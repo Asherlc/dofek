@@ -1,6 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import { ActivityRepository } from "../repositories/activity-repository.ts";
+import { registerAuthorizedTool } from "./authorized-tool.ts";
 import type { DofekMcpContext } from "./context.ts";
 import { requireMcpScope } from "./token-repository.ts";
 import { activityStreamsOutputSchema } from "./tool-output.ts";
@@ -17,18 +18,20 @@ const activityStreamChannelSchema = z.enum([
 
 /** Register capped access to deduped activity sensor streams. */
 export function registerActivityStreamsTool(server: McpServer, context: DofekMcpContext): void {
-  server.registerTool(
+  registerAuthorizedTool(
+    server,
+    ["activity:read"],
     "get_activity_streams",
     {
       title: "Get Activity Streams",
       description:
         "Return a capped, downsampled activity time series. Select only the channels needed for analysis.",
       annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
-      inputSchema: {
+      inputSchema: z.object({
         activity_id: z.uuid(),
         channels: z.array(activityStreamChannelSchema).min(1).optional(),
         downsample_to: z.number().int().min(1).max(2000).optional(),
-      },
+      }),
       outputSchema: activityStreamsOutputSchema,
     },
     async ({ activity_id, channels, downsample_to }) => {

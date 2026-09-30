@@ -4,6 +4,7 @@ import { ActivityRepository } from "../repositories/activity-repository.ts";
 import { ClimbingRepository } from "../repositories/climbing-repository.ts";
 import { readFingerLoadingActivity } from "../repositories/climbing-training-log-repository.ts";
 import { StrengthRepository } from "../repositories/strength-repository.ts";
+import { registerAuthorizedTool } from "./authorized-tool.ts";
 import type { DofekMcpContext } from "./context.ts";
 import { requireMcpScope } from "./token-repository.ts";
 import { activityDetailsOutputSchema } from "./tool-output.ts";
@@ -11,14 +12,16 @@ import { jsonToolResult } from "./tool-result.ts";
 
 /** Register one-activity structured training details. */
 export function registerActivityDetailsTool(server: McpServer, context: DofekMcpContext): void {
-  server.registerTool(
+  registerAuthorizedTool(
+    server,
+    ["activity:read"],
     "get_activity_details",
     {
       title: "Get Activity Details",
       description:
         "Return one authenticated user's activity with its strength exercises and sets, climbing entries, and finger-loading details.",
       annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
-      inputSchema: { activity_id: z.uuid() },
+      inputSchema: z.object({ activity_id: z.uuid() }),
       outputSchema: activityDetailsOutputSchema,
     },
     async ({ activity_id }) => {

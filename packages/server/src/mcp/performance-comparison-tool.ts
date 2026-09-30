@@ -8,6 +8,7 @@ import {
   identityEquivalenceSchema,
   type PerformanceEquivalence,
 } from "../repositories/performance-comparison-types.ts";
+import { registerAuthorizedTool } from "./authorized-tool.ts";
 import type { DofekMcpContext } from "./context.ts";
 import { performanceComparisonOutputSchema } from "./performance-comparison-output.ts";
 import { requireMcpScope } from "./token-repository.ts";
@@ -109,14 +110,16 @@ export function registerPerformanceComparisonTool(
   server: McpServer,
   context: DofekMcpContext,
 ): void {
-  server.registerTool(
+  registerAuthorizedTool(
+    server,
+    ["activity:read"],
     "compare_performances",
     {
       title: "Compare Equivalent Performances",
       description:
         "Compare provider-agnostic repeated workout/template IDs, provider routes, canonical routes, segments/climbs, standardized tests, normalized names, user-defined benchmark groups, and strength exercises. Level A exact: namespaced recorded identity. Level B strong_inferred: measured route geometry (canonical_route value is a discovery anchor activity ID or stored route fingerprint). Level C caller_asserted: explicit names, legacy name/type inputs, or benchmark membership. Level D weak_similarity: activity_name with asserted=false. Reference activities resolve the strongest unambiguous exact/strong evidence. Every comparison includes identity confidence, assumptions, route geometry, shared cycling metrics, quality, and source/member provenance. False-fitness guard: ordinary workout best power is lower-bound observed capability, not maximal capacity; lower observed bests do not demonstrate fitness decline. Only standardized/maximal tests or controlled equivalent efforts with comparable conditions support decline conclusions; identity alone never establishes maximal intent. Missing metrics include unavailable reasons; current FTP never supplies historical thresholds.",
       annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
-      inputSchema: {
+      inputSchema: z.object({
         start_date: dateSchema,
         end_date: dateSchema,
         reference_activity_id: z.uuid().optional(),
@@ -125,7 +128,7 @@ export function registerPerformanceComparisonTool(
         modalities: z.array(z.enum(ACTIVITY_MODALITIES)).max(ACTIVITY_MODALITIES.length).optional(),
         cursor: z.string().min(1).optional(),
         limit: z.number().int().min(1).max(100).optional(),
-      },
+      }),
       outputSchema: performanceComparisonOutputSchema,
     },
     async ({

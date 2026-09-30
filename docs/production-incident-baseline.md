@@ -1,19 +1,47 @@
 # Production Incident Baseline
 
+## 2026-09-30 — Empty route refresh fails in materialized-CTE planning
+
+- **Status / impact:** Query repair validated; deployment pending. The local `pnpm analytics:build` completed 40 of 41 models; `activity_route_identity` failed with Code 49: `Reading from materialized CTE 'affected_route_keys' before its materialization completed - DelayedPortsProcessor gate is missing in the query plan`. The user requested fixing this before the MCP rollout.
+- **Evidence / cause:** A real ClickHouse regression reproduces the failure during an empty incremental refresh, while the 20 populated-fixture cases pass. The exact compiled query also fails on [ClickHouse 26.9.6.6 stable](https://github.com/ClickHouse/ClickHouse/releases/tag/v26.9.6.6-stable), so a version upgrade alone does not resolve it. Removing only the affected-key hint exposes the same error for its upstream `existing_route_state`; removing both hints preserves the SQL results and incremental rules and avoids their broken materialized plans. ClickHouse has documented related [materialized-CTE dependency planning failures](https://github.com/ClickHouse/ClickHouse/issues/101940); that older resolved issue is context, not proof that this exact failure is resolved.
+- **Validation / remaining work:** All 21 route tests, including existing scan-budget checks, pass on the workspace's pinned 26.8.2.7 with retries disabled. Root typecheck passes. Subsequent full builds were interrupted before the route model: Docker Desktop's kernel log records `global_oom` killing this workspace's ClickHouse process at 15:12:19, 15:17:11, and 15:22:17 UTC. Stopping only this workspace’s unused Redis and Redpanda services freed sufficient memory; the subsequent complete build passed all 41 models in 14.23 seconds. No server memory limit, retry, timeout, or query optimizer setting was increased. Local SQLFluff also reports an unused-CTE false positive after its parser stops at valid `AS MATERIALIZED` syntax, plus a single-target formatting warning in an unchanged model; Full lint passes against a fresh lint schema, matching CI’s rendering; the incremental route behavior is verified by the executable database tests. Verify the complete build before merging, and include empty initial refreshes in future model regressions.
+
+## 2026-09-30 — Applied branch migration blocks main deployment
+
+- **Status / impact:** Repair implemented; production deployment pending. [Deployment 36720669142](https://github.com/Asherlc/dofek/actions/runs/36720669142) aborted in the migration step before replacing the web service, also blocking the MCP write-consent rollout.
+- **Evidence / root cause:** The first fatal line was `Integrity check failed: migration tracked at 1790727480000 is recorded as applied but is missing`. Production records SHA-256 `8c78a3557c472012c24978da8c1ae16e99573f59d66ed7d8e709297702c849ff`, exactly matching `0133_independent_climbing_outcome_count.sql` from unmerged Kaya commit `0bf3bd7f1`. Main omitted that file and journal entry. The process that originally applied it has not been identified; Git worktree isolation does not isolate an external production database.
+- **Direct fix:** Restore the original applied migration and timestamp without altering production history. Move the unapplied Apple Health view migration to `0134_apple_health_workout_revisions` with a later journal timestamp so [Drizzle's migration ordering](https://github.com/drizzle-team/drizzle-orm/blob/main/drizzle-orm/src/pg-core/dialect.ts) cannot skip it. Remove the obsolete paired-count check from the schema definition to match the already-applied constraint change.
+- **Validation / follow-up:** The real-database upgrade regression failed with the exact production error before repair, then applied the one pending migration and returned zero on a second run. All 34 migration/Apple Health integration tests pass. Verify the production migration step and MCP consent/write probe after deployment. No integrity check, retry, or timeout was weakened. Require a merged, durable journal entry before future production migration operations.
+
+## 2026-09-30 — ChatGPT nutrition save lacks write authorization
+
+- **Status / impact:** Fix implemented; deployment and real-client validation pending. After reconnecting, the user reported `MCP token requires scope: nutrition:write` when saving nutrition. The save was rejected; it was not logged.
+- **Evidence:** Read-only production inspection found a refresh token for the real connection, confirming automatic refresh issuance. Its grant, access tokens, and refresh token carry `health:read activity:read nutrition:read providers:read sync:write`, without `nutrition:write` or `health:write`. Protected-resource discovery advertises both write scopes.
+- **Cause / direct fix:** Dofek enforced tool scopes but omitted per-tool `securitySchemes` and structured `_meta["mcp/www_authenticate"]` challenges. These are the two required parts of ChatGPT's tool-level consent flow in [OpenAI's authentication guidance](https://developers.openai.com/plugins/build/auth/#triggering-authentication-ui). All 41 tools now declare their requirements using the [supported `_meta.securitySchemes` field](https://developers.openai.com/plugins/reference/#meta-fields-on-tool-descriptor). A shared registration boundary uses the MCP SDK's challenge builder for scope errors while preserving UI metadata and handler scope checks. The user approved this approach and requested write scopes by default; new personal tokens select all seven tool scopes, with editable permissions. Existing grants are not expanded.
+- **Validation:** The regressions reproduced missing declarations and missing consent challenges before the change. Unit and mobile tests pass (19,091 tests), focused authorization/UI tests pass (144 tests), and the SDK HTTP/database regression passes both read-only rejection without a stored food record and authorized save/fresh discovery. Lint and root/server/web typechecks pass. No retries, timeouts, or permission bypasses were added.
+- **Follow-up:** Validate discovery and a write-scope upgrade end to end, rather than treating successful initialization and tool listing as proof that writes are authorized. Do not expand existing grants manually.
+
 ## 2026-09-29 — Working ChatGPT connection needs automatic OAuth refresh issuance
 
 - **Status / user impact:** The user confirmed that ChatGPT connection and tool requests work after the opaque-token fix. Read-only production checks found one current grant and access token but no refresh token, so the connection could not refresh after access-token expiry.
 - **Evidence / root cause:** None of the 13 retained authorization codes requested `offline_access` or `openid`. The library's default refresh issuance requires `offline_access`, even when the client supports the `refresh_token` grant. A database-backed regression reproduced a successful code exchange whose response omitted `refresh_token`; see [oidc-provider's issuance policy](https://oidc-provider.dev/configuration/tokens/#issuerefreshtoken).
 - **Direct fix:** Use that library policy to issue refresh tokens to clients supporting the refresh grant without requiring an OIDC scope. Existing consent, PKCE, resource checks, rotation, expiry, and replay rejection remain enforced. Public-client refresh tokens must rotate or be sender-constrained under [RFC 9700 section 4.14](https://www.rfc-editor.org/rfc/rfc9700.html#section-4.14).
-- **Validation / remaining work:** The issuance regression and unit policy tests pass. The integration flow refreshes without `offline_access`, verifies rotation and authenticated MCP access, then replays the consumed refresh token and verifies family revocation. Production deployment and a fresh real ChatGPT connection are pending; an existing connection cannot gain a refresh token retrospectively. No runtime retry or timeout workaround was added.
+- **Validation / remaining work:** The issuance regression and unit policy tests pass. The integration flow refreshes without `offline_access`, verifies rotation and authenticated MCP access, then replays the consumed refresh token and verifies family revocation. Refresh issuance deployed in `sha-f7060ae`. Production probes using ChatGPT and Claude's published CIMD metadata passed code exchange, refresh issuance without `offline_access`, rotation, MCP initialization, tool discovery, and replay-triggered family revocation. Probe state was removed. The September 30 real ChatGPT reconnect created a refresh token; its attempted nutrition save then exposed missing write permission, documented above. No runtime retry or timeout workaround was added.
 - **Prior rollout / cleanup:** [PR #2835](https://github.com/Asherlc/dofek/pull/2835) deployed `sha-7522a32` through [run 36637415397](https://github.com/Asherlc/dofek/actions/runs/36637415397). Production canaries using ChatGPT and Claude's published CIMD metadata passed issuance, refresh, MCP initialization, tool discovery, and revocation, with all fixture state removed. [PR #2836](https://github.com/Asherlc/dofek/pull/2836) merged normally after all 100 checks passed; its schema-cleanup image `sha-4b4967c` completed [deployment 36646056646](https://github.com/Asherlc/dofek/actions/runs/36646056646). Production has zero obsolete OAuth tables or token columns; both personal tokens and the current CIMD grant were preserved. Both published-client canaries passed again after cleanup.
 - **Runbook improvement:** Include actual refresh-token issuance in end-to-end OAuth validation using the scopes requested by the real client; an `offline_access` canary alone did not represent ChatGPT's automatic setup.
 
 ### Midnight UTC exposed a date-dependent unit fixture
 
 - Main [CI run 36648205190](https://github.com/Asherlc/dofek/actions/runs/36648205190/job/109678740438) failed `Test / Unit Tests` at `power-repository.test.ts:271`: `expected null to be 190`. Its July 1 fixture fell outside the rolling 90-day eFTP window when UTC advanced to September 30. The same test reproduced the failure locally; production eFTP behavior was correct.
-- Canceled the queued [refresh deployment 36649669487](https://github.com/Asherlc/dofek/actions/runs/36649669487) before infrastructure or web changes. Production remains on the successful cleanup image. Refresh [PR #2838](https://github.com/Asherlc/dofek/pull/2838) is merged, but refresh issuance is not deployed.
-- Pin the fixture's clock to July 2 and restore the real clock afterward using [Vitest date mocking](https://vitest.dev/guide/mocking/dates). This fixes the test's current-date dependence without changing runtime analytics or weakening an assertion. Hosted validation and the refresh rollout remain pending.
+- Canceled the queued [refresh deployment 36649669487](https://github.com/Asherlc/dofek/actions/runs/36649669487) before infrastructure or web changes. Refresh [PR #2838](https://github.com/Asherlc/dofek/pull/2838) and the clock correction [PR #2853](https://github.com/Asherlc/dofek/pull/2853) are merged.
+- Pin the fixture's clock to July 2 and restore the real clock afterward using [Vitest date mocking](https://vitest.dev/guide/mocking/dates). This fixes the test's current-date dependence without changing runtime analytics or weakening an assertion. The corrected [main CI run 36653699442](https://github.com/Asherlc/dofek/actions/runs/36653699442) passed unit, integration, E2E, coverage, lint, and security checks before deployment; only unchanged Apple jobs remained queued. The user approved administrator merges and exact-image deployment, and the temporary ruleset bypass was restored immediately.
+
+### Production refresh verification
+
+- [Deployment 36655027715](https://github.com/Asherlc/dofek/actions/runs/36655027715) succeeded with `sha-f7060ae`, containing both fixes. Both web replicas serve digest `sha256:dd89a1e2add7d3dbfd6ba572fe8fbfd17df52dd8d59728bcb5edeb27b1d4f44d`; migrations and all service stability checks passed.
+- Database verification found zero obsolete OAuth tables or columns, two preserved personal tokens, and zero probe users. Refresh tokens now use the canonical OIDC adapter; the September 30 real ChatGPT reconnect has a refresh token.
+- An extra revoke request in back-to-back operator probes returned HTTP 429 because the shared OAuth limiter's five-request, one-minute budget was exhausted. Refresh issuance, rotation, and replay rejection had already passed. Removed the redundant revoke from the operator-only Claude probe and reran its complete refresh flow successfully; production rate limits were unchanged. Separate production revocation checks passed.
+- Future OAuth validation should use actual client scopes and include refresh issuance, rotation, authenticated MCP access, and replay rejection. Rolling-window analytics fixtures should pin their clock; see [Vitest date mocking](https://vitest.dev/guide/mocking/dates).
 
 <!-- cspell:ignore Hetzner Hypertables rollups fanout Checkpointed subcheck MISCONF docuum anchore xcframework objc -->
 
@@ -28294,3 +28322,23 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   timeout changed. Concurrent workspace load can still exhaust the shared VM;
   future diagnosis should retain VM kernel evidence and coordinate capacity
   before changing query behavior or test settings.
+
+## 2026-09-30 — Recovery follows main's restored migration history
+
+- **Evidence and fix:** [PR #2855](https://github.com/Asherlc/dofek/pull/2855)
+  restored the immutable Kaya migration on main and registered the pending Apple
+  migration at timestamp `1790779386669`. The focused recovery adopts that exact
+  journal instead of its earlier, still-pending `1790727480001` proposal. A
+  read-only production ledger check at 16:38 UTC still showed Kaya as the latest
+  applied entry; no production history was rewritten.
+- **Validation and impact:** The previous revision of
+  [PR #2857](https://github.com/Asherlc/dofek/pull/2857) passed its complete hosted
+  CI workflow. The merge with current main is undergoing fresh validation. Keep
+  both executable PostgreSQL regressions: the complete deployed migration prefix
+  and preservation of climbing data during the pending Apple upgrade.
+- **Remaining work:** Normal checked deployment and a healthy background-worker
+  cycle remain required before declaring production recovered. All 124 affected
+  database cases from the earlier validation passed across combined and isolated
+  runs after the shared Docker VM killed ClickHouse; the combined run itself did
+  not pass. No retry, timeout, integrity bypass, or production operator write was
+  introduced.

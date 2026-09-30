@@ -17,6 +17,7 @@ import {
 } from "../repositories/recovery-baseline-repository.ts";
 import { fetchRestingHeartRateValuesCte } from "../repositories/resting-heart-rate-query.ts";
 import { healthExplorerResourceUri } from "./app-resource.ts";
+import { registerAuthorizedTool } from "./authorized-tool.ts";
 import type { DofekMcpContext } from "./context.ts";
 import { HealthExplorerService } from "./health-explorer-service.ts";
 import { buildHealthSeries, type HealthTrendRow } from "./health-series-service.ts";
@@ -211,20 +212,22 @@ export function registerHealthTrendTools(server: McpServer, context: DofekMcpCon
     };
   }
 
-  server.registerTool(
+  registerAuthorizedTool(
+    server,
+    ["health:read"],
     "get_health_trends",
     {
       title: "Get Health Trends",
       description:
         "Show daily HRV and step trends, or other health metrics, for an exact date range with baseline-relative recovery context.",
       annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
-      inputSchema: {
+      inputSchema: z.object({
         start_date: dateSchema,
         end_date: dateSchema,
         metrics: z.array(healthMetricSchema).optional(),
         granularity: z.enum(["daily", "weekly"]).optional(),
         timezone: z.string().optional(),
-      },
+      }),
       outputSchema: mcpOutputSchemas.healthTrends,
     },
     async ({ start_date, end_date, metrics, granularity, timezone }) => {
@@ -248,7 +251,9 @@ export function registerHealthTrendTools(server: McpServer, context: DofekMcpCon
     },
   );
 
-  server.registerTool(
+  registerAuthorizedTool(
+    server,
+    ["health:read"],
     "render_health_explorer",
     {
       title: "Render Health Explorer",

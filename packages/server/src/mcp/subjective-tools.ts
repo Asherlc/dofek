@@ -5,6 +5,7 @@ import { captureException } from "dofek/lib/error-reporting";
 import { z } from "zod";
 import { dateSchema } from "../lib/date-schema.ts";
 import { injuryKindSchema, SubjectiveRepository } from "../repositories/subjective-repository.ts";
+import { registerAuthorizedTool } from "./authorized-tool.ts";
 import type { DofekMcpContext } from "./context.ts";
 import { requireMcpScope } from "./token-repository.ts";
 import { mcpOutputSchemas } from "./tool-output.ts";
@@ -12,14 +13,16 @@ import { jsonToolResult } from "./tool-result.ts";
 import { assertDateRange } from "./tool-utils.ts";
 
 export function registerSubjectiveTools(server: McpServer, context: DofekMcpContext): void {
-  server.registerTool(
+  registerAuthorizedTool(
+    server,
+    ["health:read"],
     "list_body_regions",
     {
       title: "List Body Regions",
       description:
         "List the canonical body-region IDs and labels accepted by injury and niggle logging.",
       annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
-      inputSchema: {},
+      inputSchema: z.object({}),
       outputSchema: mcpOutputSchemas.bodyRegions,
     },
     async () => {
@@ -29,16 +32,18 @@ export function registerSubjectiveTools(server: McpServer, context: DofekMcpCont
     },
   );
 
-  server.registerTool(
+  registerAuthorizedTool(
+    server,
+    ["health:read"],
     "get_subjective_timeline",
     {
       title: "Get Subjective Timeline",
       description: "Return raw subjective check-ins, symptoms, and injury events for a date range.",
       annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
-      inputSchema: {
+      inputSchema: z.object({
         start_date: dateSchema,
         end_date: dateSchema,
-      },
+      }),
       outputSchema: mcpOutputSchemas.subjectiveTimeline,
     },
     async ({ start_date, end_date }) => {
@@ -49,21 +54,23 @@ export function registerSubjectiveTools(server: McpServer, context: DofekMcpCont
     },
   );
 
-  server.registerTool(
+  registerAuthorizedTool(
+    server,
+    ["health:write"],
     "log_injury",
     {
       title: "Log Injury",
       description:
         "Log a private injury or niggle against a canonical body-region ID. Use list_body_regions to discover valid IDs.",
       annotations: { readOnlyHint: false, openWorldHint: false, destructiveHint: false },
-      inputSchema: {
+      inputSchema: z.object({
         kind: injuryKindSchema,
         body_region_id: z.string().trim().min(1),
         onset_date: dateSchema,
         resolved_date: dateSchema.nullable().optional(),
         severity: z.number().int().min(0).max(10).nullable().optional(),
         description: z.string().trim().min(1),
-      },
+      }),
       outputSchema: mcpOutputSchemas.injuryEvent,
     },
     async ({ kind, body_region_id, onset_date, resolved_date, severity, description }) => {

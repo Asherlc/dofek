@@ -393,6 +393,61 @@ describe("runMigrations", () => {
     }
   });
 
+  it("upgrades the production climbing migration history without skipping pending work", async () => {
+    const client = new Client({ connectionString: ctx.connectionString });
+    const migrationsFolder = join(import.meta.dirname, "../../drizzle");
+    const journal = z
+      .object({
+        entries: z.array(z.object({ idx: z.number(), tag: z.string(), when: z.number() })),
+      })
+      .parse(JSON.parse(readFileSync(join(migrationsFolder, "meta/_journal.json"), "utf8")));
+    const productionClimbingHash =
+      "8c78a3557c472012c24978da8c1ae16e99573f59d66ed7d8e709297702c849ff";
+    await client.connect();
+    try {
+      await client.query("CREATE SCHEMA drizzle");
+      await client.query(`CREATE TABLE drizzle.__drizzle_migrations (
+        id serial PRIMARY KEY,
+        hash text NOT NULL,
+        created_at bigint,
+        content_hash text
+      )`);
+      for (const entry of journal.entries.filter((entry) => entry.idx <= 132)) {
+        const hash = createHash("sha256")
+          .update(readFileSync(join(migrationsFolder, `${entry.tag}.sql`)))
+          .digest("hex");
+        await client.query(
+          "INSERT INTO drizzle.__drizzle_migrations (hash,created_at,content_hash) VALUES ($1,$2,$1)",
+          [hash, entry.when],
+        );
+      }
+      await client.query(
+        "INSERT INTO drizzle.__drizzle_migrations (hash,created_at,content_hash) VALUES ($1,$2,$1)",
+        [productionClimbingHash, 1_790_727_480_000],
+      );
+
+      await expect(runMigrations(ctx.connectionString, migrationsFolder)).resolves.toBe(1);
+      const pending = journal.entries.find((entry) =>
+        entry.tag.endsWith("_apple_health_workout_revisions"),
+      );
+      if (!pending) throw new Error("Apple Health revision migration is required");
+      const pendingHash = createHash("sha256")
+        .update(readFileSync(join(migrationsFolder, `${pending.tag}.sql`)))
+        .digest("hex");
+      const tracked = await client.query(
+        "SELECT hash FROM drizzle.__drizzle_migrations WHERE hash IN ($1,$2) ORDER BY hash",
+        [productionClimbingHash, pendingHash],
+      );
+      expect(migrationHashRowsSchema.parse(tracked.rows)).toEqual(
+        [productionClimbingHash, pendingHash].sort().map((hash) => ({ hash })),
+      );
+      await expect(runMigrations(ctx.connectionString, migrationsFolder)).resolves.toBe(0);
+    } finally {
+      await client.query("DROP SCHEMA drizzle CASCADE");
+      await client.end();
+    }
+  });
+
   it("continues after migrations recorded by the legacy filename tracker", async () => {
     const client = new Client({ connectionString: ctx.connectionString });
     const tmpDir = mkdtempSync(join(tmpdir(), "migrate-test-legacy-history-"));
