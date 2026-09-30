@@ -27928,3 +27928,26 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 
 - CI run `36632649198`, job `109626055202`, failed `pnpm audit --prod --audit-level=high --ignore-registry-errors`: Undici 6.28.0 and 7.29.0 were reported vulnerable to WebSocket denial of service and a BalancedPool TLS-validation bypass. The advisories were updated during this incident ([GHSA-rfgv-xxqx-mfg5](https://github.com/advisories/GHSA-rfgv-xxqx-mfg5), [GHSA-w293-vg96-wgc3](https://github.com/advisories/GHSA-w293-vg96-wgc3)).
 - Updated existing security overrides to the latest releases compatible with each dependency’s required major version: 6.29.0, 7.30.0, and 8.11.2. Local production audit passes the existing high-severity gate; two moderate advisories remain below that unchanged gate. The hosted dependency audit passed; the opaque-token PR has 100 successful checks, including unit, integration, mutation, lint, and E2E. Four unchanged Apple jobs remained queued. With explicit user approval, PR #2835 was administrator-merged as `7522a325d`; the ruleset was immediately restored with no bypass actor. Its exact image build and production rollout remain pending.
+
+## 2026-09-29 — Sentry remediation hosted validation remains queued
+
+- **Symptoms / impact:** [Sentry remediation PR #2837](https://github.com/Asherlc/dofek/pull/2837)
+  has reviewed, locally validated fixes, but its hosted validation and production
+  rollout remain incomplete. The same runner queue also affects `main`.
+- **Evidence:** At 00:34 UTC on September 30,
+  [run 36649078538](https://github.com/Asherlc/dofek/actions/runs/36649078538)
+  had passed change detection and the Docker build. CodeQL, Semgrep, and the
+  mobile preview also passed; 37 remaining build/test checks were queued with
+  no runner assigned and no reported failure. No fatal log line is available
+  for jobs that have not started.
+- **Root cause / status:** The operator confirmed an account limit is in place.
+  Whether it is a spending or concurrency limit, and its exact effect on the
+  queue, remain unverified. Hosted validation is unresolved.
+- **Actions / follow-up:** Cancelled only superseded runs owned by this task;
+  their queued aggregate jobs required GitHub's documented
+  [force-cancel operation](https://docs.github.com/en/rest/actions/workflow-runs#force-cancel-a-workflow-run).
+  No account limits, repository settings, or validation gates were changed.
+  Finish the latest commit's hosted checks once runner capacity is available,
+  then obtain rollout approval and follow the projection/native verification
+  gates recorded above. Five verified historical Sentry issues are resolved;
+  four server and six mobile issues remain open pending rollout or evidence.
