@@ -27961,6 +27961,97 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Symptoms / evidence:** [CI run 36663664027, dependency-audit job](https://github.com/Asherlc/dofek/actions/runs/36663664027/job/109723969830) failed `pnpm audit --prod --audit-level=high --ignore-registry-errors`. The first failing report was `high | brace-expansion: DoS via uncontrolled recursion on nested brace groups causing stack exhaustion`; the command reported two high-severity advisories and exited 1. The same command reproduced the failure locally.
 - **Root cause / fix:** The existing global override pinned `brace-expansion` 5.0.9. Advisories reviewed on September 29 report stack-exhaustion vulnerabilities in that version and require 5.0.11 or newer ([nested-brace advisory](https://github.com/advisories/GHSA-qhr7-859c-m2p7), [comma-parser advisory](https://github.com/advisories/GHSA-6j4f-fj2g-mc7p)). Updated the existing global override to 5.0.12 and its separate CommonJS-compatible `minimatch@3` override from 1.1.18 to 1.1.21, then regenerated the lockfile. Versions were checked against the [npm registry](https://registry.npmjs.org/brace-expansion).
 - **Validation / remaining risk:** Installation, lint, all four root/server/web/mobile type checks, and 19,108 unit/mobile tests pass; the unchanged local production audit passes with no high-severity findings. The hosted rerun and remaining required CI must complete before merging. The expressly approved production release remains `525ad724bcf0e12ddd58699299010e526acfe2e6`; the dependency patch needs a subsequent release. No audit ignores, retries, timeouts, or thresholds were changed.
+## 2026-09-29 — Superseded WHOOP workout remained visible through Apple Health
+
+- **Symptoms / user impact:** Activity `9b48239b-d9c0-4c7c-811f-2f7dccd05ea8`
+  displayed an older “WHOOP via Apple Health” climbing workout that no longer
+  matched the workout in the WHOOP app.
+- **Evidence:** Read-only production SSH queries found Apple Health versions
+  1834 and 1835 with sync identifier
+  `whoop://workout/e7078f0e-64f0-40f3-ac45-15939e77f8e6` and different member
+  UUIDs. Version 1834 spans 13:57:00–15:04:59 UTC; version 1835 spans
+  14:28:31–15:23:48 UTC on September 29. Both raw rows are active. The direct
+  WHOOP row and live API response match version 1835. ClickHouse serves both
+  groups with `is_deleted = 0`; production logs and source syncs are working.
+- **Root cause:** Serving queries treated changed HealthKit UUIDs as independent
+  activities and relied on time overlap for grouping. The revised bounds had
+  only 42% intersection-over-union and 66% shorter-workout containment, below
+  the grouping threshold. Apple defines replacement through sync identifier
+  and version ([HealthKit sync version](https://developer.apple.com/documentation/healthkit/hkmetadatakeysyncversion)).
+- **Fix:** Prepared query-time selection of the latest Apple Health version in
+  both PostgreSQL and ClickHouse, with forward migration
+  `0133_apple_health_workout_revisions`. Raw revisions remain intact; no
+  production records were changed during diagnosis. The
+  [Apple Health runbook](apple-health.md#workout-revisions) documents revision
+  and deletion checks.
+- **Validation:** Before the fix, real PostgreSQL and ClickHouse regressions
+  served both versions and revived the older revision when the latest was
+  absent or deleted. Mixed-provider regressions also reproduced obsolete
+  tombstones hiding current groups. After the fix, 104 database tests pass, including the
+  source-record refresh, group lifecycle, provider absence, grouping, and
+  activity API, production dbt repair, and payload lifecycle suites. Workspace
+  lint, root/server/web typechecks, and migration
+  policy pass; the full unit/mobile suite passes. An unrelated eFTP fixture
+  crossed its rolling 90-day window; the [separate fix on main](https://github.com/Asherlc/dofek/pull/2853)
+  pins the test clock and replaces this branch's relative-date correction. Local
+  validation was interrupted by a ClickHouse container
+  restart; it completed without changing runtime retries or timeouts.
+- **CI correction:** The [SQLFluff job](https://github.com/Asherlc/dofek/actions/runs/36653162781/job/109691872798)
+  failed `Lint new migration SQL` with `LT02 | Expected line break and indent
+  of 4 spaces before 'provider_id'`, followed by unqualified subquery-column
+  errors. Local `pnpm lint` checks analytics models but does not run this
+  migration check. The migration and canonical view now use the required
+  layout and explicit revision aliases; the exact SQLFluff command passes.
+  The [spell-check job](https://github.com/Asherlc/dofek/actions/runs/36653162781/job/109691872576)
+  also reported `Unknown word (endmacro)` in the test helper's Jinja matcher.
+  Added the actual Jinja keyword to the project vocabulary.
+  A [full integration shard](https://github.com/Asherlc/dofek/actions/runs/36654153806/job/109695433538)
+  then failed the production dbt repair and payload lifecycle tests with
+  `Unknown expression identifier created_at in scope apple_health_revisions`.
+  Two minimal activity-table fixtures omitted that canonical column. Their
+  schemas and seed data now include it; both dbt suites pass all eight tests.
+  The production ranking is unchanged.
+- **CI dependency audit (September 30 UTC):** After resolving the incident-log
+  merge conflict, [job 109741648357](https://github.com/Asherlc/dofek/actions/runs/36669558499/job/109741648357)
+  failed `pnpm audit --prod --audit-level=high --ignore-registry-errors` with
+  `high | brace-expansion: DoS via uncontrolled recursion on nested brace groups
+  causing stack exhaustion`. The existing override pinned 5.0.9, below the
+  patched ranges in [GHSA-qhr7-859c-m2p7](https://github.com/advisories/GHSA-qhr7-859c-m2p7)
+  and [GHSA-6j4f-fj2g-mc7p](https://github.com/advisories/GHSA-6j4f-fj2g-mc7p).
+  Updated the existing overrides to 5.0.12 and the compatible CommonJS release
+  1.1.21, then regenerated the lockfile. Frozen installation and the exact
+  production audit pass; four moderate advisories remain below the unchanged
+  high-severity gate. Workspace lint, root/server/web typechecks, spell check,
+  and all 19,136 unit/mobile tests pass. The
+  [hosted rerun](https://github.com/Asherlc/dofek/actions/runs/36670718957)
+  passed all nine required gates; audit thresholds and exclusions are unchanged.
+- **PR review regressions:** Real database tests confirmed that an oversized
+  sync version made PostgreSQL serving queries fail across users with
+  `value "18446744073709553451" is out of range for type bigint`. Version
+  parsing now checks the full nonnegative signed 64-bit range before casting,
+  retaining valid 19-digit values and matching ClickHouse's zero fallback.
+  An actual scoped dbt build also kept the superseded source active when only
+  the replacement UUID was supplied. The shared scope now includes same-user,
+  same-sync-identifier siblings and their persisted groups before dependent
+  models run. The [serving runbook](apple-health.md#workout-revisions) links
+  the implementations and executable regression coverage. All 112 relevant
+  PostgreSQL/ClickHouse tests, 19,136 unit/mobile tests, lint, and
+  root/server/web typechecks pass. Hosted checks for the review-fix commit
+  remain required before merge.
+- **Local validation interruption (September 30 UTC):** At 05:20:50 UTC,
+  PostgreSQL logged `checkpointer process (PID 114) was terminated by signal
+  9: Killed`; its cgroup reported `oom_kill 1`. Docker's VM has 8,216,862,720
+  bytes of memory shared by many running workspace stacks. Stopped only this
+  task's idle validation services to release pressure, retaining ClickHouse
+  for dbt SQL lint, then stopped its unused Redpanda container during the
+  PostgreSQL/ClickHouse rerun. Other workspaces' containers and volumes remain
+  intact. The rerun passed all 112 tests with zero PostgreSQL cgroup OOM kills.
+  No application retries, timeouts, or fallback behavior were changed for this
+  interruption. Hosted review-fix checks remain required before merge.
+- **Remaining risk / follow-up:** Production remains unresolved until the normal
+  deployment and a ClickHouse incremental refresh complete. Verify the old
+  group disappears, the current group remains, and both raw versions survive.
+  No retry, timeout, or fallback changes are part of the fix.
 
 ## 2026-09-29 — Sentry remediation hosted validation remains queued
 
@@ -28135,3 +28226,44 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   and an older timestamp; reconcile that entry after the immutable applied Kaya
   entry, then verify fresh and already-migrated database behavior. No integrity
   bypass, manual replica write, new timeout, or retry was introduced.
+
+## 2026-09-30 — Focused recovery preserves applied migration history
+
+- **Symptoms and impact:** The latest normal production
+  [migration step](https://github.com/Asherlc/dofek/actions/runs/36720669142/job/109905005570)
+  failed because applied migration `1790727480000` was missing from main.
+  Fresh read-only checks still show web replicas serving `sha-525ad72` and six
+  background processing services paused at zero replicas. The recovery is being
+  isolated from unfinished climbing-context work added to PR #2852.
+- **Direct fix and ordering evidence:** Restore all 134 journal entries and
+  their SQL files exactly as shipped in
+  [the deployed revision](https://github.com/Asherlc/dofek/tree/525ad724bcf0e12ddd58699299010e526acfe2e6/drizzle).
+  Production's latest ledger entry remains the original Kaya migration;
+  the competing Apple Health migration has not been applied. Rename only that
+  pending file to `0134_apple_health_workout_revisions.sql`, retain its SQL bytes,
+  and append it at index 134 with timestamp `1790727480001`. Preserve the Kaya
+  timestamp and hash, and keep the
+  [migration integrity checks](https://github.com/Asherlc/dofek/blob/af05410f4e40c24586d3bab092fbba0ce32f843c/src/db/migrate.ts)
+  enforced.
+- **Regression evidence:** A real PostgreSQL test reproduces the strict
+  timestamp-order failure with the old Apple timestamp. The corrected ordering
+  applies Kaya first, applies Apple once, preserves the original ledger hash and
+  timestamp, and retains a recorded send with unknown attempt count. The final
+  focused run passes. Full-build SQL lint also identified a location-summary CTE
+  whose only use is incremental; scope its definition to that existing branch.
+  Existing route coverage exercises initial creation followed by incremental
+  updates, matching dbt's
+  [incremental model lifecycle](https://docs.getdbt.com/docs/build/incremental-models).
+- **Validation and status:** Full lint, root/server/web/mobile typechecks, the
+  production dependency audit, and all 19,157 unit/mobile tests pass.
+  Independent source review finds no material defects. The full local analytics
+  build passes all 41 models after documented local bootstrap. Broader affected
+  database tests are running; hosted CI and normal deployment remain pending.
+  Recovery is unresolved until migrations
+  succeed and processing services converge. No production history rewrite,
+  manual replica change, integrity bypass, timeout increase, or retry was added.
+- **Follow-up:** Recheck the production ledger before deployment, require
+  immutable-prefix comparison when pending migrations collide, and verify the
+  deployed image and a healthy worker cycle. Historical projection
+  materialization, mobile runtime delivery, and opaque mobile-error causes
+  remain open and require their separate evidence.
