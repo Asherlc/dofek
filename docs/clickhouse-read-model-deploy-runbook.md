@@ -355,6 +355,77 @@ cycle and verify the stale activity-summary count reaches zero before declaring
 the rollout complete. Do not force the summary refresh before projection
 materialization completes.
 
+## Route source-freshness projection rollout (migration 0097)
+
+Migration `0097_activity_route_source_freshness_projections` replaces the sensor
+`by_activity_source_refresh_version` definition with both `max(refresh_version)`
+and `maxIf(refreshed_at, channel = 'altitude')`. It also adds location
+`by_activity_location_source_refresh`, matching
+`max(greatest(source_refreshed_at, refreshed_at))`. Both retain deleted rows in
+their freshness aggregates so later tombstones invalidate routes. dbt carries
+the same definitions when recreating targets. The migration changes schema
+only; replacing the sensor definition removes its old historical projection
+coverage. Newly inserted parts maintain projections automatically, while old
+parts require explicit materialization ([ClickHouse projections](https://clickhouse.com/docs/concepts/features/projections/projections)).
+
+Historical materialization requires a separate approved maintenance window and
+the approved CI or remote database operator channel. The SQL below is a
+reviewable operator procedure, not permission to mutate production over SSH;
+production SSH remains read-only under the repository deployment policy.
+Inventory the work first using [system.parts](https://clickhouse.com/docs/operations/system-tables/parts):
+
+```sql
+SELECT table, partition_id, sum(rows) AS rows, sum(bytes_on_disk) AS bytes,
+  countIf(NOT has(projections, if(table = 'activity_sensor_sample',
+    'by_activity_source_refresh_version', 'by_activity_location_source_refresh')))
+    AS missing_projection_parts
+FROM system.parts
+WHERE active AND database = 'analytics'
+  AND table IN ('activity_sensor_sample', 'activity_location_sample')
+GROUP BY table, partition_id
+ORDER BY table, partition_id;
+```
+
+Agree on maximum partition rows/bytes and available disk/memory before writing.
+Process one reviewed partition of one table at a time; substitute its exact
+`partition_id` below. Both source tables currently have no partition key,
+so each table's single `all` partition is its smallest native materialization scope.
+If either partition exceeds the approved capacity bounds, stop and review the
+operation with the owner; a time filter cannot subdivide native projection
+materialization. ClickHouse supports partition-scoped
+[`MATERIALIZE PROJECTION`](https://clickhouse.com/docs/reference/statements/alter/projection).
+
+```sql
+ALTER TABLE analytics.activity_sensor_sample
+MATERIALIZE PROJECTION by_activity_source_refresh_version
+IN PARTITION ID '<reviewed-partition-id>' SETTINGS mutations_sync = 0;
+
+-- Run separately, after the sensor partition completes and capacity is checked.
+ALTER TABLE analytics.activity_location_sample
+MATERIALIZE PROJECTION by_activity_location_source_refresh
+IN PARTITION ID '<reviewed-partition-id>' SETTINGS mutations_sync = 0;
+
+SELECT table, mutation_id, command, is_done, parts_to_do, latest_fail_reason
+FROM system.mutations
+WHERE database = 'analytics'
+  AND table IN ('activity_sensor_sample', 'activity_location_sample')
+  AND command LIKE '%MATERIALIZE PROJECTION%'
+ORDER BY create_time DESC;
+```
+
+Record each accepted mutation as the resume checkpoint. Do not resubmit while
+it is running, and stop on a non-empty `latest_fail_reason`; these progress
+fields are documented in [system.mutations](https://clickhouse.com/docs/operations/system-tables/mutations).
+Require completion and zero missing active parts before selecting the next
+partition. After all partitions are covered, verify natural selection with
+`EXPLAIN projections = 1` for the two exact aggregates above, and observe an
+unscoped incremental route build. Require both projection names in its
+`system.query_log.projections`, bounded read rows, successful route/tombstone
+output, and a successful analytics-worker cycle. Query-log projection evidence
+is documented in [ClickHouse's projection verification example](https://clickhouse.com/docs/concepts/features/projections/projections#filtering-on-columns-which-arent-in-the-primary-key).
+Do not force a build before coverage completes or compensate for incomplete
+coverage with retries, higher timeouts, or forced optimizer settings.
+
 ## Activity sensor summary queue-depth check
 
 Use this read-only check to confirm the `activity_sensor_summary_rows`

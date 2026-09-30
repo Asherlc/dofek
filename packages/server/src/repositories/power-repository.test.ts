@@ -245,8 +245,8 @@ describe("PowerRepository", () => {
 
     it("computes eFTP from raw power samples when the activity summary has no normalized power", async () => {
       vi.useFakeTimers({ toFake: ["Date"] });
-      vi.setSystemTime(new Date("2026-07-02T12:00:00.000Z"));
       try {
+        vi.setSystemTime(new Date("2026-07-02T12:00:00.000Z"));
         const rawPowerSamples = Array.from({ length: 60 }, () => ({
           activity_id: "act-raw-power",
           activity_date: "2026-07-01",

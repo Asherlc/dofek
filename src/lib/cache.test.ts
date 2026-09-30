@@ -1,9 +1,12 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  type CacheStore,
   invalidateAllQueries,
   invalidateAllUserQueries,
   invalidateUserQueryDomains,
+  NullCacheStore,
   queryCache,
+  RedisCacheStore,
 } from "./cache.js";
 
 const TTL_MS = 60_000;
@@ -66,4 +69,71 @@ describe("query cache invalidation", () => {
     await expect(queryCache.get("user-1:journal.entries")).resolves.toBeUndefined();
     await expect(queryCache.get("user-2:recovery.score")).resolves.toBeUndefined();
   });
+});
+
+it("invalidates exactly one key and preserves adjacent and other-user entries", async () => {
+  const key = "user-1:activity.stream";
+  await queryCache.set(key, "removed", TTL_MS);
+  await queryCache.set(`${key}:adjacent`, "adjacent", TTL_MS);
+  await queryCache.set("user-2:activity.stream", "other", TTL_MS);
+  await queryCache.invalidate(key);
+  await expect(queryCache.get(key)).resolves.toBeUndefined();
+  await expect(queryCache.get(`${key}:adjacent`)).resolves.toBe("adjacent");
+  await expect(queryCache.get("user-2:activity.stream")).resolves.toBe("other");
+});
+
+describe("Redis exact cache invalidation", () => {
+  function createClient() {
+    return {
+      set: vi.fn(async () => "OK" as const),
+      get: vi.fn(async () => null),
+      del: vi.fn(async (..._keys: string[]) => 1),
+      sadd: vi.fn(async () => 1),
+      smembers: vi.fn(async () => []),
+      srem: vi.fn(async (_key: string, ..._members: string[]) => 1),
+    };
+  }
+
+  it("deletes only the exact payload and registration without prefix enumeration", async () => {
+    const client = createClient();
+    const store = new RedisCacheStore(async () => client);
+    const key = 'user-1:activity.stream:UTC:{"activityId":"activity-1"}';
+
+    await store.invalidate(key);
+
+    expect(client.del).toHaveBeenCalledExactlyOnceWith(`query-cache:data:${key}`);
+    expect(client.srem).toHaveBeenCalledExactlyOnceWith(
+      "query-cache:keys",
+      `query-cache:data:${key}`,
+    );
+    expect(client.smembers).not.toHaveBeenCalled();
+  });
+
+  it("propagates payload deletion failure without removing the registration", async () => {
+    const client = createClient();
+    const error = new Error("Redis DEL failed");
+    client.del.mockRejectedValue(error);
+    const store = new RedisCacheStore(async () => client);
+
+    await expect(store.invalidate("user-1:activity.stream")).rejects.toBe(error);
+    expect(client.srem).not.toHaveBeenCalled();
+  });
+
+  it("propagates registration removal failure after deleting the exact payload", async () => {
+    const client = createClient();
+    const error = new Error("Redis SREM failed");
+    client.srem.mockRejectedValue(error);
+    const store = new RedisCacheStore(async () => client);
+
+    await expect(store.invalidate("user-1:activity.stream")).rejects.toBe(error);
+    expect(client.del).toHaveBeenCalledExactlyOnceWith("query-cache:data:user-1:activity.stream");
+  });
+});
+
+it("supports exact invalidation while caching is disabled", async () => {
+  const store: CacheStore = new NullCacheStore();
+  await store.set("user-1:activity.stream", "unused", TTL_MS);
+
+  await expect(store.invalidate("user-1:activity.stream")).resolves.toBeUndefined();
+  await expect(store.get("user-1:activity.stream")).resolves.toBeUndefined();
 });
