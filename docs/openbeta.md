@@ -17,6 +17,16 @@ endpoint ([official API repository](https://github.com/OpenBeta/openbeta-graphql
 The public website presents profile tick history at routes such as
 [`/u/{username}/ticks`](https://openbeta.io/u/thickles/ticks).
 
+Malformed profile identifiers and responses with no public profile produce
+profile-specific connection instructions. Network, API, and response-schema
+failures retain their original errors so the server can classify and report
+them, rather than treating them as rejected tokens. See the
+[provider implementation](../src/providers/openbeta.ts) and
+[connection error handling](../packages/server/src/routers/token-auth.ts).
+The web and mobile inputs display public profile identifiers as visible text;
+secret-token connections stay masked according to the shared
+[provider catalog](../packages/providers-meta/src/provider-catalog.ts).
+
 ## Stored records
 
 Each supported tick becomes one standalone `fitness.climbing_entry` row:
