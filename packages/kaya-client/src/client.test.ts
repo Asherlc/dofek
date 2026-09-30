@@ -15,6 +15,14 @@ const loginResponse = {
   user: { id: 42 },
 };
 
+const emptyClimbContext = {
+  destination: null,
+  area: null,
+  subarea: null,
+  board: null,
+  angle: null,
+};
+
 describe("KayaClient", () => {
   it("authenticates then fetches sessions and ascents with Kaya's lead field", async () => {
     const fetchFn = vi
@@ -72,6 +80,7 @@ describe("KayaClient", () => {
                 ascent_type: { id: "redpoint", name: "Redpoint" },
                 gym: { id: "gym-1", name: "Kaya Gym" },
                 climb: {
+                  ...emptyClimbContext,
                   id: "climb-1",
                   name: "Lead Route",
                   lead: true,
@@ -153,6 +162,7 @@ describe("KayaClient", () => {
               attempts: 1,
               ascent_type: { id: "flash", name: "Flash" },
               climb: {
+                ...emptyClimbContext,
                 id: "climb-1",
                 name: "Route",
                 lead: "yes",
@@ -193,6 +203,92 @@ describe("KayaClient", () => {
     const request = JSON.parse(String(fetchFn.mock.calls[0]?.[1]?.body));
     expect(request.query).toContain("attempted_climbs");
     expect(request.query).toContain("attempts");
+  });
+
+  it("requests and retains outdoor context and board on both climb feeds", async () => {
+    const context = {
+      destination: { id: 101, name: "Test destination" },
+      area: { id: 102, name: "Test area" },
+      subarea: { id: 103, name: "Test face" },
+      board: { id: 104, name: "Test board" },
+      angle: -20,
+    };
+    const climb = { ...attemptedClimb("climb-1", null), gym: null, ...context };
+    const fetchFn = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        jsonResponse({
+          data: { sessionsForUser: [{ ...session("session-1"), attempted_climbs: [climb] }] },
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          data: {
+            ascentsForUser: [
+              {
+                id: "ascent-1",
+                session_id: "session-1",
+                date: "2026-08-01T10:30:00Z",
+                attempts: null,
+                ascent_type: { id: "send", name: "Send" },
+                climb,
+              },
+            ],
+          },
+        }),
+      );
+    const client = new KayaClient("token", fetchFn);
+    const sessions = await client.listSessions("42");
+    const ascents = await client.listAscents("42");
+    const expected = {
+      destination: { id: "101", name: "Test destination" },
+      area: { id: "102", name: "Test area" },
+      subarea: { id: "103", name: "Test face" },
+      board: { id: "104", name: "Test board" },
+      angle: -20,
+    };
+    expect(sessions[0]?.attempted_climbs[0]).toMatchObject(expected);
+    expect(ascents[0]?.climb).toMatchObject(expected);
+    for (const [index, [, init]] of fetchFn.mock.calls.entries()) {
+      const query = String(JSON.parse(String(init?.body)).query).replace(/\s+/g, " ");
+      const selection = query.slice(query.indexOf(index === 0 ? "attempted_climbs {" : "climb {"));
+      for (const field of ["destination", "area", "subarea", "board"]) {
+        expect(selection).toContain(`${field} { id name }`);
+      }
+      expect(selection).toContain("angle");
+    }
+  });
+
+  it("preserves null climb context rather than omitting selected fields", async () => {
+    const fetchFn = vi.fn<typeof fetch>().mockResolvedValue(
+      jsonResponse({
+        data: {
+          sessionsForUser: [
+            { ...session("session-1"), attempted_climbs: [attemptedClimb("climb-1", null)] },
+          ],
+        },
+      }),
+    );
+    const sessions = await new KayaClient("token", fetchFn).listSessions("42");
+    expect(sessions[0]?.attempted_climbs[0]).toMatchObject(emptyClimbContext);
+  });
+
+  it("rejects a non-integer reported wall angle", async () => {
+    const fetchFn = vi.fn<typeof fetch>().mockResolvedValue(
+      jsonResponse({
+        data: {
+          sessionsForUser: [
+            {
+              ...session("session-1"),
+              attempted_climbs: [{ ...attemptedClimb("climb-1", null), angle: 2.5 }],
+            },
+          ],
+        },
+      }),
+    );
+    await expect(new KayaClient("token", fetchFn).listSessions("42")).rejects.toBeInstanceOf(
+      ZodError,
+    );
   });
 
   it.each([0, -1, 1.5, "3"])(
@@ -395,7 +491,13 @@ describe("KayaClient", () => {
             sessionsForUser: [
               {
                 ...session("session-100"),
-                attempted_climbs: [attemptedClimb("session-100_climb", null)],
+                attempted_climbs: [
+                  {
+                    ...attemptedClimb("session-100_climb", null),
+                    board: { id: "board-2", name: "Second page board" },
+                    angle: 0,
+                  },
+                ],
               },
             ],
           },
@@ -405,7 +507,14 @@ describe("KayaClient", () => {
     const sessions = await new KayaClient("token", fetchFn).listSessions("42");
     expect(sessions).toHaveLength(101);
     expect(sessions[100]).toMatchObject({
-      attempted_climbs: [expect.objectContaining({ id: "session-100_climb", attempts: null })],
+      attempted_climbs: [
+        expect.objectContaining({
+          id: "session-100_climb",
+          attempts: null,
+          board: { id: "board-2", name: "Second page board" },
+          angle: 0,
+        }),
+      ],
     });
     expect(fetchFn.mock.calls.map(([, init]) => JSON.parse(String(init?.body)).variables)).toEqual([
       { user_id: "42", offset: 0, count: 100 },
@@ -426,6 +535,7 @@ function session(id: string) {
 
 function attemptedClimb(id: string, attempts: number | null) {
   return {
+    ...emptyClimbContext,
     id,
     attempts,
     name: null,
@@ -452,6 +562,7 @@ function ascentResponse(gymCoordinates: Record<string, unknown>): Response {
           attempts: 1,
           ascent_type: { id: "flash", name: "Flash" },
           climb: {
+            ...emptyClimbContext,
             id: "climb-1",
             name: "Route",
             lead: true,
