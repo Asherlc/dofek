@@ -49,13 +49,13 @@ describe("Kaya attempted-climb import (PostgreSQL integration)", () => {
   it("re-syncs both feeds idempotently and serves unknown counts without losing sends", async () => {
     const started = new Date(Date.now() - 24 * 60 * 60 * 1000);
     const gym = {
-      id: "413",
-      name: "Touchstone Pacific Pipe",
-      latitude: "37.81535500",
-      longitude: "-122.28925760",
+      id: "4001",
+      name: "Test Climbing Gym",
+      latitude: "45.12500000",
+      longitude: "-90.25000000",
     };
     const climb = {
-      id: "2156989",
+      id: "2001",
       name: null,
       lead: false,
       climb_type: { id: "1", name: "Bouldering" },
@@ -63,31 +63,31 @@ describe("Kaya attempted-climb import (PostgreSQL integration)", () => {
       gym,
     };
     const attemptedClimbs = [
-      { ...climb, id: "3077580_2156989", attempts: null },
-      { ...climb, id: "3077580_2156990", attempts: null },
+      { ...climb, id: "1000_2001", attempts: null },
+      { ...climb, id: "1000_2002", attempts: null },
       {
         ...climb,
-        id: "3077580_2173959",
+        id: "1000_2003",
         grade: { id: "5", name: "v3", climb_type_group: "5" },
         attempts: null,
       },
     ];
     const ascents = [
       {
-        id: "13633488",
-        session_id: "3077580",
+        id: "3001",
+        session_id: "1000",
         date: started.toISOString(),
         attempts: null,
         ascent_type: { id: "repeat", name: "Repeat" },
         climb,
       },
       {
-        id: "13633550",
-        session_id: "3077580",
+        id: "3002",
+        session_id: "1000",
         date: started.toISOString(),
         attempts: 1,
         ascent_type: { id: "onsight", name: "Onsight" },
-        climb: { ...climb, id: "2173944", grade: { id: "5", name: "v3", climb_type_group: "5" } },
+        climb: { ...climb, id: "2004", grade: { id: "5", name: "v3", climb_type_group: "5" } },
       },
     ];
     server.use(
@@ -98,7 +98,7 @@ describe("Kaya attempted-climb import (PostgreSQL integration)", () => {
             data: {
               sessionsForUser: [
                 {
-                  id: "3077580",
+                  id: "1000",
                   start_time: started.toISOString(),
                   end_time: new Date(started.valueOf() + 60 * 60 * 1000).toISOString(),
                   gym,
@@ -128,14 +128,14 @@ describe("Kaya attempted-climb import (PostgreSQL integration)", () => {
     expect(entries).toHaveLength(5);
     expect(entries.filter((entry) => entry.sent)).toHaveLength(2);
     expect(entries.filter((entry) => entry.sent === false)).toHaveLength(3);
-    expect(entries.find((entry) => entry.externalId === "13633488")).toMatchObject({
+    expect(entries.find((entry) => entry.externalId === "3001")).toMatchObject({
       sent: true,
       attemptCount: null,
     });
-    expect(entries.find((entry) => entry.externalId === "3077580_2156989")).toMatchObject({
+    expect(entries.find((entry) => entry.externalId === "1000_2001")).toMatchObject({
       sent: false,
       attemptCount: null,
-      raw: expect.objectContaining({ id: "3077580_2156989", attempts: null }),
+      raw: expect.objectContaining({ id: "1000_2001", attempts: null }),
     });
     const [session] = await context.db
       .select()

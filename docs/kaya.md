@@ -4,9 +4,8 @@ The `kaya` provider connects a user’s Kaya account with their email and
 password, then syncs climbing sessions, ascents, and attempted climbs from Kaya’s authenticated
 application API. `kaya-export` remains a separate CSV-import provider.
 
-Kaya does not publish this API for third-party integrations. The contract in
-[kaya-api.openapi.yaml](kaya-api.openapi.yaml) is observed from the
-[Kaya web app](https://kaya-app.kayaclimb.com/) and may change without notice.
+The contract in [kaya-api.openapi.yaml](kaya-api.openapi.yaml) records responses
+observed from the authenticated [Kaya web app](https://kaya-app.kayaclimb.com/).
 
 For routes, Kaya’s explicit `climb.lead` boolean is stored as the canonical
 nullable `fitness.climbing_entry.lead` value: `true` is lead and `false` is

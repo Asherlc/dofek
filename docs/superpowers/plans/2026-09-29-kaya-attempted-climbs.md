@@ -1,12 +1,12 @@
 # Kaya attempted climbs implementation plan
 
-> Execution: use `superpowers:executing-plans` with explicit review checkpoints. The user approved importing attempted climbs and re-syncing the affected activity.
+> Execution: complete the tasks in order. At each review checkpoint, compare the implementation with the observed API contract and regression results; resolve material findings before proceeding. The user approved importing attempted climbs and re-syncing the affected activity.
 
 **Goal:** Import Kaya's unsuccessful climbing records and identify other omitted fields.
 
 **Architecture:** Extend the existing typed Kaya client and provider mapping. Store provider-attributed raw climbing records in the existing canonical schema; web and mobile use the existing climbing API.
 
-**Evidence:** Kaya session `3077580` returns six ascents and three `attempted_climbs`; Dofek activity `d6a03986-c1ee-45cb-9c49-a6ed5709e52f` contains six sends. The current session query omits `attempted_climbs`. Source: [Kaya application](https://kaya-app.kayaclimb.com/) and its authenticated [GraphQL endpoint](https://kaya-beta.kayaclimb.com/graphql), observed 2026-09-29.
+**Evidence:** An affected session's authenticated Kaya response contains both ascents and `attempted_climbs`, while Dofek contains only its sends. The current session query omits `attempted_climbs`. Source: [Kaya application](https://kaya-app.kayaclimb.com/) and its authenticated [GraphQL endpoint](https://kaya-beta.kayaclimb.com/graphql), observed 2026-09-29. Production identifiers and workout details are omitted from this public record; regression fixtures use synthetic identifiers and locations.
 
 ## Constraints and review focus
 
@@ -35,7 +35,7 @@
 
 - [x] Commit and push on the existing branch.
 - [x] Apply the corrected import through the normal release/sync path and re-sync the affected session.
-- [x] Verify production now serves the six sends and three attempted climbs.
+- [x] Verify production now serves both sends and attempted climbs for the affected session.
 - [x] Report remaining field omissions and any release limitation explicitly.
 
-**Production result:** The user approved deploying the verified commit while five native Apple checks waited for runners. [Deployment 36656856783](https://github.com/Asherlc/dofek/actions/runs/36656856783) released `525ad724bcf0e12ddd58699299010e526acfe2e6` successfully. The bounded September 29 re-sync completed with nine records, no errors, and a 1,494 ms duration. Read-only production verification returned six sends and three unsent climbs (V4, V4, V3), preserved their unknown counts, retained six sends in the session summary, and verified that the activity loads the corrected web assets. The protected PR remains open pending its native Apple checks; no merge bypass was used.
+**Production result:** The user approved deploying the verified commit while five native Apple checks waited for runners. [Deployment 36656856783](https://github.com/Asherlc/dofek/actions/runs/36656856783) released `525ad724bcf0e12ddd58699299010e526acfe2e6` successfully. The bounded re-sync completed on its first run without errors. Read-only production verification returned both sends and unsent climbs, preserved unknown counts and known summary sends, and verified that the activity loads the corrected web assets. The protected PR remains open pending required CI; no merge bypass was used.

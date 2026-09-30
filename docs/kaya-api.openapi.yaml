@@ -2,7 +2,7 @@ openapi: 3.1.0
 info:
   title: Kaya observed application API
   version: 1.0.0
-  description: Reverse-engineered from Kaya's web application; not a supported public API.
+  description: Records responses observed from Kaya's authenticated web application.
 servers:
   - url: https://kaya-beta.kayaclimb.com
 paths:

@@ -170,13 +170,10 @@ describe("KayaClient", () => {
   });
 
   it("requests and preserves session attempts with unknown counts and normalized coordinates", async () => {
-    const attemptedClimbs = [
-      attemptedClimb("3077580_2156989", null),
-      attemptedClimb("3077580_2156990", 3),
-    ];
+    const attemptedClimbs = [attemptedClimb("1000_2001", null), attemptedClimb("1000_2002", 3)];
     const fetchFn = vi.fn<typeof fetch>().mockResolvedValue(
       jsonResponse({
-        data: { sessionsForUser: [{ ...session("3077580"), attempted_climbs: attemptedClimbs }] },
+        data: { sessionsForUser: [{ ...session("1000"), attempted_climbs: attemptedClimbs }] },
       }),
     );
 
@@ -184,12 +181,12 @@ describe("KayaClient", () => {
       expect.objectContaining({
         attempted_climbs: [
           expect.objectContaining({
-            id: "3077580_2156989",
+            id: "1000_2001",
             attempts: null,
             grade: expect.objectContaining({ name: "v4" }),
-            gym: expect.objectContaining({ latitude: 37.815355, longitude: -122.2892576 }),
+            gym: expect.objectContaining({ latitude: 45.125, longitude: -90.25 }),
           }),
-          expect.objectContaining({ id: "3077580_2156990", attempts: 3 }),
+          expect.objectContaining({ id: "1000_2002", attempts: 3 }),
         ],
       }),
     ]);
@@ -206,8 +203,8 @@ describe("KayaClient", () => {
           data: {
             sessionsForUser: [
               {
-                ...session("3077580"),
-                attempted_climbs: [{ ...attemptedClimb("3077580_2156989", null), attempts }],
+                ...session("1000"),
+                attempted_climbs: [{ ...attemptedClimb("1000_2001", null), attempts }],
               },
             ],
           },
@@ -223,13 +220,13 @@ describe("KayaClient", () => {
   it.each(["", "   "])(
     "rejects an attempted climb with a blank grade %j before persistence",
     async (name) => {
-      const climb = attemptedClimb("3077580_2156989", null);
+      const climb = attemptedClimb("1000_2001", null);
       const fetchFn = vi.fn<typeof fetch>().mockResolvedValue(
         jsonResponse({
           data: {
             sessionsForUser: [
               {
-                ...session("3077580"),
+                ...session("1000"),
                 attempted_climbs: [{ ...climb, grade: { ...climb.grade, name } }],
               },
             ],
@@ -436,10 +433,10 @@ function attemptedClimb(id: string, attempts: number | null) {
     climb_type: { id: "1", name: "Bouldering" },
     grade: { id: "6", name: "v4", climb_type_group: "6" },
     gym: {
-      id: "413",
-      name: "Touchstone Pacific Pipe",
-      latitude: "37.81535500",
-      longitude: "-122.28925760",
+      id: "4001",
+      name: "Test Climbing Gym",
+      latitude: "45.12500000",
+      longitude: "-90.25000000",
     },
   };
 }
