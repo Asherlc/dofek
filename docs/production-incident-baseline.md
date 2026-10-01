@@ -28837,3 +28837,46 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   active. Recheck admission immediately before any operator migration, including
   already-admitted reusable jobs. No new retry, timeout or cancellation policy
   was added to steady-state workflows.
+
+## 2026-10-01 — Climbing conversion committed; native worker startup blocked
+
+- **Approved operation / preservation:** During the September 30 17:30–19:00
+  PDT maintenance window, stopped the eight application services, proved the
+  writers and active jobs drained, and ran the canonical migrator on the
+  approved `d50d0b8` image. It exited zero at 00:42:07 UTC, applying one
+  PostgreSQL migration and zero ClickHouse migrations. The authoritative
+  before/after comparison preserved all 144 climbing entry identities,
+  associations, dates, grades, raw payload hashes and expected count
+  conversions; zero detailed attempts remained zero. Migration 0135 is
+  committed, so recovery requires compatible binaries under the
+  [maintenance cutover procedure](climbing-context.md#maintenance-cutover).
+- **Symptoms / user impact:** The controlled
+  [canonical release 36798280904](https://github.com/Asherlc/dofek/actions/runs/36798280904)
+  reached `Deploy stack without ClickHouse consumers`. Public `/healthz`
+  returned HTTP 200 on two approved-image web replicas at 00:58:03 UTC,
+  after the planned traffic stop at 00:35:37 UTC. The worker repeatedly
+  exits before starting jobs; analytics, processing reconciliation and the
+  three ClickHouse sinks remain quiesced. Provider sync and background
+  processing are unavailable while public web traffic is restored.
+- **First fatal evidence / root cause:** Worker logs identify
+  `src/jobs/sync-job-context.ts:51`, followed by
+  `SyntaxError [ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX]: TypeScript parameter
+  property is not supported in strip-only mode` on Node 26.10.0. The
+  [approved context class](https://github.com/Asherlc/dofek/blob/d50d0b86cb4e5beb7247103a464c104e753a5503/src/jobs/sync-job-context.ts#L50-L58)
+  has six constructor parameter properties; the
+  [processing operation class](https://github.com/Asherlc/dofek/blob/d50d0b86cb4e5beb7247103a464c104e753a5503/src/jobs/sync-processing-operation.ts#L99-L110)
+  has three more. They require code generation, which the production
+  runtime's native type stripping does not perform; see
+  [Node's TypeScript feature restrictions](https://nodejs.org/api/typescript.html#typescript-features).
+  Passing Vitest and TypeScript checks did not establish native worker
+  startup. Repeated worker entrypoints apply zero migrations before
+  encountering the same parser failure.
+- **Unresolved containment / follow-up:** Public web and infrastructure remain
+  running. Only the controlled Stack workflow is enabled; the other three
+  deployment entry points remain disabled. The full release and scoped
+  OpenBeta refresh have not completed. Proposed recovery is explicit class
+  fields with constructor assignments, native Node regression coverage and
+  candidate-image startup validation, followed by a reviewed compatible
+  release. This strategy and any additional control-plane writes or window
+  extension require approval. No legacy restart or database restore is
+  authorized. No retry, timeout, fallback or gate suppression was added.
