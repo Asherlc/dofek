@@ -15,13 +15,13 @@ export const dayNutritionPreviewSchema = z.object({
   protein_g: nonnegativeNumber,
   carbs_g: nonnegativeNumber,
   fat_g: nonnegativeNumber,
-  calorie_goal: z.object({
-    target: z.number().positive(),
-    remaining: nonnegativeNumber,
-    over: nonnegativeNumber,
-    progress_percentage: z.number().min(0).max(100),
-    type: z.enum(["configured", "default"]),
-  }),
+  meals: z.array(
+    z.object({
+      meal: z.enum(["breakfast", "lunch", "dinner", "snack", "other"]),
+      calories: nonnegativeNumber,
+      share_percentage: z.number().finite().min(0).max(100),
+    }),
+  ),
   macros: z.object({
     protein: macroPreviewSchema,
     carbs: macroPreviewSchema,

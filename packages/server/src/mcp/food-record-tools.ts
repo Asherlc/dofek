@@ -12,7 +12,6 @@ import type {
   FoodRecordHistoryPage,
 } from "../repositories/food-record-types.ts";
 import { FoodRepository } from "../repositories/food-repository.ts";
-import { SettingsRepository } from "../repositories/settings-repository.ts";
 import {
   FoodRecordError,
   type FoodRecordMutationResult,
@@ -249,11 +248,9 @@ async function loadDaySummary(
   context: DofekMcpContext,
   date: string,
 ): Promise<DayNutritionPreview | null> {
-  const settingsRepository = new SettingsRepository(context.db, context.userId);
   const foodRepository = new FoodRepository(context.db, context.userId, context.timezone);
-  const calorieGoal = await settingsRepository.getCalorieGoalContext();
-  const { summary } = await foodRepository.nutritionByDate(date, calorieGoal.target);
-  return summary === null ? null : toDayNutritionPreview(date, summary, calorieGoal.type);
+  const { summary } = await foodRepository.nutritionTotalsByDate(date);
+  return summary === null ? null : toDayNutritionPreview(date, summary);
 }
 
 async function mutateWithDaySummary(
