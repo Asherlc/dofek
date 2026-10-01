@@ -9,9 +9,14 @@ import { z } from "zod";
 import { climbingEntry } from "../db/schema/activity.ts";
 import { SyncRun } from "./sync-run.ts";
 import { SyncWindow } from "./sync-window.ts";
+import {
+  openBetaClimb as climb,
+  openBetaGrades as grades,
+  OPENBETA_TEST_USER_UUID as OPENBETA_USER_UUID,
+  openBetaTick as tick,
+} from "./test-helpers.ts";
 
 const USER_ID = "00000000-0000-0000-0000-000000000001";
-const OPENBETA_USER_UUID = "00000000-0000-0000-0000-000000000002";
 
 const mocks = vi.hoisted(() => ({
   ensureProvider: vi.fn().mockResolvedValue(undefined),
@@ -43,48 +48,6 @@ function jsonResponse(body: unknown, status = 200): Response {
 
 function graphqlResponse(data: unknown): Response {
   return jsonResponse({ data });
-}
-
-function grades(overrides: Record<string, unknown> = {}): Record<string, unknown> {
-  return {
-    vscale: null,
-    yds: "5.10a",
-    ewbank: null,
-    french: null,
-    font: null,
-    uiaa: null,
-    brazilianCrux: null,
-    ...overrides,
-  };
-}
-
-function climb(overrides: Record<string, unknown> = {}): Record<string, unknown> {
-  return {
-    uuid: "climb-uuid-1",
-    name: "Sunset Arete",
-    grades: grades(),
-    type: { bouldering: false },
-    parent: { area_name: "Smith Rock" },
-    ...overrides,
-  };
-}
-
-function tick(overrides: Record<string, unknown> = {}): Record<string, unknown> {
-  return {
-    _id: "tick-1",
-    userId: OPENBETA_USER_UUID,
-    name: "Sunset Arete",
-    notes: "Great movement",
-    climbId: "climb-1",
-    style: "Lead",
-    attemptType: "Redpoint",
-    dateClimbed: 1786320000000,
-    grade: "5.10a",
-    source: "OB",
-    user: { username: "climber", displayName: "Climber" },
-    climb: climb({ type: { trad: true, sport: false, bouldering: false } }),
-    ...overrides,
-  };
 }
 
 function makeDb() {

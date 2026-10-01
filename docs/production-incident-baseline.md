@@ -29010,9 +29010,11 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   or CSV refresh was performed.
 - **Remaining risk / follow-up:** Six mobile issues remain open because
   the delivered build has not been verified on a device. At 02:50 UTC, the
-  deployment freeze remains while the recovery PR's incident documentation
-  and current checks are finalized; admission will be restored after compatible source
-  and healthy release proof. No database restore or legacy restart occurred.
+  healthy compatible production release is verified above. Deployment admission
+  remains frozen until current checks and review pass and the reviewed native
+  worker fix is merged into protected main. Verify main's compatible source
+  before restoring the original workflow states. No database restore or legacy
+  restart occurred.
   No retry, timeout, runtime flag, fallback or gate suppression was added.
   Future cutover preparation should verify the exact image's canonical
   native worker startup alongside its migration rehearsal.
