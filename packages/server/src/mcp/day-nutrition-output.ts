@@ -8,6 +8,10 @@ export function toDayNutritionPreview(
   date: string,
   summary: SelectedDateNutritionTotals,
 ): DayNutritionPreview {
+  const mealCalories = Object.values(summary.mealCalories).reduce(
+    (sum, calories) => sum + calories,
+    0,
+  );
   return dayNutritionPreviewSchema.parse({
     date,
     total_calories: summary.calories,
@@ -17,7 +21,7 @@ export function toDayNutritionPreview(
     meals: Object.entries(summary.mealCalories).map(([meal, calories]) => ({
       meal,
       calories,
-      share_percentage: summary.calories > 0 ? (calories / summary.calories) * 100 : 0,
+      share_percentage: mealCalories > 0 ? (calories / mealCalories) * 100 : 0,
     })),
     macros: {
       protein: {

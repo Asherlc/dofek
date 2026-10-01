@@ -59,3 +59,31 @@ it("returns zero meal shares for an empty date", () => {
     })),
   );
 });
+
+it.each([
+  { calories: 300, breakfast: 300.25, lunch: 0, breakfastShare: 100, lunchShare: 0 },
+  { calories: 0, breakfast: 0.25, lunch: 0, breakfastShare: 100, lunchShare: 0 },
+  {
+    calories: 301,
+    breakfast: 100.25,
+    lunch: 200.25,
+    breakfastShare: (100.25 / 300.5) * 100,
+    lunchShare: (200.25 / 300.5) * 100,
+  },
+])(
+  "uses precise meal totals for shares when the daily total rounds to $calories",
+  ({ calories, breakfast, lunch, breakfastShare, lunchShare }) => {
+    const preview = toDayNutritionPreview("2026-09-07", {
+      calories,
+      mealCalories: { breakfast, lunch, dinner: 0, snack: 0, other: 0 },
+      macros: {
+        protein: { grams: 0, calories: 0, energySharePercentage: 0 },
+        carbs: { grams: 0, calories: 0, energySharePercentage: 0 },
+        fat: { grams: 0, calories: 0, energySharePercentage: 0 },
+      },
+    });
+    expect(preview.meals[0]?.share_percentage).toBe(breakfastShare);
+    expect(preview.meals[1]?.share_percentage).toBe(lunchShare);
+    expect(preview.meals.reduce((sum, meal) => sum + meal.share_percentage, 0)).toBeCloseTo(100);
+  },
+);
