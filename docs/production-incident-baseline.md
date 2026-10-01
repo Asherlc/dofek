@@ -28899,8 +28899,12 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   secret preparation and root-image cleanup had already run; no application
   stack apply or climbing conversion ran.
 - **Validation / user impact:** Read-back confirms all four entrypoints are
-  disabled, no active deployment remains, all nine app replicas still run
-  `bffc564`, and the legacy climbing schema retains 144 entries and zero
+  disabled, no active deployment remains, and all nine app replicas still run
+  `bffc564`: two web replicas and one each for worker, analytics worker,
+  processing reconciliation, CDC health, and the three ClickHouse sinks.
+  CDC health is the additional replica omitted from the earlier count of
+  six ingestion/analytics background services. The legacy climbing schema
+  retains 144 entries and zero
   detailed attempts with only 0135 pending. No application outage was observed.
 - **Remaining work:** Keep the deployment freeze until separately approved
   coordinated cutover proves a compatible schema and healthy release; then
@@ -28957,3 +28961,58 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   scoped OpenBeta refresh remain required. Keep the freeze until healthy
   compatible release proof. No legacy restart or database restore is
   authorized. No retry, timeout, fallback or gate suppression was added.
+
+## 2026-10-01 — Compatible native worker recovery and OpenBeta verification
+
+- **Root cause / direct fix:** Production Node 26.10.0 could not strip nine
+  constructor parameter properties in the sync job context and processing
+  operation. Explicit readonly fields and constructor assignments preserve
+  the same public types, argument order and sync lifecycle while removing
+  the unsupported syntax; see the
+  [reviewed recovery commit](https://github.com/Asherlc/dofek/commit/cb8aedd62f8584f361dc11a23fb409fa433bb4a4)
+  and [Node's supported TypeScript syntax](https://nodejs.org/api/typescript.html#typescript-features).
+  Migration 0135 remains unchanged and all 144 entries were preserved by
+  the conversion before any provider refresh.
+- **Validation / release:** Native Node regressions reproduced the fatal
+  parser error before the fix and passed afterward with all 24 focused
+  cases. The complete local unit/mobile suite passed 19,388 tests, all four
+  typechecks and lint passed, and independent review found no issues.
+  [Hosted CI 36802385340](https://github.com/Asherlc/dofek/actions/runs/36802385340)
+  passed all nine required checks. The exact ARM64 image from
+  [build 36802626326](https://github.com/Asherlc/dofek/actions/runs/36802626326)
+  passed isolated native worker startup, readiness and graceful shutdown.
+  [Canonical Stack release 36804623149](https://github.com/Asherlc/dofek/actions/runs/36804623149)
+  succeeded with zero additional PostgreSQL or ClickHouse migrations and
+  passed the normal CDC contract, causal marker, consumer stability, backup
+  freshness and Sentry release gates. Actual read-back verified all nine
+  application replicas on the exact approved digest and full Sentry release.
+  Public `/healthz` and worker readiness returned HTTP 200; 37 workers started.
+- **Application acceptance:** The first analytics cycle completed at
+  02:29:18 UTC with 41 models passed, zero warnings/errors, successful cache
+  warming and healthy readiness. Scoped climbing router calls returned
+  10 details, 22 summaries, 21 progression points and 11 volume groups;
+  the degree view correctly excluded an unknown-unit value. The one-off
+  reader initially remained alive after its successful responses because
+  service-style client/instrumentation resources were still referenced.
+  A clean rerun closed its owned clients and exited zero using an explicit
+  finite CLI lifecycle, as the canonical migrator does. No production
+  runtime change or relaxed acceptance gate was needed.
+- **Scoped OpenBeta outcome:** After healthy release, the approved single
+  connected account's canonical full sync completed on its first attempt
+  with six records and zero errors or degradation. A complete read-only
+  paginated export independently matched all six stored numeric date
+  payloads, UTC climb dates, raw ticks and current climbing context. Prior
+  rows/associations remained intact and full-list absence reconciliation
+  passed. Resolved
+  [DOFEK-SERVER-6M](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-6M)
+  and [DOFEK-SERVER-6E](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-6E)
+  only after this live proof. No additional manual Kaya, Mountain Project
+  or CSV refresh was performed.
+- **Remaining risk / follow-up:** Six mobile issues remain open because
+  the delivered build has not been verified on a device. At 02:50 UTC, the
+  deployment freeze remains while the recovery PR's incident documentation
+  and current checks are finalized; admission will be restored after compatible source
+  and healthy release proof. No database restore or legacy restart occurred.
+  No retry, timeout, runtime flag, fallback or gate suppression was added.
+  Future cutover preparation should verify the exact image's canonical
+  native worker startup alongside its migration rehearsal.
