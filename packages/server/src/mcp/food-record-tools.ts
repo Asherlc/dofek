@@ -340,19 +340,33 @@ export function registerFoodRecordTools(server: McpServer, context: DofekMcpCont
     {
       title: "Create Food Entry",
       description:
-        "Create one itemized Dofek food record and return that day's calorie and macro preview.",
+        "Create one itemized Dofek food record and return that day's calorie and macro preview. Before logging, seek calories, protein, carbohydrate, and fat for the consumed portion from a product label, manufacturer, or reliable food database; include other nutrients when available. Ask for the brand, label, or portion when needed. Never invent missing values or substitute zero for unknown nutrients. Use estimates only with the user's approval and identify them as estimates. If the user explicitly wants an incomplete entry saved, save the known facts and explain what nutrition information is missing.",
       annotations: mutationAnnotations,
       inputSchema: z.object({
         request_id: z.uuid(),
         date: dateSchema,
         meal: z.enum(mealEnum.enumValues).nullable().optional(),
         food_name: z.string().trim().min(1),
-        food_description: nullableNonemptyTextSchema.optional(),
+        food_description: nullableNonemptyTextSchema
+          .optional()
+          .describe(
+            "Food details and nutrition source, including a source URL when available. Identify user-approved estimates here.",
+          ),
         category: z.enum(foodCategoryEnum.enumValues).nullable().optional(),
         number_of_units: z.number().finite().nonnegative().nullable().optional(),
         serving_unit: nullableNonemptyTextSchema.optional(),
-        serving_weight_grams: z.number().finite().nonnegative().nullable().optional(),
-        nutrients: z.record(nutrientIdSchema, nutrientAmountSchema),
+        serving_weight_grams: z
+          .number()
+          .finite()
+          .nonnegative()
+          .nullable()
+          .optional()
+          .describe("Weight actually consumed in grams, not the label's reference serving weight."),
+        nutrients: z
+          .record(nutrientIdSchema, nutrientAmountSchema)
+          .describe(
+            "Nutrient totals for the entire consumed portion, scaled from the source serving. Prefer calories (kcal), protein, carbohydrate, and fat (grams), plus other sourced nutrients in their canonical units. Omit unknown values; zero means a known zero. An empty map is for an explicitly requested incomplete entry.",
+          ),
       }),
       outputSchema: mcpOutputSchemas.foodRecordMutation,
       _meta: mutationUiMeta,
@@ -399,7 +413,7 @@ export function registerFoodRecordTools(server: McpServer, context: DofekMcpCont
     {
       title: "Update Food Entry",
       description:
-        "Append validated scalar and nutrient decisions to a food record and return that day's calorie and macro preview.",
+        "Append validated scalar and nutrient decisions to a food record and return that day's calorie and macro preview. When filling missing nutrition, seek calories and macros for the consumed portion from a product label, manufacturer, or reliable food database; ask for missing brand, label, or portion details. Include other sourced nutrients when available. Never invent values or substitute zero for unknown nutrients. Use estimates only with the user's approval, identify their basis in food_description, and explain any remaining gaps. Preserve existing nutrients unless the user requests a correction or removal.",
       annotations: mutationAnnotations,
       inputSchema: z.object({
         ...targetInputSchema,
@@ -414,7 +428,11 @@ export function registerFoodRecordTools(server: McpServer, context: DofekMcpCont
           serving_weight_grams: z.number().finite().nonnegative().nullable().optional(),
         }),
         clear: z.array(editableFieldSchema),
-        nutrient_set: z.record(nutrientIdSchema, nullableNutrientAmountSchema),
+        nutrient_set: z
+          .record(nutrientIdSchema, nullableNutrientAmountSchema)
+          .describe(
+            "Only nutrient decisions being changed, expressed as totals for the consumed portion in canonical units. Use sourced values or explicitly approved estimates. Zero is a known zero; null explicitly marks a nutrient unknown. Omit unchanged nutrients.",
+          ),
         nutrient_clear: z.array(nutrientIdSchema),
       }),
       outputSchema: mcpOutputSchemas.foodRecordMutation,

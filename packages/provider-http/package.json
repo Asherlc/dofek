@@ -1,6 +1,6 @@
 {
   "name": "@dofek/provider-http",
-  "version": "0.1.60",
+  "version": "0.1.61",
   "description": "Rate-limit-aware Fetch utilities and typed provider HTTP errors",
   "type": "module",
   "license": "MIT",
