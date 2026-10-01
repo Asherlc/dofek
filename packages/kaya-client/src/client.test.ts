@@ -521,6 +521,35 @@ describe("KayaClient", () => {
       { user_id: "42", offset: 100, count: 100 },
     ]);
   });
+  it.each(["", "   "])("rejects the ascent page when a grade is blank %j", async (name) => {
+    const climb = attemptedClimb("1000_2001", null);
+    const validAscent = {
+      id: "ascent-1",
+      session_id: "1000",
+      date: "2026-08-01T10:30:00.000Z",
+      attempts: null,
+      ascent_type: { id: "flash", name: "Flash" },
+      climb,
+    };
+    const fetchFn = vi.fn<typeof fetch>().mockResolvedValue(
+      jsonResponse({
+        data: {
+          ascentsForUser: [
+            validAscent,
+            {
+              ...validAscent,
+              id: "ascent-2",
+              climb: { ...climb, grade: { ...climb.grade, name } },
+            },
+          ],
+        },
+      }),
+    );
+
+    await expect(new KayaClient("token", fetchFn).listAscents("42")).rejects.toBeInstanceOf(
+      ZodError,
+    );
+  });
 });
 
 function session(id: string) {

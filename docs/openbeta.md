@@ -33,15 +33,15 @@ Each supported tick becomes one standalone `fitness.climbing_entry` row:
 
 - `external_id` is `openbeta:{tick-id}`.
 - `unattached_date` is the UTC calendar date of the tick's `dateClimbed`
-  Unix-millisecond timestamp. The original numeric value remains in `raw`.
+  integer Unix-millisecond timestamp. The original numeric value remains in `raw`.
   Date parsing accepts years 0001–9999 for the application calendar-date
   format; invalid, expanded-year, and year-zero values use the existing
   invalid-date skip path. PostgreSQL date input uses Gregorian years without
   year zero ([date input rules](https://www.postgresql.org/docs/18/datetime-input-rules.html));
   the [provider parser](../src/providers/openbeta.ts) enforces this range.
   OpenBeta declares this field as its custom `Date` scalar and serializes it
-  with `Date.getTime()` ([tick schema](https://github.com/OpenBeta/openbeta-graphql/blob/develop/src/graphql/schema/Tick.gql),
-  [scalar implementation](https://github.com/OpenBeta/openbeta-graphql/blob/develop/src/graphql/common/DateScalar.ts)).
+  with `Date.getTime()` ([tick schema](https://github.com/OpenBeta/openbeta-graphql/blob/f1508b2479cc7658ac4341d59ec817836190d6d8/src/graphql/schema/Tick.gql),
+  [scalar implementation](https://github.com/OpenBeta/openbeta-graphql/blob/f1508b2479cc7658ac4341d59ec817836190d6d8/src/graphql/common/DateScalar.ts)).
 - boulders use V-scale first, then Font; routes use YDS first, then French,
   UIAA, Ewbank, or Brazilian Crux when available.
 - `climb_style` records the climbing method independently of `result_style`,

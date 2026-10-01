@@ -47,14 +47,27 @@ export class SyncJobContext {
   totalProviders = 0;
   providerStatus: Record<string, { status: string; message?: string }> = {};
   syncRunContinued = false;
+  readonly job: SyncJob;
+  readonly db: SyncDatabase;
+  readonly signal: AbortSignal | undefined;
+  readonly requestedAt: Date;
+  readonly relativeWindow: boolean;
+  readonly syncWindow: ReturnType<typeof syncWindowFromJobData>;
   constructor(
-    readonly job: SyncJob,
-    readonly db: SyncDatabase,
-    readonly signal: AbortSignal | undefined,
-    readonly requestedAt: Date,
-    readonly relativeWindow: boolean,
-    readonly syncWindow: ReturnType<typeof syncWindowFromJobData>,
-  ) {}
+    job: SyncJob,
+    db: SyncDatabase,
+    signal: AbortSignal | undefined,
+    requestedAt: Date,
+    relativeWindow: boolean,
+    syncWindow: ReturnType<typeof syncWindowFromJobData>,
+  ) {
+    this.job = job;
+    this.db = db;
+    this.signal = signal;
+    this.requestedAt = requestedAt;
+    this.relativeWindow = relativeWindow;
+    this.syncWindow = syncWindow;
+  }
   static async create(
     job: SyncJob,
     db: SyncDatabase,

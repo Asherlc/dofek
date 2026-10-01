@@ -386,6 +386,21 @@ GROUP BY table, partition_id
 ORDER BY table, partition_id;
 ```
 
+Also capture the per-part inventory below before and after the part-filtered
+empty-row checks. Compare exact part names and delete-mask/projection flags;
+the grouped totals alone cannot detect a replaced part.
+
+```sql
+SELECT table, partition_id, name AS part_name, has_lightweight_delete,
+  has(projections, if(table = 'activity_sensor_sample',
+    'by_activity_source_refresh_version',
+    'by_activity_location_source_refresh')) AS has_expected_projection
+FROM system.parts
+WHERE active AND database = 'analytics'
+  AND table IN ('activity_sensor_sample', 'activity_location_sample')
+ORDER BY table, partition_id, part_name;
+```
+
 Agree on maximum partition rows/bytes and available disk/memory before writing.
 Process one reviewed partition of one table at a time; substitute its exact
 `partition_id` below. Both source tables currently have no partition key,
@@ -416,8 +431,30 @@ ORDER BY create_time DESC;
 Record each accepted mutation as the resume checkpoint. Do not resubmit while
 it is running, and stop on a non-empty `latest_fail_reason`; these progress
 fields are documented in [system.mutations](https://clickhouse.com/docs/operations/system-tables/mutations).
-Require completion and zero missing active parts before selecting the next
-partition. After all partitions are covered, verify natural selection with
+Require completion and zero uncovered query-visible rows before selecting the
+next partition. Every active part must have the expected projection or be
+separately verified as fully masked and empty. For each projection-less part,
+require `has_lightweight_delete = 1` in `system.parts` and run a part-filtered
+query that reads a base column, substituting the exact table and part name:
+
+```sql
+SELECT count() AS visible_rows, min(recorded_at), max(recorded_at)
+FROM analytics.activity_sensor_sample
+WHERE _part = '<uncovered-part-name>';
+```
+
+Require `visible_rows = 0` for every such part. Record the inventory before and
+after these queries; if the projection-less part names change, repeat the
+verification against the new inventory. An absent projection alone is never
+evidence that a part is empty. ClickHouse's
+[lightweight-delete mask](https://clickhouse.com/docs/reference/statements/delete#how-lightweight-deletes-work-internally-in-clickhouse)
+hides rows before later merges remove them physically, and
+[system.parts](https://clickhouse.com/docs/reference/system-tables/parts)
+reports whether a part has that mask. This exception concerns internal delete
+masks; application `is_deleted` tombstone rows remain query-visible and must
+retain projection coverage so they invalidate routes.
+
+After all partitions are covered, verify natural selection with
 `EXPLAIN projections = 1` for the two exact aggregates above, and observe an
 unscoped incremental route build. Require both projection names in its
 `system.query_log.projections`, bounded read rows, successful route/tombstone
@@ -425,6 +462,14 @@ output, and a successful analytics-worker cycle. Query-log projection evidence
 is documented in [ClickHouse's projection verification example](https://clickhouse.com/docs/concepts/features/projections/projections#filtering-on-columns-which-arent-in-the-primary-key).
 Do not force a build before coverage completes or compensate for incomplete
 coverage with retries, higher timeouts, or forced optimizer settings.
+
+Run the separate aggregate checks without projection preference or force
+settings. A scheduled build may retain previously deployed query settings;
+record those settings with its query-log evidence rather than describe that
+build as having no optimizer hints. Distinguish compact freshness reads from
+the remaining indexed geometry work, and retain query-log, readiness, and live/tombstone
+output snapshots together for recovery review. ClickHouse documents projection
+selection in the [query-log verification example](https://clickhouse.com/docs/concepts/features/projections/projections#filtering-on-columns-which-arent-in-the-primary-key).
 
 ## Activity sensor summary queue-depth check
 

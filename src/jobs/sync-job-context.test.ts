@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { stripTypeScriptTypes } from "node:module";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SyncDatabase } from "../db/index.ts";
 import type { SyncRun } from "../providers/sync-run.ts";
@@ -49,6 +51,11 @@ describe("sync-job-context", () => {
   afterEach(() => {
     vi.useRealTimers();
     vi.restoreAllMocks();
+  });
+
+  it("parses with native Node TypeScript stripping", () => {
+    const source = readFileSync(new URL("./sync-job-context.ts", import.meta.url), "utf8");
+    expect(() => stripTypeScriptTypes(source, { mode: "strip" })).not.toThrow();
   });
 
   it("reports a rejected background progress write with provider context", async () => {

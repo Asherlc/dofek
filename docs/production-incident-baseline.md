@@ -28024,6 +28024,7 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Root cause / fix:** The existing global override pinned `brace-expansion` 5.0.9. Advisories reviewed on September 29 report stack-exhaustion vulnerabilities in that version and require 5.0.11 or newer ([nested-brace advisory](https://github.com/advisories/GHSA-qhr7-859c-m2p7), [comma-parser advisory](https://github.com/advisories/GHSA-6j4f-fj2g-mc7p)). Updated the existing global override to 5.0.12 and its separate CommonJS-compatible `minimatch@3` override from 1.1.18 to 1.1.21, then regenerated the lockfile. Versions were checked against the [npm registry](https://registry.npmjs.org/brace-expansion).
 - **Validation / remaining risk:** Installation, lint, all four root/server/web/mobile type checks, and 19,108 unit/mobile tests pass; the unchanged local production audit passes with no high-severity findings. The hosted rerun and remaining required CI must complete before merging. The expressly approved production release remains `525ad724bcf0e12ddd58699299010e526acfe2e6`; the dependency patch needs a subsequent release. No audit ignores, retries, timeouts, or thresholds were changed.
 
+
 ## 2026-09-29 — Superseded WHOOP workout remained visible through Apple Health
 
 - **Symptoms / user impact:** Activity `9b48239b-d9c0-4c7c-811f-2f7dccd05ea8`
@@ -28395,6 +28396,104 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   entry, then verify fresh and already-migrated database behavior. No integrity
   bypass, manual replica write, new timeout, or retry was introduced.
 
+## 2026-09-30 — Focused recovery preserves applied migration history
+
+- **Symptoms and impact:** The latest normal production
+  [migration step](https://github.com/Asherlc/dofek/actions/runs/36720669142/job/109905005570)
+  failed because applied migration `1790727480000` was missing from main.
+  Fresh read-only checks still show web replicas serving `sha-525ad72` and six
+  background processing services paused at zero replicas. The recovery is being
+  isolated from unfinished climbing-context work added to PR #2852.
+- **Direct fix and ordering evidence:** Restore all 134 journal entries and
+  their SQL files exactly as shipped in
+  [the deployed revision](https://github.com/Asherlc/dofek/tree/525ad724bcf0e12ddd58699299010e526acfe2e6/drizzle).
+  Production's latest ledger entry remains the original Kaya migration;
+  the competing Apple Health migration has not been applied. Rename only that
+  pending file to `0134_apple_health_workout_revisions.sql`, retain its SQL bytes,
+  and append it at index 134 with timestamp `1790727480001`. Preserve the Kaya
+  timestamp and hash, and keep the
+  [migration integrity checks](https://github.com/Asherlc/dofek/blob/af05410f4e40c24586d3bab092fbba0ce32f843c/src/db/migrate.ts)
+  enforced.
+- **Regression evidence:** A real PostgreSQL test reproduces the strict
+  timestamp-order failure with the old Apple timestamp. The corrected ordering
+  applies Kaya first, applies Apple once, preserves the original ledger hash and
+  timestamp, and retains a recorded send with unknown attempt count. The final
+  focused run passes. Full-build SQL lint also identified a location-summary CTE
+  whose only use is incremental; scope its definition to that existing branch.
+  Existing route coverage exercises initial creation followed by incremental
+  updates, matching dbt's
+  [incremental model lifecycle](https://docs.getdbt.com/docs/build/incremental-models).
+- **Validation and status:** Full lint, root/server/web/mobile typechecks, the
+  production dependency audit, and all 19,157 unit/mobile tests pass.
+  Independent source review finds no material defects. The full local analytics
+  build passes all 41 models after documented local bootstrap. Broader affected
+  database tests are running; hosted CI and normal deployment remain pending.
+  Recovery is unresolved until migrations
+  succeed and processing services converge. No production history rewrite,
+  manual replica change, integrity bypass, timeout increase, or retry was added.
+- **Follow-up:** Recheck the production ledger before deployment, require
+  immutable-prefix comparison when pending migrations collide, and verify the
+  deployed image and a healthy worker cycle. Historical projection
+  materialization, mobile runtime delivery, and opaque mobile-error causes
+  remain open and require their separate evidence.
+
+## 2026-09-30 — Local validation interrupted by shared Docker VM memory
+
+- **Symptoms and impact:** The focused recovery's 14-file database validation
+  passed 123 tests but failed the body-measurement tombstone test with
+  `socket hang up`. The same file failed alone, delaying completion of local
+  validation for [PR #2857](https://github.com/Asherlc/dofek/pull/2857).
+- **Evidence and root cause:** Docker Desktop's VM kernel log records
+  `global_oom` killing this workspace's `clickhouse-serv` process at
+  15:27:24 UTC and 15:31:58 UTC, immediately before the client disconnects.
+  The shared VM exposed 7.653 GiB of memory across the running workspace
+  stacks. The killed process used about 1 GiB, below its individual 1.5 GiB
+  container cap. Inspecting only the restarted container's current OOM flag
+  missed the earlier kernel events. Docker documents the separate
+  [VM memory allocation](https://docs.docker.com/desktop/settings-and-maintenance/settings/#advanced).
+- **Direct mitigation:** Remove only the six failed fixture databases from
+  these two runs and the three empty scratch databases created by this run's
+  local bootstrap after the successful analytics build. A local-target and
+  row-count preflight verified ownership and absence of application data.
+  Restart only this workspace's ClickHouse to release its allocations.
+  Other workspace services and volumes remain intact.
+- **Validation and remaining risk:** The unchanged body-measurement file now
+  passes both tests. The full affected suite is rerunning; hosted CI and normal
+  deployment are still pending. No source behavior, memory cap, retry, or
+  timeout changed. Concurrent workspace load can still exhaust the shared VM;
+  future diagnosis should retain VM kernel evidence and coordinate capacity
+  before changing query behavior or test settings.
+
+## 2026-09-30 — Recovery follows main's restored migration history
+
+- **Evidence and fix:** [PR #2855](https://github.com/Asherlc/dofek/pull/2855)
+  restored the immutable Kaya migration on main and registered the pending Apple
+  migration at timestamp `1790779386669`. The focused recovery adopts that exact
+  journal instead of its earlier, still-pending `1790727480001` proposal. A
+  read-only production ledger check at 16:38 UTC still showed Kaya as the latest
+  applied entry; no production history was rewritten.
+- **Validation and impact:** The previous revision of
+  [PR #2857](https://github.com/Asherlc/dofek/pull/2857) passed its complete hosted
+  CI workflow. The merge with current main is undergoing fresh validation. Keep
+  both executable PostgreSQL regressions: the complete deployed migration prefix
+  and preservation of climbing data during the pending Apple upgrade.
+- **Review regression:** A [review finding](https://github.com/Asherlc/dofek/pull/2857#discussion_r4147264237)
+  reproduced a committed Kaya climb followed by a malformed session reporting
+  zero synced records. Preserve the committed counter in the error result while
+  retaining transaction rollback and sync failure. The full four-case PostgreSQL
+  Kaya suite passes after the regression first failed on the incorrect zero.
+  Blank-grade ascent-page tests also confirm rejection of the entire malformed
+  response before persistence.
+  Local `pnpm lint` then failed with a dbt `FailedToConnectError` because this
+  workspace's ClickHouse had been stopped before SQLFluff finished. Restore the
+  local service and keep it running until the complete lint command exits.
+- **Remaining work:** Normal checked deployment and a healthy background-worker
+  cycle remain required before declaring production recovered. All 124 affected
+  database cases from the earlier validation passed across combined and isolated
+  runs after the shared Docker VM killed ClickHouse; the combined run itself did
+  not pass. No retry, timeout, integrity bypass, or production operator write was
+  introduced.
+
 ## 2026-09-30 — Climbing context validation and migration ordering
 
 - **Symptoms / impact:** Climbing context implementation caught a migration
@@ -28497,6 +28596,126 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   should distinguish input errors from API and schema failures before
   recommending that users change credentials or profile visibility.
 
+## 2026-09-30 — Normal deployment restored background processing
+
+- **Root cause and direct fix:** The migration-history gap documented above
+  stopped deployment before worker restoration. Main's
+  [history restoration](https://github.com/Asherlc/dofek/pull/2855) preserves the
+  original Kaya migration and registers the Apple upgrade after it. The normal
+  [deployment of `bffc564`](https://github.com/Asherlc/dofek/actions/runs/36749707220)
+  completed successfully at 17:36 UTC without bypassing migration integrity.
+- **Read-only production verification:** The original Kaya ledger entry remains
+  at `1790727480000` with hash
+  `8c78a3557c472012c24978da8c1ae16e99573f59d66ed7d8e709297702c849ff`.
+  The canonical Apple entry is applied at `1790779386669`. Web has two running
+  replicas and all six background services have one running replica on
+  `sha-bffc564`. The first analytics cycle passed all 41 models with no warnings
+  or errors and completed cache warming without failures.
+- **Cache-warming recovery:** Readiness subsequently returned HTTP 200 with no
+  last failure and a successful cycle at 17:51:51 UTC. Redis reported zero
+  registrations in `query-cache:keys`, so the warming step exercised an empty
+  registry. Real Redis regressions separately verify the deployed eviction
+  behavior. The corresponding [activity errors](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-6G)
+  and [warming failure](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-6H)
+  are resolved, along with [the stream error](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-6J).
+- **New unresolved provider evidence:** The next scheduled OpenBeta sync
+  [rejected six numeric `dateClimbed` fields](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-6M)
+  because the provider schema requires strings. OpenBeta's official
+  [Date scalar](https://github.com/OpenBeta/openbeta-graphql/blob/f1508b2479cc7658ac4341d59ec817836190d6d8/src/graphql/common/DateScalar.ts)
+  serializes epoch milliseconds. A separate
+  [upstream HTTP 504](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-6K)
+  also interrupted sync. The grouped scheduled-sync issue reopened; all three
+  remain unresolved pending a reviewed contract fix and successful live sync.
+- **Remaining work:** The focused Kaya/SQLFluff recovery PR still requires its
+  current-head CI and normal deployment. Historical freshness-projection
+  materialization requires its separately approved maintenance window and
+  operator channel in the [read-model deployment runbook](clickhouse-read-model-deploy-runbook.md#route-source-freshness-projection-rollout-migration-0097).
+  Mobile runtime 1.2 is available in TestFlight build `1790775640`, but the
+  operator cannot test it now; mobile issues remain open pending device
+  verification or new diagnostic evidence. No new retry, timeout, integrity
+  bypass, or production SSH write was introduced.
+
+## 2026-09-30 — OpenBeta tick dates mismatched the upstream scalar
+
+- **Symptoms and evidence:** [DOFEK-SERVER-6M](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-6M)
+  rejected six ticks in `fetchGraphQL` at 17:30 UTC on `bffc564`. The first
+  validation error was `Invalid input: expected string, received number` at
+  `userTicks[0].dateClimbed`; the scheduled-sync alert reopened.
+- **Root cause and direct fix:** The integration modeled the upstream
+  [Date scalar](https://github.com/OpenBeta/openbeta-graphql/blob/f1508b2479cc7658ac4341d59ec817836190d6d8/src/graphql/common/DateScalar.ts)
+  as a string, although its serializer returns integer epoch milliseconds.
+  Match the numeric contract, derive the UTC calendar date on the server,
+  and preserve the original numeric timestamp in the raw record.
+- **Validation and remaining risk:** Numeric fixtures first reproduced the
+  production schema rejection in both unit tests and a real PostgreSQL sync.
+  The corrected provider passes all 41 unit cases and the PostgreSQL upsert,
+  absence reconciliation, UTC date-boundary, and raw-payload assertions.
+  Current-head CI, normal deployment, and a successful live OpenBeta sync are
+  still required. The separate upstream HTTP 504 remains an external failure;
+  no new retry, timeout, fallback, or client-side calculation was added.
+
+## 2026-09-30 — Approved historical projection maintenance
+
+- **Operator authorization:** The operator approved the two partition-scoped
+  `MATERIALIZE PROJECTION` statements, one table at a time, with an explicit
+  one-time production SSH exception. Bounds are sensor at most 40 million rows
+  and 1 GiB physical bytes, location at most 25 million rows and 1 GiB,
+  at least 32 GiB free disk, and at most 6 GiB tracked memory before submission
+  within the existing 13 GiB ClickHouse container cap. Other production SSH
+  actions remain read-only.
+- **Checkpoint and evidence:** Sensor mutation `mutation_56404.txt` completed
+  with zero remaining parts and no failure reason. One active physical part
+  retained 4,972 masked rows and no projection, while a direct query returned
+  zero visible rows. A local ClickHouse 26.8.2.7 fixture reproduces successful
+  materialization with an empty projection over a fully deleted part. The
+  [documented delete mask](https://clickhouse.com/docs/reference/statements/delete#how-lightweight-deletes-work-internally-in-clickhouse)
+  hides rows until later merges physically remove them.
+- **Approved coverage and location checkpoint:** The operator approved checking
+  query-visible coverage while separately proving every projection-less part
+  is masked and empty. A stable before/after inventory verified all seven such
+  sensor parts have delete masks and zero visible rows. Fresh submission bounds
+  passed: sensor 35,866,398 rows / 691,760,299 bytes, location 19,984,781 rows /
+  588,533,051 bytes, free disk 68,012,294,144 bytes, and tracked memory
+  1,460,650,484 bytes. Readiness returned HTTP 200 with no last failure.
+  Location mutation `mutation_32322.txt` completed with zero remaining parts and
+  no failure reason; all location parts have the projection.
+- **Verified recovery:** Freshness aggregates without optimizer hints select
+  their projections and read 43,737 sensor rows in 18 ms and 2,563 location rows
+  in 65 ms.
+  Three subsequent scheduled route builds finish in 12.3–18.9 seconds with
+  both projections selected. Two complete scheduled analytics cycles report
+  `PASS=41 WARN=0 ERROR=0`; readiness is HTTP 200 with no last failure.
+  Final route state contains 771 live routes and one tombstone, with no live
+  route lacking geometry. Independent operational review supports resolving
+  [DOFEK-SERVER-6C](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-6C).
+- **Remaining cost:** Normal builds retain their previously deployed projection
+  preference and still read about 35 million rows for indexed geometry work.
+  The natural plan restricts these reads to 513 affected keys; none currently
+  has a live stored route. This remains a capacity concern, not evidence of
+  another timeout. Retain duration/read-row evidence for future investigation.
+  No extra mutation, optimizer setting, retry, timeout, or forced build was
+  introduced. See the [verification procedure](clickhouse-read-model-deploy-runbook.md#route-source-freshness-projection-rollout-migration-0097).
+
+## 2026-09-30 — Dependency audit blocked the recovery PR
+
+- **Exact failure:** [PR #2857's dependency-audit job](https://github.com/Asherlc/dofek/actions/runs/36756351164/job/110028687753)
+  ran `pnpm audit --prod --audit-level=high --ignore-registry-errors`. At
+  18:13:40 UTC its first high-severity finding named `@grpc/grpc-js`; the
+  command exited 1. A local audit without registry-error suppression reproduced
+  the same finding.
+- **Root cause and direct fix:** The existing workspace override pins
+  `@grpc/grpc-js` to 1.14.4. The
+  [reviewed advisory](https://github.com/advisories/GHSA-m9gg-hp2v-232j),
+  added to the advisory database on September 30, identifies versions
+  `>=1.14.0 <1.14.5` as vulnerable. Move the existing pin and lockfile to
+  [upstream 1.14.5](https://github.com/grpc/grpc-node/releases/tag/%40grpc/grpc-js%401.14.5),
+  verified as the latest stable npm release. Only that installed package changes;
+  its child dependencies remain unchanged.
+- **Validation and follow-up:** Frozen installation succeeds. The same local
+  production audit passes with zero high findings, four moderate, and one low.
+  Final source checks, current-head hosted CI, and normal deployment remain
+  required. No audit suppression, gate change, retry, or timeout was added.
+
 ## 2026-09-30 — OpenBeta PR refactor CI validation
 
 - **Symptoms / impact:** [PR #2860](https://github.com/Asherlc/dofek/pull/2860)
@@ -28545,6 +28764,52 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   typechecks pass, and lint passes. Revalidate the new head's full suite and
   hosted gates; queued native checks and release/restore approval remain open.
 
+## 2026-09-30 — Recovery follow-up preserves published climbing context
+
+- **Trigger and scope:** [PR #2852](https://github.com/Asherlc/dofek/pull/2852)
+  merged at 20:03 UTC, advancing main to `2f02f6d`. That made the focused
+  follow-up conflict with main and prevented its pull-request CI from starting.
+  Merge published main on the existing branch, preserve its structured metadata,
+  and retain only the reviewed OpenBeta date, Kaya committed-count, gRPC, and
+  operational documentation changes.
+- **Causal regression and direct fix:** On the published metadata schema, a
+  real PostgreSQL test commits one Kaya climb and then rejects a malformed
+  session. It first reproduced `recordsSynced: 0` instead of 1. Keep the counter
+  outside the error-handler scope while preserving rollback and fail-fast
+  processing. The OpenBeta UTC-boundary and numeric raw-payload assertions
+  continue to pass with main's structured metadata.
+- **Validation and remaining gates:** All four typechecks, complete lint,
+  frozen lockfile verification, and the unchanged production audit pass.
+  The full merged unit/mobile run passes 19,287 tests with 20 existing skips and
+  no worker errors. All 29 selected provider/migration PostgreSQL cases pass.
+  Independent parity checks retain all incoming feature source and the 134
+  deployed SQL/journal entries. Hosted CI and a successful live OpenBeta sync
+  remain required; mobile verification is still unavailable. Read-only
+  production inspection still finds migration 0135 unapplied. The published
+  [climbing-context maintenance procedure](climbing-context.md#maintenance-cutover)
+  requires reviewed-commit/window/scope approval, verified isolated restore,
+  and old readers/writers quiesced through conversion; the ordinary rolling
+  deployment alone does not satisfy that schema cutover.
+  No gate suppression, migration rewrite, timeout, or retry was added.
+
+## 2026-09-30 — OpenBeta upstream availability recovered
+
+- **Symptoms and root cause:** At 17:22 UTC the scheduled tick export received
+  an OpenBeta/Cloudflare origin HTTP 504. The response identified an upstream
+  origin timeout; this prevented that export. See
+  [DOFEK-SERVER-6K](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-6K).
+- **Recovery evidence:** The scheduled production export at 21:00:07 UTC
+  reached tick-data validation and reported the separate numeric-date error
+  [DOFEK-SERVER-6M](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-6M).
+  The [deployed fetch path](https://github.com/Asherlc/dofek/blob/bffc5647c938191281a0fa2cff71fc4cc90e71f8/src/providers/openbeta.ts)
+  requires a successful HTTP response, JSON parsing, and an error-free GraphQL
+  envelope before that validation. This establishes upstream transport recovery;
+  resolve 6K independently of the remaining date-schema failure.
+- **Remaining risk and follow-up:** The date fix and scheduled-sync alert stay
+  open until the reviewed release deploys and a live sync succeeds. Upstream
+  availability can recur; no local retry, timeout, fallback, or forced sync
+  was added to cover this external outage.
+
 ## 2026-09-30 — OpenBeta tick dates reject numeric API timestamps
 
 - **Symptoms / impact:** Scheduled OpenBeta tick sync fails before writes;
@@ -28589,3 +28854,167 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Root cause:** The Redis request-deduplication integration suite reset module caches and manually registered WHOOP/Ziva resolvers. Integration suites share one module lifecycle, so a later router bootstrap encountered the test-owned Ziva resolver and failed; initial and continuation requests also used different registry generations. The paired suites reproduce CI with two failures and 71 passes.
 - **Direct fix:** Use the canonical server provider bootstrap in integration setup and one static enqueue helper for both initial and continuation jobs. Remove test-owned registration and module resets; move the suite beside the server bootstrap consumer to respect TypeScript package ownership and keep production duplicate-registration validation intact. No gate, retry, timeout, or fallback was changed.
 - **Validation / follow-up:** The unchanged paired router/queue regressions pass 73/73 after correction; typechecks and import boundaries pass. The local broader shard initially failed four FIT ingestion cases because the native decoder binary was absent. Built the pinned native helper using the [testing procedure](testing.md#native-fit-decoder); the complete current-tree shard then passed all 486 tests across 68 files with coverage, without ad-hoc waits. Direct strict typechecking of the moved fixture, full lint, and production typechecks pass. Hosted CI rerun remains pending.
+
+## 2026-09-30 — Coordinated climbing migration preparation
+
+- **Release blocker:** Migration 0135 replaces the legacy climbing columns.
+  The ordinary dependency apply restores the deployed legacy web image, so it
+  cannot maintain the old-reader exclusion required by the
+  [maintenance cutover](climbing-context.md#maintenance-cutover). Production
+  remains on `bffc564`; this preparation did not run its migration or refresh.
+- **Recovery evidence:** The September 30 06:02 UTC encrypted backup passed
+  authenticated decryption and native restore into isolated PostgreSQL
+  18.3/TimescaleDB 2.26.4, following the
+  [Timescale restore procedure](https://www.tigerdata.com/docs/deploy/self-hosted/backup-and-restore/logical-backup).
+  The canonical PostgreSQL migrator applied 0134/0135 on that older snapshot,
+  then applied zero on repeat. All 141 backed-up climbing identities,
+  associations, grades, raw hashes and expected count conversions passed;
+  this snapshot has zero detailed attempts. Current live inventory has 144
+  entries, so the final quiesced inventory remains authoritative.
+- **Pending scope:** Independent operational review requires exclusive
+  deployment admission, both-engine migration-ledger proof, the exact rebuilt
+  release, and an approved maintenance window before conversion. GitHub
+  [concurrency groups](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency)
+  do not lock external operator commands. A four-entrypoint workflow freeze
+  is proposed but not yet authorized. The recovery branch incorporates
+  published PR #2860 to retain its reviewed worker changes.
+- **Remaining risk:** Backup restore would lose writes after 06:02 UTC and
+  requires separate approval; recovery after committed conversion must use a
+  compatible image. Live OpenBeta verification and six device-only mobile
+  issues remain unresolved. No new retry or timeout is added by preparation.
+
+## 2026-09-30 — Approved deployment freeze intercepted an admitted rollout
+
+- **Cause / evidence:** Main's successful CI admitted automatic
+  [deployment 36789582641](https://github.com/Asherlc/dofek/actions/runs/36789582641)
+  before the coordinated freeze was approved. Disabling workflow triggers
+  does not stop an existing run, as distinguished by GitHub's
+  [disable procedure](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/disable-and-enable-workflows)
+  and [run cancellation](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/cancel-a-workflow-run).
+  The stack job was pulling images; the pending conversion required exclusion
+  of all old readers before migration.
+- **Approved containment:** Disabled Deploy Web, Deploy Web Stack, Deploy, and
+  Build + Deploy. With separate approval, canceled only that automatic run.
+  It completed canceled at 23:12:36 UTC; Run migrations was skipped. Terraform,
+  secret preparation and root-image cleanup had already run; no application
+  stack apply or climbing conversion ran.
+- **Validation / user impact:** Read-back confirms all four entrypoints are
+  disabled, no active deployment remains, and all nine app replicas still run
+  `bffc564`: two web replicas and one each for worker, analytics worker,
+  processing reconciliation, CDC health, and the three ClickHouse sinks.
+  CDC health is the additional replica omitted from the earlier count of
+  six ingestion/analytics background services. The legacy climbing schema
+  retains 144 entries and zero
+  detailed attempts with only 0135 pending. No application outage was observed.
+- **Remaining work:** Keep the deployment freeze until separately approved
+  coordinated cutover proves a compatible schema and healthy release; then
+  restore the original workflow states. Existing CI/build workflows remain
+  active. Recheck admission immediately before any operator migration, including
+  already-admitted reusable jobs. No new retry, timeout or cancellation policy
+  was added to steady-state workflows.
+
+## 2026-10-01 — Climbing conversion committed; native worker startup blocked
+
+- **Approved operation / preservation:** During the September 30 17:30–19:00
+  PDT maintenance window, stopped the eight application services, proved the
+  writers and active jobs drained, and ran the canonical migrator on the
+  approved `d50d0b8` image. It exited zero at 00:42:07 UTC, applying one
+  PostgreSQL migration and zero ClickHouse migrations. The authoritative
+  before/after comparison preserved all 144 climbing entry identities,
+  associations, dates, grades, raw payload hashes and expected count
+  conversions; zero detailed attempts remained zero. Migration 0135 is
+  committed, so recovery requires compatible binaries under the
+  [maintenance cutover procedure](climbing-context.md#maintenance-cutover).
+- **Symptoms / user impact:** The controlled
+  [canonical release 36798280904](https://github.com/Asherlc/dofek/actions/runs/36798280904)
+  reached `Deploy stack without ClickHouse consumers`. Public `/healthz`
+  returned HTTP 200 on two approved-image web replicas at 00:58:03 UTC,
+  after the planned traffic stop at 00:35:37 UTC. The worker repeatedly
+  exits before starting jobs; analytics, processing reconciliation and the
+  three ClickHouse sinks remain quiesced. Provider sync and background
+  processing are unavailable while public web traffic is restored.
+- **First fatal evidence / root cause:** Worker logs identify
+  `src/jobs/sync-job-context.ts:51`, followed by
+  `SyntaxError [ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX]: TypeScript parameter
+  property is not supported in strip-only mode` on Node 26.10.0. The
+  [approved context class](https://github.com/Asherlc/dofek/blob/d50d0b86cb4e5beb7247103a464c104e753a5503/src/jobs/sync-job-context.ts#L50-L58)
+  has six constructor parameter properties; the
+  [processing operation class](https://github.com/Asherlc/dofek/blob/d50d0b86cb4e5beb7247103a464c104e753a5503/src/jobs/sync-processing-operation.ts#L99-L110)
+  has three more. They require code generation, which the production
+  runtime's native type stripping does not perform; see
+  [Node's TypeScript feature restrictions](https://nodejs.org/api/typescript.html#typescript-features).
+  Passing Vitest and TypeScript checks did not establish native worker
+  startup. Repeated worker entrypoints apply zero migrations before
+  encountering the same parser failure.
+- **Approved containment / remaining work:** The user approved compatible
+  recovery through 04:00 UTC. Canceled only the controlled release at
+  01:26:53 UTC and scaled only the failing worker to zero; actual worker
+  tasks are stopped. Public web and infrastructure remain running. Only
+  Stack is enabled; the other three deployment entry points remain disabled.
+  The direct source fix preserves the public readonly fields using explicit
+  declarations and constructor assignments. Both native-parser regressions
+  reproduced the production error before the fix, then passed with all 24
+  focused cases. The complete unit/mobile suite passes 19,388 tests with 20
+  existing skips; all four application typechecks pass.
+- **Unresolved release / follow-up:** Hosted CI, independent review,
+  candidate-image worker startup, the compatible canonical release and
+  scoped OpenBeta refresh remain required. Keep the freeze until healthy
+  compatible release proof. No legacy restart or database restore is
+  authorized. No retry, timeout, fallback or gate suppression was added.
+
+## 2026-10-01 — Compatible native worker recovery and OpenBeta verification
+
+- **Root cause / direct fix:** Production Node 26.10.0 could not strip nine
+  constructor parameter properties in the sync job context and processing
+  operation. Explicit readonly fields and constructor assignments preserve
+  the same public types, argument order and sync lifecycle while removing
+  the unsupported syntax; see the
+  [reviewed recovery commit](https://github.com/Asherlc/dofek/commit/cb8aedd62f8584f361dc11a23fb409fa433bb4a4)
+  and [Node's supported TypeScript syntax](https://nodejs.org/api/typescript.html#typescript-features).
+  Migration 0135 remains unchanged and all 144 entries were preserved by
+  the conversion before any provider refresh.
+- **Validation / release:** Native Node regressions reproduced the fatal
+  parser error before the fix and passed afterward with all 24 focused
+  cases. The complete local unit/mobile suite passed 19,388 tests, all four
+  typechecks and lint passed, and independent review found no issues.
+  [Hosted CI 36802385340](https://github.com/Asherlc/dofek/actions/runs/36802385340)
+  passed all nine required checks. The exact ARM64 image from
+  [build 36802626326](https://github.com/Asherlc/dofek/actions/runs/36802626326)
+  passed isolated native worker startup, readiness and graceful shutdown.
+  [Canonical Stack release 36804623149](https://github.com/Asherlc/dofek/actions/runs/36804623149)
+  succeeded with zero additional PostgreSQL or ClickHouse migrations and
+  passed the normal CDC contract, causal marker, consumer stability, backup
+  freshness and Sentry release gates. Actual read-back verified all nine
+  application replicas on the exact approved digest and full Sentry release.
+  Public `/healthz` and worker readiness returned HTTP 200; 37 workers started.
+- **Application acceptance:** The first analytics cycle completed at
+  02:29:18 UTC with 41 models passed, zero warnings/errors, successful cache
+  warming and healthy readiness. Scoped climbing router calls returned
+  10 details, 22 summaries, 21 progression points and 11 volume groups;
+  the degree view correctly excluded an unknown-unit value. The one-off
+  reader initially remained alive after its successful responses because
+  service-style client/instrumentation resources were still referenced.
+  A clean rerun closed its owned clients and exited zero using an explicit
+  finite CLI lifecycle, as the canonical migrator does. No production
+  runtime change or relaxed acceptance gate was needed.
+- **Scoped OpenBeta outcome:** After healthy release, the approved single
+  connected account's canonical full sync completed on its first attempt
+  with six records and zero errors or degradation. A complete read-only
+  paginated export independently matched all six stored numeric date
+  payloads, UTC climb dates, raw ticks and current climbing context. Prior
+  rows/associations remained intact and full-list absence reconciliation
+  passed. Resolved
+  [DOFEK-SERVER-6M](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-6M)
+  and [DOFEK-SERVER-6E](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-6E)
+  only after this live proof. No additional manual Kaya, Mountain Project
+  or CSV refresh was performed.
+- **Remaining risk / follow-up:** Six mobile issues remain open because
+  the delivered build has not been verified on a device. At 02:50 UTC, the
+  healthy compatible production release is verified above. Deployment admission
+  remains frozen until current checks and review pass and the reviewed native
+  worker fix is merged into protected main. Verify main's compatible source
+  before restoring the original workflow states. No database restore or legacy
+  restart occurred.
+  No retry, timeout, runtime flag, fallback or gate suppression was added.
+  Future cutover preparation should verify the exact image's canonical
+  native worker startup alongside its migration rehearsal.

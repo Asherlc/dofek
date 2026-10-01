@@ -18,9 +18,12 @@ lead flag. See the observed [application API](https://kaya-beta.kayaclimb.com/gr
 The session request includes `attempted_climbs` alongside the separate
 `ascentsForUser` request. An attempted climb is a climb record whose ID combines
 the session and climb IDs, rather than an individual try. It imports as an unsent
-`climbing_entry`; ascent records keep their own source IDs, even when both feeds
-refer to the same climb. Both responses can supply `attempts: null`. Preserve
-that unknown count, and do not infer individual tries or failure reasons.
+`climbing_entry`; ascent records keep their own source IDs. A shared climb
+reference alone does not establish duplicate effort or overlapping counts.
+The [source-scoped writer](../src/db/climbing-entry-sync.ts) preserves record
+identity; any effort relationship needs separate evidence before query-time
+reconciliation. Both responses can supply `attempts: null`. Preserve that
+unknown count, and do not infer individual tries or failure reasons.
 This contract was verified against the authenticated [Kaya GraphQL endpoint](https://kaya-beta.kayaclimb.com/graphql)
 on 2026-09-29 and the [Kaya application](https://kaya-app.kayaclimb.com/).
 

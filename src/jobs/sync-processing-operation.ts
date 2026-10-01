@@ -96,15 +96,21 @@ export class SyncProcessingOperation {
   recordingCanonicalCommit = false;
   readonly #job: SyncJob;
   readonly #db: SyncDatabase;
+  readonly id: string;
+  readonly datasetKeys: readonly ProcessingDatasetKey[];
+  readonly metricStreamPublisher: MetricStreamProcessingPublisher | undefined;
   constructor(
     job: SyncJob,
     db: SyncDatabase,
-    readonly id: string,
-    readonly datasetKeys: readonly ProcessingDatasetKey[],
-    readonly metricStreamPublisher: MetricStreamProcessingPublisher | undefined,
+    id: string,
+    datasetKeys: readonly ProcessingDatasetKey[],
+    metricStreamPublisher: MetricStreamProcessingPublisher | undefined,
   ) {
     this.#job = job;
     this.#db = db;
+    this.id = id;
+    this.datasetKeys = datasetKeys;
+    this.metricStreamPublisher = metricStreamPublisher;
   }
 
   static async start(
