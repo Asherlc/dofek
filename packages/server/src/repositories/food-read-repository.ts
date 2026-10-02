@@ -19,8 +19,10 @@ import {
 } from "./food-entry-models.ts";
 import {
   nutritionSourceResolution,
+  type SelectedDateNutritionTotals,
   type SelectedDateNutritionTotalsRow,
   selectedDateNutritionSummary,
+  selectedDateNutritionTotals,
   selectedDateNutritionTotalsRowSchema,
 } from "./nutrition-source-resolution.ts";
 
@@ -85,6 +87,19 @@ export class FoodReadRepository {
     calorieGoal: number,
   ): Promise<{
     summary: SelectedDateNutritionSummary | null;
+    resolution: NutritionSourceResolution;
+  }> {
+    const result = await this.nutritionTotalsByDate(date);
+    return {
+      summary:
+        result.summary === null ? null : selectedDateNutritionSummary(result.summary, calorieGoal),
+      resolution: result.resolution,
+    };
+  }
+
+  /** Canonical observed totals independent of a calorie goal. */
+  async nutritionTotalsByDate(date: string): Promise<{
+    summary: SelectedDateNutritionTotals | null;
     resolution: NutritionSourceResolution;
   }> {
     const rows = await executeWithSchema(
@@ -154,15 +169,12 @@ export class FoodReadRepository {
         contribution_source_label: null,
       };
       return {
-        summary: selectedDateNutritionSummary(emptyRow, calorieGoal),
+        summary: selectedDateNutritionTotals(emptyRow),
         resolution: nutritionSourceResolution(emptyRow),
       };
     }
     return {
-      summary:
-        row.resolution_status === "available"
-          ? selectedDateNutritionSummary(row, calorieGoal)
-          : null,
+      summary: row.resolution_status === "available" ? selectedDateNutritionTotals(row) : null,
       resolution: nutritionSourceResolution(row),
     };
   }

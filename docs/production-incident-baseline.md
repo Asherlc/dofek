@@ -29018,3 +29018,24 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   No retry, timeout, runtime flag, fallback or gate suppression was added.
   Future cutover preparation should verify the exact image's canonical
   native worker startup alongside its migration rehearsal.
+
+## 2026-10-01 — Local MCP validation required workspace ClickHouse
+
+- **Symptoms / impact:** The first `pnpm lint` run for the target-free MCP
+  nutrition preview failed in `lint:analytics-sql`; local validation was
+  blocked. No production or user-facing outage occurred.
+- **Evidence / root cause:** SQLFluff reported `TMP | dbt tried to connect to
+  the database and failed` for `activity_aerobic_efficiency.sql`, followed
+  by `[Errno 61] Connection refused` on port 8123. The workspace services
+  were not started, so dbt used its default ClickHouse endpoint from
+  [analytics/profiles.yml](../analytics/profiles.yml).
+- **Fix / validation:** Ran the canonical `pnpm compose:up` command, which
+  started this workspace's dependencies and generated its local connection
+  settings; reran `pnpm lint` unchanged and it passed. The Docker-free test
+  suite separately passed 19,391 tests, with 20 skipped. Root and changed
+  package type checks and the MCP app build passed.
+- **Remaining risk / follow-up:** No runtime workaround, retry, timeout, or
+  lint configuration change was added. Document the analytics-lint dependency
+  beside the unit-test tiers in [docs/testing.md](testing.md#integration-dependencies).
+  The existing [Compose environment script](../scripts/compose-env.ts) and
+  [testing runbook](testing.md) remain the canonical local setup references.
