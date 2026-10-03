@@ -442,6 +442,20 @@ describe("TodayScreen independent loading states", () => {
     expect(screen.getByText("8h 0m recorded. Sleep stages were not reported.")).toBeTruthy();
   });
 
+  it("shows one sleep empty state when both the recorded night and estimate are missing", async () => {
+    mockDashboardData = {
+      ...mockDashboardData,
+      sleep: { lastNight: null, sleepDebt: 0 },
+      sleepNeed: null,
+    };
+
+    const { default: TodayScreen } = await import("../../app/(tabs)/index");
+    render(<TodayScreen />);
+
+    expect(screen.getByText("LAST NIGHT")).toBeTruthy();
+    expect(screen.getAllByText("No sleep data")).toHaveLength(1);
+  });
+
   it("shows one sleep-data prerequisite card when prior sleep is missing", async () => {
     mockDashboardData = {
       ...mockDashboardData,

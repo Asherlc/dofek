@@ -314,16 +314,14 @@ export default function TodayScreen() {
       )}
 
       {/* Sleep estimate */}
-      {!isLoading && !isSleepDataMissing && (sleepNeed || !lastNight) && (
+      {!isLoading && !isSleepDataMissing && sleepNeed != null && (
         <Animated.View
           entering={FadeInUp.delay(320)
             .duration(duration.slow)
             .easing(Easing.bezier(0.16, 1, 0.3, 1))}
         >
           <Card title="Sleep Estimate">
-            {sleepNeed == null ? (
-              <Text style={styles.noDataText}>No sleep data</Text>
-            ) : sleepNeed.availability === "available" ? (
+            {sleepNeed.availability === "available" ? (
               <>
                 <Text style={styles.sleepNeedTotal}>
                   {`${sleepNeed.estimateMetadata.valueQualifier} ${formatDurationMinutes(sleepNeed.totalNeedMinutes)}`}

@@ -598,7 +598,6 @@ export default function SettingsScreen() {
       {activeCategory === "account" ? (
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Password</Text>
-          <Text style={styles.sectionDescription}>Set or change your email login password</Text>
           {passwordStatus.isLoading ? (
             <ActivityIndicator color={colors.accent} size="small" />
           ) : passwordStatus.error ? (
@@ -687,7 +686,6 @@ export default function SettingsScreen() {
       {activeCategory === "goals-models" ? (
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Units</Text>
-          <Text style={styles.sectionDescription}>Choose how measurements are displayed</Text>
           {unitSetting.error && (
             <Text style={styles.unitErrorText}>{userFacingErrorMessage(unitSetting.error)}</Text>
           )}
