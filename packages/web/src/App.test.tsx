@@ -74,6 +74,44 @@ afterEach(() => {
 });
 
 describe("navigation measurement input", () => {
+  it.each(["click", "popstate"])(
+    "retains %s timing across a native checkpoint before the router listener, consuming it once",
+    async (type) => {
+      const listeners = vi.spyOn(type === "click" ? document : window, "addEventListener");
+      render(<App />);
+      const capture = listeners.mock.calls.find(
+        ([name, , options]) => name === type && options === true,
+      )?.[1];
+      if (typeof capture !== "function") throw new Error(`Missing ${type} capture listener`);
+      const event = type === "click" ? new MouseEvent(type) : new PopStateEvent(type);
+      let phase: number = Event.CAPTURING_PHASE;
+      Object.defineProperties(event, {
+        target: { value: screen.getByText("Dashboard link") },
+        timeStamp: { value: 300 },
+        eventPhase: { get: () => phase },
+      });
+      capture(event);
+      // Native callbacks run a checkpoint between capture and delegated bubble listeners.
+      await Promise.resolve();
+      phase = Event.BUBBLING_PHASE;
+      const href = type === "click" ? "/dashboard" : window.location.href;
+      events.get("onBeforeNavigate")?.({ toLocation: { href } });
+      expect(getPageNavigationStart()).toBe(300);
+      events.get("onBeforeNavigate")?.({ toLocation: { href } });
+      expect(getPageNavigationStart()).toBe(700);
+      phase = Event.NONE;
+    },
+  );
+  it("rejects a stopped link input immediately after dispatch, before any checkpoint", () => {
+    render(<App />);
+    screen.getByText("Unrelated link").addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+    });
+    click("Unrelated link", 200);
+    events.get("onBeforeNavigate")?.({ toLocation: { href: "/body" } });
+    expect(getPageNavigationStart()).toBe(700);
+  });
   it("does not reuse an unrelated prevented link click for programmatic navigation", async () => {
     render(<App />);
     click("Unrelated link", 200);

@@ -14,12 +14,14 @@ initPostHog();
 
 const router = createRouter({ routeTree });
 let initialNavigationResolved = false;
-let navigationInput: { href: string; startedAt: number } | undefined;
+let navigationInput: { href: string; startedAt: number; event: Event } | undefined;
 router.subscribe("onBeforeNavigate", ({ toLocation }) => {
   const input = navigationInput;
   navigationInput = undefined;
   const startedAt =
-    input?.href === new URL(toLocation.href, window.location.href).href
+    input &&
+    input.event.eventPhase !== Event.NONE &&
+    input.href === new URL(toLocation.href, window.location.href).href
       ? input.startedAt
       : performance.now();
   if (initialNavigationResolved) recordPageNavigationStart(startedAt);
@@ -40,12 +42,17 @@ export function App() {
   const [queryClient] = useState(createAppQueryClient);
   const [trpcClient] = useState(createTRPCClient);
   useEffect(() => {
-    const captureNavigationInput = (href: string, startedAt: number) => {
-      const input = { href, startedAt };
+    let expiry: number | undefined;
+    const captureNavigationInput = (href: string, event: Event) => {
+      const input = { href, startedAt: event.timeStamp, event };
       navigationInput = input;
-      queueMicrotask(() => {
+      if (expiry !== undefined) window.clearTimeout(expiry);
+      // Native dispatch can run microtasks between capture and router listeners.
+      // eventPhase rejects ended dispatch immediately; the task only releases the reference.
+      expiry = window.setTimeout(() => {
         if (navigationInput === input) navigationInput = undefined;
-      });
+        expiry = undefined;
+      }, 0);
     };
     const captureInput = (event: MouseEvent) => {
       const anchor = event.target instanceof Element ? event.target.closest("a") : null;
@@ -61,16 +68,17 @@ export function App() {
         !anchor.hasAttribute("download") &&
         event.button === 0
       )
-        captureNavigationInput(anchor.href, event.timeStamp);
+        captureNavigationInput(anchor.href, event);
     };
     const captureHistory = (event: PopStateEvent) => {
-      captureNavigationInput(window.location.href, event.timeStamp);
+      captureNavigationInput(window.location.href, event);
     };
     document.addEventListener("click", captureInput, true);
     window.addEventListener("popstate", captureHistory, true);
     return () => {
       document.removeEventListener("click", captureInput, true);
       window.removeEventListener("popstate", captureHistory, true);
+      if (expiry !== undefined) window.clearTimeout(expiry);
       navigationInput = undefined;
     };
   }, []);
