@@ -29309,3 +29309,26 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   further database validation. Retain paired native/query timings and external
   resource/log capture; consult kernel OOM records before attributing Docker
   `OOMKilled` to a container's own memory ceiling.
+
+## 2026-10-03 — E2E preview hostname lost DNS resolution again
+
+- **Symptoms / impact:** The existing local E2E server remained healthy, but its
+  quick-tunnel hostname stopped resolving. Browser access to that preview was
+  unavailable; production was unaffected. Existing preview tabs need the new
+  hostname before browser validation resumes.
+- **Evidence:** At approximately 17:30 UTC, the HTTPS probe failed with curl
+  exit 6, `Could not resolve host`. Retained tunnel output showed QUIC inactivity
+  timeouts and reconnections from 15:07 UTC, followed by repeated
+  `control stream encountered a failure while serving` errors near 17:29 UTC.
+  The E2E server container was still healthy with eleven hours of uptime.
+- **Cause:** The trigger for the tunnel connection and DNS failure remains
+  unresolved; the logs do not establish a server failure or a causal link to
+  the separate Docker memory incident.
+- **Recovery / validation:** Stopped only the old tunnel process and ran the
+  existing quick-tunnel wrapper for the same server port. Its replacement
+  connected successfully and returned HTTP 200 through the emitted HTTPS URL.
+  The replacement process stays running for the server's lifetime. No server,
+  database, image, timeout or retry configuration changed.
+- **Follow-up:** Verify the emitted hostname before later browser work and
+  retain tunnel errors separately from server health evidence. Quick tunnels
+  are documented by [Cloudflare](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/do-more-with-tunnels/trycloudflare/).
