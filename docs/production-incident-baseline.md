@@ -29039,3 +29039,41 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   beside the unit-test tiers in [docs/testing.md](testing.md#integration-dependencies).
   The existing [Compose environment script](../scripts/compose-env.ts) and
   [testing runbook](testing.md) remain the canonical local setup references.
+
+## 2026-10-02 — Production page rendering hid multi-second data waits (unresolved)
+
+- **Symptoms / impact:** A production loading audit found Training, Running's
+  pace curve, and Daily Heart Rate incomplete after 20 seconds of browser
+  observation despite early page shells. Data Sources took 5.21 seconds to
+  populate; several activity lists and analytics views took 3–4 seconds.
+  Daily Heart Rate removed its existing chart for 16.73 seconds during a date
+  change. Sleep had data by 0.39 seconds but unrelated processing work kept
+  loading indicators visible until 3.62 seconds.
+- **Evidence:** The [dated audit](performance/production-load-audit-2026-10-02.md)
+  records 58 authenticated page/navigation observations, additional filter and
+  public-page measurements, exact slow-log timestamps, trace/query IDs, mobile
+  emulation, and source references. Both web replicas ran release
+  `3b517084d`. The main sweep occurred October 3 at 03:39–03:52 UTC
+  (October 2 Pacific time). Axiom and ClickHouse query logs were working;
+  inspected spans lived in `dofek-logs` with 10% trace sampling.
+- **Confirmed causes:** Successful ClickHouse executions consumed 30.507 seconds
+  and 57.85 million rows for `heartRate.dailyBySource`, 26.153 seconds and
+  20.69 million rows for `durationCurves.paceCurve`, and 20.878 seconds and
+  10.58 million rows for `training.hrZones`. Request-time sensor reads and
+  calculations dominate those specific waits. Client query-key changes also
+  discard usable charts; global fetching state makes unrelated charts look
+  busy. Other slow parent requests require current child-query investigation
+  before assigning their root cause to an engine or queue.
+- **Fix / validation:** Audit only; no runtime fix or deployment was performed.
+  Repeated warm visits were fast, which confirms cache sensitivity but does
+  not establish resolution. Read-only engine evidence confirmed the slow-query
+  durations; mobile and filter checks confirmed separate client symptoms.
+  The initial >20-second browser observations were stopped before completion,
+  so their later server durations are not exact browser completion times.
+- **Remaining risk / follow-up:** Unresolved. Review source-preserving daily
+  heart-rate access, deduped pace-curve computation, and HR-zone model semantics;
+  preserve previous data on web and native filter changes; scope chart loading
+  state; then investigate the remaining providers/activity/nutrition queries.
+  Add useful-data milestones to existing telemetry and repeat fresh-key plus
+  warm measurements. No timeout, retry, cache flush, concurrency adjustment,
+  or other resilience knob was introduced.
