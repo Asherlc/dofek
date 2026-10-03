@@ -2,7 +2,7 @@
 
 Date: 2026-10-02 (Pacific time)
 
-Status: approach approved; written design awaiting review. This document defines
+Status: written design approved; implementation plan awaiting review. This document defines
 the intended behavior and validation gates. It does not claim that implementation
 or production acceptance has occurred.
 
