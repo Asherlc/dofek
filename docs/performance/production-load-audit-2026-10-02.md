@@ -429,3 +429,60 @@ and refresh preservation. Use the web-performance and production-log inspection
 workflows again; keep detailed browser readiness and cache-state guidance in the
 shared loading runbook. No retries, timeouts, queue limits, or other resilience
 settings were changed.
+
+## Implementation follow-up evidence
+
+The user subsequently approved the
+[under-one-second implementation plan](../superpowers/plans/2026-10-02-subsecond-page-loading.md).
+The earlier proposed budgets above are historical; acceptance now requires every
+successful required observation below 1,000 ms under the approved profiles.
+These additional read-only observations identify query work; they do not claim
+that any production page meets the target.
+
+Fresh sampled requests on October 2 (October 3 UTC) used the existing browser
+session and a sampled trace header for each request. No global tracing settings,
+cache lifetimes, or production application behavior changed.
+
+| Procedure / trace ID | Procedure time | Confirmed child work |
+| --- | ---: | --- |
+| `sync.providers` / `384ba3dc3722484998c096e570c633b1` | 524 ms | Ranked sync history: 488 ms. Separate bounded read-only EXPLAIN read 596,427 history rows to return 53; execution 542 ms. |
+| `correlation.computeV2` / `a39230ec8103456a8cdd1443e0f0dfc9` | 3,479 ms | PostgreSQL daily nutrition: 2,701 ms. |
+| Nutrition macro ratios / `2670a8c4a6bc4c61b869ecf0972e1b8b` | 2,637 ms | PostgreSQL daily nutrition: 2,629 ms. |
+| `processing.dataQuality` / `6bc55c4aae334f769caa0ea8dbff2bd1` | 6,999 ms | Two sequential route-preview reads: 3,294 and 3,270 ms; each read 19,982,527 location rows. |
+| `processing.status` / `5498c1d23cd54f8db1ddac18cf3fead8` | 105 ms | One fast observation; the original slow-path baseline remains unresolved. |
+
+The Data Quality children match ClickHouse query IDs
+`c9df0bb2-0cd8-4975-a236-b770e9dd913c` and
+`f75f7c8c-29c0-4e7e-89ce-5ef09ef6d4f1` by timestamp and duration.
+The [route-preview query](../../packages/server/src/repositories/activity-route-preview.ts)
+selects `toString(activity_id) AS activity_id` and also uses unqualified
+`activity_id` in its predicate. The deployed engine's EXPLAIN resolves that
+predicate through the alias and selects all 2,450 granules, even for five
+requested activities. This matches ClickHouse's documented
+[expression alias substitution](https://clickhouse.com/docs/reference/syntax#notes-on-usage).
+
+A controlled read-only comparison qualified the predicate's source column.
+EXPLAIN selected 32 of 2,450 granules. Both executions returned the same 485 rows
+with identical output hashes. Query-log results were:
+
+| Query | Execution | Rows read | Bytes read |
+| --- | ---: | ---: | ---: |
+| Original `11ca370d-b3a3-41d0-9858-ce293a009a4e` | 1,390 ms | 19,982,527 | 542,224,992 |
+| Qualified `5874b9b1-4ae5-406b-8b2a-82ec7d88099c` | 42 ms | 256,208 | 11,613,287 |
+
+This is one query comparison, not a repeated page acceptance run. No optimizer
+setting or schema change was used. The production reader still needs its scoped
+fix, executable regression test, and release validation.
+
+A separate 10-second-bounded read-only EXPLAIN ANALYZE of the 90-day nutrition
+macro query took 5,194 ms and returned 23 rows. Its daily-view join evaluated the
+canonical nutrient branch 24 times. Inside that branch, a nested loop removed
+about 1.26 million row pairs that did not match per iteration. This establishes a
+concrete query-plan bottleneck; preserving canonical food-source resolution,
+supplement inclusion, and ambiguous-day behavior remains mandatory. The
+[canonical views](../../drizzle/0113_effective_food_records.sql) require a
+separately reviewed query change and database parity tests.
+
+Full plans and query parameters remain in ignored `.context/load-audit/` files.
+Durations and row counts above come from the named traces, PostgreSQL plans, and
+[ClickHouse query logs](https://clickhouse.com/docs/operations/system-tables/query_log).
