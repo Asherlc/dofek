@@ -131,6 +131,13 @@ session), first data query, confirmed server cache hit/miss, warm full revisit,
 first in-app navigation, cached return, and filter operations. Unobservable
 cache status is unknown. Do not flush production caches to manufacture misses.
 
+Collect **at least five observations per scenario**. Retain every result and
+failure, including errors, cancellations, timeouts, and missing completion
+markers; do not discard slow runs. Every successful required result must be
+**less than 1000 ms**; a mean, median, or fastest sample below the budget does
+not establish acceptance. These observation and pass rules come from the
+[approved acceptance contract](../superpowers/specs/2026-10-02-subsecond-page-loading-design.md#reference-profiles-and-cache-states).
+
 Record release, route template, fixture label, viewport/throttle/cache state,
 operation, duration, outcome, rendered sections, and independent freshness/parity
 evidence. Verify a new observation and deletion become visible under the existing

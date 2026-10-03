@@ -14,11 +14,15 @@ initPostHog();
 
 const router = createRouter({ routeTree });
 let initialNavigationResolved = false;
-let navigationInputTime: number | undefined;
-router.subscribe("onBeforeNavigate", () => {
-  if (initialNavigationResolved)
-    recordPageNavigationStart(navigationInputTime ?? performance.now());
-  navigationInputTime = undefined;
+let navigationInput: { href: string; startedAt: number } | undefined;
+router.subscribe("onBeforeNavigate", ({ toLocation }) => {
+  const input = navigationInput;
+  navigationInput = undefined;
+  const startedAt =
+    input?.href === new URL(toLocation.href, window.location.href).href
+      ? input.startedAt
+      : performance.now();
+  if (initialNavigationResolved) recordPageNavigationStart(startedAt);
 });
 
 router.subscribe("onResolved", () => {
@@ -36,6 +40,13 @@ export function App() {
   const [queryClient] = useState(createAppQueryClient);
   const [trpcClient] = useState(createTRPCClient);
   useEffect(() => {
+    const captureNavigationInput = (href: string, startedAt: number) => {
+      const input = { href, startedAt };
+      navigationInput = input;
+      queueMicrotask(() => {
+        if (navigationInput === input) navigationInput = undefined;
+      });
+    };
     const captureInput = (event: MouseEvent) => {
       const anchor = event.target instanceof Element ? event.target.closest("a") : null;
       if (
@@ -44,18 +55,23 @@ export function App() {
         !event.metaKey &&
         !event.ctrlKey &&
         !event.shiftKey &&
+        !event.altKey &&
+        !event.defaultPrevented &&
+        (!anchor.target || anchor.target === "_self") &&
+        !anchor.hasAttribute("download") &&
         event.button === 0
       )
-        navigationInputTime = event.timeStamp;
+        captureNavigationInput(anchor.href, event.timeStamp);
     };
     const captureHistory = (event: PopStateEvent) => {
-      navigationInputTime = event.timeStamp;
+      captureNavigationInput(window.location.href, event.timeStamp);
     };
     document.addEventListener("click", captureInput, true);
-    window.addEventListener("popstate", captureHistory);
+    window.addEventListener("popstate", captureHistory, true);
     return () => {
       document.removeEventListener("click", captureInput, true);
-      window.removeEventListener("popstate", captureHistory);
+      window.removeEventListener("popstate", captureHistory, true);
+      navigationInput = undefined;
     };
   }, []);
 

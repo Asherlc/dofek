@@ -36,7 +36,7 @@ describe("Page data readiness", () => {
     });
   });
 
-  it("starts a date-filter generation at the input and ignores the old completion", () => {
+  it("records a separate date-filter generation after navigation completes", () => {
     cy.intercept("POST", "**/api/trpc/*heartRate.dailyBySource*", (request) => {
       request.continue((response) => response.setDelay(1200));
     }).as("heartRate");
