@@ -14,6 +14,7 @@ export const METRIC_STREAM_PROVIDER_CURRENT_STATE_PROJECTION = "by_provider_curr
 export const METRIC_STREAM_PROVIDER_CURRENT_STATE_RECORDED_AT_PROJECTION =
   "by_provider_current_state_recorded_at";
 export const METRIC_STREAM_PROVIDER_EXTERNAL_ID_PROJECTION = "by_provider_external_id";
+export const METRIC_STREAM_USER_CHANNEL_RECORDED_AT_PROJECTION = "by_user_channel_recorded_at";
 export const METRIC_STREAM_PROVIDER_GENERATION_ORDER_BY = "(user_id, provider_id, generation, id)";
 export const METRIC_STREAM_PROVIDER_GENERATION_COVERING_ORDER_BY =
   "(user_id, provider_id, generation, id, version, ingested_at)";
@@ -101,6 +102,12 @@ export function metricStreamProviderExternalIdProjectionDefinition(): string {
     ORDER BY (user_id, provider_id, external_id, id, version, ingested_at)`;
 }
 
+export function metricStreamUserChannelRecordedAtProjectionDefinition(): string {
+  return `SELECT user_id, activity_id, channel, recorded_at, id,
+      provider_id, scalar, version, ingested_at, is_deleted
+    ORDER BY (user_id, channel, recorded_at, activity_id, id)`;
+}
+
 export function buildIngestMetricStreamCreateTableSql(): string {
   return `CREATE TABLE IF NOT EXISTS ${METRIC_STREAM_TABLE} (
   id UUID,
@@ -131,6 +138,9 @@ ${metricStreamIngestMetadataColumnDefinitions},
   ),
   PROJECTION ${METRIC_STREAM_PROVIDER_EXTERNAL_ID_PROJECTION} (
     ${metricStreamProviderExternalIdProjectionDefinition()}
+  ),
+  PROJECTION ${METRIC_STREAM_USER_CHANNEL_RECORDED_AT_PROJECTION} (
+    ${metricStreamUserChannelRecordedAtProjectionDefinition()}
   )
 )
 ${metricStreamReplacingMergeTreeEngine()}`;
