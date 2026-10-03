@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  capturePageLoad,
   capturePageView,
   disablePostHogForAccountErasure,
   identifyPostHogUser,
@@ -16,10 +17,101 @@ vi.mock("posthog-js", () => ({
     opt_in_capturing: vi.fn(),
     opt_out_capturing: vi.fn(),
     reset: vi.fn(),
+    get_property: vi.fn(() => "sdk-device-id"),
   },
 }));
 
 import posthog from "posthog-js";
+
+it("strips SDK enrichment and raw account identifiers from readiness exports", () => {
+  initPostHog();
+  const config = vi.mocked(posthog.init).mock.calls.at(-1)?.[1];
+  const beforeSend = config?.before_send;
+  expect(typeof beforeSend).toBe("function");
+  if (typeof beforeSend !== "function") return;
+  const exported = beforeSend({
+    event: "page_data_readiness",
+    uuid: "event-id",
+    properties: {
+      route: "/dashboard",
+      kind: "navigation",
+      durationMs: 350,
+      outcome: "ready",
+      release: "release",
+      token: "public-api-key",
+      distinct_id: "account-id",
+      $current_url: "https://dofek.fit/body?date=private",
+      $referrer: "private",
+      accountId: "account-id",
+      heartRate: 80,
+      requestKey: "private",
+      $set: { email: "private" },
+    },
+    $set: { email: "private" },
+  });
+  expect(exported).toEqual({
+    event: "page_data_readiness",
+    uuid: "event-id",
+    properties: {
+      route: "/dashboard",
+      kind: "navigation",
+      durationMs: 350,
+      outcome: "ready",
+      release: "release",
+      token: "public-api-key",
+      distinct_id: "sdk-device-id",
+      $process_person_profile: false,
+    },
+  });
+  const pageview = {
+    event: "$pageview",
+    uuid: "event-id",
+    properties: { distinct_id: "account-id" },
+  };
+  expect(beforeSend(pageview)).toBe(pageview);
+  vi.clearAllMocks();
+});
+
+describe("page load export", () => {
+  afterEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(posthog.has_opted_out_capturing).mockReturnValue(false);
+  });
+  it("exports only the documented timing payload", () => {
+    vi.mocked(posthog.has_opted_out_capturing).mockReturnValue(false);
+    capturePageLoad({
+      route: "/body/heart-rate",
+      section: "chart",
+      generation: 2,
+      kind: "filter",
+      startedAt: 100,
+      completedAt: 450,
+      durationMs: 350,
+      outcome: "ready",
+    });
+    expect(posthog.capture).toHaveBeenCalledWith("page_data_readiness", {
+      route: "/body/heart-rate",
+      section: "chart",
+      kind: "filter",
+      durationMs: 350,
+      outcome: "ready",
+      release: "development",
+    });
+  });
+  it("does not export after consent or erasure opt-out", () => {
+    vi.mocked(posthog.has_opted_out_capturing).mockReturnValue(true);
+    capturePageLoad({
+      route: "/dashboard",
+      generation: 1,
+      kind: "navigation",
+      startedAt: 0,
+      completedAt: 450,
+      durationMs: 450,
+      outcome: "ready",
+    });
+    expect(posthog.capture).not.toHaveBeenCalled();
+  });
+});
 
 describe("initPostHog", () => {
   afterEach(() => {
