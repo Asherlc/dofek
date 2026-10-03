@@ -4,6 +4,7 @@ import { act, fireEvent, render, screen } from "@testing-library/react";
 import { createElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { HeartRateSourceSeries } from "../../../server/src/routers/heart-rate.ts";
+import { PageLoadProvider } from "../lib/page-load-context.tsx";
 
 interface DailyBySourceQueryResult {
   data: HeartRateSourceSeries[] | undefined;
@@ -50,6 +51,46 @@ vi.mock("../lib/trpc.ts", () => ({
 import { DailyHeartRatePage } from "./DailyHeartRatePage.tsx";
 
 describe("DailyHeartRatePage", () => {
+  it("records a genuine empty state only after its DOM has a paint opportunity", () => {
+    const measure = vi.fn();
+    let frames: FrameRequestCallback[] = [];
+    vi.stubGlobal("performance", { now: () => 100, measure });
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      frames.push(callback);
+      return 1;
+    });
+    vi.stubGlobal("cancelAnimationFrame", vi.fn());
+    mockDailyBySourceQuery.mockReturnValue({
+      data: [],
+      isLoading: false,
+      isError: false,
+      error: null,
+    });
+    const rendered = render(
+      <PageLoadProvider route="/body/heart-rate" startedAt={0} sections={["chart", "sources"]}>
+        <DailyHeartRatePage />
+      </PageLoadProvider>,
+    );
+    expect(screen.getByText("No heart rate data for this day")).toBeTruthy();
+    expect(measure).not.toHaveBeenCalled();
+    const paint = () => {
+      const pending = frames;
+      frames = [];
+      act(() =>
+        pending.forEach((callback) => {
+          callback(100);
+        }),
+      );
+    };
+    paint();
+    paint();
+    expect(measure).toHaveBeenCalledWith(
+      "dofek.page.data-ready",
+      expect.objectContaining({ detail: expect.objectContaining({ outcome: "empty" }) }),
+    );
+    rendered.unmount();
+    vi.unstubAllGlobals();
+  });
   it("nests its title below the Body page heading", () => {
     mockDailyBySourceQuery.mockReturnValue({
       data: [],

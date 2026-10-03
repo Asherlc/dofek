@@ -29040,6 +29040,325 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   The existing [Compose environment script](../scripts/compose-env.ts) and
   [testing runbook](testing.md) remain the canonical local setup references.
 
+## 2026-10-02 — Production page rendering hid multi-second data waits (unresolved)
+
+- **Symptoms / impact:** A production loading audit found Training, Running's
+  pace curve, and Daily Heart Rate incomplete after 20 seconds of browser
+  observation despite early page shells. Data Sources took 5.21 seconds to
+  populate; several activity lists and analytics views took 3–4 seconds.
+  Daily Heart Rate removed its existing chart for 16.73 seconds during a date
+  change. Sleep had data by 0.39 seconds but unrelated processing work kept
+  loading indicators visible until 3.62 seconds.
+- **Evidence:** The [dated audit](performance/production-load-audit-2026-10-02.md)
+  records 58 authenticated page/navigation observations, additional filter and
+  public-page measurements, exact slow-log timestamps, trace/query IDs, mobile
+  emulation, and source references. Both web replicas ran release
+  `3b517084d`. The main sweep occurred October 3 at 03:39–03:52 UTC
+  (October 2 Pacific time). Axiom and ClickHouse query logs were working;
+  inspected spans lived in `dofek-logs` with 10% trace sampling.
+- **Confirmed causes:** Successful ClickHouse executions consumed 30.507 seconds
+  and 57.85 million rows for `heartRate.dailyBySource`, 26.153 seconds and
+  20.69 million rows for `durationCurves.paceCurve`, and 20.878 seconds and
+  10.58 million rows for `training.hrZones`. Request-time sensor reads and
+  calculations dominate those specific waits. Client query-key changes also
+  discard usable charts; global fetching state makes unrelated charts look
+  busy. Other slow parent requests require current child-query investigation
+  before assigning their root cause to an engine or queue.
+- **Fix / validation:** Audit only; no runtime fix or deployment was performed.
+  Repeated warm visits were fast, which confirms cache sensitivity but does
+  not establish resolution. Read-only engine evidence confirmed the slow-query
+  durations; mobile and filter checks confirmed separate client symptoms.
+  The initial >20-second browser observations were stopped before completion,
+  so their later server durations are not exact browser completion times.
+- **Remaining risk / follow-up:** Unresolved. Review source-preserving daily
+  heart-rate access, deduped pace-curve computation, and HR-zone model semantics;
+  preserve previous data on web and native filter changes; scope chart loading
+  state; then investigate the remaining providers/activity/nutrition queries.
+  Add useful-data milestones to existing telemetry and repeat fresh-key plus
+  warm measurements. No timeout, retry, cache flush, concurrency adjustment,
+  or other resilience knob was introduced.
+
+## 2026-10-02 — Shared local Docker AIO capacity blocked performance validation
+
+- **Symptoms / impact:** The performance implementation's local database setup
+  could not start Redpanda. Browser and database validation are blocked; this
+  finding does not indicate a production outage. Unit implementation can proceed.
+- **Evidence:** `rtk proxy pnpm compose:up` failed at 21:56 Pacific time with
+  `container impolite-mole-redpanda-1 is unhealthy`. The first fatal broker line
+  was `Could not setup Async I/O`, reporting capacity in
+  `/proc/sys/fs/aio-max-nr` as 65536. A read from the workspace's database
+  container showed both `fs.aio-nr` and `fs.aio-max-nr` equal to 65536. The
+  broker exited with code 133 and was not OOM-killed. Workspace Postgres,
+  ClickHouse, and Redis were healthy; multiple other workspaces had restarting
+  brokers on the same Docker VM.
+- **Root cause:** The shared Docker VM's asynchronous-I/O allocation limit was
+  exhausted before this workspace's broker could initialize. Redpanda documents
+  its AIO tuner and 1048576 threshold in the
+  [rpk tuner overview](https://www.redpanda.com/blog/rpk-command-line-interface-developer-productivity).
+- **Fix / validation:** With user approval, increased the shared VM limit to
+  1048576 using a one-shot container from the existing database image. Restarted
+  only this workspace's already-failed broker to clear its old restart delay;
+  `rtk proxy pnpm compose:up` then completed with all four dependencies healthy
+  at 22:35 Pacific time. No other workspace's containers or volumes were stopped
+  or removed. No extra sleep or timeout change was needed.
+- **Remaining risk / follow-up:** Dependency startup is resolved; application
+  and browser validation are separate outstanding implementation gates. The
+  setting is local to the running Docker VM and must be checked after a VM
+  restart. Add an AIO-exhaustion diagnostic to the local
+  [testing runbook](testing.md). No retry, timeout, or application workaround
+  was added.
+
+## 2026-10-02 — Local browser validation hit Docker disk and build pressure
+
+- **Symptoms / impact:** The isolated browser-test image could not finish
+  building during the loading-performance implementation. Production was not
+  changed; browser validation remains outstanding.
+- **Evidence:** `pnpm compose -- --project-suffix e2e -f docker-compose.e2e.yml
+  build server` first failed while compiling the Python lz4 dependency with
+  `No space left on device`; pnpm also reported `ERR_PNPM_ENOSPC`. Docker reported
+  14.5 GB of images, 17.14 GB of writable container layers, 14.06 GB of volumes,
+  and 4.288 GB of build cache. Ignored local logs preserve the complete output.
+- **Confirmed disk cause / mitigation:** The Docker VM filesystem was exhausted.
+  Removed rebuildable build cache (3.826 GB reclaimed), then unused images
+  (4.508 GB reclaimed), following the [testing runbook](testing.md#docker-disk-recovery)
+  and [Docker pruning guidance](https://docs.docker.com/engine/manage-resources/pruning/).
+  Preserved all containers and named volumes. The filesystem then had 9.6 GB
+  available, and the next build progressed beyond the original disk failure.
+- **Subsequent failure:** The next attempt completed package downloads but
+  failed at Dockerfile line 93 with `ERR_PNPM_BROKEN_METADATA_JSON: The operation
+  was aborted due to timeout`. It reported registry request delays and an
+  unsuccessful supply-chain metadata check. Concurrent VM pressure readings
+  showed 85% full memory stall time over ten seconds. These establish a registry
+  metadata timeout and resource contention, but do not alone prove whether
+  memory stalls or registry/network behavior caused that timeout. Linux defines
+  these measurements in its [pressure-stall documentation](https://docs.kernel.org/accounting/psi.html).
+- **Validation / subsequent disk recovery:** The same build passed all 3,399
+  supply-chain checks in 32 seconds and completed, including both native decoder
+  tests. Initial stack startup then exhausted disk again: Postgres could not
+  create its WAL directory and ClickHouse could not create its processed config
+  directory. Removing the completed build's rebuildable cache reclaimed another
+  9.245 GB, leaving 7.5 GB free. Restarted the affected local ClickHouse process
+  and started the already-built image with the canonical Compose wrapper and
+  `--no-build --wait --wait-timeout 180`. All dependencies, migrations, fixture
+  seeding, analytics, and server health gates passed. Both focused page-readiness
+  Cypress scenarios passed (19 seconds), followed by a trusted Chrome navigation
+  check. No added sleep or timeout change was needed.
+- **Remaining risk / follow-up:** The VM has limited spare disk for another cold
+  build. Other workspaces' containers and volumes were preserved; stopping their
+  brokers was not needed. Registry metadata timeouts did not recur after the
+  cold-build work decreased; the respective network and memory contributions
+  remain unproven. Add build-cache sizing and pressure checks to the local
+  testing runbook. No package-policy bypass, dependency change, application
+  workaround, or resilience knob was introduced.
+
+## 2026-10-03 — Local preview tunnel lost connectivity during idle interval
+
+- **Symptoms / impact:** The local browser-validation server and its dependencies
+  remained healthy, but the previously emitted Quick Tunnel hostname no longer
+  resolved. Production was unaffected.
+- **Evidence:** The tunnel log first reported `failed to accept QUIC stream:
+  timeout: no recent network activity` at 06:49:44 UTC, followed by repeated
+  `control stream encountered a failure while serving` errors. At 13:26 UTC,
+  a bounded curl check failed with exit 6 (`Could not resolve host`); Compose
+  still reported the local server healthy.
+- **Mitigation / validation:** Stopped only the disconnected tunnel process and
+  reran the existing `/Users/asherlc/bin/paseo-quick-tunnel 3100` command. The new
+  process registered a connection, passed its connectivity checks, and the newly
+  emitted HTTPS URL returned HTTP 200. The server was not restarted. No timeout,
+  retry, protocol, or application configuration was changed.
+- **Remaining risk / follow-up:** The original disconnect trigger is unresolved;
+  do not attribute it to workstation sleep or a Cloudflare incident without
+  evidence. Recheck the emitted URL after idle intervals before browser tests.
+  Quick Tunnels use temporary hostnames and have no uptime guarantee according
+  to [Cloudflare's Quick Tunnel documentation](https://developers.cloudflare.com/tunnel/get-started/quick-tunnels/).
+
+## 2026-10-03 — Oversized local heart-rate fixture exceeded ClickHouse memory
+
+- **Symptoms / impact:** A controlled integration benchmark failed while seeding
+  one million raw rows. Production was unaffected; semantic tests passed, but
+  the benchmark could not reach its access-path assertion.
+- **Evidence / cause:** The focused heart-rate and migration integration command
+  reported `(total) memory limit exceeded: would use 1.25 GiB ... maximum:
+  1.25 GiB` during insertion. Constructing the existing provider-current-state
+  aggregate projection for the oversized insert exhausted the local engine's
+  memory allowance. Complete output remains in ignored local evidence.
+- **Mitigation / validation:** Reduced the controlled fixture to 200,000 rows
+  while retaining many dates, unassigned samples and multiple activity shapes.
+  The same unchanged engine then completed insertion, semantic/migration tests,
+  actual plans and query-log measurements. The new whole query read 49,152 rows
+  versus 81,920 for the local baseline; this is scan evidence, not a production
+  speed or page acceptance claim. Scaled timing validation remains outstanding.
+- **Remaining risk / follow-up:** Seed larger benchmarks in bounded chunks;
+  preserve a fixture that discriminates the old access path. No memory limit,
+  timeout, retry, projection setting or application behavior was changed to
+  bypass the failure. ClickHouse describes memory accounting and query limits
+  in its [memory settings reference](https://clickhouse.com/docs/operations/settings/settings#max_memory_usage).
+
+## 2026-10-03 — Activity detail route-preview latency follow-up
+
+- **Symptoms / impact:** Read-only production probes confirmed running and
+  climbing detail summaries still take about 1.4–1.5 seconds before client
+  rendering. The user's activity list/detail loading target remains unmet.
+- **Evidence / root cause:** Cache-miss traces
+  `734520662c251017715f022263142e2b` and
+  `d2dd3afa912bef3c7583a06b23e8f1d1` took 1,417 and 1,445 ms. Their matching
+  route-preview queries read 19,982,527 location rows in 1,359 and 1,370 ms;
+  queue waits were below 3 ms. This is the same previously diagnosed
+  source-column alias/index-pruning bug. See the
+  [dated activity follow-up](performance/production-load-audit-2026-10-02.md#activity-detail-follow-up--october-3)
+  and [ClickHouse alias semantics](https://clickhouse.com/docs/reference/syntax#notes-on-usage).
+- **Fix / validation status:** No production change was made. The reviewed
+  shared-query repair and real-engine regression remain scheduled for Task 8;
+  final data-visible page acceptance is unresolved. Single fast stream/zone
+  probes do not replace that gate.
+- **Additional lifecycle evidence:** The prior climbing fixture is now
+  provider-absent: its summary uses the repository fallback, while active-only
+  sensor-window lookup returns "Activity not found." Preserve those failures
+  in evidence and use an active populated climbing fixture for acceptance.
+  Validate provider-absent presentation separately; do not hide errors to meet
+  the target. Initial malformed diagnostic probes returned HTTP 400 and were
+  retained but excluded from successful timing claims.
+- **Follow-up:** Cover list filters/pagination, direct detail entry, activity
+  switching and each conditional sport section on web and native clients.
+
+## 2026-10-03 — Isolated ClickHouse version-validation resource failure
+
+- **Symptoms / impact:** Task 3's disposable ClickHouse 26.6.1.1193 validation
+  container exceeded local resources during the native-client integration run.
+  No production service was changed. The default workspace ClickHouse also
+  restarted during the validation window; its causal relationship to the
+  disposable container's resource use is unresolved. E2E ClickHouse retained
+  restart count zero and its original start time.
+- **Evidence:** The exact-version Vitest command first reported `Test timed out
+  in 30000ms` while seeding 65 activities through separate Docker exec calls.
+  Subsequent inserts returned native-client exit 137, and Docker inspection
+  confirmed `OOMKilled: true` and container exit 137. The temporary service had
+  no container memory ceiling. Its logs/data used an in-memory filesystem and were unavailable
+  after termination; the exact allocation responsible for the kill was not
+  captured. Docker documents container memory ceilings and host out-of-memory
+  behavior in [resource constraints](https://docs.docker.com/engine/containers/resource_constraints/).
+  Default ClickHouse inspection showed restart count one and start time
+  `2026-10-03T14:42:00.726884839Z`; E2E ClickHouse showed restart count zero and
+  start time `2026-10-03T06:17:59.242Z`. Neither implementing agent nor operator
+  restarted the default service. Filtered Docker event history was empty;
+  retained application logs confirmed startup but did not establish the prior
+  termination cause. The running state's `OOMKilled: false` does not establish
+  the cause of the earlier restart, and current health does not prove continuity.
+- **Cause / fix:** Serial per-row process overhead exceeded the test deadline;
+  the pending asynchronous fixture operations were not cancelled by the test
+  runner. Batched JSONEachRow fixture inserts removed that overhead. The
+  replacement disposable service used the existing workspace's 1.5 GiB ceiling
+  to contain its resource use; application and production settings were unchanged.
+- **Validation:** The same unchanged 30-second test deadline passed 15/15
+  focused tests on 26.6.1.1193, and 15/15 on the default 26.8.2.7. Production-version
+  EXPLAIN selected the compact day-version projection. Only the disposable
+  container was removed afterward; no other workspace volumes or services were
+  stopped or pruned.
+- **Follow-up:** Batch native-client fixture seeding and bound disposable
+  validation services before starting them. Keep exact-version engine execution
+  separate from HTTP/dbt compilation provenance in validation reports. Preserve
+  the overlapping default restart as unresolved; daemon/kernel evidence would
+  be needed to establish or exclude indirect host-memory impact.
+
+## 2026-10-03 — Task 4 ClickHouse host-wide OOM during validation
+
+- **Symptoms / impact:** The Task 4 disposable ClickHouse 26.6.1.1193 engine
+  stopped during exact-version pace-model validation. No production action was
+  taken. Default ClickHouse later restarted during the successful diagnostic
+  continuation; E2E ClickHouse retained restart count zero and its original start.
+- **Evidence:** The first combined 65-activity case reported a 30-second Vitest
+  timeout (41.935 seconds recorded), although its batched 65-row activity insert
+  took 5 ms and its three recorded model queries took 1194/1473/1689 ms. The
+  difference in elapsed time remains unexplained; query logs alone do not identify
+  native process or scheduler delays. A second suite, with independent first-build
+  and 65-key drain cases, passed six cases before native exit 137 during the
+  correction/merge fixture. Docker inspection confirmed `OOMKilled: true`,
+  exit 137, restart count zero, start 16:09:07.660UTC and finish 17:05:35.794UTC,
+  with the 1.5 GiB ceiling still enforced. Network mode was none and no ports were
+  published. Temporary in-memory engine logs were lost when the container stopped;
+  retained stdout contains startup log paths only. Docker documents memory
+  ceilings and out-of-memory behavior in its
+  [resource constraints](https://docs.docker.com/engine/containers/resource_constraints/).
+- **Cause:** Docker Desktop kernel records establish host-wide OOM for both
+  Task 4 deaths, rather than the disposable engine exceeding its own ceiling.
+  Rotated `init.log.20261003-101412.064` lines 1982–1983 report `global_oom` at
+  17:05:35.446UTC, killing disposable cgroup `bc7bdf003…`, anon-rss643532kB.
+  Current `init.log` lines 241–242 report `CONSTRAINT_NONE`, `global_oom` at
+  17:14:12.068UTC, killing default cgroup `3473c423…`, anon-rss620720kB.
+  Default inspection afterward shows restart count two/start17:14:12.516868301UTC;
+  neither agent restarted it. Kernel evidence is retained in ignored
+  `.context/load-audit/task4-kernel-oom.jsonl`. Swap was nearly exhausted and
+  other workspace workloads were resident; summed process RSS can double-count
+  shared pages and does not establish each workload's unique contribution.
+- **Validation:** After explicit controller authorization, one identical fresh
+  disposable instance passed all nine exact 26.6 pace tests in 64.09s, with the
+  unchanged 30s test deadline and three-build 65-key drain. Default 26.8 passed 23
+  pace/dirty-key tests. Scratch-only instrumentation paired all 156 native calls
+  with query IDs; the slowest call was 2099.53ms versus SQL 1948ms. The final three
+  drain builds took 1645.26/1436.30/1573.66ms native versus 1520/1334/1469ms SQL.
+  The first elapsed-time gap was not reproduced or retrospectively explained.
+  Live disposable cgroup peaks: memory.current 781,283,328B, anon 514,916,352B,
+  file 240,984,064B, shmem 33,492,992B; data 27,968KiB/log 4,760KiB. These are
+  independent sampled maxima, not additive totals. Its own oom_kill remained
+  zero; both data/log tmpfs capacities were 4,012,140KiB. Capacity is not usage.
+- **Mitigation / follow-up:** Only the disposable instance was removed promptly
+  after validation. No timeout, retry, memory limit or production setting changed;
+  no unrelated services or volumes were removed. Exact semantic success does not
+  resolve shared Docker host resource safety or establish production acceptance.
+  Controller owns aggregate-pressure attribution and authorization before any
+  further database validation. Retain paired native/query timings and external
+  resource/log capture; consult kernel OOM records before attributing Docker
+  `OOMKilled` to a container's own memory ceiling.
+
+## 2026-10-03 — E2E preview hostname lost DNS resolution again
+
+- **Symptoms / impact:** The existing local E2E server remained healthy, but its
+  quick-tunnel hostname stopped resolving. Browser access to that preview was
+  unavailable; production was unaffected. Existing preview tabs need the new
+  hostname before browser validation resumes.
+- **Evidence:** At approximately 17:30 UTC, the HTTPS probe failed with curl
+  exit 6, `Could not resolve host`. Retained tunnel output showed QUIC inactivity
+  timeouts and reconnections from 15:07 UTC, followed by repeated
+  `control stream encountered a failure while serving` errors near 17:29 UTC.
+  The E2E server container was still healthy with eleven hours of uptime.
+- **Cause:** The trigger for the tunnel connection and DNS failure remains
+  unresolved; the logs do not establish a server failure or a causal link to
+  the separate Docker memory incident.
+- **Recovery / validation:** Stopped only the old tunnel process and ran the
+  existing quick-tunnel wrapper for the same server port. Its replacement
+  connected successfully and returned HTTP 200 through the emitted HTTPS URL.
+  The replacement process stays running for the server's lifetime. No server,
+  database, image, timeout or retry configuration changed.
+- **Follow-up:** Verify the emitted hostname before later browser work and
+  retain tunnel errors separately from server health evidence. Quick tunnels
+  are documented by [Cloudflare](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/do-more-with-tunnels/trycloudflare/).
+
+## 2026-10-03 — Approved broker pause restored validation memory headroom
+
+- **Cause / scope:** Docker Desktop kernel records proved host-wide OOM in the
+  shared 8 GiB VM. Container limits did not establish a container-local failure.
+  Sixteen broker processes held approximately 3 GiB RSS during the captured
+  incidents; RSS can include shared pages and is not unique-memory accounting.
+- **Operator mitigation:** With explicit approval, stopped exactly fourteen
+  other-workspace Redpanda containers, preserving containers, volumes and data.
+  Each stopped with exit 0. This workspace's services remained healthy; guest
+  MemAvailable rose to 3,987,420 KiB before the next validation window.
+- **Validation:** The combined dirty-key, pace and heart-rate model suites passed
+  32/32 on the default engine; the new heart-rate model passed 9/9 on production
+  ClickHouse 26.6 with unchanged limits and deadlines. Its isolated engine peaked
+  at 1,142,071,296 bytes sampled cgroup memory, with zero observed OOM kills;
+  guest MemAvailable stayed above 3,143,188 KiB. A focused repository case also
+  executed the corrected current-schema fixture successfully. No timeout,
+  retry, sleep or query-limit mitigation was introduced.
+- **Restoration / remaining risk:** Restarted exactly the fourteen approved
+  containers and verified every one running and healthy. Default ClickHouse
+  retained restart count 2/start 17:14:12 UTC; E2E ClickHouse retained count 0.
+  With all workspaces restored, MemAvailable was 427,824 KiB and free swap 48 KiB,
+  so further database validation requires another approved bounded pause window.
+  Production was unchanged. The earlier native elapsed-time gap and Task 3
+  restart attribution remain unresolved. Keep memory-limit interpretation tied
+  to kernel evidence and [Docker's resource documentation](https://docs.docker.com/engine/containers/resource_constraints/).
+
 ## 2026-10-02 — UI cleanup PR blocked by dependency audit
 
 - **Symptoms / impact:** [PR #2866](https://github.com/Asherlc/dofek/pull/2866)
@@ -29099,3 +29418,145 @@ The unit artifact identified `TodayPlanCard.tsx:98` with conditional counts
 A focused test now opens the disclosure with both dates absent and verifies
 that supporting facts remain visible without a fabricated freshness message.
 Coverage thresholds remain unchanged.
+
+## 2026-10-03 — Main integration found an unapplied local dependency patch
+
+- **Symptoms / impact:** The approved loading-audit/main integration passed a
+  frozen dependency installation, but `pnpm check:dependency-security` failed
+  before commit. This blocked local validation; production was unchanged.
+- **Evidence / root cause:** The first fatal line was
+  `AssertionError [ERR_ASSERTION]: Missing expected exception.` at
+  `scripts/check-braces-security.ts:42`. Metro resolved the expected braces
+  patch-hash directory, but all five patched implementation files contained
+  their unpatched source. The checked-in patch applied cleanly in a dry run.
+  `pnpm store status` also reported `ERR_PNPM_MODIFIED_DEPENDENCY` for six other
+  patched artifacts. Why the inconsistent local installation was created is
+  unknown; this evidence does not establish a source-patch defect.
+- **Direct fix / validation:** With controller approval, ran
+  `pnpm install --frozen-lockfile --force`. The installed braces files then
+  contained the expected depth bounds, and both unchanged node-forge and braces
+  security regressions passed. The lockfile, patches, advisory exceptions and
+  enforcement remained unchanged. pnpm documents
+  [forced dependency repair](https://pnpm.io/cli/install#--force) and
+  [store integrity checks](https://pnpm.io/cli/store#status).
+- **Remaining risk / retrospective:** A successful frozen install alone did
+  not prove the security patch was present in an existing local installation.
+  Keep the installed-package regression gate; consider documenting names-only
+  package-resolution and source-integrity diagnosis before local artifact repair.
+  No retries, deadlines, memory limits or runtime workarounds were added.
+
+## 2026-10-03 — Restored shared brokers preceded a global E2E ClickHouse OOM
+
+- **Symptoms / impact:** Before Task 5A's E2E rebuild, the existing E2E
+  ClickHouse was exited and its server was unhealthy. The browser validation
+  stack was unavailable; production was unchanged.
+- **Evidence / root cause:** Docker recorded exit 137 and `OOMKilled=true` for
+  E2E ClickHouse container `844275e532c9` at 18:06:24.497 UTC. Docker Desktop
+  kernel log `init.log.20261003-112043.635`, lines 3193–3194, records
+  `constraint=CONSTRAINT_NONE`, `global_oom` and that exact ClickHouse victim
+  at 18:06:24.453 UTC, with 416,588 KiB anonymous RSS. This confirms guest-wide
+  exhaustion after the fourteen approved brokers had been restored; it does
+  not identify the triggering workload or prove a ClickHouse cgroup-limit OOM.
+- **Recovery / remaining risk:** The controller reopened the approved bounded
+  fourteen-broker pause, verified guest headroom, and authorized the canonical
+  current-workspace E2E rebuild/recovery for the changed browser spec. Both image
+  builds were subsequently blocked by the documented Docker disk exhaustion;
+  after the user-approved disk increase, the unchanged canonical build and
+  merged-runtime review-stack spec passed and E2E services were healthy. After
+  failed-build cleanup, the controller restored and individually verified all
+  fourteen approved brokers running and healthy. No containers or volumes were
+  deleted.
+  Preserve the kernel distinction and follow
+  [Docker memory-resource guidance](https://docs.docker.com/engine/containers/resource_constraints/).
+  No engine limits, retries, deadlines or production settings were changed.
+
+## 2026-10-03 — Canonical merged-source E2E image build exhausted Docker disk
+
+- **Symptoms / impact:** Task 5A's required canonical `pnpm e2e:web:up` failed
+  while building the merged source. Browser validation was blocked; the existing
+  server and lifetime tunnel were retained, and production was unchanged.
+- **Evidence / root cause:** Dockerfile line 93's workspace dependency install,
+  `pnpm install --force --frozen-lockfile`, first failed with
+  `ERR_PNPM_ENOSPC` / `ENOSPC: no space left on device` while copying
+  `posthog-js@1.374.2`'s `dist/module.no-external.js.map`. Guest disk space fell
+  from 5,383,184 KiB available before the build to 692,468 KiB (99% used).
+- **Direct remediation / validation:** Followed the
+  [testing disk-recovery runbook](testing.md#docker-disk-recovery):
+  `docker builder prune -af` reclaimed 4.427 GB, recovering 5,533,068 KiB free;
+  unused-image pruning reclaimed another 791.2 MB, recovering 6,231,832 KiB free.
+  All containers and volumes were preserved. Docker documents the scope of
+  [cache and image pruning](https://docs.docker.com/engine/manage-resources/pruning/).
+  The unchanged build passed the dependency install but then failed copying
+  production `node_modules` at Dockerfile line 138 with
+  `copy file range failed: no space left on device`; guest disk reported zero
+  available KiB. A final failed-build-cache prune reclaimed 8.508 GB and
+  restored 6,364,980 KiB free before the controller closed the validation window.
+- **Remaining risk / retrospective:** The full cold-image peak disk requirement
+  is not yet established, but more than the 6,231,832 KiB second-attempt budget
+  is required before the final image can complete. Further builds and scoped
+  browser validation were blocked pending an approved capacity decision.
+  The user-approved disk growth below then allowed the unchanged build and
+  scoped browser check to pass.
+  No runtime mounts,
+  fallback workflows, deadlines, retries or engine memory/query limits were changed.
+
+## 2026-10-03 — Approved Docker disk growth enabled merged-source E2E validation
+
+- **Symptoms / impact:** Required browser validation remained blocked after
+  both proven disk-exhaustion failures and authorized cache/image cleanup.
+  The user approved growing the shared Docker disk usage limit from 61,035 MiB
+  to 81,920 MiB, restarting Docker only if needed and restoring the exact
+  prechange running container set. Production was unchanged.
+- **Operator action / evidence:** The controller retained a private 56-container
+  ID/image/health snapshot. Docker UI automation timed out; the settings receipt
+  verifies that only `DiskSizeMiB` changed in the documented settings file.
+  The controller applied the change with Docker Desktop stop/start. Guest disk
+  then reported 82,249,224 KiB total and 27,097,660 KiB free. Memory, swap, CPU,
+  disk location, engine limits and existing deadlines were unchanged. Docker
+  documents the [disk control and settings file](https://docs.docker.com/desktop/settings-and-maintenance/settings/)
+  and [Desktop lifecycle commands](https://docs.docker.com/desktop/features/desktop-cli/).
+- **Restoration / recovery:** The controller verified the other 55 original
+  containers running, healthy and on their original images. The original E2E
+  server failed with `[web] Failed to start: Error: connect ECONNREFUSED
+  192.168.32.4:9000`; it recovered healthy after its previously OOM-killed
+  E2E dependency was started through the canonical workspace wrapper. The
+  fourteen approved brokers were then paused for validation, followed by four
+  unused services from the current workspace. Their volumes were preserved;
+  concurrent build-phase changes prevent attributing the whole observed memory
+  improvement exclusively to the latter pause.
+- **Validation / remaining risk:** The unchanged `pnpm e2e:web:up` passed, with
+  native tests 2/2 and seeded analytics `PASS=14 WARN=0 ERROR=0`. The newly built
+  merged image served the affected `review-stack.cy.ts` spec, which passed
+  1/1 in one second. No ad-hoc waits, runtime mounts, alternate workflow or
+  resilience knob was introduced. The controller restored all four current-workspace
+  services and all fourteen approved brokers healthy. Its 18:53:48 UTC receipt
+  verifies the other 55 original container IDs and images running and healthy,
+  with no deviations; the authorized recreated E2E server is healthy on the
+  merged image, and the original previously OOM-killed E2E ClickHouse is healthy.
+  Final guest disk had 16,849,504 KiB free. Subsequent controller memory sampling
+  reported only 856,040 KiB available and 388 KiB swap free. Disk growth resolves
+  the proven build-capacity failure; shared RAM pressure remains, and the
+  triggering workload of the earlier global OOM is unresolved.
+
+## 2026-10-03 — Loading-preparation CI expectation and telemetry coverage failures
+
+- **Symptoms / impact:** Required PR CI blocked the loading-preparation source;
+  no production rollout occurred. [Unit Tests](https://github.com/Asherlc/dofek/actions/runs/37146328769/job/111271119335)
+  ran `pnpm exec vitest run --project unit --coverage`; its first failure was
+  `AssertionError: expected [ 'sensor_scalar_sample', …(28) ] to deeply equal
+  [ 'sensor_scalar_sample', …(26) ]`. [Stryker](https://github.com/Asherlc/dofek/actions/runs/37146328769/job/111271297243)
+  first failed with `Final mutation score 54.29 under breaking threshold 75`.
+- **Root cause / direct fix:** The existing exact build-order expectation omitted
+  the registered `activity_pace_curve` and `activity_heart_rate_distribution`
+  models, and readiness telemetry tests did not cover active optional fields,
+  release identity, nullable callback input, or invalid device-ID reporting and
+  event rejection. Updated the existing order assertion and added public-behavior
+  tests, including Sentry observation and reset consent preservation. Production
+  code, schema, models, readers, dependencies and CI configuration were unchanged.
+- **Local validation / remaining work:** Focused units passed 61/61. Canonical
+  whole-file Stryker reproduced a distinct 51-mutant baseline at 66.67%
+  (34 killed, 14 survived, 3 uncovered), then passed at 100% with all 51 killed
+  and no survivors, uncovered mutants, timeouts or errors. The CI failure scored
+  35 mutants (19 killed, 13 survived, 3 uncovered); retain both scoped results.
+  No resilience knob or ad-hoc wait was introduced. Remote CI rerun remains
+  pending; the controller must confirm required checks on the pushed source.

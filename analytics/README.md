@@ -359,9 +359,55 @@ Production `DBT_SAFE_MODELS` currently selects `sensor_scalar_sample`,
 `activity_stream_points`, `activity_heart_rate_zones`, `activity_summary_rows`,
 `hiking_activity`, `body_measurement`, `activity_vo2max_estimate`,
 `activity_aerobic_efficiency`, `activity_polarization_zones`,
-`activity_power_curve`, `cycling_activity`, `daily_cycling`, `provider_stats`,
+`activity_power_curve`, `activity_pace_curve`, `activity_heart_rate_distribution`,
+`cycling_activity`, `daily_cycling`, `provider_stats`,
 `daily_activity_load`, `daily_strain`, `healthspan_activity_zone_minutes`,
-and `weekly_healthspan`. Scalar activity sample models use dbt's `microbatch`
+and `weekly_healthspan`. `activity_pace_curve` reads canonical `deduped_sensor FINAL`
+speed samples within each canonical activity's inclusive temporal window, using
+the exact effective end (`ended_at`, or start plus twelve hours). Eligible types
+are cycling, running, swimming, walking and hiking; only positive live speeds
+contribute, regardless of their nullable source activity link. The model preserves
+the existing pace query's sample-count semantics: the rounded elapsed seconds
+divided by positive sample count minus one gives an interval of at least one
+second; each duration's rounded duration/interval gives a window of at least one
+sample. Cumulative-sum differences divided by that window count produce the raw
+best speed. It requires at least two positive samples and enough samples for the
+window. ClickHouse documents Float64 ties-to-even rounding in its
+[rounding reference](https://clickhouse.com/docs/sql-reference/functions/rounding-functions#round).
+
+`activity_heart_rate_distribution` uses the same bounded dirty-key selection for
+heart-rate samples. It resolves `deduped_sensor FINAL` before filtering live,
+non-null values, preserving exact fractional Float64 values and UInt64 counts in
+`Array(Tuple(heart_rate Float64, sample_count UInt64))`. Samples are eligible for
+each endurance activity's inclusive window, including its twelve-hour fallback,
+regardless of source activity links; zero and negative values remain eligible.
+It applies no resting/max-heart-rate baseline or zone assignment. Each selected
+user/activity emits one row with complete activity/sensor versions and structural
+window/type state: live empty activities retain an empty array, while deleted or
+ineligible activities emit tombstones. Training owns this model without changing
+its fifteen-minute freshness target. The existing `activity_heart_rate_zones`
+model is unchanged. See ClickHouse's
+[Tuple type](https://clickhouse.com/docs/sql-reference/data-types/tuple) and
+[ReplacingMergeTree current-state semantics](https://clickhouse.com/docs/engines/table-engines/mergetree-family/replacingmergetree).
+
+The shared `activity_sensor_dirty_keys` macro selects at most 32 unique
+user/activity keys on both first and incremental builds. Every selected key emits
+all twelve durations (`5,15,30,60,120,300,600,1200,1800,3600,5400,7200` seconds),
+including nullable unavailable speeds and deleted/ineligible tombstones. Rows
+persist the canonical type, start/effective end, complete source activity/sensor
+version pair and processing clock, so empty work completes and unchanged builds
+append nothing. Replacement is keyed by user, activity and duration, following
+[ReplacingMergeTree](https://clickhouse.com/docs/engines/table-engines/mergetree-family/replacingmergetree).
+The training dataset owns this model and the `durationCurves` cache family;
+sensor-only corrections participate in its existing fifteen-minute freshness
+contract. Reused bounded keys, date windows, cumulative samples and durations use
+model-local materialized CTEs with one thread, as described in the
+[ClickHouse WITH reference](https://clickhouse.com/docs/sql-reference/statements/select/with#materialized-common-table-expressions).
+Historical priority corrections still require the explicit bounded canonical
+sensor replay below; formula changes require an approved historical rebuild
+because [incremental models retain prior output](https://docs.getdbt.com/docs/build/incremental-models#how-do-i-rebuild-an-incremental-model).
+
+Scalar activity sample models use dbt's `microbatch`
 incremental strategy with daily batches and a one-batch lookback, so routine
 cycles process the previous and current freshness days instead of repeatedly
 replaying older historical refreshes. Activity

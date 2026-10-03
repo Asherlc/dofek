@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { buildProcessingAnalyticsEvents } from "./analytics-processing.ts";
+import { buildProcessingCacheEvents } from "./cache-processing.ts";
 import {
   DATASET_CONTRACTS,
   datasetsForProvider,
@@ -9,10 +11,11 @@ import {
   requiredCdcEvidence,
   validateDatasetContracts,
 } from "./dataset-contracts.ts";
+import { deriveProcessingState, type ProcessingStageEvent } from "./processing-state.ts";
 
 describe("dataset contracts", () => {
   it("assigns every production dbt model exactly once", () => {
-    expect(PRODUCTION_DBT_MODELS).toHaveLength(41);
+    expect(PRODUCTION_DBT_MODELS).toHaveLength(43);
     expect(() => validateDatasetContracts(DATASET_CONTRACTS, PRODUCTION_DBT_MODELS)).not.toThrow();
 
     const assignedModels = DATASET_CONTRACTS.flatMap((contract) => contract.analyticsModels);
@@ -117,6 +120,141 @@ describe("dataset contracts", () => {
     ]);
     expect(datasetsForProvider("ziva", ["nutrition"]).map(({ key }) => key)).toEqual(["nutrition"]);
     expect(datasetsForProvider("kaya", ["nutrition"])).toEqual([]);
+  });
+
+  it("routes a sensor-only correction through training without changing its freshness target", () => {
+    const training = datasetsForProvider("garmin", ["metric_stream"]).find(
+      (contract) => contract.key === "training",
+    );
+    expect(training?.freshnessTargetMs).toBe(15 * 60 * 1000);
+    expect(training?.analyticsModels).toContain("activity_pace_curve");
+    expect(training?.analyticsModels).toContain("activity_heart_rate_distribution");
+  });
+
+  it("keeps training incomplete until exact heart-rate distribution processing finishes", () => {
+    const training = DATASET_CONTRACTS.find((contract) => contract.key === "training");
+    if (!training) throw new Error("Missing training dataset contract");
+    const successfulModels = training.analyticsModels
+      .filter((name) => name !== "activity_heart_rate_distribution")
+      .map((name) => ({ name, status: "succeeded" as const, errorCode: null, message: null }));
+    const events = (complete: boolean) =>
+      buildProcessingAnalyticsEvents({
+        runId: "heart-rate-processing",
+        pendingDatasets: [{ operationId: "heart-rate-operation", datasetKey: "training" }],
+        modelResults: complete
+          ? [
+              ...successfulModels,
+              {
+                name: "activity_heart_rate_distribution",
+                status: "succeeded",
+                errorCode: null,
+                message: null,
+              },
+            ]
+          : successfulModels,
+      });
+    expect(events(false).at(-1)).toMatchObject({
+      status: "failed",
+      errorCode: "required_model_unattempted",
+    });
+    expect(events(true).at(-1)).toMatchObject({ status: "succeeded" });
+  });
+
+  it("keeps training incomplete until the pace model and duration cache finish", () => {
+    const training = DATASET_CONTRACTS.find((contract) => contract.key === "training");
+    if (!training) throw new Error("Missing training dataset contract");
+    const operationId = "pace-operation";
+    const otherModels = training.analyticsModels
+      .filter((name) => name !== "activity_pace_curve")
+      .map((name) => ({ name, status: "succeeded" as const, errorCode: null, message: null }));
+    const pending = buildProcessingAnalyticsEvents({
+      runId: "pace-pending",
+      pendingDatasets: [{ operationId, datasetKey: "training" }],
+      modelResults: otherModels,
+    });
+    expect(pending.at(-1)).toMatchObject({
+      status: "failed",
+      errorCode: "required_model_unattempted",
+    });
+    const complete = buildProcessingAnalyticsEvents({
+      runId: "pace-ready",
+      pendingDatasets: [{ operationId, datasetKey: "training" }],
+      modelResults: [
+        ...otherModels,
+        { name: "activity_pace_curve", status: "succeeded", errorCode: null, message: null },
+      ],
+    });
+    expect(complete.at(-1)).toMatchObject({ status: "succeeded" });
+    const cacheEvents = (status: "succeeded" | "failed") =>
+      buildProcessingCacheEvents({
+        runId: "pace-cache",
+        targets: [{ operationId, datasetKey: "training", userId: "pace-user" }],
+        outcomes: [
+          {
+            userId: "pace-user",
+            path: "durationCurves.paceCurve",
+            status,
+            errorMessage: status === "failed" ? "query failed" : null,
+          },
+        ],
+      });
+    expect(cacheEvents("failed")[0]).toMatchObject({ status: "failed" });
+    expect(cacheEvents("succeeded")[0]).toMatchObject({ status: "succeeded" });
+    const now = new Date("2026-09-01T12:00:00Z");
+    const prerequisiteStages = [
+      "ingest",
+      "canonical_commit",
+      "cdc",
+    ] satisfies ProcessingStageEvent["stage"][];
+    const prerequisites: ProcessingStageEvent[] = prerequisiteStages.map((stage, sequence) => ({
+      sequence,
+      stage,
+      status: "succeeded",
+      datasetKey: "training",
+      occurredAt: now,
+      progressPercentage: null,
+      outputPath: stage === "ingest" ? null : "metric_stream",
+    }));
+    const state = (events: ProcessingStageEvent[]) =>
+      deriveProcessingState({
+        datasetKeys: ["training"],
+        outputManifest: { training: ["metric_stream"] },
+        events,
+        now,
+        delayedAfterMs: training.freshnessTargetMs,
+      });
+    expect(state(prerequisites).datasets[0]).toMatchObject({
+      currentStage: "analytics",
+      status: "waiting",
+    });
+    const analyticsReady: ProcessingStageEvent = {
+      sequence: 3,
+      stage: "analytics",
+      status: complete.at(-1)?.status ?? "failed",
+      datasetKey: "training",
+      outputPath: null,
+      occurredAt: now,
+      progressPercentage: null,
+    };
+    expect(state([...prerequisites, analyticsReady]).datasets[0]).toMatchObject({
+      currentStage: "cache_refresh",
+      status: "waiting",
+    });
+    expect(
+      state([
+        ...prerequisites,
+        analyticsReady,
+        {
+          sequence: 4,
+          stage: "cache_refresh",
+          status: cacheEvents("succeeded")[0]?.status ?? "failed",
+          datasetKey: "training",
+          outputPath: null,
+          occurredAt: now,
+          progressPercentage: null,
+        },
+      ]).overallStatus,
+    ).toBe("ready");
   });
 
   it("keeps provider processing scopes limited to datasets they can affect", () => {
