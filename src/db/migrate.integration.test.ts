@@ -1,5 +1,13 @@
 import { createHash } from "node:crypto";
-import { mkdirSync, mkdtempSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import {
+  cpSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Client } from "pg";
@@ -321,12 +329,34 @@ describe("runMigrations", () => {
 
   it("upgrades the production climbing migration history without skipping pending work", async () => {
     const client = new Client({ connectionString: ctx.connectionString });
-    const migrationsFolder = join(import.meta.dirname, "../../drizzle");
+    const repositoryMigrationsFolder = join(import.meta.dirname, "../../drizzle");
+    const migrationsFolder = mkdtempSync(
+      join(tmpdir(), "migrate-test-production-climbing-history-"),
+    );
+    ctx.addCleanup(async () => {
+      rmSync(migrationsFolder, { recursive: true, force: true });
+    });
     const journal = z
       .object({
         entries: z.array(z.object({ idx: z.number(), tag: z.string(), when: z.number() })),
       })
-      .parse(JSON.parse(readFileSync(join(migrationsFolder, "meta/_journal.json"), "utf8")));
+      .parse(
+        JSON.parse(readFileSync(join(repositoryMigrationsFolder, "meta/_journal.json"), "utf8")),
+      );
+    // This fixture models the production history through the climbing-context cutover.
+    writeTestMigrationFiles(
+      migrationsFolder,
+      journal.entries
+        .filter((entry) => entry.idx <= 135)
+        .map((entry) => ({
+          content: readFileSync(join(repositoryMigrationsFolder, `${entry.tag}.sql`), "utf8"),
+          file: `${entry.tag}.sql`,
+          when: entry.when,
+        })),
+    );
+    cpSync(join(repositoryMigrationsFolder, "_history"), join(migrationsFolder, "_history"), {
+      recursive: true,
+    });
     const productionClimbingHash =
       "8c78a3557c472012c24978da8c1ae16e99573f59d66ed7d8e709297702c849ff";
     await client.connect();

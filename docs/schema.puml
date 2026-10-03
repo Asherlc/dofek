@@ -3,8 +3,9 @@
 skinparam linetype ortho
 
 entity "device_priority" {
-  provider_id : text
-  source_name_pattern : text
+  * provider_id : text <<PK>>
+  * source_name_pattern : text <<PK>>
+  --
   priority : integer
   sleep_priority : integer
   body_priority : integer
@@ -34,8 +35,9 @@ entity "exercise_alias" {
 }
 
 entity "exercise_alias_source" {
-  alias_id : uuid <<FK>>
-  source_id : uuid <<FK>>
+  * alias_id : uuid <<PK>>
+  * source_id : uuid <<PK>>
+  --
   exercise_id : uuid <<FK>>
   created_at : timestamp
 }
@@ -51,8 +53,9 @@ entity "exercise_source" {
 }
 
 entity "oauth_token" {
-  user_id : uuid <<FK>>
-  provider_id : text <<FK>>
+  * user_id : uuid <<PK>>
+  * provider_id : text <<PK>>
+  --
   access_token : text
   refresh_token : text
   provider_account_id : text
@@ -72,10 +75,18 @@ entity "provider" {
 }
 
 entity "provider_connection" {
-  user_id : uuid <<FK>>
-  provider_id : text <<FK>>
+  * user_id : uuid <<PK>>
+  * provider_id : text <<PK>>
+  --
   created_at : timestamp
   updated_at : timestamp
+}
+
+entity "provider_issue_email" {
+  * user_id : uuid <<PK>>
+  * provider_id : text <<PK>>
+  --
+  sent_at : timestamp
 }
 
 entity "provider_priority" {
@@ -103,15 +114,17 @@ entity "provider_priority_audit" {
 }
 
 entity "sensor_device_priority" {
-  provider_id : text
-  source_name_pattern : text
-  channel : text
+  * provider_id : text <<PK>>
+  * source_name_pattern : text <<PK>>
+  * channel : text <<PK>>
+  --
   priority : bigint
 }
 
 entity "sensor_provider_priority" {
-  provider_id : text
-  channel : text
+  * provider_id : text <<PK>>
+  * channel : text <<PK>>
+  --
   priority : bigint
 }
 
@@ -264,8 +277,9 @@ entity "daily_metric_type" {
 }
 
 entity "daily_metric_value" {
-  daily_metrics_id : uuid <<FK>>
-  metric_type_id : text <<FK>>
+  * daily_metrics_id : uuid <<PK>>
+  * metric_type_id : text <<PK>>
+  --
   value : real
 }
 
@@ -439,8 +453,9 @@ entity "food_entry" {
 }
 
 entity "food_entry_nutrient" {
-  food_entry_id : uuid <<FK>>
-  nutrient_id : text <<FK>>
+  * food_entry_id : uuid <<PK>>
+  * nutrient_id : text <<PK>>
+  --
   amount : real
 }
 
@@ -482,8 +497,9 @@ entity "supplement_definition" {
 }
 
 entity "supplement_definition_nutrient" {
-  definition_id : uuid <<FK>>
-  nutrient_id : text <<FK>>
+  * definition_id : uuid <<PK>>
+  * nutrient_id : text <<PK>>
+  --
   amount : real
 }
 
@@ -505,8 +521,9 @@ entity "supplement_dose_event" {
 }
 
 entity "mcp_oidc_adapter" {
-  model : text
-  id : text
+  * model : text <<PK>>
+  * id : text <<PK>>
+  --
   payload : jsonb
   uid : text
   user_code : text
@@ -567,17 +584,19 @@ entity "medication_dose_event" {
 }
 
 entity "account_erasure_checkpoint" {
-  request_id : uuid <<FK>>
-  phase : text
+  * request_id : uuid <<PK>>
+  * phase : text <<PK>>
+  --
   details : jsonb
   completed_at : timestamp
 }
 
 entity "account_erasure_identity_fence" {
+  * identity_kind : text <<PK>>
+  * key_id : text <<PK>>
+  * identity_hash : text <<PK>>
+  --
   request_id : uuid <<FK>>
-  identity_kind : text
-  key_id : text
-  identity_hash : text
   created_at : timestamp
 }
 
@@ -744,8 +763,9 @@ entity "user_password_credential" {
 }
 
 entity "user_settings" {
-  user_id : uuid <<FK>>
-  key : text
+  * user_id : uuid <<PK>>
+  * key : text <<PK>>
+  --
   value : jsonb
   updated_at : timestamp
 }
@@ -983,8 +1003,9 @@ entity "provider_data_deletion_outbox" {
 }
 
 entity "provider_data_generation" {
-  user_id : uuid <<FK>>
-  provider_id : text
+  * user_id : uuid <<PK>>
+  * provider_id : text <<PK>>
+  --
   current_generation : bigint
   updated_at : timestamp
 }
@@ -1057,8 +1078,8 @@ entity "external_client_audit" {
 }
 
 entity "external_client_redirect_uri" {
-  client_id : text <<FK>>
-  redirect_uri : text
+  * client_id : text <<PK>>
+  * redirect_uri : text <<PK>>
 }
 
 entity "external_erasure_ack" {
@@ -1086,10 +1107,11 @@ entity "external_grant" {
 }
 
 entity "external_idempotency_receipt" {
-  grant_id : uuid <<FK>>
-  method : text
-  path : text
-  idempotency_key : text
+  * grant_id : uuid <<PK>>
+  * method : text <<PK>>
+  * path : text <<PK>>
+  * idempotency_key : text <<PK>>
+  --
   request_hash : text
   status : text
   response_json : jsonb
@@ -1098,8 +1120,9 @@ entity "external_idempotency_receipt" {
 }
 
 entity "external_identity_link" {
-  namespace : text
-  subject : text
+  * namespace : text <<PK>>
+  * subject : text <<PK>>
+  --
   user_id : uuid <<FK>>
   opaque_subject : text
   created_at : timestamp
@@ -1143,8 +1166,9 @@ entity "activity_integrity_repair_journal" {
 }
 
 entity "processing_alert_dismissal" {
-  user_id : uuid <<FK>>
-  operation_id : uuid <<FK>>
+  * user_id : uuid <<PK>>
+  * operation_id : uuid <<PK>>
+  --
   dismissed_at : timestamp
 }
 
@@ -1223,10 +1247,11 @@ entity "processing_stage_event" {
 }
 
 entity "human_food_nutrient_decision" {
-  target_id : uuid <<FK>>
+  * target_id : uuid <<PK>>
+  * nutrient_id : text <<PK>>
+  --
   identity_id : uuid <<FK>>
   user_id : uuid <<FK>>
-  nutrient_id : text <<FK>>
   operation : text
   amount : real
 }
@@ -1275,10 +1300,11 @@ user_profile ||--o{ exercise_source
 provider ||--o{ exercise_source
 user_profile ||--o{ oauth_token
 provider ||--o{ oauth_token
-provider_connection ||--o{ oauth_token
+provider_connection ||--o| oauth_token
 user_profile ||--o{ provider
 user_profile ||--o{ provider_connection
 provider ||--o{ provider_connection
+provider_connection ||--o| provider_issue_email
 provider ||--o{ webhook_subscription
 provider_connection ||--o{ webhook_subscription
 provider ||--o{ activity
@@ -1332,15 +1358,15 @@ provider ||--o{ medication_dose_event
 user_profile ||--o{ medication_dose_event
 account_erasure_request ||--o{ account_erasure_checkpoint
 account_erasure_request ||--o{ account_erasure_identity_fence
-account_erasure_request ||--o{ account_erasure_outbox
+account_erasure_request ||--o| account_erasure_outbox
 user_profile ||--o{ auth_account
 user_profile ||--o{ companion_token
 user_profile ||--o{ data_export
 user_profile ||--o{ mcp_access_token
 user_profile ||--o{ session
-user_profile ||--o{ user_billing
+user_profile ||--o| user_billing
 user_profile ||--o{ user_external_effect
-user_profile ||--o{ user_password_credential
+user_profile ||--o| user_password_credential
 user_profile ||--o{ user_settings
 body_region ||--o{ body_region
 user_profile ||--o{ breathwork_session

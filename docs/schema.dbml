@@ -354,6 +354,17 @@ table fitness.provider_connection {
   }
 }
 
+table fitness.provider_issue_email {
+  user_id uuid [not null]
+  provider_id text [not null]
+  sent_at "timestamp with time zone" [not null]
+
+  indexes {
+    (user_id, provider_id) [pk]
+
+  }
+}
+
 table fitness.provider_priority {
   provider_id text [pk, not null]
   priority integer [not null, default: 100]
@@ -2035,6 +2046,8 @@ ref provider_user_id_user_profile_id_fk: fitness.provider.user_id > fitness.user
 ref provider_connection_user_id_user_profile_id_fk: fitness.provider_connection.user_id > fitness.user_profile.id [delete: cascade, update: no action]
 
 ref provider_connection_provider_id_provider_id_fk: fitness.provider_connection.provider_id > fitness.provider.id [delete: cascade, update: no action]
+
+ref provider_issue_email_connection_fkey: fitness.provider_issue_email.(user_id, provider_id) > fitness.provider_connection.(user_id, provider_id) [delete: cascade, update: no action]
 
 ref webhook_subscription_provider_id_provider_id_fk: fitness.webhook_subscription.provider_id > fitness.provider.id [delete: no action, update: no action]
 

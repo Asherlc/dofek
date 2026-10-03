@@ -29099,3 +29099,34 @@ The unit artifact identified `TodayPlanCard.tsx:98` with conditional counts
 A focused test now opens the disclosure with both dates absent and verifies
 that supporting facts remain visible without a fabricated freshness message.
 Coverage thresholds remain unchanged.
+
+## 2026-10-03 — Provider issue email PR blocked by migration and mutation checks
+
+- **Symptoms / impact:** [PR #2869](https://github.com/Asherlc/dofek/pull/2869)
+  failed SQLFluff, Stryker, and one integration shard, blocking CI readiness.
+  No production deployment or user-facing outage occurred.
+- **Evidence / root causes:** The [SQLFluff job](https://github.com/Asherlc/dofek/actions/runs/37144716484/job/111266312528)
+  ran `uv tool run sqlfluff lint` on the new migration and reported
+  `L: 7 | P: 1 | LT02 | Expected indent of 2 spaces`. Its foreign-key
+  continuation lines used four spaces. The [mutation job](https://github.com/Asherlc/dofek/actions/runs/37144716484/job/111266498408)
+  reported `Final mutation score 64.52 under breaking threshold 75` because
+  unit tests did not detect removed recovery writes or exercise missing
+  transaction and account-deletion paths. The [integration shard](https://github.com/Asherlc/dofek/actions/runs/37144716484/job/111266498593)
+  reported `relation "provider_issue_email" already exists`: the historical
+  climbing migration fixture used the current migration folder against an
+  already-current database with history recorded only through migration 0133.
+- **Fix / validation:** Corrected the new migration's indentation, added
+  targeted sync-log cases, and bounded the historical fixture's migration
+  folder through its intended 0135 cutover while preserving archived hashes.
+  The same mutation command killed all 31 active mutants for a 100% score.
+  SQLFluff, 82 focused unit tests, and 51 PostgreSQL/email integration tests
+  passed locally. Root/server/web typechecks passed. Local analytics lint
+  first found an unreachable ClickHouse endpoint; `pnpm compose:up` restored
+  the workspace connection settings and lint passed.
+- **Remaining risk / follow-up:** Hosted validation is tracked on the
+  [PR checks](https://github.com/Asherlc/dofek/pull/2869/checks).
+  The [database README](../src/db/README.md#migrations) now includes the
+  migration SQLFluff command because root `pnpm lint` checks analytics SQL.
+  Keep historical migration fixtures scoped to the versions they model and
+  use mutation reports to cover changed runtime branches. No runtime retry,
+  timeout, or gate relaxation was added for these failures.
