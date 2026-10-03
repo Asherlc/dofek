@@ -326,6 +326,9 @@ export default function TodayScreen() {
                 <Text style={styles.sleepNeedTotal}>
                   {`${sleepNeed.estimateMetadata.valueQualifier} ${formatDurationMinutes(sleepNeed.totalNeedMinutes)}`}
                 </Text>
+                <Text style={styles.sleepNeedMetadataText}>
+                  {sleepNeed.estimateMetadata.limitationLabel}
+                </Text>
                 <TouchableOpacity
                   accessibilityRole="button"
                   accessibilityState={{ expanded: sleepCalculationOpen }}
@@ -361,9 +364,6 @@ export default function TodayScreen() {
                         </Text>
                       </View>
                     </View>
-                    <Text style={styles.sleepNeedMetadataText}>
-                      {sleepNeed.estimateMetadata.limitationLabel}
-                    </Text>
                     <Text style={styles.sleepNeedMetadataText}>
                       {sleepNeed.estimateMetadata.methodLabel}
                     </Text>

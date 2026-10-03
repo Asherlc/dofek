@@ -137,7 +137,7 @@ describe("SleepNeedCard", () => {
       screen.getByText(
         "This is an estimate, not a sleep recommendation. Its uncertainty has not been established.",
       ),
-    ).toBeDefined();
+    ).toBeVisible();
     expect(screen.queryByText(/recommended/)).toBeNull();
     expect(screen.getByRole("link", { name: "View sleep source data" }).getAttribute("href")).toBe(
       "#sleep-data-sources",
