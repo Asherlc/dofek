@@ -10,8 +10,9 @@ const forge: {
   pki: { publicKeyFromPem(pem: string): { verify(digest: string, signature: string): boolean } };
 } = cliRequire("node-forge");
 
+const modulusLength = 2048;
 const { privateKey, publicKey } = generateKeyPairSync("rsa", {
-  modulusLength: 1024,
+  modulusLength,
   publicExponent: 3,
 });
 const verifier = forge.pki.publicKeyFromPem(
@@ -23,7 +24,7 @@ function verifyDigestInfo(prefix: string) {
   const digestInfo = Buffer.concat([Buffer.from(prefix, "hex"), digest]);
   const encoded = Buffer.concat([
     Buffer.from([0, 1]),
-    Buffer.alloc(128 - digestInfo.length - 3, 0xff),
+    Buffer.alloc(modulusLength / 8 - digestInfo.length - 3, 0xff),
     Buffer.from([0]),
     digestInfo,
   ]);
