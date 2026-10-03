@@ -29060,3 +29060,34 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Status / follow-up:** Unresolved. Verify published fixed releases before
   updating the lockfile and rerunning the audit. No advisory suppression,
   dependency workaround, retry, or timeout was added.
+
+### Approved remediation later on October 2
+
+The user approved backporting the upstream fixes and excluding only the two
+patched advisory IDs from the version-based audit. The source changes from
+[forge PR #1152](https://github.com/digitalbazaar/forge/pull/1152) and
+[braces PR #72](https://github.com/micromatch/braces/pull/72) are now registered
+as pnpm patches. Both executable security regressions failed against the
+unpatched packages, then passed after installation with the patches.
+`pnpm audit --prod --audit-level=high` exited zero with two approved exceptions;
+the existing lower-severity findings remain reported. Frozen-lockfile
+installation passed. CI now runs the regressions before auditing so the
+exceptions cannot hide a missing fix in the exercised Expo/Metro dependencies.
+
+No retry or timeout was added. Hosted validation is tracked on
+[PR #2866](https://github.com/Asherlc/dofek/pull/2866/checks). See
+[dependency security patches](dependency-security-patches.md) for pinned
+upstream provenance, regression coverage, and the requirement to remove each
+patch and exception together when adopting a published fixed release.
+
+The same CI run exposed two cleanup-specific validation gaps. The
+[web E2E job](https://github.com/Asherlc/dofek/actions/runs/37095698639/job/111125421102)
+failed with `Expected to find content: 'Activity log' but never did` in
+`review-stack.cy.ts:22`; its assertion referenced the intentionally removed
+duplicate heading. It now checks the page's `Activities` heading and retains
+the canonical activity-link/detail checks. [Codecov](https://app.codecov.io/gh/Asherlc/dofek/pull/2866)
+reported 88.88% patch coverage because the changed Units section was never
+rendered by Settings tests. A search-navigation test now opens Goals & Models
+and verifies the Units controls in the correct section. The focused Settings
+suite passed 27 tests. Include browser specs and category navigation in future
+copy-cleanup validation; changing visible text can invalidate existing selectors.

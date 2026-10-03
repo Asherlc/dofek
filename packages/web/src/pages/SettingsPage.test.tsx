@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { normalizeSettingsCategory } from "./settingsCategories.ts";
@@ -104,6 +104,9 @@ vi.mock("../components/AccountErasurePanel.tsx", () => ({
 }));
 vi.mock("../components/UnitSystemToggle.tsx", () => ({
   UnitSystemToggle: () => <div>UnitSystemToggle</div>,
+}));
+vi.mock("../components/ClimbingGradeSystemToggle.tsx", () => ({
+  ClimbingGradeSystemToggle: () => <div>ClimbingGradeSystemToggle</div>,
 }));
 
 vi.mock("../lib/dashboardLayoutContext.ts", () => ({
@@ -252,6 +255,24 @@ describe("SettingsPage categories", () => {
     expect(screen.getByRole("tab", { name: "Notifications" })).toBeTruthy();
     expect(screen.queryByRole("tab", { name: "Account" })).toBeNull();
     expect(screen.getByText("Medication Reminders")).toBeTruthy();
+  });
+
+  it("finds the unit controls in Goals & Models from a settings search", async () => {
+    const { SettingsPage } = await import("./SettingsPage.tsx");
+    render(<SettingsPage />);
+
+    fireEvent.change(screen.getByRole("searchbox", { name: "Search settings" }), {
+      target: { value: "units" },
+    });
+
+    expect(screen.getByRole("tab", { name: "Goals & Models" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    expect(
+      within(screen.getByRole("region", { name: "Units" })).getByText("UnitSystemToggle"),
+    ).toBeTruthy();
+    expect(screen.queryByRole("region", { name: "Password" })).toBeNull();
   });
 
   it("finds Data Export from Privacy/Export search terms", async () => {

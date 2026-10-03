@@ -2,6 +2,11 @@
 
 Utility and maintenance scripts for development, infrastructure, and reverse engineering.
 
+`pnpm check:dependency-security` runs `check-node-forge-security.ts` and
+`check-braces-security.ts` against the installed Expo/Metro dependencies before
+the CI audit. See [dependency security patches](../docs/dependency-security-patches.md)
+for the upstream fixes, regression coverage, and scoped advisory exceptions.
+
 ## Database & Seeding
 
 - `seed-dev-db.ts`: Seeds a local development or review-app database with deterministic reviewer data.

@@ -40,6 +40,10 @@ audit:
   ignore:
     - GHSA-w3rx-r6r6-pgpr
     - GHSA-5p2g-fcmc-qvqq
+    # Backported fixes; CI runs check:dependency-security before auditing.
+    # See docs/dependency-security-patches.md for source and validation.
+    - GHSA-86w9-cpqp-85rv
+    - GHSA-vfj7-8cjw-p6xm
 
 overrides:
   "@expo/dom-webview": 55.0.5
@@ -97,7 +101,9 @@ patchedDependencies:
   "@expo/plist@0.8.1": patches/@expo__plist@0.8.1.patch
   "@tanstack/router-generator@1.167.17": patches/@tanstack__router-generator@1.167.17.patch
   "@tanstack/router-generator@1.167.18": patches/@tanstack__router-generator@1.167.18.patch
+  braces@3.0.3: patches/braces@3.0.3.patch
   expo-apple-authentication@57.0.2: patches/expo-apple-authentication@57.0.2.patch
+  node-forge@1.4.0: patches/node-forge@1.4.0.patch
 
 allowBuilds:
   "@sentry/cli": true
