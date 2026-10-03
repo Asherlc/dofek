@@ -29332,3 +29332,29 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Follow-up:** Verify the emitted hostname before later browser work and
   retain tunnel errors separately from server health evidence. Quick tunnels
   are documented by [Cloudflare](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/do-more-with-tunnels/trycloudflare/).
+
+## 2026-10-03 — Approved broker pause restored validation memory headroom
+
+- **Cause / scope:** Docker Desktop kernel records proved host-wide OOM in the
+  shared 8 GiB VM. Container limits did not establish a container-local failure.
+  Sixteen broker processes held approximately 3 GiB RSS during the captured
+  incidents; RSS can include shared pages and is not unique-memory accounting.
+- **Operator mitigation:** With explicit approval, stopped exactly fourteen
+  other-workspace Redpanda containers, preserving containers, volumes and data.
+  Each stopped with exit 0. This workspace's services remained healthy; guest
+  MemAvailable rose to 3,987,420 KiB before the next validation window.
+- **Validation:** The combined dirty-key, pace and heart-rate model suites passed
+  32/32 on the default engine; the new heart-rate model passed 9/9 on production
+  ClickHouse 26.6 with unchanged limits and deadlines. Its isolated engine peaked
+  at 1,142,071,296 bytes sampled cgroup memory, with zero observed OOM kills;
+  guest MemAvailable stayed above 3,143,188 KiB. A focused repository case also
+  executed the corrected current-schema fixture successfully. No timeout,
+  retry, sleep or query-limit mitigation was introduced.
+- **Restoration / remaining risk:** Restarted exactly the fourteen approved
+  containers and verified every one running and healthy. Default ClickHouse
+  retained restart count 2/start 17:14:12 UTC; E2E ClickHouse retained count 0.
+  With all workspaces restored, MemAvailable was 427,824 KiB and free swap 48 KiB,
+  so further database validation requires another approved bounded pause window.
+  Production was unchanged. The earlier native elapsed-time gap and Task 3
+  restart attribution remain unresolved. Keep memory-limit interpretation tied
+  to kernel evidence and [Docker's resource documentation](https://docs.docker.com/engine/containers/resource_constraints/).
