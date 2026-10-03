@@ -13,6 +13,10 @@ This directory contains the Drizzle ORM schema, migrations, and database connect
 - `user_profile`: User profiles and settings.
 - `provider`: Global catalog of registered data provider types.
 - `provider_connection`: Authoritative per-user provider connections.
+- `provider_issue_email`: Accepted issue-email delivery for each connection. The
+  [notification query](./provider-issue-notification.ts) keeps an undelivered
+  authorization warning eligible across later errors until a successful overall
+  sync, and excludes history from before the current connection was created.
 - `oauth_token`: OAuth credentials for provider APIs.
 - `activity`: Cardio/endurance workout sessions.
 - `daily_metrics`: Aggregated daily health data (HRV, Resting HR, steps).

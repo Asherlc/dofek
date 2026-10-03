@@ -26,7 +26,7 @@ export async function notifyProviderSyncIssue(
     const [notification] = await executeWithSchema(
       transaction,
       notificationRowSchema,
-      sql`SELECT profile.email, provider.name AS provider_name, latest.auth_failure_reason
+      sql`SELECT profile.email, provider.name AS provider_name, auth_issue.auth_failure_reason
           FROM fitness.provider_connection connection
           JOIN fitness.user_profile profile ON profile.id = connection.user_id
           JOIN fitness.provider provider ON provider.id = connection.provider_id
@@ -34,7 +34,7 @@ export async function notifyProviderSyncIssue(
             ON delivery.user_id = connection.user_id
             AND delivery.provider_id = connection.provider_id
           CROSS JOIN LATERAL (
-            SELECT status, auth_failure_reason, synced_at
+            SELECT status
             FROM fitness.sync_log
             WHERE user_id = connection.user_id
               AND provider_id = connection.provider_id
@@ -54,13 +54,26 @@ export async function notifyProviderSyncIssue(
             ORDER BY synced_at DESC, id DESC
             LIMIT 1
           ) recovery ON true
+          LEFT JOIN LATERAL (
+            SELECT auth_failure_reason
+            FROM fitness.sync_log
+            WHERE user_id = connection.user_id
+              AND provider_id = connection.provider_id
+              AND data_type = 'sync'
+              AND status = 'error'
+              AND auth_failure_reason IS NOT NULL
+              AND synced_at >= connection.created_at
+              AND (recovery.synced_at IS NULL OR synced_at > recovery.synced_at)
+            ORDER BY synced_at DESC, id DESC
+            LIMIT 1
+          ) auth_issue ON true
           WHERE connection.user_id = ${userId}
             AND connection.provider_id = ${providerId}
             AND profile.email IS NOT NULL
             AND latest.status = 'error'
             AND delivery.sent_at IS NULL
             AND (
-              latest.auth_failure_reason IS NOT NULL
+              auth_issue.auth_failure_reason IS NOT NULL
               OR (
                 SELECT COUNT(*) FROM (
                   SELECT id

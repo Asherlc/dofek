@@ -111,11 +111,19 @@ export function parseColumnLine(line: string): Column | null {
 
 /** Parse columns from a DBML table body (strips indexes blocks first) */
 export function parseColumns(body: string): Column[] {
+  const compositePrimaryKey =
+    body
+      .match(/\(([^)]+)\)\s+\[pk\]/)?.[1]
+      .split(",")
+      .map((name) => name.trim()) ?? [];
   const columnsSection = body.replace(/indexes\s*\{[^}]*\}/gs, "");
   const columns: Column[] = [];
   for (const line of columnsSection.split("\n")) {
     const col = parseColumnLine(line);
-    if (col) columns.push(col);
+    if (col) {
+      col.pk ||= compositePrimaryKey.includes(col.name);
+      columns.push(col);
+    }
   }
   return columns;
 }
@@ -177,7 +185,15 @@ export function buildPlantUml(tables: Table[], refs: Ref[]): string {
   }
 
   for (const ref of refs) {
-    lines.push(`${ref.toTable} ||--o{ ${ref.fromTable}`);
+    const primaryKeyColumns =
+      tables.find((table) => table.name === ref.fromTable)?.columns.filter((column) => column.pk) ??
+      [];
+    const cardinality =
+      primaryKeyColumns.length > 0 &&
+      primaryKeyColumns.every((column) => ref.fromCols.includes(column.name))
+        ? "o|"
+        : "o{";
+    lines.push(`${ref.toTable} ||--${cardinality} ${ref.fromTable}`);
   }
 
   lines.push("");

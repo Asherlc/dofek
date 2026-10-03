@@ -202,6 +202,35 @@ describe("parseColumns", () => {
 });
 
 describe("parseTables", () => {
+  it("preserves a composite primary key when rendering connection cardinality", () => {
+    const dbml = `table fitness.provider_connection {
+  user_id uuid [not null]
+  provider_id text [not null]
+  indexes {
+    (user_id, provider_id) [pk]
+  }
+}
+table fitness.provider_issue_email {
+  user_id uuid [not null]
+  provider_id text [not null]
+  sent_at timestamp [not null]
+  indexes {
+    (user_id, provider_id) [pk]
+  }
+}
+ref connection_fk: fitness.provider_issue_email.(user_id, provider_id) > fitness.provider_connection.(user_id, provider_id)`;
+    const tables = parseTables(dbml);
+    const refs = parseRefs(dbml, tables);
+
+    expect(tables[1].columns.filter((column) => column.pk).map((column) => column.name)).toEqual([
+      "user_id",
+      "provider_id",
+    ]);
+    expect(buildPlantUml(tables, refs)).toContain(
+      "provider_connection ||--o| provider_issue_email",
+    );
+  });
+
   it("parses tables from DBML", () => {
     const tables = parseTables(SINGLE_TABLE_DBML);
     expect(tables).toHaveLength(1);
@@ -273,6 +302,54 @@ describe("parseRefs", () => {
 });
 
 describe("buildPlantUml", () => {
+  it.each([
+    { primaryKeys: ["owner_id"], foreignKeys: ["owner_id"], cardinality: "o|" },
+    { primaryKeys: ["owner_id"], foreignKeys: ["owner_id", "scope"], cardinality: "o|" },
+    { primaryKeys: ["owner_id", "scope"], foreignKeys: ["owner_id"], cardinality: "o{" },
+    { primaryKeys: [], foreignKeys: ["owner_id"], cardinality: "o{" },
+  ])(
+    "renders $cardinality for PK $primaryKeys and FK $foreignKeys",
+    ({ primaryKeys, foreignKeys, cardinality }) => {
+      const tables: Table[] = [
+        {
+          name: "child",
+          columns: ["owner_id", "scope"].map((name) => ({
+            name,
+            type: "text",
+            pk: primaryKeys.includes(name),
+            fk: foreignKeys.includes(name),
+          })),
+        },
+      ];
+      expect(
+        buildPlantUml(tables, [
+          {
+            fromTable: "child",
+            fromCols: foreignKeys,
+            toTable: "parent",
+            toCols: foreignKeys,
+          },
+        ]),
+      ).toContain(`parent ||--${cardinality} child`);
+    },
+  );
+
+  it("renders a many relationship when the source table is unknown", () => {
+    expect(
+      buildPlantUml(
+        [],
+        [
+          {
+            fromTable: "child",
+            fromCols: ["owner_id"],
+            toTable: "parent",
+            toCols: ["id"],
+          },
+        ],
+      ),
+    ).toContain("parent ||--o{ child");
+  });
+
   it("generates valid PlantUML with PK/FK markers", () => {
     const tables: Table[] = [
       {

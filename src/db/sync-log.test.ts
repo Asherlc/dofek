@@ -37,6 +37,7 @@ describe("logSync", () => {
       expect.objectContaining({ authFailureReason: "session_expired", status: "error" }),
     );
     expect(notifyProviderSyncIssue).toHaveBeenCalledWith(db.db, "user-123", "whoop");
+    expect(db.spies.values).toHaveBeenCalledBefore(notifyProviderSyncIssue);
     expect(db.spies.execute).not.toHaveBeenCalled();
   });
 

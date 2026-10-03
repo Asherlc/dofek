@@ -151,6 +151,9 @@ for the upstream fixes, regression coverage, and scoped advisory exceptions.
 - `generate-schema-diagram.ts`: Generates DBML and PlantUML diagrams from the Drizzle schema modules (`src/db/schema/`).
   - Uses `drizzle-dbml-generator` and custom parsing logic to build a high-quality ERD.
   - Outputs: `docs/schema.dbml`, `docs/schema.puml`.
+  - Reads [DBML composite primary keys](https://dbml.dbdiagram.io/docs/#index-definition)
+    and renders a foreign key containing every primary-key column as zero-or-one,
+    using [PlantUML relationship notation](https://plantuml.com/ie-diagram).
 - `no-suppressions.ts`: Scans every tracked TypeScript file and rejects lint,
   type-check, coverage, or mutation-test suppression comments. Generated TanStack
   route trees are the only exclusion.

@@ -318,6 +318,113 @@ describe("provider issue email delivery", () => {
     expect(await context.db.select().from(syncLog)).toHaveLength(3);
   });
 
+  it("retries an unaccepted authorization warning after a different manual sync error", async () => {
+    server.use(
+      http.post(
+        BREVO_EMAIL_URL,
+        async ({ request }) => {
+          emailRequests.push(await request.json());
+          return HttpResponse.json({ message: "Email service unavailable" }, { status: 503 });
+        },
+        { once: true },
+      ),
+    );
+    await recordFailure({ origin: "manual", authFailureReason: "session_expired" });
+    await recordFailure({ origin: "manual" });
+    await recordFailure({ origin: "manual" });
+
+    expect(emailRequests).toHaveLength(2);
+    expect(emailRequests[1]).toMatchObject({
+      textContent: expect.stringContaining("Reconnect Test Provider"),
+    });
+  });
+
+  it.each(["manual", "scheduled"] as const)(
+    "clears a pending authorization warning after a successful %s sync",
+    async (origin) => {
+      await context.db
+        .update(userProfile)
+        .set({ email: null })
+        .where(eq(userProfile.id, TEST_USER_ID));
+      await recordFailure({ origin: "manual", authFailureReason: "session_expired" });
+      await recordRecovery(origin);
+      await context.db
+        .update(userProfile)
+        .set({ email: "user@example.test" })
+        .where(eq(userProfile.id, TEST_USER_ID));
+      await recordFailure({ origin: "manual" });
+      expect(emailRequests).toHaveLength(0);
+
+      await recordFailure();
+      await recordFailure();
+      expect(emailRequests).toHaveLength(1);
+      expect(emailRequests[0]).toMatchObject({
+        textContent: expect.stringContaining("automatic syncs"),
+      });
+    },
+  );
+
+  it("does not carry a pending authorization warning into a new connection", async () => {
+    await context.db
+      .update(userProfile)
+      .set({ email: null })
+      .where(eq(userProfile.id, TEST_USER_ID));
+    await recordFailure({ origin: "manual", authFailureReason: "session_expired" });
+    await context.db.delete(providerConnection);
+    await ensureProvider(context.db, "issue-provider", "Test Provider", undefined, TEST_USER_ID);
+    await context.db
+      .update(userProfile)
+      .set({ email: "user@example.test" })
+      .where(eq(userProfile.id, TEST_USER_ID));
+
+    await recordFailure({ origin: "manual" });
+    expect(emailRequests).toHaveLength(0);
+    await recordFailure({ origin: "manual", authFailureReason: "session_expired" });
+    expect(emailRequests).toHaveLength(1);
+  });
+
+  it("does not treat an individual data-step auth error as an overall authorization issue", async () => {
+    await recordFailure({ dataType: "sleep", authFailureReason: "session_expired" });
+    await recordFailure({ origin: "manual" });
+    expect(emailRequests).toHaveLength(0);
+
+    await recordFailure();
+    await recordFailure();
+    expect(emailRequests).toHaveLength(1);
+    expect(emailRequests[0]).toMatchObject({
+      textContent: expect.stringContaining("automatic syncs"),
+    });
+  });
+
+  it("retries a rejected repeated-failure email after a degraded sync and another failure", async () => {
+    server.use(
+      http.post(
+        BREVO_EMAIL_URL,
+        async ({ request }) => {
+          emailRequests.push(await request.json());
+          return HttpResponse.json({ message: "Email service unavailable" }, { status: 503 });
+        },
+        { once: true },
+      ),
+    );
+    await recordFailure();
+    await recordFailure();
+    await logSync(context.db, {
+      providerId: "issue-provider",
+      userId: TEST_USER_ID,
+      dataType: "sync",
+      status: "degraded",
+      origin: "scheduled",
+    });
+    await recordFailure();
+    await recordFailure();
+
+    expect(emailRequests).toHaveLength(2);
+    expect(emailRequests[1]).toMatchObject({
+      textContent: expect.stringContaining("automatic syncs"),
+    });
+  });
+
   it("waits until a recipient email is available", async () => {
     await context.db
       .update(userProfile)
