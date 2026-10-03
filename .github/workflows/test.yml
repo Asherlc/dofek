@@ -44,6 +44,8 @@ jobs:
           ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || '' }}
           persist-credentials: false
       - uses: ./.github/actions/setup-node-pnpm
+      - name: Verify dependency security patches
+        run: pnpm check:dependency-security
       - run: pnpm audit --prod --audit-level=high --ignore-registry-errors
 
   license-check:

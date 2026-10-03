@@ -29039,3 +29039,63 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   beside the unit-test tiers in [docs/testing.md](testing.md#integration-dependencies).
   The existing [Compose environment script](../scripts/compose-env.ts) and
   [testing runbook](testing.md) remain the canonical local setup references.
+
+## 2026-10-02 — UI cleanup PR blocked by dependency audit
+
+- **Symptoms / impact:** [PR #2866](https://github.com/Asherlc/dofek/pull/2866)
+  failed Dependency Audit, blocking CI readiness. No deployment was performed.
+- **Evidence / root cause:** The [audit job](https://github.com/Asherlc/dofek/actions/runs/37095433359/job/111124399964)
+  ran `pnpm audit --prod --audit-level=high --ignore-registry-errors` and reported
+  high-severity findings for `node-forge@1.4.0` and `braces@3.0.3`, then
+  `Process completed with exit code 1`. The branch lockfile and workspace
+  dependency configuration matched `origin/main`. See the
+  [node-forge advisory](https://github.com/advisories/GHSA-86w9-cpqp-85rv) and
+  [braces advisory](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm).
+- **Investigation / validation:** At 04:09 UTC on October 3, explicit
+  `pnpm view node-forge@1.4.1 version --registry=https://registry.npmjs.org`
+  and the equivalent lookup for `braces@3.0.4` both returned npm E404.
+  Those versions were suggested by the audit output but were unavailable.
+  Local lint, root/server/web/mobile typechecks, and 19,397 unit/mobile tests
+  passed, with 20 tests skipped.
+- **Status / follow-up:** Unresolved. Verify published fixed releases before
+  updating the lockfile and rerunning the audit. No advisory suppression,
+  dependency workaround, retry, or timeout was added.
+
+### Approved remediation later on October 2
+
+The user approved backporting the upstream fixes and excluding only the two
+patched advisory IDs from the version-based audit. The source changes from
+[forge PR #1152](https://github.com/digitalbazaar/forge/pull/1152) and
+[braces PR #72](https://github.com/micromatch/braces/pull/72) are now registered
+as pnpm patches. Both executable security regressions failed against the
+unpatched packages, then passed after installation with the patches.
+`pnpm audit --prod --audit-level=high` exited zero with two approved exceptions;
+the existing lower-severity findings remain reported. Frozen-lockfile
+installation passed. CI now runs the regressions before auditing so the
+exceptions cannot hide a missing fix in the exercised Expo/Metro dependencies.
+
+No retry or timeout was added. Hosted validation is tracked on
+[PR #2866](https://github.com/Asherlc/dofek/pull/2866/checks). See
+[dependency security patches](dependency-security-patches.md) for pinned
+upstream provenance, regression coverage, and the requirement to remove each
+patch and exception together when adopting a published fixed release.
+
+The same CI run exposed two cleanup-specific validation gaps. The
+[web E2E job](https://github.com/Asherlc/dofek/actions/runs/37095698639/job/111125421102)
+failed with `Expected to find content: 'Activity log' but never did` in
+`review-stack.cy.ts:22`; its assertion referenced the intentionally removed
+duplicate heading. It now checks the page's `Activities` heading and retains
+the canonical activity-link/detail checks. [Codecov](https://app.codecov.io/gh/Asherlc/dofek/pull/2866)
+reported 88.88% patch coverage because the changed Units section was never
+rendered by Settings tests. A search-navigation test now opens Goals & Models
+and verifies the Units controls in the correct section. The focused Settings
+suite passed 27 tests. Include browser specs and category navigation in future
+copy-cleanup validation; changing visible text can invalidate existing selectors.
+
+The follow-up [combined coverage job](https://github.com/Asherlc/dofek/actions/runs/37096803288/job/111130879461)
+passed global thresholds but failed `diff-cover --fail-under=80` at 75%.
+The unit artifact identified `TodayPlanCard.tsx:98` with conditional counts
+`[4, 0]`: the evidence disclosure was tested with freshness dates only.
+A focused test now opens the disclosure with both dates absent and verifies
+that supporting facts remain visible without a fabricated freshness message.
+Coverage thresholds remain unchanged.
