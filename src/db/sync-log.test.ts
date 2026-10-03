@@ -1,6 +1,8 @@
 import { PgDialect } from "drizzle-orm/pg-core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createMockDatabase } from "../providers/test-helpers.ts";
+import { AccountErasureUserFencedError } from "./account-erasure.ts";
+import type { SyncDatabase } from "./index.ts";
 import type { SyncLogEntry } from "./sync-log.ts";
 import { logSync, PartialSyncError, withSyncLog } from "./sync-log.ts";
 
@@ -35,6 +37,88 @@ describe("logSync", () => {
       expect.objectContaining({ authFailureReason: "session_expired", status: "error" }),
     );
     expect(notifyProviderSyncIssue).toHaveBeenCalledWith(db.db, "user-123", "whoop");
+    expect(db.spies.execute).not.toHaveBeenCalled();
+  });
+
+  it("records a successful overall recovery without sending a failure notification", async () => {
+    await logSync(db.db, {
+      providerId: "whoop",
+      userId: "user-123",
+      dataType: "sync",
+      status: "success",
+      origin: "manual",
+      recordCount: 12,
+    });
+
+    expect(db.spies.values).toHaveBeenCalledWith(
+      expect.objectContaining({
+        providerId: "whoop",
+        userId: "user-123",
+        dataType: "sync",
+        status: "success",
+        origin: "manual",
+        recordCount: 12,
+      }),
+    );
+    expect(notifyProviderSyncIssue).not.toHaveBeenCalled();
+  });
+
+  it("propagates a recovery-state write failure instead of reporting successful recovery", async () => {
+    const writeError = new Error("Could not clear the provider issue email marker");
+    db.spies.execute.mockResolvedValueOnce([]).mockRejectedValueOnce(writeError);
+
+    await expect(
+      logSync(db.db, {
+        providerId: "whoop",
+        userId: "user-123",
+        dataType: "sync",
+        status: "success",
+        origin: "manual",
+      }),
+    ).rejects.toBe(writeError);
+    expect(notifyProviderSyncIssue).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { status: "success" as const, operation: "recovery logging" },
+    { status: "error" as const, operation: "email delivery" },
+  ])(
+    "fails explicitly when $operation has no transactional database",
+    async ({ status, operation }) => {
+      const nonTransactionalDatabase: SyncDatabase = {
+        select: db.db.select,
+        insert: db.db.insert,
+        delete: db.db.delete,
+        execute: db.db.execute,
+      };
+
+      await expect(
+        logSync(nonTransactionalDatabase, {
+          providerId: "whoop",
+          userId: "user-123",
+          dataType: "sync",
+          status,
+          origin: "manual",
+        }),
+      ).rejects.toThrow(`Provider issue ${operation} requires a transactional database`);
+      expect(notifyProviderSyncIssue).not.toHaveBeenCalled();
+    },
+  );
+
+  it("stops notification delivery when account deletion fences the user", async () => {
+    notifyProviderSyncIssue.mockRejectedValueOnce(new AccountErasureUserFencedError());
+
+    await expect(
+      logSync(db.db, {
+        providerId: "whoop",
+        userId: "user-123",
+        dataType: "sync",
+        status: "error",
+        origin: "manual",
+      }),
+    ).resolves.toBeUndefined();
+
+    expect(captureException).not.toHaveBeenCalled();
   });
 
   it("reports email delivery errors to Sentry while preserving the recorded sync outcome", async () => {

@@ -46,6 +46,9 @@ This directory contains the Drizzle ORM schema, migrations, and database connect
 - ClickHouse migrations live in `clickhouse-migrations/` as one TypeScript module per migration, ordered by `clickhouse-migrations/registry.ts`.
 - Deploy migrations are for schema changes only. Historical backfills and full read-model rebuilds should run as explicit resumable scripts or jobs, not inside the deploy migration path.
 - Run `pnpm analytics:build`, `pnpm lint:migrations`, `pnpm lint:analytics-sql`, and `pnpm lint:analytics-policy` before pushing migration or ClickHouse analytics changes.
+- For a new Postgres migration, also run `uv tool run sqlfluff lint drizzle/<migration>.sql`.
+  The [SQLFluff CI job](../../.github/workflows/test.yml) lints added migration files;
+  the root [`pnpm lint` command](../../package.json) runs analytics SQL lint instead.
 
 ## Climbing context and attempt counts
 
