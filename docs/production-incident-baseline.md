@@ -29358,3 +29358,182 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   Production was unchanged. The earlier native elapsed-time gap and Task 3
   restart attribution remain unresolved. Keep memory-limit interpretation tied
   to kernel evidence and [Docker's resource documentation](https://docs.docker.com/engine/containers/resource_constraints/).
+
+## 2026-10-02 — UI cleanup PR blocked by dependency audit
+
+- **Symptoms / impact:** [PR #2866](https://github.com/Asherlc/dofek/pull/2866)
+  failed Dependency Audit, blocking CI readiness. No deployment was performed.
+- **Evidence / root cause:** The [audit job](https://github.com/Asherlc/dofek/actions/runs/37095433359/job/111124399964)
+  ran `pnpm audit --prod --audit-level=high --ignore-registry-errors` and reported
+  high-severity findings for `node-forge@1.4.0` and `braces@3.0.3`, then
+  `Process completed with exit code 1`. The branch lockfile and workspace
+  dependency configuration matched `origin/main`. See the
+  [node-forge advisory](https://github.com/advisories/GHSA-86w9-cpqp-85rv) and
+  [braces advisory](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm).
+- **Investigation / validation:** At 04:09 UTC on October 3, explicit
+  `pnpm view node-forge@1.4.1 version --registry=https://registry.npmjs.org`
+  and the equivalent lookup for `braces@3.0.4` both returned npm E404.
+  Those versions were suggested by the audit output but were unavailable.
+  Local lint, root/server/web/mobile typechecks, and 19,397 unit/mobile tests
+  passed, with 20 tests skipped.
+- **Status / follow-up:** Unresolved. Verify published fixed releases before
+  updating the lockfile and rerunning the audit. No advisory suppression,
+  dependency workaround, retry, or timeout was added.
+
+### Approved remediation later on October 2
+
+The user approved backporting the upstream fixes and excluding only the two
+patched advisory IDs from the version-based audit. The source changes from
+[forge PR #1152](https://github.com/digitalbazaar/forge/pull/1152) and
+[braces PR #72](https://github.com/micromatch/braces/pull/72) are now registered
+as pnpm patches. Both executable security regressions failed against the
+unpatched packages, then passed after installation with the patches.
+`pnpm audit --prod --audit-level=high` exited zero with two approved exceptions;
+the existing lower-severity findings remain reported. Frozen-lockfile
+installation passed. CI now runs the regressions before auditing so the
+exceptions cannot hide a missing fix in the exercised Expo/Metro dependencies.
+
+No retry or timeout was added. Hosted validation is tracked on
+[PR #2866](https://github.com/Asherlc/dofek/pull/2866/checks). See
+[dependency security patches](dependency-security-patches.md) for pinned
+upstream provenance, regression coverage, and the requirement to remove each
+patch and exception together when adopting a published fixed release.
+
+The same CI run exposed two cleanup-specific validation gaps. The
+[web E2E job](https://github.com/Asherlc/dofek/actions/runs/37095698639/job/111125421102)
+failed with `Expected to find content: 'Activity log' but never did` in
+`review-stack.cy.ts:22`; its assertion referenced the intentionally removed
+duplicate heading. It now checks the page's `Activities` heading and retains
+the canonical activity-link/detail checks. [Codecov](https://app.codecov.io/gh/Asherlc/dofek/pull/2866)
+reported 88.88% patch coverage because the changed Units section was never
+rendered by Settings tests. A search-navigation test now opens Goals & Models
+and verifies the Units controls in the correct section. The focused Settings
+suite passed 27 tests. Include browser specs and category navigation in future
+copy-cleanup validation; changing visible text can invalidate existing selectors.
+
+The follow-up [combined coverage job](https://github.com/Asherlc/dofek/actions/runs/37096803288/job/111130879461)
+passed global thresholds but failed `diff-cover --fail-under=80` at 75%.
+The unit artifact identified `TodayPlanCard.tsx:98` with conditional counts
+`[4, 0]`: the evidence disclosure was tested with freshness dates only.
+A focused test now opens the disclosure with both dates absent and verifies
+that supporting facts remain visible without a fabricated freshness message.
+Coverage thresholds remain unchanged.
+
+## 2026-10-03 — Main integration found an unapplied local dependency patch
+
+- **Symptoms / impact:** The approved loading-audit/main integration passed a
+  frozen dependency installation, but `pnpm check:dependency-security` failed
+  before commit. This blocked local validation; production was unchanged.
+- **Evidence / root cause:** The first fatal line was
+  `AssertionError [ERR_ASSERTION]: Missing expected exception.` at
+  `scripts/check-braces-security.ts:42`. Metro resolved the expected braces
+  patch-hash directory, but all five patched implementation files contained
+  their unpatched source. The checked-in patch applied cleanly in a dry run.
+  `pnpm store status` also reported `ERR_PNPM_MODIFIED_DEPENDENCY` for six other
+  patched artifacts. Why the inconsistent local installation was created is
+  unknown; this evidence does not establish a source-patch defect.
+- **Direct fix / validation:** With controller approval, ran
+  `pnpm install --frozen-lockfile --force`. The installed braces files then
+  contained the expected depth bounds, and both unchanged node-forge and braces
+  security regressions passed. The lockfile, patches, advisory exceptions and
+  enforcement remained unchanged. pnpm documents
+  [forced dependency repair](https://pnpm.io/cli/install#--force) and
+  [store integrity checks](https://pnpm.io/cli/store#status).
+- **Remaining risk / retrospective:** A successful frozen install alone did
+  not prove the security patch was present in an existing local installation.
+  Keep the installed-package regression gate; consider documenting names-only
+  package-resolution and source-integrity diagnosis before local artifact repair.
+  No retries, deadlines, memory limits or runtime workarounds were added.
+
+## 2026-10-03 — Restored shared brokers preceded a global E2E ClickHouse OOM
+
+- **Symptoms / impact:** Before Task 5A's E2E rebuild, the existing E2E
+  ClickHouse was exited and its server was unhealthy. The browser validation
+  stack was unavailable; production was unchanged.
+- **Evidence / root cause:** Docker recorded exit 137 and `OOMKilled=true` for
+  E2E ClickHouse container `844275e532c9` at 18:06:24.497 UTC. Docker Desktop
+  kernel log `init.log.20261003-112043.635`, lines 3193–3194, records
+  `constraint=CONSTRAINT_NONE`, `global_oom` and that exact ClickHouse victim
+  at 18:06:24.453 UTC, with 416,588 KiB anonymous RSS. This confirms guest-wide
+  exhaustion after the fourteen approved brokers had been restored; it does
+  not identify the triggering workload or prove a ClickHouse cgroup-limit OOM.
+- **Recovery / remaining risk:** The controller reopened the approved bounded
+  fourteen-broker pause, verified guest headroom, and authorized the canonical
+  current-workspace E2E rebuild/recovery for the changed browser spec. Both image
+  builds were subsequently blocked by the documented Docker disk exhaustion;
+  after the user-approved disk increase, the unchanged canonical build and
+  merged-runtime review-stack spec passed and E2E services were healthy. After
+  failed-build cleanup, the controller restored and individually verified all
+  fourteen approved brokers running and healthy. No containers or volumes were
+  deleted.
+  Preserve the kernel distinction and follow
+  [Docker memory-resource guidance](https://docs.docker.com/engine/containers/resource_constraints/).
+  No engine limits, retries, deadlines or production settings were changed.
+
+## 2026-10-03 — Canonical merged-source E2E image build exhausted Docker disk
+
+- **Symptoms / impact:** Task 5A's required canonical `pnpm e2e:web:up` failed
+  while building the merged source. Browser validation was blocked; the existing
+  server and lifetime tunnel were retained, and production was unchanged.
+- **Evidence / root cause:** Dockerfile line 93's workspace dependency install,
+  `pnpm install --force --frozen-lockfile`, first failed with
+  `ERR_PNPM_ENOSPC` / `ENOSPC: no space left on device` while copying
+  `posthog-js@1.374.2`'s `dist/module.no-external.js.map`. Guest disk space fell
+  from 5,383,184 KiB available before the build to 692,468 KiB (99% used).
+- **Direct remediation / validation:** Followed the
+  [testing disk-recovery runbook](testing.md#docker-disk-recovery):
+  `docker builder prune -af` reclaimed 4.427 GB, recovering 5,533,068 KiB free;
+  unused-image pruning reclaimed another 791.2 MB, recovering 6,231,832 KiB free.
+  All containers and volumes were preserved. Docker documents the scope of
+  [cache and image pruning](https://docs.docker.com/engine/manage-resources/pruning/).
+  The unchanged build passed the dependency install but then failed copying
+  production `node_modules` at Dockerfile line 138 with
+  `copy file range failed: no space left on device`; guest disk reported zero
+  available KiB. A final failed-build-cache prune reclaimed 8.508 GB and
+  restored 6,364,980 KiB free before the controller closed the validation window.
+- **Remaining risk / retrospective:** The full cold-image peak disk requirement
+  is not yet established, but more than the 6,231,832 KiB second-attempt budget
+  is required before the final image can complete. Further builds and scoped
+  browser validation were blocked pending an approved capacity decision.
+  The user-approved disk growth below then allowed the unchanged build and
+  scoped browser check to pass.
+  No runtime mounts,
+  fallback workflows, deadlines, retries or engine memory/query limits were changed.
+
+## 2026-10-03 — Approved Docker disk growth enabled merged-source E2E validation
+
+- **Symptoms / impact:** Required browser validation remained blocked after
+  both proven disk-exhaustion failures and authorized cache/image cleanup.
+  The user approved growing the shared Docker disk usage limit from 61,035 MiB
+  to 81,920 MiB, restarting Docker only if needed and restoring the exact
+  prechange running container set. Production was unchanged.
+- **Operator action / evidence:** The controller retained a private 56-container
+  ID/image/health snapshot. Docker UI automation timed out; the settings receipt
+  verifies that only `DiskSizeMiB` changed in the documented settings file.
+  The controller applied the change with Docker Desktop stop/start. Guest disk
+  then reported 82,249,224 KiB total and 27,097,660 KiB free. Memory, swap, CPU,
+  disk location, engine limits and existing deadlines were unchanged. Docker
+  documents the [disk control and settings file](https://docs.docker.com/desktop/settings-and-maintenance/settings/)
+  and [Desktop lifecycle commands](https://docs.docker.com/desktop/features/desktop-cli/).
+- **Restoration / recovery:** The controller verified the other 55 original
+  containers running, healthy and on their original images. The original E2E
+  server failed with `[web] Failed to start: Error: connect ECONNREFUSED
+  192.168.32.4:9000`; it recovered healthy after its previously OOM-killed
+  E2E dependency was started through the canonical workspace wrapper. The
+  fourteen approved brokers were then paused for validation, followed by four
+  unused services from the current workspace. Their volumes were preserved;
+  concurrent build-phase changes prevent attributing the whole observed memory
+  improvement exclusively to the latter pause.
+- **Validation / remaining risk:** The unchanged `pnpm e2e:web:up` passed, with
+  native tests 2/2 and seeded analytics `PASS=14 WARN=0 ERROR=0`. The newly built
+  merged image served the affected `review-stack.cy.ts` spec, which passed
+  1/1 in one second. No ad-hoc waits, runtime mounts, alternate workflow or
+  resilience knob was introduced. The controller restored all four current-workspace
+  services and all fourteen approved brokers healthy. Its 18:53:48 UTC receipt
+  verifies the other 55 original container IDs and images running and healthy,
+  with no deviations; the authorized recreated E2E server is healthy on the
+  merged image, and the original previously OOM-killed E2E ClickHouse is healthy.
+  Final guest disk had 16,849,504 KiB free. Subsequent controller memory sampling
+  reported only 856,040 KiB available and 388 KiB swap free. Disk growth resolves
+  the proven build-capacity failure; shared RAM pressure remains, and the
+  triggering workload of the earlier global OOM is unresolved.
