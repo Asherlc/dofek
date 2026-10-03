@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ClickHouseClient } from "@clickhouse/client";
@@ -47,7 +47,7 @@ export async function createActivityPerformanceFixture(client: ClickHouseClient,
 
 interface ActivityFixtureOptions {
   startedAt?: string;
-  endedAt?: string;
+  endedAt?: string | null;
   version?: number;
   deleted?: number;
   canonicalType?: string;
@@ -68,7 +68,7 @@ export async function insertPerformanceActivities(
       activity_id: activityPerformanceId(index),
       canonical_type: options.canonicalType ?? "running",
       started_at: options.startedAt ?? "2026-09-01 12:00:00",
-      ended_at: options.endedAt ?? "2026-09-01 13:00:00",
+      ended_at: options.endedAt === undefined ? "2026-09-01 13:00:00" : options.endedAt,
       member_activity_ids: options.members ?? [activityPerformanceId(index + 1000)],
       ...(options.version === undefined ? {} : { refresh_version: options.version }),
       is_deleted: options.deleted ?? 0,
@@ -120,6 +120,18 @@ export async function refreshPerformanceCanonicalSensors(
 
 /** Compile the production macro with dbt itself, then execute its SQL on ClickHouse. */
 export async function compileActivityDirtyKeys(database: string, batchSize = 32) {
+  return compileActivityPerformanceModel(
+    database,
+    "probe",
+    `{{ config(materialized='incremental') }}\n{{ activity_sensor_dirty_keys('heart_rate', this, ${batchSize}) }}`,
+  );
+}
+
+export async function compileActivityPerformanceModel(
+  database: string,
+  modelName: string,
+  modelSql: string,
+) {
   const project = await mkdtemp(join(tmpdir(), "dofek-activity-performance-"));
   try {
     await mkdir(join(project, "models"));
@@ -138,10 +150,7 @@ export async function compileActivityDirtyKeys(database: string, batchSize = 32)
         "utf8",
       ),
     );
-    await writeFile(
-      join(project, "models", "probe.sql"),
-      `{{ config(materialized='incremental') }}\n{{ activity_sensor_dirty_keys('heart_rate', this, ${batchSize}) }}`,
-    );
+    await writeFile(join(project, "models", `${modelName}.sql`), modelSql);
     const url = new URL(process.env.CLICKHOUSE_URL ?? "");
     const result = await new Promise<{ code: number; output: string }>((resolve, reject) => {
       const child = spawn(
@@ -157,7 +166,7 @@ export async function compileActivityDirtyKeys(database: string, batchSize = 32)
           "--profiles-dir",
           "analytics",
           "--select",
-          "probe",
+          modelName,
           "--target-path",
           join(project, "target"),
           "--log-path",
@@ -190,7 +199,14 @@ export async function compileActivityDirtyKeys(database: string, batchSize = 32)
     });
     if (result.code !== 0) throw new Error(`dbt compile failed: ${result.output}`);
     return await readFile(
-      join(project, "target", "compiled", "activity_performance_test", "models", "probe.sql"),
+      join(
+        project,
+        "target",
+        "compiled",
+        "activity_performance_test",
+        "models",
+        `${modelName}.sql`,
+      ),
       "utf8",
     );
   } finally {

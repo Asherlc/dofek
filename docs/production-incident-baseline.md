@@ -29259,3 +29259,53 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   separate from HTTP/dbt compilation provenance in validation reports. Preserve
   the overlapping default restart as unresolved; daemon/kernel evidence would
   be needed to establish or exclude indirect host-memory impact.
+
+## 2026-10-03 — Task 4 ClickHouse host-wide OOM during validation
+
+- **Symptoms / impact:** The Task 4 disposable ClickHouse 26.6.1.1193 engine
+  stopped during exact-version pace-model validation. No production action was
+  taken. Default ClickHouse later restarted during the successful diagnostic
+  continuation; E2E ClickHouse retained restart count zero and its original start.
+- **Evidence:** The first combined 65-activity case reported a 30-second Vitest
+  timeout (41.935 seconds recorded), although its batched 65-row activity insert
+  took 5 ms and its three recorded model queries took 1194/1473/1689 ms. The
+  difference in elapsed time remains unexplained; query logs alone do not identify
+  native process or scheduler delays. A second suite, with independent first-build
+  and 65-key drain cases, passed six cases before native exit 137 during the
+  correction/merge fixture. Docker inspection confirmed `OOMKilled: true`,
+  exit 137, restart count zero, start 16:09:07.660UTC and finish 17:05:35.794UTC,
+  with the 1.5 GiB ceiling still enforced. Network mode was none and no ports were
+  published. Temporary in-memory engine logs were lost when the container stopped;
+  retained stdout contains startup log paths only. Docker documents memory
+  ceilings and out-of-memory behavior in its
+  [resource constraints](https://docs.docker.com/engine/containers/resource_constraints/).
+- **Cause:** Docker Desktop kernel records establish host-wide OOM for both
+  Task 4 deaths, rather than the disposable engine exceeding its own ceiling.
+  Rotated `init.log.20261003-101412.064` lines 1982–1983 report `global_oom` at
+  17:05:35.446UTC, killing disposable cgroup `bc7bdf003…`, anon-rss643532kB.
+  Current `init.log` lines 241–242 report `CONSTRAINT_NONE`, `global_oom` at
+  17:14:12.068UTC, killing default cgroup `3473c423…`, anon-rss620720kB.
+  Default inspection afterward shows restart count two/start17:14:12.516868301UTC;
+  neither agent restarted it. Kernel evidence is retained in ignored
+  `.context/load-audit/task4-kernel-oom.jsonl`. Swap was nearly exhausted and
+  other workspace workloads were resident; summed process RSS can double-count
+  shared pages and does not establish each workload's unique contribution.
+- **Validation:** After explicit controller authorization, one identical fresh
+  disposable instance passed all nine exact 26.6 pace tests in 64.09s, with the
+  unchanged 30s test deadline and three-build 65-key drain. Default 26.8 passed 23
+  pace/dirty-key tests. Scratch-only instrumentation paired all 156 native calls
+  with query IDs; the slowest call was 2099.53ms versus SQL 1948ms. The final three
+  drain builds took 1645.26/1436.30/1573.66ms native versus 1520/1334/1469ms SQL.
+  The first elapsed-time gap was not reproduced or retrospectively explained.
+  Live disposable cgroup peaks: memory.current 781,283,328B, anon 514,916,352B,
+  file 240,984,064B, shmem 33,492,992B; data 27,968KiB/log 4,760KiB. These are
+  independent sampled maxima, not additive totals. Its own oom_kill remained
+  zero; both data/log tmpfs capacities were 4,012,140KiB. Capacity is not usage.
+- **Mitigation / follow-up:** Only the disposable instance was removed promptly
+  after validation. No timeout, retry, memory limit or production setting changed;
+  no unrelated services or volumes were removed. Exact semantic success does not
+  resolve shared Docker host resource safety or establish production acceptance.
+  Controller owns aggregate-pressure attribution and authorization before any
+  further database validation. Retain paired native/query timings and external
+  resource/log capture; consult kernel OOM records before attributing Docker
+  `OOMKilled` to a container's own memory ceiling.

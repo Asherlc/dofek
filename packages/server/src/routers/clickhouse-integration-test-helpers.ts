@@ -735,6 +735,9 @@ ${buildTestHealthspanReadModelSelectSql(defaultTestDatabases)}`,
     query: buildTestAnalyticsTableStatement("analytics.activity_power_curve"),
   });
   await client.command({
+    query: buildTestAnalyticsTableStatement("analytics.activity_pace_curve"),
+  });
+  await client.command({
     query: buildTestAnalyticsTableStatement("analytics.activity_aerobic_efficiency"),
   });
   await client.command({

@@ -564,6 +564,18 @@ source_devices Array(String),
 is_deleted UInt8,
 refresh_version UInt64,
 refreshed_at DateTime64(9)`,
+    activity_pace_curve: `user_id UUID,
+activity_id UUID,
+duration_seconds UInt32,
+best_speed Nullable(Float64),
+started_at DateTime64(6, 'UTC'),
+ended_at DateTime64(6, 'UTC'),
+canonical_type String,
+source_activity_version UInt64,
+source_sensor_version UInt64,
+refresh_version UInt64,
+is_deleted UInt8,
+refreshed_at DateTime64(9, 'UTC')`,
     activity_aerobic_efficiency: `activity_id UUID,
 user_id UUID,
 canonical_type String,
@@ -661,6 +673,7 @@ refreshed_at DateTime64(9)`,
     shortViewName === "provider_stats" ||
     shortViewName === "hiking_activity" ||
     shortViewName === "activity_power_curve" ||
+    shortViewName === "activity_pace_curve" ||
     shortViewName === "activity_aerobic_efficiency" ||
     shortViewName === "cycling_activity" ||
     shortViewName === "daily_cycling" ||
@@ -698,7 +711,8 @@ refreshed_at DateTime64(9)`,
                           ? "(user_id, week_start)"
                           : shortViewName === "provider_stats"
                             ? "(user_id, provider_id)"
-                            : shortViewName === "activity_power_curve"
+                            : shortViewName === "activity_power_curve" ||
+                                shortViewName === "activity_pace_curve"
                               ? "(user_id, activity_id, duration_seconds)"
                               : shortViewName === "hiking_activity" ||
                                   shortViewName === "activity_aerobic_efficiency" ||
