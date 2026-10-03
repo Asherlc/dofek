@@ -4,16 +4,57 @@ import { createMockDatabase } from "../providers/test-helpers.ts";
 import type { SyncLogEntry } from "./sync-log.ts";
 import { logSync, PartialSyncError, withSyncLog } from "./sync-log.ts";
 
-const captureException = vi.hoisted(() => vi.fn());
+const { captureException, notifyProviderSyncIssue } = vi.hoisted(() => ({
+  captureException: vi.fn(),
+  notifyProviderSyncIssue: vi.fn(),
+}));
 
 vi.mock("dofek/lib/error-reporting", () => ({ captureException }));
+vi.mock("./provider-issue-notification.ts", () => ({ notifyProviderSyncIssue }));
 
 describe("logSync", () => {
   let db: ReturnType<typeof createMockDatabase>;
 
   beforeEach(() => {
     captureException.mockReset();
+    notifyProviderSyncIssue.mockReset();
     db = createMockDatabase();
+  });
+
+  it("checks user notification eligibility after recording an overall auth failure", async () => {
+    await logSync(db.db, {
+      providerId: "whoop",
+      userId: "user-123",
+      dataType: "sync",
+      status: "error",
+      origin: "manual",
+      authFailureReason: "session_expired",
+    });
+
+    expect(db.spies.values).toHaveBeenCalledWith(
+      expect.objectContaining({ authFailureReason: "session_expired", status: "error" }),
+    );
+    expect(notifyProviderSyncIssue).toHaveBeenCalledWith(db.db, "user-123", "whoop");
+  });
+
+  it("reports email delivery errors to Sentry while preserving the recorded sync outcome", async () => {
+    const deliveryError = new Error("Brevo rejected the email");
+    notifyProviderSyncIssue.mockRejectedValueOnce(deliveryError);
+
+    await expect(
+      logSync(db.db, {
+        providerId: "whoop",
+        userId: "user-123",
+        dataType: "sync",
+        status: "error",
+        authFailureReason: "session_expired",
+      }),
+    ).resolves.toBeUndefined();
+
+    expect(db.spies.values).toHaveBeenCalledWith(expect.objectContaining({ status: "error" }));
+    expect(captureException).toHaveBeenCalledWith(deliveryError, {
+      tags: { provider: "whoop", operation: "provider-issue-email" },
+    });
   });
 
   it("alerts when a scheduled provider reaches two consecutive top-level failures", async () => {
@@ -28,8 +69,10 @@ describe("logSync", () => {
       origin: "scheduled",
     });
 
-    expect(db.spies.execute).toHaveBeenCalledTimes(2);
-    const lockQuery = new PgDialect().sqlToQuery(db.spies.execute.mock.calls[0]?.[0]);
+    expect(db.spies.execute).toHaveBeenCalledTimes(3);
+    const fenceQuery = new PgDialect().sqlToQuery(db.spies.execute.mock.calls[0]?.[0]);
+    expect(fenceQuery.sql).toContain("lock_and_reject_account_erasure_write");
+    const lockQuery = new PgDialect().sqlToQuery(db.spies.execute.mock.calls[1]?.[0]);
     expect(lockQuery.sql).toContain("pg_advisory_xact_lock");
     expect(captureException).toHaveBeenCalledWith(expect.any(Error), {
       extra: {
@@ -67,7 +110,10 @@ describe("logSync", () => {
     { origin: "scheduled" as const, dataType: "sync", status: "success" as const },
   ])("does not query failure history for $origin $dataType $status logs", async (entry) => {
     await logSync(db.db, { providerId: "whoop", userId: "user-123", ...entry });
-    expect(db.spies.execute).not.toHaveBeenCalled();
+    const statements = db.spies.execute.mock.calls.map(
+      ([query]) => new PgDialect().sqlToQuery(query).sql,
+    );
+    expect(statements).not.toContainEqual(expect.stringContaining("WITH ordered_attempts"));
     expect(captureException).not.toHaveBeenCalled();
   });
 
@@ -79,7 +125,7 @@ describe("logSync", () => {
       userId: "user-123",
       origin: "scheduled",
     });
-    expect(db.spies.execute).toHaveBeenCalledTimes(2);
+    expect(db.spies.execute).toHaveBeenCalledTimes(3);
     expect(captureException).not.toHaveBeenCalled();
   });
 

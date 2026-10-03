@@ -78,6 +78,12 @@ entity "provider_connection" {
   updated_at : timestamp
 }
 
+entity "provider_issue_email" {
+  user_id : uuid <<FK>>
+  provider_id : text <<FK>>
+  sent_at : timestamp
+}
+
 entity "provider_priority" {
   * provider_id : text <<PK>>
   --
@@ -1279,6 +1285,7 @@ provider_connection ||--o{ oauth_token
 user_profile ||--o{ provider
 user_profile ||--o{ provider_connection
 provider ||--o{ provider_connection
+provider_connection ||--o{ provider_issue_email
 provider ||--o{ webhook_subscription
 provider_connection ||--o{ webhook_subscription
 provider ||--o{ activity
