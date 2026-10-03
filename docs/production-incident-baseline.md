@@ -29193,3 +29193,69 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   timeout, retry, projection setting or application behavior was changed to
   bypass the failure. ClickHouse describes memory accounting and query limits
   in its [memory settings reference](https://clickhouse.com/docs/operations/settings/settings#max_memory_usage).
+
+## 2026-10-03 — Activity detail route-preview latency follow-up
+
+- **Symptoms / impact:** Read-only production probes confirmed running and
+  climbing detail summaries still take about 1.4–1.5 seconds before client
+  rendering. The user's activity list/detail loading target remains unmet.
+- **Evidence / root cause:** Cache-miss traces
+  `734520662c251017715f022263142e2b` and
+  `d2dd3afa912bef3c7583a06b23e8f1d1` took 1,417 and 1,445 ms. Their matching
+  route-preview queries read 19,982,527 location rows in 1,359 and 1,370 ms;
+  queue waits were below 3 ms. This is the same previously diagnosed
+  source-column alias/index-pruning bug. See the
+  [dated activity follow-up](performance/production-load-audit-2026-10-02.md#activity-detail-follow-up--october-3)
+  and [ClickHouse alias semantics](https://clickhouse.com/docs/reference/syntax#notes-on-usage).
+- **Fix / validation status:** No production change was made. The reviewed
+  shared-query repair and real-engine regression remain scheduled for Task 8;
+  final data-visible page acceptance is unresolved. Single fast stream/zone
+  probes do not replace that gate.
+- **Additional lifecycle evidence:** The prior climbing fixture is now
+  provider-absent: its summary uses the repository fallback, while active-only
+  sensor-window lookup returns "Activity not found." Preserve those failures
+  in evidence and use an active populated climbing fixture for acceptance.
+  Validate provider-absent presentation separately; do not hide errors to meet
+  the target. Initial malformed diagnostic probes returned HTTP 400 and were
+  retained but excluded from successful timing claims.
+- **Follow-up:** Cover list filters/pagination, direct detail entry, activity
+  switching and each conditional sport section on web and native clients.
+
+## 2026-10-03 — Isolated ClickHouse version-validation resource failure
+
+- **Symptoms / impact:** Task 3's disposable ClickHouse 26.6.1.1193 validation
+  container exceeded local resources during the native-client integration run.
+  No production service was changed. The default workspace ClickHouse also
+  restarted during the validation window; its causal relationship to the
+  disposable container's resource use is unresolved. E2E ClickHouse retained
+  restart count zero and its original start time.
+- **Evidence:** The exact-version Vitest command first reported `Test timed out
+  in 30000ms` while seeding 65 activities through separate Docker exec calls.
+  Subsequent inserts returned native-client exit 137, and Docker inspection
+  confirmed `OOMKilled: true` and container exit 137. The temporary service had
+  no container memory ceiling. Its logs/data used an in-memory filesystem and were unavailable
+  after termination; the exact allocation responsible for the kill was not
+  captured. Docker documents container memory ceilings and host out-of-memory
+  behavior in [resource constraints](https://docs.docker.com/engine/containers/resource_constraints/).
+  Default ClickHouse inspection showed restart count one and start time
+  `2026-10-03T14:42:00.726884839Z`; E2E ClickHouse showed restart count zero and
+  start time `2026-10-03T06:17:59.242Z`. Neither implementing agent nor operator
+  restarted the default service. Filtered Docker event history was empty;
+  retained application logs confirmed startup but did not establish the prior
+  termination cause. The running state's `OOMKilled: false` does not establish
+  the cause of the earlier restart, and current health does not prove continuity.
+- **Cause / fix:** Serial per-row process overhead exceeded the test deadline;
+  the pending asynchronous fixture operations were not cancelled by the test
+  runner. Batched JSONEachRow fixture inserts removed that overhead. The
+  replacement disposable service used the existing workspace's 1.5 GiB ceiling
+  to contain its resource use; application and production settings were unchanged.
+- **Validation:** The same unchanged 30-second test deadline passed 15/15
+  focused tests on 26.6.1.1193, and 15/15 on the default 26.8.2.7. Production-version
+  EXPLAIN selected the compact day-version projection. Only the disposable
+  container was removed afterward; no other workspace volumes or services were
+  stopped or pruned.
+- **Follow-up:** Batch native-client fixture seeding and bound disposable
+  validation services before starting them. Keep exact-version engine execution
+  separate from HTTP/dbt compilation provenance in validation reports. Preserve
+  the overlapping default restart as unresolved; daemon/kernel evidence would
+  be needed to establish or exclude indirect host-memory impact.

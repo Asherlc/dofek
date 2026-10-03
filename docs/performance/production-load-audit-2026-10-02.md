@@ -486,3 +486,47 @@ separately reviewed query change and database parity tests.
 Full plans and query parameters remain in ignored `.context/load-audit/` files.
 Durations and row counts above come from the named traces, PostgreSQL plans, and
 [ClickHouse query logs](https://clickhouse.com/docs/operations/system-tables/query_log).
+
+### Activity detail follow-up — October 3
+
+After the user explicitly emphasized activity list and detail performance,
+serial read-only API probes used the existing authenticated browser session and
+the prior walking, running, and climbing fixtures. These are diagnostic request
+timings, not page-load acceptance. No shared cache was flushed. The initial
+probe used an incorrect input envelope and returned HTTP 400; those failures
+are retained in private evidence and excluded from successful timing claims.
+The corrected requests used the existing client's POST method and plain JSON.
+
+Running `activity.byId` trace `734520662c251017715f022263142e2b` took
+1,417 ms server-side and 1,440 ms in the browser. Climbing `activity.byId` trace
+`d2dd3afa912bef3c7583a06b23e8f1d1` took 1,445 ms server-side and 1,480 ms in
+the browser. Both were logged cache misses. Their route-preview children took
+1,361 and 1,387 ms; queue waits were below 3 ms. The matching ClickHouse queries
+`9812a11e-d7ed-4bd1-9262-b7052ffcaf81` and
+`cb9437ab-e823-40d3-8cef-b7cf2b16c289` read 19,982,527 rows each, taking
+1,359 and 1,370 ms. This confirms that the already diagnosed shared route-preview
+query also delays detail summaries. Summary-model reads took 15–16 ms and read
+4,192 rows. These execution measurements come from the matching
+[query-log records](https://clickhouse.com/docs/operations/system-tables/query_log).
+
+Walking and running stream requests took 233 and 155 ms in these serial probes;
+their HR-zone requests took 72 and 66 ms. These single observations do not prove
+page readiness or repeated cold performance. Walking detail had been requested
+once before the traced series, so its fast summary observation is warm evidence.
+Climbing stream and HR-zone requests returned HTTP 404, "Activity not found,"
+while its summary succeeded. Retain these failures; an error cannot substitute
+for a successful empty or populated section. Task 8 must establish the intended
+access/lifecycle behavior before changing it.
+
+A follow-up metadata-only check confirmed that this climbing fixture is now
+provider-absent. The [activity repository](../../packages/server/src/repositories/activity-repository.ts)
+can serve its summary through `findById`'s provider-absent fallback, while
+`findSensorWindow` only reads the active `fitness.v_activity` view. This explains
+the observed summary/stream difference; the intended unavailable presentation
+still requires validation. Select an active populated climbing fixture for the
+loading gate and retain a separate provider-absent lifecycle case.
+
+Private request metadata and traces are retained under `.context/load-audit/`
+in the dated `activity-detail-*` evidence files. Cycling, strength, and
+hangboarding conditional detail fixtures are now explicit acceptance scope;
+they are not represented by these three probes.

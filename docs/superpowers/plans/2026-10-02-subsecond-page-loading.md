@@ -238,12 +238,17 @@ ingested_at, is_deleted. Order by user_id, channel, recorded_at, activity_id, id
 its `.integration.test.ts`,
 `analytics/macros/activity_sensor_dirty_keys.sql`, and
 `analytics/models/read_models/activity-performance-test-helpers.ts`.
+Keep migration-only engine tests beside the migration; put macro lifecycle
+tests in `analytics/models/read_models/activity_sensor_dirty_keys.integration.test.ts`
+so analytics fixtures remain outside the root package's `src` compilation boundary.
 
 **Interfaces:** Projection `by_user_channel_day_refresh` exposes
 `(user_id, channel, recorded_date, max(refresh_version) AS source_refresh_version)`.
 Macro `activity_sensor_dirty_keys(channel, target_relation, batch_size=32)`
 produces canonical user/activity keys, current/prior bounds, activity version,
-and source sensor version. Tasks 4/5 persist those per-key versions.
+and source sensor version. Tasks 4/5 persist those per-key versions plus
+`started_at`, `ended_at`, and `canonical_type`, which allow reconciliation of
+prior windows and type changes without rereading a vanished activity.
 
 - [ ] Write executable tests with 65 dirty activities, an older key, a deleted
   activity, a cross-midnight window, and a processed-empty key. With batch size
@@ -281,7 +286,8 @@ and source sensor version. Tasks 4/5 persist those per-key versions.
 
 **Interfaces:** Model `analytics.activity_pace_curve` has user_id UUID,
 activity_id UUID, duration_seconds UInt32, best_speed Nullable(Float64),
-started_at DateTime64(6,'UTC'), source_activity_version UInt64,
+started_at DateTime64(6,'UTC'), ended_at DateTime64(6,'UTC'),
+canonical_type String, source_activity_version UInt64,
 source_sensor_version UInt64, refresh_version UInt64, is_deleted UInt8,
 refreshed_at DateTime64(9,'UTC'). ReplacingMergeTree key:
 `(user_id, activity_id, duration_seconds)`. Emit all 12 duration keys, including
@@ -320,6 +326,7 @@ entrypoint, dataset contract, README, and current-schema helper files as Task 4.
 
 **Interfaces:** Model `analytics.activity_heart_rate_distribution` has
 user_id UUID, activity_id UUID, started_at DateTime64(6,'UTC'),
+ended_at DateTime64(6,'UTC'), canonical_type String,
 samples Array(Tuple(heart_rate Float64, sample_count UInt64)),
 source_activity_version UInt64, source_sensor_version UInt64,
 refresh_version UInt64, is_deleted UInt8, refreshed_at DateTime64(9,'UTC').
@@ -430,6 +437,7 @@ and this plan before editing each owner.
 | Procedure | Source owner |
 |---|---|
 | activity.list | `packages/server/src/repositories/activity-repository.ts` |
+| activity.byId / stream / hrZones and conditional detail data | `packages/server/src/repositories/activity-repository.ts`, `clickhouse-activity-sensor-store.ts`, `power-repository.ts`, `strength-repository.ts`, `hangboarding-repository.ts`, and their callers |
 | correlation.computeV2 / observations | `packages/server/src/repositories/correlation-repository.ts` |
 | insights.compute | `packages/server/src/repositories/insights-repository.ts` |
 | nutritionAnalytics.* | `packages/server/src/repositories/nutrition-analytics-repository.ts` |
@@ -441,6 +449,14 @@ and this plan before editing each owner.
 **Interfaces:** Keep existing public method/tRPC contracts. Output from this task
 is a measured fix and parity test for every remaining over-budget family, or an
 explicit unresolved cause that blocks final acceptance.
+
+On October 3 the user explicitly reaffirmed Activities list and Activity detail
+as priority performance scope. Diagnose direct detail entry, list-to-detail and
+activity-to-activity navigation through actual required section completion,
+including conditional cycling power, strength, hangboarding and climbing data.
+Do not infer their completion from the summary or a fast cached response. The
+acceptance inventory records these additional conditional detail fixtures;
+record missing populated production fixtures as gaps rather than passes.
 
 - [ ] For each row, reproduce a fresh-key request and record the parent, database
   children, queue wait, and CPU/transform portion. PostgreSQL work needs a bounded

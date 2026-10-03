@@ -110,7 +110,18 @@ identify the route/page responsible for adding section completion.
 | Walking activity detail | `/activity/$id`, pages/ActivityDetailPage | summary, two charts | walking sensor activity / sparse activity | activity selection |
 | Running activity detail | `/activity/$id`, pages/ActivityDetailPage | summary, charts, map | running activity + route / no route | activity selection |
 | Climbing activity detail | `/activity/$id`, pages/ActivityDetailPage | summary, climbs, suggested ticks | climbing activity + dependent climbs / no attached climbs | activity selection |
+| Cycling activity detail | `/activity/$id`, pages/ActivityDetailPage | summary, sensor charts, map, HR and power zones when available | cycling activity with power + route / missing power or route | activity selection |
+| Strength activity detail | `/activity/$id`, pages/ActivityDetailPage | summary, exercise and set details | recorded strength sets / no sets | activity selection |
+| Hangboarding activity detail | `/activity/$id`, pages/ActivityDetailPage | summary, hangboard details | recorded hangboard session / unavailable details | activity selection |
 | Public landing | `/`, pages/LandingPage | public content, provider labels | public provider catalog / unavailable catalog state | none |
+
+The user explicitly reaffirmed Activities list and Activity detail performance
+on October 3. Their target is the same <1,000 ms until all relevant selected
+data is displayed. Include direct entry, list-to-detail navigation, switching
+activities, list range/sport/pagination changes, and conditional sport sections.
+The additional cycling, strength, and hangboarding detail rows are acceptance
+scope rather than previously measured audit results; missing populated fixtures
+remain explicit validation gaps. Apply equivalent native behavior and validation.
 
 The audit's mobile rows reuse Dashboard, Activities, Training, Sleep, Nutrition,
 Data Sources, Correlation, and Running above; its public warm traces add `/login`
