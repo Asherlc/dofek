@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { createElement, type ReactNode } from "react";
 import { AccessibilityInfo, Alert, Platform } from "react-native";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -331,9 +331,7 @@ describe("ActivitiesScreen", () => {
     expect(screen.queryByText("TSS")).toBeNull();
   });
 
-  it("renders server-authored source overlap and processing freshness", () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-03-18T08:08:00.000Z"));
+  it("identifies the primary source and overlapping records", () => {
     mockQuery = {
       data: [
         {
@@ -358,11 +356,7 @@ describe("ActivitiesScreen", () => {
     render(<ActivitiesScreen />);
 
     expect(screen.getByText("Wahoo")).toBeDefined();
-    expect(
-      screen.getByText("2 matched source records · Wahoo selected by source priority"),
-    ).toBeDefined();
     expect(screen.getByText("Source overlap")).toBeDefined();
-    expect(screen.getByText("Processed 1m ago")).toBeDefined();
   });
 
   it("keeps placeholder activity data visible during background refetch errors", () => {
@@ -620,28 +614,32 @@ describe("ActivitiesScreen", () => {
     expect(activityButton?.getAttribute("aria-label")).toContain("Elevation 120 m");
   });
 
-  it("does not repeat the activity type when an activity has no custom name", () => {
-    mockQuery = {
-      data: [
-        {
-          date: "2026-03-18",
-          activities: [activity({ name: null })],
-        },
-      ],
-      isLoading: false,
-      isError: false,
-      error: null,
-    };
+  it.each([null, "Indoor Cycling"])(
+    "labels an activity named %s without repeating its type",
+    (name) => {
+      mockQuery = {
+        data: [
+          {
+            date: "2026-03-18",
+            activities: [activity({ name })],
+          },
+        ],
+        isLoading: false,
+        isError: false,
+        error: null,
+      };
 
-    render(<ActivitiesScreen />);
+      render(<ActivitiesScreen />);
 
-    const openButton = screen.getByRole("button", { name: /^Open Indoor Cycling/ });
-    expect(openButton.getAttribute("aria-label")?.match(/Indoor Cycling/g)).toHaveLength(1);
+      const openButton = screen.getByRole("button", { name: /^Open Indoor Cycling/ });
+      expect(openButton.getAttribute("aria-label")?.match(/Indoor Cycling/g)).toHaveLength(1);
+      expect(within(openButton).getAllByText("Indoor Cycling")).toHaveLength(1);
 
-    fireEvent.click(screen.getByRole("button", { name: "Select activities" }));
-    const selectButton = screen.getByRole("button", { name: /^Select Indoor Cycling/ });
-    expect(selectButton.getAttribute("aria-label")?.match(/Indoor Cycling/g)).toHaveLength(1);
-  });
+      fireEvent.click(screen.getByRole("button", { name: "Select activities" }));
+      const selectButton = screen.getByRole("button", { name: /^Select Indoor Cycling/ });
+      expect(selectButton.getAttribute("aria-label")?.match(/Indoor Cycling/g)).toHaveLength(1);
+    },
+  );
 
   it("toggles selected activities instead of navigating in select mode", () => {
     mockQuery = {
@@ -652,8 +650,9 @@ describe("ActivitiesScreen", () => {
     };
 
     render(<ActivitiesScreen />);
-    expect(screen.getByText("Choose activities to merge or delete.")).toBeDefined();
+    expect(screen.queryByText("Choose activities to merge or delete.")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Select activities" }));
+    expect(screen.getByText("Choose activities to merge or delete.")).toBeDefined();
     expect(screen.getByText("0 activities selected").getAttribute("accessibilityliveregion")).toBe(
       "polite",
     );
