@@ -51,27 +51,47 @@ export class HeartRateRepository {
    *
    * Reads the Redpanda-fed ClickHouse metric-stream mirror for
    * channel='heart_rate', downsampled to 1-minute bins (avg per bin). Rows are
-   * version-deduplicated (`FINAL` + `is_deleted = 0`) but NOT collapsed
+   * version-deduplicated by native FINAL, including insertion-order ties, but NOT collapsed
    * by provider priority, so every source is returned for overlay/comparison.
+   * The day projection identifies raw keys using only identity-safe bounds;
+   * deleted and invalid revisions must remain eligible until FINAL picks a winner.
+   * Nullable activity keys use a separate IN set because SQL NULL is not an IN match.
    */
   async dailyBySource(date: string): Promise<HeartRateSourceSeries[]> {
     const rows = await this.#clickHouse.query(
       heartRateRowSchema,
-      `WITH minute_samples AS (
+      `WITH candidate_keys AS (
+        SELECT user_id, activity_id, channel, recorded_at, id
+        FROM ingest.metric_stream
+        WHERE user_id = {userId:UUID}
+          AND channel = 'heart_rate'
+          AND recorded_at >= toDateTime({date:Date}, {timezone:String})
+          AND recorded_at < toDateTime({date:Date}, {timezone:String}) + INTERVAL 1 DAY
+      ), winning_rows AS (
+        SELECT provider_id, recorded_at, scalar, is_deleted
+        FROM ingest.metric_stream FINAL
+        WHERE user_id = {userId:UUID}
+          AND (
+            (user_id, activity_id, channel, recorded_at, id) IN (
+              SELECT user_id, activity_id, channel, recorded_at, id
+              FROM candidate_keys WHERE activity_id IS NOT NULL
+            )
+            OR (
+              activity_id IS NULL
+              AND (user_id, channel, recorded_at, id) IN (
+                SELECT user_id, channel, recorded_at, id
+                FROM candidate_keys WHERE activity_id IS NULL
+              )
+            )
+          )
+      ), minute_samples AS (
         SELECT
           provider_id,
           toStartOfMinute(toDateTime(recorded_at)) AS minute_bucket,
           toInt32(round(avg(scalar))) AS heart_rate
-        FROM ingest.metric_stream FINAL
-        WHERE user_id = {userId:UUID}
-          AND channel = 'heart_rate'
-          AND is_deleted = 0
+        FROM winning_rows
+        WHERE is_deleted = 0
           AND scalar > 0
-          -- Range over the raw recorded_at so the ORDER BY key can prune,
-          -- instead of wrapping it in toDate(). Bounds are the user's local
-          -- day expressed as UTC instants.
-          AND recorded_at >= toDateTime({date:Date}, {timezone:String})
-          AND recorded_at < toDateTime({date:Date}, {timezone:String}) + INTERVAL 1 DAY
         GROUP BY provider_id, minute_bucket
       )
       SELECT
