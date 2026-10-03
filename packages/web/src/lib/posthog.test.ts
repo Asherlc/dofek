@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import type { BeforeSendFn } from "posthog-js";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   capturePageLoad,
   capturePageView,
@@ -7,6 +8,9 @@ import {
   initPostHog,
   resetPostHogUser,
 } from "./posthog.ts";
+import { captureException } from "./telemetry.ts";
+
+vi.mock("./telemetry.ts", () => ({ captureException: vi.fn() }));
 
 vi.mock("posthog-js", () => ({
   default: {
@@ -22,6 +26,12 @@ vi.mock("posthog-js", () => ({
 }));
 
 import posthog from "posthog-js";
+
+afterEach(() => {
+  vi.clearAllMocks();
+  vi.unstubAllGlobals();
+  vi.mocked(posthog.has_opted_out_capturing).mockReturnValue(false);
+});
 
 it("strips SDK enrichment and raw account identifiers from readiness exports", () => {
   initPostHog();
@@ -49,7 +59,7 @@ it("strips SDK enrichment and raw account identifiers from readiness exports", (
     },
     $set: { email: "private" },
   });
-  expect(exported).toEqual({
+  expect(exported).toStrictEqual({
     event: "page_data_readiness",
     uuid: "event-id",
     properties: {
@@ -69,7 +79,82 @@ it("strips SDK enrichment and raw account identifiers from readiness exports", (
     properties: { distinct_id: "account-id" },
   };
   expect(beforeSend(pageview)).toBe(pageview);
-  vi.clearAllMocks();
+});
+
+describe("readiness before_send", () => {
+  let beforeSend: BeforeSendFn;
+
+  beforeEach(() => {
+    initPostHog();
+    const callback = vi.mocked(posthog.init).mock.calls.at(-1)?.[1]?.before_send;
+    if (typeof callback !== "function") throw new Error("Expected a before_send callback");
+    beforeSend = callback;
+  });
+
+  it.each([
+    { description: "missing", deviceId: undefined },
+    { description: "null", deviceId: null },
+    { description: "numeric", deviceId: 42 },
+    { description: "empty", deviceId: "" },
+  ])("reports and drops readiness with a $description device identifier", ({ deviceId }) => {
+    vi.mocked(posthog.get_property).mockReturnValueOnce(deviceId);
+
+    const exported = beforeSend({
+      event: "page_data_readiness",
+      uuid: "event-id",
+      properties: { route: "/dashboard", distinct_id: "account-id" },
+    });
+
+    expect(exported).toBeNull();
+    expect(captureException).toHaveBeenCalledExactlyOnceWith(
+      new Error("Page readiness telemetry requires the existing PostHog $device_id."),
+    );
+  });
+
+  it("preserves section and timestamp with a one-character device identifier", () => {
+    vi.mocked(posthog.get_property).mockReturnValueOnce("d");
+    const timestamp = new Date("2026-10-03T19:00:00Z");
+
+    const exported = beforeSend({
+      event: "page_data_readiness",
+      uuid: "section-event",
+      timestamp,
+      properties: {
+        route: "/body/heart-rate",
+        section: "chart",
+        kind: "filter",
+        durationMs: 350,
+        outcome: "ready",
+        release: "release",
+        token: "public-api-key",
+        distinct_id: "account-id",
+      },
+    });
+
+    expect(exported).toStrictEqual({
+      event: "page_data_readiness",
+      uuid: "section-event",
+      timestamp,
+      properties: {
+        route: "/body/heart-rate",
+        section: "chart",
+        kind: "filter",
+        durationMs: 350,
+        outcome: "ready",
+        release: "release",
+        token: "public-api-key",
+        distinct_id: "d",
+        $process_person_profile: false,
+      },
+    });
+    expect(captureException).not.toHaveBeenCalled();
+  });
+
+  it("passes through a null callback payload", () => {
+    expect(beforeSend(null)).toBeNull();
+    expect(posthog.get_property).not.toHaveBeenCalled();
+    expect(captureException).not.toHaveBeenCalled();
+  });
 });
 
 describe("page load export", () => {
@@ -110,6 +195,30 @@ describe("page load export", () => {
       outcome: "ready",
     });
     expect(posthog.capture).not.toHaveBeenCalled();
+  });
+
+  it("exports the build release and omits an unavailable section", () => {
+    vi.stubGlobal("__COMMIT_HASH__", "commit-sha");
+
+    capturePageLoad({
+      route: "/dashboard",
+      generation: 1,
+      kind: "navigation",
+      startedAt: 0,
+      completedAt: 450,
+      durationMs: 450,
+      outcome: "ready",
+    });
+
+    expect(posthog.capture).toHaveBeenCalledExactlyOnceWith("page_data_readiness", {
+      route: "/dashboard",
+      kind: "navigation",
+      durationMs: 450,
+      outcome: "ready",
+      release: "commit-sha",
+    });
+    const properties = vi.mocked(posthog.capture).mock.calls[0]?.[1];
+    expect(properties).not.toHaveProperty("section");
   });
 });
 
@@ -206,6 +315,7 @@ describe("account identity", () => {
     resetPostHogUser();
 
     expect(posthog.reset).toHaveBeenCalledOnce();
+    expect(posthog.opt_out_capturing).not.toHaveBeenCalled();
   });
 
   it("preserves account-erasure opt-out when resetting identity", () => {

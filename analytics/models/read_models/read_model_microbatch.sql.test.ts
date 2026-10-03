@@ -98,6 +98,8 @@ describe("production analytics read-model build", () => {
       "activity_duplicate_matches",
       "activity_duplicate_groups",
       "deduped_activities",
+      "activity_pace_curve",
+      "activity_heart_rate_distribution",
       "deduped_activity_members",
       "activity_effort_identity",
       "activity_sensor_sample",

@@ -29537,3 +29537,26 @@ Coverage thresholds remain unchanged.
   reported only 856,040 KiB available and 388 KiB swap free. Disk growth resolves
   the proven build-capacity failure; shared RAM pressure remains, and the
   triggering workload of the earlier global OOM is unresolved.
+
+## 2026-10-03 — Loading-preparation CI expectation and telemetry coverage failures
+
+- **Symptoms / impact:** Required PR CI blocked the loading-preparation source;
+  no production rollout occurred. [Unit Tests](https://github.com/Asherlc/dofek/actions/runs/37146328769/job/111271119335)
+  ran `pnpm exec vitest run --project unit --coverage`; its first failure was
+  `AssertionError: expected [ 'sensor_scalar_sample', …(28) ] to deeply equal
+  [ 'sensor_scalar_sample', …(26) ]`. [Stryker](https://github.com/Asherlc/dofek/actions/runs/37146328769/job/111271297243)
+  first failed with `Final mutation score 54.29 under breaking threshold 75`.
+- **Root cause / direct fix:** The existing exact build-order expectation omitted
+  the registered `activity_pace_curve` and `activity_heart_rate_distribution`
+  models, and readiness telemetry tests did not cover active optional fields,
+  release identity, nullable callback input, or invalid device-ID reporting and
+  event rejection. Updated the existing order assertion and added public-behavior
+  tests, including Sentry observation and reset consent preservation. Production
+  code, schema, models, readers, dependencies and CI configuration were unchanged.
+- **Local validation / remaining work:** Focused units passed 61/61. Canonical
+  whole-file Stryker reproduced a distinct 51-mutant baseline at 66.67%
+  (34 killed, 14 survived, 3 uncovered), then passed at 100% with all 51 killed
+  and no survivors, uncovered mutants, timeouts or errors. The CI failure scored
+  35 mutants (19 killed, 13 survived, 3 uncovered); retain both scoped results.
+  No resilience knob or ad-hoc wait was introduced. Remote CI rerun remains
+  pending; the controller must confirm required checks on the pushed source.
