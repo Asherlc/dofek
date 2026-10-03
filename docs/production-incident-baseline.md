@@ -29150,3 +29150,24 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   remain unproven. Add build-cache sizing and pressure checks to the local
   testing runbook. No package-policy bypass, dependency change, application
   workaround, or resilience knob was introduced.
+
+## 2026-10-03 — Local preview tunnel lost connectivity during idle interval
+
+- **Symptoms / impact:** The local browser-validation server and its dependencies
+  remained healthy, but the previously emitted Quick Tunnel hostname no longer
+  resolved. Production was unaffected.
+- **Evidence:** The tunnel log first reported `failed to accept QUIC stream:
+  timeout: no recent network activity` at 06:49:44 UTC, followed by repeated
+  `control stream encountered a failure while serving` errors. At 13:26 UTC,
+  a bounded curl check failed with exit 6 (`Could not resolve host`); Compose
+  still reported the local server healthy.
+- **Mitigation / validation:** Stopped only the disconnected tunnel process and
+  reran the existing `/Users/asherlc/bin/paseo-quick-tunnel 3100` command. The new
+  process registered a connection, passed its connectivity checks, and the newly
+  emitted HTTPS URL returned HTTP 200. The server was not restarted. No timeout,
+  retry, protocol, or application configuration was changed.
+- **Remaining risk / follow-up:** The original disconnect trigger is unresolved;
+  do not attribute it to workstation sleep or a Cloudflare incident without
+  evidence. Recheck the emitted URL after idle intervals before browser tests.
+  Quick Tunnels use temporary hostnames and have no uptime guarantee according
+  to [Cloudflare's Quick Tunnel documentation](https://developers.cloudflare.com/tunnel/get-started/quick-tunnels/).
