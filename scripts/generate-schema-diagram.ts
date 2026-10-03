@@ -111,11 +111,10 @@ export function parseColumnLine(line: string): Column | null {
 
 /** Parse columns from a DBML table body (strips indexes blocks first) */
 export function parseColumns(body: string): Column[] {
-  const compositePrimaryKey =
-    body
-      .match(/\(([^)]+)\)\s+\[pk\]/)?.[1]
-      .split(",")
-      .map((name) => name.trim()) ?? [];
+  const primaryKeyIndex = [...body.matchAll(/\(([^)]+)\)\s+\[([^\]]+)\]/g)].find(([, , settings]) =>
+    settings.split(",").some((setting) => setting.trim() === "pk"),
+  );
+  const compositePrimaryKey = primaryKeyIndex?.[1].split(",").map((name) => name.trim()) ?? [];
   const columnsSection = body.replace(/indexes\s*\{[^}]*\}/gs, "");
   const columns: Column[] = [];
   for (const line of columnsSection.split("\n")) {

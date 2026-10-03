@@ -170,6 +170,17 @@ describe("parseColumnLine", () => {
 });
 
 describe("parseColumns", () => {
+  it("keeps a named index called pk separate from a primary-key setting", () => {
+    expect(
+      parseColumns(`
+  value text
+  indexes {
+    (value) [name: 'pk']
+  }
+`),
+    ).toEqual([{ name: "value", type: "text", pk: false, fk: false }]);
+  });
+
   it("parses columns and strips indexes block", () => {
     const body = `
   id uuid [pk, not null]
@@ -202,8 +213,10 @@ describe("parseColumns", () => {
 });
 
 describe("parseTables", () => {
-  it("preserves a composite primary key when rendering connection cardinality", () => {
-    const dbml = `table fitness.provider_connection {
+  it.each(["pk", "pk, name: 'connection_pk'", "name: 'connection_pk', pk"])(
+    "preserves composite primary-key settings [%s] when rendering connection cardinality",
+    (settings) => {
+      const dbml = `table fitness.provider_connection {
   user_id uuid [not null]
   provider_id text [not null]
   indexes {
@@ -215,21 +228,23 @@ table fitness.provider_issue_email {
   provider_id text [not null]
   sent_at timestamp [not null]
   indexes {
-    (user_id, provider_id) [pk]
+    (sent_at) [name: 'sent_at_idx']
+    (user_id, provider_id) [${settings}]
   }
 }
 ref connection_fk: fitness.provider_issue_email.(user_id, provider_id) > fitness.provider_connection.(user_id, provider_id)`;
-    const tables = parseTables(dbml);
-    const refs = parseRefs(dbml, tables);
+      const tables = parseTables(dbml);
+      const refs = parseRefs(dbml, tables);
 
-    expect(tables[1].columns.filter((column) => column.pk).map((column) => column.name)).toEqual([
-      "user_id",
-      "provider_id",
-    ]);
-    expect(buildPlantUml(tables, refs)).toContain(
-      "provider_connection ||--o| provider_issue_email",
-    );
-  });
+      expect(tables[1].columns.filter((column) => column.pk).map((column) => column.name)).toEqual([
+        "user_id",
+        "provider_id",
+      ]);
+      expect(buildPlantUml(tables, refs)).toContain(
+        "provider_connection ||--o| provider_issue_email",
+      );
+    },
+  );
 
   it("parses tables from DBML", () => {
     const tables = parseTables(SINGLE_TABLE_DBML);
