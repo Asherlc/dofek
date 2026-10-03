@@ -29078,7 +29078,7 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   warm measurements. No timeout, retry, cache flush, concurrency adjustment,
   or other resilience knob was introduced.
 
-## 2026-10-02 — Shared local Docker AIO capacity blocked performance validation (unresolved)
+## 2026-10-02 — Shared local Docker AIO capacity blocked performance validation
 
 - **Symptoms / impact:** The performance implementation's local database setup
   could not start Redpanda. Browser and database validation are blocked; this
@@ -29095,10 +29095,15 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   exhausted before this workspace's broker could initialize. Redpanda documents
   its AIO tuner and 1048576 threshold in the
   [rpk tuner overview](https://www.redpanda.com/blog/rpk-command-line-interface-developer-productivity).
-- **Fix / validation:** No host setting has been changed yet. Approval requested
-  for increasing the shared VM limit to 1048576, then rerunning the exact Compose
-  command. No other workspace's containers or volumes were stopped or removed.
-- **Remaining risk / follow-up:** Unresolved until dependency health and the
-  affected test commands pass. Add an AIO-exhaustion diagnostic to the local
+- **Fix / validation:** With user approval, increased the shared VM limit to
+  1048576 using a one-shot container from the existing database image. Restarted
+  only this workspace's already-failed broker to clear its old restart delay;
+  `rtk proxy pnpm compose:up` then completed with all four dependencies healthy
+  at 22:35 Pacific time. No other workspace's containers or volumes were stopped
+  or removed. No extra sleep or timeout change was needed.
+- **Remaining risk / follow-up:** Dependency startup is resolved; application
+  and browser validation are separate outstanding implementation gates. The
+  setting is local to the running Docker VM and must be checked after a VM
+  restart. Add an AIO-exhaustion diagnostic to the local
   [testing runbook](testing.md). No retry, timeout, or application workaround
   was added.
