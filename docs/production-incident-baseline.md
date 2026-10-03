@@ -29107,3 +29107,38 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   restart. Add an AIO-exhaustion diagnostic to the local
   [testing runbook](testing.md). No retry, timeout, or application workaround
   was added.
+
+## 2026-10-02 — Local browser validation hit Docker disk and build pressure
+
+- **Symptoms / impact:** The isolated browser-test image could not finish
+  building during the loading-performance implementation. Production was not
+  changed; browser validation remains outstanding.
+- **Evidence:** `pnpm compose -- --project-suffix e2e -f docker-compose.e2e.yml
+  build server` first failed while compiling the Python lz4 dependency with
+  `No space left on device`; pnpm also reported `ERR_PNPM_ENOSPC`. Docker reported
+  14.5 GB of images, 17.14 GB of writable container layers, 14.06 GB of volumes,
+  and 4.288 GB of build cache. Ignored local logs preserve the complete output.
+- **Confirmed disk cause / mitigation:** The Docker VM filesystem was exhausted.
+  Removed rebuildable build cache (3.826 GB reclaimed), then unused images
+  (4.508 GB reclaimed), following the [testing runbook](testing.md#docker-disk-recovery)
+  and [Docker pruning guidance](https://docs.docker.com/engine/manage-resources/pruning/).
+  Preserved all containers and named volumes. The filesystem then had 9.6 GB
+  available, and the next build progressed beyond the original disk failure.
+- **Subsequent failure:** The next attempt completed package downloads but
+  failed at Dockerfile line 93 with `ERR_PNPM_BROKEN_METADATA_JSON: The operation
+  was aborted due to timeout`. It reported registry request delays and an
+  unsuccessful supply-chain metadata check. Concurrent VM pressure readings
+  showed 85% full memory stall time over ten seconds. These establish a registry
+  metadata timeout and resource contention, but do not alone prove whether
+  memory stalls or registry/network behavior caused that timeout. Linux defines
+  these measurements in its [pressure-stall documentation](https://docs.kernel.org/accounting/psi.html).
+- **Current validation / remaining risk:** Stopped only this workspace's unused
+  database services while building, retaining their data. The native toolchain
+  compiled successfully and is now cached. Repeating the same canonical build
+  after that reduction in work passed all 3,399 supply-chain checks in 32 seconds;
+  the remainder of the image build is in progress. No timeout, package-policy bypass,
+  dependency change, or application workaround was introduced. Other workspaces
+  remain untouched; permission to temporarily stop and restore their brokers is
+  pending. Restart this workspace's canonical dependencies before further
+  database tests, complete browser validation, and update this unresolved entry
+  with the final outcome.
