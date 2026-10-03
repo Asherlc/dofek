@@ -15,8 +15,9 @@ React/TanStack Query/Router/ECharts, Expo, Vitest, Cypress, Chrome DevTools.
 
 **Spec:** [Approved design](../specs/2026-10-02-subsecond-page-loading-design.md).
 
-**Status:** Design approved. Plan awaiting user review and execution-method
-selection. No implementation step is complete.
+**Status:** Design and plan approved. Task-by-task implementation with independent
+review agents selected. Implementation is in progress; production acceptance is
+not yet verified.
 
 ## Global Constraints
 
@@ -676,11 +677,9 @@ readiness events, cross-checked by independent Chrome traces.
 
 ## Review and execution decision
 
-The design is approved. This plan still requires user review and execution-method
-selection. Recommended: task-by-task implementation with separate review agents,
-because model lifecycle/version mistakes can silently alter health data and the
-work spans database, browser, and native boundaries. An in-session implementation
-with one final independent review is the lower-overhead alternative.
+The user approved this plan and selected task-by-task implementation with separate
+review agents. Model lifecycle/version mistakes can silently alter health data,
+so each task receives a review before dependent implementation proceeds.
 
 The plan deliberately reserves Task 8's code decisions for current child-query
 evidence. That is an explicit diagnostic deliverable and review checkpoint, not

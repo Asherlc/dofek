@@ -29077,3 +29077,28 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   Add useful-data milestones to existing telemetry and repeat fresh-key plus
   warm measurements. No timeout, retry, cache flush, concurrency adjustment,
   or other resilience knob was introduced.
+
+## 2026-10-02 — Shared local Docker AIO capacity blocked performance validation (unresolved)
+
+- **Symptoms / impact:** The performance implementation's local database setup
+  could not start Redpanda. Browser and database validation are blocked; this
+  finding does not indicate a production outage. Unit implementation can proceed.
+- **Evidence:** `rtk proxy pnpm compose:up` failed at 21:56 Pacific time with
+  `container impolite-mole-redpanda-1 is unhealthy`. The first fatal broker line
+  was `Could not setup Async I/O`, reporting capacity in
+  `/proc/sys/fs/aio-max-nr` as 65536. A read from the workspace's database
+  container showed both `fs.aio-nr` and `fs.aio-max-nr` equal to 65536. The
+  broker exited with code 133 and was not OOM-killed. Workspace Postgres,
+  ClickHouse, and Redis were healthy; multiple other workspaces had restarting
+  brokers on the same Docker VM.
+- **Root cause:** The shared Docker VM's asynchronous-I/O allocation limit was
+  exhausted before this workspace's broker could initialize. Redpanda documents
+  its AIO tuner and 1048576 threshold in the
+  [rpk tuner overview](https://www.redpanda.com/blog/rpk-command-line-interface-developer-productivity).
+- **Fix / validation:** No host setting has been changed yet. Approval requested
+  for increasing the shared VM limit to 1048576, then rerunning the exact Compose
+  command. No other workspace's containers or volumes were stopped or removed.
+- **Remaining risk / follow-up:** Unresolved until dependency health and the
+  affected test commands pass. Add an AIO-exhaustion diagnostic to the local
+  [testing runbook](testing.md). No retry, timeout, or application workaround
+  was added.
