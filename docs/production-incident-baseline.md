@@ -29132,13 +29132,21 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   metadata timeout and resource contention, but do not alone prove whether
   memory stalls or registry/network behavior caused that timeout. Linux defines
   these measurements in its [pressure-stall documentation](https://docs.kernel.org/accounting/psi.html).
-- **Current validation / remaining risk:** Stopped only this workspace's unused
-  database services while building, retaining their data. The native toolchain
-  compiled successfully and is now cached. Repeating the same canonical build
-  after that reduction in work passed all 3,399 supply-chain checks in 32 seconds;
-  the remainder of the image build is in progress. No timeout, package-policy bypass,
-  dependency change, or application workaround was introduced. Other workspaces
-  remain untouched; permission to temporarily stop and restore their brokers is
-  pending. Restart this workspace's canonical dependencies before further
-  database tests, complete browser validation, and update this unresolved entry
-  with the final outcome.
+- **Validation / subsequent disk recovery:** The same build passed all 3,399
+  supply-chain checks in 32 seconds and completed, including both native decoder
+  tests. Initial stack startup then exhausted disk again: Postgres could not
+  create its WAL directory and ClickHouse could not create its processed config
+  directory. Removing the completed build's rebuildable cache reclaimed another
+  9.245 GB, leaving 7.5 GB free. Restarted the affected local ClickHouse process
+  and started the already-built image with the canonical Compose wrapper and
+  `--no-build --wait --wait-timeout 180`. All dependencies, migrations, fixture
+  seeding, analytics, and server health gates passed. Both focused page-readiness
+  Cypress scenarios passed (19 seconds), followed by a trusted Chrome navigation
+  check. No added sleep or timeout change was needed.
+- **Remaining risk / follow-up:** The VM has limited spare disk for another cold
+  build. Other workspaces' containers and volumes were preserved; stopping their
+  brokers was not needed. Registry metadata timeouts did not recur after the
+  cold-build work decreased; the respective network and memory contributions
+  remain unproven. Add build-cache sizing and pressure checks to the local
+  testing runbook. No package-policy bypass, dependency change, application
+  workaround, or resilience knob was introduced.
