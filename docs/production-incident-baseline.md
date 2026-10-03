@@ -29091,3 +29091,11 @@ rendered by Settings tests. A search-navigation test now opens Goals & Models
 and verifies the Units controls in the correct section. The focused Settings
 suite passed 27 tests. Include browser specs and category navigation in future
 copy-cleanup validation; changing visible text can invalidate existing selectors.
+
+The follow-up [combined coverage job](https://github.com/Asherlc/dofek/actions/runs/37096803288/job/111130879461)
+passed global thresholds but failed `diff-cover --fail-under=80` at 75%.
+The unit artifact identified `TodayPlanCard.tsx:98` with conditional counts
+`[4, 0]`: the evidence disclosure was tested with freshness dates only.
+A focused test now opens the disclosure with both dates absent and verifies
+that supporting facts remain visible without a fabricated freshness message.
+Coverage thresholds remain unchanged.

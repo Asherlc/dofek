@@ -84,6 +84,18 @@ describe("TodayPlanCard", () => {
     expect(screen.queryByText(/Recovery data from/)).toBeNull();
   });
 
+  it("shows supporting facts when freshness dates are unavailable", () => {
+    render(
+      <TodayPlanCard plan={{ ...readyPlan, freshness: { recoveryDate: null, sleepDate: null } }} />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Why this?" }));
+
+    expect(screen.getByText("82/100")).toBeTruthy();
+    expect(screen.getByText("88 (Good)")).toBeTruthy();
+    expect(screen.queryByText(/data from/)).toBeNull();
+  });
+
   it("keeps evidence disclosure ids unique across multiple cards", () => {
     render(
       <>
