@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { MISSING_PREVIOUS_NIGHT_MESSAGE, type SleepNeedV2 } from "dofek-server/sleep-need-contract";
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
@@ -144,6 +144,22 @@ describe("SleepNeedCard", () => {
     );
   });
 
+  it("shows the calculation breakdown on demand", () => {
+    render(<SleepNeedCard data={mockData} />);
+
+    const adjustment = screen.getByText("Previous-day load adjustment");
+    expect(adjustment).not.toBeVisible();
+    expect(screen.getByText("About 8h 35m")).toBeVisible();
+
+    const disclosure = screen.getByText("How this is calculated");
+    fireEvent.click(disclosure);
+    expect(adjustment).toBeVisible();
+    expect(screen.getByText("+12m")).toBeVisible();
+
+    fireEvent.click(disclosure);
+    expect(adjustment).not.toBeVisible();
+  });
+
   it("passes plain numeric values to bar series (not date tuples)", () => {
     capturedOption = null;
     render(<SleepNeedCard data={mockData} />);
@@ -256,7 +272,6 @@ describe("SleepNeedCard", () => {
 
     render(<SleepNeedCard data={insufficientData} />);
 
-    expect(screen.getByText("Unavailable")).toBeDefined();
     expect(screen.getByText(insufficientData.message)).toBeDefined();
     expect(screen.getByText(insufficientData.nextAction)).toBeDefined();
     expect(screen.queryByTestId("echarts")).toBeNull();

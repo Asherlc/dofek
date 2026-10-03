@@ -535,10 +535,10 @@ describe("TodayScreen independent loading states", () => {
     expect(screen.getByText("SLEEP ESTIMATE")).toBeTruthy();
     expect(screen.queryByText("SLEEP COACH")).toBeNull();
     expect(screen.getByText("About 8h 37m")).toBeTruthy();
-    expect(screen.getByText("+17m")).toBeTruthy();
-    expect(screen.getByText("Estimated sleep need")).toBeTruthy();
-    expect(screen.getByText("Previous-day load adjustment")).toBeTruthy();
+    expect(screen.queryByText("Previous-day load adjustment")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "How this is calculated" }));
+    expect(screen.getByText("+17m")).toBeTruthy();
+    expect(screen.getByText("Previous-day load adjustment")).toBeTruthy();
     expect(
       screen.getByText(
         "Baseline uses the average of 7 qualifying nights followed by at-or-above-median heart rate variability.",
@@ -558,6 +558,8 @@ describe("TodayScreen independent loading states", () => {
       ),
     ).toBeTruthy();
     expect(screen.queryByText("recommended tonight")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "How this is calculated" }));
+    expect(screen.queryByText("Previous-day load adjustment")).toBeNull();
   });
 
   it("renders all rings when no queries are loading", async () => {
