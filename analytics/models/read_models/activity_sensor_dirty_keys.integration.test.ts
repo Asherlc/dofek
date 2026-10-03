@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { createClient } from "@clickhouse/client";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
+import { clickHouseMigrations } from "../../../src/db/clickhouse-migrations/registry.ts";
 import {
   activityPerformanceId,
   activityPerformanceUserId,
@@ -13,7 +14,6 @@ import {
   persistActivityDirtyKeys,
   refreshPerformanceCanonicalSensors,
 } from "./activity-performance-test-helpers.ts";
-import { clickHouseMigrations } from "../../../src/db/clickhouse-migrations/registry.ts";
 
 const dirtyKeySchema = z.object({
   activity_id: z.string(),
@@ -159,6 +159,25 @@ describe("0099 activity sensor day versions", () => {
       expect(completed).toBe(true);
     },
   );
+
+  it("advances an older never-processed key despite lower-UUID arrivals and shared-day refreshes", async () => {
+    await insertPerformanceActivity(client, database, 1000);
+    let completed = false;
+    for (let cycle = 0; cycle < 3; cycle++) {
+      await insertPerformanceActivities(
+        client,
+        database,
+        Array.from({ length: 32 }, (_, offset) => cycle * 32 + offset + 1),
+      );
+      await insertPerformanceSensor(client, database, "2026-09-01 12:00:00");
+      const selected = await keys();
+      expect(selected).toHaveLength(32);
+      expect(new Set(selected.map((key) => key.activity_id)).size).toBe(32);
+      completed ||= selected.some((key) => key.activity_id === activityPerformanceId(1000));
+      await persistActivityDirtyKeys(client, database, sql);
+    }
+    expect(completed).toBe(true);
+  });
 
   it("keeps a processed-empty window clean until a real source arrival", async () => {
     await insertPerformanceActivity(client, database, 1);

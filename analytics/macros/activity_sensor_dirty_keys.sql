@@ -187,9 +187,9 @@ WHERE (prior_activity_id IS null AND source_is_deleted = 0)
     OR (source_is_deleted = 1 AND prior_is_deleted = 0)
     OR (source_is_deleted = 0 AND source_sensor_version > prior_sensor_version)
 -- A pending key keeps its last processing age even if its day refreshes again.
--- New keys start at their causal source age, rather than jumping ahead at zero.
+-- Unseen keys keep their activity clock when a shared sensor day refreshes.
 ORDER BY
-    coalesce(prior_refresh_version, greatest(source_activity_version, source_sensor_version)),
+    coalesce(prior_refresh_version, source_activity_version),
     greatest(source_activity_version, source_sensor_version),
     user_id,
     activity_id
