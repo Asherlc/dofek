@@ -234,7 +234,7 @@
     "@ai-sdk/otel": "1.0.47",
     "@aws-crypto/client-node": "5.0.0",
     "@aws-sdk/client-s3": "3.1128.0",
-    "@aws-sdk/s3-request-presigner": "3.1128.0",
+    "@aws-sdk/s3-request-presigner": "3.1138.0",
     "@clickhouse/client": "1.23.1",
     "@dofek/eight-sleep": "workspace:*",
     "@dofek/format": "workspace:*",
