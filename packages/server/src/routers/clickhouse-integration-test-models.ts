@@ -576,6 +576,17 @@ source_sensor_version UInt64,
 refresh_version UInt64,
 is_deleted UInt8,
 refreshed_at DateTime64(9, 'UTC')`,
+    activity_heart_rate_distribution: `user_id UUID,
+activity_id UUID,
+started_at DateTime64(6, 'UTC'),
+ended_at DateTime64(6, 'UTC'),
+canonical_type String,
+samples Array(Tuple(heart_rate Float64, sample_count UInt64)),
+source_activity_version UInt64,
+source_sensor_version UInt64,
+refresh_version UInt64,
+is_deleted UInt8,
+refreshed_at DateTime64(9, 'UTC')`,
     activity_aerobic_efficiency: `activity_id UUID,
 user_id UUID,
 canonical_type String,
@@ -674,6 +685,7 @@ refreshed_at DateTime64(9)`,
     shortViewName === "hiking_activity" ||
     shortViewName === "activity_power_curve" ||
     shortViewName === "activity_pace_curve" ||
+    shortViewName === "activity_heart_rate_distribution" ||
     shortViewName === "activity_aerobic_efficiency" ||
     shortViewName === "cycling_activity" ||
     shortViewName === "daily_cycling" ||
@@ -715,6 +727,7 @@ refreshed_at DateTime64(9)`,
                                 shortViewName === "activity_pace_curve"
                               ? "(user_id, activity_id, duration_seconds)"
                               : shortViewName === "hiking_activity" ||
+                                  shortViewName === "activity_heart_rate_distribution" ||
                                   shortViewName === "activity_aerobic_efficiency" ||
                                   shortViewName === "activity_polarization_zones"
                                 ? "(user_id, activity_id)"

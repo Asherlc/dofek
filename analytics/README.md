@@ -359,7 +359,8 @@ Production `DBT_SAFE_MODELS` currently selects `sensor_scalar_sample`,
 `activity_stream_points`, `activity_heart_rate_zones`, `activity_summary_rows`,
 `hiking_activity`, `body_measurement`, `activity_vo2max_estimate`,
 `activity_aerobic_efficiency`, `activity_polarization_zones`,
-`activity_power_curve`, `activity_pace_curve`, `cycling_activity`, `daily_cycling`, `provider_stats`,
+`activity_power_curve`, `activity_pace_curve`, `activity_heart_rate_distribution`,
+`cycling_activity`, `daily_cycling`, `provider_stats`,
 `daily_activity_load`, `daily_strain`, `healthspan_activity_zone_minutes`,
 and `weekly_healthspan`. `activity_pace_curve` reads canonical `deduped_sensor FINAL`
 speed samples within each canonical activity's inclusive temporal window, using
@@ -373,6 +374,21 @@ sample. Cumulative-sum differences divided by that window count produce the raw
 best speed. It requires at least two positive samples and enough samples for the
 window. ClickHouse documents Float64 ties-to-even rounding in its
 [rounding reference](https://clickhouse.com/docs/sql-reference/functions/rounding-functions#round).
+
+`activity_heart_rate_distribution` uses the same bounded dirty-key selection for
+heart-rate samples. It resolves `deduped_sensor FINAL` before filtering live,
+non-null values, preserving exact fractional Float64 values and UInt64 counts in
+`Array(Tuple(heart_rate Float64, sample_count UInt64))`. Samples are eligible for
+each endurance activity's inclusive window, including its twelve-hour fallback,
+regardless of source activity links; zero and negative values remain eligible.
+It applies no resting/max-heart-rate baseline or zone assignment. Each selected
+user/activity emits one row with complete activity/sensor versions and structural
+window/type state: live empty activities retain an empty array, while deleted or
+ineligible activities emit tombstones. Training owns this model without changing
+its fifteen-minute freshness target. The existing `activity_heart_rate_zones`
+model is unchanged. See ClickHouse's
+[Tuple type](https://clickhouse.com/docs/sql-reference/data-types/tuple) and
+[ReplacingMergeTree current-state semantics](https://clickhouse.com/docs/engines/table-engines/mergetree-family/replacingmergetree).
 
 The shared `activity_sensor_dirty_keys` macro selects at most 32 unique
 user/activity keys on both first and incremental builds. Every selected key emits

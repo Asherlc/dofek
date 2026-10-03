@@ -6,6 +6,7 @@ export const PRODUCTION_DBT_MODELS = [
   "activity_duplicate_groups",
   "deduped_activities",
   "activity_pace_curve",
+  "activity_heart_rate_distribution",
   "deduped_activity_members",
   "activity_effort_identity",
   "activity_sensor_sample",
@@ -249,6 +250,7 @@ export const DATASET_CONTRACTS = [
     analyticsModels: [
       "daily_endurance_load",
       "activity_pace_curve",
+      "activity_heart_rate_distribution",
       "weekly_endurance_ramp_rate",
       "weekly_training_monotony",
       "healthspan_activity_zone_minutes",
