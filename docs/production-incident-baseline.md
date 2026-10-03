@@ -29171,3 +29171,25 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   evidence. Recheck the emitted URL after idle intervals before browser tests.
   Quick Tunnels use temporary hostnames and have no uptime guarantee according
   to [Cloudflare's Quick Tunnel documentation](https://developers.cloudflare.com/tunnel/get-started/quick-tunnels/).
+
+## 2026-10-03 — Oversized local heart-rate fixture exceeded ClickHouse memory
+
+- **Symptoms / impact:** A controlled integration benchmark failed while seeding
+  one million raw rows. Production was unaffected; semantic tests passed, but
+  the benchmark could not reach its access-path assertion.
+- **Evidence / cause:** The focused heart-rate and migration integration command
+  reported `(total) memory limit exceeded: would use 1.25 GiB ... maximum:
+  1.25 GiB` during insertion. Constructing the existing provider-current-state
+  aggregate projection for the oversized insert exhausted the local engine's
+  memory allowance. Complete output remains in ignored local evidence.
+- **Mitigation / validation:** Reduced the controlled fixture to 200,000 rows
+  while retaining many dates, unassigned samples and multiple activity shapes.
+  The same unchanged engine then completed insertion, semantic/migration tests,
+  actual plans and query-log measurements. The new whole query read 49,152 rows
+  versus 81,920 for the local baseline; this is scan evidence, not a production
+  speed or page acceptance claim. Scaled timing validation remains outstanding.
+- **Remaining risk / follow-up:** Seed larger benchmarks in bounded chunks;
+  preserve a fixture that discriminates the old access path. No memory limit,
+  timeout, retry, projection setting or application behavior was changed to
+  bypass the failure. ClickHouse describes memory accounting and query limits
+  in its [memory settings reference](https://clickhouse.com/docs/operations/settings/settings#max_memory_usage).
