@@ -354,6 +354,55 @@ array; deleted/ineligible activity state is tombstoned.
 - [ ] Commit `perf: materialize activity heart rate counts`; push.
   Mark this model-preparation commit boundary for Task 13's first release.
 
+### Task 5A: Integrate approved main changes before reader work
+
+On October 3 the user approved merging current main into this same audit branch
+after the heart-rate commit, preserving both incident records and rerunning
+affected checks. Execute after Task5's independent review. Current diagnosed
+main is `fbd1f09a1`; its incoming changes are reviewed UI-copy and release/security
+updates. Root's diagnostic found only `docs/production-incident-baseline.md`
+conflicting. No branch switching, rebase, new branch or production deployment.
+
+- [ ] Record clean BASE/HEAD and merge the approved main source. If main advanced
+  materially or conflicts differ, report evidence before broadening scope.
+- [ ] Preserve both complete incident histories once, including loading audit,
+  OOM evidence, approved broker restoration and tunnel recovery. Inspect automatic
+  incoming UI/dependency changes for consistency with the loading contracts.
+- [ ] Read the merged guidance; install the frozen lockfile. Run lint,
+  root/server/web/mobile typechecks and relevant incoming UI/security plus loading
+  tracker/processing unit tests. Repeat database suites only for a concrete new
+  merged behavior or failed check; unchanged model sources retain Task5 evidence.
+- [ ] Coordinate any database/compiler-dependent lint with root's approved
+  fourteen-broker pause/restoration window; never start with exhausted host RAM.
+  Keep all engine limits/deadlines unchanged. Commit/push the merge automatically.
+- [ ] Record exact source SHAs, conflict preservation, affected gate evidence and
+  limitations; independent scoped review must approve before Task5B/6.
+
+### Task 5B: Align reader cutover with the two-release source boundary
+
+On October 3 the user approved restoring the four Task2 reader files for
+Release A and reapplying them in Task6 for Release B. This corrects source
+sequencing: reader commit `f60a9fb750159a41034a0a31d5d69f63cfcc849c` precedes
+Tasks3–5, so the previous contiguous preparation snapshot included its cutover.
+Retain exactly the approved two releases and canonical deployment mechanism.
+
+**Files:** `packages/server/src/repositories/heart-rate-repository.ts`, its
+`.test.ts` and `.integration.test.ts`, and
+`heart-rate-repository-test-helpers.ts` from that reader commit only.
+
+- [ ] After Task5A review, restore the preceding production reader and tests in
+  those four files without removing projections0098/0099 or either result model.
+  No fallback flag, duplicate path, new workflow, extra release or branch change.
+- [ ] Run restored focused unit/database parity, lint and required typechecks
+  under the same approved capacity procedure. Do not add tests asserting the
+  absence of the new reader. Commit/push and obtain scoped independent review.
+- [ ] Record the exact preparation source boundary for Task13. It must contain
+  schema/model preparation and existing readers; it is not deployment approval.
+- [ ] Carry the reviewed reader restoration into Task6: reapply the exact Task2
+  bounded native `FINAL` implementation/tests before compact-reader work, then
+  validate the combined reader snapshot. Index/model population and freshness
+  still precede its production rollout.
+
 ### Task 6: Serve compact pace/HR results and prove freshness
 
 **Files:** Modify
