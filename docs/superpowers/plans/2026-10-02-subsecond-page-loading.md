@@ -193,7 +193,9 @@ ingested_at, is_deleted. Order by user_id, channel, recorded_at, activity_id, id
 
 - [ ] Extend integration fixtures with a newer deleted version of a positive row,
   a newer zero/null replacement, an identical replay, provider overlap, two users,
-  and both DST transition dates. Assert only the winning live positive rows
+  both DST transition dates, and differing scalar payloads with identical raw
+  identity/version/ingestion timestamp inserted into separate parts. Assert the
+  tied winner matches native FINAL before and after merges. Only winning live positive rows
   contribute; source series remain separate and minute counts/statistics match
   independently calculated expectations.
 - [ ] Capture the deployed engine version, current EXPLAIN, and baseline
@@ -207,10 +209,19 @@ ingested_at, is_deleted. Order by user_id, channel, recorded_at, activity_id, id
   migration. Preserve the raw replacement key and merge/deletion settings.
   Existing provider inventory projections serve different predicates and lack
   scalar/channel; do not delete them without a consumer/plan comparison.
-- [ ] Rewrite the reader to select complete winning tuples by the raw logical
-  replacement identity before filtering deletion/value. Apply only identity-safe
-  time/channel/user bounds early, then retain existing minute/statistic output.
-  Use normal optimizer selection; add no forced-projection setting.
+- [ ] Approved amendment (2026-10-03): use the projection to find candidate full
+  raw replacement keys for the requested user/channel/time slice, then resolve
+  those keys with a bounded native FINAL lookup before filtering deletion/value.
+  Keep candidate selection identity-safe, including deleted/invalid revisions;
+  retain existing minute/statistic output. Do not replace native winner selection
+  with argMax: the actual writer permits equal version and ingestion timestamp
+  with differing payloads, and the controlled engine reproduction returned
+  scalar 100 for FINAL versus 60 for both reducers. This follows ClickHouse's
+  [replacement tie semantics](https://clickhouse.com/docs/reference/engines/table-engines/mergetree-family/replacingmergetree#ver)
+  and [argMax tie behavior](https://clickhouse.com/docs/reference/functions/aggregate-functions/argMax).
+  Use normal optimizer selection; add no forced-projection setting. Prove both
+  candidate-scan projection use and bounded FINAL lookup with actual engine plans
+  and rows/bytes before accepting the access path.
 - [ ] On a controlled scaled fixture, verify EXPLAIN/query_log selects the new
   projection and reads the requested time/channel slice. Compare results with
   the original query before and after background merges. Execute migration twice

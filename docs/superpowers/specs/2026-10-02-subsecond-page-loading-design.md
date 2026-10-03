@@ -136,6 +136,18 @@ cannot reappear when the new version is deleted or invalid. Only identity-stable
 user/channel/time predicates may move before that reduction. Test tied versions
 against the actual writer/engine contract rather than inventing a new ordering.
 
+Approved implementation amendment (2026-10-03): retain native FINAL for winner
+selection and use the projection to find bounded candidate replacement keys.
+The actual writer permits differing payloads with equal version and ingestion
+timestamp; a separate-part engine reproduction returned scalar 100 for FINAL
+versus 60 for both version-only and version/ingestion-time argMax reducers, and
+FINAL remained 100 after merging. Candidate selection includes all revisions and
+uses only identity-safe bounds; deletion and value filters follow FINAL. Prove
+normal projection selection and bounded native lookup independently before
+adopting this path. ClickHouse documents
+[last-inserted resolution for equal versions](https://clickhouse.com/docs/reference/engines/table-engines/mergetree-family/replacingmergetree#ver)
+and [nondeterministic argMax ties](https://clickhouse.com/docs/reference/functions/aggregate-functions/argMax).
+
 Inspect existing projections before adding one; reuse or replace an inadequate
 access path instead of retaining redundant structures. A required covering
 projection is an engine-maintained index over the canonical data, not a second
