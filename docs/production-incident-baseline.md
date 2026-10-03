@@ -29039,3 +29039,24 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   beside the unit-test tiers in [docs/testing.md](testing.md#integration-dependencies).
   The existing [Compose environment script](../scripts/compose-env.ts) and
   [testing runbook](testing.md) remain the canonical local setup references.
+
+## 2026-10-02 — UI cleanup PR blocked by dependency audit
+
+- **Symptoms / impact:** [PR #2866](https://github.com/Asherlc/dofek/pull/2866)
+  failed Dependency Audit, blocking CI readiness. No deployment was performed.
+- **Evidence / root cause:** The [audit job](https://github.com/Asherlc/dofek/actions/runs/37095433359/job/111124399964)
+  ran `pnpm audit --prod --audit-level=high --ignore-registry-errors` and reported
+  high-severity findings for `node-forge@1.4.0` and `braces@3.0.3`, then
+  `Process completed with exit code 1`. The branch lockfile and workspace
+  dependency configuration matched `origin/main`. See the
+  [node-forge advisory](https://github.com/advisories/GHSA-86w9-cpqp-85rv) and
+  [braces advisory](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm).
+- **Investigation / validation:** At 04:09 UTC on October 3, explicit
+  `pnpm view node-forge@1.4.1 version --registry=https://registry.npmjs.org`
+  and the equivalent lookup for `braces@3.0.4` both returned npm E404.
+  Those versions were suggested by the audit output but were unavailable.
+  Local lint, root/server/web/mobile typechecks, and 19,397 unit/mobile tests
+  passed, with 20 tests skipped.
+- **Status / follow-up:** Unresolved. Verify published fixed releases before
+  updating the lockfile and rerunning the audit. No advisory suppression,
+  dependency workaround, retry, or timeout was added.
