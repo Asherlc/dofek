@@ -29929,3 +29929,41 @@ operation occurred.
   remains separate. No workflow trigger, timeout, retry, database setting or
   release count changed. Inspect mergeability and exact workflow event before
   diagnosing an absent run as a test failure.
+
+## 2026-10-04 — Coverage schema introspection failed on the CI ClickHouse version
+
+- **Symptoms / impact:** Normal [CI 37175963430](https://github.com/Asherlc/dofek/actions/runs/37175963430)
+  failed integration shard 3's coverage initial-create compatibility case.
+  Local ClickHouse 26.8 passed; CI uses 26.6.1.1193. Preparation CI and compact
+  reader progress are blocked. No production mutation or user outage is evidenced.
+- **Evidence / root cause:** A bounded exact-image reproduction created the native
+  View and passed its typed SELECT, then failed direct DESCRIBE with query ID
+  `caf2490e-072c-4614-9f7d-d60fdd2de025`, code 46 UNKNOWN_FUNCTION. Pinned
+  [26.6 describe source](https://raw.githubusercontent.com/ClickHouse/ClickHouse/v26.6.1.1193-stable/src/Interpreters/InterpreterDescribeQuery.cpp)
+  dispatches that form to the [registered table-function factory](https://raw.githubusercontent.com/ClickHouse/ClickHouse/v26.6.1.1193-stable/src/TableFunctions/TableFunctionFactory.cpp);
+  [26.8 source](https://raw.githubusercontent.com/ClickHouse/ClickHouse/v26.8.2.7-lts/src/Interpreters/InterpreterDescribeQuery.cpp)
+  adds parameterized-view catalog handling. This is a direct schema-introspection
+  limitation, not evidence that the view cannot be created or selected.
+- **Direct correction / validation:** The compatibility query now describes the
+  same typed SELECT through the supported subquery schema path, retaining every
+  column/type assertion, UUID binding and required query setting. Pinned 26.6
+  describe source analyzes subquery sample schemas. Corrected-path runtime
+  validation is pending; no successful repair is claimed. Diagnostic stop/down
+  both succeeded, owned resources and lock were removed, and an independent
+  check found all 57 original containers healthy at 13:45:48.720 UTC.
+- **Remaining risk / follow-up:** Require exact-image validation, local two-case
+  validation, scoped source review and normal CI on the corrected committed
+  snapshot. Downstream freshness/resource and production acceptance gates remain
+  separate. No image update, fallback, timeout, retry or setting relaxation was
+  introduced. Identify the exact failing query stage and pinned interpreter
+  dispatch before changing an image or weakening a schema gate.
+
+Validation update, 2026-10-04 14:02 UTC: the corrected initial-create case passed
+once on the exact pinned 26.6.1.1193 CI image, retry 0, with the unchanged strict
+four-column/type assertions. The canonical local compatibility suite then passed
+both initial-create and replacement cases (5.99 s total). Owned diagnostic
+stop/down succeeded, resources and lock were absent, and an independent check
+verified all 57 original containers healthy at 14:02:18.214 UTC. Normal CI on the
+corrected committed snapshot is still pending; broader preparation, compact
+reader freshness/resource and production acceptance gates remain open. No
+successful-query native ID was captured by the diagnostic's failure-only selector.

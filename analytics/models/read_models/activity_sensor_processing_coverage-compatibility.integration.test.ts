@@ -116,7 +116,7 @@ describe("coverage pinned adapter compatibility", () => {
       { user_id: activityPerformanceUserId, model: "activity_pace_curve", pending: 1 },
     ]);
     const schema = await client.query({
-      query: `DESCRIBE TABLE ${invocation}`,
+      query: `DESCRIBE TABLE (SELECT * FROM ${invocation})`,
       clickhouse_settings: activitySensorCoverageQuerySettings,
       query_params: { userIds: [activityPerformanceUserId] },
       format: "JSONEachRow",
