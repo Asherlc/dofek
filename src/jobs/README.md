@@ -41,3 +41,40 @@ This directory contains background job processing logic using BullMQ and Redis.
   Other queues declare retry options at their enqueue sites. BullMQ documents
   fixed backoff and attempt handling in
   [retrying failing jobs](https://docs.bullmq.io/guide/retrying-failing-jobs).
+
+## Provider Issue Emails
+
+The shared [sync logger](../db/sync-log.ts) checks completed, overall provider
+failures for user notification. Authorization failures send an email immediately;
+other issues send one after two scheduled failures since the last successful
+overall sync. Manual errors and individual data-step errors do not count toward
+that threshold. A successful manual or scheduled overall sync allows a later
+issue to trigger a new alert. See the
+[notification implementation](../db/provider-issue-notification.ts) and its
+[database integration tests](../db/provider-issue-notification.integration.test.ts).
+
+Emails name the provider, explain whether reconnection is required, and link to
+its page on `https://dofek.fit`. They use the existing `BREVO_API_KEY` and
+`EXPORT_EMAIL_FROM` worker configuration and Brevo's
+[transactional email API](https://developers.brevo.com/docs/send-a-transactional-email).
+Upstream error payloads are kept out of email content.
+
+`fitness.provider_issue_email` records the email accepted by Brevo for each
+connection's active issue. A transaction serializes notification decisions,
+applies the existing account-erasure fence, and records acceptance after sending.
+An overall success clears the marker in the same transaction as its sync log.
+Both logging and delivery acquire the user fence before the connection lock.
+Its connection foreign key removes that state on disconnect or account deletion.
+See PostgreSQL
+[transaction locks](https://www.postgresql.org/docs/current/explicit-locking.html)
+and [foreign keys](https://www.postgresql.org/docs/current/ddl-constraints.html#DDL-CONSTRAINTS-FK).
+Concurrent attempts and later failed syncs suppress repeat alerts until recovery.
+If a worker stops after Brevo accepts an email but before acceptance is recorded,
+a later sync may send it again.
+
+Email requests have a 30-second deadline so a stalled sender cannot hold the
+notification transaction indefinitely. Missing recipient addresses are skipped.
+Delivery errors are reported to Sentry with `operation=provider-issue-email` and
+logged without changing the recorded provider outcome; a later failed sync tries
+delivery again while the issue remains active. The shared backend applies the
+same notification policy for web and mobile users.

@@ -29872,3 +29872,60 @@ Receipts: `task6A-required-context-compatibility-green.log`,
 `task6A-required-context-tooling-green.log`. Production source-arrival,
 worker/freshness and final reader acceptance remain pending; no production
 operation occurred.
+
+## 2026-10-03 — Provider issue email PR blocked by migration and mutation checks
+
+- **Symptoms / impact:** [PR #2869](https://github.com/Asherlc/dofek/pull/2869)
+  failed SQLFluff, Stryker, and one integration shard, blocking CI readiness.
+  No production deployment or user-facing outage occurred.
+- **Evidence / root causes:** The [SQLFluff job](https://github.com/Asherlc/dofek/actions/runs/37144716484/job/111266312528)
+  ran `uv tool run sqlfluff lint` on the new migration and reported
+  `L: 7 | P: 1 | LT02 | Expected indent of 2 spaces`. Its foreign-key
+  continuation lines used four spaces. The [mutation job](https://github.com/Asherlc/dofek/actions/runs/37144716484/job/111266498408)
+  reported `Final mutation score 64.52 under breaking threshold 75` because
+  unit tests did not detect removed recovery writes or exercise missing
+  transaction and account-deletion paths. The [integration shard](https://github.com/Asherlc/dofek/actions/runs/37144716484/job/111266498593)
+  reported `relation "provider_issue_email" already exists`: the historical
+  climbing migration fixture used the current migration folder against an
+  already-current database with history recorded only through migration 0133.
+- **Fix / validation:** Corrected the new migration's indentation, added
+  targeted sync-log cases, and bounded the historical fixture's migration
+  folder through its intended 0135 cutover while preserving archived hashes.
+  The same mutation command killed all 31 active mutants for a 100% score.
+  SQLFluff, 82 focused unit tests, and 51 PostgreSQL/email integration tests
+  passed locally. Root/server/web typechecks passed. Local analytics lint
+  first found an unreachable ClickHouse endpoint; `pnpm compose:up` restored
+  the workspace connection settings and lint passed.
+- **Remaining risk / follow-up:** Hosted validation is tracked on the
+  [PR checks](https://github.com/Asherlc/dofek/pull/2869/checks).
+  The [database README](../src/db/README.md#migrations) now includes the
+  migration SQLFluff command because root `pnpm lint` checks analytics SQL.
+  Keep historical migration fixtures scoped to the versions they model and
+  use mutation reports to cover changed runtime branches. No runtime retry,
+  timeout, or gate relaxation was added for these failures.
+
+## 2026-10-03 — Reviewed analytics preparation PR had no normal CI after main advanced
+
+- **Symptoms / impact:** PR #2868 at preparation commit `ac725e4fa` had no
+  normal CI run; only skipped Dependabot Automerge appeared. GitHub reported
+  the draft PR as CONFLICTING / DIRTY. No production deployment or outage occurred.
+- **Evidence / root cause:** Main advanced by provider issue notifications and
+  package version release to `4ef5e6863`. Native merge-tree and the actual
+  same-branch merge identified only a content conflict in this incident log.
+  GitHub [does not run pull_request workflows while a merge conflict remains](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#pull_request);
+  pull_request_target can still run. The missing run is not a failed test job.
+- **Direct fix / validation:** Merged that exact frozen main commit on the same
+  branch with automatic stashing disabled. Preserved the complete reviewed
+  incident history and the distinct incoming provider-email record exactly once;
+  unrelated incoming files retain native merge results. Focused units pass 69
+  cases, provider-notification integration 23, and email integration six, with
+  teardown complete. Sandbox/analytics/migration lint, migration policy and
+  root/server/web/mobile typechecks pass without relaxed flags or limits. The
+  refreshed source review and normal PR CI remain pending. Reader/worker/cache
+  consumer changes remain uncommitted and protected.
+- **Remaining risk / follow-up:** Normal CI must validate the merged snapshot,
+  including incoming historical migration coverage; earlier main CI success
+  does not certify this merge. Production freshness/population/page acceptance
+  remains separate. No workflow trigger, timeout, retry, database setting or
+  release count changed. Inspect mergeability and exact workflow event before
+  diagnosing an absent run as a test failure.
