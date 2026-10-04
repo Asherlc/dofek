@@ -11,7 +11,7 @@
 ) }}
 
 WITH activity_keys AS MATERIALIZED (
-    {{ activity_sensor_dirty_keys('heart_rate', this) }}
+    {{ activity_sensor_dirty_keys('heart_rate', this, captured_keys=var('activity_sensor_captured_keys', none)) }}
 ),
 
 activity_bounds AS (

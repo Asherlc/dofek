@@ -1,4 +1,31 @@
-{% macro activity_sensor_dirty_keys(channel, target_relation, batch_size=32) %}
+{% macro activity_pace_durations() %}
+    {{ return([5, 15, 30, 60, 120, 300, 600, 1200, 1800, 3600, 5400, 7200]) }}
+{% endmacro %}
+
+{% macro activity_sensor_dirty_keys(channel, target_relation, batch_size=32, read_prior_state=false, captured_keys=none, required_durations=none, target_user_ids=none) %}
+{% if batch_size is not none and (batch_size < 1 or batch_size > 32) %}
+    {{ exceptions.raise_compiler_error('Activity sensor writes admit at most 32 keys') }}
+{% endif %}
+{% if captured_keys is not none %}
+    {% if captured_keys is not sequence or captured_keys is string or captured_keys | length < 1 or captured_keys | length > 32 %}
+        {{ exceptions.raise_compiler_error('activity_sensor_captured_keys must contain 1 to 32 exact source pairs') }}
+    {% endif %}
+    {% for key in captured_keys %}
+        {% if key is not mapping %}
+            {{ exceptions.raise_compiler_error('Captured activity sensor keys must be objects') }}
+        {% endif %}
+        {% for field in ['user_id', 'activity_id'] %}
+            {% if key[field] is not string or not modules.re.fullmatch('[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}', key[field]) %}
+                {{ exceptions.raise_compiler_error('Captured activity sensor key requires UUID ' ~ field) }}
+            {% endif %}
+        {% endfor %}
+        {% for field in ['source_activity_version', 'source_sensor_version'] %}
+            {% if key[field] is not string or not modules.re.fullmatch('0|[1-9][0-9]{0,19}', key[field]) or key[field] | int > 18446744073709551615 %}
+                {{ exceptions.raise_compiler_error('Captured activity sensor key requires lossless UInt64 ' ~ field) }}
+            {% endif %}
+        {% endfor %}
+    {% endfor %}
+{% endif %}
 -- Consumers persist a row even for empty results, including the complete
 -- activity/sensor version pair and current bounds. Sensor versions use the
 -- canonical serialized writer's clock; a later refresh exceeds prior day maxima.
@@ -13,10 +40,13 @@ WITH activity_state AS MATERIALIZED (
         refresh_version AS source_activity_version,
         is_deleted AS source_is_deleted
     FROM {{ ref('deduped_activities') }} FINAL
+    {% if target_user_ids is not none %}
+    WHERE user_id IN {{ target_user_ids }}
+    {% endif %}
 ),
 
 prior_state AS MATERIALIZED (
-    {% if is_incremental() %}
+    {% if read_prior_state or is_incremental() %}
     SELECT
         user_id,
         activity_id,
@@ -26,7 +56,8 @@ prior_state AS MATERIALIZED (
         tupleElement(marker, 4) AS source_activity_version,
         tupleElement(marker, 5) AS source_sensor_version,
         tupleElement(marker, 6) AS is_deleted,
-        marker_refresh_version AS refresh_version
+        marker_refresh_version AS refresh_version,
+        marker_complete
     FROM (
         -- Targets may have several durations/buckets per activity. Read one
         -- complete latest marker; a live variant wins a tied lifecycle clock.
@@ -37,8 +68,17 @@ prior_state AS MATERIALIZED (
                 tuple(canonical_type, started_at, ended_at, source_activity_version, source_sensor_version, is_deleted),
                 tuple(refresh_version, toUInt8(1) - is_deleted)
             ) AS marker,
-            max(refresh_version) AS marker_refresh_version
+            max(refresh_version) AS marker_refresh_version,
+            {% if required_durations is not none %}
+            arraySort(groupUniqArray(duration_seconds)) = [{{ required_durations | join(', ') }}]
+                AND uniqExact(tuple(canonical_type, started_at, ended_at, source_activity_version, source_sensor_version, is_deleted, refresh_version)) = 1 AS marker_complete
+            {% else %}
+            toUInt8(1) AS marker_complete
+            {% endif %}
         FROM {{ target_relation }} FINAL
+        {% if target_user_ids is not none %}
+        WHERE user_id IN {{ target_user_ids }}
+        {% endif %}
         GROUP BY user_id, activity_id
     )
     {% else %}
@@ -51,27 +91,16 @@ prior_state AS MATERIALIZED (
         CAST(null, 'Nullable(UInt64)') AS source_activity_version,
         CAST(null, 'Nullable(UInt64)') AS source_sensor_version,
         CAST(null, 'Nullable(UInt8)') AS is_deleted,
-        CAST(null, 'Nullable(UInt64)') AS refresh_version
+        CAST(null, 'Nullable(UInt64)') AS refresh_version,
+        toUInt8(0) AS marker_complete
     WHERE 0
     {% endif %}
 ),
 
-all_keys AS (
-    SELECT
-        user_id,
-        activity_id
-    FROM activity_state
-    UNION DISTINCT
-    SELECT
-        user_id,
-        activity_id
-    FROM prior_state
-),
-
 key_state AS MATERIALIZED (
     SELECT
-        all_keys.user_id AS user_id,
-        all_keys.activity_id AS activity_id,
+        coalesce(activity_state.user_id, prior_state.user_id) AS user_id,
+        coalesce(activity_state.activity_id, prior_state.activity_id) AS activity_id,
         coalesce(activity_state.canonical_type, prior_state.canonical_type) AS canonical_type,
         coalesce(activity_state.started_at, prior_state.started_at) AS started_at,
         coalesce(activity_state.ended_at, prior_state.ended_at) AS ended_at,
@@ -83,39 +112,36 @@ key_state AS MATERIALIZED (
         prior_state.source_activity_version AS prior_activity_version,
         prior_state.source_sensor_version AS prior_sensor_version,
         prior_state.is_deleted AS prior_is_deleted,
-        prior_state.refresh_version AS prior_refresh_version
-    FROM all_keys
-    LEFT JOIN activity_state USING (user_id, activity_id)
-    LEFT JOIN prior_state USING (user_id, activity_id)
-),
-
-window_bounds AS (
-    SELECT
-        user_id,
-        activity_id,
-        started_at,
-        ended_at
-    FROM key_state
-    WHERE source_is_deleted = 0
-    UNION DISTINCT
-    SELECT
-        user_id,
-        activity_id,
-        prior_started_at AS started_at,
-        prior_ended_at AS ended_at
-    FROM key_state
-    WHERE source_is_deleted = 0 AND prior_started_at IS NOT null
+        prior_state.refresh_version AS prior_refresh_version,
+        prior_state.marker_complete AS prior_marker_complete
+    FROM activity_state
+    FULL OUTER JOIN prior_state USING (user_id, activity_id)
 ),
 
 window_dates AS MATERIALIZED (
     SELECT DISTINCT
         user_id,
         activity_id,
-        arrayJoin(arrayMap(
-            offset -> toDate(started_at) + offset,
-            range(toUInt32(greatest(0, dateDiff('day', toDate(started_at), toDate(ended_at)))) + 1)
+        arrayJoin(arrayConcat(
+            arrayMap(
+                offset -> toDate(assumeNotNull(started_at)) + offset,
+                range(toUInt32(greatest(0, dateDiff('day',
+                    toDate(assumeNotNull(started_at)),
+                    toDate(assumeNotNull(ended_at))
+                ))) + 1)
+            ),
+            if(prior_started_at IS null, CAST([], 'Array(Date)'),
+                arrayMap(
+                    offset -> toDate(assumeNotNull(coalesce(prior_started_at, started_at))) + offset,
+                    range(toUInt32(greatest(0, dateDiff('day',
+                        toDate(assumeNotNull(coalesce(prior_started_at, started_at))),
+                        toDate(assumeNotNull(coalesce(prior_ended_at, ended_at)))
+                    ))) + 1)
+                )
+            )
         )) AS recorded_date
-    FROM window_bounds
+    FROM key_state
+    WHERE source_is_deleted = 0
 ),
 
 day_versions AS (
@@ -127,6 +153,9 @@ day_versions AS (
         max(refresh_version) AS source_refresh_version
     FROM {{ ref('deduped_sensor') }}
     WHERE channel = '{{ channel }}'
+        {% if target_user_ids is not none %}
+        AND user_id IN {{ target_user_ids }}
+        {% endif %}
         AND (user_id, recorded_date) IN (
             SELECT
                 user_id,
@@ -162,6 +191,7 @@ versioned_keys AS (
         key_state.prior_sensor_version AS prior_sensor_version,
         key_state.prior_is_deleted AS prior_is_deleted,
         key_state.prior_refresh_version AS prior_refresh_version,
+        key_state.prior_marker_complete AS prior_marker_complete,
         greatest(
             coalesce(key_state.prior_sensor_version, toUInt64(0)),
             coalesce(sensor_versions.source_sensor_version, toUInt64(0))
@@ -180,12 +210,22 @@ SELECT
     prior_ended_at,
     assumeNotNull(source_activity_version) AS source_activity_version,
     source_sensor_version,
-    source_is_deleted
+    source_is_deleted,
+    assumeNotNull(coalesce(prior_refresh_version, source_activity_version)) AS processing_age
 FROM versioned_keys
-WHERE (prior_activity_id IS null AND source_is_deleted = 0)
+WHERE ((prior_activity_id IS null AND source_is_deleted = 0)
     OR source_activity_version != prior_activity_version
     OR (source_is_deleted = 1 AND prior_is_deleted = 0)
     OR (source_is_deleted = 0 AND source_sensor_version > prior_sensor_version)
+    OR prior_marker_complete = 0)
+{% if captured_keys is not none %}
+    AND (user_id, activity_id, source_activity_version, source_sensor_version) IN (
+        {% for key in captured_keys %}
+        (toUUID('{{ key.user_id }}'), toUUID('{{ key.activity_id }}'), toUInt64('{{ key.source_activity_version }}'), toUInt64('{{ key.source_sensor_version }}')){% if not loop.last %},{% endif %}
+        {% endfor %}
+    )
+{% endif %}
+{% if batch_size is not none %}
 -- A pending key keeps its last processing age even if its day refreshes again.
 -- Unseen keys keep their activity clock when a shared sensor day refreshes.
 ORDER BY
@@ -194,4 +234,5 @@ ORDER BY
     user_id,
     activity_id
 LIMIT {{ batch_size }}
+{% endif %}
 {% endmacro %}

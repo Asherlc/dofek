@@ -467,18 +467,26 @@ export function lintMigrationPolicyFile(
       .filter((relation): relation is string => relation != null),
   );
 
-  if (
-    filePath.startsWith("analytics/models/") &&
-    !/\{\{\s*config\s*\([\s\S]*\bmaterialized\s*=\s*['"]incremental['"]/i.test(uncommentedContent)
-  ) {
-    violations.push(
-      buildFileViolation(
-        filePath,
-        "analytics-dbt-incremental-model",
-        "Analytics dbt models must be explicit incremental models; do not add view/table models that require full refreshes or live recomputation.",
-        content,
-      ),
+  if (filePath.startsWith("analytics/models/")) {
+    const isCoverageView =
+      filePath === "analytics/models/read_models/activity_sensor_processing_coverage.sql";
+    const materialization = isCoverageView ? "view" : "incremental";
+    const configPattern = new RegExp(
+      `\\{\\{\\s*config\\s*\\([\\s\\S]*\\bmaterialized\\s*=\\s*['"]${materialization}['"]`,
+      "i",
     );
+    if (!configPattern.test(uncommentedContent)) {
+      violations.push(
+        buildFileViolation(
+          filePath,
+          isCoverageView ? "analytics-dbt-coverage-view" : "analytics-dbt-incremental-model",
+          isCoverageView
+            ? "Activity sensor processing coverage must be an explicit read-only dbt view."
+            : "Analytics dbt models must be explicit incremental models; do not add view/table models that require full refreshes or live recomputation.",
+          content,
+        ),
+      );
+    }
   }
 
   for (const statement of statements) {

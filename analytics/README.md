@@ -403,6 +403,64 @@ sensor-only corrections participate in its existing fifteen-minute freshness
 contract. Reused bounded keys, date windows, cumulative samples and durations use
 model-local materialized CTEs with one thread, as described in the
 [ClickHouse WITH reference](https://clickhouse.com/docs/sql-reference/statements/select/with#materialized-common-table-expressions).
+
+`activity_sensor_processing_coverage` is being validated as a parameterized
+read-only view ordered
+after both compact writers. It reports every pending user/activity/source pair
+per user and model, including prior-only disappearance keys and users with zero
+pending keys. The shared selector reads actual prior state for this view without
+the writer's 32-key limit. The pace writer and coverage use one canonical
+twelve-duration inventory; missing or mixed lifecycle markers remain dirty and
+can be rebuilt. Noncanonical durations expose `invalid_duration_keys` as a hard
+preparation/integrity blocker requiring a canonical rebuild; append repair does
+not remove corrupt extra rows. Internal captured dbt batches restrict at most 32 exact
+user/activity/version pairs before ordering and LIMIT; routine invocations keep
+the same bounded selection. Variables use dbt's existing
+[project-variable interface](https://docs.getdbt.com/docs/build/project-variables).
+
+The view retains the existing required null-join/materialized-CTE semantics.
+It stores a query, not duplicate computed state, under dbt
+[view materialization](https://docs.getdbt.com/reference/resource-configs/materialized)
+and ClickHouse [CREATE VIEW](https://clickhouse.com/docs/reference/statements/create/view).
+The approved interface requires a UUID user set at every source entry before
+aggregation/materialization. Callers obtain that set from explicit processing/
+cache targets and registered changed-path keys, retaining enumeration and
+snapshot evidence; they do not scan source history to discover users. Empty
+targets perform no coverage work, never an all-user scan. Subsequent and
+non-targeted changes remain pending. ClickHouse documents the required
+parameter invocation and lack of ordinary schema metadata in
+[parameterized views](https://clickhouse.com/docs/reference/statements/create/view#parameterized-view).
+Each typed coverage read, parameterized DESCRIBE and natural EXPLAIN also requires
+`clickhouse_settings: { max_threads: 1, join_use_nulls: 1, enable_materialized_cte: 1 }`
+at its query boundary, matching the view's existing values through the
+[ClickHouse client query settings](https://clickhouse.com/docs/integrations/javascript#query-method).
+Stored view settings alone did not govern outer execution in the pinned engine's
+initial empty-model fixture; actual default-caller failures and required-context
+measurements are preserved in the [incident baseline](../docs/production-incident-baseline.md).
+The supported natural invocation uses both the UUID parameter and this fixed
+coverage-only context. Generic clients retain their defaults; this is not a
+universal dashboard thread profile. CTE reuse remains unproved, and
+[workload-specific parallelism/memory measurements](https://clickhouse.com/resources/engineering/high-concurrency-sizing-user-analytics)
+remain necessary. B must supply this context through its actual typed consumer;
+A activates no production coverage consumer.
+Pinned canonical dbt create/replace, discovery, parameterized DESCRIBE, schema/
+contract inspection, docs, artifacts, tests and SQLFluff compatibility remain
+validation gates. No custom materializer or bypass is approved. User row scope
+and total memory capacity must pass separately on the actual engine; the prior
+ordinary-view scope failure and approximately 550 MB query memory are recorded
+in the [incident baseline](../docs/production-incident-baseline.md).
+
+The approved rollout remains two releases. Preparation A adds this support and
+repairs canonical versioned cache replay while preserving old request readers
+and worker/processing coverage behavior. Reader B adds compact serving,
+finite same-cycle captured work and per-path cache generation checks only after
+A population is verified. A successful bounded write is insufficient evidence
+of complete coverage. Stable backlog and source arrival during draining/warming
+must meet both the original reader/cache freshness baseline and the existing
+fifteen-minute contract before B cutover; a finite snapshot is an as-of check,
+not a guarantee under arbitrary source churn. See the
+[approved implementation plan](../docs/superpowers/plans/2026-10-02-subsecond-page-loading.md#task-6-serve-compact-pacehr-results-and-prove-freshness)
+and [deployment runbook](../docs/clickhouse-read-model-deploy-runbook.md).
 Historical priority corrections still require the explicit bounded canonical
 sensor replay below; formula changes require an approved historical rebuild
 because [incremental models retain prior output](https://docs.getdbt.com/docs/build/incremental-models#how-do-i-rebuild-an-incremental-model).

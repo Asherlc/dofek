@@ -11,7 +11,7 @@
 ) }}
 
 WITH activity_keys AS MATERIALIZED (
-    {{ activity_sensor_dirty_keys('speed', this) }}
+    {{ activity_sensor_dirty_keys('speed', this, captured_keys=var('activity_sensor_captured_keys', none), required_durations=activity_pace_durations()) }}
 ),
 
 activity_bounds AS MATERIALIZED (
@@ -96,7 +96,7 @@ sample_rate AS (
 ),
 
 duration_values AS MATERIALIZED (
-    SELECT toUInt32(arrayJoin([5, 15, 30, 60, 120, 300, 600, 1200, 1800, 3600, 5400, 7200])) AS duration_seconds
+    SELECT toUInt32(arrayJoin([{{ activity_pace_durations() | join(', ') }}])) AS duration_seconds
 ),
 
 duration_windows AS (

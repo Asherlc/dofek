@@ -405,6 +405,103 @@ Retain exactly the approved two releases and canonical deployment mechanism.
 
 ### Task 6: Serve compact pace/HR results and prove freshness
 
+**Approved amendment (2026-10-03):** A real 65-key fixture showed that successful
+32-key model writes leave the final changed activity stale for two additional
+900-second worker intervals. Implement finite captured-key catchup in the same
+worker cycle, with at most 32 exact user/activity/source-version pairs per model
+invocation, before cache warming. The canonical build still runs once. Use the
+existing dbt [`--vars`/`var()` interface](https://docs.getdbt.com/docs/build/project-variables);
+do not add timers, retries, TTL extensions, flags or fallback readers.
+
+- **User-approved scope amendment (2026-10-03):** The ordinary view's outer
+  predicate failed the source-scope gate: 20,000 unrelated-user activities
+  increased reads from 14 to 80,014 rows. Replace it with a required UUID-set
+  [parameterized read-only view](https://clickhouse.com/docs/reference/statements/create/view#parameterized-view),
+  filtering every current/prior/activity/sensor-day/inventory source entry before
+  aggregation or materialization. B supplies users from explicit processing/cache
+  targets and registered changed-path keys; retain their enumeration and snapshot
+  evidence. Do not discover users by scanning history. Empty targets perform no
+  coverage work and never mean all users; later or non-targeted changes remain
+  pending. This amendment does not authorize production operations.
+- **Reviewed required query context (2026-10-03):** Canonical typed coverage
+  reads, parameterized DESCRIBE and natural EXPLAIN must supply the view's exact
+  existing `max_threads=1`, `join_use_nulls=1`, `enable_materialized_cte=1` at
+  the query boundary through the existing [ClickHouse client query settings](https://clickhouse.com/docs/integrations/javascript#query-method).
+  The natural invocation gate means this supported UUID/context contract.
+  Stored settings alone did not bound outer execution in the pinned engine's
+  empty-prior fixture; preserve its actual default-caller failure in the
+  [incident baseline](../../production-incident-baseline.md). No generic client
+  profile or global value changes. Materialized CTE reuse remains unproved;
+  [workload-specific lane and memory measurements](https://clickhouse.com/resources/engineering/high-concurrency-sizing-user-analytics)
+  remain mandatory. A documents/exercises support only; B must implement and
+  independently validate the actual production typed boundary with this context.
+- **Reviewed minimum query repair (2026-10-03):** Preserve the required-user
+  view and shared selector, replacing duplicate key-union joins with one
+  [FULL OUTER JOIN](https://clickhouse.com/docs/reference/statements/select/join)
+  and expanding current/prior date windows from one key-state reference.
+  Preserve UUID-null presence, deletion, disjoint windows, source maxima,
+  captured admission and writer limits. Executable equivalence and actual
+  canonical writer endpoint types precede the repair. The natural typed-view
+  resource gate remains decisive; reducing SQL references does not certify
+  [CTE reuse](https://clickhouse.com/docs/reference/statements/select/with#materialized-common-table-expressions)
+  or memory capacity. No settings, serving or storage strategy changes apply.
+- [ ] **Preparation-only A checkpoint:** Add the parameterized read-only
+  `activity_sensor_processing_coverage` view, shared selector support for
+  reading prior state without a writer limit, exact captured-pair restrictions
+  before LIMIT, and complete twelve-duration pace marker validation. Register
+  the view after both compact writers in production ordering and training
+  ownership. Update `scripts/migration-policy.ts` to require this exact coverage
+  model to use view materialization while every other analytics model remains
+  incremental; preserve all risky SQL checks. Repair canonical versioned pace key parsing in
+  `scripts/warm-query-cache.ts`, preserving and overwriting the original key.
+  Add executable engine and focused parser tests, update analytics/deploy docs,
+  and record RED/GREEN and per-user EXPLAIN/read_rows/memory/time evidence.
+  A [ClickHouse view](https://clickhouse.com/docs/reference/statements/create/view)
+  stores its query rather than rows; [dbt view materialization](https://docs.getdbt.com/reference/resource-configs/materialized)
+  owns its lifecycle. Prove initial creation and replacement with the pinned
+  canonical adapter, including relation discovery, parameterized DESCRIBE,
+  contract/schema inspection, documentation, artifacts, dbt tests and SQLFluff.
+  Parameterized views lack ordinary schema metadata without parameters. Stop on
+  incompatibility; no custom materializer, renderer or bypass is approved.
+  Validate the actual configured build/docs/lint consumers, relation discovery,
+  parameterized DESCRIBE and typed boundary. Record unparameterized catalog
+  absence; do not enable currently unused contracts or persisted column docs
+  solely to manufacture a prerequisite, and do not disable an existing consumer.
+  Validate user row scope and total memory capacity independently, including
+  unrelated users and large target sets. Approximately 550 MB observed query
+  memory remains an open resource concern. Independently close the prior
+  lifecycle deadline, 65-key pending-count and invalid-duration failures.
+- [ ] Commit and push only preparation support, with exact old reader/worker/
+  processing/cache consumer blob proof against reviewed source
+  `7504ced524aa4d01fd1af793d4005481ac37c1df` (except the named parser repair).
+  Independently review A before advancing the preparation source boundary.
+- [ ] **Reader/consumer B checkpoint:** After A review, include the exact Task 2
+  reader reapplication, compact readers, finite catchup runner, per-user/path
+  coverage and cache generation verification, and the local absent-daily-RHR
+  correction. Include exact live profile/RHR and request context in HR evidence;
+  sleep-only changes must refresh HR without duplicating model ownership.
+  Missing daily RHR must use profile/60 while actual daily zero stays zero;
+  preserve activity-detail baseline and global join settings. ClickHouse's
+  [join_use_nulls reference](https://clickhouse.com/docs/reference/settings/session-settings/join#join_use_nulls)
+  explains why an absent nonnullable join can otherwise yield zero.
+- [ ] Validate stable backlog and source arrival during draining/warming,
+  failures, processed-empty/deleted keys, mixed/missing pace markers, two users,
+  and newer-operation ordering. A checked generation is an as-of snapshot;
+  finite capture cannot guarantee arbitrary-churn latest-input parity. Preserve
+  newer pending operations and require production-engine source-to-visible lag
+  no worse than the original reader/cache baseline and within the existing
+  fifteen-minute contract, including full catchup and warming resource cost.
+  Failure blocks B cutover and requires direction; do not lengthen the contract.
+  Noncanonical duration rows are an integrity/preparation blocker naming the
+  model/key and requiring a canonical rebuild; append catchup does not remove
+  corrupt extra rows. Missing canonical or mixed lifecycle markers remain
+  repairable by the ordinary bounded writer.
+
+These checkpoints preserve exactly two production releases: A prepares data
+with old readers and no new consumer coverage gate, then B activates readers
+only after verified A population and all freshness/resource gates. Source
+approval does not authorize deployment, population or a subsecond page claim.
+
 **Files:** Modify
 `packages/server/src/repositories/clickhouse-activity-sensor-store.ts`,
 `training-repository.ts`, `heart-rate-zone-sql.ts`, their unit tests,
@@ -689,7 +786,10 @@ current-result completion callback. No global network-idle definition.
 No diagnostic-only runtime switches or ad-hoc release workflows.
 
 **Interfaces:** Release A contains the schema/index/model preparation through
-Task 5, with existing readers. Release B introduces the compact readers and
+Task 5 plus the independently reviewed preparation-only Task 6A support and
+canonical version-aware cache parser repair, with existing readers and worker/
+processing/cache consumers otherwise preserved. Its exact reviewed SHA remains
+pending the Task 6A source checkpoint. Release B introduces the compact readers and
 validated client changes after the model data is ready. Record exact reviewed
 commit/image digests; use the canonical release mechanism, not branch switching
 or manual service-image changes.

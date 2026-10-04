@@ -670,6 +670,7 @@ refreshed_at DateTime64(9)`,
     shortViewName === "activity_location_summary_rows" ||
     shortViewName === "activity_stream_points" ||
     shortViewName === "activity_heart_rate_zones" ||
+    shortViewName === "resting_heart_rate_sleep_window" ||
     shortViewName === "daily_sleep" ||
     shortViewName === "daily_recovery_inputs" ||
     shortViewName === "daily_recovery" ||
@@ -735,7 +736,9 @@ refreshed_at DateTime64(9)`,
                                   ? "(user_id, activity_id)"
                                   : shortViewName === "daily_cycling"
                                     ? "(user_id, date)"
-                                    : "tuple()";
+                                    : shortViewName === "resting_heart_rate_sleep_window"
+                                      ? "(user_id, sleep_id)"
+                                      : "tuple()";
   return `CREATE TABLE IF NOT EXISTS ${viewName} (
 ${columnDefinitions}
 )

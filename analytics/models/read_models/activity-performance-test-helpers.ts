@@ -2,10 +2,17 @@ import { spawn } from "node:child_process";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { ClickHouseClient } from "@clickhouse/client";
 import { readModelSql, renderDbtModelSql } from "../../../src/db/read-model-sql-test-helpers.ts";
 
 export const activityPerformanceUserId = "00000000-0000-4000-8000-000000000001";
+
+export const activitySensorCoverageQuerySettings = {
+  max_threads: 1,
+  join_use_nulls: 1,
+  enable_materialized_cte: 1,
+} as const;
 
 export function activityPerformanceId(index: number): string {
   return `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`;
@@ -131,6 +138,43 @@ export async function compileActivityPerformanceModel(
   database: string,
   modelName: string,
   modelSql: string,
+  variables: Record<string, unknown> = {},
+) {
+  const result = await executeActivityPerformanceModel(
+    database,
+    modelName,
+    modelSql,
+    variables,
+    "compile",
+  );
+  return result.sql;
+}
+
+/** Exercise the pinned adapter's canonical materialization, including replacement. */
+export async function runActivityPerformanceModel(
+  database: string,
+  modelName: string,
+  modelSql: string,
+) {
+  return executeActivityPerformanceModel(database, modelName, modelSql, {}, "run");
+}
+
+/** Check the actual configured build, documentation and lint toolchain. */
+export async function checkActivityPerformanceModelTooling(
+  database: string,
+  modelName: string,
+  modelSql: string,
+  command: "build" | "docs" | "lint",
+) {
+  return executeActivityPerformanceModel(database, modelName, modelSql, {}, command);
+}
+
+async function executeActivityPerformanceModel(
+  database: string,
+  modelName: string,
+  modelSql: string,
+  variables: Record<string, unknown>,
+  command: "compile" | "run" | "build" | "docs" | "lint",
 ) {
   const project = await mkdtemp(join(tmpdir(), "dofek-activity-performance-"));
   try {
@@ -140,7 +184,13 @@ export async function compileActivityPerformanceModel(
       join(project, "dbt_project.yml"),
       "name: activity_performance_test\nversion: '1.0'\nconfig-version: 2\nprofile: dofek\n",
     );
-    for (const model of ["deduped_sensor", "deduped_activities"]) {
+    for (const model of [
+      "deduped_sensor",
+      "deduped_activities",
+      "activity_pace_curve",
+      "activity_heart_rate_distribution",
+    ]) {
+      if (model === modelName) continue;
       await writeFile(join(project, "models", `${model}.sql`), "SELECT 1 AS unused");
     }
     await writeFile(
@@ -151,28 +201,53 @@ export async function compileActivityPerformanceModel(
       ),
     );
     await writeFile(join(project, "models", `${modelName}.sql`), modelSql);
+    if (command === "lint") {
+      const analyticsDirectory = fileURLToPath(new URL("../..", import.meta.url));
+      const config = await readFile(join(analyticsDirectory, ".sqlfluff"), "utf8");
+      await writeFile(
+        join(project, ".sqlfluff"),
+        config
+          .replace("project_dir = .", `project_dir = ${project}`)
+          .replace("profiles_dir = .", `profiles_dir = ${analyticsDirectory}`),
+      );
+    }
     const url = new URL(process.env.CLICKHOUSE_URL ?? "");
     const result = await new Promise<{ code: number; output: string }>((resolve, reject) => {
       const child = spawn(
         "uv",
-        [
-          "run",
-          "--project",
-          "analytics",
-          "dbt",
-          "compile",
-          "--project-dir",
-          project,
-          "--profiles-dir",
-          "analytics",
-          "--select",
-          modelName,
-          "--target-path",
-          join(project, "target"),
-          "--log-path",
-          join(project, "logs"),
-          "--no-use-colors",
-        ],
+        command === "lint"
+          ? [
+              "run",
+              "--project",
+              "analytics",
+              "sqlfluff",
+              "lint",
+              "--ignore",
+              "parsing",
+              "--config",
+              join(project, ".sqlfluff"),
+              join(project, "models", `${modelName}.sql`),
+            ]
+          : [
+              "run",
+              "--project",
+              "analytics",
+              "dbt",
+              ...(command === "docs" ? ["docs", "generate"] : [command]),
+              "--project-dir",
+              project,
+              "--profiles-dir",
+              "analytics",
+              "--select",
+              modelName,
+              "--target-path",
+              join(project, "target"),
+              "--log-path",
+              join(project, "logs"),
+              "--no-use-colors",
+              "--vars",
+              JSON.stringify(variables),
+            ],
         {
           env: {
             ...process.env,
@@ -197,8 +272,21 @@ export async function compileActivityPerformanceModel(
       child.once("error", reject);
       child.once("close", (code) => resolve({ code: code ?? 1, output }));
     });
-    if (result.code !== 0) throw new Error(`dbt compile failed: ${result.output}`);
-    return await readFile(
+    if (result.code !== 0) {
+      throw new Error(
+        `${command === "lint" ? "SQLFluff lint" : `dbt ${command}`} failed: ${result.output}`,
+      );
+    }
+    if (command === "lint") {
+      return {
+        sql: modelSql,
+        output: result.output,
+        manifest: null,
+        runResults: null,
+        catalog: null,
+      };
+    }
+    const sql = await readFile(
       join(
         project,
         "target",
@@ -209,6 +297,19 @@ export async function compileActivityPerformanceModel(
       ),
       "utf8",
     );
+    return {
+      sql,
+      output: result.output,
+      manifest: JSON.parse(await readFile(join(project, "target", "manifest.json"), "utf8")),
+      runResults:
+        command === "docs"
+          ? null
+          : JSON.parse(await readFile(join(project, "target", "run_results.json"), "utf8")),
+      catalog:
+        command === "docs"
+          ? JSON.parse(await readFile(join(project, "target", "catalog.json"), "utf8"))
+          : null,
+    };
   } finally {
     await rm(project, { recursive: true, force: true });
   }

@@ -19,6 +19,62 @@ normal deploys must not rebuild hot Postgres read models.
 
 ## Fast Triage
 
+### Compact sensor analytics: two-release boundary
+
+Preparation release A preserves old request readers and processing/cache
+coverage behavior. It installs the bounded pace/HR writers and the parameterized
+`activity_sensor_processing_coverage` view after both writers, plus canonical
+version-aware registered cache replay. The view reads current/prior activity
+keys and exact source pairs; it does not store another source of truth.
+ClickHouse documents views in [CREATE VIEW](https://clickhouse.com/docs/reference/statements/create/view)
+and dbt owns them through [view materialization](https://docs.getdbt.com/reference/resource-configs/materialized).
+Require an explicit UUID user set at every current/prior/activity/sensor-day/
+inventory entry. B derives targets from processing/cache work and registered
+changed-path keys, preserving their enumeration and snapshot; empty targets
+perform no coverage work and never mean all users. Parameterized views lack
+ordinary schema metadata without parameters, as described in
+[parameterized views](https://clickhouse.com/docs/reference/statements/create/view#parameterized-view).
+At each typed coverage read, parameterized DESCRIBE and natural EXPLAIN, also pass
+the existing view context explicitly:
+`clickhouse_settings: { max_threads: 1, join_use_nulls: 1, enable_materialized_cte: 1 }`.
+Use the existing [ClickHouse client query interface](https://clickhouse.com/docs/integrations/javascript#query-method)
+without changing generic clients or global settings. Stored view settings alone
+did not bound outer execution in the pinned empty-model fixture; the actual
+default-caller failure remains in the [incident baseline](production-incident-baseline.md).
+The natural invocation gate validates this required UUID/context contract.
+Retain independent [workload-specific lane/memory measurements](https://clickhouse.com/resources/engineering/high-concurrency-sizing-user-analytics);
+this context is coverage-specific and does not prove materialized CTE reuse.
+Preparation A activates no production coverage consumer. Reader B must supply
+and independently test this context at its canonical production typed boundary.
+Verify pinned canonical dbt initial create and replacement, discovery,
+parameterized DESCRIBE, schema/contracts, docs, artifacts, tests and SQLFluff
+before adopting the preparation source. No custom materializer or bypass is
+approved. Verify EXPLAIN/read rows/memory/time with the existing semantic
+settings; user row scope and total query/worker memory are independent gates.
+The prior ordinary view read unrelated-user sources, and its approximately
+550 MB query memory remains a separate concern; see the
+[incident baseline](production-incident-baseline.md).
+
+Reader release B requires independently reviewed A source/image and verified
+population, complete exact twelve-duration pace markers, one current HR marker
+per activity, and disappearance/deletion/processed-empty coverage. Its finite
+captured catchup uses at most 32 exact user/activity/source pairs per compact
+writer invocation through the existing dbt [project variables](https://docs.getdbt.com/docs/build/project-variables).
+It runs the canonical build once and finishes captured work before registered
+warming. Model success or a run ID alone cannot authorize current cache status.
+Per-path generation evidence includes actual request context and live HR
+profile/RHR inputs, with matching snapshots checked after warming.
+
+Measure full source-to-visible lag and resource cost for stable backlog and
+source arrival during draining/warming against the original reader/cache
+baseline and the existing fifteen-minute contract. New source operations stay
+pending; an older verified snapshot cannot complete them. A finite capture
+does not guarantee arbitrary-churn latest-input parity. Any failed freshness,
+scope or resource gate blocks B cutover and requires direction. No extra release,
+timer, retry, TTL extension, optimizer override or raw-reader fallback is part
+of this rollout. Source implementation approval is not production permission.
+See the [implementation plan](superpowers/plans/2026-10-02-subsecond-page-loading.md#task-6-serve-compact-pacehr-results-and-prove-freshness).
+
 Inspect the deploy with `gh`:
 
 ```bash

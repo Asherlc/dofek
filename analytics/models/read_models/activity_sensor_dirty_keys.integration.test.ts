@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import { createClient } from "@clickhouse/client";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
@@ -7,15 +8,18 @@ import {
   activityPerformanceId,
   activityPerformanceUserId,
   compileActivityDirtyKeys,
+  compileActivityPerformanceModel,
   createActivityPerformanceFixture,
   insertPerformanceActivities,
   insertPerformanceActivity,
   insertPerformanceSensor,
   persistActivityDirtyKeys,
   refreshPerformanceCanonicalSensors,
+  runActivityPerformanceModel,
 } from "./activity-performance-test-helpers.ts";
 
 const dirtyKeySchema = z.object({
+  user_id: z.string(),
   activity_id: z.string(),
   started_at: z.string(),
   ended_at: z.string(),
@@ -43,10 +47,10 @@ describe("0099 activity sensor day versions", () => {
       });
     }
   }
-  async function keys() {
+  async function keys(querySql = sql) {
     const result = await client.query({
       query: `SELECT * REPLACE(toString(source_sensor_version) AS source_sensor_version)
-        FROM (${sql}) SETTINGS join_use_nulls = 1, enable_materialized_cte = 1`,
+        FROM (${querySql}) SETTINGS join_use_nulls = 1, enable_materialized_cte = 1`,
       format: "JSONEachRow",
     });
     return z.array(dirtyKeySchema).parse(await result.json());
@@ -91,19 +95,331 @@ describe("0099 activity sensor day versions", () => {
       client,
       database,
       Array.from({ length: 65 }, (_, index) => index + 1),
+      { version: 41 },
     );
     await client.command({ query: `RENAME TABLE ${database}.probe TO ${database}.probe_saved` });
     try {
       const initialSql = await compileActivityDirtyKeys(database);
       const result = await client.query({
-        query: `${initialSql}\nSETTINGS join_use_nulls = 1, enable_materialized_cte = 1`,
+        query: `SELECT * REPLACE(toString(source_sensor_version) AS source_sensor_version)
+          FROM (${initialSql}) SETTINGS join_use_nulls = 1, enable_materialized_cte = 1`,
         format: "JSONEachRow",
       });
-      expect(await result.json()).toHaveLength(32);
+      const initial = z.array(dirtyKeySchema).parse(await result.json());
+      expect(initial.map((row) => row.activity_id)).toEqual(
+        Array.from({ length: 32 }, (_, index) => activityPerformanceId(index + 1)),
+      );
+      expect(initial.every((row) => row.user_id === activityPerformanceUserId)).toBe(true);
+      expect(initial.every((row) => row.source_activity_version === 41)).toBe(true);
+      expect(initial.every((row) => row.source_sensor_version === "0")).toBe(true);
+      expect(
+        initial.every((row) => row.prior_started_at === null && row.prior_ended_at === null),
+      ).toBe(true);
     } finally {
       await client.command({ query: `RENAME TABLE ${database}.probe_saved TO ${database}.probe` });
     }
   });
+
+  it.each(["table", "incremental"])(
+    "preserves zero UUID presence and excludes unseen deletions in the initial %s branch",
+    async (materialized) => {
+      const zero = "00000000-0000-0000-0000-000000000000";
+      await client.insert({
+        table: `${database}.deduped_activities`,
+        format: "JSONEachRow",
+        values: [0, 1].map((deleted) => ({
+          user_id: zero,
+          activity_id: deleted ? activityPerformanceId(2) : zero,
+          started_at: "2026-09-01 12:00:00",
+          ended_at: null,
+          member_activity_ids: [],
+          refresh_version: 0,
+          is_deleted: deleted,
+        })),
+      });
+      await client.command({ query: `RENAME TABLE ${database}.probe TO ${database}.probe_saved` });
+      try {
+        const initialSql = await compileActivityPerformanceModel(
+          database,
+          "probe",
+          `{{ config(materialized='${materialized}') }}\n{{ activity_sensor_dirty_keys('heart_rate', this) }}`,
+        );
+        expect(await keys(initialSql)).toEqual([
+          {
+            user_id: zero,
+            activity_id: zero,
+            canonical_type: "running",
+            started_at: "2026-09-01 12:00:00.000000",
+            ended_at: "2026-09-02 00:00:00.000000",
+            prior_started_at: null,
+            prior_ended_at: null,
+            source_activity_version: 0,
+            source_sensor_version: "0",
+            source_is_deleted: 0,
+          },
+        ]);
+      } finally {
+        await client.command({
+          query: `RENAME TABLE ${database}.probe_saved TO ${database}.probe`,
+        });
+      }
+    },
+  );
+
+  it("distinguishes matched zero-clock markers, same activity UUID across users and prior-only disappearance", async () => {
+    const zero = "00000000-0000-0000-0000-000000000000";
+    const disappeared = activityPerformanceId(3);
+    const deleted = activityPerformanceId(4);
+    await client.insert({
+      table: `${database}.deduped_activities`,
+      format: "JSONEachRow",
+      values: [
+        [zero, zero, 0],
+        [activityPerformanceUserId, zero, 0],
+        [zero, deleted, 1],
+      ].map(([user, activity, isDeleted]) => ({
+        user_id: user,
+        activity_id: activity,
+        started_at: "2026-09-01 12:00:00",
+        ended_at: "2026-09-01 13:00:00",
+        member_activity_ids: [],
+        refresh_version: 0,
+        is_deleted: isDeleted,
+      })),
+    });
+    await client.insert({
+      table: `${database}.probe`,
+      format: "JSONEachRow",
+      values: [zero, disappeared, deleted].map((activity) => ({
+        user_id: zero,
+        activity_id: activity,
+        canonical_type: "running",
+        started_at: "2026-09-01 12:00:00",
+        ended_at: "2026-09-01 13:00:00",
+        source_activity_version: 0,
+        source_sensor_version: 0,
+        refresh_version: 0,
+        is_deleted: 0,
+      })),
+    });
+    const selected = await keys();
+    expect(selected.map((row) => [row.user_id, row.activity_id, row.source_is_deleted])).toEqual([
+      [zero, disappeared, 1],
+      [zero, deleted, 1],
+      [activityPerformanceUserId, zero, 0],
+    ]);
+    expect(
+      selected.every(
+        (row) => row.source_activity_version === 0 && row.source_sensor_version === "0",
+      ),
+    ).toBe(true);
+    expect(selected.find((row) => row.user_id === activityPerformanceUserId)).toMatchObject({
+      prior_started_at: null,
+      prior_ended_at: null,
+    });
+    await persistActivityDirtyKeys(client, database, sql);
+    expect(await keys()).toEqual([]);
+  });
+
+  it("persists both normalized probe endpoints as nonnullable current-schema columns", async () => {
+    const result = await client.query({
+      query: `DESCRIBE TABLE ${database}.probe`,
+      format: "JSONEachRow",
+    });
+    const columns = await result.json<{ name: string; type: string }>();
+    expect(
+      columns.filter(({ name }) => name === "started_at" || name === "ended_at"),
+    ).toMatchObject([
+      { name: "started_at", type: "DateTime64(6, 'UTC')" },
+      { name: "ended_at", type: "DateTime64(6, 'UTC')" },
+    ]);
+  });
+
+  it.each(["activity_pace_curve", "activity_heart_rate_distribution"])(
+    "creates nonnullable normalized endpoints with the canonical initial %s writer",
+    async (model) => {
+      await insertPerformanceActivity(client, database, 1, { endedAt: null, version: 41 });
+      const source = await readFile(new URL(`./${model}.sql`, import.meta.url), "utf8");
+      await runActivityPerformanceModel(database, model, source);
+      const result = await client.query({
+        query: `DESCRIBE TABLE ${database}.${model}`,
+        format: "JSONEachRow",
+      });
+      const columns = await result.json<{ name: string; type: string }>();
+      expect(
+        columns.filter(({ name }) => name === "started_at" || name === "ended_at"),
+      ).toMatchObject([
+        { name: "started_at", type: "DateTime64(6, 'UTC')" },
+        { name: "ended_at", type: "DateTime64(6, 'UTC')" },
+      ]);
+      const rows = await client.query({
+        query: `SELECT DISTINCT user_id, activity_id, started_at, ended_at,
+        toString(source_activity_version) AS source_activity_version, toString(source_sensor_version) AS source_sensor_version
+        FROM ${database}.${model} FINAL`,
+        format: "JSONEachRow",
+      });
+      expect(await rows.json()).toEqual([
+        {
+          user_id: activityPerformanceUserId,
+          activity_id: activityPerformanceId(1),
+          started_at: "2026-09-01 12:00:00.000000",
+          ended_at: "2026-09-02 00:00:00.000000",
+          source_activity_version: "41",
+          source_sensor_version: "0",
+        },
+      ]);
+    },
+  );
+
+  it.each([
+    {
+      name: "absent prior and inclusive midnight",
+      start: "2026-09-01 23:55:00",
+      end: "2026-09-02 00:00:00",
+      prior: null,
+      days: [
+        ["2026-09-01", 101],
+        ["2026-09-02", 202],
+        ["2026-09-03", 999],
+      ],
+      expected: "202",
+    },
+    {
+      name: "identical windows",
+      start: "2026-09-01 12:00:00",
+      end: "2026-09-01 13:00:00",
+      prior: ["2026-09-01 12:00:00", "2026-09-01 13:00:00"],
+      days: [
+        ["2026-09-01", 101],
+        ["2026-09-02", 999],
+      ],
+      expected: "101",
+    },
+    {
+      name: "overlapping windows",
+      start: "2026-09-02 00:00:00",
+      end: "2026-09-03 00:00:00",
+      prior: ["2026-09-01 23:55:00", "2026-09-02 00:10:00"],
+      days: [
+        ["2026-09-01", 202],
+        ["2026-09-02", 101],
+        ["2026-09-03", 303],
+        ["2026-09-04", 999],
+      ],
+      expected: "303",
+    },
+    {
+      name: "disjoint prior-day maximum",
+      start: "2026-09-03 12:00:00",
+      end: "2026-09-03 13:00:00",
+      prior: ["2026-09-01 12:00:00", "2026-09-01 13:00:00"],
+      days: [
+        ["2026-09-01", 303],
+        ["2026-09-02", 999],
+        ["2026-09-03", 202],
+      ],
+      expected: "303",
+    },
+    {
+      name: "disjoint current-day maximum",
+      start: "2026-09-03 12:00:00",
+      end: "2026-09-03 13:00:00",
+      prior: ["2026-09-01 12:00:00", "2026-09-01 13:00:00"],
+      days: [
+        ["2026-09-01", 101],
+        ["2026-09-02", 999],
+        ["2026-09-03", 303],
+      ],
+      expected: "303",
+    },
+    {
+      name: "prior marker sensor maximum",
+      start: "2026-09-03 12:00:00",
+      end: "2026-09-03 13:00:00",
+      prior: ["2026-09-01 12:00:00", "2026-09-01 13:00:00"],
+      days: [
+        ["2026-09-01", 1],
+        ["2026-09-03", 2],
+      ],
+      expected: "5",
+    },
+    {
+      name: "reversed end retains only start day",
+      start: "2026-09-02 14:00:00",
+      end: "2026-09-01 13:00:00",
+      prior: null,
+      days: [
+        ["2026-09-01", 999],
+        ["2026-09-02", 101],
+      ],
+      expected: "101",
+    },
+    {
+      name: "open end normalized twelve hours",
+      start: "2026-09-01 12:00:00",
+      end: null,
+      prior: null,
+      days: [
+        ["2026-09-01", 101],
+        ["2026-09-02", 202],
+        ["2026-09-03", 999],
+      ],
+      expected: "202",
+    },
+  ])(
+    "uses independent covered-day maxima for $name",
+    async ({ start, end, prior, days, expected }) => {
+      await insertPerformanceActivity(client, database, 1, {
+        startedAt: start,
+        endedAt: end,
+        version: 2,
+      });
+      if (prior)
+        await client.insert({
+          table: `${database}.probe`,
+          format: "JSONEachRow",
+          values: [
+            {
+              user_id: activityPerformanceUserId,
+              activity_id: activityPerformanceId(1),
+              canonical_type: "running",
+              started_at: prior[0],
+              ended_at: prior[1],
+              source_activity_version: 1,
+              source_sensor_version: 5,
+              refresh_version: 10,
+              is_deleted: 0,
+            },
+          ],
+        });
+      await client.insert({
+        table: `${database}.deduped_sensor`,
+        format: "JSONEachRow",
+        values: days.map(([day, version]) => ({
+          user_id: activityPerformanceUserId,
+          channel: "heart_rate",
+          recorded_at: `${day} 12:00:00`,
+          scalar: 120,
+          refresh_version: version,
+          is_deleted: 0,
+        })),
+      });
+      expect(await keys()).toEqual([
+        {
+          user_id: activityPerformanceUserId,
+          activity_id: activityPerformanceId(1),
+          canonical_type: "running",
+          started_at: `${start}.000000`,
+          ended_at: `${end ?? "2026-09-02 00:00:00"}.000000`,
+          prior_started_at: prior ? `${prior[0]}.000000` : null,
+          prior_ended_at: prior ? `${prior[1]}.000000` : null,
+          source_activity_version: 2,
+          source_sensor_version: expected,
+          source_is_deleted: 0,
+        },
+      ]);
+    },
+  );
 
   it("selects 32 distinct activities when the persisted target has all 12 pace durations", async () => {
     await insertPerformanceActivity(client, database, 1);
