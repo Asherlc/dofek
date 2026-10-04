@@ -51,15 +51,21 @@ describe("syncCardSummary", () => {
     });
   });
 
-  it("summarizes the newest issue independently of log order", () => {
+  it.each([
+    [
+      { status: "success", syncedAt: successfulAt },
+      { status: "degraded", syncedAt: attemptedAt },
+    ],
+    [
+      { status: "degraded", syncedAt: attemptedAt },
+      { status: "success", syncedAt: successfulAt },
+    ],
+  ])("summarizes the newest issue independently of log order %#", (...recentLogs) => {
     expect(
       syncCardSummary({
         lastSyncAt: attemptedAt,
         lastSuccessfulSyncAt: successfulAt,
-        recentLogs: [
-          { status: "success", syncedAt: successfulAt },
-          { status: "degraded", syncedAt: attemptedAt },
-        ],
+        recentLogs,
       }),
     ).toMatchObject({
       latestIssue: {
@@ -81,16 +87,28 @@ describe("syncCardSummary", () => {
     });
   });
 
-  it("keeps a failure visible when data types share the newest attempt time", () => {
+  it.each([
+    [
+      { status: "error", syncedAt: attemptedAt },
+      { status: "success", syncedAt: attemptedAt },
+      { status: "degraded", syncedAt: attemptedAt },
+    ],
+    [
+      { status: "success", syncedAt: attemptedAt },
+      { status: "error", syncedAt: attemptedAt },
+      { status: "degraded", syncedAt: attemptedAt },
+    ],
+    [
+      { status: "success", syncedAt: attemptedAt },
+      { status: "degraded", syncedAt: attemptedAt },
+      { status: "error", syncedAt: attemptedAt },
+    ],
+  ])("keeps a tied failure visible independently of log order %#", (...recentLogs) => {
     expect(
       syncCardSummary({
         lastSyncAt: attemptedAt,
         lastSuccessfulSyncAt: successfulAt,
-        recentLogs: [
-          { status: "success", syncedAt: attemptedAt },
-          { status: "degraded", syncedAt: attemptedAt },
-          { status: "error", syncedAt: attemptedAt },
-        ],
+        recentLogs,
       }),
     ).toMatchObject({
       lastAttemptAt: attemptedAt,

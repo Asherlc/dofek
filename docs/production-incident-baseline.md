@@ -29130,3 +29130,29 @@ Coverage thresholds remain unchanged.
   Keep historical migration fixtures scoped to the versions they model and
   use mutation reports to cover changed runtime branches. No runtime retry,
   timeout, or gate relaxation was added for these failures.
+
+## 2026-10-03 — UI cleanup PR exposed asynchronous layout movement
+
+- **Symptoms / impact:** [PR #2871](https://github.com/Asherlc/dofek/pull/2871)
+  failed the existing Settings layout-stability checks. No production
+  deployment or user-facing outage occurred.
+- **Evidence / root cause:** The [web E2E job](https://github.com/Asherlc/dofek/actions/runs/37170308289/job/111341906945)
+  ran `pnpm exec cypress run` and reported `Data Sources height delta 92px;
+  normalized Zepp pairing delta 92px: expected 92 to be below 1` in
+  `settings-layout-stability.cy.ts:290`. Removing the duplicate panel heading
+  also removed its reserved header space. The asynchronous sync controls
+  remained outside the fixed-height provider inventory, so resolving the
+  provider list enlarged the panel and moved the following section.
+- **Fix / validation:** Moved the existing sync controls into the inventory
+  region, preserving their handlers and full-history confirmation. The
+  focused regression failed before this change and passed afterward; all
+  64 tests across the three affected suites passed. Browser captures measured
+  identical 474-pixel loading and loaded section heights. A separate narrow
+  health-card reproduction confirmed provenance-footer overflow; allowing
+  the footer to wrap kept the disclosure control within the card. Root and
+  workspace typechecks, full lint, and the web Storybook build passed.
+- **Remaining risk / follow-up:** Hosted validation is tracked on the
+  [PR checks](https://github.com/Asherlc/dofek/pull/2871/checks). Keep the
+  existing layout-stability gate when simplifying asynchronous sections;
+  inspect loading and loaded geometry together. No runtime retry, timeout,
+  or assertion threshold was changed.

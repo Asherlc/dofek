@@ -400,7 +400,9 @@ describe("DataSourcesPanel", () => {
     rerender(<DataSourcesPanel />);
 
     const processingRegion = screen.getByRole("region", { name: "Available data sources" });
-    expect(screen.getByRole("region", { name: "Sync all providers" })).toBeTruthy();
+    expect(
+      within(processingRegion).getByRole("region", { name: "Sync all providers" }),
+    ).toBeTruthy();
     expect(processingRegion).toBe(loadingRegion);
     expect(processingRegion.getAttribute("aria-busy")).toBe("true");
     expect(within(processingRegion).getByText("Loading processing status…")).toBeTruthy();

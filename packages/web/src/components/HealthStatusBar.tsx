@@ -156,8 +156,10 @@ function HealthMetricDetails({
   const blocked = metric.baselineProgress.blocker !== null;
   return (
     <div className="mt-1 text-[11px] text-subtle">
-      <div className="flex items-center justify-between gap-2">
-        {provenance ? <span>{formatHealthProvenanceSummary(provenance)}</span> : null}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        {provenance ? (
+          <span className="min-w-0">{formatHealthProvenanceSummary(provenance)}</span>
+        ) : null}
         <button
           type="button"
           className="min-h-11 min-w-11 shrink-0 text-left font-medium hover:text-muted"

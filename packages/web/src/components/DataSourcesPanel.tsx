@@ -448,22 +448,22 @@ export function DataSourcesPanel() {
 
   return (
     <div className="space-y-4">
-      {enabledSyncable.length > 1 && (
-        <div className="flex justify-end">
-          <SyncAllControls
-            busy={syncAllBusy}
-            errorMessage={syncAllError}
-            onRecentSync={() => void handleSyncAll()}
-            onFullSync={() => void handleSyncAll(true)}
-          />
-        </div>
-      )}
-
       <section
         aria-label="Available data sources"
         aria-busy={providers.isLoading || processingStatus.isLoading}
         className={providerRegionClassName}
       >
+        {enabledSyncable.length > 1 && (
+          <div className="flex justify-end">
+            <SyncAllControls
+              busy={syncAllBusy}
+              errorMessage={syncAllError}
+              onRecentSync={() => void handleSyncAll()}
+              onFullSync={() => void handleSyncAll(true)}
+            />
+          </div>
+        )}
+
         {activeSyncs.error ? (
           <p role="alert" className="text-sm text-red-400">
             {userFacingErrorMessage(activeSyncs.error)}
