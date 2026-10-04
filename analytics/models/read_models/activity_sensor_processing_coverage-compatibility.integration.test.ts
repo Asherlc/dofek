@@ -11,6 +11,10 @@ import {
   runActivityPerformanceModel,
 } from "./activity-performance-test-helpers.ts";
 
+function moduleClientDatabase(url: URL): string {
+  return url.pathname.trim().length > 1 ? url.pathname.slice(1) : "default";
+}
+
 describe("coverage pinned adapter compatibility", () => {
   const database = `coverage_adapter_${randomUUID().replaceAll("-", "")}`;
   const url = process.env.CLICKHOUSE_URL;
@@ -20,7 +24,7 @@ describe("coverage pinned adapter compatibility", () => {
     hostname: moduleClientUrl.hostname,
     port: moduleClientUrl.port,
     protocol: moduleClientUrl.protocol,
-    database: moduleClientUrl.pathname,
+    database: moduleClientDatabase(moduleClientUrl),
   };
   const client = createClient({ url });
   const model = "activity_sensor_processing_coverage";
@@ -44,6 +48,8 @@ describe("coverage pinned adapter compatibility", () => {
   });
 
   it("initial canonical create accepts the required UUID user-set invocation and exposes typed schema", async () => {
+    expect(moduleClientDatabase(new URL("https://example.invalid/"))).toBe("default");
+    expect(moduleClientDatabase(new URL("https://example.invalid/analytics"))).toBe("analytics");
     const result = await runActivityPerformanceModel(database, model, readModelSql(`${model}.sql`));
     expect(result.runResults.results[0]?.status).toBe("success");
     expect(
