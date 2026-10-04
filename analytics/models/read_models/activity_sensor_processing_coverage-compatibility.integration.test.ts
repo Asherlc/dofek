@@ -15,6 +15,13 @@ describe("coverage pinned adapter compatibility", () => {
   const database = `coverage_adapter_${randomUUID().replaceAll("-", "")}`;
   const url = process.env.CLICKHOUSE_URL;
   if (!url) throw new Error("CLICKHOUSE_URL is required");
+  const moduleClientUrl = new URL(url);
+  const moduleClientEndpoint = {
+    hostname: moduleClientUrl.hostname,
+    port: moduleClientUrl.port,
+    protocol: moduleClientUrl.protocol,
+    database: moduleClientUrl.pathname,
+  };
   const client = createClient({ url });
   const model = "activity_sensor_processing_coverage";
   const invocation = `${database}.${model}(target_user_ids={userIds:Array(UUID)})`;
@@ -42,6 +49,56 @@ describe("coverage pinned adapter compatibility", () => {
     expect(
       result.manifest.nodes[`model.activity_performance_test.${model}`]?.config.materialized,
     ).toBe("view");
+    const node = result.manifest.nodes[`model.activity_performance_test.${model}`];
+    const nativeResult = await client.query({
+      query: `SELECT database, name, engine, create_table_query FROM system.tables
+        WHERE database = {database:String} AND name = {model:String}`,
+      query_params: { database, model },
+      format: "JSONEachRow",
+    });
+    const nativeRelations = await nativeResult.json<{
+      database: string;
+      name: string;
+      engine: string;
+      create_table_query: string;
+    }>();
+    process.stdout.write(
+      `${JSON.stringify({
+        task6AAdapterCreateContract: {
+          moduleClientEndpoint,
+          childEndpoint: result.childEndpoint,
+          manifestRelation: {
+            database: node.database,
+            schema: node.schema,
+            alias: node.alias,
+            relationName: node.relation_name,
+            materialized: node.config.materialized,
+          },
+          runResults: result.runResults.results.map(
+            (entry: { unique_id: string; status: string; execution_time: number }) => ({
+              uniqueId: entry.unique_id,
+              status: entry.status,
+              executionTime: entry.execution_time,
+            }),
+          ),
+          dbtRunSqlArtifact: result.dbtRunSql,
+          nativeRelations,
+        },
+      })}\n`,
+    );
+    expect(result.childEndpoint.hostname).toBe(moduleClientEndpoint.hostname);
+    expect(result.childEndpoint.port).toBe(moduleClientEndpoint.port);
+    expect(result.childEndpoint.secure).toBe(moduleClientEndpoint.protocol === "https:");
+    expect(result.childEndpoint.schema).toBe(database);
+    expect(node.schema).toBe(database);
+    expect(node.alias).toBe(model);
+    expect(
+      nativeRelations.map(({ database: relationDatabase, name, engine }) => ({
+        database: relationDatabase,
+        name,
+        engine,
+      })),
+    ).toEqual([{ database, name: model, engine: "View" }]);
     const rows = await client.query({
       query: `SELECT user_id, model, length(pending_keys) AS pending FROM ${invocation} ORDER BY model`,
       clickhouse_settings: activitySensorCoverageQuerySettings,

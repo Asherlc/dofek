@@ -212,6 +212,23 @@ async function executeActivityPerformanceModel(
       );
     }
     const url = new URL(process.env.CLICKHOUSE_URL ?? "");
+    const childEnvironment: NodeJS.ProcessEnv = {
+      ...process.env,
+      UV_PROJECT_ENVIRONMENT: "../.venv-analytics",
+      DBT_TARGET: "dev",
+      DBT_CLICKHOUSE_SCHEMA: database,
+      DBT_CLICKHOUSE_HOST: url.hostname,
+      DBT_CLICKHOUSE_PORT: url.port,
+      DBT_CLICKHOUSE_USER: decodeURIComponent(url.username),
+      DBT_CLICKHOUSE_PASSWORD: decodeURIComponent(url.password),
+    };
+    const childEndpoint = {
+      hostname: childEnvironment.DBT_CLICKHOUSE_HOST,
+      port: childEnvironment.DBT_CLICKHOUSE_PORT,
+      schema: childEnvironment.DBT_CLICKHOUSE_SCHEMA,
+      target: childEnvironment.DBT_TARGET,
+      secure: (childEnvironment.DBT_CLICKHOUSE_SECURE ?? "false").toLowerCase() === "true",
+    };
     const result = await new Promise<{ code: number; output: string }>((resolve, reject) => {
       const child = spawn(
         "uv",
@@ -249,16 +266,7 @@ async function executeActivityPerformanceModel(
               JSON.stringify(variables),
             ],
         {
-          env: {
-            ...process.env,
-            UV_PROJECT_ENVIRONMENT: "../.venv-analytics",
-            DBT_TARGET: "dev",
-            DBT_CLICKHOUSE_SCHEMA: database,
-            DBT_CLICKHOUSE_HOST: url.hostname,
-            DBT_CLICKHOUSE_PORT: url.port,
-            DBT_CLICKHOUSE_USER: decodeURIComponent(url.username),
-            DBT_CLICKHOUSE_PASSWORD: decodeURIComponent(url.password),
-          },
+          env: childEnvironment,
           stdio: ["ignore", "pipe", "pipe"],
         },
       );
@@ -280,6 +288,8 @@ async function executeActivityPerformanceModel(
     if (command === "lint") {
       return {
         sql: modelSql,
+        dbtRunSql: null,
+        childEndpoint,
         output: result.output,
         manifest: null,
         runResults: null,
@@ -299,6 +309,21 @@ async function executeActivityPerformanceModel(
     );
     return {
       sql,
+      dbtRunSql:
+        command === "run" || command === "build"
+          ? await readFile(
+              join(
+                project,
+                "target",
+                "run",
+                "activity_performance_test",
+                "models",
+                `${modelName}.sql`,
+              ),
+              "utf8",
+            )
+          : null,
+      childEndpoint,
       output: result.output,
       manifest: JSON.parse(await readFile(join(project, "target", "manifest.json"), "utf8")),
       runResults:
