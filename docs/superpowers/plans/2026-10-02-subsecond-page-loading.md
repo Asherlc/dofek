@@ -475,6 +475,29 @@ do not add timers, retries, TTL extensions, flags or fallback readers.
   processing/cache consumer blob proof against reviewed source
   `7504ced524aa4d01fd1af793d4005481ac37c1df` (except the named parser repair).
   Independently review A before advancing the preparation source boundary.
+- [ ] **Additional preparation-only A support, approved 2026-10-04:** Extract
+  the canonical state calculation in `activity_sensor_dirty_keys.sql` and add
+  the dbt-owned parameterized `activity_sensor_key_verification` metadata view.
+  Bind explicit user UUIDs and 1–32 distinct user/activity pairs inside current
+  and prior source branches; derive window/day work only from those pairs.
+  Preserve ordinary selector/window/version/marker/admission semantics, the
+  canonical twelve pace durations and exact inner/outer 1/1/1 context. Return
+  both models with strict presence, lossless clocks and precise lifecycle
+  evidence; empty input means no work. Require the exact named view in migration
+  policy and register it as a compact-drain prerequisite in training. Native
+  [parameterized views](https://clickhouse.com/docs/reference/statements/create/view#parameterized-view)
+  and [typed parameters](https://clickhouse.com/docs/reference/syntax#defining-and-using-query-parameters)
+  remain subject to executable pinned-version create/replace/schema/tooling and
+  resource gates; use the strict subquery DESCRIBE already validated on CI 26.6.
+  Commit only independently reviewed support with old committed consumers and
+  all unstaged B work preserved. Advance preparation source from reviewed
+  `69be9444aa62aabe3d6b2a054b5b54513330e6ee` only after exact normal CI passes.
+  This is part of the same A release, not a third deployment.
+  B performs one initial distinct-identity sweep, retaining both model rows,
+  then one post-attempt read per batch. With union U and model counts P/H,
+  initial reads are ceil(U/32), later reads at most ceil(P/32)+ceil(H/32);
+  empty capture performs none. Record actual total queries, elapsed work and
+  retained capture memory independently of the 32-key/64-row request bound.
 - [ ] **Reader/consumer B checkpoint:** After A review, include the exact Task 2
   reader reapplication, compact readers, finite catchup runner, per-user/path
   coverage and cache generation verification, and the local absent-daily-RHR
@@ -786,7 +809,8 @@ current-result completion callback. No global network-idle definition.
 No diagnostic-only runtime switches or ad-hoc release workflows.
 
 **Interfaces:** Release A contains the schema/index/model preparation through
-Task 5 plus the independently reviewed preparation-only Task 6A support and
+Task 5 plus the independently reviewed preparation-only Task 6A support,
+the bounded shared-state/key-verification support approved on 2026-10-04, and
 canonical version-aware cache parser repair, with existing readers and worker/
 processing/cache consumers otherwise preserved. Its exact reviewed SHA remains
 pending the Task 6A source checkpoint. Release B introduces the compact readers and

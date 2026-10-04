@@ -330,6 +330,26 @@ SELECT 1 AS value
     }
   });
 
+  it("requires bounded key verification to be the exact named read-only view", () => {
+    const path = "analytics/models/read_models/activity_sensor_key_verification.sql";
+    expect(lintMigrationPolicyFile(path, "{{ config(materialized='view') }} SELECT 1")).toEqual([]);
+    for (const content of [
+      "{{ config(materialized='table') }} SELECT 1",
+      "{{ config(materialized='incremental') }} SELECT 1",
+      "SELECT 1",
+    ]) {
+      expect(lintMigrationPolicyFile(path, content)).toEqual([
+        expect.objectContaining({ ruleName: "analytics-dbt-coverage-view" }),
+      ]);
+    }
+    expect(
+      lintMigrationPolicyFile(
+        path,
+        "{{ config(materialized='view') }} SELECT 1; INSERT INTO analytics.target SELECT * FROM analytics.source;",
+      ),
+    ).toEqual([expect.objectContaining({ ruleName: "insert-select" })]);
+  });
+
   it.each(["view", "table"])("keeps arbitrary analytics %s models disallowed", (materialized) => {
     expect(
       lintMigrationPolicyFile(

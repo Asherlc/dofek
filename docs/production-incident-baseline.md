@@ -30022,3 +30022,170 @@ mobile typechecks passed sequentially without generated tracked-source drift.
 Final scoped review, the complete lint gate and normal CI on the merged committed
 snapshot remain pending. Protected preparation source and all 15 uncommitted
 compact-reader worktree files retain their captured identities.
+
+Normal CI validation completion, 2026-10-04: [run 37212084885](https://github.com/Asherlc/dofek/actions/runs/37212084885)
+completed successfully for exact merged commit
+`69be9444aa62aabe3d6b2a054b5b54513330e6ee`, event pull_request: 97 completed
+jobs, 93 successful and four skipped, no failures. The previously failed
+Integration Tests (3/4), Unit & Integration Tests, Test Gate and CI Gate all
+passed. The retained completed shard-3 log reports 70 files / 468 tests passed
+in 487.20 s, including canonical coverage initial-create and replacement with
+the strict four-column/lossless tuple schema. The first high-level job-log
+request was unavailable while the run was active; it was not credited as evidence.
+Completed native job-log collection subsequently succeeded. This closes the
+preparation CI incident for that exact source, without certifying uncommitted
+compact readers, cache generations, source-to-visible freshness or production
+cutover. No workflow, retry, timeout, image or assertion relaxation was required.
+
+**2026-10-04 — Compact analytics readiness correction, controlled validation.**
+The real 65-key fixture exposed false processing readiness: each compact writer
+successfully processed 32 keys, leaving 33 pending, but the recorder reported
+aggregate analytics success from dbt status/run identity alone. The direct fix
+requires typed, user-scoped ClickHouse coverage from the actual PG operation
+users before publishing success. Pending markers now produce analytics `running`,
+no cache-refresh event and overall processing `active`; failed/unattempted builds
+retain precedence. Missing coverage fails closed; a genuinely empty requested
+user requires explicit zero-current/zero-prior evidence. Production was unchanged,
+and this validation does not establish an observed production outage or cache
+freshness improvement.
+
+Sequential canonical integration checks passed with retry 0 and unchanged
+deadlines/context: 14 PG target-producer cases, one provider case, five real
+coverage-reader cases and the causal 65/32 readiness regression. Independent source
+review approved the slice with no blocking findings. Their teardown hooks completed
+without errors, but isolated object absence and successful native query IDs were
+not independently captured for those functional runs.
+
+The separate controlled absence-query experiment also passed. Its absent user
+was inside populated key bounds; inventory grew from 3,584 to 458,752 rows using
+the existing schema/default granularity and required 1/1/1 query context. Actual
+structural reads grew from 3,585 rows, 3 ms and 5,233,599 peak bytes to 24,577 rows,
+4 ms and 5,233,679 peak bytes. Expanded native query `bd16a497-3386-42a6-9cbe-72ddbe3cc89e`
+finished successfully. All three natural source branches retained FINAL/user
+filtering and selected granules current 1/4, pace 1/48 and HR 1/4; no branch fully
+scanned. Both reader executions returned `empty_sources` for exactly the requested
+UUID; each underlying structural result returned decimal zero current/pace/HR
+counts. The operator's DROP and post-DROP database-absence assertion and
+independent client close succeeded; absence rows were not separately persisted
+or independently queried again. Root verified all 57 original containers healthy
+with unchanged IDs/images afterward. No engines were created or other workspaces
+paused.
+
+Finite same-cycle catchup, actual Redis/live-input generation verification,
+source-arrival races, no-worse source-to-visible lag, the 15-minute freshness gate,
+production-scale resource acceptance and B commit/CI/cutover remain open. These
+controlled results do not prove constant physical reads or subsecond production
+page loading. Follow-up includes the deferred lossless ordering/duplicate-key
+tests and existing test warnings. A useful diagnostic-runbook improvement is to
+require an in-range absent key, selected/total granules for every source branch,
+and explicit separation of teardown completion from captured cleanup absence.
+
+**2026-10-04 — Bounded verifier initial native gate, tuple binding failure.**
+The isolated canonical initial-create test reached its first typed metadata
+request, then failed before verifier execution: query
+`4539dbb6-7617-40e0-b7a5-6988233004ab`, code 27
+`CANNOT_PARSE_INPUT_ASSERTION_FAILED`, expected `(` while decoding
+`Array(Tuple(UUID, UUID))`. Client 1.23.1 encoded nested JavaScript arrays
+with square brackets. Its exported `TupleParam` uses tuple parentheses, as
+shown by the [exact pinned official serializer](https://github.com/ClickHouse/clickhouse-js/blob/client-1.23.1/packages/client-common/src/data_formatter/format_query_params.ts).
+The test now uses that existing built-in wrapper at SELECT and strict subquery
+DESCRIBE bindings; no custom serialization, dependency, SQL, settings, retries
+or deadline change was introduced. Host serialization/type/format checks passed;
+the corrected native path and broader semantic/resource gates remain unvalidated.
+Test teardown reported no error and root independently observed all 57 original
+containers healthy; isolated database absence was not independently captured.
+Production was unchanged; no production incident or freshness improvement is
+inferred from this local validation failure.
+
+
+On 2026-10-04, the bounded verifier's corrected initial native case passed,
+but the remaining-case selection failed in dbt's system-table relation discovery
+before either case executed. Native query 6e4791d8-b405-480b-b9c2-9e32f07480dc
+tracked 38,303,582 bytes while the server rejected total memory at 1.18 GiB.
+A system.metric_log merge hit the same ceiling about 2 ms earlier; subsequent
+one-second samples tracked up to 890,798,718 merge bytes. The actual metric table
+has 2,100 columns, 95,316 rows and six parts; this evidence identifies overlapping
+metric-log merge pressure, without reconstructing every allocation at the fatal.
+The new verifier CREATE/SELECT was not the rejected statement. Production was
+unchanged. Root preserved the relevant native SQL, errors, metrics, table metadata
+and their hashes, then performed exactly one verified-own-engine
+TRUNCATE TABLE system.metric_log SYNC. Its query
+0b164468-a1b1-48ac-9e45-5386564282ec completed with no exception; all query_log,
+part_log, native-error histories, product tables and 57 original containers were
+preserved. Historical metric rows were deleted and the full history was not
+archived. ClickHouse documents that this history table may safely be truncated:
+[system.metric_log](https://clickhouse.com/docs/reference/system-tables/metric_log).
+
+After the operator cleanup, the unchanged remaining two cases passed once with
+retry 0, proving canonical replacement, the two existing schema assertions,
+empty bindings, zero-clock presence and explicit absent rows. The earlier
+corrected initial case proved both exact 41/0 source rows and microsecond bounds.
+Root retained four successful native query records under the required 1/1/1
+context (198–229 ms, about 41 MB tracked peaks), separately from the failed
+startup query. Root independently verified all 57 originals healthy after cleanup
+and after testing. This is a local prerequisite recovery, not a durable pressure
+fix: metric-log merges can recur as history accumulates under the unchanged cap.
+Full typed-schema, lifecycle/inventory, shared-selector, toolchain, key-pruning,
+finite-drain, cache-generation and production freshness gates remain open.
+No cap, logging setting, timeout, retry mechanism or steady-state cleanup changed.
+
+
+**2026-10-04 — Bounded key-verifier corrections and controlled local resource validation.**
+The configured new-view SQL lint initially failed with SQLFluff CP02 at line 10,
+position 16, treating the typed-parameter `arrayJoin` call as an identifier.
+The direct correction uses a named typed-input CTE and the native `ARRAY JOIN`
+clause; key/user bindings, empty-input behavior and query settings are preserved.
+ClickHouse documents element expansion and omission of empty arrays for this
+clause: [ARRAY JOIN](https://clickhouse.com/docs/reference/statements/select/array-join).
+The same configured dbt-templated lint passed once after correction. Its original
+failure remains in `task6B-verifier-key-lint-native.log`; no rule, parser flag,
+timeout or retry setting changed.
+
+The expanded lifecycle tests then exposed a fixture seed failure: native INSERT
+`8cd62e79-8b26-4f31-b29e-2d5246e41ad1` read and wrote zero rows, so the verifier
+correctly reported the second user absent. The replacement `user_id` alias
+collided with the unqualified original-user filter. ClickHouse documents
+query-wide aliases and same-name substitution: [expression aliases](https://clickhouse.com/docs/reference/syntax#notes-on-usage).
+The test now qualifies the source table and requires the exact seeded
+user/activity/version 99 before verification. Only that affected case was rerun;
+it passed with lossless adjacent source clocks and user isolation. Owned database
+DROP and a subsequent exact-name absence query passed. The full 25-field schema,
+inventory/lifecycle cases, selector 28, pace 9, HR 9 and coverage 12 regressions,
+and configured build/docs/lint gates are GREEN across retained distinct runs.
+Existing empty parameterized-view catalog results, adapter warnings and three
+canonical SQL-lint size skips remain explicit limitations.
+
+Root next ran one reviewed controlled key-resource operator, with no retry,
+delay, forced layout, alternative serving query, cap/settings change or history
+cleanup. Baseline 36 rows grew to 1,179,648 raw/FINAL rows, including unrequested
+same-user keys on both sides of both requested keys and eight other users.
+Both typed-view requests returned the same independently expected four rows
+with all 25 fields. Exact native QueryFinish records were
+`ca06d8b2-9ff1-44c4-bc10-db1215c90498` (169 ms, 108 read rows, 7,614 bytes) and
+`81ad8237-74b6-4e40-b111-a7b01f9d776f` (195 ms, 213,100 read rows, 14,638,788 bytes).
+Each tracked peak was 37,960,448 bytes, below the 128 MiB gate and the separately
+observed unchanged effective server cap of 1,288,931,328 bytes. Actual request
+settings retained max_threads/join_use_nulls/enable_materialized_cte 1/1/1.
+
+Manual inspection covered all ten natural source-read nodes, including repeated
+current/prior window reads. Requested user/exact-key predicates entered current
+and prior reads before joins/aggregation; sensor reads used requested user,
+model channel and dates derived from both current and prior bounds. Expanded
+selected/total data granules were current 3/9, pace prior 3/97, HR prior 3/9 and
+sensor 2/33. Requested keys lay inside expanded part bounds, so acceptance was
+based on pruning within overlapping ranges. No compiled-body fallback was needed.
+Read amplification was real; these measurements do not prove constant reads or
+a production latency SLA. Full plans, physical inventories and native results
+are retained under `task6B-verifier-key-resource` artifacts.
+
+Owned DROP, the operator's separate database-absence assertion, client close,
+source preservation and original-57 checks all passed independently. The empty
+post-DROP rowset was asserted, not separately persisted or queried again by root.
+Root independently observed all 57 original IDs/images healthy with no deviations
+at 20:14:47.537 UTC. Production was unchanged. New support-commit CI, pinned CI
+engine compatibility, finite-capture totals, Redis/live-input generation,
+source-arrival races, no-worse freshness and production cutover remain open;
+the earlier metric-log pressure recurrence risk also remains unresolved. A useful
+runbook refinement is to record selected/total data granules for every repeated
+source branch and distinguish per-request resource proof from total capture work
+and source-to-visible freshness. No steady-state diagnostic framework is added.

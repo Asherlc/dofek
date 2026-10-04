@@ -450,6 +450,21 @@ and total memory capacity must pass separately on the actual engine; the prior
 ordinary-view scope failure and approximately 550 MB query memory are recorded
 in the [incident baseline](../docs/production-incident-baseline.md).
 
+The additional approved preparation support is the dbt-owned parameterized
+`activity_sensor_key_verification` metadata view, sharing canonical state with
+the dirty selector. Required user UUIDs and at most 32 distinct user/activity
+pairs enter current/prior branches before aggregation and restrict derived
+window/day work. Each request returns strict evidence for both models, with
+explicit presence, lossless version clocks and precise lifecycle timestamps.
+Empty input means no work. Its existing 1/1/1 execution context is required at
+both view and typed caller boundaries. [Native parameterized views](https://clickhouse.com/docs/reference/statements/create/view#parameterized-view)
+store queries rather than data; [typed parameters](https://clickhouse.com/docs/reference/syntax#defining-and-using-query-parameters)
+do not certify pinned-engine compatibility or physical pruning. Canonical
+create/replace, strict subquery DESCRIBE and natural resource gates remain
+required. The initial finite sweep reuses both model rows per identity; total
+requests, elapsed work and retained capture memory need separate evidence from
+the per-request bound. This support is not yet populated or activated in production.
+
 The approved rollout remains two releases. Preparation A adds this support and
 repairs canonical versioned cache replay while preserving old request readers
 and worker/processing coverage behavior. Reader B adds compact serving,

@@ -469,7 +469,8 @@ export function lintMigrationPolicyFile(
 
   if (filePath.startsWith("analytics/models/")) {
     const isCoverageView =
-      filePath === "analytics/models/read_models/activity_sensor_processing_coverage.sql";
+      filePath === "analytics/models/read_models/activity_sensor_processing_coverage.sql" ||
+      filePath === "analytics/models/read_models/activity_sensor_key_verification.sql";
     const materialization = isCoverageView ? "view" : "incremental";
     const configPattern = new RegExp(
       `\\{\\{\\s*config\\s*\\([\\s\\S]*\\bmaterialized\\s*=\\s*['"]${materialization}['"]`,
@@ -481,7 +482,7 @@ export function lintMigrationPolicyFile(
           filePath,
           isCoverageView ? "analytics-dbt-coverage-view" : "analytics-dbt-incremental-model",
           isCoverageView
-            ? "Activity sensor processing coverage must be an explicit read-only dbt view."
+            ? "Activity sensor processing coverage and key verification must be explicit read-only dbt views."
             : "Analytics dbt models must be explicit incremental models; do not add view/table models that require full refreshes or live recomputation.",
           content,
         ),
