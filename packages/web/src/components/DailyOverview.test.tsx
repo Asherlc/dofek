@@ -306,7 +306,7 @@ describe("DailyOverview", () => {
     expect(screen.getByText("Night of Sat, Aug 1, 2026 · America/Los_Angeles")).toBeTruthy();
   });
 
-  it("renders strain and sleep context below their score rings", () => {
+  it("renders strain and sleep context in their respective breakdowns", () => {
     render(
       <DailyOverview
         readiness={mockReadiness}
@@ -317,10 +317,54 @@ describe("DailyOverview", () => {
         sleepLoading={false}
       />,
     );
-    // Strain description (moderate strain = productive)
-    expect(screen.getByText(/productive training day/)).toBeTruthy();
-    // Sleep description (Good tier)
-    expect(screen.getByText(/most of what your body needed/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Strain score breakdown" }));
+    expect(screen.getByText(/productive training day/)).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Sleep score breakdown" }));
+    expect(screen.getByText(/most of what your body needed/)).toBeVisible();
+  });
+
+  it.each(["Recovery", "Strain", "Sleep"])(
+    "hides and exposes the %s disclosure panel with its control",
+    (label) => {
+      render(
+        <DailyOverview
+          readiness={mockReadiness}
+          workloadRatio={mockWorkloadRatio}
+          sleepPerformance={mockSleepPerformance}
+        />,
+      );
+      const button = screen.getByRole("button", { name: `${label} score breakdown` });
+      const panel = document.getElementById(button.getAttribute("aria-controls") ?? "");
+      expect(panel).not.toBeNull();
+      expect(panel).toHaveAttribute("hidden");
+      expect(panel).not.toBeVisible();
+      fireEvent.click(button);
+      expect(panel).not.toHaveAttribute("hidden");
+      expect(panel).toBeVisible();
+      fireEvent.click(button);
+      expect(panel).toHaveAttribute("hidden");
+    },
+  );
+
+  it("uses distinct disclosure targets when summaries share a page", () => {
+    render(
+      <>
+        <DailyOverview
+          readiness={mockReadiness}
+          workloadRatio={mockWorkloadRatio}
+          sleepPerformance={mockSleepPerformance}
+        />
+        <DailyOverview
+          readiness={mockReadiness}
+          workloadRatio={mockWorkloadRatio}
+          sleepPerformance={mockSleepPerformance}
+        />
+      </>,
+    );
+    const controls = screen.getAllByRole("button", { name: /score breakdown/ });
+    const targetIds = controls.map((control) => control.getAttribute("aria-controls"));
+    expect(new Set(targetIds).size).toBe(6);
+    for (const id of targetIds) expect(document.getElementById(id ?? "")).not.toBeNull();
   });
 
   it("uses the standard count-up duration for recovery, strain, and sleep rings", () => {
@@ -629,8 +673,12 @@ describe("DailyOverview", () => {
     );
 
     const recoveryButton = screen.getByRole("button", { name: "Recovery score breakdown" });
+    const recoveryPanel = document.getElementById(
+      recoveryButton.getAttribute("aria-controls") ?? "",
+    );
     fireEvent.click(recoveryButton);
     expect(recoveryButton.getAttribute("aria-expanded")).toBe("true");
+    expect(recoveryPanel).toBeVisible();
 
     // Click again to collapse
     fireEvent.click(recoveryButton);
@@ -651,6 +699,10 @@ describe("DailyOverview", () => {
 
     const recoveryButton = screen.getByRole("button", { name: "Recovery score breakdown" });
     const strainButton = screen.getByRole("button", { name: "Strain score breakdown" });
+    const recoveryPanel = document.getElementById(
+      recoveryButton.getAttribute("aria-controls") ?? "",
+    );
+    const strainPanel = document.getElementById(strainButton.getAttribute("aria-controls") ?? "");
 
     // Expand recovery
     fireEvent.click(recoveryButton);
@@ -660,6 +712,8 @@ describe("DailyOverview", () => {
     fireEvent.click(strainButton);
     expect(recoveryButton.getAttribute("aria-expanded")).toBe("false");
     expect(strainButton.getAttribute("aria-expanded")).toBe("true");
+    expect(recoveryPanel).toHaveAttribute("hidden");
+    expect(strainPanel).toBeVisible();
   });
 
   it("shows yesterday's readiness as fresh (recovery reflects last night)", () => {

@@ -448,23 +448,22 @@ export function DataSourcesPanel() {
 
   return (
     <div className="space-y-4">
-      <div className="flex min-h-20 items-start justify-between gap-4">
-        <h3 className="text-sm font-medium text-foreground">Data Sources</h3>
-        {enabledSyncable.length > 1 && (
-          <SyncAllControls
-            busy={syncAllBusy}
-            errorMessage={syncAllError}
-            onRecentSync={() => void handleSyncAll()}
-            onFullSync={() => void handleSyncAll(true)}
-          />
-        )}
-      </div>
-
       <section
         aria-label="Available data sources"
         aria-busy={providers.isLoading || processingStatus.isLoading}
         className={providerRegionClassName}
       >
+        {enabledSyncable.length > 1 && (
+          <div className="flex justify-end">
+            <SyncAllControls
+              busy={syncAllBusy}
+              errorMessage={syncAllError}
+              onRecentSync={() => void handleSyncAll()}
+              onFullSync={() => void handleSyncAll(true)}
+            />
+          </div>
+        )}
+
         {activeSyncs.error ? (
           <p role="alert" className="text-sm text-red-400">
             {userFacingErrorMessage(activeSyncs.error)}

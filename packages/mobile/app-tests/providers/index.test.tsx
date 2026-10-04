@@ -697,7 +697,7 @@ describe("ProviderCard", () => {
       );
 
       expect(screen.getByText("Connected")).toBeTruthy();
-      expect(screen.getByText(/Last sync:/)).toBeTruthy();
+      expect(screen.getByText(/Last attempt:/)).toBeTruthy();
     });
 
     it("renders 'Never synced' when provider has no lastSyncAt", async () => {
@@ -1255,7 +1255,6 @@ describe("ProvidersScreen", () => {
     expect(garminCard.getByText("Rate limited until 2026-08-12T12:10:00.000Z.")).toBeTruthy();
 
     const wahooCard = within(screen.getByTestId("provider-card-wahoo"));
-    expect(wahooCard.getByText("Connected")).toBeTruthy();
     expect(wahooCard.getByText("Sync current")).toBeTruthy();
     expect(wahooCard.getByText(/Last successful sync:/)).toBeTruthy();
     expect(

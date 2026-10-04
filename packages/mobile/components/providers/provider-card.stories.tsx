@@ -1,8 +1,12 @@
 import type { Meta, StoryObj } from "@storybook/react-native";
 import type { ComponentType } from "react";
 import { View } from "react-native";
-import { ProviderCard } from "../../components/providers/provider-card.tsx";
 import { AuthProvider } from "../../lib/auth-context";
+import { ProviderCard } from "./provider-card.tsx";
+
+const oneHourAgo = new Date(Date.now() - 3600_000).toISOString();
+const oneWeekAgo = new Date(Date.now() - 86400_000 * 7).toISOString();
+const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
 
 // ── ProviderCard ──
 // AuthProvider is resolved to .storybook/mocks/auth-context in web Storybook
@@ -18,12 +22,13 @@ const providerCardMeta = {
       enabled: true,
       authStatus: "connected" as const,
       authType: "oauth",
-      lastSyncAt: new Date(Date.now() - 3600_000).toISOString(),
-      lastSuccessfulSyncAt: new Date(Date.now() - 3600_000).toISOString(),
+      lastSyncAt: oneHourAgo,
+      lastSuccessfulSyncAt: oneHourAgo,
       syncFreshness: {
         status: "current",
         label: "Sync current",
       },
+      recentLogs: [],
       importOnly: false,
       pushOnly: false,
     },
@@ -62,6 +67,7 @@ export const NotConnected: ProviderCardStory = {
       lastSyncAt: null,
       lastSuccessfulSyncAt: null,
       syncFreshness: null,
+      recentLogs: [],
       importOnly: false,
       pushOnly: false,
     },
@@ -76,13 +82,14 @@ export const Expired: ProviderCardStory = {
       enabled: true,
       authStatus: "expired",
       authType: "oauth",
-      lastSyncAt: new Date(Date.now() - 86400_000 * 7).toISOString(),
-      lastSuccessfulSyncAt: new Date(Date.now() - 86400_000 * 7).toISOString(),
+      lastSyncAt: oneWeekAgo,
+      lastSuccessfulSyncAt: oneWeekAgo,
       syncFreshness: {
         status: "overdue",
         label: "Sync overdue",
         description: "The last successful sync is overdue.",
       },
+      recentLogs: [],
       importOnly: false,
       pushOnly: false,
     },
@@ -114,6 +121,7 @@ export const ImportOnly: ProviderCardStory = {
       lastSyncAt: null,
       lastSuccessfulSyncAt: null,
       syncFreshness: null,
+      recentLogs: [],
       importOnly: true,
       pushOnly: false,
     },
@@ -131,6 +139,7 @@ export const GarminDumpImport: ProviderCardStory = {
       lastSyncAt: null,
       lastSuccessfulSyncAt: null,
       syncFreshness: null,
+      recentLogs: [],
       importOnly: true,
       pushOnly: false,
     },
@@ -149,6 +158,7 @@ export const FitFileImport: ProviderCardStory = {
       lastSyncAt: null,
       lastSuccessfulSyncAt: null,
       syncFreshness: null,
+      recentLogs: [],
       importOnly: true,
       pushOnly: false,
     },
@@ -167,6 +177,7 @@ export const AppleHealthImportOnly: ProviderCardStory = {
       lastSyncAt: null,
       lastSuccessfulSyncAt: null,
       syncFreshness: null,
+      recentLogs: [],
       importOnly: true,
       pushOnly: false,
     },
@@ -184,6 +195,7 @@ export const PushOnly: ProviderCardStory = {
       lastSyncAt: null,
       lastSuccessfulSyncAt: null,
       syncFreshness: null,
+      recentLogs: [],
       importOnly: false,
       pushOnly: true,
     },
@@ -201,6 +213,7 @@ export const AppleHealthConnected: ProviderCardStory = {
       lastSyncAt: new Date(Date.now() - 600_000).toISOString(),
       lastSuccessfulSyncAt: null,
       syncFreshness: null,
+      recentLogs: [],
       importOnly: false,
       pushOnly: false,
     },
@@ -222,6 +235,7 @@ export const NeverSynced: ProviderCardStory = {
         label: "Sync status unknown",
         description: "No successful sync has been recorded.",
       },
+      recentLogs: [],
       importOnly: false,
       pushOnly: false,
     },
@@ -238,13 +252,14 @@ export const StaleProvider: ProviderCardStory = {
       enabled: true,
       authStatus: "connected",
       authType: "custom:whoop",
-      lastSyncAt: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
-      lastSuccessfulSyncAt: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
+      lastSyncAt: thirtyDaysAgo,
+      lastSuccessfulSyncAt: thirtyDaysAgo,
       syncFreshness: {
         status: "overdue",
         label: "Sync overdue",
         description: "The last successful sync is overdue.",
       },
+      recentLogs: [],
       importOnly: false,
       pushOnly: false,
     },
