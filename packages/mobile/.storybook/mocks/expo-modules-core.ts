@@ -125,6 +125,15 @@ export function requireNativeViewManager(_moduleName: string): Record<string, un
   return {};
 }
 
-export function registerWebModule<T>(moduleImplementation: T, _moduleName?: string): T {
-  return moduleImplementation;
+const webModules = new Map<string, StorybookNativeModule>();
+
+export function registerWebModule<T extends StorybookNativeModule>(
+  moduleImplementation: new () => T,
+  moduleName = moduleImplementation.name,
+): T {
+  const registered = webModules.get(moduleName);
+  if (registered instanceof moduleImplementation) return registered;
+  const instance = new moduleImplementation();
+  webModules.set(moduleName, instance);
+  return instance;
 }

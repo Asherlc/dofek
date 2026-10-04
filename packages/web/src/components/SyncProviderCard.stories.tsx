@@ -31,7 +31,7 @@ function withRouter(Story: ComponentType) {
   });
 
   return (
-    <div className="w-screen max-w-sm p-6 bg-background">
+    <div className="w-[calc(100vw-2rem)] max-w-sm p-6 bg-background">
       <RouterProvider router={router} />
     </div>
   );

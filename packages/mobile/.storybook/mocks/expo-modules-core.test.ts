@@ -12,6 +12,19 @@ describe("expo-modules-core Storybook mock", () => {
     expect(subscription).toEqual({ remove: expect.any(Function) });
   });
 
+  it("registers a web module instance with the resource classes Expo Crypto extends", () => {
+    class BrowserCryptoModule extends expoModulesCore.NativeModule {
+      EncryptionKey = class EncryptionKey {};
+      SealedData = class SealedData {};
+    }
+
+    const module = expoModulesCore.registerWebModule(BrowserCryptoModule, "TestCryptoModule");
+    expect(module).toBeInstanceOf(BrowserCryptoModule);
+    expect(expoModulesCore.registerWebModule(BrowserCryptoModule, "TestCryptoModule")).toBe(module);
+    expect(() => new (class extends module.EncryptionKey {})()).not.toThrow();
+    expect(() => new (class extends module.SealedData {})()).not.toThrow();
+  });
+
   it("lets Expo create identifiers for browser resources", () => {
     expect(expoModulesCore.uuid.v4()).toMatch(
       /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
