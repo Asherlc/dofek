@@ -308,7 +308,7 @@ describe("DataSourcesPanel", () => {
       </PageSection>,
     );
 
-    expect(screen.getAllByRole("heading", { name: "Data Sources" })).toHaveLength(2);
+    expect(screen.getAllByRole("heading", { name: "Data Sources" })).toHaveLength(1);
     expect(screen.getByRole("region", { name: "Available data sources" })).toBeTruthy();
   });
 
@@ -350,7 +350,7 @@ describe("DataSourcesPanel", () => {
     expect(screen.queryByTestId("provider-card-garmin")).toBeNull();
   });
 
-  it("reserves stable action and provider regions while inventory loads", () => {
+  it("reserves a stable provider region while inventory loads", () => {
     mockProvidersQuery.mockReturnValue({
       data: undefined,
       isLoading: true,
@@ -363,10 +363,8 @@ describe("DataSourcesPanel", () => {
     });
 
     const { rerender } = render(<DataSourcesPanel />);
-    const actionRegion = screen.getByRole("heading", { name: "Data Sources" }).parentElement;
     const loadingRegion = screen.getByRole("region", { name: "Available data sources" });
 
-    expect(actionRegion?.className).toContain("min-h-20");
     expect(screen.queryByRole("region", { name: "Sync all providers" })).toBeNull();
     expect(loadingRegion.getAttribute("aria-busy")).toBe("true");
     expect(loadingRegion.className).toContain("h-80");
@@ -402,7 +400,6 @@ describe("DataSourcesPanel", () => {
     rerender(<DataSourcesPanel />);
 
     const processingRegion = screen.getByRole("region", { name: "Available data sources" });
-    expect(screen.getByRole("heading", { name: "Data Sources" }).parentElement).toBe(actionRegion);
     expect(screen.getByRole("region", { name: "Sync all providers" })).toBeTruthy();
     expect(processingRegion).toBe(loadingRegion);
     expect(processingRegion.getAttribute("aria-busy")).toBe("true");

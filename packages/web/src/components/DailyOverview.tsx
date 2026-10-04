@@ -604,14 +604,7 @@ export function DailyOverview({
       }
     >
       <div className="mb-5 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">
-            Daily summary
-          </p>
-          <h2 className="mt-1 text-xl font-semibold tracking-tight text-foreground">
-            Today&apos;s recovery picture
-          </h2>
-        </div>
+        <h2 className="text-xl font-semibold tracking-tight text-foreground">Daily summary</h2>
         <p className="text-xs text-subtle">
           {summaryDateContext ? formatSummaryDateContext(summaryDateContext) : endDate}
         </p>

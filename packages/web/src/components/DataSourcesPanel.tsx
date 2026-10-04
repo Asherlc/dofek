@@ -448,17 +448,16 @@ export function DataSourcesPanel() {
 
   return (
     <div className="space-y-4">
-      <div className="flex min-h-20 items-start justify-between gap-4">
-        <h3 className="text-sm font-medium text-foreground">Data Sources</h3>
-        {enabledSyncable.length > 1 && (
+      {enabledSyncable.length > 1 && (
+        <div className="flex justify-end">
           <SyncAllControls
             busy={syncAllBusy}
             errorMessage={syncAllError}
             onRecentSync={() => void handleSyncAll()}
             onFullSync={() => void handleSyncAll(true)}
           />
-        )}
-      </div>
+        </div>
+      )}
 
       <section
         aria-label="Available data sources"
