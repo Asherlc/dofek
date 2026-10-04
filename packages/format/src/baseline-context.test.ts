@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { formatBaselineContext } from "./baseline-context.ts";
+import { formatBaselineContext, formatComparisonPeriod } from "./baseline-context.ts";
 import { formatHRVMeasurement } from "./format.ts";
+
+it("labels the recent and prior comparison periods without conflating their windows", () => {
+  expect(formatComparisonPeriod({ recentDays: 7, baselineDays: 28 })).toBe("7d vs prior 28d");
+  expect(formatComparisonPeriod({ recentDays: 14, baselineDays: 60 })).toBe("14d vs prior 60d");
+});
 
 describe("formatBaselineContext", () => {
   const metric = {

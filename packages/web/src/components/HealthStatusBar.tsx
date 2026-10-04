@@ -1,17 +1,18 @@
-import { formatBaselineContext } from "@dofek/format/baseline-context";
+import { formatBaselineContext, formatComparisonPeriod } from "@dofek/format/baseline-context";
 import {
   type FormattedMeasurement,
   type FormattedMeasurementFormatter,
   type FormattedMeasurementPart,
   formatNumber,
 } from "@dofek/format/format";
+import { formatHealthStatusLabel } from "@dofek/format/health-status";
 import {
   formatHealthProvenanceSource,
   formatHealthProvenanceSummary,
 } from "@dofek/providers/health-provenance";
 import type { HealthMetricKey, HealthStatusMetric } from "dofek-server/mobile-dashboard-contracts";
 import type { BaselineRelativeMetric } from "dofek-server/types";
-import { useState } from "react";
+import { useId, useState } from "react";
 import { useCountUp } from "../hooks/useCountUp.ts";
 
 interface HealthStatusBarProps {
@@ -140,34 +141,61 @@ function formatComparison(
   return `${comparison.recentDays}d avg ${formatContextValue(comparison.recentMean, formatter, unit)} vs prior ${comparison.baselineDays}d avg ${formatContextValue(comparison.baselineMean, formatter, unit)} · ${signedDelta}`;
 }
 
-function HealthMetricProvenanceDisclosure({ metric }: { metric: HealthStatusMetric }) {
+function HealthMetricDetails({
+  metric,
+  baselineDetails,
+  comparisonDetails,
+}: {
+  metric: HealthStatusMetric;
+  baselineDetails: string;
+  comparisonDetails: string;
+}) {
   const [expanded, setExpanded] = useState(false);
+  const detailsId = useId();
   const provenance = metric.provenance;
-
-  if (!provenance) return null;
-
-  const sourceText = formatHealthProvenanceSource(provenance);
+  const blocked = metric.baselineProgress.blocker !== null;
   return (
-    <div className="mt-1 text-[10px] text-subtle">
-      <button
-        type="button"
-        className="flex w-full items-center justify-between gap-2 text-left hover:text-muted"
-        aria-expanded={expanded}
-        aria-label={`${expanded ? "Hide" : "Show"} source details for ${metric.label}`}
-        onClick={() => setExpanded((current) => !current)}
-      >
-        <span>{formatHealthProvenanceSummary(provenance)}</span>
-        <span className="shrink-0 font-medium">{expanded ? "Hide details" : "Details"}</span>
-      </button>
-      {expanded ? (
-        <div className="mt-1 space-y-0.5 border-l border-border pl-2">
-          <div>Source: {sourceText}</div>
-          <div>Latest recorded date: {provenance.latestDate ?? "Unavailable"}</div>
-          <div>
-            Coverage: {provenance.observedDays}/{provenance.windowDays} days
-          </div>
-        </div>
-      ) : null}
+    <div className="mt-1 text-[11px] text-subtle">
+      <div className="flex items-center justify-between gap-2">
+        {provenance ? <span>{formatHealthProvenanceSummary(provenance)}</span> : null}
+        <button
+          type="button"
+          className="min-h-11 min-w-11 shrink-0 text-left font-medium hover:text-muted"
+          aria-expanded={expanded}
+          aria-controls={detailsId}
+          aria-label={`${expanded ? "Hide" : "Show"} details for ${metric.label}`}
+          onClick={() => setExpanded((current) => !current)}
+        >
+          {expanded ? "Hide details" : "Details"}
+        </button>
+      </div>
+      <div id={detailsId} hidden={!expanded} className="mt-1 space-y-1 border-l border-border pl-2">
+        {expanded ? (
+          <>
+            {!blocked ? (
+              <div className="font-medium text-muted">{metric.evaluationRule}</div>
+            ) : null}
+            <div>{metric.explanation}</div>
+            {blocked ? (
+              <>
+                <div>{metric.baselineProgress.requirement}</div>
+                <div>{metric.baselineProgress.summary}</div>
+              </>
+            ) : null}
+            {baselineDetails ? <div>{baselineDetails}</div> : null}
+            {comparisonDetails ? <div>{comparisonDetails}</div> : null}
+            {provenance ? (
+              <>
+                <div>Source: {formatHealthProvenanceSource(provenance)}</div>
+                <div>Latest recorded date: {provenance.latestDate ?? "Unavailable"}</div>
+                <div>
+                  Coverage: {provenance.observedDays}/{provenance.windowDays} days
+                </div>
+              </>
+            ) : null}
+          </>
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -206,6 +234,8 @@ export function HealthStatusBar({
         const baselineContext = baselineRelative.find(
           (candidate) => candidate.metric === metric.metric,
         );
+        const blocked = metric.baselineProgress.blocker !== null;
+        const interpretation = formatHealthStatusLabel(metric);
         return (
           <div
             key={metric.metric}
@@ -229,39 +259,49 @@ export function HealthStatusBar({
             </div>
             <div className="text-[10px] text-subtle">
               {metric.baseline != null
-                ? `baseline ${formatBaseline(metric, formatter)} · ${metric.statusLabel}`
-                : metric.statusLabel}
+                ? `baseline ${formatBaseline(metric, formatter)} · ${interpretation}`
+                : interpretation}
             </div>
-            <div className="mt-1 text-[10px] font-medium text-muted">{metric.evaluationRule}</div>
-            <div className="mt-1 text-[10px] text-subtle">{metric.explanation}</div>
-            {metric.baselineProgress.blocker !== null ? (
+            {blocked ? (
               <section
                 aria-label={`${metric.label} baseline progress`}
                 className="mt-2 space-y-1 border-t border-border pt-2 text-[10px]"
               >
-                <div className="font-medium text-muted">{metric.baselineProgress.requirement}</div>
+                <div className="font-medium text-muted">{metric.evaluationRule}</div>
                 <div className="text-subtle">
                   {metric.baselineProgress.observedObservationDays} of{" "}
                   {metric.baselineProgress.requiredObservationDays} required days recorded
                 </div>
-                <div className="text-subtle">{metric.baselineProgress.summary}</div>
                 <div className="font-medium text-foreground">{metric.baselineProgress.action}</div>
               </section>
             ) : null}
             {baselineContext ? (
               <div className="mt-1 text-[10px] text-subtle">
-                {formatBaselineContext(baselineContext, {
-                  formatter,
-                  unit: units[metric.metric],
-                })}
+                {baselineContext.baseline.windowDays}d baseline ·{" "}
+                {formatComparisonPeriod(baselineContext.comparison)}
               </div>
             ) : null}
-            <HealthMetricProvenanceDisclosure metric={metric} />
             {!baselineContext && metric.comparison ? (
               <div className="mt-1 text-[10px] text-subtle">
-                {formatComparison(metric, comparisonFormatter, units[metric.metric])}
+                {formatComparisonPeriod(metric.comparison)}
               </div>
             ) : null}
+            <HealthMetricDetails
+              metric={metric}
+              baselineDetails={
+                baselineContext
+                  ? formatBaselineContext(baselineContext, {
+                      formatter,
+                      unit: units[metric.metric],
+                    })
+                  : ""
+              }
+              comparisonDetails={
+                !baselineContext
+                  ? formatComparison(metric, comparisonFormatter, units[metric.metric])
+                  : ""
+              }
+            />
           </div>
         );
       })}

@@ -96,7 +96,14 @@ describe("HealthStatusCards", () => {
 
     expect(screen.getByText("Trend Weight")).toBeTruthy();
     expect(screen.getByText("176.4 lb")).toBeTruthy();
-    expect(screen.getByText("Moving as intended")).toBeTruthy();
+    expect(screen.getByText("Moving as intended · Weight loss goal")).toBeTruthy();
+    const button = screen.getByRole("button", { name: "Show details for Trend Weight" });
+    expect(button.getAttribute("aria-expanded")).toBe("false");
+    expect(
+      screen.queryByText("Trend Weight is below your baseline, in line with your weight goal."),
+    ).toBeNull();
+    fireEvent.click(button);
+    expect(button.getAttribute("aria-expanded")).toBe("true");
     expect(
       screen.getByText("Below your baseline, where lower values support this metric"),
     ).toBeTruthy();
@@ -104,6 +111,11 @@ describe("HealthStatusCards", () => {
       screen.getByText("Trend Weight is below your baseline, in line with your weight goal."),
     ).toBeTruthy();
     expect(screen.getByLabelText("Moving as intended status").textContent).toBe("✓");
+    fireEvent.click(button);
+    expect(button.getAttribute("aria-expanded")).toBe("false");
+    expect(
+      screen.queryByText("Trend Weight is below your baseline, in line with your weight goal."),
+    ).toBeNull();
   });
 
   it("renders server-authored baseline requirements, progress, and action", () => {
@@ -122,7 +134,7 @@ describe("HealthStatusCards", () => {
             statusToken: "insufficient_data",
             statusColor: "muted",
             statusLabel: "Waiting for baseline",
-            evaluationRule: "Server-selected rule.",
+            evaluationRule: "Needs a current value, baseline, and measurable day-to-day variation",
             explanation: "Server-selected explanation.",
             baselineProgress: {
               requiredObservationDays: 3,
@@ -141,6 +153,14 @@ describe("HealthStatusCards", () => {
     );
 
     expect(screen.getByText("Waiting for baseline")).toBeTruthy();
+    expect(
+      screen.getByText("Needs a current value, baseline, and measurable day-to-day variation"),
+    ).toBeTruthy();
+    expect(screen.getByText("1 of 3 required days recorded")).toBeTruthy();
+    expect(
+      screen.getByText("Keep syncing resting heart rate data for at least 2 more days."),
+    ).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Show details for Resting Heart Rate" }));
     expect(
       screen.getByText(
         "A current value plus at least 2 more recorded days with measurable variation.",
@@ -184,6 +204,7 @@ describe("HealthStatusCards", () => {
     );
 
     expect(screen.getByText("Server-selected label")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Show details for Body Fat %" }));
     expect(screen.getByText("Server-selected rule.")).toBeTruthy();
     expect(screen.getByText("Server-selected explanation.")).toBeTruthy();
     expect(screen.queryByText(/abnormal/i)).toBeNull();
@@ -229,10 +250,10 @@ describe("HealthStatusCards", () => {
     );
 
     expect(screen.getByText("WHOOP (Cloud) · 3/30 days · latest 2026-07-30")).toBeTruthy();
-    expect(screen.getByText("7d avg 97.2 vs prior 28d avg 96.4 · +0.8")).toBeTruthy();
+    expect(screen.getByText("7d vs prior 28d")).toBeTruthy();
 
     const detailsButton = screen.getByRole("button", {
-      name: "Show source details for Blood Oxygen Saturation (SpO2)",
+      name: "Show details for Blood Oxygen Saturation (SpO2)",
     });
     expect(detailsButton.getAttribute("aria-expanded")).toBe("false");
     expect(screen.queryByText("Source: WHOOP (Cloud)")).toBeNull();
@@ -240,6 +261,7 @@ describe("HealthStatusCards", () => {
     fireEvent.click(detailsButton);
 
     expect(detailsButton.getAttribute("aria-expanded")).toBe("true");
+    expect(screen.getByText("7d avg 97.2 vs prior 28d avg 96.4 · +0.8")).toBeTruthy();
     expect(screen.getByText("Source: WHOOP (Cloud)")).toBeTruthy();
     expect(screen.getByText("Latest recorded date: 2026-07-30")).toBeTruthy();
     expect(screen.getByText("Coverage: 3/30 days")).toBeTruthy();

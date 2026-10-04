@@ -20,6 +20,12 @@ export interface BaselineContextFormatOptions {
   unit?: string;
 }
 
+export function formatComparisonPeriod(
+  comparison: Pick<BaselineContextMetric["comparison"], "recentDays" | "baselineDays">,
+): string {
+  return `${comparison.recentDays}d vs prior ${comparison.baselineDays}d`;
+}
+
 function formatContextValue(value: number, options: BaselineContextFormatOptions): string {
   if (options.formatter) return options.formatter(value).text;
   return `${formatNumber(value)}${options.unit ? ` ${options.unit}` : ""}`;
