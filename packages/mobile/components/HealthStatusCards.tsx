@@ -1,3 +1,5 @@
+import { formatComparisonContext, formatComparisonPeriod } from "@dofek/format/baseline-context";
+import { formatHealthStatusLabel } from "@dofek/format/health-status";
 import {
   formatHealthProvenanceSource,
   formatHealthProvenanceSummary,
@@ -55,6 +57,8 @@ export function HealthStatusCards({
         const baseline = metric.baselineText;
         const provenance = metric.provenance;
         const expanded = expandedMetric === metric.metric;
+        const blocked = metric.baselineProgress.blocker !== null;
+        const interpretation = formatHealthStatusLabel(metric);
         return (
           <View key={metric.metric} style={styles.card}>
             <View style={styles.titleRow}>
@@ -82,30 +86,61 @@ export function HealthStatusCards({
               {displayValue(metric, formatValue)}
             </Text>
             <Text style={[styles.status, { color: statusColor(metric.statusColor) }]}>
-              {baseline == null
-                ? metric.statusLabel
-                : `baseline ${baseline} · ${metric.statusLabel}`}
+              {baseline == null ? interpretation : `baseline ${baseline} · ${interpretation}`}
             </Text>
-            <Text style={styles.rule}>{metric.evaluationRule}</Text>
-            <Text style={styles.explanation}>{metric.explanation}</Text>
-            {provenance ? (
-              <>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel={`${expanded ? "Hide" : "Show"} source details for ${metric.label}`}
-                  accessibilityState={{ expanded }}
-                  onPress={() => setExpandedMetric(expanded ? null : metric.metric)}
-                  style={styles.provenanceDisclosure}
-                >
-                  <Text style={styles.provenanceSummary}>
-                    {formatHealthProvenanceSummary(provenance)}
+            {blocked ? (
+              <View
+                accessibilityLabel={`${metric.label} baseline progress`}
+                style={styles.progress}
+              >
+                <Text style={styles.rule}>{metric.evaluationRule}</Text>
+                <Text style={styles.progressCount}>
+                  {metric.baselineProgress.observedObservationDays} of{" "}
+                  {metric.baselineProgress.requiredObservationDays} required days recorded
+                </Text>
+                <Text style={styles.action}>{metric.baselineProgress.action}</Text>
+              </View>
+            ) : null}
+            {metric.comparison ? (
+              <Text style={styles.provenance}>{formatComparisonPeriod(metric.comparison)}</Text>
+            ) : null}
+            <View style={styles.provenanceDisclosure}>
+              {provenance ? (
+                <Text style={styles.provenanceSummary}>
+                  {formatHealthProvenanceSummary(provenance)}
+                </Text>
+              ) : null}
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`${expanded ? "Hide" : "Show"} details for ${metric.label}`}
+                aria-expanded={expanded}
+                onPress={() => setExpandedMetric(expanded ? null : metric.metric)}
+                style={styles.detailsButton}
+              >
+                <Text style={styles.provenanceAction}>{expanded ? "Hide details" : "Details"}</Text>
+              </Pressable>
+            </View>
+            {expanded ? (
+              <View style={styles.provenanceDetails}>
+                {!blocked ? <Text style={styles.rule}>{metric.evaluationRule}</Text> : null}
+                <Text style={styles.explanation}>{metric.explanation}</Text>
+                {blocked ? (
+                  <>
+                    <Text style={styles.explanation}>{metric.baselineProgress.requirement}</Text>
+                    <Text style={styles.explanation}>{metric.baselineProgress.summary}</Text>
+                  </>
+                ) : null}
+                {metric.comparison ? (
+                  <Text style={styles.provenance}>
+                    {formatComparisonContext(metric.comparison, {
+                      formatValue: (value) =>
+                        formatComparisonValue?.(metric, value) ?? String(value),
+                      missingMeans: "values",
+                    })}
                   </Text>
-                  <Text style={styles.provenanceAction}>
-                    {expanded ? "Hide details" : "Details"}
-                  </Text>
-                </Pressable>
-                {expanded ? (
-                  <View style={styles.provenanceDetails}>
+                ) : null}
+                {provenance ? (
+                  <>
                     <Text style={styles.provenance}>
                       Source: {formatHealthProvenanceSource(provenance)}
                     </Text>
@@ -115,45 +150,8 @@ export function HealthStatusCards({
                     <Text style={styles.provenance}>
                       Coverage: {provenance.observedDays}/{provenance.windowDays} days
                     </Text>
-                  </View>
+                  </>
                 ) : null}
-              </>
-            ) : null}
-            {metric.comparison ? (
-              <Text style={styles.provenance}>
-                {metric.comparison.recentDays}d avg{" "}
-                {metric.comparison.recentMean == null
-                  ? "—"
-                  : (formatComparisonValue?.(metric, metric.comparison.recentMean) ??
-                    String(metric.comparison.recentMean))}{" "}
-                vs prior {metric.comparison.baselineDays}d avg{" "}
-                {metric.comparison.baselineMean == null
-                  ? "—"
-                  : (formatComparisonValue?.(metric, metric.comparison.baselineMean) ??
-                    String(metric.comparison.baselineMean))}{" "}
-                ·{" "}
-                {metric.comparison.delta == null
-                  ? "—"
-                  : metric.comparison.delta > 0
-                    ? `+${formatComparisonValue?.(metric, metric.comparison.delta) ?? metric.comparison.delta}`
-                    : (formatComparisonValue?.(metric, metric.comparison.delta) ??
-                      metric.comparison.delta)}
-              </Text>
-            ) : null}
-            {metric.baselineProgress.blocker !== null ? (
-              <View
-                accessibilityLabel={`${metric.label} baseline progress`}
-                style={styles.progress}
-              >
-                <Text style={styles.progressRequirement}>
-                  {metric.baselineProgress.requirement}
-                </Text>
-                <Text style={styles.progressCount}>
-                  {metric.baselineProgress.observedObservationDays} of{" "}
-                  {metric.baselineProgress.requiredObservationDays} required days recorded
-                </Text>
-                <Text style={styles.explanation}>{metric.baselineProgress.summary}</Text>
-                <Text style={styles.action}>{metric.baselineProgress.action}</Text>
               </View>
             ) : null}
           </View>
@@ -230,7 +228,11 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: spacing.xs,
     justifyContent: "space-between",
-    paddingVertical: spacing.xs,
+  },
+  detailsButton: {
+    justifyContent: "center",
+    minHeight: 44,
+    minWidth: 44,
   },
   provenanceSummary: {
     color: colors.textTertiary,
@@ -253,12 +255,6 @@ const styles = StyleSheet.create({
   progress: {
     gap: spacing.xs,
     marginTop: spacing.xs,
-  },
-  progressRequirement: {
-    color: colors.textSecondary,
-    fontSize: 12,
-    fontWeight: "600",
-    lineHeight: 17,
   },
   progressCount: {
     color: colors.textSecondary,

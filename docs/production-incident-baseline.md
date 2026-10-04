@@ -29967,3 +29967,58 @@ verified all 57 original containers healthy at 14:02:18.214 UTC. Normal CI on th
 corrected committed snapshot is still pending; broader preparation, compact
 reader freshness/resource and production acceptance gates remain open. No
 successful-query native ID was captured by the diagnostic's failure-only selector.
+
+## 2026-10-03 — UI cleanup PR exposed asynchronous layout movement
+
+- **Symptoms / impact:** [PR #2871](https://github.com/Asherlc/dofek/pull/2871)
+  failed the existing Settings layout-stability checks. No production
+  deployment or user-facing outage occurred.
+- **Evidence / root cause:** The [web E2E job](https://github.com/Asherlc/dofek/actions/runs/37170308289/job/111341906945)
+  ran `pnpm exec cypress run` and reported `Data Sources height delta 92px;
+  normalized Zepp pairing delta 92px: expected 92 to be below 1` in
+  `settings-layout-stability.cy.ts:290`. Removing the duplicate panel heading
+  also removed its reserved header space. The asynchronous sync controls
+  remained outside the fixed-height provider inventory, so resolving the
+  provider list enlarged the panel and moved the following section.
+- **Fix / validation:** Moved the existing sync controls into the inventory
+  region, preserving their handlers and full-history confirmation. The
+  focused regression failed before this change and passed afterward; all
+  64 tests across the three affected suites passed. Browser captures measured
+  identical 474-pixel loading and loaded section heights. A separate narrow
+  health-card reproduction confirmed provenance-footer overflow; allowing
+  the footer to wrap kept the disclosure control within the card. Root and
+  workspace typechecks, full lint, and the web Storybook build passed.
+- **Remaining risk / follow-up:** Hosted validation is tracked on the
+  [PR checks](https://github.com/Asherlc/dofek/pull/2871/checks). Keep the
+  existing layout-stability gate when simplifying asynchronous sections;
+  inspect loading and loaded geometry together. No runtime retry, timeout,
+  or assertion threshold was changed.
+
+## 2026-10-04 — Main advanced before corrected preparation CI could start
+
+- **Symptoms / impact:** After the strict coverage schema correction, PR #2868
+  again became CONFLICTING / DIRTY when main advanced to `e000b1926`.
+  Normal pull_request CI for `00cb7504` did not start; only skipped automerge
+  and external checks were observed. No production mutation or outage occurred.
+- **Evidence / root cause:** Native merge-tree identified one incident-log
+  content conflict and no coverage/model/worker overlap. GitHub
+  [does not run pull_request workflows while a merge conflict remains](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#pull_request).
+  The missing run is not a failed test job; the prior `e433` run remains failed.
+- **Integration / validation:** The same-branch merge uses frozen main
+  `e000b1926fce71992b80effbf1190a05aba10911` with automatic stashing disabled.
+  The complete current incident document is preserved, followed by main's exact
+  distinct UI layout incident once. All other files retain native merge results.
+  Protected preparation source and uncommitted compact-reader work remain separate.
+  Focused checks, final review and normal merged-head CI are pending.
+- **Remaining risk / follow-up:** Normal CI must certify the merged snapshot,
+  including paired UI behavior and corrected schema compatibility. Prior local
+  or main success does not certify this merge. No workflow trigger, retry,
+  timeout, assertion or release-count change was introduced. Check PR
+  mergeability and exact workflow event/head before diagnosing an absent run.
+
+Host validation update: the reviewed incoming selection passed all 263 tests
+across 11 files on both unit/mobile projects. Sandbox lint and root/server/web/
+mobile typechecks passed sequentially without generated tracked-source drift.
+Final scoped review, the complete lint gate and normal CI on the merged committed
+snapshot remain pending. Protected preparation source and all 15 uncommitted
+compact-reader worktree files retain their captured identities.
