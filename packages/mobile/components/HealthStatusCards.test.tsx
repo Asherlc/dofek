@@ -210,7 +210,10 @@ describe("HealthStatusCards", () => {
     expect(screen.queryByText(/abnormal/i)).toBeNull();
   });
 
-  it("renders server-authored provenance and comparison context", () => {
+  it.each([
+    { recentMean: 97.2, expected: "7d avg 97.2 vs prior 28d avg 96.4 · +0.8" },
+    { recentMean: null, expected: "7d avg — vs prior 28d avg 96.4 · +0.8" },
+  ])("renders server-authored provenance and comparison context %#", ({ recentMean, expected }) => {
     render(
       <HealthStatusCards
         metrics={[
@@ -237,7 +240,7 @@ describe("HealthStatusCards", () => {
             comparison: {
               recentDays: 7,
               baselineDays: 28,
-              recentMean: 97.2,
+              recentMean,
               baselineMean: 96.4,
               delta: 0.8,
               direction: "increasing",
@@ -261,7 +264,7 @@ describe("HealthStatusCards", () => {
     fireEvent.click(detailsButton);
 
     expect(detailsButton.getAttribute("aria-expanded")).toBe("true");
-    expect(screen.getByText("7d avg 97.2 vs prior 28d avg 96.4 · +0.8")).toBeTruthy();
+    expect(screen.getByText(expected)).toBeTruthy();
     expect(screen.getByText("Source: WHOOP (Cloud)")).toBeTruthy();
     expect(screen.getByText("Latest recorded date: 2026-07-30")).toBeTruthy();
     expect(screen.getByText("Coverage: 3/30 days")).toBeTruthy();

@@ -1,4 +1,8 @@
-import { formatBaselineContext, formatComparisonPeriod } from "@dofek/format/baseline-context";
+import {
+  formatBaselineContext,
+  formatComparisonContext,
+  formatComparisonPeriod,
+} from "@dofek/format/baseline-context";
 import {
   type FormattedMeasurement,
   type FormattedMeasurementFormatter,
@@ -123,22 +127,6 @@ function formatContextValue(
 ): string {
   if (formatter) return formatter(value).text;
   return `${formatNumber(value)}${unit ? ` ${unit}` : ""}`;
-}
-
-function formatComparison(
-  metric: HealthStatusMetric,
-  formatter: FormattedMeasurementFormatter | undefined,
-  unit: string | undefined,
-): string {
-  const comparison = metric.comparison;
-  if (!comparison) return "";
-  if (comparison.recentMean == null || comparison.baselineMean == null) {
-    return `${comparison.recentDays}d vs prior ${comparison.baselineDays}d · Not enough comparison data`;
-  }
-  const delta =
-    comparison.delta == null ? "—" : formatContextValue(comparison.delta, formatter, unit);
-  const signedDelta = comparison.delta != null && comparison.delta > 0 ? `+${delta}` : delta;
-  return `${comparison.recentDays}d avg ${formatContextValue(comparison.recentMean, formatter, unit)} vs prior ${comparison.baselineDays}d avg ${formatContextValue(comparison.baselineMean, formatter, unit)} · ${signedDelta}`;
 }
 
 function HealthMetricDetails({
@@ -299,8 +287,12 @@ export function HealthStatusBar({
                   : ""
               }
               comparisonDetails={
-                !baselineContext
-                  ? formatComparison(metric, comparisonFormatter, units[metric.metric])
+                !baselineContext && metric.comparison
+                  ? formatComparisonContext(metric.comparison, {
+                      formatValue: (value) =>
+                        formatContextValue(value, comparisonFormatter, units[metric.metric]),
+                      missingMeans: "summary",
+                    })
                   : ""
               }
             />

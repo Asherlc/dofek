@@ -26,6 +26,32 @@ export function formatComparisonPeriod(
   return `${comparison.recentDays}d vs prior ${comparison.baselineDays}d`;
 }
 
+type ComparisonContext = BaselineContextMetric["comparison"] & {
+  recentMean: number | null;
+  baselineMean: number | null;
+};
+
+export function formatComparisonContext(
+  comparison: ComparisonContext,
+  options: {
+    formatValue: (value: number) => string;
+    missingMeans: "summary" | "values";
+  },
+): string {
+  if (
+    options.missingMeans === "summary" &&
+    (comparison.recentMean == null || comparison.baselineMean == null)
+  ) {
+    return `${formatComparisonPeriod(comparison)} · Not enough comparison data`;
+  }
+
+  const formatValue = (value: number | null): string =>
+    value == null ? "—" : options.formatValue(value);
+  const delta = formatValue(comparison.delta);
+  const signedDelta = comparison.delta != null && comparison.delta > 0 ? `+${delta}` : delta;
+  return `${comparison.recentDays}d avg ${formatValue(comparison.recentMean)} vs prior ${comparison.baselineDays}d avg ${formatValue(comparison.baselineMean)} · ${signedDelta}`;
+}
+
 function formatContextValue(value: number, options: BaselineContextFormatOptions): string {
   if (options.formatter) return options.formatter(value).text;
   return `${formatNumber(value)}${options.unit ? ` ${options.unit}` : ""}`;

@@ -1,4 +1,4 @@
-import { formatComparisonPeriod } from "@dofek/format/baseline-context";
+import { formatComparisonContext, formatComparisonPeriod } from "@dofek/format/baseline-context";
 import { formatHealthStatusLabel } from "@dofek/format/health-status";
 import {
   formatHealthProvenanceSource,
@@ -132,23 +132,11 @@ export function HealthStatusCards({
                 ) : null}
                 {metric.comparison ? (
                   <Text style={styles.provenance}>
-                    {metric.comparison.recentDays}d avg{" "}
-                    {metric.comparison.recentMean == null
-                      ? "—"
-                      : (formatComparisonValue?.(metric, metric.comparison.recentMean) ??
-                        String(metric.comparison.recentMean))}{" "}
-                    vs prior {metric.comparison.baselineDays}d avg{" "}
-                    {metric.comparison.baselineMean == null
-                      ? "—"
-                      : (formatComparisonValue?.(metric, metric.comparison.baselineMean) ??
-                        String(metric.comparison.baselineMean))}{" "}
-                    ·{" "}
-                    {metric.comparison.delta == null
-                      ? "—"
-                      : metric.comparison.delta > 0
-                        ? `+${formatComparisonValue?.(metric, metric.comparison.delta) ?? metric.comparison.delta}`
-                        : (formatComparisonValue?.(metric, metric.comparison.delta) ??
-                          metric.comparison.delta)}
+                    {formatComparisonContext(metric.comparison, {
+                      formatValue: (value) =>
+                        formatComparisonValue?.(metric, value) ?? String(value),
+                      missingMeans: "values",
+                    })}
                   </Text>
                 ) : null}
                 {provenance ? (

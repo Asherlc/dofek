@@ -207,49 +207,69 @@ describe("HealthStatusBar", () => {
     ).toBeDefined();
   });
 
-  it("renders server-authored provenance and comparison context", () => {
-    render(
-      <HealthStatusBar
-        metrics={[
-          {
-            ...serverMetric,
-            metric: "spo2",
-            provenance: {
-              latestDate: "2026-07-30",
-              sourceProviders: ["whoop"],
-              observedDays: 3,
-              windowDays: 30,
+  it.each([
+    {
+      recentMean: 97.2,
+      unit: undefined,
+      expected: "7d avg 97.2 vs prior 28d avg 96.4 · +0.8",
+    },
+    {
+      recentMean: null,
+      unit: undefined,
+      expected: "7d vs prior 28d · Not enough comparison data",
+    },
+    {
+      recentMean: 97.2,
+      unit: "%",
+      expected: "7d avg 97.2 % vs prior 28d avg 96.4 % · +0.8 %",
+    },
+  ])(
+    "renders server-authored provenance and comparison context %#",
+    ({ recentMean, unit, expected }) => {
+      render(
+        <HealthStatusBar
+          metrics={[
+            {
+              ...serverMetric,
+              metric: "spo2",
+              provenance: {
+                latestDate: "2026-07-30",
+                sourceProviders: ["whoop"],
+                observedDays: 3,
+                windowDays: 30,
+              },
+              comparison: {
+                recentDays: 7,
+                baselineDays: 28,
+                recentMean,
+                baselineMean: 96.4,
+                delta: 0.8,
+                direction: "increasing",
+              },
             },
-            comparison: {
-              recentDays: 7,
-              baselineDays: 28,
-              recentMean: 97.2,
-              baselineMean: 96.4,
-              delta: 0.8,
-              direction: "increasing",
-            },
-          },
-        ]}
-      />,
-    );
+          ]}
+          units={{ spo2: unit }}
+        />,
+      );
 
-    expect(screen.getByText("WHOOP (Cloud) · 3/30 days · latest 2026-07-30")).toBeDefined();
-    expect(screen.getByText("7d vs prior 28d")).toBeVisible();
+      expect(screen.getByText("WHOOP (Cloud) · 3/30 days · latest 2026-07-30")).toBeDefined();
+      expect(screen.getByText("7d vs prior 28d")).toBeVisible();
 
-    const detailsButton = screen.getByRole("button", {
-      name: "Show details for Skin Temperature",
-    });
-    expect(detailsButton.getAttribute("aria-expanded")).toBe("false");
-    expect(screen.queryByText("Source: WHOOP (Cloud)")).toBeNull();
+      const detailsButton = screen.getByRole("button", {
+        name: "Show details for Skin Temperature",
+      });
+      expect(detailsButton.getAttribute("aria-expanded")).toBe("false");
+      expect(screen.queryByText("Source: WHOOP (Cloud)")).toBeNull();
 
-    fireEvent.click(detailsButton);
+      fireEvent.click(detailsButton);
 
-    expect(detailsButton.getAttribute("aria-expanded")).toBe("true");
-    expect(screen.getByText("7d avg 97.2 vs prior 28d avg 96.4 · +0.8")).toBeVisible();
-    expect(screen.getByText("Source: WHOOP (Cloud)")).toBeDefined();
-    expect(screen.getByText("Latest recorded date: 2026-07-30")).toBeDefined();
-    expect(screen.getByText("Coverage: 3/30 days")).toBeDefined();
-  });
+      expect(detailsButton.getAttribute("aria-expanded")).toBe("true");
+      expect(screen.getByText(expected)).toBeVisible();
+      expect(screen.getByText("Source: WHOOP (Cloud)")).toBeDefined();
+      expect(screen.getByText("Latest recorded date: 2026-07-30")).toBeDefined();
+      expect(screen.getByText("Coverage: 3/30 days")).toBeDefined();
+    },
+  );
 
   it("renders structured units while preserving the exact server status", () => {
     const { container } = render(
