@@ -1,8 +1,8 @@
 import type { Meta, StoryObj } from "@storybook/react-native";
 import type { ComponentType } from "react";
 import { View } from "react-native";
-import { ProviderCard } from "../../components/providers/provider-card.tsx";
 import { AuthProvider } from "../../lib/auth-context";
+import { ProviderCard } from "./provider-card.tsx";
 
 const oneHourAgo = new Date(Date.now() - 3600_000).toISOString();
 const oneWeekAgo = new Date(Date.now() - 86400_000 * 7).toISOString();
