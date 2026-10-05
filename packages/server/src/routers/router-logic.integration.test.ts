@@ -681,15 +681,16 @@ describe("Router transformation logic", () => {
   });
 
   // ══════════════════════════════════════════════════════════════
-  // Weekly Report — strain zones and sleep performance
+  // Hiking — grade-adjusted pace cost factor model
   // ══════════════════════════════════════════════════════════════
-  describe("weeklyReport", () => {
+  describe("hiking walkingBiomechanics", () => {
+    // Shared cycling fixtures for hiking, running, and trend analytics.
     beforeAll(async () => {
-      // Insert activities with HR data for weekly report calculations
+      // Insert activities with HR data for cycling analytics
       // Need activities in the activity table + metric_stream for activity_summary
       const now = new Date();
 
-      const weeklyReportMetricStreamRows: ClickHouseMetricStreamSeedRow[] = [];
+      const cyclingMetricStreamRows: ClickHouseMetricStreamSeedRow[] = [];
 
       for (let week = 0; week < 8; week++) {
         for (let day = 0; day < 3; day++) {
@@ -700,7 +701,7 @@ describe("Router transformation logic", () => {
           startedAt.setHours(8, 0, 0, 0);
           const endedAt = new Date(startedAt.getTime() + 60 * 60 * 1000); // 1 hour
 
-          const externalId = `weekly-act-${week}-${day}`;
+          const externalId = `cycling-act-${week}-${day}`;
 
           await testCtx.db.execute(
             sql`INSERT INTO fitness.activity
@@ -721,7 +722,7 @@ describe("Router transformation logic", () => {
               const power = 180 + Math.round(Math.random() * 40);
               const speed = 6.5 + Math.random();
               const recordedAt = sampleTime.toISOString();
-              weeklyReportMetricStreamRows.push(
+              cyclingMetricStreamRows.push(
                 {
                   userId: TEST_USER_ID,
                   recordedAt,
@@ -760,58 +761,9 @@ describe("Router transformation logic", () => {
       );
 
       await syncClickHouseTestActivitySensorStore(testCtx);
-      await seedClickHouseMetricStreamRows(testCtx, weeklyReportMetricStreamRows);
+      await seedClickHouseMetricStreamRows(testCtx, cyclingMetricStreamRows);
     }, 120_000);
 
-    it("returns weekly summaries with strain zones", async () => {
-      const { status, result } = await query("weeklyReport.report", {
-        weeks: 8,
-      });
-      expect(status).toBe(200);
-      const data = result.result.data;
-
-      expect(data.current).toBeDefined();
-      expect(data.history).toBeDefined();
-      expect(Array.isArray(data.history)).toBe(true);
-
-      if (data.current) {
-        expect(data.current.weekStart).toBeTruthy();
-        expect(typeof data.current.trainingHours).toBe("number");
-        expect(typeof data.current.activityCount).toBe("number");
-        expect(typeof data.current.avgDailyLoad).toBe("number");
-        expect(typeof data.current.sleepPerformancePct).toBe("number");
-      }
-
-      // With 8 weeks of data, history should have entries
-      if (data.history.length > 0) {
-        for (const week of data.history) {
-          expect(week.weekStart).toBeTruthy();
-        }
-      }
-    });
-
-    it("sleep performance is relative to previous weeks", async () => {
-      const { status, result } = await query("weeklyReport.report", {
-        weeks: 8,
-      });
-      expect(status).toBe(200);
-      const data = result.result.data;
-
-      // All weeks should have sleepPerformancePct as a number
-      const allWeeks = [...data.history, ...(data.current ? [data.current] : [])];
-      for (const week of allWeeks) {
-        expect(typeof week.sleepPerformancePct).toBe("number");
-        // Should be a reasonable percentage (0-200%ish)
-        expect(week.sleepPerformancePct).toBeGreaterThanOrEqual(0);
-        expect(week.sleepPerformancePct).toBeLessThanOrEqual(500);
-      }
-    });
-  });
-
-  // ══════════════════════════════════════════════════════════════
-  // Hiking — grade-adjusted pace cost factor model
-  // ══════════════════════════════════════════════════════════════
-  describe("hiking walkingBiomechanics", () => {
     beforeAll(async () => {
       // Update existing daily_metrics rows (already inserted by sleepNeed) to add walking data
       // Also insert additional rows for dates not covered by sleepNeed
@@ -877,7 +829,7 @@ describe("Router transformation logic", () => {
   // ══════════════════════════════════════════════════════════════
   describe("calendar", () => {
     it("returns calendar data with activity counts and types", async () => {
-      // Activities were already inserted in the weeklyReport beforeAll
+      // Activities were already inserted in the shared cycling fixture setup
       const { status, result } = await query("calendar.calendarData", {
         days: 90,
       });
@@ -1058,7 +1010,7 @@ describe("Router transformation logic", () => {
   // ══════════════════════════════════════════════════════════════
   describe("cyclingAdvanced rampRate", () => {
     it("computes ramp rate with EWMA and describes the load change", async () => {
-      // Data was already inserted in weeklyReport beforeAll (cycling activities with HR + power)
+      // Data was already inserted in shared cycling fixture setup (cycling activities with HR + power)
       const { status, result } = await query("cyclingAdvanced.rampRate", {
         days: 90,
       });

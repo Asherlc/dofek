@@ -67,7 +67,6 @@ vi.mock("dofek/lib/cache", () => ({
 }));
 
 import { trendsRouter } from "./trends.ts";
-import { weeklyReportRouter } from "./weekly-report.ts";
 import { whoopAuthRouter } from "./whoop-auth.ts";
 
 // ── Trends Router ──
@@ -156,64 +155,6 @@ describe("trendsRouter", () => {
       expect(result).toHaveLength(1);
       expect(result[0]?.week).toBe("2024-01-15");
       expect(result[0]?.activityCount).toBe(5);
-    });
-  });
-});
-
-// ── Weekly Report Router ──
-
-describe("weeklyReportRouter", () => {
-  const createCaller = createTestCallerFactory(weeklyReportRouter);
-
-  describe("report", () => {
-    it("returns empty report when no data", async () => {
-      const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue([]) },
-        userId: "user-1",
-        timezone: "UTC",
-        sensorStore: makeMockSensorStore([]),
-      });
-      const result = await caller.report({ weeks: 12 });
-
-      expect(result.current).toBeNull();
-      expect(result.history).toEqual([]);
-    });
-
-    it("returns report with current and history", async () => {
-      const rows = [
-        {
-          week_start: "2024-01-08",
-          total_hours: 5.5,
-          activity_count: 4,
-          avg_daily_load: 50,
-          avg_sleep_min: 440,
-          avg_resting_hr: 55,
-          avg_hrv: 62,
-          prev_3wk_avg_sleep: 430,
-        },
-        {
-          week_start: "2024-01-15",
-          total_hours: 6.2,
-          activity_count: 5,
-          avg_daily_load: 55,
-          avg_sleep_min: 450,
-          avg_resting_hr: 54,
-          avg_hrv: 65,
-          prev_3wk_avg_sleep: 440,
-        },
-      ];
-      const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue(rows) },
-        userId: "user-1",
-        timezone: "UTC",
-        sensorStore: makeMockSensorStore(rows),
-      });
-      const result = await caller.report({ weeks: 12 });
-
-      expect(result.current).not.toBeNull();
-      expect(result.current?.weekStart).toBe("2024-01-15");
-      expect(result.history).toHaveLength(1);
-      expect(result.current?.sleepPerformancePct).toBeGreaterThan(0);
     });
   });
 });

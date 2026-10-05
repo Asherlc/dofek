@@ -80,7 +80,7 @@ const SETTINGS_CATEGORIES: readonly {
     id: "goals-models",
     label: "Goals & Models",
     searchText:
-      "goals models primary goal units journal trends health reports goal weight algorithm personalization",
+      "goals models primary goal units journal trends goal weight algorithm personalization",
   },
   {
     id: "privacy-export",
@@ -570,28 +570,6 @@ export default function SettingsScreen() {
           preference={climbingGradePreference}
           saving={setSettingMutation.isPending}
         />
-      ) : null}
-
-      {/* ── Health Reports ── */}
-      {activeCategory === "goals-models" ? (
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Health Reports</Text>
-          <Text style={styles.sectionDescription}>
-            Review and share weekly or monthly health snapshots
-          </Text>
-          <TouchableOpacity
-            style={styles.card}
-            onPress={() => router.push("/reports")}
-            activeOpacity={0.7}
-            accessibilityRole="button"
-            accessibilityLabel="Health Reports"
-          >
-            <View style={styles.dataSourcesRow}>
-              <Text style={styles.navigationLabel}>Open Health Reports</Text>
-              <Text style={styles.navigationChevron}>›</Text>
-            </View>
-          </TouchableOpacity>
-        </View>
       ) : null}
 
       {/* ── Password ── */}

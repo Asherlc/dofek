@@ -84,7 +84,6 @@ identify the route/page responsible for adding section completion.
 | Data Sources | `/providers` → settings, pages/SettingsPage | provider cards, sync history | connected providers / no providers | settings category |
 | Data Quality | `/data-quality`, pages/DataQualityPage | quality results, readiness | mixed provider quality / no observations | dataset |
 | Correlation | `/correlation`, pages/CorrelationExplorerPage | controls, observations, computed result | sufficient paired history / insufficient history | metric pair, range |
-| Health Report list | `/health-report`, routes/health-report | report list | existing report / no reports | list selection |
 | Running | `/training/running`, routes/training/running | trends, dynamics, pace curve, activities | running samples / no runs | range, All |
 | Cycling | `/training/cycling`, routes/training/cycling | power/efficiency charts, activity table | cycling power + HR / no rides | range, All |
 | Strength | `/training/strength`, routes/training/strength.lazy | metrics, exercises, activities | strength records / no sessions | range, All |
@@ -97,8 +96,6 @@ identify the route/page responsible for adding section completion.
 | Supplements | `/nutrition/supplements`, routes/nutrition/supplements | stack, safety information | active supplement versions / empty stack | date |
 | Experiments | `/experiments`, pages/PersonalExperimentsPage | list, conditional detail | existing experiment / no experiments | experiment selection |
 | Tracking | `/tracking`, pages/TrackingPage | current tracking state | tracked observations / empty state | date/range |
-| Weekly Report | `/weekly-report`, routes/weekly-report | report content | populated week / insufficient week | week |
-| Monthly Report | `/monthly-report`, routes/monthly-report | report content | populated month / insufficient month | month |
 | Behavior Impact | `/behavior-impact`, routes/behavior-impact | impact result | sufficient observations / insufficient state | range, behavior |
 | Cycle | `/cycle`, routes/cycle | history, phase state | cycle observations / no observations | range |
 | Settings default | `/settings`, pages/SettingsPage | selected category content | saved settings / defaults | category |
@@ -130,7 +127,7 @@ Data Sources, Correlation, and Running above; its public warm traces add `/login
 by Heart Rate adjacent-day, Training 90→30-day, Activities 4→8-week filters,
 cached Training/Activities navigation, and first in-app Sleep navigation.
 Public legal/support/reset flows, provider details, all admin categories,
-populated clinical/experiment detail, and shared report tokens remain the
+populated clinical/experiment detail remain the
 audit's explicitly unmeasured scope; they are not silently treated as passes.
 
 ## Acceptance runs and evidence

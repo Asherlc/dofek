@@ -1010,17 +1010,6 @@ entity "provider_data_generation" {
   updated_at : timestamp
 }
 
-entity "shared_report" {
-  * id : uuid <<PK>>
-  --
-  user_id : uuid <<FK>>
-  share_token : text
-  report_type : text
-  report_data : jsonb
-  expires_at : timestamp
-  created_at : timestamp
-}
-
 entity "subjective_check_in" {
   * id : uuid <<PK>>
   --
@@ -1388,7 +1377,6 @@ user_profile ||--o{ personal_experiment
 personal_experiment ||--o{ personal_experiment_check_in
 user_profile ||--o{ provider_data_deletion_outbox
 user_profile ||--o{ provider_data_generation
-user_profile ||--o{ shared_report
 user_profile ||--o{ subjective_check_in
 subjective_check_in ||--o{ subjective_symptom
 body_region ||--o{ subjective_symptom

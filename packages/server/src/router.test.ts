@@ -36,7 +36,6 @@ vi.mock("./routers/food.ts", () => ({ foodRouter: mockRouter }));
 vi.mock("./routers/garmin-auth.ts", () => ({ garminAuthRouter: mockRouter }));
 vi.mock("./routers/heart-rate.ts", () => ({ heartRateRouter: mockRouter }));
 vi.mock("./routers/health-kit-sync.ts", () => ({ healthKitSyncRouter: mockRouter }));
-vi.mock("./routers/health-report.ts", () => ({ healthReportRouter: mockRouter }));
 vi.mock("./routers/healthspan.ts", () => ({ healthspanRouter: mockRouter }));
 vi.mock("./routers/hiking.ts", () => ({ hikingRouter: mockRouter }));
 vi.mock("./routers/insights.ts", () => ({ insightsRouter: mockRouter }));
@@ -46,7 +45,6 @@ vi.mock("./routers/life-events.ts", () => ({ lifeEventsRouter: mockRouter }));
 vi.mock("./routers/medication-dose-events.ts", () => ({ medicationDoseEventsRouter: mockRouter }));
 vi.mock("./routers/menstrual-cycle.ts", () => ({ menstrualCycleRouter: mockRouter }));
 vi.mock("./routers/mcp.ts", () => ({ mcpRouter: mockRouter }));
-vi.mock("./routers/monthly-report.ts", () => ({ monthlyReportRouter: mockRouter }));
 vi.mock("./routers/nutrition.ts", () => ({ nutritionRouter: mockRouter }));
 vi.mock("./routers/nutrition-analytics.ts", () => ({ nutritionAnalyticsRouter: mockRouter }));
 vi.mock("./routers/personalization.ts", () => ({ personalizationRouter: mockRouter }));
@@ -67,7 +65,6 @@ vi.mock("./routers/supplements.ts", () => ({ supplementsRouter: mockRouter }));
 vi.mock("./routers/sync.ts", () => ({ syncRouter: mockRouter }));
 vi.mock("./routers/training.ts", () => ({ trainingRouter: mockRouter }));
 vi.mock("./routers/trends.ts", () => ({ trendsRouter: mockRouter }));
-vi.mock("./routers/weekly-report.ts", () => ({ weeklyReportRouter: mockRouter }));
 vi.mock("./routers/watch-altitude-sync.ts", () => ({ watchAltitudeSyncRouter: mockRouter }));
 vi.mock("./routers/whoop-auth.ts", () => ({ whoopAuthRouter: mockRouter }));
 vi.mock("./routers/whoop-ble-sync.ts", () => ({ whoopBleSyncRouter: mockRouter }));
@@ -165,7 +162,6 @@ describe("appRouter", () => {
       "garminAuth",
       "heartRate",
       "healthKitSync",
-      "healthReport",
       "whoopAuth",
       "whoopBleSync",
       "strength",
@@ -183,8 +179,6 @@ describe("appRouter", () => {
       "menstrualCycle",
       "mcp",
       "mobileDashboard",
-      "monthlyReport",
-      "weeklyReport",
       "sportSettings",
       "intervals",
       "journal",

@@ -214,11 +214,6 @@ describe("Router SQL validity", () => {
       expectValidSql("calendar.activityOverview", { weeks: 4, endDate: "2026-03-20" }));
   });
 
-  // ── Weekly Report ──
-  describe("weeklyReport", () => {
-    it("report", () => expectValidSql("weeklyReport.report", { weeks: 4 }));
-  });
-
   // ── Sleep Need ──
   describe("sleepNeed", () => {
     it("calculate", () => expectValidSql("sleepNeed.calculate"));

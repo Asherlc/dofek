@@ -29,7 +29,8 @@ Resolve public-facing trust problems and add product measurement before launchin
 - [ ] Add equivalent web and mobile product events for onboarding completion, source connection, first useful insight, Daily Brief engagement, journal or experiment engagement, subscription conversion, and relevant failure states. Web page views alone are not sufficient product measurement; see [`posthog.ts`](../packages/web/src/lib/posthog.ts).
 - [ ] Establish an automated web/mobile product-surface parity review for every user-facing feature. Platform-specific hardware and administrative features may differ intentionally, but user outcomes should remain equivalent.
 - [ ] Publish and maintain a product-surface matrix covering route discoverability, web/mobile parity, fixture coverage, and release evidence.
-- [ ] Resolve or intentionally retire low-discoverability product surfaces, including behavior impact, reports, predictions, and insights that exist but are absent from primary navigation.
+- [x] Retire weekly/monthly reports and report sharing across web, mobile, and server, including stored snapshots; see [migration 0137](../drizzle/0137_remove_shared_reports.sql).
+- [ ] Resolve or intentionally retire low-discoverability product surfaces, including behavior impact, predictions, and insights that exist but are absent from primary navigation.
 - [ ] Prioritize mobile parity for journal and life events, body and goal-weight context, behavior impact, and user-facing prediction or sport-detail outcomes. Hardware capture may remain mobile-only; administrative MCP may remain web-only.
 
 This gate is complete when the acquisition surfaces make no contradictory or prohibited claims, a seeded review account can be audited on both platforms, and the team can measure activation and retention without relying only on page views.
@@ -91,19 +92,6 @@ Distribute the Daily Brief after the core recommendation loop proves useful.
 - [ ] If a streak is tested, tie it to a low-pressure action such as reviewing the Brief or recording a check-in. Never reward exercise volume, weight change, calorie restriction, or a “perfect” recovery score.
 
 Duolingo's product research found that reducing the minimum daily commitment improved retention in its [streak experiments](https://blog.duolingo.com/improving-the-streak/). Its [widget design](https://blog.duolingo.com/widget-feature/) focuses on reminding the user of one meaningful action. Dofek should apply the habit principle without importing unsafe health gamification.
-
-### Later: Health Story, Reports, and Controlled Sharing
-
-Make long-term progress understandable and selectively shareable.
-
-- [ ] Create weekly, monthly, and annual narratives covering meaningful improvements, milestones, behaviors associated with better outcomes, source changes, and data completeness.
-- [ ] End each recap with one lesson or action for the next period.
-- [ ] Generate privacy-safe share cards that exclude health-sensitive fields by default.
-- [ ] Allow a user to create a time-limited report for a coach, clinician, family member, or other trusted recipient.
-- [ ] Let the user select domains and date ranges instead of sharing the full account.
-- [ ] Include sources, coverage, uncertainty, and raw-data appendices when appropriate.
-
-Personalized stories can create both reflection and organic distribution; Spotify's 2025 Wrapped added personalized data stories and share cards, and Spotify reported more than 620 million Wrapped shares during 2025 in its [2026 Investor Day recap](https://newsroom.spotify.com/2026-05-21/investor-day-recap/). For health-specific sharing, Apple documents granular [Health sharing](https://www.apple.com/newsroom/2021/06/apple-advances-personal-health-by-introducing-secure-sharing-and-new-insights/), and Exist added configurable [PDF health exports](https://exist.io/blog/pdf-export/) in response to user requests for clinician and family sharing.
 
 ### Later: Data Trust Center
 

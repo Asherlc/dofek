@@ -4,12 +4,6 @@ export type { ActivityHrZone } from "@dofek/zones/zones";
 // Personalization router types
 export type { PersonalizationModelCard } from "dofek/personalization/model-card";
 export type { BaselineRelativeMetric } from "./contracts/baseline-relative-metrics.ts";
-export type {
-  MonthlyReportEmptyState,
-  ReportEmptyState,
-  ReportKind,
-  WeeklyReportEmptyState,
-} from "./contracts/report-empty-state.ts";
 export type { TrainingChartAvailability } from "./contracts/training-chart-availability.ts";
 export type { InsightEvidence } from "./insights/evidence.ts";
 export type { ActivityDetail } from "./models/activity.ts";
@@ -30,7 +24,6 @@ export type {
   ClimbingSessionSummaryRow,
   ClimbingVolumeByGradeRow,
 } from "./repositories/climbing-repository.ts";
-export type { ReportDecisionSynthesis } from "./repositories/report-decision-synthesis.ts";
 // Training router types
 export type {
   HrZoneRow,
@@ -59,8 +52,6 @@ export type {
   PolarizationTrendResult,
   PolarizationWeek,
 } from "./routers/efficiency.ts";
-// Health report router types
-export type { HealthReportGenerateInput } from "./routers/health-report.ts";
 // Healthspan router types
 export type { HealthspanMetric, HealthspanResult } from "./routers/healthspan.ts";
 // Hiking router types
@@ -71,12 +62,6 @@ export type {
   GradeAdjustedPaceRow,
   WalkingBiomechanicsRow,
 } from "./routers/hiking.ts";
-// Monthly report router types
-export type {
-  MonthlyReportData,
-  MonthlyReportResult,
-  MonthSummary,
-} from "./routers/monthly-report.ts";
 // PMC router types
 export type { PmcChartResult, PmcDataPoint, TssModelInfo } from "./routers/pmc.ts";
 // Power router types
@@ -113,9 +98,3 @@ export type {
   StressResult,
   WeeklyStressRow,
 } from "./routers/stress.ts";
-// Weekly report router types
-export type {
-  WeeklyReportData,
-  WeeklyReportResult,
-  WeekSummary,
-} from "./routers/weekly-report.ts";

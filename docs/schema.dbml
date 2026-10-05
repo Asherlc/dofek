@@ -1605,20 +1605,6 @@ table fitness.provider_data_generation {
   }
 }
 
-table fitness.shared_report {
-  id uuid [pk, not null, default: `gen_random_uuid()`]
-  user_id uuid [not null]
-  share_token text [not null, unique]
-  report_type text [not null]
-  report_data jsonb [not null]
-  expires_at "timestamp with time zone"
-  created_at "timestamp with time zone" [not null, default: `now()`]
-
-  indexes {
-    user_id [name: 'shared_report_user_idx']
-  }
-}
-
 table fitness.subjective_check_in {
   id uuid [pk, not null, default: `gen_random_uuid()`]
   user_id uuid [not null]
@@ -2214,8 +2200,6 @@ ref personal_experiment_check_in_personal_experiment_id_personal_experiment_id_f
 ref provider_data_deletion_outbox_user_id_user_profile_id_fk: fitness.provider_data_deletion_outbox.user_id > fitness.user_profile.id [delete: cascade, update: no action]
 
 ref provider_data_generation_user_id_user_profile_id_fk: fitness.provider_data_generation.user_id > fitness.user_profile.id [delete: cascade, update: no action]
-
-ref shared_report_user_id_user_profile_id_fk: fitness.shared_report.user_id > fitness.user_profile.id [delete: no action, update: no action]
 
 ref subjective_check_in_user_id_user_profile_id_fk: fitness.subjective_check_in.user_id > fitness.user_profile.id [delete: cascade, update: no action]
 

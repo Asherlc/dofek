@@ -10,7 +10,6 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as ZeppPairingRouteImport } from './routes/zepp-pairing'
-import { Route as WeeklyReportRouteImport } from './routes/weekly-report'
 import { Route as TrainingRouteImport } from './routes/training'
 import { Route as TrackingRouteImport } from './routes/tracking'
 import { Route as TermsRouteImport } from './routes/terms'
@@ -24,10 +23,8 @@ import { Route as PredictionsRouteImport } from './routes/predictions'
 import { Route as OnboardingRouteImport } from './routes/onboarding'
 import { Route as NutritionRouteImport } from './routes/nutrition'
 import { Route as MoreRouteImport } from './routes/more'
-import { Route as MonthlyReportRouteImport } from './routes/monthly-report'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as InsightsRouteImport } from './routes/insights'
-import { Route as HealthReportRouteImport } from './routes/health-report'
 import { Route as ExperimentsRouteImport } from './routes/experiments'
 import { Route as DataQualityRouteImport } from './routes/data-quality'
 import { Route as DashboardRouteImport } from './routes/dashboard'
@@ -69,11 +66,6 @@ const ZeppPairingRoute = ZeppPairingRouteImport.update({
   path: '/zepp-pairing',
   getParentRoute: () => rootRouteImport,
 } as Parameters<typeof ZeppPairingRouteImport.update>[0])
-const WeeklyReportRoute = WeeklyReportRouteImport.update({
-  id: '/weekly-report',
-  path: '/weekly-report',
-  getParentRoute: () => rootRouteImport,
-} as Parameters<typeof WeeklyReportRouteImport.update>[0])
 const TrainingRoute = TrainingRouteImport.update({
   id: '/training',
   path: '/training',
@@ -139,11 +131,6 @@ const MoreRoute = MoreRouteImport.update({
   path: '/more',
   getParentRoute: () => rootRouteImport,
 } as Parameters<typeof MoreRouteImport.update>[0])
-const MonthlyReportRoute = MonthlyReportRouteImport.update({
-  id: '/monthly-report',
-  path: '/monthly-report',
-  getParentRoute: () => rootRouteImport,
-} as Parameters<typeof MonthlyReportRouteImport.update>[0])
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
@@ -154,11 +141,6 @@ const InsightsRoute = InsightsRouteImport.update({
   path: '/insights',
   getParentRoute: () => rootRouteImport,
 } as Parameters<typeof InsightsRouteImport.update>[0])
-const HealthReportRoute = HealthReportRouteImport.update({
-  id: '/health-report',
-  path: '/health-report',
-  getParentRoute: () => rootRouteImport,
-} as Parameters<typeof HealthReportRouteImport.update>[0])
 const ExperimentsRoute = ExperimentsRouteImport.update({
   id: '/experiments',
   path: '/experiments',
@@ -359,10 +341,8 @@ export interface FileRoutesByFullPath {
   '/dashboard': typeof DashboardRoute
   '/data-quality': typeof DataQualityRoute
   '/experiments': typeof ExperimentsRoute
-  '/health-report': typeof HealthReportRoute
   '/insights': typeof InsightsRoute
   '/login': typeof LoginRoute
-  '/monthly-report': typeof MonthlyReportRoute
   '/more': typeof MoreRoute
   '/nutrition': typeof NutritionRouteWithChildren
   '/onboarding': typeof OnboardingRoute
@@ -376,7 +356,6 @@ export interface FileRoutesByFullPath {
   '/terms': typeof TermsRoute
   '/tracking': typeof TrackingRoute
   '/training': typeof TrainingRouteWithChildren
-  '/weekly-report': typeof WeeklyReportRoute
   '/zepp-pairing': typeof ZeppPairingRoute
   '/activity/$id': typeof ActivityIdRoute
   '/body/heart-rate': typeof BodyHeartRateRoute
@@ -412,10 +391,8 @@ export interface FileRoutesByTo {
   '/dashboard': typeof DashboardRoute
   '/data-quality': typeof DataQualityRoute
   '/experiments': typeof ExperimentsRoute
-  '/health-report': typeof HealthReportRoute
   '/insights': typeof InsightsRoute
   '/login': typeof LoginRoute
-  '/monthly-report': typeof MonthlyReportRoute
   '/more': typeof MoreRoute
   '/onboarding': typeof OnboardingRoute
   '/predictions': typeof PredictionsRoute
@@ -426,7 +403,6 @@ export interface FileRoutesByTo {
   '/support': typeof SupportRoute
   '/terms': typeof TermsRoute
   '/tracking': typeof TrackingRoute
-  '/weekly-report': typeof WeeklyReportRoute
   '/zepp-pairing': typeof ZeppPairingRoute
   '/activity/$id': typeof ActivityIdRoute
   '/body/heart-rate': typeof BodyHeartRateRoute
@@ -466,10 +442,8 @@ export interface FileRoutesById {
   '/dashboard': typeof DashboardRoute
   '/data-quality': typeof DataQualityRoute
   '/experiments': typeof ExperimentsRoute
-  '/health-report': typeof HealthReportRoute
   '/insights': typeof InsightsRoute
   '/login': typeof LoginRoute
-  '/monthly-report': typeof MonthlyReportRoute
   '/more': typeof MoreRoute
   '/nutrition': typeof NutritionRouteWithChildren
   '/onboarding': typeof OnboardingRoute
@@ -483,7 +457,6 @@ export interface FileRoutesById {
   '/terms': typeof TermsRoute
   '/tracking': typeof TrackingRoute
   '/training': typeof TrainingRouteWithChildren
-  '/weekly-report': typeof WeeklyReportRoute
   '/zepp-pairing': typeof ZeppPairingRoute
   '/activity/$id': typeof ActivityIdRoute
   '/body/heart-rate': typeof BodyHeartRateRoute
@@ -524,10 +497,8 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/data-quality'
     | '/experiments'
-    | '/health-report'
     | '/insights'
     | '/login'
-    | '/monthly-report'
     | '/more'
     | '/nutrition'
     | '/onboarding'
@@ -541,7 +512,6 @@ export interface FileRouteTypes {
     | '/terms'
     | '/tracking'
     | '/training'
-    | '/weekly-report'
     | '/zepp-pairing'
     | '/activity/$id'
     | '/body/heart-rate'
@@ -577,10 +547,8 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/data-quality'
     | '/experiments'
-    | '/health-report'
     | '/insights'
     | '/login'
-    | '/monthly-report'
     | '/more'
     | '/onboarding'
     | '/predictions'
@@ -591,7 +559,6 @@ export interface FileRouteTypes {
     | '/support'
     | '/terms'
     | '/tracking'
-    | '/weekly-report'
     | '/zepp-pairing'
     | '/activity/$id'
     | '/body/heart-rate'
@@ -630,10 +597,8 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/data-quality'
     | '/experiments'
-    | '/health-report'
     | '/insights'
     | '/login'
-    | '/monthly-report'
     | '/more'
     | '/nutrition'
     | '/onboarding'
@@ -647,7 +612,6 @@ export interface FileRouteTypes {
     | '/terms'
     | '/tracking'
     | '/training'
-    | '/weekly-report'
     | '/zepp-pairing'
     | '/activity/$id'
     | '/body/heart-rate'
@@ -687,10 +651,8 @@ export interface RootRouteChildren {
   DashboardRoute: typeof DashboardRoute
   DataQualityRoute: typeof DataQualityRoute
   ExperimentsRoute: typeof ExperimentsRoute
-  HealthReportRoute: typeof HealthReportRoute
   InsightsRoute: typeof InsightsRoute
   LoginRoute: typeof LoginRoute
-  MonthlyReportRoute: typeof MonthlyReportRoute
   MoreRoute: typeof MoreRoute
   NutritionRoute: typeof NutritionRouteWithChildren
   OnboardingRoute: typeof OnboardingRoute
@@ -704,7 +666,6 @@ export interface RootRouteChildren {
   TermsRoute: typeof TermsRoute
   TrackingRoute: typeof TrackingRoute
   TrainingRoute: typeof TrainingRouteWithChildren
-  WeeklyReportRoute: typeof WeeklyReportRoute
   ZeppPairingRoute: typeof ZeppPairingRoute
   ActivityIdRoute: typeof ActivityIdRoute
   DeveloperIntegrationsClientIdRoute: typeof DeveloperIntegrationsClientIdRoute
@@ -718,13 +679,6 @@ declare module '@tanstack/react-router' {
       path: '/zepp-pairing'
       fullPath: '/zepp-pairing'
       preLoaderRoute: typeof ZeppPairingRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/weekly-report': {
-      id: '/weekly-report'
-      path: '/weekly-report'
-      fullPath: '/weekly-report'
-      preLoaderRoute: typeof WeeklyReportRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/training': {
@@ -818,13 +772,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof MoreRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/monthly-report': {
-      id: '/monthly-report'
-      path: '/monthly-report'
-      fullPath: '/monthly-report'
-      preLoaderRoute: typeof MonthlyReportRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/login': {
       id: '/login'
       path: '/login'
@@ -837,13 +784,6 @@ declare module '@tanstack/react-router' {
       path: '/insights'
       fullPath: '/insights'
       preLoaderRoute: typeof InsightsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/health-report': {
-      id: '/health-report'
-      path: '/health-report'
-      fullPath: '/health-report'
-      preLoaderRoute: typeof HealthReportRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/experiments': {
@@ -1202,10 +1142,8 @@ const rootRouteChildren: RootRouteChildren = {
   DashboardRoute: DashboardRoute,
   DataQualityRoute: DataQualityRoute,
   ExperimentsRoute: ExperimentsRoute,
-  HealthReportRoute: HealthReportRoute,
   InsightsRoute: InsightsRoute,
   LoginRoute: LoginRoute,
-  MonthlyReportRoute: MonthlyReportRoute,
   MoreRoute: MoreRoute,
   NutritionRoute: NutritionRouteWithChildren,
   OnboardingRoute: OnboardingRoute,
@@ -1219,7 +1157,6 @@ const rootRouteChildren: RootRouteChildren = {
   TermsRoute: TermsRoute,
   TrackingRoute: TrackingRoute,
   TrainingRoute: TrainingRouteWithChildren,
-  WeeklyReportRoute: WeeklyReportRoute,
   ZeppPairingRoute: ZeppPairingRoute,
   ActivityIdRoute: ActivityIdRoute,
   DeveloperIntegrationsClientIdRoute: DeveloperIntegrationsClientIdRoute,
