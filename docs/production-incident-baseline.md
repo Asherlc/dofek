@@ -30208,7 +30208,9 @@ subtotals on grade cards as "N recorded attempts" when the total is incomplete.
 Grades with no recorded counts hide attempts; complete totals retain their
 "N attempts" label. Sends stay visible. The server retains its existing complete
 `attempts` field and adds a nullable `recordedAttempts` subtotal; it never
-substitutes sends or zero for an unknown source count. Validation passed:
+substitutes sends or zero for an unknown source count. Server query-cache keys
+and the mobile persisted-cache contract version both advance so cached older
+responses cannot omit the required subtotal. Validation passed:
 242 relevant web/server unit tests, 34 mobile tests, and 13 real-Postgres
 integration tests, including a real router bypassing a legacy cached response.
 Full lint and root/server/web/mobile typechecks passed. Headless Storybook
