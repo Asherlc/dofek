@@ -50,4 +50,4 @@ not compute send status or attempt counts. See the
 The [climbing result formatter](src/format.ts) lets a successful Onsight or Flash
 badge convey the result without an attempt summary. Redpoint, Pinkpoint, and
 Repeat badges convey the send while the summary retains attempt information.
-Other results keep the explicit outcome and count labels supplied by the server.
+Other results keep explicit labels based on the outcome and count supplied by the server.
