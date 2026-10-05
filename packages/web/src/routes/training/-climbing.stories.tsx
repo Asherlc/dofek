@@ -72,8 +72,13 @@ function Preview() {
   const router = useMemo(() => {
     const root = createRootRoute({ component: Outlet });
     const route = createRoute({ getParentRoute: () => root, path: "/", component: ClimbingTab });
+    const activityRoute = createRoute({
+      getParentRoute: () => root,
+      path: "activity/$id",
+      component: () => <div>Activity details preview</div>,
+    });
     return createRouter({
-      routeTree: root.addChildren([route]),
+      routeTree: root.addChildren([route, activityRoute]),
       history: createMemoryHistory({ initialEntries: ["/"] }),
     });
   }, []);
