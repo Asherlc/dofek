@@ -15,6 +15,7 @@ const mockCreateExpoUploadableMobileFile = vi.fn();
 const mockGetDocumentAsync = vi.fn();
 const mockAlert = vi.hoisted(() => vi.fn());
 const mockSendAccessibilityEvent = vi.hoisted(() => vi.fn());
+const mockWindowDimensions = vi.hoisted(() => vi.fn());
 
 vi.mock("react-native", () => ({
   AppState: {
@@ -150,6 +151,7 @@ vi.mock("react-native", () => ({
     ...props
   }: Record<string, unknown>) => React.createElement("img", props),
   ActivityIndicator: () => React.createElement("span", null, "Loading..."),
+  useWindowDimensions: () => mockWindowDimensions(),
   StyleSheet: {
     create: <T extends Record<string, unknown>>(styles: T): T => styles,
     hairlineWidth: 1,
@@ -995,6 +997,7 @@ describe("ProviderCard", () => {
 
 describe("ProvidersScreen", () => {
   beforeEach(() => {
+    mockWindowDimensions.mockReturnValue({ width: 390, height: 844, scale: 1, fontScale: 1 });
     vi.stubGlobal(
       "fetch",
       vi
@@ -1282,6 +1285,34 @@ describe("ProvidersScreen", () => {
     expect(screen.getByText("Updates the last 7 days for every connected provider.")).toBeTruthy();
     expect(screen.getByText("Sync full history…")).toBeTruthy();
   });
+
+  it.each([1, 2])(
+    "keeps sync and processing space reserved at font scale %s while inventory resolves",
+    async (fontScale) => {
+      mockWindowDimensions.mockReturnValue({ width: 390, height: 844, scale: 1, fontScale });
+      mockProvidersQuery.mockReturnValue({ data: undefined, isLoading: true, error: null });
+      const { default: ProvidersScreen } = await import("../../app/providers/index");
+      const { rerender } = await renderProvidersScreen();
+      const syncRegion = screen.getByTestId("provider-sync-controls-region");
+      const processingRegion = screen.getByTestId("provider-processing-region");
+      const syncStyle = syncRegion.getAttribute("data-style");
+      const processingStyle = processingRegion.getAttribute("data-style");
+      expect(JSON.parse(syncStyle ?? "{}").minHeight).toBeGreaterThanOrEqual(140 * fontScale);
+      expect(JSON.parse(processingStyle ?? "{}").minHeight).toBeGreaterThanOrEqual(64 * fontScale);
+      expect(screen.queryByText("Sync recent data")).toBeNull();
+
+      mockProvidersQuery.mockReturnValue({
+        data: [connectedProvider],
+        isLoading: false,
+        error: null,
+      });
+      rerender(<ProvidersScreen />);
+      expect(screen.getByTestId("provider-sync-controls-region")).toBe(syncRegion);
+      expect(syncRegion.getAttribute("data-style")).toBe(syncStyle);
+      expect(processingRegion.getAttribute("data-style")).toBe(processingStyle);
+      expect(within(syncRegion).getByText("Sync recent data")).toBeTruthy();
+    },
+  );
 
   it("renders dataset-level processing progress on the provider list", async () => {
     mockDataHealthQuery.mockReturnValue({
