@@ -30246,6 +30246,8 @@ Full local Cypress validation subsequently exposed a settings layout failure: `C
 
 The subsequent push initially created no PR CI run: GitHub reported `mergeable: CONFLICTING` after unrelated changes reached `main`. GitHub documents that [pull-request workflows do not run with merge conflicts](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#pull_request). Merging current `origin/main` into the existing branch required resolving only the incident-baseline append conflict; both sets of records were retained. No branch switch, history rewrite, or workflow bypass was used.
 
+[Latest combined CI run](https://github.com/Asherlc/dofek/actions/runs/37387484094) passed browser, unit/mobile, all four integration shards, lint and typechecks, but `Diff coverage (changed lines only)` reported `Coverage: 75%`: line 463, the web full-history sync callback, was untested. The layout wrapper moved that existing callback into the changed lines. A new interaction test opens the full-history confirmation, verifies that no request starts before confirmation, and checks that confirming starts an unbounded sync. Local coverage recorded `DA:463,1`, proving the callback executes. A narrowly collected diagnostic coverage run was below the repository-wide function threshold because it collected only this component; the aggregate coverage gate and all thresholds remain unchanged.
+
 ## 2026-10-05 — Climbing attempt totals hidden by incomplete source counts
 
 The climbing page displayed no numeric grade attempt totals and included an
