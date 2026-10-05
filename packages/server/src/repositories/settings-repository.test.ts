@@ -315,7 +315,7 @@ describe("SettingsRepository", () => {
             : [],
         ),
       );
-      expect(queries.filter((query) => query.includes("DELETE FROM"))).toHaveLength(7);
+      expect(queries.filter((query) => query.includes("DELETE FROM"))).toHaveLength(6);
       expect(queries.some((query) => query.includes("fitness.supplement"))).toBe(true);
     });
 
@@ -341,8 +341,8 @@ describe("SettingsRepository", () => {
       const queries = transactionExecute.mock.calls.map(([query]) =>
         JSON.stringify(Reflect.get(query, "queryChunks") ?? []),
       );
-      // 2 child tables + 7 user-scoped tables = 9 delete statements.
-      expect(queries.filter((query) => query.includes("DELETE FROM"))).toHaveLength(9);
+      // 2 child tables + 6 user-scoped tables = 8 delete statements.
+      expect(queries.filter((query) => query.includes("DELETE FROM"))).toHaveLength(8);
     });
   });
 });
