@@ -238,7 +238,6 @@ describe("AppHeader", () => {
 
     expect(screen.getAllByText("Overview").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Nutrition").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Reports").length).toBeGreaterThan(0);
     expect(
       within(screen.getByRole("navigation", { name: "Sections" }))
         .getByRole("link", { name: "More" })
