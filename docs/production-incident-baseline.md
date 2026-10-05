@@ -30189,3 +30189,13 @@ the earlier metric-log pressure recurrence risk also remains unresolved. A usefu
 runbook refinement is to record selected/total data granules for every repeated
 source branch and distinguish per-request resource proof from total capture work
 and source-to-visible freshness. No steady-state diagnostic framework is added.
+
+### 2026-10-05 — Local integration validation blocked by Docker address-pool exhaustion
+
+- Symptoms/evidence: `pnpm test:integration -- packages/server/src/repositories/nutrition-canonical.integration.test.ts packages/server/src/repositories/nutrition-analytics-source-breakdown.integration.test.ts packages/server/src/routers/nutrition-analytics-data.integration.test.ts packages/server/src/routers/settings.integration.test.ts src/db/migrate.integration.test.ts` failed while creating `loyal-alpacka_default`; the first fatal line was `all predefined address pools have been fully subnetted`.
+- Impact: local PostgreSQL integration validation of supplement removal is blocked; no production impact observed.
+- Root cause: the Docker daemon has allocated its default subnet pool across existing workspace networks; `docker network ls` confirmed many workspace networks.
+- Mitigation: with user approval, created only `loyal-alpacka_default` on the unused `10.231.137.0/24` subnet with Compose ownership labels. The first cold database initialization crossed its existing health-startup window; logs confirmed initialization completed and subsequent healthchecks passed, with no steady-state timeout changes.
+- Validation: the same integration command reached Vitest after all four dependencies became healthy; analytics SQL lint subsequently passed. All 74 database assertions across six suites passed, including the forward migration sequence and food-source resolution. The two unrelated full-suite timeouts in `archive-erasure.test.ts` and `deploy-web-stack.test.ts` passed when rerun individually.
+- Resolution: final `pnpm lint` passed; `pnpm compose -- down --remove-orphans --volumes` removed only this workspace’s test containers, network, and disposable volumes. No timeout, retry, or network overrides were added to repository configuration.
+- Remaining risk/follow-up: the daemon’s default pool remains exhausted by other workspace networks; document an operator procedure for pool exhaustion. Docker documents explicit subnets in [network create](https://docs.docker.com/reference/cli/docker/network/create/).

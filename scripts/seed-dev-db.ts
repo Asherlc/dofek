@@ -10,7 +10,7 @@
  *   - 180 days of recovery/daily metrics
  *   - 90 WHOOP nights plus 30 Apple Health overlap sessions
  *   - 120 days of deterministic activity history and strength work
- *   - 90 days of nutrition, recent meals, and supplements
+ *   - 90 days of nutrition, recent meals
  *   - Body composition, labs, DEXA, and clinical records
  *   - Journal and life-event context for reports/correlation
  *

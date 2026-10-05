@@ -318,7 +318,6 @@ export const PROVIDER_DATA_TABLES = [
   "fitness.sleep_session",
   "fitness.food_entry",
   "fitness.clinical_record",
-  "fitness.supplement_dose_event",
   "fitness.medication_dose_event",
   "fitness.health_event",
   "fitness.journal_entry",

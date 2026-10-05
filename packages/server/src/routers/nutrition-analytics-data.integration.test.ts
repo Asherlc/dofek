@@ -441,7 +441,7 @@ describe("Nutrition analytics data coverage", () => {
   // micronutrientAdequacy — RDA percentage calculations
   // ══════════════════════════════════════════════════════════════
   describe("micronutrientAdequacy", () => {
-    it("V2 distinguishes food and taken-supplement averages on recorded days", async () => {
+    it("V2 reports food nutrient averages on recorded days", async () => {
       await queryCache.invalidateAll();
       const result = await query<MicronutrientSafetyReviewResult>(
         "nutritionAnalytics.micronutrientAdequacyV2",
@@ -451,7 +451,6 @@ describe("Nutrition analytics data coverage", () => {
       const vitaminC = result.nutrients.find((row) => row.nutrientId === "vitamin_c");
       expect(vitaminC).toBeDefined();
       expect(vitaminC?.intake.foodDailyAverage).toBe(vitaminC?.intake.totalDailyAverage);
-      expect(vitaminC?.intake.supplementDailyAverage).toBe(0);
       expect(vitaminC?.intake.daysTracked).toBeGreaterThanOrEqual(10);
       expect(vitaminC?.adequacy).toMatchObject({
         reference: {
@@ -460,7 +459,6 @@ describe("Nutrition analytics data coverage", () => {
           population: "Adults and children age 4+",
         },
       });
-      expect(result.professionalReview.status).toBe("no_supplements");
     });
 
     it("returns RDA comparisons for tracked micronutrients", async () => {

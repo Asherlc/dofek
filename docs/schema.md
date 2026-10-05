@@ -230,11 +230,6 @@ tables through ClickHouse replication.
 | `fitness.v_human_food_nutrient_decision` | Nearest effective decision per food identity and nutrient |
 | `fitness.v_food_entry_effective` | Raw food scalar fields overlaid with current human field and visibility decisions |
 | `fitness.v_food_entry_effective_nutrient` | Raw normalized nutrient rows overlaid with current human nutrient decisions and provenance |
-| `fitness.supplement` | Stable per-user supplement schedule identity, ownership, and display order |
-| `fitness.supplement_definition` | Immutable effective-dated supplement definition versions |
-| `fitness.supplement_definition_nutrient` | Canonical row-based nutrient amounts for a definition version |
-| `fitness.supplement_dose_event` | Append-only planned/taken/skipped/unknown occurrence history with provider provenance |
-| `fitness.v_supplement_dose_current` | Current leaf for each supplement occurrence event chain |
 | `fitness.v_nutrition_provider_daily` | Raw per-provider daily nutrient totals for provenance and provider inspection |
 | `fitness.v_nutrition_daily_resolution` | Per-user/date canonical contribution decision and selected/excluded source provenance |
 | `fitness.v_nutrition_canonical_nutrient` | Nutrient rows from the resolved contribution set |
@@ -247,9 +242,11 @@ tables through ClickHouse replication.
 | `fitness.personal_experiment` | User-authored N-of-1 setup and stop status; schedule and analysis fields are derived |
 | `fitness.personal_experiment_check_in` | One raw adherence/confounder/note check-in per experiment local date; derived outcome data is never stored |
 
-Supplement schedule, definition, nutrient, and dose-event ownership is defined
-by the [canonical Drizzle schema](../src/db/schema/nutrition.ts) and introduced
-by [migration 0061](../drizzle/0061_supplement_dose_events.sql).
+Supplement schedules, definitions, nutrients, and dose history are removed by
+[migration 0137](../drizzle/0137_remove_supplements.sql). Food entries and food
+nutrients remain canonical; nutrition views project only the resolved food
+contribution set. The migration drops dependent views explicitly before their
+tables, following [PostgreSQL view dependency rules](https://www.postgresql.org/docs/current/sql-dropview.html).
 
 ### Daily Nutrition vs Food Entries
 
@@ -283,13 +280,7 @@ documentation.
 inserted separately.
 
 **FatSecret** and manual food logging write `itemized`
-entries through the normalized food path. Supplement schedules do not create
-food entries. Their nutrients enter
-`fitness.v_nutrition_canonical_nutrient` only while the current dose-event
-leaf is explicitly `taken`; planned, skipped, and unknown leaves contribute
-nothing. The append-only chain uses unique and foreign-key constraints rather
-than rewriting history, following PostgreSQL's documented
-[constraint semantics](https://www.postgresql.org/docs/current/ddl-constraints.html).
+entries through the normalized food path.
 
 Serving code reads `fitness.v_nutrition_daily` and
 `fitness.v_nutrition_canonical_nutrient`. Selection prefers itemized sources,
@@ -325,13 +316,6 @@ corrected nutrient contributes exactly once under the existing overlap rules.
 provenance and inspection. The effective projections do not snapshot historical
 provider facts; the append-only history records commands and decisions, while a
 read resolves them against the current provider row.
-
-The installed-client `supplements.list` and `supplements.save` procedures keep
-their original V1 definition-only success and error shapes. Definition-version
-identity remains internal to that permanent projection. The additive
-`supplements.occurrences` and `supplements.recordDose` procedures expose
-current event IDs and history for newer clients; no mobile persisted-cache
-contract bump is required because the persisted V1 payload did not change.
 
 ## Deduplication
 

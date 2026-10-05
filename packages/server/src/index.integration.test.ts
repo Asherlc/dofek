@@ -109,8 +109,6 @@ describe("tRPC API", () => {
         body: JSON.stringify({ "0": { sinceDays: 7 } }),
       });
 
-      // Providers that don't require auth (e.g. auto-supplements) are always
-      // connected, so triggerSync will find at least one syncable provider.
       expect(res.status).toBe(200);
       const data = await res.json();
       expect(data).toHaveLength(1);

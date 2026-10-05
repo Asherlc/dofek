@@ -61,7 +61,6 @@ const toolTestMocks = vi.hoisted(() => {
     queueAdd: vi.fn(),
     sleepListRange: vi.fn(),
     strengthExercises: vi.fn(),
-    supplementsList: vi.fn(),
     subjectiveCreateInjury: vi.fn(),
     subjectiveRegions: vi.fn(),
     subjectiveTimeline: vi.fn(),
@@ -210,12 +209,6 @@ vi.mock("../repositories/finger-loading-progression-repository.ts", () => ({
 vi.mock("../repositories/strength-repository.ts", () => ({
   StrengthRepository: vi.fn(function vitestConstructor() {
     return { getExercisesForActivity: toolTestMocks.strengthExercises };
-  }),
-}));
-
-vi.mock("../repositories/supplements-repository.ts", () => ({
-  SupplementsRepository: vi.fn(function vitestConstructor() {
-    return { list: toolTestMocks.supplementsList };
   }),
 }));
 
@@ -1033,7 +1026,6 @@ describe("createMcpRouter", () => {
         "get_food_entry",
         "get_food_entry_history",
         "get_nutrition_summary",
-        "get_supplements",
       ],
       "health:write": ["log_injury"],
       "providers:read": ["list_providers"],
@@ -1400,10 +1392,7 @@ describe("createMcpRouter", () => {
       properties: {},
       type: "object",
     });
-    expect(findListedTool(tools, "get_supplements").inputSchema).toMatchObject({
-      properties: {},
-      type: "object",
-    });
+
     expect(findListedTool(tools, "start_provider_sync").inputSchema).toMatchObject({
       properties: {
         providerId: { minLength: 1, type: "string" },
@@ -1442,7 +1431,6 @@ describe("createMcpRouter", () => {
       "get_body_metrics",
       "get_subjective_timeline",
       "list_body_regions",
-      "get_supplements",
       "list_providers",
       "render_health_explorer",
     ]) {
@@ -1578,7 +1566,6 @@ describe("createMcpRouter", () => {
         name: "get_strength_progression",
         path: ["result", "sessions", "[]", "exercises", "[]", "sets", "[]", "original", "records"],
       },
-      { name: "get_supplements", path: ["result", "[]", "meal"] },
       {
         name: "search_food_entries",
         path: ["result", "items", "[]", "provenance"],
@@ -4544,22 +4531,6 @@ describe("createMcpRouter", () => {
     expect(toolTestMocks.fingerLoadingActivity).toHaveBeenCalledWith(
       expect.objectContaining({ activityId: stableGroupId }),
     );
-  });
-
-  it("returns the authenticated user's supplement definitions", async () => {
-    authorizeMcpToken();
-    toolTestMocks.supplementsList.mockResolvedValue([
-      { amount: 5, id: "creatine", name: "Creatine", unit: "g" },
-    ]);
-
-    const response = await request(createTestApp(), {
-      authorization: "Bearer good-token",
-      body: createToolCallRequest("get_supplements", {}),
-    });
-
-    expect(parseToolCallText(response.text)).toEqual([
-      { amount: 5, id: "creatine", name: "Creatine", unit: "g" },
-    ]);
   });
 
   it("returns a capped, channel-filtered activity stream", async () => {

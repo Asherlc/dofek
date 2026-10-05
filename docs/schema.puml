@@ -471,55 +471,6 @@ entity "nutrient" {
   conversion_factor : real
 }
 
-entity "supplement" {
-  * id : uuid <<PK>>
-  --
-  user_id : uuid <<FK>>
-  sort_order : bigint
-  created_at : timestamp
-  updated_at : timestamp
-}
-
-entity "supplement_definition" {
-  * id : uuid <<PK>>
-  --
-  supplement_id : uuid <<FK>>
-  supersedes_definition_id : uuid <<FK>>
-  name : text
-  amount : real
-  unit : text
-  form : text
-  description : text
-  meal : meal
-  effective_from : date
-  effective_to : date
-  created_at : timestamp
-}
-
-entity "supplement_definition_nutrient" {
-  * definition_id : uuid <<PK>>
-  * nutrient_id : text <<PK>>
-  --
-  amount : real
-}
-
-entity "supplement_dose_event" {
-  * id : uuid <<PK>>
-  --
-  user_id : uuid <<FK>>
-  supplement_id : uuid <<FK>>
-  definition_id : uuid <<FK>>
-  provider_id : text <<FK>>
-  external_id : text
-  scheduled_date : date <<FK>>
-  status : supplement_dose_status
-  supersedes_event_id : uuid <<FK>>
-  recorded_at : timestamp
-  source_name : text
-  raw : jsonb
-  created_at : timestamp
-}
-
 entity "mcp_oidc_adapter" {
   * model : text <<PK>>
   * id : text <<PK>>
@@ -1339,16 +1290,6 @@ provider ||--o{ food_entry
 user_profile ||--o{ food_entry
 food_entry ||--o{ food_entry_nutrient
 nutrient ||--o{ food_entry_nutrient
-user_profile ||--o{ supplement
-supplement ||--o{ supplement_definition
-supplement_definition ||--o{ supplement_definition
-supplement_definition ||--o{ supplement_definition_nutrient
-nutrient ||--o{ supplement_definition_nutrient
-user_profile ||--o{ supplement_dose_event
-provider ||--o{ supplement_dose_event
-supplement ||--o{ supplement_dose_event
-supplement_definition ||--o{ supplement_dose_event
-supplement_dose_event ||--o{ supplement_dose_event
 user_profile ||--o{ mcp_oidc_adapter
 user_profile ||--o{ clinical_record
 provider ||--o{ clinical_record

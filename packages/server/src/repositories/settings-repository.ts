@@ -32,8 +32,6 @@ const USER_SCOPED_DELETE_TABLES = [
   "fitness.user_settings",
   "fitness.life_events",
   "fitness.sport_settings",
-  "fitness.supplement_dose_event",
-  "fitness.supplement",
   "fitness.breathwork_session",
   "fitness.menstrual_period",
 ];

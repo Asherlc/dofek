@@ -31,7 +31,6 @@ describe("fetchMicronutrientSafetyReviews", () => {
         unit: "mg",
         avg_total_intake: 40,
         avg_food_intake: 40,
-        avg_supplement_intake: 0,
         days_tracked: 1,
         source_breakdown: [
           {
@@ -53,7 +52,7 @@ describe("fetchMicronutrientSafetyReviews", () => {
     });
   });
 
-  it("separates itemized food, provider daily totals, and supplements by source", async () => {
+  it("separates itemized food and provider daily totals by source", async () => {
     const { run } = makeQuery([
       {
         nutrient_id: "vitamin_c",
@@ -61,7 +60,7 @@ describe("fetchMicronutrientSafetyReviews", () => {
         unit: "mg",
         avg_total_intake: 90,
         avg_food_intake: 40,
-        avg_supplement_intake: 50,
+        avg_provider_daily_total_intake: 50,
         days_tracked: 10,
         source_breakdown: [
           {
@@ -74,7 +73,7 @@ describe("fetchMicronutrientSafetyReviews", () => {
           {
             providerId: "dofek",
             sourceLabel: "dofek",
-            intakeType: "supplement",
+            intakeType: "provider_daily_total",
             dailyAverageContribution: 50,
             daysTracked: 5,
           },
@@ -88,8 +87,7 @@ describe("fetchMicronutrientSafetyReviews", () => {
       intake: {
         totalDailyAverage: 90,
         foodDailyAverage: 40,
-        providerDailyTotalAverage: 0,
-        supplementDailyAverage: 50,
+        providerDailyTotalAverage: 50,
         daysTracked: 10,
       },
       sourceBreakdown: [
@@ -103,7 +101,7 @@ describe("fetchMicronutrientSafetyReviews", () => {
         {
           providerId: "dofek",
           sourceLabel: "dofek",
-          intakeType: "supplement",
+          intakeType: "provider_daily_total",
           dailyAverageContribution: 50,
           daysTracked: 5,
         },
@@ -119,7 +117,6 @@ describe("fetchMicronutrientSafetyReviews", () => {
         unit: "mcg",
         avg_total_intake: 120,
         avg_food_intake: 20,
-        avg_supplement_intake: 100,
         days_tracked: 10,
       },
     ]);
@@ -134,7 +131,6 @@ describe("fetchMicronutrientSafetyReviews", () => {
       intake: {
         totalDailyAverage: 120,
         foodDailyAverage: 20,
-        supplementDailyAverage: 100,
         daysTracked: 10,
       },
       adequacy: {
@@ -166,7 +162,6 @@ describe("fetchMicronutrientSafetyReviews", () => {
         unit: "mg",
         avg_total_intake: 45,
         avg_food_intake: 45,
-        avg_supplement_intake: 0,
         days_tracked: 5,
       },
     ]);
@@ -189,7 +184,6 @@ describe("fetchMicronutrientSafetyReviews", () => {
         unit: "mg",
         avg_total_intake: 90,
         avg_food_intake: 90,
-        avg_supplement_intake: 0,
         days_tracked: 1,
       },
     ]);
@@ -204,7 +198,7 @@ describe("fetchMicronutrientSafetyReviews", () => {
     });
   });
 
-  it("uses supplemental intake for a supplemental-only upper limit", async () => {
+  it("reports magnesium upper-limit context as not evaluable from food intake", async () => {
     const { run } = makeQuery([
       {
         nutrient_id: "magnesium",
@@ -212,7 +206,6 @@ describe("fetchMicronutrientSafetyReviews", () => {
         unit: "mg",
         avg_total_intake: 700,
         avg_food_intake: 400,
-        avg_supplement_intake: 300,
         days_tracked: 7,
       },
     ]);
@@ -221,14 +214,12 @@ describe("fetchMicronutrientSafetyReviews", () => {
 
     expect(result[0]?.toDetail()).toMatchObject({
       upperLimit: {
-        status: "within_limit",
-        intakeAmount: 300,
+        status: "not_evaluable",
         amount: 350,
         intakeScope: "supplemental_only",
-        message:
-          "Average intake over recorded days is below the included NIH adult upper limit. This does not rule out medication interactions or individual risks.",
+        message: "The NIH upper limit applies only to supplemental intake, which is not tracked.",
       },
-      safetyStatus: "within_upper_limit",
+      safetyStatus: "upper_limit_not_evaluable",
     });
   });
 
@@ -240,7 +231,6 @@ describe("fetchMicronutrientSafetyReviews", () => {
         unit: "mg",
         avg_total_intake: 39.96,
         avg_food_intake: 19.96,
-        avg_supplement_intake: 20,
         days_tracked: 7,
       },
     ]);
@@ -262,7 +252,6 @@ describe("fetchMicronutrientSafetyReviews", () => {
         unit: "mcg",
         avg_total_intake: 1_000,
         avg_food_intake: 800,
-        avg_supplement_intake: 200,
         days_tracked: 3,
       },
     ]);
@@ -290,7 +279,6 @@ describe("fetchMicronutrientSafetyReviews", () => {
         unit: "g",
         avg_total_intake: 1,
         avg_food_intake: 1,
-        avg_supplement_intake: 0,
         days_tracked: 2,
       },
     ]);
@@ -320,7 +308,6 @@ describe("fetchMicronutrientSafetyReviews", () => {
         unit: "mg",
         avg_total_intake: 10,
         avg_food_intake: 10,
-        avg_supplement_intake: 0,
         days_tracked: 4,
       },
     ]);
@@ -346,25 +333,10 @@ describe("fetchMicronutrientSafetyReviews", () => {
         unit: "mg",
         avg_total_intake: 10,
         avg_food_intake: 10,
-        avg_supplement_intake: 0,
         days_tracked: 4,
       },
     ]);
 
     await expect(run()).resolves.toEqual([]);
-  });
-
-  it("reads food and taken-supplement contributions separately", async () => {
-    const { execute, run } = makeQuery([]);
-
-    await run();
-
-    const query = JSON.stringify(execute.mock.calls[0]?.[0]);
-    expect(query).toContain("fitness.v_nutrition_canonical_nutrient");
-    expect(query).toContain("fitness.v_nutrition_entry_classification");
-    expect(query).toContain("itemized_food");
-    expect(query).toContain("meal_aggregate");
-    expect(query).toContain("provider_daily_total");
-    expect(query).toContain("supplement_dose_event_id IS NOT NULL");
   });
 });

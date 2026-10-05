@@ -94,7 +94,6 @@ identify the route/page responsible for adding section completion.
 | Endurance | `/training/endurance`, routes/training/endurance | analytics, activities | endurance samples / no activities | range, All |
 | Daily Heart Rate | `/body/heart-rate`, pages/DailyHeartRatePage | chart, sources | multiple raw provider series / no samples | adjacent days, date, Today |
 | Nutrition Analytics | `/nutrition/analytics`, pages/NutritionAnalyticsPage | TDEE, micronutrients, macro ratios | intake + body-weight history / insufficient data | range, All |
-| Supplements | `/nutrition/supplements`, routes/nutrition/supplements | stack, safety information | active supplement versions / empty stack | date |
 | Experiments | `/experiments`, pages/PersonalExperimentsPage | list, conditional detail | existing experiment / no experiments | experiment selection |
 | Tracking | `/tracking`, pages/TrackingPage | current tracking state | tracked observations / empty state | date/range |
 | Weekly Report | `/weekly-report`, routes/weekly-report | report content | populated week / insufficient week | week |

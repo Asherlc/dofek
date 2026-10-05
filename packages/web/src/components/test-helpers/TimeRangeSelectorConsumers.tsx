@@ -179,7 +179,6 @@ vi.mock("../../lib/trpc.ts", () => {
             contributingSourceLabels: [],
             excludedSourceLabels: [],
           },
-          professionalReview: null,
         }),
       },
       sleep: {

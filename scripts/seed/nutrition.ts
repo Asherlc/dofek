@@ -7,8 +7,7 @@ export async function seedNutrition(sql: Sql, random: SeedRandom): Promise<void>
   const today = new Date();
   await seedDailyNutrition(sql, random, today);
   await seedFoodEntries(sql, random, today);
-  await seedSupplements(sql);
-  console.log("Seeded: 90 days of nutrition, meal entries, and supplements");
+  console.log("Seeded: 90 days of nutrition, meal entries");
 }
 
 async function seedDailyNutrition(sql: Sql, random: SeedRandom, today: Date): Promise<void> {
@@ -129,75 +128,5 @@ async function seedFoodEntries(sql: Sql, random: SeedRandom, today: Date): Promi
         ) AS nutrient_values(nutrient_id, amount)
       `;
     }
-  }
-}
-
-async function seedSupplements(sql: Sql): Promise<void> {
-  const supplements = [
-    ["Vitamin D3", 2_000, "IU", "softgel", "breakfast", 0, 50, 0, 0, 0, 50],
-    ["Magnesium Glycinate", 300, "mg", "capsule", "dinner", 1, 0, 0, 300, 0, 0],
-    ["Creatine Monohydrate", 5, "g", "powder", "breakfast", 2, 0, 0, 0, 0, 0],
-    ["Omega-3", 1_200, "mg", "softgel", "lunch", 3, 0, 0, 0, 0, 1_200],
-  ] as const;
-
-  for (const [
-    name,
-    amount,
-    unit,
-    form,
-    meal,
-    sortOrder,
-    vitaminDMcg,
-    calciumMg,
-    magnesiumMg,
-    zincMg,
-    omega3Mg,
-  ] of supplements) {
-    await sql`
-      DELETE FROM fitness.supplement
-      WHERE user_id = ${USER_ID}
-        AND id IN (
-          SELECT definition.supplement_id
-          FROM fitness.supplement_definition AS definition
-          WHERE definition.name = ${name}
-            AND definition.effective_to IS NULL
-        )
-    `;
-    const scheduleRows = returnedIdRowSchema.array().parse(
-      await sql`
-        INSERT INTO fitness.supplement (user_id, sort_order)
-        VALUES (${USER_ID}, ${sortOrder})
-        RETURNING id
-      `,
-    );
-    const schedule = scheduleRows[0];
-    if (!schedule) throw new Error("Supplement schedule seed insert returned no row");
-    const definitionRows = returnedIdRowSchema.array().parse(
-      await sql`
-        INSERT INTO fitness.supplement_definition (
-          supplement_id, name, amount, unit, form, description, meal
-        )
-        VALUES (
-          ${schedule.id}, ${name}, ${amount}, ${unit}, ${form},
-          'Review seed supplement', ${meal}
-        )
-        RETURNING id
-    `,
-    );
-    const definition = definitionRows[0];
-    if (!definition) throw new Error("Supplement definition seed insert returned no row");
-
-    await sql`
-      INSERT INTO fitness.supplement_definition_nutrient (definition_id, nutrient_id, amount)
-      SELECT ${definition.id}, nutrient_id, amount
-      FROM (VALUES
-        ('vitamin_d', ${vitaminDMcg}::real),
-        ('calcium', ${calciumMg}::real),
-        ('magnesium', ${magnesiumMg}::real),
-        ('zinc', ${zincMg}::real),
-        ('omega_3', ${omega3Mg}::real)
-      ) AS nutrient_values(nutrient_id, amount)
-      WHERE amount > 0
-    `;
   }
 }

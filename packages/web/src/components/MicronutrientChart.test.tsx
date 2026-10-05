@@ -64,7 +64,6 @@ describe("MicronutrientChart", () => {
             totalDailyAverage: 14,
             foodDailyAverage: 9,
             providerDailyTotalAverage: 2,
-            supplementDailyAverage: 3,
             daysTracked: 7,
           },
           sourceBreakdown: [
@@ -87,13 +86,6 @@ describe("MicronutrientChart", () => {
               sourceLabel: "Imported daily total",
               intakeType: "provider_daily_total",
               dailyAverageContribution: 2,
-              daysTracked: 7,
-            },
-            {
-              providerId: "supplement",
-              sourceLabel: "Vitamin C tablet",
-              intakeType: "supplement",
-              dailyAverageContribution: 3,
               daysTracked: 7,
             },
           ],
@@ -135,7 +127,6 @@ describe("MicronutrientChart", () => {
     expect(html).toContain("&lt;img src=x onerror=&quot;alert(2)&quot;&gt;");
     expect(html).toContain("Imported daily total · Provider daily total: 2");
     expect(html).toContain("Ziva · Meal total: 4");
-    expect(html).toContain("Vitamin C tablet · Supplement: 3");
     expect(html).not.toContain("<img ");
     expect(html).not.toContain("<svg ");
   });
@@ -151,7 +142,6 @@ describe("MicronutrientChart", () => {
             totalDailyAverage: 12,
             foodDailyAverage: 12,
             providerDailyTotalAverage: 0,
-            supplementDailyAverage: 0,
             daysTracked: 7,
           },
           sourceBreakdown: [
@@ -219,7 +209,6 @@ describe("MicronutrientChart", () => {
             totalDailyAverage: 120,
             foodDailyAverage: 20,
             providerDailyTotalAverage: 0,
-            supplementDailyAverage: 100,
             daysTracked: 10,
           },
           sourceBreakdown: [],
@@ -266,7 +255,6 @@ describe("MicronutrientChart", () => {
             totalDailyAverage: 3_500,
             foodDailyAverage: 3_000,
             providerDailyTotalAverage: 0,
-            supplementDailyAverage: 500,
             daysTracked: 8,
           },
           sourceBreakdown: [],
@@ -328,7 +316,6 @@ describe("MicronutrientChart", () => {
             totalDailyAverage: 0.1,
             foodDailyAverage: 0.1,
             providerDailyTotalAverage: 0,
-            supplementDailyAverage: 0,
             daysTracked: 5,
           },
           sourceBreakdown: [],
@@ -382,7 +369,6 @@ describe("MicronutrientChart", () => {
             totalDailyAverage: 2,
             foodDailyAverage: 2,
             providerDailyTotalAverage: 0,
-            supplementDailyAverage: 0,
             daysTracked: 3,
           },
           sourceBreakdown: [],

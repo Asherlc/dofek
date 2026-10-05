@@ -291,13 +291,7 @@ export const DATASET_CONTRACTS = [
     outputPaths: [
       {
         path: "relational",
-        sources: [
-          "food_entry",
-          "food_entry_nutrient",
-          "supplement_definition",
-          "supplement_definition_nutrient",
-          "supplement_dose_event",
-        ],
+        sources: ["food_entry", "food_entry_nutrient"],
         cdcEvidence: [],
       },
     ],
@@ -426,7 +420,6 @@ const PROVIDER_DATASET_CAPABILITIES: Readonly<Record<string, readonly Processing
     "nutrition",
     "providers",
   ],
-  "auto-supplements": ["nutrition", "providers"],
   bodyspec: ["body", "providers"],
   concept2: ["activity", "training", "recovery", "providers"],
   coros: ["activity", "hiking", "cycling", "sleep", "recovery", "training", "body", "providers"],

@@ -3,16 +3,10 @@ import { sql } from "drizzle-orm";
 import { expect } from "vitest";
 import { z } from "zod";
 import type { ClickHouseClient } from "../../../../src/db/clickhouse.ts";
-import { nutrientAmountEntriesFromLegacyFields } from "../../../../src/db/nutrient-columns.ts";
 import type {
   ProviderDataGenerationContext,
   ProviderDataScope,
 } from "../../../../src/db/provider-data-deletion.ts";
-import {
-  supplement,
-  supplementDefinition,
-  supplementDefinitionNutrient,
-} from "../../../../src/db/schema/nutrition.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
 
 const PERFORMANCE_COMPARISON_SERVING_TABLES = [
@@ -82,50 +76,6 @@ export async function createPerformanceComparisonServingTablesForTest(
       query: `CREATE TABLE ${analyticsDatabase}.${name} (user_id UUID, ${columns}, refresh_version UInt64, is_deleted UInt8) ENGINE = ReplacingMergeTree(refresh_version) ORDER BY (${order})`,
     });
   }
-}
-
-export async function insertSupplementDefinitionForTest(
-  database: Database,
-  values: {
-    userId: string;
-    name: string;
-    effectiveFrom: string;
-    meal?: "breakfast" | "lunch" | "dinner" | "snack" | "other";
-  },
-  nutrients: Record<string, number | null> = {},
-): Promise<{ definitionId: string; scheduleId: string }> {
-  const [insertedSchedule] = await database
-    .insert(supplement)
-    .values({ userId: values.userId })
-    .returning({ id: supplement.id });
-  if (!insertedSchedule) throw new Error("Supplement fixture schedule insert returned no id");
-
-  const [insertedDefinition] = await database
-    .insert(supplementDefinition)
-    .values({
-      supplementId: insertedSchedule.id,
-      name: values.name,
-      effectiveFrom: values.effectiveFrom,
-      meal: values.meal,
-    })
-    .returning({ id: supplementDefinition.id });
-  if (!insertedDefinition) throw new Error("Supplement fixture definition insert returned no id");
-
-  const nutrientEntries = nutrientAmountEntriesFromLegacyFields(nutrients);
-  if (nutrientEntries.length > 0) {
-    await database.insert(supplementDefinitionNutrient).values(
-      nutrientEntries.map((nutrient) => ({
-        definitionId: insertedDefinition.id,
-        nutrientId: nutrient.nutrientId,
-        amount: nutrient.amount,
-      })),
-    );
-  }
-
-  return {
-    definitionId: insertedDefinition.id,
-    scheduleId: insertedSchedule.id,
-  };
 }
 
 export async function resolveProviderDataGenerationsForTest(

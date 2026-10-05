@@ -27,7 +27,6 @@ interface SeedCounts {
   strengthSets: number;
   nutritionDaily: number;
   foodEntries: number;
-  supplements: number;
   clinicalRecords: number;
   dexaScans: number;
   journalEntries: number;
@@ -125,7 +124,6 @@ describe("seed-dev-db", () => {
       expect(firstCounts.strengthSets).toBeGreaterThanOrEqual(80);
       expect(firstCounts.nutritionDaily).toBeGreaterThanOrEqual(85);
       expect(firstCounts.foodEntries).toBeGreaterThanOrEqual(20);
-      expect(firstCounts.supplements).toBeGreaterThanOrEqual(3);
       expect(firstCounts.clinicalRecords).toBeGreaterThanOrEqual(13);
       expect(firstCounts.dexaScans).toBeGreaterThanOrEqual(2);
       expect(firstCounts.journalEntries).toBeGreaterThanOrEqual(30);
@@ -247,10 +245,6 @@ async function readSeedCounts(sql: postgres.Sql): Promise<SeedCounts> {
     foodEntries: await readCount(
       sql,
       `SELECT COUNT(*)::int AS count FROM fitness.food_entry WHERE user_id = '${userId}'`,
-    ),
-    supplements: await readCount(
-      sql,
-      `SELECT COUNT(*)::int AS count FROM fitness.supplement WHERE user_id = '${userId}'`,
     ),
     clinicalRecords: await readCount(
       sql,

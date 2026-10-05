@@ -58,7 +58,6 @@ import { sportSettingsRouter } from "./routers/sport-settings.ts";
 import { strengthRouter } from "./routers/strength.ts";
 import { stressRouter } from "./routers/stress.ts";
 import { subjectiveRouter } from "./routers/subjective.ts";
-import { supplementsRouter } from "./routers/supplements.ts";
 import { supportRouter } from "./routers/support.ts";
 import { syncRouter } from "./routers/sync.ts";
 import { todayPlanRouter } from "./routers/today-plan.ts";
@@ -95,7 +94,6 @@ const appRouterProcedures = {
   lifeEvents: lifeEventsRouter,
   personalExperiments: personalExperimentsRouter,
   mobileDashboard: mobileDashboardRouter,
-  supplements: supplementsRouter,
   providerDetail: providerDetailRouter,
   providerGuide: providerGuideRouter,
   sync: syncRouter,

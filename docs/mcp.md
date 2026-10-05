@@ -401,8 +401,7 @@ in each window; gaps are omitted from the mean rather than filled or changed to 
 [body repository](../packages/server/src/repositories/body-repository.ts).
 
 `get_nutrition_summary` returns every date in the requested range. A date with no records has null
-energy/macros, zero meal count, and `logging_completeness: "no_logging"`. Supplement dose events do
-not count as food logging even when their nutrients are present in the canonical total. A date with food or nutrition records is
+energy/macros, zero meal count, and `logging_completeness: "no_logging"`. A date with food or nutrition records is
 `unknown_completeness`; no connected nutrition source currently supplies an explicit daily complete
 or partial observation. Low energy intake is never used as a completeness heuristic.
 `resolution_status` remains a separate

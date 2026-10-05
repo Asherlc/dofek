@@ -46,7 +46,6 @@ import { registerRepeatedEffortsTool } from "./repeated-efforts-tool.ts";
 import { registerStrengthProgressionTool } from "./strength-progression-tool.ts";
 import { registerStrengthSessionsTool } from "./strength-sessions-tool.ts";
 import { registerSubjectiveTools } from "./subjective-tools.ts";
-import { registerSupplementsTool } from "./supplements-tool.ts";
 import { registerThresholdHistoryTool } from "./threshold-history-tool.ts";
 import { requireMcpScope } from "./token-repository.ts";
 import { aggregateNumbers, isoWeek } from "./tool-aggregation.ts";
@@ -280,7 +279,6 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
   registerStrengthProgressionTool(server, context);
   registerClimbingSessionsTool(server, context);
   registerStrengthSessionsTool(server, context);
-  registerSupplementsTool(server, context);
   registerFoodRecordTools(server, context);
   registerAuthorizedTool(
     server,

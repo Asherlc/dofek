@@ -38,7 +38,6 @@ const mcpToolNames = new Set([
   "get_strength_progression",
   "get_strength_sessions",
   "get_subjective_timeline",
-  "get_supplements",
   "get_threshold_history",
   "get_training_load",
   "list_body_regions",

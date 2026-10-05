@@ -56,7 +56,6 @@ import { Route as TrainingEnduranceRouteImport } from './routes/training/enduran
 import { Route as TrainingCyclingRouteImport } from './routes/training/cycling'
 import { Route as TrainingClimbingRouteImport } from './routes/training/climbing'
 import { Route as ProvidersIdRouteImport } from './routes/providers/$id'
-import { Route as NutritionSupplementsRouteImport } from './routes/nutrition/supplements'
 import { Route as NutritionAnalyticsRouteImport } from './routes/nutrition/analytics'
 import { Route as DeveloperIntegrationsClientIdRouteImport } from './routes/developer-integrations/$clientId'
 import { Route as ClinicalRecordsIdRouteImport } from './routes/clinical-records.$id'
@@ -306,11 +305,6 @@ const ProvidersIdRoute = ProvidersIdRouteImport.update({
   path: '/$id',
   getParentRoute: () => ProvidersRoute,
 } as Parameters<typeof ProvidersIdRouteImport.update>[0])
-const NutritionSupplementsRoute = NutritionSupplementsRouteImport.update({
-  id: '/supplements',
-  path: '/supplements',
-  getParentRoute: () => NutritionRoute,
-} as Parameters<typeof NutritionSupplementsRouteImport.update>[0])
 const NutritionAnalyticsRoute = NutritionAnalyticsRouteImport.update({
   id: '/analytics',
   path: '/analytics',
@@ -383,7 +377,6 @@ export interface FileRoutesByFullPath {
   '/clinical-records/$id': typeof ClinicalRecordsIdRoute
   '/developer-integrations/$clientId': typeof DeveloperIntegrationsClientIdRoute
   '/nutrition/analytics': typeof NutritionAnalyticsRoute
-  '/nutrition/supplements': typeof NutritionSupplementsRoute
   '/providers/$id': typeof ProvidersIdRoute
   '/training/climbing': typeof TrainingClimbingRoute
   '/training/cycling': typeof TrainingCyclingRoute
@@ -433,7 +426,6 @@ export interface FileRoutesByTo {
   '/clinical-records/$id': typeof ClinicalRecordsIdRoute
   '/developer-integrations/$clientId': typeof DeveloperIntegrationsClientIdRoute
   '/nutrition/analytics': typeof NutritionAnalyticsRoute
-  '/nutrition/supplements': typeof NutritionSupplementsRoute
   '/providers/$id': typeof ProvidersIdRoute
   '/training/climbing': typeof TrainingClimbingRoute
   '/training/cycling': typeof TrainingCyclingRoute
@@ -490,7 +482,6 @@ export interface FileRoutesById {
   '/clinical-records/$id': typeof ClinicalRecordsIdRoute
   '/developer-integrations/$clientId': typeof DeveloperIntegrationsClientIdRoute
   '/nutrition/analytics': typeof NutritionAnalyticsRoute
-  '/nutrition/supplements': typeof NutritionSupplementsRoute
   '/providers/$id': typeof ProvidersIdRoute
   '/training/climbing': typeof TrainingClimbingRoute
   '/training/cycling': typeof TrainingCyclingRoute
@@ -548,7 +539,6 @@ export interface FileRouteTypes {
     | '/clinical-records/$id'
     | '/developer-integrations/$clientId'
     | '/nutrition/analytics'
-    | '/nutrition/supplements'
     | '/providers/$id'
     | '/training/climbing'
     | '/training/cycling'
@@ -598,7 +588,6 @@ export interface FileRouteTypes {
     | '/clinical-records/$id'
     | '/developer-integrations/$clientId'
     | '/nutrition/analytics'
-    | '/nutrition/supplements'
     | '/providers/$id'
     | '/training/climbing'
     | '/training/cycling'
@@ -654,7 +643,6 @@ export interface FileRouteTypes {
     | '/clinical-records/$id'
     | '/developer-integrations/$clientId'
     | '/nutrition/analytics'
-    | '/nutrition/supplements'
     | '/providers/$id'
     | '/training/climbing'
     | '/training/cycling'
@@ -1042,13 +1030,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProvidersIdRouteImport
       parentRoute: typeof ProvidersRoute
     }
-    '/nutrition/supplements': {
-      id: '/nutrition/supplements'
-      path: '/supplements'
-      fullPath: '/nutrition/supplements'
-      preLoaderRoute: typeof NutritionSupplementsRouteImport
-      parentRoute: typeof NutritionRoute
-    }
     '/nutrition/analytics': {
       id: '/nutrition/analytics'
       path: '/analytics'
@@ -1134,13 +1115,11 @@ const ClinicalRecordsRouteWithChildren = ClinicalRecordsRoute._addFileChildren(
 
 interface NutritionRouteChildren {
   NutritionAnalyticsRoute: typeof NutritionAnalyticsRoute
-  NutritionSupplementsRoute: typeof NutritionSupplementsRoute
   NutritionIndexRoute: typeof NutritionIndexRoute
 }
 
 const NutritionRouteChildren: NutritionRouteChildren = {
   NutritionAnalyticsRoute: NutritionAnalyticsRoute,
-  NutritionSupplementsRoute: NutritionSupplementsRoute,
   NutritionIndexRoute: NutritionIndexRoute,
 }
 
