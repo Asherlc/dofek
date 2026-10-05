@@ -1,7 +1,10 @@
 ALTER TABLE fitness.climbing_entry
 ADD COLUMN route_protection TEXT[],
 ADD CONSTRAINT climbing_entry_route_protection_valid
-CHECK (route_protection <@ ARRAY['sport', 'trad']::TEXT[] AND array_position(route_protection, NULL) IS NULL);
+CHECK (route_protection <@ ARRAY['sport', 'trad']::TEXT[] AND array_position(route_protection, NULL) IS NULL) NOT VALID;
+--> statement-breakpoint
+ALTER TABLE fitness.climbing_entry
+VALIDATE CONSTRAINT climbing_entry_route_protection_valid;
 --> statement-breakpoint
 CREATE OR REPLACE VIEW fitness.v_climbing_entry AS
 SELECT

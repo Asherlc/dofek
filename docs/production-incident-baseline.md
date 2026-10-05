@@ -30207,3 +30207,18 @@ needed. The available browser runtime reported no connected browsers, so
 visual inspection remains unverified; component interaction tests passed.
 The [development-environment guide](development-environment.md#storybook-through-a-development-tunnel)
 records the host requirement for future preview work.
+
+## 2026-10-05 — Climbing migration CI lint failure (local fix validated)
+
+No production impact. PR [2880](https://github.com/Asherlc/dofek/pull/2880)
+failed `Test / Migration Lint`, step `Lint new migration SQL`, when
+`xargs squawk` checked migration 0137. The first diagnostic was
+`constraint-missing-not-valid`; the command exited 123. The new check constraint
+was added without separating its creation from validation. Migration 0137 now
+adds it with `NOT VALID` and explicitly validates it in the following statement,
+as prescribed by [Squawk](https://squawkhq.com/docs/constraint-missing-not-valid)
+and [PostgreSQL](https://www.postgresql.org/docs/current/sql-altertable.html).
+Local Squawk and migration-policy checks pass, and all eight climbing repository
+PostgreSQL tests pass with the updated migration. CI confirmation remains pending.
+No retries, waits, or lint suppressions were added. Next time, run Squawk as well
+as SQLFluff before opening a PR that adds PostgreSQL migrations.
