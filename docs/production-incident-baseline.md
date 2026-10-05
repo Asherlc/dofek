@@ -1,5 +1,12 @@
 # Production Incident Baseline
 
+## 2026-10-05 — Tracking removal PR lint gates
+
+- **Symptoms / impact:** [PR #2885](https://github.com/Asherlc/dofek/pull/2885) is blocked by CI lint gates; production is unchanged.
+- **Evidence / root causes:** [Knip](https://github.com/Asherlc/dofek/actions/runs/37381183171/job/112005037889) failed `pnpm knip` with `Unused exports (1): getCapturedRouteComponent`; deleting tracking route tests left that helper unused. [Migration Lint](https://github.com/Asherlc/dofek/actions/runs/37381183171/job/112005038017) failed `xargs squawk` with `ban-drop-view` on `DROP VIEW fitness.provider_stats`. The intentional journal-column removal requires recreation because [PostgreSQL CREATE OR REPLACE VIEW](https://www.postgresql.org/docs/current/sql-createview.html) requires existing columns to retain their names, order, and types.
+- **Fix / validation:** Remove the unused helper and route-capture state. Knip and all four remaining time-range consumer tests pass locally. Migration execution passed earlier; the single-statement Squawk exception awaits user approval. No timeout, retry, or global lint setting changed.
+- **Remaining risk / follow-up:** CI readiness remains unresolved until the migration lint decision and subsequent checks finish. Include Knip and Squawk in the feature-removal validation checklist, and document an approval policy for intentional destructive migrations.
+
 ## 2026-09-30 — Nutrition nudge PR dependency audit and Metro prerequisite failures
 
 - **Symptoms / impact:** PR #2861 could not pass CI; the nutrition guidance was not yet deployed.

@@ -7,17 +7,12 @@ import { SELECTED_RANGE_QUERY_REGISTRY } from "../../lib/selectedRangeQueryRegis
 
 const state: {
   queryCalls: Array<{ name: string; input: unknown }>;
-  routeComponents: Record<string, ComponentType>;
 } = {
   queryCalls: [],
-  routeComponents: {},
 };
 
 vi.mock("@tanstack/react-router", () => ({
-  createFileRoute: (path: string) => (config: { component: ComponentType }) => {
-    state.routeComponents[path] = config.component;
-    return {};
-  },
+  createFileRoute: () => () => ({}),
   Link: ({ children, to }: { children: ReactNode; to: string }) => (
     <a href={typeof to === "string" ? to : "/experiments"}>{children}</a>
   ),
@@ -206,10 +201,6 @@ export function expectRegistryCovered(registryKey: keyof typeof SELECTED_RANGE_Q
   for (const queryName of SELECTED_RANGE_QUERY_REGISTRY[registryKey]) {
     expect(calledNames.has(queryName)).toBe(true);
   }
-}
-
-export function getCapturedRouteComponent(path: string): ComponentType | undefined {
-  return state.routeComponents[path];
 }
 
 export function BodyHarness({ BodyPage }: { BodyPage: ComponentType }) {
