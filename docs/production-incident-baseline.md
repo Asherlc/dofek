@@ -9,6 +9,44 @@
 - **Remaining risk / follow-up:** Full replacement CI remains pending. Include Knip, Squawk, historical migration dependencies, and discovery counts in the feature-removal validation checklist, and document an approval policy for intentional destructive migrations.
 - **Local validation prerequisite:** A corrected SDK integration rerun failed before the tests with `could not create directory "base/96143": No space left on device`. Rebuildable Docker build cache was pruned, reclaiming 10.18 GB while preserving containers and named volumes. Both SDK tests then passed using the existing [Docker disk recovery runbook](testing.md#docker-disk-recovery); no runtime resilience settings were added.
 
+## 2026-10-05: PR 2882 Storybook preview upload rejected by R2 (unresolved)
+
+- Impact: the mobile Storybook preview deployment failed; the preview comment
+  was skipped. Web and mobile Storybook builds passed. No production impact
+  was observed.
+- Evidence: [CI job 111990776845](https://github.com/Asherlc/dofek/actions/runs/37377356277/job/111990776845),
+  step `Deploy Mobile Storybook to R2`, ran `aws s3 cp
+  storybook-mobile-static/ s3://dofek-storybook/pr-2882/mobile/ --recursive`.
+  Its first fatal upload error at 21:43:06 UTC was `ServiceUnavailable` during
+  `PutObject` for `assets/NutritionDataQualityPanel-wWhAfOuv.js`:
+  `Reduce your concurrent request rate for the same object.` The command
+  completed with exit code 1.
+- Investigation: branch history showed only one CI run, with separate web
+  and mobile object prefixes. No duplicate write to this key was visible in
+  the job log. [R2 documents a per-key write limit](https://developers.cloudflare.com/r2/platform/limits/),
+  but the evidence does not establish the source of a conflicting write or
+  an underlying R2 service fault.
+- Remediation: none yet. An attempt to rerun the failed job was rejected by
+  GitHub while the parent run remained in progress. No retry, timeout, or
+  concurrency workaround was added.
+- Follow-up: finish the parent run, repeat the failed upload as a diagnostic,
+  and investigate R2 request evidence if it recurs. Root cause and recovery
+  remain unconfirmed.
+- The operator chose request-log investigation before another upload. The
+  configured `CLOUDFLARE_API_TOKEN` successfully read the bucket metadata, but
+  a dry-run telemetry query for the failing asset from 21:42 to 21:44 UTC
+  returned HTTP 403, code `10000`, `Authentication error`. No connected
+  dashboard browser was available. Access to historical logs remains blocked;
+  the bucket's logging-enabled state was not established.
+- [Cloudflare's query endpoint](https://developers.cloudflare.com/api/resources/workers/subresources/observability/subresources/telemetry/methods/query/)
+  lists `Workers Observability Write` as its accepted permission.
+  [R2 Data Access Logs](https://developers.cloudflare.com/r2/buckets/data-access-logs/)
+  exclude HTTP errors, retain seven days, and do not backfill operations before
+  logging is enabled. Successful writes near the failure could identify
+  another writer, but absence of a log would not establish absence of a write.
+  Next step: provide an authorized observability token or dashboard session,
+  then query the exact object key before selecting a remediation.
+
 ## 2026-09-30 — Nutrition nudge PR dependency audit and Metro prerequisite failures
 
 - **Symptoms / impact:** PR #2861 could not pass CI; the nutrition guidance was not yet deployed.
