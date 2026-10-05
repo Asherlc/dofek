@@ -82,7 +82,6 @@ identify the route/page responsible for adding section completion.
 | Nutrition / food log | `/nutrition`, pages/NutritionPage | entries, daily totals, source state | canonical food entries / no entries | adjacent date, range |
 | Training | `/training`, routes/training/index | cards, calendar, volume, activities, seven charts including HR zones, processing | multisport sensor history / no training | 90→30 days, All |
 | Data Sources | `/providers` → settings, pages/SettingsPage | provider cards, sync history | connected providers / no providers | settings category |
-| Data Quality | `/data-quality`, pages/DataQualityPage | quality results, readiness | mixed provider quality / no observations | dataset |
 | Correlation | `/correlation`, pages/CorrelationExplorerPage | controls, observations, computed result | sufficient paired history / insufficient history | metric pair, range |
 | Health Report list | `/health-report`, routes/health-report | report list | existing report / no reports | list selection |
 | Running | `/training/running`, routes/training/running | trends, dynamics, pace curve, activities | running samples / no runs | range, All |

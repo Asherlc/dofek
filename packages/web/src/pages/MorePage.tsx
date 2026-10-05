@@ -8,12 +8,6 @@ const destinations = [
     description: "Manage your profile, preferences, data sources, and account.",
   },
   {
-    to: "/data-quality",
-    title: "Data quality",
-    description:
-      "Review coverage gaps, source overlap, sync freshness, unusual observations, and manual entries.",
-  },
-  {
     to: "/cycle",
     title: "Cycle tracking",
     description: "Review provider-sourced cycle starts and phase estimates.",

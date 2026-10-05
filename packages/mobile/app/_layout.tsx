@@ -709,12 +709,6 @@ function AuthGate() {
             }}
           />
           <Stack.Screen
-            name="data-quality"
-            options={{
-              title: "Data Quality",
-            }}
-          />
-          <Stack.Screen
             name="cycle"
             options={{
               title: "Cycle Tracking",
