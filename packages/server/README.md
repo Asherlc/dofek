@@ -15,6 +15,11 @@ The backend API and background job processor for Dofek. Built with Node.js, Expr
 - **BullMQ**: Manages distributed background jobs for data synchronization, imports, and exports.
 - **Drizzle ORM**: Type-safe database interactions with TimescaleDB.
 - **Repositories**: Data access layer encapsulated in `src/repositories/`, abstracting SQL logic.
+- **Climbing data access**: [`ClimbingRepository`](./src/repositories/climbing-repository.ts)
+  serves grade analytics and session summaries, and delegates activity detail hydration and
+  cross-provider entry consolidation to
+  [`ClimbingActivityEntryRepository`](./src/repositories/climbing-activity-entry-repository.ts).
+  Both use the same [grade display conversion](./src/repositories/climbing-grade-display.ts).
 - **Insights Engine**: Complex data analysis and correlation logic located in `src/insights/`.
 - **Machine Learning**: Predictive modeling (e.g., weight prediction, activity features) in `src/ml/`.
 
@@ -63,22 +68,6 @@ token to an icon or color, but they do not infer a classification from the numer
 or deviation. Recovery classifications use the 30-day baseline in `baselineRelative`; its separate
 7-day-versus-prior-28-day comparison is context and does not determine the status, as defined by
 [`baseline-relative-metrics.ts`](./src/contracts/baseline-relative-metrics.ts).
-
-### Read-only cycle tracking contract
-
-`menstrualCycle.history` and `menstrualCycle.currentPhase` are read-only projections over raw,
-provider-attributed menstrual-flow events in `fitness.health_event`. Exact local-calendar-date
-duplicates are grouped while retaining every source; starts fewer than 21 days apart suppress the
-estimate as conflicting data. Clients render the server-authored phase, availability explanation,
-method, uncertainty, and limitation, and direct corrections back to the source provider.
-
-HealthKit menstrual-flow records carry a cycle-start metadata marker, and Apple permits either one
-interval for a period or multiple flow samples with the first sample marked as the start
-([HealthKit menstrual flow](https://developer.apple.com/documentation/healthkit/hkcategorytypeidentifier/menstrualflow)).
-Read authorization is privacy-preserving and does not disclose whether the user denied a specific
-type, so an empty response is described neutrally as no readable provider data
-([HealthKit authorization](https://developer.apple.com/documentation/healthkit/authorizing-access-to-health-data)).
-The API exposes no create, update, or delete procedure for cycle records.
 
 ### Correlation evidence contract
 

@@ -169,9 +169,8 @@ Connect each daily decision to a longer-term outcome. First slice shipped: persi
 Implementation-level backlog. Checked items are complete; unchecked are open.
 
 ### Data Ingestion
-- [x] Read-only menstrual-cycle tracking from explicit Apple Health menstrual-flow records,
-  including the upstream cycle-start marker, source attribution, background HealthKit delivery,
-  XML import, and provider-only correction workflow
+- [x] Ingest raw Apple Health menstrual-flow records, including the upstream cycle-start marker,
+  source attribution, background HealthKit delivery, and XML import
   ([HealthKit menstrual flow](https://developer.apple.com/documentation/healthkit/hkcategorytypeidentifier/menstrualflow)).
 - [ ] Add Garmin Women's Health only after Connect Developer Program approval and access to the
   official payload contract; do not extend the private Garmin provider with guessed endpoints

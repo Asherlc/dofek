@@ -140,7 +140,7 @@ export function DashboardEvidenceOverview({
     trend.restingHeartRatePoints?.filter((point) => Number.isFinite(point.value)) ?? [];
 
   return (
-    <section aria-label="Dashboard overview" className="dashboard-hero space-y-5">
+    <section aria-label="Dashboard overview" className="dashboard-hero card space-y-5 p-5 sm:p-6">
       <div className="mb-5">
         <h2 className="text-xl font-semibold tracking-tight text-foreground">Overview</h2>
         <p className="mt-1 text-sm text-muted">{formatDashboardRange(endDate, days)}</p>
