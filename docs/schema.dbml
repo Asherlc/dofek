@@ -1507,7 +1507,6 @@ table fitness.life_events {
   category text
   ongoing boolean [not null, default: false]
   notes text
-  personal_experiment_id uuid
   created_at "timestamp with time zone" [not null, default: `now()`]
 
   indexes {
@@ -1526,51 +1525,6 @@ table fitness.menstrual_period {
   indexes {
     (user_id, start_date) [name: 'menstrual_period_user_start_idx', unique]
     user_id [name: 'menstrual_period_user_idx']
-  }
-}
-
-table fitness.personal_experiment {
-  id uuid [pk, not null, default: `gen_random_uuid()`]
-  user_id uuid [not null]
-  hypothesis text [not null]
-  intervention text [not null]
-  outcome_metric_id text [not null]
-  lag_days bigint [not null, default: 0]
-  baseline_days bigint [not null]
-  intervention_days bigint [not null]
-  start_date date [not null]
-  status text [not null, default: 'active']
-  stopped_at date
-  created_at "timestamp with time zone" [not null, default: `now()`]
-
-  indexes {
-    (user_id, created_at) [name: 'personal_experiment_user_created_idx']
-    (user_id, status) [name: 'personal_experiment_user_status_idx']
-
-
-
-
-
-
-
-
-  }
-}
-
-table fitness.personal_experiment_check_in {
-  id uuid [pk, not null, default: `gen_random_uuid()`]
-  personal_experiment_id uuid [not null]
-  date date [not null]
-  adherence text [not null]
-  confounder text
-  note text
-  created_at "timestamp with time zone" [not null, default: `now()`]
-
-  indexes {
-    (personal_experiment_id, date) [name: 'personal_experiment_check_in_experiment_date_unique', unique]
-
-
-
   }
 }
 
@@ -2203,13 +2157,7 @@ ref journal_entry_question_slug_journal_question_slug_fk: fitness.journal_entry.
 
 ref life_events_user_id_user_profile_id_fk: fitness.life_events.user_id > fitness.user_profile.id [delete: no action, update: no action]
 
-ref life_events_personal_experiment_id_personal_experiment_id_fk: fitness.life_events.personal_experiment_id > fitness.personal_experiment.id [delete: set null, update: no action]
-
 ref menstrual_period_user_id_user_profile_id_fk: fitness.menstrual_period.user_id > fitness.user_profile.id [delete: no action, update: no action]
-
-ref personal_experiment_user_id_user_profile_id_fk: fitness.personal_experiment.user_id > fitness.user_profile.id [delete: cascade, update: no action]
-
-ref personal_experiment_check_in_personal_experiment_id_personal_experiment_id_fk: fitness.personal_experiment_check_in.personal_experiment_id > fitness.personal_experiment.id [delete: cascade, update: no action]
 
 ref provider_data_deletion_outbox_user_id_user_profile_id_fk: fitness.provider_data_deletion_outbox.user_id > fitness.user_profile.id [delete: cascade, update: no action]
 
