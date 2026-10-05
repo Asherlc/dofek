@@ -29156,3 +29156,32 @@ Coverage thresholds remain unchanged.
   existing layout-stability gate when simplifying asynchronous sections;
   inspect loading and loaded geometry together. No runtime retry, timeout,
   or assertion threshold was changed.
+
+## 2026-10-04 — Activity selection screenshot shows the pre-merge toolbar
+
+- **Symptoms / impact:** A user reported that selection mode on `/activities`
+  offered Delete without Merge. Their screenshot showed the older Activity log
+  heading and deletion-only guidance.
+- **Evidence / status:** [PR #2823](https://github.com/Asherlc/dofek/pull/2823)
+  added merge controls to both web and mobile and merged on 2026-09-29 UTC.
+  Read-only requests to [the production Activities page](https://dofek.fit/activities)
+  returned HTML referencing release `sha-e000b19`. Its
+  [published application bundle](https://assets.dofek.fit/web/sha-e000b19/assets/index-B2rP3oPn.js)
+  contains the main page's merge selection guidance, Merge button, and Confirm
+  Merge action. The screenshot differs from that deployed UI; the reason the
+  user's browser displayed the older UI remains unconfirmed.
+- **Mitigation / validation:** Recommend reloading the page, then selecting at
+  least two visible activities of the same type and confirming Merge. The
+  existing Activities suites passed all 30 web and 29 mobile tests, including
+  eligibility, confirmation, cache invalidation, and preserving selection on
+  errors. No application behavior, deployment, retries, or timeouts changed.
+  Root and workspace typechecks and full lint passed. The first `pnpm lint`
+  attempt stopped at `TMP | dbt tried to connect to the database and failed`
+  because the workspace ClickHouse dependency was not running. Starting the
+  documented [workspace Compose dependencies](testing.md#integration-dependencies)
+  restored the prerequisite; the unchanged lint command then passed.
+- **Retrospective / follow-up:** Comparing the screenshot, feature history,
+  and published release established that implementation already exists.
+  Browser refresh recovery still needs user confirmation. Suggested runbook
+  improvement: compare the loaded page's release with the production HTML and
+  its referenced assets before implementing an apparently missing feature.
