@@ -15,6 +15,7 @@ interface Series {
   color?: string;
   areaStyle?: boolean;
   yAxisIndex?: number;
+  formatValue?: (value: number) => string;
 }
 
 /** Returns true when every value across all series is null or data is empty. */
@@ -41,6 +42,7 @@ export function TimeSeriesChart({ series, height = 200, yAxis, loading }: TimeSe
   );
 
   const hasDualAxis = yAxisConfig.length > 1;
+  const seriesFormatters = new Map(series.map((item) => [item.name, item.formatValue]));
 
   const option = {
     aria: {
@@ -66,7 +68,7 @@ export function TimeSeriesChart({ series, height = 200, yAxis, loading }: TimeSe
           const dataPoint = param.value ?? param.data;
           const value = dataPoint?.[1];
           if (value == null) return [];
-          const displayValue = String(value);
+          const displayValue = seriesFormatters.get(param.seriesName)?.(value) ?? String(value);
           return `${escapeTooltipHtml(param.seriesName)}: <b>${escapeTooltipHtml(displayValue)}</b>`;
         });
         return `<div style="font-weight:600;margin-bottom:4px">${date}</div>${lines.join("<br/>")}`;
