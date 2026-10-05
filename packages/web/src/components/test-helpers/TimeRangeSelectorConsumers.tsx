@@ -4,7 +4,6 @@ import { type ComponentType, type ReactNode, useState } from "react";
 import { expect, vi } from "vitest";
 import { BodyDaysContext } from "../../lib/bodyDaysContext.ts";
 import { SELECTED_RANGE_QUERY_REGISTRY } from "../../lib/selectedRangeQueryRegistry.test-helper.ts";
-import { emptyJournalTrendEvidence } from "../journal-trend-test-fixtures.ts";
 
 const state: {
   queryCalls: Array<{ name: string; input: unknown }>;
@@ -36,12 +35,6 @@ vi.mock("../../lib/unitContext.ts", () => ({
 }));
 
 vi.mock("../AdaptiveTdeeChart.tsx", () => ({ AdaptiveTdeeChart: () => <div /> }));
-vi.mock("../BehaviorImpactChart.tsx", async () => {
-  const actual = await vi.importActual<typeof import("../BehaviorImpactChart.tsx")>(
-    "../BehaviorImpactChart.tsx",
-  );
-  return actual;
-});
 vi.mock("../BodyRecompositionChart.tsx", () => ({ BodyRecompositionChart: () => <div /> }));
 vi.mock("../ChartDescriptionTooltip.tsx", () => ({ ChartDescriptionTooltip: () => null }));
 vi.mock("../CorrelationCard.tsx", () => ({
@@ -129,9 +122,6 @@ vi.mock("../../lib/trpc.ts", () => {
           status: { invalidate: vi.fn() },
         },
       }),
-      behaviorImpact: {
-        impactSummary: recordQuery("behaviorImpact.impactSummary"),
-      },
       bodyAnalytics: {
         recomposition: recordQuery("bodyAnalytics.recomposition"),
         weightOverview: recordQuery("bodyAnalytics.weightOverview", {
@@ -158,10 +148,6 @@ vi.mock("../../lib/trpc.ts", () => {
       },
       insights: {
         compute: recordQuery("insights.compute"),
-      },
-      journal: {
-        entries: recordQuery("journal.entries"),
-        trends: recordQuery("journal.trends", emptyJournalTrendEvidence),
       },
       nutritionAnalytics: {
         adaptiveTdee: recordQuery("nutritionAnalytics.adaptiveTdee"),

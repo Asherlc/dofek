@@ -45,17 +45,6 @@ const personalExperimentCheckInRowSchema = z.object({
   created_at: timestampStringSchema,
 });
 
-const personalExperimentAnnotationRowSchema = z.object({
-  id: z.string(),
-  label: z.string(),
-  started_at: dateStringSchema,
-  ended_at: dateStringSchema.nullable(),
-  category: z.string().nullable(),
-  ongoing: z.coerce.boolean(),
-  notes: z.string().nullable(),
-  created_at: timestampStringSchema,
-});
-
 export type PersonalExperimentRow = z.infer<typeof personalExperimentRowSchema>;
 export type PersonalExperimentFullRow = z.infer<typeof personalExperimentFullRowSchema>;
 export type PersonalExperimentCheckInRow = z.infer<typeof personalExperimentCheckInRowSchema>;
@@ -108,19 +97,7 @@ export interface PersonalExperimentAnalysisView {
   outcomeMetricId: string;
   outcomeMetricLabel: string;
   checkIns: PersonalExperimentCheckInView[];
-  annotations: PersonalExperimentAnnotation[];
   analysis: ExperimentAnalysis;
-}
-
-export interface PersonalExperimentAnnotation {
-  id: string;
-  label: string;
-  startedAt: string;
-  endedAt: string | null;
-  category: string | null;
-  ongoing: boolean;
-  notes: string | null;
-  createdAt: string;
 }
 
 /** Data access for personal experiment setup and schedule enrichment. */
@@ -234,14 +211,6 @@ export class PersonalExperimentsRepository {
           WHERE personal_experiment_id = ${id}
           ORDER BY date ASC`,
     );
-    const annotationRows = await executeWithSchema(
-      this.#db,
-      personalExperimentAnnotationRowSchema,
-      sql`SELECT id, label, started_at, ended_at, category, ongoing, notes, created_at
-          FROM fitness.life_events
-          WHERE user_id = ${this.#userId} AND personal_experiment_id = ${id}
-          ORDER BY started_at ASC, created_at ASC`,
-    );
     const outcomeStartDate = addCalendarDays(
       experiment.schedule.baselineStartDate,
       experiment.lagDays,
@@ -266,16 +235,6 @@ export class PersonalExperimentsRepository {
       outcomeMetricId: experiment.outcomeMetricId,
       outcomeMetricLabel: experiment.outcomeMetricLabel,
       checkIns,
-      annotations: annotationRows.map((row) => ({
-        id: row.id,
-        label: row.label,
-        startedAt: row.started_at,
-        endedAt: row.ended_at,
-        category: row.category,
-        ongoing: row.ongoing,
-        notes: row.notes,
-        createdAt: row.created_at,
-      })),
       analysis: buildExperimentAnalysis({
         lagDays: experiment.lagDays,
         schedule: experiment.schedule,

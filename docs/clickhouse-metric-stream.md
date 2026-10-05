@@ -82,7 +82,7 @@ are rolled up from daily rows at query time.
 Provider record inventory uses the ClickHouse `analytics.provider_stats` read
 model for all provider-owned record counts displayed by sync/provider detail:
 activity, daily metric, sleep, body measurement, food entry, health event,
-metric stream, distinct nutrition day, lab panel, lab result, and journal entry
+metric stream, distinct nutrition day, lab panel, and lab result
 counts. Metric-stream counts are maintained by the incremental
 `analytics.provider_metric_stream_daily` model at
 `(user_id, provider_id, recorded_date)` grain. It reads compact

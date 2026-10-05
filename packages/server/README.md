@@ -102,18 +102,6 @@ timezone/timezone metadata without changing the underlying point in time
 The interval design and primary statistical references are documented in
 [`@dofek/stats`](../stats/README.md#dependence-aware-uncertainty).
 
-### Journal trend evidence contract
-
-`journal.trends` is the canonical web and mobile response for journal trend review. It returns an
-exact inclusive date window, raw provider-attributed numeric and Yes/No observations, and
-server-authored coverage statements. Finite windows include explicit null points for unrecorded
-days; the All-history window keeps points sparse and summarizes missing days by count so response
-size grows with observations instead of calendar age. The response also explicitly reports that an
-uncertainty interval is unavailable for these raw observations. Clients render that evidence
-directly and do not infer a directional trend, causal effect, or confidence interval. The contract
-and gap construction live in
-[`journal-trend-evidence.ts`](./src/services/journal-trend-evidence.ts).
-
 ### Estimated strength evidence contract
 
 `strength.estimatedOneRepMax` returns the raw estimated-max observations together with a
@@ -238,8 +226,7 @@ rather than infinity. These series expose formulas and evidence for analysis; th
 
 `get_recovery_training_series` provides a compact, selected date spine for recovery-response
 analysis. Available streams are daily HRV/calculated resting HR/respiratory rate/steps, deduplicated sleep and
-stages, reconciled body weight, the six independent analytical load channels, subjective symptoms
-and active injuries, relevant canonical activities, and optional canonical nutrition. Missing values
+stages, reconciled body weight, the six independent analytical load channels, relevant canonical activities, and optional canonical nutrition. Missing values
 remain null with explicit state. Health source attribution is labeled at daily-row scope; sleep,
 weight, load, activity, and nutrition retain their more specific provenance and quality fields.
 Sleep includes onset/wake timestamps. Weight distinguishes direct daily observations from nearby
@@ -251,12 +238,11 @@ share one source-offset-first calendar projection with an explicit analysis-time
 
 For each response date, `previous_day_training_load` is selected by the preceding local calendar
 date, not by subtracting 24 hours, which preserves next-day alignment across daylight-saving changes.
-Daily fatigue is returned as unavailable because it is not recorded in the canonical subjective
-schema. Stream selection keeps payloads focused and responses are capped at 366 inclusive days. The
+Stream selection keeps payloads focused and responses are capped at 366 inclusive days. The
 endpoint exposes aligned observations only and explicitly does not claim causal relationships from
 correlations.
 Provider and modality filters apply to activity exposure and all load channels. Authorization and
-ClickHouse requirements are evaluated from the selected streams, so Postgres-only subjective or
+ClickHouse requirements are evaluated from the selected streams, so Postgres-only
 nutrition requests do not acquire unrelated health/activity dependencies.
 Recovery explicitly selects source-context activity dates and every load channel reports
 authoritative-versus-analysis-timezone activity counts. The latter identifies activities grouped

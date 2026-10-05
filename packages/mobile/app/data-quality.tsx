@@ -15,7 +15,6 @@ const reviewRoutes = {
   nutrition: "/nutrition-analytics",
   activities: "/activities",
   dashboard: "/(tabs)",
-  journal: "/tracking",
 } as const satisfies Record<DataQualityReviewDestination, string>;
 
 export default function DataQualityScreen() {

@@ -770,15 +770,6 @@ entity "user_settings" {
   updated_at : timestamp
 }
 
-entity "body_region" {
-  * id : text <<PK>>
-  --
-  parent_id : text <<FK>>
-  label : text
-  kind : text
-  sort_order : bigint
-}
-
 entity "breathwork_session" {
   * id : uuid <<PK>>
   --
@@ -899,58 +890,6 @@ entity "imu_session" {
   created_at : timestamp
 }
 
-entity "injury_event" {
-  * id : uuid <<PK>>
-  --
-  user_id : uuid <<FK>>
-  kind : text
-  body_region_id : text <<FK>>
-  onset_date : date
-  resolved_date : date
-  severity : bigint
-  description : text
-  created_at : timestamp
-  updated_at : timestamp
-}
-
-entity "journal_entry" {
-  * id : uuid <<PK>>
-  --
-  date : date
-  provider_id : text <<FK>>
-  user_id : uuid <<FK>>
-  question_slug : text <<FK>>
-  answer_text : text
-  answer_numeric : real
-  impact_score : real
-  created_at : timestamp
-}
-
-entity "journal_question" {
-  * slug : text <<PK>>
-  --
-  display_name : text
-  category : text
-  data_type : text
-  unit : text
-  sort_order : integer
-  created_at : timestamp
-}
-
-entity "life_events" {
-  * id : uuid <<PK>>
-  --
-  label : text
-  user_id : uuid <<FK>>
-  started_at : date
-  ended_at : date
-  category : text
-  ongoing : boolean
-  notes : text
-  personal_experiment_id : uuid <<FK>>
-  created_at : timestamp
-}
-
 entity "menstrual_period" {
   * id : uuid <<PK>>
   --
@@ -1019,24 +958,6 @@ entity "shared_report" {
   report_data : jsonb
   expires_at : timestamp
   created_at : timestamp
-}
-
-entity "subjective_check_in" {
-  * id : uuid <<PK>>
-  --
-  user_id : uuid <<FK>>
-  date : date
-  created_at : timestamp
-  updated_at : timestamp
-}
-
-entity "subjective_symptom" {
-  * id : uuid <<PK>>
-  --
-  check_in_id : uuid <<FK>>
-  body_region_id : text <<FK>>
-  kind : text
-  score : bigint
 }
 
 entity "sync_log" {
@@ -1368,7 +1289,6 @@ user_profile ||--o| user_billing
 user_profile ||--o{ user_external_effect
 user_profile ||--o| user_password_credential
 user_profile ||--o{ user_settings
-body_region ||--o{ body_region
 user_profile ||--o{ breathwork_session
 provider ||--o{ dexa_scan
 user_profile ||--o{ dexa_scan
@@ -1376,22 +1296,12 @@ dexa_scan ||--o{ dexa_scan_region
 user_profile ||--o{ file_upload
 file_upload ||--o{ file_upload_outbox
 user_profile ||--o{ imu_session
-user_profile ||--o{ injury_event
-body_region ||--o{ injury_event
-provider ||--o{ journal_entry
-user_profile ||--o{ journal_entry
-journal_question ||--o{ journal_entry
-user_profile ||--o{ life_events
-personal_experiment ||--o{ life_events
 user_profile ||--o{ menstrual_period
 user_profile ||--o{ personal_experiment
 personal_experiment ||--o{ personal_experiment_check_in
 user_profile ||--o{ provider_data_deletion_outbox
 user_profile ||--o{ provider_data_generation
 user_profile ||--o{ shared_report
-user_profile ||--o{ subjective_check_in
-subjective_check_in ||--o{ subjective_symptom
-body_region ||--o{ subjective_symptom
 provider ||--o{ sync_log
 user_profile ||--o{ sync_log
 user_profile ||--o{ external_client

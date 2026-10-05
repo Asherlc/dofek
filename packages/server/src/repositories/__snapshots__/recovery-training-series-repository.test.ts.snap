@@ -9,7 +9,7 @@ exports[`RecoveryTrainingSeriesRepository > aligns selected observations on a de
   "interpretation": {
     "causality": "The series exposes aligned observations for analysis and does not claim that correlations are causal.",
     "date_alignment": "Rows use local calendar dates. previous_day_training_load is the immediately preceding calendar day, including across DST transitions.",
-    "filter_scope": "Provider and modality filters apply to activity exposure and every training-load channel; recovery, sleep, body, subjective, and nutrition observations are unfiltered.",
+    "filter_scope": "Provider and modality filters apply to activity exposure and every training-load channel; recovery, sleep, body, and nutrition observations are unfiltered.",
   },
   "range": {
     "end_date": "2026-03-09",
@@ -135,7 +135,7 @@ exports[`RecoveryTrainingSeriesRepository > aligns the prior calendar day's load
   "interpretation": {
     "causality": "The series exposes aligned observations for analysis and does not claim that correlations are causal.",
     "date_alignment": "Rows use local calendar dates. previous_day_training_load is the immediately preceding calendar day, including across DST transitions.",
-    "filter_scope": "Provider and modality filters apply to activity exposure and every training-load channel; recovery, sleep, body, subjective, and nutrition observations are unfiltered.",
+    "filter_scope": "Provider and modality filters apply to activity exposure and every training-load channel; recovery, sleep, body, and nutrition observations are unfiltered.",
   },
   "range": {
     "end_date": "2026-03-09",
@@ -172,7 +172,7 @@ exports[`RecoveryTrainingSeriesRepository > bounds rolling body-weight windows a
   "interpretation": {
     "causality": "The series exposes aligned observations for analysis and does not claim that correlations are causal.",
     "date_alignment": "Rows use local calendar dates. previous_day_training_load is the immediately preceding calendar day, including across DST transitions.",
-    "filter_scope": "Provider and modality filters apply to activity exposure and every training-load channel; recovery, sleep, body, subjective, and nutrition observations are unfiltered.",
+    "filter_scope": "Provider and modality filters apply to activity exposure and every training-load channel; recovery, sleep, body, and nutrition observations are unfiltered.",
   },
   "range": {
     "end_date": "2026-06-15",
@@ -215,7 +215,7 @@ exports[`RecoveryTrainingSeriesRepository > lists every missing sleep field with
   "interpretation": {
     "causality": "The series exposes aligned observations for analysis and does not claim that correlations are causal.",
     "date_alignment": "Rows use local calendar dates. previous_day_training_load is the immediately preceding calendar day, including across DST transitions.",
-    "filter_scope": "Provider and modality filters apply to activity exposure and every training-load channel; recovery, sleep, body, subjective, and nutrition observations are unfiltered.",
+    "filter_scope": "Provider and modality filters apply to activity exposure and every training-load channel; recovery, sleep, body, and nutrition observations are unfiltered.",
   },
   "range": {
     "end_date": "2026-06-15",
@@ -276,7 +276,7 @@ exports[`RecoveryTrainingSeriesRepository > passes provider and modality filters
   "interpretation": {
     "causality": "The series exposes aligned observations for analysis and does not claim that correlations are causal.",
     "date_alignment": "Rows use local calendar dates. previous_day_training_load is the immediately preceding calendar day, including across DST transitions.",
-    "filter_scope": "Provider and modality filters apply to activity exposure and every training-load channel; recovery, sleep, body, subjective, and nutrition observations are unfiltered.",
+    "filter_scope": "Provider and modality filters apply to activity exposure and every training-load channel; recovery, sleep, body, and nutrition observations are unfiltered.",
   },
   "range": {
     "end_date": "2026-06-01",
@@ -333,7 +333,7 @@ exports[`RecoveryTrainingSeriesRepository > returns an explicit zero exposure wh
   "interpretation": {
     "causality": "The series exposes aligned observations for analysis and does not claim that correlations are causal.",
     "date_alignment": "Rows use local calendar dates. previous_day_training_load is the immediately preceding calendar day, including across DST transitions.",
-    "filter_scope": "Provider and modality filters apply to activity exposure and every training-load channel; recovery, sleep, body, subjective, and nutrition observations are unfiltered.",
+    "filter_scope": "Provider and modality filters apply to activity exposure and every training-load channel; recovery, sleep, body, and nutrition observations are unfiltered.",
   },
   "range": {
     "end_date": "2026-06-15",
@@ -382,7 +382,7 @@ exports[`RecoveryTrainingSeriesRepository > returns nearby direct-weight evidenc
   "interpretation": {
     "causality": "The series exposes aligned observations for analysis and does not claim that correlations are causal.",
     "date_alignment": "Rows use local calendar dates. previous_day_training_load is the immediately preceding calendar day, including across DST transitions.",
-    "filter_scope": "Provider and modality filters apply to activity exposure and every training-load channel; recovery, sleep, body, subjective, and nutrition observations are unfiltered.",
+    "filter_scope": "Provider and modality filters apply to activity exposure and every training-load channel; recovery, sleep, body, and nutrition observations are unfiltered.",
   },
   "range": {
     "end_date": "2026-06-02",

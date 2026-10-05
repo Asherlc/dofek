@@ -10,9 +10,8 @@ Users can:
 2. See a server-resolved schedule with baseline / intervention / complete / stopped phases and date bounds.
 3. Stop an active experiment.
 4. Enter one raw check-in for each experiment and local calendar day: adherence (`adherent`, `partial`, `not_adherent`, or `unknown`), optional confounder, and optional note.
-5. Link existing canonical life events to an experiment as annotations without duplicating their text.
-6. See a server-derived evidence view: the canonical outcome observations (including missing days and source provenance), phase coverage, descriptive difference, bootstrap interval when enough observations exist, and explicit limitations.
-7. Enter the setup flow from Correlation Explorer with the Y-axis outcome and lag prefilled. The correlated X metric is **not** treated as an intervention.
+5. See a server-derived evidence view: the canonical outcome observations (including missing days and source provenance), phase coverage, descriptive difference, bootstrap interval when enough observations exist, and explicit limitations.
+6. Enter the setup flow from Correlation Explorer with the Y-axis outcome and lag prefilled. The correlated X metric is **not** treated as an intervention.
 
 Web: `/experiments`  
 Mobile: `/experiments` (also linked from Recovery)
@@ -27,7 +26,7 @@ Analysis keeps one local-calendar observation for every scheduled phase day. It 
 
 ## Storage
 
-`fitness.personal_experiment` stores the user-authored setup fields and stop status. `fitness.personal_experiment_check_in` stores raw daily adherence and optional context, with a unique `(personal_experiment_id, date)` constraint. `fitness.life_events.personal_experiment_id` optionally links canonical annotations and becomes `NULL` if the experiment is deleted. Derived schedule and outcome-analysis fields are not persisted.
+`fitness.personal_experiment` stores the user-authored setup fields and stop status. `fitness.personal_experiment_check_in` stores raw daily adherence and optional context, with a unique `(personal_experiment_id, date)` constraint. Derived schedule and outcome-analysis fields are not persisted.
 
 ## Deferred
 

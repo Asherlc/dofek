@@ -916,7 +916,6 @@ describe("Router data coverage", () => {
             healthEvents: number;
             nutritionDaily: number;
             clinicalRecords: number;
-            journalEntries: number;
           }[]
         >("sync.providerStats");
 
@@ -1239,50 +1238,6 @@ describe("Router data coverage", () => {
   });
 
   // ── Life event analyze with ranged event (covers endDate branches) ──
-  describe("lifeEvents.analyze", () => {
-    it("analyze returns before/after comparison for ranged event", async () => {
-      await queryCache.invalidateAll();
-      // Create a life event with a date range (covers endDate != null branches)
-      const event = await mutate<{ id: string }>("lifeEvents.create", {
-        label: "Vacation",
-        startedAt: new Date(Date.now() - 45 * 86400000).toISOString().slice(0, 10),
-        endedAt: new Date(Date.now() - 38 * 86400000).toISOString().slice(0, 10),
-        category: "travel",
-        ongoing: false,
-        notes: "Test vacation event",
-      });
-
-      const result = await query<{
-        event: Record<string, unknown>;
-        metrics: unknown[];
-        sleep: unknown[];
-        bodyComp: unknown[];
-      }>("lifeEvents.analyze", { id: event.id, windowDays: 30 });
-
-      expect(result.event).toBeDefined();
-      expect(Array.isArray(result.metrics)).toBe(true);
-      expect(Array.isArray(result.sleep)).toBe(true);
-      expect(Array.isArray(result.bodyComp)).toBe(true);
-    });
-
-    it("analyze handles ongoing event (covers NOW() branch)", async () => {
-      const event = await mutate<{ id: string }>("lifeEvents.create", {
-        label: "New Job",
-        startedAt: new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10),
-        endedAt: null,
-        category: "work",
-        ongoing: true,
-        notes: null,
-      });
-
-      const result = await query<{
-        event: Record<string, unknown>;
-        metrics: unknown[];
-      }>("lifeEvents.analyze", { id: event.id, windowDays: 14 });
-
-      expect(result.event).toBeDefined();
-    });
-  });
 
   // ── Trends (covers roundOrNull non-null branch with ClickHouse trend data) ──
   describe("trends with data", () => {

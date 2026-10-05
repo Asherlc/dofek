@@ -31,9 +31,6 @@ const mockRecoveryRefetch = vi.fn();
 const mockProcessingStatusInvalidate = vi.fn();
 const mockRouterPush = vi.fn();
 let mockRefreshInvalidate: (() => Promise<void> | void) | null | undefined;
-const mockSubjectiveCheckInInvalidate = vi.fn().mockResolvedValue(undefined);
-const mockSubjectiveCheckInData = { logged: false, symptoms: [] };
-const mockSubjectiveInjuriesData: never[] = [];
 
 function baselineMetric(
   metric: "hrv" | "resting_heart_rate" | "respiratory_rate" | "sleep_efficiency",
@@ -172,19 +169,6 @@ vi.mock("../../lib/trpc", () => ({
         useQuery: () => ({ data: undefined, isLoading: false, error: null }),
       },
     },
-    subjective: {
-      checkIn: {
-        useQuery: () => ({ data: mockSubjectiveCheckInData, isLoading: false, error: null }),
-      },
-      injuries: {
-        useQuery: () => ({ data: mockSubjectiveInjuriesData, isLoading: false, error: null }),
-      },
-      regions: {
-        useQuery: () => ({ data: [], isLoading: false, error: null }),
-      },
-      createInjury: { useMutation: () => ({ mutate: vi.fn(), isPending: false, error: null }) },
-      saveCheckIn: { useMutation: () => ({ mutate: vi.fn(), isPending: false, error: null }) },
-    },
     useUtils: () => ({
       mobileDashboard: {
         recovery: { invalidate: mockRecoveryInvalidate },
@@ -194,9 +178,6 @@ vi.mock("../../lib/trpc", () => ({
       },
       processing: {
         status: { invalidate: mockProcessingStatusInvalidate },
-      },
-      subjective: {
-        checkIn: { invalidate: mockSubjectiveCheckInInvalidate },
       },
     }),
   },
@@ -294,12 +275,10 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
     mockTodayPlanInvalidate.mockReset();
     mockRecoveryRefetch.mockReset();
     mockProcessingStatusInvalidate.mockReset();
-    mockSubjectiveCheckInInvalidate.mockReset();
     mockRouterPush.mockReset();
     mockRecoveryInvalidate.mockResolvedValue(undefined);
     mockRecoveryRefetch.mockResolvedValue(undefined);
     mockProcessingStatusInvalidate.mockResolvedValue(undefined);
-    mockSubjectiveCheckInInvalidate.mockResolvedValue(undefined);
     mockRefreshInvalidate = undefined;
   });
 
@@ -514,17 +493,6 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
     expect(mockRecoveryInvalidate).toHaveBeenCalledOnce();
     expect(mockTodayPlanInvalidate).toHaveBeenCalledOnce();
     expect(mockProcessingStatusInvalidate).toHaveBeenCalledOnce();
-  });
-
-  it("opens behavior associations from recovery tools", async () => {
-    mockRecoveryData = {};
-
-    const { default: RecoveryScreen } = await import("../../app/(tabs)/recovery");
-    render(<RecoveryScreen />);
-
-    fireEvent.click(screen.getByRole("button", { name: "Behavior Associations" }));
-
-    expect(mockRouterPush).toHaveBeenCalledWith("/behavior-associations");
   });
 
   it("keeps day selector visible while recovery data is loading", async () => {

@@ -960,6 +960,20 @@
       "when": 1791046800000,
       "tag": "0136_provider_issue_email",
       "breakpoints": true
+    },
+    {
+      "idx": 137,
+      "version": "7",
+      "when": 1791236386928,
+      "tag": "0137_remove_tracking",
+      "breakpoints": true
+    },
+    {
+      "idx": 138,
+      "version": "7",
+      "when": 1791236720526,
+      "tag": "0138_remove_tracking_mcp_scope",
+      "breakpoints": true
     }
   ]
 }

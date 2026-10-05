@@ -324,7 +324,6 @@ export const DATASET_CONTRACTS = [
           "food_entry",
           "health_event",
           "clinical_record",
-          "journal_entry",
         ],
         cdcEvidence: [
           { kind: "peerdb_marker", flowName: "dofek_fitness_raw_analytics" },

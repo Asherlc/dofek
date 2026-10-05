@@ -380,8 +380,6 @@ function ExperimentLearningCard({
   const [adherence, setAdherence] = useState<Adherence>("adherent");
   const [confounder, setConfounder] = useState("");
   const [note, setNote] = useState("");
-  const [annotationLabel, setAnnotationLabel] = useState("");
-  const [annotationNotes, setAnnotationNotes] = useState("");
   const today = formatDateYmd();
   const checkInMutation = trpc.personalExperiments.checkIn.useMutation({
     meta: locallyReportedErrorMeta,
@@ -392,18 +390,6 @@ function ExperimentLearningCard({
       ]);
     },
     onError: (error) => captureException(error, { context: "personal-experiments-check-in" }),
-  });
-  const annotationMutation = trpc.lifeEvents.create.useMutation({
-    meta: locallyReportedErrorMeta,
-    onSuccess: async () => {
-      setAnnotationLabel("");
-      setAnnotationNotes("");
-      await Promise.all([
-        utils.personalExperiments.analysis.invalidate({ id: experiment.id }),
-        utils.lifeEvents.list.invalidate(),
-      ]);
-    },
-    onError: (error) => captureException(error, { context: "personal-experiments-annotation" }),
   });
   const result = analysisQuery.data;
 
@@ -518,50 +504,6 @@ function ExperimentLearningCard({
               ))}
             </ul>
           </details>
-          <div className="space-y-2 rounded border border-border p-3">
-            <h5 className="text-xs font-medium text-muted">Experiment annotations</h5>
-            {result.annotations.map((annotation) => (
-              <p key={annotation.id} className="text-xs text-dim">
-                <span className="text-foreground">{annotation.label}</span> · {annotation.startedAt}
-                {annotation.notes ? ` · ${annotation.notes}` : ""}
-              </p>
-            ))}
-            <input
-              aria-label="Annotation label"
-              value={annotationLabel}
-              onChange={(event) => setAnnotationLabel(event.target.value)}
-              placeholder="Add a life event"
-              className="w-full rounded border border-border bg-surface px-2 py-1 text-sm text-foreground"
-            />
-            <input
-              aria-label="Annotation note"
-              value={annotationNotes}
-              onChange={(event) => setAnnotationNotes(event.target.value)}
-              placeholder="Notes (optional)"
-              className="w-full rounded border border-border bg-surface px-2 py-1 text-sm text-foreground"
-            />
-            <button
-              type="button"
-              disabled={!annotationLabel.trim() || annotationMutation.isPending}
-              onClick={() =>
-                annotationMutation.mutate({
-                  label: annotationLabel.trim(),
-                  startedAt: today,
-                  endedAt: null,
-                  category: null,
-                  ongoing: false,
-                  notes: annotationNotes.trim() || null,
-                  personalExperimentId: experiment.id,
-                })
-              }
-              className="rounded border border-border px-3 py-1.5 text-xs text-foreground disabled:opacity-50"
-            >
-              Save annotation
-            </button>
-            {annotationMutation.error ? (
-              <QueryStatePanel error={annotationMutation.error} height={72} />
-            ) : null}
-          </div>
         </>
       ) : null}
     </section>

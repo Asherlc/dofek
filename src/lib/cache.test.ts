@@ -18,55 +18,53 @@ afterEach(async () => {
 describe("query cache invalidation", () => {
   it("invalidates every prefix for the requested user domains", async () => {
     await Promise.all([
-      queryCache.set("user-1:journal.entries", "entries", TTL_MS),
-      queryCache.set("user-1:journal.trends", "trends", TTL_MS),
-      queryCache.set("user-1:behaviorImpact.sleep", "impact", TTL_MS),
+      queryCache.set("user-1:activity.list", "entries", TTL_MS),
+      queryCache.set("user-1:calendar.events", "calendar", TTL_MS),
       queryCache.set("user-1:personalization.preferences", "preferences", TTL_MS),
       queryCache.set("user-1:mobileDashboard.summary", "dashboard", TTL_MS),
       queryCache.set("user-1:recovery.score", "recovery", TTL_MS),
       queryCache.set("user-1:stress.score", "stress", TTL_MS),
       queryCache.set("user-1:pmc.chart", "pmc", TTL_MS),
-      queryCache.set("user-1:lifeEvents.timeline", "life events", TTL_MS),
-      queryCache.set("user-2:journal.entries", "other user", TTL_MS),
+      queryCache.set("user-1:personalExperiments.list", "experiments", TTL_MS),
+      queryCache.set("user-2:activity.list", "other user", TTL_MS),
     ]);
 
-    await invalidateUserQueryDomains("user-1", ["journalEntries", "personalization"]);
+    await invalidateUserQueryDomains("user-1", ["activity", "personalization"]);
 
-    await expect(queryCache.get("user-1:journal.entries")).resolves.toBeUndefined();
-    await expect(queryCache.get("user-1:journal.trends")).resolves.toBeUndefined();
-    await expect(queryCache.get("user-1:behaviorImpact.sleep")).resolves.toBeUndefined();
+    await expect(queryCache.get("user-1:activity.list")).resolves.toBeUndefined();
+    await expect(queryCache.get("user-1:calendar.events")).resolves.toBeUndefined();
     await expect(queryCache.get("user-1:personalization.preferences")).resolves.toBeUndefined();
     await expect(queryCache.get("user-1:mobileDashboard.summary")).resolves.toBeUndefined();
     await expect(queryCache.get("user-1:recovery.score")).resolves.toBeUndefined();
     await expect(queryCache.get("user-1:stress.score")).resolves.toBeUndefined();
     await expect(queryCache.get("user-1:pmc.chart")).resolves.toBeUndefined();
-    await expect(queryCache.get("user-1:lifeEvents.timeline")).resolves.toBe("life events");
-    await expect(queryCache.get("user-2:journal.entries")).resolves.toBe("other user");
+    await expect(queryCache.get("user-1:personalExperiments.list")).resolves.toBe("experiments");
+    await expect(queryCache.get("user-2:activity.list")).resolves.toBe("other user");
   });
 
   it("invalidates every query belonging to one user", async () => {
     await Promise.all([
-      queryCache.set("user-1:journal.entries", "entries", TTL_MS),
+      queryCache.set("user-1:food.list", "entries", TTL_MS),
       queryCache.set("user-1:recovery.score", "recovery", TTL_MS),
-      queryCache.set("user-2:journal.entries", "other user", TTL_MS),
+      queryCache.set("user-2:food.list", "other user", TTL_MS),
     ]);
 
     await invalidateAllUserQueries("user-1");
 
-    await expect(queryCache.get("user-1:journal.entries")).resolves.toBeUndefined();
+    await expect(queryCache.get("user-1:food.list")).resolves.toBeUndefined();
     await expect(queryCache.get("user-1:recovery.score")).resolves.toBeUndefined();
-    await expect(queryCache.get("user-2:journal.entries")).resolves.toBe("other user");
+    await expect(queryCache.get("user-2:food.list")).resolves.toBe("other user");
   });
 
   it("invalidates every cached query", async () => {
     await Promise.all([
-      queryCache.set("user-1:journal.entries", "entries", TTL_MS),
+      queryCache.set("user-1:food.list", "entries", TTL_MS),
       queryCache.set("user-2:recovery.score", "recovery", TTL_MS),
     ]);
 
     await invalidateAllQueries();
 
-    await expect(queryCache.get("user-1:journal.entries")).resolves.toBeUndefined();
+    await expect(queryCache.get("user-1:food.list")).resolves.toBeUndefined();
     await expect(queryCache.get("user-2:recovery.score")).resolves.toBeUndefined();
   });
 });

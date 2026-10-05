@@ -311,8 +311,6 @@ function ExperimentLearningCard({ experimentId }: { experimentId: string }) {
   const [adherence, setAdherence] = useState<Adherence>("adherent");
   const [confounder, setConfounder] = useState("");
   const [note, setNote] = useState("");
-  const [annotationLabel, setAnnotationLabel] = useState("");
-  const [annotationNotes, setAnnotationNotes] = useState("");
   const today = formatDateYmd();
 
   const checkInMutation = trpc.personalExperiments.checkIn.useMutation({
@@ -324,20 +322,6 @@ function ExperimentLearningCard({ experimentId }: { experimentId: string }) {
     },
     onError: (error) => {
       captureException(error, { source: "personal-experiments-check-in" });
-    },
-  });
-
-  const annotationMutation = trpc.lifeEvents.create.useMutation({
-    onSuccess: async () => {
-      setAnnotationLabel("");
-      setAnnotationNotes("");
-      await Promise.all([
-        utils.personalExperiments.analysis.invalidate({ id: experimentId }),
-        utils.lifeEvents.list.invalidate(),
-      ]);
-    },
-    onError: (error) => {
-      captureException(error, { source: "personal-experiments-annotation" });
     },
   });
 
@@ -456,62 +440,6 @@ function ExperimentLearningCard({ experimentId }: { experimentId: string }) {
               {`${observation.phaseDate} → ${observation.outcomeDate}: ${observation.value ?? "Missing"}; ${observation.phase === "baseline" ? "baseline" : (observation.adherence ?? "no check-in")}; sources: ${observation.sourceProviderIds.join(", ") || "none reported"}`}
             </Text>
           ))}
-
-          <Text style={styles.label}>Linked annotations</Text>
-          {result.annotations.map((annotation) => (
-            <Text key={annotation.id} style={styles.experimentMeta}>
-              {annotation.label}
-              {annotation.notes ? `: ${annotation.notes}` : ""}
-            </Text>
-          ))}
-          <TextInput
-            accessibilityLabel="Annotation label"
-            value={annotationLabel}
-            onChangeText={setAnnotationLabel}
-            placeholder="Annotation label"
-            placeholderTextColor={colors.textTertiary}
-            style={styles.input}
-          />
-          <TextInput
-            accessibilityLabel="Annotation notes"
-            value={annotationNotes}
-            onChangeText={setAnnotationNotes}
-            placeholder="Annotation notes (optional)"
-            placeholderTextColor={colors.textTertiary}
-            style={styles.input}
-          />
-          <Pressable
-            style={styles.secondaryButton}
-            disabled={annotationMutation.isPending || annotationLabel.trim().length === 0}
-            onPress={() =>
-              annotationMutation.mutate({
-                label: annotationLabel.trim(),
-                startedAt: today,
-                endedAt: null,
-                category: null,
-                ongoing: false,
-                notes: annotationNotes.trim() || null,
-                personalExperimentId: experimentId,
-              })
-            }
-            accessibilityRole="button"
-            accessibilityLabel="Save annotation"
-          >
-            <Text style={styles.secondaryButtonText}>
-              {annotationMutation.isPending
-                ? "Saving..."
-                : annotationMutation.error
-                  ? "Retry annotation"
-                  : "Save annotation"}
-            </Text>
-          </Pressable>
-          {annotationMutation.error ? (
-            <QueryStatePanel
-              variant="error"
-              message={getQueryErrorMessage(annotationMutation.error)}
-              minHeight={72}
-            />
-          ) : null}
         </>
       )}
     </View>

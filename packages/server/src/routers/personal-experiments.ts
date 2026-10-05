@@ -155,18 +155,6 @@ const personalExperimentAnalysisViewSchema = z.object({
   outcomeMetricId: z.string(),
   outcomeMetricLabel: z.string(),
   checkIns: z.array(checkInViewSchema),
-  annotations: z.array(
-    z.object({
-      id: z.string(),
-      label: z.string(),
-      startedAt: dateStringSchema,
-      endedAt: dateStringSchema.nullable(),
-      category: z.string().nullable(),
-      ongoing: z.boolean(),
-      notes: z.string().nullable(),
-      createdAt: z.string(),
-    }),
-  ),
   analysis: experimentAnalysisSchema,
 });
 

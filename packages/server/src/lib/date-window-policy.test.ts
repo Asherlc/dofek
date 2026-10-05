@@ -41,7 +41,6 @@ describe("selected chart range policy", () => {
       "repositories/duration-curves-repository.ts",
       "repositories/efficiency-repository.ts",
       "repositories/hiking-repository.ts",
-      "repositories/journal-repository.ts",
       "repositories/nutrition-analytics-repository.ts",
       "repositories/pmc-repository.ts",
       "repositories/power-repository.ts",

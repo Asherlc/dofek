@@ -44,18 +44,6 @@ const activeExperimentAnalysis = {
   outcomeMetricId: "hrv",
   outcomeMetricLabel: "Heart Rate Variability",
   checkIns: [],
-  annotations: [
-    {
-      id: "22222222-2222-4222-8222-222222222222",
-      label: "Travel",
-      startedAt: "2026-07-03",
-      endedAt: null,
-      category: null,
-      ongoing: false,
-      notes: "Different time zone",
-      createdAt: "2026-07-03T00:00:00.000Z",
-    },
-  ],
   analysis: {
     availability: "available",
     observations: [],

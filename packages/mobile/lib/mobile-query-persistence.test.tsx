@@ -41,9 +41,9 @@ describe("mobile query persistence", () => {
     await AsyncStorage.clear();
   });
 
-  it("uses a new cache contract buster for epistemic status fields", () => {
-    expect(MOBILE_QUERY_CACHE_CONTRACT_VERSION).toBe(7);
-    expect(mobileQueryCacheBuster("user-1")).toBe("user-1:v7");
+  it("uses the current cache contract buster", () => {
+    expect(MOBILE_QUERY_CACHE_CONTRACT_VERSION).toBe(8);
+    expect(mobileQueryCacheBuster("user-1")).toBe("user-1:v8");
   });
 
   it("reports downstream hydration failures safely and completes provider restoration", async () => {
@@ -130,7 +130,7 @@ describe("mobile query persistence", () => {
       "dofek-query-cache:user-1",
       JSON.stringify({
         timestamp: Date.now(),
-        buster: "user-1:v6",
+        buster: "user-1:v7",
         clientState: dehydrate(seedClient),
       }),
     );

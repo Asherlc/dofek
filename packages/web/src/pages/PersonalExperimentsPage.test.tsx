@@ -22,7 +22,6 @@ interface TestState {
   createInput: Record<string, unknown> | null;
   stopInput: { id: string } | null;
   checkInInput: Record<string, unknown> | null;
-  annotationInput: Record<string, unknown> | null;
   analysisData: Record<string, unknown> | undefined;
   analysisError: Error | null;
   createError: Error | null;
@@ -42,7 +41,6 @@ const state = vi.hoisted<TestState>(() => ({
   createInput: null,
   stopInput: null,
   checkInInput: null,
-  annotationInput: null,
   analysisData: undefined,
   analysisError: null,
   createError: null,
@@ -98,7 +96,6 @@ vi.mock("../lib/trpc.ts", () => ({
         list: { invalidate: vi.fn() },
         analysis: { invalidate: vi.fn() },
       },
-      lifeEvents: { list: { invalidate: vi.fn() } },
     }),
     personalExperiments: {
       list: {
@@ -156,17 +153,6 @@ vi.mock("../lib/trpc.ts", () => ({
         }),
       },
     },
-    lifeEvents: {
-      create: {
-        useMutation: () => ({
-          mutate: (input: Record<string, unknown>) => {
-            state.annotationInput = input;
-          },
-          isPending: false,
-          error: null,
-        }),
-      },
-    },
   },
 }));
 
@@ -185,7 +171,6 @@ describe("PersonalExperimentsPage", () => {
     state.createInput = null;
     state.stopInput = null;
     state.checkInInput = null;
-    state.annotationInput = null;
     state.analysisData = undefined;
     state.analysisError = null;
     state.createError = null;
@@ -313,7 +298,7 @@ describe("PersonalExperimentsPage", () => {
     expect(screen.queryByText("Loading")).toBeNull();
   });
 
-  it("records raw check-in context and renders server-derived evidence with linked annotations", async () => {
+  it("records raw check-in context and renders server-derived evidence", async () => {
     state.listData = [
       {
         id: "exp-1",
@@ -342,18 +327,6 @@ describe("PersonalExperimentsPage", () => {
       outcomeMetricId: "hrv",
       outcomeMetricLabel: "Heart Rate Variability",
       checkIns: [],
-      annotations: [
-        {
-          id: "event-1",
-          label: "Late flight",
-          startedAt: "2026-07-09",
-          endedAt: null,
-          category: "lifestyle",
-          ongoing: false,
-          notes: "Arrived after midnight",
-          createdAt: "2026-07-09T10:00:00.000Z",
-        },
-      ],
       analysis: {
         availability: "available",
         observations: [
@@ -416,7 +389,6 @@ describe("PersonalExperimentsPage", () => {
     expect(
       screen.getByText("This is an observational comparison, not a causal conclusion."),
     ).toBeTruthy();
-    expect(screen.getByText("Late flight")).toBeTruthy();
 
     fireEvent.change(screen.getByLabelText("Did you follow the plan today?"), {
       target: { value: "partial" },
@@ -432,17 +404,6 @@ describe("PersonalExperimentsPage", () => {
       adherence: "partial",
       confounder: "Late flight",
       note: null,
-    });
-
-    fireEvent.change(screen.getByLabelText("Annotation label"), {
-      target: { value: "Late flight" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Save annotation" }));
-
-    expect(state.annotationInput).toMatchObject({
-      label: "Late flight",
-      startedAt: "2026-07-26",
-      personalExperimentId: "exp-1",
     });
   });
 
@@ -547,7 +508,7 @@ describe("PersonalExperimentsPage", () => {
     expect(screen.queryByLabelText("Outcome metric")).toBeNull();
   });
 
-  it("renders unavailable evidence with recorded observations and unannotated life events", async () => {
+  it("renders unavailable evidence with recorded observations", async () => {
     state.listData = [
       {
         id: "exp-evidence",
@@ -576,18 +537,6 @@ describe("PersonalExperimentsPage", () => {
       outcomeMetricId: "hrv",
       outcomeMetricLabel: "Heart Rate Variability",
       checkIns: [],
-      annotations: [
-        {
-          id: "event-2",
-          label: "Travel",
-          startedAt: "2026-07-12",
-          endedAt: null,
-          category: "lifestyle",
-          ongoing: false,
-          notes: null,
-          createdAt: "2026-07-12T10:00:00.000Z",
-        },
-      ],
       analysis: {
         availability: "unavailable",
         observations: [
@@ -656,7 +605,6 @@ describe("PersonalExperimentsPage", () => {
     expect(
       screen.getByText(/2026-07-10 → 2026-07-11: 56.8; partial; sources: apple_health, whoop/),
     ).toBeTruthy();
-    expect(screen.getByText("Travel")).toBeTruthy();
     expect(screen.queryByText("· null")).toBeNull();
   });
 });

@@ -202,18 +202,6 @@ describe("PersonalExperimentsRepository", () => {
           { ...sampleCheckInRow, id: "check-in-4", date: "2026-07-11", adherence: "partial" },
           { ...sampleCheckInRow, id: "check-in-5", date: "2026-07-12", adherence: "adherent" },
         ],
-        [
-          {
-            id: "event-1",
-            label: "Late flight",
-            started_at: "2026-07-09",
-            ended_at: null,
-            category: "lifestyle",
-            ongoing: false,
-            notes: "Arrived after midnight",
-            created_at: "2026-07-09T10:00:00Z",
-          },
-        ],
       );
 
       const result = await repo.analyze("exp-1", { query: vi.fn() });
@@ -224,14 +212,6 @@ describe("PersonalExperimentsRepository", () => {
           availability: "available",
           effect: { baselineMean: 14, interventionMean: 22, differenceInMeans: 8 },
         },
-        annotations: [
-          {
-            id: "event-1",
-            label: "Late flight",
-            startedAt: "2026-07-09",
-            notes: "Arrived after midnight",
-          },
-        ],
       });
       expect(mockListMetricOutcomes).toHaveBeenCalledWith("hrv", 12, "2026-07-13");
     });

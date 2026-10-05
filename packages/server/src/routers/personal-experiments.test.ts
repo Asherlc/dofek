@@ -317,7 +317,6 @@ describe("personalExperimentsRouter", () => {
         availability: "available",
         effect: { differenceInMeans: 8, baselineSampleCount: 5, interventionSampleCount: 5 },
       },
-      annotations: [{ id: "event-1", label: "Late flight" }],
     });
     expect(result.analysis.observations).toHaveLength(12);
   });

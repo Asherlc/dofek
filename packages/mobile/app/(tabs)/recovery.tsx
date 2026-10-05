@@ -38,7 +38,6 @@ import { HealthStatusCards } from "../../components/HealthStatusCards";
 import { MetricCard } from "../../components/MetricCard";
 import { ProcessingStatusWidget } from "../../components/ProcessingStatusWidget";
 import { getQueryErrorMessage, QueryStatePanel } from "../../components/QueryStatePanel";
-import { SubjectiveTrackingPanel } from "../../components/SubjectiveTrackingPanel";
 import { TodayPlanCard } from "../../components/TodayPlanCard";
 import { trpc } from "../../lib/trpc";
 import { useUnitConverter } from "../../lib/units";
@@ -318,8 +317,6 @@ export default function RecoveryScreen() {
       }
     >
       <DaySelector days={days} description={description} onChange={setDays} />
-
-      <SubjectiveTrackingPanel />
 
       <ProcessingStatusWidget
         data={processingStatus.data}
@@ -877,16 +874,6 @@ export default function RecoveryScreen() {
             accessibilityLabel="Correlation Explorer"
           >
             <Text style={styles.navLinkText}>Correlation Explorer</Text>
-            <Text style={styles.navChevron}>{"\u203A"}</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.navLink}
-            onPress={() => router.push("/behavior-associations")}
-            activeOpacity={0.7}
-            accessibilityRole="button"
-            accessibilityLabel="Behavior Associations"
-          >
-            <Text style={styles.navLinkText}>Behavior Associations</Text>
             <Text style={styles.navChevron}>{"\u203A"}</Text>
           </TouchableOpacity>
           <TouchableOpacity

@@ -20,7 +20,6 @@ interface TestState {
   stopInput: { id: string } | null;
   analysisData: Record<string, unknown> | undefined;
   checkInInput: Record<string, unknown> | null;
-  annotationInput: Record<string, unknown> | null;
 }
 
 const state = vi.hoisted<TestState>(() => ({
@@ -33,7 +32,6 @@ const state = vi.hoisted<TestState>(() => ({
   stopInput: null,
   analysisData: undefined,
   checkInInput: null,
-  annotationInput: null,
 }));
 
 vi.mock("@dofek/format/format", () => ({
@@ -67,9 +65,6 @@ vi.mock("../lib/trpc", () => ({
       personalExperiments: {
         list: { invalidate: vi.fn() },
         analysis: { invalidate: vi.fn() },
-      },
-      lifeEvents: {
-        list: { invalidate: vi.fn() },
       },
     }),
     personalExperiments: {
@@ -127,17 +122,6 @@ vi.mock("../lib/trpc", () => ({
         }),
       },
     },
-    lifeEvents: {
-      create: {
-        useMutation: () => ({
-          mutate: (input: Record<string, unknown>) => {
-            state.annotationInput = input;
-          },
-          isPending: false,
-          error: null,
-        }),
-      },
-    },
   },
 }));
 
@@ -162,7 +146,6 @@ describe("ExperimentsScreen", () => {
     state.stopInput = null;
     state.analysisData = undefined;
     state.checkInInput = null;
-    state.annotationInput = null;
   });
 
   it("shows empty state and creates an experiment", async () => {
@@ -271,18 +254,6 @@ describe("ExperimentsScreen", () => {
       outcomeMetricId: "hrv",
       outcomeMetricLabel: "Heart Rate Variability",
       checkIns: [],
-      annotations: [
-        {
-          id: "event-1",
-          startedAt: "2026-07-10",
-          endedAt: null,
-          category: null,
-          ongoing: false,
-          label: "Travel",
-          notes: "Different time zone",
-          createdAt: "2026-07-10T00:00:00.000Z",
-        },
-      ],
       analysis: {
         availability: "available",
         observations: [
@@ -339,7 +310,6 @@ describe("ExperimentsScreen", () => {
 
     expect(screen.getByText("Outcome evidence")).toBeTruthy();
     expect(screen.getByText("Baseline: 5 of 7 outcome days observed")).toBeTruthy();
-    expect(screen.getByText("Travel: Different time zone")).toBeTruthy();
     expect(
       screen.getByText(/2026-07-10 → 2026-07-10: Missing; no check-in; sources: none reported/),
     ).toBeTruthy();
@@ -355,16 +325,6 @@ describe("ExperimentsScreen", () => {
       adherence: "partial",
       confounder: "Late flight",
       note: null,
-    });
-
-    fireEvent.change(screen.getByLabelText("Annotation label"), {
-      target: { value: "Illness" },
-    });
-    fireEvent.click(screen.getByLabelText("Save annotation"));
-    expect(state.annotationInput).toMatchObject({
-      label: "Illness",
-      startedAt: "2026-07-26",
-      personalExperimentId: "exp-1",
     });
   });
 });

@@ -120,7 +120,6 @@ describe("get_recovery_training_series", () => {
       "sleep",
       "body_weight",
       "training_load",
-      "subjective",
       "activities",
       "nutrition",
     ];
@@ -174,7 +173,6 @@ describe("get_recovery_training_series", () => {
         "dailyMetrics",
         "nutrition",
         "sleep",
-        "subjective",
         "trainingLoad",
         "weightObservations",
       ]);
@@ -189,7 +187,7 @@ describe("get_recovery_training_series", () => {
     }
   });
 
-  it("uses the six default non-nutrition streams", async () => {
+  it("uses the five default non-nutrition streams", async () => {
     const scopedServer = new McpServer({ name: "default-series-test", version: "1.0.0" });
     registerRecoveryTrainingSeriesTool(scopedServer, {
       db: { execute: vi.fn(), select: vi.fn(), transaction: vi.fn() },
@@ -213,7 +211,7 @@ describe("get_recovery_training_series", () => {
       expect(mocks.listRange).toHaveBeenLastCalledWith(
         "2026-03-08",
         "2026-03-09",
-        ["health", "sleep", "body_weight", "training_load", "subjective", "activities"],
+        ["health", "sleep", "body_weight", "training_load", "activities"],
         { providers: [], modalities: [] },
       );
     } finally {
@@ -238,7 +236,6 @@ describe("get_recovery_training_series", () => {
 
   it.each([
     { stream: "nutrition" as const, scope: "nutrition:read" as const },
-    { stream: "subjective" as const, scope: "health:read" as const },
     { stream: "activities" as const, scope: "activity:read" as const },
   ])(
     "allows a $stream-only request with only $scope and no ClickHouse",
