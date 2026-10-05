@@ -30199,3 +30199,10 @@ and source-to-visible freshness. No steady-state diagnostic framework is added.
 - Validation: the same integration command reached Vitest after all four dependencies became healthy; analytics SQL lint subsequently passed. All 74 database assertions across six suites passed, including the forward migration sequence and food-source resolution. The two unrelated full-suite timeouts in `archive-erasure.test.ts` and `deploy-web-stack.test.ts` passed when rerun individually.
 - Resolution: final `pnpm lint` passed; `pnpm compose -- down --remove-orphans --volumes` removed only this workspace’s test containers, network, and disposable volumes. No timeout, retry, or network overrides were added to repository configuration.
 - Remaining risk/follow-up: the daemon’s default pool remains exhausted by other workspace networks; document an operator procedure for pool exhaustion. Docker documents explicit subnets in [network create](https://docs.docker.com/reference/cli/docker/network/create/).
+
+### 2026-10-05 — Supplement removal PR blocked by destructive migration lint
+
+- Symptoms/evidence: [PR #2886 Migration Lint](https://github.com/Asherlc/dofek/actions/runs/37380655334/job/112003275274) failed at `echo "$NEW_MIGRATIONS" | xargs squawk`. The first diagnostic was `Dropping a view may break existing clients.`; four `ban-drop-view` findings and one `ban-drop-type` finding produced exit code 123.
+- Impact/root cause: CI blocks the approved complete removal of supplements because Squawk prohibits the intentional view/type drops in `0137_remove_supplements.sql`. No production deployment or data deletion occurred.
+- Validation: migration policy and SQLFluff passed locally; all 74 PostgreSQL integration assertions passed, including the forward migration and retained food-source resolution.
+- Status/follow-up: unresolved pending user approval for statement-scoped exceptions. No lint rule was disabled. Squawk documents [statement-scoped comments](https://squawkhq.com/docs/cli#disabling-rules-via-comments); add only reviewed exceptions and confirm the CI rerun before reporting readiness.
