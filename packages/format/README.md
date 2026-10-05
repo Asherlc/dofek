@@ -15,6 +15,7 @@ The `UnitConverter` class provides a unified interface for converting and labeli
 - **Robust Parsing**: `parseValidDate` normalizes Postgres-style timestamps (space-separated) for JS engines like Hermes (React Native) and older Safari that only support ISO 8601.
 - **Date Labels**: `formatDateShort`, `formatDateMedium`, `formatDateLong`, `formatMonthYear`, and `formatWeekdayShort` provide shared human-readable date labels. Use `formatDateYmd` for local query dates and `formatDateYmdInTimeZone` when the date key must be computed in a named timezone.
 - **Time Labels**: `formatDateTime`, `formatTimeOnly`, `formatWeekdayTime`, and the legacy `formatTime` wrapper provide shared human-readable time labels.
+- **Localization**: Date/time labels follow the device locale and time zone, including its 12/24-hour clock convention. Pass `locale` or `timeZone` options for an explicit display context. API date keys remain `YYYY-MM-DD`. This uses the standard [Intl.DateTimeFormat locale and time-zone defaults](https://tc39.es/ecma402/#sec-createdatetimeformat).
 - **Relative Time**: `formatRelativeTime` provides human-readable strings like "just now", "5m ago", "2h ago", and "3d ago".
 - **Durations**: `formatDurationMinutes`, `formatDurationSeconds`, and `formatDurationRange` format time spans as "Xh Ym", "Xm", or "Xs".
 - **Hour Formatting**: `formatHour` converts decimal hours to localized 12/24-hour strings, normalizing Unicode non-breaking spaces for consistent display.
