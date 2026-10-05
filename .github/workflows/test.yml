@@ -1165,7 +1165,8 @@ jobs:
             # must not surface a pre-existing file's entire coverage debt. Parse
             # the new-side line ranges from the unified diff hunks and pass them
             # to Stryker as `path:start-end` specs.
-            RANGES=$(git diff -U0 $DIFF_RANGE -- "$f" | awk '
+            # Reindentation is not a behavior change; retain actual edited lines.
+            RANGES=$(git diff --ignore-space-change -U0 $DIFF_RANGE -- "$f" | awk '
               /^@@ / {
                 match($0, /\+[0-9]+(,[0-9]+)?/)
                 plus = substr($0, RSTART + 1, RLENGTH - 1)

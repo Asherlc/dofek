@@ -1,3 +1,7 @@
+-- Intentional feature removal: recreate the view without journal_entries.
+-- PostgreSQL cannot remove view columns with CREATE OR REPLACE VIEW.
+-- https://www.postgresql.org/docs/current/sql-createview.html
+-- squawk-ignore ban-drop-view
 DROP VIEW fitness.provider_stats;
 --> statement-breakpoint
 CREATE OR REPLACE VIEW fitness.provider_stats AS
