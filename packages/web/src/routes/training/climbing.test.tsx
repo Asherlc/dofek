@@ -111,6 +111,7 @@ describe("ClimbingTab", () => {
     expect(hangboardingSummaryQuery).toHaveBeenCalledWith({ days: 90 }, expect.any(Object));
     const sectionProps = recentActivitiesSection.mock.calls[0]?.[0];
     expect(sectionProps.activityTypes).toEqual(["climbing"]);
+    expect(sectionProps.showDistance).toBe(false);
     expect(sectionProps.additionalColumns.map((column: { key: string }) => column.key)).toEqual([
       "attempts",
       "sends",

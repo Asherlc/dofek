@@ -54,6 +54,12 @@ vi.mock("./ActivityList.tsx", () => ({
 }));
 
 describe("RecentActivitiesSection", () => {
+  it("forwards the distance-column preference", () => {
+    render(<RecentActivitiesSection showDistance={false} />);
+
+    expect(activityList).toHaveBeenLastCalledWith(expect.objectContaining({ showDistance: false }));
+  });
+
   it("uses mutation state instead of awaiting bulk delete", () => {
     render(<RecentActivitiesSection />);
 

@@ -96,6 +96,28 @@ describe("ActivityList", () => {
     expect(screen.getByText("3.1 mi")).toBeDefined();
   });
 
+  it("selects concise columns and supports deletion when distance is hidden", () => {
+    const onBulkDelete = vi.fn();
+    renderWithUnits(
+      <ActivityList activities={mockActivities} showDistance={false} onBulkDelete={onBulkDelete} />,
+    );
+
+    expect(screen.getAllByRole("columnheader").map((header) => header.textContent)).toEqual([
+      "Map",
+      "Date",
+      "Type",
+      "Name",
+      "Duration",
+      "Provider",
+      "Sources",
+    ]);
+    fireEvent.click(screen.getByRole("button", { name: "Select activities" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Morning Run" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm Delete" }));
+    expect(onBulkDelete).toHaveBeenCalledWith(["1"]);
+  });
+
   it("renders a compact map tile when an activity has a location summary", () => {
     renderWithUnits(<ActivityList activities={mockActivities} />);
     const image = screen.getByTestId("activity-map-preview-tile");
