@@ -104,6 +104,27 @@ afterEach(() => {
 
 describe("OpenBetaProvider", () => {
   it.each([
+    [{ sport: true, trad: false, bouldering: false }, ["sport"]],
+    [{ sport: true, trad: true, bouldering: false }, ["sport", "trad"]],
+    [{ sport: false, trad: false, bouldering: true }, []],
+    [{ sport: null, trad: null, bouldering: false }, null],
+  ])(
+    "preserves protection flags %j independently of climbing method",
+    async (type, routeProtection) => {
+      const { db, climbingEntryValues } = makeDb();
+      const result = await new OpenBetaProvider(async () =>
+        graphqlResponse({
+          userTicks: [tick({ climb: climb({ type, grades: grades({ vscale: "V3" }) }) })],
+        }),
+      ).sync(makeRun(db));
+      expect(result.errors).toEqual([]);
+      expect(climbingEntryValues).toHaveBeenCalledWith(
+        expect.objectContaining({ routeProtection }),
+      );
+    },
+  );
+
+  it.each([
     [1786320000000, "2026-08-10"],
     [1786406399999, "2026-08-10"],
     [1786406400000, "2026-08-11"],
@@ -119,6 +140,7 @@ describe("OpenBetaProvider", () => {
     expect(climbingEntryValues).toHaveBeenCalledExactlyOnceWith(
       expect.objectContaining({
         unattachedDate: date,
+        routeProtection: ["trad"],
         raw: expect.objectContaining({ dateClimbed: timestamp }),
       }),
     );
@@ -539,7 +561,7 @@ describe("OpenBetaProvider", () => {
             climb: climb({
               name: null,
               grades: grades({ yds: null, font: " 6A+ " }),
-              type: { bouldering: true },
+              type: { bouldering: true, sport: false, trad: false },
               parent: { area_name: " " },
             }),
           }),
@@ -576,12 +598,18 @@ describe("OpenBetaProvider", () => {
           tick({
             _id: "boulder-v-fallback",
             grade: "v7+",
-            climb: climb({ grades: grades({ yds: null }), type: { bouldering: true } }),
+            climb: climb({
+              grades: grades({ yds: null }),
+              type: { bouldering: true, sport: false, trad: false },
+            }),
           }),
           tick({
             _id: "boulder-font-fallback",
             grade: "6b",
-            climb: climb({ grades: grades({ yds: null }), type: { bouldering: true } }),
+            climb: climb({
+              grades: grades({ yds: null }),
+              type: { bouldering: true, sport: false, trad: false },
+            }),
           }),
           tick({
             _id: "route-yds-fallback",

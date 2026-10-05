@@ -8,13 +8,14 @@ import {
 import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { shouldShowBlockingLoading } from "@dofek/scoring/loading-policy";
 import { aggregateWeeklyVolume, StrainScore } from "@dofek/scoring/scoring";
+import type { ClimbingFilters as ClimbingFilterValues } from "@dofek/training/climbing-filters";
 import { TRAINING_TERMINOLOGY } from "@dofek/training/terminology";
 import {
   collapseWeeklyVolumeActivityTypes,
   formatActivityTypeLabel,
 } from "@dofek/training/training";
 import { useRouter } from "expo-router";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   RefreshControl,
@@ -27,6 +28,7 @@ import {
 import { z } from "zod";
 import { ActivityCard } from "../../components/ActivityCard";
 import { ChartTitleWithTooltip } from "../../components/ChartTitleWithTooltip";
+import { ClimbingFilters } from "../../components/ClimbingFilters";
 import { SparkLine } from "../../components/charts/SparkLine";
 import { StrainGauge } from "../../components/charts/StrainGauge";
 import { VerticalAscentChart } from "../../components/charts/VerticalAscentChart";
@@ -273,6 +275,7 @@ class ClimbingSectionModel {
 }
 
 export default function StrainScreen() {
+  const [climbingFilters, setClimbingFilters] = useState<ClimbingFilterValues>({});
   const router = useRouter();
   const utils = trpc.useUtils();
   const { days, description, isHydrated, setDays } = useTimeRangePreference("training");
@@ -285,7 +288,7 @@ export default function StrainScreen() {
   }, [isHydrated]);
 
   const trainingQuery = trpc.mobileDashboard.training.useQuery(
-    { days, endDate },
+    { days, endDate, ...(Object.keys(climbingFilters).length ? { climbingFilters } : {}) },
     {
       enabled: isHydrated,
       placeholderData: preservePreviousRangeData ? (previousData) => previousData : undefined,
@@ -576,6 +579,7 @@ export default function StrainScreen() {
 
           <View style={styles.card}>
             <Text style={styles.cardTitle}>Climbing</Text>
+            <ClimbingFilters value={climbingFilters} onChange={setClimbingFilters} />
             {shouldShowClimbingError ? (
               <Text style={styles.errorText}>
                 {userFacingErrorMessage(

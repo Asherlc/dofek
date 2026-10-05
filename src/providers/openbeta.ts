@@ -67,6 +67,8 @@ const OPENBETA_TICKS_QUERY = `
         }
         type {
           bouldering
+          sport
+          trad
         }
         parent {
           uuid
@@ -126,7 +128,13 @@ const openBetaTickSchema = z
             brazilianCrux: z.string().nullable(),
           })
           .nullable(),
-        type: z.object({ bouldering: z.boolean().nullable() }).nullable(),
+        type: z
+          .object({
+            bouldering: z.boolean().nullable(),
+            sport: z.boolean().nullable(),
+            trad: z.boolean().nullable(),
+          })
+          .nullable(),
         parent: z
           .object({ uuid: z.string().trim().min(1).nullish(), area_name: z.string().nullable() })
           .nullable(),
@@ -162,6 +170,7 @@ interface OpenBetaClimbingEntry extends ClimbingMetadata {
   attemptCount: number | null;
   routeName: string | null;
   raw: OpenBetaTick;
+  routeProtection: Array<"sport" | "trad"> | null;
 }
 
 interface OpenBetaTickParseResult {
@@ -369,6 +378,12 @@ function parseOpenBetaTicks(ticks: OpenBetaTick[]): OpenBetaTickParseResult {
         climbStyle: tick.style === null ? null : methods[tick.style],
         resultStyle: tick.attemptType,
       }),
+      routeProtection:
+        tick.climb?.type?.sport == null && tick.climb?.type?.trad == null
+          ? null
+          : (["sport", "trad"] as const).filter(
+              (protection) => tick.climb?.type?.[protection] === true,
+            ),
       attemptCount: null,
       routeName: nullableText(tick.name ?? tick.climb?.name),
       raw: tick,
@@ -549,6 +564,7 @@ export class OpenBetaProvider implements SyncProvider {
                 grade: entry.grade,
                 resultStyle: entry.resultStyle,
                 climbStyle: entry.climbStyle,
+                routeProtection: entry.routeProtection,
                 board: entry.board,
                 wallAngle: entry.wallAngle,
                 attemptCount: entry.attemptCount,
@@ -566,6 +582,7 @@ export class OpenBetaProvider implements SyncProvider {
                   grade: entry.grade,
                   resultStyle: entry.resultStyle,
                   climbStyle: entry.climbStyle,
+                  routeProtection: entry.routeProtection,
                   board: entry.board,
                   wallAngle: entry.wallAngle,
                   attemptCount: entry.attemptCount,

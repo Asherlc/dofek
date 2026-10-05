@@ -1354,6 +1354,7 @@ describe("mobileDashboard.training", () => {
       },
       30,
       "2026-03-28",
+      undefined,
     );
   });
 
@@ -1437,6 +1438,7 @@ describe("mobileDashboard.training", () => {
       expect.objectContaining({ timezone: "America/Chicago" }),
       30,
       "2026-03-28",
+      undefined,
     );
   });
 });

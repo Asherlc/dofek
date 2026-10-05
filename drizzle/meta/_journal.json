@@ -960,6 +960,13 @@
       "when": 1791046800000,
       "tag": "0136_provider_issue_email",
       "breakpoints": true
+    },
+    {
+      "idx": 137,
+      "version": "7",
+      "when": 1791233000000,
+      "tag": "0137_climbing_route_protection",
+      "breakpoints": true
     }
   ]
 }

@@ -114,6 +114,7 @@ describe("MountainProjectProvider", () => {
     expect(climbingEntryValues).toHaveBeenCalledWith(
       expect.objectContaining({
         climbStyle: method,
+        routeProtection: ["trad"],
         resultStyle: "Fell/Hung",
         attemptCount: null,
         locationPath: ["Country", "State", "Region", "Park", "Crag", "Wall"].map((name) => ({

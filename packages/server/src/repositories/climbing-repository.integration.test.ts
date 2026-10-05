@@ -62,6 +62,33 @@ describe("ClimbingRepository PostgreSQL summaries", () => {
     await context?.cleanup();
   });
 
+  it("filters attached and unattached climbs before computing metrics, retaining unknown settings", async () => {
+    await context.db.execute(sql`UPDATE fitness.climbing_entry
+      SET climb_type = 'route', grade_system = 'yds', grade = CASE WHEN id = ${ATTACHED_ID}::uuid THEN '5.9' ELSE '5.10a' END,
+          climb_style = 'lead', route_protection = ARRAY['sport', 'trad'],
+          location_path = '[{"name":"Crag","externalId":null,"kind":"destination"}]'::jsonb
+      WHERE id IN (${ATTACHED_ID}::uuid, ${UNATTACHED_ID}::uuid)`);
+    const repository = new ClimbingRepository(context.db, TEST_USER_ID, "America/Los_Angeles");
+    const filters = { style: "lead", protection: "trad", setting: "outdoor" } as const;
+    expect((await repository.getVolumeByGrade(30, filters)).map((row) => row.toDetail())).toEqual([
+      expect.objectContaining({ grade: "5.9", attempts: 2, sends: 1 }),
+      expect.objectContaining({ grade: "5.10a", attempts: 3, sends: 1 }),
+    ]);
+    expect(await repository.getGradeProgression(30, { protection: "unknown" })).toEqual([]);
+    expect((await repository.getSessionSummaries(30, filters))[0]?.toDetail()).toMatchObject({
+      attempts: 2,
+    });
+    expect(await repository.getSessionSummaries(30, { style: "top-rope" })).toEqual([]);
+    await context.db.execute(sql`UPDATE fitness.climbing_entry SET location_path = '[]'::jsonb
+      WHERE id = ${ATTACHED_ID}::uuid`);
+    expect(
+      (await repository.getVolumeByGrade(30, { setting: "unknown" })).map((row) => row.toDetail()),
+    ).toEqual([expect.objectContaining({ grade: "5.9" })]);
+    expect((await repository.getVolumeByGrade(30, filters)).map((row) => row.toDetail())).toEqual([
+      expect.objectContaining({ grade: "5.10a" }),
+    ]);
+  });
+
   it("serves a full source context independently of the associated activity provider", async () => {
     const locationPath = ["Country", "State", "Region", "Park", "Crag", "Wall"].map(
       (name, index) => ({ name, externalId: `area-${index}`, kind: null }),

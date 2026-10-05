@@ -179,3 +179,14 @@ Local Conductor users must install mise and activate it in their login shell so
 the `rtk` shim is available to agent terminal commands. CodeGraph MCP does not
 depend on shell activation because `.mcp.json` launches it through
 `mise exec`.
+
+## Storybook through a development tunnel
+
+Web and mobile Storybook allow `.trycloudflare.com` hosts so a Cloudflare quick
+tunnel can forward its public hostname. Host validation stays enabled for other
+public domains. Storybook configures this reverse-proxy access through
+[`core.allowedHosts`](https://storybook.js.org/docs/api/main-config/main-config-core#allowedhosts).
+Start the usual Storybook command, then run `paseo-quick-tunnel <port>` if that
+helper is installed on your workstation; keep the tunnel running while reviewing
+the UI. Cloudflare describes the generated public hostname and tunnel lifetime
+in its [quick tunnel guide](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/do-more-with-tunnels/trycloudflare/).

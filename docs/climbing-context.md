@@ -192,3 +192,38 @@ already invalidate user query caches through
 use new versioned keys. Reload the matching web/mobile bundle before checking
 rendered context. If no OpenBeta account is connected, report fixture coverage
 separately from live account verification.
+
+## Training filters
+
+Web and mobile keep one collapsed climbing filter with independent style,
+protection, and setting selections. The server filters entries before computing
+progression, grade volume, and session summaries. Mixed sport/trad routes match
+either protection selection; selecting a climbing method does not establish
+whether a route uses bolts or removable protection.
+
+Migration [0137](../drizzle/0137_climbing_route_protection.sql) adds nullable
+`route_protection` as the single storage path for the supplied sport/trad route
+classifications. Mountain Project's exported Route Type and OpenBeta's
+[composable ClimbType flags](https://github.com/OpenBeta/openbeta-graphql/blob/develop/src/graphql/schema/Climb.gql)
+supply these values. Null means not supplied; an empty array means supplied
+without either classification. Existing records stay unknown until refreshed
+through the existing provider sync. The deploy migration performs no historical
+backfill. Mountain Project and OpenBeta refreshes fetch full tick lists, as
+described in [provider refresh and verification](#provider-refresh-and-verification).
+
+Setting is a query-time interpretation of the existing recorded location path:
+a gym node is displayed as indoor, destination/area/subarea nodes as outdoor,
+and unclassified paths as unknown. This interpretation uses the
+[observed Kaya location contract](kaya.md#observed-location-and-angle-values);
+it does not store a second copy of location-derived information.
+
+Do not mark a record outdoors solely from its provider ID. Mountain Project's
+founder documented legacy gyms in its Route Guide and the policy of moving them
+to the [separate gym directory](https://www.mountainproject.com/forum/topic/116599729/climbing-gym-directory).
+OpenBeta's [official app listing](https://play.google.com/store/apps/details?id=io.openbeta)
+describes outdoor discovery, but its checked
+[climb](https://github.com/OpenBeta/openbeta-graphql/blob/develop/src/graphql/schema/Climb.gql)
+and [area](https://github.com/OpenBeta/openbeta-graphql/blob/develop/src/graphql/schema/Area.gql)
+schemas do not establish an outdoors-only invariant or expose an indoor/outdoor
+field. Catalogue scope is evidence of intended use, not proof of each tick's
+setting; unmatched and unclassified ticks remain unknown.

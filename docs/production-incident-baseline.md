@@ -30189,3 +30189,21 @@ the earlier metric-log pressure recurrence risk also remains unresolved. A usefu
 runbook refinement is to record selected/total data granules for every repeated
 source branch and distinguish per-request resource proof from total capture work
 and source-to-visible freshness. No steady-state diagnostic framework is added.
+
+
+## 2026-10-05 — Local Storybook tunnel host rejection (resolved)
+
+No production impact. Web and mobile review previews returned HTTP 403 while
+local Storybook was running. A request to the generated tunnel hostname's
+`/index.json` failed with `curl: (56) The requested URL returned error: 403`;
+the response body was `Invalid host`. Storybook's host-validation middleware
+rejected the forwarded Cloudflare hostname because it was absent from the
+allowed-host list. Both Storybook configurations now allow only the additional
+`.trycloudflare.com` domain through
+[`core.allowedHosts`](https://storybook.js.org/docs/api/main-config/main-config-core#allowedhosts).
+After restarting Storybook, both tunnel `/index.json` and `/iframe.html`
+requests succeeded without added retries or waits. No resilience tuning was
+needed. The available browser runtime reported no connected browsers, so
+visual inspection remains unverified; component interaction tests passed.
+The [development-environment guide](development-environment.md#storybook-through-a-development-tunnel)
+records the host requirement for future preview work.

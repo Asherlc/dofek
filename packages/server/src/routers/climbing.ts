@@ -1,3 +1,4 @@
+import { climbingFiltersSchema } from "@dofek/training/climbing-filters";
 import { TRPCError } from "@trpc/server";
 import { queryCache } from "dofek/lib/cache";
 import { captureException } from "dofek/lib/error-reporting";
@@ -15,6 +16,9 @@ import {
   ClimbingRepository,
   type ClimbingSessionSummaryRow,
   type ClimbingVolumeByGradeRow,
+  climbingGradeProgressionSchema,
+  climbingSessionSummarySchema,
+  climbingVolumeByGradeSchema,
 } from "../repositories/climbing-repository.ts";
 import { ClimbingTrainingLogRepository } from "../repositories/climbing-training-log-repository.ts";
 import { HangboardingRepository } from "../repositories/hangboarding-repository.ts";
@@ -27,6 +31,7 @@ import {
 } from "../trpc.ts";
 
 const daysInputSchema = z.object({ days: z.number().int().min(1).max(365).default(90) });
+const climbingInputSchema = daysInputSchema.extend(climbingFiltersSchema.shape);
 const hangboardingSummarySchema = z.object({
   sessionCount: z.number().int().nonnegative(),
   totalDurationSeconds: z.number().nonnegative(),
@@ -150,29 +155,36 @@ export const climbingRouter = router({
     ),
 
   gradeProgression: cachedProtectedQuery({ maxAge: CacheTTL.LONG })
-    .input(daysInputSchema)
+    .input(climbingInputSchema)
+    .output(z.array(climbingGradeProgressionSchema))
     .query(async ({ ctx, input }): Promise<ClimbingGradeProgressionRow[]> => {
       return runClimbingQuery(async () => {
         const repository = await createClimbingRepository(ctx);
-        return (await repository.getGradeProgression(input.days)).map((row) => row.toDetail());
+        return (await repository.getGradeProgression(input.days, input)).map((row) =>
+          row.toDetail(),
+        );
       });
     }),
 
   volumeByGrade: cachedProtectedQuery({ maxAge: CacheTTL.LONG })
-    .input(daysInputSchema)
+    .input(climbingInputSchema)
+    .output(z.array(climbingVolumeByGradeSchema))
     .query(async ({ ctx, input }): Promise<ClimbingVolumeByGradeRow[]> => {
       return runClimbingQuery(async () => {
         const repository = await createClimbingRepository(ctx);
-        return (await repository.getVolumeByGrade(input.days)).map((row) => row.toDetail());
+        return (await repository.getVolumeByGrade(input.days, input)).map((row) => row.toDetail());
       });
     }),
 
   sessionSummary: cachedProtectedQuery({ maxAge: CacheTTL.LONG })
-    .input(daysInputSchema)
+    .input(climbingInputSchema)
+    .output(z.array(climbingSessionSummarySchema))
     .query(async ({ ctx, input }): Promise<ClimbingSessionSummaryRow[]> => {
       return runClimbingQuery(async () => {
         const repository = await createClimbingRepository(ctx);
-        return (await repository.getSessionSummaries(input.days)).map((row) => row.toDetail());
+        return (await repository.getSessionSummaries(input.days, input)).map((row) =>
+          row.toDetail(),
+        );
       });
     }),
 

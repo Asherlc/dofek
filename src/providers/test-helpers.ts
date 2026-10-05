@@ -41,7 +41,7 @@ export function openBetaClimb(overrides: Record<string, unknown> = {}): Record<s
     uuid: "climb-uuid-1",
     name: "Sunset Arete",
     grades: openBetaGrades(),
-    type: { bouldering: false },
+    type: { bouldering: false, sport: null, trad: null },
     parent: { area_name: "Smith Rock" },
     ...overrides,
   };
