@@ -30189,3 +30189,17 @@ the earlier metric-log pressure recurrence risk also remains unresolved. A usefu
 runbook refinement is to record selected/total data granules for every repeated
 source branch and distinguish per-request resource proof from total capture work
 and source-to-visible freshness. No steady-state diagnostic framework is added.
+
+
+**2026-10-05 — PR #2879 hosted runner allocation failure (unresolved).**
+CI for the climbing-chart fix remained queued and then cancelled several jobs,
+including Semgrep `SAST Scan` and the web build. The first fatal
+[Semgrep job annotation](https://github.com/Asherlc/dofek/actions/runs/37363137409/job/111942204133)
+was: "The job was not acquired by Runner of type hosted even after multiple attempts".
+The job had no steps or command logs; execution never reached the scan.
+The observed failure mechanism is hosted runner allocation; its underlying
+platform cause remains unknown. Production was unchanged, but CI blocks merging
+the chart fix. Local validation passed 342 unit tests, 33 mobile tests, full lint,
+and root/server/web typechecks. No workflow, timeout, retry, or runner changes
+were made. Follow-up: investigate hosted runner availability and the allocation
+failure before selecting a remediation. This remains unresolved.
