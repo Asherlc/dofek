@@ -1,10 +1,12 @@
 import { randomUUID } from "node:crypto";
+import { queryCache } from "dofek/lib/cache";
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { TEST_USER_ID } from "../../../../src/db/schema/core.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { executeWithSchema } from "../lib/typed-sql.ts";
+import { CacheTTL, requestCacheKey } from "../trpc.ts";
 import { activityRouter } from "./activity.ts";
 import { climbingRouter } from "./climbing.ts";
 import { createTestCallerFactory } from "./test-helpers.ts";
@@ -235,18 +237,38 @@ describe("climbing router integration", () => {
     await testContext?.cleanup();
   });
 
-  it("returns grade progression, volume, and session summaries from real Postgres rows", async () => {
+  it("returns real Postgres summaries and recorded attempts despite a legacy cached volume response", async () => {
     const caller = createCaller({
       db: testContext.db,
       userId: TEST_USER_ID,
       timezone: "UTC",
     });
 
+    const legacyCacheKey = requestCacheKey(TEST_USER_ID, "volumeByGrade", { days: 30 }, "UTC");
+    await queryCache.set(
+      legacyCacheKey,
+      [
+        {
+          climbType: "boulder",
+          gradeSystem: "v_scale",
+          grade: "V4",
+          gradeSortValue: 65,
+          attempts: 99,
+          sends: 99,
+        },
+      ],
+      CacheTTL.LONG,
+    );
+    expect(await queryCache.get(legacyCacheKey)).toEqual([
+      expect.objectContaining({ attempts: 99, sends: 99 }),
+    ]);
+
     const [gradeProgression, volumeByGrade, sessionSummary] = await Promise.all([
       caller.gradeProgression({ days: 30 }),
       caller.volumeByGrade({ days: 30 }),
       caller.sessionSummary({ days: 30 }),
     ]);
+    await queryCache.invalidate(legacyCacheKey);
 
     expect(gradeProgression).toEqual(
       expect.arrayContaining([
@@ -264,9 +286,27 @@ describe("climbing router integration", () => {
     );
     expect(volumeByGrade).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ climbType: "boulder", grade: "V4", attempts: 3, sends: 1 }),
-        expect.objectContaining({ climbType: "boulder", grade: "V5", attempts: 4, sends: 0 }),
-        expect.objectContaining({ climbType: "route", grade: "5.10a", attempts: 2, sends: 1 }),
+        expect.objectContaining({
+          climbType: "boulder",
+          grade: "V4",
+          attempts: 3,
+          recordedAttempts: 3,
+          sends: 1,
+        }),
+        expect.objectContaining({
+          climbType: "boulder",
+          grade: "V5",
+          attempts: 4,
+          recordedAttempts: 4,
+          sends: 0,
+        }),
+        expect.objectContaining({
+          climbType: "route",
+          grade: "5.10a",
+          attempts: 2,
+          recordedAttempts: 2,
+          sends: 1,
+        }),
       ]),
     );
     expect(sessionSummary).toEqual(

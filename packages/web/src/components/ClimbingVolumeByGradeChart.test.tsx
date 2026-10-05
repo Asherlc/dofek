@@ -1,21 +1,28 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+
+const chartOptions = vi.hoisted(() => vi.fn());
 
 vi.mock("./DofekChart.tsx", () => ({
   DofekChart: ({
     empty,
     emptyMessage,
     loading,
+    option,
   }: {
     empty?: boolean;
     emptyMessage?: string;
     loading?: boolean;
-  }) => (
-    <div data-testid="chart">
-      {loading ? "Loading chart" : empty ? emptyMessage : "volume chart"}
-    </div>
-  ),
+    option: Record<string, unknown>;
+  }) => {
+    chartOptions(option);
+    return (
+      <div data-testid="chart">
+        {loading ? "Loading chart" : empty ? emptyMessage : "volume chart"}
+      </div>
+    );
+  },
 }));
 
 import { ClimbingVolumeByGradeChart } from "./ClimbingVolumeByGradeChart.tsx";
@@ -35,24 +42,46 @@ describe("ClimbingVolumeByGradeChart", () => {
     expect(screen.getByText("Loading chart")).toBeTruthy();
   });
 
-  it("shows unknown attempt counts while retaining known sends", () => {
+  it("omits unknown attempts while retaining known sends and recorded zero attempts", () => {
     render(
       <ClimbingVolumeByGradeChart
         data={[
           {
             climbType: "boulder",
             gradeSystem: "v_scale",
-            grade: "V4",
-            gradeSortValue: 4,
+            grade: "VB",
+            gradeSortValue: -1,
             attempts: null,
-            sends: 2,
+            recordedAttempts: null,
+            sends: 1,
+          },
+          {
+            climbType: "boulder",
+            gradeSystem: "v_scale",
+            grade: "V0",
+            gradeSortValue: 0,
+            attempts: 0,
+            recordedAttempts: 0,
+            sends: 0,
           },
         ]}
       />,
     );
 
-    expect(screen.getByText("Attempt count not recorded")).toBeTruthy();
-    expect(screen.getByText("2 sends")).toBeTruthy();
+    const unknownGrade = screen.getByText("VB").parentElement;
+    expect(unknownGrade).toBeTruthy();
+    if (!unknownGrade) throw new Error("Missing VB grade card");
+    expect(within(unknownGrade).queryByText(/attempt/i)).toBeNull();
+    expect(within(unknownGrade).getByText("1 sends")).toBeTruthy();
+    expect(screen.getByText("0 attempts")).toBeTruthy();
+    expect(screen.getByText("0 sends")).toBeTruthy();
+    expect(chartOptions).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        series: expect.arrayContaining([
+          expect.objectContaining({ name: "Recorded attempts", data: [null, 0] }),
+        ]),
+      }),
+    );
   });
 
   it("renders per-grade sends/attempts ordered by sort value", () => {
@@ -65,6 +94,7 @@ describe("ClimbingVolumeByGradeChart", () => {
             grade: "V4",
             gradeSortValue: 4,
             attempts: 3,
+            recordedAttempts: 3,
             sends: 2,
           },
           {
@@ -73,6 +103,7 @@ describe("ClimbingVolumeByGradeChart", () => {
             grade: "V1",
             gradeSortValue: 1,
             attempts: 5,
+            recordedAttempts: 5,
             sends: 5,
           },
         ]}
@@ -86,5 +117,43 @@ describe("ClimbingVolumeByGradeChart", () => {
     ).toBeTruthy();
     expect(screen.getByText("5 attempts")).toBeTruthy();
     expect(screen.getByText("2 sends")).toBeTruthy();
+  });
+
+  it("renders and plots recorded attempts when the complete total is unknown", () => {
+    render(
+      <ClimbingVolumeByGradeChart
+        data={[
+          {
+            climbType: "boulder",
+            gradeSystem: "v_scale",
+            grade: "VB",
+            gradeSortValue: -1,
+            attempts: null,
+            recordedAttempts: 4,
+            sends: 1,
+          },
+          {
+            climbType: "boulder",
+            gradeSystem: "v_scale",
+            grade: "V0",
+            gradeSortValue: 0,
+            attempts: null,
+            recordedAttempts: 0,
+            sends: 0,
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.getByText("4 recorded attempts")).toBeTruthy();
+    expect(screen.getByText("1 sends")).toBeTruthy();
+    expect(screen.getByText("0 recorded attempts")).toBeTruthy();
+    expect(chartOptions).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        series: expect.arrayContaining([
+          expect.objectContaining({ name: "Recorded attempts", data: [4, 0] }),
+        ]),
+      }),
+    );
   });
 });

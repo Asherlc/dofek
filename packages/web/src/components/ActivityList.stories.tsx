@@ -208,6 +208,58 @@ type Story = StoryObj<typeof meta>;
 
 export const Default: Story = {};
 
+export const Climbing: Story = {
+  args: {
+    activities: [
+      {
+        id: "activity-climbing",
+        started_at: "2026-10-04T17:00:00Z",
+        ended_at: "2026-10-04T20:30:00Z",
+        canonical_type: "climbing",
+        name: null,
+        provider_id: "whoop",
+        source_providers: ["apple_health", "whoop"],
+        distance_meters: null,
+        distance_state: { status: "missing", reason: "Distance not recorded" },
+        elevation_gain_m: null,
+        elevation_state: { status: "missing", reason: "Elevation gain not recorded" },
+      },
+    ],
+    showDistance: false,
+    onBulkDelete: () => {},
+    additionalColumns: [
+      {
+        key: "attempts",
+        label: "Attempts",
+        headerClassName: "pb-2 pr-4 whitespace-nowrap",
+        cellClassName: "py-2 pr-4 text-muted tabular-nums whitespace-nowrap",
+        renderCell: () => "—",
+      },
+      {
+        key: "sends",
+        label: "Sends",
+        headerClassName: "pb-2 pr-4 whitespace-nowrap",
+        cellClassName: "py-2 pr-4 text-muted tabular-nums whitespace-nowrap",
+        renderCell: () => 1,
+      },
+      {
+        key: "best-boulder-grade",
+        label: "Best Boulder Grade",
+        headerClassName: "pb-2 pr-4 whitespace-nowrap",
+        cellClassName: "py-2 pr-4 text-muted whitespace-nowrap",
+        renderCell: () => "VB",
+      },
+      {
+        key: "best-route-grade",
+        label: "Best Route Grade",
+        headerClassName: "pb-2 whitespace-nowrap",
+        cellClassName: "py-2 text-muted whitespace-nowrap",
+        renderCell: () => "None",
+      },
+    ],
+  },
+};
+
 export const Selectable: Story = {
   args: {
     onBulkDelete: () => {},
