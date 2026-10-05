@@ -1,12 +1,20 @@
+-- Rebuild the daily view after removing supplement contributions below.
+-- squawk-ignore ban-drop-view
 DROP VIEW fitness.v_nutrition_daily;
 --> statement-breakpoint
 
+-- Rebuild the canonical view without retired supplement columns below.
+-- squawk-ignore ban-drop-view
 DROP VIEW fitness.v_nutrition_canonical_nutrient;
 --> statement-breakpoint
 
+-- Full supplement removal intentionally retires this view.
+-- squawk-ignore ban-drop-view
 DROP VIEW fitness.v_supplement_with_nutrition;
 --> statement-breakpoint
 
+-- Full supplement removal intentionally retires this view.
+-- squawk-ignore ban-drop-view
 DROP VIEW fitness.v_supplement_dose_current;
 --> statement-breakpoint
 
@@ -22,6 +30,8 @@ DROP TABLE fitness.supplement_definition;
 DROP TABLE fitness.supplement;
 --> statement-breakpoint
 
+-- The retired dose-event table was the only consumer of this enum.
+-- squawk-ignore ban-drop-type
 DROP TYPE fitness.supplement_dose_status;
 --> statement-breakpoint
 
