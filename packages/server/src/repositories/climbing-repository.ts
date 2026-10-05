@@ -275,8 +275,9 @@ export class ClimbingRepository extends BaseRepository {
     if (filters.protection === "unknown") predicates.push(sql`ce.route_protection IS NULL`);
     else if (filters.protection)
       predicates.push(sql`${filters.protection} = ANY(ce.route_protection)`);
-    // Location kinds are recorded source facts; provider identity and missing paths do not establish setting.
+    // Product policy treats Mountain Project and OpenBeta as outdoor, including older entries without paths.
     const setting = sql`CASE
+      WHEN ce.provider_id IN ('mountain-project', 'openbeta') THEN 'outdoor'
       WHEN ce.location_path @> '[{"kind":"gym"}]'::jsonb THEN 'indoor'
       WHEN ce.location_path @> '[{"kind":"destination"}]'::jsonb
         OR ce.location_path @> '[{"kind":"area"}]'::jsonb

@@ -30,7 +30,8 @@ describe("ClimbingRepository PostgreSQL summaries", () => {
     context = await setupTestDatabase();
     await context.db.execute(sql`INSERT INTO fitness.provider (id, name)
       VALUES ('climbing-summary-test', 'Climbing Summary Test'),
-             ('mountain-project', 'Mountain Project')
+             ('mountain-project', 'Mountain Project'),
+             ('openbeta', 'OpenBeta')
       ON CONFLICT (id) DO NOTHING`);
     const activities = await executeWithSchema(
       context.db,
@@ -61,6 +62,39 @@ describe("ClimbingRepository PostgreSQL summaries", () => {
   afterEach(async () => {
     await context?.cleanup();
   });
+
+  it.each(["mountain-project", "openbeta"])(
+    "treats existing %s entries without location metadata as outdoor in every summary",
+    async (providerId) => {
+      await context.db.execute(sql`UPDATE fitness.climbing_entry
+        SET provider_id = ${providerId}, location_path = '[]'::jsonb
+        WHERE id IN (${ATTACHED_ID}::uuid, ${UNATTACHED_ID}::uuid)`);
+      const repository = new ClimbingRepository(context.db, TEST_USER_ID, "America/Los_Angeles");
+      expect(
+        (await repository.getVolumeByGrade(30, { setting: "outdoor" })).map((row) =>
+          row.toDetail(),
+        ),
+      ).toEqual([
+        expect.objectContaining({ grade: "V3", attempts: 2, sends: 1 }),
+        expect.objectContaining({ grade: "V4", attempts: 3, sends: 1 }),
+      ]);
+      expect(
+        (await repository.getGradeProgression(30, { setting: "outdoor" })).map((row) =>
+          row.toDetail(),
+        ),
+      ).toEqual([expect.objectContaining({ grade: "V4" })]);
+      expect(
+        (await repository.getSessionSummaries(30, { setting: "outdoor" })).map((row) =>
+          row.toDetail(),
+        ),
+      ).toEqual([expect.objectContaining({ attempts: 2, sends: 1 })]);
+      for (const setting of ["indoor", "unknown"] as const) {
+        expect(await repository.getVolumeByGrade(30, { setting })).toEqual([]);
+        expect(await repository.getGradeProgression(30, { setting })).toEqual([]);
+        expect(await repository.getSessionSummaries(30, { setting })).toEqual([]);
+      }
+    },
+  );
 
   it("filters attached and unattached climbs before computing metrics, retaining unknown settings", async () => {
     await context.db.execute(sql`UPDATE fitness.climbing_entry
