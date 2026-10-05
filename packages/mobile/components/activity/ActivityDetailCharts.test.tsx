@@ -1,3 +1,4 @@
+import { formatDateTime } from "@dofek/format/format";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { AreaChart, LineChart } from "./ActivityDetailCharts";
@@ -30,7 +31,7 @@ describe("ActivityDetailCharts", () => {
       }),
     ).toBeDefined();
     fireEvent.click(screen.getByRole("button", { name: "View Heart Rate data" }));
-    expect(screen.getByText(/Oct 4, 2026, \d{1,2}:52 [AP]M/)).toBeDefined();
+    expect(screen.getByText(`Sample 1 · ${formatDateTime(data[0].recordedAt)}`)).toBeDefined();
     expect(screen.getByText("130 beats per minute")).toBeDefined();
     expect(screen.getByText("No value")).toBeDefined();
     expect(screen.getByText("145 beats per minute")).toBeDefined();
@@ -48,7 +49,8 @@ describe("ActivityDetailCharts", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: "View Heart Rate data" }));
-    expect(screen.getByLabelText(/Sample 1 · Oct 4, 2026/)).toBeDefined();
-    expect(screen.getByLabelText(/Sample 2 · Oct 4, 2026/)).toBeDefined();
+    const timestamp = formatDateTime(sample.recordedAt);
+    expect(screen.getByLabelText(`Sample 1 · ${timestamp}: 130 beats per minute`)).toBeDefined();
+    expect(screen.getByLabelText(`Sample 2 · ${timestamp}: 130 beats per minute`)).toBeDefined();
   });
 });
