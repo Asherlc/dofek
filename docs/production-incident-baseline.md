@@ -30218,3 +30218,17 @@ checks verified the web table and grade cards and the mobile default, unknown,
 and partial-count states. No retry or timeout tuning was added.
 A useful diagnostic runbook addition is to compare canonical attempt counts
 with raw source counts before changing the aggregation semantics.
+
+## 2026-10-05 — GitHub Actions runner assignment delays
+
+The refactor follow-up for [PR #2878](https://github.com/Asherlc/dofek/pull/2878)
+could not finish remote validation: [CI run 37363950556](https://github.com/Asherlc/dofek/actions/runs/37363950556)
+remained queued at Detect Changes, before any command executed. There was no
+fatal job log. GitHub's [Actions incident](https://www.githubstatus.com/incidents/3q1yb5m7ltvb)
+reported delayed assignment of hosted runners beginning at 19:11 UTC; the
+platform root cause was still under investigation. Local lint, typechecks,
+19,550 unit/mobile tests, and 13 PostgreSQL integration tests passed, and the
+mobile preview upload succeeded. No production impact was observed. Remote
+CI remains unresolved; keep the PR pending until required checks finish.
+No retries, timeout changes, or workflow bypasses were added. For future queue
+delays, check GitHub's published status before investigating repository code.
