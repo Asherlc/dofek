@@ -30189,3 +30189,30 @@ the earlier metric-log pressure recurrence risk also remains unresolved. A usefu
 runbook refinement is to record selected/total data granules for every repeated
 source branch and distinguish per-request resource proof from total capture work
 and source-to-visible freshness. No steady-state diagnostic framework is added.
+
+## 2026-10-05 — Climbing attempt totals hidden by incomplete source counts
+
+The climbing page displayed no numeric grade attempt totals and included an
+unavailable distance column for climbing activities. Read-only production
+queries found 169 raw climbing entries, of which 93 had recorded attempt
+counts. No record had a non-null raw `attempts` value with a null canonical
+count. Every active grade contained an unknown count; the VB entry came from
+`kaya-export` with both raw and canonical attempts null and no detailed tries.
+The [repository](../packages/server/src/repositories/climbing-repository.ts)
+intentionally returns a null total when any contributing count is unknown;
+counts were preserved, but incomplete totals therefore suppressed all grade
+attempt numbers. No production data was changed.
+
+The fix omits distance from the climbing table and exposes known attempt
+subtotals on grade cards as "N recorded attempts" when the total is incomplete.
+Grades with no recorded counts hide attempts; complete totals retain their
+"N attempts" label. Sends stay visible. The server retains its existing complete
+`attempts` field and adds a nullable `recordedAttempts` subtotal; it never
+substitutes sends or zero for an unknown source count. Validation passed:
+242 relevant web/server unit tests, 34 mobile tests, and 13 real-Postgres
+integration tests, including a real router bypassing a legacy cached response.
+Full lint and root/server/web/mobile typechecks passed. Headless Storybook
+checks verified the web table and grade cards and the mobile default, unknown,
+and partial-count states. No retry or timeout tuning was added.
+A useful diagnostic runbook addition is to compare canonical attempt counts
+with raw source counts before changing the aggregation semantics.

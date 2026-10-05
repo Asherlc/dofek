@@ -45,6 +45,7 @@ describe("ClimbingVolumeByGrade", () => {
       grade: "5.10c",
       gradeSortValue: 5103,
       attempts: 4,
+      recordedAttempts: 4,
       sends: 2,
     });
 
@@ -54,6 +55,7 @@ describe("ClimbingVolumeByGrade", () => {
       grade: "5.10c",
       gradeSortValue: 5103,
       attempts: 4,
+      recordedAttempts: 4,
       sends: 2,
     });
   });
@@ -395,13 +397,28 @@ describe("ClimbingRepository", () => {
             grade_system: "v_scale",
             grade: "V5",
             attempts: first,
+            recorded_attempts: first,
             sends: 1,
           },
-          { climb_type: "boulder", grade_system: "font", grade: "6C", attempts: second, sends: 2 },
+          {
+            climb_type: "boulder",
+            grade_system: "font",
+            grade: "6C",
+            attempts: second,
+            recorded_attempts: second,
+            sends: 2,
+          },
         ]);
 
         expect((await repo.getVolumeByGrade(90)).map((row) => row.toDetail())).toEqual([
-          expect.objectContaining({ climbType: "boulder", grade: "V5", attempts: null, sends: 3 }),
+          expect.objectContaining({
+            climbType: "boulder",
+            grade: "V5",
+            attempts: null,
+            recordedAttempts:
+              first === null && second === null ? null : (first ?? 0) + (second ?? 0),
+            sends: 3,
+          }),
         ]);
       },
     );
@@ -420,6 +437,7 @@ describe("ClimbingRepository", () => {
           grade: "V2",
           grade_sort_value: 2,
           attempts: 6,
+          recorded_attempts: 6,
           sends: 4,
         },
         {
@@ -428,6 +446,7 @@ describe("ClimbingRepository", () => {
           grade: "5.12-",
           grade_sort_value: 5117,
           attempts: 2,
+          recorded_attempts: 2,
           sends: 1,
         },
       ]);
@@ -441,6 +460,7 @@ describe("ClimbingRepository", () => {
           grade: "V2",
           gradeSortValue: 55,
           attempts: 6,
+          recordedAttempts: 6,
           sends: 4,
         },
         {
@@ -449,6 +469,7 @@ describe("ClimbingRepository", () => {
           grade: "5.12-",
           gradeSortValue: 75.5,
           attempts: 2,
+          recordedAttempts: 2,
           sends: 1,
         },
       ]);
@@ -462,6 +483,7 @@ describe("ClimbingRepository", () => {
             grade_system: "v_scale",
             grade: "V4",
             attempts: 6,
+            recorded_attempts: 6,
             sends: 4,
           },
           {
@@ -469,6 +491,7 @@ describe("ClimbingRepository", () => {
             grade_system: "yds",
             grade: "5.10c",
             attempts: 2,
+            recorded_attempts: 2,
             sends: 1,
           },
         ],
@@ -484,6 +507,7 @@ describe("ClimbingRepository", () => {
           grade: "6b",
           gradeSortValue: 64.5,
           attempts: 2,
+          recordedAttempts: 2,
           sends: 1,
         },
         {
@@ -492,6 +516,7 @@ describe("ClimbingRepository", () => {
           grade: "6a+/6b+",
           gradeSortValue: 65,
           attempts: 6,
+          recordedAttempts: 6,
           sends: 4,
         },
       ]);
@@ -505,6 +530,7 @@ describe("ClimbingRepository", () => {
             grade_system: "v_scale",
             grade: "V4",
             attempts: 3,
+            recorded_attempts: 3,
             sends: 1,
           },
           {
@@ -512,6 +538,7 @@ describe("ClimbingRepository", () => {
             grade_system: "v_scale",
             grade: "V4",
             attempts: 2,
+            recorded_attempts: 2,
             sends: 2,
           },
           {
@@ -519,6 +546,7 @@ describe("ClimbingRepository", () => {
             grade_system: "v_scale",
             grade: "not-a-grade",
             attempts: 9,
+            recorded_attempts: 9,
             sends: 9,
           },
         ],
@@ -534,6 +562,7 @@ describe("ClimbingRepository", () => {
           grade: "6a+/6b+",
           gradeSortValue: 65,
           attempts: 5,
+          recordedAttempts: 5,
           sends: 3,
         },
       ]);

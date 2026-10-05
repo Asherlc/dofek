@@ -47,6 +47,7 @@ export interface ClimbingVolumeByGradeRow {
   grade: string;
   gradeSortValue: number;
   attempts: number | null;
+  recordedAttempts: number | null;
   sends: number;
 }
 
@@ -101,6 +102,7 @@ const volumeByGradeRowSchema = z.object({
   grade_system: gradeSystemSchema,
   grade: z.string(),
   attempts: z.coerce.number().nullable(),
+  recorded_attempts: z.coerce.number().nullable(),
   sends: z.coerce.number(),
 });
 const sessionEntryRowSchema = z.object({
@@ -354,6 +356,7 @@ export class ClimbingRepository extends BaseRepository {
             CASE WHEN COUNT(CASE WHEN detail.attempt_count > 0 THEN detail.attempt_count ELSE ce.attempt_count END) = COUNT(*)
               THEN SUM(CASE WHEN detail.attempt_count > 0 THEN detail.attempt_count ELSE ce.attempt_count END)
               ELSE NULL END AS attempts,
+            SUM(CASE WHEN detail.attempt_count > 0 THEN detail.attempt_count ELSE ce.attempt_count END) AS recorded_attempts,
             COUNT(*) FILTER (WHERE CASE WHEN detail.attempt_count > 0 THEN detail.sent ELSE ce.sent END)::int AS sends
           FROM climbing_entries AS ce
           LEFT JOIN LATERAL (
@@ -374,12 +377,17 @@ export class ClimbingRepository extends BaseRepository {
           current.attempts === null || row.attempts === null
             ? null
             : current.attempts + row.attempts;
+        current.recordedAttempts =
+          current.recordedAttempts === null && row.recorded_attempts === null
+            ? null
+            : (current.recordedAttempts ?? 0) + (row.recorded_attempts ?? 0);
         current.sends += row.sends;
       } else {
         byDisplayGrade.set(key, {
           climbType: row.climb_type,
           ...display,
           attempts: row.attempts,
+          recordedAttempts: row.recorded_attempts,
           sends: row.sends,
         });
       }

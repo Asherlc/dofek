@@ -386,6 +386,7 @@ describe("climbingRouter", () => {
         grade_system: "yds",
         grade: "5.10c",
         attempts: 3,
+        recorded_attempts: 3,
         sends: 2,
       },
     ]);
@@ -400,6 +401,7 @@ describe("climbingRouter", () => {
         grade: "5.10c",
         gradeSortValue: 64.5,
         attempts: 3,
+        recordedAttempts: 3,
         sends: 2,
       },
     ]);

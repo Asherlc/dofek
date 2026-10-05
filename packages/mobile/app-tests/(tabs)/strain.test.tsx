@@ -793,6 +793,7 @@ describe("StrainScreen recent activity navigation", () => {
             grade: "V4",
             gradeSortValue: 4,
             attempts: 8,
+            recordedAttempts: 8,
             sends: 5,
           },
         ],
@@ -854,7 +855,7 @@ describe("StrainScreen recent activity navigation", () => {
     });
   });
 
-  it("renders unknown climbing attempt counts without hiding sends or sessions", async () => {
+  it("omits unknown grade attempts while retaining sends, recorded zero attempts, and sessions", async () => {
     mockTrainingState.data = {
       ...defaultMockTrainingData(),
       climbing: {
@@ -863,10 +864,20 @@ describe("StrainScreen recent activity navigation", () => {
           {
             climbType: "boulder",
             gradeSystem: "v_scale",
-            grade: "V4",
-            gradeSortValue: 4,
+            grade: "VB",
+            gradeSortValue: -1,
             attempts: null,
-            sends: 6,
+            recordedAttempts: null,
+            sends: 1,
+          },
+          {
+            climbType: "boulder",
+            gradeSystem: "v_scale",
+            grade: "V0",
+            gradeSortValue: 0,
+            attempts: 0,
+            recordedAttempts: 0,
+            sends: 0,
           },
         ],
         sessionSummary: [
@@ -888,10 +899,47 @@ describe("StrainScreen recent activity navigation", () => {
     const { default: StrainScreen } = await import("../../app/(tabs)/strain");
     render(<StrainScreen />);
 
-    expect(screen.getByText("Attempt count not recorded")).toBeTruthy();
-    expect(screen.getByText("6 sends")).toBeTruthy();
+    const unknownGrade = screen.getByText("VB").parentElement;
+    expect(unknownGrade?.textContent).toBe("VB1 sends");
+    expect(screen.getByText("0 attempts")).toBeTruthy();
+    expect(screen.getByText("0 sends")).toBeTruthy();
     expect(screen.getByText("Kaya climbing")).toBeTruthy();
     expect(screen.getByText("— attempts · 6 sends")).toBeTruthy();
+  });
+
+  it("renders recorded climbing attempt subtotals while complete totals are unknown", async () => {
+    mockTrainingState.data = {
+      ...defaultMockTrainingData(),
+      climbing: {
+        ...defaultMockTrainingData().climbing,
+        volumeByGrade: [
+          {
+            climbType: "boulder",
+            gradeSystem: "v_scale",
+            grade: "VB",
+            gradeSortValue: -1,
+            attempts: null,
+            recordedAttempts: 4,
+            sends: 1,
+          },
+          {
+            climbType: "boulder",
+            gradeSystem: "v_scale",
+            grade: "V0",
+            gradeSortValue: 0,
+            attempts: null,
+            recordedAttempts: 0,
+            sends: 0,
+          },
+        ],
+      },
+    };
+    const { default: StrainScreen } = await import("../../app/(tabs)/strain");
+    render(<StrainScreen />);
+
+    expect(screen.getByText("4 recorded attempts")).toBeTruthy();
+    expect(screen.getByText("1 sends")).toBeTruthy();
+    expect(screen.getByText("0 recorded attempts")).toBeTruthy();
   });
 
   it("renders server-computed Hangboarding summary metrics and duration trend", async () => {

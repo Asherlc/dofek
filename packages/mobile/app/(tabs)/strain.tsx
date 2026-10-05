@@ -65,6 +65,7 @@ const mobileClimbingVolumeByGradeRowSchema = z.object({
   grade: z.string(),
   gradeSortValue: z.number(),
   attempts: z.number().nullable(),
+  recordedAttempts: z.number().nullable(),
   sends: z.number(),
 });
 
@@ -762,9 +763,13 @@ function ClimbingSection({ model }: { model: ClimbingSectionModel }) {
           model.volumeRows.map((row) => (
             <View key={`${row.climbType}-${row.grade}`} style={styles.climbingVolumeRow}>
               <Text style={styles.climbingGradeText}>{row.grade}</Text>
-              <Text style={styles.climbingMetaText}>
-                {row.attempts === null ? "Attempt count not recorded" : `${row.attempts} attempts`}
-              </Text>
+              {(row.attempts ?? row.recordedAttempts) !== null && (
+                <Text style={styles.climbingMetaText}>
+                  {row.attempts !== null
+                    ? `${row.attempts} attempts`
+                    : `${row.recordedAttempts} recorded attempts`}
+                </Text>
+              )}
               <Text style={styles.climbingMetaText}>{row.sends} sends</Text>
             </View>
           ))
