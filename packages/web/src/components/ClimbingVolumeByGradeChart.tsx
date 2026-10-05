@@ -32,11 +32,11 @@ class ClimbingVolumeByGradeChartModel {
       legend: dofekLegend(true),
       tooltip: dofekTooltip(),
       xAxis: dofekAxis.category({ data: grades }),
-      yAxis: dofekAxis.value({ name: "Attempts and sends" }),
+      yAxis: dofekAxis.value({ name: "Recorded attempts and sends" }),
       series: [
         dofekSeries.bar(
-          "Attempts",
-          this.#rows.map((row) => row.attempts),
+          "Recorded attempts",
+          this.#rows.map((row) => row.attempts ?? row.recordedAttempts),
           { color: chartColors.blue },
         ),
         dofekSeries.bar(
@@ -70,11 +70,13 @@ export function ClimbingVolumeByGradeChart({ data, loading }: ClimbingVolumeByGr
                 className="rounded border border-border bg-surface px-3 py-2"
               >
                 <div className="font-semibold text-foreground">{row.grade}</div>
-                <div className="text-xs text-dim">
-                  {row.attempts === null
-                    ? "Attempt count not recorded"
-                    : `${row.attempts} attempts`}
-                </div>
+                {(row.attempts ?? row.recordedAttempts) !== null && (
+                  <div className="text-xs text-dim">
+                    {row.attempts !== null
+                      ? `${row.attempts} attempts`
+                      : `${row.recordedAttempts} recorded attempts`}
+                  </div>
+                )}
                 <div className="text-xs text-dim">{row.sends} sends</div>
               </div>
             ))}

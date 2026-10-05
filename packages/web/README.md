@@ -43,6 +43,9 @@ angle/units, method, and result for both attached climbs and suggested ticks.
 `ClimbingEntryContext` uses shared formatters and server-derived status; it
 retains unknown counts/units. See the [climbing contract](../../docs/climbing-context.md).
 
+The recent climbing activity table omits distance and keeps its climbing metrics,
+as configured by the [climbing page](src/routes/training/climbing.tsx).
+
 ```bash
 cd packages/web && pnpm dev      # Start Vite dev server (proxies /api to server)
 cd packages/web && pnpm build    # Build for production (outputs to dist/)

@@ -1,5 +1,43 @@
 # Production Incident Baseline
 
+## 2026-10-05: PR 2882 Storybook preview upload rejected by R2 (unresolved)
+
+- Impact: the mobile Storybook preview deployment failed; the preview comment
+  was skipped. Web and mobile Storybook builds passed. No production impact
+  was observed.
+- Evidence: [CI job 111990776845](https://github.com/Asherlc/dofek/actions/runs/37377356277/job/111990776845),
+  step `Deploy Mobile Storybook to R2`, ran `aws s3 cp
+  storybook-mobile-static/ s3://dofek-storybook/pr-2882/mobile/ --recursive`.
+  Its first fatal upload error at 21:43:06 UTC was `ServiceUnavailable` during
+  `PutObject` for `assets/NutritionDataQualityPanel-wWhAfOuv.js`:
+  `Reduce your concurrent request rate for the same object.` The command
+  completed with exit code 1.
+- Investigation: branch history showed only one CI run, with separate web
+  and mobile object prefixes. No duplicate write to this key was visible in
+  the job log. [R2 documents a per-key write limit](https://developers.cloudflare.com/r2/platform/limits/),
+  but the evidence does not establish the source of a conflicting write or
+  an underlying R2 service fault.
+- Remediation: none yet. An attempt to rerun the failed job was rejected by
+  GitHub while the parent run remained in progress. No retry, timeout, or
+  concurrency workaround was added.
+- Follow-up: finish the parent run, repeat the failed upload as a diagnostic,
+  and investigate R2 request evidence if it recurs. Root cause and recovery
+  remain unconfirmed.
+- The operator chose request-log investigation before another upload. The
+  configured `CLOUDFLARE_API_TOKEN` successfully read the bucket metadata, but
+  a dry-run telemetry query for the failing asset from 21:42 to 21:44 UTC
+  returned HTTP 403, code `10000`, `Authentication error`. No connected
+  dashboard browser was available. Access to historical logs remains blocked;
+  the bucket's logging-enabled state was not established.
+- [Cloudflare's query endpoint](https://developers.cloudflare.com/api/resources/workers/subresources/observability/subresources/telemetry/methods/query/)
+  lists `Workers Observability Write` as its accepted permission.
+  [R2 Data Access Logs](https://developers.cloudflare.com/r2/buckets/data-access-logs/)
+  exclude HTTP errors, retain seven days, and do not backfill operations before
+  logging is enabled. Successful writes near the failure could identify
+  another writer, but absence of a log would not establish absence of a write.
+  Next step: provide an authorized observability token or dashboard session,
+  then query the exact object key before selecting a remediation.
+
 ## 2026-09-30 — Nutrition nudge PR dependency audit and Metro prerequisite failures
 
 - **Symptoms / impact:** PR #2861 could not pass CI; the nutrition guidance was not yet deployed.
@@ -30205,3 +30243,48 @@ Local browser validation also encountered `ERR_PNPM_ENOSPC` during Docker image 
 The rebuilt E2E stack then hit `all predefined address pools have been fully subnetted`; network inspection confirmed all automatic Docker subnets were allocated. A temporary operator-only Compose override used an unallocated `10.253.88.0/24` subnet and isolated ports, preserving other workspaces' networks and services.
 
 Full local Cypress validation subsequently exposed a settings layout failure: `CLS 0.0128; ... Data Sources height delta 0px; normalized Zepp pairing delta 0px: expected 0.01280707878787879 to be at most 0.001`. Temporary diagnostics identified the provider grid moving down 68 pixels as sync controls appeared after the delayed inventory response. With user approval, web now reserves the control/processing area above that grid; mobile reserves corresponding areas scaled to system font size. The temporary diagnostic spec was deleted. All 43 browser tests and 144 provider-screen tests passed, including mobile loading transitions at normal and doubled font size; web/mobile typechecks also passed. The replacement CI run remains the final verification gate. No layout threshold was relaxed.
+
+The subsequent push initially created no PR CI run: GitHub reported `mergeable: CONFLICTING` after unrelated changes reached `main`. GitHub documents that [pull-request workflows do not run with merge conflicts](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#pull_request). Merging current `origin/main` into the existing branch required resolving only the incident-baseline append conflict; both sets of records were retained. No branch switch, history rewrite, or workflow bypass was used.
+
+## 2026-10-05 — Climbing attempt totals hidden by incomplete source counts
+
+The climbing page displayed no numeric grade attempt totals and included an
+unavailable distance column for climbing activities. Read-only production
+queries found 169 raw climbing entries, of which 93 had recorded attempt
+counts. No record had a non-null raw `attempts` value with a null canonical
+count. Every active grade contained an unknown count; the VB entry came from
+`kaya-export` with both raw and canonical attempts null and no detailed tries.
+The [repository](../packages/server/src/repositories/climbing-repository.ts)
+intentionally returns a null total when any contributing count is unknown;
+counts were preserved, but incomplete totals therefore suppressed all grade
+attempt numbers. No production data was changed.
+
+The fix omits distance from the climbing table and exposes known attempt
+subtotals on grade cards as "N recorded attempts" when the total is incomplete.
+Grades with no recorded counts hide attempts; complete totals retain their
+"N attempts" label. Sends stay visible. The server retains its existing complete
+`attempts` field and adds a nullable `recordedAttempts` subtotal; it never
+substitutes sends or zero for an unknown source count. Server query-cache keys
+and the mobile persisted-cache contract version both advance so cached older
+responses cannot omit the required subtotal. Validation passed:
+242 relevant web/server unit tests, 34 mobile tests, and 13 real-Postgres
+integration tests, including a real router bypassing a legacy cached response.
+Full lint and root/server/web/mobile typechecks passed. Headless Storybook
+checks verified the web table and grade cards and the mobile default, unknown,
+and partial-count states. No retry or timeout tuning was added.
+A useful diagnostic runbook addition is to compare canonical attempt counts
+with raw source counts before changing the aggregation semantics.
+
+## 2026-10-05 — GitHub Actions runner assignment delays
+
+The refactor follow-up for [PR #2878](https://github.com/Asherlc/dofek/pull/2878)
+could not finish remote validation: [CI run 37363950556](https://github.com/Asherlc/dofek/actions/runs/37363950556)
+remained queued at Detect Changes, before any command executed. There was no
+fatal job log. GitHub's [Actions incident](https://www.githubstatus.com/incidents/3q1yb5m7ltvb)
+reported delayed assignment of hosted runners beginning at 19:11 UTC; the
+platform root cause was still under investigation. Local lint, typechecks,
+19,550 unit/mobile tests, and 13 PostgreSQL integration tests passed, and the
+mobile preview upload succeeded. No production impact was observed. Remote
+CI remains unresolved; keep the PR pending until required checks finish.
+No retries, timeout changes, or workflow bypasses were added. For future queue
+delays, check GitHub's published status before investigating repository code.
