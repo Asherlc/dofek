@@ -30203,3 +30203,19 @@ the chart fix. Local validation passed 342 unit tests, 33 mobile tests, full lin
 and root/server/web typechecks. No workflow, timeout, retry, or runner changes
 were made. Follow-up: investigate hosted runner availability and the allocation
 failure before selecting a remediation. This remains unresolved.
+
+**2026-10-05 — PR #2879 runner recovery and test prerequisites.**
+The runner allocation failure matched GitHub's confirmed [Actions incident](https://www.githubstatus.com/incidents/3q1yb5m7ltvb).
+After GitHub applied mitigations, the rerun acquired a runner; production was
+unchanged. CI then exposed two repository failures: [Spell Check](https://github.com/Asherlc/dofek/actions/runs/37365478773/job/111991409624)
+reported `Unknown word (Kiritimati)` and `Unknown word (Juli)`, and
+[Stryker's initial test run](https://github.com/Asherlc/dofek/actions/runs/37365478773/job/111992803134)
+reported `expected +0 to be 420` in the chart's timezone boundary test.
+The test changed `TZ` inside a worker thread, which does not update native
+timezone state; [Node documents worker environment isolation](https://nodejs.org/download/release/v26.5.1/docs/api/worker_threads.html).
+Added the valid timezone and localized month names to the spelling dictionary,
+tested boundaries in the worker's actual timezone, and supplied explicit
+timezones to locale formatter tests. Local validation includes UTC worker-thread
+execution and separate process-start timezone runs. CI validation remains
+pending; no retries, timeouts, or relaxed gates were added. Follow-up: set test
+timezones before process startup rather than mutating `TZ` inside workers.

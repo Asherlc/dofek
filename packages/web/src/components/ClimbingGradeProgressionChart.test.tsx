@@ -70,7 +70,6 @@ function option(): ChartOption {
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
-  vi.unstubAllEnvs();
 });
 
 describe("ClimbingGradeProgressionChart", () => {
@@ -86,14 +85,9 @@ describe("ClimbingGradeProgressionChart", () => {
     expect(buildChartTable({ ...option() }).rows[0]?.value).toBe("V4");
   });
 
-  it.each([
-    ["America/Los_Angeles", 420],
-    ["Pacific/Kiritimati", -840],
-  ])("aligns plotted dates with local selected-range boundaries in %s", (zone, offset) => {
-    vi.stubEnv("TZ", String(zone));
+  it("aligns plotted dates with local selected-range boundaries", () => {
     const firstBoundary = new Date(2026, 6, 1);
     const lastBoundary = new Date(2026, 6, 29);
-    expect(firstBoundary.getTimezoneOffset()).toBe(offset);
     render(
       <ClimbingGradeProgressionChart
         data={[row("2026-07-01", "boulder", "V2"), row("2026-07-29", "boulder", "V4")]}
@@ -178,26 +172,29 @@ describe("ClimbingGradeProgressionChart", () => {
   });
 
   it.each([
-    ["en-US", "America/Los_Angeles", "Jul 1", "Jul 1, 2026"],
-    ["en-US", "Pacific/Kiritimati", "Jul 1", "Jul 1, 2026"],
-    ["de-DE", "America/Los_Angeles", "1. Juli", "1. Juli 2026"],
-    ["de-DE", "Pacific/Kiritimati", "1. Juli", "1. Juli 2026"],
+    ["en-US", "America/Los_Angeles", "-07:00", "Jul 1", "Jul 1, 2026"],
+    ["en-US", "Pacific/Kiritimati", "+14:00", "Jul 1", "Jul 1, 2026"],
+    ["de-DE", "America/Los_Angeles", "-07:00", "1. Juli", "1. Juli 2026"],
+    ["de-DE", "Pacific/Kiritimati", "+14:00", "1. Juli", "1. Juli 2026"],
   ])(
     "preserves calendar dates in viewer locale %s and time zone %s",
-    async (locale, zone, shortDate, mediumDate) => {
-      vi.stubEnv("TZ", zone);
+    async (locale, zone, offset, shortDate, mediumDate) => {
       vi.resetModules();
       const DateTimeFormat = Intl.DateTimeFormat;
       vi.spyOn(Intl, "DateTimeFormat").mockImplementation(
         function DeviceDateTimeFormat(locales, options) {
-          return new DateTimeFormat(locales ?? locale, options);
+          return new DateTimeFormat(locales ?? locale, {
+            ...options,
+            timeZone: options?.timeZone ?? zone,
+          });
         },
       );
       const { ClimbingGradeProgressionChart: LocalizedChart } = await import(
         "./ClimbingGradeProgressionChart.tsx"
       );
       render(<LocalizedChart data={[row("2026-07-01", "boulder", "V4")]} />);
-      expect(option().xAxis.axisLabel.formatter(new Date(2026, 6, 1).getTime())).toBe(shortDate);
+      const localMidnight = Date.parse(`2026-07-01T00:00:00${offset}`);
+      expect(option().xAxis.axisLabel.formatter(localMidnight)).toBe(shortDate);
       const tooltip = option().tooltip.formatter([{ seriesIndex: 0, dataIndex: 0 }]);
       expect(tooltip).toContain(mediumDate);
       expect(buildChartTable({ ...option() }).rows[0]?.category).toBe(mediumDate);
