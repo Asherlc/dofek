@@ -29040,6 +29040,325 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
   The existing [Compose environment script](../scripts/compose-env.ts) and
   [testing runbook](testing.md) remain the canonical local setup references.
 
+## 2026-10-02 — Production page rendering hid multi-second data waits (unresolved)
+
+- **Symptoms / impact:** A production loading audit found Training, Running's
+  pace curve, and Daily Heart Rate incomplete after 20 seconds of browser
+  observation despite early page shells. Data Sources took 5.21 seconds to
+  populate; several activity lists and analytics views took 3–4 seconds.
+  Daily Heart Rate removed its existing chart for 16.73 seconds during a date
+  change. Sleep had data by 0.39 seconds but unrelated processing work kept
+  loading indicators visible until 3.62 seconds.
+- **Evidence:** The [dated audit](performance/production-load-audit-2026-10-02.md)
+  records 58 authenticated page/navigation observations, additional filter and
+  public-page measurements, exact slow-log timestamps, trace/query IDs, mobile
+  emulation, and source references. Both web replicas ran release
+  `3b517084d`. The main sweep occurred October 3 at 03:39–03:52 UTC
+  (October 2 Pacific time). Axiom and ClickHouse query logs were working;
+  inspected spans lived in `dofek-logs` with 10% trace sampling.
+- **Confirmed causes:** Successful ClickHouse executions consumed 30.507 seconds
+  and 57.85 million rows for `heartRate.dailyBySource`, 26.153 seconds and
+  20.69 million rows for `durationCurves.paceCurve`, and 20.878 seconds and
+  10.58 million rows for `training.hrZones`. Request-time sensor reads and
+  calculations dominate those specific waits. Client query-key changes also
+  discard usable charts; global fetching state makes unrelated charts look
+  busy. Other slow parent requests require current child-query investigation
+  before assigning their root cause to an engine or queue.
+- **Fix / validation:** Audit only; no runtime fix or deployment was performed.
+  Repeated warm visits were fast, which confirms cache sensitivity but does
+  not establish resolution. Read-only engine evidence confirmed the slow-query
+  durations; mobile and filter checks confirmed separate client symptoms.
+  The initial >20-second browser observations were stopped before completion,
+  so their later server durations are not exact browser completion times.
+- **Remaining risk / follow-up:** Unresolved. Review source-preserving daily
+  heart-rate access, deduped pace-curve computation, and HR-zone model semantics;
+  preserve previous data on web and native filter changes; scope chart loading
+  state; then investigate the remaining providers/activity/nutrition queries.
+  Add useful-data milestones to existing telemetry and repeat fresh-key plus
+  warm measurements. No timeout, retry, cache flush, concurrency adjustment,
+  or other resilience knob was introduced.
+
+## 2026-10-02 — Shared local Docker AIO capacity blocked performance validation
+
+- **Symptoms / impact:** The performance implementation's local database setup
+  could not start Redpanda. Browser and database validation are blocked; this
+  finding does not indicate a production outage. Unit implementation can proceed.
+- **Evidence:** `rtk proxy pnpm compose:up` failed at 21:56 Pacific time with
+  `container impolite-mole-redpanda-1 is unhealthy`. The first fatal broker line
+  was `Could not setup Async I/O`, reporting capacity in
+  `/proc/sys/fs/aio-max-nr` as 65536. A read from the workspace's database
+  container showed both `fs.aio-nr` and `fs.aio-max-nr` equal to 65536. The
+  broker exited with code 133 and was not OOM-killed. Workspace Postgres,
+  ClickHouse, and Redis were healthy; multiple other workspaces had restarting
+  brokers on the same Docker VM.
+- **Root cause:** The shared Docker VM's asynchronous-I/O allocation limit was
+  exhausted before this workspace's broker could initialize. Redpanda documents
+  its AIO tuner and 1048576 threshold in the
+  [rpk tuner overview](https://www.redpanda.com/blog/rpk-command-line-interface-developer-productivity).
+- **Fix / validation:** With user approval, increased the shared VM limit to
+  1048576 using a one-shot container from the existing database image. Restarted
+  only this workspace's already-failed broker to clear its old restart delay;
+  `rtk proxy pnpm compose:up` then completed with all four dependencies healthy
+  at 22:35 Pacific time. No other workspace's containers or volumes were stopped
+  or removed. No extra sleep or timeout change was needed.
+- **Remaining risk / follow-up:** Dependency startup is resolved; application
+  and browser validation are separate outstanding implementation gates. The
+  setting is local to the running Docker VM and must be checked after a VM
+  restart. Add an AIO-exhaustion diagnostic to the local
+  [testing runbook](testing.md). No retry, timeout, or application workaround
+  was added.
+
+## 2026-10-02 — Local browser validation hit Docker disk and build pressure
+
+- **Symptoms / impact:** The isolated browser-test image could not finish
+  building during the loading-performance implementation. Production was not
+  changed; browser validation remains outstanding.
+- **Evidence:** `pnpm compose -- --project-suffix e2e -f docker-compose.e2e.yml
+  build server` first failed while compiling the Python lz4 dependency with
+  `No space left on device`; pnpm also reported `ERR_PNPM_ENOSPC`. Docker reported
+  14.5 GB of images, 17.14 GB of writable container layers, 14.06 GB of volumes,
+  and 4.288 GB of build cache. Ignored local logs preserve the complete output.
+- **Confirmed disk cause / mitigation:** The Docker VM filesystem was exhausted.
+  Removed rebuildable build cache (3.826 GB reclaimed), then unused images
+  (4.508 GB reclaimed), following the [testing runbook](testing.md#docker-disk-recovery)
+  and [Docker pruning guidance](https://docs.docker.com/engine/manage-resources/pruning/).
+  Preserved all containers and named volumes. The filesystem then had 9.6 GB
+  available, and the next build progressed beyond the original disk failure.
+- **Subsequent failure:** The next attempt completed package downloads but
+  failed at Dockerfile line 93 with `ERR_PNPM_BROKEN_METADATA_JSON: The operation
+  was aborted due to timeout`. It reported registry request delays and an
+  unsuccessful supply-chain metadata check. Concurrent VM pressure readings
+  showed 85% full memory stall time over ten seconds. These establish a registry
+  metadata timeout and resource contention, but do not alone prove whether
+  memory stalls or registry/network behavior caused that timeout. Linux defines
+  these measurements in its [pressure-stall documentation](https://docs.kernel.org/accounting/psi.html).
+- **Validation / subsequent disk recovery:** The same build passed all 3,399
+  supply-chain checks in 32 seconds and completed, including both native decoder
+  tests. Initial stack startup then exhausted disk again: Postgres could not
+  create its WAL directory and ClickHouse could not create its processed config
+  directory. Removing the completed build's rebuildable cache reclaimed another
+  9.245 GB, leaving 7.5 GB free. Restarted the affected local ClickHouse process
+  and started the already-built image with the canonical Compose wrapper and
+  `--no-build --wait --wait-timeout 180`. All dependencies, migrations, fixture
+  seeding, analytics, and server health gates passed. Both focused page-readiness
+  Cypress scenarios passed (19 seconds), followed by a trusted Chrome navigation
+  check. No added sleep or timeout change was needed.
+- **Remaining risk / follow-up:** The VM has limited spare disk for another cold
+  build. Other workspaces' containers and volumes were preserved; stopping their
+  brokers was not needed. Registry metadata timeouts did not recur after the
+  cold-build work decreased; the respective network and memory contributions
+  remain unproven. Add build-cache sizing and pressure checks to the local
+  testing runbook. No package-policy bypass, dependency change, application
+  workaround, or resilience knob was introduced.
+
+## 2026-10-03 — Local preview tunnel lost connectivity during idle interval
+
+- **Symptoms / impact:** The local browser-validation server and its dependencies
+  remained healthy, but the previously emitted Quick Tunnel hostname no longer
+  resolved. Production was unaffected.
+- **Evidence:** The tunnel log first reported `failed to accept QUIC stream:
+  timeout: no recent network activity` at 06:49:44 UTC, followed by repeated
+  `control stream encountered a failure while serving` errors. At 13:26 UTC,
+  a bounded curl check failed with exit 6 (`Could not resolve host`); Compose
+  still reported the local server healthy.
+- **Mitigation / validation:** Stopped only the disconnected tunnel process and
+  reran the existing `/Users/asherlc/bin/paseo-quick-tunnel 3100` command. The new
+  process registered a connection, passed its connectivity checks, and the newly
+  emitted HTTPS URL returned HTTP 200. The server was not restarted. No timeout,
+  retry, protocol, or application configuration was changed.
+- **Remaining risk / follow-up:** The original disconnect trigger is unresolved;
+  do not attribute it to workstation sleep or a Cloudflare incident without
+  evidence. Recheck the emitted URL after idle intervals before browser tests.
+  Quick Tunnels use temporary hostnames and have no uptime guarantee according
+  to [Cloudflare's Quick Tunnel documentation](https://developers.cloudflare.com/tunnel/get-started/quick-tunnels/).
+
+## 2026-10-03 — Oversized local heart-rate fixture exceeded ClickHouse memory
+
+- **Symptoms / impact:** A controlled integration benchmark failed while seeding
+  one million raw rows. Production was unaffected; semantic tests passed, but
+  the benchmark could not reach its access-path assertion.
+- **Evidence / cause:** The focused heart-rate and migration integration command
+  reported `(total) memory limit exceeded: would use 1.25 GiB ... maximum:
+  1.25 GiB` during insertion. Constructing the existing provider-current-state
+  aggregate projection for the oversized insert exhausted the local engine's
+  memory allowance. Complete output remains in ignored local evidence.
+- **Mitigation / validation:** Reduced the controlled fixture to 200,000 rows
+  while retaining many dates, unassigned samples and multiple activity shapes.
+  The same unchanged engine then completed insertion, semantic/migration tests,
+  actual plans and query-log measurements. The new whole query read 49,152 rows
+  versus 81,920 for the local baseline; this is scan evidence, not a production
+  speed or page acceptance claim. Scaled timing validation remains outstanding.
+- **Remaining risk / follow-up:** Seed larger benchmarks in bounded chunks;
+  preserve a fixture that discriminates the old access path. No memory limit,
+  timeout, retry, projection setting or application behavior was changed to
+  bypass the failure. ClickHouse describes memory accounting and query limits
+  in its [memory settings reference](https://clickhouse.com/docs/operations/settings/settings#max_memory_usage).
+
+## 2026-10-03 — Activity detail route-preview latency follow-up
+
+- **Symptoms / impact:** Read-only production probes confirmed running and
+  climbing detail summaries still take about 1.4–1.5 seconds before client
+  rendering. The user's activity list/detail loading target remains unmet.
+- **Evidence / root cause:** Cache-miss traces
+  `734520662c251017715f022263142e2b` and
+  `d2dd3afa912bef3c7583a06b23e8f1d1` took 1,417 and 1,445 ms. Their matching
+  route-preview queries read 19,982,527 location rows in 1,359 and 1,370 ms;
+  queue waits were below 3 ms. This is the same previously diagnosed
+  source-column alias/index-pruning bug. See the
+  [dated activity follow-up](performance/production-load-audit-2026-10-02.md#activity-detail-follow-up--october-3)
+  and [ClickHouse alias semantics](https://clickhouse.com/docs/reference/syntax#notes-on-usage).
+- **Fix / validation status:** No production change was made. The reviewed
+  shared-query repair and real-engine regression remain scheduled for Task 8;
+  final data-visible page acceptance is unresolved. Single fast stream/zone
+  probes do not replace that gate.
+- **Additional lifecycle evidence:** The prior climbing fixture is now
+  provider-absent: its summary uses the repository fallback, while active-only
+  sensor-window lookup returns "Activity not found." Preserve those failures
+  in evidence and use an active populated climbing fixture for acceptance.
+  Validate provider-absent presentation separately; do not hide errors to meet
+  the target. Initial malformed diagnostic probes returned HTTP 400 and were
+  retained but excluded from successful timing claims.
+- **Follow-up:** Cover list filters/pagination, direct detail entry, activity
+  switching and each conditional sport section on web and native clients.
+
+## 2026-10-03 — Isolated ClickHouse version-validation resource failure
+
+- **Symptoms / impact:** Task 3's disposable ClickHouse 26.6.1.1193 validation
+  container exceeded local resources during the native-client integration run.
+  No production service was changed. The default workspace ClickHouse also
+  restarted during the validation window; its causal relationship to the
+  disposable container's resource use is unresolved. E2E ClickHouse retained
+  restart count zero and its original start time.
+- **Evidence:** The exact-version Vitest command first reported `Test timed out
+  in 30000ms` while seeding 65 activities through separate Docker exec calls.
+  Subsequent inserts returned native-client exit 137, and Docker inspection
+  confirmed `OOMKilled: true` and container exit 137. The temporary service had
+  no container memory ceiling. Its logs/data used an in-memory filesystem and were unavailable
+  after termination; the exact allocation responsible for the kill was not
+  captured. Docker documents container memory ceilings and host out-of-memory
+  behavior in [resource constraints](https://docs.docker.com/engine/containers/resource_constraints/).
+  Default ClickHouse inspection showed restart count one and start time
+  `2026-10-03T14:42:00.726884839Z`; E2E ClickHouse showed restart count zero and
+  start time `2026-10-03T06:17:59.242Z`. Neither implementing agent nor operator
+  restarted the default service. Filtered Docker event history was empty;
+  retained application logs confirmed startup but did not establish the prior
+  termination cause. The running state's `OOMKilled: false` does not establish
+  the cause of the earlier restart, and current health does not prove continuity.
+- **Cause / fix:** Serial per-row process overhead exceeded the test deadline;
+  the pending asynchronous fixture operations were not cancelled by the test
+  runner. Batched JSONEachRow fixture inserts removed that overhead. The
+  replacement disposable service used the existing workspace's 1.5 GiB ceiling
+  to contain its resource use; application and production settings were unchanged.
+- **Validation:** The same unchanged 30-second test deadline passed 15/15
+  focused tests on 26.6.1.1193, and 15/15 on the default 26.8.2.7. Production-version
+  EXPLAIN selected the compact day-version projection. Only the disposable
+  container was removed afterward; no other workspace volumes or services were
+  stopped or pruned.
+- **Follow-up:** Batch native-client fixture seeding and bound disposable
+  validation services before starting them. Keep exact-version engine execution
+  separate from HTTP/dbt compilation provenance in validation reports. Preserve
+  the overlapping default restart as unresolved; daemon/kernel evidence would
+  be needed to establish or exclude indirect host-memory impact.
+
+## 2026-10-03 — Task 4 ClickHouse host-wide OOM during validation
+
+- **Symptoms / impact:** The Task 4 disposable ClickHouse 26.6.1.1193 engine
+  stopped during exact-version pace-model validation. No production action was
+  taken. Default ClickHouse later restarted during the successful diagnostic
+  continuation; E2E ClickHouse retained restart count zero and its original start.
+- **Evidence:** The first combined 65-activity case reported a 30-second Vitest
+  timeout (41.935 seconds recorded), although its batched 65-row activity insert
+  took 5 ms and its three recorded model queries took 1194/1473/1689 ms. The
+  difference in elapsed time remains unexplained; query logs alone do not identify
+  native process or scheduler delays. A second suite, with independent first-build
+  and 65-key drain cases, passed six cases before native exit 137 during the
+  correction/merge fixture. Docker inspection confirmed `OOMKilled: true`,
+  exit 137, restart count zero, start 16:09:07.660UTC and finish 17:05:35.794UTC,
+  with the 1.5 GiB ceiling still enforced. Network mode was none and no ports were
+  published. Temporary in-memory engine logs were lost when the container stopped;
+  retained stdout contains startup log paths only. Docker documents memory
+  ceilings and out-of-memory behavior in its
+  [resource constraints](https://docs.docker.com/engine/containers/resource_constraints/).
+- **Cause:** Docker Desktop kernel records establish host-wide OOM for both
+  Task 4 deaths, rather than the disposable engine exceeding its own ceiling.
+  Rotated `init.log.20261003-101412.064` lines 1982–1983 report `global_oom` at
+  17:05:35.446UTC, killing disposable cgroup `bc7bdf003…`, anon-rss643532kB.
+  Current `init.log` lines 241–242 report `CONSTRAINT_NONE`, `global_oom` at
+  17:14:12.068UTC, killing default cgroup `3473c423…`, anon-rss620720kB.
+  Default inspection afterward shows restart count two/start17:14:12.516868301UTC;
+  neither agent restarted it. Kernel evidence is retained in ignored
+  `.context/load-audit/task4-kernel-oom.jsonl`. Swap was nearly exhausted and
+  other workspace workloads were resident; summed process RSS can double-count
+  shared pages and does not establish each workload's unique contribution.
+- **Validation:** After explicit controller authorization, one identical fresh
+  disposable instance passed all nine exact 26.6 pace tests in 64.09s, with the
+  unchanged 30s test deadline and three-build 65-key drain. Default 26.8 passed 23
+  pace/dirty-key tests. Scratch-only instrumentation paired all 156 native calls
+  with query IDs; the slowest call was 2099.53ms versus SQL 1948ms. The final three
+  drain builds took 1645.26/1436.30/1573.66ms native versus 1520/1334/1469ms SQL.
+  The first elapsed-time gap was not reproduced or retrospectively explained.
+  Live disposable cgroup peaks: memory.current 781,283,328B, anon 514,916,352B,
+  file 240,984,064B, shmem 33,492,992B; data 27,968KiB/log 4,760KiB. These are
+  independent sampled maxima, not additive totals. Its own oom_kill remained
+  zero; both data/log tmpfs capacities were 4,012,140KiB. Capacity is not usage.
+- **Mitigation / follow-up:** Only the disposable instance was removed promptly
+  after validation. No timeout, retry, memory limit or production setting changed;
+  no unrelated services or volumes were removed. Exact semantic success does not
+  resolve shared Docker host resource safety or establish production acceptance.
+  Controller owns aggregate-pressure attribution and authorization before any
+  further database validation. Retain paired native/query timings and external
+  resource/log capture; consult kernel OOM records before attributing Docker
+  `OOMKilled` to a container's own memory ceiling.
+
+## 2026-10-03 — E2E preview hostname lost DNS resolution again
+
+- **Symptoms / impact:** The existing local E2E server remained healthy, but its
+  quick-tunnel hostname stopped resolving. Browser access to that preview was
+  unavailable; production was unaffected. Existing preview tabs need the new
+  hostname before browser validation resumes.
+- **Evidence:** At approximately 17:30 UTC, the HTTPS probe failed with curl
+  exit 6, `Could not resolve host`. Retained tunnel output showed QUIC inactivity
+  timeouts and reconnections from 15:07 UTC, followed by repeated
+  `control stream encountered a failure while serving` errors near 17:29 UTC.
+  The E2E server container was still healthy with eleven hours of uptime.
+- **Cause:** The trigger for the tunnel connection and DNS failure remains
+  unresolved; the logs do not establish a server failure or a causal link to
+  the separate Docker memory incident.
+- **Recovery / validation:** Stopped only the old tunnel process and ran the
+  existing quick-tunnel wrapper for the same server port. Its replacement
+  connected successfully and returned HTTP 200 through the emitted HTTPS URL.
+  The replacement process stays running for the server's lifetime. No server,
+  database, image, timeout or retry configuration changed.
+- **Follow-up:** Verify the emitted hostname before later browser work and
+  retain tunnel errors separately from server health evidence. Quick tunnels
+  are documented by [Cloudflare](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/do-more-with-tunnels/trycloudflare/).
+
+## 2026-10-03 — Approved broker pause restored validation memory headroom
+
+- **Cause / scope:** Docker Desktop kernel records proved host-wide OOM in the
+  shared 8 GiB VM. Container limits did not establish a container-local failure.
+  Sixteen broker processes held approximately 3 GiB RSS during the captured
+  incidents; RSS can include shared pages and is not unique-memory accounting.
+- **Operator mitigation:** With explicit approval, stopped exactly fourteen
+  other-workspace Redpanda containers, preserving containers, volumes and data.
+  Each stopped with exit 0. This workspace's services remained healthy; guest
+  MemAvailable rose to 3,987,420 KiB before the next validation window.
+- **Validation:** The combined dirty-key, pace and heart-rate model suites passed
+  32/32 on the default engine; the new heart-rate model passed 9/9 on production
+  ClickHouse 26.6 with unchanged limits and deadlines. Its isolated engine peaked
+  at 1,142,071,296 bytes sampled cgroup memory, with zero observed OOM kills;
+  guest MemAvailable stayed above 3,143,188 KiB. A focused repository case also
+  executed the corrected current-schema fixture successfully. No timeout,
+  retry, sleep or query-limit mitigation was introduced.
+- **Restoration / remaining risk:** Restarted exactly the fourteen approved
+  containers and verified every one running and healthy. Default ClickHouse
+  retained restart count 2/start 17:14:12 UTC; E2E ClickHouse retained count 0.
+  With all workspaces restored, MemAvailable was 427,824 KiB and free swap 48 KiB,
+  so further database validation requires another approved bounded pause window.
+  Production was unchanged. The earlier native elapsed-time gap and Task 3
+  restart attribution remain unresolved. Keep memory-limit interpretation tied
+  to kernel evidence and [Docker's resource documentation](https://docs.docker.com/engine/containers/resource_constraints/).
+
 ## 2026-10-02 — UI cleanup PR blocked by dependency audit
 
 - **Symptoms / impact:** [PR #2866](https://github.com/Asherlc/dofek/pull/2866)
@@ -29100,6 +29419,460 @@ A focused test now opens the disclosure with both dates absent and verifies
 that supporting facts remain visible without a fabricated freshness message.
 Coverage thresholds remain unchanged.
 
+## 2026-10-03 — Main integration found an unapplied local dependency patch
+
+- **Symptoms / impact:** The approved loading-audit/main integration passed a
+  frozen dependency installation, but `pnpm check:dependency-security` failed
+  before commit. This blocked local validation; production was unchanged.
+- **Evidence / root cause:** The first fatal line was
+  `AssertionError [ERR_ASSERTION]: Missing expected exception.` at
+  `scripts/check-braces-security.ts:42`. Metro resolved the expected braces
+  patch-hash directory, but all five patched implementation files contained
+  their unpatched source. The checked-in patch applied cleanly in a dry run.
+  `pnpm store status` also reported `ERR_PNPM_MODIFIED_DEPENDENCY` for six other
+  patched artifacts. Why the inconsistent local installation was created is
+  unknown; this evidence does not establish a source-patch defect.
+- **Direct fix / validation:** With controller approval, ran
+  `pnpm install --frozen-lockfile --force`. The installed braces files then
+  contained the expected depth bounds, and both unchanged node-forge and braces
+  security regressions passed. The lockfile, patches, advisory exceptions and
+  enforcement remained unchanged. pnpm documents
+  [forced dependency repair](https://pnpm.io/cli/install#--force) and
+  [store integrity checks](https://pnpm.io/cli/store#status).
+- **Remaining risk / retrospective:** A successful frozen install alone did
+  not prove the security patch was present in an existing local installation.
+  Keep the installed-package regression gate; consider documenting names-only
+  package-resolution and source-integrity diagnosis before local artifact repair.
+  No retries, deadlines, memory limits or runtime workarounds were added.
+
+## 2026-10-03 — Restored shared brokers preceded a global E2E ClickHouse OOM
+
+- **Symptoms / impact:** Before Task 5A's E2E rebuild, the existing E2E
+  ClickHouse was exited and its server was unhealthy. The browser validation
+  stack was unavailable; production was unchanged.
+- **Evidence / root cause:** Docker recorded exit 137 and `OOMKilled=true` for
+  E2E ClickHouse container `844275e532c9` at 18:06:24.497 UTC. Docker Desktop
+  kernel log `init.log.20261003-112043.635`, lines 3193–3194, records
+  `constraint=CONSTRAINT_NONE`, `global_oom` and that exact ClickHouse victim
+  at 18:06:24.453 UTC, with 416,588 KiB anonymous RSS. This confirms guest-wide
+  exhaustion after the fourteen approved brokers had been restored; it does
+  not identify the triggering workload or prove a ClickHouse cgroup-limit OOM.
+- **Recovery / remaining risk:** The controller reopened the approved bounded
+  fourteen-broker pause, verified guest headroom, and authorized the canonical
+  current-workspace E2E rebuild/recovery for the changed browser spec. Both image
+  builds were subsequently blocked by the documented Docker disk exhaustion;
+  after the user-approved disk increase, the unchanged canonical build and
+  merged-runtime review-stack spec passed and E2E services were healthy. After
+  failed-build cleanup, the controller restored and individually verified all
+  fourteen approved brokers running and healthy. No containers or volumes were
+  deleted.
+  Preserve the kernel distinction and follow
+  [Docker memory-resource guidance](https://docs.docker.com/engine/containers/resource_constraints/).
+  No engine limits, retries, deadlines or production settings were changed.
+
+## 2026-10-03 — Canonical merged-source E2E image build exhausted Docker disk
+
+- **Symptoms / impact:** Task 5A's required canonical `pnpm e2e:web:up` failed
+  while building the merged source. Browser validation was blocked; the existing
+  server and lifetime tunnel were retained, and production was unchanged.
+- **Evidence / root cause:** Dockerfile line 93's workspace dependency install,
+  `pnpm install --force --frozen-lockfile`, first failed with
+  `ERR_PNPM_ENOSPC` / `ENOSPC: no space left on device` while copying
+  `posthog-js@1.374.2`'s `dist/module.no-external.js.map`. Guest disk space fell
+  from 5,383,184 KiB available before the build to 692,468 KiB (99% used).
+- **Direct remediation / validation:** Followed the
+  [testing disk-recovery runbook](testing.md#docker-disk-recovery):
+  `docker builder prune -af` reclaimed 4.427 GB, recovering 5,533,068 KiB free;
+  unused-image pruning reclaimed another 791.2 MB, recovering 6,231,832 KiB free.
+  All containers and volumes were preserved. Docker documents the scope of
+  [cache and image pruning](https://docs.docker.com/engine/manage-resources/pruning/).
+  The unchanged build passed the dependency install but then failed copying
+  production `node_modules` at Dockerfile line 138 with
+  `copy file range failed: no space left on device`; guest disk reported zero
+  available KiB. A final failed-build-cache prune reclaimed 8.508 GB and
+  restored 6,364,980 KiB free before the controller closed the validation window.
+- **Remaining risk / retrospective:** The full cold-image peak disk requirement
+  is not yet established, but more than the 6,231,832 KiB second-attempt budget
+  is required before the final image can complete. Further builds and scoped
+  browser validation were blocked pending an approved capacity decision.
+  The user-approved disk growth below then allowed the unchanged build and
+  scoped browser check to pass.
+  No runtime mounts,
+  fallback workflows, deadlines, retries or engine memory/query limits were changed.
+
+## 2026-10-03 — Approved Docker disk growth enabled merged-source E2E validation
+
+- **Symptoms / impact:** Required browser validation remained blocked after
+  both proven disk-exhaustion failures and authorized cache/image cleanup.
+  The user approved growing the shared Docker disk usage limit from 61,035 MiB
+  to 81,920 MiB, restarting Docker only if needed and restoring the exact
+  prechange running container set. Production was unchanged.
+- **Operator action / evidence:** The controller retained a private 56-container
+  ID/image/health snapshot. Docker UI automation timed out; the settings receipt
+  verifies that only `DiskSizeMiB` changed in the documented settings file.
+  The controller applied the change with Docker Desktop stop/start. Guest disk
+  then reported 82,249,224 KiB total and 27,097,660 KiB free. Memory, swap, CPU,
+  disk location, engine limits and existing deadlines were unchanged. Docker
+  documents the [disk control and settings file](https://docs.docker.com/desktop/settings-and-maintenance/settings/)
+  and [Desktop lifecycle commands](https://docs.docker.com/desktop/features/desktop-cli/).
+- **Restoration / recovery:** The controller verified the other 55 original
+  containers running, healthy and on their original images. The original E2E
+  server failed with `[web] Failed to start: Error: connect ECONNREFUSED
+  192.168.32.4:9000`; it recovered healthy after its previously OOM-killed
+  E2E dependency was started through the canonical workspace wrapper. The
+  fourteen approved brokers were then paused for validation, followed by four
+  unused services from the current workspace. Their volumes were preserved;
+  concurrent build-phase changes prevent attributing the whole observed memory
+  improvement exclusively to the latter pause.
+- **Validation / remaining risk:** The unchanged `pnpm e2e:web:up` passed, with
+  native tests 2/2 and seeded analytics `PASS=14 WARN=0 ERROR=0`. The newly built
+  merged image served the affected `review-stack.cy.ts` spec, which passed
+  1/1 in one second. No ad-hoc waits, runtime mounts, alternate workflow or
+  resilience knob was introduced. The controller restored all four current-workspace
+  services and all fourteen approved brokers healthy. Its 18:53:48 UTC receipt
+  verifies the other 55 original container IDs and images running and healthy,
+  with no deviations; the authorized recreated E2E server is healthy on the
+  merged image, and the original previously OOM-killed E2E ClickHouse is healthy.
+  Final guest disk had 16,849,504 KiB free. Subsequent controller memory sampling
+  reported only 856,040 KiB available and 388 KiB swap free. Disk growth resolves
+  the proven build-capacity failure; shared RAM pressure remains, and the
+  triggering workload of the earlier global OOM is unresolved.
+
+## 2026-10-03 — Loading-preparation CI expectation and telemetry coverage failures
+
+- **Symptoms / impact:** Required PR CI blocked the loading-preparation source;
+  no production rollout occurred. [Unit Tests](https://github.com/Asherlc/dofek/actions/runs/37146328769/job/111271119335)
+  ran `pnpm exec vitest run --project unit --coverage`; its first failure was
+  `AssertionError: expected [ 'sensor_scalar_sample', …(28) ] to deeply equal
+  [ 'sensor_scalar_sample', …(26) ]`. [Stryker](https://github.com/Asherlc/dofek/actions/runs/37146328769/job/111271297243)
+  first failed with `Final mutation score 54.29 under breaking threshold 75`.
+- **Root cause / direct fix:** The existing exact build-order expectation omitted
+  the registered `activity_pace_curve` and `activity_heart_rate_distribution`
+  models, and readiness telemetry tests did not cover active optional fields,
+  release identity, nullable callback input, or invalid device-ID reporting and
+  event rejection. Updated the existing order assertion and added public-behavior
+  tests, including Sentry observation and reset consent preservation. Production
+  code, schema, models, readers, dependencies and CI configuration were unchanged.
+- **Local validation / remaining work:** Focused units passed 61/61. Canonical
+  whole-file Stryker reproduced a distinct 51-mutant baseline at 66.67%
+  (34 killed, 14 survived, 3 uncovered), then passed at 100% with all 51 killed
+  and no survivors, uncovered mutants, timeouts or errors. The CI failure scored
+  35 mutants (19 killed, 13 survived, 3 uncovered); retain both scoped results.
+  No resilience knob or ad-hoc wait was introduced. Remote CI rerun remains
+  pending; the controller must confirm required checks on the pushed source.
+
+## 2026-10-03 — Compact training freshness and cache regressions reproduced before cutover
+
+- **Symptoms / impact:** Source validation reproduced false processing readiness
+  after a successful bounded compact-model build, skipped warming of existing
+  versioned pace keys, and an absent-daily-RHR profile fallback defect. These
+  are real source/engine findings; production impact has not been quantified.
+  No production mutation or reader rollout occurred. Compact cutover remains
+  blocked pending implementation and freshness/resource acceptance. The user
+  approved the reviewed finite captured-work amendment on 2026-10-03.
+- **Evidence / root causes:** The canonical focused processing integration
+  command successfully executed the actual pace and HR dbt models for 32 of 65
+  eligible keys, then failed with `expected 'succeeded' to be 'running'`:
+  the current recorder treats dbt status/run ID as complete coverage. A separate
+  canonical real-engine/cache diagnostic first completed all 65 prior summaries,
+  780 pace markers and 65 HR distributions, then added samples to the last
+  selected existing activity at one actual canonical source clock. Old registered
+  HR exposed the added samples after the first build; compact results matched
+  only after actual 32/32/1 builds. Actual compressed fixture elapsed times were
+  1495.66/2834.83/4191.93 ms. An executable virtual-clock test of the existing
+  default worker proves two extra 900000 ms waits between those builds; this is
+  scheduling evidence, not a measured production 30-minute run.
+- **Additional causal cases:** Public cache key construction includes the
+  existing pace version segment, but the registered parser interprets it as
+  timezone. Unit RED observes parser null, refreshed0/skipped1, zero caller calls
+  and the original cache unchanged. Its real diagnostic cache therefore remains
+  stale and is not a successful pace-cache baseline. Original HR with max200,
+  profile resting60 and no daily RHR counts 650 samples at120 in zone2 rather
+  than zone0: the CTE makes joined RHR nonnullable, so a missing LEFT JOIN row
+  supplies zero and bypasses the coalesce fallback. ClickHouse documents these
+  default-value versus null semantics in
+  [join_use_nulls](https://clickhouse.com/docs/reference/settings/session-settings/join#join_use_nulls).
+  The clean backlog comparator uses a genuine selected daily RHR60 and retains
+  the absent-row failure separately, with original readers unchanged.
+- **Validation / mitigation:** The clean diagnostic passed one integration test
+  in 18.77 s under the existing 30 s deadline. Prior diagnostic failures exposed
+  missing fixture aliases and a shared RHR fixture using plain MergeTree despite
+  production ReplacingMergeTree; the fixture now matches the actual lifecycle
+  engine and `(user_id,sleep_id)` key. Production profile/summary table and current
+  view builders are used directly. Focused reader/worker checks pass 64/64.
+  The one-time diagnostic source and receipts were retained before removing it
+  from default test discovery; temporary fixture databases/cache namespaces
+  were cleaned. The controller restored all 55 preserved container identities
+  healthy after the approved broker validation windows. No deadlines, retries,
+  query settings, timers, TTLs or runtime flags were changed.
+- **Preparation progress / remaining work:** Canonical versioned parsing now
+  passes public key/replay tests and overwrites the same registered entry.
+  A focused parser/policy/ownership/order check passes 97 tests; the exact named
+  read-only coverage model must materialize as a view while other models still
+  require incremental materialization and risky SQL remains rejected. Ordinary
+  coverage and bounded captured-selector support are implemented in source but
+  engine GREEN/resource gates remain outstanding. Processing generation,
+  absent-RHR correctness and finite same-cycle consumer catchup are not implemented.
+  The approved
+  two-release amendment separates non-consuming preparation from compact-reader
+  consumer wiring. Ordinary views contain saved queries rather than stored data
+  ([ClickHouse CREATE VIEW](https://clickhouse.com/docs/reference/statements/create/view));
+  their user filtering/resource cost must be established by actual query plans
+  and rows/time evidence. Production-scale stable/source-arrival source-to-visible
+  performance must meet both the original baseline and the existing 15-minute
+  contract before enabling readers. A finite snapshot does not establish strict
+  arbitrary-source-churn freshness. Full affected integration and required
+  repository/release gates remain outstanding.
+
+Separate follow-up to the preceding CI entry: reviewed source7504's normal CI
+rerun [37148455138](https://github.com/Asherlc/dofek/actions/runs/37148455138)
+completed successfully with 97 jobs and no failures. This closes that source's
+remote-pending CI item; it does not certify the uncommitted Task 6 changes.
+
+### 2026-10-03 — shared Docker VM OOM after restoration (local validation)
+
+- Symptoms/user impact: the original `impolite-mole-e2e-clickhouse-1` stopped
+  at 21:11:06.842 UTC, exit137/OOMKilled true; its E2E API container became
+  unhealthy. Static preview HTML still answered HTTP200, which did not prove
+  database-backed page health. Production was unaffected by this local event.
+- Evidence: read-only `docker inspect` shows the original container ID
+  `844275e532c9ec4f9d6d9ec0b0903045a6949cb57dc4a63eb8c4ae7591e98509`,
+  2GiB memory/4GiB memory+swap cap, started18:47:02UTC, no restart. The kernel
+  ring buffer records `constraint=CONSTRAINT_NONE,...,global_oom` targeting
+  that exact cgroup at21:11:06.533UTC, killed process51552, anonRSS529768KiB
+  plus fileRSS31076KiB; free swap192KiB of1048572KiB. This proves shared-VM
+  exhaustion rather than hitting the engine's own memory cap. The allocation
+  triggering OOM came from runc in another workspace's Redis cgroup; the precise
+  surrounding workload is not reconstructed and no individual query is blamed.
+  Private receipts: `.context/load-audit/task6-kernel-buffer.txt` and inspect
+  observations in the audit ledger. Earlier rotated init logs no longer retained
+  the event; an ephemeral network-isolated128MiB diagnostic using the existing
+  Postgres image, SYSLOG capability and relaxed seccomp read the kernel buffer
+  then removed itself. No service/engine/settings were added by that inspection.
+- Cause/mitigation: approximately8GiB shared VM RAM and nearly exhausted1GiB
+  swap could not sustain all restored workspace services during this event.
+  The already approved exact14 broker pause recovered3,779,884KiB MemAvailable
+  before restarting only the original E2E ClickHouse. No volumes/data deleted,
+  image replaced, timeout/retry increased or shared memory setting changed.
+- Validation/remaining risk: restarting the same original engine restored both
+  its health and the E2E API health. Before the focused A engine RED phase,
+  MemAvailable was 3,457,604 KiB and disk free 16,398,728 KiB with only the
+  approved 14 brokers paused. After fixture cleanup, the controller verified
+  all 55 original container identities/images running and healthy with no
+  deviations at 21:43:43 UTC, including the original E2E engine and API.
+  No deadline or retry was changed. This mitigation does not establish that all restored services are
+  sustainable long term; shared capacity remains unresolved. The approved80GiB
+  disk increase fixed disk capacity, not this independent RAM shortage.
+
+Docker distinguishes memory and swap limits in its official
+[resource constraints documentation](https://docs.docker.com/engine/containers/resource_constraints/).
+
+### 2026-10-03 — Task 6A ordinary coverage view fails its user-scope gate
+
+The canonical current-engine preparation suite completed with seven passing and
+four failing tests in 81.88 s. The lossless decimal-string view interface,
+captured-key/source-pair rejection, user identity and missing/mixed-marker cases
+passed. Failures remain separate: the lifecycle case exceeded the existing
+30-second deadline; the first 65-key pass reported pending counts 32/33 rather
+than 33/33; invalid-duration evidence was empty for a wrong twelve-member set;
+and the ordinary view failed its per-user resource gate. Timeout contamination
+of other cases is unproved; neither marker failure is treated as resolved.
+
+With one requested-user activity the view read 14 rows. Adding one part with
+20,000 unrelated-user activities made the identical query read 80,014 rows.
+EXPLAIN includes unfiltered activity branches (`Condition: true`, 2/2 parts,
+3/3 granules) alongside correctly filtered branches. Exact query-log memory
+was 549,784,086/549,847,126 bytes, duration 400/336 ms; JSON elapsed was
+277.32/300.83 ms. These are controlled fixture measurements, not production
+throughput or page acceptance. ClickHouse documents read rows, memory and
+duration in [system.query_log](https://clickhouse.com/docs/reference/system-tables/query_log).
+The substantial fixed memory cost remains an independent capacity concern.
+
+Validation stopped at the failed scope gate with no alternative implementation,
+commit, optimizer override or deadline increase. The fixture database was dropped
+synchronously and its client closed. The controller restored and verified all
+55 original container IDs/images running and healthy with no deviations at
+22:14:28.967 UTC, including the original E2E ClickHouse/API. No production action
+occurred. Compact cutover remains blocked. A required-user parameterized-view
+proposal is awaiting explicit strategy approval and pinned-adapter/resource
+validation; its compatibility is not established. Full failure logs, compact
+metrics and complete/selected query plans are retained in the private audit
+receipts; unresolved marker/deadline cases also require executable investigation.
+
+Follow-up: the user explicitly approved the required UUID-set parameterized
+coverage approach after independent design review. The pinned canonical adapter
+has created and replaced that view, and typed invocation/parameterized DESCRIBE
+have executed successfully. The minimal suite is not yet fully GREEN, and the
+other marker/deadline/resource gates remain outstanding. No production action
+or cutover approval is implied.
+
+### 2026-10-03 — repeated shared-VM OOM after compatibility cleanup
+
+At 23:13:43.559 UTC the kernel recorded `global_oom`, `CONSTRAINT_NONE`, killing
+process 8018 in the exact original E2E ClickHouse cgroup
+`844275e532c9ec4f9d6d9ec0b0903045a6949cb57dc4a63eb8c4ae7591e98509`.
+The killed process used 596,784 KiB anonymous plus 15,948 KiB file RSS, below
+the container's 2 GiB cap; free swap was 220 KiB of 1 GiB. Container inspection
+records OOMKilled true/exit 137, finished 23:13:50.114 UTC. Its API became
+unhealthy; the default workspace ClickHouse remained healthy/OOMKilled false.
+Production was unaffected. Private receipts are
+`.context/load-audit/task6-user-scope-kernel-buffer.txt` and
+`task6-user-scope-kernel-oom.json`.
+
+This is a repeated shared-VM capacity failure. It happened after compatibility
+fixture cleanup and broker restoration; no particular query or healthcheck is
+identified as its cause. Root verified all 55 preserved original container
+identities/images running and healthy at 23:13:55.835 UTC, while the separately
+recovered E2E engine was stopped and its API unhealthy. Database validation and
+commits stopped. No deadlines, retries, query settings or memory settings changed.
+Recovery and sustainable restored-service capacity remain unresolved. A proposed
+shared-VM memory increase requires separate user approval; the prior disk-capacity
+approval does not authorize it. Docker documents the distinct memory/swap limits
+in [resource constraints](https://docs.docker.com/engine/containers/resource_constraints/).
+
+Recovery follow-up: the user explicitly approved increasing the shared VM from
+8 to 16 GiB and restoring the preserved containers. At 23:38:30.097 UTC the
+controller verified all 57 preserved IDs/images running and healthy with no
+OOM/deviations; guest MemTotal was 16,355,308 KiB, MemAvailable 5,677,804 KiB,
+all 1,048,572 KiB swap free, and the original AIO allowance 1,048,576 restored.
+The original E2E ClickHouse and API recovered. An unrelated preserved ClickHouse
+also required recovery of three XML bind sources whose source workspace was
+absent and whose paths had been recreated as empty directories. Canonical
+files were compared with persisted preprocessed configuration: all 19 active
+leaves matched. Original byte identity is not proven. No container, image or
+volume was replaced or deleted. Receipt:
+`.context/load-audit/task6-memory-restoration-success.json`.
+
+With all services restored, the unchanged default-deadline/retry-zero two-case
+coverage compatibility suite passed in 11.00 s. Canonical pinned creation and
+replacement, typed parameterized reads/DESCRIBE, omitted invocation hard failure
+and empty-target zero rows passed; isolated database/client/temp-project cleanup
+completed. This validates that local recovery phase, not long-term capacity or
+production acceptance. Full marker/lifecycle, toolchain and resource gates remain
+open; no production action occurred.
+
+Separate validation blocker at 23:45 UTC: the unchanged four-case functional
+selection failed a first single-user coverage read with ClickHouse native 241,
+`MEMORY_LIMIT_EXCEEDED`. Query 992196f8-6f20-4c65-aeb8-4d646bb47446 ran 495 ms,
+tracked 646,978,425 bytes and read zero source rows/bytes; the total-server
+exception reported RSS 1.19 GiB and maximum 1.15 GiB. This is distinct from the
+earlier shared-VM kernel OOM. All 57 preserved containers stayed healthy with no
+OOM; root measured 5,262,568 KiB available at 23:50:15 UTC. Production was
+unaffected. Fixture cleanup completed and lifecycle/resource validation stopped.
+No ClickHouse limits, query settings, retries or deadlines changed.
+
+Retained stack evidence places the failing memory check in compact MergeTree
+reader construction; it does not attribute all query memory to that reader.
+A separately cleared isolated natural EXPLAIN, without executing coverage,
+shows 44 MergeTreeSelect processors and 72 join build/transform entries, with
+ten-lane paths. Allocation ownership and a sound source correction remain
+unresolved. Root owns further capacity clearance; no source/query is blamed
+without that evidence. Receipts: `.context/load-audit/task6A-functional-query-errors-summary.json`,
+`task6A-functional-query-profile.jsonl`, `task6A-pipeline-summary.json`.
+ClickHouse recommends inspecting natural pipeline lanes alongside independent
+memory measurements in its [workload sizing guidance](https://clickhouse.com/resources/engineering/high-concurrency-sizing-user-analytics).
+
+The next cleared EXPLAIN-only comparison isolates the invocation boundary:
+the exact compiled view SELECT, retaining its three existing settings, has
+seven source processors, eleven join branches and seven materialized-CTE
+processors; the typed view call has 44 sources, 72 join branches and no
+materialized-CTE processor. No coverage SELECT was executed in this comparison;
+isolated database/client/temp-project cleanup completed. A proposed correction
+must preserve required settings at the typed caller boundary and pass separate
+result/memory/scope checks; it has not been adopted or measured yet. Receipts:
+`task6A-pipeline-comparison-summary.json` and both full pipeline plans. ClickHouse
+documents that a disabled materialized-CTE setting causes inlining in its
+[WITH reference](https://clickhouse.com/docs/reference/statements/select/with#materialized-common-table-expressions).
+
+Further diagnostics show that outer propagation of those same three values
+removes extra lanes but retains 44 readers and no materialized-CTE processors;
+it is not a complete correction. Actual canonical CREATE input and stored
+SHOW CREATE each retain all eight materialization declarations. The exact body
+under the engine's native projection wrapper still has seven readers and seven
+materialized-CTE processors. The invocation boundary is implicated; precise
+internal engine behavior and allocation ownership remain unproved. No caller,
+engine setting or serving strategy change was adopted. A source-level relational
+repair inside the same required parameterized view/shared-selector contract is
+under independent proposal review; lifecycle/resource acceptance remains blocked.
+All diagnostic fixtures completed cleanup. Receipts:
+`task6A-pipeline-propagation-summary.json`, `task6A-view-definition.json`,
+`task6A-wrapper-summary.json`. No production action occurred.
+
+After independent review, a minimum relational repair kept the required-user
+parameterized view and shared-selector contract: one FULL OUTER JOIN replaces
+the repeated key union/joins, and one key-state reference expands both date
+windows. The pre/post selector suites both passed 28 cases, including actual
+canonical pace/HR target endpoint types. The natural default-client lifecycle
+case then passed, followed by independent 65-key drain and invalid-duration
+checks. No runtime settings, caps, deadlines, retries or storage strategy changed.
+The engine's CTE reuse and exact allocation owner remain unproved; the repair
+reduces repeated relational work without claiming to fix engine internals.
+
+Controlled resource validation passed with 20,000 unrelated users: requested-user
+reads stayed exactly 74 rows/3,858 bytes, and all 14 source-plan branches showed
+the user filter. Actual query-log memory/duration were 207,134,355 B/285 ms before
+population and 95,303,019 B/393 ms afterward. A 129-user request read 188,490 rows
+and completed in 615 ms with 211,046,558 B tracked query memory. Its response
+cardinality and requested user set passed. The minimal natural pipeline has
+16 source-reader and 116 join-processor entries, with no materialization processor;
+not every plan dimension decreased. Fixtures completed cleanup and all shared
+containers remained running. Receipts: `task6A-relational-selector-green.log`,
+`task6A-relational-functional-three.log`, `task6A-relational-controlled-resource.json`.
+Production scale, source-arrival freshness and release acceptance remain pending;
+no production action occurred. ClickHouse's [join semantics](https://clickhouse.com/docs/reference/statements/select/join)
+and [workload sizing guidance](https://clickhouse.com/resources/engineering/high-concurrency-sizing-user-analytics)
+describe the relational and independent resource checks used here.
+
+Compatibility revalidation then exposed a separate native241 on the existing
+computed projection `length(pending_keys)` after canonical view creation
+succeeded. Query `167327b3-01cf-45de-b0c8-3dc3df6bb546` failed in 243 ms with
+490,505,057 B tracked query memory and zero source reads; the server reported
+RSS 1.05 GiB versus maximum 977.11 MiB. The allocation check again occurs in
+compact-reader construction, without identifying all allocation ownership.
+Canonical replacement/count/empty-target checks passed. The failed fixture was
+cleaned up and wider validation stopped; all 57 shared containers remain healthy.
+Full-column controlled passes do not prove this projection's capacity or establish
+its cause. No settings, limits, retries or test correction were adopted. Exact
+query/profile/settings/stack receipt: `task6A-compatibility-memory-query.json`.
+This local validation pressure event remains unresolved; no production impact
+or operation occurred.
+
+Same-empty-state EXPLAIN shows identical full-column and length plan dimensions,
+so the projection alone is not a proved cause. Stored view settings are
+max_threads=1/join_use_nulls=1/enable_materialized_cte=1, but the default outer
+context is auto(10)/0/0. Supplying only those existing values at the new typed
+boundary removes ten-lane paths (242 to 26 join-processor entries); materialized
+CTE reuse remains absent. A separately cleared actual diagnostic then returns
+the correct one-pending-key/source41/0 result for both models: full projection
+225 ms/42,026,959 B and length projection 204 ms/38,048,664 B, eight source
+reads each. Every fixture completed cleanup. No production or test caller has
+adopted the proposed context while independent boundary review is pending;
+wider validation remains held. This observation is limited to the pinned view
+and measured fixture, not a universal client profile. ClickHouse's [workload
+sizing guidance](https://clickhouse.com/resources/engineering/high-concurrency-sizing-user-analytics)
+explains why processing lanes affect memory and calls for workload-specific
+measurements. Receipts: `task6A-compatibility-projection.json`,
+`task6A-compatibility-propagated.json`, `task6A-compatibility-required-context.json`.
+
+Independent boundary review subsequently passed the required UUID-set caller
+with the existing three coverage settings supplied explicitly. The public
+query contract was updated before the nine typed test calls; generic clients
+and old production readers remain unchanged. Actual pinned compatibility
+passes 2/2, full functional/resource coverage 12/12, and configured tooling 3/3
+without changed deadlines, retries or memory caps. Controlled single-user
+reads remain 74 rows/3,858 B after 20,000 unrelated users; all 14 source branches
+carry user predicates. The 129-target query uses 50,395,168 B tracked memory
+in 237 ms, with actual QueryFinish settings confirming the required context.
+This closes the measured local fixture gates, while the default-caller failure,
+absence of materialized CTE reuse and precise internal allocation ownership
+remain documented limitations. Configured dbt docs generation succeeds with
+an empty catalog; SQLFluff retains its existing parsing-ignore limitation.
+Receipts: `task6A-required-context-compatibility-green.log`,
+`task6A-required-context-coverage-green.json`,
+`task6A-required-context-tooling-green.log`. Production source-arrival,
+worker/freshness and final reader acceptance remain pending; no production
+operation occurred.
+
 ## 2026-10-03 — Provider issue email PR blocked by migration and mutation checks
 
 - **Symptoms / impact:** [PR #2869](https://github.com/Asherlc/dofek/pull/2869)
@@ -29131,6 +29904,70 @@ Coverage thresholds remain unchanged.
   use mutation reports to cover changed runtime branches. No runtime retry,
   timeout, or gate relaxation was added for these failures.
 
+## 2026-10-03 — Reviewed analytics preparation PR had no normal CI after main advanced
+
+- **Symptoms / impact:** PR #2868 at preparation commit `ac725e4fa` had no
+  normal CI run; only skipped Dependabot Automerge appeared. GitHub reported
+  the draft PR as CONFLICTING / DIRTY. No production deployment or outage occurred.
+- **Evidence / root cause:** Main advanced by provider issue notifications and
+  package version release to `4ef5e6863`. Native merge-tree and the actual
+  same-branch merge identified only a content conflict in this incident log.
+  GitHub [does not run pull_request workflows while a merge conflict remains](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#pull_request);
+  pull_request_target can still run. The missing run is not a failed test job.
+- **Direct fix / validation:** Merged that exact frozen main commit on the same
+  branch with automatic stashing disabled. Preserved the complete reviewed
+  incident history and the distinct incoming provider-email record exactly once;
+  unrelated incoming files retain native merge results. Focused units pass 69
+  cases, provider-notification integration 23, and email integration six, with
+  teardown complete. Sandbox/analytics/migration lint, migration policy and
+  root/server/web/mobile typechecks pass without relaxed flags or limits. The
+  refreshed source review and normal PR CI remain pending. Reader/worker/cache
+  consumer changes remain uncommitted and protected.
+- **Remaining risk / follow-up:** Normal CI must validate the merged snapshot,
+  including incoming historical migration coverage; earlier main CI success
+  does not certify this merge. Production freshness/population/page acceptance
+  remains separate. No workflow trigger, timeout, retry, database setting or
+  release count changed. Inspect mergeability and exact workflow event before
+  diagnosing an absent run as a test failure.
+
+## 2026-10-04 — Coverage schema introspection failed on the CI ClickHouse version
+
+- **Symptoms / impact:** Normal [CI 37175963430](https://github.com/Asherlc/dofek/actions/runs/37175963430)
+  failed integration shard 3's coverage initial-create compatibility case.
+  Local ClickHouse 26.8 passed; CI uses 26.6.1.1193. Preparation CI and compact
+  reader progress are blocked. No production mutation or user outage is evidenced.
+- **Evidence / root cause:** A bounded exact-image reproduction created the native
+  View and passed its typed SELECT, then failed direct DESCRIBE with query ID
+  `caf2490e-072c-4614-9f7d-d60fdd2de025`, code 46 UNKNOWN_FUNCTION. Pinned
+  [26.6 describe source](https://raw.githubusercontent.com/ClickHouse/ClickHouse/v26.6.1.1193-stable/src/Interpreters/InterpreterDescribeQuery.cpp)
+  dispatches that form to the [registered table-function factory](https://raw.githubusercontent.com/ClickHouse/ClickHouse/v26.6.1.1193-stable/src/TableFunctions/TableFunctionFactory.cpp);
+  [26.8 source](https://raw.githubusercontent.com/ClickHouse/ClickHouse/v26.8.2.7-lts/src/Interpreters/InterpreterDescribeQuery.cpp)
+  adds parameterized-view catalog handling. This is a direct schema-introspection
+  limitation, not evidence that the view cannot be created or selected.
+- **Direct correction / validation:** The compatibility query now describes the
+  same typed SELECT through the supported subquery schema path, retaining every
+  column/type assertion, UUID binding and required query setting. Pinned 26.6
+  describe source analyzes subquery sample schemas. Corrected-path runtime
+  validation is pending; no successful repair is claimed. Diagnostic stop/down
+  both succeeded, owned resources and lock were removed, and an independent
+  check found all 57 original containers healthy at 13:45:48.720 UTC.
+- **Remaining risk / follow-up:** Require exact-image validation, local two-case
+  validation, scoped source review and normal CI on the corrected committed
+  snapshot. Downstream freshness/resource and production acceptance gates remain
+  separate. No image update, fallback, timeout, retry or setting relaxation was
+  introduced. Identify the exact failing query stage and pinned interpreter
+  dispatch before changing an image or weakening a schema gate.
+
+Validation update, 2026-10-04 14:02 UTC: the corrected initial-create case passed
+once on the exact pinned 26.6.1.1193 CI image, retry 0, with the unchanged strict
+four-column/type assertions. The canonical local compatibility suite then passed
+both initial-create and replacement cases (5.99 s total). Owned diagnostic
+stop/down succeeded, resources and lock were absent, and an independent check
+verified all 57 original containers healthy at 14:02:18.214 UTC. Normal CI on the
+corrected committed snapshot is still pending; broader preparation, compact
+reader freshness/resource and production acceptance gates remain open. No
+successful-query native ID was captured by the diagnostic's failure-only selector.
+
 ## 2026-10-03 — UI cleanup PR exposed asynchronous layout movement
 
 - **Symptoms / impact:** [PR #2871](https://github.com/Asherlc/dofek/pull/2871)
@@ -29156,3 +29993,199 @@ Coverage thresholds remain unchanged.
   existing layout-stability gate when simplifying asynchronous sections;
   inspect loading and loaded geometry together. No runtime retry, timeout,
   or assertion threshold was changed.
+
+## 2026-10-04 — Main advanced before corrected preparation CI could start
+
+- **Symptoms / impact:** After the strict coverage schema correction, PR #2868
+  again became CONFLICTING / DIRTY when main advanced to `e000b1926`.
+  Normal pull_request CI for `00cb7504` did not start; only skipped automerge
+  and external checks were observed. No production mutation or outage occurred.
+- **Evidence / root cause:** Native merge-tree identified one incident-log
+  content conflict and no coverage/model/worker overlap. GitHub
+  [does not run pull_request workflows while a merge conflict remains](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#pull_request).
+  The missing run is not a failed test job; the prior `e433` run remains failed.
+- **Integration / validation:** The same-branch merge uses frozen main
+  `e000b1926fce71992b80effbf1190a05aba10911` with automatic stashing disabled.
+  The complete current incident document is preserved, followed by main's exact
+  distinct UI layout incident once. All other files retain native merge results.
+  Protected preparation source and uncommitted compact-reader work remain separate.
+  Focused checks, final review and normal merged-head CI are pending.
+- **Remaining risk / follow-up:** Normal CI must certify the merged snapshot,
+  including paired UI behavior and corrected schema compatibility. Prior local
+  or main success does not certify this merge. No workflow trigger, retry,
+  timeout, assertion or release-count change was introduced. Check PR
+  mergeability and exact workflow event/head before diagnosing an absent run.
+
+Host validation update: the reviewed incoming selection passed all 263 tests
+across 11 files on both unit/mobile projects. Sandbox lint and root/server/web/
+mobile typechecks passed sequentially without generated tracked-source drift.
+Final scoped review, the complete lint gate and normal CI on the merged committed
+snapshot remain pending. Protected preparation source and all 15 uncommitted
+compact-reader worktree files retain their captured identities.
+
+Normal CI validation completion, 2026-10-04: [run 37212084885](https://github.com/Asherlc/dofek/actions/runs/37212084885)
+completed successfully for exact merged commit
+`69be9444aa62aabe3d6b2a054b5b54513330e6ee`, event pull_request: 97 completed
+jobs, 93 successful and four skipped, no failures. The previously failed
+Integration Tests (3/4), Unit & Integration Tests, Test Gate and CI Gate all
+passed. The retained completed shard-3 log reports 70 files / 468 tests passed
+in 487.20 s, including canonical coverage initial-create and replacement with
+the strict four-column/lossless tuple schema. The first high-level job-log
+request was unavailable while the run was active; it was not credited as evidence.
+Completed native job-log collection subsequently succeeded. This closes the
+preparation CI incident for that exact source, without certifying uncommitted
+compact readers, cache generations, source-to-visible freshness or production
+cutover. No workflow, retry, timeout, image or assertion relaxation was required.
+
+**2026-10-04 — Compact analytics readiness correction, controlled validation.**
+The real 65-key fixture exposed false processing readiness: each compact writer
+successfully processed 32 keys, leaving 33 pending, but the recorder reported
+aggregate analytics success from dbt status/run identity alone. The direct fix
+requires typed, user-scoped ClickHouse coverage from the actual PG operation
+users before publishing success. Pending markers now produce analytics `running`,
+no cache-refresh event and overall processing `active`; failed/unattempted builds
+retain precedence. Missing coverage fails closed; a genuinely empty requested
+user requires explicit zero-current/zero-prior evidence. Production was unchanged,
+and this validation does not establish an observed production outage or cache
+freshness improvement.
+
+Sequential canonical integration checks passed with retry 0 and unchanged
+deadlines/context: 14 PG target-producer cases, one provider case, five real
+coverage-reader cases and the causal 65/32 readiness regression. Independent source
+review approved the slice with no blocking findings. Their teardown hooks completed
+without errors, but isolated object absence and successful native query IDs were
+not independently captured for those functional runs.
+
+The separate controlled absence-query experiment also passed. Its absent user
+was inside populated key bounds; inventory grew from 3,584 to 458,752 rows using
+the existing schema/default granularity and required 1/1/1 query context. Actual
+structural reads grew from 3,585 rows, 3 ms and 5,233,599 peak bytes to 24,577 rows,
+4 ms and 5,233,679 peak bytes. Expanded native query `bd16a497-3386-42a6-9cbe-72ddbe3cc89e`
+finished successfully. All three natural source branches retained FINAL/user
+filtering and selected granules current 1/4, pace 1/48 and HR 1/4; no branch fully
+scanned. Both reader executions returned `empty_sources` for exactly the requested
+UUID; each underlying structural result returned decimal zero current/pace/HR
+counts. The operator's DROP and post-DROP database-absence assertion and
+independent client close succeeded; absence rows were not separately persisted
+or independently queried again. Root verified all 57 original containers healthy
+with unchanged IDs/images afterward. No engines were created or other workspaces
+paused.
+
+Finite same-cycle catchup, actual Redis/live-input generation verification,
+source-arrival races, no-worse source-to-visible lag, the 15-minute freshness gate,
+production-scale resource acceptance and B commit/CI/cutover remain open. These
+controlled results do not prove constant physical reads or subsecond production
+page loading. Follow-up includes the deferred lossless ordering/duplicate-key
+tests and existing test warnings. A useful diagnostic-runbook improvement is to
+require an in-range absent key, selected/total granules for every source branch,
+and explicit separation of teardown completion from captured cleanup absence.
+
+**2026-10-04 — Bounded verifier initial native gate, tuple binding failure.**
+The isolated canonical initial-create test reached its first typed metadata
+request, then failed before verifier execution: query
+`4539dbb6-7617-40e0-b7a5-6988233004ab`, code 27
+`CANNOT_PARSE_INPUT_ASSERTION_FAILED`, expected `(` while decoding
+`Array(Tuple(UUID, UUID))`. Client 1.23.1 encoded nested JavaScript arrays
+with square brackets. Its exported `TupleParam` uses tuple parentheses, as
+shown by the [exact pinned official serializer](https://github.com/ClickHouse/clickhouse-js/blob/client-1.23.1/packages/client-common/src/data_formatter/format_query_params.ts).
+The test now uses that existing built-in wrapper at SELECT and strict subquery
+DESCRIBE bindings; no custom serialization, dependency, SQL, settings, retries
+or deadline change was introduced. Host serialization/type/format checks passed;
+the corrected native path and broader semantic/resource gates remain unvalidated.
+Test teardown reported no error and root independently observed all 57 original
+containers healthy; isolated database absence was not independently captured.
+Production was unchanged; no production incident or freshness improvement is
+inferred from this local validation failure.
+
+
+On 2026-10-04, the bounded verifier's corrected initial native case passed,
+but the remaining-case selection failed in dbt's system-table relation discovery
+before either case executed. Native query 6e4791d8-b405-480b-b9c2-9e32f07480dc
+tracked 38,303,582 bytes while the server rejected total memory at 1.18 GiB.
+A system.metric_log merge hit the same ceiling about 2 ms earlier; subsequent
+one-second samples tracked up to 890,798,718 merge bytes. The actual metric table
+has 2,100 columns, 95,316 rows and six parts; this evidence identifies overlapping
+metric-log merge pressure, without reconstructing every allocation at the fatal.
+The new verifier CREATE/SELECT was not the rejected statement. Production was
+unchanged. Root preserved the relevant native SQL, errors, metrics, table metadata
+and their hashes, then performed exactly one verified-own-engine
+TRUNCATE TABLE system.metric_log SYNC. Its query
+0b164468-a1b1-48ac-9e45-5386564282ec completed with no exception; all query_log,
+part_log, native-error histories, product tables and 57 original containers were
+preserved. Historical metric rows were deleted and the full history was not
+archived. ClickHouse documents that this history table may safely be truncated:
+[system.metric_log](https://clickhouse.com/docs/reference/system-tables/metric_log).
+
+After the operator cleanup, the unchanged remaining two cases passed once with
+retry 0, proving canonical replacement, the two existing schema assertions,
+empty bindings, zero-clock presence and explicit absent rows. The earlier
+corrected initial case proved both exact 41/0 source rows and microsecond bounds.
+Root retained four successful native query records under the required 1/1/1
+context (198–229 ms, about 41 MB tracked peaks), separately from the failed
+startup query. Root independently verified all 57 originals healthy after cleanup
+and after testing. This is a local prerequisite recovery, not a durable pressure
+fix: metric-log merges can recur as history accumulates under the unchanged cap.
+Full typed-schema, lifecycle/inventory, shared-selector, toolchain, key-pruning,
+finite-drain, cache-generation and production freshness gates remain open.
+No cap, logging setting, timeout, retry mechanism or steady-state cleanup changed.
+
+
+**2026-10-04 — Bounded key-verifier corrections and controlled local resource validation.**
+The configured new-view SQL lint initially failed with SQLFluff CP02 at line 10,
+position 16, treating the typed-parameter `arrayJoin` call as an identifier.
+The direct correction uses a named typed-input CTE and the native `ARRAY JOIN`
+clause; key/user bindings, empty-input behavior and query settings are preserved.
+ClickHouse documents element expansion and omission of empty arrays for this
+clause: [ARRAY JOIN](https://clickhouse.com/docs/reference/statements/select/array-join).
+The same configured dbt-templated lint passed once after correction. Its original
+failure remains in `task6B-verifier-key-lint-native.log`; no rule, parser flag,
+timeout or retry setting changed.
+
+The expanded lifecycle tests then exposed a fixture seed failure: native INSERT
+`8cd62e79-8b26-4f31-b29e-2d5246e41ad1` read and wrote zero rows, so the verifier
+correctly reported the second user absent. The replacement `user_id` alias
+collided with the unqualified original-user filter. ClickHouse documents
+query-wide aliases and same-name substitution: [expression aliases](https://clickhouse.com/docs/reference/syntax#notes-on-usage).
+The test now qualifies the source table and requires the exact seeded
+user/activity/version 99 before verification. Only that affected case was rerun;
+it passed with lossless adjacent source clocks and user isolation. Owned database
+DROP and a subsequent exact-name absence query passed. The full 25-field schema,
+inventory/lifecycle cases, selector 28, pace 9, HR 9 and coverage 12 regressions,
+and configured build/docs/lint gates are GREEN across retained distinct runs.
+Existing empty parameterized-view catalog results, adapter warnings and three
+canonical SQL-lint size skips remain explicit limitations.
+
+Root next ran one reviewed controlled key-resource operator, with no retry,
+delay, forced layout, alternative serving query, cap/settings change or history
+cleanup. Baseline 36 rows grew to 1,179,648 raw/FINAL rows, including unrequested
+same-user keys on both sides of both requested keys and eight other users.
+Both typed-view requests returned the same independently expected four rows
+with all 25 fields. Exact native QueryFinish records were
+`ca06d8b2-9ff1-44c4-bc10-db1215c90498` (169 ms, 108 read rows, 7,614 bytes) and
+`81ad8237-74b6-4e40-b111-a7b01f9d776f` (195 ms, 213,100 read rows, 14,638,788 bytes).
+Each tracked peak was 37,960,448 bytes, below the 128 MiB gate and the separately
+observed unchanged effective server cap of 1,288,931,328 bytes. Actual request
+settings retained max_threads/join_use_nulls/enable_materialized_cte 1/1/1.
+
+Manual inspection covered all ten natural source-read nodes, including repeated
+current/prior window reads. Requested user/exact-key predicates entered current
+and prior reads before joins/aggregation; sensor reads used requested user,
+model channel and dates derived from both current and prior bounds. Expanded
+selected/total data granules were current 3/9, pace prior 3/97, HR prior 3/9 and
+sensor 2/33. Requested keys lay inside expanded part bounds, so acceptance was
+based on pruning within overlapping ranges. No compiled-body fallback was needed.
+Read amplification was real; these measurements do not prove constant reads or
+a production latency SLA. Full plans, physical inventories and native results
+are retained under `task6B-verifier-key-resource` artifacts.
+
+Owned DROP, the operator's separate database-absence assertion, client close,
+source preservation and original-57 checks all passed independently. The empty
+post-DROP rowset was asserted, not separately persisted or queried again by root.
+Root independently observed all 57 original IDs/images healthy with no deviations
+at 20:14:47.537 UTC. Production was unchanged. New support-commit CI, pinned CI
+engine compatibility, finite-capture totals, Redis/live-input generation,
+source-arrival races, no-worse freshness and production cutover remain open;
+the earlier metric-log pressure recurrence risk also remains unresolved. A useful
+runbook refinement is to record selected/total data granules for every repeated
+source branch and distinguish per-request resource proof from total capture work
+and source-to-visible freshness. No steady-state diagnostic framework is added.

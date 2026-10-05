@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { createTRPCError } from "../packages/server/src/lib/cache-warmer-test-helpers.ts";
+import { requestCacheKey } from "../packages/server/src/trpc.ts";
 import { MemoryCacheStore } from "../src/lib/cache.ts";
 import { captureException } from "../src/lib/error-reporting.ts";
 import {
@@ -9,8 +10,69 @@ import {
 } from "./warm-query-cache.ts";
 
 vi.mock("../src/lib/error-reporting.ts", () => ({ captureException: vi.fn() }));
+vi.mock("../packages/server/src/router.ts", () => ({ appRouter: { createCaller: vi.fn() } }));
+vi.mock("dofek/jobs/queues", () => ({
+  getSharedRedisConnection: vi.fn(() => {
+    throw new Error("Unit cache tests must not open Redis");
+  }),
+}));
 
 describe("parseRegisteredQueryCacheKey", () => {
+  it("replays a versioned pace key and overwrites its exact registered cache entry", async () => {
+    const input = { days: null };
+    const key = requestCacheKey(
+      "user-1",
+      "durationCurves.paceCurve",
+      input,
+      "America/Los_Angeles",
+      "pace-curve-availability-v1",
+    );
+    expect.soft(parseRegisteredQueryCacheKey(key)).toEqual({
+      key,
+      userId: "user-1",
+      path: "durationCurves.paceCurve",
+      timezone: "America/Los_Angeles",
+      input,
+    });
+    const cache = new MemoryCacheStore();
+    await cache.set(key, "old pace", 60000);
+    const replayedContexts: Array<{ userId: string; timezone: string; cacheMode: string }> = [];
+    const result = await warmRegisteredQueryCaches({
+      cacheStore: { listKeys: async () => [key] },
+      queryCache: cache,
+      db: {},
+      sensorStore: {},
+      getAccessWindow: async () => ({ kind: "full", paid: true, reason: "paid_grant" }),
+      createCaller: (context) => {
+        replayedContexts.push(context);
+        return {
+          durationCurves: {
+            paceCurve: async (actualInput: unknown) => {
+              expect(actualInput).toEqual(input);
+              const actualKey = requestCacheKey(
+                context.userId,
+                "durationCurves.paceCurve",
+                actualInput,
+                context.timezone,
+                "pace-curve-availability-v1",
+              );
+              await cache.set(actualKey, "current pace", 60000);
+            },
+          },
+        };
+      },
+    });
+    expect.soft(result).toEqual({ refreshed: 1, failed: 0, skipped: 0 });
+    expect.soft(replayedContexts).toEqual([
+      expect.objectContaining({
+        userId: "user-1",
+        timezone: "America/Los_Angeles",
+        cacheMode: "refresh",
+      }),
+    ]);
+    await expect.soft(cache.get(key)).resolves.toBe("current pace");
+  });
+
   it("preserves the user, path, timezone, and JSON input", () => {
     expect(
       parseRegisteredQueryCacheKey(
@@ -29,6 +91,27 @@ describe("parseRegisteredQueryCacheKey", () => {
     expect(
       parseRegisteredQueryCacheKey("user-1:auth.linkedAccounts:UTC:undefined")?.input,
     ).toBeUndefined();
+  });
+
+  it.each([
+    { userId: "first-user", timezone: "UTC", input: undefined },
+    { userId: "second-user", timezone: "Asia/Kolkata", input: null },
+    { userId: "third-user", timezone: "America/Los_Angeles", input: { label: "12:30:00" } },
+  ])("preserves versioned request identity for $userId", ({ userId, timezone, input }) => {
+    const key = requestCacheKey(
+      userId,
+      "durationCurves.paceCurve",
+      input,
+      timezone,
+      "pace-curve-availability-v1",
+    );
+    expect(parseRegisteredQueryCacheKey(key)).toEqual({
+      key,
+      userId,
+      path: "durationCurves.paceCurve",
+      timezone,
+      input,
+    });
   });
 });
 

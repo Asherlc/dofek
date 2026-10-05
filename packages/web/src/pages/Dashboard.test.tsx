@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { UnitConverter } from "@dofek/format/units";
-import { cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, render, screen } from "@testing-library/react";
 import type {
   ReadinessRow,
   SleepPerformanceInfo,
@@ -9,6 +9,7 @@ import type {
 } from "dofek-server/types";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { PageLoadProvider } from "../lib/page-load-context.tsx";
 
 type MockInsightsQueryResult = {
   data: unknown[] | undefined;
@@ -189,6 +190,57 @@ function createCoreDashboardQueryData(): {
 const coreDashboardQueryData = createCoreDashboardQueryData();
 
 describe("Dashboard", () => {
+  it("measures primary cards independently and waits for delayed conditional insights", () => {
+    const measure = vi.fn();
+    let frames: FrameRequestCallback[] = [];
+    vi.stubGlobal("performance", { now: () => 100, measure });
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      frames.push(callback);
+      return 1;
+    });
+    vi.stubGlobal("cancelAnimationFrame", vi.fn());
+    mockInsightsQuery.mockReturnValue({
+      data: undefined,
+      isLoading: true,
+      isFetched: false,
+      error: null,
+    });
+    const page = (
+      <PageLoadProvider route="/dashboard" startedAt={0} sections={["cards", "insights"]}>
+        <Dashboard />
+      </PageLoadProvider>
+    );
+    const rendered = render(page);
+    const paint = () => {
+      const pending = frames;
+      frames = [];
+      act(() =>
+        pending.forEach((callback) => {
+          callback(100);
+        }),
+      );
+    };
+    paint();
+    paint();
+    expect(measure).not.toHaveBeenCalled();
+    expect(screen.getByRole("region", { name: "Daily health summary" })).toBeTruthy();
+    mockInsightsQuery.mockReturnValue({ data: [], isLoading: false, isFetched: true, error: null });
+    rendered.rerender(
+      <PageLoadProvider route="/dashboard" startedAt={0} sections={["cards", "insights"]}>
+        <Dashboard />
+      </PageLoadProvider>,
+    );
+    paint();
+    paint();
+    expect(measure).toHaveBeenCalledWith(
+      "dofek.page.data-ready",
+      expect.objectContaining({
+        detail: expect.objectContaining({ route: "/dashboard", outcome: "ready" }),
+      }),
+    );
+    rendered.unmount();
+    vi.unstubAllGlobals();
+  });
   beforeEach(() => {
     mockReadinessQuery.mockReturnValue({
       data: coreDashboardQueryData.readiness,

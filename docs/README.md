@@ -96,6 +96,7 @@ Cross-provider reverse-engineering references:
 | [package-publishing.md](package-publishing.md) | npm trusted publishing, independent Lerna releases, and configuration-driven SwiftPM mirrors. |
 | [performance/loading-performance-runbook.md](performance/loading-performance-runbook.md) | Evidence-first workflow for diagnosing slow web and mobile loading before optimizing clients, tRPC, or ClickHouse. |
 | [performance/loading-baseline-2026-07-18.md](performance/loading-baseline-2026-07-18.md) | Current Axiom-backed loading taxonomy and backend evidence gate. |
+| [performance/production-load-audit-2026-10-02.md](performance/production-load-audit-2026-10-02.md) | Production first-paint versus data-readiness measurements, mobile web checks, filter blanking, and query evidence. |
 | [performance/loading-monitors.md](performance/loading-monitors.md) | Loading-performance monitor definitions and investigation links. |
 | [clickhouse-read-model-deploy-runbook.md](clickhouse-read-model-deploy-runbook.md) | Deploy failures around ClickHouse CDC, analytics read models, and hot fitness views. |
 | [clickhouse-cdc-health-runbook.md](clickhouse-cdc-health-runbook.md) | Preventing, diagnosing, and recovering PeerDB mapping, normalization, freshness, WAL, and lost-slot failures. |

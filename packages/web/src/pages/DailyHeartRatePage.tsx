@@ -13,9 +13,11 @@ import {
   escapeTooltipHtml,
   seriesColor,
 } from "../lib/chartTheme.ts";
+import { usePageLoad, usePageLoadDomSection } from "../lib/page-load-context.tsx";
 import { trpc } from "../lib/trpc.ts";
 
 export function DailyHeartRatePage() {
+  const pageLoad = usePageLoad();
   const [date, setDate] = useState(() => formatDateYmd());
   const today = useTodayQueryDate();
   const localTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -28,6 +30,21 @@ export function DailyHeartRatePage() {
     () => (sources !== undefined && sources.length > 0 ? buildChartOption(sources) : undefined),
     [sources],
   );
+  const currentResult = !query.isFetching && !query.isPlaceholderData && sources !== undefined;
+  usePageLoadDomSection(
+    "sources",
+    query.error ? "error" : !currentResult ? undefined : sources.length > 0 ? "ready" : "empty",
+  );
+  usePageLoadDomSection(
+    "chart",
+    query.error ? "error" : currentResult && !option ? "empty" : undefined,
+  );
+
+  function changeDate(nextDate: string, startedAt: number) {
+    if (nextDate === date) return;
+    pageLoad?.beginFilter(startedAt);
+    setDate(nextDate);
+  }
 
   return (
     <div className="space-y-6">
@@ -41,7 +58,7 @@ export function DailyHeartRatePage() {
           <legend className="sr-only">Day navigation</legend>
           <button
             type="button"
-            onClick={() => setDate(shiftDateYmd(date, -1))}
+            onClick={(event) => changeDate(shiftDateYmd(date, -1), event.timeStamp)}
             aria-label="Previous day"
             className="rounded-md border border-border bg-surface px-3 py-1.5 text-sm text-foreground hover:bg-surface-secondary"
           >
@@ -54,16 +71,17 @@ export function DailyHeartRatePage() {
               value={date}
               max={today}
               onChange={(event) => {
-                if (event.target.value && event.target.value <= today) setDate(event.target.value);
+                if (event.target.value && event.target.value <= today)
+                  changeDate(event.target.value, event.timeStamp);
               }}
               className="rounded-md border border-border bg-surface px-3 py-1.5 text-sm text-foreground"
             />
           </label>
           <button
             type="button"
-            onClick={() => {
+            onClick={(event) => {
               const nextDate = shiftDateYmd(date, 1);
-              if (nextDate <= today) setDate(nextDate);
+              if (nextDate <= today) changeDate(nextDate, event.timeStamp);
             }}
             disabled={!canGoForward}
             aria-label="Next day"
@@ -73,7 +91,7 @@ export function DailyHeartRatePage() {
           </button>
           <button
             type="button"
-            onClick={() => setDate(today)}
+            onClick={(event) => changeDate(today, event.timeStamp)}
             disabled={isToday}
             aria-label="Today"
             className="rounded-md border border-border bg-surface px-3 py-1.5 text-sm text-foreground hover:bg-surface-secondary disabled:cursor-not-allowed disabled:opacity-50"
