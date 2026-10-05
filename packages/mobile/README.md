@@ -35,6 +35,8 @@ board names, angle/units, methods, and results on attached and unattached entrie
 Labels match the web client through shared formatters; nullable counts/statuses
 remain explicit. See the [climbing contract](../../docs/climbing-context.md).
 
+The Training route coordinates query states and delegates climbing payload validation, grade cards, and Hangboarding display to [ClimbingTrainingCard](./components/ClimbingTrainingCard.tsx), with focused tests and stories beside the component.
+
 - `app/`: Expo Router screens (file-based routing). Keep this route-only; Expo documents `app` as route-exclusive and non-route files there can be treated as routes: <https://docs.expo.dev/router/basics/core-concepts/#6-non-navigation-components-live-outside-the-srcapp-directory>.
 - `app-tests/`: Vitest tests for Expo Router screens.
 - `app-stories/`: Storybook stories for Expo Router screens.

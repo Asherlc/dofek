@@ -15,6 +15,11 @@ The backend API and background job processor for Dofek. Built with Node.js, Expr
 - **BullMQ**: Manages distributed background jobs for data synchronization, imports, and exports.
 - **Drizzle ORM**: Type-safe database interactions with TimescaleDB.
 - **Repositories**: Data access layer encapsulated in `src/repositories/`, abstracting SQL logic.
+- **Climbing data access**: [`ClimbingRepository`](./src/repositories/climbing-repository.ts)
+  serves grade analytics and session summaries, and delegates activity detail hydration and
+  cross-provider entry consolidation to
+  [`ClimbingActivityEntryRepository`](./src/repositories/climbing-activity-entry-repository.ts).
+  Both use the same [grade display conversion](./src/repositories/climbing-grade-display.ts).
 - **Insights Engine**: Complex data analysis and correlation logic located in `src/insights/`.
 - **Machine Learning**: Predictive modeling (e.g., weight prediction, activity features) in `src/ml/`.
 
