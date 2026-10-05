@@ -30245,5 +30245,5 @@ The affected local mutation run killed all 59 mutations (100% for each of the
 three files). All 19,565 unit/mobile tests, nine climbing repository PostgreSQL
 tests, five OpenBeta sync PostgreSQL tests, lint, and typecheck pass. Remote
 confirmation is tracked in the PR's checks. No thresholds, exclusions, retries,
-or waits were added. For similar changes, use the `gh-fix-ci` workflow and run
-the CI mutation configuration against changed code before declaring the PR ready.
+or waits were added. For similar changes, run the CI mutation configuration
+against changed code before declaring the PR ready.
