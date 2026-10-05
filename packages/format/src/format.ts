@@ -65,7 +65,17 @@ export function formatDurationSeconds(seconds: number): string {
 export function formatClimbingAttemptResult(
   sent: boolean | null,
   attemptCount: number | null,
-): string {
+  ascentType: string | null,
+): string | null {
+  if (sent && (ascentType === "Onsight" || ascentType === "Flash")) return null;
+  if (
+    sent &&
+    (ascentType === "Redpoint" || ascentType === "Pinkpoint" || ascentType === "Repeat")
+  ) {
+    return attemptCount === null
+      ? "Attempt count not recorded"
+      : `${attemptCount} ${attemptCount === 1 ? "attempt" : "attempts"}`;
+  }
   if (sent === null && attemptCount === null) return "Outcome and attempt count not recorded";
   if (attemptCount === null) {
     return sent ? "Sent; attempt count not recorded" : "Not sent; attempt count not recorded";

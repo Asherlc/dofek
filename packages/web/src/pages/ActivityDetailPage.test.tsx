@@ -1779,7 +1779,8 @@ describe("ActivityDetailPage", () => {
       expect(screen.getByText("Mountain Project")).toBeDefined();
       expect(screen.getByText("OpenBeta")).toBeDefined();
       expect(screen.getByText("Blue Circuit")).toBeDefined();
-      expect(screen.getByText(/V4 · Sent in 2 attempts/)).toBeDefined();
+      expect(screen.getByText("V4", { exact: true })).toBeDefined();
+      expect(screen.getByText("Flash")).toBeDefined();
       const controls = screen.getAllByRole("button", { name: "Attach to this activity" });
       expect(controls).toHaveLength(2);
       const secondControl = controls.at(1);
@@ -1976,7 +1977,7 @@ describe("ActivityDetailPage", () => {
       expect(screen.getByText("V4")).toBeDefined();
       expect(screen.getByText("Blue Circuit")).toBeDefined();
       expect(screen.getByText("Redpoint")).toBeDefined();
-      expect(screen.getByText("Sent in 7 attempts")).toBeDefined();
+      expect(screen.getByText("7 attempts")).toBeDefined();
       expect(screen.getByText("Project")).toBeDefined();
       expect(screen.getByText("Attempted 1 time")).toBeDefined();
       expect(screen.getByText("Wall angle: 35°")).toBeDefined();

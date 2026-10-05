@@ -39,6 +39,38 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 export const Outdoor: Story = {};
+export const Onsight: Story = {
+  args: {
+    entries: [
+      {
+        ...entry,
+        grade: "5.6",
+        sent: true,
+        attempts: [],
+        ascentType: "Onsight",
+        holdType: null,
+        routeName: "Left Arete",
+        lead: true,
+        context: { ...entry.context, climbStyle: "lead", resultStyle: "Onsight" },
+      },
+    ],
+  },
+};
+export const Flash: Story = {
+  args: {
+    entries: [
+      {
+        ...entry,
+        sent: true,
+        attemptCount: 1,
+        attempts: [],
+        ascentType: "Flash",
+        holdType: null,
+        context: { ...entry.context, resultStyle: "Flash" },
+      },
+    ],
+  },
+};
 export const Board: Story = {
   args: {
     entries: [

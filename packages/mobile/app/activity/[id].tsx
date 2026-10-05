@@ -417,38 +417,47 @@ function ClimbingEntryBreakdown({ entries }: { entries: ClimbingEntry[] }) {
         description="The climbs recorded during this session, including grades and send status."
         textStyle={chartStyles.title}
       />
-      {entries.map((entry) => (
-        <View key={entry.id} style={climbingStyles.entryRow}>
-          <View style={climbingStyles.gradeBadge}>
-            <Text style={climbingStyles.gradeText}>{entry.grade}</Text>
-          </View>
-          <View style={climbingStyles.entryDetails}>
-            <Text style={climbingStyles.routeName}>
-              {entry.routeName ?? (entry.climbType === "boulder" ? "Boulder" : "Route")}
-            </Text>
-            <ClimbingEntryContext context={entry.context} sent={entry.sent} />
-            {entry.holdType !== null && (
-              <Text style={climbingStyles.locationName}>
-                {entry.holdType[0]?.toUpperCase()}
-                {entry.holdType.slice(1)}
+      {entries.map((entry) => {
+        const attemptResult = formatClimbingAttemptResult(
+          entry.sent,
+          entry.attemptCount,
+          entry.ascentType,
+        );
+        return (
+          <View key={entry.id} style={climbingStyles.entryRow}>
+            <View style={climbingStyles.gradeBadge}>
+              <Text style={climbingStyles.gradeText}>{entry.grade}</Text>
+            </View>
+            <View style={climbingStyles.entryDetails}>
+              <Text style={climbingStyles.routeName}>
+                {entry.routeName ?? (entry.climbType === "boulder" ? "Boulder" : "Route")}
               </Text>
-            )}
-            {entry.attempts.map((attempt) => (
-              <Text key={attempt.attemptIndex} style={climbingStyles.attemptDetail}>
-                {attempt.attemptIndex}:{" "}
-                {attempt.outcome === "sent"
-                  ? "Sent"
-                  : `${attempt.failureReason?.[0]?.toUpperCase()}${attempt.failureReason?.slice(1)}`}
-              </Text>
-            ))}
+              <ClimbingEntryContext context={entry.context} sent={entry.sent} />
+              {entry.holdType !== null && (
+                <Text style={climbingStyles.locationName}>
+                  {entry.holdType[0]?.toUpperCase()}
+                  {entry.holdType.slice(1)}
+                </Text>
+              )}
+              {entry.attempts.map((attempt) => (
+                <Text key={attempt.attemptIndex} style={climbingStyles.attemptDetail}>
+                  {attempt.attemptIndex}:{" "}
+                  {attempt.outcome === "sent"
+                    ? "Sent"
+                    : `${attempt.failureReason?.[0]?.toUpperCase()}${attempt.failureReason?.slice(1)}`}
+                </Text>
+              ))}
 
-            <Text style={entry.sent ? climbingStyles.sent : climbingStyles.attempted}>
-              {formatClimbingAttemptResult(entry.sent, entry.attemptCount)}
-            </Text>
-            <Text style={climbingStyles.sourceName}>{entry.sourceName}</Text>
+              {attemptResult !== null && (
+                <Text style={entry.sent ? climbingStyles.sent : climbingStyles.attempted}>
+                  {attemptResult}
+                </Text>
+              )}
+              <Text style={climbingStyles.sourceName}>{entry.sourceName}</Text>
+            </View>
           </View>
-        </View>
-      ))}
+        );
+      })}
     </View>
   );
 }
@@ -947,6 +956,11 @@ export default function ActivityDetailScreen() {
           ) : (
             entrySuggestions.data?.map((entry) => {
               const state = entryAttachState[entry.id];
+              const attemptResult = formatClimbingAttemptResult(
+                entry.sent,
+                entry.attemptCount,
+                entry.ascentType,
+              );
               return (
                 <View key={entry.id} style={climbingStyles.entryRow}>
                   <View style={climbingStyles.entryDetails}>
@@ -958,7 +972,8 @@ export default function ActivityDetailScreen() {
                     </Text>
                     <ClimbingEntryContext context={entry.context} sent={entry.sent} />
                     <Text style={climbingStyles.locationName}>
-                      {entry.grade} · {formatClimbingAttemptResult(entry.sent, entry.attemptCount)}
+                      {entry.grade}
+                      {attemptResult !== null ? ` · ${attemptResult}` : null}
                     </Text>
                     {state?.error ? <Text style={styles.errorText}>{state.error}</Text> : null}
                   </View>

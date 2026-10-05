@@ -41,6 +41,11 @@ export function UnattachedClimbingEntries({
           <div className="space-y-3">
             {suggestions?.map((entry) => {
               const entryState = state[entry.id];
+              const attemptResult = formatClimbingAttemptResult(
+                entry.sent,
+                entry.attemptCount,
+                entry.ascentType,
+              );
               return (
                 <div
                   key={entry.id}
@@ -54,7 +59,8 @@ export function UnattachedClimbingEntries({
                       {entry.sourceName ?? providerSourceLabel(entry.providerId)}
                     </p>
                     <p className="text-sm text-muted">
-                      {entry.grade} · {formatClimbingAttemptResult(entry.sent, entry.attemptCount)}
+                      {entry.grade}
+                      {attemptResult !== null ? ` · ${attemptResult}` : null}
                     </p>
                     <ClimbingEntryContext context={entry.context} sent={entry.sent} />
                     {entryState?.error ? (

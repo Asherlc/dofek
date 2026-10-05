@@ -54,6 +54,61 @@ const suggestions: ClimbingEntrySuggestion[] = [
 const emptySuggestions: ClimbingEntrySuggestion[] = [];
 
 describe("UnattachedClimbingEntries", () => {
+  it.each(["Onsight", "Flash"] as const)(
+    "shows the grade and %s badge as the complete result for a first-try tick",
+    (ascentType) => {
+      const suggestion = suggestions.at(1);
+      if (!suggestion) throw new Error("Expected a climbing suggestion fixture");
+      render(
+        <UnattachedClimbingEntries
+          suggestions={[
+            {
+              ...suggestion,
+              climbType: "route",
+              gradeSystem: "yds",
+              grade: "5.6",
+              routeName: "Left Arete",
+              ascentType,
+              attemptCount: null,
+              context: { ...suggestion.context, climbStyle: "lead", resultStyle: ascentType },
+            },
+          ]}
+          error={null}
+          isLoading={false}
+          state={{}}
+          onAttach={vi.fn()}
+        />,
+      );
+      expect(screen.getByText("Left Arete")).toBeInTheDocument();
+      expect(screen.getByText("5.6", { exact: true })).toBeInTheDocument();
+      expect(screen.getByText(ascentType)).toBeInTheDocument();
+      expect(screen.queryByText(/attempt|\bSent\b/i)).not.toBeInTheDocument();
+    },
+  );
+
+  it("shows a redpoint's attempts alongside its result badge", () => {
+    const suggestion = suggestions.at(1);
+    if (!suggestion) throw new Error("Expected a climbing suggestion fixture");
+    render(
+      <UnattachedClimbingEntries
+        suggestions={[
+          {
+            ...suggestion,
+            ascentType: "Redpoint",
+            attemptCount: 7,
+            context: { ...suggestion.context, resultStyle: "Redpoint" },
+          },
+        ]}
+        error={null}
+        isLoading={false}
+        state={{}}
+        onAttach={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("V4 · 7 attempts")).toBeInTheDocument();
+    expect(screen.getByText("Redpoint")).toBeInTheDocument();
+  });
+
   it("renders provider fallbacks, attachment states, and attaches the selected entry", () => {
     const onAttach = vi.fn();
 

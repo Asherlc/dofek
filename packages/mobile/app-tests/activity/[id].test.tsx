@@ -983,6 +983,60 @@ describe("ActivityDetailScreen", () => {
     expect(enabled).toBe(false);
   });
 
+  it.each(["Onsight", "Flash", "Redpoint"] as const)(
+    "uses %s badges for successful attached and unattached climbs",
+    async (ascentType) => {
+      mockByIdQuery.mockReturnValue({
+        data: { ...baseCyclingActivity, activityType: "climbing" },
+        isLoading: false,
+        error: null,
+      });
+      const climb = {
+        id: "first-try-climb",
+        providerId: "mountain-project",
+        sourceName: "Mountain Project",
+        climbType: "route",
+        gradeSystem: "yds",
+        grade: "5.6",
+        sent: true,
+        attemptCount: ascentType === "Redpoint" ? 7 : null,
+        attempts: [],
+        ascentType,
+        holdType: null,
+        lead: true,
+        routeName: "Attached Arete",
+        locationName: "Kombucha Crag",
+        wallAngleDegrees: null,
+        context: {
+          providerId: "mountain-project",
+          locationPath: [{ name: "Kombucha Crag", externalId: null, kind: null }],
+          board: null,
+          wallAngle: null,
+          climbStyle: "lead",
+          resultStyle: ascentType,
+        },
+      };
+      mockClimbingEntriesQuery.mockReturnValue({ data: [climb], isLoading: false, error: null });
+      mockEntrySuggestionsQuery.mockReturnValue({
+        data: [{ ...climb, id: "unattached-climb", routeName: "Left Arete" }],
+        isLoading: false,
+        error: null,
+      });
+      const { default: ActivityDetailScreen } = await import("../../app/activity/[id]");
+      render(React.createElement(ActivityDetailScreen));
+      expect(screen.getByText("Attached Arete")).toBeTruthy();
+      expect(screen.getByText("Left Arete")).toBeTruthy();
+      expect(screen.getAllByText(ascentType)).toHaveLength(2);
+      if (ascentType === "Redpoint") {
+        expect(screen.getByText("7 attempts")).toBeTruthy();
+        expect(screen.getByText("5.6 · 7 attempts")).toBeTruthy();
+      } else {
+        expect(screen.getAllByText("5.6", { exact: true })).toHaveLength(2);
+        expect(screen.queryByText(/attempt|\bSent\b/i)).toBeNull();
+      }
+    },
+  );
+
   it("shows the climbs attached to a canonical climbing activity", async () => {
     mockByIdQuery.mockReturnValue({
       data: {
@@ -1085,7 +1139,7 @@ describe("ActivityDetailScreen", () => {
     expect(screen.getByText("Redpoint")).toBeTruthy();
     expect(screen.getByText("Board: Training Board")).toBeTruthy();
     expect(screen.getByText("Wall angle: −20 (units unknown)")).toBeTruthy();
-    expect(screen.getByText("Sent in 7 attempts")).toBeTruthy();
+    expect(screen.getByText("7 attempts")).toBeTruthy();
     expect(screen.getByText("Project")).toBeTruthy();
     expect(screen.getByText("Attempted 1 time")).toBeTruthy();
     expect(screen.getByText("Wall angle: 35°")).toBeTruthy();
