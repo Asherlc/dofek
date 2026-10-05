@@ -108,6 +108,10 @@ describe("OpenBetaProvider", () => {
     [{ sport: true, trad: true, bouldering: false }, ["sport", "trad"]],
     [{ sport: false, trad: false, bouldering: true }, []],
     [{ sport: null, trad: null, bouldering: false }, null],
+    [{ sport: true, trad: null, bouldering: false }, ["sport"]],
+    [{ sport: null, trad: true, bouldering: false }, ["trad"]],
+    [{ sport: false, trad: null, bouldering: false }, []],
+    [{ sport: null, trad: false, bouldering: false }, []],
   ])(
     "preserves protection flags %j independently of climbing method",
     async (type, routeProtection) => {
@@ -179,11 +183,16 @@ describe("OpenBetaProvider", () => {
     async (sourceClimb, path) => {
       const { db, climbingEntryValues } = makeDb();
       const result = await new OpenBetaProvider(async () =>
-        graphqlResponse({ userTicks: [tick({ climb: sourceClimb, style: null })] }),
+        graphqlResponse({ userTicks: [tick({ climb: sourceClimb, style: null, name: null })] }),
       ).sync(makeRun(db));
       expect(result).toMatchObject({ recordsSynced: 1, errors: [] });
       expect(climbingEntryValues).toHaveBeenCalledExactlyOnceWith(
-        expect.objectContaining({ locationPath: path, climbStyle: null, attemptCount: null }),
+        expect.objectContaining({
+          locationPath: path,
+          climbStyle: null,
+          attemptCount: null,
+          routeName: sourceClimb === null ? null : "Sunset Arete",
+        }),
       );
     },
   );
@@ -766,11 +775,22 @@ describe("OpenBetaProvider", () => {
     ["string date scalar", tick({ dateClimbed: "2026-08-10" })],
     ["fractional date scalar", tick({ dateClimbed: 0.5 })],
     ["invalid climb type payload", tick({ climb: climb({ type: { bouldering: "false" } }) })],
+    [
+      "invalid sport protection flag",
+      tick({ climb: climb({ type: { bouldering: false, sport: "true", trad: false } }) }),
+    ],
+    [
+      "invalid trad protection flag",
+      tick({ climb: climb({ type: { bouldering: false, sport: false, trad: "false" } }) }),
+    ],
     ["invalid parent payload", tick({ climb: climb({ parent: { area_name: 42 } }) })],
   ])("rejects %s instead of importing malformed tick data", async (_label, malformedTick) => {
+    // Validate the schema built during provider initialization, as well as the sync response.
+    vi.resetModules();
+    const providerModule = await import("./openbeta.ts");
     const fetchFn = vi.fn().mockResolvedValue(graphqlResponse({ userTicks: [malformedTick] }));
     const { db, climbingEntryValues } = makeDb();
-    const provider = new OpenBetaProvider(fetchFn);
+    const provider = new providerModule.OpenBetaProvider(fetchFn);
 
     const result = await provider.sync(makeRun(db));
 

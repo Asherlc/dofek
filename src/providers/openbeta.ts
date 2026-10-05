@@ -365,6 +365,11 @@ function parseOpenBetaTicks(ticks: OpenBetaTick[]): OpenBetaTickParseResult {
       Aid: "aid",
       Boulder: null,
     } as const;
+    const routeType = tick.climb?.type;
+    const routeProtection =
+      routeType == null || (routeType.sport == null && routeType.trad == null)
+        ? null
+        : (["sport", "trad"] as const).filter((protection) => routeType[protection] === true);
     entries.push({
       externalId: `openbeta:${tick._id}`,
       unattachedDate,
@@ -378,12 +383,7 @@ function parseOpenBetaTicks(ticks: OpenBetaTick[]): OpenBetaTickParseResult {
         climbStyle: tick.style === null ? null : methods[tick.style],
         resultStyle: tick.attemptType,
       }),
-      routeProtection:
-        tick.climb?.type?.sport == null && tick.climb?.type?.trad == null
-          ? null
-          : (["sport", "trad"] as const).filter(
-              (protection) => tick.climb?.type?.[protection] === true,
-            ),
+      routeProtection,
       attemptCount: null,
       routeName: nullableText(tick.name ?? tick.climb?.name),
       raw: tick,

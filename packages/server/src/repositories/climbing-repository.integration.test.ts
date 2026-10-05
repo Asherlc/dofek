@@ -1,3 +1,4 @@
+import type { ClimbingFilters } from "@dofek/training/climbing-filters";
 import { sql } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
@@ -61,6 +62,42 @@ describe("ClimbingRepository PostgreSQL summaries", () => {
 
   afterEach(async () => {
     await context?.cleanup();
+  });
+
+  it("applies independent style, protection, and setting selections to actual database entries", async () => {
+    await context.db.execute(sql`UPDATE fitness.climbing_entry
+      SET climb_type = 'route', grade_system = 'yds', grade = '5.9',
+          climb_style = 'lead', route_protection = ARRAY['sport'],
+          location_path = '[{"name":"Gym","externalId":null,"kind":"gym"}]'::jsonb
+      WHERE id = ${ATTACHED_ID}::uuid`);
+    await context.db.execute(sql`INSERT INTO fitness.climbing_entry
+      (user_id, provider_id, unattached_date, external_id, climb_type, grade_system, grade,
+       result_style, attempt_count, route_protection, raw)
+      VALUES (${TEST_USER_ID}, 'climbing-summary-test', CURRENT_DATE - 2, 'unknown-method-route',
+              'route', 'yds', '5.10a', 'Send', 1, ARRAY['trad'], '{}'::jsonb)`);
+    const repository = new ClimbingRepository(context.db, TEST_USER_ID, "America/Los_Angeles");
+    const cases: Array<{ filters: ClimbingFilters; grades: string[] }> = [
+      { filters: {}, grades: ["5.9", "5.10a", "V4"] },
+      { filters: { style: "boulder" }, grades: ["V4"] },
+      { filters: { style: "route" }, grades: ["5.9", "5.10a"] },
+      { filters: { style: "unknown" }, grades: ["5.10a"] },
+      { filters: { style: "lead" }, grades: ["5.9"] },
+      { filters: { style: "top-rope" }, grades: [] },
+      { filters: { protection: "unknown" }, grades: ["V4"] },
+      { filters: { protection: "sport" }, grades: ["5.9"] },
+      { filters: { protection: "trad" }, grades: ["5.10a"] },
+      { filters: { setting: "indoor" }, grades: ["5.9"] },
+      { filters: { setting: "outdoor" }, grades: ["V4"] },
+      { filters: { setting: "unknown" }, grades: ["5.10a"] },
+      { filters: { style: "lead", protection: "sport", setting: "indoor" }, grades: ["5.9"] },
+      { filters: { style: "route", protection: "trad", setting: "outdoor" }, grades: [] },
+    ];
+    for (const { filters, grades } of cases) {
+      const rows = await repository.getVolumeByGrade(30, filters);
+      expect(rows.map((row) => row.toDetail().grade).sort(), JSON.stringify(filters)).toEqual(
+        grades.toSorted(),
+      );
+    }
   });
 
   it.each(["mountain-project", "openbeta"])(

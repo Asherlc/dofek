@@ -30219,6 +30219,31 @@ adds it with `NOT VALID` and explicitly validates it in the following statement,
 as prescribed by [Squawk](https://squawkhq.com/docs/constraint-missing-not-valid)
 and [PostgreSQL](https://www.postgresql.org/docs/current/sql-altertable.html).
 Local Squawk and migration-policy checks pass, and all eight climbing repository
-PostgreSQL tests pass with the updated migration. CI confirmation remains pending.
+PostgreSQL tests pass with the updated migration. The
+[corrected migration-lint CI check](https://github.com/Asherlc/dofek/actions/runs/37376595644/job/111988247108)
+passed before the schema-snapshot follow-up.
 No retries, waits, or lint suppressions were added. Next time, run Squawk as well
 as SQLFluff before opening a PR that adds PostgreSQL migrations.
+
+## 2026-10-05 — Climbing mutation CI coverage gaps (local fix validated)
+
+No production impact. PR [2880](https://github.com/Asherlc/dofek/pull/2880)
+failed `Test / Stryker (0)`, `(1)`, and `(3)` in
+[run 37377447441](https://github.com/Asherlc/dofek/actions/runs/37377447441).
+The failing command was `pnpm exec stryker run stryker.ci.config.json --mutate "$MUTATE_FILES"`.
+The first fatal diagnostics reported mutation scores of 0%, 70%, and 53.85%
+below the 75% breaking threshold. Server unit tests never selected the new
+filters, while provider tests omitted partial protection flags and CSV
+whitespace/mixed-type cases. Cached provider schemas also hid schema-initialization
+mutations, and redundant optional chaining introduced equivalent mutations.
+
+Added parameterized-query coverage for all three summaries, real PostgreSQL
+fixtures for independent and combined filters, and provider edge cases. Malformed
+response tests now initialize the provider afresh; OpenBeta captures the nullable
+route type once and filters its flags after an explicit null guard.
+The affected local mutation run killed all 59 mutations (100% for each of the
+three files). All 19,565 unit/mobile tests, nine climbing repository PostgreSQL
+tests, five OpenBeta sync PostgreSQL tests, lint, and typecheck pass. Remote
+confirmation is tracked in the PR's checks. No thresholds, exclusions, retries,
+or waits were added. For similar changes, use the `gh-fix-ci` workflow and run
+the CI mutation configuration against changed code before declaring the PR ready.
