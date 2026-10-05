@@ -46,3 +46,8 @@ Formats ordered location paths, recorded methods/results, and wall angles for
 web and mobile. Unknown angle units remain labeled unknown; result labels do
 not compute send status or attempt counts. See the
 [climbing context design](../../docs/superpowers/specs/2026-09-29-climbing-context-design.md).
+
+The [climbing result formatter](src/format.ts) lets a successful Onsight or Flash
+badge convey the result without an attempt summary. Redpoint, Pinkpoint, and
+Repeat badges convey the send while the summary retains attempt information.
+Other results keep the explicit outcome and count labels supplied by the server.

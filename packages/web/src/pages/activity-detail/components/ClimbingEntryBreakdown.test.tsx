@@ -5,6 +5,44 @@ import { climbingActivityEntryDetailSchema } from "../../../../../server/src/con
 import { ClimbingEntryBreakdown } from "./ClimbingEntryBreakdown.tsx";
 
 describe("ClimbingEntryBreakdown", () => {
+  it.each(["Onsight", "Flash", "Redpoint"] as const)(
+    "uses the %s badge to communicate a successful ascent",
+    (ascentType) => {
+      const entry = climbingActivityEntryDetailSchema.parse({
+        id: "entry-1",
+        climbType: "route",
+        gradeSystem: "yds",
+        grade: "5.6",
+        sent: true,
+        attemptCount: ascentType === "Redpoint" ? 7 : null,
+        attempts: [],
+        ascentType,
+        holdType: null,
+        routeName: "Left Arete",
+        locationName: "Kombucha Crag",
+        lead: true,
+        sourceName: "Mountain Project",
+        wallAngleDegrees: null,
+        context: {
+          providerId: "mountain-project",
+          locationPath: [{ name: "Kombucha Crag", externalId: null, kind: null }],
+          board: null,
+          wallAngle: null,
+          climbStyle: "lead",
+          resultStyle: ascentType,
+        },
+      });
+      render(<ClimbingEntryBreakdown entries={[entry]} />);
+      expect(screen.getByText("5.6")).toBeTruthy();
+      expect(screen.getByText(ascentType)).toBeTruthy();
+      if (ascentType === "Redpoint") {
+        expect(screen.getByText("7 attempts")).toBeTruthy();
+      } else {
+        expect(screen.queryByText(/attempt|\bSent\b/i)).toBeNull();
+      }
+    },
+  );
+
   it("combines recorded context with unknown counts and individual attempts", () => {
     const entry = climbingActivityEntryDetailSchema.parse({
       id: "entry-1",
