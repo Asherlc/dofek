@@ -1006,7 +1006,7 @@ export default function ActivityDetailScreen() {
           {/* Heart Rate Chart */}
           {hasHr && (
             <LineChart
-              data={points.map((p) => ({ value: p.heartRate }))}
+              data={points.map((p) => ({ recordedAt: p.recordedAt, value: p.heartRate }))}
               color={CHART_COLORS.heartRate}
               label="Heart Rate"
               unit="bpm"
@@ -1019,7 +1019,7 @@ export default function ActivityDetailScreen() {
           {/* Power Chart */}
           {hasPower && (
             <LineChart
-              data={points.map((p) => ({ value: p.power }))}
+              data={points.map((p) => ({ recordedAt: p.recordedAt, value: p.power }))}
               color={CHART_COLORS.power}
               label="Power"
               unit="W"
@@ -1033,6 +1033,7 @@ export default function ActivityDetailScreen() {
           {hasAltitude && (
             <AreaChart
               data={points.map((p) => ({
+                recordedAt: p.recordedAt,
                 value: p.altitude != null ? units.convertElevation(p.altitude) : null,
               }))}
               color={CHART_COLORS.altitude}

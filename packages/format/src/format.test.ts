@@ -173,6 +173,44 @@ describe("date and time formatters", () => {
     );
   });
 
+  it.each([
+    ["en-US", "America/Los_Angeles", "Oct 4, 2026, 9:52 AM", "9:52 AM"],
+    ["en-GB", "America/Los_Angeles", "4 Oct 2026, 9:52", "9:52"],
+    ["en-GB", "Europe/London", "4 Oct 2026, 17:52", "17:52"],
+    ["de-DE", "Europe/Berlin", "4. Okt. 2026, 18:52", "18:52"],
+  ])("formats timestamps in %s with its local clock", (locale, timeZone, dateTime, time) => {
+    const timestamp = "2026-10-04T16:52:51.440Z";
+
+    expect(formatDateTime(timestamp, { locale, timeZone })).toBe(dateTime);
+    expect(formatTimeOnly(timestamp, { locale, timeZone })).toBe(time);
+  });
+
+  it("uses the device locale when no locale is specified", () => {
+    const DateTimeFormat = Intl.DateTimeFormat;
+    vi.spyOn(Intl, "DateTimeFormat").mockImplementation(
+      function DeviceDateTimeFormat(locales, options) {
+        return new DateTimeFormat(locales ?? "en-GB", options);
+      },
+    );
+
+    expect(formatDateTime("2026-10-04T16:52:51.440Z", { timeZone: "Asia/Tokyo" })).toBe(
+      "5 Oct 2026, 1:52",
+    );
+  });
+
+  it("keeps API date keys Gregorian when the device locale uses another calendar", () => {
+    const DateTimeFormat = Intl.DateTimeFormat;
+    vi.spyOn(Intl, "DateTimeFormat").mockImplementation(
+      function DeviceDateTimeFormat(locales, options) {
+        return new DateTimeFormat(locales ?? "th-TH", options);
+      },
+    );
+
+    expect(formatDateYmdInTimeZone("2026-10-04T16:52:51.440Z", "Pacific/Auckland")).toBe(
+      "2026-10-05",
+    );
+  });
+
   it("returns placeholders for invalid date labels", () => {
     expect(formatDateShort("not-a-date")).toBe("--");
     expect(formatDateTime("not-a-date")).toBe("--");

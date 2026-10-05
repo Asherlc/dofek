@@ -1478,6 +1478,24 @@ describe("ActivityDetailPage", () => {
   });
 
   describe("MetricsChart timeline zoom", () => {
+    it("formats the tooltip timestamp as a readable local date and time", async () => {
+      const ActivityDetailPage = await importPage();
+      renderWithUnits(<ActivityDetailPage />);
+
+      const option = findOptionByYAxisArrayName("Heart Rate");
+      const tooltip = option?.tooltip;
+      expect(tooltip).toBeDefined();
+      if (!tooltip || typeof tooltip !== "object") throw new Error("Expected tooltip");
+      const axisPointer = Reflect.get(tooltip, "axisPointer");
+      const formatter = axisPointer?.label?.formatter;
+      expect(typeof formatter).toBe("function");
+      if (typeof formatter !== "function") throw new Error("Expected timestamp formatter");
+
+      expect(formatter({ value: mockStreamPoints[0]?.recordedAt })).toBe(
+        formatDateTime("2026-03-18T07:00:00Z"),
+      );
+    });
+
     it("presents the navigator as a labeled control instead of a miniature chart", async () => {
       const ActivityDetailPage = await importPage();
       renderWithUnits(<ActivityDetailPage />);
