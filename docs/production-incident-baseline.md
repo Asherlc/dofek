@@ -30189,3 +30189,11 @@ the earlier metric-log pressure recurrence risk also remains unresolved. A usefu
 runbook refinement is to record selected/total data granules for every repeated
 source branch and distinguish per-request resource proof from total capture work
 and source-to-visible freshness. No steady-state diagnostic framework is added.
+
+## 2026-10-05 — Reports-removal PR mobile preview upload returned storage InternalError
+
+- **Status:** Latest preview publish passed; underlying storage error remains unexplained.
+- **Symptoms / impact:** PR #2887's first mobile preview publish failed after the iOS bundle exported successfully. The preview update was unavailable from that run; production impact was not established.
+- **Evidence:** The `Publish OTA to PR branch` step ran `pnpm dlx eoas@2.3.22 publish --branch pr-2887 --platform ios --nonInteractive --packageRunner pnpm`. Its first fatal diagnostic was `File upload failed` with the XML storage error `InternalError: We encountered an internal error. Please try again.` The command exited 1 in the [failed run](https://github.com/Asherlc/dofek/actions/runs/37380008495/job/111999255166). This proves the upload failed, but does not identify the storage-side cause.
+- **Fix / validation:** No workflow, retry, timeout, or production configuration change was made. A separate commit removed an obsolete Reports assertion from the existing header navigation test. Its ordinary new-commit [preview publish passed](https://github.com/Asherlc/dofek/actions/runs/37380369013/job/112000483629), and all 19,297 local unit/mobile tests passed.
+- **Remaining risk / follow-up:** Storage failures may recur. Correlate future upload failures with storage request IDs and service logs before changing publish behavior; document the canonical OTA upload diagnostics in the deployment runbook.
