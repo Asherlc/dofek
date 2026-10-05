@@ -36,7 +36,6 @@ import { journalRouter } from "./routers/journal.ts";
 import { lifeEventsRouter } from "./routers/life-events.ts";
 import { mcpRouter } from "./routers/mcp.ts";
 import { medicationDoseEventsRouter } from "./routers/medication-dose-events.ts";
-import { menstrualCycleRouter } from "./routers/menstrual-cycle.ts";
 import { mobileDashboardRouter } from "./routers/mobile-dashboard.ts";
 import { monthlyReportRouter } from "./routers/monthly-report.ts";
 import { nutritionRouter } from "./routers/nutrition.ts";
@@ -135,7 +134,6 @@ const appRouterProcedures = {
   healthReport: healthReportRouter,
   healthspan: healthspanRouter,
   medicationDoseEvents: medicationDoseEventsRouter,
-  menstrualCycle: menstrualCycleRouter,
   mcp: mcpRouter,
   monthlyReport: monthlyReportRouter,
   weeklyReport: weeklyReportRouter,
