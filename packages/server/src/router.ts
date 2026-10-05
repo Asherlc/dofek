@@ -33,7 +33,6 @@ import { inertialMeasurementUnitSyncRouter } from "./routers/inertial-measuremen
 import { insightsRouter } from "./routers/insights.ts";
 import { intervalsRouter } from "./routers/intervals.ts";
 import { journalRouter } from "./routers/journal.ts";
-import { lifeEventsRouter } from "./routers/life-events.ts";
 import { mcpRouter } from "./routers/mcp.ts";
 import { medicationDoseEventsRouter } from "./routers/medication-dose-events.ts";
 import { menstrualCycleRouter } from "./routers/menstrual-cycle.ts";
@@ -91,7 +90,6 @@ const appRouterProcedures = {
   nutritionAnalytics: nutritionAnalyticsRouter,
   insights: insightsRouter,
   journal: journalRouter,
-  lifeEvents: lifeEventsRouter,
   mobileDashboard: mobileDashboardRouter,
   supplements: supplementsRouter,
   providerDetail: providerDetailRouter,

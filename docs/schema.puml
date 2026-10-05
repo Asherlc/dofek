@@ -937,19 +937,6 @@ entity "journal_question" {
   created_at : timestamp
 }
 
-entity "life_events" {
-  * id : uuid <<PK>>
-  --
-  label : text
-  user_id : uuid <<FK>>
-  started_at : date
-  ended_at : date
-  category : text
-  ongoing : boolean
-  notes : text
-  created_at : timestamp
-}
-
 entity "menstrual_period" {
   * id : uuid <<PK>>
   --
@@ -1353,7 +1340,6 @@ body_region ||--o{ injury_event
 provider ||--o{ journal_entry
 user_profile ||--o{ journal_entry
 journal_question ||--o{ journal_entry
-user_profile ||--o{ life_events
 user_profile ||--o{ menstrual_period
 user_profile ||--o{ provider_data_deletion_outbox
 user_profile ||--o{ provider_data_generation

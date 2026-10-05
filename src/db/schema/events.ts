@@ -348,29 +348,6 @@ export const injuryEvent = fitness.table(
 );
 
 // ============================================================
-// Life Events / Markers
-// ============================================================
-
-export const lifeEvents = fitness.table(
-  "life_events",
-  {
-    id: uuid("id").primaryKey().defaultRandom(),
-    label: text("label").notNull(),
-    userId: uuid("user_id")
-      .notNull()
-      .$defaultFn(resolveImplicitUserId)
-      .references(() => userProfile.id),
-    startedAt: date("started_at").notNull(),
-    endedAt: date("ended_at"),
-    category: text("category"),
-    ongoing: boolean("ongoing").notNull().default(false),
-    notes: text("notes"),
-    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  },
-  (table) => [index("life_events_started_at_idx").on(table.startedAt)],
-);
-
-// ============================================================
 // Breathwork sessions
 // ============================================================
 

@@ -177,9 +177,9 @@ describe("SettingsRepository", () => {
         if (transactionAborted) {
           throw new Error("current transaction is aborted");
         }
-        if (queryText.includes("fitness.life_events")) {
+        if (queryText.includes("fitness.sport_settings")) {
           transactionAborted = true;
-          throw Object.assign(new Error('relation "fitness.life_events" does not exist'), {
+          throw Object.assign(new Error('relation "fitness.sport_settings" does not exist'), {
             code: "42P01",
           });
         }
@@ -220,7 +220,7 @@ describe("SettingsRepository", () => {
             ? (Reflect.get(query, "queryChunks") ?? [])
             : [],
         );
-        if (queryText.includes("fitness.life_events")) {
+        if (queryText.includes("fitness.sport_settings")) {
           throw deletionError;
         }
         return [];
@@ -273,8 +273,8 @@ describe("SettingsRepository", () => {
       const queries = transactionExecute.mock.calls.map(([query]) =>
         JSON.stringify(Reflect.get(query, "queryChunks") ?? []),
       );
-      expect(queries.filter((query) => query.includes("DELETE FROM"))).toHaveLength(7);
-      expect(queries.some((query) => query.includes("fitness.life_events"))).toBe(true);
+      expect(queries.filter((query) => query.includes("DELETE FROM"))).toHaveLength(6);
+      expect(queries.some((query) => query.includes("fitness.sport_settings"))).toBe(true);
       expect(queries.some((query) => query.includes("fitness.breathwork_session"))).toBe(true);
       expect(queries.some((query) => query.includes("fitness.menstrual_period"))).toBe(true);
     });
@@ -286,8 +286,8 @@ describe("SettingsRepository", () => {
             ? (Reflect.get(query, "queryChunks") ?? [])
             : [],
         );
-        if (queryText.includes("fitness.life_events")) {
-          throw Object.assign(new Error('relation "fitness.life_events" does not exist'), {
+        if (queryText.includes("fitness.sport_settings")) {
+          throw Object.assign(new Error('relation "fitness.sport_settings" does not exist'), {
             code: "42P01",
           });
         }

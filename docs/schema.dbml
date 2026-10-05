@@ -1498,22 +1498,6 @@ table fitness.journal_question {
   created_at "timestamp with time zone" [not null, default: `now()`]
 }
 
-table fitness.life_events {
-  id uuid [pk, not null, default: `gen_random_uuid()`]
-  label text [not null]
-  user_id uuid [not null]
-  started_at date [not null]
-  ended_at date
-  category text
-  ongoing boolean [not null, default: false]
-  notes text
-  created_at "timestamp with time zone" [not null, default: `now()`]
-
-  indexes {
-    started_at [name: 'life_events_started_at_idx']
-  }
-}
-
 table fitness.menstrual_period {
   id uuid [pk, not null, default: `gen_random_uuid()`]
   user_id uuid [not null]
@@ -2154,8 +2138,6 @@ ref journal_entry_provider_id_provider_id_fk: fitness.journal_entry.provider_id 
 ref journal_entry_user_id_user_profile_id_fk: fitness.journal_entry.user_id > fitness.user_profile.id [delete: no action, update: no action]
 
 ref journal_entry_question_slug_journal_question_slug_fk: fitness.journal_entry.question_slug > fitness.journal_question.slug [delete: no action, update: no action]
-
-ref life_events_user_id_user_profile_id_fk: fitness.life_events.user_id > fitness.user_profile.id [delete: no action, update: no action]
 
 ref menstrual_period_user_id_user_profile_id_fk: fitness.menstrual_period.user_id > fitness.user_profile.id [delete: no action, update: no action]
 

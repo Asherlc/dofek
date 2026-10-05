@@ -30,7 +30,7 @@ Resolve public-facing trust problems and add product measurement before launchin
 - [ ] Establish an automated web/mobile product-surface parity review for every user-facing feature. Platform-specific hardware and administrative features may differ intentionally, but user outcomes should remain equivalent.
 - [ ] Publish and maintain a product-surface matrix covering route discoverability, web/mobile parity, fixture coverage, and release evidence.
 - [ ] Resolve or intentionally retire low-discoverability product surfaces, including behavior impact, reports, predictions, and insights that exist but are absent from primary navigation.
-- [ ] Prioritize mobile parity for journal and life events, body and goal-weight context, behavior impact, and user-facing prediction or sport-detail outcomes. Hardware capture may remain mobile-only; administrative MCP may remain web-only.
+- [ ] Prioritize mobile parity for journal, body and goal-weight context, behavior impact, and user-facing prediction or sport-detail outcomes. Hardware capture may remain mobile-only; administrative MCP may remain web-only.
 
 This gate is complete when the acquisition surfaces make no contradictory or prohibited claims, a seeded review account can be audited on both platforms, and the team can measure activation and retention without relying only on page views.
 
@@ -190,7 +190,6 @@ Implementation-level backlog. Checked items are complete; unchecked are open.
 ### Dashboard & Insights
 - [x] Web dashboard (Vite + React + tRPC + ECharts + shadcn/ui)
 - [x] Providers page with sync controls, health status, record counts, and log history
-- [x] Life events timeline (annotate health data with arbitrary date markers, before/after analysis)
 - [x] Insights engine (training volume, HR zone distribution, 80/20 polarization analysis)
 - [x] Additional insight categories (ACWR, TRIMP, critical power curves, training monotony/strain, ramp rate, readiness score)
 - [x] Continuous aggregates for long-range trends (daily + weekly caggs on metric_stream with auto-refresh policies)

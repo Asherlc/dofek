@@ -30189,3 +30189,7 @@ the earlier metric-log pressure recurrence risk also remains unresolved. A usefu
 runbook refinement is to record selected/total data granules for every repeated
 source branch and distinguish per-request resource proof from total capture work
 and source-to-visible freshness. No steady-state diagnostic framework is added.
+
+### 2026-10-05 — Local validation database cold-start health failure
+
+During removal of Personal Experiments and Life Events, `pnpm test:integration -- packages/server/src/routers/settings.integration.test.ts src/db/seed-dev-db.integration.test.ts` stopped before tests with `container noble-turtle-db-1 is unhealthy`. Production and users were unaffected. `pnpm compose -- logs --tail 60 db` showed the fresh TimescaleDB initialization sequence still shutting down its temporary server for a checkpoint; Docker health history reported `127.0.0.1:5432 - no response`. The container subsequently completed initialization and logged `database system is ready to accept connections`; Docker inspection then reported healthy and no OOM kill. No runtime configuration, timeout, or retry was changed. The integration command was started again after confirming prerequisite health. Cold-start readiness timing remains a local validation risk; its underlying initialization duration needs separate investigation before changing health policy.

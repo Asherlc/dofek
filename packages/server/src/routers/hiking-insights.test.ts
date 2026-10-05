@@ -68,7 +68,6 @@ vi.mock("../insights/engine.ts", async (importOriginal) => {
 
 import { hikingRouter } from "./hiking.ts";
 import { insightsRouter } from "./insights.ts";
-import { lifeEventsRouter } from "./life-events.ts";
 
 describe("hikingRouter", () => {
   const createCaller = createTestCallerFactory(hikingRouter);
@@ -266,120 +265,5 @@ describe("insightsRouter", () => {
     expect(result).toEqual({ insights: ["test-insight"] });
     // Activities and nutrition stay in Postgres; metrics, resting HR, sleep, and body comp come from ClickHouse.
     expect(execute).toHaveBeenCalledTimes(2);
-  });
-});
-
-describe("lifeEventsRouter", () => {
-  const createCaller = createTestCallerFactory(lifeEventsRouter);
-
-  function makeCaller(rows: Record<string, unknown>[] = []) {
-    return createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
-      userId: "user-1",
-      timezone: "UTC",
-      sensorStore: makeSensorStore(rows),
-    });
-  }
-
-  describe("list", () => {
-    it("returns life events", async () => {
-      const rows = [{ id: "1", label: "Vacation", started_at: "2024-01-01" }];
-      const caller = makeCaller(rows);
-      const result = await caller.list();
-      expect(result).toEqual(rows);
-    });
-  });
-
-  describe("create", () => {
-    it("creates a life event", async () => {
-      const created = { id: "new-1", label: "Surgery" };
-      const caller = makeCaller([created]);
-      const result = await caller.create({
-        label: "Surgery",
-        startedAt: "2024-01-15",
-      });
-      expect(result).toEqual(created);
-    });
-  });
-
-  describe("update", () => {
-    it("updates a life event", async () => {
-      const updated = { id: "1", label: "Updated" };
-      const caller = makeCaller([updated]);
-      const result = await caller.update({
-        id: "00000000-0000-0000-0000-000000000001",
-        label: "Updated",
-      });
-      expect(result).toEqual(updated);
-    });
-
-    it("returns null when no fields to update", async () => {
-      const caller = makeCaller([]);
-      const result = await caller.update({
-        id: "00000000-0000-0000-0000-000000000001",
-      });
-      expect(result).toBeNull();
-    });
-
-    it("handles setting endedAt to null", async () => {
-      const updated = { id: "1", ended_at: null };
-      const caller = makeCaller([updated]);
-      const result = await caller.update({
-        id: "00000000-0000-0000-0000-000000000001",
-        endedAt: null,
-      });
-      expect(result).toEqual(updated);
-    });
-  });
-
-  describe("delete", () => {
-    it("deletes a life event", async () => {
-      const caller = makeCaller([]);
-      const result = await caller.delete({
-        id: "00000000-0000-0000-0000-000000000001",
-      });
-      expect(result).toEqual({ success: true });
-    });
-  });
-
-  describe("analyze", () => {
-    it("returns null when event not found", async () => {
-      const caller = makeCaller([]);
-      const result = await caller.analyze({
-        id: "00000000-0000-0000-0000-000000000001",
-        windowDays: 30,
-      });
-      expect(result).toBeNull();
-    });
-
-    it("returns analysis for an event", async () => {
-      const execute = vi.fn();
-      // First call: get event
-      execute.mockResolvedValueOnce([{ started_at: "2024-06-01", ended_at: null, ongoing: false }]);
-      // Second call: metrics before/after
-      execute.mockResolvedValueOnce([
-        { period: "before", days: 10, avg_resting_hr: 55 },
-        { period: "after", days: 10, avg_resting_hr: 58 },
-      ]);
-      // Third call: sleep
-      execute.mockResolvedValueOnce([]);
-      // Fourth call: body comp
-      execute.mockResolvedValueOnce([]);
-
-      const caller = createCaller({
-        db: { execute },
-        userId: "user-1",
-        timezone: "UTC",
-        sensorStore: makeSensorStore([{ date: "2024-05-31", resting_hr: 52 }]),
-      });
-      const result = await caller.analyze({
-        id: "00000000-0000-0000-0000-000000000001",
-        windowDays: 30,
-      });
-
-      expect(result).not.toBeNull();
-      expect(result?.event).toBeDefined();
-      expect(result?.metrics).toHaveLength(2);
-    });
   });
 });

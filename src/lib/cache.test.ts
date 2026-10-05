@@ -26,7 +26,7 @@ describe("query cache invalidation", () => {
       queryCache.set("user-1:recovery.score", "recovery", TTL_MS),
       queryCache.set("user-1:stress.score", "stress", TTL_MS),
       queryCache.set("user-1:pmc.chart", "pmc", TTL_MS),
-      queryCache.set("user-1:lifeEvents.timeline", "life events", TTL_MS),
+      queryCache.set("user-1:sleep.list", "sleep", TTL_MS),
       queryCache.set("user-2:journal.entries", "other user", TTL_MS),
     ]);
 
@@ -40,7 +40,7 @@ describe("query cache invalidation", () => {
     await expect(queryCache.get("user-1:recovery.score")).resolves.toBeUndefined();
     await expect(queryCache.get("user-1:stress.score")).resolves.toBeUndefined();
     await expect(queryCache.get("user-1:pmc.chart")).resolves.toBeUndefined();
-    await expect(queryCache.get("user-1:lifeEvents.timeline")).resolves.toBe("life events");
+    await expect(queryCache.get("user-1:sleep.list")).resolves.toBe("sleep");
     await expect(queryCache.get("user-2:journal.entries")).resolves.toBe("other user");
   });
 

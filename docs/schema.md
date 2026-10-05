@@ -243,7 +243,6 @@ tables through ClickHouse replication.
 | `fitness.lab_result` | Clinical lab results (from Apple Health / FHIR) |
 | `fitness.health_event` | Generic health events catch-all |
 | `fitness.journal_entry` | Daily behavioral self-reports (WHOOP journal, etc.) |
-| `fitness.life_events` | Life event markers (travel, illness, etc.) |
 
 Supplement schedule, definition, nutrient, and dose-event ownership is defined
 by the [canonical Drizzle schema](../src/db/schema/nutrition.ts) and introduced
