@@ -30842,3 +30842,10 @@ matrices before attempting independent native-package updates.
   [authorization diagnostics procedure](processing-status-runbook.md#provider-authorization-diagnostics).
   Do not claim an upstream root cause or introduce recovery behavior without
   that evidence. No resilience knob was added.
+
+## 2026-10-06 — Provider diagnostics PR blocked by Expo dependency validation
+
+- **Status / impact:** [PR #2902](https://github.com/Asherlc/dofek/pull/2902) is open; readiness is blocked by the mobile dependency gate. Production is unchanged.
+- **Evidence / root cause:** [Metro Bundle job 112437120276](https://github.com/Asherlc/dofek/actions/runs/37512374439/job/112437120276) failed during `cd packages/mobile && pnpm expo install --check`, before bundling. The fatal diagnostic was `Found outdated dependencies`: the installed `@expo/metro-runtime` 58.0.12, `expo` 58.0.5, `expo-file-system` 58.0.6, and `expo-router` 58.0.15 were below the expected patch versions 58.0.13, 58.0.6, 58.0.7, and 58.0.16 respectively. The dependency check exited with status 1.
+- **Validation / mitigation:** The full local unit/mobile suite passed 18,561 tests (19 existing skips), and local lint and root/server/web/provider-HTTP typechecks passed. No dependency gate was bypassed, no workflow was rerun as a substitute for a fix, and no resilience knob was added.
+- **Remaining risk / follow-up:** Align the mobile Expo dependencies and lockfile with the supported versions, validate the dependency check and mobile build, then require green CI on the final revision. This dependency update remains unresolved and separate from the approved authorization changes.
