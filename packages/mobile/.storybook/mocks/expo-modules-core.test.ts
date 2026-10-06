@@ -72,4 +72,20 @@ describe("expo-modules-core Storybook mock", () => {
     });
     expect(result.current[0]).toEqual(denied);
   });
+
+  it("creates a mutable React ref", () => {
+    const reference = expoModulesCore.createSnapshotFriendlyRef<string>();
+    expect(reference.current).toBeNull();
+    reference.current = "Today";
+    expect(reference.current).toBe("Today");
+  });
+
+  it("reports native shared-object hooks as unavailable in web stories", () => {
+    expect(() => expoModulesCore.useReleasingSharedObject()).toThrow(
+      expoModulesCore.UnavailabilityError,
+    );
+    expect(() => expoModulesCore.useReleasingSharedObjectWithLifecycle()).toThrow(
+      expoModulesCore.UnavailabilityError,
+    );
+  });
 });

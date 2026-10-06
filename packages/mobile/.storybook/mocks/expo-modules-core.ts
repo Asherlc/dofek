@@ -1,4 +1,8 @@
-import { useEffect, useState } from "react";
+import { createRef, type RefObject, useEffect, useState } from "react";
+
+export function createSnapshotFriendlyRef<T>(): RefObject<T | null> {
+  return createRef<T>();
+}
 
 export const PermissionStatus = {
   GRANTED: "granted",
@@ -96,6 +100,14 @@ export class UnavailabilityError extends CodedError {
   constructor(moduleName: string, propertyName: string) {
     super("ERR_UNAVAILABLE", `${moduleName}.${propertyName} is unavailable in Storybook.`);
   }
+}
+
+export function useReleasingSharedObject(): never {
+  throw new UnavailabilityError("expo-modules-core", "useReleasingSharedObject");
+}
+
+export function useReleasingSharedObjectWithLifecycle(): never {
+  throw new UnavailabilityError("expo-modules-core", "useReleasingSharedObjectWithLifecycle");
 }
 
 export async function reloadAppAsync(_reason?: string): Promise<void> {
