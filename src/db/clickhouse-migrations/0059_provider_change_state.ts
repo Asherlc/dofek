@@ -1,3 +1,7 @@
+import {
+  peerDbMetadataColumnDefinitions,
+  replacingMergeTreeTable,
+} from "../clickhouse-sql-helpers.ts";
 import type { ClickHouseMigration } from "./types.ts";
 
 const targetTable = "analytics.provider_change_state";
@@ -106,6 +110,19 @@ export function createMigration(): ClickHouseMigration {
   return {
     id: "0059_provider_change_state",
     statements: [
+      `CREATE TABLE IF NOT EXISTS postgres_fitness.journal_entry (
+  id UUID,
+  date Date,
+  provider_id String,
+  user_id UUID,
+  question_slug String,
+  answer_text Nullable(String),
+  answer_numeric Nullable(Float32),
+  impact_score Nullable(Float32),
+  created_at DateTime64(6, 'UTC'),
+${peerDbMetadataColumnDefinitions}
+)
+${replacingMergeTreeTable("(user_id, date, provider_id, id)")}`,
       `CREATE TABLE IF NOT EXISTS ${targetTable} (
   user_id UUID,
   provider_id String,

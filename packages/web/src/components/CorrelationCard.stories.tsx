@@ -34,7 +34,7 @@ const meta = {
       type: "conditional",
       confidence: "strong",
       metric: "Heart Rate Variability (HRV)",
-      action: "Journal: Alcohol",
+      action: "Nutrition: Fiber",
       message:
         "Observed association: heart rate variability was 15% lower on days after consuming alcohol.",
       detail: "Based on 42 days of data (p < 0.01).",
@@ -128,7 +128,7 @@ export const Discovery: Story = {
       type: "conditional",
       confidence: "early",
       metric: "Ready Score",
-      action: "Journal: Magnesium",
+      action: "Nutrition: Magnesium",
       message: "Observed association: readiness was higher on days when Magnesium was logged.",
       detail: "Early signal based on 10 entries.",
       whenTrue: { mean: 82, n: 4 },

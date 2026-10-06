@@ -20,7 +20,6 @@ describe("ProviderStatsBreakdown", () => {
           foodEntries: 0,
           nutritionDaily: 0,
           clinicalRecords: 0,
-          journalEntries: 0,
         }}
       />,
     );
@@ -36,10 +35,9 @@ describe("ProviderStatsBreakdown", () => {
       "Nutrition",
       "Events",
       "Clinical Records",
-      "Journal",
     ]) {
       expect(screen.getByText(label)).not.toBeNull();
     }
-    expect(screen.getAllByText("0")).toHaveLength(11);
+    expect(screen.getAllByText("0")).toHaveLength(10);
   });
 });

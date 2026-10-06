@@ -1,5 +1,14 @@
 # Production Incident Baseline
 
+## 2026-10-05 — Tracking removal PR validation gates
+
+- **Symptoms / impact:** [PR #2885](https://github.com/Asherlc/dofek/pull/2885) encountered CI validation failures; production is unchanged.
+- **Evidence / root causes:** [Knip](https://github.com/Asherlc/dofek/actions/runs/37381183171/job/112005037889) failed `pnpm knip` with `Unused exports (1): getCapturedRouteComponent`; deleting tracking route tests left that helper unused. [Migration Lint](https://github.com/Asherlc/dofek/actions/runs/37381183171/job/112005038017) failed `xargs squawk` with `ban-drop-view` on `DROP VIEW fitness.provider_stats`. The intentional journal-column removal requires recreation because [PostgreSQL CREATE OR REPLACE VIEW](https://www.postgresql.org/docs/current/sql-createview.html) requires existing columns to retain their names, order, and types.
+- **Further evidence:** [Integration shard 4](https://github.com/Asherlc/dofek/actions/runs/37382396654/job/112010769481) replayed clinical migration 0099 without its historical journal-table dependency; [shard 1](https://github.com/Asherlc/dofek/actions/runs/37382396654/job/112010769505) expected 41 MCP tools after three were removed. [Stryker shard 3](https://github.com/Asherlc/dofek/actions/runs/37382396654/job/112010769873) exposed missing assertions for health-scope rejection, while [shard 0](https://github.com/Asherlc/dofek/actions/runs/37382396654/job/112010769764) selected unchanged empty-array defaults solely because formatting reindented their lines.
+- **Fix / validation:** Remove the unused helper and route-capture state; Knip and four time-range consumer tests pass. Add the user-approved exception to only the intentional DROP VIEW; Squawk 2.67.0 and migration policy pass. Restore the historical dependency in the clinical test fixture, update MCP discovery counts, and test health-scope rejection for mixed requests. The clinical migration tests and 13 MCP unit tests pass. Select mutation ranges with [Git's ignore-space-change option](https://git-scm.com/docs/git-diff), preserving substantive edits while excluding whitespace-only reindentation; targeted mutation validation scores 100%. No timeout, retry, threshold, or global lint setting changed.
+- **Remaining risk / follow-up:** Full replacement CI remains pending. Include Knip, Squawk, historical migration dependencies, and discovery counts in the feature-removal validation checklist, and document an approval policy for intentional destructive migrations.
+- **Local validation prerequisite:** A corrected SDK integration rerun failed before the tests with `could not create directory "base/96143": No space left on device`. Rebuildable Docker build cache was pruned, reclaiming 10.18 GB while preserving containers and named volumes. Both SDK tests then passed using the existing [Docker disk recovery runbook](testing.md#docker-disk-recovery); no runtime resilience settings were added.
+
 ## 2026-10-05: PR 2882 Storybook preview upload rejected by R2 (unresolved)
 
 - Impact: the mobile Storybook preview deployment failed; the preview comment
@@ -30284,8 +30293,8 @@ Local Squawk and migration-policy checks pass, and all eight climbing repository
 PostgreSQL tests pass with the updated migration. The
 [corrected migration-lint CI check](https://github.com/Asherlc/dofek/actions/runs/37376595644/job/111988247108)
 passed before the schema-snapshot follow-up. The migration was later renumbered
-to [0139](../drizzle/0139_climbing_route_protection.sql) after `main` added
-0137 and 0138; its snapshot was regenerated from the combined schema.
+to [0141](../drizzle/0141_climbing_route_protection.sql) after `main` added
+0137 through 0140; its snapshot was regenerated from the combined schema.
 No retries, waits, or lint suppressions were added. Next time, run Squawk as well
 as SQLFluff before opening a PR that adds PostgreSQL migrations.
 

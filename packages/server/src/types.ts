@@ -13,7 +13,6 @@ export type {
 export type { TrainingChartAvailability } from "./contracts/training-chart-availability.ts";
 export type { InsightEvidence } from "./insights/evidence.ts";
 export type { ActivityDetail } from "./models/activity.ts";
-export type { BehaviorAssociation } from "./repositories/behavior-impact-repository.ts";
 export type { ActivityHrZones, StreamPoint } from "./routers/activity.ts";
 
 // Recovery router types

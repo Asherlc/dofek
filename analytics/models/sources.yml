@@ -35,7 +35,6 @@ sources:
       - name: food_entry
       - name: health_event
       - name: clinical_record
-      - name: journal_entry
       - name: provider
       - name: provider_connection
       - name: provider_priority

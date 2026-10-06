@@ -23,7 +23,6 @@ import {
   fingerLoadingGripPositionEnum,
   fingerLoadingLateralityEnum,
 } from "./schema/enums.ts";
-import { journalEntry } from "./schema/events.ts";
 import { foodEntry } from "./schema/nutrition.ts";
 import { provider } from "./schema/reference.ts";
 
@@ -83,7 +82,6 @@ describe("drizzleSchema", () => {
       foodEntry,
       clinicalRecord,
       userSettings,
-      journalEntry,
     });
   });
 
