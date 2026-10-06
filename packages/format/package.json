@@ -17,7 +17,6 @@
     "./medication-reminders": "./src/medication-reminders.ts",
     "./record-local-time": "./src/record-local-time.ts",
     "./summary-date-context": "./src/summary-date-context.ts",
-    "./report-decision-synthesis": "./src/report-decision-synthesis.ts",
     "./sleep-data-state": "./src/sleep-data-state.ts",
     "./user-facing-error": "./src/user-facing-error.ts",
     "./units": "./src/units.ts"

@@ -431,7 +431,6 @@ async function activateAccountErasureInTransaction(
   await transaction.execute(
     sql`DELETE FROM fitness.companion_token WHERE user_id = ${userId}::uuid`,
   );
-  await transaction.execute(sql`DELETE FROM fitness.shared_report WHERE user_id = ${userId}::uuid`);
   await transaction.execute(
     sql`UPDATE fitness.mcp_access_token
         SET revoked_at = COALESCE(revoked_at, ${requestedAt.toISOString()})

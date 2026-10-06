@@ -414,3 +414,10 @@ pnpm lint                        # Run Biome from the repo root
 ## Production Deployment
 
 The server is packaged as a Docker image (target `server`) and handles both API requests and static asset serving for the SPA.
+
+Weekly/monthly reports and report sharing are retired. Deploy the server, web,
+and mobile removal together: older clients can no longer call the report APIs.
+[Migration 0143](../../drizzle/0143_remove_shared_reports.sql) removes
+`fitness.shared_report` and its stored snapshots. PostgreSQL's
+[`DROP TABLE`](https://www.postgresql.org/docs/current/sql-droptable.html)
+also removes that table's indexes and constraints.

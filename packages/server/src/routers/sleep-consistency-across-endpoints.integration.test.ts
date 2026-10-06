@@ -20,7 +20,6 @@ import {
  * differently:
  *   - sleep.list returns all rows (duplicate bars in the chart)
  *   - sleepNeed.calculate uses Map overwrite (latest start time wins)
- *   - weeklyReport.report has JOIN fan-out (corrupts averages)
  *   - recovery.sleepAnalytics returns duplicate rows per date
  *
  * This test inserts multi-source non-overlapping-enough sleep data and
@@ -111,7 +110,7 @@ describe("sleep data consistency across endpoints", () => {
       testDates.push(date.toISOString().slice(0, 10));
     }
 
-    // Also insert daily metrics so sleepNeed and weeklyReport work
+    // Also insert daily metrics so sleepNeed works
     for (let daysAgo = 90; daysAgo >= 0; daysAgo--) {
       await testCtx.db.execute(
         sql`INSERT INTO fitness.daily_metrics (
@@ -260,36 +259,6 @@ describe("sleep data consistency across endpoints", () => {
           `sleepNeed picked ${night.actualMinutes}min for ${night.date}, expected ~480 (WHOOP), not ~330 (Apple Health)`,
         ).toBeGreaterThanOrEqual(450);
       }
-    }
-  });
-
-  it("weeklyReport sleep average matches sleep.list durations (no JOIN fan-out)", async () => {
-    await queryCache.invalidateAll();
-
-    // Get the weekly report — use enough weeks to include all test data
-    const weeklyReport = await query<{
-      current: { avgSleepMinutes: number } | null;
-      history: { weekStart: string; avgSleepMinutes: number }[];
-    }>("weeklyReport.report", { weeks: 4, endDate });
-
-    // Find any week with sleep data — the current partial week may have 0
-    // if no test dates fall in it (depends on day-of-week when CI runs).
-    // Check all weeks (current + history) for at least one with valid sleep.
-    const allWeeks = [
-      ...(weeklyReport.current ? [weeklyReport.current] : []),
-      ...weeklyReport.history,
-    ];
-    const weeksWithSleep = allWeeks.filter((week) => week.avgSleepMinutes > 0);
-
-    expect(weeksWithSleep.length, "Expected at least one week with sleep data").toBeGreaterThan(0);
-
-    // Every week that HAS sleep data should reflect the WHOOP duration (~480),
-    // not an average of WHOOP+Apple Health (480+330)/2=405 from JOIN fan-out
-    for (const week of weeksWithSleep) {
-      expect(
-        week.avgSleepMinutes,
-        `Weekly report avg sleep is ${week.avgSleepMinutes}min — if <450, JOIN fan-out is averaging duplicates`,
-      ).toBeGreaterThanOrEqual(450);
     }
   });
 

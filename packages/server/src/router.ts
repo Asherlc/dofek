@@ -24,7 +24,6 @@ import { fileUploadRouter } from "./routers/file-upload.ts";
 import { foodRouter } from "./routers/food.ts";
 import { garminAuthRouter } from "./routers/garmin-auth.ts";
 import { healthKitSyncRouter } from "./routers/health-kit-sync.ts";
-import { healthReportRouter } from "./routers/health-report.ts";
 import { healthspanRouter } from "./routers/healthspan.ts";
 import { heartRateRouter } from "./routers/heart-rate.ts";
 import { hikingRouter } from "./routers/hiking.ts";
@@ -34,7 +33,6 @@ import { intervalsRouter } from "./routers/intervals.ts";
 import { mcpRouter } from "./routers/mcp.ts";
 import { medicationDoseEventsRouter } from "./routers/medication-dose-events.ts";
 import { mobileDashboardRouter } from "./routers/mobile-dashboard.ts";
-import { monthlyReportRouter } from "./routers/monthly-report.ts";
 import { nutritionRouter } from "./routers/nutrition.ts";
 import { nutritionAnalyticsRouter } from "./routers/nutrition-analytics.ts";
 import { personalizationRouter } from "./routers/personalization.ts";
@@ -59,7 +57,6 @@ import { tokenAuthRouter } from "./routers/token-auth.ts";
 import { trainingRouter } from "./routers/training.ts";
 import { trendsRouter } from "./routers/trends.ts";
 import { watchAltitudeSyncRouter } from "./routers/watch-altitude-sync.ts";
-import { weeklyReportRouter } from "./routers/weekly-report.ts";
 import { whoopAuthRouter } from "./routers/whoop-auth.ts";
 import { whoopBleSyncRouter } from "./routers/whoop-ble-sync.ts";
 import { router } from "./trpc.ts";
@@ -119,12 +116,9 @@ const appRouterProcedures = {
   settings: settingsRouter,
   stress: stressRouter,
   todayPlan: todayPlanRouter,
-  healthReport: healthReportRouter,
   healthspan: healthspanRouter,
   medicationDoseEvents: medicationDoseEventsRouter,
   mcp: mcpRouter,
-  monthlyReport: monthlyReportRouter,
-  weeklyReport: weeklyReportRouter,
   sportSettings: sportSettingsRouter,
   intervals: intervalsRouter,
   support: supportRouter,

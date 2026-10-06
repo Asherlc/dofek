@@ -527,11 +527,11 @@ describe("createApp", () => {
 
     middlewareOptions?.onError?.({
       error: new TRPCError({ code: "INTERNAL_SERVER_ERROR", cause: databaseError }),
-      path: "weeklyReport.get",
+      path: "training.get",
     });
 
     expect(mockSentryCaptureException).toHaveBeenCalledWith(databaseError, {
-      tags: { trpcPath: "weeklyReport.get" },
+      tags: { trpcPath: "training.get" },
     });
   });
 

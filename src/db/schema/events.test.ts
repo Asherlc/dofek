@@ -10,7 +10,6 @@ import {
   menstrualPeriod,
   providerDataDeletionOutbox,
   providerDataGeneration,
-  sharedReport,
   syncLog,
 } from "./events.ts";
 
@@ -23,7 +22,6 @@ describe("event schema", () => {
       fileUploadOutbox,
       syncLog,
       breathworkSession,
-      sharedReport,
       menstrualPeriod,
       dexaScan,
       dexaScanRegion,

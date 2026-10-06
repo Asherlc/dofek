@@ -255,6 +255,7 @@ entity "climbing_entry" {
   result_style : text
   attempt_count : integer
   climb_style : text
+  route_protection : text_array
   wall_angle : jsonb
   board : jsonb
   hold_type : climbing_hold_type
@@ -873,17 +874,6 @@ entity "provider_data_generation" {
   updated_at : timestamp
 }
 
-entity "shared_report" {
-  * id : uuid <<PK>>
-  --
-  user_id : uuid <<FK>>
-  share_token : text
-  report_type : text
-  report_data : jsonb
-  expires_at : timestamp
-  created_at : timestamp
-}
-
 entity "sync_log" {
   * id : uuid <<PK>>
   --
@@ -1213,7 +1203,6 @@ user_profile ||--o{ imu_session
 user_profile ||--o{ menstrual_period
 user_profile ||--o{ provider_data_deletion_outbox
 user_profile ||--o{ provider_data_generation
-user_profile ||--o{ shared_report
 provider ||--o{ sync_log
 user_profile ||--o{ sync_log
 user_profile ||--o{ external_client

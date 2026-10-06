@@ -20,9 +20,6 @@ const storyPaths = [
   "/nutrition",
   "/body",
   "/correlation",
-  "/health-report",
-  "/weekly-report",
-  "/monthly-report",
   "/settings",
   "/admin",
 ] as const;

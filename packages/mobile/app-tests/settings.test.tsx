@@ -606,21 +606,6 @@ describe("SettingsScreen data sources", () => {
   });
 });
 
-describe("SettingsScreen reports", () => {
-  beforeEach(() => {
-    mockSearchParams = { tab: "goals-models" };
-  });
-
-  it("opens the health reports screen", async () => {
-    const { default: SettingsScreen } = await import("../app/settings");
-
-    render(<SettingsScreen />);
-    fireEvent.click(screen.getByRole("button", { name: "Health Reports" }));
-
-    expect(mockRouterPush).toHaveBeenCalledWith("/reports");
-  });
-});
-
 describe("SettingsScreen password", () => {
   beforeEach(() => {
     mockSearchParams = { tab: "account" };

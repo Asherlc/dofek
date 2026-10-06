@@ -59,10 +59,7 @@ function AuthGate() {
   const queryClient = useQueryClient();
   const location = useLocation();
   const navigate = useNavigate();
-  const isSharedHealthReport =
-    location.pathname === "/health-report" &&
-    new URLSearchParams(location.href.split("?")[1] ?? "").has("token");
-  const isPublic = PUBLIC_PATHS.has(location.pathname) || isSharedHealthReport;
+  const isPublic = PUBLIC_PATHS.has(location.pathname);
   const previousUserIdRef = useRef<string | null>(null);
 
   useEffect(

@@ -260,7 +260,7 @@ export const DATASET_CONTRACTS = [
       "healthspan_activity_zone_minutes",
       "weekly_healthspan",
     ],
-    cacheQueryFamilies: ["training", "healthspan", "weeklyReport", "durationCurves"],
+    cacheQueryFamilies: ["training", "healthspan", "durationCurves"],
     providerIds: ["*"],
     dataTypes: ["activity", "daily_metrics", "metric_stream"],
     freshnessTargetMs: FIFTEEN_MINUTES_MS,

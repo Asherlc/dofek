@@ -709,12 +709,6 @@ function AuthGate() {
             }}
           />
           <Stack.Screen
-            name="reports"
-            options={{
-              title: "Health Reports",
-            }}
-          />
-          <Stack.Screen
             name="more"
             options={{
               title: "More",

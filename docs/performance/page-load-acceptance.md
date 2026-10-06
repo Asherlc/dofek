@@ -83,7 +83,6 @@ identify the route/page responsible for adding section completion.
 | Training | `/training`, routes/training/index | cards, calendar, volume, activities, seven charts including HR zones, processing | multisport sensor history / no training | 90→30 days, All |
 | Data Sources | `/providers` → settings, pages/SettingsPage | provider cards, sync history | connected providers / no providers | settings category |
 | Correlation | `/correlation`, pages/CorrelationExplorerPage | controls, observations, computed result | sufficient paired history / insufficient history | metric pair, range |
-| Health Report list | `/health-report`, routes/health-report | report list | existing report / no reports | list selection |
 | Running | `/training/running`, routes/training/running | trends, dynamics, pace curve, activities | running samples / no runs | range, All |
 | Cycling | `/training/cycling`, routes/training/cycling | power/efficiency charts, activity table | cycling power + HR / no rides | range, All |
 | Strength | `/training/strength`, routes/training/strength.lazy | metrics, exercises, activities | strength records / no sessions | range, All |
@@ -94,8 +93,6 @@ identify the route/page responsible for adding section completion.
 | Daily Heart Rate | `/body/heart-rate`, pages/DailyHeartRatePage | chart, sources | multiple raw provider series / no samples | adjacent days, date, Today |
 | Nutrition Analytics | `/nutrition/analytics`, pages/NutritionAnalyticsPage | TDEE, micronutrients, macro ratios | intake + body-weight history / insufficient data | range, All |
 | Experiments | `/experiments`, pages/PersonalExperimentsPage | list, conditional detail | existing experiment / no experiments | experiment selection |
-| Weekly Report | `/weekly-report`, routes/weekly-report | report content | populated week / insufficient week | week |
-| Monthly Report | `/monthly-report`, routes/monthly-report | report content | populated month / insufficient month | month |
 | Cycle | `/cycle`, routes/cycle | history, phase state | cycle observations / no observations | range |
 | Settings default | `/settings`, pages/SettingsPage | selected category content | saved settings / defaults | category |
 | Alerts | `/alerts`, pages/AlertsPage | alert list | active alerts / no alerts | selection |
@@ -126,7 +123,7 @@ Data Sources, Correlation, and Running above; its public warm traces add `/login
 by Heart Rate adjacent-day, Training 90→30-day, Activities 4→8-week filters,
 cached Training/Activities navigation, and first in-app Sleep navigation.
 Public legal/support/reset flows, provider details, all admin categories,
-populated clinical/experiment detail, and shared report tokens remain the
+populated clinical/experiment detail remain the
 audit's explicitly unmeasured scope; they are not silently treated as passes.
 
 ## Acceptance runs and evidence

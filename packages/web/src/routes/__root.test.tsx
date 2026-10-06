@@ -222,24 +222,6 @@ describe("AuthGate", () => {
     },
   );
 
-  it("allows an unauthenticated tokenized health report link", () => {
-    mockUseAuth.mockReturnValue({
-      user: null,
-      isLoading: false,
-      bootstrapError: null,
-      logout: vi.fn(),
-    });
-    mockUseLocation.mockReturnValue({
-      pathname: "/health-report",
-      href: "/health-report?token=shared-token",
-    });
-
-    const { getByTestId } = renderAuthGate();
-
-    expect(mockNavigate).not.toHaveBeenCalled();
-    expect(getByTestId("outlet")).toBeTruthy();
-  });
-
   it("allows the public account deletion status route without a session", () => {
     mockUseAuth.mockReturnValue({
       user: null,
@@ -253,26 +235,6 @@ describe("AuthGate", () => {
 
     expect(mockNavigate).not.toHaveBeenCalled();
     expect(getByTestId("outlet")).toBeTruthy();
-  });
-
-  it("keeps an unauthenticated health report management route protected", () => {
-    mockUseAuth.mockReturnValue({
-      user: null,
-      isLoading: false,
-      bootstrapError: null,
-      logout: vi.fn(),
-    });
-    mockUseLocation.mockReturnValue({
-      pathname: "/health-report",
-      href: "/health-report",
-    });
-
-    renderAuthGate();
-
-    expect(mockNavigate).toHaveBeenCalledWith({
-      to: "/login",
-      search: { returnTo: "/health-report" },
-    });
   });
 
   it("preserves protected route path as login returnTo", () => {

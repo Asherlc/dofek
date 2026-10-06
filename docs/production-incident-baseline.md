@@ -30237,6 +30237,14 @@ runbook refinement is to record selected/total data granules for every repeated
 source branch and distinguish per-request resource proof from total capture work
 and source-to-visible freshness. No steady-state diagnostic framework is added.
 
+## 2026-10-05 — Reports-removal PR mobile preview upload returned storage InternalError
+
+- **Status:** Latest preview publish passed; underlying storage error remains unexplained.
+- **Symptoms / impact:** PR #2887's first mobile preview publish failed after the iOS bundle exported successfully. The preview update was unavailable from that run; production impact was not established.
+- **Evidence:** The `Publish OTA to PR branch` step ran `pnpm dlx eoas@2.3.22 publish --branch pr-2887 --platform ios --nonInteractive --packageRunner pnpm`. Its first fatal diagnostic was `File upload failed` with the XML storage error `InternalError: We encountered an internal error. Please try again.` The command exited 1 in the [failed run](https://github.com/Asherlc/dofek/actions/runs/37380008495/job/111999255166). This proves the upload failed, but does not identify the storage-side cause.
+- **Fix / validation:** No workflow, retry, timeout, or production configuration change was made. A separate commit removed an obsolete Reports assertion from the existing header navigation test. Its ordinary new-commit [preview publish passed](https://github.com/Asherlc/dofek/actions/runs/37380369013/job/112000483629), and all 19,297 local unit/mobile tests passed.
+- **Remaining risk / follow-up:** Storage failures may recur. Correlate future upload failures with storage request IDs and service logs before changing publish behavior; document the canonical OTA upload diagnostics in the deployment runbook.
+
 ### 2026-10-05 — Local integration validation blocked by Docker address-pool exhaustion
 
 - Symptoms/evidence: `pnpm test:integration -- packages/server/src/repositories/nutrition-canonical.integration.test.ts packages/server/src/repositories/nutrition-analytics-source-breakdown.integration.test.ts packages/server/src/routers/nutrition-analytics-data.integration.test.ts packages/server/src/routers/settings.integration.test.ts src/db/migrate.integration.test.ts` failed while creating `loyal-alpacka_default`; the first fatal line was `all predefined address pools have been fully subnetted`.
@@ -30427,6 +30435,14 @@ CI remains unresolved; keep the PR pending until required checks finish.
 No retries, timeout changes, or workflow bypasses were added. For future queue
 delays, check GitHub's published status before investigating repository code.
 
+## 2026-10-05 — Reports-removal merge blocked by newly flagged transitive dependencies
+
+- **Status:** Remediated in the lockfile and validated by the local production dependency audit; hosted validation is tracked by [PR #2887 checks](https://github.com/Asherlc/dofek/pull/2887/checks).
+- **Symptoms / impact:** The reports-removal PR could not merge because `Test / Dependency Audit` failed. No production exploit or user impact was established.
+- **Evidence / root cause:** In [audit job 112066222206](https://github.com/Asherlc/dofek/actions/runs/37400125687/job/112066222206), `pnpm audit --prod --audit-level=high --ignore-registry-errors` first reported critical Seroval thenable assimilation, followed by critical proxy-address spoofing and high-severity Seroval/source-map denial of service; the command exited 1. The lockfile resolved `seroval@1.5.5`, `proxy-addr@2.0.7`, and `source-map-js@1.2.1`, all within the affected ranges in [GHSA-p6vx-979v-rg4c](https://github.com/advisories/GHSA-p6vx-979v-rg4c), [GHSA-jqcg-44mw-7w3h](https://github.com/advisories/GHSA-jqcg-44mw-7w3h), [GHSA-jp82-f5mq-hwhp](https://github.com/advisories/GHSA-jp82-f5mq-hwhp), and [GHSA-68fv-2mgg-jv7q](https://github.com/advisories/GHSA-68fv-2mgg-jv7q).
+- **Fix / validation:** Targeted `pnpm update -r seroval proxy-addr source-map-js --lockfile-only --ignore-scripts` resolved the existing dependency ranges to 1.6.8, 2.0.8, and 1.2.2 respectively. The diff changes only those three dependency resolutions and their consumers; no override, audit ignore, retry, or threshold change was added. A normal frozen-lockfile install followed. The same production audit exited 0 after the update; existing audit exceptions remain unchanged.
+- **Remaining risk / follow-up:** Require hosted checks before merge and deploy the validated lockfile with the release. When audits change between successful runs, inspect the new advisory and locked transitive version before changing CI policy.
+
 ## 2026-10-05 — Climbing PR blocked by newly published dependency advisories
 
 No production change or observed user impact. PR [2880](https://github.com/Asherlc/dofek/pull/2880)
@@ -30611,3 +30627,10 @@ or CI gate was relaxed. Remaining work is fresh CI and native validation of the
 updated PR heads. For future dependency batches, inspect the first fatal log,
 check whether main already contains its direct fix, and verify SDK version
 matrices before attempting independent native-package updates.
+
+## 2026-10-05 — Reports-removal CI Docker cache export failed before browser tests
+
+- **Status / impact:** The original external cache-export failure prevented browser assertions from running. The user-approved single diagnostic rerun passed cache export and all browser assertions; its service-side cause remains unknown. No production impact was observed.
+- **Evidence:** [E2E job 112094167491](https://github.com/Asherlc/dofek/actions/runs/37408996106/job/112094167491) completed application and native image builds, then failed the Docker Buildx build step while exporting to GitHub Actions Cache. The first fatal line was `#140 ERROR: error writing layer blob: not_found` for layer `sha256:ff488eafdbbf6984e8c08fb9ea981ed2ab805d7eb122049fd9e4cadc0a2b48a4`; Buildx exited with `failed to solve: error writing layer blob: not_found`. This identifies the failing cache-export operation but does not establish why the service rejected the blob. Docker documents the [GitHub Actions cache backend](https://docs.docker.com/build/cache/backends/gha/).
+- **Investigation / validation:** Root/server/web/mobile typechecks, lint, 78 focused tests, and 28 real-database migration/account-erasure assertions passed locally after preserving supplement removal and moving the reports drop to migration 0142. Hosted unit tests and typechecks passed. A job-specific rerun request was rejected with `job 112094167491 cannot be rerun` while the workflow was still active; no rerun occurred. The user approved one diagnostic rerun after the workflow completed. [Rerun job 112112109164](https://github.com/Asherlc/dofek/actions/runs/37408996106/job/112112109164) passed the unchanged cache export and browser test steps; no direct fix was identified or claimed.
+- **Remaining risk / follow-up:** The cache-service cause remains unresolved and may recur. Require green checks on the final merged revision; capture cache-service/request evidence if export fails again. No retry, timeout, cache bypass, or warn-and-continue change was added.
