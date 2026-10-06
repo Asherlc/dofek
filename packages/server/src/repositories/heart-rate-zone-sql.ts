@@ -73,7 +73,7 @@ export function heartRateZoneSumColumns(): string {
 export function heartRateZoneWeightedCountColumns(
   scalarExpression: string,
   weightExpression: string,
-  expressions: HeartRateZoneSqlExpressions = queryParamHeartRateExpressions,
+  expressions: HeartRateZoneSqlExpressions,
 ): string {
   return HEART_RATE_ZONES.map((zone, index) => {
     const condition = heartRateZoneCondition(
