@@ -1,5 +1,14 @@
 # Production Incident Baseline
 
+## 2026-10-06 — Peloton reconnect retained the previous failed sync status
+
+- **Symptoms / impact:** Peloton's processing-status panel continued asking the user to reconnect after a successful credential sign-in. The latest recorded scheduled sync failed at `2026-10-06T18:00:00Z`; scheduled syncs at 17:00 and 17:30 had succeeded.
+- **Evidence / root cause:** `fitness.sync_log` recorded `Peloton access token expired.` for the 18:00 workout fetch and sync. The Peloton OAuth row was subsequently updated at `18:04:22Z`, with expiration on October 8. A read-only check using the renewed token successfully read both the current Peloton member and one workout. The [credential sign-in handler](../packages/server/src/routers/credential-auth.ts) saved tokens and invalidated provider metadata without starting a sync, while the [processing repository](../packages/server/src/repositories/processing-repository.ts) continued deriving status from the earlier failed operation. The original API rejection was not reproduced with the renewed credentials.
+- **Direct fix:** After successful credential persistence, enqueue a normal tenant-scoped manual full sync in the shared server handler used by web and mobile. Reuse the existing queue's full-sync deduplication instead of adding queue machinery; BullMQ documents [deduplication until completion or failure](https://docs.bullmq.io/guide/jobs/deduplication). Queue failures report to Sentry and tell the user the provider connected but Sync must be retried. Failed sign-ins and failed token writes never enqueue.
+- **Validation:** The regression first failed because sign-in never dispatched a job and returned success even when a simulated queue failure should be surfaced. With the handler change, all 53 focused credential-router, queue, web-modal, and mobile-modal tests pass with retries disabled. Server and root TypeScript checks pass. The production recovery job advanced through 103 of 468 workouts without an authorization failure.
+- **Operator action / remaining risk:** A Peloton full sync was queued at `18:08:16Z` using the existing production queue and renewed credentials. The worker started it; completion and downstream processing readiness still need verification. The durable handler change requires deployment. No production code was hot-patched, and no timeout, retry, or fallback was added.
+- **Follow-up:** Add a reconnect diagnostic step to the processing-status runbook: compare the token update time with the failed operation time, then verify an authenticated read before asking the user to enter credentials again. The systematic-debugging and check-logs skills helped distinguish current authorization from historical processing failure.
+
 ## 2026-10-05 — Tracking removal PR validation gates
 
 - **Symptoms / impact:** [PR #2885](https://github.com/Asherlc/dofek/pull/2885) encountered CI validation failures; production is unchanged.
