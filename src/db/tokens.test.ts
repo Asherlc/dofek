@@ -340,11 +340,17 @@ describe("loadTokens", () => {
   });
 
   it("returns null when no tokens exist", async () => {
+    vi.mocked(reportProviderAuthDiagnostic).mockClear();
     mock.spies.limit.mockResolvedValue([]);
 
     const result = await loadTokens(mock.db, "nonexistent", TEST_USER_ID);
 
     expect(result).toBeNull();
+    expect(reportProviderAuthDiagnostic).toHaveBeenCalledExactlyOnceWith(
+      "nonexistent",
+      "tokens_missing",
+      TEST_USER_ID,
+    );
   });
 
   it("returns null when row is undefined", async () => {
