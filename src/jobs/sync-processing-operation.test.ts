@@ -94,7 +94,7 @@ describe("sync-processing-operation", () => {
       userId: "00000000-0000-4000-8000-000000000001",
       providerId: "garmin",
       kind: "provider_sync",
-      externalCorrelationKey: "bull-sync-1852:garmin",
+      externalCorrelationKey: `bull-sync-1852:${job.timestamp}:garmin`,
       datasetKeys: ["recovery", "training"],
     });
     expect(job.data.processingOperationIds).toEqual({ garmin: processingOperationId });
@@ -402,6 +402,57 @@ describe("sync-processing-operation", () => {
     );
   });
 
+  it("distinguishes new jobs that reuse the same queue ID", async () => {
+    const provider = createMockProvider({ id: "withings", name: "Withings" });
+    const firstJob = Object.assign(createMockJob({ providerId: "withings" }), {
+      id: "reused-sync-request",
+      timestamp: 1_759_795_200_000,
+    });
+    const laterJob = Object.assign(createMockJob({ providerId: "withings" }), {
+      id: firstJob.id,
+      timestamp: firstJob.timestamp + 30 * 60_000,
+    });
+
+    await SyncProcessingOperation.start(firstJob, mockDb, provider);
+    await SyncProcessingOperation.start(laterJob, mockDb, provider);
+
+    expect(mockCreateProcessingOperation).toHaveBeenNthCalledWith(
+      1,
+      mockDb,
+      expect.objectContaining({
+        externalCorrelationKey: `reused-sync-request:${firstJob.timestamp}:withings`,
+      }),
+    );
+    expect(mockCreateProcessingOperation).toHaveBeenNthCalledWith(
+      2,
+      mockDb,
+      expect.objectContaining({
+        externalCorrelationKey: `reused-sync-request:${laterJob.timestamp}:withings`,
+      }),
+    );
+  });
+
+  it("keeps the creation identity stable if persisting the operation ID fails", async () => {
+    const provider = createMockProvider({ id: "withings", name: "Withings" });
+    const job = Object.assign(createMockJob({ providerId: "withings" }), {
+      id: "retried-sync-request",
+      timestamp: 1_759_795_200_000,
+    });
+    job.updateData.mockRejectedValueOnce(new Error("Redis unavailable"));
+
+    await expect(SyncProcessingOperation.start(job, mockDb, provider)).rejects.toThrow(
+      "Redis unavailable",
+    );
+    await SyncProcessingOperation.start(job, mockDb, provider);
+
+    const expectedInput = expect.objectContaining({
+      externalCorrelationKey: `retried-sync-request:${job.timestamp}:withings`,
+    });
+    expect(mockCreateProcessingOperation).toHaveBeenNthCalledWith(1, mockDb, expectedInput);
+    expect(mockCreateProcessingOperation).toHaveBeenNthCalledWith(2, mockDb, expectedInput);
+    expect(job.data.processingOperationIds).toEqual({ withings: processingOperationId });
+  });
+
   it("builds a stable fallback correlation key from absolute sync bounds", async () => {
     const provider = createMockProvider({ id: "garmin", name: "Garmin" });
     mockGetEnabledSyncProviders.mockReturnValue([provider]);
@@ -419,7 +470,7 @@ describe("sync-processing-operation", () => {
       mockDb,
       expect.objectContaining({
         externalCorrelationKey:
-          "user-1:garmin:2026-06-01T00:00:00.000Z:2026-06-02T23:59:59.999Z:garmin",
+          "user-1:garmin:2026-06-01T00:00:00.000Z:2026-06-02T23:59:59.999Z:1759795200000:garmin",
       }),
     );
   });
@@ -433,7 +484,7 @@ describe("sync-processing-operation", () => {
     expect(mockCreateProcessingOperation).toHaveBeenCalledWith(
       mockDb,
       expect.objectContaining({
-        externalCorrelationKey: "user-1:garmin:days:30:open:garmin",
+        externalCorrelationKey: "user-1:garmin:days:30:open:1759795200000:garmin",
       }),
     );
   });
