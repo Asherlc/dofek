@@ -7,12 +7,6 @@ const destinations = [
     title: "Account & settings",
     description: "Manage your profile, preferences, data sources, and account.",
   },
-  {
-    to: "/data-quality",
-    title: "Data quality",
-    description:
-      "Review coverage gaps, source overlap, sync freshness, unusual observations, and manual entries.",
-  },
 ] as const;
 
 export function MorePage() {

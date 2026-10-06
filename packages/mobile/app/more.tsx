@@ -10,13 +10,6 @@ const destinations = [
     title: "Account & settings",
     description: "Manage your profile, preferences, data sources, and account.",
   },
-  {
-    href: "/data-quality",
-    icon: "shield-checkmark-outline",
-    title: "Data quality",
-    description:
-      "Review coverage gaps, source overlap, sync freshness, unusual observations, and manual entries.",
-  },
 ] as const;
 
 export default function MoreScreen() {
