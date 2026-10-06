@@ -916,7 +916,6 @@ describe("Router data coverage", () => {
             healthEvents: number;
             nutritionDaily: number;
             clinicalRecords: number;
-            journalEntries: number;
           }[]
         >("sync.providerStats");
 

@@ -12,7 +12,6 @@ import type { SyncDatabase } from "../db/index.ts";
 import { SyncRun } from "./sync-run.ts";
 import { SyncWindow } from "./sync-window.ts";
 import { makeTransactionalTestDatabase } from "./test-helpers.ts";
-import { parseJournalResponse } from "./whoop/journal-parsing.ts";
 import {
   parseHeartRateValues,
   parseRecovery,
@@ -203,10 +202,8 @@ function makeSyncMockFetch(options: {
   sleepData?: unknown;
   weightliftingData?: unknown;
   hrValues?: unknown[];
-  journalData?: unknown;
   sleepError?: boolean;
   hrError?: boolean;
-  journalError?: boolean;
   cyclesError?: boolean;
   cyclesRateLimit?: boolean;
   strainError?: boolean;
@@ -318,14 +315,6 @@ function makeSyncMockFetch(options: {
         return Promise.resolve(new Response("", { status: 404 }));
       }
       return Promise.resolve(Response.json(options.weightliftingData ?? null));
-    }
-
-    // Journal
-    if (url.includes("behavior-impact-service")) {
-      if (options.journalError) {
-        return Promise.resolve(new Response("Journal error", { status: 500 }));
-      }
-      return Promise.resolve(Response.json(options.journalData ?? []));
     }
 
     // Developer workout list (activity absence reconciliation)
@@ -441,27 +430,6 @@ function findValuesBatch(
 ): Record<string, unknown>[] | undefined {
   for (const arg of args) {
     if (isRecordArray(arg) && predicate(arg)) return arg;
-  }
-  return undefined;
-}
-
-/**
- * Extract all first-argument values from db.onConflictDoUpdate mock calls.
- * Each call[0] is the options object passed to `.onConflictDoUpdate(...)`.
- */
-function getOnConflictArgs(db: ReturnType<typeof makeChainableMock>): unknown[] {
-  return db.onConflictDoUpdate.mock.calls.map((call: unknown[]) => call[0]);
-}
-
-/**
- * Find an onConflictDoUpdate call matching a predicate.
- */
-function findOnConflictRecord(
-  args: unknown[],
-  predicate: (rec: Record<string, unknown>) => boolean,
-): Record<string, unknown> | undefined {
-  for (const arg of args) {
-    if (isRecord(arg) && predicate(arg)) return arg;
   }
   return undefined;
 }
@@ -1459,7 +1427,7 @@ describe("WhoopProvider.sync() — orchestrated checkpoint flow", () => {
     expect(savedCheckpoint.recordsSynced).toBe(1);
   });
 
-  it("uses the fallback journal label when an API checkpoint is already exhausted", async () => {
+  it("reports completion when an API checkpoint is already exhausted", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-03-10T00:00:00Z"));
     await mockStoredWhoopTokens();
@@ -1470,13 +1438,13 @@ describe("WhoopProvider.sync() — orchestrated checkpoint flow", () => {
       phase: "api",
       cycleFetchCursorMs: null,
       cycles: [],
-      apiSteps: [{ type: "journal" }],
+      apiSteps: [{ type: "persist_workouts" }],
       apiStepIndex: 1,
       presentExternalIds: [],
     };
     const { store } = makeCheckpointStore(initialCheckpoint);
     const onProgress = vi.fn();
-    const provider = new WhoopProvider(makeSyncMockFetch({ journalData: [] }));
+    const provider = new WhoopProvider(makeSyncMockFetch({}));
 
     const result = await provider.sync(
       new SyncRun({
@@ -1497,7 +1465,7 @@ describe("WhoopProvider.sync() — orchestrated checkpoint flow", () => {
       duration: 0,
       continued: false,
     });
-    expect(onProgress).toHaveBeenCalledWith(99, "Journal");
+    expect(onProgress).toHaveBeenCalledWith(99, "Sync complete");
     expect(store.clear).toHaveBeenCalledTimes(1);
   });
 
@@ -1519,7 +1487,6 @@ describe("WhoopProvider.sync() — orchestrated checkpoint flow", () => {
           start: "2026-03-01T00:00:00.000Z",
           end: "2026-03-01T01:00:00.000Z",
         },
-        { type: "journal" },
       ],
       apiStepIndex: 0,
       presentExternalIds: [],
@@ -1537,7 +1504,7 @@ describe("WhoopProvider.sync() — orchestrated checkpoint flow", () => {
         checkpoint: store,
         onProgress,
       }),
-      makeSyncMockFetch({ journalData: [] }),
+      makeSyncMockFetch({}),
       Date.now(),
     );
 
@@ -1548,7 +1515,6 @@ describe("WhoopProvider.sync() — orchestrated checkpoint flow", () => {
       "Persist workouts",
       "Strength activity-1",
       "Heart rate stream",
-      "Journal",
     ]);
   });
 
@@ -1654,7 +1620,6 @@ describe("WhoopProvider.sync() — orchestrated checkpoint flow", () => {
       apiSteps: [
         { type: "sleep_stages", sleepId: "sleep-1" },
         { type: "heart_rate", start: "2026-03-01T00:00:00.000Z", end: "2026-03-01T01:00:00.000Z" },
-        { type: "journal" },
       ],
       apiStepIndex: 0,
       presentExternalIds: [],
@@ -1680,7 +1645,7 @@ describe("WhoopProvider.sync() — orchestrated checkpoint flow", () => {
 
     const savedCheckpoint = requireRecord(saved[0], "expected rate-limited checkpoint");
     expect(savedCheckpoint.apiStepIndex).toBe(0);
-    expect(requireArray(savedCheckpoint.apiSteps, "expected retained API steps")).toHaveLength(3);
+    expect(requireArray(savedCheckpoint.apiSteps, "expected retained API steps")).toHaveLength(2);
     expect(store.clear).not.toHaveBeenCalled();
   });
 
@@ -2057,7 +2022,6 @@ describe("WhoopProvider.sync() — recovery sync", () => {
 
     const mockFetch = makeSyncMockFetch({
       cycles,
-      journalData: [],
       hrValues: [],
     });
     const provider = new WhoopProvider(mockFetch);
@@ -2073,7 +2037,7 @@ describe("WhoopProvider.sync() — recovery sync", () => {
     );
 
     expect(result.provider).toBe("whoop");
-    // The sync completes (recovery/sleep/workouts/hr/journal phases all run)
+    // The sync completes (recovery/sleep/workouts/hr phases all run)
     expect(result.recordsSynced).toBeGreaterThanOrEqual(0);
   });
 
@@ -2110,7 +2074,6 @@ describe("WhoopProvider.sync() — recovery sync", () => {
 
     const mockFetch = makeSyncMockFetch({
       cycles,
-      journalData: [],
       hrValues: [],
     });
     const provider = new WhoopProvider(mockFetch);
@@ -2154,7 +2117,6 @@ describe("WhoopProvider.sync() — recovery sync", () => {
 
     const mockFetch = makeSyncMockFetch({
       cycles,
-      journalData: [],
       hrValues: [],
     });
     const provider = new WhoopProvider(mockFetch);
@@ -2200,7 +2162,6 @@ describe("WhoopProvider.sync() — recovery sync", () => {
 
     const mockFetch = makeSyncMockFetch({
       cycles,
-      journalData: [],
       hrValues: [],
     });
     const provider = new WhoopProvider(mockFetch);
@@ -2251,7 +2212,6 @@ describe("WhoopProvider.sync() — recovery sync", () => {
 
     const mockFetch = makeSyncMockFetch({
       cycles,
-      journalData: [],
       hrValues: [],
     });
     const provider = new WhoopProvider(mockFetch);
@@ -2303,7 +2263,6 @@ describe("WhoopProvider.sync() — workout collection from cycles", () => {
     const mockFetch = makeSyncMockFetch({
       cycles,
       weightliftingData: null,
-      journalData: [],
       hrValues: [],
     });
     const provider = new WhoopProvider(mockFetch);
@@ -2628,97 +2587,8 @@ describe("parseWeightliftingWorkout — edge cases", () => {
   });
 });
 
-describe("parseJournalResponse — answer text extraction", () => {
-  it("extracts answer text from answer field in nested answers", () => {
-    const raw = [
-      {
-        date: "2026-03-01",
-        answers: [{ name: "caffeine", answer: "2 cups" }],
-      },
-    ];
-    const entries = parseJournalResponse(raw);
-    expect(entries[0]?.answerText).toBe("2 cups");
-  });
-
-  it("extracts answer text from response field in nested answers", () => {
-    const raw = [
-      {
-        date: "2026-03-01",
-        answers: [{ name: "stress", response: "moderate" }],
-      },
-    ];
-    const entries = parseJournalResponse(raw);
-    expect(entries[0]?.answerText).toBe("moderate");
-  });
-
-  it("extracts answer text from value string in nested answers", () => {
-    const raw = [
-      {
-        date: "2026-03-01",
-        answers: [{ name: "supplement", value: "melatonin" }],
-      },
-    ];
-    const entries = parseJournalResponse(raw);
-    expect(entries[0]?.answerText).toBe("melatonin");
-    // String value should not be a numeric
-    expect(entries[0]?.answerNumeric).toBeNull();
-  });
-
-  it("handles flat entry with answer field", () => {
-    const raw = [{ date: "2026-03-01", name: "note", answer: "good day" }];
-    const entries = parseJournalResponse(raw);
-    expect(entries[0]?.answerText).toBe("good day");
-  });
-
-  it("handles flat entry with type field as question name", () => {
-    const raw = [{ date: "2026-03-01", type: "Sleep Quality", value: 8 }];
-    const entries = parseJournalResponse(raw);
-    expect(entries[0]?.question).toBe("sleep_quality");
-    expect(entries[0]?.answerNumeric).toBe(8);
-  });
-
-  it("handles nested answers with impact field", () => {
-    const raw = [
-      {
-        date: "2026-03-01",
-        answers: [{ name: "alcohol", value: 0, impact: -0.5 }],
-      },
-    ];
-    const entries = parseJournalResponse(raw);
-    expect(entries[0]?.impactScore).toBe(-0.5);
-  });
-
-  it("handles nested answers with impact_score field", () => {
-    const raw = [
-      {
-        date: "2026-03-01",
-        answers: [{ name: "caffeine", value: 2, impact_score: 0.3 }],
-      },
-    ];
-    const entries = parseJournalResponse(raw);
-    expect(entries[0]?.impactScore).toBe(0.3);
-  });
-
-  it("handles nested answers with score field as numeric", () => {
-    const raw = [
-      {
-        date: "2026-03-01",
-        answers: [{ name: "mood", score: 7 }],
-      },
-    ];
-    const entries = parseJournalResponse(raw);
-    expect(entries[0]?.answerNumeric).toBe(7);
-  });
-
-  it("handles flat entry with impact field", () => {
-    const raw = [{ date: "2026-03-01", name: "caffeine", value: 3, impact: 0.1 }];
-    const entries = parseJournalResponse(raw);
-    expect(entries[0]?.impactScore).toBe(0.1);
-  });
-});
-
 // ============================================================
-// Sync flow tests — sleep, HR stream, journal
+// Sync flow tests — sleep and HR stream
 // ============================================================
 
 describe("WhoopProvider.sync() — sleep sync", () => {
@@ -2764,7 +2634,6 @@ describe("WhoopProvider.sync() — sleep sync", () => {
 
     const mockFetch = makeSyncMockFetch({
       cycles,
-      journalData: [],
       hrValues: [],
       weightliftingData: null,
     });
@@ -2819,7 +2688,6 @@ describe("WhoopProvider.sync() — sleep sync", () => {
 
     const mockFetch = makeSyncMockFetch({
       cycles,
-      journalData: [],
       hrValues: [],
       weightliftingData: null,
     });
@@ -2857,7 +2725,6 @@ describe("WhoopProvider.sync() — sleep sync", () => {
 
     const mockFetch = makeSyncMockFetch({
       cycles,
-      journalData: [],
       hrValues: [],
       weightliftingData: null,
     });
@@ -2897,7 +2764,6 @@ describe("WhoopProvider.sync() — sleep sync", () => {
 
     const mockFetch = makeSyncMockFetch({
       cycles,
-      journalData: [],
       hrValues: [],
       weightliftingData: null,
     });
@@ -2941,7 +2807,6 @@ describe("WhoopProvider.sync() — sleep sync", () => {
 
     const mockFetch = makeSyncMockFetch({
       cycles,
-      journalData: [],
       hrValues: [],
       weightliftingData: null,
     });
@@ -2990,7 +2855,6 @@ describe("WhoopProvider.sync() — sleep sync", () => {
 
     const mockFetch = makeSyncMockFetch({
       cycles,
-      journalData: [],
       hrValues: [],
       weightliftingData: null,
     });
@@ -3038,7 +2902,6 @@ describe("WhoopProvider.sync() — HR stream sync", () => {
     const mockFetch = makeSyncMockFetch({
       cycles: [],
       hrValues,
-      journalData: [],
       weightliftingData: null,
     });
     const provider = new WhoopProvider(mockFetch);
@@ -3091,7 +2954,6 @@ describe("WhoopProvider.sync() — HR stream sync", () => {
     const mockFetch = makeSyncMockFetch({
       cycles: [],
       hrValues,
-      journalData: [],
       weightliftingData: null,
     });
     const provider = new WhoopProvider(mockFetch);
@@ -3131,7 +2993,6 @@ describe("WhoopProvider.sync() — HR stream sync", () => {
     const mockFetch = makeSyncMockFetch({
       cycles: [],
       hrValues: [],
-      journalData: [],
       weightliftingData: null,
     });
     const provider = new WhoopProvider(mockFetch);
@@ -3148,238 +3009,6 @@ describe("WhoopProvider.sync() — HR stream sync", () => {
     const valuesCallArgs = getValuesCallArgs(db);
     const hrBatch = findValuesBatch(valuesCallArgs, (arr) => typeof arr[0]?.heartRate === "number");
     expect(hrBatch).toBeUndefined();
-  });
-});
-
-describe("WhoopProvider.sync() — journal sync", () => {
-  it("syncs journal entries", async () => {
-    const { loadTokens } = await import("../db/tokens.ts");
-    vi.mocked(loadTokens).mockResolvedValue({
-      accessToken: "test",
-      refreshToken: "test-refresh",
-      expiresAt: new Date("2027-01-01"),
-      scopes: "userId:42",
-    });
-
-    const journalData = [
-      {
-        date: "2026-03-01",
-        answers: [
-          { name: "caffeine", value: 2, impact: 0.3 },
-          { name: "alcohol", answer: "none", impact: -0.1 },
-        ],
-      },
-    ];
-
-    const mockFetch = makeSyncMockFetch({
-      cycles: [],
-      hrValues: [],
-      journalData,
-      weightliftingData: null,
-    });
-    const provider = new WhoopProvider(mockFetch);
-    const db = makeChainableMock();
-    const result = await provider.sync(
-      new SyncRun({
-        db: db,
-        window: SyncWindow.fromSince({ since: new Date("2026-03-01") }),
-        userId: "00000000-0000-0000-0000-000000000001",
-      }),
-    );
-
-    expect(result.provider).toBe("whoop");
-    // Journal phase should produce 2 records (2 answers)
-    expect(result.recordsSynced).toBeGreaterThanOrEqual(2);
-    // Duration should be a small positive number (Date.now() - start), not huge (Date.now() + start)
-    expect(result.duration).toBeGreaterThanOrEqual(0);
-    expect(result.duration).toBeLessThan(30000); // less than 30s for a test
-
-    // Verify journal entry inserts
-    const valuesCallArgs = getValuesCallArgs(db);
-    const caffeineInsert = findValuesRecord(
-      valuesCallArgs,
-      (rec) => rec.questionSlug === "caffeine",
-    );
-    expect(caffeineInsert).toBeDefined();
-    expect(caffeineInsert?.providerId).toBe("whoop");
-    expect(caffeineInsert?.date).toBe("2026-03-01");
-    expect(caffeineInsert?.answerNumeric).toBe(2);
-    expect(caffeineInsert?.impactScore).toBe(0.3);
-    expect(caffeineInsert?.userId).toBe("00000000-0000-0000-0000-000000000001");
-
-    const alcoholInsert = findValuesRecord(valuesCallArgs, (rec) => rec.questionSlug === "alcohol");
-    expect(alcoholInsert).toBeDefined();
-    expect(alcoholInsert?.answerText).toBe("none");
-    expect(alcoholInsert?.impactScore).toBe(-0.1);
-    expect(alcoholInsert?.userId).toBe("00000000-0000-0000-0000-000000000001");
-
-    // Verify journalQuestion inserts with correct category, dataType, and displayName
-    const caffeineQuestion = findValuesRecord(
-      valuesCallArgs,
-      (rec) => rec.slug === "caffeine" && rec.category !== undefined,
-    );
-    expect(caffeineQuestion).toBeDefined();
-    expect(caffeineQuestion?.category).toBe("custom");
-    expect(caffeineQuestion?.dataType).toBe("numeric");
-    // displayName should be "Caffeine" (snake_case → Title Case)
-    expect(caffeineQuestion?.displayName).toBe("Caffeine");
-
-    const alcoholQuestion = findValuesRecord(
-      valuesCallArgs,
-      (rec) => rec.slug === "alcohol" && rec.category !== undefined,
-    );
-    expect(alcoholQuestion).toBeDefined();
-    expect(alcoholQuestion?.category).toBe("custom");
-    expect(alcoholQuestion?.dataType).toBe("numeric");
-    expect(alcoholQuestion?.displayName).toBe("Alcohol");
-
-    // Verify onConflictDoUpdate was called for journal entries with correct target and set
-    const conflictArgs = getOnConflictArgs(db);
-    const journalConflict = findOnConflictRecord(conflictArgs, (rec) => {
-      return (
-        isRecord(rec.set) &&
-        "answerText" in rec.set &&
-        "answerNumeric" in rec.set &&
-        "impactScore" in rec.set
-      );
-    });
-    expect(journalConflict).toBeDefined();
-    // target should have 4 columns: userId, date, questionSlug, providerId
-    expect(Array.isArray(journalConflict?.target)).toBe(true);
-    if (Array.isArray(journalConflict?.target)) {
-      expect(journalConflict.target.length).toBe(4);
-    }
-    // set should have the updatable fields
-    expect(isRecord(journalConflict?.set)).toBe(true);
-    if (isRecord(journalConflict?.set)) {
-      expect("answerText" in journalConflict.set).toBe(true);
-      expect("answerNumeric" in journalConflict.set).toBe(true);
-      expect("impactScore" in journalConflict.set).toBe(true);
-    }
-  });
-
-  it("formats multi-word snake_case question names to Title Case", async () => {
-    const { loadTokens } = await import("../db/tokens.ts");
-    vi.mocked(loadTokens).mockResolvedValue({
-      accessToken: "test",
-      refreshToken: "test-refresh",
-      expiresAt: new Date("2027-01-01"),
-      scopes: "userId:42",
-    });
-
-    const journalData = [
-      {
-        date: "2026-03-01",
-        answers: [{ name: "sleep_quality", value: 8 }],
-      },
-    ];
-
-    const mockFetch = makeSyncMockFetch({
-      cycles: [],
-      hrValues: [],
-      journalData,
-      weightliftingData: null,
-    });
-    const provider = new WhoopProvider(mockFetch);
-    const db = makeChainableMock();
-    db.onConflictDoUpdate = vi.fn().mockReturnValue(db);
-    db.returning = vi.fn().mockResolvedValue([]);
-    const result = await provider.sync(
-      new SyncRun({
-        db: db,
-        window: SyncWindow.fromSince({ since: new Date("2026-03-01") }),
-        userId: "00000000-0000-0000-0000-000000000001",
-      }),
-    );
-
-    expect(result.provider).toBe("whoop");
-    expect(result.recordsSynced).toBeGreaterThanOrEqual(1);
-
-    // Verify displayName converts snake_case to Title Case via replace(/_/g, " ") then \b\w → toUpperCase
-    const valuesCallArgs = getValuesCallArgs(db);
-    const questionInsert = findValuesRecord(
-      valuesCallArgs,
-      (rec) => rec.slug === "sleep_quality" && rec.category !== undefined,
-    );
-    expect(questionInsert).toBeDefined();
-    expect(questionInsert?.displayName).toBe("Sleep Quality");
-    expect(questionInsert?.category).toBe("custom");
-    expect(questionInsert?.dataType).toBe("numeric");
-  });
-
-  it("uses provided userId from sync options", async () => {
-    const { loadTokens } = await import("../db/tokens.ts");
-    vi.mocked(loadTokens).mockResolvedValue({
-      accessToken: "test",
-      refreshToken: "test-refresh",
-      expiresAt: new Date("2027-01-01"),
-      scopes: "userId:42",
-    });
-
-    const journalData = [
-      {
-        date: "2026-03-01",
-        answers: [{ name: "caffeine", value: 1 }],
-      },
-    ];
-
-    const mockFetch = makeSyncMockFetch({
-      cycles: [],
-      hrValues: [],
-      journalData,
-      weightliftingData: null,
-    });
-    const provider = new WhoopProvider(mockFetch);
-    const db = makeChainableMock();
-    db.onConflictDoUpdate = vi.fn().mockReturnValue(db);
-    db.returning = vi.fn().mockResolvedValue([]);
-    const customUserId = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
-    const result = await provider.sync(
-      new SyncRun({
-        db: db,
-        window: SyncWindow.fromSince({ since: new Date("2026-03-01") }),
-        userId: customUserId,
-      }),
-    );
-
-    expect(result.provider).toBe("whoop");
-
-    // Verify the journal entry was inserted with the custom userId, not the default
-    const valuesCallArgs = getValuesCallArgs(db);
-    const journalInsert = findValuesRecord(
-      valuesCallArgs,
-      (rec) => rec.questionSlug === "caffeine" && rec.userId !== undefined,
-    );
-    expect(journalInsert).toBeDefined();
-    expect(journalInsert?.userId).toBe(customUserId);
-  });
-
-  it("records error when journal fetch fails", async () => {
-    const { loadTokens } = await import("../db/tokens.ts");
-    vi.mocked(loadTokens).mockResolvedValue({
-      accessToken: "test",
-      refreshToken: "test-refresh",
-      expiresAt: new Date("2027-01-01"),
-      scopes: "userId:42",
-    });
-
-    const mockFetch = makeSyncMockFetch({
-      cycles: [],
-      hrValues: [],
-      journalError: true,
-      weightliftingData: null,
-    });
-    const provider = new WhoopProvider(mockFetch);
-    const db = makeChainableMock();
-    db.onConflictDoUpdate = vi.fn().mockReturnValue(db);
-    db.returning = vi.fn().mockResolvedValue([]);
-    const result = await provider.sync(
-      new SyncRun({ db: db, window: SyncWindow.fromSince({ since: new Date("2026-03-01") }) }),
-    );
-
-    expect(result.provider).toBe("whoop");
-    const journalError = result.errors.find((e) => e.message.includes("journal"));
-    expect(journalError).toBeDefined();
   });
 });
 
@@ -3495,7 +3124,6 @@ describe("WhoopProvider.sync() — strength sync", () => {
     const mockFetch = makeSyncMockFetch({
       cycles,
       weightliftingData,
-      journalData: [],
       hrValues: [],
     });
     const provider = new WhoopProvider(mockFetch);
@@ -3647,7 +3275,6 @@ describe("WhoopProvider.sync() — strength sync", () => {
     const mockFetch = makeSyncMockFetch({
       cycles,
       weightliftingData,
-      journalData: [],
       hrValues: [],
     });
     const provider = new WhoopProvider(mockFetch);
@@ -3766,7 +3393,6 @@ describe("WhoopProvider.sync() — strength sync", () => {
     const mockFetch = makeSyncMockFetch({
       cycles,
       weightliftingData,
-      journalData: [],
       hrValues: [],
     });
     const provider = new WhoopProvider(mockFetch);
@@ -3825,7 +3451,6 @@ describe("WhoopProvider.sync() — strength sync", () => {
     const mockFetch = makeSyncMockFetch({
       cycles,
       weightliftingData: null,
-      journalData: [],
       hrValues: [],
     });
     const provider = new WhoopProvider(mockFetch);
@@ -3949,7 +3574,6 @@ describe("WhoopProvider.sync() — strength sync", () => {
     const mockFetch = makeSyncMockFetch({
       cycles,
       weightliftingData,
-      journalData: [],
       hrValues: [],
     });
     const provider = new WhoopProvider(mockFetch);
@@ -4057,7 +3681,6 @@ describe("WhoopProvider.sync() — strength sync", () => {
     const mockFetch = makeSyncMockFetch({
       cycles,
       weightliftingData,
-      journalData: [],
       hrValues: [],
     });
     const provider = new WhoopProvider(mockFetch);

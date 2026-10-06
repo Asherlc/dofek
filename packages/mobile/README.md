@@ -16,7 +16,6 @@ The mobile app for Dofek. Built with Expo and React Native, with native Swift mo
 - **Passive Motion Sync**: Core Motion and WatchMotion provide background motion
   synchronization from iPhone and Apple Watch sensors.
 - **Mobile Dashboard**: Simplified mobile-first health and recovery tracking with SVG-based charts (`react-native-svg`).
-- **Journal Trends**: Reviews server-authored numeric and Yes/No journal series with visible date bounds, explicit missing days, exact provider-attributed values, and the supported uncertainty status.
 - **Nutrition history**: Read-only nutrition history, totals, source resolution, and analytics.
 
 ## Project Structure

@@ -45,7 +45,6 @@ import { registerRecoveryTrainingSeriesTool } from "./recovery-training-series-t
 import { registerRepeatedEffortsTool } from "./repeated-efforts-tool.ts";
 import { registerStrengthProgressionTool } from "./strength-progression-tool.ts";
 import { registerStrengthSessionsTool } from "./strength-sessions-tool.ts";
-import { registerSubjectiveTools } from "./subjective-tools.ts";
 import { registerSupplementsTool } from "./supplements-tool.ts";
 import { registerThresholdHistoryTool } from "./threshold-history-tool.ts";
 import { requireMcpScope } from "./token-repository.ts";
@@ -610,7 +609,6 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
       );
     },
   );
-  registerSubjectiveTools(server, context);
   registerAuthorizedTool(
     server,
     ["providers:read"],

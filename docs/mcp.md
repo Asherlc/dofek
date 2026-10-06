@@ -133,7 +133,7 @@ Input:
 ```json
 {
   "name": "Codex",
-  "scopes": ["health:read", "health:write", "activity:read", "nutrition:read", "nutrition:write", "providers:read", "sync:write"],
+  "scopes": ["health:read", "activity:read", "nutrition:read", "nutrition:write", "providers:read", "sync:write"],
   "expiresAt": null
 }
 ```
@@ -143,7 +143,7 @@ The response includes `token` once. Store it in the MCP client. Dofek stores onl
 List existing token metadata with `mcp.listPersonalTokens`. Revoke a token with `mcp.revokeToken`.
 
 New personal tokens select all supported tool scopes by default, including
-`health:write` and `nutrition:write`; users can deselect permissions before
+`nutrition:write`; users can deselect permissions before
 creating the token. Existing tokens and OAuth grants keep their stored scopes.
 Every MCP tool declares its OAuth requirements in `_meta.securitySchemes`,
 preserving UI metadata, so clients can request the permissions for their selected
@@ -159,16 +159,11 @@ refreshing a token does not expand its permissions.
 | Scope | Allows |
 |-------|--------|
 | `health:read` | Read daily health summaries. |
-| `health:write` | Log user-owned health observations such as injuries. |
 | `activity:read` | Search activity summaries. |
 | `nutrition:read` | Read daily nutrition summaries and effective food records. |
 | `nutrition:write` | Create, update, delete, and restore food records; also requires `nutrition:read`. |
 | `providers:read` | List configured providers and connection status. |
 | `sync:write` | Enqueue provider sync jobs. |
-
-New personal tokens select `health:write` by default; users may deselect it.
-OAuth clients must request it through consent before an existing read-only grant
-can write.
 
 ## Tools
 
@@ -187,7 +182,7 @@ The canonical tool names, schemas, and scope checks are defined in the [MCP tool
 | `get_activity_summary` | `activity:read` | Aggregates activity volume and effort by type, ISO week, modality, or purpose, including unclassified and power coverage. |
 | `get_cycling_performance` | `activity:read` | Returns exact-range per-ride normalized power, intensity factor, standard best efforts, rolling-90-day bests, FTP estimates, elevation, and coverage. |
 | `get_training_load` | `activity:read`; also `nutrition:read` when requested | Returns daily load and rolling windows; analytical detail preserves modality channels and can include aligned nutrition. |
-| `get_recovery_training_series` | Scope depends on selected streams: `health:read`, `activity:read`, and/or `nutrition:read` | Returns a selected, date-aligned recovery, sleep, weight, load, subjective, compact activity-exposure, and nutrition series without causal interpretation. |
+| `get_recovery_training_series` | Scope depends on selected streams: `health:read`, `activity:read`, and/or `nutrition:read` | Returns a selected, date-aligned recovery, sleep, weight, load, compact activity-exposure, and nutrition series without causal interpretation. |
 | `compare_performances` | `activity:read` | Compares only explicitly or strongly evidenced equivalent workouts, routes, climbs, strength exercises, or standardized tests with contextual deltas and provenance. |
 | `find_repeated_efforts` | `activity:read` | Discovers repeated exact or strongly inferred identities, with opt-in weak name/duration candidates and canonical/source evidence. |
 | `get_effort_trend` | `activity:read` | Returns chronological repetitions and descriptive deltas for a discovered effort or explicit equivalence, preserving quality and false-fitness caveats. |
@@ -206,9 +201,6 @@ The canonical tool names, schemas, and scope checks are defined in the [MCP tool
 | `restore_food_entry` | `nutrition:read` + `nutrition:write` | Restores a deleted record while retaining its field and nutrient decisions. Returns that day's calorie/macro preview. |
 | `get_food_entry_history` | `nutrition:read` | Returns the paginated command and decision history for a food record. |
 | `get_body_metrics` | `health:read` | Returns reconciled body metrics, value kinds, source values, and 7/28-day rolling weight statistics. |
-| `get_subjective_timeline` | `health:read` | Returns recorded check-ins, symptoms, and injury events for an exact date range. |
-| `list_body_regions` | `health:read` | Lists canonical body-region IDs and labels accepted by subjective health tools. |
-| `log_injury` | `health:write` | Logs a private injury or niggle with onset, optional resolution and severity, description, and canonical body region. |
 | `list_providers` | `providers:read` | Lists configured providers and status. |
 | `start_provider_sync` | `sync:write` | Enqueues a provider sync job. |
 
@@ -423,7 +415,7 @@ Analytical `get_training_load` preserves its existing analysis-timezone calendar
 labels that choice as `date_policy: "analysis_timezone"`.
 
 `get_recovery_training_series` returns an inclusive local-calendar date spine capped at 366 days.
-Callers select only the needed `health`, `sleep`, `body_weight`, `training_load`, `subjective`,
+Callers select only the needed `health`, `sleep`, `body_weight`, `training_load`,
 `activities`, and `nutrition` streams; nutrition is opt-in. Missing scalar observations remain null
 and carry `missing` status. HRV, respiratory rate, and step provider attribution is explicitly
 labeled as applying to the canonical daily row because the current daily view does not attribute
@@ -436,8 +428,7 @@ same-day/interpolated/nearest direct-measurement evidence and includes 7/28-day 
 Training load remains six separate modality-specific channels. Each response date also exposes the
 immediately preceding local-calendar day's load channels, calculated by calendar date rather than a
 fixed 24-hour subtraction, so load-to-next-day recovery alignment remains correct across daylight-
-saving transitions. Subjective symptoms and active injuries are aligned by their recorded dates;
-daily fatigue is explicitly unavailable because the canonical subjective schema does not record it.
+saving transitions.
 Activities are returned as bounded daily aggregates rather than an unpaginated hydrated list. The
 aggregate retains canonical activity IDs/providers and counts dates attributed from authoritative
 named-zone/offset context separately from dates that required the analysis-timezone assumption.
@@ -452,7 +443,7 @@ recovery endpoint and does not change the standalone analytical training-load to
 analysis-timezone default.
 Optional provider and modality filters apply to both activity exposure and all training-load
 channels; other recovery streams remain unfiltered. Stream-specific authorization and dependencies
-mean nutrition-only and subjective-only requests do not require the ClickHouse analytics store.
+mean nutrition-only requests do not require the ClickHouse analytics store.
 The endpoint's interpretation block states that these observations support association analysis but do not establish causality. See the
 [series repository](../packages/server/src/repositories/recovery-training-series-repository.ts).
 
