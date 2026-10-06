@@ -245,7 +245,6 @@ describe("CorrelationExplorerPage", () => {
 
     expect(screen.getAllByRole("option", { name: "No matching metrics" })).toHaveLength(2);
     expect(screen.getByText("X vs Y on the same calendar day")).toBeTruthy();
-    expect(screen.getByRole("link", { name: "Start experiment with this outcome" })).toBeTruthy();
   });
 
   it("renders the server-authored interpretation warning", async () => {

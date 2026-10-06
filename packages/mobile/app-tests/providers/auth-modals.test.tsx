@@ -72,6 +72,24 @@ describe("provider auth modals", () => {
     whoopVerifyCode.mockReset();
   });
 
+  it.each([
+    ["openbeta", "OpenBeta profile URL or username", "text"],
+    ["wger", "JWT refresh token", "password"],
+  ])("uses the appropriate input visibility for %s", (providerId, label, inputType) => {
+    render(
+      <TokenAuthModal
+        providerId={providerId}
+        providerName={providerId}
+        tokenLabel={label}
+        instructionsUrl="https://openbeta.io/"
+        onClose={vi.fn()}
+        onSuccess={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByPlaceholderText(label).getAttribute("type")).toBe(inputType);
+  });
+
   it("trims credential usernames before submitting them", async () => {
     render(
       <CredentialAuthModal
@@ -148,7 +166,7 @@ describe("provider auth modals", () => {
 
     expect(connectButton).toHaveProperty("disabled", true);
     expect(connectButton.style.opacity).toBe("");
-    expect(screen.getByText("Enter your token to continue.")).toBeTruthy();
+    expect(screen.getByText("Paste your JWT refresh token to continue.")).toBeTruthy();
 
     fireEvent.change(screen.getByPlaceholderText("JWT refresh token"), {
       target: { value: "personal-refresh" },
@@ -157,7 +175,7 @@ describe("provider auth modals", () => {
     expect(connectButton).toHaveProperty("disabled", false);
     expect(connectButton.style.backgroundColor).not.toBe(disabledBackgroundColor);
     expect(connectButton.firstElementChild?.getAttribute("style")).not.toBe(disabledTextColor);
-    expect(screen.queryByText("Enter your token to continue.")).toBeNull();
+    expect(screen.queryByText("Paste your JWT refresh token to continue.")).toBeNull();
   });
 
   it("uses a distinct disabled treatment and guidance until a verification code is entered", async () => {

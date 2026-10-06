@@ -48,7 +48,6 @@ export function TodayPlanCard({ plan, loading = false, error }: TodayPlanCardPro
         </h2>
         {refreshWarning}
         <p className="text-sm text-foreground leading-snug">{plan.message}</p>
-        <p className="text-[11px] text-dim">{plan.epistemicStatus.label}</p>
       </section>
     );
   }
@@ -66,9 +65,7 @@ export function TodayPlanCard({ plan, loading = false, error }: TodayPlanCardPro
         </span>
       </div>
       {refreshWarning}
-      <div className="space-y-1">
-        <p className="text-sm font-medium text-foreground leading-snug">{plan.action.title}</p>
-      </div>
+      <p className="text-sm font-medium text-foreground leading-snug">{plan.action.title}</p>
       <button
         type="button"
         className="w-fit text-xs text-link underline decoration-dotted underline-offset-2 hover:text-foreground"
@@ -80,7 +77,6 @@ export function TodayPlanCard({ plan, loading = false, error }: TodayPlanCardPro
       </button>
       {evidenceOpen ? (
         <div id={evidenceId} className="space-y-2 rounded border border-border p-3">
-          <h3 className="text-xs font-medium text-foreground">Contributing observations</h3>
           <dl className="grid grid-cols-2 gap-3">
             {plan.supportingFacts.map((fact) => (
               <div key={fact.label} className="space-y-0.5">
@@ -99,12 +95,9 @@ export function TodayPlanCard({ plan, loading = false, error }: TodayPlanCardPro
               </ul>
             </div>
           ) : null}
+          {freshness != null ? <p className="text-[11px] text-dim">{freshness}</p> : null}
         </div>
       ) : null}
-      <div className="space-y-1">
-        <p className="text-[11px] text-dim">{plan.epistemicStatus.label}</p>
-        {freshness != null ? <p className="text-[11px] text-dim">{freshness}</p> : null}
-      </div>
     </section>
   );
 }

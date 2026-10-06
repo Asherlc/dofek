@@ -3,8 +3,7 @@ export type DataQualityCheckKey =
   | "source_overlap"
   | "activity_source_overlap"
   | "sync_freshness"
-  | "outliers"
-  | "manual_edits";
+  | "outliers";
 
 export type DataQualityCheckStatus = "healthy" | "attention" | "informational";
 
@@ -30,7 +29,7 @@ export interface DataQualityOverview {
   checks: DataQualityCheck[];
 }
 
-export type DataQualityReviewDestination = "nutrition" | "activities" | "dashboard" | "journal";
+export type DataQualityReviewDestination = "nutrition" | "activities" | "dashboard";
 
 export interface DataQualityReview {
   destination: DataQualityReviewDestination;
@@ -54,7 +53,6 @@ const DATA_QUALITY_REVIEWS: Record<DataQualityCheckKey, DataQualityReview> = {
   activity_source_overlap: { destination: "activities", label: "Review activities" },
   sync_freshness: { destination: "dashboard", label: "Review dashboard" },
   outliers: { destination: "dashboard", label: "Review dashboard" },
-  manual_edits: { destination: "journal", label: "Review journal" },
 };
 
 export function getDataQualityStatusLabel(status: DataQualityCheckStatus): string {

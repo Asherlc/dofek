@@ -627,13 +627,6 @@ export class WhoopClient {
     });
   }
 
-  async getJournal(start: string, end: string): Promise<unknown> {
-    return this.#get<unknown>(`${WHOOP_API_BASE}/behavior-impact-service/v1/impact`, {
-      startTime: start,
-      endTime: end,
-    });
-  }
-
   /**
    * Fetch exercise-level strength data for a workout activity.
    * Returns null if the activity has no linked exercises (404).

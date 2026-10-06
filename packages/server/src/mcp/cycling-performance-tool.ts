@@ -1,6 +1,8 @@
 import type { McpServer } from "@modelcontextprotocol/server";
+import { z } from "zod";
 import { dateSchema } from "../lib/date-schema.ts";
 import { CyclingPerformanceRepository } from "../repositories/cycling-performance-repository.ts";
+import { registerAuthorizedTool } from "./authorized-tool.ts";
 import type { DofekMcpContext } from "./context.ts";
 import { requireMcpScope } from "./token-repository.ts";
 import { cyclingPerformanceOutputSchema } from "./tool-output.ts";
@@ -8,14 +10,16 @@ import { jsonToolResult } from "./tool-result.ts";
 
 /** Register exact-range, load-normalized cycling analytics. */
 export function registerCyclingPerformanceTool(server: McpServer, context: DofekMcpContext): void {
-  server.registerTool(
+  registerAuthorizedTool(
+    server,
+    ["activity:read"],
     "get_cycling_performance",
     {
       title: "Get Cycling Performance",
       description:
         "Return per-ride normalized power, intensity factor, 5s/1m/5m/20m best efforts, rolling-90-day bests, estimated FTP, elevation gain, selected-range coverage, and all-history power availability by modality.",
       annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
-      inputSchema: { start_date: dateSchema, end_date: dateSchema },
+      inputSchema: z.object({ start_date: dateSchema, end_date: dateSchema }),
       outputSchema: cyclingPerformanceOutputSchema,
     },
     async ({ start_date, end_date }) => {

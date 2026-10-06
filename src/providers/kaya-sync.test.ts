@@ -59,6 +59,86 @@ import { KayaSyncProvider } from "./kaya-sync.ts";
 const userId = "00000000-0000-4000-8000-000000000001";
 
 describe("KayaSyncProvider", () => {
+  it.each(["missing", null, {}])(
+    "requires a callable database transaction: %j",
+    async (transaction) => {
+      const db = database();
+      if (transaction === "missing") Reflect.deleteProperty(db, "transaction");
+      else Reflect.set(db, "transaction", transaction);
+      mocks.loadTokens.mockResolvedValue({
+        accessToken: "token",
+        scopes: JSON.stringify({ kayaUserId: "42" }),
+      });
+      const result = await new KayaSyncProvider().sync(run(db));
+      expect(result).toMatchObject({
+        recordsSynced: 0,
+        errors: [{ message: "Kaya sync requires a transactional database" }],
+      });
+      expect(mocks.listSessions).not.toHaveBeenCalled();
+      expect(mocks.upsertActivity).not.toHaveBeenCalled();
+      expect(db.delete).not.toHaveBeenCalled();
+      expect(mocks.captureException).toHaveBeenCalledWith(expect.any(Error));
+    },
+  );
+
+  it("keeps an unreported rope method unknown", async () => {
+    const db = database();
+    const base = ascent("unknown-method", { lead: true, climbType: "Routes", grade: "5.10a" });
+    mocks.loadTokens.mockResolvedValue({
+      accessToken: "token",
+      scopes: JSON.stringify({ kayaUserId: "42" }),
+    });
+    mocks.listSessions.mockResolvedValue([session("session-1")]);
+    mocks.ascents.mockResolvedValue([{ ...base, climb: { ...base.climb, lead: null } }]);
+    mocks.upsertActivity.mockResolvedValue({ id: "activity-1" });
+    const result = await new KayaSyncProvider().sync(run(db));
+    expect(result.errors).toEqual([]);
+    expect(db.insertValues).toHaveBeenCalledExactlyOnceWith([
+      expect.objectContaining({ climbStyle: null }),
+    ]);
+  });
+  it("preserves outdoor nodes, board, and an unverified signed angle on both feeds", async () => {
+    const db = database();
+    const base = ascent("outdoor", { lead: true, climbType: "Routes", grade: "5.10a" });
+    const climb = {
+      ...base.climb,
+      gym: null,
+      destination: { id: "destination", name: "Destination" },
+      area: { id: "area", name: "Area" },
+      subarea: { id: "wall", name: "Wall" },
+      board: { id: "board", name: "Training Board" },
+      angle: -20,
+    };
+    mocks.loadTokens.mockResolvedValue({
+      accessToken: "token",
+      scopes: JSON.stringify({ kayaUserId: "42" }),
+    });
+    mocks.listSessions.mockResolvedValue([
+      { ...session("session-1"), attempted_climbs: [{ ...climb, id: "attempt", attempts: null }] },
+    ]);
+    mocks.ascents.mockResolvedValue([{ ...base, climb }]);
+    mocks.upsertActivity.mockResolvedValue({ id: "activity-1" });
+    const result = await new KayaSyncProvider().sync(run(db));
+    expect(result.errors).toEqual([]);
+    expect(db.insertValues).toHaveBeenCalledWith([
+      expect.objectContaining({
+        locationPath: [
+          { name: "Destination", externalId: "destination", kind: "destination" },
+          { name: "Area", externalId: "area", kind: "area" },
+          { name: "Wall", externalId: "wall", kind: "subarea" },
+        ],
+        board: { name: "Training Board", externalId: "board" },
+        wallAngle: { value: -20, unit: null },
+        climbStyle: "lead",
+        resultStyle: "Redpoint",
+      }),
+      expect.objectContaining({
+        wallAngle: { value: -20, unit: null },
+        resultStyle: "Attempt",
+        attemptCount: null,
+      }),
+    ]);
+  });
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.ensureProvider.mockResolvedValue("kaya");
@@ -114,7 +194,6 @@ describe("KayaSyncProvider", () => {
     mocks.ascents.mockResolvedValue([
       ascent("route-1", { lead: true, climbType: "Routes", grade: "5.11a" }),
       ascent("boulder-1", { lead: false, climbType: "Boulders", grade: "V5" }),
-      ascent("missing-grade", { lead: false, climbType: "Routes", grade: null }),
     ]);
     mocks.upsertActivity.mockResolvedValue({ id: "activity-1" });
     const db = database();
@@ -133,21 +212,43 @@ describe("KayaSyncProvider", () => {
     expect(mocks.ascents).toHaveBeenCalledWith("42");
     expect(result).toMatchObject({
       provider: "kaya",
-      recordsSynced: 3,
-      errors: [{ message: "Kaya ascent is missing a grade", externalId: "missing-grade" }],
+      recordsSynced: 2,
+      errors: [],
     });
     expect(db.insertValues).toHaveBeenCalledWith(
       expect.arrayContaining([
-        expect.objectContaining({ externalId: "route-1", lead: true, climbType: "route" }),
+        expect.objectContaining({ externalId: "route-1", climbStyle: "lead", climbType: "route" }),
         expect.objectContaining({
           externalId: "boulder-1",
-          lead: null,
+          climbStyle: null,
           climbType: "boulder",
           attemptCount: 2,
-          sent: true,
+          resultStyle: "Redpoint",
         }),
       ]),
     );
+  });
+
+  it("rejects an incomplete session before deleting or inserting its climbing entries", async () => {
+    mocks.loadTokens.mockResolvedValue({
+      accessToken: "access-token",
+      scopes: JSON.stringify({ kayaUserId: "42" }),
+    });
+    mocks.listSessions.mockResolvedValue([session("session-1")]);
+    mocks.ascents.mockResolvedValue([
+      ascent("valid-ascent", { lead: false, climbType: "Boulders", grade: "V4" }),
+      ascent("missing-grade", { lead: false, climbType: "Routes", grade: null }),
+    ]);
+    mocks.upsertActivity.mockResolvedValue({ id: "activity-1" });
+    const db = database();
+
+    expect(await new KayaSyncProvider().sync(run(db))).toMatchObject({
+      recordsSynced: 0,
+      errors: [{ message: "Kaya ascent is missing a grade", externalId: "missing-grade" }],
+    });
+    expect(db.delete).not.toHaveBeenCalled();
+    expect(db.insertValues).not.toHaveBeenCalled();
+    expect(mocks.captureException).toHaveBeenCalledWith(expect.any(Error));
   });
 
   it("stores Kaya's supplied time offset, session context, and ascent feedback", async () => {
@@ -203,8 +304,96 @@ describe("KayaSyncProvider", () => {
     );
     expect(db.insertValues).toHaveBeenCalledWith([
       expect.objectContaining({
-        locationName: "Session Gym",
+        locationPath: [{ name: "Session Gym", externalId: "gym-2", kind: "gym" }],
         raw: expect.objectContaining({ comment: "Felt smooth.", rating: 4, stiffness: 3 }),
+      }),
+    ]);
+  });
+
+  it("imports attempted climbs alongside sends without inventing unknown counts", async () => {
+    const db = database();
+    const sent = ascent("ascent-1", {
+      lead: false,
+      climbType: "Bouldering",
+      grade: "V4",
+      attempts: null,
+    });
+    const attempted = { ...sent.climb, id: "session-1_climb-ascent-1", attempts: null };
+    const route = {
+      ...ascent("route", { lead: true, climbType: "Routes", grade: "5.11a" }).climb,
+      id: "session-1_route",
+      attempts: 3,
+      gym: null,
+    };
+    mocks.loadTokens.mockResolvedValue({
+      accessToken: "access-token",
+      scopes: JSON.stringify({ kayaUserId: "42" }),
+    });
+    mocks.listSessions.mockResolvedValue([
+      { ...session("session-1"), attempted_climbs: [attempted, route] },
+    ]);
+    mocks.ascents.mockResolvedValue([sent]);
+    mocks.upsertActivity.mockResolvedValue({ id: "activity-1" });
+
+    await expect(new KayaSyncProvider().sync(run(db))).resolves.toMatchObject({
+      recordsSynced: 3,
+      errors: [],
+    });
+    expect(db.insertValues).toHaveBeenCalledWith([
+      expect.objectContaining({
+        externalId: "ascent-1",
+        resultStyle: "Redpoint",
+        attemptCount: null,
+        raw: sent,
+      }),
+      expect.objectContaining({
+        externalId: attempted.id,
+        climbType: "boulder",
+        gradeSystem: "v_scale",
+        resultStyle: "Attempt",
+        attemptCount: null,
+        climbStyle: null,
+        raw: attempted,
+      }),
+      expect.objectContaining({
+        externalId: route.id,
+        climbType: "route",
+        gradeSystem: "yds",
+        resultStyle: "Attempt",
+        attemptCount: 3,
+        climbStyle: "lead",
+        locationPath: [{ name: "Kaya Gym", externalId: "gym-1", kind: "gym" }],
+        raw: route,
+      }),
+    ]);
+  });
+
+  it("imports a session containing only unsuccessful climbs", async () => {
+    const db = database();
+    const attempted = {
+      ...ascent("attempt", { lead: false, climbType: "Bouldering", grade: "V5" }).climb,
+      id: "session-1_attempt",
+      attempts: null,
+    };
+    mocks.loadTokens.mockResolvedValue({
+      accessToken: "access-token",
+      scopes: JSON.stringify({ kayaUserId: "42" }),
+    });
+    mocks.listSessions.mockResolvedValue([
+      { ...session("session-1"), attempted_climbs: [attempted] },
+    ]);
+    mocks.ascents.mockResolvedValue([]);
+    mocks.upsertActivity.mockResolvedValue({ id: "activity-1" });
+
+    await expect(new KayaSyncProvider().sync(run(db))).resolves.toMatchObject({
+      recordsSynced: 1,
+      errors: [],
+    });
+    expect(db.insertValues).toHaveBeenCalledWith([
+      expect.objectContaining({
+        externalId: attempted.id,
+        resultStyle: "Attempt",
+        attemptCount: null,
       }),
     ]);
   });
@@ -473,7 +662,7 @@ describe("KayaSyncProvider", () => {
 
     await new KayaSyncProvider().sync(run(db));
 
-    expect(db.insertValues).toHaveBeenCalledWith([expect.objectContaining({ locationName: null })]);
+    expect(db.insertValues).toHaveBeenCalledWith([expect.objectContaining({ locationPath: [] })]);
   });
 
   it.each([
@@ -607,7 +796,7 @@ describe("KayaSyncProvider", () => {
     mocks.upsertActivity.mockResolvedValueOnce(null).mockResolvedValueOnce({ id: "activity-2" });
 
     await expect(new KayaSyncProvider().sync(run(db))).resolves.toMatchObject({ recordsSynced: 0 });
-    expect(db.delete).toHaveBeenCalledTimes(1);
+    expect(db.execute).toHaveBeenCalledTimes(1);
     expect(db.insertValues).not.toHaveBeenCalled();
   });
 
@@ -632,7 +821,11 @@ describe("KayaSyncProvider", () => {
     await new KayaSyncProvider().sync(run(db));
 
     expect(db.insertValues).toHaveBeenCalledWith([
-      expect.objectContaining({ attemptCount: 1, locationName: "Kaya Gym", sent: false }),
+      expect.objectContaining({
+        attemptCount: null,
+        locationPath: [{ name: "Kaya Gym", externalId: "gym-1", kind: "gym" }],
+        resultStyle: "Project",
+      }),
     ]);
   });
 
@@ -732,8 +925,32 @@ describe("KayaSyncProvider", () => {
     expect(mocks.captureException).not.toHaveBeenCalled();
   });
 
-  it("captures upstream sync failures in the result", async () => {
-    const error = "Kaya unavailable";
+  it("requires reconnect without reporting an exception when refreshing after an API rejection fails", async () => {
+    mocks.loadTokens.mockResolvedValue({
+      accessToken: "rejected-access-token",
+      refreshToken: "revoked-refresh-token",
+      expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+      scopes: JSON.stringify({ kayaUserId: "42" }),
+    });
+    mocks.listSessions.mockRejectedValue(new KayaApiError("Kaya API request failed (401)", 401));
+    mocks.ascents.mockResolvedValue([]);
+    mocks.refreshAccessToken.mockRejectedValue(
+      new KayaApiError("Kaya token refresh failed (401)", 401),
+    );
+
+    await expect(new KayaSyncProvider().sync(run(database()))).resolves.toMatchObject({
+      recordsSynced: 0,
+      errors: [{ message: "Kaya refresh token was revoked or expired." }],
+    });
+    expect(mocks.listSessions).toHaveBeenCalledTimes(1);
+    expect(mocks.captureException).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { error: "Kaya unavailable", message: "Kaya unavailable" },
+    { error: null, message: "null" },
+    { error: undefined, message: "undefined" },
+  ])("captures upstream sync failures in the result: $message", async ({ error, message }) => {
     mocks.loadTokens.mockResolvedValue({
       accessToken: "access-token",
       scopes: JSON.stringify({ kayaUserId: "42" }),
@@ -743,7 +960,7 @@ describe("KayaSyncProvider", () => {
 
     await expect(new KayaSyncProvider().sync(run(database()))).resolves.toMatchObject({
       recordsSynced: 0,
-      errors: [{ message: "Kaya unavailable" }],
+      errors: [{ message }],
     });
     expect(mocks.captureException).toHaveBeenCalledWith(error);
   });
@@ -765,18 +982,25 @@ function defaultWindow(): SyncWindow {
 }
 
 function database(): SyncDatabase & { insertValues: CallableVitestMock } {
-  const insertValues = vi.fn().mockResolvedValue(undefined);
+  const insertValues = vi.fn().mockImplementation((entries: unknown[]) => ({
+    onConflictDoUpdate: vi.fn().mockReturnValue({
+      returning: vi.fn().mockResolvedValue(entries.map(() => ({ id: "entry-1" }))),
+    }),
+  }));
   const deleteFrom = vi.fn();
   const insertInto = vi.fn();
   deleteFrom.mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) });
   insertInto.mockReturnValue({ values: insertValues });
-  return {
+  const db = {
     delete: deleteFrom,
     execute: vi.fn(),
     insert: insertInto,
     insertValues,
     select: vi.fn(),
   };
+  return Object.assign(db, {
+    transaction: async <T>(operation: (transaction: SyncDatabase) => Promise<T>) => operation(db),
+  });
 }
 
 function session(id: string) {
@@ -785,6 +1009,7 @@ function session(id: string) {
     start_time: "2026-08-01T10:00:00.000Z",
     end_time: "2026-08-01T11:00:00.000Z",
     gym: { id: "gym-1", name: "Kaya Gym" },
+    attempted_climbs: [],
   };
 }
 
@@ -813,6 +1038,11 @@ function ascent(
         ? { id: `grade-${id}`, name: options.grade, climb_type_group: "route" }
         : null,
       gym: climbGym(),
+      destination: null,
+      area: null,
+      subarea: null,
+      board: null,
+      angle: null,
     },
   };
 }

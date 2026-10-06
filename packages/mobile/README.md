@@ -5,15 +5,6 @@ The mobile app for Dofek. Built with Expo and React Native, with native Swift mo
 ## Core Features
 
 - **HealthKit Sync**: Background synchronization of health and fitness metrics from iOS using `BackgroundRefreshModule` which registers `BGAppRefreshTask`.
-- **Read-only cycle tracking**: Reads provider-originated menstrual-flow records from HealthKit,
-  preserves the required cycle-start metadata and source attribution, and renders server-computed
-  history and phase estimates. Dofek never requests menstrual-flow write permission; corrections
-  are made in the source app and synced again. HealthKit supports a whole-period interval or
-  multiple flow samples whose first sample is marked as the cycle start
-  ([Apple documentation](https://developer.apple.com/documentation/healthkit/hkcategorytypeidentifier/menstrualflow)).
-  Because HealthKit does not disclose whether a specific read permission was denied, an empty
-  result is presented neutrally as no readable provider data
-  ([authorization behavior](https://developer.apple.com/documentation/healthkit/authorizing-access-to-health-data)).
 - **WHOOP BLE Sync**: High-resolution sensor data capture (IMU - accelerometer + gyroscope) from WHOOP straps via `WhoopBleModule`.
 - **Bluetooth Heart-Rate Monitors**: Pair in Settings and passively upload live
   heart rate + R-R intervals from any standard Bluetooth heart-rate strap via
@@ -25,10 +16,16 @@ The mobile app for Dofek. Built with Expo and React Native, with native Swift mo
 - **Passive Motion Sync**: Core Motion and WatchMotion provide background motion
   synchronization from iPhone and Apple Watch sensors.
 - **Mobile Dashboard**: Simplified mobile-first health and recovery tracking with SVG-based charts (`react-native-svg`).
-- **Journal Trends**: Reviews server-authored numeric and Yes/No journal series with visible date bounds, explicit missing days, exact provider-attributed values, and the supported uncertainty status.
 - **Nutrition history**: Read-only nutrition history, totals, source resolution, and analytics.
 
 ## Project Structure
+
+Activity details use `components/ClimbingEntryContext` for full climbing paths,
+board names, angle/units, methods, and results on attached and unattached entries.
+Labels match the web client through shared formatters; nullable counts/statuses
+remain explicit. See the [climbing contract](../../docs/climbing-context.md).
+
+The Training route coordinates query states and delegates climbing payload validation, grade cards, and Hangboarding display to [ClimbingTrainingCard](./components/ClimbingTrainingCard.tsx), with focused tests and stories beside the component.
 
 - `app/`: Expo Router screens (file-based routing). Keep this route-only; Expo documents `app` as route-exclusive and non-route files there can be treated as routes: <https://docs.expo.dev/router/basics/core-concepts/#6-non-navigation-components-live-outside-the-srcapp-directory>.
 - `app-tests/`: Vitest tests for Expo Router screens.
@@ -233,7 +230,10 @@ and hardware described there.
 
 ## Dependency pins
 
-- `@react-native-async-storage/async-storage@2.2.0` — stay on 2.2.x for Expo SDK 57. AsyncStorage 3.x breaks iOS builds on recent Expo SDKs; see [expo/expo#43757](https://github.com/expo/expo/issues/43757).
+- `@react-native-async-storage/async-storage@2.2.0` — Expo SDK 58 beta pins this
+  version in its [native dependency matrix](https://api.expo.dev/v2/sdks/58.0.0/native-modules).
+  AsyncStorage 3.x breaks iOS builds on recent Expo SDKs; see
+  [expo/expo#43757](https://github.com/expo/expo/issues/43757).
 
 ## Testing
 
@@ -248,15 +248,30 @@ and hardware described there.
 
 ### Native diagnostic runtime
 
-Runtime **1.2** includes ExpoNetwork and the pnpm patch to
-`expo-apple-authentication@57.0.2`. Build a new native binary containing both;
-do not publish this JavaScript to runtime 1.1. Expo uses runtime versions to
-match updates to compatible native code
+Runtime **1.3** uses the [Expo SDK 58 beta](https://expo.dev/changelog/sdk-58-beta)
+native dependency set, including ExpoNetwork and the pnpm patch to
+`expo-apple-authentication@58.0.2`. Build a new native binary containing these
+dependencies; do not publish this JavaScript to runtime 1.2 or 1.1. Expo uses
+runtime versions to match updates to compatible native code
 ([runtime versions](https://docs.expo.dev/eas-update/runtime-versions/)).
 Use [pnpm patch/patch-commit](https://pnpm.io/cli/patch-commit) when updating the
 patch, then rerun the native regression and existing Release archive job.
 
-The [Apple patch](../../patches/expo-apple-authentication@57.0.2.patch) preserves
+Sentry React Native 8.29.0 and the separate watch Swift package use Cocoa 9.30.0.
+The [binary podspec](./plugins/Sentry.podspec.json) pins its release URL and
+SHA256 from Sentry's [Swift package manifest](https://github.com/getsentry/sentry-cocoa/blob/9.30.0/Package.swift).
+The RNSentry package patch declares this CocoaPod dependency, and Expo's
+[extraPods configuration](https://docs.expo.dev/versions/latest/sdk/build-properties/#extraiospoddependency)
+registers the podspec. CocoaPods selects the platform slice and exports the
+[vendored framework](https://guides.cocoapods.org/syntax/podspec.html#vendored_frameworks)
+to the local Swift modules consuming RNSentry. The patch uses a single
+CocoaPods framework link with inherited `-ObjC` retention for Objective-C
+categories ([Apple QA1490](https://developer.apple.com/library/archive/qa/qa1490/_index.html))
+and Swift metadata ([Swift compiler guidance](https://forums.swift.org/t/linker-flag-objc-force-loads-swift-libraries/47466/3)).
+When upgrading Sentry, update the React Native package patch and binary
+podspec together, then verify all native consumers and the Release archive.
+
+The [Apple patch](../../patches/expo-apple-authentication@58.0.2.patch) preserves
 Expo's authorization exception mapping and cancellation. Other authorization
 errors carry only an allowlisted NSError domain, numeric code, and optional
 immediate underlying domain/code. Unknown domains become `other`; native

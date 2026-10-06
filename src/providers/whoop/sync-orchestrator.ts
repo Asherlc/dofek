@@ -18,7 +18,6 @@ import {
   type WhoopSyncStep,
 } from "./sync-checkpoint.ts";
 import { syncWhoopStrainDeepDiveForDate } from "./sync-daily-activity.ts";
-import { syncWhoopJournal } from "./sync-journal.ts";
 import { syncWhoopRecovery } from "./sync-recovery.ts";
 import { syncWhoopSleepSessions, syncWhoopSleepStagesForId } from "./sync-sleep.ts";
 import { planWhoopApiSteps } from "./sync-step-plan.ts";
@@ -119,7 +118,8 @@ function syncErrorLabelForStep(step: WhoopSyncStep): string {
   }
 }
 
-function describeStep(step: WhoopSyncStep | "bootstrap_cycles" | "bootstrap_persist"): string {
+function describeStep(step: WhoopStepDescription): string {
+  if (step === "complete") return "Sync complete";
   if (step === "bootstrap_cycles") return "Fetching cycles";
   if (step === "bootstrap_persist") return "Persisting cycle data";
   switch (step.type) {
@@ -135,12 +135,10 @@ function describeStep(step: WhoopSyncStep | "bootstrap_cycles" | "bootstrap_pers
       return `Strength ${step.activityId}`;
     case "heart_rate":
       return "Heart rate stream";
-    case "journal":
-      return "Journal";
   }
 }
 
-type WhoopStepDescription = WhoopSyncStep | "bootstrap_cycles" | "bootstrap_persist";
+type WhoopStepDescription = WhoopSyncStep | "bootstrap_cycles" | "bootstrap_persist" | "complete";
 
 function developerWorkoutTokensSeenByCurrentStep(checkpoint: WhoopSyncCheckpoint): Set<string> {
   const tokens = new Set<string>();
@@ -178,8 +176,7 @@ function resolveStepDescription(checkpoint: WhoopSyncCheckpoint): WhoopStepDescr
       ? "bootstrap_persist"
       : "bootstrap_cycles";
   }
-  const fallbackJournalStep: WhoopSyncStep = { type: "journal" };
-  return checkpoint.apiSteps[checkpoint.apiStepIndex] ?? fallbackJournalStep;
+  return checkpoint.apiSteps[checkpoint.apiStepIndex] ?? "complete";
 }
 
 async function runBootstrapPersist(
@@ -381,18 +378,6 @@ async function runApiStep(
           "hr_stream",
           async () => {
             const count = await syncWhoopHeartRateForWindow(context, step.start, step.end);
-            return { recordCount: count, result: count };
-          },
-          userId,
-        );
-        break;
-      case "journal":
-        checkpoint.recordsSynced += await withSyncLog(
-          run.db,
-          "whoop",
-          "journal",
-          async () => {
-            const count = await syncWhoopJournal(context);
             return { recordCount: count, result: count };
           },
           userId,

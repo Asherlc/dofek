@@ -136,6 +136,7 @@ describe("loadMobileTrainingTab", () => {
         grade: "5.10a",
         gradeSortValue: 5101,
         attempts: 3,
+        recordedAttempts: 3,
         sends: 2,
       }),
     ]);
@@ -331,6 +332,7 @@ describe("loadMobileTrainingTab", () => {
           grade: "5.10a",
           gradeSortValue: 5101,
           attempts: 3,
+          recordedAttempts: 3,
           sends: 2,
         },
       ],

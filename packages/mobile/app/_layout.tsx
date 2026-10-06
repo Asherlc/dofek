@@ -709,18 +709,6 @@ function AuthGate() {
             }}
           />
           <Stack.Screen
-            name="data-quality"
-            options={{
-              title: "Data Quality",
-            }}
-          />
-          <Stack.Screen
-            name="cycle"
-            options={{
-              title: "Cycle Tracking",
-            }}
-          />
-          <Stack.Screen
             name="reports"
             options={{
               title: "Health Reports",
@@ -774,24 +762,6 @@ function AuthGate() {
             name="correlation"
             options={{
               title: "Correlation Explorer",
-            }}
-          />
-          <Stack.Screen
-            name="behavior-associations"
-            options={{
-              title: "Behavior Associations",
-            }}
-          />
-          <Stack.Screen
-            name="tracking"
-            options={{
-              title: "Journal Trends",
-            }}
-          />
-          <Stack.Screen
-            name="experiments"
-            options={{
-              title: "Personal Experiments",
             }}
           />
           <Stack.Screen

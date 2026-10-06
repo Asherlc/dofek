@@ -1,5 +1,4 @@
-import type { EventSubscription } from "expo-modules-core";
-import { NativeModule, requireNativeModule } from "expo-modules-core";
+import { type EventSubscription, NativeModule, requireNativeModule } from "expo";
 import { z } from "zod";
 import { captureException } from "../../lib/telemetry";
 

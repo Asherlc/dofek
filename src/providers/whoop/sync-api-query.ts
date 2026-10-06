@@ -1,13 +1,9 @@
 import type { SyncApiQuery } from "../../lib/sync-api-query.ts";
 import type { WhoopSyncStep } from "./sync-checkpoint.ts";
-import type { WhoopPersistenceContext } from "./sync-types.ts";
 
 const WHOOP_HEART_RATE_METRIC_STEP = 6;
 
-export function whoopSyncStepToApiQuery(
-  step: WhoopSyncStep,
-  context: Pick<WhoopPersistenceContext, "since" | "windowEnd">,
-): SyncApiQuery | null {
+export function whoopSyncStepToApiQuery(step: WhoopSyncStep): SyncApiQuery | null {
   switch (step.type) {
     case "strain_deep_dive":
       return {
@@ -39,14 +35,6 @@ export function whoopSyncStepToApiQuery(
           start: step.start,
           end: step.end,
           step: WHOOP_HEART_RATE_METRIC_STEP,
-        },
-      };
-    case "journal":
-      return {
-        path: "behavior-impact-service/v1/impact",
-        filters: {
-          start: context.since.toISOString(),
-          end: context.windowEnd.toISOString(),
         },
       };
   }

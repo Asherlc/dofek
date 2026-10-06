@@ -8,7 +8,6 @@ import {
   formatDateForDisplay,
   formatDateYmd,
   formatDurationMinutes,
-  formatRelativeTime,
   isToday,
   isYesterday,
   parseValidDate,
@@ -117,7 +116,7 @@ function formatActivityAccessibilityLabel(
     formatDurationMinutes(activity.durationMin),
   ];
 
-  if (activity.name !== null) {
+  if (activity.name !== null && activity.name !== activityTypeLabel) {
     labelParts.push(activityTypeLabel);
   }
 
@@ -461,9 +460,12 @@ export default function ActivitiesScreen() {
                             {selectedActivityIds.has(activity.id) ? "Selected" : "Select"}
                           </Text>
                         ) : null}
-                        <Text style={styles.typePill}>
-                          {formatActivityTypeLabel(activity.activityType)}
-                        </Text>
+                        {activity.name !== null &&
+                        activity.name !== formatActivityTypeLabel(activity.activityType) ? (
+                          <Text style={styles.typePill}>
+                            {formatActivityTypeLabel(activity.activityType)}
+                          </Text>
+                        ) : null}
                       </View>
                       <Text style={styles.activityMeta}>
                         {displayRecordLocalTime(activity.startedAt, activity.localTimeContext)} ·{" "}
@@ -474,16 +476,7 @@ export default function ActivitiesScreen() {
                         {activity.source.overlapSummary ? (
                           <Text style={styles.overlapPill}>Source overlap</Text>
                         ) : null}
-                        {activity.lastProcessedAt &&
-                        formatRelativeTime(activity.lastProcessedAt) ? (
-                          <Text style={styles.processedAt}>
-                            Processed {formatRelativeTime(activity.lastProcessedAt)}
-                          </Text>
-                        ) : null}
                       </View>
-                      {activity.source.overlapSummary ? (
-                        <Text style={styles.overlapSummary}>{activity.source.overlapSummary}</Text>
-                      ) : null}
                       <ActivityMetricStrip activity={activity} units={units} />
                     </View>
                     {activity.location ? (
@@ -558,9 +551,8 @@ function ActivityControls({
 
   return (
     <View style={styles.controlsPanel}>
-      <View style={styles.controlsHeader}>
-        <Text style={styles.controlsTitle}>Activity log</Text>
-        {canSelect && !selectMode ? (
+      {canSelect && !selectMode ? (
+        <View style={styles.controlsHeader}>
           <TouchableOpacity
             style={styles.selectButton}
             onPress={onSelect}
@@ -571,9 +563,9 @@ function ActivityControls({
           >
             <Text style={styles.selectButtonText}>Select activities</Text>
           </TouchableOpacity>
-        ) : null}
-      </View>
-      {canSelect ? (
+        </View>
+      ) : null}
+      {canSelect && selectMode ? (
         <Text style={styles.selectionGuidance}>Choose activities to merge or delete.</Text>
       ) : null}
       {selectMode ? (
@@ -843,13 +835,8 @@ const styles = StyleSheet.create({
   controlsHeader: {
     alignItems: "center",
     flexDirection: "row",
-    justifyContent: "space-between",
+    justifyContent: "flex-end",
     gap: spacing.sm,
-  },
-  controlsTitle: {
-    color: colors.text,
-    fontSize: 15,
-    fontWeight: "700",
   },
   selectButton: {
     borderColor: colors.surfaceSecondary,
@@ -1036,16 +1023,6 @@ const styles = StyleSheet.create({
     overflow: "hidden",
     paddingHorizontal: spacing.xs,
     paddingVertical: 2,
-  },
-  processedAt: {
-    color: colors.textSecondary,
-    fontSize: 11,
-  },
-  overlapSummary: {
-    color: colors.textSecondary,
-    fontSize: 11,
-    lineHeight: 16,
-    marginTop: spacing.xs,
   },
   tileContainer: {
     borderRadius: radius.md,

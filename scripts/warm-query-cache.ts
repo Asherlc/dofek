@@ -69,14 +69,21 @@ function isValidTimezone(timezone: string): boolean {
 export function parseRegisteredQueryCacheKey(key: string): RegisteredQueryCacheKey | null {
   const userSeparator = key.indexOf(":");
   const pathSeparator = key.indexOf(":", userSeparator + 1);
-  const timezoneSeparator = key.indexOf(":", pathSeparator + 1);
+  let timezoneSeparator = key.indexOf(":", pathSeparator + 1);
   if (userSeparator <= 0 || pathSeparator <= userSeparator || timezoneSeparator <= pathSeparator) {
     return null;
   }
 
   const userId = key.slice(0, userSeparator);
   const path = key.slice(userSeparator + 1, pathSeparator);
-  const timezone = key.slice(pathSeparator + 1, timezoneSeparator);
+  let timezone = key.slice(pathSeparator + 1, timezoneSeparator);
+  if (!isValidTimezone(timezone)) {
+    // requestCacheKey inserts an optional version before the timezone.
+    const versionSeparator = timezoneSeparator;
+    timezoneSeparator = key.indexOf(":", versionSeparator + 1);
+    if (timezoneSeparator <= versionSeparator) return null;
+    timezone = key.slice(versionSeparator + 1, timezoneSeparator);
+  }
   if (userId === "anon" || path.length === 0 || !isValidTimezone(timezone)) return null;
 
   try {

@@ -3,6 +3,7 @@ import type { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import { dateSchema } from "../lib/date-schema.ts";
 import { ClimbingProgressionRepository } from "../repositories/climbing-progression-repository.ts";
+import { registerAuthorizedTool } from "./authorized-tool.ts";
 import { climbingProgressionOutputSchema } from "./climbing-progression-output.ts";
 import type { DofekMcpContext } from "./context.ts";
 import { requireMcpScope } from "./token-repository.ts";
@@ -11,14 +12,16 @@ import { assertDateRange } from "./tool-utils.ts";
 
 /** Register exact-range server-computed climbing progression analytics. */
 export function registerClimbingProgressionTool(server: McpServer, context: DofekMcpContext): void {
-  server.registerTool(
+  registerAuthorizedTool(
+    server,
+    ["activity:read"],
     "get_climbing_progression",
     {
       title: "Get Climbing Progression",
       description:
         "Return exact-range climbing frequency, grades, observed sends, attempts, relative volume, rolling exposure, session details, missing-data coverage, duplicate handling, and source/timezone provenance.",
       annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
-      inputSchema: {
+      inputSchema: z.object({
         start_date: dateSchema,
         end_date: dateSchema,
         providers: z.array(z.string().min(1)).max(50).optional(),
@@ -30,7 +33,7 @@ export function registerClimbingProgressionTool(server: McpServer, context: Dofe
         grade_systems: z.array(z.enum(CLIMBING_GRADE_SYSTEMS)).max(20).optional(),
         cursor: z.string().min(1).optional(),
         limit: z.number().int().min(1).max(500).optional(),
-      },
+      }),
       outputSchema: climbingProgressionOutputSchema,
     },
     async ({

@@ -44,7 +44,6 @@ vi.mock("../../../../src/db/clickhouse-migrations.ts", () => ({
   toUInt64(0) AS metric_stream,
   toUInt64(0) AS nutrition_daily,
   toUInt64(0) AS clinical_records,
-  toUInt64(0) AS journal_entries,
   toUInt8(0) AS is_deleted,
   toUInt64(1) AS refresh_version,
   now64(9) AS refreshed_at`
@@ -326,13 +325,6 @@ describe("clickhouse integration test helpers", () => {
           command.includes("INSERT INTO postgres_fitness_test_") &&
           command.includes(".food_entry") &&
           command.includes("source_account_key"),
-      ),
-    ).toBe(true);
-    expect(
-      commands.some(
-        (command) =>
-          command.includes("TRUNCATE TABLE postgres_fitness_test_") &&
-          command.endsWith(".journal_entry"),
       ),
     ).toBe(true);
     expect(

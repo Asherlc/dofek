@@ -21,7 +21,7 @@ export function createExpoUploadableMobileFile(
     async readHeader(maxBytes) {
       const handle = file.open(FileMode.ReadOnly);
       try {
-        return new TextDecoder().decode(handle.readBytes(Math.min(maxBytes, file.size)));
+        return new TextDecoder().decode(await handle.readBytes(Math.min(maxBytes, file.size)));
       } finally {
         handle.close();
       }
@@ -32,7 +32,7 @@ export function createExpoUploadableMobileFile(
       try {
         let remaining = file.size;
         while (remaining > 0) {
-          const bytes = handle.readBytes(Math.min(4 * 1024 * 1024, remaining));
+          const bytes = await handle.readBytes(Math.min(4 * 1024 * 1024, remaining));
           digest.update(bytes);
           remaining -= bytes.byteLength;
         }
@@ -48,10 +48,10 @@ export function createExpoUploadableMobileFile(
         const handle = file.open(FileMode.ReadOnly);
         try {
           handle.offset = offset;
-          const bytes = handle.readBytes(length);
+          const bytes = await handle.readBytes(length);
           temporaryPart = new File(Paths.cache, `dofek-upload-part-${randomUUID()}`);
           temporaryPart.create();
-          temporaryPart.write(bytes);
+          await temporaryPart.write(bytes);
           uploadFile = temporaryPart;
         } finally {
           handle.close();

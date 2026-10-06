@@ -5,12 +5,10 @@ import { executeWithSchema, type SchemaExecutionDatabase } from "../db/typed-sql
 
 const SHARED_SYSTEM_TABLES = new Set([
   "fitness.app_store_notification",
-  "fitness.body_region",
   "fitness.daily_metric_type",
   "fitness.device_priority",
   "fitness.exercise",
   "fitness.exercise_alias",
-  "fitness.journal_question",
   "fitness.metric_stream_rebuild_task",
   "fitness.nutrient",
   "fitness.provider",

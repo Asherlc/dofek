@@ -11,7 +11,11 @@
 
 {% set activity_refresh_scoped = activity_refresh_scope_enabled() %}
 
-WITH ranked AS (
+WITH apple_health_revisions AS (
+    {{ apple_health_workout_revisions(activity_refresh_scoped) }}
+),
+
+ranked AS (
     SELECT *
     FROM {{ ref('activity_source_records') }} FINAL
     WHERE is_deleted = 0
@@ -19,6 +23,21 @@ WITH ranked AS (
             group_id IS null OR group_id = toUUID('00000000-0000-0000-0000-000000000000'),
             'Active activity source record is missing persisted group_id'
         ) = 0
+        {% if activity_refresh_scoped %}
+        AND user_id = toUUID('{{ var("activity_refresh_user_id") }}')
+        {% endif %}
+),
+
+absent_activity AS (
+    SELECT *
+    FROM {{ source('postgres_fitness', 'activity') }} FINAL
+    WHERE _peerdb_is_deleted = 0
+        AND coalesce(deleted_at, toDateTime64(0, 6, 'UTC')) = toDateTime64(0, 6, 'UTC')
+        AND coalesce(provider_absent_at, toDateTime64(0, 6, 'UTC')) != toDateTime64(0, 6, 'UTC')
+        AND id NOT IN (
+            SELECT id FROM apple_health_revisions
+            WHERE revision_rank > 1
+        )
         {% if activity_refresh_scoped %}
         AND user_id = toUUID('{{ var("activity_refresh_user_id") }}')
         {% endif %}
@@ -35,13 +54,7 @@ final_groups AS (
     SELECT
         id AS activity_id,
         group_id
-    FROM {{ source('postgres_fitness', 'activity') }} FINAL
-    WHERE _peerdb_is_deleted = 0
-        AND coalesce(deleted_at, toDateTime64(0, 6, 'UTC')) = toDateTime64(0, 6, 'UTC')
-        AND coalesce(provider_absent_at, toDateTime64(0, 6, 'UTC')) != toDateTime64(0, 6, 'UTC')
-        {% if activity_refresh_scoped %}
-        AND user_id = toUUID('{{ var("activity_refresh_user_id") }}')
-        {% endif %}
+    FROM absent_activity
 ),
 
 sensor_bearing_members AS (
@@ -75,13 +88,10 @@ absent_group_members AS (
             nullIf(trim(BOTH ' ' FROM absent.source_name), '')
         ) AS subsource
     FROM final_groups
-    INNER JOIN {{ source('postgres_fitness', 'activity') }} AS absent FINAL
+    INNER JOIN absent_activity AS absent
         ON absent.id = final_groups.activity_id
-        AND coalesce(absent.deleted_at, toDateTime64(0, 6, 'UTC')) = toDateTime64(0, 6, 'UTC')
-        AND coalesce(absent.provider_absent_at, toDateTime64(0, 6, 'UTC')) != toDateTime64(0, 6, 'UTC')
         AND absent.external_id IS NOT null
         AND absent.external_id != ''
-        AND absent._peerdb_is_deleted = 0
 ),
 
 absent_source_links AS (

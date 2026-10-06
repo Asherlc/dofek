@@ -1,6 +1,6 @@
 {
   "name": "@dofek/whoop-ble",
-  "version": "0.1.58",
+  "version": "0.1.66",
   "description": "Reverse-engineered WHOOP strap BLE protocol and Expo iOS client",
   "type": "module",
   "license": "MIT",
@@ -49,6 +49,9 @@
     "build": "tsc",
     "prepack": "pnpm run build",
     "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "expo-modules-core": "58.0.13"
   },
   "peerDependencies": {
     "expo-modules-core": ">=2.0.0"

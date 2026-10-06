@@ -35,7 +35,7 @@ export default function TabsLayout() {
         options={{
           title: "Today",
           tabBarIcon: ({ color, size, focused }) => (
-            <Ionicons name={getTabIconName("index", focused)} size={size} color={color} />
+            <Ionicons name={getTabIconName("index", focused)} size={size} style={{ color }} />
           ),
         }}
       />
@@ -44,7 +44,7 @@ export default function TabsLayout() {
         options={{
           title: "Recovery",
           tabBarIcon: ({ color, size, focused }) => (
-            <Ionicons name={getTabIconName("recovery", focused)} size={size} color={color} />
+            <Ionicons name={getTabIconName("recovery", focused)} size={size} style={{ color }} />
           ),
         }}
       />
@@ -53,7 +53,7 @@ export default function TabsLayout() {
         options={{
           title: "Training",
           tabBarIcon: ({ color, size, focused }) => (
-            <Ionicons name={getTabIconName("strain", focused)} size={size} color={color} />
+            <Ionicons name={getTabIconName("strain", focused)} size={size} style={{ color }} />
           ),
         }}
       />
@@ -62,7 +62,7 @@ export default function TabsLayout() {
         options={{
           title: "Activities",
           tabBarIcon: ({ color, size, focused }) => (
-            <Ionicons name={getTabIconName("activities", focused)} size={size} color={color} />
+            <Ionicons name={getTabIconName("activities", focused)} size={size} style={{ color }} />
           ),
         }}
       />
@@ -71,7 +71,7 @@ export default function TabsLayout() {
         options={{
           title: "Nutrition",
           tabBarIcon: ({ color, size, focused }) => (
-            <Ionicons name={getTabIconName("food", focused)} size={size} color={color} />
+            <Ionicons name={getTabIconName("food", focused)} size={size} style={{ color }} />
           ),
         }}
       />

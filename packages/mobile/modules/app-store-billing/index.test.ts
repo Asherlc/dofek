@@ -11,7 +11,7 @@ const nativeModule = vi.hoisted(() => ({
   stopTransactionUpdates: vi.fn(),
 }));
 
-vi.mock("expo-modules-core", () => ({
+vi.mock("expo", () => ({
   NativeModule: class {},
   requireNativeModule: () => nativeModule,
 }));

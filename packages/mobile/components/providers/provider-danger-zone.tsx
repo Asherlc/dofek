@@ -67,7 +67,7 @@ export function ProviderDangerZone({
 
   const focusDisconnectCancel = useCallback(() => {
     const node = findNodeHandle(disconnectCancelRef.current);
-    if (node !== null) AccessibilityInfo.setAccessibilityFocus(node);
+    if (typeof node === "number") AccessibilityInfo.setAccessibilityFocus(node);
   }, []);
 
   const disconnectProvider = useCallback(async () => {

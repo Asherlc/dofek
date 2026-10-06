@@ -3,6 +3,7 @@ import { z } from "zod";
 import { dateSchema } from "../lib/date-schema.ts";
 import { ActivityRepository } from "../repositories/activity-repository.ts";
 import { StrengthRepository } from "../repositories/strength-repository.ts";
+import { registerAuthorizedTool } from "./authorized-tool.ts";
 import type { DofekMcpContext } from "./context.ts";
 import { requireMcpScope } from "./token-repository.ts";
 import { strengthSessionsOutputSchema } from "./tool-output.ts";
@@ -19,14 +20,16 @@ const trainingSessionActivitySchema = z.object({
 
 /** Register exact-range strength session details and volume load. */
 export function registerStrengthSessionsTool(server: McpServer, context: DofekMcpContext): void {
-  server.registerTool(
+  registerAuthorizedTool(
+    server,
+    ["activity:read"],
     "get_strength_sessions",
     {
       title: "Get Strength Sessions",
       description:
         "Return exact-range strength sessions with exercises, sets, session volume-load, and volume-load by muscle group.",
       annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
-      inputSchema: { start_date: dateSchema, end_date: dateSchema },
+      inputSchema: z.object({ start_date: dateSchema, end_date: dateSchema }),
       outputSchema: strengthSessionsOutputSchema,
     },
     async ({ start_date, end_date }) => {

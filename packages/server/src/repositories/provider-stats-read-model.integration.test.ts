@@ -347,7 +347,6 @@ describe("provider stats read model", () => {
         metric_stream UInt64,
         nutrition_daily UInt64,
         clinical_records UInt64,
-        journal_entries UInt64,
         is_deleted UInt8,
         refresh_version UInt64,
         refreshed_at DateTime64(9, 'UTC')
@@ -364,8 +363,8 @@ describe("provider stats read model", () => {
       });
       await client.command({
         query: `INSERT INTO ${targetTable} VALUES
-          ({userId:UUID}, 'alpha_provider', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, now64(9) - INTERVAL 2 HOUR),
-          ({userId:UUID}, 'beta_provider', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, now64(9) - INTERVAL 1 HOUR)`,
+          ({userId:UUID}, 'alpha_provider', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, now64(9) - INTERVAL 2 HOUR),
+          ({userId:UUID}, 'beta_provider', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, now64(9) - INTERVAL 1 HOUR)`,
         query_params: { userId },
       });
 
@@ -574,7 +573,6 @@ describe("provider stats read model", () => {
         metric_stream UInt64,
         nutrition_daily UInt64,
         clinical_records UInt64,
-        journal_entries UInt64,
         is_deleted UInt8,
         refresh_version UInt64,
         refreshed_at DateTime64(9, 'UTC')
@@ -591,8 +589,8 @@ describe("provider stats read model", () => {
       });
       await client.command({
         query: `INSERT INTO ${targetTable} VALUES
-          ({userId:UUID}, 'alpha_provider', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, now64(9) - INTERVAL 2 HOUR),
-          ({userId:UUID}, 'beta_provider', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, now64(9) - INTERVAL 1 HOUR)`,
+          ({userId:UUID}, 'alpha_provider', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, now64(9) - INTERVAL 2 HOUR),
+          ({userId:UUID}, 'beta_provider', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, now64(9) - INTERVAL 1 HOUR)`,
         query_params: { userId },
       });
 
@@ -668,14 +666,6 @@ describe("provider stats read model", () => {
           _peerdb_version Int64`,
       },
       {
-        name: "journal_entry",
-        columns: `
-          user_id UUID,
-          provider_id String,
-          _peerdb_is_deleted Int8,
-          _peerdb_version Int64`,
-      },
-      {
         name: "body_measurement_sample",
         columns: `
           user_id UUID,
@@ -736,7 +726,6 @@ describe("provider stats read model", () => {
         metric_stream: 0,
         nutrition_daily: 0,
         clinical_records: 0,
-        journal_entries: 0,
         is_deleted: 1,
       });
 

@@ -17,9 +17,6 @@ config.resolver.nodeModulesPaths = [
   path.resolve(monorepoRoot, "node_modules"),
 ];
 
-// Enable symlink resolution for pnpm workspace packages
-config.resolver.unstable_enableSymlinks = true;
-
 // Exclude test and story files from the bundle (colocated files in app/
 // would otherwise be picked up as Expo Router routes)
 config.resolver.blockList = [/\.test\.[jt]sx?$/, /\.stories\.[jt]sx?$/];

@@ -389,7 +389,8 @@ export const mobileTrainingTabOutputSchema = z.object({
     gradeProgression: z.array(climbingGradeDisplaySchema.extend({ date: dateSchema })),
     volumeByGrade: z.array(
       climbingGradeDisplaySchema.extend({
-        attempts: z.number().int().nonnegative(),
+        attempts: z.number().int().nonnegative().nullable(),
+        recordedAttempts: z.number().int().nonnegative().nullable(),
         sends: z.number().int().nonnegative(),
       }),
     ),
@@ -399,7 +400,7 @@ export const mobileTrainingTabOutputSchema = z.object({
         date: dateSchema,
         name: z.string(),
         locationName: z.string().nullable(),
-        attempts: z.number().int().nonnegative(),
+        attempts: z.number().int().nonnegative().nullable(),
         sends: z.number().int().nonnegative(),
         hardestBoulderGrade: z.string().nullable(),
         hardestBoulderGradeSortValue: z.number().nullable(),

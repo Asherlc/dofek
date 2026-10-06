@@ -2,6 +2,7 @@ import type { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import { dateSchema } from "../lib/date-schema.ts";
 import { CyclingPowerCurveRepository } from "../repositories/cycling-power-curve-repository.ts";
+import { registerAuthorizedTool } from "./authorized-tool.ts";
 import type { DofekMcpContext } from "./context.ts";
 import { requireMcpScope } from "./token-repository.ts";
 import { cyclingPowerCurveOutputSchema } from "./tool-output.ts";
@@ -15,14 +16,16 @@ const durationSchema = z.number().int().min(1).max(21_600);
 
 /** Register bounded, server-computed cycling power-duration analysis. */
 export function registerCyclingPowerCurveTool(server: McpServer, context: DofekMcpContext): void {
-  server.registerTool(
+  registerAuthorizedTool(
+    server,
+    ["activity:read"],
     "get_cycling_power_curve",
     {
       title: "Get Cycling Power Curve",
       description:
         "Return exact-range best rolling cycling power for standard or arbitrary durations, with activity offsets, source and sample-quality evidence, and W/kg only when supported by a nearby measured body weight.",
       annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
-      inputSchema: {
+      inputSchema: z.object({
         start_date: dateSchema,
         end_date: dateSchema,
         durations_seconds: z.array(durationSchema).min(1).max(32).optional(),
@@ -31,7 +34,7 @@ export function registerCyclingPowerCurveTool(server: McpServer, context: DofekM
         include_activity_curve: z.boolean().optional(),
         cursor: z.string().min(1).optional(),
         limit: z.number().int().min(1).max(500).optional(),
-      },
+      }),
       outputSchema: cyclingPowerCurveOutputSchema,
     },
     async ({

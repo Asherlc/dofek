@@ -12,7 +12,6 @@ import type {
   FoodRecordHistoryPage,
 } from "../repositories/food-record-types.ts";
 import { FoodRepository } from "../repositories/food-repository.ts";
-import { SettingsRepository } from "../repositories/settings-repository.ts";
 import {
   FoodRecordError,
   type FoodRecordMutationResult,
@@ -20,6 +19,7 @@ import {
   reportUnexpectedFoodRecordError,
 } from "../services/food-record-service.ts";
 import { dayNutritionResourceUri } from "./app-resource.ts";
+import { registerAuthorizedTool } from "./authorized-tool.ts";
 import type { DofekMcpContext } from "./context.ts";
 import { toDayNutritionPreview } from "./day-nutrition-output.ts";
 import { foodMutationTelemetryForTool, logFoodMutation } from "./mutation-telemetry.ts";
@@ -248,11 +248,9 @@ async function loadDaySummary(
   context: DofekMcpContext,
   date: string,
 ): Promise<DayNutritionPreview | null> {
-  const settingsRepository = new SettingsRepository(context.db, context.userId);
   const foodRepository = new FoodRepository(context.db, context.userId, context.timezone);
-  const calorieGoal = await settingsRepository.getCalorieGoalContext();
-  const { summary } = await foodRepository.nutritionByDate(date, calorieGoal.target);
-  return summary === null ? null : toDayNutritionPreview(date, summary, calorieGoal.type);
+  const { summary } = await foodRepository.nutritionTotalsByDate(date);
+  return summary === null ? null : toDayNutritionPreview(date, summary);
 }
 
 async function mutateWithDaySummary(
@@ -271,20 +269,22 @@ export function registerFoodRecordTools(server: McpServer, context: DofekMcpCont
     actor: { channel: "mcp", clientId: context.clientId },
   });
 
-  server.registerTool(
+  registerAuthorizedTool(
+    server,
+    ["nutrition:read"],
     "search_food_entries",
     {
       title: "Search Food Entries",
       description: "Search effective food records in an exact date range.",
       annotations: readAnnotations,
-      inputSchema: {
+      inputSchema: z.object({
         start_date: dateSchema,
         end_date: dateSchema,
         query: z.string().trim().min(1).nullable().optional(),
         visibility: z.enum(["visible", "deleted", "all"]).optional(),
         cursor: foodRecordCursorSchema.nullable().optional(),
         limit: z.number().int().min(1).max(100).optional(),
-      },
+      }),
       outputSchema: mcpOutputSchemas.foodRecordSearch,
     },
     async ({ start_date, end_date, query, visibility, cursor, limit }) => {
@@ -306,15 +306,18 @@ export function registerFoodRecordTools(server: McpServer, context: DofekMcpCont
         };
       });
     },
+    reportUnexpectedFoodRecordError,
   );
 
-  server.registerTool(
+  registerAuthorizedTool(
+    server,
+    ["nutrition:read"],
     "get_food_entry",
     {
       title: "Get Food Entry",
       description: "Return one effective food record with its provenance and version.",
       annotations: readAnnotations,
-      inputSchema: { record_id: z.uuid() },
+      inputSchema: z.object({ record_id: z.uuid() }),
       outputSchema: mcpOutputSchemas.foodRecordDetail,
     },
     async ({ record_id }) => {
@@ -324,27 +327,44 @@ export function registerFoodRecordTools(server: McpServer, context: DofekMcpCont
         return record ? foodRecordToTransport(record) : null;
       });
     },
+    reportUnexpectedFoodRecordError,
   );
 
-  server.registerTool(
+  registerAuthorizedTool(
+    server,
+    ["nutrition:read", "nutrition:write"],
     "create_food_entry",
     {
       title: "Create Food Entry",
       description:
-        "Create one itemized Dofek food record and return that day's calorie and macro preview.",
+        "Create one itemized Dofek food record and return that day's calorie and macro preview. Before logging, seek calories, protein, carbohydrate, and fat for the consumed portion from a product label, manufacturer, or reliable food database; include other nutrients when available. Ask for the brand, label, or portion when needed. Never invent missing values or substitute zero for unknown nutrients. Use estimates only with the user's approval and identify them as estimates. If the user explicitly wants an incomplete entry saved, save the known facts and explain what nutrition information is missing.",
       annotations: mutationAnnotations,
-      inputSchema: {
+      inputSchema: z.object({
         request_id: z.uuid(),
         date: dateSchema,
         meal: z.enum(mealEnum.enumValues).nullable().optional(),
         food_name: z.string().trim().min(1),
-        food_description: nullableNonemptyTextSchema.optional(),
+        food_description: nullableNonemptyTextSchema
+          .optional()
+          .describe(
+            "Food details and nutrition source, including a source URL when available. Identify user-approved estimates here.",
+          ),
         category: z.enum(foodCategoryEnum.enumValues).nullable().optional(),
         number_of_units: z.number().finite().nonnegative().nullable().optional(),
         serving_unit: nullableNonemptyTextSchema.optional(),
-        serving_weight_grams: z.number().finite().nonnegative().nullable().optional(),
-        nutrients: z.record(nutrientIdSchema, nutrientAmountSchema),
-      },
+        serving_weight_grams: z
+          .number()
+          .finite()
+          .nonnegative()
+          .nullable()
+          .optional()
+          .describe("Weight actually consumed in grams, not the label's reference serving weight."),
+        nutrients: z
+          .record(nutrientIdSchema, nutrientAmountSchema)
+          .describe(
+            "Nutrient totals for the entire consumed portion, scaled from the source serving. Prefer calories (kcal), protein, carbohydrate, and fat (grams), plus other sourced nutrients in their canonical units. Omit unknown values; zero means a known zero. An empty map is for an explicitly requested incomplete entry.",
+          ),
+      }),
       outputSchema: mcpOutputSchemas.foodRecordMutation,
       _meta: mutationUiMeta,
     },
@@ -380,16 +400,19 @@ export function registerFoodRecordTools(server: McpServer, context: DofekMcpCont
         foodMutationTelemetryForTool("create_food_entry", request_id),
       );
     },
+    reportUnexpectedFoodRecordError,
   );
 
-  server.registerTool(
+  registerAuthorizedTool(
+    server,
+    ["nutrition:read", "nutrition:write"],
     "update_food_entry",
     {
       title: "Update Food Entry",
       description:
-        "Append validated scalar and nutrient decisions to a food record and return that day's calorie and macro preview.",
+        "Append validated scalar and nutrient decisions to a food record and return that day's calorie and macro preview. When filling missing nutrition, seek calories and macros for the consumed portion from a product label, manufacturer, or reliable food database; ask for missing brand, label, or portion details. Include other sourced nutrients when available. Never invent values or substitute zero for unknown nutrients. Use estimates only with the user's approval, identify their basis in food_description, and explain any remaining gaps. Preserve existing nutrients unless the user requests a correction or removal.",
       annotations: mutationAnnotations,
-      inputSchema: {
+      inputSchema: z.object({
         ...targetInputSchema,
         set: z.object({
           date: dateSchema.optional(),
@@ -402,9 +425,13 @@ export function registerFoodRecordTools(server: McpServer, context: DofekMcpCont
           serving_weight_grams: z.number().finite().nonnegative().nullable().optional(),
         }),
         clear: z.array(editableFieldSchema),
-        nutrient_set: z.record(nutrientIdSchema, nullableNutrientAmountSchema),
+        nutrient_set: z
+          .record(nutrientIdSchema, nullableNutrientAmountSchema)
+          .describe(
+            "Only nutrient decisions being changed, expressed as totals for the consumed portion in canonical units. Use sourced values or explicitly approved estimates. Zero is a known zero; null explicitly marks a nutrient unknown. Omit unchanged nutrients.",
+          ),
         nutrient_clear: z.array(nutrientIdSchema),
-      },
+      }),
       outputSchema: mcpOutputSchemas.foodRecordMutation,
       _meta: mutationUiMeta,
     },
@@ -434,6 +461,7 @@ export function registerFoodRecordTools(server: McpServer, context: DofekMcpCont
         foodMutationTelemetryForTool("update_food_entry", request_id),
       );
     },
+    reportUnexpectedFoodRecordError,
   );
 
   const registerTargetMutation = (
@@ -446,7 +474,9 @@ export function registerFoodRecordTools(server: McpServer, context: DofekMcpCont
       requestId: string;
     }) => Promise<FoodRecordMutationResult>,
   ) => {
-    server.registerTool(
+    registerAuthorizedTool(
+      server,
+      ["nutrition:read", "nutrition:write"],
       name,
       {
         title,
@@ -455,7 +485,7 @@ export function registerFoodRecordTools(server: McpServer, context: DofekMcpCont
           ...mutationAnnotations,
           destructiveHint: name === "delete_food_entry",
         },
-        inputSchema: targetInputSchema,
+        inputSchema: z.object(targetInputSchema),
         outputSchema: mcpOutputSchemas.foodRecordMutation,
         _meta: mutationUiMeta,
       },
@@ -473,6 +503,7 @@ export function registerFoodRecordTools(server: McpServer, context: DofekMcpCont
           foodMutationTelemetryForTool(name, request_id),
         );
       },
+      reportUnexpectedFoodRecordError,
     );
   };
 
@@ -489,17 +520,19 @@ export function registerFoodRecordTools(server: McpServer, context: DofekMcpCont
     (input) => service.restore(input),
   );
 
-  server.registerTool(
+  registerAuthorizedTool(
+    server,
+    ["nutrition:read"],
     "get_food_entry_history",
     {
       title: "Get Food Entry History",
       description: "Return paginated food record operations and provenance.",
       annotations: readAnnotations,
-      inputSchema: {
+      inputSchema: z.object({
         record_id: z.uuid(),
         cursor: z.string().nullable().optional(),
         limit: z.number().int().min(1).max(100).optional(),
-      },
+      }),
       outputSchema: mcpOutputSchemas.foodRecordHistory,
     },
     async ({ record_id, cursor, limit }) => {
@@ -508,5 +541,6 @@ export function registerFoodRecordTools(server: McpServer, context: DofekMcpCont
         historyToTransport(await repository.history(record_id, cursor ?? null, limit ?? 50)),
       );
     },
+    reportUnexpectedFoodRecordError,
   );
 }

@@ -176,7 +176,6 @@ export function ActivitiesPage() {
   );
   const mergeEligible =
     selectedVisibleCount >= 2 && selectedTypes.size === 1 && selectedCount === selectedVisibleCount;
-  const subtitle = `Last ${weeks} weeks`;
 
   const cancelSelection = () => {
     setSelectedActivityIds(new Set());
@@ -231,7 +230,7 @@ export function ActivitiesPage() {
   };
 
   return (
-    <PageLayout title="Activities" subtitle={subtitle}>
+    <PageLayout title="Activities">
       <ProcessingStatusWidget
         data={processingStatus.data}
         error={processingStatus.error}
@@ -411,26 +410,11 @@ function ActivityControls({
 
   return (
     <div className="flex flex-col gap-3 rounded-lg border border-border bg-surface-solid p-3">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <p className="text-sm font-semibold">Activity log</p>
-          {canSelect ? (
-            <p id={selectionGuidanceId} className="mt-0.5 text-xs text-muted">
-              {selectionGuidance}
-            </p>
-          ) : null}
-        </div>
-        {canSelect && !selectMode ? (
-          <button
-            type="button"
-            onClick={onSelect}
-            aria-describedby={selectionGuidanceId}
-            className="px-3 py-1.5 text-xs rounded bg-accent/10 text-foreground hover:bg-surface-hover transition-colors cursor-pointer"
-          >
-            Select activities
-          </button>
-        ) : null}
-      </div>
+      {canSelect ? (
+        <p id={selectionGuidanceId} className={selectMode ? "text-xs text-muted" : "sr-only"}>
+          {selectionGuidance}
+        </p>
+      ) : null}
       {selectMode ? (
         <div className="flex flex-wrap items-center gap-2">
           <output
@@ -528,6 +512,16 @@ function ActivityControls({
         </div>
       ) : null}
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
+        {canSelect && !selectMode ? (
+          <button
+            type="button"
+            onClick={onSelect}
+            aria-describedby={selectionGuidanceId}
+            className="sm:mr-auto px-3 py-1.5 text-xs rounded bg-accent/10 text-foreground hover:bg-surface-hover transition-colors cursor-pointer"
+          >
+            Select activities
+          </button>
+        ) : null}
         <label className="flex items-center gap-2 text-xs text-muted">
           <input
             type="checkbox"

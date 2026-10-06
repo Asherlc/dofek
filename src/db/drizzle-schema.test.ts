@@ -23,7 +23,6 @@ import {
   fingerLoadingGripPositionEnum,
   fingerLoadingLateralityEnum,
 } from "./schema/enums.ts";
-import { journalEntry } from "./schema/events.ts";
 import { foodEntry } from "./schema/nutrition.ts";
 import { provider } from "./schema/reference.ts";
 
@@ -83,7 +82,6 @@ describe("drizzleSchema", () => {
       foodEntry,
       clinicalRecord,
       userSettings,
-      journalEntry,
     });
   });
 
@@ -153,15 +151,14 @@ describe("drizzleSchema", () => {
   });
 
   it("defines ordered climbing-attempt detail without requiring imported aggregates", () => {
-    const climbingConfig = getTableConfig(climbingEntry);
     const climbingColumns = columnSummaries(climbingEntry);
     const attemptConfig = getTableConfig(climbingAttempt);
     const attemptColumns = columnSummaries(climbingAttempt);
 
     expect(climbingColumns).toMatchObject({
-      sent: { notNull: false },
+      result_style: { notNull: false },
       attempt_count: { notNull: false },
-      wall_angle_degrees: { columnType: "PgReal", notNull: false },
+      wall_angle: { columnType: "PgJsonb", notNull: false },
       hold_type: { columnType: "PgEnumColumn", notNull: false },
     });
     expect(attemptConfig.schema).toBe("fitness");
@@ -186,9 +183,6 @@ describe("drizzleSchema", () => {
         { name: "climbing_attempt_entry_index_idx", unique: true },
       ]),
     );
-    expect(climbingConfig.checks.map((checkBuilder) => checkBuilder.name)).toContain(
-      "climbing_entry_aggregate_pair",
-    );
   });
 
   it("defines fitness.climbing_entry as an activity-linked climbing log table", () => {
@@ -208,13 +202,14 @@ describe("drizzleSchema", () => {
       "climb_type",
       "grade_system",
       "grade",
-      "sent",
+      "result_style",
       "attempt_count",
-      "lead",
-      "wall_angle_degrees",
+      "climb_style",
+      "wall_angle",
+      "board",
       "hold_type",
       "route_name",
-      "location_name",
+      "location_path",
       "source_name",
       "raw",
       "created_at",
@@ -257,23 +252,19 @@ describe("drizzleSchema", () => {
         hasDefault: false,
         notNull: true,
       },
-      sent: {
-        columnType: "PgBoolean",
+      result_style: {
+        columnType: "PgText",
         hasDefault: false,
         notNull: false,
       },
-      attempt_count: {
-        columnType: "PgInteger",
-        hasDefault: true,
-        notNull: false,
-      },
-      lead: {
-        columnType: "PgBoolean",
+      attempt_count: { columnType: "PgInteger", hasDefault: false, notNull: false },
+      climb_style: {
+        columnType: "PgText",
         hasDefault: false,
         notNull: false,
       },
-      wall_angle_degrees: {
-        columnType: "PgReal",
+      wall_angle: {
+        columnType: "PgJsonb",
         hasDefault: false,
         notNull: false,
       },
@@ -287,11 +278,7 @@ describe("drizzleSchema", () => {
         hasDefault: false,
         notNull: false,
       },
-      location_name: {
-        columnType: "PgText",
-        hasDefault: false,
-        notNull: false,
-      },
+      location_path: { columnType: "PgJsonb", hasDefault: true, notNull: true },
       source_name: {
         columnType: "PgText",
         hasDefault: false,

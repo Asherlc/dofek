@@ -359,9 +359,128 @@ Production `DBT_SAFE_MODELS` currently selects `sensor_scalar_sample`,
 `activity_stream_points`, `activity_heart_rate_zones`, `activity_summary_rows`,
 `hiking_activity`, `body_measurement`, `activity_vo2max_estimate`,
 `activity_aerobic_efficiency`, `activity_polarization_zones`,
-`activity_power_curve`, `cycling_activity`, `daily_cycling`, `provider_stats`,
+`activity_power_curve`, `activity_pace_curve`, `activity_heart_rate_distribution`,
+`cycling_activity`, `daily_cycling`, `provider_stats`,
 `daily_activity_load`, `daily_strain`, `healthspan_activity_zone_minutes`,
-and `weekly_healthspan`. Scalar activity sample models use dbt's `microbatch`
+and `weekly_healthspan`. `activity_pace_curve` reads canonical `deduped_sensor FINAL`
+speed samples within each canonical activity's inclusive temporal window, using
+the exact effective end (`ended_at`, or start plus twelve hours). Eligible types
+are cycling, running, swimming, walking and hiking; only positive live speeds
+contribute, regardless of their nullable source activity link. The model preserves
+the existing pace query's sample-count semantics: the rounded elapsed seconds
+divided by positive sample count minus one gives an interval of at least one
+second; each duration's rounded duration/interval gives a window of at least one
+sample. Cumulative-sum differences divided by that window count produce the raw
+best speed. It requires at least two positive samples and enough samples for the
+window. ClickHouse documents Float64 ties-to-even rounding in its
+[rounding reference](https://clickhouse.com/docs/sql-reference/functions/rounding-functions#round).
+
+`activity_heart_rate_distribution` uses the same bounded dirty-key selection for
+heart-rate samples. It resolves `deduped_sensor FINAL` before filtering live,
+non-null values, preserving exact fractional Float64 values and UInt64 counts in
+`Array(Tuple(heart_rate Float64, sample_count UInt64))`. Samples are eligible for
+each endurance activity's inclusive window, including its twelve-hour fallback,
+regardless of source activity links; zero and negative values remain eligible.
+It applies no resting/max-heart-rate baseline or zone assignment. Each selected
+user/activity emits one row with complete activity/sensor versions and structural
+window/type state: live empty activities retain an empty array, while deleted or
+ineligible activities emit tombstones. Training owns this model without changing
+its fifteen-minute freshness target. The existing `activity_heart_rate_zones`
+model is unchanged. See ClickHouse's
+[Tuple type](https://clickhouse.com/docs/sql-reference/data-types/tuple) and
+[ReplacingMergeTree current-state semantics](https://clickhouse.com/docs/engines/table-engines/mergetree-family/replacingmergetree).
+
+The shared `activity_sensor_dirty_keys` macro selects at most 32 unique
+user/activity keys on both first and incremental builds. Every selected key emits
+all twelve durations (`5,15,30,60,120,300,600,1200,1800,3600,5400,7200` seconds),
+including nullable unavailable speeds and deleted/ineligible tombstones. Rows
+persist the canonical type, start/effective end, complete source activity/sensor
+version pair and processing clock, so empty work completes and unchanged builds
+append nothing. Replacement is keyed by user, activity and duration, following
+[ReplacingMergeTree](https://clickhouse.com/docs/engines/table-engines/mergetree-family/replacingmergetree).
+The training dataset owns this model and the `durationCurves` cache family;
+sensor-only corrections participate in its existing fifteen-minute freshness
+contract. Reused bounded keys, date windows, cumulative samples and durations use
+model-local materialized CTEs with one thread, as described in the
+[ClickHouse WITH reference](https://clickhouse.com/docs/sql-reference/statements/select/with#materialized-common-table-expressions).
+
+`activity_sensor_processing_coverage` is being validated as a parameterized
+read-only view ordered
+after both compact writers. It reports every pending user/activity/source pair
+per user and model, including prior-only disappearance keys and users with zero
+pending keys. The shared selector reads actual prior state for this view without
+the writer's 32-key limit. The pace writer and coverage use one canonical
+twelve-duration inventory; missing or mixed lifecycle markers remain dirty and
+can be rebuilt. Noncanonical durations expose `invalid_duration_keys` as a hard
+preparation/integrity blocker requiring a canonical rebuild; append repair does
+not remove corrupt extra rows. Internal captured dbt batches restrict at most 32 exact
+user/activity/version pairs before ordering and LIMIT; routine invocations keep
+the same bounded selection. Variables use dbt's existing
+[project-variable interface](https://docs.getdbt.com/docs/build/project-variables).
+
+The view retains the existing required null-join/materialized-CTE semantics.
+It stores a query, not duplicate computed state, under dbt
+[view materialization](https://docs.getdbt.com/reference/resource-configs/materialized)
+and ClickHouse [CREATE VIEW](https://clickhouse.com/docs/reference/statements/create/view).
+The approved interface requires a UUID user set at every source entry before
+aggregation/materialization. Callers obtain that set from explicit processing/
+cache targets and registered changed-path keys, retaining enumeration and
+snapshot evidence; they do not scan source history to discover users. Empty
+targets perform no coverage work, never an all-user scan. Subsequent and
+non-targeted changes remain pending. ClickHouse documents the required
+parameter invocation and lack of ordinary schema metadata in
+[parameterized views](https://clickhouse.com/docs/reference/statements/create/view#parameterized-view).
+Each typed coverage read, parameterized DESCRIBE and natural EXPLAIN also requires
+`clickhouse_settings: { max_threads: 1, join_use_nulls: 1, enable_materialized_cte: 1 }`
+at its query boundary, matching the view's existing values through the
+[ClickHouse client query settings](https://clickhouse.com/docs/integrations/javascript#query-method).
+Stored view settings alone did not govern outer execution in the pinned engine's
+initial empty-model fixture; actual default-caller failures and required-context
+measurements are preserved in the [incident baseline](../docs/production-incident-baseline.md).
+The supported natural invocation uses both the UUID parameter and this fixed
+coverage-only context. Generic clients retain their defaults; this is not a
+universal dashboard thread profile. CTE reuse remains unproved, and
+[workload-specific parallelism/memory measurements](https://clickhouse.com/resources/engineering/high-concurrency-sizing-user-analytics)
+remain necessary. B must supply this context through its actual typed consumer;
+A activates no production coverage consumer.
+Pinned canonical dbt create/replace, discovery, parameterized DESCRIBE, schema/
+contract inspection, docs, artifacts, tests and SQLFluff compatibility remain
+validation gates. No custom materializer or bypass is approved. User row scope
+and total memory capacity must pass separately on the actual engine; the prior
+ordinary-view scope failure and approximately 550 MB query memory are recorded
+in the [incident baseline](../docs/production-incident-baseline.md).
+
+The additional approved preparation support is the dbt-owned parameterized
+`activity_sensor_key_verification` metadata view, sharing canonical state with
+the dirty selector. Required user UUIDs and at most 32 distinct user/activity
+pairs enter current/prior branches before aggregation and restrict derived
+window/day work. Each request returns strict evidence for both models, with
+explicit presence, lossless version clocks and precise lifecycle timestamps.
+Empty input means no work. Its existing 1/1/1 execution context is required at
+both view and typed caller boundaries. [Native parameterized views](https://clickhouse.com/docs/reference/statements/create/view#parameterized-view)
+store queries rather than data; [typed parameters](https://clickhouse.com/docs/reference/syntax#defining-and-using-query-parameters)
+do not certify pinned-engine compatibility or physical pruning. Canonical
+create/replace, strict subquery DESCRIBE and natural resource gates remain
+required. The initial finite sweep reuses both model rows per identity; total
+requests, elapsed work and retained capture memory need separate evidence from
+the per-request bound. This support is not yet populated or activated in production.
+
+The approved rollout remains two releases. Preparation A adds this support and
+repairs canonical versioned cache replay while preserving old request readers
+and worker/processing coverage behavior. Reader B adds compact serving,
+finite same-cycle captured work and per-path cache generation checks only after
+A population is verified. A successful bounded write is insufficient evidence
+of complete coverage. Stable backlog and source arrival during draining/warming
+must meet both the original reader/cache freshness baseline and the existing
+fifteen-minute contract before B cutover; a finite snapshot is an as-of check,
+not a guarantee under arbitrary source churn. See the
+[approved implementation plan](../docs/superpowers/plans/2026-10-02-subsecond-page-loading.md#task-6-serve-compact-pacehr-results-and-prove-freshness)
+and [deployment runbook](../docs/clickhouse-read-model-deploy-runbook.md).
+Historical priority corrections still require the explicit bounded canonical
+sensor replay below; formula changes require an approved historical rebuild
+because [incremental models retain prior output](https://docs.getdbt.com/docs/build/incremental-models#how-do-i-rebuild-an-incremental-model).
+
+Scalar activity sample models use dbt's `microbatch`
 incremental strategy with daily batches and a one-batch lookback, so routine
 cycles process the previous and current freshness days instead of repeatedly
 replaying older historical refreshes. Activity
