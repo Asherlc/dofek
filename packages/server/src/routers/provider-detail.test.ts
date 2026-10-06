@@ -312,8 +312,8 @@ describe("providerDetailRouter", () => {
   // ── PROVIDER_ACCOUNT_TABLES ──
 
   describe("PROVIDER_ACCOUNT_TABLES", () => {
-    it("contains 13 child tables", () => {
-      expect(PROVIDER_ACCOUNT_TABLES).toHaveLength(13);
+    it("contains 12 child tables", () => {
+      expect(PROVIDER_ACCOUNT_TABLES).toHaveLength(12);
     });
 
     it("includes all required child tables", () => {
