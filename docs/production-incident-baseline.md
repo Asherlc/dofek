@@ -30368,6 +30368,46 @@ CI remains unresolved; keep the PR pending until required checks finish.
 No retries, timeout changes, or workflow bypasses were added. For future queue
 delays, check GitHub's published status before investigating repository code.
 
+## 2026-10-05 — Withings sync alert persisted after successful scheduled syncs
+
+- **Symptoms / impact:** The app showed "Withings couldn’t sync" for Sleep and
+  Body after Withings had already recovered. Production `fitness.sync_log`
+  recorded `withings provider request timed out after 120000ms` at
+  `2026-10-06T00:30:03Z`, followed by successful scheduled syncs at `01:00`,
+  `01:30`, and `02:00` UTC. Authorization was not marked as failed.
+- **Evidence:** Read-only Postgres queries showed that those separate jobs all
+  shared the processing operation created at `00:00:02Z`. Its latest ingest
+  event remained the `00:30` failure; later jobs added canonical-commit events
+  to the same operation, while their `worker-succeeded` event conflicted with
+  the already recorded success. Axiom CLI access worked, but retained Withings
+  logs did not expose the low-level network cause. The recorded attempt took
+  995 ms, so the error text does not prove that the two-minute deadline elapsed.
+- **Root cause of the stale alert:**
+  [SyncProcessingOperation](../src/jobs/sync-processing-operation.ts) used the
+  reusable queue job ID as the permanent processing correlation key.
+  [Request deduplication](../src/jobs/sync-request-job.ts) removes terminal jobs
+  before accepting a new job with that ID; BullMQ documents that removed job
+  IDs can be reused in its [job-ID guide](https://docs.bullmq.io/guide/jobs/job-ids).
+  The processing store then reused the old operation and deduplicated the new
+  success event. The transient network failure's underlying cause remains unknown.
+- **Fix:** Processing correlation now includes the queue job's stored creation
+  timestamp. Newly created jobs receive separate operations; retries and
+  continuations retain the operation ID in job data. Both web and mobile use
+  the same processing-alert API. Existing incident history remains intact.
+- **Validation:** The new real-Redis/Postgres regression reproduced success →
+  failure → success with one reused queue ID and incorrectly failed Sleep/Body
+  status before the fix. After the fix, it verifies distinct operations, ready
+  status, an empty alert list, and operation reuse across retry and continuation.
+  Relevant unit/mobile tests and 15 database integration tests passed without
+  added sleeps or retry tuning. Docker's automatic subnet pool was exhausted;
+  an operator-only Compose override gave this workspace a free subnet without
+  changing repository configuration or other workspaces.
+- **Remaining risk / follow-up:** Production rollout is pending. A new
+  successful sync after rollout will supersede the stale operation. No
+  resilience settings changed. For similar alerts, compare sync history with
+  processing identity before treating the alert as a continuing provider outage;
+  retain the original transport cause in observability if connection failures recur.
+
 ## 2026-10-05 — Local deployment workflow test timeouts during PR #2881 validation
 
 - **Symptoms / impact:** Local `pnpm test` validation for [PR #2881](https://github.com/Asherlc/dofek/pull/2881) passed 19,518 tests but failed four `.github/workflows/deploy-web-stack.test.ts` scenarios. The first fatal message was `Error: Test timed out in 30000ms.` at line 685 (restoring processing services after a web rollback); the normal deploy and two stability-window reset cases also timed out. Production was unaffected.
@@ -30451,6 +30491,30 @@ typechecks. At 04:03 UTC, the live climbing HTML still served `sha-06c9729`.
 The user approved merging the fix; concurrent incident-log additions then
 required a documentation-only conflict resolution preserving both records.
 Validation of the updated merge head and production rollout remain pending.
+
+Rollout follow-up: all 83 checks on the updated merge head passed in
+[CI run 37414540870](https://github.com/Asherlc/dofek/actions/runs/37414540870),
+and the user-approved [PR #2889](https://github.com/Asherlc/dofek/pull/2889)
+merged as `53ec054ea321de4082474e936b53bfbb7d0d4a3b`. The first
+[production run under the new workflow](https://github.com/Asherlc/dofek/actions/runs/37417239003)
+selected passing release `sha-ffe2bb2` despite main having advanced. Both
+climbing-fix commits are ancestors of the selected full SHA,
+`ffe2bb2946a9f58656ee97cd685ce4185c5330d4`. At 05:22 UTC on October 6,
+the climbing HTML returned HTTP 200 with that asset prefix. By 05:26 UTC,
+both web replicas and the worker used that image, and all five processing
+services were restored at `1/1` on the same release. A
+[new production request](https://github.com/Asherlc/dofek/actions/runs/37418587207)
+arrived at 05:27 UTC and remained pending while the active deploy continued,
+confirming that incoming work preserves the running release. All four
+production jobs succeeded at 05:35 UTC, including the migration, CDC, consumer
+stability, backup-freshness, and release-recording gates. The pending request
+then started after the completed release freed the slot. The stale climbing
+release is resolved. No manual production mutation, timeout increase, retry,
+or migration-order change was needed; the existing readiness and stability
+checks verify that the deployed services remain operational. For similar
+incidents, use the deployment runbook's HTML/image comparison and check the
+production job's conclusion before treating a green workflow as proof of
+deployment.
 
 ## 2026-10-05 — Dependabot update validation and local Docker capacity
 

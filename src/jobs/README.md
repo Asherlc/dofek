@@ -17,6 +17,7 @@ This directory contains background job processing logic using BullMQ and Redis.
 - **BullMQ**: Job queue management with Redis.
 - **Per-Provider Workers**: Each sync provider has its own dedicated BullMQ worker to independently manage concurrency and rate limits.
 - **Shared sync coordination**: Shared jobs fan out through the existing provider queues with one absolute sync window. BullMQ parent dependencies preserve dispatch through coordinator retries and child pruning; failed provider jobs report independently. The coordinator uses the [waiting-children processing pattern](https://docs.bullmq.io/patterns/process-step-jobs).
+- **Sync processing identity**: Each newly created queue job has its own processing operation, correlated by its queue ID, stored creation timestamp, and provider. Retries and continuations reuse the operation ID persisted in job data. A queue ID alone cannot identify a permanent processing record because BullMQ permits reusing it after job removal; see [BullMQ job IDs](https://docs.bullmq.io/guide/jobs/job-ids).
 - **Queues**: Defined in `queues.ts` with typed job data interfaces.
 - **Workers**: Implemented in `worker.ts` with support for graceful shutdown and idle spin-down.
 - **Worker responsibilities**: `worker.ts` coordinates startup;
