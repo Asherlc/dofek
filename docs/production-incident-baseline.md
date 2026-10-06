@@ -30349,3 +30349,10 @@ mobile preview upload succeeded. No production impact was observed. Remote
 CI remains unresolved; keep the PR pending until required checks finish.
 No retries, timeout changes, or workflow bypasses were added. For future queue
 delays, check GitHub's published status before investigating repository code.
+
+### 2026-10-05 — Newly reported dependency advisories blocked supplement-removal merge
+
+- Symptoms/evidence: [Dependency Audit](https://github.com/Asherlc/dofek/actions/runs/37399697920/job/112064250236) failed `pnpm audit --prod --audit-level=high --ignore-registry-errors` with exit code 1. The first finding was critical Seroval Promise thenable assimilation; the report also flagged proxy-addr IP spoofing, Seroval memory exhaustion, and source-map-js denial of service.
+- Impact/root cause: PR #2886 could not merge; no production deployment occurred. The lockfile still resolved vulnerable transitive versions Seroval 1.5.5, proxy-addr 2.0.7, and source-map-js 1.2.1. See the primary advisories for [Seroval callables](https://github.com/advisories/GHSA-p6vx-979v-rg4c), [proxy-addr](https://github.com/advisories/GHSA-jqcg-44mw-7w3h), [Seroval memory exhaustion](https://github.com/advisories/GHSA-jp82-f5mq-hwhp), and [source-map-js](https://github.com/advisories/GHSA-68fv-2mgg-jv7q).
+- Fix/validation: refreshed only those transitive lockfile entries to the registry's latest stable releases: Seroval 1.6.8, proxy-addr 2.0.8, and source-map-js 1.2.2. Frozen installation, the production high-severity audit, existing dependency-security regression checks, production web build, full lint, and all 32 API integration assertions passed. No manifest, override, exemption, retry, or audit threshold changed.
+- Remaining risk/follow-up: replacement CI pending; lower-severity findings and the two previously documented patched high-severity advisories remain under the existing policy. Refresh transitive dependencies when new advisories invalidate an otherwise green merge check.
