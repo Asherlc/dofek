@@ -30333,3 +30333,43 @@ mobile preview upload succeeded. No production impact was observed. Remote
 CI remains unresolved; keep the PR pending until required checks finish.
 No retries, timeout changes, or workflow bypasses were added. For future queue
 delays, check GitHub's published status before investigating repository code.
+
+## 2026-10-05 — Withings sync alert persisted after successful scheduled syncs
+
+- **Symptoms / impact:** The app showed "Withings couldn’t sync" for Sleep and
+  Body after Withings had already recovered. Production `fitness.sync_log`
+  recorded `withings provider request timed out after 120000ms` at
+  `2026-10-06T00:30:03Z`, followed by successful scheduled syncs at `01:00`,
+  `01:30`, and `02:00` UTC. Authorization was not marked as failed.
+- **Evidence:** Read-only Postgres queries showed that those separate jobs all
+  shared the processing operation created at `00:00:02Z`. Its latest ingest
+  event remained the `00:30` failure; later jobs added canonical-commit events
+  to the same operation, while their `worker-succeeded` event conflicted with
+  the already recorded success. Axiom CLI access worked, but retained Withings
+  logs did not expose the low-level network cause. The recorded attempt took
+  995 ms, so the error text does not prove that the two-minute deadline elapsed.
+- **Root cause of the stale alert:**
+  [SyncProcessingOperation](../src/jobs/sync-processing-operation.ts) used the
+  reusable queue job ID as the permanent processing correlation key.
+  [Request deduplication](../src/jobs/sync-request-job.ts) removes terminal jobs
+  before accepting a new job with that ID; BullMQ documents that removed job
+  IDs can be reused in its [job-ID guide](https://docs.bullmq.io/guide/jobs/job-ids).
+  The processing store then reused the old operation and deduplicated the new
+  success event. The transient network failure's underlying cause remains unknown.
+- **Fix:** Processing correlation now includes the queue job's stored creation
+  timestamp. Newly created jobs receive separate operations; retries and
+  continuations retain the operation ID in job data. Both web and mobile use
+  the same processing-alert API. Existing incident history remains intact.
+- **Validation:** The new real-Redis/Postgres regression reproduced success →
+  failure → success with one reused queue ID and incorrectly failed Sleep/Body
+  status before the fix. After the fix, it verifies distinct operations, ready
+  status, an empty alert list, and operation reuse across retry and continuation.
+  Relevant unit/mobile tests and 15 database integration tests passed without
+  added sleeps or retry tuning. Docker's automatic subnet pool was exhausted;
+  an operator-only Compose override gave this workspace a free subnet without
+  changing repository configuration or other workspaces.
+- **Remaining risk / follow-up:** Production rollout is pending. A new
+  successful sync after rollout will supersede the stale operation. No
+  resilience settings changed. For similar alerts, compare sync history with
+  processing identity before treating the alert as a continuing provider outage;
+  retain the original transport cause in observability if connection failures recur.
