@@ -231,16 +231,6 @@ const expectedListColumns = {
     "recorded_at",
     "issued_at",
   ],
-  journalEntries: [
-    "id",
-    "provider_id",
-    "date",
-    "question_slug",
-    "answer_text",
-    "answer_numeric",
-    "impact_score",
-    "created_at",
-  ],
 } satisfies Record<
   Exclude<(typeof dataTypeEnum.options)[number], "bodyMeasurements" | "metricStream">,
   string[]
@@ -254,7 +244,6 @@ const expectedListColumnCases = [
   ["healthEvents", expectedListColumns.healthEvents],
   ["nutritionDaily", expectedListColumns.nutritionDaily],
   ["clinicalRecords", expectedListColumns.clinicalRecords],
-  ["journalEntries", expectedListColumns.journalEntries],
 ] satisfies Array<[keyof typeof expectedListColumns, string[]]>;
 
 describe("providerDetailRouter", () => {
@@ -277,7 +266,6 @@ describe("providerDetailRouter", () => {
       ["metricStream", "ingest.metric_stream", "recorded_at", "id"],
       ["nutritionDaily", "fitness.v_nutrition_provider_daily", "date", "date"],
       ["clinicalRecords", "fitness.clinical_record", "downloaded_at", "id"],
-      ["journalEntries", "fitness.journal_entry", "date", "id"],
     ] as const)(
       "returns correct mapping for %s",
       (dataType, expectedTable, expectedOrder, expectedId) => {
@@ -301,8 +289,8 @@ describe("providerDetailRouter", () => {
   // ── dataTypeEnum ──
 
   describe("dataTypeEnum", () => {
-    it("contains exactly 10 data types", () => {
-      expect(dataTypeEnum.options).toHaveLength(10);
+    it("contains exactly 9 data types", () => {
+      expect(dataTypeEnum.options).toHaveLength(9);
     });
 
     it("includes all expected data types", () => {
@@ -316,7 +304,6 @@ describe("providerDetailRouter", () => {
         "metricStream",
         "nutritionDaily",
         "clinicalRecords",
-        "journalEntries",
       ];
       expect(dataTypeEnum.options).toEqual(expected);
     });
@@ -340,7 +327,6 @@ describe("providerDetailRouter", () => {
       expect(PROVIDER_ACCOUNT_TABLES).toContain("fitness.clinical_record");
       expect(PROVIDER_ACCOUNT_TABLES).toContain("fitness.medication_dose_event");
       expect(PROVIDER_ACCOUNT_TABLES).toContain("fitness.health_event");
-      expect(PROVIDER_ACCOUNT_TABLES).toContain("fitness.journal_entry");
       expect(PROVIDER_ACCOUNT_TABLES).toContain("fitness.dexa_scan");
       expect(PROVIDER_ACCOUNT_TABLES).toContain("fitness.sync_log");
       expect(PROVIDER_ACCOUNT_TABLES).toContain("fitness.activity");

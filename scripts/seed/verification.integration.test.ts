@@ -209,36 +209,4 @@ async function insertVerificationPrerequisites(): Promise<void> {
       TIMESTAMPTZ '2026-01-01T00:00:00Z' + generated_index * INTERVAL '1 day'
     FROM generate_series(1, 20) AS generated_index
   `;
-
-  await sql`
-    INSERT INTO fitness.journal_question (
-      slug,
-      display_name,
-      category,
-      data_type
-    )
-    VALUES (
-      'verification-question',
-      'Verification question',
-      'verification',
-      'boolean'
-    )
-  `;
-
-  await sql`
-    INSERT INTO fitness.journal_entry (
-      date,
-      provider_id,
-      user_id,
-      question_slug,
-      answer_text
-    )
-    SELECT
-      DATE '2026-01-01' + generated_index,
-      'manual_review',
-      ${USER_ID},
-      'verification-question',
-      'yes'
-    FROM generate_series(1, 30) AS generated_index
-  `;
 }

@@ -907,7 +907,6 @@ describe("ProviderCard", () => {
           foodEntries: 0,
           nutritionDaily: 0,
           clinicalRecords: 0,
-          journalEntries: 0,
         }}
         syncing={false}
         syncProgress={undefined}
@@ -1393,7 +1392,6 @@ describe("ProvidersScreen", () => {
           nutritionDaily: 0,
           healthEvents: 0,
           clinicalRecords: 0,
-          journalEntries: 0,
         },
       ],
       isLoading: false,

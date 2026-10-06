@@ -298,7 +298,6 @@ describe("SyncRepository", () => {
             metric_stream: "100",
             nutrition_daily: "6",
             clinical_records: "13",
-            journal_entries: "3",
           },
         ],
       );
@@ -306,7 +305,7 @@ describe("SyncRepository", () => {
       expect(result).toHaveLength(1);
       expect(result[0]).toEqual({
         providerId: "wahoo",
-        totalRecords: 168,
+        totalRecords: 165,
         activities: 5,
         dailyMetrics: 30,
         sleepSessions: 0,
@@ -316,7 +315,6 @@ describe("SyncRepository", () => {
         metricStream: 100,
         nutritionDaily: 6,
         clinicalRecords: 13,
-        journalEntries: 3,
       });
       expect(execute).not.toHaveBeenCalled();
     });
@@ -336,7 +334,6 @@ describe("SyncRepository", () => {
             metric_stream: "0",
             nutrition_daily: "0",
             clinical_records: "0",
-            journal_entries: "0",
           },
           {
             provider_id: "strava",
@@ -349,7 +346,6 @@ describe("SyncRepository", () => {
             metric_stream: "42",
             nutrition_daily: "0",
             clinical_records: "0",
-            journal_entries: "0",
           },
         ],
       );
@@ -378,7 +374,6 @@ describe("SyncRepository", () => {
             metric_stream: "7",
             nutrition_daily: "8",
             clinical_records: "19",
-            journal_entries: "11",
           },
         ],
       );

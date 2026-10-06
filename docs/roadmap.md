@@ -26,11 +26,11 @@ Resolve public-facing trust problems and add product measurement before launchin
 - [ ] Show the actual subscription price, billing period, trial or limited-access behavior, and cancellation terms on the landing page before signup; see [`LandingPage.tsx`](../packages/web/src/pages/LandingPage.tsx).
 - [ ] Update product documentation when implemented capabilities make known-gap statements stale, including medication-dose tracking.
 - [ ] Make the reproducible iOS runtime-audit prerequisite explicit: either generate the ignored Xcode workspace before an audit or document the canonical command that creates it.
-- [ ] Add equivalent web and mobile product events for onboarding completion, source connection, first useful insight, Daily Brief engagement, journal or experiment engagement, subscription conversion, and relevant failure states. Web page views alone are not sufficient product measurement; see [`posthog.ts`](../packages/web/src/lib/posthog.ts).
+- [ ] Add equivalent web and mobile product events for onboarding completion, source connection, first useful insight, Daily Brief engagement, experiment engagement, subscription conversion, and relevant failure states. Web page views alone are not sufficient product measurement; see [`posthog.ts`](../packages/web/src/lib/posthog.ts).
 - [ ] Establish an automated web/mobile product-surface parity review for every user-facing feature. Platform-specific hardware and administrative features may differ intentionally, but user outcomes should remain equivalent.
 - [ ] Publish and maintain a product-surface matrix covering route discoverability, web/mobile parity, fixture coverage, and release evidence.
-- [ ] Resolve or intentionally retire low-discoverability product surfaces, including behavior impact, reports, predictions, and insights that exist but are absent from primary navigation.
-- [ ] Prioritize mobile parity for journal, body and goal-weight context, behavior impact, and user-facing prediction or sport-detail outcomes. Hardware capture may remain mobile-only; administrative MCP may remain web-only.
+- [ ] Resolve or intentionally retire low-discoverability product surfaces, including reports, predictions, and insights that exist but are absent from primary navigation.
+- [ ] Prioritize mobile parity for body and goal-weight context and user-facing prediction or sport-detail outcomes. Hardware capture may remain mobile-only; administrative MCP may remain web-only.
 
 This gate is complete when the acquisition surfaces make no contradictory or prohibited claims, a seeded review account can be audited on both platforms, and the team can measure activation and retention without relying only on page views.
 
@@ -172,10 +172,10 @@ Implementation-level backlog. Checked items are complete; unchecked are open.
 - [x] Clinical/lab data ingestion (Apple Health FHIR clinical records — 1,173 lab results)
 - [x] Nutrition data ingestion (FatSecret provider — per-food-item granularity with full micro/macronutrients)
 - [x] Removed supplement tracking, including schedules and dose history
-  ([migration 0139](../drizzle/0139_remove_supplements.sql)).
+  ([migration 0141](../drizzle/0141_remove_supplements.sql)).
 - [x] Peloton direct provider (automated Auth0 login, workouts + performance metrics)
 - [x] Wahoo provider (OAuth + FIT file parsing → GPS/power/HR/cadence/running dynamics)
-- [x] WHOOP provider (sleep, recovery, workouts, 6s HR streams, journal entries via internal API)
+- [x] WHOOP provider (sleep, recovery, workouts, 6s HR streams via internal API)
 - [x] WHOOP strength trainer sync (exercise-level sets/reps/weight from `weightlifting-service` internal API)
 - [x] Withings provider (OAuth + sync for scale, BP, thermometer — awaiting credentials)
 - [x] Cross-provider deduplication via read-time views and analytics read models (recursive CTE overlap clustering, per-field merge by provider priority)

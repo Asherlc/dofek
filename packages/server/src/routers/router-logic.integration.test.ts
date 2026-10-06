@@ -19,27 +19,18 @@ import {
  */
 
 const TEST_USER_ID = "00000000-0000-0000-0000-000000000001";
-const OTHER_TEST_USER_ID = "123e4567-e89b-42d3-a456-426614174000";
 
 describe("Router transformation logic", () => {
   let server: ReturnType<import("express").Express["listen"]>;
   let baseUrl: string;
   let testCtx: TestContext;
   let sessionCookie: string;
-  let otherUserSessionCookie: string;
 
   beforeAll(async () => {
     testCtx = await setupTestDatabase();
 
     const session = await createSession(testCtx.db, TEST_USER_ID);
     sessionCookie = `session=${session.sessionId}`;
-    await testCtx.db.execute(
-      sql`INSERT INTO fitness.user_profile (id, name)
-          VALUES (${OTHER_TEST_USER_ID}, 'Other Cache Test User')
-          ON CONFLICT DO NOTHING`,
-    );
-    const otherUserSession = await createSession(testCtx.db, OTHER_TEST_USER_ID);
-    otherUserSessionCookie = `session=${otherUserSession.sessionId}`;
 
     // Insert a test provider (needed for FK constraints)
     await testCtx.db.execute(
@@ -224,132 +215,6 @@ describe("Router transformation logic", () => {
   // Query cache invalidation after domain mutations
   // ══════════════════════════════════════════════════════════════
   describe("query cache invalidation", () => {
-    it("refreshes journal questions, entries, and trends after every mutation", async () => {
-      const questionSlug = "cache_invalidation_energy";
-      const today = new Date().toISOString().slice(0, 10);
-      await queryCache.invalidateAll();
-      await testCtx.db.execute(
-        sql`DELETE FROM fitness.journal_entry
-            WHERE user_id = ${TEST_USER_ID} AND question_slug = ${questionSlug}`,
-      );
-      await testCtx.db.execute(
-        sql`DELETE FROM fitness.journal_question WHERE slug = ${questionSlug}`,
-      );
-
-      const { result: questionsBefore } = await query("journal.questions");
-      const { result: otherUserQuestionsBefore } = await query(
-        "journal.questions",
-        {},
-        otherUserSessionCookie,
-      );
-      expect(
-        questionsBefore.result.data.some(
-          (question: { slug: string }) => question.slug === questionSlug,
-        ),
-      ).toBe(false);
-      expect(
-        otherUserQuestionsBefore.result.data.some(
-          (question: { slug: string }) => question.slug === questionSlug,
-        ),
-      ).toBe(false);
-
-      const { status: questionStatus } = await mutate("journal.createQuestion", {
-        slug: questionSlug,
-        displayName: "Cache invalidation energy",
-        category: "custom",
-        dataType: "numeric",
-      });
-      expect(questionStatus).toBe(200);
-
-      const { result: questionsAfter } = await query("journal.questions");
-      expect(
-        questionsAfter.result.data.some(
-          (question: { slug: string }) => question.slug === questionSlug,
-        ),
-      ).toBe(true);
-      const { result: otherUserQuestionsAfter } = await query(
-        "journal.questions",
-        {},
-        otherUserSessionCookie,
-      );
-      expect(
-        otherUserQuestionsAfter.result.data.some(
-          (question: { slug: string }) => question.slug === questionSlug,
-        ),
-      ).toBe(true);
-
-      await query("journal.entries", { days: 30 });
-      await query("journal.trends", { days: 3, endDate: today });
-
-      const { status: createStatus, result: createdResult } = await mutate("journal.create", {
-        date: today,
-        questionSlug,
-        answerNumeric: 4,
-      });
-      expect(createStatus).toBe(200);
-      const entryId = createdResult.result.data.id;
-
-      const { result: entriesAfterCreate } = await query("journal.entries", { days: 30 });
-      expect(
-        entriesAfterCreate.result.data.find((entry: { id: string }) => entry.id === entryId)
-          ?.answer_numeric,
-      ).toBe(4);
-      const { result: trendsAfterCreate } = await query("journal.trends", {
-        days: 3,
-        endDate: today,
-      });
-      const trendAfterCreate = trendsAfterCreate.result.data.series.find(
-        (series: { questionSlug: string }) => series.questionSlug === questionSlug,
-      );
-      expect(trendsAfterCreate.result.data.window.dayCount).toBe(3);
-      expect(trendAfterCreate.points.at(-1)).toMatchObject({
-        date: today,
-        value: 4,
-        source: { providerId: "dofek", label: "Dofek" },
-      });
-      expect(
-        trendAfterCreate.points.filter((point: { value: number | null }) => point.value === null),
-      ).toHaveLength(2);
-
-      const { status: updateStatus } = await mutate("journal.update", {
-        id: entryId,
-        answerNumeric: 8,
-      });
-      expect(updateStatus).toBe(200);
-
-      const { result: entriesAfterUpdate } = await query("journal.entries", { days: 30 });
-      expect(
-        entriesAfterUpdate.result.data.find((entry: { id: string }) => entry.id === entryId)
-          ?.answer_numeric,
-      ).toBe(8);
-      const { result: trendsAfterUpdate } = await query("journal.trends", {
-        days: 3,
-        endDate: today,
-      });
-      expect(
-        trendsAfterUpdate.result.data.series
-          .find((series: { questionSlug: string }) => series.questionSlug === questionSlug)
-          ?.points.at(-1),
-      ).toMatchObject({ date: today, value: 8 });
-
-      const { status: deleteStatus } = await mutate("journal.delete", { id: entryId });
-      expect(deleteStatus).toBe(200);
-
-      const { result: entriesAfterDelete } = await query("journal.entries", { days: 30 });
-      expect(
-        entriesAfterDelete.result.data.find((entry: { id: string }) => entry.id === entryId),
-      ).toBeUndefined();
-      const { result: trendsAfterDelete } = await query("journal.trends", {
-        days: 3,
-        endDate: today,
-      });
-      expect(
-        trendsAfterDelete.result.data.series.find(
-          (series: { questionSlug: string }) => series.questionSlug === questionSlug,
-        ),
-      ).toBeUndefined();
-    });
-
     it("refreshes personalization status after reset", async () => {
       await queryCache.invalidateAll();
       await savePersonalizedParams(testCtx.db, TEST_USER_ID, {

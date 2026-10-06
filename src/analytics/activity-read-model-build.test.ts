@@ -426,7 +426,6 @@ describe("activity-read-model-build", () => {
       expect.objectContaining({ query_params: { userId: "user-1", providerId: "strava" } }),
     );
     expect(query.mock.calls[0]?.[0].query).toContain("postgres_fitness.daily_metrics FINAL");
-    expect(query.mock.calls[0]?.[0].query).toContain("postgres_fitness.journal_entry FINAL");
   });
 
   it("returns zero when the provider PeerDB count query returns no rows", async () => {

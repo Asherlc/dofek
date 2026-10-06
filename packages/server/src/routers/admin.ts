@@ -232,7 +232,6 @@ export const adminRouter = router({
             ('oauth_token'),
             ('provider'),
             ('clinical_record'),
-            ('journal_entry'),
             ('nutrient'),
             ('food_entry_nutrient'),
             ('breathwork_session'),

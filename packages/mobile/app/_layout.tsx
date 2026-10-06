@@ -765,18 +765,6 @@ function AuthGate() {
             }}
           />
           <Stack.Screen
-            name="behavior-associations"
-            options={{
-              title: "Behavior Associations",
-            }}
-          />
-          <Stack.Screen
-            name="tracking"
-            options={{
-              title: "Journal Trends",
-            }}
-          />
-          <Stack.Screen
             name="preview"
             options={{
               title: "Preview Update",

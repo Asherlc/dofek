@@ -4,7 +4,6 @@ import { activityRouter } from "./routers/activity.ts";
 import { adminRouter } from "./routers/admin.ts";
 import { anomalyDetectionRouter } from "./routers/anomaly-detection.ts";
 import { authRouter } from "./routers/auth.ts";
-import { behaviorImpactRouter } from "./routers/behavior-impact.ts";
 import { billingRouter } from "./routers/billing.ts";
 import { bleHeartRateSyncRouter } from "./routers/ble-heart-rate-sync.ts";
 import { bodyRouter } from "./routers/body.ts";
@@ -32,7 +31,6 @@ import { hikingRouter } from "./routers/hiking.ts";
 import { inertialMeasurementUnitSyncRouter } from "./routers/inertial-measurement-unit-sync.ts";
 import { insightsRouter } from "./routers/insights.ts";
 import { intervalsRouter } from "./routers/intervals.ts";
-import { journalRouter } from "./routers/journal.ts";
 import { mcpRouter } from "./routers/mcp.ts";
 import { medicationDoseEventsRouter } from "./routers/medication-dose-events.ts";
 import { mobileDashboardRouter } from "./routers/mobile-dashboard.ts";
@@ -54,7 +52,6 @@ import { sleepNeedRouter } from "./routers/sleep-need.ts";
 import { sportSettingsRouter } from "./routers/sport-settings.ts";
 import { strengthRouter } from "./routers/strength.ts";
 import { stressRouter } from "./routers/stress.ts";
-import { subjectiveRouter } from "./routers/subjective.ts";
 import { supportRouter } from "./routers/support.ts";
 import { syncRouter } from "./routers/sync.ts";
 import { todayPlanRouter } from "./routers/today-plan.ts";
@@ -74,7 +71,6 @@ const appRouterProcedures = {
   watchAltitudeSync: watchAltitudeSyncRouter,
   activity: activityRouter,
   anomalyDetection: anomalyDetectionRouter,
-  behaviorImpact: behaviorImpactRouter,
   billing: billingRouter,
   bleHeartRateSync: bleHeartRateSyncRouter,
   personalization: personalizationRouter,
@@ -87,7 +83,6 @@ const appRouterProcedures = {
   nutrition: nutritionRouter,
   nutritionAnalytics: nutritionAnalyticsRouter,
   insights: insightsRouter,
-  journal: journalRouter,
   mobileDashboard: mobileDashboardRouter,
   providerDetail: providerDetailRouter,
   providerGuide: providerGuideRouter,
@@ -123,7 +118,6 @@ const appRouterProcedures = {
   running: runningRouter,
   settings: settingsRouter,
   stress: stressRouter,
-  subjective: subjectiveRouter,
   todayPlan: todayPlanRouter,
   healthReport: healthReportRouter,
   healthspan: healthspanRouter,

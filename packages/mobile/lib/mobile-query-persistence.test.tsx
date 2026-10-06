@@ -41,9 +41,9 @@ describe("mobile query persistence", () => {
     await AsyncStorage.clear();
   });
 
-  it("uses a new cache contract buster for recorded climbing attempts", () => {
-    expect(MOBILE_QUERY_CACHE_CONTRACT_VERSION).toBe(8);
-    expect(mobileQueryCacheBuster("user-1")).toBe("user-1:v8");
+  it("uses the current cache contract buster", () => {
+    expect(MOBILE_QUERY_CACHE_CONTRACT_VERSION).toBe(9);
+    expect(mobileQueryCacheBuster("user-1")).toBe("user-1:v9");
   });
 
   it("reports downstream hydration failures safely and completes provider restoration", async () => {

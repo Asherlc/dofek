@@ -43,7 +43,6 @@ vi.mock("../components/DataQualityCenter", () => ({
       activity_source_overlap: "Review activities",
       sync_freshness: "Review dashboard",
       outliers: "Review dashboard",
-      manual_edits: "Review journal",
     };
     return (
       <div data-testid="data-quality-center">
@@ -161,16 +160,6 @@ const overview: DataQualityOverview = {
       lastObservedDate: null,
       details: [],
     },
-    {
-      key: "manual_edits",
-      label: "Manual edits",
-      status: "informational",
-      title: "Manual entries are included",
-      message: "1 manually entered journal record was recorded in the last 30 days.",
-      count: 1,
-      lastObservedDate: "2026-07-19",
-      details: [],
-    },
   ],
 };
 
@@ -236,8 +225,6 @@ describe("DataQualityScreen", () => {
     expect(mocks.routerPush).toHaveBeenLastCalledWith("/(tabs)");
     fireEvent.click(screen.getByRole("button", { name: "Review activities" }));
     expect(mocks.routerPush).toHaveBeenLastCalledWith("/activities");
-    fireEvent.click(screen.getByRole("button", { name: "Review journal" }));
-    expect(mocks.routerPush).toHaveBeenLastCalledWith("/tracking");
   });
 
   it("retains the overview while a background refresh fails", () => {

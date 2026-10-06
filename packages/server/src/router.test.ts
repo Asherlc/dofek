@@ -15,7 +15,6 @@ vi.mock("./routers/activity.ts", () => ({ activityRouter: mockRouter }));
 vi.mock("./routers/anomaly-detection.ts", () => ({ anomalyDetectionRouter: mockRouter }));
 vi.mock("./routers/account-erasure.ts", () => ({ accountErasureRouter: mockRouter }));
 vi.mock("./routers/auth.ts", () => ({ authRouter: mockRouter }));
-vi.mock("./routers/behavior-impact.ts", () => ({ behaviorImpactRouter: mockRouter }));
 vi.mock("./routers/billing.ts", () => ({ billingRouter: mockRouter }));
 vi.mock("./routers/ble-heart-rate-sync.ts", () => ({ bleHeartRateSyncRouter: mockRouter }));
 vi.mock("./routers/body.ts", () => ({ bodyRouter: mockRouter }));
@@ -41,7 +40,6 @@ vi.mock("./routers/healthspan.ts", () => ({ healthspanRouter: mockRouter }));
 vi.mock("./routers/hiking.ts", () => ({ hikingRouter: mockRouter }));
 vi.mock("./routers/insights.ts", () => ({ insightsRouter: mockRouter }));
 vi.mock("./routers/intervals.ts", () => ({ intervalsRouter: mockRouter }));
-vi.mock("./routers/journal.ts", () => ({ journalRouter: mockRouter }));
 vi.mock("./routers/medication-dose-events.ts", () => ({ medicationDoseEventsRouter: mockRouter }));
 vi.mock("./routers/mcp.ts", () => ({ mcpRouter: mockRouter }));
 vi.mock("./routers/monthly-report.ts", () => ({ monthlyReportRouter: mockRouter }));
@@ -124,7 +122,6 @@ describe("appRouter", () => {
       "anomalyDetection",
       "accountErasure",
       "auth",
-      "behaviorImpact",
       "billing",
       "bleHeartRateSync",
       "companionPairing",
@@ -180,9 +177,7 @@ describe("appRouter", () => {
       "weeklyReport",
       "sportSettings",
       "intervals",
-      "journal",
       "support",
-      "subjective",
     ];
 
     // The router definition record should have entries for each sub-router

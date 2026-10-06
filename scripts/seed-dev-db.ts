@@ -12,7 +12,6 @@
  *   - 120 days of deterministic activity history and strength work
  *   - 90 days of nutrition, recent meals
  *   - Body composition, labs, DEXA, and clinical records
- *   - Journal and life-event context for reports/correlation
  *
  * The data is designed to exercise reviewer-facing product surfaces:
  *   - Multi-provider sleep dedup (overlapping but <80% threshold)
@@ -27,7 +26,6 @@ import { clearSeedData, seedCore } from "./seed/core.ts";
 import { SeedRandom } from "./seed/helpers.ts";
 import { seedNutrition } from "./seed/nutrition.ts";
 import { seedRecovery } from "./seed/recovery.ts";
-import { seedReviewSurfaces } from "./seed/review-surfaces.ts";
 import { seedTraining } from "./seed/training.ts";
 import { verifySeed } from "./seed/verification.ts";
 
@@ -60,7 +58,6 @@ async function seedData() {
   await seedTraining(sql);
   await seedNutrition(sql, random);
   await seedBodyHealth(sql);
-  await seedReviewSurfaces(sql, random);
 }
 
 // ---------------------------------------------------------------------------

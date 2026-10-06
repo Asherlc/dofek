@@ -18,7 +18,6 @@ const whoopSyncStepSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("persist_workouts") }),
   z.object({ type: z.literal("weightlifting"), activityId: z.string() }),
   z.object({ type: z.literal("heart_rate"), start: z.string(), end: z.string() }),
-  z.object({ type: z.literal("journal") }),
 ]);
 
 export type WhoopSyncStep = z.infer<typeof whoopSyncStepSchema>;

@@ -60,10 +60,6 @@ function PrivacyPage() {
                 clinical lab results
               </li>
               <li>
-                <strong className="text-foreground">Journal entries</strong> — self-reported mood,
-                energy, and wellness notes from connected providers
-              </li>
-              <li>
                 <strong className="text-foreground">Authentication credentials</strong> — OAuth
                 tokens and API keys required to access your connected provider accounts
               </li>

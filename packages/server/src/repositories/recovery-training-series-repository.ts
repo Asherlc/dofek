@@ -11,14 +11,12 @@ import type {
   RecoveryDailyActivityExposure,
 } from "./recovery-activity-exposure-repository.ts";
 import type { SleepRepository } from "./sleep-repository.ts";
-import type { SubjectiveRepository } from "./subjective-repository.ts";
 
 export const recoveryTrainingStreamSchema = z.enum([
   "health",
   "sleep",
   "body_weight",
   "training_load",
-  "subjective",
   "activities",
   "nutrition",
 ]);
@@ -32,7 +30,6 @@ export interface RecoveryTrainingSeriesSources {
     listRange(startDate: string, endDate: string): Promise<DirectWeightObservation[]>;
   };
   trainingLoad?: Pick<AnalyticalTrainingLoadRepository, "listRange">;
-  subjective?: Pick<SubjectiveRepository, "timeline">;
   activities?: {
     listDailyExposureRange(
       startDate: string,
@@ -193,62 +190,53 @@ export class RecoveryTrainingSeriesRepository {
     const streams = new Set(requestedStreams);
     const priorDate = shiftDate(startDate, -1);
     const bodyLookback = shiftDate(startDate, -27);
-    const [
-      healthRows,
-      sleepRows,
-      bodyRows,
-      weightObservations,
-      load,
-      subjective,
-      activityRows,
-      nutritionRows,
-    ] = await Promise.all([
-      streams.has("health")
-        ? requiredSource(this.#sources.dailyMetrics, "health").listRange(startDate, endDate)
-        : [],
-      streams.has("sleep")
-        ? requiredSource(this.#sources.sleep, "sleep").listRange(startDate, endDate)
-        : [],
-      streams.has("body_weight")
-        ? requiredSource(this.#sources.body, "body_weight").listReconciledRange(
-            bodyLookback,
-            endDate,
-          )
-        : [],
-      streams.has("body_weight")
-        ? requiredSource(this.#sources.weightObservations, "body_weight").listRange(
-            startDate,
-            endDate,
-          )
-        : [],
-      streams.has("training_load")
-        ? requiredSource(this.#sources.trainingLoad, "training_load").listRange(
-            priorDate,
-            endDate,
-            filters,
-            "source_context",
-          )
-        : null,
-      streams.has("subjective")
-        ? requiredSource(this.#sources.subjective, "subjective").timeline(startDate, endDate)
-        : null,
-      streams.has("activities")
-        ? requiredSource(this.#sources.activities, "activities").listDailyExposureRange(
-            startDate,
-            endDate,
-            filters,
-          )
-        : [],
-      streams.has("nutrition")
-        ? requiredSource(this.#sources.nutrition, "nutrition").dailyTotalsRange(startDate, endDate)
-        : [],
-    ]);
+    const [healthRows, sleepRows, bodyRows, weightObservations, load, activityRows, nutritionRows] =
+      await Promise.all([
+        streams.has("health")
+          ? requiredSource(this.#sources.dailyMetrics, "health").listRange(startDate, endDate)
+          : [],
+        streams.has("sleep")
+          ? requiredSource(this.#sources.sleep, "sleep").listRange(startDate, endDate)
+          : [],
+        streams.has("body_weight")
+          ? requiredSource(this.#sources.body, "body_weight").listReconciledRange(
+              bodyLookback,
+              endDate,
+            )
+          : [],
+        streams.has("body_weight")
+          ? requiredSource(this.#sources.weightObservations, "body_weight").listRange(
+              startDate,
+              endDate,
+            )
+          : [],
+        streams.has("training_load")
+          ? requiredSource(this.#sources.trainingLoad, "training_load").listRange(
+              priorDate,
+              endDate,
+              filters,
+              "source_context",
+            )
+          : null,
+        streams.has("activities")
+          ? requiredSource(this.#sources.activities, "activities").listDailyExposureRange(
+              startDate,
+              endDate,
+              filters,
+            )
+          : [],
+        streams.has("nutrition")
+          ? requiredSource(this.#sources.nutrition, "nutrition").dailyTotalsRange(
+              startDate,
+              endDate,
+            )
+          : [],
+      ]);
 
     const healthByDate = new Map(healthRows.map((row) => [row.date, row]));
     const sleepByDate = new Map(sleepRows.map((row) => [row.date, row]));
     const bodyByDate = new Map(bodyRows.map((row) => [row.date, row]));
     const loadByDate = new Map(load?.rows.map((row) => [row.date, row]) ?? []);
-    const checkInByDate = new Map(subjective?.checkIns.map((row) => [row.date, row]) ?? []);
     const nutritionByDate = new Map(nutritionRows.map((row) => [row.date, row]));
     const activitiesByDate = new Map(activityRows.map((row) => [row.date, row]));
 
@@ -262,7 +250,7 @@ export class RecoveryTrainingSeriesRepository {
         causality:
           "The series exposes aligned observations for analysis and does not claim that correlations are causal.",
         filter_scope:
-          "Provider and modality filters apply to activity exposure and every training-load channel; recovery, sleep, body, subjective, and nutrition observations are unfiltered.",
+          "Provider and modality filters apply to activity exposure and every training-load channel; recovery, sleep, body, and nutrition observations are unfiltered.",
       },
       rows: dates(startDate, endDate).map((date) => {
         const row: Record<string, unknown> = { date };
@@ -290,24 +278,6 @@ export class RecoveryTrainingSeriesRepository {
         if (streams.has("training_load")) {
           row.training_load = loadByDate.get(date)?.channels ?? null;
           row.previous_day_training_load = loadByDate.get(shiftDate(date, -1))?.channels ?? null;
-        }
-        if (streams.has("subjective")) {
-          const checkIn = checkInByDate.get(date);
-          row.subjective = {
-            status: checkIn ? "observed" : "not_observed",
-            fatigue: {
-              value: null,
-              status: "unavailable",
-              reason: "The canonical subjective schema does not record daily fatigue.",
-            },
-            symptoms: checkIn?.symptoms ?? [],
-            active_injuries:
-              subjective?.injuries.filter(
-                (injury) =>
-                  injury.onset_date <= date &&
-                  (injury.resolved_date === null || injury.resolved_date >= date),
-              ) ?? [],
-          };
         }
         if (streams.has("activities")) {
           const exposure = activitiesByDate.get(date);

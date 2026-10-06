@@ -30,7 +30,6 @@ export const dataTypeEnum = z.enum([
   "metricStream",
   "nutritionDaily",
   "clinicalRecords",
-  "journalEntries",
 ]);
 
 export type DataType = z.infer<typeof dataTypeEnum>;
@@ -72,8 +71,6 @@ export function tableInfo(dataType: DataType): {
       };
     case "clinicalRecords":
       return { table: "fitness.clinical_record", orderColumn: "downloaded_at", idColumn: "id" };
-    case "journalEntries":
-      return { table: "fitness.journal_entry", orderColumn: "date", idColumn: "id" };
   }
 }
 
@@ -206,17 +203,6 @@ function listColumnNames(
         "recorded_at",
         "issued_at",
       ];
-    case "journalEntries":
-      return [
-        "id",
-        "provider_id",
-        "date",
-        "question_slug",
-        "answer_text",
-        "answer_numeric",
-        "impact_score",
-        "created_at",
-      ];
   }
 }
 
@@ -275,8 +261,6 @@ export function getRecordSelectFilterColumns(dataType: DataType): readonly strin
       return ["type", "source_name"];
     case "clinicalRecords":
       return ["clinical_type", "source_name", "fhir_version"];
-    case "journalEntries":
-      return ["question_slug"];
     case "bodyMeasurements":
       return ["source_name"];
     case "metricStream":
@@ -284,11 +268,6 @@ export function getRecordSelectFilterColumns(dataType: DataType): readonly strin
     case "nutritionDaily":
       return [];
   }
-}
-
-/** Whether record filter options for a column come from the journal question join. */
-export function isJournalQuestionSlugFilterColumn(dataType: DataType, column: string): boolean {
-  return dataType === "journalEntries" && column === "question_slug";
 }
 
 /** Whether record filter options are loaded from ClickHouse instead of Postgres. */
@@ -320,7 +299,6 @@ export const PROVIDER_DATA_TABLES = [
   "fitness.clinical_record",
   "fitness.medication_dose_event",
   "fitness.health_event",
-  "fitness.journal_entry",
   "fitness.dexa_scan",
   "fitness.imu_session",
   "fitness.sync_log",
@@ -346,10 +324,6 @@ const retainedMetricStreamDataSchema = z.object({
 const genericRowSchema = z.record(z.string(), z.unknown());
 const availableDataTypeRowSchema = z.object({ data_type: dataTypeEnum });
 const distinctValueSchema = z.object({ value: z.coerce.string() });
-const distinctLabeledValueSchema = z.object({
-  value: z.string(),
-  label: z.string().nullable(),
-});
 
 // ---------------------------------------------------------------------------
 // Repository
@@ -424,11 +398,6 @@ export class ProviderDetailRepository {
 
     const entries = await Promise.all(
       columns.map(async (column) => {
-        if (isJournalQuestionSlugFilterColumn(dataType, column)) {
-          const options = await this.#queryJournalQuestionSlugOptions(providerId);
-          return [column, options] as const;
-        }
-
         const values = await this.#queryDistinctPostgresValues(
           tableInfo(dataType).table,
           providerId,
@@ -473,9 +442,6 @@ export class ProviderDetailRepository {
               UNION ALL
               SELECT 'clinicalRecords'::text
               WHERE EXISTS (SELECT 1 FROM fitness.clinical_record WHERE user_id = ${this.#userId} AND provider_id = ${providerId})
-              UNION ALL
-              SELECT 'journalEntries'::text
-              WHERE EXISTS (SELECT 1 FROM fitness.journal_entry WHERE user_id = ${this.#userId} AND provider_id = ${providerId})
             ) AS available_data_types`,
       ),
       this.#clickHouse.query(
@@ -591,28 +557,6 @@ export class ProviderDetailRepository {
           LIMIT ${MAX_DISTINCT_FILTER_OPTIONS}`,
     );
     return rows.map((row) => row.value);
-  }
-
-  async #queryJournalQuestionSlugOptions(
-    providerId: string,
-  ): Promise<ProviderDetailFilterOption[]> {
-    const rows = await executeWithSchema(
-      this.#db,
-      distinctLabeledValueSchema,
-      sql`SELECT DISTINCT je.question_slug AS value, jq.display_name AS label
-          FROM fitness.journal_entry je
-          LEFT JOIN fitness.journal_question jq ON jq.slug = je.question_slug
-          WHERE je.user_id = ${this.#userId}
-            AND je.provider_id = ${providerId}
-            AND je.question_slug IS NOT NULL
-          ORDER BY jq.display_name NULLS LAST, je.question_slug
-          LIMIT ${MAX_DISTINCT_FILTER_OPTIONS}`,
-    );
-
-    return rows.map((row) => ({
-      value: row.value,
-      ...(row.label ? { label: row.label } : {}),
-    }));
   }
 
   async #getClickHouseRecordFilterOptions(
