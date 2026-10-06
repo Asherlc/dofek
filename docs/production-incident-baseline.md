@@ -30341,3 +30341,11 @@ mobile preview upload succeeded. No production impact was observed. Remote
 CI remains unresolved; keep the PR pending until required checks finish.
 No retries, timeout changes, or workflow bypasses were added. For future queue
 delays, check GitHub's published status before investigating repository code.
+
+## 2026-10-05 — Reports-removal merge blocked by newly flagged transitive dependencies
+
+- **Status:** Remediated in the lockfile and validated by the local production dependency audit; hosted validation is tracked by [PR #2887 checks](https://github.com/Asherlc/dofek/pull/2887/checks).
+- **Symptoms / impact:** The reports-removal PR could not merge because `Test / Dependency Audit` failed. No production exploit or user impact was established.
+- **Evidence / root cause:** In [audit job 112066222206](https://github.com/Asherlc/dofek/actions/runs/37400125687/job/112066222206), `pnpm audit --prod --audit-level=high --ignore-registry-errors` first reported critical Seroval thenable assimilation, followed by critical proxy-address spoofing and high-severity Seroval/source-map denial of service; the command exited 1. The lockfile resolved `seroval@1.5.5`, `proxy-addr@2.0.7`, and `source-map-js@1.2.1`, all within the affected ranges in [GHSA-p6vx-979v-rg4c](https://github.com/advisories/GHSA-p6vx-979v-rg4c), [GHSA-jqcg-44mw-7w3h](https://github.com/advisories/GHSA-jqcg-44mw-7w3h), [GHSA-jp82-f5mq-hwhp](https://github.com/advisories/GHSA-jp82-f5mq-hwhp), and [GHSA-68fv-2mgg-jv7q](https://github.com/advisories/GHSA-68fv-2mgg-jv7q).
+- **Fix / validation:** Targeted `pnpm update -r seroval proxy-addr source-map-js --lockfile-only --ignore-scripts` resolved the existing dependency ranges to 1.6.8, 2.0.8, and 1.2.2 respectively. The diff changes only those three dependency resolutions and their consumers; no override, audit ignore, retry, or threshold change was added. A normal frozen-lockfile install followed. The same production audit exited 0 after the update; existing audit exceptions remain unchanged.
+- **Remaining risk / follow-up:** Require hosted checks before merge and deploy the validated lockfile with the release. When audits change between successful runs, inspect the new advisory and locked transitive version before changing CI policy.
