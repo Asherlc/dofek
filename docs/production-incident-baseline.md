@@ -30385,3 +30385,42 @@ After merging current main into the PR branch, three parallel pnpm validation co
 The [Dependency Audit job](https://github.com/Asherlc/dofek/actions/runs/37398480415/job/112060885281) failed at `pnpm audit --prod --audit-level=high --ignore-registry-errors`. Its first fatal finding was the critical [Seroval Promise deserialization advisory](https://github.com/advisories/GHSA-p6vx-979v-rg4c). The inherited lockfile resolved Seroval 1.5.5, proxy-addr 2.0.7, and source-map-js 1.2.1, also affected by [Seroval TypedArray memory exhaustion](https://github.com/advisories/GHSA-jp82-f5mq-hwhp), [proxy-addr trust-subnet IP spoofing](https://github.com/advisories/GHSA-jqcg-44mw-7w3h), and [source-map-js event-loop denial of service](https://github.com/advisories/GHSA-68fv-2mgg-jv7q). These findings blocked the merge; no production exploitation was observed or investigated during this CI diagnosis.
 
 Updated only those transitive lockfile resolutions to the latest stable releases available during investigation: Seroval 1.6.8, proxy-addr 2.0.8, and source-map-js 1.2.2. All fit existing upstream dependency ranges. The exact audit command now exits successfully; existing exclusions remain unchanged and no override, retry, or timeout was added. Remaining findings are below the configured threshold or covered by the pre-existing documented backports. Local validation also passed all 19,392 unit/mobile tests (20 skipped), root/server/web/mobile typechecks, sandbox lint, the web build, and frozen-lockfile installation. The [remote Dependency Audit rerun](https://github.com/Asherlc/dofek/actions/runs/37399594471) passed on commit 151ccdf41. Subsequent integration of main preserved its tracking removal and this PR’s Data Quality deletions; both client typechecks and 43 focused navigation/deployment tests passed. Remaining required CI validation is pending. For similar failures, use the `gh-fix-ci` skill to capture the first fatal finding, inspect the dependency path and upstream range, and prefer a targeted lockfile update when a patched release fits.
+
+
+## 2026-10-05 — Dependabot update validation and local Docker capacity
+
+Several pending dependency updates inherited a date-sensitive power test. The
+[Unit Tests job](https://github.com/Asherlc/dofek/actions/runs/36647977811/job/109677446817)
+failed with `AssertionError: expected null to be 190` in the raw-power fallback
+fixture: its fixed activity date fell outside the current-power window. Current
+main already freezes that fixture's clock; incorporating main passed all 42
+power-repository tests locally and preserved its patched transitive dependencies.
+
+The [AWS update](https://github.com/Asherlc/dofek/pull/2848) additionally failed
+root typechecking at `src/export-storage.ts:59` and
+`src/file-upload-storage.ts:86`: independently updated SDK packages resolved
+incompatible Smithy types. Updating the S3 client and request presigner together
+addresses their shared type contract. The
+[table update](https://github.com/Asherlc/dofek/pull/2850) failed the web build
+because `getCoreRowModel` and `useReactTable` are no longer exported in v9;
+its caller requires the documented [v9 migration](https://tanstack.com/table/latest/docs/guide/migrating).
+The [Expo core](https://github.com/Asherlc/dofek/pull/2845) and
+[maps](https://github.com/Asherlc/dofek/pull/2851) updates failed
+`pnpm expo install --check` against the SDK 57 version matrix. The user approved
+a coordinated [SDK 58 beta migration](https://expo.dev/changelog/sdk-58-beta);
+its native compatibility and CI validation remain required before merge.
+
+Local full lint initially failed because the required ClickHouse service had
+not started. The exact prerequisite command, `pnpm compose:up`, then failed
+with `all predefined address pools have been fully subnetted`. Inspection found
+six unused workspace networks, each with zero attached containers. With explicit
+user approval, each was rechecked immediately before removal; no container or
+volume was deleted. The same Compose command then completed successfully.
+Docker documents [network inspection](https://docs.docker.com/reference/cli/docker/network/inspect/)
+and [network removal](https://docs.docker.com/reference/cli/docker/network/rm/).
+
+Production was unchanged during diagnosis. No retry, timeout, audit exclusion,
+or CI gate was relaxed. Remaining work is fresh CI and native validation of the
+updated PR heads. For future dependency batches, inspect the first fatal log,
+check whether main already contains its direct fix, and verify SDK version
+matrices before attempting independent native-package updates.
