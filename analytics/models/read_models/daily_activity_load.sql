@@ -38,6 +38,7 @@ activity_load AS (
         {% endif %}
     WHERE activity_summary.is_deleted = 0
         AND activity_summary.ended_at IS NOT NULL
+        AND activity_summary.ended_at > activity_summary.started_at
         AND activity_summary.avg_hr IS NOT NULL
 ),
 
