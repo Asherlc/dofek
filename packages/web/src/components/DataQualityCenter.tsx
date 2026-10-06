@@ -19,7 +19,6 @@ const reviewRoutes = {
   nutrition: "/nutrition",
   activities: "/activities",
   dashboard: "/dashboard",
-  journal: "/tracking",
 } as const satisfies Record<DataQualityReviewDestination, string>;
 
 function statusStyle(status: DataQualityCheck["status"]): CSSProperties {

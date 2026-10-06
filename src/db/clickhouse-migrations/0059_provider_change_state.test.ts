@@ -66,7 +66,7 @@ describe("0059_provider_change_state", () => {
     expect(migration.id).toBe("0059_provider_change_state");
     expect(sql).toContain("CREATE TABLE IF NOT EXISTS analytics.provider_change_state");
     for (const [index, source] of sources.entries()) {
-      const statement = migration.statements[index + 1];
+      const statement = migration.statements[index + 2];
 
       expect(statement).toContain(
         `CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.provider_change_from_${source.viewName}`,

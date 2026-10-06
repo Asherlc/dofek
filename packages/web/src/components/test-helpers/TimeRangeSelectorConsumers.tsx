@@ -4,21 +4,15 @@ import { type ComponentType, type ReactNode, useState } from "react";
 import { expect, vi } from "vitest";
 import { BodyDaysContext } from "../../lib/bodyDaysContext.ts";
 import { SELECTED_RANGE_QUERY_REGISTRY } from "../../lib/selectedRangeQueryRegistry.test-helper.ts";
-import { emptyJournalTrendEvidence } from "../journal-trend-test-fixtures.ts";
 
 const state: {
   queryCalls: Array<{ name: string; input: unknown }>;
-  routeComponents: Record<string, ComponentType>;
 } = {
   queryCalls: [],
-  routeComponents: {},
 };
 
 vi.mock("@tanstack/react-router", () => ({
-  createFileRoute: (path: string) => (config: { component: ComponentType }) => {
-    state.routeComponents[path] = config.component;
-    return {};
-  },
+  createFileRoute: () => () => ({}),
 }));
 
 vi.mock("../../hooks/useTodayQueryDate.ts", () => ({
@@ -33,12 +27,6 @@ vi.mock("../../lib/unitContext.ts", () => ({
 }));
 
 vi.mock("../AdaptiveTdeeChart.tsx", () => ({ AdaptiveTdeeChart: () => <div /> }));
-vi.mock("../BehaviorImpactChart.tsx", async () => {
-  const actual = await vi.importActual<typeof import("../BehaviorImpactChart.tsx")>(
-    "../BehaviorImpactChart.tsx",
-  );
-  return actual;
-});
 vi.mock("../BodyRecompositionChart.tsx", () => ({ BodyRecompositionChart: () => <div /> }));
 vi.mock("../ChartDescriptionTooltip.tsx", () => ({ ChartDescriptionTooltip: () => null }));
 vi.mock("../CorrelationCard.tsx", () => ({
@@ -126,9 +114,6 @@ vi.mock("../../lib/trpc.ts", () => {
           status: { invalidate: vi.fn() },
         },
       }),
-      behaviorImpact: {
-        impactSummary: recordQuery("behaviorImpact.impactSummary"),
-      },
       bodyAnalytics: {
         recomposition: recordQuery("bodyAnalytics.recomposition"),
         weightOverview: recordQuery("bodyAnalytics.weightOverview", {
@@ -155,10 +140,6 @@ vi.mock("../../lib/trpc.ts", () => {
       },
       insights: {
         compute: recordQuery("insights.compute"),
-      },
-      journal: {
-        entries: recordQuery("journal.entries"),
-        trends: recordQuery("journal.trends", emptyJournalTrendEvidence),
       },
       nutritionAnalytics: {
         adaptiveTdee: recordQuery("nutritionAnalytics.adaptiveTdee"),
@@ -217,10 +198,6 @@ export function expectRegistryCovered(registryKey: keyof typeof SELECTED_RANGE_Q
   for (const queryName of SELECTED_RANGE_QUERY_REGISTRY[registryKey]) {
     expect(calledNames.has(queryName)).toBe(true);
   }
-}
-
-export function getCapturedRouteComponent(path: string): ComponentType | undefined {
-  return state.routeComponents[path];
 }
 
 export function BodyHarness({ BodyPage }: { BodyPage: ComponentType }) {

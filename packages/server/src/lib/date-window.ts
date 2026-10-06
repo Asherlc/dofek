@@ -7,11 +7,6 @@ export type RangeOperator = ">" | ">=";
 
 export const SELECTED_CHART_RANGE_ENDPOINTS = {
   "activity.list": { defaultDays: 30, routerFile: "activity.ts", input: "custom" },
-  "behaviorImpact.impactSummary": {
-    defaultDays: 90,
-    routerFile: "behavior-impact.ts",
-    input: "days",
-  },
   "bodyAnalytics.recomposition": {
     defaultDays: 180,
     routerFile: "body-analytics.ts",
@@ -90,8 +85,6 @@ export const SELECTED_CHART_RANGE_ENDPOINTS = {
   "hiking.gradeAdjustedPace": { defaultDays: 90, routerFile: "hiking.ts", input: "days" },
   "hiking.walkingBiomechanics": { defaultDays: 90, routerFile: "hiking.ts", input: "days" },
   "insights.compute": { defaultDays: 90, routerFile: "insights.ts", input: "dateRange" },
-  "journal.entries": { defaultDays: 30, routerFile: "journal.ts", input: "days" },
-  "journal.trends": { defaultDays: 30, routerFile: "journal.ts", input: "dateRange" },
   "nutritionAnalytics.adaptiveTdee": {
     defaultDays: 90,
     routerFile: "nutrition-analytics.ts",
