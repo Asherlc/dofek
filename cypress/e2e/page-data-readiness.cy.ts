@@ -3,13 +3,21 @@ describe("Page data readiness", () => {
   afterEach(() => cy.cleanTestData());
 
   it("waits for the delayed required result and the visible genuine empty state", () => {
+    let releaseResponse: () => void;
+    const responseGate = new Promise<void>((resolve) => {
+      releaseResponse = resolve;
+    });
     cy.intercept("POST", "**/api/trpc/*heartRate.dailyBySource*", (request) => {
-      request.continue((response) => response.setDelay(1200));
+      request.continue((response) => {
+        response.setDelay(1200);
+        return responseGate;
+      });
     }).as("heartRate");
     cy.visit("/body/heart-rate");
     cy.contains("Daily Heart Rate by Source").should("be.visible");
     cy.window().then((window) => {
       expect(window.performance.getEntriesByName("dofek.page.data-ready")).to.have.length(0);
+      releaseResponse();
     });
     cy.wait("@heartRate");
     cy.contains("No heart rate data for this day").should("be.visible");
@@ -37,19 +45,34 @@ describe("Page data readiness", () => {
   });
 
   it("records a separate date-filter generation after navigation completes", () => {
+    let releaseResponse: () => void;
+    let responseGate = new Promise<void>((resolve) => {
+      releaseResponse = resolve;
+    });
     cy.intercept("POST", "**/api/trpc/*heartRate.dailyBySource*", (request) => {
-      request.continue((response) => response.setDelay(1200));
+      request.continue((response) => {
+        response.setDelay(1200);
+        return responseGate;
+      });
     }).as("heartRate");
     cy.visit("/body/heart-rate");
+    cy.contains("Daily Heart Rate by Source").should("be.visible");
+    cy.then(() => releaseResponse());
     cy.wait("@heartRate");
     cy.contains("No heart rate data for this day").should("be.visible");
     cy.window().should((window) =>
       expect(window.performance.getEntriesByName("dofek.page.data-ready")).to.have.length(1),
     );
+    cy.then(() => {
+      responseGate = new Promise<void>((resolve) => {
+        releaseResponse = resolve;
+      });
+    });
     cy.get('button[aria-label="Previous day"]').click();
-    cy.window().then((window) =>
-      expect(window.performance.getEntriesByName("dofek.page.data-ready")).to.have.length(1),
-    );
+    cy.window().then((window) => {
+      expect(window.performance.getEntriesByName("dofek.page.data-ready")).to.have.length(1);
+      releaseResponse();
+    });
     cy.wait("@heartRate");
     cy.contains("No heart rate data for this day").should("be.visible");
     cy.window().should((window) => {

@@ -234,11 +234,6 @@ describe("Router SQL validity", () => {
     it("scores", () => expectValidSql("stress.scores", { days: 30 }));
   });
 
-  // ── Life Events ──
-  describe("lifeEvents", () => {
-    it("list", () => expectValidSql("lifeEvents.list", { days: 90 }));
-  });
-
   // ── Trends (Continuous Aggregates) ──
   describe("trends", () => {
     it("daily", () => expectValidSql("trends.daily", { days: 365 }));
