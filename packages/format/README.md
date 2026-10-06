@@ -15,6 +15,7 @@ The `UnitConverter` class provides a unified interface for converting and labeli
 - **Robust Parsing**: `parseValidDate` normalizes Postgres-style timestamps (space-separated) for JS engines like Hermes (React Native) and older Safari that only support ISO 8601.
 - **Date Labels**: `formatDateShort`, `formatDateMedium`, `formatDateLong`, `formatMonthYear`, and `formatWeekdayShort` provide shared human-readable date labels. Use `formatDateYmd` for local query dates and `formatDateYmdInTimeZone` when the date key must be computed in a named timezone.
 - **Time Labels**: `formatDateTime`, `formatTimeOnly`, `formatWeekdayTime`, and the legacy `formatTime` wrapper provide shared human-readable time labels.
+- **Localization**: Date/time labels follow the device locale and time zone, including its 12/24-hour clock convention. Pass `locale` or `timeZone` options for an explicit display context. API date keys remain `YYYY-MM-DD`. This uses the standard [Intl.DateTimeFormat locale and time-zone defaults](https://tc39.es/ecma402/#sec-createdatetimeformat).
 - **Relative Time**: `formatRelativeTime` provides human-readable strings like "just now", "5m ago", "2h ago", and "3d ago".
 - **Durations**: `formatDurationMinutes`, `formatDurationSeconds`, and `formatDurationRange` format time spans as "Xh Ym", "Xm", or "Xs".
 - **Hour Formatting**: `formatHour` converts decimal hours to localized 12/24-hour strings, normalizing Unicode non-breaking spaces for consistent display.
@@ -39,3 +40,15 @@ These helpers use `Intl.NumberFormat` with fixed fraction options and `style: "u
 ### Activity Data States (`activity-data-state.ts`)
 
 Server-authored activity values use a discriminated state: `available`, `missing`, `stale`, `failed`, `processing`, or `conflicting`. Every non-available state carries a reason so clients can explain why a value is not displayed instead of substituting zero, a dash, or an empty value.
+
+### Climbing Context (`climbing-context.ts`)
+
+Formats ordered location paths, recorded methods/results, and wall angles for
+web and mobile. Unknown angle units remain labeled unknown; result labels do
+not compute send status or attempt counts. See the
+[climbing context design](../../docs/superpowers/specs/2026-09-29-climbing-context-design.md).
+
+The [climbing result formatter](src/format.ts) lets a successful Onsight or Flash
+badge convey the result without an attempt summary. Redpoint, Pinkpoint, and
+Repeat badges convey the send while the summary retains attempt information.
+Other results keep explicit labels based on the outcome and count supplied by the server.

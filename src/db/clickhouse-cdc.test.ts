@@ -166,7 +166,6 @@ describe("PeerDB ClickHouse CDC setup", () => {
     "food_entry",
     "health_event",
     "clinical_record",
-    "journal_entry",
     "provider",
     "provider_connection",
     "provider_priority",
@@ -759,11 +758,6 @@ describe("PeerDB ClickHouse CDC setup", () => {
         exclude: [],
       },
       {
-        sourceTableIdentifier: "fitness.journal_entry",
-        destinationTableIdentifier: "journal_entry",
-        exclude: [],
-      },
-      {
         sourceTableIdentifier: "fitness.processing_flow_marker",
         destinationTableIdentifier: "processing_flow_marker_provider_inventory",
         exclude: [],
@@ -1290,7 +1284,6 @@ describe("PeerDB ClickHouse CDC setup", () => {
       "TRUNCATE TABLE IF EXISTS postgres_fitness.food_entry",
       "TRUNCATE TABLE IF EXISTS postgres_fitness.health_event",
       "TRUNCATE TABLE IF EXISTS postgres_fitness.clinical_record",
-      "TRUNCATE TABLE IF EXISTS postgres_fitness.journal_entry",
       "TRUNCATE TABLE IF EXISTS postgres_fitness.processing_flow_marker_provider_inventory",
       "TRUNCATE TABLE IF EXISTS postgres_fitness.sensor_provider_priority",
       "TRUNCATE TABLE IF EXISTS postgres_fitness.sensor_device_priority",

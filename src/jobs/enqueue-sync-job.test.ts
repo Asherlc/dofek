@@ -37,6 +37,35 @@ describe("enqueueSyncJob", () => {
     vi.useRealTimers();
   });
 
+  it("retains a terminal coordinator child even when a cooldown exists", async () => {
+    const existing = {
+      id: "child",
+      getState: vi.fn().mockResolvedValue("completed"),
+      remove: vi.fn(),
+    };
+    mockGetJob.mockResolvedValue(existing);
+    mockGetActive.mockResolvedValue({
+      providerId: "garmin",
+      scope: "provider",
+      userId: null,
+      expiresAt: new Date("2026-06-02T12:10:00Z"),
+    });
+    const result = await enqueueSyncJob(
+      "garmin",
+      {
+        userId: "user-1",
+        providerId: "garmin",
+        sinceIso: "2026-06-01T00:00:00.000Z",
+        untilIso: "2026-06-02T23:59:59.999Z",
+      },
+      { coordinator: { id: "coordinator-1", queueQualifiedName: "bull:sync" } },
+    );
+    expect(result).toBe(existing);
+    expect(mockGetJob).toHaveBeenCalledWith(expect.stringMatching(/^sync-dispatch-/));
+    expect(mockProviderQueueAdd).not.toHaveBeenCalled();
+    expect(existing.remove).not.toHaveBeenCalled();
+  });
+
   it("enqueues immediately when no cooldown is active", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-09-21T06:30:00.000Z"));

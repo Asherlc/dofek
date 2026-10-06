@@ -38,7 +38,6 @@ export function SleepNeedCard({ data, loading }: SleepNeedCardProps) {
     return (
       <div className="card p-6">
         <h3 className="text-muted text-sm font-medium mb-2">Sleep Need Tonight</h3>
-        <p className="text-subtle text-xs mb-2">{data.epistemicStatus.label}</p>
         <p className="text-lg text-dim">{data.message}</p>
         {data.availability === "insufficient_data" && (
           <p className="text-subtle text-sm mt-2">{data.nextAction}</p>
@@ -136,31 +135,30 @@ export function SleepNeedCard({ data, loading }: SleepNeedCardProps) {
         </a>
       </div>
 
-      {/* Breakdown */}
-      <div className="flex gap-4 mb-4 text-xs">
-        <div className="flex-1 bg-surface-solid rounded-lg p-2">
-          <p className="text-subtle">{data.estimateMetadata.componentLabels.baseline}</p>
-          <p className="text-foreground font-medium">
-            {formatDurationMinutes(data.baselineMinutes)}
-          </p>
-        </div>
-        <div className="flex-1 bg-surface-solid rounded-lg p-2">
-          <p className="text-subtle">{data.estimateMetadata.componentLabels.strainDebt}</p>
-          <p className="text-foreground font-medium">
-            +{formatDurationMinutes(data.strainDebtMinutes)}
-          </p>
-        </div>
-        <div className="flex-1 bg-surface-solid rounded-lg p-2">
-          <p className="text-subtle">{data.estimateMetadata.componentLabels.debtRecovery}</p>
-          <p className="text-foreground font-medium">
-            +{formatDurationMinutes(data.debtRecoveryMinutes)}
-          </p>
-        </div>
-      </div>
-
-      <p className="mb-3 text-xs text-muted">{data.estimateMetadata.limitationLabel}</p>
-      <details className="mb-4 space-y-1 text-xs text-muted">
+      <p className="mb-4 text-xs text-muted">{data.estimateMetadata.limitationLabel}</p>
+      <details className="mb-4 space-y-3 text-xs text-muted">
         <summary className="cursor-pointer">How this is calculated</summary>
+        <div className="flex gap-4 mb-4 text-xs">
+          <div className="flex-1 bg-surface-solid rounded-lg p-2">
+            <p className="text-subtle">{data.estimateMetadata.componentLabels.baseline}</p>
+            <p className="text-foreground font-medium">
+              {formatDurationMinutes(data.baselineMinutes)}
+            </p>
+          </div>
+          <div className="flex-1 bg-surface-solid rounded-lg p-2">
+            <p className="text-subtle">{data.estimateMetadata.componentLabels.strainDebt}</p>
+            <p className="text-foreground font-medium">
+              +{formatDurationMinutes(data.strainDebtMinutes)}
+            </p>
+          </div>
+          <div className="flex-1 bg-surface-solid rounded-lg p-2">
+            <p className="text-subtle">{data.estimateMetadata.componentLabels.debtRecovery}</p>
+            <p className="text-foreground font-medium">
+              +{formatDurationMinutes(data.debtRecoveryMinutes)}
+            </p>
+          </div>
+        </div>
+
         <p>{data.estimateMetadata.methodLabel}</p>
         <p>{data.estimateMetadata.basisLabel}</p>
         <p>{data.estimateMetadata.coverageLabel}</p>

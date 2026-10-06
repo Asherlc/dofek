@@ -1,6 +1,4 @@
--- Canonical definition of the fitness.provider_stats materialized view.
--- This precomputes per-provider record counts so sync.providerStats can do a
--- fast user-scoped lookup instead of scanning many tables on demand.
+-- Canonical provider record-count view.
 
 CREATE OR REPLACE VIEW fitness.provider_stats AS
 WITH providers AS (
@@ -20,8 +18,6 @@ WITH providers AS (
   SELECT DISTINCT user_id, provider_id FROM fitness.v_nutrition_provider_daily
   UNION
   SELECT DISTINCT user_id, provider_id FROM fitness.clinical_record
-  UNION
-  SELECT DISTINCT user_id, provider_id FROM fitness.journal_entry
 )
 SELECT
   p.user_id,
@@ -34,8 +30,7 @@ SELECT
   COALESCE(he.cnt, 0)::bigint AS health_events,
   0::bigint AS metric_stream,
   COALESCE(nd.cnt, 0)::bigint AS nutrition_daily,
-  COALESCE(cr.cnt, 0)::bigint AS clinical_records,
-  COALESCE(je.cnt, 0)::bigint AS journal_entries
+  COALESCE(cr.cnt, 0)::bigint AS clinical_records
 FROM providers p
 LEFT JOIN (
   SELECT user_id, provider_id, count(*) AS cnt
@@ -75,10 +70,6 @@ LEFT JOIN (
   FROM fitness.clinical_record
   GROUP BY user_id, provider_id
 ) cr ON cr.user_id = p.user_id AND cr.provider_id = p.provider_id
-LEFT JOIN (
-  SELECT user_id, provider_id, count(*) AS cnt
-  FROM fitness.journal_entry
-  GROUP BY user_id, provider_id
-) je ON je.user_id = p.user_id AND je.provider_id = p.provider_id;
+;
 
 --> statement-breakpoint

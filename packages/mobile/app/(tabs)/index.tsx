@@ -258,7 +258,6 @@ export default function TodayScreen() {
             .easing(Easing.bezier(0.16, 1, 0.3, 1))}
         >
           <Card title="Sleep Data Needed">
-            <Text style={styles.sleepNeedMissing}>{sleepNeed.epistemicStatus?.label}</Text>
             <Text style={styles.sleepNeedMissing}>{sleepNeed.message}</Text>
           </Card>
         </Animated.View>
@@ -315,49 +314,18 @@ export default function TodayScreen() {
       )}
 
       {/* Sleep estimate */}
-      {!isLoading && !isSleepDataMissing && (sleepNeed || !lastNight) && (
+      {!isLoading && !isSleepDataMissing && sleepNeed != null && (
         <Animated.View
           entering={FadeInUp.delay(320)
             .duration(duration.slow)
             .easing(Easing.bezier(0.16, 1, 0.3, 1))}
         >
           <Card title="Sleep Estimate">
-            {sleepNeed == null ? (
-              <Text style={styles.noDataText}>No sleep data</Text>
-            ) : sleepNeed.availability === "available" ? (
+            {sleepNeed.availability === "available" ? (
               <>
                 <Text style={styles.sleepNeedTotal}>
                   {`${sleepNeed.estimateMetadata.valueQualifier} ${formatDurationMinutes(sleepNeed.totalNeedMinutes)}`}
                 </Text>
-                <Text style={styles.sleepNeedSubtitle}>
-                  {sleepNeed.estimateMetadata.summaryLabel}
-                </Text>
-                <View style={styles.sleepNeedBreakdown}>
-                  <View style={styles.sleepNeedRow}>
-                    <Text style={styles.sleepNeedLabel}>
-                      {sleepNeed.estimateMetadata.componentLabels.baseline}
-                    </Text>
-                    <Text style={styles.sleepNeedValue}>
-                      {formatDurationMinutes(sleepNeed.baselineMinutes)}
-                    </Text>
-                  </View>
-                  <View style={styles.sleepNeedRow}>
-                    <Text style={styles.sleepNeedLabel}>
-                      {sleepNeed.estimateMetadata.componentLabels.strainDebt}
-                    </Text>
-                    <Text style={styles.sleepNeedValue}>
-                      +{formatDurationMinutes(sleepNeed.strainDebtMinutes)}
-                    </Text>
-                  </View>
-                  <View style={styles.sleepNeedRow}>
-                    <Text style={styles.sleepNeedLabel}>
-                      {sleepNeed.estimateMetadata.componentLabels.debtRecovery}
-                    </Text>
-                    <Text style={styles.sleepNeedValue}>
-                      +{formatDurationMinutes(sleepNeed.debtRecoveryMinutes)}
-                    </Text>
-                  </View>
-                </View>
                 <Text style={styles.sleepNeedMetadataText}>
                   {sleepNeed.estimateMetadata.limitationLabel}
                 </Text>
@@ -370,6 +338,32 @@ export default function TodayScreen() {
                 </TouchableOpacity>
                 {sleepCalculationOpen ? (
                   <View style={styles.sleepNeedMetadata}>
+                    <View style={styles.sleepNeedBreakdown}>
+                      <View style={styles.sleepNeedRow}>
+                        <Text style={styles.sleepNeedLabel}>
+                          {sleepNeed.estimateMetadata.componentLabels.baseline}
+                        </Text>
+                        <Text style={styles.sleepNeedValue}>
+                          {formatDurationMinutes(sleepNeed.baselineMinutes)}
+                        </Text>
+                      </View>
+                      <View style={styles.sleepNeedRow}>
+                        <Text style={styles.sleepNeedLabel}>
+                          {sleepNeed.estimateMetadata.componentLabels.strainDebt}
+                        </Text>
+                        <Text style={styles.sleepNeedValue}>
+                          +{formatDurationMinutes(sleepNeed.strainDebtMinutes)}
+                        </Text>
+                      </View>
+                      <View style={styles.sleepNeedRow}>
+                        <Text style={styles.sleepNeedLabel}>
+                          {sleepNeed.estimateMetadata.componentLabels.debtRecovery}
+                        </Text>
+                        <Text style={styles.sleepNeedValue}>
+                          +{formatDurationMinutes(sleepNeed.debtRecoveryMinutes)}
+                        </Text>
+                      </View>
+                    </View>
                     <Text style={styles.sleepNeedMetadataText}>
                       {sleepNeed.estimateMetadata.methodLabel}
                     </Text>
@@ -384,7 +378,6 @@ export default function TodayScreen() {
               </>
             ) : (
               <>
-                <Text style={styles.sleepNeedMissing}>{sleepNeed.epistemicStatus.label}</Text>
                 <Text style={styles.noDataText}>{sleepNeed.message}</Text>
                 <Text style={styles.sleepNeedMissing}>{sleepNeed.nextAction}</Text>
               </>
@@ -588,11 +581,6 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: colors.text,
     fontVariant: ["tabular-nums"],
-  },
-  sleepNeedSubtitle: {
-    fontSize: 13,
-    color: colors.textSecondary,
-    marginTop: -8,
   },
   sleepNeedMissing: {
     fontSize: 15,

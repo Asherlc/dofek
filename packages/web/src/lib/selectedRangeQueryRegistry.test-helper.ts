@@ -1,5 +1,4 @@
 export const SELECTED_RANGE_QUERY_REGISTRY = {
-  behaviorImpact: ["behaviorImpact.impactSummary"],
   body: [
     "dailyMetrics.trends",
     "dailyMetrics.list",
@@ -28,8 +27,6 @@ export const SELECTED_RANGE_QUERY_REGISTRY = {
     "hiking.walkingBiomechanics",
     "hiking.activityComparison",
   ],
-  journalLog: ["journal.entries"],
-  journalTrends: ["journal.trends"],
   nutritionAnalytics: [
     "nutritionAnalytics.micronutrientAdequacyV2",
     "nutritionAnalytics.adaptiveTdee",

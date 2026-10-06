@@ -18,6 +18,7 @@ import {
   ScrollView,
   Text,
   TouchableOpacity,
+  useWindowDimensions,
   View,
 } from "react-native";
 import { OperationProgressBar } from "../../components/OperationProgressBar";
@@ -93,6 +94,7 @@ function selectStrongWeightUnit(preferredUnit: StrongWeightUnit): Promise<Strong
 }
 
 export default function ProvidersScreen() {
+  const { fontScale } = useWindowDimensions();
   const router = useRouter();
   const { serverUrl, sessionToken } = useAuth();
   const params = useLocalSearchParams<{ sharedFile?: string | string[] }>();
@@ -791,14 +793,16 @@ export default function ProvidersScreen() {
         />
       }
     >
-      {enabledProviders.length > 0 && (
-        <SyncAllControls
-          busy={anySyncing}
-          errorMessage={syncAllError}
-          onRecentSync={() => void handleSyncAll(false)}
-          onFullSync={() => void handleSyncAll(true)}
-        />
-      )}
+      <View testID="provider-sync-controls-region" style={{ minHeight: 140 * fontScale }}>
+        {enabledProviders.length > 0 && (
+          <SyncAllControls
+            busy={anySyncing}
+            errorMessage={syncAllError}
+            onRecentSync={() => void handleSyncAll(false)}
+            onFullSync={() => void handleSyncAll(true)}
+          />
+        )}
+      </View>
 
       <View style={styles.shareInfoCard}>
         <Text style={styles.shareInfoTitle}>Import from Share</Text>
@@ -839,11 +843,13 @@ export default function ProvidersScreen() {
       </View>
 
       {/* Data Sources */}
-      <ProcessingStatusWidget
-        data={processingStatus.data}
-        error={processingStatus.error}
-        loading={processingStatus.isLoading}
-      />
+      <View testID="provider-processing-region" style={{ minHeight: 64 * fontScale }}>
+        <ProcessingStatusWidget
+          data={processingStatus.data}
+          error={processingStatus.error}
+          loading={processingStatus.isLoading}
+        />
+      </View>
       <Text style={styles.sectionTitle}>Data Sources</Text>
       {activeSyncs.error ? (
         <QueryStatePanel

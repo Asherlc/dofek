@@ -618,7 +618,7 @@ export class AnalyticalTrainingLoadRepository {
                 SUM(entry.attempt_count)::int AS attempts,
                 COUNT(*)::int AS entries,
                 COUNT(entry.attempt_count)::int AS entries_with_attempts
-              FROM fitness.climbing_entry AS entry
+              FROM fitness.v_climbing_entry AS entry
               WHERE entry.activity_id = ANY(activity.member_activity_ids)
             ) AS climb ON TRUE
             LEFT JOIN LATERAL (
@@ -786,7 +786,7 @@ export class AnalyticalTrainingLoadRepository {
                 AND activity.ended_at > activity.started_at)::text AS first_session_rpe_date,
             min(${postgresLocalDate})
               FILTER (WHERE EXISTS (
-                SELECT 1 FROM fitness.climbing_entry AS entry
+                SELECT 1 FROM fitness.v_climbing_entry AS entry
                 WHERE entry.activity_id = ANY(activity.member_activity_ids)
               ))::text AS first_climbing_date,
             min(${postgresLocalDate})

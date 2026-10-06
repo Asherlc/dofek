@@ -146,6 +146,7 @@ export const Unknown: Story = {
 
 export const BlockedBaseline: Story = {
   args: {
+    baselineRelative: [],
     metrics: [
       hrvMetric({
         value: null,
@@ -158,6 +159,7 @@ export const BlockedBaseline: Story = {
         statusToken: "insufficient_data",
         statusColor: "muted",
         statusLabel: "Not enough data",
+        evaluationRule: "Needs a current value, baseline, and measurable day-to-day variation",
         explanation: "Not enough varied data yet to compare this value with your usual range.",
         baselineProgress: {
           requiredObservationDays: 3,

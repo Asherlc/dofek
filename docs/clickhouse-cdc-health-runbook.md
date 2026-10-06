@@ -146,7 +146,7 @@ ingestion.
    | PeerDB mirror | Postgres source tables | ClickHouse destination tables |
    | --- | --- | --- |
    | `dofek_fitness_raw_analytics` | `fitness.activity`, `fitness.sleep_session`, `fitness.sleep_stage`, `fitness.daily_metrics`, `fitness.provider`, `fitness.provider_connection`, `fitness.provider_priority`, `fitness.device_priority`, `fitness.processing_flow_marker`, `fitness.user_profile` | `postgres_fitness.activity`, `postgres_fitness.sleep_session`, `postgres_fitness.sleep_stage`, `postgres_fitness.daily_metrics`, `postgres_fitness.provider`, `postgres_fitness.provider_connection`, `postgres_fitness.provider_priority`, `postgres_fitness.device_priority`, `postgres_fitness.processing_flow_marker`, `postgres_fitness.user_profile` |
-   | `dofek_provider_inventory_raw_analytics` | `fitness.food_entry`, `fitness.health_event`, `fitness.clinical_record`, `fitness.journal_entry`, `fitness.processing_flow_marker` | `postgres_fitness.food_entry`, `postgres_fitness.health_event`, `postgres_fitness.clinical_record`, `postgres_fitness.journal_entry`, `postgres_fitness.processing_flow_marker_provider_inventory` |
+   | `dofek_provider_inventory_raw_analytics` | `fitness.food_entry`, `fitness.health_event`, `fitness.clinical_record`, `fitness.processing_flow_marker` | `postgres_fitness.food_entry`, `postgres_fitness.health_event`, `postgres_fitness.clinical_record`, `postgres_fitness.processing_flow_marker_provider_inventory` |
    | `dofek_sensor_priority_raw_analytics` | `fitness.sensor_provider_priority`, `fitness.sensor_device_priority` | `postgres_fitness.sensor_provider_priority`, `postgres_fitness.sensor_device_priority` |
 
    The source of truth is `src/db/peerdb/mirror-contracts.ts`; setup SQL,

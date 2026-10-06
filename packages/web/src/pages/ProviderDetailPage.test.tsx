@@ -1382,7 +1382,6 @@ describe("ProviderDetailPage activity records", () => {
         nutritionDaily: 0,
         healthEvents: 0,
         clinicalRecords: 0,
-        journalEntries: 0,
       },
     ];
     mockRecords.data = {

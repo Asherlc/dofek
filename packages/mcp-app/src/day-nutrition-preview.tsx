@@ -1,5 +1,13 @@
 import type { DayNutritionPreview } from "@dofek/mcp-contracts/day-nutrition";
 
+const mealStyles = {
+  breakfast: { label: "Breakfast", color: "#2563eb" },
+  lunch: { label: "Lunch", color: "#7c3aed" },
+  dinner: { label: "Dinner", color: "#0e7490" },
+  snack: { label: "Snacks", color: "#c026d3" },
+  other: { label: "Other / unspecified", color: "#64748b" },
+} as const;
+
 const macroColors = {
   protein: "#2563eb",
   carbs: "#5E35B1",
@@ -63,10 +71,7 @@ export interface DayNutritionPreviewPanelProps {
 }
 
 export function DayNutritionPreviewPanel({ preview }: DayNutritionPreviewPanelProps) {
-  const calorieValueLabel =
-    preview.calorie_goal.over > 0
-      ? `${formatNumber(preview.total_calories)} cal · ${formatNumber(preview.calorie_goal.over)} over target`
-      : `${formatNumber(preview.total_calories)} cal · ${formatNumber(preview.calorie_goal.remaining)} remaining`;
+  const meals = preview.meals.filter((meal) => meal.calories > 0);
 
   return (
     <main
@@ -84,16 +89,54 @@ export function DayNutritionPreviewPanel({ preview }: DayNutritionPreviewPanelPr
       </header>
 
       <section aria-label="Calories" style={{ display: "grid", gap: 12 }}>
-        <ProgressBar
-          label="Calories"
-          valueLabel={calorieValueLabel}
-          percentage={preview.calorie_goal.progress_percentage}
-          color="#16a34a"
-        />
-        <p style={{ margin: 0, fontSize: 12, color: "#64748b" }}>
-          Target {formatNumber(preview.calorie_goal.target)} calories (
-          {preview.calorie_goal.type === "configured" ? "your goal" : "default goal"})
+        <p style={{ margin: 0, fontSize: 28, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>
+          {formatNumber(preview.total_calories)} kcal logged
         </p>
+        {meals.length > 0 ? (
+          <>
+            <div
+              aria-hidden="true"
+              style={{ display: "flex", height: 12, borderRadius: 6, overflow: "hidden" }}
+            >
+              {meals.map((meal) => (
+                <div
+                  key={meal.meal}
+                  data-testid={`${meal.meal}-segment`}
+                  style={{
+                    width: `${meal.share_percentage}%`,
+                    background: mealStyles[meal.meal].color,
+                  }}
+                />
+              ))}
+            </div>
+            <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "grid", gap: 8 }}>
+              {meals.map((meal) => (
+                <li
+                  key={meal.meal}
+                  style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14 }}
+                >
+                  <span
+                    aria-hidden="true"
+                    style={{
+                      width: 10,
+                      height: 10,
+                      borderRadius: 2,
+                      background: mealStyles[meal.meal].color,
+                    }}
+                  />
+                  <span style={{ flex: 1 }}>{mealStyles[meal.meal].label}</span>
+                  <span style={{ fontVariantNumeric: "tabular-nums" }}>
+                    {formatNumber(meal.calories)} kcal
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </>
+        ) : (
+          <p style={{ margin: 0, fontSize: 14, color: "#64748b" }}>
+            No calories logged for this date.
+          </p>
+        )}
       </section>
 
       <section aria-label="Macros" style={{ display: "grid", gap: 14 }}>

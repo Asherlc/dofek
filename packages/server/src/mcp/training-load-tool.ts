@@ -4,6 +4,7 @@ import { dateSchema } from "../lib/date-schema.ts";
 import { AnalyticalTrainingLoadRepository } from "../repositories/analytical-training-load-repository.ts";
 import { FoodRepository } from "../repositories/food-repository.ts";
 import { TrainingLoadRepository } from "../repositories/training-load-repository.ts";
+import { registerAuthorizedTool } from "./authorized-tool.ts";
 import type { DofekMcpContext } from "./context.ts";
 import {
   assertNutritionSummaryDateRange,
@@ -15,19 +16,21 @@ import { jsonToolResult } from "./tool-result.ts";
 
 /** Register the activity-load analytics tool. */
 export function registerTrainingLoadTool(server: McpServer, context: DofekMcpContext): void {
-  server.registerTool(
+  registerAuthorizedTool(
+    server,
+    ["activity:read", "nutrition:read"],
     "get_training_load",
     {
       title: "Get Training Load",
       description:
         "Return daily training load with rolling windows. Set detail=analytical for separate cycling-power, heart-rate, session-RPE, climbing, finger, and strength channels with formulas, provenance, and missing-data coverage. Set include_nutrition=true with analytical detail for an aligned nutrition date spine.",
       annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
-      inputSchema: {
+      inputSchema: z.object({
         start_date: dateSchema,
         end_date: dateSchema,
         detail: z.enum(["analytical"]).optional(),
         include_nutrition: z.boolean().optional(),
-      },
+      }),
       outputSchema: trainingLoadToolOutputSchema,
     },
     async ({ start_date, end_date, detail, include_nutrition }) => {

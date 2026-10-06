@@ -140,15 +140,10 @@ export function DashboardEvidenceOverview({
     trend.restingHeartRatePoints?.filter((point) => Number.isFinite(point.value)) ?? [];
 
   return (
-    <section aria-label="Dashboard overview" className="dashboard-hero space-y-5">
-      <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <h2 className="text-xl font-semibold tracking-tight text-foreground">Overview</h2>
-          <p className="mt-1 text-sm text-muted">{formatDashboardRange(endDate, days)}</p>
-        </div>
-        <span className="w-fit rounded-md border border-border bg-surface-solid px-3 py-1.5 text-xs font-medium text-foreground">
-          {days} days
-        </span>
+    <section aria-label="Dashboard overview" className="dashboard-hero card space-y-5 p-5 sm:p-6">
+      <div className="mb-5">
+        <h2 className="text-xl font-semibold tracking-tight text-foreground">Overview</h2>
+        <p className="mt-1 text-sm text-muted">{formatDashboardRange(endDate, days)}</p>
       </div>
 
       <div className="grid gap-3 lg:grid-cols-2">
@@ -162,9 +157,6 @@ export function DashboardEvidenceOverview({
               </h3>
               <div className="mt-5 grid grid-cols-[0.7fr_1fr] items-end gap-4">
                 <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted">
-                    {relationshipHeading}
-                  </p>
                   <p className="mt-1 font-mono text-4xl font-bold tabular-nums text-accent">
                     {relationshipValue}
                   </p>

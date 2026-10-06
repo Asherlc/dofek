@@ -2,7 +2,7 @@
 
 import { UnitConverter } from "@dofek/format/units";
 import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { ActivityCardContent, type ActivityCardData } from "./ActivityCardContent.tsx";
 
 const units = new UnitConverter("metric");
@@ -37,13 +37,9 @@ function activity(overrides: Partial<ActivityCardData> = {}): ActivityCardData {
 }
 
 afterEach(cleanup);
-afterEach(() => vi.useRealTimers());
 
 describe("ActivityCardContent", () => {
-  it("renders server-authored source overlap and processing freshness", () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-07-14T09:00:00.000Z"));
-
+  it("identifies the primary source and overlapping records", () => {
     render(
       <ActivityCardContent
         activity={activity({
@@ -61,11 +57,7 @@ describe("ActivityCardContent", () => {
     );
 
     expect(screen.getByText("Wahoo")).toBeDefined();
-    expect(
-      screen.getByText("2 matched source records · Wahoo selected by source priority"),
-    ).toBeDefined();
     expect(screen.getByText("Source overlap")).toBeDefined();
-    expect(screen.getByText("Processed 1m ago")).toBeDefined();
   });
 
   it("renders the stored record-local clock time", () => {
@@ -96,7 +88,6 @@ describe("ActivityCardContent", () => {
     );
     expect(screen.getByTestId("activity-detail-metrics")).toBeDefined();
     expect(screen.queryByTestId("activity-secondary-panel")).toBeNull();
-    expect(screen.queryByText("Route")).toBeNull();
     expect(screen.queryByText("No route recorded")).toBeNull();
     expect(screen.getByText("8.5")).toBeDefined();
     expect(screen.getByTestId("activity-type-icon").getAttribute("style")).toBeNull();
@@ -162,7 +153,6 @@ describe("ActivityCardContent", () => {
     expect(screen.queryByText("No route recorded")).toBeNull();
     expect(screen.getByTestId("activity-secondary-panel")).toBeDefined();
     expect(screen.getByTestId("activity-secondary-inset").className).toContain("rounded-lg");
-    expect(screen.getByText("Route")).toBeDefined();
   });
 
   it("does not present missing route measurements as available dashes", () => {

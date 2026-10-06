@@ -23,7 +23,7 @@ import type {
   StrainTargetResult,
   WorkloadRatioResult,
 } from "dofek-server/types";
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { useCountUp } from "../hooks/useCountUp.ts";
 import { chartThemeColors } from "../lib/chartTheme.ts";
 import { QueryStatePanel } from "./QueryStatePanel.tsx";
@@ -56,6 +56,7 @@ function ScoreRing({
   children,
   onClick,
   expanded,
+  controlsId,
   targetFraction,
 }: {
   value: number;
@@ -68,6 +69,7 @@ function ScoreRing({
   children: React.ReactNode;
   onClick?: () => void;
   expanded?: boolean;
+  controlsId: string;
   /** Optional target marker as fraction 0-1 of the ring */
   targetFraction?: number;
 }) {
@@ -92,6 +94,7 @@ function ScoreRing({
       style={{ width: size, height: size }}
       onClick={onClick}
       aria-expanded={onClick ? (expanded ?? false) : undefined}
+      aria-controls={onClick ? controlsId : undefined}
       aria-label={onClick && label ? `${label} score breakdown` : undefined}
     >
       <svg width={size} height={size} aria-hidden="true">
@@ -218,9 +221,11 @@ function RecoveryBreakdown({ readiness }: { readiness: ReadinessRow }) {
 function StrainBreakdown({
   workloadRatio,
   strainTarget,
+  strain,
 }: {
   workloadRatio: WorkloadRatioResult;
   strainTarget?: StrainTargetResult | null;
+  strain: number;
 }) {
   const today = workloadRatio.timeSeries[workloadRatio.timeSeries.length - 1];
   const acuteLoad = today?.acuteLoad ?? 0;
@@ -229,6 +234,7 @@ function StrainBreakdown({
 
   return (
     <div className="space-y-3">
+      <p className="text-[11px] text-subtle">{new StrainScore(strain).description}</p>
       {/* Strain target */}
       {strainTarget && (
         <div>
@@ -306,6 +312,7 @@ function SleepBreakdown({ performance }: { performance: SleepPerformanceInfo }) 
 
   return (
     <div className="space-y-2">
+      <p className="text-[11px] text-subtle">{sleepTierDescription(performance.tier)}</p>
       <div className="flex items-center gap-3">
         <span className="text-muted text-xs w-[7.5rem] shrink-0">
           Sufficiency <span className="text-dim">(70%)</span>
@@ -357,19 +364,14 @@ function EmptyBreakdown({ message }: { message: string }) {
 function ExpandableBreakdown({
   expanded,
   children,
+  id,
 }: {
   expanded: boolean;
   children: React.ReactNode;
+  id: string;
 }) {
   return (
-    <div
-      className="overflow-hidden transition-all duration-300 ease-out"
-      style={{
-        maxHeight: expanded ? 300 : 0,
-        opacity: expanded ? 1 : 0,
-        marginTop: expanded ? 16 : 0,
-      }}
-    >
+    <div id={id} hidden={!expanded} className="mt-4">
       <div className="border-t border-border pt-3 px-1">{children}</div>
     </div>
   );
@@ -381,10 +383,12 @@ function ReadinessRing({
   score,
   onClick,
   expanded,
+  controlsId,
 }: {
   score: number;
   onClick: () => void;
   expanded: boolean;
+  controlsId: string;
 }) {
   const color = scoreColor(score);
   const ringLabel = scoreLabel(score);
@@ -398,6 +402,7 @@ function ReadinessRing({
         color={color}
         onClick={onClick}
         expanded={expanded}
+        controlsId={controlsId}
         label="Recovery"
       >
         <span className="text-3xl font-bold font-mono tabular-nums" style={{ color }}>
@@ -422,11 +427,13 @@ function StrainRing({
   targetFraction,
   onClick,
   expanded,
+  controlsId,
 }: {
   strain: number;
   targetFraction?: number;
   onClick: () => void;
   expanded: boolean;
+  controlsId: string;
 }) {
   const strainScore = new StrainScore(strain);
   const color = strainScore.color;
@@ -441,6 +448,7 @@ function StrainRing({
         color={color}
         onClick={onClick}
         expanded={expanded}
+        controlsId={controlsId}
         targetFraction={targetFraction}
         label="Strain"
       >
@@ -457,7 +465,6 @@ function StrainRing({
       >
         {ringLabel}
       </span>
-      <p className="text-[11px] text-subtle text-center leading-tight">{strainScore.description}</p>
     </div>
   );
 }
@@ -466,10 +473,12 @@ function SleepRing({
   performance,
   onClick,
   expanded,
+  controlsId,
 }: {
   performance: SleepPerformanceInfo;
   onClick: () => void;
   expanded: boolean;
+  controlsId: string;
 }) {
   const { score, tier, actualMinutes } = performance;
   const clampedScore = Math.min(score, 100);
@@ -486,6 +495,7 @@ function SleepRing({
         color={color}
         onClick={onClick}
         expanded={expanded}
+        controlsId={controlsId}
         label="Sleep"
       >
         <span className="text-3xl font-bold font-mono tabular-nums" style={{ color }}>
@@ -502,9 +512,6 @@ function SleepRing({
       >
         {tier} &middot; {formatDurationMinutes(actualMinutes)}
       </span>
-      <p className="text-[11px] text-subtle text-center leading-tight">
-        {sleepTierDescription(tier)}
-      </p>
     </div>
   );
 }
@@ -555,6 +562,12 @@ export function DailyOverview({
   embedded = false,
 }: DailyOverviewProps) {
   const [expandedRing, setExpandedRing] = useState<ExpandedRing>(null);
+  const disclosureId = useId();
+  const panelIds = {
+    recovery: `${disclosureId}-recovery`,
+    strain: `${disclosureId}-strain`,
+    sleep: `${disclosureId}-sleep`,
+  };
 
   const toggle = (ring: ExpandedRing) => setExpandedRing((prev) => (prev === ring ? null : ring));
 
@@ -604,14 +617,7 @@ export function DailyOverview({
       }
     >
       <div className="mb-5 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">
-            Daily summary
-          </p>
-          <h2 className="mt-1 text-xl font-semibold tracking-tight text-foreground">
-            Today&apos;s recovery picture
-          </h2>
-        </div>
+        <h2 className="text-xl font-semibold tracking-tight text-foreground">Daily summary</h2>
         <p className="text-xs text-subtle">
           {summaryDateContext ? formatSummaryDateContext(summaryDateContext) : endDate}
         </p>
@@ -626,6 +632,7 @@ export function DailyOverview({
               score={recoveryScore}
               onClick={() => toggle("recovery")}
               expanded={expandedRing === "recovery"}
+              controlsId={panelIds.recovery}
             />
           ) : readinessError == null ? (
             <div className="flex flex-col items-center gap-2">
@@ -635,6 +642,7 @@ export function DailyOverview({
                 color={chartThemeColors.gridLine}
                 onClick={() => toggle("recovery")}
                 expanded={expandedRing === "recovery"}
+                controlsId={panelIds.recovery}
                 label="Recovery"
               >
                 <span className="text-2xl font-bold text-subtle">--</span>
@@ -659,6 +667,7 @@ export function DailyOverview({
               targetFraction={targetFraction}
               onClick={() => toggle("strain")}
               expanded={expandedRing === "strain"}
+              controlsId={panelIds.strain}
             />
           ) : workloadError == null && strainTargetError == null ? (
             <div className="flex flex-col items-center gap-2">
@@ -668,6 +677,7 @@ export function DailyOverview({
                 color={chartThemeColors.gridLine}
                 onClick={() => toggle("strain")}
                 expanded={expandedRing === "strain"}
+                controlsId={panelIds.strain}
                 label="Strain"
               >
                 <span className="text-2xl font-bold text-subtle">--</span>
@@ -692,6 +702,7 @@ export function DailyOverview({
               performance={freshSleepPerformance}
               onClick={() => toggle("sleep")}
               expanded={expandedRing === "sleep"}
+              controlsId={panelIds.sleep}
             />
           ) : sleepError == null ? (
             <div className="flex flex-col items-center gap-2">
@@ -701,6 +712,7 @@ export function DailyOverview({
                 color={chartThemeColors.gridLine}
                 onClick={() => toggle("sleep")}
                 expanded={expandedRing === "sleep"}
+                controlsId={panelIds.sleep}
                 label="Sleep"
               >
                 <span className="text-2xl font-bold text-subtle">--</span>
@@ -715,8 +727,7 @@ export function DailyOverview({
         </div>
       </div>
 
-      {/* Expandable breakdown panels — kept mounted for open/close animation */}
-      <ExpandableBreakdown expanded={expandedRing === "recovery"}>
+      <ExpandableBreakdown id={panelIds.recovery} expanded={expandedRing === "recovery"}>
         {latestReadiness && readinessIsFresh ? (
           <RecoveryBreakdown readiness={latestReadiness} />
         ) : (
@@ -724,15 +735,19 @@ export function DailyOverview({
         )}
       </ExpandableBreakdown>
 
-      <ExpandableBreakdown expanded={expandedRing === "strain"}>
+      <ExpandableBreakdown id={panelIds.strain} expanded={expandedRing === "strain"}>
         {workloadRatio && workloadRatio.timeSeries.length > 0 ? (
-          <StrainBreakdown workloadRatio={workloadRatio} strainTarget={strainTarget} />
+          <StrainBreakdown
+            workloadRatio={workloadRatio}
+            strainTarget={strainTarget}
+            strain={strain}
+          />
         ) : (
           <EmptyBreakdown message="Strain is calculated from workout duration and heart rate. Log an activity with a heart rate monitor to see your strain." />
         )}
       </ExpandableBreakdown>
 
-      <ExpandableBreakdown expanded={expandedRing === "sleep"}>
+      <ExpandableBreakdown id={panelIds.sleep} expanded={expandedRing === "sleep"}>
         {freshSleepPerformance ? (
           <SleepBreakdown performance={freshSleepPerformance} />
         ) : (

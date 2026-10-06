@@ -68,6 +68,14 @@ describe("ClimbingEntryAssociator", () => {
       {
         id: "tick-1",
         provider_id: "openbeta",
+        context: {
+          providerId: "openbeta",
+          locationPath: [{ name: "Test Crag", externalId: "area-1", kind: null }],
+          board: null,
+          wallAngle: null,
+          climbStyle: "top-rope",
+          resultStyle: "Onsight",
+        },
         source_name: "OpenBeta",
         climb_type: "route",
         grade_system: "yds",
@@ -87,6 +95,14 @@ describe("ClimbingEntryAssociator", () => {
       {
         id: "tick-1",
         providerId: "openbeta",
+        context: {
+          providerId: "openbeta",
+          locationPath: [{ name: "Test Crag", externalId: "area-1", kind: null }],
+          board: null,
+          wallAngle: null,
+          climbStyle: "top-rope",
+          resultStyle: "Onsight",
+        },
         sourceName: "OpenBeta",
         climbType: "route",
         gradeSystem: "yds",

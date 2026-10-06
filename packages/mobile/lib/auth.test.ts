@@ -329,6 +329,15 @@ describe("startNativeAppleSignIn", () => {
     expect(mockCaptureException).not.toHaveBeenCalledWith(cancellationError, expect.anything());
   });
 
+  it("propagates the original non-cancellation native failure", async () => {
+    const original = Object.assign(new Error("native diagnostic marker"), {
+      code: "ERR_REQUEST_UNKNOWN",
+    });
+    mockSignInAsync.mockRejectedValueOnce(original);
+    await expect(startNativeAppleSignIn("https://srv")).rejects.toBe(original);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
   it("throws when server returns an error", async () => {
     mockSignInAsync.mockResolvedValueOnce({
       user: "apple-user-123",

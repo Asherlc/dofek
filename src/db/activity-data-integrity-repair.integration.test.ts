@@ -268,7 +268,8 @@ async function seedProductionDbtFixture(
       _peerdb_is_deleted UInt8,
       _peerdb_synced_at DateTime64(9, 'UTC'),
       _peerdb_version UInt64,
-      group_id UUID
+      group_id UUID,
+      created_at DateTime64(6, 'UTC')
     ) ENGINE = ReplacingMergeTree(_peerdb_version) ORDER BY id`,
     `CREATE TABLE ${database}.provider_priority (
       provider_id String,
@@ -376,28 +377,32 @@ async function seedProductionDbtFixture(
         'workout', NULL, toDateTime64('2026-09-01 14:50:00', 6, 'UTC'),
         toDateTime64('2026-09-01 15:30:00', 6, 'UTC'), NULL, 'Wahoo ride', NULL,
         NULL, NULL, NULL, 'unknown', NULL, NULL, NULL, '{}', NULL, NULL, 0,
-        toDateTime64('2026-09-02 17:00:00', 9, 'UTC'), 1, '${wahooActivityId}'
+        toDateTime64('2026-09-02 17:00:00', 9, 'UTC'), 1, '${wahooActivityId}',
+        toDateTime64('2026-09-02 17:00:00', 6, 'UTC')
       ),
       (
         '${pelotonActivityId}', 'peloton', '${TEST_USER_ID}', 'peloton-ride', 'cycling',
         'cycling', 'indoor', toDateTime64('2026-09-01 14:55:54', 6, 'UTC'),
         toDateTime64('2026-09-01 15:25:54', 6, 'UTC'), NULL, 'Peloton ride', NULL,
         'Etc/GMT+4', -300, -300, 'provider_timezone', NULL, NULL, NULL, '{}', NULL, NULL, 0,
-        toDateTime64('2026-09-02 17:00:00', 9, 'UTC'), 1, '${pelotonActivityId}'
+        toDateTime64('2026-09-02 17:00:00', 9, 'UTC'), 1, '${pelotonActivityId}',
+        toDateTime64('2026-09-02 17:00:00', 6, 'UTC')
       ),
       (
         '${namedZoneActivityId}', 'wahoo', '${TEST_USER_ID}', 'named-zone-ride', 'cycling',
         'cycling', NULL, toDateTime64('2026-09-01 15:00:00', 6, 'UTC'),
         toDateTime64('2026-09-01 15:30:00', 6, 'UTC'), NULL, 'Named zone ride', NULL,
         'America/New_York', -420, -420, 'provider_timezone', NULL, NULL, NULL, '{}', NULL, NULL, 0,
-        toDateTime64('2026-09-02 17:00:00', 9, 'UTC'), 1, '${pelotonActivityId}'
+        toDateTime64('2026-09-02 17:00:00', 9, 'UTC'), 1, '${pelotonActivityId}',
+        toDateTime64('2026-09-02 17:00:00', 6, 'UTC')
       ),
       (
         '${unrelatedActivityId}', 'wahoo', '${TEST_USER_ID}', 'unrelated-ride', 'cycling',
         'cycling', NULL, toDateTime64('2026-08-01 16:00:00', 6, 'UTC'),
         toDateTime64('2026-08-01 17:00:00', 6, 'UTC'), NULL, 'Unrelated ride', NULL,
         'America/New_York', -240, -240, 'provider_timezone', NULL, NULL, NULL, '{}', NULL, NULL, 0,
-        toDateTime64('2026-09-02 17:00:00', 9, 'UTC'), 1, '${unrelatedActivityId}'
+        toDateTime64('2026-09-02 17:00:00', 9, 'UTC'), 1, '${unrelatedActivityId}',
+        toDateTime64('2026-09-02 17:00:00', 6, 'UTC')
       )`,
   ];
   for (const statement of statements) await client.command({ query: statement });
