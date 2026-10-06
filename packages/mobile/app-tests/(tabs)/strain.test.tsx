@@ -305,6 +305,16 @@ describe("StrainScreen recent activity navigation", () => {
     }
   });
 
+  it("sends climbing selections to the server while keeping other training queries unchanged", async () => {
+    const { default: StrainScreen } = await import("../../app/(tabs)/strain");
+    render(<StrainScreen />);
+    fireEvent.click(screen.getByRole("button", { name: "All climbing" }));
+    fireEvent.click(screen.getByRole("button", { name: "Lead" }));
+    expect(mockRangeQueryCalls.training.at(-1)?.input).toMatchObject({
+      climbingFilters: { style: "lead" },
+    });
+  });
+
   it("refreshes training, intensity, polarization, monotony, and processing status together", async () => {
     const { default: StrainScreen } = await import("../../app/(tabs)/strain");
     render(<StrainScreen />);

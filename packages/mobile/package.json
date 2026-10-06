@@ -42,7 +42,7 @@
     "@dofek/zones": "workspace:*",
     "@expo/metro-runtime": "58.0.12",
     "@expo/vector-icons": "15.1.1",
-    "@formatjs/intl-getcanonicallocales": "3.2.11",
+    "@formatjs/intl-getcanonicallocales": "3.2.12",
     "@formatjs/intl-locale": "5.3.10",
     "@formatjs/intl-numberformat": "9.4.0",
     "@formatjs/intl-pluralrules": "6.3.13",

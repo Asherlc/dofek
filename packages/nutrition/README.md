@@ -51,8 +51,7 @@ source labels. Completeness is the percentage of selected calendar days with an
 available canonical contribution set; the All-history range has no invented
 calendar denominator and therefore returns a null percentage.
 
-Each nutrient separates itemized food, meal totals, provider daily totals, and
-explicitly taken supplements. `foodDailyAverage` includes itemized food and
+Each nutrient separates itemized food, meal totals, and provider daily totals. `foodDailyAverage` includes itemized food and
 meal totals; `providerDailyTotalAverage` remains separate. Per-source rows report each provider/source's contribution
 to the nutrient's average over all recorded days for that nutrient. Contributions
 and the total use the same denominator, but independently rounded presentation

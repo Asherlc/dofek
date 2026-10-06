@@ -19,7 +19,6 @@
     "./summary-date-context": "./src/summary-date-context.ts",
     "./report-decision-synthesis": "./src/report-decision-synthesis.ts",
     "./sleep-data-state": "./src/sleep-data-state.ts",
-    "./supplement-dose-events": "./src/supplement-dose-events.ts",
     "./user-facing-error": "./src/user-facing-error.ts",
     "./units": "./src/units.ts"
   },

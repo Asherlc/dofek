@@ -135,9 +135,6 @@ vi.mock("dofek/providers/decathlon", () => ({
 vi.mock("dofek/providers/velohero", () => ({
   VeloHeroProvider: mockProviderConstructor("velohero"),
 }));
-vi.mock("dofek/providers/auto-supplements", () => ({
-  AutoSupplementsProvider: mockProviderConstructor("auto-supplements"),
-}));
 vi.mock("dofek/providers/kaya/provider", () => ({
   KayaProvider: mockProviderConstructor("kaya-export"),
 }));
@@ -182,7 +179,7 @@ describe("ensureProvidersRegistered failure path", () => {
     const registeredIds = mockRegisterProvider.mock.calls.map(
       ([provider]: [{ id: string }]) => provider.id,
     );
-    expect(registeredIds).toHaveLength(32);
+    expect(registeredIds).toHaveLength(31);
     expect(registeredIds).toEqual(
       expect.arrayContaining([
         "bodyspec",

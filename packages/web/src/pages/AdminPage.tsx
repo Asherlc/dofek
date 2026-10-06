@@ -1,12 +1,15 @@
 import { formatDateTime, formatDurationSeconds } from "@dofek/format/format";
 import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { Link } from "@tanstack/react-router";
-import { type ColumnDef, flexRender, getCoreRowModel, useReactTable } from "@tanstack/react-table";
+import { type ColumnDef, flexRender, tableFeatures, useTable } from "@tanstack/react-table";
 import { type ReactNode, useMemo, useState } from "react";
 import { DeveloperClientsAdminPanel } from "../components/DeveloperClientsAdminPanel.tsx";
 import { PageLayout } from "../components/PageLayout.tsx";
 import { useAuth } from "../lib/auth-context.tsx";
 import { trpc } from "../lib/trpc.ts";
+
+const dataTableFeatures = tableFeatures({});
+type AdminColumnDef<TData extends object> = ColumnDef<typeof dataTableFeatures, TData, unknown>;
 
 type Tab =
   | "overview"
@@ -91,17 +94,17 @@ export function AdminPage() {
 
 // ── Generic data table component ──
 
-function DataTable<TData>({
+function DataTable<TData extends object>({
   columns,
   data,
 }: {
-  columns: ColumnDef<TData, unknown>[];
+  columns: AdminColumnDef<TData>[];
   data: TData[];
 }) {
-  const table = useReactTable({
+  const table = useTable({
+    features: dataTableFeatures,
     data,
     columns,
-    getCoreRowModel: getCoreRowModel(),
   });
 
   return (
@@ -129,7 +132,7 @@ function DataTable<TData>({
               key={row.id}
               className="border-b border-border/50 hover:bg-card-hover transition-colors"
             >
-              {row.getVisibleCells().map((cell) => (
+              {row.getAllCells().map((cell) => (
                 <td key={cell.id} className="px-3 py-2 text-foreground">
                   {flexRender(cell.column.columnDef.cell, cell.getContext())}
                 </td>
@@ -287,7 +290,7 @@ function UsersTab() {
     onSuccess: () => trpcUtils.admin.users.invalidate(),
   });
 
-  const columns = useMemo<ColumnDef<NonNullable<typeof data>[number], unknown>[]>(
+  const columns = useMemo<AdminColumnDef<NonNullable<typeof data>[number]>[]>(
     () => [
       { id: "id", header: "ID", cell: ({ row }) => <ShortId id={row.original.id} /> },
       {
@@ -363,7 +366,7 @@ function SyncHealthTab() {
   if (isLoading) return <LoadingState />;
   if (error) return <ErrorState message={userFacingErrorMessage(error)} />;
 
-  const columns: ColumnDef<NonNullable<typeof data>[number], unknown>[] = [
+  const columns: AdminColumnDef<NonNullable<typeof data>[number]>[] = [
     { accessorKey: "provider_id", header: "Provider" },
     { id: "total", header: "Total (7d)", cell: ({ row }) => row.original.total.toLocaleString() },
     {
@@ -419,7 +422,7 @@ function RateLimitsTab() {
   if (isLoading) return <LoadingState />;
   if (error) return <ErrorState message={userFacingErrorMessage(error)} />;
 
-  const columns: ColumnDef<NonNullable<typeof data>[number], unknown>[] = [
+  const columns: AdminColumnDef<NonNullable<typeof data>[number]>[] = [
     { accessorKey: "providerId", header: "Provider" },
     { accessorKey: "scope", header: "Scope" },
     {
@@ -518,7 +521,7 @@ function SyncLogsTab() {
   const [pagination, setPagination] = useState({ offset: 0, limit: 50 });
   const { data, isLoading, error } = trpc.admin.syncLogs.useQuery(pagination);
 
-  const columns: ColumnDef<NonNullable<typeof data>["rows"][number], unknown>[] = [
+  const columns: AdminColumnDef<NonNullable<typeof data>["rows"][number]>[] = [
     { accessorKey: "provider_id", header: "Provider" },
     { id: "user_name", header: "User", cell: ({ row }) => row.original.user_name ?? "\u2014" },
     { accessorKey: "data_type", header: "Data Type" },
@@ -586,7 +589,7 @@ function ActivitiesTab() {
   const [pagination, setPagination] = useState({ offset: 0, limit: 50 });
   const { data, isLoading, error } = trpc.admin.activities.useQuery(pagination);
 
-  const columns: ColumnDef<NonNullable<typeof data>["rows"][number], unknown>[] = [
+  const columns: AdminColumnDef<NonNullable<typeof data>["rows"][number]>[] = [
     { id: "id", header: "ID", cell: ({ row }) => <ShortId id={row.original.id} /> },
     { id: "user_name", header: "User", cell: ({ row }) => row.original.user_name ?? "\u2014" },
     { accessorKey: "provider_id", header: "Provider" },
@@ -647,7 +650,7 @@ function SleepTab() {
   const [pagination, setPagination] = useState({ offset: 0, limit: 50 });
   const { data, isLoading, error } = trpc.admin.sleepSessions.useQuery(pagination);
 
-  const columns: ColumnDef<NonNullable<typeof data>["rows"][number], unknown>[] = [
+  const columns: AdminColumnDef<NonNullable<typeof data>["rows"][number]>[] = [
     { id: "id", header: "ID", cell: ({ row }) => <ShortId id={row.original.id} /> },
     { id: "user_name", header: "User", cell: ({ row }) => row.original.user_name ?? "\u2014" },
     { accessorKey: "provider_id", header: "Provider" },
@@ -687,7 +690,7 @@ function FoodTab() {
   const [pagination, setPagination] = useState({ offset: 0, limit: 50 });
   const { data, isLoading, error } = trpc.admin.foodEntries.useQuery(pagination);
 
-  const columns: ColumnDef<NonNullable<typeof data>["rows"][number], unknown>[] = [
+  const columns: AdminColumnDef<NonNullable<typeof data>["rows"][number]>[] = [
     { id: "id", header: "ID", cell: ({ row }) => <ShortId id={row.original.id} /> },
     { id: "user_name", header: "User", cell: ({ row }) => row.original.user_name ?? "\u2014" },
     { accessorKey: "food_name", header: "Food" },
@@ -738,7 +741,7 @@ function BodyTab() {
   const [pagination, setPagination] = useState({ offset: 0, limit: 50 });
   const { data, isLoading, error } = trpc.admin.bodyMeasurements.useQuery(pagination);
 
-  const columns: ColumnDef<NonNullable<typeof data>["rows"][number], unknown>[] = [
+  const columns: AdminColumnDef<NonNullable<typeof data>["rows"][number]>[] = [
     { id: "id", header: "ID", cell: ({ row }) => <ShortId id={row.original.id} /> },
     { id: "user_name", header: "User", cell: ({ row }) => row.original.user_name ?? "\u2014" },
     {
@@ -780,7 +783,7 @@ function DailyMetricsTab() {
   const [pagination, setPagination] = useState({ offset: 0, limit: 50 });
   const { data, isLoading, error } = trpc.admin.dailyMetrics.useQuery(pagination);
 
-  const columns: ColumnDef<NonNullable<typeof data>["rows"][number], unknown>[] = [
+  const columns: AdminColumnDef<NonNullable<typeof data>["rows"][number]>[] = [
     { id: "id", header: "ID", cell: ({ row }) => <ShortId id={row.original.id} /> },
     { id: "user_name", header: "User", cell: ({ row }) => row.original.user_name ?? "\u2014" },
     { accessorKey: "date", header: "Date" },
@@ -818,7 +821,7 @@ function SessionsTab() {
     onSuccess: () => trpcUtils.admin.sessions.invalidate(),
   });
 
-  const columns: ColumnDef<NonNullable<typeof data>["rows"][number], unknown>[] = [
+  const columns: AdminColumnDef<NonNullable<typeof data>["rows"][number]>[] = [
     {
       id: "id",
       header: "Session ID",
@@ -887,7 +890,7 @@ function SessionsTab() {
 function TokensTab() {
   const { data, isLoading, error } = trpc.admin.oauthTokens.useQuery();
 
-  const columns: ColumnDef<NonNullable<typeof data>[number], unknown>[] = [
+  const columns: AdminColumnDef<NonNullable<typeof data>[number]>[] = [
     { id: "user_name", header: "User", cell: ({ row }) => row.original.user_name ?? "\u2014" },
     { accessorKey: "provider_id", header: "Provider" },
     {

@@ -104,7 +104,7 @@ describe("config values are reasonable", () => {
 describe("getConfiguredProviderIds", () => {
   it("returns all known provider IDs", () => {
     const ids = getConfiguredProviderIds();
-    expect(ids).toHaveLength(26);
+    expect(ids).toHaveLength(25);
     expect(ids).toContain("strava");
     expect(ids).toContain("garmin");
     expect(ids).toContain("whoop");

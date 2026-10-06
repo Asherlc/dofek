@@ -26,49 +26,35 @@ permissions:
   packages: read
   id-token: write
 
+concurrency:
+  group: ${{ (github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success') && 'deploy-web-production' || format('deploy-web-ineligible-{0}', github.run_id) }}
+  cancel-in-progress: false
+
 jobs:
-  eligibility:
-    name: Check Production Deploy Eligibility
+  resolve:
+    name: Select Production Release
     runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: read
+      actions: write
     outputs:
-      should_deploy: ${{ steps.check.outputs.should_deploy }}
+      image_tag: ${{ steps.select.outputs.image_tag }}
+      commit_sha: ${{ steps.select.outputs.commit_sha }}
+      ci_run_id: ${{ steps.select.outputs.ci_run_id }}
     steps:
-      - name: Reject stale or unsuccessful automatic deploys
-        id: check
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-node-pnpm
+      - name: Select latest successful release or cancel an ineligible request
+        id: select
         env:
-          CI_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
-          EVENT_NAME: ${{ github.event_name }}
           GH_TOKEN: ${{ github.token }}
-          TRIGGER_SHA: ${{ github.event.workflow_run.head_sha }}
-        run: |
-          set -euo pipefail
-
-          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
-            echo "should_deploy=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          if [ "$CI_CONCLUSION" != "success" ]; then
-            echo "should_deploy=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          CURRENT_SHA=$(gh api "repos/${GITHUB_REPOSITORY}/commits/main" --jq ".sha")
-          if [ "$TRIGGER_SHA" = "$CURRENT_SHA" ]; then
-            echo "should_deploy=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          echo "should_deploy=false" >> "$GITHUB_OUTPUT"
-          echo "Skipping stale automatic deploy for ${TRIGGER_SHA}; current main is ${CURRENT_SHA}." >> "$GITHUB_STEP_SUMMARY"
+        run: pnpm tsx scripts/select-web-deploy.ts
 
   production:
     name: Deploy Web Production
-    needs: eligibility
-    if: needs.eligibility.outputs.should_deploy == 'true'
-    concurrency:
-      group: deploy-web-production
-      cancel-in-progress: false
+    needs: resolve
     permissions:
       contents: read
       actions: read
@@ -79,9 +65,9 @@ jobs:
       environment_name: production
       ssh_user: ubuntu
       stack_override: deploy/stack.oracle.yml
-      image_tag: ${{ github.event_name == 'workflow_dispatch' && inputs.image_tag || '' }}
-      automatic_commit_sha: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || '' }}
-      ci_run_id: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.id || '' }}
+      image_tag: ${{ needs.resolve.outputs.image_tag }}
+      automatic_commit_sha: ${{ needs.resolve.outputs.commit_sha }}
+      ci_run_id: ${{ needs.resolve.outputs.ci_run_id }}
       public_url: https://dofek.fit
       web_host_rule: "Host(`dofek.asherlc.com`) || Host(`dofek.fit`) || Host(`www.dofek.fit`) || Host(`dofek.live`) || Host(`www.dofek.live`)"
     secrets: inherit

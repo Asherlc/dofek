@@ -97,7 +97,6 @@
     "./providers/mountain-project": "./src/providers/mountain-project.ts",
     "./providers/openbeta": "./src/providers/openbeta.ts",
     "./providers/bodyspec": "./src/providers/bodyspec.ts",
-    "./providers/auto-supplements": "./src/providers/auto-supplements.ts",
     "./providers/amazfit-zepp": "./src/providers/amazfit-zepp.ts",
     "./providers/zos-app/provider": "./src/providers/zos-app/provider.ts",
     "./db/migrate": "./src/db/migrate.ts",
@@ -233,8 +232,8 @@
   "dependencies": {
     "@ai-sdk/otel": "1.0.47",
     "@aws-crypto/client-node": "5.0.0",
-    "@aws-sdk/client-s3": "3.1128.0",
-    "@aws-sdk/s3-request-presigner": "3.1128.0",
+    "@aws-sdk/client-s3": "3.1146.0",
+    "@aws-sdk/s3-request-presigner": "3.1146.0",
     "@clickhouse/client": "1.23.1",
     "@dofek/eight-sleep": "workspace:*",
     "@dofek/format": "workspace:*",

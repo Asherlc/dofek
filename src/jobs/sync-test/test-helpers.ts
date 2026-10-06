@@ -318,6 +318,7 @@ export interface MockJob {
   attemptsMade: number;
   opts: { attempts: number };
   id?: string;
+  timestamp: number;
   token: string;
   queueQualifiedName: string;
   getDependencies: CallableVitestMock;
@@ -360,6 +361,7 @@ export function createMockJob(
 ): MockJob {
   const job: MockJob = {
     attemptsMade: 0,
+    timestamp: 1_759_795_200_000,
     token: "sync-token",
     queueQualifiedName: "bull:sync",
     getDependencies: vi.fn<(...args: unknown[]) => unknown>().mockResolvedValue({}),

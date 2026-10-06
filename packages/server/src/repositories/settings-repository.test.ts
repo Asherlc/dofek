@@ -273,7 +273,7 @@ describe("SettingsRepository", () => {
       const queries = transactionExecute.mock.calls.map(([query]) =>
         JSON.stringify(Reflect.get(query, "queryChunks") ?? []),
       );
-      expect(queries.filter((query) => query.includes("DELETE FROM"))).toHaveLength(6);
+      expect(queries.filter((query) => query.includes("DELETE FROM"))).toHaveLength(4);
       expect(queries.some((query) => query.includes("fitness.sport_settings"))).toBe(true);
       expect(queries.some((query) => query.includes("fitness.breathwork_session"))).toBe(true);
       expect(queries.some((query) => query.includes("fitness.menstrual_period"))).toBe(true);
@@ -315,8 +315,7 @@ describe("SettingsRepository", () => {
             : [],
         ),
       );
-      expect(queries.filter((query) => query.includes("DELETE FROM"))).toHaveLength(6);
-      expect(queries.some((query) => query.includes("fitness.supplement"))).toBe(true);
+      expect(queries.filter((query) => query.includes("DELETE FROM"))).toHaveLength(4);
     });
 
     it("executes deletes for provider child tables, provider, and user-scoped tables", async () => {
@@ -341,8 +340,8 @@ describe("SettingsRepository", () => {
       const queries = transactionExecute.mock.calls.map(([query]) =>
         JSON.stringify(Reflect.get(query, "queryChunks") ?? []),
       );
-      // 2 child tables + 6 user-scoped tables = 8 delete statements.
-      expect(queries.filter((query) => query.includes("DELETE FROM"))).toHaveLength(8);
+      // 2 child tables + 4 user-scoped tables = 6 delete statements.
+      expect(queries.filter((query) => query.includes("DELETE FROM"))).toHaveLength(6);
     });
   });
 });

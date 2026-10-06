@@ -75,6 +75,27 @@ afterEach(() => {
 });
 
 describe("MountainProjectProvider", () => {
+  it.each([
+    ["Sport", ["sport"]],
+    ["Trad", ["trad"]],
+    [" sport , TRAD , TR ", ["sport", "trad"]],
+    ["Top Rope", []],
+    ["", null],
+    ["   ", null],
+  ])("preserves route protection from CSV type %j", async (routeType, routeProtection) => {
+    const { db, climbingEntryValues } = makeDb();
+    const csv = exportCsv([
+      `2026-08-10,Context Route,5.9,,https://www.mountainproject.com/route/100/context,1,Crag,2.4,-1,Lead,Redpoint,"${routeType}",,,1800`,
+    ]);
+    const result = await new MountainProjectProvider(async () => new Response(csv)).sync(
+      makeRun(db),
+    );
+    expect(result).toMatchObject({ recordsSynced: 1, errors: [] });
+    expect(climbingEntryValues).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ routeProtection, climbStyle: "lead" }),
+    );
+  });
+
   it("preserves nonempty path nodes and leaves a boulder's rope method unknown", async () => {
     const { db, climbingEntryValues } = makeDb();
     const csv = exportCsv([
@@ -114,6 +135,7 @@ describe("MountainProjectProvider", () => {
     expect(climbingEntryValues).toHaveBeenCalledWith(
       expect.objectContaining({
         climbStyle: method,
+        routeProtection: ["trad"],
         resultStyle: "Fell/Hung",
         attemptCount: null,
         locationPath: ["Country", "State", "Region", "Park", "Crag", "Wall"].map((name) => ({

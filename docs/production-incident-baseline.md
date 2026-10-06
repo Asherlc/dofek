@@ -30237,6 +30237,33 @@ runbook refinement is to record selected/total data granules for every repeated
 source branch and distinguish per-request resource proof from total capture work
 and source-to-visible freshness. No steady-state diagnostic framework is added.
 
+### 2026-10-05 — Local integration validation blocked by Docker address-pool exhaustion
+
+- Symptoms/evidence: `pnpm test:integration -- packages/server/src/repositories/nutrition-canonical.integration.test.ts packages/server/src/repositories/nutrition-analytics-source-breakdown.integration.test.ts packages/server/src/routers/nutrition-analytics-data.integration.test.ts packages/server/src/routers/settings.integration.test.ts src/db/migrate.integration.test.ts` failed while creating `loyal-alpacka_default`; the first fatal line was `all predefined address pools have been fully subnetted`.
+- Impact: local PostgreSQL integration validation of supplement removal is blocked; no production impact observed.
+- Root cause: the Docker daemon has allocated its default subnet pool across existing workspace networks; `docker network ls` confirmed many workspace networks.
+- Mitigation: with user approval, created only `loyal-alpacka_default` on the unused `10.231.137.0/24` subnet with Compose ownership labels. The first cold database initialization crossed its existing health-startup window; logs confirmed initialization completed and subsequent healthchecks passed, with no steady-state timeout changes.
+- Validation: the same integration command reached Vitest after all four dependencies became healthy; analytics SQL lint subsequently passed. All 74 database assertions across six suites passed, including the forward migration sequence and food-source resolution. The two unrelated full-suite timeouts in `archive-erasure.test.ts` and `deploy-web-stack.test.ts` passed when rerun individually.
+- Resolution: final `pnpm lint` passed; `pnpm compose -- down --remove-orphans --volumes` removed only this workspace’s test containers, network, and disposable volumes. No timeout, retry, or network overrides were added to repository configuration.
+- Remaining risk/follow-up: the daemon’s default pool remains exhausted by other workspace networks; document an operator procedure for pool exhaustion. Docker documents explicit subnets in [network create](https://docs.docker.com/reference/cli/docker/network/create/).
+
+### 2026-10-05 — Supplement removal PR blocked by destructive migration lint
+
+- Symptoms/evidence: [PR #2886 Migration Lint](https://github.com/Asherlc/dofek/actions/runs/37380655334/job/112003275274) failed at `echo "$NEW_MIGRATIONS" | xargs squawk`. The first diagnostic was `Dropping a view may break existing clients.`; four `ban-drop-view` findings and one `ban-drop-type` finding produced exit code 123.
+- Impact/root cause: CI blocks the approved complete removal of supplements because Squawk prohibits the intentional view/type drops in `0137_remove_supplements.sql` (subsequently renamed to [0141](../drizzle/0141_remove_supplements.sql) after merging the current migration journal). No production deployment or data deletion occurred.
+- Validation: migration policy and SQLFluff passed locally; all 74 PostgreSQL integration assertions passed, including the forward migration and retained food-source resolution.
+- Fix/validation: with explicit user approval, added documented exceptions immediately before the four intentional view drops and retired type drop, using Squawk's [statement-scoped comments](https://squawkhq.com/docs/cli#disabling-rules-via-comments). Squawk 2.67.0 (the failing CI version), migration policy, and SQLFluff all passed locally. The workstation's Squawk 2.49.0 does not recognize these newer rule names, so validation used the CI version through `uv tool run`.
+- Resolution: [Migration Lint passed in CI](https://github.com/Asherlc/dofek/actions/runs/37384870434). No global rules, retries, or timeouts changed. Add Squawk validation to the local migration checklist to catch intentional destructive-operation findings before pushing.
+
+### 2026-10-05 — Supplement removal exposed obsolete integration expectations
+
+- Symptoms/evidence: [CI run 37384870434](https://github.com/Asherlc/dofek/actions/runs/37384870434) integration shard 1 failed SDK discovery with `expected ... to have a length of 41 but got 40`; shard 4 failed the credential-free sync test after `[trpc] sync.triggerSync: No configured providers available for sync`.
+- Impact/root cause: PR validation blocked, with no production impact. Two SDK counts still included the removed MCP tool, and a sync test depended on the retired always-connected supplement provider.
+- Fix/validation: updated both existing discovery counts to 40 and deleted the obsolete provider-dependent test. The two affected suites passed together with 34 assertions through `pnpm test:integration`; Biome passed. The approved isolated workspace network was reused for validation and removed with the workspace test containers and volumes afterward.
+- Remaining risk/follow-up: full CI rerun pending. Include SDK discovery counts and provider-dependent integration fixtures in the feature-removal checklist; no production behavior or CI settings changed.
+
+Follow-up: after tracking removal also landed on `main`, [CI run 37400997752](https://github.com/Asherlc/dofek/actions/runs/37400997752/job/112068952077) failed three provider-account assertions with `expected ... to have a length of 13 but got 12`. Git automatically merged both removals but retained stale count assertions. Updated the existing count and final-index expectations; both provider-detail suites passed locally with 167 tests, and Biome passed. Production was unaffected; replacement CI remains pending. Validate shared deletion inventories whenever multiple feature removals merge concurrently.
+
 ### 2026-10-05 — Local validation database cold-start health failure
 
 During removal of Personal Experiments and Life Events, `pnpm test:integration -- packages/server/src/routers/settings.integration.test.ts src/db/seed-dev-db.integration.test.ts` stopped before tests with `container noble-turtle-db-1 is unhealthy`. Production and users were unaffected. `pnpm compose -- logs --tail 60 db` showed the fresh TimescaleDB initialization sequence still shutting down its temporary server for a checkpoint; Docker health history reported `127.0.0.1:5432 - no response`. The container subsequently completed initialization and logged `database system is ready to accept connections`; Docker inspection then reported healthy and no OOM kill. No runtime configuration, timeout, or retry was changed. The integration command was started again after confirming prerequisite health. Cold-start readiness timing remains a local validation risk; its underlying initialization duration needs separate investigation before changing health policy.
@@ -30261,6 +30288,65 @@ The [replacement run](https://github.com/Asherlc/dofek/actions/runs/37390006819)
 
 With explicit user approval, all nine macOS jobs across build, deployment, release and test workflows now use `macos-latest`, which currently selects macOS 26 ARM64 in GitHub's [supported image list](https://github.com/actions/runner-images). Native build and tool cache namespaces advance so the migrated Swift jobs do not restore the previous runner's build state. Diff review, whitespace validation and `actionlint -shellcheck=` passed; replacement CI remains pending. Production was unaffected. Future runner maintenance should review deprecation notices before an image's scheduled brownouts.
 
+
+## 2026-10-05 — Local Storybook tunnel host rejection (resolved)
+
+No production impact. Web and mobile review previews returned HTTP 403 while
+local Storybook was running. A request to the generated tunnel hostname's
+`/index.json` failed with `curl: (56) The requested URL returned error: 403`;
+the response body was `Invalid host`. Storybook's host-validation middleware
+rejected the forwarded Cloudflare hostname because it was absent from the
+allowed-host list. Both Storybook configurations now allow only the additional
+`.trycloudflare.com` domain through
+[`core.allowedHosts`](https://storybook.js.org/docs/api/main-config/main-config-core#allowedhosts).
+After restarting Storybook, both tunnel `/index.json` and `/iframe.html`
+requests succeeded without added retries or waits. No resilience tuning was
+needed. The available browser runtime reported no connected browsers, so
+visual inspection remains unverified; component interaction tests passed.
+The [development-environment guide](development-environment.md#storybook-through-a-development-tunnel)
+records the host requirement for future preview work.
+
+## 2026-10-05 — Climbing migration CI lint failure (local fix validated)
+
+No production impact. PR [2880](https://github.com/Asherlc/dofek/pull/2880)
+failed `Test / Migration Lint`, step `Lint new migration SQL`, when
+`xargs squawk` checked migration 0137. The first diagnostic was
+`constraint-missing-not-valid`; the command exited 123. The new check constraint
+was added without separating its creation from validation. The climbing migration now
+adds it with `NOT VALID` and explicitly validates it in the following statement,
+as prescribed by [Squawk](https://squawkhq.com/docs/constraint-missing-not-valid)
+and [PostgreSQL](https://www.postgresql.org/docs/current/sql-altertable.html).
+Local Squawk and migration-policy checks pass, and all eight climbing repository
+PostgreSQL tests pass with the updated migration. The
+[corrected migration-lint CI check](https://github.com/Asherlc/dofek/actions/runs/37376595644/job/111988247108)
+passed before the schema-snapshot follow-up. The migration was later renumbered
+to [0142](../drizzle/0142_climbing_route_protection.sql) after `main` added
+0137 through 0141; its snapshot was regenerated from the combined schema.
+No retries, waits, or lint suppressions were added. Next time, run Squawk as well
+as SQLFluff before opening a PR that adds PostgreSQL migrations.
+
+## 2026-10-05 — Climbing mutation CI coverage gaps (local fix validated)
+
+No production impact. PR [2880](https://github.com/Asherlc/dofek/pull/2880)
+failed `Test / Stryker (0)`, `(1)`, and `(3)` in
+[run 37377447441](https://github.com/Asherlc/dofek/actions/runs/37377447441).
+The failing command was `pnpm exec stryker run stryker.ci.config.json --mutate "$MUTATE_FILES"`.
+The first fatal diagnostics reported mutation scores of 0%, 70%, and 53.85%
+below the 75% breaking threshold. Server unit tests never selected the new
+filters, while provider tests omitted partial protection flags and CSV
+whitespace/mixed-type cases. Cached provider schemas also hid schema-initialization
+mutations, and redundant optional chaining introduced equivalent mutations.
+
+Added parameterized-query coverage for all three summaries, real PostgreSQL
+fixtures for independent and combined filters, and provider edge cases. Malformed
+response tests now initialize the provider afresh; OpenBeta captures the nullable
+route type once and filters its flags after an explicit null guard.
+The affected local mutation run killed all 59 mutations (100% for each of the
+three files). All 19,565 unit/mobile tests, nine climbing repository PostgreSQL
+tests, five OpenBeta sync PostgreSQL tests, lint, and typecheck pass. Remote
+confirmation is tracked in the PR's checks. No thresholds, exclusions, retries,
+or waits were added. For similar changes, run the CI mutation configuration
+against changed code before declaring the PR ready.
 
 **2026-10-05 — PR #2879 hosted runner allocation failure (unresolved).**
 CI for the climbing-chart fix remained queued and then cancelled several jobs,
@@ -30290,6 +30376,13 @@ timezones to locale formatter tests. Local validation includes UTC worker-thread
 execution and separate process-start timezone runs. CI validation remains
 pending; no retries, timeouts, or relaxed gates were added. Follow-up: set test
 timezones before process startup rather than mutating `TZ` inside workers.
+
+### 2026-10-05 — Newly reported dependency advisories blocked supplement-removal merge
+
+- Symptoms/evidence: [Dependency Audit](https://github.com/Asherlc/dofek/actions/runs/37399697920/job/112064250236) failed `pnpm audit --prod --audit-level=high --ignore-registry-errors` with exit code 1. The first finding was critical Seroval Promise thenable assimilation; the report also flagged proxy-addr IP spoofing, Seroval memory exhaustion, and source-map-js denial of service.
+- Impact/root cause: PR #2886 could not merge; no production deployment occurred. The lockfile still resolved vulnerable transitive versions Seroval 1.5.5, proxy-addr 2.0.7, and source-map-js 1.2.1. See the primary advisories for [Seroval callables](https://github.com/advisories/GHSA-p6vx-979v-rg4c), [proxy-addr](https://github.com/advisories/GHSA-jqcg-44mw-7w3h), [Seroval memory exhaustion](https://github.com/advisories/GHSA-jp82-f5mq-hwhp), and [source-map-js](https://github.com/advisories/GHSA-68fv-2mgg-jv7q).
+- Fix/validation: refreshed only those transitive lockfile entries to the registry's latest stable releases: Seroval 1.6.8, proxy-addr 2.0.8, and source-map-js 1.2.2. Frozen installation, the production high-severity audit, existing dependency-security regression checks, production web build, full lint, and all 32 API integration assertions passed. No manifest, override, exemption, retry, or audit threshold changed.
+- Remaining risk/follow-up: replacement CI pending; lower-severity findings and the two previously documented patched high-severity advisories remain under the existing policy. Refresh transitive dependencies when new advisories invalidate an otherwise green merge check.
 
 ## 2026-10-05 — Climbing attempt totals hidden by incomplete source counts
 
@@ -30334,6 +30427,69 @@ CI remains unresolved; keep the PR pending until required checks finish.
 No retries, timeout changes, or workflow bypasses were added. For future queue
 delays, check GitHub's published status before investigating repository code.
 
+## 2026-10-05 — Climbing PR blocked by newly published dependency advisories
+
+No production change or observed user impact. PR [2880](https://github.com/Asherlc/dofek/pull/2880)
+failed [Dependency Audit](https://github.com/Asherlc/dofek/actions/runs/37399660635/job/112064036624)
+at `pnpm audit --prod --audit-level=high --ignore-registry-errors`. The first
+blocking finding was critical Seroval Promise assimilation; the command exited 1.
+The lockfile contained seroval 1.5.5, proxy-addr 2.0.7, and source-map-js 1.2.1,
+which matched newly published high/critical advisories. See the upstream
+[Seroval Promise advisory](https://github.com/advisories/GHSA-p6vx-979v-rg4c),
+[Seroval memory advisory](https://github.com/advisories/GHSA-jp82-f5mq-hwhp),
+[proxy-addr advisory](https://github.com/advisories/GHSA-jqcg-44mw-7w3h), and
+[source-map-js advisory](https://github.com/advisories/GHSA-68fv-2mgg-jv7q).
+
+Updated only those transitive lockfile resolutions to the current stable
+seroval 1.6.8, proxy-addr 2.0.8, and source-map-js 1.2.2 through
+[recursive targeted dependency updates](https://pnpm.io/cli/update). The exact
+CI audit command now passes locally: two existing ignored high advisories and
+low/moderate findings remain under the established policy. No new exclusions,
+threshold changes, retries, or waits were added. Remote confirmation is tracked
+in the PR checks. For future merge work, run the production dependency audit
+again after updating from main because advisory data changes independently
+of code and lockfile changes.
+
+## 2026-10-05 — Withings sync alert persisted after successful scheduled syncs
+
+- **Symptoms / impact:** The app showed "Withings couldn’t sync" for Sleep and
+  Body after Withings had already recovered. Production `fitness.sync_log`
+  recorded `withings provider request timed out after 120000ms` at
+  `2026-10-06T00:30:03Z`, followed by successful scheduled syncs at `01:00`,
+  `01:30`, and `02:00` UTC. Authorization was not marked as failed.
+- **Evidence:** Read-only Postgres queries showed that those separate jobs all
+  shared the processing operation created at `00:00:02Z`. Its latest ingest
+  event remained the `00:30` failure; later jobs added canonical-commit events
+  to the same operation, while their `worker-succeeded` event conflicted with
+  the already recorded success. Axiom CLI access worked, but retained Withings
+  logs did not expose the low-level network cause. The recorded attempt took
+  995 ms, so the error text does not prove that the two-minute deadline elapsed.
+- **Root cause of the stale alert:**
+  [SyncProcessingOperation](../src/jobs/sync-processing-operation.ts) used the
+  reusable queue job ID as the permanent processing correlation key.
+  [Request deduplication](../src/jobs/sync-request-job.ts) removes terminal jobs
+  before accepting a new job with that ID; BullMQ documents that removed job
+  IDs can be reused in its [job-ID guide](https://docs.bullmq.io/guide/jobs/job-ids).
+  The processing store then reused the old operation and deduplicated the new
+  success event. The transient network failure's underlying cause remains unknown.
+- **Fix:** Processing correlation now includes the queue job's stored creation
+  timestamp. Newly created jobs receive separate operations; retries and
+  continuations retain the operation ID in job data. Both web and mobile use
+  the same processing-alert API. Existing incident history remains intact.
+- **Validation:** The new real-Redis/Postgres regression reproduced success →
+  failure → success with one reused queue ID and incorrectly failed Sleep/Body
+  status before the fix. After the fix, it verifies distinct operations, ready
+  status, an empty alert list, and operation reuse across retry and continuation.
+  Relevant unit/mobile tests and 15 database integration tests passed without
+  added sleeps or retry tuning. Docker's automatic subnet pool was exhausted;
+  an operator-only Compose override gave this workspace a free subnet without
+  changing repository configuration or other workspaces.
+- **Remaining risk / follow-up:** Production rollout is pending. A new
+  successful sync after rollout will supersede the stale operation. No
+  resilience settings changed. For similar alerts, compare sync history with
+  processing identity before treating the alert as a continuing provider outage;
+  retain the original transport cause in observability if connection failures recur.
+
 ## 2026-10-05 — Local deployment workflow test timeouts during PR #2881 validation
 
 - **Symptoms / impact:** Local `pnpm test` validation for [PR #2881](https://github.com/Asherlc/dofek/pull/2881) passed 19,518 tests but failed four `.github/workflows/deploy-web-stack.test.ts` scenarios. The first fatal message was `Error: Test timed out in 30000ms.` at line 685 (restoring processing services after a web rollback); the normal deploy and two stability-window reset cases also timed out. Production was unaffected.
@@ -30351,3 +30507,171 @@ After merging current main into the PR branch, three parallel pnpm validation co
 The [Dependency Audit job](https://github.com/Asherlc/dofek/actions/runs/37398480415/job/112060885281) failed at `pnpm audit --prod --audit-level=high --ignore-registry-errors`. Its first fatal finding was the critical [Seroval Promise deserialization advisory](https://github.com/advisories/GHSA-p6vx-979v-rg4c). The inherited lockfile resolved Seroval 1.5.5, proxy-addr 2.0.7, and source-map-js 1.2.1, also affected by [Seroval TypedArray memory exhaustion](https://github.com/advisories/GHSA-jp82-f5mq-hwhp), [proxy-addr trust-subnet IP spoofing](https://github.com/advisories/GHSA-jqcg-44mw-7w3h), and [source-map-js event-loop denial of service](https://github.com/advisories/GHSA-68fv-2mgg-jv7q). These findings blocked the merge; no production exploitation was observed or investigated during this CI diagnosis.
 
 Updated only those transitive lockfile resolutions to the latest stable releases available during investigation: Seroval 1.6.8, proxy-addr 2.0.8, and source-map-js 1.2.2. All fit existing upstream dependency ranges. The exact audit command now exits successfully; existing exclusions remain unchanged and no override, retry, or timeout was added. Remaining findings are below the configured threshold or covered by the pre-existing documented backports. Local validation also passed all 19,392 unit/mobile tests (20 skipped), root/server/web/mobile typechecks, sandbox lint, the web build, and frozen-lockfile installation. The [remote Dependency Audit rerun](https://github.com/Asherlc/dofek/actions/runs/37399594471) passed on commit 151ccdf41. Subsequent integration of main preserved its tracking removal and this PR’s Data Quality deletions; both client typechecks and 43 focused navigation/deployment tests passed. Remaining required CI validation is pending. For similar failures, use the `gh-fix-ci` skill to capture the first fatal finding, inspect the dependency path and upstream range, and prefer a targeted lockfile update when a patched release fits.
+
+## 2026-10-05 — Merged climbing fixes absent from the live release
+
+- **Symptoms / impact:** The production climbing page still showed the older
+  chart axes, grade labels, and attempt-count presentation after
+  [PR #2878](https://github.com/Asherlc/dofek/pull/2878) and
+  [PR #2879](https://github.com/Asherlc/dofek/pull/2879) merged.
+- **Evidence:** At 02:59 UTC on October 6, `GET /training/climbing` returned
+  HTTP 200 with `Cache-Control: no-cache`, `CF-Cache-Status: DYNAMIC`, and
+  assets under `web/sha-06c9729/`. Both running `dofek_web` replicas and the
+  other application services still used `sha-06c9729`. Live web logs recorded
+  the page request and successful climbing API calls; the collector was running.
+- **Root cause:** The new release had not rolled out. The
+  [deployment eligibility gate](../.github/workflows/deploy-web.yml) rejects
+  successful CI commits superseded by a newer `main` commit. The chart fix's
+  [automatic deploy](https://github.com/Asherlc/dofek/actions/runs/37397876269)
+  completed successfully overall but skipped its production job. A subsequent
+  [deploy](https://github.com/Asherlc/dofek/actions/runs/37402707679) received
+  `CI_CONCLUSION: failure` for `ee73cfae2` and also skipped production; that CI
+  run failed the dependency audit addressed in the preceding incident entry.
+  No production deployment command failed in these skipped runs.
+- **Status / remaining risk:** Unresolved pending the current
+  [main CI run](https://github.com/Asherlc/dofek/actions/runs/37403094931).
+  At 03:03 UTC, 82 checks had succeeded, with no failed jobs. The iOS archive
+  was building and watchOS remained queued with no assigned runner or executed
+  steps. The cause of the runner wait is unconfirmed. No production state,
+  deployment gate, timeout, or retry was changed.
+- **Retrospective / follow-up:** The HTML asset prefix and running image tag
+  established release identity quickly. A useful deployment-runbook addition
+  would instruct operators to inspect the production job's conclusion even
+  when the overall workflow is green, then compare its image tag with the live
+  HTML asset prefix before investigating browser caching.
+
+The requested durable fix uses GitHub's native single-pending concurrency queue
+for the entire production workflow, preserving an active release while replacing
+pending requests. Target selection now runs after the slot is acquired and uses
+the newest successful main-push CI run instead of requiring the triggering SHA
+to equal current main. Both Terraform and the Swarm stack receive that selected
+full commit SHA. Unsuccessful CI triggers use separate concurrency groups and
+cancel only their own request; the selection step also exits nonzero so a
+cancellation still being processed cannot produce a green no-op. See GitHub's
+[concurrency semantics](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency)
+and [workflow cancellation API](https://docs.github.com/en/rest/actions/workflow-runs#cancel-a-workflow-run).
+Ten executable selection tests pass, including different triggering and selected
+commits, failed/cancelled/skipped CI, cancellation API failure, missing releases,
+and manual image requests. Full lint, root/server/web typechecks, workflow
+validation with `actionlint`, and all 19,161 executed unit/mobile tests passed
+(20 existing tests were skipped). Local SQL lint initially failed because the
+workspace ClickHouse service was absent; starting that service through the
+workspace Compose wrapper resolved the prerequisite and the full lint rerun
+passed. A read-only execution against GitHub selected the latest successful
+main-push CI release, `21b64aa1d086dc0289ac6ff79d20fd26eaccef37`, rather than
+the newer untested main head. Independent review found no blocking defects.
+Remote workflow validation and rollout remain pending. At 03:24 UTC, main CI's
+iOS archive had passed and only watchOS remained queued without an assigned
+runner. No deployment timeout, retry, or migration ordering changed.
+
+Follow-up: the original main CI run passed after its remaining build gates
+completed. Its [new deploy request](https://github.com/Asherlc/dofek/actions/runs/37410215890)
+again reported overall success while skipping production because main had
+advanced. All 83 [PR #2889 CI checks](https://github.com/Asherlc/dofek/actions/runs/37408894244)
+passed, including all four integration shards, mutation testing, and package
+typechecks. At 04:03 UTC, the live climbing HTML still served `sha-06c9729`.
+The user approved merging the fix; concurrent incident-log additions then
+required a documentation-only conflict resolution preserving both records.
+Validation of the updated merge head and production rollout remain pending.
+
+## 2026-10-05 — Dependabot update validation and local Docker capacity
+
+Several pending dependency updates inherited a date-sensitive power test. The
+[Unit Tests job](https://github.com/Asherlc/dofek/actions/runs/36647977811/job/109677446817)
+failed with `AssertionError: expected null to be 190` in the raw-power fallback
+fixture: its fixed activity date fell outside the current-power window. Current
+main already freezes that fixture's clock; incorporating main passed all 42
+power-repository tests locally and preserved its patched transitive dependencies.
+
+The [AWS update](https://github.com/Asherlc/dofek/pull/2848) additionally failed
+root typechecking at `src/export-storage.ts:59` and
+`src/file-upload-storage.ts:86`: independently updated SDK packages resolved
+incompatible Smithy types. Updating the S3 client and request presigner together
+addresses their shared type contract. The
+[table update](https://github.com/Asherlc/dofek/pull/2850) failed the web build
+because `getCoreRowModel` and `useReactTable` are no longer exported in v9;
+its caller requires the documented [v9 migration](https://tanstack.com/table/latest/docs/guide/migrating).
+The [Expo core](https://github.com/Asherlc/dofek/pull/2845) and
+[maps](https://github.com/Asherlc/dofek/pull/2851) updates failed
+`pnpm expo install --check` against the SDK 57 version matrix. The user approved
+a coordinated [SDK 58 beta migration](https://expo.dev/changelog/sdk-58-beta);
+its native compatibility and CI validation remain required before merge.
+
+SDK 58 alignment also exposed changed FileSystem operations: `readBytes()` and
+`write()` now return promises. Deferred-read and multipart-write regression
+tests reproduced the ordering failures before the callers were updated to
+await completion. The SDK's changed native ref types and required peer
+dependencies were migrated together, following the
+[Expo upgrade guide](https://docs.expo.dev/workflow/upgrading-expo-sdk-walkthrough/).
+The native runtime version advances to 1.3 because
+[OTA updates must match their native runtime](https://docs.expo.dev/eas-update/runtime-versions/).
+
+The HealthKit coverage command, `bash scripts/check-coverage.sh`, ran its 91
+Swift tests successfully but failed in Xcode 27 with `error: failed to load
+coverage: '.build/debug/HealthKitLibPackageTests.xctest/Contents/MacOS/HealthKitLibPackageTests':
+No such file or directory`. SwiftPM now emitted
+`.build/out/Products/Debug/codecov/HealthKitLib.json`; the script had assumed
+an obsolete executable layout. The durable TypeScript runner asks
+[`swift test --show-codecov-path`](https://github.com/swiftlang/swift-package-manager/blob/main/Sources/PackageManagerDocs/Documentation.docc/SwiftTest.md)
+for the actual coverage artifact and retains both 90% thresholds. Five CLI
+regression tests pass; actual coverage is 294/318 lines (92.45%) and 13/14
+functions (92.86%). Standalone watch tests use an external
+[`--scratch-path`](https://github.com/swiftlang/swift-package-manager/blob/main/Sources/PackageManagerDocs/Documentation.docc/SwiftTest.md)
+so their generated files cannot enter the filesystem-synchronized app target.
+
+The signed Release simulator command, `xcodebuild -workspace
+ios/Dofek.xcworkspace -scheme Dofek -configuration Release -destination
+'platform=iOS Simulator,id=DFB64DA2-5591-4C0F-92F8-8A39142736F7' build`, first
+failed at `RNSentry.h:10` with `'Sentry/Sentry.h' file not found` in the local
+WatchMotion, HealthKit, and AppStoreBilling pods. Their existing RNSentry
+dependencies were correct, but the upstream package supplied private framework
+paths without a declared binary CocoaPod; CocoaPods could not export the
+framework to transitive consumers. Updating to
+[React Native Sentry 8.29.0](https://github.com/getsentry/sentry-react-native/releases/tag/8.29.0)
+alone did not repair that metadata gap. The package patch now declares one
+exact Sentry dependency, and Expo registers a declarative
+[`extraPods` podspec](https://docs.expo.dev/versions/latest/sdk/build-properties/#extraiospoddependency)
+with [`vendored_frameworks`](https://guides.cocoapods.org/syntax/podspec.html#vendored_frameworks).
+Its single Cocoa 9.30.0 artifact URL and SHA256 match Sentry's
+[official Swift package manifest](https://github.com/getsentry/sentry-cocoa/blob/9.30.0/Package.swift);
+the watch package uses that same native SDK version.
+
+All three consumer builds then passed, but the full app link exposed duplicate
+symbols from loading the same Sentry archive through both CocoaPods' framework
+link and the previous `force_load` flag. Exact-link probes reproduced that
+conflict and verified that a single framework link with inherited `-ObjC`
+retains the Replay network-capture category and Swift metadata
+([Apple category-linking guidance](https://developer.apple.com/library/archive/qa/qa1490/_index.html),
+[Swift compiler guidance](https://forums.swift.org/t/linker-flag-objc-force-loads-swift-libraries/47466/3)).
+The final patch removes the redundant archive load and all manual framework
+download, slice selection, and search-path handling. CocoaPods now exports
+the selected framework to all three consumers. No scanning or linker
+validation was disabled.
+
+The final current-main SDK snapshot passes all four TypeScript projects, full
+lint, Knip, workflow lint, strict production audit, dependency-security checks,
+19,111 unit/mobile tests, iOS export, clean prebuild and pod installation, and a
+signed Release build for both simulator architectures including the watch app.
+The signed SDK baseline also passed password signup through the real isolated
+API and a hard app restart on a fresh simulator. SecureStore restored the
+session directly to Today with the five expected tabs; captured runtime logs
+had no keychain or session errors. Its native MapKit view rendered the synthetic
+route and distinct Start/Finish pins. Scrubbing the elevation chart displayed
+the route hover marker, and releasing the touch cleared it. Production accounts
+and data were not used. Fresh CI and the separate latest-maps native/runtime
+validation remain pending.
+
+Local full lint initially failed because the required ClickHouse service had
+not started. The exact prerequisite command, `pnpm compose:up`, then failed
+with `all predefined address pools have been fully subnetted`. Inspection found
+six unused workspace networks, each with zero attached containers. With explicit
+user approval, each was rechecked immediately before removal; no container or
+volume was deleted. The same Compose command then completed successfully.
+Docker documents [network inspection](https://docs.docker.com/reference/cli/docker/network/inspect/)
+and [network removal](https://docs.docker.com/reference/cli/docker/network/rm/).
+
+Production was unchanged during diagnosis. No retry, timeout, audit exclusion,
+or CI gate was relaxed. Remaining work is fresh CI and native validation of the
+updated PR heads. For future dependency batches, inspect the first fatal log,
+check whether main already contains its direct fix, and verify SDK version
+matrices before attempting independent native-package updates.

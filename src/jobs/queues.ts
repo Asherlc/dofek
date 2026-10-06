@@ -32,6 +32,7 @@ export interface SyncJobData {
 /** Minimal Job interface — only the subset processSyncJob actually uses. */
 export interface SyncJob {
   id?: string;
+  timestamp: number;
   token?: string;
   queueQualifiedName: string;
   getDependencies: Job<SyncJobData>["getDependencies"];

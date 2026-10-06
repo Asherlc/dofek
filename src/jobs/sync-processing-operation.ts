@@ -42,7 +42,8 @@ async function ensureProcessingOperation(
     userId: job.data.userId,
     providerId: provider.id,
     kind: "provider_sync",
-    externalCorrelationKey: `${job.id ?? fallbackCorrelationKey}:${provider.id}`,
+    // Queue IDs are reusable after removal; the creation timestamp identifies this job instance.
+    externalCorrelationKey: `${job.id ?? fallbackCorrelationKey}:${job.timestamp}:${provider.id}`,
     datasetKeys: [...datasetKeys],
   });
   const nextData = {

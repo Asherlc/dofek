@@ -8,13 +8,14 @@ import {
 import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { shouldShowBlockingLoading } from "@dofek/scoring/loading-policy";
 import { aggregateWeeklyVolume, StrainScore } from "@dofek/scoring/scoring";
+import type { ClimbingFilters as ClimbingFilterValues } from "@dofek/training/climbing-filters";
 import { TRAINING_TERMINOLOGY } from "@dofek/training/terminology";
 import {
   collapseWeeklyVolumeActivityTypes,
   formatActivityTypeLabel,
 } from "@dofek/training/training";
 import { useRouter } from "expo-router";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   RefreshControl,
@@ -26,6 +27,7 @@ import {
 } from "react-native";
 import { ActivityCard } from "../../components/ActivityCard";
 import { ChartTitleWithTooltip } from "../../components/ChartTitleWithTooltip";
+import { ClimbingFilters } from "../../components/ClimbingFilters";
 import { ClimbingTrainingCard } from "../../components/ClimbingTrainingCard";
 import { SparkLine } from "../../components/charts/SparkLine";
 import { StrainGauge } from "../../components/charts/StrainGauge";
@@ -65,6 +67,7 @@ function useReportQueryError(query: { isError: boolean; error: object | null }) 
 }
 
 export default function StrainScreen() {
+  const [climbingFilters, setClimbingFilters] = useState<ClimbingFilterValues>({});
   const router = useRouter();
   const utils = trpc.useUtils();
   const { days, description, isHydrated, setDays } = useTimeRangePreference("training");
@@ -77,7 +80,7 @@ export default function StrainScreen() {
   }, [isHydrated]);
 
   const trainingQuery = trpc.mobileDashboard.training.useQuery(
-    { days, endDate },
+    { days, endDate, ...(Object.keys(climbingFilters).length ? { climbingFilters } : {}) },
     {
       enabled: isHydrated,
       placeholderData: preservePreviousRangeData ? (previousData) => previousData : undefined,
@@ -363,6 +366,7 @@ export default function StrainScreen() {
             units={units}
           />
 
+          <ClimbingFilters value={climbingFilters} onChange={setClimbingFilters} />
           {shouldShowClimbingSection ? (
             <ClimbingTrainingCard
               data={trainingData?.climbing}

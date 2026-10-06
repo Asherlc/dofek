@@ -52,7 +52,7 @@ function PrivacyPage() {
               </li>
               <li>
                 <strong className="text-foreground">Nutrition data</strong> — food entries, calorie
-                and macro/micronutrient breakdowns, supplements
+                and macro/micronutrient breakdowns
               </li>
               <li>
                 <strong className="text-foreground">Health metrics</strong> — heart rate

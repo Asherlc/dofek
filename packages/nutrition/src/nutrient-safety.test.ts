@@ -40,7 +40,6 @@ describe("evaluateNutrientUpperLimit", () => {
         nutrientId,
         unit,
         totalDailyAmount: amount,
-        supplementalDailyAmount: 0,
       }),
     ).toMatchObject({
       status: "at_or_above_limit",
@@ -58,7 +57,6 @@ describe("evaluateNutrientUpperLimit", () => {
         nutrientId: "vitamin_c",
         unit: "mg",
         totalDailyAmount: 2_100,
-        supplementalDailyAmount: 1_900,
       }),
     ).toMatchObject({
       status: "at_or_above_limit",
@@ -69,18 +67,17 @@ describe("evaluateNutrientUpperLimit", () => {
     });
   });
 
-  it("compares only supplemental magnesium with its supplemental-only UL", () => {
+  it("reports the supplemental-only magnesium limit as not evaluable from food intake", () => {
     expect(
       evaluateNutrientUpperLimit({
         nutrientId: "magnesium",
         unit: "mg",
         totalDailyAmount: 700,
-        supplementalDailyAmount: 300,
       }),
     ).toMatchObject({
-      status: "within_limit",
+      status: "not_evaluable",
       amount: 350,
-      intakeAmount: 300,
+      limitation: "The NIH upper limit applies only to supplemental intake, which is not tracked.",
       intakeScope: "supplemental_only",
     });
   });
@@ -91,7 +88,6 @@ describe("evaluateNutrientUpperLimit", () => {
         nutrientId: "zinc",
         unit: "mcg",
         totalDailyAmount: 50_000,
-        supplementalDailyAmount: 50_000,
       }),
     ).toMatchObject({
       status: "not_evaluable",
@@ -105,7 +101,6 @@ describe("evaluateNutrientUpperLimit", () => {
         nutrientId: "vitamin_a",
         unit: "mcg",
         totalDailyAmount: 3_500,
-        supplementalDailyAmount: 3_500,
       }),
     ).toMatchObject({
       status: "not_evaluable",
@@ -122,7 +117,6 @@ describe("evaluateNutrientUpperLimit", () => {
         nutrientId: "calcium",
         unit: "mg",
         totalDailyAmount: 1_000,
-        supplementalDailyAmount: 0,
       }),
     ).toEqual({
       status: "not_in_ruleset",
