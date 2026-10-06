@@ -25,7 +25,6 @@ const fixture = {
   foodEntry: "10000000-0000-4000-8000-000000000007",
   healthEvent: "10000000-0000-4000-8000-000000000008",
   clinicalRecord: "10000000-0000-4000-8000-000000000009",
-  journalEntry: "10000000-0000-4000-8000-000000000010",
   provider: "peerdb-contract-test",
   markerBatch: "10000000-0000-4000-8000-000000000011",
   markerWatermark: "10000000-0000-4000-8000-000000000012",
@@ -123,15 +122,6 @@ describe("PeerDB CDC production contract", () => {
       ) VALUES (
         '${fixture.clinicalRecord}', '${fixture.user}', '${fixture.provider}', 'clinical-1',
         'Observation', 'PeerDB contract record', 'R4', '{}'::jsonb, '2026-09-13T12:00:00Z'
-      );
-      INSERT INTO fitness.journal_question (slug, display_name, category, data_type)
-      VALUES ('peerdb-contract', 'PeerDB contract', 'test', 'numeric')
-      ON CONFLICT (slug) DO NOTHING;
-      INSERT INTO fitness.journal_entry (
-        id, date, provider_id, user_id, question_slug, answer_numeric
-      ) VALUES (
-        '${fixture.journalEntry}', '2026-09-13', '${fixture.provider}', '${fixture.user}',
-        'peerdb-contract', 1
       );
       INSERT INTO fitness.processing_operation (id, user_id, kind, dataset_keys)
       VALUES (
@@ -255,11 +245,6 @@ describe("PeerDB CDC production contract", () => {
         table: "clinical_record",
         predicate: "id = {id:UUID}",
         queryParams: { id: fixture.clinicalRecord },
-      },
-      {
-        table: "journal_entry",
-        predicate: "id = {id:UUID}",
-        queryParams: { id: fixture.journalEntry },
       },
       {
         table: "sensor_provider_priority",

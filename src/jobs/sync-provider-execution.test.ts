@@ -54,7 +54,7 @@ describe("sync-provider-execution", () => {
     vi.restoreAllMocks();
   });
 
-  it("invalidates WHOOP journal queries after a nonzero sync", async () => {
+  it("invalidates user queries after a nonzero WHOOP sync", async () => {
     const provider = createMockProvider({
       id: "whoop",
       name: "WHOOP",

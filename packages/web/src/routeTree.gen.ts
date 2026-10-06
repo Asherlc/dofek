@@ -11,7 +11,6 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as ZeppPairingRouteImport } from './routes/zepp-pairing'
 import { Route as TrainingRouteImport } from './routes/training'
-import { Route as TrackingRouteImport } from './routes/tracking'
 import { Route as TermsRouteImport } from './routes/terms'
 import { Route as SupportRouteImport } from './routes/support'
 import { Route as SleepRouteImport } from './routes/sleep'
@@ -30,7 +29,6 @@ import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as CorrelationRouteImport } from './routes/correlation'
 import { Route as ClinicalRecordsRouteImport } from './routes/clinical-records'
 import { Route as BodyRouteImport } from './routes/body'
-import { Route as BehaviorImpactRouteImport } from './routes/behavior-impact'
 import { Route as AlertsRouteImport } from './routes/alerts'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as ActivitiesRouteImport } from './routes/activities'
@@ -69,11 +67,6 @@ const TrainingRoute = TrainingRouteImport.update({
   path: '/training',
   getParentRoute: () => rootRouteImport,
 } as Parameters<typeof TrainingRouteImport.update>[0])
-const TrackingRoute = TrackingRouteImport.update({
-  id: '/tracking',
-  path: '/tracking',
-  getParentRoute: () => rootRouteImport,
-} as Parameters<typeof TrackingRouteImport.update>[0])
 const TermsRoute = TermsRouteImport.update({
   id: '/terms',
   path: '/terms',
@@ -164,11 +157,6 @@ const BodyRoute = BodyRouteImport.update({
   path: '/body',
   getParentRoute: () => rootRouteImport,
 } as Parameters<typeof BodyRouteImport.update>[0])
-const BehaviorImpactRoute = BehaviorImpactRouteImport.update({
-  id: '/behavior-impact',
-  path: '/behavior-impact',
-  getParentRoute: () => rootRouteImport,
-} as Parameters<typeof BehaviorImpactRouteImport.update>[0])
 const AlertsRoute = AlertsRouteImport.update({
   id: '/alerts',
   path: '/alerts',
@@ -321,7 +309,6 @@ export interface FileRoutesByFullPath {
   '/activities': typeof ActivitiesRoute
   '/admin': typeof AdminRouteWithChildren
   '/alerts': typeof AlertsRoute
-  '/behavior-impact': typeof BehaviorImpactRoute
   '/body': typeof BodyRouteWithChildren
   '/clinical-records': typeof ClinicalRecordsRouteWithChildren
   '/correlation': typeof CorrelationRoute
@@ -340,7 +327,6 @@ export interface FileRoutesByFullPath {
   '/sleep': typeof SleepRoute
   '/support': typeof SupportRoute
   '/terms': typeof TermsRoute
-  '/tracking': typeof TrackingRoute
   '/training': typeof TrainingRouteWithChildren
   '/zepp-pairing': typeof ZeppPairingRoute
   '/activity/$id': typeof ActivityIdRoute
@@ -371,7 +357,6 @@ export interface FileRoutesByTo {
   '/account-deletion': typeof AccountDeletionRoute
   '/activities': typeof ActivitiesRoute
   '/alerts': typeof AlertsRoute
-  '/behavior-impact': typeof BehaviorImpactRoute
   '/correlation': typeof CorrelationRoute
   '/dashboard': typeof DashboardRoute
   '/data-quality': typeof DataQualityRoute
@@ -386,7 +371,6 @@ export interface FileRoutesByTo {
   '/sleep': typeof SleepRoute
   '/support': typeof SupportRoute
   '/terms': typeof TermsRoute
-  '/tracking': typeof TrackingRoute
   '/zepp-pairing': typeof ZeppPairingRoute
   '/activity/$id': typeof ActivityIdRoute
   '/body/heart-rate': typeof BodyHeartRateRoute
@@ -418,7 +402,6 @@ export interface FileRoutesById {
   '/activities': typeof ActivitiesRoute
   '/admin': typeof AdminRouteWithChildren
   '/alerts': typeof AlertsRoute
-  '/behavior-impact': typeof BehaviorImpactRoute
   '/body': typeof BodyRouteWithChildren
   '/clinical-records': typeof ClinicalRecordsRouteWithChildren
   '/correlation': typeof CorrelationRoute
@@ -437,7 +420,6 @@ export interface FileRoutesById {
   '/sleep': typeof SleepRoute
   '/support': typeof SupportRoute
   '/terms': typeof TermsRoute
-  '/tracking': typeof TrackingRoute
   '/training': typeof TrainingRouteWithChildren
   '/zepp-pairing': typeof ZeppPairingRoute
   '/activity/$id': typeof ActivityIdRoute
@@ -471,7 +453,6 @@ export interface FileRouteTypes {
     | '/activities'
     | '/admin'
     | '/alerts'
-    | '/behavior-impact'
     | '/body'
     | '/clinical-records'
     | '/correlation'
@@ -490,7 +471,6 @@ export interface FileRouteTypes {
     | '/sleep'
     | '/support'
     | '/terms'
-    | '/tracking'
     | '/training'
     | '/zepp-pairing'
     | '/activity/$id'
@@ -521,7 +501,6 @@ export interface FileRouteTypes {
     | '/account-deletion'
     | '/activities'
     | '/alerts'
-    | '/behavior-impact'
     | '/correlation'
     | '/dashboard'
     | '/data-quality'
@@ -536,7 +515,6 @@ export interface FileRouteTypes {
     | '/sleep'
     | '/support'
     | '/terms'
-    | '/tracking'
     | '/zepp-pairing'
     | '/activity/$id'
     | '/body/heart-rate'
@@ -567,7 +545,6 @@ export interface FileRouteTypes {
     | '/activities'
     | '/admin'
     | '/alerts'
-    | '/behavior-impact'
     | '/body'
     | '/clinical-records'
     | '/correlation'
@@ -586,7 +563,6 @@ export interface FileRouteTypes {
     | '/sleep'
     | '/support'
     | '/terms'
-    | '/tracking'
     | '/training'
     | '/zepp-pairing'
     | '/activity/$id'
@@ -619,7 +595,6 @@ export interface RootRouteChildren {
   ActivitiesRoute: typeof ActivitiesRoute
   AdminRoute: typeof AdminRouteWithChildren
   AlertsRoute: typeof AlertsRoute
-  BehaviorImpactRoute: typeof BehaviorImpactRoute
   BodyRoute: typeof BodyRouteWithChildren
   ClinicalRecordsRoute: typeof ClinicalRecordsRouteWithChildren
   CorrelationRoute: typeof CorrelationRoute
@@ -638,7 +613,6 @@ export interface RootRouteChildren {
   SleepRoute: typeof SleepRoute
   SupportRoute: typeof SupportRoute
   TermsRoute: typeof TermsRoute
-  TrackingRoute: typeof TrackingRoute
   TrainingRoute: typeof TrainingRouteWithChildren
   ZeppPairingRoute: typeof ZeppPairingRoute
   ActivityIdRoute: typeof ActivityIdRoute
@@ -660,13 +634,6 @@ declare module '@tanstack/react-router' {
       path: '/training'
       fullPath: '/training'
       preLoaderRoute: typeof TrainingRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/tracking': {
-      id: '/tracking'
-      path: '/tracking'
-      fullPath: '/tracking'
-      preLoaderRoute: typeof TrackingRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/terms': {
@@ -793,13 +760,6 @@ declare module '@tanstack/react-router' {
       path: '/body'
       fullPath: '/body'
       preLoaderRoute: typeof BodyRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/behavior-impact': {
-      id: '/behavior-impact'
-      path: '/behavior-impact'
-      fullPath: '/behavior-impact'
-      preLoaderRoute: typeof BehaviorImpactRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/alerts': {
@@ -1094,7 +1054,6 @@ const rootRouteChildren: RootRouteChildren = {
   ActivitiesRoute: ActivitiesRoute,
   AdminRoute: AdminRouteWithChildren,
   AlertsRoute: AlertsRoute,
-  BehaviorImpactRoute: BehaviorImpactRoute,
   BodyRoute: BodyRouteWithChildren,
   ClinicalRecordsRoute: ClinicalRecordsRouteWithChildren,
   CorrelationRoute: CorrelationRoute,
@@ -1113,7 +1072,6 @@ const rootRouteChildren: RootRouteChildren = {
   SleepRoute: SleepRoute,
   SupportRoute: SupportRoute,
   TermsRoute: TermsRoute,
-  TrackingRoute: TrackingRoute,
   TrainingRoute: TrainingRouteWithChildren,
   ZeppPairingRoute: ZeppPairingRoute,
   ActivityIdRoute: ActivityIdRoute,

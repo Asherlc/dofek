@@ -41,7 +41,7 @@ export function resolveWhoopSyncRequestQuery(jobData: SyncJobData): SyncApiQuery
   if (checkpoint.phase === "api") {
     const step = checkpoint.apiSteps[checkpoint.apiStepIndex];
     if (!step) return null;
-    return whoopSyncStepToApiQuery(step, windowContext);
+    return whoopSyncStepToApiQuery(step);
   }
 
   return null;

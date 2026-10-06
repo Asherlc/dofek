@@ -66,16 +66,6 @@ const overview: DataQualityOverview = {
       lastObservedDate: null,
       details: [],
     },
-    {
-      key: "manual_edits",
-      label: "Manual edits",
-      status: "informational",
-      title: "Manual entries are included",
-      message: "1 manually entered journal record was recorded in the last 30 days.",
-      count: 1,
-      lastObservedDate: "2026-07-19",
-      details: [],
-    },
   ],
 };
 
@@ -103,10 +93,6 @@ describe("DataQualityCenter", () => {
       "/dashboard",
       "/dashboard",
     ]);
-    expect(screen.getByRole("link", { name: "Review journal" })).toHaveAttribute(
-      "href",
-      "/tracking",
-    );
   });
 
   it("shows its loading state", () => {

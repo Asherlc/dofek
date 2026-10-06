@@ -14,7 +14,6 @@ import {
   recoveryTrainingStreamSchema,
 } from "../repositories/recovery-training-series-repository.ts";
 import { SleepRepository } from "../repositories/sleep-repository.ts";
-import { SubjectiveRepository } from "../repositories/subjective-repository.ts";
 import { registerAuthorizedTool } from "./authorized-tool.ts";
 import type { DofekMcpContext } from "./context.ts";
 import { recoveryTrainingSeriesOutputSchema } from "./recovery-training-series-output.ts";
@@ -22,14 +21,7 @@ import { requireMcpScope } from "./token-repository.ts";
 import { jsonToolResult } from "./tool-result.ts";
 import { assertDateRange } from "./tool-utils.ts";
 
-const DEFAULT_STREAMS = [
-  "health",
-  "sleep",
-  "body_weight",
-  "training_load",
-  "subjective",
-  "activities",
-] as const;
+const DEFAULT_STREAMS = ["health", "sleep", "body_weight", "training_load", "activities"] as const;
 const MAX_DAYS = 366;
 
 function inclusiveDays(startDate: string, endDate: string): number {
@@ -53,12 +45,12 @@ export function registerRecoveryTrainingSeriesTool(
     {
       title: "Get Recovery And Training Series",
       description:
-        "Return a compact local-date spine of selected recovery, sleep, body-weight, modality-specific load, subjective, activity, and optional nutrition observations. It aligns data but makes no causal claims.",
+        "Return a compact local-date spine of selected recovery, sleep, body-weight, modality-specific load, activity, and optional nutrition observations. It aligns data but makes no causal claims.",
       annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
       inputSchema: z.object({
         start_date: dateSchema,
         end_date: dateSchema,
-        streams: z.array(recoveryTrainingStreamSchema).min(1).max(7).optional(),
+        streams: z.array(recoveryTrainingStreamSchema).min(1).max(6).optional(),
         providers: z.array(z.string().min(1)).max(20).optional(),
         modalities: z.array(z.enum(ACTIVITY_MODALITIES)).max(ACTIVITY_MODALITIES.length).optional(),
       }),
@@ -72,11 +64,7 @@ export function registerRecoveryTrainingSeriesTool(
         );
       }
       const requestedStreams = [...new Set(streams ?? DEFAULT_STREAMS)];
-      if (
-        requestedStreams.some((stream) =>
-          ["health", "sleep", "body_weight", "subjective"].includes(stream),
-        )
-      ) {
+      if (requestedStreams.some((stream) => ["health", "sleep", "body_weight"].includes(stream))) {
         requireMcpScope(context.scopes, "health:read");
       }
       if (requestedStreams.includes("training_load") || requestedStreams.includes("activities")) {
@@ -139,11 +127,6 @@ export function registerRecoveryTrainingSeriesTool(
                   context.userId,
                   context.timezone,
                 ),
-              }
-            : {}),
-          ...(requestedStreams.includes("subjective")
-            ? {
-                subjective: new SubjectiveRepository(context.db, context.userId, context.timezone),
               }
             : {}),
           ...(requestedStreams.includes("activities")

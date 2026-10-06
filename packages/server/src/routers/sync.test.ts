@@ -2482,7 +2482,6 @@ describe("syncRouter", () => {
               metric_stream: 100,
               nutrition_daily: 7,
               clinical_records: 6,
-              journal_entries: 6,
             },
           ]),
         },
@@ -2495,7 +2494,7 @@ describe("syncRouter", () => {
       expect(result).toEqual([
         {
           providerId: "wahoo",
-          totalRecords: 148,
+          totalRecords: 142,
           activities: 10,
           dailyMetrics: 5,
           sleepSessions: 3,
@@ -2505,7 +2504,6 @@ describe("syncRouter", () => {
           metricStream: 100,
           nutritionDaily: 7,
           clinicalRecords: 6,
-          journalEntries: 6,
         },
       ]);
       expect(execute).not.toHaveBeenCalled();

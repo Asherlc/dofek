@@ -22,7 +22,6 @@ This directory contains the Drizzle ORM schema, migrations, and database connect
 - `daily_metrics`: Aggregated daily health data (HRV, Resting HR, steps).
 - `sleep_session`: Detailed sleep duration and stages.
 - `dexa_scan`: Body composition data from DEXA scans (BodySpec).
-- `journal_entry`: Daily self-report data.
 
 ## Implementation Notes
 

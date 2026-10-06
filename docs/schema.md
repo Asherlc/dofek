@@ -5,6 +5,21 @@ truth is the domain modules under `src/db/schema/` (Drizzle generates migrations
 them through `src/db/drizzle-schema.ts`). Rebuildable read models live outside
 `fitness`, currently in the `analytics` schema.
 
+Tracking storage is retired by [migration 0139](../drizzle/0139_remove_tracking.sql):
+journal entries and questions, daily subjective check-ins and symptoms,
+injury events, and body-region references are dropped with their data. PostgreSQL
+[`DROP TABLE`](https://www.postgresql.org/docs/current/sql-droptable.html) removes
+the tables and their indexes and constraints. The provider-statistics projection is
+rebuilt first; [ClickHouse migration 0100](../src/db/clickhouse-migrations/0100_remove_tracking.ts)
+removes the journal mirror and derived statistics. Use the existing
+[deployment sequence](../deploy/README.md#deployment) to reconcile PeerDB mappings
+before migrations. [Migration 0140](../drizzle/0140_remove_tracking_mcp_scope.sql)
+removes the retired injury-write permission while preserving other token and grant
+permissions.
+
+Personal experiments and life events were retired by [migration 0137](../drizzle/0137_remove_personal_experiments.sql)
+and [migration 0138](../drizzle/0138_remove_life_events.sql), respectively.
+
 ## Data Model Philosophy: Raw Data Only
 
 We only store raw, non-derivable data. If a value can be computed from other stored data, it should not have its own column. This keeps the schema honest and avoids stale or inconsistent derived values.
@@ -171,21 +186,6 @@ summaries continue to represent actual activities. See the
 [Mountain Project provider guide](mountain-project.md) and the
 [unattached ticks design spec](superpowers/specs/2026-09-26-unattached-mountain-project-ticks-design.md).
 
-### Subjective Inputs
-
-| Table | Purpose |
-|-------|---------|
-| `fitness.body_region` | Seeded hierarchical reference regions, including bilateral fingers and A1–A5 pulley locations |
-| `fitness.subjective_check_in` | One user-owned daily check-in; row presence distinguishes logged all-clear from missing data |
-| `fitness.subjective_symptom` | Sparse soreness, stiffness, or tenderness scores for reported regions |
-| `fitness.injury_event` | User-owned injury and niggle events with onset, optional resolution, severity, and description |
-
-These tables store raw user-entered observations only. The server may assemble
-date-window timelines for reading, but it does not store derived session load,
-symptom correlations, or readiness scores. PostgreSQL foreign keys and check
-constraints enforce ownership references and score/date boundaries
-([PostgreSQL `CREATE TABLE`](https://www.postgresql.org/docs/current/sql-createtable.html)).
-
 ### Daily Metrics
 
 | Table | Purpose |
@@ -242,7 +242,6 @@ tables through ClickHouse replication.
 | `fitness.v_nutrition_display_entry` | Itemized entries and meal aggregates shown once as editable food cards; daily aggregates and ambiguous samples remain totals-only provider data |
 | `fitness.lab_result` | Clinical lab results (from Apple Health / FHIR) |
 | `fitness.health_event` | Generic health events catch-all |
-| `fitness.journal_entry` | Daily behavioral self-reports (WHOOP journal, etc.) |
 
 Supplement schedule, definition, nutrient, and dose-event ownership is defined
 by the [canonical Drizzle schema](../src/db/schema/nutrition.ts) and introduced

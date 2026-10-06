@@ -13,7 +13,6 @@ const populatedStats = {
   foodEntries: 0,
   nutritionDaily: 0,
   clinicalRecords: 0,
-  journalEntries: 0,
 } satisfies ProviderStats;
 
 const zeroStats = {
@@ -27,7 +26,6 @@ const zeroStats = {
   foodEntries: 0,
   nutritionDaily: 0,
   clinicalRecords: 0,
-  journalEntries: 0,
 } satisfies ProviderStats;
 
 const meta = {

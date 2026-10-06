@@ -95,8 +95,6 @@ identify the route/page responsible for adding section completion.
 | Nutrition Analytics | `/nutrition/analytics`, pages/NutritionAnalyticsPage | TDEE, micronutrients, macro ratios | intake + body-weight history / insufficient data | range, All |
 | Supplements | `/nutrition/supplements`, routes/nutrition/supplements | stack, safety information | active supplement versions / empty stack | date |
 | Experiments | `/experiments`, pages/PersonalExperimentsPage | list, conditional detail | existing experiment / no experiments | experiment selection |
-| Tracking | `/tracking`, pages/TrackingPage | current tracking state | tracked observations / empty state | date/range |
-| Behavior Impact | `/behavior-impact`, routes/behavior-impact | impact result | sufficient observations / insufficient state | range, behavior |
 | Cycle | `/cycle`, routes/cycle | history, phase state | cycle observations / no observations | range |
 | Settings default | `/settings`, pages/SettingsPage | selected category content | saved settings / defaults | category |
 | Alerts | `/alerts`, pages/AlertsPage | alert list | active alerts / no alerts | selection |

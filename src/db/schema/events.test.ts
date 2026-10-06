@@ -1,21 +1,15 @@
 import { getTableConfig } from "drizzle-orm/pg-core";
 import { describe, expect, it } from "vitest";
 import {
-  bodyRegion,
   breathworkSession,
   dexaScan,
   dexaScanRegion,
   fileUpload,
   fileUploadOutbox,
   imuSession,
-  injuryEvent,
-  journalEntry,
-  journalQuestion,
   menstrualPeriod,
   providerDataDeletionOutbox,
   providerDataGeneration,
-  subjectiveCheckIn,
-  subjectiveSymptom,
   syncLog,
 } from "./events.ts";
 
@@ -27,12 +21,6 @@ describe("event schema", () => {
       fileUpload,
       fileUploadOutbox,
       syncLog,
-      journalQuestion,
-      journalEntry,
-      bodyRegion,
-      subjectiveCheckIn,
-      subjectiveSymptom,
-      injuryEvent,
       breathworkSession,
       menstrualPeriod,
       dexaScan,

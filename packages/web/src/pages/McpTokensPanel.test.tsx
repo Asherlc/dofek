@@ -226,7 +226,6 @@ describe("McpTokensPanel", () => {
         name: "Codex",
         scopes: [
           "health:read",
-          "health:write",
           "activity:read",
           "nutrition:read",
           "nutrition:write",
@@ -239,34 +238,6 @@ describe("McpTokensPanel", () => {
     expect(await screen.findByDisplayValue("dofek_mcp_created")).toBeTruthy();
     expect(screen.getByText("Save this token now. It will not be shown again.")).toBeTruthy();
     expect(invalidateMcp).toHaveBeenCalled();
-  });
-
-  it("lets users deselect health write access from the default permissions", async () => {
-    createTokenMutateAsync.mockResolvedValueOnce({
-      token: "dofek_mcp_writer",
-      metadata: {},
-    });
-
-    render(<McpTokensPanel />);
-
-    expect(screen.getByLabelText("Log health observations")).toHaveProperty("checked", true);
-    fireEvent.click(screen.getByLabelText("Log health observations"));
-    fireEvent.click(screen.getByRole("button", { name: "Create Token" }));
-
-    await waitFor(() => {
-      expect(createTokenMutateAsync).toHaveBeenCalledWith({
-        name: "Codex",
-        scopes: [
-          "health:read",
-          "activity:read",
-          "nutrition:read",
-          "nutrition:write",
-          "providers:read",
-          "sync:write",
-        ],
-        expiresAt: null,
-      });
-    });
   });
 
   it("selects nutrition write access by default", () => {
@@ -303,14 +274,7 @@ describe("McpTokensPanel", () => {
     await waitFor(() => {
       expect(createTokenMutateAsync).toHaveBeenCalledWith({
         name: "Codex",
-        scopes: [
-          "health:read",
-          "health:write",
-          "activity:read",
-          "nutrition:read",
-          "providers:read",
-          "sync:write",
-        ],
+        scopes: ["health:read", "activity:read", "nutrition:read", "providers:read", "sync:write"],
         expiresAt: null,
       });
     });
@@ -321,7 +285,6 @@ describe("McpTokensPanel", () => {
 
     for (const label of [
       "Modify food records",
-      "Log health observations",
       "Health summaries",
       "Activity history",
       "Nutrition summaries",
@@ -378,7 +341,6 @@ describe("McpTokensPanel", () => {
         name: "Codex",
         scopes: [
           "health:read",
-          "health:write",
           "activity:read",
           "nutrition:read",
           "nutrition:write",

@@ -255,20 +255,6 @@ const rawTableSyncs: RawTableSync[] = [
     ],
   },
   {
-    tableName: "journal_entry",
-    columns: [
-      "id",
-      "date",
-      "provider_id",
-      "user_id",
-      "question_slug",
-      "answer_text",
-      "answer_numeric",
-      "impact_score",
-      "created_at",
-    ],
-  },
-  {
     tableName: "provider",
     columns: ["id", "name", "api_base_url", "user_id", "created_at"],
   },

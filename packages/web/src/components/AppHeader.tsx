@@ -13,7 +13,6 @@ const navItems = [
   { to: "/nutrition", label: "Nutrition" },
   { to: "/body", label: "Body" },
   { to: "/correlation", label: "Correlation" },
-  { to: "/tracking", label: "Tracking" },
   { to: "/more", label: "More" },
 ] as const;
 
