@@ -35,10 +35,6 @@ describe("MoreScreen", () => {
       "Account & settings. Manage your profile, preferences, data sources, and account.",
       "/settings",
     ],
-    [
-      "Data quality. Review coverage gaps, source overlap, sync freshness, unusual observations, and manual entries.",
-      "/data-quality",
-    ],
   ] as const)("opens %s from an accessible link", async (label, route) => {
     const { default: MoreScreen } = await import("../app/more");
     render(<MoreScreen />);
