@@ -2,7 +2,8 @@ import { TRPCError } from "@trpc/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ActivityRow } from "../models/activity.ts";
 import { ActivityRepository } from "../repositories/activity-repository.ts";
-import { ClimbingActivityEntry, ClimbingRepository } from "../repositories/climbing-repository.ts";
+import { ClimbingActivityEntry } from "../repositories/climbing-activity-entry-repository.ts";
+import { ClimbingRepository } from "../repositories/climbing-repository.ts";
 import { HangboardingRepository } from "../repositories/hangboarding-repository.ts";
 import type {
   ClimbingActivityEntryRow,
@@ -386,6 +387,7 @@ describe("climbingRouter", () => {
         grade_system: "yds",
         grade: "5.10c",
         attempts: 3,
+        recorded_attempts: 3,
         sends: 2,
       },
     ]);
@@ -400,6 +402,7 @@ describe("climbingRouter", () => {
         grade: "5.10c",
         gradeSortValue: 64.5,
         attempts: 3,
+        recordedAttempts: 3,
         sends: 2,
       },
     ]);

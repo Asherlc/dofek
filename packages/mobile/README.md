@@ -5,15 +5,6 @@ The mobile app for Dofek. Built with Expo and React Native, with native Swift mo
 ## Core Features
 
 - **HealthKit Sync**: Background synchronization of health and fitness metrics from iOS using `BackgroundRefreshModule` which registers `BGAppRefreshTask`.
-- **Read-only cycle tracking**: Reads provider-originated menstrual-flow records from HealthKit,
-  preserves the required cycle-start metadata and source attribution, and renders server-computed
-  history and phase estimates. Dofek never requests menstrual-flow write permission; corrections
-  are made in the source app and synced again. HealthKit supports a whole-period interval or
-  multiple flow samples whose first sample is marked as the cycle start
-  ([Apple documentation](https://developer.apple.com/documentation/healthkit/hkcategorytypeidentifier/menstrualflow)).
-  Because HealthKit does not disclose whether a specific read permission was denied, an empty
-  result is presented neutrally as no readable provider data
-  ([authorization behavior](https://developer.apple.com/documentation/healthkit/authorizing-access-to-health-data)).
 - **WHOOP BLE Sync**: High-resolution sensor data capture (IMU - accelerometer + gyroscope) from WHOOP straps via `WhoopBleModule`.
 - **Bluetooth Heart-Rate Monitors**: Pair in Settings and passively upload live
   heart rate + R-R intervals from any standard Bluetooth heart-rate strap via
@@ -34,6 +25,8 @@ Activity details use `components/ClimbingEntryContext` for full climbing paths,
 board names, angle/units, methods, and results on attached and unattached entries.
 Labels match the web client through shared formatters; nullable counts/statuses
 remain explicit. See the [climbing contract](../../docs/climbing-context.md).
+
+The Training route coordinates query states and delegates climbing payload validation, grade cards, and Hangboarding display to [ClimbingTrainingCard](./components/ClimbingTrainingCard.tsx), with focused tests and stories beside the component.
 
 - `app/`: Expo Router screens (file-based routing). Keep this route-only; Expo documents `app` as route-exclusive and non-route files there can be treated as routes: <https://docs.expo.dev/router/basics/core-concepts/#6-non-navigation-components-live-outside-the-srcapp-directory>.
 - `app-tests/`: Vitest tests for Expo Router screens.

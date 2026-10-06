@@ -7,11 +7,6 @@ const destinations = [
     title: "Account & settings",
     description: "Manage your profile, preferences, data sources, and account.",
   },
-  {
-    to: "/cycle",
-    title: "Cycle tracking",
-    description: "Review provider-sourced cycle starts and phase estimates.",
-  },
 ] as const;
 
 export function MorePage() {
