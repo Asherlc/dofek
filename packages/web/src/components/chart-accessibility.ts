@@ -144,7 +144,10 @@ function buildRow(
   return {
     series,
     category: formatCellValue(categorySource),
-    value: formatCellValue(valueSource),
+    value:
+      isRecord(datum) && typeof datum.displayValue === "string"
+        ? datum.displayValue
+        : formatCellValue(valueSource),
   };
 }
 

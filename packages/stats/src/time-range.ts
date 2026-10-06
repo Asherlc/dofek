@@ -30,11 +30,6 @@ export const TIME_RANGE_POLICIES = {
     description:
       "Recommended default: 90 days provides enough intake and weight history for stable trends.",
   },
-  behavior: {
-    defaultDays: 90,
-    description:
-      "Recommended default: 90 days provides enough journal observations to compare patterns.",
-  },
   correlation: {
     defaultDays: 365,
     description:

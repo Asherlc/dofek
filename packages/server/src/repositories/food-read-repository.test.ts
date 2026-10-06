@@ -626,3 +626,33 @@ describe("constructor — userId is used in queries", () => {
     expect(query1Json).not.toContain("user-beta");
   });
 });
+
+describe("nutritionTotalsByDate", () => {
+  it("returns canonical meal and macro totals for a target-free preview", async () => {
+    const { repo } = makeRepository([
+      {
+        ...availableResolutionRow,
+        calories: 1000,
+        protein_g: 55,
+        carbs_g: 105,
+        fat_g: 40,
+        breakfast_calories: 400,
+        lunch_calories: 500,
+        dinner_calories: 0,
+        snack_calories: 0,
+        other_calories: 100,
+      },
+    ]);
+    const result = await repo.nutritionTotalsByDate("2024-06-15");
+    expect(result.summary).toEqual({
+      calories: 1000,
+      mealCalories: { breakfast: 400, lunch: 500, dinner: 0, snack: 0, other: 100 },
+      macros: {
+        protein: { grams: 55, calories: 220, energySharePercentage: 22 },
+        carbs: { grams: 105, calories: 420, energySharePercentage: 42 },
+        fat: { grams: 40, calories: 360, energySharePercentage: 36 },
+      },
+    });
+    expect(result.resolution.status).toBe("available");
+  });
+});

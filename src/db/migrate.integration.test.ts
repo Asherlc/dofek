@@ -1,10 +1,19 @@
 import { createHash } from "node:crypto";
-import { mkdirSync, mkdtempSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import {
+  cpSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Client } from "pg";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
+import { resetLegacyClimbingTables } from "./climbing-migration-test-helpers.ts";
 import { runMigrations } from "./migrate.ts";
 import { setupTestDatabase, type TestContext, writeTestMigrationFiles } from "./test-helpers.ts";
 
@@ -23,7 +32,7 @@ const migrationRollbackRowsSchema = z.array(
 const migrationHashRowsSchema = z.array(z.object({ hash: z.string() }));
 const climbingEntryLeadColumnRowsSchema = z.array(
   z.object({
-    data_type: z.literal("boolean"),
+    data_type: z.literal("text"),
     is_nullable: z.literal("YES"),
     constraint_definition: z.string(),
   }),
@@ -81,7 +90,7 @@ describe("runMigrations", () => {
     await client.end();
   });
 
-  it("creates a nullable route-only lead value for climbing entries", async () => {
+  it("creates a nullable checked climbing method for climbing entries", async () => {
     const client = new Client({ connectionString: ctx.connectionString });
     await client.connect();
     try {
@@ -92,18 +101,17 @@ describe("runMigrations", () => {
           pg_get_constraintdef(constraints.oid) AS constraint_definition
         FROM information_schema.columns AS columns
         JOIN pg_constraint AS constraints
-          ON constraints.conname = 'climbing_entry_lead_routes_only'
+          ON constraints.conname = 'climbing_entry_climb_style_valid'
         WHERE columns.table_schema = 'fitness'
           AND columns.table_name = 'climbing_entry'
-          AND columns.column_name = 'lead'`,
+          AND columns.column_name = 'climb_style'`,
       );
 
       expect(climbingEntryLeadColumnRowsSchema.parse(result.rows)).toEqual([
         {
-          data_type: "boolean",
+          data_type: "text",
           is_nullable: "YES",
-          constraint_definition:
-            "CHECK (((lead IS NULL) OR (climb_type = 'route'::fitness.climbing_climb_type)))",
+          constraint_definition: expect.stringContaining("'top-rope'::text"),
         },
       ]);
     } finally {
@@ -313,6 +321,88 @@ describe("runMigrations", () => {
       );
 
       await expect(runMigrations(ctx.connectionString, tmpDir)).resolves.toBe(0);
+    } finally {
+      await client.query("DROP SCHEMA drizzle CASCADE");
+      await client.end();
+    }
+  });
+
+  it("upgrades the production climbing migration history without skipping pending work", async () => {
+    const client = new Client({ connectionString: ctx.connectionString });
+    const repositoryMigrationsFolder = join(import.meta.dirname, "../../drizzle");
+    const migrationsFolder = mkdtempSync(
+      join(tmpdir(), "migrate-test-production-climbing-history-"),
+    );
+    ctx.addCleanup(async () => {
+      rmSync(migrationsFolder, { recursive: true, force: true });
+    });
+    const journal = z
+      .object({
+        entries: z.array(z.object({ idx: z.number(), tag: z.string(), when: z.number() })),
+      })
+      .parse(
+        JSON.parse(readFileSync(join(repositoryMigrationsFolder, "meta/_journal.json"), "utf8")),
+      );
+    // This fixture models the production history through the climbing-context cutover.
+    writeTestMigrationFiles(
+      migrationsFolder,
+      journal.entries
+        .filter((entry) => entry.idx <= 135)
+        .map((entry) => ({
+          content: readFileSync(join(repositoryMigrationsFolder, `${entry.tag}.sql`), "utf8"),
+          file: `${entry.tag}.sql`,
+          when: entry.when,
+        })),
+    );
+    cpSync(join(repositoryMigrationsFolder, "_history"), join(migrationsFolder, "_history"), {
+      recursive: true,
+    });
+    const productionClimbingHash =
+      "8c78a3557c472012c24978da8c1ae16e99573f59d66ed7d8e709297702c849ff";
+    await client.connect();
+    try {
+      await resetLegacyClimbingTables(client);
+      await client.query(
+        readFileSync(join(migrationsFolder, "0133_independent_climbing_outcome_count.sql"), "utf8"),
+      );
+      await client.query("CREATE SCHEMA drizzle");
+      await client.query(`CREATE TABLE drizzle.__drizzle_migrations (
+        id serial PRIMARY KEY,
+        hash text NOT NULL,
+        created_at bigint,
+        content_hash text
+      )`);
+      for (const entry of journal.entries.filter((entry) => entry.idx <= 132)) {
+        const hash = createHash("sha256")
+          .update(readFileSync(join(migrationsFolder, `${entry.tag}.sql`)))
+          .digest("hex");
+        await client.query(
+          "INSERT INTO drizzle.__drizzle_migrations (hash,created_at,content_hash) VALUES ($1,$2,$1)",
+          [hash, entry.when],
+        );
+      }
+      await client.query(
+        "INSERT INTO drizzle.__drizzle_migrations (hash,created_at,content_hash) VALUES ($1,$2,$1)",
+        [productionClimbingHash, 1_790_727_480_000],
+      );
+
+      await expect(runMigrations(ctx.connectionString, migrationsFolder)).resolves.toBe(2);
+      const pendingHashes = [
+        "0134_apple_health_workout_revisions.sql",
+        "0135_climbing_context.sql",
+      ].map((file) =>
+        createHash("sha256")
+          .update(readFileSync(join(migrationsFolder, file)))
+          .digest("hex"),
+      );
+      const tracked = await client.query(
+        "SELECT hash FROM drizzle.__drizzle_migrations WHERE hash = ANY($1::text[]) ORDER BY hash",
+        [[productionClimbingHash, ...pendingHashes]],
+      );
+      expect(migrationHashRowsSchema.parse(tracked.rows)).toEqual(
+        [productionClimbingHash, ...pendingHashes].sort().map((hash) => ({ hash })),
+      );
+      await expect(runMigrations(ctx.connectionString, migrationsFolder)).resolves.toBe(0);
     } finally {
       await client.query("DROP SCHEMA drizzle CASCADE");
       await client.end();

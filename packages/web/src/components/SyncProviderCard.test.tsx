@@ -66,6 +66,103 @@ function renderProvider({
 }
 
 describe("SyncProviderCard", () => {
+  it("summarizes a successful current sync once", () => {
+    renderProvider({
+      recentLogs: [
+        {
+          id: "last-success",
+          syncedAt: "2026-05-12T10:00:00.000Z",
+          status: "success",
+          dataType: "activities",
+          recordCount: 12,
+          durationMs: 100,
+          errorMessage: null,
+          authFailureReason: null,
+        },
+      ],
+    });
+
+    expect(screen.getAllByText("Sync current")).toHaveLength(1);
+    expect(screen.getAllByText(/^Last (?:sync|attempt|successful sync):/)).toHaveLength(1);
+    expect(screen.getByText(/^Last successful sync:/)).not.toBeNull();
+  });
+
+  it("keeps the latest attempt distinct from the successful update", () => {
+    renderProvider({
+      provider: {
+        id: "strava",
+        name: "Strava",
+        lastSyncedAt: "2026-05-13T10:00:00.000Z",
+        lastSuccessfulSyncAt: "2026-05-12T10:00:00.000Z",
+        syncFreshness: {
+          status: "overdue",
+          label: "Sync overdue",
+          description: "The last successful sync is overdue.",
+        },
+        authorized: true,
+        description: null,
+      },
+      recentLogs: [
+        {
+          id: "failed-attempt",
+          syncedAt: "2026-05-13T10:00:00.000Z",
+          status: "error",
+          dataType: "activities",
+          recordCount: 0,
+          durationMs: 100,
+          errorMessage: "Provider unavailable",
+          authFailureReason: null,
+        },
+      ],
+    });
+
+    expect(screen.getByText(/^Last attempt:/)).not.toBeNull();
+    expect(screen.getByText(/^Last successful sync:/)).not.toBeNull();
+    expect(screen.getByRole("status", { name: "Sync needs attention" })).toHaveTextContent(
+      "Latest sync failed",
+    );
+    expect(screen.getByRole("alert")).toHaveTextContent("Sync overdue");
+  });
+
+  it("uses freshness rather than a historical success to describe overdue data", () => {
+    renderProvider({
+      provider: {
+        id: "strava",
+        name: "Strava",
+        lastSyncedAt: "2026-05-12T10:00:00.000Z",
+        lastSuccessfulSyncAt: "2026-05-12T10:00:00.000Z",
+        syncFreshness: {
+          status: "overdue",
+          label: "Sync overdue",
+          description: "The last successful sync is overdue.",
+        },
+        authorized: true,
+        description: null,
+      },
+      recentLogs: [
+        {
+          id: "old-success",
+          syncedAt: "2026-05-12T10:00:00.000Z",
+          status: "success",
+          dataType: "activities",
+          recordCount: 12,
+          durationMs: 100,
+          errorMessage: null,
+          authFailureReason: null,
+        },
+      ],
+    });
+
+    expect(screen.getByRole("alert")).toHaveTextContent("Sync overdue");
+    expect(screen.queryByText("Sync current")).toBeNull();
+  });
+
+  it("recognizes historical updates when the recent log window is empty", () => {
+    renderProvider();
+    expect(screen.getByText(/^Last successful sync:/)).not.toBeNull();
+    expect(screen.queryByText("No sync history")).toBeNull();
+  });
+
   it("uses an explicit Sync button instead of making the provider name clickable", () => {
     const onSync = vi.fn();
     renderProvider({ onSync });

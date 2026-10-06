@@ -168,7 +168,7 @@ power_sample_groups AS (
                 sensor.recorded_at,
                 toFloat64(assumeNotNull(sensor.scalar)),
                 sensor.provider_id,
-                ifNull(sensor.device_id, ''),
+                coalesce(sensor.device_id, ''),
                 sensor.measurement_kind
             ))
         ) AS samples
@@ -351,7 +351,7 @@ duration_windows AS (
         start_sample.median_sample_interval_seconds AS median_sample_interval_seconds
     FROM power_sample_endpoints AS start_sample
     CROSS JOIN duration_values
-    ASOF INNER JOIN power_sample_endpoints AS end_sample
+    ASOF JOIN power_sample_endpoints AS end_sample
         ON end_sample.activity_id = start_sample.activity_id
         AND end_sample.user_id = start_sample.user_id
         AND end_sample.recorded_at >= addMilliseconds(
@@ -501,16 +501,16 @@ tombstone_rows AS (
     SELECT
         activity_keys.activity_id AS activity_id,
         activity_keys.user_id AS user_id,
-        CAST(NULL AS Nullable(DateTime64(6, 'UTC'))) AS started_at,
-        CAST(NULL AS Nullable(String)) AS activity_date,
+        CAST(NULL, 'Nullable(DateTime64(6, ''UTC''))') AS started_at,
+        CAST(NULL, 'Nullable(String)') AS activity_date,
         existing_duration_rows.duration_seconds AS duration_seconds,
-        CAST(NULL AS Nullable(Int32)) AS best_power,
-        CAST(NULL AS Nullable(Float64)) AS start_offset_seconds,
-        CAST(NULL AS Nullable(UInt64)) AS observed_samples,
-        CAST(NULL AS Nullable(Float64)) AS median_sample_interval_seconds,
-        CAST(NULL AS Nullable(Float64)) AS largest_gap_seconds,
-        CAST(NULL AS Nullable(Float64)) AS coverage_pct,
-        CAST(NULL AS Nullable(String)) AS power_measurement_kind,
+        CAST(NULL, 'Nullable(Int32)') AS best_power,
+        CAST(NULL, 'Nullable(Float64)') AS start_offset_seconds,
+        CAST(NULL, 'Nullable(UInt64)') AS observed_samples,
+        CAST(NULL, 'Nullable(Float64)') AS median_sample_interval_seconds,
+        CAST(NULL, 'Nullable(Float64)') AS largest_gap_seconds,
+        CAST(NULL, 'Nullable(Float64)') AS coverage_pct,
+        CAST(NULL, 'Nullable(String)') AS power_measurement_kind,
         CAST([], 'Array(String)') AS source_providers,
         CAST([], 'Array(String)') AS source_devices,
         1 AS is_deleted,

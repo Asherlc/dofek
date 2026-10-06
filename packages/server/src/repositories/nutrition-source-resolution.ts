@@ -32,26 +32,33 @@ export const selectedDateNutritionTotalsRowSchema = z.object({
 export type SelectedDateNutritionTotalsRow = z.infer<typeof selectedDateNutritionTotalsRowSchema>;
 
 export function selectedDateNutritionSummary(
-  row: SelectedDateNutritionTotalsRow,
+  totals: SelectedDateNutritionTotals,
   calorieGoal: number,
 ): SelectedDateNutritionSummary {
-  const calories = row.calories ?? 0;
-  const remaining = Math.max(calorieGoal - calories, 0);
-  const over = Math.max(calories - calorieGoal, 0);
   return {
-    calories,
+    ...totals,
+    calorieGoal: {
+      target: calorieGoal,
+      remaining: Math.max(calorieGoal - totals.calories, 0),
+      over: Math.max(totals.calories - calorieGoal, 0),
+      progressPercentage: Math.min((totals.calories / calorieGoal) * 100, 100),
+    },
+  };
+}
+
+export type SelectedDateNutritionTotals = Omit<SelectedDateNutritionSummary, "calorieGoal">;
+
+export function selectedDateNutritionTotals(
+  row: SelectedDateNutritionTotalsRow,
+): SelectedDateNutritionTotals {
+  return {
+    calories: row.calories ?? 0,
     mealCalories: {
       breakfast: row.breakfast_calories,
       lunch: row.lunch_calories,
       dinner: row.dinner_calories,
       snack: row.snack_calories,
       other: row.other_calories,
-    },
-    calorieGoal: {
-      target: calorieGoal,
-      remaining,
-      over,
-      progressPercentage: Math.min((calories / calorieGoal) * 100, 100),
     },
     macros: summarizeMacros(row.protein_g ?? 0, row.carbs_g ?? 0, row.fat_g ?? 0),
   };

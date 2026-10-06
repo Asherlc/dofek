@@ -173,6 +173,44 @@ describe("date and time formatters", () => {
     );
   });
 
+  it.each([
+    ["en-US", "America/Los_Angeles", "Oct 4, 2026, 9:52 AM", "9:52 AM"],
+    ["en-GB", "America/Los_Angeles", "4 Oct 2026, 9:52", "9:52"],
+    ["en-GB", "Europe/London", "4 Oct 2026, 17:52", "17:52"],
+    ["de-DE", "Europe/Berlin", "4. Okt. 2026, 18:52", "18:52"],
+  ])("formats timestamps in %s with its local clock", (locale, timeZone, dateTime, time) => {
+    const timestamp = "2026-10-04T16:52:51.440Z";
+
+    expect(formatDateTime(timestamp, { locale, timeZone })).toBe(dateTime);
+    expect(formatTimeOnly(timestamp, { locale, timeZone })).toBe(time);
+  });
+
+  it("uses the device locale when no locale is specified", () => {
+    const DateTimeFormat = Intl.DateTimeFormat;
+    vi.spyOn(Intl, "DateTimeFormat").mockImplementation(
+      function DeviceDateTimeFormat(locales, options) {
+        return new DateTimeFormat(locales ?? "en-GB", options);
+      },
+    );
+
+    expect(formatDateTime("2026-10-04T16:52:51.440Z", { timeZone: "Asia/Tokyo" })).toBe(
+      "5 Oct 2026, 1:52",
+    );
+  });
+
+  it("keeps API date keys Gregorian when the device locale uses another calendar", () => {
+    const DateTimeFormat = Intl.DateTimeFormat;
+    vi.spyOn(Intl, "DateTimeFormat").mockImplementation(
+      function DeviceDateTimeFormat(locales, options) {
+        return new DateTimeFormat(locales ?? "th-TH", options);
+      },
+    );
+
+    expect(formatDateYmdInTimeZone("2026-10-04T16:52:51.440Z", "Pacific/Auckland")).toBe(
+      "2026-10-05",
+    );
+  });
+
   it("returns placeholders for invalid date labels", () => {
     expect(formatDateShort("not-a-date")).toBe("--");
     expect(formatDateTime("not-a-date")).toBe("--");
@@ -256,18 +294,46 @@ describe("formatDurationSeconds", () => {
 });
 
 describe("formatClimbingAttemptResult", () => {
+  it.each(["Onsight", "Flash"])("lets a successful %s convey the complete result", (ascentType) => {
+    expect(formatClimbingAttemptResult(true, null, ascentType)).toBeNull();
+    expect(formatClimbingAttemptResult(true, 1, ascentType)).toBeNull();
+  });
+
+  it.each(["Redpoint", "Pinkpoint", "Repeat"])(
+    "keeps attempt information without repeating the send implied by %s",
+    (ascentType) => {
+      expect(formatClimbingAttemptResult(true, 1, ascentType)).toBe("1 attempt");
+      expect(formatClimbingAttemptResult(true, 7, ascentType)).toBe("7 attempts");
+      expect(formatClimbingAttemptResult(true, null, ascentType)).toBe(
+        "Attempt count not recorded",
+      );
+    },
+  );
+
+  it("preserves observed outcomes that differ from the recorded ascent style", () => {
+    expect(formatClimbingAttemptResult(false, 3, "Flash")).toBe("Attempted 3 times");
+    expect(formatClimbingAttemptResult(null, null, "Onsight")).toBe(
+      "Outcome and attempt count not recorded",
+    );
+    expect(formatClimbingAttemptResult(true, 2, "Unrecognized result")).toBe("Sent in 2 attempts");
+  });
+
   it("formats sent and attempted climbs with singular and plural counts", () => {
-    expect(formatClimbingAttemptResult(true, 1)).toBe("Sent in 1 attempt");
-    expect(formatClimbingAttemptResult(true, 7)).toBe("Sent in 7 attempts");
-    expect(formatClimbingAttemptResult(false, 1)).toBe("Attempted 1 time");
-    expect(formatClimbingAttemptResult(false, 3)).toBe("Attempted 3 times");
+    expect(formatClimbingAttemptResult(true, 1, null)).toBe("Sent in 1 attempt");
+    expect(formatClimbingAttemptResult(true, 7, null)).toBe("Sent in 7 attempts");
+    expect(formatClimbingAttemptResult(false, 1, null)).toBe("Attempted 1 time");
+    expect(formatClimbingAttemptResult(false, 3, null)).toBe("Attempted 3 times");
   });
 
   it("does not manufacture a failed attempt when the result is absent", () => {
-    expect(formatClimbingAttemptResult(null, null)).toBe("Outcome not recorded");
-    expect(formatClimbingAttemptResult(true, null)).toBe("Sent; attempt count not recorded");
-    expect(formatClimbingAttemptResult(false, null)).toBe("Not sent; attempt count not recorded");
-    expect(formatClimbingAttemptResult(null, 3)).toBe("3 attempts; outcome not recorded");
+    expect(formatClimbingAttemptResult(null, null, null)).toBe(
+      "Outcome and attempt count not recorded",
+    );
+    expect(formatClimbingAttemptResult(true, null, null)).toBe("Sent; attempt count not recorded");
+    expect(formatClimbingAttemptResult(false, null, null)).toBe(
+      "Not sent; attempt count not recorded",
+    );
+    expect(formatClimbingAttemptResult(null, 3, null)).toBe("3 attempts; outcome not recorded");
   });
 });
 

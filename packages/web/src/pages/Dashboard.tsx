@@ -16,6 +16,7 @@ import { QueryStatePanel } from "../components/QueryStatePanel.tsx";
 import { TodayPlanCard } from "../components/TodayPlanCard.tsx";
 import { useProcessingStatus } from "../hooks/useProcessingStatus.ts";
 import { useTodayQueryDate } from "../hooks/useTodayQueryDate.ts";
+import { usePageLoadDomSection } from "../lib/page-load-context.tsx";
 import { trpc } from "../lib/trpc.ts";
 import { useUnitConverter } from "../lib/unitContext.ts";
 
@@ -135,6 +136,47 @@ export function Dashboard() {
       ),
     [restingHeartRateRows],
   );
+
+  const cardQueries = [readinessData, workloadRatio, strainTarget, sleepPerformance, todayPlan];
+  usePageLoadDomSection(
+    "cards",
+    cardQueries.some((query) => query.error)
+      ? "error"
+      : cardQueries.some(
+            (query) => query.isFetching || (!query.isFetched && query.data === undefined),
+          )
+        ? undefined
+        : "ready",
+  );
+  usePageLoadDomSection(
+    "health",
+    trends.error
+      ? "error"
+      : trends.isFetching || !trends.isFetched
+        ? undefined
+        : trendData
+          ? "ready"
+          : "empty",
+  );
+  usePageLoadDomSection(
+    "processing",
+    processingStatus.error
+      ? "error"
+      : processingStatus.isFetching || !processingStatus.isFetched
+        ? undefined
+        : "ready",
+  );
+  usePageLoadDomSection(
+    "insights",
+    insightsQuery.error || cardQueries.some((query) => query.error)
+      ? "error"
+      : !coreDashboardReady || insightsQuery.isFetching || !insightsQuery.isFetched
+        ? undefined
+        : topInsight
+          ? undefined
+          : "empty",
+  );
+  usePageLoadDomSection("resting-heart-rate", heartRateBaseline.error ? "error" : undefined);
 
   const healthMonitor =
     trends.error && trends.data == null ? (

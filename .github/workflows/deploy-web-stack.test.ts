@@ -214,7 +214,10 @@ function runDeployConsumers(scenarios: ConsumerScenarios, options: DeployConsume
       "bash",
       [
         "-c",
-        `SECONDS=0
+        `docker() (
+${MOCK_DOCKER}
+)
+SECONDS=0
 simulated_seconds=0
 echo() {
   builtin echo "[\${simulated_seconds}s] $*"
@@ -299,6 +302,7 @@ function runDeployQuiesced(
     );
 
     const shellScript = [
+      `docker() (\n${MOCK_DOCKER}\n)`,
       "SECONDS=0",
       "simulated_seconds=0",
       'echo() { builtin echo "[${simulated_seconds}s] $*"; }',

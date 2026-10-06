@@ -127,6 +127,25 @@ describe("chart accessibility helpers", () => {
     expect(hasChartTableData({ series: "invalid" })).toBe(false);
   });
 
+  it("uses a datum's display value for the table while preserving its plotting value", () => {
+    expect(
+      buildChartTable({
+        series: [
+          {
+            name: "Boulder",
+            data: [
+              { name: "Jul 1, 2026", value: [1782864000000, 65], displayValue: "V4" },
+              { name: "Jul 2, 2026", value: [1782950400000, 69], displayValue: 69 },
+            ],
+          },
+        ],
+      }).rows,
+    ).toEqual([
+      { series: "Boulder", category: "Jul 1, 2026", value: "V4" },
+      { series: "Boulder", category: "Jul 2, 2026", value: "69" },
+    ]);
+  });
+
   it("uses category-axis defaults and preserves series order in table rows", () => {
     expect(
       buildChartTable({

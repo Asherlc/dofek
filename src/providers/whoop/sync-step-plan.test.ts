@@ -239,7 +239,6 @@ describe("WHOOP sync step planning", () => {
       { type: "weightlifting", activityId: "strength-1" },
       { type: "sleep_stages", sleepId: "123" },
       { type: "heart_rate", start: "2026-05-01T00:00:00.000Z", end: "2026-05-03T00:00:00.000Z" },
-      { type: "journal" },
     ]);
   });
 
@@ -420,6 +419,5 @@ describe("WHOOP sync step planning", () => {
     const steps = await planWhoopApiSteps(makeContext());
 
     expect(steps.some((step) => step.type === "heart_rate")).toBe(false);
-    expect(steps.some((step) => step.type === "journal")).toBe(true);
   });
 });

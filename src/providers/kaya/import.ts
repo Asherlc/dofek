@@ -1,11 +1,11 @@
 import { createHash } from "node:crypto";
 import { resolveProviderActivityType } from "@dofek/training/activity-types";
+import { type ClimbingMetadata, climbingMetadataSchema } from "@dofek/training/climbing-context";
 import { parseClimbingGrade } from "@dofek/training/climbing-grades";
-import { eq } from "drizzle-orm";
 import { z } from "zod";
+import { persistClimbingSessionEntries } from "../../db/climbing-entry-sync.ts";
 import type { SyncDatabase } from "../../db/index.ts";
 import { upsertProviderActivity } from "../../db/provider-activity-sync.ts";
-import { climbingEntry } from "../../db/schema/activity.ts";
 import { ensureProvider } from "../../db/tokens.ts";
 import type { SyncError, SyncResult } from "../types.ts";
 import { KAYA_PROVIDER_ID, KAYA_PROVIDER_NAME } from "./provider.ts";
@@ -24,7 +24,6 @@ const KAYA_HEADER = [
   "country",
 ] as const;
 
-const SENT_ASCENT_TYPES = new Set(["Flash", "Onsight", "Redpoint", "Repeat"]);
 const attemptCountSchema = z.number().int().min(1).max(2_147_483_647);
 
 interface KayaDecodedRow {
@@ -74,16 +73,13 @@ export interface KayaRawEntry {
   country: string | null;
 }
 
-export interface KayaClimbingEntry {
+export interface KayaClimbingEntry extends ClimbingMetadata {
   externalId: string;
   climbType: "boulder" | "route";
   gradeSystem: "v_scale" | "yds";
   grade: string;
-  sent: boolean;
-  attemptCount: number;
-  lead: null;
+  attemptCount: number | null;
   routeName: string | null;
-  locationName: string | null;
   sourceName: "Kaya";
   raw: KayaRawEntry;
 }
@@ -147,7 +143,11 @@ class KayaExportImporter {
 
       let syncedRecords = 0;
       for (const activity of parsed.activities) {
-        syncedRecords += await this.#upsertActivity(transactionDb, activity);
+        syncedRecords += await this.#upsertActivity(
+          transactionDb,
+          activity,
+          parsed.errors.length === 0,
+        );
       }
       return syncedRecords;
     });
@@ -160,7 +160,11 @@ class KayaExportImporter {
     };
   }
 
-  async #upsertActivity(db: SyncDatabase, kayaActivity: KayaClimbingActivity): Promise<number> {
+  async #upsertActivity(
+    db: SyncDatabase,
+    kayaActivity: KayaClimbingActivity,
+    complete: boolean,
+  ): Promise<number> {
     const row = await upsertProviderActivity(
       db,
       {
@@ -197,27 +201,13 @@ class KayaExportImporter {
     );
     if (!row) return 0;
 
-    await db.delete(climbingEntry).where(eq(climbingEntry.activityId, row.id));
-    if (kayaActivity.entries.length === 0) return 0;
-
-    await db.insert(climbingEntry).values(
-      kayaActivity.entries.map((entry) => ({
-        userId: this.#userId,
-        providerId: KAYA_PROVIDER_ID,
-        activityId: row.id,
-        externalId: entry.externalId,
-        climbType: entry.climbType,
-        gradeSystem: entry.gradeSystem,
-        grade: entry.grade,
-        sent: entry.sent,
-        attemptCount: entry.attemptCount,
-        lead: entry.lead,
-        routeName: entry.routeName,
-        locationName: entry.locationName,
-        sourceName: entry.sourceName,
-        raw: entry.raw,
-      })),
-    );
+    await persistClimbingSessionEntries(db, {
+      userId: this.#userId,
+      providerId: KAYA_PROVIDER_ID,
+      activityId: row.id,
+      entries: kayaActivity.entries,
+      complete,
+    });
 
     return kayaActivity.entries.length;
   }
@@ -312,10 +302,6 @@ class KayaExportParser {
       return { rowNumber, message: `row ${rowNumber}: grade is unsupported` };
     }
 
-    if (!SENT_ASCENT_TYPES.has(row.ascent_type)) {
-      return { rowNumber, message: `row ${rowNumber}: ascent_type is unsupported` };
-    }
-
     const raw: KayaRawEntry = {
       date: row.date,
       stiffness: nullableNumber(row.stiffness),
@@ -329,8 +315,8 @@ class KayaExportParser {
       location: nullableText(row.location),
       country: nullableText(row.country),
     };
-    const attemptCount = raw.attempts ?? 1;
-    if (!attemptCountSchema.safeParse(attemptCount).success) {
+    const attemptCount = raw.attempts;
+    if (attemptCount !== null && !attemptCountSchema.safeParse(attemptCount).success) {
       return { rowNumber, message: `row ${rowNumber}: attempts must be a positive integer` };
     }
     const routeName = nullableText(row.climb_name);
@@ -353,11 +339,15 @@ class KayaExportParser {
         climbType: parsedGrade.gradeSystem === "v_scale" ? "boulder" : "route",
         gradeSystem: parsedGrade.gradeSystem,
         grade: parsedGrade.grade,
-        sent: true,
+        ...climbingMetadataSchema.parse({
+          locationPath: [{ name: gym, externalId: null, kind: "gym" }],
+          board: null,
+          wallAngle: null,
+          climbStyle: null,
+          resultStyle: nullableText(raw.ascentType),
+        }),
         attemptCount,
-        lead: null,
         routeName,
-        locationName: gym,
         sourceName: KAYA_PROVIDER_NAME,
         raw,
       },
