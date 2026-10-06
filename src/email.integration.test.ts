@@ -85,6 +85,26 @@ describe("shared email", () => {
     ).rejects.toThrow("Brevo email request failed with status 400");
   });
 
+  it("honors the caller's cancellation signal", async () => {
+    setEmailEnv();
+    server.use(
+      http.post(BREVO_EMAIL_URL, () =>
+        HttpResponse.json({ messageId: "brevo-message-id" }, { status: 201 }),
+      ),
+    );
+    const controller = new AbortController();
+    controller.abort(new Error("Notification send deadline exceeded"));
+
+    await expect(
+      sendPlainTextEmail({
+        subject: "Subject",
+        text: "Body",
+        toEmail: "user@example.com",
+        signal: controller.signal,
+      }),
+    ).rejects.toThrow("Notification send deadline exceeded");
+  });
+
   it("includes the Brevo response body so a rejected credential is diagnosable", async () => {
     setEmailEnv();
     server.use(

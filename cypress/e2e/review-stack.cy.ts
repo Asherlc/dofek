@@ -19,7 +19,7 @@ describe("Review stack canonical activity routes", () => {
     cy.visit("/activities");
     cy.wait("@activityCalendar").its("response.statusCode").should("eq", 200);
     cy.url().should("include", "/activities");
-    cy.contains("Activity log").should("be.visible");
+    cy.contains("h1", "Activities").should("be.visible");
 
     cy.get('a[href^="/activity/"]')
       .should("have.length.greaterThan", 0)

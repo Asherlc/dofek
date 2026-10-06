@@ -5,15 +5,6 @@ The mobile app for Dofek. Built with Expo and React Native, with native Swift mo
 ## Core Features
 
 - **HealthKit Sync**: Background synchronization of health and fitness metrics from iOS using `BackgroundRefreshModule` which registers `BGAppRefreshTask`.
-- **Read-only cycle tracking**: Reads provider-originated menstrual-flow records from HealthKit,
-  preserves the required cycle-start metadata and source attribution, and renders server-computed
-  history and phase estimates. Dofek never requests menstrual-flow write permission; corrections
-  are made in the source app and synced again. HealthKit supports a whole-period interval or
-  multiple flow samples whose first sample is marked as the cycle start
-  ([Apple documentation](https://developer.apple.com/documentation/healthkit/hkcategorytypeidentifier/menstrualflow)).
-  Because HealthKit does not disclose whether a specific read permission was denied, an empty
-  result is presented neutrally as no readable provider data
-  ([authorization behavior](https://developer.apple.com/documentation/healthkit/authorizing-access-to-health-data)).
 - **WHOOP BLE Sync**: High-resolution sensor data capture (IMU - accelerometer + gyroscope) from WHOOP straps via `WhoopBleModule`.
 - **Bluetooth Heart-Rate Monitors**: Pair in Settings and passively upload live
   heart rate + R-R intervals from any standard Bluetooth heart-rate strap via
@@ -25,10 +16,16 @@ The mobile app for Dofek. Built with Expo and React Native, with native Swift mo
 - **Passive Motion Sync**: Core Motion and WatchMotion provide background motion
   synchronization from iPhone and Apple Watch sensors.
 - **Mobile Dashboard**: Simplified mobile-first health and recovery tracking with SVG-based charts (`react-native-svg`).
-- **Journal Trends**: Reviews server-authored numeric and Yes/No journal series with visible date bounds, explicit missing days, exact provider-attributed values, and the supported uncertainty status.
 - **Nutrition history**: Read-only nutrition history, totals, source resolution, and analytics.
 
 ## Project Structure
+
+Activity details use `components/ClimbingEntryContext` for full climbing paths,
+board names, angle/units, methods, and results on attached and unattached entries.
+Labels match the web client through shared formatters; nullable counts/statuses
+remain explicit. See the [climbing contract](../../docs/climbing-context.md).
+
+The Training route coordinates query states and delegates climbing payload validation, grade cards, and Hangboarding display to [ClimbingTrainingCard](./components/ClimbingTrainingCard.tsx), with focused tests and stories beside the component.
 
 - `app/`: Expo Router screens (file-based routing). Keep this route-only; Expo documents `app` as route-exclusive and non-route files there can be treated as routes: <https://docs.expo.dev/router/basics/core-concepts/#6-non-navigation-components-live-outside-the-srcapp-directory>.
 - `app-tests/`: Vitest tests for Expo Router screens.
@@ -239,6 +236,55 @@ and hardware described there.
 
 - **Component tests**: `pnpm test:mobile` from the repo root (Vitest mobile project)
 - **Native modules**: Swift tests in `modules/<name>/Tests/` (XCTest)
+- **Apple diagnostic privacy**: `pnpm tsx scripts/test-apple-auth-diagnostics.ts`
+  from the repository root compiles the installed production Swift helper with
+  a Foundation fixture and executes classification, redaction, underlying-error,
+  and non-retention checks. The existing iOS Native Build job runs this before
+  prebuild and the Release archive; see the [runner](../../scripts/test-apple-auth-diagnostics.ts)
+  and [workflow](../../.github/workflows/build-mobile.yml).
+
+### Native diagnostic runtime
+
+Runtime **1.2** includes ExpoNetwork and the pnpm patch to
+`expo-apple-authentication@57.0.2`. Build a new native binary containing both;
+do not publish this JavaScript to runtime 1.1. Expo uses runtime versions to
+match updates to compatible native code
+([runtime versions](https://docs.expo.dev/eas-update/runtime-versions/)).
+Use [pnpm patch/patch-commit](https://pnpm.io/cli/patch-commit) when updating the
+patch, then rerun the native regression and existing Release archive job.
+
+The [Apple patch](../../patches/expo-apple-authentication@57.0.2.patch) preserves
+Expo's authorization exception mapping and cancellation. Other authorization
+errors carry only an allowlisted NSError domain, numeric code, and optional
+immediate underlying domain/code. Unknown domains become `other`; native
+descriptions and userInfo are discarded. Expo's
+[exception cause formatting](https://github.com/expo/expo/blob/main/packages/expo-modules-core/ios/Core/Exceptions/Exception.swift)
+and [JavaScript error bridge](https://github.com/expo/expo/blob/main/packages/expo-modules-jsi/apple/Sources/ExpoModulesJSI/Runtime/Values/JavaScriptError.swift)
+transport the safe marker in the error message. The login boundary parses it
+into safe telemetry and presents a readable sign-in error, while preserving
+server error messages and silent user cancellation. See the
+[JavaScript diagnostic boundary](./lib/apple-auth-diagnostics.ts) and
+[Expo Apple authentication behavior](https://docs.expo.dev/versions/latest/sdk/apple-authentication/).
+These diagnostics do not establish the cause of historical Apple failures;
+device sign-in validation remains separate from helper tests and archive validation.
+
+Query persistence records allowlisted failure categories/codes and aggregate
+attempted-write counts and UTF-8 byte measurements per persister lifetime.
+Diagnostics contain no cache keys, user IDs, health values, tokens, or original
+native messages. The pinned AsyncStorage conversion drops NSError codes, so
+known fixed storage messages also map to safe categories; other failures stay
+`unknown`. Read/remove and deserialization rejections retain their original
+identity, and write failures are captured through TanStack's retry callback
+without adding retries. The provider's error callback also reports failures
+after parsing, including hydration, with a generic safe classification because
+the callback supplies no error argument. A lower-boundary failure can produce
+both its detailed safe report and this generic fallback. See
+[TanStack persistence restoration](https://tanstack.com/query/latest/docs/framework/react/plugins/persistQueryClient#persistqueryclientprovider),
+the [persistence boundary](./lib/mobile-query-persistence.ts),
+[AsyncStorage conversion](https://github.com/react-native-async-storage/async-storage/blob/v2.2.0/packages/default-storage/src/helpers.ts),
+and [TanStack async persister](https://tanstack.com/query/latest/docs/framework/react/plugins/createAsyncStoragePersister).
+The 5 MiB cap measures `TextEncoder` UTF-8 output, matching the
+[Encoding Standard](https://encoding.spec.whatwg.org/#interface-textencoder).
 
 ## Mobile Telemetry
 

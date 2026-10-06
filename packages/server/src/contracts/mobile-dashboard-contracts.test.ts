@@ -723,6 +723,23 @@ describe("workloadDisplayFixtureSchema", () => {
 });
 
 describe("mobileTrainingFixtureSchema", () => {
+  it("preserves recorded attempt subtotals when a grade's complete total is unknown", () => {
+    const fixture = validTrainingFixture();
+    const volume = {
+      climbType: "boulder" as const,
+      gradeSystem: "v_scale" as const,
+      grade: "V5",
+      gradeSortValue: 69,
+      attempts: null,
+      recordedAttempts: 4,
+      sends: 1,
+    };
+    fixture.data.climbing.volumeByGrade.push(volume);
+    expect(mobileTrainingFixtureSchema.parse(fixture).data.climbing.volumeByGrade).toEqual([
+      volume,
+    ]);
+  });
+
   it("accepts coherent training claims backed by runtime-valid data", () => {
     expect(mobileTrainingFixtureSchema.parse(validTrainingFixture())).toBeTruthy();
   });
@@ -989,7 +1006,9 @@ describe("mobileTrainingFixtureSchema", () => {
         gradeSystem,
         grade,
         gradeSortValue,
-        ...(target === "gradeProgression" ? { date: input.endDate } : { attempts: 1, sends: 1 }),
+        ...(target === "gradeProgression"
+          ? { date: input.endDate }
+          : { attempts: 1, recordedAttempts: 1, sends: 1 }),
       });
 
       expectIssue(

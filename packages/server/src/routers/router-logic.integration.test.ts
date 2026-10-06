@@ -19,27 +19,18 @@ import {
  */
 
 const TEST_USER_ID = "00000000-0000-0000-0000-000000000001";
-const OTHER_TEST_USER_ID = "123e4567-e89b-42d3-a456-426614174000";
 
 describe("Router transformation logic", () => {
   let server: ReturnType<import("express").Express["listen"]>;
   let baseUrl: string;
   let testCtx: TestContext;
   let sessionCookie: string;
-  let otherUserSessionCookie: string;
 
   beforeAll(async () => {
     testCtx = await setupTestDatabase();
 
     const session = await createSession(testCtx.db, TEST_USER_ID);
     sessionCookie = `session=${session.sessionId}`;
-    await testCtx.db.execute(
-      sql`INSERT INTO fitness.user_profile (id, name)
-          VALUES (${OTHER_TEST_USER_ID}, 'Other Cache Test User')
-          ON CONFLICT DO NOTHING`,
-    );
-    const otherUserSession = await createSession(testCtx.db, OTHER_TEST_USER_ID);
-    otherUserSessionCookie = `session=${otherUserSession.sessionId}`;
 
     // Insert a test provider (needed for FK constraints)
     await testCtx.db.execute(
@@ -96,112 +87,6 @@ describe("Router transformation logic", () => {
     const data = await res.json();
     return { status: res.status, result: data[0] };
   }
-
-  // ══════════════════════════════════════════════════════════════
-  // Life Events — CRUD operations
-  // ══════════════════════════════════════════════════════════════
-  describe("lifeEvents CRUD", () => {
-    let createdEventId: string;
-
-    it("create inserts a life event and returns it", async () => {
-      await query("lifeEvents.list");
-      const { status, result } = await mutate("lifeEvents.create", {
-        label: "Started new job",
-        startedAt: "2025-06-01",
-        category: "career",
-        ongoing: true,
-        notes: "Remote position",
-      });
-      expect(status).toBe(200);
-      expect(result.result.data).toBeDefined();
-      const event = result.result.data;
-      expect(event.label).toBe("Started new job");
-      expect(event.category).toBe("career");
-      expect(event.ongoing).toBe(true);
-      expect(event.notes).toBe("Remote position");
-      expect(event.id).toBeDefined();
-      createdEventId = event.id;
-
-      const { result: listResult } = await query("lifeEvents.list");
-      expect(
-        listResult.result.data.find((listedEvent: { id: string }) => listedEvent.id === event.id),
-      ).toBeDefined();
-    });
-
-    it("list returns the created event", async () => {
-      const { status, result } = await query("lifeEvents.list");
-      expect(status).toBe(200);
-      const events = result.result.data;
-      expect(events.length).toBeGreaterThanOrEqual(1);
-      const found = events.find((e: { id: string }) => e.id === createdEventId);
-      expect(found).toBeDefined();
-      expect(found.label).toBe("Started new job");
-    });
-
-    it("update modifies specific fields", async () => {
-      const { status, result } = await mutate("lifeEvents.update", {
-        id: createdEventId,
-        label: "Left job",
-        ongoing: false,
-        endedAt: "2025-12-31",
-      });
-      expect(status).toBe(200);
-      const updated = result.result.data;
-      expect(updated.label).toBe("Left job");
-      expect(updated.ongoing).toBe(false);
-
-      const { result: listResult } = await query("lifeEvents.list");
-      expect(
-        listResult.result.data.find((event: { id: string }) => event.id === createdEventId)?.label,
-      ).toBe("Left job");
-    });
-
-    it("update all fields including null-clearing", async () => {
-      // Covers: startedAt, category→null, notes→null, endedAt→null branches
-      const { status, result } = await mutate("lifeEvents.update", {
-        id: createdEventId,
-        startedAt: "2025-07-01",
-        endedAt: null,
-        category: null,
-        notes: null,
-      });
-      expect(status).toBe(200);
-      const updated = result.result.data;
-      expect(updated.ended_at).toBeNull();
-      expect(updated.category).toBeNull();
-      expect(updated.notes).toBeNull();
-
-      const { result: listResult } = await query("lifeEvents.list");
-      const listedEvent = listResult.result.data.find(
-        (event: { id: string }) => event.id === createdEventId,
-      );
-      expect(listedEvent.ended_at).toBeNull();
-      expect(listedEvent.category).toBeNull();
-      expect(listedEvent.notes).toBeNull();
-    });
-
-    it("update with no fields returns null", async () => {
-      const { status, result } = await mutate("lifeEvents.update", {
-        id: createdEventId,
-      });
-      expect(status).toBe(200);
-      expect(result.result.data).toBeNull();
-    });
-
-    it("delete removes the event", async () => {
-      const { status, result } = await mutate("lifeEvents.delete", {
-        id: createdEventId,
-      });
-      expect(status).toBe(200);
-      expect(result.result.data.success).toBe(true);
-
-      // Verify it's gone
-      const { result: listResult } = await query("lifeEvents.list");
-      const events = listResult.result.data;
-      const found = events.find((e: { id: string }) => e.id === createdEventId);
-      expect(found).toBeUndefined();
-    });
-  });
 
   // ══════════════════════════════════════════════════════════════
   // Sport Settings — CRUD + history
@@ -330,132 +215,6 @@ describe("Router transformation logic", () => {
   // Query cache invalidation after domain mutations
   // ══════════════════════════════════════════════════════════════
   describe("query cache invalidation", () => {
-    it("refreshes journal questions, entries, and trends after every mutation", async () => {
-      const questionSlug = "cache_invalidation_energy";
-      const today = new Date().toISOString().slice(0, 10);
-      await queryCache.invalidateAll();
-      await testCtx.db.execute(
-        sql`DELETE FROM fitness.journal_entry
-            WHERE user_id = ${TEST_USER_ID} AND question_slug = ${questionSlug}`,
-      );
-      await testCtx.db.execute(
-        sql`DELETE FROM fitness.journal_question WHERE slug = ${questionSlug}`,
-      );
-
-      const { result: questionsBefore } = await query("journal.questions");
-      const { result: otherUserQuestionsBefore } = await query(
-        "journal.questions",
-        {},
-        otherUserSessionCookie,
-      );
-      expect(
-        questionsBefore.result.data.some(
-          (question: { slug: string }) => question.slug === questionSlug,
-        ),
-      ).toBe(false);
-      expect(
-        otherUserQuestionsBefore.result.data.some(
-          (question: { slug: string }) => question.slug === questionSlug,
-        ),
-      ).toBe(false);
-
-      const { status: questionStatus } = await mutate("journal.createQuestion", {
-        slug: questionSlug,
-        displayName: "Cache invalidation energy",
-        category: "custom",
-        dataType: "numeric",
-      });
-      expect(questionStatus).toBe(200);
-
-      const { result: questionsAfter } = await query("journal.questions");
-      expect(
-        questionsAfter.result.data.some(
-          (question: { slug: string }) => question.slug === questionSlug,
-        ),
-      ).toBe(true);
-      const { result: otherUserQuestionsAfter } = await query(
-        "journal.questions",
-        {},
-        otherUserSessionCookie,
-      );
-      expect(
-        otherUserQuestionsAfter.result.data.some(
-          (question: { slug: string }) => question.slug === questionSlug,
-        ),
-      ).toBe(true);
-
-      await query("journal.entries", { days: 30 });
-      await query("journal.trends", { days: 3, endDate: today });
-
-      const { status: createStatus, result: createdResult } = await mutate("journal.create", {
-        date: today,
-        questionSlug,
-        answerNumeric: 4,
-      });
-      expect(createStatus).toBe(200);
-      const entryId = createdResult.result.data.id;
-
-      const { result: entriesAfterCreate } = await query("journal.entries", { days: 30 });
-      expect(
-        entriesAfterCreate.result.data.find((entry: { id: string }) => entry.id === entryId)
-          ?.answer_numeric,
-      ).toBe(4);
-      const { result: trendsAfterCreate } = await query("journal.trends", {
-        days: 3,
-        endDate: today,
-      });
-      const trendAfterCreate = trendsAfterCreate.result.data.series.find(
-        (series: { questionSlug: string }) => series.questionSlug === questionSlug,
-      );
-      expect(trendsAfterCreate.result.data.window.dayCount).toBe(3);
-      expect(trendAfterCreate.points.at(-1)).toMatchObject({
-        date: today,
-        value: 4,
-        source: { providerId: "dofek", label: "Dofek" },
-      });
-      expect(
-        trendAfterCreate.points.filter((point: { value: number | null }) => point.value === null),
-      ).toHaveLength(2);
-
-      const { status: updateStatus } = await mutate("journal.update", {
-        id: entryId,
-        answerNumeric: 8,
-      });
-      expect(updateStatus).toBe(200);
-
-      const { result: entriesAfterUpdate } = await query("journal.entries", { days: 30 });
-      expect(
-        entriesAfterUpdate.result.data.find((entry: { id: string }) => entry.id === entryId)
-          ?.answer_numeric,
-      ).toBe(8);
-      const { result: trendsAfterUpdate } = await query("journal.trends", {
-        days: 3,
-        endDate: today,
-      });
-      expect(
-        trendsAfterUpdate.result.data.series
-          .find((series: { questionSlug: string }) => series.questionSlug === questionSlug)
-          ?.points.at(-1),
-      ).toMatchObject({ date: today, value: 8 });
-
-      const { status: deleteStatus } = await mutate("journal.delete", { id: entryId });
-      expect(deleteStatus).toBe(200);
-
-      const { result: entriesAfterDelete } = await query("journal.entries", { days: 30 });
-      expect(
-        entriesAfterDelete.result.data.find((entry: { id: string }) => entry.id === entryId),
-      ).toBeUndefined();
-      const { result: trendsAfterDelete } = await query("journal.trends", {
-        days: 3,
-        endDate: today,
-      });
-      expect(
-        trendsAfterDelete.result.data.series.find(
-          (series: { questionSlug: string }) => series.questionSlug === questionSlug,
-        ),
-      ).toBeUndefined();
-    });
-
     it("refreshes personalization status after reset", async () => {
       await queryCache.invalidateAll();
       await savePersonalizedParams(testCtx.db, TEST_USER_ID, {
@@ -999,56 +758,6 @@ describe("Router transformation logic", () => {
       // Derived resting HR should come from the seeded overnight sensor samples.
       if (rhrMetric.value !== null) {
         expect(rhrMetric.value).toBeCloseTo(58, 0);
-      }
-    });
-  });
-
-  // ══════════════════════════════════════════════════════════════
-  // Life Events — analyze compares metrics before/after
-  // ══════════════════════════════════════════════════════════════
-  describe("lifeEvents analyze", () => {
-    let analyzeEventId: string;
-
-    beforeAll(async () => {
-      // Create a life event dated ~15 days ago
-      const eventDate = new Date();
-      eventDate.setDate(eventDate.getDate() - 15);
-      const dateStr = eventDate.toISOString().slice(0, 10);
-
-      const { result } = await mutate("lifeEvents.create", {
-        label: "Started meditation",
-        startedAt: dateStr,
-        category: "wellness",
-      });
-      analyzeEventId = result.result.data.id;
-    });
-
-    it("returns before/after comparison with metrics", async () => {
-      const { status, result } = await query("lifeEvents.analyze", {
-        id: analyzeEventId,
-        windowDays: 14,
-      });
-      expect(status).toBe(200);
-      const data = result.result.data;
-
-      expect(data).toBeDefined();
-      expect(data.event).toBeDefined();
-      expect(data.metrics).toBeDefined();
-      expect(data.sleep).toBeDefined();
-      expect(data.bodyComp).toBeDefined();
-
-      // Metrics should have 'before' and/or 'after' periods
-      if (data.metrics.length > 0) {
-        for (const period of data.metrics) {
-          expect(["before", "after"]).toContain(period.period);
-          expect(Number(period.days)).toBeGreaterThan(0);
-        }
-      }
-    });
-
-    afterAll(async () => {
-      if (analyzeEventId) {
-        await mutate("lifeEvents.delete", { id: analyzeEventId });
       }
     });
   });

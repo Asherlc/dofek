@@ -9,6 +9,11 @@ import {
   decodeMountainProjectTickExport,
   type MountainProjectTick,
 } from "@dofek/mountain-project/ticks";
+import {
+  type ClimbingMetadata,
+  type ClimbingStyle,
+  climbingMetadataSchema,
+} from "@dofek/training/climbing-context";
 import { sql } from "drizzle-orm";
 import type { TokenSet } from "../auth/oauth.ts";
 import { climbingEntry } from "../db/schema/activity.ts";
@@ -23,15 +28,13 @@ const MOUNTAIN_PROJECT_BASE_URL = "https://www.mountainproject.com";
 const MOUNTAIN_PROJECT_PROVIDER_ID = "mountain-project";
 const MOUNTAIN_PROJECT_PROVIDER_NAME = "Mountain Project";
 
-interface MountainProjectClimbingEntry {
+interface MountainProjectClimbingEntry extends ClimbingMetadata {
   externalId: string;
   climbType: "boulder" | "route";
   gradeSystem: "v_scale" | "yds";
   grade: string;
-  sent: boolean | null;
   attemptCount: number | null;
   routeName: string | null;
-  locationName: string;
   raw: MountainProjectTick["raw"];
 }
 
@@ -169,10 +172,13 @@ export class MountainProjectProvider implements SyncProvider {
                 climbType: entry.climbType,
                 gradeSystem: entry.gradeSystem,
                 grade: entry.grade,
-                sent: entry.sent,
+                resultStyle: entry.resultStyle,
+                climbStyle: entry.climbStyle,
+                board: entry.board,
+                wallAngle: entry.wallAngle,
                 attemptCount: entry.attemptCount,
                 routeName: entry.routeName,
-                locationName: entry.locationName,
+                locationPath: entry.locationPath,
                 sourceName: this.name,
                 raw: entry.raw,
               })
@@ -183,10 +189,13 @@ export class MountainProjectProvider implements SyncProvider {
                   climbType: entry.climbType,
                   gradeSystem: entry.gradeSystem,
                   grade: entry.grade,
-                  sent: entry.sent,
+                  resultStyle: entry.resultStyle,
+                  climbStyle: entry.climbStyle,
+                  board: entry.board,
+                  wallAngle: entry.wallAngle,
                   attemptCount: entry.attemptCount,
                   routeName: entry.routeName,
-                  locationName: entry.locationName,
+                  locationPath: entry.locationPath,
                   sourceName: this.name,
                   raw: entry.raw,
                   providerAbsentAt: null,
@@ -263,17 +272,33 @@ function parseMountainProjectTicks(ticks: MountainProjectTick[]): TickExportPars
     occurrenceByFingerprint.set(fingerprint, occurrence + 1);
     const externalId = `mountain-project:tick:${stableHash([fingerprint, String(occurrence)])}`;
     const climbType = isBoulder(tick) ? "boulder" : "route";
-    const sent = sentForTick(tick, climbType);
+    const methods: Readonly<Record<string, ClimbingStyle>> = {
+      Lead: "lead",
+      TR: "top-rope",
+      Follow: "follow",
+      Solo: "solo",
+      Aid: "aid",
+    };
+    const metadata = climbingMetadataSchema.parse({
+      locationPath: locationName
+        .split(">")
+        .map((name) => name.trim())
+        .filter(Boolean)
+        .map((name) => ({ name, externalId: null, kind: null })),
+      board: null,
+      wallAngle: null,
+      climbStyle: climbType === "boulder" ? null : (methods[tick.style] ?? null),
+      resultStyle: nullableText(climbType === "boulder" ? tick.style : tick.leadStyle),
+    });
     entries.push({
       externalId,
       unattachedDate: dateKey,
       climbType,
       gradeSystem: parsedGrade.gradeSystem,
       grade: parsedGrade.grade,
-      sent,
-      attemptCount: sent === null ? null : 1,
+      ...metadata,
+      attemptCount: null,
       routeName: nullableText(tick.route),
-      locationName,
       raw: tick.raw,
     });
   }
@@ -294,15 +319,6 @@ function isBoulder(tick: MountainProjectTick): boolean {
     tick.routeType.split(",").some((type) => type.trim().toLowerCase() === "boulder") ||
     Number(tick.ratingCode) >= 20_000
   );
-}
-
-function sentForTick(tick: MountainProjectTick, climbType: "boulder" | "route"): boolean | null {
-  if (climbType === "boulder") {
-    if (["Send", "Flash"].includes(tick.style)) return true;
-    return tick.style === "Attempt" ? false : null;
-  }
-  if (["Onsight", "Flash", "Redpoint", "Pinkpoint"].includes(tick.leadStyle)) return true;
-  return tick.leadStyle === "Fell/Hung" ? false : null;
 }
 
 function nullableText(value: string): string | null {

@@ -11,7 +11,7 @@ export class WhoopProvider implements SyncProvider {
   readonly id = "whoop";
   readonly name = "WHOOP (Cloud)";
   /**
-   * A scheduled (non-full) sync re-plans strain, heart-rate, and journal
+   * A scheduled (non-full) sync re-plans strain and heart-rate
    * steps for the entire lookback window on every run — only strain and
    * sleep stages skip already-synced days. A 3-day window is generous for
    * WHOOP's typical same/next-day data finalization while avoiding a full

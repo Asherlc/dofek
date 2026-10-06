@@ -17,7 +17,6 @@ import { dateWindowEndExclusiveString, dateWindowStartString } from "../lib/date
 import { ActivitiesCalendarRepository } from "./activities-calendar-repository.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
 import { AnomalyDetectionRepository, type AnomalyRow } from "./anomaly-detection-repository.ts";
-import { JournalRepository } from "./journal-repository.ts";
 import { NutritionAnalyticsRepository } from "./nutrition-analytics-repository.ts";
 import { ProcessingRepository, type ProcessingStatusDataset } from "./processing-repository.ts";
 
@@ -198,29 +197,6 @@ function outlierCheck(anomalies: readonly AnomalyRow[], windowDays: number): Dat
   });
 }
 
-function manualEntriesCheck(
-  entries: readonly { date: string; source: { providerId: string } }[],
-  windowDays: number,
-) {
-  const manualDates = entries
-    .filter((entry) => entry.source.providerId === "dofek")
-    .map((entry) => entry.date);
-  const count = manualDates.length;
-  return check({
-    key: "manual_edits",
-    label: "Manual edits",
-    status: count > 0 ? "informational" : "healthy",
-    title: count > 0 ? "Manual entries are included" : "No manual entries recorded",
-    message:
-      count > 0
-        ? `${count} manually entered ${pluralize(count, "journal record")} ${count === 1 ? "was" : "were"} recorded in the last ${windowDays} days.`
-        : `No manually entered journal records were recorded in the last ${windowDays} days.`,
-    count,
-    lastObservedDate: latestDate(manualDates),
-    details: [],
-  });
-}
-
 /** Composes existing server-side quality signals for the cross-product center. */
 export class DataQualityRepository {
   readonly #database: Database;
@@ -256,7 +232,7 @@ export class DataQualityRepository {
       endDate,
       includeProviderAbsent: true,
     });
-    const [processing, nutrition, activityDays, anomalies, journalEntries] = await Promise.all([
+    const [processing, nutrition, activityDays, anomalies] = await Promise.all([
       new ProcessingRepository(this.#database, this.#userId).status({}),
       new NutritionAnalyticsRepository(
         this.#database,
@@ -271,7 +247,6 @@ export class DataQualityRepository {
         this.#timezone,
         this.#sensorStore,
       ).getHistory(window.days, endDate),
-      new JournalRepository(this.#database, this.#userId).listEntries(window.days),
     ]);
 
     const activityOverlapDates = activityDays
@@ -287,7 +262,6 @@ export class DataQualityRepository {
       activitySourceOverlapCheck(activityOverlapDates),
       syncFreshnessCheck(processing.overallStatus, processing.datasets),
       outlierCheck(anomalies, window.days),
-      manualEntriesCheck(journalEntries, window.days),
     ];
     const hasAttention = checks.some((qualityCheck) => qualityCheck.status === "attention");
     const attentionCount = checks.filter(

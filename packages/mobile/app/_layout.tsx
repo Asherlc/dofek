@@ -36,6 +36,7 @@ import { syncWhoopBle, teardownBackgroundWhoopBleSync } from "../lib/background-
 import type { SyncTrpcClient } from "../lib/health-kit-sync";
 import { invalidateSyncedHealthData } from "../lib/invalidate-synced-health-data";
 import { resolveMedicationReminderNotificationPath } from "../lib/medication-reminder-notifications";
+import { registerMobileQueryLifecycle } from "../lib/mobile-query-lifecycle";
 import { MobileQueryPersistenceProvider } from "../lib/mobile-query-persistence";
 import { createAppQueryClient } from "../lib/query-client";
 import { rootStackScreenOptions } from "../lib/root-stack-screen-options";
@@ -708,18 +709,6 @@ function AuthGate() {
             }}
           />
           <Stack.Screen
-            name="data-quality"
-            options={{
-              title: "Data Quality",
-            }}
-          />
-          <Stack.Screen
-            name="cycle"
-            options={{
-              title: "Cycle Tracking",
-            }}
-          />
-          <Stack.Screen
             name="reports"
             options={{
               title: "Health Reports",
@@ -776,24 +765,6 @@ function AuthGate() {
             }}
           />
           <Stack.Screen
-            name="behavior-associations"
-            options={{
-              title: "Behavior Associations",
-            }}
-          />
-          <Stack.Screen
-            name="tracking"
-            options={{
-              title: "Journal Trends",
-            }}
-          />
-          <Stack.Screen
-            name="experiments"
-            options={{
-              title: "Personal Experiments",
-            }}
-          />
-          <Stack.Screen
             name="preview"
             options={{
               title: "Preview Update",
@@ -806,6 +777,8 @@ function AuthGate() {
 }
 
 function RootLayout() {
+  useEffect(registerMobileQueryLifecycle, []);
+
   return (
     <SafeAreaProvider>
       <AuthProvider>

@@ -6,6 +6,14 @@
     unique_key='source_metric_stream_id',
     engine='ReplacingMergeTree(refresh_version)',
     order_by='(user_id, activity_id, recorded_date, recorded_at, source_metric_stream_id)',
+    settings={
+        'deduplicate_merge_projection_mode': 'rebuild',
+        'lightweight_mutation_projection_mode': 'rebuild'
+    },
+    projections=[{
+        'name': 'by_activity_location_source_refresh',
+        'query': 'SELECT activity_id, user_id, max(greatest(source_refreshed_at, refreshed_at)) AS source_refreshed_at GROUP BY activity_id, user_id'
+    }],
     query_settings={
         'max_threads': 1,
         'join_use_nulls': 1,
@@ -179,7 +187,7 @@ affected_groups AS MATERIALIZED (
         assumeNotNull(activity_id) AS activity_id,
         assumeNotNull(user_id) AS user_id
     FROM candidate_affected_groups
-    WHERE activity_id IS NOT null AND user_id IS NOT null
+    WHERE activity_id IS NOT NULL AND user_id IS NOT NULL
     GROUP BY activity_id, user_id
     ORDER BY min(source_refreshed_at), user_id, activity_id
     {% if not activity_refresh_scoped %}
@@ -189,11 +197,13 @@ affected_groups AS MATERIALIZED (
 
 {% if is_incremental() %}
 existing_location_samples AS MATERIALIZED (
-    SELECT *
+    SELECT existing_samples.*
     FROM {{ this }} AS existing_samples FINAL
     WHERE existing_samples.is_deleted = 0
         AND (existing_samples.user_id, existing_samples.activity_id) IN (
-            SELECT affected_groups.user_id, affected_groups.activity_id
+            SELECT
+                affected_groups.user_id,
+                affected_groups.activity_id
             FROM affected_groups
         )
 ),
@@ -212,7 +222,9 @@ affected_current_members AS MATERIALIZED (
     WHERE activity_group_state.is_deleted = 0
         AND activity_members.is_deleted = 0
         AND (activity_members.user_id, activity_members.activity_id) IN (
-            SELECT affected_groups.user_id, affected_groups.activity_id
+            SELECT
+                affected_groups.user_id,
+                affected_groups.activity_id
             FROM affected_groups
         )
 ),
@@ -223,7 +235,8 @@ affected_location_versions AS (
     WHERE location_versions.channel = 'location'
         AND (location_versions.point IS NOT NULL OR location_versions.is_deleted = 1)
         AND (location_versions.user_id, location_versions.activity_id) IN (
-            SELECT affected_current_members.user_id,
+            SELECT
+                affected_current_members.user_id,
                 affected_current_members.member_activity_id
             FROM affected_current_members
         )
@@ -294,7 +307,9 @@ provider_counts AS (
 ),
 
 best_source AS (
-    SELECT activity_id, provider_id
+    SELECT
+        activity_id,
+        provider_id
     FROM provider_counts
     WHERE row_number = 1 AND sample_count > 0
 ),
@@ -313,7 +328,9 @@ affected_group_refresh AS MATERIALIZED (
         ON affected_location_rows.activity_id = activity_group_state.group_activity_id
         AND affected_location_rows.user_id = activity_group_state.user_id
     WHERE (activity_group_state.user_id, activity_group_state.group_activity_id) IN (
-        SELECT affected_groups.user_id, affected_groups.activity_id
+        SELECT
+            affected_groups.user_id,
+            affected_groups.activity_id
         FROM affected_groups
     )
     GROUP BY activity_group_state.group_activity_id, activity_group_state.user_id
@@ -365,12 +382,16 @@ empty_group_checkpoints AS MATERIALIZED (
         affected_group_refresh.source_refreshed_at AS source_refreshed_at
     FROM affected_group_refresh
     WHERE (affected_group_refresh.user_id, affected_group_refresh.activity_id) NOT IN (
-        SELECT user_id, activity_id
+        SELECT
+            user_id,
+            activity_id
         FROM current_location_samples
     )
     {% if is_incremental() %}
         AND (affected_group_refresh.user_id, affected_group_refresh.activity_id) NOT IN (
-            SELECT user_id, activity_id
+            SELECT
+                user_id,
+                activity_id
             FROM existing_location_samples
         )
     {% endif %}
@@ -405,7 +426,9 @@ stale_location_samples AS (
             = existing_samples.source_metric_stream_id
     WHERE current_location_samples.source_metric_stream_id IS NULL
         AND (existing_samples.user_id, existing_samples.activity_id) IN (
-            SELECT affected_groups.user_id, affected_groups.activity_id
+            SELECT
+                affected_groups.user_id,
+                affected_groups.activity_id
             FROM affected_groups
         )
 )
@@ -463,14 +486,14 @@ SELECT
     toDateTime64('1970-01-01 00:00:00', 9, 'UTC') AS recorded_at,
     toDate('1970-01-01') AS recorded_date,
     empty_group_checkpoints.activity_id AS source_metric_stream_id,
-    CAST(null, 'Nullable(UUID)') AS member_activity_id,
-    CAST(null, 'Nullable(String)') AS provider_id,
-    CAST(null, 'Nullable(String)') AS source_external_id,
-    CAST(null, 'Nullable(String)') AS device_id,
-    CAST(null, 'Nullable(String)') AS source_type,
+    CAST(NULL, 'Nullable(UUID)') AS member_activity_id,
+    CAST(NULL, 'Nullable(String)') AS provider_id,
+    CAST(NULL, 'Nullable(String)') AS source_external_id,
+    CAST(NULL, 'Nullable(String)') AS device_id,
+    CAST(NULL, 'Nullable(String)') AS source_type,
     'unknown' AS measurement_kind,
-    CAST(null, 'Nullable(Float32)') AS lat,
-    CAST(null, 'Nullable(Float32)') AS lng,
+    CAST(NULL, 'Nullable(Float32)') AS lat,
+    CAST(NULL, 'Nullable(Float32)') AS lng,
     toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version,
     1 AS is_deleted,
     empty_group_checkpoints.source_refreshed_at AS source_refreshed_at,

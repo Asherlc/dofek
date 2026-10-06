@@ -1,8 +1,11 @@
 import { randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { sql } from "drizzle-orm";
 import { Client, escapeIdentifier } from "pg";
+import { z } from "zod";
 import { drizzleSchema as schema } from "./drizzle-schema.ts";
+import { executeWithSchema } from "./execute-with-schema.ts";
 import { createDatabase } from "./index.ts";
 
 export type TestDatabase = ReturnType<typeof createDatabase>;
@@ -12,6 +15,25 @@ export interface TestContext {
   connectionString: string;
   addCleanup: (cleanup: () => Promise<void>) => void;
   cleanup: () => Promise<void>;
+}
+
+/** Observe a real lock wait before releasing a concurrency-test barrier. */
+export async function hasDatabaseLockWaiter(db: TestDatabase): Promise<boolean> {
+  const rows = await executeWithSchema(
+    db,
+    z.object({ wait_event_type: z.string().nullable() }),
+    sql`SELECT wait_event_type FROM pg_stat_activity
+        WHERE datname = current_database() AND pid <> pg_backend_pid()`,
+  );
+  return rows.some((row) => row.wait_event_type === "Lock");
+}
+
+export function createTestBarrier(): { promise: Promise<void>; resolve: () => void } {
+  let resolvePromise: () => void = () => undefined;
+  const promise = new Promise<void>((resolveBarrier) => {
+    resolvePromise = resolveBarrier;
+  });
+  return { promise, resolve: resolvePromise };
 }
 
 interface TestMigrationFile {

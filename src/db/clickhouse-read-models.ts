@@ -766,10 +766,6 @@ providers AS (
   SELECT DISTINCT user_id, provider_id
   FROM postgres_fitness.clinical_record FINAL
   WHERE _peerdb_is_deleted = 0
-  UNION DISTINCT
-  SELECT DISTINCT user_id, provider_id
-  FROM postgres_fitness.journal_entry FINAL
-  WHERE _peerdb_is_deleted = 0
 ),
 activity_counts AS (
   SELECT user_id, provider_id, count() AS count
@@ -836,12 +832,6 @@ clinical_record_counts AS (
   WHERE _peerdb_is_deleted = 0
   GROUP BY user_id, provider_id
 ),
-journal_entry_counts AS (
-  SELECT user_id, provider_id, count() AS count
-  FROM postgres_fitness.journal_entry FINAL
-  WHERE _peerdb_is_deleted = 0
-  GROUP BY user_id, provider_id
-),
 refresh_clock AS (
   SELECT
     toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version,
@@ -859,7 +849,6 @@ SELECT
   coalesce(metric_stream_counts.count, 0) AS metric_stream,
   coalesce(nutrition_daily_counts.count, 0) AS nutrition_daily,
   coalesce(clinical_record_counts.count, 0) AS clinical_records,
-  coalesce(journal_entry_counts.count, 0) AS journal_entries,
   toUInt8(0) AS is_deleted,
   refresh_clock.refresh_version AS refresh_version,
   refresh_clock.refreshed_at AS refreshed_at
@@ -892,9 +881,7 @@ LEFT JOIN nutrition_daily_counts
 LEFT JOIN clinical_record_counts
   ON clinical_record_counts.user_id = providers.user_id
  AND clinical_record_counts.provider_id = providers.provider_id
-LEFT JOIN journal_entry_counts
-  ON journal_entry_counts.user_id = providers.user_id
- AND journal_entry_counts.provider_id = providers.provider_id`;
+`;
 }
 
 export function buildProviderStatsCreateReadModelStatements(): string[] {

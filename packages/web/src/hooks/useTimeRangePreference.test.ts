@@ -48,16 +48,16 @@ describe("useTimeRangePreference", () => {
   });
 
   it("restores and persists one selection across related screens", () => {
-    window.localStorage.setItem("dofek.time-range.behavior", "30");
-    const journalScreen = renderHook(() => useTimeRangePreference("behavior"));
+    window.localStorage.setItem("dofek.time-range.training", "30");
+    const trainingScreen = renderHook(() => useTimeRangePreference("training"));
 
-    expect(journalScreen.result.current.days).toBe(30);
-    act(() => journalScreen.result.current.setDays(365));
-    journalScreen.unmount();
+    expect(trainingScreen.result.current.days).toBe(30);
+    act(() => trainingScreen.result.current.setDays(365));
+    trainingScreen.unmount();
 
-    const behaviorAssociationsScreen = renderHook(() => useTimeRangePreference("behavior"));
-    expect(behaviorAssociationsScreen.result.current.days).toBe(365);
-    expect(window.localStorage.getItem("dofek.time-range.behavior")).toBe("365");
+    const relatedTrainingScreen = renderHook(() => useTimeRangePreference("training"));
+    expect(relatedTrainingScreen.result.current.days).toBe(365);
+    expect(window.localStorage.getItem("dofek.time-range.training")).toBe("365");
   });
 
   it("reports unexpected storage read and write failures", () => {

@@ -2,7 +2,7 @@
 
 Unofficial TypeScript client for reverse-engineered WHOOP account and internal
 data APIs, including Cognito sign-in, MFA, token refresh, continuous metrics,
-cycles, sleep, journal, workouts, and Strength Trainer details.
+cycles, sleep, workouts, and Strength Trainer details.
 
 This package is not affiliated with, endorsed by, or supported by WHOOP. Most
 endpoints in this client are private implementation details observed from WHOOP
@@ -121,7 +121,7 @@ Metrics and activity data:
 - `listDeveloperWorkoutIdsInWindow(windowStart, windowEnd)`
 - `getSleep(sleepId)`
 - `getWeightliftingWorkout(activityId)`; returns `null` for an observed `404`
-- `getStrainDeepDive(date)` and `getJournal(start, end)`; both return `unknown`
+- `getStrainDeepDive(date)`, which returns `unknown`
   because these private response shapes are not stable
 
 The optional `onRequest` constructor callback receives a `WhoopRequestEvent`

@@ -7,7 +7,35 @@
 -- Git merge conflicts here force developers to reconcile concurrent changes.
 
 CREATE OR REPLACE VIEW fitness.v_activity AS
-WITH ranked AS (
+WITH apple_health_revisions AS (
+  -- HealthKit replaces a workout by sync identifier even when its UUID and times change.
+  -- Rank before lifecycle filtering so a removed latest revision cannot revive an older one.
+  SELECT
+    id,
+    ROW_NUMBER() OVER (
+      PARTITION BY user_id, TRIM(raw -> 'metadata' ->> 'HKMetadataKeySyncIdentifier')
+      ORDER BY
+        COALESCE(
+          CASE
+            WHEN (raw -> 'metadata' ->> 'HKMetadataKeySyncVersion') ~ '^[0-9]{1,19}$'
+              THEN CASE
+                WHEN (raw -> 'metadata' ->> 'HKMetadataKeySyncVersion')::numeric <= 9223372036854775807
+                  THEN (raw -> 'metadata' ->> 'HKMetadataKeySyncVersion')::bigint
+                ELSE 0
+              END
+          END,
+          0
+        ) DESC,
+        created_at DESC,
+        id DESC
+    ) AS revision_rank
+  FROM fitness.activity
+  WHERE
+    provider_id = 'apple_health'
+    AND NULLIF(TRIM(raw -> 'metadata' ->> 'HKMetadataKeySyncIdentifier'), '') IS NOT null
+),
+
+ranked AS (
   SELECT
     a.*,
     COALESCE(dp.priority, pp.priority, 100) AS prio,
@@ -42,6 +70,10 @@ WITH ranked AS (
   WHERE
     a.provider_absent_at IS null
     AND a.deleted_at IS null
+    AND a.id NOT IN (
+      SELECT revisions.id FROM apple_health_revisions AS revisions
+      WHERE revisions.revision_rank > 1
+    )
 ),
 
 tombstoned AS (
@@ -64,6 +96,10 @@ tombstoned AS (
     AND a.deleted_at IS null
     AND a.external_id IS NOT null
     AND a.external_id <> ''
+    AND a.id NOT IN (
+      SELECT revisions.id FROM apple_health_revisions AS revisions
+      WHERE revisions.revision_rank > 1
+    )
 ),
 
 effective_tombstoned AS (
@@ -102,6 +138,10 @@ effective_tombstoned AS (
         AND sib.provider_id = 'apple_health'
         AND sib.deleted_at IS null
         AND sib.id <> a.id
+        AND sib.id NOT IN (
+          SELECT revisions.id FROM apple_health_revisions AS revisions
+          WHERE revisions.revision_rank > 1
+        )
         AND COALESCE(
           NULLIF(TRIM(sib.raw -> 'metadata' ->> 'HKMetadataKeySyncIdentifier'), ''),
           'time:' || sib.started_at::text || ':' || COALESCE(sib.ended_at::text, '') || ':' || COALESCE(
@@ -121,28 +161,44 @@ effective_tombstoned AS (
           sib.provider_absent_at IS null AND sib.deleted_at IS null
           OR COALESCE(
             CASE
-              WHEN (sib.raw -> 'metadata' ->> 'HKMetadataKeySyncVersion') ~ '^[0-9]+$'
-                THEN (sib.raw -> 'metadata' ->> 'HKMetadataKeySyncVersion')::bigint
+              WHEN (sib.raw -> 'metadata' ->> 'HKMetadataKeySyncVersion') ~ '^[0-9]{1,19}$'
+                THEN CASE
+                  WHEN (sib.raw -> 'metadata' ->> 'HKMetadataKeySyncVersion')::numeric <= 9223372036854775807
+                    THEN (sib.raw -> 'metadata' ->> 'HKMetadataKeySyncVersion')::bigint
+                  ELSE 0
+                END
             END,
             0
           ) > COALESCE(
             CASE
-              WHEN (a.raw -> 'metadata' ->> 'HKMetadataKeySyncVersion') ~ '^[0-9]+$'
-                THEN (a.raw -> 'metadata' ->> 'HKMetadataKeySyncVersion')::bigint
+              WHEN (a.raw -> 'metadata' ->> 'HKMetadataKeySyncVersion') ~ '^[0-9]{1,19}$'
+                THEN CASE
+                  WHEN (a.raw -> 'metadata' ->> 'HKMetadataKeySyncVersion')::numeric <= 9223372036854775807
+                    THEN (a.raw -> 'metadata' ->> 'HKMetadataKeySyncVersion')::bigint
+                  ELSE 0
+                END
             END,
             0
           )
           OR (
             COALESCE(
               CASE
-                WHEN (sib.raw -> 'metadata' ->> 'HKMetadataKeySyncVersion') ~ '^[0-9]+$'
-                  THEN (sib.raw -> 'metadata' ->> 'HKMetadataKeySyncVersion')::bigint
+                WHEN (sib.raw -> 'metadata' ->> 'HKMetadataKeySyncVersion') ~ '^[0-9]{1,19}$'
+                  THEN CASE
+                    WHEN (sib.raw -> 'metadata' ->> 'HKMetadataKeySyncVersion')::numeric <= 9223372036854775807
+                      THEN (sib.raw -> 'metadata' ->> 'HKMetadataKeySyncVersion')::bigint
+                    ELSE 0
+                  END
               END,
               0
             ) = COALESCE(
               CASE
-                WHEN (a.raw -> 'metadata' ->> 'HKMetadataKeySyncVersion') ~ '^[0-9]+$'
-                  THEN (a.raw -> 'metadata' ->> 'HKMetadataKeySyncVersion')::bigint
+                WHEN (a.raw -> 'metadata' ->> 'HKMetadataKeySyncVersion') ~ '^[0-9]{1,19}$'
+                  THEN CASE
+                    WHEN (a.raw -> 'metadata' ->> 'HKMetadataKeySyncVersion')::numeric <= 9223372036854775807
+                      THEN (a.raw -> 'metadata' ->> 'HKMetadataKeySyncVersion')::bigint
+                    ELSE 0
+                  END
               END,
               0
             )
