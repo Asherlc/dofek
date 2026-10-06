@@ -42,7 +42,6 @@ vi.mock("./routers/hiking.ts", () => ({ hikingRouter: mockRouter }));
 vi.mock("./routers/insights.ts", () => ({ insightsRouter: mockRouter }));
 vi.mock("./routers/intervals.ts", () => ({ intervalsRouter: mockRouter }));
 vi.mock("./routers/journal.ts", () => ({ journalRouter: mockRouter }));
-vi.mock("./routers/life-events.ts", () => ({ lifeEventsRouter: mockRouter }));
 vi.mock("./routers/medication-dose-events.ts", () => ({ medicationDoseEventsRouter: mockRouter }));
 vi.mock("./routers/mcp.ts", () => ({ mcpRouter: mockRouter }));
 vi.mock("./routers/monthly-report.ts", () => ({ monthlyReportRouter: mockRouter }));
@@ -130,7 +129,6 @@ describe("appRouter", () => {
       "bleHeartRateSync",
       "companionPairing",
       "companionToken",
-      "personalExperiments",
       "sleep",
       "sleepNeed",
       "dailyMetrics",
@@ -140,7 +138,6 @@ describe("appRouter", () => {
       "nutritionAnalytics",
       "personalization",
       "insights",
-      "lifeEvents",
       "providerDetail",
       "processing",
       "providerGuide",

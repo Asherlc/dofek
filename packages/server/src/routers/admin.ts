@@ -233,7 +233,6 @@ export const adminRouter = router({
             ('provider'),
             ('clinical_record'),
             ('journal_entry'),
-            ('life_events'),
             ('nutrient'),
             ('food_entry_nutrient'),
             ('breathwork_session'),
