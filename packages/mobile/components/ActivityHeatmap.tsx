@@ -39,13 +39,10 @@ export function ActivityHeatmap({ data }: ActivityHeatmapProps) {
       <Text style={styles.title}>
         {ACTIVITY_HEATMAP_MEASURE_LABEL} ({ACTIVITY_HEATMAP_UNIT_LABEL})
       </Text>
-      <View accessible={true} accessibilityLabel="Training time legend" style={styles.legend}>
+      <View accessible={true} style={styles.legend}>
         {ACTIVITY_HEATMAP_BANDS.map((band) => (
           <View key={band.id} style={styles.legendItem}>
-            <View
-              accessibilityLabel={band.label}
-              style={[styles.legendSwatch, { backgroundColor: colorsByBand[band.id] }]}
-            />
+            <View style={[styles.legendSwatch, { backgroundColor: colorsByBand[band.id] }]} />
             <Text style={styles.legendLabel}>{band.label}</Text>
           </View>
         ))}

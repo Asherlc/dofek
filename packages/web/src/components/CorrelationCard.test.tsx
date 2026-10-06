@@ -55,7 +55,6 @@ describe("CorrelationCard", () => {
         relationship: "correlation",
         label: "Descriptive correlation",
         method: "Server correlation method.",
-        limitations: "Server limitations: missing observations and confounding remain possible.",
       },
       dataPoints: [
         { x: 1, y: 2, date: "2025-01" },
@@ -89,7 +88,6 @@ describe("CorrelationCard", () => {
         relationship: "descriptive_association",
         label: "Descriptive association",
         method: "Server comparison method.",
-        limitations: "Server limitations: missing observations and confounding remain possible.",
         estimateLabel: "Server estimate label.",
       },
     };

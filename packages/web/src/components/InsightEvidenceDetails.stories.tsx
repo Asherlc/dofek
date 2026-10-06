@@ -6,7 +6,6 @@ const evidence: InsightEvidence = {
   relationship: "descriptive_association",
   label: "Descriptive association",
   method: "Observed-group mean comparison over paired observations.",
-  limitations: "No confidence interval is available for this comparison.",
   estimateLabel: "15% lower",
 };
 

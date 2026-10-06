@@ -228,7 +228,7 @@ export default function SleepScreen() {
           {/* Hypnogram */}
           {(latestStagesQuery.data?.length ?? 0) > 0 && (
             <View style={styles.card}>
-              <Text style={styles.cardTitle}>Last Night</Text>
+              <Text style={styles.cardTitle}>Last Night's Stages</Text>
               <Hypnogram data={latestStagesQuery.data ?? []} />
             </View>
           )}

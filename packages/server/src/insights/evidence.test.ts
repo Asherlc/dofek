@@ -8,7 +8,6 @@ describe("createInsightEvidence", () => {
       label: "Descriptive association",
       method:
         "Observed-group mean comparison (with versus without the behavior); candidate differences use Welch's t-test with Benjamini–Hochberg screening.",
-      limitations: "No confidence interval is available for this comparison.",
       observationWindow: "Daily observations",
       estimateLabel: "25% higher",
     });
@@ -20,7 +19,6 @@ describe("createInsightEvidence", () => {
       label: "Descriptive correlation",
       method:
         "Spearman rank correlation over paired observations with Benjamini–Hochberg screening.",
-      limitations: "No confidence interval is available for this correlation.",
       observationWindow: "Daily observations",
     });
   });

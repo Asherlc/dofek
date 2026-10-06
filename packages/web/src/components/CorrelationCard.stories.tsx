@@ -7,7 +7,6 @@ const conditionalEvidence: InsightEvidence = {
   label: "Descriptive association",
   method:
     "Observed-group mean comparison (with versus without the behavior); candidate differences use Welch's t-test with Benjamini–Hochberg screening.",
-  limitations: "No confidence interval is available for this comparison.",
   estimateLabel: "15% lower",
 };
 
@@ -15,7 +14,6 @@ const correlationEvidence: InsightEvidence = {
   relationship: "correlation",
   label: "Descriptive correlation",
   method: "Spearman rank correlation over paired observations with Benjamini–Hochberg screening.",
-  limitations: "No confidence interval is available for this correlation.",
 };
 
 const meta = {

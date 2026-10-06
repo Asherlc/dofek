@@ -29,7 +29,6 @@ const evidence: InsightEvidence = {
   relationship: "correlation",
   label: "Descriptive correlation",
   method: "Spearman rank correlation over paired observations with Benjamini–Hochberg screening.",
-  limitations: "No confidence interval is available for this correlation.",
 };
 
 const meta = {

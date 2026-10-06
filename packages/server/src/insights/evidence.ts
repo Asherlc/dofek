@@ -5,7 +5,6 @@ export interface InsightEvidence {
   relationship: "descriptive_association" | "correlation";
   label: string;
   method: string;
-  limitations: string;
   observationWindow?: string;
   estimateLabel?: string;
 }
@@ -25,7 +24,6 @@ export function createInsightEvidence(
           : scope === "rolling_monthly"
             ? "Observed-group mean comparison across overlapping 30-day rolling windows (with versus without the behavior); candidate differences use Welch's t-test with Benjamini–Hochberg screening."
             : "Observed-group mean comparison (with versus without the behavior); candidate differences use Welch's t-test with Benjamini–Hochberg screening.",
-      limitations: "No confidence interval is available for this comparison.",
       observationWindow:
         scope === "monthly"
           ? "Monthly aggregates"
@@ -45,7 +43,6 @@ export function createInsightEvidence(
         : scope === "rolling_monthly"
           ? "Spearman rank correlation over paired observations from overlapping 30-day rolling windows; dependence-aware inference uses non-overlapping 30-day representatives with Benjamini–Hochberg screening."
           : "Spearman rank correlation over paired observations with Benjamini–Hochberg screening.",
-    limitations: "No confidence interval is available for this correlation.",
     observationWindow:
       scope === "monthly"
         ? "Monthly aggregates"
