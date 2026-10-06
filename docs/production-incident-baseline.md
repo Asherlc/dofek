@@ -30741,6 +30741,13 @@ audit applies to those unchanged exercised paths; its embedded bundle predates
 the report removals. Frozen install, all four typechecks, a fresh current-main
 iOS export, and 18,866 unit/mobile tests pass on the integrated source.
 
+The final main refresh also preserves the
+[package release metadata](https://github.com/Asherlc/dofek/commit/e2281229c2cb05fd7067541882bec1b97457d843),
+including WHOOP BLE 0.1.67. Those changes affect package version fields only;
+native executable source, maps dependencies, route/elevation behavior, and
+auth/session code remain unchanged. Final export, typechecks, and mobile tests
+validate the integrated source; hosted CI still must archive that exact head.
+
 Current-main CI's [Mobile Storybook job](https://github.com/Asherlc/dofek/actions/runs/37420553852/job/112129019035)
 failed `pnpm storybook:mobile:build` with `[UNLOADABLE_DEPENDENCY] Could not
 load react-native-web/asset-registry`. Expo now imports the public
