@@ -20,10 +20,5 @@ describe("ActivitySourceDecisionCard", () => {
     expect(screen.getByRole("heading", { name: "How sources were combined" })).toBeTruthy();
     expect(screen.getByText("2")).toBeTruthy();
     expect(screen.getByText("Wahoo")).toBeTruthy();
-    expect(
-      screen.getByText(
-        "Wahoo was selected as the primary record by source priority. Missing details may come from the other matched sources.",
-      ),
-    ).toBeTruthy();
   });
 });

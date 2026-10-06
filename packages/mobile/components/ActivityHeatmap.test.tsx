@@ -10,7 +10,7 @@ const data: CalendarDay[] = [
     totalMinutes: 0,
     activityTypes: [],
     trainingTimeBand: "none",
-    trainingTimeMeaning: "No recorded training; this may be a recovery/rest day.",
+    trainingTimeMeaning: "No recorded training",
   },
   {
     date: "2026-03-18",

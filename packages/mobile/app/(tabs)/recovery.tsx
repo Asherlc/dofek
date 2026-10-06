@@ -192,7 +192,7 @@ export default function RecoveryScreen() {
   const router = useRouter();
   const units = useUnitConverter();
   const utils = trpc.useUtils();
-  const { days, description, isHydrated, setDays } = useTimeRangePreference("recovery");
+  const { days, isHydrated, setDays } = useTimeRangePreference("recovery");
   const endDate = useTodayQueryDate();
   const hasCommittedHydratedRange = useRef(false);
   const preservePreviousRangeData = isHydrated && hasCommittedHydratedRange.current;
@@ -316,7 +316,7 @@ export default function RecoveryScreen() {
         />
       }
     >
-      <DaySelector days={days} description={description} onChange={setDays} />
+      <DaySelector days={days} onChange={setDays} />
 
       <ProcessingStatusWidget
         data={processingStatus.data}

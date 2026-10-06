@@ -136,7 +136,6 @@ export function TrainingDistributionCards({
                   latestMonotonyWeek.method.formula,
                   latestMonotonyWeek.method.calendar,
                   latestMonotonyWeek.method.activityScope,
-                  latestMonotonyWeek.method.interpretation,
                 ]}
                 source={latestMonotonyWeek.method.source}
                 sourceActionId="training-monotony-source"

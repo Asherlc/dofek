@@ -53,7 +53,6 @@ describe("NutritionDataQualityPanel", () => {
     );
 
     expect(screen.getByText("20 recorded days are usable.")).toBeTruthy();
-    expect(screen.getByText("No overlapping nutrition sources detected.")).toBeTruthy();
   });
 
   it("shows a loading state before adequacy interpretation", () => {

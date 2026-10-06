@@ -1,6 +1,5 @@
 /** @vitest-environment jsdom */
 
-import { CORRELATION_AVAILABILITY_DESCRIPTION } from "@dofek/stats/correlation";
 import { fireEvent, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -206,7 +205,6 @@ describe("CorrelationScreen", () => {
 
     expect(screen.getByRole("textbox", { name: "Search X Axis metrics" })).toBeTruthy();
     expect(screen.getByRole("textbox", { name: "Search Y Axis metrics" })).toBeTruthy();
-    expect(screen.getByText(CORRELATION_AVAILABILITY_DESCRIPTION)).toBeTruthy();
     expect(screen.getAllByLabelText("Protein (g)")).toHaveLength(2);
     expect(screen.getByText("Needs a complete, resolved daily nutrition record.")).toBeTruthy();
 
@@ -216,17 +214,6 @@ describe("CorrelationScreen", () => {
 
     expect(screen.getAllByLabelText("Heart Rate Variability (ms)")).toHaveLength(2);
     expect(screen.getAllByLabelText("Protein (g)")).toHaveLength(1);
-  });
-
-  it("renders the server-authored interpretation warning", async () => {
-    const { default: CorrelationScreen } = await import("../app/correlation");
-    render(<CorrelationScreen />);
-
-    expect(
-      screen.getByText(
-        "Measurements often persist from one day to the next (autocorrelation) or share a time trend. Either pattern can create a strong correlation without a direct relationship, so use this result to form a hypothesis—not a conclusion.",
-      ),
-    ).toBeTruthy();
   });
 
   it("renders the specific server error when a request is rejected", async () => {

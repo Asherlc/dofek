@@ -11,9 +11,7 @@ export default function OnboardingScreen() {
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <View style={styles.header}>
         <Text style={styles.title}>Set up Dofek</Text>
-        <Text style={styles.subtitle}>
-          Choose a goal and connect your health apps. Your dashboard will update as data syncs.
-        </Text>
+        <Text style={styles.subtitle}>Choose a goal and connect your health apps.</Text>
       </View>
 
       <View style={styles.goalCard}>

@@ -743,7 +743,7 @@ describe("ActivityDetailScreen", () => {
     render(React.createElement(ActivityDetailScreen));
 
     expect(screen.getByLabelText("Session perceived exertion")).toBeTruthy();
-    expect(screen.getByText("7")).toBeTruthy();
+    expect(screen.getByText("7/10")).toBeTruthy();
   });
 
   it("hides an unrecorded detail metric without GPS", async () => {
@@ -1267,11 +1267,6 @@ describe("ActivityDetailScreen", () => {
 
     expect(screen.getByText("How sources were combined")).toBeTruthy();
     expect(screen.getByText("2")).toBeTruthy();
-    expect(
-      screen.getByText(
-        "Wahoo was selected as the primary record by source priority. Missing details may come from the other matched sources.",
-      ),
-    ).toBeTruthy();
   });
 
   it("hides the source decision card when sourceDecision is null", async () => {

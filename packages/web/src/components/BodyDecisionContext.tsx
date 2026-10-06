@@ -1,7 +1,5 @@
 import {
   BODY_DECISION_CONTEXT_UNAVAILABLE,
-  BODY_SOURCE_GUIDANCE,
-  BODY_TREND_WEIGHT_DECISION_COPY,
   type BodyDecisionContextView,
   formatBodyDecisionProvenance,
   formatBodyDecisionVariation,
@@ -39,9 +37,7 @@ export function BodyDecisionContext({ context }: BodyDecisionContextProps) {
       ) : (
         <>
           {provenance != null && <p>{provenance}</p>}
-          <p>{BODY_TREND_WEIGHT_DECISION_COPY}</p>
           <p>{variation}</p>
-          <p>{BODY_SOURCE_GUIDANCE}</p>
         </>
       )}
     </section>

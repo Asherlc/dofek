@@ -205,7 +205,6 @@ export function BodyHarness({ BodyPage }: { BodyPage: ComponentType }) {
     <BodyDaysContext.Provider
       value={{
         days,
-        description: "Recommended default: 30 days keeps recent body changes visible.",
         setDays,
       }}
     >

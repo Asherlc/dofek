@@ -23,15 +23,11 @@ const context = {
 } satisfies ComponentProps<typeof BodyDecisionContext>["context"];
 
 describe("BodyDecisionContext", () => {
-  it("renders provenance, method, variation, and source guidance", () => {
+  it("renders measurement provenance and personal variation", () => {
     render(<BodyDecisionContext context={context} />);
 
     expect(screen.getByText(/Latest scale reading: 80\.0 kg/)).toBeTruthy();
-    expect(screen.getByText(/Trend Weight moves 10%/)).toBeTruthy();
     expect(screen.getByText(/Personalized typical measurement variation is -0\.4 kg/)).toBeTruthy();
-    expect(
-      screen.getByText("For comparable readings, use the same scale at a consistent time of day."),
-    ).toBeTruthy();
   });
 
   it("explains when decision context is unavailable", () => {

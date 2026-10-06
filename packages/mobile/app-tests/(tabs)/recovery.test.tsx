@@ -22,7 +22,6 @@ let mockRecoveryQueryCalls: Array<{
 }>;
 let mockTimeRangePreference = {
   days: 30,
-  description: "Recommended default: 30 days keeps recent recovery changes visible.",
   isHydrated: true,
   setDays: vi.fn(),
 };
@@ -266,7 +265,6 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
     mockRecoveryQueryCalls = [];
     mockTimeRangePreference = {
       days: 30,
-      description: "Recommended default: 30 days keeps recent recovery changes visible.",
       isHydrated: true,
       setDays: vi.fn(),
     };
@@ -940,11 +938,6 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
     expect(screen.getByText("79.8 kg")).toBeTruthy();
     expect(screen.getByText("Estimated")).toBeTruthy();
     expect(screen.getByText("Observed: 80.0 kg")).toBeTruthy();
-    expect(
-      screen.getByText(
-        "Trend Weight moves 10% toward each selected daily scale reading. Missing days are linearly interpolated; non-positive values are excluded and outliers remain included.",
-      ),
-    ).toBeTruthy();
   });
 
   it("keeps a legacy cached weight row visible without epistemic statuses", async () => {

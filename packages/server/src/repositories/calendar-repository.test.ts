@@ -24,8 +24,7 @@ describe("CalendarDay", () => {
     expect(new CalendarDay(row).toDetail()).toEqual({
       ...row,
       trainingTimeBand: "high",
-      trainingTimeMeaning:
-        "High training volume; compare with recovery before stacking another hard day.",
+      trainingTimeMeaning: "High recorded training volume",
     });
   });
 });

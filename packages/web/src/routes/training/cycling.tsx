@@ -245,7 +245,7 @@ function CyclingContent({ days }: { days: TimeRangeDays }) {
             />
           </Section>
 
-          <Section title="Recent Cycling Activities" subtitle="Recent rides and cycling workouts">
+          <Section title="Recent Cycling Activities">
             <ActivityList
               activities={activityAnalytics.data?.activities.items ?? []}
               loading={activityAnalytics.isLoading}
@@ -452,10 +452,6 @@ function EstimateEvidencePanel({
         </h2>
         <ChartDescriptionTooltip description="How the cycling estimates were calculated, how much evidence supports them, and which workouts supplied the inputs." />
       </div>
-      <p className="text-xs text-dim mb-4">
-        These are training estimates. Do not use them as a tested threshold or pacing prescription
-        when the evidence is limited.
-      </p>
       <div className="card p-4 grid grid-cols-1 lg:grid-cols-2 gap-4">
         <EstimateEvidenceBlock
           title={`Cycling power estimate · ${formatTimeRangeShortLabel(recentDays)}`}
@@ -521,18 +517,13 @@ function Section({
   subtitle?: string;
   children: React.ReactNode;
 }) {
-  const description = subtitle ?? `${title} chart.`;
-
   return (
     <section>
       <div className="mb-1 flex items-center gap-2">
         <h2 className="text-sm font-medium text-muted uppercase tracking-wider">{title}</h2>
-        <ChartDescriptionTooltip description={description} />
+        {subtitle && <ChartDescriptionTooltip description={subtitle} />}
       </div>
-      {subtitle && <p className="text-xs text-dim mb-4">{subtitle}</p>}
-      <div className="card p-4" title={description}>
-        {children}
-      </div>
+      <div className="card p-4">{children}</div>
     </section>
   );
 }

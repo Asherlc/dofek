@@ -117,14 +117,7 @@ describe("DofekChart", () => {
       screen.getByTestId("echarts-mock").getAttribute("data-option") ?? "{}",
     );
     expect(option.aria.enabled).toBe(true);
-    expect(option.aria.label.description).toBe(
-      "Chart showing Resting heart rate. Use the chart data table for exact values.",
-    );
-    expect(
-      screen.getByText(
-        "Chart showing Resting heart rate. Use the chart data table for exact values.",
-      ),
-    ).toBeDefined();
+    expect(option.aria.label.description).toBe("Resting heart rate chart.");
   });
 
   it("preserves a chart's explicit accessibility description", () => {
@@ -144,7 +137,6 @@ describe("DofekChart", () => {
       screen.getByTestId("echarts-mock").getAttribute("data-option") ?? "{}",
     );
     expect(option.aria.label.description).toBe("Daily recovery is shown as a numeric line.");
-    expect(screen.getByText("Daily recovery is shown as a numeric line.")).toBeDefined();
   });
 
   it("provides exact chart values in a keyboard-operable data table", () => {
@@ -166,7 +158,7 @@ describe("DofekChart", () => {
     disclosure.open = true;
     fireEvent(disclosure, new Event("toggle"));
 
-    expect(screen.getByRole("table", { name: /chart showing steps/i })).toBeDefined();
+    expect(screen.getByRole("table", { name: "Steps chart." })).toBeDefined();
     expect(screen.getByRole("columnheader", { name: "Day" })).toBeDefined();
     expect(screen.getByRole("cell", { name: "Monday" })).toBeDefined();
     expect(screen.getByRole("cell", { name: "4200" })).toBeDefined();

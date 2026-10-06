@@ -462,9 +462,6 @@ describe("SettingsPage categories", () => {
     render(<SettingsPage />);
 
     expect(screen.getByText(/Your access is limited to your most recent 7 days/)).toBeTruthy();
-    expect(
-      screen.getByText(/New data is available only for the most recent 7 calendar days/),
-    ).toBeTruthy();
     expect(screen.getByRole("button", { name: "Subscribe to Full Access" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Manage Billing" })).toBeNull();
   });

@@ -111,8 +111,8 @@ export class MicronutrientSafetyReview {
         reference: dailyValue,
         message:
           row.totalDailyAverage >= dailyValue.amount
-            ? "Average intake over recorded days meets or exceeds the FDA Daily Value. This generic label reference is not a personalized safety assessment."
-            : "Average intake over recorded days is below the FDA Daily Value. This generic label reference is not a personalized deficiency assessment.",
+            ? "Average intake over recorded days meets or exceeds the FDA Daily Value."
+            : "Average intake over recorded days is below the FDA Daily Value.",
       };
     }
 

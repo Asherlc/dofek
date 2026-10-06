@@ -61,8 +61,7 @@ describe("sleep need contract", () => {
           "Sleep-debt input uses 1 observed night from the model's recent-night window.",
         methodLabel: "Baseline average plus previous-day load and sleep-debt adjustments.",
         uncertaintyLabel: "Uncertainty: not established",
-        limitationLabel:
-          "This is an estimate, not a sleep recommendation. Its uncertainty has not been established.",
+        limitationLabel: "Estimated sleep need with unquantified uncertainty.",
       },
       recentNights,
     });

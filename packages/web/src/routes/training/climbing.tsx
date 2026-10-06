@@ -158,9 +158,6 @@ export function ClimbingTab() {
                 </select>
               </label>
             ))}
-            <p className="w-full text-xs text-dim">
-              Setting uses recorded location context. Missing details remain unknown.
-            </p>
           </div>
         ) : null}
       </div>
@@ -262,7 +259,7 @@ export function ClimbingTab() {
 
       <Section
         title="Hangboarding"
-        subtitle="Server-computed hangboard session time, intervals, and heart-rate summary"
+        subtitle="Hangboard session time, intervals, and heart-rate summary"
       >
         {hangboardingSummary.error && !hangboardingSummary.data ? (
           <QueryStatePanel error={hangboardingSummary.error} />
@@ -293,12 +290,9 @@ function Section({
     <section>
       <div className="mb-1 flex items-center gap-2">
         <h2 className="text-sm font-medium text-muted uppercase tracking-wider">{title}</h2>
-        <ChartDescriptionTooltip description={subtitle} />
+        {subtitle && <ChartDescriptionTooltip description={subtitle} />}
       </div>
-      <p className="text-xs text-dim mb-4">{subtitle}</p>
-      <div className="card p-4" title={subtitle}>
-        {children}
-      </div>
+      <div className="card p-4">{children}</div>
     </section>
   );
 }

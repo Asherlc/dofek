@@ -234,8 +234,7 @@ function createStoryData() {
       totalMinutes: 90,
       activityTypes: ["road_cycling"],
       trainingTimeBand: "high" as const,
-      trainingTimeMeaning:
-        "High training volume; compare with recovery before stacking another hard day.",
+      trainingTimeMeaning: "High recorded training volume",
     },
   ];
 

@@ -196,7 +196,6 @@ describe("HealthStatusBar", () => {
       />,
     );
 
-    expect(screen.getByText("30d baseline · 7d vs prior 28d")).toBeVisible();
     fireEvent.click(
       screen.getByRole("button", { name: "Show details for Heart Rate Variability (HRV)" }),
     );
@@ -251,9 +250,6 @@ describe("HealthStatusBar", () => {
           units={{ spo2: unit }}
         />,
       );
-
-      expect(screen.getByText("WHOOP (Cloud) · 3/30 days · latest 2026-07-30")).toBeDefined();
-      expect(screen.getByText("7d vs prior 28d")).toBeVisible();
 
       const detailsButton = screen.getByRole("button", {
         name: "Show details for Skin Temperature",

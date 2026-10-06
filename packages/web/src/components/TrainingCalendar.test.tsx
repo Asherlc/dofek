@@ -37,7 +37,7 @@ const data: CalendarDay[] = [
     totalMinutes: 0,
     activityTypes: [],
     trainingTimeBand: "none",
-    trainingTimeMeaning: "No recorded training; this may be a recovery/rest day.",
+    trainingTimeMeaning: "No recorded training",
   },
   {
     date: "2026-03-18",
@@ -45,7 +45,7 @@ const data: CalendarDay[] = [
     totalMinutes: 72,
     activityTypes: ["running"],
     trainingTimeBand: "high",
-    trainingTimeMeaning: "High training volume; compare with recovery.",
+    trainingTimeMeaning: "High recorded training volume",
   },
 ];
 
@@ -60,9 +60,7 @@ describe("TrainingCalendar", () => {
     expect(screen.getByText("Training time (minutes per day)")).toBeTruthy();
     expect(screen.getByText("0 min")).toBeTruthy();
     expect(screen.getByText("61–120 min")).toBeTruthy();
-    expect(
-      screen.getAllByText(/High training volume; compare with recovery/).length,
-    ).toBeGreaterThan(0);
+    expect(screen.getAllByText(/High recorded training volume/).length).toBeGreaterThan(0);
 
     const chartOption =
       screen.getByTestId("training-calendar-chart").getAttribute("data-option") ?? "";
@@ -80,9 +78,7 @@ describe("TrainingCalendar", () => {
 
     fireEvent.change(selector, { target: { value: "2026-03-10" } });
     expect(screen.getByText(/0 minutes of training time/)).toBeTruthy();
-    expect(
-      screen.getAllByText(/No recorded training; this may be a recovery\/rest day/).length,
-    ).toBeGreaterThan(0);
+    expect(screen.getAllByText(/No recorded training/).length).toBeGreaterThan(0);
 
     fireEvent.click(screen.getByRole("button", { name: "Choose chart day" }));
     expect(screen.getByText(/72 minutes of training time/)).toBeTruthy();
@@ -105,7 +101,7 @@ describe("TrainingCalendar", () => {
       totalMinutes: 0,
       activityTypes: [],
       trainingTimeBand: "none",
-      trainingTimeMeaning: "No recorded training; this may be a recovery/rest day.",
+      trainingTimeMeaning: "No recorded training",
     };
     const recentDay: CalendarDay = {
       date: "2026-03-18",
@@ -113,7 +109,7 @@ describe("TrainingCalendar", () => {
       totalMinutes: 72,
       activityTypes: [],
       trainingTimeBand: "high",
-      trainingTimeMeaning: "High training volume; compare with recovery.",
+      trainingTimeMeaning: "High recorded training volume",
     };
     render(<TrainingCalendar data={[olderDay, recentDay]} />);
 

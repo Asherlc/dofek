@@ -19,9 +19,8 @@ export function buildChartSummary(option: Record<string, unknown>): string {
       : [],
   );
   const uniqueSeriesNames = [...new Set(seriesNames)];
-  const tableHint = hasChartTableData(option) ? " Use the chart data table for exact values." : "";
   if (uniqueSeriesNames.length > 0) {
-    return `Chart showing ${formatList(uniqueSeriesNames)}.${tableHint}`;
+    return `${formatList(uniqueSeriesNames)} chart.`;
   }
 
   const axisNames = getAxes(option).flatMap((axis) =>
@@ -29,7 +28,7 @@ export function buildChartSummary(option: Record<string, unknown>): string {
   );
   const uniqueAxisNames = [...new Set(axisNames)];
   if (uniqueAxisNames.length > 0) {
-    return `Chart comparing ${formatList(uniqueAxisNames)}.${tableHint}`;
+    return `${formatList(uniqueAxisNames)} chart.`;
   }
 
   const seriesTypes = getSeries(option).flatMap((seriesItem) =>
@@ -39,10 +38,10 @@ export function buildChartSummary(option: Record<string, unknown>): string {
   );
   const firstSeriesType = seriesTypes[0];
   if (firstSeriesType !== undefined) {
-    return `${formatChartType(firstSeriesType)} chart.${tableHint}`;
+    return `${formatChartType(firstSeriesType)} chart.`;
   }
 
-  return `Chart.${tableHint}`;
+  return "Chart.";
 }
 
 export function addChartAria(

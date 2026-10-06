@@ -2,7 +2,6 @@ import { formatNumber, formatSigned } from "@dofek/format/format";
 import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { providerLabel } from "@dofek/providers/providers";
 import { chartColors } from "@dofek/scoring/colors";
-import { CORRELATION_AVAILABILITY_DESCRIPTION } from "@dofek/stats/correlation";
 import {
   formatCorrelationComparison,
   formatCorrelationLagOption,
@@ -512,7 +511,7 @@ function ScatterPlot({
 // ── Main Screen ──
 
 export default function CorrelationScreen() {
-  const { days, description, setDays } = useTimeRangePreference("correlation");
+  const { days, setDays } = useTimeRangePreference("correlation");
   const [metricX, setMetricX] = useState("protein");
   const [metricY, setMetricY] = useState("hrv");
   const [metricXSearch, setMetricXSearch] = useState("");
@@ -568,7 +567,6 @@ export default function CorrelationScreen() {
       <Text style={styles.sectionLabel}>Time Range</Text>
       <DaySelector
         days={days}
-        description={description}
         onChange={(nextDays) => {
           setDays(nextDays);
           resetObservationCursor();
@@ -579,7 +577,6 @@ export default function CorrelationScreen() {
       {/* Metric pickers */}
       {metrics.length > 0 && (
         <>
-          <Text style={styles.availabilityHint}>{CORRELATION_AVAILABILITY_DESCRIPTION}</Text>
           <MetricPicker
             label="X Axis"
             selected={metricX}
@@ -712,7 +709,6 @@ export default function CorrelationScreen() {
           <View style={styles.card}>
             <Text style={styles.cardTitle}>Finding</Text>
             <Text style={styles.insightText}>{data.insight}</Text>
-            <Text style={styles.interpretationWarning}>{data.interpretationWarning}</Text>
 
             {data.availability === "available" && hasMetricMetadata && (
               <View style={styles.statsGrid}>
@@ -739,7 +735,7 @@ export default function CorrelationScreen() {
             <View style={styles.card}>
               <ChartTitleWithTooltip
                 title="Scatter Plot"
-                description="Each point is a paired observation. The trend line shows the direction of the association; it does not prove cause."
+                description="Each point is a paired observation. The trend line shows the direction of the association."
                 textStyle={styles.cardTitle}
               />
               <ScatterPlot
@@ -782,11 +778,6 @@ export default function CorrelationScreen() {
           )}
         </>
       )}
-
-      {/* Disclaimer */}
-      <Text style={styles.disclaimer}>
-        Correlation does not imply causation. These are observational patterns in your data.
-      </Text>
     </ScrollView>
   );
 }
@@ -917,11 +908,6 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: colors.textTertiary,
   },
-  availabilityHint: {
-    fontSize: 11,
-    color: colors.textTertiary,
-    lineHeight: 16,
-  },
 
   lagHint: {
     fontSize: 11,
@@ -960,11 +946,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: colors.text,
     lineHeight: 20,
-  },
-  interpretationWarning: {
-    color: colors.textSecondary,
-    fontSize: 12,
-    lineHeight: 18,
   },
 
   statsGrid: {
@@ -1085,14 +1066,5 @@ const styles = StyleSheet.create({
   emptyText: {
     fontSize: 14,
     color: colors.textSecondary,
-  },
-
-  // Disclaimer
-  disclaimer: {
-    fontSize: 11,
-    color: colors.textTertiary,
-    textAlign: "center",
-    fontStyle: "italic",
-    paddingTop: 8,
   },
 });

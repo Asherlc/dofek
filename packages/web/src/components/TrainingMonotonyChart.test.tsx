@@ -33,8 +33,7 @@ const week = {
       "Monotony = 7-day mean daily cycling load ÷ population standard deviation of daily cycling load. Strain = weekly cycling load × monotony.",
     calendar: "Monday–Sunday calendar weeks include zero-load days.",
     activityScope: "Cycling activities with computed endurance training load.",
-    interpretation:
-      "These are descriptive workload-variability summaries, not an overtraining diagnosis.",
+    interpretation: "Daily training-load variability within each calendar week.",
     source: {
       title: "Foster (1998), Monitoring training in athletes",
       url: "https://pubmed.ncbi.nlm.nih.gov/9662690/",
@@ -50,7 +49,6 @@ describe("TrainingMonotonyChart", () => {
     fireEvent.click(screen.getByText("How this is calculated"));
     expect(screen.getByText(week.method.formula)).toBeVisible();
     expect(screen.getByText(week.method.calendar)).toBeVisible();
-    expect(screen.getByText(week.method.interpretation)).toBeVisible();
     expect(screen.getByRole("link", { name: week.method.source.title })).toHaveAttribute(
       "href",
       week.method.source.url,

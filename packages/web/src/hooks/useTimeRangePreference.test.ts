@@ -38,13 +38,11 @@ describe("useTimeRangePreference", () => {
     vi.restoreAllMocks();
   });
 
-  it("uses the canonical domain default and explanation", () => {
+  it("uses the canonical domain default", () => {
     const { result } = renderHook(() => useTimeRangePreference("nutrition"));
 
     expect(result.current.days).toBe(90);
-    expect(result.current.description).toBe(
-      "Recommended default: 90 days provides enough intake and weight history for stable trends.",
-    );
+    expect(result.current.defaultDays).toBe(90);
   });
 
   it("restores and persists one selection across related screens", () => {

@@ -80,8 +80,7 @@ const storyData = {
         adequacy: {
           status: "below_daily_value",
           percentDailyValue: 83,
-          message:
-            "Average intake over recorded days is below the FDA Daily Value. This generic label reference is not a personalized deficiency assessment.",
+          message: "Average intake over recorded days is below the FDA Daily Value.",
           reference: { amount: 18 },
         },
         upperLimit: {
@@ -102,8 +101,7 @@ const storyData = {
         adequacy: {
           status: "at_or_above_daily_value",
           percentDailyValue: 113,
-          message:
-            "Average intake over recorded days meets or exceeds the FDA Daily Value. This generic label reference is not a personalized safety assessment.",
+          message: "Average intake over recorded days meets or exceeds the FDA Daily Value.",
           reference: { amount: 90 },
         },
         upperLimit: {

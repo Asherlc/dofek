@@ -16,7 +16,7 @@ describe("chart accessibility helpers", () => {
           { type: "line", name: "Sleep", data: [7, 8] },
         ],
       }),
-    ).toBe("Chart showing Recovery and Sleep. Use the chart data table for exact values.");
+    ).toBe("Recovery and Sleep chart.");
   });
 
   it("deduplicates series names and trims metadata before formatting the list", () => {
@@ -29,11 +29,9 @@ describe("chart accessibility helpers", () => {
           { name: "Readiness", data: [4] },
         ],
       }),
-    ).toBe(
-      "Chart showing Recovery, Sleep, and Readiness. Use the chart data table for exact values.",
-    );
+    ).toBe("Recovery, Sleep, and Readiness chart.");
 
-    expect(buildChartSummary({ series: [{ name: " Recovery " }] })).toBe("Chart showing Recovery.");
+    expect(buildChartSummary({ series: [{ name: " Recovery " }] })).toBe("Recovery chart.");
   });
 
   it("falls back from axis names to chart type and then to a generic chart summary", () => {
@@ -43,11 +41,11 @@ describe("chart accessibility helpers", () => {
         yAxis: { name: "Recovery" },
         series: [{ type: "line" }],
       }),
-    ).toBe("Chart comparing Date and Recovery.");
+    ).toBe("Date and Recovery chart.");
     expect(buildChartSummary({ series: [{ type: "heatmap" }] })).toBe("Heat map chart.");
     expect(buildChartSummary({ series: [{ type: " line " }] })).toBe("Line chart.");
     expect(buildChartSummary({})).toBe("Chart.");
-    expect(buildChartSummary({ xAxis: { name: "Date" } })).toBe("Chart comparing Date.");
+    expect(buildChartSummary({ xAxis: { name: "Date" } })).toBe("Date chart.");
   });
 
   it("preserves an explicit description while enabling chart ARIA", () => {
@@ -112,7 +110,7 @@ describe("chart accessibility helpers", () => {
     });
   });
 
-  it("requires at least one populated series for a data-table hint", () => {
+  it("requires at least one populated series for a data table", () => {
     expect(
       hasChartTableData({
         series: [
