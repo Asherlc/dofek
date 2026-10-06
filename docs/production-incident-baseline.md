@@ -30661,6 +30661,21 @@ the route hover marker, and releasing the touch cleared it. Production accounts
 and data were not used. Fresh CI and the separate latest-maps native/runtime
 validation remain pending.
 
+Current-main CI's [Mobile Storybook job](https://github.com/Asherlc/dofek/actions/runs/37420553852/job/112129019035)
+failed `pnpm storybook:mobile:build` with `[UNLOADABLE_DEPENDENCY] Could not
+load react-native-web/asset-registry`. Expo now imports the public
+[React Native asset-registry entry point](https://github.com/react/react-native/blob/v0.88.0-rc.3/packages/react-native/src/asset-registry.js);
+the framework's broad React Native alias incorrectly rewrote that subpath.
+The latest [SVG resolver](https://github.com/software-mansion/react-native-svg/blob/v15.15.5/src/lib/resolveAssetUri.ts)
+also imports the older registry package, which the
+[React Native 0.88 manifest](https://github.com/react/react-native/blob/v0.88.0-rc.3/packages/react-native/package.json)
+no longer supplies. The Storybook configuration now maps both published asset
+imports to the same existing
+[React Native Web registry](https://github.com/necolas/react-native-web/blob/0.21.3/packages/react-native-web/src/modules/AssetRegistry/index.js).
+Its [post configuration hook](https://vite.dev/guide/api-plugin.html#plugin-ordering)
+applies after the framework's alias configuration. The unchanged build command
+now succeeds locally; no asset implementation, dependency, or excluded check was added.
+
 Local full lint initially failed because the required ClickHouse service had
 not started. The exact prerequisite command, `pnpm compose:up`, then failed
 with `all predefined address pools have been fully subnetted`. Inspection found
