@@ -1,4 +1,4 @@
-import type { EventSubscription } from "expo-modules-core";
+import type { EventSubscription } from "expo";
 import BackgroundRefreshModule, {
   type BackgroundRefreshEvent,
 } from "./src/BackgroundRefreshModule";

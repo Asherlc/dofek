@@ -27,11 +27,8 @@ interface SeedCounts {
   strengthSets: number;
   nutritionDaily: number;
   foodEntries: number;
-  supplements: number;
   clinicalRecords: number;
   dexaScans: number;
-  journalEntries: number;
-  lifeEvents: number;
   vSleep: number;
   vDailyMetrics: number;
 }
@@ -125,11 +122,8 @@ describe("seed-dev-db", () => {
       expect(firstCounts.strengthSets).toBeGreaterThanOrEqual(80);
       expect(firstCounts.nutritionDaily).toBeGreaterThanOrEqual(85);
       expect(firstCounts.foodEntries).toBeGreaterThanOrEqual(20);
-      expect(firstCounts.supplements).toBeGreaterThanOrEqual(3);
       expect(firstCounts.clinicalRecords).toBeGreaterThanOrEqual(13);
       expect(firstCounts.dexaScans).toBeGreaterThanOrEqual(2);
-      expect(firstCounts.journalEntries).toBeGreaterThanOrEqual(30);
-      expect(firstCounts.lifeEvents).toBeGreaterThanOrEqual(3);
       expect(firstCounts.vSleep).toBeGreaterThanOrEqual(90);
       expect(firstCounts.vDailyMetrics).toBeGreaterThanOrEqual(170);
     } finally {
@@ -248,10 +242,6 @@ async function readSeedCounts(sql: postgres.Sql): Promise<SeedCounts> {
       sql,
       `SELECT COUNT(*)::int AS count FROM fitness.food_entry WHERE user_id = '${userId}'`,
     ),
-    supplements: await readCount(
-      sql,
-      `SELECT COUNT(*)::int AS count FROM fitness.supplement WHERE user_id = '${userId}'`,
-    ),
     clinicalRecords: await readCount(
       sql,
       `SELECT COUNT(*)::int AS count FROM fitness.clinical_record WHERE user_id = '${userId}'`,
@@ -259,14 +249,6 @@ async function readSeedCounts(sql: postgres.Sql): Promise<SeedCounts> {
     dexaScans: await readCount(
       sql,
       `SELECT COUNT(*)::int AS count FROM fitness.dexa_scan WHERE user_id = '${userId}'`,
-    ),
-    journalEntries: await readCount(
-      sql,
-      `SELECT COUNT(*)::int AS count FROM fitness.journal_entry WHERE user_id = '${userId}'`,
-    ),
-    lifeEvents: await readCount(
-      sql,
-      `SELECT COUNT(*)::int AS count FROM fitness.life_events WHERE user_id = '${userId}'`,
     ),
     vSleep: await readCount(
       sql,

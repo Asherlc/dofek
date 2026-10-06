@@ -23,9 +23,6 @@ This directory contains implementations for various data providers (fitness trac
 ## Supported Providers
 
 - **API/credential/OAuth sync providers**: Amazfit/Zepp, BodySpec, Concept2, Cycling Analytics, Eight Sleep, FatSecret, Garmin, Mountain Project, OpenBeta, Oura, Peloton, Polar, Ride with GPS, Strava, TrainerRoad, Ultrahuman, VeloHero, Wahoo, Wger, WHOOP, Withings, Xert, Ziva, Zwift.
-- **Internal schedule providers**: Auto-Supplements materializes bounded,
-  user-scoped supplement dose occurrences. It never writes food entries or
-  infers that a planned dose was taken.
 - **Import-only providers**: Cronometer CSV, FIT files, Garmin account exports, Kaya, Strong CSV, and Zepp OS App exports. FIT imports use Garmin's open FIT protocol and SDK-compatible files ([FIT SDK](https://developer.garmin.com/fit/overview/)).
 - **Upload/native-mobile data sources**: Apple Health import and WHOOP BLE capture live outside this registry path in the web/mobile upload and native module flows.
 
@@ -110,6 +107,11 @@ unattached `fitness.climbing_entry` with its original GraphQL payload in
 `raw`; no OpenBeta credentials, session cookies, route writes, or synthetic
 activities are used. OpenBeta's public profile pages expose a user's logbook
 and tick history ([example public tick page](https://openbeta.io/u/thickles/ticks)).
+
+Tick dates arrive as Unix milliseconds from OpenBeta's
+[GraphQL Date scalar](https://github.com/OpenBeta/openbeta-graphql/blob/develop/src/graphql/common/DateScalar.ts).
+The provider converts them to UTC calendar dates and preserves the numeric
+timestamps in each raw payload.
 
 OpenBeta grades are mapped from the route's published grade fields, preferring
 V-scale for boulders and YDS for routes, with the other supported grade

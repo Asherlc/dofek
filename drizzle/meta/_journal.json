@@ -932,6 +932,83 @@
       "when": 1790640000002,
       "tag": "0132_remove_legacy_mcp_oauth",
       "breakpoints": true
+    },
+    {
+      "idx": 133,
+      "version": "7",
+      "when": 1790727480000,
+      "tag": "0133_independent_climbing_outcome_count",
+      "breakpoints": true
+    },
+    {
+      "idx": 134,
+      "version": "7",
+      "when": 1790779386669,
+      "tag": "0134_apple_health_workout_revisions",
+      "breakpoints": true
+    },
+    {
+      "idx": 135,
+      "version": "7",
+      "when": 1790779386670,
+      "tag": "0135_climbing_context",
+      "breakpoints": true
+    },
+    {
+      "idx": 136,
+      "version": "7",
+      "when": 1791046800000,
+      "tag": "0136_provider_issue_email",
+      "breakpoints": true
+    },
+    {
+      "idx": 137,
+      "version": "7",
+      "when": 1791236065251,
+      "tag": "0137_remove_personal_experiments",
+      "breakpoints": true
+    },
+    {
+      "idx": 138,
+      "version": "7",
+      "when": 1791236389231,
+      "tag": "0138_remove_life_events",
+      "breakpoints": true
+    },
+    {
+      "idx": 139,
+      "version": "7",
+      "when": 1791236720525,
+      "tag": "0139_remove_tracking",
+      "breakpoints": true
+    },
+    {
+      "idx": 140,
+      "version": "7",
+      "when": 1791236720526,
+      "tag": "0140_remove_tracking_mcp_scope",
+      "breakpoints": true
+    },
+    {
+      "idx": 141,
+      "version": "7",
+      "when": 1791236720527,
+      "tag": "0141_remove_supplements",
+      "breakpoints": true
+    },
+    {
+      "idx": 142,
+      "version": "7",
+      "when": 1791257237018,
+      "tag": "0142_climbing_route_protection",
+      "breakpoints": true
+    },
+    {
+      "idx": 143,
+      "version": "7",
+      "when": 1791263613909,
+      "tag": "0143_remove_shared_reports",
+      "breakpoints": true
     }
   ]
 }

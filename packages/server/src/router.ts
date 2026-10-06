@@ -4,7 +4,6 @@ import { activityRouter } from "./routers/activity.ts";
 import { adminRouter } from "./routers/admin.ts";
 import { anomalyDetectionRouter } from "./routers/anomaly-detection.ts";
 import { authRouter } from "./routers/auth.ts";
-import { behaviorImpactRouter } from "./routers/behavior-impact.ts";
 import { billingRouter } from "./routers/billing.ts";
 import { bleHeartRateSyncRouter } from "./routers/ble-heart-rate-sync.ts";
 import { bodyRouter } from "./routers/body.ts";
@@ -25,23 +24,17 @@ import { fileUploadRouter } from "./routers/file-upload.ts";
 import { foodRouter } from "./routers/food.ts";
 import { garminAuthRouter } from "./routers/garmin-auth.ts";
 import { healthKitSyncRouter } from "./routers/health-kit-sync.ts";
-import { healthReportRouter } from "./routers/health-report.ts";
 import { healthspanRouter } from "./routers/healthspan.ts";
 import { heartRateRouter } from "./routers/heart-rate.ts";
 import { hikingRouter } from "./routers/hiking.ts";
 import { inertialMeasurementUnitSyncRouter } from "./routers/inertial-measurement-unit-sync.ts";
 import { insightsRouter } from "./routers/insights.ts";
 import { intervalsRouter } from "./routers/intervals.ts";
-import { journalRouter } from "./routers/journal.ts";
-import { lifeEventsRouter } from "./routers/life-events.ts";
 import { mcpRouter } from "./routers/mcp.ts";
 import { medicationDoseEventsRouter } from "./routers/medication-dose-events.ts";
-import { menstrualCycleRouter } from "./routers/menstrual-cycle.ts";
 import { mobileDashboardRouter } from "./routers/mobile-dashboard.ts";
-import { monthlyReportRouter } from "./routers/monthly-report.ts";
 import { nutritionRouter } from "./routers/nutrition.ts";
 import { nutritionAnalyticsRouter } from "./routers/nutrition-analytics.ts";
-import { personalExperimentsRouter } from "./routers/personal-experiments.ts";
 import { personalizationRouter } from "./routers/personalization.ts";
 import { pmcRouter } from "./routers/pmc.ts";
 import { powerRouter } from "./routers/power.ts";
@@ -57,8 +50,6 @@ import { sleepNeedRouter } from "./routers/sleep-need.ts";
 import { sportSettingsRouter } from "./routers/sport-settings.ts";
 import { strengthRouter } from "./routers/strength.ts";
 import { stressRouter } from "./routers/stress.ts";
-import { subjectiveRouter } from "./routers/subjective.ts";
-import { supplementsRouter } from "./routers/supplements.ts";
 import { supportRouter } from "./routers/support.ts";
 import { syncRouter } from "./routers/sync.ts";
 import { todayPlanRouter } from "./routers/today-plan.ts";
@@ -66,7 +57,6 @@ import { tokenAuthRouter } from "./routers/token-auth.ts";
 import { trainingRouter } from "./routers/training.ts";
 import { trendsRouter } from "./routers/trends.ts";
 import { watchAltitudeSyncRouter } from "./routers/watch-altitude-sync.ts";
-import { weeklyReportRouter } from "./routers/weekly-report.ts";
 import { whoopAuthRouter } from "./routers/whoop-auth.ts";
 import { whoopBleSyncRouter } from "./routers/whoop-ble-sync.ts";
 import { router } from "./trpc.ts";
@@ -78,7 +68,6 @@ const appRouterProcedures = {
   watchAltitudeSync: watchAltitudeSyncRouter,
   activity: activityRouter,
   anomalyDetection: anomalyDetectionRouter,
-  behaviorImpact: behaviorImpactRouter,
   billing: billingRouter,
   bleHeartRateSync: bleHeartRateSyncRouter,
   personalization: personalizationRouter,
@@ -91,11 +80,7 @@ const appRouterProcedures = {
   nutrition: nutritionRouter,
   nutritionAnalytics: nutritionAnalyticsRouter,
   insights: insightsRouter,
-  journal: journalRouter,
-  lifeEvents: lifeEventsRouter,
-  personalExperiments: personalExperimentsRouter,
   mobileDashboard: mobileDashboardRouter,
-  supplements: supplementsRouter,
   providerDetail: providerDetailRouter,
   providerGuide: providerGuideRouter,
   sync: syncRouter,
@@ -130,15 +115,10 @@ const appRouterProcedures = {
   running: runningRouter,
   settings: settingsRouter,
   stress: stressRouter,
-  subjective: subjectiveRouter,
   todayPlan: todayPlanRouter,
-  healthReport: healthReportRouter,
   healthspan: healthspanRouter,
   medicationDoseEvents: medicationDoseEventsRouter,
-  menstrualCycle: menstrualCycleRouter,
   mcp: mcpRouter,
-  monthlyReport: monthlyReportRouter,
-  weeklyReport: weeklyReportRouter,
   sportSettings: sportSettingsRouter,
   intervals: intervalsRouter,
   support: supportRouter,

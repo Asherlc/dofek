@@ -19,7 +19,6 @@ import {
  * - efficiency (aerobicDecoupling, polarizationTrend)
  * - cycling-advanced (pedalDynamics)
  * - power (powerCurve, eftpTrend)
- * - supplements (list)
  * - trends (daily, weekly via ClickHouse read models)
  * - settings (get, set, getAll, slackStatus)
  * - sync (providers, providerStats, logs, syncStatus)
@@ -786,14 +785,6 @@ describe("Router data coverage", () => {
   });
 
   // ══════════════════════════════════════════════════════════════
-  // Supplements — list
-  // ══════════════════════════════════════════════════════════════
-  describe("supplements", () => {
-    it("list returns an array (possibly empty)", async () => {
-      const result = await query<unknown[]>("supplements.list");
-      expect(Array.isArray(result)).toBe(true);
-    });
-  });
 
   // ══════════════════════════════════════════════════════════════
   // Trends — daily and weekly from ClickHouse read models
@@ -916,7 +907,6 @@ describe("Router data coverage", () => {
             healthEvents: number;
             nutritionDaily: number;
             clinicalRecords: number;
-            journalEntries: number;
           }[]
         >("sync.providerStats");
 
@@ -1235,52 +1225,6 @@ describe("Router data coverage", () => {
       // With 1800 HR samples, at least some zones should have data
       const totalSeconds = result.reduce((sum, z) => sum + z.seconds, 0);
       expect(totalSeconds).toBeGreaterThan(0);
-    });
-  });
-
-  // ── Life event analyze with ranged event (covers endDate branches) ──
-  describe("lifeEvents.analyze", () => {
-    it("analyze returns before/after comparison for ranged event", async () => {
-      await queryCache.invalidateAll();
-      // Create a life event with a date range (covers endDate != null branches)
-      const event = await mutate<{ id: string }>("lifeEvents.create", {
-        label: "Vacation",
-        startedAt: new Date(Date.now() - 45 * 86400000).toISOString().slice(0, 10),
-        endedAt: new Date(Date.now() - 38 * 86400000).toISOString().slice(0, 10),
-        category: "travel",
-        ongoing: false,
-        notes: "Test vacation event",
-      });
-
-      const result = await query<{
-        event: Record<string, unknown>;
-        metrics: unknown[];
-        sleep: unknown[];
-        bodyComp: unknown[];
-      }>("lifeEvents.analyze", { id: event.id, windowDays: 30 });
-
-      expect(result.event).toBeDefined();
-      expect(Array.isArray(result.metrics)).toBe(true);
-      expect(Array.isArray(result.sleep)).toBe(true);
-      expect(Array.isArray(result.bodyComp)).toBe(true);
-    });
-
-    it("analyze handles ongoing event (covers NOW() branch)", async () => {
-      const event = await mutate<{ id: string }>("lifeEvents.create", {
-        label: "New Job",
-        startedAt: new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10),
-        endedAt: null,
-        category: "work",
-        ongoing: true,
-        notes: null,
-      });
-
-      const result = await query<{
-        event: Record<string, unknown>;
-        metrics: unknown[];
-      }>("lifeEvents.analyze", { id: event.id, windowDays: 14 });
-
-      expect(result.event).toBeDefined();
     });
   });
 

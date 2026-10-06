@@ -253,10 +253,6 @@ describe("Settings router", () => {
               ON CONFLICT DO NOTHING`,
         ),
         testCtx.db.execute(
-          sql`INSERT INTO fitness.life_events (user_id, label, started_at)
-              VALUES (${SETTINGS_TEST_USER_ID}, 'Delete event', '2024-01-15')`,
-        ),
-        testCtx.db.execute(
           sql`INSERT INTO fitness.breathwork_session (
                 id, user_id, technique_id, rounds, duration_seconds, started_at
               ) VALUES (
@@ -285,16 +281,6 @@ describe("Settings router", () => {
               ON CONFLICT DO NOTHING`,
         ),
         testCtx.db.execute(
-          sql`WITH schedule AS (
-                INSERT INTO fitness.supplement (user_id)
-                VALUES (${SETTINGS_TEST_USER_ID})
-                RETURNING id
-              )
-              INSERT INTO fitness.supplement_definition (supplement_id, name)
-              SELECT id, 'Delete supplement'
-              FROM schedule`,
-        ),
-        testCtx.db.execute(
           sql`INSERT INTO fitness.user_settings (user_id, key, value)
               VALUES (${SETTINGS_TEST_USER_ID}, 'deleteMe', 'true'::jsonb)
               ON CONFLICT (user_id, key) DO UPDATE SET value = EXCLUDED.value`,
@@ -308,11 +294,9 @@ describe("Settings router", () => {
         activitiesAfter,
         logsAfter,
         tokensAfter,
-        eventsAfter,
         breathworkSessionsAfter,
         menstrualPeriodsAfter,
         sportSettingsAfter,
-        supplementsAfter,
         userSettingsAfter,
       ] = await Promise.all([
         executeWithSchema(
@@ -333,11 +317,6 @@ describe("Settings router", () => {
         executeWithSchema(
           testCtx.db,
           countRowSchema,
-          sql`SELECT count(*)::int AS count FROM fitness.life_events WHERE user_id = ${SETTINGS_TEST_USER_ID}`,
-        ),
-        executeWithSchema(
-          testCtx.db,
-          countRowSchema,
           sql`SELECT count(*)::int AS count FROM fitness.breathwork_session WHERE user_id = ${SETTINGS_TEST_USER_ID}`,
         ),
         executeWithSchema(
@@ -353,11 +332,6 @@ describe("Settings router", () => {
         executeWithSchema(
           testCtx.db,
           countRowSchema,
-          sql`SELECT count(*)::int AS count FROM fitness.supplement WHERE user_id = ${SETTINGS_TEST_USER_ID}`,
-        ),
-        executeWithSchema(
-          testCtx.db,
-          countRowSchema,
           sql`SELECT count(*)::int AS count FROM fitness.user_settings WHERE user_id = ${SETTINGS_TEST_USER_ID}`,
         ),
       ]);
@@ -365,11 +339,9 @@ describe("Settings router", () => {
       expect(activitiesAfter[0]?.count).toBe(0);
       expect(logsAfter[0]?.count).toBe(0);
       expect(tokensAfter[0]?.count).toBe(0);
-      expect(eventsAfter[0]?.count).toBe(0);
       expect(breathworkSessionsAfter[0]?.count).toBe(0);
       expect(menstrualPeriodsAfter[0]?.count).toBe(0);
       expect(sportSettingsAfter[0]?.count).toBe(0);
-      expect(supplementsAfter[0]?.count).toBe(0);
       expect(userSettingsAfter[0]?.count).toBe(0);
 
       // Session should remain usable after data deletion.

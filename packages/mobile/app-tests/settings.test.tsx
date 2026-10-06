@@ -604,32 +604,6 @@ describe("SettingsScreen data sources", () => {
 
     expect(mockRouterPush).toHaveBeenCalledWith("/providers");
   });
-
-  it("navigates to journal trends from the health tracking section", async () => {
-    mockSearchParams = { tab: "goals-models" };
-    const { default: SettingsScreen } = await import("../app/settings");
-
-    render(<SettingsScreen />);
-
-    fireEvent.click(screen.getByRole("button", { name: "Journal Trends" }));
-
-    expect(mockRouterPush).toHaveBeenCalledWith("/tracking");
-  });
-});
-
-describe("SettingsScreen reports", () => {
-  beforeEach(() => {
-    mockSearchParams = { tab: "goals-models" };
-  });
-
-  it("opens the health reports screen", async () => {
-    const { default: SettingsScreen } = await import("../app/settings");
-
-    render(<SettingsScreen />);
-    fireEvent.click(screen.getByRole("button", { name: "Health Reports" }));
-
-    expect(mockRouterPush).toHaveBeenCalledWith("/reports");
-  });
 });
 
 describe("SettingsScreen password", () => {

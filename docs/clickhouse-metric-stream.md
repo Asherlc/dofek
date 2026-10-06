@@ -38,11 +38,13 @@ Activity stream, zone, summary, and trend reads
 Location rows are exposed through `analytics.deduped_location`, also as a normal
 view. There are no ClickHouse full-refresh read models in this chain.
 
-Runtime API queries must read `analytics.deduped_sensor`,
+Activity sensor API queries must read `analytics.deduped_sensor`,
 `analytics.activity_summary`, or `analytics.activity_trend_daily`, not the raw
-metric stream. The raw ClickHouse table exists only as the source for the
-deduped sensor incremental projection and normal analytics views. Derived rows
-are never synced back to Postgres.
+metric stream. Daily Heart Rate's source-comparison endpoint retains every
+provider and therefore reads current raw source rows rather than the
+provider-priority-deduped activity samples; see its
+[repository contract](../packages/server/src/repositories/heart-rate-repository.ts).
+Derived rows are never synced back to Postgres.
 
 ## Local Development
 
@@ -80,7 +82,7 @@ are rolled up from daily rows at query time.
 Provider record inventory uses the ClickHouse `analytics.provider_stats` read
 model for all provider-owned record counts displayed by sync/provider detail:
 activity, daily metric, sleep, body measurement, food entry, health event,
-metric stream, distinct nutrition day, lab panel, lab result, and journal entry
+metric stream, distinct nutrition day, lab panel, and lab result
 counts. Metric-stream counts are maintained by the incremental
 `analytics.provider_metric_stream_daily` model at
 `(user_id, provider_id, recorded_date)` grain. It reads compact
@@ -99,6 +101,61 @@ explicit operator actions; use the
 [read-model deploy runbook](clickhouse-read-model-deploy-runbook.md#known-failure-provider_stats-current-state-scan-timeout)
 for rollout verification and stop conditions if the daily model remains dirty
 or raw provider recounts return.
+
+## Daily Heart Rate Source Access
+
+[`HeartRateRepository.dailyBySource`](../packages/server/src/repositories/heart-rate-repository.ts)
+selects candidate raw replacement keys for one user's local calendar day using
+the `by_user_channel_recorded_at` covering projection, then reads those keys with
+native `FINAL`. Candidate predicates use only user, channel and recorded time;
+deleted, zero and null revisions remain candidates. Deletion and positive-value
+filters follow winner selection. Sources remain separate, and minute averaging
+and source summary statistics retain the existing response contract.
+
+Native winner selection is required: the writer can produce different values
+with the same replacement key, version and ingestion timestamp. ClickHouse's
+[ReplacingMergeTree tie rule](https://clickhouse.com/docs/reference/engines/table-engines/mergetree-family/replacingmergetree#ver)
+retains the last inserted row; [argMax ties are nondeterministic](https://clickhouse.com/docs/reference/functions/aggregate-functions/argMax).
+The candidate lookup separates assigned and null activity IDs because
+[`IN` does not match SQL NULL](https://clickhouse.com/docs/reference/statements/in#null-processing).
+
+Migration `0098_heart_rate_source_access` adds the projection definition only.
+It does not populate old parts. Release its schema preparation before releasing
+the repository reader, then perform materialization as an explicit operator
+action after capacity review. The current raw table has no partition expression,
+so this operation covers its single historical partition; it cannot be bounded
+by a date partition without changing the table design. Review free disk, memory,
+active mutations and workload before starting. ClickHouse documents
+[projection materialization](https://clickhouse.com/docs/reference/statements/alter/projection)
+and [table partitioning](https://clickhouse.com/docs/engines/table-engines/mergetree-family/custom-partitioning-key).
+
+```sql
+ALTER TABLE ingest.metric_stream
+  MATERIALIZE PROJECTION by_user_channel_recorded_at;
+
+SELECT mutation_id, parts_to_do, is_done, latest_fail_reason
+FROM system.mutations
+WHERE database = 'ingest' AND table = 'metric_stream'
+ORDER BY create_time DESC;
+
+SELECT count() AS active_parts,
+  countIf(NOT has(projections, 'by_user_channel_recorded_at')) AS missing_projection_parts
+FROM system.parts
+WHERE database = 'ingest' AND table = 'metric_stream' AND active;
+```
+
+Do not release the reader until the materialization mutation has completed
+without errors, at least one active part exists, and `missing_projection_parts`
+is zero. Verify the candidate query's normal projection selection with `EXPLAIN`
+and the complete query's `system.query_log.projections`; separately confirm
+native `FINAL` reads candidate-key ranges rather than the whole user history.
+The outer plan may omit the candidate subqueries under `CreatingSets`, so inspect
+the candidate selection's plan separately. See ClickHouse's
+[`EXPLAIN`](https://clickhouse.com/docs/reference/statements/explain),
+[`system.query_log`](https://clickhouse.com/docs/operations/system-tables/query_log),
+[`system.parts`](https://clickhouse.com/docs/operations/system-tables/parts), and
+[`system.mutations`](https://clickhouse.com/docs/operations/system-tables/mutations)
+references. Keep optimizer forcing settings out of the serving query.
 
 ## Scalar And Location Projections
 

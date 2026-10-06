@@ -1,5 +1,10 @@
 # Dofek Server
 
+Climbing details, attachment suggestions, and MCP session output expose required
+provider-scoped `context`. Canonical metadata is selected as one source snapshot;
+scalar filters read `fitness.v_climbing_entry`. See the
+[climbing contract and schema cutover](../../docs/climbing-context.md).
+
 The backend API and background job processor for Dofek. Built with Node.js, Express, tRPC, and Drizzle ORM.
 
 ## Architecture
@@ -10,6 +15,11 @@ The backend API and background job processor for Dofek. Built with Node.js, Expr
 - **BullMQ**: Manages distributed background jobs for data synchronization, imports, and exports.
 - **Drizzle ORM**: Type-safe database interactions with TimescaleDB.
 - **Repositories**: Data access layer encapsulated in `src/repositories/`, abstracting SQL logic.
+- **Climbing data access**: [`ClimbingRepository`](./src/repositories/climbing-repository.ts)
+  serves grade analytics and session summaries, and delegates activity detail hydration and
+  cross-provider entry consolidation to
+  [`ClimbingActivityEntryRepository`](./src/repositories/climbing-activity-entry-repository.ts).
+  Both use the same [grade display conversion](./src/repositories/climbing-grade-display.ts).
 - **Insights Engine**: Complex data analysis and correlation logic located in `src/insights/`.
 - **Machine Learning**: Predictive modeling (e.g., weight prediction, activity features) in `src/ml/`.
 
@@ -59,22 +69,6 @@ or deviation. Recovery classifications use the 30-day baseline in `baselineRelat
 7-day-versus-prior-28-day comparison is context and does not determine the status, as defined by
 [`baseline-relative-metrics.ts`](./src/contracts/baseline-relative-metrics.ts).
 
-### Read-only cycle tracking contract
-
-`menstrualCycle.history` and `menstrualCycle.currentPhase` are read-only projections over raw,
-provider-attributed menstrual-flow events in `fitness.health_event`. Exact local-calendar-date
-duplicates are grouped while retaining every source; starts fewer than 21 days apart suppress the
-estimate as conflicting data. Clients render the server-authored phase, availability explanation,
-method, uncertainty, and limitation, and direct corrections back to the source provider.
-
-HealthKit menstrual-flow records carry a cycle-start metadata marker, and Apple permits either one
-interval for a period or multiple flow samples with the first sample marked as the start
-([HealthKit menstrual flow](https://developer.apple.com/documentation/healthkit/hkcategorytypeidentifier/menstrualflow)).
-Read authorization is privacy-preserving and does not disclose whether the user denied a specific
-type, so an empty response is described neutrally as no readable provider data
-([HealthKit authorization](https://developer.apple.com/documentation/healthkit/authorizing-access-to-health-data)).
-The API exposes no create, update, or delete procedure for cycle records.
-
 ### Correlation evidence contract
 
 Current web and mobile clients use the versioned `correlation.computeV2` endpoint. The endpoint
@@ -96,18 +90,6 @@ timezone/timezone metadata without changing the underlying point in time
 ([ClickHouse date-time functions](https://clickhouse.com/docs/en/sql-reference/functions/date-time-functions#totimezone)).
 The interval design and primary statistical references are documented in
 [`@dofek/stats`](../stats/README.md#dependence-aware-uncertainty).
-
-### Journal trend evidence contract
-
-`journal.trends` is the canonical web and mobile response for journal trend review. It returns an
-exact inclusive date window, raw provider-attributed numeric and Yes/No observations, and
-server-authored coverage statements. Finite windows include explicit null points for unrecorded
-days; the All-history window keeps points sparse and summarizes missing days by count so response
-size grows with observations instead of calendar age. The response also explicitly reports that an
-uncertainty interval is unavailable for these raw observations. Clients render that evidence
-directly and do not infer a directional trend, causal effect, or confidence interval. The contract
-and gap construction live in
-[`journal-trend-evidence.ts`](./src/services/journal-trend-evidence.ts).
 
 ### Estimated strength evidence contract
 
@@ -233,8 +215,7 @@ rather than infinity. These series expose formulas and evidence for analysis; th
 
 `get_recovery_training_series` provides a compact, selected date spine for recovery-response
 analysis. Available streams are daily HRV/calculated resting HR/respiratory rate/steps, deduplicated sleep and
-stages, reconciled body weight, the six independent analytical load channels, subjective symptoms
-and active injuries, relevant canonical activities, and optional canonical nutrition. Missing values
+stages, reconciled body weight, the six independent analytical load channels, relevant canonical activities, and optional canonical nutrition. Missing values
 remain null with explicit state. Health source attribution is labeled at daily-row scope; sleep,
 weight, load, activity, and nutrition retain their more specific provenance and quality fields.
 Sleep includes onset/wake timestamps. Weight distinguishes direct daily observations from nearby
@@ -246,12 +227,11 @@ share one source-offset-first calendar projection with an explicit analysis-time
 
 For each response date, `previous_day_training_load` is selected by the preceding local calendar
 date, not by subtracting 24 hours, which preserves next-day alignment across daylight-saving changes.
-Daily fatigue is returned as unavailable because it is not recorded in the canonical subjective
-schema. Stream selection keeps payloads focused and responses are capped at 366 inclusive days. The
+Stream selection keeps payloads focused and responses are capped at 366 inclusive days. The
 endpoint exposes aligned observations only and explicitly does not claim causal relationships from
 correlations.
 Provider and modality filters apply to activity exposure and all load channels. Authorization and
-ClickHouse requirements are evaluated from the selected streams, so Postgres-only subjective or
+ClickHouse requirements are evaluated from the selected streams, so Postgres-only
 nutrition requests do not acquire unrelated health/activity dependencies.
 Recovery explicitly selects source-context activity dates and every load channel reports
 authoritative-versus-analysis-timezone activity counts. The latter identifies activities grouped
@@ -417,7 +397,7 @@ weight policy: same-day direct weight, bounded 14-day interpolation, or nearest 
 partial observation; no-log days are `no_logging`. Energy and macros remain null on no-log days, so a sparse day cannot be mistaken for a
 known deficit and a 150-calorie day is not silently classified as partial. Nutrition source resolution
 is reported independently through the canonical `fitness.v_nutrition_daily` contribution set.
-Supplement-only nutrient totals remain available but do not count as food logging. Dense nutrition
+Dense nutrition
 responses are capped at 366 inclusive days. `get_training_load` with `detail: "analytical"` and
 `include_nutrition: true` returns this canonical nutrition spine beside, rather than collapsed into,
 the modality-specific load channels and requires both read scopes.
@@ -434,3 +414,10 @@ pnpm lint                        # Run Biome from the repo root
 ## Production Deployment
 
 The server is packaged as a Docker image (target `server`) and handles both API requests and static asset serving for the SPA.
+
+Weekly/monthly reports and report sharing are retired. Deploy the server, web,
+and mobile removal together: older clients can no longer call the report APIs.
+[Migration 0143](../../drizzle/0143_remove_shared_reports.sql) removes
+`fitness.shared_report` and its stored snapshots. PostgreSQL's
+[`DROP TABLE`](https://www.postgresql.org/docs/current/sql-droptable.html)
+also removes that table's indexes and constraints.

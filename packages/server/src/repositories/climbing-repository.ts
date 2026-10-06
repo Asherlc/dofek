@@ -1,20 +1,24 @@
+import type { ClimbingFilters } from "@dofek/training/climbing-filters";
 import {
   CLIMBING_GRADE_SYSTEMS,
   type ClimbingClimbType,
   type ClimbingGradePreference,
   type ClimbingGradeSystem,
-  convertClimbingGrade,
   DEFAULT_CLIMBING_GRADE_PREFERENCE,
-  gradeSortValue,
-  isGradeSystemForClimbType,
 } from "@dofek/training/climbing-grades";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import type { ClimbingActivityEntryRow } from "../contracts/climbing-context-contracts.ts";
 import { BaseRepository } from "../lib/base-repository.ts";
 import { dateStringSchema, executeWithSchema } from "../lib/typed-sql.ts";
 import { postgresActivityCalendarDate } from "./activity-local-date.ts";
+import {
+  type ClimbingActivityEntry,
+  ClimbingActivityEntryRepository,
+} from "./climbing-activity-entry-repository.ts";
+import { displayClimbingGrade } from "./climbing-grade-display.ts";
 
-export type { ClimbingClimbType, ClimbingGradeSystem };
+export type { ClimbingActivityEntryRow, ClimbingClimbType, ClimbingGradeSystem };
 
 export interface ClimbingGradeProgressionRow {
   date: string;
@@ -41,7 +45,8 @@ export interface ClimbingVolumeByGradeRow {
   gradeSystem: ClimbingGradeSystem;
   grade: string;
   gradeSortValue: number;
-  attempts: number;
+  attempts: number | null;
+  recordedAttempts: number | null;
   sends: number;
 }
 
@@ -62,7 +67,7 @@ export interface ClimbingSessionSummaryRow {
   date: string;
   name: string;
   locationName: string | null;
-  attempts: number;
+  attempts: number | null;
   sends: number;
   hardestBoulderGrade: string | null;
   hardestBoulderGradeSortValue: number | null;
@@ -84,17 +89,32 @@ export class ClimbingSessionSummary {
 
 const climbTypeSchema = z.enum(["boulder", "route"]);
 const gradeSystemSchema = z.enum(CLIMBING_GRADE_SYSTEMS);
-const ascentTypeSchema = z.enum(["Flash", "Onsight", "Redpoint", "Pinkpoint", "Repeat"]);
-const attemptOutcomeSchema = z.enum(["sent", "failed"]);
-const failureReasonSchema = z.enum(["fell", "pumped", "skin", "technique", "fear"]);
-const holdTypeSchema = z.enum(["crimp", "sloper", "pinch", "pocket", "jug"]);
-const climbingAttemptDetailSchema = z.object({
-  attemptIndex: z.coerce.number().int().positive(),
-  failureReason: failureReasonSchema.nullable(),
-  notes: z.string().nullable(),
-  outcome: attemptOutcomeSchema,
-});
-
+export const climbingGradeProgressionSchema = z.object({
+  date: z.string(),
+  climbType: climbTypeSchema,
+  gradeSystem: gradeSystemSchema,
+  grade: z.string(),
+  gradeSortValue: z.number(),
+}) satisfies z.ZodType<ClimbingGradeProgressionRow>;
+export const climbingVolumeByGradeSchema = climbingGradeProgressionSchema
+  .omit({ date: true })
+  .extend({
+    attempts: z.number().nullable(),
+    recordedAttempts: z.number().nullable(),
+    sends: z.number(),
+  }) satisfies z.ZodType<ClimbingVolumeByGradeRow>;
+export const climbingSessionSummarySchema = z.object({
+  activityId: z.string(),
+  date: z.string(),
+  name: z.string(),
+  locationName: z.string().nullable(),
+  attempts: z.number().nullable(),
+  sends: z.number(),
+  hardestBoulderGrade: z.string().nullable(),
+  hardestBoulderGradeSortValue: z.number().nullable(),
+  hardestRouteGrade: z.string().nullable(),
+  hardestRouteGradeSortValue: z.number().nullable(),
+}) satisfies z.ZodType<ClimbingSessionSummaryRow>;
 const progressionRowSchema = z.object({
   session_date: dateStringSchema,
   climb_type: climbTypeSchema,
@@ -105,7 +125,8 @@ const volumeByGradeRowSchema = z.object({
   climb_type: climbTypeSchema,
   grade_system: gradeSystemSchema,
   grade: z.string(),
-  attempts: z.coerce.number(),
+  attempts: z.coerce.number().nullable(),
+  recorded_attempts: z.coerce.number().nullable(),
   sends: z.coerce.number(),
 });
 const sessionEntryRowSchema = z.object({
@@ -113,128 +134,12 @@ const sessionEntryRowSchema = z.object({
   session_date: dateStringSchema,
   name: z.string(),
   location_name: z.string().nullable(),
-  attempt_count: z.coerce.number(),
-  sent: z.boolean(),
-  climb_type: climbTypeSchema,
-  grade_system: gradeSystemSchema,
-  grade: z.string(),
-});
-const activityEntryRowSchema = z.object({
-  id: z.string(),
-  provider_id: z.string(),
-  climb_type: climbTypeSchema,
-  grade_system: gradeSystemSchema,
-  grade: z.string(),
+  attempt_count: z.coerce.number().nullable(),
   sent: z.boolean().nullable(),
-  attempt_count: z.coerce.number().int().positive().nullable(),
-  attempts: z.array(climbingAttemptDetailSchema),
-  ascent_type: ascentTypeSchema.nullable(),
-  hold_type: holdTypeSchema.nullable(),
-  route_name: z.string().nullable(),
-  location_name: z.string().nullable(),
-  lead: z.boolean().nullable().default(null),
-  source_name: z.string().nullable(),
-  wall_angle_degrees: z.coerce.number().nullable(),
+  climb_type: climbTypeSchema,
+  grade_system: gradeSystemSchema,
+  grade: z.string(),
 });
-type ClimbingActivityEntryDatabaseRow = z.infer<typeof activityEntryRowSchema>;
-
-function climbingIdentity(row: ClimbingActivityEntryDatabaseRow): string | null {
-  if (!row.route_name || !row.location_name) return null;
-  return JSON.stringify([
-    row.climb_type,
-    row.grade_system,
-    row.grade.trim().replace(/\s+/g, " ").toLocaleLowerCase(),
-    row.route_name.trim().replace(/\s+/g, " ").toLocaleLowerCase(),
-    row.location_name.trim().replace(/\s+/g, " ").toLocaleLowerCase(),
-    row.lead,
-  ]);
-}
-
-function compareDetailCompleteness(
-  left: ClimbingActivityEntryDatabaseRow,
-  right: ClimbingActivityEntryDatabaseRow,
-): number {
-  const completeness: Array<readonly [number, number]> = [
-    [Number(left.sent !== null), Number(right.sent !== null)],
-    [Number(left.attempt_count !== null), Number(right.attempt_count !== null)],
-    [left.attempts.length, right.attempts.length],
-  ];
-  for (const [leftValue, rightValue] of completeness) {
-    if (leftValue !== rightValue) return leftValue - rightValue;
-  }
-  return 0;
-}
-
-function deduplicateCrossProviderEntries(
-  rows: ClimbingActivityEntryDatabaseRow[],
-): ClimbingActivityEntryDatabaseRow[] {
-  const result: ClimbingActivityEntryDatabaseRow[] = [];
-  const byIdentity = new Map<
-    string,
-    Array<{ entry: ClimbingActivityEntryDatabaseRow; providers: Set<string>; sources: Set<string> }>
-  >();
-  for (const row of rows) {
-    const identity = climbingIdentity(row);
-    if (identity === null) {
-      result.push(row);
-      continue;
-    }
-    const candidates = byIdentity.get(identity) ?? [];
-    const match = candidates.find((candidate) => !candidate.providers.has(row.provider_id));
-    if (!match) {
-      const sources = new Set(row.source_name ? [row.source_name] : []);
-      candidates.push({ entry: row, providers: new Set([row.provider_id]), sources });
-      byIdentity.set(identity, candidates);
-      result.push(row);
-      continue;
-    }
-    const duplicate = match.entry;
-    match.providers.add(row.provider_id);
-    if (row.source_name) match.sources.add(row.source_name);
-    const preferred = compareDetailCompleteness(row, duplicate) > 0 ? row : duplicate;
-    Object.assign(duplicate, preferred, {
-      provider_id: duplicate.provider_id,
-      source_name: match.sources.size > 0 ? [...match.sources].join(", ") : null,
-    });
-  }
-  return result;
-}
-
-export interface ClimbingActivityEntryRow {
-  id: string;
-  climbType: ClimbingClimbType;
-  gradeSystem: ClimbingGradeSystem;
-  grade: string;
-  sent: boolean | null;
-  attemptCount: number | null;
-  attempts: Array<z.infer<typeof climbingAttemptDetailSchema>>;
-  ascentType: ClimbingActivityEntryDatabaseRow["ascent_type"];
-  holdType: z.infer<typeof holdTypeSchema> | null;
-  routeName: string | null;
-  locationName: string | null;
-  lead: boolean | null;
-  sourceName: string | null;
-  wallAngleDegrees: number | null;
-}
-
-export class ClimbingActivityEntry {
-  readonly #row: ClimbingActivityEntryRow;
-
-  constructor(row: ClimbingActivityEntryRow) {
-    this.#row = row;
-  }
-
-  toDetail(): ClimbingActivityEntryRow {
-    return this.#row;
-  }
-}
-
-interface DisplayGrade {
-  grade: string;
-  gradeSortValue: number;
-  gradeSystem: ClimbingGradeSystem;
-}
-
 export class ClimbingRepository extends BaseRepository {
   readonly #gradePreference: ClimbingGradePreference;
 
@@ -260,32 +165,32 @@ export class ClimbingRepository extends BaseRepository {
     `;
   }
 
-  #displayGrade(
-    climbType: ClimbingClimbType,
-    sourceSystem: ClimbingGradeSystem,
-    sourceGrade: string,
-  ): DisplayGrade | null {
-    if (!isGradeSystemForClimbType(sourceSystem, climbType)) return null;
-    const displaySystem = this.#gradePreference[climbType];
-    const converted = convertClimbingGrade({
-      grade: sourceGrade,
-      sourceSystem,
-      displaySystem,
-    });
-    if (converted) {
-      return {
-        grade: converted.displayGrade,
-        gradeSystem: converted.displaySystem,
-        gradeSortValue: converted.sortValue,
-      };
-    }
-    const sourceSortValue = gradeSortValue(sourceGrade, sourceSystem);
-    return sourceSortValue === null
-      ? null
-      : { grade: sourceGrade, gradeSystem: sourceSystem, gradeSortValue: sourceSortValue };
+  #entryFilterPredicate(filters: ClimbingFilters) {
+    const predicates = [sql`true`];
+    if (filters.style === "boulder" || filters.style === "route")
+      predicates.push(sql`ce.climb_type = ${filters.style}`);
+    else if (filters.style === "unknown")
+      predicates.push(sql`ce.climb_type = 'route' AND ce.climb_style IS NULL`);
+    else if (filters.style) predicates.push(sql`ce.climb_style = ${filters.style}`);
+    if (filters.protection === "unknown") predicates.push(sql`ce.route_protection IS NULL`);
+    else if (filters.protection)
+      predicates.push(sql`${filters.protection} = ANY(ce.route_protection)`);
+    // Product policy treats Mountain Project and OpenBeta as outdoor, including older entries without paths.
+    const setting = sql`CASE
+      WHEN ce.provider_id IN ('mountain-project', 'openbeta') THEN 'outdoor'
+      WHEN ce.location_path @> '[{"kind":"gym"}]'::jsonb THEN 'indoor'
+      WHEN ce.location_path @> '[{"kind":"destination"}]'::jsonb
+        OR ce.location_path @> '[{"kind":"area"}]'::jsonb
+        OR ce.location_path @> '[{"kind":"subarea"}]'::jsonb THEN 'outdoor'
+      ELSE 'unknown' END`;
+    if (filters.setting) predicates.push(sql`(${setting}) = ${filters.setting}`);
+    return sql.join(predicates, sql` AND `);
   }
 
-  async getGradeProgression(days: number): Promise<ClimbingGradeProgression[]> {
+  async getGradeProgression(
+    days: number,
+    filters: ClimbingFilters = {},
+  ): Promise<ClimbingGradeProgression[]> {
     const rows = await executeWithSchema(
       this.db,
       progressionRowSchema,
@@ -295,18 +200,20 @@ export class ClimbingRepository extends BaseRepository {
               ce.id, ce.activity_id, ce.climb_type, ce.grade_system, ce.grade,
               ce.sent, ce.attempt_count
             FROM fitness.v_activity AS a
-            JOIN fitness.climbing_entry AS ce
+            JOIN fitness.v_climbing_entry AS ce
               ON ce.activity_id = ANY(a.member_activity_ids)
              AND ce.provider_absent_at IS NULL
             WHERE ${this.#activityWindowPredicate(days)}
+              AND ${this.#entryFilterPredicate(filters)}
             UNION ALL
             SELECT
               ce.unattached_date::text AS session_date,
               ce.id, ce.activity_id, ce.climb_type, ce.grade_system, ce.grade,
               ce.sent, ce.attempt_count
-            FROM fitness.climbing_entry AS ce
+            FROM fitness.v_climbing_entry AS ce
             WHERE ce.user_id = ${this.userId}
               AND ce.activity_id IS NULL
+              AND ${this.#entryFilterPredicate(filters)}
               AND ce.provider_absent_at IS NULL
               AND ce.unattached_date > (NOW() AT TIME ZONE ${this.timezone})::date - ${days}::int
               AND ce.unattached_date <= (NOW() AT TIME ZONE ${this.timezone})::date
@@ -327,7 +234,12 @@ export class ClimbingRepository extends BaseRepository {
     );
     const bestBySession = new Map<string, ClimbingGradeProgressionRow>();
     for (const row of rows) {
-      const display = this.#displayGrade(row.climb_type, row.grade_system, row.grade);
+      const display = displayClimbingGrade(
+        this.#gradePreference,
+        row.climb_type,
+        row.grade_system,
+        row.grade,
+      );
       if (!display) continue;
       const key = `${row.session_date}:${row.climb_type}`;
       const candidate = { date: row.session_date, climbType: row.climb_type, ...display };
@@ -343,7 +255,10 @@ export class ClimbingRepository extends BaseRepository {
       .map((row) => new ClimbingGradeProgression(row));
   }
 
-  async getVolumeByGrade(days: number): Promise<ClimbingVolumeByGrade[]> {
+  async getVolumeByGrade(
+    days: number,
+    filters: ClimbingFilters = {},
+  ): Promise<ClimbingVolumeByGrade[]> {
     const rows = await executeWithSchema(
       this.db,
       volumeByGradeRowSchema,
@@ -352,17 +267,19 @@ export class ClimbingRepository extends BaseRepository {
               ce.id, ce.activity_id, ce.climb_type, ce.grade_system, ce.grade,
               ce.sent, ce.attempt_count
             FROM fitness.v_activity AS a
-            JOIN fitness.climbing_entry AS ce
+            JOIN fitness.v_climbing_entry AS ce
               ON ce.activity_id = ANY(a.member_activity_ids)
              AND ce.provider_absent_at IS NULL
             WHERE ${this.#activityWindowPredicate(days)}
+              AND ${this.#entryFilterPredicate(filters)}
             UNION ALL
             SELECT
               ce.id, ce.activity_id, ce.climb_type, ce.grade_system, ce.grade,
               ce.sent, ce.attempt_count
-            FROM fitness.climbing_entry AS ce
+            FROM fitness.v_climbing_entry AS ce
             WHERE ce.user_id = ${this.userId}
               AND ce.activity_id IS NULL
+              AND ${this.#entryFilterPredicate(filters)}
               AND ce.provider_absent_at IS NULL
               AND ce.unattached_date > (NOW() AT TIME ZONE ${this.timezone})::date - ${days}::int
               AND ce.unattached_date <= (NOW() AT TIME ZONE ${this.timezone})::date
@@ -372,7 +289,10 @@ export class ClimbingRepository extends BaseRepository {
             ce.climb_type,
             ce.grade_system,
             ce.grade,
-            SUM(CASE WHEN detail.attempt_count > 0 THEN detail.attempt_count ELSE ce.attempt_count END) AS attempts,
+            CASE WHEN COUNT(CASE WHEN detail.attempt_count > 0 THEN detail.attempt_count ELSE ce.attempt_count END) = COUNT(*)
+              THEN SUM(CASE WHEN detail.attempt_count > 0 THEN detail.attempt_count ELSE ce.attempt_count END)
+              ELSE NULL END AS attempts,
+            SUM(CASE WHEN detail.attempt_count > 0 THEN detail.attempt_count ELSE ce.attempt_count END) AS recorded_attempts,
             COUNT(*) FILTER (WHERE CASE WHEN detail.attempt_count > 0 THEN detail.sent ELSE ce.sent END)::int AS sends
           FROM climbing_entries AS ce
           LEFT JOIN LATERAL (
@@ -380,23 +300,35 @@ export class ClimbingRepository extends BaseRepository {
             FROM fitness.climbing_attempt AS attempt
             WHERE attempt.climbing_entry_id = ce.id
           ) AS detail ON true
-          WHERE CASE WHEN detail.attempt_count > 0 THEN detail.attempt_count ELSE ce.attempt_count END IS NOT NULL
           GROUP BY ce.climb_type, ce.grade_system, ce.grade`,
     );
     const byDisplayGrade = new Map<string, ClimbingVolumeByGradeRow>();
     for (const row of rows) {
-      const display = this.#displayGrade(row.climb_type, row.grade_system, row.grade);
+      const display = displayClimbingGrade(
+        this.#gradePreference,
+        row.climb_type,
+        row.grade_system,
+        row.grade,
+      );
       if (!display) continue;
       const key = `${row.climb_type}:${display.gradeSystem}:${display.grade}`;
       const current = byDisplayGrade.get(key);
       if (current) {
-        current.attempts += row.attempts;
+        current.attempts =
+          current.attempts === null || row.attempts === null
+            ? null
+            : current.attempts + row.attempts;
+        current.recordedAttempts =
+          current.recordedAttempts === null && row.recorded_attempts === null
+            ? null
+            : (current.recordedAttempts ?? 0) + (row.recorded_attempts ?? 0);
         current.sends += row.sends;
       } else {
         byDisplayGrade.set(key, {
           climbType: row.climb_type,
           ...display,
           attempts: row.attempts,
+          recordedAttempts: row.recorded_attempts,
           sends: row.sends,
         });
       }
@@ -406,7 +338,10 @@ export class ClimbingRepository extends BaseRepository {
       .map((row) => new ClimbingVolumeByGrade(row));
   }
 
-  async getSessionSummaries(days: number): Promise<ClimbingSessionSummary[]> {
+  async getSessionSummaries(
+    days: number,
+    filters: ClimbingFilters = {},
+  ): Promise<ClimbingSessionSummary[]> {
     const rows = await executeWithSchema(
       this.db,
       sessionEntryRowSchema,
@@ -421,7 +356,7 @@ export class ClimbingRepository extends BaseRepository {
             ce.grade_system,
             ce.grade
           FROM fitness.v_activity AS a
-          JOIN fitness.climbing_entry AS ce
+          JOIN fitness.v_climbing_entry AS ce
             ON ce.activity_id = ANY(a.member_activity_ids)
            AND ce.provider_absent_at IS NULL
           LEFT JOIN LATERAL (
@@ -430,8 +365,7 @@ export class ClimbingRepository extends BaseRepository {
             WHERE attempt.climbing_entry_id = ce.id
           ) AS detail ON true
           WHERE ${this.#activityWindowPredicate(days)}
-            AND CASE WHEN detail.attempt_count > 0 THEN detail.attempt_count ELSE ce.attempt_count END IS NOT NULL
-            AND CASE WHEN detail.attempt_count > 0 THEN detail.sent ELSE ce.sent END IS NOT NULL`,
+              AND ${this.#entryFilterPredicate(filters)}`,
     );
     const summaries = new Map<string, ClimbingSessionSummaryRow>();
     for (const row of rows) {
@@ -450,10 +384,13 @@ export class ClimbingRepository extends BaseRepository {
       if (existing.locationName === null && row.location_name !== null) {
         existing.locationName = row.location_name;
       }
-      existing.attempts += row.attempt_count;
+      existing.attempts =
+        existing.attempts === null || row.attempt_count === null
+          ? null
+          : existing.attempts + row.attempt_count;
       if (row.sent) existing.sends += 1;
       const display = row.sent
-        ? this.#displayGrade(row.climb_type, row.grade_system, row.grade)
+        ? displayClimbingGrade(this.#gradePreference, row.climb_type, row.grade_system, row.grade)
         : null;
       if (
         display &&
@@ -480,93 +417,13 @@ export class ClimbingRepository extends BaseRepository {
       .map((row) => new ClimbingSessionSummary(row));
   }
 
-  async getActivityEntries(activityId: string): Promise<ClimbingActivityEntry[]> {
-    const rows = await executeWithSchema(
+  getActivityEntries(activityId: string): Promise<ClimbingActivityEntry[]> {
+    return new ClimbingActivityEntryRepository(
       this.db,
-      activityEntryRowSchema,
-      sql`SELECT
-            ce.id::text AS id,
-            source_activity.provider_id,
-            ce.climb_type,
-            ce.grade_system,
-            ce.grade,
-            CASE WHEN detail.attempt_count > 0 THEN detail.sent ELSE ce.sent END AS sent,
-            CASE WHEN detail.attempt_count > 0 THEN detail.attempt_count ELSE ce.attempt_count END AS attempt_count,
-            COALESCE(detail.attempts, '[]'::jsonb) AS attempts,
-            CASE lower(btrim(COALESCE(ce.raw->>'ascentType', ce.raw->>'attemptType',
-              CASE WHEN ce.climb_type = 'boulder' THEN ce.raw->>'Style' ELSE ce.raw->>'Lead Style' END)))
-              WHEN 'flash' THEN 'Flash'
-              WHEN 'onsight' THEN 'Onsight'
-              WHEN 'redpoint' THEN 'Redpoint'
-              WHEN 'pinkpoint' THEN 'Pinkpoint'
-              WHEN 'repeat' THEN 'Repeat'
-              ELSE NULL
-            END AS ascent_type,
-            ce.hold_type,
-            ce.route_name,
-            ce.location_name,
-            ce.lead,
-            ce.source_name,
-            ce.wall_angle_degrees
-          FROM fitness.v_activity AS a
-          JOIN fitness.climbing_entry AS ce
-            ON ce.activity_id = ANY(a.member_activity_ids)
-           AND ce.provider_absent_at IS NULL
-          JOIN fitness.activity AS source_activity ON source_activity.id = ce.activity_id
-          LEFT JOIN LATERAL (
-            SELECT
-              COUNT(*)::int AS attempt_count,
-              BOOL_OR(attempt.outcome = 'sent') AS sent,
-              jsonb_agg(jsonb_build_object(
-                'attemptIndex', attempt.attempt_index,
-                'failureReason', attempt.failure_reason,
-                'notes', attempt.notes,
-                'outcome', attempt.outcome
-              ) ORDER BY attempt.attempt_index) AS attempts
-            FROM fitness.climbing_attempt AS attempt
-            WHERE attempt.climbing_entry_id = ce.id
-          ) AS detail ON true
-          WHERE a.user_id = ${this.userId}::uuid
-            AND a.id = ${activityId}::uuid
-            ${this.timestampAccessPredicate(sql`a.started_at`)}`,
-    );
-    return deduplicateCrossProviderEntries(rows)
-      .map((row) => {
-        const display = this.#displayGrade(row.climb_type, row.grade_system, row.grade);
-        return display
-          ? { row, display }
-          : {
-              row,
-              display: {
-                grade: row.grade,
-                gradeSystem: row.grade_system,
-                gradeSortValue: -1e9,
-              },
-            };
-      })
-      .sort(
-        (left, right) =>
-          right.display.gradeSortValue - left.display.gradeSortValue ||
-          left.row.id.localeCompare(right.row.id),
-      )
-      .map(
-        ({ row, display }) =>
-          new ClimbingActivityEntry({
-            id: row.id,
-            climbType: row.climb_type,
-            gradeSystem: display.gradeSystem,
-            grade: display.grade,
-            sent: row.sent,
-            attemptCount: row.attempt_count,
-            attempts: row.attempts,
-            ascentType: row.ascent_type,
-            holdType: row.hold_type,
-            routeName: row.route_name,
-            locationName: row.location_name,
-            lead: row.lead,
-            sourceName: row.source_name,
-            wallAngleDegrees: row.wall_angle_degrees,
-          }),
-      );
+      this.userId,
+      this.timezone,
+      this.accessWindow,
+      this.#gradePreference,
+    ).getActivityEntries(activityId);
   }
 }

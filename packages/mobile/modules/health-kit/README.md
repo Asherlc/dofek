@@ -85,6 +85,11 @@ From repo root:
 - `pnpm test:mobile -- packages/mobile/app/providers/index.test.tsx`
 - `pnpm test:mobile -- packages/mobile/lib/health-kit-sync.test.ts`
 - `pnpm test:mobile -- packages/mobile/lib/background-health-kit-sync.test.ts`
+- `pnpm tsx scripts/check-health-kit-coverage.ts`: runs native Swift tests and
+  enforces 90% line and function coverage for `HealthKitQueries.swift` and
+  `HealthKitTypes.swift`. The runner discovers the exported coverage report with
+  SwiftPM's [`swift test --show-codecov-path`](https://github.com/swiftlang/swift-package-manager/blob/main/Sources/PackageManagerDocs/Documentation.docc/SwiftTest.md),
+  so validation and CI artifacts follow the active toolchain's build layout.
 
 ## Physical-Device Observer Validation
 

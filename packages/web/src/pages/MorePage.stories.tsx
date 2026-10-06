@@ -16,21 +16,18 @@ function MorePageStory() {
     path: "/more",
     component: MorePage,
   });
-  const destinationRoutes = [
-    { path: "/settings", title: "Account & settings" },
-    { path: "/data-quality", title: "Data quality" },
-    { path: "/cycle", title: "Cycle tracking" },
-  ].map(({ path, title }) =>
-    createRoute({
-      getParentRoute: () => rootRoute,
-      path,
-      component: () => (
-        <main className="p-8">
-          <h1 className="text-2xl font-semibold">{title}</h1>
-          <p className="mt-2 text-muted-foreground">Story destination preview</p>
-        </main>
-      ),
-    }),
+  const destinationRoutes = [{ path: "/settings", title: "Account & settings" }].map(
+    ({ path, title }) =>
+      createRoute({
+        getParentRoute: () => rootRoute,
+        path,
+        component: () => (
+          <main className="p-8">
+            <h1 className="text-2xl font-semibold">{title}</h1>
+            <p className="mt-2 text-muted-foreground">Story destination preview</p>
+          </main>
+        ),
+      }),
   );
   const router = createRouter({
     routeTree: rootRoute.addChildren([moreRoute, ...destinationRoutes]),

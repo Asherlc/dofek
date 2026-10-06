@@ -3,6 +3,14 @@ import type { ReactNode } from "react";
 import { AppState, type AppStateStatus } from "react-native";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+const { mockRegisterQueryLifecycle, mockCleanupQueryLifecycle } = vi.hoisted(() => {
+  const cleanup = vi.fn();
+  return { mockRegisterQueryLifecycle: vi.fn(() => cleanup), mockCleanupQueryLifecycle: cleanup };
+});
+vi.mock("../lib/mobile-query-lifecycle", () => ({
+  registerMobileQueryLifecycle: mockRegisterQueryLifecycle,
+}));
+
 const mockHttpBatchLink = vi.fn((options: unknown) => ({ type: "batch", options }));
 const mockHttpLink = vi.fn((options: unknown) => ({ type: "single", options }));
 const mockSplitLink = vi.fn((options: unknown) => ({ type: "split", options }));
@@ -310,6 +318,16 @@ describe("RootLayout background cleanup", () => {
       rootAppStateCallback = callback;
       return { remove: vi.fn() };
     });
+  });
+
+  it("registers query lifecycle once and removes it on root unmount", async () => {
+    const RootLayout = await importRootLayout();
+    const rendered = render(<RootLayout />);
+    await waitFor(() => expect(mockMarkAppInteractive).toHaveBeenCalled());
+    rendered.rerender(<RootLayout />);
+    expect(mockRegisterQueryLifecycle).toHaveBeenCalledOnce();
+    rendered.unmount();
+    expect(mockCleanupQueryLifecycle).toHaveBeenCalledOnce();
   });
 
   it("keeps the native splash screen visible until the root layout can render", async () => {

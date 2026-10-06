@@ -1,4 +1,4 @@
-import type { EventSubscription } from "expo-modules-core";
+import type { EventSubscription } from "expo";
 import { z } from "zod";
 import BleHeartRateModule from "./src/BleHeartRateModule";
 

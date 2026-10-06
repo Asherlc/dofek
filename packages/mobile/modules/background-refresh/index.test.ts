@@ -7,7 +7,7 @@ const nativeModule = vi.hoisted(() => ({
   scheduleRefresh: vi.fn(),
 }));
 
-vi.mock("expo-modules-core", () => ({
+vi.mock("expo", () => ({
   requireNativeModule: () => nativeModule,
 }));
 

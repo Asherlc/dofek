@@ -1,0 +1,67 @@
+diff --git a/ios/AppleAuthenticationErrorDiagnostics.swift b/ios/AppleAuthenticationErrorDiagnostics.swift
+new file mode 100644
+index 0000000000000000000000000000000000000000..01de395aa97f242e931d4dbdd788c7c9cfb0e8fd
+--- /dev/null
++++ b/ios/AppleAuthenticationErrorDiagnostics.swift
+@@ -0,0 +1,37 @@
++import Foundation
++
++// Retain only diagnostic codes. NSError/userInfo may contain account data or credentials.
++struct AppleAuthenticationErrorDiagnostics: LocalizedError, Sendable {
++  private let domain: String
++  private let code: Int
++  private let underlyingDomain: String?
++  private let underlyingCode: Int?
++
++  init(_ error: NSError) {
++    domain = Self.safeDomain(error.domain)
++    code = error.code
++    let underlying = error.userInfo[NSUnderlyingErrorKey] as? NSError
++    underlyingDomain = underlying.map { Self.safeDomain($0.domain) }
++    underlyingCode = underlying?.code
++  }
++
++  var errorDescription: String? {
++    let underlying: String
++    if let underlyingDomain, let underlyingCode {
++      underlying = " underlyingDomain=\(underlyingDomain) underlyingCode=\(underlyingCode)"
++    } else {
++      underlying = ""
++    }
++    return "[dofek.apple-auth domain=\(domain) code=\(code)\(underlying)]"
++  }
++
++  private static func safeDomain(_ domain: String) -> String {
++    switch domain {
++    case "com.apple.AuthenticationServices.AuthorizationError", "AKAuthenticationError",
++      NSCocoaErrorDomain, NSPOSIXErrorDomain, NSURLErrorDomain:
++      return domain
++    default:
++      return "other"
++    }
++  }
++}
+diff --git a/ios/AppleAuthenticationRequest.swift b/ios/AppleAuthenticationRequest.swift
+index d869fd939d59231dc597bbc19c75e33fd7ec3932..fc5c6cffc213d73a490f59716df92df170a28a86 100644
+--- a/ios/AppleAuthenticationRequest.swift
++++ b/ios/AppleAuthenticationRequest.swift
+@@ -72,12 +72,14 @@ final class AppleAuthenticationRequest: NSObject, ASAuthorizationControllerPrese
+   }
+ 
+   func authorizationController(controller: ASAuthorizationController, didCompleteWithError error: Error) {
+-    if let error = error as? ASAuthorizationError {
+-      log.error("Apple authorization failed: \(error.localizedDescription)")
+-      callback?(nil, exceptionForAuthorizationError(error))
+-    } else {
+-      callback?(nil, RequestUnknownException())
++    let exception = (error as? ASAuthorizationError).map(exceptionForAuthorizationError)
++      ?? RequestUnknownException()
++    if !(exception is RequestCanceledException) {
++      let diagnostics = AppleAuthenticationErrorDiagnostics(error as NSError)
++      log.error("Apple authorization failed: \(diagnostics.localizedDescription)")
++      exception.causedBy(diagnostics)
+     }
++    callback?(nil, exception)
+     callback = nil
+ 
+     // Release pending request

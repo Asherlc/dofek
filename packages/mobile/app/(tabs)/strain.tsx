@@ -8,13 +8,14 @@ import {
 import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { shouldShowBlockingLoading } from "@dofek/scoring/loading-policy";
 import { aggregateWeeklyVolume, StrainScore } from "@dofek/scoring/scoring";
+import type { ClimbingFilters as ClimbingFilterValues } from "@dofek/training/climbing-filters";
 import { TRAINING_TERMINOLOGY } from "@dofek/training/terminology";
 import {
   collapseWeeklyVolumeActivityTypes,
   formatActivityTypeLabel,
 } from "@dofek/training/training";
 import { useRouter } from "expo-router";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   RefreshControl,
@@ -24,14 +25,14 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { z } from "zod";
 import { ActivityCard } from "../../components/ActivityCard";
 import { ChartTitleWithTooltip } from "../../components/ChartTitleWithTooltip";
+import { ClimbingFilters } from "../../components/ClimbingFilters";
+import { ClimbingTrainingCard } from "../../components/ClimbingTrainingCard";
 import { SparkLine } from "../../components/charts/SparkLine";
 import { StrainGauge } from "../../components/charts/StrainGauge";
 import { VerticalAscentChart } from "../../components/charts/VerticalAscentChart";
 import { DaySelector } from "../../components/DaySelector";
-import { HangboardingSummary } from "../../components/HangboardingSummary";
 import { ProcessingStatusWidget } from "../../components/ProcessingStatusWidget";
 import { ProgressiveOverloadCards } from "../../components/ProgressiveOverloadCards";
 import { QueryStatePanel } from "../../components/QueryStatePanel";
@@ -49,111 +50,6 @@ import { useTodayQueryDate } from "../../lib/useTodayQueryDate";
 import { colors } from "../../theme";
 import { ActivityRowSchema, WeeklyVolumeRowSchema } from "../../types/api";
 
-type ClimbingClimbType = "boulder" | "route";
-
-const climbingClimbTypeSchema = z.enum(["boulder", "route"]);
-
-const mobileClimbingGradeProgressionRowSchema = z.object({
-  date: z.string(),
-  climbType: climbingClimbTypeSchema,
-  grade: z.string(),
-  gradeSortValue: z.number(),
-});
-
-const mobileClimbingVolumeByGradeRowSchema = z.object({
-  climbType: climbingClimbTypeSchema,
-  grade: z.string(),
-  gradeSortValue: z.number(),
-  attempts: z.number(),
-  sends: z.number(),
-});
-
-const mobileClimbingSessionSummaryRowSchema = z.object({
-  activityId: z.string(),
-  date: z.string(),
-  name: z.string(),
-  locationName: z.string().nullable(),
-  attempts: z.number(),
-  sends: z.number(),
-  hardestBoulderGrade: z.string().nullable(),
-  hardestRouteGrade: z.string().nullable(),
-});
-
-const mobileHangboardingDailyRowSchema = z.object({
-  date: z.string(),
-  sessionCount: z.number().int().nonnegative(),
-  durationSeconds: z.number().nonnegative(),
-  workDurationSeconds: z.number().nonnegative().nullable(),
-  restDurationSeconds: z.number().nonnegative().nullable(),
-});
-
-const mobileHangboardingSummarySchema = z.object({
-  sessionCount: z.number().int().nonnegative(),
-  totalDurationSeconds: z.number().nonnegative(),
-  averageDurationSeconds: z.number().nonnegative().nullable(),
-  totalWorkDurationSeconds: z.number().nonnegative().nullable(),
-  totalRestDurationSeconds: z.number().nonnegative().nullable(),
-  workIntervalCount: z.number().int().nonnegative().nullable(),
-  averageHeartRate: z.number().nonnegative().nullable(),
-  peakHeartRate: z.number().nonnegative().nullable(),
-  latestSession: z
-    .object({
-      activityId: z.string(),
-      startedAt: z.string(),
-      planName: z.string().nullable(),
-      boardName: z.string().nullable(),
-      durationSeconds: z.number().nonnegative(),
-    })
-    .nullable(),
-  daily: z.unknown(),
-});
-
-const mobileClimbingDataSchema = z.object({
-  gradeProgression: z.array(mobileClimbingGradeProgressionRowSchema),
-  volumeByGrade: z.array(mobileClimbingVolumeByGradeRowSchema),
-  sessionSummary: z.array(mobileClimbingSessionSummaryRowSchema),
-  hangboarding: z.object({
-    ...mobileHangboardingSummarySchema.shape,
-    daily: z.array(mobileHangboardingDailyRowSchema),
-  }),
-});
-
-const mobileClimbingPayloadSchema = z.object({
-  gradeProgression: z.unknown().optional(),
-  volumeByGrade: z.unknown().optional(),
-  sessionSummary: z.unknown().optional(),
-  hangboarding: z.unknown().optional(),
-});
-
-type MobileClimbingGradeProgressionRow = z.infer<typeof mobileClimbingGradeProgressionRowSchema>;
-type MobileClimbingVolumeByGradeRow = z.infer<typeof mobileClimbingVolumeByGradeRowSchema>;
-type MobileClimbingSessionSummaryRow = z.infer<typeof mobileClimbingSessionSummaryRowSchema>;
-type MobileHangboardingSummary = z.infer<typeof mobileClimbingDataSchema>["hangboarding"];
-type MobileClimbingData = z.infer<typeof mobileClimbingDataSchema>;
-
-interface MobileClimbingParseResult {
-  data: MobileClimbingData;
-  error: Error | null;
-}
-
-const emptyClimbingData: MobileClimbingData = {
-  gradeProgression: [],
-  volumeByGrade: [],
-  sessionSummary: [],
-  hangboarding: {
-    sessionCount: 0,
-    totalDurationSeconds: 0,
-    averageDurationSeconds: null,
-    totalWorkDurationSeconds: null,
-    totalRestDurationSeconds: null,
-    workIntervalCount: null,
-    averageHeartRate: null,
-    peakHeartRate: null,
-    latestSession: null,
-    daily: [],
-  },
-};
-
 const reportedTrainingErrors = new WeakSet<object>();
 
 function useReportQueryError(query: { isError: boolean; error: object | null }) {
@@ -170,109 +66,8 @@ function useReportQueryError(query: { isError: boolean; error: object | null }) 
   }, [query.isError, query.error]);
 }
 
-function parseMobileClimbingData(value: unknown): MobileClimbingParseResult {
-  if (value == null) {
-    return { data: emptyClimbingData, error: null };
-  }
-
-  const payloadResult = mobileClimbingPayloadSchema.safeParse(value);
-  if (!payloadResult.success) {
-    const parseError = new Error(
-      `strain:climbing: Zod parse failed: ${payloadResult.error.message}`,
-    );
-    captureException(parseError, {
-      context: "strain:climbing",
-      zodError: payloadResult.error.format(),
-    });
-    return { data: emptyClimbingData, error: parseError };
-  }
-
-  const gradeProgression = safeParseRows(
-    mobileClimbingGradeProgressionRowSchema,
-    payloadResult.data.gradeProgression ?? [],
-    "strain:climbing.gradeProgression",
-  );
-  const volumeByGrade = safeParseRows(
-    mobileClimbingVolumeByGradeRowSchema,
-    payloadResult.data.volumeByGrade ?? [],
-    "strain:climbing.volumeByGrade",
-  );
-  const sessionSummary = safeParseRows(
-    mobileClimbingSessionSummaryRowSchema,
-    payloadResult.data.sessionSummary ?? [],
-    "strain:climbing.sessionSummary",
-  );
-  const hangboardingResult = mobileHangboardingSummarySchema.safeParse(
-    payloadResult.data.hangboarding ?? emptyClimbingData.hangboarding,
-  );
-  const hangboardingDaily = hangboardingResult.success
-    ? safeParseRows(
-        mobileHangboardingDailyRowSchema,
-        hangboardingResult.data.daily,
-        "strain:climbing.hangboarding.daily",
-      )
-    : { data: [], error: null };
-  const hangboarding = hangboardingResult.success
-    ? { ...hangboardingResult.data, daily: hangboardingDaily.data }
-    : emptyClimbingData.hangboarding;
-  const hangboardingError = hangboardingResult.success
-    ? hangboardingDaily.error
-    : (() => {
-        const parseError = new Error(
-          `strain:climbing.hangboarding: Zod parse failed: ${hangboardingResult.error.message}`,
-        );
-        captureException(parseError, {
-          context: "strain:climbing.hangboarding",
-          zodError: hangboardingResult.error.format(),
-        });
-        return parseError;
-      })();
-
-  return {
-    data: {
-      gradeProgression: gradeProgression.data,
-      volumeByGrade: volumeByGrade.data,
-      sessionSummary: sessionSummary.data,
-      hangboarding,
-    },
-    error:
-      gradeProgression.error ?? volumeByGrade.error ?? sessionSummary.error ?? hangboardingError,
-  };
-}
-
-class ClimbingSectionModel {
-  readonly #data: MobileClimbingData;
-
-  constructor(data: MobileClimbingData) {
-    this.#data = data;
-  }
-
-  bestGrade(climbType: ClimbingClimbType): string | null {
-    const bestRow = this.#data.gradeProgression
-      .filter((row) => row.climbType === climbType)
-      .reduce<MobileClimbingGradeProgressionRow | null>(
-        (best, row) => (best === null || row.gradeSortValue > best.gradeSortValue ? row : best),
-        null,
-      );
-    return bestRow?.grade ?? null;
-  }
-
-  get volumeRows(): MobileClimbingVolumeByGradeRow[] {
-    return [...this.#data.volumeByGrade].sort(
-      (left, right) => left.gradeSortValue - right.gradeSortValue,
-    );
-  }
-
-  get sessions(): MobileClimbingSessionSummaryRow[] {
-    return this.#data.sessionSummary;
-  }
-
-  get hangboarding(): MobileHangboardingSummary {
-    return this.#data.hangboarding;
-  }
-}
-
 export default function StrainScreen() {
+  const [climbingFilters, setClimbingFilters] = useState<ClimbingFilterValues>({});
   const router = useRouter();
   const utils = trpc.useUtils();
   const { days, description, isHydrated, setDays } = useTimeRangePreference("training");
@@ -285,7 +80,7 @@ export default function StrainScreen() {
   }, [isHydrated]);
 
   const trainingQuery = trpc.mobileDashboard.training.useQuery(
-    { days, endDate },
+    { days, endDate, ...(Object.keys(climbingFilters).length ? { climbingFilters } : {}) },
     {
       enabled: isHydrated,
       placeholderData: preservePreviousRangeData ? (previousData) => previousData : undefined,
@@ -346,12 +141,9 @@ export default function StrainScreen() {
   );
   const weeklyVolume = weeklyVolumeParsed.data;
   const verticalAscent = trainingData?.verticalAscent ?? [];
-  const climbingParsed = parseMobileClimbingData(trainingData?.climbing);
-  const climbingModel = new ClimbingSectionModel(climbingParsed.data);
   const hasCachedTrainingData = trainingData != null;
   const hasCachedClimbingData = trainingData?.climbing != null;
   const shouldShowTrainingQueryError = trainingQuery.isError && !hasCachedTrainingData;
-  const shouldShowClimbingError = climbingParsed.error !== null;
   const shouldShowClimbingSection = !trainingQuery.isError || hasCachedClimbingData;
   const collapsedWeeklyVolume = collapseWeeklyVolumeActivityTypes(weeklyVolume, 6);
   const activityTypeTotalsMap = new Map<string, number>();
@@ -574,26 +366,13 @@ export default function StrainScreen() {
             units={units}
           />
 
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>Climbing</Text>
-            {shouldShowClimbingError ? (
-              <Text style={styles.errorText}>
-                {userFacingErrorMessage(
-                  climbingParsed.error,
-                  "Climbing data could not be loaded. Please try again.",
-                )}
-              </Text>
-            ) : null}
-            {shouldShowClimbingSection ? (
-              <>
-                <ClimbingSection model={climbingModel} />
-                <HangboardingSummary
-                  data={climbingModel.hangboarding}
-                  loading={trainingQuery.isLoading && trainingData == null}
-                />
-              </>
-            ) : null}
-          </View>
+          <ClimbingFilters value={climbingFilters} onChange={setClimbingFilters} />
+          {shouldShowClimbingSection ? (
+            <ClimbingTrainingCard
+              data={trainingData?.climbing}
+              loading={trainingQuery.isLoading && trainingData == null}
+            />
+          ) : null}
 
           {/* Weekly volume summary */}
           {weeklyVolumeParsed.error && (
@@ -733,65 +512,6 @@ export default function StrainScreen() {
         monotony={monotonyQuery.data ?? null}
       />
     </ScrollView>
-  );
-}
-
-function ClimbingSection({ model }: { model: ClimbingSectionModel }) {
-  return (
-    <View style={styles.climbingStack}>
-      <View style={styles.climbingGradeGrid}>
-        <View style={styles.climbingGradeItem}>
-          <Text style={styles.loadLabel}>Best Boulder Grade</Text>
-          <Text style={styles.loadValue}>{model.bestGrade("boulder") ?? "None"}</Text>
-        </View>
-        <View style={styles.climbingGradeItem}>
-          <Text style={styles.loadLabel}>Best Route Grade</Text>
-          <Text style={styles.loadValue}>{model.bestGrade("route") ?? "None"}</Text>
-        </View>
-      </View>
-
-      {model.bestGrade("boulder") == null && model.bestGrade("route") == null && (
-        <Text style={styles.activitiesEmpty}>No climbing grade progression</Text>
-      )}
-
-      <View style={styles.climbingSubsection}>
-        <Text style={styles.climbingSubsectionTitle}>Volume by Grade</Text>
-        {model.volumeRows.length === 0 ? (
-          <Text style={styles.activitiesEmpty}>No climbing volume by grade</Text>
-        ) : (
-          model.volumeRows.map((row) => (
-            <View key={`${row.climbType}-${row.grade}`} style={styles.climbingVolumeRow}>
-              <Text style={styles.climbingGradeText}>{row.grade}</Text>
-              <Text style={styles.climbingMetaText}>{row.attempts} attempts</Text>
-              <Text style={styles.climbingMetaText}>{row.sends} sends</Text>
-            </View>
-          ))
-        )}
-      </View>
-
-      <View style={styles.climbingSubsection}>
-        <Text style={styles.climbingSubsectionTitle}>Recent Climbing Sessions</Text>
-        {model.sessions.length === 0 ? (
-          <Text style={styles.activitiesEmpty}>No climbing sessions</Text>
-        ) : (
-          model.sessions.slice(0, 3).map((session) => (
-            <View key={session.activityId} style={styles.climbingSessionRow}>
-              <Text style={styles.climbingSessionName}>{session.name}</Text>
-              {session.locationName && (
-                <Text style={styles.climbingMetaText}>{session.locationName}</Text>
-              )}
-              <Text style={styles.climbingMetaText}>
-                {session.attempts} attempts · {session.sends} sends
-              </Text>
-              <Text style={styles.climbingMetaText}>
-                Boulder {session.hardestBoulderGrade ?? "None"} · Route{" "}
-                {session.hardestRouteGrade ?? "None"}
-              </Text>
-            </View>
-          ))
-        )}
-      </View>
-    </View>
   );
 }
 
@@ -990,55 +710,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     textAlign: "center",
     paddingVertical: 24,
-  },
-  climbingStack: {
-    gap: 14,
-  },
-  climbingGradeGrid: {
-    flexDirection: "row",
-    gap: 12,
-  },
-  climbingGradeItem: {
-    alignItems: "center",
-    backgroundColor: colors.surfaceSecondary,
-    borderRadius: 12,
-    flex: 1,
-    gap: 4,
-    padding: 12,
-  },
-  climbingSubsection: {
-    borderTopColor: colors.surfaceSecondary,
-    borderTopWidth: 1,
-    gap: 8,
-    paddingTop: 12,
-  },
-  climbingSubsectionTitle: {
-    color: colors.textSecondary,
-    fontSize: 12,
-    fontWeight: "700",
-  },
-  climbingVolumeRow: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: 10,
-  },
-  climbingGradeText: {
-    color: colors.text,
-    fontSize: 15,
-    fontWeight: "700",
-    minWidth: 48,
-  },
-  climbingMetaText: {
-    color: colors.textSecondary,
-    fontSize: 12,
-  },
-  climbingSessionRow: {
-    gap: 3,
-  },
-  climbingSessionName: {
-    color: colors.text,
-    fontSize: 14,
-    fontWeight: "600",
   },
   errorText: {
     color: "#f87171",

@@ -29,6 +29,7 @@ describe("MCP SDK write and fresh discovery", () => {
   let server: ReturnType<express.Express["listen"]>;
   let endpoint: URL;
   let token: string;
+  let readToken: string;
 
   beforeAll(async () => {
     context = await setupTestDatabase();
@@ -46,6 +47,12 @@ describe("MCP SDK write and fresh discovery", () => {
       userId,
       name: "MCP SDK write regression",
       scopes: ["nutrition:read", "nutrition:write"],
+      expiresAt: null,
+    }));
+    ({ token: readToken } = await createMcpToken(context.db, {
+      userId,
+      name: "MCP SDK read-only regression",
+      scopes: ["nutrition:read"],
       expiresAt: null,
     }));
 
@@ -66,6 +73,51 @@ describe("MCP SDK write and fresh discovery", () => {
     await context?.cleanup();
   });
 
+  it("offers nutrition write consent to a read-only client before any mutation", async () => {
+    const client = new Client({ name: "dofek-sdk-consent-test", version: "1.0.0" });
+    try {
+      await client.connect(
+        new StreamableHTTPClientTransport(endpoint, {
+          requestInit: { headers: { Authorization: `Bearer ${readToken}` } },
+        }),
+      );
+      const listed = await client.listTools();
+      expect(listed.tools.find((tool) => tool.name === "create_food_entry")?._meta).toMatchObject({
+        securitySchemes: [{ type: "oauth2", scopes: ["nutrition:read", "nutrition:write"] }],
+      });
+      const rejected = await client.callTool({
+        name: "create_food_entry",
+        arguments: {
+          request_id: "22222222-2222-4222-8222-222222222222",
+          date: "2026-09-15",
+          food_name: "Unauthorized isolated oats",
+          nutrients: { protein: 12.5 },
+        },
+      });
+      expect(rejected.isError).toBe(true);
+      const challenges = z
+        .object({ "mcp/www_authenticate": z.array(z.string()) })
+        .parse(rejected._meta)["mcp/www_authenticate"];
+      expect(challenges[0]).toContain('error="insufficient_scope"');
+      expect(challenges[0]).toContain('scope="nutrition:read nutrition:write"');
+      const searched = foodRecordSearchOutputSchema.parse(
+        (
+          await client.callTool({
+            name: "search_food_entries",
+            arguments: {
+              start_date: "2026-09-15",
+              end_date: "2026-09-15",
+              query: "Unauthorized isolated oats",
+            },
+          })
+        ).structuredContent,
+      );
+      expect(searched.result.items).toEqual([]);
+    } finally {
+      await client.close();
+    }
+  });
+
   it("writes through SDK HTTP, validates the result, then rediscovers and reads it", async () => {
     const firstClient = new Client({ name: "dofek-sdk-write-test", version: "1.0.0" });
     let firstClientClosed = false;
@@ -77,7 +129,7 @@ describe("MCP SDK write and fresh discovery", () => {
       await firstClient.connect(firstTransport);
       const listed = await firstClient.listTools();
       expect(listed.nextCursor).toBeUndefined();
-      expect(listed.tools).toHaveLength(41);
+      expect(listed.tools).toHaveLength(37);
       const initialToolNames = listed.tools.map((tool) => tool.name).toSorted();
       const createTool = listed.tools.find((tool) => tool.name === "create_food_entry");
       expect(createTool).toBeDefined();
@@ -132,7 +184,7 @@ describe("MCP SDK write and fresh discovery", () => {
         await freshClient.connect(freshTransport);
         const freshTools = await freshClient.listTools();
         expect(freshTools.nextCursor).toBeUndefined();
-        expect(freshTools.tools).toHaveLength(41);
+        expect(freshTools.tools).toHaveLength(37);
         expect(freshTools.tools.map((tool) => tool.name).toSorted()).toEqual(initialToolNames);
         expect(
           freshTools.tools.find((tool) => tool.name === "search_food_entries")?.annotations,

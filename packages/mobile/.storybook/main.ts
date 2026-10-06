@@ -5,6 +5,7 @@ import type { StorybookConfig } from "@storybook/react-native-web-vite";
 const currentDir = dirname(fileURLToPath(import.meta.url));
 
 const config: StorybookConfig = {
+  core: { allowedHosts: [".trycloudflare.com"] },
   stories: ["../components/**/*.stories.@(ts|tsx)", "../app-stories/**/*.stories.@(ts|tsx)"],
   framework: "@storybook/react-native-web-vite",
   docs: {
@@ -62,6 +63,23 @@ const config: StorybookConfig = {
         replacement: resolve(currentDir, "./mocks/mobile-account-purge"),
       },
     ];
+    // Configure after the framework alias so asset consumers share the web registry.
+    viteConfig.plugins.push({
+      name: "storybook-asset-registry",
+      enforce: "post",
+      config: () => ({
+        resolve: {
+          alias: [
+            {
+              find: /^(react-native\/asset-registry|@react-native\/assets-registry\/registry)$/,
+              replacement: fileURLToPath(
+                import.meta.resolve("react-native-web/dist/modules/AssetRegistry/index.js"),
+              ),
+            },
+          ],
+        },
+      }),
+    });
     viteConfig.plugins.push({
       name: "storybook-health-kit-module-mock",
       enforce: "pre",

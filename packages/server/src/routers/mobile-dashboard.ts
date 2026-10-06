@@ -1,4 +1,5 @@
 import { summaryDateContextSchema } from "@dofek/format/summary-date-context";
+import { climbingFiltersSchema } from "@dofek/training/climbing-filters";
 import { TRPCError } from "@trpc/server";
 import { getEffectiveParams } from "dofek/personalization/params";
 import { loadPersonalizedParams } from "dofek/personalization/storage";
@@ -23,7 +24,7 @@ import {
 } from "../services/mobile-training-tab.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
-const MOBILE_TRAINING_CACHE_KEY_VERSION = "training-activity-states-v3";
+const MOBILE_TRAINING_CACHE_KEY_VERSION = "training-recorded-attempts-v4";
 const MOBILE_DASHBOARD_CACHE_KEY_VERSION = "mobile-dashboard-contract-v1";
 const MOBILE_DASHBOARD_V2_CACHE_KEY_VERSION = "mobile-dashboard-contract-v2";
 
@@ -216,7 +217,7 @@ export const mobileDashboardRouter = router({
     maxAge: CacheTTL.MEDIUM,
     keyVersion: MOBILE_TRAINING_CACHE_KEY_VERSION,
   })
-    .input(dateWindowInput)
+    .input(dateWindowInput.extend({ climbingFilters: climbingFiltersSchema.optional() }))
     .output(mobileTrainingTabOutputSchema)
     .query(async ({ ctx, input }) => {
       const sensorStore = requireSensorStore(ctx.sensorStore, "mobileDashboard.training");
@@ -231,6 +232,7 @@ export const mobileDashboardRouter = router({
         },
         input.days,
         input.endDate,
+        input.climbingFilters,
       );
       logger.info(
         `[mobile-dashboard] training timings userId=${ctx.userId} endDate=${input.endDate} days=${input.days} total=${Math.round(performance.now() - tabStart)}ms`,

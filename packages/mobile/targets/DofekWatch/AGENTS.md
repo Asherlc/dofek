@@ -35,7 +35,7 @@ Run the portable suite:
 
 ```bash
 cd packages/mobile/targets/DofekWatch
-swift test
+swift test --scratch-path ../../../../.context/dofek-watch-transfer-core
 ```
 
 For recorder, lifecycle, and transfer changes, also build the generated watchOS

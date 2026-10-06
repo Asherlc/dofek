@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { ACTIVITY_MODALITIES, CANONICAL_ACTIVITY_TYPES } from "@dofek/training/activity-types";
-import type { ConnectionOptions, JobsOptions } from "bullmq";
+import type { ConnectionOptions, Job, JobsOptions } from "bullmq";
 import { FlowProducer, Queue, QueueEvents, RedisConnection } from "bullmq";
 import { z } from "zod";
 import type {} from "../bullmq-redis-client.ts";
@@ -27,6 +27,21 @@ export interface SyncJobData {
   userId: string;
   checkpoint?: unknown;
   processingOperationIds?: Record<string, string>;
+}
+
+/** Minimal Job interface — only the subset processSyncJob actually uses. */
+export interface SyncJob {
+  id?: string;
+  timestamp: number;
+  token?: string;
+  queueQualifiedName: string;
+  getDependencies: Job<SyncJobData>["getDependencies"];
+  moveToWaitingChildren: Job<SyncJobData>["moveToWaitingChildren"];
+  attemptsMade: number;
+  opts: { attempts?: number };
+  data: SyncJobData;
+  updateProgress: (data: object) => Promise<void>;
+  updateData: (data: SyncJobData) => Promise<void>;
 }
 
 export interface ImportJobData {

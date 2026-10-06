@@ -6,7 +6,12 @@ const meta = {
   title: "Activity/ActivityDetailCharts",
   component: LineChart,
   args: {
-    data: [{ value: 112 }, { value: 125 }, { value: 138 }, { value: 129 }],
+    data: [
+      { recordedAt: "2026-10-04T16:52:51.440Z", value: 112 },
+      { recordedAt: "2026-10-04T16:53:51.440Z", value: 125 },
+      { recordedAt: "2026-10-04T16:54:51.440Z", value: 138 },
+      { recordedAt: "2026-10-04T16:55:51.440Z", value: 129 },
+    ],
     color: CHART_COLORS.heartRate,
     label: "Heart rate",
     unit: "bpm",
@@ -24,6 +29,11 @@ type Story = StoryObj<typeof meta>;
 export const Default: Story = {};
 export const Empty: Story = { args: { data: [] } };
 export const MissingSamples: Story = {
-  args: { data: [{ value: 112 }, { value: null }, { value: 138 }, { value: 129 }] },
+  args: {
+    data: meta.args.data.map((sample, index) => ({
+      ...sample,
+      value: index === 1 ? null : sample.value,
+    })),
+  },
 };
 export const Area: Story = { render: (args) => <AreaChart {...args} /> };

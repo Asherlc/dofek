@@ -36,7 +36,6 @@ const mockProviders = {
   velohero: { id: "velohero" },
   "mountain-project": { id: "mountain-project" },
   openbeta: { id: "openbeta" },
-  "auto-supplements": { id: "auto-supplements" },
   "amazfit-zepp": { id: "amazfit-zepp" },
   "kaya-export": { id: "kaya-export" },
   "zos-app": { id: "zos-app" },
@@ -131,9 +130,6 @@ vi.mock("../providers/mountain-project.ts", () => ({
 }));
 vi.mock("../providers/openbeta.ts", () => ({
   OpenBetaProvider: mockProviderConstructor(mockProviders.openbeta),
-}));
-vi.mock("../providers/auto-supplements.ts", () => ({
-  AutoSupplementsProvider: mockProviderConstructor(mockProviders["auto-supplements"]),
 }));
 vi.mock("../providers/amazfit-zepp.ts", () => ({
   AmazfitZeppProvider: mockProviderConstructor(mockProviders["amazfit-zepp"]),

@@ -61,10 +61,6 @@ const toolTestMocks = vi.hoisted(() => {
     queueAdd: vi.fn(),
     sleepListRange: vi.fn(),
     strengthExercises: vi.fn(),
-    supplementsList: vi.fn(),
-    subjectiveCreateInjury: vi.fn(),
-    subjectiveRegions: vi.fn(),
-    subjectiveTimeline: vi.fn(),
     trainingLoadListRange: vi.fn(),
     withUserWriteFence: vi.fn(),
   };
@@ -81,13 +77,6 @@ const toolTestMocks = vi.hoisted(() => {
     }),
     dailyMetricsRepository: vi.fn(function vitestConstructor() {
       return { list: mocks.dailyMetricsList, listRange: mocks.dailyMetricsListRange };
-    }),
-    subjectiveRepository: vi.fn(function vitestConstructor() {
-      return {
-        createInjury: mocks.subjectiveCreateInjury,
-        regions: mocks.subjectiveRegions,
-        timeline: mocks.subjectiveTimeline,
-      };
     }),
   };
 });
@@ -213,12 +202,6 @@ vi.mock("../repositories/strength-repository.ts", () => ({
   }),
 }));
 
-vi.mock("../repositories/supplements-repository.ts", () => ({
-  SupplementsRepository: vi.fn(function vitestConstructor() {
-    return { list: toolTestMocks.supplementsList };
-  }),
-}));
-
 vi.mock("../repositories/sync-repository.ts", () => ({
   SyncRepository: vi.fn(function vitestConstructor() {
     return {
@@ -229,15 +212,6 @@ vi.mock("../repositories/sync-repository.ts", () => ({
     };
   }),
 }));
-
-vi.mock("../repositories/subjective-repository.ts", async (importOriginal) => {
-  const original =
-    await importOriginal<typeof import("../repositories/subjective-repository.ts")>();
-  return {
-    ...original,
-    SubjectiveRepository: toolTestMocks.subjectiveRepository,
-  };
-});
 
 vi.mock("../routers/sync-helpers.ts", async (importOriginal) => {
   const original = await importOriginal<typeof import("../routers/sync-helpers.ts")>();
@@ -382,7 +356,6 @@ function createTestApp(
 
 const mcpScopes = [
   "health:read",
-  "health:write",
   "activity:read",
   "nutrition:read",
   "providers:read",
@@ -708,8 +681,6 @@ describe("createMcpRouter", () => {
     toolTestMocks.queueAdd.mockResolvedValue({ id: "job-123" });
     toolTestMocks.sleepListRange.mockResolvedValue([]);
     toolTestMocks.strengthExercises.mockResolvedValue([]);
-    toolTestMocks.subjectiveRegions.mockResolvedValue([]);
-    toolTestMocks.subjectiveTimeline.mockResolvedValue({ checkIns: [], injuries: [] });
     toolTestMocks.withUserWriteFence.mockImplementation(
       async (
         database: unknown,
@@ -944,7 +915,6 @@ describe("createMcpRouter", () => {
 
     expect(response.status).toBe(200);
     expect(response.text).toContain("get_daily_health_summary");
-    expect(response.text).toContain("get_subjective_timeline");
     expect(response.text).toContain("start_provider_sync");
   });
 
@@ -969,6 +939,111 @@ describe("createMcpRouter", () => {
     expect(freshList.status).toBe(200);
     expect(freshList.text).toContain("search_food_entries");
     expect(freshList.text).toContain("create_food_entry");
+  });
+
+  it("publishes OAuth scopes for every tool so automatic setup includes writes", async () => {
+    authorizeMcpToken(["nutrition:read"]);
+    const response = await request(createTestApp(), {
+      authorization: "Bearer read-token",
+      body: { id: 2, jsonrpc: "2.0", method: "tools/list" },
+    });
+    const tools = z
+      .object({
+        result: z.object({
+          tools: z.array(
+            z.object({
+              name: z.string(),
+              _meta: z.object({
+                securitySchemes: z.array(
+                  z.object({
+                    type: z.literal("oauth2"),
+                    scopes: z.array(z.string()),
+                  }),
+                ),
+              }),
+            }),
+          ),
+        }),
+      })
+      .parse(parseJsonRpcEvent(response.text)).result.tools;
+    const scopeGroups = {
+      "health:read": [
+        "get_daily_health_summary",
+        "get_data_coverage",
+        "get_sleep_summary",
+        "get_body_metrics",
+        "get_health_trends",
+        "render_health_explorer",
+      ],
+      "activity:read": [
+        "get_climbing_progression",
+        "get_threshold_history",
+        "get_strength_progression",
+        "search_activities",
+        "get_activity_summary",
+        "get_finger_loading",
+        "compare_performances",
+        "get_cycling_performance",
+        "get_activity_timeseries",
+        "get_strength_sessions",
+        "get_finger_loading_progression",
+        "get_effort_trend",
+        "get_activity_streams",
+        "get_cycling_training_metrics",
+        "estimate_cycling_threshold",
+        "find_repeated_efforts",
+        "get_cycling_power_curve",
+        "get_activity_details",
+        "get_climbing_sessions",
+      ],
+      "nutrition:read": [
+        "search_food_entries",
+        "get_food_entry",
+        "get_food_entry_history",
+        "get_nutrition_summary",
+      ],
+      "providers:read": ["list_providers"],
+      "sync:write": ["start_provider_sync"],
+    };
+    const expectedSchemes = Object.fromEntries(
+      Object.entries(scopeGroups).flatMap(([scope, names]) =>
+        names.map((name) => [name, [{ type: "oauth2", scopes: [scope] }]]),
+      ),
+    );
+    for (const name of [
+      "create_food_entry",
+      "update_food_entry",
+      "delete_food_entry",
+      "restore_food_entry",
+    ]) {
+      expectedSchemes[name] = [{ type: "oauth2", scopes: ["nutrition:read", "nutrition:write"] }];
+    }
+    expectedSchemes.get_training_load = [
+      { type: "oauth2", scopes: ["activity:read", "nutrition:read"] },
+    ];
+    expectedSchemes.get_recovery_training_series = [
+      { type: "oauth2", scopes: ["health:read", "activity:read", "nutrition:read"] },
+    ];
+    expect(
+      Object.fromEntries(tools.map((tool) => [tool.name, tool._meta.securitySchemes])),
+    ).toEqual(expectedSchemes);
+    expect(tools.find((tool) => tool.name === "create_food_entry")?._meta.securitySchemes).toEqual([
+      { type: "oauth2", scopes: ["nutrition:read", "nutrition:write"] },
+    ]);
+    expect(
+      new Set(
+        tools.flatMap((tool) => tool._meta.securitySchemes.flatMap((scheme) => scheme.scopes)),
+      ),
+    ).toEqual(
+      new Set([
+        "health:read",
+        "activity:read",
+        "nutrition:read",
+        "nutrition:write",
+        "providers:read",
+        "sync:write",
+      ]),
+    );
   });
 
   it("describes MCP tool input schemas for clients", async () => {
@@ -1156,34 +1231,6 @@ describe("createMcpRouter", () => {
       required: ["start_date", "end_date"],
       type: "object",
     });
-    expect(findListedTool(tools, "get_subjective_timeline").inputSchema).toMatchObject({
-      properties: {
-        end_date: { format: "date", type: "string" },
-        start_date: { format: "date", type: "string" },
-      },
-      required: ["start_date", "end_date"],
-      type: "object",
-    });
-    expect(findListedTool(tools, "list_body_regions").inputSchema).toMatchObject({
-      properties: {},
-      type: "object",
-    });
-    expect(findListedTool(tools, "log_injury").inputSchema).toMatchObject({
-      properties: {
-        body_region_id: { minLength: 1, type: "string" },
-        description: { minLength: 1, type: "string" },
-        kind: { enum: ["injury", "niggle"], type: "string" },
-        onset_date: { format: "date", type: "string" },
-        resolved_date: {
-          anyOf: [{ format: "date", type: "string" }, { type: "null" }],
-        },
-        severity: {
-          anyOf: [{ maximum: 10, minimum: 0, type: "integer" }, { type: "null" }],
-        },
-      },
-      required: ["kind", "body_region_id", "onset_date", "description"],
-      type: "object",
-    });
     expect(findListedTool(tools, "get_sleep_summary").inputSchema).toMatchObject({
       required: ["start_date", "end_date"],
       type: "object",
@@ -1287,10 +1334,7 @@ describe("createMcpRouter", () => {
       properties: {},
       type: "object",
     });
-    expect(findListedTool(tools, "get_supplements").inputSchema).toMatchObject({
-      properties: {},
-      type: "object",
-    });
+
     expect(findListedTool(tools, "start_provider_sync").inputSchema).toMatchObject({
       properties: {
         providerId: { minLength: 1, type: "string" },
@@ -1327,15 +1371,11 @@ describe("createMcpRouter", () => {
       "get_strength_progression",
       "get_nutrition_summary",
       "get_body_metrics",
-      "get_subjective_timeline",
-      "list_body_regions",
-      "get_supplements",
       "list_providers",
       "render_health_explorer",
     ]) {
       expect(findListedTool(tools, name).annotations).toMatchObject({ readOnlyHint: true });
     }
-    expect(findListedTool(tools, "log_injury").annotations?.readOnlyHint).not.toBe(true);
     expect(findListedTool(tools, "start_provider_sync").annotations?.readOnlyHint).not.toBe(true);
   });
 
@@ -1432,12 +1472,6 @@ describe("createMcpRouter", () => {
         name: "get_body_metrics",
         path: ["result", "[]", "source_provider_by_metric", "weight_kg"],
       },
-      {
-        name: "get_subjective_timeline",
-        path: ["result", "injuries", "[]", "resolved_date"],
-      },
-      { name: "list_body_regions", path: ["result", "[]", "label"] },
-      { name: "log_injury", path: ["result", "body_region_id"] },
       { name: "list_providers", path: ["result", "[]", "sync_health", "last_success"] },
       { name: "start_provider_sync", path: ["result", "queueName"] },
       {
@@ -1465,7 +1499,6 @@ describe("createMcpRouter", () => {
         name: "get_strength_progression",
         path: ["result", "sessions", "[]", "exercises", "[]", "sets", "[]", "original", "records"],
       },
-      { name: "get_supplements", path: ["result", "[]", "meal"] },
       {
         name: "search_food_entries",
         path: ["result", "items", "[]", "provenance"],
@@ -1607,236 +1640,6 @@ describe("createMcpRouter", () => {
     ).toEqual({ result: [] });
   });
 
-  it("returns a subjective timeline using the request context timezone", async () => {
-    authorizeMcpToken();
-    toolTestMocks.subjectiveTimeline.mockResolvedValue({
-      checkIns: [],
-      injuries: [],
-    });
-
-    const response = await request(createTestApp(), {
-      authorization: "Bearer good-token",
-      body: createToolCallRequest("get_subjective_timeline", {
-        end_date: "2026-05-20",
-        start_date: "2026-05-01",
-      }),
-    });
-
-    expect(response.status).toBe(200);
-    expect(parseToolCallText(response.text)).toEqual({ checkIns: [], injuries: [] });
-    expect(toolTestMocks.subjectiveRepository).toHaveBeenCalledWith(
-      expect.anything(),
-      "user-id",
-      "UTC",
-    );
-    expect(toolTestMocks.subjectiveTimeline).toHaveBeenCalledWith("2026-05-01", "2026-05-20");
-  });
-
-  it("lists the canonical body regions available for injury logging", async () => {
-    authorizeMcpToken(["health:read"]);
-    toolTestMocks.subjectiveRegions.mockResolvedValue([
-      {
-        id: "left_knee",
-        kind: "joint",
-        label: "Left knee",
-        parent_id: "left_leg",
-        sort_order: 20,
-      },
-    ]);
-
-    const response = await request(createTestApp(), {
-      authorization: "Bearer good-token",
-      body: createToolCallRequest("list_body_regions", {}),
-    });
-
-    expect(parseToolCallText(response.text)).toEqual([
-      {
-        id: "left_knee",
-        kind: "joint",
-        label: "Left knee",
-        parent_id: "left_leg",
-        sort_order: 20,
-      },
-    ]);
-  });
-
-  it("logs a user-scoped injury with optional fields defaulted to unrecorded", async () => {
-    authorizeMcpToken(["health:write"]);
-    toolTestMocks.subjectiveRegions.mockResolvedValue([
-      {
-        id: "left_knee",
-        kind: "joint",
-        label: "Left knee",
-        parent_id: "left_leg",
-        sort_order: 20,
-      },
-    ]);
-    toolTestMocks.subjectiveCreateInjury.mockResolvedValue({
-      body_region_id: "left_knee",
-      created_at: "2026-09-08T12:00:00.000Z",
-      description: "Sore after trail run",
-      id: "11111111-1111-4111-8111-111111111111",
-      kind: "niggle",
-      onset_date: "2026-09-07",
-      resolved_date: null,
-      severity: null,
-      updated_at: "2026-09-08T12:00:00.000Z",
-    });
-
-    const response = await request(createTestApp(), {
-      authorization: "Bearer write-token",
-      body: createToolCallRequest("log_injury", {
-        body_region_id: "left_knee",
-        description: "Sore after trail run",
-        kind: "niggle",
-        onset_date: "2026-09-07",
-      }),
-    });
-
-    expect(parseToolCallText(response.text)).toMatchObject({
-      body_region_id: "left_knee",
-      description: "Sore after trail run",
-      kind: "niggle",
-      resolved_date: null,
-      severity: null,
-    });
-    expect(toolTestMocks.withUserWriteFence).toHaveBeenCalledOnce();
-    expect(toolTestMocks.subjectiveCreateInjury).toHaveBeenCalledWith({
-      bodyRegionId: "left_knee",
-      description: "Sore after trail run",
-      kind: "niggle",
-      onsetDate: "2026-09-07",
-      resolvedDate: null,
-      severity: null,
-    });
-    expect(toolTestMocks.invalidateUserQueryDomains).toHaveBeenCalledWith("user-id", [
-      "subjective",
-    ]);
-  });
-
-  it("reports cache invalidation failures after returning the committed injury", async () => {
-    authorizeMcpToken(["health:write"]);
-    const cacheError = new Error("cache unavailable");
-    toolTestMocks.subjectiveRegions.mockResolvedValue([
-      {
-        id: "left_knee",
-        kind: "joint",
-        label: "Left knee",
-        parent_id: "left_leg",
-        sort_order: 20,
-      },
-    ]);
-    toolTestMocks.subjectiveCreateInjury.mockResolvedValue({
-      body_region_id: "left_knee",
-      created_at: "2026-09-08T12:00:00.000Z",
-      description: "Sore after trail run",
-      id: "11111111-1111-4111-8111-111111111111",
-      kind: "niggle",
-      onset_date: "2026-09-07",
-      resolved_date: null,
-      severity: null,
-      updated_at: "2026-09-08T12:00:00.000Z",
-    });
-    toolTestMocks.invalidateUserQueryDomains.mockRejectedValueOnce(cacheError);
-
-    const response = await request(createTestApp(), {
-      authorization: "Bearer write-token",
-      body: createToolCallRequest("log_injury", {
-        body_region_id: "left_knee",
-        description: "Sore after trail run",
-        kind: "niggle",
-        onset_date: "2026-09-07",
-      }),
-    });
-
-    expect(parseToolCallText(response.text)).toMatchObject({
-      body_region_id: "left_knee",
-      description: "Sore after trail run",
-    });
-    expect(captureException).toHaveBeenCalledWith(cacheError, {
-      tags: { mcp_tool: "log_injury", operation: "cache_invalidation" },
-    });
-    expect(toolTestMocks.subjectiveCreateInjury).toHaveBeenCalledTimes(1);
-  });
-
-  it("rejects injury logging when the body region is unknown", async () => {
-    authorizeMcpToken(["health:write"]);
-    toolTestMocks.subjectiveRegions.mockResolvedValue([]);
-
-    const response = await request(createTestApp(), {
-      authorization: "Bearer write-token",
-      body: createToolCallRequest("log_injury", {
-        body_region_id: "unknown_region",
-        description: "Pain",
-        kind: "injury",
-        onset_date: "2026-09-07",
-      }),
-    });
-
-    const parsedResponse = toolCallResponseSchema.parse(parseJsonRpcEvent(response.text));
-    expect(parsedResponse.result.isError).toBe(true);
-    expect(parsedResponse.result.content[0]?.text).toBe(
-      "Unknown body_region_id: unknown_region. Use list_body_regions to choose a valid ID.",
-    );
-    expect(toolTestMocks.subjectiveCreateInjury).not.toHaveBeenCalled();
-  });
-
-  it("rejects injury resolution dates before onset", async () => {
-    authorizeMcpToken(["health:write"]);
-
-    const response = await request(createTestApp(), {
-      authorization: "Bearer write-token",
-      body: createToolCallRequest("log_injury", {
-        body_region_id: "left_knee",
-        description: "Pain",
-        kind: "injury",
-        onset_date: "2026-09-07",
-        resolved_date: "2026-09-06",
-      }),
-    });
-
-    const parsedResponse = toolCallResponseSchema.parse(parseJsonRpcEvent(response.text));
-    expect(parsedResponse.result.isError).toBe(true);
-    expect(parsedResponse.result.content[0]?.text).toBe(
-      "resolved_date must be on or after onset_date",
-    );
-    expect(toolTestMocks.subjectiveCreateInjury).not.toHaveBeenCalled();
-  });
-
-  it("requires health write permission to log an injury", async () => {
-    authorizeMcpToken(["health:read"]);
-
-    const response = await request(createTestApp(), {
-      authorization: "Bearer read-token",
-      body: createToolCallRequest("log_injury", {
-        body_region_id: "left_knee",
-        description: "Pain",
-        kind: "injury",
-        onset_date: "2026-09-07",
-      }),
-    });
-
-    expect(response.text).toContain("requires scope: health:write");
-    expect(toolTestMocks.subjectiveCreateInjury).not.toHaveBeenCalled();
-  });
-
-  it("returns a tool error for a reversed subjective timeline range", async () => {
-    authorizeMcpToken();
-
-    const response = await request(createTestApp(), {
-      authorization: "Bearer good-token",
-      body: createToolCallRequest("get_subjective_timeline", {
-        end_date: "2026-05-01",
-        start_date: "2026-05-20",
-      }),
-    });
-
-    const parsedResponse = toolCallResponseSchema.parse(parseJsonRpcEvent(response.text));
-    expect(parsedResponse.result.isError).toBe(true);
-    expect(parsedResponse.result.content[0]?.text).toBe("start_date must be on or before end_date");
-    expect(toolTestMocks.subjectiveTimeline).not.toHaveBeenCalled();
-  });
-
   it("returns daily health summaries from the metrics repository", async () => {
     authorizeMcpToken();
     toolTestMocks.dailyMetricsList.mockResolvedValue([
@@ -1967,6 +1770,14 @@ describe("createMcpRouter", () => {
           sent: true,
           sourceName: "kaya",
           wallAngleDegrees: 30,
+          context: {
+            providerId: "kaya",
+            locationPath: [{ name: "Pacific Pipe", externalId: null, kind: null }],
+            board: null,
+            wallAngle: { value: 30, unit: "degrees" },
+            climbStyle: null,
+            resultStyle: "Send",
+          },
         }),
       },
     ]);
@@ -2049,6 +1860,14 @@ describe("createMcpRouter", () => {
           sent: null,
           sourceName: null,
           wallAngleDegrees: null,
+          context: {
+            providerId: "kaya",
+            locationPath: [],
+            board: null,
+            wallAngle: null,
+            climbStyle: null,
+            resultStyle: null,
+          },
         }),
       },
     ]);
@@ -2105,6 +1924,14 @@ describe("createMcpRouter", () => {
           sent: true,
           sourceName: "kaya",
           wallAngleDegrees: null,
+          context: {
+            providerId: "kaya",
+            locationPath: [],
+            board: null,
+            wallAngle: null,
+            climbStyle: "lead",
+            resultStyle: "redpoint",
+          },
         }),
       },
       {
@@ -2123,6 +1950,14 @@ describe("createMcpRouter", () => {
           sent: false,
           sourceName: "kaya",
           wallAngleDegrees: null,
+          context: {
+            providerId: "kaya",
+            locationPath: [],
+            board: null,
+            wallAngle: null,
+            climbStyle: "top-rope",
+            resultStyle: "Attempt",
+          },
         }),
       },
       {
@@ -2141,6 +1976,14 @@ describe("createMcpRouter", () => {
           sent: true,
           sourceName: "mountain_project",
           wallAngleDegrees: null,
+          context: {
+            providerId: "mountain-project",
+            locationPath: [],
+            board: null,
+            wallAngle: null,
+            climbStyle: null,
+            resultStyle: "onsight",
+          },
         }),
       },
       {
@@ -2159,6 +2002,14 @@ describe("createMcpRouter", () => {
           sent: true,
           sourceName: "kaya",
           wallAngleDegrees: null,
+          context: {
+            providerId: "kaya",
+            locationPath: [],
+            board: null,
+            wallAngle: null,
+            climbStyle: "lead",
+            resultStyle: "Send",
+          },
         }),
       },
       {
@@ -2177,6 +2028,14 @@ describe("createMcpRouter", () => {
           sent: false,
           sourceName: "kaya",
           wallAngleDegrees: null,
+          context: {
+            providerId: "kaya",
+            locationPath: [],
+            board: null,
+            wallAngle: null,
+            climbStyle: "lead",
+            resultStyle: "Attempt",
+          },
         }),
       },
     ]);
@@ -4127,6 +3986,14 @@ describe("createMcpRouter", () => {
           sent: true,
           sourceName: "kaya",
           wallAngleDegrees: null,
+          context: {
+            providerId: "kaya",
+            locationPath: [],
+            board: null,
+            wallAngle: null,
+            climbStyle: null,
+            resultStyle: "Send",
+          },
         }),
       },
     ]);
@@ -4351,22 +4218,6 @@ describe("createMcpRouter", () => {
     expect(toolTestMocks.fingerLoadingActivity).toHaveBeenCalledWith(
       expect.objectContaining({ activityId: stableGroupId }),
     );
-  });
-
-  it("returns the authenticated user's supplement definitions", async () => {
-    authorizeMcpToken();
-    toolTestMocks.supplementsList.mockResolvedValue([
-      { amount: 5, id: "creatine", name: "Creatine", unit: "g" },
-    ]);
-
-    const response = await request(createTestApp(), {
-      authorization: "Bearer good-token",
-      body: createToolCallRequest("get_supplements", {}),
-    });
-
-    expect(parseToolCallText(response.text)).toEqual([
-      { amount: 5, id: "creatine", name: "Creatine", unit: "g" },
-    ]);
   });
 
   it("returns a capped, channel-filtered activity stream", async () => {

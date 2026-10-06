@@ -2,10 +2,15 @@
 
 Utility and maintenance scripts for development, infrastructure, and reverse engineering.
 
+`pnpm check:dependency-security` runs `check-node-forge-security.ts` and
+`check-braces-security.ts` against the installed Expo/Metro dependencies before
+the CI audit. See [dependency security patches](../docs/dependency-security-patches.md)
+for the upstream fixes, regression coverage, and scoped advisory exceptions.
+
 ## Database & Seeding
 
 - `seed-dev-db.ts`: Seeds a local development or review-app database with deterministic reviewer data.
-  - Creates the `Review User`, `dev-session`, connected providers, sync logs, 180 days of recovery metrics, 120 days of activities, nutrition, body composition, labs, DEXA scans, journal entries, and life events.
+  - Creates the `Review User`, `dev-session`, connected providers, sync logs, 180 days of recovery metrics, 120 days of activities, nutrition, body composition, labs, DEXA scans.
   - Populates the main web and mobile review surfaces while keeping generated data deterministic across runs.
   - Automatically applies migrations when needed and verifies representative row counts before reporting success.
   - Usage: `DATABASE_URL=... pnpm seed`
@@ -95,6 +100,14 @@ Utility and maintenance scripts for development, infrastructure, and reverse eng
 
 ## Verification & Tooling
 
+- `select-web-deploy.ts`: Selects the latest successful main-push CI release
+  after the production deployment concurrency slot is acquired. Manual requests
+  retain their explicit image tag. Unsuccessful CI triggers cancel their own
+  deployment request and never return a successful step result. The workflow
+  supplies the standard GitHub event, output, summary, repository, and run-ID
+  environment variables; see the [workflow-run API](https://docs.github.com/en/rest/actions/workflow-runs)
+  and [GitHub default environment variables](https://docs.github.com/en/actions/reference/workflows-and-actions/variables#default-environment-variables).
+  - Usage: `pnpm tsx scripts/select-web-deploy.ts` in `Deploy Web`.
 - `report-repeated-cycling-efforts.ts`: Read-only historical cycling report
   using the same user-bound discovery, comparison, trend, and cycling-performance
   repositories as MCP. It makes no provider network requests and computes no
@@ -146,6 +159,9 @@ Utility and maintenance scripts for development, infrastructure, and reverse eng
 - `generate-schema-diagram.ts`: Generates DBML and PlantUML diagrams from the Drizzle schema modules (`src/db/schema/`).
   - Uses `drizzle-dbml-generator` and custom parsing logic to build a high-quality ERD.
   - Outputs: `docs/schema.dbml`, `docs/schema.puml`.
+  - Reads [DBML composite primary keys](https://dbml.dbdiagram.io/docs/#index-definition)
+    and renders a foreign key containing every primary-key column as zero-or-one,
+    using [PlantUML relationship notation](https://plantuml.com/ie-diagram).
 - `no-suppressions.ts`: Scans every tracked TypeScript file and rejects lint,
   type-check, coverage, or mutation-test suppression comments. Generated TanStack
   route trees are the only exclusion.

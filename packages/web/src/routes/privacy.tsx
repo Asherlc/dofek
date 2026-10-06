@@ -52,16 +52,12 @@ function PrivacyPage() {
               </li>
               <li>
                 <strong className="text-foreground">Nutrition data</strong> — food entries, calorie
-                and macro/micronutrient breakdowns, supplements
+                and macro/micronutrient breakdowns
               </li>
               <li>
                 <strong className="text-foreground">Health metrics</strong> — heart rate
                 variability, resting heart rate, blood pressure, blood glucose, temperature, and
                 clinical lab results
-              </li>
-              <li>
-                <strong className="text-foreground">Journal entries</strong> — self-reported mood,
-                energy, and wellness notes from connected providers
               </li>
               <li>
                 <strong className="text-foreground">Authentication credentials</strong> — OAuth

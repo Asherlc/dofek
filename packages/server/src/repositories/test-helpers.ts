@@ -3,16 +3,10 @@ import { sql } from "drizzle-orm";
 import { expect } from "vitest";
 import { z } from "zod";
 import type { ClickHouseClient } from "../../../../src/db/clickhouse.ts";
-import { nutrientAmountEntriesFromLegacyFields } from "../../../../src/db/nutrient-columns.ts";
 import type {
   ProviderDataGenerationContext,
   ProviderDataScope,
 } from "../../../../src/db/provider-data-deletion.ts";
-import {
-  supplement,
-  supplementDefinition,
-  supplementDefinitionNutrient,
-} from "../../../../src/db/schema/nutrition.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
 
 const PERFORMANCE_COMPARISON_SERVING_TABLES = [
@@ -35,6 +29,16 @@ const PERFORMANCE_COMPARISON_SERVING_TABLES = [
     "activity_power_curve",
     "activity_id UUID, duration_seconds UInt32, best_power Float64, start_offset_seconds Nullable(Float64), observed_samples Nullable(UInt32), coverage_pct Nullable(Float64), largest_gap_seconds Nullable(Float64), median_sample_interval_seconds Nullable(Float64), power_measurement_kind Nullable(String)",
     "user_id, activity_id, duration_seconds",
+  ],
+  [
+    "activity_pace_curve",
+    "activity_id UUID, duration_seconds UInt32, best_speed Nullable(Float64), started_at DateTime64(6, 'UTC'), ended_at DateTime64(6, 'UTC'), canonical_type String, source_activity_version UInt64, source_sensor_version UInt64, refreshed_at DateTime64(9, 'UTC')",
+    "user_id, activity_id, duration_seconds",
+  ],
+  [
+    "activity_heart_rate_distribution",
+    "activity_id UUID, started_at DateTime64(6, 'UTC'), ended_at DateTime64(6, 'UTC'), canonical_type String, samples Array(Tuple(heart_rate Float64, sample_count UInt64)), source_activity_version UInt64, source_sensor_version UInt64, refreshed_at DateTime64(9, 'UTC')",
+    "user_id, activity_id",
   ],
   [
     "v_body_measurement",
@@ -72,50 +76,6 @@ export async function createPerformanceComparisonServingTablesForTest(
       query: `CREATE TABLE ${analyticsDatabase}.${name} (user_id UUID, ${columns}, refresh_version UInt64, is_deleted UInt8) ENGINE = ReplacingMergeTree(refresh_version) ORDER BY (${order})`,
     });
   }
-}
-
-export async function insertSupplementDefinitionForTest(
-  database: Database,
-  values: {
-    userId: string;
-    name: string;
-    effectiveFrom: string;
-    meal?: "breakfast" | "lunch" | "dinner" | "snack" | "other";
-  },
-  nutrients: Record<string, number | null> = {},
-): Promise<{ definitionId: string; scheduleId: string }> {
-  const [insertedSchedule] = await database
-    .insert(supplement)
-    .values({ userId: values.userId })
-    .returning({ id: supplement.id });
-  if (!insertedSchedule) throw new Error("Supplement fixture schedule insert returned no id");
-
-  const [insertedDefinition] = await database
-    .insert(supplementDefinition)
-    .values({
-      supplementId: insertedSchedule.id,
-      name: values.name,
-      effectiveFrom: values.effectiveFrom,
-      meal: values.meal,
-    })
-    .returning({ id: supplementDefinition.id });
-  if (!insertedDefinition) throw new Error("Supplement fixture definition insert returned no id");
-
-  const nutrientEntries = nutrientAmountEntriesFromLegacyFields(nutrients);
-  if (nutrientEntries.length > 0) {
-    await database.insert(supplementDefinitionNutrient).values(
-      nutrientEntries.map((nutrient) => ({
-        definitionId: insertedDefinition.id,
-        nutrientId: nutrient.nutrientId,
-        amount: nutrient.amount,
-      })),
-    );
-  }
-
-  return {
-    definitionId: insertedDefinition.id,
-    scheduleId: insertedSchedule.id,
-  };
 }
 
 export async function resolveProviderDataGenerationsForTest(

@@ -68,7 +68,6 @@ export interface NutrientUpperLimitInput {
   readonly nutrientId: string;
   readonly unit: string;
   readonly totalDailyAmount: number;
-  readonly supplementalDailyAmount: number;
 }
 
 const FDA_DAILY_VALUE_SOURCE: NutrientSafetySource = {
@@ -236,8 +235,15 @@ export function evaluateNutrientUpperLimit(input: NutrientUpperLimitInput): Uppe
     };
   }
 
-  const intakeAmount =
-    rule.intakeScope === "total" ? input.totalDailyAmount : input.supplementalDailyAmount;
+  if (rule.intakeScope === "supplemental_only") {
+    return {
+      ...base,
+      status: "not_evaluable",
+      limitation: "The NIH upper limit applies only to supplemental intake, which is not tracked.",
+    };
+  }
+
+  const intakeAmount = input.totalDailyAmount;
   return {
     ...base,
     status: intakeAmount >= rule.amount ? "at_or_above_limit" : "within_limit",

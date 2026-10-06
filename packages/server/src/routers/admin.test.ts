@@ -227,15 +227,6 @@ describe("adminRouter", () => {
       expect(sqlText).not.toContain("COUNT(*)");
     });
 
-    it("includes supplement dose events in the catalog overview", async () => {
-      const execute = vi.fn().mockResolvedValue([]);
-      const caller = makeCaller(execute);
-
-      await caller.overview();
-
-      expect(getSqlText(execute.mock.calls[0]?.[0])).toContain("supplement_dose_event");
-    });
-
     it("includes retained health record tables in the catalog overview", async () => {
       const rows = [
         { table_name: "breathwork_session", row_count: "2" },

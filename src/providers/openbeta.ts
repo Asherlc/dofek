@@ -1,3 +1,8 @@
+import {
+  type ClimbingLocationNode,
+  type ClimbingMetadata,
+  climbingMetadataSchema,
+} from "@dofek/training/climbing-context";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import type { TokenSet } from "../auth/oauth.ts";
@@ -6,8 +11,9 @@ import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider, loadTokens } from "../db/tokens.ts";
 import { captureException } from "../lib/error-reporting.ts";
 import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
+import { findProviderTransportError } from "../lib/provider-transport-error.ts";
 import { type FetchProviderPagesResult, fetchProviderPages } from "../sync/pagination.ts";
-import { ProviderStoredIdentityMissingError, ProviderTokenRejectedError } from "./auth-errors.ts";
+import { ProviderAuthError, ProviderStoredIdentityMissingError } from "./auth-errors.ts";
 import type { SyncRun } from "./sync-run.ts";
 import type { ProviderAuthSetup, SyncError, SyncProvider, SyncResult } from "./types.ts";
 
@@ -48,6 +54,8 @@ const OPENBETA_TICKS_QUERY = `
       climb {
         uuid
         name
+        pathTokens
+        ancestors
         grades {
           vscale
           yds
@@ -59,8 +67,11 @@ const OPENBETA_TICKS_QUERY = `
         }
         type {
           bouldering
+          sport
+          trad
         }
         parent {
+          uuid
           area_name
         }
       }
@@ -90,19 +101,8 @@ const openBetaTickSchema = z
     notes: z.string().nullable(),
     climbId: z.string().nullable(),
     style: z.enum(["Lead", "Solo", "TR", "Follow", "Aid", "Boulder"]).nullable(),
-    attemptType: z
-      .enum([
-        "Onsight",
-        "Flash",
-        "Pinkpoint",
-        "Frenchfree",
-        "Attempt",
-        "Send",
-        "Redpoint",
-        "Repeat",
-      ])
-      .nullable(),
-    dateClimbed: z.string().nullable(),
+    attemptType: z.string().trim().min(1).nullable(),
+    dateClimbed: z.number().int().nullable(),
     grade: z.string().nullable(),
     source: z.enum(["OB", "MP"]).nullable(),
     user: z
@@ -115,6 +115,8 @@ const openBetaTickSchema = z
       .object({
         uuid: z.string().nullable(),
         name: z.string().nullable(),
+        pathTokens: z.array(z.string().trim().min(1)).nullish(),
+        ancestors: z.array(z.string().trim().min(1)).nullish(),
         grades: z
           .object({
             vscale: z.string().nullable(),
@@ -126,8 +128,16 @@ const openBetaTickSchema = z
             brazilianCrux: z.string().nullable(),
           })
           .nullable(),
-        type: z.object({ bouldering: z.boolean().nullable() }).nullable(),
-        parent: z.object({ area_name: z.string().nullable() }).nullable(),
+        type: z
+          .object({
+            bouldering: z.boolean().nullable(),
+            sport: z.boolean().nullable(),
+            trad: z.boolean().nullable(),
+          })
+          .nullable(),
+        parent: z
+          .object({ uuid: z.string().trim().min(1).nullish(), area_name: z.string().nullable() })
+          .nullable(),
       })
       .nullable(),
   })
@@ -151,17 +161,16 @@ type OpenBetaGradeSystem =
   | "ewbank"
   | "brazilian_crux";
 
-interface OpenBetaClimbingEntry {
+interface OpenBetaClimbingEntry extends ClimbingMetadata {
   externalId: string;
   unattachedDate: string;
   climbType: "boulder" | "route";
   gradeSystem: OpenBetaGradeSystem;
   grade: string;
-  sent: boolean | null;
   attemptCount: number | null;
   routeName: string | null;
-  locationName: string | null;
   raw: OpenBetaTick;
+  routeProtection: Array<"sport" | "trad"> | null;
 }
 
 interface OpenBetaTickParseResult {
@@ -204,10 +213,11 @@ async function fetchGraphQL<T>(
   return dataSchema.parse(envelope.data);
 }
 
-function profileConnectionError(): ProviderTokenRejectedError {
-  return new ProviderTokenRejectedError(
-    OPENBETA_PROVIDER_NAME,
+function profileConnectionError(options?: ErrorOptions): ProviderAuthError {
+  return new ProviderAuthError(
+    "authentication_failed",
     "Paste a public OpenBeta profile URL or username, and make sure the profile is public.",
+    options,
   );
 }
 
@@ -221,11 +231,7 @@ function parseOpenBetaUsername(input: string): string {
     try {
       url = new URL(/^https?:\/\//i.test(value) ? value : `https://${value}`);
     } catch (error) {
-      throw new ProviderTokenRejectedError(
-        OPENBETA_PROVIDER_NAME,
-        profileConnectionError().message,
-        { cause: error },
-      );
+      throw profileConnectionError({ cause: error });
     }
 
     if (!["openbeta.io", "www.openbeta.io"].includes(url.hostname.toLowerCase())) {
@@ -242,11 +248,7 @@ function parseOpenBetaUsername(input: string): string {
     try {
       username = decodeURIComponent(segments[1] ?? "");
     } catch (error) {
-      throw new ProviderTokenRejectedError(
-        OPENBETA_PROVIDER_NAME,
-        profileConnectionError().message,
-        { cause: error },
-      );
+      throw profileConnectionError({ cause: error });
     }
   }
 
@@ -261,11 +263,13 @@ function nullableText(value: string | null | undefined): string | null {
   return normalized ? normalized : null;
 }
 
-function parseOpenBetaDate(value: string | null): string | null {
-  const date = value?.slice(0, 10);
-  if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return null;
-  const parsed = new Date(`${date}T00:00:00.000Z`);
-  return Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== date ? null : date;
+function parseOpenBetaDate(value: number | null): string | null {
+  if (value === null) return null;
+  const parsed = new Date(value);
+  const year = parsed.getUTCFullYear();
+  return Number.isNaN(parsed.getTime()) || year < 1 || year > 9999
+    ? null
+    : parsed.toISOString().slice(0, 10);
 }
 
 function gradeFromTick(
@@ -309,9 +313,26 @@ function gradeFromTick(
   return null;
 }
 
-function sentForTick(attemptType: OpenBetaTick["attemptType"]): boolean | null {
-  if (attemptType == null) return null;
-  return attemptType !== "Attempt";
+function locationPathForTick(tick: OpenBetaTick): ClimbingLocationNode[] {
+  const climb = tick.climb;
+  if (!climb) return [];
+  const names = climb.pathTokens;
+  const ids = climb.ancestors;
+  const parent = climb.parent;
+  if (
+    names &&
+    ids &&
+    (names.length !== ids.length ||
+      (ids.length > 0 && parent?.uuid != null && ids.at(-1) !== parent.uuid))
+  ) {
+    throw new Error(
+      `OpenBeta tick ${tick._id} has inconsistent location path names and identities. Re-sync after the source location is corrected.`,
+    );
+  }
+  if (names && names.length > 0)
+    return names.map((name, index) => ({ name, externalId: ids?.[index] ?? null, kind: null }));
+  const name = nullableText(parent?.area_name);
+  return name ? [{ name, externalId: parent?.uuid ?? null, kind: null }] : [];
 }
 
 function parseOpenBetaTicks(ticks: OpenBetaTick[]): OpenBetaTickParseResult {
@@ -336,17 +357,35 @@ function parseOpenBetaTicks(ticks: OpenBetaTick[]): OpenBetaTickParseResult {
       continue;
     }
 
-    const sent = sentForTick(tick.attemptType);
+    const methods = {
+      Lead: "lead",
+      TR: "top-rope",
+      Follow: "follow",
+      Solo: "solo",
+      Aid: "aid",
+      Boulder: null,
+    } as const;
+    const routeType = tick.climb?.type;
+    const routeProtection =
+      routeType == null || (routeType.sport == null && routeType.trad == null)
+        ? null
+        : (["sport", "trad"] as const).filter((protection) => routeType[protection] === true);
     entries.push({
       externalId: `openbeta:${tick._id}`,
       unattachedDate,
       climbType,
       gradeSystem: grade.gradeSystem,
       grade: grade.grade,
-      sent,
-      attemptCount: sent === null ? null : 1,
+      ...climbingMetadataSchema.parse({
+        locationPath: locationPathForTick(tick),
+        board: null,
+        wallAngle: null,
+        climbStyle: tick.style === null ? null : methods[tick.style],
+        resultStyle: tick.attemptType,
+      }),
+      routeProtection,
+      attemptCount: null,
       routeName: nullableText(tick.name ?? tick.climb?.name),
-      locationName: nullableText(tick.climb?.parent?.area_name),
       raw: tick,
     });
   }
@@ -359,27 +398,20 @@ async function exchangeOpenBetaProfile(
   fetchFn: typeof globalThis.fetch,
 ): Promise<TokenSet> {
   const username = parseOpenBetaUsername(input);
-  try {
-    const data = await fetchGraphQL(
-      fetchFn,
-      OPENBETA_USER_PAGE_QUERY,
-      { username },
-      openBetaUserPageResponseSchema,
-    );
-    const profile = data.userPage?.profile;
-    if (!profile) throw profileConnectionError();
-    return {
-      accessToken: profile.userUuid,
-      refreshToken: null,
-      expiresAt: new Date("2099-12-31T00:00:00.000Z"),
-      scopes: "ticks",
-    };
-  } catch (error) {
-    if (error instanceof ProviderTokenRejectedError) throw error;
-    throw new ProviderTokenRejectedError(OPENBETA_PROVIDER_NAME, profileConnectionError().message, {
-      cause: error,
-    });
-  }
+  const data = await fetchGraphQL(
+    fetchFn,
+    OPENBETA_USER_PAGE_QUERY,
+    { username },
+    openBetaUserPageResponseSchema,
+  );
+  const profile = data.userPage?.profile;
+  if (!profile) throw profileConnectionError();
+  return {
+    accessToken: profile.userUuid,
+    refreshToken: null,
+    expiresAt: new Date("2099-12-31T00:00:00.000Z"),
+    scopes: "ticks",
+  };
 }
 
 export class OpenBetaProvider implements SyncProvider {
@@ -459,6 +491,7 @@ export class OpenBetaProvider implements SyncProvider {
         },
       });
     } catch (error) {
+      if (findProviderTransportError(error)) throw error;
       captureException(error, { tags: { provider: this.id, phase: "tick_export" } });
       return {
         provider: this.id,
@@ -468,7 +501,20 @@ export class OpenBetaProvider implements SyncProvider {
       };
     }
 
-    const parsed = parseOpenBetaTicks(pages.items);
+    let parsed: OpenBetaTickParseResult;
+    try {
+      // Validate every supplied path before writes or absence reconciliation.
+      for (const tick of pages.items) locationPathForTick(tick);
+      parsed = parseOpenBetaTicks(pages.items);
+    } catch (error) {
+      captureException(error, { tags: { provider: this.id, phase: "tick_context" } });
+      return {
+        provider: this.id,
+        recordsSynced: 0,
+        errors: [{ message: error instanceof Error ? error.message : String(error), cause: error }],
+        duration: Date.now() - startedAt,
+      };
+    }
     errors.push(...parsed.errors);
     if (parsed.unsupportedGradeCount > 0) {
       errors.push({
@@ -516,10 +562,14 @@ export class OpenBetaProvider implements SyncProvider {
                 climbType: entry.climbType,
                 gradeSystem: entry.gradeSystem,
                 grade: entry.grade,
-                sent: entry.sent,
+                resultStyle: entry.resultStyle,
+                climbStyle: entry.climbStyle,
+                routeProtection: entry.routeProtection,
+                board: entry.board,
+                wallAngle: entry.wallAngle,
                 attemptCount: entry.attemptCount,
                 routeName: entry.routeName,
-                locationName: entry.locationName,
+                locationPath: entry.locationPath,
                 sourceName: this.name,
                 raw: entry.raw,
               })
@@ -530,10 +580,14 @@ export class OpenBetaProvider implements SyncProvider {
                   climbType: entry.climbType,
                   gradeSystem: entry.gradeSystem,
                   grade: entry.grade,
-                  sent: entry.sent,
+                  resultStyle: entry.resultStyle,
+                  climbStyle: entry.climbStyle,
+                  routeProtection: entry.routeProtection,
+                  board: entry.board,
+                  wallAngle: entry.wallAngle,
                   attemptCount: entry.attemptCount,
                   routeName: entry.routeName,
-                  locationName: entry.locationName,
+                  locationPath: entry.locationPath,
                   sourceName: this.name,
                   raw: entry.raw,
                   providerAbsentAt: null,

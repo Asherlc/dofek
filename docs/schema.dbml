@@ -229,13 +229,6 @@ enum sleep_stage_name {
   awake
 }
 
-enum supplement_dose_status {
-  planned
-  taken
-  skipped
-  unknown
-}
-
 table fitness.device_priority {
   provider_id text [not null]
   source_name_pattern text [not null]
@@ -351,6 +344,17 @@ table fitness.provider_connection {
   indexes {
     (user_id, provider_id) [pk]
     provider_id [name: 'provider_connection_provider_idx']
+  }
+}
+
+table fitness.provider_issue_email {
+  user_id uuid [not null]
+  provider_id text [not null]
+  sent_at "timestamp with time zone" [not null]
+
+  indexes {
+    (user_id, provider_id) [pk]
+
   }
 }
 
@@ -561,13 +565,15 @@ table fitness.climbing_entry {
   climb_type climbing_climb_type [not null]
   grade_system climbing_grade_system [not null]
   grade text [not null]
-  sent boolean
-  attempt_count integer [default: 1]
-  lead boolean
-  wall_angle_degrees real
+  result_style text
+  attempt_count integer
+  climb_style text
+  route_protection text[]
+  wall_angle jsonb
+  board jsonb
   hold_type climbing_hold_type
   route_name text
-  location_name text
+  location_path jsonb [not null, default: `[]`]
   source_name text
   raw jsonb
   created_at "timestamp with time zone" [not null, default: `now()`]
@@ -580,6 +586,9 @@ table fitness.climbing_entry {
     (activity_id, external_id) [name: 'climbing_entry_activity_external_id_idx', unique]
     (user_id, provider_id, external_id) [name: 'climbing_entry_mountain_project_external_id_idx', unique]
     (user_id, provider_id, external_id) [name: 'climbing_entry_openbeta_external_id_idx', unique]
+
+
+
 
 
 
@@ -847,84 +856,6 @@ table fitness.nutrient {
   sort_order integer [not null, default: 0]
   open_food_facts_key text
   conversion_factor real [not null, default: 1]
-}
-
-table fitness.supplement {
-  id uuid [pk, not null, default: `gen_random_uuid()`]
-  user_id uuid [not null]
-  sort_order bigint [not null, default: 0]
-  created_at "timestamp with time zone" [not null, default: `now()`]
-  updated_at "timestamp with time zone" [not null, default: `now()`]
-
-  indexes {
-    (id, user_id) [name: 'supplement_id_user_key', unique]
-    user_id [name: 'supplement_user_idx']
-  }
-}
-
-table fitness.supplement_definition {
-  id uuid [pk, not null, default: `gen_random_uuid()`]
-  supplement_id uuid [not null]
-  supersedes_definition_id uuid
-  name text [not null]
-  amount real
-  unit text
-  form text
-  description text
-  meal meal
-  effective_from date [not null, default: `CURRENT_DATE`]
-  effective_to date
-  created_at "timestamp with time zone" [not null, default: `now()`]
-
-  indexes {
-
-    (id, supplement_id) [name: 'supplement_definition_identity_key', unique]
-    supersedes_definition_id [name: 'supplement_definition_supersedes_key', unique]
-    supplement_id [name: 'supplement_definition_active_idx', unique]
-    (supplement_id, effective_from, effective_to) [name: 'supplement_definition_effective_idx']
-
-
-  }
-}
-
-table fitness.supplement_definition_nutrient {
-  definition_id uuid [not null]
-  nutrient_id text [not null]
-  amount real [not null]
-
-  indexes {
-    (definition_id, nutrient_id) [pk]
-    definition_id [name: 'supplement_definition_nutrient_definition_idx']
-  }
-}
-
-table fitness.supplement_dose_event {
-  id uuid [pk, not null, default: `gen_random_uuid()`]
-  user_id uuid [not null]
-  supplement_id uuid [not null]
-  definition_id uuid [not null]
-  provider_id text [not null]
-  external_id text
-  scheduled_date date [not null]
-  status supplement_dose_status [not null]
-  supersedes_event_id uuid
-  recorded_at "timestamp with time zone" [not null]
-  source_name text
-  raw jsonb
-  created_at "timestamp with time zone" [not null, default: `now()`]
-
-  indexes {
-
-
-
-    (id, user_id, supplement_id, definition_id, scheduled_date) [name: 'supplement_dose_event_slot_identity_key', unique]
-    supersedes_event_id [name: 'supplement_dose_event_successor_key', unique]
-    (user_id, supplement_id, scheduled_date) [name: 'supplement_dose_event_root_key', unique]
-    (user_id, provider_id, external_id) [name: 'supplement_dose_event_provider_external_idx', unique]
-    (user_id, scheduled_date) [name: 'supplement_dose_event_user_date_idx']
-    supplement_id [name: 'supplement_dose_event_supplement_idx']
-
-  }
 }
 
 table fitness.mcp_oidc_adapter {
@@ -1257,21 +1188,6 @@ table fitness.user_settings {
   }
 }
 
-table fitness.body_region {
-  id text [pk, not null]
-  parent_id text
-  label text [not null]
-  kind text [not null]
-  sort_order bigint [not null, default: 0]
-
-  indexes {
-    (parent_id, sort_order, id) [name: 'body_region_parent_sort_idx']
-
-
-
-  }
-}
-
 table fitness.breathwork_session {
   id uuid [pk, not null, default: `gen_random_uuid()`]
   user_id uuid [not null]
@@ -1433,74 +1349,6 @@ table fitness.imu_session {
   }
 }
 
-table fitness.injury_event {
-  id uuid [pk, not null, default: `gen_random_uuid()`]
-  user_id uuid [not null]
-  kind text [not null]
-  body_region_id text [not null]
-  onset_date date [not null]
-  resolved_date date
-  severity bigint
-  description text [not null]
-  created_at "timestamp with time zone" [not null, default: `now()`]
-  updated_at "timestamp with time zone" [not null, default: `now()`]
-
-  indexes {
-    (user_id, onset_date) [name: 'injury_event_user_onset_idx']
-    body_region_id [name: 'injury_event_body_region_idx']
-
-
-
-
-  }
-}
-
-table fitness.journal_entry {
-  id uuid [pk, not null, default: `gen_random_uuid()`]
-  date date [not null]
-  provider_id text [not null]
-  user_id uuid [not null]
-  question_slug text [not null]
-  answer_text text
-  answer_numeric real
-  impact_score real
-  created_at "timestamp with time zone" [not null, default: `now()`]
-
-  indexes {
-    (user_id, date, question_slug, provider_id) [name: 'journal_entry_user_date_question_provider_idx', unique]
-    date [name: 'journal_entry_date_idx']
-    (user_id, provider_id) [name: 'journal_entry_user_provider_idx']
-    question_slug [name: 'journal_entry_question_slug_idx']
-  }
-}
-
-table fitness.journal_question {
-  slug text [pk, not null]
-  display_name text [not null]
-  category text [not null]
-  data_type text [not null]
-  unit text
-  sort_order integer [not null, default: 0]
-  created_at "timestamp with time zone" [not null, default: `now()`]
-}
-
-table fitness.life_events {
-  id uuid [pk, not null, default: `gen_random_uuid()`]
-  label text [not null]
-  user_id uuid [not null]
-  started_at date [not null]
-  ended_at date
-  category text
-  ongoing boolean [not null, default: false]
-  notes text
-  personal_experiment_id uuid
-  created_at "timestamp with time zone" [not null, default: `now()`]
-
-  indexes {
-    started_at [name: 'life_events_started_at_idx']
-  }
-}
-
 table fitness.menstrual_period {
   id uuid [pk, not null, default: `gen_random_uuid()`]
   user_id uuid [not null]
@@ -1512,51 +1360,6 @@ table fitness.menstrual_period {
   indexes {
     (user_id, start_date) [name: 'menstrual_period_user_start_idx', unique]
     user_id [name: 'menstrual_period_user_idx']
-  }
-}
-
-table fitness.personal_experiment {
-  id uuid [pk, not null, default: `gen_random_uuid()`]
-  user_id uuid [not null]
-  hypothesis text [not null]
-  intervention text [not null]
-  outcome_metric_id text [not null]
-  lag_days bigint [not null, default: 0]
-  baseline_days bigint [not null]
-  intervention_days bigint [not null]
-  start_date date [not null]
-  status text [not null, default: 'active']
-  stopped_at date
-  created_at "timestamp with time zone" [not null, default: `now()`]
-
-  indexes {
-    (user_id, created_at) [name: 'personal_experiment_user_created_idx']
-    (user_id, status) [name: 'personal_experiment_user_status_idx']
-
-
-
-
-
-
-
-
-  }
-}
-
-table fitness.personal_experiment_check_in {
-  id uuid [pk, not null, default: `gen_random_uuid()`]
-  personal_experiment_id uuid [not null]
-  date date [not null]
-  adherence text [not null]
-  confounder text
-  note text
-  created_at "timestamp with time zone" [not null, default: `now()`]
-
-  indexes {
-    (personal_experiment_id, date) [name: 'personal_experiment_check_in_experiment_date_unique', unique]
-
-
-
   }
 }
 
@@ -1587,48 +1390,6 @@ table fitness.provider_data_generation {
 
   indexes {
     (user_id, provider_id) [pk]
-
-  }
-}
-
-table fitness.shared_report {
-  id uuid [pk, not null, default: `gen_random_uuid()`]
-  user_id uuid [not null]
-  share_token text [not null, unique]
-  report_type text [not null]
-  report_data jsonb [not null]
-  expires_at "timestamp with time zone"
-  created_at "timestamp with time zone" [not null, default: `now()`]
-
-  indexes {
-    user_id [name: 'shared_report_user_idx']
-  }
-}
-
-table fitness.subjective_check_in {
-  id uuid [pk, not null, default: `gen_random_uuid()`]
-  user_id uuid [not null]
-  date date [not null]
-  created_at "timestamp with time zone" [not null, default: `now()`]
-  updated_at "timestamp with time zone" [not null, default: `now()`]
-
-  indexes {
-    (user_id, date) [name: 'subjective_check_in_user_date_key', unique]
-    (user_id, date) [name: 'subjective_check_in_user_date_idx']
-  }
-}
-
-table fitness.subjective_symptom {
-  id uuid [pk, not null, default: `gen_random_uuid()`]
-  check_in_id uuid [not null]
-  body_region_id text [not null]
-  kind text [not null]
-  score bigint [not null]
-
-  indexes {
-    (check_in_id, body_region_id, kind) [name: 'subjective_symptom_unique_kind', unique]
-    body_region_id [name: 'subjective_symptom_region_idx']
-
 
   }
 }
@@ -2033,6 +1794,8 @@ ref provider_connection_user_id_user_profile_id_fk: fitness.provider_connection.
 
 ref provider_connection_provider_id_provider_id_fk: fitness.provider_connection.provider_id > fitness.provider.id [delete: cascade, update: no action]
 
+ref provider_issue_email_connection_fkey: fitness.provider_issue_email.(user_id, provider_id) > fitness.provider_connection.(user_id, provider_id) [delete: cascade, update: no action]
+
 ref webhook_subscription_provider_id_provider_id_fk: fitness.webhook_subscription.provider_id > fitness.provider.id [delete: no action, update: no action]
 
 ref webhook_subscription_provider_connection_fkey: fitness.webhook_subscription.(user_id, provider_id) > fitness.provider_connection.(user_id, provider_id) [delete: cascade, update: no action]
@@ -2101,26 +1864,6 @@ ref food_entry_nutrient_food_entry_id_food_entry_id_fk: fitness.food_entry_nutri
 
 ref food_entry_nutrient_nutrient_id_nutrient_id_fk: fitness.food_entry_nutrient.nutrient_id > fitness.nutrient.id [delete: no action, update: no action]
 
-ref supplement_user_id_user_profile_id_fk: fitness.supplement.user_id > fitness.user_profile.id [delete: no action, update: no action]
-
-ref supplement_definition_supplement_id_supplement_id_fk: fitness.supplement_definition.supplement_id > fitness.supplement.id [delete: cascade, update: no action]
-
-ref supplement_definition_supersedes_fkey: fitness.supplement_definition.(supersedes_definition_id, supplement_id) > fitness.supplement_definition.(id, supplement_id) [delete: no action, update: no action]
-
-ref supplement_definition_nutrient_definition_id_supplement_definition_id_fk: fitness.supplement_definition_nutrient.definition_id > fitness.supplement_definition.id [delete: cascade, update: no action]
-
-ref supplement_definition_nutrient_nutrient_id_nutrient_id_fk: fitness.supplement_definition_nutrient.nutrient_id > fitness.nutrient.id [delete: no action, update: no action]
-
-ref supplement_dose_event_user_id_user_profile_id_fk: fitness.supplement_dose_event.user_id > fitness.user_profile.id [delete: no action, update: no action]
-
-ref supplement_dose_event_provider_id_provider_id_fk: fitness.supplement_dose_event.provider_id > fitness.provider.id [delete: no action, update: no action]
-
-ref supplement_dose_event_supplement_user_fkey: fitness.supplement_dose_event.(supplement_id, user_id) > fitness.supplement.(id, user_id) [delete: no action, update: no action]
-
-ref supplement_dose_event_definition_fkey: fitness.supplement_dose_event.(definition_id, supplement_id) > fitness.supplement_definition.(id, supplement_id) [delete: no action, update: no action]
-
-ref supplement_dose_event_supersedes_fkey: fitness.supplement_dose_event.(supersedes_event_id, user_id, supplement_id, definition_id, scheduled_date) > fitness.supplement_dose_event.(id, user_id, supplement_id, definition_id, scheduled_date) [delete: no action, update: no action]
-
 ref mcp_oidc_adapter_user_id_user_profile_id_fk: fitness.mcp_oidc_adapter.user_id > fitness.user_profile.id [delete: cascade, update: no action]
 
 ref clinical_record_user_id_user_profile_id_fk: fitness.clinical_record.user_id > fitness.user_profile.id [delete: no action, update: no action]
@@ -2159,8 +1902,6 @@ ref user_password_credential_user_id_user_profile_id_fk: fitness.user_password_c
 
 ref user_settings_user_id_user_profile_id_fk: fitness.user_settings.user_id > fitness.user_profile.id [delete: no action, update: no action]
 
-ref body_region_parent_id_body_region_id_fk: fitness.body_region.parent_id > fitness.body_region.id [delete: restrict, update: no action]
-
 ref breathwork_session_user_id_user_profile_id_fk: fitness.breathwork_session.user_id > fitness.user_profile.id [delete: no action, update: no action]
 
 ref dexa_scan_provider_id_provider_id_fk: fitness.dexa_scan.provider_id > fitness.provider.id [delete: no action, update: no action]
@@ -2175,37 +1916,11 @@ ref file_upload_outbox_upload_id_file_upload_id_fk: fitness.file_upload_outbox.u
 
 ref imu_session_user_id_user_profile_id_fk: fitness.imu_session.user_id > fitness.user_profile.id [delete: no action, update: no action]
 
-ref injury_event_user_id_user_profile_id_fk: fitness.injury_event.user_id > fitness.user_profile.id [delete: cascade, update: no action]
-
-ref injury_event_body_region_id_body_region_id_fk: fitness.injury_event.body_region_id > fitness.body_region.id [delete: restrict, update: no action]
-
-ref journal_entry_provider_id_provider_id_fk: fitness.journal_entry.provider_id > fitness.provider.id [delete: no action, update: no action]
-
-ref journal_entry_user_id_user_profile_id_fk: fitness.journal_entry.user_id > fitness.user_profile.id [delete: no action, update: no action]
-
-ref journal_entry_question_slug_journal_question_slug_fk: fitness.journal_entry.question_slug > fitness.journal_question.slug [delete: no action, update: no action]
-
-ref life_events_user_id_user_profile_id_fk: fitness.life_events.user_id > fitness.user_profile.id [delete: no action, update: no action]
-
-ref life_events_personal_experiment_id_personal_experiment_id_fk: fitness.life_events.personal_experiment_id > fitness.personal_experiment.id [delete: set null, update: no action]
-
 ref menstrual_period_user_id_user_profile_id_fk: fitness.menstrual_period.user_id > fitness.user_profile.id [delete: no action, update: no action]
-
-ref personal_experiment_user_id_user_profile_id_fk: fitness.personal_experiment.user_id > fitness.user_profile.id [delete: cascade, update: no action]
-
-ref personal_experiment_check_in_personal_experiment_id_personal_experiment_id_fk: fitness.personal_experiment_check_in.personal_experiment_id > fitness.personal_experiment.id [delete: cascade, update: no action]
 
 ref provider_data_deletion_outbox_user_id_user_profile_id_fk: fitness.provider_data_deletion_outbox.user_id > fitness.user_profile.id [delete: cascade, update: no action]
 
 ref provider_data_generation_user_id_user_profile_id_fk: fitness.provider_data_generation.user_id > fitness.user_profile.id [delete: cascade, update: no action]
-
-ref shared_report_user_id_user_profile_id_fk: fitness.shared_report.user_id > fitness.user_profile.id [delete: no action, update: no action]
-
-ref subjective_check_in_user_id_user_profile_id_fk: fitness.subjective_check_in.user_id > fitness.user_profile.id [delete: cascade, update: no action]
-
-ref subjective_symptom_check_in_id_subjective_check_in_id_fk: fitness.subjective_symptom.check_in_id > fitness.subjective_check_in.id [delete: cascade, update: no action]
-
-ref subjective_symptom_body_region_id_body_region_id_fk: fitness.subjective_symptom.body_region_id > fitness.body_region.id [delete: restrict, update: no action]
 
 ref sync_log_provider_id_provider_id_fk: fitness.sync_log.provider_id > fitness.provider.id [delete: no action, update: no action]
 

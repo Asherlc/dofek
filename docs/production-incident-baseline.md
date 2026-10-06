@@ -1,5 +1,129 @@
 # Production Incident Baseline
 
+## 2026-10-05 — Tracking removal PR validation gates
+
+- **Symptoms / impact:** [PR #2885](https://github.com/Asherlc/dofek/pull/2885) encountered CI validation failures; production is unchanged.
+- **Evidence / root causes:** [Knip](https://github.com/Asherlc/dofek/actions/runs/37381183171/job/112005037889) failed `pnpm knip` with `Unused exports (1): getCapturedRouteComponent`; deleting tracking route tests left that helper unused. [Migration Lint](https://github.com/Asherlc/dofek/actions/runs/37381183171/job/112005038017) failed `xargs squawk` with `ban-drop-view` on `DROP VIEW fitness.provider_stats`. The intentional journal-column removal requires recreation because [PostgreSQL CREATE OR REPLACE VIEW](https://www.postgresql.org/docs/current/sql-createview.html) requires existing columns to retain their names, order, and types.
+- **Further evidence:** [Integration shard 4](https://github.com/Asherlc/dofek/actions/runs/37382396654/job/112010769481) replayed clinical migration 0099 without its historical journal-table dependency; [shard 1](https://github.com/Asherlc/dofek/actions/runs/37382396654/job/112010769505) expected 41 MCP tools after three were removed. [Stryker shard 3](https://github.com/Asherlc/dofek/actions/runs/37382396654/job/112010769873) exposed missing assertions for health-scope rejection, while [shard 0](https://github.com/Asherlc/dofek/actions/runs/37382396654/job/112010769764) selected unchanged empty-array defaults solely because formatting reindented their lines.
+- **Fix / validation:** Remove the unused helper and route-capture state; Knip and four time-range consumer tests pass. Add the user-approved exception to only the intentional DROP VIEW; Squawk 2.67.0 and migration policy pass. Restore the historical dependency in the clinical test fixture, update MCP discovery counts, and test health-scope rejection for mixed requests. The clinical migration tests and 13 MCP unit tests pass. Select mutation ranges with [Git's ignore-space-change option](https://git-scm.com/docs/git-diff), preserving substantive edits while excluding whitespace-only reindentation; targeted mutation validation scores 100%. No timeout, retry, threshold, or global lint setting changed.
+- **Remaining risk / follow-up:** Full replacement CI remains pending. Include Knip, Squawk, historical migration dependencies, and discovery counts in the feature-removal validation checklist, and document an approval policy for intentional destructive migrations.
+- **Local validation prerequisite:** A corrected SDK integration rerun failed before the tests with `could not create directory "base/96143": No space left on device`. Rebuildable Docker build cache was pruned, reclaiming 10.18 GB while preserving containers and named volumes. Both SDK tests then passed using the existing [Docker disk recovery runbook](testing.md#docker-disk-recovery); no runtime resilience settings were added.
+
+## 2026-10-05: PR 2882 Storybook preview upload rejected by R2 (unresolved)
+
+- Impact: the mobile Storybook preview deployment failed; the preview comment
+  was skipped. Web and mobile Storybook builds passed. No production impact
+  was observed.
+- Evidence: [CI job 111990776845](https://github.com/Asherlc/dofek/actions/runs/37377356277/job/111990776845),
+  step `Deploy Mobile Storybook to R2`, ran `aws s3 cp
+  storybook-mobile-static/ s3://dofek-storybook/pr-2882/mobile/ --recursive`.
+  Its first fatal upload error at 21:43:06 UTC was `ServiceUnavailable` during
+  `PutObject` for `assets/NutritionDataQualityPanel-wWhAfOuv.js`:
+  `Reduce your concurrent request rate for the same object.` The command
+  completed with exit code 1.
+- Investigation: branch history showed only one CI run, with separate web
+  and mobile object prefixes. No duplicate write to this key was visible in
+  the job log. [R2 documents a per-key write limit](https://developers.cloudflare.com/r2/platform/limits/),
+  but the evidence does not establish the source of a conflicting write or
+  an underlying R2 service fault.
+- Remediation: none yet. An attempt to rerun the failed job was rejected by
+  GitHub while the parent run remained in progress. No retry, timeout, or
+  concurrency workaround was added.
+- Follow-up: finish the parent run, repeat the failed upload as a diagnostic,
+  and investigate R2 request evidence if it recurs. Root cause and recovery
+  remain unconfirmed.
+- The operator chose request-log investigation before another upload. The
+  configured `CLOUDFLARE_API_TOKEN` successfully read the bucket metadata, but
+  a dry-run telemetry query for the failing asset from 21:42 to 21:44 UTC
+  returned HTTP 403, code `10000`, `Authentication error`. No connected
+  dashboard browser was available. Access to historical logs remains blocked;
+  the bucket's logging-enabled state was not established.
+- [Cloudflare's query endpoint](https://developers.cloudflare.com/api/resources/workers/subresources/observability/subresources/telemetry/methods/query/)
+  lists `Workers Observability Write` as its accepted permission.
+  [R2 Data Access Logs](https://developers.cloudflare.com/r2/buckets/data-access-logs/)
+  exclude HTTP errors, retain seven days, and do not backfill operations before
+  logging is enabled. Successful writes near the failure could identify
+  another writer, but absence of a log would not establish absence of a write.
+  Next step: provide an authorized observability token or dashboard session,
+  then query the exact object key before selecting a remediation.
+
+## 2026-09-30 — Nutrition nudge PR dependency audit and Metro prerequisite failures
+
+- **Symptoms / impact:** PR #2861 could not pass CI; the nutrition guidance was not yet deployed.
+- **Evidence / root causes:** [Dependency Audit](https://github.com/Asherlc/dofek/actions/runs/36773839845/job/110087033337) failed `pnpm audit --prod --audit-level=high --ignore-registry-errors` with a high-severity finding for the existing `@grpc/grpc-js` override at 1.14.4. The [maintainer advisory](https://github.com/advisories/GHSA-m9gg-hp2v-232j), added to the advisory database today, identifies 1.14.5 as patched. Independently, [Metro Bundle](https://github.com/Asherlc/dofek/actions/runs/36773839845/job/110087033415) failed before bundling: the GitHub OIDC token request in `load-infisical-secrets` returned `curl: (22) The requested URL returned error: 503` at 20:38:45 UTC. Infisical login and Expo bundling had not begun.
+- **Direct fix / validation:** Update the existing gRPC override and lockfile to 1.14.5. Retain strict audit and prerequisite failure behavior; no resilience settings changed. Local unit/mobile validation passed 19,141 tests before the dependency update. The patched dependency audit passes with no high or critical findings; replacement CI validation is pending.
+- **Retrospective / follow-up:** Job logs distinguished a dependency advisory from an external OIDC failure. Record the token-mint step separately from Infisical login in future CI triage and inspect the first fatal line before changing build configuration.
+
+## 2026-09-30 — ChatGPT browser Reconnect cannot obtain a setup URL (unresolved)
+
+- **Symptoms / impact:** After ChatGPT requested reconnection, clicking Reconnect on chatgpt.com displayed `This app does not provide a browser setup URL right now`. The user cannot complete the new consent flow.
+- **Evidence:** The user's browser capture identifies `POST /backend-api/aip/connectors/links/oauth/reauth` on chatgpt.com at 17:49:32 UTC, requesting `nutrition:read` and `nutrition:write`. ChatGPT returns HTTP 400 with `Requested scopes are not allowed for connector` (request ID `a997dffa-3f90-44ea-acc2-710b5cd19ee1`). Production has two healthy web replicas; [live OAuth discovery](https://dofek.fit/.well-known/oauth-authorization-server) advertises both nutrition scopes, `https://dofek.fit/authorize`, and CIMD support. An unauthenticated MCP initialization receives the expected 401 resource-metadata challenge. The preceding server-log inspection contained no authorization or token request, consistent with rejection before redirecting to Dofek.
+- **Root cause / status:** ChatGPT rejects the requested scope set against its connector configuration before Dofek authorization begins. The reason for that connector allowlist mismatch remains unconfirmed; stale saved OAuth metadata is a hypothesis requiring a fresh app connection to validate. The observed rejection is not the MFA error reported in [OpenAI issue #48126](https://github.com/openai/codex/issues/48126). The signed-in browser is unavailable to operator automation, so the incident remains unresolved pending user validation.
+- **Follow-up / retrospective:** Recommend creating a fresh development app using the existing MCP endpoint and automatic OAuth discovery, then test nutrition write consent. [OpenAI's developer-mode guide](https://help.openai.com/en/articles/12584461-developer-mode-and-mcp-apps-in-chatgpt) documents recreating an app to fetch updated OAuth metadata; it does not establish that cached metadata caused this specific error. No server acceptance rules, retries, timeouts, or account security settings were changed. Browser response evidence isolated the failure where server logs could not; add credential-free reconnect status/error capture and saved-versus-live metadata comparison to the MCP runbook. For similar investigations, compare sanitized browser errors with production request logs before changing server behavior. Raw capture credentials were not persisted or used.
+- **Continued investigation:** Both public resource and authorization-server metadata advertise the nutrition scopes. ChatGPT's [public CIMD document](https://chatgpt.com/oauth/client.json) supports the observed callback, authorization-code and refresh grants, and public-client token authentication. Firefox tab inspection did not return, so saved connector settings remain inaccessible. OpenAI's [Refresh metadata procedure](https://developers.openai.com/plugins/deploy/connect-chatgpt#refresh-metadata) explicitly covers developer-mode authentication metadata changes; ask the user to refresh the saved connection and retry in a new chat before testing a replacement app. The [MCP troubleshooting instructions](mcp.md#chatgpt-reconnect-and-scope-changes) now preserve that sequence and credential-free evidence capture. No production behavior changed; user validation remains pending.
+- **Refresh timeout (unresolved):** The user's second browser capture confirms `POST /backend-api/aip/connectors/mcp/refresh_actions` on chatgpt.com began at 18:01:24 UTC and returned HTTP 500, `Request timeout`, after 120,088 ms (request ID `634a61db-5d18-4d1e-8d16-77443e62cdd2`). Within that exact window, production Axiom logs show successful `tools/list` responses at 18:01:49 and 18:02:30 UTC, completing in 123 and 128 ms. Each returned 41 tools, valid schemas, the expected food tools, no next page, and the same schema fingerprint. Two `unsupported_protocol_version` rejections preceded successful initialization with protocol `2025-11-25`; these recovered probes do not establish the cause of the browser timeout. Authenticated calls still carry `nutrition:read` without `nutrition:write`. Two web replicas are healthy. Axiom structured logging is accessible and distinguishes protocol errors that console output omits. The failure is observed in ChatGPT's refresh operation; its internal cause remains unknown. No server behavior or timeout setting was changed. For future investigations, correlate completed tool scans with the browser failure and query flattened Axiom attribute fields as documented in the [MCP troubleshooting runbook](mcp.md#chatgpt-reconnect-and-scope-changes). A support report can use the request ID, timestamps, and sanitized error without sharing the raw credential-bearing capture.
+- **Fresh connection / remaining tool-selection failure:** The user approved testing a separate developer connection and reports adding it succeeded. At 18:19:48 UTC, authenticated production requests carry all seven tool scopes, including `nutrition:write` and `health:write`. Scans at 18:19:54 and 18:22:30 returned 41 tools in 115 and 107 ms; the telemetry confirms both `search_food_entries` and `create_food_entry` are present. The user then reports ChatGPT said the logging tool was unavailable for a 30 g collagen entry. No `tools/call` was observed during the inspected window. The permissions inspection for the new app reports an app-specific `Allow all actions` setting. OAuth consent and server discovery now succeed, but actual food logging remains unverified; there is no evidence yet that Dofek received or rejected this save. Test explicit selection of the new connection in a new conversation, as documented in [OpenAI's tool-selection procedure](https://developers.openai.com/plugins/deploy/connect-chatgpt#check-tool-selection), before changing server behavior. Useful context next time is the exact selected app and message timestamp alongside tool-call logs; compare discovery responses, granted scopes, and actual tool-call logs to distinguish discovery, authorization, selection, and execution failures.
+- **Explicit-selection result:** The user confirms that the new app remains unavailable after explicitly selecting it in a new chat. No `tools/call` appears in the subsequent ten-minute Axiom inspection, though additional initialization and discovery requests succeed. The source descriptor marks `create_food_entry` as a non-destructive write requiring the two nutrition scopes. Its app permission is not a known blocker. Conversation model, read-tool availability, and composer Developer mode remain unverified; the app's `dev mode` version label does not establish the conversation mode. [OpenAI's current developer-mode guide](https://developers.openai.com/api/docs/guides/developer-mode#how-to-use) instructs selecting Developer mode in the composer and selecting the app there, and explicitly supports read and write tools on Pro accounts. Its eligibility statement conflicts with the older help article's read-only Pro statement, so do not diagnose a Pro-plan restriction from that article alone. [OpenAI's troubleshooting guide](https://help.openai.com/en/articles/20001497-troubleshooting-plugins-apps-in-chatgpt) recommends model/surface checks and support escalation when a connected app still cannot be used, rather than repeated reconnection. Root cause of the missing conversational tool remains unresolved; no production code or permission settings were changed.
+- **Read succeeds, write still unavailable:** The user identifies Astra as the model and supplies a successful food-search response from the same chat that refused the collagen save. Production confirms `search_food_entries` calls at 18:27:39 and 18:27:43 UTC, both HTTP 200, with no observed `create_food_entry` call. This rules out unavailability of the entire connection. The last scan at 18:23:27 still advertised both food tools with the unchanged fingerprint. Ask for the model-visible tool names and specifically whether `create_food_entry` is present, following the explicit-tool-name guidance in [OpenAI's developer-mode guide](https://developers.openai.com/api/docs/guides/developer-mode#how-to-use), to distinguish write-tool exposure from selection. The internal reason for the write refusal remains unknown; the collagen entry is not confirmed saved. Future runbook guidance should compare a read and write request in the same conversation before diagnosing conversation-wide tool loss.
+
+- **Real ChatGPT write verified / zero-value card:** After listing the available tools, the user explicitly requested `create_food_entry` followed by `search_food_entries`. ChatGPT reports the September 30 collagen record was saved and read back, with nutrition values unspecified. Axiom confirms `create_food_entry` completed with HTTP 200 at 18:53:32 UTC, followed by `search_food_entries` HTTP 200 at 18:53:37. This validates real conversational writes through the fresh connection; the original connection's refresh/allowlist failures and the earlier discovery refusal remain unexplained. The user's screenshot shows a nutrition card with zero calories and macros. The [card implementation](../packages/mcp-app/src/day-nutrition-preview.tsx) renders nutrient totals only, with no food-entry list or saved-record indicator; the [server mapping](../packages/server/src/mcp/day-nutrition-output.ts) supplies those totals. Given the reported empty nutrient values, zero totals do not establish a stale display. Nutrition label values are needed to validate a numerical change without guessing. No production behavior was changed. Follow-up: distinguish a saved food record from known nutrient totals in the preview; any UI change needs separate scope agreement. The useful diagnostic sequence was discovery, actual write, and read-back, correlating production request logs with the conversation rather than repeating reconnection.
+
+## 2026-09-30 — MCP write-consent production rollout
+
+- **Release / validation:** PR #2855 merged normally as `bffc5647c938191281a0fa2cff71fc4cc90e71f8` after full PR CI passed. Its main CI also passed. The exact published image is `sha-bffc564`, digest `sha256:792fdefb11b3386e2143e3954155322f4f38391ae5506031fd6890563dae27e2`; [manual deployment 36749707220](https://github.com/Asherlc/dofek/actions/runs/36749707220) completed successfully with that tag. No administrator merge or ruleset edit was needed. A duplicate automatic same-image rollout was canceled before it acquired the deployment slot.
+- **Operator correction:** The first dispatch mistakenly supplied eight SHA characters instead of the build's seven. [Run 36749507541](https://github.com/Asherlc/dofek/actions/runs/36749507541) failed image resolution before infrastructure or web changes. The published tag was verified in the successful Docker build log before dispatching the corrected release.
+- **Live behavior:** Both web replicas serve the exact image; OAuth discovery returns 200. All 41 tools expose OAuth scope declarations. A read-only nutrition token receives a structured insufficient-scope consent challenge without storing a record. A token with nutrition read/write permissions successfully saves and reads back the isolated food fixture; both exchanges issue refresh tokens. Existing user grants were not expanded.
+- **Probe cleanup / remaining risk:** The initial token probe received HTTP 525 during the stack rollout; its fixture was removed. Public discovery subsequently returned 200 from both the workstation and the web container, and a fresh complete protocol probe passed. The precise cause of that one transport response remains unconfirmed; investigate edge/origin TLS if it recurs. The authorized-write fixture triggered the append-only ledger guard during naive cleanup; removal used a transaction with a verified erasure request for only the isolated account, including the food row and OAuth adapter artifacts. Postflight confirms zero probe accounts. Future operator probes must use verified erasure cleanup from the start. Real ChatGPT consent UI and food logging still require the user's retry.
+
+## 2026-09-30 — Native build artifact download resets before compilation
+
+- **Status / impact:** Resolved before merging PR #2855; production was unchanged during this failure.
+- **Evidence / cause:** [CI attempt 1](https://github.com/Asherlc/dofek/actions/runs/36738517771/attempts/1) failed `Install CocoaPods dependencies` while React Native fetched `reactnative-core-0.86.3-debug.tar.gz`: `curl: (35) Recv failure: Connection reset by peer`. The podspec then aborted, before compilation. A subsequent read-only check of the exact artifact URL returned HTTP 200.
+- **Validation:** The failed jobs were rerun without changing dependencies, retry policy, or timeouts. [Attempt 2](https://github.com/Asherlc/dofek/actions/runs/36738517771/attempts/2) passed CocoaPods installation, the Release archive, and the full CI gate. PR #2855 merged normally as `bffc5647`; no administrator bypass or ruleset modification was used.
+
+## 2026-09-30 — Empty route refresh fails in materialized-CTE planning
+
+- **Status / impact:** Query repair validated and deployed in `sha-bffc564`; the complete production rollout passed. The local `pnpm analytics:build` completed 40 of 41 models; `activity_route_identity` failed with Code 49: `Reading from materialized CTE 'affected_route_keys' before its materialization completed - DelayedPortsProcessor gate is missing in the query plan`. The user requested fixing this before the MCP rollout.
+- **Evidence / cause:** A real ClickHouse regression reproduces the failure during an empty incremental refresh, while the 20 populated-fixture cases pass. The exact compiled query also fails on [ClickHouse 26.9.6.6 stable](https://github.com/ClickHouse/ClickHouse/releases/tag/v26.9.6.6-stable), so a version upgrade alone does not resolve it. Removing only the affected-key hint exposes the same error for its upstream `existing_route_state`; removing both hints preserves the SQL results and incremental rules and avoids their broken materialized plans. ClickHouse has documented related [materialized-CTE dependency planning failures](https://github.com/ClickHouse/ClickHouse/issues/101940); that older resolved issue is context, not proof that this exact failure is resolved.
+- **Validation / remaining work:** All 21 route tests, including existing scan-budget checks, pass on the workspace's pinned 26.8.2.7 with retries disabled. Root typecheck passes. Subsequent full builds were interrupted before the route model: Docker Desktop's kernel log records `global_oom` killing this workspace's ClickHouse process at 15:12:19, 15:17:11, and 15:22:17 UTC. Stopping only this workspace’s unused Redis and Redpanda services freed sufficient memory; the subsequent complete build passed all 41 models in 14.23 seconds. No server memory limit, retry, timeout, or query optimizer setting was increased. Local SQLFluff also reports an unused-CTE false positive after its parser stops at valid `AS MATERIALIZED` syntax, plus a single-target formatting warning in an unchanged model; Full lint passes against a fresh lint schema, matching CI’s rendering; the incremental route behavior is verified by the executable database tests. The complete build passed before PR #2855 merged; include empty initial refreshes in future model regressions.
+
+## 2026-09-30 — Applied branch migration blocks main deployment
+
+- **Status / impact:** Repair deployed in `sha-bffc564`; production migration execution passed. [Deployment 36720669142](https://github.com/Asherlc/dofek/actions/runs/36720669142) aborted in the migration step before replacing the web service, also blocking the MCP write-consent rollout.
+- **Evidence / root cause:** The first fatal line was `Integrity check failed: migration tracked at 1790727480000 is recorded as applied but is missing`. Production records SHA-256 `8c78a3557c472012c24978da8c1ae16e99573f59d66ed7d8e709297702c849ff`, exactly matching `0133_independent_climbing_outcome_count.sql` from unmerged Kaya commit `0bf3bd7f1`. Main omitted that file and journal entry. The process that originally applied it has not been identified; Git worktree isolation does not isolate an external production database.
+- **Direct fix:** Restore the original applied migration and timestamp without altering production history. Move the unapplied Apple Health view migration to `0134_apple_health_workout_revisions` with a later journal timestamp so [Drizzle's migration ordering](https://github.com/drizzle-team/drizzle-orm/blob/main/drizzle-orm/src/pg-core/dialect.ts) cannot skip it. Remove the obsolete paired-count check from the schema definition to match the already-applied constraint change.
+- **Validation / follow-up:** The real-database upgrade regression failed with the exact production error before repair, then applied the one pending migration and returned zero on a second run. All 34 migration/Apple Health integration tests pass. Production preserves the original applied hash at `1790727480000` and now records the pending Apple migration at `1790779386669`. The production MCP consent/write probe passed. No integrity check, retry, or timeout was weakened. Require a merged, durable journal entry before future production migration operations.
+
+## 2026-09-30 — ChatGPT nutrition save lacks write authorization
+
+- **Status / impact:** Deployed in `sha-bffc564`; production protocol checks pass, real ChatGPT write-consent validation remains pending. After reconnecting, the user reported `MCP token requires scope: nutrition:write` when saving nutrition. The save was rejected; it was not logged.
+- **Evidence:** Read-only production inspection found a refresh token for the real connection, confirming automatic refresh issuance. Its grant, access tokens, and refresh token carry `health:read activity:read nutrition:read providers:read sync:write`, without `nutrition:write` or `health:write`. Protected-resource discovery advertises both write scopes.
+- **Cause / direct fix:** Dofek enforced tool scopes but omitted per-tool `securitySchemes` and structured `_meta["mcp/www_authenticate"]` challenges. These are the two required parts of ChatGPT's tool-level consent flow in [OpenAI's authentication guidance](https://developers.openai.com/plugins/build/auth/#triggering-authentication-ui). All 41 tools now declare their requirements using the [supported `_meta.securitySchemes` field](https://developers.openai.com/plugins/reference/#meta-fields-on-tool-descriptor). A shared registration boundary uses the MCP SDK's challenge builder for scope errors while preserving UI metadata and handler scope checks. The user approved this approach and requested write scopes by default; new personal tokens select all seven tool scopes, with editable permissions. Existing grants are not expanded.
+- **Validation:** The regressions reproduced missing declarations and missing consent challenges before the change. Unit and mobile tests pass (19,091 tests), focused authorization/UI tests pass (144 tests), and the SDK HTTP/database regression passes both read-only rejection without a stored food record and authorized save/fresh discovery. Lint and root/server/web typechecks pass. No retries, timeouts, or permission bypasses were added.
+- **Follow-up:** Validate discovery and a write-scope upgrade end to end, rather than treating successful initialization and tool listing as proof that writes are authorized. Do not expand existing grants manually.
+
+## 2026-09-29 — Working ChatGPT connection needs automatic OAuth refresh issuance
+
+- **Status / user impact:** The user confirmed that ChatGPT connection and tool requests work after the opaque-token fix. Read-only production checks found one current grant and access token but no refresh token, so the connection could not refresh after access-token expiry.
+- **Evidence / root cause:** None of the 13 retained authorization codes requested `offline_access` or `openid`. The library's default refresh issuance requires `offline_access`, even when the client supports the `refresh_token` grant. A database-backed regression reproduced a successful code exchange whose response omitted `refresh_token`; see [oidc-provider's issuance policy](https://oidc-provider.dev/configuration/tokens/#issuerefreshtoken).
+- **Direct fix:** Use that library policy to issue refresh tokens to clients supporting the refresh grant without requiring an OIDC scope. Existing consent, PKCE, resource checks, rotation, expiry, and replay rejection remain enforced. Public-client refresh tokens must rotate or be sender-constrained under [RFC 9700 section 4.14](https://www.rfc-editor.org/rfc/rfc9700.html#section-4.14).
+- **Validation / remaining work:** The issuance regression and unit policy tests pass. The integration flow refreshes without `offline_access`, verifies rotation and authenticated MCP access, then replays the consumed refresh token and verifies family revocation. Refresh issuance deployed in `sha-f7060ae`. Production probes using ChatGPT and Claude's published CIMD metadata passed code exchange, refresh issuance without `offline_access`, rotation, MCP initialization, tool discovery, and replay-triggered family revocation. Probe state was removed. The September 30 real ChatGPT reconnect created a refresh token; its attempted nutrition save then exposed missing write permission, documented above. No runtime retry or timeout workaround was added.
+- **Prior rollout / cleanup:** [PR #2835](https://github.com/Asherlc/dofek/pull/2835) deployed `sha-7522a32` through [run 36637415397](https://github.com/Asherlc/dofek/actions/runs/36637415397). Production canaries using ChatGPT and Claude's published CIMD metadata passed issuance, refresh, MCP initialization, tool discovery, and revocation, with all fixture state removed. [PR #2836](https://github.com/Asherlc/dofek/pull/2836) merged normally after all 100 checks passed; its schema-cleanup image `sha-4b4967c` completed [deployment 36646056646](https://github.com/Asherlc/dofek/actions/runs/36646056646). Production has zero obsolete OAuth tables or token columns; both personal tokens and the current CIMD grant were preserved. Both published-client canaries passed again after cleanup.
+- **Runbook improvement:** Include actual refresh-token issuance in end-to-end OAuth validation using the scopes requested by the real client; an `offline_access` canary alone did not represent ChatGPT's automatic setup.
+
+### Midnight UTC exposed a date-dependent unit fixture
+
+- Main [CI run 36648205190](https://github.com/Asherlc/dofek/actions/runs/36648205190/job/109678740438) failed `Test / Unit Tests` at `power-repository.test.ts:271`: `expected null to be 190`. Its July 1 fixture fell outside the rolling 90-day eFTP window when UTC advanced to September 30. The same test reproduced the failure locally; production eFTP behavior was correct.
+- Canceled the queued [refresh deployment 36649669487](https://github.com/Asherlc/dofek/actions/runs/36649669487) before infrastructure or web changes. Refresh [PR #2838](https://github.com/Asherlc/dofek/pull/2838) and the clock correction [PR #2853](https://github.com/Asherlc/dofek/pull/2853) are merged.
+- Pin the fixture's clock to July 2 and restore the real clock afterward using [Vitest date mocking](https://vitest.dev/guide/mocking/dates). This fixes the test's current-date dependence without changing runtime analytics or weakening an assertion. The corrected [main CI run 36653699442](https://github.com/Asherlc/dofek/actions/runs/36653699442) passed unit, integration, E2E, coverage, lint, and security checks before deployment; only unchanged Apple jobs remained queued. The user approved administrator merges and exact-image deployment, and the temporary ruleset bypass was restored immediately.
+
+### Production refresh verification
+
+- [Deployment 36655027715](https://github.com/Asherlc/dofek/actions/runs/36655027715) succeeded with `sha-f7060ae`, containing both fixes. Both web replicas serve digest `sha256:dd89a1e2add7d3dbfd6ba572fe8fbfd17df52dd8d59728bcb5edeb27b1d4f44d`; migrations and all service stability checks passed.
+- Database verification found zero obsolete OAuth tables or columns, two preserved personal tokens, and zero probe users. Refresh tokens now use the canonical OIDC adapter; the September 30 real ChatGPT reconnect has a refresh token.
+- An extra revoke request in back-to-back operator probes returned HTTP 429 because the shared OAuth limiter's five-request, one-minute budget was exhausted. Refresh issuance, rotation, and replay rejection had already passed. Removed the redundant revoke from the operator-only Claude probe and reran its complete refresh flow successfully; production rate limits were unchanged. Separate production revocation checks passed.
+- Future OAuth validation should use actual client scopes and include refresh issuance, rotation, authenticated MCP access, and replay rejection. Rolling-window analytics fixtures should pin their clock; see [Vitest date mocking](https://vitest.dev/guide/mocking/dates).
+
 <!-- cspell:ignore Hetzner Hypertables rollups fanout Checkpointed subcheck MISCONF docuum anchore xcframework objc -->
 
 This document summarizes production failure modes observed so far. It is not a
@@ -27758,6 +27882,156 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 - **Validation:** The canonical runner reached Vitest; the activity-group reconciliation integration suite passed 19/19 tests. The initial filtered run used an underscore pattern and skipped all tests; it was corrected to the exact test title before results were accepted.
 - **Remaining risk / follow-up:** Docker Desktop may reset this VM-only sysctl after a restart. Reapply the setting if Redpanda reports the same AIO capacity error. No repository runtime workaround was added.
 
+## 2026-09-29 — Sentry triage and reviewed server/mobile remediation
+
+- **Status / user impact:** Authorization is restored. The initial 90-day
+  inventory contained nine unresolved server issues, six mobile issues, and no
+  web issues. Five historical server issues have verified recovery; four
+  server and six mobile issues remain unresolved pending rollout or cause
+  evidence. Approved remediation is implemented and independently reviewed.
+- **Evidence:** `GET /api/0/projects/east-bay-software/dofek-server/issues/`
+  returned HTTP 403 with `You do not have permission to perform this action.`
+  A names-only production Infisical export confirmed `SENTRY_AUTH_TOKEN` exists
+  and `SENTRY_READ_AUTH_TOKEN` is absent. `codex mcp list --json` showed the
+  configured Sentry MCP with `auth_status: not_logged_in`.
+- **Root cause:** The available CI token cannot read issues, and the MCP lacks
+  completed account authorization. This does not establish the causes of the
+  individual application issues. Sentry distinguishes `org:ci` release access
+  from `event:read` issue access in its
+  [API permissions](https://docs.sentry.io/api/permissions/).
+- **Mitigation / validation:** After the user completed GitHub sign-in,
+  restarted `codex mcp login sentry` with issue inspection and triage selected
+  and completed its OAuth callback. The CLI confirmed successful login, and
+  MCP project discovery, issue search, and event reads succeeded. The CLI
+  login command is documented
+  in [OpenAI's MCP guide](https://learn.chatgpt.com/docs/extend/mcp#other-cli-commands).
+- **Verified historical resolutions:** Resolved
+  [DOFEK-SERVER-3B](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-3B)
+  after the live CDC health check reported three healthy slots and one mirror;
+  [DOFEK-SERVER-6E](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-6E)
+  after confirming Polar's upstream HTTP 503 outage had ended, with 331
+  successful syncs in the last seven days and the latest at 22:00 UTC; and
+  [DOFEK-SERVER-6F](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-6F)
+  after verifying deployed commit `568c868f4` recognizes Strava's revoked-token
+  response, the last attempt records `refresh_token_revoked`, and no Strava
+  credential remains. The token-resolution regression suite passed 14/14.
+- **Additional verified resolutions:** Resolved
+  [DOFEK-SERVER-6B](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-6B)
+  after confirming deployed commit `9253ac819` removes query-wide `FINAL`
+  from activity sensor microbatches. Retained September 23–29 ClickHouse
+  history contains 1,600 successful sensor inserts, including temporary-table
+  inserts, and no failed inserts; recent batches took 4.943 and 16.157 seconds.
+  Resolved [DOFEK-SERVER-6D](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-6D)
+  after confirming deployed commit `732dc278b` replaces expired signup-week
+  access with the rolling local week. Both clients request today's quality
+  window, and entitlement/access-window tests passed 20/20, covering old
+  accounts, timezone boundaries, and DST. The four reported errors preceded
+  that fix.
+- **Active evidence:** The latest route-model failure on release `bdec1ca`
+  matched ClickHouse query `b02882b9-d210-43c0-b994-56c249949789`: code 159 after
+  240 seconds, 341,045,596 rows read, no projections selected. Its source
+  watermark queries do not match the existing sensor freshness projection,
+  and the location source has no matching projection. Cache-warming errors
+  followed a WHOOP activity's provider-absence tombstone by two minutes;
+  direct activity NOT_FOUND is correct, but replay retains the obsolete keys
+  and reports a failed processing run. Mobile breadcrumbs show alerts polling
+  every 15 seconds while backgrounded without AppState/focusManager wiring.
+- **Observability limits:** Axiom REST query returned HTTP 403 with
+  `token does not have access to resource: query with action: read`; no Axiom
+  MCP is connected. The September 17 mobile 504 trace has two errors but no
+  spans or logs in Sentry. Persistence errors discard the native cause, and
+  Expo's Apple unknown-error mapping also omits the underlying NSError.
+- **Approved follow-up:** The user approved matching freshness projections,
+  exact-key cache eviction, mobile focus/connectivity wiring, regression
+  tests, and privacy-safe persistence/Apple diagnostics. Implementation and task
+  reviews are complete; statuses for these active/opaque issues remain unresolved.
+- **Analytics implementation / validation:** Added matching altitude and
+  location aggregate projections and schema-only migration `0097`. A real
+  ClickHouse regression failed before the fix at 100.01 thousand rows against its
+  50,000-row budget; afterward, all 20 route tests passed. Query-log evidence
+  confirmed natural selection of both projections with 115/117 rows read for
+  changed/tombstoned route builds. dbt compile and analytics policy passed;
+  direct SQLFluff lint retains a baseline MATERIALIZED-CTE parser limitation.
+  No timeout or optimizer workaround was added.
+- **Historical rollout inventory:** Both source tables have a single native
+  `all` partition. Read-only inspection found 101,107,218 sensor rows / 2.49 GiB
+  in 2,017 parts, with old projection coverage in 1,053 parts; location has
+  19,945,514 rows / 560.01 MiB in eight parts and no projection. Disk free space
+  was 59.73 GiB, with no pending analytics mutations or other active queries
+  at sampling. Replacing the sensor projection removes its old coverage;
+  historical materialization remains separately approved operator work under
+  the [rollout runbook](clickhouse-read-model-deploy-runbook.md#route-source-freshness-projection-rollout-migration-0097).
+- **Cache implementation / validation:** Added required exact-key invalidation
+  to the canonical cache store. During registry replay, an actual tRPC
+  NOT_FOUND now evicts that payload and registration, increments skipped,
+  and creates no failed processing outcome. Ordinary errors, access-window
+  failures, and failed evictions still report and fail; ordinary refresh
+  failures retain the old payload. Regression tests failed before the fix,
+  then 60 focused unit tests, seven direct-request NOT_FOUND cases, and one
+  real Redis isolation test passed. Root/server typechecks and independent
+  spec/quality review passed. Production replay remains unverified until
+  deployment. Redis exact removal uses
+  [DEL](https://redis.io/docs/latest/commands/del/) and
+  [SREM](https://redis.io/docs/latest/commands/srem/).
+- **Mobile lifecycle implementation / validation:** Connected Query focus to
+  initial AppState and later app events, and Query online state to ExpoNetwork
+  snapshots/events with stale-snapshot and teardown guards. Behavioral tests
+  reproduced three polling requests in 45 seconds during background/offline
+  states before implementation. All 31 lifecycle/root tests now pass, along
+  with mobile typecheck and telemetry/route/dependency policies. Native
+  `expo-network` 57.0.2 matches SDK 57 metadata; frozen installation passed.
+  Runtime 1.2 requires a new native build; the combined generic-iOS Release
+  archive passed. This establishes polling behavior,
+  while native event delivery and production recovery remain pending. The
+  integration follows [TanStack React Native guidance](https://tanstack.com/query/latest/docs/framework/react/react-native)
+  and [Expo Network](https://docs.expo.dev/versions/latest/sdk/network/).
+- **Persistence and Apple diagnostics / validation:** Storage failures now
+  report fixed-message errors with allowlisted classifications and aggregate
+  write counts/UTF-8 byte measurements. Tests cover original rejection
+  identity, sensitive-content exclusion, and the actual 5 MiB UTF-8 boundary.
+  Independent review found a missing post-parse hydration reporting boundary;
+  an actual-provider regression failed before restoring the sanitized fallback
+  and then passed with the complete persistence suite, 26/26. The fallback
+  can coexist with detailed boundary reports because the provider callback
+  supplies no error argument; see
+  [TanStack persistence](https://tanstack.com/query/latest/docs/framework/react/plugins/persistQueryClient#persistqueryclientprovider).
+  A canonical [pnpm patch](https://pnpm.io/cli/patch) carries only allowlisted
+  Apple NSError domains/codes through Expo's exception bridge, preserving
+  cancellation and excluding descriptions/userInfo. The executable test
+  compiles the installed Swift helper and verifies classification, redaction,
+  and release of the original NSError. Focused auth/login/parser/storage
+  suites passed before the hydration refinement; native prebuild, pods, and
+  Release archive passed. These diagnostics do not establish the historical
+  persistence, disk-write, or Apple sign-in root causes. Physical-device
+  sign-in and post-release safe diagnostic evidence remain pending.
+- **Final branch validation:** Independent whole-branch review found no
+  blocking implementation findings. Workspace lint and root/server/web/mobile
+  typechecks passed. After integrating main, the full unit/mobile run passed
+  19,131 tests across 1,304
+  files, with 20 tests and two files skipped; the combined ClickHouse/Redis
+  integration run passed 21/21. Existing Vitest deprecation and SQLFluff
+  large-file/parser limitations remain tooling context. The reviewed changes
+  still require PR CI, normal deployment, and the explicit rollout checks above.
+- **CI coverage correction:** [Stryker job 109671790413](https://github.com/Asherlc/dofek/actions/runs/36646657089/job/109671790413)
+  failed `Run Stryker` with `Final mutation score 50.00 under breaking threshold 75`.
+  Its initial tests passed, but the Redis exact-invalidation body had no unit
+  coverage: its real Redis regression belongs to the integration tier, which
+  mutation validation intentionally excludes. Added public-interface unit
+  tests for exact DEL/SREM targets and original command failures, retaining
+  the real Redis isolation test. The empty-body mutant failed the new tests;
+  restored code passed 20 focused tests, and the exact CI mutation command
+  then killed both mutants with a 100% score. No production behavior,
+  thresholds, exclusions, or retry settings changed. Generated native build
+  artifacts were preserved outside the source tree during local mutation
+  sandbox creation. The fresh hosted check remains required before readiness.
+- **Remaining risk / follow-up:** Strava requires user reconnection before
+  syncing again. Deploy reviewed changes through the normal workflow, complete
+  separately approved historical projection materialization, and verify
+  production route builds/cache replay before resolving active server issues.
+  Deliver the new native runtime and collect device/recovery evidence before
+  closing mobile issues. The September 17 gateway 504 still lacks origin
+  evidence. No timeout, retry, or optimizer workaround was introduced.
+
 ## 2026-09-29 — CIMD negotiation deployed; authenticated MCP requests still rejected
 
 - **Symptoms / user impact:** ChatGPT now connects to Dofek, but subsequent tool requests repeatedly report that the connection has expired. Tool use remains blocked.
@@ -27778,3 +28052,2730 @@ Drizzle schema and runtime Zod schemas. Findings and remediations:
 
 - CI run `36632649198`, job `109626055202`, failed `pnpm audit --prod --audit-level=high --ignore-registry-errors`: Undici 6.28.0 and 7.29.0 were reported vulnerable to WebSocket denial of service and a BalancedPool TLS-validation bypass. The advisories were updated during this incident ([GHSA-rfgv-xxqx-mfg5](https://github.com/advisories/GHSA-rfgv-xxqx-mfg5), [GHSA-w293-vg96-wgc3](https://github.com/advisories/GHSA-w293-vg96-wgc3)).
 - Updated existing security overrides to the latest releases compatible with each dependency’s required major version: 6.29.0, 7.30.0, and 8.11.2. Local production audit passes the existing high-severity gate; two moderate advisories remain below that unchanged gate. The hosted dependency audit passed; the opaque-token PR has 100 successful checks, including unit, integration, mutation, lint, and E2E. Four unchanged Apple jobs remained queued. With explicit user approval, PR #2835 was administrator-merged as `7522a325d`; the ruleset was immediately restored with no bypass actor. Its exact image build and production rollout remain pending.
+
+## 2026-09-29 — Kaya unsuccessful climbs omitted from activity details
+
+- **Status:** Fixed in production and re-synced; the protected PR remains open pending required CI.
+- **Symptoms / user impact:** An affected activity showed sends and no unsuccessful climbs, despite those climbs being recorded in Kaya.
+- **Evidence:** Read-only production queries found only sent entries for the affected session. Its authenticated API also returned `attempted_climbs` with `attempts: null`. The client query did not request that field. A real PostgreSQL regression failed with `climbing_entry_aggregate_pair` (SQLSTATE `23514`) when inserting a known outcome with an unknown count. Contract evidence: [Kaya GraphQL endpoint](https://kaya-beta.kayaclimb.com/graphql) and [Kaya application](https://kaya-app.kayaclimb.com/), observed 2026-09-29. Production identifiers and workout details are omitted from this public record; regression fixtures use synthetic identifiers and locations.
+- **Root cause:** The importer fetched only the ascent feed, omitted the session's attempted-climb feed, and substituted one for missing counts; the schema also required outcome/count nullability to match.
+- **Fix:** Request and parse attempted climbs, import each as a source-attributed unsent entry, preserve null counts in both feeds, remove the paired-nullability constraint, and retain known sends in summaries while returning unknown attempt totals. Both web and mobile display missing counts explicitly. Reject missing grades and replace each complete session inside a transaction so a rejected import preserves its previous climbs ([PostgreSQL transactions](https://www.postgresql.org/docs/current/tutorial-transactions.html)). See [Kaya coverage](kaya.md).
+- **Validation:** Client/provider regression tests reproduced the omissions before the fix. Database regressions verify repeat syncs, unknown-count summaries, and rollback of rejected or incomplete replacements. The workspace unit/mobile suite passed 19,097 tests; the final [CI run](https://github.com/Asherlc/dofek/actions/runs/36655109864) passed server/web checks, all four integration shards, mutation testing, security, and coverage. The earlier [mutation job](https://github.com/Asherlc/dofek/actions/runs/36652330298/job/109690363480) failed with `Final mutation score 50.00 under breaking threshold 75`: its Docker-free unit tier lacked known/unknown count merging cases in both orders. Six public-method cases now cover those paths. The affected aggregation and provider validation/replacement ranges each score 100% locally (41 killed, none surviving). All 41 dbt models pass.
+- **Rollout / production verification:** Five native Apple jobs remained queued without runners, blocking the protected merge. With explicit user approval, [deployment 36656856783](https://github.com/Asherlc/dofek/actions/runs/36656856783) released `525ad724bcf0e12ddd58699299010e526acfe2e6`; migration, CDC, rollout, health, and release checks passed. The bounded manual Kaya job completed on its first run without errors. Read-only verification through the deployed climbing repository returned both sends and unsent climbs, preserved unknown counts without inventing individual tries, and retained known sends in the session summary. The affected activity page returned HTTP 200 and referenced `sha-525ad72` web assets.
+- **Operator lesson:** Dispatching the deploy workflow with the raw SHA failed HTTP 422 (`No ref found`); GitHub's [workflow-dispatch API](https://docs.github.com/en/rest/actions/workflows#create-a-workflow-dispatch-event) accepts a branch or tag reference. The branch was verified to point to the approved commit before dispatch, and the run's recorded SHA matched it. No production deployment was canceled and no ruleset or merge bypass was used.
+- **Remaining risk / follow-up:** Merge [PR #2852](https://github.com/Asherlc/dofek/pull/2852) when required CI completes so subsequent main releases retain the fix. Other confirmed metadata omissions are documented in [Kaya request coverage](kaya.md#confirmed-request-coverage). No retries, extra timeouts, or temporary runtime behavior were added.
+
+### Dependency audit failed during PR closeout
+
+- **Symptoms / evidence:** [CI run 36663664027, dependency-audit job](https://github.com/Asherlc/dofek/actions/runs/36663664027/job/109723969830) failed `pnpm audit --prod --audit-level=high --ignore-registry-errors`. The first failing report was `high | brace-expansion: DoS via uncontrolled recursion on nested brace groups causing stack exhaustion`; the command reported two high-severity advisories and exited 1. The same command reproduced the failure locally.
+- **Root cause / fix:** The existing global override pinned `brace-expansion` 5.0.9. Advisories reviewed on September 29 report stack-exhaustion vulnerabilities in that version and require 5.0.11 or newer ([nested-brace advisory](https://github.com/advisories/GHSA-qhr7-859c-m2p7), [comma-parser advisory](https://github.com/advisories/GHSA-6j4f-fj2g-mc7p)). Updated the existing global override to 5.0.12 and its separate CommonJS-compatible `minimatch@3` override from 1.1.18 to 1.1.21, then regenerated the lockfile. Versions were checked against the [npm registry](https://registry.npmjs.org/brace-expansion).
+- **Validation / remaining risk:** Installation, lint, all four root/server/web/mobile type checks, and 19,108 unit/mobile tests pass; the unchanged local production audit passes with no high-severity findings. The hosted rerun and remaining required CI must complete before merging. The expressly approved production release remains `525ad724bcf0e12ddd58699299010e526acfe2e6`; the dependency patch needs a subsequent release. No audit ignores, retries, timeouts, or thresholds were changed.
+
+
+## 2026-09-29 — Superseded WHOOP workout remained visible through Apple Health
+
+- **Symptoms / user impact:** Activity `9b48239b-d9c0-4c7c-811f-2f7dccd05ea8`
+  displayed an older “WHOOP via Apple Health” climbing workout that no longer
+  matched the workout in the WHOOP app.
+- **Evidence:** Read-only production SSH queries found Apple Health versions
+  1834 and 1835 with sync identifier
+  `whoop://workout/e7078f0e-64f0-40f3-ac45-15939e77f8e6` and different member
+  UUIDs. Version 1834 spans 13:57:00–15:04:59 UTC; version 1835 spans
+  14:28:31–15:23:48 UTC on September 29. Both raw rows are active. The direct
+  WHOOP row and live API response match version 1835. ClickHouse serves both
+  groups with `is_deleted = 0`; production logs and source syncs are working.
+- **Root cause:** Serving queries treated changed HealthKit UUIDs as independent
+  activities and relied on time overlap for grouping. The revised bounds had
+  only 42% intersection-over-union and 66% shorter-workout containment, below
+  the grouping threshold. Apple defines replacement through sync identifier
+  and version ([HealthKit sync version](https://developer.apple.com/documentation/healthkit/hkmetadatakeysyncversion)).
+- **Fix:** Prepared query-time selection of the latest Apple Health version in
+  both PostgreSQL and ClickHouse, with forward migration
+  `0133_apple_health_workout_revisions`. Raw revisions remain intact; no
+  production records were changed during diagnosis. The
+  [Apple Health runbook](apple-health.md#workout-revisions) documents revision
+  and deletion checks.
+- **Validation:** Before the fix, real PostgreSQL and ClickHouse regressions
+  served both versions and revived the older revision when the latest was
+  absent or deleted. Mixed-provider regressions also reproduced obsolete
+  tombstones hiding current groups. After the fix, 104 database tests pass, including the
+  source-record refresh, group lifecycle, provider absence, grouping, and
+  activity API, production dbt repair, and payload lifecycle suites. Workspace
+  lint, root/server/web typechecks, and migration
+  policy pass; the full unit/mobile suite passes. An unrelated eFTP fixture
+  crossed its rolling 90-day window; the [separate fix on main](https://github.com/Asherlc/dofek/pull/2853)
+  pins the test clock and replaces this branch's relative-date correction. Local
+  validation was interrupted by a ClickHouse container
+  restart; it completed without changing runtime retries or timeouts.
+- **CI correction:** The [SQLFluff job](https://github.com/Asherlc/dofek/actions/runs/36653162781/job/109691872798)
+  failed `Lint new migration SQL` with `LT02 | Expected line break and indent
+  of 4 spaces before 'provider_id'`, followed by unqualified subquery-column
+  errors. Local `pnpm lint` checks analytics models but does not run this
+  migration check. The migration and canonical view now use the required
+  layout and explicit revision aliases; the exact SQLFluff command passes.
+  The [spell-check job](https://github.com/Asherlc/dofek/actions/runs/36653162781/job/109691872576)
+  also reported `Unknown word (endmacro)` in the test helper's Jinja matcher.
+  Added the actual Jinja keyword to the project vocabulary.
+  A [full integration shard](https://github.com/Asherlc/dofek/actions/runs/36654153806/job/109695433538)
+  then failed the production dbt repair and payload lifecycle tests with
+  `Unknown expression identifier created_at in scope apple_health_revisions`.
+  Two minimal activity-table fixtures omitted that canonical column. Their
+  schemas and seed data now include it; both dbt suites pass all eight tests.
+  The production ranking is unchanged.
+- **CI dependency audit (September 30 UTC):** After resolving the incident-log
+  merge conflict, [job 109741648357](https://github.com/Asherlc/dofek/actions/runs/36669558499/job/109741648357)
+  failed `pnpm audit --prod --audit-level=high --ignore-registry-errors` with
+  `high | brace-expansion: DoS via uncontrolled recursion on nested brace groups
+  causing stack exhaustion`. The existing override pinned 5.0.9, below the
+  patched ranges in [GHSA-qhr7-859c-m2p7](https://github.com/advisories/GHSA-qhr7-859c-m2p7)
+  and [GHSA-6j4f-fj2g-mc7p](https://github.com/advisories/GHSA-6j4f-fj2g-mc7p).
+  Updated the existing overrides to 5.0.12 and the compatible CommonJS release
+  1.1.21, then regenerated the lockfile. Frozen installation and the exact
+  production audit pass; four moderate advisories remain below the unchanged
+  high-severity gate. Workspace lint, root/server/web typechecks, spell check,
+  and all 19,136 unit/mobile tests pass. The
+  [hosted rerun](https://github.com/Asherlc/dofek/actions/runs/36670718957)
+  passed all nine required gates; audit thresholds and exclusions are unchanged.
+- **PR review regressions:** Real database tests confirmed that an oversized
+  sync version made PostgreSQL serving queries fail across users with
+  `value "18446744073709553451" is out of range for type bigint`. Version
+  parsing now checks the full nonnegative signed 64-bit range before casting,
+  retaining valid 19-digit values and matching ClickHouse's zero fallback.
+  An actual scoped dbt build also kept the superseded source active when only
+  the replacement UUID was supplied. The shared scope now includes same-user,
+  same-sync-identifier siblings and their persisted groups before dependent
+  models run. The [serving runbook](apple-health.md#workout-revisions) links
+  the implementations and executable regression coverage. All 112 relevant
+  PostgreSQL/ClickHouse tests, 19,136 unit/mobile tests, lint, and
+  root/server/web typechecks pass. Hosted checks for the review-fix commit
+  remain required before merge.
+- **Local validation interruption (September 30 UTC):** At 05:20:50 UTC,
+  PostgreSQL logged `checkpointer process (PID 114) was terminated by signal
+  9: Killed`; its cgroup reported `oom_kill 1`. Docker's VM has 8,216,862,720
+  bytes of memory shared by many running workspace stacks. Stopped only this
+  task's idle validation services to release pressure, retaining ClickHouse
+  for dbt SQL lint, then stopped its unused Redpanda container during the
+  PostgreSQL/ClickHouse rerun. Other workspaces' containers and volumes remain
+  intact. The rerun passed all 112 tests with zero PostgreSQL cgroup OOM kills.
+  No application retries, timeouts, or fallback behavior were changed for this
+  interruption. Hosted review-fix checks remain required before merge.
+- **Remaining risk / follow-up:** Production remains unresolved until the normal
+  deployment and a ClickHouse incremental refresh complete. Verify the old
+  group disappears, the current group remains, and both raw versions survive.
+  No retry, timeout, or fallback changes are part of the fix.
+
+## 2026-09-29 — Sentry remediation hosted validation remains queued
+
+- **Symptoms / impact:** [Sentry remediation PR #2837](https://github.com/Asherlc/dofek/pull/2837)
+  has reviewed, locally validated fixes, but its hosted validation and production
+  rollout remain incomplete. The same runner queue also affects `main`.
+- **Evidence:** At 00:34 UTC on September 30,
+  [run 36649078538](https://github.com/Asherlc/dofek/actions/runs/36649078538)
+  had passed change detection and the Docker build. CodeQL, Semgrep, and the
+  mobile preview also passed; 37 remaining build/test checks were queued with
+  no runner assigned and no reported failure. No fatal log line is available
+  for jobs that have not started.
+- **Root cause / status:** The operator confirmed a concurrent-job limit is in
+  place. Its configured value and account-wide active usage were not inspected.
+  Hosted validation is unresolved while the remaining jobs await runners.
+- **Actions / follow-up:** Cancelled only superseded runs owned by this task;
+  their queued aggregate jobs required GitHub's documented
+  [force-cancel operation](https://docs.github.com/en/rest/actions/workflow-runs#force-cancel-a-workflow-run).
+  No account limits, repository settings, or validation gates were changed.
+  Finish the latest commit's hosted checks once runner capacity is available,
+  then obtain rollout approval and follow the projection/native verification
+  gates recorded above. Five verified historical Sentry issues are resolved;
+  four server and six mobile issues remain open pending rollout or evidence.
+
+## 2026-09-30 — Power-trend unit fixture expired across the UTC date boundary
+
+- **Symptoms / impact:** Hosted unit validation blocked Sentry remediation
+  PR #2837 after the other integration, mutation, and E2E jobs passed.
+- **Failure evidence:** [Unit job 109687324294](https://github.com/Asherlc/dofek/actions/runs/36651482967/job/109687324294)
+  ran `pnpm exec vitest run --project unit --coverage` after 00:47 UTC on
+  September 30. The first failed assertion was `expected null to be 190` in
+  the raw-power fallback case in `power-repository.test.ts`.
+- **Root cause:** Its fixed July 1 activity fell outside the production
+  90-day window for the current eFTP value on September 30. The long-range
+  trend still contained 190 W. The same test passed at September 29 23:47 UTC
+  and failed at September 30 00:47 UTC under both UTC and America/Los_Angeles;
+  the fixture's age, rather than the host timezone, caused the failure.
+- **Direct fix:** Scope Date to July 2 noon UTC inside that single test and
+  restore real timers in `finally`. Fixed data, exact trend/current assertions,
+  and production window semantics remain unchanged. Selective Date mocking
+  and restoration use the documented
+  [Vitest clock APIs](https://vitest.dev/api/vi.html#vi-usefaketimers).
+- **Validation / remaining risk:** All 42 tests in the source's test file pass,
+  including the former September 30 failure under both timezones. Server
+  typecheck, changed-file formatting, and diff checks pass. Full unit coverage
+  with the hosted job's existing environment passed 17,623 tests across 1,121
+  files, with 20 tests and two files skipped. The fresh hosted run remains
+  required. No retries, waits, exclusions, or threshold changes were added.
+  Fixed-date fixtures tested against rolling windows need a scoped explicit
+  clock.
+
+## 2026-09-30 — OpenBeta tick sync received upstream HTTP 504
+
+- **Symptoms / impact:** [DOFEK-SERVER-6K](https://east-bay-software.sentry.io/issues/7764101777/)
+  recorded two production errors at 17:22:37 and 17:22:45 UTC during
+  `OpenBetaProvider.sync`'s `tick_export` phase. The failed sync does not import
+  new climbing ticks; the provider returns before writing or reconciling rows,
+  preserving existing entries. Sentry's zero affected-user count does not
+  establish that no connected account was affected.
+- **Failure evidence:** The failing operation was the GraphQL `userTicks`
+  request to `https://api.openbeta.io`. Its first exception was
+  `ProviderServiceUnavailableError: openbeta API service unavailable (504)`.
+  Event `a2eca20240af4a59a576cab89348b07a` retained Cloudflare's
+  `origin_gateway_timeout` response and ray ID `a434e7e45c1040ad` under release
+  `bffc5647c938191281a0fa2cff71fc4cc90e71f8`.
+- **Root cause / status:** OpenBeta's origin did not respond within
+  Cloudflare's gateway deadline, as identified by the upstream response.
+  The reason for that origin timeout and subsequent recovery are unverified.
+  Cloudflare documents gateway timeout diagnosis in its
+  [502/504 guide](https://developers.cloudflare.com/support/troubleshooting/http-status-codes/cloudflare-5xx-errors/error-502-504/).
+- **Investigation / action:** Reviewed the Sentry issue and its last-24-hour
+  events, the shared HTTP classification, OpenBeta's pagination error return,
+  and worker result handling. HTTP 504 is classified as service unavailable;
+  At the time of this investigation, OpenBeta captured the exception and
+  returned a sync error, which the worker recorded as failed without retrying
+  the provider failure. No production mutation or retry, timeout, or fallback
+  change was made during that investigation. The
+  [subsequent transient-failure fix](#2026-09-30--openbeta-date-scalar-mismatch-and-transient-failure-handling)
+  changes that behavior to retry typed OpenBeta transport failures and report
+  terminal exhaustion.
+- **Remaining risk / follow-up:** Unresolved until a successful tick sync
+  confirms recovery. After upstream recovery, rerun the affected sync and
+  verify its success record. If failures persist, correlate request timing
+  and the Cloudflare ray ID with OpenBeta support before choosing a code
+  change. A provider-sync runbook note distinguishing upstream 504s from
+  local infrastructure failures would make future triage faster.
+
+## 2026-09-30 — OpenBeta date scalar mismatch and transient-failure handling
+
+- **Symptoms / impact:** After the earlier gateway timeout,
+  [DOFEK-SERVER-6M](https://east-bay-software.sentry.io/issues/7764116376/)
+  recorded a production `ZodError` at 17:30:06 UTC. Six returned ticks failed
+  validation, preventing that tick export from importing. Existing climbing
+  entries remained intact.
+- **Failure evidence / root cause:** The failing operation was the GraphQL
+  `userTicks` response validation in `fetchGraphQL`. The first validation
+  failure was `Invalid input: expected string, received number` at
+  `userTicks[0].dateClimbed`, event `1caf14e01dc14c54a3907c18f9f4897c`.
+  Dofek and its fixtures incorrectly modeled the date as a string. OpenBeta's
+  [tick schema](https://github.com/OpenBeta/openbeta-graphql/blob/develop/src/graphql/schema/Tick.gql)
+  declares a `Date` scalar, whose
+  [implementation](https://github.com/OpenBeta/openbeta-graphql/blob/develop/src/graphql/common/DateScalar.ts)
+  serializes dates using `getTime()` (Unix milliseconds).
+- **Direct fixes:** Parse the numeric date scalar into a UTC calendar date
+  while retaining its original value in `raw`; correct unit and integration
+  fixtures. Propagate OpenBeta's typed service-unavailable and request-timeout
+  failures to the existing BullMQ retry path rather than capturing each in
+  the provider and returning a terminal sync error. Transient attempts remain
+  observable in structured/job logs. Exhaustion records a failed processing
+  stage and actionable client message, then reports the terminal failure to
+  Sentry. Unexpected schema/write failures remain reportable.
+- **PR review fixes:** Shared sync jobs coordinate provider jobs through the
+  existing provider queues, preserving the absolute sync window. Each provider
+  owns its retries and terminal reporting, so a failed provider does not cause
+  successful providers to rerun. BullMQ parent dependencies retain dispatch
+  evidence after child pruning and the coordinator waits for children; see
+  [BullMQ flows](https://docs.bullmq.io/guide/flows). Sync and worker
+  responsibilities have focused production
+  modules with matching test files below 1,000 lines; existing regression
+  cases were retained. CLI jobs use the same retry policy and report terminal
+  failures. Review also found that existing Zepp HTTP 500 suppression continued
+  after exhaustion; attempt-aware handling now records terminal failures and
+  reports them through the worker instead of leaving ingestion running. See
+  the [job architecture](../src/jobs/README.md).
+- **Validation:** Regression tests reproduced the non-retrying timeout and
+  numeric-date schema failures before their fixes. Focused provider, processor,
+  worker-event, and transport-classification tests pass. A real PostgreSQL
+  integration test verifies numeric-date ingestion, raw-payload preservation,
+  idempotent writes, and absence reconciliation. The complete Docker-free
+  unit/mobile run passed 19,370 tests on the final review-fixed tree, with 20
+  tests skipped. Seven real-Redis regressions verify atomic dispatch, recovery
+  after child pruning, and independent terminal child failures.
+  Root, server, and web typechecks passed, along with full repository lint.
+- **Local PR validation:** `pnpm lint` initially failed during dbt-backed
+  SQL lint with `Failed to establish a new connection: [Errno 61] Connection
+  refused`: this workspace's ClickHouse had been deliberately stopped after
+  integration validation. Restarted only that workspace's ClickHouse through
+  the Compose wrapper before rerunning the unchanged lint command. No runtime
+  retry or timeout was added for this local prerequisite failure; keep
+  ClickHouse running until SQL lint completes.
+  The unchanged full `pnpm lint` rerun passed after that prerequisite was
+  restored, without ad-hoc waits.
+- **Remaining risk / follow-up:** Production verification remains unresolved
+  until deployment and a successful OpenBeta sync. No upstream server changes
+  or alert-rule changes were made. The existing queue's 288 attempts and
+  five-minute backoff are reused without increasing request timeouts; they
+  provide bounded recovery for a verified upstream availability failure
+  ([BullMQ retry semantics](https://docs.bullmq.io/guide/retrying-failing-jobs)).
+  Future provider fixtures should be checked against upstream scalar
+  serialization, and runbooks should identify which layer owns retries and
+  Sentry capture. For similar investigations, inspect the issue's exact error
+  and event timeline, verify the upstream API contract, trace worker retry
+  handling, and reproduce the observed failure before changing behavior.
+  See the [Sentry investigation guide](sentry.md) and
+  [provider sync diagnostics](provider-sync-degradation-runbook.md).
+
+## 2026-09-30 — Sentry CI completed; production remains blocked by missing migration history
+
+- **Sentry validation outcome:** [PR #2837](https://github.com/Asherlc/dofek/pull/2837)
+  completed [hosted CI run 36655164786](https://github.com/Asherlc/dofek/actions/runs/36655164786)
+  at 04:19 UTC with 103 passing checks, six skipped, and no failures or pending
+  checks. All required gates and all six macOS jobs passed, including the
+  previously failing power fixture. The operator merged the PR at 04:20 UTC as
+  `6965fffb66491d1c0ec9c994b43d4875c861fa61`. Runner capacity became available
+  without changing limits, gates, retries, or timeouts.
+- **Separate production symptoms / impact:** A read-only live stack inventory
+  at 04:23 UTC showed `web` at 2/2 on `sha-525ad72`, while `worker`,
+  `analytics-worker`, the three metric-stream ClickHouse sinks, and
+  `processing-reconciliation` remained at 0/0. Background provider sync,
+  analytics refresh, and ClickHouse stream consumption remain paused; this is
+  not evidence that the Sentry fixes have recovered production.
+- **Exact failure evidence:** [Deployment job 109719413452](https://github.com/Asherlc/dofek/actions/runs/36662167290/job/109719413452)
+  failed in `Run migrations` for image `sha-f7060ae`. Its detached migration
+  container executed `node --experimental-strip-types --enable-source-maps
+  --disable-warning=ExperimentalWarning --import ./src/opentelemetry-hook.mjs
+  --import ./src/instrumentation.ts src/db/run-migrate.ts`. The first fatal line
+  at 03:05:45 UTC was: `Integrity check failed: migration tracked at
+  1790727480000 is recorded as applied but is missing.` The migration process
+  exited 1, so the workflow did not reach its final worker-restoration stack
+  apply. The migration and restoration ordering is defined in the
+  [deployment workflow](https://github.com/Asherlc/dofek/blob/f7060aeee6c7693e9aff9e02839e0475b51952f0/.github/workflows/deploy-web-stack.yml).
+- **Root cause:** The earlier deployed release's
+  [journal entry](https://github.com/Asherlc/dofek/blob/525ad724bcf0e12ddd58699299010e526acfe2e6/drizzle/meta/_journal.json)
+  records index 133, timestamp `1790727480000`, and tag
+  `0133_independent_climbing_outcome_count`. Its
+  [immutable SQL](https://github.com/Asherlc/dofek/blob/525ad724bcf0e12ddd58699299010e526acfe2e6/drizzle/0133_independent_climbing_outcome_count.sql)
+  drops `fitness.climbing_entry`'s `climbing_entry_aggregate_pair` constraint.
+  Main's journal ends at index 132, so its image omits already-applied
+  history and the integrity check correctly refuses the migration run.
+- **Status / follow-up:** Unresolved. [PR #2852](https://github.com/Asherlc/dofek/pull/2852)
+  carries the migration; at 04:33 UTC it had 98 passing checks and three
+  macOS checks queued, with no failures. Review and finish the chosen
+  migration-history repair through normal CI/deployment, then require
+  successful migrations and full worker convergence. No production writes,
+  manual replica restoration, integrity-check bypass, or new resilience knobs
+  were performed by this task. A fresh Sentry MCP inventory at 04:21 UTC
+  still found four server and six mobile issues open, with no web issues.
+  Historical projection materialization and mobile runtime 1.2 delivery
+  remain separately required before claiming their recovery.
+
+### 2026-09-29 — Migration-history repair validation blocked by SQLFluff parsing
+
+- **Symptoms and impact:** PR #2852 carried the exact applied migration missing
+  from main but conflicted with the merged Sentry fixes. Its final validation
+  was blocked locally, extending the unresolved worker outage documented above.
+  At 05:27 UTC, production still served `sha-525ad72`; six background services
+  had zero desired/running replicas.
+- **Evidence:** Independent review found no blocking source defects and verified
+  identical deployed migration, journal, and activity-schema blobs. The remote
+  main merge only conflicted in this incident baseline; both sets of records
+  were preserved. Frozen installation and root/server/web/mobile type checks
+  passed. `pnpm lint` initially could not reach the stopped local ClickHouse
+  dependency; starting the existing workspace Compose dependencies restored
+  compilation. Lint then reported `ST03` at line 25 of
+  `activity_location_sample.sql` and `LT09` at line 125 of
+  `activity_sensor_sample.sql`.
+- **Root cause:** SQLFluff 4.3.0 parses `AS MATERIALIZED` as an expression alias,
+  leaving the subsequent CTE references unparsed and falsely reporting the
+  initial activity CTE as unused. The compiled ClickHouse query uses that CTE.
+  Version 4.3.0 remained the [latest stable release](https://github.com/sqlfluff/sqlfluff/releases/tag/4.3.0);
+  the [upstream parser repair](https://github.com/sqlfluff/sqlfluff/commit/f59543a25e13a9932a8eacc97bdcb6ede35bc011)
+  was merged on September 19 but was not included in that release.
+- **Changes and validation:** Corrected the single-wildcard select formatting and
+  strengthened the existing rollback regression to compare the complete prior
+  activity row as well as its climbs. The follow-up source review approved both
+  deltas; server type checking passed. No query behavior, lint rules, migration
+  history, or production settings were changed. Full tests and final CI remained
+  pending the lint prerequisite. Approval was requested to pin the linter and
+  dbt adapter to the exact upstream repair rather than alter valid query behavior.
+- **Additional deployment evidence:** Main CI
+  [36668366722](https://github.com/Asherlc/dofek/actions/runs/36668366722/job/109738106652)
+  failed `pnpm audit --prod --audit-level=high --ignore-registry-errors` on two
+  high-severity `brace-expansion` advisories. The latest automatic
+  [deployment eligibility run](https://github.com/Asherlc/dofek/actions/runs/36672837390)
+  consequently skipped the production stage. PR #2852 already contained the
+  dependency repair; a fresh merged-checkout audit without registry-error
+  suppression passed with four moderate findings and no high findings.
+- **Status and follow-up:** Unresolved. Finish the approved repair's local and
+  hosted checks, merge, and require successful normal migrations and worker
+  convergence. Record the dbt lint target state and parser version in future
+  validation notes; use `gh-fix-ci` and independent source review for this work.
+  No bypass, retries, manual production replica changes, or new resilience
+  settings were introduced.
+
+## 2026-09-30 — Approved parser pin and isolated regression fixtures
+
+- **Symptoms and impact:** PR #2852's validation was blocked by the SQLFluff
+  parser issue recorded above. Main's subsequent
+  [deployment](https://github.com/Asherlc/dofek/actions/runs/36720669142/job/109905005570)
+  again failed `Run migrations` at 13:25:41 UTC because applied migration
+  `1790727480000` was missing; background processing remained paused.
+- **Direct fix:** With explicit approval, pin SQLFluff and its dbt templater
+  together to official upstream commit
+  [`f59543a25e13a9932a8eacc97bdcb6ede35bc011`](https://github.com/sqlfluff/sqlfluff/commit/f59543a25e13a9932a8eacc97bdcb6ede35bc011),
+  using [uv's Git revision sources](https://docs.astral.sh/uv/concepts/projects/dependencies/#git).
+  The lock changes only those two sources. Remove the obsolete `MATERIALIZED`
+  identifier exception and correct the style findings exposed by the repaired
+  parser while preserving query semantics. Retain the original applied Kaya
+  migration and journal entry for the normal deployment.
+- **Additional regression evidence:** The real PostgreSQL climbing suite failed
+  its expected `V5` daily progression after an earlier test inserted `V9` on
+  the same calendar day. The exact test passed alone, proving shared fixture
+  contamination. Give each test its own existing database clone. The power
+  curve static assertion also expected the old explicit `INNER` spelling;
+  align it with the equivalent `ASOF JOIN` while preserving the passing real
+  ClickHouse coverage. ClickHouse documents the
+  [default inner join kind](https://clickhouse.com/docs/reference/statements/select/join).
+- **Validation and review:** All four typechecks and the first complete lint
+  run passed with the approved pin. After the fixture and assertion corrections,
+  the full workspace unit/mobile run passed, and all 62 selected PostgreSQL and
+  ClickHouse integration tests passed. Independent source review found no
+  material issues. Other concurrent worktree edits require the final staged
+  source to be validated separately before pushing; those edits are preserved.
+- **Status and follow-up:** Production recovery remains unresolved until the
+  final integrated PR passes hosted checks and normal migrations restore the
+  workers. Main added an unapplied Apple Health migration with the same ordinal
+  and an older timestamp; reconcile that entry after the immutable applied Kaya
+  entry, then verify fresh and already-migrated database behavior. No integrity
+  bypass, manual replica write, new timeout, or retry was introduced.
+
+## 2026-09-30 — Focused recovery preserves applied migration history
+
+- **Symptoms and impact:** The latest normal production
+  [migration step](https://github.com/Asherlc/dofek/actions/runs/36720669142/job/109905005570)
+  failed because applied migration `1790727480000` was missing from main.
+  Fresh read-only checks still show web replicas serving `sha-525ad72` and six
+  background processing services paused at zero replicas. The recovery is being
+  isolated from unfinished climbing-context work added to PR #2852.
+- **Direct fix and ordering evidence:** Restore all 134 journal entries and
+  their SQL files exactly as shipped in
+  [the deployed revision](https://github.com/Asherlc/dofek/tree/525ad724bcf0e12ddd58699299010e526acfe2e6/drizzle).
+  Production's latest ledger entry remains the original Kaya migration;
+  the competing Apple Health migration has not been applied. Rename only that
+  pending file to `0134_apple_health_workout_revisions.sql`, retain its SQL bytes,
+  and append it at index 134 with timestamp `1790727480001`. Preserve the Kaya
+  timestamp and hash, and keep the
+  [migration integrity checks](https://github.com/Asherlc/dofek/blob/af05410f4e40c24586d3bab092fbba0ce32f843c/src/db/migrate.ts)
+  enforced.
+- **Regression evidence:** A real PostgreSQL test reproduces the strict
+  timestamp-order failure with the old Apple timestamp. The corrected ordering
+  applies Kaya first, applies Apple once, preserves the original ledger hash and
+  timestamp, and retains a recorded send with unknown attempt count. The final
+  focused run passes. Full-build SQL lint also identified a location-summary CTE
+  whose only use is incremental; scope its definition to that existing branch.
+  Existing route coverage exercises initial creation followed by incremental
+  updates, matching dbt's
+  [incremental model lifecycle](https://docs.getdbt.com/docs/build/incremental-models).
+- **Validation and status:** Full lint, root/server/web/mobile typechecks, the
+  production dependency audit, and all 19,157 unit/mobile tests pass.
+  Independent source review finds no material defects. The full local analytics
+  build passes all 41 models after documented local bootstrap. Broader affected
+  database tests are running; hosted CI and normal deployment remain pending.
+  Recovery is unresolved until migrations
+  succeed and processing services converge. No production history rewrite,
+  manual replica change, integrity bypass, timeout increase, or retry was added.
+- **Follow-up:** Recheck the production ledger before deployment, require
+  immutable-prefix comparison when pending migrations collide, and verify the
+  deployed image and a healthy worker cycle. Historical projection
+  materialization, mobile runtime delivery, and opaque mobile-error causes
+  remain open and require their separate evidence.
+
+## 2026-09-30 — Local validation interrupted by shared Docker VM memory
+
+- **Symptoms and impact:** The focused recovery's 14-file database validation
+  passed 123 tests but failed the body-measurement tombstone test with
+  `socket hang up`. The same file failed alone, delaying completion of local
+  validation for [PR #2857](https://github.com/Asherlc/dofek/pull/2857).
+- **Evidence and root cause:** Docker Desktop's VM kernel log records
+  `global_oom` killing this workspace's `clickhouse-serv` process at
+  15:27:24 UTC and 15:31:58 UTC, immediately before the client disconnects.
+  The shared VM exposed 7.653 GiB of memory across the running workspace
+  stacks. The killed process used about 1 GiB, below its individual 1.5 GiB
+  container cap. Inspecting only the restarted container's current OOM flag
+  missed the earlier kernel events. Docker documents the separate
+  [VM memory allocation](https://docs.docker.com/desktop/settings-and-maintenance/settings/#advanced).
+- **Direct mitigation:** Remove only the six failed fixture databases from
+  these two runs and the three empty scratch databases created by this run's
+  local bootstrap after the successful analytics build. A local-target and
+  row-count preflight verified ownership and absence of application data.
+  Restart only this workspace's ClickHouse to release its allocations.
+  Other workspace services and volumes remain intact.
+- **Validation and remaining risk:** The unchanged body-measurement file now
+  passes both tests. The full affected suite is rerunning; hosted CI and normal
+  deployment are still pending. No source behavior, memory cap, retry, or
+  timeout changed. Concurrent workspace load can still exhaust the shared VM;
+  future diagnosis should retain VM kernel evidence and coordinate capacity
+  before changing query behavior or test settings.
+
+## 2026-09-30 — Recovery follows main's restored migration history
+
+- **Evidence and fix:** [PR #2855](https://github.com/Asherlc/dofek/pull/2855)
+  restored the immutable Kaya migration on main and registered the pending Apple
+  migration at timestamp `1790779386669`. The focused recovery adopts that exact
+  journal instead of its earlier, still-pending `1790727480001` proposal. A
+  read-only production ledger check at 16:38 UTC still showed Kaya as the latest
+  applied entry; no production history was rewritten.
+- **Validation and impact:** The previous revision of
+  [PR #2857](https://github.com/Asherlc/dofek/pull/2857) passed its complete hosted
+  CI workflow. The merge with current main is undergoing fresh validation. Keep
+  both executable PostgreSQL regressions: the complete deployed migration prefix
+  and preservation of climbing data during the pending Apple upgrade.
+- **Review regression:** A [review finding](https://github.com/Asherlc/dofek/pull/2857#discussion_r4147264237)
+  reproduced a committed Kaya climb followed by a malformed session reporting
+  zero synced records. Preserve the committed counter in the error result while
+  retaining transaction rollback and sync failure. The full four-case PostgreSQL
+  Kaya suite passes after the regression first failed on the incorrect zero.
+  Blank-grade ascent-page tests also confirm rejection of the entire malformed
+  response before persistence.
+  Local `pnpm lint` then failed with a dbt `FailedToConnectError` because this
+  workspace's ClickHouse had been stopped before SQLFluff finished. Restore the
+  local service and keep it running until the complete lint command exits.
+- **Remaining work:** Normal checked deployment and a healthy background-worker
+  cycle remain required before declaring production recovered. All 124 affected
+  database cases from the earlier validation passed across combined and isolated
+  runs after the shared Docker VM killed ClickHouse; the combined run itself did
+  not pass. No retry, timeout, integrity bypass, or production operator write was
+  introduced.
+
+## 2026-09-30 — Climbing context validation and migration ordering
+
+- **Symptoms / impact:** Climbing context implementation caught a migration
+  journal conflict with current main. Local analytics SQL lint also lost its
+  ClickHouse connection; production data was unchanged during this work.
+- **Evidence / cause:** The deployed Kaya migration has a later journal time
+  than main's Apple Health migration. A real upgrade from that Kaya history
+  failed with `relation "fitness.v_activity" does not exist`: timestamp-based
+  migration execution skipped the older pending view migration. A legacy
+  conversion fixture also failed SQLSTATE `23514` because the old paired
+  count/outcome constraint rejected clearing inferred counts. Separately,
+  `pnpm lint` failed with `RemoteDisconnected`; the Docker VM kernel recorded
+  global OOM killing ClickHouse at 15:37:39 UTC.
+- **Fix / validation:** With explicit approval, retained both historical SQL
+  bodies and the deployed Kaya identity, then ordered the Apple Health journal
+  entry after Kaya. The new context conversion drops the obsolete paired
+  constraint before changing counts. The [upgrade-history regressions](../src/db/climbing-migration-order.integration.test.ts),
+  [conversion tests](../src/db/climbing-context-migration.integration.test.ts),
+  and existing migrator tests pass (44 total), including repeat runs. Stopping
+  this workspace's idle DB/Redis/Redpanda freed memory; the unchanged full lint
+  command passed. Other workspaces' containers and volumes were preserved.
+- **Hosted validation:** Run [36740947351](https://github.com/Asherlc/dofek/actions/runs/36740947351)
+  failed Migration Lint at `xargs squawk` (16 online-migration safety warnings),
+  SQLFluff on the context migration (layout, unqualified ordinality, and
+  ambiguous `entry.*`), and analytics SQL lint at `ST03` for an unused
+  `location_source_versions` CTE. The conversion is an approved maintenance
+  operation: remove the unnecessary integer type rewrite, validate new CHECKs
+  before commit, enumerate view columns, and qualify ordinality. With explicit
+  approval, nine statement-specific Squawk annotations acknowledge only the
+  required renames, type conversions, and non-null constraint; all other checks
+  remain active. Squawk, SQLFluff, and migration policy now pass. The analytics
+  CTE is needed only by incremental builds; emit it with that branch and retain
+  real ClickHouse full/incremental hydration coverage. Full lint passes without
+  changing limits, retries, or gating.
+- **Final local validation:** Independent review identified refresh data loss
+  and missing CSV result/parent-only location coverage. Source-scoped upserts
+  now preserve foreign attachments, entry IDs, and detailed attempts; complete
+  responses retire missing raw records without deleting history. CSV retains
+  unfamiliar and absent labels, and OpenBeta accepts consistent parent-only
+  metadata. Runtime commit `0fd67a912` passes the full unit/mobile suite (19,271 tests), and all selected
+  database regressions pass (103 tests on the final merged branch). The runbook
+  states Kaya's actual since-only refresh scope instead of promising an
+  unenforced upper bound.
+- **Main integration:** After [PR #2855](https://github.com/Asherlc/dofek/pull/2855)
+  established the canonical Apple Health journal entry, retain its identity and
+  move only the unapplied context conversion to migration 0135 after it. The
+  migrator rejected the initial merged journal with `Migration journal
+  timestamps must be strictly increasing`; ordering the new entry resolves the
+  actual error. Both historical SQL bodies match main byte-for-byte. All three
+  applied histories, repeats, and the production-history fixture pass (51
+  migration/refresh tests). The fixture now creates the legacy tables described
+  by its history before applying the two pending migrations.
+- **Remaining gates:** Exact-commit hosted CI, verified backup restore,
+  and the separately approved [maintenance cutover](climbing-context.md#maintenance-cutover)
+  remain required. No migration integrity bypass, new retries, increased
+  timeouts, or permanent memory tuning was introduced.
+
+## 2026-09-30 — OpenBeta connection errors concealed upstream failures
+
+- **Symptoms / impact:** A public-profile connection failed with the duplicated
+  message "OpenBeta rejected this token. OpenBeta rejected this token."
+- **Evidence:** `docker service logs --raw --timestamps --since 24h --tail 2000
+  dofek_web` recorded that error at `2026-09-30T15:03:47.298450719Z`; the
+  `POST /api/trpc/tokenAuth.connect?batch=1` request returned 400 after 4840 ms.
+  Public GraphQL POST probes from both the workstation and production host
+  timed out without an HTTP response. Those later probes do not establish
+  the cause of the original request.
+- **Root cause:** The [OpenBeta profile exchange](../src/providers/openbeta.ts)
+  reclassified every upstream error as a token rejection and passed an
+  already formatted rejection into another rejection constructor. The
+  [tRPC error hook](../packages/server/src/index.ts) reports unexpected
+  internal failures to Sentry; the incorrect user-error classification
+  prevented that reporting path from observing the upstream failure.
+- **Direct fix:** Preserve upstream lookup errors, use a single profile-specific
+  message for invalid identifiers or missing profiles, and correct both
+  clients' connection instructions and show public profile input as visible
+  text through shared provider metadata. No retry, timeout, or fallback changes.
+- **Validation / remaining risk:** Regression tests reproduced the wrapping
+  failure before the fix; all 79 focused provider, connection-router, catalog,
+  web, and mobile tests pass afterward. The production connection remains
+  unresolved until deployment and a successful live profile lookup; the
+  original upstream failure cannot be recovered from the captured log.
+- **PR validation environment:** `pnpm lint` initially stopped in SQLFluff
+  with `FailedToConnectError` / `Connection refused` because this workspace
+  had no running ClickHouse or `.env.local` port configuration. Starting only
+  the workspace ClickHouse service with `pnpm compose -- up -d --wait
+  clickhouse` and writing its discovered ports with `pnpm compose:env --write`
+  restored `pnpm lint:analytics-sql`. The code/policy lint and all type checks
+  passed. See the [workspace setup procedure](../README.md#quick-start).
+- **Full local PR validation:** `pnpm test --run` passed 19,141 tests with
+  20 skipped and one failure: the deployment convergence test at
+  [deploy-web-stack.test.ts](../.github/workflows/deploy-web-stack.test.ts)
+  exceeded its 30-second test timeout. It passed unchanged in isolation
+  in 15.72 seconds. The reason for the slower full-suite execution remains
+  unconfirmed; no test timeout, retry, or production behavior was changed.
+  All 30 tests in that file subsequently passed unchanged in a full-file
+  rerun. Hosted CI remains the validation follow-up.
+- **Follow-up:** After rollout, retry the affected profile and inspect the
+  retained server error if it fails. Provider connection investigations
+  should distinguish input errors from API and schema failures before
+  recommending that users change credentials or profile visibility.
+
+## 2026-09-30 — Normal deployment restored background processing
+
+- **Root cause and direct fix:** The migration-history gap documented above
+  stopped deployment before worker restoration. Main's
+  [history restoration](https://github.com/Asherlc/dofek/pull/2855) preserves the
+  original Kaya migration and registers the Apple upgrade after it. The normal
+  [deployment of `bffc564`](https://github.com/Asherlc/dofek/actions/runs/36749707220)
+  completed successfully at 17:36 UTC without bypassing migration integrity.
+- **Read-only production verification:** The original Kaya ledger entry remains
+  at `1790727480000` with hash
+  `8c78a3557c472012c24978da8c1ae16e99573f59d66ed7d8e709297702c849ff`.
+  The canonical Apple entry is applied at `1790779386669`. Web has two running
+  replicas and all six background services have one running replica on
+  `sha-bffc564`. The first analytics cycle passed all 41 models with no warnings
+  or errors and completed cache warming without failures.
+- **Cache-warming recovery:** Readiness subsequently returned HTTP 200 with no
+  last failure and a successful cycle at 17:51:51 UTC. Redis reported zero
+  registrations in `query-cache:keys`, so the warming step exercised an empty
+  registry. Real Redis regressions separately verify the deployed eviction
+  behavior. The corresponding [activity errors](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-6G)
+  and [warming failure](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-6H)
+  are resolved, along with [the stream error](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-6J).
+- **New unresolved provider evidence:** The next scheduled OpenBeta sync
+  [rejected six numeric `dateClimbed` fields](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-6M)
+  because the provider schema requires strings. OpenBeta's official
+  [Date scalar](https://github.com/OpenBeta/openbeta-graphql/blob/f1508b2479cc7658ac4341d59ec817836190d6d8/src/graphql/common/DateScalar.ts)
+  serializes epoch milliseconds. A separate
+  [upstream HTTP 504](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-6K)
+  also interrupted sync. The grouped scheduled-sync issue reopened; all three
+  remain unresolved pending a reviewed contract fix and successful live sync.
+- **Remaining work:** The focused Kaya/SQLFluff recovery PR still requires its
+  current-head CI and normal deployment. Historical freshness-projection
+  materialization requires its separately approved maintenance window and
+  operator channel in the [read-model deployment runbook](clickhouse-read-model-deploy-runbook.md#route-source-freshness-projection-rollout-migration-0097).
+  Mobile runtime 1.2 is available in TestFlight build `1790775640`, but the
+  operator cannot test it now; mobile issues remain open pending device
+  verification or new diagnostic evidence. No new retry, timeout, integrity
+  bypass, or production SSH write was introduced.
+
+## 2026-09-30 — OpenBeta tick dates mismatched the upstream scalar
+
+- **Symptoms and evidence:** [DOFEK-SERVER-6M](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-6M)
+  rejected six ticks in `fetchGraphQL` at 17:30 UTC on `bffc564`. The first
+  validation error was `Invalid input: expected string, received number` at
+  `userTicks[0].dateClimbed`; the scheduled-sync alert reopened.
+- **Root cause and direct fix:** The integration modeled the upstream
+  [Date scalar](https://github.com/OpenBeta/openbeta-graphql/blob/f1508b2479cc7658ac4341d59ec817836190d6d8/src/graphql/common/DateScalar.ts)
+  as a string, although its serializer returns integer epoch milliseconds.
+  Match the numeric contract, derive the UTC calendar date on the server,
+  and preserve the original numeric timestamp in the raw record.
+- **Validation and remaining risk:** Numeric fixtures first reproduced the
+  production schema rejection in both unit tests and a real PostgreSQL sync.
+  The corrected provider passes all 41 unit cases and the PostgreSQL upsert,
+  absence reconciliation, UTC date-boundary, and raw-payload assertions.
+  Current-head CI, normal deployment, and a successful live OpenBeta sync are
+  still required. The separate upstream HTTP 504 remains an external failure;
+  no new retry, timeout, fallback, or client-side calculation was added.
+
+## 2026-09-30 — Approved historical projection maintenance
+
+- **Operator authorization:** The operator approved the two partition-scoped
+  `MATERIALIZE PROJECTION` statements, one table at a time, with an explicit
+  one-time production SSH exception. Bounds are sensor at most 40 million rows
+  and 1 GiB physical bytes, location at most 25 million rows and 1 GiB,
+  at least 32 GiB free disk, and at most 6 GiB tracked memory before submission
+  within the existing 13 GiB ClickHouse container cap. Other production SSH
+  actions remain read-only.
+- **Checkpoint and evidence:** Sensor mutation `mutation_56404.txt` completed
+  with zero remaining parts and no failure reason. One active physical part
+  retained 4,972 masked rows and no projection, while a direct query returned
+  zero visible rows. A local ClickHouse 26.8.2.7 fixture reproduces successful
+  materialization with an empty projection over a fully deleted part. The
+  [documented delete mask](https://clickhouse.com/docs/reference/statements/delete#how-lightweight-deletes-work-internally-in-clickhouse)
+  hides rows until later merges physically remove them.
+- **Approved coverage and location checkpoint:** The operator approved checking
+  query-visible coverage while separately proving every projection-less part
+  is masked and empty. A stable before/after inventory verified all seven such
+  sensor parts have delete masks and zero visible rows. Fresh submission bounds
+  passed: sensor 35,866,398 rows / 691,760,299 bytes, location 19,984,781 rows /
+  588,533,051 bytes, free disk 68,012,294,144 bytes, and tracked memory
+  1,460,650,484 bytes. Readiness returned HTTP 200 with no last failure.
+  Location mutation `mutation_32322.txt` completed with zero remaining parts and
+  no failure reason; all location parts have the projection.
+- **Verified recovery:** Freshness aggregates without optimizer hints select
+  their projections and read 43,737 sensor rows in 18 ms and 2,563 location rows
+  in 65 ms.
+  Three subsequent scheduled route builds finish in 12.3–18.9 seconds with
+  both projections selected. Two complete scheduled analytics cycles report
+  `PASS=41 WARN=0 ERROR=0`; readiness is HTTP 200 with no last failure.
+  Final route state contains 771 live routes and one tombstone, with no live
+  route lacking geometry. Independent operational review supports resolving
+  [DOFEK-SERVER-6C](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-6C).
+- **Remaining cost:** Normal builds retain their previously deployed projection
+  preference and still read about 35 million rows for indexed geometry work.
+  The natural plan restricts these reads to 513 affected keys; none currently
+  has a live stored route. This remains a capacity concern, not evidence of
+  another timeout. Retain duration/read-row evidence for future investigation.
+  No extra mutation, optimizer setting, retry, timeout, or forced build was
+  introduced. See the [verification procedure](clickhouse-read-model-deploy-runbook.md#route-source-freshness-projection-rollout-migration-0097).
+
+## 2026-09-30 — Dependency audit blocked the recovery PR
+
+- **Exact failure:** [PR #2857's dependency-audit job](https://github.com/Asherlc/dofek/actions/runs/36756351164/job/110028687753)
+  ran `pnpm audit --prod --audit-level=high --ignore-registry-errors`. At
+  18:13:40 UTC its first high-severity finding named `@grpc/grpc-js`; the
+  command exited 1. A local audit without registry-error suppression reproduced
+  the same finding.
+- **Root cause and direct fix:** The existing workspace override pins
+  `@grpc/grpc-js` to 1.14.4. The
+  [reviewed advisory](https://github.com/advisories/GHSA-m9gg-hp2v-232j),
+  added to the advisory database on September 30, identifies versions
+  `>=1.14.0 <1.14.5` as vulnerable. Move the existing pin and lockfile to
+  [upstream 1.14.5](https://github.com/grpc/grpc-node/releases/tag/%40grpc/grpc-js%401.14.5),
+  verified as the latest stable npm release. Only that installed package changes;
+  its child dependencies remain unchanged.
+- **Validation and follow-up:** Frozen installation succeeds. The same local
+  production audit passes with zero high findings, four moderate, and one low.
+  Final source checks, current-head hosted CI, and normal deployment remain
+  required. No audit suppression, gate change, retry, or timeout was added.
+
+## 2026-09-30 — OpenBeta PR refactor CI validation
+
+- **Symptoms / impact:** [PR #2860](https://github.com/Asherlc/dofek/pull/2860)
+  remained blocked in CI after local lint, typechecks, and unit/mobile tests
+  passed. No production rollout or user impact occurred.
+- **Evidence / causes:** [Import Boundaries](https://github.com/Asherlc/dofek/actions/runs/36767065074/job/110064130989)
+  failed `pnpm exec depcruise --config .dependency-cruiser.cjs src/ packages/`
+  with `error no-circular`: sync job context imported processing, which
+  imported the context-owned job interface. [Dependency Audit](https://github.com/Asherlc/dofek/actions/runs/36767065074/job/110064130379)
+  failed the production high-severity audit because the existing gRPC override
+  pinned `@grpc/grpc-js` to 1.14.4. The newly published
+  [advisory](https://github.com/advisories/GHSA-m9gg-hp2v-232j) identifies
+  1.14.5 as patched. [Stryker shard 5](https://github.com/Asherlc/dofek/actions/runs/36767065074/job/110064701035)
+  failed with `Final mutation score 67.50 under breaking threshold 75`:
+  extracted worker lifecycle tests left idle accounting, timer boundaries,
+  and repeated shutdown mutants alive.
+- **Fix / validation:** Moved the shared sync job contract beside queue types;
+  the exact import-boundary command passes. Updated the existing gRPC pin to
+  1.14.5; frozen installation, strict production audit, and 30 telemetry tests
+  pass. Seven direct lifecycle tests now detect all scoped mutations: 43 killed,
+  no detected timeouts, no survivors or uncovered mutants, and a 100% score.
+  No retry, timeout, threshold relaxation, or audit suppression was added for
+  these CI failures.
+- **Remaining risk / follow-up:** Local full lint, root/server/web typechecks, import boundaries,
+  strict production audit, and five OpenBeta/Postgres and seven Redis integration tests pass on
+  the merged tree. Hosted validation remains unresolved until replacement CI
+  passes. Future structural refactors should run import
+  boundaries and scoped mutation tests before pushing; dependency audit should
+  also be checked because new advisories can change CI results without code
+  changes.
+
+## 2026-09-30 — Climbing context native checks wait for runners
+
+- **Evidence / impact:** Context [CI run 36751457185](https://github.com/Asherlc/dofek/actions/runs/36751457185)
+  passed 98 checks, including server/web, database, migration, and mutation gates.
+  At 17:53 UTC four Apple jobs had remained queued since 17:29 with no assigned
+  runner (`runner_id: 0`), across both `macos-26` and `macos-14`. This delays
+  the required review/merge gate; it does not authorize deployment.
+- **Cause / action:** The queue's cause remains unconfirmed. GitHub's
+  [status endpoint](https://www.githubstatus.com/api/v2/summary.json) reported
+  Actions operational, and prior main CI passed those runner configurations.
+  Preserve all gates, labels, and timeouts; no speculative workflow change was
+  made. A concurrent [OpenBeta fix](https://github.com/Asherlc/dofek/pull/2858)
+  required merging main again; preserve both the provider/context changes and
+  both incident records. Combined provider/client tests pass (77), all four
+  typechecks pass, and lint passes. Revalidate the new head's full suite and
+  hosted gates; queued native checks and release/restore approval remain open.
+
+## 2026-09-30 — Recovery follow-up preserves published climbing context
+
+- **Trigger and scope:** [PR #2852](https://github.com/Asherlc/dofek/pull/2852)
+  merged at 20:03 UTC, advancing main to `2f02f6d`. That made the focused
+  follow-up conflict with main and prevented its pull-request CI from starting.
+  Merge published main on the existing branch, preserve its structured metadata,
+  and retain only the reviewed OpenBeta date, Kaya committed-count, gRPC, and
+  operational documentation changes.
+- **Causal regression and direct fix:** On the published metadata schema, a
+  real PostgreSQL test commits one Kaya climb and then rejects a malformed
+  session. It first reproduced `recordsSynced: 0` instead of 1. Keep the counter
+  outside the error-handler scope while preserving rollback and fail-fast
+  processing. The OpenBeta UTC-boundary and numeric raw-payload assertions
+  continue to pass with main's structured metadata.
+- **Validation and remaining gates:** All four typechecks, complete lint,
+  frozen lockfile verification, and the unchanged production audit pass.
+  The full merged unit/mobile run passes 19,287 tests with 20 existing skips and
+  no worker errors. All 29 selected provider/migration PostgreSQL cases pass.
+  Independent parity checks retain all incoming feature source and the 134
+  deployed SQL/journal entries. Hosted CI and a successful live OpenBeta sync
+  remain required; mobile verification is still unavailable. Read-only
+  production inspection still finds migration 0135 unapplied. The published
+  [climbing-context maintenance procedure](climbing-context.md#maintenance-cutover)
+  requires reviewed-commit/window/scope approval, verified isolated restore,
+  and old readers/writers quiesced through conversion; the ordinary rolling
+  deployment alone does not satisfy that schema cutover.
+  No gate suppression, migration rewrite, timeout, or retry was added.
+
+## 2026-09-30 — OpenBeta upstream availability recovered
+
+- **Symptoms and root cause:** At 17:22 UTC the scheduled tick export received
+  an OpenBeta/Cloudflare origin HTTP 504. The response identified an upstream
+  origin timeout; this prevented that export. See
+  [DOFEK-SERVER-6K](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-6K).
+- **Recovery evidence:** The scheduled production export at 21:00:07 UTC
+  reached tick-data validation and reported the separate numeric-date error
+  [DOFEK-SERVER-6M](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-6M).
+  The [deployed fetch path](https://github.com/Asherlc/dofek/blob/bffc5647c938191281a0fa2cff71fc4cc90e71f8/src/providers/openbeta.ts)
+  requires a successful HTTP response, JSON parsing, and an error-free GraphQL
+  envelope before that validation. This establishes upstream transport recovery;
+  resolve 6K independently of the remaining date-schema failure.
+- **Remaining risk and follow-up:** The date fix and scheduled-sync alert stay
+  open until the reviewed release deploys and a live sync succeeds. Upstream
+  availability can recur; no local retry, timeout, fallback, or forced sync
+  was added to cover this external outage.
+
+## 2026-09-30 — OpenBeta tick dates reject numeric API timestamps
+
+- **Symptoms / impact:** Scheduled OpenBeta tick sync fails before writes;
+  the failing page's climbing entries are not imported. Sentry recorded 11
+  occurrences from 17:30 through 22:00 UTC in
+  [DOFEK-SERVER-6M](https://east-bay-software.sentry.io/issues/7764116376/).
+  Its zero tracked users does not establish that no accounts were affected.
+- **Evidence:** `OpenBetaProvider.sync()` calls `fetchGraphQL()` for
+  `userTicks`; event `9257dac2b9264f429a4c25b4094df4c6` fails at
+  `dataSchema.parse(envelope.data)` with `Invalid input: expected string,
+  received number` for all six returned `dateClimbed` fields.
+- **Root cause:** The [provider schema](../src/providers/openbeta.ts) expects
+  nullable string dates and its parser slices strings. OpenBeta's
+  [Date scalar](https://github.com/OpenBeta/openbeta-graphql/blob/develop/src/graphql/common/DateScalar.ts)
+  serializes dates with `Date.getTime()` as numeric Unix milliseconds;
+  [TickType](https://github.com/OpenBeta/openbeta-graphql/blob/develop/src/graphql/schema/Tick.gql)
+  uses that scalar. Existing local test fixtures use string dates and miss
+  this API contract.
+- **Direct fix:** Use the numeric scalar contract, preserve the raw timestamp,
+  convert to a UTC calendar date, and replace string fixtures with timestamp
+  fixtures and regression coverage. Missing, out-of-range, and extended-year
+  dates remain rejected without absence reconciliation.
+- **Validation / follow-up:** The timestamp tests reproduced the production
+  Zod failure before the fix. All 54 provider unit tests and the real-database
+  sync regression pass; the final full unit/mobile run passes 19,284 tests
+  with 20 skipped. Root typecheck and full lint pass. Production remains
+  unresolved until deployment and a successful post-deploy sync. No retries,
+  timeouts, or other resilience knobs were added.
+- **Retrospective:** Sentry's provider/phase tags and field-level validation
+  errors established the failure without production mutations. Verify custom
+  scalar serialization against upstream source when preparing provider fixtures.
+- **Main integration:** [PR #2860](https://github.com/Asherlc/dofek/pull/2860)
+  independently supplied the numeric date fix. The merge resolution retains
+  its integer schema, year bounds, and outage handling; this branch now adds
+  UTC-boundary/raw-preservation and invalid-date reconciliation coverage plus
+  documentation. All 64 provider unit tests and five database sync tests pass.
+
+## 2026-09-30 — Provider registration failure in OpenBeta PR validation
+
+- **Symptoms / impact:** [Integration shard 1](https://github.com/Asherlc/dofek/actions/runs/36777153307/job/110099580515) failed the calendar week-list and sync-provider router cases; PR #2860 remains blocked from readiness. No production rollout occurred.
+- **Evidence:** `pnpm exec vitest run --project integration --coverage --shard=1/4` failed. The first causal router log was `Failed to register ziva provider: Sync request query resolver for 'ziva' is already registered`; both routes returned HTTP 500 before the SQL-validity assertions. Other earlier ClickHouse exceptions were expected negative-test cases.
+- **Root cause:** The Redis request-deduplication integration suite reset module caches and manually registered WHOOP/Ziva resolvers. Integration suites share one module lifecycle, so a later router bootstrap encountered the test-owned Ziva resolver and failed; initial and continuation requests also used different registry generations. The paired suites reproduce CI with two failures and 71 passes.
+- **Direct fix:** Use the canonical server provider bootstrap in integration setup and one static enqueue helper for both initial and continuation jobs. Remove test-owned registration and module resets; move the suite beside the server bootstrap consumer to respect TypeScript package ownership and keep production duplicate-registration validation intact. No gate, retry, timeout, or fallback was changed.
+- **Validation / follow-up:** The unchanged paired router/queue regressions pass 73/73 after correction; typechecks and import boundaries pass. The local broader shard initially failed four FIT ingestion cases because the native decoder binary was absent. Built the pinned native helper using the [testing procedure](testing.md#native-fit-decoder); the complete current-tree shard then passed all 486 tests across 68 files with coverage, without ad-hoc waits. Direct strict typechecking of the moved fixture, full lint, and production typechecks pass. Hosted CI rerun remains pending.
+
+## 2026-09-30 — Coordinated climbing migration preparation
+
+- **Release blocker:** Migration 0135 replaces the legacy climbing columns.
+  The ordinary dependency apply restores the deployed legacy web image, so it
+  cannot maintain the old-reader exclusion required by the
+  [maintenance cutover](climbing-context.md#maintenance-cutover). Production
+  remains on `bffc564`; this preparation did not run its migration or refresh.
+- **Recovery evidence:** The September 30 06:02 UTC encrypted backup passed
+  authenticated decryption and native restore into isolated PostgreSQL
+  18.3/TimescaleDB 2.26.4, following the
+  [Timescale restore procedure](https://www.tigerdata.com/docs/deploy/self-hosted/backup-and-restore/logical-backup).
+  The canonical PostgreSQL migrator applied 0134/0135 on that older snapshot,
+  then applied zero on repeat. All 141 backed-up climbing identities,
+  associations, grades, raw hashes and expected count conversions passed;
+  this snapshot has zero detailed attempts. Current live inventory has 144
+  entries, so the final quiesced inventory remains authoritative.
+- **Pending scope:** Independent operational review requires exclusive
+  deployment admission, both-engine migration-ledger proof, the exact rebuilt
+  release, and an approved maintenance window before conversion. GitHub
+  [concurrency groups](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency)
+  do not lock external operator commands. A four-entrypoint workflow freeze
+  is proposed but not yet authorized. The recovery branch incorporates
+  published PR #2860 to retain its reviewed worker changes.
+- **Remaining risk:** Backup restore would lose writes after 06:02 UTC and
+  requires separate approval; recovery after committed conversion must use a
+  compatible image. Live OpenBeta verification and six device-only mobile
+  issues remain unresolved. No new retry or timeout is added by preparation.
+
+## 2026-09-30 — Approved deployment freeze intercepted an admitted rollout
+
+- **Cause / evidence:** Main's successful CI admitted automatic
+  [deployment 36789582641](https://github.com/Asherlc/dofek/actions/runs/36789582641)
+  before the coordinated freeze was approved. Disabling workflow triggers
+  does not stop an existing run, as distinguished by GitHub's
+  [disable procedure](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/disable-and-enable-workflows)
+  and [run cancellation](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/cancel-a-workflow-run).
+  The stack job was pulling images; the pending conversion required exclusion
+  of all old readers before migration.
+- **Approved containment:** Disabled Deploy Web, Deploy Web Stack, Deploy, and
+  Build + Deploy. With separate approval, canceled only that automatic run.
+  It completed canceled at 23:12:36 UTC; Run migrations was skipped. Terraform,
+  secret preparation and root-image cleanup had already run; no application
+  stack apply or climbing conversion ran.
+- **Validation / user impact:** Read-back confirms all four entrypoints are
+  disabled, no active deployment remains, and all nine app replicas still run
+  `bffc564`: two web replicas and one each for worker, analytics worker,
+  processing reconciliation, CDC health, and the three ClickHouse sinks.
+  CDC health is the additional replica omitted from the earlier count of
+  six ingestion/analytics background services. The legacy climbing schema
+  retains 144 entries and zero
+  detailed attempts with only 0135 pending. No application outage was observed.
+- **Remaining work:** Keep the deployment freeze until separately approved
+  coordinated cutover proves a compatible schema and healthy release; then
+  restore the original workflow states. Existing CI/build workflows remain
+  active. Recheck admission immediately before any operator migration, including
+  already-admitted reusable jobs. No new retry, timeout or cancellation policy
+  was added to steady-state workflows.
+
+## 2026-10-01 — Climbing conversion committed; native worker startup blocked
+
+- **Approved operation / preservation:** During the September 30 17:30–19:00
+  PDT maintenance window, stopped the eight application services, proved the
+  writers and active jobs drained, and ran the canonical migrator on the
+  approved `d50d0b8` image. It exited zero at 00:42:07 UTC, applying one
+  PostgreSQL migration and zero ClickHouse migrations. The authoritative
+  before/after comparison preserved all 144 climbing entry identities,
+  associations, dates, grades, raw payload hashes and expected count
+  conversions; zero detailed attempts remained zero. Migration 0135 is
+  committed, so recovery requires compatible binaries under the
+  [maintenance cutover procedure](climbing-context.md#maintenance-cutover).
+- **Symptoms / user impact:** The controlled
+  [canonical release 36798280904](https://github.com/Asherlc/dofek/actions/runs/36798280904)
+  reached `Deploy stack without ClickHouse consumers`. Public `/healthz`
+  returned HTTP 200 on two approved-image web replicas at 00:58:03 UTC,
+  after the planned traffic stop at 00:35:37 UTC. The worker repeatedly
+  exits before starting jobs; analytics, processing reconciliation and the
+  three ClickHouse sinks remain quiesced. Provider sync and background
+  processing are unavailable while public web traffic is restored.
+- **First fatal evidence / root cause:** Worker logs identify
+  `src/jobs/sync-job-context.ts:51`, followed by
+  `SyntaxError [ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX]: TypeScript parameter
+  property is not supported in strip-only mode` on Node 26.10.0. The
+  [approved context class](https://github.com/Asherlc/dofek/blob/d50d0b86cb4e5beb7247103a464c104e753a5503/src/jobs/sync-job-context.ts#L50-L58)
+  has six constructor parameter properties; the
+  [processing operation class](https://github.com/Asherlc/dofek/blob/d50d0b86cb4e5beb7247103a464c104e753a5503/src/jobs/sync-processing-operation.ts#L99-L110)
+  has three more. They require code generation, which the production
+  runtime's native type stripping does not perform; see
+  [Node's TypeScript feature restrictions](https://nodejs.org/api/typescript.html#typescript-features).
+  Passing Vitest and TypeScript checks did not establish native worker
+  startup. Repeated worker entrypoints apply zero migrations before
+  encountering the same parser failure.
+- **Approved containment / remaining work:** The user approved compatible
+  recovery through 04:00 UTC. Canceled only the controlled release at
+  01:26:53 UTC and scaled only the failing worker to zero; actual worker
+  tasks are stopped. Public web and infrastructure remain running. Only
+  Stack is enabled; the other three deployment entry points remain disabled.
+  The direct source fix preserves the public readonly fields using explicit
+  declarations and constructor assignments. Both native-parser regressions
+  reproduced the production error before the fix, then passed with all 24
+  focused cases. The complete unit/mobile suite passes 19,388 tests with 20
+  existing skips; all four application typechecks pass.
+- **Unresolved release / follow-up:** Hosted CI, independent review,
+  candidate-image worker startup, the compatible canonical release and
+  scoped OpenBeta refresh remain required. Keep the freeze until healthy
+  compatible release proof. No legacy restart or database restore is
+  authorized. No retry, timeout, fallback or gate suppression was added.
+
+## 2026-10-01 — Compatible native worker recovery and OpenBeta verification
+
+- **Root cause / direct fix:** Production Node 26.10.0 could not strip nine
+  constructor parameter properties in the sync job context and processing
+  operation. Explicit readonly fields and constructor assignments preserve
+  the same public types, argument order and sync lifecycle while removing
+  the unsupported syntax; see the
+  [reviewed recovery commit](https://github.com/Asherlc/dofek/commit/cb8aedd62f8584f361dc11a23fb409fa433bb4a4)
+  and [Node's supported TypeScript syntax](https://nodejs.org/api/typescript.html#typescript-features).
+  Migration 0135 remains unchanged and all 144 entries were preserved by
+  the conversion before any provider refresh.
+- **Validation / release:** Native Node regressions reproduced the fatal
+  parser error before the fix and passed afterward with all 24 focused
+  cases. The complete local unit/mobile suite passed 19,388 tests, all four
+  typechecks and lint passed, and independent review found no issues.
+  [Hosted CI 36802385340](https://github.com/Asherlc/dofek/actions/runs/36802385340)
+  passed all nine required checks. The exact ARM64 image from
+  [build 36802626326](https://github.com/Asherlc/dofek/actions/runs/36802626326)
+  passed isolated native worker startup, readiness and graceful shutdown.
+  [Canonical Stack release 36804623149](https://github.com/Asherlc/dofek/actions/runs/36804623149)
+  succeeded with zero additional PostgreSQL or ClickHouse migrations and
+  passed the normal CDC contract, causal marker, consumer stability, backup
+  freshness and Sentry release gates. Actual read-back verified all nine
+  application replicas on the exact approved digest and full Sentry release.
+  Public `/healthz` and worker readiness returned HTTP 200; 37 workers started.
+- **Application acceptance:** The first analytics cycle completed at
+  02:29:18 UTC with 41 models passed, zero warnings/errors, successful cache
+  warming and healthy readiness. Scoped climbing router calls returned
+  10 details, 22 summaries, 21 progression points and 11 volume groups;
+  the degree view correctly excluded an unknown-unit value. The one-off
+  reader initially remained alive after its successful responses because
+  service-style client/instrumentation resources were still referenced.
+  A clean rerun closed its owned clients and exited zero using an explicit
+  finite CLI lifecycle, as the canonical migrator does. No production
+  runtime change or relaxed acceptance gate was needed.
+- **Scoped OpenBeta outcome:** After healthy release, the approved single
+  connected account's canonical full sync completed on its first attempt
+  with six records and zero errors or degradation. A complete read-only
+  paginated export independently matched all six stored numeric date
+  payloads, UTC climb dates, raw ticks and current climbing context. Prior
+  rows/associations remained intact and full-list absence reconciliation
+  passed. Resolved
+  [DOFEK-SERVER-6M](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-6M)
+  and [DOFEK-SERVER-6E](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-6E)
+  only after this live proof. No additional manual Kaya, Mountain Project
+  or CSV refresh was performed.
+- **Remaining risk / follow-up:** Six mobile issues remain open because
+  the delivered build has not been verified on a device. At 02:50 UTC, the
+  healthy compatible production release is verified above. Deployment admission
+  remains frozen until current checks and review pass and the reviewed native
+  worker fix is merged into protected main. Verify main's compatible source
+  before restoring the original workflow states. No database restore or legacy
+  restart occurred.
+  No retry, timeout, runtime flag, fallback or gate suppression was added.
+  Future cutover preparation should verify the exact image's canonical
+  native worker startup alongside its migration rehearsal.
+
+## 2026-10-01 — Local MCP validation required workspace ClickHouse
+
+- **Symptoms / impact:** The first `pnpm lint` run for the target-free MCP
+  nutrition preview failed in `lint:analytics-sql`; local validation was
+  blocked. No production or user-facing outage occurred.
+- **Evidence / root cause:** SQLFluff reported `TMP | dbt tried to connect to
+  the database and failed` for `activity_aerobic_efficiency.sql`, followed
+  by `[Errno 61] Connection refused` on port 8123. The workspace services
+  were not started, so dbt used its default ClickHouse endpoint from
+  [analytics/profiles.yml](../analytics/profiles.yml).
+- **Fix / validation:** Ran the canonical `pnpm compose:up` command, which
+  started this workspace's dependencies and generated its local connection
+  settings; reran `pnpm lint` unchanged and it passed. The Docker-free test
+  suite separately passed 19,391 tests, with 20 skipped. Root and changed
+  package type checks and the MCP app build passed.
+- **Remaining risk / follow-up:** No runtime workaround, retry, timeout, or
+  lint configuration change was added. Document the analytics-lint dependency
+  beside the unit-test tiers in [docs/testing.md](testing.md#integration-dependencies).
+  The existing [Compose environment script](../scripts/compose-env.ts) and
+  [testing runbook](testing.md) remain the canonical local setup references.
+
+## 2026-10-02 — Production page rendering hid multi-second data waits (unresolved)
+
+- **Symptoms / impact:** A production loading audit found Training, Running's
+  pace curve, and Daily Heart Rate incomplete after 20 seconds of browser
+  observation despite early page shells. Data Sources took 5.21 seconds to
+  populate; several activity lists and analytics views took 3–4 seconds.
+  Daily Heart Rate removed its existing chart for 16.73 seconds during a date
+  change. Sleep had data by 0.39 seconds but unrelated processing work kept
+  loading indicators visible until 3.62 seconds.
+- **Evidence:** The [dated audit](performance/production-load-audit-2026-10-02.md)
+  records 58 authenticated page/navigation observations, additional filter and
+  public-page measurements, exact slow-log timestamps, trace/query IDs, mobile
+  emulation, and source references. Both web replicas ran release
+  `3b517084d`. The main sweep occurred October 3 at 03:39–03:52 UTC
+  (October 2 Pacific time). Axiom and ClickHouse query logs were working;
+  inspected spans lived in `dofek-logs` with 10% trace sampling.
+- **Confirmed causes:** Successful ClickHouse executions consumed 30.507 seconds
+  and 57.85 million rows for `heartRate.dailyBySource`, 26.153 seconds and
+  20.69 million rows for `durationCurves.paceCurve`, and 20.878 seconds and
+  10.58 million rows for `training.hrZones`. Request-time sensor reads and
+  calculations dominate those specific waits. Client query-key changes also
+  discard usable charts; global fetching state makes unrelated charts look
+  busy. Other slow parent requests require current child-query investigation
+  before assigning their root cause to an engine or queue.
+- **Fix / validation:** Audit only; no runtime fix or deployment was performed.
+  Repeated warm visits were fast, which confirms cache sensitivity but does
+  not establish resolution. Read-only engine evidence confirmed the slow-query
+  durations; mobile and filter checks confirmed separate client symptoms.
+  The initial >20-second browser observations were stopped before completion,
+  so their later server durations are not exact browser completion times.
+- **Remaining risk / follow-up:** Unresolved. Review source-preserving daily
+  heart-rate access, deduped pace-curve computation, and HR-zone model semantics;
+  preserve previous data on web and native filter changes; scope chart loading
+  state; then investigate the remaining providers/activity/nutrition queries.
+  Add useful-data milestones to existing telemetry and repeat fresh-key plus
+  warm measurements. No timeout, retry, cache flush, concurrency adjustment,
+  or other resilience knob was introduced.
+
+## 2026-10-02 — Shared local Docker AIO capacity blocked performance validation
+
+- **Symptoms / impact:** The performance implementation's local database setup
+  could not start Redpanda. Browser and database validation are blocked; this
+  finding does not indicate a production outage. Unit implementation can proceed.
+- **Evidence:** `rtk proxy pnpm compose:up` failed at 21:56 Pacific time with
+  `container impolite-mole-redpanda-1 is unhealthy`. The first fatal broker line
+  was `Could not setup Async I/O`, reporting capacity in
+  `/proc/sys/fs/aio-max-nr` as 65536. A read from the workspace's database
+  container showed both `fs.aio-nr` and `fs.aio-max-nr` equal to 65536. The
+  broker exited with code 133 and was not OOM-killed. Workspace Postgres,
+  ClickHouse, and Redis were healthy; multiple other workspaces had restarting
+  brokers on the same Docker VM.
+- **Root cause:** The shared Docker VM's asynchronous-I/O allocation limit was
+  exhausted before this workspace's broker could initialize. Redpanda documents
+  its AIO tuner and 1048576 threshold in the
+  [rpk tuner overview](https://www.redpanda.com/blog/rpk-command-line-interface-developer-productivity).
+- **Fix / validation:** With user approval, increased the shared VM limit to
+  1048576 using a one-shot container from the existing database image. Restarted
+  only this workspace's already-failed broker to clear its old restart delay;
+  `rtk proxy pnpm compose:up` then completed with all four dependencies healthy
+  at 22:35 Pacific time. No other workspace's containers or volumes were stopped
+  or removed. No extra sleep or timeout change was needed.
+- **Remaining risk / follow-up:** Dependency startup is resolved; application
+  and browser validation are separate outstanding implementation gates. The
+  setting is local to the running Docker VM and must be checked after a VM
+  restart. Add an AIO-exhaustion diagnostic to the local
+  [testing runbook](testing.md). No retry, timeout, or application workaround
+  was added.
+
+## 2026-10-02 — Local browser validation hit Docker disk and build pressure
+
+- **Symptoms / impact:** The isolated browser-test image could not finish
+  building during the loading-performance implementation. Production was not
+  changed; browser validation remains outstanding.
+- **Evidence:** `pnpm compose -- --project-suffix e2e -f docker-compose.e2e.yml
+  build server` first failed while compiling the Python lz4 dependency with
+  `No space left on device`; pnpm also reported `ERR_PNPM_ENOSPC`. Docker reported
+  14.5 GB of images, 17.14 GB of writable container layers, 14.06 GB of volumes,
+  and 4.288 GB of build cache. Ignored local logs preserve the complete output.
+- **Confirmed disk cause / mitigation:** The Docker VM filesystem was exhausted.
+  Removed rebuildable build cache (3.826 GB reclaimed), then unused images
+  (4.508 GB reclaimed), following the [testing runbook](testing.md#docker-disk-recovery)
+  and [Docker pruning guidance](https://docs.docker.com/engine/manage-resources/pruning/).
+  Preserved all containers and named volumes. The filesystem then had 9.6 GB
+  available, and the next build progressed beyond the original disk failure.
+- **Subsequent failure:** The next attempt completed package downloads but
+  failed at Dockerfile line 93 with `ERR_PNPM_BROKEN_METADATA_JSON: The operation
+  was aborted due to timeout`. It reported registry request delays and an
+  unsuccessful supply-chain metadata check. Concurrent VM pressure readings
+  showed 85% full memory stall time over ten seconds. These establish a registry
+  metadata timeout and resource contention, but do not alone prove whether
+  memory stalls or registry/network behavior caused that timeout. Linux defines
+  these measurements in its [pressure-stall documentation](https://docs.kernel.org/accounting/psi.html).
+- **Validation / subsequent disk recovery:** The same build passed all 3,399
+  supply-chain checks in 32 seconds and completed, including both native decoder
+  tests. Initial stack startup then exhausted disk again: Postgres could not
+  create its WAL directory and ClickHouse could not create its processed config
+  directory. Removing the completed build's rebuildable cache reclaimed another
+  9.245 GB, leaving 7.5 GB free. Restarted the affected local ClickHouse process
+  and started the already-built image with the canonical Compose wrapper and
+  `--no-build --wait --wait-timeout 180`. All dependencies, migrations, fixture
+  seeding, analytics, and server health gates passed. Both focused page-readiness
+  Cypress scenarios passed (19 seconds), followed by a trusted Chrome navigation
+  check. No added sleep or timeout change was needed.
+- **Remaining risk / follow-up:** The VM has limited spare disk for another cold
+  build. Other workspaces' containers and volumes were preserved; stopping their
+  brokers was not needed. Registry metadata timeouts did not recur after the
+  cold-build work decreased; the respective network and memory contributions
+  remain unproven. Add build-cache sizing and pressure checks to the local
+  testing runbook. No package-policy bypass, dependency change, application
+  workaround, or resilience knob was introduced.
+
+## 2026-10-03 — Local preview tunnel lost connectivity during idle interval
+
+- **Symptoms / impact:** The local browser-validation server and its dependencies
+  remained healthy, but the previously emitted Quick Tunnel hostname no longer
+  resolved. Production was unaffected.
+- **Evidence:** The tunnel log first reported `failed to accept QUIC stream:
+  timeout: no recent network activity` at 06:49:44 UTC, followed by repeated
+  `control stream encountered a failure while serving` errors. At 13:26 UTC,
+  a bounded curl check failed with exit 6 (`Could not resolve host`); Compose
+  still reported the local server healthy.
+- **Mitigation / validation:** Stopped only the disconnected tunnel process and
+  reran the existing `/Users/asherlc/bin/paseo-quick-tunnel 3100` command. The new
+  process registered a connection, passed its connectivity checks, and the newly
+  emitted HTTPS URL returned HTTP 200. The server was not restarted. No timeout,
+  retry, protocol, or application configuration was changed.
+- **Remaining risk / follow-up:** The original disconnect trigger is unresolved;
+  do not attribute it to workstation sleep or a Cloudflare incident without
+  evidence. Recheck the emitted URL after idle intervals before browser tests.
+  Quick Tunnels use temporary hostnames and have no uptime guarantee according
+  to [Cloudflare's Quick Tunnel documentation](https://developers.cloudflare.com/tunnel/get-started/quick-tunnels/).
+
+## 2026-10-03 — Oversized local heart-rate fixture exceeded ClickHouse memory
+
+- **Symptoms / impact:** A controlled integration benchmark failed while seeding
+  one million raw rows. Production was unaffected; semantic tests passed, but
+  the benchmark could not reach its access-path assertion.
+- **Evidence / cause:** The focused heart-rate and migration integration command
+  reported `(total) memory limit exceeded: would use 1.25 GiB ... maximum:
+  1.25 GiB` during insertion. Constructing the existing provider-current-state
+  aggregate projection for the oversized insert exhausted the local engine's
+  memory allowance. Complete output remains in ignored local evidence.
+- **Mitigation / validation:** Reduced the controlled fixture to 200,000 rows
+  while retaining many dates, unassigned samples and multiple activity shapes.
+  The same unchanged engine then completed insertion, semantic/migration tests,
+  actual plans and query-log measurements. The new whole query read 49,152 rows
+  versus 81,920 for the local baseline; this is scan evidence, not a production
+  speed or page acceptance claim. Scaled timing validation remains outstanding.
+- **Remaining risk / follow-up:** Seed larger benchmarks in bounded chunks;
+  preserve a fixture that discriminates the old access path. No memory limit,
+  timeout, retry, projection setting or application behavior was changed to
+  bypass the failure. ClickHouse describes memory accounting and query limits
+  in its [memory settings reference](https://clickhouse.com/docs/operations/settings/settings#max_memory_usage).
+
+## 2026-10-03 — Activity detail route-preview latency follow-up
+
+- **Symptoms / impact:** Read-only production probes confirmed running and
+  climbing detail summaries still take about 1.4–1.5 seconds before client
+  rendering. The user's activity list/detail loading target remains unmet.
+- **Evidence / root cause:** Cache-miss traces
+  `734520662c251017715f022263142e2b` and
+  `d2dd3afa912bef3c7583a06b23e8f1d1` took 1,417 and 1,445 ms. Their matching
+  route-preview queries read 19,982,527 location rows in 1,359 and 1,370 ms;
+  queue waits were below 3 ms. This is the same previously diagnosed
+  source-column alias/index-pruning bug. See the
+  [dated activity follow-up](performance/production-load-audit-2026-10-02.md#activity-detail-follow-up--october-3)
+  and [ClickHouse alias semantics](https://clickhouse.com/docs/reference/syntax#notes-on-usage).
+- **Fix / validation status:** No production change was made. The reviewed
+  shared-query repair and real-engine regression remain scheduled for Task 8;
+  final data-visible page acceptance is unresolved. Single fast stream/zone
+  probes do not replace that gate.
+- **Additional lifecycle evidence:** The prior climbing fixture is now
+  provider-absent: its summary uses the repository fallback, while active-only
+  sensor-window lookup returns "Activity not found." Preserve those failures
+  in evidence and use an active populated climbing fixture for acceptance.
+  Validate provider-absent presentation separately; do not hide errors to meet
+  the target. Initial malformed diagnostic probes returned HTTP 400 and were
+  retained but excluded from successful timing claims.
+- **Follow-up:** Cover list filters/pagination, direct detail entry, activity
+  switching and each conditional sport section on web and native clients.
+
+## 2026-10-03 — Isolated ClickHouse version-validation resource failure
+
+- **Symptoms / impact:** Task 3's disposable ClickHouse 26.6.1.1193 validation
+  container exceeded local resources during the native-client integration run.
+  No production service was changed. The default workspace ClickHouse also
+  restarted during the validation window; its causal relationship to the
+  disposable container's resource use is unresolved. E2E ClickHouse retained
+  restart count zero and its original start time.
+- **Evidence:** The exact-version Vitest command first reported `Test timed out
+  in 30000ms` while seeding 65 activities through separate Docker exec calls.
+  Subsequent inserts returned native-client exit 137, and Docker inspection
+  confirmed `OOMKilled: true` and container exit 137. The temporary service had
+  no container memory ceiling. Its logs/data used an in-memory filesystem and were unavailable
+  after termination; the exact allocation responsible for the kill was not
+  captured. Docker documents container memory ceilings and host out-of-memory
+  behavior in [resource constraints](https://docs.docker.com/engine/containers/resource_constraints/).
+  Default ClickHouse inspection showed restart count one and start time
+  `2026-10-03T14:42:00.726884839Z`; E2E ClickHouse showed restart count zero and
+  start time `2026-10-03T06:17:59.242Z`. Neither implementing agent nor operator
+  restarted the default service. Filtered Docker event history was empty;
+  retained application logs confirmed startup but did not establish the prior
+  termination cause. The running state's `OOMKilled: false` does not establish
+  the cause of the earlier restart, and current health does not prove continuity.
+- **Cause / fix:** Serial per-row process overhead exceeded the test deadline;
+  the pending asynchronous fixture operations were not cancelled by the test
+  runner. Batched JSONEachRow fixture inserts removed that overhead. The
+  replacement disposable service used the existing workspace's 1.5 GiB ceiling
+  to contain its resource use; application and production settings were unchanged.
+- **Validation:** The same unchanged 30-second test deadline passed 15/15
+  focused tests on 26.6.1.1193, and 15/15 on the default 26.8.2.7. Production-version
+  EXPLAIN selected the compact day-version projection. Only the disposable
+  container was removed afterward; no other workspace volumes or services were
+  stopped or pruned.
+- **Follow-up:** Batch native-client fixture seeding and bound disposable
+  validation services before starting them. Keep exact-version engine execution
+  separate from HTTP/dbt compilation provenance in validation reports. Preserve
+  the overlapping default restart as unresolved; daemon/kernel evidence would
+  be needed to establish or exclude indirect host-memory impact.
+
+## 2026-10-03 — Task 4 ClickHouse host-wide OOM during validation
+
+- **Symptoms / impact:** The Task 4 disposable ClickHouse 26.6.1.1193 engine
+  stopped during exact-version pace-model validation. No production action was
+  taken. Default ClickHouse later restarted during the successful diagnostic
+  continuation; E2E ClickHouse retained restart count zero and its original start.
+- **Evidence:** The first combined 65-activity case reported a 30-second Vitest
+  timeout (41.935 seconds recorded), although its batched 65-row activity insert
+  took 5 ms and its three recorded model queries took 1194/1473/1689 ms. The
+  difference in elapsed time remains unexplained; query logs alone do not identify
+  native process or scheduler delays. A second suite, with independent first-build
+  and 65-key drain cases, passed six cases before native exit 137 during the
+  correction/merge fixture. Docker inspection confirmed `OOMKilled: true`,
+  exit 137, restart count zero, start 16:09:07.660UTC and finish 17:05:35.794UTC,
+  with the 1.5 GiB ceiling still enforced. Network mode was none and no ports were
+  published. Temporary in-memory engine logs were lost when the container stopped;
+  retained stdout contains startup log paths only. Docker documents memory
+  ceilings and out-of-memory behavior in its
+  [resource constraints](https://docs.docker.com/engine/containers/resource_constraints/).
+- **Cause:** Docker Desktop kernel records establish host-wide OOM for both
+  Task 4 deaths, rather than the disposable engine exceeding its own ceiling.
+  Rotated `init.log.20261003-101412.064` lines 1982–1983 report `global_oom` at
+  17:05:35.446UTC, killing disposable cgroup `bc7bdf003…`, anon-rss643532kB.
+  Current `init.log` lines 241–242 report `CONSTRAINT_NONE`, `global_oom` at
+  17:14:12.068UTC, killing default cgroup `3473c423…`, anon-rss620720kB.
+  Default inspection afterward shows restart count two/start17:14:12.516868301UTC;
+  neither agent restarted it. Kernel evidence is retained in ignored
+  `.context/load-audit/task4-kernel-oom.jsonl`. Swap was nearly exhausted and
+  other workspace workloads were resident; summed process RSS can double-count
+  shared pages and does not establish each workload's unique contribution.
+- **Validation:** After explicit controller authorization, one identical fresh
+  disposable instance passed all nine exact 26.6 pace tests in 64.09s, with the
+  unchanged 30s test deadline and three-build 65-key drain. Default 26.8 passed 23
+  pace/dirty-key tests. Scratch-only instrumentation paired all 156 native calls
+  with query IDs; the slowest call was 2099.53ms versus SQL 1948ms. The final three
+  drain builds took 1645.26/1436.30/1573.66ms native versus 1520/1334/1469ms SQL.
+  The first elapsed-time gap was not reproduced or retrospectively explained.
+  Live disposable cgroup peaks: memory.current 781,283,328B, anon 514,916,352B,
+  file 240,984,064B, shmem 33,492,992B; data 27,968KiB/log 4,760KiB. These are
+  independent sampled maxima, not additive totals. Its own oom_kill remained
+  zero; both data/log tmpfs capacities were 4,012,140KiB. Capacity is not usage.
+- **Mitigation / follow-up:** Only the disposable instance was removed promptly
+  after validation. No timeout, retry, memory limit or production setting changed;
+  no unrelated services or volumes were removed. Exact semantic success does not
+  resolve shared Docker host resource safety or establish production acceptance.
+  Controller owns aggregate-pressure attribution and authorization before any
+  further database validation. Retain paired native/query timings and external
+  resource/log capture; consult kernel OOM records before attributing Docker
+  `OOMKilled` to a container's own memory ceiling.
+
+## 2026-10-03 — E2E preview hostname lost DNS resolution again
+
+- **Symptoms / impact:** The existing local E2E server remained healthy, but its
+  quick-tunnel hostname stopped resolving. Browser access to that preview was
+  unavailable; production was unaffected. Existing preview tabs need the new
+  hostname before browser validation resumes.
+- **Evidence:** At approximately 17:30 UTC, the HTTPS probe failed with curl
+  exit 6, `Could not resolve host`. Retained tunnel output showed QUIC inactivity
+  timeouts and reconnections from 15:07 UTC, followed by repeated
+  `control stream encountered a failure while serving` errors near 17:29 UTC.
+  The E2E server container was still healthy with eleven hours of uptime.
+- **Cause:** The trigger for the tunnel connection and DNS failure remains
+  unresolved; the logs do not establish a server failure or a causal link to
+  the separate Docker memory incident.
+- **Recovery / validation:** Stopped only the old tunnel process and ran the
+  existing quick-tunnel wrapper for the same server port. Its replacement
+  connected successfully and returned HTTP 200 through the emitted HTTPS URL.
+  The replacement process stays running for the server's lifetime. No server,
+  database, image, timeout or retry configuration changed.
+- **Follow-up:** Verify the emitted hostname before later browser work and
+  retain tunnel errors separately from server health evidence. Quick tunnels
+  are documented by [Cloudflare](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/do-more-with-tunnels/trycloudflare/).
+
+## 2026-10-03 — Approved broker pause restored validation memory headroom
+
+- **Cause / scope:** Docker Desktop kernel records proved host-wide OOM in the
+  shared 8 GiB VM. Container limits did not establish a container-local failure.
+  Sixteen broker processes held approximately 3 GiB RSS during the captured
+  incidents; RSS can include shared pages and is not unique-memory accounting.
+- **Operator mitigation:** With explicit approval, stopped exactly fourteen
+  other-workspace Redpanda containers, preserving containers, volumes and data.
+  Each stopped with exit 0. This workspace's services remained healthy; guest
+  MemAvailable rose to 3,987,420 KiB before the next validation window.
+- **Validation:** The combined dirty-key, pace and heart-rate model suites passed
+  32/32 on the default engine; the new heart-rate model passed 9/9 on production
+  ClickHouse 26.6 with unchanged limits and deadlines. Its isolated engine peaked
+  at 1,142,071,296 bytes sampled cgroup memory, with zero observed OOM kills;
+  guest MemAvailable stayed above 3,143,188 KiB. A focused repository case also
+  executed the corrected current-schema fixture successfully. No timeout,
+  retry, sleep or query-limit mitigation was introduced.
+- **Restoration / remaining risk:** Restarted exactly the fourteen approved
+  containers and verified every one running and healthy. Default ClickHouse
+  retained restart count 2/start 17:14:12 UTC; E2E ClickHouse retained count 0.
+  With all workspaces restored, MemAvailable was 427,824 KiB and free swap 48 KiB,
+  so further database validation requires another approved bounded pause window.
+  Production was unchanged. The earlier native elapsed-time gap and Task 3
+  restart attribution remain unresolved. Keep memory-limit interpretation tied
+  to kernel evidence and [Docker's resource documentation](https://docs.docker.com/engine/containers/resource_constraints/).
+
+## 2026-10-02 — UI cleanup PR blocked by dependency audit
+
+- **Symptoms / impact:** [PR #2866](https://github.com/Asherlc/dofek/pull/2866)
+  failed Dependency Audit, blocking CI readiness. No deployment was performed.
+- **Evidence / root cause:** The [audit job](https://github.com/Asherlc/dofek/actions/runs/37095433359/job/111124399964)
+  ran `pnpm audit --prod --audit-level=high --ignore-registry-errors` and reported
+  high-severity findings for `node-forge@1.4.0` and `braces@3.0.3`, then
+  `Process completed with exit code 1`. The branch lockfile and workspace
+  dependency configuration matched `origin/main`. See the
+  [node-forge advisory](https://github.com/advisories/GHSA-86w9-cpqp-85rv) and
+  [braces advisory](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm).
+- **Investigation / validation:** At 04:09 UTC on October 3, explicit
+  `pnpm view node-forge@1.4.1 version --registry=https://registry.npmjs.org`
+  and the equivalent lookup for `braces@3.0.4` both returned npm E404.
+  Those versions were suggested by the audit output but were unavailable.
+  Local lint, root/server/web/mobile typechecks, and 19,397 unit/mobile tests
+  passed, with 20 tests skipped.
+- **Status / follow-up:** Unresolved. Verify published fixed releases before
+  updating the lockfile and rerunning the audit. No advisory suppression,
+  dependency workaround, retry, or timeout was added.
+
+### Approved remediation later on October 2
+
+The user approved backporting the upstream fixes and excluding only the two
+patched advisory IDs from the version-based audit. The source changes from
+[forge PR #1152](https://github.com/digitalbazaar/forge/pull/1152) and
+[braces PR #72](https://github.com/micromatch/braces/pull/72) are now registered
+as pnpm patches. Both executable security regressions failed against the
+unpatched packages, then passed after installation with the patches.
+`pnpm audit --prod --audit-level=high` exited zero with two approved exceptions;
+the existing lower-severity findings remain reported. Frozen-lockfile
+installation passed. CI now runs the regressions before auditing so the
+exceptions cannot hide a missing fix in the exercised Expo/Metro dependencies.
+
+No retry or timeout was added. Hosted validation is tracked on
+[PR #2866](https://github.com/Asherlc/dofek/pull/2866/checks). See
+[dependency security patches](dependency-security-patches.md) for pinned
+upstream provenance, regression coverage, and the requirement to remove each
+patch and exception together when adopting a published fixed release.
+
+The same CI run exposed two cleanup-specific validation gaps. The
+[web E2E job](https://github.com/Asherlc/dofek/actions/runs/37095698639/job/111125421102)
+failed with `Expected to find content: 'Activity log' but never did` in
+`review-stack.cy.ts:22`; its assertion referenced the intentionally removed
+duplicate heading. It now checks the page's `Activities` heading and retains
+the canonical activity-link/detail checks. [Codecov](https://app.codecov.io/gh/Asherlc/dofek/pull/2866)
+reported 88.88% patch coverage because the changed Units section was never
+rendered by Settings tests. A search-navigation test now opens Goals & Models
+and verifies the Units controls in the correct section. The focused Settings
+suite passed 27 tests. Include browser specs and category navigation in future
+copy-cleanup validation; changing visible text can invalidate existing selectors.
+
+The follow-up [combined coverage job](https://github.com/Asherlc/dofek/actions/runs/37096803288/job/111130879461)
+passed global thresholds but failed `diff-cover --fail-under=80` at 75%.
+The unit artifact identified `TodayPlanCard.tsx:98` with conditional counts
+`[4, 0]`: the evidence disclosure was tested with freshness dates only.
+A focused test now opens the disclosure with both dates absent and verifies
+that supporting facts remain visible without a fabricated freshness message.
+Coverage thresholds remain unchanged.
+
+## 2026-10-03 — Main integration found an unapplied local dependency patch
+
+- **Symptoms / impact:** The approved loading-audit/main integration passed a
+  frozen dependency installation, but `pnpm check:dependency-security` failed
+  before commit. This blocked local validation; production was unchanged.
+- **Evidence / root cause:** The first fatal line was
+  `AssertionError [ERR_ASSERTION]: Missing expected exception.` at
+  `scripts/check-braces-security.ts:42`. Metro resolved the expected braces
+  patch-hash directory, but all five patched implementation files contained
+  their unpatched source. The checked-in patch applied cleanly in a dry run.
+  `pnpm store status` also reported `ERR_PNPM_MODIFIED_DEPENDENCY` for six other
+  patched artifacts. Why the inconsistent local installation was created is
+  unknown; this evidence does not establish a source-patch defect.
+- **Direct fix / validation:** With controller approval, ran
+  `pnpm install --frozen-lockfile --force`. The installed braces files then
+  contained the expected depth bounds, and both unchanged node-forge and braces
+  security regressions passed. The lockfile, patches, advisory exceptions and
+  enforcement remained unchanged. pnpm documents
+  [forced dependency repair](https://pnpm.io/cli/install#--force) and
+  [store integrity checks](https://pnpm.io/cli/store#status).
+- **Remaining risk / retrospective:** A successful frozen install alone did
+  not prove the security patch was present in an existing local installation.
+  Keep the installed-package regression gate; consider documenting names-only
+  package-resolution and source-integrity diagnosis before local artifact repair.
+  No retries, deadlines, memory limits or runtime workarounds were added.
+
+## 2026-10-03 — Restored shared brokers preceded a global E2E ClickHouse OOM
+
+- **Symptoms / impact:** Before Task 5A's E2E rebuild, the existing E2E
+  ClickHouse was exited and its server was unhealthy. The browser validation
+  stack was unavailable; production was unchanged.
+- **Evidence / root cause:** Docker recorded exit 137 and `OOMKilled=true` for
+  E2E ClickHouse container `844275e532c9` at 18:06:24.497 UTC. Docker Desktop
+  kernel log `init.log.20261003-112043.635`, lines 3193–3194, records
+  `constraint=CONSTRAINT_NONE`, `global_oom` and that exact ClickHouse victim
+  at 18:06:24.453 UTC, with 416,588 KiB anonymous RSS. This confirms guest-wide
+  exhaustion after the fourteen approved brokers had been restored; it does
+  not identify the triggering workload or prove a ClickHouse cgroup-limit OOM.
+- **Recovery / remaining risk:** The controller reopened the approved bounded
+  fourteen-broker pause, verified guest headroom, and authorized the canonical
+  current-workspace E2E rebuild/recovery for the changed browser spec. Both image
+  builds were subsequently blocked by the documented Docker disk exhaustion;
+  after the user-approved disk increase, the unchanged canonical build and
+  merged-runtime review-stack spec passed and E2E services were healthy. After
+  failed-build cleanup, the controller restored and individually verified all
+  fourteen approved brokers running and healthy. No containers or volumes were
+  deleted.
+  Preserve the kernel distinction and follow
+  [Docker memory-resource guidance](https://docs.docker.com/engine/containers/resource_constraints/).
+  No engine limits, retries, deadlines or production settings were changed.
+
+## 2026-10-03 — Canonical merged-source E2E image build exhausted Docker disk
+
+- **Symptoms / impact:** Task 5A's required canonical `pnpm e2e:web:up` failed
+  while building the merged source. Browser validation was blocked; the existing
+  server and lifetime tunnel were retained, and production was unchanged.
+- **Evidence / root cause:** Dockerfile line 93's workspace dependency install,
+  `pnpm install --force --frozen-lockfile`, first failed with
+  `ERR_PNPM_ENOSPC` / `ENOSPC: no space left on device` while copying
+  `posthog-js@1.374.2`'s `dist/module.no-external.js.map`. Guest disk space fell
+  from 5,383,184 KiB available before the build to 692,468 KiB (99% used).
+- **Direct remediation / validation:** Followed the
+  [testing disk-recovery runbook](testing.md#docker-disk-recovery):
+  `docker builder prune -af` reclaimed 4.427 GB, recovering 5,533,068 KiB free;
+  unused-image pruning reclaimed another 791.2 MB, recovering 6,231,832 KiB free.
+  All containers and volumes were preserved. Docker documents the scope of
+  [cache and image pruning](https://docs.docker.com/engine/manage-resources/pruning/).
+  The unchanged build passed the dependency install but then failed copying
+  production `node_modules` at Dockerfile line 138 with
+  `copy file range failed: no space left on device`; guest disk reported zero
+  available KiB. A final failed-build-cache prune reclaimed 8.508 GB and
+  restored 6,364,980 KiB free before the controller closed the validation window.
+- **Remaining risk / retrospective:** The full cold-image peak disk requirement
+  is not yet established, but more than the 6,231,832 KiB second-attempt budget
+  is required before the final image can complete. Further builds and scoped
+  browser validation were blocked pending an approved capacity decision.
+  The user-approved disk growth below then allowed the unchanged build and
+  scoped browser check to pass.
+  No runtime mounts,
+  fallback workflows, deadlines, retries or engine memory/query limits were changed.
+
+## 2026-10-03 — Approved Docker disk growth enabled merged-source E2E validation
+
+- **Symptoms / impact:** Required browser validation remained blocked after
+  both proven disk-exhaustion failures and authorized cache/image cleanup.
+  The user approved growing the shared Docker disk usage limit from 61,035 MiB
+  to 81,920 MiB, restarting Docker only if needed and restoring the exact
+  prechange running container set. Production was unchanged.
+- **Operator action / evidence:** The controller retained a private 56-container
+  ID/image/health snapshot. Docker UI automation timed out; the settings receipt
+  verifies that only `DiskSizeMiB` changed in the documented settings file.
+  The controller applied the change with Docker Desktop stop/start. Guest disk
+  then reported 82,249,224 KiB total and 27,097,660 KiB free. Memory, swap, CPU,
+  disk location, engine limits and existing deadlines were unchanged. Docker
+  documents the [disk control and settings file](https://docs.docker.com/desktop/settings-and-maintenance/settings/)
+  and [Desktop lifecycle commands](https://docs.docker.com/desktop/features/desktop-cli/).
+- **Restoration / recovery:** The controller verified the other 55 original
+  containers running, healthy and on their original images. The original E2E
+  server failed with `[web] Failed to start: Error: connect ECONNREFUSED
+  192.168.32.4:9000`; it recovered healthy after its previously OOM-killed
+  E2E dependency was started through the canonical workspace wrapper. The
+  fourteen approved brokers were then paused for validation, followed by four
+  unused services from the current workspace. Their volumes were preserved;
+  concurrent build-phase changes prevent attributing the whole observed memory
+  improvement exclusively to the latter pause.
+- **Validation / remaining risk:** The unchanged `pnpm e2e:web:up` passed, with
+  native tests 2/2 and seeded analytics `PASS=14 WARN=0 ERROR=0`. The newly built
+  merged image served the affected `review-stack.cy.ts` spec, which passed
+  1/1 in one second. No ad-hoc waits, runtime mounts, alternate workflow or
+  resilience knob was introduced. The controller restored all four current-workspace
+  services and all fourteen approved brokers healthy. Its 18:53:48 UTC receipt
+  verifies the other 55 original container IDs and images running and healthy,
+  with no deviations; the authorized recreated E2E server is healthy on the
+  merged image, and the original previously OOM-killed E2E ClickHouse is healthy.
+  Final guest disk had 16,849,504 KiB free. Subsequent controller memory sampling
+  reported only 856,040 KiB available and 388 KiB swap free. Disk growth resolves
+  the proven build-capacity failure; shared RAM pressure remains, and the
+  triggering workload of the earlier global OOM is unresolved.
+
+## 2026-10-03 — Loading-preparation CI expectation and telemetry coverage failures
+
+- **Symptoms / impact:** Required PR CI blocked the loading-preparation source;
+  no production rollout occurred. [Unit Tests](https://github.com/Asherlc/dofek/actions/runs/37146328769/job/111271119335)
+  ran `pnpm exec vitest run --project unit --coverage`; its first failure was
+  `AssertionError: expected [ 'sensor_scalar_sample', …(28) ] to deeply equal
+  [ 'sensor_scalar_sample', …(26) ]`. [Stryker](https://github.com/Asherlc/dofek/actions/runs/37146328769/job/111271297243)
+  first failed with `Final mutation score 54.29 under breaking threshold 75`.
+- **Root cause / direct fix:** The existing exact build-order expectation omitted
+  the registered `activity_pace_curve` and `activity_heart_rate_distribution`
+  models, and readiness telemetry tests did not cover active optional fields,
+  release identity, nullable callback input, or invalid device-ID reporting and
+  event rejection. Updated the existing order assertion and added public-behavior
+  tests, including Sentry observation and reset consent preservation. Production
+  code, schema, models, readers, dependencies and CI configuration were unchanged.
+- **Local validation / remaining work:** Focused units passed 61/61. Canonical
+  whole-file Stryker reproduced a distinct 51-mutant baseline at 66.67%
+  (34 killed, 14 survived, 3 uncovered), then passed at 100% with all 51 killed
+  and no survivors, uncovered mutants, timeouts or errors. The CI failure scored
+  35 mutants (19 killed, 13 survived, 3 uncovered); retain both scoped results.
+  No resilience knob or ad-hoc wait was introduced. Remote CI rerun remains
+  pending; the controller must confirm required checks on the pushed source.
+
+## 2026-10-03 — Compact training freshness and cache regressions reproduced before cutover
+
+- **Symptoms / impact:** Source validation reproduced false processing readiness
+  after a successful bounded compact-model build, skipped warming of existing
+  versioned pace keys, and an absent-daily-RHR profile fallback defect. These
+  are real source/engine findings; production impact has not been quantified.
+  No production mutation or reader rollout occurred. Compact cutover remains
+  blocked pending implementation and freshness/resource acceptance. The user
+  approved the reviewed finite captured-work amendment on 2026-10-03.
+- **Evidence / root causes:** The canonical focused processing integration
+  command successfully executed the actual pace and HR dbt models for 32 of 65
+  eligible keys, then failed with `expected 'succeeded' to be 'running'`:
+  the current recorder treats dbt status/run ID as complete coverage. A separate
+  canonical real-engine/cache diagnostic first completed all 65 prior summaries,
+  780 pace markers and 65 HR distributions, then added samples to the last
+  selected existing activity at one actual canonical source clock. Old registered
+  HR exposed the added samples after the first build; compact results matched
+  only after actual 32/32/1 builds. Actual compressed fixture elapsed times were
+  1495.66/2834.83/4191.93 ms. An executable virtual-clock test of the existing
+  default worker proves two extra 900000 ms waits between those builds; this is
+  scheduling evidence, not a measured production 30-minute run.
+- **Additional causal cases:** Public cache key construction includes the
+  existing pace version segment, but the registered parser interprets it as
+  timezone. Unit RED observes parser null, refreshed0/skipped1, zero caller calls
+  and the original cache unchanged. Its real diagnostic cache therefore remains
+  stale and is not a successful pace-cache baseline. Original HR with max200,
+  profile resting60 and no daily RHR counts 650 samples at120 in zone2 rather
+  than zone0: the CTE makes joined RHR nonnullable, so a missing LEFT JOIN row
+  supplies zero and bypasses the coalesce fallback. ClickHouse documents these
+  default-value versus null semantics in
+  [join_use_nulls](https://clickhouse.com/docs/reference/settings/session-settings/join#join_use_nulls).
+  The clean backlog comparator uses a genuine selected daily RHR60 and retains
+  the absent-row failure separately, with original readers unchanged.
+- **Validation / mitigation:** The clean diagnostic passed one integration test
+  in 18.77 s under the existing 30 s deadline. Prior diagnostic failures exposed
+  missing fixture aliases and a shared RHR fixture using plain MergeTree despite
+  production ReplacingMergeTree; the fixture now matches the actual lifecycle
+  engine and `(user_id,sleep_id)` key. Production profile/summary table and current
+  view builders are used directly. Focused reader/worker checks pass 64/64.
+  The one-time diagnostic source and receipts were retained before removing it
+  from default test discovery; temporary fixture databases/cache namespaces
+  were cleaned. The controller restored all 55 preserved container identities
+  healthy after the approved broker validation windows. No deadlines, retries,
+  query settings, timers, TTLs or runtime flags were changed.
+- **Preparation progress / remaining work:** Canonical versioned parsing now
+  passes public key/replay tests and overwrites the same registered entry.
+  A focused parser/policy/ownership/order check passes 97 tests; the exact named
+  read-only coverage model must materialize as a view while other models still
+  require incremental materialization and risky SQL remains rejected. Ordinary
+  coverage and bounded captured-selector support are implemented in source but
+  engine GREEN/resource gates remain outstanding. Processing generation,
+  absent-RHR correctness and finite same-cycle consumer catchup are not implemented.
+  The approved
+  two-release amendment separates non-consuming preparation from compact-reader
+  consumer wiring. Ordinary views contain saved queries rather than stored data
+  ([ClickHouse CREATE VIEW](https://clickhouse.com/docs/reference/statements/create/view));
+  their user filtering/resource cost must be established by actual query plans
+  and rows/time evidence. Production-scale stable/source-arrival source-to-visible
+  performance must meet both the original baseline and the existing 15-minute
+  contract before enabling readers. A finite snapshot does not establish strict
+  arbitrary-source-churn freshness. Full affected integration and required
+  repository/release gates remain outstanding.
+
+Separate follow-up to the preceding CI entry: reviewed source7504's normal CI
+rerun [37148455138](https://github.com/Asherlc/dofek/actions/runs/37148455138)
+completed successfully with 97 jobs and no failures. This closes that source's
+remote-pending CI item; it does not certify the uncommitted Task 6 changes.
+
+### 2026-10-03 — shared Docker VM OOM after restoration (local validation)
+
+- Symptoms/user impact: the original `impolite-mole-e2e-clickhouse-1` stopped
+  at 21:11:06.842 UTC, exit137/OOMKilled true; its E2E API container became
+  unhealthy. Static preview HTML still answered HTTP200, which did not prove
+  database-backed page health. Production was unaffected by this local event.
+- Evidence: read-only `docker inspect` shows the original container ID
+  `844275e532c9ec4f9d6d9ec0b0903045a6949cb57dc4a63eb8c4ae7591e98509`,
+  2GiB memory/4GiB memory+swap cap, started18:47:02UTC, no restart. The kernel
+  ring buffer records `constraint=CONSTRAINT_NONE,...,global_oom` targeting
+  that exact cgroup at21:11:06.533UTC, killed process51552, anonRSS529768KiB
+  plus fileRSS31076KiB; free swap192KiB of1048572KiB. This proves shared-VM
+  exhaustion rather than hitting the engine's own memory cap. The allocation
+  triggering OOM came from runc in another workspace's Redis cgroup; the precise
+  surrounding workload is not reconstructed and no individual query is blamed.
+  Private receipts: `.context/load-audit/task6-kernel-buffer.txt` and inspect
+  observations in the audit ledger. Earlier rotated init logs no longer retained
+  the event; an ephemeral network-isolated128MiB diagnostic using the existing
+  Postgres image, SYSLOG capability and relaxed seccomp read the kernel buffer
+  then removed itself. No service/engine/settings were added by that inspection.
+- Cause/mitigation: approximately8GiB shared VM RAM and nearly exhausted1GiB
+  swap could not sustain all restored workspace services during this event.
+  The already approved exact14 broker pause recovered3,779,884KiB MemAvailable
+  before restarting only the original E2E ClickHouse. No volumes/data deleted,
+  image replaced, timeout/retry increased or shared memory setting changed.
+- Validation/remaining risk: restarting the same original engine restored both
+  its health and the E2E API health. Before the focused A engine RED phase,
+  MemAvailable was 3,457,604 KiB and disk free 16,398,728 KiB with only the
+  approved 14 brokers paused. After fixture cleanup, the controller verified
+  all 55 original container identities/images running and healthy with no
+  deviations at 21:43:43 UTC, including the original E2E engine and API.
+  No deadline or retry was changed. This mitigation does not establish that all restored services are
+  sustainable long term; shared capacity remains unresolved. The approved80GiB
+  disk increase fixed disk capacity, not this independent RAM shortage.
+
+Docker distinguishes memory and swap limits in its official
+[resource constraints documentation](https://docs.docker.com/engine/containers/resource_constraints/).
+
+### 2026-10-03 — Task 6A ordinary coverage view fails its user-scope gate
+
+The canonical current-engine preparation suite completed with seven passing and
+four failing tests in 81.88 s. The lossless decimal-string view interface,
+captured-key/source-pair rejection, user identity and missing/mixed-marker cases
+passed. Failures remain separate: the lifecycle case exceeded the existing
+30-second deadline; the first 65-key pass reported pending counts 32/33 rather
+than 33/33; invalid-duration evidence was empty for a wrong twelve-member set;
+and the ordinary view failed its per-user resource gate. Timeout contamination
+of other cases is unproved; neither marker failure is treated as resolved.
+
+With one requested-user activity the view read 14 rows. Adding one part with
+20,000 unrelated-user activities made the identical query read 80,014 rows.
+EXPLAIN includes unfiltered activity branches (`Condition: true`, 2/2 parts,
+3/3 granules) alongside correctly filtered branches. Exact query-log memory
+was 549,784,086/549,847,126 bytes, duration 400/336 ms; JSON elapsed was
+277.32/300.83 ms. These are controlled fixture measurements, not production
+throughput or page acceptance. ClickHouse documents read rows, memory and
+duration in [system.query_log](https://clickhouse.com/docs/reference/system-tables/query_log).
+The substantial fixed memory cost remains an independent capacity concern.
+
+Validation stopped at the failed scope gate with no alternative implementation,
+commit, optimizer override or deadline increase. The fixture database was dropped
+synchronously and its client closed. The controller restored and verified all
+55 original container IDs/images running and healthy with no deviations at
+22:14:28.967 UTC, including the original E2E ClickHouse/API. No production action
+occurred. Compact cutover remains blocked. A required-user parameterized-view
+proposal is awaiting explicit strategy approval and pinned-adapter/resource
+validation; its compatibility is not established. Full failure logs, compact
+metrics and complete/selected query plans are retained in the private audit
+receipts; unresolved marker/deadline cases also require executable investigation.
+
+Follow-up: the user explicitly approved the required UUID-set parameterized
+coverage approach after independent design review. The pinned canonical adapter
+has created and replaced that view, and typed invocation/parameterized DESCRIBE
+have executed successfully. The minimal suite is not yet fully GREEN, and the
+other marker/deadline/resource gates remain outstanding. No production action
+or cutover approval is implied.
+
+### 2026-10-03 — repeated shared-VM OOM after compatibility cleanup
+
+At 23:13:43.559 UTC the kernel recorded `global_oom`, `CONSTRAINT_NONE`, killing
+process 8018 in the exact original E2E ClickHouse cgroup
+`844275e532c9ec4f9d6d9ec0b0903045a6949cb57dc4a63eb8c4ae7591e98509`.
+The killed process used 596,784 KiB anonymous plus 15,948 KiB file RSS, below
+the container's 2 GiB cap; free swap was 220 KiB of 1 GiB. Container inspection
+records OOMKilled true/exit 137, finished 23:13:50.114 UTC. Its API became
+unhealthy; the default workspace ClickHouse remained healthy/OOMKilled false.
+Production was unaffected. Private receipts are
+`.context/load-audit/task6-user-scope-kernel-buffer.txt` and
+`task6-user-scope-kernel-oom.json`.
+
+This is a repeated shared-VM capacity failure. It happened after compatibility
+fixture cleanup and broker restoration; no particular query or healthcheck is
+identified as its cause. Root verified all 55 preserved original container
+identities/images running and healthy at 23:13:55.835 UTC, while the separately
+recovered E2E engine was stopped and its API unhealthy. Database validation and
+commits stopped. No deadlines, retries, query settings or memory settings changed.
+Recovery and sustainable restored-service capacity remain unresolved. A proposed
+shared-VM memory increase requires separate user approval; the prior disk-capacity
+approval does not authorize it. Docker documents the distinct memory/swap limits
+in [resource constraints](https://docs.docker.com/engine/containers/resource_constraints/).
+
+Recovery follow-up: the user explicitly approved increasing the shared VM from
+8 to 16 GiB and restoring the preserved containers. At 23:38:30.097 UTC the
+controller verified all 57 preserved IDs/images running and healthy with no
+OOM/deviations; guest MemTotal was 16,355,308 KiB, MemAvailable 5,677,804 KiB,
+all 1,048,572 KiB swap free, and the original AIO allowance 1,048,576 restored.
+The original E2E ClickHouse and API recovered. An unrelated preserved ClickHouse
+also required recovery of three XML bind sources whose source workspace was
+absent and whose paths had been recreated as empty directories. Canonical
+files were compared with persisted preprocessed configuration: all 19 active
+leaves matched. Original byte identity is not proven. No container, image or
+volume was replaced or deleted. Receipt:
+`.context/load-audit/task6-memory-restoration-success.json`.
+
+With all services restored, the unchanged default-deadline/retry-zero two-case
+coverage compatibility suite passed in 11.00 s. Canonical pinned creation and
+replacement, typed parameterized reads/DESCRIBE, omitted invocation hard failure
+and empty-target zero rows passed; isolated database/client/temp-project cleanup
+completed. This validates that local recovery phase, not long-term capacity or
+production acceptance. Full marker/lifecycle, toolchain and resource gates remain
+open; no production action occurred.
+
+Separate validation blocker at 23:45 UTC: the unchanged four-case functional
+selection failed a first single-user coverage read with ClickHouse native 241,
+`MEMORY_LIMIT_EXCEEDED`. Query 992196f8-6f20-4c65-aeb8-4d646bb47446 ran 495 ms,
+tracked 646,978,425 bytes and read zero source rows/bytes; the total-server
+exception reported RSS 1.19 GiB and maximum 1.15 GiB. This is distinct from the
+earlier shared-VM kernel OOM. All 57 preserved containers stayed healthy with no
+OOM; root measured 5,262,568 KiB available at 23:50:15 UTC. Production was
+unaffected. Fixture cleanup completed and lifecycle/resource validation stopped.
+No ClickHouse limits, query settings, retries or deadlines changed.
+
+Retained stack evidence places the failing memory check in compact MergeTree
+reader construction; it does not attribute all query memory to that reader.
+A separately cleared isolated natural EXPLAIN, without executing coverage,
+shows 44 MergeTreeSelect processors and 72 join build/transform entries, with
+ten-lane paths. Allocation ownership and a sound source correction remain
+unresolved. Root owns further capacity clearance; no source/query is blamed
+without that evidence. Receipts: `.context/load-audit/task6A-functional-query-errors-summary.json`,
+`task6A-functional-query-profile.jsonl`, `task6A-pipeline-summary.json`.
+ClickHouse recommends inspecting natural pipeline lanes alongside independent
+memory measurements in its [workload sizing guidance](https://clickhouse.com/resources/engineering/high-concurrency-sizing-user-analytics).
+
+The next cleared EXPLAIN-only comparison isolates the invocation boundary:
+the exact compiled view SELECT, retaining its three existing settings, has
+seven source processors, eleven join branches and seven materialized-CTE
+processors; the typed view call has 44 sources, 72 join branches and no
+materialized-CTE processor. No coverage SELECT was executed in this comparison;
+isolated database/client/temp-project cleanup completed. A proposed correction
+must preserve required settings at the typed caller boundary and pass separate
+result/memory/scope checks; it has not been adopted or measured yet. Receipts:
+`task6A-pipeline-comparison-summary.json` and both full pipeline plans. ClickHouse
+documents that a disabled materialized-CTE setting causes inlining in its
+[WITH reference](https://clickhouse.com/docs/reference/statements/select/with#materialized-common-table-expressions).
+
+Further diagnostics show that outer propagation of those same three values
+removes extra lanes but retains 44 readers and no materialized-CTE processors;
+it is not a complete correction. Actual canonical CREATE input and stored
+SHOW CREATE each retain all eight materialization declarations. The exact body
+under the engine's native projection wrapper still has seven readers and seven
+materialized-CTE processors. The invocation boundary is implicated; precise
+internal engine behavior and allocation ownership remain unproved. No caller,
+engine setting or serving strategy change was adopted. A source-level relational
+repair inside the same required parameterized view/shared-selector contract is
+under independent proposal review; lifecycle/resource acceptance remains blocked.
+All diagnostic fixtures completed cleanup. Receipts:
+`task6A-pipeline-propagation-summary.json`, `task6A-view-definition.json`,
+`task6A-wrapper-summary.json`. No production action occurred.
+
+After independent review, a minimum relational repair kept the required-user
+parameterized view and shared-selector contract: one FULL OUTER JOIN replaces
+the repeated key union/joins, and one key-state reference expands both date
+windows. The pre/post selector suites both passed 28 cases, including actual
+canonical pace/HR target endpoint types. The natural default-client lifecycle
+case then passed, followed by independent 65-key drain and invalid-duration
+checks. No runtime settings, caps, deadlines, retries or storage strategy changed.
+The engine's CTE reuse and exact allocation owner remain unproved; the repair
+reduces repeated relational work without claiming to fix engine internals.
+
+Controlled resource validation passed with 20,000 unrelated users: requested-user
+reads stayed exactly 74 rows/3,858 bytes, and all 14 source-plan branches showed
+the user filter. Actual query-log memory/duration were 207,134,355 B/285 ms before
+population and 95,303,019 B/393 ms afterward. A 129-user request read 188,490 rows
+and completed in 615 ms with 211,046,558 B tracked query memory. Its response
+cardinality and requested user set passed. The minimal natural pipeline has
+16 source-reader and 116 join-processor entries, with no materialization processor;
+not every plan dimension decreased. Fixtures completed cleanup and all shared
+containers remained running. Receipts: `task6A-relational-selector-green.log`,
+`task6A-relational-functional-three.log`, `task6A-relational-controlled-resource.json`.
+Production scale, source-arrival freshness and release acceptance remain pending;
+no production action occurred. ClickHouse's [join semantics](https://clickhouse.com/docs/reference/statements/select/join)
+and [workload sizing guidance](https://clickhouse.com/resources/engineering/high-concurrency-sizing-user-analytics)
+describe the relational and independent resource checks used here.
+
+Compatibility revalidation then exposed a separate native241 on the existing
+computed projection `length(pending_keys)` after canonical view creation
+succeeded. Query `167327b3-01cf-45de-b0c8-3dc3df6bb546` failed in 243 ms with
+490,505,057 B tracked query memory and zero source reads; the server reported
+RSS 1.05 GiB versus maximum 977.11 MiB. The allocation check again occurs in
+compact-reader construction, without identifying all allocation ownership.
+Canonical replacement/count/empty-target checks passed. The failed fixture was
+cleaned up and wider validation stopped; all 57 shared containers remain healthy.
+Full-column controlled passes do not prove this projection's capacity or establish
+its cause. No settings, limits, retries or test correction were adopted. Exact
+query/profile/settings/stack receipt: `task6A-compatibility-memory-query.json`.
+This local validation pressure event remains unresolved; no production impact
+or operation occurred.
+
+Same-empty-state EXPLAIN shows identical full-column and length plan dimensions,
+so the projection alone is not a proved cause. Stored view settings are
+max_threads=1/join_use_nulls=1/enable_materialized_cte=1, but the default outer
+context is auto(10)/0/0. Supplying only those existing values at the new typed
+boundary removes ten-lane paths (242 to 26 join-processor entries); materialized
+CTE reuse remains absent. A separately cleared actual diagnostic then returns
+the correct one-pending-key/source41/0 result for both models: full projection
+225 ms/42,026,959 B and length projection 204 ms/38,048,664 B, eight source
+reads each. Every fixture completed cleanup. No production or test caller has
+adopted the proposed context while independent boundary review is pending;
+wider validation remains held. This observation is limited to the pinned view
+and measured fixture, not a universal client profile. ClickHouse's [workload
+sizing guidance](https://clickhouse.com/resources/engineering/high-concurrency-sizing-user-analytics)
+explains why processing lanes affect memory and calls for workload-specific
+measurements. Receipts: `task6A-compatibility-projection.json`,
+`task6A-compatibility-propagated.json`, `task6A-compatibility-required-context.json`.
+
+Independent boundary review subsequently passed the required UUID-set caller
+with the existing three coverage settings supplied explicitly. The public
+query contract was updated before the nine typed test calls; generic clients
+and old production readers remain unchanged. Actual pinned compatibility
+passes 2/2, full functional/resource coverage 12/12, and configured tooling 3/3
+without changed deadlines, retries or memory caps. Controlled single-user
+reads remain 74 rows/3,858 B after 20,000 unrelated users; all 14 source branches
+carry user predicates. The 129-target query uses 50,395,168 B tracked memory
+in 237 ms, with actual QueryFinish settings confirming the required context.
+This closes the measured local fixture gates, while the default-caller failure,
+absence of materialized CTE reuse and precise internal allocation ownership
+remain documented limitations. Configured dbt docs generation succeeds with
+an empty catalog; SQLFluff retains its existing parsing-ignore limitation.
+Receipts: `task6A-required-context-compatibility-green.log`,
+`task6A-required-context-coverage-green.json`,
+`task6A-required-context-tooling-green.log`. Production source-arrival,
+worker/freshness and final reader acceptance remain pending; no production
+operation occurred.
+
+## 2026-10-03 — Provider issue email PR blocked by migration and mutation checks
+
+- **Symptoms / impact:** [PR #2869](https://github.com/Asherlc/dofek/pull/2869)
+  failed SQLFluff, Stryker, and one integration shard, blocking CI readiness.
+  No production deployment or user-facing outage occurred.
+- **Evidence / root causes:** The [SQLFluff job](https://github.com/Asherlc/dofek/actions/runs/37144716484/job/111266312528)
+  ran `uv tool run sqlfluff lint` on the new migration and reported
+  `L: 7 | P: 1 | LT02 | Expected indent of 2 spaces`. Its foreign-key
+  continuation lines used four spaces. The [mutation job](https://github.com/Asherlc/dofek/actions/runs/37144716484/job/111266498408)
+  reported `Final mutation score 64.52 under breaking threshold 75` because
+  unit tests did not detect removed recovery writes or exercise missing
+  transaction and account-deletion paths. The [integration shard](https://github.com/Asherlc/dofek/actions/runs/37144716484/job/111266498593)
+  reported `relation "provider_issue_email" already exists`: the historical
+  climbing migration fixture used the current migration folder against an
+  already-current database with history recorded only through migration 0133.
+- **Fix / validation:** Corrected the new migration's indentation, added
+  targeted sync-log cases, and bounded the historical fixture's migration
+  folder through its intended 0135 cutover while preserving archived hashes.
+  The same mutation command killed all 31 active mutants for a 100% score.
+  SQLFluff, 82 focused unit tests, and 51 PostgreSQL/email integration tests
+  passed locally. Root/server/web typechecks passed. Local analytics lint
+  first found an unreachable ClickHouse endpoint; `pnpm compose:up` restored
+  the workspace connection settings and lint passed.
+- **Remaining risk / follow-up:** Hosted validation is tracked on the
+  [PR checks](https://github.com/Asherlc/dofek/pull/2869/checks).
+  The [database README](../src/db/README.md#migrations) now includes the
+  migration SQLFluff command because root `pnpm lint` checks analytics SQL.
+  Keep historical migration fixtures scoped to the versions they model and
+  use mutation reports to cover changed runtime branches. No runtime retry,
+  timeout, or gate relaxation was added for these failures.
+
+## 2026-10-03 — Reviewed analytics preparation PR had no normal CI after main advanced
+
+- **Symptoms / impact:** PR #2868 at preparation commit `ac725e4fa` had no
+  normal CI run; only skipped Dependabot Automerge appeared. GitHub reported
+  the draft PR as CONFLICTING / DIRTY. No production deployment or outage occurred.
+- **Evidence / root cause:** Main advanced by provider issue notifications and
+  package version release to `4ef5e6863`. Native merge-tree and the actual
+  same-branch merge identified only a content conflict in this incident log.
+  GitHub [does not run pull_request workflows while a merge conflict remains](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#pull_request);
+  pull_request_target can still run. The missing run is not a failed test job.
+- **Direct fix / validation:** Merged that exact frozen main commit on the same
+  branch with automatic stashing disabled. Preserved the complete reviewed
+  incident history and the distinct incoming provider-email record exactly once;
+  unrelated incoming files retain native merge results. Focused units pass 69
+  cases, provider-notification integration 23, and email integration six, with
+  teardown complete. Sandbox/analytics/migration lint, migration policy and
+  root/server/web/mobile typechecks pass without relaxed flags or limits. The
+  refreshed source review and normal PR CI remain pending. Reader/worker/cache
+  consumer changes remain uncommitted and protected.
+- **Remaining risk / follow-up:** Normal CI must validate the merged snapshot,
+  including incoming historical migration coverage; earlier main CI success
+  does not certify this merge. Production freshness/population/page acceptance
+  remains separate. No workflow trigger, timeout, retry, database setting or
+  release count changed. Inspect mergeability and exact workflow event before
+  diagnosing an absent run as a test failure.
+
+## 2026-10-04 — Coverage schema introspection failed on the CI ClickHouse version
+
+- **Symptoms / impact:** Normal [CI 37175963430](https://github.com/Asherlc/dofek/actions/runs/37175963430)
+  failed integration shard 3's coverage initial-create compatibility case.
+  Local ClickHouse 26.8 passed; CI uses 26.6.1.1193. Preparation CI and compact
+  reader progress are blocked. No production mutation or user outage is evidenced.
+- **Evidence / root cause:** A bounded exact-image reproduction created the native
+  View and passed its typed SELECT, then failed direct DESCRIBE with query ID
+  `caf2490e-072c-4614-9f7d-d60fdd2de025`, code 46 UNKNOWN_FUNCTION. Pinned
+  [26.6 describe source](https://raw.githubusercontent.com/ClickHouse/ClickHouse/v26.6.1.1193-stable/src/Interpreters/InterpreterDescribeQuery.cpp)
+  dispatches that form to the [registered table-function factory](https://raw.githubusercontent.com/ClickHouse/ClickHouse/v26.6.1.1193-stable/src/TableFunctions/TableFunctionFactory.cpp);
+  [26.8 source](https://raw.githubusercontent.com/ClickHouse/ClickHouse/v26.8.2.7-lts/src/Interpreters/InterpreterDescribeQuery.cpp)
+  adds parameterized-view catalog handling. This is a direct schema-introspection
+  limitation, not evidence that the view cannot be created or selected.
+- **Direct correction / validation:** The compatibility query now describes the
+  same typed SELECT through the supported subquery schema path, retaining every
+  column/type assertion, UUID binding and required query setting. Pinned 26.6
+  describe source analyzes subquery sample schemas. Corrected-path runtime
+  validation is pending; no successful repair is claimed. Diagnostic stop/down
+  both succeeded, owned resources and lock were removed, and an independent
+  check found all 57 original containers healthy at 13:45:48.720 UTC.
+- **Remaining risk / follow-up:** Require exact-image validation, local two-case
+  validation, scoped source review and normal CI on the corrected committed
+  snapshot. Downstream freshness/resource and production acceptance gates remain
+  separate. No image update, fallback, timeout, retry or setting relaxation was
+  introduced. Identify the exact failing query stage and pinned interpreter
+  dispatch before changing an image or weakening a schema gate.
+
+Validation update, 2026-10-04 14:02 UTC: the corrected initial-create case passed
+once on the exact pinned 26.6.1.1193 CI image, retry 0, with the unchanged strict
+four-column/type assertions. The canonical local compatibility suite then passed
+both initial-create and replacement cases (5.99 s total). Owned diagnostic
+stop/down succeeded, resources and lock were absent, and an independent check
+verified all 57 original containers healthy at 14:02:18.214 UTC. Normal CI on the
+corrected committed snapshot is still pending; broader preparation, compact
+reader freshness/resource and production acceptance gates remain open. No
+successful-query native ID was captured by the diagnostic's failure-only selector.
+
+## 2026-10-03 — UI cleanup PR exposed asynchronous layout movement
+
+- **Symptoms / impact:** [PR #2871](https://github.com/Asherlc/dofek/pull/2871)
+  failed the existing Settings layout-stability checks. No production
+  deployment or user-facing outage occurred.
+- **Evidence / root cause:** The [web E2E job](https://github.com/Asherlc/dofek/actions/runs/37170308289/job/111341906945)
+  ran `pnpm exec cypress run` and reported `Data Sources height delta 92px;
+  normalized Zepp pairing delta 92px: expected 92 to be below 1` in
+  `settings-layout-stability.cy.ts:290`. Removing the duplicate panel heading
+  also removed its reserved header space. The asynchronous sync controls
+  remained outside the fixed-height provider inventory, so resolving the
+  provider list enlarged the panel and moved the following section.
+- **Fix / validation:** Moved the existing sync controls into the inventory
+  region, preserving their handlers and full-history confirmation. The
+  focused regression failed before this change and passed afterward; all
+  64 tests across the three affected suites passed. Browser captures measured
+  identical 474-pixel loading and loaded section heights. A separate narrow
+  health-card reproduction confirmed provenance-footer overflow; allowing
+  the footer to wrap kept the disclosure control within the card. Root and
+  workspace typechecks, full lint, and the web Storybook build passed.
+- **Remaining risk / follow-up:** Hosted validation is tracked on the
+  [PR checks](https://github.com/Asherlc/dofek/pull/2871/checks). Keep the
+  existing layout-stability gate when simplifying asynchronous sections;
+  inspect loading and loaded geometry together. No runtime retry, timeout,
+  or assertion threshold was changed.
+
+## 2026-10-04 — Main advanced before corrected preparation CI could start
+
+- **Symptoms / impact:** After the strict coverage schema correction, PR #2868
+  again became CONFLICTING / DIRTY when main advanced to `e000b1926`.
+  Normal pull_request CI for `00cb7504` did not start; only skipped automerge
+  and external checks were observed. No production mutation or outage occurred.
+- **Evidence / root cause:** Native merge-tree identified one incident-log
+  content conflict and no coverage/model/worker overlap. GitHub
+  [does not run pull_request workflows while a merge conflict remains](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#pull_request).
+  The missing run is not a failed test job; the prior `e433` run remains failed.
+- **Integration / validation:** The same-branch merge uses frozen main
+  `e000b1926fce71992b80effbf1190a05aba10911` with automatic stashing disabled.
+  The complete current incident document is preserved, followed by main's exact
+  distinct UI layout incident once. All other files retain native merge results.
+  Protected preparation source and uncommitted compact-reader work remain separate.
+  Focused checks, final review and normal merged-head CI are pending.
+- **Remaining risk / follow-up:** Normal CI must certify the merged snapshot,
+  including paired UI behavior and corrected schema compatibility. Prior local
+  or main success does not certify this merge. No workflow trigger, retry,
+  timeout, assertion or release-count change was introduced. Check PR
+  mergeability and exact workflow event/head before diagnosing an absent run.
+
+Host validation update: the reviewed incoming selection passed all 263 tests
+across 11 files on both unit/mobile projects. Sandbox lint and root/server/web/
+mobile typechecks passed sequentially without generated tracked-source drift.
+Final scoped review, the complete lint gate and normal CI on the merged committed
+snapshot remain pending. Protected preparation source and all 15 uncommitted
+compact-reader worktree files retain their captured identities.
+
+Normal CI validation completion, 2026-10-04: [run 37212084885](https://github.com/Asherlc/dofek/actions/runs/37212084885)
+completed successfully for exact merged commit
+`69be9444aa62aabe3d6b2a054b5b54513330e6ee`, event pull_request: 97 completed
+jobs, 93 successful and four skipped, no failures. The previously failed
+Integration Tests (3/4), Unit & Integration Tests, Test Gate and CI Gate all
+passed. The retained completed shard-3 log reports 70 files / 468 tests passed
+in 487.20 s, including canonical coverage initial-create and replacement with
+the strict four-column/lossless tuple schema. The first high-level job-log
+request was unavailable while the run was active; it was not credited as evidence.
+Completed native job-log collection subsequently succeeded. This closes the
+preparation CI incident for that exact source, without certifying uncommitted
+compact readers, cache generations, source-to-visible freshness or production
+cutover. No workflow, retry, timeout, image or assertion relaxation was required.
+
+**2026-10-04 — Compact analytics readiness correction, controlled validation.**
+The real 65-key fixture exposed false processing readiness: each compact writer
+successfully processed 32 keys, leaving 33 pending, but the recorder reported
+aggregate analytics success from dbt status/run identity alone. The direct fix
+requires typed, user-scoped ClickHouse coverage from the actual PG operation
+users before publishing success. Pending markers now produce analytics `running`,
+no cache-refresh event and overall processing `active`; failed/unattempted builds
+retain precedence. Missing coverage fails closed; a genuinely empty requested
+user requires explicit zero-current/zero-prior evidence. Production was unchanged,
+and this validation does not establish an observed production outage or cache
+freshness improvement.
+
+Sequential canonical integration checks passed with retry 0 and unchanged
+deadlines/context: 14 PG target-producer cases, one provider case, five real
+coverage-reader cases and the causal 65/32 readiness regression. Independent source
+review approved the slice with no blocking findings. Their teardown hooks completed
+without errors, but isolated object absence and successful native query IDs were
+not independently captured for those functional runs.
+
+The separate controlled absence-query experiment also passed. Its absent user
+was inside populated key bounds; inventory grew from 3,584 to 458,752 rows using
+the existing schema/default granularity and required 1/1/1 query context. Actual
+structural reads grew from 3,585 rows, 3 ms and 5,233,599 peak bytes to 24,577 rows,
+4 ms and 5,233,679 peak bytes. Expanded native query `bd16a497-3386-42a6-9cbe-72ddbe3cc89e`
+finished successfully. All three natural source branches retained FINAL/user
+filtering and selected granules current 1/4, pace 1/48 and HR 1/4; no branch fully
+scanned. Both reader executions returned `empty_sources` for exactly the requested
+UUID; each underlying structural result returned decimal zero current/pace/HR
+counts. The operator's DROP and post-DROP database-absence assertion and
+independent client close succeeded; absence rows were not separately persisted
+or independently queried again. Root verified all 57 original containers healthy
+with unchanged IDs/images afterward. No engines were created or other workspaces
+paused.
+
+Finite same-cycle catchup, actual Redis/live-input generation verification,
+source-arrival races, no-worse source-to-visible lag, the 15-minute freshness gate,
+production-scale resource acceptance and B commit/CI/cutover remain open. These
+controlled results do not prove constant physical reads or subsecond production
+page loading. Follow-up includes the deferred lossless ordering/duplicate-key
+tests and existing test warnings. A useful diagnostic-runbook improvement is to
+require an in-range absent key, selected/total granules for every source branch,
+and explicit separation of teardown completion from captured cleanup absence.
+
+**2026-10-04 — Bounded verifier initial native gate, tuple binding failure.**
+The isolated canonical initial-create test reached its first typed metadata
+request, then failed before verifier execution: query
+`4539dbb6-7617-40e0-b7a5-6988233004ab`, code 27
+`CANNOT_PARSE_INPUT_ASSERTION_FAILED`, expected `(` while decoding
+`Array(Tuple(UUID, UUID))`. Client 1.23.1 encoded nested JavaScript arrays
+with square brackets. Its exported `TupleParam` uses tuple parentheses, as
+shown by the [exact pinned official serializer](https://github.com/ClickHouse/clickhouse-js/blob/client-1.23.1/packages/client-common/src/data_formatter/format_query_params.ts).
+The test now uses that existing built-in wrapper at SELECT and strict subquery
+DESCRIBE bindings; no custom serialization, dependency, SQL, settings, retries
+or deadline change was introduced. Host serialization/type/format checks passed;
+the corrected native path and broader semantic/resource gates remain unvalidated.
+Test teardown reported no error and root independently observed all 57 original
+containers healthy; isolated database absence was not independently captured.
+Production was unchanged; no production incident or freshness improvement is
+inferred from this local validation failure.
+
+
+On 2026-10-04, the bounded verifier's corrected initial native case passed,
+but the remaining-case selection failed in dbt's system-table relation discovery
+before either case executed. Native query 6e4791d8-b405-480b-b9c2-9e32f07480dc
+tracked 38,303,582 bytes while the server rejected total memory at 1.18 GiB.
+A system.metric_log merge hit the same ceiling about 2 ms earlier; subsequent
+one-second samples tracked up to 890,798,718 merge bytes. The actual metric table
+has 2,100 columns, 95,316 rows and six parts; this evidence identifies overlapping
+metric-log merge pressure, without reconstructing every allocation at the fatal.
+The new verifier CREATE/SELECT was not the rejected statement. Production was
+unchanged. Root preserved the relevant native SQL, errors, metrics, table metadata
+and their hashes, then performed exactly one verified-own-engine
+TRUNCATE TABLE system.metric_log SYNC. Its query
+0b164468-a1b1-48ac-9e45-5386564282ec completed with no exception; all query_log,
+part_log, native-error histories, product tables and 57 original containers were
+preserved. Historical metric rows were deleted and the full history was not
+archived. ClickHouse documents that this history table may safely be truncated:
+[system.metric_log](https://clickhouse.com/docs/reference/system-tables/metric_log).
+
+After the operator cleanup, the unchanged remaining two cases passed once with
+retry 0, proving canonical replacement, the two existing schema assertions,
+empty bindings, zero-clock presence and explicit absent rows. The earlier
+corrected initial case proved both exact 41/0 source rows and microsecond bounds.
+Root retained four successful native query records under the required 1/1/1
+context (198–229 ms, about 41 MB tracked peaks), separately from the failed
+startup query. Root independently verified all 57 originals healthy after cleanup
+and after testing. This is a local prerequisite recovery, not a durable pressure
+fix: metric-log merges can recur as history accumulates under the unchanged cap.
+Full typed-schema, lifecycle/inventory, shared-selector, toolchain, key-pruning,
+finite-drain, cache-generation and production freshness gates remain open.
+No cap, logging setting, timeout, retry mechanism or steady-state cleanup changed.
+
+
+**2026-10-04 — Bounded key-verifier corrections and controlled local resource validation.**
+The configured new-view SQL lint initially failed with SQLFluff CP02 at line 10,
+position 16, treating the typed-parameter `arrayJoin` call as an identifier.
+The direct correction uses a named typed-input CTE and the native `ARRAY JOIN`
+clause; key/user bindings, empty-input behavior and query settings are preserved.
+ClickHouse documents element expansion and omission of empty arrays for this
+clause: [ARRAY JOIN](https://clickhouse.com/docs/reference/statements/select/array-join).
+The same configured dbt-templated lint passed once after correction. Its original
+failure remains in `task6B-verifier-key-lint-native.log`; no rule, parser flag,
+timeout or retry setting changed.
+
+The expanded lifecycle tests then exposed a fixture seed failure: native INSERT
+`8cd62e79-8b26-4f31-b29e-2d5246e41ad1` read and wrote zero rows, so the verifier
+correctly reported the second user absent. The replacement `user_id` alias
+collided with the unqualified original-user filter. ClickHouse documents
+query-wide aliases and same-name substitution: [expression aliases](https://clickhouse.com/docs/reference/syntax#notes-on-usage).
+The test now qualifies the source table and requires the exact seeded
+user/activity/version 99 before verification. Only that affected case was rerun;
+it passed with lossless adjacent source clocks and user isolation. Owned database
+DROP and a subsequent exact-name absence query passed. The full 25-field schema,
+inventory/lifecycle cases, selector 28, pace 9, HR 9 and coverage 12 regressions,
+and configured build/docs/lint gates are GREEN across retained distinct runs.
+Existing empty parameterized-view catalog results, adapter warnings and three
+canonical SQL-lint size skips remain explicit limitations.
+
+Root next ran one reviewed controlled key-resource operator, with no retry,
+delay, forced layout, alternative serving query, cap/settings change or history
+cleanup. Baseline 36 rows grew to 1,179,648 raw/FINAL rows, including unrequested
+same-user keys on both sides of both requested keys and eight other users.
+Both typed-view requests returned the same independently expected four rows
+with all 25 fields. Exact native QueryFinish records were
+`ca06d8b2-9ff1-44c4-bc10-db1215c90498` (169 ms, 108 read rows, 7,614 bytes) and
+`81ad8237-74b6-4e40-b111-a7b01f9d776f` (195 ms, 213,100 read rows, 14,638,788 bytes).
+Each tracked peak was 37,960,448 bytes, below the 128 MiB gate and the separately
+observed unchanged effective server cap of 1,288,931,328 bytes. Actual request
+settings retained max_threads/join_use_nulls/enable_materialized_cte 1/1/1.
+
+Manual inspection covered all ten natural source-read nodes, including repeated
+current/prior window reads. Requested user/exact-key predicates entered current
+and prior reads before joins/aggregation; sensor reads used requested user,
+model channel and dates derived from both current and prior bounds. Expanded
+selected/total data granules were current 3/9, pace prior 3/97, HR prior 3/9 and
+sensor 2/33. Requested keys lay inside expanded part bounds, so acceptance was
+based on pruning within overlapping ranges. No compiled-body fallback was needed.
+Read amplification was real; these measurements do not prove constant reads or
+a production latency SLA. Full plans, physical inventories and native results
+are retained under `task6B-verifier-key-resource` artifacts.
+
+Owned DROP, the operator's separate database-absence assertion, client close,
+source preservation and original-57 checks all passed independently. The empty
+post-DROP rowset was asserted, not separately persisted or queried again by root.
+Root independently observed all 57 original IDs/images healthy with no deviations
+at 20:14:47.537 UTC. Production was unchanged. New support-commit CI, pinned CI
+engine compatibility, finite-capture totals, Redis/live-input generation,
+source-arrival races, no-worse freshness and production cutover remain open;
+the earlier metric-log pressure recurrence risk also remains unresolved. A useful
+runbook refinement is to record selected/total data granules for every repeated
+source branch and distinguish per-request resource proof from total capture work
+and source-to-visible freshness. No steady-state diagnostic framework is added.
+
+## 2026-10-05 — Reports-removal PR mobile preview upload returned storage InternalError
+
+- **Status:** Latest preview publish passed; underlying storage error remains unexplained.
+- **Symptoms / impact:** PR #2887's first mobile preview publish failed after the iOS bundle exported successfully. The preview update was unavailable from that run; production impact was not established.
+- **Evidence:** The `Publish OTA to PR branch` step ran `pnpm dlx eoas@2.3.22 publish --branch pr-2887 --platform ios --nonInteractive --packageRunner pnpm`. Its first fatal diagnostic was `File upload failed` with the XML storage error `InternalError: We encountered an internal error. Please try again.` The command exited 1 in the [failed run](https://github.com/Asherlc/dofek/actions/runs/37380008495/job/111999255166). This proves the upload failed, but does not identify the storage-side cause.
+- **Fix / validation:** No workflow, retry, timeout, or production configuration change was made. A separate commit removed an obsolete Reports assertion from the existing header navigation test. Its ordinary new-commit [preview publish passed](https://github.com/Asherlc/dofek/actions/runs/37380369013/job/112000483629), and all 19,297 local unit/mobile tests passed.
+- **Remaining risk / follow-up:** Storage failures may recur. Correlate future upload failures with storage request IDs and service logs before changing publish behavior; document the canonical OTA upload diagnostics in the deployment runbook.
+
+### 2026-10-05 — Local integration validation blocked by Docker address-pool exhaustion
+
+- Symptoms/evidence: `pnpm test:integration -- packages/server/src/repositories/nutrition-canonical.integration.test.ts packages/server/src/repositories/nutrition-analytics-source-breakdown.integration.test.ts packages/server/src/routers/nutrition-analytics-data.integration.test.ts packages/server/src/routers/settings.integration.test.ts src/db/migrate.integration.test.ts` failed while creating `loyal-alpacka_default`; the first fatal line was `all predefined address pools have been fully subnetted`.
+- Impact: local PostgreSQL integration validation of supplement removal is blocked; no production impact observed.
+- Root cause: the Docker daemon has allocated its default subnet pool across existing workspace networks; `docker network ls` confirmed many workspace networks.
+- Mitigation: with user approval, created only `loyal-alpacka_default` on the unused `10.231.137.0/24` subnet with Compose ownership labels. The first cold database initialization crossed its existing health-startup window; logs confirmed initialization completed and subsequent healthchecks passed, with no steady-state timeout changes.
+- Validation: the same integration command reached Vitest after all four dependencies became healthy; analytics SQL lint subsequently passed. All 74 database assertions across six suites passed, including the forward migration sequence and food-source resolution. The two unrelated full-suite timeouts in `archive-erasure.test.ts` and `deploy-web-stack.test.ts` passed when rerun individually.
+- Resolution: final `pnpm lint` passed; `pnpm compose -- down --remove-orphans --volumes` removed only this workspace’s test containers, network, and disposable volumes. No timeout, retry, or network overrides were added to repository configuration.
+- Remaining risk/follow-up: the daemon’s default pool remains exhausted by other workspace networks; document an operator procedure for pool exhaustion. Docker documents explicit subnets in [network create](https://docs.docker.com/reference/cli/docker/network/create/).
+
+### 2026-10-05 — Supplement removal PR blocked by destructive migration lint
+
+- Symptoms/evidence: [PR #2886 Migration Lint](https://github.com/Asherlc/dofek/actions/runs/37380655334/job/112003275274) failed at `echo "$NEW_MIGRATIONS" | xargs squawk`. The first diagnostic was `Dropping a view may break existing clients.`; four `ban-drop-view` findings and one `ban-drop-type` finding produced exit code 123.
+- Impact/root cause: CI blocks the approved complete removal of supplements because Squawk prohibits the intentional view/type drops in `0137_remove_supplements.sql` (subsequently renamed to [0141](../drizzle/0141_remove_supplements.sql) after merging the current migration journal). No production deployment or data deletion occurred.
+- Validation: migration policy and SQLFluff passed locally; all 74 PostgreSQL integration assertions passed, including the forward migration and retained food-source resolution.
+- Fix/validation: with explicit user approval, added documented exceptions immediately before the four intentional view drops and retired type drop, using Squawk's [statement-scoped comments](https://squawkhq.com/docs/cli#disabling-rules-via-comments). Squawk 2.67.0 (the failing CI version), migration policy, and SQLFluff all passed locally. The workstation's Squawk 2.49.0 does not recognize these newer rule names, so validation used the CI version through `uv tool run`.
+- Resolution: [Migration Lint passed in CI](https://github.com/Asherlc/dofek/actions/runs/37384870434). No global rules, retries, or timeouts changed. Add Squawk validation to the local migration checklist to catch intentional destructive-operation findings before pushing.
+
+### 2026-10-05 — Supplement removal exposed obsolete integration expectations
+
+- Symptoms/evidence: [CI run 37384870434](https://github.com/Asherlc/dofek/actions/runs/37384870434) integration shard 1 failed SDK discovery with `expected ... to have a length of 41 but got 40`; shard 4 failed the credential-free sync test after `[trpc] sync.triggerSync: No configured providers available for sync`.
+- Impact/root cause: PR validation blocked, with no production impact. Two SDK counts still included the removed MCP tool, and a sync test depended on the retired always-connected supplement provider.
+- Fix/validation: updated both existing discovery counts to 40 and deleted the obsolete provider-dependent test. The two affected suites passed together with 34 assertions through `pnpm test:integration`; Biome passed. The approved isolated workspace network was reused for validation and removed with the workspace test containers and volumes afterward.
+- Remaining risk/follow-up: full CI rerun pending. Include SDK discovery counts and provider-dependent integration fixtures in the feature-removal checklist; no production behavior or CI settings changed.
+
+Follow-up: after tracking removal also landed on `main`, [CI run 37400997752](https://github.com/Asherlc/dofek/actions/runs/37400997752/job/112068952077) failed three provider-account assertions with `expected ... to have a length of 13 but got 12`. Git automatically merged both removals but retained stale count assertions. Updated the existing count and final-index expectations; both provider-detail suites passed locally with 167 tests, and Biome passed. Production was unaffected; replacement CI remains pending. Validate shared deletion inventories whenever multiple feature removals merge concurrently.
+
+### 2026-10-05 — Local validation database cold-start health failure
+
+During removal of Personal Experiments and Life Events, `pnpm test:integration -- packages/server/src/routers/settings.integration.test.ts src/db/seed-dev-db.integration.test.ts` stopped before tests with `container noble-turtle-db-1 is unhealthy`. Production and users were unaffected. `pnpm compose -- logs --tail 60 db` showed the fresh TimescaleDB initialization sequence still shutting down its temporary server for a checkpoint; Docker health history reported `127.0.0.1:5432 - no response`. The container subsequently completed initialization and logged `database system is ready to accept connections`; Docker inspection then reported healthy and no OOM kill. No runtime configuration, timeout, or retry was changed. The integration command was started again after confirming prerequisite health. Cold-start readiness timing remains a local validation risk; its underlying initialization duration needs separate investigation before changing health policy.
+
+### 2026-10-05 — Feature-removal PR blocked by stale test dependencies
+
+[PR #2884 CI run](https://github.com/Asherlc/dofek/actions/runs/37378508209) failed in `Run pnpm e2e:web:run`: `cy.task('cleanTestData') failed` with `relation "fitness.life_events" does not exist`. The removal migration dropped the table, but the root Cypress cleanup task still deleted from it. Removing that obsolete query addresses the teardown failure. The same browser run exposed a page-readiness assertion race (`expected [ Array(1) ] to have a length of 0 but got 1`): its fixed delay could finish before the loading assertion. The tests now hold the response until the loading assertion runs, using the documented [Cypress Promise interception callback](https://docs.cypress.io/api/commands/intercept#Returning-a-Promise), while retaining the existing duration assertion.
+
+The `Diff coverage (changed lines only)` step failed with `Failure. Coverage is below 80%`: the sole uncovered changed line was an unused router `Link` mock in `TimeRangeSelectorConsumers.tsx`. Removing the obsolete mock preserves coverage policy. Six affected component tests, root typecheck, changed-file Biome and spelling checks passed locally. Browser validation and the replacement CI run were pending when this entry was written; production was unaffected. No retries, timeouts, coverage exclusions, or runtime compatibility paths were added. Future schema removals should include root Cypress Node tasks in the dependency sweep.
+
+Local browser validation also encountered `ERR_PNPM_ENOSPC` during Docker image construction. The build was stopped; rebuildable build-cache pruning reclaimed no space, so unused-image pruning reclaimed 1.505 GB before restarting the build. Running containers and named volumes were preserved. Docker disk pressure remains a local validation risk.
+
+The rebuilt E2E stack then hit `all predefined address pools have been fully subnetted`; network inspection confirmed all automatic Docker subnets were allocated. A temporary operator-only Compose override used an unallocated `10.253.88.0/24` subnet and isolated ports, preserving other workspaces' networks and services.
+
+Full local Cypress validation subsequently exposed a settings layout failure: `CLS 0.0128; ... Data Sources height delta 0px; normalized Zepp pairing delta 0px: expected 0.01280707878787879 to be at most 0.001`. Temporary diagnostics identified the provider grid moving down 68 pixels as sync controls appeared after the delayed inventory response. With user approval, web now reserves the control/processing area above that grid; mobile reserves corresponding areas scaled to system font size. The temporary diagnostic spec was deleted. All 43 browser tests and 144 provider-screen tests passed, including mobile loading transitions at normal and doubled font size; web/mobile typechecks also passed. The replacement CI run remains the final verification gate. No layout threshold was relaxed.
+
+The subsequent push initially created no PR CI run: GitHub reported `mergeable: CONFLICTING` after unrelated changes reached `main`. GitHub documents that [pull-request workflows do not run with merge conflicts](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#pull_request). Merging current `origin/main` into the existing branch required resolving only the incident-baseline append conflict; both sets of records were retained. No branch switch, history rewrite, or workflow bypass was used.
+
+[Latest combined CI run](https://github.com/Asherlc/dofek/actions/runs/37387484094) passed browser, unit/mobile, all four integration shards, lint and typechecks, but `Diff coverage (changed lines only)` reported `Coverage: 75%`: line 463, the web full-history sync callback, was untested. The layout wrapper moved that existing callback into the changed lines. A new interaction test opens the full-history confirmation, verifies that no request starts before confirmation, and checks that confirming starts an unbounded sync. Local coverage recorded `DA:463,1`, proving the callback executes. A narrowly collected diagnostic coverage run was below the repository-wide function threshold because it collected only this component; the aggregate coverage gate and all thresholds remain unchanged.
+
+The [replacement run](https://github.com/Asherlc/dofek/actions/runs/37390006819) passed E2E, unit/mobile, all integration shards, lint and typechecks; diff coverage reported four executable changed lines, none missing, for 100%. Native validation remained pending: the four `macos-14` Swift jobs had no assigned runner and no executed steps. GitHub's [macOS 14 retirement announcement](https://github.com/actions/runner-images/issues/13518) documents a brownout during October 5, 14:00 UTC through October 6, 00:00 UTC, and retirement on November 2. The queued jobs remained unassigned after that window; no job log proved the cause of the continued wait.
+
+With explicit user approval, all nine macOS jobs across build, deployment, release and test workflows now use `macos-latest`, which currently selects macOS 26 ARM64 in GitHub's [supported image list](https://github.com/actions/runner-images). Native build and tool cache namespaces advance so the migrated Swift jobs do not restore the previous runner's build state. Diff review, whitespace validation and `actionlint -shellcheck=` passed; replacement CI remains pending. Production was unaffected. Future runner maintenance should review deprecation notices before an image's scheduled brownouts.
+
+
+## 2026-10-05 — Local Storybook tunnel host rejection (resolved)
+
+No production impact. Web and mobile review previews returned HTTP 403 while
+local Storybook was running. A request to the generated tunnel hostname's
+`/index.json` failed with `curl: (56) The requested URL returned error: 403`;
+the response body was `Invalid host`. Storybook's host-validation middleware
+rejected the forwarded Cloudflare hostname because it was absent from the
+allowed-host list. Both Storybook configurations now allow only the additional
+`.trycloudflare.com` domain through
+[`core.allowedHosts`](https://storybook.js.org/docs/api/main-config/main-config-core#allowedhosts).
+After restarting Storybook, both tunnel `/index.json` and `/iframe.html`
+requests succeeded without added retries or waits. No resilience tuning was
+needed. The available browser runtime reported no connected browsers, so
+visual inspection remains unverified; component interaction tests passed.
+The [development-environment guide](development-environment.md#storybook-through-a-development-tunnel)
+records the host requirement for future preview work.
+
+## 2026-10-05 — Climbing migration CI lint failure (local fix validated)
+
+No production impact. PR [2880](https://github.com/Asherlc/dofek/pull/2880)
+failed `Test / Migration Lint`, step `Lint new migration SQL`, when
+`xargs squawk` checked migration 0137. The first diagnostic was
+`constraint-missing-not-valid`; the command exited 123. The new check constraint
+was added without separating its creation from validation. The climbing migration now
+adds it with `NOT VALID` and explicitly validates it in the following statement,
+as prescribed by [Squawk](https://squawkhq.com/docs/constraint-missing-not-valid)
+and [PostgreSQL](https://www.postgresql.org/docs/current/sql-altertable.html).
+Local Squawk and migration-policy checks pass, and all eight climbing repository
+PostgreSQL tests pass with the updated migration. The
+[corrected migration-lint CI check](https://github.com/Asherlc/dofek/actions/runs/37376595644/job/111988247108)
+passed before the schema-snapshot follow-up. The migration was later renumbered
+to [0142](../drizzle/0142_climbing_route_protection.sql) after `main` added
+0137 through 0141; its snapshot was regenerated from the combined schema.
+No retries, waits, or lint suppressions were added. Next time, run Squawk as well
+as SQLFluff before opening a PR that adds PostgreSQL migrations.
+
+## 2026-10-05 — Climbing mutation CI coverage gaps (local fix validated)
+
+No production impact. PR [2880](https://github.com/Asherlc/dofek/pull/2880)
+failed `Test / Stryker (0)`, `(1)`, and `(3)` in
+[run 37377447441](https://github.com/Asherlc/dofek/actions/runs/37377447441).
+The failing command was `pnpm exec stryker run stryker.ci.config.json --mutate "$MUTATE_FILES"`.
+The first fatal diagnostics reported mutation scores of 0%, 70%, and 53.85%
+below the 75% breaking threshold. Server unit tests never selected the new
+filters, while provider tests omitted partial protection flags and CSV
+whitespace/mixed-type cases. Cached provider schemas also hid schema-initialization
+mutations, and redundant optional chaining introduced equivalent mutations.
+
+Added parameterized-query coverage for all three summaries, real PostgreSQL
+fixtures for independent and combined filters, and provider edge cases. Malformed
+response tests now initialize the provider afresh; OpenBeta captures the nullable
+route type once and filters its flags after an explicit null guard.
+The affected local mutation run killed all 59 mutations (100% for each of the
+three files). All 19,565 unit/mobile tests, nine climbing repository PostgreSQL
+tests, five OpenBeta sync PostgreSQL tests, lint, and typecheck pass. Remote
+confirmation is tracked in the PR's checks. No thresholds, exclusions, retries,
+or waits were added. For similar changes, run the CI mutation configuration
+against changed code before declaring the PR ready.
+
+**2026-10-05 — PR #2879 hosted runner allocation failure (unresolved).**
+CI for the climbing-chart fix remained queued and then cancelled several jobs,
+including Semgrep `SAST Scan` and the web build. The first fatal
+[Semgrep job annotation](https://github.com/Asherlc/dofek/actions/runs/37363137409/job/111942204133)
+was: "The job was not acquired by Runner of type hosted even after multiple attempts".
+The job had no steps or command logs; execution never reached the scan.
+The observed failure mechanism is hosted runner allocation; its underlying
+platform cause remains unknown. Production was unchanged, but CI blocks merging
+the chart fix. Local validation passed 342 unit tests, 33 mobile tests, full lint,
+and root/server/web typechecks. No workflow, timeout, retry, or runner changes
+were made. Follow-up: investigate hosted runner availability and the allocation
+failure before selecting a remediation. This remains unresolved.
+
+**2026-10-05 — PR #2879 runner recovery and test prerequisites.**
+The runner allocation failure matched GitHub's confirmed [Actions incident](https://www.githubstatus.com/incidents/3q1yb5m7ltvb).
+After GitHub applied mitigations, the rerun acquired a runner; production was
+unchanged. CI then exposed two repository failures: [Spell Check](https://github.com/Asherlc/dofek/actions/runs/37365478773/job/111991409624)
+reported `Unknown word (Kiritimati)` and `Unknown word (Juli)`, and
+[Stryker's initial test run](https://github.com/Asherlc/dofek/actions/runs/37365478773/job/111992803134)
+reported `expected +0 to be 420` in the chart's timezone boundary test.
+The test changed `TZ` inside a worker thread, which does not update native
+timezone state; [Node documents worker environment isolation](https://nodejs.org/download/release/v26.5.1/docs/api/worker_threads.html).
+Added the valid timezone and localized month names to the spelling dictionary,
+tested boundaries in the worker's actual timezone, and supplied explicit
+timezones to locale formatter tests. Local validation includes UTC worker-thread
+execution and separate process-start timezone runs. CI validation remains
+pending; no retries, timeouts, or relaxed gates were added. Follow-up: set test
+timezones before process startup rather than mutating `TZ` inside workers.
+
+### 2026-10-05 — Newly reported dependency advisories blocked supplement-removal merge
+
+- Symptoms/evidence: [Dependency Audit](https://github.com/Asherlc/dofek/actions/runs/37399697920/job/112064250236) failed `pnpm audit --prod --audit-level=high --ignore-registry-errors` with exit code 1. The first finding was critical Seroval Promise thenable assimilation; the report also flagged proxy-addr IP spoofing, Seroval memory exhaustion, and source-map-js denial of service.
+- Impact/root cause: PR #2886 could not merge; no production deployment occurred. The lockfile still resolved vulnerable transitive versions Seroval 1.5.5, proxy-addr 2.0.7, and source-map-js 1.2.1. See the primary advisories for [Seroval callables](https://github.com/advisories/GHSA-p6vx-979v-rg4c), [proxy-addr](https://github.com/advisories/GHSA-jqcg-44mw-7w3h), [Seroval memory exhaustion](https://github.com/advisories/GHSA-jp82-f5mq-hwhp), and [source-map-js](https://github.com/advisories/GHSA-68fv-2mgg-jv7q).
+- Fix/validation: refreshed only those transitive lockfile entries to the registry's latest stable releases: Seroval 1.6.8, proxy-addr 2.0.8, and source-map-js 1.2.2. Frozen installation, the production high-severity audit, existing dependency-security regression checks, production web build, full lint, and all 32 API integration assertions passed. No manifest, override, exemption, retry, or audit threshold changed.
+- Remaining risk/follow-up: replacement CI pending; lower-severity findings and the two previously documented patched high-severity advisories remain under the existing policy. Refresh transitive dependencies when new advisories invalidate an otherwise green merge check.
+
+## 2026-10-05 — Climbing attempt totals hidden by incomplete source counts
+
+The climbing page displayed no numeric grade attempt totals and included an
+unavailable distance column for climbing activities. Read-only production
+queries found 169 raw climbing entries, of which 93 had recorded attempt
+counts. No record had a non-null raw `attempts` value with a null canonical
+count. Every active grade contained an unknown count; the VB entry came from
+`kaya-export` with both raw and canonical attempts null and no detailed tries.
+The [repository](../packages/server/src/repositories/climbing-repository.ts)
+intentionally returns a null total when any contributing count is unknown;
+counts were preserved, but incomplete totals therefore suppressed all grade
+attempt numbers. No production data was changed.
+
+The fix omits distance from the climbing table and exposes known attempt
+subtotals on grade cards as "N recorded attempts" when the total is incomplete.
+Grades with no recorded counts hide attempts; complete totals retain their
+"N attempts" label. Sends stay visible. The server retains its existing complete
+`attempts` field and adds a nullable `recordedAttempts` subtotal; it never
+substitutes sends or zero for an unknown source count. Server query-cache keys
+and the mobile persisted-cache contract version both advance so cached older
+responses cannot omit the required subtotal. Validation passed:
+242 relevant web/server unit tests, 34 mobile tests, and 13 real-Postgres
+integration tests, including a real router bypassing a legacy cached response.
+Full lint and root/server/web/mobile typechecks passed. Headless Storybook
+checks verified the web table and grade cards and the mobile default, unknown,
+and partial-count states. No retry or timeout tuning was added.
+A useful diagnostic runbook addition is to compare canonical attempt counts
+with raw source counts before changing the aggregation semantics.
+
+## 2026-10-05 — GitHub Actions runner assignment delays
+
+The refactor follow-up for [PR #2878](https://github.com/Asherlc/dofek/pull/2878)
+could not finish remote validation: [CI run 37363950556](https://github.com/Asherlc/dofek/actions/runs/37363950556)
+remained queued at Detect Changes, before any command executed. There was no
+fatal job log. GitHub's [Actions incident](https://www.githubstatus.com/incidents/3q1yb5m7ltvb)
+reported delayed assignment of hosted runners beginning at 19:11 UTC; the
+platform root cause was still under investigation. Local lint, typechecks,
+19,550 unit/mobile tests, and 13 PostgreSQL integration tests passed, and the
+mobile preview upload succeeded. No production impact was observed. Remote
+CI remains unresolved; keep the PR pending until required checks finish.
+No retries, timeout changes, or workflow bypasses were added. For future queue
+delays, check GitHub's published status before investigating repository code.
+
+## 2026-10-05 — Reports-removal merge blocked by newly flagged transitive dependencies
+
+- **Status:** Remediated in the lockfile and validated by the local production dependency audit; hosted validation is tracked by [PR #2887 checks](https://github.com/Asherlc/dofek/pull/2887/checks).
+- **Symptoms / impact:** The reports-removal PR could not merge because `Test / Dependency Audit` failed. No production exploit or user impact was established.
+- **Evidence / root cause:** In [audit job 112066222206](https://github.com/Asherlc/dofek/actions/runs/37400125687/job/112066222206), `pnpm audit --prod --audit-level=high --ignore-registry-errors` first reported critical Seroval thenable assimilation, followed by critical proxy-address spoofing and high-severity Seroval/source-map denial of service; the command exited 1. The lockfile resolved `seroval@1.5.5`, `proxy-addr@2.0.7`, and `source-map-js@1.2.1`, all within the affected ranges in [GHSA-p6vx-979v-rg4c](https://github.com/advisories/GHSA-p6vx-979v-rg4c), [GHSA-jqcg-44mw-7w3h](https://github.com/advisories/GHSA-jqcg-44mw-7w3h), [GHSA-jp82-f5mq-hwhp](https://github.com/advisories/GHSA-jp82-f5mq-hwhp), and [GHSA-68fv-2mgg-jv7q](https://github.com/advisories/GHSA-68fv-2mgg-jv7q).
+- **Fix / validation:** Targeted `pnpm update -r seroval proxy-addr source-map-js --lockfile-only --ignore-scripts` resolved the existing dependency ranges to 1.6.8, 2.0.8, and 1.2.2 respectively. The diff changes only those three dependency resolutions and their consumers; no override, audit ignore, retry, or threshold change was added. A normal frozen-lockfile install followed. The same production audit exited 0 after the update; existing audit exceptions remain unchanged.
+- **Remaining risk / follow-up:** Require hosted checks before merge and deploy the validated lockfile with the release. When audits change between successful runs, inspect the new advisory and locked transitive version before changing CI policy.
+
+## 2026-10-05 — Climbing PR blocked by newly published dependency advisories
+
+No production change or observed user impact. PR [2880](https://github.com/Asherlc/dofek/pull/2880)
+failed [Dependency Audit](https://github.com/Asherlc/dofek/actions/runs/37399660635/job/112064036624)
+at `pnpm audit --prod --audit-level=high --ignore-registry-errors`. The first
+blocking finding was critical Seroval Promise assimilation; the command exited 1.
+The lockfile contained seroval 1.5.5, proxy-addr 2.0.7, and source-map-js 1.2.1,
+which matched newly published high/critical advisories. See the upstream
+[Seroval Promise advisory](https://github.com/advisories/GHSA-p6vx-979v-rg4c),
+[Seroval memory advisory](https://github.com/advisories/GHSA-jp82-f5mq-hwhp),
+[proxy-addr advisory](https://github.com/advisories/GHSA-jqcg-44mw-7w3h), and
+[source-map-js advisory](https://github.com/advisories/GHSA-68fv-2mgg-jv7q).
+
+Updated only those transitive lockfile resolutions to the current stable
+seroval 1.6.8, proxy-addr 2.0.8, and source-map-js 1.2.2 through
+[recursive targeted dependency updates](https://pnpm.io/cli/update). The exact
+CI audit command now passes locally: two existing ignored high advisories and
+low/moderate findings remain under the established policy. No new exclusions,
+threshold changes, retries, or waits were added. Remote confirmation is tracked
+in the PR checks. For future merge work, run the production dependency audit
+again after updating from main because advisory data changes independently
+of code and lockfile changes.
+
+## 2026-10-05 — Withings sync alert persisted after successful scheduled syncs
+
+- **Symptoms / impact:** The app showed "Withings couldn’t sync" for Sleep and
+  Body after Withings had already recovered. Production `fitness.sync_log`
+  recorded `withings provider request timed out after 120000ms` at
+  `2026-10-06T00:30:03Z`, followed by successful scheduled syncs at `01:00`,
+  `01:30`, and `02:00` UTC. Authorization was not marked as failed.
+- **Evidence:** Read-only Postgres queries showed that those separate jobs all
+  shared the processing operation created at `00:00:02Z`. Its latest ingest
+  event remained the `00:30` failure; later jobs added canonical-commit events
+  to the same operation, while their `worker-succeeded` event conflicted with
+  the already recorded success. Axiom CLI access worked, but retained Withings
+  logs did not expose the low-level network cause. The recorded attempt took
+  995 ms, so the error text does not prove that the two-minute deadline elapsed.
+- **Root cause of the stale alert:**
+  [SyncProcessingOperation](../src/jobs/sync-processing-operation.ts) used the
+  reusable queue job ID as the permanent processing correlation key.
+  [Request deduplication](../src/jobs/sync-request-job.ts) removes terminal jobs
+  before accepting a new job with that ID; BullMQ documents that removed job
+  IDs can be reused in its [job-ID guide](https://docs.bullmq.io/guide/jobs/job-ids).
+  The processing store then reused the old operation and deduplicated the new
+  success event. The transient network failure's underlying cause remains unknown.
+- **Fix:** Processing correlation now includes the queue job's stored creation
+  timestamp. Newly created jobs receive separate operations; retries and
+  continuations retain the operation ID in job data. Both web and mobile use
+  the same processing-alert API. Existing incident history remains intact.
+- **Validation:** The new real-Redis/Postgres regression reproduced success →
+  failure → success with one reused queue ID and incorrectly failed Sleep/Body
+  status before the fix. After the fix, it verifies distinct operations, ready
+  status, an empty alert list, and operation reuse across retry and continuation.
+  Relevant unit/mobile tests and 15 database integration tests passed without
+  added sleeps or retry tuning. Docker's automatic subnet pool was exhausted;
+  an operator-only Compose override gave this workspace a free subnet without
+  changing repository configuration or other workspaces.
+- **Remaining risk / follow-up:** Production rollout is pending. A new
+  successful sync after rollout will supersede the stale operation. No
+  resilience settings changed. For similar alerts, compare sync history with
+  processing identity before treating the alert as a continuing provider outage;
+  retain the original transport cause in observability if connection failures recur.
+
+## 2026-10-05 — Local deployment workflow test timeouts during PR #2881 validation
+
+- **Symptoms / impact:** Local `pnpm test` validation for [PR #2881](https://github.com/Asherlc/dofek/pull/2881) passed 19,518 tests but failed four `.github/workflows/deploy-web-stack.test.ts` scenarios. The first fatal message was `Error: Test timed out in 30000ms.` at line 685 (restoring processing services after a web rollback); the normal deploy and two stability-window reset cases also timed out. Production was unaffected.
+- **Evidence:** The isolated deployment suite passed all 30 tests in 132.22 seconds. A full unit/mobile rerun with temporary scenario-timing instrumentation passed all 19,522 tests in 233.87 seconds; Vitest's result cache recorded 58.86 seconds for the deployment test file. The [CI unit-test job](https://github.com/Asherlc/dofek/actions/runs/37377345620/job/111990241250) passed the same 30 deployment tests in 7.51 seconds. Temporary instrumentation was removed afterward.
+- **Investigation / status:** A healthy consumer-deploy fixture invoked the Docker mock 281 times. A one-off comparison measured 8.9 seconds with executable mocks versus 3.1 seconds with the same mock body invoked as a shell function, with matching exit status and terminal output. Eight parallel fixtures also passed in both forms. Repeated interpreter launches are a measured slow path, but the original timeout trigger remains unconfirmed because neither the parallel fixtures nor the full-suite rerun reproduced it. Node documents that [`spawnSync` blocks until the subprocess exits](https://nodejs.org/api/child_process.html#child_processspawnsynccommand-args-options).
+- **Mitigation / validation / remaining risk:** After user alignment, both test harnesses reuse the existing Docker mock body as a subshell function for direct polling, avoiding repeated interpreter launches while retaining executable mocks for subprocess-wrapped stack commands. All 30 deployment tests passed in 7.13 seconds. The first post-change full suite hit two unrelated `UND_ERR_SOCKET` failures in `src/upload-server.test.ts`; running that file with the deployment tests passed all 45 tests. A fresh full unit/mobile run then passed all 19,522 tests (20 skipped) in 222.29 seconds; repository sandbox lint and TypeScript checks passed. No production workflow, timeout, or retry was changed, and no resilience knob was added. The exact trigger for the original deployment timeout and the intermittent upload socket failures remains unconfirmed.
+- **Retrospective / follow-up:** Distinguish macOS harness process-launch cost from deployment convergence failures. Capture per-scenario elapsed time and host workload on the next failing run; a successful isolated rerun alone does not establish the original root cause.
+
+### PR #2881 merge validation — concurrent local dependency installs
+
+After merging current main into the PR branch, three parallel pnpm validation commands each started an implicit dependency install. The test command failed before running Vitest with `ENOENT: no such file or directory, unlink '.../node_modules/.pnpm/node_modules/oxc-resolver'`; the other commands reported concurrent bin-link failures. A single `pnpm install --frozen-lockfile` completed successfully, after which all 44 affected navigation/deployment tests passed. Web and mobile typechecks also passed. This was a local validation failure with no production impact; no dependency, timeout, or retry setting was changed. Run one lockfile-preserving install before parallel validation after dependency updates; pnpm documents [frozen-lockfile installation](https://pnpm.io/cli/install#--frozen-lockfile).
+
+### PR #2881 merge validation — newly reported transitive dependency vulnerabilities
+
+The [Dependency Audit job](https://github.com/Asherlc/dofek/actions/runs/37398480415/job/112060885281) failed at `pnpm audit --prod --audit-level=high --ignore-registry-errors`. Its first fatal finding was the critical [Seroval Promise deserialization advisory](https://github.com/advisories/GHSA-p6vx-979v-rg4c). The inherited lockfile resolved Seroval 1.5.5, proxy-addr 2.0.7, and source-map-js 1.2.1, also affected by [Seroval TypedArray memory exhaustion](https://github.com/advisories/GHSA-jp82-f5mq-hwhp), [proxy-addr trust-subnet IP spoofing](https://github.com/advisories/GHSA-jqcg-44mw-7w3h), and [source-map-js event-loop denial of service](https://github.com/advisories/GHSA-68fv-2mgg-jv7q). These findings blocked the merge; no production exploitation was observed or investigated during this CI diagnosis.
+
+Updated only those transitive lockfile resolutions to the latest stable releases available during investigation: Seroval 1.6.8, proxy-addr 2.0.8, and source-map-js 1.2.2. All fit existing upstream dependency ranges. The exact audit command now exits successfully; existing exclusions remain unchanged and no override, retry, or timeout was added. Remaining findings are below the configured threshold or covered by the pre-existing documented backports. Local validation also passed all 19,392 unit/mobile tests (20 skipped), root/server/web/mobile typechecks, sandbox lint, the web build, and frozen-lockfile installation. The [remote Dependency Audit rerun](https://github.com/Asherlc/dofek/actions/runs/37399594471) passed on commit 151ccdf41. Subsequent integration of main preserved its tracking removal and this PR’s Data Quality deletions; both client typechecks and 43 focused navigation/deployment tests passed. Remaining required CI validation is pending. For similar failures, use the `gh-fix-ci` skill to capture the first fatal finding, inspect the dependency path and upstream range, and prefer a targeted lockfile update when a patched release fits.
+
+## 2026-10-05 — Merged climbing fixes absent from the live release
+
+- **Symptoms / impact:** The production climbing page still showed the older
+  chart axes, grade labels, and attempt-count presentation after
+  [PR #2878](https://github.com/Asherlc/dofek/pull/2878) and
+  [PR #2879](https://github.com/Asherlc/dofek/pull/2879) merged.
+- **Evidence:** At 02:59 UTC on October 6, `GET /training/climbing` returned
+  HTTP 200 with `Cache-Control: no-cache`, `CF-Cache-Status: DYNAMIC`, and
+  assets under `web/sha-06c9729/`. Both running `dofek_web` replicas and the
+  other application services still used `sha-06c9729`. Live web logs recorded
+  the page request and successful climbing API calls; the collector was running.
+- **Root cause:** The new release had not rolled out. The
+  [deployment eligibility gate](../.github/workflows/deploy-web.yml) rejects
+  successful CI commits superseded by a newer `main` commit. The chart fix's
+  [automatic deploy](https://github.com/Asherlc/dofek/actions/runs/37397876269)
+  completed successfully overall but skipped its production job. A subsequent
+  [deploy](https://github.com/Asherlc/dofek/actions/runs/37402707679) received
+  `CI_CONCLUSION: failure` for `ee73cfae2` and also skipped production; that CI
+  run failed the dependency audit addressed in the preceding incident entry.
+  No production deployment command failed in these skipped runs.
+- **Status / remaining risk:** Unresolved pending the current
+  [main CI run](https://github.com/Asherlc/dofek/actions/runs/37403094931).
+  At 03:03 UTC, 82 checks had succeeded, with no failed jobs. The iOS archive
+  was building and watchOS remained queued with no assigned runner or executed
+  steps. The cause of the runner wait is unconfirmed. No production state,
+  deployment gate, timeout, or retry was changed.
+- **Retrospective / follow-up:** The HTML asset prefix and running image tag
+  established release identity quickly. A useful deployment-runbook addition
+  would instruct operators to inspect the production job's conclusion even
+  when the overall workflow is green, then compare its image tag with the live
+  HTML asset prefix before investigating browser caching.
+
+The requested durable fix uses GitHub's native single-pending concurrency queue
+for the entire production workflow, preserving an active release while replacing
+pending requests. Target selection now runs after the slot is acquired and uses
+the newest successful main-push CI run instead of requiring the triggering SHA
+to equal current main. Both Terraform and the Swarm stack receive that selected
+full commit SHA. Unsuccessful CI triggers use separate concurrency groups and
+cancel only their own request; the selection step also exits nonzero so a
+cancellation still being processed cannot produce a green no-op. See GitHub's
+[concurrency semantics](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency)
+and [workflow cancellation API](https://docs.github.com/en/rest/actions/workflow-runs#cancel-a-workflow-run).
+Ten executable selection tests pass, including different triggering and selected
+commits, failed/cancelled/skipped CI, cancellation API failure, missing releases,
+and manual image requests. Full lint, root/server/web typechecks, workflow
+validation with `actionlint`, and all 19,161 executed unit/mobile tests passed
+(20 existing tests were skipped). Local SQL lint initially failed because the
+workspace ClickHouse service was absent; starting that service through the
+workspace Compose wrapper resolved the prerequisite and the full lint rerun
+passed. A read-only execution against GitHub selected the latest successful
+main-push CI release, `21b64aa1d086dc0289ac6ff79d20fd26eaccef37`, rather than
+the newer untested main head. Independent review found no blocking defects.
+Remote workflow validation and rollout remain pending. At 03:24 UTC, main CI's
+iOS archive had passed and only watchOS remained queued without an assigned
+runner. No deployment timeout, retry, or migration ordering changed.
+
+Follow-up: the original main CI run passed after its remaining build gates
+completed. Its [new deploy request](https://github.com/Asherlc/dofek/actions/runs/37410215890)
+again reported overall success while skipping production because main had
+advanced. All 83 [PR #2889 CI checks](https://github.com/Asherlc/dofek/actions/runs/37408894244)
+passed, including all four integration shards, mutation testing, and package
+typechecks. At 04:03 UTC, the live climbing HTML still served `sha-06c9729`.
+The user approved merging the fix; concurrent incident-log additions then
+required a documentation-only conflict resolution preserving both records.
+Validation of the updated merge head and production rollout remain pending.
+
+Rollout follow-up: all 83 checks on the updated merge head passed in
+[CI run 37414540870](https://github.com/Asherlc/dofek/actions/runs/37414540870),
+and the user-approved [PR #2889](https://github.com/Asherlc/dofek/pull/2889)
+merged as `53ec054ea321de4082474e936b53bfbb7d0d4a3b`. The first
+[production run under the new workflow](https://github.com/Asherlc/dofek/actions/runs/37417239003)
+selected passing release `sha-ffe2bb2` despite main having advanced. Both
+climbing-fix commits are ancestors of the selected full SHA,
+`ffe2bb2946a9f58656ee97cd685ce4185c5330d4`. At 05:22 UTC on October 6,
+the climbing HTML returned HTTP 200 with that asset prefix. By 05:26 UTC,
+both web replicas and the worker used that image, and all five processing
+services were restored at `1/1` on the same release. A
+[new production request](https://github.com/Asherlc/dofek/actions/runs/37418587207)
+arrived at 05:27 UTC and remained pending while the active deploy continued,
+confirming that incoming work preserves the running release. All four
+production jobs succeeded at 05:35 UTC, including the migration, CDC, consumer
+stability, backup-freshness, and release-recording gates. The pending request
+then started after the completed release freed the slot. The stale climbing
+release is resolved. No manual production mutation, timeout increase, retry,
+or migration-order change was needed; the existing readiness and stability
+checks verify that the deployed services remain operational. For similar
+incidents, use the deployment runbook's HTML/image comparison and check the
+production job's conclusion before treating a green workflow as proof of
+deployment.
+
+## 2026-10-05 — Dependabot update validation and local Docker capacity
+
+Several pending dependency updates inherited a date-sensitive power test. The
+[Unit Tests job](https://github.com/Asherlc/dofek/actions/runs/36647977811/job/109677446817)
+failed with `AssertionError: expected null to be 190` in the raw-power fallback
+fixture: its fixed activity date fell outside the current-power window. Current
+main already freezes that fixture's clock; incorporating main passed all 42
+power-repository tests locally and preserved its patched transitive dependencies.
+
+The [AWS update](https://github.com/Asherlc/dofek/pull/2848) additionally failed
+root typechecking at `src/export-storage.ts:59` and
+`src/file-upload-storage.ts:86`: independently updated SDK packages resolved
+incompatible Smithy types. Updating the S3 client and request presigner together
+addresses their shared type contract. The
+[table update](https://github.com/Asherlc/dofek/pull/2850) failed the web build
+because `getCoreRowModel` and `useReactTable` are no longer exported in v9;
+its caller requires the documented [v9 migration](https://tanstack.com/table/latest/docs/guide/migrating).
+The [Expo core](https://github.com/Asherlc/dofek/pull/2845) and
+[maps](https://github.com/Asherlc/dofek/pull/2851) updates failed
+`pnpm expo install --check` against the SDK 57 version matrix. The user approved
+a coordinated [SDK 58 beta migration](https://expo.dev/changelog/sdk-58-beta);
+its native compatibility and CI validation subsequently passed before merge.
+
+SDK 58 alignment also exposed changed FileSystem operations: `readBytes()` and
+`write()` now return promises. Deferred-read and multipart-write regression
+tests reproduced the ordering failures before the callers were updated to
+await completion. The SDK's changed native ref types and required peer
+dependencies were migrated together, following the
+[Expo upgrade guide](https://docs.expo.dev/workflow/upgrading-expo-sdk-walkthrough/).
+The native runtime version advances to 1.3 because
+[OTA updates must match their native runtime](https://docs.expo.dev/eas-update/runtime-versions/).
+
+The HealthKit coverage command, `bash scripts/check-coverage.sh`, ran its 91
+Swift tests successfully but failed in Xcode 27 with `error: failed to load
+coverage: '.build/debug/HealthKitLibPackageTests.xctest/Contents/MacOS/HealthKitLibPackageTests':
+No such file or directory`. SwiftPM now emitted
+`.build/out/Products/Debug/codecov/HealthKitLib.json`; the script had assumed
+an obsolete executable layout. The durable TypeScript runner asks
+[`swift test --show-codecov-path`](https://github.com/swiftlang/swift-package-manager/blob/main/Sources/PackageManagerDocs/Documentation.docc/SwiftTest.md)
+for the actual coverage artifact and retains both 90% thresholds. Five CLI
+regression tests pass; actual coverage is 294/318 lines (92.45%) and 13/14
+functions (92.86%). Standalone watch tests use an external
+[`--scratch-path`](https://github.com/swiftlang/swift-package-manager/blob/main/Sources/PackageManagerDocs/Documentation.docc/SwiftTest.md)
+so their generated files cannot enter the filesystem-synchronized app target.
+
+The signed Release simulator command, `xcodebuild -workspace
+ios/Dofek.xcworkspace -scheme Dofek -configuration Release -destination
+'platform=iOS Simulator,id=DFB64DA2-5591-4C0F-92F8-8A39142736F7' build`, first
+failed at `RNSentry.h:10` with `'Sentry/Sentry.h' file not found` in the local
+WatchMotion, HealthKit, and AppStoreBilling pods. Their existing RNSentry
+dependencies were correct, but the upstream package supplied private framework
+paths without a declared binary CocoaPod; CocoaPods could not export the
+framework to transitive consumers. Updating to
+[React Native Sentry 8.29.0](https://github.com/getsentry/sentry-react-native/releases/tag/8.29.0)
+alone did not repair that metadata gap. The package patch now declares one
+exact Sentry dependency, and Expo registers a declarative
+[`extraPods` podspec](https://docs.expo.dev/versions/latest/sdk/build-properties/#extraiospoddependency)
+with [`vendored_frameworks`](https://guides.cocoapods.org/syntax/podspec.html#vendored_frameworks).
+Its single Cocoa 9.30.0 artifact URL and SHA256 match Sentry's
+[official Swift package manifest](https://github.com/getsentry/sentry-cocoa/blob/9.30.0/Package.swift);
+the watch package uses that same native SDK version.
+
+All three consumer builds then passed, but the full app link exposed duplicate
+symbols from loading the same Sentry archive through both CocoaPods' framework
+link and the previous `force_load` flag. Exact-link probes reproduced that
+conflict and verified that a single framework link with inherited `-ObjC`
+retains the Replay network-capture category and Swift metadata
+([Apple category-linking guidance](https://developer.apple.com/library/archive/qa/qa1490/_index.html),
+[Swift compiler guidance](https://forums.swift.org/t/linker-flag-objc-force-loads-swift-libraries/47466/3)).
+The final patch removes the redundant archive load and all manual framework
+download, slice selection, and search-path handling. CocoaPods now exports
+the selected framework to all three consumers. No scanning or linker
+validation was disabled.
+
+The final current-main SDK snapshot passes all four TypeScript projects, full
+lint, Knip, workflow lint, strict production audit, dependency-security checks,
+19,111 unit/mobile tests, iOS export, clean prebuild and pod installation, and a
+signed Release build for both simulator architectures including the watch app.
+The signed SDK baseline also passed password signup through the real isolated
+API and a hard app restart on a fresh simulator. SecureStore restored the
+session directly to Today with the five expected tabs; captured runtime logs
+had no keychain or session errors. Its native MapKit view rendered the synthetic
+route and distinct Start/Finish pins. Scrubbing the elevation chart displayed
+the route hover marker, and releasing the touch cleared it. Production accounts
+and data were not used. The SDK upgrade subsequently passed
+[all 100 checks](https://github.com/Asherlc/dofek/actions/runs/37421482561) and
+merged as `40390ff973aa757a7ce5856c07f19caecd000777`.
+
+The separate latest-maps candidate pins the
+[stable 1.29.11 release](https://github.com/react-native-maps/react-native-maps/releases/tag/v1.29.11)
+and advances the native runtime to 1.4. Its signed Release scheme passed for
+both simulator architectures and the watch target. The exact binary passed the
+isolated-API acceptance audit: a 61-point native MapKit route with Start/Finish
+pins, elevation touch-down showing a matching hover marker/crosshair, release
+clearing both, back/reopen remounting the map, and hard restart restoring the
+existing SecureStore session to Today with five tabs. Runtime logs had no
+keychain, session, or fatal exception.
+
+The unchanged `pnpm expo install --check` exited 1 with
+`react-native-maps@1.29.11 - expected version: 1.29.0`. Upstream's
+[Fabric compatibility table](https://github.com/react-native-maps/react-native-maps/blob/v1.29.11/README.md#compatibility)
+requires React Native 0.81.1 or newer; the app uses 0.88.0-rc.3. Expo's fixed
+SDK matrix recommendation differs from this tested native pin; this is an exact
+version-predicate failure, not a native runtime failure. The refreshed
+[Dependabot CI run](https://github.com/Asherlc/dofek/actions/runs/37424544937)
+also passed its iOS Native Build and watchOS Build jobs before the Metro Bundle
+job failed that same predicate. After reviewing the native and runtime proof,
+the user explicitly approved adding only `react-native-maps` to the existing
+[`expo.install.exclude` setting](https://docs.expo.dev/more/expo-cli/#configuring-dependency-validation).
+The package stays pinned to 1.29.11; all other SDK-managed packages retain the
+same version check. Future maps upgrades require a fresh native binary, runtime
+increment, and the signed MapKit acceptance audit.
+
+With that approved setting, the same Expo check exits 0. Frozen installation,
+all four typechecks, full lint with the workspace ClickHouse prerequisite,
+1,467 mobile tests, a fresh iOS export, mobile Storybook, dependency-security
+checks, and the strict production audit pass. The lockfile and runtime config
+still match the signed maps artifact; the new version-management setting does
+not change its native dependency graph.
+
+Integration onto the actual SDK main preserves the concurrent health-report
+removals. Native dependencies/modules, activity detail, RouteMap/elevation,
+five-tab layout, and auth/session behavior are unchanged. The preserved binary
+audit applies to those unchanged exercised paths; its embedded bundle predates
+the report removals. Frozen install, all four typechecks, a fresh current-main
+iOS export, and 18,866 unit/mobile tests pass on the integrated source.
+
+Current-main CI's [Mobile Storybook job](https://github.com/Asherlc/dofek/actions/runs/37420553852/job/112129019035)
+failed `pnpm storybook:mobile:build` with `[UNLOADABLE_DEPENDENCY] Could not
+load react-native-web/asset-registry`. Expo now imports the public
+[React Native asset-registry entry point](https://github.com/react/react-native/blob/v0.88.0-rc.3/packages/react-native/src/asset-registry.js);
+the framework's broad React Native alias incorrectly rewrote that subpath.
+The latest [SVG resolver](https://github.com/software-mansion/react-native-svg/blob/v15.15.5/src/lib/resolveAssetUri.ts)
+also imports the older registry package, which the
+[React Native 0.88 manifest](https://github.com/react/react-native/blob/v0.88.0-rc.3/packages/react-native/package.json)
+no longer supplies. The Storybook configuration now maps both published asset
+imports to the same existing
+[React Native Web registry](https://github.com/necolas/react-native-web/blob/0.21.3/packages/react-native-web/src/modules/AssetRegistry/index.js).
+Its [post configuration hook](https://vite.dev/guide/api-plugin.html#plugin-ordering)
+applies after the framework's alias configuration. The unchanged build command
+now succeeds locally; no asset implementation, dependency, or excluded check was added.
+
+Local full lint initially failed because the required ClickHouse service had
+not started. The exact prerequisite command, `pnpm compose:up`, then failed
+with `all predefined address pools have been fully subnetted`. Inspection found
+six unused workspace networks, each with zero attached containers. With explicit
+user approval, each was rechecked immediately before removal; no container or
+volume was deleted. The same Compose command then completed successfully.
+Docker documents [network inspection](https://docs.docker.com/reference/cli/docker/network/inspect/)
+and [network removal](https://docs.docker.com/reference/cli/docker/network/rm/).
+
+Production was unchanged during diagnosis. The only new validation exception is
+the explicitly approved maps version-management setting. No retry, timeout,
+audit exclusion, or other CI gate was changed. Final maps CI remains required
+before merge. For future dependency batches, inspect
+the first fatal log,
+check whether main already contains its direct fix, and verify SDK version
+matrices before attempting independent native-package updates.
+
+## 2026-10-05 — Reports-removal CI Docker cache export failed before browser tests
+
+- **Status / impact:** The original external cache-export failure prevented browser assertions from running. The user-approved single diagnostic rerun passed cache export and all browser assertions; its service-side cause remains unknown. No production impact was observed.
+- **Evidence:** [E2E job 112094167491](https://github.com/Asherlc/dofek/actions/runs/37408996106/job/112094167491) completed application and native image builds, then failed the Docker Buildx build step while exporting to GitHub Actions Cache. The first fatal line was `#140 ERROR: error writing layer blob: not_found` for layer `sha256:ff488eafdbbf6984e8c08fb9ea981ed2ab805d7eb122049fd9e4cadc0a2b48a4`; Buildx exited with `failed to solve: error writing layer blob: not_found`. This identifies the failing cache-export operation but does not establish why the service rejected the blob. Docker documents the [GitHub Actions cache backend](https://docs.docker.com/build/cache/backends/gha/).
+- **Investigation / validation:** Root/server/web/mobile typechecks, lint, 78 focused tests, and 28 real-database migration/account-erasure assertions passed locally after preserving supplement removal and moving the reports drop to migration 0142. Hosted unit tests and typechecks passed. A job-specific rerun request was rejected with `job 112094167491 cannot be rerun` while the workflow was still active; no rerun occurred. The user approved one diagnostic rerun after the workflow completed. [Rerun job 112112109164](https://github.com/Asherlc/dofek/actions/runs/37408996106/job/112112109164) passed the unchanged cache export and browser test steps; no direct fix was identified or claimed.
+- **Remaining risk / follow-up:** The cache-service cause remains unresolved and may recur. Require green checks on the final merged revision; capture cache-service/request evidence if export fails again. No retry, timeout, cache bypass, or warn-and-continue change was added.

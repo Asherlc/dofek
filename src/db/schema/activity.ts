@@ -1,3 +1,9 @@
+import type {
+  ClimbingBoard,
+  ClimbingLocationNode,
+  ClimbingStyle,
+  ClimbingWallAngle,
+} from "@dofek/training/climbing-context";
 import { sql } from "drizzle-orm";
 import {
   bigint,
@@ -127,13 +133,15 @@ export const climbingEntry = fitness.table(
     climbType: climbingClimbTypeEnum("climb_type").notNull(),
     gradeSystem: climbingGradeSystemEnum("grade_system").notNull(),
     grade: text("grade").notNull(),
-    sent: boolean("sent"),
-    attemptCount: integer("attempt_count").default(1),
-    lead: boolean("lead"),
-    wallAngleDegrees: real("wall_angle_degrees"),
+    resultStyle: text("result_style"),
+    attemptCount: integer("attempt_count"),
+    climbStyle: text("climb_style").$type<ClimbingStyle>(),
+    routeProtection: text("route_protection").array().$type<Array<"sport" | "trad">>(),
+    wallAngle: jsonb("wall_angle").$type<ClimbingWallAngle>(),
+    board: jsonb("board").$type<ClimbingBoard>(),
     holdType: climbingHoldTypeEnum("hold_type"),
     routeName: text("route_name"),
-    locationName: text("location_name"),
+    locationPath: jsonb("location_path").$type<ClimbingLocationNode[]>().notNull().default([]),
     sourceName: text("source_name"),
     raw: jsonb("raw"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -165,12 +173,8 @@ export const climbingEntry = fitness.table(
     check("climbing_entry_grade_nonempty", sql`btrim(${table.grade}) <> ''`),
     check("climbing_entry_attempt_count_positive", sql`${table.attemptCount} > 0`),
     check(
-      "climbing_entry_aggregate_pair",
-      sql`(${table.sent} IS NULL) = (${table.attemptCount} IS NULL)`,
-    ),
-    check(
-      "climbing_entry_wall_angle_range",
-      sql`${table.wallAngleDegrees} IS NULL OR (${table.wallAngleDegrees} >= -90 AND ${table.wallAngleDegrees} <= 90)`,
+      "climbing_entry_wall_angle_valid",
+      sql`fitness.climbing_wall_angle_valid(${table.wallAngle})`,
     ),
     check(
       "climbing_entry_external_id_nonempty",
@@ -181,9 +185,19 @@ export const climbingEntry = fitness.table(
       sql`${table.routeName} IS NULL OR btrim(${table.routeName}) <> ''`,
     ),
     check(
-      "climbing_entry_location_name_nonempty",
-      sql`${table.locationName} IS NULL OR btrim(${table.locationName}) <> ''`,
+      "climbing_entry_location_path_valid",
+      sql`fitness.climbing_location_path_valid(${table.locationPath})`,
     ),
+    check("climbing_entry_board_valid", sql`fitness.climbing_board_valid(${table.board})`),
+    check(
+      "climbing_entry_climb_style_valid",
+      sql`${table.climbStyle} IN ('lead', 'top-rope', 'follow', 'solo', 'aid')`,
+    ),
+    check(
+      "climbing_entry_route_protection_valid",
+      sql`${table.routeProtection} <@ ARRAY['sport', 'trad']::text[] AND array_position(${table.routeProtection}, NULL) IS NULL`,
+    ),
+    check("climbing_entry_result_style_nonempty", sql`btrim(${table.resultStyle}) <> ''`),
     check(
       "climbing_entry_source_name_nonempty",
       sql`${table.sourceName} IS NULL OR btrim(${table.sourceName}) <> ''`,

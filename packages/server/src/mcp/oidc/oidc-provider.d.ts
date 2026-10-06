@@ -79,6 +79,11 @@ declare module "oidc-provider" {
     };
     adapter?: (model: string) => Adapter;
     ttl?: Record<string, number>;
+    issueRefreshToken?: (
+      ctx: unknown,
+      client: { grantTypeAllowed(grantType: string): boolean },
+      source: unknown,
+    ) => boolean | Promise<boolean>;
     rotateRefreshToken?: (ctx: unknown, token: unknown) => boolean;
     findAccount?: (
       ctx: unknown,

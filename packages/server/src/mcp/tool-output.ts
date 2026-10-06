@@ -1,5 +1,6 @@
 import { recordLocalTimeContextSchema } from "@dofek/format/record-local-time";
 import { healthMetricSchema } from "@dofek/mcp-contracts/health-explorer";
+import { climbingContextSchema } from "@dofek/training/climbing-context";
 import { CLIMBING_GRADE_SYSTEMS } from "@dofek/training/climbing-grades";
 import { z } from "zod";
 import { baselineRelativeMetricSchema } from "../contracts/baseline-relative-metrics.ts";
@@ -279,52 +280,6 @@ export const bodyMetricsOutputSchema = jsonResult(
   ),
 );
 
-const injuryEventSchema = z.object({
-  id: z.string(),
-  kind: z.enum(["injury", "niggle"]),
-  body_region_id: z.string(),
-  onset_date: z.string(),
-  resolved_date: nullableString,
-  severity: nullableNumber,
-  description: z.string(),
-  created_at: z.string(),
-  updated_at: z.string(),
-});
-
-export const bodyRegionsOutputSchema = jsonResult(
-  z.array(
-    z.object({
-      id: z.string(),
-      parent_id: nullableString,
-      label: z.string(),
-      kind: z.string(),
-      sort_order: z.number().int(),
-    }),
-  ),
-);
-
-export const injuryEventOutputSchema = jsonResult(injuryEventSchema);
-
-export const subjectiveTimelineOutputSchema = jsonResult(
-  z.object({
-    checkIns: z.array(
-      z.object({
-        date: z.string(),
-        logged: z.boolean(),
-        symptoms: z.array(
-          z.object({
-            id: z.string(),
-            body_region_id: z.string(),
-            kind: z.string(),
-            score: z.number(),
-          }),
-        ),
-      }),
-    ),
-    injuries: z.array(injuryEventSchema),
-  }),
-);
-
 const syncHealthSchema = z.object({
   last_success: nullableString,
   last_attempt: nullableString,
@@ -444,6 +399,7 @@ const climbingAttemptSchema = z.object({
 });
 const climbingEntrySchema = z.object({
   id: z.string(),
+  context: climbingContextSchema,
   discipline: z.enum(["boulder", "lead", "top_rope", "route"]),
   grade: z.string(),
   grade_system: z.enum(CLIMBING_GRADE_SYSTEMS),
@@ -881,56 +837,6 @@ export const activityDetailsOutputSchema = jsonResult(
   }),
 );
 
-const supplementSchema = z.object({
-  id: z.string().min(1),
-  name: z.string().min(1).max(200),
-  amount: z.number().positive().optional(),
-  unit: z.string().max(10).optional(),
-  form: z.string().optional(),
-  description: z.string().optional(),
-  meal: z.enum(["breakfast", "lunch", "dinner", "snack", "other"]).optional(),
-  calories: z.number().int().nonnegative().optional(),
-  proteinG: z.number().nonnegative().optional(),
-  carbsG: z.number().nonnegative().optional(),
-  fatG: z.number().nonnegative().optional(),
-  saturatedFatG: z.number().nonnegative().optional(),
-  polyunsaturatedFatG: z.number().nonnegative().optional(),
-  monounsaturatedFatG: z.number().nonnegative().optional(),
-  transFatG: z.number().nonnegative().optional(),
-  cholesterolMg: z.number().nonnegative().optional(),
-  sodiumMg: z.number().nonnegative().optional(),
-  potassiumMg: z.number().nonnegative().optional(),
-  fiberG: z.number().nonnegative().optional(),
-  sugarG: z.number().nonnegative().optional(),
-  vitaminAMcg: z.number().nonnegative().optional(),
-  vitaminCMg: z.number().nonnegative().optional(),
-  vitaminDMcg: z.number().nonnegative().optional(),
-  vitaminEMg: z.number().nonnegative().optional(),
-  vitaminKMcg: z.number().nonnegative().optional(),
-  vitaminB1Mg: z.number().nonnegative().optional(),
-  vitaminB2Mg: z.number().nonnegative().optional(),
-  vitaminB3Mg: z.number().nonnegative().optional(),
-  vitaminB5Mg: z.number().nonnegative().optional(),
-  vitaminB6Mg: z.number().nonnegative().optional(),
-  vitaminB7Mcg: z.number().nonnegative().optional(),
-  vitaminB9Mcg: z.number().nonnegative().optional(),
-  vitaminB12Mcg: z.number().nonnegative().optional(),
-  calciumMg: z.number().nonnegative().optional(),
-  ironMg: z.number().nonnegative().optional(),
-  magnesiumMg: z.number().nonnegative().optional(),
-  zincMg: z.number().nonnegative().optional(),
-  seleniumMcg: z.number().nonnegative().optional(),
-  copperMg: z.number().nonnegative().optional(),
-  manganeseMg: z.number().nonnegative().optional(),
-  chromiumMcg: z.number().nonnegative().optional(),
-  iodineMcg: z.number().nonnegative().optional(),
-  omega3Mg: z.number().nonnegative().optional(),
-  omega6Mg: z.number().nonnegative().optional(),
-  caffeineMg: z.number().nonnegative().optional(),
-  waterMl: z.number().nonnegative().optional(),
-});
-export const supplementsOutputSchema = jsonResult(z.array(supplementSchema));
-
 const trainingLoadResultSchema = z.object({
   range: rangeSchema,
   rows: z.array(
@@ -958,7 +864,6 @@ export const mcpOutputSchemas = {
   cyclingTrainingMetrics: cyclingTrainingMetricsOutputSchema,
   activityTimeseries: activityTimeseriesOutputSchema,
   activitySummary: activitySummaryOutputSchema,
-  bodyRegions: bodyRegionsOutputSchema,
   bodyMetrics: bodyMetricsOutputSchema,
   dailyHealthSummary: dailyHealthSummaryOutputSchema,
   dataCoverage: dataCoverageOutputSchema,
@@ -970,13 +875,11 @@ export const mcpOutputSchemas = {
   foodRecordMutation: foodRecordMutationOutputSchema,
   foodRecordSearch: foodRecordSearchOutputSchema,
   healthTrends: healthTrendsOutputSchema,
-  injuryEvent: injuryEventOutputSchema,
   nutritionSummary: nutritionSummaryOutputSchema,
   providerSync: providerSyncOutputSchema,
   providers: providersOutputSchema,
   searchActivities: searchActivitiesOutputSchema,
   sleepSummary: sleepSummaryOutputSchema,
-  subjectiveTimeline: subjectiveTimelineOutputSchema,
   thresholdHistory: thresholdHistoryOutputSchema,
   trainingLoad: trainingLoadToolOutputSchema,
 };

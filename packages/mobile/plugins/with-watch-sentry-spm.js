@@ -1,7 +1,7 @@
 /**
  * Expo config plugin that links the watch-only Sentry SDK through SwiftPM.
  *
- * The iOS app uses the Sentry framework bundled by @sentry/react-native.
+ * The iOS app consumes the same Sentry SDK through CocoaPods.
  * The watch extension is a separate executable, so it has its own Sentry
  * linkage and must not introduce the legacy CocoaPods source build.
  */
@@ -21,7 +21,7 @@ const {
 } = requireAppleTargets("@bacons/xcode");
 
 const PACKAGE_URL = "https://github.com/getsentry/sentry-cocoa.git";
-const PACKAGE_VERSION = "9.24.0";
+const PACKAGE_VERSION = "9.30.0";
 const PRODUCT_NAME = "Sentry";
 const TARGET_NAME = "DofekWatch";
 

@@ -138,17 +138,6 @@ describe("account erasure persistence (integration)", () => {
           )`,
     );
     await context.db.execute(
-      sql`INSERT INTO fitness.shared_report (
-            user_id, share_token, report_type, report_data
-          )
-          VALUES (
-            ${deletingUserId}::uuid,
-            'account-erasure-shared-link',
-            'weekly',
-            '{}'::jsonb
-          )`,
-    );
-    await context.db.execute(
       sql`INSERT INTO fitness.daily_metric_type (
             id, display_name, category, priority_category
           )
@@ -229,8 +218,6 @@ describe("account erasure persistence (integration)", () => {
               AS other_sessions,
             (SELECT count(*)::int FROM fitness.companion_token
               WHERE user_id = ${deletingUserId}::uuid) AS companion_tokens,
-            (SELECT count(*)::int FROM fitness.shared_report
-              WHERE user_id = ${deletingUserId}::uuid) AS shared_reports,
             replay_retained_until - requested_at AS replay_window,
             completion_deadline - requested_at AS completion_window
           FROM fitness.account_erasure_request
@@ -244,7 +231,6 @@ describe("account erasure persistence (integration)", () => {
         deleting_sessions: 0,
         other_sessions: 1,
         replay_window: "7 days",
-        shared_reports: 0,
       }),
     ]);
   });

@@ -1274,7 +1274,7 @@ describe("mobileDashboard.training", () => {
     });
     expect(cachedQueryOptions).toContainEqual({
       maxAge: 600_000,
-      keyVersion: "training-activity-states-v3",
+      keyVersion: "training-recorded-attempts-v4",
     });
     const timingCall = vi
       .mocked(logger.info)
@@ -1354,6 +1354,7 @@ describe("mobileDashboard.training", () => {
       },
       30,
       "2026-03-28",
+      undefined,
     );
   });
 
@@ -1437,6 +1438,7 @@ describe("mobileDashboard.training", () => {
       expect.objectContaining({ timezone: "America/Chicago" }),
       30,
       "2026-03-28",
+      undefined,
     );
   });
 });

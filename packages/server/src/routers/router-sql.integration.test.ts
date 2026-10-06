@@ -214,11 +214,6 @@ describe("Router SQL validity", () => {
       expectValidSql("calendar.activityOverview", { weeks: 4, endDate: "2026-03-20" }));
   });
 
-  // ── Weekly Report ──
-  describe("weeklyReport", () => {
-    it("report", () => expectValidSql("weeklyReport.report", { weeks: 4 }));
-  });
-
   // ── Sleep Need ──
   describe("sleepNeed", () => {
     it("calculate", () => expectValidSql("sleepNeed.calculate"));
@@ -232,11 +227,6 @@ describe("Router SQL validity", () => {
   // ── Stress ──
   describe("stress", () => {
     it("scores", () => expectValidSql("stress.scores", { days: 30 }));
-  });
-
-  // ── Life Events ──
-  describe("lifeEvents", () => {
-    it("list", () => expectValidSql("lifeEvents.list", { days: 90 }));
   });
 
   // ── Trends (Continuous Aggregates) ──

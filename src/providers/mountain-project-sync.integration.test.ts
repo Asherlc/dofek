@@ -88,8 +88,14 @@ describe("MountainProjectProvider.sync() (integration)", () => {
     expect(west).toMatchObject({
       activityId: null,
       unattachedDate: "2026-08-10",
-      sent: true,
-      attemptCount: 1,
+      resultStyle: "Onsight",
+      climbStyle: "lead",
+      attemptCount: null,
+      locationPath: ["Colorado", "Boulder", "Eldorado Canyon"].map((name) => ({
+        name,
+        externalId: null,
+        kind: null,
+      })),
       gradeSystem: "yds",
       grade: "5.7",
     });

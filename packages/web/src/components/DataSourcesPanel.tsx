@@ -40,7 +40,6 @@ const oauthPostMessage = z.object({
 const providerRegionClassName =
   "h-80 space-y-3 overflow-y-auto overscroll-contain rounded-lg pr-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent sm:h-96 lg:h-[28rem]";
 const providerGridClassName = "grid gap-3 sm:grid-cols-2 lg:grid-cols-3";
-const hiddenProviderIds = new Set(["auto-supplements"]);
 
 export function DataSourcesPanel() {
   const providers = trpc.sync.providers.useQuery();
@@ -248,9 +247,7 @@ export function DataSourcesPanel() {
   const activeImportByProvider = new Map(
     (activeImports.data ?? []).map((activeImport) => [activeImport.providerId, activeImport]),
   );
-  const enabledSyncable = allProviders.filter(
-    (p) => !hiddenProviderIds.has(p.id) && !p.importOnly && !p.pushOnly,
-  );
+  const enabledSyncable = allProviders.filter((p) => !p.importOnly && !p.pushOnly);
   const syncAllBusy =
     syncMutation.isPending ||
     syncAllMode !== null ||
@@ -392,7 +389,6 @@ export function DataSourcesPanel() {
   });
 
   for (const p of allProviders) {
-    if (hiddenProviderIds.has(p.id)) continue;
     const importConfig = getFileImportConfig(p.id);
     if (importConfig) {
       unifiedProviders.push({ kind: "import", id: p.id, config: importConfig });
@@ -448,34 +444,35 @@ export function DataSourcesPanel() {
 
   return (
     <div className="space-y-4">
-      <div className="flex min-h-20 items-start justify-between gap-4">
-        <h3 className="text-sm font-medium text-foreground">Data Sources</h3>
-        {enabledSyncable.length > 1 && (
-          <SyncAllControls
-            busy={syncAllBusy}
-            errorMessage={syncAllError}
-            onRecentSync={() => void handleSyncAll()}
-            onFullSync={() => void handleSyncAll(true)}
-          />
-        )}
-      </div>
-
       <section
         aria-label="Available data sources"
         aria-busy={providers.isLoading || processingStatus.isLoading}
         className={providerRegionClassName}
       >
-        {activeSyncs.error ? (
-          <p role="alert" className="text-sm text-red-400">
-            {userFacingErrorMessage(activeSyncs.error)}
-          </p>
-        ) : null}
+        <div className="min-h-36 space-y-3">
+          {enabledSyncable.length > 1 && (
+            <div className="flex justify-end">
+              <SyncAllControls
+                busy={syncAllBusy}
+                errorMessage={syncAllError}
+                onRecentSync={() => void handleSyncAll()}
+                onFullSync={() => void handleSyncAll(true)}
+              />
+            </div>
+          )}
 
-        <ProcessingStatusWidget
-          data={processingStatus.data}
-          error={processingStatus.error}
-          loading={processingStatus.isLoading}
-        />
+          {activeSyncs.error ? (
+            <p role="alert" className="text-sm text-red-400">
+              {userFacingErrorMessage(activeSyncs.error)}
+            </p>
+          ) : null}
+
+          <ProcessingStatusWidget
+            data={processingStatus.data}
+            error={processingStatus.error}
+            loading={processingStatus.isLoading}
+          />
+        </div>
 
         {providers.error ? <QueryStatePanel error={providers.error} height={72} /> : null}
         {stats.error ? <QueryStatePanel error={stats.error} height={72} /> : null}

@@ -36,7 +36,6 @@ async function clearSeedUserData(sql: Sql, userId: string): Promise<void> {
   await sql`DELETE FROM fitness.food_entry_nutrient WHERE food_entry_id IN (
     SELECT id FROM fitness.food_entry WHERE user_id = ${userId}
   )`;
-  await sql`DELETE FROM fitness.supplement_dose_event WHERE user_id = ${userId}`;
   await sql`DELETE FROM fitness.dexa_scan_region WHERE scan_id IN (
     SELECT id FROM fitness.dexa_scan WHERE user_id = ${userId}
   )`;
@@ -44,12 +43,9 @@ async function clearSeedUserData(sql: Sql, userId: string): Promise<void> {
   await sql`DELETE FROM fitness.medication_dose_event WHERE user_id = ${userId}`;
   await sql`DELETE FROM fitness.health_event WHERE user_id = ${userId}`;
   await sql`DELETE FROM fitness.dexa_scan WHERE user_id = ${userId}`;
-  await sql`DELETE FROM fitness.journal_entry WHERE user_id = ${userId}`;
-  await sql`DELETE FROM fitness.life_events WHERE user_id = ${userId}`;
   await sql`DELETE FROM fitness.breathwork_session WHERE user_id = ${userId}`;
   await sql`DELETE FROM fitness.menstrual_period WHERE user_id = ${userId}`;
   await sql`DELETE FROM fitness.food_entry WHERE user_id = ${userId}`;
-  await sql`DELETE FROM fitness.supplement WHERE user_id = ${userId}`;
   await sql`DELETE FROM fitness.daily_metric_value WHERE daily_metrics_id IN (
     SELECT id FROM fitness.daily_metrics WHERE user_id = ${userId}
   )`;
@@ -196,7 +192,6 @@ async function seedSyncLogs(sql: Sql): Promise<void> {
     ["strava", "activities", "success", 96, null, 1_120, 1],
     ["strava", "streams", "success", 1_400, null, 1_560, 1],
     ["bodyspec", "body_composition", "success", 2, null, 330, 3],
-    ["manual_review", "journal", "success", 60, null, 120, 1],
     ["manual_review", "cycle", "success", 6, null, 170, 1],
   ] as const;
 

@@ -10,9 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as ZeppPairingRouteImport } from './routes/zepp-pairing'
-import { Route as WeeklyReportRouteImport } from './routes/weekly-report'
 import { Route as TrainingRouteImport } from './routes/training'
-import { Route as TrackingRouteImport } from './routes/tracking'
 import { Route as TermsRouteImport } from './routes/terms'
 import { Route as SupportRouteImport } from './routes/support'
 import { Route as SleepRouteImport } from './routes/sleep'
@@ -24,18 +22,12 @@ import { Route as PredictionsRouteImport } from './routes/predictions'
 import { Route as OnboardingRouteImport } from './routes/onboarding'
 import { Route as NutritionRouteImport } from './routes/nutrition'
 import { Route as MoreRouteImport } from './routes/more'
-import { Route as MonthlyReportRouteImport } from './routes/monthly-report'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as InsightsRouteImport } from './routes/insights'
-import { Route as HealthReportRouteImport } from './routes/health-report'
-import { Route as ExperimentsRouteImport } from './routes/experiments'
-import { Route as DataQualityRouteImport } from './routes/data-quality'
 import { Route as DashboardRouteImport } from './routes/dashboard'
-import { Route as CycleRouteImport } from './routes/cycle'
 import { Route as CorrelationRouteImport } from './routes/correlation'
 import { Route as ClinicalRecordsRouteImport } from './routes/clinical-records'
 import { Route as BodyRouteImport } from './routes/body'
-import { Route as BehaviorImpactRouteImport } from './routes/behavior-impact'
 import { Route as AlertsRouteImport } from './routes/alerts'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as ActivitiesRouteImport } from './routes/activities'
@@ -56,7 +48,6 @@ import { Route as TrainingEnduranceRouteImport } from './routes/training/enduran
 import { Route as TrainingCyclingRouteImport } from './routes/training/cycling'
 import { Route as TrainingClimbingRouteImport } from './routes/training/climbing'
 import { Route as ProvidersIdRouteImport } from './routes/providers/$id'
-import { Route as NutritionSupplementsRouteImport } from './routes/nutrition/supplements'
 import { Route as NutritionAnalyticsRouteImport } from './routes/nutrition/analytics'
 import { Route as DeveloperIntegrationsClientIdRouteImport } from './routes/developer-integrations/$clientId'
 import { Route as ClinicalRecordsIdRouteImport } from './routes/clinical-records.$id'
@@ -69,21 +60,11 @@ const ZeppPairingRoute = ZeppPairingRouteImport.update({
   path: '/zepp-pairing',
   getParentRoute: () => rootRouteImport,
 } as Parameters<typeof ZeppPairingRouteImport.update>[0])
-const WeeklyReportRoute = WeeklyReportRouteImport.update({
-  id: '/weekly-report',
-  path: '/weekly-report',
-  getParentRoute: () => rootRouteImport,
-} as Parameters<typeof WeeklyReportRouteImport.update>[0])
 const TrainingRoute = TrainingRouteImport.update({
   id: '/training',
   path: '/training',
   getParentRoute: () => rootRouteImport,
 } as Parameters<typeof TrainingRouteImport.update>[0])
-const TrackingRoute = TrackingRouteImport.update({
-  id: '/tracking',
-  path: '/tracking',
-  getParentRoute: () => rootRouteImport,
-} as Parameters<typeof TrackingRouteImport.update>[0])
 const TermsRoute = TermsRouteImport.update({
   id: '/terms',
   path: '/terms',
@@ -139,11 +120,6 @@ const MoreRoute = MoreRouteImport.update({
   path: '/more',
   getParentRoute: () => rootRouteImport,
 } as Parameters<typeof MoreRouteImport.update>[0])
-const MonthlyReportRoute = MonthlyReportRouteImport.update({
-  id: '/monthly-report',
-  path: '/monthly-report',
-  getParentRoute: () => rootRouteImport,
-} as Parameters<typeof MonthlyReportRouteImport.update>[0])
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
@@ -154,31 +130,11 @@ const InsightsRoute = InsightsRouteImport.update({
   path: '/insights',
   getParentRoute: () => rootRouteImport,
 } as Parameters<typeof InsightsRouteImport.update>[0])
-const HealthReportRoute = HealthReportRouteImport.update({
-  id: '/health-report',
-  path: '/health-report',
-  getParentRoute: () => rootRouteImport,
-} as Parameters<typeof HealthReportRouteImport.update>[0])
-const ExperimentsRoute = ExperimentsRouteImport.update({
-  id: '/experiments',
-  path: '/experiments',
-  getParentRoute: () => rootRouteImport,
-} as Parameters<typeof ExperimentsRouteImport.update>[0])
-const DataQualityRoute = DataQualityRouteImport.update({
-  id: '/data-quality',
-  path: '/data-quality',
-  getParentRoute: () => rootRouteImport,
-} as Parameters<typeof DataQualityRouteImport.update>[0])
 const DashboardRoute = DashboardRouteImport.update({
   id: '/dashboard',
   path: '/dashboard',
   getParentRoute: () => rootRouteImport,
 } as Parameters<typeof DashboardRouteImport.update>[0])
-const CycleRoute = CycleRouteImport.update({
-  id: '/cycle',
-  path: '/cycle',
-  getParentRoute: () => rootRouteImport,
-} as Parameters<typeof CycleRouteImport.update>[0])
 const CorrelationRoute = CorrelationRouteImport.update({
   id: '/correlation',
   path: '/correlation',
@@ -194,11 +150,6 @@ const BodyRoute = BodyRouteImport.update({
   path: '/body',
   getParentRoute: () => rootRouteImport,
 } as Parameters<typeof BodyRouteImport.update>[0])
-const BehaviorImpactRoute = BehaviorImpactRouteImport.update({
-  id: '/behavior-impact',
-  path: '/behavior-impact',
-  getParentRoute: () => rootRouteImport,
-} as Parameters<typeof BehaviorImpactRouteImport.update>[0])
 const AlertsRoute = AlertsRouteImport.update({
   id: '/alerts',
   path: '/alerts',
@@ -306,11 +257,6 @@ const ProvidersIdRoute = ProvidersIdRouteImport.update({
   path: '/$id',
   getParentRoute: () => ProvidersRoute,
 } as Parameters<typeof ProvidersIdRouteImport.update>[0])
-const NutritionSupplementsRoute = NutritionSupplementsRouteImport.update({
-  id: '/supplements',
-  path: '/supplements',
-  getParentRoute: () => NutritionRoute,
-} as Parameters<typeof NutritionSupplementsRouteImport.update>[0])
 const NutritionAnalyticsRoute = NutritionAnalyticsRouteImport.update({
   id: '/analytics',
   path: '/analytics',
@@ -351,18 +297,12 @@ export interface FileRoutesByFullPath {
   '/activities': typeof ActivitiesRoute
   '/admin': typeof AdminRouteWithChildren
   '/alerts': typeof AlertsRoute
-  '/behavior-impact': typeof BehaviorImpactRoute
   '/body': typeof BodyRouteWithChildren
   '/clinical-records': typeof ClinicalRecordsRouteWithChildren
   '/correlation': typeof CorrelationRoute
-  '/cycle': typeof CycleRoute
   '/dashboard': typeof DashboardRoute
-  '/data-quality': typeof DataQualityRoute
-  '/experiments': typeof ExperimentsRoute
-  '/health-report': typeof HealthReportRoute
   '/insights': typeof InsightsRoute
   '/login': typeof LoginRoute
-  '/monthly-report': typeof MonthlyReportRoute
   '/more': typeof MoreRoute
   '/nutrition': typeof NutritionRouteWithChildren
   '/onboarding': typeof OnboardingRoute
@@ -374,16 +314,13 @@ export interface FileRoutesByFullPath {
   '/sleep': typeof SleepRoute
   '/support': typeof SupportRoute
   '/terms': typeof TermsRoute
-  '/tracking': typeof TrackingRoute
   '/training': typeof TrainingRouteWithChildren
-  '/weekly-report': typeof WeeklyReportRoute
   '/zepp-pairing': typeof ZeppPairingRoute
   '/activity/$id': typeof ActivityIdRoute
   '/body/heart-rate': typeof BodyHeartRateRoute
   '/clinical-records/$id': typeof ClinicalRecordsIdRoute
   '/developer-integrations/$clientId': typeof DeveloperIntegrationsClientIdRoute
   '/nutrition/analytics': typeof NutritionAnalyticsRoute
-  '/nutrition/supplements': typeof NutritionSupplementsRoute
   '/providers/$id': typeof ProvidersIdRoute
   '/training/climbing': typeof TrainingClimbingRoute
   '/training/cycling': typeof TrainingCyclingRoute
@@ -406,16 +343,10 @@ export interface FileRoutesByTo {
   '/account-deletion': typeof AccountDeletionRoute
   '/activities': typeof ActivitiesRoute
   '/alerts': typeof AlertsRoute
-  '/behavior-impact': typeof BehaviorImpactRoute
   '/correlation': typeof CorrelationRoute
-  '/cycle': typeof CycleRoute
   '/dashboard': typeof DashboardRoute
-  '/data-quality': typeof DataQualityRoute
-  '/experiments': typeof ExperimentsRoute
-  '/health-report': typeof HealthReportRoute
   '/insights': typeof InsightsRoute
   '/login': typeof LoginRoute
-  '/monthly-report': typeof MonthlyReportRoute
   '/more': typeof MoreRoute
   '/onboarding': typeof OnboardingRoute
   '/predictions': typeof PredictionsRoute
@@ -425,15 +356,12 @@ export interface FileRoutesByTo {
   '/sleep': typeof SleepRoute
   '/support': typeof SupportRoute
   '/terms': typeof TermsRoute
-  '/tracking': typeof TrackingRoute
-  '/weekly-report': typeof WeeklyReportRoute
   '/zepp-pairing': typeof ZeppPairingRoute
   '/activity/$id': typeof ActivityIdRoute
   '/body/heart-rate': typeof BodyHeartRateRoute
   '/clinical-records/$id': typeof ClinicalRecordsIdRoute
   '/developer-integrations/$clientId': typeof DeveloperIntegrationsClientIdRoute
   '/nutrition/analytics': typeof NutritionAnalyticsRoute
-  '/nutrition/supplements': typeof NutritionSupplementsRoute
   '/providers/$id': typeof ProvidersIdRoute
   '/training/climbing': typeof TrainingClimbingRoute
   '/training/cycling': typeof TrainingCyclingRoute
@@ -458,18 +386,12 @@ export interface FileRoutesById {
   '/activities': typeof ActivitiesRoute
   '/admin': typeof AdminRouteWithChildren
   '/alerts': typeof AlertsRoute
-  '/behavior-impact': typeof BehaviorImpactRoute
   '/body': typeof BodyRouteWithChildren
   '/clinical-records': typeof ClinicalRecordsRouteWithChildren
   '/correlation': typeof CorrelationRoute
-  '/cycle': typeof CycleRoute
   '/dashboard': typeof DashboardRoute
-  '/data-quality': typeof DataQualityRoute
-  '/experiments': typeof ExperimentsRoute
-  '/health-report': typeof HealthReportRoute
   '/insights': typeof InsightsRoute
   '/login': typeof LoginRoute
-  '/monthly-report': typeof MonthlyReportRoute
   '/more': typeof MoreRoute
   '/nutrition': typeof NutritionRouteWithChildren
   '/onboarding': typeof OnboardingRoute
@@ -481,16 +403,13 @@ export interface FileRoutesById {
   '/sleep': typeof SleepRoute
   '/support': typeof SupportRoute
   '/terms': typeof TermsRoute
-  '/tracking': typeof TrackingRoute
   '/training': typeof TrainingRouteWithChildren
-  '/weekly-report': typeof WeeklyReportRoute
   '/zepp-pairing': typeof ZeppPairingRoute
   '/activity/$id': typeof ActivityIdRoute
   '/body/heart-rate': typeof BodyHeartRateRoute
   '/clinical-records/$id': typeof ClinicalRecordsIdRoute
   '/developer-integrations/$clientId': typeof DeveloperIntegrationsClientIdRoute
   '/nutrition/analytics': typeof NutritionAnalyticsRoute
-  '/nutrition/supplements': typeof NutritionSupplementsRoute
   '/providers/$id': typeof ProvidersIdRoute
   '/training/climbing': typeof TrainingClimbingRoute
   '/training/cycling': typeof TrainingCyclingRoute
@@ -516,18 +435,12 @@ export interface FileRouteTypes {
     | '/activities'
     | '/admin'
     | '/alerts'
-    | '/behavior-impact'
     | '/body'
     | '/clinical-records'
     | '/correlation'
-    | '/cycle'
     | '/dashboard'
-    | '/data-quality'
-    | '/experiments'
-    | '/health-report'
     | '/insights'
     | '/login'
-    | '/monthly-report'
     | '/more'
     | '/nutrition'
     | '/onboarding'
@@ -539,16 +452,13 @@ export interface FileRouteTypes {
     | '/sleep'
     | '/support'
     | '/terms'
-    | '/tracking'
     | '/training'
-    | '/weekly-report'
     | '/zepp-pairing'
     | '/activity/$id'
     | '/body/heart-rate'
     | '/clinical-records/$id'
     | '/developer-integrations/$clientId'
     | '/nutrition/analytics'
-    | '/nutrition/supplements'
     | '/providers/$id'
     | '/training/climbing'
     | '/training/cycling'
@@ -571,16 +481,10 @@ export interface FileRouteTypes {
     | '/account-deletion'
     | '/activities'
     | '/alerts'
-    | '/behavior-impact'
     | '/correlation'
-    | '/cycle'
     | '/dashboard'
-    | '/data-quality'
-    | '/experiments'
-    | '/health-report'
     | '/insights'
     | '/login'
-    | '/monthly-report'
     | '/more'
     | '/onboarding'
     | '/predictions'
@@ -590,15 +494,12 @@ export interface FileRouteTypes {
     | '/sleep'
     | '/support'
     | '/terms'
-    | '/tracking'
-    | '/weekly-report'
     | '/zepp-pairing'
     | '/activity/$id'
     | '/body/heart-rate'
     | '/clinical-records/$id'
     | '/developer-integrations/$clientId'
     | '/nutrition/analytics'
-    | '/nutrition/supplements'
     | '/providers/$id'
     | '/training/climbing'
     | '/training/cycling'
@@ -622,18 +523,12 @@ export interface FileRouteTypes {
     | '/activities'
     | '/admin'
     | '/alerts'
-    | '/behavior-impact'
     | '/body'
     | '/clinical-records'
     | '/correlation'
-    | '/cycle'
     | '/dashboard'
-    | '/data-quality'
-    | '/experiments'
-    | '/health-report'
     | '/insights'
     | '/login'
-    | '/monthly-report'
     | '/more'
     | '/nutrition'
     | '/onboarding'
@@ -645,16 +540,13 @@ export interface FileRouteTypes {
     | '/sleep'
     | '/support'
     | '/terms'
-    | '/tracking'
     | '/training'
-    | '/weekly-report'
     | '/zepp-pairing'
     | '/activity/$id'
     | '/body/heart-rate'
     | '/clinical-records/$id'
     | '/developer-integrations/$clientId'
     | '/nutrition/analytics'
-    | '/nutrition/supplements'
     | '/providers/$id'
     | '/training/climbing'
     | '/training/cycling'
@@ -679,18 +571,12 @@ export interface RootRouteChildren {
   ActivitiesRoute: typeof ActivitiesRoute
   AdminRoute: typeof AdminRouteWithChildren
   AlertsRoute: typeof AlertsRoute
-  BehaviorImpactRoute: typeof BehaviorImpactRoute
   BodyRoute: typeof BodyRouteWithChildren
   ClinicalRecordsRoute: typeof ClinicalRecordsRouteWithChildren
   CorrelationRoute: typeof CorrelationRoute
-  CycleRoute: typeof CycleRoute
   DashboardRoute: typeof DashboardRoute
-  DataQualityRoute: typeof DataQualityRoute
-  ExperimentsRoute: typeof ExperimentsRoute
-  HealthReportRoute: typeof HealthReportRoute
   InsightsRoute: typeof InsightsRoute
   LoginRoute: typeof LoginRoute
-  MonthlyReportRoute: typeof MonthlyReportRoute
   MoreRoute: typeof MoreRoute
   NutritionRoute: typeof NutritionRouteWithChildren
   OnboardingRoute: typeof OnboardingRoute
@@ -702,9 +588,7 @@ export interface RootRouteChildren {
   SleepRoute: typeof SleepRoute
   SupportRoute: typeof SupportRoute
   TermsRoute: typeof TermsRoute
-  TrackingRoute: typeof TrackingRoute
   TrainingRoute: typeof TrainingRouteWithChildren
-  WeeklyReportRoute: typeof WeeklyReportRoute
   ZeppPairingRoute: typeof ZeppPairingRoute
   ActivityIdRoute: typeof ActivityIdRoute
   DeveloperIntegrationsClientIdRoute: typeof DeveloperIntegrationsClientIdRoute
@@ -720,25 +604,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ZeppPairingRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/weekly-report': {
-      id: '/weekly-report'
-      path: '/weekly-report'
-      fullPath: '/weekly-report'
-      preLoaderRoute: typeof WeeklyReportRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/training': {
       id: '/training'
       path: '/training'
       fullPath: '/training'
       preLoaderRoute: typeof TrainingRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/tracking': {
-      id: '/tracking'
-      path: '/tracking'
-      fullPath: '/tracking'
-      preLoaderRoute: typeof TrackingRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/terms': {
@@ -818,13 +688,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof MoreRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/monthly-report': {
-      id: '/monthly-report'
-      path: '/monthly-report'
-      fullPath: '/monthly-report'
-      preLoaderRoute: typeof MonthlyReportRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/login': {
       id: '/login'
       path: '/login'
@@ -839,39 +702,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof InsightsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/health-report': {
-      id: '/health-report'
-      path: '/health-report'
-      fullPath: '/health-report'
-      preLoaderRoute: typeof HealthReportRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/experiments': {
-      id: '/experiments'
-      path: '/experiments'
-      fullPath: '/experiments'
-      preLoaderRoute: typeof ExperimentsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/data-quality': {
-      id: '/data-quality'
-      path: '/data-quality'
-      fullPath: '/data-quality'
-      preLoaderRoute: typeof DataQualityRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/dashboard': {
       id: '/dashboard'
       path: '/dashboard'
       fullPath: '/dashboard'
       preLoaderRoute: typeof DashboardRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/cycle': {
-      id: '/cycle'
-      path: '/cycle'
-      fullPath: '/cycle'
-      preLoaderRoute: typeof CycleRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/correlation': {
@@ -893,13 +728,6 @@ declare module '@tanstack/react-router' {
       path: '/body'
       fullPath: '/body'
       preLoaderRoute: typeof BodyRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/behavior-impact': {
-      id: '/behavior-impact'
-      path: '/behavior-impact'
-      fullPath: '/behavior-impact'
-      preLoaderRoute: typeof BehaviorImpactRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/alerts': {
@@ -1042,13 +870,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProvidersIdRouteImport
       parentRoute: typeof ProvidersRoute
     }
-    '/nutrition/supplements': {
-      id: '/nutrition/supplements'
-      path: '/supplements'
-      fullPath: '/nutrition/supplements'
-      preLoaderRoute: typeof NutritionSupplementsRouteImport
-      parentRoute: typeof NutritionRoute
-    }
     '/nutrition/analytics': {
       id: '/nutrition/analytics'
       path: '/analytics'
@@ -1134,13 +955,11 @@ const ClinicalRecordsRouteWithChildren = ClinicalRecordsRoute._addFileChildren(
 
 interface NutritionRouteChildren {
   NutritionAnalyticsRoute: typeof NutritionAnalyticsRoute
-  NutritionSupplementsRoute: typeof NutritionSupplementsRoute
   NutritionIndexRoute: typeof NutritionIndexRoute
 }
 
 const NutritionRouteChildren: NutritionRouteChildren = {
   NutritionAnalyticsRoute: NutritionAnalyticsRoute,
-  NutritionSupplementsRoute: NutritionSupplementsRoute,
   NutritionIndexRoute: NutritionIndexRoute,
 }
 
@@ -1194,18 +1013,12 @@ const rootRouteChildren: RootRouteChildren = {
   ActivitiesRoute: ActivitiesRoute,
   AdminRoute: AdminRouteWithChildren,
   AlertsRoute: AlertsRoute,
-  BehaviorImpactRoute: BehaviorImpactRoute,
   BodyRoute: BodyRouteWithChildren,
   ClinicalRecordsRoute: ClinicalRecordsRouteWithChildren,
   CorrelationRoute: CorrelationRoute,
-  CycleRoute: CycleRoute,
   DashboardRoute: DashboardRoute,
-  DataQualityRoute: DataQualityRoute,
-  ExperimentsRoute: ExperimentsRoute,
-  HealthReportRoute: HealthReportRoute,
   InsightsRoute: InsightsRoute,
   LoginRoute: LoginRoute,
-  MonthlyReportRoute: MonthlyReportRoute,
   MoreRoute: MoreRoute,
   NutritionRoute: NutritionRouteWithChildren,
   OnboardingRoute: OnboardingRoute,
@@ -1217,9 +1030,7 @@ const rootRouteChildren: RootRouteChildren = {
   SleepRoute: SleepRoute,
   SupportRoute: SupportRoute,
   TermsRoute: TermsRoute,
-  TrackingRoute: TrackingRoute,
   TrainingRoute: TrainingRouteWithChildren,
-  WeeklyReportRoute: WeeklyReportRoute,
   ZeppPairingRoute: ZeppPairingRoute,
   ActivityIdRoute: ActivityIdRoute,
   DeveloperIntegrationsClientIdRoute: DeveloperIntegrationsClientIdRoute,

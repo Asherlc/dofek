@@ -471,15 +471,7 @@ export class ClimbingProgressionRepository {
             CASE WHEN detail.attempt_count > 0 THEN detail.sent ELSE ce.sent END AS sent,
             CASE WHEN detail.attempt_count > 0 THEN detail.attempt_count ELSE ce.attempt_count END AS attempt_count,
             COALESCE(detail.attempts, '[]'::jsonb) AS attempts,
-            CASE lower(btrim(COALESCE(ce.raw->>'ascentType', ce.raw->>'attemptType',
-              CASE WHEN ce.climb_type = 'boulder' THEN ce.raw->>'Style' ELSE ce.raw->>'Lead Style' END)))
-              WHEN 'flash' THEN 'Flash'
-              WHEN 'onsight' THEN 'Onsight'
-              WHEN 'redpoint' THEN 'Redpoint'
-              WHEN 'pinkpoint' THEN 'Pinkpoint'
-              WHEN 'repeat' THEN 'Repeat'
-              ELSE NULL
-            END AS ascent_type,
+            ce.ascent_type,
             ce.lead,
             ce.wall_angle_degrees,
             ce.hold_type,
@@ -487,7 +479,7 @@ export class ClimbingProgressionRepository {
             ce.location_name,
             ce.source_name
           FROM fitness.v_activity AS a
-          LEFT JOIN fitness.climbing_entry AS ce ON ce.activity_id = ANY(a.member_activity_ids)
+          LEFT JOIN fitness.v_climbing_entry AS ce ON ce.activity_id = ANY(a.member_activity_ids)
           LEFT JOIN fitness.activity AS source_activity ON source_activity.id = ce.activity_id
           LEFT JOIN LATERAL (
             SELECT
@@ -557,7 +549,7 @@ export class ClimbingProgressionRepository {
       coverageRowSchema,
       sql`SELECT MIN(${localDate})::text AS first_observed_date
           FROM fitness.v_activity AS a
-          LEFT JOIN fitness.climbing_entry AS ce ON ce.activity_id = ANY(a.member_activity_ids)
+          LEFT JOIN fitness.v_climbing_entry AS ce ON ce.activity_id = ANY(a.member_activity_ids)
           LEFT JOIN fitness.activity AS source_activity ON source_activity.id = ce.activity_id
           WHERE a.user_id = ${this.#userId}::uuid
             AND a.canonical_type = 'climbing'
@@ -574,7 +566,7 @@ export class ClimbingProgressionRepository {
       sql`WITH climbing_dates AS (
             SELECT DISTINCT ${localDate} AS date
             FROM fitness.v_activity AS a
-            LEFT JOIN fitness.climbing_entry AS ce ON ce.activity_id = ANY(a.member_activity_ids)
+            LEFT JOIN fitness.v_climbing_entry AS ce ON ce.activity_id = ANY(a.member_activity_ids)
             LEFT JOIN fitness.activity AS source_activity ON source_activity.id = ce.activity_id
             WHERE a.user_id = ${this.#userId}::uuid
               AND a.canonical_type = 'climbing'

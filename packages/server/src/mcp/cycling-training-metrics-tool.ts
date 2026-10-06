@@ -2,6 +2,7 @@ import type { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import { dateSchema } from "../lib/date-schema.ts";
 import { CyclingTrainingMetricsRepository } from "../repositories/cycling-training-metrics-repository.ts";
+import { registerAuthorizedTool } from "./authorized-tool.ts";
 import type { DofekMcpContext } from "./context.ts";
 import { cyclingTrainingMetricsOutputSchema } from "./cycling-training-metrics-output.ts";
 import { requireMcpScope } from "./token-repository.ts";
@@ -24,14 +25,16 @@ export function registerCyclingTrainingMetricsTool(
   server: McpServer,
   context: DofekMcpContext,
 ): void {
-  server.registerTool(
+  registerAuthorizedTool(
+    server,
+    ["activity:read"],
     "get_cycling_training_metrics",
     {
       title: "Get Cycling Training Metrics",
       description:
         "Return paginated per-ride normalized power, variability, work, historical FTP-dependent load, power and heart-rate zones, aerobic efficiency, cardiac drift, best powers, and recorded or explicitly inferred intervals. Results preserve merged-activity, sample, device, timezone, coverage, and availability evidence; raw streams remain server-side.",
       annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
-      inputSchema: {
+      inputSchema: z.object({
         start_date: dateSchema,
         end_date: dateSchema,
         modalities: z.array(z.string().min(1)).max(20).optional(),
@@ -39,7 +42,7 @@ export function registerCyclingTrainingMetricsTool(
         best_power_durations_seconds: z.array(durationSchema).min(1).max(17).optional(),
         cursor: z.string().min(1).optional(),
         limit: z.number().int().min(1).max(25).optional(),
-      },
+      }),
       outputSchema: cyclingTrainingMetricsOutputSchema,
     },
     async ({

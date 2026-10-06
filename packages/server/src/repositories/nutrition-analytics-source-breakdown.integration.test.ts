@@ -35,8 +35,7 @@ describe("nutrition analytics source breakdown with Postgres", () => {
         ('nutrition-2136-manual', 'Manual Food'),
         ('nutrition-2136-cronometer', 'Cronometer'),
         ('nutrition-2136-meals', 'Meal Source'),
-        ('nutrition-2136-other-itemized', 'Other Itemized Source'),
-        ('nutrition-2136-supplements', 'Dofek Supplements')
+        ('nutrition-2136-other-itemized', 'Other Itemized Source')
       ON CONFLICT (id) DO NOTHING
     `);
 
@@ -47,7 +46,6 @@ describe("nutrition analytics source breakdown with Postgres", () => {
       foodName: "Breakfast",
       vitaminC: 40,
     });
-    await addTakenSupplement(dates[0] ?? "", 10);
 
     await addFoodEntry({
       date: dates[1] ?? "",
@@ -133,53 +131,6 @@ describe("nutrition analytics source breakdown with Postgres", () => {
     `);
   }
 
-  async function addTakenSupplement(date: string, vitaminC: number): Promise<void> {
-    await context.db.execute(sql`
-      WITH schedule AS (
-        INSERT INTO fitness.supplement (user_id)
-        VALUES (${USER_ID})
-        RETURNING id
-      ),
-      definition AS (
-        INSERT INTO fitness.supplement_definition (
-          supplement_id,
-          name,
-          effective_from
-        )
-        SELECT id, 'Vitamin C', ${date}::date
-        FROM schedule
-        RETURNING id, supplement_id
-      ),
-      nutrient AS (
-        INSERT INTO fitness.supplement_definition_nutrient (
-          definition_id,
-          nutrient_id,
-          amount
-        )
-        SELECT id, 'vitamin_c', ${vitaminC}
-        FROM definition
-      )
-      INSERT INTO fitness.supplement_dose_event (
-        user_id,
-        supplement_id,
-        definition_id,
-        provider_id,
-        scheduled_date,
-        status,
-        recorded_at
-      )
-      SELECT
-        ${USER_ID},
-        supplement_id,
-        id,
-        'nutrition-2136-supplements',
-        ${date}::date,
-        'taken',
-        NOW()
-      FROM definition
-    `);
-  }
-
   it("separates canonical nutrient contributions by intake type and source", async () => {
     const repository = new NutritionAnalyticsRepository(context.db, USER_ID);
 
@@ -188,10 +139,9 @@ describe("nutrition analytics source breakdown with Postgres", () => {
 
     expect(vitaminC?.toDetail()).toMatchObject({
       intake: {
-        totalDailyAverage: 60,
+        totalDailyAverage: 57.5,
         foodDailyAverage: 42.5,
         providerDailyTotalAverage: 15,
-        supplementDailyAverage: 2.5,
         daysTracked: 4,
       },
       sourceBreakdown: [
@@ -216,13 +166,6 @@ describe("nutrition analytics source breakdown with Postgres", () => {
           dailyAverageContribution: 15,
           daysTracked: 1,
         },
-        {
-          providerId: "nutrition-2136-supplements",
-          sourceLabel: "nutrition-2136-supplements",
-          intakeType: "supplement",
-          dailyAverageContribution: 2.5,
-          daysTracked: 1,
-        },
       ],
     });
   });
@@ -237,19 +180,8 @@ describe("nutrition analytics source breakdown with Postgres", () => {
       overlapDays: 2,
       conflictDays: 1,
       completenessPercent: 13.3,
-      sourceLabels: [
-        "Cronometer",
-        "Manual Food",
-        "Meal Source",
-        "Other Itemized Source",
-        "nutrition-2136-supplements",
-      ],
-      contributingSourceLabels: [
-        "Cronometer",
-        "Manual Food",
-        "Meal Source",
-        "nutrition-2136-supplements",
-      ],
+      sourceLabels: ["Cronometer", "Manual Food", "Meal Source", "Other Itemized Source"],
+      contributingSourceLabels: ["Cronometer", "Manual Food", "Meal Source"],
       excludedSourceLabels: ["Cronometer", "Manual Food", "Other Itemized Source"],
     });
   });

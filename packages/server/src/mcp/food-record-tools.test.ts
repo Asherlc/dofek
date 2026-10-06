@@ -10,10 +10,9 @@ const mocks = vi.hoisted(() => ({
   create: vi.fn(),
   delete: vi.fn(),
   get: vi.fn(),
-  getCalorieGoalContext: vi.fn(),
   history: vi.fn(),
   loggerInfo: vi.fn(),
-  nutritionByDate: vi.fn(),
+  nutritionTotalsByDate: vi.fn(),
   restore: vi.fn(),
   search: vi.fn(),
   serviceConstructor: vi.fn(),
@@ -38,17 +37,7 @@ vi.mock("../repositories/food-repository.ts", async (importOriginal) => {
   return {
     ...original,
     FoodRepository: vi.fn(function foodRepositoryConstructor() {
-      return { nutritionByDate: mocks.nutritionByDate };
-    }),
-  };
-});
-
-vi.mock("../repositories/settings-repository.ts", async (importOriginal) => {
-  const original = await importOriginal<typeof import("../repositories/settings-repository.ts")>();
-  return {
-    ...original,
-    SettingsRepository: vi.fn(function settingsRepositoryConstructor() {
-      return { getCalorieGoalContext: mocks.getCalorieGoalContext };
+      return { nutritionTotalsByDate: mocks.nutritionTotalsByDate };
     }),
   };
 });
@@ -146,13 +135,13 @@ const daySummary = {
   protein_g: 98,
   carbs_g: 120,
   fat_g: 55,
-  calorie_goal: {
-    target: 2200,
-    remaining: 750,
-    over: 0,
-    progress_percentage: 65.9,
-    type: "configured" as const,
-  },
+  meals: [
+    { meal: "breakfast", calories: 400, share_percentage: (400 / 1450) * 100 },
+    { meal: "lunch", calories: 500, share_percentage: (500 / 1450) * 100 },
+    { meal: "dinner", calories: 450, share_percentage: (450 / 1450) * 100 },
+    { meal: "snack", calories: 100, share_percentage: (100 / 1450) * 100 },
+    { meal: "other", calories: 0, share_percentage: 0 },
+  ],
   macros: {
     protein: { grams: 98, energy_share_percentage: 28 },
     carbs: { grams: 120, energy_share_percentage: 34 },
@@ -173,10 +162,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function isSchemaRecord(value: unknown): value is Record<string, z.ZodType> {
-  return isRecord(value) && Object.values(value).every((schema) => schema instanceof z.ZodType);
-}
-
 function registeredToolFromCall(call: unknown): [string, RegisteredTool] {
   if (!Array.isArray(call) || typeof call[0] !== "string") {
     throw new Error("Unexpected registerTool call");
@@ -187,7 +172,7 @@ function registeredToolFromCall(call: unknown): [string, RegisteredTool] {
     !isRecord(config) ||
     !isRecord(config.annotations) ||
     !Object.values(config.annotations).every((value) => typeof value === "boolean") ||
-    !isSchemaRecord(config.inputSchema) ||
+    !(config.inputSchema instanceof z.ZodObject) ||
     !(config.outputSchema instanceof z.ZodType) ||
     typeof handler !== "function"
   ) {
@@ -197,7 +182,7 @@ function registeredToolFromCall(call: unknown): [string, RegisteredTool] {
     call[0],
     {
       annotations: config.annotations,
-      inputSchema: config.inputSchema,
+      inputSchema: config.inputSchema.shape,
       outputSchema: config.outputSchema,
       meta: config._meta,
       handler,
@@ -242,8 +227,7 @@ beforeEach(() => {
   mocks.search.mockResolvedValue({ items: [domainRecord], nextCursor: null });
   mocks.get.mockResolvedValue(domainRecord);
   mocks.history.mockResolvedValue({ recordId, items: [], nextCursor: null });
-  mocks.getCalorieGoalContext.mockResolvedValue({ target: 2200, type: "configured" });
-  mocks.nutritionByDate.mockResolvedValue({
+  mocks.nutritionTotalsByDate.mockResolvedValue({
     summary: {
       calories: 1450,
       mealCalories: {
@@ -252,12 +236,6 @@ beforeEach(() => {
         dinner: 450,
         snack: 100,
         other: 0,
-      },
-      calorieGoal: {
-        target: 2200,
-        remaining: 750,
-        over: 0,
-        progressPercentage: 65.9,
       },
       macros: {
         protein: { grams: 98, calories: 392, energySharePercentage: 28 },
@@ -326,6 +304,7 @@ describe("registerFoodRecordTools", () => {
     ]) {
       expect(tool(name).meta).toEqual({
         ui: { resourceUri: "ui://dofek/day-nutrition.html" },
+        securitySchemes: [{ type: "oauth2", scopes: ["nutrition:read", "nutrition:write"] }],
       });
     }
   });
@@ -661,7 +640,7 @@ describe("registerFoodRecordTools", () => {
     expect(result).toMatchObject({
       _meta: { ui: { resourceUri: "ui://dofek/day-nutrition.html" } },
     });
-    expect(mocks.nutritionByDate).toHaveBeenCalledWith("2026-09-07", 2200);
+    expect(mocks.nutritionTotalsByDate).toHaveBeenCalledWith("2026-09-07");
     expect(
       tool("delete_food_entry").outputSchema.safeParse(structuredContent(result)).success,
     ).toBe(true);
@@ -669,7 +648,7 @@ describe("registerFoodRecordTools", () => {
 
   it("returns a null day summary when nutrition sources conflict", async () => {
     const { tool } = setup();
-    mocks.nutritionByDate.mockResolvedValueOnce({
+    mocks.nutritionTotalsByDate.mockResolvedValueOnce({
       summary: null,
       resolution: { status: "source_conflict" },
     });
@@ -695,8 +674,9 @@ describe("registerFoodRecordTools", () => {
       ["get_food_entry", { record_id: recordId }],
       ["get_food_entry_history", { record_id: recordId }],
     ] as const) {
-      await expect(tool(name).handler(input)).rejects.toMatchObject({
-        code: "insufficient_scope",
+      await expect(tool(name).handler(input)).resolves.toMatchObject({
+        isError: true,
+        _meta: { "mcp/www_authenticate": [expect.stringContaining('error="insufficient_scope"')] },
       });
     }
     expect(mocks.search).not.toHaveBeenCalled();
@@ -716,7 +696,10 @@ describe("registerFoodRecordTools", () => {
         expected_version: version,
         request_id: requestId,
       }),
-    ).rejects.toMatchObject({ code: "insufficient_scope" });
+    ).resolves.toMatchObject({
+      isError: true,
+      _meta: { "mcp/www_authenticate": [expect.stringContaining('error="insufficient_scope"')] },
+    });
     expect(mocks.delete).not.toHaveBeenCalled();
   });
 

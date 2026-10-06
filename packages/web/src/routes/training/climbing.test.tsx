@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const gradeProgressionQuery = vi.hoisted(() => vi.fn());
@@ -45,8 +45,10 @@ vi.mock("../../components/HangboardingSummary.tsx", () => ({
 }));
 
 vi.mock("../../components/QueryStatePanel.tsx", () => ({
-  QueryStatePanel: ({ error }: { error?: Error | null }) => (
-    <div>{error ? `Error: ${error.message}` : "Query state"}</div>
+  QueryStatePanel: ({ error, variant }: { error?: Error | null; variant?: string }) => (
+    <div>
+      {error ? `Error: ${error.message}` : variant === "loading" ? "Loading data." : "Query state"}
+    </div>
   ),
 }));
 
@@ -71,6 +73,75 @@ async function importClimbingTab() {
 }
 
 describe("ClimbingTab", () => {
+  it("shows a loading panel while filtered sessions are first fetched", async () => {
+    sessionSummaryQuery.mockReturnValue({ data: undefined, isLoading: true, error: null });
+    const ClimbingTab = await importClimbingTab();
+    render(<ClimbingTab />);
+    fireEvent.click(screen.getByRole("button", { name: "All climbing" }));
+    fireEvent.change(screen.getByLabelText("Style"), { target: { value: "lead" } });
+    expect(screen.getByText("Loading data.")).toBeTruthy();
+  });
+  it("keeps cached session rows visible while a filtered request fails", async () => {
+    sessionSummaryQuery.mockReturnValue({
+      data: [
+        {
+          activityId: "cached",
+          date: "2026-10-04",
+          name: "Cached climbing",
+          attempts: 3,
+          sends: 2,
+          hardestBoulderGrade: null,
+          hardestRouteGrade: "5.10a",
+        },
+      ],
+      isLoading: false,
+      error: new Error("Climbing query unavailable"),
+    });
+    const ClimbingTab = await importClimbingTab();
+    render(<ClimbingTab />);
+    fireEvent.click(screen.getByRole("button", { name: "All climbing" }));
+    fireEvent.change(screen.getByLabelText("Style"), { target: { value: "lead" } });
+    expect(screen.getByRole("link", { name: "Cached climbing" })).toBeTruthy();
+    expect(screen.getByText("Error: Climbing query unavailable")).toBeTruthy();
+  });
+  it("keeps filters collapsed and applies independent selections with removable chips", async () => {
+    const ClimbingTab = await importClimbingTab();
+    render(<ClimbingTab />);
+    const toggle = screen.getByRole("button", { name: "All climbing" });
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(screen.queryByLabelText("Protection")).toBeNull();
+    fireEvent.click(toggle);
+    sessionSummaryQuery.mockReturnValue({
+      data: [
+        {
+          activityId: "matched",
+          date: "2026-10-04",
+          name: "Trad session",
+          attempts: 3,
+          sends: 2,
+          hardestBoulderGrade: null,
+          hardestRouteGrade: "5.10a",
+        },
+      ],
+      isLoading: false,
+      error: null,
+    });
+    fireEvent.change(screen.getByLabelText("Style"), { target: { value: "lead" } });
+    expect(screen.getByRole("link", { name: "Trad session" }).getAttribute("href")).toBe(
+      "/activity/matched",
+    );
+    fireEvent.change(screen.getByLabelText("Protection"), { target: { value: "trad" } });
+    fireEvent.change(screen.getByLabelText("Setting"), { target: { value: "outdoor" } });
+    expect(volumeByGradeQuery).toHaveBeenLastCalledWith(
+      { days: 90, style: "lead", protection: "trad", setting: "outdoor" },
+      expect.any(Object),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Remove Trad filter" }));
+    expect(gradeProgressionQuery).toHaveBeenLastCalledWith(
+      { days: 90, style: "lead", setting: "outdoor" },
+      expect.any(Object),
+    );
+  });
   beforeEach(() => {
     gradeProgressionQuery.mockReset();
     volumeByGradeQuery.mockReset();
@@ -111,6 +182,7 @@ describe("ClimbingTab", () => {
     expect(hangboardingSummaryQuery).toHaveBeenCalledWith({ days: 90 }, expect.any(Object));
     const sectionProps = recentActivitiesSection.mock.calls[0]?.[0];
     expect(sectionProps.activityTypes).toEqual(["climbing"]);
+    expect(sectionProps.showDistance).toBe(false);
     expect(sectionProps.additionalColumns.map((column: { key: string }) => column.key)).toEqual([
       "attempts",
       "sends",
