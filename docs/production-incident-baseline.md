@@ -30289,6 +30289,65 @@ The [replacement run](https://github.com/Asherlc/dofek/actions/runs/37390006819)
 With explicit user approval, all nine macOS jobs across build, deployment, release and test workflows now use `macos-latest`, which currently selects macOS 26 ARM64 in GitHub's [supported image list](https://github.com/actions/runner-images). Native build and tool cache namespaces advance so the migrated Swift jobs do not restore the previous runner's build state. Diff review, whitespace validation and `actionlint -shellcheck=` passed; replacement CI remains pending. Production was unaffected. Future runner maintenance should review deprecation notices before an image's scheduled brownouts.
 
 
+## 2026-10-05 — Local Storybook tunnel host rejection (resolved)
+
+No production impact. Web and mobile review previews returned HTTP 403 while
+local Storybook was running. A request to the generated tunnel hostname's
+`/index.json` failed with `curl: (56) The requested URL returned error: 403`;
+the response body was `Invalid host`. Storybook's host-validation middleware
+rejected the forwarded Cloudflare hostname because it was absent from the
+allowed-host list. Both Storybook configurations now allow only the additional
+`.trycloudflare.com` domain through
+[`core.allowedHosts`](https://storybook.js.org/docs/api/main-config/main-config-core#allowedhosts).
+After restarting Storybook, both tunnel `/index.json` and `/iframe.html`
+requests succeeded without added retries or waits. No resilience tuning was
+needed. The available browser runtime reported no connected browsers, so
+visual inspection remains unverified; component interaction tests passed.
+The [development-environment guide](development-environment.md#storybook-through-a-development-tunnel)
+records the host requirement for future preview work.
+
+## 2026-10-05 — Climbing migration CI lint failure (local fix validated)
+
+No production impact. PR [2880](https://github.com/Asherlc/dofek/pull/2880)
+failed `Test / Migration Lint`, step `Lint new migration SQL`, when
+`xargs squawk` checked migration 0137. The first diagnostic was
+`constraint-missing-not-valid`; the command exited 123. The new check constraint
+was added without separating its creation from validation. The climbing migration now
+adds it with `NOT VALID` and explicitly validates it in the following statement,
+as prescribed by [Squawk](https://squawkhq.com/docs/constraint-missing-not-valid)
+and [PostgreSQL](https://www.postgresql.org/docs/current/sql-altertable.html).
+Local Squawk and migration-policy checks pass, and all eight climbing repository
+PostgreSQL tests pass with the updated migration. The
+[corrected migration-lint CI check](https://github.com/Asherlc/dofek/actions/runs/37376595644/job/111988247108)
+passed before the schema-snapshot follow-up. The migration was later renumbered
+to [0142](../drizzle/0142_climbing_route_protection.sql) after `main` added
+0137 through 0141; its snapshot was regenerated from the combined schema.
+No retries, waits, or lint suppressions were added. Next time, run Squawk as well
+as SQLFluff before opening a PR that adds PostgreSQL migrations.
+
+## 2026-10-05 — Climbing mutation CI coverage gaps (local fix validated)
+
+No production impact. PR [2880](https://github.com/Asherlc/dofek/pull/2880)
+failed `Test / Stryker (0)`, `(1)`, and `(3)` in
+[run 37377447441](https://github.com/Asherlc/dofek/actions/runs/37377447441).
+The failing command was `pnpm exec stryker run stryker.ci.config.json --mutate "$MUTATE_FILES"`.
+The first fatal diagnostics reported mutation scores of 0%, 70%, and 53.85%
+below the 75% breaking threshold. Server unit tests never selected the new
+filters, while provider tests omitted partial protection flags and CSV
+whitespace/mixed-type cases. Cached provider schemas also hid schema-initialization
+mutations, and redundant optional chaining introduced equivalent mutations.
+
+Added parameterized-query coverage for all three summaries, real PostgreSQL
+fixtures for independent and combined filters, and provider edge cases. Malformed
+response tests now initialize the provider afresh; OpenBeta captures the nullable
+route type once and filters its flags after an explicit null guard.
+The affected local mutation run killed all 59 mutations (100% for each of the
+three files). All 19,565 unit/mobile tests, nine climbing repository PostgreSQL
+tests, five OpenBeta sync PostgreSQL tests, lint, and typecheck pass. Remote
+confirmation is tracked in the PR's checks. No thresholds, exclusions, retries,
+or waits were added. For similar changes, run the CI mutation configuration
+against changed code before declaring the PR ready.
+
 **2026-10-05 — PR #2879 hosted runner allocation failure (unresolved).**
 CI for the climbing-chart fix remained queued and then cancelled several jobs,
 including Semgrep `SAST Scan` and the web build. The first fatal
@@ -30367,6 +30426,29 @@ mobile preview upload succeeded. No production impact was observed. Remote
 CI remains unresolved; keep the PR pending until required checks finish.
 No retries, timeout changes, or workflow bypasses were added. For future queue
 delays, check GitHub's published status before investigating repository code.
+
+## 2026-10-05 — Climbing PR blocked by newly published dependency advisories
+
+No production change or observed user impact. PR [2880](https://github.com/Asherlc/dofek/pull/2880)
+failed [Dependency Audit](https://github.com/Asherlc/dofek/actions/runs/37399660635/job/112064036624)
+at `pnpm audit --prod --audit-level=high --ignore-registry-errors`. The first
+blocking finding was critical Seroval Promise assimilation; the command exited 1.
+The lockfile contained seroval 1.5.5, proxy-addr 2.0.7, and source-map-js 1.2.1,
+which matched newly published high/critical advisories. See the upstream
+[Seroval Promise advisory](https://github.com/advisories/GHSA-p6vx-979v-rg4c),
+[Seroval memory advisory](https://github.com/advisories/GHSA-jp82-f5mq-hwhp),
+[proxy-addr advisory](https://github.com/advisories/GHSA-jqcg-44mw-7w3h), and
+[source-map-js advisory](https://github.com/advisories/GHSA-68fv-2mgg-jv7q).
+
+Updated only those transitive lockfile resolutions to the current stable
+seroval 1.6.8, proxy-addr 2.0.8, and source-map-js 1.2.2 through
+[recursive targeted dependency updates](https://pnpm.io/cli/update). The exact
+CI audit command now passes locally: two existing ignored high advisories and
+low/moderate findings remain under the established policy. No new exclusions,
+threshold changes, retries, or waits were added. Remote confirmation is tracked
+in the PR checks. For future merge work, run the production dependency audit
+again after updating from main because advisory data changes independently
+of code and lockfile changes.
 
 ## 2026-10-05 — Withings sync alert persisted after successful scheduled syncs
 

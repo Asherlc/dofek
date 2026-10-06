@@ -5,6 +5,7 @@ import type { StorybookConfig } from "@storybook/react-native-web-vite";
 const currentDir = dirname(fileURLToPath(import.meta.url));
 
 const config: StorybookConfig = {
+  core: { allowedHosts: [".trycloudflare.com"] },
   stories: ["../components/**/*.stories.@(ts|tsx)", "../app-stories/**/*.stories.@(ts|tsx)"],
   framework: "@storybook/react-native-web-vite",
   docs: {

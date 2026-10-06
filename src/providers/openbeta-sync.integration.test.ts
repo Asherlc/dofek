@@ -146,7 +146,7 @@ describe("OpenBetaProvider.sync() (integration)", () => {
           uuid: "climb-uuid-1",
           name: "Sunset Arete",
           grades: null,
-          type: { bouldering: false },
+          type: { bouldering: false, sport: null, trad: null },
           pathTokens: ["Crag", "Wall"],
           ancestors: ["area-1"],
           parent: { uuid: "area-1", area_name: "Wall" },

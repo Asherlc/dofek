@@ -205,6 +205,7 @@ describe("drizzleSchema", () => {
       "result_style",
       "attempt_count",
       "climb_style",
+      "route_protection",
       "wall_angle",
       "board",
       "hold_type",

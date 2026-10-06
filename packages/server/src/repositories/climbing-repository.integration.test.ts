@@ -1,3 +1,4 @@
+import type { ClimbingFilters } from "@dofek/training/climbing-filters";
 import { sql } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
@@ -30,7 +31,8 @@ describe("ClimbingRepository PostgreSQL summaries", () => {
     context = await setupTestDatabase();
     await context.db.execute(sql`INSERT INTO fitness.provider (id, name)
       VALUES ('climbing-summary-test', 'Climbing Summary Test'),
-             ('mountain-project', 'Mountain Project')
+             ('mountain-project', 'Mountain Project'),
+             ('openbeta', 'OpenBeta')
       ON CONFLICT (id) DO NOTHING`);
     const activities = await executeWithSchema(
       context.db,
@@ -60,6 +62,102 @@ describe("ClimbingRepository PostgreSQL summaries", () => {
 
   afterEach(async () => {
     await context?.cleanup();
+  });
+
+  it("applies independent style, protection, and setting selections to actual database entries", async () => {
+    await context.db.execute(sql`UPDATE fitness.climbing_entry
+      SET climb_type = 'route', grade_system = 'yds', grade = '5.9',
+          climb_style = 'lead', route_protection = ARRAY['sport'],
+          location_path = '[{"name":"Gym","externalId":null,"kind":"gym"}]'::jsonb
+      WHERE id = ${ATTACHED_ID}::uuid`);
+    await context.db.execute(sql`INSERT INTO fitness.climbing_entry
+      (user_id, provider_id, unattached_date, external_id, climb_type, grade_system, grade,
+       result_style, attempt_count, route_protection, raw)
+      VALUES (${TEST_USER_ID}, 'climbing-summary-test', CURRENT_DATE - 2, 'unknown-method-route',
+              'route', 'yds', '5.10a', 'Send', 1, ARRAY['trad'], '{}'::jsonb)`);
+    const repository = new ClimbingRepository(context.db, TEST_USER_ID, "America/Los_Angeles");
+    const cases: Array<{ filters: ClimbingFilters; grades: string[] }> = [
+      { filters: {}, grades: ["5.9", "5.10a", "V4"] },
+      { filters: { style: "boulder" }, grades: ["V4"] },
+      { filters: { style: "route" }, grades: ["5.9", "5.10a"] },
+      { filters: { style: "unknown" }, grades: ["5.10a"] },
+      { filters: { style: "lead" }, grades: ["5.9"] },
+      { filters: { style: "top-rope" }, grades: [] },
+      { filters: { protection: "unknown" }, grades: ["V4"] },
+      { filters: { protection: "sport" }, grades: ["5.9"] },
+      { filters: { protection: "trad" }, grades: ["5.10a"] },
+      { filters: { setting: "indoor" }, grades: ["5.9"] },
+      { filters: { setting: "outdoor" }, grades: ["V4"] },
+      { filters: { setting: "unknown" }, grades: ["5.10a"] },
+      { filters: { style: "lead", protection: "sport", setting: "indoor" }, grades: ["5.9"] },
+      { filters: { style: "route", protection: "trad", setting: "outdoor" }, grades: [] },
+    ];
+    for (const { filters, grades } of cases) {
+      const rows = await repository.getVolumeByGrade(30, filters);
+      expect(rows.map((row) => row.toDetail().grade).sort(), JSON.stringify(filters)).toEqual(
+        grades.toSorted(),
+      );
+    }
+  });
+
+  it.each(["mountain-project", "openbeta"])(
+    "treats existing %s entries without location metadata as outdoor in every summary",
+    async (providerId) => {
+      await context.db.execute(sql`UPDATE fitness.climbing_entry
+        SET provider_id = ${providerId}, location_path = '[]'::jsonb
+        WHERE id IN (${ATTACHED_ID}::uuid, ${UNATTACHED_ID}::uuid)`);
+      const repository = new ClimbingRepository(context.db, TEST_USER_ID, "America/Los_Angeles");
+      expect(
+        (await repository.getVolumeByGrade(30, { setting: "outdoor" })).map((row) =>
+          row.toDetail(),
+        ),
+      ).toEqual([
+        expect.objectContaining({ grade: "V3", attempts: 2, sends: 1 }),
+        expect.objectContaining({ grade: "V4", attempts: 3, sends: 1 }),
+      ]);
+      expect(
+        (await repository.getGradeProgression(30, { setting: "outdoor" })).map((row) =>
+          row.toDetail(),
+        ),
+      ).toEqual([expect.objectContaining({ grade: "V4" })]);
+      expect(
+        (await repository.getSessionSummaries(30, { setting: "outdoor" })).map((row) =>
+          row.toDetail(),
+        ),
+      ).toEqual([expect.objectContaining({ attempts: 2, sends: 1 })]);
+      for (const setting of ["indoor", "unknown"] as const) {
+        expect(await repository.getVolumeByGrade(30, { setting })).toEqual([]);
+        expect(await repository.getGradeProgression(30, { setting })).toEqual([]);
+        expect(await repository.getSessionSummaries(30, { setting })).toEqual([]);
+      }
+    },
+  );
+
+  it("filters attached and unattached climbs before computing metrics, retaining unknown settings", async () => {
+    await context.db.execute(sql`UPDATE fitness.climbing_entry
+      SET climb_type = 'route', grade_system = 'yds', grade = CASE WHEN id = ${ATTACHED_ID}::uuid THEN '5.9' ELSE '5.10a' END,
+          climb_style = 'lead', route_protection = ARRAY['sport', 'trad'],
+          location_path = '[{"name":"Crag","externalId":null,"kind":"destination"}]'::jsonb
+      WHERE id IN (${ATTACHED_ID}::uuid, ${UNATTACHED_ID}::uuid)`);
+    const repository = new ClimbingRepository(context.db, TEST_USER_ID, "America/Los_Angeles");
+    const filters = { style: "lead", protection: "trad", setting: "outdoor" } as const;
+    expect((await repository.getVolumeByGrade(30, filters)).map((row) => row.toDetail())).toEqual([
+      expect.objectContaining({ grade: "5.9", attempts: 2, sends: 1 }),
+      expect.objectContaining({ grade: "5.10a", attempts: 3, sends: 1 }),
+    ]);
+    expect(await repository.getGradeProgression(30, { protection: "unknown" })).toEqual([]);
+    expect((await repository.getSessionSummaries(30, filters))[0]?.toDetail()).toMatchObject({
+      attempts: 2,
+    });
+    expect(await repository.getSessionSummaries(30, { style: "top-rope" })).toEqual([]);
+    await context.db.execute(sql`UPDATE fitness.climbing_entry SET location_path = '[]'::jsonb
+      WHERE id = ${ATTACHED_ID}::uuid`);
+    expect(
+      (await repository.getVolumeByGrade(30, { setting: "unknown" })).map((row) => row.toDetail()),
+    ).toEqual([expect.objectContaining({ grade: "5.9" })]);
+    expect((await repository.getVolumeByGrade(30, filters)).map((row) => row.toDetail())).toEqual([
+      expect.objectContaining({ grade: "5.10a" }),
+    ]);
   });
 
   it("serves a full source context independently of the associated activity provider", async () => {

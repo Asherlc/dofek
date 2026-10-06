@@ -1,6 +1,7 @@
 import type { StorybookConfig } from "@storybook/react-vite";
 
 const config: StorybookConfig = {
+  core: { allowedHosts: [".trycloudflare.com"] },
   stories: ["../src/**/*.stories.@(ts|tsx|js|jsx)"],
   addons: ["@storybook/addon-a11y"],
   framework: {
