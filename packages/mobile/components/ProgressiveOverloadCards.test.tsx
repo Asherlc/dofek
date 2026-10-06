@@ -31,8 +31,7 @@ const evidence = {
     upperKgPerWeek: 240,
     statement: "The interval reflects variation and short-range dependence among recorded weeks.",
   },
-  interpretation:
-    "Recorded weekly volume increased over this period. An increase is not inherently good or bad.",
+  interpretation: "Recorded weekly volume increased over this period.",
   deloadContext:
     "Recorded volume cannot distinguish a planned deload from missed training or incomplete data.",
 };

@@ -40,8 +40,7 @@ const evidence = {
     upperKgPerWeek: 240,
     statement: "The interval reflects variation and short-range dependence among recorded weeks.",
   },
-  interpretation:
-    "Recorded weekly volume increased over this period. An increase is not inherently good or bad.",
+  interpretation: "Recorded weekly volume increased over this period.",
   deloadContext:
     "Recorded volume cannot distinguish a planned deload from missed training or incomplete data.",
 } satisfies ProgressiveOverloadRow;
@@ -81,8 +80,7 @@ describe("ProgressiveOverloadCards", () => {
             exerciseName: "Deadlift",
             slopeKgPerWeek: -150,
             trend: "decreasing" as const,
-            interpretation:
-              "Recorded weekly volume decreased over this period. A decrease is not inherently good or bad.",
+            interpretation: "Recorded weekly volume decreased over this period.",
           },
         ]}
       />,
@@ -119,8 +117,7 @@ describe("ProgressiveOverloadCards", () => {
               reason: "insufficient_observations" as const,
               statement: "Uncertainty needs at least 4 recorded weeks; this estimate has 3.",
             },
-            interpretation:
-              "Recorded weekly volume was stable over this period. Stability is not inherently good or bad.",
+            interpretation: "Recorded weekly volume was stable over this period.",
           },
         ]}
       />,
