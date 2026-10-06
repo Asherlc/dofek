@@ -240,7 +240,7 @@ tables through ClickHouse replication.
 | `fitness.journal_entry` | Daily behavioral self-reports (WHOOP journal, etc.) |
 
 Supplement schedules, definitions, nutrients, and dose history are removed by
-[migration 0137](../drizzle/0137_remove_supplements.sql). Food entries and food
+[migration 0139](../drizzle/0139_remove_supplements.sql). Food entries and food
 nutrients remain canonical; nutrition views project only the resolved food
 contribution set. The migration drops dependent views explicitly before their
 tables, following [PostgreSQL view dependency rules](https://www.postgresql.org/docs/current/sql-dropview.html).
