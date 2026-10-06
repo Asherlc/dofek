@@ -80,9 +80,6 @@ export function ClimbingFilters({
               </View>
             </View>
           ))}
-          <Text style={styles.label}>
-            Setting uses recorded location context. Missing details remain unknown.
-          </Text>
         </View>
       ) : null}
     </View>

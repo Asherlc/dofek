@@ -25,8 +25,7 @@ const data: MicronutrientSafetyReviewRow[] = [
     adequacy: {
       status: "at_or_above_daily_value",
       percentDailyValue: 600,
-      message:
-        "Average intake over recorded days meets or exceeds the FDA Daily Value. This generic label reference is not a personalized safety assessment.",
+      message: "Average intake over recorded days meets or exceeds the FDA Daily Value.",
       reference: {
         type: "daily_value",
         amount: 20,

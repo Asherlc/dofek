@@ -13,13 +13,14 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 import pyarrow as pa
+import pyarrow.parquet as pq
 import pytest
 
 if TYPE_CHECKING:
     from pathlib import Path
 
 from dofek_ml.data_loading import REQUIRED_PARQUET_COLUMNS, validate_parquet_schema
-from dofek_ml.parquet_io import read_schema, write_table
+from dofek_ml.parquet_io import read_schema
 
 
 @pytest.fixture
@@ -40,7 +41,7 @@ def valid_parquet_file(tmp_path: Path) -> Path:
         }
     )
     filepath: Path = tmp_path / "valid.parquet"
-    write_table(table, filepath)
+    pq.write_table(table, filepath)
     return filepath
 
 
@@ -72,7 +73,7 @@ class TestParquetSchemaContract:
             }
         )
         filepath: Path = tmp_path / "missing_recorded_at.parquet"
-        write_table(table, filepath)
+        pq.write_table(table, filepath)
         schema: pa.Schema = read_schema(filepath)
         with pytest.raises(ValueError, match="missing required columns"):
             validate_parquet_schema(schema)
@@ -92,7 +93,7 @@ class TestParquetSchemaContract:
             }
         )
         filepath: Path = tmp_path / "missing_channel.parquet"
-        write_table(table, filepath)
+        pq.write_table(table, filepath)
         schema: pa.Schema = read_schema(filepath)
         with pytest.raises(ValueError, match="missing required columns"):
             validate_parquet_schema(schema)
@@ -112,7 +113,7 @@ class TestParquetSchemaContract:
             }
         )
         filepath: Path = tmp_path / "missing_vector.parquet"
-        write_table(table, filepath)
+        pq.write_table(table, filepath)
         schema: pa.Schema = read_schema(filepath)
         with pytest.raises(ValueError, match="missing required columns"):
             validate_parquet_schema(schema)
@@ -125,7 +126,7 @@ class TestParquetSchemaContract:
             }
         )
         filepath: Path = tmp_path / "minimal.parquet"
-        write_table(table, filepath)
+        pq.write_table(table, filepath)
         schema: pa.Schema = read_schema(filepath)
         with pytest.raises(ValueError, match="missing required columns") as exc_info:
             validate_parquet_schema(schema)
@@ -152,7 +153,7 @@ class TestParquetSchemaContract:
         }
         table: pa.Table = pa.table(columns)
         filepath: Path = tmp_path / "extra_cols.parquet"
-        write_table(table, filepath)
+        pq.write_table(table, filepath)
         schema: pa.Schema = read_schema(filepath)
         validate_parquet_schema(schema)  # should not raise
 
@@ -184,7 +185,7 @@ class TestParquetSchemaContract:
             }
         )
         filepath: Path = tmp_path / "scalar_row.parquet"
-        write_table(table, filepath)
+        pq.write_table(table, filepath)
         schema: pa.Schema = read_schema(filepath)
         validate_parquet_schema(schema)
 
@@ -205,6 +206,6 @@ class TestParquetSchemaContract:
             }
         )
         filepath: Path = tmp_path / "vector_row.parquet"
-        write_table(table, filepath)
+        pq.write_table(table, filepath)
         schema: pa.Schema = read_schema(filepath)
         validate_parquet_schema(schema)

@@ -154,8 +154,7 @@ describe("NutritionAnalyticsScreen", () => {
               adequacy: {
                 status: "below_daily_value",
                 percentDailyValue: 67,
-                message:
-                  "Average intake over recorded days is below the FDA Daily Value. This generic label reference is not a personalized deficiency assessment.",
+                message: "Average intake over recorded days is below the FDA Daily Value.",
                 reference: {
                   type: "daily_value",
                   amount: 18,
@@ -212,7 +211,7 @@ describe("NutritionAnalyticsScreen", () => {
     expect(screen.getByText("28-day fit · at least 20 usable calorie days")).toBeTruthy();
     expect(
       screen.getByText(
-        "Average over recorded days vs. U.S. Food and Drug Administration (FDA) Daily Value; not a personalized deficiency or safety assessment",
+        "Average over recorded days vs. U.S. Food and Drug Administration (FDA) Daily Value",
       ),
     ).toBeTruthy();
     expect(screen.getByText("Nutrition data quality")).toBeTruthy();

@@ -82,9 +82,7 @@ export function ActivityCardContent({
     <div
       data-testid="activity-card-layout"
       className={
-        activity.location
-          ? "grid min-h-60 sm:grid-cols-[minmax(0,2fr)_minmax(18rem,3fr)]"
-          : "grid min-h-60"
+        activity.location ? "grid min-h-60 sm:grid-cols-[minmax(0,2fr)_minmax(18rem,3fr)]" : "grid"
       }
     >
       <div className="flex min-w-0 flex-col p-4 sm:p-5">
@@ -118,16 +116,6 @@ export function ActivityCardContent({
         {partialAbsenceSummary ? (
           <p className="mt-2 text-xs text-amber-700 dark:text-amber-300">{partialAbsenceSummary}</p>
         ) : null}
-        <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
-          <span className="rounded-full border border-border bg-surface-secondary px-2 py-0.5 font-medium text-foreground">
-            {activity.source.primarySourceLabel}
-          </span>
-          {activity.source.overlapSummary ? (
-            <span className="rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 font-medium text-amber-700 dark:text-amber-300">
-              Source overlap
-            </span>
-          ) : null}
-        </div>
         <div data-testid="activity-detail-metrics" className="mt-auto pt-6">
           <ActivityMetricGrid activity={activity} units={units} />
         </div>

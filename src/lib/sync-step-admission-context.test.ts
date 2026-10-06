@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
   hasSyncStepAdmissionClaimed,
   isInsideSyncStepAdmission,
-  markSyncStepAdmissionClaimed,
   runWithSyncStepAdmission,
   tryClaimSyncStepAdmission,
 } from "./sync-step-admission-context.ts";
@@ -15,7 +14,7 @@ describe("sync-step-admission-context", () => {
     runWithSyncStepAdmission(() => {
       expect(isInsideSyncStepAdmission()).toBe(true);
       expect(hasSyncStepAdmissionClaimed()).toBe(false);
-      markSyncStepAdmissionClaimed();
+      tryClaimSyncStepAdmission();
       expect(hasSyncStepAdmissionClaimed()).toBe(true);
     });
 
@@ -25,7 +24,7 @@ describe("sync-step-admission-context", () => {
 
   it("resets admission state for each sync step scope", () => {
     runWithSyncStepAdmission(() => {
-      markSyncStepAdmissionClaimed();
+      tryClaimSyncStepAdmission();
       expect(hasSyncStepAdmissionClaimed()).toBe(true);
     });
 

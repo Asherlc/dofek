@@ -3,20 +3,6 @@ import { z } from "zod";
 import { selectedChartRangeQuery } from "../lib/chart-range.ts";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
 import {
-  cardioPlan,
-  computeComponentScores,
-  computeFocusMuscles,
-  computeReadinessScore,
-  computeTrainingStreak,
-  computeZonePercentages,
-  daysAgoFromDate,
-  getReadinessLevel,
-  normalizeMuscleName,
-  pickCardioFocus,
-  pickStrengthSplit,
-  shouldDoStrengthToday,
-} from "../repositories/training-recommendation.ts";
-import {
   type TrainingHrZonesResult,
   TrainingRepository,
 } from "../repositories/training-repository.ts";
@@ -63,29 +49,6 @@ function requireSensorStore(
     });
   }
   return sensorStore;
-}
-
-export {
-  cardioPlan,
-  computeComponentScores,
-  computeFocusMuscles,
-  computeReadinessScore,
-  computeTrainingStreak,
-  computeZonePercentages,
-  daysAgoFromDate,
-  getReadinessLevel,
-  normalizeMuscleName,
-  pickCardioFocus,
-  pickStrengthSplit,
-  shouldDoStrengthToday,
-};
-
-export function clamp(value: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, value));
-}
-
-export function uniqueStrings(values: string[]): string[] {
-  return [...new Set(values)];
 }
 
 export const trainingRouter = router({

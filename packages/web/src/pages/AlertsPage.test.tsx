@@ -216,13 +216,6 @@ describe("AlertsPage", () => {
     render(<AlertsPage />);
 
     expect(screen.getByText("Nothing needs your attention")).toBeTruthy();
-    expect(screen.getByText("When an alert appears, it will show")).toBeTruthy();
-    expect(screen.getByText("What happened")).toBeTruthy();
-    expect(screen.getByText("When it happened")).toBeTruthy();
-    expect(screen.getByText("What to do next")).toBeTruthy();
-    expect(
-      screen.getByText("Only real problems detected for your account are shown."),
-    ).toBeTruthy();
   });
 
   it("paginates active alerts", () => {
@@ -265,9 +258,7 @@ describe("AlertsPage", () => {
     render(<AlertsPage />);
 
     expect(screen.getByRole("heading", { name: "Alert status is unavailable" })).toBeTruthy();
-    expect(screen.getByText(/Your synced health data is still available/)).toBeTruthy();
-    expect(screen.getByText(/this status check did not pause syncs or imports/)).toBeTruthy();
-    expect(screen.getByText(/Details: Status service timed out\./)).toBeTruthy();
+    expect(screen.getByText(/Status service timed out\./)).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "Retry alert status" }));
 

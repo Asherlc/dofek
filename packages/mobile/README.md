@@ -234,6 +234,16 @@ and hardware described there.
   version in its [native dependency matrix](https://api.expo.dev/v2/sdks/58.0.0/native-modules).
   AsyncStorage 3.x breaks iOS builds on recent Expo SDKs; see
   [expo/expo#43757](https://github.com/expo/expo/issues/43757).
+- `react-native-maps@1.29.11` — the [stable release](https://github.com/react-native-maps/react-native-maps/releases/tag/v1.29.11)
+  uses Fabric with React Native 0.81.1 or newer, matching this app's React Native
+  0.88 dependency ([upstream compatibility table](https://github.com/react-native-maps/react-native-maps/blob/v1.29.11/README.md#compatibility)).
+  SDK 58 recommends 1.29.0, so this tested native pin is managed through Expo's
+  documented [`expo.install.exclude`](https://docs.expo.dev/more/expo-cli/#configuring-dependency-validation)
+  setting. The existing Expo check still validates the remaining SDK-managed
+  packages. Maps upgrades require a fresh native binary, a matching runtime
+  increment, and the signed simulator audit: route, Start/Finish pins, elevation
+  hover/release, navigation/remount, and session restoration after restart
+  ([native runtime compatibility](https://docs.expo.dev/eas-update/runtime-versions/)).
 
 ## Testing
 
@@ -248,10 +258,11 @@ and hardware described there.
 
 ### Native diagnostic runtime
 
-Runtime **1.3** uses the [Expo SDK 58 beta](https://expo.dev/changelog/sdk-58-beta)
-native dependency set, including ExpoNetwork and the pnpm patch to
-`expo-apple-authentication@58.0.2`. Build a new native binary containing these
-dependencies; do not publish this JavaScript to runtime 1.2 or 1.1. Expo uses
+Runtime **1.4** uses the [Expo SDK 58 beta](https://expo.dev/changelog/sdk-58-beta)
+native dependency set, including ExpoNetwork, the pnpm patch to
+`expo-apple-authentication@58.0.2`, and `react-native-maps@1.29.11`. Build a new
+native binary containing these dependencies; do not publish this JavaScript to
+runtime 1.3 or earlier. Expo uses
 runtime versions to match updates to compatible native code
 ([runtime versions](https://docs.expo.dev/eas-update/runtime-versions/)).
 Use [pnpm patch/patch-commit](https://pnpm.io/cli/patch-commit) when updating the

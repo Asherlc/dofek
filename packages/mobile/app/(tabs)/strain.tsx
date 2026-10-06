@@ -70,7 +70,7 @@ export default function StrainScreen() {
   const [climbingFilters, setClimbingFilters] = useState<ClimbingFilterValues>({});
   const router = useRouter();
   const utils = trpc.useUtils();
-  const { days, description, isHydrated, setDays } = useTimeRangePreference("training");
+  const { days, isHydrated, setDays } = useTimeRangePreference("training");
   const units = useUnitConverter();
   const endDate = useTodayQueryDate();
   const hasCommittedHydratedRange = useRef(false);
@@ -209,7 +209,7 @@ export default function StrainScreen() {
         />
       }
     >
-      <DaySelector days={days} description={description} onChange={setDays} />
+      <DaySelector days={days} onChange={setDays} />
 
       <ProcessingStatusWidget
         data={processingStatus.data}

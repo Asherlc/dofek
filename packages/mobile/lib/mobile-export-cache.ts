@@ -20,11 +20,6 @@ export function createMobileExportCacheFile(filename: string): File {
   return new File(ensureExportCacheDirectory(), filename);
 }
 
-export function mobileExportCacheDirectoryUri(): string {
-  const uri = ensureExportCacheDirectory().uri;
-  return uri.endsWith("/") ? uri : `${uri}/`;
-}
-
 export function deleteMobileExportCacheFile(file: File): void {
   if (file.exists) {
     file.delete();

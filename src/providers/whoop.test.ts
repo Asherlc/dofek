@@ -3,7 +3,6 @@ import { WhoopClient, WhoopRateLimitError } from "@dofek/whoop/client";
 import type {
   WhoopHrValue,
   WhoopRecoveryRecord,
-  WhoopSleepRecord,
   WhoopWeightliftingWorkoutResponse,
   WhoopWorkoutRecord,
 } from "@dofek/whoop/types";
@@ -15,7 +14,6 @@ import { makeTransactionalTestDatabase } from "./test-helpers.ts";
 import {
   parseHeartRateValues,
   parseRecovery,
-  parseSleep,
   parseWeightliftingWorkout,
   parseWorkout,
 } from "./whoop/parsing.ts";
@@ -455,40 +453,6 @@ const sampleRecovery: WhoopRecoveryRecord = {
   },
 };
 
-const sampleSleep: WhoopSleepRecord = {
-  id: 10235,
-  user_id: 10129,
-  created_at: "2026-03-01T06:00:00Z",
-  updated_at: "2026-03-01T06:30:00Z",
-  start: "2026-02-28T23:00:00Z",
-  end: "2026-03-01T06:30:00Z",
-  timezone_offset: "-05:00",
-  nap: false,
-  score_state: "SCORED",
-  score: {
-    stage_summary: {
-      total_in_bed_time_milli: 27000000,
-      total_awake_time_milli: 1800000,
-      total_no_data_time_milli: 0,
-      total_light_sleep_time_milli: 10800000,
-      total_slow_wave_sleep_time_milli: 7200000,
-      total_rem_sleep_time_milli: 5400000,
-      sleep_cycle_count: 4,
-      disturbance_count: 2,
-    },
-    sleep_needed: {
-      baseline_milli: 28800000,
-      need_from_sleep_debt_milli: 1800000,
-      need_from_recent_strain_milli: 900000,
-      need_from_recent_nap_milli: 0,
-    },
-    respiratory_rate: 16.1,
-    sleep_performance_percentage: 92,
-    sleep_consistency_percentage: 88,
-    sleep_efficiency_percentage: 91.7,
-  },
-};
-
 const sampleWorkout: WhoopWorkoutRecord = {
   activity_id: "abc12345-6789-0def-1234-567890abcdef",
   during: "['2026-03-01T10:00:00Z','2026-03-01T11:00:00Z')",
@@ -771,45 +735,6 @@ describe("WHOOP Provider — parsing", () => {
       expect(result.hrv).toBeCloseTo(48, 0);
       expect(result.spo2).toBe(97);
       expect(result.skinTemp).toBeCloseTo(34.86, 1);
-    });
-  });
-
-  describe("parseSleep", () => {
-    it("maps sleep fields to sleep session", () => {
-      const result = parseSleep(sampleSleep);
-      expect(result).not.toBeNull();
-      expect(result?.externalId).toBe("10235");
-      expect(result?.startedAt).toEqual(new Date("2026-02-28T23:00:00Z"));
-      expect(result?.endedAt).toEqual(new Date("2026-03-01T06:30:00Z"));
-      expect(result?.deepMinutes).toBe(120); // 7200000ms / 60000
-      expect(result?.remMinutes).toBe(90);
-      expect(result?.lightMinutes).toBe(180);
-      expect(result?.awakeMinutes).toBe(30);
-      expect(result?.durationMinutes).toBe(420);
-      expect(result?.stagingAvailable).toBe(true);
-      expect(result?.efficiencyPct).toBeCloseTo(91.7);
-      expect(result?.isNap).toBe(false);
-    });
-
-    it("leaves sleep details unavailable when score is missing", () => {
-      const noScore: WhoopSleepRecord = {
-        ...sampleSleep,
-        score: undefined,
-      };
-      const result = parseSleep(noScore);
-      expect(result).not.toBeNull();
-      expect(result?.durationMinutes).toBeUndefined();
-      expect(result?.deepMinutes).toBeUndefined();
-      expect(result?.remMinutes).toBeUndefined();
-      expect(result?.lightMinutes).toBeUndefined();
-      expect(result?.awakeMinutes).toBeUndefined();
-      expect(result?.stagingAvailable).toBe(false);
-      expect(result?.efficiencyPct).toBeUndefined();
-    });
-
-    it("marks naps as isNap=true", () => {
-      const nap: WhoopSleepRecord = { ...sampleSleep, nap: true };
-      expect(parseSleep(nap)?.isNap).toBe(true);
     });
   });
 

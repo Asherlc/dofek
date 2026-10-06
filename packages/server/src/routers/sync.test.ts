@@ -10,7 +10,6 @@ const {
   mockImportQueueGetJobs,
   mockImportQueueGetJobCounts,
   mockGetAllProviders,
-  mockGetSyncProviders,
   mockRegisterProvider,
   mockLoggerWarn,
   mockCaptureException,
@@ -34,7 +33,6 @@ const {
   mockImportQueueGetJobs: vi.fn().mockResolvedValue([]),
   mockImportQueueGetJobCounts: vi.fn(),
   mockGetAllProviders: vi.fn(() => []),
-  mockGetSyncProviders: vi.fn(() => []),
   mockRegisterProvider: vi.fn(),
   mockLoggerWarn: vi.fn(),
   mockCaptureException: vi.fn(),
@@ -142,7 +140,6 @@ vi.mock("dofek/jobs/queues", () => ({
 
 vi.mock("dofek/providers/registry", () => ({
   getAllProviders: mockGetAllProviders,
-  getSyncProviders: mockGetSyncProviders,
   registerProvider: mockRegisterProvider,
 }));
 
@@ -1596,7 +1593,6 @@ describe("syncRouter", () => {
 
     it("throws for unknown provider", async () => {
       mockGetAllProviders.mockReturnValue([]);
-      mockGetSyncProviders.mockReturnValue([]);
 
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },

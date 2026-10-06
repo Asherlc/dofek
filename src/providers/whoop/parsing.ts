@@ -7,7 +7,6 @@ import { mapSportId, mapV2ActivityType } from "@dofek/whoop/sports";
 import type {
   WhoopCycle,
   WhoopHrValue,
-  WhoopMetricValue,
   WhoopRecoveryRecord,
   WhoopSleepRecord,
   WhoopWeightliftingSet,
@@ -212,44 +211,6 @@ export function parseInlineSleep(
   };
 }
 
-/** Parse a sleep record from the legacy sleep-service API response. */
-export function parseSleep(record: WhoopSleepRecord): ParsedSleep | null {
-  // BFF v0 uses `during` range; fall back to legacy `start`/`end`
-  let startedAt: Date;
-  let endedAt: Date;
-  if (record.during) {
-    const range = parseDuringRange(record.during);
-    startedAt = range.start;
-    endedAt = range.end;
-  } else {
-    startedAt = new Date(record.start ?? "");
-    endedAt = new Date(record.end ?? "");
-  }
-
-  if (Number.isNaN(startedAt.getTime()) || Number.isNaN(endedAt.getTime())) {
-    return null;
-  }
-
-  const stages = record.score?.stage_summary;
-  const totalSleepMilli = stages
-    ? stages.total_in_bed_time_milli - stages.total_awake_time_milli
-    : undefined;
-  return {
-    externalId: String(record.id),
-    startedAt,
-    endedAt,
-    durationMinutes: totalSleepMilli == null ? undefined : milliToMinutes(totalSleepMilli),
-    deepMinutes: stages ? milliToMinutes(stages.total_slow_wave_sleep_time_milli) : undefined,
-    remMinutes: stages ? milliToMinutes(stages.total_rem_sleep_time_milli) : undefined,
-    lightMinutes: stages ? milliToMinutes(stages.total_light_sleep_time_milli) : undefined,
-    awakeMinutes: stages ? milliToMinutes(stages.total_awake_time_milli) : undefined,
-    stagingAvailable: stages != null,
-    efficiencyPct: normalizeEfficiencyPct(record.score?.sleep_efficiency_percentage),
-    sleepType: record.nap ? "nap" : "sleep",
-    isNap: record.nap,
-  };
-}
-
 export interface ParsedWorkout {
   externalId: string;
   activityType: ProviderActivityType;
@@ -352,11 +313,6 @@ export function parseHeartRateValues(values: WhoopHrValue[]): ParsedHrRecord[] {
   }));
 }
 
-export interface ParsedDailyStepCount {
-  date: string;
-  steps: number;
-}
-
 function isWhoopBffRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
@@ -405,25 +361,6 @@ export function parseStrainDeepDiveSteps(raw: unknown): number | null {
   }
 
   return null;
-}
-
-export function parseDailyStepValues(values: WhoopMetricValue[]): ParsedDailyStepCount[] {
-  const maxStepsByDate = new Map<string, number>();
-
-  for (const value of values) {
-    const roundedSteps = Math.round(value.data);
-    if (!Number.isFinite(roundedSteps) || roundedSteps < 0) continue;
-
-    const date = new Date(value.time).toISOString().slice(0, 10);
-    const currentMax = maxStepsByDate.get(date);
-    if (currentMax == null || roundedSteps > currentMax) {
-      maxStepsByDate.set(date, roundedSteps);
-    }
-  }
-
-  return [...maxStepsByDate.entries()]
-    .sort((left, right) => left[0].localeCompare(right[0]))
-    .map(([date, steps]) => ({ date, steps }));
 }
 
 /**

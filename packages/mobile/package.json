@@ -7,6 +7,7 @@
     "install": {
       "exclude": [
         "@sentry/react-native",
+        "react-native-maps",
         "typescript"
       ]
     }
@@ -53,7 +54,6 @@
     "@opentelemetry/semantic-conventions": "1.43.0",
     "@react-native-async-storage/async-storage": "2.2.0",
     "@react-native-community/datetimepicker": "9.2.1",
-    "@react-native-community/slider": "5.2.1",
     "@sentry/cli": "3.7.0",
     "@sentry/react-native": "8.29.0",
     "@tanstack/query-async-storage-persister": "5.101.4",
@@ -87,7 +87,7 @@
     "react-native": "0.88.0-rc.3",
     "react-native-body-highlighter": "3.2.0",
     "react-native-gesture-handler": "3.2.1",
-    "react-native-maps": "1.29.0",
+    "react-native-maps": "1.29.11",
     "react-native-reanimated": "4.7.0",
     "react-native-safe-area-context": "5.9.1",
     "react-native-screens": "4.28.0",

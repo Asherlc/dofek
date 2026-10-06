@@ -63,7 +63,6 @@ function BodyErrorStoryFrame() {
   const bodyDays = useMemo(
     () => ({
       days: 30,
-      description: "Recommended default: 30 days keeps recent body changes visible.",
       setDays: () => {},
     }),
     [],

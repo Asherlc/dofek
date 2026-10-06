@@ -9,8 +9,7 @@ const method = {
     "Easy zone (Zone 1) is below 80%, threshold zone (Zone 2) is 80–<90%, and high zone (Zone 3) is at least 90% of maximum heart rate.",
   calculationChoice:
     "Dofek requires recorded time in all three zones and does not calculate the polarization index when high-zone time exceeds easy-zone time.",
-  interpretation:
-    "The >2.00 comparison is Treff's descriptive training-distribution heuristic, not a physiological or medical assessment.",
+  interpretation: "The >2.00 comparison is Treff's descriptive training-distribution heuristic.",
   source: {
     title: "Treff et al. (2019), The Polarization-Index",
     url: "https://doi.org/10.3389/fphys.2019.00707",
@@ -29,7 +28,7 @@ const weeks: PolarizationWeek[] = [
     status: "not_polarized",
     statusLabel: "Does not match polarized-pattern heuristic",
     explanation:
-      "This week's recorded cycling distribution is at or below Treff's descriptive 2.00 heuristic. It is not a physiological or medical assessment.",
+      "This week's recorded cycling distribution is at or below Treff's descriptive 2.00 heuristic.",
   },
   {
     week: "2026-05-04",
@@ -42,7 +41,7 @@ const weeks: PolarizationWeek[] = [
     status: "not_polarized",
     statusLabel: "Does not match polarized-pattern heuristic",
     explanation:
-      "This week's recorded cycling distribution is at or below Treff's descriptive 2.00 heuristic. It is not a physiological or medical assessment.",
+      "This week's recorded cycling distribution is at or below Treff's descriptive 2.00 heuristic.",
   },
   {
     week: "2026-05-11",
@@ -55,7 +54,7 @@ const weeks: PolarizationWeek[] = [
     status: "not_polarized",
     statusLabel: "Does not match polarized-pattern heuristic",
     explanation:
-      "This week's recorded cycling distribution is at or below Treff's descriptive 2.00 heuristic. It is not a physiological or medical assessment.",
+      "This week's recorded cycling distribution is at or below Treff's descriptive 2.00 heuristic.",
   },
   {
     week: "2026-05-18",
@@ -68,7 +67,7 @@ const weeks: PolarizationWeek[] = [
     status: "not_polarized",
     statusLabel: "Does not match polarized-pattern heuristic",
     explanation:
-      "This week's recorded cycling distribution is at or below Treff's descriptive 2.00 heuristic. It is not a physiological or medical assessment.",
+      "This week's recorded cycling distribution is at or below Treff's descriptive 2.00 heuristic.",
   },
   {
     week: "2026-05-25",
@@ -81,7 +80,7 @@ const weeks: PolarizationWeek[] = [
     status: "not_polarized",
     statusLabel: "Does not match polarized-pattern heuristic",
     explanation:
-      "This week's recorded cycling distribution is at or below Treff's descriptive 2.00 heuristic. It is not a physiological or medical assessment.",
+      "This week's recorded cycling distribution is at or below Treff's descriptive 2.00 heuristic.",
   },
 ];
 

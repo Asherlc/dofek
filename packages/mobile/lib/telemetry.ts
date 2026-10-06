@@ -297,11 +297,3 @@ export const logger = {
     console.error(`[${category}] ${message}`);
   },
 };
-
-/** Flush pending log records (call before app exits or backgrounds). */
-export async function flushTelemetry(): Promise<void> {
-  await loggerProvider?.forceFlush();
-  if (posthogClient) {
-    await posthogClient.flush();
-  }
-}

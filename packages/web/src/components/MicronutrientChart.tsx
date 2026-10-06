@@ -229,7 +229,7 @@ export function MicronutrientChart({ data, loading, selectedWindowDays }: Micron
           Food: ${row.intake.foodDailyAverage} ${unit}/day<br/>
           Provider daily totals: ${row.intake.providerDailyTotalAverage} ${unit}/day<br/>
           ${sourceBreakdown ? `<br/><b>Sources</b><br/>${sourceBreakdown}<br/>` : ""}
-          <b>${adequacy.percentDailyValue}% of ${DAILY_VALUE_TARGET_LABEL} (adequacy reference, not a safety rating)</b><br/>
+          <b>${adequacy.percentDailyValue}% of ${DAILY_VALUE_TARGET_LABEL}</b><br/>
           ${tooltipTargetContext(row)}<br/>
           ${tooltipUpperLimitContext(row)}
           <span style="color:${chartThemeColors.axisLabel}">(average over ${row.intake.daysTracked} recorded days in ${selectedWindowLabel(selectedWindowDays)})</span>`;

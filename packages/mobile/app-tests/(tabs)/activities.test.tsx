@@ -331,34 +331,6 @@ describe("ActivitiesScreen", () => {
     expect(screen.queryByText("TSS")).toBeNull();
   });
 
-  it("identifies the primary source and overlapping records", () => {
-    mockQuery = {
-      data: [
-        {
-          date: "2026-03-18",
-          activities: [
-            activity({
-              source: {
-                primarySourceLabel: "Wahoo",
-                sourceCount: 2,
-                overlapSummary: "2 matched source records · Wahoo selected by source priority",
-              },
-              lastProcessedAt: "2026-03-18T08:07:00.000Z",
-            }),
-          ],
-        },
-      ],
-      isLoading: false,
-      isError: false,
-      error: null,
-    };
-
-    render(<ActivitiesScreen />);
-
-    expect(screen.getByText("Wahoo")).toBeDefined();
-    expect(screen.getByText("Source overlap")).toBeDefined();
-  });
-
   it("keeps placeholder activity data visible during background refetch errors", () => {
     mockQuery = {
       data: [{ date: "2026-03-18", activities: [activity({ name: "Cached Ride" })] }],

@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   cardioPlan,
-  clamp,
   computeComponentScores,
   computeFocusMuscles,
   computeReadinessScore,
@@ -13,23 +12,7 @@ import {
   pickCardioFocus,
   pickStrengthSplit,
   shouldDoStrengthToday,
-  uniqueStrings,
-} from "./training.ts";
-
-describe("clamp", () => {
-  it("returns value when within range", () => {
-    expect(clamp(5, 0, 10)).toBe(5);
-  });
-  it("clamps to min", () => {
-    expect(clamp(-5, 0, 10)).toBe(0);
-  });
-  it("clamps to max", () => {
-    expect(clamp(15, 0, 10)).toBe(10);
-  });
-  it("handles equal min and max", () => {
-    expect(clamp(5, 3, 3)).toBe(3);
-  });
-});
+} from "./training-recommendation.ts";
 
 describe("getReadinessLevel", () => {
   it("returns unknown for null", () => {
@@ -67,18 +50,6 @@ describe("daysAgoFromDate", () => {
   });
   it("returns null for invalid date", () => {
     expect(daysAgoFromDate("not-a-date", "2024-01-15")).toBeNull();
-  });
-});
-
-describe("uniqueStrings", () => {
-  it("removes duplicates", () => {
-    expect(uniqueStrings(["a", "b", "a"])).toEqual(["a", "b"]);
-  });
-  it("returns empty for empty input", () => {
-    expect(uniqueStrings([])).toEqual([]);
-  });
-  it("preserves order", () => {
-    expect(uniqueStrings(["c", "a", "b", "a"])).toEqual(["c", "a", "b"]);
   });
 });
 
@@ -406,7 +377,6 @@ describe("pickCardioFocus", () => {
   });
 
   it("returns z2 for high readiness with plenty of intensity already", () => {
-    // Both high and moderate are high → z2
     expect(
       pickCardioFocus({
         ...baseInput,

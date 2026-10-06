@@ -12,7 +12,7 @@ Recovery, readiness, and stress scoring logic. Shared across web and mobile plat
 ## Implementation Details
 
 ### Readiness Calculation
-The `ReadinessScore` class uses customizable weights (defaulting to 50% HRV, 20% RHR, 15% sleep, and 15% respiratory rate) to produce a weighted average of component scores.
+The [`ReadinessScore` class](src/readiness.ts) requires caller-supplied weights to produce a weighted average of HRV, resting HR, sleep, and respiratory rate component scores.
 
 ### Stress Scale
 Stress is computed in `computeDailyStress` using z-score thresholds. HRV below baseline (negative z-score) contributes up to 1.5 stress, RHR above baseline (positive z-score) contributes up to 1.0, and poor sleep efficiency (< 85%) contributes up to 0.5.

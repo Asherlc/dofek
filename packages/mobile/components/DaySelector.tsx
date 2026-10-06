@@ -16,12 +16,10 @@ export const DEFAULT_DAY_OPTIONS: DayOption[] = [
 
 export function DaySelector({
   days,
-  description,
   onChange,
   options = DEFAULT_DAY_OPTIONS,
 }: {
   days: number;
-  description: string;
   onChange: (days: number) => void;
   options?: DayOption[];
 }) {
@@ -47,7 +45,6 @@ export function DaySelector({
           </TouchableOpacity>
         ))}
       </View>
-      <Text style={styles.description}>{description}</Text>
     </View>
   );
 }
@@ -76,10 +73,5 @@ const styles = StyleSheet.create({
   },
   textActive: {
     color: colors.text,
-  },
-  description: {
-    color: colors.textTertiary,
-    fontSize: 12,
-    lineHeight: 16,
   },
 });

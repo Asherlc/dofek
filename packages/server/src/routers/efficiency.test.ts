@@ -89,10 +89,6 @@ vi.mock("../lib/typed-sql.ts", async (importOriginal) => {
   };
 });
 
-vi.mock("../lib/endurance-types.ts", () => ({
-  enduranceTypeFilter: () => ({ sql: "true" }),
-}));
-
 import { efficiencyRouter } from "./efficiency.ts";
 
 const createCaller = createTestCallerFactory(efficiencyRouter);

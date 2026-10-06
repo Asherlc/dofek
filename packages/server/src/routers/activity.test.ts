@@ -7,7 +7,6 @@ import { Activity } from "../models/activity.ts";
 import { ActivityRepository } from "../repositories/activity-repository.ts";
 import { PowerRepository } from "../repositories/power-repository.ts";
 import { ExerciseWithSets, StrengthRepository } from "../repositories/strength-repository.ts";
-import { mapStreamPoint } from "./activity.ts";
 import { createTestCallerFactory, makeTestCaller } from "./test-helpers.ts";
 
 const { mockInvalidateUserQueryDomains } = vi.hoisted(() => ({
@@ -1645,49 +1644,6 @@ describe("Activity model (via router integration)", () => {
     expect(detail.elevationGain).toBeNull();
     expect(detail.elevationLoss).toBeNull();
     expect(detail.sampleCount).toBeNull();
-  });
-});
-
-describe("mapStreamPoint", () => {
-  it("maps all populated fields", () => {
-    const mapped = mapStreamPoint({
-      recorded_at: "2026-03-01T10:00:00Z",
-      heart_rate: 145,
-      power: 220,
-      speed: 8.5,
-      cadence: 85,
-      altitude: 350.5,
-      lat: 40.7128,
-      lng: -74.006,
-    });
-    expect(mapped.recordedAt).toBe("2026-03-01T10:00:00Z");
-    expect(mapped.heartRate).toBe(145);
-    expect(mapped.power).toBe(220);
-    expect(mapped.speed).toBe(8.5);
-    expect(mapped.cadence).toBe(85);
-    expect(mapped.altitude).toBe(350.5);
-    expect(mapped.lat).toBe(40.7128);
-    expect(mapped.lng).toBe(-74.006);
-  });
-
-  it("returns null for all nullable fields when null", () => {
-    const mapped = mapStreamPoint({
-      recorded_at: "2026-03-01T10:00:00Z",
-      heart_rate: null,
-      power: null,
-      speed: null,
-      cadence: null,
-      altitude: null,
-      lat: null,
-      lng: null,
-    });
-    expect(mapped.heartRate).toBeNull();
-    expect(mapped.power).toBeNull();
-    expect(mapped.speed).toBeNull();
-    expect(mapped.cadence).toBeNull();
-    expect(mapped.altitude).toBeNull();
-    expect(mapped.lat).toBeNull();
-    expect(mapped.lng).toBeNull();
   });
 });
 

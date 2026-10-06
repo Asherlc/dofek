@@ -45,29 +45,6 @@ export function heartRateZoneSqlParams(): Record<string, number> {
   );
 }
 
-export function heartRateZoneNumbersSql(): string {
-  return `SELECT number AS zone FROM numbers(${HEART_RATE_ZONES.length})`;
-}
-
-export function heartRateZoneCaseSql(
-  scalarExpression: string,
-  expressions: HeartRateZoneSqlExpressions = queryParamHeartRateExpressions,
-): string {
-  return HEART_RATE_ZONES.map((zone, index) => {
-    const isFirstZone = index === 0;
-    const isLastZone = index === HEART_RATE_ZONES.length - 1;
-    const condition = heartRateZoneCondition(
-      scalarExpression,
-      zoneParamName(zone.zone, "min"),
-      zoneParamName(zone.zone, "max"),
-      isFirstZone,
-      isLastZone,
-      expressions,
-    );
-    return `WHEN ${zone.zone} THEN ${condition}`;
-  }).join("\n              ");
-}
-
 export function heartRateZoneCountColumns(
   scalarExpression: string,
   expressions: HeartRateZoneSqlExpressions = queryParamHeartRateExpressions,

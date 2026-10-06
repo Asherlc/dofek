@@ -124,7 +124,7 @@ function renderStageContent(night: SleepNightlyRow, compact = false) {
 export default function SleepScreen() {
   const scrollViewRef = useRef<ScrollViewInstance>(null);
   const sleepSourcesYRef = useRef(0);
-  const { days, description, setDays } = useTimeRangePreference("sleep");
+  const { days, setDays } = useTimeRangePreference("sleep");
   const sleepQuery = trpc.recovery.sleepAnalytics.useQuery({ days });
   const latestStagesQuery = trpc.sleep.latestStages.useQuery();
   const consistencyQuery = trpc.recovery.sleepConsistency.useQuery({ days });
@@ -183,7 +183,7 @@ export default function SleepScreen() {
         />
       }
     >
-      <DaySelector days={days} description={description} onChange={setDays} />
+      <DaySelector days={days} onChange={setDays} />
 
       <ProcessingStatusWidget
         data={processingStatus.data}

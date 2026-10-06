@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { createSession, deleteExpiredSessions, deleteSession, validateSession } from "./session.ts";
+import { createSession, deleteSession, validateSession } from "./session.ts";
 
 const mockExecute = vi.fn();
 
@@ -77,14 +77,6 @@ describe("session", () => {
   describe("deleteSession", () => {
     it("executes a DELETE query", async () => {
       await deleteSession(mockDb, "session-to-delete");
-
-      expect(mockExecute).toHaveBeenCalledTimes(1);
-    });
-  });
-
-  describe("deleteExpiredSessions", () => {
-    it("executes a DELETE for expired sessions", async () => {
-      await deleteExpiredSessions(mockDb);
 
       expect(mockExecute).toHaveBeenCalledTimes(1);
     });

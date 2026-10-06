@@ -30635,7 +30635,7 @@ The [Expo core](https://github.com/Asherlc/dofek/pull/2845) and
 [maps](https://github.com/Asherlc/dofek/pull/2851) updates failed
 `pnpm expo install --check` against the SDK 57 version matrix. The user approved
 a coordinated [SDK 58 beta migration](https://expo.dev/changelog/sdk-58-beta);
-its native compatibility and CI validation remain required before merge.
+its native compatibility and CI validation subsequently passed before merge.
 
 SDK 58 alignment also exposed changed FileSystem operations: `readBytes()` and
 `write()` now return promises. Deferred-read and multipart-write regression
@@ -30698,8 +30698,55 @@ session directly to Today with the five expected tabs; captured runtime logs
 had no keychain or session errors. Its native MapKit view rendered the synthetic
 route and distinct Start/Finish pins. Scrubbing the elevation chart displayed
 the route hover marker, and releasing the touch cleared it. Production accounts
-and data were not used. Fresh CI and the separate latest-maps native/runtime
-validation remain pending.
+and data were not used. The SDK upgrade subsequently passed
+[all 100 checks](https://github.com/Asherlc/dofek/actions/runs/37421482561) and
+merged as `40390ff973aa757a7ce5856c07f19caecd000777`.
+
+The separate latest-maps candidate pins the
+[stable 1.29.11 release](https://github.com/react-native-maps/react-native-maps/releases/tag/v1.29.11)
+and advances the native runtime to 1.4. Its signed Release scheme passed for
+both simulator architectures and the watch target. The exact binary passed the
+isolated-API acceptance audit: a 61-point native MapKit route with Start/Finish
+pins, elevation touch-down showing a matching hover marker/crosshair, release
+clearing both, back/reopen remounting the map, and hard restart restoring the
+existing SecureStore session to Today with five tabs. Runtime logs had no
+keychain, session, or fatal exception.
+
+The unchanged `pnpm expo install --check` exited 1 with
+`react-native-maps@1.29.11 - expected version: 1.29.0`. Upstream's
+[Fabric compatibility table](https://github.com/react-native-maps/react-native-maps/blob/v1.29.11/README.md#compatibility)
+requires React Native 0.81.1 or newer; the app uses 0.88.0-rc.3. Expo's fixed
+SDK matrix recommendation differs from this tested native pin; this is an exact
+version-predicate failure, not a native runtime failure. The refreshed
+[Dependabot CI run](https://github.com/Asherlc/dofek/actions/runs/37424544937)
+also passed its iOS Native Build and watchOS Build jobs before the Metro Bundle
+job failed that same predicate. After reviewing the native and runtime proof,
+the user explicitly approved adding only `react-native-maps` to the existing
+[`expo.install.exclude` setting](https://docs.expo.dev/more/expo-cli/#configuring-dependency-validation).
+The package stays pinned to 1.29.11; all other SDK-managed packages retain the
+same version check. Future maps upgrades require a fresh native binary, runtime
+increment, and the signed MapKit acceptance audit.
+
+With that approved setting, the same Expo check exits 0. Frozen installation,
+all four typechecks, full lint with the workspace ClickHouse prerequisite,
+1,467 mobile tests, a fresh iOS export, mobile Storybook, dependency-security
+checks, and the strict production audit pass. The lockfile and runtime config
+still match the signed maps artifact; the new version-management setting does
+not change its native dependency graph.
+
+Integration onto the actual SDK main preserves the concurrent health-report
+removals. Native dependencies/modules, activity detail, RouteMap/elevation,
+five-tab layout, and auth/session behavior are unchanged. The preserved binary
+audit applies to those unchanged exercised paths; its embedded bundle predates
+the report removals. Frozen install, all four typechecks, a fresh current-main
+iOS export, and 18,866 unit/mobile tests pass on the integrated source.
+
+The final main refresh also preserves the
+[package release metadata](https://github.com/Asherlc/dofek/commit/e2281229c2cb05fd7067541882bec1b97457d843),
+including WHOOP BLE 0.1.67. Those changes affect package version fields only;
+native executable source, maps dependencies, route/elevation behavior, and
+auth/session code remain unchanged. Final export, typechecks, and mobile tests
+validate the integrated source; hosted CI still must archive that exact head.
 
 Current-main CI's [Mobile Storybook job](https://github.com/Asherlc/dofek/actions/runs/37420553852/job/112129019035)
 failed `pnpm storybook:mobile:build` with `[UNLOADABLE_DEPENDENCY] Could not
@@ -30725,9 +30772,11 @@ volume was deleted. The same Compose command then completed successfully.
 Docker documents [network inspection](https://docs.docker.com/reference/cli/docker/network/inspect/)
 and [network removal](https://docs.docker.com/reference/cli/docker/network/rm/).
 
-Production was unchanged during diagnosis. No retry, timeout, audit exclusion,
-or CI gate was relaxed. Remaining work is fresh CI and native validation of the
-updated PR heads. For future dependency batches, inspect the first fatal log,
+Production was unchanged during diagnosis. The only new validation exception is
+the explicitly approved maps version-management setting. No retry, timeout,
+audit exclusion, or other CI gate was changed. Final maps CI remains required
+before merge. For future dependency batches, inspect
+the first fatal log,
 check whether main already contains its direct fix, and verify SDK version
 matrices before attempting independent native-package updates.
 
@@ -30744,3 +30793,11 @@ matrices before attempting independent native-package updates.
 - **Evidence / cause:** `pnpm --filter dofek-mobile exec storybook dev -p 5185 --config-dir .storybook --ci` failed with `[MISSING_EXPORT] "createSnapshotFriendlyRef" is not exported by ".storybook/mocks/expo-modules-core.ts"`, imported by the installed Expo package. The same bundle required `useReleasingSharedObject` and `useReleasingSharedObjectWithLifecycle`. The browser mock lagged behind the installed module's public exports.
 - **Direct fix / validation:** The mock now implements the ref export with React's [createRef](https://react.dev/reference/react/createRef), matching the installed implementation. Both native shared-object lifecycle exports explicitly raise the existing unavailability error at the browser boundary; installed preview consumers only re-export them. Focused mock tests, the unchanged development command, and `pnpm storybook:mobile:build` pass. No retry, startup delay, dependency, or ignored check was added.
 - **Remaining risk / follow-up:** Native resource lifecycle behavior belongs to Expo's [Shared Objects](https://docs.expo.dev/modules/shared-objects/) runtime and is not simulated by browser Storybook. Future SDK updates should verify the mock's named exports and run the preview build; native consumers require native validation.
+
+## 2026-10-06 — Dead-code cleanup removed a still-used Vitest import
+
+- **Status / impact:** PR #2892 failed the format package typecheck and its dependent static-analysis gate. Production was unchanged. The still-used import is restored.
+- **Evidence / root cause:** [Typecheck job 112304014418](https://github.com/Asherlc/dofek/actions/runs/37473669916/job/112304014418) ran `pnpm run typecheck` in `packages/format`. Its first fatal line was `src/activity-overview.test.ts(13,29): error TS2304: Cannot find name 'vi'.` The cleanup removed the `vi` import while two active tests still called `vi.fn`. The same package command reproduced both errors locally. Runtime tests passed because [Vitest enables globals](../vitest.config.ts); the [root TypeScript project](../tsconfig.json) includes only root `src`, while the [format project](../packages/format/tsconfig.json) includes its own tests.
+- **Fix / validation:** Restore the explicit `vi` import without changing test behavior or compiler settings. Full `pnpm lint` and all workspace typecheck scripts pass with `pnpm --recursive --include-workspace-root --if-present run typecheck`. All 15 format test files pass (393 tests, retries disabled).
+- **Local validation prerequisite:** `pnpm compose:up` initially failed because Redpanda could not create its crash-report directory: `No space left on device`. Removing only this workspace's disposable Compose resources and pruning rebuildable Docker build cache reclaimed 4.373 GB, following [Docker disk recovery](testing.md#docker-disk-recovery). Other workspaces' containers and named volumes were retained.
+- **Remaining risk / follow-up:** Require green checks on the final PR revision. For future cleanup, run every package's typecheck script rather than checking only root, server, web, and mobile. No retry, timeout, suppression, or compiler gate was relaxed.

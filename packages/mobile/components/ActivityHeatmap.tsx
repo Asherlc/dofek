@@ -1,7 +1,6 @@
 import { formatDateMedium } from "@dofek/format/format";
 import {
   ACTIVITY_HEATMAP_BANDS,
-  ACTIVITY_HEATMAP_DESCRIPTION,
   ACTIVITY_HEATMAP_MEASURE_LABEL,
   ACTIVITY_HEATMAP_UNIT_LABEL,
   type ActivityHeatmapBandId,
@@ -40,7 +39,6 @@ export function ActivityHeatmap({ data }: ActivityHeatmapProps) {
       <Text style={styles.title}>
         {ACTIVITY_HEATMAP_MEASURE_LABEL} ({ACTIVITY_HEATMAP_UNIT_LABEL})
       </Text>
-      <Text style={styles.description}>{ACTIVITY_HEATMAP_DESCRIPTION}</Text>
       <View accessible={true} accessibilityLabel="Training time legend" style={styles.legend}>
         {ACTIVITY_HEATMAP_BANDS.map((band) => (
           <View key={band.id} style={styles.legendItem}>
@@ -101,11 +99,6 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 15,
     fontWeight: "700",
-  },
-  description: {
-    color: colors.textSecondary,
-    fontSize: 12,
-    lineHeight: 18,
   },
   legend: {
     gap: spacing.xs,

@@ -1,6 +1,6 @@
 # @dofek/nutrition
 
-Domain logic for food tracking, nutrient analysis, and daily metrics.
+Domain logic for food tracking, nutrient analysis, and [nutrition summaries](src/selected-date-summary.ts).
 
 ## Selected-Date Nutrition Contract
 
@@ -68,9 +68,4 @@ The `NUTRIENTS` constant is the single source of truth for micronutrient metadat
 - **RDA**: NIH Recommended Daily Allowances (e.g., 900mcg for Vitamin A).
 - **OFF Mapping**: Maps internal IDs to Open Food Facts keys (e.g., `vitamin-pp` for Niacin).
 - **Conversion Factors**: Normalizes OFF data (e.g., multiplier of 1000 for sodium grams to mg).
-- **Legacy Support**: `legacyFieldsToNutrients` migrates camelCase provider fields to normalized snake_case identifiers.
-
-### Daily Metrics & Body Measurements (`daily-metrics.ts`, `body-measurements.ts`)
-- **Canonical Types**: Defines `DAILY_METRIC_TYPES` (heart rate variability, steps, skin temperature, etc.) and `MEASUREMENT_TYPES` (weight, body fat %, blood pressure).
-- **Priority Logic**: Metrics have a `priorityCategory` ("recovery" or "activity") used by the database view to deduplicate data when multiple providers report for the same day.
-- **Unit Management**: Standardizes units (kg, bpm, ms, etc.) across the system.
+- **Provider Field Metadata**: The [catalog](src/nutrients.ts) records camelCase provider field names alongside canonical nutrient IDs.

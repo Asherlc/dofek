@@ -21,10 +21,9 @@ describe("activity heatmap semantics", () => {
       "61–120 min",
       ">120 min",
     ]);
-    expect(ACTIVITY_HEATMAP_BANDS[0]?.meaning).toContain("recovery");
-    expect(ACTIVITY_HEATMAP_BANDS.at(-1)?.meaning).toContain("recovery");
-    expect(ACTIVITY_HEATMAP_DESCRIPTION).toContain("intensity");
-    expect(ACTIVITY_HEATMAP_DESCRIPTION).toContain("overload");
+    expect(ACTIVITY_HEATMAP_BANDS[0]?.meaning).toBe("No recorded training");
+    expect(ACTIVITY_HEATMAP_BANDS.at(-1)?.meaning).toBe("Very high recorded training volume");
+    expect(ACTIVITY_HEATMAP_DESCRIPTION).toBe("Recorded training time in minutes per day.");
   });
 
   it.each([

@@ -36,9 +36,5 @@ describe("NutritionAnalyticsPage time range", () => {
       { name: "nutritionAnalytics.adaptiveTdee", input: { days: null } },
     ]);
     expectRegistryCovered("nutritionAnalytics");
-    expect(
-      screen.getByText(/U\.S\. Food and Drug Administration \(FDA\) Daily Value \(All\)/),
-    ).toBeTruthy();
-    expect(screen.queryByText(/null days/)).toBeNull();
   });
 });

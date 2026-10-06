@@ -22,16 +22,14 @@ export const Route = createFileRoute("/training")({
 });
 
 function TrainingLayout() {
-  const { days, description, setDays } = useTimeRangePreference("training");
+  const { days, setDays } = useTimeRangePreference("training");
   const trainingDays = useMemo(() => ({ days, setDays }), [days, setDays]);
 
   return (
     <TrainingDaysContext.Provider value={trainingDays}>
       <ChartRangeProvider days={days}>
         <PageLayout
-          headerChildren={
-            <TimeRangeSelector days={days} description={description} onChange={setDays} />
-          }
+          headerChildren={<TimeRangeSelector days={days} onChange={setDays} />}
           tabs={subtabs}
         >
           <Outlet />

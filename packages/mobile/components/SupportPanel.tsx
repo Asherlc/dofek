@@ -66,10 +66,6 @@ export function SupportPanel({
 
   return (
     <View style={styles.container}>
-      <Text style={styles.dimText}>
-        Have a question or hit a problem? Send us a message and we'll reply by email.
-      </Text>
-
       <Text style={styles.label}>Subject</Text>
       <TextInput
         style={styles.input}

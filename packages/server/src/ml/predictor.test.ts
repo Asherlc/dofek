@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { DailyFeatureRow, ExtractedDataset } from "./features.ts";
 import { PREDICTION_TARGETS } from "./features.ts";
-import { trainFromDataset, trainHrvPredictor, trainPredictor } from "./predictor.ts";
+import { trainFromDataset, trainPredictor } from "./predictor.ts";
 
 const telemetryMocks = vi.hoisted(() => ({
   captureException: vi.fn(),
@@ -89,15 +89,18 @@ function generateSyntheticDays(n: number, seed: number = 42): DailyFeatureRow[] 
   return days;
 }
 
-describe("trainHrvPredictor (legacy wrapper)", () => {
+describe("trainPredictor (HRV target)", () => {
+  const target = PREDICTION_TARGETS.find((candidate) => candidate.id === "hrv");
+  if (!target) throw new Error("expected hrv target");
+
   it("returns null with insufficient data", () => {
     const days = generateSyntheticDays(10);
-    expect(trainHrvPredictor(days)).toBeNull();
+    expect(trainPredictor(days, target)).toBeNull();
   });
 
   it("trains both models on synthetic data", () => {
     const days = generateSyntheticDays(60);
-    const result = trainHrvPredictor(days);
+    const result = trainPredictor(days, target);
 
     expect(result).not.toBeNull();
     expect(result?.targetId).toBe("hrv");
@@ -108,7 +111,7 @@ describe("trainHrvPredictor (legacy wrapper)", () => {
 
   it("produces reasonable R² values", () => {
     const days = generateSyntheticDays(60);
-    const result = trainHrvPredictor(days);
+    const result = trainPredictor(days, target);
     if (!result) throw new Error("expected result");
 
     expect(result.diagnostics.linearRSquared).toBeGreaterThan(0.01);
@@ -119,7 +122,7 @@ describe("trainHrvPredictor (legacy wrapper)", () => {
 
   it("ranks sleep features highly for HRV", () => {
     const days = generateSyntheticDays(60);
-    const result = trainHrvPredictor(days);
+    const result = trainPredictor(days, target);
     if (!result) throw new Error("expected result");
 
     const topFeatures = result.featureImportances.slice(0, 5).map((f) => f.name);
@@ -130,7 +133,7 @@ describe("trainHrvPredictor (legacy wrapper)", () => {
 
   it("excludes hrv and resting_hr from HRV features", () => {
     const days = generateSyntheticDays(60);
-    const result = trainHrvPredictor(days);
+    const result = trainPredictor(days, target);
     if (!result) throw new Error("expected result");
 
     const featureNames = result.featureImportances.map((f) => f.name);
@@ -140,7 +143,7 @@ describe("trainHrvPredictor (legacy wrapper)", () => {
 
   it("generates tomorrow prediction from latest data", () => {
     const days = generateSyntheticDays(60);
-    const result = trainHrvPredictor(days);
+    const result = trainPredictor(days, target);
     if (!result) throw new Error("expected result");
 
     expect(result.tomorrowPrediction).not.toBeNull();
@@ -150,7 +153,7 @@ describe("trainHrvPredictor (legacy wrapper)", () => {
 
   it("predictions have correct shape", () => {
     const days = generateSyntheticDays(60);
-    const result = trainHrvPredictor(days);
+    const result = trainPredictor(days, target);
     if (!result) throw new Error("expected result");
 
     for (const pred of result.predictions) {
@@ -163,7 +166,7 @@ describe("trainHrvPredictor (legacy wrapper)", () => {
 
   it("is deterministic for a fixed seed and preserves date alignment", () => {
     const days = generateSyntheticDays(60, 42);
-    const result = trainHrvPredictor(days);
+    const result = trainPredictor(days, target);
     if (!result) throw new Error("expected result");
 
     expect(result.diagnostics).toEqual({
@@ -205,22 +208,6 @@ describe("trainHrvPredictor (legacy wrapper)", () => {
     }
   });
 
-  it("returns null when HRV target is unavailable", () => {
-    const originalTargets = [...PREDICTION_TARGETS];
-    PREDICTION_TARGETS.splice(
-      0,
-      PREDICTION_TARGETS.length,
-      ...originalTargets.filter((target) => target.id !== "hrv"),
-    );
-
-    try {
-      const days = generateSyntheticDays(60);
-      expect(trainHrvPredictor(days)).toBeNull();
-    } finally {
-      PREDICTION_TARGETS.splice(0, PREDICTION_TARGETS.length, ...originalTargets);
-    }
-  });
-
   it("handles days with lots of missing nutrition data", () => {
     const days = generateSyntheticDays(60);
     const rng = mulberry32(99);
@@ -234,7 +221,7 @@ describe("trainHrvPredictor (legacy wrapper)", () => {
       }
     }
 
-    const result = trainHrvPredictor(days);
+    const result = trainPredictor(days, target);
     expect(result).not.toBeNull();
     const featureNames = result?.featureImportances.map((f) => f.name);
     expect(featureNames).not.toContain("calories");

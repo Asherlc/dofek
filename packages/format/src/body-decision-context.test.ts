@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  BODY_SOURCE_GUIDANCE,
   BODY_TREND_WEIGHT_DECISION_COPY,
   formatBodyDecisionProvenance,
   formatBodyDecisionVariation,
@@ -61,7 +60,7 @@ describe("body decision context formatting", () => {
     expect(formatSignedBodyResidual(0, formatWeight)).toBe("0.0 kg");
   });
 
-  it("describes available variation as an informational residual band", () => {
+  it("describes available variation with its residual band and reading count", () => {
     expect(
       formatBodyDecisionVariation(
         {
@@ -75,7 +74,7 @@ describe("body decision context formatting", () => {
         (value) => formatSignedBodyResidual(value, formatWeight),
       ),
     ).toBe(
-      "Personalized typical measurement variation is -0.4 kg to +0.6 kg around Trend Weight, based on 12 of the latest 30 actual scale readings. This is informational, not a clinical threshold; outliers remain included.",
+      "Personalized typical measurement variation is -0.4 kg to +0.6 kg around Trend Weight, based on 12 of the latest 30 actual scale readings. Outliers included.",
     );
   });
 
@@ -138,10 +137,7 @@ describe("body decision context formatting", () => {
     );
   });
 
-  it("keeps the Trend Weight method and source guidance as shared copy", () => {
+  it("keeps the Trend Weight method as shared copy", () => {
     expect(BODY_TREND_WEIGHT_DECISION_COPY).toContain("Missing days are linearly interpolated");
-    expect(BODY_SOURCE_GUIDANCE).toBe(
-      "For comparable readings, use the same scale at a consistent time of day.",
-    );
   });
 });

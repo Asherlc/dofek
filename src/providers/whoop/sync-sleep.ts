@@ -1,23 +1,16 @@
-import { and, eq, isNotNull } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { dailyMetrics, sleepSession, sleepStage } from "../../db/schema/activity.ts";
 import { withSyncLog } from "../../db/sync-log.ts";
 import { getTokenUserId } from "../../db/token-user-context.ts";
 import { logger } from "../../logger.ts";
 import { resolveWhoopCycleDay } from "./cycle-day.ts";
 import {
-  extractSleepIdsFromCycle,
   inlineSleepSchema,
   parseInlineSleep,
   parseSleepStages,
   resolveInlineSleepExternalId,
 } from "./parsing.ts";
-import { isWhoopRateLimitError } from "./rate-limit.ts";
 import type { WhoopPersistenceContext, WhoopSyncContext } from "./sync-types.ts";
-
-export type WhoopSleepStagesSyncResult = {
-  count: number;
-  rateLimited: boolean;
-};
 
 export async function syncWhoopSleepSessions(context: WhoopPersistenceContext): Promise<number> {
   const { db, cycles, providerId, options } = context;
@@ -165,88 +158,4 @@ export async function syncWhoopSleepStagesForId(
     })),
   );
   return 1;
-}
-
-export async function syncWhoopSleepStages(
-  context: WhoopSyncContext,
-): Promise<WhoopSleepStagesSyncResult> {
-  const { db, cycles, providerId, options } = context;
-
-  try {
-    const result = await withSyncLog(
-      db,
-      providerId,
-      "sleep_stages",
-      async () => {
-        let count = 0;
-        const sleepIds = new Set<string>();
-        for (const cycle of cycles) {
-          const ids = extractSleepIdsFromCycle(cycle);
-          for (const id of ids) sleepIds.add(id);
-        }
-
-        const userId = options?.userId ?? getTokenUserId();
-        const syncedSleepIds =
-          userId == null
-            ? new Set<string>()
-            : new Set(
-                (
-                  await db
-                    .select({ externalId: sleepSession.externalId })
-                    .from(sleepSession)
-                    .innerJoin(sleepStage, eq(sleepStage.sessionId, sleepSession.id))
-                    .where(
-                      and(
-                        eq(sleepSession.userId, userId),
-                        eq(sleepSession.providerId, providerId),
-                        isNotNull(sleepSession.externalId),
-                      ),
-                    )
-                )
-                  .map((row) => row.externalId)
-                  .filter((externalId): externalId is string => externalId != null),
-              );
-
-        for (const sleepId of sleepIds) {
-          if (syncedSleepIds.has(sleepId)) continue;
-
-          try {
-            count += await syncWhoopSleepStagesForId(context, sleepId);
-          } catch (err) {
-            if (isWhoopRateLimitError(err)) {
-              context.errors.push({
-                message: `sleep_stages: ${err instanceof Error ? err.message : String(err)}`,
-                cause: err,
-              });
-              return {
-                recordCount: count,
-                result: { count, rateLimited: true },
-              };
-            }
-            context.errors.push({
-              message: `sleep_stages(${sleepId}): ${err instanceof Error ? err.message : String(err)}`,
-              cause: err,
-            });
-            logger.warn(`[whoop] Failed to fetch sleep stages for ${sleepId}: ${err}`);
-          }
-        }
-        return { recordCount: count, result: { count, rateLimited: false } };
-      },
-      options?.userId,
-    );
-    return result;
-  } catch (err) {
-    if (isWhoopRateLimitError(err)) {
-      context.errors.push({
-        message: `sleep_stages: ${err instanceof Error ? err.message : String(err)}`,
-        cause: err,
-      });
-      return { count: 0, rateLimited: true };
-    }
-    context.errors.push({
-      message: `sleep_stages: ${err instanceof Error ? err.message : String(err)}`,
-      cause: err,
-    });
-    return { count: 0, rateLimited: false };
-  }
 }

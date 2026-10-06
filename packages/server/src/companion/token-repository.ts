@@ -30,9 +30,6 @@ export interface CompanionTokenMetadata {
 }
 
 type ExecutableDatabase = SchemaExecutionDatabase;
-interface TransactionalDatabase {
-  transaction: <T>(callback: (transaction: ExecutableDatabase) => Promise<T>) => Promise<T>;
-}
 
 export function generateCompanionToken(): string {
   return `dofek_companion_${randomBytes(32).toString("base64url")}`;
@@ -99,16 +96,6 @@ export async function createOrGetCompanionToken(
     createdAt: existingRow.created_at,
     revokedAt: existingRow.revoked_at,
   };
-}
-
-export async function regenerateCompanionToken(
-  db: TransactionalDatabase,
-  userId: string,
-  connectionType: CompanionConnectionType = DEFAULT_COMPANION_CONNECTION_TYPE,
-): Promise<CompanionTokenMetadata> {
-  return db.transaction((transaction) =>
-    regenerateCompanionTokenInTransaction(transaction, userId, connectionType),
-  );
 }
 
 export async function regenerateCompanionTokenInTransaction(

@@ -1,10 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import {
-  createSession,
-  deleteExpiredSessions,
-  deleteSession,
-  validateSession,
-} from "../auth/session.ts";
+import { createSession, deleteSession, validateSession } from "../auth/session.ts";
 
 function createMockDb(rows: Record<string, unknown>[] = []) {
   return {
@@ -78,17 +73,6 @@ describe("session", () => {
       const db = { execute: mockExecute };
 
       await deleteSession(db, "session-to-delete");
-
-      expect(mockExecute).toHaveBeenCalledOnce();
-    });
-  });
-
-  describe("deleteExpiredSessions", () => {
-    it("calls db.execute to delete expired sessions", async () => {
-      const mockExecute = vi.fn().mockResolvedValue([]);
-      const db = { execute: mockExecute };
-
-      await deleteExpiredSessions(db);
 
       expect(mockExecute).toHaveBeenCalledOnce();
     });

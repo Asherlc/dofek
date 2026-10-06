@@ -1,8 +1,7 @@
-import { formatDateMedium, formatDurationMinutes } from "@dofek/format/format";
+import { formatDateMedium } from "@dofek/format/format";
 import { statusColors, surfaceColors } from "@dofek/scoring/colors";
 import {
   ACTIVITY_HEATMAP_BANDS,
-  ACTIVITY_HEATMAP_DESCRIPTION,
   ACTIVITY_HEATMAP_MEASURE_LABEL,
   ACTIVITY_HEATMAP_UNIT_LABEL,
   type ActivityHeatmapBandId,
@@ -119,9 +118,6 @@ function TrainingCalendarContent({ data, height }: TrainingCalendarProps) {
 
   return (
     <div className="space-y-3">
-      <p className="text-xs text-muted" id={`${detailsSelectId}-description`}>
-        {ACTIVITY_HEATMAP_DESCRIPTION}
-      </p>
       <p className="text-xs font-semibold text-muted">
         {ACTIVITY_HEATMAP_MEASURE_LABEL} ({ACTIVITY_HEATMAP_UNIT_LABEL})
       </p>
@@ -156,7 +152,6 @@ function TrainingCalendarContent({ data, height }: TrainingCalendarProps) {
             View daily training details
           </label>
           <select
-            aria-describedby={`${detailsSelectId}-description`}
             className="w-full rounded border border-border-strong bg-surface-solid px-2 py-1 text-foreground"
             id={detailsSelectId}
             onChange={(event) => setSelectedDate(event.target.value)}
@@ -175,7 +170,6 @@ function TrainingCalendarContent({ data, height }: TrainingCalendarProps) {
             </span>
           </p>
           <p>{selectedDay.activityCount} recorded activities.</p>
-          <p>{formatDurationMinutes(selectedDay.totalMinutes)} total duration.</p>
         </div>
       ) : null}
     </div>

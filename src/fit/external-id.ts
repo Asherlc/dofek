@@ -6,12 +6,6 @@ function activityIdFromPath(path: string): string | undefined {
   return fileName.match(/_(\d+)(?:_[^/]*)?\.fit$/i)?.[1];
 }
 
-export function fitExternalId(path: string, data: Buffer): string {
-  const activityId = activityIdFromPath(path);
-  if (activityId) return activityId;
-  return `fit:${createHash("sha256").update(data).digest("hex").slice(0, 32)}`;
-}
-
 export async function fitExternalIdFromFile(path: string, filePath: string): Promise<string> {
   const activityId = activityIdFromPath(path);
   if (activityId) return activityId;

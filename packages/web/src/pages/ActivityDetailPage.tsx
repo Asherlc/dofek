@@ -1165,9 +1165,7 @@ function Section({
         <h2 className="text-sm font-medium text-muted uppercase tracking-wider">{title}</h2>
         <ChartDescriptionTooltip description={description} />
       </div>
-      <div className="card p-4" title={description}>
-        {children}
-      </div>
+      <div className="card p-4">{children}</div>
     </section>
   );
 }

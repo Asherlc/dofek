@@ -5,7 +5,7 @@ interface ActivitySourceDecisionCardProps {
   decision: ActivitySourceDecisionDetail;
 }
 
-/** Renders the server-authored explanation of how multi-source activity records were combined. */
+/** Renders the source count and primary source for a multi-source activity. */
 export function ActivitySourceDecisionCard({ decision }: ActivitySourceDecisionCardProps) {
   const headingId = useId();
 
@@ -27,7 +27,6 @@ export function ActivitySourceDecisionCard({ decision }: ActivitySourceDecisionC
           <dd className="mt-0.5 text-foreground">{decision.primarySourceLabel}</dd>
         </div>
       </dl>
-      <p className="mt-3 text-xs text-subtle">{decision.explanation}</p>
     </section>
   );
 }

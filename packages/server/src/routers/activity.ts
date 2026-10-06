@@ -17,10 +17,7 @@ import {
 } from "../lib/chart-range.ts";
 import { endDateSchema } from "../lib/date-window.ts";
 import { Activity, type ActivityDetail } from "../models/activity.ts";
-import {
-  ActivityRepository,
-  StreamPoint as StreamPointModel,
-} from "../repositories/activity-repository.ts";
+import { ActivityRepository } from "../repositories/activity-repository.ts";
 import { HangboardingRepository } from "../repositories/hangboarding-repository.ts";
 import { PowerRepository } from "../repositories/power-repository.ts";
 import { StrengthRepository } from "../repositories/strength-repository.ts";
@@ -448,17 +445,3 @@ export const activityRouter = router({
       }
     }),
 });
-
-/** Map a raw stream row to a StreamPoint. Exported for backward compatibility. */
-export function mapStreamPoint(row: {
-  recorded_at: string;
-  heart_rate: number | null;
-  power: number | null;
-  speed: number | null;
-  cadence: number | null;
-  altitude: number | null;
-  lat: number | null;
-  lng: number | null;
-}): StreamPoint {
-  return new StreamPointModel(row).toDetail();
-}

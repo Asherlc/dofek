@@ -102,8 +102,7 @@ function createSeededProviders(sleepDataUnavailable: boolean) {
                 "Sleep-debt input uses 11 observed nights from the model's recent-night window.",
               methodLabel: "Baseline average plus previous-day load and sleep-debt adjustments.",
               uncertaintyLabel: "Uncertainty: not established",
-              limitationLabel:
-                "This is an estimate, not a sleep recommendation. Its uncertainty has not been established.",
+              limitationLabel: "Estimated sleep need with unquantified uncertainty.",
             },
             recentNights: [],
           },
@@ -177,7 +176,7 @@ function createSeededProviders(sleepDataUnavailable: boolean) {
       context: {
         label: "Recent-to-baseline workload ratio",
         description:
-          "Compares load from the latest 7 days with an equivalent 7-day baseline from the latest 28 days. This is descriptive context, not a safe range or an injury prediction.",
+          "Compares load from the latest 7 days with an equivalent 7-day baseline from the latest 28 days.",
         recentDays: 7,
         baselineDays: 28,
       },

@@ -185,12 +185,6 @@ function readRequiredEnvironmentValue(env: NodeJS.ProcessEnv, key: "REDPANDA_BRO
   return value;
 }
 
-export async function createKafkaMetricStreamEventPublisherFromEnv(
-  env: NodeJS.ProcessEnv = process.env,
-): Promise<KafkaMetricStreamEventPublisher> {
-  return createKafkaMetricStreamEventPublisherForRoute("live", env);
-}
-
 export async function createKafkaMetricStreamEventPublisherForRoute(
   route: MetricStreamRoute,
   env: NodeJS.ProcessEnv = process.env,

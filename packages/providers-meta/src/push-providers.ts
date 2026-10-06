@@ -31,9 +31,3 @@ export const PUSH_PROVIDERS: readonly PushProviderDefinition[] = [
     description: "Synced from the iOS app when a Bluetooth heart-rate monitor is connected.",
   },
 ] as const;
-
-const PUSH_PROVIDER_ID_SET = new Set(PUSH_PROVIDERS.map((provider) => provider.id));
-
-export function isPushProvider(id: string): boolean {
-  return PUSH_PROVIDER_ID_SET.has(id);
-}

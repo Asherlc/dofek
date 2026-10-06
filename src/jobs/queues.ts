@@ -469,27 +469,6 @@ export function getFlowProducer(): FlowProducer {
   return cachedFlowProducer;
 }
 
-export async function closeFitFileImportQueueResources(): Promise<void> {
-  const queue = cachedFitFileImportQueue;
-  const flowProducer = cachedFlowProducer;
-
-  const closeOperations: Array<Promise<unknown>> = [];
-  if (queue) {
-    closeOperations.push(queue.close());
-  }
-  if (cachedFitFileImportQueueEvents) {
-    closeOperations.push(cachedFitFileImportQueueEvents.close());
-  }
-  if (flowProducer) {
-    closeOperations.push(flowProducer.close());
-  }
-  await Promise.all(closeOperations);
-
-  cachedFitFileImportQueue = null;
-  cachedFitFileImportQueueEvents = null;
-  cachedFlowProducer = null;
-}
-
 export function getPostSyncQueue(): Queue<PostSyncJobData> {
   if (!cachedPostSyncQueue) {
     cachedPostSyncQueue = createPostSyncQueue();

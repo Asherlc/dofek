@@ -42,7 +42,7 @@ describe("McpClientSetupPanel", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Copy for ChatGPT" }));
     await waitFor(() => expect(mocks.setStringAsync).toHaveBeenCalledWith(endpoint));
-    expect(screen.getByText(/In ChatGPT desktop, open Settings/)).toBeTruthy();
+    expect(await screen.findByText(/In ChatGPT desktop, open Settings/)).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "Other MCP clients" }));
     expect(screen.getByText(/codex mcp add dofek --url/)).toBeTruthy();
@@ -52,6 +52,7 @@ describe("McpClientSetupPanel", () => {
         `codex mcp add dofek --url ${endpoint}\ncodex mcp login dofek`,
       ),
     );
+    expect(await screen.findByText("Codex setup copied.")).toBeTruthy();
   });
 
   it("surfaces and reports clipboard failures", async () => {

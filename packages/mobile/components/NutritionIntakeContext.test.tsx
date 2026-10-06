@@ -52,10 +52,9 @@ describe("NutritionIntakeContext", () => {
     expect(screen.getByText("4,259 kcal")).toBeTruthy();
     expect(screen.getByText("Configured daily logged-intake target: 2,450 kcal")).toBeTruthy();
     expect(screen.getByText(overTargetContext.comparison.message)).toBeTruthy();
-    expect(screen.getByText(overTargetContext.limitation)).toBeTruthy();
     expect(
       screen.getByLabelText(
-        "Logged intake: 4,259 kcal. Configured daily logged-intake target: 2,450 kcal. Observed logged intake is 1,809 kcal above the configured daily logged-intake target. Scale: 0 to 4,259 kcal. This target describes logged intake only; it is not an estimate of energy expenditure or calorie balance.",
+        "Logged intake: 4,259 kcal. Configured daily logged-intake target: 2,450 kcal. Observed logged intake is 1,809 kcal above the configured daily logged-intake target. Scale: 0 to 4,259 kcal.",
       ),
     ).toBeTruthy();
   });
@@ -88,7 +87,7 @@ describe("NutritionIntakeContext", () => {
 
     expect(
       screen.getByLabelText(
-        `Logged intake: 4,259 kcal. Configured daily logged-intake target: 2,450 kcal. ${context.comparison.message} Scale: 0 to 4,259 kcal. ${context.limitation}`,
+        `Logged intake: 4,259 kcal. Configured daily logged-intake target: 2,450 kcal. ${context.comparison.message} Scale: 0 to 4,259 kcal.`,
       ),
     ).toBeTruthy();
   });

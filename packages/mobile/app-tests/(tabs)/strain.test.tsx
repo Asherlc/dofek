@@ -23,7 +23,6 @@ let mockRangeQueryCalls: Record<
 >;
 let mockTimeRangePreference = {
   days: 90,
-  description: "Recommended default: 90 days balances recent training changes with enough history.",
   isHydrated: true,
   setDays: vi.fn(),
 };
@@ -75,7 +74,7 @@ function defaultMockTrainingData(): MockTrainingData {
       context: {
         label: "Recent-to-baseline workload ratio",
         description:
-          "Compares load from the latest 7 days with an equivalent 7-day baseline from the latest 28 days. This is descriptive context, not a safe range or an injury prediction.",
+          "Compares load from the latest 7 days with an equivalent 7-day baseline from the latest 28 days.",
         recentDays: 7,
         baselineDays: 28,
       },
@@ -266,8 +265,6 @@ describe("StrainScreen recent activity navigation", () => {
     };
     mockTimeRangePreference = {
       days: 90,
-      description:
-        "Recommended default: 90 days balances recent training changes with enough history.",
       isHydrated: true,
       setDays: vi.fn(),
     };
@@ -643,7 +640,7 @@ describe("StrainScreen recent activity navigation", () => {
         context: {
           label: "Recent-to-baseline workload ratio",
           description:
-            "Compares load from the latest 7 days with an equivalent 7-day baseline from the latest 28 days. This is descriptive context, not a safe range or an injury prediction.",
+            "Compares load from the latest 7 days with an equivalent 7-day baseline from the latest 28 days.",
           recentDays: 5,
           baselineDays: 20,
         },
@@ -673,7 +670,7 @@ describe("StrainScreen recent activity navigation", () => {
     expect(screen.getByText("20-day baseline load")).toBeTruthy();
     expect(
       screen.getByText(
-        "Compares load from the latest 7 days with an equivalent 7-day baseline from the latest 28 days. This is descriptive context, not a safe range or an injury prediction.",
+        "Compares load from the latest 7 days with an equivalent 7-day baseline from the latest 28 days.",
       ),
     ).toBeTruthy();
     expect(screen.getByText("4.00")).toBeTruthy();
@@ -702,7 +699,7 @@ describe("StrainScreen recent activity navigation", () => {
         context: {
           label: "Recent-to-baseline workload ratio",
           description:
-            "Compares load from the latest 7 days with an equivalent 7-day baseline from the latest 28 days. This is descriptive context, not a safe range or an injury prediction.",
+            "Compares load from the latest 7 days with an equivalent 7-day baseline from the latest 28 days.",
           recentDays: 7,
           baselineDays: 28,
         },

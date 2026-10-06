@@ -68,7 +68,7 @@ function isSleepInsight(metric: string): boolean {
 }
 
 export function SleepPage() {
-  const { days, description, setDays } = useTimeRangePreference("sleep");
+  const { days, setDays } = useTimeRangePreference("sleep");
   const endDate = useTodayQueryDate();
 
   const sleepData = trpc.sleep.list.useQuery({ ...selectedRangeQueryInput(days), endDate });
@@ -129,9 +129,7 @@ export function SleepPage() {
   return (
     <ChartRangeProvider days={days}>
       <PageLayout
-        headerChildren={
-          <TimeRangeSelector days={days} description={description} onChange={setDays} />
-        }
+        headerChildren={<TimeRangeSelector days={days} onChange={setDays} />}
         title="Sleep"
         subtitle="Sleep stages, debt, and patterns over time"
       >

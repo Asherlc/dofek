@@ -11,7 +11,6 @@ const mockProviderConstructor = vi.hoisted(
 vi.mock("dofek/providers/registry", () => ({
   registerProvider: (...args: unknown[]) => mockRegisterProvider(...args),
   getAllProviders: vi.fn(() => []),
-  getSyncProviders: vi.fn(() => []),
 }));
 
 vi.mock("dofek/jobs/provider-queue-config", () => ({

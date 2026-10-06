@@ -17,7 +17,7 @@ function accessibilityLabel(context: SelectedDateNutritionIntakeContext): string
   const comparisonWithSeparator = /[.!?…]$/.test(comparisonMessage)
     ? comparisonMessage
     : `${comparisonMessage}.`;
-  return `Logged intake: ${formatCalories(context.observedCalories)}. ${context.target.label}: ${formatCalories(context.target.calories)}. ${comparisonWithSeparator} Scale: 0 to ${formatCalories(context.scale.maximumCalories)}. ${context.limitation}`;
+  return `Logged intake: ${formatCalories(context.observedCalories)}. ${context.target.label}: ${formatCalories(context.target.calories)}. ${comparisonWithSeparator} Scale: 0 to ${formatCalories(context.scale.maximumCalories)}.`;
 }
 
 export function NutritionIntakeContext({ context }: NutritionIntakeContextProps) {
@@ -57,7 +57,6 @@ export function NutritionIntakeContext({ context }: NutritionIntakeContextProps)
         <Text style={styles.scaleLabel}>{formatCalories(context.scale.maximumCalories)} scale</Text>
       </View>
       <Text style={styles.comparison}>{context.comparison.message}</Text>
-      <Text style={styles.limitation}>{context.limitation}</Text>
     </View>
   );
 }
@@ -121,9 +120,5 @@ const styles = StyleSheet.create({
   comparison: {
     color: colors.textSecondary,
     fontSize: 13,
-  },
-  limitation: {
-    color: colors.textTertiary,
-    fontSize: 12,
   },
 });

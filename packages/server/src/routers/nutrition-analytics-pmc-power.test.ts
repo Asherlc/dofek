@@ -40,10 +40,6 @@ vi.mock("../lib/typed-sql.ts", async (importOriginal) => {
   };
 });
 
-vi.mock("../lib/endurance-types.ts", () => ({
-  enduranceTypeFilter: () => ({ sql: "true" }),
-}));
-
 vi.mock("dofek/personalization/storage", () => ({
   loadPersonalizedParams: vi.fn().mockResolvedValue(null),
 }));

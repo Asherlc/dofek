@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  fixedRangeQueryInput,
   formatTimeRangeLabel,
   formatTimeRangeShortLabel,
   minimumSelectedRangeDays,
@@ -29,10 +28,6 @@ describe("timeRange", () => {
     expect(minimumSelectedRangeDays(7, 90)).toBe(90);
     expect(minimumSelectedRangeDays(365, 90)).toBe(365);
     expect(minimumSelectedRangeDays(null, 90)).toBeNull();
-  });
-
-  it("marks intentional fixed range queries explicitly", () => {
-    expect(fixedRangeQueryInput(365)).toEqual({ days: 365 });
   });
 
   it("formats All without rendering null days", () => {

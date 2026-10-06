@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { CalendarDay } from "./calendar-repository.ts";
 
 describe("CalendarDay heatmap contract", () => {
-  it("adds a server-authored volume band and recovery-safe meaning", () => {
+  it("adds a server-authored volume band and meaning", () => {
     const detail = new CalendarDay({
       date: "2024-06-15",
       activityCount: 2,
@@ -11,6 +11,6 @@ describe("CalendarDay heatmap contract", () => {
     }).toDetail();
 
     expect(detail.trainingTimeBand).toBe("very_high");
-    expect(detail.trainingTimeMeaning).toContain("recovery");
+    expect(detail.trainingTimeMeaning).toBe("Very high recorded training volume");
   });
 });

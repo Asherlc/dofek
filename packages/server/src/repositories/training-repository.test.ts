@@ -189,7 +189,7 @@ describe("TrainingRepository", () => {
             expect.objectContaining({ zone: 0, label: "Below Zone 1", seconds: 0, percent: 0 }),
             expect.objectContaining({ zone: 5, label: "VO2max", seconds: 0, percent: 0 }),
           ]),
-          explanation: expect.stringContaining("does not classify training polarization"),
+          explanation: expect.stringContaining("endurance training time"),
         },
       });
       expect(executedSql(execute)).toContain("ended_at IS NOT NULL");
@@ -251,7 +251,7 @@ describe("TrainingRepository", () => {
             expect.objectContaining({ zone: 0, seconds: 0, percent: 0 }),
             expect.objectContaining({ zone: 5, seconds: 0, percent: 0 }),
           ]),
-          explanation: expect.stringContaining("does not classify training polarization"),
+          explanation: expect.stringContaining("endurance training time"),
         },
       });
     });

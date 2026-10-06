@@ -1,12 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  getNutrientById,
-  getNutrientByLegacyField,
-  getNutrientsByCategory,
-  legacyFieldsToNutrients,
-  NUTRIENTS,
-  type NutrientCategory,
-} from "./nutrients.ts";
+import { NUTRIENTS, type NutrientCategory } from "./nutrients.ts";
 
 describe("NUTRIENTS catalog", () => {
   it("has unique ids", () => {
@@ -66,13 +59,21 @@ describe("NUTRIENTS catalog", () => {
   });
 
   it("includes macros, caffeine, and water in the canonical catalog", () => {
-    expect(getNutrientById("calories")?.legacyFieldName).toBe("calories");
-    expect(getNutrientById("protein")?.legacyFieldName).toBe("proteinG");
-    expect(getNutrientById("carbohydrate")?.legacyFieldName).toBe("carbsG");
-    expect(getNutrientById("fat")?.legacyFieldName).toBe("fatG");
-    expect(getNutrientById("fiber")?.legacyFieldName).toBe("fiberG");
-    expect(getNutrientById("caffeine")?.legacyFieldName).toBe("caffeineMg");
-    expect(getNutrientById("water")?.legacyFieldName).toBe("waterMl");
+    expect(NUTRIENTS.find((nutrient) => nutrient.id === "calories")?.legacyFieldName).toBe(
+      "calories",
+    );
+    expect(NUTRIENTS.find((nutrient) => nutrient.id === "protein")?.legacyFieldName).toBe(
+      "proteinG",
+    );
+    expect(NUTRIENTS.find((nutrient) => nutrient.id === "carbohydrate")?.legacyFieldName).toBe(
+      "carbsG",
+    );
+    expect(NUTRIENTS.find((nutrient) => nutrient.id === "fat")?.legacyFieldName).toBe("fatG");
+    expect(NUTRIENTS.find((nutrient) => nutrient.id === "fiber")?.legacyFieldName).toBe("fiberG");
+    expect(NUTRIENTS.find((nutrient) => nutrient.id === "caffeine")?.legacyFieldName).toBe(
+      "caffeineMg",
+    );
+    expect(NUTRIENTS.find((nutrient) => nutrient.id === "water")?.legacyFieldName).toBe("waterMl");
   });
 
   it("includes all expected minerals", () => {
@@ -87,99 +88,12 @@ describe("NUTRIENTS catalog", () => {
   });
 
   it("sodium conversion factor is 1000 (OFF stores in grams)", () => {
-    const sodium = getNutrientById("sodium");
+    const sodium = NUTRIENTS.find((nutrient) => nutrient.id === "sodium");
     expect(sodium?.conversionFactor).toBe(1000);
   });
 
   it("omega-3 conversion factor is 1000 (OFF stores in grams)", () => {
-    const omega3 = getNutrientById("omega_3");
+    const omega3 = NUTRIENTS.find((nutrient) => nutrient.id === "omega_3");
     expect(omega3?.conversionFactor).toBe(1000);
-  });
-});
-
-describe("getNutrientById", () => {
-  it("returns the nutrient for a valid id", () => {
-    const result = getNutrientById("vitamin_a");
-    expect(result).not.toBeNull();
-    expect(result?.displayName).toBe("Vitamin A");
-    expect(result?.unit).toBe("mcg");
-  });
-
-  it("returns null for an unknown id", () => {
-    expect(getNutrientById("nonexistent")).toBeNull();
-  });
-});
-
-describe("getNutrientByLegacyField", () => {
-  it("maps camelCase field name to nutrient", () => {
-    const result = getNutrientByLegacyField("vitaminAMcg");
-    expect(result).not.toBeNull();
-    expect(result?.id).toBe("vitamin_a");
-  });
-
-  it("returns null for unknown field", () => {
-    expect(getNutrientByLegacyField("unknownField")).toBeNull();
-  });
-});
-
-describe("getNutrientsByCategory", () => {
-  it("returns only nutrients in the given category", () => {
-    const vitamins = getNutrientsByCategory("vitamin");
-    expect(vitamins.length).toBeGreaterThan(0);
-    for (const vitamin of vitamins) {
-      expect(vitamin.category).toBe("vitamin");
-    }
-  });
-
-  it("returns nutrients sorted by sortOrder", () => {
-    const minerals = getNutrientsByCategory("mineral");
-    for (let index = 1; index < minerals.length; index++) {
-      const previous = minerals[index - 1];
-      const current = minerals[index];
-      if (previous && current) {
-        expect(previous.sortOrder).toBeLessThanOrEqual(current.sortOrder);
-      }
-    }
-  });
-});
-
-describe("legacyFieldsToNutrients", () => {
-  it("converts legacy camelCase fields to nutrient id map", () => {
-    const result = legacyFieldsToNutrients({
-      calories: 250,
-      proteinG: 12,
-      vitaminAMcg: 150,
-      calciumMg: 200,
-      omega3Mg: 2500,
-      caffeineMg: 95,
-      waterMl: 500,
-    });
-    expect(result).toEqual({
-      calories: 250,
-      protein: 12,
-      vitamin_a: 150,
-      calcium: 200,
-      omega_3: 2500,
-      caffeine: 95,
-      water: 500,
-    });
-  });
-
-  it("skips null, undefined, and non-number values", () => {
-    const result = legacyFieldsToNutrients({
-      vitaminAMcg: null,
-      calciumMg: undefined,
-      ironMg: "not a number",
-      zincMg: 11,
-    });
-    expect(result).toEqual({ zinc: 11 });
-  });
-
-  it("ignores non-nutrient fields", () => {
-    const result = legacyFieldsToNutrients({
-      foodName: "Test",
-      vitaminCMg: 60,
-    });
-    expect(result).toEqual({ vitamin_c: 60 });
   });
 });
