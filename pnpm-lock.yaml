@@ -23,7 +23,7 @@ overrides:
   dompurify: 3.4.14
   fast-uri: 3.1.8
   form-data: 4.0.6
-  gel>shell-quote: 1.10.0
+  gel>shell-quote: 1.12.0
   hono: 4.13.8
   ip-address: 10.4.0
   inquirer@0.11.0>lodash: 4.18.1
@@ -40,7 +40,7 @@ overrides:
   react: 19.3.0
   react-dom: 19.3.0
   router>path-to-regexp: 8.4.2
-  shell-quote: 1.10.0
+  shell-quote: 1.12.0
   tar: 7.5.20
   test-exclude@<8.0.0: 8.0.0
   '@sentry/cli>undici': 6.29.0
@@ -15224,8 +15224,8 @@ packages:
     resolution: {integrity: sha512-7++dFhtcx3353uBaq8DDR4NuxBetBzC7ZQOhmTQInHEd6bSrXdiEyzCvG07Z44UYdLShWUyXt5M/yhz8ekcb1A==}
     engines: {node: '>=8'}
 
-  shell-quote@1.10.0:
-    resolution: {integrity: sha512-w1aiOKwKuRgtwAReIIj89puqg+I7GvX4IbLrvmhXbzQsj1+Zwi4VO3+fa6ZF91TWSjIxoEkKnMeHcLEODK5ZXA==}
+  shell-quote@1.12.0:
+    resolution: {integrity: sha512-PcByqNyT/38F2kDNi006HAMRJaULuBzq/FOsw3qdZvX/GA9W/jamDaRskgHjubHiftXK5sIFxLNkvrXUwcof6Q==}
     engines: {node: '>= 0.4'}
 
   shelljs@0.8.5:
@@ -29202,7 +29202,7 @@ snapshots:
       debug: 4.4.3(supports-color@11.0.0)
       env-paths: 3.0.0
       semver: 7.8.5
-      shell-quote: 1.10.0
+      shell-quote: 1.12.0
       which: 4.0.0
     transitivePeerDependencies:
       - supports-color
@@ -32640,7 +32640,7 @@ snapshots:
 
   react-devtools-core@6.1.5:
     dependencies:
-      shell-quote: 1.10.0
+      shell-quote: 1.12.0
       ws: 8.21.0
     transitivePeerDependencies:
       - bufferutil
@@ -33521,7 +33521,7 @@ snapshots:
 
   shebang-regex@3.0.0: {}
 
-  shell-quote@1.10.0: {}
+  shell-quote@1.12.0: {}
 
   shelljs@0.8.5:
     dependencies:

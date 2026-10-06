@@ -63,7 +63,7 @@ overrides:
   dompurify: 3.4.14
   "fast-uri": 3.1.8
   form-data: 4.0.6
-  "gel>shell-quote": 1.10.0
+  "gel>shell-quote": 1.12.0
   hono: 4.13.8
   ip-address: 10.4.0
   "inquirer@0.11.0>lodash": 4.18.1
@@ -80,7 +80,7 @@ overrides:
   react: 19.3.0
   react-dom: 19.3.0
   "router>path-to-regexp": 8.4.2
-  shell-quote: 1.10.0
+  shell-quote: 1.12.0
   tar: 7.5.20
   "test-exclude@<8.0.0": 8.0.0
   "@sentry/cli>undici": 6.29.0
