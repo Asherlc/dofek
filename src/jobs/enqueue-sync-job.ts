@@ -9,6 +9,8 @@ import { getProviderSyncQueue, SYNC_JOB_RETRY_OPTIONS, type SyncJobData } from "
 import { type EnqueuedSyncJob, enqueueSyncJobWithRequestDedup } from "./sync-request-job.ts";
 
 export type EnqueueSyncJobOptions = {
+  /** Stable identity for one provider dispatch from a shared coordinator. */
+  coordinator?: { id: string; queueQualifiedName: string };
   /** When active, skip enqueue instead of scheduling a duplicate delayed job. */
   skipWhenRateLimited?: boolean;
   /** Coalesce a user-triggered initial full sync until that job completes or fails. */
@@ -73,6 +75,7 @@ export async function enqueueSyncJob(
     deduplicationId ? { ...jobOptions, deduplication: { id: deduplicationId } } : jobOptions,
     (name, data, opts) => queue.add(name, data, opts),
     (jobId) => queue.getJob(jobId),
+    options?.coordinator,
   );
 }
 

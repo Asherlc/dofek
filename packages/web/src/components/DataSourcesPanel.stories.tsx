@@ -142,7 +142,7 @@ function DataSourcesPanelStoryFrame({ scenario }: { scenario: DataSourcesScenari
   return (
     <trpc.Provider client={trpcClient} queryClient={queryClient}>
       <QueryClientProvider client={queryClient}>
-        <div className="w-[900px] bg-background p-6">
+        <div className="w-full max-w-[900px] bg-background p-6">
           <RouterProvider router={router} />
         </div>
       </QueryClientProvider>

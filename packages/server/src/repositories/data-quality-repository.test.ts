@@ -6,23 +6,19 @@ import type { ActivitySensorStore } from "./activity-repository.ts";
 const {
   mockActivityWeekList,
   mockAnomalyHistory,
-  mockJournalEntries,
   mockNutritionQuality,
   mockProcessingStatus,
   mockActivitiesCalendarConstructor,
   mockAnomalyDetectionConstructor,
-  mockJournalConstructor,
   mockNutritionAnalyticsConstructor,
   mockProcessingConstructor,
 } = vi.hoisted(() => ({
   mockActivityWeekList: vi.fn(),
   mockAnomalyHistory: vi.fn(),
-  mockJournalEntries: vi.fn(),
   mockNutritionQuality: vi.fn(),
   mockProcessingStatus: vi.fn(),
   mockActivitiesCalendarConstructor: vi.fn(),
   mockAnomalyDetectionConstructor: vi.fn(),
-  mockJournalConstructor: vi.fn(),
   mockNutritionAnalyticsConstructor: vi.fn(),
   mockProcessingConstructor: vi.fn(),
 }));
@@ -43,15 +39,6 @@ vi.mock("./anomaly-detection-repository.ts", () => ({
     }
 
     getHistory = mockAnomalyHistory;
-  },
-}));
-vi.mock("./journal-repository.ts", () => ({
-  JournalRepository: class {
-    constructor(...args: unknown[]) {
-      mockJournalConstructor(...args);
-    }
-
-    listEntries = mockJournalEntries;
   },
 }));
 vi.mock("./nutrition-analytics-repository.ts", () => ({
@@ -141,10 +128,6 @@ describe("DataQualityRepository", () => {
         severity: "alert",
       },
     ]);
-    mockJournalEntries.mockResolvedValue([
-      { date: "2026-07-19", source: { providerId: "dofek" } },
-      { date: "2026-07-18", source: { providerId: "garmin" } },
-    ]);
   });
 
   it("combines existing server-side quality signals into one overview", async () => {
@@ -185,13 +168,6 @@ describe("DataQualityRepository", () => {
           details: ["Activities: failed."],
         }),
         expect.objectContaining({ key: "outliers", status: "attention", count: 1 }),
-        expect.objectContaining({
-          key: "manual_edits",
-          status: "informational",
-          count: 1,
-          message: "1 manually entered journal record was recorded in the last 30 days.",
-          lastObservedDate: "2026-07-19",
-        }),
       ],
     });
     expect(mockActivityWeekList).toHaveBeenCalledWith({
@@ -200,7 +176,6 @@ describe("DataQualityRepository", () => {
       includeProviderAbsent: true,
     });
     expect(mockAnomalyHistory).toHaveBeenCalledWith(30, "2026-07-22");
-    expect(mockJournalEntries).toHaveBeenCalledWith(30);
     expect(mockActivitiesCalendarConstructor).toHaveBeenCalledWith(
       database,
       "10000000-0000-4000-8000-000000000001",
@@ -213,10 +188,6 @@ describe("DataQualityRepository", () => {
       "10000000-0000-4000-8000-000000000001",
       "UTC",
       sensorStore,
-    );
-    expect(mockJournalConstructor).toHaveBeenCalledWith(
-      database,
-      "10000000-0000-4000-8000-000000000001",
     );
     expect(mockNutritionAnalyticsConstructor).toHaveBeenCalledWith(
       database,
@@ -253,9 +224,6 @@ describe("DataQualityRepository", () => {
       { date: "2026-07-22", activities: [{ source: { overlapSummary: null } }] },
     ]);
     mockAnomalyHistory.mockResolvedValue([]);
-    mockJournalEntries.mockResolvedValue([
-      { date: "2026-07-21", source: { providerId: "garmin" } },
-    ]);
 
     const overview = await makeRepository().overview("2026-07-22");
 
@@ -315,16 +283,6 @@ describe("DataQualityRepository", () => {
         lastObservedDate: null,
         details: [],
       },
-      {
-        key: "manual_edits",
-        label: "Manual edits",
-        status: "healthy",
-        title: "No manual entries recorded",
-        message: "No manually entered journal records were recorded in the last 30 days.",
-        count: 0,
-        lastObservedDate: null,
-        details: [],
-      },
     ]);
   });
 
@@ -358,7 +316,6 @@ describe("DataQualityRepository", () => {
       },
     ]);
     mockAnomalyHistory.mockResolvedValue([]);
-    mockJournalEntries.mockResolvedValue([]);
 
     const overview = await makeRepository().overview("2026-07-22");
 
@@ -409,7 +366,6 @@ describe("DataQualityRepository", () => {
       },
     ]);
     mockAnomalyHistory.mockResolvedValue([]);
-    mockJournalEntries.mockResolvedValue([]);
 
     const overview = await makeRepository().overview("2026-07-22");
 
@@ -500,7 +456,6 @@ describe("DataQualityRepository", () => {
       { date: "2026-07-22", activities: [{ source: { overlapSummary: null } }] },
     ]);
     mockAnomalyHistory.mockResolvedValue([]);
-    mockJournalEntries.mockResolvedValue([]);
 
     const overview = await makeRepository().overview("2026-07-22");
 
@@ -528,7 +483,6 @@ describe("DataQualityRepository", () => {
     });
     mockActivityWeekList.mockResolvedValue([]);
     mockAnomalyHistory.mockResolvedValue([]);
-    mockJournalEntries.mockResolvedValue([]);
 
     const overview = await makeRepository().overview("2026-07-22");
 
@@ -556,7 +510,6 @@ describe("DataQualityRepository", () => {
     });
     mockActivityWeekList.mockResolvedValue([]);
     mockAnomalyHistory.mockResolvedValue([]);
-    mockJournalEntries.mockResolvedValue([]);
 
     const overview = await makeRepository({
       kind: "limited",
@@ -569,7 +522,6 @@ describe("DataQualityRepository", () => {
     expect(overview.window).toEqual({ days: 30, endDate: "2026-07-22" });
     expect(mockNutritionQuality).toHaveBeenCalledWith(30);
     expect(mockAnomalyHistory).toHaveBeenCalledWith(30, "2026-07-22");
-    expect(mockJournalEntries).toHaveBeenCalledWith(30);
   });
 
   it("uses an earlier access end when it precedes the selected quality window", async () => {
@@ -590,7 +542,6 @@ describe("DataQualityRepository", () => {
     });
     mockActivityWeekList.mockResolvedValue([]);
     mockAnomalyHistory.mockResolvedValue([]);
-    mockJournalEntries.mockResolvedValue([]);
 
     const overview = await makeRepository({
       kind: "limited",
@@ -603,10 +554,9 @@ describe("DataQualityRepository", () => {
     expect(overview.window).toEqual({ days: 27, endDate: "2026-07-22" });
     expect(mockNutritionQuality).toHaveBeenCalledWith(27);
     expect(mockAnomalyHistory).toHaveBeenCalledWith(27, "2026-07-22");
-    expect(mockJournalEntries).toHaveBeenCalledWith(27);
   });
 
-  it("reports plural outliers and manual entries with bounded details", async () => {
+  it("reports plural outliers with bounded details", async () => {
     mockProcessingStatus.mockResolvedValue({
       overallStatus: "ready",
       datasets: [{ label: "Activities", status: "ready" }],
@@ -631,11 +581,6 @@ describe("DataQualityRepository", () => {
       { date: "2026-07-20", metric: "Recovery", value: 3 },
       { date: "2026-07-18", metric: "Strain", value: 4 },
     ]);
-    mockJournalEntries.mockResolvedValue([
-      { date: "2026-07-10", source: { providerId: "dofek" } },
-      { date: "2026-07-22", source: { providerId: "dofek" } },
-      { date: "2026-07-11", source: { providerId: "garmin" } },
-    ]);
 
     const overview = await makeRepository().overview("2026-07-22");
 
@@ -652,16 +597,6 @@ describe("DataQualityRepository", () => {
       count: 4,
       lastObservedDate: "2026-07-22",
       details: ["Heart rate on 2026-07-15.", "Sleep on 2026-07-22.", "Recovery on 2026-07-20."],
-    });
-    expect(overview.checks.find((check) => check.key === "manual_edits")).toEqual({
-      key: "manual_edits",
-      label: "Manual edits",
-      status: "informational",
-      title: "Manual entries are included",
-      message: "2 manually entered journal records were recorded in the last 30 days.",
-      count: 2,
-      lastObservedDate: "2026-07-22",
-      details: [],
     });
   });
 
@@ -683,7 +618,6 @@ describe("DataQualityRepository", () => {
     });
     mockActivityWeekList.mockResolvedValue([]);
     mockAnomalyHistory.mockResolvedValue([]);
-    mockJournalEntries.mockResolvedValue([]);
 
     const overview = await makeRepository({
       kind: "full",
@@ -694,7 +628,6 @@ describe("DataQualityRepository", () => {
     expect(overview.window).toEqual({ days: 30, endDate: "2026-07-22" });
     expect(mockNutritionQuality).toHaveBeenCalledWith(30);
     expect(mockAnomalyHistory).toHaveBeenCalledWith(30, "2026-07-22");
-    expect(mockJournalEntries).toHaveBeenCalledWith(30);
   });
 
   it("uses the accessible intersection for a restricted data-quality window", async () => {
@@ -734,7 +667,6 @@ describe("DataQualityRepository", () => {
         severity: "alert",
       },
     ]);
-    mockJournalEntries.mockResolvedValue([{ date: "2026-07-21", source: { providerId: "dofek" } }]);
 
     const overview = await makeRepository({
       kind: "limited",
@@ -760,12 +692,8 @@ describe("DataQualityRepository", () => {
     expect(overview.checks.find((check) => check.key === "outliers")).toMatchObject({
       message: "1 unusual observation was flagged in the last 4 days.",
     });
-    expect(overview.checks.find((check) => check.key === "manual_edits")).toMatchObject({
-      message: "1 manually entered journal record was recorded in the last 4 days.",
-    });
     expect(mockNutritionQuality).toHaveBeenCalledWith(4);
     expect(mockAnomalyHistory).toHaveBeenCalledWith(4, "2026-07-22");
-    expect(mockJournalEntries).toHaveBeenCalledWith(4);
     expect(mockActivityWeekList).toHaveBeenCalledWith({
       weeks: 1,
       endDate: "2026-07-22",

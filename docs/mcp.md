@@ -35,7 +35,7 @@ CIMD client metadata is resolved by oidc-provider's `clientIdMetadataDocument` f
 
 ChatGPT’s CIMD transition publishes the plural method list as capabilities and retains the singular field as a legacy preference. Dofek enables oidc-provider's RP Metadata Choices feature and advertises only `none`, so ChatGPT and other clients with that public method use it with PKCE. [OpenAI client registration guidance](https://developers.openai.com/plugins/build/auth/#client-registration); [oidc-provider metadata negotiation](https://github.com/panva/node-oidc-provider/blob/v9.12.2/lib/helpers/client_schema.js)
 
-The client redirects each user to Dofek to sign in and approve the requested scopes. Access tokens expire after one hour. Refresh tokens expire after 30 days and rotate on every use; reusing an older refresh token fails ([OAuth 2.0 Security BCP refresh token rotation](https://www.rfc-editor.org/rfc/rfc9700#name-refresh-tokens); [RFC 6819 §5.2.2.3](https://www.rfc-editor.org/rfc/rfc6819#section-5.2.2.3)). The `/revoke` endpoint invalidates the complete access-and-refresh token pair ([RFC 7009](https://www.rfc-editor.org/rfc/rfc7009)).
+The client redirects each user to Dofek to sign in and approve the requested scopes. Access tokens expire after one hour. Clients whose metadata supports the `refresh_token` grant receive a refresh token automatically, without requiring the OIDC `offline_access` scope, through the library's [refresh-token issuance policy](https://oidc-provider.dev/configuration/tokens/#issuerefreshtoken). Refresh tokens expire after 30 days and rotate on every use; reusing an older refresh token revokes its token family ([OAuth 2.0 Security BCP refresh token rotation](https://www.rfc-editor.org/rfc/rfc9700#name-refresh-tokens); [RFC 6819 §5.2.2.3](https://www.rfc-editor.org/rfc/rfc6819#section-5.2.2.3)). The `/revoke` endpoint invalidates the complete access-and-refresh token pair ([RFC 7009](https://www.rfc-editor.org/rfc/rfc7009)).
 
 Examples that use this path include [Claude remote connectors](https://support.claude.com/en/articles/11503834-building-custom-connectors-via-remote-mcp-servers) and [ChatGPT apps / connectors](https://developers.openai.com/apps-sdk/build/auth).
 
@@ -49,11 +49,12 @@ actions:
   the Dofek name and URL prefilled. Review the connection and authorize Dofek
   when prompted. Anthropic documents custom remote connectors and their OAuth
   flow in the [Claude connector guide](https://claude.com/docs/connectors/building/directory-vs-custom).
-- **ChatGPT:** **Copy for ChatGPT** copies the endpoint. In the ChatGPT desktop
-  app, open **Settings → MCP servers → Add server**, select Streamable HTTP,
-  paste the URL, save, restart, and authenticate. ChatGPT web uses published
-  plugins rather than the desktop app's local MCP configuration
-  ([OpenAI MCP documentation](https://learn.chatgpt.com/docs/extend/mcp.md)).
+- **ChatGPT:** **Copy for ChatGPT** copies the endpoint. For a developer-mode
+  connection, add the public MCP URL in ChatGPT's Apps/Plugins interface and
+  complete OAuth when prompted. Review the discovered tools, then test the
+  connection in a new conversation. Availability depends on account and
+  workspace policy. See [OpenAI's connection guide](https://developers.openai.com/plugins/deploy/connect-chatgpt)
+  and [developer-mode app configuration](https://help.openai.com/en/articles/12584461-developer-mode-and-mcp-apps-in-chatgpt).
 - **Cursor:** **Add to Cursor** opens Cursor's documented MCP install deeplink
   containing `{ "url": "https://dofek.fit/api/mcp" }`; Cursor shows the
   configuration for review before installation and OAuth
@@ -132,7 +133,7 @@ Input:
 ```json
 {
   "name": "Codex",
-  "scopes": ["health:read", "health:write", "activity:read", "nutrition:read", "providers:read", "sync:write"],
+  "scopes": ["health:read", "activity:read", "nutrition:read", "nutrition:write", "providers:read", "sync:write"],
   "expiresAt": null
 }
 ```
@@ -141,27 +142,28 @@ The response includes `token` once. Store it in the MCP client. Dofek stores onl
 
 List existing token metadata with `mcp.listPersonalTokens`. Revoke a token with `mcp.revokeToken`.
 
-`nutrition:write` is an explicit opt-in. It is not selected by default when a
-manual token is created, and OAuth's default scope request omits it. Existing
-manual tokens and OAuth grants keep their stored scopes. To add food-record
-write access, create a new manual token with **Modify food records** selected,
-or reauthorize the OAuth client with `nutrition:write` in its requested scopes.
-Granting that scope does not change the other default scopes.
+New personal tokens select all supported tool scopes by default, including
+`nutrition:write`; users can deselect permissions before
+creating the token. Existing tokens and OAuth grants keep their stored scopes.
+Every MCP tool declares its OAuth requirements in `_meta.securitySchemes`,
+preserving UI metadata, so clients can request the permissions for their selected
+tools through normal consent. A missing scope produces a tool-level
+`_meta["mcp/www_authenticate"]` challenge with the required scopes and protected
+resource metadata URL, following [OpenAI's tool authentication guidance](https://developers.openai.com/plugins/build/auth/#triggering-authentication-ui)
+and [tool metadata reference](https://developers.openai.com/plugins/reference/#meta-fields-on-tool-descriptor).
+Reauthorization is required before an existing read-only grant can write;
+refreshing a token does not expand its permissions.
 
 ## Scopes
 
 | Scope | Allows |
 |-------|--------|
 | `health:read` | Read daily health summaries. |
-| `health:write` | Log user-owned health observations such as injuries. |
 | `activity:read` | Search activity summaries. |
 | `nutrition:read` | Read daily nutrition summaries and effective food records. |
 | `nutrition:write` | Create, update, delete, and restore food records; also requires `nutrition:read`. |
 | `providers:read` | List configured providers and connection status. |
 | `sync:write` | Enqueue provider sync jobs. |
-
-`health:write` is never granted by default. Manual-token users must select it,
-and OAuth clients must request it explicitly.
 
 ## Tools
 
@@ -180,7 +182,7 @@ The canonical tool names, schemas, and scope checks are defined in the [MCP tool
 | `get_activity_summary` | `activity:read` | Aggregates activity volume and effort by type, ISO week, modality, or purpose, including unclassified and power coverage. |
 | `get_cycling_performance` | `activity:read` | Returns exact-range per-ride normalized power, intensity factor, standard best efforts, rolling-90-day bests, FTP estimates, elevation, and coverage. |
 | `get_training_load` | `activity:read`; also `nutrition:read` when requested | Returns daily load and rolling windows; analytical detail preserves modality channels and can include aligned nutrition. |
-| `get_recovery_training_series` | Scope depends on selected streams: `health:read`, `activity:read`, and/or `nutrition:read` | Returns a selected, date-aligned recovery, sleep, weight, load, subjective, compact activity-exposure, and nutrition series without causal interpretation. |
+| `get_recovery_training_series` | Scope depends on selected streams: `health:read`, `activity:read`, and/or `nutrition:read` | Returns a selected, date-aligned recovery, sleep, weight, load, compact activity-exposure, and nutrition series without causal interpretation. |
 | `compare_performances` | `activity:read` | Compares only explicitly or strongly evidenced equivalent workouts, routes, climbs, strength exercises, or standardized tests with contextual deltas and provenance. |
 | `find_repeated_efforts` | `activity:read` | Discovers repeated exact or strongly inferred identities, with opt-in weak name/duration candidates and canonical/source evidence. |
 | `get_effort_trend` | `activity:read` | Returns chronological repetitions and descriptive deltas for a discovered effort or explicit equivalence, preserving quality and false-fitness caveats. |
@@ -199,9 +201,6 @@ The canonical tool names, schemas, and scope checks are defined in the [MCP tool
 | `restore_food_entry` | `nutrition:read` + `nutrition:write` | Restores a deleted record while retaining its field and nutrient decisions. Returns that day's calorie/macro preview. |
 | `get_food_entry_history` | `nutrition:read` | Returns the paginated command and decision history for a food record. |
 | `get_body_metrics` | `health:read` | Returns reconciled body metrics, value kinds, source values, and 7/28-day rolling weight statistics. |
-| `get_subjective_timeline` | `health:read` | Returns recorded check-ins, symptoms, and injury events for an exact date range. |
-| `list_body_regions` | `health:read` | Lists canonical body-region IDs and labels accepted by subjective health tools. |
-| `log_injury` | `health:write` | Logs a private injury or niggle with onset, optional resolution and severity, description, and canonical body region. |
 | `list_providers` | `providers:read` | Lists configured providers and status. |
 | `start_provider_sync` | `sync:write` | Enqueues a provider sync job. |
 
@@ -210,7 +209,17 @@ The canonical tool names, schemas, and scope checks are defined in the [MCP tool
 The seven food-record tools use the exact schemas in
 [`food-record-tools.ts`](../packages/server/src/mcp/food-record-tools.ts). Read
 tools require `nutrition:read`. Every mutation requires both `nutrition:read`
-and the opt-in `nutrition:write` scope.
+and the `nutrition:write` scope approved by the user.
+
+Create and update descriptions encourage sourced nutrition for the consumed
+portion, clarification when brand/label/portion information is missing, and
+explicit approval for estimates. Unknown nutrients must not be filled with
+zero. Incomplete entries remain supported when explicitly requested; these
+descriptions guide the model rather than enforce completeness. See the
+[tool descriptors](../packages/server/src/mcp/food-record-tools.ts) and
+[OpenAI's tool metadata guidance](https://developers.openai.com/plugins/guides/optimize-metadata).
+The [manual nutrition eval](mcp-nutrition-manual-eval.md) measures conversational
+behavior separately from schema and mutation tests.
 
 `search_food_entries` requires `start_date` and `end_date`. Its optional
 case-insensitive text query matches the effective food name, description,
@@ -406,7 +415,7 @@ Analytical `get_training_load` preserves its existing analysis-timezone calendar
 labels that choice as `date_policy: "analysis_timezone"`.
 
 `get_recovery_training_series` returns an inclusive local-calendar date spine capped at 366 days.
-Callers select only the needed `health`, `sleep`, `body_weight`, `training_load`, `subjective`,
+Callers select only the needed `health`, `sleep`, `body_weight`, `training_load`,
 `activities`, and `nutrition` streams; nutrition is opt-in. Missing scalar observations remain null
 and carry `missing` status. HRV, respiratory rate, and step provider attribution is explicitly
 labeled as applying to the canonical daily row because the current daily view does not attribute
@@ -419,8 +428,7 @@ same-day/interpolated/nearest direct-measurement evidence and includes 7/28-day 
 Training load remains six separate modality-specific channels. Each response date also exposes the
 immediately preceding local-calendar day's load channels, calculated by calendar date rather than a
 fixed 24-hour subtraction, so load-to-next-day recovery alignment remains correct across daylight-
-saving transitions. Subjective symptoms and active injuries are aligned by their recorded dates;
-daily fatigue is explicitly unavailable because the canonical subjective schema does not record it.
+saving transitions.
 Activities are returned as bounded daily aggregates rather than an unpaginated hydrated list. The
 aggregate retains canonical activity IDs/providers and counts dates attributed from authoritative
 named-zone/offset context separately from dates that required the analysis-timezone assumption.
@@ -435,7 +443,7 @@ recovery endpoint and does not change the standalone analytical training-load to
 analysis-timezone default.
 Optional provider and modality filters apply to both activity exposure and all training-load
 channels; other recovery streams remain unfiltered. Stream-specific authorization and dependencies
-mean nutrition-only and subjective-only requests do not require the ClickHouse analytics store.
+mean nutrition-only requests do not require the ClickHouse analytics store.
 The endpoint's interpretation block states that these observations support association analysis but do not establish causality. See the
 [series repository](../packages/server/src/repositories/recovery-training-series-repository.ts).
 
@@ -682,3 +690,41 @@ release.
 ## Auth Failures
 
 Missing or invalid tokens return `401` with `WWW-Authenticate: Bearer`. Tokens without the required tool scope return a tool-level insufficient-scope error.
+
+### ChatGPT reconnect and scope changes
+
+When ChatGPT cannot open the consent flow, inspect the failed reconnect request
+in the browser's Network panel before changing Dofek. Record only its timestamp,
+method, URL path, HTTP status, requested scope names, response error, and request
+ID. Do not share or retain raw HAR files, authorization headers, cookies, tokens,
+or authorization codes.
+
+Compare the requested scopes against both public discovery documents:
+
+```text
+https://dofek.fit/.well-known/oauth-protected-resource/api/mcp
+https://dofek.fit/.well-known/oauth-authorization-server
+```
+
+The [OpenAI authentication guide](https://developers.openai.com/plugins/build/auth)
+describes resource and authorization-server discovery and the tool-level
+security metadata needed to trigger consent. Correlate the browser request with
+Dofek authorization/token logs to identify which system rejected it. Successful
+tool discovery alone does not verify write authorization.
+
+For developer-mode connections, OpenAI documents selecting **Refresh** on the
+saved connection after changing authentication or tool metadata, verifying the
+updated metadata, and testing again in a new conversation. See
+[Refresh metadata](https://developers.openai.com/plugins/deploy/connect-chatgpt#refresh-metadata).
+If the saved OAuth metadata cannot be refreshed, creating a fresh development
+app is a documented way to fetch updated OAuth metadata; see
+[OAuth app configuration](https://help.openai.com/en/articles/12584461-developer-mode-and-mcp-apps-in-chatgpt).
+Use the canonical endpoint and automatic OAuth discovery. Preserve the existing
+connection until the replacement is verified.
+
+The [2026-09-30 reconnect incident](production-incident-baseline.md#2026-09-30--chatgpt-browser-reconnect-cannot-obtain-a-setup-url-unresolved)
+returned ChatGPT HTTP 400 `Requested scopes are not allowed for connector`
+before redirecting to Dofek, even though live discovery advertised the requested
+nutrition scopes. That evidence establishes a ChatGPT connector scope rejection;
+it does not prove that its saved metadata is stale. Verify the result after
+refreshing or recreating the app before marking the incident resolved.

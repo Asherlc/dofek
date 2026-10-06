@@ -9,7 +9,6 @@ import { trpc } from "../lib/trpc.ts";
 
 type McpScope =
   | "health:read"
-  | "health:write"
   | "activity:read"
   | "nutrition:read"
   | "nutrition:write"
@@ -18,7 +17,6 @@ type McpScope =
 
 const mcpScopeOptions: Array<{ value: McpScope; label: string }> = [
   { value: "health:read", label: "Health summaries" },
-  { value: "health:write", label: "Log health observations" },
   { value: "activity:read", label: "Activity history" },
   { value: "nutrition:read", label: "Nutrition summaries" },
   { value: "nutrition:write", label: "Modify food records" },
@@ -27,9 +25,6 @@ const mcpScopeOptions: Array<{ value: McpScope; label: string }> = [
 ];
 
 const mcpScopeValues = mcpScopeOptions.map((option) => option.value);
-const defaultMcpScopeValues = mcpScopeValues.filter(
-  (scope) => scope !== "health:write" && scope !== "nutrition:write",
-);
 
 function formatTimestamp(value: Date | string | null): string {
   if (!value) return "Never";
@@ -64,7 +59,7 @@ export function McpTokensPanel() {
   const [name, setName] = useState("Codex");
   const [expiresAt, setExpiresAt] = useState<string | null>(null);
   const [selectedScopes, setSelectedScopes] = useState<Set<McpScope>>(
-    () => new Set(defaultMcpScopeValues),
+    () => new Set(mcpScopeValues),
   );
   const [createdToken, setCreatedToken] = useState<string | null>(null);
   const [editingTokenId, setEditingTokenId] = useState<string | null>(null);

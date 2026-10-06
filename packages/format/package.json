@@ -7,10 +7,12 @@
     "./activity-overview": "./src/activity-overview.ts",
     "./activity-data-state": "./src/activity-data-state.ts",
     "./baseline-context": "./src/baseline-context.ts",
+    "./climbing-context": "./src/climbing-context.ts",
     "./data-quality": "./src/data-quality.ts",
     "./body-decision-context": "./src/body-decision-context.ts",
     "./format": "./src/format.ts",
     "./healthspan-context": "./src/healthspan-context.ts",
+    "./health-status": "./src/health-status.ts",
     "./medication-dose-events": "./src/medication-dose-events.ts",
     "./medication-reminders": "./src/medication-reminders.ts",
     "./record-local-time": "./src/record-local-time.ts",
@@ -22,6 +24,7 @@
     "./units": "./src/units.ts"
   },
   "dependencies": {
+    "@dofek/training": "workspace:*",
     "zod": "4.4.3"
   },
   "scripts": {

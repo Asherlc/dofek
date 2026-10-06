@@ -306,7 +306,6 @@ health_events UInt64,
 metric_stream UInt64,
 nutrition_daily UInt64,
 clinical_records UInt64,
-journal_entries UInt64,
 is_deleted UInt8,
 refresh_version UInt64,
 refreshed_at DateTime64(9)`,
@@ -564,6 +563,29 @@ source_devices Array(String),
 is_deleted UInt8,
 refresh_version UInt64,
 refreshed_at DateTime64(9)`,
+    activity_pace_curve: `user_id UUID,
+activity_id UUID,
+duration_seconds UInt32,
+best_speed Nullable(Float64),
+started_at DateTime64(6, 'UTC'),
+ended_at DateTime64(6, 'UTC'),
+canonical_type String,
+source_activity_version UInt64,
+source_sensor_version UInt64,
+refresh_version UInt64,
+is_deleted UInt8,
+refreshed_at DateTime64(9, 'UTC')`,
+    activity_heart_rate_distribution: `user_id UUID,
+activity_id UUID,
+started_at DateTime64(6, 'UTC'),
+ended_at DateTime64(6, 'UTC'),
+canonical_type String,
+samples Array(Tuple(heart_rate Float64, sample_count UInt64)),
+source_activity_version UInt64,
+source_sensor_version UInt64,
+refresh_version UInt64,
+is_deleted UInt8,
+refreshed_at DateTime64(9, 'UTC')`,
     activity_aerobic_efficiency: `activity_id UUID,
 user_id UUID,
 canonical_type String,
@@ -647,6 +669,7 @@ refreshed_at DateTime64(9)`,
     shortViewName === "activity_location_summary_rows" ||
     shortViewName === "activity_stream_points" ||
     shortViewName === "activity_heart_rate_zones" ||
+    shortViewName === "resting_heart_rate_sleep_window" ||
     shortViewName === "daily_sleep" ||
     shortViewName === "daily_recovery_inputs" ||
     shortViewName === "daily_recovery" ||
@@ -661,6 +684,8 @@ refreshed_at DateTime64(9)`,
     shortViewName === "provider_stats" ||
     shortViewName === "hiking_activity" ||
     shortViewName === "activity_power_curve" ||
+    shortViewName === "activity_pace_curve" ||
+    shortViewName === "activity_heart_rate_distribution" ||
     shortViewName === "activity_aerobic_efficiency" ||
     shortViewName === "cycling_activity" ||
     shortViewName === "daily_cycling" ||
@@ -698,9 +723,11 @@ refreshed_at DateTime64(9)`,
                           ? "(user_id, week_start)"
                           : shortViewName === "provider_stats"
                             ? "(user_id, provider_id)"
-                            : shortViewName === "activity_power_curve"
+                            : shortViewName === "activity_power_curve" ||
+                                shortViewName === "activity_pace_curve"
                               ? "(user_id, activity_id, duration_seconds)"
                               : shortViewName === "hiking_activity" ||
+                                  shortViewName === "activity_heart_rate_distribution" ||
                                   shortViewName === "activity_aerobic_efficiency" ||
                                   shortViewName === "activity_polarization_zones"
                                 ? "(user_id, activity_id)"
@@ -708,7 +735,9 @@ refreshed_at DateTime64(9)`,
                                   ? "(user_id, activity_id)"
                                   : shortViewName === "daily_cycling"
                                     ? "(user_id, date)"
-                                    : "tuple()";
+                                    : shortViewName === "resting_heart_rate_sleep_window"
+                                      ? "(user_id, sleep_id)"
+                                      : "tuple()";
   return `CREATE TABLE IF NOT EXISTS ${viewName} (
 ${columnDefinitions}
 )

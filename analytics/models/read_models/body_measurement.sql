@@ -66,7 +66,7 @@ body_measurement_samples AS (
         device_id,
         channel,
         scalar,
-        ifNull(
+        coalesce(
             concat(provider_id, ':', external_id),
             concat(
                 provider_id,
@@ -75,7 +75,7 @@ body_measurement_samples AS (
                 ':',
                 toString(recorded_at),
                 ':',
-                ifNull(device_id, '')
+                coalesce(device_id, '')
             )
         ) AS measurement_key
     FROM {{ source('analytics', 'body_measurement_sample') }} FINAL

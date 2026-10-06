@@ -4,6 +4,7 @@ import { z } from "zod";
 import { dateSchema } from "../lib/date-schema.ts";
 import { ActivityRepository } from "../repositories/activity-repository.ts";
 import { ClimbingRepository } from "../repositories/climbing-repository.ts";
+import { registerAuthorizedTool } from "./authorized-tool.ts";
 import type { DofekMcpContext } from "./context.ts";
 import { requireMcpScope } from "./token-repository.ts";
 import { climbingSessionsOutputSchema } from "./tool-output.ts";
@@ -32,14 +33,16 @@ function disciplineFor(climb: {
 
 /** Register exact-range climbing session details and aggregates. */
 export function registerClimbingSessionsTool(server: McpServer, context: DofekMcpContext): void {
-  server.registerTool(
+  registerAuthorizedTool(
+    server,
+    ["activity:read"],
     "get_climbing_sessions",
     {
       title: "Get Climbing Sessions",
       description:
         "Return exact-range climbing sessions with route/problem details, heart rate, duration, grade distribution, send rate, maximum grade, and volume.",
       annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
-      inputSchema: { start_date: dateSchema, end_date: dateSchema },
+      inputSchema: z.object({ start_date: dateSchema, end_date: dateSchema }),
       outputSchema: climbingSessionsOutputSchema,
     },
     async ({ start_date, end_date }) => {
@@ -79,6 +82,7 @@ export function registerClimbingSessionsTool(server: McpServer, context: DofekMc
             location_name: detail.locationName,
             source_name: detail.sourceName,
             wall_angle_degrees: detail.wallAngleDegrees,
+            context: detail.context,
           };
         });
         sessions.push({

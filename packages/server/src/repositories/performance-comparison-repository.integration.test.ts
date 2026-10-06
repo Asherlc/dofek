@@ -134,21 +134,13 @@ describe("PerformanceComparisonRepository database semantics", () => {
           'America/Los_Angeles', -420, -420, 'provider_timezone')
     `);
     await postgres.db.execute(sql`
-      INSERT INTO fitness.climbing_entry (
-        user_id, provider_id, activity_id, external_id, climb_type, grade_system, grade, sent, attempt_count,
-        lead, wall_angle_degrees, route_name, location_name
-      ) VALUES
-        (${userId}::uuid, ${workoutProvider}, ${climbBaselineIds[0]}::uuid, 'route-base-a', 'route', 'yds', '5.11a', true, 2,
-          false, 10, 'Red Corner', 'Test Gym'),
-        (${userId}::uuid, ${mirrorProvider}, ${climbBaselineIds[1]}::uuid, 'route-base-b', 'route', 'yds', '5.11a', true, 2,
-          false, 10, 'Red Corner', 'Test Gym'),
-        (${userId}::uuid, ${workoutProvider}, ${climbLatestIds[0]}::uuid, 'route-latest-a', 'route', 'yds', '5.11a', true, 1,
-          false, 10, 'Red Corner', 'Test Gym'),
-        (${userId}::uuid, ${mirrorProvider}, ${climbLatestIds[1]}::uuid, 'route-latest-b', 'route', 'yds', '5.11a', false, 3,
-          false, 10, 'Red Corner', 'Test Gym'),
-        (${userId}::uuid, ${workoutProvider}, ${climbLeadId}::uuid, 'route-lead', 'route', 'yds', '5.11a', true, 1,
-          true, 10, 'Red Corner', 'Test Gym')
-    `);
+      INSERT INTO fitness.climbing_entry (user_id, provider_id, activity_id, external_id, climb_type, grade_system, grade, result_style, attempt_count, climb_style, wall_angle, route_name, location_path) VALUES
+        (${userId}::uuid, ${workoutProvider}, ${climbBaselineIds[0]}::uuid, 'route-base-a', 'route', 'yds', '5.11a', 'Send', 2, 'top-rope', '{"value":10,"unit":"degrees"}'::jsonb, 'Red Corner', '[{"name":"Test Gym","externalId":null,"kind":null}]'::jsonb),
+        (${userId}::uuid, ${mirrorProvider}, ${climbBaselineIds[1]}::uuid, 'route-base-b', 'route', 'yds', '5.11a', 'Send', 2, 'top-rope', '{"value":10,"unit":"degrees"}'::jsonb, 'Red Corner', '[{"name":"Test Gym","externalId":null,"kind":null}]'::jsonb),
+        (${userId}::uuid, ${workoutProvider}, ${climbLatestIds[0]}::uuid, 'route-latest-a', 'route', 'yds', '5.11a', 'Send', 1, 'top-rope', '{"value":10,"unit":"degrees"}'::jsonb, 'Red Corner', '[{"name":"Test Gym","externalId":null,"kind":null}]'::jsonb),
+        (${userId}::uuid, ${mirrorProvider}, ${climbLatestIds[1]}::uuid, 'route-latest-b', 'route', 'yds', '5.11a', 'Not sent', 3, 'top-rope', '{"value":10,"unit":"degrees"}'::jsonb, 'Red Corner', '[{"name":"Test Gym","externalId":null,"kind":null}]'::jsonb),
+        (${userId}::uuid, ${workoutProvider}, ${climbLeadId}::uuid, 'route-lead', 'route', 'yds', '5.11a', 'Send', 1, 'lead', '{"value":10,"unit":"degrees"}'::jsonb, 'Red Corner', '[{"name":"Test Gym","externalId":null,"kind":null}]'::jsonb)
+`);
     await postgres.db.execute(sql`
       INSERT INTO fitness.exercise (id, name, equipment)
       VALUES (${exerciseId}::uuid, 'Performance comparison bench', 'barbell')

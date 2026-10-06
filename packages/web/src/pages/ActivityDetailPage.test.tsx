@@ -1478,6 +1478,24 @@ describe("ActivityDetailPage", () => {
   });
 
   describe("MetricsChart timeline zoom", () => {
+    it("formats the tooltip timestamp as a readable local date and time", async () => {
+      const ActivityDetailPage = await importPage();
+      renderWithUnits(<ActivityDetailPage />);
+
+      const option = findOptionByYAxisArrayName("Heart Rate");
+      const tooltip = option?.tooltip;
+      expect(tooltip).toBeDefined();
+      if (!tooltip || typeof tooltip !== "object") throw new Error("Expected tooltip");
+      const axisPointer = Reflect.get(tooltip, "axisPointer");
+      const formatter = axisPointer?.label?.formatter;
+      expect(typeof formatter).toBe("function");
+      if (typeof formatter !== "function") throw new Error("Expected timestamp formatter");
+
+      expect(formatter({ value: mockStreamPoints[0]?.recordedAt })).toBe(
+        formatDateTime("2026-03-18T07:00:00Z"),
+      );
+    });
+
     it("presents the navigator as a labeled control instead of a miniature chart", async () => {
       const ActivityDetailPage = await importPage();
       renderWithUnits(<ActivityDetailPage />);
@@ -1737,6 +1755,14 @@ describe("ActivityDetailPage", () => {
             lead: null,
             routeName: "Blue Circuit",
             locationName: "Pacific Pipe",
+            context: {
+              providerId: "mountain-project",
+              locationPath: [{ name: "Pacific Pipe", externalId: null, kind: null }],
+              board: null,
+              wallAngle: null,
+              climbStyle: null,
+              resultStyle: "Flash",
+            },
           },
           {
             id: "tick-2",
@@ -1751,6 +1777,14 @@ describe("ActivityDetailPage", () => {
             lead: true,
             routeName: "Project",
             locationName: "Pacific Pipe",
+            context: {
+              providerId: "openbeta",
+              locationPath: [{ name: "Pacific Pipe", externalId: null, kind: null }],
+              board: null,
+              wallAngle: null,
+              climbStyle: "lead",
+              resultStyle: "Attempt",
+            },
           },
         ],
         error: null,
@@ -1763,7 +1797,8 @@ describe("ActivityDetailPage", () => {
       expect(screen.getByText("Mountain Project")).toBeDefined();
       expect(screen.getByText("OpenBeta")).toBeDefined();
       expect(screen.getByText("Blue Circuit")).toBeDefined();
-      expect(screen.getByText(/V4 · Sent · 2 attempts/)).toBeDefined();
+      expect(screen.getByText("V4", { exact: true })).toBeDefined();
+      expect(screen.getByText("Flash")).toBeDefined();
       const controls = screen.getAllByRole("button", { name: "Attach to this activity" });
       expect(controls).toHaveLength(2);
       const secondControl = controls.at(1);
@@ -1803,6 +1838,14 @@ describe("ActivityDetailPage", () => {
             lead: true,
             routeName: "The Corner",
             locationName: "Test Crag",
+            context: {
+              providerId: "openbeta",
+              locationPath: [{ name: "Test Crag", externalId: null, kind: null }],
+              board: null,
+              wallAngle: null,
+              climbStyle: "lead",
+              resultStyle: "Onsight",
+            },
           },
         ],
         error: null,
@@ -1874,6 +1917,14 @@ describe("ActivityDetailPage", () => {
             sourceName: "Kaya",
             wallAngleDegrees: null,
             lead: null,
+            context: {
+              providerId: "kaya",
+              locationPath: [{ name: "Touchstone Pacific Pipe", externalId: null, kind: null }],
+              board: null,
+              wallAngle: null,
+              climbStyle: null,
+              resultStyle: "Redpoint",
+            },
           },
           {
             id: "climb-project",
@@ -1897,6 +1948,38 @@ describe("ActivityDetailPage", () => {
             sourceName: "Kaya",
             wallAngleDegrees: 35,
             lead: null,
+            context: {
+              providerId: "kaya",
+              locationPath: [{ name: "Touchstone Pacific Pipe", externalId: null, kind: null }],
+              board: null,
+              wallAngle: { value: 35, unit: "degrees" },
+              climbStyle: null,
+              resultStyle: "Attempt",
+            },
+          },
+          {
+            id: "kaya-unsent",
+            climbType: "boulder",
+            gradeSystem: "v_scale",
+            grade: "V3",
+            sent: false,
+            attemptCount: null,
+            attempts: [],
+            ascentType: null,
+            holdType: null,
+            routeName: null,
+            locationName: "Touchstone Pacific Pipe",
+            sourceName: "Kaya",
+            wallAngleDegrees: null,
+            lead: null,
+            context: {
+              providerId: "kaya",
+              locationPath: [{ name: "Touchstone Pacific Pipe", externalId: null, kind: null }],
+              board: null,
+              wallAngle: null,
+              climbStyle: null,
+              resultStyle: "Attempt",
+            },
           },
         ],
         error: null,
@@ -1912,12 +1995,14 @@ describe("ActivityDetailPage", () => {
       expect(screen.getByText("V4")).toBeDefined();
       expect(screen.getByText("Blue Circuit")).toBeDefined();
       expect(screen.getByText("Redpoint")).toBeDefined();
-      expect(screen.getByText("Sent in 7 attempts")).toBeDefined();
+      expect(screen.getByText("7 attempts")).toBeDefined();
       expect(screen.getByText("Project")).toBeDefined();
       expect(screen.getByText("Attempted 1 time")).toBeDefined();
-      expect(screen.getByText("35° · Crimp")).toBeDefined();
+      expect(screen.getByText("Wall angle: 35°")).toBeDefined();
+      expect(screen.getByText("Crimp")).toBeTruthy();
       expect(screen.getByText("1: Technique")).toBeDefined();
-      expect(screen.getAllByText("Touchstone Pacific Pipe")).toHaveLength(2);
+      expect(screen.getByText("Not sent; attempt count not recorded")).toBeDefined();
+      expect(screen.getAllByText("Touchstone Pacific Pipe")).toHaveLength(3);
 
       Object.assign(mockActivity, originalData);
     });

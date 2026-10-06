@@ -24,6 +24,7 @@ import {
   View,
 } from "react-native";
 import { ProviderLogo } from "../components/ProviderLogo";
+import { appleSignInDiagnostic } from "../lib/apple-auth-diagnostics";
 import {
   type ConfiguredProviders,
   fetchConfiguredProviders,
@@ -106,8 +107,13 @@ export default function LoginScreen() {
         }
       }
     } catch (err: unknown) {
-      captureException(err, { source: "login-screen-handle-login" });
-      setError(userFacingErrorMessage(err, "Login failed"));
+      const diagnostic = providerId === "apple" ? appleSignInDiagnostic(err) : undefined;
+      const reportedError = diagnostic?.error ?? err;
+      captureException(reportedError, {
+        source: "login-screen-handle-login",
+        ...diagnostic?.context,
+      });
+      setError(userFacingErrorMessage(reportedError, "Login failed"));
     } finally {
       setLoggingIn(false);
     }

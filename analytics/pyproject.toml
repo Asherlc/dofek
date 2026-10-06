@@ -4,6 +4,11 @@ version = "0.1.0"
 requires-python = ">=3.12"
 dependencies = [
     "dbt-clickhouse>=1.10.1,<1.11",
-    "sqlfluff>=4.2.2,<5",
-    "sqlfluff-templater-dbt>=4.2.2,<5",
+    "sqlfluff==4.3.0",
+    "sqlfluff-templater-dbt==4.3.0",
 ]
+
+[tool.uv.sources]
+# ClickHouse MATERIALIZED CTE grammar: https://github.com/sqlfluff/sqlfluff/pull/8497
+sqlfluff = { git = "https://github.com/sqlfluff/sqlfluff.git", rev = "f59543a25e13a9932a8eacc97bdcb6ede35bc011" }
+sqlfluff-templater-dbt = { git = "https://github.com/sqlfluff/sqlfluff.git", rev = "f59543a25e13a9932a8eacc97bdcb6ede35bc011", subdirectory = "plugins/sqlfluff-templater-dbt" }

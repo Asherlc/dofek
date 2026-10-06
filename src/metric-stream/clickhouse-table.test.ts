@@ -5,8 +5,10 @@ import {
   METRIC_STREAM_PROCESSING_ACKNOWLEDGEMENT_TABLE,
   METRIC_STREAM_PROVIDER_CURRENT_STATE_RECORDED_AT_PROJECTION,
   METRIC_STREAM_PROVIDER_EXTERNAL_ID_PROJECTION,
+  METRIC_STREAM_USER_CHANNEL_RECORDED_AT_PROJECTION,
   metricStreamProviderCurrentStateRecordedAtProjectionDefinition,
   metricStreamProviderExternalIdProjectionDefinition,
+  metricStreamUserChannelRecordedAtProjectionDefinition,
 } from "./clickhouse-table.ts";
 
 describe("buildMetricStreamProcessingAcknowledgementTableSql", () => {
@@ -25,6 +27,17 @@ describe("buildMetricStreamProcessingAcknowledgementTableSql", () => {
     expect(sql).toContain("marker_offset UInt64");
     expect(sql).toContain("ENGINE = ReplacingMergeTree(applied_at)");
     expect(sql).toContain("ORDER BY (operation_id, batch_id)");
+  });
+});
+
+describe("metric-stream user/channel/day projection", () => {
+  it("shares the covering raw-key definition with the current bootstrap", () => {
+    const definition = metricStreamUserChannelRecordedAtProjectionDefinition();
+    expect(METRIC_STREAM_USER_CHANNEL_RECORDED_AT_PROJECTION).toBe("by_user_channel_recorded_at");
+    expect(definition).toContain("user_id, activity_id, channel, recorded_at, id");
+    expect(definition).toContain("provider_id, scalar, version, ingested_at, is_deleted");
+    expect(definition).toContain("ORDER BY (user_id, channel, recorded_at, activity_id, id)");
+    expect(buildIngestMetricStreamCreateTableSql()).toContain(definition);
   });
 });
 

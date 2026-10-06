@@ -185,6 +185,7 @@ export function createOidcProvider(
   const provider = new Provider(issuer, {
     scopes: [...MCP_OAUTH_SCOPES, MCP_OAUTH_OFFLINE_ACCESS_SCOPE],
     clientAuthMethods: ["none"],
+    issueRefreshToken: (_ctx, client) => client.grantTypeAllowed("refresh_token"),
 
     features: {
       ciba: { enabled: false },

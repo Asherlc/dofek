@@ -1,3 +1,4 @@
+import { formatDateTime } from "@dofek/format/format";
 import { activityMetricColors } from "@dofek/scoring/colors";
 import { StyleSheet, View } from "react-native";
 import Svg, {
@@ -43,7 +44,7 @@ export const chartStyles = StyleSheet.create({
 });
 
 interface ChartProps {
-  data: Array<{ value: number | null }>;
+  data: Array<{ recordedAt: string; value: number | null }>;
   color: string;
   label: string;
   unit: string;
@@ -54,7 +55,7 @@ interface ChartProps {
 
 function accessibleRows(data: ChartProps["data"], unit: string) {
   return data.map((datum, index) => ({
-    label: `Sample ${index + 1}`,
+    label: `Sample ${index + 1} · ${formatDateTime(datum.recordedAt)}`,
     value: datum.value === null ? "No value" : `${datum.value} ${unit}`,
   }));
 }

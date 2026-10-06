@@ -44,6 +44,8 @@ jobs:
           ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || '' }}
           persist-credentials: false
       - uses: ./.github/actions/setup-node-pnpm
+      - name: Verify dependency security patches
+        run: pnpm check:dependency-security
       - run: pnpm audit --prod --audit-level=high --ignore-registry-errors
 
   license-check:
@@ -600,7 +602,7 @@ jobs:
     name: SwiftLint
     needs: check-mobile-changes
     if: needs.check-mobile-changes.outputs.changed == 'true'
-    runs-on: macos-14
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -616,7 +618,7 @@ jobs:
     name: Periphery
     needs: check-mobile-changes
     if: needs.check-mobile-changes.outputs.changed == 'true'
-    runs-on: macos-14
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -628,8 +630,8 @@ jobs:
             packages/mobile/modules/health-kit/.build
             packages/mobile/modules/whoop-ble/.build
             packages/mobile/modules/watch-motion/.build
-          key: periphery-v2-${{ hashFiles('packages/mobile/modules/*/Package.swift') }}
-          restore-keys: periphery-v2-
+          key: periphery-v3-${{ hashFiles('packages/mobile/modules/*/Package.swift') }}
+          restore-keys: periphery-v3-
       - name: Install Periphery
         run: brew install peripheryapp/periphery/periphery
       - name: Scan for unused code
@@ -1052,7 +1054,7 @@ jobs:
     name: Swift Tests
     needs: check-mobile-changes
     if: needs.check-mobile-changes.outputs.changed == 'true'
-    runs-on: macos-14
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -1064,8 +1066,8 @@ jobs:
             packages/mobile/modules/background-refresh/.build
             packages/mobile/modules/core-motion/.build
             packages/mobile/modules/health-kit/.build
-          key: swift-build-v1-${{ hashFiles('packages/mobile/modules/background-refresh/Package.swift', 'packages/mobile/modules/core-motion/Package.swift', 'packages/mobile/modules/health-kit/Package.swift') }}
-          restore-keys: swift-build-v1-
+          key: swift-build-v2-${{ hashFiles('packages/mobile/modules/background-refresh/Package.swift', 'packages/mobile/modules/core-motion/Package.swift', 'packages/mobile/modules/health-kit/Package.swift') }}
+          restore-keys: swift-build-v2-
       - name: Run Background Refresh Swift tests
         working-directory: packages/mobile/modules/background-refresh
         run: swift test
@@ -1163,7 +1165,8 @@ jobs:
             # must not surface a pre-existing file's entire coverage debt. Parse
             # the new-side line ranges from the unified diff hunks and pass them
             # to Stryker as `path:start-end` specs.
-            RANGES=$(git diff -U0 $DIFF_RANGE -- "$f" | awk '
+            # Reindentation is not a behavior change; retain actual edited lines.
+            RANGES=$(git diff --ignore-space-change -U0 $DIFF_RANGE -- "$f" | awk '
               /^@@ / {
                 match($0, /\+[0-9]+(,[0-9]+)?/)
                 plus = substr($0, RSTART + 1, RLENGTH - 1)
@@ -1323,7 +1326,7 @@ jobs:
   mutation-swift:
     name: Swift Mutation Testing
     needs: check-mobile-changes
-    runs-on: macos-14
+    runs-on: macos-latest
     if: github.event_name == 'pull_request' && needs.check-mobile-changes.outputs.changed == 'true'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -1334,13 +1337,13 @@ jobs:
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: packages/mobile/modules/health-kit/.build
-          key: swift-build-v1-${{ hashFiles('packages/mobile/modules/health-kit/Package.swift') }}
-          restore-keys: swift-build-v1-
+          key: swift-build-v2-${{ hashFiles('packages/mobile/modules/health-kit/Package.swift') }}
+          restore-keys: swift-build-v2-
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         id: muter-cache
         with:
           path: /opt/homebrew/Cellar/muter
-          key: muter-v1-${{ runner.os }}-${{ runner.arch }}
+          key: muter-v2-${{ runner.os }}-${{ runner.arch }}
       - name: Install Muter
         if: steps.muter-cache.outputs.cache-hit != 'true'
         run: brew install muter-mutation-testing/formulae/muter

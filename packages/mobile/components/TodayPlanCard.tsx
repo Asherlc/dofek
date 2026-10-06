@@ -54,7 +54,6 @@ export function TodayPlanCard({ plan, loading = false, error }: TodayPlanCardPro
         <Text style={styles.sectionTitle}>WHAT MATTERS TODAY</Text>
         {refreshWarning}
         <Text style={styles.message}>{plan.message}</Text>
-        <Text style={styles.meta}>{plan.epistemicStatus?.label}</Text>
       </View>
     );
   }
@@ -80,7 +79,6 @@ export function TodayPlanCard({ plan, loading = false, error }: TodayPlanCardPro
       </Pressable>
       {evidenceOpen ? (
         <View style={styles.evidence} accessibilityLabel="Why this?">
-          <Text style={styles.evidenceHeading}>Contributing observations</Text>
           <View style={styles.factsRow}>
             {plan.supportingFacts.map((fact) => (
               <View key={fact.label} style={styles.fact}>
@@ -99,10 +97,9 @@ export function TodayPlanCard({ plan, loading = false, error }: TodayPlanCardPro
               ))}
             </View>
           ) : null}
+          {freshness != null ? <Text style={styles.meta}>{freshness}</Text> : null}
         </View>
       ) : null}
-      <Text style={styles.meta}>{plan.epistemicStatus?.label}</Text>
-      {freshness != null ? <Text style={styles.meta}>{freshness}</Text> : null}
     </View>
   );
 }

@@ -74,6 +74,24 @@ export const providerConnection = fitness.table(
   ],
 );
 
+/** Issue email accepted by the sender during an active connection issue. */
+export const providerIssueEmail = fitness.table(
+  "provider_issue_email",
+  {
+    userId: uuid("user_id").notNull(),
+    providerId: text("provider_id").notNull(),
+    sentAt: timestamp("sent_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.userId, table.providerId] }),
+    foreignKey({
+      columns: [table.userId, table.providerId],
+      foreignColumns: [providerConnection.userId, providerConnection.providerId],
+      name: "provider_issue_email_connection_fkey",
+    }).onDelete("cascade"),
+  ],
+);
+
 export const providerPriority = fitness.table("provider_priority", {
   providerId: text("provider_id").primaryKey(),
   priority: integer("priority").notNull().default(DEFAULT_PROVIDER_PRIORITY),

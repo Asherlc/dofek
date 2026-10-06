@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { computeSinceDate, parseSinceDays } from "./cli.ts";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { computeSinceDate, parseSinceDays, resolveCliUserId } from "./cli.ts";
 
 describe("parseSinceDays", () => {
   it("returns 7 when no --since-days arg is present", () => {
@@ -45,5 +45,29 @@ describe("computeSinceDate", () => {
 
     expect(result.getTime()).toBeGreaterThanOrEqual(before);
     expect(result.getTime()).toBeLessThanOrEqual(after);
+  });
+});
+
+describe("resolveCliUserId", () => {
+  afterEach(() => vi.unstubAllEnvs());
+  it("uses the configured user without querying", async () => {
+    vi.stubEnv("DOFEK_USER_ID", "configured-user");
+    const execute = vi.fn();
+    const database = { execute };
+    expect(await resolveCliUserId(database)).toBe("configured-user");
+    expect(execute).not.toHaveBeenCalled();
+  });
+  it("uses the earliest database user when no user is configured", async () => {
+    vi.stubEnv("DOFEK_USER_ID", "");
+    const execute = vi.fn().mockResolvedValue([{ id: "oldest-user" }]);
+    expect(await resolveCliUserId({ execute })).toBe("oldest-user");
+    expect(execute).toHaveBeenCalledOnce();
+  });
+  it("requires a configured or existing user", async () => {
+    vi.stubEnv("DOFEK_USER_ID", "");
+    const execute = vi.fn().mockResolvedValue([]);
+    await expect(resolveCliUserId({ execute })).rejects.toThrow(
+      "No user found. Set DOFEK_USER_ID or create a user first.",
+    );
   });
 });

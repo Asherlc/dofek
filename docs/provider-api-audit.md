@@ -8,10 +8,9 @@ Last updated: 2026-08-14
 
 ## Menstrual-cycle record providers
 
-Cycle tracking is intentionally limited to explicit, consented menstrual records. Dofek does not
-infer a period start from temperature, sleep, recovery, stress, or other proxy signals, and it has
-no first-party period create, update, or delete API. Users correct a record in its source and sync
-again.
+Dofek retains integration-sourced raw menstrual records without cycle screens, phase estimates,
+or cycle-specific APIs. Collection remains in the [HealthKit sync pipeline](../packages/mobile/lib/health-kit-sync.ts)
+and [Apple Health importer](../src/providers/apple-health/import.ts); users correct records in their source.
 
 ### Implemented: Apple Health / HealthKit
 

@@ -37,6 +37,16 @@ const PERFORMANCE_COMPARISON_SERVING_TABLES = [
     "user_id, activity_id, duration_seconds",
   ],
   [
+    "activity_pace_curve",
+    "activity_id UUID, duration_seconds UInt32, best_speed Nullable(Float64), started_at DateTime64(6, 'UTC'), ended_at DateTime64(6, 'UTC'), canonical_type String, source_activity_version UInt64, source_sensor_version UInt64, refreshed_at DateTime64(9, 'UTC')",
+    "user_id, activity_id, duration_seconds",
+  ],
+  [
+    "activity_heart_rate_distribution",
+    "activity_id UUID, started_at DateTime64(6, 'UTC'), ended_at DateTime64(6, 'UTC'), canonical_type String, samples Array(Tuple(heart_rate Float64, sample_count UInt64)), source_activity_version UInt64, source_sensor_version UInt64, refreshed_at DateTime64(9, 'UTC')",
+    "user_id, activity_id",
+  ],
+  [
     "v_body_measurement",
     "recorded_at DateTime64(6, 'UTC'), weight_kg Nullable(Float64), provider_id String, external_id Nullable(String)",
     "user_id, recorded_at",

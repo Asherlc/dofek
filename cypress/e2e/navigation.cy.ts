@@ -14,7 +14,6 @@ describe("Navigation", () => {
     { path: "/nutrition", label: "Nutrition" },
     { path: "/body", label: "Body" },
     { path: "/correlation", label: "Correlation" },
-    { path: "/tracking", label: "Tracking" },
     { path: "/settings", label: "Settings" },
   ];
 
