@@ -30821,9 +30821,16 @@ matrices before attempting independent native-package updates.
   provider-HTTP typechecks and `pnpm lint:sandbox` passed locally. Full lint's
   SQL step could not connect to ClickHouse; `pnpm compose -- up -d --wait clickhouse`
   then failed with `all predefined address pools have been fully subnetted`.
-  Docker inspection found `noisy-lynx_default` empty, but it belongs to another
-  workspace and requires approval before removal under the
+  After user approval and a fresh empty-container check, removing
+  `noisy-lynx_default` resolved the network exhaustion under the
   [network-recovery procedure](testing.md#docker-address-pool-exhaustion).
+  SQL lint then reached ClickHouse but failed with `Code: 75`, `errno: 28`,
+  `No space left on device` writing `/var/lib/clickhouse/tmp/`; the Docker VM
+  reported zero available bytes. Build-cache pruning reclaimed zero bytes.
+  This workspace's validation containers, network, and volume were removed.
+  A stopped `charming-leopard-clickhouse-1` container held 2.32 GB of writable
+  state; removal requires separate user approval and must preserve its named
+  `charming-leopard_clickhouse_data` volume. No timeouts or retries were changed.
   These changes require release before they affect production.
 - **Remaining risk / follow-up:** Capture the next rejection with the shared
   [authorization diagnostics procedure](processing-status-runbook.md#provider-authorization-diagnostics).
