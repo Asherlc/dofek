@@ -87,7 +87,7 @@
     "react-native": "0.88.0-rc.3",
     "react-native-body-highlighter": "3.2.0",
     "react-native-gesture-handler": "3.2.1",
-    "react-native-maps": "1.29.0",
+    "react-native-maps": "1.29.11",
     "react-native-reanimated": "4.7.0",
     "react-native-safe-area-context": "5.9.1",
     "react-native-screens": "4.28.0",
