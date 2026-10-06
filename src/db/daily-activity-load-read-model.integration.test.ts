@@ -32,6 +32,33 @@ describe("daily activity-load read-model lifecycle", () => {
     }
   });
 
+  it.each(["1970-01-01 00:00:00", "2024-01-29 23:49:27"])(
+    "excludes non-positive activity windows ending at %s from load and rolling strain",
+    async (endedAt) => {
+      const activeClient = requireClient(client);
+      await seedFixture(activeClient, targetSchema);
+      await activeClient.command({
+        query: `INSERT INTO ${targetSchema}.activity_summary_rows
+          SELECT {activityId:UUID}, {userId:UUID},
+            toDateTime64('2024-01-29 23:49:27', 6, 'UTC'),
+            toDateTime64({endedAt:String}, 6, 'UTC'),
+            150, 200, 0, toUInt64(toUnixTimestamp64Nano(now64(9))), now64(9)`,
+        query_params: {
+          activityId: "00000000-0000-4000-8000-000000001770",
+          userId: testUserId,
+          endedAt,
+        },
+      });
+      await materializeDailyActivityLoad(activeClient, targetSchema, false);
+      await materializeDailyStrain(activeClient, targetSchema, false);
+
+      await expect(readLiveLoad(activeClient, targetSchema)).resolves.toEqual([{ daily_load: 30 }]);
+      await expect(readLiveStrainLoad(activeClient, targetSchema)).resolves.toEqual([
+        { daily_load: 30 },
+      ]);
+    },
+  );
+
   it("updates from the live summary version and tombstones deleted load and strain rows", async () => {
     const activeClient = requireClient(client);
     await seedFixture(activeClient, targetSchema);
@@ -59,6 +86,21 @@ describe("daily activity-load read-model lifecycle", () => {
     await expect(readLiveLoad(activeClient, targetSchema)).resolves.toEqual([]);
     await expect(readLiveStrainLoad(activeClient, targetSchema)).resolves.toEqual([]);
   }, 180_000);
+
+  it("tombstones previously computed load when an activity window becomes invalid", async () => {
+    const activeClient = requireClient(client);
+    await seedFixture(activeClient, targetSchema);
+    await materializeDailyActivityLoad(activeClient, targetSchema, false);
+    await materializeDailyStrain(activeClient, targetSchema, false);
+    await expect(readLiveLoad(activeClient, targetSchema)).resolves.toEqual([{ daily_load: 30 }]);
+
+    await appendActivitySummaryVersion(activeClient, targetSchema, 100, false, -1);
+    await materializeDailyActivityLoad(activeClient, targetSchema, true);
+    await materializeDailyStrain(activeClient, targetSchema, true);
+
+    await expect(readLiveLoad(activeClient, targetSchema)).resolves.toEqual([]);
+    await expect(readLiveStrainLoad(activeClient, targetSchema)).resolves.toEqual([]);
+  });
 });
 
 function requireClickHouseUrl(): string {
@@ -171,10 +213,8 @@ async function readLiveLoad(
     query: `SELECT daily_load
       FROM ${targetSchema}.daily_activity_load FINAL
       WHERE user_id = {userId:UUID}
-        AND activity_id = {activityId:UUID}
         AND is_deleted = 0`,
     query_params: {
-      activityId: testActivityId,
       userId: testUserId,
     },
     format: "JSONEachRow",
@@ -190,7 +230,6 @@ async function readLiveStrainLoad(
     query: `SELECT daily_load
       FROM ${targetSchema}.daily_strain FINAL
       WHERE user_id = {userId:UUID}
-        AND date = today()
         AND is_deleted = 0`,
     query_params: {
       userId: testUserId,
@@ -278,6 +317,7 @@ async function appendActivitySummaryVersion(
   targetSchema: string,
   averageHeartRate: number,
   isDeleted: boolean,
+  durationSeconds = 3600,
 ): Promise<void> {
   await client.command({
     query: `INSERT INTO ${targetSchema}.activity_summary_rows
@@ -285,7 +325,7 @@ async function appendActivitySummaryVersion(
         {activityId:UUID},
         {userId:UUID},
         toDateTime64(today(), 6, 'UTC'),
-        toDateTime64(today(), 6, 'UTC') + INTERVAL 1 HOUR,
+        toDateTime64(today(), 6, 'UTC') + toIntervalSecond({durationSeconds:Int32}),
         {averageHeartRate:Float64},
         200,
         {isDeleted:UInt8},
@@ -296,6 +336,7 @@ async function appendActivitySummaryVersion(
       averageHeartRate,
       isDeleted: isDeleted ? 1 : 0,
       userId: testUserId,
+      durationSeconds,
     },
   });
 }
