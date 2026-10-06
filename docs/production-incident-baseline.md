@@ -30383,3 +30383,26 @@ mobile preview upload succeeded. No production impact was observed. Remote
 CI remains unresolved; keep the PR pending until required checks finish.
 No retries, timeout changes, or workflow bypasses were added. For future queue
 delays, check GitHub's published status before investigating repository code.
+
+## 2026-10-05 — Climbing PR blocked by newly published dependency advisories
+
+No production change or observed user impact. PR [2880](https://github.com/Asherlc/dofek/pull/2880)
+failed [Dependency Audit](https://github.com/Asherlc/dofek/actions/runs/37399660635/job/112064036624)
+at `pnpm audit --prod --audit-level=high --ignore-registry-errors`. The first
+blocking finding was critical Seroval Promise assimilation; the command exited 1.
+The lockfile contained seroval 1.5.5, proxy-addr 2.0.7, and source-map-js 1.2.1,
+which matched newly published high/critical advisories. See the upstream
+[Seroval Promise advisory](https://github.com/advisories/GHSA-p6vx-979v-rg4c),
+[Seroval memory advisory](https://github.com/advisories/GHSA-jp82-f5mq-hwhp),
+[proxy-addr advisory](https://github.com/advisories/GHSA-jqcg-44mw-7w3h), and
+[source-map-js advisory](https://github.com/advisories/GHSA-68fv-2mgg-jv7q).
+
+Updated only those transitive lockfile resolutions to the current stable
+seroval 1.6.8, proxy-addr 2.0.8, and source-map-js 1.2.2 through
+[recursive targeted dependency updates](https://pnpm.io/cli/update). The exact
+CI audit command now passes locally: two existing ignored high advisories and
+low/moderate findings remain under the established policy. No new exclusions,
+threshold changes, retries, or waits were added. Remote confirmation is tracked
+in the PR checks. For future merge work, run the production dependency audit
+again after updating from main because advisory data changes independently
+of code and lockfile changes.
