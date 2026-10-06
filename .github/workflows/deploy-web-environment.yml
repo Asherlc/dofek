@@ -23,12 +23,12 @@ on:
         type: string
         default: ""
       automatic_commit_sha:
-        description: "Commit SHA from the successful CI workflow_run"
+        description: "Commit SHA selected from successful main CI"
         required: false
         type: string
         default: ""
       ci_run_id:
-        description: "CI workflow run ID that triggered this deploy"
+        description: "Successful CI workflow run ID for the selected release"
         required: false
         type: string
         default: ""
@@ -160,6 +160,7 @@ jobs:
     needs: [check]
     uses: ./.github/workflows/deploy-terraform.yml
     with:
+      commit_sha: ${{ inputs.automatic_commit_sha }}
       dispatching_run_id: ${{ github.run_id }}
     secrets: inherit
 
