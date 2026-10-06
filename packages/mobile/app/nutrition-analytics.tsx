@@ -63,10 +63,6 @@ function selectedWindowLabel(selectedWindowDays: number | null): string {
     : `a ${selectedWindowDays}-day selected window`;
 }
 
-function targetStatusLabel(status: "below_daily_value" | "at_or_above_daily_value"): string {
-  return status === "at_or_above_daily_value" ? "Meets or exceeds target" : "Below target";
-}
-
 function targetSummary(nutrient: MicronutrientSafetyReviewResult["nutrients"][number]): string {
   if (nutrient.adequacy == null) {
     return `No ${DAILY_VALUE_TARGET_LABEL} target is available for this nutrient.`;
@@ -75,14 +71,6 @@ function targetSummary(nutrient: MicronutrientSafetyReviewResult["nutrients"][nu
     return `${DAILY_VALUE_TARGET_LABEL} target not evaluable`;
   }
   return `${formatNutritionNumber(nutrient.adequacy.percentDailyValue)}% of ${DAILY_VALUE_TARGET_LABEL} (${formatNutritionNumber(nutrient.adequacy.reference.amount)} ${nutrient.unit}/day)`;
-}
-
-function targetStatusSummary(
-  nutrient: MicronutrientSafetyReviewResult["nutrients"][number],
-): string {
-  if (nutrient.adequacy?.status === "not_evaluable") return "Not evaluable";
-  if (nutrient.adequacy == null) return "No target available";
-  return targetStatusLabel(nutrient.adequacy.status);
 }
 
 function upperLimitSummary(nutrient: MicronutrientSafetyReviewResult["nutrients"][number]): string {
@@ -111,7 +99,6 @@ function nutrientContextAccessibilityLabel(
   const parts = [
     nutrient.nutrient,
     `Target: ${targetSummary(nutrient)}`,
-    nutrient.adequacy == null ? null : `Target status: ${targetStatusSummary(nutrient)}`,
     nutrient.adequacy == null ? null : `Target source: ${nutrient.adequacy.reference.source.title}`,
     nutrient.adequacy?.status === "not_evaluable"
       ? `Target guidance: ${nutrient.adequacy.message}`
@@ -154,9 +141,6 @@ function MicronutrientContextDetails({
           <Text style={styles.nutrientContextText}>Target: {targetSummary(nutrient)}</Text>
           {nutrient.adequacy != null ? (
             <>
-              <Text style={styles.nutrientContextText}>
-                Target status: {targetStatusSummary(nutrient)}
-              </Text>
               <Text style={styles.nutrientContextText}>
                 Target source: {nutrient.adequacy.reference.source.title}
               </Text>

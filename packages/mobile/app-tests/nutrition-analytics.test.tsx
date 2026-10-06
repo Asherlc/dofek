@@ -375,7 +375,7 @@ describe("NutritionAnalyticsScreen", () => {
     ).toBeTruthy();
     expect(
       screen.getByLabelText(
-        "Vitamin D. Target: 600% of U.S. Food and Drug Administration (FDA) Daily Value (20 mcg/day). Target status: Meets or exceeds target. Target source: Daily Value on the Nutrition and Supplement Facts Labels. Tolerable Upper Intake Level (UL): 100 mcg/day for total daily intake. UL status: At or above the Tolerable Upper Intake Level (UL). UL source: Vitamin D - Health Professional Fact Sheet. UL guidance: Review this intake with a doctor or pharmacist. Average over 10 recorded days in a 30-day selected window.",
+        "Vitamin D. Target: 600% of U.S. Food and Drug Administration (FDA) Daily Value (20 mcg/day). Target source: Daily Value on the Nutrition and Supplement Facts Labels. Tolerable Upper Intake Level (UL): 100 mcg/day for total daily intake. UL status: At or above the Tolerable Upper Intake Level (UL). UL source: Vitamin D - Health Professional Fact Sheet. UL guidance: Review this intake with a doctor or pharmacist. Average over 10 recorded days in a 30-day selected window.",
       ),
     ).toBeTruthy();
     expect(screen.getByText("Vitamin A")).toBeTruthy();

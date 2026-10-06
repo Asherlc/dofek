@@ -21,10 +21,6 @@ function selectedWindowLabel(selectedWindowDays: number | null | undefined): str
     : `a ${selectedWindowDays}-day selected window`;
 }
 
-function targetStatusLabel(status: "below_daily_value" | "at_or_above_daily_value"): string {
-  return status === "at_or_above_daily_value" ? "Meets or exceeds target" : "Below target";
-}
-
 function targetSummary(row: MicronutrientSafetyReviewRow): string {
   if (row.adequacy == null) {
     return `No ${DAILY_VALUE_TARGET_LABEL} target is available for this nutrient.`;
@@ -33,12 +29,6 @@ function targetSummary(row: MicronutrientSafetyReviewRow): string {
     return `${DAILY_VALUE_TARGET_LABEL} target not evaluable`;
   }
   return `${formatNutritionNumber(row.adequacy.percentDailyValue)}% of ${DAILY_VALUE_TARGET_LABEL} (${formatNutritionNumber(row.adequacy.reference.amount)} ${row.unit}/day)`;
-}
-
-function targetStatusSummary(row: MicronutrientSafetyReviewRow): string {
-  if (row.adequacy?.status === "not_evaluable") return "Not evaluable";
-  if (row.adequacy == null) return "No target available";
-  return targetStatusLabel(row.adequacy.status);
 }
 
 function upperLimitSummary(row: MicronutrientSafetyReviewRow): string {
@@ -58,12 +48,10 @@ function tooltipTargetContext(row: MicronutrientSafetyReviewRow): string {
   }
   if (row.adequacy.status === "not_evaluable") {
     return `Target: ${DAILY_VALUE_TARGET_LABEL} target not evaluable<br/>
-          Target status: Not evaluable<br/>
           Target source: ${escapeTooltipHtml(row.adequacy.reference.source.title)}<br/>
           Target guidance: ${escapeTooltipHtml(row.adequacy.message)}`;
   }
   return `Target: ${row.adequacy.percentDailyValue}% of ${DAILY_VALUE_TARGET_LABEL} (${row.adequacy.reference.amount} ${escapeTooltipHtml(row.unit)}/day)<br/>
-          Target status: ${targetStatusLabel(row.adequacy.status)}<br/>
           Target source: ${escapeTooltipHtml(row.adequacy.reference.source.title)}`;
 }
 
@@ -118,10 +106,6 @@ function renderMicronutrientContextDetails({
             </div>
             {row.adequacy != null ? (
               <>
-                <div>
-                  <dt className="inline font-medium">Target status: </dt>
-                  <dd className="inline">{targetStatusSummary(row)}</dd>
-                </div>
                 <div>
                   <dt className="inline font-medium">Target source: </dt>
                   <dd className="inline">
