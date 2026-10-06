@@ -1,4 +1,7 @@
+import type { ClimbingFilters } from "@dofek/training/climbing-filters";
 import type { ClimbingGradePreference } from "@dofek/training/climbing-grades";
+import { SQL } from "drizzle-orm";
+import { PgDialect } from "drizzle-orm/pg-core";
 import { describe, expect, it, vi } from "vitest";
 import {
   ClimbingGradeProgression,
@@ -101,6 +104,83 @@ describe("ClimbingRepository", () => {
     );
     return { repo, execute };
   }
+
+  it.each(["getGradeProgression", "getVolumeByGrade", "getSessionSummaries"] as const)(
+    "%s sends each selected filter to PostgreSQL as a bound query condition",
+    async (method) => {
+      const cases: Array<{ filters: ClimbingFilters; condition: string; values: string[] }> = [
+        { filters: {}, condition: "true", values: [] },
+        { filters: { style: "boulder" }, condition: "ce.climb_type =", values: ["boulder"] },
+        { filters: { style: "route" }, condition: "ce.climb_type =", values: ["route"] },
+        {
+          filters: { style: "unknown" },
+          condition: "ce.climb_type = 'route' AND ce.climb_style IS NULL",
+          values: [],
+        },
+        { filters: { style: "lead" }, condition: "ce.climb_style =", values: ["lead"] },
+        {
+          filters: { protection: "unknown" },
+          condition: "ce.route_protection IS NULL",
+          values: [],
+        },
+        {
+          filters: { protection: "sport" },
+          condition: "= ANY(ce.route_protection)",
+          values: ["sport"],
+        },
+        {
+          filters: { protection: "trad" },
+          condition: "= ANY(ce.route_protection)",
+          values: ["trad"],
+        },
+        {
+          filters: { setting: "indoor" },
+          condition: "CASE WHEN ce.provider_id",
+          values: ["indoor"],
+        },
+        {
+          filters: { setting: "outdoor" },
+          condition: "CASE WHEN ce.provider_id",
+          values: ["outdoor"],
+        },
+        {
+          filters: { setting: "unknown" },
+          condition: "CASE WHEN ce.provider_id",
+          values: ["unknown"],
+        },
+      ];
+      for (const { filters, condition, values } of cases) {
+        const { repo, execute } = makeRepository();
+        await repo[method](30, filters);
+        const query = execute.mock.calls[0]?.[0];
+        if (!(query instanceof SQL)) throw new Error("Expected a parameterized SQL query");
+        const statement = new PgDialect().sqlToQuery(query);
+        const text = statement.sql.replace(/\s+/g, " ");
+        expect(text).toContain(condition);
+        expect(statement.params).toEqual(expect.arrayContaining(values));
+        expect(statement.params).not.toContain(undefined);
+        if (Object.keys(filters).length === 0) {
+          if (method === "getSessionSummaries") expect(text.trim()).toMatch(/AND true$/);
+          else expect(text).toContain("AND true AND ce.provider_absent_at IS NULL");
+        }
+        if (filters.style !== "boulder" && filters.style !== "route")
+          expect(text).not.toMatch(/ce\.climb_type = \$/);
+        if (
+          !filters.style ||
+          filters.style === "unknown" ||
+          filters.style === "boulder" ||
+          filters.style === "route"
+        )
+          expect(text).not.toContain("ce.climb_style =");
+        if (filters.style !== "unknown") expect(text).not.toContain("ce.climb_style IS NULL");
+        if (filters.protection !== "unknown")
+          expect(text).not.toContain("ce.route_protection IS NULL");
+        if (!filters.protection || filters.protection === "unknown")
+          expect(text).not.toContain("= ANY(ce.route_protection)");
+        if (!filters.setting) expect(text).not.toContain("CASE WHEN ce.provider_id");
+      }
+    },
+  );
 
   describe("getGradeProgression", () => {
     it("returns empty array when no climbing entries exist", async () => {

@@ -29,7 +29,7 @@ Resolve public-facing trust problems and add product measurement before launchin
 - [ ] Add equivalent web and mobile product events for onboarding completion, source connection, first useful insight, Daily Brief engagement, experiment engagement, subscription conversion, and relevant failure states. Web page views alone are not sufficient product measurement; see [`posthog.ts`](../packages/web/src/lib/posthog.ts).
 - [ ] Establish an automated web/mobile product-surface parity review for every user-facing feature. Platform-specific hardware and administrative features may differ intentionally, but user outcomes should remain equivalent.
 - [ ] Publish and maintain a product-surface matrix covering route discoverability, web/mobile parity, fixture coverage, and release evidence.
-- [x] Retire weekly/monthly reports and report sharing across web, mobile, and server, including stored snapshots; see [migration 0142](../drizzle/0142_remove_shared_reports.sql).
+- [x] Retire weekly/monthly reports and report sharing across web, mobile, and server, including stored snapshots; see [migration 0143](../drizzle/0143_remove_shared_reports.sql).
 - [ ] Resolve or intentionally retire low-discoverability product surfaces, including predictions and insights that exist but are absent from primary navigation.
 - [ ] Prioritize mobile parity for body and goal-weight context and user-facing prediction or sport-detail outcomes. Hardware capture may remain mobile-only; administrative MCP may remain web-only.
 

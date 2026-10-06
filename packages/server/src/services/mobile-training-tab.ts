@@ -1,4 +1,5 @@
 import { StrainScore } from "@dofek/scoring/scoring";
+import type { ClimbingFilters } from "@dofek/training/climbing-filters";
 import type { Database } from "dofek/db";
 import { getEffectiveParams } from "dofek/personalization/params";
 import { loadPersonalizedParams } from "dofek/personalization/storage";
@@ -74,6 +75,7 @@ export async function loadMobileTrainingTab(
   ctx: MobileTrainingTabContext,
   days: number,
   endDate: string,
+  climbingFilters: ClimbingFilters = {},
 ): Promise<MobileTrainingTabResult> {
   const trainingRepo = new TrainingRepository(
     ctx.db,
@@ -195,9 +197,9 @@ export async function loadMobileTrainingTab(
         variabilityOffset: 0,
       }),
     ),
-    limiter.run(() => climbingRepo.getGradeProgression(days)),
-    limiter.run(() => climbingRepo.getVolumeByGrade(days)),
-    limiter.run(() => climbingRepo.getSessionSummaries(days)),
+    limiter.run(() => climbingRepo.getGradeProgression(days, climbingFilters)),
+    limiter.run(() => climbingRepo.getVolumeByGrade(days, climbingFilters)),
+    limiter.run(() => climbingRepo.getSessionSummaries(days, climbingFilters)),
     limiter.run(() => hangboardingRepo.getSummary(days)),
     limiter.run(() => strengthRepo.getProgressiveOverload(days)),
   ]);

@@ -136,6 +136,7 @@ export const climbingEntry = fitness.table(
     resultStyle: text("result_style"),
     attemptCount: integer("attempt_count"),
     climbStyle: text("climb_style").$type<ClimbingStyle>(),
+    routeProtection: text("route_protection").array().$type<Array<"sport" | "trad">>(),
     wallAngle: jsonb("wall_angle").$type<ClimbingWallAngle>(),
     board: jsonb("board").$type<ClimbingBoard>(),
     holdType: climbingHoldTypeEnum("hold_type"),
@@ -191,6 +192,10 @@ export const climbingEntry = fitness.table(
     check(
       "climbing_entry_climb_style_valid",
       sql`${table.climbStyle} IN ('lead', 'top-rope', 'follow', 'solo', 'aid')`,
+    ),
+    check(
+      "climbing_entry_route_protection_valid",
+      sql`${table.routeProtection} <@ ARRAY['sport', 'trad']::text[] AND array_position(${table.routeProtection}, NULL) IS NULL`,
     ),
     check("climbing_entry_result_style_nonempty", sql`btrim(${table.resultStyle}) <> ''`),
     check(

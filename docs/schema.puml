@@ -255,6 +255,7 @@ entity "climbing_entry" {
   result_style : text
   attempt_count : integer
   climb_style : text
+  route_protection : text_array
   wall_angle : jsonb
   board : jsonb
   hold_type : climbing_hold_type

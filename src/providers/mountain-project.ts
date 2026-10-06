@@ -36,6 +36,7 @@ interface MountainProjectClimbingEntry extends ClimbingMetadata {
   attemptCount: number | null;
   routeName: string | null;
   raw: MountainProjectTick["raw"];
+  routeProtection: Array<"sport" | "trad"> | null;
 }
 
 interface TickExportParseResult {
@@ -174,6 +175,7 @@ export class MountainProjectProvider implements SyncProvider {
                 grade: entry.grade,
                 resultStyle: entry.resultStyle,
                 climbStyle: entry.climbStyle,
+                routeProtection: entry.routeProtection,
                 board: entry.board,
                 wallAngle: entry.wallAngle,
                 attemptCount: entry.attemptCount,
@@ -191,6 +193,7 @@ export class MountainProjectProvider implements SyncProvider {
                   grade: entry.grade,
                   resultStyle: entry.resultStyle,
                   climbStyle: entry.climbStyle,
+                  routeProtection: entry.routeProtection,
                   board: entry.board,
                   wallAngle: entry.wallAngle,
                   attemptCount: entry.attemptCount,
@@ -297,6 +300,12 @@ function parseMountainProjectTicks(ticks: MountainProjectTick[]): TickExportPars
       gradeSystem: parsedGrade.gradeSystem,
       grade: parsedGrade.grade,
       ...metadata,
+      routeProtection: tick.routeType.trim()
+        ? tick.routeType.split(",").flatMap((value) => {
+            const type = value.trim().toLowerCase();
+            return type === "sport" || type === "trad" ? [type] : [];
+          })
+        : null,
       attemptCount: null,
       routeName: nullableText(tick.route),
       raw: tick.raw,

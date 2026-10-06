@@ -100,6 +100,14 @@ for the upstream fixes, regression coverage, and scoped advisory exceptions.
 
 ## Verification & Tooling
 
+- `select-web-deploy.ts`: Selects the latest successful main-push CI release
+  after the production deployment concurrency slot is acquired. Manual requests
+  retain their explicit image tag. Unsuccessful CI triggers cancel their own
+  deployment request and never return a successful step result. The workflow
+  supplies the standard GitHub event, output, summary, repository, and run-ID
+  environment variables; see the [workflow-run API](https://docs.github.com/en/rest/actions/workflow-runs)
+  and [GitHub default environment variables](https://docs.github.com/en/actions/reference/workflows-and-actions/variables#default-environment-variables).
+  - Usage: `pnpm tsx scripts/select-web-deploy.ts` in `Deploy Web`.
 - `report-repeated-cycling-efforts.ts`: Read-only historical cycling report
   using the same user-bound discovery, comparison, trend, and cycling-performance
   repositories as MCP. It makes no provider network requests and computes no

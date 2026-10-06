@@ -1,3 +1,4 @@
+import type { ClimbingFilters } from "@dofek/training/climbing-filters";
 import {
   CLIMBING_GRADE_SYSTEMS,
   type ClimbingClimbType,
@@ -88,6 +89,32 @@ export class ClimbingSessionSummary {
 
 const climbTypeSchema = z.enum(["boulder", "route"]);
 const gradeSystemSchema = z.enum(CLIMBING_GRADE_SYSTEMS);
+export const climbingGradeProgressionSchema = z.object({
+  date: z.string(),
+  climbType: climbTypeSchema,
+  gradeSystem: gradeSystemSchema,
+  grade: z.string(),
+  gradeSortValue: z.number(),
+}) satisfies z.ZodType<ClimbingGradeProgressionRow>;
+export const climbingVolumeByGradeSchema = climbingGradeProgressionSchema
+  .omit({ date: true })
+  .extend({
+    attempts: z.number().nullable(),
+    recordedAttempts: z.number().nullable(),
+    sends: z.number(),
+  }) satisfies z.ZodType<ClimbingVolumeByGradeRow>;
+export const climbingSessionSummarySchema = z.object({
+  activityId: z.string(),
+  date: z.string(),
+  name: z.string(),
+  locationName: z.string().nullable(),
+  attempts: z.number().nullable(),
+  sends: z.number(),
+  hardestBoulderGrade: z.string().nullable(),
+  hardestBoulderGradeSortValue: z.number().nullable(),
+  hardestRouteGrade: z.string().nullable(),
+  hardestRouteGradeSortValue: z.number().nullable(),
+}) satisfies z.ZodType<ClimbingSessionSummaryRow>;
 const progressionRowSchema = z.object({
   session_date: dateStringSchema,
   climb_type: climbTypeSchema,
@@ -138,7 +165,32 @@ export class ClimbingRepository extends BaseRepository {
     `;
   }
 
-  async getGradeProgression(days: number): Promise<ClimbingGradeProgression[]> {
+  #entryFilterPredicate(filters: ClimbingFilters) {
+    const predicates = [sql`true`];
+    if (filters.style === "boulder" || filters.style === "route")
+      predicates.push(sql`ce.climb_type = ${filters.style}`);
+    else if (filters.style === "unknown")
+      predicates.push(sql`ce.climb_type = 'route' AND ce.climb_style IS NULL`);
+    else if (filters.style) predicates.push(sql`ce.climb_style = ${filters.style}`);
+    if (filters.protection === "unknown") predicates.push(sql`ce.route_protection IS NULL`);
+    else if (filters.protection)
+      predicates.push(sql`${filters.protection} = ANY(ce.route_protection)`);
+    // Product policy treats Mountain Project and OpenBeta as outdoor, including older entries without paths.
+    const setting = sql`CASE
+      WHEN ce.provider_id IN ('mountain-project', 'openbeta') THEN 'outdoor'
+      WHEN ce.location_path @> '[{"kind":"gym"}]'::jsonb THEN 'indoor'
+      WHEN ce.location_path @> '[{"kind":"destination"}]'::jsonb
+        OR ce.location_path @> '[{"kind":"area"}]'::jsonb
+        OR ce.location_path @> '[{"kind":"subarea"}]'::jsonb THEN 'outdoor'
+      ELSE 'unknown' END`;
+    if (filters.setting) predicates.push(sql`(${setting}) = ${filters.setting}`);
+    return sql.join(predicates, sql` AND `);
+  }
+
+  async getGradeProgression(
+    days: number,
+    filters: ClimbingFilters = {},
+  ): Promise<ClimbingGradeProgression[]> {
     const rows = await executeWithSchema(
       this.db,
       progressionRowSchema,
@@ -152,6 +204,7 @@ export class ClimbingRepository extends BaseRepository {
               ON ce.activity_id = ANY(a.member_activity_ids)
              AND ce.provider_absent_at IS NULL
             WHERE ${this.#activityWindowPredicate(days)}
+              AND ${this.#entryFilterPredicate(filters)}
             UNION ALL
             SELECT
               ce.unattached_date::text AS session_date,
@@ -160,6 +213,7 @@ export class ClimbingRepository extends BaseRepository {
             FROM fitness.v_climbing_entry AS ce
             WHERE ce.user_id = ${this.userId}
               AND ce.activity_id IS NULL
+              AND ${this.#entryFilterPredicate(filters)}
               AND ce.provider_absent_at IS NULL
               AND ce.unattached_date > (NOW() AT TIME ZONE ${this.timezone})::date - ${days}::int
               AND ce.unattached_date <= (NOW() AT TIME ZONE ${this.timezone})::date
@@ -201,7 +255,10 @@ export class ClimbingRepository extends BaseRepository {
       .map((row) => new ClimbingGradeProgression(row));
   }
 
-  async getVolumeByGrade(days: number): Promise<ClimbingVolumeByGrade[]> {
+  async getVolumeByGrade(
+    days: number,
+    filters: ClimbingFilters = {},
+  ): Promise<ClimbingVolumeByGrade[]> {
     const rows = await executeWithSchema(
       this.db,
       volumeByGradeRowSchema,
@@ -214,6 +271,7 @@ export class ClimbingRepository extends BaseRepository {
               ON ce.activity_id = ANY(a.member_activity_ids)
              AND ce.provider_absent_at IS NULL
             WHERE ${this.#activityWindowPredicate(days)}
+              AND ${this.#entryFilterPredicate(filters)}
             UNION ALL
             SELECT
               ce.id, ce.activity_id, ce.climb_type, ce.grade_system, ce.grade,
@@ -221,6 +279,7 @@ export class ClimbingRepository extends BaseRepository {
             FROM fitness.v_climbing_entry AS ce
             WHERE ce.user_id = ${this.userId}
               AND ce.activity_id IS NULL
+              AND ${this.#entryFilterPredicate(filters)}
               AND ce.provider_absent_at IS NULL
               AND ce.unattached_date > (NOW() AT TIME ZONE ${this.timezone})::date - ${days}::int
               AND ce.unattached_date <= (NOW() AT TIME ZONE ${this.timezone})::date
@@ -279,7 +338,10 @@ export class ClimbingRepository extends BaseRepository {
       .map((row) => new ClimbingVolumeByGrade(row));
   }
 
-  async getSessionSummaries(days: number): Promise<ClimbingSessionSummary[]> {
+  async getSessionSummaries(
+    days: number,
+    filters: ClimbingFilters = {},
+  ): Promise<ClimbingSessionSummary[]> {
     const rows = await executeWithSchema(
       this.db,
       sessionEntryRowSchema,
@@ -302,7 +364,8 @@ export class ClimbingRepository extends BaseRepository {
             FROM fitness.climbing_attempt AS attempt
             WHERE attempt.climbing_entry_id = ce.id
           ) AS detail ON true
-          WHERE ${this.#activityWindowPredicate(days)}`,
+          WHERE ${this.#activityWindowPredicate(days)}
+              AND ${this.#entryFilterPredicate(filters)}`,
     );
     const summaries = new Map<string, ClimbingSessionSummaryRow>();
     for (const row of rows) {

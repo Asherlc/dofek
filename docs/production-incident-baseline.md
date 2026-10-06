@@ -30297,6 +30297,65 @@ The [replacement run](https://github.com/Asherlc/dofek/actions/runs/37390006819)
 With explicit user approval, all nine macOS jobs across build, deployment, release and test workflows now use `macos-latest`, which currently selects macOS 26 ARM64 in GitHub's [supported image list](https://github.com/actions/runner-images). Native build and tool cache namespaces advance so the migrated Swift jobs do not restore the previous runner's build state. Diff review, whitespace validation and `actionlint -shellcheck=` passed; replacement CI remains pending. Production was unaffected. Future runner maintenance should review deprecation notices before an image's scheduled brownouts.
 
 
+## 2026-10-05 — Local Storybook tunnel host rejection (resolved)
+
+No production impact. Web and mobile review previews returned HTTP 403 while
+local Storybook was running. A request to the generated tunnel hostname's
+`/index.json` failed with `curl: (56) The requested URL returned error: 403`;
+the response body was `Invalid host`. Storybook's host-validation middleware
+rejected the forwarded Cloudflare hostname because it was absent from the
+allowed-host list. Both Storybook configurations now allow only the additional
+`.trycloudflare.com` domain through
+[`core.allowedHosts`](https://storybook.js.org/docs/api/main-config/main-config-core#allowedhosts).
+After restarting Storybook, both tunnel `/index.json` and `/iframe.html`
+requests succeeded without added retries or waits. No resilience tuning was
+needed. The available browser runtime reported no connected browsers, so
+visual inspection remains unverified; component interaction tests passed.
+The [development-environment guide](development-environment.md#storybook-through-a-development-tunnel)
+records the host requirement for future preview work.
+
+## 2026-10-05 — Climbing migration CI lint failure (local fix validated)
+
+No production impact. PR [2880](https://github.com/Asherlc/dofek/pull/2880)
+failed `Test / Migration Lint`, step `Lint new migration SQL`, when
+`xargs squawk` checked migration 0137. The first diagnostic was
+`constraint-missing-not-valid`; the command exited 123. The new check constraint
+was added without separating its creation from validation. The climbing migration now
+adds it with `NOT VALID` and explicitly validates it in the following statement,
+as prescribed by [Squawk](https://squawkhq.com/docs/constraint-missing-not-valid)
+and [PostgreSQL](https://www.postgresql.org/docs/current/sql-altertable.html).
+Local Squawk and migration-policy checks pass, and all eight climbing repository
+PostgreSQL tests pass with the updated migration. The
+[corrected migration-lint CI check](https://github.com/Asherlc/dofek/actions/runs/37376595644/job/111988247108)
+passed before the schema-snapshot follow-up. The migration was later renumbered
+to [0142](../drizzle/0142_climbing_route_protection.sql) after `main` added
+0137 through 0141; its snapshot was regenerated from the combined schema.
+No retries, waits, or lint suppressions were added. Next time, run Squawk as well
+as SQLFluff before opening a PR that adds PostgreSQL migrations.
+
+## 2026-10-05 — Climbing mutation CI coverage gaps (local fix validated)
+
+No production impact. PR [2880](https://github.com/Asherlc/dofek/pull/2880)
+failed `Test / Stryker (0)`, `(1)`, and `(3)` in
+[run 37377447441](https://github.com/Asherlc/dofek/actions/runs/37377447441).
+The failing command was `pnpm exec stryker run stryker.ci.config.json --mutate "$MUTATE_FILES"`.
+The first fatal diagnostics reported mutation scores of 0%, 70%, and 53.85%
+below the 75% breaking threshold. Server unit tests never selected the new
+filters, while provider tests omitted partial protection flags and CSV
+whitespace/mixed-type cases. Cached provider schemas also hid schema-initialization
+mutations, and redundant optional chaining introduced equivalent mutations.
+
+Added parameterized-query coverage for all three summaries, real PostgreSQL
+fixtures for independent and combined filters, and provider edge cases. Malformed
+response tests now initialize the provider afresh; OpenBeta captures the nullable
+route type once and filters its flags after an explicit null guard.
+The affected local mutation run killed all 59 mutations (100% for each of the
+three files). All 19,565 unit/mobile tests, nine climbing repository PostgreSQL
+tests, five OpenBeta sync PostgreSQL tests, lint, and typecheck pass. Remote
+confirmation is tracked in the PR's checks. No thresholds, exclusions, retries,
+or waits were added. For similar changes, run the CI mutation configuration
+against changed code before declaring the PR ready.
+
 **2026-10-05 — PR #2879 hosted runner allocation failure (unresolved).**
 CI for the climbing-chart fix remained queued and then cancelled several jobs,
 including Semgrep `SAST Scan` and the web build. The first fatal
@@ -30384,6 +30443,29 @@ delays, check GitHub's published status before investigating repository code.
 - **Fix / validation:** Targeted `pnpm update -r seroval proxy-addr source-map-js --lockfile-only --ignore-scripts` resolved the existing dependency ranges to 1.6.8, 2.0.8, and 1.2.2 respectively. The diff changes only those three dependency resolutions and their consumers; no override, audit ignore, retry, or threshold change was added. A normal frozen-lockfile install followed. The same production audit exited 0 after the update; existing audit exceptions remain unchanged.
 - **Remaining risk / follow-up:** Require hosted checks before merge and deploy the validated lockfile with the release. When audits change between successful runs, inspect the new advisory and locked transitive version before changing CI policy.
 
+## 2026-10-05 — Climbing PR blocked by newly published dependency advisories
+
+No production change or observed user impact. PR [2880](https://github.com/Asherlc/dofek/pull/2880)
+failed [Dependency Audit](https://github.com/Asherlc/dofek/actions/runs/37399660635/job/112064036624)
+at `pnpm audit --prod --audit-level=high --ignore-registry-errors`. The first
+blocking finding was critical Seroval Promise assimilation; the command exited 1.
+The lockfile contained seroval 1.5.5, proxy-addr 2.0.7, and source-map-js 1.2.1,
+which matched newly published high/critical advisories. See the upstream
+[Seroval Promise advisory](https://github.com/advisories/GHSA-p6vx-979v-rg4c),
+[Seroval memory advisory](https://github.com/advisories/GHSA-jp82-f5mq-hwhp),
+[proxy-addr advisory](https://github.com/advisories/GHSA-jqcg-44mw-7w3h), and
+[source-map-js advisory](https://github.com/advisories/GHSA-68fv-2mgg-jv7q).
+
+Updated only those transitive lockfile resolutions to the current stable
+seroval 1.6.8, proxy-addr 2.0.8, and source-map-js 1.2.2 through
+[recursive targeted dependency updates](https://pnpm.io/cli/update). The exact
+CI audit command now passes locally: two existing ignored high advisories and
+low/moderate findings remain under the established policy. No new exclusions,
+threshold changes, retries, or waits were added. Remote confirmation is tracked
+in the PR checks. For future merge work, run the production dependency audit
+again after updating from main because advisory data changes independently
+of code and lockfile changes.
+
 ## 2026-10-05 — Withings sync alert persisted after successful scheduled syncs
 
 - **Symptoms / impact:** The app showed "Withings couldn’t sync" for Sleep and
@@ -30442,6 +30524,71 @@ The [Dependency Audit job](https://github.com/Asherlc/dofek/actions/runs/3739848
 
 Updated only those transitive lockfile resolutions to the latest stable releases available during investigation: Seroval 1.6.8, proxy-addr 2.0.8, and source-map-js 1.2.2. All fit existing upstream dependency ranges. The exact audit command now exits successfully; existing exclusions remain unchanged and no override, retry, or timeout was added. Remaining findings are below the configured threshold or covered by the pre-existing documented backports. Local validation also passed all 19,392 unit/mobile tests (20 skipped), root/server/web/mobile typechecks, sandbox lint, the web build, and frozen-lockfile installation. The [remote Dependency Audit rerun](https://github.com/Asherlc/dofek/actions/runs/37399594471) passed on commit 151ccdf41. Subsequent integration of main preserved its tracking removal and this PR’s Data Quality deletions; both client typechecks and 43 focused navigation/deployment tests passed. Remaining required CI validation is pending. For similar failures, use the `gh-fix-ci` skill to capture the first fatal finding, inspect the dependency path and upstream range, and prefer a targeted lockfile update when a patched release fits.
 
+## 2026-10-05 — Merged climbing fixes absent from the live release
+
+- **Symptoms / impact:** The production climbing page still showed the older
+  chart axes, grade labels, and attempt-count presentation after
+  [PR #2878](https://github.com/Asherlc/dofek/pull/2878) and
+  [PR #2879](https://github.com/Asherlc/dofek/pull/2879) merged.
+- **Evidence:** At 02:59 UTC on October 6, `GET /training/climbing` returned
+  HTTP 200 with `Cache-Control: no-cache`, `CF-Cache-Status: DYNAMIC`, and
+  assets under `web/sha-06c9729/`. Both running `dofek_web` replicas and the
+  other application services still used `sha-06c9729`. Live web logs recorded
+  the page request and successful climbing API calls; the collector was running.
+- **Root cause:** The new release had not rolled out. The
+  [deployment eligibility gate](../.github/workflows/deploy-web.yml) rejects
+  successful CI commits superseded by a newer `main` commit. The chart fix's
+  [automatic deploy](https://github.com/Asherlc/dofek/actions/runs/37397876269)
+  completed successfully overall but skipped its production job. A subsequent
+  [deploy](https://github.com/Asherlc/dofek/actions/runs/37402707679) received
+  `CI_CONCLUSION: failure` for `ee73cfae2` and also skipped production; that CI
+  run failed the dependency audit addressed in the preceding incident entry.
+  No production deployment command failed in these skipped runs.
+- **Status / remaining risk:** Unresolved pending the current
+  [main CI run](https://github.com/Asherlc/dofek/actions/runs/37403094931).
+  At 03:03 UTC, 82 checks had succeeded, with no failed jobs. The iOS archive
+  was building and watchOS remained queued with no assigned runner or executed
+  steps. The cause of the runner wait is unconfirmed. No production state,
+  deployment gate, timeout, or retry was changed.
+- **Retrospective / follow-up:** The HTML asset prefix and running image tag
+  established release identity quickly. A useful deployment-runbook addition
+  would instruct operators to inspect the production job's conclusion even
+  when the overall workflow is green, then compare its image tag with the live
+  HTML asset prefix before investigating browser caching.
+
+The requested durable fix uses GitHub's native single-pending concurrency queue
+for the entire production workflow, preserving an active release while replacing
+pending requests. Target selection now runs after the slot is acquired and uses
+the newest successful main-push CI run instead of requiring the triggering SHA
+to equal current main. Both Terraform and the Swarm stack receive that selected
+full commit SHA. Unsuccessful CI triggers use separate concurrency groups and
+cancel only their own request; the selection step also exits nonzero so a
+cancellation still being processed cannot produce a green no-op. See GitHub's
+[concurrency semantics](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency)
+and [workflow cancellation API](https://docs.github.com/en/rest/actions/workflow-runs#cancel-a-workflow-run).
+Ten executable selection tests pass, including different triggering and selected
+commits, failed/cancelled/skipped CI, cancellation API failure, missing releases,
+and manual image requests. Full lint, root/server/web typechecks, workflow
+validation with `actionlint`, and all 19,161 executed unit/mobile tests passed
+(20 existing tests were skipped). Local SQL lint initially failed because the
+workspace ClickHouse service was absent; starting that service through the
+workspace Compose wrapper resolved the prerequisite and the full lint rerun
+passed. A read-only execution against GitHub selected the latest successful
+main-push CI release, `21b64aa1d086dc0289ac6ff79d20fd26eaccef37`, rather than
+the newer untested main head. Independent review found no blocking defects.
+Remote workflow validation and rollout remain pending. At 03:24 UTC, main CI's
+iOS archive had passed and only watchOS remained queued without an assigned
+runner. No deployment timeout, retry, or migration ordering changed.
+
+Follow-up: the original main CI run passed after its remaining build gates
+completed. Its [new deploy request](https://github.com/Asherlc/dofek/actions/runs/37410215890)
+again reported overall success while skipping production because main had
+advanced. All 83 [PR #2889 CI checks](https://github.com/Asherlc/dofek/actions/runs/37408894244)
+passed, including all four integration shards, mutation testing, and package
+typechecks. At 04:03 UTC, the live climbing HTML still served `sha-06c9729`.
+The user approved merging the fix; concurrent incident-log additions then
+required a documentation-only conflict resolution preserving both records.
+Validation of the updated merge head and production rollout remain pending.
 
 ## 2026-10-05 — Dependabot update validation and local Docker capacity
 

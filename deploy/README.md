@@ -231,30 +231,36 @@ CI (main) -> build dofek (+ dofek-ml for local ML tooling)
 
 Production web deployments are serialized and never cancel an in-progress
 deployment. Automatic and manual triggers share the same production concurrency
-group. A rollout intentionally quiesces `analytics-worker`,
+group, using GitHub's default single pending run. New requests replace pending
+work while the active deployment finishes. A rollout intentionally quiesces
+`analytics-worker`,
 all three metric-stream ClickHouse sinks, and `processing-reconciliation` before
 migrations and restores all five only after the final stack converges, so a
-newer run must
-wait rather than interrupt that state transition. Automatic runs also deploy
-only when an eligibility job confirms through the GitHub commits API that their
-successful CI commit is still the current `main` commit. Only eligible runs
-enter the production job's concurrency group, so an older success that finishes
-out of order cannot displace a valid pending deployment and is skipped before
-Terraform instead of rolling production back. GitHub documents both the
-commits endpoint and that concurrency groups retain at most one running and one
-pending job, with `cancel-in-progress` controlling whether a running job is
-terminated:
-<https://docs.github.com/en/rest/commits/commits#get-a-commit>,
-<https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency>.
+newer run must wait rather than interrupt that state transition. After acquiring
+the deployment slot, automatic runs select the newest successful `main` push
+from the CI workflow's runs. A newer untested commit does not block that release,
+and an older CI completion cannot select an older image than the latest passing
+release. The selected commit and CI run are recorded in the workflow summary.
+GitHub documents the default
+[pending-run replacement](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency)
+and the [workflow-run API](https://docs.github.com/en/rest/actions/workflow-runs#list-workflow-runs-for-a-workflow).
 
-1. **Build**: GitHub Actions builds the `server` image for every `main` push and pushes it to GHCR with the commit-derived tag (`<tag>`), because `Deploy Web` is triggered by the successful `CI` `workflow_run` for `main` and deploys that tag. The web build inside the image uses `VITE_ASSET_BASE_URL=https://assets.dofek.fit/web/<tag>/`, so Vite-generated JavaScript and CSS references point at immutable R2-backed CDN assets instead of the Express origin; Vite's `base` option controls the public base path for built assets: https://vite.dev/config/shared-options.html#base. `<tag>` is the image tag used consistently for both the GHCR image and the web asset prefix. See GitHub's `workflow_run` event documentation for the trigger behavior: https://docs.github.com/en/actions/reference/events-that-trigger-workflows#workflow_run. The `ml` image is built only when ML image inputs change.
-   Automatic deploys also check out the successful CI run's full commit SHA
-   before rendering stack configuration. GitHub documents that a
+Requests triggered by unsuccessful CI use an isolated concurrency group so they
+cannot replace valid pending production work. They cancel their own workflow
+before deployment and retain a nonzero step result while cancellation is
+processed. Superseded pending requests are cancelled by GitHub concurrency;
+green indicates that the production release ran successfully. GitHub documents
+the cancellation API and its required Actions write permission:
+<https://docs.github.com/en/rest/actions/workflow-runs#cancel-a-workflow-run>.
+For a reported stale page, compare the live HTML's `web/<tag>/` asset prefix with
+the running Swarm image tag and inspect the production job's actual conclusion.
+
+1. **Build**: GitHub Actions builds the `server` image for every `main` push and pushes it to GHCR with the commit-derived tag (`<tag>`). A successful main CI completion requests deployment; when its slot starts, `Deploy Web` selects the latest passing main push and deploys that tag. The web build inside the image uses `VITE_ASSET_BASE_URL=https://assets.dofek.fit/web/<tag>/`, so Vite-generated JavaScript and CSS references point at immutable R2-backed CDN assets instead of the Express origin; Vite's `base` option controls the public base path for built assets: https://vite.dev/config/shared-options.html#base. `<tag>` is the image tag used consistently for both the GHCR image and the web asset prefix. See GitHub's `workflow_run` event documentation for the trigger behavior: https://docs.github.com/en/actions/reference/events-that-trigger-workflows#workflow_run. The `ml` image is built only when ML image inputs change.
+   Automatic deploys check out the selected CI run's full commit SHA for both
+   Terraform and stack configuration. GitHub documents that a
    `workflow_run` workflow's `GITHUB_SHA` is the last commit on the default
-   branch rather than necessarily the triggering workflow's commit, so using
-   a live API result as the freshness boundary and
-   `github.event.workflow_run.head_sha` as the deploy commit prevents a queued
-   stale success from rolling production backward while keeping image code,
+   branch rather than necessarily the selected release's commit, so using
+   the selected run's `head_sha` as the deploy commit keeps image code,
    healthchecks, entrypoints, and stack configuration from different revisions
    from being mixed:
    <https://docs.github.com/en/actions/reference/events-that-trigger-workflows#workflow_run>.
