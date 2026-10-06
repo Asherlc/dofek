@@ -30828,9 +30828,15 @@ matrices before attempting independent native-package updates.
   `No space left on device` writing `/var/lib/clickhouse/tmp/`; the Docker VM
   reported zero available bytes. Build-cache pruning reclaimed zero bytes.
   This workspace's validation containers, network, and volume were removed.
-  A stopped `charming-leopard-clickhouse-1` container held 2.32 GB of writable
-  state; removal requires separate user approval and must preserve its named
-  `charming-leopard_clickhouse_data` volume. No timeouts or retries were changed.
+  The user separately approved removing the stopped
+  `charming-leopard-clickhouse-1` container (2.32 GB writable state), but it was
+  already absent at the immediate pre-removal check; no removal was performed
+  by this investigation. Its named `charming-leopard_clickhouse_data` volume
+  still existed. Docker subsequently had 3.7 GB available. With generated local
+  ports written to `.env.local`, workspace ClickHouse passed the existing Compose
+  health gate and full `pnpm lint` passed without ad-hoc waits or configuration
+  changes. This workspace's temporary validation resources were then removed.
+  No timeouts or retries were changed.
   These changes require release before they affect production.
 - **Remaining risk / follow-up:** Capture the next rejection with the shared
   [authorization diagnostics procedure](processing-status-runbook.md#provider-authorization-diagnostics).
