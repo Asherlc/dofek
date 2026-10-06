@@ -201,7 +201,7 @@ progression, grade volume, and session summaries. Mixed sport/trad routes match
 either protection selection; selecting a climbing method does not establish
 whether a route uses bolts or removable protection.
 
-Migration [0137](../drizzle/0137_climbing_route_protection.sql) adds nullable
+Migration [0139](../drizzle/0139_climbing_route_protection.sql) adds nullable
 `route_protection` as the single storage path for the supplied sport/trad route
 classifications. Mountain Project's exported Route Type and OpenBeta's
 [composable ClimbType flags](https://github.com/OpenBeta/openbeta-graphql/blob/develop/src/graphql/schema/Climb.gql)

@@ -783,12 +783,6 @@ function AuthGate() {
             }}
           />
           <Stack.Screen
-            name="experiments"
-            options={{
-              title: "Personal Experiments",
-            }}
-          />
-          <Stack.Screen
             name="preview"
             options={{
               title: "Preview Update",

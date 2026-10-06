@@ -156,15 +156,6 @@ const EXPORT_TABLES: ExportTableConfig[] = [
       ),
   },
   {
-    name: "life-events.csv",
-    query: (db, userId) =>
-      executeWithSchema(
-        db,
-        exportRowSchema,
-        sql`SELECT * FROM fitness.life_events WHERE user_id = ${userId} ORDER BY started_at`,
-      ),
-  },
-  {
     name: "menstrual-periods.csv",
     query: (db, userId) =>
       executeWithSchema(
