@@ -62,7 +62,6 @@ import { useProcessingStatus } from "../../lib/useProcessingStatus";
 import { useRefresh } from "../../lib/useRefresh";
 import { colors } from "../../theme";
 
-const hiddenProviderIds = new Set(["auto-supplements"]);
 function deleteSharedFile(fileUri: string): void {
   const file = new ExpoFile(fileUri);
   if (file.exists) {
@@ -699,9 +698,7 @@ export default function ProvidersScreen() {
   });
 
   const isLoading = providers.isLoading;
-  const visibleProviderList = providerList.filter(
-    (provider) => !hiddenProviderIds.has(provider.id),
-  );
+  const visibleProviderList = providerList;
   const enabledProviders = visibleProviderList.filter((p) => p.enabled);
   const appleHealthProvider = appleHealthLogsQuery.data
     ? appleHealth.model.toProviderCard({

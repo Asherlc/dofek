@@ -716,64 +716,6 @@ describe("NutritionAnalyticsRepository", () => {
     });
   });
 
-  describe("getSupplementMedicationReview", () => {
-    it("recommends professional review without inferring a specific interaction", async () => {
-      const { repo } = makeRepository([
-        {
-          has_medication_records: true,
-          has_supplements: true,
-        },
-      ]);
-
-      await expect(repo.getSupplementMedicationReview()).resolves.toMatchObject({
-        status: "professional_review_recommended",
-        message:
-          "Review your complete medication and supplement list with a doctor or pharmacist because supplements can interact with medications.",
-        limitation:
-          "Dofek does not determine whether a specific medication and supplement interact.",
-        source: {
-          agency: "FDA",
-          url: "https://www.fda.gov/consumers/consumer-updates/mixing-medications-and-dietary-supplements-can-endanger-your-health",
-        },
-      });
-    });
-
-    it("reports when no medication records are available", async () => {
-      const { repo } = makeRepository([
-        {
-          has_medication_records: false,
-          has_supplements: true,
-        },
-      ]);
-
-      await expect(repo.getSupplementMedicationReview()).resolves.toMatchObject({
-        status: "no_medication_records",
-      });
-    });
-
-    it("reports when no supplements are available", async () => {
-      const { repo } = makeRepository([
-        {
-          has_medication_records: true,
-          has_supplements: false,
-        },
-      ]);
-
-      await expect(repo.getSupplementMedicationReview()).resolves.toMatchObject({
-        status: "no_supplements",
-        message: "Add supplements to review them alongside your medication records.",
-      });
-    });
-
-    it("fails loudly when the status query returns no row", async () => {
-      const { repo } = makeRepository([]);
-
-      await expect(repo.getSupplementMedicationReview()).rejects.toThrow(
-        "Supplement and medication review query returned no status row.",
-      );
-    });
-  });
-
   describe("getAdaptiveTdeeData", () => {
     it("returns empty array when no data", async () => {
       const { repo } = makeRepository([]);

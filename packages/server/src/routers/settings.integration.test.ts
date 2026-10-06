@@ -281,16 +281,6 @@ describe("Settings router", () => {
               ON CONFLICT DO NOTHING`,
         ),
         testCtx.db.execute(
-          sql`WITH schedule AS (
-                INSERT INTO fitness.supplement (user_id)
-                VALUES (${SETTINGS_TEST_USER_ID})
-                RETURNING id
-              )
-              INSERT INTO fitness.supplement_definition (supplement_id, name)
-              SELECT id, 'Delete supplement'
-              FROM schedule`,
-        ),
-        testCtx.db.execute(
           sql`INSERT INTO fitness.user_settings (user_id, key, value)
               VALUES (${SETTINGS_TEST_USER_ID}, 'deleteMe', 'true'::jsonb)
               ON CONFLICT (user_id, key) DO UPDATE SET value = EXCLUDED.value`,
@@ -307,7 +297,6 @@ describe("Settings router", () => {
         breathworkSessionsAfter,
         menstrualPeriodsAfter,
         sportSettingsAfter,
-        supplementsAfter,
         userSettingsAfter,
       ] = await Promise.all([
         executeWithSchema(
@@ -343,11 +332,6 @@ describe("Settings router", () => {
         executeWithSchema(
           testCtx.db,
           countRowSchema,
-          sql`SELECT count(*)::int AS count FROM fitness.supplement WHERE user_id = ${SETTINGS_TEST_USER_ID}`,
-        ),
-        executeWithSchema(
-          testCtx.db,
-          countRowSchema,
           sql`SELECT count(*)::int AS count FROM fitness.user_settings WHERE user_id = ${SETTINGS_TEST_USER_ID}`,
         ),
       ]);
@@ -358,7 +342,6 @@ describe("Settings router", () => {
       expect(breathworkSessionsAfter[0]?.count).toBe(0);
       expect(menstrualPeriodsAfter[0]?.count).toBe(0);
       expect(sportSettingsAfter[0]?.count).toBe(0);
-      expect(supplementsAfter[0]?.count).toBe(0);
       expect(userSettingsAfter[0]?.count).toBe(0);
 
       // Session should remain usable after data deletion.

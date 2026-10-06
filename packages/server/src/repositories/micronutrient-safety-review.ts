@@ -37,16 +37,11 @@ export interface MicronutrientSafetyReviewData {
   readonly totalDailyAverage: number;
   readonly foodDailyAverage: number;
   readonly providerDailyTotalAverage: number;
-  readonly supplementDailyAverage: number;
   readonly daysTracked: number;
   readonly sourceBreakdown: NutritionSourceContribution[];
 }
 
-export type NutritionIntakeType =
-  | "itemized_food"
-  | "meal_aggregate"
-  | "provider_daily_total"
-  | "supplement";
+export type NutritionIntakeType = "itemized_food" | "meal_aggregate" | "provider_daily_total";
 
 export interface NutritionSourceContribution {
   readonly providerId: string;
@@ -125,7 +120,6 @@ export class MicronutrientSafetyReview {
       nutrientId: row.nutrientId,
       unit: row.unit,
       totalDailyAmount: row.totalDailyAverage,
-      supplementalDailyAmount: row.supplementDailyAverage,
     });
     this.#upperLimit = { ...upperLimit, message: upperLimitMessage(upperLimit) };
     this.#safetyStatus = safetyStatus(upperLimit);
@@ -140,7 +134,6 @@ export class MicronutrientSafetyReview {
         totalDailyAverage: Math.round(this.#row.totalDailyAverage * 10) / 10,
         foodDailyAverage: Math.round(this.#row.foodDailyAverage * 10) / 10,
         providerDailyTotalAverage: Math.round(this.#row.providerDailyTotalAverage * 10) / 10,
-        supplementDailyAverage: Math.round(this.#row.supplementDailyAverage * 10) / 10,
         daysTracked: this.#row.daysTracked,
       },
       sourceBreakdown: this.#row.sourceBreakdown.map((source) => ({
@@ -161,13 +154,12 @@ const micronutrientSafetyReviewRowSchema = z.object({
   avg_total_intake: z.coerce.number(),
   avg_food_intake: z.coerce.number(),
   avg_provider_daily_total_intake: z.coerce.number(),
-  avg_supplement_intake: z.coerce.number(),
   days_tracked: z.coerce.number(),
   source_breakdown: z.array(
     z.object({
       providerId: z.string(),
       sourceLabel: z.string(),
-      intakeType: z.enum(["itemized_food", "meal_aggregate", "provider_daily_total", "supplement"]),
+      intakeType: z.enum(["itemized_food", "meal_aggregate", "provider_daily_total"]),
       dailyAverageContribution: z.coerce.number(),
       daysTracked: z.coerce.number(),
     }),
@@ -190,21 +182,17 @@ export async function fetchMicronutrientSafetyReviews(options: {
             fen.amount,
             fen.provider_id,
             CASE
-              WHEN fen.supplement_dose_event_id IS NOT NULL THEN 'supplement'
               WHEN classification.effective_grain = 'itemized' THEN 'itemized_food'
               WHEN classification.effective_grain = 'meal_aggregate' THEN 'meal_aggregate'
               ELSE 'provider_daily_total'
             END AS intake_type,
             COALESCE(
               classification.source_label,
-              NULLIF(BTRIM(supplement_event.source_name), ''),
               fen.provider_id
             ) AS source_label
           FROM fitness.v_nutrition_canonical_nutrient AS fen
           LEFT JOIN fitness.v_nutrition_entry_classification AS classification
             ON classification.id = fen.food_entry_id
-          LEFT JOIN fitness.v_supplement_dose_current AS supplement_event
-            ON supplement_event.id = fen.supplement_dose_event_id
           WHERE fen.user_id = ${options.userId}
             ${currentDateRangePredicate(sql`fen.date`, options.days)}
             ${options.dateAccessPredicate}
@@ -225,12 +213,7 @@ export async function fetchMicronutrientSafetyReviews(options: {
               SUM(contribution.amount)
                 FILTER (WHERE contribution.intake_type = 'provider_daily_total'),
               0
-            ) AS provider_daily_total_amount,
-            COALESCE(
-              SUM(contribution.amount)
-                FILTER (WHERE contribution.intake_type = 'supplement'),
-              0
-            ) AS supplement_amount
+            ) AS provider_daily_total_amount
           FROM contributions AS contribution
           JOIN fitness.nutrient AS n ON n.id = contribution.nutrient_id
           GROUP BY contribution.date, n.id, n.display_name, n.unit
@@ -243,7 +226,6 @@ export async function fetchMicronutrientSafetyReviews(options: {
             AVG(total_amount) AS avg_total_intake,
             AVG(food_amount) AS avg_food_intake,
             AVG(provider_daily_total_amount) AS avg_provider_daily_total_intake,
-            AVG(supplement_amount) AS avg_supplement_intake,
             COUNT(total_amount)::integer AS days_tracked
           FROM daily_totals
           GROUP BY id, display_name, unit
@@ -295,7 +277,6 @@ export async function fetchMicronutrientSafetyReviews(options: {
           summary.avg_total_intake,
           summary.avg_food_intake,
           summary.avg_provider_daily_total_intake,
-          summary.avg_supplement_intake,
           summary.days_tracked,
           COALESCE(source_breakdowns.sources, '[]'::jsonb) AS source_breakdown
         FROM nutrient_summary AS summary
@@ -308,7 +289,6 @@ export async function fetchMicronutrientSafetyReviews(options: {
       nutrientId: row.nutrient_id,
       unit: row.unit,
       totalDailyAmount: row.avg_total_intake,
-      supplementalDailyAmount: row.avg_supplement_intake,
     });
     if (getNutrientDailyValue(row.nutrient_id) == null && upperLimit.status === "not_in_ruleset") {
       return [];
@@ -322,7 +302,6 @@ export async function fetchMicronutrientSafetyReviews(options: {
         totalDailyAverage: row.avg_total_intake,
         foodDailyAverage: row.avg_food_intake,
         providerDailyTotalAverage: row.avg_provider_daily_total_intake,
-        supplementDailyAverage: row.avg_supplement_intake,
         daysTracked: row.days_tracked,
         sourceBreakdown: row.source_breakdown,
       }),

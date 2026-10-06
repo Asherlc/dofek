@@ -97,7 +97,6 @@
     "./providers/mountain-project": "./src/providers/mountain-project.ts",
     "./providers/openbeta": "./src/providers/openbeta.ts",
     "./providers/bodyspec": "./src/providers/bodyspec.ts",
-    "./providers/auto-supplements": "./src/providers/auto-supplements.ts",
     "./providers/amazfit-zepp": "./src/providers/amazfit-zepp.ts",
     "./providers/zos-app/provider": "./src/providers/zos-app/provider.ts",
     "./db/migrate": "./src/db/migrate.ts",

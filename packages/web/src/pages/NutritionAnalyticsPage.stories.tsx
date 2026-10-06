@@ -75,7 +75,6 @@ const storyData = {
         intake: {
           totalDailyAverage: 15,
           foodDailyAverage: 15,
-          supplementDailyAverage: 0,
           daysTracked: 30,
         },
         adequacy: {
@@ -97,8 +96,7 @@ const storyData = {
         unit: "mg",
         intake: {
           totalDailyAverage: 102,
-          foodDailyAverage: 72,
-          supplementDailyAverage: 30,
+          foodDailyAverage: 102,
           daysTracked: 30,
         },
         adequacy: {

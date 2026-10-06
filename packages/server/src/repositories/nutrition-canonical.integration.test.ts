@@ -3,14 +3,12 @@ import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { TEST_USER_ID } from "../../../../src/db/schema/core.ts";
-import { supplementDoseEvent } from "../../../../src/db/schema/nutrition.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { executeWithSchema } from "../lib/typed-sql.ts";
 import type { BodyClickHouseStore } from "./body-clickhouse.ts";
 import { FoodRepository } from "./food-repository.ts";
 import { NutritionAnalyticsRepository } from "./nutrition-analytics-repository.ts";
 import { ProviderDetailRepository } from "./provider-detail-repository.ts";
-import { insertSupplementDefinitionForTest } from "./test-helpers.ts";
 
 const OTHER_USER_ID = "00000000-0000-0000-0000-000000002059";
 const resolutionStatusSchema = nutritionSourceResolutionSchema.shape.status;
@@ -844,37 +842,6 @@ describe("canonical nutrition contribution set", () => {
     expect(rows[1]?.proteinGrams).toBeNull();
     expect(rows[1]?.mealCount).toBe(0);
     expect(rows[1]?.loggingCompleteness).toBe("no_logging");
-  });
-
-  it("does not count a supplement-only nutrition total as food logging", async () => {
-    const date = "2026-01-22";
-    const definition = await insertSupplementDefinitionForTest(
-      context.db,
-      {
-        userId: TEST_USER_ID,
-        name: "Completeness fixture vitamin D",
-        effectiveFrom: date,
-      },
-      { vitaminDMcg: 25 },
-    );
-    await context.db.insert(supplementDoseEvent).values({
-      userId: TEST_USER_ID,
-      supplementId: definition.scheduleId,
-      definitionId: definition.definitionId,
-      providerId: "nutrition-itemized",
-      externalId: `supplement-only-${date}`,
-      scheduledDate: date,
-      status: "taken",
-      recordedAt: new Date(`${date}T08:00:00.000Z`),
-    });
-
-    const rows = await new FoodRepository(context.db, TEST_USER_ID, "UTC").dailyTotalsRange(
-      date,
-      date,
-    );
-
-    expect(rows[0]?.loggingCompleteness).toBe("no_logging");
-    expect(rows[0]?.sourceProviders).toContain("nutrition-itemized");
   });
 
   it("applies effective nutrient corrections and visibility exactly once to canonical totals", async () => {
