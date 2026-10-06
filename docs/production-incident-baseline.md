@@ -30590,6 +30590,30 @@ The user approved merging the fix; concurrent incident-log additions then
 required a documentation-only conflict resolution preserving both records.
 Validation of the updated merge head and production rollout remain pending.
 
+Rollout follow-up: all 83 checks on the updated merge head passed in
+[CI run 37414540870](https://github.com/Asherlc/dofek/actions/runs/37414540870),
+and the user-approved [PR #2889](https://github.com/Asherlc/dofek/pull/2889)
+merged as `53ec054ea321de4082474e936b53bfbb7d0d4a3b`. The first
+[production run under the new workflow](https://github.com/Asherlc/dofek/actions/runs/37417239003)
+selected passing release `sha-ffe2bb2` despite main having advanced. Both
+climbing-fix commits are ancestors of the selected full SHA,
+`ffe2bb2946a9f58656ee97cd685ce4185c5330d4`. At 05:22 UTC on October 6,
+the climbing HTML returned HTTP 200 with that asset prefix. By 05:26 UTC,
+both web replicas and the worker used that image, and all five processing
+services were restored at `1/1` on the same release. A
+[new production request](https://github.com/Asherlc/dofek/actions/runs/37418587207)
+arrived at 05:27 UTC and remained pending while the active deploy continued,
+confirming that incoming work preserves the running release. All four
+production jobs succeeded at 05:35 UTC, including the migration, CDC, consumer
+stability, backup-freshness, and release-recording gates. The pending request
+then started after the completed release freed the slot. The stale climbing
+release is resolved. No manual production mutation, timeout increase, retry,
+or migration-order change was needed; the existing readiness and stability
+checks verify that the deployed services remain operational. For similar
+incidents, use the deployment runbook's HTML/image comparison and check the
+production job's conclusion before treating a green workflow as proof of
+deployment.
+
 ## 2026-10-05 — Dependabot update validation and local Docker capacity
 
 Several pending dependency updates inherited a date-sensitive power test. The
