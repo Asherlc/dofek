@@ -136,6 +136,14 @@ raw values from Postgres, and confirm a subsequent CDC update preserves NULL.
 Then rebuild the affected activity source records, deduplicated activities,
 summary rows, and daily endurance load. Use the existing user/activity refresh
 scope for activity models; do not put historical repair in runtime setup.
+Run operator dbt rebuilds in a separate one-shot container using the deployed
+image and normal ClickHouse credentials. Do not start a second dbt process
+inside a busy analytics worker: both processes share its memory limit. For a
+read-only project mount, put `--log-path` and `--target-path` in writable
+temporary directories. Remove temporary credential files after the rebuild.
+Docker documents [container memory limits](https://docs.docker.com/engine/containers/resource_constraints/#memory)
+and dbt documents [log-path](https://docs.getdbt.com/reference/global-configs/logs#log-path)
+and [target-path](https://docs.getdbt.com/reference/global-configs/json-artifacts#target-path).
 Verify unknown ends remain NULL, no active duration is negative, obsolete load
 rows are tombstoned, and registered chart caches are recomputed. Missing ends
 are excluded from duration/load totals; the bounded sensor search window must
