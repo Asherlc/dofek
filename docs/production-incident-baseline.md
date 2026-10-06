@@ -30450,6 +30450,46 @@ in the PR checks. For future merge work, run the production dependency audit
 again after updating from main because advisory data changes independently
 of code and lockfile changes.
 
+## 2026-10-05 — Withings sync alert persisted after successful scheduled syncs
+
+- **Symptoms / impact:** The app showed "Withings couldn’t sync" for Sleep and
+  Body after Withings had already recovered. Production `fitness.sync_log`
+  recorded `withings provider request timed out after 120000ms` at
+  `2026-10-06T00:30:03Z`, followed by successful scheduled syncs at `01:00`,
+  `01:30`, and `02:00` UTC. Authorization was not marked as failed.
+- **Evidence:** Read-only Postgres queries showed that those separate jobs all
+  shared the processing operation created at `00:00:02Z`. Its latest ingest
+  event remained the `00:30` failure; later jobs added canonical-commit events
+  to the same operation, while their `worker-succeeded` event conflicted with
+  the already recorded success. Axiom CLI access worked, but retained Withings
+  logs did not expose the low-level network cause. The recorded attempt took
+  995 ms, so the error text does not prove that the two-minute deadline elapsed.
+- **Root cause of the stale alert:**
+  [SyncProcessingOperation](../src/jobs/sync-processing-operation.ts) used the
+  reusable queue job ID as the permanent processing correlation key.
+  [Request deduplication](../src/jobs/sync-request-job.ts) removes terminal jobs
+  before accepting a new job with that ID; BullMQ documents that removed job
+  IDs can be reused in its [job-ID guide](https://docs.bullmq.io/guide/jobs/job-ids).
+  The processing store then reused the old operation and deduplicated the new
+  success event. The transient network failure's underlying cause remains unknown.
+- **Fix:** Processing correlation now includes the queue job's stored creation
+  timestamp. Newly created jobs receive separate operations; retries and
+  continuations retain the operation ID in job data. Both web and mobile use
+  the same processing-alert API. Existing incident history remains intact.
+- **Validation:** The new real-Redis/Postgres regression reproduced success →
+  failure → success with one reused queue ID and incorrectly failed Sleep/Body
+  status before the fix. After the fix, it verifies distinct operations, ready
+  status, an empty alert list, and operation reuse across retry and continuation.
+  Relevant unit/mobile tests and 15 database integration tests passed without
+  added sleeps or retry tuning. Docker's automatic subnet pool was exhausted;
+  an operator-only Compose override gave this workspace a free subnet without
+  changing repository configuration or other workspaces.
+- **Remaining risk / follow-up:** Production rollout is pending. A new
+  successful sync after rollout will supersede the stale operation. No
+  resilience settings changed. For similar alerts, compare sync history with
+  processing identity before treating the alert as a continuing provider outage;
+  retain the original transport cause in observability if connection failures recur.
+
 ## 2026-10-05 — Local deployment workflow test timeouts during PR #2881 validation
 
 - **Symptoms / impact:** Local `pnpm test` validation for [PR #2881](https://github.com/Asherlc/dofek/pull/2881) passed 19,518 tests but failed four `.github/workflows/deploy-web-stack.test.ts` scenarios. The first fatal message was `Error: Test timed out in 30000ms.` at line 685 (restoring processing services after a web rollback); the normal deploy and two stability-window reset cases also timed out. Production was unaffected.
@@ -30467,3 +30507,42 @@ After merging current main into the PR branch, three parallel pnpm validation co
 The [Dependency Audit job](https://github.com/Asherlc/dofek/actions/runs/37398480415/job/112060885281) failed at `pnpm audit --prod --audit-level=high --ignore-registry-errors`. Its first fatal finding was the critical [Seroval Promise deserialization advisory](https://github.com/advisories/GHSA-p6vx-979v-rg4c). The inherited lockfile resolved Seroval 1.5.5, proxy-addr 2.0.7, and source-map-js 1.2.1, also affected by [Seroval TypedArray memory exhaustion](https://github.com/advisories/GHSA-jp82-f5mq-hwhp), [proxy-addr trust-subnet IP spoofing](https://github.com/advisories/GHSA-jqcg-44mw-7w3h), and [source-map-js event-loop denial of service](https://github.com/advisories/GHSA-68fv-2mgg-jv7q). These findings blocked the merge; no production exploitation was observed or investigated during this CI diagnosis.
 
 Updated only those transitive lockfile resolutions to the latest stable releases available during investigation: Seroval 1.6.8, proxy-addr 2.0.8, and source-map-js 1.2.2. All fit existing upstream dependency ranges. The exact audit command now exits successfully; existing exclusions remain unchanged and no override, retry, or timeout was added. Remaining findings are below the configured threshold or covered by the pre-existing documented backports. Local validation also passed all 19,392 unit/mobile tests (20 skipped), root/server/web/mobile typechecks, sandbox lint, the web build, and frozen-lockfile installation. The [remote Dependency Audit rerun](https://github.com/Asherlc/dofek/actions/runs/37399594471) passed on commit 151ccdf41. Subsequent integration of main preserved its tracking removal and this PR’s Data Quality deletions; both client typechecks and 43 focused navigation/deployment tests passed. Remaining required CI validation is pending. For similar failures, use the `gh-fix-ci` skill to capture the first fatal finding, inspect the dependency path and upstream range, and prefer a targeted lockfile update when a patched release fits.
+
+
+## 2026-10-05 — Dependabot update validation and local Docker capacity
+
+Several pending dependency updates inherited a date-sensitive power test. The
+[Unit Tests job](https://github.com/Asherlc/dofek/actions/runs/36647977811/job/109677446817)
+failed with `AssertionError: expected null to be 190` in the raw-power fallback
+fixture: its fixed activity date fell outside the current-power window. Current
+main already freezes that fixture's clock; incorporating main passed all 42
+power-repository tests locally and preserved its patched transitive dependencies.
+
+The [AWS update](https://github.com/Asherlc/dofek/pull/2848) additionally failed
+root typechecking at `src/export-storage.ts:59` and
+`src/file-upload-storage.ts:86`: independently updated SDK packages resolved
+incompatible Smithy types. Updating the S3 client and request presigner together
+addresses their shared type contract. The
+[table update](https://github.com/Asherlc/dofek/pull/2850) failed the web build
+because `getCoreRowModel` and `useReactTable` are no longer exported in v9;
+its caller requires the documented [v9 migration](https://tanstack.com/table/latest/docs/guide/migrating).
+The [Expo core](https://github.com/Asherlc/dofek/pull/2845) and
+[maps](https://github.com/Asherlc/dofek/pull/2851) updates failed
+`pnpm expo install --check` against the SDK 57 version matrix. The user approved
+a coordinated [SDK 58 beta migration](https://expo.dev/changelog/sdk-58-beta);
+its native compatibility and CI validation remain required before merge.
+
+Local full lint initially failed because the required ClickHouse service had
+not started. The exact prerequisite command, `pnpm compose:up`, then failed
+with `all predefined address pools have been fully subnetted`. Inspection found
+six unused workspace networks, each with zero attached containers. With explicit
+user approval, each was rechecked immediately before removal; no container or
+volume was deleted. The same Compose command then completed successfully.
+Docker documents [network inspection](https://docs.docker.com/reference/cli/docker/network/inspect/)
+and [network removal](https://docs.docker.com/reference/cli/docker/network/rm/).
+
+Production was unchanged during diagnosis. No retry, timeout, audit exclusion,
+or CI gate was relaxed. Remaining work is fresh CI and native validation of the
+updated PR heads. For future dependency batches, inspect the first fatal log,
+check whether main already contains its direct fix, and verify SDK version
+matrices before attempting independent native-package updates.
