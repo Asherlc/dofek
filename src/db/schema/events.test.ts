@@ -8,8 +8,6 @@ import {
   fileUploadOutbox,
   imuSession,
   menstrualPeriod,
-  personalExperiment,
-  personalExperimentCheckIn,
   providerDataDeletionOutbox,
   providerDataGeneration,
   sharedReport,
@@ -24,8 +22,6 @@ describe("event schema", () => {
       fileUpload,
       fileUploadOutbox,
       syncLog,
-      personalExperiment,
-      personalExperimentCheckIn,
       breathworkSession,
       sharedReport,
       menstrualPeriod,
@@ -42,16 +38,12 @@ describe("event schema", () => {
   it("keeps lifecycle records uniquely addressable and constrained", () => {
     const upload = getTableConfig(fileUpload);
     const deletionOutbox = getTableConfig(providerDataDeletionOutbox);
-    const experiment = getTableConfig(personalExperiment);
 
     expect(upload.indexes.map((index) => index.config.name)).toEqual(
       expect.arrayContaining(["file_upload_owner_updated_idx", "file_upload_reconcile_idx"]),
     );
     expect(deletionOutbox.checks.map((check) => check.name)).toContain(
       "provider_data_deletion_outbox_status_valid",
-    );
-    expect(experiment.checks.map((check) => check.name)).toContain(
-      "personal_experiment_stopped_at_consistent",
     );
   });
 });

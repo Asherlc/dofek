@@ -1237,8 +1237,6 @@ describe("Router data coverage", () => {
     });
   });
 
-  // ── Life event analyze with ranged event (covers endDate branches) ──
-
   // ── Trends (covers roundOrNull non-null branch with ClickHouse trend data) ──
   describe("trends with data", () => {
     it("daily returns aggregated metrics from the ClickHouse trend read model", async () => {

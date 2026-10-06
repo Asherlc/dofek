@@ -37,7 +37,6 @@ import { mobileDashboardRouter } from "./routers/mobile-dashboard.ts";
 import { monthlyReportRouter } from "./routers/monthly-report.ts";
 import { nutritionRouter } from "./routers/nutrition.ts";
 import { nutritionAnalyticsRouter } from "./routers/nutrition-analytics.ts";
-import { personalExperimentsRouter } from "./routers/personal-experiments.ts";
 import { personalizationRouter } from "./routers/personalization.ts";
 import { pmcRouter } from "./routers/pmc.ts";
 import { powerRouter } from "./routers/power.ts";
@@ -85,7 +84,6 @@ const appRouterProcedures = {
   nutrition: nutritionRouter,
   nutritionAnalytics: nutritionAnalyticsRouter,
   insights: insightsRouter,
-  personalExperiments: personalExperimentsRouter,
   mobileDashboard: mobileDashboardRouter,
   supplements: supplementsRouter,
   providerDetail: providerDetailRouter,

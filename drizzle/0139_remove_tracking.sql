@@ -140,8 +140,6 @@ DROP TABLE fitness.journal_entry;
 --> statement-breakpoint
 DROP TABLE fitness.journal_question;
 --> statement-breakpoint
-DROP TABLE fitness.life_events;
---> statement-breakpoint
 DROP TABLE fitness.subjective_symptom;
 --> statement-breakpoint
 DROP TABLE fitness.subjective_check_in;

@@ -56,9 +56,6 @@ describe("Responsive decision controls", () => {
           .should("be.visible")
           .and(expectInsideViewport(viewportWidth));
 
-        cy.contains("a", "Start experiment with Heart Rate Variability")
-          .should("be.visible")
-          .and(expectInsideViewport(viewportWidth));
         expectNoHorizontalOverflow();
       });
     }

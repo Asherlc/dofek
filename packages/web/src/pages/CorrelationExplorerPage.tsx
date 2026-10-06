@@ -444,20 +444,6 @@ export function CorrelationExplorerPage() {
                 })}
               </p>
             </div>
-
-            <div className="flex flex-wrap items-center gap-3">
-              <Link
-                to="/experiments"
-                search={{ outcomeMetricId: metricY, lagDays: lag }}
-                className="inline-flex w-full justify-center px-3 py-1.5 text-center text-xs rounded-md bg-accent/15 text-foreground hover:bg-accent/25 transition-colors sm:w-auto"
-              >
-                Start experiment with {yMetric?.label ?? "this outcome"}
-              </Link>
-              <span className="text-[10px] text-dim">
-                Prefills the outcome and lag. You still choose a controllable intervention — the
-                correlated X metric is not assumed to be one.
-              </span>
-            </div>
           </div>
         )}
 

@@ -127,7 +127,6 @@ describe("appRouter", () => {
       "bleHeartRateSync",
       "companionPairing",
       "companionToken",
-      "personalExperiments",
       "sleep",
       "sleepNeed",
       "dailyMetrics",

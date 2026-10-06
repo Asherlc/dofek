@@ -50,7 +50,7 @@ describe("tracking MCP scope migration", () => {
       [JSON.stringify(token), JSON.stringify(grant), userId],
     );
     const migration = readFileSync(
-      resolve(import.meta.dirname, "../../drizzle/0138_remove_tracking_mcp_scope.sql"),
+      resolve(import.meta.dirname, "../../drizzle/0140_remove_tracking_mcp_scope.sql"),
       "utf8",
     );
     for (const statement of migration.split("--> statement-breakpoint"))

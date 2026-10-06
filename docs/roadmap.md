@@ -52,19 +52,6 @@ The category increasingly centers the home experience on timely guidance rather 
 
 This outcome is successful when a newly activated user can receive a credible action within 24 hours of connecting sufficient data, and returning users regularly engage with or intentionally dismiss the Brief.
 
-### Next: Personal Experiments
-
-Turn correlations and medication-dose events into guided N-of-1 experiments.
-
-- [x] Let a user choose a question or hypothesis, outcome, intervention, and practical experiment duration. *(setup & schedule slice; see [`personal-experiments.md`](./personal-experiments.md))*
-- [x] Record raw adherence and obvious confounders once per experiment day; outcome observations remain canonical server-derived data. *(learning-loop slice; see [`personal-experiments.md`](./personal-experiments.md))*
-- [x] Support relevant time lags instead of assuming only same-day effects. *(setup stores lag; analysis deferred)*
-- [x] Report descriptive effect direction and magnitude, sample size, uncertainty, missing data, and limitations without claiming causality. *(learning-loop slice; see [`personal-experiments.md`](./personal-experiments.md))*
-- [ ] Recommend extending or stopping an experiment when evidence is insufficient rather than manufacturing a conclusion. *(manual stop shipped; evidence-based recommend deferred)*
-- [ ] Feed completed experiments into future Daily Brief recommendations only when the evidence contract permits it.
-
-[Exist](https://exist.io/) combines automatic data, manual tracking, goals, experiments, correlations, and weekly summaries, and documents that it requires several weeks of data before producing correlations in its [correlation FAQ](https://exist.io/page/faqs/). [Bearable's Factor Effect Report](https://bearable.app/support/howto/the-factor-effect-report/) connects behaviors and interventions to symptoms, mood, and sleep. Dofek can build a stronger version by using its broader provider data and explicit provenance.
-
 ### Next: Goals, Calendar, and Plan Compliance
 
 Connect each daily decision to a longer-term outcome.
@@ -125,7 +112,6 @@ Instrument and review these measures before expanding the roadmap:
 - **Time to value:** elapsed time between account creation and the first explanation or recommendation based on real user data.
 - **Data readiness:** percentage of active users with enough fresh data to generate a Brief, plus the leading causes of insufficient data.
 - **Brief usefulness:** accept, modify, intentional-dismiss, and outcome-check-in rates.
-- **Experiment completion:** percentage of started experiments that collect enough adherent observations to report a result or a justified insufficient-data outcome.
 - **Retention:** day 7, day 30, and rolling four-week retention segmented by activation and Brief engagement.
 - **Conversion:** subscription conversion segmented by source count, goal, first insight, and Brief engagement.
 - **Trust:** source-remediation success, report corrections, support contacts about incorrect metrics, and user-reported recommendation confidence.

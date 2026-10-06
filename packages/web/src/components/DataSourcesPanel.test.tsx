@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { ROUTINE_SYNC_DAYS } from "@dofek/providers/sync-actions";
+import { ROUTINE_SYNC_DAYS, SYNC_ALL_ACTIONS } from "@dofek/providers/sync-actions";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -701,6 +701,24 @@ describe("DataSourcesPanel", () => {
     expect(
       within(screen.getByTestId("provider-card-garmin")).getByText("Latest sync: success"),
     ).toBeTruthy();
+  });
+
+  it("starts an unbounded sync for all connected providers only after confirmation", async () => {
+    mockSyncMutateAsync.mockResolvedValue({ providerResults: [] });
+    render(<DataSourcesPanel />);
+
+    fireEvent.click(screen.getByRole("button", { name: SYNC_ALL_ACTIONS.full.accessibilityLabel }));
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).getByText(SYNC_ALL_ACTIONS.full.confirmationDescription)).toBeTruthy();
+    expect(mockSyncMutateAsync).not.toHaveBeenCalled();
+
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: SYNC_ALL_ACTIONS.full.confirmLabel }),
+    );
+    await waitFor(() => {
+      expect(mockSyncMutateAsync).toHaveBeenCalledExactlyOnceWith({ sinceDays: undefined });
+    });
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 
   it("shows sync-all skipped and failed provider outcomes only on matching cards", async () => {

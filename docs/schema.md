@@ -5,17 +5,20 @@ truth is the domain modules under `src/db/schema/` (Drizzle generates migrations
 them through `src/db/drizzle-schema.ts`). Rebuildable read models live outside
 `fitness`, currently in the `analytics` schema.
 
-Tracking storage is retired by [migration 0137](../drizzle/0137_remove_tracking.sql):
-journal entries and questions, life events, daily subjective check-ins and symptoms,
+Tracking storage is retired by [migration 0139](../drizzle/0139_remove_tracking.sql):
+journal entries and questions, daily subjective check-ins and symptoms,
 injury events, and body-region references are dropped with their data. PostgreSQL
 [`DROP TABLE`](https://www.postgresql.org/docs/current/sql-droptable.html) removes
 the tables and their indexes and constraints. The provider-statistics projection is
 rebuilt first; [ClickHouse migration 0100](../src/db/clickhouse-migrations/0100_remove_tracking.ts)
 removes the journal mirror and derived statistics. Use the existing
 [deployment sequence](../deploy/README.md#deployment) to reconcile PeerDB mappings
-before migrations. [Migration 0138](../drizzle/0138_remove_tracking_mcp_scope.sql)
+before migrations. [Migration 0140](../drizzle/0140_remove_tracking_mcp_scope.sql)
 removes the retired injury-write permission while preserving other token and grant
 permissions.
+
+Personal experiments and life events were retired by [migration 0137](../drizzle/0137_remove_personal_experiments.sql)
+and [migration 0138](../drizzle/0138_remove_life_events.sql), respectively.
 
 ## Data Model Philosophy: Raw Data Only
 
@@ -239,8 +242,6 @@ tables through ClickHouse replication.
 | `fitness.v_nutrition_display_entry` | Itemized entries and meal aggregates shown once as editable food cards; daily aggregates and ambiguous samples remain totals-only provider data |
 | `fitness.lab_result` | Clinical lab results (from Apple Health / FHIR) |
 | `fitness.health_event` | Generic health events catch-all |
-| `fitness.personal_experiment` | User-authored N-of-1 setup and stop status; schedule and analysis fields are derived |
-| `fitness.personal_experiment_check_in` | One raw adherence/confounder/note check-in per experiment local date; derived outcome data is never stored |
 
 Supplement schedule, definition, nutrient, and dose-event ownership is defined
 by the [canonical Drizzle schema](../src/db/schema/nutrition.ts) and introduced

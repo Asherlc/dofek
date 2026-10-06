@@ -13,7 +13,6 @@ const navItems = [
   { to: "/nutrition", label: "Nutrition" },
   { to: "/body", label: "Body" },
   { to: "/correlation", label: "Correlation" },
-  { to: "/experiments", label: "Experiments" },
   { to: "/health-report", label: "Reports" },
   { to: "/more", label: "More" },
 ] as const;

@@ -13,9 +13,6 @@ const state: {
 
 vi.mock("@tanstack/react-router", () => ({
   createFileRoute: () => () => ({}),
-  Link: ({ children, to }: { children: ReactNode; to: string }) => (
-    <a href={typeof to === "string" ? to : "/experiments"}>{children}</a>
-  ),
 }));
 
 vi.mock("../../hooks/useTodayQueryDate.ts", () => ({
