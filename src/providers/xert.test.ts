@@ -58,7 +58,7 @@ vi.mock("../db/provider-activity-sync.ts", async (importOriginal) => {
   };
 });
 
-import { getProviderAuthType } from "./types.ts";
+import { getProviderAuthTypeFromSetup } from "./types.ts";
 import {
   mapXertSport,
   parseXertActivity,
@@ -260,7 +260,7 @@ describe("XertProvider", () => {
   });
 
   it("is detected as a credential provider", () => {
-    expect(getProviderAuthType(new XertProvider())).toBe("credential");
+    expect(getProviderAuthTypeFromSetup(new XertProvider().authSetup())).toBe("credential");
   });
 
   it("sync returns error when no tokens", async () => {

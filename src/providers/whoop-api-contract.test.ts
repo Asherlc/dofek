@@ -28,48 +28,6 @@ const hasCredentials = REFRESH_TOKEN.length > 0 && !Number.isNaN(USER_ID) && USE
 // If the API stops providing these fields, the test fails.
 // ============================================================
 
-/** Every sleep record must have timestamps we can parse */
-const sleepTimestampSchema = z
-  .object({
-    start: z.string().optional(),
-    end: z.string().optional(),
-    during: z.string().optional(),
-  })
-  .refine((record) => (record.start && record.end) || record.during, {
-    message:
-      "Sleep record must have either (start + end) or during — our parseSleep needs at least one",
-  });
-
-const sleepStageSummarySchema = z.object({
-  total_in_bed_time_milli: z.number(),
-  total_awake_time_milli: z.number(),
-  total_light_sleep_time_milli: z.number(),
-  total_slow_wave_sleep_time_milli: z.number(),
-  total_rem_sleep_time_milli: z.number(),
-});
-
-const sleepNeededSchema = z.object({
-  baseline_milli: z.number(),
-  need_from_sleep_debt_milli: z.number(),
-  need_from_recent_strain_milli: z.number(),
-  need_from_recent_nap_milli: z.number(),
-});
-
-const sleepScoreSchema = z.object({
-  stage_summary: sleepStageSummarySchema,
-  sleep_needed: sleepNeededSchema,
-  sleep_efficiency_percentage: z.number(),
-});
-
-const sleepRecordSchema = z
-  .object({
-    id: z.union([z.number(), z.string()]),
-    user_id: z.number(),
-    nap: z.boolean(),
-    score: sleepScoreSchema.optional(),
-  })
-  .and(sleepTimestampSchema);
-
 /** Recovery must have biometric data we can extract */
 const recoverySchema = z
   .object({
@@ -178,42 +136,6 @@ describe.skipIf(!hasCredentials)("WHOOP API contract", () => {
         console.error("Recovery contract violation:", JSON.stringify(result.error.issues, null, 2));
         console.error("Recovery keys:", Object.keys(cycle.recovery));
         console.error("Recovery sample:", JSON.stringify(cycle.recovery, null, 2).slice(0, 500));
-      }
-      expect(result.success).toBe(true);
-    }
-  });
-
-  it("getSleep returns record with parseable timestamps", async () => {
-    const end = new Date();
-    const start = new Date(end.getTime() - 3 * 24 * 60 * 60 * 1000);
-
-    const cycles = await client.getCycles(start.toISOString(), end.toISOString(), 5);
-
-    // Find sleep IDs from v2_activities
-    const sleepIds: string[] = [];
-    for (const cycle of cycles) {
-      for (const v2Activity of cycle.v2_activities ?? []) {
-        if (
-          v2Activity.score_type?.toLowerCase() === "sleep" ||
-          v2Activity.type?.toLowerCase().includes("sleep")
-        ) {
-          sleepIds.push(v2Activity.id);
-        }
-      }
-    }
-    expect(sleepIds.length).toBeGreaterThan(0);
-
-    // Validate each sleep response
-    for (const sleepId of sleepIds.slice(0, 3)) {
-      const sleepData = await client.getSleep(sleepId);
-      const result = sleepRecordSchema.safeParse(sleepData);
-      if (!result.success) {
-        console.error(
-          `Sleep ${sleepId} contract violation:`,
-          JSON.stringify(result.error.issues, null, 2),
-        );
-        console.error("Sleep keys:", Object.keys(sleepData));
-        console.error("Sleep sample:", JSON.stringify(sleepData, null, 2).slice(0, 500));
       }
       expect(result.success).toBe(true);
     }

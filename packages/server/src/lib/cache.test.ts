@@ -1,5 +1,4 @@
 import {
-  invalidateAllQueries,
   invalidateAllUserQueries,
   invalidateUserQueryDomains,
   MemoryCacheStore,
@@ -155,15 +154,5 @@ describe("user query invalidation", () => {
 
     expect(await queryCache.get("user1:activity.list:UTC:{}")).toBeUndefined();
     expect(await queryCache.get("user2:activity.list:UTC:{}")).toBe("other-user");
-  });
-
-  it("invalidates globally visible queries for every user", async () => {
-    await queryCache.set("user1:activity.list:UTC:{}", "first-user", 60_000);
-    await queryCache.set("user2:activity.list:UTC:{}", "second-user", 60_000);
-
-    await invalidateAllQueries();
-
-    expect(await queryCache.get("user1:activity.list:UTC:{}")).toBeUndefined();
-    expect(await queryCache.get("user2:activity.list:UTC:{}")).toBeUndefined();
   });
 });

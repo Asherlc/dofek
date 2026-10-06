@@ -270,11 +270,6 @@ export function getRecordSelectFilterColumns(dataType: DataType): readonly strin
   }
 }
 
-/** Whether record filter options are loaded from ClickHouse instead of Postgres. */
-export function usesClickHouseRecordFilterOptions(dataType: DataType): boolean {
-  return dataType === "bodyMeasurements" || dataType === "metricStream";
-}
-
 /** Curated columns shown in the provider detail records table. */
 export function getRecordDisplayColumns(dataType: DataType): readonly string[] {
   const candidates = getRecordFilterColumns(dataType).filter(

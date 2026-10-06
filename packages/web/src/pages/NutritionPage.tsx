@@ -47,11 +47,6 @@ export const foodEntrySchema = z
   .passthrough();
 export type FoodEntry = z.infer<typeof foodEntrySchema>;
 
-export const selectedDateFoodSchema = z.object({
-  entries: z.array(foodEntrySchema),
-  summary: selectedDateNutritionSummarySchema,
-});
-
 export const selectedDateFoodV2Schema = z.object({
   entries: z.array(foodEntrySchema),
   summary: selectedDateNutritionSummarySchema.nullable(),

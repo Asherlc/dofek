@@ -11,15 +11,6 @@ export function providerLabel(id: string): string {
   return providerCatalogEntry(id)?.label ?? id;
 }
 
-export interface ProviderProvenance {
-  providerId: string;
-  label: string;
-}
-
-export function resolveProviderProvenance(providerId: string): ProviderProvenance {
-  return { providerId, label: providerLabel(providerId) };
-}
-
 export function providerSourceLabel(id: string, subsource?: string | null): string {
   if (id === "apple_health" && subsource) return `${subsource} (via Apple Health)`;
   return providerLabel(id);
@@ -70,18 +61,6 @@ export function providerAbsentExplanation(id: string, subsource?: string | null)
   }
   return `This activity was hidden because ${providerSourceLabel(id, subsource)} reported it as deleted or missing.`;
 }
-
-export const SVG_LOGOS: ReadonlySet<string> = new Set(
-  Object.entries(PROVIDER_CATALOG)
-    .filter(([, entry]) => entry.logo?.type === "svg")
-    .map(([id, entry]) => entry.logo?.id ?? id),
-);
-
-export const PNG_LOGOS: ReadonlySet<string> = new Set(
-  Object.entries(PROVIDER_CATALOG)
-    .filter(([, entry]) => entry.logo?.type === "png")
-    .map(([id, entry]) => entry.logo?.id ?? id),
-);
 
 export const BRAND_COLORS: Readonly<Record<string, string>> = Object.entries(
   PROVIDER_CATALOG,

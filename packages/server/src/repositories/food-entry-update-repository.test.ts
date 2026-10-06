@@ -262,10 +262,10 @@ describe("delete — object shape", () => {
 
 describe("update — early return null condition boundary", () => {
   it("returns null only when ALL three conditions are met: no food clauses, no nutrient clauses, no nutrients", async () => {
-    // Pass an unrecognized field name that is not in fieldColumnMap or NUTRIENT_COLUMN_MAP
+    // Pass an unrecognized field name outside the editable fields and nutrient mapping.
     const { repo } = makeRepository([]);
     const result = await repo.update({ id: "entry-1", unknownField: "value" });
-    // unknownField is not in fieldColumnMap or NUTRIENT_COLUMN_MAP, and no nutrients key
+    // unknownField is neither an editable field nor a nutrient field, and there is no nutrients key.
     // => foodEntryClauses.length === 0 && nutrientClauses.length === 0 && !nutrients => null
     expect(result).toBeNull();
   });
@@ -551,7 +551,7 @@ describe("update — multiple nutrient fields at once", () => {
 });
 
 describe("update — nutrient null value handling", () => {
-  it("handles nutrient field set to null (null branch in NUTRIENT_COLUMN_MAP)", async () => {
+  it("handles a nutrient field set to null", async () => {
     const foodRow = makeFoodEntryRow();
     const execute = vi
       .fn()

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import { FoodEntry, FoodRepository } from "./food-repository.ts";
+import { FoodEntry } from "./food-entry-models.ts";
+import { FoodRepository } from "./food-repository.ts";
 import { makeFoodEntryRow } from "./food-repository-test-helpers.ts";
 
 describe("FoodRepository", () => {

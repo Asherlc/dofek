@@ -15,10 +15,8 @@ const mocks = vi.hoisted(() => {
   const mockLoggerProvider = vi.fn(function loggerProviderConstructor() {
     return {
       getLogger: mocks.mockGetLogger,
-      forceFlush: mocks.mockForceFlush,
     };
   });
-  const mockForceFlush = vi.fn().mockResolvedValue(undefined);
   return {
     mockInit,
     mockCaptureException,
@@ -29,7 +27,6 @@ const mocks = vi.hoisted(() => {
     mockResourceFromAttributes,
     mockBatchLogRecordProcessor,
     mockLoggerProvider,
-    mockForceFlush,
   };
 });
 
@@ -42,7 +39,6 @@ vi.mock("@sentry/react-native", () => ({
 
 const posthogMocks = vi.hoisted(() => {
   const captureException = vi.fn();
-  const flush = vi.fn().mockResolvedValue(undefined);
   const register = vi.fn();
   const mockPosthogConstructor = vi.fn(function posthogConstructor(
     _apiKey: string,
@@ -50,11 +46,10 @@ const posthogMocks = vi.hoisted(() => {
   ) {
     return {
       captureException,
-      flush,
       register,
     };
   });
-  return { captureException, flush, register, mockPosthogConstructor };
+  return { captureException, register, mockPosthogConstructor };
 });
 
 type PostHogClientOptions = {
@@ -542,17 +537,5 @@ describe("ios telemetry", () => {
 
     // No OTel calls
     expect(mocks.mockGetLogger).not.toHaveBeenCalled();
-  });
-
-  it("flushTelemetry flushes the OTel provider", async () => {
-    process.env.EXPO_PUBLIC_SENTRY_DSN = "https://key@sentry.example/789";
-    process.env.EXPO_PUBLIC_OTEL_ENDPOINT = "https://api.axiom.co/v1/logs";
-
-    const mod = await import("./telemetry");
-    mod.initTelemetry();
-
-    await mod.flushTelemetry();
-
-    expect(mocks.mockForceFlush).toHaveBeenCalledTimes(1);
   });
 });

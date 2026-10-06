@@ -227,25 +227,6 @@ export function isSyncProvider(provider: Provider): provider is SyncProvider {
 }
 
 // ============================================================
-// Specialized provider interfaces
-// ============================================================
-
-/** Provider that authenticates via OAuth 2.0 redirect (Strava, Fitbit, Wahoo, etc.) */
-export interface OAuthProvider extends SyncProvider {
-  authSetup(options?: { host?: string }): ProviderAuthSetup;
-}
-
-/** Provider that authenticates via user-provided credentials (Eight Sleep, Zwift, etc.) */
-export interface CredentialProvider extends SyncProvider {
-  authSetup(options?: { host?: string }): ProviderAuthSetup & {
-    automatedLogin: NonNullable<ProviderAuthSetup["automatedLogin"]>;
-  };
-}
-
-/** Provider that uses file import only (Strong CSV, Cronometer CSV) */
-export interface FileImportProvider extends ImportProvider {}
-
-// ============================================================
 // Webhook support
 // ============================================================
 
@@ -347,23 +328,4 @@ export interface WebhookProvider extends SyncProvider {
 /** Type guard: narrows a Provider to WebhookProvider. */
 export function isWebhookProvider(provider: Provider): provider is WebhookProvider {
   return "registerWebhook" in provider && typeof provider.registerWebhook === "function";
-}
-
-// ============================================================
-// Runtime auth type detection
-// ============================================================
-
-/**
- * Detect a provider's authentication type from its interface.
- * Used by the sync router to tell the frontend which auth flow to use.
- */
-export function getProviderAuthType(provider: Provider): ProviderAuthType | "none" {
-  if ("importOnly" in provider && provider.importOnly === true) return "file-import";
-  let setup: ProviderAuthSetup | undefined;
-  try {
-    setup = provider.authSetup?.();
-  } catch {
-    return "none";
-  }
-  return getProviderAuthTypeFromSetup(setup);
 }

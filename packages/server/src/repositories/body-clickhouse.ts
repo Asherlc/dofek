@@ -69,13 +69,6 @@ export const bodyLatestClickHouseSchema = z.object({
   body_fat_pct: z.coerce.number().nullable(),
 });
 
-export const bodyComparisonClickHouseSchema = z.object({
-  period: z.string(),
-  measurements: z.coerce.number(),
-  avg_weight: z.coerce.number().nullable(),
-  avg_body_fat: z.coerce.number().nullable(),
-});
-
 type BodyWeightOptions = {
   requireBodyFat?: boolean;
   accessWindow?: AccessWindow;
@@ -270,56 +263,4 @@ export async function fetchLatestBodyMeasurement(
     { userId },
   );
   return rows[0] ?? null;
-}
-
-export async function fetchBodyComparisonRows(
-  store: BodyClickHouseStore,
-  userId: string,
-  timezone: string,
-  startDate: string,
-  endDate: string | null,
-  windowDays: number,
-): Promise<z.infer<typeof bodyComparisonClickHouseSchema>[]> {
-  const normalizedEndDate = endDate?.toLowerCase();
-  const afterEndClause =
-    endDate === null
-      ? "AND local_date <= addDays(toDate({startDate:String}), {windowDays:UInt32})"
-      : normalizedEndDate === "now" || normalizedEndDate === "now()"
-        ? "AND local_date <= today()"
-        : "AND local_date <= toDate({endDate:String})";
-
-  return store.query(
-    bodyComparisonClickHouseSchema,
-    `
-      WITH body_rows AS (
-        SELECT
-          toDate(toTimeZone(recorded_at, {timezone:String})) AS local_date,
-          weight_kg,
-          body_fat_pct
-        FROM analytics.v_body_measurement
-        WHERE user_id = {userId:UUID}
-          AND (weight_kg IS NULL OR weight_kg > 0)
-      ),
-      combined AS (
-        SELECT 'before' AS period, weight_kg, body_fat_pct
-        FROM body_rows
-        WHERE local_date BETWEEN subtractDays(toDate({startDate:String}), {windowDays:UInt32})
-          AND subtractDays(toDate({startDate:String}), 1)
-        UNION ALL
-        SELECT 'after' AS period, weight_kg, body_fat_pct
-        FROM body_rows
-        WHERE local_date >= toDate({startDate:String})
-          ${afterEndClause}
-      )
-      SELECT
-        period,
-        count() AS measurements,
-        avg(weight_kg) AS avg_weight,
-        avg(body_fat_pct) AS avg_body_fat
-      FROM combined
-      GROUP BY period
-      ORDER BY period
-    `,
-    { userId, timezone, startDate, endDate: endDate ?? startDate, windowDays },
-  );
 }

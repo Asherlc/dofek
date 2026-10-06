@@ -47,8 +47,6 @@ export function createWahooWorkoutSummarySchema() {
 
 export const wahooWorkoutSummarySchema = createWahooWorkoutSummarySchema();
 
-export type WahooWorkoutSummary = z.infer<typeof wahooWorkoutSummarySchema>;
-
 export function createWahooWorkoutSchema() {
   return z.object({
     id: z.number(),

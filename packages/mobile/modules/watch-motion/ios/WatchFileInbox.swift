@@ -30,12 +30,6 @@ final class WatchFileInbox {
         self.fileManager = fileManager
     }
 
-    func persistReceivedFile(at sourceURL: URL, metadata: [String: Any]?) throws -> String {
-        operationLock.lock()
-        defer { operationLock.unlock() }
-        return try persistReceivedFileWithoutLock(at: sourceURL, metadata: metadata)
-    }
-
     func persistReceivedFileIfAccepted(
         at sourceURL: URL,
         metadata: [String: Any]?,

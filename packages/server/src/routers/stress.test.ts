@@ -1,4 +1,4 @@
-import { defaultStressThresholds } from "@dofek/recovery/stress";
+import type { StressThresholds } from "@dofek/recovery/stress";
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("../trpc.ts", async () => {
@@ -40,7 +40,10 @@ vi.mock("dofek/personalization/storage", () => ({
 
 vi.mock("dofek/personalization/params", () => ({
   getEffectiveParams: vi.fn().mockReturnValue({
-    stressThresholds: defaultStressThresholds(),
+    stressThresholds: {
+      hrvThresholds: [-2, -1.5, -1],
+      rhrThresholds: [2, 1.5, 1],
+    } satisfies StressThresholds,
   }),
 }));
 

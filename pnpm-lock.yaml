@@ -542,9 +542,6 @@ importers:
       '@react-native-community/datetimepicker':
         specifier: 9.2.1
         version: 9.2.1(expo@58.0.5)(react-native@0.88.0-rc.3)(react@19.3.0)
-      '@react-native-community/slider':
-        specifier: 5.2.1
-        version: 5.2.1
       '@sentry/cli':
         specifier: 3.7.0
         version: 3.7.0

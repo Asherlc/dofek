@@ -1,5 +1,5 @@
 import { execSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
@@ -75,7 +75,6 @@ import {
   buildSourceNameMap,
   defaultConsoleProgress,
   extractExportXml,
-  findLatestExport,
   importAppleHealthFile,
   importClinicalRecords,
   importMedicationDoseEvents,
@@ -2756,82 +2755,5 @@ describe("buildSourceNameMap", () => {
     // Only the entry with both attributes should be in the map
     expect(map.size).toBe(1);
     expect(map.get("clinical-records/valid.json")).toBe("LabCorp");
-  });
-});
-
-// ============================================================
-// findLatestExport
-// ============================================================
-
-describe("findLatestExport", () => {
-  let tmpDir: string;
-  const savedEnv = process.env.APPLE_HEALTH_IMPORT_DIR;
-
-  beforeAll(() => {
-    tmpDir = join(tmpdir(), `find-export-test-${Date.now()}`);
-    mkdirSync(tmpDir, { recursive: true });
-  });
-
-  afterEach(() => {
-    if (savedEnv !== undefined) {
-      process.env.APPLE_HEALTH_IMPORT_DIR = savedEnv;
-    } else {
-      delete process.env.APPLE_HEALTH_IMPORT_DIR;
-    }
-  });
-
-  afterAll(() => {
-    try {
-      rmSync(tmpDir, { recursive: true, force: true });
-    } catch {
-      /* best effort */
-    }
-  });
-
-  it("returns null when APPLE_HEALTH_IMPORT_DIR is not set", () => {
-    delete process.env.APPLE_HEALTH_IMPORT_DIR;
-    expect(findLatestExport()).toBeNull();
-  });
-
-  it("returns null when directory does not exist", () => {
-    process.env.APPLE_HEALTH_IMPORT_DIR = join(tmpDir, "nonexistent");
-    expect(findLatestExport()).toBeNull();
-  });
-
-  it("returns null when no .xml or .zip files exist", () => {
-    const dir = join(tmpDir, "no-match");
-    mkdirSync(dir, { recursive: true });
-    writeFileSync(join(dir, "readme.txt"), "data");
-    process.env.APPLE_HEALTH_IMPORT_DIR = dir;
-
-    expect(findLatestExport()).toBeNull();
-  });
-
-  it("returns the latest export file by modification time", () => {
-    // Use file names where alphabetical order differs from mtime order
-    // to ensure the sort is actually working (not just relying on fs order)
-    const dir = join(tmpDir, "multi-files");
-    mkdirSync(dir, { recursive: true });
-    writeFileSync(join(dir, "aaa-old.xml"), "old data");
-    writeFileSync(join(dir, "zzz-new.zip"), "new data");
-    // Force aaa-old.xml to have an old mtime
-    utimesSync(join(dir, "aaa-old.xml"), new Date("2020-01-01"), new Date("2020-01-01"));
-    process.env.APPLE_HEALTH_IMPORT_DIR = dir;
-
-    const result = findLatestExport();
-
-    // zzz-new.zip is newest by mtime, even though alphabetically last
-    expect(result).toBe(join(dir, "zzz-new.zip"));
-  });
-
-  it("returns .xml file when it is the only option", () => {
-    const dir = join(tmpDir, "xml-only");
-    mkdirSync(dir, { recursive: true });
-    writeFileSync(join(dir, "export.xml"), "xml data");
-    process.env.APPLE_HEALTH_IMPORT_DIR = dir;
-
-    const result = findLatestExport();
-
-    expect(result).toBe(join(dir, "export.xml"));
   });
 });

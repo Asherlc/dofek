@@ -13,8 +13,8 @@ The `UnitConverter` class provides a unified interface for converting and labeli
 
 ### Date and Time (`format.ts`)
 - **Robust Parsing**: `parseValidDate` normalizes Postgres-style timestamps (space-separated) for JS engines like Hermes (React Native) and older Safari that only support ISO 8601.
-- **Date Labels**: `formatDateShort`, `formatDateMedium`, `formatDateLong`, `formatMonthYear`, and `formatWeekdayShort` provide shared human-readable date labels. Use `formatDateYmd` for local query dates and `formatDateYmdInTimeZone` when the date key must be computed in a named timezone.
-- **Time Labels**: `formatDateTime`, `formatTimeOnly`, `formatWeekdayTime`, and the legacy `formatTime` wrapper provide shared human-readable time labels.
+- **Date Labels**: `formatDateShort`, `formatDateMedium`, `formatDateLong`, and `formatWeekdayShort` provide shared human-readable date labels. Use `formatDateYmd` for local query dates and `formatDateYmdInTimeZone` when the date key must be computed in a named timezone. See [the formatting helpers](src/format.ts).
+- **Time Labels**: `formatDateTime`, `formatTimeOnly`, and the `formatTime` wrapper provide shared human-readable time labels. See [the formatting helpers](src/format.ts).
 - **Localization**: Date/time labels follow the device locale and time zone, including its 12/24-hour clock convention. Pass `locale` or `timeZone` options for an explicit display context. API date keys remain `YYYY-MM-DD`. This uses the standard [Intl.DateTimeFormat locale and time-zone defaults](https://tc39.es/ecma402/#sec-createdatetimeformat).
 - **Relative Time**: `formatRelativeTime` provides human-readable strings like "just now", "5m ago", "2h ago", and "3d ago".
 - **Durations**: `formatDurationMinutes`, `formatDurationSeconds`, and `formatDurationRange` format time spans as "Xh Ym", "Xm", or "Xs".
@@ -23,14 +23,13 @@ The `UnitConverter` class provides a unified interface for converting and labeli
 ### Numeric Formatting
 
 - `formatNumber`: Safely formats finite numbers with fixed decimals; returns `--` for `NaN` or `Infinity`.
-- `formatPercent`: Converts 0–1 ratios to percentage strings.
 - `formatSigned`: Prefixes positive values with `+`.
 
 ### Domain Metric Formatting
 
 Use the shared domain helpers from `@dofek/format/format` anywhere these values are displayed:
 - Nutrition values: `formatNutritionNumber`, `formatCalories`, `formatGrams`, and `formatNutritionAmount` use 0 decimals.
-- Body composition values: `formatBodyCompositionNumber` and `formatBodyCompositionPercent` use 1 decimal.
+- Body composition values: [`formatBodyCompositionNumber`](src/format.ts) uses 1 decimal.
 - Recovery and training values: `formatHRV`, `formatSpO2`, `formatSteps`, `formatIntensity`, and `formatTrainingLoad` use 0 decimals; `formatSteps` also groups thousands.
 - Dates and times: use the shared date/time helpers above instead of direct `toLocaleDateString`, `toLocaleTimeString`, `toLocaleString`, or ad hoc `toISOString().slice(0, 10)` in display code. Use `formatTableCellValue` for generic table cells and detail modals that may contain dates or timestamps.
 - Time spans: `formatDurationMinutes`, `formatDurationSeconds`, and `formatDurationRange` provide human-readable durations.

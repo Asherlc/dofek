@@ -1,8 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  heartRateZoneCaseSql,
   heartRateZoneCountColumns,
-  heartRateZoneNumbersSql,
   heartRateZoneSqlParams,
   heartRateZoneSumColumns,
 } from "./heart-rate-zone-sql.ts";
@@ -25,19 +23,6 @@ describe("heart-rate-zone-sql", () => {
     });
   });
 
-  it("generates case predicates with open first and last zone bounds", () => {
-    expect(heartRateZoneCaseSql("scalar")).toBe(
-      [
-        "WHEN 0 THEN scalar < {restingHr:Float64} + ({maxHr:Float64} - {restingHr:Float64}) * {heartRateZone0MaxPctHrr:Float64}",
-        "WHEN 1 THEN scalar >= {restingHr:Float64} + ({maxHr:Float64} - {restingHr:Float64}) * {heartRateZone1MinPctHrr:Float64}\n                AND scalar < {restingHr:Float64} + ({maxHr:Float64} - {restingHr:Float64}) * {heartRateZone1MaxPctHrr:Float64}",
-        "WHEN 2 THEN scalar >= {restingHr:Float64} + ({maxHr:Float64} - {restingHr:Float64}) * {heartRateZone2MinPctHrr:Float64}\n                AND scalar < {restingHr:Float64} + ({maxHr:Float64} - {restingHr:Float64}) * {heartRateZone2MaxPctHrr:Float64}",
-        "WHEN 3 THEN scalar >= {restingHr:Float64} + ({maxHr:Float64} - {restingHr:Float64}) * {heartRateZone3MinPctHrr:Float64}\n                AND scalar < {restingHr:Float64} + ({maxHr:Float64} - {restingHr:Float64}) * {heartRateZone3MaxPctHrr:Float64}",
-        "WHEN 4 THEN scalar >= {restingHr:Float64} + ({maxHr:Float64} - {restingHr:Float64}) * {heartRateZone4MinPctHrr:Float64}\n                AND scalar < {restingHr:Float64} + ({maxHr:Float64} - {restingHr:Float64}) * {heartRateZone4MaxPctHrr:Float64}",
-        "WHEN 5 THEN scalar >= {restingHr:Float64} + ({maxHr:Float64} - {restingHr:Float64}) * {heartRateZone5MinPctHrr:Float64}",
-      ].join("\n              "),
-    );
-  });
-
   it("generates count columns with activity metadata heart-rate expressions", () => {
     expect(
       heartRateZoneCountColumns("heart_rate", { maxHr: "am.max_hr", restingHr: "am.resting_hr" }),
@@ -53,8 +38,7 @@ describe("heart-rate-zone-sql", () => {
     );
   });
 
-  it("generates zone number and sum projections for zone zero through zone five", () => {
-    expect(heartRateZoneNumbersSql()).toBe("SELECT number AS zone FROM numbers(6)");
+  it("generates sum projections for zone zero through zone five", () => {
     expect(heartRateZoneSumColumns()).toBe(
       [
         "sum(zone0) AS zone0",

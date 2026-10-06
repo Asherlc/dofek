@@ -4,7 +4,6 @@ import {
   BRAND_COLORS,
   formatProviderAbsentTombstoneSummary,
   formatProviderPartialAbsenceSummary,
-  PNG_LOGOS,
   PROVIDER_LABELS,
   providerAbsentExplanation,
   providerLabel,
@@ -12,8 +11,6 @@ import {
   providerLogoType,
   providerRecordLabel,
   providerSourceLabel,
-  resolveProviderProvenance,
-  SVG_LOGOS,
 } from "./providers.ts";
 
 describe("PROVIDER_LABELS", () => {
@@ -50,15 +47,6 @@ describe("providerLabel", () => {
 
   it("falls back to the raw ID for unknown providers", () => {
     expect(providerLabel("unknown-provider")).toBe("unknown-provider");
-  });
-});
-
-describe("resolveProviderProvenance", () => {
-  it("pairs the canonical human label with the diagnostic provider ID", () => {
-    expect(resolveProviderProvenance("manual_review")).toEqual({
-      providerId: "manual_review",
-      label: "Manual review",
-    });
   });
 });
 
@@ -126,32 +114,6 @@ describe("providerAbsentExplanation", () => {
   });
 });
 
-describe("SVG_LOGOS", () => {
-  it("contains providers with SVG logos", () => {
-    expect(SVG_LOGOS.has("strava")).toBe(true);
-    expect(SVG_LOGOS.has("garmin")).toBe(true);
-    expect(SVG_LOGOS.has("google")).toBe(true);
-  });
-
-  it("does not contain PNG-only providers", () => {
-    expect(SVG_LOGOS.has("wahoo")).toBe(false);
-    expect(SVG_LOGOS.has("whoop")).toBe(false);
-  });
-});
-
-describe("PNG_LOGOS", () => {
-  it("contains providers with PNG logos", () => {
-    expect(PNG_LOGOS.has("wahoo")).toBe(true);
-    expect(PNG_LOGOS.has("whoop")).toBe(true);
-    expect(PNG_LOGOS.has("polar")).toBe(true);
-  });
-
-  it("does not contain SVG providers", () => {
-    expect(PNG_LOGOS.has("strava")).toBe(false);
-    expect(PNG_LOGOS.has("garmin")).toBe(false);
-  });
-});
-
 describe("BRAND_COLORS", () => {
   it("maps providers to hex color strings", () => {
     expect(BRAND_COLORS.velohero).toBe("#FF6600");
@@ -183,8 +145,7 @@ describe("providerLogoType", () => {
 describe("Ziva catalog metadata", () => {
   it("uses the generic provider presentation without guessed branding", () => {
     expect(BRAND_COLORS.ziva).toBeUndefined();
-    expect(SVG_LOGOS.has("ziva")).toBe(false);
-    expect(PNG_LOGOS.has("ziva")).toBe(false);
+    expect(providerLogoType("ziva")).toBeNull();
   });
 });
 

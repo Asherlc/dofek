@@ -1,8 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-  formatAssociationEstimateLabel,
   formatBodyCompositionNumber,
-  formatBodyCompositionPercent,
   formatCalories,
   formatCaloriesMeasurement,
   formatClimbingAttemptResult,
@@ -21,13 +19,10 @@ import {
   formatHRV,
   formatHRVMeasurement,
   formatIntensity,
-  formatMonthYear,
   formatNumber,
   formatNutritionAmount,
   formatNutritionNumber,
   formatPace,
-  formatPercent,
-  formatReadinessDifference,
   formatRelativeTime,
   formatSigned,
   formatSleepDebt,
@@ -41,7 +36,6 @@ import {
   formatTimeOnly,
   formatTrainingLoad,
   formatWeekdayShort,
-  formatWeekdayTime,
   isToday,
   isYesterday,
   parseValidDate,
@@ -142,13 +136,12 @@ describe("shiftDateYmd", () => {
 });
 
 describe("date and time formatters", () => {
-  it("formats short, medium, long, month, and weekday date labels", () => {
+  it("formats short, medium, long, and weekday date labels", () => {
     const date = new Date(2026, 0, 5, 14, 30);
 
     expect(formatDateShort(date)).toBe("Jan 5");
     expect(formatDateMedium(date)).toBe("Jan 5, 2026");
     expect(formatDateLong(date)).toBe("Mon, Jan 5, 2026");
-    expect(formatMonthYear(date)).toBe("January 2026");
     expect(formatWeekdayShort(date)).toBe("Mon");
   });
 
@@ -161,7 +154,6 @@ describe("date and time formatters", () => {
 
     expect(formatDateTime(date)).toBe("Jan 5, 2026, 2:30 PM");
     expect(formatTimeOnly(date)).toBe("2:30 PM");
-    expect(formatWeekdayTime(date)).toBe("Monday 2:30 PM");
   });
 
   it("supports timezone-aware date labels", () => {
@@ -334,43 +326,6 @@ describe("formatClimbingAttemptResult", () => {
       "Not sent; attempt count not recorded",
     );
     expect(formatClimbingAttemptResult(null, 3, null)).toBe("3 attempts; outcome not recorded");
-  });
-});
-
-describe("formatReadinessDifference", () => {
-  it("uses neutral direction labels for positive, negative, and zero differences", () => {
-    expect(formatReadinessDifference(18.6)).toBe("18.6% higher");
-    expect(formatReadinessDifference(-12.4)).toBe("12.4% lower");
-    expect(formatReadinessDifference(0)).toBe("0.0% difference");
-  });
-
-  it("returns a placeholder for a non-finite difference", () => {
-    expect(formatReadinessDifference(Number.NaN)).toBe("--");
-  });
-});
-
-describe("formatAssociationEstimateLabel", () => {
-  it("keeps the server-authored unavailable label intact", () => {
-    expect(formatAssociationEstimateLabel("Estimate unavailable")).toBe("Estimate unavailable");
-  });
-
-  it("keeps a bare Estimate label from gaining a duplicate prefix", () => {
-    expect(formatAssociationEstimateLabel("Estimate")).toBe("Estimate");
-  });
-
-  it("adds the estimate prefix to numeric server labels", () => {
-    expect(formatAssociationEstimateLabel("18.6% higher")).toBe("Estimate: 18.6% higher");
-  });
-
-  it("normalizes surrounding whitespace without duplicating a server prefix", () => {
-    expect(formatAssociationEstimateLabel("  Estimate unavailable  ")).toBe("Estimate unavailable");
-    expect(formatAssociationEstimateLabel(" 18.6% higher ")).toBe("Estimate: 18.6% higher");
-  });
-
-  it("prefixes labels that mention Estimate away from the start", () => {
-    expect(formatAssociationEstimateLabel("relative Estimate effect")).toBe(
-      "Estimate: relative Estimate effect",
-    );
   });
 });
 
@@ -728,32 +683,6 @@ describe("formatNumber", () => {
   });
 });
 
-describe("formatPercent", () => {
-  it("formats a ratio as percentage with default 0 decimals", () => {
-    expect(formatPercent(0.75)).toBe("75%");
-  });
-
-  it("formats with 1 decimal", () => {
-    expect(formatPercent(0.756, 1)).toBe("75.6%");
-  });
-
-  it("handles 0", () => {
-    expect(formatPercent(0)).toBe("0%");
-  });
-
-  it("handles 1 (100%)", () => {
-    expect(formatPercent(1)).toBe("100%");
-  });
-
-  it("handles values already in percentage scale", () => {
-    expect(formatPercent(75.6, 1)).toBe("7560.0%");
-  });
-
-  it("returns -- for NaN", () => {
-    expect(formatPercent(Number.NaN)).toBe("--");
-  });
-});
-
 describe("formatSigned", () => {
   it("prepends + for positive numbers", () => {
     expect(formatSigned(2.5, 1)).toBe("+2.5");
@@ -809,7 +738,6 @@ describe("domain metric formatters", () => {
   it("formats body composition values with 1 decimal", () => {
     expect(formatBodyCompositionNumber(82.44)).toBe("82.4");
     expect(formatBodyCompositionNumber(82.45)).toBe("82.5");
-    expect(formatBodyCompositionPercent(18.24)).toBe("18.2%");
   });
 
   it("formats oxygen saturation with 0 decimals", () => {

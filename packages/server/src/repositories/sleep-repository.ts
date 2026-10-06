@@ -11,16 +11,6 @@ import { fetchLatestSleepNight, fetchSleepNights } from "./clickhouse-sleep-repo
 // Zod schemas
 // ---------------------------------------------------------------------------
 
-export const sleepListRowSchema = z.object({
-  started_at: z.string(),
-  duration_minutes: z.coerce.number().nullable(),
-  deep_minutes: z.coerce.number().nullable(),
-  rem_minutes: z.coerce.number().nullable(),
-  light_minutes: z.coerce.number().nullable(),
-  awake_minutes: z.coerce.number().nullable(),
-  efficiency_pct: z.coerce.number().nullable(),
-});
-
 const sleepStageRowSchema = z.object({
   stage: z.enum(["deep", "light", "rem", "awake"]),
   started_at: z.string(),

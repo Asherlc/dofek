@@ -21,11 +21,6 @@ export function getAllProviders(): Provider[] {
   return Array.from(providers.values());
 }
 
-/** Returns only providers that sync via API (excludes import-only providers). */
-export function getSyncProviders(): SyncProvider[] {
-  return getAllProviders().filter(isSyncProvider);
-}
-
 /**
  * Sync-eligible providers are API sync providers and not CSV import providers.
  */
@@ -40,8 +35,4 @@ export function getEnabledSyncProviders(): SyncProvider[] {
   return getAllProviders().filter((provider): provider is SyncProvider => {
     return isSyncEligibleProvider(provider) && provider.validate() === null;
   });
-}
-
-export function getEnabledProviders(): Provider[] {
-  return getAllProviders().filter((p) => p.validate() === null);
 }

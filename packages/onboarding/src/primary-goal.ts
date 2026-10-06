@@ -41,9 +41,6 @@ export const PRIMARY_GOAL_OPTIONS: ReadonlyArray<PrimaryGoalOption> = [
 ];
 
 const GOAL_IDS: ReadonlySet<string> = new Set(primaryGoalIds);
-const GOAL_MAP: ReadonlyMap<string, PrimaryGoalOption> = new Map(
-  PRIMARY_GOAL_OPTIONS.map((option) => [option.id, option]),
-);
 
 function isPrimaryGoal(value: unknown): value is PrimaryGoal {
   return typeof value === "string" && GOAL_IDS.has(value);
@@ -52,9 +49,4 @@ function isPrimaryGoal(value: unknown): value is PrimaryGoal {
 /** Parse a setting value into a PrimaryGoal, or null when unset/invalid. */
 export function parsePrimaryGoal(value: unknown): PrimaryGoal | null {
   return isPrimaryGoal(value) ? value : null;
-}
-
-/** Human-readable label for a primary goal, falls back to the raw id. */
-export function primaryGoalLabel(id: string): string {
-  return GOAL_MAP.get(id)?.label ?? id;
 }

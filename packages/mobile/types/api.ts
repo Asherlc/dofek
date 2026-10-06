@@ -45,16 +45,12 @@ export const ActivityRowSchema = ActivityRowBaseSchema.transform((row) => ({
       : { status: "available" as const }),
 }));
 
-export type ActivityRow = z.infer<typeof ActivityRowSchema>;
-
 export const WeeklyVolumeRowSchema = z.object({
   week: z.string(),
   canonical_type: z.string(),
   count: z.number(),
   hours: z.coerce.number(),
 });
-
-export type WeeklyVolumeRow = z.infer<typeof WeeklyVolumeRowSchema>;
 
 export const FoodEntrySchema = z
   .object({
@@ -70,11 +66,6 @@ export const FoodEntrySchema = z
   .passthrough();
 
 export type FoodEntryRow = z.infer<typeof FoodEntrySchema>;
-
-export const FoodByDateSchema = z.object({
-  entries: z.array(FoodEntrySchema),
-  summary: selectedDateNutritionSummarySchema,
-});
 
 export const FoodByDateV2Schema = z.object({
   entries: z.array(FoodEntrySchema),

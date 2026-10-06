@@ -6,8 +6,8 @@ import {
 import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-  markSyncStepAdmissionClaimed,
   runWithSyncStepAdmission,
+  tryClaimSyncStepAdmission,
 } from "./sync-step-admission-context.ts";
 
 const sharedRedisMocks = vi.hoisted(() => ({
@@ -260,7 +260,7 @@ describe("InMemoryAdaptiveRateLimitStore", () => {
     const store = new InMemoryAdaptiveRateLimitStore();
 
     await runWithSyncStepAdmission(async () => {
-      markSyncStepAdmissionClaimed();
+      tryClaimSyncStepAdmission();
       await store.awaitAdmission("garmin", "provider", null);
     });
 

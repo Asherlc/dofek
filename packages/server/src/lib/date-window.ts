@@ -145,10 +145,6 @@ export function selectedChartRangeDaysSchema(
   return rangeDaysSchema(SELECTED_CHART_RANGE_ENDPOINTS[endpoint].defaultDays, options);
 }
 
-export function rangeDaysInput(defaultDays: number) {
-  return z.object({ days: rangeDaysSchema(defaultDays) });
-}
-
 export function selectedChartRangeInput(
   endpoint: SelectedChartRangeEndpoint,
   options: { min?: number; max?: number } = {},
@@ -332,10 +328,6 @@ export function timestampWindowStartPredicate(
   return operator === ">="
     ? sql`AND ${column} >= ${timestampWindowStart(endDate, days)}`
     : sql`AND ${column} > ${timestampWindowStart(endDate, days)}`;
-}
-
-export function timestampWindowStartString(endDate: string, days: number): string {
-  return `${dateWindowStartString(endDate, days)} 00:00:00`;
 }
 
 export function currentDateRangePredicate(

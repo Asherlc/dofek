@@ -16,7 +16,6 @@ import {
   endDateSchema,
   postgresCurrentTimestampRangeLowerBound,
   postgresEndDateTimestampRangeLowerBound,
-  rangeDaysInput,
   rangeDaysOrNullAdd,
   rangeDaysParams,
   selectedChartDateRangeInput,
@@ -24,7 +23,6 @@ import {
   selectedDateRangeInput,
   timestampWindowStart,
   timestampWindowStartPredicate,
-  timestampWindowStartString,
 } from "./date-window.ts";
 
 const dialect = new PgDialect();
@@ -75,21 +73,6 @@ describe("selectedDateRangeInput", () => {
       endDate: "2026-03-23",
       days: null,
     });
-  });
-});
-
-describe("rangeDaysInput", () => {
-  it("defaults omitted days to the provided finite window", () => {
-    expect(rangeDaysInput(90).parse({})).toEqual({ days: 90 });
-  });
-
-  it("preserves null days as an unbounded all-time range", () => {
-    expect(rangeDaysInput(90).parse({ days: null })).toEqual({ days: null });
-  });
-
-  it("rejects non-positive finite days", () => {
-    expect(() => rangeDaysInput(90).parse({ days: 0 })).toThrow(z.ZodError);
-    expect(() => rangeDaysInput(90).parse({ days: -1 })).toThrow(z.ZodError);
   });
 });
 
@@ -370,11 +353,5 @@ describe("timestampWindowStart", () => {
     const dateStart = dateWindowStart("2026-03-23", 7);
     // They use different SQL casts (::timestamp vs just ::date - ::int)
     expect(timestamp).not.toEqual(dateStart);
-  });
-});
-
-describe("timestampWindowStartString", () => {
-  it("returns a midnight timestamp lower bound for non-SQL query parameters", () => {
-    expect(timestampWindowStartString("2026-03-23", 7)).toBe("2026-03-16 00:00:00");
   });
 });

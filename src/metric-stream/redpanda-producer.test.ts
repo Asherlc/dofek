@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
-  createKafkaMetricStreamEventPublisherFromEnv,
+  createKafkaMetricStreamEventPublisherForRoute,
   KafkaMetricStreamEventPublisher,
   type KafkaProducerLike,
   type KafkaProducerSendInput,
@@ -348,10 +348,10 @@ describe("getDefaultMetricStreamEventPublisher", () => {
   });
 });
 
-describe("createKafkaMetricStreamEventPublisherFromEnv", () => {
+describe("createKafkaMetricStreamEventPublisherForRoute", () => {
   it("requires Redpanda brokers", async () => {
     await expect(
-      createKafkaMetricStreamEventPublisherFromEnv({
+      createKafkaMetricStreamEventPublisherForRoute("live", {
         METRIC_STREAM_LIVE_TOPIC: "metric-stream-live-v1",
       }),
     ).rejects.toThrow("REDPANDA_BROKERS is required");
@@ -359,7 +359,7 @@ describe("createKafkaMetricStreamEventPublisherFromEnv", () => {
 
   it("requires a live metric stream topic", async () => {
     await expect(
-      createKafkaMetricStreamEventPublisherFromEnv({
+      createKafkaMetricStreamEventPublisherForRoute("live", {
         REDPANDA_BROKERS: "redpanda:9092",
       }),
     ).rejects.toThrow("METRIC_STREAM_LIVE_TOPIC is required");
@@ -367,7 +367,7 @@ describe("createKafkaMetricStreamEventPublisherFromEnv", () => {
 
   it("rejects broker lists that only contain separators and whitespace", async () => {
     await expect(
-      createKafkaMetricStreamEventPublisherFromEnv({
+      createKafkaMetricStreamEventPublisherForRoute("live", {
         METRIC_STREAM_LIVE_TOPIC: "metric-stream-live-v1",
         REDPANDA_BROKERS: " , ",
       }),
@@ -379,7 +379,7 @@ describe("createKafkaMetricStreamEventPublisherFromEnv", () => {
     kafkaProducerFactory.mockClear();
     kafkaProducerConnect.mockClear();
 
-    const publisher = await createKafkaMetricStreamEventPublisherFromEnv({
+    const publisher = await createKafkaMetricStreamEventPublisherForRoute("live", {
       METRIC_STREAM_LIVE_TOPIC: "metric-stream-live-v1",
       REDPANDA_BROKERS: " redpanda:9092 , redpanda:9093 ",
     });

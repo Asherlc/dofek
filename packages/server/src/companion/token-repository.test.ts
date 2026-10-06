@@ -3,7 +3,7 @@ import {
   createOrGetCompanionToken,
   generateCompanionToken,
   hashCompanionToken,
-  regenerateCompanionToken,
+  regenerateCompanionTokenInTransaction,
   revokeCompanionToken,
   revokeCompanionTokenByToken,
   validateCompanionToken,
@@ -109,7 +109,7 @@ describe("token-repository", () => {
     });
   });
 
-  describe("regenerateCompanionToken", () => {
+  describe("regenerateCompanionTokenInTransaction", () => {
     it("revokes existing token and creates a new one", async () => {
       const transaction = createMockDb();
       transaction.execute
@@ -128,21 +128,10 @@ describe("token-repository", () => {
             revoked_at: null,
           },
         ]); // INSERT ... ON CONFLICT ... RETURNING
-      let transactionCallCount = 0;
-      const db = {
-        execute: vi.fn(),
-        transaction: async <T>(callback: (tx: typeof transaction) => Promise<T>): Promise<T> => {
-          transactionCallCount += 1;
-          return callback(transaction);
-        },
-      };
-
-      const result = await regenerateCompanionToken(db, "user-123");
+      const result = await regenerateCompanionTokenInTransaction(transaction, "user-123");
 
       expect(result.id).toBe("new-id");
       expect(result.token).not.toBeNull();
-      expect(transactionCallCount).toBe(1);
-      expect(db.execute).not.toHaveBeenCalled();
     });
 
     it("returns a conflict result without revoking an active token", async () => {
@@ -162,12 +151,7 @@ describe("token-repository", () => {
             revoked_at: null,
           },
         ]); // SELECT active token
-      const db = {
-        transaction: async <T>(callback: (tx: typeof transaction) => Promise<T>): Promise<T> =>
-          callback(transaction),
-      };
-
-      const result = await regenerateCompanionToken(db, "user-123");
+      const result = await regenerateCompanionTokenInTransaction(transaction, "user-123");
 
       expect(result).toEqual({
         id: "new-id",
