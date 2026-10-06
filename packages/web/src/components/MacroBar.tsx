@@ -23,9 +23,9 @@ export function MacroBar({ label, grams, energySharePercentage, color }: MacroBa
         <span className="font-medium text-muted">{label}</span>
         <span className="flex items-baseline gap-2 tabular-nums">
           <span className="font-medium text-foreground">
-            {formatNutritionNumber(energySharePercentage)}% of energy
+            {formatNutritionNumber(energySharePercentage)}%
           </span>
-          <span className="text-subtle">{formatGrams(grams)} logged</span>
+          <span className="text-subtle">{formatGrams(grams)}</span>
         </span>
       </div>
       <meter
@@ -33,7 +33,7 @@ export function MacroBar({ label, grams, energySharePercentage, color }: MacroBa
         value={energySharePercentage}
         min={0}
         max={100}
-        aria-label={`${label}: ${formatNutritionNumber(energySharePercentage)}% share of energy; ${formattedGrams} grams logged`}
+        aria-label={`${label}: ${formatNutritionNumber(energySharePercentage)}% of energy; ${formattedGrams} grams`}
       />
       <div className="h-2 rounded-full bg-accent/10 overflow-hidden" aria-hidden="true">
         <div

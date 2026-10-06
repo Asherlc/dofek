@@ -295,7 +295,7 @@ describe("foodRouter", () => {
         target: {
           calories: 2450,
           type: "configured",
-          label: "Configured daily logged-intake target",
+          label: "Target",
         },
         scale: {
           maximumCalories: 4259,

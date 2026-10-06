@@ -9,7 +9,6 @@ import type { ClimbingSessionSummaryRow } from "dofek-server/types";
 import { useId, useState } from "react";
 import type { Activity } from "../../components/ActivityList.tsx";
 import type { ActivityTableColumn } from "../../components/ActivityTable.tsx";
-import { ChartDescriptionTooltip } from "../../components/ChartDescriptionTooltip.tsx";
 import { ClimbingGradeProgressionChart } from "../../components/ClimbingGradeProgressionChart.tsx";
 import { ClimbingVolumeByGradeChart } from "../../components/ClimbingVolumeByGradeChart.tsx";
 import { HangboardingSummary } from "../../components/HangboardingSummary.tsx";
@@ -167,7 +166,7 @@ export function ClimbingTab() {
         </p>
       ) : null}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Section title="Grade Progression" subtitle="Best sent grade by session">
+        <Section title="Grade Progression">
           {gradeProgression.error && !gradeProgression.data ? (
             <QueryStatePanel error={gradeProgression.error} />
           ) : (
@@ -178,7 +177,7 @@ export function ClimbingTab() {
           )}
         </Section>
 
-        <Section title="Volume by Grade" subtitle="Attempts and sends grouped by grade">
+        <Section title="Volume by Grade">
           {volumeByGrade.error && !volumeByGrade.data ? (
             <QueryStatePanel error={volumeByGrade.error} />
           ) : (
@@ -190,10 +189,7 @@ export function ClimbingTab() {
         </Section>
       </div>
 
-      <Section
-        title="Recent Climbing Activities"
-        subtitle="Recent climbing activities with attempts, sends, and hardest grades"
-      >
+      <Section title="Recent Climbing Activities">
         <div className="space-y-4">
           {sessionSummary.error ? (
             <QueryStatePanel error={sessionSummary.error} height={0} />
@@ -257,10 +253,7 @@ export function ClimbingTab() {
         </div>
       </Section>
 
-      <Section
-        title="Hangboarding"
-        subtitle="Hangboard session time, intervals, and heart-rate summary"
-      >
+      <Section title="Hangboarding">
         {hangboardingSummary.error && !hangboardingSummary.data ? (
           <QueryStatePanel error={hangboardingSummary.error} />
         ) : (
@@ -277,20 +270,11 @@ export function ClimbingTab() {
   );
 }
 
-function Section({
-  title,
-  subtitle,
-  children,
-}: {
-  title: string;
-  subtitle: string;
-  children: React.ReactNode;
-}) {
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section>
       <div className="mb-1 flex items-center gap-2">
         <h2 className="text-sm font-medium text-muted uppercase tracking-wider">{title}</h2>
-        {subtitle && <ChartDescriptionTooltip description={subtitle} />}
       </div>
       <div className="card p-4">{children}</div>
     </section>

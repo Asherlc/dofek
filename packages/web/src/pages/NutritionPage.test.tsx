@@ -30,7 +30,7 @@ const defaultIntakeContext = {
   target: {
     calories: 2000,
     type: "default",
-    label: "Default daily logged-intake target",
+    label: "Default target",
   },
   scale: { maximumCalories: 2000, observedPercentage: 0, targetPercentage: 100 },
   comparison: {
@@ -105,7 +105,7 @@ describe("NutritionPage", () => {
           target: {
             calories: 2000,
             type: "default",
-            label: "Default daily logged-intake target",
+            label: "Default target",
           },
           scale: { maximumCalories: 2000, observedPercentage: 6, targetPercentage: 100 },
           comparison: {
@@ -159,7 +159,7 @@ describe("NutritionPage", () => {
           target: {
             calories: 2200,
             type: "configured",
-            label: "Configured daily logged-intake target",
+            label: "Target",
           },
           scale: {
             maximumCalories: 2200,
@@ -195,17 +195,12 @@ describe("NutritionPage", () => {
 
     expect(screen.getByText("999 kcal")).toBeTruthy();
     expect(screen.getByText("777 kcal")).toBeTruthy();
-    expect(
-      screen.getByText(
-        "Observed logged intake is 1,201 kcal below the configured daily logged-intake target.",
-      ),
-    ).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "Share of energy" })).toBeTruthy();
-    expect(screen.getByText("35% of energy")).toBeTruthy();
-    expect(screen.getByText("88 g logged")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Macros (% energy)" })).toBeTruthy();
+    expect(screen.getByText("35%")).toBeTruthy();
+    expect(screen.getByText("88 g")).toBeTruthy();
     expect(
       screen.getByRole("meter", {
-        name: "Protein: 35% share of energy; 88 grams logged",
+        name: "Protein: 35% of energy; 88 grams",
       }),
     ).toHaveAttribute("value", "35");
   });
@@ -263,7 +258,7 @@ describe("NutritionPage", () => {
           target: {
             calories: 2000,
             type: "default",
-            label: "Default daily logged-intake target",
+            label: "Default target",
           },
           scale: { maximumCalories: 2000, observedPercentage: 90, targetPercentage: 100 },
           comparison: {

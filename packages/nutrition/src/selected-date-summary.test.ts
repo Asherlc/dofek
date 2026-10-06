@@ -189,7 +189,7 @@ describe("selectedDateNutritionIntakeContextSchema", () => {
       target: {
         calories: 2450,
         type: "configured",
-        label: "Configured daily logged-intake target",
+        label: "Target",
       },
       scale: {
         maximumCalories: 4259,
@@ -215,7 +215,7 @@ describe("selectedDateNutritionIntakeContextSchema", () => {
       target: {
         calories: 2450,
         type: "configured",
-        label: "Configured daily logged-intake target",
+        label: "Target",
       },
       scale: {
         maximumCalories: 2450,

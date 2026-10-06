@@ -64,8 +64,7 @@ function tooltipTargetContext(row: MicronutrientSafetyReviewRow): string {
   }
   return `Target: ${row.adequacy.percentDailyValue}% of ${DAILY_VALUE_TARGET_LABEL} (${row.adequacy.reference.amount} ${escapeTooltipHtml(row.unit)}/day)<br/>
           Target status: ${targetStatusLabel(row.adequacy.status)}<br/>
-          Target source: ${escapeTooltipHtml(row.adequacy.reference.source.title)}<br/>
-          Target guidance: ${escapeTooltipHtml(row.adequacy.message)}`;
+          Target source: ${escapeTooltipHtml(row.adequacy.reference.source.title)}`;
 }
 
 function tooltipUpperLimitContext(row: MicronutrientSafetyReviewRow): string {
@@ -80,8 +79,7 @@ function tooltipUpperLimitContext(row: MicronutrientSafetyReviewRow): string {
   }
   return `<b>Tolerable Upper Intake Level (UL): ${upperLimit.amount} ${escapeTooltipHtml(upperLimit.unit)}/day for ${escapeTooltipHtml(upperLimitIntakeScopeLabel(upperLimit.intakeScope))}</b><br/>
           UL status: ${escapeTooltipHtml(upperLimitStatusLabel(upperLimit.status))}<br/>
-          UL source: ${escapeTooltipHtml(upperLimit.source.title)}<br/>
-          UL guidance: ${escapeTooltipHtml(upperLimit.message)}`;
+          UL source: ${escapeTooltipHtml(upperLimit.source.title)}${upperLimit.status === "at_or_above_limit" ? `<br/>UL guidance: ${escapeTooltipHtml(upperLimit.message)}` : ""}`;
 }
 
 function statusDetailClass(row: MicronutrientSafetyReviewRow): string {
@@ -137,10 +135,12 @@ function renderMicronutrientContextDetails({
                     </a>
                   </dd>
                 </div>
-                <div>
-                  <dt className="inline font-medium">Target guidance: </dt>
-                  <dd className="inline">{row.adequacy.message}</dd>
-                </div>
+                {row.adequacy.status === "not_evaluable" && (
+                  <div>
+                    <dt className="inline font-medium">Target guidance: </dt>
+                    <dd className="inline">{row.adequacy.message}</dd>
+                  </div>
+                )}
               </>
             ) : null}
             <div>
@@ -166,10 +166,12 @@ function renderMicronutrientContextDetails({
                     </a>
                   </dd>
                 </div>
-                <div>
-                  <dt className="inline font-medium">UL guidance: </dt>
-                  <dd className="inline">{row.upperLimit.message}</dd>
-                </div>
+                {row.upperLimit.status !== "within_limit" && (
+                  <div>
+                    <dt className="inline font-medium">UL guidance: </dt>
+                    <dd className="inline">{row.upperLimit.message}</dd>
+                  </div>
+                )}
               </>
             ) : null}
             <div>

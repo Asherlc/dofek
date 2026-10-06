@@ -97,7 +97,7 @@ describe("ProgressiveOverloadCards", () => {
     ).toBeTruthy();
   });
 
-  it("renders unavailable uncertainty exactly and formats imperial rates", () => {
+  it("formats decreasing weekly volume rates in imperial units", () => {
     render(
       <ProgressiveOverloadCards
         exercises={[
@@ -121,9 +121,6 @@ describe("ProgressiveOverloadCards", () => {
     );
 
     expect(screen.getByText("Decreasing 2.2 lb/week")).toBeTruthy();
-    expect(
-      screen.getByText("Uncertainty needs at least 4 recorded weeks; this estimate has 3."),
-    ).toBeTruthy();
   });
 
   it("distinguishes loading and empty states", () => {

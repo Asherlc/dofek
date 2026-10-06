@@ -5,9 +5,7 @@ export interface InsightEvidence {
   relationship: "descriptive_association" | "correlation";
   label: string;
   method: string;
-  interpretation: string;
   limitations: string;
-  recommendation: string;
   observationWindow?: string;
   estimateLabel?: string;
 }
@@ -27,10 +25,7 @@ export function createInsightEvidence(
           : scope === "rolling_monthly"
             ? "Observed-group mean comparison across overlapping 30-day rolling windows (with versus without the behavior); candidate differences use Welch's t-test with Benjamini–Hochberg screening."
             : "Observed-group mean comparison (with versus without the behavior); candidate differences use Welch's t-test with Benjamini–Hochberg screening.",
-      interpretation:
-        "This association does not prove cause. Missing data and other factors may affect it.",
       limitations: "No confidence interval is available for this comparison.",
-      recommendation: "This is not a prescription or recommendation to change the behavior.",
       observationWindow:
         scope === "monthly"
           ? "Monthly aggregates"
@@ -50,10 +45,7 @@ export function createInsightEvidence(
         : scope === "rolling_monthly"
           ? "Spearman rank correlation over paired observations from overlapping 30-day rolling windows; dependence-aware inference uses non-overlapping 30-day representatives with Benjamini–Hochberg screening."
           : "Spearman rank correlation over paired observations with Benjamini–Hochberg screening.",
-    interpretation:
-      "This correlation does not prove cause. Missing data and other factors may affect it.",
     limitations: "No confidence interval is available for this correlation.",
-    recommendation: "Use this as a hypothesis, not a prescription or treatment recommendation.",
     observationWindow:
       scope === "monthly"
         ? "Monthly aggregates"

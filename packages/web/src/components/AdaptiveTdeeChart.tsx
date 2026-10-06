@@ -118,14 +118,6 @@ function AdaptiveTdeeEvidence({ data }: { data: AdaptiveTdeeResult }) {
   return (
     <div className="space-y-1 text-xs text-dim">
       <p>
-        {evidence.selectedWindowDays}-day evaluation · {evidence.observedDays} accessible calendar
-        days
-      </p>
-      <p>
-        {evidence.fitWindowDays}-day fit · at least {evidence.minimumCalorieDays} usable calorie
-        days
-      </p>
-      <p>
         {evidence.calorieDays} calorie days · {evidence.weightDays} weight days ·{" "}
         {evidence.acceptedWindows} accepted windows
       </p>

@@ -13,7 +13,6 @@ import Animated, {
   withTiming,
 } from "react-native-reanimated";
 import { Card } from "../../components/Card";
-import { ChartTitleWithTooltip } from "../../components/ChartTitleWithTooltip";
 import { RecoveryRing } from "../../components/charts/RecoveryRing";
 import { SleepBar } from "../../components/charts/SleepBar";
 import { StrainGauge } from "../../components/charts/StrainGauge";
@@ -168,11 +167,7 @@ export default function TodayScreen() {
       {/* Recovery + Strain rings — tappable for navigation */}
       <View style={styles.ringsRow}>
         <View style={styles.ringSection}>
-          <ChartTitleWithTooltip
-            title="Recovery"
-            description="Readiness is scored from 0 to 100. Tap the ring to open recovery details."
-            textStyle={styles.sectionLabel}
-          />
+          <Text style={styles.sectionLabel}>Recovery</Text>
           <TouchableOpacity
             style={styles.ringTouchTarget}
             onPress={() => router.navigate("/(tabs)/recovery")}
@@ -194,11 +189,7 @@ export default function TodayScreen() {
           </TouchableOpacity>
         </View>
         <View style={styles.ringSection}>
-          <ChartTitleWithTooltip
-            title="Strain"
-            description="Daily training strain compared with your recent baseline. Tap the gauge to open training details."
-            textStyle={styles.sectionLabel}
-          />
+          <Text style={styles.sectionLabel}>Strain</Text>
           <TouchableOpacity
             style={styles.ringTouchTarget}
             onPress={() => router.navigate("/(tabs)/strain")}
@@ -325,9 +316,6 @@ export default function TodayScreen() {
               <>
                 <Text style={styles.sleepNeedTotal}>
                   {`${sleepNeed.estimateMetadata.valueQualifier} ${formatDurationMinutes(sleepNeed.totalNeedMinutes)}`}
-                </Text>
-                <Text style={styles.sleepNeedMetadataText}>
-                  {sleepNeed.estimateMetadata.limitationLabel}
                 </Text>
                 <TouchableOpacity
                   accessibilityRole="button"

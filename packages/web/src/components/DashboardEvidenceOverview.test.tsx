@@ -126,10 +126,8 @@ describe("DashboardEvidenceOverview", () => {
             relationship: "correlation",
             label: "Server-authored descriptive correlation",
             method: "Server correlation method.",
-            interpretation: "Server interpretation: association does not establish causation.",
             limitations:
               "Server limitations: missing observations and confounding remain possible.",
-            recommendation: "Server recommendation: this is not a prescription.",
             observationWindow: "Daily observations",
           },
           dataPoints: [{ x: 68, y: 82, date: "2026-05-27" }],
@@ -180,9 +178,7 @@ describe("DashboardEvidenceOverview", () => {
             relationship: "descriptive_association",
             label: "Descriptive association",
             method: "Server comparison method.",
-            interpretation: "Server interpretation: association does not establish causation.",
             limitations: "Server limitations.",
-            recommendation: "Server recommendation.",
             estimateLabel: "12.4% higher",
           },
         }}

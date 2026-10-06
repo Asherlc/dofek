@@ -103,7 +103,7 @@ describe("ProgressiveOverloadCards", () => {
     expect(chartColorsUsed).toEqual([chartColors.blue, chartColors.blue]);
   });
 
-  it("renders an explicit unavailable uncertainty reason", () => {
+  it("renders stable weekly volume rates", () => {
     render(
       <ProgressiveOverloadCards
         exercises={[
@@ -127,9 +127,6 @@ describe("ProgressiveOverloadCards", () => {
     );
 
     expect(screen.getByText("Stable 0.0 kg/week")).toHaveClass("text-muted");
-    expect(
-      screen.getByText("Uncertainty needs at least 4 recorded weeks; this estimate has 3."),
-    ).toBeInTheDocument();
   });
 
   it("formats weekly volume slopes in the selected weight unit", () => {

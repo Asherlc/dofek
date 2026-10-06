@@ -548,7 +548,6 @@ describe("TodayScreen independent loading states", () => {
     expect(screen.getByText("SLEEP ESTIMATE")).toBeTruthy();
     expect(screen.queryByText("SLEEP COACH")).toBeNull();
     expect(screen.getByText("About 8h 37m")).toBeTruthy();
-    expect(screen.getByText("Estimated sleep need with unquantified uncertainty.")).toBeTruthy();
     expect(screen.queryByText("Previous-day load adjustment")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "How this is calculated" }));
     expect(screen.getByText("+17m")).toBeTruthy();
@@ -566,7 +565,6 @@ describe("TodayScreen independent loading states", () => {
     expect(
       screen.getByText("Baseline average plus previous-day load and sleep-debt adjustments."),
     ).toBeTruthy();
-    expect(screen.getByText("Estimated sleep need with unquantified uncertainty.")).toBeTruthy();
     expect(screen.queryByText("recommended tonight")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "How this is calculated" }));
     expect(screen.queryByText("Previous-day load adjustment")).toBeNull();

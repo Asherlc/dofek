@@ -397,7 +397,6 @@ export function BodyPage() {
             <div className="card p-2 sm:p-4">
               <div className="mb-2 flex items-center gap-2">
                 <h4 className="text-xs font-medium text-subtle uppercase">Recomposition</h4>
-                <ChartDescriptionTooltip description="Fat and lean mass over time, shown in your selected weight unit." />
               </div>
               <BodyRecompositionChart
                 data={weightOverview.data?.recomposition ?? []}

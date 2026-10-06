@@ -47,7 +47,6 @@ import { ActivitySourceDecisionCard } from "../../components/activity/ActivitySo
 import { ProviderAbsentBanner } from "../../components/activity/ProviderAbsentBanner";
 import { styles } from "../../components/activity/styles";
 import { HrZonesChart, PowerZonesChart } from "../../components/activity/ZoneDistributionCharts";
-import { ChartTitleWithTooltip } from "../../components/ChartTitleWithTooltip";
 import { ClimbingEntryContext } from "../../components/ClimbingEntryContext";
 import { HangboardingDetail } from "../../components/HangboardingDetail";
 import { MuscleGroupBodyDiagram } from "../../components/MuscleGroupBodyDiagram";
@@ -252,11 +251,7 @@ function ExerciseBreakdown({
 
   return (
     <View style={exerciseStyles.container}>
-      <ChartTitleWithTooltip
-        title="Exercises"
-        description="Exercises performed during this strength workout, with details for each set."
-        textStyle={chartStyles.title}
-      />
+      <Text style={chartStyles.title}>Exercises</Text>
       {muscleGroupData.length > 0 && <MuscleGroupBodyDiagram data={muscleGroupData} />}
       {exercises.map((exercise) => {
         const hasWeight = exercise.sets.some((set) => set.weightKg != null);
@@ -412,11 +407,7 @@ interface ClimbingEntry {
 function ClimbingEntryBreakdown({ entries }: { entries: ClimbingEntry[] }) {
   return (
     <View style={climbingStyles.container}>
-      <ChartTitleWithTooltip
-        title="Climbs"
-        description="The climbs recorded during this session, including grades and send status."
-        textStyle={chartStyles.title}
-      />
+      <Text style={chartStyles.title}>Climbs</Text>
       {entries.map((entry) => {
         const attemptResult = formatClimbingAttemptResult(
           entry.sent,

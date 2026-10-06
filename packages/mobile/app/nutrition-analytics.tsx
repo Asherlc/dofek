@@ -113,7 +113,9 @@ function nutrientContextAccessibilityLabel(
     `Target: ${targetSummary(nutrient)}`,
     nutrient.adequacy == null ? null : `Target status: ${targetStatusSummary(nutrient)}`,
     nutrient.adequacy == null ? null : `Target source: ${nutrient.adequacy.reference.source.title}`,
-    nutrient.adequacy == null ? null : `Target guidance: ${nutrient.adequacy.message}`,
+    nutrient.adequacy?.status === "not_evaluable"
+      ? `Target guidance: ${nutrient.adequacy.message}`
+      : null,
     upperLimitSummary(nutrient),
     nutrient.upperLimit.status === "not_in_ruleset"
       ? null
@@ -121,7 +123,7 @@ function nutrientContextAccessibilityLabel(
     nutrient.upperLimit.status === "not_in_ruleset"
       ? null
       : `UL source: ${nutrient.upperLimit.source.title}`,
-    nutrient.upperLimit.status === "not_in_ruleset"
+    nutrient.upperLimit.status === "not_in_ruleset" || nutrient.upperLimit.status === "within_limit"
       ? null
       : `UL guidance: ${nutrient.upperLimit.message}`,
     `Average over ${nutrient.intake.daysTracked} recorded days in ${selectedWindowLabel(selectedWindowDays)}`,
@@ -158,9 +160,11 @@ function MicronutrientContextDetails({
               <Text style={styles.nutrientContextText}>
                 Target source: {nutrient.adequacy.reference.source.title}
               </Text>
-              <Text style={styles.nutrientContextText}>
-                Target guidance: {nutrient.adequacy.message}
-              </Text>
+              {nutrient.adequacy.status === "not_evaluable" && (
+                <Text style={styles.nutrientContextText}>
+                  Target guidance: {nutrient.adequacy.message}
+                </Text>
+              )}
             </>
           ) : null}
           <Text style={styles.nutrientContextText}>{upperLimitSummary(nutrient)}</Text>
@@ -172,9 +176,11 @@ function MicronutrientContextDetails({
               <Text style={styles.nutrientContextText}>
                 UL source: {nutrient.upperLimit.source.title}
               </Text>
-              <Text style={styles.nutrientContextText}>
-                UL guidance: {nutrient.upperLimit.message}
-              </Text>
+              {nutrient.upperLimit.status !== "within_limit" && (
+                <Text style={styles.nutrientContextText}>
+                  UL guidance: {nutrient.upperLimit.message}
+                </Text>
+              )}
             </>
           ) : null}
           <Text style={styles.nutrientContextText}>
@@ -351,14 +357,6 @@ function AdaptiveTdeeEvidence({ data }: { data: AdaptiveTdeeResult }) {
   return (
     <View style={styles.tdeeDetails}>
       <Text style={styles.cardSubtext}>
-        {evidence.selectedWindowDays}-day evaluation · {evidence.observedDays} accessible calendar
-        days
-      </Text>
-      <Text style={styles.cardSubtext}>
-        {evidence.fitWindowDays}-day fit · at least {evidence.minimumCalorieDays} usable calorie
-        days
-      </Text>
-      <Text style={styles.cardSubtext}>
         {evidence.calorieDays} calorie days · {evidence.weightDays} weight days ·{" "}
         {evidence.acceptedWindows} accepted windows
       </Text>
@@ -441,11 +439,7 @@ function MicronutrientAdequacySection({
 
   return (
     <View>
-      <ChartTitleWithTooltip
-        title="Micronutrient Adequacy"
-        description="Bars show average intake on recorded days as a percentage of the standard Daily Value. Markers may show a separate upper limit."
-        textStyle={styles.sectionTitle}
-      />
+      <Text style={styles.sectionTitle}>Micronutrient Adequacy</Text>
       <Text style={styles.sectionSubtext}>
         Average over recorded days vs. {DAILY_VALUE_TARGET_LABEL}
       </Text>

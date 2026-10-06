@@ -326,7 +326,7 @@ describe("StrainScreen recent activity navigation", () => {
     expect(mockProcessingStatusInvalidate).toHaveBeenCalledOnce();
   });
 
-  it("leads with plain labels while keeping server-owned model details accessible", async () => {
+  it("renders model labels, values, and calculation details", async () => {
     mockHrZonesState.data = {
       maxHr: 190,
       weeks: [],
@@ -395,15 +395,7 @@ describe("StrainScreen recent activity navigation", () => {
     render(<StrainScreen />);
 
     expect(screen.getByText("Heart-rate zone distribution")).toBeTruthy();
-    expect(
-      screen.getByText("Shows how recorded heart-rate time is distributed across effort zones."),
-    ).toBeTruthy();
-    expect(screen.queryByText("Mobile descriptive intensity explanation.")).toBeNull();
     expect(screen.getByText("Not polarized")).toBeTruthy();
-    expect(
-      screen.getByText("Shows the balance of easy, threshold, and high-intensity cycling."),
-    ).toBeTruthy();
-    expect(screen.queryByText("Server says exactly 2.00 is not polarized.")).toBeNull();
     expect(screen.getByText("Training variety and total load")).toBeTruthy();
     expect(screen.queryByText("Mobile Foster formula.")).toBeNull();
 
@@ -414,7 +406,7 @@ describe("StrainScreen recent activity navigation", () => {
     );
     expect(alertSpy).toHaveBeenCalledWith(
       "How this is calculated for Easy-to-hard training balance",
-      expect.stringContaining("Server says exactly 2.00 is not polarized."),
+      expect.stringContaining("Mobile Treff formula."),
       [{ text: "Close" }],
     );
     alertSpy.mockRestore();
@@ -495,9 +487,6 @@ describe("StrainScreen recent activity navigation", () => {
 
     expect(screen.getByText("Intensity refresh failed")).toBeTruthy();
     expect(screen.getByText("Polarization refresh failed")).toBeTruthy();
-    expect(
-      screen.getByText("Shows how recorded heart-rate time is distributed across effort zones."),
-    ).toBeTruthy();
     expect(screen.getByText("No easy-to-hard training balance data in this period")).toBeTruthy();
   });
 
@@ -832,9 +821,6 @@ describe("StrainScreen recent activity navigation", () => {
 
     expect(screen.getByText("Back Squat")).toBeTruthy();
     expect(screen.getByText("Increasing 100.0 kg/week")).toBeTruthy();
-    expect(
-      screen.getByText("Uncertainty needs at least 4 recorded weeks; this estimate has 2."),
-    ).toBeTruthy();
   });
 
   it("shows one server error notice for a failed composite training query", async () => {
@@ -880,7 +866,7 @@ describe("StrainScreen recent activity navigation", () => {
           name: "About How this is calculated for Heart-rate zone distribution",
         })
         .getAttribute("aria-description"),
-    ).toContain("Independent intensity data remains available.");
+    ).toContain("Karvonen");
   });
 
   it("keeps equal messages separate when training and companion queries both fail", async () => {
