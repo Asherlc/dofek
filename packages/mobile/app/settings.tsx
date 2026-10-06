@@ -80,7 +80,7 @@ const SETTINGS_CATEGORIES: readonly {
     id: "goals-models",
     label: "Goals & Models",
     searchText:
-      "goals models primary goal units journal trends health reports goal weight algorithm personalization",
+      "goals models primary goal units health reports goal weight algorithm personalization",
   },
   {
     id: "privacy-export",
@@ -534,28 +534,6 @@ export default function SettingsScreen() {
         </View>
       ) : null}
 
-      {/* ── Health Tracking ── */}
-      {activeCategory === "goals-models" ? (
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Health Tracking</Text>
-          <Text style={styles.sectionDescription}>Log and review personal health events</Text>
-          <View style={styles.healthTrackingCards}>
-            <TouchableOpacity
-              style={styles.card}
-              onPress={() => router.push("/tracking")}
-              activeOpacity={0.7}
-              accessibilityRole="button"
-              accessibilityLabel="Journal Trends"
-            >
-              <View style={styles.dataSourcesRow}>
-                <Text style={styles.navigationLabel}>Journal Trends</Text>
-                <Text style={styles.navigationChevron}>›</Text>
-              </View>
-            </TouchableOpacity>
-          </View>
-        </View>
-      ) : null}
-
       {activeCategory === "goals-models" ? (
         <ClimbingGradeSystemSettings
           errorMessage={
@@ -598,7 +576,6 @@ export default function SettingsScreen() {
       {activeCategory === "account" ? (
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Password</Text>
-          <Text style={styles.sectionDescription}>Set or change your email login password</Text>
           {passwordStatus.isLoading ? (
             <ActivityIndicator color={colors.accent} size="small" />
           ) : passwordStatus.error ? (
@@ -687,7 +664,6 @@ export default function SettingsScreen() {
       {activeCategory === "goals-models" ? (
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Units</Text>
-          <Text style={styles.sectionDescription}>Choose how measurements are displayed</Text>
           {unitSetting.error && (
             <Text style={styles.unitErrorText}>{userFacingErrorMessage(unitSetting.error)}</Text>
           )}

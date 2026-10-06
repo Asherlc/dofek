@@ -10,7 +10,6 @@ export interface ProviderStats {
   metricStream: number;
   nutritionDaily: number;
   clinicalRecords: number;
-  journalEntries: number;
 }
 
 /** Ordered mapping of stat keys to human-readable labels, used for display. */
@@ -27,7 +26,6 @@ export const DATA_TYPE_LABELS: ReadonlyArray<{
   { key: "nutritionDaily", label: "Nutrition" },
   { key: "healthEvents", label: "Events" },
   { key: "clinicalRecords", label: "Clinical Records" },
-  { key: "journalEntries", label: "Journal" },
 ] as const;
 
 /** Sum of all record counts for a provider. */

@@ -21,6 +21,50 @@ import {
 } from "../metric-stream/events.ts";
 import type { MetricStreamEventPublisher } from "../metric-stream/redpanda-producer.ts";
 
+export const OPENBETA_TEST_USER_UUID = "00000000-0000-0000-0000-000000000002";
+
+export function openBetaGrades(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    vscale: null,
+    yds: "5.10a",
+    ewbank: null,
+    french: null,
+    font: null,
+    uiaa: null,
+    brazilianCrux: null,
+    ...overrides,
+  };
+}
+
+export function openBetaClimb(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    uuid: "climb-uuid-1",
+    name: "Sunset Arete",
+    grades: openBetaGrades(),
+    type: { bouldering: false },
+    parent: { area_name: "Smith Rock" },
+    ...overrides,
+  };
+}
+
+export function openBetaTick(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    _id: "tick-1",
+    userId: OPENBETA_TEST_USER_UUID,
+    name: "Sunset Arete",
+    notes: "Great movement",
+    climbId: "climb-1",
+    style: "Lead",
+    attemptType: "Redpoint",
+    dateClimbed: 1786320000000,
+    grade: "5.10a",
+    source: "OB",
+    user: { username: "climber", displayName: "Climber" },
+    climb: openBetaClimb({ type: { trad: true, sport: false, bouldering: false } }),
+    ...overrides,
+  };
+}
+
 export function fakeJwt(expirationEpochSeconds: number): string {
   const header = Buffer.from(JSON.stringify({ alg: "none", typ: "JWT" })).toString("base64url");
   const payload = Buffer.from(JSON.stringify({ exp: expirationEpochSeconds })).toString(

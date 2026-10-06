@@ -588,7 +588,7 @@ describe("ActivitiesPage", () => {
     expect(screen.getByLabelText("Activity location map")).toBeDefined();
   });
 
-  it("explains the activity selection action before entering select mode", () => {
+  it("shows selection guidance while choosing activities", () => {
     mockQuery = {
       data: [{ date: "2026-03-18", activities: [activity()] }],
       isLoading: false,
@@ -598,7 +598,9 @@ describe("ActivitiesPage", () => {
 
     render(<ActivitiesPage />);
 
-    expect(screen.getByRole("button", { name: "Select activities" })).toBeDefined();
+    const selectButton = screen.getByRole("button", { name: "Select activities" });
+    expect(selectButton).toHaveAccessibleDescription("Choose activities to merge or delete.");
+    fireEvent.click(selectButton);
     expect(screen.getByText("Choose activities to merge or delete.")).toBeDefined();
   });
 

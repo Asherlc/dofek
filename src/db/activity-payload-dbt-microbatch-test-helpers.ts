@@ -72,6 +72,7 @@ export async function seedLocationFixture(
   await runStatements(client, [
     `DROP DATABASE IF EXISTS ${database} SYNC`,
     `CREATE DATABASE ${database}`,
+    createSourceActivitySql(database),
     createDedupedActivitiesSql(database),
     createDedupedActivityMembersSql(database),
     createMetricStreamSql(database),
@@ -586,6 +587,7 @@ export async function seedSensorFixture(client: ClickHouseClient, database: stri
   await runStatements(client, [
     `DROP DATABASE IF EXISTS ${database} SYNC`,
     `CREATE DATABASE ${database}`,
+    createSourceActivitySql(database),
     createDedupedActivitiesSql(database),
     createDedupedSensorSql(database),
     `INSERT INTO ${database}.deduped_activities VALUES
@@ -687,7 +689,8 @@ export async function runDbtBatch(
   end: string,
   activityIds?: readonly string[],
   activityLocationBatchSize?: number,
-): Promise<void> {
+  activityRefreshUserId = userId,
+): Promise<{ exitCode: number; stdout: string; stderr: string }> {
   const url = new URL(requireClickHouseUrl());
   const result = await runProcess(
     "uv",
@@ -719,7 +722,7 @@ export async function runDbtBatch(
           : {}),
         ...(activityIds
           ? {
-              activity_refresh_user_id: userId,
+              activity_refresh_user_id: activityRefreshUserId,
               activity_refresh_activity_ids: activityIds,
             }
           : {}),
@@ -742,6 +745,7 @@ export async function runDbtBatch(
     },
   );
   expect(result.exitCode, result.stderr || result.stdout).toBe(0);
+  return result;
 }
 
 export function runProcess(
@@ -939,7 +943,8 @@ export function createSourceActivitySql(database: string): string {
     source_name Nullable(String),
     deleted_at Nullable(DateTime64(6, 'UTC')),
     _peerdb_is_deleted Int8,
-    _peerdb_version Int64
+    _peerdb_version Int64,
+    created_at DateTime64(6, 'UTC') DEFAULT now64(6)
   ) ENGINE = ReplacingMergeTree(_peerdb_version) ORDER BY id`;
 }
 

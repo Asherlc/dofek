@@ -111,6 +111,11 @@ unattached `fitness.climbing_entry` with its original GraphQL payload in
 activities are used. OpenBeta's public profile pages expose a user's logbook
 and tick history ([example public tick page](https://openbeta.io/u/thickles/ticks)).
 
+Tick dates arrive as Unix milliseconds from OpenBeta's
+[GraphQL Date scalar](https://github.com/OpenBeta/openbeta-graphql/blob/develop/src/graphql/common/DateScalar.ts).
+The provider converts them to UTC calendar dates and preserves the numeric
+timestamps in each raw payload.
+
 OpenBeta grades are mapped from the route's published grade fields, preferring
 V-scale for boulders and YDS for routes, with the other supported grade
 systems retained when those fields are available. A complete,

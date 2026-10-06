@@ -13,6 +13,7 @@
 {% set activity_refresh_scoped = activity_refresh_scope_enabled() %}
 
 WITH
+{% if is_incremental() %}
 location_source_versions AS MATERIALIZED (
     SELECT
         activity_id,
@@ -22,7 +23,6 @@ location_source_versions AS MATERIALIZED (
     GROUP BY activity_id, user_id
 ),
 
-{% if is_incremental() %}
 target_state AS (
     SELECT count() = 0 AS is_empty
     FROM {{ this }}
@@ -119,7 +119,8 @@ location_dirty_keys AS (
                 > existing_summary_state.summary_refresh_version
         )
     {% else %}
-    SELECT CAST(null, 'Nullable(UUID)') AS activity_id,
+    SELECT
+        CAST(null, 'Nullable(UUID)') AS activity_id,
         CAST(null, 'Nullable(UUID)') AS user_id
     WHERE 1 = 0
     {% endif %}
@@ -235,7 +236,10 @@ latest_location_samples AS (
         SELECT *
         FROM {{ ref('activity_location_sample') }}
         WHERE (user_id, activity_id, source_metric_stream_id) IN (
-            SELECT user_id, activity_id, source_metric_stream_id
+            SELECT
+                user_id,
+                activity_id,
+                source_metric_stream_id
             FROM affected_location_sample_keys
         )
         ORDER BY

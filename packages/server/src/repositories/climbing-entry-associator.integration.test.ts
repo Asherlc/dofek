@@ -53,24 +53,18 @@ describe("ClimbingEntryAssociator PostgreSQL behavior", () => {
     groupId = activity.group_id;
     activityId = groupId;
 
-    await context.db.execute(sql`INSERT INTO fitness.climbing_entry (
-      id, user_id, provider_id, activity_id, unattached_date, external_id,
-      climb_type, grade_system, grade, sent, attempt_count, provider_absent_at, source_name, raw
-    ) VALUES
-      (${DATE_MATCH_TICK_ID}, ${TEST_USER_ID}, 'mountain-project', NULL, '2026-01-01',
-       'local-day', 'boulder', 'v_scale', 'V4', TRUE, 1, NULL, 'Mountain Project', '{"exported":true}'::jsonb),
-      (${ADJACENT_TICK_ID}, ${TEST_USER_ID}, 'mountain-project', NULL, '2026-01-02',
-       'adjacent-day', 'boulder', 'v_scale', 'V5', TRUE, 1, NULL, 'Mountain Project', '{}'::jsonb),
-      (${ABSENT_TICK_ID}, ${TEST_USER_ID}, 'mountain-project', NULL, '2026-01-01',
-       'absent', 'boulder', 'v_scale', 'V6', TRUE, 1, CURRENT_TIMESTAMP, 'Mountain Project', '{}'::jsonb),
-      (${FOREIGN_TICK_ID}, ${OTHER_USER_ID}, 'mountain-project', NULL, '2026-01-01',
-       'foreign-user', 'boulder', 'v_scale', 'V7', TRUE, 1, NULL, 'Mountain Project', '{}'::jsonb),
-      (${OPENBETA_TICK_ID}, ${TEST_USER_ID}, 'openbeta', NULL, '2026-01-01',
-       'openbeta:local-day', 'route', 'yds', '5.10a', TRUE, 1, NULL, 'OpenBeta',
-       '{"source":"openbeta","attemptType":"Onsight"}'::jsonb),
-      (${CONCURRENT_TICK_ID}, ${TEST_USER_ID}, 'openbeta', NULL, '2026-01-01',
-       'openbeta:concurrent', 'route', 'yds', '5.10b', TRUE, 1, NULL, 'OpenBeta',
-       '{"source":"openbeta","attemptType":"Flash"}'::jsonb)`);
+    await context.db.execute(sql`INSERT INTO fitness.climbing_entry (id, user_id, provider_id, activity_id, unattached_date, external_id, climb_type, grade_system, grade, result_style, attempt_count, provider_absent_at, source_name, raw) VALUES
+        (${DATE_MATCH_TICK_ID}, ${TEST_USER_ID}, 'mountain-project', NULL, '2026-01-01', 'local-day', 'boulder', 'v_scale', 'V4', 'Send', 1, NULL, 'Mountain Project', '{"exported":true}'::jsonb),
+        (${ADJACENT_TICK_ID}, ${TEST_USER_ID}, 'mountain-project', NULL, '2026-01-02', 'adjacent-day', 'boulder', 'v_scale', 'V5', 'Send', 1, NULL, 'Mountain Project', '{}'::jsonb),
+        (${ABSENT_TICK_ID}, ${TEST_USER_ID}, 'mountain-project', NULL, '2026-01-01', 'absent', 'boulder', 'v_scale', 'V6', 'Send', 1, CURRENT_TIMESTAMP, 'Mountain Project', '{}'::jsonb),
+        (${FOREIGN_TICK_ID}, ${OTHER_USER_ID}, 'mountain-project', NULL, '2026-01-01', 'foreign-user', 'boulder', 'v_scale', 'V7', 'Send', 1, NULL, 'Mountain Project', '{}'::jsonb),
+        (${OPENBETA_TICK_ID}, ${TEST_USER_ID}, 'openbeta', NULL, '2026-01-01', 'openbeta:local-day', 'route', 'yds', '5.10a', 'Onsight', 1, NULL, 'OpenBeta', '{"source":"openbeta","attemptType":"Onsight"}'::jsonb),
+        (${CONCURRENT_TICK_ID}, ${TEST_USER_ID}, 'openbeta', NULL, '2026-01-01', 'openbeta:concurrent', 'route', 'yds', '5.10b', 'Flash', 1, NULL, 'OpenBeta', '{"source":"openbeta","attemptType":"Flash"}'::jsonb)
+`);
+    await context.db.execute(sql`UPDATE fitness.climbing_entry SET
+      location_path = '[{"name":"Country","externalId":"country-id","kind":null},{"name":"Wall","externalId":"wall-id","kind":null}]'::jsonb,
+      climb_style = 'top-rope'
+      WHERE id = ${OPENBETA_TICK_ID}::uuid`);
   }, 60_000);
 
   afterAll(async () => {
@@ -94,7 +88,18 @@ describe("ClimbingEntryAssociator PostgreSQL behavior", () => {
           sourceName: "OpenBeta",
           grade: "5.10a",
           ascentType: "Onsight",
-          locationName: null,
+          locationName: "Country > Wall",
+          context: {
+            providerId: "openbeta",
+            locationPath: [
+              { name: "Country", externalId: "country-id", kind: null },
+              { name: "Wall", externalId: "wall-id", kind: null },
+            ],
+            board: null,
+            wallAngle: null,
+            climbStyle: "top-rope",
+            resultStyle: "Onsight",
+          },
         }),
       ]),
     );
@@ -138,6 +143,19 @@ describe("ClimbingEntryAssociator PostgreSQL behavior", () => {
       TEST_USER_ID,
       "America/Los_Angeles",
     ).getActivityEntries(activityId);
+    expect(
+      attachedEntries.find((entry) => entry.toDetail().id === OPENBETA_TICK_ID)?.toDetail().context,
+    ).toEqual({
+      providerId: "openbeta",
+      locationPath: [
+        { name: "Country", externalId: "country-id", kind: null },
+        { name: "Wall", externalId: "wall-id", kind: null },
+      ],
+      board: null,
+      wallAngle: null,
+      climbStyle: "top-rope",
+      resultStyle: "Onsight",
+    });
     expect(
       attachedEntries.find((entry) => entry.toDetail().id === OPENBETA_TICK_ID)?.toDetail(),
     ).toMatchObject({ ascentType: "Onsight" });

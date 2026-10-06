@@ -136,11 +136,6 @@ export const peerDbMirrorContracts = [
         exclude: [],
       },
       {
-        sourceTableIdentifier: "fitness.journal_entry",
-        destinationTableIdentifier: "journal_entry",
-        exclude: [],
-      },
-      {
         sourceTableIdentifier: "fitness.processing_flow_marker",
         destinationTableIdentifier: "processing_flow_marker_provider_inventory",
         exclude: [],

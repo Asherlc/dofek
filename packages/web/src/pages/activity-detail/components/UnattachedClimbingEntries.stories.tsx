@@ -15,10 +15,18 @@ const meta = {
         grade: "V4",
         sent: true,
         ascentType: "Flash",
-        attemptCount: 3,
+        attemptCount: null,
         lead: null,
         routeName: "Blue Arete",
         locationName: "Pacific Pipe",
+        context: {
+          providerId: "mountain-project",
+          locationPath: [{ name: "Pacific Pipe", externalId: null, kind: null }],
+          board: null,
+          wallAngle: null,
+          climbStyle: null,
+          resultStyle: "Flash",
+        },
       },
     ],
     error: null,
@@ -32,6 +40,32 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const Default: Story = {};
+
+export const Onsight: Story = {
+  args: {
+    suggestions: meta.args.suggestions.map((entry) => ({
+      ...entry,
+      climbType: "route",
+      gradeSystem: "yds",
+      grade: "5.6",
+      routeName: "Left Arete",
+      ascentType: "Onsight",
+      lead: true,
+      context: { ...entry.context, climbStyle: "lead", resultStyle: "Onsight" },
+    })),
+  },
+};
+
+export const Redpoint: Story = {
+  args: {
+    suggestions: meta.args.suggestions.map((entry) => ({
+      ...entry,
+      ascentType: "Redpoint",
+      attemptCount: 7,
+      context: { ...entry.context, resultStyle: "Redpoint" },
+    })),
+  },
+};
 
 export const Loading: Story = {
   args: { suggestions: undefined, isLoading: true },

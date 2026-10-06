@@ -14,6 +14,14 @@
     on_schema_change='append_new_columns',
     engine='ReplacingMergeTree(refresh_version)',
     order_by='(user_id, channel, recorded_date, recorded_at)',
+    settings={
+        'deduplicate_merge_projection_mode': 'rebuild',
+        'lightweight_mutation_projection_mode': 'rebuild'
+    },
+    projections=[{
+        'name': 'by_user_channel_day_refresh',
+        'query': 'SELECT user_id, channel, recorded_date, max(refresh_version) AS source_refresh_version GROUP BY user_id, channel, recorded_date'
+    }],
     query_settings={
         'max_threads': 1
     }

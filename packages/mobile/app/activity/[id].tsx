@@ -15,6 +15,7 @@ import type { UnitConverter } from "@dofek/format/units";
 import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { providerSourceLabel } from "@dofek/providers/providers";
 import { getActivityIconInfo } from "@dofek/training/activity-icons";
+import type { ClimbingContext } from "@dofek/training/climbing-context";
 import type { MuscleGroupInput } from "@dofek/training/muscle-groups";
 import {
   cadenceUnit,
@@ -47,6 +48,7 @@ import { ProviderAbsentBanner } from "../../components/activity/ProviderAbsentBa
 import { styles } from "../../components/activity/styles";
 import { HrZonesChart, PowerZonesChart } from "../../components/activity/ZoneDistributionCharts";
 import { ChartTitleWithTooltip } from "../../components/ChartTitleWithTooltip";
+import { ClimbingEntryContext } from "../../components/ClimbingEntryContext";
 import { HangboardingDetail } from "../../components/HangboardingDetail";
 import { MuscleGroupBodyDiagram } from "../../components/MuscleGroupBodyDiagram";
 import { getQueryErrorMessage, QueryStatePanel } from "../../components/QueryStatePanel";
@@ -387,6 +389,7 @@ const exerciseStyles = StyleSheet.create({
 });
 
 interface ClimbingEntry {
+  context: ClimbingContext;
   id: string;
   climbType: "boulder" | "route";
   grade: string;
@@ -414,48 +417,47 @@ function ClimbingEntryBreakdown({ entries }: { entries: ClimbingEntry[] }) {
         description="The climbs recorded during this session, including grades and send status."
         textStyle={chartStyles.title}
       />
-      {entries.map((entry) => (
-        <View key={entry.id} style={climbingStyles.entryRow}>
-          <View style={climbingStyles.gradeBadge}>
-            <Text style={climbingStyles.gradeText}>{entry.grade}</Text>
-          </View>
-          <View style={climbingStyles.entryDetails}>
-            <Text style={climbingStyles.routeName}>
-              {entry.routeName ?? (entry.climbType === "boulder" ? "Boulder" : "Route")}
-            </Text>
-            {entry.locationName && (
-              <Text style={climbingStyles.locationName}>{entry.locationName}</Text>
-            )}
-            {(entry.wallAngleDegrees !== null || entry.holdType !== null) && (
-              <Text style={climbingStyles.locationName}>
-                {[
-                  entry.wallAngleDegrees === null ? null : `${entry.wallAngleDegrees}°`,
-                  entry.holdType === null
-                    ? null
-                    : `${entry.holdType[0]?.toUpperCase()}${entry.holdType.slice(1)}`,
-                ]
-                  .filter((value) => value !== null)
-                  .join(" · ")}
+      {entries.map((entry) => {
+        const attemptResult = formatClimbingAttemptResult(
+          entry.sent,
+          entry.attemptCount,
+          entry.ascentType,
+        );
+        return (
+          <View key={entry.id} style={climbingStyles.entryRow}>
+            <View style={climbingStyles.gradeBadge}>
+              <Text style={climbingStyles.gradeText}>{entry.grade}</Text>
+            </View>
+            <View style={climbingStyles.entryDetails}>
+              <Text style={climbingStyles.routeName}>
+                {entry.routeName ?? (entry.climbType === "boulder" ? "Boulder" : "Route")}
               </Text>
-            )}
-            {entry.attempts.map((attempt) => (
-              <Text key={attempt.attemptIndex} style={climbingStyles.attemptDetail}>
-                {attempt.attemptIndex}:{" "}
-                {attempt.outcome === "sent"
-                  ? "Sent"
-                  : `${attempt.failureReason?.[0]?.toUpperCase()}${attempt.failureReason?.slice(1)}`}
-              </Text>
-            ))}
+              <ClimbingEntryContext context={entry.context} sent={entry.sent} />
+              {entry.holdType !== null && (
+                <Text style={climbingStyles.locationName}>
+                  {entry.holdType[0]?.toUpperCase()}
+                  {entry.holdType.slice(1)}
+                </Text>
+              )}
+              {entry.attempts.map((attempt) => (
+                <Text key={attempt.attemptIndex} style={climbingStyles.attemptDetail}>
+                  {attempt.attemptIndex}:{" "}
+                  {attempt.outcome === "sent"
+                    ? "Sent"
+                    : `${attempt.failureReason?.[0]?.toUpperCase()}${attempt.failureReason?.slice(1)}`}
+                </Text>
+              ))}
+
+              {attemptResult !== null && (
+                <Text style={entry.sent ? climbingStyles.sent : climbingStyles.attempted}>
+                  {attemptResult}
+                </Text>
+              )}
+              <Text style={climbingStyles.sourceName}>{entry.sourceName}</Text>
+            </View>
           </View>
-          <View style={climbingStyles.resultDetails}>
-            {entry.ascentType && <Text style={climbingStyles.sent}>{entry.ascentType}</Text>}
-            <Text style={entry.sent ? climbingStyles.sent : climbingStyles.attempted}>
-              {formatClimbingAttemptResult(entry.sent, entry.attemptCount)}
-            </Text>
-            <Text style={climbingStyles.sourceName}>{entry.sourceName}</Text>
-          </View>
-        </View>
-      ))}
+        );
+      })}
     </View>
   );
 }
@@ -513,9 +515,6 @@ const climbingStyles = StyleSheet.create({
   locationName: {
     color: colors.textTertiary,
     fontSize: 11,
-  },
-  resultDetails: {
-    alignItems: "flex-end",
   },
   sent: {
     color: colors.positive,
@@ -957,12 +956,11 @@ export default function ActivityDetailScreen() {
           ) : (
             entrySuggestions.data?.map((entry) => {
               const state = entryAttachState[entry.id];
-              const result =
-                entry.sent === true
-                  ? "Sent"
-                  : entry.sent === false
-                    ? "Attempted"
-                    : "Status unknown";
+              const attemptResult = formatClimbingAttemptResult(
+                entry.sent,
+                entry.attemptCount,
+                entry.ascentType,
+              );
               return (
                 <View key={entry.id} style={climbingStyles.entryRow}>
                   <View style={climbingStyles.entryDetails}>
@@ -972,20 +970,10 @@ export default function ActivityDetailScreen() {
                     <Text style={climbingStyles.locationName}>
                       {entry.sourceName ?? providerSourceLabel(entry.providerId)}
                     </Text>
-                    {entry.ascentType && (
-                      <Text style={climbingStyles.sent}>{entry.ascentType}</Text>
-                    )}
+                    <ClimbingEntryContext context={entry.context} sent={entry.sent} />
                     <Text style={climbingStyles.locationName}>
-                      {[
-                        entry.grade,
-                        result,
-                        entry.attemptCount === null
-                          ? null
-                          : `${entry.attemptCount} ${entry.attemptCount === 1 ? "attempt" : "attempts"}`,
-                        entry.locationName,
-                      ]
-                        .filter(Boolean)
-                        .join(" · ")}
+                      {entry.grade}
+                      {attemptResult !== null ? ` · ${attemptResult}` : null}
                     </Text>
                     {state?.error ? <Text style={styles.errorText}>{state.error}</Text> : null}
                   </View>
@@ -1018,7 +1006,7 @@ export default function ActivityDetailScreen() {
           {/* Heart Rate Chart */}
           {hasHr && (
             <LineChart
-              data={points.map((p) => ({ value: p.heartRate }))}
+              data={points.map((p) => ({ recordedAt: p.recordedAt, value: p.heartRate }))}
               color={CHART_COLORS.heartRate}
               label="Heart Rate"
               unit="bpm"
@@ -1031,7 +1019,7 @@ export default function ActivityDetailScreen() {
           {/* Power Chart */}
           {hasPower && (
             <LineChart
-              data={points.map((p) => ({ value: p.power }))}
+              data={points.map((p) => ({ recordedAt: p.recordedAt, value: p.power }))}
               color={CHART_COLORS.power}
               label="Power"
               unit="W"
@@ -1045,6 +1033,7 @@ export default function ActivityDetailScreen() {
           {hasAltitude && (
             <AreaChart
               data={points.map((p) => ({
+                recordedAt: p.recordedAt,
                 value: p.altitude != null ? units.convertElevation(p.altitude) : null,
               }))}
               color={CHART_COLORS.altitude}

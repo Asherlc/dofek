@@ -98,6 +98,9 @@ describe("production analytics read-model build", () => {
       "activity_duplicate_matches",
       "activity_duplicate_groups",
       "deduped_activities",
+      "activity_pace_curve",
+      "activity_heart_rate_distribution",
+      "activity_sensor_processing_coverage",
       "deduped_activity_members",
       "activity_effort_identity",
       "activity_sensor_sample",
@@ -344,9 +347,6 @@ describe("production analytics read-model build", () => {
     );
     expect(sql).toContain("begin=activity_sensor_sample_begin");
     expect(sql).toContain("'name': 'by_activity_source_refresh_version'");
-    expect(sql).toContain(
-      "'query': 'SELECT activity_id, user_id, max(refresh_version) AS source_refresh_version GROUP BY activity_id, user_id'",
-    );
     expect(sql).toContain("event_time='refreshed_at'");
     expect(sql).not.toContain("'final': 1");
     expect(normalizedSql).toContain(

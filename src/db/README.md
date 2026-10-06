@@ -13,12 +13,15 @@ This directory contains the Drizzle ORM schema, migrations, and database connect
 - `user_profile`: User profiles and settings.
 - `provider`: Global catalog of registered data provider types.
 - `provider_connection`: Authoritative per-user provider connections.
+- `provider_issue_email`: Accepted issue-email delivery for each connection. The
+  [notification query](./provider-issue-notification.ts) keeps an undelivered
+  authorization warning eligible across later errors until a successful overall
+  sync, and excludes history from before the current connection was created.
 - `oauth_token`: OAuth credentials for provider APIs.
 - `activity`: Cardio/endurance workout sessions.
 - `daily_metrics`: Aggregated daily health data (HRV, Resting HR, steps).
 - `sleep_session`: Detailed sleep duration and stages.
 - `dexa_scan`: Body composition data from DEXA scans (BodySpec).
-- `journal_entry`: Daily self-report data.
 
 ## Implementation Notes
 
@@ -46,8 +49,27 @@ This directory contains the Drizzle ORM schema, migrations, and database connect
 - ClickHouse migrations live in `clickhouse-migrations/` as one TypeScript module per migration, ordered by `clickhouse-migrations/registry.ts`.
 - Deploy migrations are for schema changes only. Historical backfills and full read-model rebuilds should run as explicit resumable scripts or jobs, not inside the deploy migration path.
 - Run `pnpm analytics:build`, `pnpm lint:migrations`, `pnpm lint:analytics-sql`, and `pnpm lint:analytics-policy` before pushing migration or ClickHouse analytics changes.
+- For a new Postgres migration, also run `uv tool run sqlfluff lint drizzle/<migration>.sql`.
+  The [SQLFluff CI job](../../.github/workflows/test.yml) lints added migration files;
+  the root [`pnpm lint` command](../../package.json) runs analytics SQL lint instead.
 
-## Climbing Attempt Count Backfill
+## Climbing context and attempt counts
+
+`fitness.climbing_entry` stores the canonical location path, board, angle and
+unit, climbing method, and recorded result. Readers use the permanent
+`fitness.v_climbing_entry` projection for legacy display/filter scalars, which
+PostgreSQL [views](https://www.postgresql.org/docs/current/sql-createview.html)
+derive without duplicate storage. Migration `0135_climbing_context` converts
+the old columns and requires a coordinated maintenance cutover; follow the
+[climbing context runbook](../../docs/climbing-context.md#maintenance-cutover).
+
+Climbing outcomes and attempt counts are independently nullable: a provider can
+record an unsent climb or a send without recording its count. Preserve that
+unknown count rather than defaulting it to one. Summaries retain known sends
+and report an unknown attempt total when any contributing count is missing.
+The positive-count constraint still applies to recorded counts; see
+[PostgreSQL check constraints](https://www.postgresql.org/docs/current/ddl-constraints.html#DDL-CONSTRAINTS-CHECK-CONSTRAINTS)
+and the observed [Kaya contract](../../docs/kaya.md#attempts-and-unknown-counts).
 
 After deploying migration `0055_climbing_attempt_count`, preview the Kaya backfill with
 `pnpm backfill:climbing-attempt-count`. Run it again with `--execute` to copy valid positive

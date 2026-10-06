@@ -157,6 +157,7 @@
     "release:npm:test": "vitest run --project unit packages/provider-http packages/scoring packages/zones packages/training packages/eight-sleep packages/garmin-connect packages/peloton-client packages/trainerroad-client packages/trainingpeaks-connect packages/velohero-client packages/whoop-whoop packages/xert-client packages/zepp-client packages/zwift-client",
     "release:npm:publish": "pnpm --recursive publish --access public --no-git-checks",
     "typecheck": "tsc --noEmit",
+    "check:dependency-security": "tsx scripts/check-node-forge-security.ts && tsx scripts/check-braces-security.ts",
     "lint": "pnpm lint:sandbox && pnpm lint:analytics-sql",
     "lint:sandbox": "pnpm lint:exact-versions && biome check . --max-diagnostics=500 && pnpm lint:suppressions && pnpm lint:workflow-downloads && pnpm lint:analytics-policy && pnpm provider-derived-metric-policy && pnpm lint:mobile-telemetry && pnpm lint:web-stories && pnpm lint:review-scenarios && pnpm check:mobile-app-routes",
     "lint:fix": "biome check --write .",
@@ -232,8 +233,8 @@
   "dependencies": {
     "@ai-sdk/otel": "1.0.47",
     "@aws-crypto/client-node": "5.0.0",
-    "@aws-sdk/client-s3": "3.1128.0",
-    "@aws-sdk/s3-request-presigner": "3.1138.0",
+    "@aws-sdk/client-s3": "3.1146.0",
+    "@aws-sdk/s3-request-presigner": "3.1146.0",
     "@clickhouse/client": "1.23.1",
     "@dofek/eight-sleep": "workspace:*",
     "@dofek/format": "workspace:*",

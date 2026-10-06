@@ -1,5 +1,6 @@
 import { recordLocalTimeContextSchema } from "@dofek/format/record-local-time";
 import { healthMetricSchema } from "@dofek/mcp-contracts/health-explorer";
+import { climbingContextSchema } from "@dofek/training/climbing-context";
 import { CLIMBING_GRADE_SYSTEMS } from "@dofek/training/climbing-grades";
 import { z } from "zod";
 import { baselineRelativeMetricSchema } from "../contracts/baseline-relative-metrics.ts";
@@ -279,52 +280,6 @@ export const bodyMetricsOutputSchema = jsonResult(
   ),
 );
 
-const injuryEventSchema = z.object({
-  id: z.string(),
-  kind: z.enum(["injury", "niggle"]),
-  body_region_id: z.string(),
-  onset_date: z.string(),
-  resolved_date: nullableString,
-  severity: nullableNumber,
-  description: z.string(),
-  created_at: z.string(),
-  updated_at: z.string(),
-});
-
-export const bodyRegionsOutputSchema = jsonResult(
-  z.array(
-    z.object({
-      id: z.string(),
-      parent_id: nullableString,
-      label: z.string(),
-      kind: z.string(),
-      sort_order: z.number().int(),
-    }),
-  ),
-);
-
-export const injuryEventOutputSchema = jsonResult(injuryEventSchema);
-
-export const subjectiveTimelineOutputSchema = jsonResult(
-  z.object({
-    checkIns: z.array(
-      z.object({
-        date: z.string(),
-        logged: z.boolean(),
-        symptoms: z.array(
-          z.object({
-            id: z.string(),
-            body_region_id: z.string(),
-            kind: z.string(),
-            score: z.number(),
-          }),
-        ),
-      }),
-    ),
-    injuries: z.array(injuryEventSchema),
-  }),
-);
-
 const syncHealthSchema = z.object({
   last_success: nullableString,
   last_attempt: nullableString,
@@ -444,6 +399,7 @@ const climbingAttemptSchema = z.object({
 });
 const climbingEntrySchema = z.object({
   id: z.string(),
+  context: climbingContextSchema,
   discipline: z.enum(["boulder", "lead", "top_rope", "route"]),
   grade: z.string(),
   grade_system: z.enum(CLIMBING_GRADE_SYSTEMS),
@@ -958,7 +914,6 @@ export const mcpOutputSchemas = {
   cyclingTrainingMetrics: cyclingTrainingMetricsOutputSchema,
   activityTimeseries: activityTimeseriesOutputSchema,
   activitySummary: activitySummaryOutputSchema,
-  bodyRegions: bodyRegionsOutputSchema,
   bodyMetrics: bodyMetricsOutputSchema,
   dailyHealthSummary: dailyHealthSummaryOutputSchema,
   dataCoverage: dataCoverageOutputSchema,
@@ -970,13 +925,11 @@ export const mcpOutputSchemas = {
   foodRecordMutation: foodRecordMutationOutputSchema,
   foodRecordSearch: foodRecordSearchOutputSchema,
   healthTrends: healthTrendsOutputSchema,
-  injuryEvent: injuryEventOutputSchema,
   nutritionSummary: nutritionSummaryOutputSchema,
   providerSync: providerSyncOutputSchema,
   providers: providersOutputSchema,
   searchActivities: searchActivitiesOutputSchema,
   sleepSummary: sleepSummaryOutputSchema,
-  subjectiveTimeline: subjectiveTimelineOutputSchema,
   thresholdHistory: thresholdHistoryOutputSchema,
   trainingLoad: trainingLoadToolOutputSchema,
 };

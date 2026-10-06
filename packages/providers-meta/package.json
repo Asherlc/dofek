@@ -11,6 +11,7 @@
     "./health-provenance": "./src/health-provenance.ts",
     "./provider-disconnect": "./src/provider-disconnect.ts",
     "./sync-log-presentation": "./src/sync-log-presentation.ts",
+    "./sync-card-summary": "./src/sync-card-summary.ts",
     "./whoop": "./src/whoop.ts",
     "./push-providers": "./src/push-providers.ts",
     "./processing-alerts": "./src/processing-alerts.ts",

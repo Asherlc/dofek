@@ -8,7 +8,6 @@ import { getQueryErrorMessage, QueryStatePanel } from "./QueryStatePanel";
 
 type McpScope =
   | "health:read"
-  | "health:write"
   | "activity:read"
   | "nutrition:read"
   | "nutrition:write"
@@ -17,7 +16,6 @@ type McpScope =
 
 const mcpScopeOptions: Array<{ value: McpScope; label: string }> = [
   { value: "health:read", label: "Health summaries" },
-  { value: "health:write", label: "Log health observations" },
   { value: "activity:read", label: "Activity history" },
   { value: "nutrition:read", label: "Nutrition summaries" },
   { value: "nutrition:write", label: "Modify food records" },

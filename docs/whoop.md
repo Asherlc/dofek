@@ -32,7 +32,6 @@ Full API documentation is in [`whoop-api.openapi.yaml`](whoop-api.openapi.yaml) 
 | Workouts | `GET /core-details-bff/v0/cycles/details` | Embedded in cycle response under `strain.workouts[]`. Aggregate only: strain, HR, calories, zones. |
 | Strength workouts | `GET /weightlifting-service/v2/weightlifting-workout/{activityId}` | Discovered, not yet synced. Exercise-level data: sets, reps, weight, muscle groups, MSK strain. |
 | Heart rate | `GET /metrics-service/v1/metrics/user/<userId>` | 6-second interval time series. |
-| Journal | `GET /behavior-impact-service/v1/impact` | Behavior/journal entries with impact scores. |
 
 ### Key implementation notes
 

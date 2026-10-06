@@ -33,6 +33,47 @@ const serverMetric = {
 };
 
 describe("HealthStatusBar", () => {
+  it("opens and closes supporting details without source provenance", () => {
+    render(<HealthStatusBar metrics={[serverMetric]} />);
+
+    const button = screen.getByRole("button", { name: "Show details for Skin Temperature" });
+    expect(button.getAttribute("aria-expanded")).toBe("false");
+    const panel = document.getElementById(button.getAttribute("aria-controls") ?? "");
+    expect(panel).not.toBeNull();
+    expect(panel).not.toBeVisible();
+    expect(screen.queryByText(serverMetric.explanation)).toBeNull();
+
+    fireEvent.click(button);
+    expect(button.getAttribute("aria-expanded")).toBe("true");
+    expect(panel).toBeVisible();
+    expect(screen.getByText(serverMetric.evaluationRule)).toBeVisible();
+    expect(screen.getByText(serverMetric.explanation)).toBeVisible();
+
+    fireEvent.click(button);
+    expect(button.getAttribute("aria-expanded")).toBe("false");
+    expect(panel).not.toBeVisible();
+    expect(screen.queryByText(serverMetric.explanation)).toBeNull();
+    expect(screen.getByText(/Near baseline/)).toBeVisible();
+  });
+
+  it("keeps weight-goal context beside the server interpretation", () => {
+    render(
+      <HealthStatusBar
+        metrics={[
+          {
+            ...serverMetric,
+            metric: "trend_weight",
+            label: "Trend Weight",
+            intent: "lower",
+            statusLabel: "Moving as intended",
+            statusToken: "moving_as_intended",
+          },
+        ]}
+      />,
+    );
+    expect(screen.getByText(/Moving as intended · Weight loss goal/)).toBeVisible();
+  });
+
   it("renders the server-authored blocked baseline requirement and action", () => {
     render(
       <HealthStatusBar
@@ -49,6 +90,7 @@ describe("HealthStatusBar", () => {
             statusToken: "insufficient_data",
             statusColor: "muted",
             statusLabel: "Not enough data",
+            evaluationRule: "Needs a current value, baseline, and measurable day-to-day variation",
             explanation: "Not enough varied data yet to compare this value with your usual range.",
             baselineProgress: {
               ...serverMetric.baselineProgress,
@@ -65,6 +107,13 @@ describe("HealthStatusBar", () => {
     );
 
     expect(screen.getByText("1 of 3 required days recorded")).toBeDefined();
+    expect(
+      screen.getByText("Needs a current value, baseline, and measurable day-to-day variation"),
+    ).toBeVisible();
+    expect(
+      screen.getByText("Keep syncing skin temperature data for at least 2 more days."),
+    ).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Show details for Skin Temperature" }));
     expect(
       screen.getByText(
         "A current value plus at least 2 more recorded days with measurable variation.",
@@ -147,6 +196,10 @@ describe("HealthStatusBar", () => {
       />,
     );
 
+    expect(screen.getByText("30d baseline · 7d vs prior 28d")).toBeVisible();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Show details for Heart Rate Variability (HRV)" }),
+    );
     expect(
       screen.getByText(
         "30d baseline 60.0 ± 6.0 · 2.0 SD above baseline · 7d vs prior 28d +5.0 · 24/30 baseline days",
@@ -154,48 +207,69 @@ describe("HealthStatusBar", () => {
     ).toBeDefined();
   });
 
-  it("renders server-authored provenance and comparison context", () => {
-    render(
-      <HealthStatusBar
-        metrics={[
-          {
-            ...serverMetric,
-            metric: "spo2",
-            provenance: {
-              latestDate: "2026-07-30",
-              sourceProviders: ["whoop"],
-              observedDays: 3,
-              windowDays: 30,
+  it.each([
+    {
+      recentMean: 97.2,
+      unit: undefined,
+      expected: "7d avg 97.2 vs prior 28d avg 96.4 · +0.8",
+    },
+    {
+      recentMean: null,
+      unit: undefined,
+      expected: "7d vs prior 28d · Not enough comparison data",
+    },
+    {
+      recentMean: 97.2,
+      unit: "%",
+      expected: "7d avg 97.2 % vs prior 28d avg 96.4 % · +0.8 %",
+    },
+  ])(
+    "renders server-authored provenance and comparison context %#",
+    ({ recentMean, unit, expected }) => {
+      render(
+        <HealthStatusBar
+          metrics={[
+            {
+              ...serverMetric,
+              metric: "spo2",
+              provenance: {
+                latestDate: "2026-07-30",
+                sourceProviders: ["whoop"],
+                observedDays: 3,
+                windowDays: 30,
+              },
+              comparison: {
+                recentDays: 7,
+                baselineDays: 28,
+                recentMean,
+                baselineMean: 96.4,
+                delta: 0.8,
+                direction: "increasing",
+              },
             },
-            comparison: {
-              recentDays: 7,
-              baselineDays: 28,
-              recentMean: 97.2,
-              baselineMean: 96.4,
-              delta: 0.8,
-              direction: "increasing",
-            },
-          },
-        ]}
-      />,
-    );
+          ]}
+          units={{ spo2: unit }}
+        />,
+      );
 
-    expect(screen.getByText("WHOOP (Cloud) · 3/30 days · latest 2026-07-30")).toBeDefined();
-    expect(screen.getByText("7d avg 97.2 vs prior 28d avg 96.4 · +0.8")).toBeDefined();
+      expect(screen.getByText("WHOOP (Cloud) · 3/30 days · latest 2026-07-30")).toBeDefined();
+      expect(screen.getByText("7d vs prior 28d")).toBeVisible();
 
-    const detailsButton = screen.getByRole("button", {
-      name: "Show source details for Skin Temperature",
-    });
-    expect(detailsButton.getAttribute("aria-expanded")).toBe("false");
-    expect(screen.queryByText("Source: WHOOP (Cloud)")).toBeNull();
+      const detailsButton = screen.getByRole("button", {
+        name: "Show details for Skin Temperature",
+      });
+      expect(detailsButton.getAttribute("aria-expanded")).toBe("false");
+      expect(screen.queryByText("Source: WHOOP (Cloud)")).toBeNull();
 
-    fireEvent.click(detailsButton);
+      fireEvent.click(detailsButton);
 
-    expect(detailsButton.getAttribute("aria-expanded")).toBe("true");
-    expect(screen.getByText("Source: WHOOP (Cloud)")).toBeDefined();
-    expect(screen.getByText("Latest recorded date: 2026-07-30")).toBeDefined();
-    expect(screen.getByText("Coverage: 3/30 days")).toBeDefined();
-  });
+      expect(detailsButton.getAttribute("aria-expanded")).toBe("true");
+      expect(screen.getByText(expected)).toBeVisible();
+      expect(screen.getByText("Source: WHOOP (Cloud)")).toBeDefined();
+      expect(screen.getByText("Latest recorded date: 2026-07-30")).toBeDefined();
+      expect(screen.getByText("Coverage: 3/30 days")).toBeDefined();
+    },
+  );
 
   it("renders structured units while preserving the exact server status", () => {
     const { container } = render(
@@ -218,6 +292,7 @@ describe("HealthStatusBar", () => {
     expect(container.querySelector(".font-semibold")?.textContent).toContain("94.0°F");
     expect(screen.getByText(/baseline 94.0°F/)).toBeDefined();
     expect(screen.getByText(/Near baseline/)).toBeDefined();
+    fireEvent.click(screen.getByRole("button", { name: "Show details for Skin Temperature" }));
     expect(
       screen.getByText("Within your usual range: less than 1 standard deviation from baseline"),
     ).toBeDefined();
@@ -245,6 +320,7 @@ describe("HealthStatusBar", () => {
     );
 
     expect(screen.getByText(/Server-selected label/)).toBeDefined();
+    fireEvent.click(screen.getByRole("button", { name: "Show details for Skin Temperature" }));
     expect(screen.getByText("Server-selected explanation.")).toBeDefined();
     expect(screen.queryByText(/abnormal/i)).toBeNull();
   });
