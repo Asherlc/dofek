@@ -30384,6 +30384,46 @@ delays, check GitHub's published status before investigating repository code.
 - **Fix / validation:** Targeted `pnpm update -r seroval proxy-addr source-map-js --lockfile-only --ignore-scripts` resolved the existing dependency ranges to 1.6.8, 2.0.8, and 1.2.2 respectively. The diff changes only those three dependency resolutions and their consumers; no override, audit ignore, retry, or threshold change was added. A normal frozen-lockfile install followed. The same production audit exited 0 after the update; existing audit exceptions remain unchanged.
 - **Remaining risk / follow-up:** Require hosted checks before merge and deploy the validated lockfile with the release. When audits change between successful runs, inspect the new advisory and locked transitive version before changing CI policy.
 
+## 2026-10-05 — Withings sync alert persisted after successful scheduled syncs
+
+- **Symptoms / impact:** The app showed "Withings couldn’t sync" for Sleep and
+  Body after Withings had already recovered. Production `fitness.sync_log`
+  recorded `withings provider request timed out after 120000ms` at
+  `2026-10-06T00:30:03Z`, followed by successful scheduled syncs at `01:00`,
+  `01:30`, and `02:00` UTC. Authorization was not marked as failed.
+- **Evidence:** Read-only Postgres queries showed that those separate jobs all
+  shared the processing operation created at `00:00:02Z`. Its latest ingest
+  event remained the `00:30` failure; later jobs added canonical-commit events
+  to the same operation, while their `worker-succeeded` event conflicted with
+  the already recorded success. Axiom CLI access worked, but retained Withings
+  logs did not expose the low-level network cause. The recorded attempt took
+  995 ms, so the error text does not prove that the two-minute deadline elapsed.
+- **Root cause of the stale alert:**
+  [SyncProcessingOperation](../src/jobs/sync-processing-operation.ts) used the
+  reusable queue job ID as the permanent processing correlation key.
+  [Request deduplication](../src/jobs/sync-request-job.ts) removes terminal jobs
+  before accepting a new job with that ID; BullMQ documents that removed job
+  IDs can be reused in its [job-ID guide](https://docs.bullmq.io/guide/jobs/job-ids).
+  The processing store then reused the old operation and deduplicated the new
+  success event. The transient network failure's underlying cause remains unknown.
+- **Fix:** Processing correlation now includes the queue job's stored creation
+  timestamp. Newly created jobs receive separate operations; retries and
+  continuations retain the operation ID in job data. Both web and mobile use
+  the same processing-alert API. Existing incident history remains intact.
+- **Validation:** The new real-Redis/Postgres regression reproduced success →
+  failure → success with one reused queue ID and incorrectly failed Sleep/Body
+  status before the fix. After the fix, it verifies distinct operations, ready
+  status, an empty alert list, and operation reuse across retry and continuation.
+  Relevant unit/mobile tests and 15 database integration tests passed without
+  added sleeps or retry tuning. Docker's automatic subnet pool was exhausted;
+  an operator-only Compose override gave this workspace a free subnet without
+  changing repository configuration or other workspaces.
+- **Remaining risk / follow-up:** Production rollout is pending. A new
+  successful sync after rollout will supersede the stale operation. No
+  resilience settings changed. For similar alerts, compare sync history with
+  processing identity before treating the alert as a continuing provider outage;
+  retain the original transport cause in observability if connection failures recur.
+
 ## 2026-10-05 — Local deployment workflow test timeouts during PR #2881 validation
 
 - **Symptoms / impact:** Local `pnpm test` validation for [PR #2881](https://github.com/Asherlc/dofek/pull/2881) passed 19,518 tests but failed four `.github/workflows/deploy-web-stack.test.ts` scenarios. The first fatal message was `Error: Test timed out in 30000ms.` at line 685 (restoring processing services after a web rollback); the normal deploy and two stability-window reset cases also timed out. Production was unaffected.
@@ -30401,3 +30441,49 @@ After merging current main into the PR branch, three parallel pnpm validation co
 The [Dependency Audit job](https://github.com/Asherlc/dofek/actions/runs/37398480415/job/112060885281) failed at `pnpm audit --prod --audit-level=high --ignore-registry-errors`. Its first fatal finding was the critical [Seroval Promise deserialization advisory](https://github.com/advisories/GHSA-p6vx-979v-rg4c). The inherited lockfile resolved Seroval 1.5.5, proxy-addr 2.0.7, and source-map-js 1.2.1, also affected by [Seroval TypedArray memory exhaustion](https://github.com/advisories/GHSA-jp82-f5mq-hwhp), [proxy-addr trust-subnet IP spoofing](https://github.com/advisories/GHSA-jqcg-44mw-7w3h), and [source-map-js event-loop denial of service](https://github.com/advisories/GHSA-68fv-2mgg-jv7q). These findings blocked the merge; no production exploitation was observed or investigated during this CI diagnosis.
 
 Updated only those transitive lockfile resolutions to the latest stable releases available during investigation: Seroval 1.6.8, proxy-addr 2.0.8, and source-map-js 1.2.2. All fit existing upstream dependency ranges. The exact audit command now exits successfully; existing exclusions remain unchanged and no override, retry, or timeout was added. Remaining findings are below the configured threshold or covered by the pre-existing documented backports. Local validation also passed all 19,392 unit/mobile tests (20 skipped), root/server/web/mobile typechecks, sandbox lint, the web build, and frozen-lockfile installation. The [remote Dependency Audit rerun](https://github.com/Asherlc/dofek/actions/runs/37399594471) passed on commit 151ccdf41. Subsequent integration of main preserved its tracking removal and this PR’s Data Quality deletions; both client typechecks and 43 focused navigation/deployment tests passed. Remaining required CI validation is pending. For similar failures, use the `gh-fix-ci` skill to capture the first fatal finding, inspect the dependency path and upstream range, and prefer a targeted lockfile update when a patched release fits.
+
+
+## 2026-10-05 — Dependabot update validation and local Docker capacity
+
+Several pending dependency updates inherited a date-sensitive power test. The
+[Unit Tests job](https://github.com/Asherlc/dofek/actions/runs/36647977811/job/109677446817)
+failed with `AssertionError: expected null to be 190` in the raw-power fallback
+fixture: its fixed activity date fell outside the current-power window. Current
+main already freezes that fixture's clock; incorporating main passed all 42
+power-repository tests locally and preserved its patched transitive dependencies.
+
+The [AWS update](https://github.com/Asherlc/dofek/pull/2848) additionally failed
+root typechecking at `src/export-storage.ts:59` and
+`src/file-upload-storage.ts:86`: independently updated SDK packages resolved
+incompatible Smithy types. Updating the S3 client and request presigner together
+addresses their shared type contract. The
+[table update](https://github.com/Asherlc/dofek/pull/2850) failed the web build
+because `getCoreRowModel` and `useReactTable` are no longer exported in v9;
+its caller requires the documented [v9 migration](https://tanstack.com/table/latest/docs/guide/migrating).
+The [Expo core](https://github.com/Asherlc/dofek/pull/2845) and
+[maps](https://github.com/Asherlc/dofek/pull/2851) updates failed
+`pnpm expo install --check` against the SDK 57 version matrix. The user approved
+a coordinated [SDK 58 beta migration](https://expo.dev/changelog/sdk-58-beta);
+its native compatibility and CI validation remain required before merge.
+
+Local full lint initially failed because the required ClickHouse service had
+not started. The exact prerequisite command, `pnpm compose:up`, then failed
+with `all predefined address pools have been fully subnetted`. Inspection found
+six unused workspace networks, each with zero attached containers. With explicit
+user approval, each was rechecked immediately before removal; no container or
+volume was deleted. The same Compose command then completed successfully.
+Docker documents [network inspection](https://docs.docker.com/reference/cli/docker/network/inspect/)
+and [network removal](https://docs.docker.com/reference/cli/docker/network/rm/).
+
+Production was unchanged during diagnosis. No retry, timeout, audit exclusion,
+or CI gate was relaxed. Remaining work is fresh CI and native validation of the
+updated PR heads. For future dependency batches, inspect the first fatal log,
+check whether main already contains its direct fix, and verify SDK version
+matrices before attempting independent native-package updates.
+
+## 2026-10-05 — Reports-removal CI Docker cache export failed before browser tests
+
+- **Status / impact:** The original external cache-export failure prevented browser assertions from running. The user-approved single diagnostic rerun passed cache export and all browser assertions; its service-side cause remains unknown. No production impact was observed.
+- **Evidence:** [E2E job 112094167491](https://github.com/Asherlc/dofek/actions/runs/37408996106/job/112094167491) completed application and native image builds, then failed the Docker Buildx build step while exporting to GitHub Actions Cache. The first fatal line was `#140 ERROR: error writing layer blob: not_found` for layer `sha256:ff488eafdbbf6984e8c08fb9ea981ed2ab805d7eb122049fd9e4cadc0a2b48a4`; Buildx exited with `failed to solve: error writing layer blob: not_found`. This identifies the failing cache-export operation but does not establish why the service rejected the blob. Docker documents the [GitHub Actions cache backend](https://docs.docker.com/build/cache/backends/gha/).
+- **Investigation / validation:** Root/server/web/mobile typechecks, lint, 78 focused tests, and 28 real-database migration/account-erasure assertions passed locally after preserving supplement removal and moving the reports drop to migration 0142. Hosted unit tests and typechecks passed. A job-specific rerun request was rejected with `job 112094167491 cannot be rerun` while the workflow was still active; no rerun occurred. The user approved one diagnostic rerun after the workflow completed. [Rerun job 112112109164](https://github.com/Asherlc/dofek/actions/runs/37408996106/job/112112109164) passed the unchanged cache export and browser test steps; no direct fix was identified or claimed.
+- **Remaining risk / follow-up:** The cache-service cause remains unresolved and may recur. Require green checks on the final merged revision; capture cache-service/request evidence if export fails again. No retry, timeout, cache bypass, or warn-and-continue change was added.
