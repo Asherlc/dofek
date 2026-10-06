@@ -34,8 +34,5 @@ describe("MorePage", () => {
     expect(screen.getByRole("link", { name: /Account & settings/ }).getAttribute("href")).toBe(
       "/settings",
     );
-    expect(screen.getByRole("link", { name: /Data quality/ }).getAttribute("href")).toBe(
-      "/data-quality",
-    );
   });
 });
