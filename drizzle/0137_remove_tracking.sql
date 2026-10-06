@@ -135,6 +135,7 @@ LEFT JOIN fe ON p.user_id = fe.user_id AND p.provider_id = fe.provider_id
 LEFT JOIN he ON p.user_id = he.user_id AND p.provider_id = he.provider_id
 LEFT JOIN nd ON p.user_id = nd.user_id AND p.provider_id = nd.provider_id
 LEFT JOIN cr ON p.user_id = cr.user_id AND p.provider_id = cr.provider_id;
+--> statement-breakpoint
 DROP TABLE fitness.journal_entry;
 --> statement-breakpoint
 DROP TABLE fitness.journal_question;
