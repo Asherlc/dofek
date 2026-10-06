@@ -59,6 +59,34 @@ describe("daily activity-load read-model lifecycle", () => {
     await expect(readLiveLoad(activeClient, targetSchema)).resolves.toEqual([]);
     await expect(readLiveStrainLoad(activeClient, targetSchema)).resolves.toEqual([]);
   }, 180_000);
+
+  it("removes load from an invalid activity interval and restores it after correction", async () => {
+    const activeClient = requireClient(client);
+    await seedFixture(activeClient, targetSchema);
+    await materializeDailyActivityLoad(activeClient, targetSchema, false);
+    await materializeDailyStrain(activeClient, targetSchema, false);
+
+    await activeClient.command({
+      query: `INSERT INTO ${targetSchema}.activity_summary_rows
+        SELECT activity_id, user_id, started_at, toDateTime64(0, 6, 'UTC'),
+          avg_hr, max_hr, is_deleted,
+          toUInt64(toUnixTimestamp64Nano(now64(9))), now64(9)
+        FROM ${targetSchema}.activity_summary_rows FINAL`,
+    });
+    await materializeDailyActivityLoad(activeClient, targetSchema, true);
+    await materializeDailyStrain(activeClient, targetSchema, true);
+
+    await expect(readLiveLoad(activeClient, targetSchema)).resolves.toEqual([]);
+    await expect(readLiveStrainLoad(activeClient, targetSchema)).resolves.toEqual([]);
+
+    await appendActivitySummaryVersion(activeClient, targetSchema, 100, false);
+    await materializeDailyActivityLoad(activeClient, targetSchema, true);
+    await materializeDailyStrain(activeClient, targetSchema, true);
+    await expect(readLiveLoad(activeClient, targetSchema)).resolves.toEqual([{ daily_load: 30 }]);
+    await expect(readLiveStrainLoad(activeClient, targetSchema)).resolves.toEqual([
+      { daily_load: 30 },
+    ]);
+  });
 });
 
 function requireClickHouseUrl(): string {

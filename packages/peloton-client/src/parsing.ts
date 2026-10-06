@@ -75,7 +75,7 @@ export function parseWorkout(workout: PelotonWorkout): ParsedPelotonWorkout {
 export interface ParsedMetricSeries {
   slug: string;
   displayName: string;
-  values: number[];
+  values: (number | null)[];
   offsetsSeconds: number[];
   averageValue: number;
   maxValue: number;

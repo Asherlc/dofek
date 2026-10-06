@@ -69,3 +69,21 @@ export function heartRateZoneSumColumns(): string {
     ",\n        ",
   );
 }
+
+export function heartRateZoneWeightedCountColumns(
+  scalarExpression: string,
+  weightExpression: string,
+  expressions: HeartRateZoneSqlExpressions = queryParamHeartRateExpressions,
+): string {
+  return HEART_RATE_ZONES.map((zone, index) => {
+    const condition = heartRateZoneCondition(
+      scalarExpression,
+      zoneParamName(zone.zone, "min"),
+      zoneParamName(zone.zone, "max"),
+      index === 0,
+      index === HEART_RATE_ZONES.length - 1,
+      expressions,
+    );
+    return `sumIf(${weightExpression}, ${condition}) AS zone${zone.zone}`;
+  }).join(",\n          ");
+}
