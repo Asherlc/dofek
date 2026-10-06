@@ -12,7 +12,13 @@ import { QueryErrorBoundary } from "../components/QueryErrorBoundary.tsx";
 import { UnitProvider } from "../components/UnitProvider.tsx";
 import { installWebAccountPurgeListener } from "../lib/account-erasure-purge.ts";
 import { AuthProvider, useAuth } from "../lib/auth-context.tsx";
+import { getPageNavigationStart, PageLoadProvider } from "../lib/page-load-context.tsx";
 import { ProcessingAlertsProvider } from "../lib/processing-alerts-context.tsx";
+
+const PAGE_LOAD_SECTIONS: Record<string, readonly string[]> = {
+  "/dashboard": ["cards", "health", "insights", "resting-heart-rate", "processing"],
+  "/body/heart-rate": ["chart", "sources"],
+};
 
 const PUBLIC_PATHS = new Set([
   "/",
@@ -152,11 +158,22 @@ function AuthGate() {
     return null;
   }
 
+  const pageSections = PAGE_LOAD_SECTIONS[location.pathname];
+  const outlet = pageSections ? (
+    <PageLoadProvider
+      key={`${location.pathname}:${user?.id ?? "signed-out"}`}
+      route={location.pathname}
+      startedAt={getPageNavigationStart()}
+      sections={pageSections}
+    >
+      <Outlet />
+    </PageLoadProvider>
+  ) : (
+    <Outlet />
+  );
   const content = (
     <PageTransition>
-      <QueryErrorBoundary>
-        <Outlet />
-      </QueryErrorBoundary>
+      <QueryErrorBoundary>{outlet}</QueryErrorBoundary>
     </PageTransition>
   );
 

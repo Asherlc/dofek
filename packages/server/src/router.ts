@@ -4,7 +4,6 @@ import { activityRouter } from "./routers/activity.ts";
 import { adminRouter } from "./routers/admin.ts";
 import { anomalyDetectionRouter } from "./routers/anomaly-detection.ts";
 import { authRouter } from "./routers/auth.ts";
-import { behaviorImpactRouter } from "./routers/behavior-impact.ts";
 import { billingRouter } from "./routers/billing.ts";
 import { bleHeartRateSyncRouter } from "./routers/ble-heart-rate-sync.ts";
 import { bodyRouter } from "./routers/body.ts";
@@ -32,16 +31,12 @@ import { hikingRouter } from "./routers/hiking.ts";
 import { inertialMeasurementUnitSyncRouter } from "./routers/inertial-measurement-unit-sync.ts";
 import { insightsRouter } from "./routers/insights.ts";
 import { intervalsRouter } from "./routers/intervals.ts";
-import { journalRouter } from "./routers/journal.ts";
-import { lifeEventsRouter } from "./routers/life-events.ts";
 import { mcpRouter } from "./routers/mcp.ts";
 import { medicationDoseEventsRouter } from "./routers/medication-dose-events.ts";
-import { menstrualCycleRouter } from "./routers/menstrual-cycle.ts";
 import { mobileDashboardRouter } from "./routers/mobile-dashboard.ts";
 import { monthlyReportRouter } from "./routers/monthly-report.ts";
 import { nutritionRouter } from "./routers/nutrition.ts";
 import { nutritionAnalyticsRouter } from "./routers/nutrition-analytics.ts";
-import { personalExperimentsRouter } from "./routers/personal-experiments.ts";
 import { personalizationRouter } from "./routers/personalization.ts";
 import { pmcRouter } from "./routers/pmc.ts";
 import { powerRouter } from "./routers/power.ts";
@@ -57,7 +52,6 @@ import { sleepNeedRouter } from "./routers/sleep-need.ts";
 import { sportSettingsRouter } from "./routers/sport-settings.ts";
 import { strengthRouter } from "./routers/strength.ts";
 import { stressRouter } from "./routers/stress.ts";
-import { subjectiveRouter } from "./routers/subjective.ts";
 import { supplementsRouter } from "./routers/supplements.ts";
 import { supportRouter } from "./routers/support.ts";
 import { syncRouter } from "./routers/sync.ts";
@@ -78,7 +72,6 @@ const appRouterProcedures = {
   watchAltitudeSync: watchAltitudeSyncRouter,
   activity: activityRouter,
   anomalyDetection: anomalyDetectionRouter,
-  behaviorImpact: behaviorImpactRouter,
   billing: billingRouter,
   bleHeartRateSync: bleHeartRateSyncRouter,
   personalization: personalizationRouter,
@@ -91,9 +84,6 @@ const appRouterProcedures = {
   nutrition: nutritionRouter,
   nutritionAnalytics: nutritionAnalyticsRouter,
   insights: insightsRouter,
-  journal: journalRouter,
-  lifeEvents: lifeEventsRouter,
-  personalExperiments: personalExperimentsRouter,
   mobileDashboard: mobileDashboardRouter,
   supplements: supplementsRouter,
   providerDetail: providerDetailRouter,
@@ -130,12 +120,10 @@ const appRouterProcedures = {
   running: runningRouter,
   settings: settingsRouter,
   stress: stressRouter,
-  subjective: subjectiveRouter,
   todayPlan: todayPlanRouter,
   healthReport: healthReportRouter,
   healthspan: healthspanRouter,
   medicationDoseEvents: medicationDoseEventsRouter,
-  menstrualCycle: menstrualCycleRouter,
   mcp: mcpRouter,
   monthlyReport: monthlyReportRouter,
   weeklyReport: weeklyReportRouter,

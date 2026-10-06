@@ -3,6 +3,7 @@ import { z } from "zod";
 import { dateSchema } from "../lib/date-schema.ts";
 import { EFFORT_IDENTITY_KINDS } from "../repositories/repeated-effort-types.ts";
 import { RepeatedEffortsRepository } from "../repositories/repeated-efforts-repository.ts";
+import { registerAuthorizedTool } from "./authorized-tool.ts";
 import type { DofekMcpContext } from "./context.ts";
 import {
   repeatedEffortsOutputSchema,
@@ -13,14 +14,16 @@ import { jsonToolResult } from "./tool-result.ts";
 import { assertDateRange } from "./tool-utils.ts";
 
 export function registerRepeatedEffortsTool(server: McpServer, context: DofekMcpContext): void {
-  server.registerTool(
+  registerAuthorizedTool(
+    server,
+    ["activity:read"],
     "find_repeated_efforts",
     {
       title: "Find Repeated Efforts",
       description:
         "Discover provider-neutral repeated efforts: Level A exact namespaced workout/route/test identity; Level B strong geometry inference; Level C caller-asserted benchmarks (select user_defined_benchmark); Level D weak name/duration candidates (opt in with equivalence_strength: weak). Strong is the default. Preserves canonical/member/source evidence and quality flags. Repetition does not establish a maximal test or comparable conditions. Requests exceeding 2,000 activities or 250 route candidates must be narrowed; filters and repetition counts precede pagination.",
       annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
-      inputSchema: {
+      inputSchema: z.object({
         start_date: dateSchema,
         end_date: dateSchema,
         minimum_repetitions: z.number().int().min(2).max(2000).optional(),
@@ -31,7 +34,7 @@ export function registerRepeatedEffortsTool(server: McpServer, context: DofekMcp
         canonical_types: z.array(z.string().min(1)).max(50).optional(),
         limit: z.number().int().min(1).max(100).optional(),
         cursor: z.string().min(1).max(32768).optional(),
-      },
+      }),
       outputSchema: repeatedEffortsOutputSchema,
     },
     async (input) => {

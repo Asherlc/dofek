@@ -10,6 +10,8 @@ import {
 import type { ComponentType } from "react";
 import { SyncProviderCard } from "./SyncProviderCard.tsx";
 
+const recentSuccessfulAt = new Date(Date.now() - 3600_000).toISOString();
+
 function withRouter(Story: ComponentType) {
   const rootRoute = createRootRoute({
     component: Outlet,
@@ -31,7 +33,7 @@ function withRouter(Story: ComponentType) {
   });
 
   return (
-    <div className="w-screen max-w-sm p-6 bg-background">
+    <div className="w-[calc(100vw-2rem)] max-w-sm p-6 bg-background">
       <RouterProvider router={router} />
     </div>
   );
@@ -46,8 +48,8 @@ const meta = {
     provider: {
       id: "strava",
       name: "Strava",
-      lastSyncedAt: "2026-05-12T10:00:00.000Z",
-      lastSuccessfulSyncAt: "2026-05-12T10:00:00.000Z",
+      lastSyncedAt: recentSuccessfulAt,
+      lastSuccessfulSyncAt: recentSuccessfulAt,
       syncFreshness: {
         status: "current",
         label: "Sync current",
@@ -62,7 +64,7 @@ const meta = {
     recentLogs: [
       {
         id: "strava-sync-1",
-        syncedAt: "2026-05-12T10:00:00.000Z",
+        syncedAt: recentSuccessfulAt,
         status: "success",
         dataType: "activities",
         recordCount: 12,
@@ -110,6 +112,7 @@ export const OverdueProvider: Story = {
   name: "Overdue provider",
   tags: ["review-scenario", "review-scenario-stale-provider"],
   args: {
+    recentLogs: [],
     provider: {
       id: "strava",
       name: "Strava",
@@ -144,6 +147,7 @@ export const NeedsAuth: Story = {
 
 export const NeedsReauth: Story = {
   args: {
+    recentLogs: [],
     provider: {
       id: "whoop",
       name: "WHOOP",

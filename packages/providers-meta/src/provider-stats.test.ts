@@ -16,7 +16,6 @@ const FULL_STATS: ProviderStats = {
   metricStream: 5000,
   nutritionDaily: 150,
   clinicalRecords: 8,
-  journalEntries: 20,
 };
 
 const SPARSE_STATS: ProviderStats = {
@@ -29,7 +28,6 @@ const SPARSE_STATS: ProviderStats = {
   metricStream: 0,
   nutritionDaily: 0,
   clinicalRecords: 0,
-  journalEntries: 0,
 };
 
 const EMPTY_STATS: ProviderStats = {
@@ -42,7 +40,6 @@ const EMPTY_STATS: ProviderStats = {
   metricStream: 0,
   nutritionDaily: 0,
   clinicalRecords: 0,
-  journalEntries: 0,
 };
 
 describe("DATA_TYPE_LABELS", () => {
@@ -57,14 +54,13 @@ describe("DATA_TYPE_LABELS", () => {
       { key: "nutritionDaily", label: "Nutrition" },
       { key: "healthEvents", label: "Events" },
       { key: "clinicalRecords", label: "Clinical Records" },
-      { key: "journalEntries", label: "Journal" },
     ]);
   });
 });
 
 describe("providerStatsTotal", () => {
   it("sums all stat fields", () => {
-    expect(providerStatsTotal(FULL_STATS)).toBe(5968);
+    expect(providerStatsTotal(FULL_STATS)).toBe(5948);
   });
 
   it("returns 0 for empty stats", () => {
@@ -93,7 +89,6 @@ describe("providerStatsBreakdown", () => {
       { label: "Nutrition", count: 0 },
       { label: "Events", count: 0 },
       { label: "Clinical Records", count: 0 },
-      { label: "Journal", count: 0 },
     ]);
   });
 
@@ -109,7 +104,6 @@ describe("providerStatsBreakdown", () => {
       { label: "Nutrition", count: 150 },
       { label: "Events", count: 10 },
       { label: "Clinical Records", count: 8 },
-      { label: "Journal", count: 20 },
     ]);
   });
 

@@ -1339,21 +1339,6 @@ describe("WhoopClient.getSleep", () => {
   });
 });
 
-describe("WhoopClient.getJournal", () => {
-  it("returns journal data", async () => {
-    const journalData = { impacts: [] };
-
-    const fetchFn = createMockFetch({ status: 200, ok: true, body: journalData });
-    const client = new WhoopClient(makeToken(), fetchFn);
-
-    const result = await client.getJournal("2024-01-01T00:00:00Z", "2024-01-31T23:59:59Z");
-
-    expect(result).toEqual(journalData);
-    const url = getFirstRequestUrl(fetchFn);
-    expect(String(url)).toContain("/behavior-impact-service/v1/impact");
-  });
-});
-
 describe("WhoopClient.getWeightliftingWorkout", () => {
   it("returns weightlifting workout data", async () => {
     const workoutData = {

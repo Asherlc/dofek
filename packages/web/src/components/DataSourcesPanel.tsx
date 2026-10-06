@@ -448,34 +448,35 @@ export function DataSourcesPanel() {
 
   return (
     <div className="space-y-4">
-      <div className="flex min-h-20 items-start justify-between gap-4">
-        <h3 className="text-sm font-medium text-foreground">Data Sources</h3>
-        {enabledSyncable.length > 1 && (
-          <SyncAllControls
-            busy={syncAllBusy}
-            errorMessage={syncAllError}
-            onRecentSync={() => void handleSyncAll()}
-            onFullSync={() => void handleSyncAll(true)}
-          />
-        )}
-      </div>
-
       <section
         aria-label="Available data sources"
         aria-busy={providers.isLoading || processingStatus.isLoading}
         className={providerRegionClassName}
       >
-        {activeSyncs.error ? (
-          <p role="alert" className="text-sm text-red-400">
-            {userFacingErrorMessage(activeSyncs.error)}
-          </p>
-        ) : null}
+        <div className="min-h-36 space-y-3">
+          {enabledSyncable.length > 1 && (
+            <div className="flex justify-end">
+              <SyncAllControls
+                busy={syncAllBusy}
+                errorMessage={syncAllError}
+                onRecentSync={() => void handleSyncAll()}
+                onFullSync={() => void handleSyncAll(true)}
+              />
+            </div>
+          )}
 
-        <ProcessingStatusWidget
-          data={processingStatus.data}
-          error={processingStatus.error}
-          loading={processingStatus.isLoading}
-        />
+          {activeSyncs.error ? (
+            <p role="alert" className="text-sm text-red-400">
+              {userFacingErrorMessage(activeSyncs.error)}
+            </p>
+          ) : null}
+
+          <ProcessingStatusWidget
+            data={processingStatus.data}
+            error={processingStatus.error}
+            loading={processingStatus.isLoading}
+          />
+        </div>
 
         {providers.error ? <QueryStatePanel error={providers.error} height={72} /> : null}
         {stats.error ? <QueryStatePanel error={stats.error} height={72} /> : null}

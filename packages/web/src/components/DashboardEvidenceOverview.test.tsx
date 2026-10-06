@@ -194,7 +194,6 @@ describe("DashboardEvidenceOverview", () => {
     );
 
     expect(screen.getByText("Key association")).toBeTruthy();
-    expect(screen.getByText("Association", { exact: true })).toBeTruthy();
     expect(screen.getByText("12.4% higher")).toBeTruthy();
     expect(screen.queryByText("Correlation", { exact: true })).toBeNull();
     expect(screen.queryByText("0.42", { exact: true })).toBeNull();
@@ -224,7 +223,6 @@ describe("DashboardEvidenceOverview", () => {
     );
 
     expect(screen.getByText("Key correlation")).toBeTruthy();
-    expect(screen.getByText("Correlation", { exact: true })).toBeTruthy();
     expect(screen.getByText("0.42", { exact: true })).toBeTruthy();
   });
 

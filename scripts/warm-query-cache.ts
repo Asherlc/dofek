@@ -2,11 +2,13 @@ import { randomUUID } from "node:crypto";
 import { pathToFileURL } from "node:url";
 import { getAccessWindowForUser } from "../packages/server/src/billing/access-window-repository.ts";
 import type { AccessWindow } from "../packages/server/src/billing/entitlement.ts";
+import { isTRPCNotFoundError } from "../packages/server/src/lib/trpc-errors.ts";
 import { ClickHouseActivitySensorStore } from "../packages/server/src/repositories/clickhouse-activity-sensor-store.ts";
 import { appRouter } from "../packages/server/src/router.ts";
 import type { Context } from "../packages/server/src/trpc.ts";
 import { createClickHouseClientFromEnv } from "../src/db/clickhouse.ts";
 import { createDatabaseFromEnv } from "../src/db/index.ts";
+import { type CacheStore, queryCache } from "../src/lib/cache.ts";
 import { captureException } from "../src/lib/error-reporting.ts";
 import { RedisQueryCacheRegistry } from "../src/lib/redis-query-cache-registry.ts";
 import { logger } from "../src/logger.ts";
@@ -35,6 +37,7 @@ interface WarmCallerContext<TDatabase, TSensorStore> {
 
 export interface WarmRegisteredQueryCachesInput<TDatabase, TSensorStore> {
   cacheStore: QueryCacheRegistry;
+  queryCache: Pick<CacheStore, "invalidate">;
   db: TDatabase;
   sensorStore: TSensorStore;
   createCaller(context: WarmCallerContext<TDatabase, TSensorStore>): unknown;
@@ -66,14 +69,21 @@ function isValidTimezone(timezone: string): boolean {
 export function parseRegisteredQueryCacheKey(key: string): RegisteredQueryCacheKey | null {
   const userSeparator = key.indexOf(":");
   const pathSeparator = key.indexOf(":", userSeparator + 1);
-  const timezoneSeparator = key.indexOf(":", pathSeparator + 1);
+  let timezoneSeparator = key.indexOf(":", pathSeparator + 1);
   if (userSeparator <= 0 || pathSeparator <= userSeparator || timezoneSeparator <= pathSeparator) {
     return null;
   }
 
   const userId = key.slice(0, userSeparator);
   const path = key.slice(userSeparator + 1, pathSeparator);
-  const timezone = key.slice(pathSeparator + 1, timezoneSeparator);
+  let timezone = key.slice(pathSeparator + 1, timezoneSeparator);
+  if (!isValidTimezone(timezone)) {
+    // requestCacheKey inserts an optional version before the timezone.
+    const versionSeparator = timezoneSeparator;
+    timezoneSeparator = key.indexOf(":", versionSeparator + 1);
+    if (timezoneSeparator <= versionSeparator) return null;
+    timezone = key.slice(versionSeparator + 1, timezoneSeparator);
+  }
   if (userId === "anon" || path.length === 0 || !isValidTimezone(timezone)) return null;
 
   try {
@@ -151,7 +161,14 @@ export async function warmRegisteredQueryCachesWithOutcomes<TDatabase, TSensorSt
         accessWindow,
         cacheMode: "refresh",
       });
-      await invokeCallerProcedure(caller, registeredQuery.path, registeredQuery.input);
+      try {
+        await invokeCallerProcedure(caller, registeredQuery.path, registeredQuery.input);
+      } catch (error) {
+        if (!isTRPCNotFoundError(error)) throw error;
+        await input.queryCache.invalidate(registeredQuery.key);
+        skipped += 1;
+        continue;
+      }
       refreshed += 1;
       outcomes.push({
         userId: registeredQuery.userId,
@@ -197,6 +214,7 @@ export async function warmQueryCacheFromEnvironment(): Promise<void> {
     const result = await warmRegisteredQueryCachesWithOutcomes(
       {
         cacheStore: cacheRegistry,
+        queryCache,
         db,
         sensorStore,
         createCaller: (context) => appRouter.createCaller(context satisfies Context),

@@ -30,6 +30,15 @@ Authenticated specs normally use this lifecycle:
 
 The login-page spec intentionally does not create a session.
 
+When removing a database-backed feature, update `cleanTestData` in the root
+`cypress.config.ts` alongside its migration so authenticated specs can still
+clean up against the current schema.
+
+For loading-state assertions, hold the intercepted response until the assertion
+has run, then release it. A fixed response delay alone can expire before Cypress
+reaches the assertion. Returning a Promise from `request.continue()` holds the
+response until it resolves; see [Cypress interception callbacks](https://docs.cypress.io/api/commands/intercept#Returning-a-Promise).
+
 ## Node Tasks
 
 `cypress.config.ts` registers these tasks:

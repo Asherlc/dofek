@@ -442,6 +442,20 @@ describe("TodayScreen independent loading states", () => {
     expect(screen.getByText("8h 0m recorded. Sleep stages were not reported.")).toBeTruthy();
   });
 
+  it("shows one sleep empty state when both the recorded night and estimate are missing", async () => {
+    mockDashboardData = {
+      ...mockDashboardData,
+      sleep: { lastNight: null, sleepDebt: 0 },
+      sleepNeed: null,
+    };
+
+    const { default: TodayScreen } = await import("../../app/(tabs)/index");
+    render(<TodayScreen />);
+
+    expect(screen.getByText("LAST NIGHT")).toBeTruthy();
+    expect(screen.getAllByText("No sleep data")).toHaveLength(1);
+  });
+
   it("shows one sleep-data prerequisite card when prior sleep is missing", async () => {
     mockDashboardData = {
       ...mockDashboardData,
@@ -535,10 +549,15 @@ describe("TodayScreen independent loading states", () => {
     expect(screen.getByText("SLEEP ESTIMATE")).toBeTruthy();
     expect(screen.queryByText("SLEEP COACH")).toBeNull();
     expect(screen.getByText("About 8h 37m")).toBeTruthy();
-    expect(screen.getByText("+17m")).toBeTruthy();
-    expect(screen.getByText("Estimated sleep need")).toBeTruthy();
-    expect(screen.getByText("Previous-day load adjustment")).toBeTruthy();
+    expect(
+      screen.getByText(
+        "This is an estimate, not a sleep recommendation. Its uncertainty has not been established.",
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByText("Previous-day load adjustment")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "How this is calculated" }));
+    expect(screen.getByText("+17m")).toBeTruthy();
+    expect(screen.getByText("Previous-day load adjustment")).toBeTruthy();
     expect(
       screen.getByText(
         "Baseline uses the average of 7 qualifying nights followed by at-or-above-median heart rate variability.",
@@ -558,6 +577,8 @@ describe("TodayScreen independent loading states", () => {
       ),
     ).toBeTruthy();
     expect(screen.queryByText("recommended tonight")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "How this is calculated" }));
+    expect(screen.queryByText("Previous-day load adjustment")).toBeNull();
   });
 
   it("renders all rings when no queries are loading", async () => {

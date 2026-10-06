@@ -31,11 +31,6 @@ describe("time range policy", () => {
         description:
           "Recommended default: 90 days provides enough intake and weight history for stable trends.",
       },
-      behavior: {
-        defaultDays: 90,
-        description:
-          "Recommended default: 90 days provides enough journal observations to compare patterns.",
-      },
       correlation: {
         defaultDays: 365,
         description:
@@ -50,7 +45,6 @@ describe("time range policy", () => {
     expect(timeRangePreferenceKey("sleep")).toBe("dofek.time-range.sleep");
     expect(timeRangePreferenceKey("training")).toBe("dofek.time-range.training");
     expect(timeRangePreferenceKey("nutrition")).toBe("dofek.time-range.nutrition");
-    expect(timeRangePreferenceKey("behavior")).toBe("dofek.time-range.behavior");
     expect(timeRangePreferenceKey("correlation")).toBe("dofek.time-range.correlation");
   });
 

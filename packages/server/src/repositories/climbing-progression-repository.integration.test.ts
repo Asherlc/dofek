@@ -42,19 +42,12 @@ describe("ClimbingProgressionRepository database semantics", () => {
           'Travel climbing', 'Kaya', '{}'::jsonb, NULL, -420, -420, 'provider_offset')
     `);
     await context.db.execute(sql`
-      INSERT INTO fitness.climbing_entry (
-        user_id, provider_id, activity_id, external_id, climb_type, grade_system, grade, sent,
-        attempt_count, wall_angle_degrees, route_name, location_name, source_name, raw
-      ) VALUES
-        (${userId}::uuid, ${kayaProvider}, ${kayaActivity}::uuid, 'kaya-blue', 'boulder', 'v_scale', 'V5', true,
-          3, 30, 'Blue Arete', 'Pacific Pipe', 'Kaya', '{"ascentType":"Redpoint"}'::jsonb),
-        (${userId}::uuid, ${mirrorProvider}, ${mirrorActivity}::uuid, 'mirror-blue', 'boulder', 'v_scale', 'V5', true,
-          3, 30, 'Blue Arete', 'Pacific Pipe', 'Mirror', '{"ascentType":"Redpoint"}'::jsonb),
-        (${userId}::uuid, ${kayaProvider}, ${kayaActivity}::uuid, 'kaya-red', 'boulder', 'v_scale', 'V6', NULL,
-          NULL, 20, 'Red Roof', 'Pacific Pipe', 'Kaya', '{}'::jsonb),
-        (${userId}::uuid, ${kayaProvider}, ${offsetActivity}::uuid, 'offset-green', 'boulder', 'v_scale', 'V3', true,
-          1, 10, 'Green Slab', 'Travel Gym', 'Kaya', '{"attemptType":"Flash"}'::jsonb)
-    `);
+      INSERT INTO fitness.climbing_entry (user_id, provider_id, activity_id, external_id, climb_type, grade_system, grade, result_style, attempt_count, wall_angle, route_name, location_path, source_name, raw) VALUES
+        (${userId}::uuid, ${kayaProvider}, ${kayaActivity}::uuid, 'kaya-blue', 'boulder', 'v_scale', 'V5', 'Redpoint', 3, '{"value":30,"unit":"degrees"}'::jsonb, 'Blue Arete', '[{"name":"Pacific Pipe","externalId":null,"kind":null}]'::jsonb, 'Kaya', '{"ascentType":"Redpoint"}'::jsonb),
+        (${userId}::uuid, ${mirrorProvider}, ${mirrorActivity}::uuid, 'mirror-blue', 'boulder', 'v_scale', 'V5', 'Redpoint', 3, '{"value":30,"unit":"degrees"}'::jsonb, 'Blue Arete', '[{"name":"Pacific Pipe","externalId":null,"kind":null}]'::jsonb, 'Mirror', '{"ascentType":"Redpoint"}'::jsonb),
+        (${userId}::uuid, ${kayaProvider}, ${kayaActivity}::uuid, 'kaya-red', 'boulder', 'v_scale', 'V6', NULL, NULL, '{"value":20,"unit":"degrees"}'::jsonb, 'Red Roof', '[{"name":"Pacific Pipe","externalId":null,"kind":null}]'::jsonb, 'Kaya', '{}'::jsonb),
+        (${userId}::uuid, ${kayaProvider}, ${offsetActivity}::uuid, 'offset-green', 'boulder', 'v_scale', 'V3', 'Flash', 1, '{"value":10,"unit":"degrees"}'::jsonb, 'Green Slab', '[{"name":"Travel Gym","externalId":null,"kind":null}]'::jsonb, 'Kaya', '{"attemptType":"Flash"}'::jsonb)
+`);
   });
 
   afterAll(async () => {
@@ -150,5 +143,49 @@ describe("ClimbingProgressionRepository database semantics", () => {
       }),
     ]);
     expect(result.sessions[0]?.climbs).toEqual([expect.objectContaining({ ascent_type: "Flash" })]);
+  });
+
+  it("serves zero degrees while leaving an unverified angle out of degree analytics", async () => {
+    const activityId = randomUUID();
+    await context.db.execute(sql`
+      INSERT INTO fitness.activity (
+        id, group_id, provider_id, user_id, external_id, canonical_type, provider_type,
+        started_at, ended_at, name, source_name, raw, local_time_source
+      ) VALUES (
+        ${activityId}::uuid, ${activityId}::uuid, ${kayaProvider}, ${userId}::uuid,
+        'angle-session', 'climbing', 'bouldering', '2026-07-13T18:00:00Z',
+        '2026-07-13T19:00:00Z', 'Angle fixture', 'Kaya', '{}'::jsonb, 'unknown'
+      )
+    `);
+    await context.db.execute(sql`
+      INSERT INTO fitness.climbing_entry (
+        user_id, provider_id, activity_id, external_id, climb_type, grade_system,
+        grade, result_style, wall_angle, route_name
+      ) VALUES
+        (${userId}::uuid, ${kayaProvider}, ${activityId}::uuid, 'known-zero',
+          'boulder', 'v_scale', 'V2', 'Send', '{"value":0,"unit":"degrees"}'::jsonb, 'Vertical'),
+        (${userId}::uuid, ${kayaProvider}, ${activityId}::uuid, 'unverified-angle',
+          'boulder', 'v_scale', 'V3', 'Send', '{"value":40,"unit":null}'::jsonb, 'Board')
+    `);
+    const result = await new ClimbingProgressionRepository(
+      context.db,
+      userId,
+      "America/Los_Angeles",
+    ).listRange({
+      startDate: "2026-07-13",
+      endDate: "2026-07-13",
+      providers: [],
+      disciplines: [],
+      locations: [],
+      gradeSystems: [],
+      cursor: null,
+      limit: 100,
+    });
+    expect(result.sessions[0]?.climbs).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ route_name: "Vertical", wall_angle_degrees: 0 }),
+        expect.objectContaining({ route_name: "Board", wall_angle_degrees: null }),
+      ]),
+    );
   });
 });

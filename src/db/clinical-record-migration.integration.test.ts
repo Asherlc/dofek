@@ -42,6 +42,11 @@ async function restoreLegacyClinicalSchema(connectionString: string): Promise<vo
     await client.query("BEGIN");
     await client.query("DROP VIEW fitness.provider_stats");
     await client.query("DROP TABLE IF EXISTS fitness.clinical_record");
+    // Migration 0099 predates tracking retirement and reads this historical dependency.
+    await client.query(`CREATE TABLE fitness.journal_entry (
+      user_id uuid NOT NULL,
+      provider_id text NOT NULL
+    )`);
     await client.query(`
       DROP TABLE IF EXISTS fitness.lab_result;
       DROP TABLE IF EXISTS fitness.lab_panel;

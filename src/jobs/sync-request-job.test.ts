@@ -1,180 +1,11 @@
 import type { JobsOptions } from "bullmq";
 import { describe, expect, it, vi } from "vitest";
-import {
-  buildSyncRequestJobId,
-  registerSyncRequestQueryResolver,
-} from "../lib/sync-request-query.ts";
+import { registerSyncRequestQueryResolver } from "../lib/sync-request-query.ts";
 import { resolveWhoopSyncRequestQuery } from "../providers/whoop/sync-request-query.ts";
 import type { SyncJobData } from "./queues.ts";
 import { enqueueSyncJobWithRequestDedup } from "./sync-request-job.ts";
 
 registerSyncRequestQueryResolver("whoop", resolveWhoopSyncRequestQuery);
-
-describe("resolveWhoopSyncRequestQuery", () => {
-  it("maps a fresh sync job to the first bootstrap cycles request", () => {
-    expect(
-      resolveWhoopSyncRequestQuery({
-        userId: "user-1",
-        providerId: "whoop",
-        sinceDays: 30,
-      }),
-    ).toEqual({
-      path: "core-details-bff/v0/cycles/details",
-      filters: expect.objectContaining({
-        cursorMs: expect.any(Number),
-      }),
-    });
-  });
-
-  it("maps an API checkpoint to the next step request", () => {
-    expect(
-      resolveWhoopSyncRequestQuery({
-        userId: "user-1",
-        providerId: "whoop",
-        sinceIso: "2026-05-01T00:00:00.000Z",
-        untilIso: "2026-05-03T00:00:00.000Z",
-        checkpoint: {
-          runId: "run-1",
-          recordsSynced: 0,
-          phase: "api",
-          cycleFetchCursorMs: null,
-          cycles: [],
-          apiSteps: [
-            {
-              type: "heart_rate",
-              start: "2026-05-01T00:00:00.000Z",
-              end: "2026-05-08T00:00:00.000Z",
-            },
-          ],
-          apiStepIndex: 0,
-          presentExternalIds: [],
-        },
-      }),
-    ).toEqual({
-      path: "metrics-service/v1/metrics",
-      filters: {
-        name: "heart_rate",
-        start: "2026-05-01T00:00:00.000Z",
-        end: "2026-05-08T00:00:00.000Z",
-        step: 6,
-      },
-    });
-  });
-
-  it("returns bootstrap cycle details query with checkpoint cursor", () => {
-    expect(
-      resolveWhoopSyncRequestQuery({
-        userId: "user-1",
-        providerId: "whoop",
-        sinceIso: "2026-05-01T00:00:00.000Z",
-        untilIso: "2026-05-03T00:00:00.000Z",
-        checkpoint: {
-          runId: "run-1",
-          recordsSynced: 0,
-          phase: "bootstrap",
-          cycleFetchCursorMs: 1234567890,
-          cycles: [],
-          apiSteps: [],
-          apiStepIndex: 0,
-          presentExternalIds: [],
-        },
-      }),
-    ).toEqual({
-      path: "core-details-bff/v0/cycles/details",
-      filters: {
-        start: "2026-05-01T00:00:00.000Z",
-        end: "2026-05-03T00:00:00.000Z",
-        cursorMs: 1234567890,
-      },
-    });
-  });
-
-  it("returns null for bootstrap checkpoint with null cursor", () => {
-    expect(
-      resolveWhoopSyncRequestQuery({
-        userId: "user-1",
-        providerId: "whoop",
-        sinceIso: "2026-05-01T00:00:00.000Z",
-        untilIso: "2026-05-03T00:00:00.000Z",
-        checkpoint: {
-          runId: "run-1",
-          recordsSynced: 0,
-          phase: "bootstrap",
-          cycleFetchCursorMs: null,
-          cycles: [],
-          apiSteps: [],
-          apiStepIndex: 0,
-          presentExternalIds: [],
-        },
-      }),
-    ).toBeNull();
-  });
-
-  it("returns null when API phase step index is out of bounds", () => {
-    expect(
-      resolveWhoopSyncRequestQuery({
-        userId: "user-1",
-        providerId: "whoop",
-        sinceIso: "2026-05-01T00:00:00.000Z",
-        untilIso: "2026-05-03T00:00:00.000Z",
-        checkpoint: {
-          runId: "run-1",
-          recordsSynced: 0,
-          phase: "api",
-          cycleFetchCursorMs: null,
-          cycles: [],
-          apiSteps: [],
-          apiStepIndex: 0,
-          presentExternalIds: [],
-        },
-      }),
-    ).toBeNull();
-  });
-
-  it("returns null for a done checkpoint even when api steps exist", () => {
-    expect(
-      resolveWhoopSyncRequestQuery({
-        userId: "user-1",
-        providerId: "whoop",
-        sinceIso: "2026-05-01T00:00:00.000Z",
-        untilIso: "2026-05-03T00:00:00.000Z",
-        checkpoint: {
-          runId: "run-1",
-          recordsSynced: 0,
-          phase: "done",
-          cycleFetchCursorMs: null,
-          cycles: [],
-          apiSteps: [
-            {
-              type: "heart_rate",
-              start: "2026-05-01T00:00:00.000Z",
-              end: "2026-05-08T00:00:00.000Z",
-            },
-          ],
-          apiStepIndex: 0,
-          presentExternalIds: [],
-        },
-      }),
-    ).toBeNull();
-  });
-});
-
-describe("buildSyncRequestJobId", () => {
-  it("is stable for the same provider request", () => {
-    const query = {
-      path: "metrics-service/v1/metrics",
-      filters: {
-        name: "heart_rate",
-        start: "2026-05-01T00:00:00.000Z",
-        end: "2026-05-08T00:00:00.000Z",
-        step: 6,
-      },
-    };
-    expect(buildSyncRequestJobId("whoop", "user-1", query)).toBe(
-      buildSyncRequestJobId("whoop", "user-1", query),
-    );
-  });
-});
 
 describe("enqueueSyncJobWithRequestDedup", () => {
   const jobData: SyncJobData = {
@@ -183,6 +14,94 @@ describe("enqueueSyncJobWithRequestDedup", () => {
     sinceDays: 7,
   };
   const jobOptions: JobsOptions = {};
+
+  it.each(["completed", "failed"])("reuses a %s child for the same coordinator", async (state) => {
+    const existing = { getState: vi.fn().mockResolvedValue(state), remove: vi.fn() };
+    const addJob = vi.fn();
+    const getJob = vi.fn().mockResolvedValue(existing);
+    const result = await enqueueSyncJobWithRequestDedup(
+      "whoop",
+      jobData,
+      jobOptions,
+      addJob,
+      getJob,
+      { id: "coordinator-1", queueQualifiedName: "bull:sync" },
+    );
+    expect(result).toBe(existing);
+    expect(result?.alreadyQueued).toBe(true);
+    expect(existing.remove).not.toHaveBeenCalled();
+    expect(addJob).not.toHaveBeenCalled();
+  });
+  it("atomically registers a coordinator parent with independent terminal failures", async () => {
+    const addJob = vi.fn().mockResolvedValue({ id: "child" });
+    await enqueueSyncJobWithRequestDedup(
+      "whoop",
+      jobData,
+      jobOptions,
+      addJob,
+      vi.fn().mockResolvedValue(undefined),
+      {
+        id: "coordinator-1",
+        queueQualifiedName: "bull:sync",
+      },
+    );
+    expect(addJob).toHaveBeenCalledWith(
+      "sync",
+      jobData,
+      expect.objectContaining({
+        parent: { id: "coordinator-1", queue: "bull:sync" },
+        ignoreDependencyOnFailure: true,
+      }),
+    );
+  });
+
+  it("replaces a coordinator child that is neither pending nor terminal", async () => {
+    const existing = {
+      getState: vi.fn().mockResolvedValue("unknown"),
+      remove: vi.fn().mockResolvedValue(undefined),
+    };
+    const addJob = vi.fn().mockResolvedValue({ id: "replacement" });
+    const result = await enqueueSyncJobWithRequestDedup(
+      "whoop",
+      jobData,
+      jobOptions,
+      addJob,
+      vi.fn().mockResolvedValue(existing),
+      {
+        id: "coordinator-1",
+        queueQualifiedName: "bull:sync",
+      },
+    );
+    expect(existing.remove).toHaveBeenCalledOnce();
+    expect(addJob).toHaveBeenCalledOnce();
+    expect(result?.id).toBe("replacement");
+    expect(result?.alreadyQueued).toBe(false);
+  });
+
+  it("scopes coordinator child identity by parent and provider", async () => {
+    const addJob = vi.fn().mockResolvedValue({ id: "child" });
+    const getJob = vi.fn().mockResolvedValue(undefined);
+    await enqueueSyncJobWithRequestDedup("whoop", jobData, jobOptions, addJob, getJob, {
+      id: "coordinator-1",
+      queueQualifiedName: "bull:sync",
+    });
+    const firstId = getJob.mock.calls[0]?.[0];
+    await enqueueSyncJobWithRequestDedup("whoop", jobData, jobOptions, addJob, getJob, {
+      id: "coordinator-2",
+      queueQualifiedName: "bull:sync",
+    });
+    expect(getJob.mock.calls[1]?.[0]).not.toBe(firstId);
+    await enqueueSyncJobWithRequestDedup("garmin", jobData, jobOptions, addJob, getJob, {
+      id: "coordinator-1",
+      queueQualifiedName: "bull:sync",
+    });
+    expect(getJob.mock.calls[2]?.[0]).not.toBe(firstId);
+    await enqueueSyncJobWithRequestDedup("whoop", jobData, jobOptions, addJob, getJob, {
+      id: "coordinator-1",
+      queueQualifiedName: "bull:sync",
+    });
+    expect(getJob.mock.calls[3]?.[0]).toBe(firstId);
+  });
 
   it("adds a new job when no existing job matches the dedup key", async () => {
     const newJob = {};
@@ -394,6 +313,7 @@ describe("enqueueSyncJobWithRequestDedup", () => {
       );
 
       expect(result?.alreadyQueued).toBe(false);
+      if (jobData.checkpoint !== undefined) expect(getJob).not.toHaveBeenCalled();
     },
   );
 

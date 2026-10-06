@@ -246,7 +246,7 @@ export function SettingsPage() {
         ) : null}
 
         {activeCategory === "account" ? (
-          <PageSection title="Password" subtitle="Set or change your email login password">
+          <PageSection title="Password">
             <PasswordSettingsPanel />
           </PageSection>
         ) : null}
@@ -287,7 +287,7 @@ export function SettingsPage() {
         ) : null}
 
         {activeCategory === "goals-models" ? (
-          <PageSection title="Units" subtitle="Choose how measurements are displayed">
+          <PageSection title="Units">
             <UnitSystemToggle />
           </PageSection>
         ) : null}

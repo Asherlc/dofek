@@ -13,7 +13,6 @@ function sources(
     body: { listReconciledRange: vi.fn().mockResolvedValue([]) },
     weightObservations: { listRange: vi.fn().mockResolvedValue([]) },
     trainingLoad: { listRange: vi.fn().mockResolvedValue({ rows: [] }) },
-    subjective: { timeline: vi.fn().mockResolvedValue({ checkIns: [], injuries: [] }) },
     activities: { listDailyExposureRange: vi.fn().mockResolvedValue([]) },
     nutrition: { dailyTotalsRange: vi.fn().mockResolvedValue([]) },
     ...overrides,
@@ -134,14 +133,13 @@ describe("RecoveryTrainingSeriesRepository", () => {
   it("queries only requested streams", async () => {
     const input = sources();
     await new RecoveryTrainingSeriesRepository(input, "UTC").listRange("2026-06-01", "2026-06-02", [
-      "subjective",
+      "nutrition",
     ]);
 
-    expect(input.subjective.timeline).toHaveBeenCalledOnce();
+    expect(input.nutrition.dailyTotalsRange).toHaveBeenCalledOnce();
     expect(input.dailyMetrics.listRange).not.toHaveBeenCalled();
     expect(input.sleep.listRange).not.toHaveBeenCalled();
     expect(input.trainingLoad.listRange).not.toHaveBeenCalled();
-    expect(input.nutrition.dailyTotalsRange).not.toHaveBeenCalled();
   });
 
   it("returns nearby direct-weight evidence and rolling context on dates without a measurement", async () => {

@@ -3,6 +3,7 @@ import { z } from "zod";
 import { dateSchema } from "../lib/date-schema.ts";
 import { fingerLoadingExerciseSchema } from "../repositories/climbing-training-log-repository.ts";
 import { FingerLoadingProgressionRepository } from "../repositories/finger-loading-progression-repository.ts";
+import { registerAuthorizedTool } from "./authorized-tool.ts";
 import type { DofekMcpContext } from "./context.ts";
 import { fingerLoadingProgressionOutputSchema } from "./finger-loading-progression-output.ts";
 import { requireMcpScope } from "./token-repository.ts";
@@ -14,14 +15,16 @@ export function registerFingerLoadingProgressionTool(
   server: McpServer,
   context: DofekMcpContext,
 ): void {
-  server.registerTool(
+  registerAuthorizedTool(
+    server,
+    ["activity:read"],
     "get_finger_loading_progression",
     {
       title: "Get Finger Loading Progression",
       description:
         "Return exact-range finger/hangboard protocols, effective load, load ratio, time-under-tension, kg-second exposure, consecutive days, explicit-threshold high-intensity days, and source/timezone provenance as a separate load channel.",
       annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
-      inputSchema: {
+      inputSchema: z.object({
         start_date: dateSchema,
         end_date: dateSchema,
         providers: z.array(z.string().min(1)).max(50).optional(),
@@ -31,7 +34,7 @@ export function registerFingerLoadingProgressionTool(
         min_rpe: z.number().min(0).max(10).optional(),
         cursor: z.string().min(1).optional(),
         limit: z.number().int().min(1).max(500).optional(),
-      },
+      }),
       outputSchema: fingerLoadingProgressionOutputSchema,
     },
     async ({

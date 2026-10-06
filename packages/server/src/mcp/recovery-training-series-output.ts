@@ -70,20 +70,6 @@ const loadChannelsSchema = z
     strength_volume: analyticalTrainingLoadChannelSchema,
   })
   .strict();
-const injurySchema = z
-  .object({
-    id: z.string(),
-    kind: z.enum(["injury", "niggle"]),
-    body_region_id: z.string(),
-    onset_date: z.string(),
-    resolved_date: z.string().nullable(),
-    severity: nullableNumber,
-    description: z.string(),
-    created_at: z.string(),
-    updated_at: z.string(),
-  })
-  .strict();
-
 /** Strict wire contract for compact, selected date-aligned recovery and exposure streams. */
 export const recoveryTrainingSeriesOutputSchema = z
   .object({
@@ -174,30 +160,6 @@ export const recoveryTrainingSeriesOutputSchema = z
                 .optional(),
               training_load: loadChannelsSchema.nullable().optional(),
               previous_day_training_load: loadChannelsSchema.nullable().optional(),
-              subjective: z
-                .object({
-                  status: z.enum(["observed", "not_observed"]),
-                  fatigue: z
-                    .object({
-                      value: z.null(),
-                      status: z.literal("unavailable"),
-                      reason: z.string().min(1),
-                    })
-                    .strict(),
-                  symptoms: z.array(
-                    z
-                      .object({
-                        id: z.string(),
-                        body_region_id: z.string(),
-                        kind: z.enum(["soreness", "stiffness", "tenderness"]),
-                        score: z.number().int().min(1).max(10),
-                      })
-                      .strict(),
-                  ),
-                  active_injuries: z.array(injurySchema),
-                })
-                .strict()
-                .optional(),
               activity_exposure: z
                 .object({
                   activity_count: z.number().int().nonnegative(),

@@ -716,7 +716,7 @@ interface MetricDefinition {
   data: Array<number | null>;
 }
 
-function MetricsChart({
+export function MetricsChart({
   points,
   activityType,
   hasHr,
@@ -839,7 +839,13 @@ function MetricsChart({
       bottom: 86,
       left: 60,
     },
-    tooltip: dofekTooltip(),
+    tooltip: dofekTooltip({
+      axisPointer: {
+        label: {
+          formatter: ({ value }: { value: string }) => formatDateTime(value),
+        },
+      },
+    }),
     legend: { ...dofekLegend(true), selected: legendSelected },
     dataZoom: [
       { type: "inside", xAxisIndex: 0, start: 0, end: 100 },

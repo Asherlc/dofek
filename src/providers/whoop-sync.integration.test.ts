@@ -12,7 +12,7 @@ import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { activity, dailyMetrics, sleepSession, sleepStage } from "../db/schema/activity.ts";
 import { TEST_USER_ID } from "../db/schema/core.ts";
-import { journalEntry, syncLog } from "../db/schema/events.ts";
+import { syncLog } from "../db/schema/events.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
@@ -275,11 +275,6 @@ function whoopHandlers(
         return HttpResponse.json({ sections: [] });
       }
       return HttpResponse.json(fakeStrainDeepDiveResponse(steps));
-    }),
-
-    // Journal / behavior-impact-service
-    http.get("https://api.prod.whoop.com/behavior-impact-service/v1/impact", () => {
-      return HttpResponse.json([]);
     }),
   ];
 }
@@ -1165,77 +1160,6 @@ describe("WhoopProvider.sync() (integration)", () => {
     });
   });
 
-  it("syncs journal entries from behavior-impact-service", async () => {
-    await saveTokens(ctx.db, "whoop", {
-      accessToken: "fake-access",
-      refreshToken: "fake-refresh",
-      expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
-      scopes: "userId:10129",
-    });
-
-    // Override to return journal data and empty cycles
-    server.use(
-      http.post("https://api.prod.whoop.com/auth-service/v3/whoop/", () => {
-        return HttpResponse.json({
-          AuthenticationResult: {
-            AccessToken: "test-token",
-            RefreshToken: "test-refresh",
-          },
-        });
-      }),
-      http.get("https://api.prod.whoop.com/users-service/v2/bootstrap/", () => {
-        return HttpResponse.json({ id: 10129 });
-      }),
-      http.get("https://api.prod.whoop.com/core-details-bff/v0/cycles/details", () => {
-        return HttpResponse.json([]);
-      }),
-      http.get("https://api.prod.whoop.com/developer/v2/activity/workout", () => {
-        return HttpResponse.json({ records: [], next_token: null });
-      }),
-      http.get("https://api.prod.whoop.com/metrics-service/v1/metrics/user/:userId", () => {
-        return HttpResponse.json({ values: [] });
-      }),
-      http.get("https://api.prod.whoop.com/home-service/v1/deep-dive/strain", () => {
-        return HttpResponse.json({ sections: [] });
-      }),
-      http.get("https://api.prod.whoop.com/behavior-impact-service/v1/impact", () => {
-        return HttpResponse.json([
-          {
-            date: "2026-03-01T00:00:00Z",
-            answers: [
-              { name: "caffeine", value: 2, impact: 0.5 },
-              { name: "alcohol", value: 0, impact: -0.1 },
-              { name: "melatonin", answer: "yes", impact: 0.3 },
-            ],
-          },
-        ]);
-      }),
-    );
-
-    const provider = new WhoopProvider();
-    const result = await provider.sync(
-      new SyncRun({
-        db: ctx.db,
-        window: integrationSyncWindow("2026-02-28T00:00:00Z"),
-        metricStreamPublisher: metricStreamCapture.publisher,
-      }),
-    );
-
-    expect(result.errors).toHaveLength(0);
-
-    const { journalEntry } = await import("../db/schema/events.ts");
-    const rows = await ctx.db
-      .select()
-      .from(journalEntry)
-      .where(eq(journalEntry.providerId, "whoop"));
-
-    expect(rows.length).toBeGreaterThanOrEqual(3);
-    const caffeine = rows.find((r) => r.questionSlug === "caffeine");
-    expect(caffeine).toBeDefined();
-    expect(caffeine?.answerNumeric).toBe(2);
-    expect(caffeine?.impactScore).toBe(0.5);
-  });
-
   it("handles auth failure gracefully", async () => {
     await saveTokens(ctx.db, "whoop", {
       accessToken: "fake-access",
@@ -1296,7 +1220,7 @@ describe("WhoopProvider.sync() (integration)", () => {
     expect(result.recordsSynced).toBeGreaterThan(0);
   });
 
-  it("catches HR stream errors and continues to journal sync", async () => {
+  it("reports HR stream errors without failing the sync", async () => {
     server.use(
       http.post("https://api.prod.whoop.com/auth-service/v3/whoop/", () => {
         return HttpResponse.json({
@@ -1323,14 +1247,6 @@ describe("WhoopProvider.sync() (integration)", () => {
       }),
       http.get("https://api.prod.whoop.com/home-service/v1/deep-dive/strain", () => {
         return HttpResponse.json({ sections: [] });
-      }),
-      http.get("https://api.prod.whoop.com/behavior-impact-service/v1/impact", () => {
-        return HttpResponse.json([
-          {
-            date: "2026-03-01T00:00:00Z",
-            answers: [{ name: "caffeine", value: 1, impact: 0.2 }],
-          },
-        ]);
       }),
     );
 
@@ -1346,61 +1262,6 @@ describe("WhoopProvider.sync() (integration)", () => {
     // Should have an hr_stream error
     const hrError = result.errors.find((e) => e.message.includes("hr_stream"));
     expect(hrError).toBeDefined();
-
-    // Journal should still have been synced
-    const rows = await ctx.db
-      .select()
-      .from(journalEntry)
-      .where(eq(journalEntry.providerId, "whoop"));
-    const caffeine = rows.find((r) => r.questionSlug === "caffeine");
-    expect(caffeine).toBeDefined();
-  });
-
-  it("catches journal errors gracefully", async () => {
-    server.use(
-      http.post("https://api.prod.whoop.com/auth-service/v3/whoop/", () => {
-        return HttpResponse.json({
-          AuthenticationResult: { AccessToken: "test-token", RefreshToken: "test-refresh" },
-        });
-      }),
-      http.get("https://api.prod.whoop.com/users-service/v2/bootstrap/", () => {
-        return HttpResponse.json({ id: 10129 });
-      }),
-      http.get("https://api.prod.whoop.com/core-details-bff/v0/cycles/details", () => {
-        return HttpResponse.json([]);
-      }),
-      http.get("https://api.prod.whoop.com/metrics-service/v1/metrics/user/:userId", () => {
-        return HttpResponse.json({ values: [] });
-      }),
-      http.get("https://api.prod.whoop.com/developer/v2/activity/workout", () => {
-        return HttpResponse.json({ records: [], next_token: null });
-      }),
-      http.get(
-        "https://api.prod.whoop.com/weightlifting-service/v2/weightlifting-workout/:id",
-        () => {
-          return new HttpResponse("Not found", { status: 404 });
-        },
-      ),
-      http.get("https://api.prod.whoop.com/home-service/v1/deep-dive/strain", () => {
-        return HttpResponse.json({ sections: [] });
-      }),
-      http.get("https://api.prod.whoop.com/behavior-impact-service/v1/impact", () => {
-        return new HttpResponse("Internal Server Error", { status: 500 });
-      }),
-    );
-
-    const provider = new WhoopProvider();
-    const result = await provider.sync(
-      new SyncRun({
-        db: ctx.db,
-        window: integrationSyncWindow("2026-02-28T00:00:00Z"),
-        metricStreamPublisher: metricStreamCapture.publisher,
-      }),
-    );
-
-    // Should have a journal error
-    const journalError = result.errors.find((e) => e.message.includes("journal"));
-    expect(journalError).toBeDefined();
   });
 });
 
