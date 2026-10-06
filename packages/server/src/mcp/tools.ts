@@ -23,6 +23,7 @@ import { registerActivityDetailsTool } from "./activity-details-tool.ts";
 import { registerActivityStreamsTool } from "./activity-streams-tool.ts";
 import { registerActivityTimeseriesTool } from "./activity-timeseries-tool.ts";
 import { registerDofekAppResources } from "./app-resource.ts";
+import { registerAuthorizedTool } from "./authorized-tool.ts";
 import { registerClimbingProgressionTool } from "./climbing-progression-tool.ts";
 import { registerClimbingSessionsTool } from "./climbing-sessions-tool.ts";
 import type { DofekMcpContext } from "./context.ts";
@@ -44,7 +45,6 @@ import { registerRecoveryTrainingSeriesTool } from "./recovery-training-series-t
 import { registerRepeatedEffortsTool } from "./repeated-efforts-tool.ts";
 import { registerStrengthProgressionTool } from "./strength-progression-tool.ts";
 import { registerStrengthSessionsTool } from "./strength-sessions-tool.ts";
-import { registerSubjectiveTools } from "./subjective-tools.ts";
 import { registerSupplementsTool } from "./supplements-tool.ts";
 import { registerThresholdHistoryTool } from "./threshold-history-tool.ts";
 import { requireMcpScope } from "./token-repository.ts";
@@ -210,16 +210,18 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
   });
   registerDofekAppResources(server);
   registerHealthTrendTools(server, context);
-  server.registerTool(
+  registerAuthorizedTool(
+    server,
+    ["health:read"],
     "get_daily_health_summary",
     {
       title: "Get Daily Health Summary",
       description: "Return server-computed health metrics for one day.",
       annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
-      inputSchema: {
+      inputSchema: z.object({
         date: dateSchema,
         timezone: z.string().optional(),
-      },
+      }),
       outputSchema: mcpOutputSchemas.dailyHealthSummary,
     },
     async ({ date, timezone }) => {
@@ -233,14 +235,16 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
       return jsonToolResult(rows[0] ?? null);
     },
   );
-  server.registerTool(
+  registerAuthorizedTool(
+    server,
+    ["health:read"],
     "get_data_coverage",
     {
       title: "Get Data Coverage",
       description:
         "Return first and last observed dates, observed-day counts, and source providers for every health metric.",
       annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
-      inputSchema: {},
+      inputSchema: z.object({}),
       outputSchema: mcpOutputSchemas.dataCoverage,
     },
     async () => {
@@ -277,18 +281,20 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
   registerStrengthSessionsTool(server, context);
   registerSupplementsTool(server, context);
   registerFoodRecordTools(server, context);
-  server.registerTool(
+  registerAuthorizedTool(
+    server,
+    ["health:read"],
     "get_sleep_summary",
     {
       title: "Get Sleep Summary",
       description:
         "Summarize sleep by night, including duration, efficiency, stages, and timing, for an exact date range.",
       annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
-      inputSchema: {
+      inputSchema: z.object({
         start_date: dateSchema,
         end_date: dateSchema,
         timezone: z.string().optional(),
-      },
+      }),
       outputSchema: mcpOutputSchemas.sleepSummary,
     },
     async ({ start_date, end_date, timezone }) => {
@@ -363,20 +369,22 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
       );
     },
   );
-  server.registerTool(
+  registerAuthorizedTool(
+    server,
+    ["activity:read"],
     "search_activities",
     {
       title: "Search Activities",
       description:
         "Show authenticated user activities in an optional date range (defaulting to the last 30 days), optionally filtered by text.",
       annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
-      inputSchema: {
+      inputSchema: z.object({
         from: dateSchema.optional(),
         to: dateSchema.optional(),
         query: z.string().max(200).optional(),
         include: z.array(z.literal("mapPreview")).optional(),
         limit: z.number().int().min(1).max(25).optional(),
-      },
+      }),
       outputSchema: mcpOutputSchemas.searchActivities,
     },
     async ({ from, to, query, include, limit }) => {
@@ -421,13 +429,15 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
       });
     },
   );
-  server.registerTool(
+  registerAuthorizedTool(
+    server,
+    ["activity:read"],
     "get_activity_summary",
     {
       title: "Get Activity Summary",
       description: "Aggregate activity volume and effort over an exact date range.",
       annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
-      inputSchema: {
+      inputSchema: z.object({
         start_date: dateSchema,
         end_date: dateSchema,
         group_by: z
@@ -440,7 +450,7 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
           ])
           .optional(),
         canonical_types: z.array(z.string()).optional(),
-      },
+      }),
       outputSchema: mcpOutputSchemas.activitySummary,
     },
     async ({ start_date, end_date, group_by, canonical_types }) => {
@@ -463,18 +473,20 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
       });
     },
   );
-  server.registerTool(
+  registerAuthorizedTool(
+    server,
+    ["activity:read"],
     "get_finger_loading",
     {
       title: "Get Finger Loading",
       description:
         "Return structured finger-loading protocols and server-computed effective load for an exact date range.",
       annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
-      inputSchema: {
+      inputSchema: z.object({
         start_date: dateSchema,
         end_date: dateSchema,
         timezone: z.string().optional(),
-      },
+      }),
       outputSchema: mcpOutputSchemas.fingerLoading,
     },
     async ({ start_date, end_date, timezone }) => {
@@ -512,18 +524,20 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
       );
     },
   );
-  server.registerTool(
+  registerAuthorizedTool(
+    server,
+    ["nutrition:read"],
     "get_nutrition_summary",
     {
       title: "Get Nutrition Summary",
       description:
         "Return a complete daily date spine of calorie, macronutrient, fiber, and meal totals with source resolution and conservative logging-completeness status. Missing nutrition stays null.",
       annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
-      inputSchema: {
+      inputSchema: z.object({
         start_date: dateSchema,
         end_date: dateSchema,
         timezone: z.string().optional(),
-      },
+      }),
       outputSchema: mcpOutputSchemas.nutritionSummary,
     },
     async ({ start_date, end_date, timezone }) => {
@@ -539,17 +553,19 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
       return jsonToolResult(rows.map(toNutritionSummaryOutput));
     },
   );
-  server.registerTool(
+  registerAuthorizedTool(
+    server,
+    ["health:read"],
     "get_body_metrics",
     {
       title: "Get Body Metrics",
       description:
         "Return reconciled weight and body-composition measurements, explicit value kinds, source provenance, and 7/28-day rolling weight statistics for an exact date range.",
       annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
-      inputSchema: {
+      inputSchema: z.object({
         start_date: dateSchema,
         end_date: dateSchema,
-      },
+      }),
       outputSchema: mcpOutputSchemas.bodyMetrics,
     },
     async ({ start_date, end_date }) => {
@@ -593,15 +609,16 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
       );
     },
   );
-  registerSubjectiveTools(server, context);
-  server.registerTool(
+  registerAuthorizedTool(
+    server,
+    ["providers:read"],
     "list_providers",
     {
       title: "List Providers",
       description:
         "List configured Dofek providers with connection status and last-sync timestamps.",
       annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
-      inputSchema: {},
+      inputSchema: z.object({}),
       outputSchema: mcpOutputSchemas.providers,
     },
     async () => {
@@ -609,13 +626,15 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
       return jsonToolResult(await listProviderStatuses(context));
     },
   );
-  server.registerTool(
+  registerAuthorizedTool(
+    server,
+    ["sync:write"],
     "start_provider_sync",
     {
       title: "Start Provider Sync",
       description: "Enqueue a user-scoped provider sync job.",
       annotations: { readOnlyHint: false, openWorldHint: false, destructiveHint: false },
-      inputSchema: {
+      inputSchema: z.object({
         providerId: z.string().min(1),
         sinceDays: z.number().int().positive().optional(),
         sinceDate: z
@@ -626,7 +645,7 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
           .string()
           .regex(/^\d{4}-\d{2}-\d{2}$/)
           .optional(),
-      },
+      }),
       outputSchema: mcpOutputSchemas.providerSync,
     },
     async ({ providerId, sinceDays, sinceDate, untilDate }) => {

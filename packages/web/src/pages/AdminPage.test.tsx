@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AdminPage } from "./AdminPage.tsx";
@@ -297,6 +297,41 @@ describe("AdminPage", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Developer Clients" }));
     expect(screen.getByText("Developer client panel")).toBeTruthy();
+  });
+
+  it("renders complete server pages as the administrator navigates between them", () => {
+    const activities = Array.from({ length: 51 }, (_, index) => ({
+      id: `activity-${index + 1}`,
+      user_name: "Ada Admin",
+      provider_id: "whoop",
+      canonical_type: "running",
+      name: `Run ${index + 1}`,
+      duration_seconds: 3661,
+      started_at: "2026-01-01T00:00:00Z",
+      source_name: "Watch",
+    }));
+    mockActivitiesUseQuery.mockImplementation(
+      ({ offset, limit }: { offset: number; limit: number }) =>
+        queryResult({ rows: activities.slice(offset, offset + limit), total: 51 }),
+    );
+
+    render(<AdminPage />);
+    fireEvent.click(screen.getByRole("button", { name: "Activities" }));
+
+    const table = screen.getByRole("table");
+    expect(within(table).getByRole("columnheader", { name: "Provider" })).toBeTruthy();
+    expect(within(table).getAllByRole("row")).toHaveLength(51);
+    expect(within(table).getByRole("cell", { name: "Run 50" })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    expect(within(table).getAllByRole("row")).toHaveLength(2);
+    expect(within(table).getByRole("cell", { name: "Run 51" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Next" })).toBeDisabled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Previous" }));
+    expect(within(table).getAllByRole("row")).toHaveLength(51);
+    expect(within(table).getByRole("cell", { name: "Run 1" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Previous" })).toBeDisabled();
   });
 
   it("shows the query error returned by an administrative view", () => {

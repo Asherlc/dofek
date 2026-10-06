@@ -22,7 +22,6 @@ describe("data-quality presentation metadata", () => {
     ["activity_source_overlap", "activities", "Review activities"],
     ["sync_freshness", "dashboard", "Review dashboard"],
     ["outliers", "dashboard", "Review dashboard"],
-    ["manual_edits", "journal", "Review journal"],
   ] as const)(
     "maps %s to the shared review destination",
     (key: DataQualityCheckKey, destination, label) => {

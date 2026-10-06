@@ -168,13 +168,12 @@ export function listWhoopHeartRateWindows(
 function planWhoopStepIfNotQueued(
   steps: WhoopSyncStep[],
   step: WhoopSyncStep,
-  context: WhoopPersistenceContext,
   pendingKeys: ReadonlySet<string>,
 ): void {
   planSyncStepIfRequestNotPending(
     steps,
     step,
-    (candidate) => whoopSyncStepToApiQuery(candidate, context),
+    (candidate) => whoopSyncStepToApiQuery(candidate),
     pendingKeys,
   );
 }
@@ -195,22 +194,22 @@ export async function planWhoopApiSteps(
       ...context,
       since: detailedSyncStart,
     })) {
-      planWhoopStepIfNotQueued(steps, { type: "strain_deep_dive", date }, context, pendingKeys);
+      planWhoopStepIfNotQueued(steps, { type: "strain_deep_dive", date }, pendingKeys);
     }
   }
 
-  planWhoopStepIfNotQueued(steps, { type: "developer_workouts" }, context, pendingKeys);
-  planWhoopStepIfNotQueued(steps, { type: "persist_workouts" }, context, pendingKeys);
+  planWhoopStepIfNotQueued(steps, { type: "developer_workouts" }, pendingKeys);
+  planWhoopStepIfNotQueued(steps, { type: "persist_workouts" }, pendingKeys);
 
   for (const workout of collectWhoopWorkouts(context.cycles)) {
     const activityId = resolveWhoopWorkoutExternalId(workout);
     if (activityId) {
-      planWhoopStepIfNotQueued(steps, { type: "weightlifting", activityId }, context, pendingKeys);
+      planWhoopStepIfNotQueued(steps, { type: "weightlifting", activityId }, pendingKeys);
     }
   }
 
   for (const sleepId of await listWhoopSleepIdsNeedingStages(context)) {
-    planWhoopStepIfNotQueued(steps, { type: "sleep_stages", sleepId }, context, pendingKeys);
+    planWhoopStepIfNotQueued(steps, { type: "sleep_stages", sleepId }, pendingKeys);
   }
 
   for (const window of listWhoopHeartRateWindows(
@@ -220,11 +219,9 @@ export async function planWhoopApiSteps(
     planWhoopStepIfNotQueued(
       steps,
       { type: "heart_rate", start: window.start, end: window.end },
-      context,
       pendingKeys,
     );
   }
-  planWhoopStepIfNotQueued(steps, { type: "journal" }, context, pendingKeys);
 
   return steps;
 }

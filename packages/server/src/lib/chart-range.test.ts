@@ -373,7 +373,7 @@ describe("selected chart range query builders", () => {
   it("keeps finite range constraints inside the route builder", async () => {
     const testRouter = router({
       impactSummary: selectedChartRangeQuery(
-        "behaviorImpact.impactSummary",
+        "hiking.gradeAdjustedPace",
         1,
         ({ range }) => ({
           days: range.days,

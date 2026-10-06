@@ -57,7 +57,6 @@ describe("TodayPlanCard", () => {
     expect(screen.getByText("82/100")).toBeTruthy();
     expect(screen.getByText("Sleep performance")).toBeTruthy();
     expect(screen.getByText("88 (Good)")).toBeTruthy();
-    expect(screen.getByText("Suggested")).toBeTruthy();
     expect(screen.getByText(/Recovery data from 2026-07-26/)).toBeTruthy();
     expect(screen.getByText(/Sleep data from 2026-07-26/)).toBeTruthy();
   });
@@ -67,13 +66,17 @@ describe("TodayPlanCard", () => {
 
     const disclosure = screen.getByRole("button", { name: "Why this?" });
     expect(disclosure.getAttribute("aria-expanded")).toBe("false");
+    expect(screen.queryByText(/Recovery data from/)).toBeNull();
 
     fireEvent.click(disclosure);
 
     expect(disclosure.getAttribute("aria-expanded")).toBe("true");
-    expect(screen.getByText("Contributing observations")).toBeTruthy();
     expect(screen.getByText("Recovery")).toBeTruthy();
+    expect(screen.getByText(/Recovery data from 2026-07-26/)).toBeTruthy();
     expect(screen.getByText(/Sleep and recent workload data were unavailable/)).toBeTruthy();
+    fireEvent.click(disclosure);
+    expect(disclosure.getAttribute("aria-expanded")).toBe("false");
+    expect(screen.queryByText(/Recovery data from/)).toBeNull();
   });
 
   it("renders the insufficient-data message from the server", () => {
@@ -84,7 +87,6 @@ describe("TodayPlanCard", () => {
         "Connect a recovery source and wait for today's recovery score before a training plan can be generated.",
       ),
     ).toBeTruthy();
-    expect(screen.getByText("Unavailable")).toBeTruthy();
   });
 
   it("renders a loading state", () => {

@@ -40,11 +40,15 @@ audit:
   ignore:
     - GHSA-w3rx-r6r6-pgpr
     - GHSA-5p2g-fcmc-qvqq
+    # Backported fixes; CI runs check:dependency-security before auditing.
+    # See docs/dependency-security-patches.md for source and validation.
+    - GHSA-86w9-cpqp-85rv
+    - GHSA-vfj7-8cjw-p6xm
 
 overrides:
   "@expo/dom-webview": 55.0.5
   "@expo/xcpretty>js-yaml": 4.3.2
-  "@grpc/grpc-js": 1.14.4
+  "@grpc/grpc-js": 1.14.5
   "@opentelemetry/core": 2.9.0
   "@protobufjs/utf8": 1.1.2
   "@hono/node-server": 2.1.1
@@ -52,7 +56,7 @@ overrides:
   "archiver@<8.0.0": 8.0.0
   axios: 1.18.1
   body-parser: 2.3.0
-  brace-expansion: 5.0.9
+  brace-expansion: 5.0.12
   browserslist: 4.28.8
   esbuild: 0.28.1
   decode-uri-component: 0.5.0
@@ -64,7 +68,7 @@ overrides:
   ip-address: 10.4.0
   "inquirer@0.11.0>lodash": 4.18.1
   "lerna>minimatch": 3.1.4
-  "minimatch@3>brace-expansion": 1.1.18
+  "minimatch@3>brace-expansion": 1.1.21
   minimatch: 10.2.5
   "nanoid@<3.3.17": 3.3.18
   image-size: "file:vendor/image-size"
@@ -97,6 +101,9 @@ patchedDependencies:
   "@expo/plist@0.8.1": patches/@expo__plist@0.8.1.patch
   "@tanstack/router-generator@1.167.17": patches/@tanstack__router-generator@1.167.17.patch
   "@tanstack/router-generator@1.167.18": patches/@tanstack__router-generator@1.167.18.patch
+  braces@3.0.3: patches/braces@3.0.3.patch
+  expo-apple-authentication@57.0.2: patches/expo-apple-authentication@57.0.2.patch
+  node-forge@1.4.0: patches/node-forge@1.4.0.patch
 
 allowBuilds:
   "@sentry/cli": true

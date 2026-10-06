@@ -209,19 +209,6 @@ ${peerDbMetadataColumnDefinitions}
 )
 ${replacingMergeTreeTable("(user_id, start_date, provider_id, id)")}`,
     buildPostgresFitnessClinicalRecordRawTableStatement(),
-    `CREATE TABLE IF NOT EXISTS postgres_fitness.journal_entry (
-  id UUID,
-  date Date,
-  provider_id String,
-  user_id UUID,
-  question_slug String,
-  answer_text Nullable(String),
-  answer_numeric Nullable(Float32),
-  impact_score Nullable(Float32),
-  created_at DateTime64(6, 'UTC'),
-${peerDbMetadataColumnDefinitions}
-)
-${replacingMergeTreeTable("(user_id, date, provider_id, id)")}`,
     buildPostgresFitnessProviderRawTableStatement(),
     buildPostgresFitnessProviderConnectionRawTableStatement(),
     `CREATE TABLE IF NOT EXISTS postgres_fitness.provider_priority (

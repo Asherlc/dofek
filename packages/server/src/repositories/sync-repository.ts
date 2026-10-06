@@ -61,7 +61,6 @@ const clickHouseProviderStatsRowSchema = z.object({
   metric_stream: z.coerce.number(),
   nutrition_daily: z.coerce.number(),
   clinical_records: z.coerce.number(),
-  journal_entries: z.coerce.number(),
 });
 
 // ---------------------------------------------------------------------------
@@ -98,7 +97,6 @@ export interface ProviderStatRow {
   metricStream: number;
   nutritionDaily: number;
   clinicalRecords: number;
-  journalEntries: number;
 }
 
 export interface SyncLogRow {
@@ -385,8 +383,7 @@ export class SyncRepository {
         row.health_events +
         row.metric_stream +
         row.nutrition_daily +
-        row.clinical_records +
-        row.journal_entries,
+        row.clinical_records,
       activities: row.activities,
       dailyMetrics: row.daily_metrics,
       sleepSessions: row.sleep_sessions,
@@ -396,7 +393,6 @@ export class SyncRepository {
       metricStream: row.metric_stream,
       nutritionDaily: row.nutrition_daily,
       clinicalRecords: row.clinical_records,
-      journalEntries: row.journal_entries,
     }));
   }
 
@@ -420,8 +416,7 @@ export class SyncRepository {
           health_events,
           metric_stream,
           nutrition_daily,
-          clinical_records,
-          journal_entries
+          clinical_records
         FROM analytics.provider_stats FINAL
         WHERE user_id = {userId:UUID}
           AND is_deleted = 0

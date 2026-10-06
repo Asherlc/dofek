@@ -36,6 +36,7 @@ export function formatDateYmdInTimeZone(value: DateInput, timeZone: string): str
   const parts = dateTimeFormatter(
     { year: "numeric", month: "2-digit", day: "2-digit" },
     timeZone,
+    "en-US",
   ).formatToParts(date);
   const year = parts.find((part) => part.type === "year")?.value;
   const month = parts.find((part) => part.type === "month")?.value;
@@ -65,8 +66,18 @@ export function formatDurationSeconds(seconds: number): string {
 export function formatClimbingAttemptResult(
   sent: boolean | null,
   attemptCount: number | null,
-): string {
-  if (sent === null && attemptCount === null) return "Outcome not recorded";
+  ascentType: string | null,
+): string | null {
+  if (sent && (ascentType === "Onsight" || ascentType === "Flash")) return null;
+  if (
+    sent &&
+    (ascentType === "Redpoint" || ascentType === "Pinkpoint" || ascentType === "Repeat")
+  ) {
+    return attemptCount === null
+      ? "Attempt count not recorded"
+      : `${attemptCount} ${attemptCount === 1 ? "attempt" : "attempts"}`;
+  }
+  if (sent === null && attemptCount === null) return "Outcome and attempt count not recorded";
   if (attemptCount === null) {
     return sent ? "Sent; attempt count not recorded" : "Not sent; attempt count not recorded";
   }
@@ -138,6 +149,7 @@ export function formatSleepDebtInline(minutes: number): string {
 type DateInput = Date | number | string;
 
 type DateFormatOptions = {
+  locale?: string;
   timeZone?: string;
 };
 
@@ -180,7 +192,6 @@ export function formatDateTime(value: DateInput, options: DateFormatOptions = {}
       year: "numeric",
       hour: "numeric",
       minute: "2-digit",
-      hour12: true,
     },
     options,
   );
@@ -188,16 +199,12 @@ export function formatDateTime(value: DateInput, options: DateFormatOptions = {}
 
 /** Format a time-only label: "2:30 PM" */
 export function formatTimeOnly(value: DateInput, options: DateFormatOptions = {}): string {
-  return formatDateInput(value, { hour: "numeric", minute: "2-digit", hour12: true }, options);
+  return formatDateInput(value, { hour: "numeric", minute: "2-digit" }, options);
 }
 
 /** Format a weekday and time label: "Monday, 2:30 PM" */
 export function formatWeekdayTime(value: DateInput, options: DateFormatOptions = {}): string {
-  return formatDateInput(
-    value,
-    { weekday: "long", hour: "numeric", minute: "2-digit", hour12: true },
-    options,
-  );
+  return formatDateInput(value, { weekday: "long", hour: "numeric", minute: "2-digit" }, options);
 }
 
 /** Format a Date for user-facing display: "Mon, Jan 1, 2024" */
@@ -431,7 +438,7 @@ function formatDateInput(
 ): string {
   const date = parseDateInput(value);
   if (!date) return "--";
-  return dateTimeFormatter(dateTimeOptions, options.timeZone)
+  return dateTimeFormatter(dateTimeOptions, options.timeZone, options.locale)
     .format(date)
     .replace(/\u202f/g, " ");
 }
@@ -439,11 +446,12 @@ function formatDateInput(
 function dateTimeFormatter(
   options: Intl.DateTimeFormatOptions,
   timeZone: string | undefined,
+  locale?: string,
 ): Intl.DateTimeFormat {
-  const key = `${JSON.stringify(options)}:${timeZone ?? ""}`;
+  const key = `${JSON.stringify(options)}:${timeZone ?? ""}:${locale ?? ""}`;
   const existing = dateTimeFormatters.get(key);
   if (existing) return existing;
-  const formatter = new Intl.DateTimeFormat("en-US", { ...options, timeZone });
+  const formatter = new Intl.DateTimeFormat(locale, { ...options, timeZone });
   dateTimeFormatters.set(key, formatter);
   return formatter;
 }

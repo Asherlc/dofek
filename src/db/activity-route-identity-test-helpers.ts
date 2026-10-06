@@ -1,5 +1,6 @@
 import type { createClient } from "@clickhouse/client";
 import { z } from "zod";
+import { createMigration } from "./clickhouse-migrations/0097_activity_route_source_freshness_projections.ts";
 import { readModelSql, renderDbtModelSql } from "./read-model-sql-test-helpers.ts";
 
 export const userId = "00000000-0000-4000-8000-000000000001";
@@ -160,8 +161,9 @@ export async function seedSchema(
     `CREATE DATABASE ${database}`,
     `CREATE TABLE ${database}.activity_sensor_sample (
       activity_id UUID, user_id UUID, recorded_at DateTime64(6, 'UTC'), channel String,
-      scalar Nullable(Float64), is_deleted UInt8, refreshed_at DateTime64(9, 'UTC')
-    ) ENGINE = ReplacingMergeTree(refreshed_at) ORDER BY (user_id, activity_id, channel, recorded_at)`,
+      scalar Nullable(Float64), is_deleted UInt8, refreshed_at DateTime64(9, 'UTC'),
+      refresh_version UInt64 MATERIALIZED toUInt64(toUnixTimestamp64Nano(refreshed_at))
+    ) ENGINE = ReplacingMergeTree(refresh_version) ORDER BY (user_id, activity_id, channel, recorded_at)`,
     `CREATE TABLE ${database}.deduped_activities (
       activity_id UUID, user_id UUID, member_activity_ids Array(UUID), canonical_type String, started_at DateTime64(6, 'UTC'),
       ended_at Nullable(DateTime64(6, 'UTC')), refresh_version UInt64, is_deleted UInt8,
@@ -196,4 +198,7 @@ export async function seedSchema(
     ) ENGINE = ReplacingMergeTree(refresh_version) ORDER BY (user_id, activity_id)`,
   ];
   for (const query of statements) await client.command({ query });
+  for (const query of createMigration().statements) {
+    await client.command({ query: query.replaceAll("analytics.", `${database}.`) });
+  }
 }

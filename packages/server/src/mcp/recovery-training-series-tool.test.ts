@@ -89,6 +89,44 @@ describe("get_recovery_training_series", () => {
     await server.close();
   });
 
+  it.each(["health", "sleep", "body_weight"] as const)(
+    "requires health permission for %s even when activity access is granted",
+    async (stream) => {
+      const scopedServer = new McpServer({ name: "scope-series-test", version: "1.0.0" });
+      registerRecoveryTrainingSeriesTool(scopedServer, {
+        db: { execute: vi.fn(), select: vi.fn(), transaction: vi.fn() },
+        userId: "00000000-0000-4000-8000-000000000002",
+        scopes: ["activity:read"],
+        timezone: "UTC",
+        sensorStore: { query: vi.fn() },
+      });
+      const scopedClient = new Client({ name: "scope-series-client", version: "1.0.0" });
+      const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+      await scopedServer.connect(serverTransport);
+      await scopedClient.connect(clientTransport);
+      try {
+        const result = await scopedClient.callTool({
+          name: "get_recovery_training_series",
+          arguments: {
+            start_date: "2026-03-08",
+            end_date: "2026-03-08",
+            streams: [stream, "activities"],
+          },
+        });
+        expect(result.isError).toBe(true);
+        expect(result.content[0]).toMatchObject({
+          type: "text",
+          text: expect.stringContaining("health:read"),
+        });
+        expect(mocks.constructorArgs).not.toHaveBeenCalled();
+        expect(mocks.listRange).not.toHaveBeenCalled();
+      } finally {
+        await scopedClient.close();
+        await scopedServer.close();
+      }
+    },
+  );
+
   it("returns only the requested compact streams", async () => {
     const result = await client.callTool({
       name: "get_recovery_training_series",
@@ -120,7 +158,6 @@ describe("get_recovery_training_series", () => {
       "sleep",
       "body_weight",
       "training_load",
-      "subjective",
       "activities",
       "nutrition",
     ];
@@ -174,7 +211,6 @@ describe("get_recovery_training_series", () => {
         "dailyMetrics",
         "nutrition",
         "sleep",
-        "subjective",
         "trainingLoad",
         "weightObservations",
       ]);
@@ -189,7 +225,7 @@ describe("get_recovery_training_series", () => {
     }
   });
 
-  it("uses the six default non-nutrition streams", async () => {
+  it("uses the five default non-nutrition streams", async () => {
     const scopedServer = new McpServer({ name: "default-series-test", version: "1.0.0" });
     registerRecoveryTrainingSeriesTool(scopedServer, {
       db: { execute: vi.fn(), select: vi.fn(), transaction: vi.fn() },
@@ -213,7 +249,7 @@ describe("get_recovery_training_series", () => {
       expect(mocks.listRange).toHaveBeenLastCalledWith(
         "2026-03-08",
         "2026-03-09",
-        ["health", "sleep", "body_weight", "training_load", "subjective", "activities"],
+        ["health", "sleep", "body_weight", "training_load", "activities"],
         { providers: [], modalities: [] },
       );
     } finally {
@@ -238,7 +274,6 @@ describe("get_recovery_training_series", () => {
 
   it.each([
     { stream: "nutrition" as const, scope: "nutrition:read" as const },
-    { stream: "subjective" as const, scope: "health:read" as const },
     { stream: "activities" as const, scope: "activity:read" as const },
   ])(
     "allows a $stream-only request with only $scope and no ClickHouse",

@@ -39,13 +39,9 @@ describe("unattached climbing entries", () => {
   it("stores a dated standalone tick with source identity and raw payload", async () => {
     const externalId = `tick-${randomUUID()}`;
     const rows = await client.query(
-      `INSERT INTO fitness.climbing_entry (
-      user_id, provider_id, activity_id, unattached_date, external_id,
-      climb_type, grade_system, grade, sent, attempt_count, source_name, raw
-    ) VALUES (
-      $1, 'mountain-project', NULL, '2026-09-26', $2,
-      'boulder', 'v_scale', 'V4', true, 1, 'Boulder Canyon', jsonb_build_object('tickId', $2::text)
-    ) RETURNING user_id, provider_id, activity_id, unattached_date::text AS unattached_date, raw`,
+      `INSERT INTO fitness.climbing_entry (user_id, provider_id, activity_id, unattached_date, external_id, climb_type, grade_system, grade, result_style, attempt_count, source_name, raw) VALUES
+        ($1, 'mountain-project', NULL, '2026-09-26', $2, 'boulder', 'v_scale', 'V4', COALESCE(NULLIF(btrim(COALESCE((jsonb_build_object('tickId', $2::text))::jsonb->>'ascentType', (jsonb_build_object('tickId', $2::text))::jsonb->>'attemptType', (jsonb_build_object('tickId', $2::text))::jsonb->>'Lead Style')), ''), 'Send'), 1, 'Boulder Canyon', jsonb_build_object('tickId', $2::text))
+RETURNING user_id, provider_id, activity_id, unattached_date::text AS unattached_date, raw`,
       [userId, externalId],
     );
     expect(rows.rows).toEqual([
@@ -59,10 +55,9 @@ describe("unattached climbing entries", () => {
     ]);
     await expect(
       client.query(
-        `INSERT INTO fitness.climbing_entry (
-      user_id, provider_id, activity_id, unattached_date, external_id,
-      climb_type, grade_system, grade, sent, attempt_count
-    ) VALUES ($1, 'mountain-project', NULL, '2026-09-26', $2, 'boulder', 'v_scale', 'V4', true, 1)`,
+        `INSERT INTO fitness.climbing_entry (user_id, provider_id, activity_id, unattached_date, external_id, climb_type, grade_system, grade, result_style, attempt_count) VALUES
+        ($1, 'mountain-project', NULL, '2026-09-26', $2, 'boulder', 'v_scale', 'V4', 'Send', 1)
+`,
         [userId, externalId],
       ),
     ).rejects.toMatchObject({ code: "23505" });
@@ -77,18 +72,18 @@ describe("unattached climbing entries", () => {
       [userId, `attached-fixture-${randomUUID()}`],
     );
     const activityId = z.object({ id: z.string() }).parse(activity.rows[0]).id;
-    const base = `user_id, provider_id, activity_id, unattached_date, external_id, climb_type, grade_system, grade, sent, attempt_count`;
+    const base = `user_id, provider_id, activity_id, unattached_date, external_id, climb_type, grade_system, grade, result_style, attempt_count`;
     await expect(
       client.query(
         `INSERT INTO fitness.climbing_entry (${base}) VALUES
-      ($1, 'mountain-project', NULL, NULL, 'none-null', 'boulder', 'v_scale', 'V1', true, 1)`,
+      ($1, 'mountain-project', NULL, NULL, 'none-null', 'boulder', 'v_scale', 'V1', 'Send', 1)`,
         [userId],
       ),
     ).rejects.toMatchObject({ code: "23514" });
     await expect(
       client.query(
         `INSERT INTO fitness.climbing_entry (${base}) VALUES
-      ($1, 'mountain-project', $2, '2026-09-26', 'both-set', 'boulder', 'v_scale', 'V1', true, 1)`,
+      ($1, 'mountain-project', $2, '2026-09-26', 'both-set', 'boulder', 'v_scale', 'V1', 'Send', 1)`,
         [userId, activityId],
       ),
     ).rejects.toMatchObject({ code: "23514" });
@@ -105,10 +100,9 @@ describe("unattached climbing entries", () => {
     const activityId = z.object({ id: z.string() }).parse(result.rows[0]).id;
     await expect(
       client.query(
-        `INSERT INTO fitness.climbing_entry (
-      user_id, provider_id, activity_id, external_id, climb_type, grade_system, grade
-      , sent, attempt_count
-    ) VALUES ($1, 'mountain-project', $2, 'cross-owner', 'boulder', 'v_scale', 'V1', true, 1)`,
+        `INSERT INTO fitness.climbing_entry (user_id, provider_id, activity_id, external_id, climb_type, grade_system, grade, result_style, attempt_count) VALUES
+        ($1, 'mountain-project', $2, 'cross-owner', 'boulder', 'v_scale', 'V1', 'Send', 1)
+`,
         [userId, activityId],
       ),
     ).rejects.toMatchObject({ code: "23503" });

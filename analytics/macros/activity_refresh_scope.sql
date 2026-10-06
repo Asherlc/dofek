@@ -10,7 +10,7 @@
     {{ return(provided == 2) }}
 {%- endmacro %}
 
-{% macro activity_refresh_ids() -%}
+{% macro activity_refresh_requested_ids() -%}
     {%- set activity_ids = var('activity_refresh_activity_ids') -%}
     {%- if activity_ids | length == 0 -%}
         CAST([], 'Array(UUID)')
@@ -21,4 +21,11 @@
         {%- endfor -%}
         ]
     {%- endif -%}
+{%- endmacro %}
+
+{% macro activity_refresh_ids() -%}
+    arrayDistinct(arrayConcat(
+        {{ activity_refresh_requested_ids() }},
+        {{ apple_health_workout_refresh_ids() }}
+    ))
 {%- endmacro %}

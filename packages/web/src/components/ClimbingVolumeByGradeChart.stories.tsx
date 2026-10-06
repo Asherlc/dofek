@@ -8,6 +8,7 @@ const volumeRows = [
     grade: "V1",
     gradeSortValue: 1,
     attempts: 6,
+    recordedAttempts: 6,
     sends: 5,
   },
   {
@@ -16,6 +17,7 @@ const volumeRows = [
     grade: "V3",
     gradeSortValue: 3,
     attempts: 8,
+    recordedAttempts: 8,
     sends: 4,
   },
   {
@@ -24,6 +26,7 @@ const volumeRows = [
     grade: "V5",
     gradeSortValue: 5,
     attempts: 3,
+    recordedAttempts: 3,
     sends: 1,
   },
 ];
@@ -50,6 +53,49 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const Default: Story = {};
+
+export const UnknownAttemptCounts: Story = {
+  args: {
+    data: [
+      {
+        climbType: "boulder",
+        gradeSystem: "v_scale",
+        grade: "VB",
+        gradeSortValue: -1,
+        attempts: null,
+        recordedAttempts: null,
+        sends: 1,
+      },
+      ...volumeRows.map((row) => ({ ...row, attempts: null, recordedAttempts: null })),
+    ],
+  },
+};
+
+export const RecordedAttemptSubtotals: Story = {
+  args: {
+    data: [
+      {
+        climbType: "boulder",
+        gradeSystem: "v_scale",
+        grade: "VB",
+        gradeSortValue: -1,
+        attempts: null,
+        recordedAttempts: 4,
+        sends: 1,
+      },
+      {
+        climbType: "boulder",
+        gradeSystem: "v_scale",
+        grade: "V0",
+        gradeSortValue: 0,
+        attempts: null,
+        recordedAttempts: 0,
+        sends: 0,
+      },
+      ...volumeRows,
+    ],
+  },
+};
 
 export const Loading: Story = {
   args: {
