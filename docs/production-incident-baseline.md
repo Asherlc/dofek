@@ -30351,3 +30351,59 @@ After merging current main into the PR branch, three parallel pnpm validation co
 The [Dependency Audit job](https://github.com/Asherlc/dofek/actions/runs/37398480415/job/112060885281) failed at `pnpm audit --prod --audit-level=high --ignore-registry-errors`. Its first fatal finding was the critical [Seroval Promise deserialization advisory](https://github.com/advisories/GHSA-p6vx-979v-rg4c). The inherited lockfile resolved Seroval 1.5.5, proxy-addr 2.0.7, and source-map-js 1.2.1, also affected by [Seroval TypedArray memory exhaustion](https://github.com/advisories/GHSA-jp82-f5mq-hwhp), [proxy-addr trust-subnet IP spoofing](https://github.com/advisories/GHSA-jqcg-44mw-7w3h), and [source-map-js event-loop denial of service](https://github.com/advisories/GHSA-68fv-2mgg-jv7q). These findings blocked the merge; no production exploitation was observed or investigated during this CI diagnosis.
 
 Updated only those transitive lockfile resolutions to the latest stable releases available during investigation: Seroval 1.6.8, proxy-addr 2.0.8, and source-map-js 1.2.2. All fit existing upstream dependency ranges. The exact audit command now exits successfully; existing exclusions remain unchanged and no override, retry, or timeout was added. Remaining findings are below the configured threshold or covered by the pre-existing documented backports. Local validation also passed all 19,392 unit/mobile tests (20 skipped), root/server/web/mobile typechecks, sandbox lint, the web build, and frozen-lockfile installation. The [remote Dependency Audit rerun](https://github.com/Asherlc/dofek/actions/runs/37399594471) passed on commit 151ccdf41. Subsequent integration of main preserved its tracking removal and this PR’s Data Quality deletions; both client typechecks and 43 focused navigation/deployment tests passed. Remaining required CI validation is pending. For similar failures, use the `gh-fix-ci` skill to capture the first fatal finding, inspect the dependency path and upstream range, and prefer a targeted lockfile update when a patched release fits.
+
+## 2026-10-05 — Merged climbing fixes absent from the live release
+
+- **Symptoms / impact:** The production climbing page still showed the older
+  chart axes, grade labels, and attempt-count presentation after
+  [PR #2878](https://github.com/Asherlc/dofek/pull/2878) and
+  [PR #2879](https://github.com/Asherlc/dofek/pull/2879) merged.
+- **Evidence:** At 02:59 UTC on October 6, `GET /training/climbing` returned
+  HTTP 200 with `Cache-Control: no-cache`, `CF-Cache-Status: DYNAMIC`, and
+  assets under `web/sha-06c9729/`. Both running `dofek_web` replicas and the
+  other application services still used `sha-06c9729`. Live web logs recorded
+  the page request and successful climbing API calls; the collector was running.
+- **Root cause:** The new release had not rolled out. The
+  [deployment eligibility gate](../.github/workflows/deploy-web.yml) rejects
+  successful CI commits superseded by a newer `main` commit. The chart fix's
+  [automatic deploy](https://github.com/Asherlc/dofek/actions/runs/37397876269)
+  completed successfully overall but skipped its production job. A subsequent
+  [deploy](https://github.com/Asherlc/dofek/actions/runs/37402707679) received
+  `CI_CONCLUSION: failure` for `ee73cfae2` and also skipped production; that CI
+  run failed the dependency audit addressed in the preceding incident entry.
+  No production deployment command failed in these skipped runs.
+- **Status / remaining risk:** Unresolved pending the current
+  [main CI run](https://github.com/Asherlc/dofek/actions/runs/37403094931).
+  At 03:03 UTC, 82 checks had succeeded, with no failed jobs. The iOS archive
+  was building and watchOS remained queued with no assigned runner or executed
+  steps. The cause of the runner wait is unconfirmed. No production state,
+  deployment gate, timeout, or retry was changed.
+- **Retrospective / follow-up:** The HTML asset prefix and running image tag
+  established release identity quickly. A useful deployment-runbook addition
+  would instruct operators to inspect the production job's conclusion even
+  when the overall workflow is green, then compare its image tag with the live
+  HTML asset prefix before investigating browser caching.
+
+The requested durable fix uses GitHub's native single-pending concurrency queue
+for the entire production workflow, preserving an active release while replacing
+pending requests. Target selection now runs after the slot is acquired and uses
+the newest successful main-push CI run instead of requiring the triggering SHA
+to equal current main. Both Terraform and the Swarm stack receive that selected
+full commit SHA. Unsuccessful CI triggers use separate concurrency groups and
+cancel only their own request; the selection step also exits nonzero so a
+cancellation still being processed cannot produce a green no-op. See GitHub's
+[concurrency semantics](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency)
+and [workflow cancellation API](https://docs.github.com/en/rest/actions/workflow-runs#cancel-a-workflow-run).
+Ten executable selection tests pass, including different triggering and selected
+commits, failed/cancelled/skipped CI, cancellation API failure, missing releases,
+and manual image requests. Full lint, root/server/web typechecks, workflow
+validation with `actionlint`, and all 19,161 executed unit/mobile tests passed
+(20 existing tests were skipped). Local SQL lint initially failed because the
+workspace ClickHouse service was absent; starting that service through the
+workspace Compose wrapper resolved the prerequisite and the full lint rerun
+passed. A read-only execution against GitHub selected the latest successful
+main-push CI release, `21b64aa1d086dc0289ac6ff79d20fd26eaccef37`, rather than
+the newer untested main head. Independent review found no blocking defects.
+Remote workflow validation and rollout remain pending. At 03:24 UTC, main CI's
+iOS archive had passed and only watchOS remained queued without an assigned
+runner. No deployment timeout, retry, or migration ordering changed.
