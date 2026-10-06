@@ -1,205 +1,173 @@
 // @vitest-environment jsdom
-import { gradeSortValue } from "@dofek/training/climbing-grades";
-import { cleanup, render, screen } from "@testing-library/react";
-import type { ClimbingGradeProgressionRow } from "dofek-server/types";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { climbingProgressionFixture } from "./climbing-progression-test-helpers.ts";
 
 interface ChartOption {
-  grid: { left: number; right: number };
-  xAxis: { axisLabel: { formatter: (value: number) => string } };
-  yAxis: Array<{
-    show: boolean;
-    position: string;
-    min: number;
-    max: number;
-    axisLabel: { customValues: number[]; formatter: (value: number) => string };
-    axisTick: { customValues: number[] };
-    splitLine: { show?: boolean };
-  }>;
+  xAxis: { show: boolean; data: string[] };
+  yAxis: { min: number; max: number; interval: number };
   series: Array<{
     name: string;
-    smooth: boolean;
-    data: Array<{ name: string; value: [number, number] }>;
+    type: string;
+    stack: string;
+    itemStyle: { decal?: unknown };
+    data: Array<{ name: string; value: number | null; displayValue: string }>;
+    markPoint?: { data: Array<{ coord: number[]; label: { formatter: string } }> };
   }>;
-  tooltip: { formatter: (params: Array<{ seriesIndex: number; dataIndex: number }>) => string };
+  tooltip: { formatter: (params: Array<{ dataIndex: number }>) => string };
 }
-
-const chart = vi.hoisted((): { option: ChartOption | undefined; loading: boolean } => ({
-  option: undefined,
-  loading: false,
-}));
+const charts = vi.hoisted(() => new Map<string, ChartOption>());
 vi.mock("./DofekChart.tsx", () => ({
   DofekChart: ({
+    option,
     empty,
     emptyMessage,
-    option,
     loading,
   }: {
+    option: ChartOption;
     empty?: boolean;
     emptyMessage?: string;
-    option: ChartOption;
     loading?: boolean;
   }) => {
-    chart.option = option;
-    chart.loading = loading ?? false;
-    return <div data-testid="chart">{empty ? emptyMessage : "Chart"}</div>;
+    if (option.series?.[0]) charts.set(option.series[0].name.split(" · ")[0] ?? "", option);
+    return <div>{loading ? "Loading climbing chart" : empty ? emptyMessage : "Chart"}</div>;
   },
 }));
 
 import { ClimbingGradeProgressionChart } from "./ClimbingGradeProgressionChart.tsx";
 import { buildChartTable } from "./chart-accessibility.ts";
 
-function row(
-  date: string,
-  climbType: ClimbingGradeProgressionRow["climbType"],
-  grade: string,
-  gradeSystem: ClimbingGradeProgressionRow["gradeSystem"] = climbType === "boulder"
-    ? "v_scale"
-    : "yds",
-): ClimbingGradeProgressionRow {
-  const score = gradeSortValue(grade, gradeSystem);
-  if (score === null) throw new Error(`Invalid fixture grade: ${grade}`);
-  return { date, climbType, grade, gradeSystem, gradeSortValue: score };
+function boulderOption() {
+  const option = charts.get("Bouldering");
+  if (!option) throw new Error("Bouldering chart not rendered");
+  return option;
 }
-
-function option(): ChartOption {
-  if (!chart.option) throw new Error("Chart was not rendered");
-  return chart.option;
-}
-
 afterEach(() => {
   cleanup();
-  vi.restoreAllMocks();
+  charts.clear();
 });
 
 describe("ClimbingGradeProgressionChart", () => {
+  it("distinguishes retained grade scales in style and focus labels", () => {
+    const french = climbingProgressionFixture("lead");
+    french.gradeSystem = "french";
+    french.grades = french.grades.map((grade, index) => ({
+      ...grade,
+      grade: index === 0 ? "5c" : "6c",
+    }));
+    french.periods = french.periods.map((period) => ({
+      ...period,
+      settings: period.settings.map((point) => ({
+        ...point,
+        segments: point.segments.map((segment, index) => ({
+          ...segment,
+          grade: index === 0 ? "5c" : "6c",
+        })),
+      })),
+    }));
+    render(<ClimbingGradeProgressionChart data={[climbingProgressionFixture("lead"), french]} />);
+    expect(screen.getByRole("button", { name: "Focus Lead · French" })).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Focus Lead · Yosemite Decimal System" }),
+    ).toBeTruthy();
+  });
   it("retains loading and empty states", () => {
-    render(<ClimbingGradeProgressionChart data={[]} loading />);
-    expect(chart.loading).toBe(true);
-    expect(screen.getByText("No climbing grade progression")).toBeTruthy();
+    const { rerender } = render(<ClimbingGradeProgressionChart data={[]} loading />);
+    expect(screen.getByText("Loading climbing chart")).toBeTruthy();
+    rerender(<ClimbingGradeProgressionChart data={[]} />);
+    expect(screen.getByText("No recorded climbing grades")).toBeTruthy();
   });
-
-  it("shows a readable session date in the chart data table", () => {
-    render(<ClimbingGradeProgressionChart data={[row("2026-07-01", "boulder", "V4")]} />);
-    expect(buildChartTable({ ...option() }).rows[0]?.category).toBe("Jul 1, 2026");
-    expect(buildChartTable({ ...option() }).rows[0]?.value).toBe("V4");
-  });
-
-  it("aligns plotted dates with local selected-range boundaries", () => {
-    const firstBoundary = new Date(2026, 6, 1);
-    const lastBoundary = new Date(2026, 6, 29);
-    render(
-      <ClimbingGradeProgressionChart
-        data={[row("2026-07-01", "boulder", "V2"), row("2026-07-29", "boulder", "V4")]}
-      />,
-    );
-    expect(option().series[0]?.data.map((datum) => datum.value[0])).toEqual([
-      firstBoundary.getTime(),
-      lastBoundary.getTime(),
-    ]);
-  });
-
-  it("sorts each series chronologically, draws straight lines, and keeps newest summaries", () => {
+  it("renders distinct style lanes with grade stacks and patterned outdoor bars on a common scale", () => {
     render(
       <ClimbingGradeProgressionChart
         data={[
-          row("2026-07-10", "boulder", "V4"),
-          row("2026-07-11", "route", "5.10a"),
-          row("2026-07-01", "boulder", "V2"),
-          row("2026-07-02", "route", "5.11a"),
+          climbingProgressionFixture(),
+          climbingProgressionFixture("top-rope"),
+          climbingProgressionFixture("lead"),
         ]}
       />,
     );
-    expect(option().series[0]?.data.map((datum) => datum.value)).toEqual([
-      [new Date(2026, 6, 1).getTime(), 55],
-      [new Date(2026, 6, 10).getTime(), 65],
+    expect(screen.getByRole("button", { name: "Focus Bouldering" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Focus Top rope" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Focus Lead" })).toBeTruthy();
+    const option = boulderOption();
+    expect(option.xAxis).toMatchObject({ show: true, data: ["Jun", "Jul", "Aug"] });
+    expect(option.yAxis).toMatchObject({ min: 0, max: 6, interval: 2 });
+    expect(option.series.map((series) => [series.stack, series.type])).toEqual([
+      ["indoor", "bar"],
+      ["indoor", "bar"],
+      ["outdoor", "bar"],
+      ["outdoor", "bar"],
     ]);
-    expect(option().series.every((series) => series.smooth === false)).toBe(true);
-    expect(screen.getByText("V4")).toBeTruthy();
-    expect(screen.getByText("5.10a")).toBeTruthy();
-    expect(screen.queryByText("V2")).toBeNull();
+    expect(option.series[2]?.itemStyle.decal).toBeTruthy();
+    expect(option.series[1]?.data.map((point) => point.value)).toEqual([1, 3.5, null]);
+    expect(option.series[2]?.data.map((point) => point.value)).toEqual([1, 0, null]);
   });
-
-  it("uses actual grade ticks on separate left and right axes with one grid-line set", () => {
+  it("uses the server's rates, counts, and recorded days in readable chart data and tooltips", () => {
+    render(<ClimbingGradeProgressionChart data={[climbingProgressionFixture()]} />);
+    const option = boulderOption();
+    const table = buildChartTable({ ...option });
+    expect(table.rows).toContainEqual(
+      expect.objectContaining({
+        category: "Jun 2026",
+        value: "3.0 sends/day · 12 sends · 4 recorded days",
+      }),
+    );
+    const tooltip = option.tooltip.formatter([{ dataIndex: 1 }]);
+    expect(tooltip).toContain("Jul 2026");
+    expect(tooltip).toContain("14 sends");
+    expect(tooltip).toContain("4 recorded days");
+    expect(tooltip).toContain("Outdoor");
+    expect(tooltip).toContain("0.0 sends/day");
+    expect(option.tooltip.formatter([{ dataIndex: 2 }])).toContain("No recorded days");
+  });
+  it("focuses a style, compares or isolates settings, and returns to the overview", () => {
     render(
       <ClimbingGradeProgressionChart
-        data={[
-          row("2026-07-01", "boulder", "V2"),
-          row("2026-07-08", "boulder", "V4"),
-          row("2026-07-01", "route", "5.10a"),
-          row("2026-07-08", "route", "5.11a"),
-        ]}
+        data={[climbingProgressionFixture(), climbingProgressionFixture("lead")]}
       />,
     );
-    const [boulder, route] = option().yAxis;
-    expect(boulder?.position).toBe("left");
-    expect(route?.position).toBe("right");
-    expect(route?.splitLine.show).toBe(false);
-    expect(option().grid.left).toBeGreaterThanOrEqual(64);
-    expect(option().grid.right).toBeGreaterThanOrEqual(64);
-    for (const axis of option().yAxis) {
-      expect(axis.axisTick.customValues).toEqual(axis.axisLabel.customValues);
-      for (const score of axis.axisLabel.customValues) {
-        const grade = axis.axisLabel.formatter(score);
-        expect(grade).not.toBe("");
-        expect(gradeSortValue(grade, axis === boulder ? "v_scale" : "yds")).toBe(score);
-      }
-      expect(axis.axisLabel.formatter(63.123)).toBe("");
-    }
+    fireEvent.click(screen.getByRole("button", { name: "Focus Bouldering" }));
+    expect(screen.queryByRole("button", { name: "Focus Lead" })).toBeNull();
+    fireEvent.change(screen.getByRole("combobox", { name: "Compare settings" }), {
+      target: { value: "outdoor" },
+    });
+    expect(boulderOption().series.every((series) => series.stack === "outdoor")).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "All styles" }));
+    expect(screen.getByRole("button", { name: "Focus Lead" })).toBeTruthy();
+    expect(boulderOption().series.map((series) => series.stack)).toContain("indoor");
   });
 
-  it.each(["boulder", "route"] as const)("shows a sensible single %s axis", (climbType) => {
-    render(
-      <ClimbingGradeProgressionChart
-        data={[row("2026-07-01", climbType, climbType === "boulder" ? "V4" : "5.10a")]}
-      />,
+  it("marks a known zero differently from an unrecorded period", () => {
+    render(<ClimbingGradeProgressionChart data={[climbingProgressionFixture()]} />);
+    const outdoor = boulderOption().series.find(
+      (series) => series.name === "Bouldering · Outdoor · V4",
     );
-    const visible = option().yAxis.filter((axis) => axis.show);
-    expect(visible).toHaveLength(1);
-    expect(visible[0]?.position).toBe("left");
-    expect(visible[0]?.splitLine.show).not.toBe(false);
-    expect(visible[0]?.min).toBeLessThan(visible[0]?.max ?? 0);
+    expect(outdoor?.markPoint?.data).toMatchObject([
+      { coord: [1, 0], label: { formatter: "0" } },
+      { coord: [2, 0], label: { formatter: "—" } },
+    ]);
   });
-
-  it("uses the returned display system and original grade in the tooltip", () => {
-    const point = row("2026-07-01", "route", "6a+", "french");
-    render(<ClimbingGradeProgressionChart data={[{ ...point, grade: "6a+ <test>" }]} />);
-    expect(option().yAxis[1]?.axisLabel.formatter(62.5)).toBe("6a+");
-    const tooltip = option().tooltip.formatter([{ seriesIndex: 1, dataIndex: 0 }]);
-    expect(tooltip).toContain("Route: <strong>6a+ &lt;test&gt;</strong>");
-    expect(tooltip).not.toContain("62.5");
-    expect(tooltip).not.toContain("00:00");
+  it("preserves unknown categories and escapes returned grade labels", () => {
+    const lane = climbingProgressionFixture("unknown");
+    lane.settings = ["unknown"];
+    lane.periods = lane.periods.map((period) => ({
+      ...period,
+      settings: period.settings.slice(0, 1).map((setting) => ({
+        ...setting,
+        setting: "unknown",
+        unknownOutcomes: 1,
+        segments: setting.segments.map((segment) => ({
+          ...segment,
+          grade: `${segment.grade} <test>`,
+        })),
+      })),
+    }));
+    render(<ClimbingGradeProgressionChart data={[lane]} />);
+    expect(screen.getByRole("button", { name: "Focus Unknown style" })).toBeTruthy();
+    expect(screen.getByText("Unknown setting")).toBeTruthy();
+    const tooltip = charts.get("Unknown style")?.tooltip.formatter([{ dataIndex: 0 }]);
+    expect(tooltip).toContain("&lt;test&gt;");
+    expect(tooltip).toContain("1 outcome unrecorded");
   });
-
-  it.each([
-    ["en-US", "America/Los_Angeles", "-07:00", "Jul 1", "Jul 1, 2026"],
-    ["en-US", "Pacific/Kiritimati", "+14:00", "Jul 1", "Jul 1, 2026"],
-    ["de-DE", "America/Los_Angeles", "-07:00", "1. Juli", "1. Juli 2026"],
-    ["de-DE", "Pacific/Kiritimati", "+14:00", "1. Juli", "1. Juli 2026"],
-  ])(
-    "preserves calendar dates in viewer locale %s and time zone %s",
-    async (locale, zone, offset, shortDate, mediumDate) => {
-      vi.resetModules();
-      const DateTimeFormat = Intl.DateTimeFormat;
-      vi.spyOn(Intl, "DateTimeFormat").mockImplementation(
-        function DeviceDateTimeFormat(locales, options) {
-          return new DateTimeFormat(locales ?? locale, {
-            ...options,
-            timeZone: options?.timeZone ?? zone,
-          });
-        },
-      );
-      const { ClimbingGradeProgressionChart: LocalizedChart } = await import(
-        "./ClimbingGradeProgressionChart.tsx"
-      );
-      render(<LocalizedChart data={[row("2026-07-01", "boulder", "V4")]} />);
-      const localMidnight = Date.parse(`2026-07-01T00:00:00${offset}`);
-      expect(option().xAxis.axisLabel.formatter(localMidnight)).toBe(shortDate);
-      const tooltip = option().tooltip.formatter([{ seriesIndex: 0, dataIndex: 0 }]);
-      expect(tooltip).toContain(mediumDate);
-      expect(buildChartTable({ ...option() }).rows[0]?.category).toBe(mediumDate);
-      expect(tooltip).not.toContain("Jun");
-      expect(tooltip).not.toContain("00:00");
-    },
-  );
 });

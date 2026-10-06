@@ -24,7 +24,7 @@ import {
 } from "../services/mobile-training-tab.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
-const MOBILE_TRAINING_CACHE_KEY_VERSION = "training-recorded-attempts-v4";
+const MOBILE_TRAINING_CACHE_KEY_VERSION = "training-climbing-lanes-v5";
 const MOBILE_DASHBOARD_CACHE_KEY_VERSION = "mobile-dashboard-contract-v1";
 const MOBILE_DASHBOARD_V2_CACHE_KEY_VERSION = "mobile-dashboard-contract-v2";
 

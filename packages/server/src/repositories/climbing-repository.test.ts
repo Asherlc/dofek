@@ -11,26 +11,6 @@ import {
 } from "./climbing-repository.ts";
 import { queryText } from "./climbing-test-helpers.ts";
 
-describe("ClimbingGradeProgression", () => {
-  it("serializes to API shape", () => {
-    const row = new ClimbingGradeProgression({
-      date: "2026-07-09",
-      climbType: "boulder",
-      gradeSystem: "v_scale",
-      grade: "V5",
-      gradeSortValue: 5,
-    });
-
-    expect(row.toDetail()).toEqual({
-      date: "2026-07-09",
-      climbType: "boulder",
-      gradeSystem: "v_scale",
-      grade: "V5",
-      gradeSortValue: 5,
-    });
-  });
-});
-
 describe("ClimbingVolumeByGrade", () => {
   it("serializes to API shape", () => {
     const row = new ClimbingVolumeByGrade({
@@ -160,8 +140,7 @@ describe("ClimbingRepository", () => {
         expect(statement.params).toEqual(expect.arrayContaining(values));
         expect(statement.params).not.toContain(undefined);
         if (Object.keys(filters).length === 0) {
-          if (method === "getSessionSummaries") expect(text.trim()).toMatch(/AND true$/);
-          else expect(text).toContain("AND true AND ce.provider_absent_at IS NULL");
+          expect(text).toContain("AND true AND ce.provider_absent_at IS NULL");
         }
         if (filters.style !== "boulder" && filters.style !== "route")
           expect(text).not.toMatch(/ce\.climb_type = \$/);
@@ -177,7 +156,6 @@ describe("ClimbingRepository", () => {
           expect(text).not.toContain("ce.route_protection IS NULL");
         if (!filters.protection || filters.protection === "unknown")
           expect(text).not.toContain("= ANY(ce.route_protection)");
-        if (!filters.setting) expect(text).not.toContain("CASE WHEN ce.provider_id");
       }
     },
   );
@@ -189,44 +167,87 @@ describe("ClimbingRepository", () => {
       await expect(repo.getGradeProgression(90)).resolves.toEqual([]);
     });
 
-    it("returns normalized best sent grade rows with server-computed sort values", async () => {
+    it("shows increasingly consistent sends at the same maximum grade and preserves missing periods", async () => {
+      const entry = (date: string, grade: string, sent: boolean | null = true) => ({
+        session_date: date,
+        climb_type: "boulder",
+        climb_style: null,
+        grade_system: "v_scale",
+        grade,
+        setting: "indoor",
+        sent,
+      });
       const { repo } = makeRepository([
-        {
-          session_date: "2026-07-06",
-          climb_type: "boulder",
-          grade_system: "v_scale",
-          grade: "V3",
-          grade_sort_value: 3,
-        },
-        {
-          session_date: "2026-07-09",
-          climb_type: "route",
-          grade_system: "yds",
-          grade: "5.10c",
-          grade_sort_value: 5103,
-        },
+        entry("2026-01-02", "V4"),
+        entry("2026-01-02", "V2"),
+        entry("2026-01-05", "V1"),
+        entry("2026-01-10", "V3", false),
+        entry("2026-03-02", "V4"),
+        entry("2026-03-02", "V4"),
+        entry("2026-03-05", "V4"),
+        entry("2026-03-05", "V3", false),
       ]);
 
-      const result = await repo.getGradeProgression(90);
-
-      expect(result).toHaveLength(2);
-      expect(result[0]).toBeInstanceOf(ClimbingGradeProgression);
-      expect(result.map((row) => row.toDetail())).toEqual([
-        {
-          date: "2026-07-06",
-          climbType: "boulder",
-          gradeSystem: "v_scale",
-          grade: "V3",
-          gradeSortValue: 60,
-        },
-        {
-          date: "2026-07-09",
-          climbType: "route",
-          gradeSystem: "yds",
-          grade: "5.10c",
-          gradeSortValue: 64.5,
-        },
-      ]);
+      const [result] = await repo.getGradeProgression(365);
+      expect(result).toBeInstanceOf(ClimbingGradeProgression);
+      expect(result?.toDetail()).toMatchObject({
+        style: "boulder",
+        gradeSystem: "v_scale",
+        settings: ["indoor"],
+        grades: [{ grade: "V1" }, { grade: "V2" }, { grade: "V3" }, { grade: "V4" }],
+        periods: [
+          {
+            startDate: "2026-01-01",
+            endDate: "2026-01-31",
+            settings: [
+              {
+                climbingDays: 3,
+                sends: 3,
+                sendsPerDay: 1,
+                segments: [
+                  { grade: "V1", sendsPerDay: 1 / 3, stackStart: 0, stackEnd: 1 / 3 },
+                  { grade: "V2", sendsPerDay: 1 / 3 },
+                  { grade: "V3", sendsPerDay: 0 },
+                  { grade: "V4", sendsPerDay: 1 / 3, stackEnd: 1 },
+                ],
+              },
+            ],
+          },
+          {
+            startDate: "2026-02-01",
+            endDate: "2026-02-28",
+            settings: [
+              {
+                climbingDays: 0,
+                sends: 0,
+                sendsPerDay: null,
+                segments: [
+                  { sendsPerDay: null },
+                  { sendsPerDay: null },
+                  { sendsPerDay: null },
+                  { sendsPerDay: null },
+                ],
+              },
+            ],
+          },
+          {
+            startDate: "2026-03-01",
+            settings: [
+              {
+                climbingDays: 2,
+                sends: 3,
+                sendsPerDay: 1.5,
+                segments: [
+                  { sendsPerDay: 0 },
+                  { sendsPerDay: 0 },
+                  { sendsPerDay: 0 },
+                  { grade: "V4", sendsPerDay: 1.5 },
+                ],
+              },
+            ],
+          },
+        ],
+      });
     });
 
     it("converts boulder and route progression grades to the selected systems", async () => {
@@ -235,12 +256,18 @@ describe("ClimbingRepository", () => {
           {
             session_date: "2026-07-06",
             climb_type: "boulder",
+            climb_style: null,
+            setting: "indoor",
+            sent: true,
             grade_system: "v_scale",
             grade: "V4",
           },
           {
             session_date: "2026-07-09",
             climb_type: "route",
+            climb_style: "lead",
+            setting: "outdoor",
+            sent: true,
             grade_system: "yds",
             grade: "5.10c",
           },
@@ -250,67 +277,85 @@ describe("ClimbingRepository", () => {
 
       const progression = await repo.getGradeProgression(90);
 
-      expect(progression.map((row) => row.toDetail())).toEqual([
+      expect(progression.map((row) => row.toDetail())).toMatchObject([
         {
-          date: "2026-07-06",
+          style: "boulder",
           climbType: "boulder",
           gradeSystem: "font",
-          grade: "6a+/6b+",
-          gradeSortValue: 65,
+          grades: [{ grade: "6a+/6b+", gradeSortValue: 65 }],
+          periods: [{ settings: [{ sends: 1, sendsPerDay: 1 }] }],
         },
         {
-          date: "2026-07-09",
+          style: "lead",
           climbType: "route",
           gradeSystem: "french",
-          grade: "6b",
-          gradeSortValue: 64.5,
+          grades: [{ grade: "6b", gradeSortValue: 64.5 }],
+          periods: [{ settings: [{ sends: 1, sendsPerDay: 1 }] }],
         },
       ]);
     });
 
-    it("keeps the first equal grade, replaces it with a harder grade, skips invalid grades, and orders session types", async () => {
+    it("keeps styles and settings separate, counts each day once, and retains failed-only days", async () => {
+      const entry = (
+        style: string | null,
+        setting: string,
+        grade: string,
+        sent: boolean | null = true,
+      ) => ({
+        session_date: "2026-07-06",
+        climb_type: "route",
+        climb_style: style,
+        grade_system: "yds",
+        grade,
+        setting,
+        sent,
+      });
       const { repo } = makeRepository([
-        {
-          session_date: "2026-07-06",
-          climb_type: "boulder",
-          grade_system: "v_scale",
-          grade: "V3",
-        },
-        {
-          session_date: "2026-07-06",
-          climb_type: "boulder",
-          grade_system: "v_scale",
-          grade: "V3",
-        },
-        {
-          session_date: "2026-07-06",
-          climb_type: "boulder",
-          grade_system: "v_scale",
-          grade: "V4",
-        },
-        {
-          session_date: "2026-07-06",
-          climb_type: "boulder",
-          grade_system: "v_scale",
-          grade: "not-a-grade",
-        },
-        {
-          session_date: "2026-07-06",
-          climb_type: "route",
-          grade_system: "yds",
-          grade: "5.10c",
-        },
+        entry("lead", "indoor", "5.10a"),
+        entry("lead", "indoor", "5.10a"),
+        entry("lead", "outdoor", "5.10b", false),
+        entry("top-rope", "indoor", "5.10c"),
+        entry(null, "unknown", "5.11a", null),
       ]);
-
-      const progression = await repo.getGradeProgression(90);
-
-      expect(progression.map((row) => row.toDetail())).toEqual([
-        expect.objectContaining({ climbType: "boulder", grade: "V4", gradeSortValue: 65 }),
-        expect.objectContaining({ climbType: "route", grade: "5.10c", gradeSortValue: 64.5 }),
+      const lanes = (await repo.getGradeProgression(90)).map((row) => row.toDetail());
+      expect(lanes).toMatchObject([
+        {
+          style: "top-rope",
+          settings: ["indoor"],
+          periods: [{ settings: [{ climbingDays: 1, sends: 1 }] }],
+        },
+        {
+          style: "lead",
+          settings: ["indoor", "outdoor"],
+          periods: [
+            {
+              settings: [
+                { setting: "indoor", climbingDays: 1, sends: 2, sendsPerDay: 2 },
+                { setting: "outdoor", climbingDays: 1, sends: 0, sendsPerDay: 0 },
+              ],
+            },
+          ],
+        },
+        {
+          style: "unknown",
+          settings: ["unknown"],
+          periods: [
+            {
+              settings: [
+                {
+                  climbingDays: 1,
+                  sends: 0,
+                  unknownOutcomes: 1,
+                  sendsPerDay: 0,
+                },
+              ],
+            },
+          ],
+        },
       ]);
     });
 
-    it("queries best sent grades through deduped activity members and excludes unsent entries", async () => {
+    it("queries climbing outcomes through deduped activity members", async () => {
       const { repo, execute } = makeRepository([]);
 
       await repo.getGradeProgression(30);
@@ -325,6 +370,75 @@ describe("ClimbingRepository", () => {
       expect(text).toContain("ELSE ce.sent");
       expect(text).toContain("NOW() AT TIME ZONE");
       expect(text).toContain("::date - ");
+    });
+
+    it("merges equivalent display grades without dropping repeated sends and rejects invalid grades", async () => {
+      const entry = (grade: string, gradeSystem = "v_scale") => ({
+        session_date: "2026-07-06",
+        climb_type: "boulder",
+        climb_style: null,
+        grade_system: gradeSystem,
+        grade,
+        setting: "indoor",
+        sent: true,
+      });
+      const { repo } = makeRepository([
+        entry("V5"),
+        entry("6C", "font"),
+        entry("not-a-grade"),
+        entry("5.10a", "yds"),
+      ]);
+      expect((await repo.getGradeProgression(90))[0]?.toDetail()).toMatchObject({
+        grades: [{ grade: "V5", gradeSortValue: 69 }],
+        periods: [
+          {
+            settings: [
+              {
+                climbingDays: 1,
+                sends: 2,
+                segments: [
+                  {
+                    grade: "V5",
+                    sends: 2,
+                    sendsPerDay: 2,
+                    stackStart: 0,
+                    stackEnd: 2,
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      });
+    });
+
+    it("uses at most six calendar periods and a common scale across all lanes, including year boundaries", async () => {
+      const entry = (date: string, climbType = "boulder", grade = "V4") => ({
+        session_date: date,
+        climb_type: climbType,
+        climb_style: climbType === "route" ? "lead" : null,
+        grade_system: climbType === "route" ? "yds" : "v_scale",
+        grade,
+        setting: "outdoor",
+        sent: true,
+      });
+      const { repo } = makeRepository([
+        entry("2025-12-06"),
+        entry("2026-11-06"),
+        entry("2026-01-06", "route", "5.10a"),
+        entry("2026-01-06", "route", "5.10a"),
+        entry("2026-01-06", "route", "5.10a"),
+        entry("2026-01-06", "route", "5.10a"),
+      ]);
+      const lanes = (await repo.getGradeProgression(365)).map((row) => row.toDetail());
+      for (const lane of lanes) {
+        expect(lane.periods).toHaveLength(6);
+        expect(lane.periods[0]).toMatchObject({ startDate: "2025-12-01", endDate: "2026-01-31" });
+        expect(lane.periods[5]).toMatchObject({ startDate: "2026-10-01", endDate: "2026-11-30" });
+        expect(lane.axisMax).toBe(6);
+        expect(lane.axisInterval).toBe(2);
+        expect(lane.axisTicks).toEqual([0, 2, 4, 6]);
+      }
     });
 
     it("includes active standalone ticks by the user's calendar date", async () => {
@@ -677,7 +791,7 @@ describe("ClimbingRepository", () => {
       expect(text).toContain("a.canonical_type = 'climbing'");
       expect(text).toContain("attempt_count");
       expect(text).toContain("ce.grade_system");
-      expect(text).not.toContain("unattached_date");
+      expect(text).toContain("WHERE ce.canonical_activity_id IS NOT NULL");
     });
 
     it("keeps a non-null location from a later entry in the same activity", async () => {

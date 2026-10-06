@@ -1,21 +1,14 @@
 import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
+import { climbingGradeProgressionSchema } from "@dofek/training/climbing-progression";
 import { StyleSheet, Text, View } from "react-native";
 import { z } from "zod";
 import { safeParseRows } from "../lib/safe-parse";
 import { captureException } from "../lib/telemetry";
 import { colors } from "../theme";
+import { ClimbingGradeProgressionChart } from "./ClimbingGradeProgressionChart";
 import { HangboardingSummary } from "./HangboardingSummary";
 
-type ClimbingClimbType = "boulder" | "route";
-
 const climbingClimbTypeSchema = z.enum(["boulder", "route"]);
-
-const mobileClimbingGradeProgressionRowSchema = z.object({
-  date: z.string(),
-  climbType: climbingClimbTypeSchema,
-  grade: z.string(),
-  gradeSortValue: z.number(),
-});
 
 const mobileClimbingVolumeByGradeRowSchema = z.object({
   climbType: climbingClimbTypeSchema,
@@ -67,7 +60,7 @@ const mobileHangboardingSummarySchema = z.object({
 });
 
 const mobileClimbingDataSchema = z.object({
-  gradeProgression: z.array(mobileClimbingGradeProgressionRowSchema),
+  gradeProgression: z.array(climbingGradeProgressionSchema),
   volumeByGrade: z.array(mobileClimbingVolumeByGradeRowSchema),
   sessionSummary: z.array(mobileClimbingSessionSummaryRowSchema),
   hangboarding: z.object({
@@ -83,7 +76,6 @@ const mobileClimbingPayloadSchema = z.object({
   hangboarding: z.unknown().optional(),
 });
 
-type MobileClimbingGradeProgressionRow = z.infer<typeof mobileClimbingGradeProgressionRowSchema>;
 type MobileClimbingVolumeByGradeRow = z.infer<typeof mobileClimbingVolumeByGradeRowSchema>;
 type MobileClimbingSessionSummaryRow = z.infer<typeof mobileClimbingSessionSummaryRowSchema>;
 type MobileHangboardingSummary = z.infer<typeof mobileClimbingDataSchema>["hangboarding"];
@@ -130,7 +122,7 @@ function parseMobileClimbingData(value: unknown): MobileClimbingParseResult {
   }
 
   const gradeProgression = safeParseRows(
-    mobileClimbingGradeProgressionRowSchema,
+    climbingGradeProgressionSchema,
     payloadResult.data.gradeProgression ?? [],
     "strain:climbing.gradeProgression",
   );
@@ -189,14 +181,8 @@ class ClimbingSectionModel {
     this.#data = data;
   }
 
-  bestGrade(climbType: ClimbingClimbType): string | null {
-    const bestRow = this.#data.gradeProgression
-      .filter((row) => row.climbType === climbType)
-      .reduce<MobileClimbingGradeProgressionRow | null>(
-        (best, row) => (best === null || row.gradeSortValue > best.gradeSortValue ? row : best),
-        null,
-      );
-    return bestRow?.grade ?? null;
+  get gradeProgression() {
+    return this.#data.gradeProgression;
   }
 
   get volumeRows(): MobileClimbingVolumeByGradeRow[] {
@@ -234,29 +220,16 @@ export function ClimbingTrainingCard({
           )}
         </Text>
       ) : null}
-      <ClimbingSection model={model} />
+      <ClimbingSection model={model} loading={loading} />
       <HangboardingSummary data={model.hangboarding} loading={loading} />
     </View>
   );
 }
 
-function ClimbingSection({ model }: { model: ClimbingSectionModel }) {
+function ClimbingSection({ model, loading }: { model: ClimbingSectionModel; loading: boolean }) {
   return (
     <View style={styles.climbingStack}>
-      <View style={styles.climbingGradeGrid}>
-        <View style={styles.climbingGradeItem}>
-          <Text style={styles.loadLabel}>Best Boulder Grade</Text>
-          <Text style={styles.loadValue}>{model.bestGrade("boulder") ?? "None"}</Text>
-        </View>
-        <View style={styles.climbingGradeItem}>
-          <Text style={styles.loadLabel}>Best Route Grade</Text>
-          <Text style={styles.loadValue}>{model.bestGrade("route") ?? "None"}</Text>
-        </View>
-      </View>
-
-      {model.bestGrade("boulder") == null && model.bestGrade("route") == null && (
-        <Text style={styles.activitiesEmpty}>No climbing grade progression</Text>
-      )}
+      <ClimbingGradeProgressionChart data={model.gradeProgression} loading={loading} />
 
       <View style={styles.climbingSubsection}>
         <Text style={styles.climbingSubsectionTitle}>Volume by Grade</Text>
@@ -319,17 +292,6 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
     letterSpacing: 0.5,
   },
-  loadValue: {
-    fontSize: 22,
-    fontWeight: "700",
-    color: colors.text,
-    fontVariant: ["tabular-nums"],
-  },
-  loadLabel: {
-    fontSize: 11,
-    color: colors.textTertiary,
-    textAlign: "center",
-  },
   activitiesEmpty: {
     color: colors.textTertiary,
     fontSize: 13,
@@ -344,18 +306,6 @@ const styles = StyleSheet.create({
   },
   climbingStack: {
     gap: 14,
-  },
-  climbingGradeGrid: {
-    flexDirection: "row",
-    gap: 12,
-  },
-  climbingGradeItem: {
-    alignItems: "center",
-    backgroundColor: colors.surfaceSecondary,
-    borderRadius: 12,
-    flex: 1,
-    gap: 4,
-    padding: 12,
   },
   climbingSubsection: {
     borderTopColor: colors.surfaceSecondary,
