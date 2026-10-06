@@ -1,8 +1,4 @@
 import { formatDateYmdInTimeZone } from "@dofek/format/format";
-import {
-  NUTRIENT_SAFETY_RULESET_REVIEWED_ON,
-  type NutrientSafetySource,
-} from "@dofek/nutrition/nutrient-safety";
 import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
@@ -94,13 +90,6 @@ export interface NutritionAnalyticsDataQuality {
   readonly sourceLabels: string[];
   readonly contributingSourceLabels: string[];
   readonly excludedSourceLabels: string[];
-}
-
-export interface SupplementMedicationReview {
-  readonly status: "professional_review_recommended" | "no_medication_records" | "no_supplements";
-  readonly message: string;
-  readonly limitation: string;
-  readonly source: NutrientSafetySource;
 }
 
 export interface AdaptiveTdeeDataPoint {
@@ -573,77 +562,6 @@ export class NutritionAnalyticsRepository extends BaseRepository {
       sourceLabels: [...sourceLabels].sort(),
       contributingSourceLabels: [...contributingSourceLabels].sort(),
       excludedSourceLabels: [...excludedSourceLabels].sort(),
-    };
-  }
-
-  /** General review state; no medication-specific interaction is inferred. */
-  async getSupplementMedicationReview(): Promise<SupplementMedicationReview> {
-    const rows = await executeWithSchema(
-      this.db,
-      z.object({
-        has_medication_records: z.boolean(),
-        has_supplements: z.boolean(),
-      }),
-      sql`SELECT
-            (
-              EXISTS (
-                SELECT 1
-                FROM fitness.clinical_record
-                WHERE user_id = ${this.userId}
-                  AND clinical_type = 'medication'
-              )
-              OR EXISTS (
-                SELECT 1
-                FROM fitness.medication_dose_event
-                WHERE user_id = ${this.userId}
-              )
-            ) AS has_medication_records,
-            EXISTS (
-              SELECT 1
-              FROM fitness.supplement s
-              JOIN fitness.supplement_definition definition
-                ON definition.supplement_id = s.id
-                AND definition.effective_to IS NULL
-              WHERE s.user_id = ${this.userId}
-            ) AS has_supplements`,
-    );
-    const row = rows[0];
-    if (!row) {
-      throw new Error("Supplement and medication review query returned no status row.");
-    }
-
-    const source: NutrientSafetySource = {
-      agency: "FDA",
-      title: "Mixing Medications and Dietary Supplements Can Endanger Your Health",
-      url: "https://www.fda.gov/consumers/consumer-updates/mixing-medications-and-dietary-supplements-can-endanger-your-health",
-      reviewedOn: NUTRIENT_SAFETY_RULESET_REVIEWED_ON,
-    };
-    const limitation =
-      "Dofek does not determine whether a specific medication and supplement interact.";
-
-    if (!row.has_supplements) {
-      return {
-        status: "no_supplements",
-        message: "Add supplements to review them alongside your medication records.",
-        limitation,
-        source,
-      };
-    }
-    if (!row.has_medication_records) {
-      return {
-        status: "no_medication_records",
-        message:
-          "No medication records are available for a combined review. Keep your doctor or pharmacist informed about all supplements you take.",
-        limitation,
-        source,
-      };
-    }
-    return {
-      status: "professional_review_recommended",
-      message:
-        "Review your complete medication and supplement list with a doctor or pharmacist because supplements can interact with medications.",
-      limitation,
-      source,
     };
   }
 

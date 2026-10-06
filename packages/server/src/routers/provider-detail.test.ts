@@ -312,8 +312,8 @@ describe("providerDetailRouter", () => {
   // ── PROVIDER_ACCOUNT_TABLES ──
 
   describe("PROVIDER_ACCOUNT_TABLES", () => {
-    it("contains 13 child tables", () => {
-      expect(PROVIDER_ACCOUNT_TABLES).toHaveLength(13);
+    it("contains 12 child tables", () => {
+      expect(PROVIDER_ACCOUNT_TABLES).toHaveLength(12);
     });
 
     it("includes all required child tables", () => {
@@ -326,7 +326,6 @@ describe("providerDetailRouter", () => {
       expect(PROVIDER_ACCOUNT_TABLES).toContain("fitness.food_entry");
       expect(PROVIDER_ACCOUNT_TABLES).toContain("fitness.clinical_record");
       expect(PROVIDER_ACCOUNT_TABLES).toContain("fitness.medication_dose_event");
-      expect(PROVIDER_ACCOUNT_TABLES).toContain("fitness.supplement_dose_event");
       expect(PROVIDER_ACCOUNT_TABLES).toContain("fitness.health_event");
       expect(PROVIDER_ACCOUNT_TABLES).toContain("fitness.dexa_scan");
       expect(PROVIDER_ACCOUNT_TABLES).toContain("fitness.sync_log");

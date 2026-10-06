@@ -30237,6 +30237,33 @@ runbook refinement is to record selected/total data granules for every repeated
 source branch and distinguish per-request resource proof from total capture work
 and source-to-visible freshness. No steady-state diagnostic framework is added.
 
+### 2026-10-05 — Local integration validation blocked by Docker address-pool exhaustion
+
+- Symptoms/evidence: `pnpm test:integration -- packages/server/src/repositories/nutrition-canonical.integration.test.ts packages/server/src/repositories/nutrition-analytics-source-breakdown.integration.test.ts packages/server/src/routers/nutrition-analytics-data.integration.test.ts packages/server/src/routers/settings.integration.test.ts src/db/migrate.integration.test.ts` failed while creating `loyal-alpacka_default`; the first fatal line was `all predefined address pools have been fully subnetted`.
+- Impact: local PostgreSQL integration validation of supplement removal is blocked; no production impact observed.
+- Root cause: the Docker daemon has allocated its default subnet pool across existing workspace networks; `docker network ls` confirmed many workspace networks.
+- Mitigation: with user approval, created only `loyal-alpacka_default` on the unused `10.231.137.0/24` subnet with Compose ownership labels. The first cold database initialization crossed its existing health-startup window; logs confirmed initialization completed and subsequent healthchecks passed, with no steady-state timeout changes.
+- Validation: the same integration command reached Vitest after all four dependencies became healthy; analytics SQL lint subsequently passed. All 74 database assertions across six suites passed, including the forward migration sequence and food-source resolution. The two unrelated full-suite timeouts in `archive-erasure.test.ts` and `deploy-web-stack.test.ts` passed when rerun individually.
+- Resolution: final `pnpm lint` passed; `pnpm compose -- down --remove-orphans --volumes` removed only this workspace’s test containers, network, and disposable volumes. No timeout, retry, or network overrides were added to repository configuration.
+- Remaining risk/follow-up: the daemon’s default pool remains exhausted by other workspace networks; document an operator procedure for pool exhaustion. Docker documents explicit subnets in [network create](https://docs.docker.com/reference/cli/docker/network/create/).
+
+### 2026-10-05 — Supplement removal PR blocked by destructive migration lint
+
+- Symptoms/evidence: [PR #2886 Migration Lint](https://github.com/Asherlc/dofek/actions/runs/37380655334/job/112003275274) failed at `echo "$NEW_MIGRATIONS" | xargs squawk`. The first diagnostic was `Dropping a view may break existing clients.`; four `ban-drop-view` findings and one `ban-drop-type` finding produced exit code 123.
+- Impact/root cause: CI blocks the approved complete removal of supplements because Squawk prohibits the intentional view/type drops in `0137_remove_supplements.sql` (subsequently renamed to [0141](../drizzle/0141_remove_supplements.sql) after merging the current migration journal). No production deployment or data deletion occurred.
+- Validation: migration policy and SQLFluff passed locally; all 74 PostgreSQL integration assertions passed, including the forward migration and retained food-source resolution.
+- Fix/validation: with explicit user approval, added documented exceptions immediately before the four intentional view drops and retired type drop, using Squawk's [statement-scoped comments](https://squawkhq.com/docs/cli#disabling-rules-via-comments). Squawk 2.67.0 (the failing CI version), migration policy, and SQLFluff all passed locally. The workstation's Squawk 2.49.0 does not recognize these newer rule names, so validation used the CI version through `uv tool run`.
+- Resolution: [Migration Lint passed in CI](https://github.com/Asherlc/dofek/actions/runs/37384870434). No global rules, retries, or timeouts changed. Add Squawk validation to the local migration checklist to catch intentional destructive-operation findings before pushing.
+
+### 2026-10-05 — Supplement removal exposed obsolete integration expectations
+
+- Symptoms/evidence: [CI run 37384870434](https://github.com/Asherlc/dofek/actions/runs/37384870434) integration shard 1 failed SDK discovery with `expected ... to have a length of 41 but got 40`; shard 4 failed the credential-free sync test after `[trpc] sync.triggerSync: No configured providers available for sync`.
+- Impact/root cause: PR validation blocked, with no production impact. Two SDK counts still included the removed MCP tool, and a sync test depended on the retired always-connected supplement provider.
+- Fix/validation: updated both existing discovery counts to 40 and deleted the obsolete provider-dependent test. The two affected suites passed together with 34 assertions through `pnpm test:integration`; Biome passed. The approved isolated workspace network was reused for validation and removed with the workspace test containers and volumes afterward.
+- Remaining risk/follow-up: full CI rerun pending. Include SDK discovery counts and provider-dependent integration fixtures in the feature-removal checklist; no production behavior or CI settings changed.
+
+Follow-up: after tracking removal also landed on `main`, [CI run 37400997752](https://github.com/Asherlc/dofek/actions/runs/37400997752/job/112068952077) failed three provider-account assertions with `expected ... to have a length of 13 but got 12`. Git automatically merged both removals but retained stale count assertions. Updated the existing count and final-index expectations; both provider-detail suites passed locally with 167 tests, and Biome passed. Production was unaffected; replacement CI remains pending. Validate shared deletion inventories whenever multiple feature removals merge concurrently.
+
 ### 2026-10-05 — Local validation database cold-start health failure
 
 During removal of Personal Experiments and Life Events, `pnpm test:integration -- packages/server/src/routers/settings.integration.test.ts src/db/seed-dev-db.integration.test.ts` stopped before tests with `container noble-turtle-db-1 is unhealthy`. Production and users were unaffected. `pnpm compose -- logs --tail 60 db` showed the fresh TimescaleDB initialization sequence still shutting down its temporary server for a checkpoint; Docker health history reported `127.0.0.1:5432 - no response`. The container subsequently completed initialization and logged `database system is ready to accept connections`; Docker inspection then reported healthy and no OOM kill. No runtime configuration, timeout, or retry was changed. The integration command was started again after confirming prerequisite health. Cold-start readiness timing remains a local validation risk; its underlying initialization duration needs separate investigation before changing health policy.
@@ -30290,6 +30317,13 @@ timezones to locale formatter tests. Local validation includes UTC worker-thread
 execution and separate process-start timezone runs. CI validation remains
 pending; no retries, timeouts, or relaxed gates were added. Follow-up: set test
 timezones before process startup rather than mutating `TZ` inside workers.
+
+### 2026-10-05 — Newly reported dependency advisories blocked supplement-removal merge
+
+- Symptoms/evidence: [Dependency Audit](https://github.com/Asherlc/dofek/actions/runs/37399697920/job/112064250236) failed `pnpm audit --prod --audit-level=high --ignore-registry-errors` with exit code 1. The first finding was critical Seroval Promise thenable assimilation; the report also flagged proxy-addr IP spoofing, Seroval memory exhaustion, and source-map-js denial of service.
+- Impact/root cause: PR #2886 could not merge; no production deployment occurred. The lockfile still resolved vulnerable transitive versions Seroval 1.5.5, proxy-addr 2.0.7, and source-map-js 1.2.1. See the primary advisories for [Seroval callables](https://github.com/advisories/GHSA-p6vx-979v-rg4c), [proxy-addr](https://github.com/advisories/GHSA-jqcg-44mw-7w3h), [Seroval memory exhaustion](https://github.com/advisories/GHSA-jp82-f5mq-hwhp), and [source-map-js](https://github.com/advisories/GHSA-68fv-2mgg-jv7q).
+- Fix/validation: refreshed only those transitive lockfile entries to the registry's latest stable releases: Seroval 1.6.8, proxy-addr 2.0.8, and source-map-js 1.2.2. Frozen installation, the production high-severity audit, existing dependency-security regression checks, production web build, full lint, and all 32 API integration assertions passed. No manifest, override, exemption, retry, or audit threshold changed.
+- Remaining risk/follow-up: replacement CI pending; lower-severity findings and the two previously documented patched high-severity advisories remain under the existing policy. Refresh transitive dependencies when new advisories invalidate an otherwise green merge check.
 
 ## 2026-10-05 — Climbing attempt totals hidden by incomplete source counts
 

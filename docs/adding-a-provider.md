@@ -6,7 +6,7 @@ Providers are plugins that pull data from an external API and upsert it into the
 
 **Every new sync provider must authenticate per user.** Users connect their own account via the app UI (Settings → Data Sources). Credentials are stored in `oauth_token` and loaded during sync with `loadTokens(db, providerId, userId)`.
 
-Do **not** build new providers that read user-specific credentials from deployment env vars (for example `MY_PROVIDER_USER_ID`, `MY_PROVIDER_API_TOKEN`, or a shared email address). External-account providers have no exemptions. `auto-supplements` is exempt only because it is an internal provider with no external account.
+Do **not** build new providers that read user-specific credentials from deployment env vars (for example `MY_PROVIDER_USER_ID`, `MY_PROVIDER_API_TOKEN`, or a shared email address). External-account providers have no exemptions.
 
 Supported connect flows:
 

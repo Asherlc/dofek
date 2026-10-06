@@ -127,14 +127,6 @@ export default function FoodScreen() {
           >
             <Text style={styles.sectionLinkText}>Analytics</Text>
           </TouchableOpacity>
-          <TouchableOpacity
-            onPress={() => router.push("/supplements")}
-            style={styles.sectionLinkButton}
-            accessibilityRole="button"
-            accessibilityLabel="Supplements"
-          >
-            <Text style={styles.sectionLinkText}>Supplements</Text>
-          </TouchableOpacity>
         </View>
 
         {!isToday(selectedDate) && (
