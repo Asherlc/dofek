@@ -166,7 +166,10 @@ export const climbingRouter = router({
       });
     }),
 
-  volumeByGrade: cachedProtectedQuery({ maxAge: CacheTTL.LONG })
+  volumeByGrade: cachedProtectedQuery({
+    maxAge: CacheTTL.LONG,
+    keyVersion: "climbing-recorded-attempts-v1",
+  })
     .input(climbingInputSchema)
     .output(z.array(climbingVolumeByGradeSchema))
     .query(async ({ ctx, input }): Promise<ClimbingVolumeByGradeRow[]> => {

@@ -252,6 +252,7 @@ export function ClimbingTab() {
           ) : (
             <RecentActivitiesSection
               activityTypes={CLIMBING_ACTIVITY_TYPES}
+              showDistance={false}
               additionalColumns={climbingSessionColumns(sessionSummary.data ?? [])}
               additionalDataLoading={sessionSummary.isLoading}
             />

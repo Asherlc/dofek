@@ -357,4 +357,25 @@ describe("ClimbingRepository PostgreSQL summaries", () => {
       (await repository.getGradeProgression(30)).map((entry) => entry.toDetail()),
     ).toContainEqual(expect.objectContaining({ grade: "V5" }));
   });
+
+  it("returns recorded attempt subtotals independently of complete totals and combines converted grades", async () => {
+    await context.db.execute(sql`INSERT INTO fitness.climbing_entry
+      (user_id, provider_id, activity_id, external_id, climb_type, grade_system, grade, result_style, attempt_count) VALUES
+      (${TEST_USER_ID}, 'climbing-summary-test', ${activityMemberId}, 'mixed-known', 'boulder', 'v_scale', 'V5', 'Not sent', 4),
+      (${TEST_USER_ID}, 'climbing-summary-test', ${activityMemberId}, 'mixed-unknown', 'boulder', 'v_scale', 'V5', 'Send', NULL),
+      (${TEST_USER_ID}, 'climbing-summary-test', ${activityMemberId}, 'mixed-converted', 'boulder', 'font', '6C', 'Not sent', 3),
+      (${TEST_USER_ID}, 'climbing-summary-test', ${activityMemberId}, 'all-unknown', 'boulder', 'v_scale', 'V6', 'Send', NULL),
+      (${TEST_USER_ID}, 'climbing-summary-test', ${activityMemberId}, 'all-unknown-converted', 'boulder', 'font', '7A', 'Not sent', NULL),
+      (${TEST_USER_ID}, 'climbing-summary-test', ${activityMemberId}, 'all-known', 'boulder', 'v_scale', 'V7', 'Send', 2),
+      (${TEST_USER_ID}, 'climbing-summary-test', ${activityMemberId}, 'all-known-converted', 'boulder', 'font', '7A+', 'Not sent', 3)`);
+
+    const repository = new ClimbingRepository(context.db, TEST_USER_ID, "America/Los_Angeles");
+    expect((await repository.getVolumeByGrade(30)).map((row) => row.toDetail())).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ grade: "V5", attempts: null, recordedAttempts: 7 }),
+        expect.objectContaining({ grade: "V6", attempts: null, recordedAttempts: null }),
+        expect.objectContaining({ grade: "V7", attempts: 5, recordedAttempts: 5 }),
+      ]),
+    );
+  });
 });

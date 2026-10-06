@@ -28,8 +28,14 @@ This contract was verified against the authenticated [Kaya GraphQL endpoint](htt
 on 2026-09-29 and the [Kaya application](https://kaya-app.kayaclimb.com/).
 
 Climbing summaries include these records and retain known send counts. An
-attempt total is `null` when any contributing count is unknown; both clients
-display the missing count explicitly. The outcome and count are independently
+attempt total is `null` when any contributing count is unknown. Grade volume
+also exposes `recordedAttempts`, the subtotal of known counts, or `null` when
+none are recorded. Web and mobile grade cards label incomplete subtotals as
+"N recorded attempts", use "N attempts" for complete totals, and omit attempts
+when no counts are known. Recorded zero remains visible and sends are retained.
+See the [web grade card](../packages/web/src/components/ClimbingVolumeByGradeChart.tsx)
+and [mobile climbing section](../packages/mobile/app/(tabs)/strain.tsx).
+The outcome and count are independently
 nullable in PostgreSQL, whose [check constraints](https://www.postgresql.org/docs/current/ddl-constraints.html#DDL-CONSTRAINTS-CHECK-CONSTRAINTS)
 allow unknown values while retaining the positive-count constraint.
 

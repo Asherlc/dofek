@@ -108,10 +108,12 @@ function ActivitiesStory({
   scenario,
   activityTypes,
   emptyMessage,
+  showDistance,
 }: {
   scenario: ActivitiesScenario;
   activityTypes?: readonly string[];
   emptyMessage?: string;
+  showDistance?: boolean;
 }) {
   const queryClient = useMemo(
     () => new QueryClient({ defaultOptions: { queries: { retry: false } } }),
@@ -127,7 +129,11 @@ function ActivitiesStory({
       getParentRoute: () => rootRoute,
       path: "/",
       component: () => (
-        <RecentActivitiesSection activityTypes={activityTypes} emptyMessage={emptyMessage} />
+        <RecentActivitiesSection
+          activityTypes={activityTypes}
+          emptyMessage={emptyMessage}
+          showDistance={showDistance}
+        />
       ),
     });
     const activityRoute = createRoute({
@@ -139,7 +145,7 @@ function ActivitiesStory({
       routeTree: rootRoute.addChildren([homeRoute, activityRoute]),
       history: createMemoryHistory({ initialEntries: ["/"] }),
     });
-  }, [activityTypes, emptyMessage]);
+  }, [activityTypes, emptyMessage, showDistance]);
 
   return (
     <trpc.Provider client={trpcClient} queryClient={queryClient}>
@@ -168,6 +174,19 @@ type Story = StoryObj<typeof meta>;
 
 export const Default: Story = {
   render: () => <ActivitiesStory scenario={{ items: activities, totalCount: activities.length }} />,
+};
+
+export const Climbing: Story = {
+  render: () => (
+    <ActivitiesStory
+      scenario={{
+        items: [{ ...activities[1], canonical_type: "climbing", name: "Bouldering session" }],
+        totalCount: 1,
+      }}
+      activityTypes={["climbing"]}
+      showDistance={false}
+    />
+  ),
 };
 
 export const Imperial: Story = {
