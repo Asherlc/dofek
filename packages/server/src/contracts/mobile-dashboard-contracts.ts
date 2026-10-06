@@ -390,6 +390,7 @@ export const mobileTrainingTabOutputSchema = z.object({
     volumeByGrade: z.array(
       climbingGradeDisplaySchema.extend({
         attempts: z.number().int().nonnegative().nullable(),
+        recordedAttempts: z.number().int().nonnegative().nullable(),
         sends: z.number().int().nonnegative(),
       }),
     ),

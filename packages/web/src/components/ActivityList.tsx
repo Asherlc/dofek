@@ -40,6 +40,7 @@ export interface Activity {
 interface ActivityListProps {
   activities: Activity[];
   additionalColumns?: Array<ActivityTableColumn<Activity>>;
+  showDistance?: boolean;
   loading?: boolean;
   error?: string;
   emptyMessage?: string;
@@ -69,6 +70,7 @@ function formatActivityDuration(startedAt: string, endedAt: string | null): stri
 export function ActivityList({
   activities,
   additionalColumns = [],
+  showDistance = true,
   loading,
   error,
   emptyMessage = "No recent activities",
@@ -259,7 +261,10 @@ export function ActivityList({
       renderCell: (activity) => activity.source_providers?.join(", "),
     },
   ];
-  const activityColumns = [...baseColumns, ...additionalColumns];
+  const activityColumns = [
+    ...baseColumns.filter((column) => showDistance || column.key !== "distance"),
+    ...additionalColumns,
+  ];
   const columns = selectMode ? [selectionColumn, ...activityColumns] : activityColumns;
   const footer =
     totalCount != null && pageSize != null && onPageChange ? (

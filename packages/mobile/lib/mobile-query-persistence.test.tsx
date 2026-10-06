@@ -42,8 +42,8 @@ describe("mobile query persistence", () => {
   });
 
   it("uses the current cache contract buster", () => {
-    expect(MOBILE_QUERY_CACHE_CONTRACT_VERSION).toBe(8);
-    expect(mobileQueryCacheBuster("user-1")).toBe("user-1:v8");
+    expect(MOBILE_QUERY_CACHE_CONTRACT_VERSION).toBe(9);
+    expect(mobileQueryCacheBuster("user-1")).toBe("user-1:v9");
   });
 
   it("reports downstream hydration failures safely and completes provider restoration", async () => {
