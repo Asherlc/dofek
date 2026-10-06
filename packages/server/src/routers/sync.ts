@@ -146,7 +146,6 @@ const providerStatsOutputSchema = z.array(
     metricStream: z.number().int().nonnegative(),
     nutritionDaily: z.number().int().nonnegative(),
     clinicalRecords: z.number().int().nonnegative(),
-    journalEntries: z.number().int().nonnegative(),
   }),
 );
 

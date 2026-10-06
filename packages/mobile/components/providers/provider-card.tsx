@@ -1,6 +1,7 @@
 import { formatDurationSeconds, formatRelativeTime } from "@dofek/format/format";
 import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import type { ProviderStats } from "@dofek/providers/provider-stats";
+import { syncCardSummary } from "@dofek/providers/sync-card-summary";
 import { ActivityIndicator, Text, TouchableOpacity, View } from "react-native";
 import { OperationProgressBar } from "../../components/OperationProgressBar";
 import { ProviderLogo } from "../../components/ProviderLogo";
@@ -114,13 +115,8 @@ export function ProviderCard({
 }) {
   const { serverUrl } = useAuth();
   const dotColor = statusDotColor(provider.authStatus);
-  const lastSyncRelative = provider.lastSyncAt ? formatRelativeTime(provider.lastSyncAt) : null;
-  const latestSyncLabel =
-    provider.recentLogs[0]?.status === "error"
-      ? "Latest sync failed"
-      : provider.recentLogs[0]?.status === "degraded"
-        ? "Latest sync completed with issues"
-        : "Sync current";
+  const summary = syncCardSummary(provider);
+  const lastSyncRelative = summary.lastAttemptAt ? formatRelativeTime(summary.lastAttemptAt) : null;
   const lastSuccessfulSyncRelative = provider.lastSuccessfulSyncAt
     ? formatRelativeTime(provider.lastSuccessfulSyncAt)
     : null;
@@ -200,7 +196,7 @@ export function ProviderCard({
                 "The sync or import failed. Please try again.",
               )}
             </Text>
-          ) : (
+          ) : provider.authStatus !== "connected" || syncFreshness === null ? (
             <Text style={styles.cardMetaText}>
               {provider.importOnly
                 ? "Import only"
@@ -208,15 +204,15 @@ export function ProviderCard({
                   ? "Push only"
                   : statusLabel(provider.authStatus)}
             </Text>
-          )}
+          ) : null}
           {canRunManualSync &&
             (lastSyncRelative ? (
-              <Text style={styles.cardMetaText}>Last sync: {lastSyncRelative}</Text>
-            ) : (
+              <Text style={styles.cardMetaText}>Last attempt: {lastSyncRelative}</Text>
+            ) : !summary.hasHistory ? (
               <Text style={styles.cardMetaText}>Never synced</Text>
-            ))}
-          {provider.recentLogs[0] ? (
-            <Text style={styles.cardMetaText}>{latestSyncLabel}</Text>
+            ) : null)}
+          {summary.latestIssue ? (
+            <Text style={styles.cardMetaText}>{summary.latestIssue.label}</Text>
           ) : null}
           {canRunManualSync && lastSuccessfulSyncRelative ? (
             <Text style={styles.cardMetaText}>

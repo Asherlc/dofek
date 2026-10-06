@@ -1,6 +1,7 @@
 import { formatRelativeTime } from "@dofek/format/format";
 import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import type { ProviderStats } from "@dofek/providers/provider-stats";
+import { syncCardSummary } from "@dofek/providers/sync-card-summary";
 import { operationalStatusColors } from "@dofek/scoring/colors";
 import { Link } from "@tanstack/react-router";
 import type { ProviderState, SyncLogEntry, SyncProviderSummary } from "./DataSourcesSyncTypes.ts";
@@ -37,9 +38,13 @@ export function SyncProviderCard({
   recentLogs: SyncLogEntry[];
   onSync: () => void;
 }) {
-  const lastSyncedRelative = provider.lastSyncedAt
-    ? formatRelativeTime(provider.lastSyncedAt)
-    : null;
+  const summary = syncCardSummary({
+    lastSyncAt: provider.lastSyncedAt,
+    lastSuccessfulSyncAt: provider.lastSuccessfulSyncAt,
+    recentLogs,
+  });
+  const lastAttemptAt = pushOnly ? provider.lastSyncedAt : summary.lastAttemptAt;
+  const lastSyncedRelative = lastAttemptAt ? formatRelativeTime(lastAttemptAt) : null;
   const lastSuccessfulSyncRelative = provider.lastSuccessfulSyncAt
     ? formatRelativeTime(provider.lastSuccessfulSyncAt)
     : null;
@@ -49,29 +54,11 @@ export function SyncProviderCard({
     : needsAuth
       ? `Connect ${provider.name}`
       : `Sync ${provider.name} from the last 7 days`;
-  const latestLog = recentLogs.reduce<SyncLogEntry | undefined>((latest, entry) => {
-    if (!latest || entry.syncedAt > latest.syncedAt) return entry;
-    return latest;
-  }, undefined);
-  const latestSync = latestLog
-    ? latestLog.status === "error"
-      ? {
-          label: "Latest sync failed",
-          accessibilityLabel: "Sync needs attention",
-          colors: operationalStatusColors.danger,
-        }
-      : latestLog.status === "degraded"
-        ? {
-            label: "Latest sync completed with issues",
-            accessibilityLabel: "Sync completed with issues",
-            colors: operationalStatusColors.warning,
-          }
-        : {
-            label: "Sync current",
-            accessibilityLabel: "Sync current",
-            colors: operationalStatusColors.success,
-          }
-    : null;
+  const latestSync = summary.latestIssue;
+  const latestSyncColors =
+    latestSync?.status === "error"
+      ? operationalStatusColors.danger
+      : operationalStatusColors.warning;
   const syncFreshness = !pushOnly && !needsAuth ? provider.syncFreshness : null;
   const syncFreshnessColors =
     syncFreshness?.status === "overdue"
@@ -103,9 +90,9 @@ export function SyncProviderCard({
             className="inline-block h-2 w-2 rounded-full"
             style={{ backgroundColor: operationalStatusColors.info.indicator }}
           />
-        ) : (
+        ) : state.status !== "idle" ? (
           <StatusDot status={state.status} />
-        )}
+        ) : null}
         <span className="text-sm font-medium text-foreground">{provider.name}</span>
         {pushOnly && <span className="text-xs text-subtle">Mobile sync</span>}
         {!pushOnly && needsReauth && (
@@ -140,7 +127,7 @@ export function SyncProviderCard({
       )}
       {state.status !== "syncing" && !state.message && lastSyncedRelative && (
         <span className="text-xs text-dim mt-1">
-          {pushOnly ? "Last received" : "Last sync"}: {lastSyncedRelative}
+          {pushOnly ? "Last received" : "Last attempt"}: {lastSyncedRelative}
         </span>
       )}
       {!pushOnly && state.status !== "syncing" && lastSuccessfulSyncRelative && (
@@ -153,7 +140,7 @@ export function SyncProviderCard({
       {stats && <ProviderStatsBreakdown stats={stats} />}
 
       {/* Latest sync status + action links */}
-      <div className="flex items-center justify-between mt-2 pt-2 border-t border-border/50">
+      <div className="flex flex-wrap items-center justify-between gap-2 mt-2 pt-2 border-t border-border/50">
         <div className="flex items-center gap-1">
           {pushOnly ? (
             <span className="text-xs text-dim">
@@ -164,23 +151,23 @@ export function SyncProviderCard({
               aria-label={latestSync.accessibilityLabel}
               className="inline-flex items-center gap-1.5 text-xs"
               style={{
-                color: latestSync.colors.foreground,
+                color: latestSyncColors.foreground,
               }}
             >
               <span
                 aria-hidden="true"
                 className="h-2 w-2 rounded-full"
                 style={{
-                  backgroundColor: latestSync.colors.indicator,
+                  backgroundColor: latestSyncColors.indicator,
                 }}
               />
               {latestSync.label}
             </output>
-          ) : (
+          ) : !summary.hasHistory ? (
             <span className="text-xs text-dim">No sync history</span>
-          )}
+          ) : null}
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           {syncFreshness && (
             <div
               role={syncFreshness.status === "overdue" ? "alert" : undefined}

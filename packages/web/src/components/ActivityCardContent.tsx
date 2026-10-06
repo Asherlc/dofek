@@ -4,7 +4,7 @@ import {
   activityDataStateLabel,
   formatActivityMetric,
 } from "@dofek/format/activity-data-state";
-import { formatDurationMinutes, formatRelativeTime } from "@dofek/format/format";
+import { formatDurationMinutes } from "@dofek/format/format";
 import {
   formatRecordLocalTime,
   type RecordLocalTimeContext,
@@ -77,9 +77,6 @@ export function ActivityCardContent({
     undefined,
     Intl.DateTimeFormat().resolvedOptions().timeZone,
   );
-  const processedRelative = activity.lastProcessedAt
-    ? formatRelativeTime(activity.lastProcessedAt)
-    : null;
 
   return (
     <div
@@ -130,11 +127,7 @@ export function ActivityCardContent({
               Source overlap
             </span>
           ) : null}
-          {processedRelative ? <span>Processed {processedRelative}</span> : null}
         </div>
-        {activity.source.overlapSummary ? (
-          <p className="mt-1.5 text-xs text-muted">{activity.source.overlapSummary}</p>
-        ) : null}
         <div data-testid="activity-detail-metrics" className="mt-auto pt-6">
           <ActivityMetricGrid activity={activity} units={units} />
         </div>
@@ -144,10 +137,9 @@ export function ActivityCardContent({
           data-testid="activity-secondary-panel"
           className="flex min-h-64 flex-col border-t border-border/60 bg-surface-secondary/45 p-4 sm:border-l sm:border-t-0"
         >
-          <p className="text-[11px] font-semibold uppercase tracking-wider text-muted">Route</p>
           <div
             data-testid="activity-secondary-inset"
-            className="mt-3 min-h-48 flex-1 overflow-hidden rounded-lg border border-border bg-surface-solid"
+            className="min-h-48 flex-1 overflow-hidden rounded-lg border border-border bg-surface-solid"
           >
             <ActivityMapTile location={activity.location} variant="panel" />
           </div>

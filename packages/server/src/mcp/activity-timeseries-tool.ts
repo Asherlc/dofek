@@ -3,6 +3,7 @@ import { z } from "zod";
 import { ActivityRepository } from "../repositories/activity-repository.ts";
 import { activityTimeseriesStreams } from "../repositories/activity-timeseries.ts";
 import { ActivityTimeseriesRepository } from "../repositories/activity-timeseries-repository.ts";
+import { registerAuthorizedTool } from "./authorized-tool.ts";
 import type { DofekMcpContext } from "./context.ts";
 import { requireMcpScope } from "./token-repository.ts";
 import { activityTimeseriesOutputSchema } from "./tool-output.ts";
@@ -14,21 +15,23 @@ const streamSchema = z.enum(activityTimeseriesStreams);
 
 /** Register synchronized, provenance-rich access to native activity sensor samples. */
 export function registerActivityTimeseriesTool(server: McpServer, context: DofekMcpContext): void {
-  server.registerTool(
+  registerAuthorizedTool(
+    server,
+    ["activity:read"],
     "get_activity_timeseries",
     {
       title: "Get Activity Time Series",
       description:
         "Return synchronized, provenance-rich activity streams with explicit measured, zero, interpolated, and missing states. Raw detail is available; compact fixed resolutions are recommended for broad analysis.",
       annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
-      inputSchema: {
+      inputSchema: z.object({
         activity_id: z.uuid(),
         streams: z.array(streamSchema).min(1),
         resolution: resolutionSchema.optional(),
         fill: fillSchema.optional(),
         cursor: z.string().min(1).optional(),
         limit: z.number().int().min(1).max(2_000).optional(),
-      },
+      }),
       outputSchema: activityTimeseriesOutputSchema,
     },
     async ({ activity_id, streams, resolution, fill, cursor, limit }) => {

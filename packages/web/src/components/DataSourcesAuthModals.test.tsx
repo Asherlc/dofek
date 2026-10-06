@@ -154,6 +154,25 @@ describe("data source auth dialogs", () => {
 });
 
 describe("Data source authentication telemetry", () => {
+  it.each([
+    ["openbeta", "OpenBeta profile URL or username", "text"],
+    ["wger", "JWT refresh token", "password"],
+  ])("uses the appropriate input visibility for %s", async (providerId, label, inputType) => {
+    const { TokenAuthModal } = await import("./DataSourcesAuthModals.tsx");
+    render(
+      <TokenAuthModal
+        providerId={providerId}
+        providerName={providerId}
+        tokenLabel={label}
+        instructionsUrl="https://openbeta.io/"
+        onClose={vi.fn()}
+        onSuccess={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByLabelText(label)).toHaveAttribute("type", inputType);
+  });
+
   it("connects a personal token without exposing it to telemetry", async () => {
     mockTokenConnect.mockResolvedValue({ success: true });
     const token = "personal-token-must-not-leak";
@@ -179,7 +198,7 @@ describe("Data source authentication telemetry", () => {
       expect(mockTokenConnect).toHaveBeenCalledWith({ providerId: "wger", token });
       expect(onSuccess).toHaveBeenCalledOnce();
     });
-    expect(screen.getByRole("link", { name: "Create a JWT refresh token" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "Open Wger" })).toHaveAttribute(
       "href",
       "https://wger.readthedocs.io/en/latest/api/api.html#jwt-tokens",
     );
@@ -204,7 +223,7 @@ describe("Data source authentication telemetry", () => {
     expect(connectButton).toBeDisabled();
     expect(connectButton).toHaveClass("bg-surface-hover", "text-muted", "cursor-not-allowed");
     expect(connectButton).not.toHaveClass("bg-emerald-600", "text-white", "disabled:opacity-50");
-    expect(screen.getByText("Enter your token to continue.")).toBeTruthy();
+    expect(screen.getByText("Paste your JWT refresh token to continue.")).toBeTruthy();
 
     fireEvent.change(screen.getByLabelText("JWT refresh token"), {
       target: { value: "personal-refresh" },
@@ -212,7 +231,7 @@ describe("Data source authentication telemetry", () => {
 
     expect(connectButton).toBeEnabled();
     expect(connectButton).toHaveClass("bg-emerald-600", "text-white");
-    expect(screen.queryByText("Enter your token to continue.")).toBeNull();
+    expect(screen.queryByText("Paste your JWT refresh token to continue.")).toBeNull();
   });
 
   it("reports personal token failures with provider context only", async () => {

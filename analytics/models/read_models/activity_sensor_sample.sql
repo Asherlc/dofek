@@ -21,7 +21,7 @@
     },
     projections=[{
         'name': 'by_activity_source_refresh_version',
-        'query': 'SELECT activity_id, user_id, max(refresh_version) AS source_refresh_version GROUP BY activity_id, user_id'
+        'query': "SELECT activity_id, user_id, max(refresh_version) AS source_refresh_version, maxIf(refreshed_at, channel = 'altitude') AS altitude_source_refreshed_at GROUP BY activity_id, user_id"
     }],
     query_settings={
         'max_threads': 1,
@@ -122,8 +122,7 @@ activity_samples AS (
 
 {% if is_incremental() %}
 existing_activity_samples AS (
-    SELECT
-        existing_samples.*
+    SELECT existing_samples.*
     FROM {{ this }} AS existing_samples
     WHERE (existing_samples.user_id, existing_samples.channel, existing_samples.recorded_at) IN (
         SELECT

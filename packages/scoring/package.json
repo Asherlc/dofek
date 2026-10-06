@@ -1,6 +1,6 @@
 {
   "name": "@dofek/scoring",
-  "version": "0.1.58",
+  "version": "0.1.66",
   "description": "Platform-agnostic health scoring models, labels, colors, and design tokens",
   "type": "module",
   "license": "MIT",
@@ -38,7 +38,6 @@
     "./sleep-performance": "./src/sleep-performance.ts",
     "./healthspan-years": "./src/healthspan-years.ts",
     "./loading-policy": "./src/loading-policy.ts",
-    "./menstrual-cycle": "./src/menstrual-cycle.ts",
     "./query-cache": "./src/query-cache.ts"
   },
   "publishConfig": {
@@ -79,10 +78,6 @@
       "./loading-policy": {
         "types": "./dist/loading-policy.d.ts",
         "import": "./dist/loading-policy.js"
-      },
-      "./menstrual-cycle": {
-        "types": "./dist/menstrual-cycle.d.ts",
-        "import": "./dist/menstrual-cycle.js"
       },
       "./query-cache": {
         "types": "./dist/query-cache.d.ts",

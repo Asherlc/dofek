@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { ROUTINE_SYNC_DAYS } from "@dofek/providers/sync-actions";
+import { ROUTINE_SYNC_DAYS, SYNC_ALL_ACTIONS } from "@dofek/providers/sync-actions";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -308,7 +308,7 @@ describe("DataSourcesPanel", () => {
       </PageSection>,
     );
 
-    expect(screen.getAllByRole("heading", { name: "Data Sources" })).toHaveLength(2);
+    expect(screen.getAllByRole("heading", { name: "Data Sources" })).toHaveLength(1);
     expect(screen.getByRole("region", { name: "Available data sources" })).toBeTruthy();
   });
 
@@ -350,7 +350,7 @@ describe("DataSourcesPanel", () => {
     expect(screen.queryByTestId("provider-card-garmin")).toBeNull();
   });
 
-  it("reserves stable action and provider regions while inventory loads", () => {
+  it("reserves a stable provider region while inventory loads", () => {
     mockProvidersQuery.mockReturnValue({
       data: undefined,
       isLoading: true,
@@ -363,10 +363,8 @@ describe("DataSourcesPanel", () => {
     });
 
     const { rerender } = render(<DataSourcesPanel />);
-    const actionRegion = screen.getByRole("heading", { name: "Data Sources" }).parentElement;
     const loadingRegion = screen.getByRole("region", { name: "Available data sources" });
 
-    expect(actionRegion?.className).toContain("min-h-20");
     expect(screen.queryByRole("region", { name: "Sync all providers" })).toBeNull();
     expect(loadingRegion.getAttribute("aria-busy")).toBe("true");
     expect(loadingRegion.className).toContain("h-80");
@@ -402,8 +400,9 @@ describe("DataSourcesPanel", () => {
     rerender(<DataSourcesPanel />);
 
     const processingRegion = screen.getByRole("region", { name: "Available data sources" });
-    expect(screen.getByRole("heading", { name: "Data Sources" }).parentElement).toBe(actionRegion);
-    expect(screen.getByRole("region", { name: "Sync all providers" })).toBeTruthy();
+    expect(
+      within(processingRegion).getByRole("region", { name: "Sync all providers" }),
+    ).toBeTruthy();
     expect(processingRegion).toBe(loadingRegion);
     expect(processingRegion.getAttribute("aria-busy")).toBe("true");
     expect(within(processingRegion).getByText("Loading processing status…")).toBeTruthy();
@@ -702,6 +701,24 @@ describe("DataSourcesPanel", () => {
     expect(
       within(screen.getByTestId("provider-card-garmin")).getByText("Latest sync: success"),
     ).toBeTruthy();
+  });
+
+  it("starts an unbounded sync for all connected providers only after confirmation", async () => {
+    mockSyncMutateAsync.mockResolvedValue({ providerResults: [] });
+    render(<DataSourcesPanel />);
+
+    fireEvent.click(screen.getByRole("button", { name: SYNC_ALL_ACTIONS.full.accessibilityLabel }));
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).getByText(SYNC_ALL_ACTIONS.full.confirmationDescription)).toBeTruthy();
+    expect(mockSyncMutateAsync).not.toHaveBeenCalled();
+
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: SYNC_ALL_ACTIONS.full.confirmLabel }),
+    );
+    await waitFor(() => {
+      expect(mockSyncMutateAsync).toHaveBeenCalledExactlyOnceWith({ sinceDays: undefined });
+    });
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 
   it("shows sync-all skipped and failed provider outcomes only on matching cards", async () => {
@@ -1026,7 +1043,6 @@ describe("DataSourcesPanel", () => {
       foodEntries: 0,
       nutritionDaily: 0,
       clinicalRecords: 0,
-      journalEntries: 0,
     };
     const kayaStats = {
       providerId: "kaya-export",
@@ -1039,7 +1055,6 @@ describe("DataSourcesPanel", () => {
       foodEntries: 0,
       nutritionDaily: 0,
       clinicalRecords: 0,
-      journalEntries: 0,
     };
     mockProvidersQuery.mockReturnValue({
       data: [

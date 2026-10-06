@@ -82,7 +82,7 @@ describe("activity_power_curve model", () => {
     expect(modelSql).toContain("power_sample_groups AS (");
     expect(modelSql).toContain("cumulative_energy");
     expect(modelSql).toContain("cumulative_discontinuities");
-    expect(modelSql).toContain("ASOF INNER JOIN power_sample_endpoints AS end_sample");
+    expect(modelSql).toContain("ASOF JOIN power_sample_endpoints AS end_sample");
     expect(modelSql).toContain("end_sample.previous_power * greatest(");
     expect(modelSql).toContain("end_sample.recorded_offset");
     expect(modelSql).not.toContain("end_sample.recorded_at = addSeconds(");

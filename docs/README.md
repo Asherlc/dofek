@@ -27,8 +27,7 @@ the exact section.
 - [processing-status-runbook.md](processing-status-runbook.md): durable processing evidence, deployment order, and stage diagnosis.
 - [account-erasure-runbook.md](account-erasure-runbook.md): durable account deletion, retention proof, restore reconciliation, and incident response.
 - [roadmap.md](roadmap.md): product strategy, release gates, Daily Brief,
-  experiments, goals, and trust roadmap.
-- [personal-experiments.md](personal-experiments.md): N-of-1 experiment setup and schedule slice.
+  goals, and trust roadmap.
 - [review-fixture-scenarios.md](review-fixture-scenarios.md): paired web/mobile
   Storybook fixtures for empty, partial, conflicting-source, stale-provider,
   processing, and error review states.
@@ -38,6 +37,7 @@ the exact section.
 | Doc | What it is for |
 |-----|----------------|
 | [schema.md](schema.md) | Database layout, raw-data-only rules, and view/dedup behavior. |
+| [climbing-context.md](climbing-context.md) | Location paths, boards, angles, climbing methods/results, provider coverage, and coordinated schema cutover. |
 | [altitude-provenance.md](altitude-provenance.md) | Provider-by-provider altitude source confidence and modeling implications. |
 | [record-local-time.md](record-local-time.md) | Trusted per-record local clock context, provenance, and bounded historical activity backfill. |
 | [body-metrics-decision-context.md](body-metrics-decision-context.md) | Server-authored Trend Weight methodology, measurement provenance, and personalized variation context. |
@@ -52,7 +52,7 @@ the exact section.
 | [external-api.md](external-api.md) | Target-agnostic authenticated write API, explicit external identity linking, nutrition writes, and account-erasure coordination. |
 | [credential-encryption.md](credential-encryption.md) | Stored credential encryption, required key material, context binding, and rotation boundary. |
 | [posthog-support.md](posthog-support.md) | In-app support ticket flow, PostHog Conversations integration, and failure handling. |
-| [roadmap.md](roadmap.md) | Product strategy and release gates across the Daily Brief, experiments, goals, trust, and onboarding. |
+| [roadmap.md](roadmap.md) | Product strategy and release gates across the Daily Brief, goals, trust, and onboarding. |
 | [apple-health.md](apple-health.md) | Apple Health import model and type mapping. |
 | [apple-watch-accelerometer.md](apple-watch-accelerometer.md) | Notes on Apple Watch accelerometer capture and interpretation. |
 
@@ -95,6 +95,7 @@ Cross-provider reverse-engineering references:
 | [package-publishing.md](package-publishing.md) | npm trusted publishing, independent Lerna releases, and configuration-driven SwiftPM mirrors. |
 | [performance/loading-performance-runbook.md](performance/loading-performance-runbook.md) | Evidence-first workflow for diagnosing slow web and mobile loading before optimizing clients, tRPC, or ClickHouse. |
 | [performance/loading-baseline-2026-07-18.md](performance/loading-baseline-2026-07-18.md) | Current Axiom-backed loading taxonomy and backend evidence gate. |
+| [performance/production-load-audit-2026-10-02.md](performance/production-load-audit-2026-10-02.md) | Production first-paint versus data-readiness measurements, mobile web checks, filter blanking, and query evidence. |
 | [performance/loading-monitors.md](performance/loading-monitors.md) | Loading-performance monitor definitions and investigation links. |
 | [clickhouse-read-model-deploy-runbook.md](clickhouse-read-model-deploy-runbook.md) | Deploy failures around ClickHouse CDC, analytics read models, and hot fitness views. |
 | [clickhouse-cdc-health-runbook.md](clickhouse-cdc-health-runbook.md) | Preventing, diagnosing, and recovering PeerDB mapping, normalization, freshness, WAL, and lost-slot failures. |

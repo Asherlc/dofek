@@ -2,6 +2,7 @@ interface PlainTextEmailInput {
   subject: string;
   text: string;
   toEmail: string;
+  signal?: AbortSignal;
 }
 
 interface BrevoEmailConfig {
@@ -41,6 +42,7 @@ export async function sendPlainTextEmail(input: PlainTextEmailInput): Promise<vo
       "content-type": "application/json",
     },
     method: "POST",
+    signal: input.signal,
   });
 
   if (!response.ok) {

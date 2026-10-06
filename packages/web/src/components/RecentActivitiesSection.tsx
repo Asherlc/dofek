@@ -49,6 +49,7 @@ const PAGE_SIZE = 20;
 interface RecentActivitiesSectionProps {
   activityTypes?: readonly string[];
   additionalColumns?: Array<ActivityTableColumn<Activity>>;
+  showDistance?: boolean;
   additionalDataLoading?: boolean;
   emptyMessage?: string;
 }
@@ -56,6 +57,7 @@ interface RecentActivitiesSectionProps {
 export function RecentActivitiesSection({
   activityTypes,
   additionalColumns,
+  showDistance,
   additionalDataLoading = false,
   emptyMessage,
 }: RecentActivitiesSectionProps) {
@@ -85,6 +87,7 @@ export function RecentActivitiesSection({
     <ActivityList
       activities={assertRows(activities.data?.items, activityRowSchema)}
       additionalColumns={additionalColumns}
+      showDistance={showDistance}
       loading={activities.isLoading || additionalDataLoading}
       error={
         activities.error

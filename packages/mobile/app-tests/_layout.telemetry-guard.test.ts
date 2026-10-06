@@ -15,6 +15,10 @@ describe("app bootstrap telemetry guard", () => {
       hideAsync: vi.fn(() => Promise.resolve()),
     }));
 
+    vi.doMock("../lib/mobile-query-lifecycle", () => ({
+      registerMobileQueryLifecycle: vi.fn(() => vi.fn()),
+    }));
+
     vi.doMock("expo-crypto", () => ({
       randomUUID: vi.fn(() => "11111111-1111-4111-8111-111111111111"),
     }));

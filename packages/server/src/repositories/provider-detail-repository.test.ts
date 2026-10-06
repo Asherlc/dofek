@@ -5,7 +5,6 @@ import {
   getRecordDisplayColumns,
   getRecordFilterColumns,
   getRecordSelectFilterColumns,
-  isJournalQuestionSlugFilterColumn,
   PROVIDER_ACCOUNT_TABLES,
   PROVIDER_DATA_TABLES,
   ProviderDetailRepository,
@@ -29,7 +28,6 @@ describe("tableInfo", () => {
     ["metricStream", "ingest.metric_stream", "recorded_at", "id"],
     ["nutritionDaily", "fitness.v_nutrition_provider_daily", "date", "date"],
     ["clinicalRecords", "fitness.clinical_record", "downloaded_at", "id"],
-    ["journalEntries", "fitness.journal_entry", "date", "id"],
   ] as const)(
     "returns correct mapping for %s",
     (dataType, expectedTable, expectedOrder, expectedId) => {
@@ -55,8 +53,8 @@ describe("tableInfo", () => {
 // ---------------------------------------------------------------------------
 
 describe("dataTypeEnum", () => {
-  it("contains exactly 10 data types", () => {
-    expect(dataTypeEnum.options).toHaveLength(10);
+  it("contains exactly 9 data types", () => {
+    expect(dataTypeEnum.options).toHaveLength(9);
   });
 
   it("includes all expected data types", () => {
@@ -70,7 +68,6 @@ describe("dataTypeEnum", () => {
       "metricStream",
       "nutritionDaily",
       "clinicalRecords",
-      "journalEntries",
     ];
     expect(dataTypeEnum.options).toEqual(expected);
   });
@@ -81,8 +78,8 @@ describe("dataTypeEnum", () => {
 // ---------------------------------------------------------------------------
 
 describe("PROVIDER_ACCOUNT_TABLES", () => {
-  it("contains 14 child tables", () => {
-    expect(PROVIDER_ACCOUNT_TABLES).toHaveLength(14);
+  it("contains 13 child tables", () => {
+    expect(PROVIDER_ACCOUNT_TABLES).toHaveLength(13);
   });
 
   it("includes all required child tables", () => {
@@ -97,7 +94,6 @@ describe("PROVIDER_ACCOUNT_TABLES", () => {
     expect(PROVIDER_ACCOUNT_TABLES).toContain("fitness.supplement_dose_event");
     expect(PROVIDER_ACCOUNT_TABLES).toContain("fitness.medication_dose_event");
     expect(PROVIDER_ACCOUNT_TABLES).toContain("fitness.health_event");
-    expect(PROVIDER_ACCOUNT_TABLES).toContain("fitness.journal_entry");
     expect(PROVIDER_ACCOUNT_TABLES).toContain("fitness.dexa_scan");
     expect(PROVIDER_ACCOUNT_TABLES).toContain("fitness.sync_log");
     expect(PROVIDER_ACCOUNT_TABLES).toContain("fitness.activity");
@@ -165,7 +161,6 @@ describe("ProviderDetailRepository", () => {
     ["foodEntries", ["meal", "source_name"]],
     ["healthEvents", ["type", "source_name"]],
     ["clinicalRecords", ["clinical_type", "source_name", "fhir_version"]],
-    ["journalEntries", ["question_slug"]],
     ["bodyMeasurements", ["source_name"]],
     ["metricStream", ["source_type", "channel", "device_id"]],
     ["nutritionDaily", []],
@@ -605,11 +600,6 @@ describe("ProviderDetailRepository", () => {
         orderColumn: "downloaded_at",
         idColumn: "id",
       });
-      expect(tableInfo("journalEntries")).toStrictEqual({
-        table: "fitness.journal_entry",
-        orderColumn: "date",
-        idColumn: "id",
-      });
     });
   });
 
@@ -685,9 +675,9 @@ describe("ProviderDetailRepository", () => {
     });
 
     it("PROVIDER_ACCOUNT_TABLES is an array (not empty array from ArrayDeclaration mutation)", () => {
-      expect(PROVIDER_ACCOUNT_TABLES.length).toBe(14);
+      expect(PROVIDER_ACCOUNT_TABLES.length).toBe(13);
       expect(PROVIDER_ACCOUNT_TABLES[0]).toBe("fitness.daily_metrics");
-      expect(PROVIDER_ACCOUNT_TABLES[13]).toBe("fitness.provider_connection");
+      expect(PROVIDER_ACCOUNT_TABLES[12]).toBe("fitness.provider_connection");
     });
 
     it("tableInfo returns three-key objects (not empty objects from ObjectLiteral mutation)", () => {
@@ -730,11 +720,11 @@ describe("ProviderDetailRepository", () => {
       expect(result).toHaveLength(2);
     });
 
-    it("dataTypeEnum has exactly 10 options", () => {
-      expect(dataTypeEnum.options).toHaveLength(10);
+    it("dataTypeEnum has exactly 9 options", () => {
+      expect(dataTypeEnum.options).toHaveLength(9);
       // Verify first and last entries specifically
       expect(dataTypeEnum.options[0]).toBe("activities");
-      expect(dataTypeEnum.options[9]).toBe("journalEntries");
+      expect(dataTypeEnum.options[8]).toBe("clinicalRecords");
     });
 
     it("PROVIDER_ACCOUNT_TABLES ordering: activity comes before oauth_token", () => {
@@ -760,12 +750,6 @@ describe("ProviderDetailRepository", () => {
   });
 
   describe("getRecordFilterOptions", () => {
-    it("identifies journal question_slug columns for joined filter options", () => {
-      expect(isJournalQuestionSlugFilterColumn("journalEntries", "question_slug")).toBe(true);
-      expect(isJournalQuestionSlugFilterColumn("journalEntries", "date")).toBe(false);
-      expect(isJournalQuestionSlugFilterColumn("activities", "question_slug")).toBe(false);
-    });
-
     it("identifies ClickHouse-backed record filter option data types", () => {
       expect(usesClickHouseRecordFilterOptions("bodyMeasurements")).toBe(true);
       expect(usesClickHouseRecordFilterOptions("metricStream")).toBe(true);
@@ -781,21 +765,6 @@ describe("ProviderDetailRepository", () => {
       expect(result.canonical_type).toEqual([{ value: "running" }, { value: "cycling" }]);
       expect(result.source_name).toEqual([{ value: "running" }, { value: "cycling" }]);
       expect(execute).toHaveBeenCalledTimes(getRecordSelectFilterColumns("activities").length);
-    });
-
-    it("joins journal questions for question_slug labels", async () => {
-      const { repo, execute } = makeRepository([
-        { value: "mood", label: "Mood" },
-        { value: "energy", label: null },
-      ]);
-
-      const result = await repo.getRecordFilterOptions("whoop", "journalEntries");
-
-      const sqlText = stringifyQuery(execute.mock.calls[0]?.[0]);
-      expect(sqlText).toContain("fitness.journal_entry je");
-      expect(sqlText).toContain("fitness.journal_question jq");
-      expect(sqlText).not.toContain("SELECT DISTINCT question_slug AS value");
-      expect(result.question_slug).toEqual([{ value: "mood", label: "Mood" }, { value: "energy" }]);
     });
 
     it("queries ClickHouse for body measurement dropdown values", async () => {

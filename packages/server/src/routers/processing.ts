@@ -121,7 +121,6 @@ const dataQualityOutputSchema = z.object({
         "activity_source_overlap",
         "sync_freshness",
         "outliers",
-        "manual_edits",
       ]),
       label: z.string().min(1),
       status: z.enum(["healthy", "attention", "informational"]),

@@ -1,14 +1,20 @@
 import { captureException } from "dofek/lib/error-reporting";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import { logger } from "../logger.ts";
 import {
   authFailureReasonFromError,
   type ProviderAuthFailureReason,
 } from "../providers/auth-errors.ts";
 import type { SyncDegradation, SyncDegradationKind } from "../sync/sync-degradation.ts";
 import { reportSyncDegradation } from "../sync/sync-degradation-reporting.ts";
+import {
+  AccountErasureUserFencedError,
+  withAccountErasureUserWriteFence,
+} from "./account-erasure.ts";
 import { executeWithSchema } from "./execute-with-schema.ts";
-import type { Database, SyncDatabase, TransactionDatabase } from "./index.ts";
+import type { Database, SyncDatabase } from "./index.ts";
+import { notifyProviderSyncIssue } from "./provider-issue-notification.ts";
 import { type SyncLogOrigin, syncLog } from "./schema/events.ts";
 import { getTokenUserId } from "./token-user-context.ts";
 
@@ -82,7 +88,7 @@ async function insertScheduledFailureAndCount(
     throw new Error("Scheduled sync failure logging requires a transactional database");
   }
 
-  return db.transaction(async (transaction: TransactionDatabase) => {
+  return withAccountErasureUserWriteFence(db, userId, async (transaction) => {
     await transaction.execute(
       sql`SELECT pg_advisory_xact_lock(hashtextextended(${`${userId}:${entry.providerId}`}, 0))`,
     );
@@ -117,6 +123,23 @@ async function insertScheduledFailureAndCount(
   });
 }
 
+async function insertRecoveryAndResetNotification(
+  db: SyncDatabase,
+  entry: SyncLogEntry,
+  userId: string,
+): Promise<void> {
+  if (!hasTransaction(db)) {
+    throw new Error("Provider issue recovery logging requires a transactional database");
+  }
+  await withAccountErasureUserWriteFence(db, userId, async (transaction) => {
+    await insertSyncLog(transaction, entry, userId);
+    await transaction.execute(
+      sql`DELETE FROM fitness.provider_issue_email
+          WHERE user_id = ${userId} AND provider_id = ${entry.providerId}`,
+    );
+  });
+}
+
 /**
  * Record a sync attempt for a specific provider + data type.
  */
@@ -127,6 +150,8 @@ export async function logSync(db: SyncDatabase, entry: SyncLogEntry): Promise<vo
   let consecutiveFailures = 0;
   if (isScheduledTopLevelFailure) {
     consecutiveFailures = await insertScheduledFailureAndCount(db, entry, scopedUserId);
+  } else if (entry.dataType === "sync" && entry.status === "success") {
+    await insertRecoveryAndResetNotification(db, entry, scopedUserId);
   } else {
     await insertSyncLog(db, entry, scopedUserId);
   }
@@ -144,6 +169,23 @@ export async function logSync(db: SyncDatabase, entry: SyncLogEntry): Promise<vo
         error_message: entry.errorMessage,
       },
     });
+  }
+
+  if (entry.dataType === "sync" && entry.status === "error") {
+    if (!hasTransaction(db)) {
+      throw new Error("Provider issue email delivery requires a transactional database");
+    }
+    try {
+      await notifyProviderSyncIssue(db, scopedUserId, entry.providerId);
+    } catch (error: unknown) {
+      if (error instanceof AccountErasureUserFencedError) return;
+      captureException(error, {
+        tags: { provider: entry.providerId, operation: "provider-issue-email" },
+      });
+      logger.error(
+        `[provider-issue-email] Delivery failed for ${entry.providerId}: ${String(error)}`,
+      );
+    }
   }
 }
 

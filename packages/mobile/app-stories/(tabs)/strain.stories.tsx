@@ -130,7 +130,12 @@ function createMockActivities(dates: FixtureDates) {
   ];
 }
 
-function createSeededProviders(hasActivities: boolean, trainingUnavailable: boolean) {
+function createSeededProviders(
+  hasActivities: boolean,
+  trainingUnavailable: boolean,
+  withUnknownClimbingAttempts: boolean,
+  withRecordedClimbingAttempts: boolean,
+) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false, staleTime: Number.POSITIVE_INFINITY } },
   });
@@ -147,7 +152,7 @@ function createSeededProviders(hasActivities: boolean, trainingUnavailable: bool
         timeSeries: [],
       };
   const fixture = mobileTrainingFixtureSchema.parse({
-    input: { days: 30, endDate },
+    input: { days: 90, endDate },
     data: {
       workloadRatio,
       strainTarget: hasActivities
@@ -179,17 +184,61 @@ function createSeededProviders(hasActivities: boolean, trainingUnavailable: bool
           ]
         : [],
       verticalAscent: [],
+      progressiveOverload: [],
       climbing: {
         gradeProgression: [],
-        volumeByGrade: [],
+        volumeByGrade:
+          withUnknownClimbingAttempts || withRecordedClimbingAttempts
+            ? [
+                {
+                  climbType: "boulder",
+                  gradeSystem: "v_scale",
+                  grade: "VB",
+                  gradeSortValue: -1,
+                  attempts: null,
+                  recordedAttempts: withRecordedClimbingAttempts ? 4 : null,
+                  sends: 1,
+                },
+                {
+                  climbType: "boulder",
+                  gradeSystem: "v_scale",
+                  grade: "V0",
+                  gradeSortValue: 0,
+                  attempts: withRecordedClimbingAttempts ? null : 0,
+                  recordedAttempts: 0,
+                  sends: 0,
+                },
+                {
+                  climbType: "boulder",
+                  gradeSystem: "v_scale",
+                  grade: "V1",
+                  gradeSortValue: 1,
+                  attempts: 6,
+                  recordedAttempts: 6,
+                  sends: 5,
+                },
+              ]
+            : [],
         sessionSummary: [],
+        hangboarding: {
+          sessionCount: 0,
+          totalDurationSeconds: 0,
+          averageDurationSeconds: null,
+          totalWorkDurationSeconds: null,
+          totalRestDurationSeconds: null,
+          workIntervalCount: null,
+          averageHeartRate: null,
+          peakHeartRate: null,
+          latestSession: null,
+          daily: [],
+        },
       },
     },
   });
 
   if (!trainingUnavailable) {
     queryClient.setQueryData(
-      [["mobileDashboard", "training"], { input: { days: 30, endDate }, type: "query" }],
+      [["mobileDashboard", "training"], { input: { days: 90, endDate }, type: "query" }],
       fixture.data,
     );
   }
@@ -207,13 +256,22 @@ function MockProviders({
   children,
   trainingUnavailable = false,
   withActivities = false,
+  withUnknownClimbingAttempts = false,
+  withRecordedClimbingAttempts = false,
 }: {
   children: React.ReactNode;
   trainingUnavailable?: boolean;
   withActivities?: boolean;
+  withUnknownClimbingAttempts?: boolean;
+  withRecordedClimbingAttempts?: boolean;
 }) {
   const { queryClient, trpcClient } = useMemo(() => {
-    const seededProviders = createSeededProviders(withActivities, trainingUnavailable);
+    const seededProviders = createSeededProviders(
+      withActivities,
+      trainingUnavailable,
+      withUnknownClimbingAttempts,
+      withRecordedClimbingAttempts,
+    );
     return {
       queryClient: seededProviders.queryClient,
       trpcClient: trpc.createClient({
@@ -226,7 +284,12 @@ function MockProviders({
         ],
       }),
     };
-  }, [trainingUnavailable, withActivities]);
+  }, [
+    trainingUnavailable,
+    withActivities,
+    withUnknownClimbingAttempts,
+    withRecordedClimbingAttempts,
+  ]);
 
   return (
     <trpc.Provider client={trpcClient} queryClient={queryClient}>
@@ -257,6 +320,30 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const Default: Story = {};
+
+export const UnknownClimbingAttemptCounts: Story = {
+  decorators: [
+    (Story) => (
+      <MockProviders withUnknownClimbingAttempts>
+        <View style={{ flex: 1, backgroundColor: "#000" }}>
+          <Story />
+        </View>
+      </MockProviders>
+    ),
+  ],
+};
+
+export const RecordedClimbingAttemptSubtotals: Story = {
+  decorators: [
+    (Story) => (
+      <MockProviders withRecordedClimbingAttempts>
+        <View style={{ flex: 1, backgroundColor: "#000" }}>
+          <Story />
+        </View>
+      </MockProviders>
+    ),
+  ],
+};
 
 export const WithActivities: Story = {
   decorators: [

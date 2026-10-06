@@ -44,7 +44,8 @@ export function QueryStatePanel({
   }
 
   const resolvedTitle =
-    title ?? (variant === "error" ? "Could not load this section" : "No data to display");
+    title ??
+    (variant === "error" ? "Could not load this section" : message ? null : "No data to display");
   const resolvedMessage =
     variant === "error" && message ? userFacingErrorMessage(message) : message;
 
@@ -70,9 +71,11 @@ export function QueryStatePanel({
           !
         </Text>
       ) : null}
-      <Text style={[styles.title, variant === "error" ? styles.errorText : null]}>
-        {resolvedTitle}
-      </Text>
+      {resolvedTitle ? (
+        <Text style={[styles.title, variant === "error" ? styles.errorText : null]}>
+          {resolvedTitle}
+        </Text>
+      ) : null}
       {resolvedMessage ? (
         <Text
           style={[styles.message, variant === "error" ? styles.errorText : styles.emptyMessage]}

@@ -2,7 +2,8 @@ import { TRPCError } from "@trpc/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ActivityRow } from "../models/activity.ts";
 import { ActivityRepository } from "../repositories/activity-repository.ts";
-import { ClimbingActivityEntry, ClimbingRepository } from "../repositories/climbing-repository.ts";
+import { ClimbingActivityEntry } from "../repositories/climbing-activity-entry-repository.ts";
+import { ClimbingRepository } from "../repositories/climbing-repository.ts";
 import { HangboardingRepository } from "../repositories/hangboarding-repository.ts";
 import type {
   ClimbingActivityEntryRow,
@@ -113,6 +114,14 @@ function makeResolvedActivity(id: string, resolvedFrom?: string): ActivityRow {
     subsource: null,
     timezone: "UTC",
     total_distance: null,
+    context: {
+      providerId: "kaya",
+      locationPath: [],
+      board: null,
+      wallAngle: null,
+      climbStyle: null,
+      resultStyle: null,
+    },
   };
 }
 
@@ -140,6 +149,15 @@ describe("climbingRouter", () => {
         location_name: "Pacific Pipe",
         source_name: "Kaya",
         wall_angle_degrees: null,
+        lead: null,
+        context: {
+          providerId: "kaya",
+          locationPath: [],
+          board: null,
+          wallAngle: null,
+          climbStyle: null,
+          resultStyle: null,
+        },
       },
     ]);
 
@@ -164,11 +182,20 @@ describe("climbingRouter", () => {
           locationName: "Pacific Pipe",
           sourceName: "Kaya",
           wallAngleDegrees: null,
+          lead: null,
+          context: {
+            providerId: "kaya",
+            locationPath: [],
+            board: null,
+            wallAngle: null,
+            climbStyle: null,
+            resultStyle: null,
+          },
         },
       ]);
       expect(cachedQueryOptions).toContainEqual({
         maxAge: 3_600_000,
-        keyVersion: "climbing-activity-group-v1",
+        keyVersion: "climbing-activity-context-v2",
       });
     } finally {
       activityLookup.mockRestore();
@@ -193,6 +220,14 @@ describe("climbingRouter", () => {
         lead: null,
         route_name: "Pinch",
         location_name: "The Gym",
+        context: {
+          providerId: "openbeta",
+          locationPath: [],
+          board: null,
+          wallAngle: null,
+          climbStyle: null,
+          resultStyle: null,
+        },
       },
     ]);
 
@@ -214,6 +249,14 @@ describe("climbingRouter", () => {
         lead: null,
         routeName: "Pinch",
         locationName: "The Gym",
+        context: {
+          providerId: "openbeta",
+          locationPath: [],
+          board: null,
+          wallAngle: null,
+          climbStyle: null,
+          resultStyle: null,
+        },
       },
     ]);
   });
@@ -267,6 +310,14 @@ describe("climbingRouter", () => {
             sent: true,
             sourceName: "Kaya",
             wallAngleDegrees: null,
+            context: {
+              providerId: "kaya",
+              locationPath: [],
+              board: null,
+              wallAngle: null,
+              climbStyle: null,
+              resultStyle: null,
+            },
           }),
         ]);
       const { caller } = makeCaller([]);
@@ -336,6 +387,7 @@ describe("climbingRouter", () => {
         grade_system: "yds",
         grade: "5.10c",
         attempts: 3,
+        recorded_attempts: 3,
         sends: 2,
       },
     ]);
@@ -350,6 +402,7 @@ describe("climbingRouter", () => {
         grade: "5.10c",
         gradeSortValue: 64.5,
         attempts: 3,
+        recordedAttempts: 3,
         sends: 2,
       },
     ]);
