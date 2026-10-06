@@ -98,7 +98,7 @@ export function buildClimbingGradeProgression(
           climbingProgressionStyles.indexOf(right.style) ||
         left.gradeSystem.localeCompare(right.gradeSystem),
     )
-    .map((recorded): ClimbingGradeProgressionLane => {
+    .map((recorded) => {
       const grades = [...recorded.grades]
         .map(([grade, gradeSortValue]) => ({ grade, gradeSortValue }))
         .sort(
@@ -114,9 +114,6 @@ export function buildClimbingGradeProgression(
         gradeSystem: recorded.gradeSystem,
         grades,
         settings,
-        axisMax: 1,
-        axisInterval: 1,
-        axisTicks: [0, 1],
         periods: periods.map((period, index) => ({
           ...period,
           settings: settings.map((setting) => {
