@@ -12,7 +12,6 @@ import { captureException } from "../lib/telemetry.ts";
 export function useTimeRangePreference(domain: TimeRangeDomain): {
   days: TimeRangeDays;
   defaultDays: number;
-  description: string;
   setDays: (days: TimeRangeDays) => void;
 } {
   const policy = TIME_RANGE_POLICIES[domain];
@@ -45,7 +44,6 @@ export function useTimeRangePreference(domain: TimeRangeDomain): {
   return {
     days,
     defaultDays: policy.defaultDays,
-    description: policy.description,
     setDays,
   };
 }

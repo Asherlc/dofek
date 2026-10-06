@@ -19,14 +19,11 @@ describe("useTimeRangePreference", () => {
     vi.mocked(AsyncStorage.setItem).mockClear();
   });
 
-  it("uses the canonical domain default and explanation", () => {
+  it("uses the canonical domain default", () => {
     const { result } = renderHook(() => useTimeRangePreference("training"));
 
     expect(result.current.days).toBe(90);
     expect(result.current.isHydrated).toBe(false);
-    expect(result.current.description).toBe(
-      "Recommended default: 90 days balances recent training changes with enough history.",
-    );
   });
 
   it("exposes the restored range only after storage hydration settles", async () => {

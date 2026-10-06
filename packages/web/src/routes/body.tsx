@@ -14,10 +14,10 @@ export const Route = createFileRoute("/body")({
 });
 
 function BodyLayout() {
-  const { days, description, setDays } = useTimeRangePreference("body");
+  const { days, setDays } = useTimeRangePreference("body");
 
   return (
-    <BodyDaysContext.Provider value={{ days, description, setDays }}>
+    <BodyDaysContext.Provider value={{ days, setDays }}>
       <ChartRangeProvider days={days}>
         <PageLayout
           title="Body"

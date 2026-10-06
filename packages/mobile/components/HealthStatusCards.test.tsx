@@ -252,9 +252,6 @@ describe("HealthStatusCards", () => {
       />,
     );
 
-    expect(screen.getByText("WHOOP (Cloud) · 3/30 days · latest 2026-07-30")).toBeTruthy();
-    expect(screen.getByText("7d vs prior 28d")).toBeTruthy();
-
     const detailsButton = screen.getByRole("button", {
       name: "Show details for Blood Oxygen Saturation (SpO2)",
     });

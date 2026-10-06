@@ -39,27 +39,6 @@ function activity(overrides: Partial<ActivityCardData> = {}): ActivityCardData {
 afterEach(cleanup);
 
 describe("ActivityCardContent", () => {
-  it("identifies the primary source and overlapping records", () => {
-    render(
-      <ActivityCardContent
-        activity={activity({
-          source: {
-            primarySourceLabel: "Wahoo",
-            sourceCount: 2,
-            overlapSummary: "2 matched source records · Wahoo selected by source priority",
-          },
-          lastProcessedAt: "2026-07-14T08:59:00.000Z",
-        })}
-        units={units}
-        selectMode={false}
-        selected={false}
-      />,
-    );
-
-    expect(screen.getByText("Wahoo")).toBeDefined();
-    expect(screen.getByText("Source overlap")).toBeDefined();
-  });
-
   it("renders the stored record-local clock time", () => {
     render(
       <ActivityCardContent

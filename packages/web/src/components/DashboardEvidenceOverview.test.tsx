@@ -143,9 +143,6 @@ describe("DashboardEvidenceOverview", () => {
     expect(screen.getByText("Apr 28 - May 27")).toBeTruthy();
     expect(screen.getByText("Key correlation")).toBeTruthy();
     expect(screen.getByText("Server-authored descriptive correlation")).toBeTruthy();
-    expect(
-      screen.getByText("Server interpretation: association does not establish causation."),
-    ).toBeTruthy();
     const observationWindow = screen.getByText("Daily observations");
     expect(observationWindow.parentElement?.textContent).toContain(
       "Observation window: Daily observations",

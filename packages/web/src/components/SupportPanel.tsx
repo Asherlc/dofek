@@ -48,10 +48,6 @@ export function SupportPanel() {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      <p className="text-sm text-muted">
-        Have a question or hit a problem? Send us a message and we'll reply by email.
-      </p>
-
       <div className="space-y-1">
         <label htmlFor="support-subject" className="block text-xs font-medium text-subtle">
           Subject

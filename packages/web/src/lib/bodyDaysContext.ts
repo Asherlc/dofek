@@ -3,7 +3,6 @@ import type { TimeRangeDays } from "./timeRange.ts";
 
 interface BodyDaysContextValue {
   days: TimeRangeDays;
-  description: string;
   setDays: (days: TimeRangeDays) => void;
 }
 

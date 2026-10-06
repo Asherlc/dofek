@@ -89,7 +89,7 @@ function BodySectionUnavailable({ label }: { label: string }) {
 
 export function BodyPage() {
   const units = useUnitConverter();
-  const { days, description, setDays } = useBodyDays();
+  const { days, setDays } = useBodyDays();
   const endDate = useTodayQueryDate();
   const [bodyTrendMetric, setBodyTrendMetric] = useState<"weight" | "bodyFat">("weight");
 
@@ -239,7 +239,7 @@ export function BodyPage() {
   return (
     <>
       <div className="flex justify-end">
-        <TimeRangeSelector days={days} description={description} onChange={setDays} />
+        <TimeRangeSelector days={days} onChange={setDays} />
       </div>
 
       {failedDependencies.length > 0 ? (

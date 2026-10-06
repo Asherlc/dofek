@@ -84,7 +84,7 @@ export function TrainingOverview() {
         <TrainingInsightsPanel days={days} />
       </Section>
 
-      <Section title="Recent Activities" subtitle="All recent training activities">
+      <Section title="Recent Activities">
         <RecentActivitiesSection />
       </Section>
 
@@ -126,18 +126,13 @@ function Section({
   subtitle?: string;
   children: React.ReactNode;
 }) {
-  const description = subtitle ?? `${title} chart.`;
-
   return (
     <section>
       <div className="mb-1 flex items-center gap-2">
         <h2 className="text-sm font-medium text-muted uppercase tracking-wider">{title}</h2>
-        <ChartDescriptionTooltip description={description} />
+        {subtitle && <ChartDescriptionTooltip description={subtitle} />}
       </div>
-      {subtitle && <p className="text-xs text-dim mb-4">{subtitle}</p>}
-      <div className="card p-4" title={description}>
-        {children}
-      </div>
+      <div className="card p-4">{children}</div>
     </section>
   );
 }

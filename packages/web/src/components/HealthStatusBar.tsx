@@ -1,8 +1,4 @@
-import {
-  formatBaselineContext,
-  formatComparisonContext,
-  formatComparisonPeriod,
-} from "@dofek/format/baseline-context";
+import { formatBaselineContext, formatComparisonContext } from "@dofek/format/baseline-context";
 import {
   type FormattedMeasurement,
   type FormattedMeasurementFormatter,
@@ -10,10 +6,7 @@ import {
   formatNumber,
 } from "@dofek/format/format";
 import { formatHealthStatusLabel } from "@dofek/format/health-status";
-import {
-  formatHealthProvenanceSource,
-  formatHealthProvenanceSummary,
-} from "@dofek/providers/health-provenance";
+import { formatHealthProvenanceSource } from "@dofek/providers/health-provenance";
 import type { HealthMetricKey, HealthStatusMetric } from "dofek-server/mobile-dashboard-contracts";
 import type { BaselineRelativeMetric } from "dofek-server/types";
 import { useId, useState } from "react";
@@ -145,9 +138,6 @@ function HealthMetricDetails({
   return (
     <div className="mt-1 text-[11px] text-subtle">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        {provenance ? (
-          <span className="min-w-0">{formatHealthProvenanceSummary(provenance)}</span>
-        ) : null}
         <button
           type="button"
           className="min-h-11 min-w-11 shrink-0 text-left font-medium hover:text-muted"
@@ -264,17 +254,6 @@ export function HealthStatusBar({
                 </div>
                 <div className="font-medium text-foreground">{metric.baselineProgress.action}</div>
               </section>
-            ) : null}
-            {baselineContext ? (
-              <div className="mt-1 text-[10px] text-subtle">
-                {baselineContext.baseline.windowDays}d baseline ·{" "}
-                {formatComparisonPeriod(baselineContext.comparison)}
-              </div>
-            ) : null}
-            {!baselineContext && metric.comparison ? (
-              <div className="mt-1 text-[10px] text-subtle">
-                {formatComparisonPeriod(metric.comparison)}
-              </div>
             ) : null}
             <HealthMetricDetails
               metric={metric}

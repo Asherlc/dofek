@@ -9,7 +9,7 @@ export function OnboardingPage() {
       <section className="rounded-lg border border-border bg-surface-solid p-5 sm:p-8">
         <h1 className="max-w-3xl text-3xl font-bold text-foreground sm:text-4xl">Set up Dofek</h1>
         <p className="mt-4 max-w-2xl text-sm leading-6 text-muted sm:text-base">
-          Choose a goal and connect your health apps. Your dashboard will update as data syncs.
+          Choose a goal and connect your health apps.
         </p>
       </section>
 

@@ -2060,9 +2060,11 @@ describe("explainInsight()", () => {
     whenFalse: { mean: 62, median: 62, stddev: 2, p25: 61, p75: 63, n: 35 },
   };
 
-  it("generates a non-empty explanation for conditional insights", () => {
+  it("describes the observed conditional comparison", () => {
     const result = explainInsight(baseConditional);
-    expect(result.length).toBeGreaterThan(0);
+    expect(result).toBe(
+      "Observed association: On days when you have 7+ hours of sleep, resting heart rate was consistently 4.0 lower (58.0 vs 62.0).",
+    );
   });
 
   it("uses confidence-based frequency word (strong → consistently)", () => {
@@ -2109,7 +2111,9 @@ describe("explainInsight()", () => {
       dataPoints: [],
     };
     const result = explainInsight(correlationInsight);
-    expect(result.length).toBeGreaterThan(0);
+    expect(result).toBe(
+      "Observed association: More steps was associated with lower resting heart rate.",
+    );
   });
 
   it("handles body comp insights with weight change", () => {
@@ -2127,7 +2131,9 @@ describe("explainInsight()", () => {
       whenFalse: { mean: 0.1, median: 0.15, stddev: 0.1, p25: 0.05, p75: 0.2, n: 20 },
     };
     const result = explainInsight(bodyCompInsight);
-    expect(result.length).toBeGreaterThan(0);
+    expect(result).toBe(
+      "Observed association: In months when you get high protein intake, weight generally changed by -0.30 kg/mo vs +0.10 kg/mo without.",
+    );
   });
 
   it("generates explanation for discovery type insights", () => {
@@ -2146,7 +2152,9 @@ describe("explainInsight()", () => {
       dataPoints: [],
     };
     const result = explainInsight(discoveryInsight);
-    expect(result.length).toBeGreaterThan(0);
+    expect(result).toBe(
+      "Observed association: More daily steps was associated with lower resting heart rate.",
+    );
   });
 
   it("formats small differences with 1 decimal place", () => {
@@ -2180,27 +2188,6 @@ describe("explainInsight()", () => {
   it("handles action ending with 'day'", () => {
     const result = explainInsight({ ...baseConditional, action: "cardio day" });
     expect(result).toContain("On days when it's a cardio day,");
-  });
-
-  it("labels correlation explanations as observed associations", () => {
-    const correlationInsight: Omit<Insight, "explanation"> = {
-      id: "corr_prefix",
-      type: "correlation",
-      confidence: "strong",
-      action: "steps",
-      metric: "resting heart rate",
-      message: "",
-      effectSize: -0.6,
-      pValue: 0.001,
-      detail: "Spearman ρ = -0.60, n = 45",
-      whenTrue: { mean: 0, median: 0, stddev: 0, p25: 0, p75: 0, n: 0 },
-      whenFalse: { mean: 0, median: 0, stddev: 0, p25: 0, p75: 0, n: 0 },
-      dataPoints: [],
-    };
-
-    expect(explainInsight(correlationInsight)).toMatch(
-      /^Observed association: .*does not establish causation or prescribe a behavior change\.$/,
-    );
   });
 });
 

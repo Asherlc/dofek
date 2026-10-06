@@ -471,12 +471,6 @@ export default function ActivitiesScreen() {
                         {displayRecordLocalTime(activity.startedAt, activity.localTimeContext)} ·{" "}
                         {formatDurationMinutes(activity.durationMin)}
                       </Text>
-                      <View style={styles.provenanceRow}>
-                        <Text style={styles.sourcePill}>{activity.source.primarySourceLabel}</Text>
-                        {activity.source.overlapSummary ? (
-                          <Text style={styles.overlapPill}>Source overlap</Text>
-                        ) : null}
-                      </View>
                       <ActivityMetricStrip activity={activity} units={units} />
                     </View>
                     {activity.location ? (
@@ -994,35 +988,6 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     fontSize: 12,
     marginTop: 2,
-  },
-  provenanceRow: {
-    alignItems: "center",
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: spacing.xs,
-    marginTop: spacing.xs,
-  },
-  sourcePill: {
-    backgroundColor: colors.surfaceSecondary,
-    borderRadius: radius.sm,
-    color: colors.text,
-    fontSize: 11,
-    fontWeight: "600",
-    overflow: "hidden",
-    paddingHorizontal: spacing.xs,
-    paddingVertical: 2,
-  },
-  overlapPill: {
-    backgroundColor: "rgba(217, 119, 6, 0.12)",
-    borderColor: "rgba(217, 119, 6, 0.4)",
-    borderRadius: radius.sm,
-    borderWidth: 1,
-    color: "#b45309",
-    fontSize: 11,
-    fontWeight: "600",
-    overflow: "hidden",
-    paddingHorizontal: spacing.xs,
-    paddingVertical: 2,
   },
   tileContainer: {
     borderRadius: radius.md,

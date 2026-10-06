@@ -1,13 +1,12 @@
 import { formatRelativeTime } from "@dofek/format/format";
 import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import {
-  PROCESSING_ALERTS_EMPTY_PREVIEW,
+  PROCESSING_ALERTS_EMPTY_MESSAGE,
   type ProcessingAlert,
   processingAlertsFailurePresentation,
 } from "@dofek/providers/processing-alerts";
 import { Link } from "@tanstack/react-router";
 import { useState } from "react";
-import { EmptyStatePreview } from "../components/EmptyStatePreview.tsx";
 import { PageLayout } from "../components/PageLayout.tsx";
 import { PaginationControls } from "../components/PaginationControls.tsx";
 import { QueryStatePanel } from "../components/QueryStatePanel.tsx";
@@ -62,16 +61,13 @@ export function AlertsPage() {
   ) : null;
 
   return (
-    <PageLayout
-      title="Alerts"
-      subtitle="Problems that need your attention appear here until they are resolved"
-    >
+    <PageLayout title="Alerts">
       {alertsQuery.isLoading && !alertsQuery.data ? (
         <QueryStatePanel variant="loading" />
       ) : failurePresentation && (!alertsQuery.data || alerts.length === 0) ? (
         failurePanel
       ) : alertsQuery.data?.alerts.length === 0 ? (
-        <EmptyStatePreview content={PROCESSING_ALERTS_EMPTY_PREVIEW} />
+        <QueryStatePanel variant="empty" message={PROCESSING_ALERTS_EMPTY_MESSAGE} />
       ) : (
         <div className="space-y-3">
           {failurePanel}

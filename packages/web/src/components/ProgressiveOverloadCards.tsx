@@ -74,14 +74,10 @@ export function ProgressiveOverloadCards({ exercises, loading }: ProgressiveOver
               {formatDateMedium(exercise.period.startWeek)} –{" "}
               {formatDateMedium(exercise.period.endWeek)}
             </div>
-            <div className="text-xs text-muted mb-2">
-              {exercise.period.observationCount} recorded weeks across{" "}
-              {exercise.period.elapsedWeekCount} calendar weeks
-            </div>
             <div className="text-xs text-muted mb-1">{uncertaintyLabel(exercise, units)}</div>
-            <div className="text-xs text-muted mb-2">{exercise.uncertainty.statement}</div>
-            <div className="text-xs text-muted mb-1">{exercise.interpretation}</div>
-            <div className="text-xs text-muted mb-2">{exercise.deloadContext}</div>
+            {exercise.uncertainty.availability === "unavailable" ? (
+              <div className="text-xs text-muted mb-2">{exercise.uncertainty.statement}</div>
+            ) : null}
             {exercise.observations.length >= 2 && (
               <SparklineChart
                 values={exercise.observations.map((observation) => observation.totalVolumeKg)}

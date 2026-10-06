@@ -13,8 +13,7 @@ export function SupportPage() {
         ) : (
           <div className="space-y-3 text-sm">
             <p className="text-muted">
-              Sign in or create an account to send a secure support request. This protects your
-              health information and lets our team reply with the relevant account context.
+              Sign in or create an account to send a secure support request.
             </p>
             <a
               href="/login?returnTo=/support"

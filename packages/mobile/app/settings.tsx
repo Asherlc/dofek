@@ -463,7 +463,6 @@ export default function SettingsScreen() {
       {activeCategory === "data-sources" ? (
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Data Sources</Text>
-          <Text style={styles.sectionDescription}>Connect and manage health data providers</Text>
           <View style={styles.healthTrackingCards}>
             <TouchableOpacity
               style={styles.card}
@@ -676,9 +675,6 @@ export default function SettingsScreen() {
       {activeCategory === "notifications" ? (
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Medication Reminders</Text>
-          <Text style={styles.sectionDescription}>
-            Optional daily reminders with imported logging state
-          </Text>
           <View style={styles.card}>
             <MedicationRemindersPanel focusedReminderId={focusedReminderId} />
           </View>
@@ -688,7 +684,6 @@ export default function SettingsScreen() {
       {activeCategory === "notifications" ? (
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Medication Doses</Text>
-          <Text style={styles.sectionDescription}>Review imported medication dose events</Text>
           <View style={styles.card}>
             <MedicationDoseEventsPanel queryResult={medicationDoseEvents} />
           </View>
@@ -699,7 +694,6 @@ export default function SettingsScreen() {
       {activeCategory === "billing" ? (
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Billing</Text>
-          <Text style={styles.sectionDescription}>Manage subscription and data access</Text>
           <View style={styles.card}>
             {billingStatus.isLoading ? (
               <ActivityIndicator color={colors.accent} size="small" />
@@ -717,12 +711,6 @@ export default function SettingsScreen() {
                       )}).`
                     : "Full access is enabled for this account."}
                 </Text>
-                {billingStatus.data.access.kind === "full" &&
-                billingStatus.data.access.reason === "paid_grant" ? (
-                  <Text style={styles.billingDetailText}>
-                    Existing account access is already granted.
-                  </Text>
-                ) : null}
                 {billingStatus.data.access.kind === "full" &&
                 billingStatus.data.access.reason === "stripe_subscription" &&
                 billingStatus.data.stripeSubscriptionStatus ? (
@@ -834,9 +822,6 @@ export default function SettingsScreen() {
       {activeCategory === "goals-models" ? (
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Algorithm Personalization</Text>
-          <Text style={styles.sectionDescription}>
-            Parameters are automatically learned from your data
-          </Text>
           <View style={styles.card}>
             <PersonalizationPanel />
           </View>

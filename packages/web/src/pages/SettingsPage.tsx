@@ -168,19 +168,10 @@ export function SettingsPage() {
                       : "You currently have full access to your data."}
                 </p>
                 <div className="space-y-1">
-                  {billingStatus.data.access.kind === "limited" ? (
-                    <p className="text-xs text-muted">
-                      New data is available only for the most recent 7 calendar days.
-                    </p>
-                  ) : billingStatus.data.access.reason === "stripe_subscription" &&
-                    billingStatus.data.stripeSubscriptionStatus ? (
+                  {billingStatus.data.access.reason === "stripe_subscription" &&
+                  billingStatus.data.stripeSubscriptionStatus ? (
                     <p className="text-xs text-muted">
                       Stripe subscription status: {billingStatus.data.stripeSubscriptionStatus}
-                    </p>
-                  ) : null}
-                  {billingStatus.data.access.reason === "paid_grant" ? (
-                    <p className="text-xs text-muted">
-                      Existing account access is already granted.
                     </p>
                   ) : null}
                 </div>

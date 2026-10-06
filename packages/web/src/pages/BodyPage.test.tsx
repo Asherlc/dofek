@@ -89,7 +89,6 @@ vi.mock("../hooks/useTodayQueryDate.ts", () => ({
 vi.mock("../lib/bodyDaysContext.ts", () => ({
   useBodyDays: () => ({
     days: 30,
-    description: "Recommended default: 30 days keeps recent body changes visible.",
     setDays: vi.fn(),
   }),
 }));

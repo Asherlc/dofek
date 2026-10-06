@@ -615,7 +615,7 @@ describe("EfficiencyRepository.getPolarizationTrend", () => {
       explanation: expect.stringContaining("cycling"),
       method: expect.objectContaining({
         formula: expect.stringContaining("log10"),
-        interpretation: expect.stringContaining("not a physiological or medical assessment"),
+        interpretation: expect.stringContaining("descriptive training-distribution heuristic"),
       }),
     });
   });
@@ -718,7 +718,7 @@ describe("EfficiencyRepository.getPolarizationTrend", () => {
       calculationChoice:
         "Dofek requires recorded time in all three zones and does not calculate the polarization index when high-zone time exceeds easy-zone time.",
       interpretation:
-        "The >2.00 comparison is Treff's descriptive training-distribution heuristic, not a physiological or medical assessment.",
+        "The >2.00 comparison is Treff's descriptive training-distribution heuristic.",
       source: {
         title: "Treff et al. (2019), The Polarization-Index",
         url: "https://doi.org/10.3389/fphys.2019.00707",

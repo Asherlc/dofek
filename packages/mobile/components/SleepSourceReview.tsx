@@ -40,9 +40,6 @@ export function SleepSourceReview({ nights }: { nights: SleepSourceReviewNight[]
       <Text accessibilityRole="header" style={styles.title}>
         Sleep Sources
       </Text>
-      <Text style={styles.description}>
-        See which sleep record is used for each night and compare overlapping records.
-      </Text>
       <View style={styles.nights}>
         {nights.map((night) => {
           const rowKey = night.selectedSessionId ?? night.date;
@@ -67,9 +64,7 @@ export function SleepSourceReview({ nights }: { nights: SleepSourceReviewNight[]
               {mergedSources.length > 0 && (
                 <Text style={styles.mergedSources}>Merged with {mergedSources.join(", ")}</Text>
               )}
-              {overlaps.length === 0 ? (
-                <Text style={styles.noOverlap}>No overlapping sleep records</Text>
-              ) : (
+              {overlaps.length > 0 && (
                 <>
                   <Pressable
                     accessibilityRole="button"
@@ -149,11 +144,6 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
     textTransform: "uppercase",
   },
-  description: {
-    color: colors.textTertiary,
-    fontSize: 12,
-    lineHeight: 17,
-  },
   nights: {
     gap: 12,
   },
@@ -179,11 +169,6 @@ const styles = StyleSheet.create({
   mergedSources: {
     color: colors.textTertiary,
     fontSize: 12,
-  },
-  noOverlap: {
-    color: colors.textTertiary,
-    fontSize: 12,
-    paddingTop: 2,
   },
   reviewButton: {
     alignSelf: "flex-start",

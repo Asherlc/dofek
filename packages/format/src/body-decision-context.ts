@@ -1,9 +1,6 @@
 export const BODY_TREND_WEIGHT_DECISION_COPY =
   "Trend Weight moves 10% toward each selected daily scale reading. Missing days are linearly interpolated; non-positive values are excluded and outliers remain included.";
 
-export const BODY_SOURCE_GUIDANCE =
-  "For comparable readings, use the same scale at a consistent time of day.";
-
 export const BODY_DECISION_CONTEXT_UNAVAILABLE =
   "Measurement decision context is temporarily unavailable. Refresh to try again.";
 
@@ -70,5 +67,5 @@ export function formatBodyDecisionVariation(
     return `Personalized typical measurement variation is unavailable until at least ${variation.minimumObservations} actual scale readings are available.`;
   }
 
-  return `Personalized typical measurement variation is ${formatResidual(variation.lowerResidualKg)} to ${formatResidual(variation.upperResidualKg)} around Trend Weight, based on ${variation.observations} of the latest ${variation.maximumObservations} actual scale readings. This is informational, not a clinical threshold; outliers remain included.`;
+  return `Personalized typical measurement variation is ${formatResidual(variation.lowerResidualKg)} to ${formatResidual(variation.upperResidualKg)} around Trend Weight, based on ${variation.observations} of the latest ${variation.maximumObservations} actual scale readings. Outliers included.`;
 }

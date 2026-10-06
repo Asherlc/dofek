@@ -7,7 +7,7 @@ export interface ActivitySourceDecision {
   explanation: string;
 }
 
-/** Renders the server-authored explanation of how multi-source activity records were combined. */
+/** Renders the source count and primary source for a multi-source activity. */
 export function ActivitySourceDecisionCard({ decision }: { decision: ActivitySourceDecision }) {
   return (
     <View style={styles.sourceDecisionCard}>
@@ -22,7 +22,6 @@ export function ActivitySourceDecisionCard({ decision }: { decision: ActivitySou
           <Text style={styles.sourceDecisionValue}>{decision.primarySourceLabel}</Text>
         </View>
       </View>
-      <Text style={styles.sourceDecisionExplanation}>{decision.explanation}</Text>
     </View>
   );
 }

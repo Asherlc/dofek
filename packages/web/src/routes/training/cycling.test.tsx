@@ -403,11 +403,10 @@ describe("CyclingTab", () => {
     }
   });
 
-  it("uses the server-authored threshold context without estimate evidence", async () => {
+  it("omits method details when estimate evidence is unavailable", async () => {
     state.estimateEvidenceAvailable = false;
     await renderCyclingTab();
 
-    expect(screen.getByText("Server-authored cycling threshold estimate")).toBeTruthy();
     expect(screen.queryByRole("heading", { name: "Estimate method and confidence" })).toBeNull();
   });
 

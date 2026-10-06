@@ -7,34 +7,25 @@ import {
 } from "./time-range.ts";
 
 describe("time range policy", () => {
-  it("defines domain-appropriate defaults with user-facing explanations", () => {
+  it("defines domain-appropriate defaults", () => {
     expect(TIME_RANGE_POLICIES).toEqual({
       body: {
         defaultDays: 30,
-        description: "Recommended default: 30 days keeps recent body changes visible.",
       },
       recovery: {
         defaultDays: 30,
-        description: "Recommended default: 30 days keeps recent recovery changes visible.",
       },
       sleep: {
         defaultDays: 30,
-        description: "Recommended default: 30 days keeps recent sleep patterns visible.",
       },
       training: {
         defaultDays: 90,
-        description:
-          "Recommended default: 90 days balances recent training changes with enough history.",
       },
       nutrition: {
         defaultDays: 90,
-        description:
-          "Recommended default: 90 days provides enough intake and weight history for stable trends.",
       },
       correlation: {
         defaultDays: 365,
-        description:
-          "Recommended default: 1 year provides enough paired observations for longer-term relationships.",
       },
     });
   });

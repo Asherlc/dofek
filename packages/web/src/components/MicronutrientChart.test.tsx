@@ -186,9 +186,7 @@ describe("MicronutrientChart", () => {
 
     const html = String(formatter([{ name: "Iron", value: 67, dataIndex: 0 }]));
 
-    expect(html).toContain(
-      "67% of U.S. Food and Drug Administration (FDA) Daily Value (adequacy reference, not a safety rating)",
-    );
+    expect(html).toContain("67% of U.S. Food and Drug Administration (FDA) Daily Value");
     expect(html).toContain("average over 7 recorded days");
     expect(html).toContain("Food: 12 mg/day");
     expect(html).toContain("Provider daily totals: 0 mg/day");

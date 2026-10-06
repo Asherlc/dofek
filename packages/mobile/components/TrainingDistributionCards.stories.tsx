@@ -18,7 +18,7 @@ const meta = {
         { zone: 5, label: "VO2max", seconds: 150, percent: 2.1 },
       ],
       explanation:
-        "A descriptive view of endurance training time across the Karvonen five-zone heart-rate model. It does not classify training polarization.",
+        "A descriptive view of endurance training time across the Karvonen five-zone heart-rate model.",
     },
     polarization: {
       model: "treff-three-zone",
@@ -35,7 +35,7 @@ const meta = {
         calculationChoice:
           "Dofek requires recorded time in all three zones and does not calculate the polarization index when high-zone time exceeds easy-zone time.",
         interpretation:
-          "The >2.00 comparison is Treff's descriptive training-distribution heuristic, not a physiological or medical assessment.",
+          "The >2.00 comparison is Treff's descriptive training-distribution heuristic.",
         source: {
           title: "Treff et al. (2019), The Polarization-Index",
           url: "https://doi.org/10.3389/fphys.2019.00707",
@@ -53,7 +53,7 @@ const meta = {
           status: "not_polarized",
           statusLabel: "Does not match polarized-pattern heuristic",
           explanation:
-            "This week's recorded cycling distribution is at or below Treff's descriptive 2.00 heuristic. It is not a physiological or medical assessment.",
+            "This week's recorded cycling distribution is at or below Treff's descriptive 2.00 heuristic.",
         },
       ],
     },
@@ -70,8 +70,7 @@ const meta = {
             "Monotony = 7-day mean daily cycling load ÷ population standard deviation of daily cycling load. Strain = weekly cycling load × monotony.",
           calendar: "Monday–Sunday calendar weeks include zero-load days.",
           activityScope: "Cycling activities with computed endurance training load.",
-          interpretation:
-            "These are descriptive workload-variability summaries, not an overtraining diagnosis.",
+          interpretation: "Daily training-load variability within each calendar week.",
           source: {
             title: "Foster (1998), Monitoring training in athletes",
             url: "https://pubmed.ncbi.nlm.nih.gov/9662690/",

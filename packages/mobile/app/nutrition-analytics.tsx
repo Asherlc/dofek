@@ -206,7 +206,7 @@ function LoadingText() {
 // ── Main Screen ──
 
 export default function NutritionAnalyticsScreen() {
-  const { days, description, setDays } = useTimeRangePreference("nutrition");
+  const { days, setDays } = useTimeRangePreference("nutrition");
   const router = useRouter();
   const { refreshing, onRefresh } = useRefresh();
   const adaptiveTdee = trpc.nutritionAnalytics.adaptiveTdee.useQuery({
@@ -242,7 +242,7 @@ export default function NutritionAnalyticsScreen() {
         />
       }
     >
-      <DaySelector days={days} description={description} onChange={setDays} options={DAY_OPTIONS} />
+      <DaySelector days={days} onChange={setDays} options={DAY_OPTIONS} />
 
       {firstError ? (
         <View style={styles.recovery}>
@@ -447,12 +447,7 @@ function MicronutrientAdequacySection({
         textStyle={styles.sectionTitle}
       />
       <Text style={styles.sectionSubtext}>
-        Average over recorded days vs. {DAILY_VALUE_TARGET_LABEL}; not a personalized deficiency or
-        safety assessment
-      </Text>
-      <Text style={styles.sectionSubtext}>
-        The Daily Value target marker and any Tolerable Upper Intake Level (UL) are separate; see
-        each nutrient&apos;s target, source, and safety details below.
+        Average over recorded days vs. {DAILY_VALUE_TARGET_LABEL}
       </Text>
 
       {sorted.map((nutrient) => {

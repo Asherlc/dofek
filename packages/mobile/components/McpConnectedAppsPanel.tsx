@@ -114,10 +114,7 @@ export function McpConnectedAppsPanel() {
   return (
     <View style={styles.panel}>
       <Text style={styles.title}>Connected apps</Text>
-      <Text style={styles.description}>
-        Each app is shown once, even when it refreshes its access token. Disconnect it here to
-        revoke all access.
-      </Text>
+      <Text style={styles.description}>Disconnect an app to revoke all access.</Text>
       {errorMessage ? (
         <Text accessibilityRole="alert" style={styles.error}>
           {errorMessage}
