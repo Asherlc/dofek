@@ -7,7 +7,7 @@ import { scanActiveActivityPredicatePairing } from "./activity-visibility.ts";
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "../..");
 const EFFICIENCY_REPOSITORY_PATH =
   "packages/server/src/repositories/efficiency-repository.ts" as const;
-const SCANNED_PATH_COUNT = 19;
+const SCANNED_PATH_COUNT = 18;
 
 describe("activity visibility predicates", () => {
   it("pairs provider_absent_at filters with deleted_at in scanned sources", () => {

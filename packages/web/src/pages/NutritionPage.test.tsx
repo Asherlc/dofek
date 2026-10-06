@@ -4,12 +4,7 @@ import type { SelectedDateNutritionIntakeContext } from "@dofek/nutrition/select
 import { render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
-import {
-  type FoodEntry,
-  foodEntrySchema,
-  selectedDateFoodSchema,
-  selectedDateFoodV2Schema,
-} from "./NutritionPage";
+import { type FoodEntry, foodEntrySchema, selectedDateFoodV2Schema } from "./NutritionPage";
 
 const foodRefetchMock = vi.fn();
 let foodByDateQuery: {
@@ -358,27 +353,6 @@ describe("foodEntrySchema", () => {
   it("rejects entries with string calories", () => {
     const input = [{ ...makeEntry(), calories: "200" }];
     expect(() => entrySchema.parse(input)).toThrow();
-  });
-});
-
-describe("selectedDateFoodSchema", () => {
-  it("parses the v1 response with a non-null server-owned display summary", () => {
-    const result = selectedDateFoodSchema.parse({
-      entries: [makeEntry()],
-      summary: {
-        calories: 999,
-        mealCalories: { breakfast: 777, lunch: 0, dinner: 0, snack: 0, other: 0 },
-        calorieGoal: { target: 2200, remaining: 1201, over: 0, progressPercentage: 45.4 },
-        macros: {
-          protein: { grams: 88, calories: 352, energySharePercentage: 35 },
-          carbs: { grams: 111, calories: 444, energySharePercentage: 45 },
-          fat: { grams: 22, calories: 198, energySharePercentage: 20 },
-        },
-      },
-    });
-
-    expect(result.summary.calories).toBe(999);
-    expect(result.summary.mealCalories.breakfast).toBe(777);
   });
 });
 

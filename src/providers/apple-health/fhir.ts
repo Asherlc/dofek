@@ -433,20 +433,3 @@ export function parseFhirAllergyIntolerance(
     raw: { ...resource },
   };
 }
-
-/**
- * Build a map from Observation FHIR ID -> panel name, using DiagnosticReports.
- * @deprecated Use parseFhirDiagnosticReport instead — panels are now stored as first-class rows.
- */
-export function buildPanelMap(reports: FhirDiagnosticReport[]): Map<string, string> {
-  const map = new Map<string, string>();
-  for (const report of reports) {
-    const panelName = getDisplayName(report.code);
-    for (const ref of report.result ?? []) {
-      // reference format: "Observation/obs-id-here"
-      const obsId = ref.reference.replace(/^Observation\//, "");
-      map.set(obsId, panelName);
-    }
-  }
-  return map;
-}

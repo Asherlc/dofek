@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { BodyClickHouseStore } from "./body-clickhouse.ts";
 import {
-  fetchBodyComparisonRows,
   fetchBodyCompProvenanceRows,
   fetchBodyCompRows,
   fetchBodyDecisionMeasurements,
@@ -210,25 +209,5 @@ describe("fetchBodyCompRows", () => {
       endDate: "now",
       days: 90,
     });
-  });
-});
-
-describe("fetchBodyComparisonRows", () => {
-  it("treats now expressions as the open-ended comparison window", async () => {
-    const calls: Array<{ query: string; params?: Record<string, unknown> }> = [];
-    const store: BodyClickHouseStore = {
-      async query(_schema, query, params) {
-        calls.push({ query, params });
-        return [];
-      },
-    };
-
-    await fetchBodyComparisonRows(store, "user-1", "UTC", "2026-01-01", "now", 30);
-    await fetchBodyComparisonRows(store, "user-1", "UTC", "2026-01-01", "NOW()", 30);
-
-    for (const call of calls) {
-      expect(call.query).toContain("AND local_date <= today()");
-      expect(call.query).not.toContain("AND local_date <= toDate({endDate:String})");
-    }
   });
 });

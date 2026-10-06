@@ -4,7 +4,6 @@ import {
   PRIMARY_GOAL_SETTINGS_KEY,
   parsePrimaryGoal,
   primaryGoalIds,
-  primaryGoalLabel,
 } from "./primary-goal";
 
 describe("PRIMARY_GOAL_OPTIONS", () => {
@@ -70,15 +69,5 @@ describe("parsePrimaryGoal", () => {
     expect(parsePrimaryGoal("")).toBeNull();
     expect(parsePrimaryGoal("loseWeight")).toBeNull();
     expect(parsePrimaryGoal(42)).toBeNull();
-  });
-});
-
-describe("primaryGoalLabel", () => {
-  it("returns the display label for a known goal", () => {
-    expect(primaryGoalLabel("weightTrend")).toBe("Weight trend");
-  });
-
-  it("falls back to the raw id for unknown values", () => {
-    expect(primaryGoalLabel("unknown")).toBe("unknown");
   });
 });

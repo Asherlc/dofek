@@ -6,7 +6,7 @@ import { executeWithSchema } from "../lib/typed-sql.ts";
 import {
   createOrGetCompanionToken,
   listActiveCompanionTokens,
-  regenerateCompanionToken,
+  regenerateCompanionTokenInTransaction,
   revokeCompanionToken,
   validateCompanionToken,
 } from "./token-repository.ts";
@@ -65,7 +65,11 @@ describe("companion token repository (integration)", () => {
     );
 
     try {
-      await expect(regenerateCompanionToken(ctx.db, testUserId)).rejects.toThrow();
+      await expect(
+        ctx.db.transaction((transaction) =>
+          regenerateCompanionTokenInTransaction(transaction, testUserId),
+        ),
+      ).rejects.toThrow();
     } finally {
       await ctx.db.execute(
         sql.raw("DROP TRIGGER fail_companion_token_insert ON fitness.companion_token"),
@@ -80,7 +84,9 @@ describe("companion token repository (integration)", () => {
     const previous = await createOrGetCompanionToken(ctx.db, testUserId);
     if (!previous.token) throw new Error("Failed to create initial companion token");
 
-    const replacement = await regenerateCompanionToken(ctx.db, testUserId);
+    const replacement = await ctx.db.transaction((transaction) =>
+      regenerateCompanionTokenInTransaction(transaction, testUserId),
+    );
 
     if (!replacement.token) throw new Error("Regeneration did not return a replacement token");
     expect(await validateCompanionToken(ctx.db, previous.token)).toBeNull();
@@ -159,8 +165,12 @@ describe("companion token repository (integration)", () => {
     const results = await (async () => {
       try {
         return await Promise.all([
-          regenerateCompanionToken(ctx.db, testUserId),
-          regenerateCompanionToken(ctx.db, testUserId),
+          ctx.db.transaction((transaction) =>
+            regenerateCompanionTokenInTransaction(transaction, testUserId),
+          ),
+          ctx.db.transaction((transaction) =>
+            regenerateCompanionTokenInTransaction(transaction, testUserId),
+          ),
         ]);
       } finally {
         await ctx.db.execute(

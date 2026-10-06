@@ -10,7 +10,6 @@ import {
   ProviderDetailRepository,
   SYNC_LOG_FILTER_OPTION_FIELDS,
   tableInfo,
-  usesClickHouseRecordFilterOptions,
 } from "./provider-detail-repository.ts";
 
 // ---------------------------------------------------------------------------
@@ -749,12 +748,6 @@ describe("ProviderDetailRepository", () => {
   });
 
   describe("getRecordFilterOptions", () => {
-    it("identifies ClickHouse-backed record filter option data types", () => {
-      expect(usesClickHouseRecordFilterOptions("bodyMeasurements")).toBe(true);
-      expect(usesClickHouseRecordFilterOptions("metricStream")).toBe(true);
-      expect(usesClickHouseRecordFilterOptions("activities")).toBe(false);
-    });
-
     it("queries distinct postgres values for categorical record columns", async () => {
       const { repo, execute } = makeRepository([{ value: "running" }, { value: "cycling" }]);
 

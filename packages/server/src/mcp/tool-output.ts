@@ -853,7 +853,6 @@ const trainingLoadResultSchema = z.object({
     }),
   ),
 });
-export const trainingLoadOutputSchema = jsonResult(trainingLoadResultSchema);
 export const trainingLoadToolOutputSchema = jsonResult(
   z.union([trainingLoadResultSchema, analyticalTrainingLoadOutputSchema.shape.result]),
 );
