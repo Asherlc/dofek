@@ -43,8 +43,13 @@ can run on macOS without watch hardware:
 
 ```bash
 cd packages/mobile/targets/DofekWatch
-swift test
+swift test --scratch-path ../../../../.context/dofek-watch-transfer-core
 ```
+
+Keep SwiftPM output outside the Watch target's synchronized source folder.
+SwiftPM's [`--scratch-path` option](https://github.com/swiftlang/swift-package-manager/blob/main/Sources/CoreCommands/Options.swift)
+selects a separate build directory; otherwise Xcode includes the generated
+files through [Apple Targets' synchronized folder](https://github.com/EvanBacon/expo-apple-targets/blob/main/packages/apple-targets/src/with-xcode-changes.ts).
 
 The remaining recorder, transfer, lifecycle, and Watch Connectivity behavior
 must also be exercised through the generated watchOS target. Validate sensor

@@ -30637,6 +30637,85 @@ The [Expo core](https://github.com/Asherlc/dofek/pull/2845) and
 a coordinated [SDK 58 beta migration](https://expo.dev/changelog/sdk-58-beta);
 its native compatibility and CI validation remain required before merge.
 
+SDK 58 alignment also exposed changed FileSystem operations: `readBytes()` and
+`write()` now return promises. Deferred-read and multipart-write regression
+tests reproduced the ordering failures before the callers were updated to
+await completion. The SDK's changed native ref types and required peer
+dependencies were migrated together, following the
+[Expo upgrade guide](https://docs.expo.dev/workflow/upgrading-expo-sdk-walkthrough/).
+The native runtime version advances to 1.3 because
+[OTA updates must match their native runtime](https://docs.expo.dev/eas-update/runtime-versions/).
+
+The HealthKit coverage command, `bash scripts/check-coverage.sh`, ran its 91
+Swift tests successfully but failed in Xcode 27 with `error: failed to load
+coverage: '.build/debug/HealthKitLibPackageTests.xctest/Contents/MacOS/HealthKitLibPackageTests':
+No such file or directory`. SwiftPM now emitted
+`.build/out/Products/Debug/codecov/HealthKitLib.json`; the script had assumed
+an obsolete executable layout. The durable TypeScript runner asks
+[`swift test --show-codecov-path`](https://github.com/swiftlang/swift-package-manager/blob/main/Sources/PackageManagerDocs/Documentation.docc/SwiftTest.md)
+for the actual coverage artifact and retains both 90% thresholds. Five CLI
+regression tests pass; actual coverage is 294/318 lines (92.45%) and 13/14
+functions (92.86%). Standalone watch tests use an external
+[`--scratch-path`](https://github.com/swiftlang/swift-package-manager/blob/main/Sources/PackageManagerDocs/Documentation.docc/SwiftTest.md)
+so their generated files cannot enter the filesystem-synchronized app target.
+
+The signed Release simulator command, `xcodebuild -workspace
+ios/Dofek.xcworkspace -scheme Dofek -configuration Release -destination
+'platform=iOS Simulator,id=DFB64DA2-5591-4C0F-92F8-8A39142736F7' build`, first
+failed at `RNSentry.h:10` with `'Sentry/Sentry.h' file not found` in the local
+WatchMotion, HealthKit, and AppStoreBilling pods. Their existing RNSentry
+dependencies were correct, but the upstream package supplied private framework
+paths without a declared binary CocoaPod; CocoaPods could not export the
+framework to transitive consumers. Updating to
+[React Native Sentry 8.29.0](https://github.com/getsentry/sentry-react-native/releases/tag/8.29.0)
+alone did not repair that metadata gap. The package patch now declares one
+exact Sentry dependency, and Expo registers a declarative
+[`extraPods` podspec](https://docs.expo.dev/versions/latest/sdk/build-properties/#extraiospoddependency)
+with [`vendored_frameworks`](https://guides.cocoapods.org/syntax/podspec.html#vendored_frameworks).
+Its single Cocoa 9.30.0 artifact URL and SHA256 match Sentry's
+[official Swift package manifest](https://github.com/getsentry/sentry-cocoa/blob/9.30.0/Package.swift);
+the watch package uses that same native SDK version.
+
+All three consumer builds then passed, but the full app link exposed duplicate
+symbols from loading the same Sentry archive through both CocoaPods' framework
+link and the previous `force_load` flag. Exact-link probes reproduced that
+conflict and verified that a single framework link with inherited `-ObjC`
+retains the Replay network-capture category and Swift metadata
+([Apple category-linking guidance](https://developer.apple.com/library/archive/qa/qa1490/_index.html),
+[Swift compiler guidance](https://forums.swift.org/t/linker-flag-objc-force-loads-swift-libraries/47466/3)).
+The final patch removes the redundant archive load and all manual framework
+download, slice selection, and search-path handling. CocoaPods now exports
+the selected framework to all three consumers. No scanning or linker
+validation was disabled.
+
+The final current-main SDK snapshot passes all four TypeScript projects, full
+lint, Knip, workflow lint, strict production audit, dependency-security checks,
+19,111 unit/mobile tests, iOS export, clean prebuild and pod installation, and a
+signed Release build for both simulator architectures including the watch app.
+The signed SDK baseline also passed password signup through the real isolated
+API and a hard app restart on a fresh simulator. SecureStore restored the
+session directly to Today with the five expected tabs; captured runtime logs
+had no keychain or session errors. Its native MapKit view rendered the synthetic
+route and distinct Start/Finish pins. Scrubbing the elevation chart displayed
+the route hover marker, and releasing the touch cleared it. Production accounts
+and data were not used. Fresh CI and the separate latest-maps native/runtime
+validation remain pending.
+
+Current-main CI's [Mobile Storybook job](https://github.com/Asherlc/dofek/actions/runs/37420553852/job/112129019035)
+failed `pnpm storybook:mobile:build` with `[UNLOADABLE_DEPENDENCY] Could not
+load react-native-web/asset-registry`. Expo now imports the public
+[React Native asset-registry entry point](https://github.com/react/react-native/blob/v0.88.0-rc.3/packages/react-native/src/asset-registry.js);
+the framework's broad React Native alias incorrectly rewrote that subpath.
+The latest [SVG resolver](https://github.com/software-mansion/react-native-svg/blob/v15.15.5/src/lib/resolveAssetUri.ts)
+also imports the older registry package, which the
+[React Native 0.88 manifest](https://github.com/react/react-native/blob/v0.88.0-rc.3/packages/react-native/package.json)
+no longer supplies. The Storybook configuration now maps both published asset
+imports to the same existing
+[React Native Web registry](https://github.com/necolas/react-native-web/blob/0.21.3/packages/react-native-web/src/modules/AssetRegistry/index.js).
+Its [post configuration hook](https://vite.dev/guide/api-plugin.html#plugin-ordering)
+applies after the framework's alias configuration. The unchanged build command
+now succeeds locally; no asset implementation, dependency, or excluded check was added.
+
 Local full lint initially failed because the required ClickHouse service had
 not started. The exact prerequisite command, `pnpm compose:up`, then failed
 with `all predefined address pools have been fully subnetted`. Inspection found

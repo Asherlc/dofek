@@ -218,7 +218,7 @@
     "storybook:build": "pnpm --filter dofek-web build-storybook",
     "storybook:web": "pnpm --filter dofek-web storybook",
     "storybook:web:build": "pnpm --filter dofek-web build-storybook",
-    "storybook:mobile": "pnpm --filter dofek-mobile storybook",
+    "storybook:mobile": "pnpm --filter dofek-mobile storybook:native",
     "storybook:mobile:ios": "pnpm --filter dofek-mobile storybook:ios",
     "storybook:mobile:web": "pnpm --filter dofek-mobile storybook:web",
     "storybook:mobile:build": "pnpm --filter dofek-mobile build-storybook",

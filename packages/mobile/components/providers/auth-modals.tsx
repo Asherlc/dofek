@@ -7,6 +7,7 @@ import {
   Modal,
   Text,
   TextInput,
+  type TextInputInstance,
   TouchableOpacity,
   View,
 } from "react-native";
@@ -41,7 +42,7 @@ export function CredentialAuthModal({
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const emailRef = useRef<TextInput>(null);
+  const emailRef = useRef<TextInputInstance>(null);
   const signInDisabled = loading || !username.trim() || !password;
   const signInHint = credentialSubmitHint(username, password, loading);
 
@@ -155,7 +156,7 @@ export function TokenAuthModal({
   const [token, setToken] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const tokenRef = useRef<TextInput>(null);
+  const tokenRef = useRef<TextInputInstance>(null);
   const connectDisabled = loading || !token;
   const connectHint = !loading && !token ? `Paste your ${tokenLabel} to continue.` : null;
   const connectMutation = trpc.tokenAuth.connect.useMutation();
@@ -316,7 +317,7 @@ export function GarminAuthModal({
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const emailRef = useRef<TextInput>(null);
+  const emailRef = useRef<TextInputInstance>(null);
   const signInDisabled = loading || !username.trim() || !password;
   const signInHint = credentialSubmitHint(username, password, loading);
 
@@ -434,8 +435,8 @@ export function WhoopAuthModal({
   const [challengeId, setChallengeId] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const emailRef = useRef<TextInput>(null);
-  const codeRef = useRef<TextInput>(null);
+  const emailRef = useRef<TextInputInstance>(null);
+  const codeRef = useRef<TextInputInstance>(null);
   const credentialSignInDisabled = loading || !username.trim() || !password;
   const credentialSignInHint = credentialSubmitHint(username, password, loading);
   const verificationDisabled = loading || !code;

@@ -42,10 +42,10 @@ index 0000000000000000000000000000000000000000..01de395aa97f242e931d4dbdd788c7c9
 +  }
 +}
 diff --git a/ios/AppleAuthenticationRequest.swift b/ios/AppleAuthenticationRequest.swift
-index d933f9cd222e75b7988cf11723f77dbf9316b5f1..d03893bf34a37b2193b5ffe1f3b2ee0f1e860129 100644
+index d869fd939d59231dc597bbc19c75e33fd7ec3932..fc5c6cffc213d73a490f59716df92df170a28a86 100644
 --- a/ios/AppleAuthenticationRequest.swift
 +++ b/ios/AppleAuthenticationRequest.swift
-@@ -66,12 +66,14 @@ final class AppleAuthenticationRequest: NSObject, ASAuthorizationControllerPrese
+@@ -72,12 +72,14 @@ final class AppleAuthenticationRequest: NSObject, ASAuthorizationControllerPrese
    }
  
    func authorizationController(controller: ASAuthorizationController, didCompleteWithError error: Error) {

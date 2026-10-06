@@ -14,7 +14,14 @@ import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { shouldShowBlockingLoading } from "@dofek/scoring/loading-policy";
 import { sleepDebtColor } from "@dofek/scoring/scoring";
 import { useRef } from "react";
-import { RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import {
+  RefreshControl,
+  ScrollView,
+  type ScrollViewInstance,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 import { ChartTitleWithTooltip } from "../components/ChartTitleWithTooltip";
 import { Hypnogram } from "../components/charts/Hypnogram";
 import { SleepBar } from "../components/charts/SleepBar";
@@ -115,7 +122,7 @@ function renderStageContent(night: SleepNightlyRow, compact = false) {
 }
 
 export default function SleepScreen() {
-  const scrollViewRef = useRef<ScrollView>(null);
+  const scrollViewRef = useRef<ScrollViewInstance>(null);
   const sleepSourcesYRef = useRef(0);
   const { days, description, setDays } = useTimeRangePreference("sleep");
   const sleepQuery = trpc.recovery.sleepAnalytics.useQuery({ days });

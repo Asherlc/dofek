@@ -17,6 +17,10 @@ This package currently supports iOS 16.4 or later. It is not affiliated with,
 endorsed by, or supported by WHOOP. The protocol is undocumented and may change
 without notice.
 
+Library development uses the same `expo-modules-core` version as the Dofek app.
+Consumers supply the compatible runtime through their Expo SDK, following
+Expo's [native library dependency guidance](https://docs.expo.dev/modules/existing-library/).
+
 Protocol details and provenance are documented in
 [`docs/whoop-ble-protocol.md`](../../../../docs/whoop-ble-protocol.md).
 Native Swift applications can use the separately tagged
