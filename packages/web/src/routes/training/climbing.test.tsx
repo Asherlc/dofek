@@ -45,8 +45,10 @@ vi.mock("../../components/HangboardingSummary.tsx", () => ({
 }));
 
 vi.mock("../../components/QueryStatePanel.tsx", () => ({
-  QueryStatePanel: ({ error }: { error?: Error | null }) => (
-    <div>{error ? `Error: ${error.message}` : "Query state"}</div>
+  QueryStatePanel: ({ error, variant }: { error?: Error | null; variant?: string }) => (
+    <div>
+      {error ? `Error: ${error.message}` : variant === "loading" ? "Loading data." : "Query state"}
+    </div>
   ),
 }));
 
@@ -71,6 +73,14 @@ async function importClimbingTab() {
 }
 
 describe("ClimbingTab", () => {
+  it("shows a loading panel while filtered sessions are first fetched", async () => {
+    sessionSummaryQuery.mockReturnValue({ data: undefined, isLoading: true, error: null });
+    const ClimbingTab = await importClimbingTab();
+    render(<ClimbingTab />);
+    fireEvent.click(screen.getByRole("button", { name: "All climbing" }));
+    fireEvent.change(screen.getByLabelText("Style"), { target: { value: "lead" } });
+    expect(screen.getByText("Loading data.")).toBeTruthy();
+  });
   it("keeps cached session rows visible while a filtered request fails", async () => {
     sessionSummaryQuery.mockReturnValue({
       data: [

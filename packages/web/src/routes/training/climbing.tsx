@@ -203,7 +203,7 @@ export function ClimbingTab() {
           ) : null}
           {Object.keys(filters).length ? (
             sessionSummary.isLoading && !sessionSummary.data ? (
-              <QueryStatePanel />
+              <QueryStatePanel variant="loading" />
             ) : sessionSummary.error && !sessionSummary.data ? null : (
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-sm">
