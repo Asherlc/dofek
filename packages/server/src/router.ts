@@ -52,7 +52,6 @@ import { sleepNeedRouter } from "./routers/sleep-need.ts";
 import { sportSettingsRouter } from "./routers/sport-settings.ts";
 import { strengthRouter } from "./routers/strength.ts";
 import { stressRouter } from "./routers/stress.ts";
-import { supplementsRouter } from "./routers/supplements.ts";
 import { supportRouter } from "./routers/support.ts";
 import { syncRouter } from "./routers/sync.ts";
 import { todayPlanRouter } from "./routers/today-plan.ts";
@@ -85,7 +84,6 @@ const appRouterProcedures = {
   nutritionAnalytics: nutritionAnalyticsRouter,
   insights: insightsRouter,
   mobileDashboard: mobileDashboardRouter,
-  supplements: supplementsRouter,
   providerDetail: providerDetailRouter,
   providerGuide: providerGuideRouter,
   sync: syncRouter,

@@ -19,7 +19,6 @@ import {
  * - efficiency (aerobicDecoupling, polarizationTrend)
  * - cycling-advanced (pedalDynamics)
  * - power (powerCurve, eftpTrend)
- * - supplements (list)
  * - trends (daily, weekly via ClickHouse read models)
  * - settings (get, set, getAll, slackStatus)
  * - sync (providers, providerStats, logs, syncStatus)
@@ -786,14 +785,6 @@ describe("Router data coverage", () => {
   });
 
   // ══════════════════════════════════════════════════════════════
-  // Supplements — list
-  // ══════════════════════════════════════════════════════════════
-  describe("supplements", () => {
-    it("list returns an array (possibly empty)", async () => {
-      const result = await query<unknown[]>("supplements.list");
-      expect(Array.isArray(result)).toBe(true);
-    });
-  });
 
   // ══════════════════════════════════════════════════════════════
   // Trends — daily and weekly from ClickHouse read models

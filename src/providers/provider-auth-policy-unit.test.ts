@@ -1,9 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-  checkPerUserAuthCompliance,
-  isImportOnlyProvider,
-  requiresPerUserConnect,
-} from "./provider-auth-policy.ts";
+import { checkPerUserAuthCompliance, isImportOnlyProvider } from "./provider-auth-policy.ts";
 import type { Provider, ProviderAuthSetup } from "./types.ts";
 
 function stubProvider(overrides: Partial<Provider> = {}): Provider {
@@ -15,14 +11,6 @@ function stubProvider(overrides: Partial<Provider> = {}): Provider {
     ...overrides,
   };
 }
-
-describe("requiresPerUserConnect", () => {
-  it("only exempts internal providers", () => {
-    expect(requiresPerUserConnect("ultrahuman")).toBe(true);
-    expect(requiresPerUserConnect("auto-supplements")).toBe(false);
-    expect(requiresPerUserConnect("amazfit-zepp")).toBe(true);
-  });
-});
 
 describe("isImportOnlyProvider", () => {
   it("detects import-only providers", () => {
@@ -42,11 +30,6 @@ describe("checkPerUserAuthCompliance", () => {
 
   it("accepts import-only providers without authSetup", () => {
     const provider = stubProvider({ id: "strong-csv", name: "Strong", importOnly: true as const });
-    expect(checkPerUserAuthCompliance(provider)).toEqual({ ok: true });
-  });
-
-  it("accepts internal providers without authSetup", () => {
-    const provider = stubProvider({ id: "auto-supplements", name: "Auto Supplements" });
     expect(checkPerUserAuthCompliance(provider)).toEqual({ ok: true });
   });
 
