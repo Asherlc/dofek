@@ -116,6 +116,31 @@ Fix pattern:
 2. Add or update tests that assert the mirror table includes PeerDB metadata.
 3. Rerun the deploy; do not bypass CDC setup.
 
+## Known Failure: Missing Activity Ends Become Epoch Timestamps
+
+Compare source `fitness.activity.ended_at IS NULL` with the same IDs in
+`postgres_fitness.activity FINAL`. A non-nullable destination converts missing
+timestamps into defaults; this can produce negative durations and corrupt load
+analytics. PeerDB documents [nullable column mapping](https://clickhouse.com/blog/postgres-to-clickhouse-data-modeling-tips).
+
+CDC setup persists `PEERDB_NULLABLE=true` in the PeerDB catalog's
+`public.dynamic_settings`; no application environment variable is required.
+PeerDB resolves this catalog setting after mirror-specific overrides, and its
+application mode is new mirrors: [versioned configuration implementation](https://github.com/PeerDB-io/peerdb/blob/v0.36.19/flow/internal/dynamicconf.go).
+Migration 0101 restores nullable raw and deduplicated activity end columns;
+the deployment schema validator rejects a non-nullable activity end column.
+Changing the type does not repair existing defaults: [ClickHouse Nullable](https://clickhouse.com/docs/sql-reference/data-types/nullable).
+
+For an existing mirror, capture exact mismatched source IDs, restore only those
+raw values from Postgres, and confirm a subsequent CDC update preserves NULL.
+Then rebuild the affected activity source records, deduplicated activities,
+summary rows, and daily endurance load. Use the existing user/activity refresh
+scope for activity models; do not put historical repair in runtime setup.
+Verify unknown ends remain NULL, no active duration is negative, obsolete load
+rows are tombstoned, and registered chart caches are recomputed. Missing ends
+are excluded from duration/load totals; the bounded sensor search window must
+not become a fabricated duration. dbt supports [incremental model execution](https://docs.getdbt.com/docs/build/incremental-models).
+
 ## Known Failure: Deploy Migration Timeout
 
 Symptom:

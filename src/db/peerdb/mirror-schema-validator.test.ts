@@ -45,7 +45,12 @@ function clickHouseClient(columns: string[]) {
     async query() {
       return {
         async json() {
-          return columns.map((name) => ({ database: "destination", name, table: "daily_metrics" }));
+          return columns.map((name) => ({
+            database: "destination",
+            name,
+            table: "daily_metrics",
+            type: "String",
+          }));
         },
       };
     },

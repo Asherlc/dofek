@@ -235,7 +235,7 @@ merged AS (
         ) AS provider_type,
         any(best.modality) AS modality,
         minIf(ranked.started_at, ranked.activity_id IS NOT null) AS started_at,
-        maxIf(coalesce(ranked.ended_at, ranked.started_at + INTERVAL 12 HOUR), ranked.activity_id IS NOT null) AS ended_at,
+        maxIf(ranked.ended_at, ranked.activity_id IS NOT null) AS ended_at,
         any(best.source_name) AS source_name,
         tupleElement(any(tuple(best.name)), 1) AS name,
         argMinIf(
