@@ -23,10 +23,6 @@ export function initProductionPostHog(serviceName = SERVER_DISTINCT_ID): void {
   client.register({ service: serviceName });
 }
 
-export function getPostHogClient(): PostHog | undefined {
-  return client;
-}
-
 export function capturePostHogException(
   error: unknown,
   distinctId = SERVER_DISTINCT_ID,
@@ -37,12 +33,4 @@ export function capturePostHogException(
   }
 
   client.captureException(error, distinctId, additionalProperties);
-}
-
-export async function shutdownPostHog(): Promise<void> {
-  if (!client) {
-    return;
-  }
-
-  await client.shutdown();
 }

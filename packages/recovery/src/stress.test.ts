@@ -4,11 +4,14 @@ import {
   computeDailyStress,
   computeStressTrend,
   type DailyStressInput,
-  defaultStressThresholds,
+  type StressThresholds,
 } from "./stress.ts";
 
 describe("computeDailyStress", () => {
-  const defaults = defaultStressThresholds();
+  const defaults: StressThresholds = {
+    hrvThresholds: [-2.0, -1.5, -1.0],
+    rhrThresholds: [2.0, 1.5, 1.0],
+  };
 
   it("returns 0 stress when all metrics are at baseline", () => {
     const input: DailyStressInput = {

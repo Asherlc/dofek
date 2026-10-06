@@ -11,6 +11,7 @@ if TYPE_CHECKING:
 
 import pandas as pd
 import pyarrow as pa
+import pyarrow.parquet as pq
 import pytest
 
 from dofek_ml.data_loading import (
@@ -28,7 +29,7 @@ from dofek_ml.data_loading import (
     read_parquet_r2,
     validate_parquet_schema,
 )
-from dofek_ml.parquet_io import read_schema, write_table
+from dofek_ml.parquet_io import read_schema
 
 # ---------------------------------------------------------------------------
 # Shared test data for the new metric_stream format (Parquet)
@@ -108,7 +109,7 @@ def _build_sample_parquet_table() -> pa.Table:
 def _write_sample_parquet(path: Path) -> None:
     """Write the sample sensor data as a Parquet file."""
     table: pa.Table = _build_sample_parquet_table()
-    write_table(table, path)
+    pq.write_table(table, path)
 
 
 def _parquet_bytes() -> bytes:
@@ -117,7 +118,7 @@ def _parquet_bytes() -> bytes:
 
     table: pa.Table = _build_sample_parquet_table()
     buffer: io.BytesIO = io.BytesIO()
-    write_table(table, buffer)
+    pq.write_table(table, buffer)
     return buffer.getvalue()
 
 
@@ -156,7 +157,7 @@ class TestValidateParquetSchema:
             }
         )
         filepath: Path = tmp_path / "incomplete.parquet"
-        write_table(table, filepath)
+        pq.write_table(table, filepath)
         schema: pa.Schema = read_schema(filepath)
         with pytest.raises(ValueError, match="missing required columns"):
             validate_parquet_schema(schema)

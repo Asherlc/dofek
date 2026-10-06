@@ -6,7 +6,6 @@ import {
 } from "./food-entry-create-repository.ts";
 import {
   DailyNutritionSummary as DailyNutritionSummaryModel,
-  FoodEntry as FoodEntryModel,
   type FoodEntryRow as FoodEntryRowData,
   foodEntryRowSchema as foodEntrySchema,
 } from "./food-entry-models.ts";
@@ -18,8 +17,6 @@ import { FoodReadRepository } from "./food-read-repository.ts";
 
 export const DailyNutritionSummary = DailyNutritionSummaryModel;
 export type DailyNutritionSummary = DailyNutritionSummaryModel;
-export const FoodEntry = FoodEntryModel;
-export type FoodEntry = FoodEntryModel;
 export type FoodEntryRow = FoodEntryRowData;
 export const foodEntryRowSchema = foodEntrySchema;
 export type CreateFoodEntryInput = CreateFoodEntryInputData;

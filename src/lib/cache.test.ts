@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   type CacheStore,
-  invalidateAllQueries,
   invalidateAllUserQueries,
   invalidateUserQueryDomains,
   NullCacheStore,
@@ -54,18 +53,6 @@ describe("query cache invalidation", () => {
     await expect(queryCache.get("user-1:food.list")).resolves.toBeUndefined();
     await expect(queryCache.get("user-1:recovery.score")).resolves.toBeUndefined();
     await expect(queryCache.get("user-2:food.list")).resolves.toBe("other user");
-  });
-
-  it("invalidates every cached query", async () => {
-    await Promise.all([
-      queryCache.set("user-1:food.list", "entries", TTL_MS),
-      queryCache.set("user-2:recovery.score", "recovery", TTL_MS),
-    ]);
-
-    await invalidateAllQueries();
-
-    await expect(queryCache.get("user-1:food.list")).resolves.toBeUndefined();
-    await expect(queryCache.get("user-2:recovery.score")).resolves.toBeUndefined();
   });
 });
 

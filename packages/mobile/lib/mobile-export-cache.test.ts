@@ -39,7 +39,6 @@ vi.mock("expo-file-system", () => ({
 import {
   createMobileExportCacheFile,
   deleteMobileExportCacheFile,
-  mobileExportCacheDirectoryUri,
   purgeMobileExportCache,
 } from "./mobile-export-cache";
 
@@ -58,7 +57,6 @@ describe("mobile export cache", () => {
       intermediates: true,
     });
     expect(file.uri).toBe("file:///cache/dofek-exports-v1/activity-12345678.fit");
-    expect(mobileExportCacheDirectoryUri()).toBe("file:///cache/dofek-exports-v1/");
   });
 
   it.each(["", "../private.zip", "nested/private.zip", "private email.zip"])(

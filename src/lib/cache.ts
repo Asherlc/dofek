@@ -203,8 +203,3 @@ export async function invalidateUserQueryDomains(
 export async function invalidateAllUserQueries(userId: string): Promise<void> {
   await queryCache.invalidateByPrefix(`${userId}:`);
 }
-
-/** Invalidates the shared query cache after a write to globally visible data. */
-export async function invalidateAllQueries(): Promise<void> {
-  await queryCache.invalidateAll();
-}

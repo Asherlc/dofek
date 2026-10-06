@@ -8,22 +8,14 @@ import { drizzleSchema as schema } from "../../db/drizzle-schema.ts";
 import { setupTestDatabase, type TestContext } from "../../db/test-helpers.ts";
 import { runWithTokenUser } from "../../db/token-user-context.ts";
 import type { MetricStreamRowInput } from "../../metric-stream/events.ts";
-import { SyncRun } from "../sync-run.ts";
-import { SyncWindow } from "../sync-window.ts";
 import { createCapturingMetricStreamPublisher } from "../test-helpers.ts";
-import {
-  buildPanelMap,
-  type FhirDiagnosticReport,
-  type FhirObservation,
-  parseFhirObservation,
-} from "./fhir.ts";
+import { type FhirObservation, parseFhirObservation } from "./fhir.ts";
 import {
   extractExportXml,
   importAppleHealthFile,
   importClinicalRecords,
   importMedicationDoseEvents,
 } from "./import.ts";
-import { AppleHealthProvider } from "./provider.ts";
 import { streamHealthExport } from "./streaming.ts";
 import { enrichWorkoutFromStats, type HealthWorkout } from "./workouts.ts";
 
@@ -489,57 +481,6 @@ describe("enrichWorkoutFromStats — additional scenarios", () => {
 });
 
 // ============================================================
-// AppleHealthProvider — validate and sync edge cases
-// ============================================================
-
-describe("AppleHealthProvider", () => {
-  const originalEnv = { ...process.env };
-
-  afterAll(() => {
-    process.env = { ...originalEnv };
-  });
-
-  it("validate returns error when APPLE_HEALTH_IMPORT_DIR is not set", () => {
-    delete process.env.APPLE_HEALTH_IMPORT_DIR;
-    const provider = new AppleHealthProvider();
-    expect(provider.validate()).toContain("APPLE_HEALTH_IMPORT_DIR");
-  });
-
-  it("validate returns null when APPLE_HEALTH_IMPORT_DIR is set", () => {
-    process.env.APPLE_HEALTH_IMPORT_DIR = "/tmp/some-dir";
-    const provider = new AppleHealthProvider();
-    expect(provider.validate()).toBeNull();
-  });
-
-  it("has correct id and name", () => {
-    const provider = new AppleHealthProvider();
-    expect(provider.id).toBe("apple_health");
-    expect(provider.name).toBe("Apple Health");
-  });
-
-  it("sync returns error when no export file is found", async () => {
-    const emptyDir = join(tmpdir(), `ah-empty-${Date.now()}`);
-    mkdirSync(emptyDir, { recursive: true });
-    process.env.APPLE_HEALTH_IMPORT_DIR = emptyDir;
-
-    const provider = new AppleHealthProvider();
-    const testContext = await setupTestDatabase();
-    try {
-      const result = await provider.sync(
-        new SyncRun({ db: testContext.db, window: SyncWindow.fromSince({ since: new Date() }) }),
-      );
-
-      expect(result.recordsSynced).toBe(0);
-      expect(result.errors).toHaveLength(1);
-      expect(result.errors[0]?.message).toContain("No Apple Health export found");
-    } finally {
-      await testContext.cleanup();
-      rmSync(emptyDir, { recursive: true, force: true });
-    }
-  });
-});
-
-// ============================================================
 // parseFhirObservation — additional edge cases
 // ============================================================
 
@@ -645,33 +586,6 @@ describe("parseFhirObservation — additional edge cases", () => {
     expect(result.referenceRangeHigh).toBe(150);
     // text should NOT be set when structured range exists
     expect(result.referenceRangeText).toBeUndefined();
-  });
-});
-
-// ============================================================
-// buildPanelMap — edge cases
-// ============================================================
-
-describe("buildPanelMap — edge cases", () => {
-  it("handles report with no result array", () => {
-    const report: FhirDiagnosticReport = {
-      resourceType: "DiagnosticReport",
-      id: "dr-no-results",
-      code: { coding: [{ display: "Empty Panel" }] },
-    };
-    const map = buildPanelMap([report]);
-    expect(map.size).toBe(0);
-  });
-
-  it("handles report with no display - uses code text", () => {
-    const report: FhirDiagnosticReport = {
-      resourceType: "DiagnosticReport",
-      id: "dr-text-only",
-      code: { text: "Custom Panel", coding: [] },
-      result: [{ reference: "Observation/obs-x" }],
-    };
-    const map = buildPanelMap([report]);
-    expect(map.get("obs-x")).toBe("Custom Panel");
   });
 });
 

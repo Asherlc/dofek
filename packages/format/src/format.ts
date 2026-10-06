@@ -172,11 +172,6 @@ export function formatDateLong(value: DateInput, options: DateFormatOptions = {}
   );
 }
 
-/** Format a month label: "January 2024" */
-export function formatMonthYear(value: DateInput, options: DateFormatOptions = {}): string {
-  return formatDateInput(value, { month: "long", year: "numeric" }, options);
-}
-
 /** Format a weekday label: "Mon" */
 export function formatWeekdayShort(value: DateInput, options: DateFormatOptions = {}): string {
   return formatDateInput(value, { weekday: "short" }, options);
@@ -200,11 +195,6 @@ export function formatDateTime(value: DateInput, options: DateFormatOptions = {}
 /** Format a time-only label: "2:30 PM" */
 export function formatTimeOnly(value: DateInput, options: DateFormatOptions = {}): string {
   return formatDateInput(value, { hour: "numeric", minute: "2-digit" }, options);
-}
-
-/** Format a weekday and time label: "Monday, 2:30 PM" */
-export function formatWeekdayTime(value: DateInput, options: DateFormatOptions = {}): string {
-  return formatDateInput(value, { weekday: "long", hour: "numeric", minute: "2-digit" }, options);
 }
 
 /** Format a Date for user-facing display: "Mon, Jan 1, 2024" */
@@ -289,33 +279,12 @@ export function formatNumber(value: number, decimals = 1): string {
   return fixedDecimalFormatter(decimals).format(value);
 }
 
-/** Format a ratio (0–1) as a percentage string. Returns "--" for non-finite values. */
-export function formatPercent(value: number, decimals = 0): string {
-  if (!Number.isFinite(value)) return "--";
-  return `${fixedDecimalFormatter(decimals).format(value * 100)}%`;
-}
-
 /** Format a number with explicit +/- sign prefix. Zero has no sign. Returns "--" for non-finite values. */
 export function formatSigned(value: number, decimals = 1): string {
   if (!Number.isFinite(value)) return "--";
   const formatted = fixedDecimalFormatter(decimals).format(value);
   if (value > 0) return `+${formatted}`;
   return formatted;
-}
-
-/** Format a readiness percentage difference with a neutral direction label. */
-export function formatReadinessDifference(value: number): string {
-  if (!Number.isFinite(value)) return "--";
-  if (value > 0) return `${formatNumber(Math.abs(value), 1)}% higher`;
-  if (value < 0) return `${formatNumber(Math.abs(value), 1)}% lower`;
-  return "0.0% difference";
-}
-
-export function formatAssociationEstimateLabel(estimateLabel: string): string {
-  const normalizedLabel = estimateLabel.trim();
-  return /^Estimate(?::|\s|$)/.test(normalizedLabel)
-    ? normalizedLabel
-    : `Estimate: ${normalizedLabel}`;
 }
 
 export type NullableNumber = number | null | undefined;
@@ -520,11 +489,6 @@ export function formatNutritionAmount(value: NullableNumber, unit: string): stri
 /** Format body composition display values such as weight, body fat, and lean mass with 1 decimal. */
 export function formatBodyCompositionNumber(value: NullableNumber): string {
   return formatMetricValue(value, 1);
-}
-
-/** Format body composition percentage display values such as body fat with 1 decimal. */
-export function formatBodyCompositionPercent(value: NullableNumber): string {
-  return formatMetricUnitValue(value, 1, "percent");
 }
 
 /** Format oxygen saturation display values with 0 decimals. */

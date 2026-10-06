@@ -27,10 +27,6 @@ export function minimumSelectedRangeQueryInput(
   return selectedRangeQueryInput(minimumSelectedRangeDays(days, minimumDays));
 }
 
-export function fixedRangeQueryInput(days: number): { days: number } {
-  return { days };
-}
-
 export function formatTimeRangeLabel(days: TimeRangeDays): string {
   return days === null ? "All" : `${days} days`;
 }

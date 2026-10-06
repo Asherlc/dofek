@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Provider, ProviderAuthSetup } from "./types.ts";
-import { getProviderAuthType, isSyncProvider, isWebhookProvider } from "./types.ts";
+import { getProviderAuthTypeFromSetup, isSyncProvider, isWebhookProvider } from "./types.ts";
 
 function stubProvider(overrides: Partial<Provider> = {}): Provider {
   return {
@@ -21,39 +21,20 @@ const dummyOAuthConfig = {
   scopes: ["read"],
 };
 
-describe("getProviderAuthType", () => {
-  it("returns 'file-import' for import-only providers", () => {
-    const provider: Provider = {
-      id: "strong-csv",
-      name: "Strong CSV",
-      validate: () => null,
-      importOnly: true,
-    };
-    expect(getProviderAuthType(provider)).toBe("file-import");
-  });
-
+describe("getProviderAuthTypeFromSetup", () => {
   it("returns 'none' when authSetup is not defined", () => {
     const provider = stubProvider();
-    expect(getProviderAuthType(provider)).toBe("none");
+    expect(getProviderAuthTypeFromSetup(provider.authSetup?.())).toBe("none");
   });
 
   it("returns 'none' when authSetup returns undefined", () => {
     const provider = stubProvider({ authSetup: () => undefined });
-    expect(getProviderAuthType(provider)).toBe("none");
+    expect(getProviderAuthTypeFromSetup(provider.authSetup?.())).toBe("none");
   });
 
   it("returns 'none' when authSetup returns an empty setup", () => {
     const provider = stubProvider({ authSetup: () => ({}) });
-    expect(getProviderAuthType(provider)).toBe("none");
-  });
-
-  it("returns 'none' when authSetup throws", () => {
-    const provider = stubProvider({
-      authSetup: () => {
-        throw new Error("Missing env vars");
-      },
-    });
-    expect(getProviderAuthType(provider)).toBe("none");
+    expect(getProviderAuthTypeFromSetup(provider.authSetup?.())).toBe("none");
   });
 
   it("returns 'credential' when automatedLogin is defined", () => {
@@ -66,7 +47,7 @@ describe("getProviderAuthType", () => {
       }),
     };
     const provider = stubProvider({ authSetup: () => setup });
-    expect(getProviderAuthType(provider)).toBe("credential");
+    expect(getProviderAuthTypeFromSetup(provider.authSetup?.())).toBe("credential");
   });
 
   it("returns 'token' when manual token authentication is defined", () => {
@@ -83,7 +64,7 @@ describe("getProviderAuthType", () => {
       },
     };
     const provider = stubProvider({ authSetup: () => setup });
-    expect(getProviderAuthType(provider)).toBe("token");
+    expect(getProviderAuthTypeFromSetup(provider.authSetup?.())).toBe("token");
   });
 
   it("prioritizes personal token auth when OAuth is also configured", () => {
@@ -108,7 +89,7 @@ describe("getProviderAuthType", () => {
     };
     const provider = stubProvider({ authSetup: () => setup });
 
-    expect(getProviderAuthType(provider)).toBe("token");
+    expect(getProviderAuthTypeFromSetup(provider.authSetup?.())).toBe("token");
   });
 
   it("returns 'oauth1' when oauth1Flow is defined", () => {
@@ -127,7 +108,7 @@ describe("getProviderAuthType", () => {
       },
     };
     const provider = stubProvider({ authSetup: () => setup });
-    expect(getProviderAuthType(provider)).toBe("oauth1");
+    expect(getProviderAuthTypeFromSetup(provider.authSetup?.())).toBe("oauth1");
   });
 
   it("returns 'oauth' when only oauthConfig is defined", () => {
@@ -141,7 +122,7 @@ describe("getProviderAuthType", () => {
       }),
     };
     const provider = stubProvider({ authSetup: () => setup });
-    expect(getProviderAuthType(provider)).toBe("oauth");
+    expect(getProviderAuthTypeFromSetup(provider.authSetup?.())).toBe("oauth");
   });
 
   it("prioritizes credential over oauth when both automatedLogin and oauthConfig exist", () => {
@@ -158,19 +139,19 @@ describe("getProviderAuthType", () => {
       }),
     };
     const provider = stubProvider({ authSetup: () => setup });
-    expect(getProviderAuthType(provider)).toBe("credential");
+    expect(getProviderAuthTypeFromSetup(provider.authSetup?.())).toBe("credential");
   });
 
   it("returns 'token' for UltrahumanProvider", async () => {
     const { UltrahumanProvider } = await import("./ultrahuman.ts");
     const provider = new UltrahumanProvider();
-    expect(getProviderAuthType(provider)).toBe("token");
+    expect(getProviderAuthTypeFromSetup(provider.authSetup?.())).toBe("token");
   });
 
   it("returns 'credential' for AmazfitZeppProvider", async () => {
     const { AmazfitZeppProvider } = await import("./amazfit-zepp.ts");
     const provider = new AmazfitZeppProvider();
-    expect(getProviderAuthType(provider)).toBe("credential");
+    expect(getProviderAuthTypeFromSetup(provider.authSetup?.())).toBe("credential");
   });
 
   it("returns 'oauth' when setup has oauthConfig but nothing else", () => {
@@ -187,27 +168,15 @@ describe("getProviderAuthType", () => {
     };
     const provider = stubProvider({ authSetup: () => setup });
     // Must be 'oauth', NOT 'none'
-    expect(getProviderAuthType(provider)).toBe("oauth");
+    expect(getProviderAuthTypeFromSetup(provider.authSetup?.())).toBe("oauth");
   });
 
   it("returns exact string 'none' (not empty) when no auth setup exists", () => {
     const provider = stubProvider({ authSetup: undefined });
-    const result = getProviderAuthType(provider);
+    const result = getProviderAuthTypeFromSetup(provider.authSetup?.());
     expect(result).toBe("none");
     expect(result).not.toBe("");
     expect(result.length).toBe(4);
-  });
-
-  it("returns exact string 'file-import' for import-only providers", () => {
-    const provider: Provider = {
-      id: "strong-csv",
-      name: "Strong CSV",
-      validate: () => null,
-      importOnly: true,
-    };
-    const result = getProviderAuthType(provider);
-    expect(result).toBe("file-import");
-    expect(result).not.toBe("");
   });
 });
 

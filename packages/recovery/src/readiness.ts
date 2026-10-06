@@ -21,17 +21,6 @@ export interface ReadinessWeights {
   respiratoryRate: number;
 }
 
-// ── Default weights ─────────────────────────────────────────────
-
-export function defaultReadinessWeights(): ReadinessWeights {
-  return {
-    hrv: 0.5,
-    restingHr: 0.2,
-    sleep: 0.15,
-    respiratoryRate: 0.15,
-  };
-}
-
 // ── ReadinessScore ──────────────────────────────────────────────
 
 export class ReadinessScore {

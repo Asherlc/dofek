@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   BLE_HEART_RATE_PROVIDER_ID,
-  isPushProvider,
   PUSH_PROVIDERS,
   WHOOP_BLE_PROVIDER_ID,
 } from "./push-providers.ts";
@@ -25,11 +24,5 @@ describe("push-providers", () => {
       authType: "push:mobile",
       description: "Synced from the iOS app when a Bluetooth heart-rate monitor is connected.",
     });
-  });
-
-  it("recognizes push provider IDs", () => {
-    expect(isPushProvider("whoop_ble")).toBe(true);
-    expect(isPushProvider("ble_heart_rate")).toBe(true);
-    expect(isPushProvider("whoop")).toBe(false);
   });
 });

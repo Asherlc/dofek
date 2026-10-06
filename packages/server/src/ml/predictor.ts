@@ -10,7 +10,7 @@ import { captureException } from "dofek/lib/error-reporting";
 import { predictorLinearFitFallbacksTotal } from "../lib/metrics.ts";
 import { logger } from "../logger.ts";
 import type { DailyFeatureRow, ExtractedDataset, PredictionTarget } from "./features.ts";
-import { buildDataset, PREDICTION_TARGETS } from "./features.ts";
+import { buildDataset } from "./features.ts";
 import { GradientBoostedTrees } from "./gradient-boost.ts";
 import { LinearRegression } from "./regression.ts";
 
@@ -193,13 +193,6 @@ export function trainFromDataset(
     },
     tomorrowPrediction,
   };
-}
-
-/** Convenience wrapper: train HRV predictor (default target) */
-export function trainHrvPredictor(days: DailyFeatureRow[]): PredictionResult | null {
-  const target = PREDICTION_TARGETS.find((t) => t.id === "hrv");
-  if (!target) return null;
-  return trainPredictor(days, target);
 }
 
 /**

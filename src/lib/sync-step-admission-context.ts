@@ -19,11 +19,6 @@ export function hasSyncStepAdmissionClaimed(): boolean {
   return syncStepAdmissionContext.getStore()?.admitted ?? false;
 }
 
-export function markSyncStepAdmissionClaimed(): void {
-  const state = syncStepAdmissionContext.getStore();
-  if (state) state.admitted = true;
-}
-
 /** Claims the sync-step budget slot for the current caller; returns false if already claimed. */
 export function tryClaimSyncStepAdmission(): boolean {
   const state = syncStepAdmissionContext.getStore();

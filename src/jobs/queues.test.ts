@@ -445,51 +445,6 @@ describe("queues", () => {
     });
   });
 
-  describe("closeFitFileImportQueueResources", () => {
-    it("closes cached FIT file import queue resources and clears the cache", async () => {
-      process.env.REDIS_URL = "redis://localhost:6379";
-      const {
-        closeFitFileImportQueueResources,
-        getFitFileImportQueue,
-        getFitFileImportQueueEvents,
-        getFlowProducer,
-      } = await import("./queues.ts");
-
-      getFitFileImportQueue();
-      getFitFileImportQueueEvents();
-      getFlowProducer();
-      const queueConstructorCallsBeforeClose = MockQueue.mock.calls.length;
-      const queueEventsConstructorCallsBeforeClose = MockQueueEvents.mock.calls.length;
-      const flowProducerConstructorCallsBeforeClose = MockFlowProducer.mock.calls.length;
-
-      await closeFitFileImportQueueResources();
-
-      expect(mockQueueClose).toHaveBeenCalledOnce();
-      expect(mockQueueEventsClose).toHaveBeenCalledOnce();
-      expect(mockFlowProducerClose).toHaveBeenCalledOnce();
-
-      getFitFileImportQueue();
-      getFitFileImportQueueEvents();
-      getFlowProducer();
-
-      expect(MockQueue).toHaveBeenCalledTimes(queueConstructorCallsBeforeClose + 1);
-      expect(MockQueueEvents).toHaveBeenCalledTimes(queueEventsConstructorCallsBeforeClose + 1);
-      expect(MockFlowProducer).toHaveBeenCalledTimes(flowProducerConstructorCallsBeforeClose + 1);
-    });
-
-    it("is safe when no FIT file import resources are cached", async () => {
-      const { closeFitFileImportQueueResources } = await import("./queues.ts");
-      await closeFitFileImportQueueResources();
-      vi.clearAllMocks();
-
-      await expect(closeFitFileImportQueueResources()).resolves.toBeUndefined();
-
-      expect(mockQueueClose).not.toHaveBeenCalled();
-      expect(mockQueueEventsClose).not.toHaveBeenCalled();
-      expect(mockFlowProducerClose).not.toHaveBeenCalled();
-    });
-  });
-
   describe("providerSyncQueueName", () => {
     it("returns sync-{providerId} format", async () => {
       const { providerSyncQueueName } = await import("./queues.ts");

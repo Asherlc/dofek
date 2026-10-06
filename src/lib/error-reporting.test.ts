@@ -137,16 +137,17 @@ describe("initProductionPostHog", () => {
 
   it("does not initialize outside production deployments", async () => {
     vi.stubEnv("DEPLOY_ENVIRONMENT", "local");
-    const { initProductionPostHog, getPostHogClient } = await import("./posthog.ts");
+    const { PostHog } = await import("posthog-node");
+    const { initProductionPostHog } = await import("./posthog.ts");
 
     initProductionPostHog();
-    expect(getPostHogClient()).toBeUndefined();
+    expect(PostHog).not.toHaveBeenCalled();
   });
 
   it("initializes once in production with exception autocapture", async () => {
     vi.stubEnv("DEPLOY_ENVIRONMENT", "production");
     const { PostHog } = await import("posthog-node");
-    const { initProductionPostHog, getPostHogClient } = await import("./posthog.ts");
+    const { initProductionPostHog } = await import("./posthog.ts");
 
     initProductionPostHog("dofek-test");
     initProductionPostHog("dofek-test");
@@ -160,6 +161,5 @@ describe("initProductionPostHog", () => {
       }),
     );
     expect(posthogMocks.register).toHaveBeenCalledWith({ service: "dofek-test" });
-    expect(getPostHogClient()).toBeDefined();
   });
 });

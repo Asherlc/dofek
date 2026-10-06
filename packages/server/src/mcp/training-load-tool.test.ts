@@ -2,7 +2,7 @@ import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport, McpServer } from "@modelcontextprotocol/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { analyticalTrainingLoadOutputSchema } from "./analytical-training-load-output.ts";
-import { trainingLoadOutputSchema } from "./tool-output.ts";
+import { trainingLoadToolOutputSchema } from "./tool-output.ts";
 
 const mocks = vi.hoisted(() => ({
   analyticalListRange: vi.fn(),
@@ -145,7 +145,7 @@ describe("get_training_load", () => {
     expect(mocks.analyticalListRange).not.toHaveBeenCalled();
     if (result.isError)
       throw new Error(result.content[0]?.type === "text" ? result.content[0].text : "Tool failed");
-    expect(trainingLoadOutputSchema.parse(result.structuredContent)).toEqual({
+    expect(trainingLoadToolOutputSchema.parse(result.structuredContent)).toEqual({
       result: {
         range: { start_date: "2026-06-15", end_date: "2026-06-15", timezone: "UTC" },
         rows: legacyRows,

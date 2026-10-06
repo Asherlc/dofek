@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { createReadStream, createWriteStream, mkdirSync, readdirSync, statSync } from "node:fs";
+import { createReadStream, createWriteStream, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { and, eq, gte, sql } from "drizzle-orm";
@@ -929,25 +929,4 @@ export async function importMedicationDoseEvents(
   });
 
   return { inserted: batch.length, skipped, errors };
-}
-
-/**
- * Find the latest Apple Health export file in the given directory.
- */
-export function findLatestExport(): string | null {
-  const dir = process.env.APPLE_HEALTH_IMPORT_DIR;
-  if (!dir) return null;
-
-  try {
-    // Look for both .xml and .zip files
-    const files = readdirSync(dir)
-      .filter((f) => f.endsWith(".xml") || f.endsWith(".zip"))
-      .map((f) => ({ name: f, mtime: statSync(join(dir, f)).mtimeMs }))
-      .sort((a, b) => b.mtime - a.mtime);
-
-    const latest = files[0];
-    return latest ? join(dir, latest.name) : null;
-  } catch {
-    return null;
-  }
 }

@@ -10,7 +10,6 @@ const SCANNED_RELATIVE_PATHS = [
   "packages/server/src/repositories/efficiency-repository.ts",
   "packages/server/src/repositories/intervals-repository.ts",
   "packages/server/src/repositories/predictions-repository.ts",
-  "packages/server/src/repositories/raw-activity-count.ts",
   "packages/server/src/repositories/strength-repository.ts",
   "packages/server/src/routers/admin.ts",
   "packages/server/src/routers/sync.ts",

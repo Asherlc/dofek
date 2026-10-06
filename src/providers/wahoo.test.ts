@@ -13,11 +13,11 @@ import * as fitImportQueueModule from "../jobs/enqueue-fit-file-import.ts";
 import * as loggerModule from "../logger.ts";
 import { SyncRun } from "./sync-run.ts";
 import { SyncWindow } from "./sync-window.ts";
-import { WahooClient, type WahooWorkout, type WahooWorkoutSummary } from "./wahoo/client.ts";
+import { WahooClient, type WahooWorkout } from "./wahoo/client.ts";
 import { parseWorkoutList, parseWorkoutSummary } from "./wahoo/parsers.ts";
 import { WahooProvider, wahooOAuthConfig } from "./wahoo/provider.ts";
 
-const sampleWorkoutSummary: WahooWorkoutSummary = {
+const sampleWorkoutSummary: NonNullable<WahooWorkout["workout_summary"]> = {
   id: 101,
   ascent_accum: 350.5,
   cadence_avg: 85.2,

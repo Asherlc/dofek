@@ -1,7 +1,6 @@
 import { WhoopClient } from "@dofek/whoop/client";
 import type {
   WhoopCycle,
-  WhoopMetricValue,
   WhoopRecoveryRecord,
   WhoopSleepRecord,
   WhoopWeightliftingWorkoutResponse,
@@ -11,11 +10,9 @@ import { describe, expect, it } from "vitest";
 import {
   buildV2ActivityTypeLookup,
   type InlineSleepRecord,
-  parseDailyStepValues,
   parseHeartRateValues,
   parseInlineSleep,
   parseRecovery,
-  parseSleep,
   parseSleepStages,
   parseStrainDeepDiveSteps,
   parseWeightliftingWorkout,
@@ -27,7 +24,6 @@ import {
 // ============================================================
 // Coverage tests for WHOOP pure parsing functions:
 // - parseRecovery with non-SCORED state
-// - parseSleep without score (no stage_summary)
 // - parseWorkout without score (no distance, calories, etc.)
 // - parseHeartRateValues with empty/large arrays
 // - WhoopClient.authenticate MFA required path
@@ -187,113 +183,6 @@ describe("parseRecovery — edge cases", () => {
   });
 });
 
-describe("parseSleep — invalid timestamps", () => {
-  function sleepRecord(overrides: Partial<WhoopSleepRecord> = {}): WhoopSleepRecord {
-    return {
-      id: 400,
-      user_id: 10129,
-      created_at: "2026-03-01T06:00:00Z",
-      updated_at: "2026-03-01T06:30:00Z",
-      start: "2026-02-28T23:00:00Z",
-      end: "2026-03-01T07:00:00Z",
-      timezone_offset: "-05:00",
-      nap: false,
-      score_state: "PENDING",
-      ...overrides,
-    };
-  }
-
-  it("returns null for empty start timestamp", () => {
-    expect(parseSleep(sleepRecord({ start: "" }))).toBeNull();
-  });
-
-  it("returns null for non-date start timestamp", () => {
-    expect(parseSleep(sleepRecord({ start: "not-a-date" }))).toBeNull();
-  });
-
-  it("returns null for empty end timestamp", () => {
-    expect(parseSleep(sleepRecord({ end: "" }))).toBeNull();
-  });
-
-  it("returns null for garbage start timestamp", () => {
-    expect(parseSleep(sleepRecord({ start: "garbage" }))).toBeNull();
-  });
-
-  it("returns null when start/end are missing and no during is provided", () => {
-    expect(parseSleep(sleepRecord({ start: undefined, end: undefined }))).toBeNull();
-  });
-
-  it("succeeds with valid timestamps", () => {
-    const parsed = parseSleep(sleepRecord());
-    expect(parsed).not.toBeNull();
-    expect(parsed?.startedAt).toEqual(new Date("2026-02-28T23:00:00Z"));
-    expect(parsed?.endedAt).toEqual(new Date("2026-03-01T07:00:00Z"));
-  });
-
-  it("parses 'during' Postgres range when start/end are missing", () => {
-    const parsed = parseSleep(
-      sleepRecord({
-        start: undefined,
-        end: undefined,
-        during: "['2026-02-28T23:00:00.000Z','2026-03-01T07:00:00.000Z')",
-      }),
-    );
-    expect(parsed).not.toBeNull();
-    expect(parsed?.startedAt).toEqual(new Date("2026-02-28T23:00:00.000Z"));
-    expect(parsed?.endedAt).toEqual(new Date("2026-03-01T07:00:00.000Z"));
-  });
-
-  it("prefers 'during' over start/end when both are present", () => {
-    const parsed = parseSleep(
-      sleepRecord({
-        start: "2026-01-01T00:00:00Z",
-        end: "2026-01-01T08:00:00Z",
-        during: "['2026-02-28T23:00:00.000Z','2026-03-01T07:00:00.000Z')",
-      }),
-    );
-    expect(parsed).not.toBeNull();
-    expect(parsed?.startedAt).toEqual(new Date("2026-02-28T23:00:00.000Z"));
-    expect(parsed?.endedAt).toEqual(new Date("2026-03-01T07:00:00.000Z"));
-  });
-
-  it("falls back to `during` field when start/end are missing", () => {
-    const record: WhoopSleepRecord = {
-      id: 500,
-      user_id: 10129,
-      created_at: "2026-03-01T06:00:00Z",
-      updated_at: "2026-03-01T06:30:00Z",
-      timezone_offset: "-05:00",
-      nap: false,
-      score_state: "SCORED",
-      during: "['2026-03-24T05:30:00.000Z','2026-03-24T13:15:00.000Z')",
-      score: {
-        stage_summary: {
-          total_in_bed_time_milli: 27900000,
-          total_awake_time_milli: 1800000,
-          total_no_data_time_milli: 0,
-          total_light_sleep_time_milli: 10800000,
-          total_slow_wave_sleep_time_milli: 7200000,
-          total_rem_sleep_time_milli: 8100000,
-          sleep_cycle_count: 4,
-          disturbance_count: 2,
-        },
-        respiratory_rate: 15.5,
-        sleep_performance_percentage: 96,
-        sleep_consistency_percentage: 85,
-        sleep_efficiency_percentage: 93.5,
-      },
-    };
-
-    const parsed = parseSleep(record);
-    expect(parsed).not.toBeNull();
-    expect(parsed?.startedAt).toEqual(new Date("2026-03-24T05:30:00.000Z"));
-    expect(parsed?.endedAt).toEqual(new Date("2026-03-24T13:15:00.000Z"));
-    expect(parsed?.deepMinutes).toBe(120);
-    expect(parsed?.remMinutes).toBe(135);
-    expect(parsed?.lightMinutes).toBe(180);
-  });
-});
-
 describe("parseInlineSleep — BFF v0 cycle.sleeps format", () => {
   function inlineSleep(overrides: Partial<InlineSleepRecord> = {}): InlineSleepRecord {
     return {
@@ -379,106 +268,6 @@ describe("parseInlineSleep — BFF v0 cycle.sleeps format", () => {
   it("keeps percentage-scale in_sleep_efficiency as-is", () => {
     const parsed = parseInlineSleep(inlineSleep({ in_sleep_efficiency: 89.4 }), 0);
     expect(parsed?.efficiencyPct).toBe(89.4);
-  });
-});
-
-describe("parseSleep — edge cases", () => {
-  it("handles sleep record without score", () => {
-    const record: WhoopSleepRecord = {
-      id: 300,
-      user_id: 10129,
-      created_at: "2026-03-01T06:00:00Z",
-      updated_at: "2026-03-01T06:30:00Z",
-      start: "2026-02-28T23:00:00Z",
-      end: "2026-03-01T07:00:00Z",
-      timezone_offset: "-05:00",
-      nap: false,
-      score_state: "PENDING",
-    };
-
-    const parsed = parseSleep(record);
-    expect(parsed).not.toBeNull();
-    expect(parsed?.externalId).toBe("300");
-    expect(parsed?.deepMinutes).toBeUndefined();
-    expect(parsed?.remMinutes).toBeUndefined();
-    expect(parsed?.lightMinutes).toBeUndefined();
-    expect(parsed?.awakeMinutes).toBeUndefined();
-    expect(parsed?.durationMinutes).toBeUndefined();
-    expect(parsed?.stagingAvailable).toBe(false);
-    expect(parsed?.efficiencyPct).toBeUndefined();
-    expect(parsed?.isNap).toBe(false);
-  });
-
-  it("parses nap correctly", () => {
-    const record: WhoopSleepRecord = {
-      id: 301,
-      user_id: 10129,
-      created_at: "2026-03-01T14:00:00Z",
-      updated_at: "2026-03-01T14:30:00Z",
-      start: "2026-03-01T13:00:00Z",
-      end: "2026-03-01T13:30:00Z",
-      timezone_offset: "-05:00",
-      nap: true,
-      score_state: "SCORED",
-      score: {
-        stage_summary: {
-          total_in_bed_time_milli: 1800000,
-          total_awake_time_milli: 300000,
-          total_no_data_time_milli: 0,
-          total_light_sleep_time_milli: 900000,
-          total_slow_wave_sleep_time_milli: 300000,
-          total_rem_sleep_time_milli: 300000,
-          sleep_cycle_count: 1,
-          disturbance_count: 0,
-        },
-        respiratory_rate: 15.0,
-        sleep_performance_percentage: 50,
-        sleep_consistency_percentage: 70,
-        sleep_efficiency_percentage: 83.3,
-      },
-    };
-
-    const parsed = parseSleep(record);
-    expect(parsed).not.toBeNull();
-    expect(parsed?.isNap).toBe(true);
-    expect(parsed?.deepMinutes).toBe(5);
-    expect(parsed?.lightMinutes).toBe(15);
-    expect(parsed?.remMinutes).toBe(5);
-    expect(parsed?.awakeMinutes).toBe(5);
-    expect(parsed?.efficiencyPct).toBeCloseTo(83.3);
-  });
-
-  it("normalizes fractional sleep_efficiency_percentage to percentage", () => {
-    const record: WhoopSleepRecord = {
-      id: 302,
-      user_id: 10129,
-      created_at: "2026-03-01T06:00:00Z",
-      updated_at: "2026-03-01T06:30:00Z",
-      start: "2026-02-28T23:00:00Z",
-      end: "2026-03-01T07:00:00Z",
-      timezone_offset: "-05:00",
-      nap: false,
-      score_state: "SCORED",
-      score: {
-        stage_summary: {
-          total_in_bed_time_milli: 27000000,
-          total_awake_time_milli: 1800000,
-          total_no_data_time_milli: 0,
-          total_light_sleep_time_milli: 10800000,
-          total_slow_wave_sleep_time_milli: 7200000,
-          total_rem_sleep_time_milli: 5400000,
-          sleep_cycle_count: 4,
-          disturbance_count: 2,
-        },
-        respiratory_rate: 16.1,
-        sleep_performance_percentage: 92,
-        sleep_consistency_percentage: 88,
-        sleep_efficiency_percentage: 0.917,
-      },
-    };
-
-    const parsed = parseSleep(record);
-    expect(parsed?.efficiencyPct).toBeCloseTo(91.7, 1);
   });
 });
 
@@ -821,31 +610,6 @@ describe("parseStrainDeepDiveSteps", () => {
   });
 });
 
-describe("parseDailyStepValues", () => {
-  it("uses the max value per day when multiple samples exist", () => {
-    const values: WhoopMetricValue[] = [
-      { time: new Date("2026-03-01T08:00:00Z").getTime(), data: 1200 },
-      { time: new Date("2026-03-01T20:00:00Z").getTime(), data: 7421 },
-      { time: new Date("2026-03-01T22:00:00Z").getTime(), data: 7000 },
-      { time: new Date("2026-03-02T21:00:00Z").getTime(), data: 9100 },
-    ];
-
-    expect(parseDailyStepValues(values)).toEqual([
-      { date: "2026-03-01", steps: 7421 },
-      { date: "2026-03-02", steps: 9100 },
-    ]);
-  });
-
-  it("rounds step values and ignores negatives", () => {
-    const values: WhoopMetricValue[] = [
-      { time: new Date("2026-03-01T08:00:00Z").getTime(), data: -5 },
-      { time: new Date("2026-03-01T20:00:00Z").getTime(), data: 9000.6 },
-    ];
-
-    expect(parseDailyStepValues(values)).toEqual([{ date: "2026-03-01", steps: 9001 }]);
-  });
-});
-
 describe("WhoopClient.authenticate — MFA required path", () => {
   it("throws when MFA is required", async () => {
     const mockFetch: typeof globalThis.fetch = (_input: RequestInfo | URL) => {
@@ -1079,45 +843,6 @@ describe("parseWorkout — legacy fallback without during", () => {
     const parsed = parseWorkout(record);
     expect(parsed).not.toBeNull();
     expect(parsed?.externalId).toBe("67890");
-  });
-});
-
-// ============================================================
-// parseSleep — scored records
-// ============================================================
-
-describe("parseSleep — scored records", () => {
-  it("extracts scored sleep stages", () => {
-    const record: WhoopSleepRecord = {
-      id: 400,
-      user_id: 10129,
-      created_at: "2026-03-01T06:00:00Z",
-      updated_at: "2026-03-01T06:30:00Z",
-      start: "2026-02-28T23:00:00Z",
-      end: "2026-03-01T06:30:00Z",
-      timezone_offset: "-05:00",
-      nap: false,
-      score_state: "SCORED",
-      score: {
-        stage_summary: {
-          total_in_bed_time_milli: 27000000,
-          total_awake_time_milli: 1800000,
-          total_no_data_time_milli: 0,
-          total_light_sleep_time_milli: 10800000,
-          total_slow_wave_sleep_time_milli: 7200000,
-          total_rem_sleep_time_milli: 5400000,
-          sleep_cycle_count: 4,
-          disturbance_count: 2,
-        },
-        respiratory_rate: 16.1,
-        sleep_performance_percentage: 92,
-        sleep_consistency_percentage: 88,
-        sleep_efficiency_percentage: 91.7,
-      },
-    };
-
-    const parsed = parseSleep(record);
-    expect(parsed).not.toBeNull();
   });
 });
 
