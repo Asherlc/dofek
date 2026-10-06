@@ -937,20 +937,6 @@ entity "journal_question" {
   created_at : timestamp
 }
 
-entity "life_events" {
-  * id : uuid <<PK>>
-  --
-  label : text
-  user_id : uuid <<FK>>
-  started_at : date
-  ended_at : date
-  category : text
-  ongoing : boolean
-  notes : text
-  personal_experiment_id : uuid <<FK>>
-  created_at : timestamp
-}
-
 entity "menstrual_period" {
   * id : uuid <<PK>>
   --
@@ -958,33 +944,6 @@ entity "menstrual_period" {
   start_date : date
   end_date : date
   notes : text
-  created_at : timestamp
-}
-
-entity "personal_experiment" {
-  * id : uuid <<PK>>
-  --
-  user_id : uuid <<FK>>
-  hypothesis : text
-  intervention : text
-  outcome_metric_id : text
-  lag_days : bigint
-  baseline_days : bigint
-  intervention_days : bigint
-  start_date : date
-  status : text
-  stopped_at : date
-  created_at : timestamp
-}
-
-entity "personal_experiment_check_in" {
-  * id : uuid <<PK>>
-  --
-  personal_experiment_id : uuid <<FK>>
-  date : date
-  adherence : text
-  confounder : text
-  note : text
   created_at : timestamp
 }
 
@@ -1370,11 +1329,7 @@ body_region ||--o{ injury_event
 provider ||--o{ journal_entry
 user_profile ||--o{ journal_entry
 journal_question ||--o{ journal_entry
-user_profile ||--o{ life_events
-personal_experiment ||--o{ life_events
 user_profile ||--o{ menstrual_period
-user_profile ||--o{ personal_experiment
-personal_experiment ||--o{ personal_experiment_check_in
 user_profile ||--o{ provider_data_deletion_outbox
 user_profile ||--o{ provider_data_generation
 user_profile ||--o{ subjective_check_in

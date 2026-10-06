@@ -234,7 +234,6 @@ export const adminRouter = router({
             ('clinical_record'),
             ('journal_entry'),
             ('supplement'),
-            ('life_events'),
             ('nutrient'),
             ('food_entry_nutrient'),
             ('supplement_definition'),

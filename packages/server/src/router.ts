@@ -32,13 +32,11 @@ import { inertialMeasurementUnitSyncRouter } from "./routers/inertial-measuremen
 import { insightsRouter } from "./routers/insights.ts";
 import { intervalsRouter } from "./routers/intervals.ts";
 import { journalRouter } from "./routers/journal.ts";
-import { lifeEventsRouter } from "./routers/life-events.ts";
 import { mcpRouter } from "./routers/mcp.ts";
 import { medicationDoseEventsRouter } from "./routers/medication-dose-events.ts";
 import { mobileDashboardRouter } from "./routers/mobile-dashboard.ts";
 import { nutritionRouter } from "./routers/nutrition.ts";
 import { nutritionAnalyticsRouter } from "./routers/nutrition-analytics.ts";
-import { personalExperimentsRouter } from "./routers/personal-experiments.ts";
 import { personalizationRouter } from "./routers/personalization.ts";
 import { pmcRouter } from "./routers/pmc.ts";
 import { powerRouter } from "./routers/power.ts";
@@ -88,8 +86,6 @@ const appRouterProcedures = {
   nutritionAnalytics: nutritionAnalyticsRouter,
   insights: insightsRouter,
   journal: journalRouter,
-  lifeEvents: lifeEventsRouter,
-  personalExperiments: personalExperimentsRouter,
   mobileDashboard: mobileDashboardRouter,
   supplements: supplementsRouter,
   providerDetail: providerDetailRouter,

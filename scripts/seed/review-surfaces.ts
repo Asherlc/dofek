@@ -3,8 +3,7 @@ import { daysBefore, type SeedRandom, type Sql, USER_ID } from "./helpers.ts";
 export async function seedReviewSurfaces(sql: Sql, random: SeedRandom): Promise<void> {
   const today = new Date();
   await seedJournalEntries(sql, random, today);
-  await seedLifeEvents(sql, today);
-  console.log("Seeded: journal entries and life events");
+  console.log("Seeded: journal entries");
 }
 
 async function seedJournalEntries(sql: Sql, random: SeedRandom, today: Date): Promise<void> {
@@ -54,25 +53,5 @@ async function seedJournalEntries(sql: Sql, random: SeedRandom, today: Date): Pr
               impact_score = EXCLUDED.impact_score
       `;
     }
-  }
-}
-
-async function seedLifeEvents(sql: Sql, today: Date): Promise<void> {
-  const events = [
-    ["Training Camp", 42, 34, "training", "High-volume training block"],
-    ["Travel Week", 18, 14, "travel", "Cross-country travel and disrupted sleep"],
-    ["New Sleep Routine", 10, null, "habit", "Earlier bedtime and reduced evening screens"],
-  ] as const;
-
-  for (const [label, startDaysAgo, endDaysAgo, category, notes] of events) {
-    await sql`
-      INSERT INTO fitness.life_events (
-        label, user_id, started_at, ended_at, category, ongoing, notes
-      ) VALUES (
-        ${label}, ${USER_ID}, ${daysBefore(today, startDaysAgo)},
-        ${endDaysAgo == null ? null : daysBefore(today, endDaysAgo)}, ${category},
-        ${endDaysAgo == null}, ${notes}
-      )
-    `;
   }
 }

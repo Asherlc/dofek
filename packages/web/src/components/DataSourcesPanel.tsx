@@ -453,28 +453,30 @@ export function DataSourcesPanel() {
         aria-busy={providers.isLoading || processingStatus.isLoading}
         className={providerRegionClassName}
       >
-        {enabledSyncable.length > 1 && (
-          <div className="flex justify-end">
-            <SyncAllControls
-              busy={syncAllBusy}
-              errorMessage={syncAllError}
-              onRecentSync={() => void handleSyncAll()}
-              onFullSync={() => void handleSyncAll(true)}
-            />
-          </div>
-        )}
+        <div className="min-h-36 space-y-3">
+          {enabledSyncable.length > 1 && (
+            <div className="flex justify-end">
+              <SyncAllControls
+                busy={syncAllBusy}
+                errorMessage={syncAllError}
+                onRecentSync={() => void handleSyncAll()}
+                onFullSync={() => void handleSyncAll(true)}
+              />
+            </div>
+          )}
 
-        {activeSyncs.error ? (
-          <p role="alert" className="text-sm text-red-400">
-            {userFacingErrorMessage(activeSyncs.error)}
-          </p>
-        ) : null}
+          {activeSyncs.error ? (
+            <p role="alert" className="text-sm text-red-400">
+              {userFacingErrorMessage(activeSyncs.error)}
+            </p>
+          ) : null}
 
-        <ProcessingStatusWidget
-          data={processingStatus.data}
-          error={processingStatus.error}
-          loading={processingStatus.isLoading}
-        />
+          <ProcessingStatusWidget
+            data={processingStatus.data}
+            error={processingStatus.error}
+            loading={processingStatus.isLoading}
+          />
+        </div>
 
         {providers.error ? <QueryStatePanel error={providers.error} height={72} /> : null}
         {stats.error ? <QueryStatePanel error={stats.error} height={72} /> : null}

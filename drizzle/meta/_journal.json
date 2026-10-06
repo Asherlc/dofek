@@ -964,8 +964,22 @@
     {
       "idx": 137,
       "version": "7",
-      "when": 1791236258570,
-      "tag": "0137_remove_shared_reports",
+      "when": 1791236065251,
+      "tag": "0137_remove_personal_experiments",
+      "breakpoints": true
+    },
+    {
+      "idx": 138,
+      "version": "7",
+      "when": 1791236389231,
+      "tag": "0138_remove_life_events",
+      "breakpoints": true
+    },
+    {
+      "idx": 139,
+      "version": "7",
+      "when": 1791248941341,
+      "tag": "0139_remove_shared_reports",
       "breakpoints": true
     }
   ]

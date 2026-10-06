@@ -1541,66 +1541,6 @@ describe("Router coverage", () => {
   }
 
   // ══════════════════════════════════════════════════════════════
-  // Life Events — CRUD and analyze
-  // ══════════════════════════════════════════════════════════════
-  describe("lifeEvents", () => {
-    it("create + list + update + delete lifecycle", async () => {
-      // Create
-      const created = await mutate<{
-        id: string;
-        label: string;
-        category: string | null;
-      }>("lifeEvents.create", {
-        label: "Coverage Test Event",
-        startedAt: "2025-01-15",
-        endedAt: "2025-02-15",
-        category: "health",
-        ongoing: false,
-        notes: "Test notes",
-      });
-      expect(created.id).toBeTruthy();
-      expect(created.label).toBe("Coverage Test Event");
-
-      // List
-      await queryCache.invalidateAll();
-      const list = await query<{ id: string; label: string }[]>("lifeEvents.list");
-      expect(list.some((e) => e.id === created.id)).toBe(true);
-
-      // Update
-      const updated = await mutate<{ id: string; label: string } | null>("lifeEvents.update", {
-        id: created.id,
-        label: "Updated Event",
-        notes: null,
-        category: null,
-        endedAt: null,
-      });
-      expect(updated).not.toBeNull();
-      expect(updated?.label).toBe("Updated Event");
-
-      // Analyze
-      const analysis = await query<{
-        event: Record<string, unknown>;
-        metrics: unknown[];
-        sleep: unknown[];
-        bodyComp: unknown[];
-      } | null>("lifeEvents.analyze", { id: created.id, windowDays: 30 });
-      expect(analysis).not.toBeNull();
-      if (analysis) {
-        expect(analysis.event).toBeDefined();
-        expect(Array.isArray(analysis.metrics)).toBe(true);
-        expect(Array.isArray(analysis.sleep)).toBe(true);
-        expect(Array.isArray(analysis.bodyComp)).toBe(true);
-      }
-
-      // Delete
-      const deleteResult = await mutate<{ success: boolean }>("lifeEvents.delete", {
-        id: created.id,
-      });
-      expect(deleteResult.success).toBe(true);
-    });
-  });
-
-  // ══════════════════════════════════════════════════════════════
   // Auth — linked accounts and unlinking
   // ══════════════════════════════════════════════════════════════
   describe("auth", () => {
