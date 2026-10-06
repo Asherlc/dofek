@@ -396,7 +396,11 @@ describe("ZivaMcpClient", () => {
     expect(error).toBeInstanceOf(ZivaMcpAuthenticationError);
     expect(error).not.toHaveProperty("cause");
     expect(error).not.toHaveProperty("message", expect.stringContaining(privateBody));
-    expect(telemetryMocks.captureException).not.toHaveBeenCalled();
+    expect(telemetryMocks.captureException).toHaveBeenCalledWith(
+      expect.objectContaining({ message: "Provider ziva HTTP authorization rejected (401)" }),
+      expect.objectContaining({ tags: expect.objectContaining({ operation: "provider-http" }) }),
+    );
+    expect(JSON.stringify(telemetryMocks.captureException.mock.calls)).not.toContain(privateBody);
   });
 
   it("preserves typed rate-limit metadata without exposing the response body", async () => {

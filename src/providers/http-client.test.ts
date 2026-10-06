@@ -170,10 +170,7 @@ describe("ProviderHttpClient", () => {
     });
 
     it("throws on non-OK response", async () => {
-      const mockFetch = vi.fn().mockResolvedValue({
-        ok: false,
-        status: 403,
-      });
+      const mockFetch = vi.fn().mockResolvedValue(new Response(null, { status: 403 }));
       const client = new TestClient("tok", "https://api.test.com", mockFetch);
 
       await expect(client.doGetBuffer("https://cdn.example.com/file.fit")).rejects.toThrow(

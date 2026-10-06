@@ -30794,3 +30794,38 @@ matrices before attempting independent native-package updates.
 - **Fix / validation:** Restore the explicit `vi` import without changing test behavior or compiler settings. Full `pnpm lint` and all workspace typecheck scripts pass with `pnpm --recursive --include-workspace-root --if-present run typecheck`. All 15 format test files pass (393 tests, retries disabled).
 - **Local validation prerequisite:** `pnpm compose:up` initially failed because Redpanda could not create its crash-report directory: `No space left on device`. Removing only this workspace's disposable Compose resources and pruning rebuildable Docker build cache reclaimed 4.373 GB, following [Docker disk recovery](testing.md#docker-disk-recovery). Other workspaces' containers and named volumes were retained.
 - **Remaining risk / follow-up:** Require green checks on the final PR revision. For future cleanup, run every package's typecheck script rather than checking only root, server, web, and mobile. No retry, timeout, suppression, or compiler gate was relaxed.
+
+## 2026-10-06 — Peloton authorization failure persisted after credential reconnect
+
+- **Status / impact:** The 18:00 UTC scheduled Peloton sync failed authorization,
+  leaving data stale and a reconnect warning visible after credentials were replaced.
+  The reason Peloton rejected the original token remains unresolved.
+- **Evidence:** Production `fitness.sync_log` records successful Peloton syncs
+  at 17:00 and 17:30 UTC and `Peloton access token expired.` errors at
+  18:00:00.767/18:00:00.782 UTC. Worker service logs show the 18:00 sync starting,
+  with no Peloton refresh-attempt log in the retained window. The token row was
+  replaced at 18:04:22 UTC, with an expiry of October 8 at 18:04:22 UTC. The prior
+  investigation verified that the replacement could read profile and workouts.
+- **Diagnosis:** The [Peloton adapter](../src/providers/peloton.ts) maps every
+  API `401` to `AccessTokenExpiredError`; that label does not prove expiry
+  ([RFC 6750](https://www.rfc-editor.org/rfc/rfc6750#section-3.1)). The old token
+  was overwritten; its upstream error body was not saved to the sync ledger,
+  and [worker failure reporting](../src/jobs/sync-provider-failure.ts) excludes
+  auth errors from Sentry. Axiom API queries using the worker's configured token
+  returned `403` because it lacks query/read permission.
+- **Changes / validation:** The shared credential sign-in path now queues a sync
+  after saving credentials. Common HTTP, token storage, credential sign-in,
+  and OAuth refresh boundaries emit safe diagnostics through existing logs and
+  Sentry. No Peloton-specific behavior or retry/timeout changes were introduced.
+  The impacted unit tier passed 4,559 tests (four skipped); root, server, and
+  provider-HTTP typechecks and `pnpm lint:sandbox` passed locally. Full lint's
+  SQL step could not connect to ClickHouse; `pnpm compose -- up -d --wait clickhouse`
+  then failed with `all predefined address pools have been fully subnetted`.
+  Docker inspection found `noisy-lynx_default` empty, but it belongs to another
+  workspace and requires approval before removal under the
+  [network-recovery procedure](testing.md#docker-address-pool-exhaustion).
+  These changes require release before they affect production.
+- **Remaining risk / follow-up:** Capture the next rejection with the shared
+  [authorization diagnostics procedure](processing-status-runbook.md#provider-authorization-diagnostics).
+  Do not claim an upstream root cause or introduce recovery behavior without
+  that evidence. No resilience knob was added.
