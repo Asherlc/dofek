@@ -514,7 +514,7 @@ describe("DataSourcesPanel", () => {
     expect(screen.getByText(refreshError.message)).toBeTruthy();
   });
 
-  it("groups WHOOP Cloud and Bluetooth in one provider section and hides Auto-Supplements", () => {
+  it("groups WHOOP Cloud and Bluetooth in one provider section", () => {
     mockProvidersQuery.mockReturnValue({
       data: [
         {
@@ -535,15 +535,6 @@ describe("DataSourcesPanel", () => {
           pushOnly: true,
           needsReauth: false,
         },
-        {
-          id: "auto-supplements",
-          name: "Auto-Supplements",
-          authorized: true,
-          authType: "none",
-          importOnly: false,
-          pushOnly: false,
-          needsReauth: false,
-        },
       ],
       isLoading: false,
       error: null,
@@ -556,7 +547,6 @@ describe("DataSourcesPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: "Bluetooth" }));
     expect(screen.getByTestId("provider-card-whoop_ble")).toBeTruthy();
     expect(screen.queryByTestId("provider-card-whoop")).toBeNull();
-    expect(screen.queryByTestId("provider-card-auto-supplements")).toBeNull();
   });
 
   it("opens personal token auth with server-provided instructions", () => {

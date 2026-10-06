@@ -39,10 +39,7 @@ import { nutritionAnalyticsRouter } from "./nutrition-analytics.ts";
 const createCaller = createTestCallerFactory(nutritionAnalyticsRouter);
 
 function makeCaller() {
-  const execute = vi.fn().mockImplementation(async (query: unknown) => {
-    if (collectSqlText(query).includes("has_medication_records")) {
-      return [{ has_medication_records: false, has_supplements: false }];
-    }
+  const execute = vi.fn().mockImplementation(async () => {
     return [];
   });
   const sensorStore = makeMockSensorStore([]);
@@ -85,7 +82,6 @@ describe("nutritionAnalyticsRouter selected ranges", () => {
 
     expect(result).toMatchObject({
       nutrients: [],
-      professionalReview: { status: "no_supplements" },
       dataQuality: {
         selectedWindowDays: 30,
         daysWithData: 0,

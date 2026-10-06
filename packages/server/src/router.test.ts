@@ -57,7 +57,6 @@ vi.mock("./routers/sleep-need.ts", () => ({ sleepNeedRouter: mockRouter }));
 vi.mock("./routers/sport-settings.ts", () => ({ sportSettingsRouter: mockRouter }));
 vi.mock("./routers/strength.ts", () => ({ strengthRouter: mockRouter }));
 vi.mock("./routers/stress.ts", () => ({ stressRouter: mockRouter }));
-vi.mock("./routers/supplements.ts", () => ({ supplementsRouter: mockRouter }));
 vi.mock("./routers/sync.ts", () => ({ syncRouter: mockRouter }));
 vi.mock("./routers/training.ts", () => ({ trainingRouter: mockRouter }));
 vi.mock("./routers/trends.ts", () => ({ trendsRouter: mockRouter }));
@@ -133,7 +132,6 @@ describe("appRouter", () => {
       "nutritionAnalytics",
       "personalization",
       "insights",
-      "supplements",
       "providerDetail",
       "processing",
       "providerGuide",

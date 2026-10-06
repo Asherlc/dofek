@@ -4,7 +4,6 @@ import {
   type MicronutrientSafetyReview,
   type NutritionAnalyticsDataQuality,
   NutritionAnalyticsRepository,
-  type SupplementMedicationReview,
 } from "../repositories/nutrition-analytics-repository.ts";
 import { CacheTTL, router } from "../trpc.ts";
 
@@ -24,7 +23,6 @@ export type MicronutrientSafetyReviewRow = ReturnType<MicronutrientSafetyReview[
 export interface MicronutrientSafetyReviewResult {
   nutrients: MicronutrientSafetyReviewRow[];
   dataQuality: NutritionAnalyticsDataQuality;
-  professionalReview: SupplementMedicationReview;
 }
 
 export interface AdaptiveTdeeResult {
@@ -84,15 +82,13 @@ export const nutritionAnalyticsRouter = router({
         ctx.accessWindow,
         ctx.sensorStore,
       );
-      const [nutrients, dataQuality, professionalReview] = await Promise.all([
+      const [nutrients, dataQuality] = await Promise.all([
         repo.getMicronutrientSafetyReview(range.days),
         repo.getMicronutrientDataQuality(range.days),
-        repo.getSupplementMedicationReview(),
       ]);
       return {
         nutrients: nutrients.map((nutrient) => nutrient.toDetail()),
         dataQuality,
-        professionalReview,
       };
     },
   ),

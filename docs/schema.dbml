@@ -229,13 +229,6 @@ enum sleep_stage_name {
   awake
 }
 
-enum supplement_dose_status {
-  planned
-  taken
-  skipped
-  unknown
-}
-
 table fitness.device_priority {
   provider_id text [not null]
   source_name_pattern text [not null]
@@ -861,84 +854,6 @@ table fitness.nutrient {
   sort_order integer [not null, default: 0]
   open_food_facts_key text
   conversion_factor real [not null, default: 1]
-}
-
-table fitness.supplement {
-  id uuid [pk, not null, default: `gen_random_uuid()`]
-  user_id uuid [not null]
-  sort_order bigint [not null, default: 0]
-  created_at "timestamp with time zone" [not null, default: `now()`]
-  updated_at "timestamp with time zone" [not null, default: `now()`]
-
-  indexes {
-    (id, user_id) [name: 'supplement_id_user_key', unique]
-    user_id [name: 'supplement_user_idx']
-  }
-}
-
-table fitness.supplement_definition {
-  id uuid [pk, not null, default: `gen_random_uuid()`]
-  supplement_id uuid [not null]
-  supersedes_definition_id uuid
-  name text [not null]
-  amount real
-  unit text
-  form text
-  description text
-  meal meal
-  effective_from date [not null, default: `CURRENT_DATE`]
-  effective_to date
-  created_at "timestamp with time zone" [not null, default: `now()`]
-
-  indexes {
-
-    (id, supplement_id) [name: 'supplement_definition_identity_key', unique]
-    supersedes_definition_id [name: 'supplement_definition_supersedes_key', unique]
-    supplement_id [name: 'supplement_definition_active_idx', unique]
-    (supplement_id, effective_from, effective_to) [name: 'supplement_definition_effective_idx']
-
-
-  }
-}
-
-table fitness.supplement_definition_nutrient {
-  definition_id uuid [not null]
-  nutrient_id text [not null]
-  amount real [not null]
-
-  indexes {
-    (definition_id, nutrient_id) [pk]
-    definition_id [name: 'supplement_definition_nutrient_definition_idx']
-  }
-}
-
-table fitness.supplement_dose_event {
-  id uuid [pk, not null, default: `gen_random_uuid()`]
-  user_id uuid [not null]
-  supplement_id uuid [not null]
-  definition_id uuid [not null]
-  provider_id text [not null]
-  external_id text
-  scheduled_date date [not null]
-  status supplement_dose_status [not null]
-  supersedes_event_id uuid
-  recorded_at "timestamp with time zone" [not null]
-  source_name text
-  raw jsonb
-  created_at "timestamp with time zone" [not null, default: `now()`]
-
-  indexes {
-
-
-
-    (id, user_id, supplement_id, definition_id, scheduled_date) [name: 'supplement_dose_event_slot_identity_key', unique]
-    supersedes_event_id [name: 'supplement_dose_event_successor_key', unique]
-    (user_id, supplement_id, scheduled_date) [name: 'supplement_dose_event_root_key', unique]
-    (user_id, provider_id, external_id) [name: 'supplement_dose_event_provider_external_idx', unique]
-    (user_id, scheduled_date) [name: 'supplement_dose_event_user_date_idx']
-    supplement_id [name: 'supplement_dose_event_supplement_idx']
-
-  }
 }
 
 table fitness.mcp_oidc_adapter {
@@ -1946,26 +1861,6 @@ ref food_entry_user_id_user_profile_id_fk: fitness.food_entry.user_id > fitness.
 ref food_entry_nutrient_food_entry_id_food_entry_id_fk: fitness.food_entry_nutrient.food_entry_id > fitness.food_entry.id [delete: cascade, update: no action]
 
 ref food_entry_nutrient_nutrient_id_nutrient_id_fk: fitness.food_entry_nutrient.nutrient_id > fitness.nutrient.id [delete: no action, update: no action]
-
-ref supplement_user_id_user_profile_id_fk: fitness.supplement.user_id > fitness.user_profile.id [delete: no action, update: no action]
-
-ref supplement_definition_supplement_id_supplement_id_fk: fitness.supplement_definition.supplement_id > fitness.supplement.id [delete: cascade, update: no action]
-
-ref supplement_definition_supersedes_fkey: fitness.supplement_definition.(supersedes_definition_id, supplement_id) > fitness.supplement_definition.(id, supplement_id) [delete: no action, update: no action]
-
-ref supplement_definition_nutrient_definition_id_supplement_definition_id_fk: fitness.supplement_definition_nutrient.definition_id > fitness.supplement_definition.id [delete: cascade, update: no action]
-
-ref supplement_definition_nutrient_nutrient_id_nutrient_id_fk: fitness.supplement_definition_nutrient.nutrient_id > fitness.nutrient.id [delete: no action, update: no action]
-
-ref supplement_dose_event_user_id_user_profile_id_fk: fitness.supplement_dose_event.user_id > fitness.user_profile.id [delete: no action, update: no action]
-
-ref supplement_dose_event_provider_id_provider_id_fk: fitness.supplement_dose_event.provider_id > fitness.provider.id [delete: no action, update: no action]
-
-ref supplement_dose_event_supplement_user_fkey: fitness.supplement_dose_event.(supplement_id, user_id) > fitness.supplement.(id, user_id) [delete: no action, update: no action]
-
-ref supplement_dose_event_definition_fkey: fitness.supplement_dose_event.(definition_id, supplement_id) > fitness.supplement_definition.(id, supplement_id) [delete: no action, update: no action]
-
-ref supplement_dose_event_supersedes_fkey: fitness.supplement_dose_event.(supersedes_event_id, user_id, supplement_id, definition_id, scheduled_date) > fitness.supplement_dose_event.(id, user_id, supplement_id, definition_id, scheduled_date) [delete: no action, update: no action]
 
 ref mcp_oidc_adapter_user_id_user_profile_id_fk: fitness.mcp_oidc_adapter.user_id > fitness.user_profile.id [delete: cascade, update: no action]
 

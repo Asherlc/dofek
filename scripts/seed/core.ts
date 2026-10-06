@@ -36,7 +36,6 @@ async function clearSeedUserData(sql: Sql, userId: string): Promise<void> {
   await sql`DELETE FROM fitness.food_entry_nutrient WHERE food_entry_id IN (
     SELECT id FROM fitness.food_entry WHERE user_id = ${userId}
   )`;
-  await sql`DELETE FROM fitness.supplement_dose_event WHERE user_id = ${userId}`;
   await sql`DELETE FROM fitness.dexa_scan_region WHERE scan_id IN (
     SELECT id FROM fitness.dexa_scan WHERE user_id = ${userId}
   )`;
@@ -47,7 +46,6 @@ async function clearSeedUserData(sql: Sql, userId: string): Promise<void> {
   await sql`DELETE FROM fitness.breathwork_session WHERE user_id = ${userId}`;
   await sql`DELETE FROM fitness.menstrual_period WHERE user_id = ${userId}`;
   await sql`DELETE FROM fitness.food_entry WHERE user_id = ${userId}`;
-  await sql`DELETE FROM fitness.supplement WHERE user_id = ${userId}`;
   await sql`DELETE FROM fitness.daily_metric_value WHERE daily_metrics_id IN (
     SELECT id FROM fitness.daily_metrics WHERE user_id = ${userId}
   )`;

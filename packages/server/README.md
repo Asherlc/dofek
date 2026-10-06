@@ -397,7 +397,7 @@ weight policy: same-day direct weight, bounded 14-day interpolation, or nearest 
 partial observation; no-log days are `no_logging`. Energy and macros remain null on no-log days, so a sparse day cannot be mistaken for a
 known deficit and a 150-calorie day is not silently classified as partial. Nutrition source resolution
 is reported independently through the canonical `fitness.v_nutrition_daily` contribution set.
-Supplement-only nutrient totals remain available but do not count as food logging. Dense nutrition
+Dense nutrition
 responses are capped at 366 inclusive days. `get_training_load` with `detail: "analytical"` and
 `include_nutrition: true` returns this canonical nutrition spine beside, rather than collapsed into,
 the modality-specific load channels and requires both read scopes.
@@ -417,7 +417,7 @@ The server is packaged as a Docker image (target `server`) and handles both API 
 
 Weekly/monthly reports and report sharing are retired. Deploy the server, web,
 and mobile removal together: older clients can no longer call the report APIs.
-[Migration 0141](../../drizzle/0141_remove_shared_reports.sql) removes
+[Migration 0142](../../drizzle/0142_remove_shared_reports.sql) removes
 `fitness.shared_report` and its stored snapshots. PostgreSQL's
 [`DROP TABLE`](https://www.postgresql.org/docs/current/sql-droptable.html)
 also removes that table's indexes and constraints.

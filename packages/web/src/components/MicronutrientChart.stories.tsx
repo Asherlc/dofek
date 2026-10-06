@@ -9,9 +9,8 @@ const data: MicronutrientSafetyReviewRow[] = [
     unit: "mcg",
     intake: {
       totalDailyAverage: 120,
-      foodDailyAverage: 20,
+      foodDailyAverage: 120,
       providerDailyTotalAverage: 0,
-      supplementDailyAverage: 100,
       daysTracked: 28,
     },
     sourceBreakdown: [
@@ -19,14 +18,7 @@ const data: MicronutrientSafetyReviewRow[] = [
         providerId: "ziva",
         sourceLabel: "Ziva",
         intakeType: "meal_aggregate",
-        dailyAverageContribution: 20,
-        daysTracked: 28,
-      },
-      {
-        providerId: "dofek",
-        sourceLabel: "Dofek supplements",
-        intakeType: "supplement",
-        dailyAverageContribution: 100,
+        dailyAverageContribution: 120,
         daysTracked: 28,
       },
     ],
