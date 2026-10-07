@@ -40,7 +40,7 @@ This gate is complete when the acquisition surfaces make no contradictory or pro
 Make one personalized, trustworthy action the center of the web and mobile home experiences.
 
 - [ ] Generate one primary action from server-owned metric and recommendation logic. The client renders the decision and must not independently calculate its health meaning.
-- [ ] Tie the action to the goal selected during onboarding and the user's current recovery, sleep, training, nutrition, health, schedule, and data-availability context.
+- [ ] Tie the action to the user's current recovery, sleep, training, nutrition, health, schedule, and data-availability context.
 - [ ] Explain the recommendation with two or three concise supporting facts.
 - [ ] Show the contributing sources, freshness, missing-data caveats, and confidence.
 - [ ] Let the user accept, modify, or dismiss the action and optionally state why.
@@ -53,12 +53,10 @@ The category increasingly centers the home experience on timely guidance rather 
 
 This outcome is successful when a newly activated user can receive a credible action within 24 hours of connecting sufficient data, and returning users regularly engage with or intentionally dismiss the Brief.
 
-### Next: Goals, Calendar, and Plan Compliance
+### Next: Calendar and Plan Compliance
 
-Connect each daily decision to a longer-term outcome.
+Connect daily decisions to planned and completed work.
 
-- [ ] Persist the goal selected during onboarding and allow it to be changed.
-- [ ] Support an event date or ongoing outcome target such as race preparation, sleep consistency, strength progression, or weight trend.
 - [ ] Present planned and completed work in a shared web/mobile calendar.
 - [ ] Explain plan deviations using recovery, availability, and completed-work evidence without moral judgment.
 - [ ] Adjust future recommendations when the user accepts a change or repeatedly dismisses a type of action.
@@ -74,7 +72,6 @@ Distribute the Daily Brief after the core recommendation loop proves useful.
 - [ ] Add iOS home-screen and lock-screen widgets for the day's action, its status, and critical data freshness.
 - [ ] Add a Watch glance for the accepted action and relevant target.
 - [ ] Notify users when a required source becomes stale or disconnected and provide direct remediation.
-- [x] Support optional medication reminders with clear logging state.
 - [ ] If a streak is tested, tie it to a low-pressure action such as reviewing the Brief or recording a check-in. Never reward exercise volume, weight change, calorie restriction, or a “perfect” recovery score.
 
 Duolingo's product research found that reducing the minimum daily commitment improved retention in its [streak experiments](https://blog.duolingo.com/improving-the-streak/). Its [widget design](https://blog.duolingo.com/widget-feature/) focuses on reminding the user of one meaningful action. Dofek should apply the habit principle without importing unsafe health gamification.
@@ -122,16 +119,13 @@ Implemented first-run flow that helps a new user reach a useful dashboard quickl
 
 - Landing page Get started CTAs send users to login with `returnTo=/onboarding`; see [`LandingPage.tsx`](../packages/web/src/pages/LandingPage.tsx) and [`index.tsx`](../packages/web/src/routes/index.tsx).
 - Web and mobile render shared setup steps from `@dofek/onboarding`; see [`get-started-flow.ts`](../packages/onboarding/src/get-started-flow.ts), [`OnboardingPage.tsx`](../packages/web/src/pages/OnboardingPage.tsx), and [`onboarding.tsx`](../packages/mobile/app/onboarding.tsx).
-- Onboarding and settings persist a primary goal from shared options in `@dofek/onboarding/primary-goal`; see [`primary-goal.ts`](../packages/onboarding/src/primary-goal.ts), [`PrimaryGoalSelector.tsx`](../packages/web/src/components/PrimaryGoalSelector.tsx), and [`PrimaryGoalSelector.tsx`](../packages/mobile/components/PrimaryGoalSelector.tsx).
 - Web onboarding includes the public iOS TestFlight invite so Apple Health and mobile setup are first-class; see [`OnboardingPage.tsx`](../packages/web/src/pages/OnboardingPage.tsx).
 - Landing page copy frames correlations, trends, comparisons, and cross-device source setup before signup; see [`LandingPage.tsx`](../packages/web/src/pages/LandingPage.tsx).
 
-### Goals, Calendar, and Plan Compliance
+### Calendar and Plan Compliance
 
-Connect each daily decision to a longer-term outcome. First slice shipped: persist and edit primary goal. Deferred: event dates, planned/completed calendar merge, compliance explanations, recommendation adjustments, and plan import.
+Connect each daily decision to a longer-term outcome. Deferred: planned/completed calendar merge, compliance explanations, recommendation adjustments, and plan import.
 
-- [x] Persist the goal selected during onboarding and allow it to be changed; see [`2026-07-26-primary-goal-selection.md`](superpowers/plans/2026-07-26-primary-goal-selection.md).
-- [ ] Support an event date or ongoing outcome target beyond the primary-goal taxonomy.
 - [ ] Present planned and completed work in a shared web/mobile calendar.
 - [ ] Explain plan deviations using recovery, availability, and completed-work evidence without moral judgment.
 - [ ] Adjust future recommendations when the user accepts a change or repeatedly dismisses a type of action.

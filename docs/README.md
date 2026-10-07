@@ -27,7 +27,7 @@ the exact section.
 - [processing-status-runbook.md](processing-status-runbook.md): durable processing evidence, deployment order, and stage diagnosis.
 - [account-erasure-runbook.md](account-erasure-runbook.md): durable account deletion, retention proof, restore reconciliation, and incident response.
 - [roadmap.md](roadmap.md): product strategy, release gates, Daily Brief,
-  goals, and trust roadmap.
+  calendar, and trust roadmap.
 - [review-fixture-scenarios.md](review-fixture-scenarios.md): paired web/mobile
   Storybook fixtures for empty, partial, conflicting-source, stale-provider,
   processing, and error review states.
@@ -52,7 +52,7 @@ the exact section.
 | [external-api.md](external-api.md) | Target-agnostic authenticated write API, explicit external identity linking, nutrition writes, and account-erasure coordination. |
 | [credential-encryption.md](credential-encryption.md) | Stored credential encryption, required key material, context binding, and rotation boundary. |
 | [posthog-support.md](posthog-support.md) | In-app support ticket flow, PostHog Conversations integration, and failure handling. |
-| [roadmap.md](roadmap.md) | Product strategy and release gates across the Daily Brief, goals, trust, and onboarding. |
+| [roadmap.md](roadmap.md) | Product strategy and release gates across the Daily Brief, calendar, trust, and onboarding. |
 | [apple-health.md](apple-health.md) | Apple Health import model and type mapping. |
 | [apple-watch-accelerometer.md](apple-watch-accelerometer.md) | Notes on Apple Watch accelerometer capture and interpretation. |
 

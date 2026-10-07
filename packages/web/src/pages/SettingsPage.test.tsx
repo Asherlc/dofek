@@ -9,9 +9,9 @@ type SettingsSearch = {
   tab?:
     | "account"
     | "data-sources"
-    | "goals-models"
+    | "models-units"
     | "privacy-export"
-    | "notifications"
+    | "medications"
     | "billing"
     | "advanced";
 };
@@ -87,17 +87,11 @@ vi.mock("../components/LinkedAccountsPanel.tsx", () => ({
 vi.mock("../components/MedicationDoseEventsPanel.tsx", () => ({
   MedicationDoseEventsPanel: () => <div>MedicationDoseEventsPanel</div>,
 }));
-vi.mock("../components/MedicationRemindersPanel.tsx", () => ({
-  MedicationRemindersPanel: () => <div>MedicationRemindersPanel</div>,
-}));
 vi.mock("../components/PasswordSettingsPanel.tsx", () => ({
   PasswordSettingsPanel: () => <div>PasswordSettingsPanel</div>,
 }));
 vi.mock("../components/PersonalizationPanel.tsx", () => ({
   PersonalizationPanel: () => <div>PersonalizationPanel</div>,
-}));
-vi.mock("../components/PrimaryGoalSelector.tsx", () => ({
-  PrimaryGoalSelector: () => <div>PrimaryGoalSelector</div>,
 }));
 vi.mock("../components/AccountErasurePanel.tsx", () => ({
   AccountErasurePanel: () => <div>AccountErasurePanel</div>,
@@ -213,9 +207,9 @@ describe("SettingsPage categories", () => {
     ).toEqual([
       { id: "settings-tab-account", label: "Account" },
       { id: "settings-tab-data-sources", label: "Data Sources" },
-      { id: "settings-tab-goals-models", label: "Goals & Models" },
+      { id: "settings-tab-models-units", label: "Models & Units" },
       { id: "settings-tab-privacy-export", label: "Privacy/Export" },
-      { id: "settings-tab-notifications", label: "Notifications" },
+      { id: "settings-tab-medications", label: "Medications" },
       { id: "settings-tab-billing", label: "Billing" },
       { id: "settings-tab-advanced", label: "Advanced" },
     ]);
@@ -230,9 +224,9 @@ describe("SettingsPage categories", () => {
     for (const category of [
       "Account",
       "Data Sources",
-      "Goals & Models",
+      "Models & Units",
       "Privacy/Export",
-      "Notifications",
+      "Medications",
       "Billing",
       "Advanced",
     ]) {
@@ -252,12 +246,12 @@ describe("SettingsPage categories", () => {
       target: { value: "medication" },
     });
 
-    expect(screen.getByRole("tab", { name: "Notifications" })).toBeTruthy();
+    expect(screen.getByRole("tab", { name: "Medications" })).toBeTruthy();
     expect(screen.queryByRole("tab", { name: "Account" })).toBeNull();
-    expect(screen.getByText("Medication Reminders")).toBeTruthy();
+    expect(screen.getByText("Medication Doses")).toBeTruthy();
   });
 
-  it("finds the unit controls in Goals & Models from a settings search", async () => {
+  it("finds the unit controls in Models & Units from a settings search", async () => {
     const { SettingsPage } = await import("./SettingsPage.tsx");
     render(<SettingsPage />);
 
@@ -265,7 +259,7 @@ describe("SettingsPage categories", () => {
       target: { value: "units" },
     });
 
-    expect(screen.getByRole("tab", { name: "Goals & Models" })).toHaveAttribute(
+    expect(screen.getByRole("tab", { name: "Models & Units" })).toHaveAttribute(
       "aria-selected",
       "true",
     );
@@ -322,7 +316,7 @@ describe("SettingsPage categories", () => {
 
     const searchbox = screen.getByRole("searchbox", { name: "Search settings" });
     fireEvent.change(searchbox, { target: { value: "medication" } });
-    fireEvent.click(screen.getByRole("tab", { name: "Notifications" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Medications" }));
 
     if (!(searchbox instanceof HTMLInputElement)) {
       throw new Error("Expected the settings search control to be an input.");
@@ -336,8 +330,8 @@ describe("SettingsPage categories", () => {
 
   it.each([
     ["connections", "data-sources"],
-    ["general", "goals-models"],
-    ["health", "goals-models"],
+    ["general", "models-units"],
+    ["health", "models-units"],
     ["account", "account"],
   ] as const)("normalizes the legacy %s deep link to %s", async (legacyTab, currentCategory) => {
     expect(normalizeSettingsCategory(legacyTab)).toBe(currentCategory);
