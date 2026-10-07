@@ -3,6 +3,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { Alert } from "react-native";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { climbingProgressionFixture } from "../../components/climbing-progression-test-helpers";
 
 const mockRouterPush = vi.fn();
 const mockTrainingInvalidate = vi.fn();
@@ -901,14 +902,7 @@ describe("StrainScreen recent activity navigation", () => {
     mockTrainingState.data = {
       ...defaultMockTrainingData(),
       climbing: {
-        gradeProgression: [
-          {
-            date: "2026-07-09",
-            climbType: "boulder",
-            grade: "V4",
-            gradeSortValue: 4,
-          },
-        ],
+        gradeProgression: [climbingProgressionFixture()],
         volumeByGrade: [],
         sessionSummary: [],
       },
@@ -920,7 +914,7 @@ describe("StrainScreen recent activity navigation", () => {
     render(<StrainScreen />);
 
     expect(screen.queryByText("Climbing refresh failed")).toBeNull();
-    expect(screen.getByText("Best Boulder Grade")).toBeTruthy();
+    expect(screen.getByText("Bouldering")).toBeTruthy();
     expect(screen.getByText("V4")).toBeTruthy();
   });
 

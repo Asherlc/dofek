@@ -1,3 +1,4 @@
+import { climbingMetadataSchema } from "@dofek/training/climbing-context";
 import type { ClimbingFilters } from "@dofek/training/climbing-filters";
 import {
   CLIMBING_GRADE_SYSTEMS,
@@ -6,6 +7,11 @@ import {
   type ClimbingGradeSystem,
   DEFAULT_CLIMBING_GRADE_PREFERENCE,
 } from "@dofek/training/climbing-grades";
+import {
+  type ClimbingGradeProgressionLane,
+  climbingGradeProgressionSchema,
+  climbingProgressionSettings,
+} from "@dofek/training/climbing-progression";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import type { ClimbingActivityEntryRow } from "../contracts/climbing-context-contracts.ts";
@@ -17,16 +23,15 @@ import {
   ClimbingActivityEntryRepository,
 } from "./climbing-activity-entry-repository.ts";
 import { displayClimbingGrade } from "./climbing-grade-display.ts";
+import {
+  buildClimbingGradeProgression,
+  type ClimbingProgressionEntry,
+} from "./climbing-grade-progression.ts";
 
 export type { ClimbingActivityEntryRow, ClimbingClimbType, ClimbingGradeSystem };
+export { climbingGradeProgressionSchema };
 
-export interface ClimbingGradeProgressionRow {
-  date: string;
-  climbType: ClimbingClimbType;
-  gradeSystem: ClimbingGradeSystem;
-  grade: string;
-  gradeSortValue: number;
-}
+export type ClimbingGradeProgressionRow = ClimbingGradeProgressionLane;
 
 export class ClimbingGradeProgression {
   readonly #row: ClimbingGradeProgressionRow;
@@ -89,20 +94,15 @@ export class ClimbingSessionSummary {
 
 const climbTypeSchema = z.enum(["boulder", "route"]);
 const gradeSystemSchema = z.enum(CLIMBING_GRADE_SYSTEMS);
-export const climbingGradeProgressionSchema = z.object({
-  date: z.string(),
+export const climbingVolumeByGradeSchema = z.object({
   climbType: climbTypeSchema,
   gradeSystem: gradeSystemSchema,
   grade: z.string(),
   gradeSortValue: z.number(),
-}) satisfies z.ZodType<ClimbingGradeProgressionRow>;
-export const climbingVolumeByGradeSchema = climbingGradeProgressionSchema
-  .omit({ date: true })
-  .extend({
-    attempts: z.number().nullable(),
-    recordedAttempts: z.number().nullable(),
-    sends: z.number(),
-  }) satisfies z.ZodType<ClimbingVolumeByGradeRow>;
+  attempts: z.number().nullable(),
+  recordedAttempts: z.number().nullable(),
+  sends: z.number(),
+}) satisfies z.ZodType<ClimbingVolumeByGradeRow>;
 export const climbingSessionSummarySchema = z.object({
   activityId: z.string(),
   date: z.string(),
@@ -118,8 +118,11 @@ export const climbingSessionSummarySchema = z.object({
 const progressionRowSchema = z.object({
   session_date: dateStringSchema,
   climb_type: climbTypeSchema,
+  climb_style: climbingMetadataSchema.shape.climbStyle,
+  setting: z.enum(climbingProgressionSettings),
   grade_system: gradeSystemSchema,
   grade: z.string(),
+  sent: z.boolean().nullable(),
 });
 const volumeByGradeRowSchema = z.object({
   climb_type: climbTypeSchema,
@@ -175,30 +178,30 @@ export class ClimbingRepository extends BaseRepository {
     if (filters.protection === "unknown") predicates.push(sql`ce.route_protection IS NULL`);
     else if (filters.protection)
       predicates.push(sql`${filters.protection} = ANY(ce.route_protection)`);
+    if (filters.setting) predicates.push(sql`(${this.#entrySetting()}) = ${filters.setting}`);
+    return sql.join(predicates, sql` AND `);
+  }
+
+  #entrySetting() {
     // Product policy treats Mountain Project and OpenBeta as outdoor, including older entries without paths.
-    const setting = sql`CASE
+    return sql`CASE
       WHEN ce.provider_id IN ('mountain-project', 'openbeta') THEN 'outdoor'
       WHEN ce.location_path @> '[{"kind":"gym"}]'::jsonb THEN 'indoor'
       WHEN ce.location_path @> '[{"kind":"destination"}]'::jsonb
         OR ce.location_path @> '[{"kind":"area"}]'::jsonb
         OR ce.location_path @> '[{"kind":"subarea"}]'::jsonb THEN 'outdoor'
       ELSE 'unknown' END`;
-    if (filters.setting) predicates.push(sql`(${setting}) = ${filters.setting}`);
-    return sql.join(predicates, sql` AND `);
   }
 
-  async getGradeProgression(
-    days: number,
-    filters: ClimbingFilters = {},
-  ): Promise<ClimbingGradeProgression[]> {
-    const rows = await executeWithSchema(
-      this.db,
-      progressionRowSchema,
-      sql`WITH climbing_entries AS (
+  #canonicalEntryCtes(days: number, filters: ClimbingFilters) {
+    return sql`climbing_entries AS (
             SELECT
               (${postgresActivityCalendarDate(sql`a`, this.timezone)})::text AS session_date,
-              ce.id, ce.activity_id, ce.climb_type, ce.grade_system, ce.grade,
-              ce.sent, ce.attempt_count
+              a.id AS canonical_activity_id, ce.id, ce.provider_id,
+              ce.climb_type, ce.grade_system, ce.grade,
+              ce.climb_style, ${this.#entrySetting()} AS setting, ce.sent,
+              ce.route_name, ce.location_path, ce.board, ce.wall_angle, ce.route_protection,
+              a.name AS activity_name, ce.location_name, ce.attempt_count
             FROM fitness.v_activity AS a
             JOIN fitness.v_climbing_entry AS ce
               ON ce.activity_id = ANY(a.member_activity_ids)
@@ -208,8 +211,11 @@ export class ClimbingRepository extends BaseRepository {
             UNION ALL
             SELECT
               ce.unattached_date::text AS session_date,
-              ce.id, ce.activity_id, ce.climb_type, ce.grade_system, ce.grade,
-              ce.sent, ce.attempt_count
+              NULL::uuid AS canonical_activity_id, ce.id, ce.provider_id,
+              ce.climb_type, ce.grade_system, ce.grade,
+              ce.climb_style, ${this.#entrySetting()} AS setting, ce.sent,
+              ce.route_name, ce.location_path, ce.board, ce.wall_angle, ce.route_protection,
+              NULL::text AS activity_name, ce.location_name, ce.attempt_count
             FROM fitness.v_climbing_entry AS ce
             WHERE ce.user_id = ${this.userId}
               AND ce.activity_id IS NULL
@@ -218,41 +224,80 @@ export class ClimbingRepository extends BaseRepository {
               AND ce.unattached_date > (NOW() AT TIME ZONE ${this.timezone})::date - ${days}::int
               AND ce.unattached_date <= (NOW() AT TIME ZONE ${this.timezone})::date
               ${this.dateAccessPredicate(sql`ce.unattached_date`)}
-          )
+          ), recorded_entries AS (
+            SELECT ce.*,
+              CASE WHEN detail.attempt_count > 0 THEN detail.sent ELSE ce.sent END AS recorded_sent,
+              CASE WHEN detail.attempt_count > 0 THEN detail.attempt_count ELSE ce.attempt_count END AS recorded_attempt_count
+            FROM climbing_entries AS ce
+            LEFT JOIN LATERAL (
+              SELECT COUNT(*)::int AS attempt_count, BOOL_OR(attempt.outcome = 'sent') AS sent
+              FROM fitness.climbing_attempt AS attempt
+              WHERE attempt.climbing_entry_id = ce.id
+            ) AS detail ON true
+          ), observations AS (
+            SELECT ce.*,
+              CASE WHEN ce.canonical_activity_id IS NOT NULL
+                AND NULLIF(BTRIM(ce.route_name), '') IS NOT NULL
+                AND jsonb_array_length(ce.location_path) > 0
+              THEN jsonb_build_array(
+                ce.canonical_activity_id, ce.session_date,
+                ce.climb_type, ce.grade_system, LOWER(BTRIM(ce.grade)),
+                ce.climb_style, ce.setting, LOWER(BTRIM(ce.route_name)),
+                (SELECT jsonb_agg(jsonb_build_array(LOWER(BTRIM(node->>'name')), node->>'kind') ORDER BY position)
+                  FROM jsonb_array_elements(ce.location_path) WITH ORDINALITY AS location(node, position)),
+                LOWER(BTRIM(ce.board->>'name')), ce.wall_angle, ce.route_protection,
+                ce.recorded_sent
+              ) ELSE jsonb_build_array(ce.id) END AS observation
+            FROM recorded_entries AS ce
+          ), ranked_observations AS (
+            SELECT *, ROW_NUMBER() OVER (
+              PARTITION BY observation, provider_id ORDER BY recorded_attempt_count DESC NULLS LAST, id
+            ) AS occurrence
+            FROM observations
+          ), canonical_entries AS (
+            SELECT DISTINCT ON (observation, occurrence) *,
+              CASE WHEN MIN(recorded_attempt_count) OVER paired = MAX(recorded_attempt_count) OVER paired
+                THEN MAX(recorded_attempt_count) OVER paired ELSE NULL END AS canonical_attempt_count
+            FROM ranked_observations
+            WINDOW paired AS (PARTITION BY observation, occurrence)
+            ORDER BY observation, occurrence, provider_id, id
+          )`;
+  }
+
+  async getGradeProgression(
+    days: number,
+    filters: ClimbingFilters = {},
+  ): Promise<ClimbingGradeProgression[]> {
+    const rows = await executeWithSchema(
+      this.db,
+      progressionRowSchema,
+      sql`WITH ${this.#canonicalEntryCtes(days, filters)}
           SELECT
-            ce.session_date,
-            ce.climb_type,
-            ce.grade_system,
-            ce.grade
-          FROM climbing_entries AS ce
-          LEFT JOIN LATERAL (
-            SELECT COUNT(*)::int AS attempt_count, BOOL_OR(attempt.outcome = 'sent') AS sent
-            FROM fitness.climbing_attempt AS attempt
-            WHERE attempt.climbing_entry_id = ce.id
-          ) AS detail ON true
-          WHERE CASE WHEN detail.attempt_count > 0 THEN detail.sent ELSE ce.sent END = true`,
+            session_date, climb_type, climb_style, setting, grade_system, grade,
+            recorded_sent AS sent
+          FROM canonical_entries`,
     );
-    const bestBySession = new Map<string, ClimbingGradeProgressionRow>();
-    for (const row of rows) {
+    const entries = rows.flatMap((row): ClimbingProgressionEntry[] => {
       const display = displayClimbingGrade(
         this.#gradePreference,
         row.climb_type,
         row.grade_system,
         row.grade,
       );
-      if (!display) continue;
-      const key = `${row.session_date}:${row.climb_type}`;
-      const candidate = { date: row.session_date, climbType: row.climb_type, ...display };
-      const current = bestBySession.get(key);
-      if (!current || candidate.gradeSortValue > current.gradeSortValue)
-        bestBySession.set(key, candidate);
-    }
-    return [...bestBySession.values()]
-      .sort(
-        (left, right) =>
-          left.date.localeCompare(right.date) || left.climbType.localeCompare(right.climbType),
-      )
-      .map((row) => new ClimbingGradeProgression(row));
+      return display
+        ? [
+            {
+              date: row.session_date,
+              climbType: row.climb_type,
+              style: row.climb_type === "boulder" ? "boulder" : (row.climb_style ?? "unknown"),
+              setting: row.setting,
+              sent: row.sent,
+              ...display,
+            },
+          ]
+        : [];
+    });
+    return buildClimbingGradeProgression(entries).map((lane) => new ClimbingGradeProgression(lane));
   }
 
   async getVolumeByGrade(
@@ -262,44 +307,17 @@ export class ClimbingRepository extends BaseRepository {
     const rows = await executeWithSchema(
       this.db,
       volumeByGradeRowSchema,
-      sql`WITH climbing_entries AS (
-            SELECT
-              ce.id, ce.activity_id, ce.climb_type, ce.grade_system, ce.grade,
-              ce.sent, ce.attempt_count
-            FROM fitness.v_activity AS a
-            JOIN fitness.v_climbing_entry AS ce
-              ON ce.activity_id = ANY(a.member_activity_ids)
-             AND ce.provider_absent_at IS NULL
-            WHERE ${this.#activityWindowPredicate(days)}
-              AND ${this.#entryFilterPredicate(filters)}
-            UNION ALL
-            SELECT
-              ce.id, ce.activity_id, ce.climb_type, ce.grade_system, ce.grade,
-              ce.sent, ce.attempt_count
-            FROM fitness.v_climbing_entry AS ce
-            WHERE ce.user_id = ${this.userId}
-              AND ce.activity_id IS NULL
-              AND ${this.#entryFilterPredicate(filters)}
-              AND ce.provider_absent_at IS NULL
-              AND ce.unattached_date > (NOW() AT TIME ZONE ${this.timezone})::date - ${days}::int
-              AND ce.unattached_date <= (NOW() AT TIME ZONE ${this.timezone})::date
-              ${this.dateAccessPredicate(sql`ce.unattached_date`)}
-          )
+      sql`WITH ${this.#canonicalEntryCtes(days, filters)}
           SELECT
             ce.climb_type,
             ce.grade_system,
             ce.grade,
-            CASE WHEN COUNT(CASE WHEN detail.attempt_count > 0 THEN detail.attempt_count ELSE ce.attempt_count END) = COUNT(*)
-              THEN SUM(CASE WHEN detail.attempt_count > 0 THEN detail.attempt_count ELSE ce.attempt_count END)
+            CASE WHEN COUNT(ce.canonical_attempt_count) = COUNT(*)
+              THEN SUM(ce.canonical_attempt_count)
               ELSE NULL END AS attempts,
-            SUM(CASE WHEN detail.attempt_count > 0 THEN detail.attempt_count ELSE ce.attempt_count END) AS recorded_attempts,
-            COUNT(*) FILTER (WHERE CASE WHEN detail.attempt_count > 0 THEN detail.sent ELSE ce.sent END)::int AS sends
-          FROM climbing_entries AS ce
-          LEFT JOIN LATERAL (
-            SELECT COUNT(*)::int AS attempt_count, BOOL_OR(attempt.outcome = 'sent') AS sent
-            FROM fitness.climbing_attempt AS attempt
-            WHERE attempt.climbing_entry_id = ce.id
-          ) AS detail ON true
+            SUM(ce.canonical_attempt_count) AS recorded_attempts,
+            COUNT(*) FILTER (WHERE ce.recorded_sent)::int AS sends
+          FROM canonical_entries AS ce
           GROUP BY ce.climb_type, ce.grade_system, ce.grade`,
     );
     const byDisplayGrade = new Map<string, ClimbingVolumeByGradeRow>();
@@ -345,27 +363,19 @@ export class ClimbingRepository extends BaseRepository {
     const rows = await executeWithSchema(
       this.db,
       sessionEntryRowSchema,
-      sql`SELECT
-            a.id::text AS activity_id,
-            (${postgresActivityCalendarDate(sql`a`, this.timezone)})::text AS session_date,
-            COALESCE(a.name, 'Climbing') AS name,
+      sql`WITH ${this.#canonicalEntryCtes(days, filters)}
+          SELECT
+            ce.canonical_activity_id::text AS activity_id,
+            ce.session_date,
+            COALESCE(ce.activity_name, 'Climbing') AS name,
             ce.location_name,
-            CASE WHEN detail.attempt_count > 0 THEN detail.attempt_count ELSE ce.attempt_count END AS attempt_count,
-            CASE WHEN detail.attempt_count > 0 THEN detail.sent ELSE ce.sent END AS sent,
+            ce.canonical_attempt_count AS attempt_count,
+            ce.recorded_sent AS sent,
             ce.climb_type,
             ce.grade_system,
             ce.grade
-          FROM fitness.v_activity AS a
-          JOIN fitness.v_climbing_entry AS ce
-            ON ce.activity_id = ANY(a.member_activity_ids)
-           AND ce.provider_absent_at IS NULL
-          LEFT JOIN LATERAL (
-            SELECT COUNT(*)::int AS attempt_count, BOOL_OR(attempt.outcome = 'sent') AS sent
-            FROM fitness.climbing_attempt AS attempt
-            WHERE attempt.climbing_entry_id = ce.id
-          ) AS detail ON true
-          WHERE ${this.#activityWindowPredicate(days)}
-              AND ${this.#entryFilterPredicate(filters)}`,
+          FROM canonical_entries AS ce
+          WHERE ce.canonical_activity_id IS NOT NULL`,
     );
     const summaries = new Map<string, ClimbingSessionSummaryRow>();
     for (const row of rows) {
