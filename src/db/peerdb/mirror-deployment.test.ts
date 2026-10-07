@@ -37,6 +37,7 @@ const clickHouseClient = {
         database: "destination",
         table: "activity",
         name,
+        type: "String",
       })),
   })),
 };

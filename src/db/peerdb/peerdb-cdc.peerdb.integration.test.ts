@@ -188,6 +188,42 @@ describe("PeerDB CDC production contract", () => {
     );
   });
 
+  it("preserves missing activity end times during snapshot and CDC updates", async () => {
+    await waitForClickHouseFixture(clickHouseClient, fixture);
+    const readEndTime = async () => {
+      const result = await clickHouseClient.query<{ ended_at: string | null }>({
+        query: "SELECT ended_at FROM postgres_fitness.activity FINAL WHERE id = {id:UUID}",
+        query_params: { id: fixture.activity },
+        format: "JSONEachRow",
+      });
+      return result.json();
+    };
+    expect(await readEndTime()).toEqual([{ ended_at: null }]);
+
+    await postgresClient.query(
+      "UPDATE fitness.activity SET ended_at = '2026-09-13T13:00:00Z' WHERE id = $1",
+      [fixture.activity],
+    );
+    await waitForClickHouseRows(clickHouseClient, [
+      {
+        table: "activity",
+        predicate: "id = {id:UUID} AND ended_at = toDateTime64('2026-09-13 13:00:00', 6)",
+        queryParams: { id: fixture.activity },
+      },
+    ]);
+    await postgresClient.query("UPDATE fitness.activity SET ended_at = NULL WHERE id = $1", [
+      fixture.activity,
+    ]);
+    await waitForClickHouseRows(clickHouseClient, [
+      {
+        table: "activity",
+        predicate: "id = {id:UUID} AND ended_at IS NULL",
+        queryParams: { id: fixture.activity },
+      },
+    ]);
+    expect(await readEndTime()).toEqual([{ ended_at: null }]);
+  });
+
   it("replicates a fixture through every managed mapping and its exact causal marker", async () => {
     await waitForClickHouseRows(clickHouseClient, [
       { table: "activity", predicate: "id = {id:UUID}", queryParams: { id: fixture.activity } },

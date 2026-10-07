@@ -97,6 +97,31 @@ ${renderDedupedActivitiesSelectSql(targetSchema)}`,
     ]);
   }, 180_000);
 
+  it("preserves unknown end times and uses only recorded end times across members", async () => {
+    const activeClient = requireClient(client);
+    await seedSpecificActivityTypeFixture(activeClient, targetSchema, "cycling", "cycling");
+    await activeClient.command({
+      query: `ALTER TABLE ${targetSchema}.activity_source_records UPDATE ended_at = NULL WHERE 1 SETTINGS mutations_sync = 2`,
+    });
+    const readGroups = async () => {
+      const result = await activeClient.query({
+        query: renderDedupedActivitiesSelectSql(targetSchema),
+        format: "JSONEachRow",
+      });
+      return result.json();
+    };
+    expect(await readGroups()).toEqual([expect.objectContaining({ ended_at: null })]);
+
+    await activeClient.command({
+      query: `ALTER TABLE ${targetSchema}.activity_source_records
+      UPDATE ended_at = toDateTime64('2026-07-05 17:00:00', 6, 'UTC')
+      WHERE activity_id = '${linkedActivityId}' SETTINGS mutations_sync = 2`,
+    });
+    expect(await readGroups()).toEqual([
+      expect.objectContaining({ ended_at: "2026-07-05 17:00:00.000000" }),
+    ]);
+  });
+
   it("prefers specific canonical and provider type evidence over provider priority", async () => {
     const activeClient = requireClient(client);
     await seedSpecificActivityTypeFixture(activeClient, targetSchema);
