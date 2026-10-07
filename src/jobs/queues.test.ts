@@ -460,7 +460,7 @@ describe("queues", () => {
   });
 
   describe("getSharedRedisConnection", () => {
-    it("bounds nonblocking commands and shares the connection", async () => {
+    it("bounds shared Redis commands and reuses the connection", async () => {
       const { getSharedRedisConnection } = await import("./queues.ts");
       await closeAllQueueResources();
       const first = getSharedRedisConnection();
