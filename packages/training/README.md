@@ -51,6 +51,7 @@ Every public module is imported as `@dofek/training/<subpath>`.
 | `activity-icons` | Normalize activity names into framework-neutral icon categories |
 | `climbing-grades` | Validate, order, and convert Sandbag-supported boulder and route climbing grades |
 | `climbing-context` | Validate provider-scoped climbing location paths, boards, wall-angle units, methods, and result labels |
+| `climbing-progression` | [Server-computed grade-stack contract](src/climbing-progression.ts), style and setting labels, and period and exact-value formatting shared by web and mobile |
 | `cycling-workout-metrics` | Coverage-aware per-activity power, heart-rate, cadence, drift, zone, load, and interval calculations |
 | `derived-cardio` | Cycling and submaximal walking/running VO2 max estimates and validation |
 | `endurance-types` | Endurance and indoor-cycling type guards |
