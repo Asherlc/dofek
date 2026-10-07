@@ -18,12 +18,18 @@ export type {
 export { ProviderRateLimitError, ProviderRequestTimeoutError, ProviderServiceUnavailableError };
 
 export interface FetchRateLimitHandlingOptions {
+  onResponse?: (
+    response: Response,
+    input: RequestInfo | URL,
+    init: RequestInit | undefined,
+  ) => void;
   createRateLimitError: (response: Response, responseBody: string) => Error;
   createServiceUnavailableError?: (response: Response, responseBody: string) => Error;
   additionalServiceUnavailableStatusCodes?: readonly number[];
 }
 
 export interface RateLimitAwareFetchOptions {
+  onResponse?: FetchRateLimitHandlingOptions["onResponse"];
   providerId: string;
   scope?: ProviderRateLimitScope;
   userId?: string | null;
@@ -111,6 +117,7 @@ export async function fetchWithRateLimitHandling(
   options: FetchRateLimitHandlingOptions,
 ): Promise<Response> {
   const response = init === undefined ? await fetchFn(input) : await fetchFn(input, init);
+  options.onResponse?.(response, input, init);
   if (response.status === 429) {
     const responseBody = await response.text();
     throw options.createRateLimitError(response, responseBody);
@@ -195,6 +202,7 @@ export function createRateLimitAwareFetch(
         input,
         { ...init, signal },
         {
+          onResponse: options.onResponse,
           createRateLimitError:
             options.createRateLimitError ??
             ((response, responseBody) =>

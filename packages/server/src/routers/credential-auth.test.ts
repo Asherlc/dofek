@@ -11,6 +11,7 @@ const {
   mockEnsureProvidersRegistered,
   mockEnqueueSyncJob,
   mockCaptureException,
+  mockReportProviderAuthDiagnostic,
 } = vi.hoisted(() => ({
   mockEnsureProvider: vi.fn(),
   mockSaveTokens: vi.fn(),
@@ -19,6 +20,11 @@ const {
   mockEnsureProvidersRegistered: vi.fn(),
   mockEnqueueSyncJob: vi.fn(),
   mockCaptureException: vi.fn(),
+  mockReportProviderAuthDiagnostic: vi.fn(),
+}));
+
+vi.mock("dofek/lib/provider-diagnostics", () => ({
+  reportProviderAuthDiagnostic: mockReportProviderAuthDiagnostic,
 }));
 
 vi.mock("dofek/db/account-erasure", () => ({
@@ -145,6 +151,16 @@ describe("credentialAuthRouter", () => {
         "user-abc",
       );
       expect(mockSaveTokens).toHaveBeenCalledWith(mockDb, "eight-sleep", fakeTokens, "user-abc");
+      expect(mockReportProviderAuthDiagnostic).toHaveBeenCalledWith(
+        "eight-sleep",
+        "sign_in_started",
+        "user-abc",
+      );
+      expect(mockReportProviderAuthDiagnostic).toHaveBeenCalledWith(
+        "eight-sleep",
+        "sign_in_succeeded",
+        "user-abc",
+      );
       expect(mockInvalidateByPrefix).toHaveBeenCalledWith("user-abc:sync.providers");
       expect(mockEnqueueSyncJob).toHaveBeenCalledWith("eight-sleep", "user-abc");
     });
@@ -302,6 +318,11 @@ describe("credentialAuthRouter", () => {
         code: "BAD_REQUEST",
         message: "Eight Sleep authentication failed.",
       } satisfies Partial<TRPCError>);
+      expect(mockReportProviderAuthDiagnostic).toHaveBeenCalledWith(
+        "eight-sleep",
+        "sign_in_failed",
+        "user-abc",
+      );
       expect(mockEnqueueSyncJob).not.toHaveBeenCalled();
     });
 

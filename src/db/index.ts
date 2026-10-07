@@ -5,6 +5,7 @@ import { captureException } from "../lib/error-reporting.ts";
 import { logger } from "../logger.ts";
 import { drizzleSchema as schema } from "./drizzle-schema.ts";
 import { registerPostgresPoolMetrics } from "./pool-metrics.ts";
+import { runSavepointEffects, runTransactionEffects } from "./transaction-effects.ts";
 
 type DrizzleDatabase = ReturnType<typeof drizzle<typeof schema>>;
 type RawTransactionDatabase = Parameters<Parameters<DrizzleDatabase["transaction"]>[0]>[0];
@@ -84,7 +85,9 @@ function normalizeTransaction(transaction: RawTransactionDatabase): TransactionD
     query: transaction.query,
     select: transaction.select.bind(transaction),
     transaction<T>(operation: (nested: TransactionDatabase) => Promise<T>): Promise<T> {
-      return rawTransaction((nested) => operation(normalizeTransaction(nested)));
+      return runSavepointEffects(() =>
+        rawTransaction((nested) => operation(normalizeTransaction(nested))),
+      );
     },
     update: transaction.update.bind(transaction),
   };
@@ -116,7 +119,9 @@ export function createDatabase(connectionString: string): Database {
       operation: (transaction: TransactionDatabase) => Promise<T>,
       config?: TransactionConfig,
     ): Promise<T> {
-      return rawTransaction((transaction) => operation(normalizeTransaction(transaction)), config);
+      return runTransactionEffects(() =>
+        rawTransaction((transaction) => operation(normalizeTransaction(transaction)), config),
+      );
     },
   });
 }
