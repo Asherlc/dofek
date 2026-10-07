@@ -6,6 +6,7 @@ export interface PeerDbTableMapping {
 
 export interface PeerDbMirrorTableContract extends PeerDbTableMapping {
   allowAbsentExcludedSourceColumns?: readonly string[];
+  requiredNullableColumns?: readonly string[];
 }
 
 export interface PeerDbProcessingMarkerContract {
@@ -39,6 +40,7 @@ export const peerDbMirrorContracts = [
         sourceTableIdentifier: "fitness.activity",
         destinationTableIdentifier: "activity",
         exclude: [],
+        requiredNullableColumns: ["ended_at"],
       },
       {
         sourceTableIdentifier: "fitness.sleep_session",
