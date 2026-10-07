@@ -313,7 +313,7 @@ wheels = [
 
 [[package]]
 name = "dbt-clickhouse"
-version = "1.10.1"
+version = "1.10.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "clickhouse-connect" },
@@ -321,9 +321,9 @@ dependencies = [
     { name = "dbt-adapters" },
     { name = "dbt-core" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/0a/62/302c6299c295d517d19f7be69aa91a5708b792af7be13dd9990b09ccc429/dbt_clickhouse-1.10.1.tar.gz", hash = "sha256:c44b122c217936ebb665951c782b0035879d18dd0e0de60996ccdba4dae96500", size = 53717, upload-time = "2026-06-17T09:53:41.773Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/97/a4/045bdaadf59066510c780351b592ad04ec5ca0e067128e2b535317857c01/dbt_clickhouse-1.10.3.tar.gz", hash = "sha256:cf1dd5787ab83c97548dcbbc7bb580434eab9de52f538aa78d3bf6a54342915d", size = 58828, upload-time = "2026-09-15T17:57:40.128Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/f2/8d/7cc0eb67c876383f31b237ea9ce1b094dfb9d35c6fddfdb1a566c09c39f6/dbt_clickhouse-1.10.1-py3-none-any.whl", hash = "sha256:244dde2e54d105e7e040912de78445e08f04bdf5346183b74ff452e02a19f9d6", size = 68607, upload-time = "2026-06-17T09:53:40.435Z" },
+    { url = "https://files.pythonhosted.org/packages/b3/9e/5c362e9b4b9cceda077ac9914c85f411a798a03dce81cec090fb6fd56597/dbt_clickhouse-1.10.3-py3-none-any.whl", hash = "sha256:2f377515ae0dc3e36b524ca6c0f70dd5993a1d87ca8152dec543bb6efd88b1cf", size = 74000, upload-time = "2026-09-15T17:57:37.197Z" },
 ]
 
 [[package]]
@@ -477,7 +477,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "dbt-clickhouse", specifier = ">=1.10.1,<1.11" },
+    { name = "dbt-clickhouse", specifier = ">=1.10.3,<1.11" },
     { name = "sqlfluff", git = "https://github.com/sqlfluff/sqlfluff.git?rev=f59543a25e13a9932a8eacc97bdcb6ede35bc011" },
     { name = "sqlfluff-templater-dbt", git = "https://github.com/sqlfluff/sqlfluff.git?subdirectory=plugins%2Fsqlfluff-templater-dbt&rev=f59543a25e13a9932a8eacc97bdcb6ede35bc011" },
 ]
