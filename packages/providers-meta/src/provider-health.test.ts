@@ -16,7 +16,7 @@ describe("providerHealth", () => {
     });
   });
 
-  it("does not let a stored connection hide expired authorization", () => {
+  it("marks a stored connection disconnected when reconnection is required", () => {
     expect(
       providerHealth({
         authorized: true,
@@ -24,7 +24,7 @@ describe("providerHealth", () => {
         requiresAuthorization: true,
       }),
     ).toEqual({
-      connection: { label: "Connected", status: "healthy" },
+      connection: { label: "Disconnected", status: "warning" },
       authorization: { label: "Reconnect required", status: "warning" },
       requiresReconnect: true,
     });
@@ -38,7 +38,7 @@ describe("providerHealth", () => {
         requiresAuthorization: true,
       }),
     ).toEqual({
-      connection: { label: "Not connected", status: "neutral" },
+      connection: { label: "Disconnected", status: "warning" },
       authorization: { label: "Reconnect required", status: "warning" },
       requiresReconnect: true,
     });

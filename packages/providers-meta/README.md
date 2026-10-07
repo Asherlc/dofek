@@ -28,8 +28,9 @@ The `ProviderStats` interface tracks counts for 9 data types. `providerStatsBrea
 
 Use [`providerHealth`](src/provider-health.ts) as the shared presentation contract for web and
 mobile provider status. It keeps connection state separate from authorization state and exposes
-`requiresReconnect` as the canonical signal for reconnect actions. A provider can therefore remain
-connected while its authorization needs attention; providers that require no authorization report
+`requiresReconnect` as the canonical signal for reconnect actions. Providers requiring reconnection
+display a warning connection status of Disconnected even when credentials remain saved (see the
+[shared status contract](src/provider-health.ts)); providers that require no authorization report
 authorization as not required.
 
 Processing-status presentation helpers, including dataset-scoped failure messages, live in
