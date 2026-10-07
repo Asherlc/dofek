@@ -56,7 +56,8 @@ describe("activity_sensor_summary_rows model", () => {
     expect(modelSql).toContain("dirty_keys AS MATERIALIZED (");
     expect(modelSql).toContain("latest_sensor_samples AS MATERIALIZED (");
     expect(modelSql).toContain("power_cumulative AS MATERIALIZED (");
-    expect(modelSql.match(/ AS MATERIALIZED \(/g)).toHaveLength(4);
+    expect(modelSql).toContain("altitude_samples AS MATERIALIZED (");
+    expect(modelSql.match(/ AS MATERIALIZED \(/g)).toHaveLength(5);
   });
 
   it("limits changed sample keys to activities that are still active", () => {
