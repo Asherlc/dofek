@@ -15,6 +15,17 @@ latitude/longitude only in read models. Elevation gain/loss is not stored as
 canonical raw data; ClickHouse read models derive it from deduped altitude
 deltas.
 
+The [sensor summary model](../analytics/models/read_models/activity_sensor_summary_rows.sql)
+uses one altitude source per activity, identified by provider, member activity,
+and device. It selects the source with the most valid samples in the current
+deduplicated activity stream, with the source identity as a deterministic
+tie-break. Gain, loss, altitude range, and climbing deltas use that same source;
+other sensor summaries retain their existing sample union. Raw observations
+remain intact. This prevents different altitude baselines from being treated
+as physical climbing while retaining the existing timestamp-level sensor
+resolution upstream. Source selection does not recover observations already
+excluded by that upstream resolution.
+
 This means the database currently preserves the altitude value, provider, source
 type, activity, timestamp, and optional device/source name. It does not preserve
 an explicit altitude-source classification such as `barometer`, `gnss`, `dem`,
@@ -90,6 +101,61 @@ or `sensor_fusion`.
   and <https://support.google.com/fitbit/answer/14237111>
 
 ## Modeling Implications
+
+### Diagnosing inflated ascent
+
+When ascent or vertical ascent rate is implausible, inspect elapsed duration,
+the altitude numerator, and consecutive samples with their `provider_id`,
+`member_activity_id`, and `device_id`. Timestamp-level deduplication can
+interleave overlapping recordings with different altitude baselines, including
+two recordings from the same provider. A source change must not be counted as
+physical ascent. Compare within-source deltas before attributing the problem to
+a sensor or filtering the chart. The October 7, 2026
+[incident record](production-incident-baseline.md#2026-10-07--vertical-ascent-outliers-from-interleaved-altitude-sources-unresolved)
+contains a confirmed example; ClickHouse's
+[`lagInFrame`](https://clickhouse.com/docs/sql-reference/window-functions/lagInFrame)
+operates on the previous row in the configured partition and frame.
+
+### Bounded repair of existing elevation summaries
+
+Changing incremental model SQL does not rewrite existing results. dbt documents
+[explicit historical rebuilding](https://docs.getdbt.com/docs/build/incremental-models#how-do-i-rebuild-an-incremental-model).
+After deploying a correction, use the existing activity refresh scope to rebuild
+only reviewed affected groups, rather than refreshing all retained activity
+history. Follow the deployment environment and diagnostics prerequisites in the
+[analytics repair procedure](../analytics/README.md#microbatch-start-bounds-and-historical-backfills).
+
+1. Record the affected user and canonical activity IDs, current elevation
+   gain/loss, elapsed seconds, source counts, and source-specific diagnostic
+   deltas. Inspect ordinary observations as well as the most conspicuous
+   outliers; inflated totals can be smaller than the two extreme chart points.
+2. From the target release's production analytics environment, run the following
+   scoped build with the verified user and group UUIDs. Scope variables are
+   defined by the [activity refresh macro](../analytics/macros/activity_refresh_scope.sql).
+   Keep the UUID list bounded and process additional groups in separate builds.
+
+   ```sh
+   pnpm tsx scripts/with-env.ts -- env \
+     DBT_TARGET=prod \
+     UV_PROJECT_ENVIRONMENT=../.venv-analytics \
+     uv run --project analytics dbt build \
+     --project-dir analytics --profiles-dir analytics --threads 1 \
+     --vars '{"activity_refresh_user_id":"<user-uuid>","activity_refresh_activity_ids":["<canonical-activity-uuid>"]}' \
+     --select "activity_sensor_summary_rows activity_summary_rows cycling_activity hiking_activity"
+   ```
+
+3. Verify the repaired active `FINAL` rows in each affected model. Confirm that
+   source switches no longer contribute to ascent, gain/loss remain unavailable
+   for fewer than two valid samples, and activity counts and ordinary durations
+   are preserved. The cycling rate must equal the repaired gain divided by
+   elapsed hours. Refresh registered query caches through
+   `pnpm tsx scripts/warm-query-cache.ts`, then check the web and mobile responses.
+   Capture the model results, IDs, and before/after values in the incident record.
+
+The scoped summary models force reviewed keys dirty; cycling and hiking consumers
+detect the newer summary timestamps. This procedure does not replay raw
+ingestion or rebuild activity identity, and must not be added to routine deploys
+or scheduled workers.
 
 Altitude should be treated as an associated vertical measurement, not as an
 intrinsic part of a 2D GPS point. Horizontal position is a point-valued metric in
