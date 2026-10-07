@@ -1,7 +1,5 @@
 import { WhoopClient } from "@dofek/whoop/client";
 import { TRPCError } from "@trpc/server";
-import { ensureProvider } from "dofek/db/tokens";
-import { queryCache } from "dofek/lib/cache";
 import { captureException } from "dofek/lib/error-reporting";
 import { saveWhoopAuthTokens } from "dofek/providers/whoop/resolve-tokens";
 import { z } from "zod";
@@ -11,6 +9,8 @@ import {
 } from "../lib/whoop-verification-challenge-store.ts";
 import { logger } from "../logger.ts";
 import { protectedProcedure, router } from "../trpc.ts";
+
+import { completeCredentialReconnect } from "./credential-reconnect.ts";
 
 const challengeStore = getWhoopVerificationChallengeStore();
 
@@ -142,18 +142,18 @@ export const whoopAuthRouter = router({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      await ensureProvider(ctx.db, "whoop", "WHOOP", undefined, ctx.userId);
-      await saveWhoopAuthTokens(
-        ctx.db,
-        {
-          accessToken: input.accessToken,
-          refreshToken: input.refreshToken,
-          userId: input.userId,
-          expiresInSeconds: input.expiresInSeconds,
-        },
-        ctx.userId,
+      await completeCredentialReconnect(ctx, { id: "whoop", name: "WHOOP" }, (transaction) =>
+        saveWhoopAuthTokens(
+          transaction,
+          {
+            accessToken: input.accessToken,
+            refreshToken: input.refreshToken,
+            userId: input.userId,
+            expiresInSeconds: input.expiresInSeconds,
+          },
+          ctx.userId,
+        ),
       );
-      await queryCache.invalidateByPrefix(`${ctx.userId}:sync.providers`);
       return { success: true };
     }),
 });
