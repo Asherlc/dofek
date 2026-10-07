@@ -1,7 +1,6 @@
 import { GET_STARTED_STEPS } from "@dofek/onboarding/get-started-flow";
 import { useRouter } from "expo-router";
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
-import { PrimaryGoalSelector } from "../components/PrimaryGoalSelector";
 import { colors } from "../theme";
 
 export default function OnboardingScreen() {
@@ -11,11 +10,7 @@ export default function OnboardingScreen() {
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <View style={styles.header}>
         <Text style={styles.title}>Set up Dofek</Text>
-        <Text style={styles.subtitle}>Choose a goal and connect your health apps.</Text>
-      </View>
-
-      <View style={styles.goalCard}>
-        <PrimaryGoalSelector />
+        <Text style={styles.subtitle}>Connect your health apps.</Text>
       </View>
 
       <View style={styles.stepList}>
@@ -67,13 +62,6 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     fontSize: 15,
     lineHeight: 22,
-  },
-  goalCard: {
-    backgroundColor: colors.surface,
-    borderColor: colors.surfaceSecondary,
-    borderRadius: 14,
-    borderWidth: 1,
-    padding: 18,
   },
   stepList: {
     gap: 12,

@@ -31,9 +31,7 @@ import { GoalWeightSettingsSection } from "../components/GoalWeightSettingsSecti
 import { McpClientSetupPanel } from "../components/McpClientSetupPanel";
 import { McpConnectedAppsPanel } from "../components/McpConnectedAppsPanel";
 import { MedicationDoseEventsPanel } from "../components/MedicationDoseEventsPanel";
-import { MedicationRemindersPanel } from "../components/MedicationRemindersPanel";
 import { PersonalizationPanel } from "../components/PersonalizationPanel";
-import { PrimaryGoalSelector } from "../components/PrimaryGoalSelector";
 import { ProviderLogo } from "../components/ProviderLogo";
 import { getQueryErrorMessage, QueryStatePanel } from "../components/QueryStatePanel";
 import { styles } from "../components/settings.styles";
@@ -51,9 +49,9 @@ type AppStoreBillingAction = "manage" | "restore" | "subscribe";
 type SettingsCategory =
   | "account"
   | "data-sources"
-  | "goals-models"
+  | "models-units"
   | "privacy-export"
-  | "notifications"
+  | "medications"
   | "billing"
   | "advanced";
 
@@ -77,9 +75,9 @@ const SETTINGS_CATEGORIES: readonly {
     searchText: "data sources providers Zepp integrations Bluetooth devices WHOOP heart rate",
   },
   {
-    id: "goals-models",
-    label: "Goals & Models",
-    searchText: "goals models primary goal units goal weight algorithm personalization",
+    id: "models-units",
+    label: "Models & Units",
+    searchText: "models units goal weight algorithm personalization",
   },
   {
     id: "privacy-export",
@@ -87,9 +85,9 @@ const SETTINGS_CATEGORIES: readonly {
     searchText: "privacy export data export download delete danger zone",
   },
   {
-    id: "notifications",
-    label: "Notifications",
-    searchText: "notifications medication reminders medication doses",
+    id: "medications",
+    label: "Medications",
+    searchText: "medications medication doses",
   },
   {
     id: "billing",
@@ -157,8 +155,8 @@ function isSettingsCategory(value: unknown): value is SettingsCategory {
 
 const LEGACY_SETTINGS_CATEGORY_MAP: Readonly<Record<string, SettingsCategory>> = {
   connections: "data-sources",
-  general: "goals-models",
-  health: "goals-models",
+  general: "models-units",
+  health: "models-units",
 };
 
 function normalizeSettingsCategory(value: unknown): SettingsCategory | undefined {
@@ -179,18 +177,10 @@ export default function SettingsScreen() {
   const auth = useAuth();
   const router = useRouter();
   const searchParams = useLocalSearchParams<{
-    focus?: string;
-    reminderId?: string;
     tab?: string;
   }>();
-  const focusedReminderId =
-    typeof searchParams.reminderId === "string" ? searchParams.reminderId : null;
   const normalizedRequestedCategory = normalizeSettingsCategory(searchParams.tab);
-  const requestedCategory: SettingsCategory = normalizedRequestedCategory
-    ? normalizedRequestedCategory
-    : searchParams.focus === "medicationReminders"
-      ? "notifications"
-      : "account";
+  const requestedCategory: SettingsCategory = normalizedRequestedCategory ?? "account";
   const [categorySearch, setCategorySearch] = useState("");
   const normalizedCategorySearch = categorySearch.trim().toLowerCase();
   const visibleCategories = SETTINGS_CATEGORIES.filter(
@@ -532,7 +522,7 @@ export default function SettingsScreen() {
         </View>
       ) : null}
 
-      {activeCategory === "goals-models" ? (
+      {activeCategory === "models-units" ? (
         <ClimbingGradeSystemSettings
           errorMessage={
             climbingGradeSetting.error
@@ -629,15 +619,8 @@ export default function SettingsScreen() {
 
       {activeCategory === "data-sources" ? <ZeppPairingCard /> : null}
 
-      {/* ── Primary Goal ── */}
-      {activeCategory === "goals-models" ? (
-        <View style={styles.section}>
-          <PrimaryGoalSelector />
-        </View>
-      ) : null}
-
       {/* ── Units ── */}
-      {activeCategory === "goals-models" ? (
+      {activeCategory === "models-units" ? (
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Units</Text>
           {unitSetting.error && (
@@ -672,16 +655,7 @@ export default function SettingsScreen() {
         </View>
       ) : null}
 
-      {activeCategory === "notifications" ? (
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Medication Reminders</Text>
-          <View style={styles.card}>
-            <MedicationRemindersPanel focusedReminderId={focusedReminderId} />
-          </View>
-        </View>
-      ) : null}
-
-      {activeCategory === "notifications" ? (
+      {activeCategory === "medications" ? (
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Medication Doses</Text>
           <View style={styles.card}>
@@ -814,12 +788,12 @@ export default function SettingsScreen() {
         </View>
       ) : null}
 
-      {activeCategory === "goals-models" ? (
+      {activeCategory === "models-units" ? (
         <GoalWeightSettingsSection unitSystem={currentUnitSystem} />
       ) : null}
 
       {/* ── Algorithm Personalization ── */}
-      {activeCategory === "goals-models" ? (
+      {activeCategory === "models-units" ? (
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Algorithm Personalization</Text>
           <View style={styles.card}>

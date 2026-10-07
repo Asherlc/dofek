@@ -8,12 +8,10 @@ import { DataSourcesPanel } from "../components/DataSourcesPanel.tsx";
 import { ExportPanel } from "../components/ExportPanel.tsx";
 import { LinkedAccountsPanel } from "../components/LinkedAccountsPanel.tsx";
 import { MedicationDoseEventsPanel } from "../components/MedicationDoseEventsPanel.tsx";
-import { MedicationRemindersPanel } from "../components/MedicationRemindersPanel.tsx";
 import { PageLayout } from "../components/PageLayout.tsx";
 import { PageSection } from "../components/PageSection.tsx";
 import { PasswordSettingsPanel } from "../components/PasswordSettingsPanel.tsx";
 import { PersonalizationPanel } from "../components/PersonalizationPanel.tsx";
-import { PrimaryGoalSelector } from "../components/PrimaryGoalSelector.tsx";
 import { UnitSystemToggle } from "../components/UnitSystemToggle.tsx";
 import { ZeppPairingPanel } from "../components/ZeppPairingPanel.tsx";
 import {
@@ -271,19 +269,13 @@ export function SettingsPage() {
           </PageSection>
         ) : null}
 
-        {activeCategory === "goals-models" ? (
-          <PageSection title="Primary goal" subtitle="What would you like to focus on?">
-            <PrimaryGoalSelector showHeading={false} />
-          </PageSection>
-        ) : null}
-
-        {activeCategory === "goals-models" ? (
+        {activeCategory === "models-units" ? (
           <PageSection title="Units">
             <UnitSystemToggle />
           </PageSection>
         ) : null}
 
-        {activeCategory === "goals-models" ? (
+        {activeCategory === "models-units" ? (
           <PageSection
             title="Climbing grades"
             subtitle="Choose the grade systems used for boulders and routes"
@@ -292,16 +284,7 @@ export function SettingsPage() {
           </PageSection>
         ) : null}
 
-        {activeCategory === "notifications" ? (
-          <PageSection
-            title="Medication Reminders"
-            subtitle="Optional daily reminders with imported logging state"
-          >
-            <MedicationRemindersPanel />
-          </PageSection>
-        ) : null}
-
-        {activeCategory === "notifications" ? (
+        {activeCategory === "medications" ? (
           <PageSection title="Medication Doses" subtitle="Review imported medication dose events">
             <MedicationDoseEventsPanel />
           </PageSection>
@@ -349,7 +332,7 @@ export function SettingsPage() {
           </PageSection>
         ) : null}
 
-        {activeCategory === "goals-models" ? (
+        {activeCategory === "models-units" ? (
           <PageSection
             title="Algorithm Personalization"
             subtitle="Parameters are automatically learned from your data to improve accuracy"

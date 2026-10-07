@@ -37,8 +37,8 @@ beforeAll(async () => {
 describe("settings search validation", () => {
   it.each([
     ["connections", "data-sources"],
-    ["general", "goals-models"],
-    ["health", "goals-models"],
+    ["general", "models-units"],
+    ["health", "models-units"],
     ["account", "account"],
   ] as const)("normalizes the legacy %s tab to %s", (legacyTab, currentCategory) => {
     expect(normalizeSettingsCategory(legacyTab)).toBe(currentCategory);

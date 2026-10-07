@@ -1,5 +1,3 @@
-import { medicationRemindersSchema } from "@dofek/format/medication-reminders";
-import { PRIMARY_GOAL_SETTINGS_KEY, primaryGoalIds } from "@dofek/onboarding/primary-goal";
 import { invalidateAllUserQueries, queryCache } from "dofek/lib/cache";
 import { z } from "zod";
 import {
@@ -46,14 +44,6 @@ const settingInputSchema = z.discriminatedUnion("key", [
   z.strictObject({
     key: z.literal("whoop.wearLocation"),
     value: z.enum(["wrist", "bicep", "chest", "waist", "calf"]),
-  }),
-  z.strictObject({
-    key: z.literal("medicationReminders"),
-    value: medicationRemindersSchema,
-  }),
-  z.strictObject({
-    key: z.literal(PRIMARY_GOAL_SETTINGS_KEY),
-    value: z.enum(primaryGoalIds),
   }),
 ]);
 

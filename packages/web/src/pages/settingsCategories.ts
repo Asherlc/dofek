@@ -1,9 +1,9 @@
 export type SettingsCategory =
   | "account"
   | "data-sources"
-  | "goals-models"
+  | "models-units"
   | "privacy-export"
-  | "notifications"
+  | "medications"
   | "billing"
   | "advanced";
 
@@ -23,9 +23,9 @@ export const SETTINGS_CATEGORIES: readonly {
     searchText: "data sources providers Zepp integrations",
   },
   {
-    id: "goals-models",
-    label: "Goals & Models",
-    searchText: "goals models primary goal units goal weight algorithm personalization",
+    id: "models-units",
+    label: "Models & Units",
+    searchText: "models units goal weight algorithm personalization",
   },
   {
     id: "privacy-export",
@@ -33,9 +33,9 @@ export const SETTINGS_CATEGORIES: readonly {
     searchText: "privacy export data export download delete danger zone",
   },
   {
-    id: "notifications",
-    label: "Notifications",
-    searchText: "notifications medication reminders medication doses",
+    id: "medications",
+    label: "Medications",
+    searchText: "medications medication doses",
   },
   {
     id: "billing",
@@ -55,8 +55,8 @@ export function isSettingsCategory(value: unknown): value is SettingsCategory {
 
 const LEGACY_SETTINGS_CATEGORY_MAP: Readonly<Record<string, SettingsCategory>> = {
   connections: "data-sources",
-  general: "goals-models",
-  health: "goals-models",
+  general: "models-units",
+  health: "models-units",
 };
 
 export function normalizeSettingsCategory(value: unknown): SettingsCategory | undefined {

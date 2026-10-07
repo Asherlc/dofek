@@ -1,7 +1,6 @@
 import { GET_STARTED_STEPS, IOS_TESTFLIGHT_INVITE } from "@dofek/onboarding/get-started-flow";
 import { Link } from "@tanstack/react-router";
 import { PageLayout } from "../components/PageLayout.tsx";
-import { PrimaryGoalSelector } from "../components/PrimaryGoalSelector.tsx";
 
 export function OnboardingPage() {
   return (
@@ -9,12 +8,8 @@ export function OnboardingPage() {
       <section className="rounded-lg border border-border bg-surface-solid p-5 sm:p-8">
         <h1 className="max-w-3xl text-3xl font-bold text-foreground sm:text-4xl">Set up Dofek</h1>
         <p className="mt-4 max-w-2xl text-sm leading-6 text-muted sm:text-base">
-          Choose a goal and connect your health apps.
+          Connect your health apps.
         </p>
-      </section>
-
-      <section className="mt-4 rounded-lg border border-border bg-surface p-5 shadow-sm sm:p-6">
-        <PrimaryGoalSelector />
       </section>
 
       <section className="mt-4 grid gap-4 lg:grid-cols-3">

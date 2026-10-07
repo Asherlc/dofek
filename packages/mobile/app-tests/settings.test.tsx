@@ -40,10 +40,6 @@ vi.mock("expo-sharing", () => ({
   shareAsync: vi.fn(),
 }));
 
-vi.mock("../lib/medication-reminder-notifications", () => ({
-  syncMedicationReminderNotifications: vi.fn().mockResolvedValue(undefined),
-}));
-
 vi.mock("../components/PersonalizationPanel", () => ({
   PersonalizationPanel: () => React.createElement("div", null, "PersonalizationPanel"),
 }));
@@ -64,7 +60,7 @@ vi.mock("../components/McpClientSetupPanel", () => ({
 
 const mockRouterPush = vi.fn();
 const mockRouterSetParams = vi.fn();
-let mockSearchParams: { focus?: string; reminderId?: string; tab?: string } = {};
+let mockSearchParams: { tab?: string } = {};
 const mockLogout = vi.fn();
 let mockAuthServerUrl = "https://test.example.com";
 const mockBillingStatusInvalidate = vi.fn();
@@ -295,9 +291,7 @@ vi.mock("../lib/trpc", () => ({
         useQuery: (input: { key: string }) =>
           input.key === "unitSystem"
             ? mockUnitSettingQuery
-            : input.key === "medicationReminders"
-              ? { data: { key: "medicationReminders", value: [] }, error: null, refetch: vi.fn() }
-              : { data: { value: "metric" }, error: null, refetch: vi.fn() },
+            : { data: { value: "metric" }, error: null, refetch: vi.fn() },
       },
       set: {
         useMutation: () => ({ mutate: mockSettingsSetMutate, isPending: false }),
@@ -355,9 +349,9 @@ describe("SettingsScreen categories", () => {
     for (const category of [
       "Account",
       "Data Sources",
-      "Goals & Models",
+      "Models & Units",
       "Privacy/Export",
-      "Notifications",
+      "Medications",
       "Billing",
       "Advanced",
     ]) {
@@ -378,9 +372,9 @@ describe("SettingsScreen categories", () => {
       target: { value: "medication" },
     });
 
-    expect(screen.getByRole("button", { name: "Notifications" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Medications" })).toBeTruthy();
+    expect(screen.getByText("Medication Doses")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Account" })).toBeNull();
-    expect(screen.getByText("Medication Reminders")).toBeTruthy();
   });
 
   it("switches from Account to Data Sources", async () => {
@@ -401,24 +395,6 @@ describe("SettingsScreen categories", () => {
     expect(mockRouterSetParams).toHaveBeenCalledWith({ tab: "data-sources" });
   });
 
-  it("opens the Notifications category for medication reminder deep links", async () => {
-    mockSearchParams = {
-      focus: "medicationReminders",
-      reminderId: "11111111-1111-4111-8111-111111111111",
-    };
-    const { default: SettingsScreen } = await import("../app/settings");
-
-    render(<SettingsScreen />);
-
-    expect(screen.getByText("Medication Reminders")).toBeTruthy();
-    expect(
-      screen.getByRole("button", { name: "Notifications" }).getAttribute("aria-selected"),
-    ).toBe("true");
-
-    fireEvent.click(screen.getByRole("button", { name: "Billing" }));
-    expect(screen.getAllByText("Billing").length).toBeGreaterThan(1);
-  });
-
   it("respects a billing category deep link", async () => {
     mockSearchParams = { tab: "billing" };
     const { default: SettingsScreen } = await import("../app/settings");
@@ -434,8 +410,8 @@ describe("SettingsScreen categories", () => {
 
   it.each([
     ["connections", "Data Sources", "2 connected"],
-    ["general", "Goals & Models", "Units"],
-    ["health", "Goals & Models", "Units"],
+    ["general", "Models & Units", "Units"],
+    ["health", "Models & Units", "Units"],
     ["account", "Account", "Password"],
   ] as const)(
     "normalizes the legacy %s deep link to %s",
@@ -456,7 +432,7 @@ describe("SettingsScreen categories", () => {
 
 describe("SettingsScreen unit system", () => {
   beforeEach(() => {
-    mockSearchParams = { tab: "goals-models" };
+    mockSearchParams = { tab: "models-units" };
   });
 
   it("restores the exact cached unit setting and shows the server error when a write fails", async () => {
@@ -791,7 +767,7 @@ describe("SettingsScreen Zepp pairing", () => {
 
 describe("SettingsScreen medication doses", () => {
   beforeEach(() => {
-    mockSearchParams = { tab: "notifications" };
+    mockSearchParams = { tab: "medications" };
   });
 
   it("shows medication dose empty state when no imported dose events exist", async () => {
@@ -799,8 +775,6 @@ describe("SettingsScreen medication doses", () => {
 
     render(<SettingsScreen />);
 
-    expect(screen.getByText("Medication Reminders")).toBeTruthy();
-    expect(screen.getByText("No medication reminders yet.")).toBeTruthy();
     expect(screen.getByText("Medication Doses")).toBeTruthy();
     expect(screen.getByText("No medication dose events to display.")).toBeTruthy();
   });
