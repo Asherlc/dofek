@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { runTransactionEffects } from "../db/transaction-effects.ts";
 import {
   reportProviderAuthDiagnostic,
   reportProviderHttpDiagnostic,
@@ -87,6 +88,43 @@ describe("reportProviderHttpDiagnostic", () => {
 });
 
 describe("reportProviderAuthDiagnostic", () => {
+  it.each(["tokens_loaded", "tokens_missing", "sign_in_started", "refresh_started"] as const)(
+    "reports %s immediately even when its transaction later rolls back",
+    async (event) => {
+      await expect(
+        runTransactionEffects(async () => {
+          reportProviderAuthDiagnostic("provider", event, "user-123");
+          expect(debug).toHaveBeenCalledWith(expect.stringContaining(`"event":"${event}"`));
+          throw new Error("rollback");
+        }),
+      ).rejects.toThrow("rollback");
+      expect(debug).toHaveBeenCalledOnce();
+    },
+  );
+
+  it.each(["tokens_saved", "tokens_deleted", "sign_in_succeeded", "refresh_succeeded"] as const)(
+    "reports %s only after commit",
+    async (event) => {
+      await runTransactionEffects(async () => {
+        reportProviderAuthDiagnostic("provider", event, "user-123");
+        expect(debug).not.toHaveBeenCalled();
+      });
+      expect(debug).toHaveBeenCalledOnce();
+      expect(debug).toHaveBeenCalledWith(expect.stringContaining(`"event":"${event}"`));
+    },
+  );
+
+  it("does not report successful credential persistence when commit rejects", async () => {
+    await expect(
+      runTransactionEffects(async () => {
+        reportProviderAuthDiagnostic("provider", "tokens_saved", "user-123");
+        reportProviderAuthDiagnostic("provider", "sign_in_succeeded", "user-123");
+        throw new Error("commit failed");
+      }),
+    ).rejects.toThrow("commit failed");
+    expect(debug).not.toHaveBeenCalled();
+  });
+
   it("records credential expiry and refresh availability without token values", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-10-06T18:00:00Z"));

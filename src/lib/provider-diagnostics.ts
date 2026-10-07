@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import type { TokenSet } from "../auth/oauth.ts";
 import { getTokenUserId } from "../db/token-user-context.ts";
+import { afterCommit } from "../db/transaction-effects.ts";
 import { logger } from "../logger.ts";
 import { captureException } from "./error-reporting.ts";
 
@@ -21,6 +22,7 @@ export function reportProviderHttpDiagnostic(
   response: Response,
   input: RequestInfo | URL,
   init?: RequestInit,
+  userId?: string | null,
 ): void {
   if (response.ok) return;
 
@@ -44,7 +46,7 @@ export function reportProviderHttpDiagnostic(
   const diagnostic = {
     event: "http_failed",
     providerId,
-    userId: getTokenUserId(),
+    userId: userId ?? getTokenUserId(),
     origin: url.origin,
     // Paths can contain account IDs or credentials; queries and fragments are omitted entirely.
     endpointHash: createHash("sha256").update(url.pathname).digest("hex"),
@@ -93,6 +95,15 @@ export function reportProviderAuthDiagnostic(
       level: "warning",
     });
   } else {
-    logger.debug(message);
+    if (
+      event === "tokens_saved" ||
+      event === "tokens_deleted" ||
+      event === "sign_in_succeeded" ||
+      event === "refresh_succeeded"
+    ) {
+      afterCommit(() => logger.debug(message));
+    } else {
+      logger.debug(message);
+    }
   }
 }
