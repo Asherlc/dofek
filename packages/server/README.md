@@ -20,6 +20,9 @@ The backend API and background job processor for Dofek. Built with Node.js, Expr
   cross-provider entry consolidation to
   [`ClimbingActivityEntryRepository`](./src/repositories/climbing-activity-entry-repository.ts).
   Both use the same [grade display conversion](./src/repositories/climbing-grade-display.ts).
+  Progression, volume, and session summaries share canonical send observations;
+  [progression semantics](../../docs/climbing-context.md#grade-progression-and-send-counts)
+  define recorded-day denominators and repeat-preserving provider consolidation.
 - **Insights Engine**: Complex data analysis and correlation logic located in `src/insights/`.
 - **Machine Learning**: Predictive modeling (e.g., weight prediction, activity features) in `src/ml/`.
 

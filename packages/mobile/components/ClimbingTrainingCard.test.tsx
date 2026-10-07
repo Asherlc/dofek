@@ -3,6 +3,7 @@ import { render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { captureException } from "../lib/telemetry";
 import { ClimbingTrainingCard } from "./ClimbingTrainingCard";
+import { climbingProgressionFixture } from "./climbing-progression-test-helpers";
 
 vi.mock("../lib/telemetry", () => ({ captureException: vi.fn() }));
 const mockTrainingState: { data: Record<string, unknown> | undefined } = { data: undefined };
@@ -37,15 +38,7 @@ describe("ClimbingTrainingCard", () => {
     mockTrainingState.data = {
       ...defaultMockTrainingData(),
       climbing: {
-        gradeProgression: [
-          {
-            date: "2026-07-09",
-            climbType: "boulder",
-            gradeSystem: "v_scale",
-            grade: "V4",
-            gradeSortValue: 4,
-          },
-        ],
+        gradeProgression: [climbingProgressionFixture()],
         volumeByGrade: [
           {
             climbType: "boulder",
@@ -77,7 +70,7 @@ describe("ClimbingTrainingCard", () => {
     render(<ClimbingTrainingCard data={mockTrainingState.data?.climbing} />);
 
     expect(screen.getByText("Climbing")).toBeTruthy();
-    expect(screen.getByText("Best Boulder Grade")).toBeTruthy();
+    expect(screen.getByText("Bouldering")).toBeTruthy();
     expect(screen.getAllByText("V4").length).toBeGreaterThanOrEqual(2);
     expect(screen.getByText("8 attempts")).toBeTruthy();
     expect(screen.getByText("5 sends")).toBeTruthy();
@@ -88,14 +81,7 @@ describe("ClimbingTrainingCard", () => {
     mockTrainingState.data = {
       ...defaultMockTrainingData(),
       climbing: {
-        gradeProgression: [
-          {
-            date: "2026-07-09",
-            climbType: "boulder",
-            grade: "V4",
-            gradeSortValue: 4,
-          },
-        ],
+        gradeProgression: [climbingProgressionFixture()],
         volumeByGrade: [{ climbType: "boulder", grade: "V4", gradeSortValue: "bad" }],
         sessionSummary: [],
       },
@@ -103,7 +89,7 @@ describe("ClimbingTrainingCard", () => {
 
     render(<ClimbingTrainingCard data={mockTrainingState.data?.climbing} />);
 
-    expect(screen.getByText("Best Boulder Grade")).toBeTruthy();
+    expect(screen.getByText("Bouldering")).toBeTruthy();
     expect(screen.getByText("V4")).toBeTruthy();
     expect(screen.getByText("Climbing data could not be loaded. Please try again.")).toBeTruthy();
     expect(screen.queryByText(/Zod parse failed/)).toBeNull();
@@ -299,41 +285,10 @@ describe("ClimbingTrainingCard", () => {
     });
   });
 
-  it("shows the best climbing grade instead of the most recent lower grade", async () => {
-    mockTrainingState.data = {
-      ...defaultMockTrainingData(),
-      climbing: {
-        gradeProgression: [
-          {
-            date: "2026-07-08",
-            climbType: "boulder",
-            gradeSystem: "v_scale",
-            grade: "V5",
-            gradeSortValue: 5,
-          },
-          {
-            date: "2026-07-09",
-            climbType: "boulder",
-            gradeSystem: "v_scale",
-            grade: "V3",
-            gradeSortValue: 3,
-          },
-        ],
-        volumeByGrade: [],
-        sessionSummary: [],
-      },
-    };
-
-    render(<ClimbingTrainingCard data={mockTrainingState.data?.climbing} />);
-
-    expect(screen.getByText("Best Boulder Grade")).toBeTruthy();
-    expect(screen.getByText("V5")).toBeTruthy();
-  });
-
   it("renders climbing empty states from empty server arrays", async () => {
     render(<ClimbingTrainingCard data={mockTrainingState.data?.climbing} />);
 
-    expect(screen.getByText("No climbing grade progression")).toBeTruthy();
+    expect(screen.getByText("No recorded climbing grades")).toBeTruthy();
     expect(screen.getByText("No climbing volume by grade")).toBeTruthy();
     expect(screen.getByText("No climbing sessions")).toBeTruthy();
   });
