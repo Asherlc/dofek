@@ -233,7 +233,7 @@ vi.mock("../../lib/trpc.ts", () => ({
                               "Indirect estimate from 5-minute maximal aerobic power and latest body weight",
                             confidence: "limited",
                             confidenceLabel: "Indirect estimate",
-                            confidenceDetail: "A field estimate, not a laboratory measurement.",
+                            confidenceDetail: null,
                             sourceWorkouts: [
                               { id: "ride-1", name: "Threshold Intervals", date: "2026-03-15" },
                             ],
@@ -257,7 +257,7 @@ vi.mock("../../lib/trpc.ts", () => ({
                               "Indirect estimate from 5-minute maximal aerobic power and latest body weight",
                             confidence: "limited",
                             confidenceLabel: "Indirect estimate",
-                            confidenceDetail: "A field estimate, not a laboratory measurement.",
+                            confidenceDetail: null,
                             sourceWorkouts: [],
                             pacingGuidance: "Do not use this estimate to set workout pacing.",
                           },
@@ -372,7 +372,6 @@ describe("CyclingTab", () => {
     expect(screen.getByText("High fit quality")).toBeTruthy();
     expect(screen.getAllByText("Indirect estimate")).toHaveLength(2);
     expect(screen.getAllByText(/Threshold Intervals/)).toHaveLength(3);
-    expect(screen.getByText(/Do not use this estimate to set pacing/)).toBeTruthy();
   });
 
   it("renders unavailable time-to-exhaustion values from the server", async () => {

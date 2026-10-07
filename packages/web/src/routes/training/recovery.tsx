@@ -47,10 +47,7 @@ function RecoveryTab() {
     <>
       <TodayPlanCard plan={todayPlan.data} loading={todayPlan.isLoading} error={todayPlan.error} />
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Section
-          title="Readiness Score"
-          subtitle="Composite score from heart rate variability, resting heart rate, sleep, and load balance"
-        >
+        <Section title="Readiness Score">
           {readiness.error && !readiness.data ? (
             <QueryStatePanel error={readiness.error} />
           ) : (
@@ -75,10 +72,7 @@ function RecoveryTab() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Section
-          title="Heart Rate Variability & Resting Heart Rate"
-          subtitle="Daily recovery vitals with 7-day averages"
-        >
+        <Section title="Heart Rate Variability & Resting Heart Rate">
           {hrvBaseline.error && !hrvBaseline.data ? (
             <QueryStatePanel error={hrvBaseline.error} />
           ) : (
@@ -86,10 +80,7 @@ function RecoveryTab() {
           )}
         </Section>
 
-        <Section
-          title="Heart Rate Variability Coefficient of Variation"
-          subtitle="7-day rolling heart rate variability"
-        >
+        <Section title="Heart Rate Variability Coefficient of Variation">
           {hrvVariability.error && !hrvVariability.data ? (
             <QueryStatePanel error={hrvVariability.error} />
           ) : (
@@ -100,10 +91,7 @@ function RecoveryTab() {
           )}
         </Section>
 
-        <Section
-          title="Sleep Analytics"
-          subtitle="Nightly sleep stages, efficiency, and sleep debt"
-        >
+        <Section title="Sleep Analytics">
           {sleepData.error && !sleepData.data ? (
             <QueryStatePanel error={sleepData.error} />
           ) : (

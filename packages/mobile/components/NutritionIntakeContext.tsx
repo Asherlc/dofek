@@ -13,11 +13,7 @@ interface NutritionIntakeContextProps {
 const TARGET_MARKER_WIDTH = 2;
 
 function accessibilityLabel(context: SelectedDateNutritionIntakeContext): string {
-  const comparisonMessage = context.comparison.message.trimEnd();
-  const comparisonWithSeparator = /[.!?…]$/.test(comparisonMessage)
-    ? comparisonMessage
-    : `${comparisonMessage}.`;
-  return `Logged intake: ${formatCalories(context.observedCalories)}. ${context.target.label}: ${formatCalories(context.target.calories)}. ${comparisonWithSeparator} Scale: 0 to ${formatCalories(context.scale.maximumCalories)}.`;
+  return `Calories: ${formatCalories(context.observedCalories)}. ${context.target.label}: ${formatCalories(context.target.calories)}. Scale: 0 to ${formatCalories(context.scale.maximumCalories)}.`;
 }
 
 export function NutritionIntakeContext({ context }: NutritionIntakeContextProps) {
@@ -33,7 +29,7 @@ export function NutritionIntakeContext({ context }: NutritionIntakeContextProps)
   return (
     <View style={styles.container} accessible accessibilityLabel={accessibilityLabel(context)}>
       <View style={styles.header}>
-        <Text style={styles.title}>Logged intake</Text>
+        <Text style={styles.title}>Calories</Text>
         <Text style={styles.observedCalories}>{formatCalories(context.observedCalories)}</Text>
       </View>
       <Text style={styles.target}>
@@ -54,9 +50,8 @@ export function NutritionIntakeContext({ context }: NutritionIntakeContextProps)
       </View>
       <View style={styles.scaleLabels} accessible={false}>
         <Text style={styles.scaleLabel}>{formatCalories(0)}</Text>
-        <Text style={styles.scaleLabel}>{formatCalories(context.scale.maximumCalories)} scale</Text>
+        <Text style={styles.scaleLabel}>{formatCalories(context.scale.maximumCalories)}</Text>
       </View>
-      <Text style={styles.comparison}>{context.comparison.message}</Text>
     </View>
   );
 }
@@ -116,9 +111,5 @@ const styles = StyleSheet.create({
   scaleLabel: {
     color: colors.textTertiary,
     fontSize: 11,
-  },
-  comparison: {
-    color: colors.textSecondary,
-    fontSize: 13,
   },
 });

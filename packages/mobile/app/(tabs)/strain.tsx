@@ -324,11 +324,7 @@ export default function StrainScreen() {
 
           {/* Strain trend */}
           <View style={styles.card}>
-            <ChartTitleWithTooltip
-              title={`Daily Strain (${days} Days)`}
-              description="Daily strain scores for the selected period. The dashed line marks the average."
-              textStyle={styles.cardTitle}
-            />
+            <Text style={styles.cardTitle}>{`Daily Strain (${days} Days)`}</Text>
             {strainTrendAvailability?.status === "available" ? (
               <SparkLine
                 data={strainTrend}
@@ -346,11 +342,7 @@ export default function StrainScreen() {
 
           {/* Vertical Ascent Rate */}
           <View style={styles.card}>
-            <ChartTitleWithTooltip
-              title="Vertical Ascent Rate"
-              description="Climbing speed — meters gained per hour while ascending. Bubble size indicates elevation gain."
-              textStyle={styles.cardTitle}
-            />
+            <Text style={styles.cardTitle}>Vertical Ascent Rate</Text>
             {verticalAscentAvailability?.status === "available" ? (
               <VerticalAscentChart data={verticalAscent} units={units} />
             ) : verticalAscentAvailability ? (
@@ -388,11 +380,7 @@ export default function StrainScreen() {
           )}
           {!weeklyVolumeParsed.error && weeklyVolume.length > 0 && (
             <View style={styles.card}>
-              <ChartTitleWithTooltip
-                title="Weekly Volume"
-                description="Recorded training duration per week. The longest week fills the bar."
-                textStyle={styles.cardTitle}
-              />
+              <Text style={styles.cardTitle}>Weekly Volume</Text>
               <View style={styles.volumeStack}>
                 {aggregateWeeklyVolume(weeklyVolume).map((week) => (
                   <View key={week.week} style={styles.volumeRow}>

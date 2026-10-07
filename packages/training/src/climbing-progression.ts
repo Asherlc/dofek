@@ -109,9 +109,6 @@ export function climbingProgressionGradeColor(index: number, gradeCount: number)
   return `hsl(${Math.round(215 - position * 55)}, ${Math.round(16 + position * 49)}%, ${Math.round(65 - position * 13)}%)`;
 }
 
-export const climbingProgressionGuide =
-  "Color shows grade. Bars compare settings within each style. Each bar divides recorded sends by distinct recorded climbing days for that style and setting, including failed-only days. A 0 means recorded days with no known sends; a dash means no recorded days. Matching named climbs in merged sessions are combined across sources; incomplete or different source context stays separate. Unknown styles and settings stay separate; unlogged attempts are not inferred.";
-
 export function climbingProgressionValueLabel(
   setting: ClimbingProgressionSetting,
   segment?: ClimbingProgressionSetting["segments"][number],

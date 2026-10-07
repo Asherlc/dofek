@@ -37,7 +37,6 @@ import type { StreamPoint, StrengthExerciseDetail } from "../../../server/src/ro
 import { ActivityExportDropdown } from "../components/ActivityExportDropdown.tsx";
 import { ActivityPerceivedExertion } from "../components/ActivityPerceivedExertion.tsx";
 import { ActivitySourceDecisionCard } from "../components/ActivitySourceDecisionCard.tsx";
-import { ChartDescriptionTooltip } from "../components/ChartDescriptionTooltip.tsx";
 import { DofekChart } from "../components/DofekChart.tsx";
 import { HangboardingDetail } from "../components/HangboardingDetail.tsx";
 import { HrZonesChart, PowerZonesChart } from "../components/HeartRateZonesChart.tsx";
@@ -256,25 +255,19 @@ export function ActivityDetailPage() {
       {detail.error ? <QueryStatePanel error={detail.error} height={72} /> : null}
 
       {stream.error ? (
-        <Section
-          title="Sensor Data"
-          description="The recorded route and sensor samples for this activity."
-        >
+        <Section title="Sensor Data">
           <QueryStatePanel error={stream.error} height={72} />
         </Section>
       ) : null}
 
       {hasGps && (
-        <Section title="Route Map" description="Recorded GPS path with start and finish locations.">
+        <Section title="Route Map">
           <RouteMap points={points} onRegisterHoverCallback={mapHoverRef} />
         </Section>
       )}
 
       {(hasHr || hasPower || hasSpeed || hasCadence) && (
-        <Section
-          title="Performance"
-          description="Heart rate, power, speed, and cadence aligned over the workout."
-        >
+        <Section title="Performance">
           <MetricsChart
             points={points}
             activityType={activity.activityType}
@@ -291,10 +284,7 @@ export function ActivityDetailPage() {
 
       {isStrengthActivity &&
         (strengthExercises.isLoading || strengthExercises.error || exercises.length > 0) && (
-          <Section
-            title="Exercises"
-            description="Exercises performed during this strength workout, with details for each set."
-          >
+          <Section title="Exercises">
             {strengthExercises.error && !strengthExercisesHaveCachedData ? (
               <QueryStatePanel error={strengthExercises.error} height={160} />
             ) : strengthExercises.isLoading && !strengthExercisesHaveCachedData ? (
@@ -312,10 +302,7 @@ export function ActivityDetailPage() {
         )}
 
       {isClimbingActivity && (climbingEntries.error || (climbingEntries.data?.length ?? 0) > 0) && (
-        <Section
-          title="Climbs"
-          description="The climbs recorded during this session, including grades and send status."
-        >
+        <Section title="Climbs">
           {climbingEntries.error ? (
             <p className="text-sm text-red-400">{userFacingErrorMessage(climbingEntries.error)}</p>
           ) : (
@@ -335,10 +322,7 @@ export function ActivityDetailPage() {
       )}
 
       {isHangboardingActivity && (
-        <Section
-          title={formatActivityTypeLabel(activity.activityType)}
-          description="The hangboard plan, board, and intervals recorded during this session."
-        >
+        <Section title={formatActivityTypeLabel(activity.activityType)}>
           <HangboardingDetail
             data={hangboardDetails.data}
             loading={hangboardDetails.isLoading}
@@ -349,7 +333,7 @@ export function ActivityDetailPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {hasAltitude && (
-          <Section title="Elevation Profile" description="Elevation over elapsed activity time.">
+          <Section title="Elevation Profile">
             <ElevationChart
               points={points}
               loading={stream.isLoading}
@@ -360,10 +344,7 @@ export function ActivityDetailPage() {
         )}
 
         {showHrZones && (
-          <Section
-            title="Heart Rate Zones"
-            description="Recorded duration and percentage of activity time in each heart rate zone."
-          >
+          <Section title="Heart Rate Zones">
             {hrZones.error && !hrZonesHaveCachedData ? (
               <QueryStatePanel error={hrZones.error} height={250} />
             ) : (
@@ -376,10 +357,7 @@ export function ActivityDetailPage() {
         )}
 
         {isCycling && hasPower && (powerZones.error || powerZones.data != null) && (
-          <Section
-            title="Power Zones"
-            description="Recorded duration and percentage of activity time in each power zone."
-          >
+          <Section title="Power Zones">
             {powerZones.error && powerZones.data == null ? (
               <QueryStatePanel error={powerZones.error} height={250} />
             ) : powerZones.data ? (
@@ -1150,20 +1128,11 @@ function StrengthExerciseBreakdown({
   );
 }
 
-function Section({
-  title,
-  description,
-  children,
-}: {
-  title: string;
-  description: string;
-  children: React.ReactNode;
-}) {
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section>
       <div className="mb-2 flex items-center gap-2">
         <h2 className="text-sm font-medium text-muted uppercase tracking-wider">{title}</h2>
-        <ChartDescriptionTooltip description={description} />
       </div>
       <div className="card p-4">{children}</div>
     </section>
