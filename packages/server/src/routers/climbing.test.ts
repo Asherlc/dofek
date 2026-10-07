@@ -361,6 +361,9 @@ describe("climbingRouter", () => {
       {
         session_date: "2026-07-09",
         climb_type: "boulder",
+        climb_style: null,
+        setting: "indoor",
+        sent: true,
         grade_system: "v_scale",
         grade: "V4",
       },
@@ -369,13 +372,15 @@ describe("climbingRouter", () => {
     const result: ClimbingGradeProgressionRow[] = await caller.gradeProgression({ days: 90 });
 
     expect(execute).toHaveBeenCalledTimes(2);
-    expect(result).toEqual([
+    expect(result).toMatchObject([
       {
-        date: "2026-07-09",
+        style: "boulder",
         climbType: "boulder",
         gradeSystem: "v_scale",
-        grade: "V4",
-        gradeSortValue: 65,
+        grades: [{ grade: "V4", gradeSortValue: 65 }],
+        periods: [
+          { startDate: "2026-07-01", settings: [{ climbingDays: 1, sends: 1, sendsPerDay: 1 }] },
+        ],
       },
     ]);
   });

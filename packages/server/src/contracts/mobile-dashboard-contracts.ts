@@ -1,6 +1,7 @@
 import { activityDataStateSchema } from "@dofek/format/activity-data-state";
 import { ACTIVITY_MODALITIES } from "@dofek/training/activity-types";
 import { CLIMBING_GRADE_SYSTEMS, isGradeSystemForClimbType } from "@dofek/training/climbing-grades";
+import { climbingGradeProgressionSchema } from "@dofek/training/climbing-progression";
 import { z } from "zod";
 import {
   baselineComparisonDirectionSchema,
@@ -386,7 +387,7 @@ export const mobileTrainingTabOutputSchema = z.object({
     verticalAscent: trainingChartAvailabilitySchema,
   }),
   climbing: z.object({
-    gradeProgression: z.array(climbingGradeDisplaySchema.extend({ date: dateSchema })),
+    gradeProgression: z.array(climbingGradeProgressionSchema),
     volumeByGrade: z.array(
       climbingGradeDisplaySchema.extend({
         attempts: z.number().int().nonnegative().nullable(),
@@ -614,11 +615,21 @@ export const mobileTrainingFixtureSchema = z
         ...data.workloadRatio.timeSeries.map((row) => row.date),
         ...data.activities.map((row) => row.started_at.slice(0, 10)),
         ...data.verticalAscent.map((row) => row.date),
-        ...data.climbing.gradeProgression.map((row) => row.date),
         ...data.climbing.sessionSummary.map((row) => row.date),
       ],
       context,
     );
+    const windowStart = fixtureWindowStart(input);
+    for (const lane of data.climbing.gradeProgression) {
+      for (const period of lane.periods) {
+        if (period.startDate > input.endDate || period.endDate < windowStart) {
+          context.addIssue({
+            code: "custom",
+            message: `Fixture climbing period ${period.startDate}..${period.endDate} does not overlap ${windowStart}..${input.endDate}`,
+          });
+        }
+      }
+    }
     validateWeeksOverlappingWindow(
       input,
       data.weeklyVolume.map((row) => row.week),

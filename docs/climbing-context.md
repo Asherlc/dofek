@@ -49,6 +49,41 @@ opaque provider payloads remain available for provenance. Formatting expands
 TR to “Top rope” and Fell/Hung to “Fell or hung”; an unverified angle displays
 as `Wall angle: −20 (units unknown)`. Missing outcomes/counts remain explicit.
 
+## Grade progression and send counts
+
+The web and mobile progression charts show grade-colored stacks of **recorded sends
+per recorded climbing day**, with separate lanes for bouldering, top rope, lead,
+follow, solo, aid, and unknown route style. Indoor, outdoor, and unknown settings
+remain separate within each lane. Increasing repeat sends at the same grade can
+therefore show progress even when the hardest recorded grade stays unchanged.
+These are recorded send frequencies, rather than success percentages: unlogged
+attempts are not inferred.
+
+The [repository](../packages/server/src/repositories/climbing-repository.ts) and
+[aggregation](../packages/server/src/repositories/climbing-grade-progression.ts)
+compute the grade counts, rates, cumulative stack bounds, and common axis on the
+server. The denominator is distinct observed calendar dates for that style,
+setting, and display scale, including failed-only and unknown-outcome entries.
+Zero means recorded days with no known sends; null means no recorded days.
+All lanes share up to six calendar-month bins over the observed span, including
+gaps between observations. Grade scales that cannot be converted remain distinct
+and get qualified lane labels. Existing style, protection, and setting filters
+apply before counting.
+
+Progression, volume by grade, and session summaries share one query-time
+observation selection. Within a canonical merged activity, named climbs with
+matching source grade, style, setting, full location-name hierarchy, board name,
+angle value and unit, protection, and effective outcome are paired across sources.
+Provider-local place IDs and missing attempt coverage do not create extra sends.
+Occurrence ranks preserve genuine same-provider repeats: two matching records from
+one provider and one from another count as two, rather than three or one. The
+query uses PostgreSQL [window functions](https://www.postgresql.org/docs/current/functions-window.html)
+without changing stored records. Known attempt counts supply coverage for matched
+observations; conflicting known counts leave attempts unknown. Unnamed,
+unattached, or differing-context entries remain separate because the available
+identity does not establish an overlap. This policy is exercised against
+[PostgreSQL fixtures](../packages/server/src/repositories/climbing-repository.integration.test.ts).
+
 ## Provider coverage
 
 | Source | Location | Board and angle | Method and result |
