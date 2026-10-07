@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createTestCallerFactory, makeMockSensorStore } from "./test-helpers.ts";
 
 const { mockLoggerInfo, mockLoggerError, mockCaptureException } = vi.hoisted(() => ({
@@ -66,103 +66,21 @@ vi.mock("dofek/lib/cache", () => ({
   queryCache: { invalidateByPrefix: vi.fn() },
 }));
 
-import { trendsRouter } from "./trends.ts";
+const mockEnqueue = vi.fn();
+vi.mock("dofek/jobs/enqueue-sync-job", () => ({
+  enqueueReconnectSyncJob: (...args: unknown[]) => mockEnqueue(...args),
+}));
+vi.mock("dofek/db/account-erasure", () => ({
+  withAccountErasureUserWriteFence: vi.fn(async (db, _userId, operation) => operation(db)),
+}));
+
 import { whoopAuthRouter } from "./whoop-auth.ts";
-
-// ── Trends Router ──
-
-describe("trendsRouter", () => {
-  const createCaller = createTestCallerFactory(trendsRouter);
-
-  function makeCaller(rows: Record<string, unknown>[] = []) {
-    return createCaller({
-      db: { execute: vi.fn().mockResolvedValue(rows) },
-      userId: "user-1",
-      timezone: "UTC",
-      sensorStore: makeMockSensorStore(rows),
-    });
-  }
-
-  describe("daily", () => {
-    it("returns daily trend rows", async () => {
-      const rows = [
-        {
-          date: "2024-01-15",
-          avg_hr: 145.3,
-          max_hr: 180,
-          avg_power: 200.7,
-          max_power: 350,
-          avg_cadence: 85.2,
-          avg_speed: 8.456,
-          total_samples: 3600,
-          hr_samples: 3500,
-          power_samples: 3000,
-          activity_count: 1,
-        },
-      ];
-      const caller = makeCaller(rows);
-      const result = await caller.daily({ days: 365 });
-
-      expect(result).toHaveLength(1);
-      expect(result[0]?.avgHr).toBe(145.3);
-      expect(result[0]?.avgSpeed).toBe(8.46); // rounded to 2 decimals
-    });
-
-    it("handles null values", async () => {
-      const rows = [
-        {
-          date: "2024-01-15",
-          avg_hr: null,
-          max_hr: null,
-          avg_power: null,
-          max_power: null,
-          avg_cadence: null,
-          avg_speed: null,
-          total_samples: 0,
-          hr_samples: 0,
-          power_samples: 0,
-          activity_count: 0,
-        },
-      ];
-      const caller = makeCaller(rows);
-      const result = await caller.daily({ days: 365 });
-
-      expect(result[0]?.avgHr).toBeNull();
-      expect(result[0]?.maxPower).toBeNull();
-    });
-  });
-
-  describe("weekly", () => {
-    it("returns weekly trend rows", async () => {
-      const rows = [
-        {
-          period: "2024-01-15",
-          avg_hr: 150,
-          max_hr: 185,
-          avg_power: 210,
-          max_power: 380,
-          avg_cadence: 88,
-          avg_speed: 9.12,
-          total_samples: 25000,
-          hr_samples: 24000,
-          power_samples: 20000,
-          activity_count: 5,
-        },
-      ];
-      const caller = makeCaller(rows);
-      const result = await caller.weekly({ weeks: 52 });
-
-      expect(result).toHaveLength(1);
-      expect(result[0]?.week).toBe("2024-01-15");
-      expect(result[0]?.activityCount).toBe(5);
-    });
-  });
-});
-
-// ── Whoop Auth Router ──
 
 describe("whoopAuthRouter", () => {
   const createCaller = createTestCallerFactory(whoopAuthRouter);
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
 
   it("logs and reports signIn failures", async () => {
     const { WhoopClient } = await import("@dofek/whoop/client");
@@ -357,6 +275,7 @@ describe("whoopAuthRouter", () => {
       });
 
       expect(result).toEqual({ success: true });
+      expect(mockEnqueue).toHaveBeenCalledWith("whoop", "user-1");
       expect(ensureProvider).toHaveBeenCalledWith(
         expect.anything(),
         "whoop",

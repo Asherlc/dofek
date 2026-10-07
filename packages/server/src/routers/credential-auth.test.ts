@@ -21,7 +21,11 @@ const {
   mockCaptureException: vi.fn(),
 }));
 
-vi.mock("dofek/jobs/enqueue-sync-job", () => ({ enqueueSyncJob: mockEnqueueSyncJob }));
+vi.mock("dofek/db/account-erasure", () => ({
+  withAccountErasureUserWriteFence: vi.fn(async (db, _userId, operation) => operation(db)),
+}));
+
+vi.mock("dofek/jobs/enqueue-sync-job", () => ({ enqueueReconnectSyncJob: mockEnqueueSyncJob }));
 vi.mock("dofek/lib/error-reporting", () => ({ captureException: mockCaptureException }));
 
 vi.mock("dofek/db/tokens", () => ({
@@ -71,9 +75,33 @@ describe("credentialAuthRouter", () => {
     vi.clearAllMocks();
     mockEnqueueSyncJob.mockResolvedValue({ id: "sync-123", alreadyQueued: false });
     mockSaveTokens.mockResolvedValue(undefined);
+    mockInvalidateByPrefix.mockResolvedValue(undefined);
   });
 
   describe("signIn", () => {
+    it("reports cache failure without skipping the newly authorized sync", async () => {
+      mockGetAllProviders.mockReturnValue([
+        stubProvider({
+          id: "peloton",
+          name: "Peloton",
+          authSetup: () => ({
+            automatedLogin: vi.fn().mockResolvedValue({ accessToken: "new-token" }),
+          }),
+        }),
+      ]);
+      mockInvalidateByPrefix.mockRejectedValueOnce(new Error("Cache unavailable"));
+      const caller = createCaller({
+        db: { execute: vi.fn() },
+        userId: "user-abc",
+        timezone: "UTC",
+      });
+      await expect(
+        caller.signIn({ providerId: "peloton", username: "a", password: "b" }),
+      ).rejects.toThrow(
+        "Peloton connected and sync started, but its status could not be refreshed. Refresh this page.",
+      );
+      expect(mockEnqueueSyncJob).toHaveBeenCalled();
+    });
     it("calls automatedLogin and saves tokens for a valid provider", async () => {
       const fakeTokens = {
         accessToken: "access-123",
@@ -118,19 +146,36 @@ describe("credentialAuthRouter", () => {
       );
       expect(mockSaveTokens).toHaveBeenCalledWith(mockDb, "eight-sleep", fakeTokens, "user-abc");
       expect(mockInvalidateByPrefix).toHaveBeenCalledWith("user-abc:sync.providers");
-      expect(mockEnqueueSyncJob).toHaveBeenCalledWith(
-        "eight-sleep",
-        {
-          providerId: "eight-sleep",
-          userId: "user-abc",
-          origin: "manual",
-          targetRefreshWindow: { type: "full" },
-        },
-        { singleFlightFullSync: true },
-      );
-      expect(mockSaveTokens.mock.invocationCallOrder[0]).toBeLessThan(
-        mockEnqueueSyncJob.mock.invocationCallOrder[0] ?? 0,
-      );
+      expect(mockEnqueueSyncJob).toHaveBeenCalledWith("eight-sleep", "user-abc");
+    });
+
+    it("waits for the saved credentials before starting sync", async () => {
+      const pending = Promise.withResolvers<void>();
+      const started = Promise.withResolvers<void>();
+      mockGetAllProviders.mockReturnValue([
+        stubProvider({
+          id: "peloton",
+          name: "Peloton",
+          authSetup: () => ({
+            automatedLogin: vi.fn().mockResolvedValue({ accessToken: "new-token" }),
+          }),
+        }),
+      ]);
+      mockSaveTokens.mockImplementationOnce(() => {
+        started.resolve();
+        return pending.promise;
+      });
+      const caller = createCaller({
+        db: { execute: vi.fn() },
+        userId: "user-abc",
+        timezone: "UTC",
+      });
+      const completion = caller.signIn({ providerId: "peloton", username: "a", password: "b" });
+      await started.promise;
+      expect(mockEnqueueSyncJob).not.toHaveBeenCalled();
+      pending.resolve();
+      await completion;
+      expect(mockEnqueueSyncJob).toHaveBeenCalledWith("peloton", "user-abc");
     });
 
     it("does not queue a sync when credential persistence fails", async () => {

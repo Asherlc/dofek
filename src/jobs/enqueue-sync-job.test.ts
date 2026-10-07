@@ -22,8 +22,12 @@ vi.mock("./queues.ts", () => ({
   },
 }));
 
-const { enqueueSyncJob, scheduleDelayedSyncJob, syncJobOptionsWithRateLimitCooldown } =
-  await import("./enqueue-sync-job.ts");
+const {
+  enqueueSyncJob,
+  enqueueReconnectSyncJob,
+  scheduleDelayedSyncJob,
+  syncJobOptionsWithRateLimitCooldown,
+} = await import("./enqueue-sync-job.ts");
 
 describe("enqueueSyncJob", () => {
   beforeEach(() => {
@@ -36,6 +40,58 @@ describe("enqueueSyncJob", () => {
   afterEach(() => {
     vi.useRealTimers();
   });
+
+  it("starts reconnect work immediately when no cooldown is active", async () => {
+    await enqueueReconnectSyncJob("peloton", "user-1");
+    expect(mockProviderQueueAdd).toHaveBeenCalledWith(
+      "sync",
+      {
+        providerId: "peloton",
+        userId: "user-1",
+        origin: "manual",
+        targetRefreshWindow: { type: "full" },
+      },
+      expect.objectContaining({
+        attempts: 288,
+        jobId: expect.stringMatching(/^sync-reconnect-[0-9a-f-]{36}$/),
+      }),
+    );
+    expect(mockProviderQueueAdd.mock.calls[0]?.[2].delay).toBeUndefined();
+  });
+
+  it.each(["active", "delayed"])(
+    "schedules fresh reconnect work instead of reusing a %s job",
+    async (state) => {
+      mockGetActive.mockResolvedValue({ providerId: "peloton", expiresAt: new Date("2026-10-07") });
+      mockGetJob.mockResolvedValue({ id: "old-job", getState: vi.fn().mockResolvedValue(state) });
+
+      await enqueueReconnectSyncJob("peloton", "user-1");
+      await enqueueReconnectSyncJob("peloton", "user-1");
+
+      expect(mockProviderQueueAdd).toHaveBeenCalledTimes(2);
+      const firstOptions = mockProviderQueueAdd.mock.calls[0]?.[2];
+      const secondOptions = mockProviderQueueAdd.mock.calls[1]?.[2];
+      expect(firstOptions).toEqual(
+        expect.objectContaining({
+          delay: 600_000,
+          attempts: 288,
+          jobId: expect.stringMatching(/^sync-reconnect-/),
+        }),
+      );
+      expect(firstOptions.jobId).not.toBe(secondOptions.jobId);
+      expect(firstOptions.deduplication).toBeUndefined();
+      expect(mockProviderQueueAdd).toHaveBeenCalledWith(
+        "sync",
+        {
+          providerId: "peloton",
+          userId: "user-1",
+          origin: "manual",
+          targetRefreshWindow: { type: "full" },
+        },
+        firstOptions,
+      );
+    },
+  );
 
   it("retains a terminal coordinator child even when a cooldown exists", async () => {
     const existing = {

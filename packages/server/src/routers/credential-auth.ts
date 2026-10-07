@@ -1,14 +1,12 @@
 import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { TRPCError } from "@trpc/server";
-import { ensureProvider, saveTokens } from "dofek/db/tokens";
-import { enqueueSyncJob } from "dofek/jobs/enqueue-sync-job";
-import { queryCache } from "dofek/lib/cache";
-import { captureException } from "dofek/lib/error-reporting";
+import { saveTokens } from "dofek/db/tokens";
 import { authFailureReasonFromError } from "dofek/providers/auth-errors";
 import { getAllProviders } from "dofek/providers/registry";
 import type { TokenSet } from "dofek/providers/types";
 import { z } from "zod";
 import { protectedProcedure, router } from "../trpc.ts";
+import { completeCredentialReconnect } from "./credential-reconnect.ts";
 import { ensureProvidersRegistered } from "./sync-helpers.ts";
 
 export const credentialAuthRouter = router({
@@ -62,29 +60,11 @@ export const credentialAuthRouter = router({
 
         throw error;
       }
-      await ensureProvider(ctx.db, provider.id, provider.name, setup.apiBaseUrl, ctx.userId);
-      await saveTokens(ctx.db, provider.id, tokens, ctx.userId);
-      await queryCache.invalidateByPrefix(`${ctx.userId}:sync.providers`);
-
-      try {
-        await enqueueSyncJob(
-          provider.id,
-          {
-            providerId: provider.id,
-            userId: ctx.userId,
-            origin: "manual",
-            targetRefreshWindow: { type: "full" },
-          },
-          { singleFlightFullSync: true },
-        );
-      } catch (error) {
-        captureException(error);
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: `${provider.name} connected, but its sync could not be started. Try Sync again.`,
-          cause: error,
-        });
-      }
+      await completeCredentialReconnect(
+        ctx,
+        { id: provider.id, name: provider.name, apiBaseUrl: setup.apiBaseUrl },
+        (transaction) => saveTokens(transaction, provider.id, tokens, ctx.userId),
+      );
 
       return { success: true };
     }),
