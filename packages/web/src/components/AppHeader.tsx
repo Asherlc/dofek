@@ -21,13 +21,13 @@ const desktopLinkClass =
   "block rounded-md px-3 py-2 text-sm font-medium text-muted transition-colors hover:bg-accent/10 hover:text-foreground";
 
 const desktopActiveLinkClass =
-  "block rounded-md px-3 py-2 text-sm font-semibold bg-accent/10 text-foreground";
+  "block rounded-md px-3 py-2 text-sm font-semibold bg-accent/10 text-accent";
 
 const mobileLinkClass =
   "block rounded-md px-3 py-2.5 text-sm font-medium text-muted transition-colors hover:bg-accent/10 hover:text-foreground";
 
 const mobileActiveLinkClass =
-  "block rounded-md px-3 py-2.5 text-sm font-semibold bg-accent/10 text-foreground";
+  "block rounded-md px-3 py-2.5 text-sm font-semibold bg-accent/10 text-accent";
 
 export function AppHeader({
   children,
@@ -133,7 +133,7 @@ export function AppHeader({
               ref={index === 0 ? firstMobileLinkRef : undefined}
               to={to}
               onClick={() => setMenuOpen(false)}
-              className={mobileLinkClass}
+              inactiveProps={{ className: mobileLinkClass }}
               activeProps={{ className: mobileActiveLinkClass }}
               activeOptions={{ exact: to === "/dashboard" }}
             >
@@ -158,7 +158,7 @@ export function AppHeader({
               key={to}
               ref={index === 0 ? firstDesktopLinkRef : undefined}
               to={to}
-              className={desktopLinkClass}
+              inactiveProps={{ className: desktopLinkClass }}
               activeProps={{ className: desktopActiveLinkClass }}
               activeOptions={{ exact: to === "/dashboard" }}
             >
@@ -219,9 +219,14 @@ function AlertLink({ activeCount, compact = false }: { activeCount: number; comp
       className={
         compact
           ? "relative flex h-8 w-8 items-center justify-center rounded-md text-muted transition-colors hover:bg-accent/10 hover:text-foreground"
-          : "flex items-center justify-between rounded-md px-3 py-2 text-sm font-medium text-muted transition-colors hover:bg-accent/10 hover:text-foreground"
+          : "flex items-center justify-between rounded-md px-3 py-2 text-sm transition-colors"
       }
-      activeProps={compact ? undefined : { className: desktopActiveLinkClass }}
+      activeProps={compact ? undefined : { className: "font-semibold bg-accent/10 text-accent" }}
+      inactiveProps={
+        compact
+          ? undefined
+          : { className: "font-medium text-muted hover:bg-accent/10 hover:text-foreground" }
+      }
     >
       <span className="flex items-center gap-2">
         <BellIcon />

@@ -15,9 +15,9 @@ import { dateStringSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 import { activityMeasurementState } from "../services/activity-data-state.ts";
 import { type ActivitySensorStore, activityRepositoryFor } from "./activity-repository.ts";
 import {
-  heartRateZoneCountColumns,
   heartRateZoneSqlParams,
   heartRateZoneSumColumns,
+  heartRateZoneWeightedCountColumns,
 } from "./heart-rate-zone-sql.ts";
 import { restingHeartRateClickHouseCte } from "./resting-heart-rate-query.ts";
 
@@ -161,15 +161,14 @@ export class TrainingRepository extends BaseRepository {
         SELECT
           am.activity_date AS activity_date,
           am.max_hr AS max_hr,
-          ${heartRateZoneCountColumns("ds.scalar", activityMetaHeartRateExpressions)}
-        FROM analytics.deduped_sensor ds
+          ${heartRateZoneWeightedCountColumns("sample.1", "sample.2", activityMetaHeartRateExpressions)}
+        FROM analytics.activity_heart_rate_distribution distribution FINAL
         INNER JOIN activity_meta am
-          ON ds.user_id = am.user_id
-         AND ds.recorded_at >= am.started_at
-         AND ds.recorded_at <= coalesce(am.ended_at, am.started_at + INTERVAL 12 HOUR)
-        WHERE ds.channel = 'heart_rate'
-          AND ds.scalar IS NOT NULL
-          AND ds.is_deleted = 0
+          ON distribution.user_id = am.user_id
+         AND distribution.activity_id = am.id
+        ARRAY JOIN distribution.samples AS sample
+        WHERE distribution.user_id = {userId:UUID}
+          AND distribution.is_deleted = 0
         GROUP BY am.activity_date, am.max_hr
       )
       SELECT

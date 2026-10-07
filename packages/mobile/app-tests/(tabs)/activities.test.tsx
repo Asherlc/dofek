@@ -304,8 +304,7 @@ describe("ActivitiesScreen", () => {
     const previousCalendarData = [{ date: "2026-03-10" }];
     expect(calendarDataOptions?.placeholderData?.(previousCalendarData)).toBe(previousCalendarData);
     expect(screen.getByText("Training time (minutes per day)")).toBeTruthy();
-    expect(screen.getByText("High training volume; compare with recovery.")).toBeTruthy();
-    expect(screen.getByRole("button", { name: /72 minutes of training time/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /72 min/ })).toBeTruthy();
   });
 
   it("uses QueryStatePanel for overview loading state", () => {

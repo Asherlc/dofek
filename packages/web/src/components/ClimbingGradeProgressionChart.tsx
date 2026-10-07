@@ -1,7 +1,6 @@
 import {
   type ClimbingGradeProgressionLane,
   climbingProgressionGradeColor,
-  climbingProgressionGuide,
   climbingProgressionLaneLabel,
   climbingProgressionPeriodLabel,
   climbingProgressionSettingLabels,
@@ -65,7 +64,7 @@ function laneOption(
   return {
     aria: {
       label: {
-        description: "Color shows grade; bar height shows sends per recorded climbing day.",
+        description: `${styleLabel}: sends per climbing day`,
       },
     },
     grid: dofekGrid("single", { top: 10, bottom: 30, left: 32, right: 8, containLabel: true }),
@@ -181,7 +180,7 @@ export function ClimbingGradeProgressionChart({
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-muted">
-        <span>Recorded sends per climbing day</span>
+        <span>Sends per climbing day</span>
         {focused ? (
           <div className="flex flex-wrap items-center gap-3">
             <button
@@ -195,13 +194,13 @@ export function ClimbingGradeProgressionChart({
               All styles
             </button>
             <label className="flex items-center gap-2">
-              Compare settings
+              Setting
               <select
                 value={setting}
                 className="min-h-10 rounded border border-border bg-surface px-2 text-foreground"
                 onChange={(event) => setSelectedSetting(event.target.value)}
               >
-                <option value="all">Compare settings</option>
+                <option value="all">All</option>
                 {focused.settings.map((setting) => (
                   <option key={setting} value={setting}>
                     {climbingProgressionSettingLabels[setting]}
@@ -269,10 +268,6 @@ export function ClimbingGradeProgressionChart({
           />
         </section>
       ))}
-      <details className="text-xs text-dim">
-        <summary className="min-h-10 cursor-pointer py-2">How to read this chart</summary>
-        <p className="pb-2 leading-relaxed">{climbingProgressionGuide}</p>
-      </details>
     </div>
   );
 }

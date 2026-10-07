@@ -41,6 +41,58 @@ describe("enqueueSyncJob", () => {
     vi.useRealTimers();
   });
 
+  it("anchors an explicit relative window before enqueue", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-07T00:00:00Z"));
+    await enqueueSyncJob("garmin", {
+      userId: "user-1",
+      targetRefreshWindow: { type: "days", days: 7 },
+    });
+    expect(mockProviderQueueAdd).toHaveBeenCalledWith(
+      "sync",
+      expect.objectContaining({ requestedAtIso: "2026-10-07T00:00:00.000Z" }),
+      expect.anything(),
+    );
+  });
+
+  it.each([undefined, { type: "days" as const, days: 7 }])(
+    "keeps non-full requests out of initial full-sync deduplication",
+    async (targetRefreshWindow) => {
+      await enqueueSyncJob(
+        "garmin",
+        { userId: "user-1", targetRefreshWindow },
+        { singleFlightFullSync: true },
+      );
+      expect(mockProviderQueueAdd).toHaveBeenCalledWith(
+        "sync",
+        expect.anything(),
+        expect.not.objectContaining({ deduplication: expect.anything() }),
+      );
+    },
+  );
+
+  it.each([undefined, "wahoo"])(
+    "preserves the delayed request provider and user scope",
+    async (requestedProviderId) => {
+      const cooldown = {
+        providerId: "garmin",
+        scope: "provider" as const,
+        userId: null,
+        expiresAt: new Date("2026-10-08"),
+      };
+      await scheduleDelayedSyncJob({ userId: "user-1", providerId: requestedProviderId }, cooldown);
+      const { getProviderSyncQueue } = await import("./queues.ts");
+      const { providerRateLimitCooldownJobId } = await import("./provider-rate-limit-cooldown.ts");
+      expect(getProviderSyncQueue).toHaveBeenCalledWith(requestedProviderId ?? "garmin");
+      expect(mockProviderQueueAdd).toHaveBeenCalledWith(
+        "sync",
+        expect.objectContaining({ providerId: requestedProviderId ?? "garmin", userId: "user-1" }),
+        expect.anything(),
+      );
+      expect(providerRateLimitCooldownJobId).toHaveBeenCalledWith(cooldown, "user-1");
+    },
+  );
+
   it("starts reconnect work immediately when no cooldown is active", async () => {
     await enqueueReconnectSyncJob("peloton", "user-1");
     expect(mockProviderQueueAdd).toHaveBeenCalledWith(

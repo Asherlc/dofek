@@ -217,12 +217,7 @@ describe("PersonalizationPanel", () => {
 
     expect(
       screen.getByText(
-        "How far each threshold is from your usual baseline (in standard deviations)",
-      ),
-    ).toBeTruthy();
-    expect(
-      screen.getByText(
-        "Heart Rate Variability: -2, -1.25, -0.5 · Resting Heart Rate: 2, 1.25, 0.5",
+        "Heart Rate Variability (SD): -2, -1.25, -0.5 · Resting Heart Rate (SD): 2, 1.25, 0.5",
       ),
     ).toBeTruthy();
     expect(screen.queryByText(/\bms\b/)).toBeNull();
@@ -248,7 +243,9 @@ describe("PersonalizationPanel", () => {
     render(<PersonalizationPanel />);
 
     expect(
-      screen.getByText("Heart Rate Variability: -2, -1.5, -1 · Resting Heart Rate: 2, 1.5, 1"),
+      screen.getByText(
+        "Heart Rate Variability (SD): -2, -1.5, -1 · Resting Heart Rate (SD): 2, 1.5, 1",
+      ),
     ).toBeTruthy();
   });
 
@@ -287,7 +284,7 @@ describe("PersonalizationPanel", () => {
     expect(screen.queryByText("Reset to Defaults")).toBeNull();
   });
 
-  it("renders server-built model evidence without deriving confidence", () => {
+  it("renders the last successful model update", () => {
     vi.mocked(trpc.personalization.status.useQuery).mockReturnValue({
       data: mockData,
       isLoading: false,
@@ -295,32 +292,9 @@ describe("PersonalizationPanel", () => {
 
     render(<PersonalizationPanel />);
 
-    const heading = screen.getByLabelText("Training Load Windows model evidence");
+    const heading = screen.getByText("Training Load Windows");
     const card = heading.parentElement?.parentElement;
     if (!card) throw new Error("Training Load Windows card not found");
-    expect(within(card).getByText("Past 365 days")).toBeTruthy();
-    expect(within(card).getByText("100 qualifying days used; minimum 90 days")).toBeTruthy();
-    expect(within(card).getByText("Pearson correlation: 0.850")).toBeTruthy();
-    expect(within(card).getByText("No calibrated uncertainty interval is available.")).toBeTruthy();
-    expect(within(card).getByText("• Days without a nonzero performance observation")).toBeTruthy();
-    expect(card?.textContent).not.toMatch(/confidence/i);
-  });
-
-  it("renders truthful unavailable fit-time evidence", () => {
-    vi.mocked(trpc.personalization.status.useQuery).mockReturnValue({
-      data: mockData,
-      isLoading: false,
-    });
-
-    render(<PersonalizationPanel />);
-
-    const heading = screen.getByLabelText("Readiness Score Weights model evidence");
-    const card = heading.parentElement?.parentElement;
-    if (!card) throw new Error("Readiness Score Weights card not found");
-    expect(
-      within(card).getByText("Successful fit time unavailable until this model is refit"),
-    ).toBeTruthy();
-    expect(within(card).getByText(/Update status:/)).toBeTruthy();
-    expect(within(card).queryByText(/Last successful update:/)).toBeNull();
+    expect(within(card).getByText("Updated Mar 18, 2026")).toBeTruthy();
   });
 });

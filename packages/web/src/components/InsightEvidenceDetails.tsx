@@ -1,10 +1,7 @@
 import type { InsightEvidence } from "dofek-server/types";
 import { EvidenceDetails } from "./EvidenceDetails.tsx";
 
-type InsightEvidenceDetailFields = Pick<
-  InsightEvidence,
-  "method" | "limitations" | "observationWindow"
->;
+type InsightEvidenceDetailFields = Pick<InsightEvidence, "method" | "observationWindow">;
 
 interface InsightEvidenceDetailsProps {
   evidence: Partial<InsightEvidenceDetailFields>;
@@ -12,16 +9,10 @@ interface InsightEvidenceDetailsProps {
 }
 
 export function InsightEvidenceDetails({ evidence, className }: InsightEvidenceDetailsProps) {
-  if (
-    ![evidence.method, evidence.limitations, evidence.observationWindow].some((value) =>
-      value?.trim(),
-    )
-  )
-    return null;
+  if (![evidence.method, evidence.observationWindow].some((value) => value?.trim())) return null;
 
   return (
     <div className={className}>
-      <EvidenceDetails details={[{ key: "limitations", value: evidence.limitations }]} />
       <details className="mt-2 text-xs text-muted">
         <summary className="cursor-pointer">Calculation details</summary>
         <EvidenceDetails

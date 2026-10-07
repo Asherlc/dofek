@@ -39,27 +39,20 @@ export function ActivityHeatmap({ data }: ActivityHeatmapProps) {
       <Text style={styles.title}>
         {ACTIVITY_HEATMAP_MEASURE_LABEL} ({ACTIVITY_HEATMAP_UNIT_LABEL})
       </Text>
-      <View accessible={true} accessibilityLabel="Training time legend" style={styles.legend}>
+      <View accessible={true} style={styles.legend}>
         {ACTIVITY_HEATMAP_BANDS.map((band) => (
           <View key={band.id} style={styles.legendItem}>
-            <View
-              accessibilityLabel={band.label}
-              style={[styles.legendSwatch, { backgroundColor: colorsByBand[band.id] }]}
-            />
-            <View style={styles.legendCopy}>
-              <Text style={styles.legendLabel}>{band.label}</Text>
-              <Text style={styles.legendMeaning}>{band.meaning}</Text>
-            </View>
+            <View style={[styles.legendSwatch, { backgroundColor: colorsByBand[band.id] }]} />
+            <Text style={styles.legendLabel}>{band.label}</Text>
           </View>
         ))}
       </View>
-      <Text style={styles.daysLabel}>Recorded days</Text>
       <View style={styles.dayGrid}>
         {data.map((day) => (
           <TouchableOpacity
             key={day.date}
             accessibilityHint="Double-tap to view daily training details."
-            accessibilityLabel={`${formatDateMedium(day.date)}, ${day.totalMinutes} minutes of training time. ${day.trainingTimeMeaning}`}
+            accessibilityLabel={`${formatDateMedium(day.date)}, ${day.totalMinutes} min, ${day.activityCount} ${day.activityCount === 1 ? "activity" : "activities"}`}
             accessibilityRole="button"
             accessibilityState={{ selected: day.date === selectedDay?.date }}
             onPress={() => setSelectedDate(day.date)}
@@ -75,14 +68,9 @@ export function ActivityHeatmap({ data }: ActivityHeatmapProps) {
         ))}
       </View>
       {selectedDay ? (
-        <View accessibilityLiveRegion="polite" accessible={true} style={styles.details}>
-          <Text style={styles.detailsTitle}>{formatDateMedium(selectedDay.date)}</Text>
-          <Text style={styles.detailsValue}>
-            {selectedDay.totalMinutes} minutes of training time
-          </Text>
-          <Text style={styles.detailsMeaning}>{selectedDay.trainingTimeMeaning}</Text>
-          <Text style={styles.detailsMeta}>{selectedDay.activityCount} recorded activities.</Text>
-        </View>
+        <Text accessibilityLiveRegion="polite" style={styles.detailsMeta}>
+          {selectedDay.activityCount} {selectedDay.activityCount === 1 ? "activity" : "activities"}
+        </Text>
       ) : null}
     </View>
   );
@@ -101,10 +89,12 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
   legend: {
-    gap: spacing.xs,
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.sm,
   },
   legendItem: {
-    alignItems: "flex-start",
+    alignItems: "center",
     flexDirection: "row",
     gap: spacing.xs,
   },
@@ -113,28 +103,12 @@ const styles = StyleSheet.create({
     borderRadius: 3,
     borderWidth: 1,
     height: 14,
-    marginTop: 2,
     width: 14,
-  },
-  legendCopy: {
-    flex: 1,
-    gap: 2,
   },
   legendLabel: {
     color: colors.text,
     fontSize: 12,
     fontWeight: "700",
-  },
-  legendMeaning: {
-    color: colors.textSecondary,
-    fontSize: 12,
-  },
-  daysLabel: {
-    color: colors.textSecondary,
-    fontSize: 12,
-    fontWeight: "700",
-    marginTop: spacing.xs,
-    textTransform: "uppercase",
   },
   dayGrid: {
     flexDirection: "row",
@@ -161,26 +135,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "700",
     marginTop: 2,
-  },
-  details: {
-    backgroundColor: colors.surfaceSecondary,
-    borderRadius: radius.md,
-    gap: 2,
-    padding: spacing.sm,
-  },
-  detailsTitle: {
-    color: colors.text,
-    fontSize: 13,
-    fontWeight: "700",
-  },
-  detailsValue: {
-    color: colors.text,
-    fontSize: 14,
-    fontWeight: "700",
-  },
-  detailsMeaning: {
-    color: colors.textSecondary,
-    fontSize: 12,
   },
   detailsMeta: {
     color: colors.textTertiary,

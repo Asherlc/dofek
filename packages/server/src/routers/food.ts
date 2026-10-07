@@ -49,8 +49,8 @@ async function loadFoodByDate(db: Database, userId: string, timezone: string, da
 }
 
 const calorieTargetLabels: Record<NutritionCalorieTargetType, string> = {
-  configured: "Configured daily logged-intake target",
-  default: "Default daily logged-intake target",
+  configured: "Target",
+  default: "Default target",
 };
 
 const intakeTargetDescriptions: Record<NutritionCalorieTargetType, string> = {

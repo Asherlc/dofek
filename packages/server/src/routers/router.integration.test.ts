@@ -882,7 +882,7 @@ describe("Router coverage", () => {
         expect(typeof exercise.slopeKgPerWeek).toBe("number");
         expect(exercise.trend).toBe("increasing");
         expect(exercise.slopeKgPerWeek).toBeGreaterThan(0);
-        expect(exercise.interpretation).toContain("not inherently good or bad");
+        expect(exercise.interpretation).toBe("Recorded weekly volume increased over this period.");
         expect(exercise.deloadContext).toContain("planned deload");
       }
     });
