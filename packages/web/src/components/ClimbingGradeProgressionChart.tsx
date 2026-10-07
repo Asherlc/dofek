@@ -1,11 +1,17 @@
-import { formatDateMedium, formatDateShort } from "@dofek/format/format";
-import { gradeOptionsForSystem, gradeSortValue } from "@dofek/training/climbing-grades";
-import type { ClimbingGradeProgressionRow } from "dofek-server/types";
 import {
-  chartColors,
+  type ClimbingGradeProgressionLane,
+  climbingProgressionGradeColor,
+  climbingProgressionLaneLabel,
+  climbingProgressionPeriodLabel,
+  climbingProgressionSettingLabels,
+  climbingProgressionSettings,
+  climbingProgressionValueLabel,
+} from "@dofek/training/climbing-progression";
+import { useState } from "react";
+import {
+  chartThemeColors,
   dofekAxis,
   dofekGrid,
-  dofekLegend,
   dofekSeries,
   dofekTooltip,
   escapeTooltipHtml,
@@ -13,176 +19,255 @@ import {
 import { DofekChart } from "./DofekChart.tsx";
 
 interface ClimbingGradeProgressionChartProps {
-  data: ClimbingGradeProgressionRow[];
+  data: ClimbingGradeProgressionLane[];
   loading?: boolean;
 }
 
-class ClimbingGradeProgressionChartModel {
-  readonly #rows: ClimbingGradeProgressionRow[];
-
-  constructor(rows: ClimbingGradeProgressionRow[]) {
-    this.#rows = [...rows].sort((left, right) => left.date.localeCompare(right.date));
-  }
-
-  get latestRows(): ClimbingGradeProgressionRow[] {
-    const latestByType = new Map<string, ClimbingGradeProgressionRow>();
-    for (const row of this.#rows) {
-      const existing = latestByType.get(row.climbType);
-      if (!existing || row.date > existing.date) {
-        latestByType.set(row.climbType, row);
-      }
-    }
-    return [...latestByType.values()].sort((left, right) =>
-      left.climbType.localeCompare(right.climbType),
-    );
-  }
-
-  option(): Record<string, unknown> {
-    const hasBoulder = this.#rows.some((row) => row.climbType === "boulder");
-    const hasRoute = this.#rows.some((row) => row.climbType === "route");
-    return {
-      grid: dofekGrid(hasBoulder && hasRoute ? "dualAxis" : "single", {
-        top: 50,
-        bottom: 42,
-        left: 64,
-        right: hasBoulder && hasRoute ? 64 : 20,
-      }),
-      legend: dofekLegend(true),
-      tooltip: dofekTooltip({
-        formatter: (params: Array<{ seriesIndex: number; dataIndex: number }>) => {
-          const rows = params.flatMap((param) => {
-            const row = this.#rowsForType(param.seriesIndex === 0 ? "boulder" : "route")[
-              param.dataIndex
-            ];
-            return row ? [row] : [];
-          });
-          const first = rows[0];
-          if (!first) return "";
-          return [
-            `<strong>${escapeTooltipHtml(formatDateMedium(first.date, { timeZone: "UTC" }))}</strong>`,
-            ...rows.map(
-              (row) =>
-                `${climbTypeLabel(row.climbType)}: <strong>${escapeTooltipHtml(row.grade)}</strong>`,
-            ),
-          ].join("<br/>");
-        },
-      }),
-      xAxis: dofekAxis.time({
-        show: true,
-        axisLabel: {
-          formatter: (value: number) => formatDateShort(value),
-          hideOverlap: true,
-        },
-      }),
-      yAxis: [this.#gradeAxis("boulder", false), this.#gradeAxis("route", hasBoulder)],
-      series: [
-        dofekSeries.line("Boulder", this.#seriesData("boulder"), {
-          color: chartColors.emerald,
-          symbol: "circle",
-          symbolSize: 6,
-          smooth: false,
-        }),
-        dofekSeries.line("Route", this.#seriesData("route"), {
-          color: chartColors.blue,
-          yAxisIndex: 1,
-          symbol: "circle",
-          symbolSize: 6,
-          smooth: false,
-        }),
-      ],
-    };
-  }
-
-  #rowsForType(climbType: ClimbingGradeProgressionRow["climbType"]): ClimbingGradeProgressionRow[] {
-    return this.#rows.filter((row) => row.climbType === climbType);
-  }
-
-  #seriesData(climbType: ClimbingGradeProgressionRow["climbType"]): Array<{
-    name: string;
-    displayValue: string;
-    value: [number, number];
-  }> {
-    return this.#rowsForType(climbType).map((row) => ({
-      name: formatDateMedium(row.date, { timeZone: "UTC" }),
-      displayValue: row.grade,
-      // Match ECharts' local calendar parsing of the selected date-range boundaries.
-      value: [Date.parse(`${row.date}T00:00:00`), row.gradeSortValue],
-    }));
-  }
-
-  #gradeAxis(climbType: ClimbingGradeProgressionRow["climbType"], onRight: boolean) {
-    const rows = this.#rowsForType(climbType);
-    const latest = rows.at(-1);
-    const grades = latest
-      ? gradeOptionsForSystem(latest.gradeSystem)
-          .flatMap((grade) => {
-            const score = gradeSortValue(grade, latest.gradeSystem);
-            return score === null ? [] : [{ grade, score }];
-          })
-          .sort((left, right) => left.score - right.score)
-      : [];
-    const scores = rows.map((row) => row.gradeSortValue);
-    const lowest = Math.min(...scores);
-    const highest = Math.max(...scores);
-    const lower = [...grades].reverse().find((grade) => grade.score < lowest)?.score ?? lowest;
-    const upper = grades.find((grade) => grade.score > highest)?.score ?? highest;
-    const candidates = grades.filter((grade) => grade.score >= lower && grade.score <= upper);
-    // Cap density while placing every tick at a real grade's normalized score.
-    const stride = Math.max(1, Math.ceil((candidates.length - 1) / 5));
-    const ticks = candidates.filter(
-      (_grade, index) => index % stride === 0 || index === candidates.length - 1,
-    );
-    const labels = new Map(ticks.map(({ grade, score }) => [score, grade]));
-    const customValues = ticks.map((grade) => grade.score);
-    return {
-      ...dofekAxis.value({
-        name: `${climbTypeLabel(climbType)} Grade`,
-        position: onRight ? "right" : "left",
-        showSplitLine: !onRight,
-        min: latest ? lower : 0,
-        max: latest ? upper : 1,
-        axisLabel: {
-          customValues,
-          formatter: (value: number) => labels.get(value) ?? "",
-          hideOverlap: true,
-        },
-      }),
-      show: rows.length > 0,
-      axisTick: { show: true, customValues },
-      axisPointer: { label: { show: false } },
-    };
-  }
+function laneKey(lane: ClimbingGradeProgressionLane) {
+  return `${lane.style}:${lane.gradeSystem}`;
 }
 
-function climbTypeLabel(climbType: ClimbingGradeProgressionRow["climbType"]): string {
-  return climbType === "boulder" ? "Boulder" : "Route";
+function settingPattern(setting: ClimbingGradeProgressionLane["settings"][number]) {
+  return setting === "indoor"
+    ? undefined
+    : {
+        symbol: setting === "outdoor" ? "rect" : "circle",
+        symbolSize: setting === "outdoor" ? 1 : 0.5,
+        color: "rgba(15,23,42,0.45)",
+        dashArrayX: setting === "outdoor" ? [1, 0] : [1, 4],
+        dashArrayY: setting === "outdoor" ? [2, 4] : [1, 4],
+        rotation: setting === "outdoor" ? -Math.PI / 4 : 0,
+      };
+}
+
+function settingSwatch(setting: ClimbingGradeProgressionLane["settings"][number]) {
+  return {
+    backgroundColor: "#94a3b8",
+    backgroundImage:
+      setting === "outdoor"
+        ? "repeating-linear-gradient(135deg, transparent, transparent 3px, #334155 3px, #334155 4px)"
+        : setting === "unknown"
+          ? "radial-gradient(#334155 1px, transparent 1px)"
+          : undefined,
+    backgroundSize: setting === "unknown" ? "4px 4px" : undefined,
+  };
+}
+
+function laneOption(
+  lane: ClimbingGradeProgressionLane,
+  selectedSetting: string,
+  styleLabel: string,
+) {
+  const settings = lane.settings.filter(
+    (setting) => selectedSetting === "all" || setting === selectedSetting,
+  );
+  return {
+    aria: {
+      label: {
+        description: `${styleLabel}: sends per climbing day`,
+      },
+    },
+    grid: dofekGrid("single", { top: 10, bottom: 30, left: 32, right: 8, containLabel: true }),
+    xAxis: dofekAxis.category({
+      show: true,
+      data: lane.periods.map((period) => climbingProgressionPeriodLabel(period)),
+      axisLabel: { interval: 0, hideOverlap: true },
+    }),
+    yAxis: { ...dofekAxis.value({ min: 0, max: lane.axisMax }), interval: lane.axisInterval },
+    tooltip: dofekTooltip({
+      formatter: (params: Array<{ dataIndex: number }>) => {
+        const period = lane.periods[params[0]?.dataIndex ?? -1];
+        if (!period) return "";
+        return [
+          `<strong>${escapeTooltipHtml(climbingProgressionPeriodLabel(period, true))} · ${styleLabel}</strong>`,
+          ...period.settings
+            .filter((setting) => settings.includes(setting.setting))
+            .flatMap((setting) => [
+              `<br/><strong>${climbingProgressionSettingLabels[setting.setting]}</strong>`,
+              escapeTooltipHtml(climbingProgressionValueLabel(setting)),
+              ...setting.segments
+                .filter((segment) => segment.sends > 0)
+                .map(
+                  (segment) =>
+                    `${escapeTooltipHtml(segment.grade)}: ${escapeTooltipHtml(climbingProgressionValueLabel(setting, segment))}`,
+                ),
+            ]),
+        ].join("<br/>");
+      },
+    }),
+    series: settings.flatMap((setting) =>
+      lane.grades.map(({ grade }, index) => ({
+        ...dofekSeries.bar(
+          `${styleLabel} · ${climbingProgressionSettingLabels[setting]} · ${grade}`,
+          lane.periods.map((period) => {
+            const point = period.settings.find((point) => point.setting === setting);
+            const segment = point?.segments.find((segment) => segment.grade === grade);
+            return {
+              name: climbingProgressionPeriodLabel(period, true),
+              value: segment?.sendsPerDay ?? null,
+              displayValue:
+                point && segment
+                  ? climbingProgressionValueLabel(point, segment)
+                  : "No recorded days",
+            };
+          }),
+          {
+            stack: setting,
+            barWidth: settings.length === 1 ? "40%" : settings.length === 2 ? "22%" : "16%",
+            barGap: "20%",
+            color: climbingProgressionGradeColor(index, lane.grades.length),
+            itemStyle: { decal: settingPattern(setting) },
+          },
+        ),
+        markPoint:
+          index === lane.grades.length - 1
+            ? {
+                silent: true,
+                symbol: "circle",
+                symbolSize: 1,
+                itemStyle: { color: "transparent" },
+                data: lane.periods.flatMap((period, periodIndex) => {
+                  const point = period.settings.find((point) => point.setting === setting);
+                  return point?.sendsPerDay == null || point.sendsPerDay === 0
+                    ? [
+                        {
+                          coord: [periodIndex, 0],
+                          label: {
+                            show: true,
+                            position: "top",
+                            distance: 5,
+                            color: chartThemeColors.axisLabel,
+                            fontSize: 11,
+                            formatter: point?.sendsPerDay === 0 ? "0" : "—",
+                          },
+                        },
+                      ]
+                    : [];
+                }),
+              }
+            : undefined,
+      })),
+    ),
+  };
 }
 
 export function ClimbingGradeProgressionChart({
   data,
   loading,
 }: ClimbingGradeProgressionChartProps) {
-  const model = new ClimbingGradeProgressionChartModel(data);
+  const [focusedKey, setFocusedKey] = useState<string | null>(null);
+  const [selectedSetting, setSelectedSetting] = useState("all");
+  const focused = data.find((lane) => laneKey(lane) === focusedKey);
+  const visible = focused ? [focused] : data;
+  const setting = focused?.settings.some((value) => value === selectedSetting)
+    ? selectedSetting
+    : "all";
+  const availableSettings = climbingProgressionSettings.filter((setting) =>
+    visible.some((lane) => lane.settings.includes(setting)),
+  );
+
+  if (data.length === 0)
+    return (
+      <DofekChart
+        option={{ series: [] }}
+        loading={loading}
+        empty
+        emptyMessage="No recorded climbing grades"
+        height={180}
+      />
+    );
 
   return (
     <div className="space-y-3">
-      <DofekChart
-        option={model.option()}
-        loading={loading}
-        empty={data.length === 0}
-        emptyMessage="No climbing grade progression"
-        height={280}
-      />
-      {data.length > 0 && (
-        <div className="grid gap-2 sm:grid-cols-2">
-          {model.latestRows.map((row) => (
-            <div key={row.climbType} className="rounded border border-border bg-surface px-3 py-2">
-              <div className="text-xs text-dim">{climbTypeLabel(row.climbType)}</div>
-              <div className="text-lg font-semibold text-foreground">{row.grade}</div>
+      <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-muted">
+        <span>Sends per climbing day</span>
+        {focused ? (
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              className="min-h-10 rounded border border-border px-3 text-foreground"
+              onClick={() => {
+                setFocusedKey(null);
+                setSelectedSetting("all");
+              }}
+            >
+              All styles
+            </button>
+            <label className="flex items-center gap-2">
+              Setting
+              <select
+                value={setting}
+                className="min-h-10 rounded border border-border bg-surface px-2 text-foreground"
+                onChange={(event) => setSelectedSetting(event.target.value)}
+              >
+                <option value="all">All</option>
+                {focused.settings.map((setting) => (
+                  <option key={setting} value={setting}>
+                    {climbingProgressionSettingLabels[setting]}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+        ) : (
+          <div className="flex flex-wrap items-center gap-3">
+            {availableSettings.map((setting) => (
+              <span key={setting} className="inline-flex items-center gap-1.5">
+                <span
+                  className="inline-block h-3 w-3 rounded-sm"
+                  style={settingSwatch(setting)}
+                  aria-hidden="true"
+                />
+                {climbingProgressionSettingLabels[setting]}
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+      {visible.map((lane) => (
+        <section
+          key={laneKey(lane)}
+          aria-label={climbingProgressionLaneLabel(lane, data)}
+          className="border-t border-border pt-3"
+        >
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h3 className="text-sm font-semibold text-foreground">
+              {climbingProgressionLaneLabel(lane, data)}
+            </h3>
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted">
+              {lane.grades.map(({ grade }, index) => (
+                <span key={grade} className="inline-flex items-center gap-1">
+                  <span
+                    aria-hidden="true"
+                    className="inline-block h-2.5 w-2.5 rounded-sm"
+                    style={{
+                      backgroundColor: climbingProgressionGradeColor(index, lane.grades.length),
+                    }}
+                  />
+                  {grade}
+                </span>
+              ))}
             </div>
-          ))}
-        </div>
-      )}
+            {!focused && (
+              <button
+                type="button"
+                aria-label={`Focus ${climbingProgressionLaneLabel(lane, data)}`}
+                className="min-h-10 rounded px-3 text-xs font-medium text-accent hover:bg-surface-hover"
+                onClick={() => {
+                  setFocusedKey(laneKey(lane));
+                  setSelectedSetting("all");
+                }}
+              >
+                Focus ↗
+              </button>
+            )}
+          </div>
+          <DofekChart
+            option={laneOption(lane, setting, climbingProgressionLaneLabel(lane, data))}
+            height={focused ? 300 : 170}
+          />
+        </section>
+      ))}
     </div>
   );
 }

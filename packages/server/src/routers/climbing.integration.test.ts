@@ -274,13 +274,15 @@ describe("climbing router integration", () => {
       expect.arrayContaining([
         expect.objectContaining({
           climbType: "boulder",
-          grade: "V4",
-          gradeSortValue: expect.any(Number),
+          grades: expect.arrayContaining([
+            expect.objectContaining({ grade: "V4", gradeSortValue: expect.any(Number) }),
+          ]),
         }),
         expect.objectContaining({
           climbType: "route",
-          grade: "5.10a",
-          gradeSortValue: expect.any(Number),
+          grades: expect.arrayContaining([
+            expect.objectContaining({ grade: "5.10a", gradeSortValue: expect.any(Number) }),
+          ]),
         }),
       ]),
     );

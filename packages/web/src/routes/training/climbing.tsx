@@ -165,11 +165,12 @@ export function ClimbingTab() {
           Updating climbing…
         </p>
       ) : null}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 gap-6">
         <Section title="Grade Progression">
-          {gradeProgression.error && !gradeProgression.data ? (
-            <QueryStatePanel error={gradeProgression.error} />
-          ) : (
+          {gradeProgression.error ? (
+            <QueryStatePanel error={gradeProgression.error} height={0} />
+          ) : null}
+          {gradeProgression.error && !gradeProgression.data ? null : (
             <ClimbingGradeProgressionChart
               data={gradeProgression.data ?? []}
               loading={gradeProgression.isLoading}
@@ -178,9 +179,8 @@ export function ClimbingTab() {
         </Section>
 
         <Section title="Volume by Grade">
-          {volumeByGrade.error && !volumeByGrade.data ? (
-            <QueryStatePanel error={volumeByGrade.error} />
-          ) : (
+          {volumeByGrade.error ? <QueryStatePanel error={volumeByGrade.error} height={0} /> : null}
+          {volumeByGrade.error && !volumeByGrade.data ? null : (
             <ClimbingVolumeByGradeChart
               data={volumeByGrade.data ?? []}
               loading={volumeByGrade.isLoading}
