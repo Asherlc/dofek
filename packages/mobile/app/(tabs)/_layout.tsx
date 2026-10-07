@@ -15,16 +15,12 @@ export default function TabsLayout() {
     <View style={styles.headerActions}>
       <AlertsBell activeCount={activeAlertCount} onPress={() => router.push("/alerts")} />
       <Pressable
-        onPress={() => router.push("/more")}
+        onPress={() => router.push("/settings")}
         style={styles.headerButton}
         accessibilityRole="button"
-        accessibilityLabel="More"
+        accessibilityLabel="Settings"
       >
-        <Ionicons
-          name="ellipsis-horizontal-circle-outline"
-          size={22}
-          color={colors.textSecondary}
-        />
+        <Ionicons name="settings-outline" size={22} color={colors.textSecondary} />
       </Pressable>
     </View>
   );

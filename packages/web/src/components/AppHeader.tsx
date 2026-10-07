@@ -12,7 +12,6 @@ const navItems = [
   { to: "/nutrition", label: "Nutrition" },
   { to: "/body", label: "Body" },
   { to: "/correlation", label: "Correlation" },
-  { to: "/more", label: "More" },
 ] as const;
 
 const adminNavItems = [...navItems, { to: "/admin", label: "Admin" }] as const;
@@ -140,6 +139,14 @@ export function AppHeader({
               {label}
             </Link>
           ))}
+          <Link
+            to="/settings"
+            onClick={() => setMenuOpen(false)}
+            inactiveProps={{ className: mobileLinkClass }}
+            activeProps={{ className: mobileActiveLinkClass }}
+          >
+            Settings
+          </Link>
         </nav>
       </ModalDialog>
 

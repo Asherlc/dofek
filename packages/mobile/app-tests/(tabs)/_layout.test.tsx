@@ -87,11 +87,11 @@ describe("tab layout selected state", () => {
     expect(mockPush).toHaveBeenCalledWith("/alerts");
   });
 
-  it("opens More from the global tab header", () => {
+  it("opens Settings from the global tab header", () => {
     render(<TabsLayout />);
 
-    fireEvent.click(screen.getByRole("button", { name: "More" }));
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
 
-    expect(mockPush).toHaveBeenCalledWith("/more");
+    expect(mockPush).toHaveBeenCalledWith("/settings");
   });
 });

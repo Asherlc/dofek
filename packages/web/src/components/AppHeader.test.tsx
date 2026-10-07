@@ -292,19 +292,14 @@ describe("AppHeader", () => {
 
     expect(screen.getAllByText("Overview").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Nutrition").length).toBeGreaterThan(0);
-    expect(
-      within(screen.getByRole("navigation", { name: "Sections" }))
-        .getByRole("link", { name: "More" })
-        .getAttribute("href"),
-    ).toBe("/more");
 
     fireEvent.click(screen.getByLabelText("Toggle navigation menu"));
 
     expect(
       within(screen.getByRole("navigation", { name: "Mobile" }))
-        .getByRole("link", { name: "More" })
+        .getByRole("link", { name: "Settings" })
         .getAttribute("href"),
-    ).toBe("/more");
+    ).toBe("/settings");
     expect(screen.getByText("Ada Lovelace")).toBeTruthy();
   });
 
