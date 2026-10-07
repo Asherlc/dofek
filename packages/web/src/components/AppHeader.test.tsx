@@ -5,6 +5,8 @@ import type { MouseEventHandler, ReactNode, Ref } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AppHeader } from "./AppHeader.tsx";
 
+const navigationState = vi.hoisted(() => ({ pathname: "/dashboard" }));
+
 function relativeLuminance(hexColor: string): number {
   const linearChannel = (start: number) => {
     const channel = Number.parseInt(hexColor.slice(start, start + 2), 16) / 255;
@@ -33,6 +35,9 @@ vi.mock("@tanstack/react-router", () => ({
   Link: ({
     children,
     className,
+    activeProps,
+    inactiveProps,
+    activeOptions,
     to,
     "aria-label": ariaLabel,
     onClick,
@@ -40,28 +45,40 @@ vi.mock("@tanstack/react-router", () => ({
   }: {
     children: ReactNode;
     className?: string;
+    activeProps?: { className?: string };
+    inactiveProps?: { className?: string };
+    activeOptions?: { exact?: boolean };
     to: string;
     "aria-label"?: string;
     onClick?: MouseEventHandler<HTMLAnchorElement>;
     ref?: Ref<HTMLAnchorElement>;
-  }) => (
-    <a
-      href={to}
-      className={className}
-      aria-label={ariaLabel}
-      onClick={(event) => {
-        event.preventDefault();
-        onClick?.(event);
-      }}
-      ref={ref}
-    >
-      {children}
-    </a>
-  ),
+  }) => {
+    const isActive =
+      navigationState.pathname === to ||
+      (!activeOptions?.exact && navigationState.pathname.startsWith(`${to}/`));
+    return (
+      <a
+        href={to}
+        className={[className, isActive ? activeProps?.className : inactiveProps?.className]
+          .filter(Boolean)
+          .join(" ")}
+        aria-current={isActive ? "page" : undefined}
+        aria-label={ariaLabel}
+        onClick={(event) => {
+          event.preventDefault();
+          onClick?.(event);
+        }}
+        ref={ref}
+      >
+        {children}
+      </a>
+    );
+  },
 }));
 
 describe("AppHeader", () => {
   beforeEach(() => {
+    navigationState.pathname = "/dashboard";
     vi.stubGlobal(
       "matchMedia",
       vi.fn(() => ({
@@ -72,6 +89,43 @@ describe("AppHeader", () => {
         removeEventListener: vi.fn(),
       })),
     );
+  });
+
+  it("uses the accent color for the current section in desktop navigation", () => {
+    render(<AppHeader />);
+
+    const navigation = within(screen.getByRole("navigation", { name: "Sections" }));
+    const currentLink = navigation.getByRole("link", { name: "Overview", current: "page" });
+    expect(currentLink.className).toContain("text-accent");
+    expect(currentLink.className).toContain("bg-accent/10");
+    expect(currentLink.className).toContain("rounded-md");
+    expect(currentLink.classList.contains("text-muted")).toBe(false);
+    expect(navigation.getByRole("link", { name: "Training" }).className).toContain("text-muted");
+  });
+
+  it("keeps the current section highlighted in mobile navigation on a nested route", () => {
+    navigationState.pathname = "/training/climbing";
+    render(<AppHeader />);
+    fireEvent.click(screen.getByRole("button", { name: "Toggle navigation menu" }));
+
+    const navigation = within(screen.getByRole("navigation", { name: "Mobile" }));
+    const currentLink = navigation.getByRole("link", { name: "Training", current: "page" });
+    expect(currentLink.className).toContain("text-accent");
+    expect(currentLink.className).toContain("bg-accent/10");
+    expect(currentLink.className).toContain("rounded-md");
+    expect(currentLink.classList.contains("text-muted")).toBe(false);
+    expect(navigation.getByRole("link", { name: "Overview" }).className).toContain("text-muted");
+  });
+
+  it("highlights desktop Alerts while keeping its active count visible", () => {
+    navigationState.pathname = "/alerts";
+    render(<AppHeader activeAlertCount={3} />);
+
+    const sidebar = within(screen.getByLabelText("Primary navigation"));
+    const currentLink = sidebar.getByRole("link", { name: "Alerts, 3 active", current: "page" });
+    expect(currentLink.className).toContain("text-accent");
+    expect(currentLink.classList.contains("text-muted")).toBe(false);
+    expect(within(currentLink).getByText("3")).toBeTruthy();
   });
 
   afterEach(() => {
