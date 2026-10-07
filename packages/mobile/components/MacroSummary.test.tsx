@@ -33,7 +33,7 @@ describe("MacroSummary", () => {
     expect(macroDot("Fat").style.backgroundColor).toBe(cssRgb(chartColors.teal));
   });
 
-  it("labels energy shares separately from logged grams with exact accessible context", () => {
+  it("renders energy percentages and grams with accessible context", () => {
     render(
       <MacroSummary
         macros={{
@@ -44,9 +44,9 @@ describe("MacroSummary", () => {
       />,
     );
 
-    expect(screen.getByText("Share of energy")).not.toBeNull();
+    expect(screen.getByText("Macros (% energy)")).not.toBeNull();
     expect(screen.getByText("25%")).not.toBeNull();
-    expect(screen.getByText("65 g logged")).not.toBeNull();
-    expect(screen.getByLabelText("Protein: 25% share of energy; 65 grams logged")).not.toBeNull();
+    expect(screen.getByText("65 g")).not.toBeNull();
+    expect(screen.getByLabelText("Protein: 25% of energy; 65 grams")).not.toBeNull();
   });
 });

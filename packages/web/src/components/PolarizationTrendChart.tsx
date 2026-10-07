@@ -101,7 +101,6 @@ export function buildPolarizationTrendOption(weeks: PolarizationWeek[], threshol
           `Zone 1 (easy, <80% max HR): ${formatMinutes(weekData.z1Seconds)}`,
           `Zone 2 (threshold, 80-90% max HR): ${formatMinutes(weekData.z2Seconds)}`,
           `Zone 3 (high, ≥90% max HR): ${formatMinutes(weekData.z3Seconds)}`,
-          escapeTooltipHtml(weekData.explanation),
         ]
           .filter((line): line is string => typeof line === "string")
           .join("<br/>");
@@ -190,13 +189,7 @@ export function PolarizationTrendChart({
         <MethodExplanation
           className="mt-2"
           technicalName={TRAINING_TERMINOLOGY.polarization.technicalName}
-          lines={[
-            TRAINING_TERMINOLOGY.polarization.details,
-            method.formula,
-            method.zoneBasis,
-            method.calculationChoice,
-            method.interpretation,
-          ]}
+          lines={[TRAINING_TERMINOLOGY.polarization.details, method.formula, method.zoneBasis]}
           source={method.source}
         />
       ) : null}

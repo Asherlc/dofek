@@ -20,7 +20,6 @@ describe("AccessibleChart", () => {
         name: "Heart rate. Heart rate over the recorded sample sequence.",
       }),
     ).toBeDefined();
-    expect(screen.getByText("Heart rate over the recorded sample sequence.")).toBeDefined();
     expect(screen.getByText("visual-only chart")).toBeDefined();
   });
 

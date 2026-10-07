@@ -3,7 +3,6 @@ import type { UnitConverter } from "@dofek/format/units";
 import { createFileRoute } from "@tanstack/react-router";
 import type { TrainingChartAvailability } from "dofek-server/types";
 import { ActivityTable, type ActivityTableColumn } from "../../components/ActivityTable.tsx";
-import { ChartDescriptionTooltip } from "../../components/ChartDescriptionTooltip.tsx";
 import { DofekChart } from "../../components/DofekChart.tsx";
 import { ChartLoadingSkeleton } from "../../components/LoadingSkeleton.tsx";
 import { QueryStatePanel } from "../../components/QueryStatePanel.tsx";
@@ -44,7 +43,7 @@ export function RunningTab() {
   return (
     <>
       {/* Pace Duration Curve */}
-      <Section title="Pace Duration Curve" subtitle="Best sustained pace at each duration">
+      <Section title="Pace Duration Curve">
         {paceCurve.error && !paceCurve.data ? (
           <QueryStatePanel error={paceCurve.error} />
         ) : (
@@ -59,7 +58,7 @@ export function RunningTab() {
 
       {/* Pace Trend + Running Dynamics side by side */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Section title="Pace Trend" subtitle="Average pace per run over time">
+        <Section title="Pace Trend">
           {paceTrend.error && !paceTrend.data ? (
             <QueryStatePanel error={paceTrend.error} />
           ) : (
@@ -72,7 +71,7 @@ export function RunningTab() {
           )}
         </Section>
 
-        <Section title="Cadence Trend" subtitle="Steps per minute over time">
+        <Section title="Cadence Trend">
           {dynamics.error && !dynamics.data ? (
             <QueryStatePanel error={dynamics.error} />
           ) : (
@@ -86,7 +85,7 @@ export function RunningTab() {
       </div>
 
       {/* Running Dynamics Table */}
-      <Section title="Running Form" subtitle="Per-activity running dynamics">
+      <Section title="Running Form">
         {dynamics.error && !dynamics.data ? (
           <QueryStatePanel error={dynamics.error} />
         ) : (
@@ -447,20 +446,11 @@ function RunningDynamicsTable({
 
 // ── Section helper ──
 
-function Section({
-  title,
-  subtitle,
-  children,
-}: {
-  title: string;
-  subtitle?: string;
-  children: React.ReactNode;
-}) {
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section>
       <div className="mb-1 flex items-center gap-2">
         <h2 className="text-sm font-medium text-muted uppercase tracking-wider">{title}</h2>
-        {subtitle && <ChartDescriptionTooltip description={subtitle} />}
       </div>
       <div className="card p-4">{children}</div>
     </section>

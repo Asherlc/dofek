@@ -51,7 +51,6 @@ function accessibilityLabel(
     rateLabel(exercise, units),
     `${formatDateMedium(exercise.period.startWeek)} to ${formatDateMedium(exercise.period.endWeek)}`,
     interval,
-    exercise.uncertainty.availability === "unavailable" ? exercise.uncertainty.statement : null,
   ]
     .filter((part): part is string => part !== null)
     .map((part) => part.replace(/\.$/, ""))
@@ -87,9 +86,6 @@ export function ProgressiveOverloadCards({
                 <Text style={styles.detail}>{rateLabel(exercise, units)}</Text>
                 <Text style={styles.detail}>{periodLabel(exercise)}</Text>
                 {interval ? <Text style={styles.detail}>{interval}</Text> : null}
-                {exercise.uncertainty.availability === "unavailable" ? (
-                  <Text style={styles.detail}>{exercise.uncertainty.statement}</Text>
-                ) : null}
                 <SparkLine
                   data={exercise.observations.map((observation) => observation.totalVolumeKg)}
                   color={colors.accent}

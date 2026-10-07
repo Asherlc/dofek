@@ -109,8 +109,12 @@ function getExplicitDescription(option: Record<string, unknown>): string | null 
 }
 
 function getSeries(option: Record<string, unknown>): Record<string, unknown>[] {
-  if (Array.isArray(option.series)) return option.series.filter(isRecord);
-  return isRecord(option.series) ? [option.series] : [];
+  const series = Array.isArray(option.series)
+    ? option.series.filter(isRecord)
+    : isRecord(option.series)
+      ? [option.series]
+      : [];
+  return series.filter((item) => typeof item.name !== "string" || !item.name.startsWith("_"));
 }
 
 function getAxes(option: Record<string, unknown>): Record<string, unknown>[] {

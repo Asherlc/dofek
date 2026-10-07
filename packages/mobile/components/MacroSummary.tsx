@@ -25,12 +25,12 @@ function MacroBar({
     <View
       style={styles.macroItem}
       accessible
-      accessibilityLabel={`${label}: ${formatNutritionNumber(energySharePercentage)}% share of energy; ${formattedGrams} grams logged`}
+      accessibilityLabel={`${label}: ${formatNutritionNumber(energySharePercentage)}% of energy; ${formattedGrams} grams`}
     >
       <View style={[styles.macroDot, { backgroundColor: color }]} />
       <Text style={styles.macroLabel}>{label}</Text>
       <Text style={styles.macroValue}>{formatNutritionNumber(energySharePercentage)}%</Text>
-      <Text style={styles.macroGrams}>{formatGrams(grams)} logged</Text>
+      <Text style={styles.macroGrams}>{formatGrams(grams)}</Text>
     </View>
   );
 }
@@ -39,9 +39,7 @@ export function MacroSummary({ macros }: MacroSummaryProps) {
   return (
     <View style={styles.container}>
       <View style={styles.macroSection}>
-        <Text style={styles.macroSectionEyebrow}>Observed intake composition</Text>
-        <Text style={styles.macroSectionTitle}>Share of energy</Text>
-        <Text style={styles.macroSectionDescription}>Logged grams are shown separately.</Text>
+        <Text style={styles.macroSectionTitle}>Macros (% energy)</Text>
         <View style={styles.macroItems}>
           <MacroBar
             label="Protein"
@@ -82,21 +80,10 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: colors.text,
   },
-  macroSectionEyebrow: {
-    color: colors.textTertiary,
-    fontSize: 11,
-    fontWeight: "600",
-    letterSpacing: 0.5,
-    textTransform: "uppercase",
-  },
-  macroSectionDescription: {
-    fontSize: 12,
-    color: colors.textTertiary,
-    marginBottom: 8,
-  },
   macroItems: {
     flexDirection: "row",
     justifyContent: "space-around",
+    marginTop: 8,
   },
   macroItem: {
     alignItems: "center",

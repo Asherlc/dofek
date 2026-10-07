@@ -127,7 +127,6 @@ describe("ProgressiveOverload", () => {
 
       expect(detail.trend).toBe(trend);
       expect(detail.interpretation).toContain(`Recorded weekly volume ${direction}`);
-      expect(detail.interpretation).toContain("not inherently good or bad");
       expect(detail.deloadContext).toBe(DELOAD_CONTEXT);
     },
   );

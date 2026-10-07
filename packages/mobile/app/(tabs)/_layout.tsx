@@ -2,6 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { Tabs, useRouter } from "expo-router";
 import { Pressable, StyleSheet, View } from "react-native";
 import { AlertsBell } from "../../components/AlertsBell";
+import { TabBarButton } from "../../components/TabBarButton";
 import { getTabIconName, selectedTabBackgroundColor } from "../../lib/tab-selection";
 import { useProcessingAlerts } from "../../lib/useProcessingAlerts";
 import { colors } from "../../theme";
@@ -85,15 +86,11 @@ const styles = StyleSheet.create({
     borderTopColor: colors.surface,
     borderTopWidth: 0.5,
     elevation: 8,
-    paddingTop: 4,
     position: "relative",
     zIndex: 1,
   },
   tabBarItem: {
-    borderRadius: 12,
     marginHorizontal: 6,
-    marginTop: 4,
-    marginBottom: 2,
   },
   tabBarLabel: {
     fontWeight: "600",
@@ -123,6 +120,7 @@ export const tabsScreenOptions = {
   tabBarInactiveTintColor: colors.textSecondary,
   tabBarStyle: styles.tabBar,
   tabBarItemStyle: styles.tabBarItem,
+  tabBarButton: TabBarButton,
   tabBarLabelStyle: styles.tabBarLabel,
   tabBarActiveBackgroundColor: selectedTabBackgroundColor,
   headerStyle: styles.header,

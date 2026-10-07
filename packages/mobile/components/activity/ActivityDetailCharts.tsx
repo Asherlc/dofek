@@ -1,6 +1,6 @@
 import { formatDateTime } from "@dofek/format/format";
 import { activityMetricColors } from "@dofek/scoring/colors";
-import { StyleSheet, View } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 import Svg, {
   Circle,
   Defs,
@@ -13,7 +13,6 @@ import Svg, {
 } from "react-native-svg";
 import { colors } from "../../theme";
 import { AccessibleChart } from "../AccessibleChart";
-import { ChartTitleWithTooltip } from "../ChartTitleWithTooltip";
 import { ACTIVITY_CHART_WIDTH } from "./chartDimensions";
 import { useChartScrub } from "./useChartScrub";
 
@@ -113,11 +112,7 @@ export function LineChart({
       rows={accessibleRows(data, unit)}
     >
       <View style={chartStyles.container}>
-        <ChartTitleWithTooltip
-          title={label}
-          description={`${label} uses ${unit} on the vertical axis. Drag across the plot to inspect recorded samples.`}
-          textStyle={chartStyles.title}
-        />
+        <Text style={chartStyles.title}>{label}</Text>
         <View {...panResponder.panHandlers}>
           <Svg width={CHART_WIDTH} height={CHART_HEIGHT}>
             {yTicks.map((tick) => (
@@ -254,11 +249,7 @@ export function AreaChart({
       rows={accessibleRows(data, unit)}
     >
       <View style={chartStyles.container}>
-        <ChartTitleWithTooltip
-          title={label}
-          description={`${label} uses ${unit} on the vertical axis. Drag across the plot to inspect recorded samples.`}
-          textStyle={chartStyles.title}
-        />
+        <Text style={chartStyles.title}>{label}</Text>
         <View {...panResponder.panHandlers}>
           <Svg width={CHART_WIDTH} height={CHART_HEIGHT}>
             <Defs>
