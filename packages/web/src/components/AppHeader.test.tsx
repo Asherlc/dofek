@@ -292,20 +292,32 @@ describe("AppHeader", () => {
 
     expect(screen.getAllByText("Overview").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Nutrition").length).toBeGreaterThan(0);
-    expect(
-      within(screen.getByRole("navigation", { name: "Sections" }))
-        .getByRole("link", { name: "More" })
-        .getAttribute("href"),
-    ).toBe("/more");
 
     fireEvent.click(screen.getByLabelText("Toggle navigation menu"));
 
     expect(
       within(screen.getByRole("navigation", { name: "Mobile" }))
-        .getByRole("link", { name: "More" })
+        .getByRole("link", { name: "Settings" })
         .getAttribute("href"),
-    ).toBe("/more");
+    ).toBe("/settings");
     expect(screen.getByText("Ada Lovelace")).toBeTruthy();
+  });
+
+  it("closes the navigation menu when opening Settings", async () => {
+    render(<AppHeader />);
+    fireEvent.click(screen.getByLabelText("Toggle navigation menu"));
+
+    fireEvent.click(
+      within(screen.getByRole("navigation", { name: "Mobile" })).getByRole("link", {
+        name: "Settings",
+      }),
+    );
+
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Navigation" })).toBeNull());
+    expect(screen.getByLabelText("Toggle navigation menu")).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
   });
 
   it("does not include Settings in the main sidebar nav and links the user card to settings", () => {
