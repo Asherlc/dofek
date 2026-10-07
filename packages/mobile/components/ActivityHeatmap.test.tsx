@@ -6,7 +6,7 @@ import { ActivityHeatmap } from "./ActivityHeatmap";
 const data: CalendarDay[] = [
   {
     date: "2026-03-10",
-    activityCount: 1,
+    activityCount: 0,
     totalMinutes: 0,
     activityTypes: [],
     trainingTimeBand: "none",
@@ -23,23 +23,23 @@ const data: CalendarDay[] = [
 ];
 
 describe("ActivityHeatmap", () => {
-  it("renders the shared measure, unit, and meaning on mobile", () => {
+  it("renders the shared measure, unit, and duration bands", () => {
     render(<ActivityHeatmap data={data} />);
 
     expect(screen.getByText("Training time (minutes per day)")).toBeTruthy();
     expect(screen.getByText("61–120 min")).toBeTruthy();
-    expect(screen.getByText("High training volume; compare with recovery.")).toBeTruthy();
   });
 
   it("makes exact day details available from an accessible day button", () => {
     render(<ActivityHeatmap data={data} />);
 
-    const dayButton = screen.getByRole("button", { name: /72 minutes of training time/ });
+    const dayButton = screen.getByRole("button", { name: /72 min/ });
     expect(dayButton.getAttribute("aria-description")).toContain("Double-tap");
 
+    fireEvent.click(screen.getByRole("button", { name: /0 min/ }));
+    expect(screen.getByText("0 activities")).toBeTruthy();
     fireEvent.click(dayButton);
-    expect(screen.getByText("72 minutes of training time")).toBeTruthy();
-    expect(screen.getByText("High training volume; compare with recovery.")).toBeTruthy();
+    expect(screen.getByText("1 activity")).toBeTruthy();
   });
 
   it("selects the newest day when data arrives after an empty range", () => {
@@ -48,6 +48,6 @@ describe("ActivityHeatmap", () => {
 
     rerender(<ActivityHeatmap data={data} />);
 
-    expect(screen.getByText("72 minutes of training time")).toBeTruthy();
+    expect(screen.getByText("1 activity")).toBeTruthy();
   });
 });

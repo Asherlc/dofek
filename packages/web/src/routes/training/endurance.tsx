@@ -1,7 +1,6 @@
 import { ENDURANCE_ACTIVITY_TYPES } from "@dofek/training/endurance-types";
 import { TRAINING_TERMINOLOGY } from "@dofek/training/terminology";
 import { createFileRoute } from "@tanstack/react-router";
-import { ChartDescriptionTooltip } from "../../components/ChartDescriptionTooltip.tsx";
 import { PolarizationTrendChart } from "../../components/PolarizationTrendChart.tsx";
 import { QueryStatePanel } from "../../components/QueryStatePanel.tsx";
 import { RampRateChart } from "../../components/RampRateChart.tsx";
@@ -28,10 +27,7 @@ function EnduranceTab() {
 
   return (
     <>
-      <Section
-        title={TRAINING_TERMINOLOGY.polarization.plainLabel}
-        subtitle="Weekly balance of easy, threshold, and high-intensity cycling"
-      >
+      <Section title={TRAINING_TERMINOLOGY.polarization.plainLabel}>
         {polarization.error ? (
           <QueryStatePanel error={polarization.error} />
         ) : (
@@ -45,10 +41,7 @@ function EnduranceTab() {
         )}
       </Section>
 
-      <Section
-        title="Ramp Rate"
-        subtitle="Change in cycling chronic training load between consecutive weekly endpoints. Positive values indicate an increase; negative values indicate a decrease."
-      >
+      <Section title="Ramp Rate">
         {rampRate.error ? (
           <QueryStatePanel error={rampRate.error} />
         ) : (
@@ -61,10 +54,7 @@ function EnduranceTab() {
         )}
       </Section>
 
-      <Section
-        title={TRAINING_TERMINOLOGY.monotony.plainLabel}
-        subtitle="Weekly training variety and total load"
-      >
+      <Section title={TRAINING_TERMINOLOGY.monotony.plainLabel}>
         {monotony.error ? (
           <QueryStatePanel error={monotony.error} />
         ) : (
@@ -72,27 +62,18 @@ function EnduranceTab() {
         )}
       </Section>
 
-      <Section title="Recent Endurance Activities" subtitle="Recent cardio and endurance workouts">
+      <Section title="Recent Endurance Activities">
         <RecentActivitiesSection activityTypes={ENDURANCE_ACTIVITY_TYPES} />
       </Section>
     </>
   );
 }
 
-function Section({
-  title,
-  subtitle,
-  children,
-}: {
-  title: string;
-  subtitle?: string;
-  children: React.ReactNode;
-}) {
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section>
       <div className="mb-1 flex items-center gap-2">
         <h2 className="text-sm font-medium text-muted uppercase tracking-wider">{title}</h2>
-        {subtitle && <ChartDescriptionTooltip description={subtitle} />}
       </div>
       <div className="card p-4">{children}</div>
     </section>

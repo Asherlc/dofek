@@ -1,9 +1,8 @@
 import { statusColors } from "@dofek/scoring/colors";
 import { useCallback, useMemo, useState } from "react";
-import { type LayoutChangeEvent, StyleSheet, View } from "react-native";
+import { type LayoutChangeEvent, StyleSheet, Text, View } from "react-native";
 import MapView, { Marker, Polyline } from "react-native-maps";
 import { colors, radius, spacing } from "../theme";
-import { ChartTitleWithTooltip } from "./ChartTitleWithTooltip";
 
 interface GpsPoint {
   lat: number | null;
@@ -71,11 +70,7 @@ export function RouteMap({ points, hoveredPosition }: RouteMapProps) {
 
   return (
     <View style={styles.container}>
-      <ChartTitleWithTooltip
-        title="Route Map"
-        description="Markers identify the first and last recorded GPS points."
-        textStyle={styles.title}
-      />
+      <Text style={styles.title}>Route Map</Text>
       <View style={styles.mapWrapper} onLayout={handleLayout}>
         {mapWidth != null && (
           <MapView

@@ -48,7 +48,7 @@ interface EstimateEvidence {
   method: string;
   confidence: "high" | "moderate" | "limited" | "not_available";
   confidenceLabel: string;
-  confidenceDetail: string;
+  confidenceDetail: string | null;
   sourceWorkouts: Array<{ id: string; name: string | null; date: string }>;
   pacingGuidance: string;
 }
@@ -120,7 +120,7 @@ function CyclingContent({ days }: { days: TimeRangeDays }) {
       ) : (
         <>
           {/* Power Duration Curve with comparison */}
-          <Section title="Power Duration Curve" subtitle="Best power at each duration">
+          <Section title="Power Duration Curve">
             <div className="grid grid-cols-1 lg:grid-cols-[1fr_auto] gap-6">
               <PowerCurveChart
                 data={performance.data?.powerCurve.recent.points ?? []}
@@ -182,14 +182,7 @@ function CyclingContent({ days }: { days: TimeRangeDays }) {
           </Section>
 
           {/* eFTP Trend */}
-          <Section
-            title="Estimated Threshold Power Trend"
-            subtitle={
-              estimateEvidence
-                ? "Estimate evidence from observed cycling workouts"
-                : "Server-authored cycling threshold estimate"
-            }
-          >
+          <Section title="Estimated Threshold Power Trend">
             <EftpTrendChart
               data={performance.data?.eftpTrend.trend ?? []}
               currentEftp={performance.data?.eftpTrend.currentEftp ?? null}
@@ -206,10 +199,7 @@ function CyclingContent({ days }: { days: TimeRangeDays }) {
         <>
           {/* Aerobic Efficiency + Activity Variability */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <Section
-              title="Aerobic Efficiency"
-              subtitle="Power output per heartbeat at easy effort — higher means fitter"
-            >
+            <Section title="Aerobic Efficiency">
               <AerobicEfficiencyChart
                 activities={activityAnalytics.data?.aerobicEfficiency.activities ?? []}
                 maxHr={activityAnalytics.data?.aerobicEfficiency.maxHr ?? null}
@@ -218,10 +208,7 @@ function CyclingContent({ days }: { days: TimeRangeDays }) {
               />
             </Section>
 
-            <Section
-              title="Vertical Ascent Rate"
-              subtitle="Climbing speed — meters gained per hour while ascending"
-            >
+            <Section title="Vertical Ascent Rate">
               <VerticalAscentChart
                 data={activityAnalytics.data?.verticalAscent ?? []}
                 availability={activityAnalytics.data?.availability?.verticalAscent}
@@ -230,10 +217,7 @@ function CyclingContent({ days }: { days: TimeRangeDays }) {
             </Section>
           </div>
 
-          <Section
-            title="Activity Variability Index"
-            subtitle="Effort-adjusted power versus average power for each activity"
-          >
+          <Section title="Activity Variability Index">
             <ActivityVariabilityTable
               data={activityAnalytics.data?.variability.rows ?? []}
               totalCount={activityAnalytics.data?.variability.totalCount ?? 0}
@@ -450,7 +434,6 @@ function EstimateEvidencePanel({
         >
           Estimate method and confidence
         </h2>
-        <ChartDescriptionTooltip description="How the cycling estimates were calculated, how much evidence supports them, and which workouts supplied the inputs." />
       </div>
       <div className="card p-4 grid grid-cols-1 lg:grid-cols-2 gap-4">
         <EstimateEvidenceBlock
@@ -486,7 +469,7 @@ function EstimateEvidenceBlock({ title, evidence }: { title: string; evidence: E
         </summary>
         <div className="mt-2 space-y-1">
           <p>Method: {evidence.method}</p>
-          <p>{evidence.confidenceDetail}</p>
+          {evidence.confidenceDetail && <p>{evidence.confidenceDetail}</p>}
           <p>Source workouts:</p>
           {evidence.sourceWorkouts.length > 0 ? (
             <ul className="list-disc space-y-0.5 pl-4 text-muted">
@@ -499,7 +482,6 @@ function EstimateEvidenceBlock({ title, evidence }: { title: string; evidence: E
           ) : (
             <p className="text-muted">No source workouts in this period.</p>
           )}
-          <p>Pacing guidance: {evidence.pacingGuidance}</p>
         </div>
       </details>
     </div>

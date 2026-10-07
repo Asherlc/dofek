@@ -132,7 +132,6 @@ describe("SleepNeedCard", () => {
     expect(screen.getByText("Estimated sleep need")).toBeDefined();
     expect(screen.getByText("About 8h 35m")).toBeDefined();
     expect(screen.getByText("Previous-day load adjustment")).toBeDefined();
-    expect(screen.getByText("Estimated sleep need with unquantified uncertainty.")).toBeVisible();
     expect(screen.queryByText(/recommended/)).toBeNull();
     expect(screen.getByRole("link", { name: "View sleep source data" }).getAttribute("href")).toBe(
       "#sleep-data-sources",

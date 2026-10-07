@@ -10,7 +10,7 @@ const overTargetContext = {
   target: {
     calories: 2450,
     type: "configured",
-    label: "Configured daily logged-intake target",
+    label: "Target",
   },
   scale: {
     maximumCalories: 4259,
@@ -27,26 +27,16 @@ const overTargetContext = {
     "This target describes logged intake only; it is not an estimate of energy expenditure or calorie balance.",
 } satisfies SelectedDateNutritionIntakeContext;
 
-const messageWithoutPeriodContext = {
-  ...overTargetContext,
-  comparison: {
-    ...overTargetContext.comparison,
-    message: "Observed logged intake is 1,809 kcal above the configured daily logged-intake target",
-  },
-} satisfies SelectedDateNutritionIntakeContext;
-
 describe("NutritionIntakeContext", () => {
   it("keeps over-target intake on a neutral, two-value scale", () => {
     render(<NutritionIntakeContext context={overTargetContext} />);
 
-    expect(screen.getByText("Logged intake")).toBeTruthy();
-    expect(screen.getByText("4,259 kcal")).toBeTruthy();
-    expect(screen.getByText("Configured daily logged-intake target: 2,450 kcal")).toBeTruthy();
-    expect(screen.getByText(overTargetContext.comparison.message)).toBeTruthy();
-    expect(screen.getByText(overTargetContext.limitation)).toBeTruthy();
+    expect(screen.getByText("Calories")).toBeTruthy();
+    expect(screen.getAllByText("4,259 kcal")).toHaveLength(2);
+    expect(screen.getByText("Target: 2,450 kcal")).toBeTruthy();
 
     const meter = screen.getByRole("meter", {
-      name: /Logged intake: 4,259 kcal.*2,450 kcal.*1,809 kcal above.*Scale: 0 to 4,259 kcal.*This target describes logged intake only/i,
+      name: /Calories: 4,259 kcal.*2,450 kcal.*Scale: 0 to 4,259 kcal/i,
     });
     expect(meter).toHaveAttribute("value", "4259");
     expect(meter).toHaveAttribute("max", "4259");
@@ -65,36 +55,9 @@ describe("NutritionIntakeContext", () => {
       </>,
     );
 
-    const headings = screen.getAllByRole("heading", { name: "Logged intake" });
+    const headings = screen.getAllByRole("heading", { name: "Calories" });
     expect(headings).toHaveLength(2);
     expect(headings[0]?.id).toBeTruthy();
     expect(headings[0]?.id).not.toBe(headings[1]?.id);
-  });
-
-  it("adds a sentence separator before scale context", () => {
-    render(<NutritionIntakeContext context={messageWithoutPeriodContext} />);
-
-    expect(
-      screen.getByRole("meter", {
-        name: /configured daily logged-intake target\. Scale: 0 to/i,
-      }),
-    ).toBeTruthy();
-  });
-
-  it.each(["!", "?", "…"])("keeps terminal %s before scale context", (ending) => {
-    const context = {
-      ...messageWithoutPeriodContext,
-      comparison: {
-        ...messageWithoutPeriodContext.comparison,
-        message: `${messageWithoutPeriodContext.comparison.message}${ending}`,
-      },
-    } satisfies SelectedDateNutritionIntakeContext;
-    render(<NutritionIntakeContext context={context} />);
-
-    expect(
-      screen.getByRole("meter", {
-        name: `Logged intake: 4,259 kcal. Configured daily logged-intake target: 2,450 kcal. ${context.comparison.message} Scale: 0 to 4,259 kcal. ${context.limitation}`,
-      }),
-    ).toBeTruthy();
   });
 });

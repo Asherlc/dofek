@@ -169,7 +169,7 @@ services:
     restart: "no"
 
   peerdb-flow-api:
-    image: ghcr.io/peerdb-io/flow-api:stable-v0.37.10
+    image: ghcr.io/peerdb-io/flow-api:stable-v0.37.11
     environment: &peerdb-flow-environment
       PEERDB_CATALOG_HOST: peerdb-catalog
       PEERDB_CATALOG_PORT: "5432"
@@ -204,7 +204,7 @@ services:
         condition: service_completed_successfully
 
   peerdb-flow-snapshot-worker:
-    image: ghcr.io/peerdb-io/flow-snapshot-worker:stable-v0.37.10
+    image: ghcr.io/peerdb-io/flow-snapshot-worker:stable-v0.37.11
     environment: *peerdb-flow-environment
     restart: unless-stopped
     depends_on:
@@ -212,7 +212,7 @@ services:
         condition: service_started
 
   peerdb-flow-worker:
-    image: ghcr.io/peerdb-io/flow-worker:stable-v0.37.9
+    image: ghcr.io/peerdb-io/flow-worker:stable-v0.37.11
     environment: *peerdb-flow-environment
     restart: unless-stopped
     depends_on:

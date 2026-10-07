@@ -56,7 +56,7 @@ function upperLimitMessage(evaluation: UpperLimitEvaluation): string {
     case "at_or_above_limit":
       return "Average intake over recorded days is at or above the included NIH adult upper limit. Review this intake with a doctor or pharmacist.";
     case "within_limit":
-      return "Average intake over recorded days is below the included NIH adult upper limit. This does not rule out medication interactions or individual risks.";
+      return "Average intake over recorded days is below the included NIH adult upper limit.";
     case "not_evaluable":
       return evaluation.limitation;
     case "not_in_ruleset":

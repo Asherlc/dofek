@@ -135,7 +135,6 @@ export function SleepNeedCard({ data, loading }: SleepNeedCardProps) {
         </a>
       </div>
 
-      <p className="mb-4 text-xs text-muted">{data.estimateMetadata.limitationLabel}</p>
       <details className="mb-4 space-y-3 text-xs text-muted">
         <summary className="cursor-pointer">How this is calculated</summary>
         <div className="flex gap-4 mb-4 text-xs">

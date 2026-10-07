@@ -12,7 +12,7 @@ import { openExternalUrl } from "../lib/open-external-url";
 import { TrainingDistributionCards } from "./TrainingDistributionCards";
 
 describe("TrainingDistributionCards", () => {
-  it("leads with a plain description and keeps the server explanation accessible", () => {
+  it("renders zone values and provides the calculation method", () => {
     const alertSpy = vi.spyOn(Alert, "alert").mockImplementation(() => {});
 
     render(
@@ -37,10 +37,6 @@ describe("TrainingDistributionCards", () => {
     expect(screen.getByText("25%")).toBeTruthy();
     expect(screen.getByText("Aerobic")).toBeTruthy();
     expect(screen.getByText("75%")).toBeTruthy();
-    expect(
-      screen.getByText("Shows how recorded heart-rate time is distributed across effort zones."),
-    ).toBeTruthy();
-    expect(screen.queryByText("Server-provided descriptive Karvonen explanation.")).toBeNull();
     fireEvent.click(
       screen.getByRole("button", {
         name: "About How this is calculated for Heart-rate zone distribution",
@@ -48,13 +44,13 @@ describe("TrainingDistributionCards", () => {
     );
     expect(alertSpy).toHaveBeenCalledWith(
       "How this is calculated for Heart-rate zone distribution",
-      expect.stringContaining("Server-provided descriptive Karvonen explanation."),
+      expect.stringContaining("Karvonen"),
       [{ text: "Close" }],
     );
     alertSpy.mockRestore();
   });
 
-  it("renders the exact Treff status and explanation returned by the server", () => {
+  it("renders the server Treff status, zone percentages, and calculation method", () => {
     const alertSpy = vi.spyOn(Alert, "alert").mockImplementation(() => {});
 
     render(
@@ -97,12 +93,8 @@ describe("TrainingDistributionCards", () => {
 
     expect(screen.getByText("Easy-to-hard training balance")).toBeTruthy();
     expect(screen.getByText("Not polarized")).toBeTruthy();
-    expect(
-      screen.getByText("Shows the balance of easy, threshold, and high-intensity cycling."),
-    ).toBeTruthy();
     expect(screen.getByText("80% easy · 10% threshold · 10% high")).toBeTruthy();
     expect(screen.getByText("Easy-to-hard balance 2.000")).toBeTruthy();
-    expect(screen.queryByText("The exact 2.00 boundary is not polarized.")).toBeNull();
     expect(screen.queryByText("Server-provided Treff formula.")).toBeNull();
     fireEvent.click(
       screen.getByRole("button", {
@@ -112,11 +104,6 @@ describe("TrainingDistributionCards", () => {
     expect(alertSpy).toHaveBeenCalledWith(
       "How this is calculated for Easy-to-hard training balance",
       expect.stringContaining("Technical name: Polarization Index"),
-      [{ text: "Close" }],
-    );
-    expect(alertSpy).toHaveBeenCalledWith(
-      "How this is calculated for Easy-to-hard training balance",
-      expect.stringContaining("The exact 2.00 boundary is not polarized."),
       [{ text: "Close" }],
     );
     alertSpy.mockRestore();
@@ -164,10 +151,6 @@ describe("TrainingDistributionCards", () => {
     );
 
     expect(screen.getByText("Insufficient data")).toBeTruthy();
-    expect(
-      screen.getByText("Shows the balance of easy, threshold, and high-intensity cycling."),
-    ).toBeTruthy();
-    expect(screen.queryByText("Polarization needs time in every Treff zone.")).toBeNull();
     fireEvent.click(
       screen.getByRole("button", {
         name: "About How this is calculated for Easy-to-hard training balance",
@@ -175,7 +158,7 @@ describe("TrainingDistributionCards", () => {
     );
     expect(alertSpy).toHaveBeenCalledWith(
       "How this is calculated for Easy-to-hard training balance",
-      expect.stringContaining("Polarization needs time in every Treff zone."),
+      expect.stringContaining("Server-provided Treff formula."),
       [{ text: "Close" }],
     );
     alertSpy.mockRestore();

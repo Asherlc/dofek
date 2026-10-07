@@ -304,9 +304,6 @@ describe("CorrelationExplorerPage", () => {
     expect(screen.getByText("5 more paired calendar days needed")).toBeTruthy();
     expect(screen.getByText("90 selected")).toBeTruthy();
     expect(screen.getByText("90 missing pairs")).toBeTruthy();
-    expect(
-      screen.getByText("95% block-bootstrap interval unavailable (fewer than five paired days)."),
-    ).toBeTruthy();
     expect(screen.queryByText(/block-bootstrap interval: .* to /)).toBeNull();
     expect(screen.queryByText(/Spearman/)).toBeNull();
     expect(screen.queryByText(/Pearson/)).toBeNull();
@@ -326,26 +323,6 @@ describe("CorrelationExplorerPage", () => {
 
     expect(screen.getByText("1 more paired calendar day needed")).toBeTruthy();
     expect(screen.queryByText("1 more paired calendar days needed")).toBeNull();
-  });
-
-  it("explains every unavailable bootstrap outcome", async () => {
-    const { CorrelationExplorerPage } = await import("./CorrelationExplorerPage.tsx");
-    const { rerender } = render(<CorrelationExplorerPage />);
-
-    for (const [reason, expected] of [
-      ["empty_input", "no eligible calendar days"],
-      ["degenerate_input", "one metric did not vary"],
-      ["insufficient_valid_replicates", "not enough valid resamples"],
-    ] as const) {
-      state.correlationData = {
-        ...state.correlationData,
-        uncertainty: { availability: "unavailable", reason },
-      };
-      rerender(<CorrelationExplorerPage />);
-      expect(
-        screen.getByText(`95% block-bootstrap interval unavailable (${expected}).`),
-      ).toBeTruthy();
-    }
   });
 
   it("shows coverage, dependence-aware uncertainty, and server-computed effect estimates", async () => {

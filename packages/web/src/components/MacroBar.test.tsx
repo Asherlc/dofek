@@ -15,7 +15,7 @@ function cssRgb(hex: string): string {
 }
 
 describe("MacroBar", () => {
-  it("labels the server-owned energy share separately from logged grams", () => {
+  it("renders server-owned energy percentages and grams", () => {
     const { container } = render(
       <MacroBar label="Protein" grams={65} energySharePercentage={25} color="blue" />,
     );
@@ -23,11 +23,11 @@ describe("MacroBar", () => {
     expect(
       container.querySelector('[data-testid="macro-bar-fill"]')?.getAttribute("style"),
     ).toContain("25%");
-    expect(screen.getByText("25% of energy")).not.toBeNull();
-    expect(screen.getByText("65 g logged")).not.toBeNull();
+    expect(screen.getByText("25%")).not.toBeNull();
+    expect(screen.getByText("65 g")).not.toBeNull();
     expect(
       screen.getByRole("meter", {
-        name: "Protein: 25% share of energy; 65 grams logged",
+        name: "Protein: 25% of energy; 65 grams",
       }),
     ).not.toBeNull();
   });

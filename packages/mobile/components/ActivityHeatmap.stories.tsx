@@ -42,6 +42,32 @@ type Story = StoryObj<typeof meta>;
 
 export const Default: Story = {};
 
+export const AllBands: Story = {
+  args: {
+    data: [
+      data[0],
+      {
+        date: "2026-03-11",
+        activityCount: 1,
+        totalMinutes: 20,
+        activityTypes: ["walking"],
+        trainingTimeBand: "light",
+        trainingTimeMeaning: "Light recorded training volume.",
+      },
+      data[1],
+      {
+        date: "2026-03-14",
+        activityCount: 1,
+        totalMinutes: 72,
+        activityTypes: ["running"],
+        trainingTimeBand: "high",
+        trainingTimeMeaning: "High recorded training volume",
+      },
+      data[2],
+    ].filter((day): day is CalendarDay => day !== undefined),
+  },
+};
+
 export const Empty: Story = {
   args: { data: [] },
 };
