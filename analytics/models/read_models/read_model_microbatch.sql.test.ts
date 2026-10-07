@@ -516,7 +516,7 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("empty_group_checkpoints AS MATERIALIZED");
   });
 
-  it("uses the same null-ended activity window for duplicate matches and merged activities", () => {
+  it("bounds duplicate matching while retaining recorded merged activity timestamps", () => {
     const matchesSql = readModel("activity_duplicate_matches");
     const dedupedActivitiesSql = readModel("deduped_activities");
 
@@ -525,7 +525,7 @@ describe("production analytics read-model build", () => {
     expect(matchesSql).toContain("least(left_activity.ended_at, right_activity.ended_at)");
 
     expect(dedupedActivitiesSql).toContain("minIf(ranked.started_at, ranked.activity_id IS NOT null) AS started_at");
-    expect(dedupedActivitiesSql).toContain("maxIf(coalesce(ranked.ended_at, ranked.started_at + INTERVAL 12 HOUR), ranked.activity_id IS NOT null) AS ended_at");
+    expect(dedupedActivitiesSql).toContain("maxIf(ranked.ended_at, ranked.activity_id IS NOT null) AS ended_at");
     expect(dedupedActivitiesSql).toContain("maxIf(ranked.source_synced_at, ranked.activity_id IS NOT null) AS source_synced_at");
   });
 

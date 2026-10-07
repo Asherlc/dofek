@@ -1,4 +1,5 @@
-import type { JobsOptions } from "bullmq";
+import { randomUUID } from "node:crypto";
+import type { Job, JobsOptions } from "bullmq";
 import {
   type ProviderRateLimitCooldown,
   providerRateLimitCooldownJobId,
@@ -76,6 +77,19 @@ export async function enqueueSyncJob(
     (name, data, opts) => queue.add(name, data, opts),
     (jobId) => queue.getJob(jobId),
     options?.coordinator,
+  );
+}
+
+/** Reconnect must not reuse work that started with an older authorization. */
+export async function enqueueReconnectSyncJob(
+  providerId: string,
+  userId: string,
+): Promise<Job<SyncJobData>> {
+  const options = await syncJobOptionsWithRateLimitCooldown(providerId, userId);
+  return getProviderSyncQueue(providerId).add(
+    "sync",
+    { providerId, userId, origin: "manual", targetRefreshWindow: { type: "full" } },
+    { ...options, jobId: `sync-reconnect-${randomUUID()}` },
   );
 }
 

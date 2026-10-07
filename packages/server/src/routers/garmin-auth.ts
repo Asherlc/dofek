@@ -1,8 +1,9 @@
 import { GarminConnectClient } from "@dofek/garmin-connect/client";
-import { ensureProvider, saveTokens } from "dofek/db/tokens";
-import { queryCache } from "dofek/lib/cache";
+import { saveTokens } from "dofek/db/tokens";
 import { z } from "zod";
 import { protectedProcedure, router } from "../trpc.ts";
+
+import { completeCredentialReconnect } from "./credential-reconnect.ts";
 
 export const garminAuthRouter = router({
   /** Sign in with Garmin Connect credentials and save tokens in one step */
@@ -15,19 +16,22 @@ export const garminAuthRouter = router({
         "garmin.com",
       );
 
-      await ensureProvider(ctx.db, "garmin", "Garmin Connect", undefined, ctx.userId);
-      await saveTokens(
-        ctx.db,
-        "garmin",
-        {
-          accessToken: JSON.stringify(tokens),
-          refreshToken: null,
-          expiresAt: new Date(Date.now() + tokens.oauth2.expires_in * 1000),
-          scopes: "garmin-connect-internal",
-        },
-        ctx.userId,
+      await completeCredentialReconnect(
+        ctx,
+        { id: "garmin", name: "Garmin Connect" },
+        (transaction) =>
+          saveTokens(
+            transaction,
+            "garmin",
+            {
+              accessToken: JSON.stringify(tokens),
+              refreshToken: null,
+              expiresAt: new Date(Date.now() + tokens.oauth2.expires_in * 1000),
+              scopes: "garmin-connect-internal",
+            },
+            ctx.userId,
+          ),
       );
-      await queryCache.invalidateByPrefix(`${ctx.userId}:sync.providers`);
 
       return { success: true };
     }),

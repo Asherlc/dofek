@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { mapFitnessDiscipline, parsePerformanceGraph, parseWorkout } from "./parsing.ts";
-import type { PelotonPerformanceGraph, PelotonWorkout } from "./types.ts";
+import {
+  type PelotonPerformanceGraph,
+  type PelotonWorkout,
+  pelotonPerformanceGraphSchema,
+} from "./types.ts";
 
 const workout: PelotonWorkout = {
   id: "workout-1",
@@ -137,6 +141,30 @@ describe("parseWorkout", () => {
 });
 
 describe("parsePerformanceGraph", () => {
+  it("keeps null samples aligned with their original time offsets", () => {
+    const graph = pelotonPerformanceGraphSchema.parse({
+      duration: 20,
+      is_class_plan_shown: false,
+      segment_list: [],
+      average_summaries: [],
+      summaries: [],
+      metrics: [
+        {
+          display_name: "Heart Rate",
+          slug: "heart_rate",
+          values: [null, 120, null, 140],
+          average_value: 130,
+          max_value: 140,
+        },
+      ],
+    });
+
+    expect(parsePerformanceGraph(graph, 5)[0]).toMatchObject({
+      values: [null, 120, null, 140],
+      offsetsSeconds: [0, 5, 10, 15],
+    });
+  });
+
   it("adds offsets at the requested sample interval", () => {
     const graph: PelotonPerformanceGraph = {
       duration: 15,
