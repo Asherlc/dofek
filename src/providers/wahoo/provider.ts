@@ -10,7 +10,7 @@ import { finishProviderActivityListSync } from "../../db/provider-activity-sync.
 import { createProviderRateLimitFetch } from "../../lib/provider-rate-limit-fetch.ts";
 import { logger } from "../../logger.ts";
 import { fetchProviderPages } from "../../sync/pagination.ts";
-import { AccessTokenExpiredError } from "../auth-errors.ts";
+import { AccessTokenExpiredError, ProviderAuthenticationFailedError } from "../auth-errors.ts";
 import type { SyncRun } from "../sync-run.ts";
 import type {
   ProviderAuthSetup,
@@ -284,7 +284,7 @@ export class WahooProvider implements WebhookProvider {
     }
 
     let client = new WahooClient(tokens.accessToken, this.#fetchFn);
-    let retriedExpiredAccessToken = false;
+    let retriedRejectedAccessToken = false;
     const persister = new WahooActivityPersister(
       this.id,
       client,
@@ -309,10 +309,16 @@ export class WahooProvider implements WebhookProvider {
         try {
           response = await client.getWorkouts(page ?? 1);
         } catch (error) {
-          if (!(error instanceof AccessTokenExpiredError) || retriedExpiredAccessToken) {
+          if (
+            !(
+              error instanceof AccessTokenExpiredError ||
+              error instanceof ProviderAuthenticationFailedError
+            ) ||
+            retriedRejectedAccessToken
+          ) {
             throw error;
           }
-          retriedExpiredAccessToken = true;
+          retriedRejectedAccessToken = true;
           logger.info(
             "[wahoo] API rejected access token, refreshing and retrying workout request...",
           );

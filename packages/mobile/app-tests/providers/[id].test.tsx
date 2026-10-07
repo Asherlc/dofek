@@ -752,7 +752,7 @@ describe("ProviderDetailScreen", () => {
       expect(screen.getAllByText("Reconnect")).toHaveLength(2);
       expect(screen.getByRole("button", { name: "Reconnect Wahoo" })).toBeTruthy();
       expect(screen.getByText("Connection")).toBeTruthy();
-      expect(screen.getByText("Connected")).toBeTruthy();
+      expect(screen.getByText("Disconnected")).toBeTruthy();
       expect(screen.getByText("Authorization")).toBeTruthy();
       expect(screen.getByText("Reconnect required")).toBeTruthy();
       expect(screen.queryByText("Sync")).toBeNull();

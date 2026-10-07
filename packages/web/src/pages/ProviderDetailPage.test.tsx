@@ -662,7 +662,7 @@ describe("ProviderDetailPage import-only providers", () => {
     expect(screen.getByText("Syncing Wahoo")).toBeTruthy();
   });
 
-  it("separates connection from expired authorization and promotes reconnect", async () => {
+  it("shows disconnected for expired authorization and promotes reconnect", async () => {
     mockUseParams.mockReturnValue({ id: "whoop" });
     mockProviders.data = [
       {
@@ -680,7 +680,7 @@ describe("ProviderDetailPage import-only providers", () => {
     render(<ProviderDetailPage />);
 
     expect(screen.getByText("Connection")).toBeTruthy();
-    expect(screen.getByText("Connected")).toBeTruthy();
+    expect(screen.getByText("Disconnected")).toBeTruthy();
     expect(screen.getByText("Authorization")).toBeTruthy();
     expect(screen.getByText("Reconnect required")).toBeTruthy();
     expect(screen.queryByText("Sync Controls")).toBeNull();
