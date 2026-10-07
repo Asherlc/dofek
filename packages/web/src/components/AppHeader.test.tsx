@@ -303,6 +303,23 @@ describe("AppHeader", () => {
     expect(screen.getByText("Ada Lovelace")).toBeTruthy();
   });
 
+  it("closes the navigation menu when opening Settings", async () => {
+    render(<AppHeader />);
+    fireEvent.click(screen.getByLabelText("Toggle navigation menu"));
+
+    fireEvent.click(
+      within(screen.getByRole("navigation", { name: "Mobile" })).getByRole("link", {
+        name: "Settings",
+      }),
+    );
+
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Navigation" })).toBeNull());
+    expect(screen.getByLabelText("Toggle navigation menu")).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
+  });
+
   it("does not include Settings in the main sidebar nav and links the user card to settings", () => {
     render(<AppHeader />);
 
