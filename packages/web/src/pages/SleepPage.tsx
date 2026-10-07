@@ -179,7 +179,7 @@ export function SleepPage() {
         </PageSection>
 
         {/* Last Night Hypnogram */}
-        <PageSection title="Last Night">
+        <PageSection title="Last Night's Stages">
           {latestStages.isError && !latestStages.data && (
             <QueryStatePanel error={latestStages.error} height={72} />
           )}

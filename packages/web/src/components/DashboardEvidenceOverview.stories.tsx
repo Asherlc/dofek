@@ -29,10 +29,6 @@ const evidence: InsightEvidence = {
   relationship: "correlation",
   label: "Descriptive correlation",
   method: "Spearman rank correlation over paired observations with Benjamini–Hochberg screening.",
-  interpretation:
-    "This correlation does not prove cause. Missing data and other factors may affect it.",
-  limitations: "No confidence interval is available for this correlation.",
-  recommendation: "Use this as a hypothesis, not a prescription or treatment recommendation.",
 };
 
 const meta = {

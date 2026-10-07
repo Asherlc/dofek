@@ -1,6 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { ActivityComparisonChart } from "../../components/ActivityComparisonChart.tsx";
-import { ChartDescriptionTooltip } from "../../components/ChartDescriptionTooltip.tsx";
 import { ElevationGainChart } from "../../components/ElevationGainChart.tsx";
 import { GradeAdjustedPaceTable } from "../../components/GradeAdjustedPaceTable.tsx";
 import { QueryStatePanel } from "../../components/QueryStatePanel.tsx";
@@ -44,7 +43,7 @@ function HikingTab() {
 
   return (
     <>
-      <Section title={HIKING_PACE_COPY.title} subtitle={HIKING_PACE_COPY.description}>
+      <Section title={HIKING_PACE_COPY.title}>
         {shouldShowQueryError(gradeAdjustedPace) ? (
           <QueryStatePanel error={gradeAdjustedPace.error} />
         ) : (
@@ -56,10 +55,7 @@ function HikingTab() {
       </Section>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Section
-          title="Elevation Gain"
-          subtitle="Weekly cumulative elevation from hiking and walking"
-        >
+        <Section title="Elevation Gain">
           {shouldShowQueryError(elevation) ? (
             <QueryStatePanel error={elevation.error} />
           ) : (
@@ -67,7 +63,7 @@ function HikingTab() {
           )}
         </Section>
 
-        <Section title="Walking Biomechanics" subtitle="Step length, gait symmetry, double support">
+        <Section title="Walking Biomechanics">
           {shouldShowQueryError(biomechanics) ? (
             <QueryStatePanel error={biomechanics.error} />
           ) : (
@@ -79,7 +75,7 @@ function HikingTab() {
         </Section>
       </div>
 
-      <Section title="Route Comparison" subtitle="Repeated routes compared over time">
+      <Section title="Route Comparison">
         {shouldShowQueryError(routeComparison) ? (
           <QueryStatePanel error={routeComparison.error} />
         ) : (
@@ -97,20 +93,11 @@ function HikingTab() {
   );
 }
 
-function Section({
-  title,
-  subtitle,
-  children,
-}: {
-  title: string;
-  subtitle?: string;
-  children: React.ReactNode;
-}) {
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section>
       <div className="mb-1 flex items-center gap-2">
         <h2 className="text-sm font-medium text-muted uppercase tracking-wider">{title}</h2>
-        {subtitle && <ChartDescriptionTooltip description={subtitle} />}
       </div>
       <div className="card p-4">{children}</div>
     </section>

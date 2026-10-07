@@ -231,16 +231,12 @@ export function NutritionPage() {
             >
               {/* Macro bars */}
               <div className="space-y-3">
-                <p
+                <h3
                   id="nutrition-composition-heading"
-                  className="text-xs font-medium uppercase tracking-wide text-subtle"
+                  className="text-sm font-medium text-foreground"
                 >
-                  Observed intake composition
-                </p>
-                <div>
-                  <h3 className="text-sm font-medium text-foreground">Share of energy</h3>
-                  <p className="text-xs text-subtle">Logged grams are shown separately.</p>
-                </div>
+                  Macros (% energy)
+                </h3>
                 <MacroBar
                   label="Protein"
                   grams={selectedDateFood.summary.macros.protein.grams}

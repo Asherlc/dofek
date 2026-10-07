@@ -21,7 +21,6 @@ import {
 } from "react-native";
 import Svg, { Circle, Line } from "react-native-svg";
 import { AccessibleChart } from "../components/AccessibleChart";
-import { ChartTitleWithTooltip } from "../components/ChartTitleWithTooltip";
 import { DaySelector } from "../components/DaySelector";
 import { getQueryErrorMessage, QueryStatePanel } from "../components/QueryStatePanel";
 import { trpc } from "../lib/trpc";
@@ -241,19 +240,7 @@ function UncertaintySummary({
       </Text>
     );
   }
-  return (
-    <Text style={styles.statText}>
-      95% block-bootstrap interval unavailable (
-      {uncertainty.reason === "degenerate_input"
-        ? "one metric did not vary"
-        : uncertainty.reason === "insufficient_pairs"
-          ? "fewer than five paired days"
-          : uncertainty.reason === "empty_input"
-            ? "no eligible calendar days"
-            : "not enough valid resamples"}
-      ).
-    </Text>
-  );
+  return null;
 }
 
 function ObservationContributors({
@@ -662,11 +649,7 @@ export default function CorrelationScreen() {
         <>
           {/* Correlation evidence card */}
           <View style={styles.card}>
-            <ChartTitleWithTooltip
-              title="Correlation Evidence"
-              description="The rank correlation, dependence-aware interval, and calendar-day coverage for the selected metrics."
-              textStyle={styles.cardTitle}
-            />
+            <Text style={styles.cardTitle}>Correlation Evidence</Text>
             <Text style={styles.statText}>{data.epistemicStatus?.label}</Text>
 
             {data.availability === "available" ? (
@@ -705,12 +688,9 @@ export default function CorrelationScreen() {
             <CoverageSummary coverage={data.coverage} />
           </View>
 
-          {/* Insight card */}
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>Finding</Text>
-            <Text style={styles.insightText}>{data.insight}</Text>
-
-            {data.availability === "available" && hasMetricMetadata && (
+          {data.availability === "available" && hasMetricMetadata && (
+            <View style={styles.card}>
+              <Text style={styles.cardTitle}>Mean ± SD</Text>
               <View style={styles.statsGrid}>
                 <View style={styles.statsGridItem}>
                   <Text style={styles.statsGridLabel}>{xMetric.label}</Text>
@@ -727,17 +707,13 @@ export default function CorrelationScreen() {
                   </Text>
                 </View>
               </View>
-            )}
-          </View>
+            </View>
+          )}
 
           {/* Scatter plot */}
           {data.availability === "available" && data.dataPoints.length > 0 && hasMetricMetadata && (
             <View style={styles.card}>
-              <ChartTitleWithTooltip
-                title="Scatter Plot"
-                description="Each point is a paired observation. The trend line shows the direction of the association."
-                textStyle={styles.cardTitle}
-              />
+              <Text style={styles.cardTitle}>Scatter Plot</Text>
               <ScatterPlot
                 dataPoints={data.dataPoints}
                 regression={data.regression}

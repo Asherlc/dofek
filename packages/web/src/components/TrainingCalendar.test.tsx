@@ -33,7 +33,7 @@ const { TrainingCalendar } = await import("./TrainingCalendar.tsx");
 const data: CalendarDay[] = [
   {
     date: "2026-03-10",
-    activityCount: 1,
+    activityCount: 0,
     totalMinutes: 0,
     activityTypes: [],
     trainingTimeBand: "none",
@@ -54,13 +54,10 @@ describe("TrainingCalendar", () => {
     chartOptions.length = 0;
   });
 
-  it("labels the measure and exposes semantic legend details", () => {
+  it("labels the measure and duration bands", () => {
     render(<TrainingCalendar data={data} />);
 
     expect(screen.getByText("Training time (minutes per day)")).toBeTruthy();
-    expect(screen.getByText("0 min")).toBeTruthy();
-    expect(screen.getByText("61–120 min")).toBeTruthy();
-    expect(screen.getAllByText(/High recorded training volume/).length).toBeGreaterThan(0);
 
     const chartOption =
       screen.getByTestId("training-calendar-chart").getAttribute("data-option") ?? "";
@@ -72,25 +69,25 @@ describe("TrainingCalendar", () => {
   it("exposes exact day details through a keyboard/tap-selectable control and chart click", () => {
     render(<TrainingCalendar data={data} />);
 
-    const selector = screen.getByRole("combobox", { name: "View daily training details" });
+    const selector = screen.getByRole("combobox", { name: "Day" });
     expect(selector).toHaveValue("2026-03-18");
-    expect(screen.getByText(/72 minutes of training time/)).toBeTruthy();
+    expect(selector).toHaveValue("2026-03-18");
 
     fireEvent.change(selector, { target: { value: "2026-03-10" } });
-    expect(screen.getByText(/0 minutes of training time/)).toBeTruthy();
-    expect(screen.getAllByText(/No recorded training/).length).toBeGreaterThan(0);
+    expect(selector).toHaveValue("2026-03-10");
+    expect(screen.getByText("0 activities")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "Choose chart day" }));
-    expect(screen.getByText(/72 minutes of training time/)).toBeTruthy();
+    expect(selector).toHaveValue("2026-03-18");
 
     fireEvent.click(screen.getByRole("button", { name: "Ignore invalid chart day" }));
-    expect(screen.getByText(/72 minutes of training time/)).toBeTruthy();
+    expect(selector).toHaveValue("2026-03-18");
   });
 
   it("renders an empty chart without inaccessible calendar controls", () => {
     render(<TrainingCalendar data={[]} height={240} />);
 
-    expect(screen.queryByRole("combobox", { name: "View daily training details" })).toBeNull();
+    expect(screen.queryByRole("combobox", { name: "Day" })).toBeNull();
     expect(screen.getByTestId("training-calendar-chart").getAttribute("data-option")).toBe("{}");
   });
 

@@ -46,7 +46,7 @@ const meta = {
   },
   decorators: [
     (Story) => (
-      <div className="w-[900px] bg-page p-6">
+      <div className="w-full max-w-[900px] bg-page p-6">
         <Story />
       </div>
     ),

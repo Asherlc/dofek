@@ -8,7 +8,6 @@ import {
 import { Link } from "@tanstack/react-router";
 import type { AppRouterOutputs } from "dofek-server/router";
 import { useState } from "react";
-import { ChartDescriptionTooltip } from "../components/ChartDescriptionTooltip.tsx";
 import { ChartRangeProvider, DofekChart } from "../components/DofekChart.tsx";
 import { PageLayout } from "../components/PageLayout.tsx";
 import { QueryStatePanel } from "../components/QueryStatePanel.tsx";
@@ -510,12 +509,9 @@ export function CorrelationExplorerPage() {
                 <CoverageSummary coverage={data.coverage} />
               </div>
 
-              {/* Insight card */}
-              <div className="card p-4 space-y-3">
-                <h3 className="text-xs text-subtle uppercase tracking-wider">Finding</h3>
-                <p className="text-sm text-foreground leading-relaxed">{data.insight}</p>
-
-                {data.availability === "available" && hasMetricMetadata && (
+              {data.availability === "available" && hasMetricMetadata && (
+                <div className="card p-4 space-y-3">
+                  <h3 className="text-xs text-subtle uppercase tracking-wider">Mean ± SD</h3>
                   <div className="grid grid-cols-2 gap-3 pt-1">
                     <div>
                       <p className="text-[10px] text-dim">{xMetric.label}</p>
@@ -532,8 +528,8 @@ export function CorrelationExplorerPage() {
                       </p>
                     </div>
                   </div>
-                )}
-              </div>
+                </div>
+              )}
             </div>
 
             {/* Scatter plot */}
@@ -541,7 +537,6 @@ export function CorrelationExplorerPage() {
               <div className="card p-4">
                 <div className="mb-2 flex items-center gap-2">
                   <h3 className="text-xs text-subtle uppercase tracking-wider">Scatter Plot</h3>
-                  <ChartDescriptionTooltip description="Each point is a paired observation. The trend line shows the direction of the association." />
                 </div>
                 <ScatterPlot
                   dataPoints={dataPoints}
@@ -631,19 +626,7 @@ function UncertaintySummary({
       </p>
     );
   }
-  return (
-    <p className="text-[11px] text-dim">
-      95% block-bootstrap interval unavailable (
-      {uncertainty.reason === "degenerate_input"
-        ? "one metric did not vary"
-        : uncertainty.reason === "insufficient_pairs"
-          ? "fewer than five paired days"
-          : uncertainty.reason === "empty_input"
-            ? "no eligible calendar days"
-            : "not enough valid resamples"}
-      ).
-    </p>
-  );
+  return null;
 }
 
 function ScatterPlot({

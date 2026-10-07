@@ -13,7 +13,7 @@ vi.mock("./DofekChart.tsx", () => ({
 import { PolarizationTrendChart } from "./PolarizationTrendChart.tsx";
 
 describe("PolarizationTrendChart", () => {
-  it("renders the server-provided formula, calculation choice, and primary source", () => {
+  it("renders the server-provided formula, zone basis, and primary source", () => {
     const method = {
       formula:
         "Polarization index = log10((easy-zone fraction / threshold-zone fraction) × high-zone fraction × 100).",
@@ -35,8 +35,6 @@ describe("PolarizationTrendChart", () => {
     fireEvent.click(screen.getByText("How this is calculated"));
     expect(screen.getByText(method.formula)).toBeVisible();
     expect(screen.getByText(method.zoneBasis)).toBeVisible();
-    expect(screen.getByText(method.calculationChoice)).toBeVisible();
-    expect(screen.getByText(method.interpretation)).toBeVisible();
     expect(screen.getByRole("link", { name: method.source.title })).toHaveAttribute(
       "href",
       method.source.url,

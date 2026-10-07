@@ -148,7 +148,7 @@ export function VerticalAscentChart({ data, loading, availability }: VerticalAsc
   return (
     <div>
       <DofekChart option={option} height={300} />
-      <p className="text-xs text-dim mt-1">Bubble size indicates elevation gain.</p>
+      <p className="text-xs text-dim mt-1">Bubble size: elevation gain</p>
     </div>
   );
 }

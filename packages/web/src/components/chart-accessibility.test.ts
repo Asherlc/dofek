@@ -12,6 +12,7 @@ describe("chart accessibility helpers", () => {
       buildChartSummary({
         xAxis: { data: ["Monday", "Tuesday"] },
         series: [
+          { type: "line", name: "_lowerBand", data: [60, 65] },
           { type: "line", name: "Recovery", data: [72, 81] },
           { type: "line", name: "Sleep", data: [7, 8] },
         ],
@@ -86,6 +87,7 @@ describe("chart accessibility helpers", () => {
     const option = {
       xAxis: { type: "category", name: "Day", data: ["Monday", "Tuesday"] },
       series: [
+        { type: "line", name: "_zoneGreen", data: [5, 5] },
         { type: "bar", name: "Steps", data: [4_200, 6_100] },
         {
           type: "line",

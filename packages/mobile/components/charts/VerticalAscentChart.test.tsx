@@ -197,8 +197,6 @@ describe("VerticalAscentChart", () => {
 
   it("renders caption text", () => {
     render(<VerticalAscentChart data={SAMPLE_DATA} units={METRIC} width={360} />);
-    expect(
-      screen.getByText("Bubble size indicates elevation gain. Higher = stronger climbing."),
-    ).toBeTruthy();
+    expect(screen.getByText("Bubble size: elevation gain")).toBeTruthy();
   });
 });
