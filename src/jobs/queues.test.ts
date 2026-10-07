@@ -9,6 +9,7 @@ const {
   MockFlowProducer,
   mockQueueEventsClose,
   MockQueueEvents,
+  MockRedisConnection,
 } = vi.hoisted(() => {
   const mockQueueAdd = vi.fn();
   const mockQueueClose = vi.fn().mockResolvedValue(undefined);
@@ -26,6 +27,9 @@ const {
   const MockQueueEvents = vi.fn(function vitestConstructor() {
     return mockQueueEventsInstance;
   });
+  const MockRedisConnection = vi.fn(function vitestConstructor() {
+    return { close: vi.fn().mockResolvedValue(undefined) };
+  });
   return {
     mockQueueAdd,
     mockQueueClose,
@@ -34,6 +38,7 @@ const {
     MockFlowProducer,
     mockQueueEventsClose,
     MockQueueEvents,
+    MockRedisConnection,
   };
 });
 
@@ -41,6 +46,7 @@ vi.mock("bullmq", () => ({
   FlowProducer: MockFlowProducer,
   Queue: MockQueue,
   QueueEvents: MockQueueEvents,
+  RedisConnection: MockRedisConnection,
 }));
 
 import {
@@ -453,6 +459,21 @@ describe("queues", () => {
     });
   });
 
+  describe("getSharedRedisConnection", () => {
+    it("bounds nonblocking commands and shares the connection", async () => {
+      const { getSharedRedisConnection } = await import("./queues.ts");
+      await closeAllQueueResources();
+      const first = getSharedRedisConnection();
+      expect(getSharedRedisConnection()).toBe(first);
+      expect(MockRedisConnection).toHaveBeenCalledTimes(1);
+      expect(MockRedisConnection).toHaveBeenCalledWith(
+        expect.objectContaining({ commandTimeout: 5000 }),
+        { shared: true, blocking: false, skipVersionCheck: true },
+      );
+      await closeAllQueueResources();
+    });
+  });
+
   describe("createProviderSyncQueue", () => {
     it("creates a Queue with per-provider queue name", async () => {
       const { createProviderSyncQueue } = await import("./queues.ts");
@@ -471,7 +492,11 @@ describe("queues", () => {
       createProviderSyncQueue("garmin");
 
       expect(MockQueue).toHaveBeenCalledWith("sync-garmin", {
-        connection: expect.objectContaining({ host: "localhost", port: 6379 }),
+        connection: expect.objectContaining({
+          host: "localhost",
+          port: 6379,
+          commandTimeout: 5000,
+        }),
       });
     });
   });

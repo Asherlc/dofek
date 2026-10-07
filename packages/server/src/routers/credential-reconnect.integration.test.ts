@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
+import { createConnection, createServer, type Socket } from "node:net";
 import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { Worker } from "bullmq";
-import { initiateAccountErasure } from "dofek/db/account-erasure";
+import { initiateAccountErasure, withAccountErasureUserWriteFence } from "dofek/db/account-erasure";
 import { loadTokens, saveTokens } from "dofek/db/tokens";
 import { scheduleDelayedSyncJob } from "dofek/jobs/enqueue-sync-job";
 import { providerRateLimitCooldownStore } from "dofek/jobs/provider-rate-limit-cooldown";
@@ -9,9 +10,10 @@ import {
   closeAllQueueResources,
   getProviderSyncQueue,
   getRedisConnection,
+  getSharedRedisConnection,
 } from "dofek/jobs/queues";
 import { sql } from "drizzle-orm";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { completeCredentialReconnect } from "./credential-reconnect.ts";
 
@@ -19,6 +21,7 @@ describe("credential reconnect persistence and dispatch", () => {
   let context: TestContext;
   const provider = { id: `reconnect-test-${randomUUID()}`, name: "Reconnect Test" };
   const userId = randomUUID();
+  let cleanupRedisProxy: (() => Promise<void>) | undefined;
   const tokens = {
     accessToken: "renewed",
     refreshToken: null,
@@ -37,6 +40,11 @@ describe("credential reconnect persistence and dispatch", () => {
     await getProviderSyncQueue(provider.id).obliterate({ force: true });
     await closeAllQueueResources();
     await context?.cleanup();
+  });
+
+  afterEach(async () => {
+    await cleanupRedisProxy?.();
+    cleanupRedisProxy = undefined;
   });
 
   it("commits renewed credentials and dispatches even while an older full sync is active", async () => {
@@ -91,6 +99,72 @@ describe("credential reconnect persistence and dispatch", () => {
     const reconnect = delayed.find((job) => job.id?.startsWith("sync-reconnect-"));
     expect(reconnect?.opts.delay).toBeGreaterThan(0);
   });
+
+  it("bounds stalled Redis commands and releases the erasure lock after dispatch fails", async () => {
+    await closeAllQueueResources();
+    const originalUrl = process.env.REDIS_URL;
+    if (!originalUrl) throw new Error("REDIS_URL is required");
+    const upstreamUrl = new URL(originalUrl);
+    let stalled = false;
+    const sockets = new Set<Socket>();
+    const proxy = createServer((socket) => {
+      const upstream = createConnection({
+        host: upstreamUrl.hostname,
+        port: Number(upstreamUrl.port || 6379),
+      });
+      sockets.add(socket);
+      sockets.add(upstream);
+      socket.on("data", (data) => {
+        if (!stalled) upstream.write(data);
+      });
+      upstream.on("data", (data) => {
+        if (!stalled) socket.write(data);
+      });
+      socket.on("close", () => upstream.destroy());
+      upstream.on("close", () => socket.destroy());
+    });
+    await new Promise<void>((resolve) => proxy.listen(0, "127.0.0.1", resolve));
+    const address = proxy.address();
+    if (!address || typeof address === "string") throw new Error("Redis proxy address missing");
+    const proxyUrl = new URL(originalUrl);
+    proxyUrl.hostname = "127.0.0.1";
+    proxyUrl.port = String(address.port);
+    process.env.REDIS_URL = proxyUrl.toString();
+    const queue = getProviderSyncQueue(provider.id);
+    const sharedClient = await getSharedRedisConnection().client;
+    await queue.waitUntilReady();
+    cleanupRedisProxy = async () => {
+      stalled = false;
+      await queue.close();
+      sharedClient.disconnect();
+      for (const socket of sockets) socket.destroy();
+      await new Promise<void>((resolve, reject) =>
+        proxy.close((error) => (error ? reject(error) : resolve())),
+      );
+      await closeAllQueueResources();
+      process.env.REDIS_URL = originalUrl;
+    };
+    stalled = true;
+    const startedAt = Date.now();
+    const results = await Promise.allSettled([
+      sharedClient.get("reconnect-timeout-fixture"),
+      completeCredentialReconnect({ db: context.db, userId }, provider, (transaction) =>
+        saveTokens(transaction, provider.id, tokens, userId),
+      ),
+    ]);
+    expect(results[0]).toMatchObject({
+      status: "rejected",
+      reason: { message: "Command timed out" },
+    });
+    expect(results[1]).toMatchObject({
+      status: "rejected",
+      reason: {
+        message: "Reconnect Test connected, but its sync could not be started. Try Sync again.",
+      },
+    });
+    expect(Date.now() - startedAt).toBeLessThan(7_000);
+    await withAccountErasureUserWriteFence(context.db, userId, async () => undefined);
+  }, 8_000);
 
   it("rejects reconnect writes and dispatch after erasure begins", async () => {
     await initiateAccountErasure(
