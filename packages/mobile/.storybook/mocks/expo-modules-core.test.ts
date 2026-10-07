@@ -52,6 +52,25 @@ describe("expo-modules-core Storybook mock", () => {
     );
   });
 
+  it("creates the React refs required by the installed Expo SDK", () => {
+    const ref = expoModulesCore.createSnapshotFriendlyRef<string>();
+    expect(ref.current).toBeNull();
+    ref.current = "preview";
+    expect(ref.current).toBe("preview");
+  });
+
+  it("reports native shared-object lifecycle hooks as unavailable in the browser preview", () => {
+    expect(() =>
+      expoModulesCore.useReleasingSharedObject(() => new expoModulesCore.SharedObject(), []),
+    ).toThrow(expoModulesCore.UnavailabilityError);
+    expect(() =>
+      expoModulesCore.useReleasingSharedObjectWithLifecycle(
+        { factory: () => new expoModulesCore.SharedObject() },
+        [],
+      ),
+    ).toThrow(expoModulesCore.UnavailabilityError);
+  });
+
   it("lets Expo permission hooks use the supplied browser permission methods", async () => {
     const granted = {
       status: expoModulesCore.PermissionStatus.GRANTED,
@@ -71,21 +90,5 @@ describe("expo-modules-core Storybook mock", () => {
       await result.current[1]();
     });
     expect(result.current[0]).toEqual(denied);
-  });
-
-  it("creates a mutable React ref", () => {
-    const reference = expoModulesCore.createSnapshotFriendlyRef<string>();
-    expect(reference.current).toBeNull();
-    reference.current = "Today";
-    expect(reference.current).toBe("Today");
-  });
-
-  it("reports native shared-object hooks as unavailable in web stories", () => {
-    expect(() => expoModulesCore.useReleasingSharedObject()).toThrow(
-      expoModulesCore.UnavailabilityError,
-    );
-    expect(() => expoModulesCore.useReleasingSharedObjectWithLifecycle()).toThrow(
-      expoModulesCore.UnavailabilityError,
-    );
   });
 });

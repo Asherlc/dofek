@@ -2,6 +2,7 @@
 
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { climbingProgressionFixture } from "../../components/climbing-progression-test-helpers.ts";
 
 const gradeProgressionQuery = vi.hoisted(() => vi.fn());
 const volumeByGradeQuery = vi.hoisted(() => vi.fn());
@@ -73,6 +74,24 @@ async function importClimbingTab() {
 }
 
 describe("ClimbingTab", () => {
+  it("shows actionable refresh errors alongside retained charts", async () => {
+    gradeProgressionQuery.mockReturnValue({
+      data: [],
+      isLoading: false,
+      error: new Error("Reconnect the climbing provider"),
+    });
+    volumeByGradeQuery.mockReturnValue({
+      data: [],
+      isLoading: false,
+      error: new Error("Climbing grade query unavailable"),
+    });
+    const ClimbingTab = await importClimbingTab();
+    render(<ClimbingTab />);
+    expect(screen.getByText("Grade Progression component")).toBeTruthy();
+    expect(screen.getByText("Volume by Grade component")).toBeTruthy();
+    expect(screen.getByText("Error: Reconnect the climbing provider")).toBeTruthy();
+    expect(screen.getByText("Error: Climbing grade query unavailable")).toBeTruthy();
+  });
   it("shows a loading panel while filtered sessions are first fetched", async () => {
     sessionSummaryQuery.mockReturnValue({ data: undefined, isLoading: true, error: null });
     const ClimbingTab = await importClimbingTab();
@@ -243,21 +262,13 @@ describe("ClimbingTab", () => {
     const ClimbingTab = await importClimbingTab();
     render(<ClimbingTab />);
 
-    expect(screen.queryByText("Error: Grade query failed")).toBeNull();
+    expect(screen.getByText("Error: Grade query failed")).toBeTruthy();
     expect(screen.getByText("Grade Progression component")).toBeTruthy();
   });
 
   it("keeps stale cached section data visible during refetch errors", async () => {
     gradeProgressionQuery.mockReturnValue({
-      data: [
-        {
-          date: "2026-07-09",
-          climbType: "boulder",
-          gradeSystem: "v_scale",
-          grade: "V4",
-          gradeSortValue: 4,
-        },
-      ],
+      data: [climbingProgressionFixture()],
       isLoading: false,
       error: new Error("Grade query failed"),
     });
@@ -265,7 +276,7 @@ describe("ClimbingTab", () => {
     const ClimbingTab = await importClimbingTab();
     render(<ClimbingTab />);
 
-    expect(screen.queryByText("Error: Grade query failed")).toBeNull();
+    expect(screen.getByText("Error: Grade query failed")).toBeTruthy();
     expect(screen.getByText("Grade Progression component")).toBeTruthy();
   });
 

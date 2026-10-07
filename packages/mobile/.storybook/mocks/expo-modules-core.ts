@@ -1,6 +1,6 @@
-import { createRef, type RefObject, useEffect, useState } from "react";
+import { createRef, type DependencyList, useEffect, useState } from "react";
 
-export function createSnapshotFriendlyRef<T>(): RefObject<T | null> {
+export function createSnapshotFriendlyRef<T>() {
   return createRef<T>();
 }
 
@@ -102,11 +102,17 @@ export class UnavailabilityError extends CodedError {
   }
 }
 
-export function useReleasingSharedObject(): never {
+export function useReleasingSharedObject(
+  _factory: () => unknown,
+  _dependencies: DependencyList,
+): never {
   throw new UnavailabilityError("expo-modules-core", "useReleasingSharedObject");
 }
 
-export function useReleasingSharedObjectWithLifecycle(): never {
+export function useReleasingSharedObjectWithLifecycle(
+  _lifecycle: unknown,
+  _dependencies: DependencyList,
+): never {
   throw new UnavailabilityError("expo-modules-core", "useReleasingSharedObjectWithLifecycle");
 }
 

@@ -1,4 +1,4 @@
-import { createElement, type ReactNode } from "react";
+import { createElement, type ReactNode, useEffect, useRef } from "react";
 import { beforeEach, vi } from "vitest";
 
 const asyncStorageValues = vi.hoisted(() => new Map<string, string>());
@@ -126,14 +126,26 @@ vi.mock("react-native", () => {
       accessible: _accessible,
       automaticallyAdjustKeyboardInsets,
       children,
+      onLayout,
       style,
       testID,
       ...props
-    }: Record<string, unknown>) =>
-      el(
+    }: Record<string, unknown>) => {
+      const elementRef = useRef<HTMLElement>(null);
+      useEffect(() => {
+        const element = elementRef.current;
+        if (!element || typeof onLayout !== "function") return;
+        const measure = (event: Event) => {
+          if (event instanceof CustomEvent) onLayout({ nativeEvent: { layout: event.detail } });
+        };
+        element.addEventListener("layout", measure);
+        return () => element.removeEventListener("layout", measure);
+      }, [onLayout]);
+      return el(
         name,
         {
           ...props,
+          ref: elementRef,
           "aria-description": accessibilityHint,
           "aria-label": accessibilityLabel,
           "data-automatically-adjust-keyboard-insets": automaticallyAdjustKeyboardInsets,
@@ -143,6 +155,7 @@ vi.mock("react-native", () => {
         },
         children,
       );
+    };
     component.displayName = name;
     return component;
   }
@@ -397,8 +410,12 @@ vi.mock("react-native-svg", () => {
   const React = require("react");
 
   function svgComponent(name: string) {
-    const component = ({ children, ...props }: Record<string, unknown>) =>
-      React.createElement(name, props, ...(children != null ? [children] : []));
+    const component = ({ children, onPress, ...props }: Record<string, unknown>) =>
+      React.createElement(
+        name,
+        { ...props, onClick: onPress },
+        ...(children != null ? [children] : []),
+      );
     component.displayName = name;
     return component;
   }
@@ -417,6 +434,7 @@ vi.mock("react-native-svg", () => {
     G: svgComponent("G"),
     Text: svgComponent("SvgText"),
     Defs: svgComponent("Defs"),
+    Pattern: svgComponent("Pattern"),
     LinearGradient: svgComponent("LinearGradient"),
     Stop: svgComponent("Stop"),
   };

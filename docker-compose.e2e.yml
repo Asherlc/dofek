@@ -51,7 +51,7 @@ services:
       retries: 15
 
   redpanda:
-    image: mirror.gcr.io/redpandadata/redpanda:v26.2.2
+    image: mirror.gcr.io/redpandadata/redpanda:v26.2.3
     command:
       - redpanda
       - start

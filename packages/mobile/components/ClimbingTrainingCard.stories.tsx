@@ -1,8 +1,9 @@
 import type { Meta, StoryObj } from "@storybook/react-native";
 import { ClimbingTrainingCard } from "./ClimbingTrainingCard";
+import { climbingProgressionFixture } from "./climbing-progression-test-helpers";
 
 const data = {
-  gradeProgression: [{ date: "2026-10-04", climbType: "boulder", grade: "V3", gradeSortValue: 3 }],
+  gradeProgression: [climbingProgressionFixture()],
   volumeByGrade: [
     {
       climbType: "boulder",
