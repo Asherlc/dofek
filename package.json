@@ -48,6 +48,7 @@
     "./lib/posthog-config": "./src/lib/posthog-config.ts",
     "./lib/ai-observability": "./src/lib/ai-observability.ts",
     "./lib/error-reporting": "./src/lib/error-reporting.ts",
+    "./lib/provider-diagnostics": "./src/lib/provider-diagnostics.ts",
     "./providers/provider-model": "./src/providers/provider-model.ts",
     "./providers/registry": "./src/providers/index.ts",
     "./providers/wahoo/client": "./src/providers/wahoo/client.ts",

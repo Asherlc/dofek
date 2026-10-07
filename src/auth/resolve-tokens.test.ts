@@ -1,7 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { reportProviderAuthDiagnostic } from "../lib/provider-diagnostics.ts";
 import { RefreshTokenRevokedError } from "../providers/auth-errors.ts";
 import type { OAuthConfig, TokenSet } from "./oauth.ts";
 import { resolveOAuthTokens } from "./resolve-tokens.ts";
+
+vi.mock("../lib/provider-diagnostics.ts", () => ({ reportProviderAuthDiagnostic: vi.fn() }));
 
 vi.mock("../db/tokens.ts", () => ({
   loadTokens: vi.fn(),
@@ -113,6 +116,19 @@ describe("resolveOAuthTokens", () => {
       providerName: "Fitbit",
       getOAuthConfig: () => fakeConfig,
     });
+
+    expect(reportProviderAuthDiagnostic).toHaveBeenCalledWith(
+      "fitbit",
+      "refresh_started",
+      undefined,
+      expiredTokens,
+    );
+    expect(reportProviderAuthDiagnostic).toHaveBeenCalledWith(
+      "fitbit",
+      "refresh_succeeded",
+      undefined,
+      expect.objectContaining({ expiresAt: refreshedTokens.expiresAt }),
+    );
 
     const resolvedTokens = { ...refreshedTokens, providerAccountId: undefined };
     expect(result).toEqual(resolvedTokens);
@@ -312,6 +328,13 @@ describe("resolveOAuthTokens", () => {
         getOAuthConfig: () => fakeConfig,
       }),
     ).rejects.toThrow("Polar refresh token was revoked or expired.");
+
+    expect(reportProviderAuthDiagnostic).toHaveBeenCalledWith(
+      "polar",
+      "refresh_failed",
+      undefined,
+      expect.objectContaining({ refreshToken: "dead-refresh" }),
+    );
 
     expect(mockDeleteTokens).toHaveBeenCalledWith(fakeDb, "polar");
     expect(mockSaveTokens).not.toHaveBeenCalled();

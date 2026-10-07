@@ -1,4 +1,5 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { reportProviderAuthDiagnostic } from "../lib/provider-diagnostics.ts";
 import { createMockDatabase } from "../providers/test-helpers.ts";
 import {
   encryptCredentialValue,
@@ -15,6 +16,8 @@ import {
   loadTokens,
   saveTokens,
 } from "./tokens.ts";
+
+vi.mock("../lib/provider-diagnostics.ts", () => ({ reportProviderAuthDiagnostic: vi.fn() }));
 
 describe("deriveProviderAccountKey", () => {
   it("creates a stable opaque namespace scoped to user, provider, and account", () => {
@@ -284,6 +287,13 @@ describe("loadTokens", () => {
 
     const result = await loadTokens(mock.db, "wahoo", TEST_USER_ID);
 
+    expect(reportProviderAuthDiagnostic).toHaveBeenCalledWith(
+      "wahoo",
+      "tokens_loaded",
+      TEST_USER_ID,
+      { expiresAt: new Date("2026-04-01T00:00:00Z"), refreshToken: "refresh-456" },
+    );
+
     expect(result).toEqual({
       accessToken: "access-123",
       refreshToken: "refresh-456",
@@ -330,11 +340,17 @@ describe("loadTokens", () => {
   });
 
   it("returns null when no tokens exist", async () => {
+    vi.mocked(reportProviderAuthDiagnostic).mockClear();
     mock.spies.limit.mockResolvedValue([]);
 
     const result = await loadTokens(mock.db, "nonexistent", TEST_USER_ID);
 
     expect(result).toBeNull();
+    expect(reportProviderAuthDiagnostic).toHaveBeenCalledExactlyOnceWith(
+      "nonexistent",
+      "tokens_missing",
+      TEST_USER_ID,
+    );
   });
 
   it("returns null when row is undefined", async () => {

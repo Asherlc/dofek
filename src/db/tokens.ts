@@ -1,5 +1,6 @@
 import { and, eq, type SQLWrapper, sql } from "drizzle-orm";
 import type { TokenSet } from "../auth/oauth.ts";
+import { reportProviderAuthDiagnostic } from "../lib/provider-diagnostics.ts";
 import {
   decryptCredentialValue,
   deriveCredentialIdentifier,
@@ -159,6 +160,7 @@ export async function saveTokens(
         updatedAt: new Date(),
       },
     });
+  reportProviderAuthDiagnostic(providerId, "tokens_saved", scopedUserId, tokens);
 }
 
 /**
@@ -197,6 +199,7 @@ export async function deleteTokens(
   await db
     .delete(oauthToken)
     .where(and(eq(oauthToken.providerId, providerId), eq(oauthToken.userId, scopedUserId)));
+  reportProviderAuthDiagnostic(providerId, "tokens_deleted", scopedUserId);
 }
 
 /**
@@ -245,7 +248,10 @@ export async function loadTokens(
     .where(and(eq(oauthToken.providerId, providerId), eq(oauthToken.userId, scopedUserId)))
     .limit(1);
 
-  if (rows.length === 0) return null;
+  if (rows.length === 0) {
+    reportProviderAuthDiagnostic(providerId, "tokens_missing", scopedUserId);
+    return null;
+  }
 
   const row = rows[0];
   if (!row) return null;
@@ -265,6 +271,10 @@ export async function loadTokens(
         oauthTokenContext(scopedUserId, providerId, "provider_account_id"),
       )
     : undefined;
+  reportProviderAuthDiagnostic(providerId, "tokens_loaded", scopedUserId, {
+    expiresAt: row.expiresAt,
+    refreshToken: decryptedRefreshToken,
+  });
   return {
     accessToken: decryptedAccessToken,
     refreshToken: decryptedRefreshToken,

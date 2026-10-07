@@ -207,8 +207,8 @@ and reports reconciliation failures there; the entrypoint logs the nonzero exit
 before the next scheduled retry. Alert on repeated `processing reconciliation`
 failures, outbox rows that persist across two completed reconciliation
 summaries, analytics/cache `failed` events, and operations whose latest
-nonterminal event exceeds the dataset's freshness target. Monitor `cdc-health`
-independently for a stale or failing bounded CDC result.
+event that has not reached a terminal state exceeds the dataset's freshness
+target. Monitor `cdc-health` independently for a stale or failing bounded CDC result.
 
 The ledger is append-only and is not physically purged in the first release.
 `processing.status` considers operations created in the last 90 days;
@@ -219,3 +219,40 @@ events—do not mutate or compact stage facts in place.
 Operational metadata must never contain provider payloads, metric samples,
 credentials, raw exception objects, or identifying filenames. Ordinary user
 APIs omit dbt model names and other infrastructure details.
+
+## Provider Authorization Diagnostics
+
+Search application logs for `[provider-diagnostics]` and correlate `providerId`,
+`userId`, timestamps, and the enclosing trace. The shared
+[provider HTTP boundary](../src/lib/provider-rate-limit-fetch.ts) records failed
+HTTP responses; [token storage](../src/db/tokens.ts) records loaded, saved,
+missing, and deleted credentials. Expiry timing and refresh-token availability
+are included only when the caller supplies token metadata.
+The [OAuth resolver](../src/auth/resolve-tokens.ts) records refresh attempts and
+outcomes. Custom token protocols still share HTTP and storage diagnostics.
+The [credential sign-in endpoint](../packages/server/src/routers/credential-auth.ts)
+records sign-in outcomes and queues a full sync after credentials are saved,
+using the existing single-flight queue policy for both web and mobile.
+
+HTTP diagnostics contain the origin, method, status, a SHA-256 fingerprint of
+the pathname, and an allowlisted Bearer error category. They omit URL credentials,
+query strings, fragments, raw paths, headers, and request/response bodies.
+To match a known endpoint, hash its pathname with SHA-256 and compare
+`endpointHash`. Auth diagnostics contain `event`, `providerId`, and `userId` when
+known. When token metadata is supplied, they also contain `expiresAt`,
+`expiresInSeconds`, and `hasRefreshToken`; token values are omitted.
+Successful credential mutations and sign-in/refresh outcomes are published after
+the enclosing database transaction commits, before subsequent sync dispatch or
+cache invalidation. Rolled-back transactions and savepoints discard those
+observations. See the [transaction effects implementation](../src/db/transaction-effects.ts)
+and [Drizzle transaction semantics](https://orm.drizzle.team/docs/transactions).
+Failed sign-in/refresh events and HTTP `401`/`403`
+produce sanitized Sentry warnings; the original response remains available to
+the provider. See the [shared implementation](../src/lib/provider-diagnostics.ts)
+and OpenTelemetry's [sensitive-data guidance](https://opentelemetry.io/docs/security/handling-sensitive-data/).
+
+Do not conclude that a token expired from HTTP `401` alone. OAuth's
+`invalid_token` also covers revoked and malformed tokens
+([RFC 6750, section 3.1](https://www.rfc-editor.org/rfc/rfc6750#section-3.1)).
+Compare the most recent `tokens_loaded`/`tokens_saved` expiry with the failure,
+then inspect any intervening refresh events before recommending reconnect.

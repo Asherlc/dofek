@@ -30823,6 +30823,69 @@ matrices before attempting independent native-package updates.
 - **Direct fix / validation:** The mock now implements the ref export with React's [createRef](https://react.dev/reference/react/createRef), matching the installed implementation. Both native shared-object lifecycle exports explicitly raise the existing unavailability error at the browser boundary; installed preview consumers only re-export them. Focused mock tests, the unchanged development command, and `pnpm storybook:mobile:build` pass. No retry, startup delay, dependency, or ignored check was added.
 - **Remaining risk / follow-up:** Native resource lifecycle behavior belongs to Expo's [Shared Objects](https://docs.expo.dev/modules/shared-objects/) runtime and is not simulated by browser Storybook. Future SDK updates should verify the mock's named exports and run the preview build; native consumers require native validation.
 
+## 2026-10-06 — Peloton authorization failure persisted after credential reconnect
+
+- **Status / impact:** The 18:00 UTC scheduled Peloton sync failed authorization,
+  leaving data stale and a reconnect warning visible after credentials were replaced.
+  The reason Peloton rejected the original token remains unresolved.
+- **Evidence:** Production `fitness.sync_log` records successful Peloton syncs
+  at 17:00 and 17:30 UTC and `Peloton access token expired.` errors at
+  18:00:00.767/18:00:00.782 UTC. Worker service logs show the 18:00 sync starting,
+  with no Peloton refresh-attempt log in the retained window. The token row was
+  replaced at 18:04:22 UTC, with an expiry of October 8 at 18:04:22 UTC. The prior
+  investigation verified that the replacement could read profile and workouts.
+- **Diagnosis:** The [Peloton adapter](../src/providers/peloton.ts) maps every
+  API `401` to `AccessTokenExpiredError`; that label does not prove expiry
+  ([RFC 6750](https://www.rfc-editor.org/rfc/rfc6750#section-3.1)). The old token
+  was overwritten; its upstream error body was not saved to the sync ledger,
+  and [worker failure reporting](../src/jobs/sync-provider-failure.ts) excludes
+  auth errors from Sentry. Axiom API queries using the worker's configured token
+  returned `403` because it lacks query/read permission.
+- **Changes / validation:** The shared credential sign-in path now queues a sync
+  after saving credentials. Common HTTP, token storage, credential sign-in,
+  and OAuth refresh boundaries emit safe diagnostics through existing logs and
+  Sentry. No Peloton-specific behavior or retry/timeout changes were introduced.
+  The impacted unit tier passed 4,559 tests (four skipped); root, server, and
+  provider-HTTP typechecks and `pnpm lint:sandbox` passed locally. Full lint's
+  SQL step could not connect to ClickHouse; `pnpm compose -- up -d --wait clickhouse`
+  then failed with `all predefined address pools have been fully subnetted`.
+  After user approval and a fresh empty-container check, removing
+  `noisy-lynx_default` resolved the network exhaustion under the
+  [network-recovery procedure](testing.md#docker-address-pool-exhaustion).
+  SQL lint then reached ClickHouse but failed with `Code: 75`, `errno: 28`,
+  `No space left on device` writing `/var/lib/clickhouse/tmp/`; the Docker VM
+  reported zero available bytes. Build-cache pruning reclaimed zero bytes.
+  This workspace's validation containers, network, and volume were removed.
+  The user separately approved removing the stopped
+  `charming-leopard-clickhouse-1` container (2.32 GB writable state), but it was
+  already absent at the immediate pre-removal check; no removal was performed
+  by this investigation. Its named `charming-leopard_clickhouse_data` volume
+  still existed. Docker subsequently had 3.7 GB available. With generated local
+  ports written to `.env.local`, workspace ClickHouse passed the existing Compose
+  health gate and full `pnpm lint` passed without ad-hoc waits or configuration
+  changes. This workspace's temporary validation resources were then removed.
+  No timeouts or retries were changed.
+  These changes require release before they affect production.
+- **Remaining risk / follow-up:** Capture the next rejection with the shared
+  [authorization diagnostics procedure](processing-status-runbook.md#provider-authorization-diagnostics).
+  Do not claim an upstream root cause or introduce recovery behavior without
+  that evidence. No resilience knob was added.
+
+## 2026-10-06 — Provider diagnostics PR blocked by Expo dependency validation
+
+- **Status / impact:** [PR #2902](https://github.com/Asherlc/dofek/pull/2902) is open; readiness is blocked by the mobile dependency gate. Production is unchanged.
+- **Evidence / root cause:** [Metro Bundle job 112437120276](https://github.com/Asherlc/dofek/actions/runs/37512374439/job/112437120276) failed during `cd packages/mobile && pnpm expo install --check`, before bundling. The fatal diagnostic was `Found outdated dependencies`: the installed `@expo/metro-runtime` 58.0.12, `expo` 58.0.5, `expo-file-system` 58.0.6, and `expo-router` 58.0.15 were below the expected patch versions 58.0.13, 58.0.6, 58.0.7, and 58.0.16 respectively. The dependency check exited with status 1.
+- **Validation / mitigation:** The full local unit/mobile suite passed 18,561 tests (19 existing skips), and local lint and root/server/web/provider-HTTP typechecks passed. No dependency gate was bypassed, no workflow was rerun as a substitute for a fix, and no resilience knob was added.
+- **Remaining risk / follow-up:** Align the mobile Expo dependencies and lockfile with the supported versions, validate the dependency check and mobile build, then require green CI on the final revision. This dependency update remains unresolved and separate from the approved authorization changes.
+
+## 2026-10-06 — CI repair for shared provider authorization diagnostics
+
+- **Status / impact:** [PR #2902](https://github.com/Asherlc/dofek/pull/2902) had three failing gates; production was unchanged.
+- **Evidence / root causes:** In [run 37512960306](https://github.com/Asherlc/dofek/actions/runs/37512960306), Metro dependency validation reported `Found outdated dependencies` before bundling. `pnpm audit --prod --audit-level=high` reported vulnerable shell-quote and MCP OAuth client versions. Stryker shard 2 reported `Final mutation score 60.00 under breaking threshold 75`: removing the empty-token-row diagnostic survived because the test asserted only the null return.
+- **Direct fixes:** Update the four affected Expo SDK 58 patch packages and regenerate the lockfile. Upgrade shell-quote to 1.12.0 and the MCP client/core/server packages to 2.3.1, with the node adapter at its current 2.1.1 release. The upstream advisories identify fixes for [shell-quote command injection](https://github.com/advisories/GHSA-pqg4-j6r4-53mv) and [MCP OAuth credential disclosure](https://github.com/advisories/GHSA-6qxp-vccf-f47h). Assert exactly one user-scoped `tokens_missing` diagnostic for an empty token lookup.
+- **Local validation:** Expo dependency validation and the iOS Metro export pass with a non-secret test Sentry DSN; the operator Infisical session could not export configured secrets. Production dependency audit passes its existing high-severity gate, dependency security regressions pass, and root/server/mobile typechecks and sandbox lint pass. The focused token suite passes all 18 tests. The full unit/mobile suite passes 18,561 tests (19 existing skips); the changed token ranges reach a 100% mutation score with all five active mutants killed. Two earlier local mutation dry runs failed with socket hang up in different server tests; an instrumented run passed without reproducing that transport failure, so no transport cause is claimed and the temporary diagnostic was removed.
+- **Remaining risk / follow-up:** Require passing CI on the repaired revision. No retries, timeouts, mutation thresholds, or audit exclusions were changed. Use `expo install --check` and the production dependency audit as preflight checks before PR publication ([Expo CLI dependency validation](https://docs.expo.dev/more/expo-cli/#install)).
+
 ## 2026-10-06 — Dead-code cleanup removed a still-used Vitest import
 
 - **Status / impact:** PR #2892 failed the format package typecheck and its dependent static-analysis gate. Production was unchanged. The still-used import is restored.
@@ -30965,6 +31028,13 @@ Reconnect PR final-main reconciliation: main advanced through [PR #2903](https:/
 
 Reconnect final-head spell check: [run 37577231339](https://github.com/Asherlc/dofek/actions/runs/37577231339) failed `pnpm exec cspell --no-progress` with `src/jobs/queues.test.ts:463:16 - Unknown word (nonblocking)`. The new test description used a word outside the configured dictionary. Reworded that description using existing vocabulary; no spelling exclusion, dictionary override, runtime behavior, or retry policy was changed. Full-repository spell validation passes with zero issues across 2,706 files, and all 54 queue unit tests pass without retries. Include the separate spell command in the pre-push checklist because `pnpm lint` does not execute it.
 
+## 2026-10-07 — Local review validation exhausted Docker subnet allocation
+
+- **Symptoms / impact:** `pnpm compose -- up -d --wait db clickhouse redis redpanda` failed with `all predefined address pools have been fully subnetted`, blocking database validation for [PR #2902](https://github.com/Asherlc/dofek/pull/2902). Production was unaffected.
+- **Evidence / cause:** Every existing user-created bridge network had attached containers; Docker's default automatic subnet pool had no remaining allocation. The previously approved empty network had already been removed.
+- **Mitigation / validation:** With explicit user approval, created only `flying-puma_default` using the unused `10.241.0.0/24` subnet and Compose ownership labels. All four workspace dependencies became healthy; full lint and three PostgreSQL transaction tests passed without test retries or added waits. Other workspace resources were preserved. Explicit subnet allocation follows [Docker network creation guidance](https://docs.docker.com/reference/cli/docker/network/create/).
+- **Remaining risk / follow-up:** Automatic network allocation remains exhausted for future workspaces. Document inspecting subnet usage and requesting approval for an explicit workspace allocation in the local testing runbook; do not remove another workspace's attached resources.
+
 Sentry PR validation after the third main advance: [run 37552365305](https://github.com/Asherlc/dofek/actions/runs/37552365305) reached 100 successful checks, including iOS/watchOS builds, with Periphery and Swift mutation still queued before the merge. The new conflict affected appended incident notes only; both histories were preserved. The latest merge passes full lint, every workspace typecheck, 18,566 unit/mobile assertions, and six real-database regressions. The subsequent [run 37565159147](https://github.com/Asherlc/dofek/actions/runs/37565159147) passed all 105 checks before another main advance introduced a documentation-only conflict. Both histories were retained again. The fourth merged revision passes lint, all workspace typechecks, 18,572 unit/mobile assertions, and six database regressions. Final-head hosted checks remain required; the runner-queue cause remains unresolved.
 
 ## 2026-10-06 — Sentry production verification and deployment selector failure
@@ -31005,6 +31075,8 @@ Docker review follow-up: the linked [disk-recovery procedure](testing.md#docker-
 - **Evidence / cause:** The jobs and check-run APIs leave [Test / Test Gate job 112864591630](https://github.com/Asherlc/dofek/actions/runs/37640469772/job/112864591630) queued from 15:16:41 UTC, with no assigned runner, steps, completion, or annotations. No job reports failure; `gh run view 37640469772 --log-failed` returns no failing log. Even CI Gate passed. [Main CI run 37638619744](https://github.com/Asherlc/dofek/actions/runs/37638619744) for `0a480c4` also reports failure with successful gates and no failed or pending job. There is no first fatal line to cite, and the root cause is unknown. [GitHub Status](https://www.githubstatus.com/) reports no current Actions incident; that does not rule out an isolated service failure.
 - **Action / remaining risk:** Stopped rollout and requested direction. The user approved rerunning CI; attempt 2 started at 15:33:41 UTC against the same commit and completed successfully at 15:49:39 UTC, including every required check and the previously missing unit/integration gate. [PR #2916](https://github.com/Asherlc/dofek/pull/2916) merged as `ee1c994` at 15:50:38 UTC. No workflow behavior, timeout, retry, fallback, or required check was changed or bypassed; the rerun establishes completed validation, not a source fix for GitHub's earlier state. Main CI, deployment, and production parser verification remain required before resolving the remaining Peloton issue.
 - **Retrospective:** Inspect the workflow conclusion as well as required check results: successful gate check runs alone did not establish that this workflow completed successfully. Preserve the run/job identifiers and explicitly record when a service returns failure without a fatal log.
+
+Local incident-note validation initially failed before lint ran: parallel pnpm commands each attempted dependency installation after main added a package export, and overlapping symlink writes produced `ENOENT ... unlink .../node_modules/.pnpm/node_modules/oxc-resolver`. A single `pnpm install --frozen-lockfile` refreshed the workspace; the unchanged full lint command then passed, as did root/server/web typechecks and spelling. Complete dependency installation before parallel validation when package metadata changes. pnpm documents automatic installation before scripts through [`verifyDepsBeforeRun`](https://pnpm.io/settings/build#verifydepsbeforerun); no dependency-check setting or lockfile changed.
 
 ## 2026-10-07 — Wahoo reconnect warning at the access-token expiry boundary (unresolved)
 
