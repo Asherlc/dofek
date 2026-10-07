@@ -71,7 +71,7 @@ export function seedFoodStoryQuery(queryClient: QueryClient, date: string): void
       target: {
         calories: 2200,
         type: "default",
-        label: "Default daily logged-intake target",
+        label: "Default target",
       },
       scale: {
         maximumCalories: 2220,

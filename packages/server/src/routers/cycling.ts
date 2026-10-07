@@ -46,7 +46,7 @@ const estimateEvidenceSchema = z.object({
   method: z.string(),
   confidence: z.enum(["high", "moderate", "limited", "not_available"]),
   confidenceLabel: z.string(),
-  confidenceDetail: z.string(),
+  confidenceDetail: z.string().nullable(),
   sourceWorkouts: z.array(sourceWorkoutSchema),
   pacingGuidance: z.string(),
 });

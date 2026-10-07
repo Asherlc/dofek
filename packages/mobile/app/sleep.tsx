@@ -22,7 +22,6 @@ import {
   Text,
   View,
 } from "react-native";
-import { ChartTitleWithTooltip } from "../components/ChartTitleWithTooltip";
 import { Hypnogram } from "../components/charts/Hypnogram";
 import { SleepBar } from "../components/charts/SleepBar";
 import { SparkLine } from "../components/charts/SparkLine";
@@ -208,11 +207,7 @@ export default function SleepScreen() {
           {/* Last night's sleep */}
           {lastNight && (
             <View style={styles.card}>
-              <ChartTitleWithTooltip
-                title="Last Night"
-                description="This sleep stage bar shows how your most recent night was split across deep, REM, light, and awake time."
-                textStyle={styles.cardTitle}
-              />
+              <Text style={styles.cardTitle}>Last Night</Text>
               {renderStageContent(lastNight)}
               <Text style={styles.sleepTiming}>
                 {lastNightBedtime === "--" || lastNightWake === "--"
@@ -233,11 +228,7 @@ export default function SleepScreen() {
           {/* Hypnogram */}
           {(latestStagesQuery.data?.length ?? 0) > 0 && (
             <View style={styles.card}>
-              <ChartTitleWithTooltip
-                title="Last Night"
-                description="This hypnogram shows the progression of your sleep stages throughout the night — when you were in deep, REM, light, or awake phases."
-                textStyle={styles.cardTitle}
-              />
+              <Text style={styles.cardTitle}>Last Night's Stages</Text>
               <Hypnogram data={latestStagesQuery.data ?? []} />
             </View>
           )}
@@ -284,11 +275,7 @@ export default function SleepScreen() {
           {/* Sleep consistency */}
           {latestConsistency && (
             <View style={styles.card}>
-              <ChartTitleWithTooltip
-                title="Schedule Consistency"
-                description="Scores range from 0 to 100; higher scores mean your sleep and wake times varied less. The dashed line marks the average."
-                textStyle={styles.cardTitle}
-              />
+              <Text style={styles.cardTitle}>Schedule Consistency</Text>
               <View style={styles.consistencyRow}>
                 <View style={styles.consistencyStat}>
                   <Text style={styles.consistencyValue}>
@@ -357,11 +344,7 @@ export default function SleepScreen() {
           {/* Nightly history */}
           {nightly.length > 0 && (
             <View style={styles.card}>
-              <ChartTitleWithTooltip
-                title="Recent Nights"
-                description="These stacked bars compare the sleep-stage breakdown for your most recent nights."
-                textStyle={styles.cardTitle}
-              />
+              <Text style={styles.cardTitle}>Recent Nights</Text>
               <View style={styles.nightlyStack}>
                 {nightly
                   .slice(-7)

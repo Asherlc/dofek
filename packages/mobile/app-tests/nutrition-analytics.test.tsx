@@ -208,7 +208,6 @@ describe("NutritionAnalyticsScreen", () => {
     expect(
       screen.getByText("No body-weight measurements are available in the selected period."),
     ).toBeTruthy();
-    expect(screen.getByText("28-day fit · at least 20 usable calorie days")).toBeTruthy();
     expect(
       screen.getByText(
         "Average over recorded days vs. U.S. Food and Drug Administration (FDA) Daily Value",
@@ -376,7 +375,7 @@ describe("NutritionAnalyticsScreen", () => {
     ).toBeTruthy();
     expect(
       screen.getByLabelText(
-        "Vitamin D. Target: 600% of U.S. Food and Drug Administration (FDA) Daily Value (20 mcg/day). Target status: Meets or exceeds target. Target source: Daily Value on the Nutrition and Supplement Facts Labels. Target guidance: Target guidance from the server. Tolerable Upper Intake Level (UL): 100 mcg/day for total daily intake. UL status: At or above the Tolerable Upper Intake Level (UL). UL source: Vitamin D - Health Professional Fact Sheet. UL guidance: Review this intake with a doctor or pharmacist. Average over 10 recorded days in a 30-day selected window.",
+        "Vitamin D. Target: 600% of U.S. Food and Drug Administration (FDA) Daily Value (20 mcg/day). Target source: Daily Value on the Nutrition and Supplement Facts Labels. Tolerable Upper Intake Level (UL): 100 mcg/day for total daily intake. UL status: At or above the Tolerable Upper Intake Level (UL). UL source: Vitamin D - Health Professional Fact Sheet. UL guidance: Review this intake with a doctor or pharmacist. Average over 10 recorded days in a 30-day selected window.",
       ),
     ).toBeTruthy();
     expect(screen.getByText("Vitamin A")).toBeTruthy();
@@ -535,7 +534,6 @@ describe("NutritionAnalyticsScreen", () => {
     expect(screen.getAllByRole("alert")).toHaveLength(1);
     expect(screen.getByText("Nutrition analytics refresh failed.")).toBeTruthy();
     expect(screen.getByText("Observed rolling range: 2,180–2,320 energy-rate-unit")).toBeTruthy();
-    expect(screen.getByText("90-day evaluation · 90 accessible calendar days")).toBeTruthy();
     expect(screen.getByText("82 calorie days · 45 weight days · 30 accepted windows")).toBeTruthy();
     expect(
       screen.getByText(

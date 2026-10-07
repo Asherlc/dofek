@@ -25,7 +25,6 @@ import {
   escapeTooltipHtml,
 } from "../lib/chartTheme.ts";
 import { useUnitConverter } from "../lib/unitContext.ts";
-import { ChartDescriptionTooltip } from "./ChartDescriptionTooltip.tsx";
 import { DofekChart } from "./DofekChart.tsx";
 import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
 
@@ -325,7 +324,6 @@ export function WeeklyHrZonesChart({
             <span className="text-dim">(max heart rate: {maxHeartRateLabel})</span>
           )}
         </h3>
-        <ChartDescriptionTooltip description="Weekly training time by heart rate zone, shown as a percentage." />
       </div>
       <DofekChart option={option} height={220} />
     </div>

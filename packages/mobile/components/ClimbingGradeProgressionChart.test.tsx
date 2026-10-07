@@ -105,13 +105,4 @@ describe("ClimbingGradeProgressionChart", () => {
     rerender(<ClimbingGradeProgressionChart data={[]} />);
     expect(screen.getByText("No recorded climbing grades")).toBeTruthy();
   });
-
-  it("explains the denominator when the chart method is disclosed", () => {
-    render(<ClimbingGradeProgressionChart data={[climbingProgressionFixture()]} />);
-    const disclosure = screen.getByRole("button", { name: "How to read this chart" });
-    expect(disclosure.getAttribute("aria-expanded")).toBe("false");
-    fireEvent.click(disclosure);
-    expect(disclosure.getAttribute("aria-expanded")).toBe("true");
-    expect(screen.getByText(/including failed-only days/)).toBeTruthy();
-  });
 });

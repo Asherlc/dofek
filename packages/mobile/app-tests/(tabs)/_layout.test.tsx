@@ -36,6 +36,10 @@ vi.mock("expo-router", () => ({
   useRouter: () => ({ push: mockPush }),
 }));
 
+vi.mock("expo-router/react-navigation", () => ({
+  PlatformPressable: () => null,
+}));
+
 vi.mock("../../lib/useProcessingAlerts", () => ({
   useProcessingAlerts: () => ({
     data: {
@@ -56,8 +60,8 @@ describe("tab layout selected state", () => {
     expect(getTabIconName("food", false)).toBe("nutrition-outline");
   });
 
-  it("sets a distinct active tab background color", () => {
-    expect(selectedTabBackgroundColor).toBe(colors.surfaceSecondary);
+  it("uses an accent-tinted background for the selected tab", () => {
+    expect(selectedTabBackgroundColor).toBe(colors.accentSubtle);
   });
 
   it("keeps the tab bar above screen content", () => {

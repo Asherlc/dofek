@@ -100,8 +100,8 @@ export function PersonalizationPanel() {
 
       <ParamCard
         modelCard={modelCards.stressThresholds}
-        value={`Heart Rate Variability: ${data.effective.stressThresholds.hrvThresholds.map(formatStandardDeviation).join(", ")} · Resting Heart Rate: ${data.effective.stressThresholds.rhrThresholds.map(formatStandardDeviation).join(", ")}`}
-        defaultValue={`Heart Rate Variability: ${data.defaults.stressThresholds.hrvThresholds.map(formatStandardDeviation).join(", ")} · Resting Heart Rate: ${data.defaults.stressThresholds.rhrThresholds.map(formatStandardDeviation).join(", ")}`}
+        value={`Heart Rate Variability (SD): ${data.effective.stressThresholds.hrvThresholds.map(formatStandardDeviation).join(", ")} · Resting Heart Rate (SD): ${data.effective.stressThresholds.rhrThresholds.map(formatStandardDeviation).join(", ")}`}
+        defaultValue={`Heart Rate Variability (SD): ${data.defaults.stressThresholds.hrvThresholds.map(formatStandardDeviation).join(", ")} · Resting Heart Rate (SD): ${data.defaults.stressThresholds.rhrThresholds.map(formatStandardDeviation).join(", ")}`}
       />
 
       <ParamCard
@@ -164,11 +164,7 @@ function ParamCard({
   return (
     <View style={styles.paramCard}>
       <View style={styles.paramHeader}>
-        <Text
-          style={styles.paramLabel}
-          accessibilityRole="header"
-          accessibilityLabel={`${modelCard.title} model evidence`}
-        >
+        <Text style={styles.paramLabel} accessibilityRole="header">
           {modelCard.title}
         </Text>
         <Text
@@ -177,39 +173,14 @@ function ParamCard({
           {isPersonalized ? "Learned" : "Default"}
         </Text>
       </View>
-      <Text style={styles.paramDescription}>{modelCard.description}</Text>
       <Text style={styles.paramValue}>{value}</Text>
       {isPersonalized && <Text style={styles.paramDefault}>Default: {defaultValue}</Text>}
-      <View style={styles.modelEvidence}>
-        {modelCard.lastSuccessfulFitAt ? (
-          <EvidenceRow
-            label="Last successful update"
-            value={formatDateMedium(modelCard.lastSuccessfulFitAt)}
-          />
-        ) : (
-          <EvidenceRow label="Update status" value={modelCard.lastFitSummary} />
-        )}
-        <EvidenceRow label="Data window" value={modelCard.dataWindow} />
-        <EvidenceRow label="Available data" value={modelCard.dataSufficiency} />
-        <EvidenceRow label="Calculation details" value={modelCard.fitEvidence} />
-        <EvidenceRow label="Uncertainty" value={modelCard.uncertainty} />
-        <Text style={styles.evidenceLabel}>Excluded data:</Text>
-        {modelCard.excludedData.map((exclusion) => (
-          <Text key={exclusion} style={styles.evidenceValue}>
-            {"\u2022"} {exclusion}
-          </Text>
-        ))}
-      </View>
+      {modelCard.lastSuccessfulFitAt ? (
+        <Text style={styles.paramDefault}>
+          Updated {formatDateMedium(modelCard.lastSuccessfulFitAt)}
+        </Text>
+      ) : null}
     </View>
-  );
-}
-
-function EvidenceRow({ label, value }: { label: string; value: string }) {
-  return (
-    <Text style={styles.evidenceValue}>
-      <Text style={styles.evidenceLabel}>{label}: </Text>
-      {value}
-    </Text>
   );
 }
 
@@ -337,10 +308,6 @@ const styles = StyleSheet.create({
   badgeDefault: {
     color: colors.textTertiary,
   },
-  paramDescription: {
-    fontSize: 12,
-    color: colors.textTertiary,
-  },
   paramValue: {
     fontSize: 14,
     color: colors.text,
@@ -351,19 +318,6 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: colors.textTertiary,
     opacity: 0.7,
-  },
-  modelEvidence: {
-    gap: 3,
-    paddingTop: 8,
-  },
-  evidenceLabel: {
-    fontSize: 11,
-    fontWeight: "600",
-    color: colors.textSecondary,
-  },
-  evidenceValue: {
-    fontSize: 11,
-    color: colors.textTertiary,
   },
 
   // Actions

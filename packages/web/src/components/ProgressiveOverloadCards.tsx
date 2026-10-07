@@ -74,9 +74,8 @@ export function ProgressiveOverloadCards({ exercises, loading }: ProgressiveOver
               {formatDateMedium(exercise.period.startWeek)} –{" "}
               {formatDateMedium(exercise.period.endWeek)}
             </div>
-            <div className="text-xs text-muted mb-1">{uncertaintyLabel(exercise, units)}</div>
-            {exercise.uncertainty.availability === "unavailable" ? (
-              <div className="text-xs text-muted mb-2">{exercise.uncertainty.statement}</div>
+            {exercise.uncertainty.availability === "available" ? (
+              <div className="text-xs text-muted mb-1">{uncertaintyLabel(exercise, units)}</div>
             ) : null}
             {exercise.observations.length >= 2 && (
               <SparklineChart

@@ -1,7 +1,6 @@
 import {
   type ClimbingGradeProgressionLane,
   climbingProgressionGradeColor,
-  climbingProgressionGuide,
   climbingProgressionLaneLabel,
   climbingProgressionPeriodLabel,
   climbingProgressionSettingLabels,
@@ -26,7 +25,6 @@ function laneKey(lane: ClimbingGradeProgressionLane) {
 export function ClimbingGradeProgressionChart({ data, loading }: Props) {
   const [focusedKey, setFocusedKey] = useState<string | null>(null);
   const [selectedSetting, setSelectedSetting] = useState("all");
-  const [guideOpen, setGuideOpen] = useState(false);
   const focused = data.find((lane) => laneKey(lane) === focusedKey);
   const visible = focused ? [focused] : data;
   const setting = focused?.settings.some((value) => value === selectedSetting)
@@ -44,7 +42,7 @@ export function ClimbingGradeProgressionChart({ data, loading }: Props) {
 
   return (
     <View style={styles.stack}>
-      <Text style={styles.caption}>Recorded sends per climbing day</Text>
+      <Text style={styles.caption}>Sends per climbing day</Text>
       {focused ? (
         <View style={styles.controls}>
           <Pressable
@@ -59,7 +57,7 @@ export function ClimbingGradeProgressionChart({ data, loading }: Props) {
             <Text style={styles.buttonText}>All styles</Text>
           </Pressable>
           {[
-            { value: "all", label: "Compare", accessibilityLabel: "Compare settings" },
+            { value: "all", label: "All settings", accessibilityLabel: "All settings" },
             ...focused.settings.map((value) => ({
               value,
               label: climbingProgressionSettingLabels[value],
@@ -101,16 +99,6 @@ export function ClimbingGradeProgressionChart({ data, loading }: Props) {
           }}
         />
       ))}
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="How to read this chart"
-        accessibilityState={{ expanded: guideOpen }}
-        style={styles.button}
-        onPress={() => setGuideOpen((open) => !open)}
-      >
-        <Text style={styles.caption}>How to read this chart</Text>
-      </Pressable>
-      {guideOpen && <Text style={styles.caption}>{climbingProgressionGuide}</Text>}
     </View>
   );
 }
@@ -187,11 +175,7 @@ function ClimbingLane({
           </View>
         ))}
       </View>
-      <AccessibleChart
-        title={label}
-        summary="Color shows grade; bar height shows sends per recorded climbing day."
-        rows={rows}
-      >
+      <AccessibleChart title={label} summary="Sends per climbing day" rows={rows}>
         <View onLayout={onLayout} style={{ height: baseline + 30 }}>
           {width > 0 && (
             <Svg width={width} height={baseline + 30}>

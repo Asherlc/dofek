@@ -1,7 +1,6 @@
 import { formatDateYmd } from "@dofek/format/format";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo } from "react";
-import { ChartDescriptionTooltip } from "../../components/ChartDescriptionTooltip.tsx";
 import {
   CorrelationCard,
   CorrelationCardSkeleton,
@@ -48,10 +47,7 @@ export function TrainingOverview() {
 
   return (
     <>
-      <Section
-        title="Training Calendar"
-        subtitle="Daily training time (minutes per day); compare higher-volume days with recovery"
-      >
+      <Section title="Training Calendar">
         {calendarData.error ? (
           <QueryStatePanel error={calendarData.error} />
         ) : calendarData.isLoading ? (
@@ -61,10 +57,7 @@ export function TrainingOverview() {
         )}
       </Section>
 
-      <Section
-        title="Fitness / Fatigue / Form"
-        subtitle="Long-term fitness, short-term fatigue, and training form over time"
-      >
+      <Section title="Fitness / Fatigue / Form">
         {pmcData.error ? (
           <QueryStatePanel error={pmcData.error} />
         ) : (
@@ -77,10 +70,7 @@ export function TrainingOverview() {
         )}
       </Section>
 
-      <Section
-        title="Volume & Zones"
-        subtitle="Weekly volume, HR zone distribution, intensity split"
-      >
+      <Section title="Volume & Zones">
         <TrainingInsightsPanel days={days} />
       </Section>
 
@@ -117,20 +107,11 @@ export function TrainingOverview() {
   );
 }
 
-function Section({
-  title,
-  subtitle,
-  children,
-}: {
-  title: string;
-  subtitle?: string;
-  children: React.ReactNode;
-}) {
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section>
       <div className="mb-1 flex items-center gap-2">
         <h2 className="text-sm font-medium text-muted uppercase tracking-wider">{title}</h2>
-        {subtitle && <ChartDescriptionTooltip description={subtitle} />}
       </div>
       <div className="card p-4">{children}</div>
     </section>

@@ -46,16 +46,10 @@ export function TrainingDistributionCards({
                 </View>
               ))}
           </View>
-          <Text style={styles.explanation}>
-            {TRAINING_TERMINOLOGY.intensityDistribution.plainDescription}
-          </Text>
           <TrainingMethodDetails
             title={TRAINING_TERMINOLOGY.intensityDistribution.plainLabel}
             technicalName={TRAINING_TERMINOLOGY.intensityDistribution.technicalName}
-            lines={[
-              TRAINING_TERMINOLOGY.intensityDistribution.details,
-              intensityDistribution.explanation,
-            ]}
+            lines={[TRAINING_TERMINOLOGY.intensityDistribution.details]}
             sourceActionId="heart-rate-zone-model-source"
           />
         </View>
@@ -83,9 +77,6 @@ export function TrainingDistributionCards({
                 {formatIntensity(latestPolarizationWeek.zonePercentages.z2)} threshold ·{" "}
                 {formatIntensity(latestPolarizationWeek.zonePercentages.z3)} high
               </Text>
-              <Text style={styles.explanation}>
-                {TRAINING_TERMINOLOGY.polarization.plainDescription}
-              </Text>
             </>
           ) : (
             <Text style={styles.emptyText}>
@@ -97,11 +88,8 @@ export function TrainingDistributionCards({
             technicalName={TRAINING_TERMINOLOGY.polarization.technicalName}
             lines={[
               TRAINING_TERMINOLOGY.polarization.details,
-              ...(latestPolarizationWeek ? [latestPolarizationWeek.explanation] : []),
               polarization.method.formula,
               polarization.method.zoneBasis,
-              polarization.method.calculationChoice,
-              polarization.method.interpretation,
             ]}
             source={polarization.method.source}
             sourceActionId="polarization-source"
@@ -217,11 +205,6 @@ const styles = StyleSheet.create({
   zoneSummary: {
     color: colors.textSecondary,
     fontSize: 12,
-  },
-  explanation: {
-    color: colors.textSecondary,
-    fontSize: 12,
-    lineHeight: 18,
   },
   emptyText: {
     color: colors.textTertiary,

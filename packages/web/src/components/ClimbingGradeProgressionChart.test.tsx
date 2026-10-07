@@ -129,7 +129,7 @@ describe("ClimbingGradeProgressionChart", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "Focus Bouldering" }));
     expect(screen.queryByRole("button", { name: "Focus Lead" })).toBeNull();
-    fireEvent.change(screen.getByRole("combobox", { name: "Compare settings" }), {
+    fireEvent.change(screen.getByRole("combobox", { name: "Setting" }), {
       target: { value: "outdoor" },
     });
     expect(boulderOption().series.every((series) => series.stack === "outdoor")).toBe(true);

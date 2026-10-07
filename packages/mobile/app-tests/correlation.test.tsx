@@ -235,9 +235,6 @@ describe("CorrelationScreen", () => {
     expect(screen.getByText("5 more paired calendar days needed")).toBeTruthy();
     expect(screen.getByText("90 selected")).toBeTruthy();
     expect(screen.getByText("90 missing pairs")).toBeTruthy();
-    expect(
-      screen.getByText("95% block-bootstrap interval unavailable (fewer than five paired days)."),
-    ).toBeTruthy();
     expect(screen.queryByText(/block-bootstrap interval: .* to /)).toBeNull();
     expect(screen.queryByText("Spearman")).toBeNull();
     expect(screen.queryByText("Pearson")).toBeNull();
