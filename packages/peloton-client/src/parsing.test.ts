@@ -141,7 +141,7 @@ describe("parseWorkout", () => {
 });
 
 describe("parsePerformanceGraph", () => {
-  it("keeps null samples aligned with their original time offsets", () => {
+  it("preserves missing summaries and keeps null samples aligned with their time offsets", () => {
     const graph = pelotonPerformanceGraphSchema.parse({
       duration: 20,
       is_class_plan_shown: false,
@@ -153,8 +153,8 @@ describe("parsePerformanceGraph", () => {
           display_name: "Heart Rate",
           slug: "heart_rate",
           values: [null, 120, null, 140],
-          average_value: 130,
-          max_value: 140,
+          average_value: null,
+          max_value: null,
         },
       ],
     });
@@ -162,6 +162,8 @@ describe("parsePerformanceGraph", () => {
     expect(parsePerformanceGraph(graph, 5)[0]).toMatchObject({
       values: [null, 120, null, 140],
       offsetsSeconds: [0, 5, 10, 15],
+      averageValue: null,
+      maxValue: null,
     });
   });
 

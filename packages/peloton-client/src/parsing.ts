@@ -77,8 +77,8 @@ export interface ParsedMetricSeries {
   displayName: string;
   values: (number | null)[];
   offsetsSeconds: number[];
-  averageValue: number;
-  maxValue: number;
+  averageValue: number | null;
+  maxValue: number | null;
 }
 
 export function parsePerformanceGraph(

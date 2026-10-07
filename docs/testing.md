@@ -194,13 +194,16 @@ deleting anything:
 docker system df -v
 ```
 
-Remove disposable containers and volumes created by the current workspace,
-then prune the build cache, which Docker can recreate:
+Remove disposable containers created by the current workspace while retaining
+named database volumes, then prune the build cache, which Docker can recreate:
 
 ```bash
-pnpm compose -- down --remove-orphans --volumes
+pnpm compose -- down --remove-orphans
 docker builder prune -af
 ```
+
+Compose retains named volumes when `down` runs without `--volumes`; see Docker's
+[`down` documentation](https://docs.docker.com/reference/cli/docker/compose/down/).
 
 If that does not reclaim enough space, prune images that are not used by any container:
 
@@ -208,7 +211,7 @@ If that does not reclaim enough space, prune images that are not used by any con
 docker image prune -af
 ```
 
-Preserve running containers and named volumes belonging to other workspaces. Do not run
+Preserve running containers belonging to other workspaces and all named database volumes. Do not run
 `docker volume prune` or `docker system prune --volumes` unless the user explicitly approves
 deleting unused cross-workspace data. Docker documents which object types each prune command
 removes in its [resource pruning guide](https://docs.docker.com/engine/manage-resources/pruning/).
