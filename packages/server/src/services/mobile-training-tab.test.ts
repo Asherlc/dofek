@@ -9,6 +9,7 @@ import { VerticalAscentModel } from "../repositories/cycling-advanced-models.ts"
 import type { HangboardingSummary } from "../repositories/hangboarding-repository.ts";
 import { ProgressiveOverload } from "../repositories/progressive-overload.ts";
 import { loadMobileTrainingTab } from "./mobile-training-tab.ts";
+import { climbingProgressionFixture } from "./mobile-training-tab-test-helpers.ts";
 
 vi.mock("dofek/personalization/storage", () => ({
   loadPersonalizedParams: vi.fn(async () => null),
@@ -120,15 +121,9 @@ describe("loadMobileTrainingTab", () => {
   async function mockClimbingRepos() {
     const repository = (await import("../repositories/climbing-repository.ts")).ClimbingRepository
       .prototype;
-    const gradeProgressionSpy = vi.spyOn(repository, "getGradeProgression").mockResolvedValue([
-      new ClimbingGradeProgression({
-        date: "2026-03-28",
-        climbType: "boulder",
-        gradeSystem: "v_scale",
-        grade: "V4",
-        gradeSortValue: 4,
-      }),
-    ]);
+    const gradeProgressionSpy = vi
+      .spyOn(repository, "getGradeProgression")
+      .mockResolvedValue([new ClimbingGradeProgression(climbingProgressionFixture)]);
     const volumeByGradeSpy = vi.spyOn(repository, "getVolumeByGrade").mockResolvedValue([
       new ClimbingVolumeByGrade({
         climbType: "route",
@@ -316,15 +311,7 @@ describe("loadMobileTrainingTab", () => {
       variabilityOffset: 0,
     });
     expect(result.climbing).toEqual({
-      gradeProgression: [
-        {
-          date: "2026-03-28",
-          climbType: "boulder",
-          gradeSystem: "v_scale",
-          grade: "V4",
-          gradeSortValue: 4,
-        },
-      ],
+      gradeProgression: [climbingProgressionFixture],
       volumeByGrade: [
         {
           climbType: "route",

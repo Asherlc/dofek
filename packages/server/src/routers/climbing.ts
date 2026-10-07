@@ -154,7 +154,10 @@ export const climbingRouter = router({
       }),
     ),
 
-  gradeProgression: cachedProtectedQuery({ maxAge: CacheTTL.LONG })
+  gradeProgression: cachedProtectedQuery({
+    maxAge: CacheTTL.LONG,
+    keyVersion: "climbing-grade-lanes-v1",
+  })
     .input(climbingInputSchema)
     .output(z.array(climbingGradeProgressionSchema))
     .query(async ({ ctx, input }): Promise<ClimbingGradeProgressionRow[]> => {
@@ -168,7 +171,7 @@ export const climbingRouter = router({
 
   volumeByGrade: cachedProtectedQuery({
     maxAge: CacheTTL.LONG,
-    keyVersion: "climbing-recorded-attempts-v1",
+    keyVersion: "climbing-canonical-observations-v2",
   })
     .input(climbingInputSchema)
     .output(z.array(climbingVolumeByGradeSchema))
@@ -179,7 +182,10 @@ export const climbingRouter = router({
       });
     }),
 
-  sessionSummary: cachedProtectedQuery({ maxAge: CacheTTL.LONG })
+  sessionSummary: cachedProtectedQuery({
+    maxAge: CacheTTL.LONG,
+    keyVersion: "climbing-canonical-observations-v1",
+  })
     .input(climbingInputSchema)
     .output(z.array(climbingSessionSummarySchema))
     .query(async ({ ctx, input }): Promise<ClimbingSessionSummaryRow[]> => {
