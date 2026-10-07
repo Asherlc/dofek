@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const { mockSignIn, mockEnsureProvider, mockSaveTokens, mockInvalidateByPrefix } = vi.hoisted(
   () => ({
@@ -8,6 +8,15 @@ const { mockSignIn, mockEnsureProvider, mockSaveTokens, mockInvalidateByPrefix }
     mockInvalidateByPrefix: vi.fn(),
   }),
 );
+
+const mockEnqueue = vi.fn();
+vi.mock("dofek/jobs/enqueue-sync-job", () => ({
+  enqueueReconnectSyncJob: (...args: unknown[]) => mockEnqueue(...args),
+}));
+vi.mock("dofek/db/account-erasure", () => ({
+  withAccountErasureUserWriteFence: vi.fn(async (db, _userId, operation) => operation(db)),
+}));
+vi.mock("dofek/lib/error-reporting", () => ({ captureException: vi.fn() }));
 
 vi.mock("@dofek/garmin-connect/client", () => ({
   GarminConnectClient: { signIn: mockSignIn },
@@ -37,6 +46,10 @@ import { createTestCallerFactory } from "./test-helpers.ts";
 describe("garminAuthRouter", () => {
   const createCaller = createTestCallerFactory(garminAuthRouter);
 
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   describe("signIn", () => {
     it("calls GarminConnectClient.signIn and saves tokens", async () => {
       const fakeTokens = {
@@ -57,6 +70,7 @@ describe("garminAuthRouter", () => {
       });
 
       expect(result.success).toBe(true);
+      expect(mockEnqueue).toHaveBeenCalledWith("garmin", "user-123");
       expect(mockSignIn).toHaveBeenCalledWith("test@example.com", "secret", "garmin.com");
       expect(mockEnsureProvider).toHaveBeenCalledWith(
         mockDb,

@@ -2,6 +2,8 @@ import { execFileSync } from "node:child_process";
 import { appendFileSync, readFileSync } from "node:fs";
 import { z } from "zod";
 
+const commitShaSchema = z.string().regex(/^[a-f0-9]{40}$/);
+
 function requiredEnvironmentVariable(name: string): string {
   const value = process.env[name];
   if (!value) throw new Error(`Missing required environment variable ${name}`);
@@ -32,7 +34,10 @@ if (eventName === "workflow_dispatch") {
 } else if (eventName === "workflow_run") {
   const request = z
     .object({
-      workflow_run: z.object({ conclusion: z.string().nullable() }),
+      workflow_run: z.object({
+        conclusion: z.string().nullable(),
+        head_sha: commitShaSchema,
+      }),
     })
     .parse(event);
   if (request.workflow_run.conclusion !== "success") {
@@ -54,33 +59,60 @@ if (eventName === "workflow_dispatch") {
     // Keep this request non-successful even if cancellation is still being processed.
     process.exitCode = 1;
   } else {
-    const response = execFileSync(
-      "gh",
-      [
-        "api",
-        "--method",
-        "GET",
-        `repos/${repository}/actions/workflows/ci.yml/runs`,
-        "-f",
-        "branch=main",
-        "-f",
-        "event=push",
-        "-f",
-        "status=success",
-        "-F",
-        "per_page=1",
-        "--jq",
-        ".workflow_runs[0] | if . == null then null else {id, head_sha} end",
-      ],
-      { encoding: "utf8", stdio: ["ignore", "pipe", "inherit"] },
-    );
-    const latestRun = z
-      .object({
-        id: z.number().int().positive(),
-        head_sha: z.string().regex(/^[a-f0-9]{40}$/),
+    const mainCommits = z.array(commitShaSchema).parse(
+      execFileSync("git", ["rev-list", "--first-parent", "origin/main"], {
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "inherit"],
       })
-      .nullable()
-      .parse(JSON.parse(response));
+        .trim()
+        .split("\n"),
+    );
+    const triggeringIndex = mainCommits.indexOf(request.workflow_run.head_sha);
+    if (triggeringIndex === -1) {
+      throw new Error(
+        `Triggering CI commit ${request.workflow_run.head_sha} is not in the checked-out main history`,
+      );
+    }
+    const successfulRunSchema = z.object({
+      id: z.number().int().positive(),
+      head_sha: commitShaSchema,
+      head_branch: z.literal("main"),
+      event: z.literal("push"),
+      conclusion: z.literal("success"),
+    });
+    let latestRun: z.infer<typeof successfulRunSchema> | null = null;
+    for (const commit of mainCommits.slice(0, triggeringIndex + 1)) {
+      const response = execFileSync(
+        "gh",
+        [
+          "api",
+          "--method",
+          "GET",
+          `repos/${repository}/actions/workflows/ci.yml/runs`,
+          "-f",
+          "branch=main",
+          "-f",
+          "event=push",
+          "-f",
+          "status=success",
+          "-f",
+          `head_sha=${commit}`,
+          "-F",
+          "per_page=1",
+          "--jq",
+          ".workflow_runs[0] | if . == null then null else {id, head_sha, head_branch, event, conclusion} end",
+        ],
+        { encoding: "utf8", stdio: ["ignore", "pipe", "inherit"] },
+      );
+      const run = successfulRunSchema.nullable().parse(JSON.parse(response));
+      if (run) {
+        if (run.head_sha !== commit) {
+          throw new Error(`CI lookup for ${commit} returned a different commit ${run.head_sha}`);
+        }
+        latestRun = run;
+        break;
+      }
+    }
     if (!latestRun)
       throw new Error("No successful main CI run is available for production deployment");
 

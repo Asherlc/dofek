@@ -1,12 +1,12 @@
 import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { TRPCError } from "@trpc/server";
-import { ensureProvider, saveTokens } from "dofek/db/tokens";
-import { queryCache } from "dofek/lib/cache";
+import { saveTokens } from "dofek/db/tokens";
 import { authFailureReasonFromError } from "dofek/providers/auth-errors";
 import { getAllProviders } from "dofek/providers/registry";
 import type { TokenSet } from "dofek/providers/types";
 import { z } from "zod";
 import { protectedProcedure, router } from "../trpc.ts";
+import { completeCredentialReconnect } from "./credential-reconnect.ts";
 import { ensureProvidersRegistered } from "./sync-helpers.ts";
 
 export const credentialAuthRouter = router({
@@ -60,9 +60,11 @@ export const credentialAuthRouter = router({
 
         throw error;
       }
-      await ensureProvider(ctx.db, provider.id, provider.name, setup.apiBaseUrl, ctx.userId);
-      await saveTokens(ctx.db, provider.id, tokens, ctx.userId);
-      await queryCache.invalidateByPrefix(`${ctx.userId}:sync.providers`);
+      await completeCredentialReconnect(
+        ctx,
+        { id: provider.id, name: provider.name, apiBaseUrl: setup.apiBaseUrl },
+        (transaction) => saveTokens(transaction, provider.id, tokens, ctx.userId),
+      );
 
       return { success: true };
     }),

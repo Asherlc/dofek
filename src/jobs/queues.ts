@@ -282,6 +282,10 @@ export function getRedisConnection(): ConnectionOptions {
   };
 }
 
+function getRedisCommandConnection(): ConnectionOptions {
+  return { ...getRedisConnection(), commandTimeout: 5000 };
+}
+
 // ── Shared Redis connection ──
 
 let sharedRedisConnection: RedisConnection | null = null;
@@ -289,7 +293,7 @@ let sharedRedisConnection: RedisConnection | null = null;
 /** Get the singleton RedisConnection shared across all modules in this process. */
 export function getSharedRedisConnection(): RedisConnection {
   if (!sharedRedisConnection) {
-    sharedRedisConnection = new RedisConnection(getRedisConnection(), {
+    sharedRedisConnection = new RedisConnection(getRedisCommandConnection(), {
       shared: true,
       blocking: false,
       skipVersionCheck: true,
@@ -311,7 +315,7 @@ export function createProviderSyncQueue(
   connection?: ConnectionOptions,
 ): Queue<SyncJobData> {
   return new Queue(providerSyncQueueName(providerId), {
-    connection: connection ?? getRedisConnection(),
+    connection: connection ?? getRedisCommandConnection(),
   });
 }
 

@@ -101,8 +101,13 @@ for the upstream fixes, regression coverage, and scoped advisory exceptions.
 ## Verification & Tooling
 
 - `select-web-deploy.ts`: Selects the latest successful main-push CI release
-  after the production deployment concurrency slot is acquired. Manual requests
-  retain their explicit image tag. Unsuccessful CI triggers cancel their own
+  after the production deployment concurrency slot is acquired. Walks the fetched
+  `origin/main` first-parent history newest first, checking successful CI by
+  `head_sha` until it finds a passing commit, bounded by the triggering commit.
+  Requires full main history and rejects a response for another commit, branch,
+  event, or conclusion; see [`git rev-list`](https://git-scm.com/docs/git-rev-list)
+  and the [workflow-run filters](https://docs.github.com/en/rest/actions/workflow-runs#list-workflow-runs-for-a-workflow).
+  Manual requests retain their explicit image tag. Unsuccessful CI triggers cancel their own
   deployment request and never return a successful step result. The workflow
   supplies the standard GitHub event, output, summary, repository, and run-ID
   environment variables; see the [workflow-run API](https://docs.github.com/en/rest/actions/workflow-runs)

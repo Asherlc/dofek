@@ -237,8 +237,16 @@ work while the active deployment finishes. A rollout intentionally quiesces
 all three metric-stream ClickHouse sinks, and `processing-reconciliation` before
 migrations and restores all five only after the final stack converges, so a
 newer run must wait rather than interrupt that state transition. After acquiring
-the deployment slot, automatic runs select the newest successful `main` push
-from the CI workflow's runs. A newer untested commit does not block that release,
+the deployment slot, automatic runs fetch the current `main` branch with full
+history, walk its first-parent commits newest first, and check the CI workflow's
+successful runs for each exact `head_sha`. The first passing commit is selected;
+the triggering commit bounds the search so an API response cannot roll a release
+back to an older commit. Each returned run must match the queried commit and be
+a successful `main` push. This uses one API call per candidate and avoids relying
+on a broad run list's recency. Git documents
+[first-parent traversal](https://git-scm.com/docs/git-rev-list), and checkout documents
+[full history fetching](https://github.com/actions/checkout#fetch-all-history-for-all-tags-and-branches).
+A newer untested commit does not block that release,
 and an older CI completion cannot select an older image than the latest passing
 release. The selected commit and CI run are recorded in the workflow summary.
 GitHub documents the default

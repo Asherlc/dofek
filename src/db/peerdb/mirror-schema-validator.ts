@@ -17,6 +17,7 @@ type PeerDbMirrorSchemaIssueKind =
   | "missing_source_table"
   | "missing_destination_table"
   | "missing_destination_columns"
+  | "non_nullable_destination_columns"
   | "unknown_excluded_source_columns"
   | "missing_peerdb_metadata_columns";
 
@@ -52,6 +53,7 @@ const destinationColumnRowsSchema = z.array(
     database: z.string(),
     name: z.string(),
     table: z.string(),
+    type: z.string(),
   }),
 );
 const peerDbMetadataColumns = [
@@ -107,7 +109,7 @@ async function readSourceColumns(
 async function readDestinationColumns(
   client: ClickHouseCatalogClient,
   contracts: readonly PeerDbMirrorContract[],
-): Promise<Map<string, Set<string>>> {
+): Promise<Map<string, Map<string, string>>> {
   const databases = [...new Set(contracts.map(({ destinationDatabase }) => destinationDatabase))];
   const tables = [
     ...new Set(
@@ -117,7 +119,7 @@ async function readDestinationColumns(
     ),
   ];
   const result = await client.query({
-    query: `SELECT database, table, name
+    query: `SELECT database, table, name, type
       FROM system.columns
       WHERE database IN ({databases:Array(String)})
         AND table IN ({tables:Array(String)})
@@ -126,9 +128,12 @@ async function readDestinationColumns(
     query_params: { databases, tables },
   });
   const rows = destinationColumnRowsSchema.parse(await result.json());
-  const columnsByRelation = new Map<string, Set<string>>();
+  const columnsByRelation = new Map<string, Map<string, string>>();
   for (const row of rows) {
-    addColumn(columnsByRelation, relationKey(row.database, row.table), row.name);
+    const relation = relationKey(row.database, row.table);
+    const columns = columnsByRelation.get(relation) ?? new Map<string, string>();
+    columns.set(row.name, row.type);
+    columnsByRelation.set(relation, columns);
   }
   return columnsByRelation;
 }
@@ -158,7 +163,8 @@ export async function inspectPeerDbMirrorSchemas(
         sourceTableIdentifier: mapping.sourceTableIdentifier,
       };
       const sourceColumns = sourceColumnsByRelation.get(mapping.sourceTableIdentifier);
-      const destinationColumns = destinationColumnsByRelation.get(destinationTableIdentifier);
+      const destinationTypes = destinationColumnsByRelation.get(destinationTableIdentifier);
+      const destinationColumns = destinationTypes ? new Set(destinationTypes.keys()) : undefined;
       if (!sourceColumns) {
         issues.push({ ...issueBase, columns: [], kind: "missing_source_table" });
       }
@@ -166,6 +172,22 @@ export async function inspectPeerDbMirrorSchemas(
         issues.push({ ...issueBase, columns: [], kind: "missing_destination_table" });
       }
       if (!sourceColumns || !destinationColumns) continue;
+
+      const nonNullableColumns = (mapping.requiredNullableColumns ?? []).filter((column) => {
+        const type = destinationTypes?.get(column);
+        return (
+          type !== undefined &&
+          !type.startsWith("Nullable(") &&
+          !type.startsWith("LowCardinality(Nullable(")
+        );
+      });
+      if (nonNullableColumns.length > 0) {
+        issues.push({
+          ...issueBase,
+          columns: [...nonNullableColumns].sort(),
+          kind: "non_nullable_destination_columns",
+        });
+      }
 
       const excludedColumns = new Set(mapping.exclude);
       const allowedAbsentExcludedSourceColumns = new Set(
