@@ -2,9 +2,11 @@ import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import type { SyncDatabase } from "../db/index.ts";
 import type { ProcessingDatasetKey } from "../processing/dataset-contracts.ts";
 import type { SyncDegradation } from "../sync/sync-degradation.ts";
+import type { WebhookEvent } from "../webhook-event.ts";
 import type { SyncOptions, SyncRun } from "./sync-run.ts";
 
 export type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
+export type { WebhookEvent } from "../webhook-event.ts";
 export type {
   SyncCheckpointStore,
   SyncOptions,
@@ -229,27 +231,6 @@ export function isSyncProvider(provider: Provider): provider is SyncProvider {
 // ============================================================
 // Webhook support
 // ============================================================
-
-/**
- * An event parsed from an incoming webhook payload.
- * Used to determine which user needs a sync.
- */
-export interface WebhookEvent {
-  /** Provider-specific owner/user ID (e.g., Strava athlete_id, Fitbit user_id) */
-  ownerExternalId: string;
-  /** What happened */
-  eventType: "create" | "update" | "delete";
-  /** What kind of object changed (activity, sleep, body, etc.) */
-  objectType: string;
-  /** External ID of the changed object (if available) */
-  objectId?: string;
-  /**
-   * Provider-specific metadata carried through to syncWebhookEvent().
-   * Can include the full payload (Wahoo, Concept2, Suunto), a date (Fitbit),
-   * a time range (Withings), or any other context needed for targeted sync.
-   */
-  metadata?: Record<string, unknown>;
-}
 
 /**
  * A provider that supports receiving webhook push notifications.

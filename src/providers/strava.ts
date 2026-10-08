@@ -647,7 +647,7 @@ export class StravaProvider implements WebhookProvider {
 
     // Handle delete events by preserving the raw row but hiding it from current activity views.
     if (event.eventType === "delete") {
-      await markProviderActivityAbsent(db, {
+      const recordsChanged = await markProviderActivityAbsent(db, {
         providerId: this.id,
         externalId: event.objectId,
         userId: scopedUserId,
@@ -655,7 +655,12 @@ export class StravaProvider implements WebhookProvider {
       logger.info(
         `[strava] Marked activity ${event.objectId} provider-absent via webhook for user ${scopedUserId}`,
       );
-      return { provider: this.id, recordsSynced: 0, errors: [], duration: Date.now() - start };
+      return {
+        provider: this.id,
+        recordsSynced: recordsChanged,
+        errors: [],
+        duration: Date.now() - start,
+      };
     }
 
     let client: StravaClient;

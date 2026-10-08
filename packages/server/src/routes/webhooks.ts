@@ -18,7 +18,6 @@ import {
   AccountErasureUserFencedError,
   withAccountErasureUserWriteFence,
 } from "dofek/db/account-erasure";
-import { runWithTokenUser } from "dofek/db/token-user-context";
 import { enqueueSyncJob } from "dofek/jobs/enqueue-sync-job";
 import { captureException } from "dofek/lib/error-reporting";
 import type { WebhookEvent, WebhookProvider } from "dofek/providers/types";
@@ -40,11 +39,7 @@ interface WebhookRouterDeps {
   syncQueue: import("bullmq").Queue;
 }
 
-type WebhookFailurePhase =
-  | "event-processing"
-  | "request-processing"
-  | "targeted-sync"
-  | "validation-challenge";
+type WebhookFailurePhase = "event-processing" | "request-processing" | "validation-challenge";
 
 function captureWebhookFailure(
   error: unknown,
@@ -280,49 +275,20 @@ export function createWebhookRouter({ db, syncQueue: _syncQueue }: WebhookRouter
 
           const { provider_id, user_id } = row;
 
-          const processingKind = await withAccountErasureUserWriteFence(
-            db,
-            user_id,
-            async (transaction): Promise<"enqueued" | "targeted"> => {
-              // If the provider supports targeted webhook sync, use it directly
-              // instead of enqueueing a full sync job. This is much more efficient
-              // (e.g., 2 API calls for Strava instead of 41, or 0 for Wahoo).
-              const syncWebhookEvent = provider.syncWebhookEvent;
-              if (syncWebhookEvent) {
-                try {
-                  const result = await runWithTokenUser(user_id, () =>
-                    syncWebhookEvent.call(provider, transaction, event, { userId: user_id }),
-                  );
-                  logger.info(
-                    `[webhook] ${providerName}: synced ${result.recordsSynced} records for ${event.eventType} ${event.objectType} (${result.duration}ms)`,
-                  );
-                  return "targeted";
-                } catch (err: unknown) {
-                  captureWebhookFailure(err, providerName, "targeted-sync", event);
-                  logger.warn(
-                    `[webhook] ${providerName}: targeted sync failed, falling back to full sync: ${err}`,
-                  );
-                  // Fall through to enqueue a full sync as fallback
-                }
-              }
-
-              // Fallback: enqueue a full 1-day sync via BullMQ
-              await enqueueSyncJob(provider_id, {
-                providerId: provider_id,
-                sinceDays: 1,
-                userId: user_id,
-                origin: "manual",
-              });
-              return "enqueued";
-            },
-          );
+          const targeted = Boolean(provider.syncWebhookEvent);
+          await withAccountErasureUserWriteFence(db, user_id, async () => {
+            await enqueueSyncJob(provider_id, {
+              providerId: provider_id,
+              sinceDays: 1,
+              userId: user_id,
+              origin: "manual",
+              ...(targeted ? { webhookEvent: event } : {}),
+            });
+          });
           processed++;
-
-          if (processingKind === "enqueued") {
-            logger.info(
-              `[webhook] ${providerName}: enqueued full sync (${event.eventType} ${event.objectType})`,
-            );
-          }
+          logger.info(
+            `[webhook] ${providerName}: enqueued ${targeted ? "targeted" : "full"} sync (${event.eventType} ${event.objectType})`,
+          );
         } catch (err) {
           if (err instanceof AccountErasureUserFencedError) {
             processed++;
