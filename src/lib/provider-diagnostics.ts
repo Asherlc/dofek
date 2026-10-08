@@ -68,10 +68,10 @@ async function readAuthErrors(
   const errors: Array<z.infer<typeof authErrorSchema>> = [];
   const code = authErrorCodeSchema.safeParse(parsed.data.error);
   if (code.success) errors.push({ code: code.data });
-  for (const entry of parsed.data.errors ?? []) {
+  parsed.data.errors?.forEach((entry) => {
     const error = authErrorSchema.safeParse(entry);
     if (error.success) errors.push(error.data);
-  }
+  });
   return errors;
 }
 
@@ -88,7 +88,6 @@ export async function reportProviderHttpDiagnostic(
   const responseAtMs = Date.now();
   const scopedUserId = userId ?? getTokenUserId();
   const tokens = getProviderTokenDiagnostic(providerId, scopedUserId);
-  const expiryMs = tokens ? Date.parse(tokens.expiresAt) : undefined;
   const authErrors =
     response.status === 401 || response.status === 403
       ? await readAuthErrors(response, providerId)
@@ -127,15 +126,17 @@ export async function reportProviderHttpDiagnostic(
           requestDurationMs: responseAtMs - requestStartedAtMs,
         }
       : {}),
-    ...(tokens && expiryMs !== undefined
+    ...(tokens
       ? {
           tokenExpiresAt: tokens.expiresAt,
           hasRefreshToken: tokens.hasRefreshToken,
-          tokenExpiresInSecondsAtResponse: Math.floor((expiryMs - responseAtMs) / 1000),
+          tokenExpiresInSecondsAtResponse: Math.floor(
+            (Date.parse(tokens.expiresAt) - responseAtMs) / 1000,
+          ),
           ...(requestStartedAtMs !== undefined
             ? {
                 tokenExpiresInSecondsAtRequestStart: Math.floor(
-                  (expiryMs - requestStartedAtMs) / 1000,
+                  (Date.parse(tokens.expiresAt) - requestStartedAtMs) / 1000,
                 ),
               }
             : {}),

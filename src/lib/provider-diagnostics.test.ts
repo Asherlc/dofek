@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { runTransactionEffects } from "../db/transaction-effects.ts";
-import {
-  reportProviderAuthDiagnostic,
-  reportProviderHttpDiagnostic,
-} from "./provider-diagnostics.ts";
+
+let reportProviderAuthDiagnostic: typeof import("./provider-diagnostics.ts").reportProviderAuthDiagnostic;
+let reportProviderHttpDiagnostic: typeof import("./provider-diagnostics.ts").reportProviderHttpDiagnostic;
+let runWithProviderTokenDiagnostics: typeof import("./provider-token-diagnostic-context.ts").runWithProviderTokenDiagnostics;
+let runTransactionEffects: typeof import("../db/transaction-effects.ts").runTransactionEffects;
 
 const { debug, warn, captureException } = vi.hoisted(() => ({
   debug: vi.fn(),
@@ -12,12 +12,19 @@ const { debug, warn, captureException } = vi.hoisted(() => ({
 }));
 vi.mock("../logger.ts", () => ({ logger: { debug, warn } }));
 vi.mock("./error-reporting.ts", () => ({ captureException }));
-vi.mock("../db/token-user-context.ts", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../db/token-user-context.ts")>()),
+vi.mock("../db/token-user-context.ts", () => ({
   getTokenUserId: () => "user-123",
 }));
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(async () => {
+  vi.resetModules();
+  ({ reportProviderAuthDiagnostic, reportProviderHttpDiagnostic } = await import(
+    "./provider-diagnostics.ts"
+  ));
+  ({ runWithProviderTokenDiagnostics } = await import("./provider-token-diagnostic-context.ts"));
+  ({ runTransactionEffects } = await import("../db/transaction-effects.ts"));
+  vi.clearAllMocks();
+});
 
 describe("reportProviderHttpDiagnostic", () => {
   it.each(["peloton", "eight-sleep", "garmin"])(
@@ -80,6 +87,9 @@ describe("reportProviderHttpDiagnostic", () => {
     );
     expect(warn).toHaveBeenCalledWith(expect.stringContaining(`"category":"${category}"`));
     expect(captureException).toHaveBeenCalledTimes(status === 403 ? 1 : 0);
+    expect(
+      JSON.parse(warn.mock.calls[0]?.[0].replace("[provider-diagnostics] ", "")),
+    ).not.toHaveProperty("authErrors");
   });
 
   it("passes successful responses through without failure telemetry", async () => {
@@ -131,14 +141,118 @@ describe("reportProviderHttpDiagnostic", () => {
     await reportProviderHttpDiagnostic("provider", response, "https://api.example.com/me");
     expect(captureException).toHaveBeenCalledOnce();
     expect(captureException.mock.calls[0]?.[1].extra.statusCode).toBe(401);
+    expect(captureException.mock.calls[0]?.[1].extra).not.toHaveProperty("authErrors");
     expect(await response.text()).toBe("malformed private-json");
     expect(JSON.stringify([warn.mock.calls, captureException.mock.calls])).not.toContain(
       "private-json",
     );
   });
+
+  it.each([401, 403])("records structured codes for HTTP %s", async (status) => {
+    await reportProviderHttpDiagnostic(
+      "provider",
+      Response.json({ errors: [{ code: "insufficient_scope" }] }, { status }),
+      "https://api.example.com/me",
+    );
+    expect(captureException.mock.calls[0]?.[1].extra.authErrors).toEqual([
+      { code: "insufficient_scope" },
+    ]);
+  });
+
+  it.each([
+    Response.json(null, { status: 401 }),
+    Response.json({ errors: "private-invalid-errors" }, { status: 401 }),
+    Response.json({ error: "private-unknown-code" }, { status: 401 }),
+    new Response('{"error":"invalid_token"}', { status: 401 }),
+    Response.json({ error: "invalid_token" }, { status: 500 }),
+  ])("omits unverified auth evidence for response %#", async (response) => {
+    await reportProviderHttpDiagnostic("provider", response.clone(), "https://api.example.com/me");
+    const diagnostic = JSON.parse(warn.mock.calls[0]?.[0].replace("[provider-diagnostics] ", ""));
+    expect(diagnostic).not.toHaveProperty("authErrors");
+  });
+
+  it("reports body transport errors with sanitized context", async () => {
+    const response = new Response(
+      new ReadableStream({
+        start(controller) {
+          controller.error(new Error("private-read-secret"));
+        },
+      }),
+      { status: 401, headers: { "Content-Type": "application/json" } },
+    );
+    await reportProviderHttpDiagnostic("provider", response, "https://api.example.com/me");
+    expect(captureException).toHaveBeenCalledTimes(2);
+    expect(captureException.mock.calls[0]?.[0].message).toBe(
+      "Unable to read provider authorization diagnostic response",
+    );
+    expect(captureException.mock.calls[0]?.[1]).toEqual({
+      tags: { provider: "provider", operation: "provider-http-diagnostics" },
+    });
+    expect(captureException.mock.calls[1]?.[1].extra).not.toHaveProperty("authErrors");
+    expect(JSON.stringify([warn.mock.calls, captureException.mock.calls])).not.toContain(
+      "private-read-secret",
+    );
+  });
+
+  it("records known expiry without inventing request timing", async () => {
+    await runWithProviderTokenDiagnostics("user-123", async () => {
+      reportProviderAuthDiagnostic("provider", "tokens_loaded", undefined, {
+        expiresAt: new Date("2026-10-08T20:00:00Z"),
+        refreshToken: null,
+      });
+      await reportProviderHttpDiagnostic(
+        "provider",
+        new Response(null, { status: 401 }),
+        "https://api.example.com/me",
+      );
+      const diagnostic = captureException.mock.calls[0]?.[1].extra;
+      expect(diagnostic.tokenExpiresAt).toBe("2026-10-08T20:00:00.000Z");
+      expect(diagnostic).not.toHaveProperty("tokenExpiresInSecondsAtRequestStart");
+      expect(diagnostic).not.toHaveProperty("requestStartedAt");
+    });
+  });
 });
 
 describe("reportProviderAuthDiagnostic", () => {
+  it.each(["tokens_missing", "tokens_deleted"] as const)(
+    "clears expiry after %s",
+    async (event) => {
+      await runWithProviderTokenDiagnostics("user-123", async () => {
+        reportProviderAuthDiagnostic("provider", "tokens_loaded", undefined, {
+          expiresAt: new Date("2026-10-08T20:00:00Z"),
+          refreshToken: null,
+        });
+        reportProviderAuthDiagnostic("provider", event);
+        await reportProviderHttpDiagnostic(
+          "provider",
+          new Response(null, { status: 401 }),
+          "https://api.example.com/me",
+        );
+        expect(captureException.mock.calls[0]?.[1].extra).not.toHaveProperty("tokenExpiresAt");
+      });
+    },
+  );
+
+  it.each(["sign_in_started", "refresh_started"] as const)(
+    "retains loaded expiry during %s",
+    async (event) => {
+      await runWithProviderTokenDiagnostics("user-123", async () => {
+        reportProviderAuthDiagnostic("provider", "tokens_loaded", undefined, {
+          expiresAt: new Date("2026-10-08T20:00:00Z"),
+          refreshToken: null,
+        });
+        reportProviderAuthDiagnostic("provider", event);
+        await reportProviderHttpDiagnostic(
+          "provider",
+          new Response(null, { status: 401 }),
+          "https://api.example.com/me",
+        );
+        expect(captureException.mock.calls[0]?.[1].extra.tokenExpiresAt).toBe(
+          "2026-10-08T20:00:00.000Z",
+        );
+      });
+    },
+  );
   it.each(["tokens_loaded", "tokens_missing", "sign_in_started", "refresh_started"] as const)(
     "reports %s immediately even when its transaction later rolls back",
     async (event) => {
