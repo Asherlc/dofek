@@ -19,7 +19,7 @@ export type ProcessingDisplayStage =
   | "cache_refresh";
 
 export interface ProcessingTarget {
-  action: "import" | "recompute" | "sync";
+  action: "import" | "recompute" | "sync" | "update";
   label: string;
 }
 
@@ -31,6 +31,8 @@ function activeHeading(target: ProcessingTarget): string {
       return `Recomputing ${target.label}`;
     case "sync":
       return `Syncing ${target.label}`;
+    case "update":
+      return `Updating ${target.label}`;
   }
 }
 
@@ -115,7 +117,10 @@ export function processingTarget(input: {
   const relevantDatasets = unfinishedDatasets.length > 0 ? unfinishedDatasets : input.datasets;
   const targets = [...new Set(relevantDatasets.map(datasetTarget))];
 
-  return { action: "recompute", label: formatList(targets) };
+  return {
+    action: input.operationKind === "provider_sync" ? "update" : "recompute",
+    label: formatList(targets),
+  };
 }
 
 export interface ProcessingTargetOperationSummary {
@@ -134,9 +139,8 @@ export interface ProcessingTargetScope {
  * operation touching that dataset, including unrelated provider syncs that
  * happen to still be in progress. When exactly one provider is responsible
  * for every non-ready operation, attribute the target to that provider (e.g.
- * "Syncing Peloton") instead of the generic "recompute" framing, which
- * incorrectly describes an in-progress provider sync as a recompute the
- * user never requested.
+ * "Syncing Peloton"). When several providers are active, describe their
+ * combined work as an update. Reserve "recompute" for analytics operations.
  */
 export function resolveProcessingTargetScope(input: {
   scopeProviderId: string | null;
@@ -155,13 +159,28 @@ export function resolveProcessingTargetScope(input: {
       .map((operation) => operation.providerId)
       .filter((providerId): providerId is string => providerId !== null),
   );
-  if (distinctProviderIds.size === 1) {
+  if (
+    distinctProviderIds.size === 1 &&
+    nonReadyOperations.every((operation) => operation.providerId !== null)
+  ) {
     const [providerId] = distinctProviderIds;
     const operation = nonReadyOperations.find((candidate) => candidate.providerId === providerId);
     return { providerId: providerId ?? null, operationKind: operation?.kind ?? null };
   }
 
-  return { providerId: null, operationKind: input.operations[0]?.kind ?? null };
+  const allProviderUpdates =
+    nonReadyOperations.length > 0 &&
+    nonReadyOperations.every(
+      (operation) =>
+        operation.providerId !== null &&
+        (operation.kind === "provider_sync" || operation.kind === "file_import"),
+    );
+  return {
+    providerId: null,
+    operationKind: allProviderUpdates
+      ? "provider_sync"
+      : (nonReadyOperations.find((operation) => operation.providerId === null)?.kind ?? null),
+  };
 }
 
 export function processingStatusMessage(input: {

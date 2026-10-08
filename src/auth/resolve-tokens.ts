@@ -26,6 +26,7 @@ export async function resolveOAuthTokens(options: {
   getOAuthConfig: () => OAuthConfig | null | undefined;
   fetchFn?: FetchFn;
   forceRefresh?: boolean;
+  refreshBeforeExpiryMs?: number;
   validateRefreshedTokens?: (
     currentTokens: TokenSet,
     refreshedTokens: TokenSet,
@@ -38,6 +39,7 @@ export async function resolveOAuthTokens(options: {
     getOAuthConfig,
     fetchFn = globalThis.fetch,
     forceRefresh = false,
+    refreshBeforeExpiryMs = 0,
     validateRefreshedTokens,
   } = options;
 
@@ -48,11 +50,11 @@ export async function resolveOAuthTokens(options: {
     );
   }
 
-  if (!forceRefresh && tokens.expiresAt > new Date()) {
+  if (!forceRefresh && tokens.expiresAt.getTime() > Date.now() + refreshBeforeExpiryMs) {
     return tokens;
   }
 
-  logger.info(`[${providerId}] Access token expired, refreshing...`);
+  logger.info(`[${providerId}] Access token expired or near expiry, refreshing...`);
 
   if (!tokens.refreshToken) {
     logger.warn(
