@@ -120,6 +120,23 @@ describe("processing status presentation", () => {
     ).toEqual({ action: "recompute", label: "sleep and training" });
   });
 
+  it("labels concurrent provider activity failures as an update", () => {
+    const scope = resolveProcessingTargetScope({
+      scopeProviderId: null,
+      operations: [
+        { providerId: null, kind: "analytics_recompute", status: "ready" },
+        { providerId: "strava", kind: "provider_sync", status: "failed" },
+        { providerId: "whoop", kind: "provider_sync", status: "active" },
+      ],
+    });
+    const target = processingTarget({
+      ...scope,
+      datasets: [{ key: "activity", label: "Activities", status: "failed" }],
+    });
+
+    expect(processingHeading("failed", target)).toBe("Activities update didn’t finish");
+  });
+
   it("formats empty, single, and three-area recomputation targets", () => {
     expect(processingTarget({ providerId: null, datasets: [] })).toEqual({
       action: "recompute",
@@ -428,7 +445,7 @@ describe("resolveProcessingTargetScope", () => {
     ).toEqual({ providerId: "peloton", operationKind: "provider_sync" });
   });
 
-  it("falls back to the generic recompute target when multiple providers are in progress", () => {
+  it("marks concurrent provider operations as one provider update", () => {
     expect(
       resolveProcessingTargetScope({
         scopeProviderId: null,
@@ -438,6 +455,18 @@ describe("resolveProcessingTargetScope", () => {
         ],
       }),
     ).toEqual({ providerId: null, operationKind: "provider_sync" });
+  });
+
+  it("keeps a concurrent analytics build distinct from provider syncs", () => {
+    expect(
+      resolveProcessingTargetScope({
+        scopeProviderId: null,
+        operations: [
+          { providerId: "strava", kind: "provider_sync", status: "active" },
+          { providerId: null, kind: "analytics_build", status: "active" },
+        ],
+      }),
+    ).toEqual({ providerId: null, operationKind: "analytics_build" });
   });
 
   it("falls back to the generic recompute target when no operation has a provider", () => {
