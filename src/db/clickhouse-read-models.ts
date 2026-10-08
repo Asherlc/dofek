@@ -130,8 +130,13 @@ activity_membership_check AS (
   FROM active_activity
 ),
 active_provider_priority AS (
-  SELECT *
+  SELECT provider_id, toNullable(priority) AS priority
   FROM postgres_fitness.provider_priority FINAL
+  WHERE _peerdb_is_deleted = 0
+),
+active_field_priority AS (
+  SELECT provider_id, field_key, toNullable(priority) AS priority
+  FROM postgres_fitness.provider_field_priority FINAL
   WHERE _peerdb_is_deleted = 0
 ),
 active_device_priority AS (
@@ -176,11 +181,21 @@ ranked AS (
     active_activity.end_utc_offset_minutes AS end_utc_offset_minutes,
     active_activity.local_time_source AS local_time_source,
     active_activity.raw AS raw,
-    coalesce(device_priority_match.priority, active_provider_priority.priority, 100) AS priority
+    coalesce(device_priority_match.priority, active_provider_priority.priority, 100) AS priority,
+    coalesce(name_field_priority.priority, device_priority_match.priority,
+      active_provider_priority.priority, 100) AS name_priority,
+    coalesce(notes_field_priority.priority, device_priority_match.priority,
+      active_provider_priority.priority, 100) AS notes_priority
   FROM active_activity
   CROSS JOIN activity_membership_check
   LEFT JOIN active_provider_priority
     ON active_provider_priority.provider_id = active_activity.provider_id
+  LEFT JOIN active_field_priority AS name_field_priority
+    ON name_field_priority.provider_id = active_activity.provider_id
+    AND name_field_priority.field_key = 'activity.name'
+  LEFT JOIN active_field_priority AS notes_field_priority
+    ON notes_field_priority.provider_id = active_activity.provider_id
+    AND notes_field_priority.field_key = 'activity.notes'
   LEFT JOIN device_priority_match
     ON device_priority_match.activity_id = active_activity.id
 ),
@@ -301,8 +316,10 @@ merged AS (
       ranked.id IS NOT NULL
     ) AS ended_at,
     any(best.source_name) AS source_name,
-    argMinIf(ranked.name, ranked.priority, ranked.name IS NOT NULL) AS name,
-    argMinIf(ranked.notes, ranked.priority, ranked.notes IS NOT NULL) AS notes,
+    argMinIf(ranked.name, tuple(ranked.name_priority, toString(ranked.id)),
+      ranked.name IS NOT NULL) AS name,
+    argMinIf(ranked.notes, tuple(ranked.notes_priority, toString(ranked.id)),
+      ranked.notes IS NOT NULL) AS notes,
     tupleElement(
       argMinIf(
         tuple(
