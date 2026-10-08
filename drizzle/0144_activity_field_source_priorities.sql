@@ -1,3 +1,104 @@
+CREATE TABLE fitness.provider_field_priority (
+  provider_id text NOT NULL,
+  field_key text NOT NULL,
+  priority integer NOT NULL,
+  PRIMARY KEY (provider_id, field_key)
+);
+--> statement-breakpoint
+ALTER TABLE fitness.provider_priority_audit ADD COLUMN field_key text;
+--> statement-breakpoint
+ALTER TABLE fitness.provider_priority_audit
+DROP CONSTRAINT provider_priority_audit_priority_table_check;
+--> statement-breakpoint
+ALTER TABLE fitness.provider_priority_audit
+ADD CONSTRAINT provider_priority_audit_priority_table_check CHECK (
+  priority_table IN (
+    'provider_priority',
+    'device_priority',
+    'sensor_provider_priority',
+    'sensor_device_priority',
+    'provider_field_priority'
+  )
+);
+--> statement-breakpoint
+CREATE OR REPLACE FUNCTION fitness.record_provider_priority_audit()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  changed_provider_id text;
+  changed_source_name_pattern text;
+  changed_channel text;
+  changed_field_key text;
+BEGIN
+  IF TG_OP = 'DELETE' THEN
+    changed_provider_id := OLD.provider_id;
+  ELSE
+    changed_provider_id := NEW.provider_id;
+  END IF;
+
+  IF TG_TABLE_NAME IN ('device_priority', 'sensor_device_priority') THEN
+    IF TG_OP = 'DELETE' THEN
+      changed_source_name_pattern := OLD.source_name_pattern;
+    ELSE
+      changed_source_name_pattern := NEW.source_name_pattern;
+    END IF;
+  END IF;
+
+  IF TG_TABLE_NAME IN ('sensor_provider_priority', 'sensor_device_priority') THEN
+    IF TG_OP = 'DELETE' THEN
+      changed_channel := OLD.channel;
+    ELSE
+      changed_channel := NEW.channel;
+    END IF;
+  END IF;
+
+  IF TG_TABLE_NAME = 'provider_field_priority' THEN
+    IF TG_OP = 'DELETE' THEN
+      changed_field_key := OLD.field_key;
+    ELSE
+      changed_field_key := NEW.field_key;
+    END IF;
+  END IF;
+
+  INSERT INTO fitness.provider_priority_audit (
+    changed_by,
+    priority_table,
+    provider_id,
+    source_name_pattern,
+    channel,
+    field_key,
+    old_value,
+    new_value,
+    reason
+  )
+  VALUES (
+    COALESCE(NULLIF(current_setting('app.changed_by', true), ''), current_user),
+    TG_TABLE_NAME,
+    changed_provider_id,
+    changed_source_name_pattern,
+    changed_channel,
+    changed_field_key,
+    CASE WHEN TG_OP IN ('UPDATE', 'DELETE') THEN to_jsonb(OLD) ELSE NULL END,
+    CASE WHEN TG_OP IN ('INSERT', 'UPDATE') THEN to_jsonb(NEW) ELSE NULL END,
+    NULLIF(current_setting('app.priority_change_reason', true), '')
+  );
+
+  IF TG_OP = 'DELETE' THEN
+    RETURN OLD;
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+--> statement-breakpoint
+CREATE TRIGGER provider_field_priority_audit_trigger
+AFTER INSERT OR UPDATE OR DELETE ON fitness.provider_field_priority
+FOR EACH ROW EXECUTE FUNCTION fitness.record_provider_priority_audit();
+--> statement-breakpoint
+INSERT INTO fitness.provider_field_priority (provider_id, field_key, priority)
+VALUES ('kaya', 'activity.name', 0);
+--> statement-breakpoint
 -- Canonical definition of the fitness.v_activity view.
 -- This file is the source definition for fresh databases, local test schemas,
 -- and future forward migrations that need to update the deployed view.
