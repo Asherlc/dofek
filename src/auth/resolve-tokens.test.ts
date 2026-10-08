@@ -93,6 +93,32 @@ describe("resolveOAuthTokens", () => {
     expect(mockSaveTokens).not.toHaveBeenCalled();
   });
 
+  it("refreshes a token that will expire within the requested validity window", async () => {
+    mockLoadTokens.mockResolvedValue({
+      accessToken: "nearly-expired-token",
+      refreshToken: "current-refresh-token",
+      expiresAt: futureDate(30_000),
+      scopes: null,
+    });
+    mockRefreshAccessToken.mockResolvedValue({
+      accessToken: "fresh-token",
+      refreshToken: "new-refresh-token",
+      expiresAt: futureDate(6 * 3600_000),
+      scopes: null,
+    });
+
+    const result = await resolveOAuthTokens({
+      db: fakeDb,
+      providerId: "strava",
+      providerName: "Strava",
+      getOAuthConfig: () => fakeConfig,
+      refreshBeforeExpiryMs: 3600_000,
+    });
+
+    expect(result.accessToken).toBe("fresh-token");
+    expect(mockSaveTokens).toHaveBeenCalledOnce();
+  });
+
   it("refreshes expired tokens and saves them", async () => {
     const expiredTokens: TokenSet = {
       accessToken: "old-token",
