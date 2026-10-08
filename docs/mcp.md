@@ -279,7 +279,15 @@ nutrient facts, so human corrections and tombstones affect effective nutrition
 without changing export values ([export query](../packages/server/src/repositories/food-repository.ts)).
 
 Create requires a UUID `request_id`; update, delete, and restore require UUID
-`record_id` and `request_id` plus nullable UUID `expected_version`. A source
+`record_id` and `request_id` plus nullable UUID `expected_version`. Generate a
+fresh request UUID for each new operation (for example, with
+[`crypto.randomUUID()`](https://nodejs.org/api/crypto.html#cryptorandomuuidoptions)),
+including a separate UUID for each food entry. Reuse that UUID only when retrying
+the identical request; descriptive text IDs are invalid. The
+[tool schemas](../packages/server/src/mcp/food-record-tools.ts) advertise this
+guidance and reject invalid IDs with instructions to generate a UUID. Zod
+[schema descriptions](https://zod.dev/metadata#describe) are included in the
+advertised JSON Schema. A source
 record with no human changes has `version: null`, so its first mutation must use
 `expected_version: null`. Afterward, callers pass the version returned by the
 latest read or mutation. A stale version produces `CONFLICT` with the current
