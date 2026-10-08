@@ -150,18 +150,16 @@ export const styles = StyleSheet.create({
     lineHeight: 16,
   },
   sourceDecisionCard: {
-    marginTop: 8,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
-    padding: 12,
-    gap: 10,
+    marginTop: 2,
+    gap: 8,
+  },
+  sourceDecisionToggle: {
+    paddingVertical: 8,
+    alignSelf: "flex-start",
   },
   sourceDecisionTitle: {
-    fontSize: 13,
-    fontWeight: "700",
-    color: colors.text,
+    fontSize: 12,
+    color: colors.textTertiary,
   },
   sourceDecisionDetails: {
     flexDirection: "row",

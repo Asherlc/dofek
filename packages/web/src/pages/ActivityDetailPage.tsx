@@ -245,9 +245,6 @@ export function ActivityDetailPage() {
       </div>
 
       {activity.providerAbsentAt ? <ProviderAbsentBanner activity={activity} /> : null}
-      {activity.sourceDecision ? (
-        <ActivitySourceDecisionCard decision={activity.sourceDecision} />
-      ) : null}
 
       <ActivityHeader activity={activity} units={units} />
       <ActivityPerceivedExertion value={activity.perceivedExertion} />
@@ -475,9 +472,14 @@ export function ActivityHeader({
         {localStartTime === "--" ? "Local time unavailable" : localStartTime}
       </p>
       {(activity.sourceLinks.length > 0 || activity.sourceProviders.length > 0) && (
-        <p className="text-xs text-subtle mb-4">
-          Source: <SourceLinks activity={activity} />
-        </p>
+        <div className="mb-4">
+          <p className="text-xs text-subtle">
+            Source: <SourceLinks activity={activity} />
+          </p>
+          {activity.sourceDecision ? (
+            <ActivitySourceDecisionCard key={activity.id} decision={activity.sourceDecision} />
+          ) : null}
+        </div>
       )}
 
       {stats.length > 0 && (

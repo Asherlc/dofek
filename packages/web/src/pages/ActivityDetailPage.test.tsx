@@ -1410,7 +1410,10 @@ describe("ActivityDetailPage", () => {
       const ActivityDetailPage = await importPage();
       renderWithUnits(<ActivityDetailPage />);
 
-      expect(screen.getByRole("heading", { name: "How sources were combined" })).toBeTruthy();
+      const toggle = screen.getByRole("button", { name: "How sources were combined" });
+      expect(toggle.parentElement?.parentElement?.textContent).toContain("Source:");
+      expect(toggle.getAttribute("aria-expanded")).toBe("false");
+      fireEvent.click(toggle);
       expect(screen.getByText("2")).toBeTruthy();
 
       Object.assign(mockActivity, originalData);
@@ -1420,7 +1423,7 @@ describe("ActivityDetailPage", () => {
       const ActivityDetailPage = await importPage();
       renderWithUnits(<ActivityDetailPage />);
 
-      expect(screen.queryByRole("heading", { name: "How sources were combined" })).toBeNull();
+      expect(screen.queryByRole("button", { name: "How sources were combined" })).toBeNull();
     });
   });
 
