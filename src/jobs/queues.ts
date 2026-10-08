@@ -7,7 +7,7 @@ import type {} from "../bullmq-redis-client.ts";
 import type { DataExportRequest } from "../db/data-export.ts";
 import type { ProviderDataDeletionRequest } from "../db/provider-data-deletion.ts";
 import type { SyncLogOrigin } from "../db/schema/events.ts";
-import type { WebhookEvent } from "../providers/types.ts";
+import type { WebhookEvent } from "../webhook-event.ts";
 import type { ProviderSyncTier } from "./provider-queue-config.ts";
 
 // ── Job payload types ──
