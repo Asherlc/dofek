@@ -37,6 +37,7 @@ sources:
       - name: clinical_record
       - name: provider
       - name: provider_connection
+      - name: provider_field_priority
       - name: provider_priority
       - name: sensor_device_priority
       - name: sensor_provider_priority

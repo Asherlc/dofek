@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { createClient } from "@clickhouse/client";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { buildPostgresFitnessProviderFieldPriorityRawTableStatement } from "./clickhouse-raw-tables.ts";
 import { extractCteSql, readModelSql, renderDbtModelSql } from "./read-model-sql-test-helpers.ts";
 
 const activityId = "00000000-0000-0000-0000-000000000101";
@@ -225,7 +226,7 @@ ${renderDedupedActivitiesSelectSql(targetSchema)}`,
         primary_activity_id: linkedActivityId,
         provider_id: "whoop",
         canonical_type: "cycling",
-        name: null,
+        name: "Power Zone Ride",
       },
     ]);
     // The generic, higher-priority member now has more samples than the specific member.
@@ -267,7 +268,8 @@ ${renderDedupedActivitiesSelectSql(targetSchema)}`,
     // Both windows and providers match; only the lower-priority linked member owns this sample.
     const sql = renderDedupedActivitiesSelectSql(targetSchema);
     const credits = await activeClient.query({
-      query: `WITH ranked AS (${extractCteSql(sql, "ranked")}),
+      query: `WITH active_field_priority AS (${extractCteSql(sql, "active_field_priority")}),
+      ranked AS (${extractCteSql(sql, "ranked")}),
       sensor_bearing_members AS (${extractCteSql(sql, "sensor_bearing_members")})
       SELECT ranked.activity_id AS memberId, toUInt32(coalesce(sensor_sample_count, 0)) AS sampleCount
       FROM ranked LEFT JOIN sensor_bearing_members
@@ -530,6 +532,10 @@ function renderDedupedActivitiesSelectSql(targetSchema: string, scopedIds?: stri
     )
     .replace(/{{ this }}/g, `${targetSchema}.deduped_activities`)
     .replace(/{{ source\('postgres_fitness', 'activity'\) }}/g, `${targetSchema}.source_activity`)
+    .replace(
+      /{{ source\('postgres_fitness', 'provider_field_priority'\) }}/g,
+      `${targetSchema}.provider_field_priority`,
+    )
     .replace(/{{ source\('ingest', 'metric_stream_current'\) }}/g, `${targetSchema}.metric_stream`)
     .concat("\nSETTINGS max_threads = 1, join_use_nulls = 1");
 }
@@ -688,6 +694,12 @@ async function seedTablesAndMembership(
   for (const statement of statements) {
     await client.command({ query: statement });
   }
+  await client.command({
+    query: buildPostgresFitnessProviderFieldPriorityRawTableStatement().replaceAll(
+      "postgres_fitness.",
+      `${database}.`,
+    ),
+  });
   await client.command({
     query: `ALTER TABLE ${database}.activity_source_records ADD COLUMN group_id Nullable(UUID) DEFAULT '${groupId}'`,
   });

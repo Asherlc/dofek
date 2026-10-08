@@ -15,16 +15,53 @@ WITH apple_health_revisions AS (
     {{ apple_health_workout_revisions(activity_refresh_scoped) }}
 ),
 
+active_field_priority AS (
+    SELECT
+        provider_id,
+        field_key,
+        priority
+    FROM {{ source('postgres_fitness', 'provider_field_priority') }} FINAL
+    WHERE _peerdb_is_deleted = 0
+),
+
 ranked AS (
-    SELECT *
-    FROM {{ ref('activity_source_records') }} FINAL
-    WHERE is_deleted = 0
+    SELECT
+        source_records.activity_id AS activity_id,
+        source_records.group_id AS group_id,
+        source_records.provider_id AS provider_id,
+        source_records.user_id AS user_id,
+        source_records.external_id AS external_id,
+        source_records.canonical_type AS canonical_type,
+        source_records.provider_type AS provider_type,
+        source_records.modality AS modality,
+        source_records.started_at AS started_at,
+        source_records.ended_at AS ended_at,
+        source_records.source_name AS source_name,
+        source_records.name AS name,
+        source_records.notes AS notes,
+        source_records.timezone AS timezone,
+        source_records.start_utc_offset_minutes AS start_utc_offset_minutes,
+        source_records.end_utc_offset_minutes AS end_utc_offset_minutes,
+        source_records.local_time_source AS local_time_source,
+        source_records.raw AS raw,
+        source_records.source_synced_at AS source_synced_at,
+        source_records.priority AS priority,
+        coalesce(name_rule.priority, source_records.priority, 100) AS name_priority,
+        coalesce(notes_rule.priority, source_records.priority, 100) AS notes_priority
+    FROM {{ ref('activity_source_records') }} AS source_records FINAL
+    LEFT JOIN active_field_priority AS name_rule
+        ON name_rule.provider_id = source_records.provider_id
+        AND name_rule.field_key = 'activity.name'
+    LEFT JOIN active_field_priority AS notes_rule
+        ON notes_rule.provider_id = source_records.provider_id
+        AND notes_rule.field_key = 'activity.notes'
+    WHERE source_records.is_deleted = 0
         AND throwIf(
             group_id IS null OR group_id = toUUID('00000000-0000-0000-0000-000000000000'),
             'Active activity source record is missing persisted group_id'
         ) = 0
         {% if activity_refresh_scoped %}
-        AND user_id = toUUID('{{ var("activity_refresh_user_id") }}')
+        AND source_records.user_id = toUUID('{{ var("activity_refresh_user_id") }}')
         {% endif %}
 ),
 
@@ -141,7 +178,6 @@ best AS (
             ranked.started_at AS started_at,
             ranked.ended_at AS ended_at,
             ranked.source_name AS source_name,
-            ranked.name AS name,
             ranked.priority AS priority,
             coalesce(sensor_bearing_members.sensor_sample_count, 0) AS sensor_sample_count,
             coalesce(sensor_bearing_members.has_elevation, 0) AS has_elevation,
@@ -237,10 +273,14 @@ merged AS (
         minIf(ranked.started_at, ranked.activity_id IS NOT null) AS started_at,
         maxIf(ranked.ended_at, ranked.activity_id IS NOT null) AS ended_at,
         any(best.source_name) AS source_name,
-        tupleElement(any(tuple(best.name)), 1) AS name,
+        argMinIf(
+            ranked.name,
+            tuple(ranked.name_priority, toString(ranked.activity_id)),
+            ranked.name IS NOT null
+        ) AS name,
         argMinIf(
             ranked.notes,
-            tuple(ranked.priority, toString(ranked.activity_id)),
+            tuple(ranked.notes_priority, toString(ranked.activity_id)),
             ranked.notes IS NOT null
         ) AS notes,
         anyIf(best_context.timezone, best_context.local_time_source != 'unknown') AS timezone,
