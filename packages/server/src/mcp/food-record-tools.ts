@@ -48,10 +48,18 @@ const editableFieldSchema = z.enum([
 const foodRecordCursorSchema = z.object({
   record_id: z.uuid(),
 });
+const requestIdSchema = z
+  .uuid({
+    error:
+      "request_id must be a UUID. Generate a fresh UUID for each new operation (for example with crypto.randomUUID()), then retry. Reuse the same UUID only when retrying the identical request.",
+  })
+  .describe(
+    "Caller-generated UUID used to prevent duplicate writes. Generate a fresh UUID for each new operation (for example with crypto.randomUUID()); do not use descriptive text or ask the user for this ID. Reuse the same UUID only when retrying the identical request. Separate food entries require separate UUIDs.",
+  );
 const targetInputSchema = {
   record_id: z.uuid(),
   expected_version: z.uuid().nullable(),
-  request_id: z.uuid(),
+  request_id: requestIdSchema,
 };
 
 const readAnnotations = { readOnlyHint: true, openWorldHint: false } as const;
@@ -340,7 +348,7 @@ export function registerFoodRecordTools(server: McpServer, context: DofekMcpCont
         "Create one itemized Dofek food record and return that day's calorie and macro preview. Before logging, seek calories, protein, carbohydrate, and fat for the consumed portion from a product label, manufacturer, or reliable food database; include other nutrients when available. Ask for the brand, label, or portion when needed. Never invent missing values or substitute zero for unknown nutrients. Use estimates only with the user's approval and identify them as estimates. If the user explicitly wants an incomplete entry saved, save the known facts and explain what nutrition information is missing.",
       annotations: mutationAnnotations,
       inputSchema: z.object({
-        request_id: z.uuid(),
+        request_id: requestIdSchema,
         date: dateSchema,
         meal: z.enum(mealEnum.enumValues).nullable().optional(),
         food_name: z.string().trim().min(1),

@@ -619,6 +619,46 @@ describe("registerFoodRecordTools", () => {
     expect(foodName?.safeParse("Oats").success).toBe(true);
   });
 
+  describe.each([
+    "create_food_entry",
+    "update_food_entry",
+    "delete_food_entry",
+    "restore_food_entry",
+  ])("%s request IDs", (name) => {
+    it("advertises UUID generation and retry guidance", () => {
+      const { tool } = setup();
+      const schema = z.object(tool(name).inputSchema);
+      const advertised = z.toJSONSchema(schema).properties?.request_id;
+
+      expect(advertised).toMatchObject({
+        type: "string",
+        format: "uuid",
+        description: expect.stringContaining("Generate a fresh UUID"),
+      });
+      expect(advertised).toMatchObject({
+        description: expect.stringContaining(
+          "Reuse the same UUID only when retrying the identical request",
+        ),
+      });
+    });
+
+    it("rejects descriptive IDs with an actionable message and accepts UUIDs", () => {
+      const { tool } = setup();
+      const schema = z.object(tool(name).inputSchema).pick({ request_id: true });
+      const invalid = schema.safeParse({ request_id: "collagen-2026-10-08-morning" });
+
+      expect(invalid.success).toBe(false);
+      expect(invalid.error?.issues).toEqual([
+        expect.objectContaining({
+          path: ["request_id"],
+          message: expect.stringContaining("request_id must be a UUID"),
+        }),
+      ]);
+      expect(invalid.error?.issues[0]?.message).toContain("Generate a fresh UUID");
+      expect(schema.parse({ request_id: requestId })).toEqual({ request_id: requestId });
+    });
+  });
+
   it("returns mutation receipts, records, day summary, and UI metadata", async () => {
     const { tool } = setup();
 
