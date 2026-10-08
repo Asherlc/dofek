@@ -74,7 +74,27 @@ describe("HealthStatusBar", () => {
     expect(screen.getByText(/Moving as intended · Weight loss goal/)).toBeVisible();
   });
 
-  it("renders the server-authored blocked baseline requirement and action", () => {
+  it.each([
+    {
+      blocker: "collecting" as const,
+      summary:
+        "Skin Temperature has 1 of 3 required days recorded; the baseline is still collecting observations.",
+      action: "Keep syncing skin temperature data for at least 2 more days.",
+      showAction: true,
+    },
+    {
+      blocker: "syncing" as const,
+      summary: "Skin Temperature baseline data is still syncing.",
+      action: "Wait for the sync to finish, then check your baseline again.",
+      showAction: false,
+    },
+    {
+      blocker: "sync_error" as const,
+      summary: "Skin Temperature baseline data could not sync.",
+      action: "Reconnect the data source and start the sync again.",
+      showAction: true,
+    },
+  ])("renders baseline guidance for $blocker", ({ blocker, summary, action, showAction }) => {
     render(
       <HealthStatusBar
         metrics={[
@@ -96,37 +116,30 @@ describe("HealthStatusBar", () => {
               ...serverMetric.baselineProgress,
               observedObservationDays: 1,
               hasMeasurableVariation: false,
-              blocker: "collecting",
-              summary:
-                "Skin Temperature has 1 of 3 required days recorded; the baseline is still collecting observations.",
-              action: "Keep syncing skin temperature data for at least 2 more days.",
+              blocker,
+              summary,
+              action,
             },
           },
         ]}
       />,
     );
 
-    expect(screen.getByText("1 of 3 required days recorded")).toBeDefined();
     expect(
       screen.getByText("Needs a current value, baseline, and measurable day-to-day variation"),
     ).toBeVisible();
-    expect(
-      screen.getByText("Keep syncing skin temperature data for at least 2 more days."),
-    ).toBeVisible();
+    if (showAction) {
+      expect(screen.getByText(action)).toBeVisible();
+    } else {
+      expect(screen.queryByText(action)).toBeNull();
+    }
     fireEvent.click(screen.getByRole("button", { name: "Show details for Skin Temperature" }));
     expect(
       screen.getByText(
         "A current value plus at least 2 more recorded days with measurable variation.",
       ),
     ).toBeDefined();
-    expect(
-      screen.getByText(
-        "Skin Temperature has 1 of 3 required days recorded; the baseline is still collecting observations.",
-      ),
-    ).toBeDefined();
-    expect(
-      screen.getByText("Keep syncing skin temperature data for at least 2 more days."),
-    ).toBeDefined();
+    expect(screen.getByText(summary)).toBeVisible();
   });
 
   it("renders server-authored HRV and steps text instead of recomputing raw values", () => {

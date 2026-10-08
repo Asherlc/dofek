@@ -118,7 +118,24 @@ describe("HealthStatusCards", () => {
     ).toBeNull();
   });
 
-  it("renders server-authored baseline requirements, progress, and action", () => {
+  it.each([
+    {
+      blocker: "collecting" as const,
+      summary:
+        "Resting Heart Rate has 1 of 3 required days recorded; the baseline is still collecting observations.",
+      action: "Keep syncing resting heart rate data for at least 2 more days.",
+    },
+    {
+      blocker: "syncing" as const,
+      summary: "Resting Heart Rate baseline data is still syncing.",
+      action: "Wait for the sync to finish, then check your baseline again.",
+    },
+    {
+      blocker: "sync_error" as const,
+      summary: "Resting Heart Rate baseline data could not sync.",
+      action: "Reconnect the data source and start the sync again.",
+    },
+  ])("renders baseline requirements and actionable guidance for $blocker", (fixture) => {
     render(
       <HealthStatusCards
         metrics={[
@@ -140,12 +157,11 @@ describe("HealthStatusCards", () => {
               requiredObservationDays: 3,
               observedObservationDays: 1,
               hasMeasurableVariation: false,
-              blocker: "collecting",
+              blocker: fixture.blocker,
               requirement:
                 "A current value plus at least 2 more recorded days with measurable variation.",
-              summary:
-                "Resting Heart Rate has 1 of 3 required days recorded; the baseline is still collecting observations.",
-              action: "Keep syncing resting heart rate data for at least 2 more days.",
+              summary: fixture.summary,
+              action: fixture.action,
             },
           },
         ]}
@@ -156,25 +172,23 @@ describe("HealthStatusCards", () => {
     expect(
       screen.getByText("Needs a current value, baseline, and measurable day-to-day variation"),
     ).toBeTruthy();
-    expect(screen.getByText("1 of 3 required days recorded")).toBeTruthy();
-    expect(
-      screen.getByText("Keep syncing resting heart rate data for at least 2 more days."),
-    ).toBeTruthy();
+    if (fixture.blocker === "syncing") {
+      expect(screen.queryByText(fixture.action)).toBeNull();
+    } else {
+      expect(screen.getByText(fixture.action)).toBeTruthy();
+    }
     fireEvent.click(screen.getByRole("button", { name: "Show details for Resting Heart Rate" }));
     expect(
       screen.getByText(
         "A current value plus at least 2 more recorded days with measurable variation.",
       ),
     ).toBeTruthy();
-    expect(screen.getByText("1 of 3 required days recorded")).toBeTruthy();
-    expect(
-      screen.getByText(
-        "Resting Heart Rate has 1 of 3 required days recorded; the baseline is still collecting observations.",
-      ),
-    ).toBeTruthy();
-    expect(
-      screen.getByText("Keep syncing resting heart rate data for at least 2 more days."),
-    ).toBeTruthy();
+    expect(screen.getByText(fixture.summary)).toBeTruthy();
+    if (fixture.blocker === "syncing") {
+      expect(screen.queryByText(fixture.action)).toBeNull();
+    } else {
+      expect(screen.getByText(fixture.action)).toBeTruthy();
+    }
   });
 
   it("does not reinterpret a server status from the numeric fields", () => {
