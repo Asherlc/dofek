@@ -14,9 +14,16 @@ export function createProviderRateLimitFetch(
     providerId,
     adaptiveStore: providerAdaptiveRateLimitStore,
     ...options,
-    onResponse: (response, input, init) => {
-      reportProviderHttpDiagnostic(providerId, response, input, init, options?.userId);
-      options?.onResponse?.(response, input, init);
+    onResponse: async (response, input, init, requestStartedAtMs) => {
+      await reportProviderHttpDiagnostic(
+        providerId,
+        response,
+        input,
+        init,
+        options?.userId,
+        requestStartedAtMs,
+      );
+      await options?.onResponse?.(response, input, init, requestStartedAtMs);
     },
   });
 }

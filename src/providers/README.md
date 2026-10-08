@@ -15,6 +15,14 @@ This directory contains implementations for various data providers (fitness trac
 
 - **Registry**: All active providers are registered in `index.ts`.
 - **HTTP Client**: Provider fetches pass through the shared `@dofek/provider-http` boundary for adaptive rate limiting and a two-minute request deadline. The deadline composes with a caller-provided abort signal; request-start timeouts use `ETIMEDOUT`, and native response-body `TimeoutError` failures are also retryable instead of leaving a BullMQ job active indefinitely. Node.js documents [`AbortSignal.timeout()` and `AbortSignal.any()`](https://nodejs.org/api/globals.html#class-abortsignal).
+- **Authorization diagnostics**: The [shared HTTP observer](../lib/provider-diagnostics.ts)
+  reports rejected requests with provider/user attribution, HTTP status, request
+  start/duration, and an endpoint hash. When credentials were loaded in the current
+  user's sync context, it adds their expiry and seconds remaining at request start
+  and response, plus refresh-token availability. HTTP 401/403 JSON responses are
+  read through a clone and reduced to allowlisted error codes/resources/fields;
+  tokens, raw bodies, descriptions, URL paths, and queries are excluded. Bearer
+  error categories follow [RFC 6750 section 3.1](https://www.rfc-editor.org/rfc/rfc6750#section-3.1).
 - **Validation**: `validate()` may gate app-level OAuth client config, but must not gate on per-user credentials. User auth is checked at sync time via `loadTokens()`.
 - **UI visibility**: Providers that fail `validate()` are hidden until required app config is present. Users connect individually via Connect buttons.
 - **Data Mapping**: Providers transform vendor-specific JSON into Dofek's internal schema modules (see `src/db/schema/`).

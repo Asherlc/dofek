@@ -25,7 +25,23 @@ it("observes HTTP responses before classification without consuming their body",
     response,
     "https://api.example.com/data",
     expect.any(Object),
+    expect.any(Number),
   );
+});
+
+it("awaits an asynchronous response observer before returning the readable response", async () => {
+  let observationCompleted = false;
+  const original = Response.json({ error: "invalid_token" }, { status: 401 });
+  const fetchFn = createRateLimitAwareFetch(async () => original, {
+    providerId: "example",
+    async onResponse(response) {
+      expect(await response.clone().json()).toEqual({ error: "invalid_token" });
+      observationCompleted = true;
+    },
+  });
+  const result = await fetchFn("https://api.example.com/me");
+  expect(observationCompleted).toBe(true);
+  expect(await result.json()).toEqual({ error: "invalid_token" });
 });
 
 function createMockAdaptiveStore(): AdaptiveRateLimitStore & {

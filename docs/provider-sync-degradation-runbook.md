@@ -42,3 +42,27 @@ Only safe context is sent to logs. Raw cursors and tokens are filtered out unles
 ## Reconciliation Safety
 
 Activity-list providers must skip absence reconciliation when list pagination degrades. Degraded list fetches are partial by definition, so tombstoning missing activities after a degraded fetch can hide valid upstream activities. Completed authoritative list fetches should still call `finishProviderActivityListSync()` as described in [`src/providers/README.md`](../src/providers/README.md).
+
+## Reconnect Emails And Recovered Authorization Failures
+
+Match the email timestamp to the provider's overall `data_type = 'sync'` attempts
+in `fitness.sync_log`, including `origin`, `auth_failure_reason`, and the next
+successful attempt. A recovered request rejection does not prove refresh-token
+revocation. Compare the matching Sentry event's HTTP breadcrumbs with shared
+`[provider-diagnostics]` warnings; see the [sync log writer](../src/db/sync-log.ts)
+and [HTTP observer](../src/lib/provider-diagnostics.ts).
+
+For a rejected request, inspect `tokenExpiresAt`,
+`tokenExpiresInSecondsAtRequestStart`, `tokenExpiresInSecondsAtResponse`, and
+allowlisted `authErrors`. These fields can distinguish expiry during a request
+from a provider-reported scope or credential error without exposing credentials.
+Expiry metadata is available only when the shared credential lifecycle recorded
+it in the current user's context. An HTTP 401 alone remains ambiguous:
+[RFC 6750 section 3.1](https://www.rfc-editor.org/rfc/rfc6750#section-3.1)
+includes expired, revoked, and malformed credentials under `invalid_token`.
+
+For Strava, compare expiry against both the successful list request and the
+rejected detail request. Its [authentication documentation](https://developers.strava.com/docs/authentication/)
+defines `expires_at` as the access token's expiration timestamp. Preserve the
+historical rejection as unresolved when its expiry and structured error were
+not captured; do not infer a reason from a later refreshed token.
