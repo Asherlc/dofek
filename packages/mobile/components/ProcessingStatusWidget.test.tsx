@@ -185,7 +185,7 @@ describe("ProcessingStatusWidget", () => {
           ...snapshot,
           scope: { providerId: null, datasets: ["sleep"] },
           datasets: [{ ...activityDataset, key: "sleep", label: "Sleep" }],
-          operations: [{ ...operation, providerId: null }],
+          operations: [{ ...operation, providerId: null, kind: "analytics_build" }],
         }}
       />,
     );
@@ -208,6 +208,25 @@ describe("ProcessingStatusWidget", () => {
 
     expect(screen.getByText("Syncing Garmin")).toBeTruthy();
     expect(screen.queryByText("Recomputing sleep")).toBeNull();
+  });
+
+  it("calls concurrent provider failures an activity update", () => {
+    render(
+      <ProcessingStatusWidget
+        data={{
+          ...snapshot,
+          scope: { providerId: null, datasets: ["activity"] },
+          overallStatus: "failed",
+          datasets: [{ ...activityDataset, status: "failed", lastFailedAt: snapshot.generatedAt }],
+          operations: [
+            { ...operation, providerId: "strava", status: "failed", timeline: [] },
+            { ...operation, id: "00000000-0000-4000-8000-000000001853", providerId: "whoop" },
+          ],
+        }}
+      />,
+    );
+
+    expect(screen.getByText("Activities update didn’t finish")).toBeTruthy();
   });
 
   it("surfaces the server error message", () => {

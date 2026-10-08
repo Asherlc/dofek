@@ -252,6 +252,8 @@ export function stravaStreamsToMetricStream(
 // ============================================================
 
 const STRAVA_API_BASE = "https://www.strava.com/api/v3/";
+// Strava issues a fresh access token when the current one expires within an hour.
+const STRAVA_REFRESH_BEFORE_EXPIRY_MS = 60 * 60 * 1000;
 
 /** Minimum delay between consecutive Strava API requests (ms).
  *  Strava allows 100 requests per 15 minutes = 9s/request average.
@@ -259,11 +261,14 @@ const STRAVA_API_BASE = "https://www.strava.com/api/v3/";
 export const STRAVA_THROTTLE_MS = 10_000;
 
 export class StravaClient {
-  #accessToken: string;
+  #getAccessToken: () => Promise<string>;
   #fetchFn: typeof globalThis.fetch;
 
-  constructor(accessToken: string, fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.#accessToken = accessToken;
+  constructor(
+    getAccessToken: () => Promise<string>,
+    fetchFn: typeof globalThis.fetch = globalThis.fetch,
+  ) {
+    this.#getAccessToken = getAccessToken;
     this.#fetchFn = createProviderRateLimitFetch("strava", fetchFn, {
       createRateLimitError: createStravaRateLimitError,
     });
@@ -277,8 +282,9 @@ export class StravaClient {
       }
     }
 
+    const accessToken = await this.#getAccessToken();
     const response = await this.#fetchFn(url.toString(), {
-      headers: { Authorization: `Bearer ${this.#accessToken}` },
+      headers: { Authorization: `Bearer ${accessToken}` },
     });
 
     if (response.status === 401 || response.status === 403) {
@@ -601,7 +607,18 @@ export class StravaProvider implements WebhookProvider {
       providerName: this.name,
       getOAuthConfig: () => stravaOAuthConfig(),
       fetchFn: this.#fetchFn,
+      refreshBeforeExpiryMs: STRAVA_REFRESH_BEFORE_EXPIRY_MS,
     });
+  }
+
+  async #createClient(db: SyncDatabase): Promise<StravaClient> {
+    let tokens = await this.#resolveTokens(db);
+    return new StravaClient(async () => {
+      if (tokens.expiresAt.getTime() <= Date.now() + STRAVA_REFRESH_BEFORE_EXPIRY_MS) {
+        tokens = await this.#resolveTokens(db);
+      }
+      return tokens.accessToken;
+    }, this.#fetchFn);
   }
 
   /**
@@ -641,15 +658,13 @@ export class StravaProvider implements WebhookProvider {
       return { provider: this.id, recordsSynced: 0, errors: [], duration: Date.now() - start };
     }
 
-    let tokens: TokenSet;
+    let client: StravaClient;
     try {
-      tokens = await this.#resolveTokens(db);
+      client = await this.#createClient(db);
     } catch (err) {
       errors.push({ message: err instanceof Error ? err.message : String(err), cause: err });
       return { provider: this.id, recordsSynced, errors, duration: Date.now() - start };
     }
-
-    const client = new StravaClient(tokens.accessToken, this.#fetchFn);
 
     // Fetch the single activity detail (1 API call)
     const detail = await client.getActivity(activityExternalId);
@@ -731,15 +746,14 @@ export class StravaProvider implements WebhookProvider {
     const errors: SyncError[] = [];
     let recordsSynced = 0;
 
-    let tokens: TokenSet;
+    let client: StravaClient;
     try {
-      tokens = await this.#resolveTokens(db);
+      client = await this.#createClient(db);
     } catch (err) {
       errors.push({ message: err instanceof Error ? err.message : String(err), cause: err });
       return { provider: this.id, recordsSynced, errors, duration: Date.now() - start };
     }
 
-    const client = new StravaClient(tokens.accessToken, this.#fetchFn);
     const since = window.since;
     const syncWindowEnd = window.until;
 
