@@ -5,6 +5,7 @@ import {
 } from "@dofek/provider-http/rate-limit";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SyncDatabase } from "../db/index.ts";
+import { getProviderIngestContext } from "../db/provider-ingest-context.ts";
 import { RefreshTokenRevokedError } from "../providers/auth-errors.ts";
 import type { SyncRun } from "../providers/sync-run.ts";
 import type { SyncResult, WebhookEvent } from "../providers/types.ts";
@@ -55,6 +56,8 @@ describe("sync-provider-execution", () => {
   });
 
   it("runs a targeted activity webhook through canonical processing", async () => {
+    const { loadUserHomeTimezone } = await import("../db/home-timezone.ts");
+    vi.mocked(loadUserHomeTimezone).mockResolvedValueOnce("America/Los_Angeles");
     const event: WebhookEvent = {
       ownerExternalId: "owner-1",
       eventType: "create",
@@ -62,15 +65,15 @@ describe("sync-provider-execution", () => {
       objectId: "20507693282",
     };
     const sync = vi.fn();
-    const syncWebhookEvent = vi.fn(
-      async () =>
-        ({
-          provider: "strava",
-          recordsSynced: 1,
-          errors: [],
-          duration: 42,
-        }) satisfies SyncResult,
-    );
+    const syncWebhookEvent = vi.fn(async () => {
+      expect(getProviderIngestContext()?.homeTimezone).toBe("America/Los_Angeles");
+      return {
+        provider: "strava",
+        recordsSynced: 1,
+        errors: [],
+        duration: 42,
+      } satisfies SyncResult;
+    });
     const provider = Object.assign(
       createMockProvider({ id: "strava", processingDatasetKeys: ["activity"], sync }),
       { registerWebhook: vi.fn(), syncWebhookEvent },
@@ -115,6 +118,51 @@ describe("sync-provider-execution", () => {
 
     expect(provider.syncWebhookEvent).toHaveBeenCalledOnce();
     expect(provider.sync).not.toHaveBeenCalled();
+  });
+
+  it("runs a regular window sync for a webhook provider when the job has no event", async () => {
+    const sync = vi.fn(async () => ({
+      provider: "strava",
+      recordsSynced: 1,
+      errors: [],
+      duration: 1,
+    }));
+    const syncWebhookEvent = vi.fn();
+    const provider = Object.assign(createMockProvider({ id: "strava", sync }), {
+      registerWebhook: vi.fn(),
+      syncWebhookEvent,
+    });
+    mockGetEnabledSyncProviders.mockReturnValue([provider]);
+
+    await runSyncJob(createMockJob({ providerId: "strava", userId: "user-1" }), mockDb);
+
+    expect(sync).toHaveBeenCalledOnce();
+    expect(syncWebhookEvent).not.toHaveBeenCalled();
+  });
+
+  it("runs a regular window sync when queued event work has no webhook provider", async () => {
+    const event: WebhookEvent = {
+      ownerExternalId: "owner-1",
+      eventType: "create",
+      objectType: "activity",
+      objectId: "activity-1",
+    };
+    const sync = vi.fn(async () => ({
+      provider: "test-provider",
+      recordsSynced: 1,
+      errors: [],
+      duration: 1,
+    }));
+    const syncWebhookEvent = vi.fn();
+    const provider = Object.assign(createMockProvider({ sync }), { syncWebhookEvent });
+    mockGetEnabledSyncProviders.mockReturnValue([provider]);
+    const job = createMockJob({ providerId: "test-provider", userId: "user-1" });
+    Object.assign(job.data, { webhookEvent: event });
+
+    await runSyncJob(job, mockDb);
+
+    expect(sync).toHaveBeenCalledOnce();
+    expect(syncWebhookEvent).not.toHaveBeenCalled();
   });
 
   it("reports a targeted webhook failure and runs a full sync in the worker", async () => {

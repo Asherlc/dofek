@@ -973,6 +973,7 @@ describe("StravaProvider.syncWebhookEvent", () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     process.env = { ...originalEnv };
   });
 
@@ -1026,6 +1027,8 @@ describe("StravaProvider.syncWebhookEvent", () => {
   });
 
   it("handles delete events by marking activity provider-absent", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-08T12:00:00Z"));
     const provider = new StravaProvider(async () => new Response());
     providerActivityAbsenceMocks.markProviderActivityAbsent.mockResolvedValueOnce(1);
 
@@ -1048,6 +1051,7 @@ describe("StravaProvider.syncWebhookEvent", () => {
     );
 
     expect(result.recordsSynced).toBe(1);
+    expect(result.duration).toBe(0);
     expect(result.errors).toHaveLength(0);
     expect(providerActivityAbsenceMocks.markProviderActivityAbsent).toHaveBeenCalledWith(mockDb, {
       providerId: "strava",
