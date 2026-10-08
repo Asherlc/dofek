@@ -886,6 +886,34 @@ describe("ActivityDetailPage", () => {
     expect(routeOptions.refetchInterval({ state: { data: { status: "ready" } } })).toBe(false);
   });
 
+  it("shows a loading state before route freshness is known", async () => {
+    mockRouteUseQuery.mockReturnValue({
+      data: { status: "unavailable" },
+      error: null,
+      isLoading: true,
+    });
+    const ActivityDetailPage = await importPage();
+
+    renderWithUnits(<ActivityDetailPage />);
+
+    expect(screen.getByText("Loading route map…")).toBeDefined();
+    expect(leafletMocks.tileLayer).not.toHaveBeenCalled();
+  });
+
+  it("shows a route-specific error instead of drawing cached partial GPS", async () => {
+    mockRouteUseQuery.mockReturnValue({
+      data: { status: "unavailable" },
+      error: new Error("Route freshness query failed."),
+      isLoading: false,
+    });
+    const ActivityDetailPage = await importPage();
+
+    renderWithUnits(<ActivityDetailPage />);
+
+    expect(screen.getByText("Route freshness query failed.")).toBeDefined();
+    expect(leafletMocks.tileLayer).not.toHaveBeenCalled();
+  });
+
   it("draws the ready route endpoint even when the cached sensor stream ends early", async () => {
     mockRouteUseQuery.mockReturnValue({
       data: {
