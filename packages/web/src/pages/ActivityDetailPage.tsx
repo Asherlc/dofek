@@ -13,6 +13,7 @@ import {
 import { formatRecordLocalTime } from "@dofek/format/record-local-time";
 import type { UnitConverter } from "@dofek/format/units";
 import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
+import { processingPollInterval } from "@dofek/providers/processing-status";
 import { providerSourceLabel } from "@dofek/providers/providers";
 import { activityMetricColors, statusColors } from "@dofek/scoring/colors";
 import {
@@ -103,6 +104,13 @@ export function ActivityDetailPage() {
   const stream = trpc.activity.stream.useQuery(
     { id, maxPoints: 500 },
     { placeholderData: (previousData) => previousData },
+  );
+  const route = trpc.activity.route.useQuery(
+    { id, maxPoints: 500 },
+    {
+      refetchInterval: (query) =>
+        query.state.data?.status === "processing" ? processingPollInterval("active") : false,
+    },
   );
   const hrZones = trpc.activity.hrZones.useQuery(
     { id },
@@ -218,7 +226,9 @@ export function ActivityDetailPage() {
   const activity = detail.data;
   const zones = hrZones.data ?? [];
   const exercises = strengthExercises.data ?? [];
-  const hasGps = points.some((p) => p.lat != null && p.lng != null);
+  const routePoints = route.data?.status === "ready" ? route.data.points : [];
+  const hasGps = routePoints.length > 0;
+  const routeProcessing = route.isLoading || route.data?.status === "processing";
   const hasHr = points.some((p) => p.heartRate != null);
   const hasSpeed = points.some((p) => p.speed != null);
   const hasCadence = points.some((p) => p.cadence != null);
@@ -260,9 +270,17 @@ export function ActivityDetailPage() {
         </Section>
       ) : null}
 
-      {hasGps && (
+      {(route.error || routeProcessing || hasGps) && (
         <Section title="Route Map">
-          <RouteMap points={points} onRegisterHoverCallback={mapHoverRef} />
+          {route.error ? (
+            <QueryStatePanel error={route.error} height={160} />
+          ) : routeProcessing ? (
+            <p role="status" className="py-8 text-center text-sm text-muted">
+              {route.isLoading ? "Loading route map…" : "Processing route map…"}
+            </p>
+          ) : (
+            <RouteMap points={routePoints} onRegisterHoverCallback={mapHoverRef} />
+          )}
         </Section>
       )}
 
@@ -579,7 +597,7 @@ function RouteMap({
   points,
   onRegisterHoverCallback,
 }: {
-  points: StreamPoint[];
+  points: Array<{ lat: number; lng: number }>;
   onRegisterHoverCallback?: React.MutableRefObject<
     (position: { lat: number; lng: number } | null) => void
   >;
@@ -591,10 +609,7 @@ function RouteMap({
     const container = mapRef.current;
     if (!container) return;
 
-    const gpsPoints = points.filter(
-      (p): p is StreamPoint & { lat: number; lng: number } => p.lat != null && p.lng != null,
-    );
-    if (gpsPoints.length === 0) return;
+    if (points.length === 0) return;
 
     let cancelled = false;
 
@@ -616,7 +631,7 @@ function RouteMap({
           '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
       }).addTo(map);
 
-      const latLngs = gpsPoints.map((p) => L.latLng(p.lat, p.lng));
+      const latLngs = points.map((p) => L.latLng(p.lat, p.lng));
 
       L.polyline(latLngs, {
         color: statusColors.positive,

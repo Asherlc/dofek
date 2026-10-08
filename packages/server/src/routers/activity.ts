@@ -18,6 +18,7 @@ import {
 import { endDateSchema } from "../lib/date-window.ts";
 import { Activity, type ActivityDetail } from "../models/activity.ts";
 import { ActivityRepository } from "../repositories/activity-repository.ts";
+import { getActivityRoute } from "../repositories/activity-route-repository.ts";
 import { HangboardingRepository } from "../repositories/hangboarding-repository.ts";
 import { PowerRepository } from "../repositories/power-repository.ts";
 import { StrengthRepository } from "../repositories/strength-repository.ts";
@@ -195,6 +196,35 @@ export const activityRouter = router({
       );
       const points = await repo.getStream(input.id, input.maxPoints);
       return points.map((point) => point.toDetail());
+    }),
+
+  route: protectedProcedure
+    .input(
+      z.object({
+        id: z.guid(),
+        maxPoints: z.number().int().min(10).max(10000).default(500),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      if (!ctx.sensorStore) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message:
+            "ClickHouse activity analytics store is required for activity routes. Set CLICKHOUSE_URL and retry.",
+        });
+      }
+      const repo = new ActivityRepository(
+        ctx.db,
+        ctx.userId,
+        ctx.timezone,
+        ctx.accessWindow,
+        ctx.sensorStore,
+      );
+      const window = await repo.findSensorWindow(input.id);
+      if (!window) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Activity not found" });
+      }
+      return getActivityRoute(ctx.sensorStore, window, input.maxPoints);
     }),
 
   hrZones: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })

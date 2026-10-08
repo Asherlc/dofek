@@ -693,6 +693,42 @@ describe("activityRouter", () => {
     });
   });
 
+  describe("route", () => {
+    it("keeps partial GPS coordinates out of an activity route response", async () => {
+      const activityId = "00000000-0000-0000-0000-000000000001";
+      const sensorStore = makeSensorStoreStub({
+        query: vi.fn().mockResolvedValue([{ is_processing: 1, gps_count: 1 }]),
+      });
+      const caller = createCaller({
+        db: {
+          execute: vi
+            .fn()
+            .mockResolvedValueOnce([
+              {
+                requested_id: activityId,
+                resolved_group_id: activityId,
+                resolution_kind: "group",
+              },
+            ])
+            .mockResolvedValueOnce([
+              {
+                id: activityId,
+                user_id: "user-1",
+                started_at: "2026-07-01T12:00:00Z",
+                ended_at: "2026-07-01T13:00:00Z",
+                member_activity_ids: [activityId],
+              },
+            ]),
+        },
+        sensorStore,
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await expect(caller.route({ id: activityId })).resolves.toEqual({ status: "processing" });
+    });
+  });
+
   describe("delete", () => {
     beforeEach(() => {
       mockEnqueueActivityDeleteAnalyticsRefresh.mockClear();

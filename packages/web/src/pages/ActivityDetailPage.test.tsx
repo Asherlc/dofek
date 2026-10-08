@@ -253,6 +253,26 @@ const mockStreamUseQuery = vi.fn(
     isLoading: false,
   }),
 );
+type MockRouteData =
+  | { status: "processing" | "unavailable" }
+  | { status: "ready"; points: Array<{ lat: number | null; lng: number | null }> };
+const mockRouteUseQuery = vi.fn(
+  (
+    _input?: unknown,
+    _options?: unknown,
+  ): {
+    data: MockRouteData;
+    error: Error | null;
+    isLoading: boolean;
+  } => ({
+    data: {
+      status: "ready",
+      points: mockStreamPoints.map((point) => ({ lat: point.lat, lng: point.lng })),
+    },
+    error: null,
+    isLoading: false,
+  }),
+);
 const mockPowerZonesUseQuery = vi.fn(
   (_input?: unknown, _options?: { enabled?: boolean }): MockQueryResult<MockPowerZonesResult> => ({
     data: undefined,
@@ -277,6 +297,7 @@ vi.mock("../lib/trpc.ts", () => ({
     activity: {
       byId: { useQuery: mockActivityByIdUseQuery },
       stream: { useQuery: mockStreamUseQuery },
+      route: { useQuery: mockRouteUseQuery },
       hrZones: { useQuery: mockHrZonesUseQuery },
       powerZones: { useQuery: mockPowerZonesUseQuery },
       strengthExercises: { useQuery: mockStrengthExercisesUseQuery },
@@ -376,6 +397,15 @@ afterEach(() => {
     data: mockStreamPoints,
     error: null,
     isError: false,
+    isLoading: false,
+  }));
+  mockRouteUseQuery.mockReset();
+  mockRouteUseQuery.mockImplementation((_input?: unknown, _options?: unknown) => ({
+    data: {
+      status: "ready",
+      points: mockStreamPoints.map((point) => ({ lat: point.lat, lng: point.lng })),
+    },
+    error: null,
     isLoading: false,
   }));
   mockHrZonesUseQuery.mockReset();
@@ -817,6 +847,11 @@ describe("ActivityDetailPage", () => {
       isError: false,
       isLoading: false,
     });
+    mockRouteUseQuery.mockReturnValue({
+      data: { status: "ready", points: [] },
+      error: null,
+      isLoading: false,
+    });
     const ActivityDetailPage = await importPage();
 
     renderWithUnits(<ActivityDetailPage />);
@@ -824,6 +859,50 @@ describe("ActivityDetailPage", () => {
     expect(screen.queryByText("Route Map")).toBeNull();
     const metricEvents = capturedEvents.find((events) => events.legendselectchanged != null);
     expect(metricEvents?.updateAxisPointer).toBeUndefined();
+  });
+
+  it("shows route processing instead of drawing cached partial GPS", async () => {
+    mockRouteUseQuery.mockReturnValue({
+      data: { status: "processing" },
+      error: null,
+      isLoading: false,
+    });
+    const ActivityDetailPage = await importPage();
+
+    renderWithUnits(<ActivityDetailPage />);
+
+    expect(screen.getByText("Processing route map…")).toBeDefined();
+    expect(leafletMocks.tileLayer).not.toHaveBeenCalled();
+    const routeOptions = mockRouteUseQuery.mock.calls[0]?.[1];
+    if (
+      !routeOptions ||
+      typeof routeOptions !== "object" ||
+      !("refetchInterval" in routeOptions) ||
+      typeof routeOptions.refetchInterval !== "function"
+    ) {
+      throw new Error("Expected activity route polling option");
+    }
+    expect(routeOptions.refetchInterval({ state: { data: { status: "processing" } } })).toBe(3000);
+    expect(routeOptions.refetchInterval({ state: { data: { status: "ready" } } })).toBe(false);
+  });
+
+  it("draws the ready route endpoint even when the cached sensor stream ends early", async () => {
+    mockRouteUseQuery.mockReturnValue({
+      data: {
+        status: "ready",
+        points: [
+          { lat: 1, lng: 1 },
+          { lat: 9, lng: 9 },
+        ],
+      },
+      error: null,
+      isLoading: false,
+    });
+    const ActivityDetailPage = await importPage();
+
+    renderWithUnits(<ActivityDetailPage />);
+
+    await waitFor(() => expect(leafletMocks.latLng).toHaveBeenCalledWith(9, 9));
   });
 
   it("shows OpenStreetMap tiles with attribution on the route map", async () => {
@@ -887,6 +966,11 @@ describe("ActivityDetailPage", () => {
       ],
       error: null,
       isError: false,
+      isLoading: false,
+    });
+    mockRouteUseQuery.mockReturnValue({
+      data: { status: "unavailable" },
+      error: null,
       isLoading: false,
     });
     const ActivityDetailPage = await importPage();
@@ -2274,6 +2358,11 @@ describe("ActivityDetailPage", () => {
         data: [],
         error: null,
         isError: false,
+        isLoading: false,
+      });
+      mockRouteUseQuery.mockReturnValue({
+        data: { status: "unavailable" },
+        error: null,
         isLoading: false,
       });
       const ActivityDetailPage = await importPage();
