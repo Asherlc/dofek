@@ -106,7 +106,7 @@ export const providerFieldPriority = fitness.table(
   {
     providerId: text("provider_id").notNull(),
     fieldKey: text("field_key").notNull(),
-    priority: integer("priority").notNull(),
+    priority: bigint("priority", { mode: "number" }).notNull(),
   },
   (table) => [primaryKey({ columns: [table.providerId, table.fieldKey] })],
 );

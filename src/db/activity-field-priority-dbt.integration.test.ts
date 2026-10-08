@@ -307,7 +307,7 @@ describe("dbt merged activity field priorities", () => {
     ]);
   });
 
-  it("selects notes independently through an arbitrary provider rule", async () => {
+  it("selects notes independently through an arbitrary provider's 64-bit priority", async () => {
     const id = randomUUID();
     const noteProvider = `note-${randomUUID()}`;
     await client.insert({
@@ -317,7 +317,7 @@ describe("dbt merged activity field priorities", () => {
         {
           provider_id: noteProvider,
           field_key: "activity.notes",
-          priority: 0,
+          priority: -2147483649,
           _peerdb_is_deleted: 0,
           _peerdb_version: 1,
         },

@@ -1,13 +1,16 @@
 CREATE TABLE fitness.provider_field_priority (
   provider_id text NOT NULL,
   field_key text NOT NULL,
-  priority integer NOT NULL,
+  priority bigint NOT NULL,
   PRIMARY KEY (provider_id, field_key)
 );
 --> statement-breakpoint
 ALTER TABLE fitness.provider_priority_audit ADD COLUMN field_key text;
 --> statement-breakpoint
+-- Drizzle replaces this check atomically. The replacement retains every existing
+-- value and adds provider_field_priority; no application names this constraint.
 ALTER TABLE fitness.provider_priority_audit
+-- squawk-ignore ban-drop-constraint
 DROP CONSTRAINT provider_priority_audit_priority_table_check;
 --> statement-breakpoint
 ALTER TABLE fitness.provider_priority_audit
@@ -19,7 +22,10 @@ ADD CONSTRAINT provider_priority_audit_priority_table_check CHECK (
     'sensor_device_priority',
     'provider_field_priority'
   )
-);
+) NOT VALID;
+--> statement-breakpoint
+ALTER TABLE fitness.provider_priority_audit
+VALIDATE CONSTRAINT provider_priority_audit_priority_table_check;
 --> statement-breakpoint
 CREATE OR REPLACE FUNCTION fitness.record_provider_priority_audit()
 RETURNS trigger

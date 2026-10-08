@@ -194,13 +194,13 @@ describe("merged activity field priorities", () => {
     expect(rows).toEqual([{ name: "Device workout" }]);
   });
 
-  it("lets an arbitrary provider's name rule beat device priority without changing notes", async () => {
+  it("lets an arbitrary provider's 64-bit name priority beat device priority", async () => {
     const customGroupId = "10000000-0000-4000-8000-000000000135";
     await context.db.execute(sql`INSERT INTO fitness.provider (id, name)
       VALUES ('field-test-a', 'Field Test A') ON CONFLICT DO NOTHING`);
     await context.db.execute(sql`INSERT INTO fitness.provider_field_priority
       (provider_id, field_key, priority)
-      VALUES ('field-test-a', 'activity.name', 0)
+      VALUES ('field-test-a', 'activity.name', -2147483649)
       ON CONFLICT (provider_id, field_key) DO UPDATE SET priority = excluded.priority`);
     await context.db.execute(sql`INSERT INTO fitness.activity_group (id, user_id)
       VALUES (${customGroupId}, ${TEST_USER_ID}) ON CONFLICT DO NOTHING`);

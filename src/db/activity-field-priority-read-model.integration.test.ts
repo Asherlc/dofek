@@ -184,11 +184,11 @@ describe("live activity field priorities", () => {
     ]);
   });
 
-  it("applies a notes rule independently of the name", async () => {
+  it("applies a 64-bit notes priority independently of the name", async () => {
     const id = "20000000-0000-4000-8000-000000000120";
     await runIsolated(`INSERT INTO postgres_fitness.provider_field_priority
       (provider_id, field_key, priority, _peerdb_is_deleted, _peerdb_version)
-      VALUES ('whoop', 'activity.notes', 0, 0, 1)`);
+      VALUES ('whoop', 'activity.notes', -2147483649, 0, 1)`);
     await insertActivities([
       {
         id: "20000000-0000-4000-8000-000000000121",

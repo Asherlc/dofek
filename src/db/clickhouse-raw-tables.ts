@@ -81,7 +81,7 @@ export function buildPostgresFitnessProviderFieldPriorityRawTableStatement(): st
   return `CREATE TABLE IF NOT EXISTS postgres_fitness.provider_field_priority (
   provider_id String,
   field_key String,
-  priority Int32,
+  priority Int64,
 ${peerDbMetadataColumnDefinitions}
 )
 ${replacingMergeTreeTable("(provider_id, field_key)")}`;

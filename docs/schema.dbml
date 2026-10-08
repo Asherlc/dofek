@@ -347,6 +347,16 @@ table fitness.provider_connection {
   }
 }
 
+table fitness.provider_field_priority {
+  provider_id text [not null]
+  field_key text [not null]
+  priority bigint [not null]
+
+  indexes {
+    (provider_id, field_key) [pk]
+  }
+}
+
 table fitness.provider_issue_email {
   user_id uuid [not null]
   provider_id text [not null]
@@ -375,6 +385,7 @@ table fitness.provider_priority_audit {
   provider_id text [not null]
   source_name_pattern text
   channel text
+  field_key text
   old_value jsonb
   new_value jsonb
   reason text
