@@ -607,11 +607,13 @@ function RouteMap({
         mapInstanceRef.current = null;
       }
 
-      const map = L.map(container, { zoomControl: true, attributionControl: false });
+      const map = L.map(container, { zoomControl: true, attributionControl: true });
       mapInstanceRef.current = map;
 
-      L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
+      L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
         maxZoom: 19,
+        attribution:
+          '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
       }).addTo(map);
 
       const latLngs = gpsPoints.map((p) => L.latLng(p.lat, p.lng));

@@ -826,6 +826,25 @@ describe("ActivityDetailPage", () => {
     expect(metricEvents?.updateAxisPointer).toBeUndefined();
   });
 
+  it("shows OpenStreetMap tiles with attribution on the route map", async () => {
+    const ActivityDetailPage = await importPage();
+    renderWithUnits(<ActivityDetailPage />);
+
+    await waitFor(() =>
+      expect(leafletMocks.map).toHaveBeenCalledWith(
+        expect.any(HTMLElement),
+        expect.objectContaining({ attributionControl: true }),
+      ),
+    );
+    expect(leafletMocks.tileLayer).toHaveBeenCalledWith(
+      "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+      expect.objectContaining({
+        attribution:
+          '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+      }),
+    );
+  });
+
   it("creates a route hover marker from valid chart pointer events", async () => {
     const ActivityDetailPage = await importPage();
     renderWithUnits(<ActivityDetailPage />);
