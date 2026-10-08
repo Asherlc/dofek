@@ -101,15 +101,16 @@ jobs:
             -workspace packages/mobile/ios/Dofek.xcworkspace \
             -scheme Dofek \
             -configuration Release \
-            -archivePath $RUNNER_TEMP/Dofek.xcarchive \
+            -archivePath "$RUNNER_TEMP/Dofek.xcarchive" \
             -derivedDataPath "$DERIVED_DATA_PATH" \
             -destination 'generic/platform=iOS' \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGN_IDENTITY="" \
             COMPILER_INDEX_STORE_ENABLE=NO \
             EXCLUDED_SOURCE_FILE_NAMES='*.test.swift' \
-            CC=$RUNNER_TEMP/ccache-wrappers/ccache-clang \
-            CPLUSPLUS=$RUNNER_TEMP/ccache-wrappers/ccache-clang++
+            C_COMPILER_LAUNCHER="$(command -v ccache)" \
+            CXX_COMPILER_LAUNCHER="$(command -v ccache)" \
+            CLANG_ENABLE_EXPLICIT_MODULES_WITH_COMPILER_LAUNCHER=YES
         timeout-minutes: 25
       - name: Upload archive
         if: github.event_name != 'pull_request'
@@ -167,8 +168,9 @@ jobs:
             SYMROOT="$BUILD_DIR" \
             CODE_SIGNING_ALLOWED=NO \
             COMPILER_INDEX_STORE_ENABLE=NO \
-            CC=$RUNNER_TEMP/ccache-wrappers/ccache-clang \
-            CXX=$RUNNER_TEMP/ccache-wrappers/ccache-clang++ \
+            C_COMPILER_LAUNCHER="$(command -v ccache)" \
+            CXX_COMPILER_LAUNCHER="$(command -v ccache)" \
+            CLANG_ENABLE_EXPLICIT_MODULES_WITH_COMPILER_LAUNCHER=YES \
             2>&1 | tee -a /tmp/watchos-build.log | tail -80
           xcodebuild build \
             -project packages/mobile/ios/Dofek.xcodeproj \
@@ -179,8 +181,9 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             COMPILER_INDEX_STORE_ENABLE=NO \
             EXCLUDED_SOURCE_FILE_NAMES='*.test.swift' \
-            CC=$RUNNER_TEMP/ccache-wrappers/ccache-clang \
-            CXX=$RUNNER_TEMP/ccache-wrappers/ccache-clang++ \
+            C_COMPILER_LAUNCHER="$(command -v ccache)" \
+            CXX_COMPILER_LAUNCHER="$(command -v ccache)" \
+            CLANG_ENABLE_EXPLICIT_MODULES_WITH_COMPILER_LAUNCHER=YES \
             2>&1 | tee -a /tmp/watchos-build.log | tail -80
       - name: Show watchOS build errors
         if: failure()
