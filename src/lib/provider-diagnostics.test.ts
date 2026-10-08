@@ -12,7 +12,10 @@ const { debug, warn, captureException } = vi.hoisted(() => ({
 }));
 vi.mock("../logger.ts", () => ({ logger: { debug, warn } }));
 vi.mock("./error-reporting.ts", () => ({ captureException }));
-vi.mock("../db/token-user-context.ts", () => ({ getTokenUserId: () => "user-123" }));
+vi.mock("../db/token-user-context.ts", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../db/token-user-context.ts")>()),
+  getTokenUserId: () => "user-123",
+}));
 
 beforeEach(() => vi.clearAllMocks());
 
@@ -33,7 +36,7 @@ describe("reportProviderHttpDiagnostic", () => {
         headers: { Authorization: "Bearer token-secret" },
         body: "password=body-secret",
       };
-      reportProviderHttpDiagnostic(providerId, response, url, init);
+      await reportProviderHttpDiagnostic(providerId, response, url, init);
       expect(await response.text()).toBe("private response token-secret");
       const diagnostic = JSON.parse(warn.mock.calls[0]?.[0].replace("[provider-diagnostics] ", ""));
       expect(diagnostic).toMatchObject({
@@ -70,7 +73,7 @@ describe("reportProviderHttpDiagnostic", () => {
     [500, "http_error"],
     [429, "rate_limited"],
   ])("classifies HTTP %s without guessing token expiration", async (status, category) => {
-    reportProviderHttpDiagnostic(
+    await reportProviderHttpDiagnostic(
       "provider",
       new Response("private", { status: Number(status) }),
       new Request("https://api.example.com/me"),
@@ -81,9 +84,57 @@ describe("reportProviderHttpDiagnostic", () => {
 
   it("passes successful responses through without failure telemetry", async () => {
     const response = Response.json({ ok: true });
-    reportProviderHttpDiagnostic("provider", response, new URL("https://api.example.com/me"));
+    await reportProviderHttpDiagnostic("provider", response, new URL("https://api.example.com/me"));
     expect(warn).not.toHaveBeenCalled();
     expect(captureException).not.toHaveBeenCalled();
+  });
+
+  it.each(["strava", "wahoo", "peloton"])(
+    "records allowlisted auth codes for %s without leaking response fields",
+    async (providerId) => {
+      const response = Response.json(
+        {
+          error: "invalid_token",
+          error_description: "access-token-secret",
+          errors: [
+            { resource: "AccessToken", field: "access_token", code: "expired", message: "private" },
+            { resource: "secret-account", field: "secret-field", code: "secret-code" },
+          ],
+        },
+        { status: 401 },
+      );
+      await reportProviderHttpDiagnostic(providerId, response, "https://api.example.com/me");
+      expect(captureException.mock.calls[0]?.[1].extra).toMatchObject({
+        authErrors: [
+          { code: "invalid_token" },
+          { resource: "AccessToken", field: "access_token", code: "expired" },
+        ],
+      });
+      expect(await response.json()).toMatchObject({ error_description: "access-token-secret" });
+      const output = JSON.stringify([warn.mock.calls, captureException.mock.calls]);
+      for (const secret of [
+        "access-token-secret",
+        "private",
+        "secret-account",
+        "secret-field",
+        "secret-code",
+      ])
+        expect(output).not.toContain(secret);
+    },
+  );
+
+  it("still reports rejection when an advertised JSON body is malformed", async () => {
+    const response = new Response("malformed private-json", {
+      status: 401,
+      headers: { "Content-Type": "application/json" },
+    });
+    await reportProviderHttpDiagnostic("provider", response, "https://api.example.com/me");
+    expect(captureException).toHaveBeenCalledOnce();
+    expect(captureException.mock.calls[0]?.[1].extra.statusCode).toBe(401);
+    expect(await response.text()).toBe("malformed private-json");
+    expect(JSON.stringify([warn.mock.calls, captureException.mock.calls])).not.toContain(
+      "private-json",
+    );
   });
 });
 

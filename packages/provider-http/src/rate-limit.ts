@@ -22,7 +22,8 @@ export interface FetchRateLimitHandlingOptions {
     response: Response,
     input: RequestInfo | URL,
     init: RequestInit | undefined,
-  ) => void;
+    requestStartedAtMs: number,
+  ) => void | Promise<void>;
   createRateLimitError: (response: Response, responseBody: string) => Error;
   createServiceUnavailableError?: (response: Response, responseBody: string) => Error;
   additionalServiceUnavailableStatusCodes?: readonly number[];
@@ -116,8 +117,9 @@ export async function fetchWithRateLimitHandling(
   init: RequestInit | undefined,
   options: FetchRateLimitHandlingOptions,
 ): Promise<Response> {
+  const requestStartedAtMs = Date.now();
   const response = init === undefined ? await fetchFn(input) : await fetchFn(input, init);
-  options.onResponse?.(response, input, init);
+  await options.onResponse?.(response, input, init, requestStartedAtMs);
   if (response.status === 429) {
     const responseBody = await response.text();
     throw options.createRateLimitError(response, responseBody);

@@ -87,7 +87,7 @@ describe("provider issue email delivery", () => {
     });
   }
 
-  it("emails immediately when a manual sync finds authorization needs attention", async () => {
+  it("emails immediately when a manual sync confirms refresh credentials are revoked", async () => {
     await recordFailure({ origin: "manual", authFailureReason: "refresh_token_revoked" });
 
     expect(emailRequests).toHaveLength(1);
@@ -116,9 +116,65 @@ describe("provider issue email delivery", () => {
     expect(emailRequests).toHaveLength(1);
   });
 
+  it.each([
+    "authorization_failed",
+    "access_token_expired",
+    "session_expired",
+    "authentication_failed",
+  ] as const)(
+    "does not email when a scheduled %s failure recovers on the next attempt",
+    async (authFailureReason) => {
+      await recordFailure({ authFailureReason });
+      expect(emailRequests).toHaveLength(0);
+      await recordRecovery();
+      await recordFailure({ authFailureReason });
+      expect(emailRequests).toHaveLength(0);
+      await recordRecovery();
+      expect(emailRequests).toHaveLength(0);
+    },
+  );
+
+  it("emails once when request authorization still fails on the next scheduled attempt", async () => {
+    await recordFailure({ authFailureReason: "authorization_failed" });
+    expect(emailRequests).toHaveLength(0);
+    await recordFailure({ authFailureReason: "authorization_failed" });
+    expect(emailRequests).toHaveLength(1);
+    expect(emailRequests[0]).toMatchObject({
+      textContent: expect.stringContaining("Reconnect Test Provider"),
+    });
+    await recordFailure({ authFailureReason: "authorization_failed" });
+    expect(emailRequests).toHaveLength(1);
+  });
+
+  it("waits for an automatic attempt after a manual authorization failure", async () => {
+    await recordFailure({ origin: "manual", authFailureReason: "authorization_failed" });
+    await recordFailure({ origin: "manual", authFailureReason: "authorization_failed" });
+    expect(emailRequests).toHaveLength(0);
+    await recordFailure({ authFailureReason: "authorization_failed" });
+    expect(emailRequests).toHaveLength(1);
+  });
+
+  it("confirms an authorization issue when the next automatic attempt fails for another reason", async () => {
+    await recordFailure({ origin: "manual", authFailureReason: "authorization_failed" });
+    expect(emailRequests).toHaveLength(0);
+    await recordFailure();
+    expect(emailRequests).toHaveLength(1);
+    expect(emailRequests[0]).toMatchObject({
+      textContent: expect.stringContaining("Reconnect Test Provider"),
+    });
+  });
+
+  it("clears a manual authorization failure when the next automatic attempt recovers", async () => {
+    await recordFailure({ origin: "manual", authFailureReason: "authorization_failed" });
+    expect(emailRequests).toHaveLength(0);
+    await recordRecovery();
+    await recordFailure();
+    expect(emailRequests).toHaveLength(0);
+  });
+
   it("sends only one authorization warning until recovery", async () => {
-    await recordFailure({ authFailureReason: "session_expired" });
-    await recordFailure({ authFailureReason: "session_expired" });
+    await recordFailure({ authFailureReason: "refresh_token_revoked" });
+    await recordFailure({ authFailureReason: "refresh_token_revoked" });
 
     expect(emailRequests).toHaveLength(1);
   });
@@ -126,9 +182,9 @@ describe("provider issue email delivery", () => {
   it.each(["manual", "scheduled"] as const)(
     "allows a new authorization alert after a successful %s sync",
     async (origin) => {
-      await recordFailure({ authFailureReason: "session_expired" });
+      await recordFailure({ authFailureReason: "refresh_token_revoked" });
       await recordRecovery(origin);
-      await recordFailure({ authFailureReason: "session_expired" });
+      await recordFailure({ authFailureReason: "refresh_token_revoked" });
 
       expect(emailRequests).toHaveLength(2);
     },
@@ -159,7 +215,7 @@ describe("provider issue email delivery", () => {
         return HttpResponse.json({ messageId: "test-message" }, { status: 201 });
       }),
     );
-    const failure = recordFailure({ authFailureReason: "session_expired" });
+    const failure = recordFailure({ authFailureReason: "refresh_token_revoked" });
     await emailStarted.promise;
     const recovery = recordRecovery();
     const completion = Promise.allSettled([failure, recovery]);
@@ -173,7 +229,7 @@ describe("provider issue email delivery", () => {
       { status: "fulfilled", value: undefined },
       { status: "fulfilled", value: undefined },
     ]);
-    await recordFailure({ authFailureReason: "session_expired" });
+    await recordFailure({ authFailureReason: "refresh_token_revoked" });
 
     expect(emailRequests).toHaveLength(2);
   });
@@ -189,31 +245,31 @@ describe("provider issue email delivery", () => {
   });
 
   it("waits for the overall sync outcome instead of alerting on individual data steps", async () => {
-    await recordFailure({ dataType: "activities", authFailureReason: "session_expired" });
+    await recordFailure({ dataType: "activities", authFailureReason: "refresh_token_revoked" });
     await recordFailure({ dataType: "sleep" });
     expect(emailRequests).toHaveLength(0);
 
-    await recordFailure({ authFailureReason: "session_expired" });
+    await recordFailure({ authFailureReason: "refresh_token_revoked" });
     expect(emailRequests).toHaveLength(1);
   });
 
   it("keeps an issue active when only one data step succeeds", async () => {
-    await recordFailure({ authFailureReason: "session_expired" });
+    await recordFailure({ authFailureReason: "refresh_token_revoked" });
     await logSync(context.db, {
       providerId: "issue-provider",
       userId: TEST_USER_ID,
       dataType: "sleep",
       status: "success",
     });
-    await recordFailure({ authFailureReason: "session_expired" });
+    await recordFailure({ authFailureReason: "refresh_token_revoked" });
 
     expect(emailRequests).toHaveLength(1);
   });
 
   it("suppresses duplicate delivery from concurrent failure notifications", async () => {
     await Promise.all([
-      recordFailure({ authFailureReason: "session_expired" }),
-      recordFailure({ authFailureReason: "session_expired" }),
+      recordFailure({ authFailureReason: "refresh_token_revoked" }),
+      recordFailure({ authFailureReason: "refresh_token_revoked" }),
     ]);
 
     expect(emailRequests).toHaveLength(1);
@@ -226,7 +282,7 @@ describe("provider issue email delivery", () => {
       dataType: "sync",
       status: "error",
       origin: "scheduled",
-      authFailureReason: "session_expired",
+      authFailureReason: "refresh_token_revoked",
     });
     const providerLockAcquired = createTestBarrier();
     const releaseFailureInsert = createTestBarrier();
@@ -261,7 +317,7 @@ describe("provider issue email delivery", () => {
       dataType: "sync",
       status: "error",
       origin: "scheduled",
-      authFailureReason: "session_expired",
+      authFailureReason: "refresh_token_revoked",
     });
     await providerLockAcquired.promise;
     const notification = notifyProviderSyncIssue(context.db, TEST_USER_ID, "issue-provider");
@@ -286,9 +342,12 @@ describe("provider issue email delivery", () => {
     await ensureProvider(context.db, "issue-provider", "Test Provider", undefined, OTHER_USER_ID);
     await ensureProvider(context.db, "other-provider", "Other Provider", undefined, TEST_USER_ID);
 
-    await recordFailure({ authFailureReason: "session_expired" });
-    await recordFailure({ authFailureReason: "session_expired", userId: OTHER_USER_ID });
-    await recordFailure({ authFailureReason: "session_expired", providerId: "other-provider" });
+    await recordFailure({ authFailureReason: "refresh_token_revoked" });
+    await recordFailure({ authFailureReason: "refresh_token_revoked", userId: OTHER_USER_ID });
+    await recordFailure({
+      authFailureReason: "refresh_token_revoked",
+      providerId: "other-provider",
+    });
 
     expect(emailRequests).toHaveLength(3);
     expect(emailRequests[1]).toMatchObject({ to: [{ email: "other@example.test" }] });
@@ -302,7 +361,9 @@ describe("provider issue email delivery", () => {
         return HttpResponse.json({ message: "Email service unavailable" }, { status: 503 });
       }),
     );
-    await expect(recordFailure({ authFailureReason: "session_expired" })).resolves.toBeUndefined();
+    await expect(
+      recordFailure({ authFailureReason: "refresh_token_revoked" }),
+    ).resolves.toBeUndefined();
 
     server.resetHandlers();
     server.use(
@@ -311,8 +372,8 @@ describe("provider issue email delivery", () => {
         return HttpResponse.json({ messageId: "test-message" }, { status: 201 });
       }),
     );
-    await recordFailure({ authFailureReason: "session_expired" });
-    await recordFailure({ authFailureReason: "session_expired" });
+    await recordFailure({ authFailureReason: "refresh_token_revoked" });
+    await recordFailure({ authFailureReason: "refresh_token_revoked" });
 
     expect(emailRequests).toHaveLength(2);
     expect(await context.db.select().from(syncLog)).toHaveLength(3);
@@ -329,7 +390,7 @@ describe("provider issue email delivery", () => {
         { once: true },
       ),
     );
-    await recordFailure({ origin: "manual", authFailureReason: "session_expired" });
+    await recordFailure({ origin: "manual", authFailureReason: "refresh_token_revoked" });
     await recordFailure({ origin: "manual" });
     await recordFailure({ origin: "manual" });
 
@@ -346,7 +407,7 @@ describe("provider issue email delivery", () => {
         .update(userProfile)
         .set({ email: null })
         .where(eq(userProfile.id, TEST_USER_ID));
-      await recordFailure({ origin: "manual", authFailureReason: "session_expired" });
+      await recordFailure({ origin: "manual", authFailureReason: "refresh_token_revoked" });
       await recordRecovery(origin);
       await context.db
         .update(userProfile)
@@ -369,7 +430,7 @@ describe("provider issue email delivery", () => {
       .update(userProfile)
       .set({ email: null })
       .where(eq(userProfile.id, TEST_USER_ID));
-    await recordFailure({ origin: "manual", authFailureReason: "session_expired" });
+    await recordFailure({ origin: "manual", authFailureReason: "refresh_token_revoked" });
     await context.db.delete(providerConnection);
     await ensureProvider(context.db, "issue-provider", "Test Provider", undefined, TEST_USER_ID);
     await context.db
@@ -379,12 +440,12 @@ describe("provider issue email delivery", () => {
 
     await recordFailure({ origin: "manual" });
     expect(emailRequests).toHaveLength(0);
-    await recordFailure({ origin: "manual", authFailureReason: "session_expired" });
+    await recordFailure({ origin: "manual", authFailureReason: "refresh_token_revoked" });
     expect(emailRequests).toHaveLength(1);
   });
 
   it("does not treat an individual data-step auth error as an overall authorization issue", async () => {
-    await recordFailure({ dataType: "sleep", authFailureReason: "session_expired" });
+    await recordFailure({ dataType: "sleep", authFailureReason: "refresh_token_revoked" });
     await recordFailure({ origin: "manual" });
     expect(emailRequests).toHaveLength(0);
 
@@ -430,21 +491,21 @@ describe("provider issue email delivery", () => {
       .update(userProfile)
       .set({ email: null })
       .where(eq(userProfile.id, TEST_USER_ID));
-    await recordFailure({ authFailureReason: "session_expired" });
+    await recordFailure({ authFailureReason: "refresh_token_revoked" });
     expect(emailRequests).toHaveLength(0);
 
     await context.db
       .update(userProfile)
       .set({ email: "user@example.test" })
       .where(eq(userProfile.id, TEST_USER_ID));
-    await recordFailure({ authFailureReason: "session_expired" });
+    await recordFailure({ authFailureReason: "refresh_token_revoked" });
 
     expect(emailRequests).toHaveLength(1);
   });
 
   it("does not email about a disconnected provider", async () => {
     await context.db.delete(providerConnection);
-    await recordFailure({ authFailureReason: "session_expired" });
+    await recordFailure({ authFailureReason: "refresh_token_revoked" });
 
     expect(emailRequests).toHaveLength(0);
   });

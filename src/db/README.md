@@ -14,9 +14,14 @@ This directory contains the Drizzle ORM schema, migrations, and database connect
 - `provider`: Global catalog of registered data provider types.
 - `provider_connection`: Authoritative per-user provider connections.
 - `provider_issue_email`: Accepted issue-email delivery for each connection. The
-  [notification query](./provider-issue-notification.ts) keeps an undelivered
-  authorization warning eligible across later errors until a successful overall
-  sync, and excludes history from before the current connection was created.
+  [notification query](./provider-issue-notification.ts) alerts immediately for
+  confirmed refresh-token revocation. Other authorization failures wait for the
+  next automatic sync: recovery sends no email, another error sends one. Repeated
+  manual failures alone do not trigger that confirmation. Generic errors require
+  two automatic failures. Successful overall syncs clear the failure streak;
+  history from before the current connection was created is excluded. The
+  [integration tests](./provider-issue-notification.integration.test.ts) exercise
+  recovery, confirmation, delivery retry, and concurrent suppression.
 - `oauth_token`: OAuth credentials for provider APIs.
 - `activity`: Cardio/endurance workout sessions.
 - `daily_metrics`: Aggregated daily health data (HRV, Resting HR, steps).
