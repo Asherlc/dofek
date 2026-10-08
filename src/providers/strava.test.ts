@@ -8,7 +8,7 @@ vi.mock("../db/provider-data-deletion.ts", async (importOriginal) => {
 });
 
 const providerActivityAbsenceMocks = vi.hoisted(() => ({
-  markProviderActivityAbsent: vi.fn().mockResolvedValue(undefined),
+  markProviderActivityAbsent: vi.fn().mockResolvedValue(0),
   finishProviderActivityListSync: vi.fn().mockResolvedValue(undefined),
   upsertProviderActivity: vi.fn().mockResolvedValue({ id: "10000000-0000-4000-8000-000000000001" }),
 }));
@@ -1027,6 +1027,7 @@ describe("StravaProvider.syncWebhookEvent", () => {
 
   it("handles delete events by marking activity provider-absent", async () => {
     const provider = new StravaProvider(async () => new Response());
+    providerActivityAbsenceMocks.markProviderActivityAbsent.mockResolvedValueOnce(1);
 
     const mockDb = {
       select: vi.fn(),
@@ -1046,7 +1047,7 @@ describe("StravaProvider.syncWebhookEvent", () => {
       { userId: "00000000-0000-0000-0000-000000000001" },
     );
 
-    expect(result.recordsSynced).toBe(0);
+    expect(result.recordsSynced).toBe(1);
     expect(result.errors).toHaveLength(0);
     expect(providerActivityAbsenceMocks.markProviderActivityAbsent).toHaveBeenCalledWith(mockDb, {
       providerId: "strava",

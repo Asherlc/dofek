@@ -7,6 +7,7 @@ import type {} from "../bullmq-redis-client.ts";
 import type { DataExportRequest } from "../db/data-export.ts";
 import type { ProviderDataDeletionRequest } from "../db/provider-data-deletion.ts";
 import type { SyncLogOrigin } from "../db/schema/events.ts";
+import type { WebhookEvent } from "../providers/types.ts";
 import type { ProviderSyncTier } from "./provider-queue-config.ts";
 
 // ── Job payload types ──
@@ -26,6 +27,8 @@ export interface SyncJobData {
     | { type: "range"; sinceIso: string; untilIso: string };
   userId: string;
   checkpoint?: unknown;
+  /** Targeted provider event; absent for a regular window sync. */
+  webhookEvent?: WebhookEvent;
   processingOperationIds?: Record<string, string>;
 }
 

@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SyncDatabase } from "../db/index.ts";
 import { RefreshTokenRevokedError } from "../providers/auth-errors.ts";
 import type { SyncRun } from "../providers/sync-run.ts";
-import type { SyncResult } from "../providers/types.ts";
+import type { SyncResult, WebhookEvent } from "../providers/types.ts";
 
 import {
   createMockJob,
@@ -52,6 +52,101 @@ describe("sync-provider-execution", () => {
   afterEach(() => {
     vi.useRealTimers();
     vi.restoreAllMocks();
+  });
+
+  it("runs a targeted activity webhook through canonical processing", async () => {
+    const event: WebhookEvent = {
+      ownerExternalId: "owner-1",
+      eventType: "create",
+      objectType: "activity",
+      objectId: "20507693282",
+    };
+    const sync = vi.fn();
+    const syncWebhookEvent = vi.fn(
+      async () =>
+        ({
+          provider: "strava",
+          recordsSynced: 1,
+          errors: [],
+          duration: 42,
+        }) satisfies SyncResult,
+    );
+    const provider = Object.assign(
+      createMockProvider({ id: "strava", processingDatasetKeys: ["activity"], sync }),
+      { registerWebhook: vi.fn(), syncWebhookEvent },
+    );
+    mockGetEnabledSyncProviders.mockReturnValue([provider]);
+    const job = createMockJob({ providerId: "strava", userId: "user-1", sinceDays: 1 });
+    Object.assign(job.data, { webhookEvent: event });
+
+    await runSyncJob(job, mockDb);
+
+    expect(syncWebhookEvent).toHaveBeenCalledWith(
+      mockDb,
+      event,
+      expect.objectContaining({ userId: "user-1", metricStreamPublisher: expect.anything() }),
+    );
+    expect(sync).not.toHaveBeenCalled();
+    expect(mockRecordRelationalCanonicalCommits).toHaveBeenCalledWith(
+      mockDb,
+      expect.objectContaining({ datasetKeys: ["activity"] }),
+    );
+  });
+
+  it("preserves the provider receiver when running targeted webhook work", async () => {
+    const event: WebhookEvent = {
+      ownerExternalId: "owner-1",
+      eventType: "create",
+      objectType: "activity",
+      objectId: "activity-1",
+    };
+    const provider = Object.assign(createMockProvider({ id: "strava" }), {
+      registerWebhook: vi.fn(),
+      syncWebhookEvent: vi.fn(async function (this: { id: string }) {
+        expect(this.id).toBe("strava");
+        return { provider: this.id, recordsSynced: 1, errors: [], duration: 1 };
+      }),
+    });
+    mockGetEnabledSyncProviders.mockReturnValue([provider]);
+    const job = createMockJob({ providerId: "strava", userId: "user-1", sinceDays: 1 });
+    Object.assign(job.data, { webhookEvent: event });
+
+    await runSyncJob(job, mockDb);
+
+    expect(provider.syncWebhookEvent).toHaveBeenCalledOnce();
+    expect(provider.sync).not.toHaveBeenCalled();
+  });
+
+  it("reports a targeted webhook failure and runs a full sync in the worker", async () => {
+    const error = new Error("Targeted fetch failed");
+    const event: WebhookEvent = {
+      ownerExternalId: "owner-1",
+      eventType: "create",
+      objectType: "activity",
+      objectId: "activity-1",
+    };
+    const sync = vi.fn(async () => ({
+      provider: "strava",
+      recordsSynced: 1,
+      errors: [],
+      duration: 1,
+    }));
+    const provider = Object.assign(createMockProvider({ id: "strava", sync }), {
+      registerWebhook: vi.fn(),
+      syncWebhookEvent: vi.fn(async () => {
+        throw error;
+      }),
+    });
+    mockGetEnabledSyncProviders.mockReturnValue([provider]);
+    const job = createMockJob({ providerId: "strava", userId: "user-1", sinceDays: 1 });
+    Object.assign(job.data, { webhookEvent: event });
+
+    await runSyncJob(job, mockDb);
+
+    expect(sync).toHaveBeenCalledOnce();
+    expect(mockCaptureException).toHaveBeenCalledWith(error, {
+      tags: { provider: "strava", webhookPhase: "targeted-sync" },
+    });
   });
 
   it("invalidates user queries after a nonzero WHOOP sync", async () => {

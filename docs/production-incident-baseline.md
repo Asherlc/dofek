@@ -1,5 +1,12 @@
 # Production Incident Baseline
 
+## 2026-10-08 — Targeted webhook activity bypassed automatic grouping
+
+- **Status / impact:** The affected WHOOP and Strava activities now resolve to one group after a one-day Strava sync. The recurrence fix is implemented locally and awaits deployment.
+- **Evidence / root cause:** A read-only production query found two active source rows for the same user with 94.9% interval overlap, separate group IDs, and no group alias. The last Strava full-sync activity canonical commit finished at 21:00:56 UTC; the source row was created at 21:03:41 UTC by a targeted webhook. Web logs show the webhook completed in about 13 seconds and was delivered three times. [The webhook route](../packages/server/src/routes/webhooks.ts) calls `syncWebhookEvent` inside the HTTP request and bypasses [worker output recording](../src/jobs/sync-processing-operation.ts), where [activity reconciliation](../src/processing/processing-event-store.ts) runs. Strava requires a 200 response within two seconds and recommends asynchronous processing ([Strava webhook documentation](https://developers.strava.com/docs/webhooks/)).
+- **Fix / validation:** The existing overlap rule already qualifies this pair; no matching-threshold change is needed. A one-day production Strava sync merged the two groups; both activity URLs now resolve to the WHOOP-anchored group, which includes both providers. The code change queues targeted events for the provider worker, where canonical commits and downstream processing run. Targeted delete events report actual changed rows so reconciliation runs when needed. Unit and database integration tests cover these paths.
+- **Remaining risk / follow-up:** Deploy the worker and webhook changes, then confirm new targeted callbacks complete within the provider response window and create processing operations. No new timeout or retry setting was added.
+
 ## 2026-10-06 — Missing activity end times corrupted training charts
 
 - **Status / impact:** Production weekly volume, ramp rate, and load strain included enormous negative durations/load. The bounded data repair and [durable server deployment](https://github.com/Asherlc/dofek/actions/runs/37518013362) are complete. PR merge remains gated on native Apple CI checks.
