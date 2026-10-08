@@ -17,6 +17,11 @@ describe("getActivityRoute", () => {
 
     await expect(getActivityRoute(store, window, 500)).resolves.toEqual({ status: "processing" });
     expect(query).toHaveBeenCalledOnce();
+    expect(query).toHaveBeenCalledWith(expect.anything(), expect.any(String), {
+      userId: window.userId,
+      activityId: window.activityId,
+      memberActivityIds: window.memberActivityIds,
+    });
   });
 
   it("reports no GPS when the current route model has no live points", async () => {
@@ -43,6 +48,13 @@ describe("getActivityRoute", () => {
       points,
     });
     expect(query).toHaveBeenCalledTimes(2);
+    expect(query).toHaveBeenNthCalledWith(2, expect.anything(), expect.any(String), {
+      userId: window.userId,
+      activityId: window.activityId,
+      startedAt: window.startedAt,
+      endedAt: window.endedAt,
+      maxPoints: 500,
+    });
   });
 
   it("reports no route if there are no points inside the activity window", async () => {
