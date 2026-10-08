@@ -2656,7 +2656,7 @@ describe("StravaProvider.sync — additional coverage", () => {
     }
   });
 
-  it("refreshes again when a token approaches expiry during a paced sync", async () => {
+  it("refreshes at the one-hour boundary during a paced sync", async () => {
     setupEnv();
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(new Date("2026-10-08T20:00:00Z"));
@@ -2677,14 +2677,16 @@ describe("StravaProvider.sync — additional coverage", () => {
         }
         activityHeaders.push(new Headers(init?.headers).get("Authorization") ?? "");
         if (urlString.includes("/athlete/activities")) {
-          vi.setSystemTime(new Date("2026-10-08T21:30:00Z"));
+          vi.setSystemTime(new Date("2026-10-08T21:00:00Z"));
           return Promise.resolve(Response.json([MOCK_ACTIVITY]));
         }
         if (urlString.includes("/streams")) return Promise.resolve(Response.json([]));
         return Promise.resolve(Response.json(MOCK_ACTIVITY));
       });
 
-      const provider = new StravaProvider(mockFetch);
+      vi.resetModules();
+      const { StravaProvider: ReloadedStravaProvider } = await import("./strava.ts");
+      const provider = new ReloadedStravaProvider(mockFetch);
       const result = await provider.sync(
         new SyncRun({
           db: createMockDb([{ ...VALID_TOKEN, expiresAt: new Date("2026-10-08T22:00:00Z") }]),
