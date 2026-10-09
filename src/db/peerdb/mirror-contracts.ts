@@ -95,6 +95,11 @@ export const peerDbMirrorContracts = [
         exclude: [],
       },
       {
+        sourceTableIdentifier: "fitness.provider_field_priority",
+        destinationTableIdentifier: "provider_field_priority",
+        exclude: [],
+      },
+      {
         sourceTableIdentifier: "fitness.device_priority",
         destinationTableIdentifier: "device_priority",
         exclude: [],

@@ -13,6 +13,7 @@ import { join } from "node:path";
 import { Client } from "pg";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
+import { assertPostgresAccountErasureCoverage } from "../account-erasure/postgres-erasure.ts";
 import { resetLegacyClimbingTables } from "./climbing-migration-test-helpers.ts";
 import { runMigrations } from "./migrate.ts";
 import { setupTestDatabase, type TestContext, writeTestMigrationFiles } from "./test-helpers.ts";
@@ -64,6 +65,10 @@ describe("runMigrations", () => {
 
   afterEach(async () => {
     await ctx?.cleanup();
+  });
+
+  it("classifies every table in the migrated schema for account erasure", async () => {
+    await expect(assertPostgresAccountErasureCoverage(ctx.db)).resolves.toBeUndefined();
   });
 
   it("runs migrations successfully and returns count", async () => {

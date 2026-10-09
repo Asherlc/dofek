@@ -77,6 +77,16 @@ ${peerDbMetadataColumnDefinitions}
 ${replacingMergeTreeTable("(user_id, provider_id)")}`;
 }
 
+export function buildPostgresFitnessProviderFieldPriorityRawTableStatement(): string {
+  return `CREATE TABLE IF NOT EXISTS postgres_fitness.provider_field_priority (
+  provider_id String,
+  field_key String,
+  priority Int64,
+${peerDbMetadataColumnDefinitions}
+)
+${replacingMergeTreeTable("(provider_id, field_key)")}`;
+}
+
 export function buildPostgresFitnessClinicalRecordRawTableStatement(): string {
   return `CREATE TABLE IF NOT EXISTS postgres_fitness.clinical_record (
   id UUID,
@@ -221,6 +231,7 @@ ${replacingMergeTreeTable("(user_id, start_date, provider_id, id)")}`,
 ${peerDbMetadataColumnDefinitions}
 )
 ${replacingMergeTreeTable("(provider_id)")}`,
+    buildPostgresFitnessProviderFieldPriorityRawTableStatement(),
     `CREATE TABLE IF NOT EXISTS postgres_fitness.device_priority (
   provider_id String,
   source_name_pattern String,

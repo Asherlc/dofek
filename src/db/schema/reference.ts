@@ -101,6 +101,16 @@ export const providerPriority = fitness.table("provider_priority", {
   dailyActivityPriority: integer("daily_activity_priority"),
 });
 
+export const providerFieldPriority = fitness.table(
+  "provider_field_priority",
+  {
+    providerId: text("provider_id").notNull(),
+    fieldKey: text("field_key").notNull(),
+    priority: bigint("priority", { mode: "number" }).notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.providerId, table.fieldKey] })],
+);
+
 export const devicePriority = fitness.table(
   "device_priority",
   {
@@ -150,6 +160,7 @@ export const providerPriorityAudit = fitness.table(
     providerId: text("provider_id").notNull(),
     sourceNamePattern: text("source_name_pattern"),
     channel: text("channel"),
+    fieldKey: text("field_key"),
     oldValue: jsonb("old_value"),
     newValue: jsonb("new_value"),
     reason: text("reason"),

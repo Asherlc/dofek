@@ -13,6 +13,7 @@ import {
   repairActivityDataIntegrity,
   rollbackActivityDataIntegrity,
 } from "./activity-data-integrity-repair.ts";
+import { buildPostgresFitnessProviderFieldPriorityRawTableStatement } from "./clickhouse-raw-tables.ts";
 import { TEST_USER_ID } from "./schema/core.ts";
 import { setupTestDatabase, type TestContext } from "./test-helpers.ts";
 import { ensureProvider } from "./tokens.ts";
@@ -242,6 +243,10 @@ async function seedProductionDbtFixture(
   const statements = [
     `DROP DATABASE IF EXISTS ${database} SYNC`,
     `CREATE DATABASE ${database}`,
+    buildPostgresFitnessProviderFieldPriorityRawTableStatement().replaceAll(
+      "postgres_fitness.",
+      `${database}.`,
+    ),
     `CREATE TABLE ${database}.activity (
       id UUID,
       provider_id String,

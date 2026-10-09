@@ -13,6 +13,7 @@ const SHARED_SYSTEM_TABLES = new Set([
   "fitness.nutrient",
   "fitness.provider",
   "fitness.provider_connection_backfill_progress",
+  "fitness.provider_field_priority",
   "fitness.provider_priority",
   "fitness.provider_priority_audit",
   "fitness.sensor_device_priority",

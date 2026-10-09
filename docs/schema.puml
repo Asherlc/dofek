@@ -82,6 +82,13 @@ entity "provider_connection" {
   updated_at : timestamp
 }
 
+entity "provider_field_priority" {
+  * provider_id : text <<PK>>
+  * field_key : text <<PK>>
+  --
+  priority : bigint
+}
+
 entity "provider_issue_email" {
   * user_id : uuid <<PK>>
   * provider_id : text <<PK>>
@@ -108,6 +115,7 @@ entity "provider_priority_audit" {
   provider_id : text
   source_name_pattern : text
   channel : text
+  field_key : text
   old_value : jsonb
   new_value : jsonb
   reason : text
