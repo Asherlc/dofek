@@ -141,21 +141,36 @@ These behaviors come from the pinned
    requires fresh recovery review. Stop if the workflow has changed or evidence
    names a different failure. Slot fields are documented in
    [PostgreSQL replication slots](https://www.postgresql.org/docs/current/view-pg-replication-slots.html).
-2. Review the incident-specific baseline: ten mappings for `fitness.activity`,
+2. Decode the catalog's `flows.config_proto` with established protobuf tooling
+   and the pinned [FlowConnectionConfigs definition](https://github.com/PeerDB-io/peerdb/blob/v0.36.19/protos/flow.proto#L50-L102).
+   Require exactly the incident-specific baseline: ten mappings for `fitness.activity`,
    `sleep_session`, `sleep_stage`, `daily_metrics`, `provider`,
    `provider_connection`, `provider_priority`, `device_priority`,
    `processing_flow_marker`, and `user_profile`; each destination has the same
    unqualified table name. The pending addition is
    `fitness.provider_field_priority` to `provider_field_priority`. Preserve all
    live mapping properties, including the existing sleep/daily exclusions.
-   Do not substitute a newly rendered contract or remove a baseline table.
+   Review catalog baseline mappings separately from API/workflow mappings: the
+   [status handler](https://github.com/PeerDB-io/peerdb/blob/v0.36.19/flow/cmd/mirror_status.go)
+   replaces catalog mappings with workflow mappings when available. Require
+   Temporal evidence that the pending `AddTablesToPublication` activity names
+   only `fitness.provider_field_priority`. Stop for any different activity or
+   table set. Do not substitute a newly rendered contract or remove a baseline
+   table.
 3. Run the source and catalog queries below through the existing read-only
-   database operator connections, without exporting credentials. Require nonzero
-   source OIDs and publication membership for every baseline table, catalog
-   schema entries for their destinations, and no completed pending addition.
-   The cancellation endpoint separately rejects a missing catalog schema or
-   zero catalog OID before mutation. A completed addition is retained by the
-   endpoint and requires fresh review rather than this baseline-only recovery.
+   database operator connections, without exporting credentials. Decode each
+   baseline destination's `table_schema_mapping.table_schema` with the pinned
+   [TableSchema definition](https://github.com/PeerDB-io/peerdb/blob/v0.36.19/protos/flow.proto#L236-L245).
+   Require every stored `table_oid` to be nonzero and exactly equal to its live
+   source relation OID, every baseline table to belong to the publication, and
+   no completed pending addition. Print only source/destination identifiers,
+   exclusions, OIDs, and equality results; never the whole config or `env` map.
+   Catalog schema names alone are insufficient. The endpoint rejects a missing
+   catalog schema or zero catalog OID before mutation, but its
+   [OID lookup](https://github.com/PeerDB-io/peerdb/blob/v0.36.19/flow/activities/cancel_table_addition_activity.go)
+   does not compare stored OIDs with the live source. A completed addition is
+   retained by the endpoint and requires fresh review rather than this
+   baseline-only recovery.
 
 ```sql
 -- Source Postgres: all ten baseline rows must have nonzero OIDs and published=true.
@@ -172,10 +187,12 @@ SELECT slot_name, active, wal_status, restart_lsn,
 FROM pg_replication_slots
 WHERE slot_name = 'peerflow_slot_dofek_fitness_raw_analytics';
 
--- PeerDB catalog: every baseline destination must exist; no pending copy may be complete.
+-- PeerDB catalog: decode each baseline schema's stored table_oid separately.
 SELECT table_name FROM public.table_schema_mapping
 WHERE flow_name = 'dofek_fitness_raw_analytics' ORDER BY table_name;
-SELECT source_table, run_uuid, consolidate_complete FROM peerdb_stats.qrep_runs
+SELECT count(*) AS pending_runs,
+  count(*) FILTER (WHERE consolidate_complete) AS completed_pending_runs
+FROM peerdb_stats.qrep_runs
 WHERE parent_mirror_name = 'dofek_fitness_raw_analytics'
   AND source_table = 'fitness.provider_field_priority';
 ```
@@ -240,7 +257,10 @@ NODE
    with the [CDC health runbook](clickhouse-cdc-health-runbook.md).
 6. Deploy the tested fix through canonical CI. Require migrations, full CDC
    setup, finalize, and exact marker verification to succeed before the final
-   stack deploy restores consumers. Confirm `provider_field_priority` exists
+   stack deploy restores consumers. The [workflow](../.github/workflows/deploy-web-stack.yml)
+   then checks five consumers and three R2 archives serially, requiring each
+   service's same task to remain converged for 60 seconds. Confirm
+   `provider_field_priority` exists
    on both databases, belongs to the publication, and is mirrored. An active
    slot or successful cancellation alone does not prove that new mapping or
    analytics freshness. Record the recovery evidence in the
