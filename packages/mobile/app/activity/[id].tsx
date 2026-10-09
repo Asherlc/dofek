@@ -895,15 +895,17 @@ export default function ActivityDetailScreen() {
           {localStartTime === "--" ? "Local time unavailable" : localStartTime}
         </Text>
         {(activity.sourceLinks.length > 0 || activity.sourceProviders.length > 0) && (
-          <View style={styles.sourceRow}>
-            <Text style={styles.source}>Source: </Text>
-            <ActivitySourceLinks activity={activity} />
+          <View>
+            <View style={styles.sourceRow}>
+              <Text style={styles.source}>Source: </Text>
+              <ActivitySourceLinks activity={activity} />
+            </View>
+            {activity.sourceDecision ? (
+              <ActivitySourceDecisionCard key={activity.id} decision={activity.sourceDecision} />
+            ) : null}
           </View>
         )}
         {activity.providerAbsentAt && <ProviderAbsentBanner activity={activity} />}
-        {activity.sourceDecision ? (
-          <ActivitySourceDecisionCard decision={activity.sourceDecision} />
-        ) : null}
       </View>
 
       {/* Stats Grid */}

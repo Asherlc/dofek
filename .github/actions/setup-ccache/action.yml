@@ -1,5 +1,5 @@
 name: Setup ccache for Xcode
-description: Install ccache, configure it for Xcode, create compiler wrappers, and restore cache
+description: Install ccache, configure it for Xcode compiler launchers, and restore cache
 
 inputs:
   cache-key-prefix:
@@ -17,20 +17,6 @@ runs:
         ccache --set-config=sloppiness=clang_index_store,file_stat_matches,include_file_ctime,include_file_mtime,ivfsoverlay,pch_defines,modules,system_headers,time_macros
         ccache --set-config=depend_mode=true
         ccache --set-config=compiler_check=content
-        CCACHE_BIN=$(which ccache)
-        CLANG_PATH=$(xcrun --find clang)
-        CLANGXX_PATH=$(xcrun --find clang++)
-        WRAPPER_DIR="$RUNNER_TEMP/ccache-wrappers"
-        mkdir -p "$WRAPPER_DIR"
-        cat > "$WRAPPER_DIR/ccache-clang" <<WRAPPER
-        #!/bin/bash
-        exec "$CCACHE_BIN" "$CLANG_PATH" "\$@"
-        WRAPPER
-        cat > "$WRAPPER_DIR/ccache-clang++" <<WRAPPER
-        #!/bin/bash
-        exec "$CCACHE_BIN" "$CLANGXX_PATH" "\$@"
-        WRAPPER
-        chmod +x "$WRAPPER_DIR/ccache-clang" "$WRAPPER_DIR/ccache-clang++"
     - name: Cache ccache
       uses: actions/cache@a7833574556fa59680c1b7cb190c1735db73ebf0 # v5.0.0
       with:

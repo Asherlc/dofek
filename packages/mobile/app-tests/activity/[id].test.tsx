@@ -1322,7 +1322,9 @@ describe("ActivityDetailScreen", () => {
     const { default: ActivityDetailScreen } = await import("../../app/activity/[id]");
     render(React.createElement(ActivityDetailScreen));
 
-    expect(screen.getByText("How sources were combined")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "How sources were combined" })).toBeTruthy();
+    expect(screen.queryByText("2")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "How sources were combined" }));
     expect(screen.getByText("2")).toBeTruthy();
   });
 
