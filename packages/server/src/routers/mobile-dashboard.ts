@@ -185,7 +185,7 @@ export const mobileDashboardRouter = router({
 
   recovery: cachedProtectedQuery({
     maxAge: CacheTTL.MEDIUM,
-    keyVersion: HEALTH_STATUS_CACHE_KEY_VERSION,
+    keyVersion: `${HEALTH_STATUS_CACHE_KEY_VERSION}:resting-heart-rate-trend-v1`,
   })
     .input(dateWindowInput)
     .output(mobileRecoveryTabOutputSchema)

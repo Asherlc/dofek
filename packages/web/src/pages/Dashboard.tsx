@@ -47,10 +47,11 @@ const restingHeartRateChartRowSchema = z
   .object({
     date: z.string(),
     resting_hr: z.number().nullable(),
+    resting_hr_mean_7d: z.number().nullable(),
   })
   .transform((row) => ({
     date: row.date,
-    restingHeartRate: row.resting_hr,
+    restingHeartRate: row.resting_hr == null ? null : row.resting_hr_mean_7d,
   }));
 
 function buildHealthMetrics(trendData: TrendRow | undefined): HealthStatusMetric[] {

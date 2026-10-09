@@ -62,6 +62,7 @@ function validRecoveryFixture(): z.input<typeof mobileRecoveryFixtureSchema> {
           resting_hr_mean_7d: 53,
         },
       ],
+      restingHeartRateTrendDirection: null,
       readinessScore: [
         {
           date: input.endDate,

@@ -107,6 +107,27 @@ type Story = StoryObj<typeof meta>;
 
 export const Default: Story = {};
 
+export const SmoothedRecentTrend: Story = {
+  name: "Smoothed 90-day resting heart rate trend",
+  args: {
+    days: 90,
+    endDate: "2026-10-08",
+    trend: {
+      latestRestingHeartRate: 54,
+      averageRestingHeartRate: 53.5,
+      restingHeartRateTrendLabel: "above average",
+      restingHeartRatePoints: Array.from({ length: 90 }, (_, dayIndex) => {
+        const date = new Date("2026-07-11T12:00:00Z");
+        date.setUTCDate(date.getUTCDate() + dayIndex);
+        return {
+          date: date.toISOString().slice(0, 10),
+          value: 53.5 + Math.sin(dayIndex / 8) * 0.6 + Math.sin(dayIndex / 3) * 0.2,
+        };
+      }),
+    },
+  },
+};
+
 export const Loading: Story = {
   args: {
     topInsight: undefined,

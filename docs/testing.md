@@ -157,6 +157,44 @@ and requires connected containers to be disconnected before
 After freeing an approved unused network, rerun `pnpm compose:up` from the
 current workspace; do not replace its generated service ports while running.
 
+If all existing networks are occupied and the current workspace's default
+network is absent, create only that network with an explicitly chosen subnet.
+From the repository root, obtain the project and default-network names through
+the [workspace Compose wrapper](../scripts/compose-command.ts), which uses the
+physical workspace directory rather than inherited shell configuration:
+
+```bash
+pnpm --silent compose -- config --format json | jq '{project: .name, defaultNetwork: .networks.default.name}'
+docker network ls --quiet | xargs docker network inspect --format '{{.Name}} {{range .IPAM.Config}}{{.Subnet}} {{end}}'
+```
+
+Check host and VPN destination ranges as well: use `netstat -rn -f inet` on
+macOS or `ip -4 route show table all` on Linux, with the relevant VPN connected.
+Choose a private CIDR that overlaps none of the Docker subnets or host/VPN
+destination ranges, excluding default routes. Do not copy a subnet from a
+previous incident; it may now be allocated. Docker requires non-overlapping
+subnets and supports explicit allocation through
+[`network create --subnet`](https://docs.docker.com/reference/cli/docker/network/create/).
+
+Confirm the reported default network is still absent with
+`docker network inspect CURRENT_WORKSPACE_DEFAULT_NETWORK`, then replace all
+three placeholders below with the checked subnet and the wrapper's reported
+names:
+
+```bash
+docker network create --driver bridge --subnet CHECKED_UNUSED_PRIVATE_CIDR \
+  --label com.docker.compose.project=CURRENT_WORKSPACE_PROJECT \
+  --label com.docker.compose.network=default \
+  CURRENT_WORKSPACE_DEFAULT_NETWORK
+```
+
+The labels match [Compose's network metadata](https://docs.docker.com/reference/compose-file/networks/#labels).
+Inspect the created network's labels and subnet, then rerun the original
+command unchanged through the workspace wrapper. Preserve every occupied
+network and other workspace's containers and volumes. This operator action
+does not expand the daemon's default address pools; future workspaces need
+their own checked-unused subnet or a separately approved pool change.
+
 ### Shared Docker VM Resource Pressure
 
 When independent services restart or database setup times out, collect capacity

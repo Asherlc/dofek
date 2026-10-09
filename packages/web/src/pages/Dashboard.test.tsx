@@ -583,7 +583,7 @@ describe("Dashboard", () => {
     ).toBeTruthy();
   });
 
-  it("passes API-backed resting heart rate chart points into the dashboard overview", () => {
+  it("passes server-smoothed resting heart rate chart points into the dashboard overview", () => {
     mockTrendsQuery.mockReturnValue({
       data: {
         avg_hrv: 43.8,
@@ -611,9 +611,10 @@ describe("Dashboard", () => {
     });
     mockHeartRateBaselineQuery.mockReturnValue({
       data: [
-        { date: "2026-05-25", resting_hr: 57 },
-        { date: "2026-05-26", resting_hr: null },
-        { date: "2026-05-27", resting_hr: 55 },
+        { date: "2026-05-24", resting_hr: 60, resting_hr_mean_7d: null },
+        { date: "2026-05-25", resting_hr: 64, resting_hr_mean_7d: 57.2 },
+        { date: "2026-05-26", resting_hr: null, resting_hr_mean_7d: 57.2 },
+        { date: "2026-05-27", resting_hr: 55, resting_hr_mean_7d: 56.5 },
       ],
       isLoading: false,
       error: null,
@@ -627,8 +628,8 @@ describe("Dashboard", () => {
           latestRestingHeartRate: 55,
           averageRestingHeartRate: 56.2,
           restingHeartRatePoints: [
-            { date: "2026-05-25", value: 57 },
-            { date: "2026-05-27", value: 55 },
+            { date: "2026-05-25", value: 57.2 },
+            { date: "2026-05-27", value: 56.5 },
           ],
         }),
         restingHeartRateLoading: false,

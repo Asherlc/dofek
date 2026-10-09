@@ -235,6 +235,7 @@ export const mobileRecoveryTabOutputSchema = z.object({
       resting_hr_mean_7d: nonnegativeNumberSchema.nullable(),
     }),
   ),
+  restingHeartRateTrendDirection: z.enum(["up", "down", "stable"]).nullable(),
   readinessScore: z.array(readinessRowOutputSchema),
   stress: stressOutputSchema,
   trends: z
