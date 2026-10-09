@@ -8,7 +8,7 @@ import {
   computeDailyStress,
   computeStressTrend,
 } from "@dofek/recovery/stress";
-import { baselineReadinessComponents } from "@dofek/scoring/scoring";
+import { baselineReadinessComponents, trendDirection } from "@dofek/scoring/scoring";
 import type { Database } from "dofek/db";
 import { captureException } from "dofek/lib/error-reporting";
 import { getEffectiveParams } from "dofek/personalization/params";
@@ -339,9 +339,22 @@ export async function loadMobileRecoveryTab(
     ),
   ];
 
+  const restingHeartRateTrendValues = hrvBaseline
+    .slice(-14)
+    .flatMap((row) =>
+      row.resting_hr != null && row.resting_hr_mean_7d != null ? [row.resting_hr_mean_7d] : [],
+    );
+  const previousRestingHeartRateAverage = restingHeartRateTrendValues.at(-2);
+  const latestRestingHeartRateAverage = restingHeartRateTrendValues.at(-1);
+  const restingHeartRateTrendDirection =
+    previousRestingHeartRateAverage == null || latestRestingHeartRateAverage == null
+      ? null
+      : trendDirection(latestRestingHeartRateAverage, previousRestingHeartRateAverage);
+
   return {
     hrvVariability: computeHrvVariability(dailyMetricsRows, days, endDate),
     hrvBaseline,
+    restingHeartRateTrendDirection,
     readinessScore,
     stress,
     trends: deriveTrends(dailyMetrics),

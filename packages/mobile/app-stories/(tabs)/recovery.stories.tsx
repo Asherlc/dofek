@@ -144,6 +144,7 @@ function createSeededProviders(healthspanInsufficient = false, recoveryUnavailab
         mean_7d: 52,
         resting_hr_mean_7d: 53 + Math.sin(index / 4) * 0.5,
       })),
+      restingHeartRateTrendDirection: "down",
       readinessScore: trendDates.map((date, index) => ({
         date,
         readinessScore: 68 + (index % 5) * 4,

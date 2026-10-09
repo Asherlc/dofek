@@ -228,9 +228,6 @@ export default function RecoveryScreen() {
     (metric) => metric.metric === "sleep_efficiency",
   );
   const hrvValues = hrvData.flatMap((d) => (d.hrv != null ? [d.hrv] : []));
-  const restingHeartRateValues = hrvBaselineData.flatMap((d) =>
-    d.resting_hr != null ? [d.resting_hr] : [],
-  );
   const restingHeartRateTrend = hrvBaselineData.map((d) =>
     d.resting_hr == null ? null : d.resting_hr_mean_7d,
   );
@@ -481,14 +478,7 @@ export default function RecoveryScreen() {
                 ? formatBaselineContext(restingHeartRateContext, { unit: "bpm" })
                 : undefined
             }
-            trendDirection={
-              restingHeartRateValues.length >= 2
-                ? computeTrend(
-                    restingHeartRateValues[restingHeartRateValues.length - 1] ?? 0,
-                    restingHeartRateValues[restingHeartRateValues.length - 2] ?? 0,
-                  )
-                : undefined
-            }
+            trendDirection={recoveryData?.restingHeartRateTrendDirection ?? undefined}
             onViewData={() => router.push("/daily-heart-rate")}
           />
 

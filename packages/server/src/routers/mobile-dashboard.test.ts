@@ -848,6 +848,7 @@ function emptyRecoveryTabResult(): import("../services/mobile-recovery-tab.ts").
   return {
     hrvVariability: [],
     hrvBaseline: [],
+    restingHeartRateTrendDirection: null,
     readinessScore: [],
     stress: { daily: [], weekly: [], latestScore: null, trend: "stable" },
     trends: null,
@@ -1040,6 +1041,7 @@ describe("mobileDashboard.recovery", () => {
     const loadSpy = vi.spyOn(mobileRecoveryTab, "loadMobileRecoveryTab").mockResolvedValue({
       hrvVariability: [],
       hrvBaseline: [],
+      restingHeartRateTrendDirection: null,
       readinessScore: [],
       stress: { daily: [], weekly: [], latestScore: null, trend: "stable" },
       trends: null,
@@ -1122,6 +1124,7 @@ describe("mobileDashboard.recovery", () => {
     const loadSpy = vi.spyOn(mobileRecoveryTab, "loadMobileRecoveryTab").mockResolvedValue({
       hrvVariability: [],
       hrvBaseline: [],
+      restingHeartRateTrendDirection: null,
       readinessScore: [],
       stress: { daily: [], weekly: [], latestScore: null, trend: "stable" },
       trends: null,
