@@ -595,7 +595,7 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
     expect(screen.queryByText("24")).toBeNull();
   });
 
-  it("displays Resting Heart Rate from the baseline query", async () => {
+  it("displays Resting Heart Rate with the server's 7-day average trend", async () => {
     mockRecoveryData = {
       hrvVariability: [],
       hrvBaseline: [
@@ -603,7 +603,7 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
           date: "2026-04-05",
           hrv: 50,
           resting_hr: 56,
-          resting_hr_mean_7d: 57,
+          resting_hr_mean_7d: 53,
         },
         {
           date: "2026-04-06",
@@ -627,16 +627,45 @@ describe("RecoveryScreen SpO2 and Skin Temperature cards", () => {
     expect(screen.getByText("Resting Heart Rate")).toBeTruthy();
     expect(screen.getByText("54")).toBeTruthy();
     expect(
+      screen.getByText("54").parentElement?.querySelector('[data-testid="trend-arrow"]')
+        ?.textContent,
+    ).toBe("\u2193");
+    expect(
+      screen
+        .getByRole("button", { name: "About Resting Heart Rate" })
+        .getAttribute("aria-description"),
+    ).toMatch(/7-day average/);
+    expect(
       screen.getByText(
         "30d baseline 50.0 bpm ± 5.0 bpm · 1.0 SD above baseline · 7d vs prior 28d +2.0 bpm · 24/30 baseline days",
       ),
     ).toBeTruthy();
 
-    const restingHeartRateSparklineCall = sparkLinePropsCalls.find((sparkLineProps) => {
-      const data = sparkLineProps.data;
-      return Array.isArray(data) && data[0] === 56 && data[1] === 54;
+    const restingHeartRateSparklineCall = sparkLinePropsCalls.find(
+      (props) => props.color === "#ff0",
+    );
+    expect(restingHeartRateSparklineCall?.data).toEqual([53, 55]);
+  });
+
+  it("preserves unavailable readings and averages as gaps in the resting-heart-rate trend", async () => {
+    mockRecoveryData = createRecoveryFixture({
+      hrvBaseline: [
+        { date: "2026-04-02", resting_hr: 56, resting_hr_mean_7d: 57 },
+        { date: "2026-04-03", resting_hr: null, resting_hr_mean_7d: 56 },
+        { date: "2026-04-04", resting_hr: 54, resting_hr_mean_7d: 55 },
+        { date: "2026-04-05", resting_hr: 52, resting_hr_mean_7d: null },
+        { date: "2026-04-06", resting_hr: 50, resting_hr_mean_7d: 53 },
+      ].map((row) => ({ hrv: null, mean_60d: null, sd_60d: null, mean_7d: null, ...row })),
+      baselineRelative: [baselineMetric("resting_heart_rate", 50)],
     });
-    expect(restingHeartRateSparklineCall).toBeDefined();
+
+    const { default: RecoveryScreen } = await import("../../app/(tabs)/recovery");
+    render(<RecoveryScreen />);
+
+    const restingHeartRateSparklineCall = sparkLinePropsCalls.find(
+      (props) => props.color === "#ff0",
+    );
+    expect(restingHeartRateSparklineCall?.data).toEqual([57, null, 55, null, 53]);
   });
 
   it("opens contributing heart-rate readings from the resting-heart-rate card", async () => {

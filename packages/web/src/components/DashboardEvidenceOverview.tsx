@@ -19,6 +19,7 @@ export interface DashboardTrendSnapshot {
 
 export interface RestingHeartRatePoint {
   date: string;
+  /** Server-computed trailing 7-day average. */
   value: number;
 }
 
@@ -197,19 +198,22 @@ export function DashboardEvidenceOverview({
               <p className="text-xs text-muted">bpm</p>
               <p className="text-xs text-muted">{trendLabel}</p>
             </div>
-            <MiniChartFrame
-              data={restingHeartRatePoints.length > 1 ? restingHeartRatePoints : []}
-              loading={restingHeartRateLoading}
-              error={restingHeartRateError}
-              height={112}
-            >
-              <MiniTrend
-                points={restingHeartRatePoints}
-                averageRestingHeartRate={trend.averageRestingHeartRate}
-                formatRestingHeartRate={formatRestingHeartRate}
-                tone={restingHeartRateToneValue}
-              />
-            </MiniChartFrame>
+            <div>
+              <p className="mb-1 text-xs text-muted">7-day average</p>
+              <MiniChartFrame
+                data={restingHeartRatePoints.length > 1 ? restingHeartRatePoints : []}
+                loading={restingHeartRateLoading}
+                error={restingHeartRateError}
+                height={112}
+              >
+                <MiniTrend
+                  points={restingHeartRatePoints}
+                  averageRestingHeartRate={trend.averageRestingHeartRate}
+                  formatRestingHeartRate={formatRestingHeartRate}
+                  tone={restingHeartRateToneValue}
+                />
+              </MiniChartFrame>
+            </div>
           </div>
           <Link
             aria-label="View resting heart rate data"
@@ -410,19 +414,27 @@ function MiniTrend({
           opacity="0.5"
         />
       )}
-      <path d={pathData} fill="none" stroke={tone.colorVariable} strokeWidth="2" />
+      <path
+        d={pathData}
+        fill="none"
+        stroke={tone.colorVariable}
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
       <path d={areaData} fill={tone.colorVariable} opacity={tone.fillOpacity} />
       {points.map((point, index) => (
         <circle
           key={`${point.date}-${point.value}`}
           cx={toX(index)}
           cy={toY(point.value)}
-          r="3"
+          r="5"
           className="cursor-help"
-          fill={tone.colorVariable}
+          fill="transparent"
         >
           <title>
-            {formatChartDate(point.date)}: Resting heart rate: {formatRestingHeartRate(point.value)}
+            {formatChartDate(point.date)}: 7-day average resting heart rate:{" "}
+            {formatRestingHeartRate(point.value)}
           </title>
         </circle>
       ))}

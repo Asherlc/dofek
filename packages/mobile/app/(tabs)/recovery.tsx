@@ -231,6 +231,9 @@ export default function RecoveryScreen() {
   const restingHeartRateValues = hrvBaselineData.flatMap((d) =>
     d.resting_hr != null ? [d.resting_hr] : [],
   );
+  const restingHeartRateTrend = hrvBaselineData.map((d) =>
+    d.resting_hr == null ? null : d.resting_hr_mean_7d,
+  );
 
   const readinessData = recoveryData?.readinessScore ?? [];
   const readinessValues = readinessData.map((d) => d.readinessScore);
@@ -470,8 +473,8 @@ export default function RecoveryScreen() {
                 : "--"
             }
             unit="bpm"
-            trend={restingHeartRateValues.slice(-14)}
-            chartDescription="Recorded resting heart rates, measured in beats per minute."
+            trend={restingHeartRateTrend.slice(-14)}
+            chartDescription="7-day average resting heart rate, measured in beats per minute. Gaps indicate missing readings."
             color={colors.warning}
             subtitle={
               restingHeartRateContext

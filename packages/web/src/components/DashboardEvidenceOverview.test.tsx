@@ -160,6 +160,7 @@ describe("DashboardEvidenceOverview", () => {
       "Observation window: Daily observations",
     );
     expect(screen.getByText("Recent trend")).toBeTruthy();
+    expect(screen.getByText("7-day average")).toBeTruthy();
     expect(screen.queryByText("Compare sources")).toBeNull();
     expect(screen.queryByText("Connected source coverage")).toBeNull();
     expect(screen.getByText("Health monitor")).toBeTruthy();
@@ -331,8 +332,8 @@ describe("DashboardEvidenceOverview", () => {
     expect(screen.getByText("May 27")).toBeTruthy();
     expect(screen.getByText("57 bpm")).toBeTruthy();
     expect(screen.getByText("52 bpm")).toBeTruthy();
-    expect(screen.getByText("May 25: Resting heart rate: 57 bpm")).toBeTruthy();
-    expect(screen.getByText("May 27: Resting heart rate: 52 bpm")).toBeTruthy();
+    expect(screen.getByText("May 25: 7-day average resting heart rate: 57 bpm")).toBeTruthy();
+    expect(screen.getByText("May 27: 7-day average resting heart rate: 52 bpm")).toBeTruthy();
   });
 
   it("does not render fake chart data when API-backed points are missing", () => {
