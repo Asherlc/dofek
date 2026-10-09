@@ -6,6 +6,7 @@ import {
 } from "./baseline-progress.ts";
 
 const input = {
+  metric: "resting_heart_rate" as const,
   label: "Resting Heart Rate",
   value: 56,
   sampleDeviation: 2,
@@ -75,6 +76,64 @@ describe("buildBaselineProgress", () => {
       hasMeasurableVariation: false,
       summary: "Resting Heart Rate has enough observations, but they have not varied yet.",
       action: "Continue recording resting heart rate data until the values vary.",
+    });
+  });
+
+  it.each([3, 89])(
+    "requires only steps for the selected date when %i days provide a varied baseline",
+    (observedDays) => {
+      expect(
+        buildBaselineProgress({
+          ...input,
+          metric: "steps",
+          label: "Steps",
+          value: null,
+          observedDays,
+        }),
+      ).toMatchObject({
+        observedObservationDays: observedDays,
+        hasMeasurableVariation: true,
+        blocker: "missing_source_data",
+        requirement: "A step count for this day to compare with your recorded baseline.",
+        summary: "No step count is available for this day.",
+        action: "Sync steps data again to record a step count for this day.",
+      });
+    },
+  );
+
+  it("names the selected-date steps requirement while the baseline is collecting", () => {
+    expect(
+      buildBaselineProgress({
+        ...input,
+        metric: "steps",
+        label: "Steps",
+        value: null,
+        observedDays: 1,
+        sampleDeviation: null,
+      }),
+    ).toMatchObject({
+      requirement:
+        "A step count for this day plus at least 2 more recorded days with measurable variation.",
+      summary: "No step count is available for this day.",
+      action: "Sync steps data again to record a step count for this day.",
+    });
+  });
+
+  it.each([
+    { observedDays: 2, sampleDeviation: 2 },
+    { observedDays: 3, sampleDeviation: 0 },
+  ])("keeps the baseline requirement when missing steps are not the only blocker", (fixture) => {
+    expect(
+      buildBaselineProgress({
+        ...input,
+        metric: "steps",
+        label: "Steps",
+        value: null,
+        ...fixture,
+      }),
+    ).toMatchObject({
+      requirement:
+        "A step count for this day plus at least 2 more recorded days with measurable variation.",
     });
   });
 
