@@ -72,6 +72,14 @@ or deviation. Recovery classifications use the 30-day baseline in `baselineRelat
 7-day-versus-prior-28-day comparison is context and does not determine the status, as defined by
 [`baseline-relative-metrics.ts`](./src/contracts/baseline-relative-metrics.ts).
 
+When a finite baseline has at least three varied observations but the current value is missing
+and no processing blocker takes precedence,
+the server reports `Current value missing` and asks only for that value; historical coverage stays
+available in Details. Steps requires an observation on the selected date so an older daily total
+does not appear as current progress. See the [status builder](./src/services/health-status.ts),
+[baseline requirements](./src/services/baseline-progress.ts), and
+[selected-date database regression](./src/routers/daily-metrics.integration.test.ts).
+
 ### Correlation evidence contract
 
 Current web and mobile clients use the versioned `correlation.computeV2` endpoint. The endpoint

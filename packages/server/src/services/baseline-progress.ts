@@ -52,6 +52,7 @@ export function buildBaselineProgress(input: BaselineProgressInput): BaselinePro
   let blocker: BaselineProgressBlocker | null = null;
   let summary = `${input.label} baseline is ready.`;
   let action = "No action needed.";
+  let requirement = `A current value plus at least ${BASELINE_REQUIRED_OBSERVATION_DAYS - 1} more recorded days with measurable variation.`;
 
   if (input.processingStatus === "syncing") {
     blocker = "syncing";
@@ -69,6 +70,9 @@ export function buildBaselineProgress(input: BaselineProgressInput): BaselinePro
     blocker = "missing_source_data";
     summary = `No current ${input.label} value is available yet.`;
     action = `Sync ${input.label.toLowerCase()} data again to record a current value.`;
+    if (observedDays >= BASELINE_REQUIRED_OBSERVATION_DAYS && variation) {
+      requirement = "A current value to compare with your recorded baseline.";
+    }
   } else if (observedDays < BASELINE_REQUIRED_OBSERVATION_DAYS) {
     blocker = "collecting";
     summary = progressSummary(input.label, observedDays);
@@ -84,7 +88,7 @@ export function buildBaselineProgress(input: BaselineProgressInput): BaselinePro
     observedObservationDays: observedDays,
     hasMeasurableVariation: variation,
     blocker,
-    requirement: `A current value plus at least ${BASELINE_REQUIRED_OBSERVATION_DAYS - 1} more recorded days with measurable variation.`,
+    requirement,
     summary,
     action,
   };

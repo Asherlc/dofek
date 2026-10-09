@@ -490,6 +490,92 @@ describe("buildRestingHeartRateTrendLabel", () => {
 });
 
 describe("buildHealthStatusFromSummary", () => {
+  it.each([3, 89])(
+    "identifies a missing current Steps value with %i recorded days",
+    (observedDays) => {
+      const result = buildHealthStatusFromSummary({
+        metric: "steps",
+        label: "Steps",
+        value: null,
+        baseline: 6055,
+        sampleDeviation: 2000,
+        intent: "neutral",
+        observedDays,
+        processingStatus: null,
+      });
+
+      expect(result).toMatchObject({
+        value: null,
+        baseline: 6055,
+        baselineText: "6,055",
+        statusToken: "insufficient_data",
+        statusLabel: "Current value missing",
+        evaluationRule: "Needs a current value to compare with your recorded baseline",
+        explanation:
+          "No Steps value is available for the selected date; your recorded baseline is available.",
+        baselineProgress: {
+          observedObservationDays: observedDays,
+          hasMeasurableVariation: true,
+          blocker: "missing_source_data",
+          requirement: "A current value to compare with your recorded baseline.",
+          action: "Sync steps data again to record a current value.",
+        },
+      });
+    },
+  );
+
+  it("identifies a missing current value for other metrics with a complete baseline", () => {
+    expect(
+      buildHealthStatusFromSummary({
+        metric: "skin_temperature",
+        label: "Skin Temperature",
+        value: null,
+        baseline: 33,
+        sampleDeviation: 1,
+        intent: "neutral",
+        observedDays: 3,
+      }),
+    ).toMatchObject({
+      statusLabel: "Current value missing",
+      explanation:
+        "No current Skin Temperature value is available; your recorded baseline is available.",
+    });
+  });
+
+  it.each([
+    { observedDays: 2, sampleDeviation: 2000, baseline: 6055, processingStatus: null },
+    { observedDays: 89, sampleDeviation: 0, baseline: 6055, processingStatus: null },
+    { observedDays: 89, sampleDeviation: 2000, baseline: null, processingStatus: null },
+    {
+      observedDays: 89,
+      sampleDeviation: 2000,
+      baseline: 6055,
+      processingStatus: "syncing" as const,
+    },
+    {
+      observedDays: 89,
+      sampleDeviation: 2000,
+      baseline: 6055,
+      processingStatus: "sync_error" as const,
+    },
+  ])(
+    "keeps the broader diagnosis when the missing current value is not the only blocker",
+    (input) => {
+      expect(
+        buildHealthStatusFromSummary({
+          metric: "steps",
+          label: "Steps",
+          value: null,
+          intent: "neutral",
+          ...input,
+        }),
+      ).toMatchObject({
+        statusLabel: "Not enough data",
+        evaluationRule: "Needs a current value, baseline, and measurable day-to-day variation",
+      });
+    },
+  );
+
   it("includes server-authored baseline requirements and action for insufficient data", () => {
     const result = buildHealthStatusFromSummary({
       metric: "resting_heart_rate",
@@ -707,7 +793,7 @@ describe("buildHealthStatusFromSummary", () => {
   });
 
   it.each([
-    { value: null, baseline: 50, sampleDeviation: 10 },
+    { value: null, baseline: 50, sampleDeviation: 0 },
     { value: 50, baseline: null, sampleDeviation: 10 },
     { value: 50, baseline: 50, sampleDeviation: null },
     { value: 50, baseline: 50, sampleDeviation: 0 },

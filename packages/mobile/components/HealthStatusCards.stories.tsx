@@ -99,6 +99,47 @@ export const InsufficientData: Story = {
   },
 };
 
+export const MissingCurrentValue: Story = {
+  args: {
+    metrics: [
+      {
+        metric: "steps",
+        label: "Steps",
+        value: null,
+        valueText: null,
+        baseline: 6055,
+        baselineText: "6,055",
+        sampleDeviation: 2000,
+        deviation: null,
+        direction: "unknown",
+        intent: "neutral",
+        statusToken: "insufficient_data",
+        statusColor: "muted",
+        statusLabel: "Current value missing",
+        evaluationRule: "Needs a current value to compare with your recorded baseline",
+        explanation:
+          "No Steps value is available for the selected date; your recorded baseline is available.",
+        provenance: {
+          latestDate: "2026-10-08",
+          sourceProviders: ["apple_health"],
+          observedDays: 89,
+          windowDays: 90,
+        },
+        comparison: null,
+        baselineProgress: {
+          requiredObservationDays: 3,
+          observedObservationDays: 89,
+          hasMeasurableVariation: true,
+          blocker: "missing_source_data",
+          requirement: "A current value to compare with your recorded baseline.",
+          summary: "No current Steps value is available yet.",
+          action: "Sync steps data again to record a current value.",
+        },
+      },
+    ],
+  },
+};
+
 export const FarFromBaseline: Story = {
   args: {
     metrics: [

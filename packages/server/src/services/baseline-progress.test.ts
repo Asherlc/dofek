@@ -78,6 +78,27 @@ describe("buildBaselineProgress", () => {
     });
   });
 
+  it.each([3, 89])(
+    "requires only a current value when %i recorded days provide a varied baseline",
+    (observedDays) => {
+      expect(
+        buildBaselineProgress({
+          ...input,
+          label: "Steps",
+          value: null,
+          observedDays,
+        }),
+      ).toMatchObject({
+        observedObservationDays: observedDays,
+        hasMeasurableVariation: true,
+        blocker: "missing_source_data",
+        requirement: "A current value to compare with your recorded baseline.",
+        summary: "No current Steps value is available yet.",
+        action: "Sync steps data again to record a current value.",
+      });
+    },
+  );
+
   it("lets processing state take precedence over an empty canonical window", () => {
     expect(
       buildBaselineProgress({
