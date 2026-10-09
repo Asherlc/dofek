@@ -2,6 +2,7 @@ import type { DerivedProcessingStatus } from "dofek/processing/processing-state"
 import type {
   BaselineProgress,
   BaselineProgressBlocker,
+  HealthStatusMetric,
 } from "../contracts/mobile-dashboard-contracts.ts";
 
 export const BASELINE_REQUIRED_OBSERVATION_DAYS = 3;
@@ -9,6 +10,7 @@ export const BASELINE_REQUIRED_OBSERVATION_DAYS = 3;
 export type BaselineProcessingStatus = "syncing" | "sync_error" | null;
 
 interface BaselineProgressInput {
+  metric: HealthStatusMetric["metric"];
   label: string;
   value: number | null;
   observedDays: number;
@@ -49,10 +51,11 @@ function missingSourceAction(label: string): string {
 export function buildBaselineProgress(input: BaselineProgressInput): BaselineProgress {
   const observedDays = Math.max(0, Math.trunc(input.observedDays));
   const variation = observedDays > 1 && hasMeasurableVariation(input.sampleDeviation);
+  const requiredValue = input.metric === "steps" ? "A step count for this day" : "A current value";
   let blocker: BaselineProgressBlocker | null = null;
   let summary = `${input.label} baseline is ready.`;
   let action = "No action needed.";
-  let requirement = `A current value plus at least ${BASELINE_REQUIRED_OBSERVATION_DAYS - 1} more recorded days with measurable variation.`;
+  let requirement = `${requiredValue} plus at least ${BASELINE_REQUIRED_OBSERVATION_DAYS - 1} more recorded days with measurable variation.`;
 
   if (input.processingStatus === "syncing") {
     blocker = "syncing";
@@ -68,10 +71,13 @@ export function buildBaselineProgress(input: BaselineProgressInput): BaselinePro
     action = missingSourceAction(input.label);
   } else if (input.value == null) {
     blocker = "missing_source_data";
-    summary = `No current ${input.label} value is available yet.`;
-    action = `Sync ${input.label.toLowerCase()} data again to record a current value.`;
+    summary =
+      input.metric === "steps"
+        ? "No step count is available for this day."
+        : `No current ${input.label} value is available yet.`;
+    action = `Sync ${input.label.toLowerCase()} data again to record ${requiredValue.toLowerCase()}.`;
     if (observedDays >= BASELINE_REQUIRED_OBSERVATION_DAYS && variation) {
-      requirement = "A current value to compare with your recorded baseline.";
+      requirement = `${requiredValue} to compare with your recorded baseline.`;
     }
   } else if (observedDays < BASELINE_REQUIRED_OBSERVATION_DAYS) {
     blocker = "collecting";

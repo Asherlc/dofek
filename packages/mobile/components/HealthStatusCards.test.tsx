@@ -118,7 +118,7 @@ describe("HealthStatusCards", () => {
     ).toBeNull();
   });
 
-  it("shows a missing current Steps value while retaining its recorded baseline", () => {
+  it("shows missing Steps for this day while retaining its recorded baseline", () => {
     render(
       <HealthStatusCards
         metrics={[
@@ -135,10 +135,11 @@ describe("HealthStatusCards", () => {
             intent: "neutral",
             statusToken: "insufficient_data",
             statusColor: "muted",
-            statusLabel: "Current value missing",
-            evaluationRule: "Needs a current value to compare with your recorded baseline",
+            statusLabel: "Steps missing for this day",
+            evaluationRule:
+              "Needs a step count for this day to compare with your recorded baseline",
             explanation:
-              "No Steps value is available for the selected date; your recorded baseline is available.",
+              "No step count is available for this day; your recorded baseline is available.",
             comparison: null,
             provenance: {
               latestDate: "2026-10-08",
@@ -151,9 +152,9 @@ describe("HealthStatusCards", () => {
               observedObservationDays: 89,
               hasMeasurableVariation: true,
               blocker: "missing_source_data",
-              requirement: "A current value to compare with your recorded baseline.",
-              summary: "No current Steps value is available yet.",
-              action: "Sync steps data again to record a current value.",
+              requirement: "A step count for this day to compare with your recorded baseline.",
+              summary: "No step count is available for this day.",
+              action: "Sync steps data again to record a step count for this day.",
             },
           },
         ]}
@@ -161,12 +162,14 @@ describe("HealthStatusCards", () => {
     );
 
     expect(screen.getByText("—")).toBeTruthy();
-    expect(screen.getByText("baseline 6,055 · Current value missing")).toBeTruthy();
-    expect(screen.getByLabelText("Current value missing status").textContent).toBe("?");
+    expect(screen.getByText("baseline 6,055 · Steps missing for this day")).toBeTruthy();
+    expect(screen.getByLabelText("Steps missing for this day status").textContent).toBe("?");
     expect(
-      screen.getByText("Needs a current value to compare with your recorded baseline"),
+      screen.getByText("Needs a step count for this day to compare with your recorded baseline"),
     ).toBeTruthy();
-    expect(screen.getByText("Sync steps data again to record a current value.")).toBeTruthy();
+    expect(
+      screen.getByText("Sync steps data again to record a step count for this day."),
+    ).toBeTruthy();
 
     const button = screen.getByRole("button", { name: "Show details for Steps" });
     expect(button.getAttribute("aria-expanded")).toBe("false");
@@ -175,13 +178,13 @@ describe("HealthStatusCards", () => {
     expect(button.getAttribute("aria-expanded")).toBe("true");
     expect(
       screen.getByText(
-        "No Steps value is available for the selected date; your recorded baseline is available.",
+        "No step count is available for this day; your recorded baseline is available.",
       ),
     ).toBeTruthy();
     expect(
-      screen.getByText("A current value to compare with your recorded baseline."),
+      screen.getByText("A step count for this day to compare with your recorded baseline."),
     ).toBeTruthy();
-    expect(screen.getByText("No current Steps value is available yet.")).toBeTruthy();
+    expect(screen.getByText("No step count is available for this day.")).toBeTruthy();
     expect(screen.getByText("Source: Apple Health")).toBeTruthy();
     expect(screen.getByText("Latest recorded date: 2026-10-08")).toBeTruthy();
     expect(screen.getByText("Coverage: 89/90 days")).toBeTruthy();

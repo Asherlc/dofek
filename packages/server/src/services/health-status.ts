@@ -194,6 +194,7 @@ function evidenceForMetric(
 
 function insufficientData(input: HealthStatusSummaryInput): HealthStatusMetric {
   const baselineProgress = buildBaselineProgress({
+    metric: input.metric,
     label: input.label,
     value: input.value,
     observedDays: input.observedDays ?? 0,
@@ -207,6 +208,9 @@ function insufficientData(input: HealthStatusSummaryInput): HealthStatusMetric {
     baselineProgress.blocker === "missing_source_data" &&
     baselineProgress.observedObservationDays >= baselineProgress.requiredObservationDays &&
     baselineProgress.hasMeasurableVariation;
+  const missingValueLabel =
+    input.metric === "steps" ? "Steps missing for this day" : "Current value missing";
+  const requiredValue = input.metric === "steps" ? "a step count for this day" : "a current value";
 
   return {
     ...metricFields(input),
@@ -214,13 +218,15 @@ function insufficientData(input: HealthStatusSummaryInput): HealthStatusMetric {
     direction: "unknown",
     statusToken: "insufficient_data",
     statusColor: "muted",
-    statusLabel: currentValueMissing ? "Current value missing" : "Not enough data",
+    statusLabel: currentValueMissing ? missingValueLabel : "Not enough data",
     evaluationRule: currentValueMissing
-      ? "Needs a current value to compare with your recorded baseline"
-      : "Needs a current value, baseline, and measurable day-to-day variation",
+      ? `Needs ${requiredValue} to compare with your recorded baseline`
+      : input.metric === "steps"
+        ? "Needs a step count for this day, a baseline, and measurable day-to-day variation"
+        : "Needs a current value, baseline, and measurable day-to-day variation",
     explanation: currentValueMissing
       ? input.metric === "steps"
-        ? "No Steps value is available for the selected date; your recorded baseline is available."
+        ? "No step count is available for this day; your recorded baseline is available."
         : `No current ${input.label} value is available; your recorded baseline is available.`
       : "Not enough varied data yet to compare this value with your usual range.",
     baselineProgress,
@@ -229,6 +235,7 @@ function insufficientData(input: HealthStatusSummaryInput): HealthStatusMetric {
 
 function baselineProgressFor(input: HealthStatusSummaryInput): BaselineProgress {
   return buildBaselineProgress({
+    metric: input.metric,
     label: input.label,
     value: input.value,
     observedDays: input.observedDays ?? 0,

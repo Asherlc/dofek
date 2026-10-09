@@ -6,6 +6,7 @@ import {
 } from "./baseline-progress.ts";
 
 const input = {
+  metric: "resting_heart_rate" as const,
   label: "Resting Heart Rate",
   value: 56,
   sampleDeviation: 2,
@@ -79,11 +80,12 @@ describe("buildBaselineProgress", () => {
   });
 
   it.each([3, 89])(
-    "requires only a current value when %i recorded days provide a varied baseline",
+    "requires only steps for the selected date when %i days provide a varied baseline",
     (observedDays) => {
       expect(
         buildBaselineProgress({
           ...input,
+          metric: "steps",
           label: "Steps",
           value: null,
           observedDays,
@@ -92,12 +94,30 @@ describe("buildBaselineProgress", () => {
         observedObservationDays: observedDays,
         hasMeasurableVariation: true,
         blocker: "missing_source_data",
-        requirement: "A current value to compare with your recorded baseline.",
-        summary: "No current Steps value is available yet.",
-        action: "Sync steps data again to record a current value.",
+        requirement: "A step count for this day to compare with your recorded baseline.",
+        summary: "No step count is available for this day.",
+        action: "Sync steps data again to record a step count for this day.",
       });
     },
   );
+
+  it("names the selected-date steps requirement while the baseline is collecting", () => {
+    expect(
+      buildBaselineProgress({
+        ...input,
+        metric: "steps",
+        label: "Steps",
+        value: null,
+        observedDays: 1,
+        sampleDeviation: null,
+      }),
+    ).toMatchObject({
+      requirement:
+        "A step count for this day plus at least 2 more recorded days with measurable variation.",
+      summary: "No step count is available for this day.",
+      action: "Sync steps data again to record a step count for this day.",
+    });
+  });
 
   it("lets processing state take precedence over an empty canonical window", () => {
     expect(

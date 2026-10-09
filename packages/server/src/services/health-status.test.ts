@@ -491,7 +491,7 @@ describe("buildRestingHeartRateTrendLabel", () => {
 
 describe("buildHealthStatusFromSummary", () => {
   it.each([3, 89])(
-    "identifies a missing current Steps value with %i recorded days",
+    "identifies missing steps for the selected date with %i recorded days",
     (observedDays) => {
       const result = buildHealthStatusFromSummary({
         metric: "steps",
@@ -509,16 +509,17 @@ describe("buildHealthStatusFromSummary", () => {
         baseline: 6055,
         baselineText: "6,055",
         statusToken: "insufficient_data",
-        statusLabel: "Current value missing",
-        evaluationRule: "Needs a current value to compare with your recorded baseline",
+        statusLabel: "Steps missing for this day",
+        evaluationRule: "Needs a step count for this day to compare with your recorded baseline",
         explanation:
-          "No Steps value is available for the selected date; your recorded baseline is available.",
+          "No step count is available for this day; your recorded baseline is available.",
         baselineProgress: {
           observedObservationDays: observedDays,
           hasMeasurableVariation: true,
           blocker: "missing_source_data",
-          requirement: "A current value to compare with your recorded baseline.",
-          action: "Sync steps data again to record a current value.",
+          requirement: "A step count for this day to compare with your recorded baseline.",
+          summary: "No step count is available for this day.",
+          action: "Sync steps data again to record a step count for this day.",
         },
       });
     },
@@ -571,7 +572,8 @@ describe("buildHealthStatusFromSummary", () => {
         }),
       ).toMatchObject({
         statusLabel: "Not enough data",
-        evaluationRule: "Needs a current value, baseline, and measurable day-to-day variation",
+        evaluationRule:
+          "Needs a step count for this day, a baseline, and measurable day-to-day variation",
       });
     },
   );
