@@ -227,15 +227,12 @@ export function DashboardEvidenceOverview({
               <p className="font-medium text-muted">
                 {trend.restingHeartRateBaselineProgress.requirement}
               </p>
-              <p className="text-subtle">
-                {trend.restingHeartRateBaselineProgress.observedObservationDays} of{" "}
-                {trend.restingHeartRateBaselineProgress.requiredObservationDays} required days
-                recorded
-              </p>
               <p className="text-subtle">{trend.restingHeartRateBaselineProgress.summary}</p>
-              <p className="font-medium text-foreground">
-                {trend.restingHeartRateBaselineProgress.action}
-              </p>
+              {trend.restingHeartRateBaselineProgress.blocker !== "syncing" ? (
+                <p className="font-medium text-foreground">
+                  {trend.restingHeartRateBaselineProgress.action}
+                </p>
+              ) : null}
             </section>
           ) : null}
         </EvidenceCard>
