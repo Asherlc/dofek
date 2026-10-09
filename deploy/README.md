@@ -163,12 +163,16 @@ If direct SSH fails with `Permission denied`, verify you are using the matching 
 - `docker stack deploy` is the only production rollout command for web deploys. It updates `web` and `worker` together from `deploy/stack.yml`.
 - Swarm rollback is **image rollback only**. It does not roll back database schema changes that were already applied.
 - Migrations run after the non-pruning pre-migration stack apply and after the
-  live PeerDB mappings have been reconciled and checked against the still-old
-  destination schema. After migration and CDC setup, deployment validates the
+  existing PeerDB mapping identities have been reconciled and checked against
+  the still-old source and destination schemas. Preparation does not add new
+  table mappings. After Postgres/ClickHouse migrations and publication setup,
+  CDC setup applies the full mapping contract, including newly created tables.
+  Deployment then validates the
   final schema and requires exact processing markers to cross every
   marker-bearing mirror before restoring ClickHouse consumers. PeerDB documents
   its pause/edit/resume behavior in the [mirror editing guide](https://docs.peerdb.io/features/edit-mirror)
   and its state-change API in the [state-change reference](https://docs.peerdb.io/peerdb-api/endpoints/change-mirror-state).
+  See the [CDC deploy boundary and interrupted-addition recovery procedure](../docs/clickhouse-read-model-deploy-runbook.md#known-failure-new-peerdb-table-added-before-its-migration).
 
 ### Production Secrets
 
@@ -424,7 +428,11 @@ the running Swarm image tag and inspect the production job's actual conclusion.
       of keeping a long-lived Docker-over-SSH stack-deploy wait open while the
       single-node host restarts services.
    8. Wait until Postgres is writable (`SELECT NOT pg_is_in_recovery()`) and
-      ClickHouse answers `/ping`.
+      ClickHouse answers `/ping`; wait for PeerDB SQL and its Flow API, then
+      run `peerdb-cdc-contract prepare` against existing mapping identities
+      only. Apply registered additive `pre-cdc` destination migrations and
+      preserve existing projection checks; defer every new table mapping until
+      its source, destination, and publication membership exist.
    9. Run the requested image's tracked Postgres and ClickHouse migrations in a
       detached one-shot container on `<stack>_default`. CI polls its status and
       logs, removes it on exit, and fails if it exceeds four hours.
@@ -453,7 +461,13 @@ the running Swarm image tag and inspect the production job's actual conclusion.
        CDC setup command. The command loads
        `src/db/peerdb/metric-stream-cdc.sql`, substitutes deployment connection
        values, creates the Postgres and ClickHouse peers if missing, and applies
-       the fitness-raw, provider-inventory, and sensor-priority mirrors.
+       the fitness-raw, provider-inventory, and sensor-priority mirrors. It
+       configures publication membership before reconciling the full mapping
+       contract, including new mappings. Finalize then validates the full schema
+       and writes causal markers; verify requires those exact markers in each
+       mirror's assigned destination before consumers can resume. See the
+       [checked-in CDC setup](../src/db/clickhouse-cdc.ts) and
+       [contract deployment](../src/db/peerdb/mirror-deployment.ts).
    15. Run the final `docker stack deploy -c deploy/stack.yml ...` to restore
        `analytics-worker`, all three metric-stream ClickHouse sinks, and
        `processing-reconciliation` only when every post-quiesce readiness step

@@ -78,12 +78,27 @@ export async function preparePeerDbDeployment(
   const existingMirrorNames = new Set(
     existingMirrors.filter(({ isCdc }) => isCdc).map(({ name }) => name),
   );
+  const existingContracts: PeerDbMirrorContract[] = [];
+  for (const contract of options.contracts) {
+    if (!existingMirrorNames.has(contract.name)) continue;
+    const status = await options.mirrorApiClient.getMirrorStatus(contract.name);
+    existingContracts.push({
+      ...contract,
+      tableMappings: contract.tableMappings.filter((mapping) =>
+        status.tableMappings.some(
+          (liveMapping) =>
+            liveMapping.sourceTableIdentifier === mapping.sourceTableIdentifier &&
+            liveMapping.destinationTableIdentifier === mapping.destinationTableIdentifier,
+        ),
+      ),
+    });
+  }
   await reconcileExistingPeerDbMirrors(
     options.mirrorApiClient,
     existingMirrorNames,
-    options.contracts,
+    existingContracts,
   );
-  await assertPeerDbMirrorSchemasCompatible(options);
+  await assertPeerDbMirrorSchemasCompatible({ ...options, contracts: existingContracts });
 }
 
 export async function finalizePeerDbDeployment(
