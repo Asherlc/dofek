@@ -202,8 +202,6 @@ function insufficientData(input: HealthStatusSummaryInput): HealthStatusMetric {
     processingStatus: input.processingStatus ?? null,
   });
   const currentValueMissing =
-    input.value == null &&
-    input.baseline != null &&
     Number.isFinite(input.baseline) &&
     baselineProgress.blocker === "missing_source_data" &&
     baselineProgress.observedObservationDays >= baselineProgress.requiredObservationDays &&

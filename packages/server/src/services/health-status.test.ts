@@ -538,8 +538,14 @@ describe("buildHealthStatusFromSummary", () => {
       }),
     ).toMatchObject({
       statusLabel: "Current value missing",
+      evaluationRule: "Needs a current value to compare with your recorded baseline",
       explanation:
         "No current Skin Temperature value is available; your recorded baseline is available.",
+      baselineProgress: {
+        requirement: "A current value to compare with your recorded baseline.",
+        summary: "No current Skin Temperature value is available yet.",
+        action: "Sync skin temperature data again to record a current value.",
+      },
     });
   });
 
@@ -547,6 +553,13 @@ describe("buildHealthStatusFromSummary", () => {
     { observedDays: 2, sampleDeviation: 2000, baseline: 6055, processingStatus: null },
     { observedDays: 89, sampleDeviation: 0, baseline: 6055, processingStatus: null },
     { observedDays: 89, sampleDeviation: 2000, baseline: null, processingStatus: null },
+    { observedDays: 89, sampleDeviation: 2000, baseline: Number.NaN, processingStatus: null },
+    {
+      observedDays: 89,
+      sampleDeviation: 2000,
+      baseline: Number.POSITIVE_INFINITY,
+      processingStatus: null,
+    },
     {
       observedDays: 89,
       sampleDeviation: 2000,

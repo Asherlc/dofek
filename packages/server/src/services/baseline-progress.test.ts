@@ -119,6 +119,24 @@ describe("buildBaselineProgress", () => {
     });
   });
 
+  it.each([
+    { observedDays: 2, sampleDeviation: 2 },
+    { observedDays: 3, sampleDeviation: 0 },
+  ])("keeps the baseline requirement when missing steps are not the only blocker", (fixture) => {
+    expect(
+      buildBaselineProgress({
+        ...input,
+        metric: "steps",
+        label: "Steps",
+        value: null,
+        ...fixture,
+      }),
+    ).toMatchObject({
+      requirement:
+        "A step count for this day plus at least 2 more recorded days with measurable variation.",
+    });
+  });
+
   it("lets processing state take precedence over an empty canonical window", () => {
     expect(
       buildBaselineProgress({
