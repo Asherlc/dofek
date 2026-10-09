@@ -74,6 +74,78 @@ describe("HealthStatusBar", () => {
     expect(screen.getByText(/Moving as intended · Weight loss goal/)).toBeVisible();
   });
 
+  it("shows missing Steps for this day while retaining its recorded baseline", () => {
+    render(
+      <HealthStatusBar
+        metrics={[
+          {
+            metric: "steps",
+            label: "Steps",
+            value: null,
+            valueText: null,
+            baseline: 6055,
+            baselineText: "6,055",
+            sampleDeviation: 2000,
+            deviation: null,
+            direction: "unknown",
+            intent: "neutral",
+            statusToken: "insufficient_data",
+            statusColor: "muted",
+            statusLabel: "Steps missing for this day",
+            evaluationRule:
+              "Needs a step count for this day to compare with your recorded baseline",
+            explanation:
+              "No step count is available for this day; your recorded baseline is available.",
+            comparison: null,
+            provenance: {
+              latestDate: "2026-10-08",
+              sourceProviders: ["apple_health"],
+              observedDays: 89,
+              windowDays: 90,
+            },
+            baselineProgress: {
+              requiredObservationDays: 3,
+              observedObservationDays: 89,
+              hasMeasurableVariation: true,
+              blocker: "missing_source_data",
+              requirement: "A step count for this day to compare with your recorded baseline.",
+              summary: "No step count is available for this day.",
+              action: "Sync steps data again to record a step count for this day.",
+            },
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.getByText("—")).toBeVisible();
+    expect(screen.getByText("baseline 6,055 · Steps missing for this day")).toBeVisible();
+    expect(screen.getByLabelText("Steps missing for this day status").textContent).toBe("?");
+    expect(
+      screen.getByText("Needs a step count for this day to compare with your recorded baseline"),
+    ).toBeVisible();
+    expect(
+      screen.getByText("Sync steps data again to record a step count for this day."),
+    ).toBeVisible();
+
+    const button = screen.getByRole("button", { name: "Show details for Steps" });
+    expect(button.getAttribute("aria-expanded")).toBe("false");
+    expect(screen.queryByText("Coverage: 89/90 days")).toBeNull();
+    fireEvent.click(button);
+    expect(button.getAttribute("aria-expanded")).toBe("true");
+    expect(
+      screen.getByText(
+        "No step count is available for this day; your recorded baseline is available.",
+      ),
+    ).toBeVisible();
+    expect(
+      screen.getByText("A step count for this day to compare with your recorded baseline."),
+    ).toBeVisible();
+    expect(screen.getByText("No step count is available for this day.")).toBeVisible();
+    expect(screen.getByText("Source: Apple Health")).toBeVisible();
+    expect(screen.getByText("Latest recorded date: 2026-10-08")).toBeVisible();
+    expect(screen.getByText("Coverage: 89/90 days")).toBeVisible();
+  });
+
   it.each([
     {
       blocker: "collecting" as const,
