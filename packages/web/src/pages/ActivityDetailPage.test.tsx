@@ -3,7 +3,7 @@
 import { formatDateTime, formatTimeOnly } from "@dofek/format/format";
 import type { UnitSystem } from "@dofek/format/units";
 import { UnitConverter } from "@dofek/format/units";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ActivityDetail } from "../../../server/src/models/activity.ts";
@@ -1541,8 +1541,11 @@ describe("ActivityDetailPage", () => {
       const ActivityDetailPage = await importPage();
       renderWithUnits(<ActivityDetailPage />);
 
-      const toggle = screen.getByRole("button", { name: "How sources were combined" });
-      expect(toggle.parentElement?.parentElement?.textContent).toContain("Source:");
+      const sourceContainer = screen.getByText("Source:").parentElement;
+      if (!sourceContainer) throw new Error("Expected the source list container");
+      const toggle = within(sourceContainer).getByRole("button", {
+        name: "How sources were combined",
+      });
       expect(toggle.getAttribute("aria-expanded")).toBe("false");
       fireEvent.click(toggle);
       expect(screen.getByText("2")).toBeTruthy();
