@@ -1,10 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
-import type { PeerDbMirrorContract } from "./mirror-contracts.ts";
+import type { PeerDbMirrorContract, PeerDbTableMapping } from "./mirror-contracts.ts";
 import {
   finalizePeerDbDeployment,
   preparePeerDbDeployment,
   verifyPeerDbDeployment,
 } from "./mirror-deployment.ts";
+import type { PeerDbMirrorApiClient } from "./mirror-reconciler.ts";
 
 const contract = {
   name: "test_mirror",
@@ -41,6 +42,37 @@ const clickHouseClient = {
       })),
   })),
 };
+
+function existingMirror(initialMappings: readonly PeerDbTableMapping[]) {
+  let currentFlowState = "STATUS_RUNNING";
+  let tableMappings = [...initialMappings];
+  const client: PeerDbMirrorApiClient = {
+    async listMirrors() {
+      return [{ destinationType: 3, isCdc: true, name: "test_mirror" }];
+    },
+    async getMirrorStatus() {
+      return { currentFlowState, tableMappings };
+    },
+    async changeMirrorState(request) {
+      currentFlowState = request.requestedFlowState;
+      const update = request.flowConfigUpdate?.cdcFlowConfigUpdate;
+      if (update?.removed_tables) {
+        tableMappings = tableMappings.filter(
+          (mapping) =>
+            !update.removed_tables?.some(
+              (removed) =>
+                removed.sourceTableIdentifier === mapping.sourceTableIdentifier &&
+                removed.destinationTableIdentifier === mapping.destinationTableIdentifier,
+            ),
+        );
+      }
+      if (update?.additional_tables) {
+        tableMappings = [...tableMappings, ...update.additional_tables];
+      }
+    },
+  };
+  return { client, readMappings: () => tableMappings, readState: () => currentFlowState };
+}
 
 describe("PeerDB deployment contract", () => {
   it("accepts an empty direct verification set without polling", async () => {
@@ -88,12 +120,134 @@ describe("PeerDB deployment contract", () => {
       sourcePostgresClient,
     });
 
-    expect(events).toEqual(["list", "status", "validate"]);
+    expect(events).toEqual(["list", "status", "status", "validate"]);
   });
 
-  it("does not reconcile a non-CDC flow that happens to share a managed mirror name", async () => {
+  it("defers new table mappings and their schema checks until after migration", async () => {
+    const mirror = existingMirror(contract.tableMappings);
+
+    await expect(
+      preparePeerDbDeployment({
+        clickHouseClient,
+        contracts: [
+          {
+            ...contract,
+            tableMappings: [
+              ...contract.tableMappings,
+              {
+                sourceTableIdentifier: "fitness.provider_field_priority",
+                destinationTableIdentifier: "provider_field_priority",
+                exclude: [],
+              },
+            ],
+          },
+        ],
+        mirrorApiClient: mirror.client,
+        sourcePostgresClient,
+      }),
+    ).resolves.toBeUndefined();
+
+    expect(mirror.readMappings()).toEqual([
+      {
+        sourceTableIdentifier: "fitness.activity",
+        destinationTableIdentifier: "activity",
+        exclude: [],
+      },
+    ]);
+    expect(mirror.readState()).toBe("STATUS_RUNNING");
+  });
+
+  it.each([
+    { sourceTableIdentifier: "fitness.activity", destinationTableIdentifier: "new_activity" },
+    { sourceTableIdentifier: "fitness.new_activity", destinationTableIdentifier: "activity" },
+  ])(
+    "defers the changed mapping $sourceTableIdentifier -> $destinationTableIdentifier and removes its obsolete mapping",
+    async (mapping) => {
+      const mirror = existingMirror(contract.tableMappings);
+
+      await expect(
+        preparePeerDbDeployment({
+          clickHouseClient,
+          contracts: [{ ...contract, tableMappings: [{ ...mapping, exclude: [] }] }],
+          mirrorApiClient: mirror.client,
+          sourcePostgresClient,
+        }),
+      ).resolves.toBeUndefined();
+
+      expect(mirror.readMappings()).toEqual([]);
+      expect(mirror.readState()).toBe("STATUS_RUNNING");
+    },
+  );
+
+  it("reconciles changed exclusions for existing table identities before schema validation", async () => {
+    const mirror = existingMirror(contract.tableMappings);
+
+    await preparePeerDbDeployment({
+      clickHouseClient,
+      contracts: [
+        {
+          ...contract,
+          tableMappings: [{ ...contract.tableMappings[0], exclude: ["provider_estimate"] }],
+        },
+      ],
+      mirrorApiClient: mirror.client,
+      sourcePostgresClient: {
+        query: async () => ({
+          rows: ["id", "provider_estimate"].map((column_name) => ({
+            table_schema: "fitness",
+            table_name: "activity",
+            column_name,
+          })),
+        }),
+      },
+    });
+
+    expect(mirror.readMappings()).toEqual([
+      {
+        sourceTableIdentifier: "fitness.activity",
+        destinationTableIdentifier: "activity",
+        exclude: ["provider_estimate"],
+      },
+    ]);
+    expect(mirror.readState()).toBe("STATUS_RUNNING");
+  });
+
+  it("removes obsolete mappings before migration", async () => {
+    const mirror = existingMirror([
+      ...contract.tableMappings,
+      {
+        sourceTableIdentifier: "fitness.legacy_activity",
+        destinationTableIdentifier: "legacy_activity",
+        exclude: [],
+      },
+    ]);
+
+    await preparePeerDbDeployment({
+      clickHouseClient,
+      contracts: [contract],
+      mirrorApiClient: mirror.client,
+      sourcePostgresClient,
+    });
+
+    expect(mirror.readMappings()).toEqual([
+      {
+        sourceTableIdentifier: "fitness.activity",
+        destinationTableIdentifier: "activity",
+        exclude: [],
+      },
+    ]);
+    expect(mirror.readState()).toBe("STATUS_RUNNING");
+  });
+
+  it.each([
+    { description: "absent mirror", mirrors: [] },
+    {
+      description: "non-CDC flow with a managed name",
+      mirrors: [{ destinationType: 3, isCdc: false, name: "test_mirror" }],
+    },
+  ])("defers reconciliation and schema validation for an $description", async ({ mirrors }) => {
     const mirrorApiClient = {
-      listMirrors: vi.fn(async () => [{ destinationType: 3, isCdc: false, name: "test_mirror" }]),
+      listMirrors: vi.fn(async () => mirrors),
       getMirrorStatus: vi.fn(async () => ({
         currentFlowState: "STATUS_RUNNING",
         tableMappings: contract.tableMappings,
@@ -102,14 +256,82 @@ describe("PeerDB deployment contract", () => {
     };
 
     await preparePeerDbDeployment({
-      clickHouseClient,
+      clickHouseClient: { query: async () => ({ json: async () => [] }) },
       contracts: [contract],
       mirrorApiClient,
-      sourcePostgresClient,
+      sourcePostgresClient: { query: async () => ({ rows: [] }) },
     });
 
     expect(mirrorApiClient.getMirrorStatus).not.toHaveBeenCalled();
   });
+
+  it("rejects an invalid existing mirror state before migration", async () => {
+    const mirror = existingMirror([]);
+    vi.spyOn(mirror.client, "getMirrorStatus").mockResolvedValue({
+      currentFlowState: "STATUS_SNAPSHOT",
+      tableMappings: [],
+    });
+
+    await expect(
+      preparePeerDbDeployment({
+        clickHouseClient,
+        contracts: [contract],
+        mirrorApiClient: mirror.client,
+        sourcePostgresClient,
+      }),
+    ).rejects.toThrow("current state is STATUS_SNAPSHOT");
+  });
+
+  it.each([
+    {
+      sourceColumns: [],
+      destinationColumns: ["id", "_peerdb_is_deleted", "_peerdb_synced_at", "_peerdb_version"],
+      issue: "missing_source_table",
+    },
+    { sourceColumns: ["id"], destinationColumns: [], issue: "missing_destination_table" },
+    {
+      sourceColumns: ["id", "name"],
+      destinationColumns: ["id", "_peerdb_is_deleted", "_peerdb_synced_at", "_peerdb_version"],
+      issue: "missing_destination_columns=[name]",
+    },
+    {
+      sourceColumns: ["id"],
+      destinationColumns: ["id"],
+      issue: "missing_peerdb_metadata_columns",
+    },
+  ])(
+    "continues failing existing mapping schema checks for $issue",
+    async ({ sourceColumns, destinationColumns, issue }) => {
+      const mirror = existingMirror(contract.tableMappings);
+
+      await expect(
+        preparePeerDbDeployment({
+          clickHouseClient: {
+            query: async () => ({
+              json: async () =>
+                destinationColumns.map((name) => ({
+                  database: "destination",
+                  table: "activity",
+                  name,
+                  type: "String",
+                })),
+            }),
+          },
+          contracts: [contract],
+          mirrorApiClient: mirror.client,
+          sourcePostgresClient: {
+            query: async () => ({
+              rows: sourceColumns.map((column_name) => ({
+                table_schema: "fitness",
+                table_name: "activity",
+                column_name,
+              })),
+            }),
+          },
+        }),
+      ).rejects.toThrow(issue);
+    },
+  );
 
   it("validates then writes one unique canary for each marker-bearing contract", async () => {
     const writeMarker = vi.fn(async () => ({

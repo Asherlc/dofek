@@ -5,9 +5,14 @@ import {
   createPeerDbMirrorApiClientFromEnv,
   setupClickHouseCdcFromEnv,
 } from "../clickhouse-cdc.ts";
-import { buildPostgresFitnessRawTableStatements } from "../clickhouse-raw-tables.ts";
+import {
+  buildPostgresFitnessProviderFieldPriorityRawTableStatement,
+  buildPostgresFitnessRawTableStatements,
+} from "../clickhouse-raw-tables.ts";
 import { runMigrations } from "../migrate.ts";
 import { peerDbMirrorContracts } from "./mirror-contracts.ts";
+import { preparePeerDbDeployment } from "./mirror-deployment.ts";
+import { reconcileExistingPeerDbMirrors } from "./mirror-reconciler.ts";
 import {
   waitForCanonicalMirror,
   waitForClickHouseFixture,
@@ -29,6 +34,8 @@ const fixture = {
   markerBatch: "10000000-0000-4000-8000-000000000011",
   markerWatermark: "10000000-0000-4000-8000-000000000012",
   sourceAccountKey: "peerdb-contract-source-account",
+  upgradeMarkerBatch: "10000000-0000-4000-8000-000000000013",
+  upgradeMarkerWatermark: "10000000-0000-4000-8000-000000000014",
 } as const;
 
 describe("PeerDB CDC production contract", () => {
@@ -309,6 +316,135 @@ describe("PeerDB CDC production contract", () => {
           watermark: fixture.markerWatermark,
         },
       })),
+    ]);
+  });
+
+  it("defers a new mapping until its source migration and publication setup finish", async () => {
+    const mirrorApiClient = createPeerDbMirrorApiClientFromEnv();
+    const fitnessContract = peerDbMirrorContracts[0];
+    const previousFitnessContract = {
+      ...fitnessContract,
+      tableMappings: fitnessContract.tableMappings.filter(
+        ({ sourceTableIdentifier }) => sourceTableIdentifier !== "fitness.provider_field_priority",
+      ),
+    };
+    await waitForCanonicalMirror(
+      mirrorApiClient,
+      fitnessContract.name,
+      fitnessContract.tableMappings,
+    );
+    await reconcileExistingPeerDbMirrors(mirrorApiClient, new Set([fitnessContract.name]), [
+      previousFitnessContract,
+    ]);
+
+    const slotName = `peerflow_slot_${fitnessContract.name}`;
+    const slotBefore = await postgresClient.query<{
+      slot_name: string;
+      confirmed_flush_lsn: string;
+    }>("SELECT slot_name, confirmed_flush_lsn FROM pg_replication_slots WHERE slot_name = $1", [
+      slotName,
+    ]);
+    expect(slotBefore.rows).toHaveLength(1);
+    const confirmedFlushLsn = slotBefore.rows[0]?.confirmed_flush_lsn;
+    expect(confirmedFlushLsn).toEqual(expect.any(String));
+
+    await postgresClient.query(`
+      ALTER PUBLICATION peerdb_raw_analytics_publication
+        DROP TABLE fitness.provider_field_priority;
+      ALTER TABLE fitness.provider_field_priority RENAME TO upgrade_provider_field_priority;
+    `);
+    try {
+      await clickHouseClient.command({
+        query: "DROP TABLE IF EXISTS postgres_fitness.provider_field_priority SYNC",
+      });
+      const sourceBefore = await postgresClient.query<{ source_table: string | null }>(
+        "SELECT to_regclass('fitness.provider_field_priority')::text AS source_table",
+      );
+      expect(sourceBefore.rows).toEqual([{ source_table: null }]);
+      const publicationBefore = await postgresClient.query(`
+        SELECT tablename FROM pg_publication_tables
+        WHERE pubname = 'peerdb_raw_analytics_publication'
+          AND schemaname = 'fitness' AND tablename = 'provider_field_priority'
+      `);
+      expect(publicationBefore.rows).toEqual([]);
+
+      await preparePeerDbDeployment({
+        clickHouseClient,
+        contracts: peerDbMirrorContracts,
+        mirrorApiClient,
+        sourcePostgresClient: postgresClient,
+      });
+      const preparedMirror = await waitForCanonicalMirror(
+        mirrorApiClient,
+        fitnessContract.name,
+        previousFitnessContract.tableMappings,
+      );
+      expect(preparedMirror.currentFlowState).toBe("STATUS_RUNNING");
+    } finally {
+      await postgresClient.query(`
+        ALTER TABLE fitness.upgrade_provider_field_priority RENAME TO provider_field_priority
+      `);
+      await clickHouseClient.command({
+        query: buildPostgresFitnessProviderFieldPriorityRawTableStatement(),
+      });
+    }
+
+    await setupClickHouseCdcFromEnv();
+    await waitForCanonicalMirror(
+      mirrorApiClient,
+      fitnessContract.name,
+      fitnessContract.tableMappings,
+    );
+    const publicationAfter = await postgresClient.query<{ tablename: string }>(`
+      SELECT tablename FROM pg_publication_tables
+      WHERE pubname = 'peerdb_raw_analytics_publication'
+        AND schemaname = 'fitness' AND tablename = 'provider_field_priority'
+    `);
+    expect(publicationAfter.rows).toEqual([{ tablename: "provider_field_priority" }]);
+
+    await postgresClient.query(`
+      BEGIN;
+      INSERT INTO fitness.provider_field_priority (provider_id, field_key, priority)
+      VALUES ('${fixture.provider}', 'name', 25);
+      INSERT INTO fitness.processing_flow_marker (
+        operation_id, dataset_key, flow_name, batch_key, source_watermark
+      ) VALUES (
+        '${fixture.operation}', 'activity', '${fitnessContract.name}',
+        '${fixture.upgradeMarkerBatch}', '${fixture.upgradeMarkerWatermark}'
+      );
+      COMMIT;
+    `);
+    await waitForClickHouseRows(clickHouseClient, [
+      {
+        table: "provider_field_priority",
+        predicate:
+          "provider_id = {provider:String} AND field_key = {field:String} AND priority = 25",
+        queryParams: { provider: fixture.provider, field: "name" },
+      },
+      {
+        table: fitnessContract.processingMarker.destinationTableIdentifier,
+        predicate:
+          "operation_id = {operation:UUID} AND dataset_key = 'activity' AND flow_name = {flow:String} AND batch_key = {batch:String} AND source_watermark = {watermark:String}",
+        queryParams: {
+          operation: fixture.operation,
+          flow: fitnessContract.name,
+          batch: fixture.upgradeMarkerBatch,
+          watermark: fixture.upgradeMarkerWatermark,
+        },
+      },
+    ]);
+    const slotAfter = await postgresClient.query<{
+      slot_name: string;
+      active: boolean;
+      lsn_did_not_rewind: boolean;
+    }>(
+      `SELECT slot_name, active,
+         pg_wal_lsn_diff(confirmed_flush_lsn, $2::pg_lsn) >= 0 AS lsn_did_not_rewind
+       FROM pg_replication_slots WHERE slot_name = $1`,
+      [slotName, confirmedFlushLsn],
+    );
+    expect(slotAfter.rows).toEqual([
+      { slot_name: slotName, active: true, lsn_did_not_rewind: true },
     ]);
   });
 });

@@ -92,6 +92,160 @@ The important deploy steps are:
 If the job times out, identify the last active step and inspect both GitHub
 logs and server state before retrying.
 
+## Known Failure: New PeerDB Table Added Before Its Migration
+
+For DOFEK-SERVER-3B, [deploy 37873586628](https://github.com/Asherlc/dofek/actions/runs/37873586628)
+added `fitness.provider_field_priority` during `Prepare PeerDB CDC contract`,
+before Postgres migration `0144` created it. The first fatal PeerDB activity
+reported that the table was missing from `peerdb_raw_analytics_publication`.
+The fitness mirror entered `STATUS_SNAPSHOT`,
+its existing slot became inactive, and the failed deployment left ClickHouse
+consumers quiesced. Catalog `flows.status = 1` alone did not reflect the stuck
+workflow; [PeerDB's status handler](https://github.com/PeerDB-io/peerdb/blob/v0.36.19/flow/cmd/mirror_status.go)
+queries Temporal for the current state.
+
+The durable boundary is: prepare reconciles and validates existing mapping
+identities against the old schemas; tracked migrations create new source and
+destination tables; CDC setup configures publication membership and reconciles
+the full mapping contract. Finalize/verify then prove exact causal markers
+before the final canonical deploy restores consumers. See
+[contract deployment](../src/db/peerdb/mirror-deployment.ts),
+[CDC setup](../src/db/clickhouse-cdc.ts), and
+[deployment order](processing-status-runbook.md#deployment-order).
+
+### Reviewable recovery procedure
+
+This procedure is prepared for an operator; it does not authorize production
+mutation. SSH shell diagnostics remain read-only. Execute the cancellation only
+as a separately approved remote Docker API operator action, then use the fixed
+canonical CI deployment
+for migrations, CDC setup, marker verification, and consumer restoration.
+
+PeerDB `v0.36.19` supports
+`POST /v1/flows/cdc/cancel_table_addition` in `STATUS_SETUP` or
+`STATUS_SNAPSHOT`. It restores the pre-addition catalog mapping set plus any
+completed QRep additions, checks catalog source OIDs before updating the
+catalog or replacing the workflow, and starts CDC without setup/snapshot.
+It preserves the slot and destination data; its publication cleanup skips an
+explicit user publication such as `peerdb_raw_analytics_publication`.
+These behaviors come from the pinned
+[request/response definition](https://github.com/PeerDB-io/peerdb/blob/v0.36.19/protos/route.proto#L518-L529),
+[handler](https://github.com/PeerDB-io/peerdb/blob/v0.36.19/flow/cmd/cancel_table_addition.go),
+[workflow](https://github.com/PeerDB-io/peerdb/blob/v0.36.19/flow/workflows/cancel_table_addition_flow.go), and
+[activities](https://github.com/PeerDB-io/peerdb/blob/v0.36.19/flow/activities/cancel_table_addition_activity.go).
+
+1. Preserve the failing step, log reporting missing publication membership, API
+   workflow state, slot state, and current consumer replica counts. Verify the deployed PeerDB image
+   is still `v0.36.19`. Require the existing slot's `wal_status` to be `reserved`
+   or `extended` and `restart_lsn` to be non-null; `unreserved` or `lost`
+   requires fresh recovery review. Stop if the workflow has changed or evidence
+   names a different failure. Slot fields are documented in
+   [PostgreSQL replication slots](https://www.postgresql.org/docs/current/view-pg-replication-slots.html).
+2. Review the incident-specific baseline: ten mappings for `fitness.activity`,
+   `sleep_session`, `sleep_stage`, `daily_metrics`, `provider`,
+   `provider_connection`, `provider_priority`, `device_priority`,
+   `processing_flow_marker`, and `user_profile`; each destination has the same
+   unqualified table name. The pending addition is
+   `fitness.provider_field_priority` to `provider_field_priority`. Preserve all
+   live mapping properties, including the existing sleep/daily exclusions.
+   Do not substitute a newly rendered contract or remove a baseline table.
+3. Run the source and catalog queries below through the existing read-only
+   database operator connections, without exporting credentials. Require nonzero
+   source OIDs and publication membership for every baseline table, catalog
+   schema entries for their destinations, and no completed pending addition.
+   The cancellation endpoint separately rejects a missing catalog schema or
+   zero catalog OID before mutation. A completed addition is retained by the
+   endpoint and requires fresh review rather than this baseline-only recovery.
+
+```sql
+-- Source Postgres: all ten baseline rows must have nonzero OIDs and published=true.
+SELECT source_table, to_regclass(source_table)::oid AS source_oid,
+  EXISTS (SELECT 1 FROM pg_publication_tables
+    WHERE pubname = 'peerdb_raw_analytics_publication'
+      AND schemaname || '.' || tablename = source_table) AS published
+FROM unnest(ARRAY['fitness.activity', 'fitness.sleep_session', 'fitness.sleep_stage',
+  'fitness.daily_metrics', 'fitness.provider', 'fitness.provider_connection',
+  'fitness.provider_priority', 'fitness.device_priority',
+  'fitness.processing_flow_marker', 'fitness.user_profile']) AS expected(source_table);
+SELECT slot_name, active, wal_status, restart_lsn,
+  pg_wal_lsn_diff(pg_current_wal_lsn(), restart_lsn) AS retained_wal_bytes
+FROM pg_replication_slots
+WHERE slot_name = 'peerflow_slot_dofek_fitness_raw_analytics';
+
+-- PeerDB catalog: every baseline destination must exist; no pending copy may be complete.
+SELECT table_name FROM public.table_schema_mapping
+WHERE flow_name = 'dofek_fitness_raw_analytics' ORDER BY table_name;
+SELECT source_table, run_uuid, consolidate_complete FROM peerdb_stats.qrep_runs
+WHERE parent_mirror_name = 'dofek_fitness_raw_analytics'
+  AND source_table = 'fitness.provider_field_priority';
+```
+
+4. After operator approval, submit the following supported request. It rereads
+   live mappings, preserves their full objects, and leaves the removal override
+   false. Keep the same recorded idempotency key if the client disconnects;
+   inspect the cancellation workflow and mirror state before resubmitting.
+   The handler's idempotency key selects the Temporal cancellation workflow,
+   while its state precondition rejects a mirror that already resumed. Choose
+   the exact running web container ID with `docker --host ssh://dofek-server ps`,
+   using the [configured production SSH alias](../deploy/README.md#ssh-access-debugging-only); Node
+   reaches the internal Flow API through its existing overlay network. Print
+   only selected status fields, never the full config or its `env` map.
+
+```bash
+web_task='<reviewed-running-web-container-id>'
+docker --host ssh://dofek-server exec -i --workdir /app "$web_task" node --input-type=module <<'NODE'
+const flow = 'dofek_fitness_raw_analytics';
+const api = 'http://peerdb-flow-api:8113/v1';
+const post = async (path, body) => {
+  const response = await fetch(`${api}/${path}`, {method: 'POST',
+    headers: {'content-type': 'application/json'}, body: JSON.stringify(body)});
+  const result = await response.json();
+  if (!response.ok) throw new Error(`PeerDB HTTP ${response.status}: ${result.message ?? 'request rejected'}`);
+  return result;
+};
+const status = await post('mirrors/status',
+  {flow_job_name: flow, include_flow_info: true, exclude_batches: true});
+if (!['STATUS_SETUP', 'STATUS_SNAPSHOT'].includes(status.currentFlowState))
+  throw new Error(`Recovery precondition changed: ${status.currentFlowState}`);
+const config = status.cdcStatus.config;
+console.log(JSON.stringify({state: status.currentFlowState,
+  publication: config.publicationName, mappings: config.tableMappings,
+  snapshots: status.cdcStatus.snapshotStatus}, null, 2));
+const expected = ['activity', 'sleep_session', 'sleep_stage', 'daily_metrics',
+  'provider', 'provider_connection', 'provider_priority', 'device_priority',
+  'processing_flow_marker', 'user_profile', 'provider_field_priority'];
+if (config.publicationName !== 'peerdb_raw_analytics_publication' ||
+    config.tableMappings.length !== expected.length ||
+    expected.some(name => !config.tableMappings.some(mapping =>
+      mapping.sourceTableIdentifier === `fitness.${name}` && mapping.destinationTableIdentifier === name)))
+  throw new Error('Live mappings differ from the reviewed incident baseline');
+if (status.cdcStatus.snapshotStatus.clones.some(copy =>
+    copy.sourceTable === 'fitness.provider_field_priority' && copy.consolidateCompleted))
+  throw new Error('Pending addition completed a snapshot; review recovery again');
+const result = await post('flows/cdc/cancel_table_addition', {
+  flow_job_name: flow, currently_replicating_tables: config.tableMappings,
+  idempotency_key: 'DOFEK-SERVER-3B-2026-10-08', assume_table_removal_will_not_happen: false,
+});
+console.log(JSON.stringify({flow: result.flowJobName, runId: result.runId,
+  mappings: result.tablesAfterCancellation}, null, 2));
+NODE
+```
+
+5. Recheck API `STATUS_RUNNING`, the same active slot with non-null `restart_lsn`
+   and `wal_status` still `reserved` or `extended`, and the ten baseline mappings.
+   Run the existing health command in
+   the running `cdc-health` container:
+   `node --experimental-strip-types scripts/check-clickhouse-cdc.ts`.
+   Require a fresh passing monitor result and inspect normalization progress
+   with the [CDC health runbook](clickhouse-cdc-health-runbook.md).
+6. Deploy the tested fix through canonical CI. Require migrations, full CDC
+   setup, finalize, and exact marker verification to succeed before the final
+   stack deploy restores consumers. Confirm `provider_field_priority` exists
+   on both databases, belongs to the publication, and is mirrored. An active
+   slot or successful cancellation alone does not prove that new mapping or
+   analytics freshness. Record the recovery evidence in the
+   [incident baseline](production-incident-baseline.md).
+
 ## Known Failure: PeerDB Destination Validation
 
 Symptom:

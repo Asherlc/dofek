@@ -70,13 +70,16 @@ manually out of order.
    `metric-stream-clickhouse-sink`, and `processing-reconciliation` remain
    quiesced, then wait for Postgres, ClickHouse, and the PeerDB Flow API.
 2. Run `peerdb-cdc-contract prepare`. This applies only registered additive
-   `pre-cdc` ClickHouse migrations, reconciles every live mapping to the typed
-   contract, reads the mapping back, and validates the resulting PostgreSQL to
-   ClickHouse projection. An existing mirror is edited in place; it and its
-   logical replication slot are not replaced.
+   `pre-cdc` ClickHouse migrations, reconciles existing mapping identities to
+   the typed contract, reads those mappings back, and validates their PostgreSQL
+   to ClickHouse projection. New table mappings are deferred until migrations
+   and publication setup finish. An existing mirror is edited in place; it and
+   its logical replication slot are not replaced.
 3. Run the normal database migrations and deploy the requested immutable image
-   with the same consumers still quiesced. Run the checked-in CDC setup for any
-   mirror that does not exist yet.
+   with the same consumers still quiesced. Run the checked-in CDC setup to
+   configure publication membership, reconcile the full mapping contract, and
+   create any missing mirrors. See [CDC setup](../src/db/clickhouse-cdc.ts) and
+   [contract deployment](../src/db/peerdb/mirror-deployment.ts).
 4. Run `peerdb-cdc-contract finalize`. It validates the post-migration schema
    again and writes one unique processing marker for every managed mirror.
    The owner-only deploy artifact records the exact operation, dataset, flow,
