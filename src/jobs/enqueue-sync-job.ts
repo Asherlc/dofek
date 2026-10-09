@@ -67,7 +67,8 @@ export async function enqueueSyncJob(
     return null;
   }
   const anchoredJobData = withRelativeRequestAnchor(jobData);
-  const jobOptions = await syncJobOptionsWithRateLimitCooldown(providerId, jobData.userId);
+  const jobOptions = { ...(await syncJobOptionsWithRateLimitCooldown(providerId, jobData.userId)) };
+  if (anchoredJobData.webhookEvent) jobOptions.jobId = `sync-webhook-${randomUUID()}`;
   const deduplicationId = initialFullSyncDeduplicationId(providerId, anchoredJobData, options);
   const queue = getProviderSyncQueue(providerId);
   return enqueueSyncJobWithRequestDedup(
@@ -106,7 +107,9 @@ export async function scheduleDelayedSyncJob(
     {
       ...SYNC_JOB_RETRY_OPTIONS,
       delay: providerRateLimitDelayMs(cooldown),
-      jobId: providerRateLimitCooldownJobId(cooldown, jobData.userId ?? ""),
+      jobId: jobData.webhookEvent
+        ? `sync-webhook-${randomUUID()}`
+        : providerRateLimitCooldownJobId(cooldown, jobData.userId),
     },
     (name, data, opts) => queue.add(name, data, opts),
     (jobId) => queue.getJob(jobId),

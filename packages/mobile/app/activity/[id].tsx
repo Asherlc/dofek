@@ -13,6 +13,7 @@ import {
 import { formatRecordLocalTime } from "@dofek/format/record-local-time";
 import type { UnitConverter } from "@dofek/format/units";
 import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
+import { processingPollInterval } from "@dofek/providers/processing-status";
 import { providerSourceLabel } from "@dofek/providers/providers";
 import { getActivityIconInfo } from "@dofek/training/activity-icons";
 import type { ClimbingContext } from "@dofek/training/climbing-context";
@@ -606,6 +607,14 @@ export default function ActivityDetailScreen() {
     { id: id ?? "", maxPoints: 200 },
     { enabled: !!id, placeholderData: (previousData) => previousData },
   );
+  const route = trpc.activity.route.useQuery(
+    { id: id ?? "", maxPoints: 200 },
+    {
+      enabled: !!id,
+      refetchInterval: (query) =>
+        query.state.data?.status === "processing" ? processingPollInterval("active") : false,
+    },
+  );
   const hrZones = trpc.activity.hrZones.useQuery(
     { id: id ?? "" },
     { enabled: !!id, placeholderData: (previousData) => previousData },
@@ -730,7 +739,8 @@ export default function ActivityDetailScreen() {
   );
   const zones = hrZones.data ?? [];
 
-  const hasGps = points.some((p) => p.lat != null && p.lng != null);
+  const routePoints = route.data?.status === "ready" ? route.data.points : [];
+  const hasGps = routePoints.length > 0;
   const hasHr = points.some((p) => p.heartRate != null);
   const hasAltitude = points.some((p) => p.altitude != null);
 
@@ -914,7 +924,23 @@ export default function ActivityDetailScreen() {
       )}
 
       {/* Route Map */}
-      {hasGps && <RouteMap points={points} hoveredPosition={hoveredPosition} />}
+      {route.error ? (
+        <QueryStatePanel
+          variant="error"
+          message={getQueryErrorMessage(route.error)}
+          onRetry={() => void route.refetch()}
+          retrying={route.isFetching}
+        />
+      ) : route.isLoading || route.data?.status === "processing" ? (
+        <View style={styles.chartsLoading} accessibilityLiveRegion="polite">
+          <ActivityIndicator color={colors.accent} size="small" />
+          <Text style={styles.chartsLoadingText}>
+            {route.isLoading ? "Loading route map…" : "Processing route map…"}
+          </Text>
+        </View>
+      ) : hasGps ? (
+        <RouteMap points={routePoints} hoveredPosition={hoveredPosition} />
+      ) : null}
 
       {/* Strength Exercises */}
       {(strengthExercises.data?.length ?? 0) > 0 && (

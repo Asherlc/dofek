@@ -693,6 +693,73 @@ describe("activityRouter", () => {
     });
   });
 
+  describe("route", () => {
+    it("requires the activity analytics store", async () => {
+      const caller = createCaller({
+        db: { execute: vi.fn() },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await expect(
+        caller.route({ id: "00000000-0000-0000-0000-000000000001" }),
+      ).rejects.toMatchObject({
+        code: "PRECONDITION_FAILED",
+        message:
+          "ClickHouse activity analytics store is required for activity routes. Set CLICKHOUSE_URL and retry.",
+      });
+    });
+
+    it("does not expose a route for an activity outside the user's visible activities", async () => {
+      const query = vi.fn();
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        sensorStore: makeSensorStoreStub({ query }),
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await expect(
+        caller.route({ id: "00000000-0000-0000-0000-000000000001" }),
+      ).rejects.toMatchObject({ code: "NOT_FOUND", message: "Activity not found" });
+      expect(query).not.toHaveBeenCalled();
+    });
+
+    it("keeps partial GPS coordinates out of an activity route response", async () => {
+      const activityId = "00000000-0000-0000-0000-000000000001";
+      const sensorStore = makeSensorStoreStub({
+        query: vi.fn().mockResolvedValue([{ is_processing: 1, gps_count: 1 }]),
+      });
+      const caller = createCaller({
+        db: {
+          execute: vi
+            .fn()
+            .mockResolvedValueOnce([
+              {
+                requested_id: activityId,
+                resolved_group_id: activityId,
+                resolution_kind: "group",
+              },
+            ])
+            .mockResolvedValueOnce([
+              {
+                id: activityId,
+                user_id: "user-1",
+                started_at: "2026-07-01T12:00:00Z",
+                ended_at: "2026-07-01T13:00:00Z",
+                member_activity_ids: [activityId],
+              },
+            ]),
+        },
+        sensorStore,
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await expect(caller.route({ id: activityId })).resolves.toEqual({ status: "processing" });
+    });
+  });
+
   describe("delete", () => {
     beforeEach(() => {
       mockEnqueueActivityDeleteAnalyticsRefresh.mockClear();

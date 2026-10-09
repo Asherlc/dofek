@@ -248,11 +248,11 @@ export function HealthStatusBar({
                 className="mt-2 space-y-1 border-t border-border pt-2 text-[10px]"
               >
                 <div className="font-medium text-muted">{metric.evaluationRule}</div>
-                <div className="text-subtle">
-                  {metric.baselineProgress.observedObservationDays} of{" "}
-                  {metric.baselineProgress.requiredObservationDays} required days recorded
-                </div>
-                <div className="font-medium text-foreground">{metric.baselineProgress.action}</div>
+                {metric.baselineProgress.blocker !== "syncing" ? (
+                  <div className="font-medium text-foreground">
+                    {metric.baselineProgress.action}
+                  </div>
+                ) : null}
               </section>
             ) : null}
             <HealthMetricDetails

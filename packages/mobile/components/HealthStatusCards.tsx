@@ -91,11 +91,9 @@ export function HealthStatusCards({
                 style={styles.progress}
               >
                 <Text style={styles.rule}>{metric.evaluationRule}</Text>
-                <Text style={styles.progressCount}>
-                  {metric.baselineProgress.observedObservationDays} of{" "}
-                  {metric.baselineProgress.requiredObservationDays} required days recorded
-                </Text>
-                <Text style={styles.action}>{metric.baselineProgress.action}</Text>
+                {metric.baselineProgress.blocker !== "syncing" ? (
+                  <Text style={styles.action}>{metric.baselineProgress.action}</Text>
+                ) : null}
               </View>
             ) : null}
             <View style={styles.provenanceDisclosure}>
@@ -238,11 +236,6 @@ const styles = StyleSheet.create({
   progress: {
     gap: spacing.xs,
     marginTop: spacing.xs,
-  },
-  progressCount: {
-    color: colors.textSecondary,
-    fontSize: 12,
-    lineHeight: 17,
   },
   action: {
     color: colors.text,

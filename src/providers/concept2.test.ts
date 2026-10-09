@@ -62,7 +62,7 @@ vi.mock("../auth/oauth.ts", () => ({
 }));
 
 const providerActivityAbsenceMocks = vi.hoisted(() => ({
-  markProviderActivityAbsent: vi.fn().mockResolvedValue(undefined),
+  markProviderActivityAbsent: vi.fn().mockResolvedValue(0),
   finishProviderActivityListSync: vi.fn().mockResolvedValue(undefined),
   upsertProviderActivity: vi.fn().mockResolvedValue({ id: "activity-id" }),
 }));
@@ -286,6 +286,7 @@ describe("Concept2Provider", () => {
   const originalEnv = { ...process.env };
 
   afterEach(() => {
+    vi.useRealTimers();
     process.env = { ...originalEnv };
     providerActivityAbsenceMocks.markProviderActivityAbsent.mockClear();
     providerActivityAbsenceMocks.finishProviderActivityListSync.mockClear();
@@ -514,8 +515,11 @@ describe("Concept2Provider", () => {
     });
 
     it("marks activity provider-absent on delete event", async () => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(new Date("2026-10-08T12:00:00Z"));
       const provider = new Concept2Provider();
       const db = createMockDb();
+      providerActivityAbsenceMocks.markProviderActivityAbsent.mockResolvedValueOnce(1);
 
       const event: WebhookEvent = {
         ownerExternalId: "42",
@@ -527,7 +531,9 @@ describe("Concept2Provider", () => {
       const result = await provider.syncWebhookEvent(db, event);
 
       expect(result.provider).toBe("concept2");
-      expect(result.recordsSynced).toBe(0);
+      expect(result.recordsSynced).toBe(1);
+      expect(result.errors).toHaveLength(0);
+      expect(result.duration).toBe(0);
       expect(providerActivityAbsenceMocks.markProviderActivityAbsent).toHaveBeenCalledWith(db, {
         providerId: "concept2",
         externalId: "12345",
