@@ -297,12 +297,17 @@ export class Concept2Provider implements WebhookProvider {
     // Handle delete events
     if (event.eventType === "delete" && event.objectId) {
       const scopedUserId = resolveScopedUserId(options?.userId);
-      await markProviderActivityAbsent(db, {
+      const recordsChanged = await markProviderActivityAbsent(db, {
         providerId: this.id,
         externalId: event.objectId,
         userId: scopedUserId,
       });
-      return { provider: this.id, recordsSynced: 0, errors: [], duration: Date.now() - start };
+      return {
+        provider: this.id,
+        recordsSynced: recordsChanged,
+        errors: [],
+        duration: Date.now() - start,
+      };
     }
 
     // Extract the full result from webhook metadata

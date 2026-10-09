@@ -7,7 +7,7 @@ import { invalidateAllUserQueries } from "../lib/cache.ts";
 import { providerRequiresStoredTokens } from "../lib/custom-auth-providers.ts";
 import { captureException } from "../lib/error-reporting.ts";
 import { logger } from "../logger.ts";
-import type { SyncProvider } from "../providers/types.ts";
+import { isWebhookProvider, type SyncProvider } from "../providers/types.ts";
 import {
   syncDuration,
   syncErrorsTotal,
@@ -109,8 +109,30 @@ export async function executeSyncProvider(
     }
     logger.info(`[worker] Starting ${provider.name}...`);
     const homeTimezone = await loadUserHomeTimezone(db, job.data.userId);
-    const result = await runWithProviderUserIngestContext(job.data.userId, { homeTimezone }, () =>
-      provider.sync(context.createRun(provider, processingOperation.metricStreamPublisher)),
+    const result = await runWithProviderUserIngestContext(
+      job.data.userId,
+      { homeTimezone },
+      async () => {
+        const event = job.data.webhookEvent;
+        if (event && isWebhookProvider(provider) && provider.syncWebhookEvent) {
+          try {
+            return await provider.syncWebhookEvent(db, event, {
+              userId: job.data.userId,
+              metricStreamPublisher: processingOperation.metricStreamPublisher,
+            });
+          } catch (error) {
+            captureException(error, {
+              tags: { provider: provider.id, webhookPhase: "targeted-sync" },
+            });
+            logger.warn(
+              `[worker] ${provider.name} targeted webhook sync failed; running full sync: ${error}`,
+            );
+          }
+        }
+        return provider.sync(
+          context.createRun(provider, processingOperation.metricStreamPublisher),
+        );
+      },
     );
     if (result.recordsSynced > 0) {
       if (

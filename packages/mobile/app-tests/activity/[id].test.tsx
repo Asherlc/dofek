@@ -94,7 +94,8 @@ vi.mock("../../components/MuscleGroupBodyDiagram", () => ({
 }));
 
 vi.mock("../../components/RouteMap", () => ({
-  RouteMap: () => null,
+  RouteMap: ({ points }: { points: Array<{ lat: number | null; lng: number | null }> }) =>
+    React.createElement("span", null, `Route ends at ${points.at(-1)?.lat ?? "none"}`),
 }));
 
 vi.mock("../../components/activity/useChartScrub", () => ({
@@ -227,6 +228,7 @@ vi.mock("@dofek/zones/zones", async () => {
 
 const mockByIdQuery = vi.fn();
 const mockStreamQuery = vi.fn();
+const mockRouteQuery = vi.fn();
 const mockHrZonesQuery = vi.fn();
 const mockPowerZonesQuery = vi.fn();
 const mockStrengthExercisesQuery = vi.fn();
@@ -263,6 +265,7 @@ vi.mock("../../lib/trpc", () => ({
     activity: {
       byId: { useQuery: (...args: unknown[]) => mockByIdQuery(...args) },
       stream: { useQuery: (...args: unknown[]) => mockStreamQuery(...args) },
+      route: { useQuery: (...args: unknown[]) => mockRouteQuery(...args) },
       hrZones: { useQuery: (...args: unknown[]) => mockHrZonesQuery(...args) },
       powerZones: { useQuery: (...args: unknown[]) => mockPowerZonesQuery(...args) },
       strengthExercises: { useQuery: (...args: unknown[]) => mockStrengthExercisesQuery(...args) },
@@ -420,6 +423,7 @@ function getPlaceholderData(value: unknown): ((previousData: unknown) => unknown
 beforeEach(() => {
   mockByIdQuery.mockClear();
   mockStreamQuery.mockClear();
+  mockRouteQuery.mockClear();
   mockHrZonesQuery.mockClear();
   mockPowerZonesQuery.mockClear();
   mockStrengthExercisesQuery.mockClear();
@@ -452,6 +456,11 @@ beforeEach(() => {
   vi.mocked(captureException).mockClear();
   mockByIdQuery.mockReturnValue({ data: baseCyclingActivity, isLoading: false, error: null });
   mockStreamQuery.mockReturnValue({ data: streamPointsWithHrAndPower, isLoading: false });
+  mockRouteQuery.mockReturnValue({
+    data: { status: "unavailable" },
+    isLoading: false,
+    error: null,
+  });
   mockHrZonesQuery.mockReturnValue({ data: [], isLoading: false, error: null });
   mockPowerZonesQuery.mockReturnValue({ data: null, isLoading: false });
   mockStrengthExercisesQuery.mockReturnValue({ data: [], isLoading: false });
@@ -460,6 +469,54 @@ beforeEach(() => {
 });
 
 describe("ActivityDetailScreen", () => {
+  it("shows route processing and disables GPX while cached sensor points are partial", async () => {
+    mockStreamQuery.mockReturnValue({
+      data: [{ ...streamPointsWithHrAndPower[0], lat: 37.1, lng: -122.1 }],
+      isLoading: false,
+    });
+    mockRouteQuery.mockReturnValue({
+      data: { status: "processing" },
+      isLoading: false,
+      error: null,
+    });
+    const { default: ActivityDetailScreen } = await import("../../app/activity/[id]");
+
+    render(React.createElement(ActivityDetailScreen));
+
+    expect(screen.getByText("Processing route map…")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Export Activity" }));
+    expect(
+      screen.getByRole("button", { name: "Export as GPS track (GPX)" }).hasAttribute("disabled"),
+    ).toBe(true);
+  });
+
+  it("draws the ready route endpoint instead of the cached sensor endpoint", async () => {
+    mockStreamQuery.mockReturnValue({
+      data: [{ ...streamPointsWithHrAndPower[0], lat: 37.1, lng: -122.1 }],
+      isLoading: false,
+    });
+    mockRouteQuery.mockReturnValue({
+      data: {
+        status: "ready",
+        points: [
+          { lat: 37.1, lng: -122.1 },
+          { lat: 37.9, lng: -122.9 },
+        ],
+      },
+      isLoading: false,
+      error: null,
+    });
+    const { default: ActivityDetailScreen } = await import("../../app/activity/[id]");
+
+    render(React.createElement(ActivityDetailScreen));
+
+    expect(screen.getByText("Route ends at 37.9")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Export Activity" }));
+    expect(
+      screen.getByRole("button", { name: "Export as GPS track (GPX)" }).hasAttribute("disabled"),
+    ).toBe(false);
+  });
+
   it("invalidates Activities screen queries after deleting an activity", async () => {
     const { default: ActivityDetailScreen } = await import("../../app/activity/[id]");
     render(React.createElement(ActivityDetailScreen));
