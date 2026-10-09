@@ -474,8 +474,10 @@ the running Swarm image tag and inspect the production job's actual conclusion.
        and ClickHouse CDC setup succeeds. If a prerequisite fails, the workflow
        leaves all five services at zero replicas and reports that the operator
        must resolve the failed step and rerun the deployment. After restoration,
-       each of the five services must keep the same Swarm task at `1/1`
-       continuously for 60 seconds; a replacement task or any
+       each of the five services and the three metric-stream R2 archive services
+       must keep the same Swarm task at `1/1` continuously for 60 seconds. The
+       [workflow](../.github/workflows/deploy-web-stack.yml) checks all eight
+       services serially; a replacement task or any
        replica loss restarts the stability window. Swarm creates a new task when
        a task crashes, so a transient `1/1` sample is not deployment convergence
        ([Docker Swarm tasks and scheduling](https://docs.docker.com/engine/swarm/how-swarm-mode-works/services/#tasks-and-scheduling)).
