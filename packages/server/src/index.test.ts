@@ -220,7 +220,7 @@ function request(
   path: string,
 ): Promise<{ status: number; body: string }> {
   return new Promise((resolve, reject) => {
-    const server = app.listen(0, () => {
+    const server = app.listen(0, "127.0.0.1", () => {
       const addr = server.address();
       if (!addr || typeof addr === "string") {
         server.close();
