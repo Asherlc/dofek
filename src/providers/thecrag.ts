@@ -1,3 +1,4 @@
+import { validateHeaderValue } from "node:http";
 import {
   type ClimbingClimbType,
   type ClimbingGradeSystem,
@@ -103,7 +104,7 @@ function sourceClimbType(ascent: z.infer<typeof ascentSchema>): ClimbingClimbTyp
   if (isBoulder && !isRoute) return "boulder";
   if (isRoute && !isBoulder) return "route";
   throw new Error(
-    `theCrag ascent ${ascent.id} has an unsupported or inconsistent climbing discipline. Correct its route style in theCrag and sync again.`,
+    `theCrag ascent ${ascent.id} has an unsupported or inconsistent climbing discipline. Review the route style or contact support before syncing this logbook.`,
   );
 }
 
@@ -360,6 +361,14 @@ export class TheCragProvider implements SyncProvider {
           const token = input.trim();
           if (!token)
             throw new ProviderTokenRejectedError(this.name, "Paste your personal API key.");
+          try {
+            validateHeaderValue("X-CData-Key", `key=${token}`);
+          } catch {
+            throw new ProviderTokenRejectedError(
+              this.name,
+              "Paste your personal API key again from theCrag API settings. The pasted key contains invalid characters.",
+            );
+          }
           const logbook = await fetchLogbookPage(this.#fetchFn, token, 1);
           return {
             accessToken: token,

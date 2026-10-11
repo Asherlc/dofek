@@ -75,6 +75,14 @@ contract. An authenticated production response has not yet been verified;
 unauthenticated research requests were blocked by Cloudflare. Passing fixture
 tests establish Dofek's handling of that contract, not live-account access.
 
+The [importer](../src/providers/thecrag.ts) classifies ascents from boulder,
+sport, and trad styles. theCrag supports additional valid disciplines
+([Route Gear Styles](https://www.thecrag.com/en/article/styles)). If recorded
+gear and route styles cannot establish a supported discipline, or conflict,
+the entire batch stops without changing saved entries. No ascents are skipped,
+so an incremental cursor cannot advance past an unsaved ascent. A top-rope tick
+can still be classified when its route supplies a sport or trad style.
+
 The reference names `date` and `logDate` as ISO-8601 values but does not
 establish every live representation. It also lists `gradeAtom.type` without
 defining its values or identifying a grading-system discriminator

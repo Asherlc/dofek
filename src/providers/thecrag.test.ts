@@ -163,6 +163,61 @@ describe("TheCragProvider personal key authentication", () => {
     expect(fetchFn).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ["carriage return", "\r"],
+    ["line feed", "\n"],
+    ["CRLF", "\r\n"],
+    ["null", "\u0000"],
+    ["control character", "\u0001"],
+    ["DEL", "\u007f"],
+    ["non-Latin-1 character", "\u0100"],
+  ])(
+    "rejects keys containing %s without exposing their value or contacting the service",
+    async (_label, character) => {
+      const secret = `private-key-start${character}private-key-end`;
+      const fetchFn = vi.fn<typeof fetch>().mockImplementation(async (_input, options) => {
+        new Headers(options?.headers);
+        return response();
+      });
+      const exchange = new TheCragProvider(fetchFn).authSetup().manualToken?.exchangeToken;
+      if (!exchange) throw new Error("Personal key connection is unavailable");
+      const error = await exchange(secret).catch((rejection: unknown) => rejection);
+      expect(error).toBeInstanceOf(ProviderTokenRejectedError);
+      expect(error).toMatchObject({
+        message: expect.stringMatching(/paste.*API key.*invalid.*character/i),
+      });
+      if (!(error instanceof Error)) throw new Error("Invalid key did not produce an error");
+      expect(error.cause).toBeUndefined();
+      const exposed = inspect(
+        { error, telemetry: mocks.captureException.mock.calls },
+        { depth: null },
+      );
+      expect(exposed).not.toContain("private-key-start");
+      expect(exposed).not.toContain("private-key-end");
+      expect(fetchFn).not.toHaveBeenCalled();
+      expect(mocks.captureException).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(["valid-key_+/=.:", "valid\tkey", "valid-é-key"])(
+    "verifies header-safe key %j through the service without guessing its format",
+    async (key) => {
+      const fetchFn = vi.fn<typeof fetch>().mockResolvedValue(response());
+      const exchange = new TheCragProvider(fetchFn).authSetup().manualToken?.exchangeToken;
+      if (!exchange) throw new Error("Personal key connection is unavailable");
+      await expect(exchange(key)).resolves.toMatchObject({
+        accessToken: key,
+        providerAccountId: "123",
+      });
+      expect(fetchFn).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          headers: expect.objectContaining({ "X-CData-Key": `key=${key}` }),
+        }),
+      );
+    },
+  );
+
   it("preserves shared rate-limit errors", async () => {
     const fetchFn = vi.fn<typeof fetch>().mockResolvedValue(
       new Response(null, {
@@ -397,6 +452,35 @@ describe("TheCragProvider logbook sync", () => {
       expect(database.spies.execute).not.toHaveBeenCalled();
     },
   );
+
+  it("gives an actionable review path for a recorded discipline that is not supported", async () => {
+    const database = createMockDatabase();
+    const result = await new TheCragProvider(
+      vi.fn<typeof fetch>().mockResolvedValue(
+        response([
+          theCragAscent({
+            climbedGearStyle: "aid",
+            markdown: "private unsupported-ascent notes",
+            route: { id: "2001", grade: "A1", style: "Aid" },
+          }),
+        ]),
+      ),
+    ).sync(makeRun(database.db));
+    expect(result.errors).toEqual([
+      expect.objectContaining({
+        message: expect.stringMatching(
+          /Review the route style or contact support before syncing this logbook\./,
+        ),
+      }),
+    ]);
+    expect(
+      inspect(
+        { errors: result.errors, telemetry: mocks.captureException.mock.calls },
+        { depth: null },
+      ),
+    ).not.toContain("private unsupported-ascent notes");
+    expect(database.spies.execute).not.toHaveBeenCalled();
+  });
 
   it("uses the recorded route discipline when gear style is absent", async () => {
     const database = createMockDatabase({ executeResult: [{ id: "entry-1" }] });
