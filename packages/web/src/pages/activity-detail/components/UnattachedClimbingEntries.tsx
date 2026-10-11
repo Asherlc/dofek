@@ -21,25 +21,24 @@ export function UnattachedClimbingEntries({
   state: EntryAttachState;
   onAttach: (entryId: string) => void;
 }) {
-  const title = "Unattached climbing entries";
   const description =
     "Climbing entries recorded for this day that can be attached to this activity.";
 
   return (
-    <section>
-      <div className="mb-2 flex items-center gap-2">
-        <h2 className="text-sm font-medium text-muted uppercase tracking-wider">{title}</h2>
-        <ChartDescriptionTooltip description={description} />
-      </div>
-      <div className="card p-4" title={description}>
-        {error ? (
-          <p className="text-sm text-red-400">{userFacingErrorMessage(error)}</p>
-        ) : isLoading && !suggestions ? (
-          <p className="text-sm text-muted">Loading climbing entries...</p>
-        ) : (suggestions?.length ?? 0) === 0 ? (
-          <p className="text-sm text-muted">No unattached climbing entries for this day.</p>
-        ) : (
-          <div className="space-y-3">
+    <div>
+      {error ? (
+        <p className="text-sm text-red-400">{userFacingErrorMessage(error)}</p>
+      ) : isLoading && !suggestions ? (
+        <p className="text-sm text-muted">Loading climbing entries...</p>
+      ) : (suggestions?.length ?? 0) === 0 ? (
+        <p className="text-sm text-muted">No unattached climbing entries for this day.</p>
+      ) : (
+        <>
+          <div className="mb-2 flex items-center gap-2">
+            <h3 className="text-xs font-medium text-muted">Unattached</h3>
+            <ChartDescriptionTooltip description={description} />
+          </div>
+          <div className="divide-y divide-border">
             {suggestions?.map((entry) => {
               const entryState = state[entry.id];
               const attemptResult = formatClimbingAttemptResult(
@@ -51,7 +50,7 @@ export function UnattachedClimbingEntries({
               return (
                 <div
                   key={entry.id}
-                  className="flex items-center justify-between gap-3 rounded-md border border-border p-3"
+                  className="flex items-center justify-between gap-3 py-3 first:pt-0 last:pb-0"
                 >
                   <div className="min-w-0 flex-1">
                     <ClimbingEntrySources
@@ -85,8 +84,8 @@ export function UnattachedClimbingEntries({
               );
             })}
           </div>
-        )}
-      </div>
-    </section>
+        </>
+      )}
+    </div>
   );
 }

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import React from "react";
 import { Alert, Linking } from "react-native";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -391,6 +391,33 @@ const baseCyclingActivity = {
   sampleCountState: { status: "available" },
 };
 
+const attachedClimbingEntry = {
+  id: "attached-climb",
+  providerId: "kaya",
+  climbType: "boulder",
+  gradeSystem: "v_scale",
+  grade: "V3",
+  sent: true,
+  attemptCount: 1,
+  attempts: [],
+  ascentType: "Flash",
+  holdType: null,
+  lead: null,
+  routeName: "Attached Boulder",
+  locationName: "Pacific Pipe",
+  sourceName: "Kaya",
+  sourceLinks: [],
+  wallAngleDegrees: null,
+  context: {
+    providerId: "kaya",
+    locationPath: [{ name: "Pacific Pipe", externalId: null, kind: null }],
+    board: null,
+    wallAngle: null,
+    climbStyle: null,
+    resultStyle: "Flash",
+  },
+};
+
 const streamPointsWithHrAndPower = Array.from({ length: 5 }, (_, index) => ({
   recordedAt: `2026-04-14T10:0${index}:00.000Z`,
   heartRate: 140 + index,
@@ -562,9 +589,14 @@ describe("ActivityDetailScreen", () => {
     expect(screen.getByText(/2026-03-18 at/)).toBeTruthy();
   });
 
-  it("renders server suggestions from both providers and attaches only the selected entry", async () => {
+  it("groups attached climbs and server suggestions in one card and attaches only the selected entry", async () => {
     mockByIdQuery.mockReturnValue({
       data: { ...baseCyclingActivity, activityType: "climbing", name: "Morning Rock Climb" },
+      isLoading: false,
+      error: null,
+    });
+    mockClimbingEntriesQuery.mockReturnValue({
+      data: [attachedClimbingEntry],
       isLoading: false,
       error: null,
     });
@@ -625,7 +657,12 @@ describe("ActivityDetailScreen", () => {
     const { default: ActivityDetailScreen } = await import("../../app/activity/[id]");
     render(React.createElement(ActivityDetailScreen));
     expect(getQueryEnabledFlag(mockEntrySuggestionsQuery.mock.calls[0]?.[1])).toBe(true);
-    expect(screen.getByText("Unattached climbing entries")).toBeTruthy();
+    const climbsCard = screen.getByText("Climbs").parentElement;
+    if (!climbsCard) throw new Error("Expected a climbs card");
+    expect(within(climbsCard).getByText("Attached Boulder")).toBeTruthy();
+    expect(within(climbsCard).getByText("Blue Circuit")).toBeTruthy();
+    expect(within(climbsCard).getByText("Project")).toBeTruthy();
+    expect(within(climbsCard).getByText("Unattached")).toBeTruthy();
     expect(screen.getByText("Mountain Project")).toBeTruthy();
     expect(screen.getByText("OpenBeta")).toBeTruthy();
     expect(screen.getByText("Blue Circuit")).toBeTruthy();
@@ -633,7 +670,7 @@ describe("ActivityDetailScreen", () => {
     expect(screen.getByText("Top rope")).toBeTruthy();
     expect(screen.getByText("Fell or hung")).toBeTruthy();
     expect(screen.getByText("5.10a · Not sent; attempt count not recorded")).toBeTruthy();
-    const controls = screen.getAllByRole("button", { name: "Attach to this activity" });
+    const controls = within(climbsCard).getAllByRole("button", { name: "Attach to this activity" });
     expect(controls).toHaveLength(2);
     const secondControl = controls.at(1);
     if (!secondControl) throw new Error("Expected a second attach control");
@@ -686,6 +723,99 @@ describe("ActivityDetailScreen", () => {
     render(React.createElement(ActivityDetailScreen));
     expect(screen.getByText("No unattached climbing entries for this day.")).toBeTruthy();
   });
+
+  it("keeps one loading panel until attached climbs resolve after empty suggestions", async () => {
+    mockByIdQuery.mockReturnValue({
+      data: { ...baseCyclingActivity, activityType: "climbing" },
+      isLoading: false,
+      error: null,
+    });
+    mockClimbingEntriesQuery.mockReturnValue({ data: undefined, isLoading: true, error: null });
+    mockEntrySuggestionsQuery.mockReturnValue({ data: undefined, isLoading: true, error: null });
+    const { default: ActivityDetailScreen } = await import("../../app/activity/[id]");
+    const view = render(React.createElement(ActivityDetailScreen));
+    const climbsCard = screen.getByText("Climbs").parentElement;
+    if (!climbsCard) throw new Error("Expected a climbs card");
+    expect(climbsCard.querySelectorAll('[testid="query-state-loading"]')).toHaveLength(1);
+    expect(screen.queryByText("No unattached climbing entries for this day.")).toBeNull();
+
+    mockEntrySuggestionsQuery.mockReturnValue({ data: [], isLoading: false, error: null });
+    view.rerender(React.createElement(ActivityDetailScreen));
+    expect(climbsCard.querySelectorAll('[testid="query-state-loading"]')).toHaveLength(1);
+    expect(screen.queryByText("No unattached climbing entries for this day.")).toBeNull();
+
+    mockClimbingEntriesQuery.mockReturnValue({ data: [], isLoading: false, error: null });
+    view.rerender(React.createElement(ActivityDetailScreen));
+    expect(screen.getByText("No unattached climbing entries for this day.")).toBeTruthy();
+  });
+
+  it("keeps available suggestions attachable while attached climbs initially load", async () => {
+    mockByIdQuery.mockReturnValue({
+      data: { ...baseCyclingActivity, activityType: "climbing" },
+      isLoading: false,
+      error: null,
+    });
+    mockClimbingEntriesQuery.mockReturnValue({ data: undefined, isLoading: true, error: null });
+    mockEntrySuggestionsQuery.mockReturnValue({
+      data: [{ ...attachedClimbingEntry, id: "suggested-climb", routeName: "Suggested Boulder" }],
+      isLoading: false,
+      error: null,
+    });
+    const { default: ActivityDetailScreen } = await import("../../app/activity/[id]");
+    render(React.createElement(ActivityDetailScreen));
+    const climbsCard = screen.getByText("Climbs").parentElement;
+    if (!climbsCard) throw new Error("Expected a climbs card");
+    expect(within(climbsCard).getByText("Suggested Boulder")).toBeTruthy();
+    expect(climbsCard.querySelectorAll('[testid="query-state-loading"]')).toHaveLength(1);
+    fireEvent.click(within(climbsCard).getByRole("button", { name: "Attach to this activity" }));
+    expect(mockAttachEntryMutate).toHaveBeenCalledWith({
+      activityId: baseCyclingActivity.id,
+      entryId: "suggested-climb",
+    });
+    await waitFor(() => {
+      expect(mockClimbingEntriesInvalidate).toHaveBeenCalledWith({ id: baseCyclingActivity.id });
+    });
+  });
+
+  it("keeps cached attached climbs visible while suggestions load during a refetch", async () => {
+    mockByIdQuery.mockReturnValue({
+      data: { ...baseCyclingActivity, activityType: "climbing" },
+      isLoading: false,
+      error: null,
+    });
+    mockClimbingEntriesQuery.mockReturnValue({
+      data: [attachedClimbingEntry],
+      isLoading: false,
+      isFetching: true,
+      error: null,
+    });
+    mockEntrySuggestionsQuery.mockReturnValue({ data: undefined, isLoading: true, error: null });
+    const { default: ActivityDetailScreen } = await import("../../app/activity/[id]");
+    render(React.createElement(ActivityDetailScreen));
+    const climbsCard = screen.getByText("Climbs").parentElement;
+    if (!climbsCard) throw new Error("Expected a climbs card");
+    expect(within(climbsCard).getByText("Attached Boulder")).toBeTruthy();
+    expect(climbsCard.querySelectorAll('[testid="query-state-loading"]')).toHaveLength(1);
+    expect(screen.queryByText("No unattached climbing entries for this day.")).toBeNull();
+  });
+
+  it.each([null, new Error("Climbs unavailable")])(
+    "does not report an empty card before attached climbs have data (error: %s)",
+    async (error) => {
+      mockByIdQuery.mockReturnValue({
+        data: { ...baseCyclingActivity, activityType: "climbing" },
+        isLoading: false,
+        error: null,
+      });
+      mockClimbingEntriesQuery.mockReturnValue({ data: undefined, isLoading: false, error });
+      mockEntrySuggestionsQuery.mockReturnValue({ data: [], isLoading: false, error: null });
+      const { default: ActivityDetailScreen } = await import("../../app/activity/[id]");
+      render(React.createElement(ActivityDetailScreen));
+      expect(screen.getByText("Climbs")).toBeTruthy();
+      expect(screen.queryByText("No unattached climbing entries for this day.")).toBeNull();
+      if (error) expect(screen.getByText("Climbs unavailable")).toBeTruthy();
+    },
+  );
 
   it("recomputes the activity and invalidates detail caches", async () => {
     let finishByIdInvalidation: () => void = () => {};
@@ -1270,6 +1400,7 @@ describe("ActivityDetailScreen", () => {
 
     expect(getQueryEnabledFlag(mockClimbingEntriesQuery.mock.calls[0]?.[1])).toBe(true);
     expect(screen.getByText("Climbs")).toBeTruthy();
+    expect(screen.queryByText("No unattached climbing entries for this day.")).toBeNull();
     expect(screen.getByText("V4")).toBeTruthy();
     expect(screen.getByText("Blue Circuit")).toBeTruthy();
     expect(screen.getByText("Redpoint")).toBeTruthy();

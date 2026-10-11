@@ -1870,8 +1870,96 @@ describe("ActivityDetailPage", () => {
   });
 
   describe("climbing entries", () => {
-    it("renders server suggestions from both providers and attaches only the selected entry", async () => {
+    it("waits for attached climbs before showing the empty suggestions notice", async () => {
       Object.assign(mockActivity, { activityType: "climbing", name: "Morning Rock Climb" });
+      mockClimbingEntriesUseQuery.mockReturnValue({
+        data: undefined,
+        error: null,
+        isError: false,
+        isLoading: true,
+      });
+      const ActivityDetailPage = await importPage();
+      const view = renderWithUnits(<ActivityDetailPage />);
+      const climbsSection = screen.getByRole("heading", { name: "Climbs" }).closest("section");
+      if (!climbsSection) throw new Error("Expected a climbs section");
+      expect(
+        within(climbsSection).queryByText("No unattached climbing entries for this day."),
+      ).toBeNull();
+      expect(
+        within(climbsSection).getByRole("status", { name: "Loading climbs." }),
+      ).toBeInTheDocument();
+
+      mockClimbingEntriesUseQuery.mockReturnValue({
+        data: [],
+        error: null,
+        isError: false,
+        isLoading: false,
+      });
+      view.rerender(
+        <UnitContext.Provider value={{ unitSystem: "metric", setUnitSystem: () => {} }}>
+          <ActivityDetailPage />
+        </UnitContext.Provider>,
+      );
+      expect(
+        within(climbsSection).getByText("No unattached climbing entries for this day."),
+      ).toBeInTheDocument();
+    });
+
+    it("shows one compact loading state while both climbing queries are pending", async () => {
+      Object.assign(mockActivity, { activityType: "climbing", name: "Morning Rock Climb" });
+      mockClimbingEntriesUseQuery.mockReturnValue({
+        data: undefined,
+        error: null,
+        isError: false,
+        isLoading: true,
+      });
+      mockEntrySuggestionsUseQuery.mockReturnValue({
+        data: undefined,
+        error: null,
+        isLoading: true,
+      });
+      const ActivityDetailPage = await importPage();
+      renderWithUnits(<ActivityDetailPage />);
+      const climbsSection = screen.getByRole("heading", { name: "Climbs" }).closest("section");
+      if (!climbsSection) throw new Error("Expected a climbs section");
+      expect(within(climbsSection).getAllByRole("status")).toHaveLength(1);
+      expect(within(climbsSection).queryByText("Loading climbing entries...")).toBeNull();
+    });
+
+    it("groups attached climbs and suggestions in one section and attaches only the selected entry", async () => {
+      Object.assign(mockActivity, { activityType: "climbing", name: "Morning Rock Climb" });
+      mockClimbingEntriesUseQuery.mockReturnValue({
+        data: [
+          {
+            id: "attached-climb",
+            climbType: "boulder",
+            gradeSystem: "v_scale",
+            grade: "V3",
+            sent: true,
+            ascentType: "Flash",
+            attemptCount: 1,
+            attempts: [],
+            holdType: null,
+            routeName: "Attached Arete",
+            locationName: "Pacific Pipe",
+            sourceName: "Kaya",
+            sourceLinks: [],
+            wallAngleDegrees: null,
+            lead: null,
+            context: {
+              providerId: "kaya",
+              locationPath: [{ name: "Pacific Pipe", externalId: null, kind: null }],
+              board: null,
+              wallAngle: null,
+              climbStyle: null,
+              resultStyle: "Flash",
+            },
+          },
+        ],
+        error: null,
+        isError: false,
+        isLoading: false,
+      });
       mockEntrySuggestionsUseQuery.mockReturnValue({
         data: [
           {
@@ -1927,12 +2015,19 @@ describe("ActivityDetailPage", () => {
       const ActivityDetailPage = await importPage();
       renderWithUnits(<ActivityDetailPage />);
       expect(getQueryEnabledFlag(mockEntrySuggestionsUseQuery.mock.calls[0]?.[1])).toBe(true);
-      expect(screen.getByText("Unattached climbing entries")).toBeDefined();
+      const climbsSection = screen.getByRole("heading", { name: "Climbs" }).closest("section");
+      if (!climbsSection) throw new Error("Expected a climbs section");
+      expect(within(climbsSection).getByText("Attached Arete")).toBeInTheDocument();
+      expect(within(climbsSection).getByText("Blue Circuit")).toBeInTheDocument();
+      expect(within(climbsSection).getByText("Project")).toBeInTheDocument();
+      expect(
+        within(climbsSection).getAllByRole("button", { name: "Attach to this activity" }),
+      ).toHaveLength(2);
       expect(screen.getByText("Mountain Project")).toBeDefined();
       expect(screen.getByText("OpenBeta")).toBeDefined();
       expect(screen.getByText("Blue Circuit")).toBeDefined();
       expect(screen.getByText("V4", { exact: true })).toBeDefined();
-      expect(screen.getByText("Flash")).toBeDefined();
+      expect(screen.getAllByText("Flash")).toHaveLength(2);
       const controls = screen.getAllByRole("button", { name: "Attach to this activity" });
       expect(controls).toHaveLength(2);
       const secondControl = controls.at(1);
@@ -1952,6 +2047,77 @@ describe("ActivityDetailPage", () => {
       expect(mockActivityByIdInvalidate).not.toHaveBeenCalled();
       expect(mockActivityStreamInvalidate).not.toHaveBeenCalled();
     });
+
+    it.each([
+      { state: "loading", error: null, isLoading: true },
+      { state: "paused", error: null, isLoading: false },
+      {
+        state: "unavailable",
+        error: new Error("Attached climbs are unavailable. Refresh to try again."),
+        isLoading: false,
+      },
+    ])(
+      "keeps suggestions actionable when attached climbs are $state",
+      async ({ error, isLoading }) => {
+        const originalActivity = { ...mockActivity };
+        Object.assign(mockActivity, { activityType: "climbing", name: "Morning Rock Climb" });
+        mockClimbingEntriesUseQuery.mockReturnValue({
+          data: undefined,
+          error,
+          isError: error !== null,
+          isLoading,
+        });
+        mockEntrySuggestionsUseQuery.mockReturnValue({
+          data: [
+            {
+              id: "available-tick",
+              providerId: "openbeta",
+              sourceName: "OpenBeta",
+              sourceLinks: [],
+              climbType: "route",
+              gradeSystem: "yds",
+              grade: "5.10a",
+              sent: true,
+              ascentType: "Onsight",
+              attemptCount: 1,
+              lead: true,
+              routeName: "Available Arete",
+              locationName: "Test Crag",
+              context: {
+                providerId: "openbeta",
+                locationPath: [{ name: "Test Crag", externalId: null, kind: null }],
+                board: null,
+                wallAngle: null,
+                climbStyle: "lead",
+                resultStyle: "Onsight",
+              },
+            },
+          ],
+          error: null,
+          isLoading: false,
+        });
+
+        const ActivityDetailPage = await importPage();
+        renderWithUnits(<ActivityDetailPage />);
+        const climbsSection = screen.getByRole("heading", { name: "Climbs" }).closest("section");
+        if (!climbsSection) throw new Error("Expected a climbs section");
+        expect(within(climbsSection).getByText("Available Arete")).toBeInTheDocument();
+        if (error) expect(within(climbsSection).getByText(error.message)).toBeInTheDocument();
+        const attachButton = within(climbsSection).getByRole("button", {
+          name: "Attach to this activity",
+        });
+        expect(attachButton).toBeEnabled();
+        fireEvent.click(attachButton);
+        expect(mockAttachEntryMutate).toHaveBeenCalledWith({
+          activityId: "test-123",
+          entryId: "available-tick",
+        });
+        await waitFor(() =>
+          expect(mockClimbingEntriesInvalidate).toHaveBeenCalledWith({ id: "test-123" }),
+        );
+        Object.assign(mockActivity, originalActivity);
+      },
+    );
 
     it("shows the server error when attaching a climbing entry fails", async () => {
       const originalActivity = { ...mockActivity };
@@ -2141,6 +2307,9 @@ describe("ActivityDetailPage", () => {
       expect(screen.getByText("1: Technique")).toBeDefined();
       expect(screen.getByText("Not sent; attempt count not recorded")).toBeDefined();
       expect(screen.getAllByText("Touchstone Pacific Pipe")).toHaveLength(3);
+      expect(
+        screen.queryByText("No unattached climbing entries for this day."),
+      ).not.toBeInTheDocument();
 
       Object.assign(mockActivity, originalData);
     });

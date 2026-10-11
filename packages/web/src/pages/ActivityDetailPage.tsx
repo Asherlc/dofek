@@ -139,6 +139,7 @@ export function ActivityDetailPage() {
     { activityId: id },
     { enabled: isClimbingActivity },
   );
+  const climbingEntriesLoading = climbingEntries.isLoading && !climbingEntries.data;
   const trpcUtils = trpc.useUtils();
   const [entryAttachState, setEntryAttachState] = useState<
     Record<string, { pending: boolean; error: string | null }>
@@ -316,24 +317,38 @@ export function ActivityDetailPage() {
           </Section>
         )}
 
-      {isClimbingActivity && (climbingEntries.error || (climbingEntries.data?.length ?? 0) > 0) && (
+      {isClimbingActivity && (
         <Section title="Climbs">
           {climbingEntries.error ? (
             <p className="text-sm text-red-400">{userFacingErrorMessage(climbingEntries.error)}</p>
-          ) : (
+          ) : climbingEntriesLoading ? (
+            <QueryStatePanel variant="loading" contextLabel="Climbs" height={72} />
+          ) : (climbingEntries.data?.length ?? 0) > 0 ? (
             <ClimbingEntryBreakdown entries={climbingEntries.data ?? []} />
+          ) : null}
+          {(entrySuggestions.error ||
+            (!climbingEntriesLoading && entrySuggestions.isLoading) ||
+            (entrySuggestions.data?.length ?? 0) > 0 ||
+            (climbingEntries.data !== undefined && climbingEntries.data.length === 0)) && (
+            <div
+              className={
+                climbingEntries.error ||
+                climbingEntriesLoading ||
+                (climbingEntries.data?.length ?? 0) > 0
+                  ? "mt-3 border-t border-border pt-3"
+                  : undefined
+              }
+            >
+              <UnattachedClimbingEntries
+                suggestions={entrySuggestions.data}
+                error={entrySuggestions.error}
+                isLoading={entrySuggestions.isLoading}
+                state={entryAttachState}
+                onAttach={handleAttachEntry}
+              />
+            </div>
           )}
         </Section>
-      )}
-
-      {isClimbingActivity && (
-        <UnattachedClimbingEntries
-          suggestions={entrySuggestions.data}
-          error={entrySuggestions.error}
-          isLoading={entrySuggestions.isLoading}
-          state={entryAttachState}
-          onAttach={handleAttachEntry}
-        />
       )}
 
       {isHangboardingActivity && (

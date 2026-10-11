@@ -409,8 +409,7 @@ interface ClimbingEntry {
 
 function ClimbingEntryBreakdown({ entries }: { entries: ClimbingEntry[] }) {
   return (
-    <View style={climbingStyles.container}>
-      <Text style={chartStyles.title}>Climbs</Text>
+    <>
       {entries.map((entry) => {
         const attemptResult = formatClimbingAttemptResult(
           entry.sent,
@@ -454,7 +453,7 @@ function ClimbingEntryBreakdown({ entries }: { entries: ClimbingEntry[] }) {
           </View>
         );
       })}
-    </View>
+    </>
   );
 }
 
@@ -466,9 +465,9 @@ const climbingStyles = StyleSheet.create({
     gap: 12,
   },
   sectionTitle: {
-    color: colors.text,
-    fontSize: 16,
-    fontWeight: "700",
+    color: colors.textSecondary,
+    fontSize: 13,
+    fontWeight: "600",
   },
   attachButton: {
     backgroundColor: colors.accent,
@@ -640,6 +639,7 @@ export default function ActivityDetailScreen() {
     { activityId: id },
     { enabled: !!id && isClimbingActivity },
   );
+  const climbingEntriesLoading = climbingEntries.isLoading && !climbingEntries.data;
   const [entryAttachState, setEntryAttachState] = useState<
     Record<string, { pending: boolean; error: string | null }>
   >({});
@@ -942,72 +942,81 @@ export default function ActivityDetailScreen() {
         <ExerciseBreakdown exercises={strengthExercises.data ?? []} units={units} />
       )}
 
-      {isClimbingActivity && climbingEntries.error && (
+      {(isClimbingActivity || (climbingEntries.data?.length ?? 0) > 0) && (
         <View style={climbingStyles.container}>
-          <Text style={styles.errorText}>{userFacingErrorMessage(climbingEntries.error)}</Text>
-        </View>
-      )}
-      {(climbingEntries.data?.length ?? 0) > 0 && (
-        <ClimbingEntryBreakdown entries={climbingEntries.data ?? []} />
-      )}
-      {isClimbingActivity && (
-        <View style={climbingStyles.container}>
-          <Text style={climbingStyles.sectionTitle}>Unattached climbing entries</Text>
-          {entrySuggestions.error ? (
-            <QueryStatePanel
-              variant="error"
-              message={getQueryErrorMessage(entrySuggestions.error)}
-              onRetry={() => void entrySuggestions.refetch()}
-              retrying={entrySuggestions.isFetching}
-            />
-          ) : entrySuggestions.isLoading && !entrySuggestions.data ? (
-            <QueryStatePanel variant="loading" />
-          ) : (entrySuggestions.data?.length ?? 0) === 0 ? (
-            <QueryStatePanel
-              variant="empty"
-              message="No unattached climbing entries for this day."
-            />
-          ) : (
-            entrySuggestions.data?.map((entry) => {
-              const state = entryAttachState[entry.id];
-              const attemptResult = formatClimbingAttemptResult(
-                entry.sent,
-                entry.attemptCount,
-                entry.ascentType,
-                entry.context,
-              );
-              return (
-                <View key={entry.id} style={climbingStyles.entryRow}>
-                  <View style={climbingStyles.entryDetails}>
-                    <ClimbingEntrySources
-                      name={
-                        entry.routeName ?? (entry.climbType === "boulder" ? "Boulder" : "Route")
-                      }
-                      sourceName={entry.sourceName ?? providerSourceLabel(entry.providerId)}
-                      links={entry.sourceLinks}
-                    />
-                    <ClimbingEntryContext context={entry.context} sent={entry.sent} />
-                    <Text style={climbingStyles.locationName}>
-                      {entry.grade}
-                      {attemptResult !== null ? ` · ${attemptResult}` : null}
-                    </Text>
-                    {state?.error ? <Text style={styles.errorText}>{state.error}</Text> : null}
-                  </View>
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel="Attach to this activity"
-                    disabled={state?.pending}
-                    style={climbingStyles.attachButton}
-                    onPress={() => handleAttachEntry(entry.id)}
-                  >
-                    <Text style={climbingStyles.attachButtonText}>
-                      {state?.pending ? "Attaching..." : "Attach"}
-                    </Text>
-                  </Pressable>
-                </View>
-              );
-            })
+          <Text style={chartStyles.title}>Climbs</Text>
+          {isClimbingActivity && climbingEntries.error && (
+            <Text style={styles.errorText}>{userFacingErrorMessage(climbingEntries.error)}</Text>
           )}
+          {isClimbingActivity && climbingEntriesLoading && (
+            <QueryStatePanel variant="loading" minHeight={72} />
+          )}
+          {(climbingEntries.data?.length ?? 0) > 0 && (
+            <ClimbingEntryBreakdown entries={climbingEntries.data ?? []} />
+          )}
+          {isClimbingActivity &&
+            (entrySuggestions.error ? (
+              <QueryStatePanel
+                variant="error"
+                message={getQueryErrorMessage(entrySuggestions.error)}
+                onRetry={() => void entrySuggestions.refetch()}
+                retrying={entrySuggestions.isFetching}
+              />
+            ) : entrySuggestions.isLoading && !entrySuggestions.data ? (
+              climbingEntriesLoading ? null : (
+                <QueryStatePanel variant="loading" minHeight={72} />
+              )
+            ) : (entrySuggestions.data?.length ?? 0) === 0 ? (
+              climbingEntries.data?.length === 0 ? (
+                <QueryStatePanel
+                  variant="empty"
+                  message="No unattached climbing entries for this day."
+                />
+              ) : null
+            ) : (
+              <>
+                <Text style={climbingStyles.sectionTitle}>Unattached</Text>
+                {entrySuggestions.data?.map((entry) => {
+                  const state = entryAttachState[entry.id];
+                  const attemptResult = formatClimbingAttemptResult(
+                    entry.sent,
+                    entry.attemptCount,
+                    entry.ascentType,
+                    entry.context,
+                  );
+                  return (
+                    <View key={entry.id} style={climbingStyles.entryRow}>
+                      <View style={climbingStyles.entryDetails}>
+                        <ClimbingEntrySources
+                          name={
+                            entry.routeName ?? (entry.climbType === "boulder" ? "Boulder" : "Route")
+                          }
+                          sourceName={entry.sourceName ?? providerSourceLabel(entry.providerId)}
+                          links={entry.sourceLinks}
+                        />
+                        <ClimbingEntryContext context={entry.context} sent={entry.sent} />
+                        <Text style={climbingStyles.locationName}>
+                          {entry.grade}
+                          {attemptResult !== null ? ` · ${attemptResult}` : null}
+                        </Text>
+                        {state?.error ? <Text style={styles.errorText}>{state.error}</Text> : null}
+                      </View>
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel="Attach to this activity"
+                        disabled={state?.pending}
+                        style={climbingStyles.attachButton}
+                        onPress={() => handleAttachEntry(entry.id)}
+                      >
+                        <Text style={climbingStyles.attachButtonText}>
+                          {state?.pending ? "Attaching..." : "Attach"}
+                        </Text>
+                      </Pressable>
+                    </View>
+                  );
+                })}
+              </>
+            ))}
         </View>
       )}
 
