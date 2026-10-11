@@ -1,3 +1,4 @@
+import { once } from "node:events";
 import type { AddressInfo } from "node:net";
 import { healthExplorerSnapshotSchema } from "@dofek/mcp-contracts/health-explorer";
 import { captureException } from "dofek/lib/error-reporting";
@@ -317,7 +318,8 @@ async function request(
 }
 
 async function requestMany(app: express.Express, count: number): Promise<number[]> {
-  const server = app.listen(0);
+  const server = app.listen(0, "127.0.0.1");
+  await once(server, "listening");
   try {
     const port = getPort(server);
     const statuses: number[] = [];
