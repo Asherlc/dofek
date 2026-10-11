@@ -10,6 +10,7 @@ const meta = {
         id: "entry-1",
         providerId: "mountain-project",
         sourceName: "Mountain Project",
+        sourceLinks: [],
         climbType: "boulder",
         gradeSystem: "v_scale",
         grade: "V4",
@@ -40,6 +41,46 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const Default: Story = {};
+export const SwissCheese: Story = {
+  args: {
+    suggestions: meta.args.suggestions.map((entry) => ({
+      ...entry,
+      climbType: "route",
+      gradeSystem: "yds",
+      grade: "5.4",
+      routeName: "Swiss Cheese",
+      sourceLinks: [
+        {
+          providerId: "mountain-project",
+          kind: "route",
+          url: "https://www.mountainproject.com/route/105734732/swiss-cheese",
+        },
+      ],
+      locationName:
+        "California > San Francisco Bay Area > South Bay Area > Castle Rock and Sanborn Area > Goat Rock Area > Goat Rock",
+      sent: null,
+      ascentType: null,
+      lead: false,
+      context: {
+        ...entry.context,
+        locationPath: [
+          "California",
+          "San Francisco Bay Area",
+          "South Bay Area",
+          "Castle Rock and Sanborn Area",
+          "Goat Rock Area",
+          "Goat Rock",
+        ].map((name) => ({
+          name,
+          externalId: null,
+          kind: null,
+        })),
+        climbStyle: "top-rope",
+        resultStyle: null,
+      },
+    })),
+  },
+};
 
 export const Onsight: Story = {
   args: {

@@ -44,7 +44,9 @@ when the authenticated user changes.
 Activity details render the complete climbing location path, board, recorded
 angle/units, method, and result for both attached climbs and suggested ticks.
 `ClimbingEntryContext` uses shared formatters and server-derived status; it
-retains unknown counts/units. See the [climbing contract](../../docs/climbing-context.md).
+retains unknown counts/units, with absent Mountain Project top-rope placeholders
+omitted. Route names and additional source routes/tick lists use verified links
+from the server. See the [climbing contract](../../docs/climbing-context.md).
 
 The recent climbing activity table omits distance and keeps its climbing metrics,
 as configured by the [climbing page](src/routes/training/climbing.tsx).

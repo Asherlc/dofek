@@ -1,6 +1,7 @@
 import { formatClimbingAttemptResult } from "@dofek/format/format";
 import type { ClimbingActivityEntryRow } from "../../../../../server/src/repositories/climbing-repository.ts";
 import { ClimbingEntryContext } from "./ClimbingEntryContext.tsx";
+import { ClimbingEntrySources } from "./ClimbingEntrySources.tsx";
 
 export function ClimbingEntryBreakdown({ entries }: { entries: ClimbingActivityEntryRow[] }) {
   return (
@@ -10,6 +11,7 @@ export function ClimbingEntryBreakdown({ entries }: { entries: ClimbingActivityE
           entry.sent,
           entry.attemptCount,
           entry.ascentType,
+          entry.context,
         );
         return (
           <div
@@ -21,9 +23,11 @@ export function ClimbingEntryBreakdown({ entries }: { entries: ClimbingActivityE
                 {entry.grade}
               </span>
               <div className="min-w-0">
-                <p className="truncate text-sm font-medium text-foreground">
-                  {entry.routeName ?? (entry.climbType === "boulder" ? "Boulder" : "Route")}
-                </p>
+                <ClimbingEntrySources
+                  name={entry.routeName ?? (entry.climbType === "boulder" ? "Boulder" : "Route")}
+                  sourceName={entry.sourceName}
+                  links={entry.sourceLinks}
+                />
                 <ClimbingEntryContext context={entry.context} sent={entry.sent} />
                 {entry.holdType !== null && (
                   <p className="text-xs text-subtle">
@@ -51,7 +55,6 @@ export function ClimbingEntryBreakdown({ entries }: { entries: ClimbingActivityE
                   {attemptResult}
                 </p>
               )}
-              <p className="text-xs text-dim">{entry.sourceName}</p>
             </div>
           </div>
         );

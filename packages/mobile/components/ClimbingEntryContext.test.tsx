@@ -42,6 +42,22 @@ describe("ClimbingEntryContext", () => {
     expect(screen.getByText("Wall angle: 0°")).toBeTruthy();
     expect(screen.getByText("Flash")).toHaveStyle({ color: colors.positive });
   });
+  it("omits unavailable result text for Mountain Project top-rope ticks", () => {
+    render(
+      <ClimbingEntryContext
+        context={{
+          ...context,
+          providerId: "mountain-project",
+          climbStyle: "top-rope",
+          resultStyle: null,
+        }}
+        sent={null}
+      />,
+    );
+    expect(screen.getByText("Top rope")).toBeTruthy();
+    expect(screen.queryByText("Result unknown")).toBeNull();
+  });
+
   it("makes a missing result explicit", () => {
     render(
       <ClimbingEntryContext

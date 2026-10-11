@@ -51,3 +51,7 @@ The [climbing result formatter](src/format.ts) lets a successful Onsight or Flas
 badge convey the result without an attempt summary. Redpoint, Pinkpoint, and
 Repeat badges convey the send while the summary retains attempt information.
 Other results keep explicit labels based on the outcome and count supplied by the server.
+Passing the entry's source context omits absent result/count placeholders for
+Mountain Project top-rope ticks, as described in the
+[source coverage audit](../../docs/mountain-project.md#climbing-style-and-result-coverage).
+Recorded values still display, and other sources retain explicit unknown labels.

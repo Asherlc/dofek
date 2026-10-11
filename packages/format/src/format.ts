@@ -1,3 +1,5 @@
+import { type ClimbingResultContext, isMountainProjectTopRopeEntry } from "./climbing-context.ts";
+
 /** Format a Date as YYYY-MM-DD for API queries. */
 export function formatDateYmd(date?: Date): string {
   const resolvedDate = date ?? new Date();
@@ -67,6 +69,7 @@ export function formatClimbingAttemptResult(
   sent: boolean | null,
   attemptCount: number | null,
   ascentType: string | null,
+  context?: ClimbingResultContext,
 ): string | null {
   if (sent && (ascentType === "Onsight" || ascentType === "Flash")) return null;
   if (
@@ -77,7 +80,9 @@ export function formatClimbingAttemptResult(
       ? "Attempt count not recorded"
       : `${attemptCount} ${attemptCount === 1 ? "attempt" : "attempts"}`;
   }
-  if (sent === null && attemptCount === null) return "Outcome and attempt count not recorded";
+  if (sent === null && attemptCount === null) {
+    return isMountainProjectTopRopeEntry(context) ? null : "Outcome and attempt count not recorded";
+  }
   if (attemptCount === null) {
     return sent ? "Sent; attempt count not recorded" : "Not sent; attempt count not recorded";
   }

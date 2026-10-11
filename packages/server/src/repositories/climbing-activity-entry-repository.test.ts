@@ -21,6 +21,7 @@ describe("ClimbingActivityEntry", () => {
       routeName: "Blue Arete",
       locationName: "Pacific Pipe",
       sourceName: "Kaya",
+      sourceLinks: [],
       wallAngleDegrees: null,
       context: emptyClimbingContext("kaya"),
     });
@@ -38,6 +39,7 @@ describe("ClimbingActivityEntry", () => {
       routeName: "Blue Arete",
       locationName: "Pacific Pipe",
       sourceName: "Kaya",
+      sourceLinks: [],
       wallAngleDegrees: null,
       context: emptyClimbingContext("kaya"),
     });
@@ -48,6 +50,7 @@ describe("ClimbingActivityEntry", () => {
       {
         id: "00000000-0000-4000-8000-000000000001",
         provider_id: "kaya",
+        raw: null,
         climb_type: "boulder",
         grade_system: "v_scale",
         grade: "V3",
@@ -76,6 +79,7 @@ describe("ClimbingActivityEntry", () => {
       attemptCount: null,
       sent: null,
       sourceName: null,
+      sourceLinks: [],
     });
   });
 });
@@ -135,6 +139,7 @@ describe("ClimbingActivityEntryRepository", () => {
           ...base,
           id: "mp",
           provider_id: "mountain-project",
+          raw: { URL: "https://www.mountainproject.com/route/105734732/swiss-cheese" },
           source_name: "Mountain Project",
           sent: null,
           attempt_count: null,
@@ -144,6 +149,10 @@ describe("ClimbingActivityEntryRepository", () => {
           ...base,
           id: "ob",
           provider_id: "openbeta",
+          raw: {
+            climb: { uuid: "10000000-0000-4000-8000-000000000001" },
+            user: { username: "thickles" },
+          },
           source_name: "OpenBeta",
           sent: false,
           attempt_count: null,
@@ -157,6 +166,19 @@ describe("ClimbingActivityEntryRepository", () => {
         sourceName: "Mountain Project, OpenBeta",
         sent: false,
         attemptCount: null,
+        sourceLinks: [
+          {
+            providerId: "mountain-project",
+            kind: "route",
+            url: "https://www.mountainproject.com/route/105734732/swiss-cheese",
+          },
+          {
+            providerId: "openbeta",
+            kind: "route",
+            url: "https://openbeta.io/climb/10000000-0000-4000-8000-000000000001",
+          },
+          { providerId: "openbeta", kind: "ticks", url: "https://openbeta.io/u/thickles/ticks" },
+        ],
       });
     });
     it("returns normalized entries for an activity member", async () => {
@@ -164,6 +186,7 @@ describe("ClimbingActivityEntryRepository", () => {
         {
           id: "entry-1",
           provider_id: "kaya",
+          raw: null,
           climb_type: "boulder",
           grade_system: "v_scale",
           grade: "v4",
@@ -199,6 +222,7 @@ describe("ClimbingActivityEntryRepository", () => {
         locationName: "Pacific Pipe",
         lead: null,
         sourceName: "Kaya",
+        sourceLinks: [],
         wallAngleDegrees: null,
         context: emptyClimbingContext("kaya"),
       });
@@ -209,6 +233,7 @@ describe("ClimbingActivityEntryRepository", () => {
         {
           id: "mountain-project-entry",
           provider_id: "mountain-project",
+          raw: null,
           climb_type: "route",
           grade_system: "yds",
           grade: "5.6",
@@ -227,6 +252,7 @@ describe("ClimbingActivityEntryRepository", () => {
         {
           id: "kaya-entry",
           provider_id: "kaya",
+          raw: null,
           climb_type: "route",
           grade_system: "yds",
           grade: "5.6",
@@ -252,6 +278,7 @@ describe("ClimbingActivityEntryRepository", () => {
           sent: true,
           attemptCount: 1,
           sourceName: "Mountain Project, Kaya",
+          sourceLinks: [],
         },
       ]);
     });
@@ -276,6 +303,7 @@ describe("ClimbingActivityEntryRepository", () => {
           ...entry,
           id: "provider-a-1",
           provider_id: "provider-a",
+          raw: null,
           source_name: "Provider A",
           context: emptyClimbingContext("provider-a"),
         },
@@ -283,6 +311,7 @@ describe("ClimbingActivityEntryRepository", () => {
           ...entry,
           id: "provider-b-1",
           provider_id: "provider-b",
+          raw: null,
           source_name: "Provider B",
           context: emptyClimbingContext("provider-b"),
         },
@@ -290,6 +319,7 @@ describe("ClimbingActivityEntryRepository", () => {
           ...entry,
           id: "provider-b-2",
           provider_id: "provider-b",
+          raw: null,
           source_name: "Provider B",
           context: emptyClimbingContext("provider-b"),
         },
@@ -297,6 +327,7 @@ describe("ClimbingActivityEntryRepository", () => {
           ...entry,
           id: "provider-c-1",
           provider_id: "provider-c",
+          raw: null,
           source_name: "Provider C",
           context: emptyClimbingContext("provider-c"),
         },
@@ -315,6 +346,7 @@ describe("ClimbingActivityEntryRepository", () => {
         {
           id: "mountain-project-entry",
           provider_id: "mountain-project",
+          raw: null,
           climb_type: "route",
           grade_system: "yds",
           grade: " 5.10c ",
@@ -333,6 +365,7 @@ describe("ClimbingActivityEntryRepository", () => {
         {
           id: "kaya-entry",
           provider_id: "kaya",
+          raw: null,
           climb_type: "route",
           grade_system: "yds",
           grade: "5.10C",
@@ -356,6 +389,7 @@ describe("ClimbingActivityEntryRepository", () => {
       expect(entries[0]?.toDetail()).toMatchObject({
         sent: true,
         sourceName: "Mountain Project, Kaya",
+        sourceLinks: [],
       });
     });
 
@@ -387,6 +421,7 @@ describe("ClimbingActivityEntryRepository", () => {
           ...base,
           id: "mountain-project-entry",
           provider_id: "mountain-project",
+          raw: null,
           context: emptyClimbingContext("mountain-project"),
         },
         {
@@ -394,6 +429,7 @@ describe("ClimbingActivityEntryRepository", () => {
           ...change,
           id: "kaya-entry",
           provider_id: "kaya",
+          raw: null,
           context: emptyClimbingContext("kaya"),
         },
       ]);
@@ -428,6 +464,7 @@ describe("ClimbingActivityEntryRepository", () => {
           ...names,
           id: "mountain-project-entry",
           provider_id: "mountain-project",
+          raw: null,
           context: emptyClimbingContext("mountain-project"),
         },
         {
@@ -435,6 +472,7 @@ describe("ClimbingActivityEntryRepository", () => {
           ...names,
           id: "kaya-entry",
           provider_id: "kaya",
+          raw: null,
           context: emptyClimbingContext("kaya"),
         },
       ]);
@@ -465,18 +503,21 @@ describe("ClimbingActivityEntryRepository", () => {
           ...base,
           id: "source-a",
           provider_id: "kaya",
+          raw: null,
           context: emptyClimbingContext("kaya"),
         },
         {
           ...base,
           id: "source-b",
           provider_id: "kaya",
+          raw: null,
           context: emptyClimbingContext("kaya"),
         },
         {
           ...base,
           id: "source-c",
           provider_id: "mountain-project",
+          raw: null,
           attempts: [{ attemptIndex: 1, failureReason: null, notes: null, outcome: "sent" }],
           context: emptyClimbingContext("mountain-project"),
         },
@@ -507,6 +548,7 @@ describe("ClimbingActivityEntryRepository", () => {
           ...base,
           id: "unknown",
           provider_id: "mountain-project",
+          raw: null,
           sent: null,
           context: emptyClimbingContext("mountain-project"),
         },
@@ -514,6 +556,7 @@ describe("ClimbingActivityEntryRepository", () => {
           ...base,
           id: "recorded",
           provider_id: "kaya",
+          raw: null,
           sent: false,
           context: emptyClimbingContext("kaya"),
         },
@@ -545,6 +588,7 @@ describe("ClimbingActivityEntryRepository", () => {
           ...base,
           id: "unknown-count",
           provider_id: "mountain-project",
+          raw: null,
           attempt_count: null,
           context: emptyClimbingContext("mountain-project"),
         },
@@ -552,6 +596,7 @@ describe("ClimbingActivityEntryRepository", () => {
           ...base,
           id: "known-count",
           provider_id: "kaya",
+          raw: null,
           attempt_count: 2,
           context: emptyClimbingContext("kaya"),
         },
@@ -584,12 +629,14 @@ describe("ClimbingActivityEntryRepository", () => {
           ...base,
           id: "first",
           provider_id: "mountain-project",
+          raw: null,
           context: emptyClimbingContext("mountain-project"),
         },
         {
           ...base,
           id: "second",
           provider_id: "kaya",
+          raw: null,
           context: emptyClimbingContext("kaya"),
         },
       ]);
@@ -620,12 +667,14 @@ describe("ClimbingActivityEntryRepository", () => {
           ...base,
           id: "source-a",
           provider_id: "mountain-project",
+          raw: null,
           context: emptyClimbingContext("mountain-project"),
         },
         {
           ...base,
           id: "source-b",
           provider_id: "kaya",
+          raw: null,
           context: emptyClimbingContext("kaya"),
         },
       ]);
@@ -657,6 +706,7 @@ describe("ClimbingActivityEntryRepository", () => {
         {
           id: "entry-1",
           provider_id: "kaya",
+          raw: null,
           climb_type: "boulder",
           grade_system: "v_scale",
           grade: "not-a-grade",
@@ -674,6 +724,7 @@ describe("ClimbingActivityEntryRepository", () => {
         {
           id: "entry-2",
           provider_id: "kaya",
+          raw: null,
           climb_type: "boulder",
           grade_system: "v_scale",
           grade: "also-not-a-grade",
@@ -701,6 +752,7 @@ describe("ClimbingActivityEntryRepository", () => {
           {
             id: "entry-valid",
             provider_id: "kaya",
+            raw: null,
             climb_type: "boulder",
             grade_system: "v_scale",
             grade: "V4",
@@ -718,6 +770,7 @@ describe("ClimbingActivityEntryRepository", () => {
           {
             id: "entry-invalid",
             provider_id: "kaya",
+            raw: null,
             climb_type: "boulder",
             grade_system: "v_scale",
             grade: "not-a-grade",
@@ -749,6 +802,7 @@ describe("ClimbingActivityEntryRepository", () => {
         {
           id: "entry-b",
           provider_id: "kaya",
+          raw: null,
           climb_type: "boulder",
           grade_system: "v_scale",
           grade: "V4",
@@ -766,6 +820,7 @@ describe("ClimbingActivityEntryRepository", () => {
         {
           id: "entry-a",
           provider_id: "kaya",
+          raw: null,
           climb_type: "boulder",
           grade_system: "v_scale",
           grade: "V4",
@@ -783,6 +838,7 @@ describe("ClimbingActivityEntryRepository", () => {
         {
           id: "entry-c",
           provider_id: "kaya",
+          raw: null,
           climb_type: "boulder",
           grade_system: "v_scale",
           grade: "V3",

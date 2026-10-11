@@ -95,7 +95,7 @@ export const climbingRouter = router({
 
   activityEntries: cachedProtectedQuery({
     maxAge: CacheTTL.LONG,
-    keyVersion: "climbing-activity-context-v2",
+    keyVersion: "climbing-activity-context-v3",
   })
     .input(z.object({ id: z.guid() }))
     .output(z.array(climbingActivityEntryDetailSchema))
@@ -118,7 +118,7 @@ export const climbingRouter = router({
 
   unattachedClimbingEntries: cachedProtectedQuery({
     maxAge: CacheTTL.SHORT,
-    keyVersion: "climbing-suggestions-context-v1",
+    keyVersion: "climbing-suggestions-context-v2",
   })
     .input(z.object({ activityId: z.guid() }))
     .output(z.array(climbingEntrySuggestionSchema))

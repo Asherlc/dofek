@@ -1878,6 +1878,7 @@ describe("ActivityDetailPage", () => {
             id: "tick-1",
             providerId: "mountain-project",
             sourceName: "Mountain Project",
+            sourceLinks: [],
             climbType: "boulder",
             gradeSystem: "v_scale",
             grade: "V4",
@@ -1900,6 +1901,7 @@ describe("ActivityDetailPage", () => {
             id: "tick-2",
             providerId: "openbeta",
             sourceName: "OpenBeta",
+            sourceLinks: [],
             climbType: "route",
             gradeSystem: "yds",
             grade: "5.10a",
@@ -1961,6 +1963,7 @@ describe("ActivityDetailPage", () => {
             id: "tick-1",
             providerId: "openbeta",
             sourceName: "OpenBeta",
+            sourceLinks: [],
             climbType: "route",
             gradeSystem: "yds",
             grade: "5.10a",
@@ -2047,6 +2050,7 @@ describe("ActivityDetailPage", () => {
             routeName: "Blue Circuit",
             locationName: "Touchstone Pacific Pipe",
             sourceName: "Kaya",
+            sourceLinks: [],
             wallAngleDegrees: null,
             lead: null,
             context: {
@@ -2078,6 +2082,7 @@ describe("ActivityDetailPage", () => {
             routeName: "Project",
             locationName: "Touchstone Pacific Pipe",
             sourceName: "Kaya",
+            sourceLinks: [],
             wallAngleDegrees: 35,
             lead: null,
             context: {
@@ -2102,6 +2107,7 @@ describe("ActivityDetailPage", () => {
             routeName: null,
             locationName: "Touchstone Pacific Pipe",
             sourceName: "Kaya",
+            sourceLinks: [],
             wallAngleDegrees: null,
             lead: null,
             context: {

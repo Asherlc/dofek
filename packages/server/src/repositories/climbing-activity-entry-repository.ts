@@ -13,6 +13,7 @@ import {
 import { BaseRepository } from "../lib/base-repository.ts";
 import { executeWithSchema } from "../lib/typed-sql.ts";
 import { displayClimbingGrade } from "./climbing-grade-display.ts";
+import { climbingSourceLinks } from "./climbing-source-links.ts";
 
 const climbTypeSchema = z.enum(["boulder", "route"]);
 const gradeSystemSchema = z.enum(CLIMBING_GRADE_SYSTEMS);
@@ -20,6 +21,7 @@ const ascentTypeSchema = z.enum(["Flash", "Onsight", "Redpoint", "Pinkpoint", "R
 const activityEntryRowSchema = z.object({
   id: z.string(),
   provider_id: z.string(),
+  raw: z.json().nullable(),
   context: climbingContextSchema,
   climb_type: climbTypeSchema,
   grade_system: gradeSystemSchema,
@@ -35,7 +37,9 @@ const activityEntryRowSchema = z.object({
   source_name: z.string().nullable(),
   wall_angle_degrees: z.coerce.number().nullable(),
 });
-type ClimbingActivityEntryDatabaseRow = z.infer<typeof activityEntryRowSchema>;
+type ClimbingActivityEntryDatabaseRow = z.infer<typeof activityEntryRowSchema> & {
+  sourceLinks: ClimbingActivityEntryRow["sourceLinks"];
+};
 
 function climbingIdentity(row: ClimbingActivityEntryDatabaseRow): string | null {
   if (!row.route_name || !row.location_name) return null;
@@ -91,9 +95,18 @@ function deduplicateCrossProviderEntries(
     match.providers.add(row.provider_id);
     if (row.source_name) match.sources.add(row.source_name);
     const preferred = compareDetailCompleteness(row, duplicate) > 0 ? row : duplicate;
+    const sourceLinks = [
+      ...new Map(
+        [...duplicate.sourceLinks, ...row.sourceLinks].map((link) => [
+          JSON.stringify([link.providerId, link.kind, link.url]),
+          link,
+        ]),
+      ).values(),
+    ];
     Object.assign(duplicate, preferred, {
       provider_id: duplicate.provider_id,
       source_name: match.sources.size > 0 ? [...match.sources].join(", ") : null,
+      sourceLinks,
     });
   }
   return result;
@@ -131,7 +144,8 @@ export class ClimbingActivityEntryRepository extends BaseRepository {
       activityEntryRowSchema,
       sql`SELECT
             ce.id::text AS id,
-            source_activity.provider_id,
+            ce.provider_id,
+            ce.raw,
             jsonb_build_object('providerId', ce.provider_id, 'locationPath', ce.location_path,
               'board', ce.board, 'wallAngle', ce.wall_angle, 'climbStyle', ce.climb_style,
               'resultStyle', ce.result_style) AS context,
@@ -152,7 +166,6 @@ export class ClimbingActivityEntryRepository extends BaseRepository {
           JOIN fitness.v_climbing_entry AS ce
             ON ce.activity_id = ANY(a.member_activity_ids)
            AND ce.provider_absent_at IS NULL
-          JOIN fitness.activity AS source_activity ON source_activity.id = ce.activity_id
           LEFT JOIN LATERAL (
             SELECT
               COUNT(*)::int AS attempt_count,
@@ -170,7 +183,12 @@ export class ClimbingActivityEntryRepository extends BaseRepository {
             AND a.id = ${activityId}::uuid
             ${this.timestampAccessPredicate(sql`a.started_at`)}`,
     );
-    return deduplicateCrossProviderEntries(rows)
+    return deduplicateCrossProviderEntries(
+      rows.map((row) => ({
+        ...row,
+        sourceLinks: climbingSourceLinks(row.provider_id, row.raw),
+      })),
+    )
       .map((row) => {
         const display = displayClimbingGrade(
           this.#gradePreference,
@@ -211,6 +229,7 @@ export class ClimbingActivityEntryRepository extends BaseRepository {
             locationName: row.location_name,
             lead: row.lead,
             sourceName: row.source_name,
+            sourceLinks: row.sourceLinks,
             wallAngleDegrees: row.wall_angle_degrees,
           }),
       );

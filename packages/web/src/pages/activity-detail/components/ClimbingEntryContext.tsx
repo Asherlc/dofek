@@ -16,15 +16,16 @@ export function ClimbingEntryContext({
   const location = formatClimbingLocationPath(context.locationPath);
   const method = formatClimbingStyle(context.climbStyle);
   const angle = formatClimbingWallAngle(context.wallAngle);
+  const result = formatClimbingResultStyle(context.resultStyle, context);
   return (
     <div className="min-w-0 space-y-0.5 break-words text-xs text-subtle">
       {location && <p>{location}</p>}
       {context.board && <p>Board: {context.board.name}</p>}
       {angle && <p>{angle}</p>}
       {method && <p>{method}</p>}
-      <p className={sent === true ? "font-medium text-green-500" : "text-subtle"}>
-        {formatClimbingResultStyle(context.resultStyle)}
-      </p>
+      {result !== null && (
+        <p className={sent === true ? "font-medium text-green-500" : "text-subtle"}>{result}</p>
+      )}
     </div>
   );
 }

@@ -1,14 +1,62 @@
 /** @vitest-environment jsdom */
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import { climbingActivityEntryDetailSchema } from "../../../../../server/src/contracts/climbing-context-contracts.ts";
+import type { ClimbingActivityEntryRow } from "../../../../../server/src/contracts/climbing-context-contracts.ts";
 import { ClimbingEntryBreakdown } from "./ClimbingEntryBreakdown.tsx";
 
 describe("ClimbingEntryBreakdown", () => {
+  it("shows a Mountain Project top-rope tick without unavailable outcome placeholders", () => {
+    const entry: ClimbingActivityEntryRow = {
+      id: "swiss-cheese",
+      climbType: "route",
+      gradeSystem: "yds",
+      grade: "5.4",
+      sent: null,
+      attemptCount: null,
+      attempts: [],
+      ascentType: null,
+      holdType: null,
+      routeName: "Swiss Cheese",
+      locationName: "California > Goat Rock",
+      lead: false,
+      sourceName: "Mountain Project",
+      sourceLinks: [
+        {
+          providerId: "mountain-project",
+          kind: "route",
+          url: "https://www.mountainproject.com/route/105734732/swiss-cheese",
+        },
+      ],
+      wallAngleDegrees: null,
+      context: {
+        providerId: "mountain-project",
+        locationPath: [
+          { name: "California", externalId: null, kind: null },
+          { name: "Goat Rock", externalId: null, kind: null },
+        ],
+        board: null,
+        wallAngle: null,
+        climbStyle: "top-rope",
+        resultStyle: null,
+      },
+    };
+    render(<ClimbingEntryBreakdown entries={[entry]} />);
+    expect(screen.getByText("Swiss Cheese")).toBeTruthy();
+    expect(
+      screen.getByRole("link", { name: "Swiss Cheese on Mountain Project" }).getAttribute("href"),
+    ).toBe("https://www.mountainproject.com/route/105734732/swiss-cheese");
+    expect(screen.getByText("5.4")).toBeTruthy();
+    expect(screen.getByText("California > Goat Rock")).toBeTruthy();
+    expect(screen.getByText("Top rope")).toBeTruthy();
+    expect(screen.getByText("Mountain Project")).toBeTruthy();
+    expect(screen.queryByText("Result unknown")).toBeNull();
+    expect(screen.queryByText(/outcome|attempt/i)).toBeNull();
+  });
+
   it.each(["Onsight", "Flash", "Redpoint"] as const)(
     "uses the %s badge to communicate a successful ascent",
     (ascentType) => {
-      const entry = climbingActivityEntryDetailSchema.parse({
+      const entry: ClimbingActivityEntryRow = {
         id: "entry-1",
         climbType: "route",
         gradeSystem: "yds",
@@ -22,6 +70,7 @@ describe("ClimbingEntryBreakdown", () => {
         locationName: "Kombucha Crag",
         lead: true,
         sourceName: "Mountain Project",
+        sourceLinks: [],
         wallAngleDegrees: null,
         context: {
           providerId: "mountain-project",
@@ -31,7 +80,7 @@ describe("ClimbingEntryBreakdown", () => {
           climbStyle: "lead",
           resultStyle: ascentType,
         },
-      });
+      };
       render(<ClimbingEntryBreakdown entries={[entry]} />);
       expect(screen.getByText("5.6")).toBeTruthy();
       expect(screen.getByText(ascentType)).toBeTruthy();
@@ -44,7 +93,7 @@ describe("ClimbingEntryBreakdown", () => {
   );
 
   it("combines recorded context with unknown counts and individual attempts", () => {
-    const entry = climbingActivityEntryDetailSchema.parse({
+    const entry: ClimbingActivityEntryRow = {
       id: "entry-1",
       climbType: "route",
       gradeSystem: "yds",
@@ -58,6 +107,7 @@ describe("ClimbingEntryBreakdown", () => {
       locationName: "Crag > Wall",
       lead: false,
       sourceName: "Mountain Project",
+      sourceLinks: [],
       wallAngleDegrees: null,
       context: {
         providerId: "mountain-project",
@@ -70,7 +120,7 @@ describe("ClimbingEntryBreakdown", () => {
         climbStyle: "top-rope",
         resultStyle: "Fell/Hung",
       },
-    });
+    };
     render(<ClimbingEntryBreakdown entries={[entry]} />);
     expect(screen.getByText("5.9")).toBeTruthy();
     expect(screen.getByText("Crag > Wall")).toBeTruthy();

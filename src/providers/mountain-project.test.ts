@@ -234,7 +234,11 @@ describe("MountainProjectProvider", () => {
             { name: "Boulder", externalId: null, kind: null },
             { name: "Eldorado Canyon", externalId: null, kind: null },
           ],
-          raw: expect.objectContaining({ Notes: "2:1 W/TMG", "Your Stars": "-1" }),
+          raw: expect.objectContaining({
+            Notes: "2:1 W/TMG",
+            "Your Stars": "-1",
+            sourceProfileId: "110186720",
+          }),
         }),
         expect.objectContaining({ resultStyle: null, attemptCount: null, grade: "5.10b" }),
       ]),

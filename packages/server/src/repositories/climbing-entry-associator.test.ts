@@ -68,6 +68,10 @@ describe("ClimbingEntryAssociator", () => {
       {
         id: "tick-1",
         provider_id: "openbeta",
+        raw: {
+          climb: { uuid: "10000000-0000-4000-8000-000000000001" },
+          user: { username: "thickles" },
+        },
         context: {
           providerId: "openbeta",
           locationPath: [{ name: "Test Crag", externalId: "area-1", kind: null }],
@@ -104,6 +108,14 @@ describe("ClimbingEntryAssociator", () => {
           resultStyle: "Onsight",
         },
         sourceName: "OpenBeta",
+        sourceLinks: [
+          {
+            providerId: "openbeta",
+            kind: "route",
+            url: "https://openbeta.io/climb/10000000-0000-4000-8000-000000000001",
+          },
+          { providerId: "openbeta", kind: "ticks", url: "https://openbeta.io/u/thickles/ticks" },
+        ],
         climbType: "route",
         gradeSystem: "yds",
         grade: "5.10a",
