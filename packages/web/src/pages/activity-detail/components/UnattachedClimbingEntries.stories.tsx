@@ -1,9 +1,20 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { ClimbingEntryBreakdown } from "./ClimbingEntryBreakdown.tsx";
 import { UnattachedClimbingEntries } from "./UnattachedClimbingEntries.tsx";
 
 const meta = {
   title: "Activity Detail/Unattached Climbing Entries",
   component: UnattachedClimbingEntries,
+  decorators: [
+    (Story) => (
+      <section>
+        <h2 className="mb-2 text-sm font-medium text-muted uppercase tracking-wider">Climbs</h2>
+        <div className="card p-4">
+          <Story />
+        </div>
+      </section>
+    ),
+  ],
   args: {
     suggestions: [
       {
@@ -40,6 +51,28 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const Default: Story = {};
+
+export const WithAttachedClimbs: Story = {
+  render: (args) => (
+    <>
+      <ClimbingEntryBreakdown
+        entries={meta.args.suggestions.map((entry) => ({
+          ...entry,
+          id: "attached-entry",
+          routeName: "The Corner",
+          grade: "V3",
+          gradeSystem: "v_scale",
+          attempts: [],
+          holdType: "crimp",
+          wallAngleDegrees: null,
+        }))}
+      />
+      <div className="mt-3 border-t border-border pt-3">
+        <UnattachedClimbingEntries {...args} />
+      </div>
+    </>
+  ),
+};
 
 export const Onsight: Story = {
   args: {

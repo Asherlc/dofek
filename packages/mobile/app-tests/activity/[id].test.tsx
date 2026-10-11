@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import React from "react";
 import { Alert } from "react-native";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -562,9 +562,37 @@ describe("ActivityDetailScreen", () => {
     expect(screen.getByText(/2026-03-18 at/)).toBeTruthy();
   });
 
-  it("renders server suggestions from both providers and attaches only the selected entry", async () => {
+  it("groups attached climbs and server suggestions in one card and attaches only the selected entry", async () => {
     mockByIdQuery.mockReturnValue({
       data: { ...baseCyclingActivity, activityType: "climbing", name: "Morning Rock Climb" },
+      isLoading: false,
+      error: null,
+    });
+    mockClimbingEntriesQuery.mockReturnValue({
+      data: [
+        {
+          id: "attached-climb",
+          climbType: "boulder",
+          grade: "V3",
+          sent: true,
+          attemptCount: 1,
+          attempts: [],
+          ascentType: "Flash",
+          holdType: null,
+          routeName: "Attached Boulder",
+          locationName: "Pacific Pipe",
+          sourceName: "Kaya",
+          wallAngleDegrees: null,
+          context: {
+            providerId: "kaya",
+            locationPath: [{ name: "Pacific Pipe", externalId: null, kind: null }],
+            board: null,
+            wallAngle: null,
+            climbStyle: null,
+            resultStyle: "Flash",
+          },
+        },
+      ],
       isLoading: false,
       error: null,
     });
@@ -623,7 +651,12 @@ describe("ActivityDetailScreen", () => {
     const { default: ActivityDetailScreen } = await import("../../app/activity/[id]");
     render(React.createElement(ActivityDetailScreen));
     expect(getQueryEnabledFlag(mockEntrySuggestionsQuery.mock.calls[0]?.[1])).toBe(true);
-    expect(screen.getByText("Unattached climbing entries")).toBeTruthy();
+    const climbsCard = screen.getByText("Climbs").parentElement;
+    if (!climbsCard) throw new Error("Expected a climbs card");
+    expect(within(climbsCard).getByText("Attached Boulder")).toBeTruthy();
+    expect(within(climbsCard).getByText("Blue Circuit")).toBeTruthy();
+    expect(within(climbsCard).getByText("Project")).toBeTruthy();
+    expect(within(climbsCard).getByText("Unattached")).toBeTruthy();
     expect(screen.getByText("Mountain Project")).toBeTruthy();
     expect(screen.getByText("OpenBeta")).toBeTruthy();
     expect(screen.getByText("Blue Circuit")).toBeTruthy();
@@ -631,7 +664,7 @@ describe("ActivityDetailScreen", () => {
     expect(screen.getByText("Top rope")).toBeTruthy();
     expect(screen.getByText("Fell or hung")).toBeTruthy();
     expect(screen.getByText("5.10a · Not sent; attempt count not recorded")).toBeTruthy();
-    const controls = screen.getAllByRole("button", { name: "Attach to this activity" });
+    const controls = within(climbsCard).getAllByRole("button", { name: "Attach to this activity" });
     expect(controls).toHaveLength(2);
     const secondControl = controls.at(1);
     if (!secondControl) throw new Error("Expected a second attach control");
@@ -1191,6 +1224,7 @@ describe("ActivityDetailScreen", () => {
 
     expect(getQueryEnabledFlag(mockClimbingEntriesQuery.mock.calls[0]?.[1])).toBe(true);
     expect(screen.getByText("Climbs")).toBeTruthy();
+    expect(screen.queryByText("No unattached climbing entries for this day.")).toBeNull();
     expect(screen.getByText("V4")).toBeTruthy();
     expect(screen.getByText("Blue Circuit")).toBeTruthy();
     expect(screen.getByText("Redpoint")).toBeTruthy();
