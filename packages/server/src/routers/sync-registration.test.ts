@@ -1,6 +1,7 @@
+import { getProviderAuthTypeFromSetup, type Provider } from "dofek/providers/types";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-const mockRegisterProvider = vi.fn();
+const mockRegisterProvider = vi.fn<(provider: Provider) => void>();
 const mockProviderConstructor = vi.hoisted(
   () => (id: string) =>
     vi.fn(function vitestConstructor() {
@@ -9,7 +10,7 @@ const mockProviderConstructor = vi.hoisted(
 );
 
 vi.mock("dofek/providers/registry", () => ({
-  registerProvider: (...args: unknown[]) => mockRegisterProvider(...args),
+  registerProvider: (provider: Provider) => mockRegisterProvider(provider),
   getAllProviders: vi.fn(() => []),
 }));
 
@@ -175,15 +176,14 @@ describe("ensureProvidersRegistered failure path", () => {
 
     await ensureProvidersRegistered();
 
-    const registeredIds = mockRegisterProvider.mock.calls.map(
-      ([provider]: [{ id: string }]) => provider.id,
-    );
-    expect(registeredIds).toHaveLength(31);
+    const registeredIds = mockRegisterProvider.mock.calls.map(([provider]) => provider.id);
+    expect(registeredIds).toHaveLength(32);
     expect(registeredIds).toEqual(
       expect.arrayContaining([
         "bodyspec",
         "cycling_analytics",
         "openbeta",
+        "thecrag",
         "ultrahuman",
         "wger",
         "ziva",
@@ -192,5 +192,16 @@ describe("ensureProvidersRegistered failure path", () => {
     expect(registeredIds).not.toEqual(
       expect.arrayContaining(["fitbit", "suunto", "coros", "komoot", "decathlon", "mapmyfitness"]),
     );
+
+    const theCrag = mockRegisterProvider.mock.calls.find(([provider]) => {
+      return provider.id === "thecrag";
+    })?.[0];
+    expect(theCrag?.validate()).toBeNull();
+    const setup = theCrag?.authSetup?.();
+    expect(getProviderAuthTypeFromSetup(setup)).toBe("token");
+    expect(setup?.manualToken).toMatchObject({
+      label: "Personal API key (active supporter required)",
+      instructionsUrl: "https://www.thecrag.com/en/article/logbookreadapi",
+    });
   });
 });

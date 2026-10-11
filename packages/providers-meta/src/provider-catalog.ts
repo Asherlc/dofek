@@ -98,6 +98,7 @@ export const PROVIDER_CATALOG: Readonly<Record<string, ProviderCatalogEntry>> = 
   velohero: { label: "VeloHero", brandColor: "#FF6600" },
   "mountain-project": { label: "Mountain Project", brandColor: "#1F5A88" },
   openbeta: { label: "OpenBeta", connectionInputType: "text" },
+  thecrag: { label: "theCrag" },
   wger: { label: "Wger", logo: { type: "png" } },
   xert: { label: "Xert", logo: { type: "png" } },
   "apple-health": { label: "Apple Health" },

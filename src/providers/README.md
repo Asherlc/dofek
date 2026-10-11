@@ -30,7 +30,7 @@ This directory contains implementations for various data providers (fitness trac
 
 ## Supported Providers
 
-- **API/credential/OAuth sync providers**: Amazfit/Zepp, BodySpec, Concept2, Cycling Analytics, Eight Sleep, FatSecret, Garmin, Mountain Project, OpenBeta, Oura, Peloton, Polar, Ride with GPS, Strava, TrainerRoad, Ultrahuman, VeloHero, Wahoo, Wger, WHOOP, Withings, Xert, Ziva, Zwift.
+- **API/credential/OAuth sync providers**: Amazfit/Zepp, BodySpec, Concept2, Cycling Analytics, Eight Sleep, FatSecret, Garmin, Mountain Project, OpenBeta, Oura, Peloton, Polar, Ride with GPS, Strava, theCrag, TrainerRoad, Ultrahuman, VeloHero, Wahoo, Wger, WHOOP, Withings, Xert, Ziva, Zwift.
 - **Import-only providers**: Cronometer CSV, FIT files, Garmin account exports, Kaya, Strong CSV, and Zepp OS App exports. FIT imports use Garmin's open FIT protocol and SDK-compatible files ([FIT SDK](https://developer.garmin.com/fit/overview/)).
 - **Upload/native-mobile data sources**: Apple Health import and WHOOP BLE capture live outside this registry path in the web/mobile upload and native module flows.
 
@@ -127,6 +127,23 @@ systems retained when those fields are available. A complete,
 non-empty tick list reconciles missing OpenBeta ticks as soft tombstones;
 empty, malformed, partially unsupported, or failed responses do not retire
 existing rows.
+
+## theCrag
+
+theCrag imports a connected user's climbing logbook through the personal-key
+read API. Users need active supporter status and generate their own key in
+Settings → API Keys; the same secure token form connects the provider on web
+and mobile. The API includes private notes and supports pagination and
+incremental reads by ascent update time
+([official personal logbook API](https://www.thecrag.com/en/article/logbookreadapi)).
+
+The provider stores standalone climbing entries and original source payloads,
+without creating workouts or inferring deletions from missing ascents. Dofek
+polls daily with one concurrent sync job; this is a conservative local policy
+for the API's documented weekly account budget, whose numeric limit is not
+published in the [personal API guide](https://www.thecrag.com/en/article/logbookreadapi).
+See the [theCrag provider guide](../../docs/thecrag.md) for connection,
+storage, and the limits of published-contract testing.
 
 ## OAuth authorization erasure
 

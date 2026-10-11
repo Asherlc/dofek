@@ -113,6 +113,7 @@ async function doRegisterProviders() {
           (openBetaModule) => new openBetaModule.OpenBetaProvider(),
         ),
     ],
+    ["thecrag", () => import("dofek/providers/thecrag").then((m) => new m.TheCragProvider())],
     [
       "kaya-export",
       () => import("dofek/providers/kaya/provider").then((m) => new m.KayaProvider()),
