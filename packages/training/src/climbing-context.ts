@@ -38,3 +38,10 @@ export type ClimbingWallAngle = z.infer<typeof wallAngleSchema>;
 export type ClimbingStyle = z.infer<typeof climbStyleSchema>;
 export type ClimbingMetadata = z.infer<typeof climbingMetadataSchema>;
 export type ClimbingContext = z.infer<typeof climbingContextSchema>;
+
+export const climbingSourceLinkSchema = z.strictObject({
+  providerId: recordedTextSchema,
+  kind: z.enum(["route", "ticks"]),
+  url: z.url().startsWith("https://"),
+});
+export type ClimbingSourceLink = z.infer<typeof climbingSourceLinkSchema>;

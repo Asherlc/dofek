@@ -47,7 +47,10 @@ Detailed attempt records retain their existing precedence over entry-level
 outcomes/counts. A climbing method alone never implies a send. Exact labels and
 opaque provider payloads remain available for provenance. Formatting expands
 TR to “Top rope” and Fell/Hung to “Fell or hung”; an unverified angle displays
-as `Wall angle: −20 (units unknown)`. Missing outcomes/counts remain explicit.
+as `Wall angle: −20 (units unknown)`. Missing outcomes/counts remain explicit,
+except for absent result/count placeholders on Mountain Project top-rope entries.
+The [Mountain Project coverage audit](mountain-project.md#climbing-style-and-result-coverage)
+documents why those fields stay unknown; their omission is display-only.
 
 ## Grade progression and send counts
 
@@ -227,6 +230,39 @@ already invalidate user query caches through
 use new versioned keys. Reload the matching web/mobile bundle before checking
 rendered context. If no OpenBeta account is connected, report fixture coverage
 separately from live account verification.
+
+## Original route and tick sources
+
+Activity details and attachment suggestions serve `sourceLinks` separately from
+the preferred context snapshot. Links are derived from each retained source
+payload before cross-provider consolidation, then unioned by provider, kind,
+and URL. Repeated entries from the same provider remain separate. Web and mobile
+link the route name to its first verified route destination and display additional
+source routes and public tick lists. See the
+[source adapter](../packages/server/src/repositories/climbing-source-links.ts) and
+[activity hydration](../packages/server/src/repositories/climbing-activity-entry-repository.ts).
+
+| Source | Route destination | Tick destination and coverage |
+| --- | --- | --- |
+| Mountain Project | Actual exported `raw.URL`, restricted to its HTTPS route pages, such as [Swiss Cheese](https://www.mountainproject.com/route/105734732/swiss-cheese) | Public profile tick list when sync has retained `sourceProfileId`. The [observed list](https://www.mountainproject.com/user/110186720/ticks/ticks) resolves by numeric profile ID; it is a logbook. The [RSS feed](https://www.mountainproject.com/rss/user-ticks/110186720) explicitly marks GUIDs as non-permalinks and links routes. |
+| OpenBeta | Recorded climb UUID, or `climbId` for an `OB` record. Its [climb page](https://github.com/OpenBeta/open-tacos/blob/develop/src/app/%28default%29/climb/%5B%5B...slug%5D%5D/page.tsx) redirects UUID links to friendly route URLs. | Recorded username links to the [public tick logbook](https://github.com/OpenBeta/open-tacos/blob/develop/src/app/%28default%29/u/%5Busername%5D/ticks/page.tsx). Its [tick list component](https://github.com/OpenBeta/open-tacos/blob/develop/src/app/%28default%29/u/%5Busername%5D/ticks/UserTicksContent.tsx) links to climbs rather than individual ticks. |
+| Kaya API | Actual nullable climb `slug`, requested and retained during sync. The [Kaya app](https://kaya-app.kayaclimb.com/) uses `/climb/:climb_slug`; [Cragmont Crack](https://kaya-app.kayaclimb.com/climb/Cragmont-Crack-5.6-Berkeley-7599113) is an observed destination. | No verified ascent/session permalink in the reviewed app router. An ascent ID does not supply a destination. |
+| Kaya CSV | No recorded destination | Import names and synthetic IDs supply no verified source link; see the [CSV import contract](kaya.md). |
+
+This source audit was performed on 2026-10-11. Existing Mountain Project rows
+already have route URLs; their tick-list identity appears after the next sync.
+Existing Kaya rows without a slug gain route links after sync supplies it.
+No account credentials are read during hydration, no route-name search guesses
+are used, and no individual-tick permalinks are invented. The
+[response contracts](../packages/server/src/contracts/climbing-context-contracts.ts)
+validate HTTPS destinations; the adapter validates the source host and path.
+
+Kaya verification inspected its [application bundle](https://kaya-app.kayaclimb.com/static/js/main.a2a87244.chunk.js)
+(version 1.3.55) and issued read-only `webClimb` GraphQL queries through its
+[endpoint](https://kaya-beta.kayaclimb.com/graphql). The Cragmont Crack slug
+resolved to internal climb ID `1062267`; its public suffix `7599113` did not
+resolve by itself. Consequently Dofek uses the actual slug rather than building
+one from a name or climb ID.
 
 ## Training filters
 

@@ -137,6 +137,8 @@ describe("climbingRouter", () => {
     const { caller, execute } = makeCaller([
       {
         id: "entry-1",
+        provider_id: "kaya",
+        raw: null,
         climb_type: "boulder",
         grade_system: "v_scale",
         grade: "v4",
@@ -181,6 +183,7 @@ describe("climbingRouter", () => {
           routeName: "Blue Arete",
           locationName: "Pacific Pipe",
           sourceName: "Kaya",
+          sourceLinks: [],
           wallAngleDegrees: null,
           lead: null,
           context: {
@@ -195,7 +198,7 @@ describe("climbingRouter", () => {
       ]);
       expect(cachedQueryOptions).toContainEqual({
         maxAge: 3_600_000,
-        keyVersion: "climbing-activity-context-v2",
+        keyVersion: "climbing-activity-context-v3",
       });
     } finally {
       activityLookup.mockRestore();
@@ -210,6 +213,7 @@ describe("climbingRouter", () => {
       {
         id: "734b5d3e-df2b-4ee0-888e-55ea539d913b",
         provider_id: "openbeta",
+        raw: null,
         source_name: "OpenBeta",
         climb_type: "boulder",
         grade_system: "v_scale",
@@ -240,6 +244,7 @@ describe("climbingRouter", () => {
         id: "734b5d3e-df2b-4ee0-888e-55ea539d913b",
         providerId: "openbeta",
         sourceName: "OpenBeta",
+        sourceLinks: [],
         climbType: "boulder",
         gradeSystem: "v_scale",
         grade: "V4",
@@ -309,6 +314,7 @@ describe("climbingRouter", () => {
             routeName: "Blue Arete",
             sent: true,
             sourceName: "Kaya",
+            sourceLinks: [],
             wallAngleDegrees: null,
             context: {
               providerId: "kaya",

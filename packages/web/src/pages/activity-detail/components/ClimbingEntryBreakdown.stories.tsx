@@ -16,6 +16,7 @@ const entry: ClimbingActivityEntryRow = {
   locationName: "Country > State > Region > Park > Crag > Wall",
   lead: false,
   sourceName: "Mountain Project",
+  sourceLinks: [],
   wallAngleDegrees: null,
   context: {
     providerId: "mountain-project",
@@ -39,6 +40,45 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 export const Outdoor: Story = {};
+export const SwissCheese: Story = {
+  args: {
+    entries: [
+      {
+        ...entry,
+        grade: "5.4",
+        sent: null,
+        attempts: [],
+        holdType: null,
+        routeName: "Swiss Cheese",
+        sourceLinks: [
+          {
+            providerId: "mountain-project",
+            kind: "route",
+            url: "https://www.mountainproject.com/route/105734732/swiss-cheese",
+          },
+        ],
+        locationName:
+          "California > San Francisco Bay Area > South Bay Area > Castle Rock and Sanborn Area > Goat Rock Area > Goat Rock",
+        context: {
+          ...entry.context,
+          locationPath: [
+            "California",
+            "San Francisco Bay Area",
+            "South Bay Area",
+            "Castle Rock and Sanborn Area",
+            "Goat Rock Area",
+            "Goat Rock",
+          ].map((name) => ({
+            name,
+            externalId: null,
+            kind: null,
+          })),
+          resultStyle: null,
+        },
+      },
+    ],
+  },
+};
 export const Onsight: Story = {
   args: {
     entries: [
@@ -84,6 +124,7 @@ export const Board: Story = {
         ascentType: "Redpoint",
         lead: null,
         sourceName: "Kaya",
+        sourceLinks: [],
         context: {
           ...entry.context,
           providerId: "kaya",

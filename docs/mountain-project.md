@@ -84,7 +84,12 @@ as recorded. The [permanent view](climbing-context.md#interpretation) derives
 send status while preserving unknown results. Total attempt counts remain
 null because the checked export has no count field.
 `TR` specifies top-rope climbing; it does not establish a clean send. The
-combined `Fell/Hung` value does not distinguish a fall from a hang or report
+activity-detail and unattached-entry displays omit the unknown result and
+attempt-count placeholders for Mountain Project top-rope ticks when those
+values are absent. The stored values and analytics coverage remain unknown;
+any recorded result or count is still displayed. Both clients use the
+[shared result formatters](../packages/format/src/climbing-context.ts).
+The combined `Fell/Hung` value does not distinguish a fall from a hang or report
 how many occurred. This coverage was checked against the observed tick-export
 contract and importer on 2026-09-29. Source surface:
 [Mountain Project](https://www.mountainproject.com/).

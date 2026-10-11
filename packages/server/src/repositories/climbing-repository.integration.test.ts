@@ -64,6 +64,64 @@ describe("ClimbingRepository PostgreSQL summaries", () => {
     await context?.cleanup();
   });
 
+  it("hydrates all source links while consolidating providers and retaining same-source laps on one activity", async () => {
+    const routeUrl = "https://www.mountainproject.com/route/105734732/swiss-cheese";
+    const uuid = "10000000-0000-4000-8000-000000000001";
+    const mpRaw = { URL: routeUrl, sourceProfileId: "110186720" };
+    const obRaw = { climb: { uuid }, user: { username: "thickles" } };
+    const path = [{ name: "Goat Rock", externalId: null, kind: null }];
+    for (const [provider, externalId, result, raw] of [
+      ["mountain-project", "swiss-cheese-1", null, mpRaw],
+      ["openbeta", "swiss-cheese-mirror", "Fell/Hung", obRaw],
+      ["mountain-project", "swiss-cheese-2", null, mpRaw],
+    ] as const) {
+      await context.db.execute(sql`INSERT INTO fitness.climbing_entry
+        (user_id, provider_id, activity_id, external_id, climb_type, grade_system, grade,
+         route_name, location_path, climb_style, result_style, attempt_count, source_name, raw)
+        VALUES (${TEST_USER_ID}, ${provider}, ${activityMemberId}::uuid, ${externalId},
+          'route', 'yds', '5.4', 'Swiss Cheese', ${JSON.stringify(path)}::jsonb,
+          'top-rope', ${result}, NULL,
+          ${provider === "openbeta" ? "OpenBeta" : "Mountain Project"}, ${JSON.stringify(raw)}::jsonb)`);
+    }
+    const repository = new ClimbingRepository(context.db, TEST_USER_ID, "UTC");
+    const entries = (await repository.getActivityEntries(activityId))
+      .map((entry) => entry.toDetail())
+      .filter((entry) => entry.routeName === "Swiss Cheese");
+    expect(entries).toHaveLength(2);
+    const merged = entries.find((entry) => entry.context.providerId === "openbeta");
+    expect(merged).toMatchObject({
+      sent: false,
+      attemptCount: null,
+      sourceName: "Mountain Project, OpenBeta",
+      sourceLinks: [
+        { providerId: "mountain-project", kind: "route", url: routeUrl },
+        {
+          providerId: "mountain-project",
+          kind: "ticks",
+          url: "https://www.mountainproject.com/user/110186720/ticks/ticks",
+        },
+        { providerId: "openbeta", kind: "route", url: `https://openbeta.io/climb/${uuid}` },
+        { providerId: "openbeta", kind: "ticks", url: "https://openbeta.io/u/thickles/ticks" },
+      ],
+    });
+    expect(entries.find((entry) => entry.context.providerId === "mountain-project")).toMatchObject({
+      sent: null,
+      attemptCount: null,
+      sourceLinks: merged?.sourceLinks.slice(0, 2),
+    });
+    const rows = await executeWithSchema(
+      context.db,
+      z.object({
+        result_style: z.string().nullable(),
+        attempt_count: z.number().nullable(),
+        raw: z.json(),
+      }),
+      sql`SELECT result_style, attempt_count, raw FROM fitness.climbing_entry
+      WHERE external_id = 'swiss-cheese-1' AND user_id = ${TEST_USER_ID}::uuid`,
+    );
+    expect(rows).toEqual([{ result_style: null, attempt_count: null, raw: mpRaw }]);
+  });
+
   it("counts matching provider sends once while retaining repeated sends and incomplete attempt coverage", async () => {
     await context.db.execute(sql`INSERT INTO fitness.provider (id, name)
       VALUES ('climbing-summary-mirror', 'Climbing mirror')`);

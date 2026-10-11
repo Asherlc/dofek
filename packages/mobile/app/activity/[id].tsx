@@ -49,6 +49,7 @@ import { ProviderAbsentBanner } from "../../components/activity/ProviderAbsentBa
 import { styles } from "../../components/activity/styles";
 import { HrZonesChart, PowerZonesChart } from "../../components/activity/ZoneDistributionCharts";
 import { ClimbingEntryContext } from "../../components/ClimbingEntryContext";
+import { ClimbingEntrySources } from "../../components/ClimbingEntrySources";
 import { HangboardingDetail } from "../../components/HangboardingDetail";
 import { MuscleGroupBodyDiagram } from "../../components/MuscleGroupBodyDiagram";
 import { getQueryErrorMessage, QueryStatePanel } from "../../components/QueryStatePanel";
@@ -386,6 +387,7 @@ const exerciseStyles = StyleSheet.create({
 
 interface ClimbingEntry {
   context: ClimbingContext;
+  sourceLinks: import("@dofek/training/climbing-context").ClimbingSourceLink[];
   id: string;
   climbType: "boulder" | "route";
   grade: string;
@@ -414,6 +416,7 @@ function ClimbingEntryBreakdown({ entries }: { entries: ClimbingEntry[] }) {
           entry.sent,
           entry.attemptCount,
           entry.ascentType,
+          entry.context,
         );
         return (
           <View key={entry.id} style={climbingStyles.entryRow}>
@@ -421,9 +424,11 @@ function ClimbingEntryBreakdown({ entries }: { entries: ClimbingEntry[] }) {
               <Text style={climbingStyles.gradeText}>{entry.grade}</Text>
             </View>
             <View style={climbingStyles.entryDetails}>
-              <Text style={climbingStyles.routeName}>
-                {entry.routeName ?? (entry.climbType === "boulder" ? "Boulder" : "Route")}
-              </Text>
+              <ClimbingEntrySources
+                name={entry.routeName ?? (entry.climbType === "boulder" ? "Boulder" : "Route")}
+                sourceName={entry.sourceName}
+                links={entry.sourceLinks}
+              />
               <ClimbingEntryContext context={entry.context} sent={entry.sent} />
               {entry.holdType !== null && (
                 <Text style={climbingStyles.locationName}>
@@ -445,7 +450,6 @@ function ClimbingEntryBreakdown({ entries }: { entries: ClimbingEntry[] }) {
                   {attemptResult}
                 </Text>
               )}
-              <Text style={climbingStyles.sourceName}>{entry.sourceName}</Text>
             </View>
           </View>
         );
@@ -499,11 +503,6 @@ const climbingStyles = StyleSheet.create({
   entryDetails: {
     flex: 1,
   },
-  routeName: {
-    color: colors.text,
-    fontSize: 14,
-    fontWeight: "600",
-  },
   locationName: {
     color: colors.textTertiary,
     fontSize: 11,
@@ -521,10 +520,6 @@ const climbingStyles = StyleSheet.create({
   attemptDetail: {
     color: colors.textSecondary,
     fontSize: 11,
-  },
-  sourceName: {
-    color: colors.textTertiary,
-    fontSize: 10,
   },
 });
 
@@ -979,16 +974,18 @@ export default function ActivityDetailScreen() {
                 entry.sent,
                 entry.attemptCount,
                 entry.ascentType,
+                entry.context,
               );
               return (
                 <View key={entry.id} style={climbingStyles.entryRow}>
                   <View style={climbingStyles.entryDetails}>
-                    <Text style={climbingStyles.routeName}>
-                      {entry.routeName ?? (entry.climbType === "boulder" ? "Boulder" : "Route")}
-                    </Text>
-                    <Text style={climbingStyles.locationName}>
-                      {entry.sourceName ?? providerSourceLabel(entry.providerId)}
-                    </Text>
+                    <ClimbingEntrySources
+                      name={
+                        entry.routeName ?? (entry.climbType === "boulder" ? "Boulder" : "Route")
+                      }
+                      sourceName={entry.sourceName ?? providerSourceLabel(entry.providerId)}
+                      links={entry.sourceLinks}
+                    />
                     <ClimbingEntryContext context={entry.context} sent={entry.sent} />
                     <Text style={climbingStyles.locationName}>
                       {entry.grade}

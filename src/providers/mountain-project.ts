@@ -162,6 +162,7 @@ export class MountainProjectProvider implements SyncProvider {
           let count = 0;
           const presentExternalIds = parsed.entries.map((entry) => entry.externalId);
           for (const entry of parsed.entries) {
+            const raw = { ...entry.raw, sourceProfileId: tokens.accessToken };
             await db
               .insert(climbingEntry)
               .values({
@@ -182,7 +183,7 @@ export class MountainProjectProvider implements SyncProvider {
                 routeName: entry.routeName,
                 locationPath: entry.locationPath,
                 sourceName: this.name,
-                raw: entry.raw,
+                raw,
               })
               .onConflictDoUpdate({
                 target: [climbingEntry.userId, climbingEntry.providerId, climbingEntry.externalId],
@@ -200,7 +201,7 @@ export class MountainProjectProvider implements SyncProvider {
                   routeName: entry.routeName,
                   locationPath: entry.locationPath,
                   sourceName: this.name,
-                  raw: entry.raw,
+                  raw,
                   providerAbsentAt: null,
                 },
               });

@@ -2,7 +2,7 @@
 
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import React from "react";
-import { Alert } from "react-native";
+import { Alert, Linking } from "react-native";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { captureException } from "../../lib/telemetry";
 
@@ -574,6 +574,7 @@ describe("ActivityDetailScreen", () => {
           id: "tick-1",
           providerId: "mountain-project",
           sourceName: "Mountain Project",
+          sourceLinks: [],
           climbType: "boulder",
           gradeSystem: "v_scale",
           grade: "V4",
@@ -595,6 +596,7 @@ describe("ActivityDetailScreen", () => {
           id: "tick-2",
           providerId: "openbeta",
           sourceName: "OpenBeta",
+          sourceLinks: [],
           climbType: "route",
           gradeSystem: "yds",
           grade: "5.10a",
@@ -1052,6 +1054,7 @@ describe("ActivityDetailScreen", () => {
         id: "first-try-climb",
         providerId: "mountain-project",
         sourceName: "Mountain Project",
+        sourceLinks: [],
         climbType: "route",
         gradeSystem: "yds",
         grade: "5.6",
@@ -1094,6 +1097,79 @@ describe("ActivityDetailScreen", () => {
     },
   );
 
+  it("shows attached and suggested Mountain Project top-rope ticks without unavailable outcomes", async () => {
+    mockByIdQuery.mockReturnValue({
+      data: { ...baseCyclingActivity, activityType: "climbing" },
+      isLoading: false,
+      error: null,
+    });
+    const climb = {
+      id: "swiss-cheese",
+      providerId: "mountain-project",
+      sourceName: "Mountain Project",
+      sourceLinks: [
+        {
+          providerId: "mountain-project",
+          kind: "route",
+          url: "https://www.mountainproject.com/route/105734732/swiss-cheese",
+        },
+        {
+          providerId: "mountain-project",
+          kind: "ticks",
+          url: "https://www.mountainproject.com/user/110186720/ticks/ticks",
+        },
+      ],
+      climbType: "route",
+      gradeSystem: "yds",
+      grade: "5.4",
+      sent: null,
+      attemptCount: null,
+      attempts: [],
+      ascentType: null,
+      holdType: null,
+      lead: false,
+      routeName: "Swiss Cheese",
+      locationName: "California > Goat Rock",
+      wallAngleDegrees: null,
+      context: {
+        providerId: "mountain-project",
+        locationPath: [
+          { name: "California", externalId: null, kind: null },
+          { name: "Goat Rock", externalId: null, kind: null },
+        ],
+        board: null,
+        wallAngle: null,
+        climbStyle: "top-rope",
+        resultStyle: null,
+      },
+    };
+    mockClimbingEntriesQuery.mockReturnValue({ data: [climb], isLoading: false, error: null });
+    mockEntrySuggestionsQuery.mockReturnValue({
+      data: [{ ...climb, id: "unattached-swiss-cheese" }],
+      isLoading: false,
+      error: null,
+    });
+    const { default: ActivityDetailScreen } = await import("../../app/activity/[id]");
+    render(React.createElement(ActivityDetailScreen));
+    expect(screen.getAllByText("Swiss Cheese")).toHaveLength(2);
+    for (const link of screen.getAllByRole("link", { name: "Swiss Cheese on mountain-project" }))
+      fireEvent.click(link);
+    for (const link of screen.getAllByRole("link", { name: "mountain-project ticks" }))
+      fireEvent.click(link);
+    expect(Linking.openURL).toHaveBeenCalledWith(
+      "https://www.mountainproject.com/route/105734732/swiss-cheese",
+    );
+    expect(Linking.openURL).toHaveBeenCalledWith(
+      "https://www.mountainproject.com/user/110186720/ticks/ticks",
+    );
+    expect(screen.getAllByText("5.4", { exact: true })).toHaveLength(2);
+    expect(screen.getAllByText("California > Goat Rock")).toHaveLength(2);
+    expect(screen.getAllByText("Top rope")).toHaveLength(2);
+    expect(screen.getAllByText("Mountain Project")).toHaveLength(2);
+    expect(screen.queryByText("Result unknown")).toBeNull();
+    expect(screen.queryByText(/outcome|attempt/i)).toBeNull();
+  });
+
   it("shows the climbs attached to a canonical climbing activity", async () => {
     mockByIdQuery.mockReturnValue({
       data: {
@@ -1119,6 +1195,7 @@ describe("ActivityDetailScreen", () => {
           routeName: "Blue Circuit",
           locationName: "Touchstone Pacific Pipe",
           sourceName: "Kaya",
+          sourceLinks: [],
           wallAngleDegrees: null,
           context: {
             providerId: "kaya",
@@ -1149,6 +1226,7 @@ describe("ActivityDetailScreen", () => {
           routeName: "Project",
           locationName: "Touchstone Pacific Pipe",
           sourceName: "Kaya",
+          sourceLinks: [],
           wallAngleDegrees: 35,
           context: {
             providerId: "kaya",
@@ -1172,6 +1250,7 @@ describe("ActivityDetailScreen", () => {
           routeName: null,
           locationName: "Touchstone Pacific Pipe",
           sourceName: "Kaya",
+          sourceLinks: [],
           wallAngleDegrees: null,
           context: {
             providerId: "kaya",

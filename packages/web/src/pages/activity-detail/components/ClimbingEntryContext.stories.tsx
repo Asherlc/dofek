@@ -57,6 +57,27 @@ export const Board: Story = {
 export const TopRopeUnknown: Story = {
   args: { context: { ...empty, providerId: "openbeta", climbStyle: "top-rope" } },
 };
+export const MountainProjectTopRope: Story = {
+  args: {
+    context: {
+      ...empty,
+      providerId: "mountain-project",
+      locationPath: [
+        "California",
+        "San Francisco Bay Area",
+        "South Bay Area",
+        "Castle Rock and Sanborn Area",
+        "Goat Rock Area",
+        "Goat Rock",
+      ].map((name) => ({
+        name,
+        externalId: null,
+        kind: null,
+      })),
+      climbStyle: "top-rope",
+    },
+  },
+};
 export const FellHung: Story = {
   args: {
     context: {
