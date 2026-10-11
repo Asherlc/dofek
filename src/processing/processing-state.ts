@@ -142,10 +142,13 @@ function deriveDatasetState(
     }
 
     const fact = latestBySequence(
-      stageFacts.filter((stageFact): stageFact is ProcessingStageEvent => stageFact !== undefined),
+      stageFacts.filter(
+        (stageFact): stageFact is ProcessingStageEvent =>
+          stageFact?.status === "running" || stageFact?.status === "queued",
+      ),
     );
 
-    if (fact?.status === "running" || fact?.status === "queued") {
+    if (fact) {
       const delayed = now.getTime() - fact.occurredAt.getTime() > delayedAfterMs;
       return {
         datasetKey,

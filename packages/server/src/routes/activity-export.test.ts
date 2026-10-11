@@ -76,7 +76,7 @@ async function request(
   headers: Record<string, string> = {},
 ) {
   return new Promise<{ status: number; body: unknown; headers: Headers }>((resolve, reject) => {
-    const server = app.listen(0, () => {
+    const server = app.listen(0, "127.0.0.1", () => {
       const port = getPort(server);
       fetch(`http://127.0.0.1:${port}${path}`, {
         method: method.toUpperCase(),

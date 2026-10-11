@@ -1,3 +1,4 @@
+import { once } from "node:events";
 import express from "express";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createStripeWebhookRouter } from "./stripe-webhook.ts";
@@ -50,7 +51,8 @@ describe("stripe webhook route", () => {
     const execute = vi.fn(async () => [{ user_id: "user-1" }]);
     const app = express();
     app.use("/api/webhooks/stripe", createStripeWebhookRouter({ db: { execute } }));
-    const server = app.listen(0);
+    const server = app.listen(0, "127.0.0.1");
+    await once(server, "listening");
     const address = server.address();
     if (!address || typeof address === "string") {
       server.close();
