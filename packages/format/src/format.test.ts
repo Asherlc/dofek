@@ -286,6 +286,29 @@ describe("formatDurationSeconds", () => {
 });
 
 describe("formatClimbingAttemptResult", () => {
+  it("omits unsupported Mountain Project top-rope placeholders without losing recorded data", () => {
+    const context = { providerId: "mountain-project", climbStyle: "top-rope" } as const;
+    expect(formatClimbingAttemptResult(null, null, null, context)).toBeNull();
+    expect(formatClimbingAttemptResult(true, 2, null, context)).toBe("Sent in 2 attempts");
+    expect(formatClimbingAttemptResult(false, null, null, context)).toBe(
+      "Not sent; attempt count not recorded",
+    );
+    expect(formatClimbingAttemptResult(null, 3, null, context)).toBe(
+      "3 attempts; outcome not recorded",
+    );
+    expect(
+      formatClimbingAttemptResult(null, null, null, {
+        providerId: "openbeta",
+        climbStyle: "top-rope",
+      }),
+    ).toBe("Outcome and attempt count not recorded");
+    expect(
+      formatClimbingAttemptResult(null, null, null, {
+        providerId: "mountain-project",
+        climbStyle: "lead",
+      }),
+    ).toBe("Outcome and attempt count not recorded");
+  });
   it.each(["Onsight", "Flash"])("lets a successful %s convey the complete result", (ascentType) => {
     expect(formatClimbingAttemptResult(true, null, ascentType)).toBeNull();
     expect(formatClimbingAttemptResult(true, 1, ascentType)).toBeNull();

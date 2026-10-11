@@ -42,6 +42,18 @@ describe("climbing context labels", () => {
     expect(formatClimbingResultStyle(result)).toBe(label);
   });
 
+  it("omits a result that Mountain Project does not collect for top rope", () => {
+    const context = { providerId: "mountain-project", climbStyle: "top-rope" } as const;
+    expect(formatClimbingResultStyle(null, context)).toBeNull();
+    expect(formatClimbingResultStyle("Fell/Hung", context)).toBe("Fell or hung");
+    expect(
+      formatClimbingResultStyle(null, { providerId: "openbeta", climbStyle: "top-rope" }),
+    ).toBe("Result unknown");
+    expect(
+      formatClimbingResultStyle(null, { providerId: "mountain-project", climbStyle: "lead" }),
+    ).toBe("Result unknown");
+  });
+
   it("labels unverified units without displaying a degree symbol", () => {
     expect(formatClimbingWallAngle({ value: -20, unit: null })).toBe(
       "Wall angle: −20 (units unknown)",

@@ -1870,6 +1870,62 @@ describe("ActivityDetailPage", () => {
   });
 
   describe("climbing entries", () => {
+    it("waits for attached climbs before showing the empty suggestions notice", async () => {
+      Object.assign(mockActivity, { activityType: "climbing", name: "Morning Rock Climb" });
+      mockClimbingEntriesUseQuery.mockReturnValue({
+        data: undefined,
+        error: null,
+        isError: false,
+        isLoading: true,
+      });
+      const ActivityDetailPage = await importPage();
+      const view = renderWithUnits(<ActivityDetailPage />);
+      const climbsSection = screen.getByRole("heading", { name: "Climbs" }).closest("section");
+      if (!climbsSection) throw new Error("Expected a climbs section");
+      expect(
+        within(climbsSection).queryByText("No unattached climbing entries for this day."),
+      ).toBeNull();
+      expect(
+        within(climbsSection).getByRole("status", { name: "Loading climbs." }),
+      ).toBeInTheDocument();
+
+      mockClimbingEntriesUseQuery.mockReturnValue({
+        data: [],
+        error: null,
+        isError: false,
+        isLoading: false,
+      });
+      view.rerender(
+        <UnitContext.Provider value={{ unitSystem: "metric", setUnitSystem: () => {} }}>
+          <ActivityDetailPage />
+        </UnitContext.Provider>,
+      );
+      expect(
+        within(climbsSection).getByText("No unattached climbing entries for this day."),
+      ).toBeInTheDocument();
+    });
+
+    it("shows one compact loading state while both climbing queries are pending", async () => {
+      Object.assign(mockActivity, { activityType: "climbing", name: "Morning Rock Climb" });
+      mockClimbingEntriesUseQuery.mockReturnValue({
+        data: undefined,
+        error: null,
+        isError: false,
+        isLoading: true,
+      });
+      mockEntrySuggestionsUseQuery.mockReturnValue({
+        data: undefined,
+        error: null,
+        isLoading: true,
+      });
+      const ActivityDetailPage = await importPage();
+      renderWithUnits(<ActivityDetailPage />);
+      const climbsSection = screen.getByRole("heading", { name: "Climbs" }).closest("section");
+      if (!climbsSection) throw new Error("Expected a climbs section");
+      expect(within(climbsSection).getAllByRole("status")).toHaveLength(1);
+      expect(within(climbsSection).queryByText("Loading climbing entries...")).toBeNull();
+    });
+
     it("groups attached climbs and suggestions in one section and attaches only the selected entry", async () => {
       Object.assign(mockActivity, { activityType: "climbing", name: "Morning Rock Climb" });
       mockClimbingEntriesUseQuery.mockReturnValue({
@@ -1887,6 +1943,7 @@ describe("ActivityDetailPage", () => {
             routeName: "Attached Arete",
             locationName: "Pacific Pipe",
             sourceName: "Kaya",
+            sourceLinks: [],
             wallAngleDegrees: null,
             lead: null,
             context: {
@@ -1909,6 +1966,7 @@ describe("ActivityDetailPage", () => {
             id: "tick-1",
             providerId: "mountain-project",
             sourceName: "Mountain Project",
+            sourceLinks: [],
             climbType: "boulder",
             gradeSystem: "v_scale",
             grade: "V4",
@@ -1931,6 +1989,7 @@ describe("ActivityDetailPage", () => {
             id: "tick-2",
             providerId: "openbeta",
             sourceName: "OpenBeta",
+            sourceLinks: [],
             climbType: "route",
             gradeSystem: "yds",
             grade: "5.10a",
@@ -1991,6 +2050,7 @@ describe("ActivityDetailPage", () => {
 
     it.each([
       { state: "loading", error: null, isLoading: true },
+      { state: "paused", error: null, isLoading: false },
       {
         state: "unavailable",
         error: new Error("Attached climbs are unavailable. Refresh to try again."),
@@ -2013,6 +2073,7 @@ describe("ActivityDetailPage", () => {
               id: "available-tick",
               providerId: "openbeta",
               sourceName: "OpenBeta",
+              sourceLinks: [],
               climbType: "route",
               gradeSystem: "yds",
               grade: "5.10a",
@@ -2068,6 +2129,7 @@ describe("ActivityDetailPage", () => {
             id: "tick-1",
             providerId: "openbeta",
             sourceName: "OpenBeta",
+            sourceLinks: [],
             climbType: "route",
             gradeSystem: "yds",
             grade: "5.10a",
@@ -2154,6 +2216,7 @@ describe("ActivityDetailPage", () => {
             routeName: "Blue Circuit",
             locationName: "Touchstone Pacific Pipe",
             sourceName: "Kaya",
+            sourceLinks: [],
             wallAngleDegrees: null,
             lead: null,
             context: {
@@ -2185,6 +2248,7 @@ describe("ActivityDetailPage", () => {
             routeName: "Project",
             locationName: "Touchstone Pacific Pipe",
             sourceName: "Kaya",
+            sourceLinks: [],
             wallAngleDegrees: 35,
             lead: null,
             context: {
@@ -2209,6 +2273,7 @@ describe("ActivityDetailPage", () => {
             routeName: null,
             locationName: "Touchstone Pacific Pipe",
             sourceName: "Kaya",
+            sourceLinks: [],
             wallAngleDegrees: null,
             lead: null,
             context: {

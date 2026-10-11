@@ -1,4 +1,4 @@
-import { climbingContextSchema } from "@dofek/training/climbing-context";
+import { climbingContextSchema, climbingSourceLinkSchema } from "@dofek/training/climbing-context";
 import { CLIMBING_GRADE_SYSTEMS } from "@dofek/training/climbing-grades";
 import { z } from "zod";
 
@@ -15,6 +15,7 @@ const entryFields = {
   lead: z.boolean().nullable(),
   sourceName: z.string().nullable(),
   context: climbingContextSchema,
+  sourceLinks: z.array(climbingSourceLinkSchema),
 };
 
 export const climbingActivityEntryDetailSchema = z.object({

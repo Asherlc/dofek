@@ -18,15 +18,14 @@ export function ClimbingEntryContext({
   const location = formatClimbingLocationPath(context.locationPath);
   const method = formatClimbingStyle(context.climbStyle);
   const angle = formatClimbingWallAngle(context.wallAngle);
+  const result = formatClimbingResultStyle(context.resultStyle, context);
   return (
     <View style={styles.container}>
       {location && <Text style={styles.label}>{location}</Text>}
       {context.board && <Text style={styles.label}>Board: {context.board.name}</Text>}
       {angle && <Text style={styles.label}>{angle}</Text>}
       {method && <Text style={styles.label}>{method}</Text>}
-      <Text style={sent === true ? styles.sent : styles.label}>
-        {formatClimbingResultStyle(context.resultStyle)}
-      </Text>
+      {result !== null && <Text style={sent === true ? styles.sent : styles.label}>{result}</Text>}
     </View>
   );
 }

@@ -1,8 +1,15 @@
 import type {
+  ClimbingContext,
   ClimbingLocationNode,
   ClimbingStyle,
   ClimbingWallAngle,
 } from "@dofek/training/climbing-context";
+
+export type ClimbingResultContext = Pick<ClimbingContext, "providerId" | "climbStyle">;
+
+export function isMountainProjectTopRopeEntry(context?: ClimbingResultContext): boolean {
+  return context?.providerId === "mountain-project" && context.climbStyle === "top-rope";
+}
 
 export function formatClimbingLocationPath(nodes: readonly ClimbingLocationNode[]): string | null {
   return nodes.length === 0 ? null : nodes.map((node) => node.name).join(" > ");
@@ -20,8 +27,11 @@ export function formatClimbingStyle(style: ClimbingStyle | null): string | null 
   return style === null ? null : styleLabels[style];
 }
 
-export function formatClimbingResultStyle(result: string | null): string {
-  if (result === null) return "Result unknown";
+export function formatClimbingResultStyle(
+  result: string | null,
+  context?: ClimbingResultContext,
+): string | null {
+  if (result === null) return isMountainProjectTopRopeEntry(context) ? null : "Result unknown";
   return result.toLowerCase() === "fell/hung" ? "Fell or hung" : result;
 }
 

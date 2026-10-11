@@ -4,6 +4,7 @@ import { providerSourceLabel } from "@dofek/providers/providers";
 import type { ClimbingEntrySuggestion } from "../../../../../server/src/repositories/climbing-entry-associator.ts";
 import { ChartDescriptionTooltip } from "../../../components/ChartDescriptionTooltip.tsx";
 import { ClimbingEntryContext } from "./ClimbingEntryContext.tsx";
+import { ClimbingEntrySources } from "./ClimbingEntrySources.tsx";
 
 export type EntryAttachState = Record<string, { pending: boolean; error: string | null }>;
 
@@ -44,6 +45,7 @@ export function UnattachedClimbingEntries({
                 entry.sent,
                 entry.attemptCount,
                 entry.ascentType,
+                entry.context,
               );
               return (
                 <div
@@ -51,12 +53,13 @@ export function UnattachedClimbingEntries({
                   className="flex items-center justify-between gap-3 py-3 first:pt-0 last:pb-0"
                 >
                   <div className="min-w-0 flex-1">
-                    <p className="font-medium">
-                      {entry.routeName ?? (entry.climbType === "boulder" ? "Boulder" : "Route")}
-                    </p>
-                    <p className="text-xs text-subtle">
-                      {entry.sourceName ?? providerSourceLabel(entry.providerId)}
-                    </p>
+                    <ClimbingEntrySources
+                      name={
+                        entry.routeName ?? (entry.climbType === "boulder" ? "Boulder" : "Route")
+                      }
+                      sourceName={entry.sourceName ?? providerSourceLabel(entry.providerId)}
+                      links={entry.sourceLinks}
+                    />
                     <p className="text-sm text-muted">
                       {entry.grade}
                       {attemptResult !== null ? ` · ${attemptResult}` : null}

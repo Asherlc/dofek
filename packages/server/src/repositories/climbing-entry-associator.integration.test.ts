@@ -58,7 +58,7 @@ describe("ClimbingEntryAssociator PostgreSQL behavior", () => {
         (${ADJACENT_TICK_ID}, ${TEST_USER_ID}, 'mountain-project', NULL, '2026-01-02', 'adjacent-day', 'boulder', 'v_scale', 'V5', 'Send', 1, NULL, 'Mountain Project', '{}'::jsonb),
         (${ABSENT_TICK_ID}, ${TEST_USER_ID}, 'mountain-project', NULL, '2026-01-01', 'absent', 'boulder', 'v_scale', 'V6', 'Send', 1, CURRENT_TIMESTAMP, 'Mountain Project', '{}'::jsonb),
         (${FOREIGN_TICK_ID}, ${OTHER_USER_ID}, 'mountain-project', NULL, '2026-01-01', 'foreign-user', 'boulder', 'v_scale', 'V7', 'Send', 1, NULL, 'Mountain Project', '{}'::jsonb),
-        (${OPENBETA_TICK_ID}, ${TEST_USER_ID}, 'openbeta', NULL, '2026-01-01', 'openbeta:local-day', 'route', 'yds', '5.10a', 'Onsight', 1, NULL, 'OpenBeta', '{"source":"openbeta","attemptType":"Onsight"}'::jsonb),
+        (${OPENBETA_TICK_ID}, ${TEST_USER_ID}, 'openbeta', NULL, '2026-01-01', 'openbeta:local-day', 'route', 'yds', '5.10a', 'Onsight', 1, NULL, 'OpenBeta', '{"source":"OB","attemptType":"Onsight","climb":{"uuid":"10000000-0000-4000-8000-000000000001"},"user":{"username":"thickles"}}'::jsonb),
         (${CONCURRENT_TICK_ID}, ${TEST_USER_ID}, 'openbeta', NULL, '2026-01-01', 'openbeta:concurrent', 'route', 'yds', '5.10b', 'Flash', 1, NULL, 'OpenBeta', '{"source":"openbeta","attemptType":"Flash"}'::jsonb)
 `);
     await context.db.execute(sql`UPDATE fitness.climbing_entry SET
@@ -86,6 +86,14 @@ describe("ClimbingEntryAssociator PostgreSQL behavior", () => {
           id: OPENBETA_TICK_ID,
           providerId: "openbeta",
           sourceName: "OpenBeta",
+          sourceLinks: [
+            {
+              providerId: "openbeta",
+              kind: "route",
+              url: "https://openbeta.io/climb/10000000-0000-4000-8000-000000000001",
+            },
+            { providerId: "openbeta", kind: "ticks", url: "https://openbeta.io/u/thickles/ticks" },
+          ],
           grade: "5.10a",
           ascentType: "Onsight",
           locationName: "Country > Wall",
@@ -158,7 +166,17 @@ describe("ClimbingEntryAssociator PostgreSQL behavior", () => {
     });
     expect(
       attachedEntries.find((entry) => entry.toDetail().id === OPENBETA_TICK_ID)?.toDetail(),
-    ).toMatchObject({ ascentType: "Onsight" });
+    ).toMatchObject({
+      ascentType: "Onsight",
+      sourceLinks: [
+        {
+          providerId: "openbeta",
+          kind: "route",
+          url: "https://openbeta.io/climb/10000000-0000-4000-8000-000000000001",
+        },
+        { providerId: "openbeta", kind: "ticks", url: "https://openbeta.io/u/thickles/ticks" },
+      ],
+    });
   });
 
   it("allows only one concurrent attachment of the same entry", async () => {

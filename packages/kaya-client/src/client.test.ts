@@ -83,6 +83,7 @@ describe("KayaClient", () => {
                   ...emptyClimbContext,
                   id: "climb-1",
                   name: "Lead Route",
+                  slug: "Lead-Route-5.11a-Kaya-Gym-12345",
                   lead: true,
                   climb_type: { id: "routes", name: "Routes" },
                   grade: { id: "grade-1", name: "5.11a", climb_type_group: "route" },
@@ -117,7 +118,7 @@ describe("KayaClient", () => {
         rating: 4,
         stiffness: 3,
         gym: { id: "gym-1", name: "Kaya Gym" },
-        climb: expect.objectContaining({ lead: true }),
+        climb: expect.objectContaining({ lead: true, slug: "Lead-Route-5.11a-Kaya-Gym-12345" }),
       }),
     ]);
 
@@ -145,6 +146,8 @@ describe("KayaClient", () => {
     expect(graphQlRequests[1]).toContain("rating");
     expect(graphQlRequests[1]).toContain("stiffness");
     expect(graphQlRequests[1]).toContain("lead");
+    expect(graphQlRequests[0]).toContain("slug");
+    expect(graphQlRequests[1]).toContain("slug");
     expect(fetchFn.mock.calls[1]?.[1]?.headers).toMatchObject({
       authorization: "Bearer kaya-access-token",
     });
@@ -207,6 +210,7 @@ describe("KayaClient", () => {
 
   it("requests and retains outdoor context and board on both climb feeds", async () => {
     const context = {
+      slug: "Test-Route-5.6-Test-Destination-12345",
       destination: { id: 101, name: "Test destination" },
       area: { id: 102, name: "Test area" },
       subarea: { id: 103, name: "Test face" },
@@ -241,6 +245,7 @@ describe("KayaClient", () => {
     const sessions = await client.listSessions("42");
     const ascents = await client.listAscents("42");
     const expected = {
+      slug: "Test-Route-5.6-Test-Destination-12345",
       destination: { id: "101", name: "Test destination" },
       area: { id: "102", name: "Test area" },
       subarea: { id: "103", name: "Test face" },

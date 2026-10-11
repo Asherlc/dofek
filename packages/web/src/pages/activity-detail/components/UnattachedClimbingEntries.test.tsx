@@ -10,6 +10,7 @@ const suggestions: ClimbingEntrySuggestion[] = [
     id: "entry-1",
     providerId: "openbeta",
     sourceName: null,
+    sourceLinks: [],
     climbType: "route",
     gradeSystem: "yds",
     grade: "5.10a",
@@ -32,6 +33,7 @@ const suggestions: ClimbingEntrySuggestion[] = [
     id: "entry-2",
     providerId: "mountain-project",
     sourceName: "Mountain Project",
+    sourceLinks: [],
     climbType: "boulder",
     gradeSystem: "v_scale",
     grade: "V4",
@@ -54,6 +56,63 @@ const suggestions: ClimbingEntrySuggestion[] = [
 const emptySuggestions: ClimbingEntrySuggestion[] = [];
 
 describe("UnattachedClimbingEntries", () => {
+  it("offers a Mountain Project top-rope tick without unavailable outcome placeholders", () => {
+    const suggestion = suggestions.at(1);
+    if (!suggestion) throw new Error("Expected a climbing suggestion fixture");
+    render(
+      <UnattachedClimbingEntries
+        suggestions={[
+          {
+            ...suggestion,
+            climbType: "route",
+            gradeSystem: "yds",
+            grade: "5.4",
+            routeName: "Swiss Cheese",
+            sourceLinks: [
+              {
+                providerId: "mountain-project",
+                kind: "route",
+                url: "https://www.mountainproject.com/route/105734732/swiss-cheese",
+              },
+              {
+                providerId: "mountain-project",
+                kind: "ticks",
+                url: "https://www.mountainproject.com/user/110186720/ticks/ticks",
+              },
+            ],
+            sent: null,
+            attemptCount: null,
+            lead: false,
+            context: {
+              ...suggestion.context,
+              climbStyle: "top-rope",
+              resultStyle: null,
+            },
+          },
+        ]}
+        error={null}
+        isLoading={false}
+        state={{}}
+        onAttach={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("Swiss Cheese")).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: "Swiss Cheese on Mountain Project" }).getAttribute("href"),
+    ).toBe("https://www.mountainproject.com/route/105734732/swiss-cheese");
+    expect(screen.getByRole("link", { name: "Mountain Project ticks" }).getAttribute("href")).toBe(
+      "https://www.mountainproject.com/user/110186720/ticks/ticks",
+    );
+    expect(screen.getByText("5.4", { exact: true })).toBeInTheDocument();
+    expect(screen.getByText("Top rope")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Mountain Project ticks" }).textContent).toBe(
+      "Mountain Project",
+    );
+    expect(screen.getByRole("button", { name: "Attach to this activity" })).toBeInTheDocument();
+    expect(screen.queryByText("Result unknown")).not.toBeInTheDocument();
+    expect(screen.queryByText(/outcome|attempt/i)).not.toBeInTheDocument();
+  });
+
   it.each(["Onsight", "Flash"] as const)(
     "shows the grade and %s badge as the complete result for a first-try tick",
     (ascentType) => {

@@ -10,10 +10,12 @@ export type { ClimbingEntrySuggestion } from "../contracts/climbing-context-cont
 import type { AccessWindow } from "../billing/entitlement.ts";
 import { BaseRepository } from "../lib/base-repository.ts";
 import { ActivityRepository } from "./activity-repository.ts";
+import { climbingSourceLinks } from "./climbing-source-links.ts";
 
 const suggestionSchema = z.object({
   id: z.string(),
   provider_id: z.string(),
+  raw: z.json().nullable(),
   context: climbingContextSchema,
   source_name: z.string().nullable(),
   climb_type: z.enum(["boulder", "route"]),
@@ -59,7 +61,7 @@ export class ClimbingEntryAssociator extends BaseRepository {
     const displayedDate = activity.displayed_date;
     const rows = await this.query(
       suggestionSchema,
-      sql`SELECT id::text AS id, provider_id, source_name,
+      sql`SELECT id::text AS id, provider_id, source_name, raw,
                  climb_type::text AS climb_type,
                  grade_system::text AS grade_system, grade, sent, attempt_count,
                  ascent_type,
@@ -79,6 +81,7 @@ export class ClimbingEntryAssociator extends BaseRepository {
       providerId: row.provider_id,
       context: row.context,
       sourceName: row.source_name,
+      sourceLinks: climbingSourceLinks(row.provider_id, row.raw),
       climbType: row.climb_type,
       gradeSystem: row.grade_system,
       grade: row.grade,

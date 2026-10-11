@@ -79,7 +79,7 @@ describe("createUploadHandler", () => {
     const server = createServer(handler);
     return new Promise<TestUploadServer>((resolve, reject) => {
       server.once("error", reject);
-      server.listen(0, () => {
+      server.listen(0, "127.0.0.1", () => {
         server.off("error", reject);
         const address = server.address();
         if (!address || typeof address !== "object") {
