@@ -155,6 +155,11 @@ describe("UnattachedClimbingEntries", () => {
       "No unattached climbing entries for this day.",
     ],
     [
+      "no data while fetching is paused",
+      { suggestions: undefined, error: null, isLoading: false },
+      "No unattached climbing entries for this day.",
+    ],
+    [
       "error",
       {
         suggestions: undefined,

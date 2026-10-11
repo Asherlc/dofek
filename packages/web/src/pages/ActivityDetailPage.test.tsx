@@ -1989,6 +1989,75 @@ describe("ActivityDetailPage", () => {
       expect(mockActivityStreamInvalidate).not.toHaveBeenCalled();
     });
 
+    it.each([
+      { state: "loading", error: null, isLoading: true },
+      {
+        state: "unavailable",
+        error: new Error("Attached climbs are unavailable. Refresh to try again."),
+        isLoading: false,
+      },
+    ])(
+      "keeps suggestions actionable when attached climbs are $state",
+      async ({ error, isLoading }) => {
+        const originalActivity = { ...mockActivity };
+        Object.assign(mockActivity, { activityType: "climbing", name: "Morning Rock Climb" });
+        mockClimbingEntriesUseQuery.mockReturnValue({
+          data: undefined,
+          error,
+          isError: error !== null,
+          isLoading,
+        });
+        mockEntrySuggestionsUseQuery.mockReturnValue({
+          data: [
+            {
+              id: "available-tick",
+              providerId: "openbeta",
+              sourceName: "OpenBeta",
+              climbType: "route",
+              gradeSystem: "yds",
+              grade: "5.10a",
+              sent: true,
+              ascentType: "Onsight",
+              attemptCount: 1,
+              lead: true,
+              routeName: "Available Arete",
+              locationName: "Test Crag",
+              context: {
+                providerId: "openbeta",
+                locationPath: [{ name: "Test Crag", externalId: null, kind: null }],
+                board: null,
+                wallAngle: null,
+                climbStyle: "lead",
+                resultStyle: "Onsight",
+              },
+            },
+          ],
+          error: null,
+          isLoading: false,
+        });
+
+        const ActivityDetailPage = await importPage();
+        renderWithUnits(<ActivityDetailPage />);
+        const climbsSection = screen.getByRole("heading", { name: "Climbs" }).closest("section");
+        if (!climbsSection) throw new Error("Expected a climbs section");
+        expect(within(climbsSection).getByText("Available Arete")).toBeInTheDocument();
+        if (error) expect(within(climbsSection).getByText(error.message)).toBeInTheDocument();
+        const attachButton = within(climbsSection).getByRole("button", {
+          name: "Attach to this activity",
+        });
+        expect(attachButton).toBeEnabled();
+        fireEvent.click(attachButton);
+        expect(mockAttachEntryMutate).toHaveBeenCalledWith({
+          activityId: "test-123",
+          entryId: "available-tick",
+        });
+        await waitFor(() =>
+          expect(mockClimbingEntriesInvalidate).toHaveBeenCalledWith({ id: "test-123" }),
+        );
+        Object.assign(mockActivity, originalActivity);
+      },
+    );
+
     it("shows the server error when attaching a climbing entry fails", async () => {
       const originalActivity = { ...mockActivity };
       Object.assign(mockActivity, { activityType: "climbing", name: "Morning Rock Climb" });
