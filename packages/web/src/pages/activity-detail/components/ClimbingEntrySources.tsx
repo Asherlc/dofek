@@ -45,7 +45,7 @@ export function ClimbingEntrySources({
                     : `${providerSourceLabel(link.providerId)} ticks`
                 }
               >
-                {providerSourceLabel(link.providerId)} {link.kind}
+                {providerSourceLabel(link.providerId)}
               </a>
             </li>
           ))}

@@ -38,6 +38,10 @@ describe("ClimbingEntrySources", () => {
     expect(vi.mocked(Linking.openURL).mock.calls.map(([url]) => url)).toEqual(
       links.map((link) => link.url),
     );
+    expect(screen.getByRole("link", { name: "Swiss Cheese route on OpenBeta" }).textContent).toBe(
+      "OpenBeta",
+    );
+    expect(screen.getByRole("link", { name: "OpenBeta ticks" }).textContent).toBe("OpenBeta");
   });
   it("reports an opening failure and shows the reason", async () => {
     const error = new Error("No browser available");

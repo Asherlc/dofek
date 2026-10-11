@@ -33,6 +33,10 @@ describe("ClimbingEntrySources", () => {
     expect(screen.getByRole("link", { name: "OpenBeta ticks" }).getAttribute("href")).toBe(
       "https://openbeta.io/u/thickles/ticks",
     );
+    expect(screen.getByRole("link", { name: "Swiss Cheese route on OpenBeta" }).textContent).toBe(
+      "OpenBeta",
+    );
+    expect(screen.getByRole("link", { name: "OpenBeta ticks" }).textContent).toBe("OpenBeta");
     expect(screen.getByText("Mountain Project, OpenBeta")).toBeTruthy();
   });
   it("keeps an entry without verified destinations readable", () => {

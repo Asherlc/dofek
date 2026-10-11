@@ -52,7 +52,7 @@ export function ClimbingEntrySources({
               }}
             >
               <Text style={[styles.source, styles.link]}>
-                {providerSourceLabel(link.providerId)} {link.kind}
+                {providerSourceLabel(link.providerId)}
               </Text>
             </Pressable>
           ))}

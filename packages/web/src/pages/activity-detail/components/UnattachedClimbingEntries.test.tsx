@@ -105,7 +105,9 @@ describe("UnattachedClimbingEntries", () => {
     );
     expect(screen.getByText("5.4", { exact: true })).toBeInTheDocument();
     expect(screen.getByText("Top rope")).toBeInTheDocument();
-    expect(screen.getByText("Mountain Project")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Mountain Project ticks" }).textContent).toBe(
+      "Mountain Project",
+    );
     expect(screen.getByRole("button", { name: "Attach to this activity" })).toBeInTheDocument();
     expect(screen.queryByText("Result unknown")).not.toBeInTheDocument();
     expect(screen.queryByText(/outcome|attempt/i)).not.toBeInTheDocument();
