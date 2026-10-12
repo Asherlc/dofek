@@ -47,8 +47,9 @@ export function processingHeading(
   if (target) {
     switch (status) {
       case "failed":
-      case "blocked":
         return `${capitalize(target.label)} ${target.action} didn’t finish`;
+      case "blocked":
+        return `${activeHeading(target)} is waiting to continue`;
       case "delayed":
         return `${activeHeading(target)} is taking longer than expected`;
       case "active":
@@ -64,8 +65,9 @@ export function processingHeading(
   }
   switch (status) {
     case "failed":
-    case "blocked":
       return "Your data update didn’t finish";
+    case "blocked":
+      return "Your data update is waiting to continue";
     case "delayed":
       return "Processing is taking longer than expected";
     case "active":
@@ -188,14 +190,14 @@ export function processingStatusMessage(input: {
   errorMessage: string | null;
 }): string | null {
   const failureGuidance = "Try the update again. If it still fails, reconnect the data source.";
-  if ((input.status === "failed" || input.status === "blocked") && input.errorMessage) {
+  if (input.status === "failed" && input.errorMessage) {
     return userFacingErrorMessage(input.errorMessage, failureGuidance);
   }
   switch (input.status) {
     case "delayed":
+    case "blocked":
       return "Your existing data is still available.";
     case "failed":
-    case "blocked":
       return failureGuidance;
     case "partial":
     case "active":
@@ -250,16 +252,12 @@ export interface ProcessingFailureGroup {
   providerId: string | null;
   providerLabel: string | null;
   datasetLabels: string[];
-  status: "blocked" | "failed";
+  status: "failed";
   failedAt: string | null;
   lastReadyAt: string | null;
   errorMessage: string | null;
   requiresReconnect: boolean;
   dismissed: boolean;
-}
-
-function isFailureStatus(status: ProcessingDisplayStatus): status is "blocked" | "failed" {
-  return status === "blocked" || status === "failed";
 }
 
 function latestTimestamp(values: readonly (string | null)[]): string | null {
@@ -283,9 +281,9 @@ export function processingFailureGroups(input: {
     }
   }
 
-  const alertableDatasets = input.datasets.filter((dataset) => isFailureStatus(dataset.status));
+  const alertableDatasets = input.datasets.filter((dataset) => dataset.status === "failed");
   return input.operations.flatMap((operation) => {
-    if (operation.dismissed || !isFailureStatus(operation.status)) return [];
+    if (operation.dismissed || operation.status !== "failed") return [];
     const operationDatasetKeys = new Set(operation.datasets);
     const groupedDatasets = alertableDatasets.filter(
       (dataset) =>
@@ -326,7 +324,7 @@ export function processingDatasetStatusLabel(status: ProcessingDisplayStatus): s
     case "delayed":
       return "Delayed";
     case "blocked":
-      return "Blocked";
+      return "Waiting to continue";
     case "failed":
       return "Failed";
     case "cancelled":

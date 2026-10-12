@@ -268,37 +268,94 @@ describe("ProcessingStatusWidget", () => {
     expect(screen.queryByTestId("processing-status-progress")).toBeNull();
   });
 
-  it.each(["failed", "blocked"] as const)(
-    "surfaces %s datasets, their last ready age, and the actionable error",
-    (status) => {
-      vi.useFakeTimers();
-      vi.setSystemTime(new Date("2026-07-22T14:00:00.000Z"));
+  it("surfaces failed datasets, their last ready age, and the actionable error", () => {
+    const status = "failed" as const;
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-07-22T14:00:00.000Z"));
+    render(
+      <ProcessingStatusWidget
+        data={{
+          ...snapshot,
+          overallStatus: status,
+          datasets: [
+            {
+              ...activityDataset,
+              status,
+              progressPercentage: null,
+              lastFailedAt: "2026-07-22T13:00:00.000Z",
+              lastReadyAt: "2026-07-22T12:00:00.000Z",
+            },
+          ],
+          operations: [
+            {
+              ...operation,
+              status,
+              dismissed: false,
+              errorMessage: "Reconnect Garmin, then start the sync again.",
+              errorCode: "provider_auth_failed",
+              timeline: [
+                {
+                  ...timelineEvent,
+                  status: "failed",
+                  errorMessage: "Reconnect Garmin, then start the sync again.",
+                },
+              ],
+            },
+          ],
+        }}
+      />,
+    );
+
+    expect(screen.getByText("Garmin sync didn’t finish")).toBeTruthy();
+    expect(screen.getByText("Activities")).toBeTruthy();
+    expect(screen.getByText("Failed: 1h ago")).toBeTruthy();
+    expect(screen.getByText("Last successful update: 2h ago")).toBeTruthy();
+    expect(screen.getByText("Reconnect Garmin, then start the sync again.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Reconnect Garmin" }));
+    expect(mockPush).toHaveBeenCalledWith("/providers/garmin");
+  });
+
+  it.each([
+    {
+      providerId: "garmin",
+      kind: "provider_sync",
+      key: "activity",
+      label: "Activities",
+      heading: "Syncing Garmin is waiting to continue",
+    },
+    {
+      providerId: null,
+      kind: "analytics_refresh",
+      key: "sleep",
+      label: "Sleep",
+      heading: "Recomputing sleep is waiting to continue",
+    },
+  ])(
+    "keeps blocked $kind visible as pending progress",
+    ({ providerId, kind, key, label, heading }) => {
       render(
         <ProcessingStatusWidget
           data={{
             ...snapshot,
-            overallStatus: status,
-            datasets: [
-              {
-                ...activityDataset,
-                status,
-                progressPercentage: null,
-                lastFailedAt: "2026-07-22T13:00:00.000Z",
-                lastReadyAt: "2026-07-22T12:00:00.000Z",
-              },
-            ],
+            scope: { providerId, datasets: [key] },
+            overallStatus: "blocked",
+            datasets: [{ ...activityDataset, key, label, status: "blocked", lastFailedAt: null }],
             operations: [
               {
                 ...operation,
-                status,
-                dismissed: false,
-                errorMessage: "Reconnect Garmin, then start the sync again.",
-                errorCode: "provider_auth_failed",
+                providerId,
+                kind,
+                status: "blocked",
+                datasets: [key],
+                errorCode: null,
+                errorMessage: null,
                 timeline: [
                   {
                     ...timelineEvent,
-                    status: "failed",
-                    errorMessage: "Reconnect Garmin, then start the sync again.",
+                    stage: "analytics",
+                    status: "started",
+                    datasetKey: key,
+                    progressPercentage: 60,
                   },
                 ],
               },
@@ -307,15 +364,14 @@ describe("ProcessingStatusWidget", () => {
         />,
       );
 
-      expect(screen.getByText("Garmin sync didn’t finish")).toBeTruthy();
-      expect(screen.getByText("Activities")).toBeTruthy();
-      expect(
-        screen.getByText(`${status === "failed" ? "Failed" : "Blocked"}: 1h ago`),
-      ).toBeTruthy();
-      expect(screen.getByText("Last successful update: 2h ago")).toBeTruthy();
-      expect(screen.getByText("Reconnect Garmin, then start the sync again.")).toBeTruthy();
-      fireEvent.click(screen.getByRole("button", { name: "Reconnect Garmin" }));
-      expect(mockPush).toHaveBeenCalledWith("/providers/garmin");
+      expect(screen.getByText(heading)).toBeTruthy();
+      const progressLabel = providerId ? "Processing progress" : heading;
+      expect(screen.getByRole("progressbar", { name: progressLabel })).toBeTruthy();
+      if (providerId) {
+        expect(screen.getByText("Your existing data is still available.")).toBeTruthy();
+        expect(screen.getByText("Waiting to continue")).toBeTruthy();
+      }
+      expect(screen.queryByRole("button", { name: /Dismiss .* failure|Reconnect/ })).toBeNull();
     },
   );
 
@@ -412,6 +468,31 @@ describe("ProcessingStatusWidget", () => {
 
     expect(screen.getByText("Syncing Wahoo")).toBeTruthy();
     expect(screen.getByText("Sleep")).toBeTruthy();
+  });
+
+  it("keeps blocked sibling progress neutral after its operation failure is dismissed", () => {
+    const currentSnapshot = failedWahooSnapshot();
+    const failedDataset = currentSnapshot.datasets.at(0);
+    const blockedDataset = currentSnapshot.datasets.at(1);
+    const currentOperation = currentSnapshot.operations.at(0);
+    if (!failedDataset || !blockedDataset || !currentOperation) {
+      throw new Error("Expected current processing fixtures");
+    }
+
+    render(
+      <ProcessingStatusWidget
+        data={failedWahooSnapshot({
+          datasets: [failedDataset, { ...blockedDataset, status: "blocked", lastFailedAt: null }],
+          operations: [{ ...currentOperation, dismissed: true }],
+        })}
+      />,
+    );
+
+    expect(screen.getByText("Syncing Wahoo is waiting to continue")).toBeTruthy();
+    expect(screen.getByText("Sleep")).toBeTruthy();
+    expect(screen.getByText("Waiting to continue")).toBeTruthy();
+    expect(screen.getByText("Your existing data is still available.")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Dismiss .* failure|Reconnect/ })).toBeNull();
   });
 
   it("does not render an older failed group after the dataset is ready again", () => {

@@ -20,6 +20,10 @@ export const Ready: Story = { args: { label: "Sleep is ready", progress: 100, st
 export const Delayed: Story = {
   args: { label: "Sleep recompute delayed", progress: 35, status: "delayed" },
 };
+export const Blocked: Story = {
+  name: "Waiting to continue",
+  args: { label: "Recomputing sleep is waiting to continue", status: "blocked" },
+};
 export const Failed: Story = {
   args: { label: "Sleep recompute failed", progress: null, status: "failed" },
 };

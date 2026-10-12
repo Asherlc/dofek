@@ -25,7 +25,7 @@ describe("processing status presentation", () => {
   });
 
   it.each([
-    ["blocked", "Your data update didn’t finish"],
+    ["blocked", "Your data update is waiting to continue"],
     ["delayed", "Processing is taking longer than expected"],
     ["active", "Updating your data"],
     ["partial", "Finishing your data update"],
@@ -37,7 +37,7 @@ describe("processing status presentation", () => {
   });
 
   it.each([
-    ["blocked", "Try the update again. If it still fails, reconnect the data source."],
+    ["blocked", "Your existing data is still available."],
     ["partial", null],
     ["active", null],
     ["waiting", null],
@@ -47,10 +47,13 @@ describe("processing status presentation", () => {
     expect(processingStatusMessage({ status, errorMessage: null })).toBe(message);
   });
 
-  it("only displays server errors for failed or blocked states", () => {
+  it("keeps blocked work neutral despite a stale server error", () => {
     expect(processingStatusMessage({ status: "blocked", errorMessage: "Reconnect Garmin." })).toBe(
-      "Reconnect Garmin.",
+      "Your existing data is still available.",
     );
+  });
+
+  it("ignores stale errors while work is active", () => {
     expect(processingStatusMessage({ status: "active", errorMessage: "Ignore this." })).toBeNull();
   });
 
@@ -98,13 +101,21 @@ describe("processing status presentation", () => {
   });
 
   it.each([
-    ["blocked", "Sleep recompute didn’t finish"],
+    ["blocked", "Recomputing sleep is waiting to continue"],
     ["delayed", "Recomputing sleep is taking longer than expected"],
     ["waiting", "Preparing to recompute sleep"],
     ["cancelled", "Sleep recompute was cancelled"],
     ["ready", "Sleep recompute complete"],
   ] as const)("uses area-specific recomputation copy for %s", (status, heading) => {
     expect(processingHeading(status, { action: "recompute", label: "sleep" })).toBe(heading);
+  });
+
+  it.each([
+    ["import", "Importing Apple Health is waiting to continue"],
+    ["sync", "Syncing Apple Health is waiting to continue"],
+    ["update", "Updating Apple Health is waiting to continue"],
+  ] as const)("keeps a blocked %s target waiting to continue", (action, heading) => {
+    expect(processingHeading("blocked", { action, label: "Apple Health" })).toBe(heading);
   });
 
   it("names every affected area when the update is not provider-scoped", () => {
@@ -196,7 +207,7 @@ describe("processing status presentation", () => {
     ).toBe(80);
   });
 
-  it("groups current failed datasets by operation in server dataset order", () => {
+  it("groups only failed siblings by operation in server dataset order", () => {
     const groups = processingFailureGroups({
       datasets: [
         {
@@ -239,16 +250,74 @@ describe("processing status presentation", () => {
         operationId: firstOperationId,
         providerId: "whoop",
         providerLabel: "WHOOP (Cloud)",
-        datasetLabels: ["Activities", "Recovery", "Sleep"],
+        datasetLabels: ["Activities", "Sleep"],
         status: "failed",
-        failedAt: "2026-07-22T16:00:00.000Z",
-        lastReadyAt: "2026-07-21T12:00:00.000Z",
+        failedAt: "2026-07-22T15:00:00.000Z",
+        lastReadyAt: "2026-07-21T11:00:00.000Z",
         errorMessage: "Reconnect WHOOP.",
         requiresReconnect: true,
         dismissed: false,
       },
     ]);
   });
+
+  it.each(["blocked", "delayed", "active", "partial", "waiting", "cancelled", "ready"] as const)(
+    "keeps a %s operation out of failure alerts even with a failed dataset",
+    (status) => {
+      expect(
+        processingFailureGroups({
+          datasets: [
+            {
+              key: "sleep",
+              label: "Sleep",
+              status: "failed",
+              lastFailedAt: "2026-07-22T15:00:00.000Z",
+              lastReadyAt: null,
+            },
+          ],
+          operations: [
+            {
+              id: firstOperationId,
+              providerId: "whoop",
+              status,
+              datasets: ["sleep"],
+              dismissed: false,
+              errorMessage: "Previous update failed.",
+            },
+          ],
+        }),
+      ).toEqual([]);
+    },
+  );
+
+  it.each(["blocked", "delayed", "active", "partial", "waiting", "cancelled", "ready"] as const)(
+    "keeps a %s dataset out of a failed operation alert",
+    (status) => {
+      expect(
+        processingFailureGroups({
+          datasets: [
+            {
+              key: "sleep",
+              label: "Sleep",
+              status,
+              lastFailedAt: "2026-07-22T15:00:00.000Z",
+              lastReadyAt: null,
+            },
+          ],
+          operations: [
+            {
+              id: firstOperationId,
+              providerId: "whoop",
+              status: "failed",
+              datasets: ["sleep"],
+              dismissed: false,
+              errorMessage: "Sleep failed.",
+            },
+          ],
+        }),
+      ).toEqual([]);
+    },
+  );
 
   it("does not require reconnecting for a retry-only provider failure", () => {
     const groups = processingFailureGroups({
@@ -346,7 +415,7 @@ describe("processing status presentation", () => {
           {
             key: "sleep",
             label: "Sleep",
-            status: "blocked",
+            status: "failed",
             lastFailedAt: "2026-07-22T15:00:00.000Z",
             lastReadyAt: "2026-07-21T11:00:00.000Z",
           },
@@ -363,10 +432,10 @@ describe("processing status presentation", () => {
           {
             id: secondOperationId,
             providerId: "whoop",
-            status: "blocked",
+            status: "failed",
             datasets: ["sleep"],
             dismissed: false,
-            errorMessage: "Sleep blocked.",
+            errorMessage: "Sleep failed.",
           },
         ],
       }),
@@ -380,21 +449,21 @@ describe("processing status presentation", () => {
       expect.objectContaining({
         operationId: secondOperationId,
         datasetLabels: ["Sleep"],
-        status: "blocked",
-        errorMessage: "Sleep blocked.",
+        status: "failed",
+        errorMessage: "Sleep failed.",
       }),
     ]);
   });
 
-  it("preserves a missing last-ready timestamp", () => {
+  it("preserves a recorded failure with missing failure and ready timestamps", () => {
     expect(
       processingFailureGroups({
         datasets: [
           {
             key: "providers",
             label: "Providers",
-            status: "blocked",
-            lastFailedAt: "2026-07-22T14:00:00.000Z",
+            status: "failed",
+            lastFailedAt: null,
             lastReadyAt: null,
           },
         ],
@@ -402,7 +471,7 @@ describe("processing status presentation", () => {
           {
             id: firstOperationId,
             providerId: null,
-            status: "blocked",
+            status: "failed",
             datasets: ["providers"],
             dismissed: false,
             errorMessage: null,
@@ -413,6 +482,7 @@ describe("processing status presentation", () => {
       expect.objectContaining({
         operationId: firstOperationId,
         providerLabel: null,
+        failedAt: null,
         lastReadyAt: null,
       }),
     ]);
@@ -424,7 +494,7 @@ describe("processing status presentation", () => {
     ["active", "Updating"],
     ["partial", "Finishing"],
     ["delayed", "Delayed"],
-    ["blocked", "Blocked"],
+    ["blocked", "Waiting to continue"],
     ["failed", "Failed"],
     ["cancelled", "Cancelled"],
   ] as const)("labels a %s dataset for display", (status, label) => {
