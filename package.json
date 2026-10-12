@@ -96,6 +96,7 @@
     "./providers/velohero": "./src/providers/velohero.ts",
     "./providers/mountain-project": "./src/providers/mountain-project.ts",
     "./providers/openbeta": "./src/providers/openbeta.ts",
+    "./providers/thecrag": "./src/providers/thecrag.ts",
     "./providers/bodyspec": "./src/providers/bodyspec.ts",
     "./providers/amazfit-zepp": "./src/providers/amazfit-zepp.ts",
     "./providers/zos-app/provider": "./src/providers/zos-app/provider.ts",

@@ -77,6 +77,7 @@ async function doRegisterProviders() {
           (openBetaModule) => new openBetaModule.OpenBetaProvider(),
         ),
     ],
+    ["thecrag", () => import("../providers/thecrag.ts").then((m) => new m.TheCragProvider())],
     [
       "amazfit-zepp",
       () => import("../providers/amazfit-zepp.ts").then((m) => new m.AmazfitZeppProvider()),

@@ -166,6 +166,9 @@ export const climbingEntry = fitness.table(
     uniqueIndex("climbing_entry_openbeta_external_id_idx")
       .on(table.userId, table.providerId, table.externalId)
       .where(sql`${table.providerId} = 'openbeta' AND ${table.externalId} IS NOT NULL`),
+    uniqueIndex("climbing_entry_thecrag_external_id_idx")
+      .on(table.userId, table.providerId, table.externalId)
+      .where(sql`${table.providerId} = 'thecrag' AND ${table.externalId} IS NOT NULL`),
     check(
       "climbing_entry_activity_unattached_date_pair",
       sql`(${table.activityId} IS NULL) = (${table.unattachedDate} IS NOT NULL)`,
