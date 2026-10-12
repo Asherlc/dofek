@@ -61,6 +61,25 @@ only; it never contains metric payloads.
 All event writes are idempotent. Re-running the reconciler, analytics build, or
 cache warmer may reuse the same facts without duplicating lifecycle state.
 
+## Customer Alerts
+
+Failure alerts require a current recorded failed stage fact. The
+[state reducer](../src/processing/processing-state.ts) distinguishes those facts
+from an inferred `blocked` state, which means a required next stage has not
+been recorded. The [alert repository](../packages/server/src/repositories/processing-repository.ts)
+includes only failed datasets in failure alerts. Stalled updates remain visible
+as “waiting to continue” processing status on both clients, using the
+[shared presentation helpers](../packages/providers-meta/src/processing-status.ts).
+Retry, reconnect, and failure-dismissal controls belong to recorded failures.
+
+An empty alert list does not prove an earlier operation recovered. The
+[event store](../src/processing/processing-event-store.ts) loads twenty recent
+user operations within ninety days, and the repository selects the newest
+operation touching each dataset. Record the original operation ID and screenshot
+time, then inspect that operation's successful stage facts using the diagnosis
+queries below. Model-level failures can be omitted from the public timeline;
+use the durable ledger when confirming the failure or its recovery.
+
 ## Deployment Order
 
 Use the normal production deployment workflow; do not deploy these pieces

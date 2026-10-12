@@ -209,4 +209,97 @@ describe("ProcessingRepository integration", () => {
     );
     await expect(repository.alerts()).resolves.toEqual(expect.objectContaining({ alerts: [] }));
   });
+
+  it("distinguishes stalled, failed, and recovered updates using recorded stage facts", async () => {
+    const isolatedUserId = "20000000-0000-4000-8000-000000000050";
+    const isolatedOperationId = "20000000-0000-4000-8000-000000000051";
+    const stalledAt = new Date(Date.now() - 30 * 60_000);
+    await testContext.db.execute(sql`
+      INSERT INTO fitness.user_profile (id, name)
+      VALUES (${isolatedUserId}::uuid, 'Recorded Failure Alert Test User');
+    `);
+    await testContext.db.execute(sql`
+      INSERT INTO fitness.processing_operation (
+        id, user_id, provider_id, kind, external_correlation_key, dataset_keys, created_at
+      ) VALUES (
+        ${isolatedOperationId}::uuid, ${isolatedUserId}::uuid, 'strava', 'provider_sync',
+        'recorded-failure-alert', ARRAY['activity']::text[], ${stalledAt.toISOString()}::timestamptz
+      );
+    `);
+    await appendProcessingStageEvent(testContext.db, {
+      operationId: isolatedOperationId,
+      stage: "ingest",
+      status: "succeeded",
+      datasetKey: null,
+      occurredAt: stalledAt,
+      idempotencyKey: "stalled-ingest-succeeded",
+    });
+    const repository = new ProcessingRepository(testContext.db, isolatedUserId);
+
+    const stalledStatus = await repository.status({ datasets: ["activity"] });
+    expect(stalledStatus.datasets).toEqual([
+      expect.objectContaining({ key: "activity", status: "blocked", lastFailedAt: null }),
+    ]);
+    await expect(repository.alerts()).resolves.toEqual(expect.objectContaining({ alerts: [] }));
+
+    const failedAt = new Date();
+    await appendProcessingStageEvent(testContext.db, {
+      operationId: isolatedOperationId,
+      stage: "analytics",
+      status: "failed",
+      datasetKey: "activity",
+      modelName: "activity_summary",
+      occurredAt: failedAt,
+      errorCode: "analytics_failed",
+      errorMessage: "Activity updates could not be completed.",
+      idempotencyKey: "recorded-analytics-model-failed",
+    });
+    const failedStatus = await repository.status({ datasets: ["activity"] });
+    expect(failedStatus.datasets).toEqual([
+      expect.objectContaining({ key: "activity", status: "failed" }),
+    ]);
+    expect(failedStatus.operations[0]?.timeline.map((event) => event.status)).toEqual([
+      "succeeded",
+    ]);
+    await expect(repository.alerts()).resolves.toEqual(
+      expect.objectContaining({
+        alerts: [
+          expect.objectContaining({
+            id: isolatedOperationId,
+            datasetKeys: ["activity"],
+            action: "retry_sync",
+            occurredAt: failedAt.toISOString(),
+          }),
+        ],
+      }),
+    );
+
+    await appendProcessingStageEvent(testContext.db, {
+      operationId: isolatedOperationId,
+      stage: "analytics",
+      status: "succeeded",
+      datasetKey: "activity",
+      modelName: "activity_summary",
+      idempotencyKey: "recorded-analytics-model-recovered",
+    });
+    await appendSucceededStage({
+      operationId: isolatedOperationId,
+      stage: "analytics",
+      datasetKey: "activity",
+      occurredAt: new Date().toISOString(),
+      idempotencyKey: "recovered-analytics-succeeded",
+    });
+    await appendSucceededStage({
+      operationId: isolatedOperationId,
+      stage: "cache_refresh",
+      datasetKey: "activity",
+      occurredAt: new Date().toISOString(),
+      idempotencyKey: "recovered-cache-succeeded",
+    });
+    const recoveredStatus = await repository.status({ datasets: ["activity"] });
+    expect(recoveredStatus.datasets).toEqual([
+      expect.objectContaining({ key: "activity", status: "ready" }),
+    ]);
+    await expect(repository.alerts()).resolves.toEqual(expect.objectContaining({ alerts: [] }));
+  });
 });

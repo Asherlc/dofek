@@ -80,7 +80,7 @@ const borderStyleByStatus = StyleSheet.create({
   active: { borderLeftColor: operationalStatusColors.info.indicator },
   partial: { borderLeftColor: operationalStatusColors.info.indicator },
   delayed: { borderLeftColor: operationalStatusColors.warning.indicator },
-  blocked: { borderLeftColor: operationalStatusColors.danger.indicator },
+  blocked: { borderLeftColor: operationalStatusColors.warning.indicator },
   failed: { borderLeftColor: operationalStatusColors.danger.indicator },
   cancelled: { borderLeftColor: operationalStatusColors.neutral.indicator },
 });

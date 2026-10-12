@@ -126,6 +126,32 @@ export const LongRecompute: Story = {
   },
 };
 export const Delayed: Story = { args: { data: { ...activeSnapshot, overallStatus: "delayed" } } };
+export const Blocked: Story = {
+  name: "Waiting to continue",
+  args: {
+    data: {
+      ...activeSnapshot,
+      overallStatus: "blocked",
+      datasets: [{ ...activeDataset, status: "blocked", lastFailedAt: null }],
+      operations: [
+        {
+          ...activeOperation,
+          status: "blocked",
+          errorCode: null,
+          errorMessage: null,
+          timeline: [
+            {
+              ...activeTimelineEvent,
+              stage: "analytics",
+              status: "started",
+              progressPercentage: 60,
+            },
+          ],
+        },
+      ],
+    },
+  },
+};
 export const Partial: Story = {
   name: "Partial data",
   tags: ["review-scenario", "review-scenario-partial-data"],

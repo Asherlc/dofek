@@ -42,6 +42,18 @@ describe("SourceProcessingStatusCard", () => {
 
     rerender(
       <SourceProcessingStatusCard
+        heading="Importing Apple Health is waiting to continue"
+        message="Your existing data is still available."
+        progress={null}
+        status="blocked"
+      />,
+    );
+    expect(screen.getByRole("summary").style.borderLeftColor).toBe(
+      cssRgb(operationalStatusColors.warning.indicator),
+    );
+
+    rerender(
+      <SourceProcessingStatusCard
         heading="Import complete"
         message={null}
         progress={null}

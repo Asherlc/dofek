@@ -17,7 +17,7 @@ const indicatorColorByStatus: Record<ProcessingDisplayStatus, string> = {
   active: operationalStatusColors.info.indicator,
   partial: operationalStatusColors.info.indicator,
   delayed: operationalStatusColors.warning.indicator,
-  blocked: operationalStatusColors.danger.indicator,
+  blocked: operationalStatusColors.warning.indicator,
   failed: operationalStatusColors.danger.indicator,
   cancelled: operationalStatusColors.neutral.indicator,
 };
