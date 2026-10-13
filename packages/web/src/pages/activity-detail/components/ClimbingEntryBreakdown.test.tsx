@@ -53,16 +53,22 @@ describe("ClimbingEntryBreakdown", () => {
     expect(screen.queryByText(/outcome|attempt/i)).toBeNull();
   });
 
-  it.each(["Onsight", "Flash", "Redpoint"] as const)(
-    "uses the %s badge to communicate a successful ascent",
-    (ascentType) => {
+  it.each([
+    ["Onsight", null],
+    ["Flash", null],
+    ["Repeat", null],
+    ["Repeat", 3],
+    ["Redpoint", 7],
+  ] as const)(
+    "uses the %s badge to communicate a successful ascent with %s recorded attempts",
+    (ascentType, attemptCount) => {
       const entry: ClimbingActivityEntryRow = {
         id: "entry-1",
         climbType: "route",
         gradeSystem: "yds",
         grade: "5.6",
         sent: true,
-        attemptCount: ascentType === "Redpoint" ? 7 : null,
+        attemptCount,
         attempts: [],
         ascentType,
         holdType: null,
@@ -82,10 +88,11 @@ describe("ClimbingEntryBreakdown", () => {
         },
       };
       render(<ClimbingEntryBreakdown entries={[entry]} />);
+      expect(screen.getByText("Left Arete")).toBeTruthy();
       expect(screen.getByText("5.6")).toBeTruthy();
       expect(screen.getByText(ascentType)).toBeTruthy();
-      if (ascentType === "Redpoint") {
-        expect(screen.getByText("7 attempts")).toBeTruthy();
+      if (attemptCount != null) {
+        expect(screen.getByText(`${attemptCount} attempts`)).toBeTruthy();
       } else {
         expect(screen.queryByText(/attempt|\bSent\b/i)).toBeNull();
       }

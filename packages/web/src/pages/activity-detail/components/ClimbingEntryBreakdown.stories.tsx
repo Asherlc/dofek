@@ -111,6 +111,20 @@ export const Flash: Story = {
     ],
   },
 };
+export const Repeat: Story = {
+  args: {
+    entries: [
+      {
+        ...entry,
+        sent: true,
+        attempts: [],
+        ascentType: "Repeat",
+        holdType: null,
+        context: { ...entry.context, resultStyle: "Repeat" },
+      },
+    ],
+  },
+};
 export const Board: Story = {
   args: {
     entries: [

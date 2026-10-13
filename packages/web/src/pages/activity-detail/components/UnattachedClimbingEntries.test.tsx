@@ -113,7 +113,7 @@ describe("UnattachedClimbingEntries", () => {
     expect(screen.queryByText(/outcome|attempt/i)).not.toBeInTheDocument();
   });
 
-  it.each(["Onsight", "Flash"] as const)(
+  it.each(["Onsight", "Flash", "Repeat"] as const)(
     "shows the grade and %s badge as the complete result for a first-try tick",
     (ascentType) => {
       const suggestion = suggestions.at(1);
@@ -145,7 +145,7 @@ describe("UnattachedClimbingEntries", () => {
     },
   );
 
-  it("shows a redpoint's attempts alongside its result badge", () => {
+  it.each(["Redpoint", "Repeat"] as const)("shows a %s tick's recorded attempts", (ascentType) => {
     const suggestion = suggestions.at(1);
     if (!suggestion) throw new Error("Expected a climbing suggestion fixture");
     render(
@@ -153,9 +153,9 @@ describe("UnattachedClimbingEntries", () => {
         suggestions={[
           {
             ...suggestion,
-            ascentType: "Redpoint",
+            ascentType,
             attemptCount: 7,
-            context: { ...suggestion.context, resultStyle: "Redpoint" },
+            context: { ...suggestion.context, resultStyle: ascentType },
           },
         ]}
         error={null}
@@ -165,7 +165,7 @@ describe("UnattachedClimbingEntries", () => {
       />,
     );
     expect(screen.getByText("V4 · 7 attempts")).toBeInTheDocument();
-    expect(screen.getByText("Redpoint")).toBeInTheDocument();
+    expect(screen.getByText(ascentType)).toBeInTheDocument();
   });
 
   it("renders provider fallbacks, attachment states, and attaches the selected entry", () => {
