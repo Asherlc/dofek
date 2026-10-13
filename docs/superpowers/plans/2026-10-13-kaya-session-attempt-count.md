@@ -46,6 +46,19 @@
 
 - [x] Document the observed field distinction and response alias with primary-source links.
 - [x] Run lint, relevant unit/mobile tests, and all package type checks; expect success.
-- [ ] Review the complete diff, commit, and push; create a reviewable PR.
-- [ ] Release the validated commit through the canonical production workflow, then request the normal Kaya sync for the affected user.
-- [ ] Verify corrected source counts, stable entry identities, API output, and unknown ascent counts; record the operational outcome.
+- [x] Review the complete diff, commit, and push; create a reviewable PR.
+- [x] Release the validated commit through the canonical production workflow, then request the normal Kaya sync for the affected user.
+- [x] Verify corrected source counts, stable entry identities, API output, and unknown ascent counts; record the operational outcome.
+
+### Task 3: Repair the separately reported Expo compatibility check
+
+**Approved follow-up:** Update the twelve compatible mobile dependency pins and generated lockfile after `pnpm expo install --check` reported outdated dependencies. Preserve the existing SDK 58 release channel and dependency policies.
+
+**Files:** `packages/mobile/package.json`, `pnpm-lock.yaml`, `pnpm-workspace.yaml`, `packages/mobile/app.json`, `packages/mobile/README.md`, `docs/production-incident-baseline.md`.
+
+- [x] Reproduce the exact compatibility failure with the existing private environment loader.
+- [x] Update the twelve pins to the published Expo 58.0.9 compatibility cohort; review generated exact-version release-age entries against the lockfile.
+- [x] Increment the native runtime to 1.6 and document the fresh-binary requirement, following [Expo's runtime guidance](https://docs.expo.dev/eas-update/runtime-versions/#manually-increment-the-runtime-version).
+- [x] Run full lint, all type checks, and the unit/mobile test tier; independently review the final diff.
+- [x] Verify resolved runtime configuration and final iOS export.
+Hosted validation after the follow-up is pushed is tracked in the [PR checks](https://github.com/Asherlc/dofek/pull/2938/checks), including the fresh native archive.

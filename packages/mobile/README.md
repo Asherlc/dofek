@@ -260,11 +260,11 @@ and hardware described there.
 
 ### Native diagnostic runtime
 
-Runtime **1.5** uses the [Expo SDK 58 beta](https://expo.dev/changelog/sdk-58-beta)
-native dependency set aligned with Expo 58.0.7 and React Native 0.88.0-rc.4,
+Runtime **1.6** uses the [Expo SDK 58 beta](https://expo.dev/changelog/sdk-58-beta)
+native dependency set aligned with Expo 58.0.9 and React Native 0.88.0-rc.4,
 including ExpoNetwork, the pnpm patch to `expo-apple-authentication@58.0.2`, and
 `react-native-maps@1.29.11`. Build a new native binary containing these
-dependencies; do not publish this JavaScript to runtime 1.4 or earlier.
+dependencies; do not publish this JavaScript to runtime 1.5 or earlier.
 Expo requires a runtime increment when native code is updated; see
 [manual runtime version increments](https://docs.expo.dev/eas-update/runtime-versions/#manually-increment-the-runtime-version).
 Expo uses
