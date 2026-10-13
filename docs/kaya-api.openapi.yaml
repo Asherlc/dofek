@@ -133,7 +133,15 @@ components:
               - type: object
                 required: [attempts]
                 properties:
-                  attempts: { type: [integer, 'null'], minimum: 1 }
+                  attempts:
+                    type: [integer, 'null']
+                    minimum: 1
+                    description: >-
+                      Per-climb session count from Kaya's session_attempts field,
+                      selected with the GraphQL response alias attempts.
+                    externalDocs:
+                      description: Observed authenticated Kaya GraphQL API on 2026-10-13
+                      url: https://kaya-beta.kayaclimb.com/graphql
     KayaClimb:
       type: object
       required: [id, name, lead, climb_type, grade, gym, destination, area, subarea, board, angle]

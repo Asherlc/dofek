@@ -22,10 +22,16 @@ the session and climb IDs, rather than an individual try. It imports as an unsen
 reference alone does not establish duplicate effort or overlapping counts.
 The [source-scoped writer](../src/db/climbing-entry-sync.ts) preserves record
 identity; any effort relationship needs separate evidence before query-time
-reconciliation. Both responses can supply `attempts: null`. Preserve that
-unknown count, and do not infer individual tries or failure reasons.
+reconciliation. Attempted climbs report their per-climb session count in
+`session_attempts`; their `attempts` field can be null even when that count is
+known. The session query selects `attempts: session_attempts`, using a permanent
+[GraphQL response alias](https://graphql.org/learn/queries/#aliases) to retain the
+client's typed `attempts` property. The separate ascent feed uses its own
+`attempts` field, which can be null, including for Repeat ascents. Preserve
+unknown counts, and do not infer individual tries or failure reasons.
 This contract was verified against the authenticated [Kaya GraphQL endpoint](https://kaya-beta.kayaclimb.com/graphql)
-on 2026-09-29 and the [Kaya application](https://kaya-app.kayaclimb.com/).
+and [Kaya application](https://kaya-app.kayaclimb.com/) on 2026-09-29; the
+attempted-climb count field was verified again on 2026-10-13.
 
 Climbing summaries include these records and retain known send counts. An
 attempt total is `null` when any contributing count is unknown. Grade volume

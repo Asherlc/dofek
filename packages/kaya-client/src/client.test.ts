@@ -182,6 +182,39 @@ describe("KayaClient", () => {
     await expect(new KayaClient("token", fetchFn).listAscents("42")).rejects.toThrow();
   });
 
+  it("reads session attempt counts when the upstream attempts field is null", async () => {
+    const upstreamClimbs = [
+      { ...attemptedClimb("climb-1", null), session_attempts: 1 },
+      { ...attemptedClimb("climb-2", null), session_attempts: 5 },
+      { ...attemptedClimb("climb-3", null), session_attempts: 1 },
+      { ...attemptedClimb("climb-4", null), session_attempts: 3 },
+    ];
+    const fetchFn = vi.fn<typeof fetch>().mockImplementation(async (_url, init) => {
+      const request = JSON.parse(String(init?.body));
+      const selectsSessionAttempts =
+        /attempted_climbs\s*\{\s*attempts\s*:\s*session_attempts\b/.test(request.query);
+      return jsonResponse({
+        data: {
+          sessionsForUser: [
+            {
+              ...session("session-1"),
+              attempted_climbs: upstreamClimbs.map(({ session_attempts, ...climb }) => ({
+                ...climb,
+                attempts: selectsSessionAttempts ? session_attempts : climb.attempts,
+              })),
+            },
+          ],
+        },
+      });
+    });
+
+    const sessions = await new KayaClient("token", fetchFn).listSessions("42");
+
+    expect(sessions[0]?.attempted_climbs.map(({ attempts }) => attempts)).toEqual([1, 5, 1, 3]);
+    const request = JSON.parse(String(fetchFn.mock.calls[0]?.[1]?.body));
+    expect(request.query).toMatch(/attempted_climbs\s*\{\s*attempts\s*:\s*session_attempts\b/);
+  });
+
   it("requests and preserves session attempts with unknown counts and normalized coordinates", async () => {
     const attemptedClimbs = [attemptedClimb("1000_2001", null), attemptedClimb("1000_2002", 3)];
     const fetchFn = vi.fn<typeof fetch>().mockResolvedValue(
