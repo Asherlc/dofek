@@ -92,7 +92,7 @@
     "react-native-screens": "4.29.0",
     "react-native-svg": "15.15.5",
     "react-native-worklets": "0.13.0",
-    "zod": "4.4.3"
+    "zod": "4.6.6"
   },
   "devDependencies": {
     "@storybook/addon-ondevice-actions": "10.6.0",
