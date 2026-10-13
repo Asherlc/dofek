@@ -1172,9 +1172,15 @@ describe("ActivityDetailScreen", () => {
     expect(enabled).toBe(false);
   });
 
-  it.each(["Onsight", "Flash", "Redpoint"] as const)(
-    "uses %s badges for successful attached and unattached climbs",
-    async (ascentType) => {
+  it.each([
+    ["Onsight", null],
+    ["Flash", null],
+    ["Repeat", null],
+    ["Repeat", 3],
+    ["Redpoint", 7],
+  ] as const)(
+    "uses %s badges for successful attached and unattached climbs with %s recorded attempts",
+    async (ascentType, attemptCount) => {
       mockByIdQuery.mockReturnValue({
         data: { ...baseCyclingActivity, activityType: "climbing" },
         isLoading: false,
@@ -1189,7 +1195,7 @@ describe("ActivityDetailScreen", () => {
         gradeSystem: "yds",
         grade: "5.6",
         sent: true,
-        attemptCount: ascentType === "Redpoint" ? 7 : null,
+        attemptCount,
         attempts: [],
         ascentType,
         holdType: null,
@@ -1217,9 +1223,9 @@ describe("ActivityDetailScreen", () => {
       expect(screen.getByText("Attached Arete")).toBeTruthy();
       expect(screen.getByText("Left Arete")).toBeTruthy();
       expect(screen.getAllByText(ascentType)).toHaveLength(2);
-      if (ascentType === "Redpoint") {
-        expect(screen.getByText("7 attempts")).toBeTruthy();
-        expect(screen.getByText("5.6 · 7 attempts")).toBeTruthy();
+      if (attemptCount != null) {
+        expect(screen.getByText(`${attemptCount} attempts`)).toBeTruthy();
+        expect(screen.getByText(`5.6 · ${attemptCount} attempts`)).toBeTruthy();
       } else {
         expect(screen.getAllByText("5.6", { exact: true })).toHaveLength(2);
         expect(screen.queryByText(/attempt|\bSent\b/i)).toBeNull();

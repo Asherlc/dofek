@@ -47,8 +47,11 @@ Detailed attempt records retain their existing precedence over entry-level
 outcomes/counts. A climbing method alone never implies a send. Exact labels and
 opaque provider payloads remain available for provenance. Formatting expands
 TR to “Top rope” and Fell/Hung to “Fell or hung”; an unverified angle displays
-as `Wall angle: −20 (units unknown)`. Missing outcomes/counts remain explicit,
-except for absent result/count placeholders on Mountain Project top-rope entries.
+as `Wall angle: −20 (units unknown)`. The [shared result formatter](../packages/format/src/format.ts)
+lets a successful Onsight or Flash badge convey the complete result. A successful
+Repeat with no recorded attempt count also omits attempt text; recorded Repeat
+counts still display. Other missing outcomes/counts remain explicit, except for
+absent result/count placeholders on Mountain Project top-rope entries.
 The [Mountain Project coverage audit](mountain-project.md#climbing-style-and-result-coverage)
 documents why those fields stay unknown; their omission is display-only.
 

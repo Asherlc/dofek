@@ -319,6 +319,16 @@ describe("formatClimbingAttemptResult", () => {
     (ascentType) => {
       expect(formatClimbingAttemptResult(true, 1, ascentType)).toBe("1 attempt");
       expect(formatClimbingAttemptResult(true, 7, ascentType)).toBe("7 attempts");
+    },
+  );
+
+  it("lets a successful repeat without a recorded count convey the result", () => {
+    expect(formatClimbingAttemptResult(true, null, "Repeat")).toBeNull();
+  });
+
+  it.each(["Redpoint", "Pinkpoint"])(
+    "retains the missing attempt count for a successful %s",
+    (ascentType) => {
       expect(formatClimbingAttemptResult(true, null, ascentType)).toBe(
         "Attempt count not recorded",
       );
@@ -328,6 +338,12 @@ describe("formatClimbingAttemptResult", () => {
   it("preserves observed outcomes that differ from the recorded ascent style", () => {
     expect(formatClimbingAttemptResult(false, 3, "Flash")).toBe("Attempted 3 times");
     expect(formatClimbingAttemptResult(null, null, "Onsight")).toBe(
+      "Outcome and attempt count not recorded",
+    );
+    expect(formatClimbingAttemptResult(false, null, "Repeat")).toBe(
+      "Not sent; attempt count not recorded",
+    );
+    expect(formatClimbingAttemptResult(null, null, "Repeat")).toBe(
       "Outcome and attempt count not recorded",
     );
     expect(formatClimbingAttemptResult(true, 2, "Unrecognized result")).toBe("Sent in 2 attempts");

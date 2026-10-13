@@ -72,6 +72,7 @@ export function formatClimbingAttemptResult(
   context?: ClimbingResultContext,
 ): string | null {
   if (sent && (ascentType === "Onsight" || ascentType === "Flash")) return null;
+  if (sent && ascentType === "Repeat" && attemptCount === null) return null;
   if (
     sent &&
     (ascentType === "Redpoint" || ascentType === "Pinkpoint" || ascentType === "Repeat")
