@@ -33,9 +33,19 @@ generation. Read these entries with `performance.getEntriesByName` or Chrome's
 Performance panel; no global diagnostic object is installed. Keep raw traces,
 record identifiers, account data, and date/range inputs in ignored local evidence.
 
-The existing consent-gated PostHog export, `page_data_readiness`, includes only
+The existing PostHog export, `page_data_readiness`, includes only
 route, optional section, kind, durationMs, outcome, and release as measurement
-properties. SDK transport metadata retains the public project token, event UUID,
+properties. The export has no explicit consent gate. The
+[web PostHog module](../../packages/web/src/lib/posthog.ts) does not set an
+opt-out default, so capture is active until a device opts out. Before each
+readiness event, `capturePageLoad` checks `posthog.has_opted_out_capturing()`
+and drops the event for an opted-out device. When the
+[auth context](../../packages/web/src/lib/auth-context.tsx) identifies a
+signed-in user, `identifyPostHogUser` calls `posthog.opt_in_capturing()` before
+`identify`. Thus sign-in removes an earlier opt-out on that device. Sign-out
+keeps an existing opt-out, and account erasure resets the SDK and opts the
+device out. PostHog documents these opt-out and opt-in calls in
+[Controlling data collection](https://posthog.com/docs/privacy/data-collection#opting-in-and-out). SDK transport metadata retains the public project token, event UUID,
 optional timestamp, existing device ID as `distinct_id`, and
 `$process_person_profile: false`. The readiness-specific `before_send` filter
 removes raw account IDs, URLs/query strings/referrers, health values, request
@@ -43,9 +53,8 @@ keys, and profile updates. Other analytics events retain their existing policy.
 The device ID is transport metadata, **not an anonymity guarantee**: existing
 profile associations remain associated ([PostHog anonymous/identified events](https://posthog.com/docs/data/anonymous-vs-identified-events)).
 Missing SDK device identity reports an error through existing telemetry and
-drops this export; it does not manufacture an ID. Erasure and opt-out keep
-exports disabled. Browser-local timing remains available without analytics
-consent, as required by the design.
+drops this export; it does not manufacture an ID. Browser-local timing remains
+available when the device is opted out.
 
 ## Current instrumentation coverage
 
