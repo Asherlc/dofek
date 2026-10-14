@@ -88,7 +88,7 @@
     "react-native-gesture-handler": "3.2.1",
     "react-native-maps": "1.29.11",
     "react-native-reanimated": "4.7.0",
-    "react-native-safe-area-context": "5.9.1",
+    "react-native-safe-area-context": "5.10.1",
     "react-native-screens": "4.29.0",
     "react-native-svg": "15.15.5",
     "react-native-worklets": "0.13.0",
