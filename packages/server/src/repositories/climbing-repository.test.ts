@@ -168,6 +168,48 @@ describe("ClimbingRepository session summaries", () => {
       hardestBoulderGrade: null,
     });
   });
+  it.each([
+    { grade: "V4", grade_system: null },
+    { grade: null, grade_system: "v_scale" },
+  ])("retains participation when only part of the grade is known %j", async (grade) => {
+    const [result] = await repository([{ ...session, ...grade }]).getSessionSummaries(30);
+    expect(result?.toDetail()).toMatchObject({ attempts: 1, sends: 1, hardestBoulderGrade: null });
+  });
+  it("keeps the hardest sent grade when easier observations follow", async () => {
+    const [result] = await repository([
+      { ...session, grade: "V7" },
+      { ...session, grade: "V2" },
+      { ...session, ...route, grade: "5.11a" },
+      { ...session, ...route, grade: "5.8" },
+    ]).getSessionSummaries(30);
+    expect(result?.toDetail()).toMatchObject({
+      hardestBoulderGrade: "V7",
+      hardestRouteGrade: "5.11a",
+      attempts: 4,
+      sends: 4,
+    });
+  });
+  it.each([
+    {
+      first: { grade: "4b+", grade_system: "french" },
+      second: { grade: "5", grade_system: "saxon" },
+      expected: "5.7",
+    },
+    {
+      first: { grade: "5", grade_system: "saxon" },
+      second: { grade: "4b+", grade_system: "french" },
+      expected: "5.6/5.7",
+    },
+  ])(
+    "preserves the first observed display label for tied route grades $expected",
+    async ({ first, second, expected }) => {
+      const [result] = await repository([
+        { ...session, ...route, ...first },
+        { ...session, ...route, ...second },
+      ]).getSessionSummaries(30);
+      expect(result?.toDetail().hardestRouteGrade).toBe(expected);
+    },
+  );
   it.each<[number | null, number | null]>([
     [3, null],
     [null, 3],
@@ -189,5 +231,55 @@ describe("ClimbingRepository session summaries", () => {
       { ...session, activity_id: "later", session_date: "2026-10-02" },
     ]).getSessionSummaries(30);
     expect(result.map((row) => row.toDetail().activityId)).toEqual(["later", "activity"]);
+  });
+});
+
+describe("ClimbingRepository attached rock observations", () => {
+  it("projects all scoped observation facts and preserves independently missing grade fields", async () => {
+    const observation = {
+      activity_id: "activity",
+      session_date: "2026-10-01",
+      climb_kind: "route",
+      attempt_scope: "pitch",
+      grade_system: "yds",
+      grade: "5.10c",
+      attempt_count: 3,
+      sends: 1,
+      observed_outcomes: 2,
+      unknown_outcomes: 1,
+    };
+    expect(
+      await repository([
+        observation,
+        { ...observation, grade_system: null },
+        { ...observation, grade: null },
+      ]).getAttachedRockObservations("2026-10-01", "2026-10-02"),
+    ).toEqual([
+      {
+        activityId: "activity",
+        date: "2026-10-01",
+        climbKind: "route",
+        attemptScope: "pitch",
+        displayGrade: { grade: "5.10c", gradeSystem: "yds", gradeSortValue: 64.5 },
+        recordedAttempts: 3,
+        sends: 1,
+        observedOutcomes: 2,
+        unknownOutcomes: 1,
+      },
+      ...[0, 1].map(() => ({
+        activityId: "activity",
+        date: "2026-10-01",
+        climbKind: "route",
+        attemptScope: "pitch",
+        displayGrade: null,
+        recordedAttempts: 3,
+        sends: 1,
+        observedOutcomes: 2,
+        unknownOutcomes: 1,
+      })),
+    ]);
+    expect(await repository([]).getAttachedRockObservations("2026-10-01", "2026-10-02")).toEqual(
+      [],
+    );
   });
 });

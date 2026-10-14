@@ -39,6 +39,140 @@ function repository(logs: ClimbingLogEntryDetail[]) {
 }
 describe("ClimbingActivityLogEntryRepository", () => {
   it.each([
+    { facts: {}, labels: ["sent"] },
+    { facts: { attemptIndex: 1, receivedBeta: false }, labels: ["sent", "Onsight"] },
+    { facts: { attemptIndex: 1, receivedBeta: true }, labels: ["sent", "Flash"] },
+    { facts: { attemptIndex: 1, receivedBeta: null }, labels: ["sent"] },
+    { facts: { attemptIndex: 2, receivedBeta: true }, labels: ["sent"] },
+    { facts: { attemptIndex: 1, receivedBeta: false, hadCompletedBefore: true }, labels: ["sent"] },
+    {
+      facts: { attemptIndex: 1, receivedBeta: false, priorFailedAttemptsGroundUp: true },
+      labels: ["sent"],
+    },
+    { facts: { outcome: "failed" }, labels: [] },
+    { facts: { outcome: null }, labels: [] },
+    { facts: { fellOrHung: true }, labels: [] },
+    { facts: { fellOrHung: null }, labels: [] },
+    { facts: { usedAid: true }, labels: [] },
+    { facts: { usedAid: null }, labels: [] },
+  ] satisfies Array<{
+    facts: Partial<ClimbingLogEntryDetail["attempts"][number]>;
+    labels: string[];
+  }>)("derives rock labels from independent attempt facts: $facts", async ({ facts, labels }) => {
+    const log = named("openbeta", undefined, true);
+    log.attempts = [
+      climbingAttemptFixture(log.id, {
+        outcome: "completed",
+        usedAid: false,
+        fellOrHung: false,
+        ...facts,
+      }),
+    ];
+    const [result] = await repository([log]).getLogEntries([log.id]);
+    expect(result?.toDetail().attempts[0]?.rockResultLabels).toEqual(labels);
+  });
+  it.each([false, true, null])(
+    "requires a recorded absence of dabs for a boulder send (%s)",
+    async (dabbed) => {
+      const log = named("openbeta", undefined, true);
+      if (!log.climb) throw new Error("Expected catalogue fixture");
+      log.climb.kind = "boulder";
+      log.attempts[0] = climbingAttemptFixture(log.id, {
+        outcome: "completed",
+        usedAid: false,
+        fellOrHung: false,
+        dabbed,
+      });
+      const [result] = await repository([log]).getLogEntries([log.id]);
+      expect(result?.toDetail().attempts[0]?.rockResultLabels).toEqual(
+        dabbed === false ? ["sent"] : [],
+      );
+    },
+  );
+  it("keeps mountaineering completions separate from rock send labels", async () => {
+    const log = named("openbeta", undefined, true);
+    log.discipline = "mountaineering";
+    const [result] = await repository([log]).getLogEntries([log.id]);
+    expect(result?.toDetail().recordedClimbOutcome).toBe("completed");
+    expect(result?.toDetail().attempts[0]?.rockResultLabels).toEqual([]);
+    if (!log.climb) throw new Error("Expected catalogue fixture");
+    log.climb.kind = "summit";
+    log.discipline = "rock_climbing";
+    const [summit] = await repository([log]).getLogEntries([log.id]);
+    expect(summit?.toDetail().attempts[0]?.rockResultLabels).toEqual([]);
+  });
+  it.each([
+    { outcomes: ["failed", "completed"], expected: "completed" },
+    { outcomes: ["failed", "failed"], expected: "failed" },
+    { outcomes: ["failed", null], expected: null },
+    { outcomes: [], expected: null },
+  ] as const)("projects a whole-climb outcome from $outcomes", async ({ outcomes, expected }) => {
+    const log = named("openbeta");
+    log.attempts = outcomes.map((outcome) => climbingAttemptFixture(log.id, { outcome }));
+    const [result] = await repository([log]).getLogEntries([log.id]);
+    expect(result?.toDetail().recordedClimbOutcome).toBe(expected);
+    expect(result?.toDetail().recordedClimbAttemptCount).toBe(outcomes.length);
+  });
+  it("groups repeated identified pitches while retaining separate unidentified pitch occurrences", async () => {
+    const log = named("openbeta");
+    if (!log.climb) throw new Error("Expected catalogue fixture");
+    const pitch = {
+      id: "20000000-0000-4000-8000-000000000020",
+      climbId: log.climb.id,
+      externalId: "pitch-one",
+      number: 1,
+      name: "First pitch",
+      publishedGrades: [{ value: "5.9", system: "yds" }],
+    } as const;
+    log.climb.pitches = [{ ...pitch, publishedGrades: [...pitch.publishedGrades] }];
+    log.attempts = [
+      climbingAttemptFixture(log.id, { outcome: "failed" }),
+      ...["failed", "completed"].map((outcome, index) =>
+        climbingAttemptFixture(log.id, {
+          id: `20000000-0000-4000-8000-00000000002${index + 1}`,
+          scope: "pitch",
+          pitchId: pitch.id,
+          outcome: outcome === "failed" ? "failed" : "completed",
+        }),
+      ),
+      ...[3, 4].map((index) =>
+        climbingAttemptFixture(log.id, {
+          id: `20000000-0000-4000-8000-00000000002${index}`,
+          scope: "pitch",
+        }),
+      ),
+    ];
+    const [result] = await repository([log]).getLogEntries([log.id]);
+    expect(result?.toDetail()).toMatchObject({
+      recordedClimbAttemptCount: 1,
+      recordedPitchAttemptCount: 4,
+      recordedClimbOutcome: "failed",
+      pitchResults: [
+        {
+          pitch,
+          attemptIds: [log.attempts[1]?.id, log.attempts[2]?.id],
+          recordedAttemptCount: 2,
+          recordedOutcome: "completed",
+          displayGrade: "5.9",
+        },
+        {
+          pitch: null,
+          attemptIds: [log.attempts[3]?.id],
+          recordedAttemptCount: 1,
+          recordedOutcome: null,
+          displayGrade: null,
+        },
+        {
+          pitch: null,
+          attemptIds: [log.attempts[4]?.id],
+          recordedAttemptCount: 1,
+          recordedOutcome: null,
+          displayGrade: null,
+        },
+      ],
+    });
+  });
+  it.each([
     { kind: "route", ropeMethod: "lead" },
     { kind: "route", ropeMethod: "top_rope" },
     { kind: "route", ropeMethod: null },

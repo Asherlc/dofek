@@ -79,13 +79,6 @@ ALTER TABLE fitness.climbing_attempt VALIDATE CONSTRAINT climbing_attempt_pitch_
 DROP VIEW fitness.v_climbing_entry;
 --> statement-breakpoint
 ALTER TABLE fitness.climbing_entry
-DROP CONSTRAINT climbing_entry_grade_nonempty,
-DROP CONSTRAINT climbing_entry_route_name_nonempty,
-DROP CONSTRAINT climbing_entry_location_path_valid,
-DROP CONSTRAINT climbing_entry_attempt_count_positive,
-DROP CONSTRAINT climbing_entry_result_style_nonempty,
-DROP CONSTRAINT climbing_entry_climb_style_valid,
-DROP CONSTRAINT climbing_entry_route_protection_valid,
 DROP CONSTRAINT climbing_entry_activity_owner_fk;
 --> statement-breakpoint
 -- Quiesced transactional cutover: CONCURRENTLY cannot run inside this transaction.
@@ -179,10 +172,6 @@ ALTER TABLE fitness.climbing_attempt RENAME COLUMN climbing_entry_id TO climbing
 --> statement-breakpoint
 ALTER TABLE fitness.climbing_attempt
 RENAME CONSTRAINT climbing_attempt_climbing_entry_id_fkey TO climbing_attempt_climbing_log_entry_id_climbing_log_entry_id_fk;
---> statement-breakpoint
-ALTER TABLE fitness.climbing_attempt
-DROP CONSTRAINT climbing_attempt_failure_reason,
-DROP CONSTRAINT climbing_attempt_legacy_index_positive;
 --> statement-breakpoint
 -- Quiesced transactional replacement of the legacy log-local ordinal index.
 -- squawk-ignore require-concurrent-index-deletion

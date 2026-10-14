@@ -88,6 +88,201 @@ afterEach(() => {
   });
 });
 describe("OpenBetaProvider", () => {
+  it.each([
+    {
+      style: "Lead",
+      label: "Onsight",
+      expected: { scope: "climb", ropeMethod: "lead", qualifier: "free-onsight" },
+    },
+    {
+      style: "TR",
+      label: "Flash",
+      expected: { scope: "climb", ropeMethod: "top_rope", qualifier: "free-flash" },
+    },
+    {
+      style: "Follow",
+      label: "Redpoint",
+      expected: { scope: "climb", ropeMethod: "follow", qualifier: "free-send" },
+    },
+    { style: "Solo", label: null, expected: { scope: "climb", ropeMethod: null, solo: true } },
+    {
+      style: "Aid",
+      label: "Onsight",
+      expected: { scope: "climb", ropeMethod: null, usedAid: true, qualifier: "aid-onsight" },
+    },
+    {
+      style: "Aid",
+      label: "Flash",
+      expected: { scope: "climb", ropeMethod: null, usedAid: true, qualifier: "aid-flash" },
+    },
+    {
+      style: "Aid",
+      label: "Redpoint",
+      expected: { scope: "climb", ropeMethod: null, usedAid: true },
+    },
+    {
+      style: "Lead",
+      label: "Frenchfree",
+      expected: { scope: "climb", ropeMethod: "lead", usedAid: true },
+    },
+    {
+      style: "Lead",
+      label: "Pinkpoint",
+      expected: {
+        scope: "climb",
+        ropeMethod: "lead",
+        usedPreplacedProtection: true,
+        qualifier: "free-send",
+      },
+    },
+    { style: null, label: "Unknown", expected: { scope: "climb", ropeMethod: null } },
+    {
+      style: "Lead",
+      label: " oNsIgHt ",
+      expected: { scope: "climb", ropeMethod: "lead", qualifier: "free-onsight" },
+    },
+  ])(
+    "preserves exact independent attempt facts $style/$label",
+    async ({ style, label, expected }) => {
+      const { db } = makeDb();
+      const result = await new OpenBetaProvider(async () =>
+        graphqlResponse({ userTicks: [tick({ style, attemptType: label })] }),
+      ).sync(makeRun(db));
+      expect(result).toMatchObject({ recordsSynced: 1, errors: [] });
+      expect(entries()[0]?.attempts).toStrictEqual([expected]);
+    },
+  );
+  it.each([
+    {
+      type: { bouldering: true, sport: false, trad: false },
+      style: null,
+      kind: "boulder",
+      protection: [],
+    },
+    {
+      type: { bouldering: false, sport: true, trad: null },
+      style: null,
+      kind: "route",
+      protection: ["sport"],
+    },
+    {
+      type: { bouldering: false, sport: null, trad: true },
+      style: null,
+      kind: "route",
+      protection: ["trad"],
+    },
+    {
+      type: { bouldering: false, sport: false, trad: false },
+      style: "Boulder",
+      kind: "boulder",
+      protection: [],
+    },
+    {
+      type: { bouldering: false, sport: false, trad: false },
+      style: "Lead",
+      kind: "route",
+      protection: [],
+    },
+    {
+      type: { bouldering: false, sport: false, trad: false },
+      style: null,
+      kind: null,
+      protection: [],
+    },
+    { type: null, style: null, kind: null, protection: null },
+  ])(
+    "preserves catalogue classification independently of method $kind/$style",
+    async ({ type, style, kind, protection }) => {
+      const { db } = makeDb();
+      const source = tick({
+        style,
+        attemptType: null,
+        grade: null,
+        climb: climb({ type, parent: null, grades: null }),
+      });
+      await new OpenBetaProvider(async () => graphqlResponse({ userTicks: [source] })).sync(
+        makeRun(db),
+      );
+      expect(entries()[0]).toStrictEqual({
+        externalId: "openbeta:tick-1",
+        climbedOn: "2026-08-10",
+        notes: "Great movement",
+        sourceName: "OpenBeta",
+        raw: source,
+        reportedGrades: [],
+        ...(kind === null ? {} : { discipline: "rock_climbing" }),
+        attempts: [{ scope: "climb", ropeMethod: style === "Lead" ? "lead" : null }],
+        climb: {
+          externalId: "climb-uuid-1",
+          name: "Sunset Arete",
+          ...(kind === null ? {} : { kind }),
+          routeProtection: protection,
+        },
+      });
+    },
+  );
+  it("retains every supplied grade scale and preserves unknown or blank grade text", async () => {
+    const { db } = makeDb();
+    await new OpenBetaProvider(async () =>
+      graphqlResponse({
+        userTicks: [
+          tick({
+            grade: "6B",
+            style: "Boulder",
+            climb: climb({
+              type: { bouldering: true, sport: null, trad: null },
+              grades: grades({
+                vscale: " V4 ",
+                font: "6B",
+                yds: "5.10a",
+                french: "6a",
+                uiaa: "6",
+                ewbank: "19",
+                brazilianCrux: "V",
+                wi: "WI4",
+              }),
+            }),
+          }),
+        ],
+      }),
+    ).sync(makeRun(db));
+    expect(entries()[0]?.climb?.publishedGrades).toEqual([
+      { value: "V4", system: "v_scale" },
+      { value: "6B", system: "font" },
+      { value: "5.10a", system: "yds" },
+      { value: "6a", system: "french" },
+      { value: "6", system: "uiaa" },
+      { value: "19", system: "ewbank" },
+      { value: "V", system: "brazilian_crux" },
+      { value: "WI4", system: "water_ice" },
+    ]);
+    expect(entries()[0]?.reportedGrades).toEqual([{ value: "6B", system: "font" }]);
+  });
+  it("uses a verified parent as the only fallback area and keeps unknown scales raw", async () => {
+    const { db } = makeDb();
+    await new OpenBetaProvider(async () =>
+      graphqlResponse({
+        userTicks: [
+          tick({
+            grade: " ",
+            climb: climb({
+              pathTokens: [],
+              ancestors: [],
+              grades: grades({ yds: "unrated", font: " " }),
+              parent: { uuid: "parent", area_name: " Wall ", metadata: { lat: 0, lng: 0 } },
+            }),
+          }),
+        ],
+      }),
+    ).sync(makeRun(db));
+    expect(entries()[0]?.climb?.areas).toStrictEqual([
+      { name: "Wall", externalId: "parent", coordinates: { latitude: 0, longitude: 0 } },
+    ]);
+    expect(entries()[0]?.climb?.publishedGrades).toStrictEqual([
+      { value: "unrated", system: null },
+    ]);
+    expect(entries()[0]?.reportedGrades).toEqual([]);
+  });
   it("resolves a public profile URL to the stable OpenBeta user UUID", async () => {
     const fetchFn = vi.fn().mockResolvedValue(
       graphqlResponse({
@@ -421,11 +616,11 @@ describe("OpenBetaProvider", () => {
     );
     expect(entries()[0]?.climb).toMatchObject({
       coordinates: { latitude: 0, longitude: -122.25 },
-      areas: [
-        { externalId: "area-country", name: "Country" },
-        { externalId: "area-wall", name: "Wall", coordinates: { latitude: 37.5, longitude: 0 } },
-      ],
     });
+    expect(entries()[0]?.climb?.areas).toStrictEqual([
+      { externalId: "area-country", name: "Country" },
+      { externalId: "area-wall", name: "Wall", coordinates: { latitude: 37.5, longitude: 0 } },
+    ]);
   });
   it("rejects disagreeing climb references before writing", async () => {
     const { db } = makeDb();
@@ -469,10 +664,10 @@ describe("OpenBetaProvider", () => {
       }),
     ).sync(makeRun(db));
     expect(entries()[0]?.climb?.pitches).toEqual([
-      expect.objectContaining({
+      {
         externalId: "pitch-zero",
         publishedGrades: [{ value: "5.10a", system: "yds" }],
-      }),
+      },
     ]);
     expect(entries()[0]?.raw).toMatchObject({
       climb: { pitches: [{ id: "pitch-zero", pitchNumber: 0 }] },

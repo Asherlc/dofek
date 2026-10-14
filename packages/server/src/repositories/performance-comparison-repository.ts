@@ -27,9 +27,9 @@ import {
   describeComparisonEvidence,
   PerformanceComparisonIdentity,
 } from "./performance-comparison-identity.ts";
+import { performanceClimbingRowSchema } from "./performance-comparison-modality-metrics.ts";
 import {
   buildPerformanceComparisonRows,
-  performanceClimbingRowSchema,
   performanceDurationSeconds,
   performanceSensorRowSchema,
   performanceStrengthRowSchema,

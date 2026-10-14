@@ -112,6 +112,215 @@ const baseRow = {
 };
 
 describe("ClimbingProgressionRepository", () => {
+  it.each([
+    { grade: null, grade_system: null },
+    { grade: "V5", grade_system: null },
+    { grade: null, grade_system: "v_scale" },
+  ])(
+    "retains participation without inventing a grade from incomplete evidence %j",
+    async (grade) => {
+      const repository = new ClimbingProgressionRepository(
+        executeDb([{ ...baseRow, ...grade, unknown_outcomes: 0 }]),
+        "00000000-0000-4000-8000-000000000002",
+        "UTC",
+      );
+      const result = await repository.listRange({
+        startDate: "2026-07-10",
+        endDate: "2026-07-10",
+        providers: [],
+        filters: {},
+        locations: [],
+        gradeSystems: [],
+        cursor: null,
+        limit: 100,
+      });
+      expect(result.daily[0]).toMatchObject({ attempts: 3, sends: 1, failed_attempts: 2 });
+      expect(result.sessions[0]?.climbing_log_entries[0]).toMatchObject({
+        ...grade,
+        normalized_grade: null,
+        recorded_attempt_count: 3,
+      });
+      expect(result.grade_distribution).toEqual([]);
+      expect(result.grade_progression).toEqual([]);
+      expect(result.hardest).toEqual({ send: null, flash: null, onsight: null });
+    },
+  );
+  it("retains failed graded attempts without reporting a hardest send or below-send volume", async () => {
+    const repository = new ClimbingProgressionRepository(
+      executeDb([{ ...baseRow, sends: 0, unknown_outcomes: 0 }]),
+      "00000000-0000-4000-8000-000000000002",
+      "UTC",
+    );
+    const result = await repository.listRange({
+      startDate: "2026-07-10",
+      endDate: "2026-07-10",
+      providers: [],
+      filters: {},
+      locations: [],
+      gradeSystems: [],
+      cursor: null,
+      limit: 100,
+    });
+    expect(result.grade_distribution[0]).toMatchObject({
+      attempts: 3,
+      sends: 0,
+      failed_attempts: 3,
+      send_rate: 0,
+      attempts_per_send: null,
+    });
+    expect(result.hardest).toEqual({ send: null, flash: null, onsight: null });
+    expect(result.grade_progression).toEqual([]);
+    expect(result.below_range_hardest_send).toMatchObject({
+      entries: 0,
+      attempts: null,
+      status: "unavailable",
+    });
+  });
+  it("counts explicit failures separately from unknown outcomes", async () => {
+    const repository = new ClimbingProgressionRepository(
+      executeDb([{ ...baseRow, unknown_outcomes: 0 }]),
+      "00000000-0000-4000-8000-000000000002",
+      "UTC",
+    );
+    const result = await repository.listRange({
+      startDate: "2026-07-10",
+      endDate: "2026-07-10",
+      providers: [],
+      filters: {},
+      locations: [],
+      gradeSystems: [],
+      cursor: null,
+      limit: 100,
+    });
+    expect(result.daily[0]).toMatchObject({
+      attempts: 3,
+      sends: 1,
+      failed_attempts: 2,
+      observed_outcomes: 3,
+    });
+    expect(result.grade_distribution[0]).toMatchObject({
+      failed_attempts: 2,
+      observed_outcomes: 3,
+      send_rate: 1 / 3,
+    });
+  });
+  it.each(["onsight", "flash"] as const)(
+    "keeps mixed attempt lanes and the first %s evidence",
+    async (label) => {
+      const attempts = [
+        climbingAttemptFixture(baseRow.entry_id, {
+          ropeMethod: "lead",
+          solo: false,
+          usedAid: false,
+          outcome: "completed",
+          fellOrHung: false,
+          attemptIndex: 1,
+          receivedBeta: label === "flash",
+        }),
+        climbingAttemptFixture(baseRow.entry_id, {
+          ropeMethod: "lead",
+          solo: false,
+          usedAid: false,
+          outcome: "failed",
+          fellOrHung: true,
+        }),
+        climbingAttemptFixture(baseRow.entry_id, {
+          ropeMethod: "top_rope",
+          solo: false,
+          usedAid: false,
+          outcome: "completed",
+          fellOrHung: false,
+        }),
+        climbingAttemptFixture(baseRow.entry_id, {
+          ropeMethod: "lead",
+          solo: true,
+          usedAid: true,
+          outcome: "completed",
+        }),
+      ];
+      const row = {
+        ...baseRow,
+        climb_kind: "route",
+        grade_system: "yds",
+        grade: "5.10a",
+        recorded_attempt_count: 4,
+        sends: 2,
+        unknown_outcomes: 0,
+        attempts: attempts.map(({ rockResultLabels, ...attempt }) => attempt),
+        attempt_observations: attempts.map((attempt, index) => ({
+          ropeMethod: attempt.ropeMethod,
+          solo: attempt.solo,
+          usedAid: attempt.usedAid,
+          sends: index === 0 || index === 2 ? 1 : 0,
+          unknownOutcomes: 0,
+          onsight: index === 0 && label === "onsight",
+          flash: index === 0 && label === "flash",
+        })),
+      };
+      const db = {
+        execute: vi
+          .fn()
+          .mockResolvedValueOnce([row])
+          .mockResolvedValueOnce([{ first_observed_date: "2026-07-10" }])
+          .mockResolvedValueOnce([{ preceding_consecutive_days: 0 }]),
+      };
+      const repository = new ClimbingProgressionRepository(
+        db,
+        "00000000-0000-4000-8000-000000000002",
+        "UTC",
+      );
+      const result = await repository.listRange({
+        startDate: "2026-07-10",
+        endDate: "2026-07-10",
+        providers: [],
+        filters: {},
+        locations: [],
+        gradeSystems: [],
+        cursor: null,
+        limit: 100,
+      });
+      expect(result.daily[0]).toMatchObject({
+        attempts: 4,
+        sends: 2,
+        failed_attempts: 1,
+        observed_outcomes: 4,
+      });
+      expect(result.grade_distribution).toMatchObject([
+        {
+          rope_method: "lead",
+          solo: false,
+          used_aid: false,
+          attempts: 2,
+          sends: 1,
+          failed_attempts: 1,
+          send_rate: 0.5,
+          attempts_per_send: 2,
+        },
+        {
+          rope_method: "top_rope",
+          solo: false,
+          used_aid: false,
+          attempts: 1,
+          sends: 1,
+          failed_attempts: 0,
+          send_rate: 1,
+          attempts_per_send: 1,
+        },
+        {
+          rope_method: "lead",
+          solo: true,
+          used_aid: true,
+          attempts: 1,
+          sends: 0,
+          failed_attempts: 0,
+          send_rate: 0,
+          attempts_per_send: null,
+        },
+      ]);
+      expect(result.hardest[label]?.grade).toBe("5.10a");
+      expect(result.hardest[label === "onsight" ? "flash" : "onsight"]).toBeNull();
+    },
+  );
   it("counts a recorded occurrence while preserving its unknown execution outcome", async () => {
     const repository = new ClimbingProgressionRepository(
       executeDb([

@@ -44,13 +44,15 @@ function row(
 ) {
   return `${date},West Overhang,${grade},Source note,https://www.mountainproject.com/route/105751342/west-overhang,1,"Colorado > Boulder > Eldorado Canyon",2.4,-1,${style},${qualifier},${type},,,1800`;
 }
-function run(provider: MountainProjectProvider) {
-  const db = makeTransactionalTestDatabase({
+function database() {
+  return makeTransactionalTestDatabase({
     select: vi.fn(),
     insert: vi.fn(),
     delete: vi.fn(),
     execute: vi.fn().mockResolvedValue([]),
   });
+}
+function run(provider: MountainProjectProvider, db = database()) {
   return provider.sync(
     new SyncRun({
       db,
@@ -75,6 +77,62 @@ afterEach(() => {
 });
 
 describe("MountainProjectProvider", () => {
+  it.each([
+    { rows: [row()], reconciles: true, synced: 1 },
+    { rows: [], reconciles: false, synced: 0 },
+    {
+      rows: [row(), row("Lead", "Redpoint", "Trad", "5.9", "2026-02-30")],
+      reconciles: false,
+      synced: 1,
+    },
+    { rows: [row("Lead", "Redpoint", "Trad", "5.9", "2026-02-30")], reconciles: false, synced: 0 },
+  ])(
+    "reconciles only complete valid nonempty discovery $reconciles/$synced",
+    async ({ rows, reconciles, synced }) => {
+      const db = database();
+      const result = await run(
+        new MountainProjectProvider(async () => new Response(csv(rows))),
+        db,
+      );
+      expect(result.recordsSynced).toBe(synced);
+      expect(db.execute).toHaveBeenCalledTimes(reconciles ? 1 : 0);
+    },
+  );
+  it.each([
+    ["https://www.mountainproject.com/route/123/name", "123"],
+    ["https://mountainproject.com/route/123", "123"],
+    ["http://mountainproject.com/route/123", null],
+    ["https://other.example/route/123", null],
+    ["https://mountainproject.com/area/123", null],
+    ["https://mountainproject.com/prefix/route/123", null],
+    ["https://mountainproject.com/route/0", null],
+    ["https://mountainproject.com/route/123suffix", null],
+    ["malformed", null],
+  ])("verifies the route URL %s before assigning a shared target", async (url, target) => {
+    const source = row().replace(
+      "https://www.mountainproject.com/route/105751342/west-overhang",
+      url,
+    );
+    await run(new MountainProjectProvider(async () => new Response(csv([source]))));
+    expect(entries()[0]?.climb?.externalId).toBe(target);
+  });
+  it("classifies mixed rock route types and graded boulders while retaining source provenance", async () => {
+    await run(
+      new MountainProjectProvider(
+        async () =>
+          new Response(csv([row("Lead", "", '"Ice, Trad"'), row("Lead", "", "Boulder", "V4")])),
+      ),
+    );
+    expect(entries().map((entry) => [entry.discipline, entry.climb?.kind])).toEqual([
+      ["rock_climbing", "route"],
+      ["rock_climbing", "boulder"],
+    ]);
+    expect(entries()[1]?.attempts).toStrictEqual([{ scope: "climb", ropeMethod: null }]);
+    expect(entries()[0]?.raw).toMatchObject({
+      "Route Type": "Ice, Trad",
+      sourceProfileId: "110186720",
+    });
+  });
   it("connects a public profile through the existing form", async () => {
     const setup = new MountainProjectProvider(async () => new Response(csv([]))).authSetup();
     expect(setup.manualToken?.kind).toBe("public-profile");
@@ -94,8 +152,8 @@ describe("MountainProjectProvider", () => {
     ["Lead", { ropeMethod: "lead" }],
     ["TR", { ropeMethod: "top_rope" }],
     ["Follow", { ropeMethod: "follow" }],
-    ["Solo", { solo: true }],
-    ["Aid", { usedAid: true }],
+    ["Solo", { ropeMethod: null, solo: true }],
+    ["Aid", { ropeMethod: null, usedAid: true }],
   ])("maps source method %s independently of result", async (style, facts) => {
     await run(
       new MountainProjectProvider(async () => new Response(csv([row(style, "Fell/Hung")]))),
@@ -116,6 +174,9 @@ describe("MountainProjectProvider", () => {
         ],
       },
     });
+    expect(entries()[0]?.attempts).toStrictEqual([
+      { scope: "climb", ...facts, qualifier: "fell-hung" },
+    ]);
   });
   it.each([
     ["Sport", ["sport"]],

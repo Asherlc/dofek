@@ -1,5 +1,6 @@
-import type { z } from "zod";
-import type { performanceClimbingRowSchema } from "./performance-comparison-result.ts";
+import { FREE_ROCK_GRADE_SYSTEMS } from "@dofek/training/climbing-grades";
+import { attemptScopeSchema, ropeMethodSchema } from "@dofek/training/climbing-log";
+import { z } from "zod";
 
 export interface StrengthComparisonRow {
   activity_id: string;
@@ -14,6 +15,27 @@ export interface StrengthComparisonRow {
   reps: number | null;
   rpe: number | null;
 }
+
+export const performanceClimbingRowSchema = z.object({
+  activity_id: z.uuid(),
+  entry_id: z.uuid(),
+  entry_activity_id: z.uuid(),
+  entry_provider: z.string(),
+  external_id: z.string().nullable(),
+  climb_kind: z.enum(["boulder", "route"]),
+  grade_system: z.enum(FREE_ROCK_GRADE_SYSTEMS).nullable(),
+  grade: z.string().nullable(),
+  attempt_scope: attemptScopeSchema,
+  pitch_number: z.coerce.number().int().positive().nullable(),
+  recorded_attempt_count: z.coerce.number().int().positive(),
+  sends: z.coerce.number().int().nonnegative(),
+  unknown_outcomes: z.coerce.number().int().nonnegative(),
+  rope_method: ropeMethodSchema.nullable(),
+  solo: z.boolean().nullable(),
+  wall_angle_degrees: z.coerce.number().nullable(),
+  climb_name: z.string().nullable(),
+  location_name: z.string().nullable(),
+});
 
 export type ClimbingComparisonRow = z.infer<typeof performanceClimbingRowSchema>;
 

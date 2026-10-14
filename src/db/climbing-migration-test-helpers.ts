@@ -1,8 +1,10 @@
 import type { Client } from "pg";
 
 export async function resetLegacyClimbingTables(client: Client): Promise<void> {
-  await client.query(`DROP TABLE fitness.climbing_attempt CASCADE;
-    DROP TABLE fitness.climbing_entry CASCADE;
+  await client.query(`DROP TABLE IF EXISTS
+      fitness.climbing_log_entry_grade, fitness.pitch_grade, fitness.climb_grade,
+      fitness.climbing_attempt, fitness.pitch, fitness.climb, fitness.area,
+      fitness.climbing_log_entry, fitness.climbing_entry CASCADE;
     CREATE TABLE fitness.climbing_entry (
       id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
       user_id uuid NOT NULL REFERENCES fitness.user_profile(id), provider_id text NOT NULL,
