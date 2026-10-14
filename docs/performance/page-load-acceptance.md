@@ -45,7 +45,8 @@ signed-in user, `identifyPostHogUser` calls `posthog.opt_in_capturing()` before
 `identify`. Thus sign-in removes an earlier opt-out on that device. Sign-out
 keeps an existing opt-out, and account erasure resets the SDK and opts the
 device out. PostHog documents these opt-out and opt-in calls in
-[Controlling data collection](https://posthog.com/docs/privacy/data-collection#opting-in-and-out). SDK transport metadata retains the public project token, event UUID,
+[Controlling data collection](https://posthog.com/docs/privacy/data-collection#opting-in-and-out).
+SDK transport metadata retains the public project token, event UUID,
 optional timestamp, existing device ID as `distinct_id`, and
 `$process_person_profile: false`. The readiness-specific `before_send` filter
 removes raw account IDs, URLs/query strings/referrers, health values, request

@@ -109,10 +109,10 @@ Release A keeps the existing reader.
 reads `ingest.metric_stream FINAL` directly for one user's local calendar day,
 with user, channel and recorded-time predicates.
 
-The candidate-key reader below is the planned Release B reader. It is not in
-the committed repository code. It selects candidate raw replacement keys for
-one user's local calendar day using the `by_user_channel_recorded_at` covering
-projection, then reads those keys with native `FINAL`. Candidate predicates use only user, channel and recorded time;
+The candidate-key reader below is the planned Release B reader. It selects
+candidate raw replacement keys for one user's local calendar day using the
+`by_user_channel_recorded_at` covering projection, then reads those keys with
+native `FINAL`. Candidate predicates use only user, channel and recorded time;
 deleted, zero and null revisions remain candidates. Deletion and positive-value
 filters follow winner selection. Sources remain separate, and minute averaging
 and source summary statistics retain the existing response contract.
