@@ -1,7 +1,4 @@
-export interface GpsCoordinates {
-  latitude: number;
-  longitude: number;
-}
+import type { GpsCoordinates } from "./gps-coordinates.ts";
 
 export interface ClimbingMapLocation {
   coordinates: GpsCoordinates;

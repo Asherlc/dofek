@@ -1,6 +1,7 @@
 import { providerSourceLabel } from "@dofek/providers/providers";
 import { statusColors } from "@dofek/scoring/colors";
-import type { ClimbingMapMarker, GpsCoordinates } from "@dofek/training/climbing-map";
+import type { ClimbingMapMarker } from "@dofek/training/climbing-map";
+import type { GpsCoordinates } from "@dofek/training/gps-coordinates";
 import { useEffect, useRef, useState } from "react";
 import { captureException } from "../lib/telemetry.ts";
 
