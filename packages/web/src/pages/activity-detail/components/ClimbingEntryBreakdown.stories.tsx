@@ -226,7 +226,7 @@ export const RepeatedPoint: Story = {
     if (!dot) throw new Error("Expected repeated source dot");
     const bounds = dot.getBoundingClientRect();
     // Leaflet copies enumerable MouseEvent coordinates for its synthetic preclick;
-    // user-event shadows those coordinates with nonenumerable properties.
+    // user-event shadows those coordinates with properties set to enumerable: false.
     dot.dispatchEvent(
       new MouseEvent("click", {
         bubbles: true,

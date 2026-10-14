@@ -19,7 +19,7 @@ describe("ClimbingEntryCard", () => {
     expect(screen.getByRole("listitem")).toHaveTextContent("Entry 3");
     expect(screen.getByRole("listitem")).toHaveAttribute("aria-current", "true");
   });
-  it("preserves a tick action without inventing GPS for a locationless tick", () => {
+  it("preserves a tick action without inventing GPS for a tick without a location", () => {
     const onAttach = vi.fn();
     render(
       <ClimbingEntryCard entryId="indoor" name="Board tick" location={undefined}>
