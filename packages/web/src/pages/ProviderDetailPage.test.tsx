@@ -85,7 +85,7 @@ interface MockProvider {
   description?: string;
   needsReauth?: boolean;
   pushOnly?: boolean;
-  tokenAuth?: { label: string; instructionsUrl: string } | null;
+  tokenAuth?: ProviderManualConnectionMetadata | null;
 }
 
 type MockProviderStats = ProviderStats & { providerId: string };
@@ -1239,10 +1239,38 @@ describe("ProviderDetailPage import-only providers", () => {
         lastSyncedAt: null,
         importOnly: false,
         needsReauth: true,
-        tokenAuth: { label: "Access token", instructionsUrl: "https://example.com/token" },
+        tokenAuth: {
+          kind: "access-token",
+          label: "Access token",
+          instructionsUrl: "https://example.com/token",
+        },
       },
     ];
     rerender(<ProviderDetailPage />);
+    fireEvent.click(screen.getByRole("button", { name: "Reconnect Ultrahuman" }));
+    expect(screen.getByText("Token reconnect form")).toBeTruthy();
+  });
+
+  it("reconnects a public profile through the shared connection form", async () => {
+    mockUseParams.mockReturnValue({ id: "ultrahuman" });
+    mockProviders.data = [
+      {
+        id: "ultrahuman",
+        name: "Ultrahuman",
+        authorized: false,
+        authType: "public-profile",
+        lastSyncedAt: null,
+        importOnly: false,
+        needsReauth: true,
+        tokenAuth: {
+          kind: "public-profile",
+          label: "Public profile URL",
+          instructionsUrl: "https://example.com/profiles",
+        },
+      },
+    ];
+    const { ProviderDetailPage } = await import("./ProviderDetailPage");
+    render(<ProviderDetailPage />);
     fireEvent.click(screen.getByRole("button", { name: "Reconnect Ultrahuman" }));
     expect(screen.getByText("Token reconnect form")).toBeTruthy();
   });
@@ -1569,3 +1597,5 @@ describe("WhoopWearLocationPicker", () => {
     expect(mockCaptureException).toHaveBeenCalledTimes(1);
   });
 });
+
+import type { ProviderManualConnectionMetadata } from "@dofek/providers/provider-connection";

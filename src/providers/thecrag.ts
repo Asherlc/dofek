@@ -355,6 +355,7 @@ export class TheCragProvider implements SyncProvider {
     return {
       apiBaseUrl: API_BASE_URL,
       manualToken: {
+        kind: "access-token",
         label: "Personal API key (active supporter required)",
         instructionsUrl: "https://www.thecrag.com/en/article/logbookreadapi",
         exchangeToken: async (input): Promise<TokenSet> => {

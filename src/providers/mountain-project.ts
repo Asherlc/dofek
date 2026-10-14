@@ -64,6 +64,7 @@ export class MountainProjectProvider implements SyncProvider {
       apiBaseUrl: MOUNTAIN_PROJECT_BASE_URL,
       // Mountain Project has no user API token; manualToken stores the public profile identifier.
       manualToken: {
+        kind: "public-profile",
         label: "Mountain Project profile URL",
         instructionsUrl: "https://www.mountainproject.com/",
         exchangeToken: async (input: string): Promise<TokenSet> => {

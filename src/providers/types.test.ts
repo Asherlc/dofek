@@ -22,6 +22,37 @@ const dummyOAuthConfig = {
 };
 
 describe("getProviderAuthTypeFromSetup", () => {
+  it.each(["mountain-project", "openbeta"])(
+    "classifies the existing %s public profile connection",
+    async (providerId) => {
+      const provider =
+        providerId === "mountain-project"
+          ? new (await import("./mountain-project.ts")).MountainProjectProvider()
+          : new (await import("./openbeta.ts")).OpenBetaProvider();
+      expect(getProviderAuthTypeFromSetup(provider.authSetup())).toBe("public-profile");
+    },
+  );
+
+  it("classifies profile identity separately from access tokens", () => {
+    const provider = stubProvider({
+      authSetup: () => ({
+        manualToken: {
+          kind: "public-profile",
+          label: "Public profile URL",
+          instructionsUrl: "https://example.com/profiles",
+          exchangeToken: async () => ({
+            accessToken: "182146",
+            providerAccountId: "182146",
+            refreshToken: null,
+            expiresAt: new Date("2099-01-01T00:00:00Z"),
+            scopes: null,
+          }),
+        },
+      }),
+    });
+    expect(getProviderAuthTypeFromSetup(provider.authSetup?.())).toBe("public-profile");
+  });
+
   it("returns 'none' when authSetup is not defined", () => {
     const provider = stubProvider();
     expect(getProviderAuthTypeFromSetup(provider.authSetup?.())).toBe("none");
@@ -53,6 +84,7 @@ describe("getProviderAuthTypeFromSetup", () => {
   it("returns 'token' when manual token authentication is defined", () => {
     const setup: ProviderAuthSetup = {
       manualToken: {
+        kind: "access-token",
         label: "Personal API token",
         instructionsUrl: "https://example.com/settings/api-token",
         exchangeToken: async () => ({
@@ -77,6 +109,7 @@ describe("getProviderAuthTypeFromSetup", () => {
         scopes: null,
       }),
       manualToken: {
+        kind: "access-token",
         label: "Personal API token",
         instructionsUrl: "https://example.com/settings/api-token",
         exchangeToken: async () => ({

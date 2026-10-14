@@ -5,7 +5,7 @@ import { loadTokens } from "../db/tokens.ts";
 import { executeWithSchema } from "../db/typed-sql.ts";
 import { listUserExternalEffects } from "../db/user-external-effect.ts";
 import { getAllProviders } from "../providers/index.ts";
-import type { Provider } from "../providers/types.ts";
+import { getProviderAuthTypeFromSetup, type Provider } from "../providers/types.ts";
 import {
   decryptCredentialValue,
   encryptCredentialValue,
@@ -198,6 +198,12 @@ async function loadProviderConnections(
         throw new ProviderRevocationPrerequisiteError(
           `Dofek cannot verify the ${connection.provider_id} connection for account deletion. Contact support before retrying.`,
         );
+      }
+      if (getProviderAuthTypeFromSetup(provider.authSetup?.()) === "public-profile") {
+        return {
+          disposition: "no_remote_authorization" as const,
+          providerId: connection.provider_id,
+        };
       }
       const tokens = await loadTokens(database, connection.provider_id, userId);
       if (!tokens) {

@@ -105,6 +105,9 @@ importers:
       '@dofek/provider-http':
         specifier: workspace:*
         version: link:packages/provider-http
+      '@dofek/providers':
+        specifier: workspace:*
+        version: link:packages/providers-meta
       '@dofek/scoring':
         specifier: workspace:*
         version: link:packages/scoring

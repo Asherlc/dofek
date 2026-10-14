@@ -23,6 +23,7 @@ const localOnlyUserId = "90000000-0000-4000-8000-000000001995";
 const legacyWithingsUserId = "a0000000-0000-4000-8000-000000001995";
 const withingsUserId = "b0000000-0000-4000-8000-000000001995";
 const zivaUserId = "c0000000-0000-4000-8000-000000001995";
+const publicProfileUserId = "d0000000-0000-4000-8000-000000001995";
 const storedAccountRowSchema = z.object({
   provider_account_id: z.string().min(1),
 });
@@ -36,6 +37,28 @@ const authProviderDefinitions = [
   ["withings", "Withings"],
 ] as const;
 const providers: Provider[] = [
+  ...["mountain-project", "openbeta"].map(
+    (providerId): Provider => ({
+      id: providerId,
+      name: providerId,
+      validate: () => null,
+      authSetup: () => ({
+        manualToken: {
+          kind: "public-profile",
+          label: "Public profile URL",
+          instructionsUrl: "https://example.com/profiles",
+          exchangeToken: async () => ({
+            accessToken: "182146",
+            providerAccountId: "182146",
+            refreshToken: null,
+            expiresAt: new Date("2099-01-01T00:00:00Z"),
+            scopes: null,
+          }),
+        },
+      }),
+      sync: async () => ({ provider: providerId, recordsSynced: 0, duration: 0, errors: [] }),
+    }),
+  ),
   ...authProviderDefinitions.map(
     ([providerId, providerName]): Provider => ({
       authSetup: () => ({}),
@@ -77,6 +100,7 @@ describe("account-erasure remote snapshot persistence (integration)", () => {
             (${localOnlyUserId}::uuid, 'Local-only Snapshot User'),
             (${legacyWithingsUserId}::uuid, 'Legacy Withings Snapshot User'),
             (${withingsUserId}::uuid, 'Withings Snapshot User'),
+            (${publicProfileUserId}::uuid, 'Public Profile Snapshot User'),
             (${zivaUserId}::uuid, 'Ziva Snapshot User')`,
     );
     await ensureProvider(
@@ -145,6 +169,21 @@ describe("account-erasure remote snapshot persistence (integration)", () => {
       decathlonUserId,
     );
     await ensureProvider(context.db, "ziva", "Ziva", "https://connect.ziva.fit/mcp", zivaUserId);
+    for (const providerId of ["mountain-project", "openbeta"]) {
+      await ensureProvider(context.db, providerId, providerId, undefined, publicProfileUserId);
+      await saveTokens(
+        context.db,
+        providerId,
+        {
+          accessToken: "182146",
+          providerAccountId: "182146",
+          refreshToken: null,
+          expiresAt: new Date("2099-01-01T00:00:00Z"),
+          scopes: null,
+        },
+        publicProfileUserId,
+      );
+    }
     await saveTokens(
       context.db,
       "polar",
@@ -251,6 +290,21 @@ describe("account-erasure remote snapshot persistence (integration)", () => {
 
   afterAll(async () => {
     await context?.cleanup();
+  });
+
+  it("snapshots public profiles without remote authorization", async () => {
+    const encrypted = await context.db.transaction((transaction) =>
+      createEncryptedAccountErasureSnapshot(transaction, publicProfileUserId, providers),
+    );
+    const snapshot = await decryptAccountErasureSnapshot(encrypted, publicProfileUserId);
+    expect(snapshot.providerConnections).toEqual([
+      { providerId: "mountain-project", disposition: "no_remote_authorization" },
+      { providerId: "openbeta", disposition: "no_remote_authorization" },
+    ]);
+    expect(await loadTokens(context.db, "mountain-project", publicProfileUserId)).toMatchObject({
+      accessToken: "182146",
+      providerAccountId: "182146",
+    });
   });
 
   it("encrypts the durable Polar account id and includes it in the encrypted snapshot", async () => {

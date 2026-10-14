@@ -423,6 +423,7 @@ const tokenProvider = {
   name: "Wger",
   authType: "token",
   tokenAuth: {
+    kind: "access-token",
     label: "JWT refresh token",
     instructionsUrl: "https://wger.readthedocs.io/en/latest/api/api.html#jwt-tokens",
   },
@@ -985,26 +986,41 @@ describe("ProviderDetailScreen", () => {
       });
     });
 
-    it("opens and submits personal token auth for a token provider", async () => {
-      mockUseLocalSearchParams.mockReturnValue({ id: "wger" });
-      mockProvidersQuery.mockReturnValue({ data: [tokenProvider], isLoading: false });
-      mockTokenConnect.mockResolvedValue({ success: true });
-      const { default: ProviderDetailScreen } = await import("../../app/providers/[id]");
-      render(<ProviderDetailScreen />);
-
-      fireEvent.click(screen.getByText("Connect"));
-      fireEvent.change(screen.getByPlaceholderText("JWT refresh token"), {
-        target: { value: "personal-refresh" },
-      });
-      fireEvent.click(screen.getByRole("button", { name: "Connect Wger" }));
-
-      await waitFor(() => {
-        expect(mockTokenConnect).toHaveBeenCalledWith({
-          providerId: "wger",
-          token: "personal-refresh",
+    it.each(["token", "public-profile"])(
+      "opens and submits the %s connection form",
+      async (authType) => {
+        mockUseLocalSearchParams.mockReturnValue({ id: "wger" });
+        mockProvidersQuery.mockReturnValue({
+          data: [
+            {
+              ...tokenProvider,
+              authType,
+              tokenAuth: {
+                ...tokenProvider.tokenAuth,
+                kind: authType === "public-profile" ? "public-profile" : "access-token",
+              },
+            },
+          ],
+          isLoading: false,
         });
-      });
-    });
+        mockTokenConnect.mockResolvedValue({ success: true });
+        const { default: ProviderDetailScreen } = await import("../../app/providers/[id]");
+        render(<ProviderDetailScreen />);
+
+        fireEvent.click(screen.getByText("Connect"));
+        fireEvent.change(screen.getByPlaceholderText("JWT refresh token"), {
+          target: { value: "personal-refresh" },
+        });
+        fireEvent.click(screen.getByRole("button", { name: "Connect Wger" }));
+
+        await waitFor(() => {
+          expect(mockTokenConnect).toHaveBeenCalledWith({
+            providerId: "wger",
+            token: "personal-refresh",
+          });
+        });
+      },
+    );
 
     it("surfaces and reports missing personal-token metadata", async () => {
       mockUseLocalSearchParams.mockReturnValue({ id: "wger" });

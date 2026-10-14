@@ -1,5 +1,6 @@
 import { formatDateYmd } from "@dofek/format/format";
 import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
+import type { ProviderManualConnectionMetadata } from "@dofek/providers/provider-connection";
 import * as WebBrowser from "expo-web-browser";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAppleHealthProviderModel } from "../../lib/apple-health-provider";
@@ -16,7 +17,7 @@ interface ProviderRecord {
   id: string;
   name: string;
   authType: string;
-  tokenAuth?: { label: string; instructionsUrl: string } | null;
+  tokenAuth?: ProviderManualConnectionMetadata | null;
   authorized: boolean;
   importOnly: boolean;
   pushOnly: boolean;
@@ -28,7 +29,7 @@ export interface DisplayProvider {
   id: string;
   name: string;
   authType: string;
-  tokenAuth?: { label: string; instructionsUrl: string } | null;
+  tokenAuth?: ProviderManualConnectionMetadata | null;
   authorized: boolean;
   importOnly: boolean;
   pushOnly: boolean;
@@ -40,10 +41,7 @@ interface CredentialAuthProvider {
   name: string;
 }
 
-interface TokenAuthProvider extends CredentialAuthProvider {
-  label: string;
-  instructionsUrl: string;
-}
+interface TokenAuthProvider extends CredentialAuthProvider, ProviderManualConnectionMetadata {}
 
 export interface ProviderDetailModals {
   credentialAuthProvider: CredentialAuthProvider | null;
@@ -259,9 +257,11 @@ export function useProviderDetailActions(
       case "credential":
         setCredentialAuthProvider({ id: displayProvider.id, name: displayProvider.name });
         break;
+      case "public-profile":
       case "token":
         if (displayProvider.tokenAuth) {
           setTokenAuthProvider({
+            kind: displayProvider.tokenAuth.kind,
             id: displayProvider.id,
             name: displayProvider.name,
             label: displayProvider.tokenAuth.label,

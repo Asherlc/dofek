@@ -26,6 +26,11 @@ The `ProviderStats` interface tracks counts for 9 data types. `providerStatsBrea
 
 ### Provider Health
 
+The [manual connection contract](src/provider-connection.ts) distinguishes public
+profile identity from an access token. Both clients use that capability to show
+profile input as text and protect access-token input, without inferring the
+connection kind from the provider's name or catalog entry.
+
 Use [`providerHealth`](src/provider-health.ts) as the shared presentation contract for web and
 mobile provider status. It keeps connection state separate from authorization state and exposes
 `requiresReconnect` as the canonical signal for reconnect actions. Providers requiring reconnection

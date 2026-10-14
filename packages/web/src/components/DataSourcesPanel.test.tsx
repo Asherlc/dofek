@@ -549,38 +549,42 @@ describe("DataSourcesPanel", () => {
     expect(screen.queryByTestId("provider-card-whoop")).toBeNull();
   });
 
-  it("opens personal token auth with server-provided instructions", () => {
-    mockProvidersQuery.mockReturnValue({
-      data: [
-        {
-          id: "wger",
-          name: "Wger",
-          authorized: false,
-          authType: "token",
-          tokenAuth: {
-            label: "JWT refresh token",
-            instructionsUrl: "https://wger.readthedocs.io/en/latest/api/api.html#jwt-tokens",
+  it.each(["token", "public-profile"])(
+    "opens the %s connection form with server instructions",
+    (authType) => {
+      mockProvidersQuery.mockReturnValue({
+        data: [
+          {
+            id: "wger",
+            name: "Wger",
+            authorized: false,
+            authType,
+            tokenAuth: {
+              kind: authType === "public-profile" ? "public-profile" : "access-token",
+              label: "JWT refresh token",
+              instructionsUrl: "https://wger.readthedocs.io/en/latest/api/api.html#jwt-tokens",
+            },
+            importOnly: false,
+            pushOnly: false,
+            needsReauth: false,
           },
-          importOnly: false,
-          pushOnly: false,
-          needsReauth: false,
-        },
-      ],
-      isLoading: false,
-      error: null,
-    });
+        ],
+        isLoading: false,
+        error: null,
+      });
 
-    render(<DataSourcesPanel />);
-    fireEvent.click(
-      within(screen.getByTestId("provider-card-wger")).getByRole("button", { name: "Sync" }),
-    );
+      render(<DataSourcesPanel />);
+      fireEvent.click(
+        within(screen.getByTestId("provider-card-wger")).getByRole("button", { name: "Sync" }),
+      );
 
-    expect(
-      screen.getByText(
-        "Wger JWT refresh token https://wger.readthedocs.io/en/latest/api/api.html#jwt-tokens",
-      ),
-    ).toBeTruthy();
-  });
+      expect(
+        screen.getByText(
+          "Wger JWT refresh token https://wger.readthedocs.io/en/latest/api/api.html#jwt-tokens",
+        ),
+      ).toBeTruthy();
+    },
+  );
 
   it("surfaces and reports missing personal-token metadata", () => {
     mockProvidersQuery.mockReturnValue({

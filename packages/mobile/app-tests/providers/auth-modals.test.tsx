@@ -62,6 +62,21 @@ import {
 } from "../../components/providers/auth-modals";
 
 describe("provider auth modals", () => {
+  it("shows an unfamiliar public profile identity as visible text", () => {
+    render(
+      <TokenAuthModal
+        kind="public-profile"
+        providerId="public-profile"
+        providerName="Public Profile"
+        tokenLabel="Public profile URL"
+        instructionsUrl="https://example.com/profiles"
+        onClose={vi.fn()}
+        onSuccess={vi.fn()}
+      />,
+    );
+    expect(screen.getByPlaceholderText("Public profile URL").getAttribute("type")).toBe("text");
+  });
+
   beforeEach(() => {
     credentialSignIn.mockReset();
     tokenConnect.mockReset();
@@ -78,6 +93,7 @@ describe("provider auth modals", () => {
   ])("uses the appropriate input visibility for %s", (providerId, label, inputType) => {
     render(
       <TokenAuthModal
+        kind={providerId === "openbeta" ? "public-profile" : "access-token"}
         providerId={providerId}
         providerName={providerId}
         tokenLabel={label}
@@ -151,6 +167,7 @@ describe("provider auth modals", () => {
   it("uses a distinct disabled treatment and guidance until a token is entered", () => {
     render(
       <TokenAuthModal
+        kind="access-token"
         providerId="wger"
         providerName="Wger"
         tokenLabel="JWT refresh token"
@@ -244,6 +261,7 @@ describe("provider auth modals", () => {
     const onSuccess = vi.fn();
     render(
       <TokenAuthModal
+        kind="access-token"
         providerId="wger"
         providerName="Wger"
         tokenLabel="JWT refresh token"
@@ -273,6 +291,7 @@ describe("provider auth modals", () => {
     tokenConnect.mockRejectedValue(error);
     render(
       <TokenAuthModal
+        kind="access-token"
         providerId="ultrahuman"
         providerName="Ultrahuman"
         tokenLabel="Personal API token"
@@ -306,6 +325,7 @@ describe("provider auth modals", () => {
     const onSuccess = vi.fn();
     render(
       <TokenAuthModal
+        kind="access-token"
         providerId="wger"
         providerName="Wger"
         tokenLabel="JWT refresh token"

@@ -8,7 +8,8 @@ This directory contains implementations for various data providers (fitness trac
 
 - **Provider Interface**: All providers implement the `Provider` interface (defined in `types.ts`).
 - **Sync vs Import**: Providers are either `SyncProvider` (fetches data via API) or `ImportProvider` (processes uploaded files).
-- **Authentication**: Supports OAuth 2.0 (`oauth`), OAuth 1.0 (`oauth1`), personal token (`token`), and credential-based (`credential`) authentication. **New sync providers must authenticate per user** — see `docs/adding-a-provider.md` and `provider-auth-policy.ts`.
+- **Connections**: Supports OAuth 2.0 (`oauth`), OAuth 1.0 (`oauth1`), personal token (`token`), credentials (`credential`), and public profile identity (`public-profile`). Each sync provider connects per user through the [provider contract](types.ts) and [auth policy](provider-auth-policy.ts); see [the provider guide](../../docs/adding-a-provider.md).
+- **Manual connections**: `manualToken.kind` distinguishes `public-profile` from `access-token`. Both use the existing connect form and encrypted identity/token repository; [account-erasure snapshotting](../account-erasure/remote-snapshot.ts) marks public-profile connections as `no_remote_authorization`, including identities stored before this classification was added.
 - **Webhooks**: Many providers (Strava, Fitbit, Oura) support real-time updates via webhooks (`WebhookProvider`).
 
 ## Implementation Details
