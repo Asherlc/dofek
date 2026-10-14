@@ -137,7 +137,7 @@ services:
       start_period: 30s
 
   peerdb-minio-lifecycle:
-    image: amazon/aws-cli:2.37.1@sha256:b0dd5a4d216a1786863541a201baa7b7b4c5032bec9c6e72c38d01cafd7e8db8
+    image: amazon/aws-cli:2.37.10@sha256:3dacc5db57c923c4223e949795f538ecf1f2212b2b7d5a028b47b97f91564c0d
     environment:
       AWS_ACCESS_KEY_ID: peerdb
       AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-peerdblocaldev}
