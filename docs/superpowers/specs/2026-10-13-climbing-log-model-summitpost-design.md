@@ -3,6 +3,8 @@
 Status: domain model approved in conversation on 2026-10-13. This written
 specification consolidates that model, its migration, and SummitPost ingestion.
 Coordinate storage uses PostgreSQL's native point type as requested.
+Activity-detail maps and the Climbs card grid reflect the user's clarification
+on 2026-10-13.
 Implementation follows review of this specification and its written plan.
 
 ## Intended outcome
@@ -11,6 +13,11 @@ Import all of the connecting user's SummitPost logs, including hikes,
 scrambles, mountaineering, rock climbs, and unsuccessful outings. Use the same
 canonical model as existing climbing ticks, with appropriate server queries
 and UI filters on web and mobile.
+
+On the activity details page, show GPS-backed climbs as dots on the activity
+map. Present the activity's Climbs section as a responsive grid of tick cards;
+each tick with a source location also shows a compact map with one point.
+Implement the same behavior on web and mobile.
 
 The agreed vocabulary is:
 
@@ -494,6 +501,59 @@ Register metadata, settings, worker/server entries, exports, and queue policy.
 
 ## Serving, web, and mobile
 
+### Activity-detail climb maps and grid
+
+The map and grid changes belong on the **activity details page**, in its
+**Climbs** section. Replace its attached-climb rows and unattached-tick
+suggestion rows with responsive card grids on both platforms. Use one column
+where needed for readable cards and more columns as available width permits.
+Preserve source order, repeated log occurrences, source links, and each
+suggestion's independent Attach button, pending state, and actionable error.
+Cards show the Climb name, available grade, location, and recorded result;
+supporting notes and provenance remain in details or existing disclosures.
+
+Show the attached ticks with verified source coordinates as dots on one
+activity-detail map. Retain the activity's recorded GPS route when available
+and overlay the climb dots; source points also support a map when the activity
+has no sensor GPS. Fit the map to its available route and points. Only attached
+ticks contribute to this map; attaching a suggestion updates both the grid
+and the map. Dots identify their tick cards by Climb name and log-entry
+identity, including separate occurrences at the same coordinates. Unrelated
+climb points do not form a connected route.
+
+Every attached tick and unattached suggestion with a verified source location
+also displays a compact map with one dot in its own card. Keep cards without
+coordinates usable without a map. A source location is resolved on the server
+from `Climb.coordinates`, or from the nearest containing Area with coordinates
+when the Climb has none. Return the owning object's identity, name, provider,
+and point scope with the coordinates. Label a containing place as **Area
+location**, so a gym or bounding-box center is not presented as an exact Climb
+point. Keep the coordinates on their canonical owner; this serving projection
+does not copy them into log-entry storage.
+
+Recorded activity GPS and provider-supplied Climb/Area points retain separate
+provenance. Activity GPS does not supply a missing tick location, and a source
+point does not establish a measured activity route. Resolve locations for
+attached logs and suggestions through the same shared contract, preserving
+user/provider ownership and activity visibility. Missing coordinates remain
+null, zero is valid, and invalid coordinate pairs fail boundary validation.
+
+Reuse the existing map stack and
+[server tile-preview helper](../../../packages/server/src/lib/osm-tile.ts).
+Expose projected dot positions separately from its connected `routePath`,
+with viewport fitting performed on the server. Leaflet supports independent
+[circle markers](https://leafletjs.com/reference.html#circlemarker), and the
+existing native stack supports
+[markers](https://github.com/react-native-maps/react-native-maps/blob/master/docs/marker.md).
+No additional map dependency or geocoding service is required. Tile previews
+must retain visible attribution, ordinary browser caching, and lazy loading
+under the [OpenStreetMap tile usage policy](https://operations.osmfoundation.org/policies/tiles/).
+Provide readable map labels and keep tick identity and actions accessible
+through the cards. A tile-load error leaves the card and Attach action usable
+and shows a specific map-unavailable state.
+
+### Provider records and analytics
+
 Use **Data Sources → Provider → Records → Climbing log** on both platforms.
 The generic query includes every retained log, including ungraded, undated,
 and unclassified records. Rows show Climb name, recorded day, and recorded
@@ -598,6 +658,16 @@ connection/records/detail/attachment interactions. Provider parser tests use
 verified HTML; network-level integration fixtures cover pagination, ownership,
 replies, repeats, missing fields, malformed responses, and actionable errors.
 
+Map acceptance covers activity-detail climb dots with and without a recorded
+GPS route, one-point tick maps, exact Climb versus containing-Area labels,
+missing and zero-valued coordinates, repeated ticks at the same point, and
+ownership isolation. Executable database tests verify shared point resolution
+for attached logs and suggestions. Web and mobile interaction tests verify the
+responsive Climbs grid, preserved source links, Attach pending/error states,
+and map updates after attachment. Add paired Storybook states for point maps,
+no GPS, loading, map errors, and narrow/wide grids; visually review both
+platforms before implementation completion.
+
 Run full lint, all package typechecks, focused unit/mobile tests, and required
 database integrations before implementation pushes. Do not add static tests
 whose only purpose is proving old names disappeared; review the cleanup diff
@@ -606,5 +676,7 @@ and compile every consumer.
 Completion requires one canonical entity model everywhere, no obsolete active
 storage/contracts, preserved source identities and outcomes, the approved
 shared-grade/location behavior and setting changes, stored source coordinates,
-and import of all verified SummitPost signed-log categories. Fixture-only
-verification does not establish a successful sync of the supplied profile.
+activity-detail climb dots, tick point maps, the Climbs card grid on both
+platforms, and import of all verified SummitPost signed-log categories.
+Fixture-only verification does not establish a successful sync of the supplied
+profile.
