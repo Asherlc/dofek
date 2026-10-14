@@ -176,6 +176,7 @@ const mockProcessingStatusInvalidate = vi.fn();
 const mockProcessingDismissMutation = { mutate: vi.fn(), isPending: false, error: null };
 const mockPollSyncJob = vi.fn();
 const mockSyncStatusFetch = vi.fn();
+const mockRecordDetailQuery = vi.fn();
 
 vi.mock("../lib/trpc.ts", () => ({
   trpc: {
@@ -198,6 +199,7 @@ vi.mock("../lib/trpc.ts", () => ({
       logFilterOptions: { useQuery: () => ({ data: {}, isLoading: false }) },
       availableDataTypes: { useQuery: () => mockAvailableDataTypes },
       records: { useQuery: () => mockRecords },
+      recordDetail: { useQuery: (...args: unknown[]) => mockRecordDetailQuery(...args) },
       recordFilterOptions: { useQuery: () => ({ data: {}, isLoading: false }) },
     },
     settings: {
@@ -250,6 +252,7 @@ beforeEach(() => {
   mockStats.data = [];
   mockStats.error = null;
   mockRecords.data = { rows: [], columns: [] };
+  mockRecordDetailQuery.mockReset().mockReturnValue({ data: null, error: null, isLoading: false });
   mockRecords.isLoading = false;
   mockRecords.isError = false;
   mockRecords.error = null;
@@ -1386,6 +1389,11 @@ describe("ProviderDetailPage activity records", () => {
   });
 
   it("links from an activity record modal to the activity detail page", async () => {
+    mockRecordDetailQuery.mockReturnValue({
+      data: { id: "activity-123", name: "Morning Ride" },
+      error: null,
+      isLoading: false,
+    });
     mockUseParams.mockReturnValue({ id: "wahoo" });
     mockProviders.data = [
       {
@@ -1410,6 +1418,7 @@ describe("ProviderDetailPage activity records", () => {
         nutritionDaily: 0,
         healthEvents: 0,
         clinicalRecords: 0,
+        climbingLogEntries: 0,
       },
     ];
     mockRecords.data = {
@@ -1421,6 +1430,11 @@ describe("ProviderDetailPage activity records", () => {
     render(<ProviderDetailPage />);
 
     fireEvent.click(screen.getByText("Morning Ride"));
+    expect(mockRecordDetailQuery).toHaveBeenCalledWith({
+      providerId: "wahoo",
+      dataType: "activities",
+      recordId: "activity-123",
+    });
 
     expect(screen.getByRole("link", { name: "Open activity" }).getAttribute("href")).toBe(
       "/activity/activity-123",

@@ -1,3 +1,6 @@
+import type { z } from "zod";
+import type { performanceClimbingRowSchema } from "./performance-comparison-result.ts";
+
 export interface StrengthComparisonRow {
   activity_id: string;
   set_id: string;
@@ -12,22 +15,7 @@ export interface StrengthComparisonRow {
   rpe: number | null;
 }
 
-export interface ClimbingComparisonRow {
-  activity_id: string;
-  entry_id: string;
-  entry_activity_id: string;
-  entry_provider: string;
-  external_id: string | null;
-  climb_type: string;
-  grade_system: string;
-  grade: string;
-  sent: boolean | null;
-  attempt_count: number | null;
-  lead: boolean | null;
-  wall_angle_degrees: number | null;
-  route_name: string | null;
-  location_name: string | null;
-}
+export type ClimbingComparisonRow = z.infer<typeof performanceClimbingRowSchema>;
 
 function normalized(value: string): string {
   return value.trim().replace(/\s+/g, " ").toLocaleLowerCase();
@@ -228,18 +216,26 @@ export function computeStrengthComparisonMetrics(rows: StrengthComparisonRow[]) 
 function climbIdentityFingerprint(row: ClimbingComparisonRow): string {
   return JSON.stringify([
     row.activity_id,
-    row.climb_type,
+    row.climb_kind,
     row.grade_system,
-    normalized(row.grade),
-    row.lead,
+    row.grade === null ? null : normalized(row.grade),
+    row.attempt_scope,
+    row.pitch_number,
+    row.rope_method,
+    row.solo,
     row.wall_angle_degrees,
-    row.route_name && normalized(row.route_name),
+    row.climb_name && normalized(row.climb_name),
     row.location_name && normalized(row.location_name),
   ]);
 }
 
 function climbObservationFingerprint(row: ClimbingComparisonRow): string {
-  return JSON.stringify([climbIdentityFingerprint(row), row.sent, row.attempt_count]);
+  return JSON.stringify([
+    climbIdentityFingerprint(row),
+    row.sends,
+    row.unknown_outcomes,
+    row.recorded_attempt_count,
+  ]);
 }
 
 function consolidateClimbingRows(rows: ClimbingComparisonRow[]) {
@@ -277,7 +273,12 @@ function consolidateClimbingRows(rows: ClimbingComparisonRow[]) {
   for (const climb of climbs) {
     for (const source of climb.sourceRows) {
       if (source.external_id === null) continue;
-      const key = `${source.entry_provider}:${source.external_id}`;
+      const key = JSON.stringify([
+        source.entry_provider,
+        source.external_id,
+        source.attempt_scope,
+        source.pitch_number,
+      ]);
       stableIds.set(key, [...(stableIds.get(key) ?? []), climb]);
     }
   }
@@ -297,23 +298,29 @@ export function computeClimbingComparisonMetrics(rows: ClimbingComparisonRow[]) 
   );
   const validRows = valid.map((climb) => climb.row);
   const excluded = consolidated.climbs.length - validRows.length;
-  const attempts = validRows.flatMap((row) =>
-    row.attempt_count === null ? [] : [row.attempt_count],
+  const attempts = validRows.map((row) => row.recorded_attempt_count);
+  const recordedAttempts = attempts.reduce((sum, value) => sum + value, 0);
+  const observedOutcomes = validRows.reduce(
+    (sum, row) => sum + row.recorded_attempt_count - row.unknown_outcomes,
+    0,
   );
-  const outcomes = validRows.flatMap((row) => (row.sent === null ? [] : [row.sent]));
   const evidence = consolidated.climbs.slice(0, 100).map((climb) => {
     const sourceEntryIds = unique(climb.sourceRows.map((row) => row.entry_id));
     const sourceActivityIds = unique(climb.sourceRows.map((row) => row.entry_activity_id));
     const sourceProviders = unique(climb.sourceRows.map((row) => row.entry_provider));
     return {
-      climb_type: climb.row.climb_type,
+      climb_kind: climb.row.climb_kind,
       grade_system: climb.row.grade_system,
       grade: climb.row.grade,
-      route_name: climb.row.route_name,
+      climb_name: climb.row.climb_name,
       location_name: climb.row.location_name,
-      sent: climb.row.sent,
-      attempt_count: climb.row.attempt_count,
-      lead: climb.row.lead,
+      recorded_attempt_count: climb.row.recorded_attempt_count,
+      sends: climb.row.sends,
+      unknown_outcomes: climb.row.unknown_outcomes,
+      attempt_scope: climb.row.attempt_scope,
+      pitch_number: climb.row.pitch_number,
+      rope_method: climb.row.rope_method,
+      solo: climb.row.solo,
       status: consolidated.ambiguous.has(climb.row.entry_id)
         ? ("excluded_ambiguous" as const)
         : ("included" as const),
@@ -339,14 +346,18 @@ export function computeClimbingComparisonMetrics(rows: ClimbingComparisonRow[]) 
         : attempts.length === validRows.length && excluded === 0
           ? ("complete" as const)
           : ("partial" as const),
-    sends: outcomes.length === 0 ? null : outcomes.filter(Boolean).length,
+    sends: observedOutcomes === 0 ? null : validRows.reduce((sum, row) => sum + row.sends, 0),
     outcomes_status:
-      outcomes.length === 0
+      observedOutcomes === 0
         ? ("unavailable" as const)
-        : outcomes.length === validRows.length && excluded === 0
+        : observedOutcomes === recordedAttempts && excluded === 0
           ? ("complete" as const)
           : ("partial" as const),
-    observed_grades: unique(validRows.map((row) => `${row.grade_system}:${row.grade}`)),
+    observed_grades: unique(
+      validRows.flatMap((row) =>
+        row.grade_system === null || row.grade === null ? [] : [`${row.grade_system}:${row.grade}`],
+      ),
+    ),
     evidence,
     evidence_count: consolidated.climbs.length,
     evidence_truncated: consolidated.climbs.length > evidence.length,

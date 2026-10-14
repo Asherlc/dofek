@@ -20,12 +20,14 @@ The mobile app for Dofek. Built with Expo and React Native, with native Swift mo
 
 ## Project Structure
 
-Activity details use `components/ClimbingEntryContext` for full climbing paths,
-board names, angle/units, methods, and results on attached and unattached entries.
-Labels match the web client through shared formatters; nullable counts/statuses
-remain explicit, with absent Mountain Project top-rope placeholders omitted.
-Route names and additional source routes/tick lists open verified links supplied
-by the server. See the [climbing contract](../../docs/climbing-context.md).
+Activity details show climbing logs and same-day attachment suggestions for
+climbing and hiking activities. Cards show current shared locations, published
+display grades, scoped results, and server-derived rock labels.
+[Details](components/ClimbingLogEntryDetails.tsx) show coordinates, published and
+reported grade collections, independent attempt facts, notes, and disclosed
+source data. Provider records use server columns and filters, fetch the selected
+log's complete graph, and retain cached rows during refresh errors. Labels match
+web through shared formatters. See the [canonical response contract](../server/src/contracts/climbing-log-contracts.ts).
 
 The Training route coordinates query states and delegates climbing payload validation, grade cards, and Hangboarding display to [ClimbingTrainingCard](./components/ClimbingTrainingCard.tsx), with focused tests and stories beside the component.
 

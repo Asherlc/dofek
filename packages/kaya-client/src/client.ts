@@ -24,7 +24,7 @@ const climbSchema = z.object({
   id: idSchema,
   name: z.string().nullable(),
   slug: z.string().nullish(),
-  lead: z.boolean(),
+  lead: z.boolean().nullish(),
   climb_type: z.object({ id: idSchema, name: z.string() }),
   grade: z
     .object({
@@ -34,9 +34,9 @@ const climbSchema = z.object({
     })
     .nullable(),
   gym: gymSchema.nullable(),
-  destination: locationSchema.pick({ id: true, name: true }).nullable(),
-  area: locationSchema.pick({ id: true, name: true }).nullable(),
-  subarea: locationSchema.pick({ id: true, name: true }).nullable(),
+  destination: locationSchema.nullable(),
+  area: locationSchema.nullable(),
+  subarea: locationSchema.nullable(),
   board: locationSchema.pick({ id: true, name: true }).nullable(),
   angle: z.number().int().nullable(),
 });
@@ -182,6 +182,6 @@ function browserHeaders(): Record<string, string> {
   return { "content-type": "application/json", origin: KAYA_APP_URL, referer: `${KAYA_APP_URL}/` };
 }
 
-const CLIMB_FIELDS = `id name slug lead climb_type { id name } grade { id name climb_type_group } gym { id name address city region country latitude longitude } destination { id name } area { id name } subarea { id name } board { id name } angle`;
+const CLIMB_FIELDS = `id name slug lead climb_type { id name } grade { id name climb_type_group } gym { id name address city region country latitude longitude } destination { id name latitude longitude } area { id name latitude longitude } subarea { id name latitude longitude } board { id name } angle`;
 const SESSION_QUERY = `query sessionsForUser($user_id: ID!, $offset: Int!, $count: Int!) { sessionsForUser(user_id: $user_id, offset: $offset, count: $count) { id start_time end_time notes gym { id name address city region country latitude longitude } board { id name latitude longitude } destination { id name latitude longitude } attempted_climbs { attempts: session_attempts ${CLIMB_FIELDS} } } }`;
 const ASCENT_QUERY = `query ascentsForUser($user_id: ID!, $offset: Int!, $count: Int!) { ascentsForUser(user_id: $user_id, offset: $offset, count: $count) { id session_id date comment rating stiffness attempts ascent_type { id name } gym { id name address city region country latitude longitude } climb { ${CLIMB_FIELDS} } } }`;

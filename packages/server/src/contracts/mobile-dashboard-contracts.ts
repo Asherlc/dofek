@@ -1,6 +1,9 @@
 import { activityDataStateSchema } from "@dofek/format/activity-data-state";
 import { ACTIVITY_MODALITIES } from "@dofek/training/activity-types";
-import { CLIMBING_GRADE_SYSTEMS, isGradeSystemForClimbType } from "@dofek/training/climbing-grades";
+import {
+  FREE_ROCK_GRADE_SYSTEMS,
+  isGradeSystemForClimbKind,
+} from "@dofek/training/climbing-grades";
 import { climbingGradeProgressionSchema } from "@dofek/training/climbing-progression";
 import { z } from "zod";
 import {
@@ -19,16 +22,16 @@ const stressScoreSchema = z.number().min(0).max(3);
 const nonnegativeNumberSchema = z.number().min(0);
 const climbingGradeDisplaySchema = z
   .object({
-    climbType: z.enum(["boulder", "route"]),
-    gradeSystem: z.enum(CLIMBING_GRADE_SYSTEMS),
+    climbKind: z.enum(["boulder", "route"]),
+    gradeSystem: z.enum(FREE_ROCK_GRADE_SYSTEMS),
     grade: z.string(),
     gradeSortValue: z.number(),
   })
   .superRefine((grade, context) => {
-    if (!isGradeSystemForClimbType(grade.gradeSystem, grade.climbType)) {
+    if (!isGradeSystemForClimbKind(grade.gradeSystem, grade.climbKind)) {
       context.addIssue({
         code: "custom",
-        message: "Grade system must match the climb type",
+        message: "Grade system must match the climb kind",
         path: ["gradeSystem"],
       });
     }

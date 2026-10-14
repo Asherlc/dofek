@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SyncDatabase } from "../../db/index.ts";
+import { makeTransactionalTestDatabase } from "../test-helpers.ts";
 
 const mockEnsureProvider = vi.fn().mockResolvedValue(undefined);
 vi.mock("../../db/tokens.ts", () => ({
@@ -7,12 +8,12 @@ vi.mock("../../db/tokens.ts", () => ({
 }));
 
 const mockInsertValues = vi.fn().mockReturnValue({ onConflictDoNothing: vi.fn() });
-const mockDb: SyncDatabase = {
+const mockDb: SyncDatabase = makeTransactionalTestDatabase({
   select: vi.fn(),
   insert: vi.fn().mockReturnValue({ values: mockInsertValues }),
   delete: vi.fn(),
   execute: vi.fn(),
-};
+});
 
 vi.mock("../../db/schema/events.ts", () => ({
   imuSession: Symbol("imuSession"),

@@ -31,6 +31,7 @@
     "@aws-crypto/sha256-browser": "5.2.0",
     "@bacons/apple-targets": "5.0.0",
     "@dofek/auth": "workspace:*",
+    "@dofek/filter-columns": "workspace:*",
     "@dofek/format": "workspace:*",
     "@dofek/imu": "workspace:*",
     "@dofek/mcp-contracts": "workspace:*",

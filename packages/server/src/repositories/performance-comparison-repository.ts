@@ -1,4 +1,8 @@
 import { createHash } from "node:crypto";
+import {
+  type ClimbingGradePreference,
+  DEFAULT_CLIMBING_GRADE_PREFERENCE,
+} from "@dofek/training/climbing-grades";
 import type { Database } from "dofek/db";
 import { type SQL, sql } from "drizzle-orm";
 import { z } from "zod";
@@ -8,6 +12,7 @@ import {
   postgresActivityLocalDate,
 } from "./activity-local-date.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
+import { rockClimbingLogProjection } from "./climbing-rock-observations.ts";
 import { loadCyclingEffortMetrics } from "./cycling-effort-metrics.ts";
 import {
   buildMovingDuration,
@@ -30,6 +35,7 @@ import {
   performanceStrengthRowSchema,
 } from "./performance-comparison-result.ts";
 import {
+  climbingPerformanceIdentitySchema,
   isIdentityEquivalence,
   type PerformanceEquivalence,
 } from "./performance-comparison-types.ts";
@@ -49,15 +55,6 @@ const sourceRawEvidenceSchema = z.object({
   raw: z.record(z.string(), z.unknown()).nullable(),
 });
 
-const climbIdentitySchema = z.object({
-  climbType: z.string(),
-  gradeSystem: z.string(),
-  grade: z.string(),
-  routeName: z.string(),
-  locationName: z.string(),
-  lead: z.boolean().nullable(),
-});
-
 const activityRowSchema = z.object({
   activity_id: z.string().uuid(),
   canonical_type: z.string(),
@@ -75,7 +72,7 @@ const activityRowSchema = z.object({
   date_was_authoritative: z.coerce.boolean(),
   source_raw_evidence: z.array(sourceRawEvidenceSchema),
   exercise_ids: z.array(z.string().uuid()),
-  climb_identities: z.array(climbIdentitySchema),
+  climb_identities: z.array(climbingPerformanceIdentitySchema),
 });
 
 const cursorSchema = z
@@ -110,7 +107,10 @@ function unique<T>(values: T[]): T[] {
   return [...new Set(values)];
 }
 
-function equivalencePredicate(key: PerformanceEquivalence): SQL {
+function equivalencePredicate(
+  key: PerformanceEquivalence,
+  gradePreference: ClimbingGradePreference,
+): SQL {
   if (isIdentityEquivalence(key))
     throw new Error("Identity-model keys require authorized member selection");
   if (key.kind === "cycling_route" || key.kind === "standardized_test") {
@@ -133,14 +133,14 @@ function equivalencePredicate(key: PerformanceEquivalence): SQL {
   }
   if (key.kind === "climb") {
     return sql`EXISTS (
-      SELECT 1 FROM fitness.v_climbing_entry AS matched_climb
+      SELECT 1 FROM (${rockClimbingLogProjection(gradePreference, { attemptScope: key.attemptScope, ropeMethod: key.ropeMethod ?? "unknown", solo: key.solo })}) AS matched_climb
       WHERE matched_climb.activity_id = ANY(a.member_activity_ids)
-        AND matched_climb.climb_type::text = ${key.climbType}
+        AND matched_climb.climb_kind::text = ${key.climbKind}
         AND matched_climb.grade_system::text = ${key.gradeSystem}
         AND lower(regexp_replace(btrim(matched_climb.grade), '\\s+', ' ', 'g')) = ${normalized(key.grade)}
-        AND lower(regexp_replace(btrim(matched_climb.route_name), '\\s+', ' ', 'g')) = ${normalized(key.routeName)}
+        AND lower(regexp_replace(btrim(matched_climb.climb_name), '\\s+', ' ', 'g')) = ${normalized(key.climbName)}
         AND lower(regexp_replace(btrim(matched_climb.location_name), '\\s+', ' ', 'g')) = ${normalized(key.locationName)}
-        AND matched_climb.lead IS NOT DISTINCT FROM ${key.lead}
+        AND matched_climb.pitch_number IS NOT DISTINCT FROM ${key.pitchNumber}
     )`;
   }
   return sql`a.canonical_type::text = ${key.canonicalType}
@@ -180,6 +180,7 @@ function activitySelect(
   where: SQL,
   marker: string,
   orderAndLimit: SQL,
+  gradePreference: ClimbingGradePreference,
 ): SQL {
   const localDate = postgresActivityLocalDate(sql`a`, timezone);
   const authoritativeDate = postgresActivityDateIsAuthoritative(sql`a`);
@@ -222,15 +223,16 @@ function activitySelect(
     ) AS strength_evidence ON true
     LEFT JOIN LATERAL (
       SELECT jsonb_agg(DISTINCT jsonb_build_object(
-        'climbType', climb.climb_type,
+        'climbKind', climb.climb_kind,
         'gradeSystem', climb.grade_system,
         'grade', lower(regexp_replace(btrim(climb.grade), '\\s+', ' ', 'g')),
-        'routeName', lower(regexp_replace(btrim(climb.route_name), '\\s+', ' ', 'g')),
+        'climbName', lower(regexp_replace(btrim(climb.climb_name), '\\s+', ' ', 'g')),
         'locationName', lower(regexp_replace(btrim(climb.location_name), '\\s+', ' ', 'g')),
-        'lead', climb.lead
-      )) FILTER (WHERE climb.route_name IS NOT NULL AND climb.location_name IS NOT NULL)
+        'ropeMethod', climb.rope_method, 'solo', climb.solo,
+        'attemptScope', climb.attempt_scope, 'pitchNumber', climb.pitch_number
+      )) FILTER (WHERE climb.climb_name IS NOT NULL AND climb.location_name IS NOT NULL AND climb.grade IS NOT NULL)
         AS identities
-      FROM fitness.v_climbing_entry AS climb
+      FROM (${rockClimbingLogProjection(gradePreference)}) AS climb
       WHERE climb.activity_id = ANY(a.member_activity_ids)
     ) AS climb_evidence ON true
     WHERE a.user_id = ${userId}::uuid
@@ -255,12 +257,15 @@ function outputKey(key: PerformanceEquivalence) {
   if (key.kind === "climb") {
     return {
       kind: key.kind,
-      climb_type: key.climbType,
+      climb_kind: key.climbKind,
       grade_system: key.gradeSystem,
       grade: key.grade,
-      route_name: key.routeName,
+      climb_name: key.climbName,
       location_name: key.locationName,
-      lead: key.lead,
+      rope_method: key.ropeMethod,
+      solo: key.solo,
+      attempt_scope: key.attemptScope,
+      pitch_number: key.pitchNumber,
     };
   }
   if (key.kind === "cycling_route" || key.kind === "standardized_test") {
@@ -330,17 +335,20 @@ export class PerformanceComparisonRepository {
   readonly #store: Pick<ActivitySensorStore, "query">;
   readonly #userId: string;
   readonly #timezone: string;
+  readonly #gradePreference: ClimbingGradePreference;
 
   constructor(
     db: Pick<Database, "execute">,
     store: Pick<ActivitySensorStore, "query">,
     userId: string,
     timezone: string,
+    gradePreference: ClimbingGradePreference = DEFAULT_CLIMBING_GRADE_PREFERENCE,
   ) {
     this.#db = db;
     this.#store = store;
     this.#userId = userId;
     this.#timezone = timezone;
+    this.#gradePreference = gradePreference;
   }
 
   async #reference(activityId: string): Promise<ActivityRow> {
@@ -353,6 +361,7 @@ export class PerformanceComparisonRepository {
         sql`a.id = ${activityId}::uuid`,
         "performance-comparison:reference",
         sql`LIMIT 1`,
+        this.#gradePreference,
       ),
     );
     const row = rows[0];
@@ -380,6 +389,7 @@ export class PerformanceComparisonRepository {
         )})`,
         "performance-comparison:cycling-efforts",
         sql`ORDER BY a.started_at, a.id LIMIT ${requested.length}`,
+        this.#gradePreference,
       ),
     );
     const activitiesById = new Map(rows.map((activity) => [activity.activity_id, activity]));
@@ -442,6 +452,7 @@ export class PerformanceComparisonRepository {
                 : sql`${range} AND ${filters}`,
               "performance-comparison:scope",
               sql`ORDER BY a.started_at, a.id LIMIT 2001`,
+              this.#gradePreference,
             ),
           )
         : [];
@@ -497,7 +508,7 @@ export class PerformanceComparisonRepository {
               sql`, `,
             )})`
           : sql`false`
-        : equivalencePredicate(equivalence.key);
+        : equivalencePredicate(equivalence.key, this.#gradePreference);
     const evidenceFor = (activityId?: string) =>
       describeComparisonEvidence(equivalence, identityRows, this.#userId, activityId);
     const {
@@ -515,6 +526,7 @@ export class PerformanceComparisonRepository {
         sql`${range} AND ${filters} AND ${identity} ${referenceFilter}`,
         "performance-comparison:baseline",
         sql`ORDER BY a.started_at ASC, a.id ASC LIMIT 1`,
+        this.#gradePreference,
       ),
     );
     const baseline = baselineRows[0];
@@ -540,6 +552,7 @@ export class PerformanceComparisonRepository {
         sql`${range} AND ${filters} AND ${identity} ${cursorPredicate}`,
         "performance-comparison:candidates",
         sql`ORDER BY a.started_at ASC, a.id ASC LIMIT ${input.limit + 1}`,
+        this.#gradePreference,
       ),
     );
     const hasMore = candidateRows.length > input.limit;
@@ -554,19 +567,32 @@ export class PerformanceComparisonRepository {
           a.id::text AS activity_id,
           climb.id::text AS entry_id,
           climb.activity_id::text AS entry_activity_id,
-          source_activity.provider_id AS entry_provider,
+          climb.provider_id AS entry_provider,
           climb.external_id,
-          climb.climb_type::text AS climb_type,
+          climb.climb_kind::text AS climb_kind,
           climb.grade_system::text AS grade_system,
           climb.grade,
-          climb.sent,
-          climb.attempt_count,
-          climb.lead,
-          climb.wall_angle_degrees,
-          climb.route_name,
+          climb.recorded_attempt_count,
+          climb.sends,
+          climb.unknown_outcomes,
+          climb.attempt_scope,
+          climb.pitch_number,
+          climb.rope_method,
+          climb.solo,
+          CASE WHEN climb.wall_angle->>'unit' = 'degrees' THEN (climb.wall_angle->>'value')::float END AS wall_angle_degrees,
+          climb.climb_name,
           climb.location_name
         FROM fitness.v_activity AS a
-        JOIN fitness.v_climbing_entry AS climb ON climb.activity_id = ANY(a.member_activity_ids)
+        JOIN (${rockClimbingLogProjection(
+          this.#gradePreference,
+          equivalence.key.kind === "climb" && !isIdentityEquivalence(equivalence.key)
+            ? {
+                attemptScope: equivalence.key.attemptScope,
+                ropeMethod: equivalence.key.ropeMethod ?? "unknown",
+                solo: equivalence.key.solo,
+              }
+            : {},
+        )}) AS climb ON climb.activity_id = ANY(a.member_activity_ids)
         JOIN fitness.activity AS source_activity ON source_activity.id = climb.activity_id
         WHERE a.user_id = ${this.#userId}::uuid
           AND a.id IN (${sql.join(
@@ -575,12 +601,12 @@ export class PerformanceComparisonRepository {
           )})
           ${
             equivalence.key.kind === "climb" && !isIdentityEquivalence(equivalence.key)
-              ? sql`AND climb.climb_type::text = ${equivalence.key.climbType}
+              ? sql`AND climb.climb_kind::text = ${equivalence.key.climbKind}
                 AND climb.grade_system::text = ${equivalence.key.gradeSystem}
                 AND lower(regexp_replace(btrim(climb.grade), '\\s+', ' ', 'g')) = ${normalized(equivalence.key.grade)}
-                AND lower(regexp_replace(btrim(climb.route_name), '\\s+', ' ', 'g')) = ${normalized(equivalence.key.routeName)}
+                AND lower(regexp_replace(btrim(climb.climb_name), '\\s+', ' ', 'g')) = ${normalized(equivalence.key.climbName)}
                 AND lower(regexp_replace(btrim(climb.location_name), '\\s+', ' ', 'g')) = ${normalized(equivalence.key.locationName)}
-                AND climb.lead IS NOT DISTINCT FROM ${equivalence.key.lead}`
+                AND climb.pitch_number IS NOT DISTINCT FROM ${equivalence.key.pitchNumber}`
               : sql``
           }
         ORDER BY a.id, climb.id`,

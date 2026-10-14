@@ -17,6 +17,7 @@ import {
   parseGarminDumpFile,
   prepareGarminDumpImport,
 } from "./garmin-dump.ts";
+import { makeTransactionalTestDatabase } from "./test-helpers.ts";
 
 const mockCaptureException = vi.fn();
 vi.mock("@sentry/node", () => ({
@@ -81,12 +82,12 @@ vi.mock("../db/provider-activity-sync.ts", () => ({
   upsertProviderActivity: (...args: unknown[]) => mockUpsertProviderActivity(...args),
 }));
 
-const mockDb: SyncDatabase = {
+const mockDb: SyncDatabase = makeTransactionalTestDatabase({
   select: vi.fn(),
   insert: vi.fn(),
   delete: vi.fn(),
   execute: vi.fn(),
-};
+});
 
 const createdDirectories: string[] = [];
 

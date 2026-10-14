@@ -1,6 +1,7 @@
 import { resolveProviderActivityType } from "@dofek/training/activity-types";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SyncDatabase } from "../db/index.ts";
+import { makeTransactionalTestDatabase } from "../providers/test-helpers.ts";
 
 const mocks = vi.hoisted(() => ({
   add: vi.fn(),
@@ -49,12 +50,12 @@ describe("enqueueFitFileImportAndWait", () => {
   });
 
   it("runs the import in-process when a metric stream publisher is supplied", async () => {
-    const db: SyncDatabase = {
+    const db: SyncDatabase = makeTransactionalTestDatabase({
       select: vi.fn(),
       insert: vi.fn(),
       delete: vi.fn(),
       execute: vi.fn(),
-    };
+    });
     const metricStreamPublisher = {
       publishRows: vi.fn(async () => []),
     };
@@ -115,12 +116,12 @@ describe("enqueueFitFileImportAndWait", () => {
         endedAtIso: "2026-07-01T13:00:00.000Z",
         name: "Morning ride",
       },
-      db: {
+      db: makeTransactionalTestDatabase({
         select: vi.fn(),
         insert: vi.fn(),
         delete: vi.fn(),
         execute: vi.fn(),
-      },
+      }),
       metricStreamPublisher: {
         publishRows: vi.fn(async () => []),
       },

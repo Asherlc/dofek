@@ -18,10 +18,7 @@ import { accountErasureAllowsQueuedUserWork } from "./account-erasure-work-guard
 import { scheduleDelayedSyncJob } from "./enqueue-sync-job.ts";
 import { providerRateLimitCooldownStore } from "./provider-rate-limit-cooldown.ts";
 import type { SyncJobContext } from "./sync-job-context.ts";
-import {
-  requireTransactionalSyncDatabase,
-  SyncProcessingOperation,
-} from "./sync-processing-operation.ts";
+import { SyncProcessingOperation } from "./sync-processing-operation.ts";
 import {
   firstAuthFailureReason,
   handleSyncProviderFailure,
@@ -66,24 +63,20 @@ export async function executeSyncProvider(
     job.data.userId,
   );
   if (activeCooldown) {
-    const retryAt = await withAccountErasureUserWriteFence(
-      requireTransactionalSyncDatabase(db),
-      job.data.userId,
-      async () => {
-        signal?.throwIfAborted();
-        const scheduledRetryAt = await scheduleDelayedSyncJob(
-          {
-            ...job.data,
-            providerId: provider.id,
-            sinceIso: since.toISOString(),
-            untilIso: until.toISOString(),
-          },
-          activeCooldown,
-        );
-        signal?.throwIfAborted();
-        return scheduledRetryAt;
-      },
-    );
+    const retryAt = await withAccountErasureUserWriteFence(db, job.data.userId, async () => {
+      signal?.throwIfAborted();
+      const scheduledRetryAt = await scheduleDelayedSyncJob(
+        {
+          ...job.data,
+          providerId: provider.id,
+          sinceIso: since.toISOString(),
+          untilIso: until.toISOString(),
+        },
+        activeCooldown,
+      );
+      signal?.throwIfAborted();
+      return scheduledRetryAt;
+    });
     signal?.throwIfAborted();
     context.completedCount++;
     context.providerStatus[provider.id] = {

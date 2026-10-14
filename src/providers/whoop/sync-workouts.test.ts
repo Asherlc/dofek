@@ -3,6 +3,7 @@ import type { WhoopWeightliftingWorkoutResponse, WhoopWorkoutRecord } from "@dof
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SyncDatabase } from "../../db/index.ts";
 import { SyncWindow } from "../sync-window.ts";
+import { makeTransactionalTestDatabase } from "../test-helpers.ts";
 import type { WhoopSyncContext } from "./sync-types.ts";
 import {
   fetchWhoopDeveloperWorkoutsPage,
@@ -51,12 +52,12 @@ function makeDb(selectedRows: unknown[] = []) {
   );
   chain.limit.mockResolvedValue(selectedRows);
 
-  const db: SyncDatabase = {
+  const db: SyncDatabase = makeTransactionalTestDatabase({
     insert: vi.fn().mockReturnValue(chain),
     select: vi.fn().mockReturnValue(chain),
     delete: vi.fn().mockReturnValue(chain),
     execute: vi.fn().mockResolvedValue([]),
-  };
+  });
 
   return { db, chain, delete: db.delete, insert: db.insert };
 }

@@ -3,6 +3,10 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import React from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  climbingClimbFixture,
+  climbingLogEntryFixture,
+} from "../../../server/src/repositories/climbing-test-helpers.ts";
 
 const mockAlertFn = vi.fn();
 const mockOpenBrowserAsync = vi.fn();
@@ -276,6 +280,20 @@ const mockProviderStatsQuery = vi.fn();
 const mockDataHealthQuery = vi.fn();
 const mockAvailableDataTypesQuery = vi.fn();
 const mockRecordsQuery = vi.fn();
+const mockRecordDetailQuery = vi.fn(
+  (
+    ..._input: unknown[]
+  ): {
+    data: Record<string, unknown> | null | undefined;
+    isLoading: boolean;
+    error: Error | null;
+  } => ({
+    data: { id: "activity-123", name: "Morning Ride", notes: null, raw: { source: "wahoo" } },
+    isLoading: false,
+    error: null,
+  }),
+);
+const mockRecordFilterOptionsQuery = vi.fn((..._input: unknown[]) => ({ data: {} }));
 const mockLogsQuery = vi.fn();
 const mockSyncMutateAsync = vi.fn();
 const mockDisconnectMutateAsync = vi.fn();
@@ -324,6 +342,10 @@ vi.mock("../../lib/trpc", () => ({
         useQuery: (...args: unknown[]) => mockAvailableDataTypesQuery(...args),
       },
       records: { useQuery: (...args: unknown[]) => mockRecordsQuery(...args) },
+      recordDetail: { useQuery: (...args: unknown[]) => mockRecordDetailQuery(...args) },
+      recordFilterOptions: {
+        useQuery: (...args: unknown[]) => mockRecordFilterOptionsQuery(...args),
+      },
       logs: { useQuery: (...args: unknown[]) => mockLogsQuery(...args) },
       disconnect: {
         useMutation: () => ({ mutateAsync: mockDisconnectMutateAsync, isPending: false }),
@@ -466,6 +488,7 @@ const appleHealthStats = {
   nutritionDaily: 0,
   healthEvents: 0,
   clinicalRecords: 0,
+  climbingLogEntries: 0,
 };
 
 function setupDefaultMocks() {
@@ -482,12 +505,22 @@ function setupDefaultMocks() {
     isError: false,
     error: null,
   });
-  mockRecordsQuery.mockReturnValue({ data: { rows: [] }, isLoading: false });
+  mockRecordsQuery.mockReturnValue({
+    data: { columns: ["id", "name"], filterColumns: [], rows: [] },
+    isLoading: false,
+  });
   mockLogsQuery.mockReturnValue({ data: [], isLoading: false });
 }
 
 describe("ProviderDetailScreen", () => {
   beforeEach(() => {
+    mockRecordDetailQuery.mockReset();
+    mockRecordDetailQuery.mockReturnValue({
+      data: { id: "activity-123", name: "Morning Ride", notes: null, raw: { source: "wahoo" } },
+      isLoading: false,
+      error: null,
+    });
+    mockRecordFilterOptionsQuery.mockClear();
     vi.stubGlobal(
       "fetch",
       vi
@@ -1332,6 +1365,66 @@ describe("ProviderDetailScreen", () => {
   });
 
   describe("Activity records", () => {
+    it("shows cached log-only records with server columns and fetches their full graph", async () => {
+      mockProviderStatsQuery.mockReturnValue({ data: undefined, isLoading: false, error: null });
+      mockAvailableDataTypesQuery.mockReturnValue({
+        data: ["climbingLogEntries"],
+        isLoading: false,
+        isError: true,
+        error: new Error("Availability refresh failed"),
+      });
+      const log = climbingLogEntryFixture({
+        climb: climbingClimbFixture(),
+        climbId: climbingClimbFixture().id,
+      });
+      mockRecordDetailQuery.mockReturnValue({ data: log, isLoading: false, error: null });
+      mockRecordsQuery.mockReturnValue({
+        data: {
+          rows: [
+            {
+              id: log.id,
+              name: "Corner",
+              climbed_on: null,
+              result: "Pitch completed",
+              discipline: null,
+            },
+          ],
+          columns: ["name", "climbed_on", "result", "discipline"],
+          filterColumns: ["name"],
+        },
+        isLoading: false,
+        isError: true,
+        error: new Error("Records refresh failed"),
+      });
+      const { default: ProviderDetailScreen } = await import("../../app/providers/[id]");
+      render(<ProviderDetailScreen />);
+      expect(screen.getByText("Corner")).toBeTruthy();
+      expect(screen.getByText("Pitch completed")).toBeTruthy();
+      expect(screen.getByText("Availability refresh failed")).toBeTruthy();
+      expect(screen.getByText("Records refresh failed")).toBeTruthy();
+      fireEvent.click(screen.getByRole("button", { name: "Open record Corner" }));
+      expect(mockRecordDetailQuery).toHaveBeenCalledWith({
+        providerId: "wahoo",
+        dataType: "climbingLogEntries",
+        recordId: log.id,
+      });
+      expect(screen.getByRole("dialog").textContent).toContain("Published climb grades");
+      expect(mockRecordFilterOptionsQuery).toHaveBeenCalledWith({
+        providerId: "wahoo",
+        dataType: "climbingLogEntries",
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Close record detail" }));
+      fireEvent.change(screen.getByPlaceholderText("Filter Name"), { target: { value: "Ridge" } });
+      await waitFor(() =>
+        expect(mockRecordsQuery).toHaveBeenCalledWith(
+          expect.objectContaining({
+            providerId: "wahoo",
+            dataType: "climbingLogEntries",
+            filters: { name: "Ridge" },
+          }),
+        ),
+      );
+    });
     it("exposes the active record type as a selected tab", async () => {
       mockAvailableDataTypesQuery.mockReturnValue({
         data: ["activities", "sleepSessions"],
@@ -1370,6 +1463,8 @@ describe("ProviderDetailScreen", () => {
     it("exposes record detail disclosure state", async () => {
       mockRecordsQuery.mockReturnValue({
         data: {
+          columns: ["id", "name"],
+          filterColumns: [],
           rows: [
             {
               id: "activity-123",
@@ -1405,7 +1500,11 @@ describe("ProviderDetailScreen", () => {
       });
       mockProviderStatsQuery.mockReturnValue({ data: [], isLoading: false });
       mockRecordsQuery.mockReturnValue({
-        data: { rows: [{ id: "activity-123", name: "Kaya climbing" }] },
+        data: {
+          columns: ["id", "name"],
+          filterColumns: [],
+          rows: [{ id: "activity-123", name: "Kaya climbing" }],
+        },
         isLoading: false,
       });
 
@@ -1436,7 +1535,11 @@ describe("ProviderDetailScreen", () => {
         isLoading: false,
       });
       mockRecordsQuery.mockReturnValue({
-        data: { rows: [{ id: "activity-123", name: "Morning Ride" }] },
+        data: {
+          columns: ["id", "name"],
+          filterColumns: [],
+          rows: [{ id: "activity-123", name: "Morning Ride" }],
+        },
         isLoading: false,
       });
 
@@ -1465,7 +1568,10 @@ describe("ProviderDetailScreen", () => {
       mockUseLocalSearchParams.mockReturnValue({ id: "whoop" });
       mockProvidersQuery.mockReturnValue({ data: [whoopProvider], isLoading: false });
       mockProviderStatsQuery.mockReturnValue({ data: [], isLoading: false });
-      mockRecordsQuery.mockReturnValue({ data: { rows: [] }, isLoading: false });
+      mockRecordsQuery.mockReturnValue({
+        data: { columns: ["id", "name"], filterColumns: [], rows: [] },
+        isLoading: false,
+      });
       mockLogsQuery.mockReturnValue({ data: [], isLoading: false });
       mockSettingsGetQuery.mockReturnValue({ data: null, isLoading: false });
       mockSettingsSetMutate.mockReset();

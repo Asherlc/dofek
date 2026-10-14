@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
 import { SyncRun } from "./sync-run.ts";
 import { SyncWindow } from "./sync-window.ts";
+import { makeTransactionalTestDatabase } from "./test-helpers.ts";
 
 vi.mock("../db/token-user-context.ts", () => ({
   getTokenUserId: () => "user-1",
@@ -350,7 +351,7 @@ describe("MapMyFitnessProvider", () => {
   it("sync returns error when no tokens", async () => {
     process.env.MAPMYFITNESS_CLIENT_ID = "id";
     process.env.MAPMYFITNESS_CLIENT_SECRET = "secret";
-    const mockDb = {
+    const mockDb = makeTransactionalTestDatabase({
       select: vi.fn().mockReturnValue({
         from: vi.fn().mockReturnValue({
           where: vi.fn().mockReturnValue({
@@ -368,7 +369,7 @@ describe("MapMyFitnessProvider", () => {
       }),
       delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
       execute: vi.fn().mockResolvedValue([]),
-    };
+    });
 
     const result = await new MapMyFitnessProvider().sync(
       new SyncRun({ db: mockDb, window: SyncWindow.fromSince({ since: new Date("2026-01-01") }) }),

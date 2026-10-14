@@ -186,7 +186,7 @@ The canonical tool names, schemas, and scope checks are defined in the [MCP tool
 | `compare_performances` | `activity:read` | Compares only explicitly or strongly evidenced equivalent workouts, routes, climbs, strength exercises, or standardized tests with contextual deltas and provenance. |
 | `find_repeated_efforts` | `activity:read` | Discovers repeated exact or strongly inferred identities, with opt-in weak name/duration candidates and canonical/source evidence. |
 | `get_effort_trend` | `activity:read` | Returns chronological repetitions and descriptive deltas for a discovered effort or explicit equivalence, preserving quality and false-fitness caveats. |
-| `get_climbing_sessions` | `activity:read` | Returns exact-range climbing sessions with grades, attempts, sends, discipline, wall angle, and explicit unavailable fields. |
+| `get_climbing_sessions` | `activity:read` | Returns exact-range climbing/hiking sessions with full attached log graphs and scoped rock aggregates. |
 | `get_climbing_progression` | `activity:read` | Returns longitudinal climbing grade, attempt, send-rate, frequency, rolling-exposure, duplicate, and provenance analysis. |
 | `get_finger_loading` | `activity:read` | Returns structured finger-loading protocols, effective load, and total time under tension inside exact date boundaries. |
 | `get_finger_loading_progression` | `activity:read` | Returns longitudinal finger-load detail, explicit-threshold high-intensity days, consecutive exposure, and provenance as a separate load channel. |
@@ -490,7 +490,10 @@ descriptive and make no causal claim.
 Exact provider workout, route, segment, and standardized-test evidence is
 materialized by the dbt-owned `analytics.activity_effort_identity` model from
 retained source payloads. Climb evidence instead comes from
-`fitness.climbing_entry`; route claims and geometry are projected by
+the canonical climbing log graph. Whole-Climb observations use Climb's
+published grades; pitch observations use identified Pitch grades. Matching
+and metrics share the [scoped projection](../packages/server/src/repositories/climbing-rock-observations.ts).
+Route claims and geometry are projected by
 `analytics.activity_route_identity`. The historical identity audit and scoped
 refresh procedure is documented in the
 [activity effort identity runbook](activity-effort-identity-runbook.md), while
@@ -510,9 +513,15 @@ normalized power by that contemporaneous estimate. Missing power remains
 `null`, and both power and elevation aggregates report activity coverage. See the
 [cycling-performance repository](../packages/server/src/repositories/cycling-performance-repository.ts).
 
-`get_climbing_sessions` exposes the stored Kaya/file-import grade, attempt,
-send, lead/top-rope, and wall-angle fields. Route height is not currently stored,
-so `total_vertical_m` is explicitly `null`. `get_finger_loading` reports
+`get_climbing_sessions` returns climbing sessions and hiking outings with
+attached logs. Each log includes current Climb/Area/Pitch definitions,
+published and reported grades, scoped attempts and outcomes, notes, provenance
+and source links. Rock aggregates use whole-Climb attempts and compatible
+published grades, with unknown free-send outcomes reported separately.
+Generic or pitch completion does not become a whole-route free send. See the
+[session tool](../packages/server/src/mcp/climbing-sessions-tool.ts) and
+[canonical contract](../packages/server/src/contracts/climbing-log-contracts.ts).
+`get_finger_loading` reports
 effective load as `bodyweight_kg + external_load_kg` (a negative external load
 represents assistance) and computes total time under tension as hold duration
 times set count. See the [climbing repository](../packages/server/src/repositories/climbing-repository.ts)

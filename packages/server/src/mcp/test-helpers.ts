@@ -1,36 +1,60 @@
 import type { ClimbingContext } from "@dofek/training/climbing-context";
+import type { AttachedRockClimbingObservation } from "../repositories/climbing-repository.ts";
+import {
+  climbingAttemptFixture,
+  climbingClimbFixture,
+  climbingLogEntryFixture,
+} from "../repositories/climbing-test-helpers.ts";
+
+export function attachedRockClimbingObservationFixture(
+  overrides: Partial<AttachedRockClimbingObservation> = {},
+): AttachedRockClimbingObservation {
+  return {
+    activityId: "activity-1",
+    date: "2026-07-09",
+    climbKind: "boulder",
+    attemptScope: "climb",
+    displayGrade: { grade: "V5", gradeSystem: "v_scale", gradeSortValue: 70 },
+    recordedAttempts: 3,
+    sends: 1,
+    observedOutcomes: 1,
+    unknownOutcomes: 2,
+    ...overrides,
+  };
+}
 
 export function climbingSessionContext(): ClimbingContext {
+  const { areaPath, pitches: _pitches, ...climb } = climbingClimbFixture("openbeta");
+  const leaf = areaPath[0];
+  if (!leaf) throw new Error("Expected test area");
+  leaf.name = "Crag";
   return {
     providerId: "openbeta",
-    locationPath: [{ name: "Crag", externalId: "area-1", kind: null }],
+    climb,
+    areaPath,
     board: { name: "Board", externalId: "board-1" },
     wallAngle: { value: -20, unit: null },
-    climbStyle: "top-rope",
-    resultStyle: "Fell/Hung",
+    holdType: null,
   };
 }
-export function climbingSessionDetail(context = climbingSessionContext()) {
-  return {
-    id: "entry-1",
-    climbType: "route" as const,
-    gradeSystem: "yds" as const,
-    grade: "5.10a",
-    sent: false,
-    attemptCount: null,
-    attempts: [],
-    ascentType: null,
-    holdType: null,
-    routeName: "Corner",
-    locationName: "Crag",
-    lead: false,
+export function climbingSessionDetail() {
+  const context = climbingSessionContext();
+  const catalogue = climbingClimbFixture("openbeta");
+  const log = climbingLogEntryFixture({
+    climbId: catalogue.id,
+    climb: { ...catalogue, areaPath: context.areaPath },
+    discipline: "rock_climbing",
+    climbedOn: "2026-09-29",
+    board: context.board,
+    wallAngle: context.wallAngle,
     sourceName: "Mountain Project, OpenBeta",
-    wallAngleDegrees: null,
-    context,
-  };
+    displayGrade: "5.10a",
+    recordedClimbAttemptCount: 1,
+  });
+  log.attempts = [climbingAttemptFixture(log.id, { ropeMethod: "top_rope", fellOrHung: true })];
+  return log;
 }
 export function climbingSessionResult() {
-  const detail = climbingSessionDetail();
   return {
     sessions: [
       {
@@ -39,41 +63,27 @@ export function climbingSessionResult() {
         duration_minutes: null,
         avg_hr: null,
         name: null,
-        gym_vs_crag: null,
         location: "Crag",
-        total_vertical_m: null,
-        climbs: [
-          {
-            id: detail.id,
-            discipline: "top_rope",
-            grade: detail.grade,
-            grade_system: detail.gradeSystem,
-            sent: detail.sent,
-            attempt_count: detail.attemptCount,
-            attempts: detail.attempts,
-            ascent_type: detail.ascentType,
-            hold_type: detail.holdType,
-            route_name: detail.routeName,
-            location_name: detail.locationName,
-            source_name: detail.sourceName,
-            wall_angle_degrees: detail.wallAngleDegrees,
-            context: detail.context,
-          },
-        ],
+        climbing_log_entries: [climbingSessionDetail()],
       },
     ],
     aggregates: {
       grade_distribution: [
-        { discipline: "top_rope", grade: "5.10a", grade_system: "yds", attempts: null, sends: 0 },
+        {
+          climb_kind: "route",
+          grade: "5.10a",
+          grade_system: "yds",
+          recorded_attempts: 1,
+          sends: 0,
+        },
       ],
       send_rate: 0,
-      max_grade_by_discipline: { boulder: null, route: null },
-      volume: { climbs: 1, attempts: null, sends: 0, total_vertical_m: null },
+      max_grade_by_kind: { boulder: null, route: null },
+      volume: { rock_log_entries: 1, recorded_attempts: 1, sends: 0 },
       coverage: {
-        entries: 1,
-        entries_with_attempts: 0,
-        entries_with_observed_outcome: 1,
-        attempt_data: "unavailable",
+        rock_log_entries: 1,
+        observed_free_send_outcomes: 1,
+        unknown_free_send_outcomes: 0,
       },
     },
   };

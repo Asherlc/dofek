@@ -17,6 +17,7 @@ import {
 } from "./bodyspec.ts";
 import { SyncRun } from "./sync-run.ts";
 import { SyncWindow } from "./sync-window.ts";
+import { makeTransactionalTestDatabase } from "./test-helpers.ts";
 
 // ============================================================
 // Mocks for unit-testing sync orchestration
@@ -467,7 +468,12 @@ describe("BodySpecProvider", () => {
       const onConflictDoUpdateFn = vi.fn().mockReturnValue({ returning: returningFn });
       const valuesFn = vi.fn().mockReturnValue({ onConflictDoUpdate: onConflictDoUpdateFn });
       const insertFn = vi.fn().mockReturnValue({ values: valuesFn });
-      return { insert: insertFn, select: vi.fn(), delete: vi.fn(), execute: vi.fn() };
+      return makeTransactionalTestDatabase({
+        insert: insertFn,
+        select: vi.fn(),
+        delete: vi.fn(),
+        execute: vi.fn(),
+      });
     }
 
     function jsonResponse(body: unknown, status = 200): Response {
@@ -1082,12 +1088,12 @@ describe("BodySpecProvider", () => {
       const onConflictDoUpdateFn = vi.fn().mockReturnValue({ returning: returningFn });
       const valuesFn = vi.fn().mockReturnValue({ onConflictDoUpdate: onConflictDoUpdateFn });
       const insertFn = vi.fn().mockReturnValue({ values: valuesFn });
-      const db: SyncDatabase = {
+      const db: SyncDatabase = makeTransactionalTestDatabase({
         insert: insertFn,
         select: vi.fn(),
         delete: vi.fn(),
         execute: vi.fn(),
-      };
+      });
 
       const provider = new BodySpecProvider(fetchFn);
       const result = await provider.sync(
@@ -1256,7 +1262,12 @@ describe("BodySpecProvider", () => {
           }),
         }),
       });
-      return { insert: insertFn, select: vi.fn(), delete: vi.fn(), execute: vi.fn() };
+      return makeTransactionalTestDatabase({
+        insert: insertFn,
+        select: vi.fn(),
+        delete: vi.fn(),
+        execute: vi.fn(),
+      });
     }
 
     it("surfaces a 429 as a ProviderRateLimitError tagged with providerId 'bodyspec'", async () => {

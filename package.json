@@ -183,7 +183,7 @@
     "backfill:body-measurements": "tsx scripts/with-env.ts -- tsx scripts/backfill-body-measurement-sample.ts",
     "backfill:hang-ten-workouts": "tsx scripts/with-env.ts -- tsx scripts/backfill-hang-ten-workouts.ts",
     "backfill:activity-overview-availability": "tsx scripts/with-env.ts -- tsx scripts/backfill-activity-overview-availability.ts",
-    "backfill:climbing-attempt-count": "tsx scripts/with-env.ts -- tsx scripts/backfill-climbing-attempt-count.ts",
+    "migrate:climbing-log-model": "tsx scripts/with-env.ts -- tsx scripts/migrate-climbing-log-model.ts",
     "backfill:sleep-quality": "tsx scripts/with-env.ts -- tsx scripts/backfill-sleep-quality.ts",
     "backfill:record-local-time": "tsx scripts/with-env.ts -- tsx scripts/backfill-record-local-time-context.ts",
     "backfill:activity-effort-identities": "tsx scripts/with-env.ts -- tsx scripts/backfill-activity-effort-identities.ts",

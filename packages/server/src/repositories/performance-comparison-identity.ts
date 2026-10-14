@@ -289,7 +289,7 @@ const unique = (values: string[]) => [...new Set(values)];
 export function resolveFromReference(row: {
   canonical_type: string;
   exercise_ids: string[];
-  climb_identities: Array<Omit<Extract<PerformanceEquivalence, { climbType: string }>, "kind">>;
+  climb_identities: Array<Omit<Extract<PerformanceEquivalence, { climbKind: string }>, "kind">>;
 }): ResolvedEquivalence {
   const climbIdentities = row.climb_identities.filter(
     (identity, index, all) =>

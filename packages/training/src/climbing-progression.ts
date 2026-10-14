@@ -1,29 +1,16 @@
 import { z } from "zod";
 import {
-  CLIMBING_GRADE_SYSTEMS,
+  FREE_ROCK_GRADE_SYSTEMS,
   gradeSystemLabel,
-  isGradeSystemForClimbType,
+  isGradeSystemForClimbKind,
 } from "./climbing-grades.ts";
-
-export const climbingProgressionStyles = [
-  "boulder",
-  "top-rope",
-  "lead",
-  "follow",
-  "solo",
-  "aid",
-  "unknown",
-] as const;
+import { attemptScopeSchema, ropeMethodSchema } from "./climbing-log.ts";
 export const climbingProgressionSettings = ["indoor", "outdoor", "unknown"] as const;
-
-export const climbingProgressionStyleLabels = {
-  boulder: "Bouldering",
-  "top-rope": "Top rope",
+const ropeMethodLabels = {
+  top_rope: "Top rope",
   lead: "Lead",
   follow: "Follow",
-  solo: "Solo",
-  aid: "Aid",
-  unknown: "Unknown style",
+  unroped: "Unroped",
 } as const;
 export const climbingProgressionSettingLabels = {
   indoor: "Indoor",
@@ -52,9 +39,12 @@ const settingSchema = z.object({
 /** Server-computed grade stacks; clients format and position these values. */
 export const climbingGradeProgressionSchema = z
   .object({
-    style: z.enum(climbingProgressionStyles),
-    climbType: z.enum(["boulder", "route"]),
-    gradeSystem: z.enum(CLIMBING_GRADE_SYSTEMS),
+    climbKind: z.enum(["boulder", "route"]),
+    attemptScope: attemptScopeSchema,
+    ropeMethod: ropeMethodSchema.nullable(),
+    solo: z.boolean().nullable(),
+    usedAid: z.boolean().nullable(),
+    gradeSystem: z.enum(FREE_ROCK_GRADE_SYSTEMS),
     grades: z.array(z.object({ grade: z.string(), gradeSortValue: z.number() })),
     settings: z.array(z.enum(climbingProgressionSettings)),
     axisMax: z.number().positive(),
@@ -68,23 +58,65 @@ export const climbingGradeProgressionSchema = z
       }),
     ),
   })
-  .refine((lane) => isGradeSystemForClimbType(lane.gradeSystem, lane.climbType), {
+  .refine((lane) => isGradeSystemForClimbKind(lane.gradeSystem, lane.climbKind), {
     path: ["gradeSystem"],
-    message: "Grade system must match the climb type",
+    message: "Grade system must match the climb kind",
   });
 
 export type ClimbingGradeProgressionLane = z.infer<typeof climbingGradeProgressionSchema>;
 export type ClimbingProgressionPeriod = ClimbingGradeProgressionLane["periods"][number];
 export type ClimbingProgressionSetting = ClimbingProgressionPeriod["settings"][number];
 
+export function climbingProgressionLaneKey(
+  lane: Pick<
+    ClimbingGradeProgressionLane,
+    "climbKind" | "attemptScope" | "ropeMethod" | "solo" | "usedAid"
+  >,
+): string {
+  return JSON.stringify([
+    lane.climbKind,
+    lane.attemptScope,
+    lane.ropeMethod,
+    lane.solo,
+    lane.usedAid,
+  ]);
+}
+
 export function climbingProgressionLaneLabel(
   lane: ClimbingGradeProgressionLane,
   lanes: ClimbingGradeProgressionLane[],
 ): string {
-  const style = climbingProgressionStyleLabels[lane.style];
-  return lanes.some((other) => other.style === lane.style && other.gradeSystem !== lane.gradeSystem)
-    ? `${style} · ${gradeSystemLabel(lane.gradeSystem)}`
-    : style;
+  const parts = [
+    lane.climbKind === "boulder"
+      ? "Bouldering"
+      : lane.ropeMethod === null
+        ? "Routes"
+        : ropeMethodLabels[lane.ropeMethod],
+  ];
+  const matching = lanes.filter(
+    (other) =>
+      other.climbKind === lane.climbKind &&
+      other.attemptScope === lane.attemptScope &&
+      other.ropeMethod === lane.ropeMethod,
+  );
+  if (lane.climbKind === "boulder" && lane.ropeMethod !== null)
+    parts.push(ropeMethodLabels[lane.ropeMethod]);
+  if (lane.solo === true) parts.push("Solo");
+  else if (matching.some((other) => other.solo !== lane.solo))
+    parts.push(lane.solo === false ? "With belayer" : "Solo unknown");
+  if (lane.usedAid === true) parts.push("Aid");
+  else if (matching.some((other) => other.usedAid !== lane.usedAid))
+    parts.push(lane.usedAid === false ? "Without aid" : "Aid unknown");
+  if (lane.attemptScope === "pitch") parts.push("Pitch");
+  if (
+    lanes.some(
+      (other) =>
+        climbingProgressionLaneKey(other) === climbingProgressionLaneKey(lane) &&
+        other.gradeSystem !== lane.gradeSystem,
+    )
+  )
+    parts.push(gradeSystemLabel(lane.gradeSystem));
+  return parts.join(" · ");
 }
 
 export function climbingProgressionPeriodLabel(

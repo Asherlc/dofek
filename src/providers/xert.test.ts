@@ -2,6 +2,7 @@ import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SyncRun } from "./sync-run.ts";
 import { SyncWindow } from "./sync-window.ts";
+import { makeTransactionalTestDatabase } from "./test-helpers.ts";
 
 vi.mock("../db/token-user-context.ts", () => ({
   getTokenUserId: () => "user-1",
@@ -264,7 +265,7 @@ describe("XertProvider", () => {
   });
 
   it("sync returns error when no tokens", async () => {
-    const mockDb = {
+    const mockDb = makeTransactionalTestDatabase({
       select: vi.fn().mockReturnValue({
         from: vi.fn().mockReturnValue({
           where: vi.fn().mockReturnValue({
@@ -282,7 +283,7 @@ describe("XertProvider", () => {
       }),
       delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
       execute: vi.fn().mockResolvedValue([]),
-    };
+    });
     const result = await new XertProvider().sync(
       new SyncRun({ db: mockDb, window: SyncWindow.fromSince({ since: new Date("2026-01-01") }) }),
     );
@@ -343,12 +344,12 @@ describe("XertProvider", () => {
         },
       ]);
 
-    const db = {
+    const db = makeTransactionalTestDatabase({
       select: vi.fn(),
       insert: vi.fn(),
       delete: vi.fn(),
       execute: vi.fn().mockResolvedValue([]),
-    };
+    });
     const result = await new XertProvider(mockFetch).sync(
       new SyncRun({
         db,
@@ -421,12 +422,12 @@ describe("XertProvider", () => {
       return Response.json([]);
     };
 
-    const db = {
+    const db = makeTransactionalTestDatabase({
       select: vi.fn(),
       insert: vi.fn(),
       delete: vi.fn(),
       execute: vi.fn().mockResolvedValue([]),
-    };
+    });
     const result = await new XertProvider(mockFetch).sync(
       new SyncRun({
         db,
@@ -532,12 +533,12 @@ describe("XertProvider", () => {
         },
       ]);
 
-    const db = {
+    const db = makeTransactionalTestDatabase({
       select: vi.fn(),
       insert: vi.fn(),
       delete: vi.fn(),
       execute: vi.fn().mockResolvedValue([]),
-    };
+    });
     const result = await new XertProvider(mockFetch).sync(
       new SyncRun({
         db,
@@ -567,12 +568,12 @@ describe("XertProvider", () => {
   it("returns the provider API error from activity sync", async () => {
     const mockFetch: typeof globalThis.fetch = async () =>
       new Response("rate exceeded", { status: 503 });
-    const db = {
+    const db = makeTransactionalTestDatabase({
       select: vi.fn(),
       insert: vi.fn(),
       delete: vi.fn(),
       execute: vi.fn().mockResolvedValue([]),
-    };
+    });
 
     const result = await new XertProvider(mockFetch).sync(
       new SyncRun({
@@ -625,12 +626,12 @@ describe("XertProvider", () => {
         })),
       );
     };
-    const db = {
+    const db = makeTransactionalTestDatabase({
       select: vi.fn(),
       insert: vi.fn(),
       delete: vi.fn(),
       execute: vi.fn().mockResolvedValue([]),
-    };
+    });
 
     const result = await new XertProvider(mockFetch).sync(
       new SyncRun({
@@ -653,12 +654,12 @@ describe("XertProvider", () => {
       vi.setSystemTime(new Date("2026-03-01T00:00:01.375Z"));
       return Response.json([]);
     };
-    const db = {
+    const db = makeTransactionalTestDatabase({
       select: vi.fn(),
       insert: vi.fn(),
       delete: vi.fn(),
       execute: vi.fn().mockResolvedValue([]),
-    };
+    });
 
     try {
       const result = await new XertProvider(mockFetch).sync(
@@ -712,12 +713,12 @@ describe("XertProvider", () => {
       );
     };
 
-    const db = {
+    const db = makeTransactionalTestDatabase({
       select: vi.fn(),
       insert: vi.fn(),
       delete: vi.fn(),
       execute: vi.fn().mockResolvedValue([]),
-    };
+    });
     const result = await new XertProvider(mockFetch).sync(
       new SyncRun({
         db,

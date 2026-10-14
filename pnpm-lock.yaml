@@ -475,6 +475,9 @@ importers:
       '@dofek/auth':
         specifier: workspace:*
         version: link:../auth
+      '@dofek/filter-columns':
+        specifier: workspace:*
+        version: link:../filter-columns
       '@dofek/format':
         specifier: workspace:*
         version: link:../format

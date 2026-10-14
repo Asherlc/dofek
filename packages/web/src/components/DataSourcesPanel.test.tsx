@@ -1037,6 +1037,7 @@ describe("DataSourcesPanel", () => {
       foodEntries: 0,
       nutritionDaily: 0,
       clinicalRecords: 0,
+      climbingLogEntries: 0,
     };
     const kayaStats = {
       providerId: "kaya-export",
@@ -1049,6 +1050,7 @@ describe("DataSourcesPanel", () => {
       foodEntries: 0,
       nutritionDaily: 0,
       clinicalRecords: 0,
+      climbingLogEntries: 0,
     };
     mockProvidersQuery.mockReturnValue({
       data: [

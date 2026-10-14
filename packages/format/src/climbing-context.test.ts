@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  formatClimbingAttemptCount,
   formatClimbingLocationPath,
-  formatClimbingResultStyle,
-  formatClimbingStyle,
+  formatClimbingRecordedOutcome,
+  formatClimbingRopeMethod,
   formatClimbingWallAngle,
 } from "./climbing-context.ts";
 
@@ -12,8 +13,6 @@ describe("climbing context labels", () => {
       formatClimbingLocationPath(
         ["Country", "Region", "District", "Town", "Crag", "Face"].map((name) => ({
           name,
-          externalId: null,
-          kind: null,
         })),
       ),
     ).toBe("Country > Region > District > Town > Crag > Face");
@@ -22,36 +21,26 @@ describe("climbing context labels", () => {
 
   it.each([
     ["lead", "Lead"],
-    ["top-rope", "Top rope"],
+    ["top_rope", "Top rope"],
     ["follow", "Follow"],
-    ["solo", "Solo"],
-    ["aid", "Aid"],
+    ["unroped", "Unroped"],
     [null, null],
   ] as const)("formats method %s as %s", (style, label) => {
-    expect(formatClimbingStyle(style)).toBe(label);
+    expect(formatClimbingRopeMethod(style)).toBe(label);
   });
 
   it.each([
-    ["Fell/Hung", "Fell or hung"],
-    ["fell/hung", "Fell or hung"],
-    ["Onsight", "Onsight"],
-    ["Frenchfree", "Frenchfree"],
-    ["A future result", "A future result"],
-    [null, "Result unknown"],
-  ])("formats the recorded result %s", (result, label) => {
-    expect(formatClimbingResultStyle(result)).toBe(label);
+    ["climb", "completed", "Whole climb completed"],
+    ["pitch", "completed", "Pitch completed"],
+    ["climb", "failed", "Whole climb failed"],
+    ["pitch", null, "Pitch outcome unknown"],
+  ] as const)("formats the recorded %s result", (scope, result, label) => {
+    expect(formatClimbingRecordedOutcome(scope, result)).toBe(label);
   });
 
-  it("omits a result that Mountain Project does not collect for top rope", () => {
-    const context = { providerId: "mountain-project", climbStyle: "top-rope" } as const;
-    expect(formatClimbingResultStyle(null, context)).toBeNull();
-    expect(formatClimbingResultStyle("Fell/Hung", context)).toBe("Fell or hung");
-    expect(
-      formatClimbingResultStyle(null, { providerId: "openbeta", climbStyle: "top-rope" }),
-    ).toBe("Result unknown");
-    expect(
-      formatClimbingResultStyle(null, { providerId: "mountain-project", climbStyle: "lead" }),
-    ).toBe("Result unknown");
+  it("formats server-supplied recorded counts with singular and plural labels", () => {
+    expect(formatClimbingAttemptCount(1)).toBe("1 recorded attempt");
+    expect(formatClimbingAttemptCount(3)).toBe("3 recorded attempts");
   });
 
   it("labels unverified units without displaying a degree symbol", () => {

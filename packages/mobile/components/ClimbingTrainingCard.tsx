@@ -11,7 +11,7 @@ import { HangboardingSummary } from "./HangboardingSummary";
 const climbingClimbTypeSchema = z.enum(["boulder", "route"]);
 
 const mobileClimbingVolumeByGradeRowSchema = z.object({
-  climbType: climbingClimbTypeSchema,
+  climbKind: climbingClimbTypeSchema,
   grade: z.string(),
   gradeSortValue: z.number(),
   attempts: z.number().nullable(),
@@ -237,7 +237,7 @@ function ClimbingSection({ model, loading }: { model: ClimbingSectionModel; load
           <Text style={styles.activitiesEmpty}>No climbing volume by grade</Text>
         ) : (
           model.volumeRows.map((row) => (
-            <View key={`${row.climbType}-${row.grade}`} style={styles.climbingVolumeRow}>
+            <View key={`${row.climbKind}-${row.grade}`} style={styles.climbingVolumeRow}>
               <Text style={styles.climbingGradeText}>{row.grade}</Text>
               {(row.attempts ?? row.recordedAttempts) !== null && (
                 <Text style={styles.climbingMetaText}>

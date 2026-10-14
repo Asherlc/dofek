@@ -3,7 +3,7 @@ import { ClimbingVolumeByGradeChart } from "./ClimbingVolumeByGradeChart.tsx";
 
 const volumeRows = [
   {
-    climbType: "boulder" as const,
+    climbKind: "boulder" as const,
     gradeSystem: "v_scale" as const,
     grade: "V1",
     gradeSortValue: 1,
@@ -12,7 +12,7 @@ const volumeRows = [
     sends: 5,
   },
   {
-    climbType: "boulder" as const,
+    climbKind: "boulder" as const,
     gradeSystem: "v_scale" as const,
     grade: "V3",
     gradeSortValue: 3,
@@ -21,7 +21,7 @@ const volumeRows = [
     sends: 4,
   },
   {
-    climbType: "boulder" as const,
+    climbKind: "boulder" as const,
     gradeSystem: "v_scale" as const,
     grade: "V5",
     gradeSortValue: 5,
@@ -58,7 +58,7 @@ export const UnknownAttemptCounts: Story = {
   args: {
     data: [
       {
-        climbType: "boulder",
+        climbKind: "boulder",
         gradeSystem: "v_scale",
         grade: "VB",
         gradeSortValue: -1,
@@ -75,7 +75,7 @@ export const RecordedAttemptSubtotals: Story = {
   args: {
     data: [
       {
-        climbType: "boulder",
+        climbKind: "boulder",
         gradeSystem: "v_scale",
         grade: "VB",
         gradeSortValue: -1,
@@ -84,7 +84,7 @@ export const RecordedAttemptSubtotals: Story = {
         sends: 1,
       },
       {
-        climbType: "boulder",
+        climbKind: "boulder",
         gradeSystem: "v_scale",
         grade: "V0",
         gradeSortValue: 0,

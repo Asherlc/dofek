@@ -6,8 +6,10 @@
  * comments throughout provider test files.
  */
 import { sql } from "drizzle-orm";
+import { drizzle } from "drizzle-orm/node-postgres";
 import { vi } from "vitest";
-import type { SyncDatabase } from "../db/index.ts";
+import { drizzleSchema } from "../db/drizzle-schema.ts";
+import type { SyncDatabase, TransactionDatabase } from "../db/index.ts";
 import type {
   ProviderDataGenerationContext,
   ProviderDataScope,
@@ -90,6 +92,48 @@ export function openBetaGrades(overrides: Record<string, unknown> = {}): Record<
   };
 }
 
+export function kayaClimbFixture(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    id: "2001",
+    name: "Test problem",
+    lead: false,
+    climb_type: { id: "1", name: "Bouldering" },
+    grade: { id: "6", name: "V4", climb_type_group: "boulder" },
+    gym: { id: "4001", name: "Test Gym", latitude: 0, longitude: -122.25 },
+    destination: null,
+    area: null,
+    subarea: null,
+    board: null,
+    angle: null,
+    ...overrides,
+  };
+}
+export function kayaAscentFixture(
+  overrides: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    id: "3001",
+    session_id: "1000",
+    date: "2026-08-01T10:30:00Z",
+    attempts: null,
+    ascent_type: { id: "flash", name: "Flash" },
+    climb: kayaClimbFixture(),
+    ...overrides,
+  };
+}
+export function kayaSessionFixture(
+  overrides: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    id: "1000",
+    start_time: "2026-08-01T10:00:00Z",
+    end_time: "2026-08-01T11:00:00Z",
+    gym: { id: "4001", name: "Test Gym", latitude: 0, longitude: -122.25 },
+    attempted_climbs: [],
+    ...overrides,
+  };
+}
+
 export function openBetaClimb(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     uuid: "climb-uuid-1",
@@ -107,7 +151,7 @@ export function openBetaTick(overrides: Record<string, unknown> = {}): Record<st
     userId: OPENBETA_TEST_USER_UUID,
     name: "Sunset Arete",
     notes: "Great movement",
-    climbId: "climb-1",
+    climbId: "climb-uuid-1",
     style: "Lead",
     attemptType: "Redpoint",
     dateClimbed: 1786320000000,
@@ -138,17 +182,17 @@ export async function resolveProviderDataGenerationsForTest(
   };
 }
 
-export function makeTransactionalTestDatabase<TDatabase extends Database>(
-  database: TDatabase,
-): TDatabase & {
-  transaction<TResult>(work: (transaction: TDatabase) => Promise<TResult>): Promise<TResult>;
-} {
-  async function transaction<TResult>(
-    work: (transaction: TDatabase) => Promise<TResult>,
-  ): Promise<TResult> {
-    return work(database);
-  }
-  return Object.assign(database, { transaction });
+export function makeTransactionalTestDatabase<
+  TDatabase extends Omit<SyncDatabase, "transaction"> &
+    Partial<Pick<TransactionDatabase, "query" | "update">>,
+>(database: TDatabase): TDatabase & TransactionDatabase {
+  const transaction: SyncDatabase["transaction"] = async (work) => work(transactionDb);
+  const transactionDb = Object.assign(database, {
+    query: database.query ?? drizzle.mock({ schema: drizzleSchema }).query,
+    update: database.update ?? vi.fn(),
+    transaction,
+  });
+  return transactionDb;
 }
 
 /**
@@ -291,7 +335,7 @@ export function createMockDatabase(options: MockDatabaseOptions = {}): MockDatab
   // Build the db object that structurally satisfies SyncDatabase.
   // We use a function-typed variable so TypeScript infers the mock
   // return values' chain types without needing type assertions.
-  const db = makeTransactionalTestDatabase<SyncDatabase>({
+  const db = makeTransactionalTestDatabase({
     select: selectFn,
     insert: insertFn,
     delete: deleteFn,

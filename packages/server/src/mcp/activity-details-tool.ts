@@ -1,5 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
+import { loadClimbingGradePreference } from "../climbing-grade-preferences.ts";
 import { ActivityRepository } from "../repositories/activity-repository.ts";
 import { ClimbingRepository } from "../repositories/climbing-repository.ts";
 import { readFingerLoadingActivity } from "../repositories/climbing-training-log-repository.ts";
@@ -36,17 +37,24 @@ export function registerActivityDetailsTool(server: McpServer, context: DofekMcp
       const activity = await activityRepository.findById(activity_id);
       if (!activity) throw new Error("Activity not found.");
       const stableGroupId = activity.id;
-      const [strengthExercises, climbingEntries, fingerLoading] = await Promise.all([
+      const gradePreference = await loadClimbingGradePreference(context.db, context.userId);
+      const [strengthExercises, climbingLogEntries, fingerLoading] = await Promise.all([
         new StrengthRepository(
           context.db,
           context.userId,
           context.timezone,
         ).getExercisesForActivity(stableGroupId),
-        new ClimbingRepository(context.db, context.userId, context.timezone, {
-          kind: "full",
-          paid: true,
-          reason: "paid_grant",
-        }).getActivityEntries(stableGroupId),
+        new ClimbingRepository(
+          context.db,
+          context.userId,
+          context.timezone,
+          {
+            kind: "full",
+            paid: true,
+            reason: "paid_grant",
+          },
+          gradePreference,
+        ).getActivityLogEntries(stableGroupId),
         readFingerLoadingActivity({
           activityId: stableGroupId,
           database: context.db,
@@ -55,7 +63,7 @@ export function registerActivityDetailsTool(server: McpServer, context: DofekMcp
       ]);
       return jsonToolResult({
         activity,
-        climbing_entries: climbingEntries.map((entry) => entry.toDetail()),
+        climbing_log_entries: climbingLogEntries.map((entry) => entry.toDetail()),
         finger_loading: fingerLoading,
         strength_exercises: strengthExercises.map((exercise) => exercise.toDetail()),
       });

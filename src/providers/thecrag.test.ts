@@ -6,6 +6,8 @@ import {
 import { DrizzleQueryError, SQL } from "drizzle-orm";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { ClimbingLogSyncInput } from "../db/climbing-log-sync.ts";
+import type { SyncDatabase } from "../db/index.ts";
 import { authFailureReasonFromError, ProviderTokenRejectedError } from "./auth-errors.ts";
 import { SyncRun } from "./sync-run.ts";
 import { SyncWindow } from "./sync-window.ts";
@@ -15,6 +17,10 @@ import { TheCragProvider } from "./thecrag.ts";
 const USER_ID = "00000000-0000-0000-0000-000000000001";
 const ACCOUNT_ID = "123";
 const mocks = vi.hoisted(() => ({
+  persist: vi.fn(async (_db: SyncDatabase, input: ClimbingLogSyncInput) => ({
+    logEntryIds: input.entries.map((entry) => entry.externalId),
+    recordsSynced: input.entries.length,
+  })),
   ensureProvider: vi.fn().mockResolvedValue(undefined),
   loadTokens: vi.fn(),
   captureException: vi.fn(),
@@ -23,6 +29,7 @@ const mocks = vi.hoisted(() => ({
   ),
 }));
 
+vi.mock("../db/climbing-log-sync.ts", () => ({ persistClimbingLogEntries: mocks.persist }));
 vi.mock("../db/tokens.ts", () => ({
   ensureProvider: mocks.ensureProvider,
   loadTokens: mocks.loadTokens,
@@ -65,15 +72,10 @@ function makeRun(
   });
 }
 
-function writtenRecords(mockDatabase: ReturnType<typeof createMockDatabase>): unknown {
-  const statement = mockDatabase.spies.execute.mock.calls.at(-1)?.[0];
-  if (!(statement instanceof SQL)) throw new Error("No climbing-record statement was written");
-  const parameters = new PgDialect().sqlToQuery(statement).params;
-  const encodedRecords = parameters.find(
-    (parameter): parameter is string => typeof parameter === "string" && parameter.startsWith("[{"),
-  );
-  if (!encodedRecords) throw new Error("Climbing-record statement has no encoded records");
-  return JSON.parse(encodedRecords);
+function writtenRecords() {
+  const input = mocks.persist.mock.calls.at(-1)?.[1];
+  if (!input) throw new Error("No source batch was written");
+  return input.entries;
 }
 
 afterEach(() => {
@@ -244,6 +246,54 @@ describe("TheCragProvider personal key authentication", () => {
 });
 
 describe("TheCragProvider logbook sync", () => {
+  it.each([
+    ["attempt", [{ scope: "climb", outcome: "failed" }]],
+    ["dog", [{ scope: "climb", outcome: "completed", fellOrHung: true }]],
+    ["tick", [{ scope: "climb", outcome: "completed" }]],
+  ])("maps explicit source outcome %s independently of fall or hang", async (label, attempts) => {
+    const database = createMockDatabase();
+    const result = await new TheCragProvider(
+      vi
+        .fn<typeof fetch>()
+        .mockResolvedValue(response([theCragAscent({ tick: { label, name: label } })])),
+    ).sync(makeRun(database.db));
+    expect(result).toMatchObject({ recordsSynced: 1, errors: [] });
+    expect(writtenRecords()[0]).toMatchObject({ notes: "Personal ascent notes", attempts });
+  });
+  it("maps an aid Onsight without inferring falling or hanging", async () => {
+    const database = createMockDatabase();
+    await new TheCragProvider(
+      vi.fn<typeof fetch>().mockResolvedValue(
+        response([
+          theCragAscent({
+            climbedGearStyle: "aid",
+            tick: { label: "onsight", name: "Aid Onsight" },
+          }),
+        ]),
+      ),
+    ).sync(makeRun(database.db));
+    expect(writtenRecords()[0]).toMatchObject({
+      attempts: [{ scope: "climb", usedAid: true, qualifier: "aid-onsight" }],
+    });
+  });
+  it.each([
+    ["lead solo", "lead", false],
+    ["top rope solo", "top_rope", false],
+    ["aid solo", null, true],
+  ] as const)("maps independent method and aid use for %s", async (label, ropeMethod, aid) => {
+    const database = createMockDatabase();
+    await new TheCragProvider(async () =>
+      response([theCragAscent({ climbedGearStyle: aid ? "aid" : "sport", tick: { label } })]),
+    ).sync(makeRun(database.db));
+    expect(writtenRecords()[0]?.attempts).toEqual([
+      expect.objectContaining({
+        scope: "climb",
+        solo: true,
+        ropeMethod,
+        ...(aid ? { usedAid: true } : {}),
+      }),
+    ]);
+  });
   it("reports malformed JSON without leaking the upstream body to errors or telemetry", async () => {
     const body = "KEY123 NOTE456";
     const fetchFn = vi.fn<typeof fetch>().mockResolvedValue(new Response(body, { status: 200 }));
@@ -281,26 +331,28 @@ describe("TheCragProvider logbook sync", () => {
     });
     const result = await new TheCragProvider(fetchFn).sync(makeRun(database.db));
     expect(result).toMatchObject({ recordsSynced: 1, errors: [] });
-    expect(writtenRecords(database)).toEqual([
+    expect(writtenRecords()).toEqual([
       expect.objectContaining({
-        external_id: "thecrag:1001",
-        unattached_date: "2026-10-10",
-        climb_type: "route",
-        grade_system: "yds",
-        grade: "5.10a",
-        result_style: "Redpoint",
-        climb_style: null,
-        route_protection: ["sport"],
-        attempt_count: null,
-        board: null,
-        wall_angle: null,
-        route_name: "Sunset Arete",
-        location_path: [
-          { name: "United States", externalId: "3001", kind: null },
-          { name: "Example Crag", externalId: "3002", kind: null },
-          { name: "South Wall", externalId: "3003", kind: null },
+        externalId: "thecrag:1001",
+        climbedOn: "2026-10-10",
+        attempts: [
+          expect.objectContaining({
+            scope: "climb",
+            qualifier: "free-send",
+            protectionUsed: ["sport"],
+          }),
         ],
         raw: { accountId: "123", ascent: source },
+        climb: expect.objectContaining({
+          kind: "route",
+          publishedGrades: [{ system: "yds", value: "5.10a" }],
+          name: "Sunset Arete",
+          areas: [
+            { name: "United States", externalId: "3001" },
+            { name: "Example Crag", externalId: "3002" },
+            { name: "South Wall", externalId: "3003" },
+          ],
+        }),
       }),
     ]);
     expect(mocks.loadTokens).toHaveBeenCalledWith(database.db, "thecrag", USER_ID);
@@ -324,13 +376,15 @@ describe("TheCragProvider logbook sync", () => {
       vi.fn<typeof fetch>().mockResolvedValue(response([source])),
     ).sync(makeRun(database.db));
     expect(result.errors).toEqual([]);
-    expect(writtenRecords(database)).toEqual([
+    expect(writtenRecords()).toEqual([
       expect.objectContaining({
-        location_path: [
-          { name: "United States", externalId: "3001", kind: null },
-          { name: "Example Crag", externalId: "3002", kind: null },
-        ],
         raw: { accountId: "123", ascent: source },
+        climb: expect.objectContaining({
+          areas: [
+            { name: "United States", externalId: "3001" },
+            { name: "Example Crag", externalId: "3002" },
+          ],
+        }),
       }),
     ]);
   });
@@ -352,6 +406,15 @@ describe("TheCragProvider logbook sync", () => {
     ["BLDV:V3", "Boulder", "boulder", "v_scale", "V3"],
     ["FR:  6a", "Sport", "sport", "french", "6a"],
     ["FR \n6a", "Sport", "sport", "french", "6a"],
+    ["AID A2", "Aid", "aid", "aid", "A2"],
+    ["AIDC C2+", "Aid", "aid", "aid", "C2+"],
+    ["WICE WI4+", "Ice", "ice", "water_ice", "WI4+"],
+    ["AICE AI3", "Ice", "ice", "alpine_ice", "AI3"],
+    ["MIXED M6+", "Mixed", "mixed", "mixed", "M6+"],
+    ["IFAS AD+", "Alpine", "alpine", "ifas", "AD+"],
+    ["NCCS VI", "Alpine", "alpine", "nccs", "VI"],
+    ["UK E3", "Trad", "trad", "british_adjectival", "E3"],
+    ["UKT 5c", "Trad", "trad", "british_technical", "5c"],
   ])(
     "maps evidenced grade %s without interpreting gradeAtom.type",
     async (sourceGrade, style, climbedGearStyle, gradeSystem, grade) => {
@@ -364,15 +427,54 @@ describe("TheCragProvider logbook sync", () => {
         vi.fn<typeof fetch>().mockResolvedValue(response([source])),
       ).sync(makeRun(database.db));
       expect(result).toMatchObject({ recordsSynced: 1, errors: [] });
-      expect(writtenRecords(database)).toEqual([
+      expect(writtenRecords()).toEqual([
         expect.objectContaining({
-          grade_system: gradeSystem,
-          grade,
           raw: { accountId: "123", ascent: source },
+          climb: expect.objectContaining({
+            publishedGrades: [{ value: grade, system: gradeSystem }],
+          }),
         }),
       ]);
     },
   );
+  it("keeps advertised sport protection separate from a Greenpoint's trad protection", async () => {
+    const database = createMockDatabase();
+    await new TheCragProvider(async () =>
+      response([
+        theCragAscent({
+          climbedGearStyle: "trad",
+          tick: { label: "greenpoint" },
+          route: { id: "2001", grade: "YDS 5.10a AIDC C2", style: "Sport" },
+        }),
+      ]),
+    ).sync(makeRun(database.db));
+    expect(writtenRecords()[0]).toMatchObject({
+      climb: {
+        routeProtection: ["sport"],
+        publishedGrades: [
+          { value: "5.10a", system: "yds" },
+          { value: "C2", system: "aid" },
+        ],
+      },
+      attempts: [{ scope: "climb", protectionUsed: ["trad"], qualifier: "free-send" }],
+    });
+  });
+  it.each([
+    ["repeat", { hadCompletedBefore: true }],
+    ["ground-up redpoint", { priorFailedAttemptsGroundUp: true }],
+    ["pinkpoint", { usedPreplacedProtection: true }],
+    ["french free", { usedAid: true }],
+    ["dab", { qualifier: "dab" }],
+    ["fell/hung", { qualifier: "fell-hung" }],
+  ])("maps independent source facts for %s", async (label, facts) => {
+    const database = createMockDatabase();
+    await new TheCragProvider(async () => response([theCragAscent({ tick: { label } })])).sync(
+      makeRun(database.db),
+    );
+    expect(writtenRecords()[0]?.attempts).toEqual([
+      expect.objectContaining({ scope: "climb", ...facts }),
+    ]);
+  });
 
   it.each([
     "19",
@@ -384,7 +486,9 @@ describe("TheCragProvider logbook sync", () => {
     "prefix FR:6a",
     "FRextra:6a",
     "FR:6a\ntrailing",
-  ])("rejects unsupported or ambiguous grade %j before storing any ascent", async (grade) => {
+    "NCCST T6",
+    "AUAID M5",
+  ])("retains grade text with an unknown system %j", async (grade) => {
     const database = createMockDatabase();
     const fetchFn = vi.fn<typeof fetch>().mockResolvedValue(
       response([
@@ -396,19 +500,16 @@ describe("TheCragProvider logbook sync", () => {
       ]),
     );
     const result = await new TheCragProvider(fetchFn).sync(makeRun(database.db));
-    expect(result.recordsSynced).toBe(0);
-    expect(result.errors).toEqual([
-      expect.objectContaining({
-        message: expect.stringMatching(/unsupported or ambiguous grade/i),
-      }),
-    ]);
-    expect(database.spies.execute).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ recordsSynced: 2, errors: [] });
+    const definition = writtenRecords()[1]?.climb;
+    if (grade !== "")
+      expect(definition).toMatchObject({ publishedGrades: [{ value: grade, system: null }] });
+    expect(writtenRecords()[1]?.raw).toMatchObject({ ascent: { route: { grade } } });
   });
 
   it.each([
     ["boulder", "Sport", "V4"],
     ["sport", "Boulder", "5.10a"],
-    ["unknown", "Unknown", "5.10a"],
   ])("rejects contradictory or unsupported discipline %s/%s", async (gear, style, grade) => {
     const database = createMockDatabase();
     const result = await new TheCragProvider(
@@ -453,7 +554,7 @@ describe("TheCragProvider logbook sync", () => {
     },
   );
 
-  it("gives an actionable review path for a recorded discipline that is not supported", async () => {
+  it("retains aid records with an unknown grade system", async () => {
     const database = createMockDatabase();
     const result = await new TheCragProvider(
       vi.fn<typeof fetch>().mockResolvedValue(
@@ -466,13 +567,12 @@ describe("TheCragProvider logbook sync", () => {
         ]),
       ),
     ).sync(makeRun(database.db));
-    expect(result.errors).toEqual([
-      expect.objectContaining({
-        message: expect.stringMatching(
-          /Review the route style or contact support before syncing this logbook\./,
-        ),
-      }),
-    ]);
+    expect(result).toMatchObject({ recordsSynced: 1, errors: [] });
+    expect(writtenRecords()[0]).toMatchObject({
+      discipline: "rock_climbing",
+      attempts: [{ scope: "climb", usedAid: true }],
+      climb: { kind: "route", publishedGrades: [{ value: "A1", system: null }] },
+    });
     expect(
       inspect(
         { errors: result.errors, telemetry: mocks.captureException.mock.calls },
@@ -490,8 +590,11 @@ describe("TheCragProvider logbook sync", () => {
         .mockResolvedValue(response([theCragAscent({ climbedGearStyle: null })])),
     ).sync(makeRun(database.db));
     expect(result.errors).toEqual([]);
-    expect(writtenRecords(database)).toEqual([
-      expect.objectContaining({ climb_type: "route", route_protection: null }),
+    expect(writtenRecords()).toEqual([
+      expect.objectContaining({
+        attempts: [expect.objectContaining({ protectionUsed: null })],
+        climb: expect.objectContaining({ kind: "route" }),
+      }),
     ]);
   });
 
@@ -528,23 +631,25 @@ describe("TheCragProvider logbook sync", () => {
       vi.fn<typeof fetch>().mockResolvedValue(response([source])),
     ).sync(makeRun(database.db));
     expect(result.errors).toEqual([]);
-    expect(writtenRecords(database)).toEqual([
+    expect(writtenRecords()).toEqual([
       expect.objectContaining({
-        location_path: [
-          { name: "United States", externalId: "3001", kind: null },
-          { name: "Area", externalId: null, kind: null },
-          { name: "Area", externalId: null, kind: null },
-        ],
         raw: { accountId: "123", ascent: source },
+        climb: expect.objectContaining({
+          areas: [
+            { name: "United States", externalId: "3001" },
+            { name: "Area", externalId: null },
+            { name: "Area", externalId: null },
+          ],
+        }),
       }),
     ]);
   });
 
   it.each([
-    [null, null],
-    [undefined, null],
-    [{ name: "  ", label: " On sight " }, "On sight"],
-  ])("retains nullable outcome metadata and trims source text (%j)", async (tick, resultStyle) => {
+    [null, undefined],
+    [undefined, undefined],
+    [{ name: "  ", label: " On sight " }, "free-onsight"],
+  ])("retains nullable outcome metadata and trims source text (%j)", async (tick, qualifier) => {
     const database = createMockDatabase({ executeResult: [{ id: "entry-1" }] });
     const result = await new TheCragProvider(
       vi.fn<typeof fetch>().mockResolvedValue(
@@ -558,13 +663,13 @@ describe("TheCragProvider logbook sync", () => {
       ),
     ).sync(makeRun(database.db));
     expect(result.errors).toEqual([]);
-    expect(writtenRecords(database)).toEqual([
+    expect(writtenRecords()).toEqual([
       expect.objectContaining({
-        result_style: resultStyle,
-        route_name: "Route name",
-        route_protection: ["trad"],
+        attempts: [expect.objectContaining({ protectionUsed: ["trad"] })],
+        climb: expect.objectContaining({ name: "Route name", routeProtection: ["trad"] }),
       }),
     ]);
+    expect(writtenRecords()[0]?.attempts[0]?.qualifier).toBe(qualifier);
   });
 
   it("preserves the source day in a complete local ISO timestamp", async () => {
@@ -575,9 +680,7 @@ describe("TheCragProvider logbook sync", () => {
         .mockResolvedValue(response([theCragAscent({ date: "2026-10-10T23:15:00" })])),
     ).sync(makeRun(database.db));
     expect(result.errors).toEqual([]);
-    expect(writtenRecords(database)).toEqual([
-      expect.objectContaining({ unattached_date: "2026-10-10" }),
-    ]);
+    expect(writtenRecords()).toEqual([expect.objectContaining({ climbedOn: "2026-10-10" })]);
   });
 
   it.each(["2026", "2026-10", "2026-02-30", "0000-01-01", "2026-10-10garbage"])(
@@ -608,13 +711,18 @@ describe("TheCragProvider logbook sync", () => {
       ),
     ).sync(makeRun(database.db));
     expect(result.errors).toEqual([]);
-    expect(writtenRecords(database)).toEqual([
+    expect(writtenRecords()).toEqual([
       expect.objectContaining({
-        result_style: "Unfamiliar result",
-        route_name: null,
-        location_path: [],
-        route_protection: null,
-        attempt_count: null,
+        attempts: [expect.objectContaining({ protectionUsed: null })],
+        climb: expect.objectContaining({
+          kind: "boulder",
+          publishedGrades: [{ value: "V4", system: "v_scale" }],
+        }),
+        raw: expect.objectContaining({
+          ascent: expect.objectContaining({
+            tick: { label: "unfamiliar-result", name: "Unfamiliar result" },
+          }),
+        }),
       }),
     ]);
   });
@@ -635,7 +743,7 @@ describe("TheCragProvider logbook sync", () => {
     const result = await new TheCragProvider(fetchFn).sync(makeRun(database.db));
     expect(result).toMatchObject({ recordsSynced: 2, errors: [] });
     expect(new URL(String(fetchFn.mock.calls[1]?.[0])).searchParams.get("page")).toBe("2");
-    expect(database.spies.execute).toHaveBeenCalledTimes(1);
+    expect(mocks.persist).toHaveBeenCalledTimes(1);
   });
 
   it("reports save failures without exposing private bound ascent data", async () => {
@@ -643,11 +751,11 @@ describe("TheCragProvider logbook sync", () => {
     const database = createMockDatabase();
     const postgresError = Object.assign(new Error("Check constraint failed"), { code: "23514" });
     const failure = new DrizzleQueryError(
-      "INSERT INTO fitness.climbing_entry SELECT private parameters",
+      "INSERT INTO fitness.climbing_log_entry SELECT private parameters",
       [JSON.stringify([{ raw: { ascent: { markdown: privateNotes } } }])],
       postgresError,
     );
-    database.spies.execute.mockRejectedValueOnce(failure);
+    mocks.persist.mockRejectedValueOnce(failure);
     const result = await new TheCragProvider(
       vi
         .fn<typeof fetch>()
@@ -680,7 +788,7 @@ describe("TheCragProvider logbook sync", () => {
     async (code) => {
       const database = createMockDatabase();
       const driverError = Object.assign(new Error("private driver details"), { code });
-      database.spies.execute.mockRejectedValueOnce(
+      mocks.persist.mockRejectedValueOnce(
         new DrizzleQueryError("INSERT private bound query", ["private ascent notes"], driverError),
       );
       const result = await new TheCragProvider(

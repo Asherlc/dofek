@@ -16,6 +16,7 @@ import {
   StrongCsvValidationError,
   strongCsvWeightUnit,
 } from "./strong-csv.ts";
+import { makeTransactionalTestDatabase } from "./test-helpers.ts";
 
 vi.mock("../db/tokens.ts", () => ({
   ensureProvider: vi.fn().mockResolvedValue(undefined),
@@ -128,30 +129,6 @@ describe("importStrongCsv", () => {
         "America/Los_Angeles",
       ]),
     ).rejects.toThrow(StrongCsvValidationError);
-  });
-
-  it("requires a transactional database before importing", async () => {
-    await expect(
-      importStrongCsv(
-        { insert: vi.fn(), execute: vi.fn(), select: vi.fn(), delete: vi.fn() },
-        "Date,Workout Name,Duration,Exercise Name,Set Order,Weight,Reps\n2026-01-15 07:55:54,Leg Day,30m,Squat,0,100,5",
-        "user-1",
-        "kg",
-        "America/Los_Angeles",
-      ),
-    ).rejects.toThrow("transactional database");
-  });
-
-  it("rejects a non-function transaction property", async () => {
-    await expect(
-      Reflect.apply(importStrongCsv, undefined, [
-        { insert: vi.fn(), execute: vi.fn(), select: vi.fn(), delete: vi.fn(), transaction: null },
-        "Date,Workout Name,Duration,Exercise Name,Set Order,Weight,Reps\n2026-01-15 07:55:54,Leg Day,30m,Squat,0,100,5",
-        "user-1",
-        "kg",
-        "America/Los_Angeles",
-      ]),
-    ).rejects.toThrow("Strong CSV import requires a transactional database");
   });
 
   it("fails the import for a nonexistent local workout timestamp", async () => {
@@ -298,20 +275,22 @@ describe("importStrongCsv", () => {
           onConflictDoNothing: vi.fn().mockResolvedValue(undefined),
         }),
       });
-    const db = withTransaction({
-      execute,
-      insert,
-      delete: vi.fn().mockReturnValue({
-        where: vi.fn().mockResolvedValue(undefined),
-      }),
-      select: vi.fn().mockReturnValue({
-        from: vi.fn().mockReturnValue({
-          where: vi.fn().mockReturnValue({
-            limit: vi.fn().mockResolvedValue([{ id: "exercise-1" }]),
+    const db = withTransaction(
+      makeTransactionalTestDatabase({
+        execute,
+        insert,
+        delete: vi.fn().mockReturnValue({
+          where: vi.fn().mockResolvedValue(undefined),
+        }),
+        select: vi.fn().mockReturnValue({
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              limit: vi.fn().mockResolvedValue([{ id: "exercise-1" }]),
+            }),
           }),
         }),
       }),
-    });
+    );
 
     const result = await runWithProviderIngestContext({ homeTimezone: "America/Los_Angeles" }, () =>
       Reflect.apply(importStrongCsv, undefined, [
@@ -432,18 +411,20 @@ describe("importStrongCsv", () => {
           onConflictDoNothing: vi.fn().mockResolvedValue(undefined),
         }),
       });
-    const db = withTransaction({
-      execute,
-      insert,
-      delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
-      select: vi.fn().mockReturnValue({
-        from: vi.fn().mockReturnValue({
-          where: vi.fn().mockReturnValue({
-            limit: vi.fn().mockResolvedValue([{ id: "exercise-1" }]),
+    const db = withTransaction(
+      makeTransactionalTestDatabase({
+        execute,
+        insert,
+        delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
+        select: vi.fn().mockReturnValue({
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              limit: vi.fn().mockResolvedValue([{ id: "exercise-1" }]),
+            }),
           }),
         }),
       }),
-    });
+    );
 
     await runWithProviderIngestContext({ homeTimezone: "America/Los_Angeles" }, () =>
       Reflect.apply(importStrongCsv, undefined, [db, csv, "user-1", "lbs", "America/Los_Angeles"]),
@@ -460,16 +441,20 @@ describe("importStrongCsv", () => {
 
   it("does not replace prior sets when the activity upsert returns no row", async () => {
     const deleteRows = vi.fn();
-    const db = withTransaction({
-      execute: vi.fn(),
-      insert: vi.fn().mockReturnValue({
-        values: vi.fn().mockReturnValue({
-          onConflictDoUpdate: vi.fn().mockReturnValue({ returning: vi.fn().mockResolvedValue([]) }),
+    const db = withTransaction(
+      makeTransactionalTestDatabase({
+        execute: vi.fn(),
+        insert: vi.fn().mockReturnValue({
+          values: vi.fn().mockReturnValue({
+            onConflictDoUpdate: vi
+              .fn()
+              .mockReturnValue({ returning: vi.fn().mockResolvedValue([]) }),
+          }),
         }),
+        delete: deleteRows,
+        select: vi.fn(),
       }),
-      delete: deleteRows,
-      select: vi.fn(),
-    });
+    );
 
     const result = await importStrongCsv(
       db,
@@ -503,24 +488,26 @@ describe("importStrongCsv", () => {
         }),
       })
       .mockReturnValueOnce({ values: vi.fn().mockResolvedValue(undefined) });
-    const db = withTransaction({
-      execute: vi.fn().mockResolvedValue([
-        {
-          alias_exercise_id: "00000000-0000-4000-8000-000000000001",
-          exercise_id: "00000000-0000-4000-8000-000000000001",
-          source_linked: true,
-        },
-      ]),
-      insert,
-      delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
-      select: vi.fn().mockReturnValue({
-        from: vi.fn().mockReturnValue({
-          where: vi.fn().mockReturnValue({
-            limit: vi.fn().mockResolvedValue([{ id: "exercise-1" }]),
+    const db = withTransaction(
+      makeTransactionalTestDatabase({
+        execute: vi.fn().mockResolvedValue([
+          {
+            alias_exercise_id: "00000000-0000-4000-8000-000000000001",
+            exercise_id: "00000000-0000-4000-8000-000000000001",
+            source_linked: true,
+          },
+        ]),
+        insert,
+        delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
+        select: vi.fn().mockReturnValue({
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              limit: vi.fn().mockResolvedValue([{ id: "exercise-1" }]),
+            }),
           }),
         }),
       }),
-    });
+    );
 
     const result = await Reflect.apply(importStrongCsv, undefined, [
       db,

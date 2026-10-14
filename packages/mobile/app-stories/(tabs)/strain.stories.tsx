@@ -191,7 +191,7 @@ function createSeededProviders(
           withUnknownClimbingAttempts || withRecordedClimbingAttempts
             ? [
                 {
-                  climbType: "boulder",
+                  climbKind: "boulder",
                   gradeSystem: "v_scale",
                   grade: "VB",
                   gradeSortValue: -1,
@@ -200,7 +200,7 @@ function createSeededProviders(
                   sends: 1,
                 },
                 {
-                  climbType: "boulder",
+                  climbKind: "boulder",
                   gradeSystem: "v_scale",
                   grade: "V0",
                   gradeSortValue: 0,
@@ -209,7 +209,7 @@ function createSeededProviders(
                   sends: 0,
                 },
                 {
-                  climbType: "boulder",
+                  climbKind: "boulder",
                   gradeSystem: "v_scale",
                   grade: "V1",
                   gradeSortValue: 1,

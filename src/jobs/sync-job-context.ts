@@ -8,7 +8,6 @@ import type { SyncCheckpointStore, SyncProvider } from "../providers/types.ts";
 import { enqueueSyncJob } from "./enqueue-sync-job.ts";
 import type { SyncJob } from "./queues.ts";
 import { syncRequestedAtFromJobData, syncWindowFromJobData } from "./sync-job-window.ts";
-import { requireTransactionalSyncDatabase } from "./sync-processing-operation.ts";
 
 /**
  * Compute overall job percentage from completed providers + within-provider progress.
@@ -134,20 +133,16 @@ export class SyncJobContext {
       checkpoint: createCheckpointStore(job),
       enqueueSyncContinuation: async (checkpoint) => {
         signal?.throwIfAborted();
-        await withAccountErasureUserWriteFence(
-          requireTransactionalSyncDatabase(db),
-          job.data.userId,
-          async () => {
-            signal?.throwIfAborted();
-            await enqueueSyncJob(provider.id, {
-              ...job.data,
-              providerId: provider.id,
-              sinceIso: since.toISOString(),
-              untilIso: until.toISOString(),
-              checkpoint,
-            });
-          },
-        );
+        await withAccountErasureUserWriteFence(db, job.data.userId, async () => {
+          signal?.throwIfAborted();
+          await enqueueSyncJob(provider.id, {
+            ...job.data,
+            providerId: provider.id,
+            sinceIso: since.toISOString(),
+            untilIso: until.toISOString(),
+            checkpoint,
+          });
+        });
       },
     });
   }

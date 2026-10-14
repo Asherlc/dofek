@@ -1,471 +1,238 @@
-import { SQL } from "drizzle-orm";
-import { PgDialect } from "drizzle-orm/pg-core";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { climbingEntry } from "../db/schema/activity.ts";
+import type { ClimbingLogSyncInput } from "../db/climbing-log-sync.ts";
+import type { SyncDatabase } from "../db/index.ts";
 import { SyncRun } from "./sync-run.ts";
 import { SyncWindow } from "./sync-window.ts";
+import { makeTransactionalTestDatabase } from "./test-helpers.ts";
 
 const mocks = vi.hoisted(() => ({
   ensureProvider: vi.fn().mockResolvedValue(undefined),
   loadTokens: vi.fn().mockResolvedValue({
     accessToken: "110186720",
     refreshToken: null,
-    expiresAt: new Date("2099-12-31T00:00:00.000Z"),
+    expiresAt: new Date("2099-12-31T00:00:00Z"),
     scopes: "ticks",
   }),
-  withSyncLog: vi.fn(async (_db, _providerId, _dataType, callback) => (await callback()).result),
+  withSyncLog: vi.fn(async (_db, _provider, _type, callback) => (await callback()).result),
+  persist: vi.fn(async (_db: SyncDatabase, input: ClimbingLogSyncInput) => ({
+    logEntryIds: input.entries.map((entry) => entry.externalId),
+    recordsSynced: input.entries.length,
+  })),
   captureException: vi.fn(),
 }));
-
 vi.mock("../db/tokens.ts", () => ({
   ensureProvider: mocks.ensureProvider,
   loadTokens: mocks.loadTokens,
 }));
 vi.mock("../db/sync-log.ts", () => ({ withSyncLog: mocks.withSyncLog }));
+vi.mock("../db/climbing-log-sync.ts", () => ({ persistClimbingLogEntries: mocks.persist }));
 vi.mock("../lib/error-reporting.ts", () => ({ captureException: mocks.captureException }));
 
 import { MountainProjectProvider } from "./mountain-project.ts";
 
 const header =
   'Date,Route,Rating,Notes,URL,Pitches,Location,"Avg Stars","Your Stars",Style,"Lead Style","Route Type","Your Rating",Length,"Rating Code"';
-
-function exportCsv(rows: string[]): string {
+function csv(rows: string[]) {
   return [header, ...rows].join("\n");
 }
-
-function makeDb() {
-  const conflictUpdates = vi.fn().mockResolvedValue(undefined);
-  const climbingEntryValues = vi.fn().mockReturnValue({ onConflictDoUpdate: conflictUpdates });
-  const insert = vi.fn().mockReturnValue({ values: climbingEntryValues });
-  return {
-    db: {
-      insert,
-      delete: vi.fn(),
-      select: vi.fn(),
-      execute: vi.fn(),
-    },
-    climbingEntryValues,
-    conflictUpdates,
-    insert,
-  };
+function row(
+  style = "Lead",
+  qualifier = "Onsight",
+  type = "Trad",
+  grade = "5.7",
+  date = "2026-08-10",
+) {
+  return `${date},West Overhang,${grade},Source note,https://www.mountainproject.com/route/105751342/west-overhang,1,"Colorado > Boulder > Eldorado Canyon",2.4,-1,${style},${qualifier},${type},,,1800`;
 }
-
-function makeRun(
-  db: ReturnType<typeof makeDb>["db"],
-  userId: string | null = "00000000-0000-0000-0000-000000000001",
-): SyncRun {
-  return new SyncRun({
-    db,
-    window: SyncWindow.full(new Date("2026-08-11T00:00:00.000Z")),
-    userId: userId ?? undefined,
+function run(provider: MountainProjectProvider) {
+  const db = makeTransactionalTestDatabase({
+    select: vi.fn(),
+    insert: vi.fn(),
+    delete: vi.fn(),
+    execute: vi.fn().mockResolvedValue([]),
   });
+  return provider.sync(
+    new SyncRun({
+      db,
+      userId: "00000000-0000-0000-0000-000000000001",
+      window: SyncWindow.full(new Date("2026-08-11T00:00:00Z")),
+    }),
+  );
 }
-
+function entries() {
+  const input = mocks.persist.mock.calls[0]?.[1];
+  if (!input) throw new Error("Expected source batch");
+  return input.entries;
+}
 afterEach(() => {
   vi.clearAllMocks();
   mocks.loadTokens.mockResolvedValue({
     accessToken: "110186720",
     refreshToken: null,
-    expiresAt: new Date("2099-12-31T00:00:00.000Z"),
+    expiresAt: new Date("2099-12-31T00:00:00Z"),
     scopes: "ticks",
   });
-  mocks.withSyncLog.mockImplementation(
-    async (_db, _providerId, _dataType, callback) => (await callback()).result,
-  );
 });
 
 describe("MountainProjectProvider", () => {
-  it.each([
-    ["Sport", ["sport"]],
-    ["Trad", ["trad"]],
-    [" sport , TRAD , TR ", ["sport", "trad"]],
-    ["Top Rope", []],
-    ["", null],
-    ["   ", null],
-  ])("preserves route protection from CSV type %j", async (routeType, routeProtection) => {
-    const { db, climbingEntryValues } = makeDb();
-    const csv = exportCsv([
-      `2026-08-10,Context Route,5.9,,https://www.mountainproject.com/route/100/context,1,Crag,2.4,-1,Lead,Redpoint,"${routeType}",,,1800`,
-    ]);
-    const result = await new MountainProjectProvider(async () => new Response(csv)).sync(
-      makeRun(db),
-    );
-    expect(result).toMatchObject({ recordsSynced: 1, errors: [] });
-    expect(climbingEntryValues).toHaveBeenCalledExactlyOnceWith(
-      expect.objectContaining({ routeProtection, climbStyle: "lead" }),
-    );
-  });
-
-  it("preserves nonempty path nodes and leaves a boulder's rope method unknown", async () => {
-    const { db, climbingEntryValues } = makeDb();
-    const csv = exportCsv([
-      '2026-08-10,Context Boulder,V4,,https://www.mountainproject.com/route/100/context,1," Country > > Wall > ",2.4,-1,Lead,,Boulder,,,20400',
-    ]);
-    const result = await new MountainProjectProvider(async () => new Response(csv)).sync(
-      makeRun(db),
-    );
-    expect(result).toMatchObject({ recordsSynced: 1, errors: [] });
-    expect(climbingEntryValues).toHaveBeenCalledExactlyOnceWith(
-      expect.objectContaining({
-        climbType: "boulder",
-        climbStyle: null,
-        resultStyle: "Lead",
-        locationPath: [
-          { name: "Country", externalId: null, kind: null },
-          { name: "Wall", externalId: null, kind: null },
-        ],
-      }),
-    );
-  });
-  it.each([
-    ["Lead", "lead"],
-    ["TR", "top-rope"],
-    ["Follow", "follow"],
-    ["Solo", "solo"],
-    ["Aid", "aid"],
-  ])("preserves %s and six location levels independently of a result", async (style, method) => {
-    const { db, climbingEntryValues } = makeDb();
-    const csv = exportCsv([
-      `2026-08-10,Context Route,5.9,,https://www.mountainproject.com/route/100/context,1,"Country > State > Region > Park > Crag > Wall",2.4,-1,${style},Fell/Hung,Trad,,,1800`,
-    ]);
-    const result = await new MountainProjectProvider(async () => new Response(csv)).sync(
-      makeRun(db),
-    );
-    expect(result.errors).toEqual([]);
-    expect(climbingEntryValues).toHaveBeenCalledWith(
-      expect.objectContaining({
-        climbStyle: method,
-        routeProtection: ["trad"],
-        resultStyle: "Fell/Hung",
-        attemptCount: null,
-        locationPath: ["Country", "State", "Region", "Park", "Crag", "Wall"].map((name) => ({
-          name,
-          externalId: null,
-          kind: null,
-        })),
-        board: null,
-        wallAngle: null,
-      }),
-    );
-  });
-  it("returns an actionable error without persisting when no user context is available", async () => {
-    const { db } = makeDb();
-    const provider = new MountainProjectProvider(vi.fn());
-
-    const result = await provider.sync(makeRun(db, null));
-
-    expect(result).toMatchObject({
-      provider: "mountain-project",
-      recordsSynced: 0,
-      errors: [
-        expect.objectContaining({ message: "Mountain Project sync requires a user context." }),
-      ],
-    });
-    expect(mocks.ensureProvider).not.toHaveBeenCalled();
-    expect(db.insert).not.toHaveBeenCalled();
-    expect(db.execute).not.toHaveBeenCalled();
-  });
-
-  it("uses a profile URL manual-token connection without OAuth credentials", async () => {
-    const provider = new MountainProjectProvider(async () => new Response(exportCsv([])));
-    const setup = provider.authSetup();
-
+  it("connects a public profile through the existing form", async () => {
+    const setup = new MountainProjectProvider(async () => new Response(csv([]))).authSetup();
+    expect(setup.manualToken?.kind).toBe("public-profile");
     await expect(
       setup.manualToken?.exchangeToken("https://www.mountainproject.com/user/110186720/example"),
     ).resolves.toMatchObject({ accessToken: "110186720", scopes: "ticks" });
-    expect(setup.oauthConfig).toBeUndefined();
-    expect(setup.automatedLogin).toBeUndefined();
   });
-
-  it("rejects a profile connection when the public endpoint does not return a tick export", async () => {
-    const provider = new MountainProjectProvider(async () => new Response("not a CSV"));
-
-    await expect(provider.authSetup().manualToken?.exchangeToken("110186720")).rejects.toThrow(
+  it("rejects a profile response without a valid tick export", async () => {
+    const setup = new MountainProjectProvider(
+      async () => new Response("<html>Private</html>"),
+    ).authSetup();
+    await expect(setup.manualToken?.exchangeToken("110186720")).rejects.toThrow(
       "Paste your public Mountain Project profile URL",
     );
   });
-
-  it("returns an actionable error without fetching when the stored profile identity is missing", async () => {
-    mocks.loadTokens.mockResolvedValueOnce(null);
-    const { db } = makeDb();
-    const provider = new MountainProjectProvider(vi.fn());
-
-    const result = await provider.sync(makeRun(db));
-
-    expect(provider.validate()).toBeNull();
-    expect(result).toMatchObject({
-      provider: "mountain-project",
-      recordsSynced: 0,
-      errors: [expect.objectContaining({ message: expect.stringContaining("profile connection") })],
-    });
-    expect(db.execute).not.toHaveBeenCalled();
-  });
-
-  it("persists one standalone climbing entry per supported tick", async () => {
-    const csv = exportCsv([
-      '2026-08-10,"West Overhang",5.7,"2:1 W/TMG",https://www.mountainproject.com/route/105751342/west-overhang,1,"Colorado > Boulder > Eldorado Canyon",2.4,-1,Lead,Onsight,Trad,,,1800',
-      '2026-08-10,"Still My Way",5.10b/c,,https://www.mountainproject.com/route/110994870/still-my-way,1,"Colorado > Boulder > Eldorado Canyon",2.2,2,TR,,Sport,,40,1800',
-      '2026-08-10,"Jim Hall Left",V0,,https://www.mountainproject.com/route/110000001/jim-hall-left,1,"Colorado > Boulder > Flagstaff",2.0,3,Flash,,Boulder,,,20008',
-    ]);
-    const { db, climbingEntryValues } = makeDb();
-    const provider = new MountainProjectProvider(async () => new Response(csv));
-
-    const result = await provider.sync(makeRun(db));
-
-    expect(result).toMatchObject({ provider: "mountain-project", recordsSynced: 3, errors: [] });
-    expect(climbingEntryValues).toHaveBeenCalledTimes(3);
-    const values = climbingEntryValues.mock.calls.map(([value]) => value);
-    expect(values).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          userId: "00000000-0000-0000-0000-000000000001",
-          providerId: "mountain-project",
-          activityId: null,
-          unattachedDate: "2026-08-10",
-          externalId: expect.stringMatching(/^mountain-project:tick:/),
-          climbType: "route",
-          gradeSystem: "yds",
-          grade: "5.7",
-          resultStyle: "Onsight",
-          attemptCount: null,
-          routeName: "West Overhang",
-          locationPath: [
-            { name: "Colorado", externalId: null, kind: null },
-            { name: "Boulder", externalId: null, kind: null },
-            { name: "Eldorado Canyon", externalId: null, kind: null },
-          ],
-          raw: expect.objectContaining({
-            Notes: "2:1 W/TMG",
-            "Your Stars": "-1",
-            sourceProfileId: "110186720",
-          }),
-        }),
-        expect.objectContaining({ resultStyle: null, attemptCount: null, grade: "5.10b" }),
-      ]),
-    );
-    expect(db.execute).toHaveBeenCalledOnce();
-    const reconciliationQuery = db.execute.mock.calls[0]?.[0];
-    if (!(reconciliationQuery instanceof SQL)) throw new Error("Expected reconciliation SQL");
-    const reconciliation = new PgDialect().sqlToQuery(reconciliationQuery);
-    expect(reconciliation.params).toContain(values[0]?.externalId);
-  });
-
-  it("does not reconcile prior ticks from an empty export", async () => {
-    const { db } = makeDb();
-    const provider = new MountainProjectProvider(async () => new Response(exportCsv([])));
-
-    const result = await provider.sync(makeRun(db));
-
-    expect(result).toMatchObject({ recordsSynced: 0, errors: [] });
-    expect(db.execute).not.toHaveBeenCalled();
-  });
-
-  it("assigns unique stable external IDs to repeated same-day laps", async () => {
-    const row =
-      '2026-08-10,"West Overhang",5.7,,https://www.mountainproject.com/route/105751342/west-overhang,1,"Colorado > Boulder > Eldorado Canyon",2.4,-1,Lead,Redpoint,Trad,,,1800';
-    const { db, climbingEntryValues } = makeDb();
-    const provider = new MountainProjectProvider(async () => new Response(exportCsv([row, row])));
-
-    await provider.sync(makeRun(db));
-
-    const externalIds = climbingEntryValues.mock.calls.map(([entry]) => entry.externalId);
-    expect(externalIds).toHaveLength(2);
-    expect(externalIds[0]).not.toBe(externalIds[1]);
-  });
-
-  it("validates rows, classifies every sent state, and falls back to Rating Code for boulders", async () => {
-    const csv = exportCsv([
-      '2026-02-30,"Impossible Date",5.7,,https://www.mountainproject.com/route/1/impossible,1,"Colorado > Boulder",2.4,-1,Lead,Onsight,Trad,,,1800',
-      '2026/08/10,"Bad Date",5.7,,https://www.mountainproject.com/route/2/bad-date,1,"Colorado > Boulder",2.4,-1,Lead,Onsight,Trad,,,1800',
-      '2026-08-10,"No Location",5.7,,https://www.mountainproject.com/route/3/no-location,1,"   ",2.4,-1,Lead,Onsight,Trad,,,1800',
-      '2026-08-10,"Code Boulder",V2,,https://www.mountainproject.com/route/4/code-boulder,1," Colorado > Boulder ",2.4,-1,Attempt,,Trad,,,20000',
-      '2026-08-10,"Typed Boulder",V1,,https://www.mountainproject.com/route/5/typed-boulder,1,"Colorado > Boulder",2.4,-1,Send,,Boulder,,,0',
-      '2026-08-10,"Unknown Boulder",V0,,https://www.mountainproject.com/route/6/unknown-boulder,1,"Colorado > Boulder",2.4,-1,,,,,,20008',
-      '2026-08-10,"Fell Route",5.9,,https://www.mountainproject.com/route/7/fell-route,1,"Colorado > Boulder",2.4,-1,Lead,Fell/Hung,Trad,,,1800',
-      '2026-08-10,"Unknown Route",5.8,,https://www.mountainproject.com/route/8/unknown-route,1,"Colorado > Boulder",2.4,-1,TR,,Sport,,,1800',
-      '2026-08-10,"  ",5.6,,https://www.mountainproject.com/route/9/no-name,1,"Colorado > Boulder",2.4,-1,Lead,Redpoint,Trad,,,1800',
-    ]);
-    const { db, climbingEntryValues } = makeDb();
-    const result = await new MountainProjectProvider(async () => new Response(csv)).sync(
-      makeRun(db),
-    );
-
-    expect(result.recordsSynced).toBe(6);
-    expect(result.errors).toEqual([
-      expect.objectContaining({ message: expect.stringContaining("invalid date: 2026-02-30") }),
-      expect.objectContaining({ message: expect.stringContaining("invalid date: 2026/08/10") }),
-      expect.objectContaining({ message: expect.stringContaining("No Location") }),
-    ]);
-    const entries = climbingEntryValues.mock.calls.flatMap(([values]) => values);
-    expect(entries).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          routeName: "Code Boulder",
-          climbType: "boulder",
-          resultStyle: "Attempt",
-          attemptCount: null,
-          locationPath: [
-            { name: "Colorado", externalId: null, kind: null },
-            { name: "Boulder", externalId: null, kind: null },
-          ],
-        }),
-        expect.objectContaining({
-          routeName: "Typed Boulder",
-          climbType: "boulder",
-          resultStyle: "Send",
-          attemptCount: null,
-        }),
-        expect.objectContaining({
-          routeName: "Unknown Boulder",
-          climbType: "boulder",
-          resultStyle: null,
-          attemptCount: null,
-        }),
-        expect.objectContaining({
-          routeName: "Fell Route",
-          climbType: "route",
-          climbStyle: "lead",
-          resultStyle: "Fell/Hung",
-          attemptCount: null,
-        }),
-        expect.objectContaining({
-          routeName: "Unknown Route",
-          climbType: "route",
-          climbStyle: "top-rope",
-          resultStyle: null,
-          attemptCount: null,
-        }),
-        expect.objectContaining({
-          routeName: null,
-          climbType: "route",
-          resultStyle: "Redpoint",
-          attemptCount: null,
-        }),
-      ]),
-    );
-  });
-
-  it("restores a returning tick without replacing attachment or standalone date", async () => {
-    const csv = exportCsv([
-      '2026-08-10,"West Overhang",5.7,,https://www.mountainproject.com/route/105751342/west-overhang,1,"Colorado > Boulder",2.4,-1,Lead,Redpoint,Trad,,,1800',
-    ]);
-    const { db, climbingEntryValues, conflictUpdates } = makeDb();
-    const result = await new MountainProjectProvider(async () => new Response(csv)).sync(
-      makeRun(db),
-    );
-
-    expect(result.recordsSynced).toBe(1);
-    expect(climbingEntryValues).toHaveBeenCalledTimes(1);
-    expect(db.insert).toHaveBeenCalled();
-    expect(conflictUpdates).toHaveBeenCalledWith(
-      expect.objectContaining({
-        target: [climbingEntry.userId, climbingEntry.providerId, climbingEntry.externalId],
-        set: expect.objectContaining({ providerAbsentAt: null, raw: expect.any(Object) }),
-      }),
-    );
-    const conflictSet = conflictUpdates.mock.calls[0]?.[0].set;
-    expect(conflictSet).not.toHaveProperty("activityId");
-    expect(conflictSet).not.toHaveProperty("unattachedDate");
-    expect(db.execute).toHaveBeenCalledTimes(1);
-  });
-
-  it("reports unsupported grades and does not reconcile an unsupported-only export", async () => {
-    const csv = exportCsv([
-      '2026-08-10,"Ice Route",WI4,,https://www.mountainproject.com/route/110000002/ice-route,1,"Colorado > Boulder > Eldorado Canyon",2.4,-1,Lead,Onsight,Ice,,,0',
-      '2026-08-10,"Mixed Route",M6+,,https://www.mountainproject.com/route/110000003/mixed-route,1,"Colorado > Boulder > Eldorado Canyon",2.4,-1,Lead,Onsight,Mixed,,,0',
-    ]);
-    const { db } = makeDb();
-    const provider = new MountainProjectProvider(async () => new Response(csv));
-
-    const result = await provider.sync(makeRun(db));
-
-    expect(result.recordsSynced).toBe(0);
-    expect(result.errors).toEqual([
-      expect.objectContaining({
-        message: "Skipped 2 Mountain Project ticks with unsupported grades.",
-      }),
-    ]);
-    expect(db.execute).not.toHaveBeenCalled();
-  });
-
   it.each([
-    [
-      "a partially invalid export",
-      '2026-02-30,"Invalid Date",5.7,,https://www.mountainproject.com/route/1/invalid,1,"Colorado > Boulder",2.4,-1,Lead,Redpoint,Trad,,,1800',
-    ],
-    [
-      "an export with an unsupported tick",
-      '2026-08-10,"Ice Route",WI4,,https://www.mountainproject.com/route/2/ice,1,"Colorado > Boulder",2.4,-1,Lead,Onsight,Ice,,,0',
-    ],
-  ])("does not reconcile absent IDs from %s", async (_case, skippedRow) => {
-    const validRow =
-      '2026-08-10,"West Overhang",5.7,,https://www.mountainproject.com/route/105751342/west-overhang,1,"Colorado > Boulder",2.4,-1,Lead,Redpoint,Trad,,,1800';
-    const { db } = makeDb();
-    const provider = new MountainProjectProvider(
-      async () => new Response(exportCsv([validRow, skippedRow])),
+    ["Lead", { ropeMethod: "lead" }],
+    ["TR", { ropeMethod: "top_rope" }],
+    ["Follow", { ropeMethod: "follow" }],
+    ["Solo", { solo: true }],
+    ["Aid", { usedAid: true }],
+  ])("maps source method %s independently of result", async (style, facts) => {
+    await run(
+      new MountainProjectProvider(async () => new Response(csv([row(style, "Fell/Hung")]))),
     );
-
-    const result = await provider.sync(makeRun(db));
-
-    expect(result.recordsSynced).toBe(1);
-    expect(result.errors.length).toBeGreaterThan(0);
-    expect(db.execute).not.toHaveBeenCalled();
-  });
-
-  it("does not reconcile when the public export request fails", async () => {
-    const { db } = makeDb();
-    const provider = new MountainProjectProvider(
-      async () => new Response("unavailable", { status: 503 }),
-    );
-
-    const result = await provider.sync(makeRun(db));
-
-    expect(result.errors[0]?.message).toContain("tick export failed (503)");
-    expect(db.execute).not.toHaveBeenCalled();
-    expect(mocks.captureException).toHaveBeenCalled();
-  });
-
-  it("does not report an expected missing public export to Sentry", async () => {
-    const { db } = makeDb();
-    const provider = new MountainProjectProvider(
-      async () => new Response("not found", { status: 404 }),
-    );
-
-    const result = await provider.sync(makeRun(db));
-
-    expect(result.errors[0]?.message).toContain("couldn't read your ticks");
-    expect(db.execute).not.toHaveBeenCalled();
-    expect(mocks.captureException).not.toHaveBeenCalled();
-  });
-
-  it("reports and captures persistence failures without reconciling an incomplete write", async () => {
-    const now = vi.spyOn(Date, "now").mockReturnValueOnce(1_000).mockReturnValueOnce(1_100);
-    const { db, insert } = makeDb();
-    insert.mockReturnValueOnce({
-      values: vi.fn().mockReturnValue({
-        onConflictDoUpdate: vi.fn().mockRejectedValue(new Error("database offline")),
-      }),
+    expect(entries()[0]).toMatchObject({
+      attempts: [{ scope: "climb", ...facts, qualifier: "fell-hung" }],
+      notes: "Source note",
+      discipline: "rock_climbing",
+      climb: {
+        externalId: "105751342",
+        kind: "route",
+        name: "West Overhang",
+        publishedGrades: [{ value: "5.7", system: "yds" }],
+        areas: [
+          { name: "Colorado", externalId: null },
+          { name: "Boulder", externalId: null },
+          { name: "Eldorado Canyon", externalId: null },
+        ],
+      },
     });
-    const provider = new MountainProjectProvider(
-      async () =>
-        new Response(
-          exportCsv([
-            '2026-08-10,"West Overhang",5.7,,https://www.mountainproject.com/route/105751342/west-overhang,1,"Colorado > Boulder",2.4,-1,Lead,Redpoint,Trad,,,1800',
-          ]),
-        ),
+  });
+  it.each([
+    ["Sport", ["sport"]],
+    ["Trad", ["trad"]],
+    ['" sport , TRAD , TR "', ["sport", "trad"]],
+    ["Top Rope", []],
+    ["", null],
+  ])("preserves supplied protection %s", async (type, protection) => {
+    await run(
+      new MountainProjectProvider(async () => new Response(csv([row("Lead", "Redpoint", type)]))),
     );
-
-    const result = await provider.sync(makeRun(db));
-
-    try {
-      expect(result).toMatchObject({
-        recordsSynced: 0,
-        errors: [expect.objectContaining({ message: "database offline" })],
-      });
-      expect(result.duration).toBe(100);
-    } finally {
-      now.mockRestore();
-    }
+    expect(entries()[0]?.climb?.routeProtection).toEqual(protection);
+  });
+  it.each([
+    ["Onsight", "free-onsight"],
+    ["Flash", "free-flash"],
+    ["Redpoint", "free-send"],
+    ["Pinkpoint", "free-send"],
+    ["Fell/Hung", "fell-hung"],
+  ])("maps source qualifier %s to attempt facts", async (source, qualifier) => {
+    await run(new MountainProjectProvider(async () => new Response(csv([row("Lead", source)]))));
+    expect(entries()[0]?.attempts[0]?.qualifier).toBe(qualifier);
+  });
+  it("uses a boulder's source result while leaving rope method unknown", async () => {
+    await run(
+      new MountainProjectProvider(
+        async () => new Response(csv([row("Flash", "", "Boulder", "V4")])),
+      ),
+    );
+    expect(entries()[0]).toMatchObject({
+      attempts: [{ scope: "climb", ropeMethod: null, qualifier: "free-flash" }],
+      climb: { kind: "boulder", publishedGrades: [{ system: "v_scale", value: "V4" }] },
+    });
+  });
+  it("keeps repeated occurrences separate on one verified climb", async () => {
+    const source = row();
+    await run(new MountainProjectProvider(async () => new Response(csv([source, source]))));
+    expect(entries()).toHaveLength(2);
+    expect(new Set(entries().map((entry) => entry.externalId)).size).toBe(2);
+    expect(entries().map((entry) => entry.climb?.externalId)).toEqual(["105751342", "105751342"]);
+  });
+  it("retains ungraded undated and unknown-system source logs", async () => {
+    const result = await run(
+      new MountainProjectProvider(
+        async () => new Response(csv([row("", "", "", "", ""), row("Lead", "", "Ice", "WI4")])),
+      ),
+    );
+    expect(result).toMatchObject({ recordsSynced: 2, errors: [] });
+    expect(entries()).toEqual([
+      expect.objectContaining({
+        climbedOn: null,
+        climb: expect.objectContaining({ publishedGrades: [] }),
+      }),
+      expect.objectContaining({
+        discipline: null,
+        climb: expect.objectContaining({
+          publishedGrades: [{ value: "WI4", system: "water_ice" }],
+        }),
+      }),
+    ]);
+  });
+  it("keeps published compound grades and a separately supplied rating independent", async () => {
+    const source = row("Aid", "Flash", "Trad", "5.10 A2").replace(
+      "Trad,,,1800",
+      "Trad,5.9,100,1800",
+    );
+    await run(new MountainProjectProvider(async () => new Response(csv([source]))));
+    expect(entries()[0]).toMatchObject({
+      reportedGrades: [{ value: "5.9", system: "yds" }],
+      climb: {
+        publishedGrades: [
+          { value: "5.10", system: "yds" },
+          { value: "A2", system: "aid" },
+        ],
+      },
+      attempts: [{ scope: "climb", usedAid: true, qualifier: "aid-flash" }],
+    });
+  });
+  it("records Pinkpoint's preplaced protection separately from the route's protection", async () => {
+    await run(
+      new MountainProjectProvider(
+        async () => new Response(csv([row("Lead", "Pinkpoint", "Sport")])),
+      ),
+    );
+    expect(entries()[0]).toMatchObject({
+      climb: { routeProtection: ["sport"] },
+      attempts: [{ usedPreplacedProtection: true, qualifier: "free-send" }],
+    });
+  });
+  it("rejects malformed supplied dates while preserving the valid records", async () => {
+    const result = await run(
+      new MountainProjectProvider(
+        async () =>
+          new Response(csv([row(), row("Lead", "Redpoint", "Trad", "5.9", "2026-02-30")])),
+      ),
+    );
+    expect(result).toMatchObject({
+      recordsSynced: 1,
+      errors: [expect.objectContaining({ message: expect.stringContaining("invalid date") })],
+    });
+    expect(entries()).toHaveLength(1);
+  });
+  it.each([503, 404])("returns an actionable export failure for HTTP %s", async (status) => {
+    const result = await run(
+      new MountainProjectProvider(async () => new Response("unavailable", { status })),
+    );
+    expect(result.errors).toHaveLength(1);
+    expect(mocks.persist).not.toHaveBeenCalled();
+    if (status === 503) expect(mocks.captureException).toHaveBeenCalled();
+  });
+  it("reports persistence errors with provider context", async () => {
+    mocks.persist.mockRejectedValueOnce(new Error("database offline"));
+    const result = await run(new MountainProjectProvider(async () => new Response(csv([row()]))));
+    expect(result).toMatchObject({
+      recordsSynced: 0,
+      errors: [expect.objectContaining({ message: "database offline" })],
+    });
     expect(mocks.captureException).toHaveBeenCalledWith(
       expect.objectContaining({ message: "database offline" }),
       { tags: { provider: "mountain-project", phase: "climbing_activity" } },

@@ -31,6 +31,7 @@ export type Database = Omit<DrizzleDatabase, "execute" | "transaction"> & {
  * with lightweight mocks.
  */
 export interface SyncDatabase {
+  transaction: Database["transaction"];
   select: Database["select"];
   insert: Database["insert"];
   delete: Database["delete"];

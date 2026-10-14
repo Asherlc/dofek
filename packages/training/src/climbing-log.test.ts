@@ -4,6 +4,9 @@ import {
   climbingAttemptSchema,
   climbingLogEntrySchema,
   climbSchema,
+  gradeComponentSchema,
+  isClimbingLogActivity,
+  pitchSchema,
 } from "./climbing-log.ts";
 
 const owner = {
@@ -12,23 +15,45 @@ const owner = {
   providerId: "summitpost",
   externalId: "object:1234",
 };
+
+describe("climbing log activity association", () => {
+  it.each([
+    ["climbing", true],
+    ["hiking", true],
+    ["running", false],
+    ["hangboard", false],
+  ])("accepts %s: %s", (kind, eligible) => {
+    expect(isClimbingLogActivity(kind)).toBe(eligible);
+  });
+});
 const summit = {
   ...owner,
   name: "Recorded summit",
   kind: "summit",
   areaId: null,
-  grade: null,
-  gradeSystem: null,
+  publishedGrades: [],
   setting: null,
+  routeProtection: null,
   coordinates: null,
 };
 const attempt = {
   id: "00000000-0000-4000-8000-000000000003",
   climbingLogEntryId: "00000000-0000-4000-8000-000000000004",
+  scope: "climb",
+  pitchId: null,
+  parentAttemptId: null,
   attemptIndex: null,
   outcome: null,
-  clean: null,
+  ropeMethod: null,
+  solo: null,
+  protectionUsed: null,
+  usedPreplacedProtection: null,
+  usedAid: null,
+  fellOrHung: null,
+  dabbed: null,
   receivedBeta: null,
+  hadCompletedBefore: null,
+  priorFailedAttemptsGroundUp: null,
   notes: null,
   createdAt: "2026-10-13T12:00:00Z",
 };
@@ -37,14 +62,14 @@ describe("climbing log entities", () => {
   it("accepts an undated ungraded summit with unknown attempt facts", () => {
     expect(climbSchema.parse(summit)).toMatchObject({
       kind: "summit",
-      grade: null,
-      gradeSystem: null,
+      publishedGrades: [],
       setting: null,
     });
     expect(climbingAttemptSchema.parse(attempt)).toMatchObject({
       attemptIndex: null,
       outcome: null,
-      clean: null,
+      fellOrHung: null,
+      usedAid: null,
       receivedBeta: null,
     });
     expect(
@@ -55,12 +80,11 @@ describe("climbing log entities", () => {
         activityId: null,
         climbedOn: null,
         discipline: null,
-        climbStyle: null,
         title: "Recorded outing",
         notes: null,
+        reportedGrades: [],
         board: null,
         wallAngle: null,
-        routeProtection: null,
         holdType: null,
         sourceName: null,
         raw: null,
@@ -80,37 +104,126 @@ describe("climbing log entities", () => {
     ["saxon", "7a"],
     ["norwegian", "6"],
     ["brazilian_crux", "VI"],
-  ])("validates the recognized %s grade system", (gradeSystem, grade) => {
-    expect(climbSchema.parse({ ...summit, gradeSystem, grade })).toMatchObject({
-      gradeSystem,
-      grade,
+    ["british_adjectival", "HVS"],
+    ["british_technical", "5a"],
+    ["aid", "A3"],
+    ["water_ice", "WI4"],
+    ["alpine_ice", "AI3"],
+    ["mixed", "M6"],
+    ["ifas", "TD"],
+    ["nccs", "VI"],
+  ])("validates a recorded component in the recognized %s system", (system, value) => {
+    expect(gradeComponentSchema.parse({ system, value })).toEqual({
+      system,
+      value,
     });
   });
 
-  it("preserves unknown systems independently of difficulty text", () => {
-    expect(climbSchema.parse({ ...summit, grade: "Class 3", gradeSystem: null }).grade).toBe(
-      "Class 3",
-    );
-    expect(climbSchema.safeParse({ ...summit, grade: null, gradeSystem: "yds" }).success).toBe(
+  it("keeps unknown systems with recorded text", () => {
+    expect(gradeComponentSchema.parse({ value: " Class 3 ", system: null })).toEqual({
+      value: "Class 3",
+      system: null,
+    });
+    expect(gradeComponentSchema.safeParse({ value: "V4", system: "yds" }).success).toBe(false);
+    expect(gradeComponentSchema.safeParse({ value: "5.12a", system: "water_ice" }).success).toBe(
       false,
     );
-    expect(climbSchema.safeParse({ ...summit, grade: "V4", gradeSystem: "yds" }).success).toBe(
-      false,
-    );
-    expect(climbSchema.safeParse({ ...summit, grade: "", gradeSystem: null }).success).toBe(false);
+    expect(gradeComponentSchema.safeParse({ value: " ", system: null }).success).toBe(false);
   });
 
-  it("keeps completion cleanliness and beta as independent recorded facts", () => {
+  it("accepts pitch-only logs and independent attempt facts", () => {
     expect(
-      climbingAttemptSchema.parse({ ...attempt, outcome: "completed", clean: null }),
-    ).toMatchObject({ outcome: "completed", clean: null });
-    expect(climbingAttemptSchema.parse({ ...attempt, clean: false })).toMatchObject({
+      climbingAttemptSchema.parse({
+        ...attempt,
+        scope: "pitch",
+        outcome: "completed",
+        usedAid: true,
+      }),
+    ).toMatchObject({
+      scope: "pitch",
+      pitchId: null,
+      parentAttemptId: null,
+      outcome: "completed",
+      fellOrHung: null,
+      usedAid: true,
+    });
+    expect(climbingAttemptSchema.parse({ ...attempt, fellOrHung: true })).toMatchObject({
       outcome: null,
-      clean: false,
+      fellOrHung: true,
     });
     expect(
       climbingAttemptSchema.parse({ ...attempt, outcome: "failed", receivedBeta: true }),
     ).toMatchObject({ outcome: "failed", receivedBeta: true });
+    expect(
+      climbingAttemptSchema.parse({
+        ...attempt,
+        ropeMethod: "lead",
+        solo: true,
+        protectionUsed: ["trad"],
+        hadCompletedBefore: true,
+        priorFailedAttemptsGroundUp: false,
+      }),
+    ).toMatchObject({
+      ropeMethod: "lead",
+      solo: true,
+      protectionUsed: ["trad"],
+      usedAid: null,
+      hadCompletedBefore: true,
+      priorFailedAttemptsGroundUp: false,
+    });
+  });
+
+  it("retains multiple published and separately reported grade components", () => {
+    expect(
+      climbSchema.parse({
+        ...summit,
+        publishedGrades: [
+          { value: "5.12a", system: "yds" },
+          { value: "A3", system: "aid" },
+        ],
+        routeProtection: ["sport"],
+      }),
+    ).toMatchObject({
+      publishedGrades: [
+        { value: "5.12a", system: "yds" },
+        { value: "A3", system: "aid" },
+      ],
+      routeProtection: ["sport"],
+    });
+    expect(
+      pitchSchema.parse({
+        id: owner.id,
+        climbId: summit.id,
+        externalId: null,
+        number: 2,
+        name: null,
+        publishedGrades: [
+          { value: "HVS", system: "british_adjectival" },
+          { value: "5a", system: "british_technical" },
+        ],
+      }),
+    ).toMatchObject({
+      number: 2,
+      publishedGrades: [
+        { value: "HVS", system: "british_adjectival" },
+        { value: "5a", system: "british_technical" },
+      ],
+    });
+  });
+
+  it("validates attempt target scope and one-level parent fields", () => {
+    expect(climbingAttemptSchema.safeParse({ ...attempt, pitchId: owner.id }).success).toBe(false);
+    expect(climbingAttemptSchema.safeParse({ ...attempt, parentAttemptId: owner.id }).success).toBe(
+      false,
+    );
+    expect(
+      climbingAttemptSchema.parse({
+        ...attempt,
+        scope: "pitch",
+        pitchId: owner.id,
+        parentAttemptId: summit.id,
+      }).scope,
+    ).toBe("pitch");
   });
 
   it.each([0, -1, 1.5])("rejects an invalid actual attempt index %s", (attemptIndex) => {

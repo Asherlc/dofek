@@ -2,7 +2,6 @@ import { randomUUID } from "node:crypto";
 import { and, eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
-import type { SyncDatabase } from "../../db/index.ts";
 import { foodEntry, foodEntryNutrient } from "../../db/schema/nutrition.ts";
 import {
   humanFoodNutrientDecision,
@@ -472,18 +471,5 @@ describe.sequential("upsertZivaMealsForDate", () => {
         source_protein: 31,
       },
     ]);
-  });
-
-  it("fails loudly when transaction support is unavailable", async () => {
-    const nonTransactionalDatabase: SyncDatabase = {
-      select: context.db.select,
-      insert: context.db.insert,
-      delete: context.db.delete,
-      execute: context.db.execute,
-    };
-
-    await expect(
-      upsertZivaMealsForDate(nonTransactionalDatabase, userId, [makeMeal()]),
-    ).rejects.toThrow("Ziva nutrition sync requires a transactional database");
   });
 });
