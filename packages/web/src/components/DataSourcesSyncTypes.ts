@@ -29,7 +29,7 @@ export interface SyncProviderSummary {
   name: string;
   description: string | null;
   authType: string;
-  tokenAuth: { label: string; instructionsUrl: string } | null;
+  tokenAuth: ProviderManualConnectionMetadata | null;
   authorized: boolean;
   lastSyncedAt: string | null;
   lastSuccessfulSyncAt: string | null;
@@ -39,3 +39,5 @@ export interface SyncProviderSummary {
   needsReauth: boolean;
   recentLogs: SyncLogEntry[];
 }
+
+import type { ProviderManualConnectionMetadata } from "@dofek/providers/provider-connection";

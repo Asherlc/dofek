@@ -1024,6 +1024,7 @@ describe("OpenBetaProvider", () => {
     expect(provider.authSetup()).toMatchObject({
       apiBaseUrl: "https://api.openbeta.io",
       manualToken: {
+        kind: "public-profile",
         label: "OpenBeta profile URL or username",
         instructionsUrl: "https://openbeta.io/",
       },

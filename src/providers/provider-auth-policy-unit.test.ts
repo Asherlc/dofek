@@ -127,6 +127,7 @@ describe("checkPerUserAuthCompliance", () => {
       name: "Token Provider",
       authSetup: () => ({
         manualToken: {
+          kind: "access-token",
           label: "Personal API token",
           instructionsUrl: "https://example.com/settings/token",
           exchangeToken: async () => ({

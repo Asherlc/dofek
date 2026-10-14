@@ -431,6 +431,7 @@ export class OpenBetaProvider implements SyncProvider {
     return {
       apiBaseUrl: OPENBETA_API_BASE_URL,
       manualToken: {
+        kind: "public-profile",
         label: "OpenBeta profile URL or username",
         instructionsUrl: "https://openbeta.io/",
         exchangeToken: (input) => exchangeOpenBetaProfile(input, this.#fetchFn),

@@ -150,6 +150,7 @@ export class CyclingAnalyticsProvider implements SyncProvider {
     const config = cyclingAnalyticsOAuthConfig(options?.host);
     const fetchFn = this.#fetchFn;
     const manualToken = {
+      kind: "access-token",
       label: "Personal API token",
       instructionsUrl: "https://www.cyclinganalytics.com/developer/api/authentication",
       exchangeToken: async (token: string): Promise<TokenSet> => {

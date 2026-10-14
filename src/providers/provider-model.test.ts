@@ -2,7 +2,34 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { CyclingAnalyticsProvider } from "./cycling-analytics.ts";
 import { ProviderModel, providerTokenAuthSchema } from "./provider-model.ts";
 
+const captureException = vi.hoisted(() => vi.fn());
+vi.mock("../lib/error-reporting.ts", () => ({ captureException }));
+
 describe("ProviderModel", () => {
+  it("exposes a public profile connection without classifying it as an access token", () => {
+    const model = new ProviderModel(
+      {
+        id: "public-profile",
+        name: "Public Profile",
+        authSetup: () => ({
+          manualToken: {
+            kind: "public-profile",
+            label: "Public profile URL",
+            instructionsUrl: "https://example.com/profiles",
+          },
+        }),
+      },
+      new Set(),
+    );
+    expect(model.authType).toBe("public-profile");
+    expect(model.isConnected).toBe(false);
+    expect(model.tokenAuth).toEqual({
+      kind: "public-profile",
+      label: "Public profile URL",
+      instructionsUrl: "https://example.com/profiles",
+    });
+  });
+
   afterEach(() => {
     vi.unstubAllEnvs();
   });
@@ -11,6 +38,7 @@ describe("ProviderModel", () => {
     "rejects a non-HTTPS token URL at the shared schema boundary: %s",
     (instructionsUrl) => {
       const result = providerTokenAuthSchema.safeParse({
+        kind: "access-token",
         label: "Personal token",
         instructionsUrl,
       });
@@ -93,6 +121,7 @@ describe("ProviderModel", () => {
         name: "Personal Token Provider",
         authSetup: () => ({
           manualToken: {
+            kind: "access-token",
             label: "Refresh token",
             instructionsUrl: "https://example.com/settings/api-key",
             exchangeToken: async () => ({}),
@@ -105,6 +134,7 @@ describe("ProviderModel", () => {
     expect(model.authType).toBe("token");
     expect(model.isConnected).toBe(false);
     expect(model.tokenAuth).toEqual({
+      kind: "access-token",
       label: "Refresh token",
       instructionsUrl: "https://example.com/settings/api-key",
     });
@@ -123,6 +153,7 @@ describe("ProviderModel", () => {
 
       expect(model.authType).toBe("token");
       expect(model.tokenAuth).toEqual({
+        kind: "access-token",
         label: "Personal API token",
         instructionsUrl: "https://www.cyclinganalytics.com/developer/api/authentication",
       });
@@ -138,6 +169,7 @@ describe("ProviderModel", () => {
           name: "Unsafe Token Provider",
           authSetup: () => ({
             manualToken: {
+              kind: "access-token",
               label: "Personal token",
               instructionsUrl,
               exchangeToken: async () => ({}),
@@ -159,17 +191,20 @@ describe("ProviderModel", () => {
     { manualToken: {} },
     {
       manualToken: {
+        kind: "access-token",
         label: 123,
         instructionsUrl: "https://example.com/token",
       },
     },
     {
       manualToken: {
+        kind: "access-token",
         label: "Personal token",
       },
     },
     {
       manualToken: {
+        kind: "access-token",
         label: "Personal token",
         instructionsUrl: new URL("https://example.com/token"),
       },
@@ -211,18 +246,22 @@ describe("ProviderModel", () => {
   });
 
   it("handles authSetup that throws", () => {
+    const error = new Error("no credentials");
     const model = new ProviderModel(
       {
         id: "broken",
         name: "Broken",
         authSetup: () => {
-          throw new Error("no credentials");
+          throw error;
         },
       },
       new Set(),
     );
     expect(model.authType).toBe("none");
     expect(model.isConnected).toBe(true);
+    expect(captureException).toHaveBeenCalledWith(error, {
+      tags: { provider: "broken", phase: "auth_setup" },
+    });
   });
 
   it("reads lastSyncedAt from the map", () => {

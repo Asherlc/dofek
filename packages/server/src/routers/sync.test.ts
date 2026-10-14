@@ -422,6 +422,7 @@ describe("syncRouter", () => {
           validate: () => null,
           authSetup: () => ({
             manualToken: {
+              kind: "access-token",
               label: "JWT refresh token",
               instructionsUrl: "https://wger.readthedocs.io/en/latest/api/api.html#jwt-tokens",
               exchangeToken: vi.fn(),
@@ -449,6 +450,7 @@ describe("syncRouter", () => {
         authType: "token",
         authorized: false,
         tokenAuth: {
+          kind: "access-token",
           label: "JWT refresh token",
           instructionsUrl: "https://wger.readthedocs.io/en/latest/api/api.html#jwt-tokens",
         },

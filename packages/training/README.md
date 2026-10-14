@@ -51,6 +51,9 @@ Every public module is imported as `@dofek/training/<subpath>`.
 | `activity-icons` | Normalize activity names into framework-neutral icon categories |
 | `climbing-grades` | Validate, order, and convert Sandbag-supported boulder and route climbing grades |
 | `climbing-context` | Validate provider-scoped climbing location paths, boards, wall-angle units, methods, and result labels |
+| `climbing-experience` | [Shared recorded board and wall-angle schemas](src/climbing-experience.ts) |
+| `climbing-log` | [Area, Climb, ClimbingLogEntry, ClimbingAttempt, and their canonical enums](src/climbing-log.ts) |
+| `gps-coordinates` | [Complete finite latitude/longitude pairs](src/gps-coordinates.ts) for [native PostgreSQL point storage](https://www.postgresql.org/docs/current/datatype-geometric.html#DATATYPE-GEOMETRIC-POINTS) using x = longitude and y = latitude |
 | `climbing-progression` | [Server-computed grade-stack contract](src/climbing-progression.ts), style and setting labels, and period and exact-value formatting shared by web and mobile |
 | `cycling-workout-metrics` | Coverage-aware per-activity power, heart-rate, cadence, drift, zone, load, and interval calculations |
 | `derived-cardio` | Cycling and submaximal walking/running VO2 max estimates and validation |

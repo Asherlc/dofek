@@ -244,6 +244,7 @@
     "@dofek/mountain-project": "workspace:*",
     "@dofek/peloton": "workspace:*",
     "@dofek/provider-http": "workspace:*",
+    "@dofek/providers": "workspace:*",
     "@dofek/scoring": "workspace:*",
     "@dofek/stats": "workspace:*",
     "@dofek/trainerroad": "workspace:*",
