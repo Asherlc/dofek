@@ -1,6 +1,89 @@
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import type { ClimbingMapMarker } from "@dofek/training/climbing-map";
+import { fireEvent, render, screen } from "@testing-library/react";
+import { createElement, type ReactNode, useState } from "react";
+import { describe, expect, it, vi } from "vitest";
 import { RouteMap } from "./RouteMap";
+
+vi.mock("react-native-maps", () => ({
+  default: ({
+    children,
+    initialRegion,
+    region,
+    style,
+  }: {
+    children: ReactNode;
+    initialRegion?: unknown;
+    region?: unknown;
+    style: { width: number; height: number };
+  }) => {
+    const [mountedRegion] = useState(initialRegion);
+    return createElement(
+      "div",
+      { "data-testid": "map", "data-region": JSON.stringify(region ?? mountedRegion), style },
+      children,
+    );
+  },
+  Marker: ({
+    coordinate,
+    title,
+    description,
+    children,
+    onPress,
+  }: {
+    coordinate: unknown;
+    title?: string;
+    description?: string;
+    children?: ReactNode;
+    onPress?: () => void;
+  }) =>
+    createElement(
+      "div",
+      {
+        "data-testid": "marker",
+        "data-coordinate": JSON.stringify(coordinate),
+        title,
+        onClick: onPress,
+      },
+      description,
+      children,
+    ),
+  Polyline: ({ coordinates }: { coordinates: unknown }) =>
+    createElement("div", {
+      "data-testid": "polyline",
+      "data-coordinates": JSON.stringify(coordinates),
+    }),
+}));
+
+const climbMarkers: ClimbingMapMarker[] = [
+  {
+    entryId: "tick-1",
+    label: "Swiss Cheese",
+    location: {
+      coordinates: { latitude: 40.752, longitude: -73.98 },
+      scope: "climb",
+      objectId: "route-1",
+      providerId: "mountain-project",
+      name: "Swiss Cheese",
+    },
+  },
+  {
+    entryId: "tick-2",
+    label: "Left Arete",
+    location: {
+      coordinates: { latitude: 40.753, longitude: -73.979 },
+      scope: "area",
+      objectId: "area-1",
+      providerId: "openbeta",
+      name: "Goat Rock",
+    },
+  },
+];
+
+function measure(container: HTMLElement, width = 320) {
+  const wrapper = container.querySelectorAll("view").item(1);
+  if (!wrapper) throw new Error("Expected a map layout wrapper");
+  fireEvent(wrapper, new CustomEvent("layout", { detail: { width, height: 280 } }));
+}
 
 const gpsPoints = [
   { lat: 40.748, lng: -73.985 },
@@ -10,6 +93,35 @@ const gpsPoints = [
 ];
 
 describe("RouteMap", () => {
+  it("opens every same-name occurrence at a tapped coordinate and selects distinct card identities", () => {
+    const first = climbMarkers[0];
+    if (!first) throw new Error("Expected a source fixture");
+    const onSelectEntry = vi.fn();
+    const { container } = render(
+      <RouteMap
+        points={[]}
+        climbMarkers={[
+          { ...first, entryNumber: 1 },
+          { ...first, entryId: "repeat", entryNumber: 3 },
+        ]}
+        onSelectEntry={onSelectEntry}
+      />,
+    );
+    measure(container);
+    const dots = screen.getAllByTestId("marker");
+    expect(dots[0]?.getAttribute("data-coordinate")).toBe(dots[1]?.getAttribute("data-coordinate"));
+    const topDot = dots[1];
+    if (!topDot) throw new Error("Expected the top overlapping dot");
+    fireEvent.click(topDot);
+    fireEvent.click(screen.getByRole("button", { name: "Entry 1 · Swiss Cheese" }));
+    expect(onSelectEntry).toHaveBeenLastCalledWith("tick-1");
+    fireEvent.click(screen.getByRole("button", { name: "Entry 3 · Swiss Cheese" }));
+    expect(onSelectEntry).toHaveBeenLastCalledWith("repeat");
+    expect(
+      screen.getByRole("button", { name: "Entry 3 · Swiss Cheese" }).getAttribute("aria-selected"),
+    ).toBe("true");
+    expect(screen.getAllByTestId("marker")).toHaveLength(2);
+  });
   it("renders the title when given GPS points", () => {
     render(<RouteMap points={gpsPoints} />);
     expect(screen.getByText("Route Map")).toBeTruthy();
@@ -48,5 +160,87 @@ describe("RouteMap", () => {
       />,
     );
     expect(container.innerHTML).toBe("");
+  });
+
+  it("renders source-only markers with a finite local viewport and no sensor pins", () => {
+    const { container } = render(<RouteMap points={[]} climbMarkers={climbMarkers} />);
+    measure(container);
+    expect(screen.getAllByTestId("marker")).toHaveLength(2);
+    expect(screen.getAllByTestId("marker")[0]?.getAttribute("data-coordinate")).toBe(
+      '{"latitude":40.752,"longitude":-73.98}',
+    );
+    expect(screen.getAllByTestId("marker")[1]?.getAttribute("data-coordinate")).toBe(
+      '{"latitude":40.753,"longitude":-73.979}',
+    );
+    expect(screen.queryByTestId("polyline")).toBeNull();
+    expect(screen.queryByTitle("Start")).toBeNull();
+    expect(screen.queryByTitle("Finish")).toBeNull();
+    expect(screen.getByTestId("map").getAttribute("data-region")).toBe(
+      '{"latitude":40.7525,"longitude":-73.9795,"latitudeDelta":0.005,"longitudeDelta":0.005}',
+    );
+    expect(screen.getByText(/Area location.*Goat Rock.*OpenBeta/)).toBeTruthy();
+  });
+
+  it("keeps separate repeated ticks alongside the sensor route and hover marker", () => {
+    const first = climbMarkers[0];
+    if (!first) throw new Error("Expected a climb marker fixture");
+    const { container } = render(
+      <RouteMap
+        points={gpsPoints}
+        climbMarkers={[first, { ...first, entryId: "repeat", label: "Swiss Cheese repeat" }]}
+        hoveredPosition={{ lat: 40.75, lng: -73.983 }}
+      />,
+    );
+    expect(screen.queryByTestId("map")).toBeNull();
+    measure(container, 410);
+    expect(screen.getAllByTestId("marker")).toHaveLength(5);
+    expect(screen.getByTitle("Entry 1 · Swiss Cheese")).toBeTruthy();
+    expect(screen.getByTitle("Entry 2 · Swiss Cheese repeat")).toBeTruthy();
+    expect(screen.getByTitle("Start")).toBeTruthy();
+    expect(screen.getByTitle("Finish")).toBeTruthy();
+    expect(screen.getByTestId("polyline").getAttribute("data-coordinates")).toContain(
+      '"latitude":40.748',
+    );
+    expect(screen.getByTestId("map").style.width).toBe("410px");
+  });
+
+  it("uses a compact single-point source preview", () => {
+    const { container } = render(
+      <RouteMap points={[]} climbMarkers={climbMarkers.slice(0, 1)} compact />,
+    );
+    measure(container);
+    expect(screen.getAllByTestId("marker")).toHaveLength(1);
+    expect(screen.getByTestId("map").style.height).toBe("140px");
+    expect(screen.queryByTitle("Start")).toBeNull();
+    expect(screen.queryByTitle("Finish")).toBeNull();
+  });
+
+  it("updates the mounted native viewport when source coordinates change", () => {
+    const first = climbMarkers[0];
+    if (!first) throw new Error("Expected a climb marker fixture");
+    const view = render(<RouteMap points={[]} climbMarkers={[first]} />);
+    expect(screen.queryByTestId("map")).toBeNull();
+    measure(view.container);
+    const mountedMap = screen.getByTestId("map");
+    view.rerender(
+      <RouteMap
+        points={[]}
+        climbMarkers={[
+          first,
+          {
+            ...first,
+            entryId: "far-tick",
+            location: { ...first.location, coordinates: { latitude: 40.762, longitude: -73.97 } },
+          },
+        ]}
+      />,
+    );
+    expect(screen.getByTestId("map")).toBe(mountedMap);
+    expect(JSON.parse(mountedMap.getAttribute("data-region") ?? "null")).toMatchObject({
+      latitude: expect.closeTo(40.757, 10),
+      longitude: expect.closeTo(-73.975, 10),
+      latitudeDelta: expect.closeTo(0.013, 10),
+      longitudeDelta: expect.closeTo(0.013, 10),
+    });
   });
 });

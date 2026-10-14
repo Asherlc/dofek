@@ -49,7 +49,9 @@ not compute send status or attempt counts. See the
 
 The [climbing result formatter](src/format.ts) lets a successful Onsight or Flash
 badge convey the result without an attempt summary. Redpoint, Pinkpoint, and
-Repeat badges convey the send while the summary retains attempt information.
+Repeat badges convey the send while the summary retains recorded attempt information.
+Unknown attempt counts are omitted; other recorded outcomes still display as
+"Sent" or "Not sent". See the [climbing result formatter](src/format.ts).
 Other results keep explicit labels based on the outcome and count supplied by the server.
 Passing the entry's source context omits absent result/count placeholders for
 Mountain Project top-rope ticks, as described in the

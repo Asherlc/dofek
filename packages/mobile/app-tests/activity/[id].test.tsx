@@ -663,13 +663,15 @@ describe("ActivityDetailScreen", () => {
     expect(within(climbsCard).getByText("Blue Circuit")).toBeTruthy();
     expect(within(climbsCard).getByText("Project")).toBeTruthy();
     expect(within(climbsCard).getByText("Unattached")).toBeTruthy();
+    expect(within(climbsCard).getAllByLabelText(/Climbing entry:/)).toHaveLength(3);
     expect(screen.getByText("Mountain Project")).toBeTruthy();
     expect(screen.getByText("OpenBeta")).toBeTruthy();
     expect(screen.getByText("Blue Circuit")).toBeTruthy();
     expect(screen.getByText("Country > State > Region > Park > Crag > Wall")).toBeTruthy();
     expect(screen.getByText("Top rope")).toBeTruthy();
     expect(screen.getByText("Fell or hung")).toBeTruthy();
-    expect(screen.getByText("5.10a · Not sent; attempt count not recorded")).toBeTruthy();
+    expect(screen.getByText("5.10a")).toBeTruthy();
+    expect(screen.getByText("Not sent")).toBeTruthy();
     const controls = within(climbsCard).getAllByRole("button", { name: "Attach to this activity" });
     expect(controls).toHaveLength(2);
     const secondControl = controls.at(1);
@@ -1218,8 +1220,7 @@ describe("ActivityDetailScreen", () => {
       expect(screen.getByText("Left Arete")).toBeTruthy();
       expect(screen.getAllByText(ascentType)).toHaveLength(2);
       if (ascentType === "Redpoint") {
-        expect(screen.getByText("7 attempts")).toBeTruthy();
-        expect(screen.getByText("5.6 · 7 attempts")).toBeTruthy();
+        expect(screen.getAllByText("7 attempts")).toHaveLength(2);
       } else {
         expect(screen.getAllByText("5.6", { exact: true })).toHaveLength(2);
         expect(screen.queryByText(/attempt|\bSent\b/i)).toBeNull();
@@ -1412,7 +1413,7 @@ describe("ActivityDetailScreen", () => {
     expect(screen.getByText("Wall angle: 35°")).toBeTruthy();
     expect(screen.getByText("Crimp")).toBeTruthy();
     expect(screen.getByText("1: Technique")).toBeTruthy();
-    expect(screen.getByText("Not sent; attempt count not recorded")).toBeTruthy();
+    expect(screen.getByText("Not sent")).toBeTruthy();
     expect(screen.getAllByText("Touchstone Pacific Pipe")).toHaveLength(3);
   });
 

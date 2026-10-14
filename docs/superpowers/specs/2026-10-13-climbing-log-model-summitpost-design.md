@@ -5,6 +5,10 @@ specification consolidates that model, its migration, and SummitPost ingestion.
 Coordinate storage uses PostgreSQL's native point type as requested.
 Activity-detail maps and the Climbs card grid reflect the user's clarification
 on 2026-10-13.
+The user subsequently requested component-level implementation and Storybook
+validation first. That iteration uses explicit location inputs in components;
+the canonical model, ingestion, and live API wiring retain the requirements
+below and are implemented separately.
 Implementation follows review of this specification and its written plan.
 
 ## Intended outcome

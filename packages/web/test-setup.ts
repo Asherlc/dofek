@@ -1,6 +1,20 @@
 import "@testing-library/jest-dom/vitest";
 import { installTestWebAccountStateLocks } from "./src/lib/web-account-state-lock.test-helpers.ts";
-import { vi } from "vitest";
+import { beforeEach, vi } from "vitest";
+
+beforeEach(() => {
+  vi.stubGlobal(
+    "IntersectionObserver",
+    class {
+      constructor(private callback: (entries: { isIntersecting: boolean }[]) => void) {}
+      observe() {
+        this.callback([{ isIntersecting: true }]);
+      }
+      unobserve() {}
+      disconnect() {}
+    },
+  );
+});
 
 if (typeof navigator !== "undefined") {
   installTestWebAccountStateLocks();

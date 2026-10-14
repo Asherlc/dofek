@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 
-import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import type { ClimbingEntrySuggestion } from "../../../../../server/src/repositories/climbing-entry-associator.ts";
 import { UnattachedClimbingEntries } from "./UnattachedClimbingEntries.tsx";
 
@@ -54,8 +54,105 @@ const suggestions: ClimbingEntrySuggestion[] = [
   },
 ];
 const emptySuggestions: ClimbingEntrySuggestion[] = [];
+afterEach(() => vi.unstubAllGlobals());
+
+beforeAll(() => {
+  Object.defineProperty(SVGSVGElement.prototype, "createSVGRect", {
+    configurable: true,
+    value: () => ({}),
+  });
+});
 
 describe("UnattachedClimbingEntries", () => {
+  it("keeps a tick's map mounted when only its attachment state changes", async () => {
+    let enterViewport = () => {};
+    vi.stubGlobal(
+      "IntersectionObserver",
+      class {
+        constructor(callback: (entries: { isIntersecting: boolean }[]) => void) {
+          enterViewport = () => callback([{ isIntersecting: true }]);
+        }
+        observe() {}
+        disconnect() {}
+      },
+    );
+    const props = {
+      suggestions,
+      locations: {
+        "entry-1": {
+          coordinates: { latitude: 37.8, longitude: -122.4 },
+          scope: "area" as const,
+          objectId: "crag",
+          providerId: "openbeta",
+          name: "Test Crag",
+        },
+      },
+      error: null,
+      isLoading: false,
+      onAttach: vi.fn(),
+    };
+    const { container, rerender } = render(<UnattachedClimbingEntries {...props} state={{}} />);
+    await act(async () => {
+      await import("leaflet");
+    });
+    expect(container.querySelector("img.leaflet-tile")).toBeNull();
+    act(() => enterViewport());
+    await waitFor(() => expect(container.querySelector("img.leaflet-tile")).not.toBeNull());
+    const tile = container.querySelector("img.leaflet-tile");
+    rerender(
+      <UnattachedClimbingEntries
+        {...props}
+        state={{ "entry-1": { pending: true, error: null } }}
+      />,
+    );
+    await waitFor(() => expect(container.querySelector("img.leaflet-tile")).toBe(tile));
+    expect(screen.getByText("Attaching...")).toBeInTheDocument();
+  });
+
+  it("keeps ordered tick cards, source locations, and independent attachment actions", () => {
+    const onAttach = vi.fn();
+    render(
+      <UnattachedClimbingEntries
+        suggestions={suggestions}
+        locations={{
+          "entry-1": {
+            coordinates: { latitude: 37.8, longitude: -122.4 },
+            scope: "area",
+            objectId: "area-1",
+            providerId: "openbeta",
+            name: "Test Crag",
+          },
+          "entry-2": {
+            coordinates: { latitude: 37.8, longitude: -122.4 },
+            scope: "climb",
+            objectId: "climb-2",
+            providerId: "mountain-project",
+            name: "Blue Arete",
+          },
+        }}
+        error={null}
+        isLoading={false}
+        state={{ "entry-1": { pending: true, error: "Entry unavailable" } }}
+        onAttach={onAttach}
+      />,
+    );
+    const cards = screen.getAllByRole("listitem");
+    expect(cards).toHaveLength(2);
+    expect(cards[0]).toHaveTextContent("Route");
+    expect(cards[1]).toHaveTextContent("Blue Arete");
+    expect(screen.getByText("Area location: Test Crag · OpenBeta")).toBeInTheDocument();
+    expect(screen.getByText("Climb location: Blue Arete · Mountain Project")).toBeInTheDocument();
+    expect(screen.getAllByRole("region", { name: /Climbing locations/ })).toHaveLength(2);
+    const buttons = screen.getAllByRole("button", { name: "Attach to this activity" });
+    expect(buttons[0]).toBeDisabled();
+    expect(buttons[1]).toBeEnabled();
+    const second = buttons[1];
+    if (!second) throw new Error("Expected the second Attach action");
+    fireEvent.click(second);
+    expect(onAttach).toHaveBeenCalledWith("entry-2");
+    expect(screen.getByRole("alert")).toHaveTextContent("Entry unavailable");
+  });
+
   it("offers a Mountain Project top-rope tick without unavailable outcome placeholders", () => {
     const suggestion = suggestions.at(1);
     if (!suggestion) throw new Error("Expected a climbing suggestion fixture");
@@ -185,7 +282,7 @@ describe("UnattachedClimbingEntries", () => {
 
     expect(screen.getByText("Route")).toBeInTheDocument();
     expect(screen.getByText("OpenBeta")).toBeInTheDocument();
-    expect(screen.getByText(/5\.10a · Not sent; attempt count not recorded/)).toBeInTheDocument();
+    expect(screen.getByText(/5\.10a · Not sent/)).toBeInTheDocument();
     expect(screen.getByText("Test Crag")).toBeInTheDocument();
     expect(screen.getByText("Top rope")).toBeInTheDocument();
     expect(screen.getByText("Fell or hung")).toBeInTheDocument();

@@ -1,8 +1,10 @@
 import { formatClimbingAttemptResult } from "@dofek/format/format";
 import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { providerSourceLabel } from "@dofek/providers/providers";
+import type { ClimbingMapLocation } from "@dofek/training/climbing-map";
 import type { ClimbingEntrySuggestion } from "../../../../../server/src/repositories/climbing-entry-associator.ts";
 import { ChartDescriptionTooltip } from "../../../components/ChartDescriptionTooltip.tsx";
+import { ClimbingEntryCard } from "./ClimbingEntryCard.tsx";
 import { ClimbingEntryContext } from "./ClimbingEntryContext.tsx";
 import { ClimbingEntrySources } from "./ClimbingEntrySources.tsx";
 
@@ -10,12 +12,14 @@ export type EntryAttachState = Record<string, { pending: boolean; error: string 
 
 export function UnattachedClimbingEntries({
   suggestions,
+  locations,
   error,
   isLoading,
   state,
   onAttach,
 }: {
   suggestions: ClimbingEntrySuggestion[] | undefined;
+  locations?: Readonly<Record<string, ClimbingMapLocation>>;
   error: unknown | null;
   isLoading: boolean;
   state: EntryAttachState;
@@ -38,9 +42,14 @@ export function UnattachedClimbingEntries({
             <h3 className="text-xs font-medium text-muted">Unattached</h3>
             <ChartDescriptionTooltip description={description} />
           </div>
-          <div className="divide-y divide-border">
-            {suggestions?.map((entry) => {
+          <ul
+            aria-label="Unattached climbs"
+            className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,260px),1fr))] gap-3"
+          >
+            {suggestions?.map((entry, index) => {
               const entryState = state[entry.id];
+              const location = locations?.[entry.id];
+              const name = entry.routeName ?? (entry.climbType === "boulder" ? "Boulder" : "Route");
               const attemptResult = formatClimbingAttemptResult(
                 entry.sent,
                 entry.attemptCount,
@@ -48,15 +57,16 @@ export function UnattachedClimbingEntries({
                 entry.context,
               );
               return (
-                <div
+                <ClimbingEntryCard
                   key={entry.id}
-                  className="flex items-center justify-between gap-3 py-3 first:pt-0 last:pb-0"
+                  entryId={entry.id}
+                  name={name}
+                  location={location}
+                  entryNumber={index + 1}
                 >
                   <div className="min-w-0 flex-1">
                     <ClimbingEntrySources
-                      name={
-                        entry.routeName ?? (entry.climbType === "boulder" ? "Boulder" : "Route")
-                      }
+                      name={name}
                       sourceName={entry.sourceName ?? providerSourceLabel(entry.providerId)}
                       links={entry.sourceLinks}
                     />
@@ -73,17 +83,17 @@ export function UnattachedClimbingEntries({
                   </div>
                   <button
                     type="button"
-                    className="rounded-md bg-accent px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+                    className="mt-auto self-start rounded-md bg-accent px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
                     aria-label="Attach to this activity"
                     disabled={entryState?.pending}
                     onClick={() => onAttach(entry.id)}
                   >
                     {entryState?.pending ? "Attaching..." : "Attach"}
                   </button>
-                </div>
+                </ClimbingEntryCard>
               );
             })}
-          </div>
+          </ul>
         </>
       )}
     </div>

@@ -37,6 +37,7 @@ import type { ActivityDetail } from "../../../server/src/models/activity.ts";
 import type { StreamPoint, StrengthExerciseDetail } from "../../../server/src/routers/activity.ts";
 import { ActivityExportDropdown } from "../components/ActivityExportDropdown.tsx";
 import { ActivityPerceivedExertion } from "../components/ActivityPerceivedExertion.tsx";
+import { ActivityRouteMap } from "../components/ActivityRouteMap.tsx";
 import { ActivitySourceDecisionCard } from "../components/ActivitySourceDecisionCard.tsx";
 import { DofekChart } from "../components/DofekChart.tsx";
 import { HangboardingDetail } from "../components/HangboardingDetail.tsx";
@@ -277,7 +278,7 @@ export function ActivityDetailPage() {
               {route.isLoading ? "Loading route map…" : "Processing route map…"}
             </p>
           ) : (
-            <RouteMap points={routePoints} onRegisterHoverCallback={mapHoverRef} />
+            <ActivityRouteMap points={routePoints} onRegisterHoverCallback={mapHoverRef} />
           )}
         </Section>
       )}
@@ -608,117 +609,6 @@ function SourceLinkLabel({ link }: { link: ActivityDetail["sourceLinks"][number]
   }
 
   return <>{link.label}</>;
-}
-
-function RouteMap({
-  points,
-  onRegisterHoverCallback,
-}: {
-  points: Array<{ lat: number; lng: number }>;
-  onRegisterHoverCallback?: React.MutableRefObject<
-    (position: { lat: number; lng: number } | null) => void
-  >;
-}) {
-  const mapRef = useRef<HTMLDivElement>(null);
-  const mapInstanceRef = useRef<ReturnType<typeof import("leaflet")["map"]> | null>(null);
-
-  useEffect(() => {
-    const container = mapRef.current;
-    if (!container) return;
-
-    if (points.length === 0) return;
-
-    let cancelled = false;
-
-    import("leaflet").then((L) => {
-      if (cancelled || !container) return;
-
-      // Clean up any existing map instance
-      if (mapInstanceRef.current) {
-        mapInstanceRef.current.remove();
-        mapInstanceRef.current = null;
-      }
-
-      const map = L.map(container, { zoomControl: true, attributionControl: true });
-      mapInstanceRef.current = map;
-
-      L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
-        maxZoom: 19,
-        attribution:
-          '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-      }).addTo(map);
-
-      const latLngs = points.map((p) => L.latLng(p.lat, p.lng));
-
-      L.polyline(latLngs, {
-        color: statusColors.positive,
-        weight: 3,
-        opacity: 0.8,
-      }).addTo(map);
-
-      // Start and end markers
-      const startLatLng = latLngs[0];
-      const endLatLng = latLngs[latLngs.length - 1];
-      if (startLatLng) {
-        L.circleMarker(startLatLng, {
-          radius: 6,
-          color: statusColors.positive,
-          fillColor: statusColors.positive,
-          fillOpacity: 1,
-        }).addTo(map);
-      }
-      if (endLatLng) {
-        L.circleMarker(endLatLng, {
-          radius: 6,
-          color: statusColors.danger,
-          fillColor: statusColors.danger,
-          fillOpacity: 1,
-        }).addTo(map);
-      }
-
-      const bounds = L.latLngBounds(latLngs);
-      map.fitBounds(bounds, { padding: [30, 30] });
-
-      // Register hover marker callback so charts can update the map without React re-renders
-      if (onRegisterHoverCallback) {
-        let hoverMarker: ReturnType<typeof L.circleMarker> | null = null;
-
-        onRegisterHoverCallback.current = (position) => {
-          if (position) {
-            if (hoverMarker) {
-              hoverMarker.setLatLng([position.lat, position.lng]);
-            } else {
-              hoverMarker = L.circleMarker([position.lat, position.lng], {
-                radius: 7,
-                color: statusColors.positive,
-                fillColor: "#ffffff",
-                fillOpacity: 1,
-                weight: 3,
-              }).addTo(map);
-            }
-          } else {
-            if (hoverMarker) {
-              hoverMarker.remove();
-              hoverMarker = null;
-            }
-          }
-        };
-      }
-    });
-
-    return () => {
-      cancelled = true;
-      if (onRegisterHoverCallback) {
-        onRegisterHoverCallback.current = () => {};
-      }
-      if (mapInstanceRef.current) {
-        mapInstanceRef.current.remove();
-        mapInstanceRef.current = null;
-      }
-    };
-  }, [points, onRegisterHoverCallback]);
-
-  return <div ref={mapRef} className="w-full h-[400px] rounded-lg" />;
 }
 
 interface MetricDefinition {

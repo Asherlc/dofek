@@ -44,12 +44,28 @@ when the authenticated user changes.
 Activity details render the complete climbing location path, board, recorded
 angle/units, method, and result for both attached climbs and suggested ticks.
 `ClimbingEntryContext` uses shared formatters and server-derived status; it
-retains unknown counts/units, with absent Mountain Project top-rope placeholders
-omitted. Route names and additional source routes/tick lists use verified links
+retains recorded counts/results and labels unknown angle units/outcomes, with
+absent Mountain Project top-rope placeholders omitted. Unknown attempt counts
+are omitted by the [shared result formatter](../format/src/format.ts).
+Route names and additional source routes/tick lists use verified links
 from the server. See the [climbing contract](../../docs/climbing-context.md).
 
 The recent climbing activity table omits distance and keeps its climbing metrics,
 as configured by the [climbing page](src/routes/training/climbing.tsx).
+
+Activity-detail climbing entries and attachment suggestions use card grids.
+Their component inputs accept source locations keyed by entry ID; the
+[shared location types](../training/src/climbing-map.ts) retain coordinates,
+the owning Climb or Area, and provider attribution.
+[ActivityRouteMap](src/components/ActivityRouteMap.tsx) renders source dots
+independently of recorded GPS tracks and loads compact tick maps as they
+approach the viewport. Its occurrence chooser uses Entry numbers from the full
+card order; selection can highlight the matching
+[climbing card](src/pages/activity-detail/components/ClimbingEntryCard.tsx),
+including repeated names at the same point.
+The colocated map and climbing-entry Storybook stories supply GPS fixtures for
+this component boundary. Live coordinate ingestion, resolution, and API wiring
+are a separate part of the [climbing model design](../../docs/superpowers/specs/2026-10-13-climbing-log-model-summitpost-design.md#activity-detail-climb-maps-and-grid).
 
 ```bash
 cd packages/web && pnpm dev      # Start Vite dev server (proxies /api to server)

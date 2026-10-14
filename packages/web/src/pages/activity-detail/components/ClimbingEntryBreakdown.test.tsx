@@ -5,6 +5,72 @@ import type { ClimbingActivityEntryRow } from "../../../../../server/src/contrac
 import { ClimbingEntryBreakdown } from "./ClimbingEntryBreakdown.tsx";
 
 describe("ClimbingEntryBreakdown", () => {
+  it("preserves mixed-GPS ticks and repeated climbs as separate ordered cards", () => {
+    const entry: ClimbingActivityEntryRow = {
+      id: "tick-1",
+      climbType: "route",
+      gradeSystem: "yds",
+      grade: "5.4",
+      sent: null,
+      attemptCount: null,
+      attempts: [],
+      ascentType: null,
+      holdType: null,
+      routeName: "Swiss Cheese",
+      locationName: null,
+      lead: false,
+      sourceName: "Mountain Project",
+      sourceLinks: [
+        {
+          providerId: "mountain-project",
+          kind: "route",
+          url: "https://www.mountainproject.com/route/105734732/swiss-cheese",
+        },
+      ],
+      wallAngleDegrees: null,
+      context: {
+        providerId: "mountain-project",
+        locationPath: [],
+        board: null,
+        wallAngle: null,
+        climbStyle: "top-rope",
+        resultStyle: null,
+      },
+    };
+    const location = {
+      coordinates: { latitude: 37.23, longitude: -122.11 },
+      scope: "area" as const,
+      objectId: "goat-rock",
+      providerId: "mountain-project",
+      name: "Goat Rock",
+    };
+    render(
+      <ClimbingEntryBreakdown
+        entries={[
+          entry,
+          { ...entry, id: "tick-3", routeName: "Indoor tick", sourceLinks: [] },
+          { ...entry, id: "tick-2" },
+        ]}
+        locations={{ "tick-1": location, "tick-2": location }}
+        selectedEntryId="tick-2"
+      />,
+    );
+    const cards = screen.getAllByRole("listitem");
+    expect(cards).toHaveLength(3);
+    expect(cards[0]).toHaveTextContent("Swiss Cheese");
+    expect(cards[0]).toHaveTextContent("Entry 1");
+    expect(cards[1]).toHaveTextContent("Indoor tick");
+    expect(cards[1]).toHaveTextContent("Entry 2");
+    expect(cards[2]).toHaveTextContent("Swiss Cheese");
+    expect(cards[2]).toHaveTextContent("Entry 3 · Selected");
+    expect(cards[2]).toHaveAttribute("aria-current", "true");
+    expect(screen.getAllByText("Area location: Goat Rock · Mountain Project")).toHaveLength(2);
+    expect(screen.getAllByRole("region", { name: "Climbing locations" })).toHaveLength(2);
+    expect(screen.getAllByRole("link", { name: "Swiss Cheese on Mountain Project" })).toHaveLength(
+      2,
+    );
+  });
+
   it("shows a Mountain Project top-rope tick without unavailable outcome placeholders", () => {
     const entry: ClimbingActivityEntryRow = {
       id: "swiss-cheese",
@@ -127,7 +193,7 @@ describe("ClimbingEntryBreakdown", () => {
     expect(screen.getByText("Board: Board")).toBeTruthy();
     expect(screen.getByText("Top rope")).toBeTruthy();
     expect(screen.getByText("Fell or hung")).toBeTruthy();
-    expect(screen.getByText("Not sent; attempt count not recorded")).toBeTruthy();
+    expect(screen.getByText("Not sent")).toBeTruthy();
     expect(screen.getByText("1: Fell")).toBeTruthy();
     expect(screen.getByText("Crimp")).toBeTruthy();
     expect(screen.getByText("Mountain Project")).toBeTruthy();

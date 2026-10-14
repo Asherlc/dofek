@@ -18,7 +18,7 @@ const capturedEvents: Array<Record<string, (...params: Array<Record<string, unkn
 
 const leafletMocks = vi.hoisted(() => ({
   map: vi.fn(() => ({ remove: vi.fn(), fitBounds: vi.fn() })),
-  tileLayer: vi.fn(() => ({ addTo: vi.fn() })),
+  tileLayer: vi.fn(() => ({ addTo: vi.fn(), on: vi.fn() })),
   latLng: vi.fn((lat: number, lng: number) => ({ lat, lng })),
   latLngBounds: vi.fn(() => ({})),
   polyline: vi.fn(() => ({ addTo: vi.fn() })),
@@ -2305,7 +2305,7 @@ describe("ActivityDetailPage", () => {
       expect(screen.getByText("Wall angle: 35°")).toBeDefined();
       expect(screen.getByText("Crimp")).toBeTruthy();
       expect(screen.getByText("1: Technique")).toBeDefined();
-      expect(screen.getByText("Not sent; attempt count not recorded")).toBeDefined();
+      expect(screen.getByText("Not sent")).toBeDefined();
       expect(screen.getAllByText("Touchstone Pacific Pipe")).toHaveLength(3);
       expect(
         screen.queryByText("No unattached climbing entries for this day."),

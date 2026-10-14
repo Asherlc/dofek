@@ -1,6 +1,15 @@
 import { statusColors } from "@dofek/scoring/colors";
-import type { ReactNode } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import {
+  Children,
+  createContext,
+  isValidElement,
+  type ReactElement,
+  type ReactNode,
+  useContext,
+  useState,
+} from "react";
+import { Pressable, StyleSheet, Text, View } from "react-native";
+import Svg, { Polyline as SvgPolyline } from "react-native-svg";
 
 interface Coordinate {
   latitude: number;
@@ -10,6 +19,33 @@ interface Coordinate {
 interface MapViewProps {
   children?: ReactNode;
   style?: unknown;
+  initialRegion?: Region;
+  region?: Region;
+}
+
+interface Region extends Coordinate {
+  latitudeDelta: number;
+  longitudeDelta: number;
+}
+const MapPreview = createContext<{ region: Region; select: (markerId: string) => void } | null>(
+  null,
+);
+
+function useMapPreview() {
+  const preview = useContext(MapPreview);
+  if (!preview) throw new Error("Storybook map markers and routes require a MapView region.");
+  return preview;
+}
+
+function project(coordinate: Coordinate, region: Region) {
+  return {
+    x: Number(
+      (50 + ((coordinate.longitude - region.longitude) / region.longitudeDelta) * 100).toFixed(4),
+    ),
+    y: Number(
+      (50 - ((coordinate.latitude - region.latitude) / region.latitudeDelta) * 100).toFixed(4),
+    ),
+  };
 }
 
 interface PolylineProps {
@@ -19,41 +55,110 @@ interface PolylineProps {
 
 interface MarkerProps {
   children?: ReactNode;
-  coordinate?: Coordinate;
+  coordinate: Coordinate;
   pinColor?: string;
   title?: string;
+  description?: string;
+  identifier?: string;
+  onPress?: () => void;
 }
 
-export default function MapView({ children, style }: MapViewProps) {
+function markerId({ identifier, title, coordinate }: MarkerProps) {
+  return identifier ?? `${title ?? "Map point"}:${coordinate.latitude}:${coordinate.longitude}`;
+}
+
+export default function MapView({ children, style, initialRegion, region }: MapViewProps) {
+  const [mountedRegion] = useState(initialRegion);
+  const [selectedId, select] = useState<string | null>(null);
+  const viewport = region ?? mountedRegion;
+  if (!viewport) throw new Error("Storybook MapView requires region or initialRegion.");
+  const markers = Children.toArray(children).filter(
+    (child): child is ReactElement<MarkerProps> =>
+      isValidElement<MarkerProps>(child) && child.type === Marker,
+  );
+  const selected = markers.find((marker) => markerId(marker.props) === selectedId)?.props;
   return (
-    <View style={[styles.map, style]}>
-      <View style={styles.grid} />
-      {children}
+    <View style={styles.preview}>
+      <View style={[styles.map, style]}>
+        <View style={styles.grid} />
+        <MapPreview.Provider value={{ region: viewport, select }}>{children}</MapPreview.Provider>
+      </View>
+      {markers.length > 0 && (
+        <View style={styles.inspection}>
+          {selected && (
+            <View accessibilityLabel="Selected map point" style={styles.details}>
+              {selected.title && <Text style={styles.markerLabel}>{selected.title}</Text>}
+              {selected.description && (
+                <Text style={styles.description}>{selected.description}</Text>
+              )}
+              <Text style={styles.description}>
+                Latitude {selected.coordinate.latitude} · Longitude {selected.coordinate.longitude}
+              </Text>
+            </View>
+          )}
+        </View>
+      )}
     </View>
   );
 }
 
 export function Polyline({ coordinates = [], strokeColor = statusColors.positive }: PolylineProps) {
+  const { region } = useMapPreview();
   if (coordinates.length === 0) return null;
 
   return (
-    <View style={[styles.route, { borderColor: strokeColor }]}>
-      <Text style={styles.routeText}>{coordinates.length} route points</Text>
-    </View>
+    <Svg
+      style={StyleSheet.absoluteFillObject}
+      width="100%"
+      height="100%"
+      viewBox="0 0 100 100"
+      preserveAspectRatio="none"
+    >
+      <SvgPolyline
+        points={coordinates
+          .map((coordinate) => {
+            const { x, y } = project(coordinate, region);
+            return `${x},${y}`;
+          })
+          .join(" ")}
+        stroke={strokeColor}
+        strokeWidth={1}
+        fill="none"
+      />
+    </Svg>
   );
 }
 
-export function Marker({ children, pinColor = statusColors.positive, title }: MarkerProps) {
+export function Marker({
+  children,
+  coordinate,
+  pinColor = statusColors.positive,
+  title,
+  description,
+  identifier,
+  onPress,
+}: MarkerProps) {
+  const preview = useMapPreview();
+  const position = project(coordinate, preview.region);
   return (
-    <View style={styles.markerWrap}>
-      <View style={[styles.marker, { backgroundColor: pinColor }]} />
-      {title ? <Text style={styles.markerLabel}>{title}</Text> : null}
-      {children}
-    </View>
+    <Pressable
+      style={[styles.markerWrap, { left: `${position.x}%`, top: `${position.y}%` }]}
+      accessibilityLabel={`${title ?? "Map point"}, latitude ${coordinate.latitude}, longitude ${coordinate.longitude}${description ? `, ${description}` : ""}`}
+      accessibilityRole="button"
+      onPress={() => {
+        preview.select(markerId({ identifier, title, coordinate }));
+        onPress?.();
+      }}
+    >
+      {children ?? <View style={[styles.marker, { backgroundColor: pinColor }]} />}
+    </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
+  preview: { minWidth: 0, maxWidth: "100%" },
+  inspection: { gap: 8, padding: 8, backgroundColor: "#edf3ee", minWidth: 0 },
+  details: { gap: 3, minWidth: 0 },
   map: {
     backgroundColor: "#d8e4dc",
     overflow: "hidden",
@@ -63,31 +168,14 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     backgroundColor: "rgba(255,255,255,0.28)",
   },
-  route: {
-    position: "absolute",
-    left: "18%",
-    right: "18%",
-    top: "42%",
-    height: 44,
-    borderTopWidth: 4,
-    borderRightWidth: 4,
-    transform: [{ rotate: "-12deg" }],
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  routeText: {
-    color: "#214034",
-    fontSize: 12,
-    fontWeight: "600",
-    transform: [{ rotate: "12deg" }],
-  },
   markerWrap: {
     position: "absolute",
-    top: "48%",
-    left: "46%",
+    width: 14,
+    height: 14,
+    transform: [{ translateX: -7 }, { translateY: -7 }],
     alignItems: "center",
-    gap: 3,
   },
+  description: { color: "#214034", fontSize: 11, flexShrink: 1 },
   marker: {
     width: 14,
     height: 14,
@@ -99,5 +187,6 @@ const styles = StyleSheet.create({
     color: "#214034",
     fontSize: 10,
     fontWeight: "700",
+    textAlign: "center",
   },
 });

@@ -1,22 +1,41 @@
 import { formatClimbingAttemptResult } from "@dofek/format/format";
+import type { ClimbingMapLocation } from "@dofek/training/climbing-map";
 import type { ClimbingActivityEntryRow } from "../../../../../server/src/repositories/climbing-repository.ts";
+import { ClimbingEntryCard } from "./ClimbingEntryCard.tsx";
 import { ClimbingEntryContext } from "./ClimbingEntryContext.tsx";
 import { ClimbingEntrySources } from "./ClimbingEntrySources.tsx";
 
-export function ClimbingEntryBreakdown({ entries }: { entries: ClimbingActivityEntryRow[] }) {
+export function ClimbingEntryBreakdown({
+  entries,
+  locations,
+  selectedEntryId,
+}: {
+  entries: ClimbingActivityEntryRow[];
+  locations?: Readonly<Record<string, ClimbingMapLocation>>;
+  selectedEntryId?: string | null;
+}) {
   return (
-    <div className="divide-y divide-border">
-      {entries.map((entry) => {
+    <ul
+      aria-label="Attached climbs"
+      className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,260px),1fr))] gap-3"
+    >
+      {entries.map((entry, index) => {
         const attemptResult = formatClimbingAttemptResult(
           entry.sent,
           entry.attemptCount,
           entry.ascentType,
           entry.context,
         );
+        const location = locations?.[entry.id];
+        const name = entry.routeName ?? (entry.climbType === "boulder" ? "Boulder" : "Route");
         return (
-          <div
+          <ClimbingEntryCard
             key={entry.id}
-            className="flex flex-wrap items-center justify-between gap-4 py-3 first:pt-0 last:pb-0"
+            entryId={entry.id}
+            name={name}
+            location={location}
+            entryNumber={index + 1}
+            selected={entry.id === selectedEntryId}
           >
             <div className="flex min-w-0 items-center gap-3">
               <span className="min-w-12 rounded bg-accent/10 px-2 py-1 text-center text-sm font-semibold text-accent">
@@ -24,7 +43,7 @@ export function ClimbingEntryBreakdown({ entries }: { entries: ClimbingActivityE
               </span>
               <div className="min-w-0">
                 <ClimbingEntrySources
-                  name={entry.routeName ?? (entry.climbType === "boulder" ? "Boulder" : "Route")}
+                  name={name}
                   sourceName={entry.sourceName}
                   links={entry.sourceLinks}
                 />
@@ -49,16 +68,16 @@ export function ClimbingEntryBreakdown({ entries }: { entries: ClimbingActivityE
                 )}
               </div>
             </div>
-            <div className="shrink-0 text-right">
+            <div className="mt-auto">
               {attemptResult !== null && (
                 <p className={entry.sent ? "text-sm text-green-500" : "text-sm text-subtle"}>
                   {attemptResult}
                 </p>
               )}
             </div>
-          </div>
+          </ClimbingEntryCard>
         );
       })}
-    </div>
+    </ul>
   );
 }

@@ -1,4 +1,6 @@
+import type { ClimbingMapLocation } from "@dofek/training/climbing-map";
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import "leaflet/dist/leaflet.css";
 import { ClimbingEntryBreakdown } from "./ClimbingEntryBreakdown.tsx";
 import { UnattachedClimbingEntries } from "./UnattachedClimbingEntries.tsx";
 
@@ -157,4 +159,68 @@ export const Attaching: Story = {
 
 export const AttachError: Story = {
   args: { state: { "entry-1": { pending: false, error: "This entry is no longer available." } } },
+};
+
+const location: ClimbingMapLocation = {
+  coordinates: { latitude: 37.234, longitude: -122.111 },
+  scope: "climb",
+  objectId: "blue-arete",
+  providerId: "mountain-project",
+  name: "Blue Arete",
+};
+const gridSuggestions = meta.args.suggestions.flatMap((entry) => [
+  entry,
+  {
+    ...entry,
+    id: "entry-2",
+    routeName: "The very long north-facing ridge traverse above the exposed corner and upper wall",
+  },
+  { ...entry, id: "entry-3", routeName: "Indoor board tick" },
+]);
+const locations: Record<string, ClimbingMapLocation> = {
+  "entry-1": location,
+  "entry-2": { ...location, scope: "area", objectId: "goat-rock", name: "Goat Rock" },
+};
+export const ExactClimb: Story = { args: { locations } };
+export const Area: Story = {
+  args: {
+    locations: {
+      "entry-1": { ...location, scope: "area", objectId: "goat-rock", name: "Goat Rock" },
+    },
+  },
+};
+export const MixedGPS: Story = { args: { suggestions: gridSuggestions, locations } };
+export const LongName: Story = { ...MixedGPS };
+export const RepeatedPoint: Story = {
+  args: { suggestions: gridSuggestions, locations: { "entry-1": location, "entry-2": location } },
+};
+export const IndependentAttachStates: Story = {
+  ...MixedGPS,
+  args: {
+    ...MixedGPS.args,
+    state: {
+      "entry-1": { pending: true, error: null },
+      "entry-2": { pending: false, error: "Entry no longer available. Refresh and try again." },
+    },
+  },
+};
+export const Narrow: Story = {
+  ...IndependentAttachStates,
+  decorators: [
+    (Story) => (
+      <div style={{ width: 320, maxWidth: "100%" }}>
+        <Story />
+      </div>
+    ),
+  ],
+};
+export const Wide: Story = {
+  ...IndependentAttachStates,
+  decorators: [
+    (Story) => (
+      <div style={{ width: 1000, maxWidth: "100%" }}>
+        <Story />
+      </div>
+    ),
+  ],
 };

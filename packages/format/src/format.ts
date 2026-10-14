@@ -77,14 +77,14 @@ export function formatClimbingAttemptResult(
     (ascentType === "Redpoint" || ascentType === "Pinkpoint" || ascentType === "Repeat")
   ) {
     return attemptCount === null
-      ? "Attempt count not recorded"
+      ? null
       : `${attemptCount} ${attemptCount === 1 ? "attempt" : "attempts"}`;
   }
   if (sent === null && attemptCount === null) {
-    return isMountainProjectTopRopeEntry(context) ? null : "Outcome and attempt count not recorded";
+    return isMountainProjectTopRopeEntry(context) ? null : "Outcome not recorded";
   }
   if (attemptCount === null) {
-    return sent ? "Sent; attempt count not recorded" : "Not sent; attempt count not recorded";
+    return sent ? "Sent" : "Not sent";
   }
   if (sent === null) {
     return `${attemptCount} ${attemptCount === 1 ? "attempt" : "attempts"}; outcome not recorded`;
