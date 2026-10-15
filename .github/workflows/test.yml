@@ -633,7 +633,7 @@ jobs:
           key: periphery-v3-${{ hashFiles('packages/mobile/modules/*/Package.swift') }}
           restore-keys: periphery-v3-
       - name: Install Periphery
-        run: brew install peripheryapp/periphery/periphery
+        run: brew install --formula homebrew/core/periphery
       - name: Scan for unused code
         run: |
           fail=0
