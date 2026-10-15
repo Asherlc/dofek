@@ -19,7 +19,7 @@ The web dashboard for Dofek. A modern React SPA built with Vite, TypeScript, and
 - **Unit System**: A global `UnitProvider` handles conversion between metric and imperial units across the application.
 - **Charts**: Custom visualization components (e.g., `TimeSeriesChart`, `PmcChart`, `Hypnogram`) built on top of ECharts and `react-native-svg` (shared patterns).
 - **Resting heart rate trend**: The dashboard renders the server's trailing seven-calendar-day average as a line without visible point markers. The card and hover labels identify the average; daily readings remain on the heart-rate detail page. See [`Dashboard`](src/pages/Dashboard.tsx) and the [server window calculation](../server/src/repositories/daily-metrics-repository.ts).
-- **Climbing progression**: Grade-colored stacked bars show sends per recorded climbing day in separate style and grade-system lanes. Patterns distinguish indoor, outdoor, and unknown settings; focus controls compare or isolate settings. The server supplies rates, stack bounds, axes, and exact counts, while [shared labels and formatting](../training/src/climbing-progression.ts) keep web and mobile consistent. See the [counting semantics](../../docs/climbing-context.md#grade-progression-and-send-counts) and [`ClimbingGradeProgressionChart`](src/components/ClimbingGradeProgressionChart.tsx).
+- **Climbing progression**: Grade-colored stacked bars show sends per recorded climbing day in separate kind, scope, rope-method, solo, aid, and grade-system lanes. Patterns distinguish indoor, outdoor, and unknown settings. The server supplies counts and chart values; [shared labels](../training/src/climbing-progression.ts) keep both clients consistent. See [`ClimbingGradeProgressionChart`](src/components/ClimbingGradeProgressionChart.tsx).
 - **Error Boundaries**: Granular error handling using `QueryErrorBoundary` and a top-level `ErrorBoundary` in `App.tsx`.
 
 
@@ -41,19 +41,21 @@ when the authenticated user changes.
 
 ## Development
 
-Activity details render the complete climbing location path, board, recorded
-angle/units, method, and result for both attached climbs and suggested ticks.
-`ClimbingEntryContext` uses shared formatters and server-derived status; it
-retains recorded counts/results and labels unknown angle units/outcomes, with
-absent Mountain Project top-rope placeholders omitted. Unknown attempt counts
-are omitted by the [shared result formatter](../format/src/format.ts).
-Route names and additional source routes/tick lists use verified links
-from the server. See the [climbing contract](../../docs/climbing-context.md).
+Activity details show attached climbing logs and same-day attachment suggestions
+for climbing and hiking activities. Cards show the current shared location,
+published display grade, scoped results, and server-derived rock labels.
+[Details](src/components/ClimbingLogEntryDetails.tsx) show current coordinates,
+published and reported grade collections, independent attempt facts, notes, and
+disclosed source data. Missing totals retain one recorded occurrence. Provider
+records fetch the selected log's complete graph and retain cached rows during
+refresh errors. See the [canonical response contract](../server/src/contracts/climbing-log-contracts.ts).
+
 
 The recent climbing activity table omits distance and keeps its climbing metrics,
 as configured by the [climbing page](src/routes/training/climbing.tsx).
 
-Activity-detail climbing entries and attachment suggestions use card grids.
+Activity-detail climbing logs and attachment suggestions share the
+[canonical log-card grid](src/pages/activity-detail/components/ClimbingLogEntryBreakdown.tsx).
 Their component inputs accept source locations keyed by entry ID; the
 [shared location types](../training/src/climbing-map.ts) retain coordinates,
 the owning Climb or Area, and provider attribution.
@@ -61,11 +63,12 @@ the owning Climb or Area, and provider attribution.
 independently of recorded GPS tracks and loads compact tick maps as they
 approach the viewport. Its occurrence chooser uses Entry numbers from the full
 card order; selection can highlight the matching
-[climbing card](src/pages/activity-detail/components/ClimbingEntryCard.tsx),
+[climbing card](src/pages/activity-detail/components/ClimbingLogEntryCard.tsx),
 including repeated names at the same point.
-The colocated map and climbing-entry Storybook stories supply GPS fixtures for
-this component boundary. Live coordinate ingestion, resolution, and API wiring
-are a separate part of the [climbing model design](../../docs/superpowers/specs/2026-10-13-climbing-log-model-summitpost-design.md#activity-detail-climb-maps-and-grid).
+The colocated map and climbing-log Storybook stories supply explicit location
+fixtures at this component boundary. Connecting the canonical Climb/Area
+geometry to these map inputs remains a separate integration step in the
+[climbing map design](../../docs/superpowers/specs/2026-10-13-climbing-log-model-summitpost-design.md#activity-detail-climb-maps-and-grid).
 
 ```bash
 cd packages/web && pnpm dev      # Start Vite dev server (proxies /api to server)

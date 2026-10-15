@@ -1,15 +1,13 @@
 # Shared climbing log model and SummitPost provider
 
-Status: domain model approved in conversation on 2026-10-13. This written
-specification consolidates that model, its migration, and SummitPost ingestion.
+<!-- cspell:words AICE AIDC belayer DBML Greenpoint IFAS ltree NCCS NCCST preplaced reparenting unroped WICE -->
+
+Status: initial domain model approved on 2026-10-13; revised UML and the
+nullable `fellOrHung` simplification approved in conversation on 2026-10-14.
+The revised written specification was approved on 2026-10-14. This revision
+consolidates the approved discussion, its migration, and SummitPost ingestion.
+The aligned implementation plan was approved and Native execution resumed.
 Coordinate storage uses PostgreSQL's native point type as requested.
-Activity-detail maps and the Climbs card grid reflect the user's clarification
-on 2026-10-13.
-The user subsequently requested component-level implementation and Storybook
-validation first. That iteration uses explicit location inputs in components;
-the canonical model, ingestion, and live API wiring retain the requirements
-below and are implemented separately.
-Implementation follows review of this specification and its written plan.
 
 ## Intended outcome
 
@@ -18,19 +16,17 @@ scrambles, mountaineering, rock climbs, and unsuccessful outings. Use the same
 canonical model as existing climbing ticks, with appropriate server queries
 and UI filters on web and mobile.
 
-On the activity details page, show GPS-backed climbs as dots on the activity
-map. Present the activity's Climbs section as a responsive grid of tick cards;
-each tick with a source location also shows a compact map with one point.
-Implement the same behavior on web and mobile.
-
 The agreed vocabulary is:
 
 - **Area**: a named containing place, optionally inside another Area.
 - **Climb**: the named mountain, route, or boulder, distinct from its containing
   places.
+- **Pitch**: an individually identified section of a route, belonging to a Climb.
 - **ClimbingLogEntry**: one source-recorded account of undertaking a Climb.
   Preserve whether it describes one try or summarizes several.
-- **ClimbingAttempt**: one individually recorded try belonging to a log entry.
+- **ClimbingAttempt**: one recorded try at the whole Climb or at a pitch,
+  belonging to a log entry. The same model holds either scope.
+- **GradeComponent**: a recorded difficulty value and its nullable grading system.
 - **Activity**: an optional timed outing associated with the log entry.
 
 A successful ascent is an outcome; it does not require a second entry model.
@@ -50,12 +46,20 @@ database relations, tests, and active documentation.
 | --- | --- | --- |
 | `Area` | `area` | `fitness.area` |
 | `Climb` | `climb` | `fitness.climb` |
+| `Pitch` | `pitch` | `fitness.pitch` |
+| Published Climb grade component | `climbGrade` | `fitness.climb_grade` |
+| Published Pitch grade component | `pitchGrade` | `fitness.pitch_grade` |
+| Separately reported log grade component | `climbingLogEntryGrade` | `fitness.climbing_log_entry_grade` |
 | `ClimbingLogEntry` | `climbingLogEntry` | `fitness.climbing_log_entry` |
 | `ClimbingAttempt` | `climbingAttempt` | `fitness.climbing_attempt` |
 | Canonical serving projection | Corresponding log-entry query types | `fitness.v_climbing_log_entry` |
 
-Foreign keys use `parentAreaId`, `areaId`, `climbId`, `climbingLogEntryId`,
-and `activityId`, with snake_case database names.
+Foreign keys use `parentAreaId`, `areaId`, `climbId`, `pitchId`,
+`climbingLogEntryId`, `parentAttemptId`, and `activityId`, with snake_case
+database names. Grade rows have exactly one owning entity through their table's
+required foreign key. `GradeComponent` is the shared value type, not a shared
+grade catalogue. Its fields are `value` and `system` consistently in storage
+and application contracts.
 
 ```mermaid
 classDiagram
@@ -76,10 +80,18 @@ classDiagram
         string? name
         ClimbKind? kind
         UUID? areaId
-        string? grade
-        ClimbingGradeSystem? gradeSystem
+        GradeComponent[] publishedGrades
         ClimbSetting? setting
+        ProtectionStyle[]? routeProtection
         GpsCoordinates? coordinates
+    }
+    class Pitch {
+        UUID id
+        UUID climbId
+        string? externalId
+        int? number
+        string? name
+        GradeComponent[] publishedGrades
     }
     class ClimbingLogEntry {
         UUID id
@@ -90,18 +102,34 @@ classDiagram
         UUID? activityId
         date? climbedOn
         ClimbingDiscipline? discipline
-        ClimbingMethod? climbStyle
         string? title
         string? notes
+        GradeComponent[] reportedGrades
     }
     class ClimbingAttempt {
         UUID id
         UUID climbingLogEntryId
+        AttemptScope scope
+        UUID? pitchId
+        UUID? parentAttemptId
         int? attemptIndex
         AttemptOutcome? outcome
-        boolean? clean
+        RopeMethod? ropeMethod
+        boolean? solo
+        ProtectionStyle[]? protectionUsed
+        boolean? usedPreplacedProtection
+        boolean? usedAid
+        boolean? fellOrHung
+        boolean? dabbed
         boolean? receivedBeta
+        boolean? hadCompletedBefore
+        boolean? priorFailedAttemptsGroundUp
         string? notes
+    }
+    class GradeComponent {
+        <<datatype>>
+        string value
+        GradeSystem? system
     }
     class Activity {
         UUID id
@@ -111,13 +139,30 @@ classDiagram
         double latitude
         double longitude
     }
+    Area "0..1" <-- "0..*" Area : parent
+    Area "0..1" <-- "0..*" Climb : contains
+    Climb "1" *-- "0..*" Pitch
+    Climb "0..1" <-- "0..*" ClimbingLogEntry : records
+    Activity "0..1" <-- "0..*" ClimbingLogEntry : associated outing
+    ClimbingLogEntry "1" *-- "1..*" ClimbingAttempt : recorded tries
+    Pitch "0..1" <-- "0..*" ClimbingAttempt : identified pitch
+    ClimbingAttempt "0..1" <-- "0..*" ClimbingAttempt : parent whole-climb try
+    Climb *-- GradeComponent : publishedGrades
+    Pitch *-- GradeComponent : publishedGrades
+    ClimbingLogEntry *-- GradeComponent : reportedGrades
+    Area "1" *-- "0..1" GpsCoordinates : coordinates
+    Climb "1" *-- "0..1" GpsCoordinates : coordinates
+```
+
+```mermaid
+classDiagram
     class ClimbKind {
         <<enumeration>>
         boulder
         route
         summit
     }
-    class ClimbingGradeSystem {
+    class GradeSystem {
         <<enumeration>>
         v_scale
         font
@@ -128,6 +173,14 @@ classDiagram
         saxon
         norwegian
         brazilian_crux
+        british_adjectival
+        british_technical
+        aid
+        water_ice
+        alpine_ice
+        mixed
+        ifas
+        nccs
     }
     class ClimbSetting {
         <<enumeration>>
@@ -137,52 +190,53 @@ classDiagram
     class ClimbingDiscipline {
         <<enumeration>>
         rock_climbing
+        ice_climbing
+        mixed_climbing
+        snow_climbing
         hiking
         scrambling
         mountaineering
     }
-    class ClimbingMethod {
+    class RopeMethod {
         <<enumeration>>
         lead
-        top-rope
+        top_rope
         follow
-        solo
-        aid
+        unroped
+    }
+    class ProtectionStyle {
+        <<enumeration>>
+        sport
+        trad
+    }
+    class AttemptScope {
+        <<enumeration>>
+        climb
+        pitch
     }
     class AttemptOutcome {
         <<enumeration>>
         completed
         failed
     }
-    Area "0..1" <-- "0..*" Area : parent
-    Area "0..1" <-- "0..*" Climb : contains
-    Climb "0..1" <-- "0..*" ClimbingLogEntry : records
-    Activity "0..1" <-- "0..*" ClimbingLogEntry : associated outing
-    ClimbingLogEntry "1" *-- "1..*" ClimbingAttempt : recorded tries
-    Area "1" *-- "0..1" GpsCoordinates : coordinates
-    Climb "1" *-- "0..1" GpsCoordinates : coordinates
-    Climb ..> ClimbKind
-    Climb ..> ClimbingGradeSystem
-    Climb ..> ClimbSetting
-    ClimbingLogEntry ..> ClimbingDiscipline
-    ClimbingLogEntry ..> ClimbingMethod
-    ClimbingAttempt ..> AttemptOutcome
 ```
 
 The diagram shows principal fields; retained context and lifecycle fields are
 specified below. A question mark denotes a nullable field.
 
-Use the same enum definitions in shared application schemas and PostgreSQL,
-rather than accepting arbitrary strings. Missing or unrecognized values stay
-null, and unfamiliar source labels remain in provenance. `completed` means
-the recorded objective was achieved; `failed` means explicitly unsuccessful.
-Clean climbing is a separate nullable fact on the attempt, not another
-completion status. `sent` becomes a server-derived label for completed clean
-rock attempts, without a stored send flag or enum member.
-The approved `climbStyle` field uses the climbing-method enum.
-Retain the existing [grade-system values](../../../src/db/schema/enums.ts)
-when moving the enum-backed field to Climb. Grade itself remains text; its
-validation uses the selected recognized system.
+Use the same enum definitions in shared application schemas and PostgreSQL.
+Missing or unrecognized classifications stay null, and unfamiliar source labels
+remain in provenance. `scope` is required: it identifies whether the try
+describes the whole Climb or a pitch, including a pitch whose identity is unknown.
+`completed` means the recorded goal at that scope was achieved; `failed` means
+explicitly unsuccessful at that scope. Completion and execution facts are
+independent. Send, Onsight, Flash, and Pinkpoint are server-derived labels;
+there is no stored `clean`, `sent`, or `resultStyle` field.
+
+Use `GradeSystem` consistently for the shared type and grade-row `system`
+field. Retain the existing grading values and add the verified British,
+aid, ice, mixed, and alpine systems below. A component's `value` remains text;
+recognized systems validate their own values. No converted grade is stored.
 
 ### Area and Climb
 
@@ -196,8 +250,8 @@ Area has a nonempty `name` and nullable `parentAreaId`.
 The parent is the nearest recorded containing Area: omitted intermediate
 levels must not be invented. A null parent means no parent is recorded.
 Climb has a nullable nonempty `name`, nullable recorded `kind`
-(boulder, route, or summit), nullable `areaId`, nullable `grade` and
-`gradeSystem`, and nullable source-evidenced indoor/outdoor `setting`.
+(boulder, route, or summit), nullable `areaId`, an owned collection of
+published grade components, and nullable source-evidenced indoor/outdoor `setting`.
 Its name stays separate from the area chain, matching the existing
 [climbing-context contract](../../climbing-context.md).
 Destination/area/subarea labels remain source provenance; the parent
@@ -218,6 +272,53 @@ Shared source objects are updated from verified current provider metadata.
 A rename or hierarchy change updates what all associated historical entries
 display, as requested. An incomplete response must not erase known names or
 parentage; verified removal is different from an omitted field.
+
+### Pitches and grade collections
+
+Pitch has a required `climbId`, nullable verified source `externalId`, nullable
+positive source pitch `number`, nullable nonempty `name`, and its own published
+grade components. Its owner and provider follow its containing Climb. A source
+pitch ID or verified number within an identified route can establish identity;
+matching names alone cannot. OpenBeta's official
+[Climb and Pitch schema](https://github.com/OpenBeta/openbeta-graphql/blob/f1508b2479cc7658ac4341d59ec817836190d6d8/src/graphql/schema/Climb.gql)
+supplies pitch identity, number, and grades. Its
+[tick contract](https://github.com/OpenBeta/openbeta-graphql/blob/f1508b2479cc7658ac4341d59ec817836190d6d8/documentation/tick_logic.md)
+does not support pitch ticks; catalogue pitches alone create no pitch attempts.
+
+Each published or reported grade is a `GradeComponent { value, system }`.
+Use owned child rows for Climb, Pitch, and log grade collections. Preserve
+separately supplied components and equivalent source grading systems. A Climb
+can therefore have both `5.12a` in `yds` and `A3` in `aid`, or British
+adjectival and technical grades. Do not derive a stored route grade from its
+pitch grades or insert converted equivalents. The source documents
+[multiple published and separately recorded ascent grades](https://www.thecrag.com/en/article/gradesonthecrag/grade-comparison).
+
+Map grading systems only with verified source meaning: theCrag `AID`/`AIDC`
+map to `aid` while retaining their A/C text, `WICE` to `water_ice`, `AICE` to
+`alpine_ice`, `MIXED` to `mixed`, `IFAS` to `ifas`, `NCCS` to `nccs`, `UK` to
+`british_adjectival`, and `UKT` to `british_technical`.
+`NCCST` is a distinct technical scale; it is not `nccs`. Australian aid and
+mixed grades can both use M-prefixed values, so prefixes alone do not establish
+their system. Unrecognized systems retain text with null `system`. See the
+official [system labels and examples](https://www.thecrag.com/en/article/gradesonthecrag).
+
+`publishedGrades` contains recorded current catalogue components. Their updates
+affect historical shared-object displays. `reportedGrades` contains grades
+separately supplied for the source log, including an explicit personal opinion
+when its meaning is established. Do not copy published grades into this
+collection, overwrite it on a catalogue update, or assume every ascent-grade
+field is a personal assessment. OpenBeta's
+[Tick grade](https://github.com/OpenBeta/openbeta-graphql/blob/f1508b2479cc7658ac4341d59ec817836190d6d8/src/graphql/schema/Tick.gql)
+can describe an unmatched imported climb; the observed
+[KAYA audit](../../kaya.md#confirmed-request-coverage) has not established that
+its separate ascent-grade field always equals the published grade or represents
+an opinion. Keep unverified field meanings in raw provenance.
+
+An empty collection means no grade components are recorded. An omitted source
+collection does not erase known components; a verified replacement updates
+the whole supplied collection, including an explicitly empty one. Preserve
+source component order as structural row order when it is supplied. Do not
+select a primary component by discarding the others during ingestion.
 
 ### Coordinates
 
@@ -278,9 +379,9 @@ identities, raw payloads, tombstones, and existing attempts.
 | `climbId` | Reference to the recorded Climb; nullable only when no identifying climb facts are supplied. |
 | `activityId` | Nullable association to a same-user Activity. |
 | `climbedOn` | Nullable exact source calendar date, independent of activity attachment. |
-| `discipline` | Nullable source-evidenced rock-climbing, hiking, scrambling, or mountaineering classification. |
+| `discipline` | Nullable source-evidenced rock, ice, mixed, snow, hiking, scrambling, or mountaineering classification. |
 | `title`, `notes` | Nullable nonempty source text. |
-| Existing experience context | Method, protection, board, reported wall angle, and hold type, retaining their recorded meaning. |
+| Existing experience context | Board, reported wall angle, and hold type, retaining their recorded meaning. Method and actual protection use belong to the described attempt. |
 | Existing lifecycle metadata | Source name, opaque raw provenance, creation time, and provider-absence tombstone. |
 
 Location belongs to the Climb through `Climb.areaId`. KAYA's
@@ -290,14 +391,20 @@ complete a missing Climb location; separate source fields do not establish a
 second canonical location relationship. If supplied locations conflict,
 resolve them from verified current metadata before updating shared containment.
 
-Store the climb's grade and grading system only on Climb. Updating a shared
-grade changes what its historical entries display and what grade analytics
-use. Remove the old log-level grade columns; keep original source values in
-opaque provenance. A separately recorded personal grade opinion is a distinct
-fact and must not be relabeled as the climb's published grade. This change
-does not add a second normalized generic-grade path. Retain other existing
-experience context without guessing whether ambiguous historical values
-were object or event properties.
+Published Climb and Pitch grades live in their owned grade rows; separately
+reported log grades live in the log's owned grade rows. Remove scalar grade
+and grade-system columns from Climb and log storage. Catalogue updates change
+published-grade displays and grade analytics while preserving reported log
+grades. Retain original source values and uncertain meanings in provenance.
+
+Climb's nullable `routeProtection` collection records advertised sport/trad
+protection when supplied. Attempt's nullable `protectionUsed` collection records
+actual protection used. Do not populate actual use from catalogue style alone.
+This distinction permits source-evidenced Greenpoint: trad protection used on
+a sport route. Source labels and semantics are documented by
+[theCrag](https://www.thecrag.com/en/article/ticktypes).
+Retain board, wall-angle, and hold-type context at its established source scope
+without guessing whether ambiguous historical values were object or event properties.
 
 Rename the attempt foreign key to `climbing_log_entry_id`; preserve existing
 attempt IDs, recorded facts, and notes. Outcome becomes nullable so
@@ -306,39 +413,105 @@ failure-reason field, enum, and requirement that a failed attempt have a
 structured reason. Provider notes remain source text rather than being parsed
 into an unsupported cause taxonomy.
 
+### Attempt scope, counts, and order
+
+Every attempt has `scope = climb` or `scope = pitch`. A whole-Climb attempt
+has no `pitchId` or `parentAttemptId`. A pitch attempt may reference an
+identified Pitch belonging to the log's Climb. Its nullable `parentAttemptId`
+may reference a whole-Climb attempt in the same log only when the source
+establishes that grouping. Parent links are one level deep; pitch attempts
+cannot own further child attempts. An unidentified pitch try can retain
+`scope = pitch` with null `pitchId`, without inventing a Pitch definition.
+
+One source occurrence owns all of its scoped attempts. A pitch-only log creates
+pitch attempts and zero whole-Climb attempts. Completing a pitch, including
+every retained pitch, does not by itself establish whole-Climb completion.
+TheCrag's [personal API](https://www.thecrag.com/en/article/logbookreadapi)
+documents pitch-level results; their exact payload shape must be verified
+before normalization. A reported number of pitches is not a try count and
+does not create synthetic pitch attempts. Preserve unverified extent in provenance.
+
 A source-reported count of N actual tries creates N partially described
-attempt rows. Unknown outcomes, clean-climbing conditions, beta, order,
-notes, and times remain unknown.
-A source-logged occurrence with no total supplied creates one recorded
-attempt. This represents the recorded occurrence and asserts nothing about
-unreported tries. Preserve any explicitly described individual attempts.
-Reuse rows on resync and reconcile reported counts with already described
-attempts; do not
-append the count to an existing collection and count the same tries twice.
+attempt rows at the source's reported scope. Unknown outcome, rope method,
+solo status, protection use, aid use, falls/hangs, dabs, beta, history, order,
+notes, and times remain unknown. A total does not apply one described result
+to every row. A source-logged occurrence without a total creates one recorded
+attempt at its established scope; an explicit collection of pitch results
+does not additionally create a whole-route try. Preserve explicitly described
+individual tries and reconcile counts within the same scope and identified
+Climb/Pitch, retaining child row IDs. Never append the total to the existing
+collection or combine overlapping source summaries without evidence.
 
-The server derives recorded attempt counts from the stored rows. Do not store
-or infer whether the source history is complete or incomplete. Counts describe
-recorded attempts, not a claimed lifetime total. Nullable `attemptIndex`
-describes actual attempt order across the same user's verified Climb, when
-established by the source. A provider first-try designation sets it to 1 and
-places that attempt first in the Climb's history. Do not assign actual indices
-just by sorting imported records or creating count-based rows. Unknown actual
-positions remain null. Creation timestamps remain ingestion metadata.
-Legacy per-log indices do not by themselves establish actual global indices;
-resolve their meaning from source evidence before converting existing rows.
+The server derives separate whole-Climb and pitch attempt counts. A parent
+and its child pitch attempts never count together as a whole-Climb total.
+Counts describe recorded tries, not a claimed lifetime total. Store no
+attempt-count or history-completeness flag.
 
-Attempt.outcome is the canonical recorded result. Retain a source-described
-successful or unsuccessful try without assuming anything about unreported
-tries. `clean` records whether the climbing was free of falls, rests on the
-rope, and aid, independently of achieving its goal. Set it only from verified
-source evidence; goal completion alone establishes no clean-climbing fact.
-Store no separate log success boolean or result label. Original qualifiers
-remain in opaque provenance; labels are derived
-only when normalized recorded facts establish them.
+Nullable `attemptIndex` describes actual order across the same user's verified
+Climb or Pitch. An explicit first-try designation sets it to 1 for that target,
+without assigning indices by import order or count expansion. Actual order
+for an unidentified pitch remains unknown. Legacy per-log indices do not
+establish global target history. Creation timestamps remain ingestion metadata.
+
+### Attempt facts and derived labels
+
+Attempt.outcome is the canonical recorded completion result at its scope.
+Retain explicitly successful or unsuccessful tries without assuming unreported
+tries or copying pitch outcomes onto a parent. A source marking an attempt as
+unsent does not necessarily report failure to complete the climb: OpenBeta
+[converts Mountain Project's Fell/Hung label into Attempt](https://github.com/OpenBeta/openbeta-graphql/blob/f1508b2479cc7658ac4341d59ec817836190d6d8/documentation/tick_logic.md).
+Keep outcome null when the source's physical completion meaning is ambiguous.
+
+`fellOrHung` is one nullable source fact: true means a reported fall or hang;
+false means evidence that neither occurred; null means unknown. Do not create
+separate fall/rest booleans, a fall/rest union, or a condition-event table.
+Current Mountain Project and theCrag labels combine the two conditions;
+theCrag defines Hang dog as resting or falling in its
+[tick definitions](https://www.thecrag.com/en/article/ticktypes). KAYA's
+[currently selected contract](../../../packages/kaya-client/src/client.ts)
+provides ascent labels, counts, and comments, without separate fall/rest events.
+Notes remain source text; do not infer structured events from narrative text.
+
+Rope method, solo status, and aid use are independent nullable facts on the
+attempt. Lead solo is `ropeMethod = lead, solo = true`; top-rope solo is
+`ropeMethod = top_rope, solo = true`. Aid solo establishes `solo = true` and
+`usedAid = true`, leaving rope method unknown unless supplied. `solo` means
+climbing without a partner belayer, not necessarily physical solitude.
+French-free establishes gear assistance and can coexist with lead climbing;
+it does not establish falling or hanging. These combinations are documented
+by [OpenBeta](https://github.com/OpenBeta/openbeta-graphql/blob/f1508b2479cc7658ac4341d59ec817836190d6d8/documentation/tick_logic.md)
+and [theCrag](https://www.thecrag.com/en/article/ticktypes).
+
+Aid alone never sets `fellOrHung`. Normal gear support during aid is not a
+reported fall or hang. Aid completion is independent of aid use and resting.
+TheCrag's Aid Onsight/Flash wording says no resting but does not explicitly
+establish no falls, so it cannot supply `fellOrHung = false`; preserve that
+qualifier in raw provenance. In aid, clean describes hammerless protection
+ethics, rather than fall-free execution. See Chris McNamara's firsthand
+[AAJ account](https://publications.americanalpineclub.org/articles/12199811700/Free-Fast-and-Clean-The-Future-of-Yosemite-Climbing).
+
+`dabbed` records source-described contact with ground or a person in bouldering.
+A Dab can describe completion while excluding a valid boulder send; it does
+not imply falling. `usedPreplacedProtection` records the distinct Pinkpoint
+fact. Both definitions are given by [theCrag](https://www.thecrag.com/en/article/ticktypes).
+
+`hadCompletedBefore` and `priorFailedAttemptsGroundUp` retain explicit source
+history claims from Repeat and Ground-up Redpoint respectively. Do not set
+false from missing imported history, invent earlier attempts, or assign an
+exact index from either claim. Preserve contradictory qualifiers in provenance
+and do not force a consistent derived label. The source's
+[definitions](https://www.thecrag.com/en/article/ticktypes) establish their scope.
+
+Derive a free rock send only from completion and sufficient source evidence:
+`outcome = completed`, `fellOrHung = false`, `usedAid = false`, and, for a
+boulder, `dabbed = false`. Unknown relevant conditions supply no send claim.
+A completed aid ascent remains completed without being classified as a free
+send. Do not store `clean`, `sent`, a duplicate log success, or an inferred
+result label. Raw qualifiers remain available independently.
 
 `ClimbingAttempt.receivedBeta` is nullable recorded knowledge before the try.
 For a source entry explicitly marked Flash with no prior retained attempts or
-ascents on the same verified Climb, record `receivedBeta = true` on its
+ascents on the same verified Climb/Pitch, record `receivedBeta = true` on its
 successful attempt. The explicit qualifier supplies this evidence; absence
 of earlier records alone supplies none. Keep absent beta knowledge null.
 Exclude the current log and its own attempts from the prior-history check,
@@ -348,25 +521,38 @@ onsight/flash labels only when success and actual first-try history are also
 established. Explicit Onsight/Flash supplies first-try order evidence;
 normalize that to `attemptIndex = 1`, without storing a firstTry boolean.
 
-| Source evidence | outcome | clean | receivedBeta | attemptIndex |
-| --- | --- | --- | --- | --- |
-| Explicit Onsight | completed | true | false | 1 |
-| Explicit Flash with no prior retained attempts/ascents | completed | true | true | 1 |
-| Explicit clean Send | completed | true | null | null unless supplied |
-| Fell/Hung without completion information | null | false | null | null unless supplied |
-| Summit reached | completed | null | null | null unless supplied |
-| Turned back before summit | failed | null | null | null unless supplied |
+| Source evidence at the described scope | outcome | fellOrHung | usedAid | receivedBeta | attemptIndex |
+| --- | --- | --- | --- | --- | --- |
+| Explicit free Onsight | completed | false | false | false | 1 |
+| Explicit free Flash with no prior retained target history | completed | false | false | true | 1 |
+| Explicit free Send | completed | false | false | null | null unless supplied |
+| Fell/Hung without completion information | null | true | null | null | null unless supplied |
+| Explicit Dab | completed | null | null | null | null unless supplied |
+| Explicit Aid Onsight | completed | null | true | false | 1 |
+| Explicit Aid Flash with no prior retained target history | completed | null | true | true | 1 |
+| Summit reached | completed | null | null | null | null unless supplied |
+| Turned back before summit | failed | null | null | null | null unless supplied |
+
+An explicit free boulder send qualifier also establishes `dabbed = false`;
+Dab establishes `dabbed = true`. Pinkpoint additionally establishes preplaced
+protection. Apply every mapping only at the scope the source describes;
+partial-route reports do not establish whole-route completion.
 
 The Flash mapping uses the stated history condition, excluding the current
 log and its own attempts. If that condition is not met, retain the qualifier
 in provenance and do not guess beta knowledge without independent evidence.
-Provider-established first-try order remains source evidence.
+Provider-established first-try order remains source evidence for the same
+identified Climb/Pitch. Resolve the complete incoming batch at that scope
+before evaluating history; a whole-route try does not establish the order of
+an individual pitch, or vice versa.
 The explicit labels' first-try/beta meanings are documented in OpenBeta's
 [tick schema](https://github.com/OpenBeta/openbeta-graphql/blob/develop/src/graphql/schema/Tick.gql).
-Provider-specific mappings require verified semantics. A rock send is derived
-from completed outcome and known clean climbing; Onsight/Flash additionally
-require actual index 1 and known beta facts. Unknown facts do not receive a
-classification simply because no earlier imported history exists.
+Provider-specific mappings require verified semantics. Free Onsight/Flash
+additionally require actual index 1 and known beta facts. Pinkpoint requires
+the corresponding free lead completion and explicit preplaced-protection
+evidence. Unknown facts do not receive a classification merely because no
+earlier imported history exists. Source-defined aid qualifiers remain distinct
+from free-send labels.
 
 ## Source identity and hierarchy migration
 
@@ -395,22 +581,27 @@ For legacy data:
    Climb when their recorded chains agree. A changed chain can replace that
    Climb's association; remove superseded unreferenced imported objects as
    part of the conversion/update transaction.
-6. Move the source-reported Climb grade/system to Climb and remove duplicate
-   normalized log storage. Resolve differing grades for the same verified
-   Climb using current authoritative source metadata, preserving old supplied
-   values only in opaque provenance.
+6. Move verified published grade components into owned Climb/Pitch grade rows.
+   Move only separately reported log grades into log grade rows. Resolve
+   differing published definitions using current authoritative source metadata;
+   preserve old snapshots and unverified grade meanings in opaque provenance.
+   Create Pitch definitions and pitch attempts only from their own source evidence.
 7. Resolve conflicting definitions of a verified source object from an
    authoritative source update timestamp or verified current source metadata.
    Row creation time is not such a timestamp. If neither is available, fail
    preflight before destructive conversion and report the specific conflict.
-8. Convert attempts using their recorded semantics: an existing explicit clean
-   send establishes completed outcome and clean climbing; explicit Fell/Hung
-   establishes unclean climbing without necessarily establishing failure to
-   reach the top. A generic legacy unsuccessful-send value alone must not
-   establish either objective noncompletion or specific climbing conditions.
-   Recover objective-completion and actual-order facts only when source evidence
-   supplies them. Inventory any legacy row whose known facts cannot be represented
-   before removing the old columns.
+8. Convert attempts using recorded semantics and scope. An explicit free send
+   establishes completed outcome, `fellOrHung = false`, `usedAid = false`,
+   and, for a boulder, `dabbed = false`. Explicit Fell/Hung establishes
+   `fellOrHung = true` without necessarily establishing failure to complete.
+   Legacy `clean = false` alone does not establish a fall/hang: aid or a dab
+   may account for it. A generic unsuccessful-send value does not establish
+   failure to complete or a particular condition. Retain scoped source
+   evidence and recover method, solo, protection, history, and actual order
+   only when their meanings are established. Inventory and resolve any legacy
+   row whose known facts cannot be represented before removing old columns;
+   fail conversion preflight rather than inventing a cause or silently losing
+   a known fact.
 
 After conversion, current provider metadata is the shared definition.
 There is no normalized historical-location snapshot or version infrastructure.
@@ -421,14 +612,15 @@ separate provider objects must not automatically produce duplicate sends.
 ## Date, difficulty, and outcome semantics
 
 Missing date, difficulty, discipline, and result remain independently unknown
-and never prevent browsing. Represent a source-logged occurrence as one
-recorded attempt unless supplied count or individual-try records establish
-more. Do not assume success, fabricate dates, or extract grades from narrative
-notes.
-Climb.grade is nullable recorded difficulty text. A recognized grade system
-requires a nonempty valid grade. An unknown system may retain recorded text
-with a null normalized system; preserve unfamiliar source system labels in
-raw provenance.
+and never prevent browsing. Represent the recorded tries at their reported
+scope without adding whole-route tries for pitch-only logs. Do not assume
+success, fabricate dates, or extract grades from narrative notes.
+Every supplied grade component requires nonempty text. A recognized system
+requires a valid value; an unfamiliar system retains text with null `system`
+and its original system label in provenance. Select compatible free-climbing
+components for grade analytics after eligibility checks. Never count one
+attempt multiple times because its Climb has multiple components or equivalent
+grading systems. Aid, ice, and commitment components are not free rock grades.
 
 `climbedOn` survives attachment. Remove the existing activity/date constraint.
 Previously erased source dates remain unknown unless recovered from a verified
@@ -436,20 +628,23 @@ raw source date; the associated activity's date is not a replacement.
 Use the existing [date-string contract](../../../packages/server/src/lib/typed-sql.ts)
 to serve `YYYY-MM-DD` without timezone conversion.
 
-The server derives log outcomes from recorded attempt results. These describe
-the logged experience and make no claims about unreported tries. Never store
-a duplicate inferred log success. Normalize explicitly supplied source outcomes
-and recognized qualifiers into the corresponding attempt facts. Keep the
-clean-send projection for rock analytics separate: source summit completion
-alone cannot establish a clean rock send, even when a technical grade is
-present. Preserve the distinctions documented in
+The server derives whole-Climb and pitch outcomes separately. Whole-Climb
+completion requires a completed attempt with `scope = climb`; pitch success
+cannot establish it. A pitch-only log can display its recorded pitch results
+without claiming route completion. Summaries make no claims about unreported
+tries or pitches. Store no duplicate inferred log success. Keep free-send
+projections for rock analytics separate: source summit completion alone cannot
+establish a free rock send, even when a technical grade is present.
+Preserve the distinctions documented in
 [climbing context](../../climbing-context.md#interpretation).
 
 A mountain, a route, a possible activity listed on an object page, or a missing
 grade does not establish the entry's discipline. Existing records migrate
 with their established rock-climbing semantics; newly ambiguous records stay
-unclassified. Method (lead, top-rope, follow, solo, aid) remains separate from
-discipline and Climb kind.
+unclassified. Rope method, solo status, and aid use remain separate from
+discipline and Climb kind. OpenBeta's potentially overlapping snow/ice/mixed
+[catalogue types](https://github.com/OpenBeta/openbeta-graphql/blob/f1508b2479cc7658ac4341d59ec817836190d6d8/src/graphql/schema/Climb.gql)
+do not by themselves establish the discipline of an individual log.
 
 Both physical and soft deletion of an Activity clear associations while
 preserving source logs and dates. Physical deletion uses a same-user foreign
@@ -457,7 +652,9 @@ key with column-specific
 [SET NULL](https://www.postgresql.org/docs/current/ddl-constraints.html#DDL-CONSTRAINTS-FK);
 the [activity repository](../../../packages/server/src/repositories/activity-repository.ts)
 must unlink logs in the same transaction as its soft deletion.
-Deleting a log deletes its owned attempts.
+Deleting a log deletes its owned attempts and reported grade rows. Published
+Climb/Pitch grades remain owned by their shared objects while those objects
+are referenced by another retained log from the same user and provider.
 
 ## SummitPost access and synchronization
 
@@ -505,63 +702,11 @@ Register metadata, settings, worker/server entries, exports, and queue policy.
 
 ## Serving, web, and mobile
 
-### Activity-detail climb maps and grid
-
-The map and grid changes belong on the **activity details page**, in its
-**Climbs** section. Replace its attached-climb rows and unattached-tick
-suggestion rows with responsive card grids on both platforms. Use one column
-where needed for readable cards and more columns as available width permits.
-Preserve source order, repeated log occurrences, source links, and each
-suggestion's independent Attach button, pending state, and actionable error.
-Cards show the Climb name, available grade, location, and recorded result;
-supporting notes and provenance remain in details or existing disclosures.
-
-Show the attached ticks with verified source coordinates as dots on one
-activity-detail map. Retain the activity's recorded GPS route when available
-and overlay the climb dots; source points also support a map when the activity
-has no sensor GPS. Fit the map to its available route and points. Only attached
-ticks contribute to this map; attaching a suggestion updates both the grid
-and the map. Dots identify their tick cards by Climb name and log-entry
-identity, including separate occurrences at the same coordinates. Unrelated
-climb points do not form a connected route.
-
-Every attached tick and unattached suggestion with a verified source location
-also displays a compact map with one dot in its own card. Keep cards without
-coordinates usable without a map. A source location is resolved on the server
-from `Climb.coordinates`, or from the nearest containing Area with coordinates
-when the Climb has none. Return the owning object's identity, name, provider,
-and point scope with the coordinates. Label a containing place as **Area
-location**, so a gym or bounding-box center is not presented as an exact Climb
-point. Keep the coordinates on their canonical owner; this serving projection
-does not copy them into log-entry storage.
-
-Recorded activity GPS and provider-supplied Climb/Area points retain separate
-provenance. Activity GPS does not supply a missing tick location, and a source
-point does not establish a measured activity route. Resolve locations for
-attached logs and suggestions through the same shared contract, preserving
-user/provider ownership and activity visibility. Missing coordinates remain
-null, zero is valid, and invalid coordinate pairs fail boundary validation.
-
-Reuse the existing map stack and
-[server tile-preview helper](../../../packages/server/src/lib/osm-tile.ts).
-Expose projected dot positions separately from its connected `routePath`,
-with viewport fitting performed on the server. Leaflet supports independent
-[circle markers](https://leafletjs.com/reference.html#circlemarker), and the
-existing native stack supports
-[markers](https://github.com/react-native-maps/react-native-maps/blob/master/docs/marker.md).
-No additional map dependency or geocoding service is required. Tile previews
-must retain visible attribution, ordinary browser caching, and lazy loading
-under the [OpenStreetMap tile usage policy](https://operations.osmfoundation.org/policies/tiles/).
-Provide readable map labels and keep tick identity and actions accessible
-through the cards. A tile-load error leaves the card and Attach action usable
-and shows a specific map-unavailable state.
-
-### Provider records and analytics
-
 Use **Data Sources → Provider → Records → Climbing log** on both platforms.
 The generic query includes every retained log, including ungraded, undated,
 and unclassified records. Rows show Climb name, recorded day, and recorded
-outcome; absent values remain explicit. Order dated rows newest first, then
+outcomes at their reported scope; absent values remain explicit. A completed
+pitch is labelled as a pitch result, not whole-route completion. Order dated rows newest first, then
 undated rows with stable identity tie-breakers. Put notes, source links, and
 provenance in details, using text rendering and accessible link names.
 
@@ -570,7 +715,8 @@ and display actionable server errors. Merge indexed user/provider-scoped
 Postgres log counts into shared provider statistics, including providers with
 no sensor data. Add `climbingLogEntries` to shared record/count contracts.
 
-Filters distinguish Climb kind, discipline, method, protection, and setting.
+Filters distinguish Climb kind, discipline, attempt scope, rope method,
+solo status, actual protection use, advertised route protection, and setting.
 Derive paths on the server from current Area relationships and filter setting
 through Climb.setting, preserving existing verified setting evidence without
 using provider identity or place names as proof. Clients render values; they
@@ -581,7 +727,7 @@ inferred outdoor classifications become unknown unless independently verified.
 
 Rock queries apply eligibility before grade schemas/conversion in both
 attached and standalone branches, performance comparison, and training
-exposure. Generic summit success never enters clean-send metrics. Preserve
+exposure. Generic summit success never enters free-send metrics. Preserve
 historical rock observations and repeat-occurrence matching. Ungraded known
 rock observations may contribute to participation; undated records do not
 acquire dates for trends. Update activity-type gates and attachment validation
@@ -598,8 +744,19 @@ active documentation in the same change.
   log-entry names; keep no compatibility aliases or dual writers/readers.
 - Move `routeName` / `route_name` and `climbType` / `climb_type` to Climb's
   `name` and `kind`; remove the superseded log columns.
-- Move `grade` and `gradeSystem` / `grade_system` to Climb and remove
-  normalized log copies. Join Climb for current-grade displays and analytics.
+- Replace scalar `grade` and `gradeSystem` / `grade_system` storage with owned
+  published Climb/Pitch grade rows and separately reported log grade rows.
+  Join shared published components for catalogue displays and analytics;
+  never create reported grades by copying them.
+- Replace log-level `climbStyle` / `climb_style` with attempt-level
+  `ropeMethod` / `rope_method`, `solo`, and `usedAid` / `used_aid`. Move verified
+  advertised protection to Climb and record actual protection on Attempt.
+- Remove attempt `clean` and use source-evidenced `fellOrHung`, `usedAid`, and
+  `dabbed` without retaining a fall/rest union, compatibility alias, or stored
+  derived send status. Preserve independently supplied preplaced-protection
+  and history facts.
+- Add Pitch definitions and the one-level attempt grouping with ownership
+  and scope constraints. Keep counts and outcomes separate for climb/pitch scope.
 - Replace stored `locationPath` / `location_path` with Area references.
   Serve derived `areaPath` using the current hierarchy.
 - Remove the normalized location-node kind contract. Preserve source labels
@@ -620,9 +777,10 @@ active documentation in the same change.
   write fences, generated DBML/UML, active guides, and executable maintenance
   tooling. Retire obsolete backfill commands rather than leaving broken tools.
 
-Area and Climb ownership makes provider deletion and account erasure complete:
-remove attempts/logs, climbs, and areas without deleting another provider's
-associated activities. Include all canonical entities in
+Ownership makes provider deletion and account erasure complete: remove scoped
+attempts, reported log grades, logs, published grades, pitches, climbs, and
+areas without deleting another provider's associated activities. Include all
+canonical entities and their scope/protection/history facts in
 [account export](../../../src/export.ts) and follow the existing
 [deletion](../../provider-data-deletion-runbook.md) and
 [erasure](../../account-erasure-runbook.md) inventories.
@@ -636,7 +794,7 @@ This is a coordinated schema/application cutover. Inventory and quiesce old
 readers/writers, convert and validate, remove old storage, then resume only
 the matching application version. Do not rely on rolling deployment to bridge
 breaking names. Follow the
-[maintenance-cutover procedure](../../climbing-context.md#maintenance-cutover)
+[maintenance-cutover procedure](../../climbing-log-model-cutover.md)
 and [schema migration policy](../../schema.md): large data conversion belongs
 in bounded resumable operational tooling outside schema-only deployment
 migrations. No production cutover or external-provider refresh is performed
@@ -646,13 +804,17 @@ merely by approving this design.
 
 Start with failing executable PostgreSQL tests for entity reuse, missing IDs,
 hierarchy rename/reparenting on historical logs, cycle rejection, namespace
-and ownership isolation, shared-grade updates, coordinate pair/range checks,
-coordinate ownership, Flash-to-beta/order normalization, independent clean
-and completion facts, and partial-source updates.
+and ownership isolation, owned grade-collection updates, coordinate pair/range
+checks, coordinate ownership, and target-scoped Flash-to-beta/order normalization.
+Verify independent completion, fall/hang, aid, dab, rope method, solo, actual
+protection, preplaced protection, and explicitly reported history facts.
+Cover pitch-only logs, unidentified pitch scope, same-log one-level parent
+links, separate counts/outcomes, and preservation of reported grades during
+published-grade changes. Verify partial-source updates preserve known facts.
 Exercise migration preservation, current-metadata conflict resolution,
-nullable grades/dates,
+ungraded collections and nullable dates,
 source occurrence idempotency, count-to-row conversion, missing-count logged
-occurrences, outcome derivation, and both forms of activity deletion.
+occurrences at the correct scope, outcome derivation, and both forms of activity deletion.
 Test log browsing, counts, export, provider deletion, and erasure
 against the canonical schema.
 
@@ -662,16 +824,6 @@ connection/records/detail/attachment interactions. Provider parser tests use
 verified HTML; network-level integration fixtures cover pagination, ownership,
 replies, repeats, missing fields, malformed responses, and actionable errors.
 
-Map acceptance covers activity-detail climb dots with and without a recorded
-GPS route, one-point tick maps, exact Climb versus containing-Area labels,
-missing and zero-valued coordinates, repeated ticks at the same point, and
-ownership isolation. Executable database tests verify shared point resolution
-for attached logs and suggestions. Web and mobile interaction tests verify the
-responsive Climbs grid, preserved source links, Attach pending/error states,
-and map updates after attachment. Add paired Storybook states for point maps,
-no GPS, loading, map errors, and narrow/wide grids; visually review both
-platforms before implementation completion.
-
 Run full lint, all package typechecks, focused unit/mobile tests, and required
 database integrations before implementation pushes. Do not add static tests
 whose only purpose is proving old names disappeared; review the cleanup diff
@@ -680,7 +832,5 @@ and compile every consumer.
 Completion requires one canonical entity model everywhere, no obsolete active
 storage/contracts, preserved source identities and outcomes, the approved
 shared-grade/location behavior and setting changes, stored source coordinates,
-activity-detail climb dots, tick point maps, the Climbs card grid on both
-platforms, and import of all verified SummitPost signed-log categories.
-Fixture-only verification does not establish a successful sync of the supplied
-profile.
+and import of all verified SummitPost signed-log categories. Fixture-only
+verification does not establish a successful sync of the supplied profile.

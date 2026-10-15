@@ -20,26 +20,27 @@ The mobile app for Dofek. Built with Expo and React Native, with native Swift mo
 
 ## Project Structure
 
-Activity details use `components/ClimbingEntryContext` for full climbing paths,
-board names, angle/units, methods, and results on attached and unattached entries.
-Labels match the web client through shared formatters; recorded counts/results
-and unknown angle units/outcomes remain explicit, with absent Mountain Project
-top-rope placeholders omitted. Unknown attempt counts are omitted by the
-[shared result formatter](../format/src/format.ts).
-Route names and additional source routes/tick lists open verified links supplied
-by the server. See the [climbing contract](../../docs/climbing-context.md).
+Activity details show climbing logs and same-day attachment suggestions for
+climbing and hiking activities. Cards show current shared locations, published
+display grades, scoped results, and server-derived rock labels.
+[Details](components/ClimbingLogEntryDetails.tsx) show coordinates, published and
+reported grade collections, independent attempt facts, notes, and disclosed
+source data. Provider records use server columns and filters, fetch the selected
+log's complete graph, and retain cached rows during refresh errors. Labels match
+web through shared formatters. See the [canonical response contract](../server/src/contracts/climbing-log-contracts.ts).
 
 Activity-detail climbing entries and suggestions use
-[ClimbingEntryGrid](./components/ClimbingEntryGrid.tsx) and
-[ClimbingEntryCard](./components/ClimbingEntryCard.tsx). Their source-location
+[ClimbingLogEntryBreakdown](./components/ClimbingLogEntryBreakdown.tsx) and
+[ClimbingLogEntryCard](./components/ClimbingLogEntryCard.tsx). Their source-location
 inputs share the web client's [coordinate and provenance types](../training/src/climbing-map.ts).
 [RouteMap](./components/RouteMap.tsx) renders source dots independently of the
 recorded GPS route and supports compact tick maps. Its production occurrence
 chooser uses Entry numbers from the full card order and can select the matching
 card, including repeated names at the same point. Colocated Storybook stories
 exercise exact Climb points, containing-Area points, missing GPS, and attachment
-states. Live coordinate ingestion, resolution, and API wiring remain separate
-from this [component implementation](../../docs/superpowers/specs/2026-10-13-climbing-log-model-summitpost-design.md#activity-detail-climb-maps-and-grid).
+states. Map previews accept explicit location inputs; the activity screen does
+not yet supply those inputs from canonical log locations. The complete log and
+attempt graph follows the [canonical response contract](../server/src/contracts/climbing-log-contracts.ts).
 
 The Training route coordinates query states and delegates climbing payload validation, grade cards, and Hangboarding display to [ClimbingTrainingCard](./components/ClimbingTrainingCard.tsx), with focused tests and stories beside the component.
 

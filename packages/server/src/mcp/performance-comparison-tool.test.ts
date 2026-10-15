@@ -173,7 +173,7 @@ describe("compare_performances", () => {
     });
     server = new McpServer({ name: "performance-comparison-test", version: "1.0.0" });
     registerPerformanceComparisonTool(server, {
-      db: { execute: vi.fn(), select: vi.fn(), transaction: vi.fn() },
+      db: { execute: vi.fn().mockResolvedValue([]), select: vi.fn(), transaction: vi.fn() },
       sensorStore: { query: vi.fn() },
       userId: "00000000-0000-4000-8000-000000000001",
       scopes: ["activity:read"],

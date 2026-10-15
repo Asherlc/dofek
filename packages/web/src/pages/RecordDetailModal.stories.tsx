@@ -17,7 +17,8 @@ const meta = {
   title: "Providers/RecordDetailModal",
   component: RecordDetailModal,
   args: {
-    record,
+    state: { data: record, error: null, isLoading: false },
+    dataType: "activities",
     onClose: () => {},
   },
   parameters: { layout: "fullscreen" },
@@ -31,11 +32,15 @@ export const Default: Story = {};
 
 export const WithoutRawData: Story = {
   args: {
-    record: {
-      id: "record-456",
-      provider: "manual",
-      note: "User-entered measurement",
-      raw: null,
+    state: {
+      error: null,
+      isLoading: false,
+      data: {
+        id: "record-456",
+        provider: "manual",
+        note: "User-entered measurement",
+        raw: null,
+      },
     },
   },
 };

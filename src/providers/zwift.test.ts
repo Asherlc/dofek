@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SyncRun } from "./sync-run.ts";
 import { SyncWindow } from "./sync-window.ts";
+import { makeTransactionalTestDatabase } from "./test-helpers.ts";
 
 // Restore real timers and any Date.now spy after each test so a failed
 // assertion before an inline mockRestore() can't leak the mocked clock.
@@ -219,7 +220,13 @@ function makeMockDb(
   });
 
   const execute = vi.fn().mockResolvedValue([]);
-  return { insert, select, delete: deleteFn, execute, _insertValues: insertValues };
+  return makeTransactionalTestDatabase({
+    insert,
+    select,
+    delete: deleteFn,
+    execute,
+    _insertValues: insertValues,
+  });
 }
 
 // ============================================================
@@ -762,7 +769,7 @@ describe("ZwiftProvider", () => {
   });
 
   it("sync returns error when no tokens stored", async () => {
-    const mockDb = {
+    const mockDb = makeTransactionalTestDatabase({
       select: vi.fn().mockReturnValue({
         from: vi.fn().mockReturnValue({
           where: vi.fn().mockReturnValue({
@@ -780,7 +787,7 @@ describe("ZwiftProvider", () => {
       }),
       delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
       execute: vi.fn().mockResolvedValue([]),
-    };
+    });
 
     const provider = new ZwiftProvider();
     const result = await provider.sync(
@@ -792,7 +799,7 @@ describe("ZwiftProvider", () => {
   });
 
   it("sync returns error when athleteId missing from stored tokens and JWT has no sub", async () => {
-    const mockDb = {
+    const mockDb = makeTransactionalTestDatabase({
       select: vi.fn().mockReturnValue({
         from: vi.fn().mockReturnValue({
           where: vi.fn().mockReturnValue({
@@ -818,7 +825,7 @@ describe("ZwiftProvider", () => {
       }),
       delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
       execute: vi.fn().mockResolvedValue([]),
-    };
+    });
 
     const provider = new ZwiftProvider();
     const result = await provider.sync(
@@ -833,7 +840,7 @@ describe("ZwiftProvider", () => {
     const payload = Buffer.from(JSON.stringify({ sub: "12345" })).toString("base64url");
     const fakeJwt = `${header}.${payload}.fake-signature`;
 
-    const mockDb = {
+    const mockDb = makeTransactionalTestDatabase({
       select: vi.fn().mockReturnValue({
         from: vi.fn().mockReturnValue({
           where: vi.fn().mockReturnValue({
@@ -859,7 +866,7 @@ describe("ZwiftProvider", () => {
       }),
       delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
       execute: vi.fn().mockResolvedValue([]),
-    };
+    });
 
     MockZwiftClient.activities = [];
     MockZwiftClient.powerCurve = {};
@@ -883,7 +890,7 @@ describe("ZwiftProvider", () => {
   });
 
   it("sync returns error when token expired and no refresh token", async () => {
-    const mockDb = {
+    const mockDb = makeTransactionalTestDatabase({
       select: vi.fn().mockReturnValue({
         from: vi.fn().mockReturnValue({
           where: vi.fn().mockReturnValue({
@@ -909,7 +916,7 @@ describe("ZwiftProvider", () => {
       }),
       delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
       execute: vi.fn().mockResolvedValue([]),
-    };
+    });
 
     const provider = new ZwiftProvider();
     const result = await provider.sync(

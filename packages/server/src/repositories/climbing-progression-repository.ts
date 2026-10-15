@@ -1,22 +1,27 @@
 import { createHash } from "node:crypto";
+import type { ClimbingFilters } from "@dofek/training/climbing-filters";
 import {
-  CLIMBING_GRADE_SYSTEMS,
   type ClimbingGradePreference,
-  type ClimbingGradeSystem,
   convertClimbingGrade,
   DEFAULT_CLIMBING_GRADE_PREFERENCE,
+  FREE_ROCK_GRADE_SYSTEMS,
+  type FreeRockGradeSystem,
   gradeSortValue,
 } from "@dofek/training/climbing-grades";
+import {
+  attemptScopeSchema,
+  climbingAttemptSchema,
+  ropeMethodSchema,
+} from "@dofek/training/climbing-log";
 import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { dateStringSchema, executeWithSchema, timestampStringSchema } from "../lib/typed-sql.ts";
+import { rockClimbingLogProjection } from "./climbing-rock-observations.ts";
 
-const attemptSchema = z.object({
-  attemptIndex: z.coerce.number().int().positive(),
-  failureReason: z.string().nullable(),
-  notes: z.string().nullable(),
-  outcome: z.enum(["sent", "failed"]),
+const rockResultLabelsSchema = z.object({
+  onsight: z.boolean().nullable(),
+  flash: z.boolean().nullable(),
 });
 
 const sourceExternalIdSchema = z.object({
@@ -43,17 +48,35 @@ const climbingProgressionRowSchema = z.object({
   entry_activity_id: z.string().uuid().nullable(),
   entry_provider: z.string().nullable(),
   external_id: z.string().nullable(),
-  climb_type: z.enum(["boulder", "route"]).nullable(),
-  grade_system: z.enum(CLIMBING_GRADE_SYSTEMS).nullable(),
+  climb_kind: z.enum(["boulder", "route"]).nullable(),
+  grade_system: z.enum(FREE_ROCK_GRADE_SYSTEMS).nullable(),
   grade: z.string().nullable(),
-  sent: z.boolean().nullable(),
-  attempt_count: z.coerce.number().int().positive().nullable(),
-  attempts: z.array(attemptSchema).default([]),
-  ascent_type: z.string().nullable(),
-  lead: z.boolean().nullable(),
+  recorded_attempt_count: z.coerce.number().int().positive().nullable(),
+  sends: z.coerce.number().int().nonnegative().nullable(),
+  unknown_outcomes: z.coerce.number().int().nonnegative().nullable(),
+  attempts: z.array(climbingAttemptSchema),
+  attempt_observations: z.array(
+    z.object({
+      ropeMethod: ropeMethodSchema.nullable(),
+      solo: z.boolean().nullable(),
+      usedAid: z.boolean().nullable(),
+      sends: z.number().int().min(0).max(1),
+      unknownOutcomes: z.number().int().min(0).max(1),
+      onsight: z.boolean().nullable(),
+      flash: z.boolean().nullable(),
+    }),
+  ),
+  rock_result_labels: rockResultLabelsSchema.nullable(),
+  attempt_scope: attemptScopeSchema.nullable(),
+  pitch_id: z.uuid().nullable(),
+  pitch_number: z.coerce.number().int().positive().nullable(),
+  unknown_pitch_attempt_id: z.uuid().nullable(),
+  rope_method: ropeMethodSchema.nullable(),
+  solo: z.boolean().nullable(),
+  used_aid: z.boolean().nullable(),
   wall_angle_degrees: z.coerce.number().nullable(),
   hold_type: z.string().nullable(),
-  route_name: z.string().nullable(),
+  climb_name: z.string().nullable(),
   location_name: z.string().nullable(),
   source_name: z.string().nullable(),
 });
@@ -76,8 +99,14 @@ type ClimbRow = ClimbingProgressionRow & {
   entry_id: string;
   entry_activity_id: string;
   entry_provider: string;
-  climb_type: "boulder" | "route";
-  grade_system: ClimbingGradeSystem;
+  climb_kind: "boulder" | "route";
+  attempt_scope: z.infer<typeof attemptScopeSchema>;
+  recorded_attempt_count: number;
+  sends: number;
+  unknown_outcomes: number;
+};
+type GradedClimbRow = ClimbRow & {
+  grade_system: FreeRockGradeSystem;
   grade: string;
 };
 
@@ -85,9 +114,9 @@ export interface ClimbingProgressionInput {
   startDate: string;
   endDate: string;
   providers: string[];
-  disciplines: Array<"boulder" | "lead" | "top_rope" | "route">;
+  filters: ClimbingFilters;
   locations: string[];
-  gradeSystems: ClimbingGradeSystem[];
+  gradeSystems: FreeRockGradeSystem[];
   cursor: string | null;
   limit: number;
 }
@@ -108,34 +137,60 @@ function unique(values: string[]): string[] {
   return [...new Set(values)].sort();
 }
 
-function disciplineFor(row: Pick<ClimbRow, "climb_type" | "lead">) {
-  if (row.climb_type === "boulder") return "boulder" as const;
-  if (row.lead === true) return "lead" as const;
-  if (row.lead === false) return "top_rope" as const;
-  return "route" as const;
+function laneFacts(row: ClimbRow) {
+  return {
+    climb_kind: row.climb_kind,
+    attempt_scope: row.attempt_scope,
+    rope_method: row.rope_method,
+    solo: row.solo,
+    used_aid: row.used_aid,
+  };
 }
 
 function identityFingerprint(row: ClimbRow): string {
   return JSON.stringify([
     row.activity_id,
-    row.climb_type,
+    row.climb_kind,
     row.grade_system,
     row.grade,
-    row.route_name?.trim().toLocaleLowerCase() ?? null,
+    row.climb_name?.trim().toLocaleLowerCase() ?? null,
     row.location_name?.trim().toLocaleLowerCase() ?? null,
     row.wall_angle_degrees,
-    row.lead,
+    row.attempt_scope,
+    row.pitch_number,
+    row.unknown_pitch_attempt_id,
+    row.rope_method,
+    row.solo,
   ]);
 }
 
 function observationFingerprint(row: ClimbRow): string {
   return JSON.stringify([
     identityFingerprint(row),
-    row.sent,
-    row.attempt_count,
-    row.ascent_type?.trim().toLocaleLowerCase() ?? null,
+    row.sends,
+    row.unknown_outcomes,
+    row.recorded_attempt_count,
+    row.rock_result_labels,
     row.hold_type,
-    row.attempts,
+    row.attempts
+      .map((attempt) => [
+        attempt.scope,
+        attempt.parentAttemptId !== null,
+        attempt.attemptIndex,
+        attempt.outcome,
+        attempt.ropeMethod,
+        attempt.solo,
+        attempt.protectionUsed,
+        attempt.usedPreplacedProtection,
+        attempt.usedAid,
+        attempt.fellOrHung,
+        attempt.dabbed,
+        attempt.receivedBeta,
+        attempt.hadCompletedBefore,
+        attempt.priorFailedAttemptsGroundUp,
+        attempt.notes,
+      ])
+      .sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right))),
   ]);
 }
 
@@ -224,7 +279,13 @@ function consolidateExactDuplicates(rows: ClimbRow[]): {
   const byStableIdentity = new Map<string, Set<ConsolidatedClimb>>();
   for (const climb of climbs) {
     for (const source of climb.sourceExternalEntryIds) {
-      const key = `${source.provider}:${source.external_id}`;
+      const key = JSON.stringify([
+        source.provider,
+        source.external_id,
+        climb.row.attempt_scope,
+        climb.row.pitch_id,
+        climb.row.unknown_pitch_attempt_id,
+      ]);
       const matching = byStableIdentity.get(key) ?? new Set<ConsolidatedClimb>();
       matching.add(climb);
       byStableIdentity.set(key, matching);
@@ -243,54 +304,97 @@ function consolidateExactDuplicates(rows: ClimbRow[]): {
 }
 
 function attemptSummary(climbs: ConsolidatedClimb[]) {
-  const knownAttempts = climbs.filter((climb) => climb.row.attempt_count !== null);
-  const observedOutcomes = climbs.filter((climb) => climb.row.sent !== null);
-  const attempts = knownAttempts.reduce(
-    (total, climb) => total + (climb.row.attempt_count ?? 0),
-    0,
-  );
-  const sends = observedOutcomes.filter((climb) => climb.row.sent === true).length;
+  const attempts = climbs.reduce((total, climb) => total + climb.row.recorded_attempt_count, 0);
+  const unknownOutcomes = climbs.reduce((total, climb) => total + climb.row.unknown_outcomes, 0);
+  const observedOutcomes = attempts - unknownOutcomes;
+  const sends = climbs.reduce((total, climb) => total + climb.row.sends, 0);
   return {
-    attempts: knownAttempts.length === 0 ? null : attempts,
-    attemptsStatus:
-      knownAttempts.length === 0
-        ? ("unavailable" as const)
-        : knownAttempts.length === climbs.length
-          ? ("complete" as const)
-          : ("partial" as const),
-    entriesWithAttempts: knownAttempts.length,
-    observedOutcomes: observedOutcomes.length,
-    sends: observedOutcomes.length === 0 ? null : sends,
-    failedEntries: observedOutcomes.length === 0 ? null : observedOutcomes.length - sends,
-    sendRate: observedOutcomes.length === 0 ? null : sends / observedOutcomes.length,
+    attempts: climbs.length === 0 ? null : attempts,
+    attemptsStatus: climbs.length === 0 ? ("unavailable" as const) : ("complete" as const),
+    entriesWithAttempts: climbs.length,
+    observedOutcomes,
+    unknownOutcomes,
+    sends: observedOutcomes === 0 ? null : sends,
+    failedAttempts:
+      climbs.length === 0
+        ? null
+        : climbs.reduce(
+            (total, climb) =>
+              total + climb.row.attempts.filter((attempt) => attempt.outcome === "failed").length,
+            0,
+          ),
+    sendRate: observedOutcomes === 0 ? null : sends / observedOutcomes,
   };
 }
 
-function hardestEvidence(climbs: ConsolidatedClimb[], ascentType?: "flash" | "onsight") {
+type GradedClimb = ConsolidatedClimb & { row: GradedClimbRow };
+function hasPublishedGrade(climb: ConsolidatedClimb): climb is GradedClimb {
+  return climb.row.grade !== null && climb.row.grade_system !== null;
+}
+
+function splitAttemptLanes(climb: GradedClimb): GradedClimb[] {
+  const lanes = new Map<string, GradedClimb>();
+  for (const [index, observation] of climb.row.attempt_observations.entries()) {
+    const key = JSON.stringify([observation.ropeMethod, observation.solo, observation.usedAid]);
+    const attempt = climb.row.attempts[index];
+    if (!attempt) throw new Error("Climbing attempt evidence is missing its recorded row");
+    const lane = lanes.get(key);
+    if (lane) {
+      lane.row.recorded_attempt_count += 1;
+      lane.row.sends += observation.sends;
+      lane.row.unknown_outcomes += observation.unknownOutcomes;
+      lane.row.attempts.push(attempt);
+      lane.row.rock_result_labels = {
+        onsight: lane.row.rock_result_labels?.onsight === true || observation.onsight === true,
+        flash: lane.row.rock_result_labels?.flash === true || observation.flash === true,
+      };
+    } else {
+      lanes.set(key, {
+        ...climb,
+        row: {
+          ...climb.row,
+          rope_method: observation.ropeMethod,
+          solo: observation.solo,
+          used_aid: observation.usedAid,
+          recorded_attempt_count: 1,
+          sends: observation.sends,
+          unknown_outcomes: observation.unknownOutcomes,
+          attempts: [attempt],
+          rock_result_labels: { onsight: observation.onsight, flash: observation.flash },
+        },
+      });
+    }
+  }
+  return [...lanes.values()];
+}
+
+function hardestEvidence(climbs: ConsolidatedClimb[], resultLabel?: "flash" | "onsight") {
   return climbs
+    .filter(hasPublishedGrade)
     .filter((climb) => {
-      if (climb.row.sent !== true) return false;
-      return ascentType == null
-        ? true
-        : climb.row.ascent_type?.trim().toLocaleLowerCase() === ascentType;
+      if (climb.row.sends === 0) return false;
+      return resultLabel == null ? true : climb.row.rock_result_labels?.[resultLabel] === true;
     })
     .map((climb) => ({ climb, sort: gradeSortValue(climb.row.grade, climb.row.grade_system) }))
-    .filter((candidate): candidate is { climb: ConsolidatedClimb; sort: number } =>
+    .filter((candidate): candidate is { climb: GradedClimb; sort: number } =>
       Number.isFinite(candidate.sort),
     )
     .sort((left, right) => right.sort - left.sort)[0];
 }
 
 function normalizedGrade(
-  row: Pick<ClimbRow, "climb_type" | "grade" | "grade_system">,
+  row: Pick<ClimbRow, "climb_kind" | "grade" | "grade_system">,
   preference: ClimbingGradePreference,
 ) {
-  const normalizedGradeSystem = preference[row.climb_type];
-  const converted = convertClimbingGrade({
-    grade: row.grade,
-    sourceSystem: row.grade_system,
-    displaySystem: normalizedGradeSystem,
-  });
+  const normalizedGradeSystem = preference[row.climb_kind];
+  const converted =
+    row.grade === null || row.grade_system === null
+      ? null
+      : convertClimbingGrade({
+          grade: row.grade,
+          sourceSystem: row.grade_system,
+          displaySystem: normalizedGradeSystem,
+        });
   return {
     normalized_grade: converted?.displayGrade ?? null,
     normalized_grade_system: normalizedGradeSystem,
@@ -306,11 +410,11 @@ function hardestOutput(
   return {
     grade: row.grade,
     grade_system: row.grade_system,
-    discipline: disciplineFor(row),
+    ...laneFacts(row),
     date: row.session_date,
     activity_id: row.activity_id,
     entry_id: row.entry_id,
-    ascent_type: row.ascent_type,
+    rock_result_labels: row.rock_result_labels,
     source_providers: candidate.climb.sourceProviders,
     ...normalizedGrade(row, preference),
   };
@@ -327,7 +431,7 @@ function cursorShape(
         startDate: input.startDate,
         endDate: input.endDate,
         providers: [...input.providers].sort(),
-        disciplines: [...input.disciplines].sort(),
+        filters: Object.entries(input.filters).sort(([left], [right]) => left.localeCompare(right)),
         locations: [...input.locations].sort(),
         gradeSystems: [...input.gradeSystems].sort(),
         preference,
@@ -407,7 +511,7 @@ export class ClimbingProgressionRepository {
       input.providers.length === 0
         ? sql`true`
         : sql`(
-            source_activity.provider_id IN (${sql.join(
+            ce.provider_id IN (${sql.join(
               input.providers.map((provider) => sql`${provider}`),
               sql`, `,
             )})
@@ -416,20 +520,12 @@ export class ClimbingProgressionRepository {
               sql`, `,
             )}]::text[]
           )`;
-    const disciplinePredicate =
-      input.disciplines.length === 0
-        ? sql`true`
-        : sql`(
-            CASE
-              WHEN ce.climb_type = 'boulder' THEN 'boulder'
-              WHEN ce.lead = true THEN 'lead'
-              WHEN ce.lead = false THEN 'top_rope'
-              ELSE 'route'
-            END IN (${sql.join(
-              input.disciplines.map((discipline) => sql`${discipline}`),
-              sql`, `,
-            )})
-          )`;
+    const projection = rockClimbingLogProjection(this.#gradePreference, input.filters);
+    const requiresLog =
+      Object.keys(input.filters).length > 0 ||
+      input.locations.length > 0 ||
+      input.gradeSystems.length > 0;
+    const activityPredicate = sql`(a.canonical_type = 'climbing' OR (a.canonical_type = 'hiking' AND ce.id IS NOT NULL))`;
     const locationPredicate =
       input.locations.length === 0
         ? sql`true`
@@ -463,43 +559,28 @@ export class ClimbingProgressionRepository {
             a.local_time_source,
             ce.id::text AS entry_id,
             ce.activity_id::text AS entry_activity_id,
-            source_activity.provider_id AS entry_provider,
+            ce.provider_id AS entry_provider,
             ce.external_id,
-            ce.climb_type,
+            ce.climb_kind,
             ce.grade_system,
             ce.grade,
-            CASE WHEN detail.attempt_count > 0 THEN detail.sent ELSE ce.sent END AS sent,
-            CASE WHEN detail.attempt_count > 0 THEN detail.attempt_count ELSE ce.attempt_count END AS attempt_count,
-            COALESCE(detail.attempts, '[]'::jsonb) AS attempts,
-            ce.ascent_type,
-            ce.lead,
-            ce.wall_angle_degrees,
+            ce.recorded_attempt_count, ce.sends, ce.unknown_outcomes,
+            COALESCE(ce.attempts, '[]'::jsonb) AS attempts,
+            COALESCE(ce.attempt_observations, '[]'::jsonb) AS attempt_observations,
+            ce.rock_result_labels, ce.attempt_scope, ce.pitch_id, ce.pitch_number,
+            ce.unknown_pitch_attempt_id, ce.rope_method, ce.solo, ce.used_aid,
+            CASE WHEN ce.wall_angle ->> 'unit' = 'degrees' THEN (ce.wall_angle ->> 'value')::double precision END AS wall_angle_degrees,
             ce.hold_type,
-            ce.route_name,
+            ce.climb_name,
             ce.location_name,
             ce.source_name
           FROM fitness.v_activity AS a
-          LEFT JOIN fitness.v_climbing_entry AS ce ON ce.activity_id = ANY(a.member_activity_ids)
-          LEFT JOIN fitness.activity AS source_activity ON source_activity.id = ce.activity_id
-          LEFT JOIN LATERAL (
-            SELECT
-              COUNT(*)::int AS attempt_count,
-              BOOL_OR(attempt.outcome = 'sent') AS sent,
-              jsonb_agg(jsonb_build_object(
-                'attemptIndex', attempt.attempt_index,
-                'failureReason', attempt.failure_reason,
-                'notes', attempt.notes,
-                'outcome', attempt.outcome
-              ) ORDER BY attempt.attempt_index) AS attempts
-            FROM fitness.climbing_attempt AS attempt
-            WHERE attempt.climbing_entry_id = ce.id
-          ) AS detail ON true
+          LEFT JOIN (${projection}) AS ce ON ce.activity_id = ANY(a.member_activity_ids) AND ce.user_id = a.user_id
           WHERE a.user_id = ${this.#userId}::uuid
-            AND a.canonical_type = 'climbing'
+            AND ${activityPredicate}
             AND ${localDate} BETWEEN ${lookbackStartDate}::date AND ${input.endDate}::date
             AND ${providerPredicate}
-            AND (${input.disciplines.length === 0} OR ce.id IS NOT NULL)
-            AND ${disciplinePredicate}
+            AND (${!requiresLog} OR ce.id IS NOT NULL)
             AND ${locationPredicate}
             AND ${gradeSystemPredicate}
           ORDER BY a.started_at DESC, a.id, ce.id`,
@@ -510,9 +591,11 @@ export class ClimbingProgressionRepository {
         row.entry_id !== null &&
         row.entry_activity_id !== null &&
         row.entry_provider !== null &&
-        row.climb_type !== null &&
-        row.grade_system !== null &&
-        row.grade !== null,
+        row.climb_kind !== null &&
+        row.attempt_scope !== null &&
+        row.recorded_attempt_count !== null &&
+        row.sends !== null &&
+        row.unknown_outcomes !== null,
     );
     const {
       climbs: allClimbs,
@@ -549,13 +632,11 @@ export class ClimbingProgressionRepository {
       coverageRowSchema,
       sql`SELECT MIN(${localDate})::text AS first_observed_date
           FROM fitness.v_activity AS a
-          LEFT JOIN fitness.v_climbing_entry AS ce ON ce.activity_id = ANY(a.member_activity_ids)
-          LEFT JOIN fitness.activity AS source_activity ON source_activity.id = ce.activity_id
+          LEFT JOIN (${projection}) AS ce ON ce.activity_id = ANY(a.member_activity_ids) AND ce.user_id = a.user_id
           WHERE a.user_id = ${this.#userId}::uuid
-            AND a.canonical_type = 'climbing'
+            AND ${activityPredicate}
             AND ${providerPredicate}
-            AND (${input.disciplines.length === 0} OR ce.id IS NOT NULL)
-            AND ${disciplinePredicate}
+            AND (${!requiresLog} OR ce.id IS NOT NULL)
             AND ${locationPredicate}
             AND ${gradeSystemPredicate}`,
     );
@@ -566,15 +647,13 @@ export class ClimbingProgressionRepository {
       sql`WITH climbing_dates AS (
             SELECT DISTINCT ${localDate} AS date
             FROM fitness.v_activity AS a
-            LEFT JOIN fitness.v_climbing_entry AS ce ON ce.activity_id = ANY(a.member_activity_ids)
-            LEFT JOIN fitness.activity AS source_activity ON source_activity.id = ce.activity_id
-            WHERE a.user_id = ${this.#userId}::uuid
-              AND a.canonical_type = 'climbing'
+            LEFT JOIN (${projection}) AS ce ON ce.activity_id = ANY(a.member_activity_ids) AND ce.user_id = a.user_id
+              WHERE a.user_id = ${this.#userId}::uuid
+              AND ${activityPredicate}
               AND ${localDate} < ${input.startDate}::date
               AND ${providerPredicate}
-              AND (${input.disciplines.length === 0} OR ce.id IS NOT NULL)
-              AND ${disciplinePredicate}
-              AND ${locationPredicate}
+              AND (${!requiresLog} OR ce.id IS NOT NULL)
+                AND ${locationPredicate}
               AND ${gradeSystemPredicate}
           ), numbered AS (
             SELECT date, ROW_NUMBER() OVER (ORDER BY date DESC) AS position
@@ -637,21 +716,22 @@ export class ClimbingProgressionRepository {
           assumed: activity.local_time_source === "unknown",
         },
         quality_flags: qualityFlags,
-        climbs: activityClimbs.map((climb) => ({
+        climbing_log_entries: activityClimbs.map((climb) => ({
           id: climb.row.entry_id,
-          discipline: disciplineFor(climb.row),
-          climb_type: climb.row.climb_type,
+          ...laneFacts(climb.row),
+          pitch_id: climb.row.pitch_id,
+          pitch_number: climb.row.pitch_number,
           grade: climb.row.grade,
           grade_system: climb.row.grade_system,
           ...normalizedGrade(climb.row, this.#gradePreference),
-          sent: climb.row.sent,
-          attempt_count: climb.row.attempt_count,
+          sends: climb.row.sends,
+          unknown_outcomes: climb.row.unknown_outcomes,
+          recorded_attempt_count: climb.row.recorded_attempt_count,
           attempts: climb.row.attempts,
-          ascent_type: climb.row.ascent_type,
-          lead: climb.row.lead,
+          rock_result_labels: climb.row.rock_result_labels,
           wall_angle_degrees: climb.row.wall_angle_degrees,
           hold_type: climb.row.hold_type,
-          route_name: climb.row.route_name,
+          climb_name: climb.row.climb_name,
           location_name: climb.row.location_name,
           external_id: climb.row.external_id,
           provenance: {
@@ -698,8 +778,9 @@ export class ClimbingProgressionRepository {
           attempts: null,
           attempts_status: "unavailable" as const,
           sends: null,
-          failed_entries: null,
+          failed_attempts: null,
           observed_outcomes: null,
+          unknown_outcomes: null,
           send_rate: null,
           is_rest_day: null,
           consecutive_climbing_days: null,
@@ -720,8 +801,9 @@ export class ClimbingProgressionRepository {
         attempts: sessionCount === 0 ? 0 : summary.attempts,
         attempts_status: sessionCount === 0 ? ("complete" as const) : summary.attemptsStatus,
         sends: sessionCount === 0 ? 0 : summary.sends,
-        failed_entries: sessionCount === 0 ? 0 : summary.failedEntries,
+        failed_attempts: sessionCount === 0 ? 0 : summary.failedAttempts,
         observed_outcomes: sessionCount === 0 ? 0 : summary.observedOutcomes,
+        unknown_outcomes: sessionCount === 0 ? 0 : summary.unknownOutcomes,
         send_rate: summary.sendRate,
         is_rest_day: sessionCount === 0,
         consecutive_climbing_days: consecutiveDays,
@@ -734,13 +816,11 @@ export class ClimbingProgressionRepository {
       };
     });
 
-    const gradeGroups = new Map<string, ConsolidatedClimb[]>();
-    for (const climb of aggregateClimbs) {
-      const key = JSON.stringify([
-        disciplineFor(climb.row),
-        climb.row.grade_system,
-        climb.row.grade,
-      ]);
+    const gradedClimbs = aggregateClimbs.filter(hasPublishedGrade);
+    const gradedLanes = gradedClimbs.flatMap(splitAttemptLanes);
+    const gradeGroups = new Map<string, GradedClimb[]>();
+    for (const climb of gradedLanes) {
+      const key = JSON.stringify([laneFacts(climb.row), climb.row.grade_system, climb.row.grade]);
       gradeGroups.set(key, [...(gradeGroups.get(key) ?? []), climb]);
     }
     const gradeDistribution = [...gradeGroups.values()]
@@ -749,7 +829,7 @@ export class ClimbingProgressionRepository {
         if (!first) throw new Error("Climbing grade group unexpectedly empty");
         const summary = attemptSummary(matching);
         return {
-          discipline: disciplineFor(first.row),
+          ...laneFacts(first.row),
           grade: first.row.grade,
           grade_system: first.row.grade_system,
           ...normalizedGrade(first.row, this.#gradePreference),
@@ -759,12 +839,13 @@ export class ClimbingProgressionRepository {
           attempts_status: summary.attemptsStatus,
           entries_with_attempts: summary.entriesWithAttempts,
           sends: summary.sends,
-          failed_entries: summary.failedEntries,
+          failed_attempts: summary.failedAttempts,
           observed_outcomes: summary.observedOutcomes,
+          unknown_outcomes: summary.unknownOutcomes,
           send_rate: summary.sendRate,
           attempts_per_send:
             summary.attemptsStatus === "complete" &&
-            summary.observedOutcomes === matching.length &&
+            summary.unknownOutcomes === 0 &&
             summary.sends != null &&
             summary.sends > 0 &&
             summary.attempts != null
@@ -779,27 +860,31 @@ export class ClimbingProgressionRepository {
           left.grade.localeCompare(right.grade),
       );
 
-    const progressionByDateAndDiscipline = new Map<string, ConsolidatedClimb>();
-    for (const climb of aggregateClimbs.filter((candidate) => candidate.row.sent === true)) {
-      const key = `${climb.row.session_date}:${disciplineFor(climb.row)}`;
-      const current = progressionByDateAndDiscipline.get(key);
+    const progressionByDateAndLane = new Map<string, GradedClimb>();
+    for (const climb of gradedLanes.filter((candidate) => candidate.row.sends > 0)) {
+      const key = JSON.stringify([
+        climb.row.session_date,
+        laneFacts(climb.row),
+        climb.row.grade_system,
+      ]);
+      const current = progressionByDateAndLane.get(key);
       const candidateSort = gradeSortValue(climb.row.grade, climb.row.grade_system);
       const currentSort = current
         ? gradeSortValue(current.row.grade, current.row.grade_system)
         : null;
       if (candidateSort !== null && (currentSort === null || candidateSort > currentSort)) {
-        progressionByDateAndDiscipline.set(key, climb);
+        progressionByDateAndLane.set(key, climb);
       }
     }
-    const gradeProgression = [...progressionByDateAndDiscipline.values()]
+    const gradeProgression = [...progressionByDateAndLane.values()]
       .sort(
         (left, right) =>
           left.row.session_date.localeCompare(right.row.session_date) ||
-          disciplineFor(left.row).localeCompare(disciplineFor(right.row)),
+          JSON.stringify(laneFacts(left.row)).localeCompare(JSON.stringify(laneFacts(right.row))),
       )
       .map((climb) => ({
         date: climb.row.session_date,
-        discipline: disciplineFor(climb.row),
+        ...laneFacts(climb.row),
         grade: climb.row.grade,
         grade_system: climb.row.grade_system,
         ...normalizedGrade(climb.row, this.#gradePreference),
@@ -809,9 +894,9 @@ export class ClimbingProgressionRepository {
         source_providers: climb.sourceProviders,
       }));
 
-    const hardestSend = hardestEvidence(aggregateClimbs);
+    const hardestSend = hardestEvidence(gradedLanes);
     const belowHardest = hardestSend
-      ? aggregateClimbs.filter((climb) => {
+      ? gradedClimbs.filter((climb) => {
           const sort = gradeSortValue(climb.row.grade, climb.row.grade_system);
           return sort !== null && sort < hardestSend.sort;
         })
@@ -823,8 +908,9 @@ export class ClimbingProgressionRepository {
       range: { start_date: input.startDate, end_date: input.endDate, timezone: this.#timezone },
       definitions: {
         attempts:
-          "Attempt totals use detailed attempt rows when present, otherwise the source aggregate; missing source attempts remain null.",
-        send_rate: "Observed sends divided by entries with an observed sent/failed outcome.",
+          "Attempt totals count recorded rows at the selected scope. These totals do not imply complete lifetime attempt history.",
+        send_rate:
+          "Confirmed free-rock sends divided by recorded attempts with a known free-send result. Unknown execution facts remain outside this denominator.",
         rolling_exposure:
           "Count of calendar days containing at least one canonical climbing session in the trailing 7 or 28 days, inclusive.",
         duplicate_handling:
@@ -836,7 +922,8 @@ export class ClimbingProgressionRepository {
         sessions: sessionRows.length,
         entries: climbs.length,
         entries_with_attempts: allSummary.entriesWithAttempts,
-        entries_with_observed_outcome: allSummary.observedOutcomes,
+        observed_free_send_outcomes: allSummary.observedOutcomes,
+        unknown_free_send_outcomes: allSummary.unknownOutcomes,
         attempt_data: allSummary.attemptsStatus,
         first_observed_date: firstObservedDate,
         timezone_assumed_sessions: sessionRows.filter(
@@ -851,8 +938,8 @@ export class ClimbingProgressionRepository {
       grade_progression: gradeProgression,
       hardest: {
         send: hardestOutput(hardestSend, this.#gradePreference),
-        flash: hardestOutput(hardestEvidence(aggregateClimbs, "flash"), this.#gradePreference),
-        onsight: hardestOutput(hardestEvidence(aggregateClimbs, "onsight"), this.#gradePreference),
+        flash: hardestOutput(hardestEvidence(gradedLanes, "flash"), this.#gradePreference),
+        onsight: hardestOutput(hardestEvidence(gradedLanes, "onsight"), this.#gradePreference),
       },
       below_range_hardest_send: {
         metric_name: "volume_below_range_hardest_send",

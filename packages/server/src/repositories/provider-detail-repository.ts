@@ -15,6 +15,7 @@ import {
 } from "../lib/field-filters.ts";
 import { executeWithSchema } from "../lib/typed-sql.ts";
 import type { BodyClickHouseStore } from "./body-clickhouse.ts";
+import { ClimbingActivityLogEntryRepository } from "./climbing-activity-log-entry-repository.ts";
 
 // ---------------------------------------------------------------------------
 // Data type mapping
@@ -30,6 +31,7 @@ export const dataTypeEnum = z.enum([
   "metricStream",
   "nutritionDaily",
   "clinicalRecords",
+  "climbingLogEntries",
 ]);
 
 export type DataType = z.infer<typeof dataTypeEnum>;
@@ -71,6 +73,8 @@ export function tableInfo(dataType: DataType): {
       };
     case "clinicalRecords":
       return { table: "fitness.clinical_record", orderColumn: "downloaded_at", idColumn: "id" };
+    case "climbingLogEntries":
+      return { table: "fitness.v_climbing_log_entry", orderColumn: "climbed_on", idColumn: "id" };
   }
 }
 
@@ -113,6 +117,18 @@ function listColumnNames(
   dataType: Exclude<DataType, "bodyMeasurements" | "metricStream">,
 ): string[] {
   switch (dataType) {
+    case "climbingLogEntries":
+      return [
+        "id",
+        "name",
+        "climbed_on",
+        "result",
+        "discipline",
+        "source_name",
+        "provider_absent_at",
+        "external_id",
+        "created_at",
+      ];
     case "activities":
       return [
         "id",
@@ -249,6 +265,8 @@ export const SYNC_LOG_FILTER_OPTION_FIELDS = {
 /** Record columns exposed as dropdown filters, keyed by data type. */
 export function getRecordSelectFilterColumns(dataType: DataType): readonly string[] {
   switch (dataType) {
+    case "climbingLogEntries":
+      return ["discipline", "source_name"];
     case "activities":
       return ["canonical_type", "provider_type", "modality", "source_name"];
     case "dailyMetrics":
@@ -272,6 +290,7 @@ export function getRecordSelectFilterColumns(dataType: DataType): readonly strin
 
 /** Curated columns shown in the provider detail records table. */
 export function getRecordDisplayColumns(dataType: DataType): readonly string[] {
+  if (dataType === "climbingLogEntries") return ["name", "climbed_on", "result", "discipline"];
   const candidates = getRecordFilterColumns(dataType).filter(
     (column) => !RECORD_DISPLAY_EXCLUDED.has(column),
   );
@@ -297,6 +316,9 @@ export const PROVIDER_DATA_TABLES = [
   "fitness.dexa_scan",
   "fitness.imu_session",
   "fitness.sync_log",
+  "fitness.climbing_log_entry",
+  "fitness.climb",
+  "fitness.area",
   "fitness.activity",
 ];
 
@@ -437,6 +459,9 @@ export class ProviderDetailRepository {
               UNION ALL
               SELECT 'clinicalRecords'::text
               WHERE EXISTS (SELECT 1 FROM fitness.clinical_record WHERE user_id = ${this.#userId} AND provider_id = ${providerId})
+              UNION ALL
+              SELECT 'climbingLogEntries'::text
+              WHERE EXISTS (SELECT 1 FROM fitness.climbing_log_entry WHERE user_id = ${this.#userId} AND provider_id = ${providerId})
             ) AS available_data_types`,
       ),
       this.#clickHouse.query(
@@ -497,9 +522,25 @@ export class ProviderDetailRepository {
       ...filterConditions,
     ];
 
-    const query = sql`SELECT ${sql.raw(listColumns(dataType))} FROM ${sql.raw(info.table)}
+    const source =
+      dataType === "climbingLogEntries"
+        ? sql`(
+      SELECT entry.*, COALESCE(entry.climb_name, entry.title) AS name,
+        CASE WHEN entry.recorded_climb_attempt_count > 0 THEN
+          'Whole climb ' || COALESCE(entry.recorded_climb_outcome, 'outcome unknown')
+        ELSE 'Pitch ' || COALESCE((SELECT CASE WHEN BOOL_OR(attempt.outcome = 'completed') THEN 'completed'
+          WHEN BOOL_AND(COALESCE(attempt.outcome = 'failed', false)) THEN 'failed' END
+          FROM fitness.climbing_attempt AS attempt WHERE attempt.climbing_log_entry_id = entry.id AND attempt.scope = 'pitch'), 'outcome unknown') END AS result
+      FROM fitness.v_climbing_log_entry AS entry
+    ) AS log_records`
+        : sql`${sql.raw(info.table)}`;
+    const ordering =
+      dataType === "climbingLogEntries"
+        ? sql`climbed_on DESC NULLS LAST, id`
+        : sql`${sql.raw(info.orderColumn)} DESC`;
+    const query = sql`SELECT ${sql.raw(listColumns(dataType))} FROM ${source}
               WHERE ${sql.join(whereConditions, sql` AND `)}
-              ORDER BY ${sql.raw(info.orderColumn)} DESC
+              ORDER BY ${ordering}
               LIMIT ${limit}
               OFFSET ${offset}`;
 
@@ -512,6 +553,13 @@ export class ProviderDetailRepository {
     dataType: DataType,
     recordId: string,
   ): Promise<Record<string, unknown> | null> {
+    if (dataType === "climbingLogEntries") {
+      return new ClimbingActivityLogEntryRepository(
+        this.#db,
+        this.#userId,
+        "UTC",
+      ).getProviderLogEntry(providerId, recordId);
+    }
     const info = tableInfo(dataType);
 
     if (dataType === "bodyMeasurements") {

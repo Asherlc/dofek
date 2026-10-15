@@ -1,9 +1,122 @@
-import { sql } from "drizzle-orm";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { eq, sql } from "drizzle-orm";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { persistClimbingLogEntries } from "../../../../src/db/climbing-log-sync.ts";
+import { activity } from "../../../../src/db/schema/activity.ts";
+import { climb, climbingAttempt, climbingLogEntry } from "../../../../src/db/schema/climbing.ts";
 import { TEST_USER_ID } from "../../../../src/db/schema/core.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
+import { ensureProvider } from "../../../../src/db/tokens.ts";
 import { makeMockSensorStore } from "../routers/test-helpers.ts";
 import { ActivityRepository } from "./activity-repository.ts";
+
+describe("ActivityRepository climbing log unlinking", () => {
+  let context: TestContext;
+  beforeAll(async () => {
+    context = await setupTestDatabase();
+    await ensureProvider(
+      context.db,
+      "climbing_log_delete",
+      "Climbing log deletion",
+      undefined,
+      TEST_USER_ID,
+    );
+  });
+  afterAll(async () => {
+    await context.cleanup();
+  });
+  afterEach(async () => {
+    await context.db
+      .delete(climbingLogEntry)
+      .where(eq(climbingLogEntry.providerId, "climbing_log_delete"));
+    await context.db.delete(climb).where(eq(climb.providerId, "climbing_log_delete"));
+    await context.db.delete(activity).where(eq(activity.providerId, "climbing_log_delete"));
+  });
+  async function seed(key: string) {
+    const [parent] = await context.db
+      .insert(activity)
+      .values({
+        userId: TEST_USER_ID,
+        providerId: "climbing_log_delete",
+        externalId: key,
+        canonicalType: "hiking",
+        providerType: "hike",
+        startedAt: new Date("2026-10-01T12:00:00Z"),
+      })
+      .returning();
+    if (!parent?.groupId) throw new Error("Expected activity group");
+    const result = await persistClimbingLogEntries(context.db, {
+      userId: TEST_USER_ID,
+      providerId: "climbing_log_delete",
+      entries: [
+        {
+          externalId: key,
+          activityId: parent.id,
+          climbedOn: "2026-10-01",
+          discipline: "mountaineering",
+          climb: { externalId: `summit:${key}`, kind: "summit" },
+          attempts: [{ scope: "climb", outcome: "completed" }],
+        },
+      ],
+    });
+    const id = result.logEntryIds[0];
+    if (!id) throw new Error("Expected log");
+    const attempts = await context.db
+      .select()
+      .from(climbingAttempt)
+      .where(eq(climbingAttempt.climbingLogEntryId, id));
+    return { parent, id, attempts };
+  }
+  it.each(["single", "bulk"])(
+    "unlinks logs without losing source dates or attempts on %s deletion",
+    async (mode) => {
+      const first = await seed(`delete:${mode}:one`);
+      const second = await seed(`delete:${mode}:two`);
+      await context.db.transaction(async (tx) => {
+        const repo = new ActivityRepository(tx, TEST_USER_ID, "UTC");
+        if (mode === "single") await repo.delete(first.parent.groupId ?? first.parent.id);
+        else
+          await repo.bulkDelete([
+            first.parent.groupId ?? first.parent.id,
+            second.parent.groupId ?? second.parent.id,
+          ]);
+      });
+      expect(
+        await context.db.select().from(climbingLogEntry).where(eq(climbingLogEntry.id, first.id)),
+      ).toEqual([expect.objectContaining({ activityId: null, climbedOn: "2026-10-01" })]);
+      expect(
+        await context.db
+          .select()
+          .from(climbingAttempt)
+          .where(eq(climbingAttempt.climbingLogEntryId, first.id)),
+      ).toEqual(first.attempts);
+      expect(
+        (
+          await context.db.select().from(climbingLogEntry).where(eq(climbingLogEntry.id, second.id))
+        )[0]?.activityId,
+      ).toBe(mode === "bulk" ? null : second.parent.id);
+    },
+  );
+  it("rolls back the activity deletion and log unlink together", async () => {
+    const fixture = await seed("rollback");
+    await expect(
+      context.db.transaction(async (tx) => {
+        await new ActivityRepository(tx, TEST_USER_ID, "UTC").delete(
+          fixture.parent.groupId ?? fixture.parent.id,
+        );
+        throw new Error("Rollback fixture");
+      }),
+    ).rejects.toThrow("Rollback fixture");
+    expect(
+      await context.db.select().from(climbingLogEntry).where(eq(climbingLogEntry.id, fixture.id)),
+    ).toEqual([
+      expect.objectContaining({ activityId: fixture.parent.id, climbedOn: "2026-10-01" }),
+    ]);
+    expect(
+      (await context.db.select().from(activity).where(eq(activity.id, fixture.parent.id)))[0]
+        ?.deletedAt,
+    ).toBeNull();
+  });
+});
 
 describe("ActivityRepository exact-range search", () => {
   let testContext: TestContext;

@@ -307,9 +307,9 @@ describe("StrainScreen recent activity navigation", () => {
     const { default: StrainScreen } = await import("../../app/(tabs)/strain");
     render(<StrainScreen />);
     fireEvent.click(screen.getByRole("button", { name: "All climbing" }));
-    fireEvent.click(screen.getByRole("button", { name: "Lead" }));
+    fireEvent.click(screen.getByRole("button", { name: "Rope method: Lead" }));
     expect(mockRangeQueryCalls.training.at(-1)?.input).toMatchObject({
-      climbingFilters: { style: "lead" },
+      climbingFilters: { ropeMethod: "lead" },
     });
   });
 

@@ -13,7 +13,7 @@ import {
   withAccountErasureUserWriteFence,
 } from "./account-erasure.ts";
 import { executeWithSchema } from "./execute-with-schema.ts";
-import type { Database, SyncDatabase } from "./index.ts";
+import type { SyncDatabase } from "./index.ts";
 import { notifyProviderSyncIssue } from "./provider-issue-notification.ts";
 import { type SyncLogOrigin, syncLog } from "./schema/events.ts";
 import { getTokenUserId } from "./token-user-context.ts";
@@ -56,10 +56,6 @@ const consecutiveFailureRowSchema = z.object({
   consecutive_failures: z.coerce.number().int().nonnegative(),
 });
 
-function hasTransaction(db: SyncDatabase): db is SyncDatabase & Pick<Database, "transaction"> {
-  return "transaction" in db && typeof db.transaction === "function";
-}
-
 async function insertSyncLog(
   db: Pick<SyncDatabase, "insert">,
   entry: SyncLogEntry,
@@ -84,10 +80,6 @@ async function insertScheduledFailureAndCount(
   entry: SyncLogEntry,
   userId: string,
 ): Promise<number> {
-  if (!hasTransaction(db)) {
-    throw new Error("Scheduled sync failure logging requires a transactional database");
-  }
-
   return withAccountErasureUserWriteFence(db, userId, async (transaction) => {
     await transaction.execute(
       sql`SELECT pg_advisory_xact_lock(hashtextextended(${`${userId}:${entry.providerId}`}, 0))`,
@@ -128,9 +120,6 @@ async function insertRecoveryAndResetNotification(
   entry: SyncLogEntry,
   userId: string,
 ): Promise<void> {
-  if (!hasTransaction(db)) {
-    throw new Error("Provider issue recovery logging requires a transactional database");
-  }
   await withAccountErasureUserWriteFence(db, userId, async (transaction) => {
     await insertSyncLog(transaction, entry, userId);
     await transaction.execute(
@@ -172,9 +161,6 @@ export async function logSync(db: SyncDatabase, entry: SyncLogEntry): Promise<vo
   }
 
   if (entry.dataType === "sync" && entry.status === "error") {
-    if (!hasTransaction(db)) {
-      throw new Error("Provider issue email delivery requires a transactional database");
-    }
     try {
       await notifyProviderSyncIssue(db, scopedUserId, entry.providerId);
     } catch (error: unknown) {

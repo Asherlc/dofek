@@ -10,6 +10,7 @@ import {
 } from "./decathlon.ts";
 import { SyncRun } from "./sync-run.ts";
 import { SyncWindow } from "./sync-window.ts";
+import { makeTransactionalTestDatabase } from "./test-helpers.ts";
 
 const providerActivityAbsenceMocks = vi.hoisted(() => ({
   finishProviderActivityListSync: vi.fn().mockResolvedValue(undefined),
@@ -81,12 +82,12 @@ function createMockDb() {
     fn.mockReturnValue(chain);
   }
 
-  const db: SyncDatabase = {
+  const db: SyncDatabase = makeTransactionalTestDatabase({
     select: vi.fn(),
     insert: vi.fn().mockReturnValue(chain),
     delete: vi.fn(),
     execute: vi.fn(),
-  };
+  });
 
   return Object.assign(db, chain);
 }

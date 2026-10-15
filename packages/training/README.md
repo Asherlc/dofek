@@ -49,12 +49,13 @@ Every public module is imported as `@dofek/training/<subpath>`.
 | Subpath | Purpose |
 | --- | --- |
 | `activity-icons` | Normalize activity names into framework-neutral icon categories |
-| `climbing-grades` | Validate, order, and convert Sandbag-supported boulder and route climbing grades |
-| `climbing-context` | Validate provider-scoped climbing location paths, boards, wall-angle units, methods, and result labels |
+| `climbing-grades` | Validate recorded grade components; order and convert supported free-rock grades with [Sandbag](https://github.com/OpenBeta/sandbag) |
+| `climbing-context` | Validate the current Climb and Area path with recorded board, wall-angle, and hold-type context |
+| `climbing-map` | [Explicit source locations and tick marker inputs](src/climbing-map.ts) shared by web and mobile maps |
 | `climbing-experience` | [Shared recorded board and wall-angle schemas](src/climbing-experience.ts) |
-| `climbing-log` | [Area, Climb, ClimbingLogEntry, ClimbingAttempt, and their canonical enums](src/climbing-log.ts) |
+| `climbing-log` | [Area, Climb, Pitch, owned GradeComponent collections, ClimbingLogEntry, scoped ClimbingAttempt, and their canonical enums](src/climbing-log.ts) |
 | `gps-coordinates` | [Complete finite latitude/longitude pairs](src/gps-coordinates.ts) for [native PostgreSQL point storage](https://www.postgresql.org/docs/current/datatype-geometric.html#DATATYPE-GEOMETRIC-POINTS) using x = longitude and y = latitude |
-| `climbing-progression` | [Server-computed grade-stack contract](src/climbing-progression.ts), style and setting labels, and period and exact-value formatting shared by web and mobile |
+| `climbing-progression` | [Server-computed grade-stack contract](src/climbing-progression.ts), independent attempt-fact lane and setting labels, and period/exact-value formatting shared by web and mobile |
 | `cycling-workout-metrics` | Coverage-aware per-activity power, heart-rate, cadence, drift, zone, load, and interval calculations |
 | `derived-cardio` | Cycling and submaximal walking/running VO2 max estimates and validation |
 | `endurance-types` | Endurance and indoor-cycling type guards |
@@ -68,6 +69,23 @@ Every public module is imported as `@dofek/training/<subpath>`.
 | `workout-recommendation` | Workout recommendation types and calculation |
 
 ## Model details
+
+### Climbing grades and attempts
+
+`GradeSystem` covers recorded free, British, aid, ice, mixed, and commitment
+components. `FreeRockGradeSystem` restricts numerical conversion and display
+preferences to the existing Sandbag-supported free-rock scales. Grade
+validation preserves A/C aid prefixes and documented modifiers/ranges rather
+than converting recorded values; see theCrag's [grade definitions](https://www.thecrag.com/en/article/gradesonthecrag),
+the [UIAA difficulty scales](https://theuiaa.org/documents/mountaineering/THESCALESOFDIFFICULTYINCLIMBING_p1b.pdf),
+and firsthand [mixed-grade](https://publications.americanalpineclub.org/articles/13201217584)
+and [ice/mixed range](https://publications.americanalpineclub.org/articles/13201213975) examples.
+
+Published components belong to Climb/Pitch; separately reported components
+belong to the log. Attempts record whole-Climb or pitch scope and independent
+completion, rope method, solo, aid, protection, fall/hang, dab, beta and source
+history facts. Server queries derive result labels and counts; see the
+[canonical model](../../docs/superpowers/specs/2026-10-13-climbing-log-model-summitpost-design.md).
 
 ### Training distributions
 

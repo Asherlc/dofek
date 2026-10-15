@@ -993,6 +993,15 @@ export class ActivityRepository extends BaseRepository {
 
     if (memberActivityIds.length > 0) {
       await this.db.execute(sql`
+        UPDATE fitness.climbing_log_entry
+        SET activity_id = NULL
+        WHERE user_id = ${this.userId}::uuid
+          AND activity_id IN (${sql.join(
+            memberActivityIds.map((id) => sql`${id}::uuid`),
+            sql`, `,
+          )})
+      `);
+      await this.db.execute(sql`
         UPDATE fitness.activity
         SET deleted_at = NOW()
         WHERE id IN (${sql.join(

@@ -35,14 +35,18 @@ function climbingRow(overrides: Partial<ClimbingComparisonRow> = {}): ClimbingCo
     entry_activity_id: SOURCE_ACTIVITY_A,
     entry_provider: "kaya",
     external_id: "problem-1",
-    climb_type: "boulder",
+    climb_kind: "boulder",
     grade_system: "v_scale",
     grade: "V6",
-    sent: true,
-    attempt_count: 2,
-    lead: null,
+    sends: 1,
+    unknown_outcomes: 0,
+    recorded_attempt_count: 2,
+    rope_method: null,
+    solo: null,
+    attempt_scope: "climb",
+    pitch_number: null,
     wall_angle_degrees: 30,
-    route_name: "Blue Arete",
+    climb_name: "Blue Arete",
     location_name: "The Gym",
     ...overrides,
   };
@@ -279,7 +283,10 @@ describe("computeClimbingComparisonMetrics", () => {
       evidence: [
         {
           status: "included",
-          lead: null,
+          rope_method: null,
+          solo: null,
+          attempt_scope: "climb",
+          pitch_number: null,
           merged_duplicate: true,
           source_activity_ids: [SOURCE_ACTIVITY_A, SOURCE_ACTIVITY_B],
           source_providers: ["kaya", "strava"],
@@ -295,8 +302,9 @@ describe("computeClimbingComparisonMetrics", () => {
         entry_id: "00000000-0000-4000-8000-000000000042",
         entry_activity_id: SOURCE_ACTIVITY_B,
         entry_provider: "strava",
-        sent: false,
-        attempt_count: 3,
+        sends: 0,
+        unknown_outcomes: 0,
+        recorded_attempt_count: 3,
       }),
     ]);
 
@@ -316,20 +324,21 @@ describe("computeClimbingComparisonMetrics", () => {
 
   it("marks complete observations partial when other matching climbs are ambiguous", () => {
     const result = computeClimbingComparisonMetrics([
-      climbingRow({ route_name: "Independent Route", external_id: "independent" }),
+      climbingRow({ climb_name: "Independent Route", external_id: "independent" }),
       climbingRow({
         entry_id: "00000000-0000-4000-8000-000000000042",
-        route_name: "Conflicted Route",
+        climb_name: "Conflicted Route",
         external_id: "conflicted",
       }),
       climbingRow({
         entry_id: "00000000-0000-4000-8000-000000000043",
         entry_activity_id: SOURCE_ACTIVITY_B,
         entry_provider: "strava",
-        route_name: "Conflicted Route",
+        climb_name: "Conflicted Route",
         external_id: "conflicted-other",
-        sent: false,
-        attempt_count: 3,
+        sends: 0,
+        unknown_outcomes: 0,
+        recorded_attempt_count: 3,
       }),
     ]);
 
@@ -362,19 +371,19 @@ describe("computeClimbingComparisonMetrics", () => {
     });
   });
 
-  it("does not infer missing attempts or outcomes", () => {
+  it("retains recorded attempts while keeping unobserved outcomes partial", () => {
     expect(
       computeClimbingComparisonMetrics([
-        climbingRow({ sent: null, attempt_count: null }),
+        climbingRow({ sends: 0, unknown_outcomes: 1, recorded_attempt_count: 1 }),
         climbingRow({
           entry_id: "00000000-0000-4000-8000-000000000042",
-          route_name: "Green Slab",
+          climb_name: "Green Slab",
           external_id: "problem-2",
         }),
       ]),
     ).toMatchObject({
-      attempts: 2,
-      attempts_status: "partial",
+      attempts: 3,
+      attempts_status: "complete",
       sends: 1,
       outcomes_status: "partial",
     });
@@ -388,10 +397,11 @@ describe("computeClimbingComparisonMetrics", () => {
         entry_provider: `provider-${index}`,
         external_id: `external-${index}`,
         grade: index === 0 ? " V6 " : "v6",
-        route_name: index === 0 ? " Blue   Arete " : "blue arete",
+        climb_name: index === 0 ? " Blue   Arete " : "blue arete",
         location_name: index === 0 ? " THE GYM " : "the gym",
-        sent: false,
-        attempt_count: 1,
+        sends: 0,
+        unknown_outcomes: 0,
+        recorded_attempt_count: 1,
       }),
     );
     const distinct = Array.from({ length: 100 }, (_, index) =>
@@ -400,9 +410,10 @@ describe("computeClimbingComparisonMetrics", () => {
         entry_activity_id: `distinct-source-${index}`,
         entry_provider: "kaya",
         external_id: `distinct-external-${index}`,
-        route_name: `Route ${index}`,
-        sent: index % 2 === 0,
-        attempt_count: 2,
+        climb_name: `Route ${index}`,
+        sends: index % 2 === 0 ? 1 : 0,
+        unknown_outcomes: 0,
+        recorded_attempt_count: 2,
       }),
     );
 
@@ -426,7 +437,8 @@ describe("computeClimbingComparisonMetrics", () => {
       source_activity_count: 21,
       source_provider_count: 21,
       source_evidence_truncated: true,
-      sent: false,
+      sends: 0,
+      unknown_outcomes: 0,
     });
     expect(result?.evidence[0]?.source_entry_ids).toHaveLength(20);
   });

@@ -156,35 +156,35 @@ validation scan's stronger lock during the initial constraint addition:
 | `fitness.activity_interval` | Laps/intervals with time ranges (metrics computed at query time from sensor_sample) |
 | `fitness.sensor_sample` | Time-series sensor data (TimescaleDB hypertable) — all channels at any frequency |
 | `fitness.finger_loading_entry` | Finger-loading protocols with raw edge, grip, load, bodyweight, laterality, set, hold, rest, RPE, and note values; existing rows remain read-only in the application |
-| `fitness.climbing_entry` | Provider climbs and retained Dofek-created climb definitions, including grade, wall angle, hold type, route, and location; Mountain Project and OpenBeta ticks can remain standalone until attached to an activity |
-| `fitness.climbing_attempt` | Ordered raw outcomes, failure reasons, and notes for attempts on a retained climbing entry |
+| `fitness.area` | Current user/provider-owned location hierarchy and native coordinates |
+| `fitness.climb` / `fitness.pitch` | Shared physical climbing definitions and identified pitches |
+| `fitness.climb_grade` / `fitness.pitch_grade` | Ordered published grade components owned by their definitions |
+| `fitness.climbing_log_entry` | Source occurrence, independent source date, notes, provenance, experience context and optional Activity |
+| `fitness.climbing_log_entry_grade` | Ordered separately reported grade components |
+| `fitness.climbing_attempt` | Scoped occurrences with independent nullable completion and execution facts |
 
-Climbing entries canonically store `location_path`, `board`, `wall_angle`,
-`climb_style`, and `result_style`. The permanent `fitness.v_climbing_entry`
-projection derives location labels, lead/send flags, success qualifiers, and
-known degree angles; these scalars are not duplicated in the base table.
-Retained Dofek-created entries leave `result_style` and `attempt_count` null;
-serving queries give detailed `climbing_attempt` records precedence. Imported
-provider rows retain recorded counts, with missing counts unknown. See the
-[climbing context contract and cutover](climbing-context.md) and PostgreSQL's
-[view contract](https://www.postgresql.org/docs/current/sql-createview.html).
-Finger-loading effective
-load is likewise derived as bodyweight plus signed external load and is never
-stored separately. Database constraints keep each outcome/failure-reason pair
-consistent using PostgreSQL check constraints
-([PostgreSQL `CREATE TABLE`](https://www.postgresql.org/docs/current/sql-createtable.html)).
+Climb references Area; Pitch references Climb. Historical logs display current
+shared definitions. Verified source identities are user/provider scoped;
+unverified names do not merge objects. Coordinates are native PostgreSQL
+points with longitude as x and latitude as y. See the
+[climbing schema](../src/db/schema/climbing.ts), [model guide](climbing-context.md)
+and [PostgreSQL geometric types](https://www.postgresql.org/docs/current/datatype-geometric.html).
 
-Mountain Project and OpenBeta ticks use the same `fitness.climbing_entry` table
-as other climbs. Each entry has an owner and provider identity. While unattached,
-it has no activity association and stores the export's date in `unattached_date`;
-attaching it clears that date, and its associated activity supplies its day.
-The server suggests only active unattached climbing entries whose exported day
-exactly matches the climbing activity's displayed calendar date in the user's
-timezone. Attachment is always an explicit per-entry action. Unattached
-entries remain in climb and grade summaries, while activity and session
-summaries continue to represent actual activities. See the
-[Mountain Project provider guide](mountain-project.md) and the
-[unattached ticks design spec](superpowers/specs/2026-09-26-unattached-mountain-project-ticks-design.md).
+Attempts record whole-Climb or pitch scope, nullable completion, and independent
+rope method, solo, protection, aid, fall/hang, dab, beta and history facts.
+Pitch attempts may identify a Pitch and an established parent whole-Climb
+attempt. `fitness.v_climbing_log_entry` derives current paths, owned grades,
+scoped counts and compatible free-rock labels without storing duplicate
+summaries. See the [writer](../src/db/climbing-log-sync.ts) and PostgreSQL's
+[view semantics](https://www.postgresql.org/docs/current/sql-createview.html).
+
+`climbed_on` remains independent of attachment. Same-day suggestions include
+active unattached logs for eligible climbing or hiking Activities. Attachment
+preserves the source date; deleting an Activity unlinks its logs. Undated logs
+remain accessible through provider records. See the
+[association rules](../packages/server/src/repositories/climbing-log-entry-associator.ts).
+Finger-loading effective load is derived as bodyweight plus signed external
+load; see the [finger-loading schema](../src/db/schema/activity.ts).
 
 ### Daily Metrics
 
@@ -316,10 +316,12 @@ read resolves them against the current provider row.
 ## Deduplication
 
 Provider-sourced tables use unique external-ID indexes as appropriate for each
-source's identity scope. Climbing entries retain per-activity external-ID
-uniqueness for existing providers and use user-wide uniqueness for Mountain
-Project ticks; see [`climbing_entry` indexes](../src/db/schema/activity.ts).
-Syncs use upsert to avoid duplicates.
+source's identity scope. When supplied, `(user_id, provider_id, external_id)`
+identifies a climbing source log for idempotent upserts. Climb identity is
+separate from occurrence identity; repeated source occurrences remain separate.
+Cross-provider overlap is resolved at query time while retaining attribution.
+See the [source identity index](../src/db/schema/climbing.ts) and
+[observation selection](../packages/server/src/repositories/climbing-repository.ts).
 
 Every metric-stream ingestion path must publish Redpanda events with a stable `external_id`. Provider-supplied IDs are preferred; when the source does not expose a sample ID, ingestion derives a deterministic ID from provider, activity/source, channel, and timestamp. Metric stream events use `(user_id, provider_id, external_id, channel, recorded_at)` as the logical idempotency key so failed syncs can be retried without duplicating raw samples in ClickHouse.
 

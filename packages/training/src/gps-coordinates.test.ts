@@ -22,10 +22,7 @@ describe("gpsCoordinatesSchema", () => {
     { latitude: -90.01, longitude: 0 },
     { latitude: 0, longitude: 180.01 },
     { latitude: 0, longitude: -180.01 },
-  ])(
-    "rejects incomplete pairs, values that are not finite, and out-of-range pairs: %j",
-    (coordinates) => {
-      expect(gpsCoordinatesSchema.safeParse(coordinates).success).toBe(false);
-    },
-  );
+  ])("rejects incomplete nonfinite and out-of-range pairs: %j", (coordinates) => {
+    expect(gpsCoordinatesSchema.safeParse(coordinates).success).toBe(false);
+  });
 });

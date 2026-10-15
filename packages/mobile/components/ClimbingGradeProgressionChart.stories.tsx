@@ -5,8 +5,8 @@ import { climbingProgressionFixture } from "./climbing-progression-test-helpers"
 
 const data = [
   climbingProgressionFixture(),
-  climbingProgressionFixture("top-rope"),
-  climbingProgressionFixture("lead"),
+  climbingProgressionFixture("route", { ropeMethod: "top_rope" }),
+  climbingProgressionFixture("route", { ropeMethod: "lead" }),
 ];
 const meta = {
   title: "Components/ClimbingGradeProgressionChart",
@@ -29,9 +29,9 @@ export const UnknownCategories: Story = {
   args: {
     data: [
       {
-        ...climbingProgressionFixture("unknown"),
+        ...climbingProgressionFixture("route"),
         settings: ["unknown"],
-        periods: climbingProgressionFixture("unknown").periods.map((period) => ({
+        periods: climbingProgressionFixture("route").periods.map((period) => ({
           ...period,
           settings: period.settings
             .slice(0, 1)

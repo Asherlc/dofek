@@ -2,7 +2,8 @@ import { eq, sql } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { activity, climbingEntry } from "../db/schema/activity.ts";
+import { activity } from "../db/schema/activity.ts";
+import { climb, climbGrade, climbingAttempt, climbingLogEntry } from "../db/schema/climbing.ts";
 import { TEST_USER_ID } from "../db/schema/core.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
@@ -32,7 +33,7 @@ describe("TheCragProvider.sync (PostgreSQL)", () => {
     );
 
   const entries = () =>
-    context.db.select().from(climbingEntry).where(eq(climbingEntry.providerId, "thecrag"));
+    context.db.select().from(climbingLogEntry).where(eq(climbingLogEntry.providerId, "thecrag"));
 
   const connect = async (userId = TEST_USER_ID, accountId = "123") => {
     await ensureProvider(context.db, "thecrag", "theCrag", "https://www.thecrag.com/api", userId);
@@ -59,7 +60,7 @@ describe("TheCragProvider.sync (PostgreSQL)", () => {
 
   beforeEach(async () => {
     await connect();
-    await context.db.delete(climbingEntry).where(eq(climbingEntry.providerId, "thecrag"));
+    await context.db.delete(climbingLogEntry).where(eq(climbingLogEntry.providerId, "thecrag"));
     await context.db.delete(activity).where(eq(activity.providerId, "thecrag"));
   });
 
@@ -79,14 +80,31 @@ describe("TheCragProvider.sync (PostgreSQL)", () => {
         userId: TEST_USER_ID,
         externalId: "thecrag:1001",
         activityId: null,
-        unattachedDate: "2026-10-10",
-        climbType: "route",
-        gradeSystem: "yds",
-        grade: "5.10a",
-        routeName: "Sunset Arete",
-        resultStyle: "Redpoint",
-        attemptCount: null,
+        climbedOn: "2026-10-10",
+        discipline: "rock_climbing",
         raw: { accountId: "123", ascent },
+      }),
+    ]);
+    expect(await context.db.select().from(climb).where(eq(climb.providerId, "thecrag"))).toEqual([
+      expect.objectContaining({
+        externalId: "2001",
+        kind: "route",
+        name: "Sunset Arete",
+        routeProtection: ["sport"],
+      }),
+    ]);
+    expect(await context.db.select().from(climbGrade)).toEqual([
+      expect.objectContaining({ system: "yds", value: "5.10a" }),
+    ]);
+    expect(await context.db.select().from(climbingAttempt)).toEqual([
+      expect.objectContaining({
+        scope: "climb",
+        outcome: "completed",
+        fellOrHung: false,
+        usedAid: false,
+        protectionUsed: ["sport"],
+        receivedBeta: null,
+        attemptIndex: null,
       }),
     ]);
     expect(
@@ -111,9 +129,9 @@ describe("TheCragProvider.sync (PostgreSQL)", () => {
       .returning();
     if (!workout) throw new Error("Fixture activity was not inserted");
     await context.db
-      .update(climbingEntry)
-      .set({ activityId: workout.id, unattachedDate: null })
-      .where(eq(climbingEntry.externalId, "thecrag:1002"));
+      .update(climbingLogEntry)
+      .set({ activityId: workout.id })
+      .where(eq(climbingLogEntry.externalId, "thecrag:1002"));
     ascents = [
       theCragAscent({ date: "2026-10-09", epoch: 1791676810 }),
       theCragAscent({ id: "1002", date: "2026-10-09", epoch: 1791676810 }),
@@ -121,11 +139,11 @@ describe("TheCragProvider.sync (PostgreSQL)", () => {
     expect(await run()).toMatchObject({ recordsSynced: 2, errors: [] });
     expect(await entries()).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ externalId: "thecrag:1001", unattachedDate: "2026-10-09" }),
+        expect.objectContaining({ externalId: "thecrag:1001", climbedOn: "2026-10-09" }),
         expect.objectContaining({
           externalId: "thecrag:1002",
           activityId: workout.id,
-          unattachedDate: null,
+          climbedOn: "2026-10-09",
           raw: { accountId: "123", ascent: ascents[1] },
         }),
       ]),
@@ -147,7 +165,7 @@ describe("TheCragProvider.sync (PostgreSQL)", () => {
     expect(requestedSince).toEqual([null, "1791676799"]);
     expect(await entries()).toEqual([
       expect.objectContaining({
-        unattachedDate: "2020-01-20",
+        climbedOn: "2020-01-20",
         raw: { accountId: "123", ascent: ascents[0] },
       }),
     ]);
@@ -209,7 +227,7 @@ describe("TheCragProvider.sync (PostgreSQL)", () => {
     server.use(http.get(endpoint, () => HttpResponse.json(theCragPage([theCragAscent()]))));
     expect(await run()).toMatchObject({ errors: [] });
     const previous = await entries();
-    await context.db.execute(sql`ALTER TABLE fitness.climbing_entry ADD CONSTRAINT test_reject_ascent
+    await context.db.execute(sql`ALTER TABLE fitness.climbing_log_entry ADD CONSTRAINT test_reject_ascent
       CHECK (external_id <> 'thecrag:1002')`);
     try {
       server.use(
@@ -228,7 +246,7 @@ describe("TheCragProvider.sync (PostgreSQL)", () => {
       expect(await entries()).toEqual(previous);
     } finally {
       await context.db.execute(
-        sql`ALTER TABLE fitness.climbing_entry DROP CONSTRAINT test_reject_ascent`,
+        sql`ALTER TABLE fitness.climbing_log_entry DROP CONSTRAINT test_reject_ascent`,
       );
     }
   });

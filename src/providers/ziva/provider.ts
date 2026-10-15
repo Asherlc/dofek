@@ -6,7 +6,7 @@ import {
 } from "@dofek/provider-http/rate-limit";
 import type { TokenSet } from "../../auth/oauth.ts";
 import { resolveOAuthTokens } from "../../auth/resolve-tokens.ts";
-import type { Database, SyncDatabase } from "../../db/index.ts";
+import type { SyncDatabase } from "../../db/index.ts";
 import { getProviderIngestContext } from "../../db/provider-ingest-context.ts";
 import { deleteTokens, deriveProviderAccountKey } from "../../db/tokens.ts";
 import { captureException } from "../../lib/error-reporting.ts";
@@ -41,12 +41,6 @@ import {
   type ZivaSyncCheckpoint,
 } from "./sync-plan.ts";
 
-type TransactionalSyncDatabase = SyncDatabase & Pick<Database, "transaction">;
-
-function isTransactionalDatabase(db: SyncDatabase): db is TransactionalSyncDatabase {
-  return "transaction" in db && typeof db.transaction === "function";
-}
-
 function requireUserId(run: SyncRun): string {
   const userId = run.options.userId?.trim();
   if (!userId) throw new Error("Ziva sync requires a user ID");
@@ -63,13 +57,6 @@ function requireContinuationEnqueue(run: SyncRun): (checkpoint: unknown) => Prom
   const enqueue = run.options.enqueueSyncContinuation;
   if (!enqueue) throw new Error("Ziva sync requires continuation enqueue support");
   return enqueue;
-}
-
-function requireTransactionalDatabase(db: SyncDatabase): TransactionalSyncDatabase {
-  if (!isTransactionalDatabase(db)) {
-    throw new Error("Ziva sync requires a transactional database");
-  }
-  return db;
 }
 
 function isAbortError(error: unknown): boolean {
@@ -186,7 +173,7 @@ export class ZivaProvider implements SyncProvider {
     signal?.throwIfAborted();
     const startedAt = Date.now();
     const userId = requireUserId(run);
-    const db = requireTransactionalDatabase(run.db);
+    const db = run.db;
     const checkpointStore = requireCheckpoint(run);
     const enqueueContinuation = requireContinuationEnqueue(run);
     const rawCheckpoint = await checkpointStore.load();

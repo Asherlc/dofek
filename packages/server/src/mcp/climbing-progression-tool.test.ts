@@ -1,6 +1,7 @@
 import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport, McpServer } from "@modelcontextprotocol/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { climbingAttemptFixture } from "../repositories/climbing-test-helpers.ts";
 import { climbingProgressionOutputSchema } from "./climbing-progression-output.ts";
 
 const mocks = vi.hoisted(() => ({ listRange: vi.fn() }));
@@ -26,9 +27,10 @@ function fixture() {
     coverage: {
       sessions: 1,
       entries: 1,
-      entries_with_attempts: 0,
-      entries_with_observed_outcome: 0,
-      attempt_data: "unavailable" as const,
+      entries_with_attempts: 1,
+      observed_free_send_outcomes: 0,
+      unknown_free_send_outcomes: 1,
+      attempt_data: "complete" as const,
       first_observed_date: "2026-07-10",
       timezone_assumed_sessions: 1,
       merged_exact_duplicate_records: 0,
@@ -41,11 +43,12 @@ function fixture() {
         exposure_status: "observed" as const,
         sessions: 1,
         entries: 1,
-        attempts: null,
-        attempts_status: "unavailable" as const,
+        attempts: 1,
+        attempts_status: "complete" as const,
         sends: null,
-        failed_entries: null,
+        failed_attempts: 0,
         observed_outcomes: 0,
+        unknown_outcomes: 1,
         send_rate: null,
         is_rest_day: false,
         consecutive_climbing_days: 1,
@@ -55,19 +58,24 @@ function fixture() {
     ],
     grade_distribution: [
       {
-        discipline: "boulder" as const,
+        climb_kind: "boulder" as const,
+        attempt_scope: "climb" as const,
+        rope_method: null,
+        solo: null,
+        used_aid: null,
         grade: "V5",
         grade_system: "v_scale" as const,
         normalized_grade: "V5",
         normalized_grade_system: "v_scale" as const,
         grade_sort_value: 70,
         entries: 1,
-        attempts: null,
-        attempts_status: "unavailable" as const,
-        entries_with_attempts: 0,
+        attempts: 1,
+        attempts_status: "complete" as const,
+        entries_with_attempts: 1,
         sends: null,
-        failed_entries: null,
+        failed_attempts: 0,
         observed_outcomes: 0,
+        unknown_outcomes: 1,
         send_rate: null,
         attempts_per_send: null,
       },
@@ -77,7 +85,7 @@ function fixture() {
     below_range_hardest_send: {
       metric_name: "volume_below_range_hardest_send" as const,
       entries: 0,
-      attempts: null,
+      attempts: 1,
       status: "unavailable" as const,
     },
     sessions: [
@@ -99,23 +107,35 @@ function fixture() {
           assumed: true,
         },
         quality_flags: ["timezone_assumed_from_user_context"],
-        climbs: [
+        climbing_log_entries: [
           {
             id: "00000000-0000-4000-8000-000000000101",
-            discipline: "boulder" as const,
-            climb_type: "boulder" as const,
+            pitch_id: null,
+            pitch_number: null,
+            attempt_scope: "climb" as const,
+            rope_method: null,
+            solo: null,
+            used_aid: null,
+            climb_kind: "boulder" as const,
             grade: "V5",
             grade_system: "v_scale" as const,
             normalized_grade: "V5",
             normalized_grade_system: "v_scale" as const,
-            sent: null,
-            attempt_count: null,
-            attempts: [],
-            ascent_type: null,
-            lead: null,
+            sends: 0,
+            unknown_outcomes: 1,
+            recorded_attempt_count: 1,
+            attempts: [
+              (() => {
+                const { rockResultLabels, ...attempt } = climbingAttemptFixture(
+                  "00000000-0000-4000-8000-000000000101",
+                );
+                return attempt;
+              })(),
+            ],
+            rock_result_labels: { onsight: null, flash: null },
             wall_angle_degrees: 30,
             hold_type: null,
-            route_name: "Blue Arete",
+            climb_name: "Blue Arete",
             location_name: "Pacific Pipe",
             external_id: "problem-1",
             provenance: {
@@ -143,7 +163,7 @@ describe("get_climbing_progression", () => {
     mocks.listRange.mockReset().mockResolvedValue(fixture());
     server = new McpServer({ name: "climbing-progression-test", version: "1.0.0" });
     registerClimbingProgressionTool(server, {
-      db: { execute: vi.fn(), select: vi.fn(), transaction: vi.fn() },
+      db: { execute: vi.fn().mockResolvedValue([]), select: vi.fn(), transaction: vi.fn() },
       userId: "00000000-0000-4000-8000-000000000002",
       scopes: ["activity:read"],
       timezone: "UTC",
@@ -166,7 +186,7 @@ describe("get_climbing_progression", () => {
         start_date: "2026-07-01",
         end_date: "2026-07-31",
         providers: ["kaya"],
-        disciplines: ["boulder"],
+        filters: { climbKind: "boulder" },
         locations: ["Pacific Pipe"],
         grade_systems: ["v_scale"],
         limit: 25,
@@ -178,7 +198,7 @@ describe("get_climbing_progression", () => {
       startDate: "2026-07-01",
       endDate: "2026-07-31",
       providers: ["kaya"],
-      disciplines: ["boulder"],
+      filters: { climbKind: "boulder" },
       locations: ["Pacific Pipe"],
       gradeSystems: ["v_scale"],
       cursor: null,

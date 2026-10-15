@@ -11,6 +11,7 @@ import {
 } from "./suunto.ts";
 import { SyncRun } from "./sync-run.ts";
 import { SyncWindow } from "./sync-window.ts";
+import { makeTransactionalTestDatabase } from "./test-helpers.ts";
 
 vi.mock("../db/token-user-context.ts", () => ({
   getTokenUserId: () => "user-1",
@@ -38,12 +39,12 @@ function createWebhookDb() {
       onConflictDoNothing: vi.fn().mockResolvedValue(undefined),
     }),
   };
-  return {
+  return makeTransactionalTestDatabase({
     select: vi.fn(),
     insert: vi.fn().mockReturnValue(chain),
     delete: vi.fn(),
     execute: vi.fn(),
-  };
+  });
 }
 
 describe("mapSuuntoActivityType", () => {
@@ -167,7 +168,7 @@ describe("SuuntoProvider", () => {
     process.env.SUUNTO_CLIENT_ID = "id";
     process.env.SUUNTO_CLIENT_SECRET = "secret";
     process.env.SUUNTO_SUBSCRIPTION_KEY = "key";
-    const mockDb = {
+    const mockDb = makeTransactionalTestDatabase({
       select: vi.fn().mockReturnValue({
         from: vi.fn().mockReturnValue({
           where: vi.fn().mockReturnValue({
@@ -185,7 +186,7 @@ describe("SuuntoProvider", () => {
       }),
       delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
       execute: vi.fn().mockResolvedValue([]),
-    };
+    });
     const result = await new SuuntoProvider().sync(
       new SyncRun({ db: mockDb, window: SyncWindow.fromSince({ since: new Date("2026-01-01") }) }),
     );
@@ -295,12 +296,12 @@ describe("SuuntoProvider.syncWebhookEvent", () => {
 
   it("returns immediately for non-workout objectType", async () => {
     const provider = new SuuntoProvider(async () => new Response());
-    const mockDb = {
+    const mockDb = makeTransactionalTestDatabase({
       select: vi.fn(),
       insert: vi.fn(),
       delete: vi.fn(),
       execute: vi.fn(),
-    };
+    });
 
     const result = await provider.syncWebhookEvent(mockDb, {
       ownerExternalId: "user-123",
@@ -316,12 +317,12 @@ describe("SuuntoProvider.syncWebhookEvent", () => {
 
   it("returns error when workout metadata fails validation", async () => {
     const provider = new SuuntoProvider(async () => new Response());
-    const mockDb = {
+    const mockDb = makeTransactionalTestDatabase({
       select: vi.fn(),
       insert: vi.fn(),
       delete: vi.fn(),
       execute: vi.fn(),
-    };
+    });
 
     const result = await provider.syncWebhookEvent(mockDb, {
       ownerExternalId: "user-123",
@@ -337,12 +338,12 @@ describe("SuuntoProvider.syncWebhookEvent", () => {
 
   it("upserts activity on happy path with valid workout metadata", async () => {
     const mockInsert = makeSuuntoInsertMock();
-    const mockDb = {
+    const mockDb = makeTransactionalTestDatabase({
       select: vi.fn(),
       insert: mockInsert,
       delete: vi.fn(),
       execute: vi.fn(),
-    };
+    });
 
     const provider = new SuuntoProvider(async () => new Response());
     const result = await provider.syncWebhookEvent(mockDb, {
@@ -538,12 +539,12 @@ describe("SuuntoProvider — precise webhook assertions", () => {
 
   it("syncWebhookEvent returns provider 'suunto' for all paths", async () => {
     const provider = new SuuntoProvider(async () => new Response());
-    const mockDb = {
+    const mockDb = makeTransactionalTestDatabase({
       select: vi.fn(),
       insert: vi.fn(),
       delete: vi.fn(),
       execute: vi.fn(),
-    };
+    });
 
     // Non-workout path
     const result = await provider.syncWebhookEvent(mockDb, {
@@ -559,12 +560,12 @@ describe("SuuntoProvider — precise webhook assertions", () => {
 
   it("syncWebhookEvent invalid metadata path returns provider 'suunto'", async () => {
     const provider = new SuuntoProvider(async () => new Response());
-    const mockDb = {
+    const mockDb = makeTransactionalTestDatabase({
       select: vi.fn(),
       insert: vi.fn(),
       delete: vi.fn(),
       execute: vi.fn(),
-    };
+    });
 
     const result = await provider.syncWebhookEvent(mockDb, {
       ownerExternalId: "user",

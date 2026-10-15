@@ -1,16 +1,14 @@
 import { TRPCError } from "@trpc/server";
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { ActivityRow } from "../models/activity.ts";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ActivityRepository } from "../repositories/activity-repository.ts";
-import { ClimbingActivityEntry } from "../repositories/climbing-activity-entry-repository.ts";
+import { ClimbingActivityLogEntry } from "../repositories/climbing-activity-log-entry-repository.ts";
+import { ClimbingLogEntryAssociator } from "../repositories/climbing-log-entry-associator.ts";
 import { ClimbingRepository } from "../repositories/climbing-repository.ts";
+import {
+  climbingActivityFixture,
+  climbingLogEntryFixture,
+} from "../repositories/climbing-test-helpers.ts";
 import { HangboardingRepository } from "../repositories/hangboarding-repository.ts";
-import type {
-  ClimbingActivityEntryRow,
-  ClimbingGradeProgressionRow,
-  ClimbingSessionSummaryRow,
-  ClimbingVolumeByGradeRow,
-} from "./climbing.ts";
 import { createTestCallerFactory } from "./test-helpers.ts";
 
 const { captureException } = vi.hoisted(() => ({ captureException: vi.fn() }));
@@ -80,321 +78,73 @@ function makeCallerWithResponses(responses: Record<string, unknown>[][]) {
   return { caller, execute };
 }
 
-function makeResolvedActivity(id: string, resolvedFrom?: string): ActivityRow {
-  return {
-    absent_source_external_ids: null,
-    avg_cadence: null,
-    avg_hr: null,
-    avg_power: null,
-    avg_speed: null,
-    canonical_type: "climbing",
-    displayed_date: "2026-09-01",
-    elevation_gain_m: null,
-    elevation_loss_m: null,
-    ended_at: "2026-09-01T11:00:00.000Z",
-    end_utc_offset_minutes: 0,
-    id,
-    local_time_source: "provider_timezone",
-    max_hr: null,
-    max_power: null,
-    max_speed: null,
-    modality: null,
-    name: "Climbing",
-    notes: null,
-    perceived_exertion: null,
-    provider_absent_at: null,
-    provider_id: "kaya",
-    raw_type: "climbing",
-    resolved_from: resolvedFrom,
-    sample_count: null,
-    source_external_ids: [],
-    source_providers: ["kaya"],
-    start_utc_offset_minutes: 0,
-    started_at: "2026-09-01T10:00:00.000Z",
-    subsource: null,
-    timezone: "UTC",
-    total_distance: null,
-    context: {
-      providerId: "kaya",
-      locationPath: [],
-      board: null,
-      wallAngle: null,
-      climbStyle: null,
-      resultStyle: null,
-    },
-  };
-}
-
+const groupId = "00000000-0000-4000-8000-000000000701";
 describe("climbingRouter", () => {
   beforeEach(() => {
     captureException.mockClear();
-  });
-
-  it("returns activity entry rows", async () => {
-    const activityLookup = vi
-      .spyOn(ActivityRepository.prototype, "findById")
-      .mockResolvedValue(makeResolvedActivity("734b5d3e-df2b-4ee0-888e-55ea539d913a"));
-    const { caller, execute } = makeCaller([
-      {
-        id: "entry-1",
-        provider_id: "kaya",
-        raw: null,
-        climb_type: "boulder",
-        grade_system: "v_scale",
-        grade: "v4",
-        sent: true,
-        attempt_count: 7,
-        attempts: [],
-        ascent_type: "Redpoint",
-        hold_type: null,
-        route_name: "Blue Arete",
-        location_name: "Pacific Pipe",
-        source_name: "Kaya",
-        wall_angle_degrees: null,
-        lead: null,
-        context: {
-          providerId: "kaya",
-          locationPath: [],
-          board: null,
-          wallAngle: null,
-          climbStyle: null,
-          resultStyle: null,
-        },
-      },
-    ]);
-
-    try {
-      const result: ClimbingActivityEntryRow[] = await caller.activityEntries({
-        id: "734b5d3e-df2b-4ee0-888e-55ea539d913a",
-      });
-
-      expect(execute).toHaveBeenCalledTimes(2);
-      expect(result).toEqual([
-        {
-          id: "entry-1",
-          climbType: "boulder",
-          gradeSystem: "v_scale",
-          grade: "V4",
-          sent: true,
-          attemptCount: 7,
-          attempts: [],
-          ascentType: "Redpoint",
-          holdType: null,
-          routeName: "Blue Arete",
-          locationName: "Pacific Pipe",
-          sourceName: "Kaya",
-          sourceLinks: [],
-          wallAngleDegrees: null,
-          lead: null,
-          context: {
-            providerId: "kaya",
-            locationPath: [],
-            board: null,
-            wallAngle: null,
-            climbStyle: null,
-            resultStyle: null,
-          },
-        },
-      ]);
-      expect(cachedQueryOptions).toContainEqual({
-        maxAge: 3_600_000,
-        keyVersion: "climbing-activity-context-v3",
-      });
-    } finally {
-      activityLookup.mockRestore();
-    }
-  });
-
-  it("serves user-scoped climbing-entry suggestions for the resolved activity", async () => {
-    vi.spyOn(ActivityRepository.prototype, "findById").mockResolvedValue(
-      makeResolvedActivity("734b5d3e-df2b-4ee0-888e-55ea539d913a"),
-    );
-    const { caller } = makeCaller([
-      {
-        id: "734b5d3e-df2b-4ee0-888e-55ea539d913b",
-        provider_id: "openbeta",
-        raw: null,
-        source_name: "OpenBeta",
-        climb_type: "boulder",
-        grade_system: "v_scale",
-        grade: "V4",
-        sent: true,
-        ascent_type: null,
-        attempt_count: 1,
-        lead: null,
-        route_name: "Pinch",
-        location_name: "The Gym",
-        context: {
-          providerId: "openbeta",
-          locationPath: [],
-          board: null,
-          wallAngle: null,
-          climbStyle: null,
-          resultStyle: null,
-        },
-      },
-    ]);
-
-    await expect(
-      caller.unattachedClimbingEntries({
-        activityId: "734b5d3e-df2b-4ee0-888e-55ea539d913a",
-      }),
-    ).resolves.toEqual([
-      {
-        id: "734b5d3e-df2b-4ee0-888e-55ea539d913b",
-        providerId: "openbeta",
-        sourceName: "OpenBeta",
-        sourceLinks: [],
-        climbType: "boulder",
-        gradeSystem: "v_scale",
-        grade: "V4",
-        sent: true,
-        ascentType: null,
-        attemptCount: 1,
-        lead: null,
-        routeName: "Pinch",
-        locationName: "The Gym",
-        context: {
-          providerId: "openbeta",
-          locationPath: [],
-          board: null,
-          wallAngle: null,
-          climbStyle: null,
-          resultStyle: null,
-        },
-      },
-    ]);
-  });
-
-  it("attaches a single climbing entry and invalidates affected climbing caches", async () => {
     invalidateByPrefix.mockClear();
-    vi.spyOn(ActivityRepository.prototype, "findById").mockResolvedValue(
-      makeResolvedActivity("734b5d3e-df2b-4ee0-888e-55ea539d913a"),
-    );
-    const { caller } = makeCaller([{ id: "734b5d3e-df2b-4ee0-888e-55ea539d913b" }]);
-
-    await expect(
-      caller.attachClimbingEntry({
-        activityId: "734b5d3e-df2b-4ee0-888e-55ea539d913a",
-        entryId: "734b5d3e-df2b-4ee0-888e-55ea539d913b",
-      }),
-    ).resolves.toEqual({ attached: true });
-    expect(invalidateByPrefix).toHaveBeenCalledWith("user-1:climbing.activityEntries:");
-    expect(invalidateByPrefix).toHaveBeenCalledWith("user-1:climbing.unattachedClimbingEntries:");
-    expect(invalidateByPrefix).toHaveBeenCalledWith("user-1:climbing.sessionSummary:");
-    expect(invalidateByPrefix).toHaveBeenCalledWith("user-1:climbing.gradeProgression:");
-    expect(invalidateByPrefix).toHaveBeenCalledWith("user-1:climbing.volumeByGrade:");
   });
-
+  afterEach(() => vi.restoreAllMocks());
   it.each([
-    ["stable group", "00000000-0000-4000-8000-000000000701", undefined],
-    ["member", "00000000-0000-4000-8000-000000000702", "00000000-0000-4000-8000-000000000702"],
-    ["merge alias", "00000000-0000-4000-8000-000000000703", "00000000-0000-4000-8000-000000000703"],
-  ] as const)(
-    "hydrates %s requests through the resolved stable group",
-    async (_, requestedId, resolvedFrom) => {
-      const stableGroupId = "00000000-0000-4000-8000-000000000701";
+    groupId,
+    "00000000-0000-4000-8000-000000000702",
+    "00000000-0000-4000-8000-000000000703",
+  ])(
+    "hydrates canonical climbing logs through the resolved activity group %s",
+    async (requestedId) => {
       const activityLookup = vi
         .spyOn(ActivityRepository.prototype, "findById")
-        .mockResolvedValue(makeResolvedActivity(stableGroupId, resolvedFrom));
-      const climbingLookup = vi
-        .spyOn(ClimbingRepository.prototype, "getActivityEntries")
-        .mockResolvedValue([
-          new ClimbingActivityEntry({
-            ascentType: "Redpoint",
-            attemptCount: 1,
-            attempts: [],
-            climbType: "boulder",
-            grade: "V4",
-            gradeSystem: "v_scale",
-            holdType: null,
-            id: "entry-1",
-            lead: null,
-            locationName: "Pacific Pipe",
-            routeName: "Blue Arete",
-            sent: true,
-            sourceName: "Kaya",
-            sourceLinks: [],
-            wallAngleDegrees: null,
-            context: {
-              providerId: "kaya",
-              locationPath: [],
-              board: null,
-              wallAngle: null,
-              climbStyle: null,
-              resultStyle: null,
-            },
-          }),
-        ]);
-      const { caller } = makeCaller([]);
-
-      try {
-        await expect(caller.activityEntries({ id: requestedId })).resolves.toEqual([
-          expect.objectContaining({ id: "entry-1", routeName: "Blue Arete" }),
-        ]);
-        expect(activityLookup).toHaveBeenCalledWith(requestedId);
-        expect(climbingLookup).toHaveBeenCalledWith(stableGroupId);
-      } finally {
-        activityLookup.mockRestore();
-        climbingLookup.mockRestore();
-      }
+        .mockResolvedValue(climbingActivityFixture({ id: groupId }));
+      const detail = climbingLogEntryFixture();
+      const logLookup = vi
+        .spyOn(ClimbingRepository.prototype, "getActivityLogEntries")
+        .mockResolvedValue([new ClimbingActivityLogEntry(detail)]);
+      const { caller } = makeCaller();
+      expect(await caller.activityLogEntries({ activityId: requestedId })).toEqual([detail]);
+      expect(activityLookup).toHaveBeenCalledWith(requestedId);
+      expect(logLookup).toHaveBeenCalledWith(groupId);
     },
   );
-
-  it("returns the same NOT_FOUND response for unresolved or cross-user climbing IDs", async () => {
-    const activityLookup = vi
-      .spyOn(ActivityRepository.prototype, "findById")
-      .mockResolvedValue(null);
-    const climbingLookup = vi.spyOn(ClimbingRepository.prototype, "getActivityEntries");
-    const { caller } = makeCaller([]);
-
-    try {
-      await expect(
-        caller.activityEntries({ id: "00000000-0000-4000-8000-000000000704" }),
-      ).rejects.toMatchObject<Partial<TRPCError>>({
-        code: "NOT_FOUND",
-        message: "Activity not found",
-      });
-      expect(climbingLookup).not.toHaveBeenCalled();
-    } finally {
-      activityLookup.mockRestore();
-      climbingLookup.mockRestore();
-    }
+  it("returns NOT_FOUND before reading an unresolved or cross-user activity", async () => {
+    vi.spyOn(ActivityRepository.prototype, "findById").mockResolvedValue(null);
+    const lookup = vi.spyOn(ClimbingRepository.prototype, "getActivityLogEntries");
+    const { caller } = makeCaller();
+    await expect(caller.activityLogEntries({ activityId: groupId })).rejects.toMatchObject({
+      code: "NOT_FOUND",
+      message: "Activity not found",
+    });
+    expect(lookup).not.toHaveBeenCalled();
   });
-
-  it("returns grade progression rows", async () => {
-    const { caller, execute } = makeCaller([
-      {
-        session_date: "2026-07-09",
-        climb_type: "boulder",
-        climb_style: null,
-        setting: "indoor",
-        sent: true,
-        grade_system: "v_scale",
-        grade: "V4",
-      },
-    ]);
-
-    const result: ClimbingGradeProgressionRow[] = await caller.gradeProgression({ days: 90 });
-
-    expect(execute).toHaveBeenCalledTimes(2);
-    expect(result).toMatchObject([
-      {
-        style: "boulder",
-        climbType: "boulder",
-        gradeSystem: "v_scale",
-        grades: [{ grade: "V4", gradeSortValue: 65 }],
-        periods: [
-          { startDate: "2026-07-01", settings: [{ climbingDays: 1, sends: 1, sendsPerDay: 1 }] },
-        ],
-      },
-    ]);
+  it("serves canonical same-day log suggestions", async () => {
+    const detail = climbingLogEntryFixture();
+    const lookup = vi
+      .spyOn(ClimbingLogEntryAssociator.prototype, "getSuggestions")
+      .mockResolvedValue([detail]);
+    const { caller } = makeCaller();
+    expect(await caller.unattachedClimbingLogEntries({ activityId: groupId })).toEqual([detail]);
+    expect(lookup).toHaveBeenCalledWith(groupId);
   });
-
-  it("returns volume by grade rows", async () => {
-    const { caller, execute } = makeCaller([
+  it("attaches a log and invalidates every affected climbing cache", async () => {
+    const attach = vi
+      .spyOn(ClimbingLogEntryAssociator.prototype, "attachLogEntry")
+      .mockResolvedValue(undefined);
+    const { caller } = makeCaller();
+    const input = { activityId: groupId, climbingLogEntryId: climbingLogEntryFixture().id };
+    expect(await caller.attachClimbingLogEntry(input)).toEqual({ attached: true });
+    expect(attach).toHaveBeenCalledWith(input);
+    for (const procedure of [
+      "activityLogEntries",
+      "unattachedClimbingLogEntries",
+      "gradeProgression",
+      "volumeByGrade",
+      "sessionSummary",
+    ])
+      expect(invalidateByPrefix).toHaveBeenCalledWith(`user-1:climbing.${procedure}:`);
+  });
+  it("returns server-computed volume with the canonical kind", async () => {
+    const { caller } = makeCaller([
       {
-        climb_type: "route",
+        climb_kind: "route",
         grade_system: "yds",
         grade: "5.10c",
         attempts: 3,
@@ -402,13 +152,9 @@ describe("climbingRouter", () => {
         sends: 2,
       },
     ]);
-
-    const result: ClimbingVolumeByGradeRow[] = await caller.volumeByGrade({ days: 90 });
-
-    expect(execute).toHaveBeenCalledTimes(2);
-    expect(result).toEqual([
+    expect(await caller.volumeByGrade({ days: 90 })).toEqual([
       {
-        climbType: "route",
+        climbKind: "route",
         gradeSystem: "yds",
         grade: "5.10c",
         gradeSortValue: 64.5,
@@ -418,41 +164,30 @@ describe("climbingRouter", () => {
       },
     ]);
   });
-
-  it("returns session summary rows", async () => {
-    const { caller, execute } = makeCaller([
+  it("returns progression with independently recorded method and solo status", async () => {
+    const { caller } = makeCaller([
       {
-        activity_id: "activity-1",
         session_date: "2026-07-09",
-        name: "Kaya climbing at Touchstone Pacific Pipe",
-        location_name: "Touchstone Pacific Pipe",
-        attempt_count: 9,
-        sent: true,
-        climb_type: "boulder",
-        grade_system: "v_scale",
-        grade: "V4",
+        climb_kind: "route",
+        attempt_scope: "climb",
+        setting: "indoor",
+        grade_system: "yds",
+        grade: "5.10a",
+        attempt_observations: [
+          { ropeMethod: "lead", solo: true, usedAid: false, sends: 1, unknownOutcomes: 0 },
+        ],
       },
     ]);
-
-    const result: ClimbingSessionSummaryRow[] = await caller.sessionSummary({ days: 90 });
-
-    expect(execute).toHaveBeenCalledTimes(2);
-    expect(result).toEqual([
+    expect(await caller.gradeProgression({ days: 90 })).toMatchObject([
       {
-        activityId: "activity-1",
-        date: "2026-07-09",
-        name: "Kaya climbing at Touchstone Pacific Pipe",
-        locationName: "Touchstone Pacific Pipe",
-        attempts: 9,
-        sends: 1,
-        hardestBoulderGrade: "V4",
-        hardestBoulderGradeSortValue: 65,
-        hardestRouteGrade: null,
-        hardestRouteGradeSortValue: null,
+        climbKind: "route",
+        ropeMethod: "lead",
+        solo: true,
+        usedAid: false,
+        periods: [{ settings: [{ sends: 1, climbingDays: 1 }] }],
       },
     ]);
   });
-
   it("returns the Hangboarding summary contract", async () => {
     const { caller, execute } = makeCallerWithResponses([
       [

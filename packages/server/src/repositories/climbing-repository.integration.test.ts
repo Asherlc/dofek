@@ -1,676 +1,378 @@
 import type { ClimbingFilters } from "@dofek/training/climbing-filters";
-import { sql } from "drizzle-orm";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { z } from "zod";
+import { and, eq } from "drizzle-orm";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import type { SourceClimbingLogEntry } from "../../../../src/db/climbing-log-sync.ts";
+import { activity } from "../../../../src/db/schema/activity.ts";
+import { area, climb, climbingLogEntry } from "../../../../src/db/schema/climbing.ts";
 import { TEST_USER_ID } from "../../../../src/db/schema/core.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
-import { executeWithSchema } from "../lib/typed-sql.ts";
+import { ensureProvider } from "../../../../src/db/tokens.ts";
+import {
+  climbingTestDate,
+  seedClimbingActivity,
+  seedClimbingLog,
+} from "./climbing-integration-test-helpers.ts";
 import { ClimbingRepository } from "./climbing-repository.ts";
 
-const ATTACHED_ID = "b0000000-0000-4000-8000-000000000001";
-const ABSENT_ATTACHED_ID = "b0000000-0000-4000-8000-000000000004";
-const UNATTACHED_ID = "b0000000-0000-4000-8000-000000000002";
-const ABSENT_ID = "b0000000-0000-4000-8000-000000000003";
-const BOUNDARY_ATTACHED_ID = "b0000000-0000-4000-8000-000000000006";
-const BOUNDARY_UNATTACHED_ID = "b0000000-0000-4000-8000-000000000007";
-const OFFSET_ATTACHED_ID = "b0000000-0000-4000-8000-000000000008";
-const activityIdSchema = z.object({ id: z.string(), group_id: z.string() });
-const activityStartSchema = activityIdSchema.extend({ started_at: z.string() });
-const entryStateSchema = z.object({
-  activity_id: z.string().nullable(),
-  provider_absent_at: z.string().nullable(),
-  raw: z.record(z.string(), z.unknown()),
-});
-
-describe("ClimbingRepository PostgreSQL summaries", () => {
+describe("ClimbingRepository PostgreSQL scoped rock summaries", () => {
   let context: TestContext;
-  let activityId: string;
-  let activityMemberId: string;
-
-  beforeEach(async () => {
+  beforeAll(async () => {
     context = await setupTestDatabase();
-    await context.db.execute(sql`INSERT INTO fitness.provider (id, name)
-      VALUES ('climbing-summary-test', 'Climbing Summary Test'),
-             ('mountain-project', 'Mountain Project'),
-             ('openbeta', 'OpenBeta')
-      ON CONFLICT (id) DO NOTHING`);
-    const activities = await executeWithSchema(
-      context.db,
-      activityIdSchema,
-      sql`INSERT INTO fitness.activity (
-      provider_id, user_id, external_id, canonical_type, provider_type,
-      started_at, ended_at, local_time_source, timezone
-    ) VALUES (
-      'climbing-summary-test', ${TEST_USER_ID}, 'summary-session', 'climbing', 'climbing',
-      NOW() - INTERVAL '2 days', NOW() - INTERVAL '2 days' + INTERVAL '1 hour', 'unknown', NULL
-    ) RETURNING id::text AS id, group_id::text AS group_id`,
-    );
-    const [seededActivity] = activities;
-    if (!seededActivity) throw new Error("Failed to seed climbing activity");
-    activityId = seededActivity.group_id;
-    activityMemberId = seededActivity.id;
-
-    await context.db.execute(sql`INSERT INTO fitness.climbing_entry (id, user_id, provider_id, activity_id, unattached_date, external_id, climb_type, grade_system, grade, result_style, attempt_count, provider_absent_at, raw) VALUES
-        (${ATTACHED_ID}, ${TEST_USER_ID}, 'climbing-summary-test', ${activityMemberId}, NULL, 'attached-send', 'boulder', 'v_scale', 'V3', 'Send', 2, NULL, '{}'::jsonb),
-        (${ABSENT_ATTACHED_ID}, ${TEST_USER_ID}, 'mountain-project', ${activityMemberId}, NULL, 'absent-attached-send', 'boulder', 'v_scale', 'V8', 'Send', 5, NOW(), '{"retained":true}'::jsonb),
-        (${UNATTACHED_ID}, ${TEST_USER_ID}, 'mountain-project', NULL, (SELECT (started_at AT TIME ZONE 'America/Los_Angeles')::date
-        FROM fitness.activity WHERE id = ${activityMemberId}::uuid), 'unattached-send', 'boulder', 'v_scale', 'V4', 'Send', 3, NULL, '{}'::jsonb),
-        (${ABSENT_ID}, ${TEST_USER_ID}, 'mountain-project', NULL, (SELECT (started_at AT TIME ZONE 'America/Los_Angeles')::date
-        FROM fitness.activity WHERE id = ${activityMemberId}::uuid), 'absent-send', 'boulder', 'v_scale', 'V8', 'Send', 5, NOW(), '{}'::jsonb)
-`);
-  }, 60_000);
-
-  afterEach(async () => {
-    await context?.cleanup();
+    for (const provider of ["climbing-summary-test", "mountain-project", "openbeta"])
+      await ensureProvider(context.db, provider, provider, undefined, TEST_USER_ID);
   });
+  afterEach(async () => {
+    await context.db.delete(climbingLogEntry);
+    await context.db.delete(climb);
+    await context.db.update(area).set({ parentAreaId: null });
+    await context.db.delete(area);
+    await context.db.delete(activity).where(eq(activity.userId, TEST_USER_ID));
+  });
+  afterAll(async () => context.cleanup());
+  const repo = (timezone = "UTC") => new ClimbingRepository(context.db, TEST_USER_ID, timezone);
+  const route = {
+    externalId: "route",
+    name: "Corner",
+    kind: "route",
+    publishedGrades: [{ value: "5.10a", system: "yds" }],
+    areas: [{ externalId: "wall", name: "Wall" }],
+  } as const;
+  async function write(
+    source: Partial<SourceClimbingLogEntry> = {},
+    providerId = "climbing-summary-test",
+  ) {
+    return seedClimbingLog(context.db, providerId, {
+      externalId: "log",
+      climbedOn: await climbingTestDate(context.db),
+      discipline: "rock_climbing",
+      climb: route,
+      attempts: [{ scope: "climb", qualifier: "free-send" }],
+      ...source,
+    });
+  }
+  const volume = async (filters: ClimbingFilters = {}) =>
+    (await repo().getVolumeByGrade(30, filters)).map((row) => row.toDetail());
 
-  it("hydrates all source links while consolidating providers and retaining same-source laps on one activity", async () => {
-    const routeUrl = "https://www.mountainproject.com/route/105734732/swiss-cheese";
-    const uuid = "10000000-0000-4000-8000-000000000001";
-    const mpRaw = { URL: routeUrl, sourceProfileId: "110186720" };
-    const obRaw = { climb: { uuid }, user: { username: "thickles" } };
-    const path = [{ name: "Goat Rock", externalId: null, kind: null }];
-    for (const [provider, externalId, result, raw] of [
-      ["mountain-project", "swiss-cheese-1", null, mpRaw],
-      ["openbeta", "swiss-cheese-mirror", "Fell/Hung", obRaw],
-      ["mountain-project", "swiss-cheese-2", null, mpRaw],
-    ] as const) {
-      await context.db.execute(sql`INSERT INTO fitness.climbing_entry
-        (user_id, provider_id, activity_id, external_id, climb_type, grade_system, grade,
-         route_name, location_path, climb_style, result_style, attempt_count, source_name, raw)
-        VALUES (${TEST_USER_ID}, ${provider}, ${activityMemberId}::uuid, ${externalId},
-          'route', 'yds', '5.4', 'Swiss Cheese', ${JSON.stringify(path)}::jsonb,
-          'top-rope', ${result}, NULL,
-          ${provider === "openbeta" ? "OpenBeta" : "Mountain Project"}, ${JSON.stringify(raw)}::jsonb)`);
-    }
-    const repository = new ClimbingRepository(context.db, TEST_USER_ID, "UTC");
-    const entries = (await repository.getActivityEntries(activityId))
-      .map((entry) => entry.toDetail())
-      .filter((entry) => entry.routeName === "Swiss Cheese");
-    expect(entries).toHaveLength(2);
-    const merged = entries.find((entry) => entry.context.providerId === "openbeta");
-    expect(merged).toMatchObject({
-      sent: false,
-      attemptCount: null,
-      sourceName: "Mountain Project, OpenBeta",
-      sourceLinks: [
-        { providerId: "mountain-project", kind: "route", url: routeUrl },
-        {
-          providerId: "mountain-project",
-          kind: "ticks",
-          url: "https://www.mountainproject.com/user/110186720/ticks/ticks",
-        },
-        { providerId: "openbeta", kind: "route", url: `https://openbeta.io/climb/${uuid}` },
-        { providerId: "openbeta", kind: "ticks", url: "https://openbeta.io/u/thickles/ticks" },
+  it("counts one send despite equivalent and aid grade components", async () => {
+    await write({
+      climb: {
+        ...route,
+        publishedGrades: [
+          { value: "6a", system: "french" },
+          { value: "5.10a", system: "yds" },
+          { value: "A1", system: "aid" },
+        ],
+      },
+    });
+    expect(await volume()).toEqual([
+      expect.objectContaining({
+        climbKind: "route",
+        grade: "5.10a",
+        sends: 1,
+        recordedAttempts: 1,
+      }),
+    ]);
+  });
+  it("uses pitch grades only for pitch-scoped results", async () => {
+    await write({
+      climb: {
+        ...route,
+        pitches: [
+          { externalId: "pitch", number: 1, publishedGrades: [{ value: "5.12a", system: "yds" }] },
+        ],
+      },
+      attempts: [{ scope: "pitch", pitch: { number: 1 }, qualifier: "free-send" }],
+    });
+    expect(await volume()).toEqual([]);
+    expect(await volume({ attemptScope: "pitch" })).toEqual([
+      expect.objectContaining({ grade: "5.12a", sends: 1, recordedAttempts: 1 }),
+    ]);
+    expect(
+      (await repo().getGradeProgression(30, { attemptScope: "pitch" })).flatMap((row) =>
+        row.toDetail().grades.map((grade) => grade.grade),
+      ),
+    ).toEqual(["5.12a"]);
+  });
+  it("requires combined method and solo filters on the same attempt", async () => {
+    await write({
+      attempts: [
+        { scope: "climb", ropeMethod: "lead", solo: false },
+        { scope: "climb", ropeMethod: "top_rope", solo: true },
       ],
     });
-    expect(entries.find((entry) => entry.context.providerId === "mountain-project")).toMatchObject({
-      sent: null,
-      attemptCount: null,
-      sourceLinks: merged?.sourceLinks.slice(0, 2),
+    expect(await volume({ ropeMethod: "lead", solo: true })).toEqual([]);
+    expect(await volume({ ropeMethod: "lead", solo: false })).toEqual([
+      expect.objectContaining({ recordedAttempts: 1 }),
+    ]);
+  });
+  it("keeps aid completion and dabs out of free-send metrics", async () => {
+    await write({
+      attempts: [{ scope: "climb", outcome: "completed", usedAid: true, fellOrHung: false }],
     });
-    const rows = await executeWithSchema(
+    await write({
+      externalId: "dab",
+      climb: {
+        externalId: "boulder",
+        kind: "boulder",
+        publishedGrades: [{ value: "V4", system: "v_scale" }],
+      },
+      attempts: [{ scope: "climb", qualifier: "dab", usedAid: false, fellOrHung: false }],
+    });
+    expect(await volume()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ grade: "5.10a", sends: 0, recordedAttempts: 1 }),
+        expect.objectContaining({ grade: "V4", sends: 0, recordedAttempts: 1 }),
+      ]),
+    );
+  });
+  it("keeps advertised protection separate from actual protection", async () => {
+    await write({
+      climb: { ...route, routeProtection: ["sport"] },
+      attempts: [{ scope: "climb", protectionUsed: ["trad"] }],
+    });
+    expect(await volume({ routeProtection: "sport" })).toHaveLength(1);
+    expect(await volume({ protectionUsed: "sport" })).toEqual([]);
+    expect(await volume({ protectionUsed: "trad" })).toHaveLength(1);
+  });
+  it("filters known rock observations before converting grades", async () => {
+    await write({
+      externalId: "ice",
+      discipline: "ice_climbing",
+      climb: { ...route, publishedGrades: [{ value: "WI5", system: "water_ice" }] },
+    });
+    await write({
+      externalId: "aid-grade",
+      climb: {
+        externalId: "aid",
+        kind: "route",
+        publishedGrades: [{ value: "A2", system: "aid" }],
+      },
+    });
+    await write({
+      externalId: "reported-only",
+      climb: { externalId: "ungraded", kind: "route" },
+      reportedGrades: [{ value: "5.14a", system: "yds" }],
+    });
+    await write({
+      externalId: "summit",
+      discipline: "mountaineering",
+      climb: { externalId: "summit", kind: "summit" },
+    });
+    expect(await volume()).toEqual([]);
+    expect(await repo().getGradeProgression(30)).toEqual([]);
+  });
+  it("counts known rock ungraded participation without treating opinions as published difficulty", async () => {
+    const outing = await seedClimbingActivity(
       context.db,
-      z.object({
-        result_style: z.string().nullable(),
-        attempt_count: z.number().nullable(),
-        raw: z.json(),
+      "climbing-summary-test",
+      "ungraded-session",
+    );
+    await write({
+      activityId: outing.id,
+      climb: { externalId: "ungraded", kind: "route" },
+      reportedGrades: [{ value: "5.14a", system: "yds" }],
+    });
+    expect(await volume()).toEqual([]);
+    expect((await repo().getSessionSummaries(30)).map((row) => row.toDetail())).toEqual([
+      expect.objectContaining({
+        activityId: outing.groupId,
+        attempts: 1,
+        sends: 1,
+        hardestRouteGrade: null,
       }),
-      sql`SELECT result_style, attempt_count, raw FROM fitness.climbing_entry
-      WHERE external_id = 'swiss-cheese-1' AND user_id = ${TEST_USER_ID}::uuid`,
-    );
-    expect(rows).toEqual([{ result_style: null, attempt_count: null, raw: mpRaw }]);
-  });
-
-  it("counts matching provider sends once while retaining repeated sends and incomplete attempt coverage", async () => {
-    await context.db.execute(sql`INSERT INTO fitness.provider (id, name)
-      VALUES ('climbing-summary-mirror', 'Climbing mirror')`);
-    const [mirror] = await executeWithSchema(
-      context.db,
-      activityIdSchema,
-      sql`
-      INSERT INTO fitness.activity (group_id, provider_id, user_id, external_id,
-        canonical_type, provider_type, started_at, ended_at, local_time_source)
-      SELECT group_id, 'openbeta', user_id, 'mirrored-session', canonical_type,
-        provider_type, started_at, ended_at, local_time_source
-      FROM fitness.activity WHERE id = ${activityMemberId}::uuid
-      RETURNING id::text AS id, group_id::text AS group_id`,
-    );
-    if (!mirror) throw new Error("Failed to seed mirrored activity");
-    await context.db.execute(sql`UPDATE fitness.climbing_entry
-      SET route_name = 'Blue Arete',
-          location_path = '[{"name":"Gym","externalId":"source-gym","kind":"gym"}]'::jsonb
-      WHERE id = ${ATTACHED_ID}::uuid`);
-    await context.db.execute(sql`INSERT INTO fitness.climbing_entry
-      (user_id, provider_id, activity_id, external_id, climb_type, grade_system,
-       grade, result_style, attempt_count, route_name, location_path) VALUES
-      (${TEST_USER_ID}, 'climbing-summary-test', ${activityMemberId}, 'genuine-repeat',
-       'boulder', 'v_scale', 'V3', 'Send', 2, 'Blue Arete',
-       '[{"name":"Gym","externalId":"source-gym","kind":"gym"}]'::jsonb),
-      (${TEST_USER_ID}, 'climbing-summary-mirror', ${mirror.id}, 'mirrored-send',
-       'boulder', 'v_scale', 'V3', 'Send', NULL, 'Blue Arete',
-       '[{"name":"Gym","externalId":"mirror-gym","kind":"gym"}]'::jsonb)`);
-
-    const repository = new ClimbingRepository(context.db, TEST_USER_ID, "UTC");
-    const lanes = (await repository.getGradeProgression(30, { setting: "indoor" })).map((lane) =>
-      lane.toDetail(),
-    );
-    expect(lanes).toMatchObject([
-      {
-        style: "boulder",
-        periods: [
-          {
-            settings: [
-              {
-                climbingDays: 1,
-                sends: 2,
-                sendsPerDay: 2,
-                segments: [{ grade: "V3", sends: 2 }],
-              },
-            ],
-          },
-        ],
-      },
-    ]);
-    expect(
-      (await repository.getVolumeByGrade(30, { setting: "indoor" })).map((row) => row.toDetail()),
-    ).toMatchObject([{ grade: "V3", sends: 2, attempts: 4, recordedAttempts: 4 }]);
-    expect(
-      (await repository.getSessionSummaries(30, { setting: "indoor" })).map((row) =>
-        row.toDetail(),
-      ),
-    ).toMatchObject([{ activityId, sends: 2, attempts: 4 }]);
-
-    await context.db.execute(sql`UPDATE fitness.climbing_entry SET attempt_count = 4
-      WHERE external_id = 'mirrored-send' AND user_id = ${TEST_USER_ID}::uuid`);
-    expect(
-      (await repository.getVolumeByGrade(30, { setting: "indoor" })).map((row) => row.toDetail()),
-    ).toMatchObject([{ grade: "V3", sends: 2, attempts: null, recordedAttempts: 2 }]);
-  });
-
-  it("keeps unnamed climbs and distinct style, setting, and angle contexts separate across providers", async () => {
-    await context.db.execute(sql`INSERT INTO fitness.provider (id, name)
-      VALUES ('climbing-summary-mirror', 'Climbing mirror')`);
-    const [mirror] = await executeWithSchema(
-      context.db,
-      activityIdSchema,
-      sql`
-      INSERT INTO fitness.activity (group_id, provider_id, user_id, external_id,
-        canonical_type, provider_type, started_at, ended_at, local_time_source)
-      SELECT group_id, 'climbing-summary-mirror', user_id, 'mirrored-session', canonical_type,
-        provider_type, started_at, ended_at, local_time_source
-      FROM fitness.activity WHERE id = ${activityMemberId}::uuid
-      RETURNING id::text AS id, group_id::text AS group_id`,
-    );
-    if (!mirror) throw new Error("Failed to seed mirrored activity");
-    await context.db.execute(sql`INSERT INTO fitness.climbing_entry
-      (user_id, provider_id, activity_id, external_id, climb_type, grade_system, grade,
-       climb_style, result_style, wall_angle, route_name, location_path) VALUES
-      (${TEST_USER_ID}, 'climbing-summary-test', ${activityMemberId}, 'follow-a',
-       'route', 'yds', '5.9', 'follow', 'Send', '{"value":20,"unit":"degrees"}'::jsonb,
-       'Arete', '[{"name":"Gym","externalId":null,"kind":"gym"}]'::jsonb),
-      (${TEST_USER_ID}, 'climbing-summary-mirror', ${mirror.id}, 'follow-b',
-       'route', 'yds', '5.9', 'follow', 'Send', '{"value":20,"unit":null}'::jsonb,
-       'Arete', '[{"name":"Gym","externalId":null,"kind":"gym"}]'::jsonb),
-      (${TEST_USER_ID}, 'climbing-summary-mirror', ${mirror.id}, 'follow-outdoor',
-       'route', 'yds', '5.9', 'follow', 'Send', '{"value":20,"unit":"degrees"}'::jsonb,
-       'Arete', '[{"name":"Gym","externalId":null,"kind":"destination"}]'::jsonb),
-      (${TEST_USER_ID}, 'climbing-summary-mirror', ${mirror.id}, 'solo-b',
-       'route', 'yds', '5.9', 'solo', 'Send', '{"value":20,"unit":"degrees"}'::jsonb,
-       'Arete', '[{"name":"Gym","externalId":null,"kind":"gym"}]'::jsonb),
-      (${TEST_USER_ID}, 'climbing-summary-mirror', ${mirror.id}, 'unnamed',
-       'boulder', 'v_scale', 'V3', NULL, 'Send', NULL, NULL, '[]'::jsonb)`);
-    const lanes = (
-      await new ClimbingRepository(context.db, TEST_USER_ID, "UTC").getGradeProgression(30)
-    ).map((lane) => lane.toDetail());
-    expect(lanes.find((lane) => lane.style === "boulder")?.periods[0]?.settings).toMatchObject([
-      { setting: "outdoor", sends: 1 },
-      { setting: "unknown", sends: 2 },
-    ]);
-    expect(lanes.find((lane) => lane.style === "follow")?.periods[0]?.settings).toMatchObject([
-      { setting: "indoor", sends: 2 },
-      { setting: "outdoor", sends: 1 },
-    ]);
-    expect(lanes.find((lane) => lane.style === "solo")?.periods[0]?.settings).toMatchObject([
-      { setting: "indoor", sends: 1 },
     ]);
   });
-
-  it("separates grade stacks by style and setting and retains failed-only recorded days", async () => {
-    await context.db.execute(sql`UPDATE fitness.climbing_entry
-      SET location_path = '[{"name":"Gym","externalId":null,"kind":"gym"}]'::jsonb
-      WHERE id = ${ATTACHED_ID}::uuid`);
-    await context.db.execute(sql`INSERT INTO fitness.climbing_attempt
-      (climbing_entry_id, attempt_index, outcome, failure_reason)
-      VALUES (${ATTACHED_ID}::uuid, 1, 'failed', 'fell')`);
-    await context.db.execute(sql`INSERT INTO fitness.climbing_entry
-      (user_id, provider_id, activity_id, external_id, climb_type, grade_system, grade,
-       climb_style, result_style, location_path) VALUES
-      (${TEST_USER_ID}, 'climbing-summary-test', ${activityMemberId}, 'lane-lead-1',
-       'route', 'yds', '5.10a', 'lead', 'Send', '[{"name":"Gym","externalId":null,"kind":"gym"}]'::jsonb),
-      (${TEST_USER_ID}, 'climbing-summary-test', ${activityMemberId}, 'lane-lead-2',
-       'route', 'yds', '5.10a', 'lead', 'Send', '[{"name":"Gym","externalId":null,"kind":"gym"}]'::jsonb),
-      (${TEST_USER_ID}, 'climbing-summary-test', ${activityMemberId}, 'lane-top-rope',
-       'route', 'yds', '5.11a', 'top-rope', 'Send', '[{"name":"Gym","externalId":null,"kind":"gym"}]'::jsonb)`);
-
-    const repository = new ClimbingRepository(context.db, TEST_USER_ID, "America/Los_Angeles");
-    const lanes = (await repository.getGradeProgression(30)).map((row) => row.toDetail());
-    expect(lanes).toMatchObject([
-      {
-        style: "boulder",
-        settings: ["indoor", "outdoor"],
-        periods: [
-          {
-            settings: [
-              { setting: "indoor", climbingDays: 1, sends: 0, sendsPerDay: 0 },
-              { setting: "outdoor", climbingDays: 1, sends: 1, sendsPerDay: 1 },
-            ],
-          },
-        ],
-      },
-      {
-        style: "top-rope",
-        periods: [
-          {
-            settings: [
-              {
-                climbingDays: 1,
-                sends: 1,
-                segments: [{ grade: "5.11a", sends: 1 }],
-              },
-            ],
-          },
-        ],
-      },
-      {
-        style: "lead",
-        periods: [
-          {
-            settings: [
-              {
-                climbingDays: 1,
-                sends: 2,
-                segments: [{ grade: "5.10a", sends: 2, sendsPerDay: 2 }],
-              },
-            ],
-          },
-        ],
-      },
-    ]);
-    const focused = (
-      await repository.getGradeProgression(30, { style: "lead", setting: "indoor" })
-    ).map((row) => row.toDetail());
-    expect(focused).toMatchObject([
-      {
-        style: "lead",
-        settings: ["indoor"],
-        periods: [
-          {
-            settings: [
-              {
-                climbingDays: 1,
-                sends: 2,
-                sendsPerDay: 2,
-              },
-            ],
-          },
-        ],
-      },
+  it("counts each recorded attempt once and preserves multiple completed attempts", async () => {
+    await write({
+      attempts: [
+        { scope: "climb", qualifier: "free-send" },
+        { scope: "climb", qualifier: "free-send" },
+        { scope: "climb", outcome: "failed" },
+      ],
+    });
+    expect(await volume()).toEqual([
+      expect.objectContaining({ attempts: 3, recordedAttempts: 3, sends: 2 }),
     ]);
   });
-
-  it("applies independent style, protection, and setting selections to actual database entries", async () => {
-    await context.db.execute(sql`UPDATE fitness.climbing_entry
-      SET climb_type = 'route', grade_system = 'yds', grade = '5.9',
-          climb_style = 'lead', route_protection = ARRAY['sport'],
-          location_path = '[{"name":"Gym","externalId":null,"kind":"gym"}]'::jsonb
-      WHERE id = ${ATTACHED_ID}::uuid`);
-    await context.db.execute(sql`INSERT INTO fitness.climbing_entry
-      (user_id, provider_id, unattached_date, external_id, climb_type, grade_system, grade,
-       result_style, attempt_count, route_protection, raw)
-      VALUES (${TEST_USER_ID}, 'climbing-summary-test', CURRENT_DATE - 2, 'unknown-method-route',
-              'route', 'yds', '5.10a', 'Send', 1, ARRAY['trad'], '{}'::jsonb)`);
-    const repository = new ClimbingRepository(context.db, TEST_USER_ID, "America/Los_Angeles");
-    const cases: Array<{ filters: ClimbingFilters; grades: string[] }> = [
-      { filters: {}, grades: ["5.9", "5.10a", "V4"] },
-      { filters: { style: "boulder" }, grades: ["V4"] },
-      { filters: { style: "route" }, grades: ["5.9", "5.10a"] },
-      { filters: { style: "unknown" }, grades: ["5.10a"] },
-      { filters: { style: "lead" }, grades: ["5.9"] },
-      { filters: { style: "top-rope" }, grades: [] },
-      { filters: { protection: "unknown" }, grades: ["V4"] },
-      { filters: { protection: "sport" }, grades: ["5.9"] },
-      { filters: { protection: "trad" }, grades: ["5.10a"] },
-      { filters: { setting: "indoor" }, grades: ["5.9"] },
-      { filters: { setting: "outdoor" }, grades: ["V4"] },
-      { filters: { setting: "unknown" }, grades: ["5.10a"] },
-      { filters: { style: "lead", protection: "sport", setting: "indoor" }, grades: ["5.9"] },
-      { filters: { style: "route", protection: "trad", setting: "outdoor" }, grades: [] },
-    ];
-    for (const { filters, grades } of cases) {
-      const rows = await repository.getVolumeByGrade(30, filters);
-      expect(rows.map((row) => row.toDetail().grade).sort(), JSON.stringify(filters)).toEqual(
-        grades.toSorted(),
-      );
-    }
+  it("retains one unknown attempt when the provider gives no total", async () => {
+    await write({ attempts: [{ scope: "climb" }] });
+    expect(await volume()).toEqual([
+      expect.objectContaining({ attempts: 1, recordedAttempts: 1, sends: 0 }),
+    ]);
+    const [lane] = await repo().getGradeProgression(30);
+    expect(lane?.toDetail().periods[0]?.settings[0]).toMatchObject({
+      climbingDays: 1,
+      unknownOutcomes: 1,
+      sends: 0,
+    });
   });
-
-  it.each(["mountain-project", "openbeta"])(
-    "treats existing %s entries without location metadata as outdoor in every summary",
-    async (providerId) => {
-      await context.db.execute(sql`UPDATE fitness.climbing_entry
-        SET provider_id = ${providerId}, location_path = '[]'::jsonb
-        WHERE id IN (${ATTACHED_ID}::uuid, ${UNATTACHED_ID}::uuid)`);
-      const repository = new ClimbingRepository(context.db, TEST_USER_ID, "America/Los_Angeles");
-      expect(
-        (await repository.getVolumeByGrade(30, { setting: "outdoor" })).map((row) =>
-          row.toDetail(),
-        ),
-      ).toEqual([
-        expect.objectContaining({ grade: "V3", attempts: 2, sends: 1 }),
+  it("retains attached and standalone rock metrics", async () => {
+    const outing = await seedClimbingActivity(context.db, "climbing-summary-test", "outing");
+    await write({ activityId: outing.id, reportedAttemptCounts: [{ scope: "climb", count: 2 }] });
+    await write({
+      externalId: "standalone",
+      climb: {
+        externalId: "other",
+        kind: "boulder",
+        publishedGrades: [{ value: "V4", system: "v_scale" }],
+      },
+      reportedAttemptCounts: [{ scope: "climb", count: 3 }],
+    });
+    expect(await volume()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ grade: "5.10a", attempts: 2, sends: 1 }),
         expect.objectContaining({ grade: "V4", attempts: 3, sends: 1 }),
-      ]);
-      expect(
-        (await repository.getGradeProgression(30, { setting: "outdoor" })).map((row) =>
-          row.toDetail(),
-        ),
-      ).toEqual([
-        expect.objectContaining({
-          grades: [
-            expect.objectContaining({ grade: "V3" }),
-            expect.objectContaining({ grade: "V4" }),
-          ],
-          periods: [
-            expect.objectContaining({
-              settings: [expect.objectContaining({ climbingDays: 1, sends: 2, sendsPerDay: 2 })],
-            }),
-          ],
-        }),
-      ]);
-      expect(
-        (await repository.getSessionSummaries(30, { setting: "outdoor" })).map((row) =>
-          row.toDetail(),
-        ),
-      ).toEqual([expect.objectContaining({ attempts: 2, sends: 1 })]);
-      for (const setting of ["indoor", "unknown"] as const) {
-        expect(await repository.getVolumeByGrade(30, { setting })).toEqual([]);
-        expect(await repository.getGradeProgression(30, { setting })).toEqual([]);
-        expect(await repository.getSessionSummaries(30, { setting })).toEqual([]);
-      }
+      ]),
+    );
+    expect((await repo().getSessionSummaries(30)).map((row) => row.toDetail())).toEqual([
+      expect.objectContaining({ attempts: 2, sends: 1, hardestRouteGrade: "5.10a" }),
+    ]);
+  });
+  it("consolidates exact provider observations while preserving same-provider laps", async () => {
+    const outing = await seedClimbingActivity(context.db, "climbing-summary-test", "outing");
+    await write({ activityId: outing.id, externalId: "mp-first" }, "mountain-project");
+    await write({ activityId: outing.id, externalId: "ob-first" }, "openbeta");
+    await write({ activityId: outing.id, externalId: "mp-second" }, "mountain-project");
+    expect(await volume()).toEqual([expect.objectContaining({ recordedAttempts: 2, sends: 2 })]);
+  });
+  it("retains conflicting provider attempt totals as an unknown canonical total", async () => {
+    const outing = await seedClimbingActivity(context.db, "climbing-summary-test", "outing");
+    await write(
+      { activityId: outing.id, reportedAttemptCounts: [{ scope: "climb", count: 2 }] },
+      "mountain-project",
+    );
+    await write(
+      { activityId: outing.id, reportedAttemptCounts: [{ scope: "climb", count: 4 }] },
+      "openbeta",
+    );
+    expect(await volume()).toEqual([
+      expect.objectContaining({ attempts: null, recordedAttempts: null, sends: 1 }),
+    ]);
+  });
+  it("preserves standalone source observations without cross-provider merging", async () => {
+    await write({}, "mountain-project");
+    await write({}, "openbeta");
+    expect(await volume()).toEqual([expect.objectContaining({ recordedAttempts: 2, sends: 2 })]);
+  });
+  it.each(["mountain-project", "openbeta"])(
+    "retains unknown %s setting without an inferred provider default",
+    async (provider) => {
+      await write({}, provider);
+      expect(await volume({ setting: "outdoor" })).toEqual([]);
+      expect(await volume({ setting: "unknown" })).toHaveLength(1);
     },
   );
-
-  it("filters attached and unattached climbs before computing metrics, retaining unknown settings", async () => {
-    await context.db.execute(sql`UPDATE fitness.climbing_entry
-      SET climb_type = 'route', grade_system = 'yds', grade = CASE WHEN id = ${ATTACHED_ID}::uuid THEN '5.9' ELSE '5.10a' END,
-          climb_style = 'lead', route_protection = ARRAY['sport', 'trad'],
-          location_path = '[{"name":"Crag","externalId":null,"kind":"destination"}]'::jsonb
-      WHERE id IN (${ATTACHED_ID}::uuid, ${UNATTACHED_ID}::uuid)`);
-    const repository = new ClimbingRepository(context.db, TEST_USER_ID, "America/Los_Angeles");
-    const filters = { style: "lead", protection: "trad", setting: "outdoor" } as const;
-    expect((await repository.getVolumeByGrade(30, filters)).map((row) => row.toDetail())).toEqual([
-      expect.objectContaining({ grade: "5.9", attempts: 2, sends: 1 }),
-      expect.objectContaining({ grade: "5.10a", attempts: 3, sends: 1 }),
-    ]);
-    expect(await repository.getGradeProgression(30, { protection: "unknown" })).toEqual([]);
-    expect((await repository.getSessionSummaries(30, filters))[0]?.toDetail()).toMatchObject({
-      attempts: 2,
+  it("uses verified settings for both attached and standalone filters", async () => {
+    const outing = await seedClimbingActivity(context.db, "climbing-summary-test", "outing");
+    await write({ activityId: outing.id, climb: { ...route, setting: "indoor" } });
+    await write({
+      externalId: "outdoor",
+      climb: { ...route, externalId: "outdoor-route", setting: "outdoor" },
     });
-    expect(await repository.getSessionSummaries(30, { style: "top-rope" })).toEqual([]);
-    await context.db.execute(sql`UPDATE fitness.climbing_entry SET location_path = '[]'::jsonb
-      WHERE id = ${ATTACHED_ID}::uuid`);
-    expect(
-      (await repository.getVolumeByGrade(30, { setting: "unknown" })).map((row) => row.toDetail()),
-    ).toEqual([expect.objectContaining({ grade: "5.9" })]);
-    expect((await repository.getVolumeByGrade(30, filters)).map((row) => row.toDetail())).toEqual([
-      expect.objectContaining({ grade: "5.10a" }),
+    expect(await volume({ setting: "indoor" })).toEqual([
+      expect.objectContaining({ recordedAttempts: 1 }),
     ]);
+    expect(await volume({ setting: "outdoor" })).toEqual([
+      expect.objectContaining({ recordedAttempts: 1 }),
+    ]);
+    expect(await repo().getSessionSummaries(30, { setting: "outdoor" })).toEqual([]);
   });
-
-  it("serves a full source context independently of the associated activity provider", async () => {
-    const locationPath = ["Country", "State", "Region", "Park", "Crag", "Wall"].map(
-      (name, index) => ({ name, externalId: `area-${index}`, kind: null }),
-    );
-    await context.db.execute(sql`UPDATE fitness.climbing_entry
-      SET provider_id = 'mountain-project', location_path = ${JSON.stringify(locationPath)}::jsonb,
-          climb_style = 'top-rope', result_style = 'Frenchfree', attempt_count = NULL,
-          wall_angle = '{"value":-20,"unit":null}'::jsonb
-      WHERE id = ${ATTACHED_ID}::uuid`);
-    const [detail] = await new ClimbingRepository(
-      context.db,
-      TEST_USER_ID,
-      "UTC",
-    ).getActivityEntries(activityId);
-    expect(detail?.toDetail()).toMatchObject({
-      sent: null,
-      attemptCount: null,
-      lead: false,
-      wallAngleDegrees: null,
-      context: {
-        providerId: "mountain-project",
-        locationPath,
-        board: null,
-        wallAngle: { value: -20, unit: null },
-        climbStyle: "top-rope",
-        resultStyle: "Frenchfree",
-      },
+  it("excludes absent source logs and restores them with unchanged attempts", async () => {
+    const outing = await seedClimbingActivity(context.db, "climbing-summary-test", "outing");
+    const id = await write({ activityId: outing.id, raw: { retained: true } });
+    await context.db
+      .update(climbingLogEntry)
+      .set({ providerAbsentAt: new Date() })
+      .where(eq(climbingLogEntry.id, id));
+    expect(await volume()).toEqual([]);
+    expect(await repo().getActivityLogEntries(outing.groupId)).toEqual([]);
+    await context.db
+      .update(climbingLogEntry)
+      .set({ providerAbsentAt: null })
+      .where(eq(climbingLogEntry.id, id));
+    expect(await volume()).toEqual([expect.objectContaining({ recordedAttempts: 1, sends: 1 })]);
+    expect((await repo().getActivityLogEntries(outing.groupId))[0]?.toDetail()).toMatchObject({
+      raw: { retained: true },
+      recordedClimbAttemptCount: 1,
     });
   });
-
-  it("excludes absent attached ticks from active reads and restores them when the provider returns", async () => {
-    const repository = new ClimbingRepository(context.db, TEST_USER_ID, "America/Los_Angeles");
-
-    const progression = await repository.getGradeProgression(30);
-    expect(progression.map((row) => row.toDetail())).toEqual([
-      expect.objectContaining({
-        climbType: "boulder",
-        grades: [
-          expect.objectContaining({ grade: "V3" }),
-          expect.objectContaining({ grade: "V4" }),
-        ],
-      }),
-    ]);
-
-    const volume = await repository.getVolumeByGrade(30);
-    expect(volume.map((row) => row.toDetail())).toEqual([
-      expect.objectContaining({ climbType: "boulder", grade: "V3", attempts: 2, sends: 1 }),
-      expect.objectContaining({ climbType: "boulder", grade: "V4", attempts: 3, sends: 1 }),
-    ]);
-
-    const sessions = await repository.getSessionSummaries(30);
-    expect(sessions.map((row) => row.toDetail())).toHaveLength(1);
-    expect(sessions[0]?.toDetail()).toMatchObject({ attempts: 2, sends: 1 });
-    const details = await repository.getActivityEntries(activityId);
-    expect(details.map((row) => row.toDetail().id)).toEqual([ATTACHED_ID]);
-
-    const retainedRows = await executeWithSchema(
+  it("uses strict calendar-day boundaries and does not invent dates for standalone logs", async () => {
+    const boundaryDate = await climbingTestDate(context.db, 30);
+    const outing = await seedClimbingActivity(
       context.db,
-      entryStateSchema,
-      sql`SELECT activity_id::text AS activity_id, provider_absent_at::text AS provider_absent_at, raw
-          FROM fitness.climbing_entry WHERE id = ${ABSENT_ATTACHED_ID}::uuid`,
+      "climbing-summary-test",
+      "boundary",
+      new Date(`${boundaryDate}T12:00:00Z`),
     );
-    expect(retainedRows).toEqual([
-      expect.objectContaining({
-        activity_id: activityMemberId,
-        provider_absent_at: expect.any(String),
-        raw: { retained: true },
-      }),
-    ]);
-
-    await context.db.execute(sql`UPDATE fitness.climbing_entry
-      SET provider_absent_at = NULL WHERE id = ${ABSENT_ATTACHED_ID}::uuid`);
-
-    expect((await repository.getGradeProgression(30)).map((row) => row.toDetail())).toEqual([
-      expect.objectContaining({
-        climbType: "boulder",
-        grades: expect.arrayContaining([expect.objectContaining({ grade: "V8" })]),
-      }),
-    ]);
-    expect((await repository.getVolumeByGrade(30)).map((row) => row.toDetail())).toEqual([
-      expect.objectContaining({ grade: "V3", attempts: 2, sends: 1 }),
-      expect.objectContaining({ grade: "V4", attempts: 3, sends: 1 }),
-      expect.objectContaining({ grade: "V8", attempts: 5, sends: 1 }),
-    ]);
-    expect((await repository.getSessionSummaries(30))[0]?.toDetail()).toMatchObject({
-      attempts: 7,
-      sends: 2,
-    });
-    expect(
-      (await repository.getActivityEntries(activityId)).map((row) => row.toDetail().id),
-    ).toEqual([ABSENT_ATTACHED_ID, ATTACHED_ID]);
+    await write({ activityId: outing.id, climbedOn: boundaryDate });
+    await write({ externalId: "boundary-standalone", climbedOn: boundaryDate });
+    await write({ externalId: "undated", climbedOn: null });
+    expect(await volume()).toEqual([]);
+    expect(await repo().getGradeProgression(30)).toEqual([]);
+    expect(await repo().getSessionSummaries(30)).toEqual([]);
   });
-
-  it("uses the same strict calendar-day boundary for attached and unattached entries", async () => {
-    const timezone = "America/Los_Angeles";
-    const boundaryDate = sql`(NOW() AT TIME ZONE ${timezone})::date - 30`;
-    const [boundaryActivity] = await executeWithSchema(
+  it("uses source-resolved activity dates independently of the log source date", async () => {
+    const date = await climbingTestDate(context.db);
+    const outing = await seedClimbingActivity(
       context.db,
-      activityIdSchema,
-      sql`INSERT INTO fitness.activity (
-        provider_id, user_id, external_id, canonical_type, provider_type,
-        started_at, ended_at, local_time_source, timezone
-      ) VALUES (
-        'climbing-summary-test', ${TEST_USER_ID}, 'summary-boundary', 'climbing', 'climbing',
-        (((NOW() AT TIME ZONE ${timezone})::date - 30)::timestamp + INTERVAL '12 hours') AT TIME ZONE ${timezone},
-        (((NOW() AT TIME ZONE ${timezone})::date - 30)::timestamp + INTERVAL '13 hours') AT TIME ZONE ${timezone},
-        'unknown', NULL
-      ) RETURNING id::text AS id, group_id::text AS group_id`,
+      "climbing-summary-test",
+      "offset",
+      new Date(`${date}T23:30:00Z`),
     );
-    if (!boundaryActivity) throw new Error("Failed to seed boundary climbing activity");
-    await context.db.execute(sql`INSERT INTO fitness.climbing_entry (id, user_id, provider_id, activity_id, unattached_date, external_id, climb_type, grade_system, grade, result_style, attempt_count, provider_absent_at, raw) VALUES
-        (${BOUNDARY_ATTACHED_ID}, ${TEST_USER_ID}, 'climbing-summary-test', ${boundaryActivity.id}, NULL, 'boundary-attached', 'boulder', 'v_scale', 'V6', 'Send', 1, NULL, '{}'::jsonb),
-        (${BOUNDARY_UNATTACHED_ID}, ${TEST_USER_ID}, 'mountain-project', NULL, ${boundaryDate}, 'boundary-unattached', 'boulder', 'v_scale', 'V7', 'Send', 1, NULL, '{}'::jsonb)
-`);
-
-    const repository = new ClimbingRepository(context.db, TEST_USER_ID, timezone);
-    expect(
-      (await repository.getGradeProgression(30)).flatMap((row) =>
-        row.toDetail().grades.map(({ grade }) => grade),
-      ),
-    ).not.toEqual(expect.arrayContaining(["V6", "V7"]));
-    expect((await repository.getVolumeByGrade(30)).map((row) => row.toDetail().grade)).not.toEqual(
-      expect.arrayContaining(["V6", "V7"]),
-    );
-  });
-
-  it("uses the source-resolved activity date in climbing summaries", async () => {
-    const [offsetActivity] = await executeWithSchema(
-      context.db,
-      activityStartSchema,
-      sql`INSERT INTO fitness.activity (
-        provider_id, user_id, external_id, canonical_type, provider_type,
-        started_at, ended_at, local_time_source, start_utc_offset_minutes,
-        end_utc_offset_minutes, timezone
-      ) VALUES (
-        'climbing-summary-test', ${TEST_USER_ID}, 'summary-offset-date', 'climbing', 'climbing',
-        (date_trunc('month', NOW() AT TIME ZONE 'UTC') + INTERVAL '1 hour') AT TIME ZONE 'UTC',
-        (date_trunc('month', NOW() AT TIME ZONE 'UTC') + INTERVAL '2 hours') AT TIME ZONE 'UTC',
-        'provider_offset', 120, 120, NULL
-      ) RETURNING id::text AS id, group_id::text AS group_id, started_at::text AS started_at`,
-    );
-    if (!offsetActivity) throw new Error("Failed to seed source-offset climbing activity");
-    const expectedDate = new Date(Date.parse(offsetActivity.started_at) + 120 * 60 * 1000)
+    await context.db
+      .update(activity)
+      .set({
+        localTimeSource: "provider_offset",
+        startUtcOffsetMinutes: 120,
+        endUtcOffsetMinutes: 120,
+      })
+      .where(and(eq(activity.id, outing.id), eq(activity.userId, TEST_USER_ID)));
+    await write({ activityId: outing.id, climbedOn: "2020-01-01" });
+    const expectedDate = new Date(Date.parse(`${date}T23:30:00Z`) + 120 * 60000)
       .toISOString()
       .slice(0, 10);
-    await context.db.execute(sql`INSERT INTO fitness.climbing_entry (id, user_id, provider_id, activity_id, external_id, climb_type, grade_system, grade, result_style, attempt_count, raw) VALUES
-        (${OFFSET_ATTACHED_ID}, ${TEST_USER_ID}, 'climbing-summary-test', ${offsetActivity.id}, 'summary-offset-entry', 'boulder', 'v_scale', 'V9', 'Send', 1, '{}'::jsonb)
-`);
-
-    const repository = new ClimbingRepository(context.db, TEST_USER_ID, "America/Los_Angeles");
-    expect((await repository.getGradeProgression(90)).map((row) => row.toDetail())).toContainEqual(
-      expect.objectContaining({
-        periods: expect.arrayContaining([
-          expect.objectContaining({
-            startDate: `${expectedDate.slice(0, 7)}-01`,
-            settings: expect.arrayContaining([
-              expect.objectContaining({
-                segments: expect.arrayContaining([
-                  expect.objectContaining({ grade: "V9", sends: 1 }),
-                ]),
-              }),
-            ]),
-          }),
-        ]),
-      }),
-    );
-    expect((await repository.getSessionSummaries(90)).map((row) => row.toDetail())).toContainEqual(
-      expect.objectContaining({ activityId: offsetActivity.group_id, date: expectedDate }),
-    );
+    expect(
+      (await repo("America/Los_Angeles").getSessionSummaries(30))[0]?.toDetail(),
+    ).toMatchObject({ date: expectedDate, attempts: 1 });
   });
-
-  it("retains known sends and unsuccessful climbs when attempt counts are unknown", async () => {
-    await context.db.execute(sql`DELETE FROM fitness.activity
-      WHERE user_id = ${TEST_USER_ID} AND provider_id = 'climbing-summary-test' AND external_id = 'unknown-count-session'`);
-    const [activity] = await executeWithSchema(
+  it("returns exact-range attached rock observations with one grade and scoped counts", async () => {
+    const date = await climbingTestDate(context.db);
+    const outing = await seedClimbingActivity(
       context.db,
-      activityIdSchema,
-      sql`
-      INSERT INTO fitness.activity (
-        provider_id, user_id, external_id, canonical_type, provider_type,
-        started_at, ended_at, local_time_source
-      ) VALUES (
-        'climbing-summary-test', ${TEST_USER_ID}, 'unknown-count-session', 'climbing', 'climbing',
-        NOW() - INTERVAL '1 day', NOW() - INTERVAL '1 day' + INTERVAL '1 hour', 'unknown'
-      ) RETURNING id::text AS id, group_id::text AS group_id`,
+      "climbing-summary-test",
+      "exact-range",
+      new Date(`${date}T12:00:00Z`),
     );
-    if (!activity) throw new Error("Failed to seed unknown-count climbing activity");
-    await context.db.execute(sql`INSERT INTO fitness.climbing_entry (user_id, provider_id, activity_id, external_id, climb_type, grade_system, grade, result_style, attempt_count) VALUES
-        (${TEST_USER_ID}, 'climbing-summary-test', ${activity.id}, 'unknown-count-send', 'boulder', 'v_scale', 'V5', 'Send', NULL),
-        (${TEST_USER_ID}, 'climbing-summary-test', ${activity.id}, 'unknown-count-attempt', 'boulder', 'v_scale', 'V5', 'Not sent', NULL),
-        (${TEST_USER_ID}, 'climbing-summary-test', ${activity.id}, 'known-count-attempt', 'boulder', 'font', '6C', 'Not sent', 3),
-        (${TEST_USER_ID}, 'climbing-summary-test', ${activity.id}, 'unknown-outcome', 'route', 'yds', '5.12a', NULL, 2)
-`);
-
-    const repository = new ClimbingRepository(context.db, TEST_USER_ID, "America/Los_Angeles");
-    expect(
-      (await repository.getActivityEntries(activity.group_id)).map((entry) => entry.toDetail()),
-    ).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ sent: true, attemptCount: null, grade: "V5" }),
-        expect.objectContaining({ sent: false, attemptCount: null, grade: "V5" }),
-        expect.objectContaining({ sent: null, attemptCount: 2, climbType: "route" }),
-      ]),
-    );
-    expect((await repository.getVolumeByGrade(30)).map((entry) => entry.toDetail())).toContainEqual(
-      expect.objectContaining({ grade: "V5", attempts: null, sends: 1 }),
-    );
-    expect(
-      (await repository.getSessionSummaries(30)).map((entry) => entry.toDetail()),
-    ).toContainEqual(
+    await write({
+      activityId: outing.id,
+      climb: {
+        ...route,
+        publishedGrades: [
+          { value: "5.10a", system: "yds" },
+          { value: "6a", system: "french" },
+        ],
+        pitches: [
+          { externalId: "pitch", number: 1, publishedGrades: [{ value: "5.12a", system: "yds" }] },
+        ],
+      },
+      attempts: [
+        { scope: "climb", qualifier: "free-send" },
+        { scope: "pitch", pitch: { number: 1 }, qualifier: "free-send" },
+      ],
+      reportedAttemptCounts: [{ scope: "climb", count: 3 }],
+    });
+    await write({ externalId: "standalone" });
+    expect(await repo().getAttachedRockObservations(date, date)).toEqual([
       expect.objectContaining({
-        activityId: activity.group_id,
-        attempts: null,
+        activityId: outing.groupId,
+        climbKind: "route",
+        attemptScope: "climb",
+        recordedAttempts: 3,
         sends: 1,
-        hardestBoulderGrade: "V5",
+        observedOutcomes: 1,
+        displayGrade: { grade: "5.10a", gradeSystem: "yds", gradeSortValue: expect.any(Number) },
       }),
-    );
-    expect(
-      (await repository.getGradeProgression(30)).map((entry) => entry.toDetail()),
-    ).toContainEqual(
-      expect.objectContaining({
-        grades: expect.arrayContaining([expect.objectContaining({ grade: "V5" })]),
-      }),
-    );
-  });
-
-  it("returns recorded attempt subtotals independently of complete totals and combines converted grades", async () => {
-    await context.db.execute(sql`INSERT INTO fitness.climbing_entry
-      (user_id, provider_id, activity_id, external_id, climb_type, grade_system, grade, result_style, attempt_count) VALUES
-      (${TEST_USER_ID}, 'climbing-summary-test', ${activityMemberId}, 'mixed-known', 'boulder', 'v_scale', 'V5', 'Not sent', 4),
-      (${TEST_USER_ID}, 'climbing-summary-test', ${activityMemberId}, 'mixed-unknown', 'boulder', 'v_scale', 'V5', 'Send', NULL),
-      (${TEST_USER_ID}, 'climbing-summary-test', ${activityMemberId}, 'mixed-converted', 'boulder', 'font', '6C', 'Not sent', 3),
-      (${TEST_USER_ID}, 'climbing-summary-test', ${activityMemberId}, 'all-unknown', 'boulder', 'v_scale', 'V6', 'Send', NULL),
-      (${TEST_USER_ID}, 'climbing-summary-test', ${activityMemberId}, 'all-unknown-converted', 'boulder', 'font', '7A', 'Not sent', NULL),
-      (${TEST_USER_ID}, 'climbing-summary-test', ${activityMemberId}, 'all-known', 'boulder', 'v_scale', 'V7', 'Send', 2),
-      (${TEST_USER_ID}, 'climbing-summary-test', ${activityMemberId}, 'all-known-converted', 'boulder', 'font', '7A+', 'Not sent', 3)`);
-
-    const repository = new ClimbingRepository(context.db, TEST_USER_ID, "America/Los_Angeles");
-    expect((await repository.getVolumeByGrade(30)).map((row) => row.toDetail())).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ grade: "V5", attempts: null, recordedAttempts: 7 }),
-        expect.objectContaining({ grade: "V6", attempts: null, recordedAttempts: null }),
-        expect.objectContaining({ grade: "V7", attempts: 5, recordedAttempts: 5 }),
-      ]),
-    );
+    ]);
+    expect(await repo().getAttachedRockObservations("2000-01-01", "2000-01-01")).toEqual([]);
   });
 });

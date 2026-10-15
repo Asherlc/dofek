@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { makeTransactionalTestDatabase } from "../providers/test-helpers.ts";
 
 const mockExecute = vi.fn().mockResolvedValue([]);
 const mockReconcile = vi.fn().mockResolvedValue(undefined);
@@ -33,12 +34,12 @@ function makeMockDb(onConflictDoUpdate = vi.fn()): SyncDatabase {
   const values = vi.fn().mockReturnValue({ onConflictDoUpdate });
   const insert = vi.fn().mockReturnValue({ values });
 
-  return {
+  return makeTransactionalTestDatabase({
     select: vi.fn(),
     insert,
     delete: vi.fn(),
     execute: mockExecute,
-  };
+  });
 }
 
 describe("findUniqueProviderActivityByExactIdentity", () => {

@@ -276,15 +276,50 @@ describe("SyncRepository", () => {
   });
 
   describe("getProviderStats", () => {
+    it("merges PostgreSQL log totals with existing counts and includes log-only providers", async () => {
+      const { repo } = makeRepository(
+        [
+          { provider_id: "wahoo", count: "2" },
+          { provider_id: "mountain-project", count: "3" },
+        ],
+        [
+          {
+            provider_id: "wahoo",
+            activities: 1,
+            daily_metrics: 0,
+            sleep_sessions: 0,
+            body_measurements: 0,
+            food_entries: 0,
+            health_events: 0,
+            metric_stream: 0,
+            nutrition_daily: 0,
+            clinical_records: 0,
+          },
+        ],
+      );
+      expect(await repo.getProviderStats()).toEqual([
+        expect.objectContaining({
+          providerId: "wahoo",
+          totalRecords: 3,
+          activities: 1,
+          climbingLogEntries: 2,
+        }),
+        expect.objectContaining({
+          providerId: "mountain-project",
+          totalRecords: 3,
+          activities: 0,
+          climbingLogEntries: 3,
+        }),
+      ]);
+    });
     it("returns empty array when no providers", async () => {
-      const { repo, execute } = makeRepository([]);
+      const { repo } = makeRepository([]);
       const result = await repo.getProviderStats();
       expect(result).toEqual([]);
-      expect(execute).not.toHaveBeenCalled();
     });
 
     it("maps rows to ProviderStatRow objects with numeric values", async () => {
-      const { repo, execute } = makeRepository(
+      const { repo } = makeRepository(
         [],
         [
           {
@@ -315,8 +350,8 @@ describe("SyncRepository", () => {
         metricStream: 100,
         nutritionDaily: 6,
         clinicalRecords: 13,
+        climbingLogEntries: 0,
       });
-      expect(execute).not.toHaveBeenCalled();
     });
 
     it("handles multiple providers", async () => {
@@ -360,7 +395,7 @@ describe("SyncRepository", () => {
     });
 
     it("reads provider stats from the compact ClickHouse read model", async () => {
-      const { repo, execute, query } = makeRepository(
+      const { repo, query } = makeRepository(
         [],
         [
           {
@@ -390,7 +425,6 @@ describe("SyncRepository", () => {
       expect(querySql).toEqual(expect.stringContaining("user_id = {userId:UUID}"));
       expect(querySql).toEqual(expect.stringContaining("is_deleted = 0"));
       expect(querySql).not.toEqual(expect.stringContaining("postgres_fitness.metric_stream"));
-      expect(execute).not.toHaveBeenCalled();
     });
   });
 });

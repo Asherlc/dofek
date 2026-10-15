@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SyncRun } from "./sync-run.ts";
 import { SyncWindow } from "./sync-window.ts";
+import { makeTransactionalTestDatabase } from "./test-helpers.ts";
 
 vi.mock("../db/token-user-context.ts", () => ({
   getTokenUserId: () => "user-1",
@@ -267,7 +268,7 @@ describe("WgerProvider", () => {
     const mockFetch = vi.fn<typeof globalThis.fetch>(async () => {
       throw new Error("fetch should not be called when tokens are missing");
     });
-    const mockDb = {
+    const mockDb = makeTransactionalTestDatabase({
       select: vi.fn().mockReturnValue({
         from: vi.fn().mockReturnValue({
           where: vi.fn().mockReturnValue({
@@ -285,7 +286,7 @@ describe("WgerProvider", () => {
       }),
       delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
       execute: vi.fn().mockResolvedValue([]),
-    };
+    });
     const result = await new WgerProvider(mockFetch).sync(
       new SyncRun({ db: mockDb, window: SyncWindow.fromSince({ since: new Date("2026-01-01") }) }),
     );
@@ -556,12 +557,12 @@ describe("WgerProvider", () => {
       return new Response("not found", { status: 404 });
     };
 
-    const db = {
+    const db = makeTransactionalTestDatabase({
       select: vi.fn(),
       insert: vi.fn(),
       delete: vi.fn(),
       execute: vi.fn().mockResolvedValue([]),
-    };
+    });
     const result = await new WgerProvider(mockFetch).sync(
       new SyncRun({
         db,
@@ -633,12 +634,12 @@ describe("WgerProvider", () => {
       return new Response("not found", { status: 404 });
     };
 
-    const db = {
+    const db = makeTransactionalTestDatabase({
       select: vi.fn(),
       insert: vi.fn(),
       delete: vi.fn(),
       execute: vi.fn().mockResolvedValue([]),
-    };
+    });
     const result = await new WgerProvider(mockFetch).sync(
       new SyncRun({
         db,
@@ -690,12 +691,12 @@ describe("WgerProvider", () => {
       return new Response("not found", { status: 404 });
     };
 
-    const db = {
+    const db = makeTransactionalTestDatabase({
       select: vi.fn(),
       insert: vi.fn(),
       delete: vi.fn(),
       execute: vi.fn().mockResolvedValue([]),
-    };
+    });
     const result = await new WgerProvider(mockFetch).sync(
       new SyncRun({
         db,
@@ -756,12 +757,12 @@ describe("WgerProvider", () => {
       return new Response("not found", { status: 404 });
     };
 
-    const db = {
+    const db = makeTransactionalTestDatabase({
       select: vi.fn(),
       insert: vi.fn(),
       delete: vi.fn(),
       execute: vi.fn().mockResolvedValue([]),
-    };
+    });
 
     const provider = new WgerProvider(mockFetch);
     const result = await provider.sync(
@@ -816,12 +817,12 @@ describe("WgerProvider", () => {
       return new Response("not found", { status: 404 });
     };
 
-    const db = {
+    const db = makeTransactionalTestDatabase({
       select: vi.fn(),
       insert: vi.fn(),
       delete: vi.fn(),
       execute: vi.fn().mockResolvedValue([]),
-    };
+    });
 
     const provider = new WgerProvider(mockFetch);
     const result = await provider.sync(

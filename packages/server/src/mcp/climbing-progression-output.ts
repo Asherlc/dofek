@@ -1,11 +1,26 @@
-import { CLIMBING_GRADE_SYSTEMS } from "@dofek/training/climbing-grades";
+import { FREE_ROCK_GRADE_SYSTEMS } from "@dofek/training/climbing-grades";
+import {
+  attemptScopeSchema,
+  climbingAttemptSchema,
+  ropeMethodSchema,
+} from "@dofek/training/climbing-log";
 import { z } from "zod";
 
 const nullableNumber = z.number().nullable();
 const dateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const timestampSchema = z.string().datetime({ offset: true });
-const disciplineSchema = z.enum(["boulder", "lead", "top_rope", "route"]);
-const gradeSystemSchema = z.enum(CLIMBING_GRADE_SYSTEMS);
+const laneShape = {
+  climb_kind: z.enum(["boulder", "route"]),
+  attempt_scope: attemptScopeSchema,
+  rope_method: ropeMethodSchema.nullable(),
+  solo: z.boolean().nullable(),
+  used_aid: z.boolean().nullable(),
+};
+const rockResultLabelsSchema = z.object({
+  onsight: z.boolean().nullable(),
+  flash: z.boolean().nullable(),
+});
+const gradeSystemSchema = z.enum(FREE_ROCK_GRADE_SYSTEMS);
 const attemptCoverageSchema = z.enum(["complete", "partial", "unavailable"]);
 const sourceExternalIdSchema = z
   .object({
@@ -15,25 +30,17 @@ const sourceExternalIdSchema = z
     subsource: z.string().nullable().optional(),
   })
   .strict();
-const attemptSchema = z
-  .object({
-    attemptIndex: z.number().int().positive(),
-    failureReason: z.string().nullable(),
-    notes: z.string().nullable(),
-    outcome: z.enum(["sent", "failed"]),
-  })
-  .strict();
 const hardestSchema = z
   .object({
     grade: z.string(),
     grade_system: gradeSystemSchema,
     normalized_grade: z.string().nullable(),
     normalized_grade_system: gradeSystemSchema,
-    discipline: disciplineSchema,
+    ...laneShape,
     date: dateSchema,
     activity_id: z.uuid(),
     entry_id: z.uuid(),
-    ascent_type: z.string().nullable(),
+    rock_result_labels: rockResultLabelsSchema.nullable(),
     source_providers: z.array(z.string()),
   })
   .strict();
@@ -60,8 +67,9 @@ export const climbingProgressionOutputSchema = z
             sessions: z.number().int().nonnegative(),
             entries: z.number().int().nonnegative(),
             entries_with_attempts: z.number().int().nonnegative(),
-            entries_with_observed_outcome: z.number().int().nonnegative(),
+            observed_free_send_outcomes: z.number().int().nonnegative(),
             attempt_data: attemptCoverageSchema,
+            unknown_free_send_outcomes: z.number().int().nonnegative(),
             first_observed_date: dateSchema.nullable(),
             timezone_assumed_sessions: z.number().int().nonnegative(),
             merged_exact_duplicate_records: z.number().int().nonnegative(),
@@ -79,8 +87,9 @@ export const climbingProgressionOutputSchema = z
               attempts: z.number().int().nonnegative().nullable(),
               attempts_status: attemptCoverageSchema,
               sends: z.number().int().nonnegative().nullable(),
-              failed_entries: z.number().int().nonnegative().nullable(),
+              failed_attempts: z.number().int().nonnegative().nullable(),
               observed_outcomes: z.number().int().nonnegative().nullable(),
+              unknown_outcomes: z.number().int().nonnegative().nullable(),
               send_rate: nullableNumber,
               is_rest_day: z.boolean().nullable(),
               consecutive_climbing_days: z.number().int().nonnegative().nullable(),
@@ -92,7 +101,7 @@ export const climbingProgressionOutputSchema = z
         grade_distribution: z.array(
           z
             .object({
-              discipline: disciplineSchema,
+              ...laneShape,
               grade: z.string(),
               grade_system: gradeSystemSchema,
               normalized_grade: z.string().nullable(),
@@ -103,8 +112,9 @@ export const climbingProgressionOutputSchema = z
               attempts_status: attemptCoverageSchema,
               entries_with_attempts: z.number().int().nonnegative(),
               sends: z.number().int().nonnegative().nullable(),
-              failed_entries: z.number().int().nonnegative().nullable(),
+              failed_attempts: z.number().int().nonnegative().nullable(),
               observed_outcomes: z.number().int().nonnegative(),
+              unknown_outcomes: z.number().int().nonnegative(),
               send_rate: nullableNumber,
               attempts_per_send: nullableNumber,
             })
@@ -114,7 +124,7 @@ export const climbingProgressionOutputSchema = z
           z
             .object({
               date: dateSchema,
-              discipline: disciplineSchema,
+              ...laneShape,
               grade: z.string(),
               grade_system: gradeSystemSchema,
               normalized_grade: z.string().nullable(),
@@ -163,24 +173,25 @@ export const climbingProgressionOutputSchema = z
                 })
                 .strict(),
               quality_flags: z.array(z.string()),
-              climbs: z.array(
+              climbing_log_entries: z.array(
                 z
                   .object({
                     id: z.uuid(),
-                    discipline: disciplineSchema,
-                    climb_type: z.enum(["boulder", "route"]),
-                    grade: z.string(),
-                    grade_system: gradeSystemSchema,
+                    ...laneShape,
+                    pitch_id: z.uuid().nullable(),
+                    pitch_number: z.number().int().positive().nullable(),
+                    grade: z.string().nullable(),
+                    grade_system: gradeSystemSchema.nullable(),
                     normalized_grade: z.string().nullable(),
                     normalized_grade_system: gradeSystemSchema,
-                    sent: z.boolean().nullable(),
-                    attempt_count: z.number().int().positive().nullable(),
-                    attempts: z.array(attemptSchema),
-                    ascent_type: z.string().nullable(),
-                    lead: z.boolean().nullable(),
+                    sends: z.number().int().nonnegative(),
+                    unknown_outcomes: z.number().int().nonnegative(),
+                    recorded_attempt_count: z.number().int().positive(),
+                    attempts: z.array(climbingAttemptSchema),
+                    rock_result_labels: rockResultLabelsSchema.nullable(),
                     wall_angle_degrees: nullableNumber,
                     hold_type: z.string().nullable(),
-                    route_name: z.string().nullable(),
+                    climb_name: z.string().nullable(),
                     location_name: z.string().nullable(),
                     external_id: z.string().nullable(),
                     provenance: z

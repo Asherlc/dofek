@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SyncDatabase } from "../db/index.ts";
+import { makeTransactionalTestDatabase } from "../providers/test-helpers.ts";
 import type { ExportJobData } from "./queues.ts";
 
 process.env.JOB_FILES_DIR = "/app/job-files";
@@ -49,12 +50,12 @@ vi.mock("node:fs/promises", () => ({
 
 const { processExportJob } = await import("./process-export-job.ts");
 
-const mockDb: SyncDatabase = {
+const mockDb: SyncDatabase = makeTransactionalTestDatabase({
   select: vi.fn(),
   insert: vi.fn(),
   delete: vi.fn(),
   execute: vi.fn(),
-};
+});
 
 interface MockJob {
   data: ExportJobData;

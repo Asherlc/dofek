@@ -25,5 +25,9 @@ const csv = await new MountainProjectClient().getTickExport(userId);
 ```
 
 Use `decodeMountainProjectTickExport` from `@dofek/mountain-project/ticks` to
-turn the CSV into typed tick rows. Use `normalizeMountainProjectGrade` from
-`@dofek/mountain-project/grades` for the leading YDS/V-scale grade token.
+turn the CSV into typed tick rows. Use `parseMountainProjectGrades` from
+`@dofek/mountain-project/grades` for the recorded grade components, including
+compound free, aid, ice and mixed grades. `normalizeMountainProjectGrade`
+supplies the leading YDS/V-scale grade used by that parser. Published `Rating`
+and separately supplied `Your Rating` remain separate fields in the observed
+[public export](https://www.mountainproject.com/user/200232920/cole-schmidt/tick-export).

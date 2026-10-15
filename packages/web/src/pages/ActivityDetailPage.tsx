@@ -16,6 +16,7 @@ import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { processingPollInterval } from "@dofek/providers/processing-status";
 import { providerSourceLabel } from "@dofek/providers/providers";
 import { activityMetricColors, statusColors } from "@dofek/scoring/colors";
+import { isClimbingLogActivity } from "@dofek/training/climbing-log";
 import {
   computeIntensities,
   expandMuscleGroup,
@@ -55,10 +56,10 @@ import {
 } from "../lib/chartTheme.ts";
 import { trpc } from "../lib/trpc.ts";
 import { useUnitConverter } from "../lib/unitContext.ts";
-import { ClimbingEntryBreakdown } from "./activity-detail/components/ClimbingEntryBreakdown.tsx";
+import { ClimbingLogEntryBreakdown } from "./activity-detail/components/ClimbingLogEntryBreakdown.tsx";
 import { DeleteActivityButton } from "./activity-detail/components/DeleteActivityButton.tsx";
 import { RecomputeActivityButton } from "./activity-detail/components/RecomputeActivityButton.tsx";
-import { UnattachedClimbingEntries } from "./activity-detail/components/UnattachedClimbingEntries.tsx";
+import { UnattachedClimbingLogEntries } from "./activity-detail/components/UnattachedClimbingLogEntries.tsx";
 import { ProviderAbsentBanner } from "./ProviderAbsentBanner.tsx";
 
 const CHART_COLORS = {
@@ -130,13 +131,12 @@ export function ActivityDetailPage() {
     { id },
     { enabled: isStrengthActivity },
   );
-  const isClimbingActivity =
-    detail.data != null && isActivityDetailType(detail.data.activityType, "climbing");
-  const climbingEntries = trpc.climbing.activityEntries.useQuery(
-    { id },
+  const isClimbingActivity = detail.data != null && isClimbingLogActivity(detail.data.activityType);
+  const climbingEntries = trpc.climbing.activityLogEntries.useQuery(
+    { activityId: id },
     { enabled: isClimbingActivity },
   );
-  const entrySuggestions = trpc.climbing.unattachedClimbingEntries.useQuery(
+  const entrySuggestions = trpc.climbing.unattachedClimbingLogEntries.useQuery(
     { activityId: id },
     { enabled: isClimbingActivity },
   );
@@ -145,14 +145,14 @@ export function ActivityDetailPage() {
   const [entryAttachState, setEntryAttachState] = useState<
     Record<string, { pending: boolean; error: string | null }>
   >({});
-  const attachEntry = trpc.climbing.attachClimbingEntry.useMutation({
+  const attachEntry = trpc.climbing.attachClimbingLogEntry.useMutation({
     onSuccess: async (_result, input) => {
       await Promise.all([
-        trpcUtils.climbing.activityEntries.invalidate({ id: input.activityId }),
+        trpcUtils.climbing.activityLogEntries.invalidate({ activityId: input.activityId }),
         trpcUtils.climbing.sessionSummary.invalidate(),
         trpcUtils.climbing.gradeProgression.invalidate(),
         trpcUtils.climbing.volumeByGrade.invalidate(),
-        trpcUtils.climbing.unattachedClimbingEntries.invalidate({
+        trpcUtils.climbing.unattachedClimbingLogEntries.invalidate({
           activityId: input.activityId,
         }),
       ]);
@@ -161,7 +161,7 @@ export function ActivityDetailPage() {
   const handleAttachEntry = (entryId: string) => {
     setEntryAttachState((current) => ({ ...current, [entryId]: { pending: true, error: null } }));
     attachEntry.mutate(
-      { activityId: id, entryId },
+      { activityId: id, climbingLogEntryId: entryId },
       {
         onSuccess: () =>
           setEntryAttachState((current) => ({
@@ -320,12 +320,13 @@ export function ActivityDetailPage() {
 
       {isClimbingActivity && (
         <Section title="Climbs">
-          {climbingEntries.error ? (
+          {climbingEntries.error && (
             <p className="text-sm text-red-400">{userFacingErrorMessage(climbingEntries.error)}</p>
-          ) : climbingEntriesLoading ? (
+          )}
+          {climbingEntriesLoading ? (
             <QueryStatePanel variant="loading" contextLabel="Climbs" height={72} />
           ) : (climbingEntries.data?.length ?? 0) > 0 ? (
-            <ClimbingEntryBreakdown entries={climbingEntries.data ?? []} />
+            <ClimbingLogEntryBreakdown entries={climbingEntries.data ?? []} />
           ) : null}
           {(entrySuggestions.error ||
             (!climbingEntriesLoading && entrySuggestions.isLoading) ||
@@ -340,7 +341,7 @@ export function ActivityDetailPage() {
                   : undefined
               }
             >
-              <UnattachedClimbingEntries
+              <UnattachedClimbingLogEntries
                 suggestions={entrySuggestions.data}
                 error={entrySuggestions.error}
                 isLoading={entrySuggestions.isLoading}

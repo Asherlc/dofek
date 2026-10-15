@@ -81,7 +81,7 @@ export function buildEquivalenceEvidence(
     evidence_type:
       | "cycling_route_name_provider_type"
       | "standardized_test_name_provider_type"
-      | "climbing_entry"
+      | "climbing_log_entry"
       | "strength_set"
       | "canonical_activity_name";
     provider: string | null;
@@ -118,9 +118,9 @@ export function buildEquivalenceEvidence(
   } else if (key.kind === "climb") {
     for (const row of input.climbingRows) {
       items.push({
-        evidence_type: "climbing_entry",
+        evidence_type: "climbing_log_entry",
         provider: row.entry_provider,
-        value: `${row.climb_type}:${row.grade_system}:${row.grade}:${row.route_name ?? ""}:${row.location_name ?? ""}:lead=${String(row.lead)}`,
+        value: `${row.climb_kind}:${row.grade_system}:${row.grade}:${row.climb_name ?? ""}:${row.location_name ?? ""}:scope=${row.attempt_scope}:method=${row.rope_method ?? "unknown"}:solo=${String(row.solo)}`,
         field: null,
         provider_type: null,
         source_activity_id: row.entry_activity_id,

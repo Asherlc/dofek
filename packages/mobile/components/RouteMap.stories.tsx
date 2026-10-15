@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-native";
-import { areaClimbingLocation, exactClimbingLocation } from "./climbing-entry-fixtures";
+import { areaClimbingLocation, exactClimbingLocation } from "./climbing-log-entry-fixtures";
 import { RouteMap } from "./RouteMap";
 
 const meta = {

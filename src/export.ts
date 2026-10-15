@@ -173,6 +173,78 @@ const EXPORT_TABLES: ExportTableConfig[] = [
         sql`SELECT * FROM fitness.sport_settings WHERE user_id = ${userId} ORDER BY sport, effective_from`,
       ),
   },
+  {
+    name: "areas.csv",
+    query: (db, userId) =>
+      executeWithSchema(
+        db,
+        exportRowSchema,
+        sql`SELECT id,user_id,provider_id,external_id,name,parent_area_id,coordinates::text AS coordinates FROM fitness.area WHERE user_id=${userId} ORDER BY id`,
+      ),
+  },
+  {
+    name: "climbs.csv",
+    query: (db, userId) =>
+      executeWithSchema(
+        db,
+        exportRowSchema,
+        sql`SELECT id,user_id,provider_id,external_id,name,kind,area_id,setting,route_protection,coordinates::text AS coordinates FROM fitness.climb WHERE user_id=${userId} ORDER BY id`,
+      ),
+  },
+  {
+    name: "pitches.csv",
+    query: (db, userId) =>
+      executeWithSchema(
+        db,
+        exportRowSchema,
+        sql`SELECT p.* FROM fitness.pitch p JOIN fitness.climb c ON c.id=p.climb_id WHERE c.user_id=${userId} ORDER BY p.climb_id,p.number,p.id`,
+      ),
+  },
+  {
+    name: "climb-grades.csv",
+    query: (db, userId) =>
+      executeWithSchema(
+        db,
+        exportRowSchema,
+        sql`SELECT g.* FROM fitness.climb_grade g JOIN fitness.climb c ON c.id=g.climb_id WHERE c.user_id=${userId} ORDER BY g.climb_id,g.position`,
+      ),
+  },
+  {
+    name: "pitch-grades.csv",
+    query: (db, userId) =>
+      executeWithSchema(
+        db,
+        exportRowSchema,
+        sql`SELECT g.* FROM fitness.pitch_grade g JOIN fitness.pitch p ON p.id=g.pitch_id JOIN fitness.climb c ON c.id=p.climb_id WHERE c.user_id=${userId} ORDER BY g.pitch_id,g.position`,
+      ),
+  },
+  {
+    name: "climbing-log-entry-grades.csv",
+    query: (db, userId) =>
+      executeWithSchema(
+        db,
+        exportRowSchema,
+        sql`SELECT g.* FROM fitness.climbing_log_entry_grade g JOIN fitness.climbing_log_entry e ON e.id=g.climbing_log_entry_id WHERE e.user_id=${userId} ORDER BY g.climbing_log_entry_id,g.position`,
+      ),
+  },
+  {
+    name: "climbing-log-entries.csv",
+    query: (db, userId) =>
+      executeWithSchema(
+        db,
+        exportRowSchema,
+        sql`SELECT * FROM fitness.climbing_log_entry WHERE user_id=${userId} ORDER BY climbed_on NULLS LAST,id`,
+      ),
+  },
+  {
+    name: "climbing-attempts.csv",
+    query: (db, userId) =>
+      executeWithSchema(
+        db,
+        exportRowSchema,
+        sql`SELECT a.* FROM fitness.climbing_attempt a JOIN fitness.climbing_log_entry e ON e.id=a.climbing_log_entry_id WHERE e.user_id=${userId} ORDER BY a.climbing_log_entry_id,a.attempt_index NULLS LAST,a.id`,
+      ),
+  },
 ];
 
 function csvHeaders(rows: Record<string, unknown>[]): string[] {
