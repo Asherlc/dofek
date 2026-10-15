@@ -1,9 +1,11 @@
+import { writeFileSync } from "node:fs";
 import * as Sentry from "@sentry/node";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
 import { z } from "zod";
 import { createDatabase } from "../../db/index.ts";
 import { initProductionSentry } from "../../lib/sentry.ts";
+import { logger } from "../../logger.ts";
 import { MountainProjectProvider } from "../../providers/mountain-project.ts";
 import { SyncRun } from "../../providers/sync-run.ts";
 import { SyncWindow } from "../../providers/sync-window.ts";
@@ -14,8 +16,24 @@ import {
 } from "../account-erasure-work-guard.ts";
 
 const input = z
-  .object({ connectionString: z.string(), userId: z.string(), csv: z.string() })
+  .object({
+    connectionString: z.string(),
+    userId: z.string(),
+    csv: z.string(),
+    evidencePath: z.string(),
+  })
   .parse(await new Promise<unknown>((resolve) => process.once("message", resolve)));
+
+const realLogError = logger.error;
+logger.error = (...args: unknown[]) => {
+  if (
+    args[0] ===
+    "[provider-sync-lock] PostgreSQL session lost; stopping worker to prevent stale writes"
+  ) {
+    writeFileSync(input.evidencePath, "provider_sync_session_lost\n");
+  }
+  return Reflect.apply(realLogError, logger, args);
+};
 
 process.env.DEPLOY_ENVIRONMENT = "production";
 initProductionSentry("https://test@sentry.example.test/1");
@@ -40,6 +58,7 @@ const responseReleased = new Promise<void>((resolve) => {
   releaseHttpResponse = resolve;
 });
 process.on("message", (message) => {
+  if (message === "exit_unrelated") process.exit(1);
   if (message === "release_http") releaseHttpResponse();
   if (message === "release_flush") finishFlush();
 });

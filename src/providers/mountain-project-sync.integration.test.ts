@@ -1,5 +1,6 @@
 import { fork } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { eq, sql } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
@@ -200,128 +201,149 @@ describe("MountainProjectProvider canonical persistence", () => {
     expect(stored.map(({ log }) => log.climbedOn).sort()).toEqual(["2026-08-10", "2026-08-11"]);
   });
 
-  it("stops a source writer immediately when its lock session disconnects during HTTP", async () => {
-    const [header, oldTick] = fixtureCsv.split("\n");
-    if (!header || !oldTick) throw new Error("Expected a complete source tick fixture");
-    const child = fork(new URL("../jobs/fixtures/provider-sync-lock-loss.ts", import.meta.url), {
-      execArgv: ["--import", "tsx"],
-      stdio: ["ignore", "pipe", "pipe", "ipc"],
-    });
-    let diagnostics = "";
-    child.stdout?.on("data", (chunk) => {
-      diagnostics += String(chunk);
-    });
-    child.stderr?.on("data", (chunk) => {
-      diagnostics += String(chunk);
-    });
-    const signal = () => {
-      let notify: () => void = () => {
-        throw new Error("Child signal was not initialized");
-      };
-      const promise = new Promise<void>((resolve) => {
-        notify = resolve;
+  it.each([
+    { failure: "lock session disconnect", throughGuard: true },
+    { failure: "unrelated process exit", throughGuard: false },
+  ])(
+    "identifies $failure during HTTP and prevents stale source writes",
+    async ({ throughGuard }) => {
+      const [header, oldTick] = fixtureCsv.split("\n");
+      if (!header || !oldTick) throw new Error("Expected a complete source tick fixture");
+      const evidenceDirectory = mkdtempSync(join(tmpdir(), "dofek-provider-lock-loss-"));
+      ctx.addCleanup(async () => rmSync(evidenceDirectory, { recursive: true, force: true }));
+      const evidencePath = join(evidenceDirectory, "guard-fatal.txt");
+      const child = fork(new URL("../jobs/fixtures/provider-sync-lock-loss.ts", import.meta.url), {
+        execArgv: ["--import", "tsx"],
+        stdio: ["ignore", "pipe", "pipe", "ipc"],
       });
-      return { promise, notify: () => notify() };
-    };
-    const httpPending = signal();
-    const fatalCaptured = signal();
-    const callbackFinished = signal();
-    const exited = new Promise<number | null>((resolve) => child.once("exit", resolve));
-    child.on("message", (message) => {
-      diagnostics += `\nIPC: ${JSON.stringify(message)}`;
-      if (message === "http_pending") httpPending.notify();
-      if (message === "fatal_captured") fatalCaptured.notify();
-      if (message === "callback_finished") callbackFinished.notify();
-    });
-    child.send({
-      connectionString: ctx.connectionString,
-      userId,
-      csv: [header, oldTick].join("\n"),
-    });
-    try {
-      await Promise.race([
-        httpPending.promise,
-        exited.then((code) => {
-          throw new Error(`Source fixture exited before HTTP: ${code}; ${diagnostics}`);
-        }),
-      ]);
-      const holders = await executeWithSchema(
-        ctx.db,
-        z.object({ pid: z.number().int() }),
-        sql`SELECT DISTINCT sessions.pid FROM pg_stat_activity AS sessions
+      let diagnostics = "";
+      child.stdout?.on("data", (chunk) => {
+        diagnostics += String(chunk);
+      });
+      child.stderr?.on("data", (chunk) => {
+        diagnostics += String(chunk);
+      });
+      const signal = () => {
+        let notify: () => void = () => {
+          throw new Error("Child signal was not initialized");
+        };
+        const promise = new Promise<void>((resolve) => {
+          notify = resolve;
+        });
+        return { promise, notify: () => notify() };
+      };
+      const httpPending = signal();
+      const fatalCaptured = signal();
+      const callbackFinished = signal();
+      const exited = new Promise<number | null>((resolve) => child.once("exit", resolve));
+      child.on("message", (message) => {
+        diagnostics += `\nIPC: ${JSON.stringify(message)}`;
+        if (message === "http_pending") httpPending.notify();
+        if (message === "fatal_captured") fatalCaptured.notify();
+        if (message === "callback_finished") callbackFinished.notify();
+      });
+      child.send({
+        connectionString: ctx.connectionString,
+        userId,
+        csv: [header, oldTick].join("\n"),
+        evidencePath,
+      });
+      try {
+        await Promise.race([
+          httpPending.promise,
+          exited.then((code) => {
+            throw new Error(`Source fixture exited before HTTP: ${code}; ${diagnostics}`);
+          }),
+        ]);
+        const holders = await executeWithSchema(
+          ctx.db,
+          z.object({ pid: z.number().int() }),
+          sql`SELECT DISTINCT sessions.pid FROM pg_stat_activity AS sessions
           JOIN pg_locks AS locks ON locks.pid = sessions.pid
           WHERE sessions.datname = current_database()
             AND sessions.application_name = 'dofek-account-erasure-work-lock'
             AND locks.locktype = 'advisory' AND locks.granted`,
-      );
-      expect(holders).toHaveLength(1);
-      const holder = holders[0];
-      if (!holder) throw new Error("Expected the child source-refresh lock session");
-      const terminated = await executeWithSchema(
-        ctx.db,
-        z.object({ terminated: z.boolean() }),
-        sql`SELECT pg_terminate_backend(${holder.pid}) AS terminated`,
-      );
-      expect(terminated).toEqual([{ terminated: true }]);
-      await Promise.race([fatalCaptured.promise, exited]);
+        );
+        expect(holders).toHaveLength(1);
+        const holder = holders[0];
+        if (!holder) throw new Error("Expected the child source-refresh lock session");
+        if (throughGuard) {
+          const terminated = await executeWithSchema(
+            ctx.db,
+            z.object({ terminated: z.boolean() }),
+            sql`SELECT pg_terminate_backend(${holder.pid}) AS terminated`,
+          );
+          expect(terminated).toEqual([{ terminated: true }]);
+        } else {
+          child.send("exit_unrelated");
+        }
+        await Promise.race([fatalCaptured.promise, exited]);
 
-      currentExport = [header, oldTick, oldTick.replace("2026-08-10", "2026-08-11")].join("\n");
-      serve();
-      server.use(
-        http.get("https://www.mountainproject.com/api/v2/routes/:id", ({ params }) =>
-          HttpResponse.json({
-            id: Number(params.id),
-            title: "Route",
-            parent: { id: 2, name: "Crag" },
-          }),
-        ),
-        http.get("https://www.mountainproject.com/api/v2/areas/2", () =>
-          HttpResponse.json({
-            id: 2,
-            title: "Current crag",
-            parent: { id: 0, name: "" },
-            coordinates: [-106, 40],
-          }),
-        ),
-      );
-      const replacementPool = createAccountErasureWorkLockPool(ctx.connectionString);
-      ctx.addCleanup(() => replacementPool.close());
-      await expect(
-        runQueuedUserWorkUnlessAccountErasing(
-          replacementPool,
-          ctx.db,
-          userId,
-          "replacement provider sync",
-          run,
-          "mountain-project",
-        ),
-      ).resolves.toMatchObject({ recordsSynced: 2, errors: [] });
-      if (child.connected) child.send("release_http");
-      const outcome = await Promise.race([
-        callbackFinished.promise.then(() => ({ status: "callback_finished" })),
-        exited.then((code) => ({ status: "exited", code })),
-      ]);
-      const stored = await records();
-      expect({
-        outcome,
-        areas: (await ctx.db.select().from(area)).map(({ name, coordinates }) => ({
-          name,
-          coordinates,
-        })),
-        activeDates: stored
-          .filter(({ log }) => log.providerAbsentAt === null)
-          .map(({ log }) => log.climbedOn)
-          .sort(),
-      }).toEqual({
-        outcome: { status: "exited", code: 1 },
-        areas: [{ name: "Current crag", coordinates: { x: -106, y: 40 } }],
-        activeDates: ["2026-08-10", "2026-08-11"],
-      });
-    } finally {
-      if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
-      await exited;
-    }
-  });
+        currentExport = [header, oldTick, oldTick.replace("2026-08-10", "2026-08-11")].join("\n");
+        serve();
+        server.use(
+          http.get("https://www.mountainproject.com/api/v2/routes/:id", ({ params }) =>
+            HttpResponse.json({
+              id: Number(params.id),
+              title: "Route",
+              parent: { id: 2, name: "Crag" },
+            }),
+          ),
+          http.get("https://www.mountainproject.com/api/v2/areas/2", () =>
+            HttpResponse.json({
+              id: 2,
+              title: "Current crag",
+              parent: { id: 0, name: "" },
+              coordinates: [-106, 40],
+            }),
+          ),
+        );
+        const replacementPool = createAccountErasureWorkLockPool(ctx.connectionString);
+        ctx.addCleanup(() => replacementPool.close());
+        await expect(
+          runQueuedUserWorkUnlessAccountErasing(
+            replacementPool,
+            ctx.db,
+            userId,
+            "replacement provider sync",
+            run,
+            "mountain-project",
+          ),
+        ).resolves.toMatchObject({ recordsSynced: 2, errors: [] });
+        if (child.connected) child.send("release_http");
+        const outcome = await Promise.race([
+          callbackFinished.promise.then(() => ({ status: "callback_finished" as const })),
+          exited.then((code) => ({ status: "exited" as const, code })),
+        ]);
+        const exitedThroughGuard =
+          outcome.status === "exited" &&
+          outcome.code === 1 &&
+          existsSync(evidencePath) &&
+          readFileSync(evidencePath, "utf8") === "provider_sync_session_lost\n";
+        expect(exitedThroughGuard).toBe(throughGuard);
+        const stored = await records();
+        expect({
+          outcome,
+          areas: (await ctx.db.select().from(area)).map(({ name, coordinates }) => ({
+            name,
+            coordinates,
+          })),
+          activeDates: stored
+            .filter(({ log }) => log.providerAbsentAt === null)
+            .map(({ log }) => log.climbedOn)
+            .sort(),
+        }).toEqual({
+          outcome: { status: "exited", code: 1 },
+          areas: [{ name: "Current crag", coordinates: { x: -106, y: 40 } }],
+          activeDates: ["2026-08-10", "2026-08-11"],
+        });
+      } finally {
+        if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+        await exited;
+        rmSync(evidenceDirectory, { recursive: true, force: true });
+      }
+    },
+  );
 
   it("maps source qualifiers and current shared metadata while preserving attachment and source date", async () => {
     currentExport = fixtureCsv;

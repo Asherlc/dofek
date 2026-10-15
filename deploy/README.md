@@ -271,9 +271,11 @@ green indicates that the production release ran successfully. GitHub documents
 the cancellation API and its required Actions write permission:
 <https://docs.github.com/en/rest/actions/workflow-runs#cancel-a-workflow-run>.
 For a reported stale page, compare the live HTML's `web/<tag>/` asset prefix with
-the running Swarm image tag and inspect the production job's actual conclusion.
+the selected workflow tag, verify the running Swarm image digest matches the
+resolved `APP_IMAGE`, and inspect the production job's actual conclusion in the
+[canonical deployment workflow](../.github/workflows/deploy-web-stack.yml).
 
-1. **Build**: GitHub Actions builds the `server` image for every `main` push and pushes it to GHCR with the commit-derived tag (`<tag>`). A successful main CI completion requests deployment; when its slot starts, `Deploy Web` selects the latest passing main push and deploys that tag. The web build inside the image uses `VITE_ASSET_BASE_URL=https://assets.dofek.fit/web/<tag>/`, so Vite-generated JavaScript and CSS references point at immutable R2-backed CDN assets instead of the Express origin; Vite's `base` option controls the public base path for built assets: https://vite.dev/config/shared-options.html#base. `<tag>` is the image tag used consistently for both the GHCR image and the web asset prefix. See GitHub's `workflow_run` event documentation for the trigger behavior: https://docs.github.com/en/actions/reference/events-that-trigger-workflows#workflow_run. The `ml` image is built only when ML image inputs change.
+1. **Build**: GitHub Actions builds the `server` image for every `main` push and pushes it to GHCR with the commit-derived tag (`<tag>`). A successful main CI completion requests deployment; when its slot starts, `Deploy Web` selects the latest passing main push and resolves that tag to the immutable image it deploys. The web build inside the image uses `VITE_ASSET_BASE_URL=https://assets.dofek.fit/web/<tag>/`, so Vite-generated JavaScript and CSS references point at immutable R2-backed CDN assets instead of the Express origin; Vite's `base` option controls the public base path for built assets: https://vite.dev/config/shared-options.html#base. `<tag>` is the image tag used consistently for both the GHCR image and the web asset prefix. See GitHub's `workflow_run` event documentation for the trigger behavior: https://docs.github.com/en/actions/reference/events-that-trigger-workflows#workflow_run. The `ml` image is built only when ML image inputs change.
    Automatic deploys check out the selected CI run's full commit SHA for both
    Terraform and stack configuration. GitHub documents that a
    `workflow_run` workflow's `GITHUB_SHA` is the last commit on the default
@@ -643,25 +645,26 @@ Missing keys fail the workflow immediately with an explicit key name.
 
 If a deploy is running against a fresh host (or after removing previous non-swarm containers), `<stack>_db` and `<stack>_default` may not exist yet. In that case, waiting for Postgres before any stack deploy will fail forever because there is no DB service to reach.
 
-The deploy workflow handles this by always applying the stack configuration
-before migrations:
+The [deploy workflow](../.github/workflows/deploy-web-stack.yml) handles this by
+always applying the stack configuration before migrations, using the immutable
+references selected by the [image resolver](../scripts/resolve-deploy-image.ts):
 
-- On existing stacks, the pre-migration deploy uses the currently running app
-  image tag so infrastructure/config changes are applied while app code remains
-  on the old release. The migration quiesce overlay sets `worker` to zero so
+- On existing stacks, the pre-migration deploy uses the web service's existing
+  desired image digest reference so infrastructure/config changes are applied
+  while app code remains on that release. The migration quiesce overlay sets `worker` to zero so
   that old release cannot run its startup migration against a database that the
   requested image will advance. The CDC quiesce overlay also sets
   `analytics-worker`, all three metric-stream ClickHouse sinks, and
   `processing-reconciliation` to zero so all five remain stopped until the
   final stack deploy.
-- On clean-slate hosts, the pre-migration deploy uses the requested deploy tag
-  because there is no old release to preserve; the migration quiesce overlay
+- On clean-slate hosts, the pre-migration deploy uses the requested immutable
+  image (`APP_IMAGE`) because there is no old release to preserve; the migration quiesce overlay
   still keeps `worker` stopped until the one-shot migration completes, and the
   CDC quiesce overlay keeps `analytics-worker`,
   all three metric-stream ClickHouse sinks, and `processing-reconciliation` stopped.
 - After the pre-migration stack apply, the workflow waits for Postgres and
   ClickHouse, runs migrations, and then performs the pruned deploy with the
-  requested image tag while `analytics-worker`,
+  requested immutable image (`APP_IMAGE`) while `analytics-worker`,
   all three metric-stream ClickHouse sinks, and `processing-reconciliation` remain
   quiesced. The final stack deploy restores all five.
 
