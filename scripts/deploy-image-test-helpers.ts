@@ -1,4 +1,8 @@
-import { execFileSync, spawnSync } from "node:child_process";
+import {
+  execFileSync,
+  type SpawnSyncOptionsWithStringEncoding,
+  spawnSync,
+} from "node:child_process";
 import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -72,37 +76,40 @@ export function runDeployImageFixture({
   writeFileSync(sshPath, "#!/usr/bin/env node\nprocess.exit(0);\n");
   chmodSync(sshPath, 0o755);
   try {
-    const result = spawnSync(
-      script ? "bash" : resolve("node_modules/.bin/tsx"),
-      script ? ["-e", "-o", "pipefail", "-c", script] : [resolve("scripts", filename), ...args],
-      {
-        encoding: "utf8",
-        env: {
-          ...process.env,
-          PATH: `${directory}:${process.env.PATH ?? ""}`,
-          IMAGE_TAG: "requested",
-          STACK_NAME: "dofek",
-          SSH_USER: "fixture",
-          DOCKER_HOST: "ssh://fixture@example.test",
-          GITHUB_OUTPUT: outputPath,
-          FIXTURE_CALLS: callsPath,
-          FIXTURE_MOVED: join(directory, "moved"),
-          FIXTURE_DIGEST: JSON.stringify(digest),
-          FIXTURE_PINNED_DIGEST: deployTestDigest,
-          FIXTURE_DESIRED: desiredImage,
-          FIXTURE_RELEASE: release,
-          FIXTURE_FAILURE: failure,
-          FIXTURE_TASK_IMAGES: JSON.stringify(taskImages),
-          FIXTURE_TASK_STATE: taskState,
-          FIXTURE_REPLICAS: String(desiredReplicas),
-          RUNNER_TEMP: directory,
-          INFISICAL_ENV_FILE: dotenvPath,
-          WEB_PRE_MIGRATION_ENV_FILE: "old-web.env",
-          STACK_FILE_FLAGS: "-c deploy/stack.yml",
-          ...environment,
-        },
+    const options: SpawnSyncOptionsWithStringEncoding = {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        PATH: `${directory}:${process.env.PATH ?? ""}`,
+        IMAGE_TAG: "requested",
+        STACK_NAME: "dofek",
+        SSH_USER: "fixture",
+        DOCKER_HOST: "ssh://fixture@example.test",
+        GITHUB_OUTPUT: outputPath,
+        FIXTURE_CALLS: callsPath,
+        FIXTURE_MOVED: join(directory, "moved"),
+        FIXTURE_DIGEST: JSON.stringify(digest),
+        FIXTURE_PINNED_DIGEST: deployTestDigest,
+        FIXTURE_DESIRED: desiredImage,
+        FIXTURE_RELEASE: release,
+        FIXTURE_FAILURE: failure,
+        FIXTURE_TASK_IMAGES: JSON.stringify(taskImages),
+        FIXTURE_TASK_STATE: taskState,
+        FIXTURE_REPLICAS: String(desiredReplicas),
+        RUNNER_TEMP: directory,
+        INFISICAL_ENV_FILE: dotenvPath,
+        WEB_PRE_MIGRATION_ENV_FILE: "old-web.env",
+        STACK_FILE_FLAGS: "-c deploy/stack.yml",
+        ...environment,
       },
-    );
+    };
+    const result = script
+      ? spawnSync("bash", ["-e", "-o", "pipefail", "-c", script], options)
+      : spawnSync(
+          resolve("node_modules/.bin/tsx"),
+          [resolve("scripts", filename), ...args],
+          options,
+        );
     return {
       status: result.status,
       stderr: result.stderr,
