@@ -103,7 +103,7 @@ describe("KayaSyncProvider canonical persistence", () => {
     expect(attempts.filter((attempt) => attempt.climbingLogEntryId === send.id)).toEqual([
       expect.objectContaining({
         scope: "climb",
-        outcome: "completed",
+        sourceResult: "Flash",
         fellOrHung: false,
         dabbed: false,
         usedAid: false,
@@ -114,13 +114,44 @@ describe("KayaSyncProvider canonical persistence", () => {
     expect(
       attempts
         .filter((attempt) => attempt.climbingLogEntryId !== send.id)
-        .every((attempt) => attempt.outcome === null && attempt.attemptIndex === null),
+        .every((attempt) => attempt.sourceResult === null && attempt.attemptIndex === null),
     ).toBe(true);
     expect(await run()).toMatchObject({ recordsSynced: 2, errors: [] });
     expect(await logs()).toEqual(before);
     expect(
       (await context.db.select().from(climbingAttempt)).map((attempt) => attempt.id).sort(),
     ).toEqual(attempts.map((attempt) => attempt.id).sort());
+  });
+  it("retains one exact source result while refreshing the same ascent's reported count", async () => {
+    sessions = [];
+    ascents = [
+      kayaAscentFixture({
+        session_id: null,
+        attempts: 3,
+        ascent_type: { id: "redpoint", name: " rEdPoInT " },
+      }),
+    ];
+    expect(await run()).toMatchObject({ recordsSynced: 1, errors: [] });
+    const before = await context.db.select().from(climbingAttempt);
+    const described = before.find((attempt) => attempt.sourceResult === " rEdPoInT ");
+    if (!described) throw new Error("Expected original source result");
+    expect(before).toHaveLength(3);
+    expect(before.filter((attempt) => attempt.sourceResult === null)).toHaveLength(2);
+
+    ascents = [
+      kayaAscentFixture({
+        session_id: null,
+        attempts: 4,
+        ascent_type: { id: "redpoint", name: " rEdPoInT " },
+      }),
+    ];
+    expect(await run()).toMatchObject({ recordsSynced: 1, errors: [] });
+    const after = await context.db.select().from(climbingAttempt);
+    expect(after).toHaveLength(4);
+    expect(after.filter((attempt) => attempt.sourceResult !== null)).toEqual([
+      expect.objectContaining({ id: described.id, sourceResult: " rEdPoInT " }),
+    ]);
+    expect(after.filter((attempt) => attempt.sourceResult === null)).toHaveLength(3);
   });
   it("retains a nullable standalone source occurrence and later attaches the same ID", async () => {
     sessions = [];

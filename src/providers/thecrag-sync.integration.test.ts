@@ -99,7 +99,7 @@ describe("TheCragProvider.sync (PostgreSQL)", () => {
     expect(await context.db.select().from(climbingAttempt)).toEqual([
       expect.objectContaining({
         scope: "climb",
-        outcome: "completed",
+        sourceResult: "redpoint",
         fellOrHung: false,
         usedAid: false,
         protectionUsed: ["sport"],

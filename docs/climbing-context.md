@@ -10,7 +10,7 @@ A climbing log entry records an occurrence on a Climb, optionally associated wit
 | Climb | Owner/provider, verified source identity, nullable name/kind/Area/setting, advertised route protection, coordinates, ordered published grades |
 | Pitch | Required Climb, nullable verified identity/number/name, ordered published grades |
 | ClimbingLogEntry | Owner/provider, occurrence identity, optional Climb/Activity, independently nullable source date, discipline/title/notes, reported grades, board/angle/hold type, raw source record and retention metadata |
-| ClimbingAttempt | Required log, scope, optional Pitch/parent, nullable actual order/outcome, independent method/solo/protection/aid/fall-or-hang/dab/beta/history facts and notes |
+| ClimbingAttempt | Required log, scope, optional Pitch/parent, nullable actual order and original source result label, independent method/solo/protection/aid/fall-or-hang/dab/beta/history facts and notes |
 
 Areas form an adjacency list through `parentAreaId`. PostgreSQL recursive queries build the current path; ownership constraints and cycle checks protect the hierarchy. Shared metadata updates apply to past logs referencing the same verified source object. Unidentified objects remain local to their log; matching names do not establish identity. See the [schema](../src/db/schema/climbing.ts) and PostgreSQL [recursive queries](https://www.postgresql.org/docs/current/queries-with.html#QUERIES-WITH-RECURSIVE).
 
@@ -22,7 +22,9 @@ Published grade components belong to their Climb or Pitch. Independently reporte
 
 Whole-Climb attempts have no Pitch or parent. Pitch attempts may reference an identified Pitch and a whole-Climb parent in the same log; unknown pitch identity is retained without creating a catalogue object. Parent relationships have one level. Catalogue pitch counts and route extent do not establish tries. The [writer](../src/db/climbing-log-sync.ts) validates these relationships and expands a reported count N into N occurrences at the reported scope. A missing total retains one occurrence with unknown details. It makes no completeness claim.
 
-`outcome` is `completed`, `failed`, or null. Completion, rope method, solo, protection, aid, fall/hang, dab, and history are independent facts. Aid use does not establish a fall or hang. `fellOrHung` retains the combined source condition; unknown booleans remain null. See the [fact normalizer](../src/db/source-attempt-facts.ts).
+`climbing_attempt.source_result` stores the original supported source result label on the described occurrence. Count-expanded anonymous occurrences have no result label. The `fitness.v_climbing_attempt` view computes `outcome` as `completed`, `failed`, or null through `fitness.climbing_attempt_outcome`; no outcome column is stored. The API continues returning the computed outcome. See the [projection and migration](../drizzle/0148_compute_climbing_attempt_outcome.sql) and PostgreSQL's [view semantics](https://www.postgresql.org/docs/current/sql-createview.html).
+
+Completion, rope method, solo, protection, aid, fall/hang, dab, and history remain independent. A top-rope method, a pitch count, or absence of falls alone does not establish completion. Aid use does not establish a fall or hang. `fellOrHung` retains the combined source condition; unknown booleans remain null. The [writer](../src/db/climbing-log-sync.ts) retains exact labels and their attempt associations across partial updates; the [fact normalizer](../src/db/source-attempt-facts.ts) interprets the separate execution qualifiers.
 
 The server derives a free rock send from completion with known absence of aid and falls/hangs; bouldering also requires known absence of a dab. Generic completion remains visible when execution facts are unknown. Source first-try qualifiers establish order 1 on an identified target. Flash supplies inferred beta only when no other retained log identifies the same target; independently supplied beta survives that guard. Missing prior history never becomes a stored false. The [reader](../packages/server/src/repositories/climbing-activity-log-entry-repository.ts) returns derived labels alongside complete recorded facts.
 
@@ -34,7 +36,7 @@ The server derives a free rock send from completion with known absence of aid an
 | ClimbSetting | `indoor`, `outdoor` |
 | ClimbingDiscipline | `rock_climbing`, `ice_climbing`, `mixed_climbing`, `snow_climbing`, `hiking`, `scrambling`, `mountaineering` |
 | AttemptScope | `climb`, `pitch` |
-| AttemptOutcome | `completed`, `failed` |
+| AttemptOutcome (computed API value) | `completed`, `failed` |
 | RopeMethod | `lead`, `top_rope`, `follow`, `unroped` |
 | ProtectionStyle | `sport`, `trad` |
 | GradeSystem | `v_scale`, `font`, `yds`, `french`, `uiaa`, `ewbank`, `saxon`, `norwegian`, `brazilian_crux`, `british_adjectival`, `british_technical`, `aid`, `water_ice`, `alpine_ice`, `mixed`, `ifas`, `nccs` |
@@ -52,3 +54,5 @@ The current filters independently select kind, scope, rope method, solo, aid, ac
 ## Maintenance cutover
 
 Existing installations require the quiesced, bounded [climbing-log model cutover](climbing-log-model-cutover.md). Fresh databases can apply preparation and finalization directly because they have no legacy records. Conversion gates preserve source evidence before removing old storage; see [0146](../drizzle/0146_climbing_log_model_prepare.sql) and [0147](../drizzle/0147_climbing_log_model_finalize.sql).
+
+The subsequent [outcome migration](../drizzle/0148_compute_climbing_attempt_outcome.sql) reconstructs source labels from retained original records, verifies every known outcome, and rejects missing or ambiguous evidence before dropping the column. Stop all affected web readers and sync/import writers for this cutover; existing binaries still read or write the removed column. Resume only with the matching release, following the [deployment runbook](../deploy/README.md).

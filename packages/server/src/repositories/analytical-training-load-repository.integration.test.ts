@@ -96,7 +96,7 @@ describe("AnalyticalTrainingLoadRepository database semantics", () => {
             kind: "boulder",
             publishedGrades: [{ value: "V5", system: "v_scale" }],
           },
-          attempts: [{ scope: "climb", qualifier: "free-send" }],
+          attempts: [{ scope: "climb", sourceResult: "Send", qualifier: "free-send" }],
           reportedAttemptCounts: [{ scope: "climb", count: 3 }],
         },
         {
@@ -111,14 +111,14 @@ describe("AnalyticalTrainingLoadRepository database semantics", () => {
           activityId: climbingActivityId,
           discipline: "mountaineering",
           climb: { externalId: "summit", kind: "summit" },
-          attempts: [{ scope: "climb", outcome: "completed" }],
+          attempts: [{ scope: "climb", sourceResult: "completed" }],
         },
         {
           externalId: "pitch",
           activityId: climbingActivityId,
           discipline: "rock_climbing",
           climb: { externalId: "pitch-route", kind: "route" },
-          attempts: [{ scope: "pitch", outcome: "completed" }],
+          attempts: [{ scope: "pitch", sourceResult: "completed" }],
         },
       ],
     });

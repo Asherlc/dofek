@@ -5,7 +5,7 @@ import {
   isValidClimbingGrade,
   parseClimbingGrade,
 } from "@dofek/training/climbing-grades";
-import type { GradeComponent, RopeMethod } from "@dofek/training/climbing-log";
+import type { AttemptOutcome, GradeComponent, RopeMethod } from "@dofek/training/climbing-log";
 import { gpsCoordinatesSchema } from "@dofek/training/gps-coordinates";
 import { z } from "zod";
 import type { SourceClimbDefinition } from "./climbing-log-sync.ts";
@@ -14,6 +14,10 @@ import {
   type SourceAttemptFacts,
   type SourceAttemptQualifier,
 } from "./source-attempt-facts.ts";
+
+export type LegacyAttemptFacts = Omit<SourceAttemptFacts, "sourceResult"> & {
+  outcome?: AttemptOutcome | null;
+};
 
 export const legacyClimbingRowSchema = z.object({
   id: z.string(),
@@ -157,7 +161,7 @@ export function legacyClimbingDefinition(row: LegacyClimbingRow, hasOtherTargetH
   const areas: NonNullable<SourceClimbDefinition["areas"]>[number][] = row.location_path.map(
     (node) => ({ name: node.name, externalId: node.externalId }),
   );
-  const facts: SourceAttemptFacts = {};
+  const facts: LegacyAttemptFacts = {};
   const methods: Record<string, RopeMethod> = {
     lead: "lead",
     "top-rope": "top_rope",
@@ -366,11 +370,16 @@ export function legacyClimbingDefinition(row: LegacyClimbingRow, hasOtherTargetH
     qualifier = "free-send";
   if (label === "fell/hung") qualifier = "fell-hung";
   if (label === "dab") qualifier = "dab";
-  const normalized = normalizeSourceAttemptFacts(facts, qualifier, {
-    climbKind: row.climb_type,
-    targetIdentified: targetId !== null,
-    hasOtherTargetHistory,
-  });
+  const { outcome, ...executionFacts } = facts;
+  const normalized: LegacyAttemptFacts = {
+    ...normalizeSourceAttemptFacts(executionFacts, qualifier, {
+      climbKind: row.climb_type,
+      targetIdentified: targetId !== null,
+      hasOtherTargetHistory,
+    }),
+    ...(outcome === undefined ? {} : { outcome }),
+    ...(qualifier !== undefined && qualifier !== "fell-hung" ? { outcome: "completed" } : {}),
+  };
   const definition: SourceClimbDefinition = {
     externalId: targetId,
     name,

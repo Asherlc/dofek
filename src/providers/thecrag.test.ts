@@ -247,10 +247,10 @@ describe("TheCragProvider personal key authentication", () => {
 
 describe("TheCragProvider logbook sync", () => {
   it.each([
-    ["attempt", [{ scope: "climb", outcome: "failed" }]],
-    ["dog", [{ scope: "climb", outcome: "completed", fellOrHung: true }]],
-    ["tick", [{ scope: "climb", outcome: "completed" }]],
-  ])("maps explicit source outcome %s independently of fall or hang", async (label, attempts) => {
+    ["attempt", [{ scope: "climb", sourceResult: "attempt" }]],
+    ["dog", [{ scope: "climb", sourceResult: "dog", fellOrHung: true }]],
+    ["tick", [{ scope: "climb", sourceResult: "tick" }]],
+  ])("retains explicit source result %s independently of fall or hang", async (label, attempts) => {
     const database = createMockDatabase();
     const result = await new TheCragProvider(
       vi
@@ -649,7 +649,7 @@ describe("TheCragProvider logbook sync", () => {
     [null, undefined],
     [undefined, undefined],
     [{ name: "  ", label: " On sight " }, "free-onsight"],
-  ])("retains nullable outcome metadata and trims source text (%j)", async (tick, qualifier) => {
+  ])("retains nullable result metadata and trims display text (%j)", async (tick, qualifier) => {
     const database = createMockDatabase({ executeResult: [{ id: "entry-1" }] });
     const result = await new TheCragProvider(
       vi.fn<typeof fetch>().mockResolvedValue(
@@ -670,6 +670,9 @@ describe("TheCragProvider logbook sync", () => {
       }),
     ]);
     expect(writtenRecords()[0]?.attempts[0]?.qualifier).toBe(qualifier);
+    expect(writtenRecords()[0]?.attempts[0]?.sourceResult).toBe(
+      qualifier ? " On sight " : undefined,
+    );
   });
 
   it("preserves the source day in a complete local ISO timestamp", async () => {

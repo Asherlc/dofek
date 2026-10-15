@@ -82,10 +82,12 @@ and firsthand [mixed-grade](https://publications.americanalpineclub.org/articles
 and [ice/mixed range](https://publications.americanalpineclub.org/articles/13201213975) examples.
 
 Published components belong to Climb/Pitch; separately reported components
-belong to the log. Attempts record whole-Climb or pitch scope and independent
-completion, rope method, solo, aid, protection, fall/hang, dab, beta and source
-history facts. Server queries derive result labels and counts; see the
-[canonical model](../../docs/superpowers/specs/2026-10-13-climbing-log-model-summitpost-design.md).
+belong to the log. Recorded attempts retain whole-Climb or pitch scope, original
+source result labels, rope method, solo, aid, protection, fall/hang, dab, beta and
+source history facts. The raw record schema and computed response schema are
+separate. Server queries derive completion, result labels and counts; see the
+[current model](../../docs/climbing-context.md) and
+[schemas](src/climbing-log.ts).
 
 ### Training distributions
 

@@ -73,17 +73,42 @@ describe("KayaSyncProvider", () => {
   it.each([
     {
       label: " Onsight ",
-      attempt: { scope: "climb", ropeMethod: "lead", qualifier: "free-onsight" },
+      attempt: {
+        scope: "climb",
+        ropeMethod: "lead",
+        qualifier: "free-onsight",
+        sourceResult: " Onsight ",
+      },
     },
-    { label: "Flash", attempt: { scope: "climb", ropeMethod: "lead", qualifier: "free-flash" } },
-    { label: "Redpoint", attempt: { scope: "climb", ropeMethod: "lead", qualifier: "free-send" } },
-    { label: "Send", attempt: { scope: "climb", ropeMethod: "lead", qualifier: "free-send" } },
+    {
+      label: "Flash",
+      attempt: {
+        scope: "climb",
+        ropeMethod: "lead",
+        qualifier: "free-flash",
+        sourceResult: "Flash",
+      },
+    },
+    {
+      label: "Redpoint",
+      attempt: {
+        scope: "climb",
+        ropeMethod: "lead",
+        qualifier: "free-send",
+        sourceResult: "Redpoint",
+      },
+    },
+    {
+      label: "Send",
+      attempt: { scope: "climb", ropeMethod: "lead", qualifier: "free-send", sourceResult: "Send" },
+    },
     {
       label: "Repeat",
       attempt: {
         scope: "climb",
         ropeMethod: "lead",
         qualifier: "free-send",
+        sourceResult: "Repeat",
         hadCompletedBefore: true,
       },
     },
@@ -151,7 +176,7 @@ describe("KayaSyncProvider", () => {
       reportedAttemptCounts: [{ scope: "climb", count: 3 }],
     });
     expect(mocks.persistSessions.mock.calls[0]?.[1].standaloneEntries[0]?.attempts).toStrictEqual([
-      { scope: "climb", ropeMethod: "top_rope", qualifier: "free-send" },
+      { scope: "climb", ropeMethod: "top_rope", qualifier: "free-send", sourceResult: "Redpoint" },
     ]);
   });
   it.each(["0000-01-01", "2026-02-30", "malformed"])(

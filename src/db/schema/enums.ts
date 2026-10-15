@@ -1,7 +1,6 @@
 import { ACTIVITY_MODALITIES, CANONICAL_ACTIVITY_TYPES } from "@dofek/training/activity-types";
 import { GRADE_SYSTEMS } from "@dofek/training/climbing-grades";
 import {
-  ATTEMPT_OUTCOMES,
   ATTEMPT_SCOPES,
   CLIMB_KINDS,
   CLIMB_SETTINGS,
@@ -93,8 +92,6 @@ export const climbingHoldTypeEnum = fitness.enum("climbing_hold_type", [
   "pocket",
   "jug",
 ]);
-
-export const attemptOutcomeEnum = fitness.enum("attempt_outcome", ATTEMPT_OUTCOMES);
 
 export const sleepStageNameEnum = fitness.enum("sleep_stage_name", [
   "deep",

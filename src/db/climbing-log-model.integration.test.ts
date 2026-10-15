@@ -79,7 +79,7 @@ describe("canonical climbing log model (integration)", () => {
     expect(log).toMatchObject({ climbedOn: null, discipline: null, activityId: null });
     expect(attempt).toMatchObject({
       attemptIndex: null,
-      outcome: null,
+      sourceResult: null,
       scope: "climb",
       pitchId: null,
       parentAttemptId: null,
@@ -183,7 +183,7 @@ describe("canonical climbing log model (integration)", () => {
       id: attemptId,
       climbingLogEntryId: logId,
       scope: "climb",
-      outcome: "completed",
+      sourceResult: "completed",
     });
     await context.db.delete(activity).where(eq(activity.id, activityId));
 
@@ -202,7 +202,7 @@ describe("canonical climbing log model (integration)", () => {
       climbedOn: "2026-10-01",
     });
     expect(attempts.map((row) => row.id)).toEqual([attemptId]);
-    expect(attempts[0]?.outcome).toBe("completed");
+    expect(attempts[0]?.sourceResult).toBe("completed");
   });
 
   async function recordedRoute() {

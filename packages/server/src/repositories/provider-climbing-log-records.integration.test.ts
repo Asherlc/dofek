@@ -89,7 +89,7 @@ describe("provider climbing log records", () => {
                   {
                     scope: "pitch" as const,
                     pitch: { externalId: "p1" },
-                    outcome: "completed" as const,
+                    sourceResult: "completed" as const,
                   },
                 ]
               : [{ scope: "climb" as const }],

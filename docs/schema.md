@@ -161,7 +161,7 @@ validation scan's stronger lock during the initial constraint addition:
 | `fitness.climb_grade` / `fitness.pitch_grade` | Ordered published grade components owned by their definitions |
 | `fitness.climbing_log_entry` | Source occurrence, independent source date, notes, provenance, experience context and optional Activity |
 | `fitness.climbing_log_entry_grade` | Ordered separately reported grade components |
-| `fitness.climbing_attempt` | Scoped occurrences with independent nullable completion and execution facts |
+| `fitness.climbing_attempt` | Scoped occurrences with original source result labels and independent nullable execution facts |
 
 Climb references Area; Pitch references Climb. Historical logs display current
 shared definitions. Verified source identities are user/provider scoped;
@@ -170,10 +170,12 @@ points with longitude as x and latitude as y. See the
 [climbing schema](../src/db/schema/climbing.ts), [model guide](climbing-context.md)
 and [PostgreSQL geometric types](https://www.postgresql.org/docs/current/datatype-geometric.html).
 
-Attempts record whole-Climb or pitch scope, nullable completion, and independent
+Attempts record whole-Climb or pitch scope, nullable raw source result labels, and independent
 rope method, solo, protection, aid, fall/hang, dab, beta and history facts.
 Pitch attempts may identify a Pitch and an established parent whole-Climb
-attempt. `fitness.v_climbing_log_entry` derives current paths, owned grades,
+attempt. `fitness.v_climbing_attempt` computes completion through the
+[canonical result function](../drizzle/0148_compute_climbing_attempt_outcome.sql),
+and `fitness.v_climbing_log_entry` derives current paths, owned grades,
 scoped counts and compatible free-rock labels without storing duplicate
 summaries. See the [writer](../src/db/climbing-log-sync.ts) and PostgreSQL's
 [view semantics](https://www.postgresql.org/docs/current/sql-createview.html).
