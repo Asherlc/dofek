@@ -29,7 +29,12 @@ function collectSourceFiles(directory: string): string[] {
       files.push(...collectSourceFiles(path));
       continue;
     }
-    if (entry.endsWith(".ts") && !entry.endsWith(".test.ts")) {
+    if (
+      entry.endsWith(".ts") &&
+      !entry.endsWith(".test.ts") &&
+      entry !== "test-helpers.ts" &&
+      !entry.endsWith("-test-helpers.ts")
+    ) {
       files.push(path);
     }
   }
@@ -37,13 +42,6 @@ function collectSourceFiles(directory: string): string[] {
 }
 
 describe("provider activity sync policy", () => {
-  it("syncs Mountain Project ticks through climbing entries", () => {
-    const source = readFileSync(join(REPO_ROOT, "src/providers/mountain-project.ts"), "utf8");
-
-    expect(source).toContain(".insert(climbingEntry)");
-    expect(source).not.toContain("upsertProviderActivity(");
-  });
-
   it("routes provider code through provider-activity-sync instead of provider-activity-absence", () => {
     const violations: string[] = [];
 

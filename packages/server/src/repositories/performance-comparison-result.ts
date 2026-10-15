@@ -18,7 +18,11 @@ import {
   computeStrengthComparisonMetrics,
   type StrengthComparisonRow,
 } from "./performance-comparison-modality-metrics.ts";
-import { isIdentityEquivalence, type ResolvedEquivalence } from "./performance-comparison-types.ts";
+import {
+  type ClimbingPerformanceIdentity,
+  isIdentityEquivalence,
+  type ResolvedEquivalence,
+} from "./performance-comparison-types.ts";
 
 export const performanceSensorRowSchema = z.object({
   activity_id: z.uuid(),
@@ -35,23 +39,6 @@ export const performanceSensorRowSchema = z.object({
   sample_count: z.coerce.number().int().nonnegative().nullable(),
   power_sample_count: z.coerce.number().int().nonnegative().nullable(),
   heart_rate_sample_count: z.coerce.number().int().nonnegative().nullable(),
-});
-
-export const performanceClimbingRowSchema = z.object({
-  activity_id: z.uuid(),
-  entry_id: z.uuid(),
-  entry_activity_id: z.uuid(),
-  entry_provider: z.string(),
-  external_id: z.string().nullable(),
-  climb_type: z.string(),
-  grade_system: z.string(),
-  grade: z.string(),
-  sent: z.boolean().nullable(),
-  attempt_count: z.coerce.number().int().positive().nullable(),
-  lead: z.boolean().nullable(),
-  wall_angle_degrees: z.coerce.number().nullable(),
-  route_name: z.string().nullable(),
-  location_name: z.string().nullable(),
 });
 
 export const performanceStrengthRowSchema = z.object({
@@ -101,14 +88,7 @@ export interface PerformanceActivityRow {
     raw: Record<string, unknown> | null;
   }>;
   exercise_ids: string[];
-  climb_identities: Array<{
-    climbType: string;
-    gradeSystem: string;
-    grade: string;
-    routeName: string;
-    locationName: string;
-    lead: boolean | null;
-  }>;
+  climb_identities: ClimbingPerformanceIdentity[];
 }
 
 function round(value: number, digits = 3): number {

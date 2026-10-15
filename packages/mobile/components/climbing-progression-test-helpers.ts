@@ -1,13 +1,17 @@
 import type { ClimbingGradeProgressionLane } from "@dofek/training/climbing-progression";
 
 export function climbingProgressionFixture(
-  style: ClimbingGradeProgressionLane["style"] = "boulder",
+  climbKind: ClimbingGradeProgressionLane["climbKind"] = "boulder",
+  facts: Partial<ClimbingGradeProgressionLane> = {},
 ): ClimbingGradeProgressionLane {
-  const grade = style === "boulder" ? "V4" : "5.11a";
+  const grade = climbKind === "boulder" ? "V4" : "5.11a";
   return {
-    style,
-    climbType: style === "boulder" ? "boulder" : "route",
-    gradeSystem: style === "boulder" ? "v_scale" : "yds",
+    attemptScope: "climb",
+    ropeMethod: null,
+    solo: null,
+    usedAid: false,
+    climbKind,
+    gradeSystem: climbKind === "boulder" ? "v_scale" : "yds",
     grades: [{ grade, gradeSortValue: 65 }],
     settings: ["indoor", "outdoor"],
     axisMax: 3,
@@ -59,5 +63,6 @@ export function climbingProgressionFixture(
         ],
       },
     ],
+    ...facts,
   };
 }

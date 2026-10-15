@@ -1035,12 +1035,15 @@ describe("PerformanceComparisonRepository", () => {
         source_raw_evidence: [],
         climb_identities: [
           {
-            climbType: "boulder",
+            climbKind: "boulder",
             gradeSystem: "v_scale",
             grade: "v6",
-            routeName: "blue arete",
+            climbName: "blue arete",
             locationName: "the gym",
-            lead: null,
+            ropeMethod: null,
+            solo: null,
+            attemptScope: "climb" as const,
+            pitchNumber: null,
           },
         ],
       }),
@@ -1423,15 +1426,18 @@ describe("PerformanceComparisonRepository", () => {
     });
   });
 
-  it("compares an exact climb identity without producing deltas from incomplete attempts", async () => {
+  it("compares recorded climb counts while gating deltas on unknown outcomes", async () => {
     const identity = {
       kind: "climb" as const,
-      climbType: "boulder",
+      climbKind: "boulder",
       gradeSystem: "v_scale",
       grade: "V6",
-      routeName: "Blue Arete",
+      climbName: "Blue Arete",
       locationName: "The Gym",
-      lead: null,
+      ropeMethod: null,
+      solo: null,
+      attemptScope: "climb" as const,
+      pitchNumber: null,
     };
     const first = activityRow({
       canonical_type: "climbing",
@@ -1464,14 +1470,18 @@ describe("PerformanceComparisonRepository", () => {
             entry_activity_id: FIRST_ID,
             entry_provider: "kaya",
             external_id: "problem-1",
-            climb_type: "boulder",
+            climb_kind: "boulder",
             grade_system: "v_scale",
             grade: "V6",
-            sent: null,
-            attempt_count: null,
-            lead: null,
+            sends: 0,
+            unknown_outcomes: 1,
+            recorded_attempt_count: 1,
+            rope_method: null,
+            solo: null,
+            attempt_scope: "climb",
+            pitch_number: null,
             wall_angle_degrees: 30,
-            route_name: "Blue Arete",
+            climb_name: "Blue Arete",
             location_name: "The Gym",
           },
           {
@@ -1480,14 +1490,18 @@ describe("PerformanceComparisonRepository", () => {
             entry_activity_id: SECOND_ID,
             entry_provider: "kaya",
             external_id: "problem-1",
-            climb_type: "boulder",
+            climb_kind: "boulder",
             grade_system: "v_scale",
             grade: "V6",
-            sent: true,
-            attempt_count: 2,
-            lead: null,
+            sends: 1,
+            unknown_outcomes: 0,
+            recorded_attempt_count: 2,
+            rope_method: null,
+            solo: null,
+            attempt_scope: "climb",
+            pitch_number: null,
             wall_angle_degrees: 30,
-            route_name: "Blue Arete",
+            climb_name: "Blue Arete",
             location_name: "The Gym",
           },
         ]);
@@ -1527,12 +1541,18 @@ describe("PerformanceComparisonRepository", () => {
           outcomes_status: "complete",
         },
       },
-      delta_to_baseline: { climbing_attempts: null, climbing_sends: null },
+      delta_to_baseline: { climbing_attempts: 1, climbing_sends: null },
     });
-    expect(result.equivalence.key).toMatchObject({ kind: "climb", lead: null });
+    expect(result.equivalence.key).toMatchObject({
+      kind: "climb",
+      rope_method: null,
+      solo: null,
+      attempt_scope: "climb",
+      pitch_number: null,
+    });
     const candidateQuery = db.execute.mock.calls
       .map(([query]) => queryText(query))
       .find((text) => text.includes("performance-comparison:candidates"));
-    expect(candidateQuery).toContain("lead");
+    expect(candidateQuery).toContain("rope_method");
   });
 });

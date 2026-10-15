@@ -1023,6 +1023,20 @@
       "when": 1791747000000,
       "tag": "0145_thecrag_climbing_entries",
       "breakpoints": true
+    },
+    {
+      "idx": 146,
+      "version": "7",
+      "when": 1791943149739,
+      "tag": "0146_climbing_log_model_prepare",
+      "breakpoints": true
+    },
+    {
+      "idx": 147,
+      "version": "7",
+      "when": 1791943919655,
+      "tag": "0147_climbing_log_model_finalize",
+      "breakpoints": true
     }
   ]
 }

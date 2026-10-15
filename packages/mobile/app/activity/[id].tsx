@@ -4,7 +4,6 @@ import {
   formatActivityMetric,
 } from "@dofek/format/activity-data-state";
 import {
-  formatClimbingAttemptResult,
   formatDateLong,
   formatDurationRange,
   formatDurationSeconds,
@@ -16,7 +15,7 @@ import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { processingPollInterval } from "@dofek/providers/processing-status";
 import { providerSourceLabel } from "@dofek/providers/providers";
 import { getActivityIconInfo } from "@dofek/training/activity-icons";
-import type { ClimbingContext } from "@dofek/training/climbing-context";
+import { isClimbingLogActivity } from "@dofek/training/climbing-log";
 import type { MuscleGroupInput } from "@dofek/training/muscle-groups";
 import {
   cadenceUnit,
@@ -48,12 +47,12 @@ import { ActivitySourceDecisionCard } from "../../components/activity/ActivitySo
 import { ProviderAbsentBanner } from "../../components/activity/ProviderAbsentBanner";
 import { styles } from "../../components/activity/styles";
 import { HrZonesChart, PowerZonesChart } from "../../components/activity/ZoneDistributionCharts";
-import { ClimbingEntryContext } from "../../components/ClimbingEntryContext";
-import { ClimbingEntrySources } from "../../components/ClimbingEntrySources";
+import { ClimbingLogEntryBreakdown } from "../../components/ClimbingLogEntryBreakdown";
 import { HangboardingDetail } from "../../components/HangboardingDetail";
 import { MuscleGroupBodyDiagram } from "../../components/MuscleGroupBodyDiagram";
 import { getQueryErrorMessage, QueryStatePanel } from "../../components/QueryStatePanel";
 import { RouteMap } from "../../components/RouteMap";
+import { UnattachedClimbingLogEntries } from "../../components/UnattachedClimbingLogEntries";
 import { type ActivityExportFormat, downloadActivityExport } from "../../lib/activity-export";
 import { useAuth } from "../../lib/auth-context";
 import { captureException } from "../../lib/telemetry";
@@ -385,141 +384,8 @@ const exerciseStyles = StyleSheet.create({
   },
 });
 
-interface ClimbingEntry {
-  context: ClimbingContext;
-  sourceLinks: import("@dofek/training/climbing-context").ClimbingSourceLink[];
-  id: string;
-  climbType: "boulder" | "route";
-  grade: string;
-  sent: boolean | null;
-  attemptCount: number | null;
-  attempts: Array<{
-    attemptIndex: number;
-    failureReason: "fell" | "pumped" | "skin" | "technique" | "fear" | null;
-    notes: string | null;
-    outcome: "sent" | "failed";
-  }>;
-  ascentType: "Flash" | "Onsight" | "Redpoint" | "Pinkpoint" | "Repeat" | null;
-  holdType: "crimp" | "sloper" | "pinch" | "pocket" | "jug" | null;
-  routeName: string | null;
-  locationName: string | null;
-  sourceName: string | null;
-  wallAngleDegrees: number | null;
-}
-
-function ClimbingEntryBreakdown({ entries }: { entries: ClimbingEntry[] }) {
-  return (
-    <>
-      {entries.map((entry) => {
-        const attemptResult = formatClimbingAttemptResult(
-          entry.sent,
-          entry.attemptCount,
-          entry.ascentType,
-          entry.context,
-        );
-        return (
-          <View key={entry.id} style={climbingStyles.entryRow}>
-            <View style={climbingStyles.gradeBadge}>
-              <Text style={climbingStyles.gradeText}>{entry.grade}</Text>
-            </View>
-            <View style={climbingStyles.entryDetails}>
-              <ClimbingEntrySources
-                name={entry.routeName ?? (entry.climbType === "boulder" ? "Boulder" : "Route")}
-                sourceName={entry.sourceName}
-                links={entry.sourceLinks}
-              />
-              <ClimbingEntryContext context={entry.context} sent={entry.sent} />
-              {entry.holdType !== null && (
-                <Text style={climbingStyles.locationName}>
-                  {entry.holdType[0]?.toUpperCase()}
-                  {entry.holdType.slice(1)}
-                </Text>
-              )}
-              {entry.attempts.map((attempt) => (
-                <Text key={attempt.attemptIndex} style={climbingStyles.attemptDetail}>
-                  {attempt.attemptIndex}:{" "}
-                  {attempt.outcome === "sent"
-                    ? "Sent"
-                    : `${attempt.failureReason?.[0]?.toUpperCase()}${attempt.failureReason?.slice(1)}`}
-                </Text>
-              ))}
-
-              {attemptResult !== null && (
-                <Text style={entry.sent ? climbingStyles.sent : climbingStyles.attempted}>
-                  {attemptResult}
-                </Text>
-              )}
-            </View>
-          </View>
-        );
-      })}
-    </>
-  );
-}
-
 const climbingStyles = StyleSheet.create({
-  container: {
-    backgroundColor: colors.surface,
-    borderRadius: 16,
-    padding: 16,
-    gap: 12,
-  },
-  sectionTitle: {
-    color: colors.textSecondary,
-    fontSize: 13,
-    fontWeight: "600",
-  },
-  attachButton: {
-    backgroundColor: colors.accent,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  attachButtonText: {
-    color: colors.text,
-    fontSize: 13,
-    fontWeight: "600",
-  },
-  entryRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    paddingVertical: 4,
-  },
-  gradeBadge: {
-    minWidth: 48,
-    borderRadius: 8,
-    backgroundColor: colors.surfaceSecondary,
-    paddingHorizontal: 8,
-    paddingVertical: 6,
-    alignItems: "center",
-  },
-  gradeText: {
-    color: colors.accent,
-    fontSize: 14,
-    fontWeight: "700",
-  },
-  entryDetails: {
-    flex: 1,
-  },
-  locationName: {
-    color: colors.textTertiary,
-    fontSize: 11,
-  },
-  sent: {
-    color: colors.positive,
-    fontSize: 13,
-    fontWeight: "600",
-  },
-  attempted: {
-    color: colors.textSecondary,
-    fontSize: 13,
-    fontWeight: "600",
-  },
-  attemptDetail: {
-    color: colors.textSecondary,
-    fontSize: 11,
-  },
+  container: { backgroundColor: colors.surface, borderRadius: 16, padding: 16, gap: 12 },
 });
 
 // ── Main Screen ──
@@ -629,13 +495,12 @@ export default function ActivityDetailScreen() {
     { id: id ?? "" },
     { enabled: !!id && isStrengthActivity },
   );
-  const isClimbingActivity =
-    detail.data != null && isActivityDetailType(detail.data.activityType, "climbing");
-  const climbingEntries = trpc.climbing.activityEntries.useQuery(
-    { id: id ?? "" },
+  const isClimbingActivity = detail.data != null && isClimbingLogActivity(detail.data.activityType);
+  const climbingEntries = trpc.climbing.activityLogEntries.useQuery(
+    { activityId: id ?? "" },
     { enabled: !!id && isClimbingActivity },
   );
-  const entrySuggestions = trpc.climbing.unattachedClimbingEntries.useQuery(
+  const entrySuggestions = trpc.climbing.unattachedClimbingLogEntries.useQuery(
     { activityId: id },
     { enabled: !!id && isClimbingActivity },
   );
@@ -643,14 +508,14 @@ export default function ActivityDetailScreen() {
   const [entryAttachState, setEntryAttachState] = useState<
     Record<string, { pending: boolean; error: string | null }>
   >({});
-  const attachEntry = trpc.climbing.attachClimbingEntry.useMutation({
+  const attachEntry = trpc.climbing.attachClimbingLogEntry.useMutation({
     onSuccess: async (_result, input) => {
       await Promise.all([
-        trpcUtils.climbing.activityEntries.invalidate({ id: input.activityId }),
+        trpcUtils.climbing.activityLogEntries.invalidate({ activityId: input.activityId }),
         trpcUtils.climbing.sessionSummary.invalidate(),
         trpcUtils.climbing.gradeProgression.invalidate(),
         trpcUtils.climbing.volumeByGrade.invalidate(),
-        trpcUtils.climbing.unattachedClimbingEntries.invalidate({
+        trpcUtils.climbing.unattachedClimbingLogEntries.invalidate({
           activityId: input.activityId,
         }),
       ]);
@@ -660,7 +525,7 @@ export default function ActivityDetailScreen() {
     if (!id) return;
     setEntryAttachState((current) => ({ ...current, [entryId]: { pending: true, error: null } }));
     attachEntry.mutate(
-      { activityId: id, entryId },
+      { activityId: id, climbingLogEntryId: entryId },
       {
         onSuccess: () =>
           setEntryAttachState((current) => ({
@@ -952,71 +817,21 @@ export default function ActivityDetailScreen() {
             <QueryStatePanel variant="loading" minHeight={72} />
           )}
           {(climbingEntries.data?.length ?? 0) > 0 && (
-            <ClimbingEntryBreakdown entries={climbingEntries.data ?? []} />
+            <ClimbingLogEntryBreakdown entries={climbingEntries.data ?? []} />
           )}
           {isClimbingActivity &&
-            (entrySuggestions.error ? (
-              <QueryStatePanel
-                variant="error"
-                message={getQueryErrorMessage(entrySuggestions.error)}
-                onRetry={() => void entrySuggestions.refetch()}
-                retrying={entrySuggestions.isFetching}
+            (entrySuggestions.error ||
+              (!climbingEntriesLoading && entrySuggestions.isLoading) ||
+              (entrySuggestions.data?.length ?? 0) > 0 ||
+              climbingEntries.data?.length === 0) && (
+              <UnattachedClimbingLogEntries
+                suggestions={entrySuggestions.data}
+                error={entrySuggestions.error ?? null}
+                isLoading={entrySuggestions.isLoading}
+                state={entryAttachState}
+                onAttach={handleAttachEntry}
               />
-            ) : entrySuggestions.isLoading && !entrySuggestions.data ? (
-              climbingEntriesLoading ? null : (
-                <QueryStatePanel variant="loading" minHeight={72} />
-              )
-            ) : (entrySuggestions.data?.length ?? 0) === 0 ? (
-              climbingEntries.data?.length === 0 ? (
-                <QueryStatePanel
-                  variant="empty"
-                  message="No unattached climbing entries for this day."
-                />
-              ) : null
-            ) : (
-              <>
-                <Text style={climbingStyles.sectionTitle}>Unattached</Text>
-                {entrySuggestions.data?.map((entry) => {
-                  const state = entryAttachState[entry.id];
-                  const attemptResult = formatClimbingAttemptResult(
-                    entry.sent,
-                    entry.attemptCount,
-                    entry.ascentType,
-                    entry.context,
-                  );
-                  return (
-                    <View key={entry.id} style={climbingStyles.entryRow}>
-                      <View style={climbingStyles.entryDetails}>
-                        <ClimbingEntrySources
-                          name={
-                            entry.routeName ?? (entry.climbType === "boulder" ? "Boulder" : "Route")
-                          }
-                          sourceName={entry.sourceName ?? providerSourceLabel(entry.providerId)}
-                          links={entry.sourceLinks}
-                        />
-                        <ClimbingEntryContext context={entry.context} sent={entry.sent} />
-                        <Text style={climbingStyles.locationName}>
-                          {entry.grade}
-                          {attemptResult !== null ? ` · ${attemptResult}` : null}
-                        </Text>
-                        {state?.error ? <Text style={styles.errorText}>{state.error}</Text> : null}
-                      </View>
-                      <Pressable
-                        accessibilityRole="button"
-                        accessibilityLabel="Attach to this activity"
-                        disabled={state?.pending}
-                        style={climbingStyles.attachButton}
-                        onPress={() => handleAttachEntry(entry.id)}
-                      >
-                        <Text style={climbingStyles.attachButtonText}>
-                          {state?.pending ? "Attaching..." : "Attach"}
-                        </Text>
-                      </Pressable>
-                    </View>
-                  );
-                })}
-              </>
-            ))}
+            )}
         </View>
       )}
 

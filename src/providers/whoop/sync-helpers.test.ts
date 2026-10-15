@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SyncDatabase } from "../../db/index.ts";
 import { dailyMetrics } from "../../db/schema/activity.ts";
 import { withSyncLog } from "../../db/sync-log.ts";
+import { makeTransactionalTestDatabase } from "../test-helpers.ts";
 import { syncWhoopRecovery } from "./sync-recovery.ts";
 import { syncWhoopSleepSessions, syncWhoopSleepStagesForId } from "./sync-sleep.ts";
 import type { WhoopSyncContext } from "./sync-types.ts";
@@ -51,12 +52,12 @@ function makeDb(selectedRows: unknown[] = []) {
   );
   chain.limit.mockResolvedValue(selectedRows);
 
-  const db: SyncDatabase = {
+  const db: SyncDatabase = makeTransactionalTestDatabase({
     insert: vi.fn().mockReturnValue(chain),
     select: vi.fn().mockReturnValue(chain),
     delete: vi.fn().mockReturnValue(chain),
     execute: vi.fn().mockResolvedValue([]),
-  };
+  });
 
   return { db, chain, insert: db.insert, select: db.select };
 }

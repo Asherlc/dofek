@@ -5,8 +5,25 @@ import { ClimbingGradeProgressionChart } from "./ClimbingGradeProgressionChart";
 import { climbingProgressionFixture } from "./climbing-progression-test-helpers";
 
 describe("ClimbingGradeProgressionChart", () => {
+  it("focuses a solo pitch lane independently of another lane with the same method and grade system", () => {
+    render(
+      <ClimbingGradeProgressionChart
+        data={[
+          climbingProgressionFixture("route", { ropeMethod: "lead", solo: false }),
+          climbingProgressionFixture("route", {
+            ropeMethod: "lead",
+            solo: true,
+            attemptScope: "pitch",
+          }),
+        ]}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Focus Lead · Solo · Pitch" }));
+    expect(screen.getByText("Lead · Solo · Pitch")).toBeTruthy();
+    expect(screen.queryByText("Lead")).toBeNull();
+  });
   it("distinguishes retained grade scales in style and focus labels", () => {
-    const french = climbingProgressionFixture("lead");
+    const french = climbingProgressionFixture("route", { ropeMethod: "lead" });
     french.gradeSystem = "french";
     french.grades = [{ grade: "6c", gradeSortValue: 65 }];
     french.periods = french.periods.map((period) => ({
@@ -16,7 +33,11 @@ describe("ClimbingGradeProgressionChart", () => {
         segments: point.segments.map((segment) => ({ ...segment, grade: "6c" })),
       })),
     }));
-    render(<ClimbingGradeProgressionChart data={[climbingProgressionFixture("lead"), french]} />);
+    render(
+      <ClimbingGradeProgressionChart
+        data={[climbingProgressionFixture("route", { ropeMethod: "lead" }), french]}
+      />,
+    );
     expect(screen.getByRole("button", { name: "Focus Lead · French" })).toBeTruthy();
     expect(
       screen.getByRole("button", { name: "Focus Lead · Yosemite Decimal System" }),
@@ -54,8 +75,8 @@ describe("ClimbingGradeProgressionChart", () => {
       <ClimbingGradeProgressionChart
         data={[
           climbingProgressionFixture(),
-          climbingProgressionFixture("top-rope"),
-          climbingProgressionFixture("lead"),
+          climbingProgressionFixture("route", { ropeMethod: "top_rope" }),
+          climbingProgressionFixture("route", { ropeMethod: "lead" }),
         ]}
       />,
     );
@@ -70,7 +91,10 @@ describe("ClimbingGradeProgressionChart", () => {
   it("focuses a style and isolates outdoor records without changing the server values", () => {
     render(
       <ClimbingGradeProgressionChart
-        data={[climbingProgressionFixture(), climbingProgressionFixture("lead")]}
+        data={[
+          climbingProgressionFixture(),
+          climbingProgressionFixture("route", { ropeMethod: "lead" }),
+        ]}
       />,
     );
     fireEvent.click(screen.getByRole("button", { name: "Focus Bouldering" }));
@@ -79,11 +103,11 @@ describe("ClimbingGradeProgressionChart", () => {
     fireEvent.click(screen.getByRole("button", { name: "View Bouldering data" }));
     expect(screen.getByText("0.0 sends/day · 0 sends · 1 recorded day")).toBeTruthy();
     expect(screen.queryByText("2.0 sends/day · 4 sends · 2 recorded days")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "All styles" }));
+    fireEvent.click(screen.getByRole("button", { name: "All climbs" }));
     expect(screen.getByRole("button", { name: "Focus Lead" })).toBeTruthy();
   });
   it("preserves unknown settings and explains unrecorded outcomes", () => {
-    const lane = climbingProgressionFixture("unknown");
+    const lane = climbingProgressionFixture("route");
     lane.settings = ["unknown"];
     lane.periods = lane.periods.map((period) => ({
       ...period,
@@ -94,9 +118,9 @@ describe("ClimbingGradeProgressionChart", () => {
       })),
     }));
     render(<ClimbingGradeProgressionChart data={[lane]} />);
-    expect(screen.getByRole("button", { name: "Focus Unknown style" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Focus Routes" })).toBeTruthy();
     expect(screen.getByText(/Unknown setting/)).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "View Unknown style data" }));
+    fireEvent.click(screen.getByRole("button", { name: "View Routes data" }));
     expect(screen.getByText(/1 outcome unrecorded/)).toBeTruthy();
   });
   it("distinguishes loading and empty states", () => {

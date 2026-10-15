@@ -1,7 +1,7 @@
 # theCrag
 
 Dofek's [`thecrag` provider](../src/providers/thecrag.ts) reads one connected user's climbing logbook and
-stores each ascent as a standalone `fitness.climbing_entry`. The integration
+stores each ascent as a standalone `fitness.climbing_log_entry`. The integration
 uses the existing personal-token connection flow on both web and mobile.
 
 ## Connect
@@ -47,17 +47,19 @@ Later scheduled syncs use the connected account's newest imported update epoch,
 with a one-second overlap, to request new and edited ascents. The cursor follows
 source update time, so an edited historical ascent can arrive independently of
 its climb date. A sync validates the complete fetched batch before saving it in
-one atomic database statement.
+one database transaction through the [canonical writer](../src/db/climbing-log-sync.ts).
 
 The original ascent payload remains available in `raw.ascent`, and
 `raw.accountId` identifies its source account. The payload retains provider IDs,
 tick labels, historical markers, performance ratings, tags, pitch data, and
-route ancestry. Route names, source date prefixes, supplied ancestor paths,
-and recorded tick results populate the existing climbing-entry model. Notes
-remain in the raw payload. Sport/trad gear style can identify route protection,
-but does not establish a climbing method. Missing method, attempt counts, board,
-and angle remain unknown. The provider creates no synthetic activities and
-stores no provider-estimated energy expenditure.
+route ancestry. Verified route/ancestor IDs identify shared Climb and Area
+objects. Published route grades and separately reported ascent grades retain
+their owners. Source dates and notes belong to the log. Recorded gear style
+and tick labels supply independent execution facts; advertised route protection
+stays on the Climb. Catalogue pitch definitions and counts do not establish
+tries. Without a reported attempt total, the log records one occurrence.
+Missing method, board and angle remain unknown. See the
+[adapter](../src/providers/thecrag.ts) and [model](climbing-context.md).
 
 Dofek does not infer that an ascent was deleted when it is absent from an
 incremental response. This initial integration provides no upstream-deletion
@@ -75,8 +77,9 @@ contract. An authenticated production response has not yet been verified;
 unauthenticated research requests were blocked by Cloudflare. Passing fixture
 tests establish Dofek's handling of that contract, not live-account access.
 
-The [importer](../src/providers/thecrag.ts) classifies ascents from boulder,
-sport, and trad styles. theCrag supports additional valid disciplines
+The [importer](../src/providers/thecrag.ts) recognizes supported rock, ice,
+mixed, snow, hiking, scrambling and mountaineering classifications when source
+styles establish them. theCrag supports additional valid disciplines
 ([Route Gear Styles](https://www.thecrag.com/en/article/styles)). If recorded
 gear and route styles cannot establish a supported discipline, or conflict,
 the entire batch stops without changing saved entries. No ascents are skipped,
@@ -87,19 +90,17 @@ The reference names `date` and `logDate` as ISO-8601 values but does not
 establish every live representation. It also lists `gradeAtom.type` without
 defining its values or identifying a grading-system discriminator
 ([personal API reference](https://www.thecrag.com/en/article/logbookreadapi)).
-Only valid `YYYY-MM-DD` source-date prefixes and supported, identifiable grade
-systems are imported. Ambiguous dates or grades stop sync with an explicit
-error and leave saved entries unchanged. Clear V-scale/YDS grades and explicit
-supported system labels are validated through Dofek's shared grading library.
-Bare numeric grades or `6a`/`6A` without a supported system label cannot establish
-their system. theCrag's
+Only valid `YYYY-MM-DD` source-date prefixes establish the normalized date.
+Grade components retain source text; clear V-scale/YDS syntax and explicit
+supported scale labels establish systems through the shared validator.
+Bare numeric grades or `6a`/`6A` without a supported system label retain a null
+system. theCrag's
 [grade-system documentation](https://www.thecrag.com/en/article/gradesonthecrag)
 shows why identical grade text can belong to different systems. The undefined
 live semantics of `gradeAtom.type` remain an acceptance-check limitation.
 
-The [importer](../src/providers/thecrag.ts) currently supports six explicit
-textual scale labels with colon syntax, in addition to clear V-scale and YDS
-values:
+The [importer](../src/providers/thecrag.ts) supports explicit textual scale
+labels with colon syntax, including the following examples:
 
 | Label | System | Supported example |
 |-------|--------|-------------------|
@@ -109,6 +110,11 @@ values:
 | `UIAA` | UIAA | `UIAA: 7` |
 | `YDS` | Yosemite Decimal | `YDS: 5.10a` |
 | `BLDV` | V-scale | `BLDV: V4` |
+| `AID` / `AIDC` | Aid | `AID: A2`, `AIDC: C2` |
+| `WICE` / `AICE` | Water / alpine ice | `WICE: WI3`, `AICE: AI3` |
+| `MIXED` | Mixed | `MIXED: M4` |
+| `IFAS` / `NCCS` | Alpine / commitment | `IFAS: AD`, `NCCS: III` |
+| `UK` / `UKT` | British adjectival / technical | `UK: E1`, `UKT: 5a` |
 
 The labels come from theCrag's
 [grade-system documentation](https://www.thecrag.com/en/article/gradesonthecrag).

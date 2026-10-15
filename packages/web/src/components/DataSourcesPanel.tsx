@@ -1,5 +1,6 @@
 import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { groupProviderEntries, providerFamily } from "@dofek/providers/provider-catalog";
+import type { ProviderManualConnectionMetadata } from "@dofek/providers/provider-connection";
 import { ROUTINE_SYNC_DAYS } from "@dofek/providers/sync-actions";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { z } from "zod";
@@ -80,12 +81,13 @@ export function DataSourcesPanel() {
     id: string;
     name: string;
   } | null>(null);
-  const [tokenAuthProvider, setTokenAuthProvider] = useState<{
-    id: string;
-    name: string;
-    label: string;
-    instructionsUrl: string;
-  } | null>(null);
+  const [tokenAuthProvider, setTokenAuthProvider] = useState<
+    | (ProviderManualConnectionMetadata & {
+        id: string;
+        name: string;
+      })
+    | null
+  >(null);
 
   const updateState = useCallback(
     (id: string, state: ProviderState) => setProviderStates((prev) => ({ ...prev, [id]: state })),
@@ -342,9 +344,11 @@ export function DataSourcesPanel() {
         case "credential":
           setCredentialAuthProvider({ id: provider.id, name: provider.name });
           break;
+        case "public-profile":
         case "token":
           if (provider.tokenAuth) {
             setTokenAuthProvider({
+              kind: provider.tokenAuth.kind,
               id: provider.id,
               name: provider.name,
               label: provider.tokenAuth.label,
@@ -545,6 +549,7 @@ export function DataSourcesPanel() {
 
       {tokenAuthProvider && (
         <TokenAuthModal
+          kind={tokenAuthProvider.kind}
           providerId={tokenAuthProvider.id}
           providerName={tokenAuthProvider.name}
           tokenLabel={tokenAuthProvider.label}

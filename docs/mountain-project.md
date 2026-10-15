@@ -1,7 +1,7 @@
 # Mountain Project provider
 
 The Mountain Project integration syncs a connected user's route and boulder
-ticks as standalone climbing entries. It is an unofficial integration and
+ticks as standalone climbing log entries. It is an unofficial integration and
 fetches a public export endpoint observed on
 [Mountain Project](https://www.mountainproject.com/).
 Use it only for the profile data that the connecting user is authorized to
@@ -42,11 +42,13 @@ Date,Route,Rating,Notes,URL,Pitches,Location,"Avg Stars","Your Stars",Style,"Lea
 ```
 
 - `Date` is a date-only `YYYY-MM-DD` value. Each supported row is stored as one
-  climbing entry; it does not create an activity or session.
+  climbing log entry; it does not create an activity or session.
 - `URL` is retained as raw source data and participates in the content-derived
   tick identity.
-- `Notes`, `Pitches`, `Length`, average/user stars, user rating, and rating
-  code remain in the raw row. `Your Stars = -1` means unrated.
+- `Notes` populate the log. `Rating` belongs to the Climb's published grades;
+  `Your Rating` belongs to the log's separately reported grades. `Pitches`,
+  `Length`, stars, and rating code also remain in the raw row.
+  `Your Stars = -1` means unrated.
 - Roped `Style` values include Lead, TR, Follow, and Solo; boulder values
   include Send, Flash, and Attempt. `Lead Style` further identifies Lead
   ascents such as Onsight, Flash, Redpoint, Pinkpoint, and Fell/Hung.
@@ -61,62 +63,49 @@ produce a replacement ID; full-list reconciliation marks the stale tick
 absent when it disappears from the export. Same-day duplicate laps receive
 distinct occurrence indexes.
 
-## Climbing style and result coverage
+## Attempt facts
 
-The observed export separates the climbing method (`Style`) from the result
-qualifier (`Lead Style`). The
-[current importer](../src/providers/mountain-project.ts) retains both columns
-in the raw row and already interprets these values:
+The observed export separates `Style` from `Lead Style`. Dofek retains the
+original labels and normalizes their independently supported facts through the
+[importer](../src/providers/mountain-project.ts) and
+[attempt normalizer](../src/db/source-attempt-facts.ts):
 
-| Source values | Current normalized result |
+| Source value | Recorded facts |
 | --- | --- |
-| Boulder `Style = Send` or `Flash` | Sent |
-| Boulder `Style = Attempt` | Not sent |
-| Route `Lead Style = Onsight`, `Flash`, `Redpoint`, or `Pinkpoint` | Sent |
-| Route `Lead Style = Fell/Hung` | Not sent |
-| Route with blank `Lead Style`, including `Style = TR` | Result unknown |
+| Lead / TR / Follow | Lead / top-rope / follow rope method |
+| Solo / Aid | Independent solo / aid fact |
+| Send, Redpoint, Pinkpoint | Completed free attempt; Pinkpoint also records preplaced protection |
+| Onsight / Flash | First attempt index; supported completion and execution facts; beta follows the shared history rule |
+| Boulder Attempt | Failed attempt |
+| Fell/Hung | `fellOrHung = true`; completion remains unknown |
+| Blank qualifier | Outcome and execution facts remain unknown |
 
-Route `Style` values `Lead`, `TR`, `Follow`, and `Solo` populate canonical
-`climb_style` independently of `result_style`. Route result labels come from
-`Lead Style`; boulder result labels come from `Style`. Both clients render the
-method and recorded label, including Fell/Hung as “Fell or hung” and Frenchfree
-as recorded. The [permanent view](climbing-context.md#interpretation) derives
-send status while preserving unknown results. Total attempt counts remain
-null because the checked export has no count field.
-`TR` specifies top-rope climbing; it does not establish a clean send. The
-activity-detail and unattached-entry displays omit the unknown result and
-attempt-count placeholders for Mountain Project top-rope ticks when those
-values are absent. The stored values and analytics coverage remain unknown;
-any recorded result or count is still displayed. Both clients use the
-[shared result formatters](../packages/format/src/climbing-context.ts).
-The combined `Fell/Hung` value does not distinguish a fall from a hang or report
-how many occurred. This coverage was checked against the observed tick-export
-contract and importer on 2026-09-29. Source surface:
-[Mountain Project](https://www.mountainproject.com/).
+The export supplies no attempt total, so each tick records one whole-Climb
+occurrence. `Pitches` describes the tick's pitch extent and creates neither
+additional tries nor catalogue Pitch objects. A top-rope method alone proves
+no completion or free send. Advertised sport/trad route types belong to the
+Climb and do not prove which protection the person used. These are Dofek's
+[normalization rules](climbing-context.md), based on the observed
+[tick export](https://www.mountainproject.com/user/200232920/cole-schmidt/tick-export).
 
 ## Tick dates and activity matching
 
-An unattached tick stores the exported date as its normalized
-`unattached_date`. When a user attaches it to a climbing activity, that date is
-cleared and the activity becomes the source of the tick's day. Activity detail
-suggestions include active unattached entries from supported climbing providers,
-including Mountain Project and OpenBeta, whose exported day equals the
-activity's displayed calendar date in the user's timezone. A matching day only
-suggests an entry; the user attaches each entry explicitly. Attached entries
-keep their association across later syncs. Unattached entries contribute to
-climb and grade summaries, but never create an activity, session, or duration.
-
-See the [schema guide](schema.md#activities) for the stored association and
-date rules, and the [unattached ticks design spec](superpowers/specs/2026-09-26-unattached-mountain-project-ticks-design.md)
-for the full matching and sync contract.
+The source calendar date is `climbed_on` and survives explicit attachment to
+a climbing or hiking Activity. Same-day suggestions use the Activity's
+displayed calendar date; a matching day does not attach a log automatically.
+Later syncs retain the association. Undated logs remain available in provider
+records, and standalone logs create no session or duration. See the
+[association contract](climbing-context.md) and
+[associator](../packages/server/src/repositories/climbing-log-entry-associator.ts).
 
 ## Grade handling
 
-The provider extracts and canonicalizes only leading YDS or V-scale tokens.
-Examples: `5.7 PG13` becomes `5.7`, `5.10b/c` becomes `5.10b`, and
-`5.5 WI2+ M2-3 Mod. Snow` becomes `5.5`. Pure ice, mixed, aid, snow, third-,
-and fourth-class values are skipped and reported once as an aggregated sync
-error because canonical climbing entries require a YDS or V-scale grade.
+The [grade parser](../packages/mountain-project-client/src/grades.ts) retains
+ordered components, including compound rock, ice, mixed, aid and commitment
+grades. Recognized syntax receives a GradeSystem; uncertain text retains a
+null system. A missing grade does not remove a log. Published `Rating` and
+reported `Your Rating` remain separate collections, and discipline follows
+the supplied route types rather than a required rock grade.
 
 ## Other observed endpoints
 
@@ -134,9 +123,10 @@ public tick export already supplied the required tick fields during probing.
 
 A read-only tick-export audit on 2026-09-29 confirmed the 15 columns listed
 above. The importer splits `Location` at ` > ` into an ordered
-`fitness.climbing_entry.location_path` of nonempty names and retains the
-exported row in `raw`. IDs and roles stay null because the export supplies
-neither. The read view derives the complete display label from those nodes.
+Area chain of nonempty names and retains the exported row in `raw`. Area
+external IDs stay null because the export supplies none; names are not used
+to merge source objects. The verified route URL identifies the Climb. The
+read view follows its current Area ancestry rather than storing a path copy.
 For [Cragmont Crack](https://www.mountainproject.com/route/105734660/cragmont-crack),
 the location path is:
 

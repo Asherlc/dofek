@@ -16,6 +16,7 @@ const FULL_STATS: ProviderStats = {
   metricStream: 5000,
   nutritionDaily: 150,
   clinicalRecords: 8,
+  climbingLogEntries: 0,
 };
 
 const SPARSE_STATS: ProviderStats = {
@@ -28,6 +29,7 @@ const SPARSE_STATS: ProviderStats = {
   metricStream: 0,
   nutritionDaily: 0,
   clinicalRecords: 0,
+  climbingLogEntries: 0,
 };
 
 const EMPTY_STATS: ProviderStats = {
@@ -40,6 +42,7 @@ const EMPTY_STATS: ProviderStats = {
   metricStream: 0,
   nutritionDaily: 0,
   clinicalRecords: 0,
+  climbingLogEntries: 0,
 };
 
 describe("DATA_TYPE_LABELS", () => {
@@ -54,6 +57,7 @@ describe("DATA_TYPE_LABELS", () => {
       { key: "nutritionDaily", label: "Nutrition" },
       { key: "healthEvents", label: "Events" },
       { key: "clinicalRecords", label: "Clinical Records" },
+      { key: "climbingLogEntries", label: "Climbing log" },
     ]);
   });
 });
@@ -89,6 +93,7 @@ describe("providerStatsBreakdown", () => {
       { label: "Nutrition", count: 0 },
       { label: "Events", count: 0 },
       { label: "Clinical Records", count: 0 },
+      { label: "Climbing log", count: 0 },
     ]);
   });
 
@@ -104,6 +109,7 @@ describe("providerStatsBreakdown", () => {
       { label: "Nutrition", count: 150 },
       { label: "Events", count: 10 },
       { label: "Clinical Records", count: 8 },
+      { label: "Climbing log", count: 0 },
     ]);
   });
 

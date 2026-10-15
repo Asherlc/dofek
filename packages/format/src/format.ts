@@ -1,5 +1,3 @@
-import { type ClimbingResultContext, isMountainProjectTopRopeEntry } from "./climbing-context.ts";
-
 /** Format a Date as YYYY-MM-DD for API queries. */
 export function formatDateYmd(date?: Date): string {
   const resolvedDate = date ?? new Date();
@@ -63,37 +61,6 @@ export function formatDurationSeconds(seconds: number): string {
     return `${fixedDecimalFormatter(decimals).format(seconds)}s`;
   }
   return formatDurationMinutes(Math.round(seconds / 60));
-}
-
-export function formatClimbingAttemptResult(
-  sent: boolean | null,
-  attemptCount: number | null,
-  ascentType: string | null,
-  context?: ClimbingResultContext,
-): string | null {
-  if (sent && (ascentType === "Onsight" || ascentType === "Flash")) return null;
-  if (sent && ascentType === "Repeat" && attemptCount === null) return null;
-  if (
-    sent &&
-    (ascentType === "Redpoint" || ascentType === "Pinkpoint" || ascentType === "Repeat")
-  ) {
-    return attemptCount === null
-      ? "Attempt count not recorded"
-      : `${attemptCount} ${attemptCount === 1 ? "attempt" : "attempts"}`;
-  }
-  if (sent === null && attemptCount === null) {
-    return isMountainProjectTopRopeEntry(context) ? null : "Outcome and attempt count not recorded";
-  }
-  if (attemptCount === null) {
-    return sent ? "Sent; attempt count not recorded" : "Not sent; attempt count not recorded";
-  }
-  if (sent === null) {
-    return `${attemptCount} ${attemptCount === 1 ? "attempt" : "attempts"}; outcome not recorded`;
-  }
-  if (sent) {
-    return `Sent in ${attemptCount} ${attemptCount === 1 ? "attempt" : "attempts"}`;
-  }
-  return `Attempted ${attemptCount} ${attemptCount === 1 ? "time" : "times"}`;
 }
 
 /** Parse a timestamp string into a Date, returning null if invalid.

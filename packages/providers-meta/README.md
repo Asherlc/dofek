@@ -22,9 +22,19 @@ Supported locations are defined in `WHOOP_WEAR_LOCATIONS`. The `parseWhoopWearLo
 
 ### Statistics
 
-The `ProviderStats` interface tracks counts for 9 data types. `providerStatsBreakdown` returns only non-zero entries with their human-readable labels (defined in `DATA_TYPE_LABELS`).
+The [ProviderStats interface](src/provider-stats.ts) tracks counts for ten data
+types, including `climbingLogEntries` with the label “Climbing log”.
+`providerStatsBreakdown` returns every entry, including zero-valued counts, with
+its human-readable label. The [server statistics repository](../server/src/repositories/sync-repository.ts)
+counts retained climbing logs directly, including undated and provider-absence
+records, without multiplying counts by their grades or attempts.
 
 ### Provider Health
+
+The [manual connection contract](src/provider-connection.ts) distinguishes public
+profile identity from an access token. Both clients use that capability to show
+profile input as text and protect access-token input, without inferring the
+connection kind from the provider's name or catalog entry.
 
 Use [`providerHealth`](src/provider-health.ts) as the shared presentation contract for web and
 mobile provider status. It keeps connection state separate from authorization state and exposes

@@ -6,20 +6,24 @@ import {
 
 const boulderEntry: ClimbingProgressionEntry = {
   date: "2026-01-02",
-  style: "boulder",
-  climbType: "boulder",
+  attemptScope: "climb",
+  ropeMethod: null,
+  solo: null,
+  usedAid: null,
+  climbKind: "boulder",
   setting: "indoor",
   gradeSystem: "v_scale",
   grade: "V4",
   gradeSortValue: 65,
-  sent: true,
+  sends: 1,
+  unknownOutcomes: 0,
 };
 
 describe("buildClimbingGradeProgression", () => {
   it("keeps a visible zero baseline when all outcomes are failed or unknown", () => {
     const [lane] = buildClimbingGradeProgression([
-      { ...boulderEntry, sent: false },
-      { ...boulderEntry, date: "2026-03-02", sent: null },
+      { ...boulderEntry, sends: 0, unknownOutcomes: 0 },
+      { ...boulderEntry, date: "2026-03-02", sends: 0, unknownOutcomes: 1 },
     ]);
 
     expect(lane).toMatchObject({
@@ -71,14 +75,20 @@ describe("buildClimbingGradeProgression", () => {
 
     expect(lanes).toMatchObject([
       {
-        style: "boulder",
+        attemptScope: "climb",
+        ropeMethod: null,
+        solo: null,
+        usedAid: null,
         gradeSystem: "font",
         grades: [{ grade: "6A", gradeSortValue: 60 }],
         settings: ["outdoor"],
         periods: [{ settings: [{ climbingDays: 1, sends: 1, sendsPerDay: 1 }] }],
       },
       {
-        style: "boulder",
+        attemptScope: "climb",
+        ropeMethod: null,
+        solo: null,
+        usedAid: null,
         gradeSystem: "v_scale",
         grades: [{ grade: "V4", gradeSortValue: 65 }],
         settings: ["indoor"],
@@ -90,8 +100,8 @@ describe("buildClimbingGradeProgression", () => {
   it("orders tied grades by label and preserves each grade's stack", () => {
     const routeEntry: ClimbingProgressionEntry = {
       ...boulderEntry,
-      style: "lead",
-      climbType: "route",
+      ropeMethod: "lead",
+      climbKind: "route",
       gradeSystem: "yds",
       grade: "5.10a",
       gradeSortValue: 61,
@@ -119,7 +129,7 @@ describe("buildClimbingGradeProgression", () => {
       { ...boulderEntry, date: "2025-02-01", grade: "V3", gradeSortValue: 61 },
       { ...boulderEntry, date: "2025-02-01" },
       { ...boulderEntry, date: "2026-04-01" },
-      { ...boulderEntry, date: "2026-04-03", sent: false },
+      { ...boulderEntry, date: "2026-04-03", sends: 0, unknownOutcomes: 0 },
     ]);
 
     expect(lane).toMatchObject({ axisMax: 3, axisInterval: 1, axisTicks: [0, 1, 2, 3] });

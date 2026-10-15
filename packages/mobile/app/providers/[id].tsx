@@ -4,7 +4,7 @@ import { providerHealth } from "@dofek/providers/provider-health";
 import type { ProviderStats } from "@dofek/providers/provider-stats";
 import { DATA_TYPE_LABELS } from "@dofek/providers/provider-stats";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   RefreshControl,
@@ -27,7 +27,8 @@ import {
   formatColumnName,
   recordAccessibilityLabel,
 } from "../../components/providers/provider-detail-record-format";
-import { ProviderRecordDetailModal } from "../../components/providers/provider-record-detail-modal";
+import { ProviderRecordDetail } from "../../components/providers/provider-record-detail";
+import { ProviderRecordFilters } from "../../components/providers/provider-record-filters";
 import {
   type ProviderDetailActionsResult,
   useProviderDetailActions,
@@ -53,6 +54,23 @@ function formatProviderName(id: string): string {
 function RecordsTable({ providerId, dataType }: { providerId: string; dataType: DataType }) {
   const [page, setPage] = useState(0);
   const [selectedRecord, setSelectedRecord] = useState<Record<string, unknown> | null>(null);
+  const [filters, setFilters] = useState<Record<string, string>>({});
+  const [activeFilters, setActiveFilters] = useState<Record<string, string>>({});
+  useEffect(() => {
+    const timer = setTimeout(
+      () =>
+        setActiveFilters(
+          Object.fromEntries(
+            Object.entries(filters)
+              .filter(([, value]) => value.trim())
+              .map(([key, value]) => [key, value.trim()]),
+          ),
+        ),
+      300,
+    );
+    return () => clearTimeout(timer);
+  }, [filters]);
+  const filterOptions = trpc.providerDetail.recordFilterOptions.useQuery({ providerId, dataType });
   const pageSize = 25;
 
   const records = trpc.providerDetail.records.useQuery({
@@ -60,25 +78,12 @@ function RecordsTable({ providerId, dataType }: { providerId: string; dataType: 
     dataType,
     limit: pageSize,
     offset: page * pageSize,
+    filters: activeFilters,
   });
 
   const rows = records.data?.rows ?? [];
 
-  const [lastDataType, setLastDataType] = useState(dataType);
-  if (dataType !== lastDataType) {
-    setPage(0);
-    setLastDataType(dataType);
-    setSelectedRecord(null);
-  }
-
-  const [lastProviderId, setLastProviderId] = useState(providerId);
-  if (providerId !== lastProviderId) {
-    setPage(0);
-    setLastProviderId(providerId);
-    setSelectedRecord(null);
-  }
-
-  if (records.isLoading) {
+  if (records.isLoading && records.data === undefined) {
     return (
       <View style={recordStyles.emptyContainer}>
         <ActivityIndicator color={colors.accent} size="small" />
@@ -86,7 +91,7 @@ function RecordsTable({ providerId, dataType }: { providerId: string; dataType: 
     );
   }
 
-  if (records.isError) {
+  if (records.isError && records.data === undefined) {
     return (
       <View style={recordStyles.emptyContainer}>
         <Text style={recordStyles.errorText}>
@@ -99,33 +104,29 @@ function RecordsTable({ providerId, dataType }: { providerId: string; dataType: 
     );
   }
 
-  if (rows.length === 0) {
-    return (
-      <View style={recordStyles.emptyContainer}>
-        <Text style={recordStyles.emptyText}>No records found.</Text>
-      </View>
-    );
-  }
-
-  const excludedColumns = new Set(["raw", "user_id"]);
-  const columns = Object.keys(rows[0] ?? {}).filter((col) => !excludedColumns.has(col));
-  const priorityCols = [
-    "id",
-    "name",
-    "date",
-    "started_at",
-    "recorded_at",
-    "canonical_type",
-    "type",
-  ];
-  const sortedColumns = [
-    ...priorityCols.filter((c) => columns.includes(c)),
-    ...columns.filter((c) => !priorityCols.includes(c)),
-  ];
-  const visibleColumns = sortedColumns.slice(0, 3);
+  const visibleColumns = records.data?.columns ?? [];
 
   return (
     <View>
+      {records.error && (
+        <Text style={recordStyles.errorText}>{userFacingErrorMessage(records.error)}</Text>
+      )}
+      <ProviderRecordFilters
+        columns={records.data?.filterColumns ?? visibleColumns}
+        filters={filters}
+        options={filterOptions.data}
+        onChange={(key, value) => {
+          setFilters((current) => ({ ...current, [key]: value }));
+          setPage(0);
+        }}
+      />
+      {rows.length === 0 && (
+        <Text style={recordStyles.emptyText}>
+          {Object.keys(activeFilters).length
+            ? "No records match the current filters."
+            : "No records found."}
+        </Text>
+      )}
       <View style={recordStyles.table}>
         {rows.map((row, idx) => (
           <TouchableOpacity
@@ -183,14 +184,17 @@ function RecordsTable({ providerId, dataType }: { providerId: string; dataType: 
       </View>
 
       {selectedRecord && (
-        <ProviderRecordDetailModal
-          record={selectedRecord}
+        <ProviderRecordDetail
+          input={{
+            providerId,
+            dataType,
+            recordId: String(
+              dataType === "dailyMetrics" || dataType === "nutritionDaily"
+                ? selectedRecord.date
+                : selectedRecord.id,
+            ),
+          }}
           onClose={() => setSelectedRecord(null)}
-          activityId={
-            dataType === "activities" && typeof selectedRecord.id === "string"
-              ? selectedRecord.id
-              : undefined
-          }
         />
       )}
     </View>
@@ -372,11 +376,11 @@ function RecordsBrowser({
   }
 
   const activeTabAvailable = availableTypes.some((dt) => dt.key === activeTab);
-  if (stats && availableTypes.length > 0 && !activeTabAvailable) {
+  if (availableTypes.length > 0 && !activeTabAvailable) {
     setActiveTab(availableTypes[0]?.key ?? "activities");
   }
 
-  if (availability.isLoading) {
+  if (availability.isLoading && availability.data === undefined) {
     return (
       <View>
         <Text style={styles.sectionTitle}>Records</Text>
@@ -387,7 +391,7 @@ function RecordsBrowser({
     );
   }
 
-  if (availability.isError) {
+  if (availability.isError && availability.data === undefined) {
     return (
       <View>
         <Text style={styles.sectionTitle}>Records</Text>
@@ -408,7 +412,9 @@ function RecordsBrowser({
   return (
     <View>
       <Text style={styles.sectionTitle}>Records</Text>
-
+      {availability.error && (
+        <QueryStatePanel variant="error" message={getQueryErrorMessage(availability.error)} />
+      )}
       {/* Tabs */}
       <ScrollView
         horizontal
@@ -436,7 +442,11 @@ function RecordsBrowser({
         ))}
       </ScrollView>
 
-      <RecordsTable providerId={providerId} dataType={activeTab} />
+      <RecordsTable
+        key={`${providerId}:${activeTab}`}
+        providerId={providerId}
+        dataType={activeTab}
+      />
     </View>
   );
 }

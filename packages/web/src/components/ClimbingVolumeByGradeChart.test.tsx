@@ -47,7 +47,7 @@ describe("ClimbingVolumeByGradeChart", () => {
       <ClimbingVolumeByGradeChart
         data={[
           {
-            climbType: "boulder",
+            climbKind: "boulder",
             gradeSystem: "v_scale",
             grade: "VB",
             gradeSortValue: -1,
@@ -56,7 +56,7 @@ describe("ClimbingVolumeByGradeChart", () => {
             sends: 1,
           },
           {
-            climbType: "boulder",
+            climbKind: "boulder",
             gradeSystem: "v_scale",
             grade: "V0",
             gradeSortValue: 0,
@@ -89,7 +89,7 @@ describe("ClimbingVolumeByGradeChart", () => {
       <ClimbingVolumeByGradeChart
         data={[
           {
-            climbType: "boulder",
+            climbKind: "boulder",
             gradeSystem: "v_scale",
             grade: "V4",
             gradeSortValue: 4,
@@ -98,7 +98,7 @@ describe("ClimbingVolumeByGradeChart", () => {
             sends: 2,
           },
           {
-            climbType: "boulder",
+            climbKind: "boulder",
             gradeSystem: "v_scale",
             grade: "V1",
             gradeSortValue: 1,
@@ -124,7 +124,7 @@ describe("ClimbingVolumeByGradeChart", () => {
       <ClimbingVolumeByGradeChart
         data={[
           {
-            climbType: "boulder",
+            climbKind: "boulder",
             gradeSystem: "v_scale",
             grade: "VB",
             gradeSortValue: -1,
@@ -133,7 +133,7 @@ describe("ClimbingVolumeByGradeChart", () => {
             sends: 1,
           },
           {
-            climbType: "boulder",
+            climbKind: "boulder",
             gradeSystem: "v_scale",
             grade: "V0",
             gradeSortValue: 0,

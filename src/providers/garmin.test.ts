@@ -2,6 +2,7 @@ import { GarminApiError, GarminRateLimitError } from "@dofek/garmin-connect/clie
 import type { GarminTokens } from "@dofek/garmin-connect/types";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { TokenSet } from "../auth/oauth.ts";
+import type { SyncDatabase } from "../db/index.ts";
 import { eachDay, formatDate } from "./garmin/date-utils.ts";
 import {
   deserializeInternalTokens,
@@ -223,6 +224,7 @@ function fakeStoredTokens(overrides?: { expiresAt?: Date }): TokenSet {
 }
 
 interface MockDb {
+  transaction: SyncDatabase["transaction"];
   select: CallableVitestMock;
   from: CallableVitestMock;
   where: CallableVitestMock;
@@ -239,7 +241,7 @@ interface MockDb {
 }
 
 function createMockDb(): MockDb {
-  const db: MockDb = {
+  const db: MockDb = makeTransactionalTestDatabase({
     select: vi.fn(),
     from: vi.fn(),
     where: vi.fn(),
@@ -253,7 +255,7 @@ function createMockDb(): MockDb {
     returning: vi.fn().mockResolvedValue([{ id: "mock-session-id" }]),
     delete: vi.fn(),
     execute: vi.fn().mockResolvedValue([]),
-  };
+  });
   const whereResult = Object.assign(Promise.resolve([]), {
     limit: (...args: unknown[]) => db.limit(...args),
     returning: vi.fn().mockResolvedValue([{ date: "2026-03-01" }]),

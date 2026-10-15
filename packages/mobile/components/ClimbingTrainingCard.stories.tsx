@@ -6,7 +6,7 @@ const data = {
   gradeProgression: [climbingProgressionFixture()],
   volumeByGrade: [
     {
-      climbType: "boulder",
+      climbKind: "boulder",
       grade: "V3",
       gradeSortValue: 3,
       attempts: 8,
@@ -43,7 +43,7 @@ export const UnknownAttempts: Story = {
       ...data,
       volumeByGrade: [
         {
-          climbType: "boulder",
+          climbKind: "boulder",
           grade: "VB",
           gradeSortValue: -1,
           attempts: null,
@@ -60,7 +60,7 @@ export const RecordedAttempts: Story = {
       ...data,
       volumeByGrade: [
         {
-          climbType: "boulder",
+          climbKind: "boulder",
           grade: "VB",
           gradeSortValue: -1,
           attempts: null,

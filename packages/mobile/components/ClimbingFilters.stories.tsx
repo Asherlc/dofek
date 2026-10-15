@@ -22,5 +22,5 @@ export const Default: Story = {
 };
 export const Selected: Story = {
   ...Default,
-  args: { value: { style: "lead", protection: "trad", setting: "outdoor" } },
+  args: { value: { ropeMethod: "lead", protectionUsed: "trad", setting: "outdoor" } },
 };

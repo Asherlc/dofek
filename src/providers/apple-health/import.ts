@@ -27,7 +27,6 @@ import {
   DAILY_METRIC_TYPES,
   METRIC_STREAM_TYPES,
   NUTRITION_TYPES,
-  requireTransactionalDatabase,
   upsertBodyMeasurementBatch,
   upsertDailyMetricsBatch,
   upsertHealthEventBatch,
@@ -808,7 +807,7 @@ export async function importClinicalRecords(
     return { inserted: 0, skipped, errors };
   }
 
-  const inserted = await requireTransactionalDatabase(db).transaction(async (tx) => {
+  const inserted = await db.transaction(async (tx) => {
     // A validated ZIP is a complete replacement, including an empty archive.
     await tx
       .delete(clinicalRecord)
@@ -883,7 +882,7 @@ export async function importMedicationDoseEvents(
     return { inserted: 0, skipped, errors };
   }
 
-  await requireTransactionalDatabase(db).transaction(async (tx) => {
+  await db.transaction(async (tx) => {
     await tx
       .delete(medicationDoseEvent)
       .where(

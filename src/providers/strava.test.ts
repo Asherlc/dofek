@@ -979,12 +979,12 @@ describe("StravaProvider.syncWebhookEvent", () => {
 
   it("returns immediately for non-activity objectType", async () => {
     const provider = new StravaProvider(async () => new Response());
-    const mockDb = {
+    const mockDb = makeTransactionalTestDatabase({
       select: vi.fn(),
       insert: vi.fn(),
       delete: vi.fn(),
       execute: vi.fn(),
-    };
+    });
 
     const result = await provider.syncWebhookEvent(
       mockDb,
@@ -1005,12 +1005,12 @@ describe("StravaProvider.syncWebhookEvent", () => {
 
   it("returns immediately when objectId is missing", async () => {
     const provider = new StravaProvider(async () => new Response());
-    const mockDb = {
+    const mockDb = makeTransactionalTestDatabase({
       select: vi.fn(),
       insert: vi.fn(),
       delete: vi.fn(),
       execute: vi.fn(),
-    };
+    });
 
     const result = await provider.syncWebhookEvent(
       mockDb,
@@ -1032,12 +1032,12 @@ describe("StravaProvider.syncWebhookEvent", () => {
     const provider = new StravaProvider(async () => new Response());
     providerActivityAbsenceMocks.markProviderActivityAbsent.mockResolvedValueOnce(1);
 
-    const mockDb = {
+    const mockDb = makeTransactionalTestDatabase({
       select: vi.fn(),
       insert: vi.fn(),
       delete: vi.fn(),
       execute: vi.fn(),
-    };
+    });
 
     const result = await provider.syncWebhookEvent(
       mockDb,
@@ -1065,12 +1065,12 @@ describe("StravaProvider.syncWebhookEvent", () => {
   it("handles delete event when activity not found", async () => {
     const provider = new StravaProvider(async () => new Response());
 
-    const mockDb = {
+    const mockDb = makeTransactionalTestDatabase({
       select: vi.fn(),
       insert: vi.fn(),
       delete: vi.fn(),
       execute: vi.fn(),
-    };
+    });
 
     const result = await provider.syncWebhookEvent(
       mockDb,
@@ -1094,12 +1094,12 @@ describe("StravaProvider.syncWebhookEvent", () => {
 
   it("returns error when token resolution fails", async () => {
     const provider = new StravaProvider(async () => new Response());
-    const mockDb = {
+    const mockDb = makeTransactionalTestDatabase({
       select: makeStravaSelectMock(null),
       insert: vi.fn(),
       delete: vi.fn(),
       execute: vi.fn(),
-    };
+    });
 
     const result = await provider.syncWebhookEvent(
       mockDb,
@@ -1226,12 +1226,12 @@ describe("StravaProvider.syncWebhookEvent", () => {
     };
 
     const mockInsert = makeStravaInsertMock();
-    const mockDb = {
+    const mockDb = makeTransactionalTestDatabase({
       select: makeStravaSelectMock(validTokenRow),
       insert: mockInsert,
       delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
       execute: vi.fn(),
-    };
+    });
 
     const provider = new StravaProvider(mockFetch);
     const result = await provider.syncWebhookEvent(
@@ -1269,12 +1269,12 @@ describe("StravaProvider.syncWebhookEvent", () => {
     };
 
     const mockInsert = makeStravaInsertMock();
-    const mockDb = {
+    const mockDb = makeTransactionalTestDatabase({
       select: makeStravaSelectMock(validTokenRow),
       insert: mockInsert,
       delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
       execute: vi.fn(),
-    };
+    });
 
     const provider = new StravaProvider(mockFetch);
     const result = await provider.syncWebhookEvent(
@@ -1308,12 +1308,12 @@ describe("StravaProvider.syncWebhookEvent", () => {
 
     providerActivityAbsenceMocks.upsertProviderActivity.mockResolvedValueOnce(undefined);
 
-    const mockDb = {
+    const mockDb = makeTransactionalTestDatabase({
       select: makeStravaSelectMock(validTokenRow),
       insert: vi.fn(),
       delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
       execute: vi.fn(),
-    };
+    });
 
     const provider = new StravaProvider(mockFetch);
     const result = await provider.syncWebhookEvent(
@@ -1591,12 +1591,12 @@ describe("StravaProvider — precise webhook string/object assertions", () => {
 
   it("syncWebhookEvent returns provider as 'strava' for all paths", async () => {
     const provider = new StravaProvider(async () => new Response());
-    const mockDb = {
+    const mockDb = makeTransactionalTestDatabase({
       select: vi.fn(),
       insert: vi.fn(),
       delete: vi.fn(),
       execute: vi.fn(),
-    };
+    });
 
     // Non-activity path
     const result = await provider.syncWebhookEvent(mockDb, {
@@ -1610,12 +1610,12 @@ describe("StravaProvider — precise webhook string/object assertions", () => {
   });
 
   it("syncWebhookEvent delete path returns provider 'strava'", async () => {
-    const mockDb = {
+    const mockDb = makeTransactionalTestDatabase({
       select: vi.fn(),
       insert: vi.fn(),
       delete: vi.fn(),
       execute: vi.fn(),
-    };
+    });
 
     const provider = new StravaProvider(async () => new Response());
     const result = await provider.syncWebhookEvent(
@@ -1642,7 +1642,12 @@ describe("StravaProvider — precise webhook string/object assertions", () => {
 
   it("syncWebhookEvent falls back to token user context when options.userId is missing", async () => {
     const provider = new StravaProvider(async () => new Response());
-    const mockDb = { select: vi.fn(), insert: vi.fn(), delete: vi.fn(), execute: vi.fn() };
+    const mockDb = makeTransactionalTestDatabase({
+      select: vi.fn(),
+      insert: vi.fn(),
+      delete: vi.fn(),
+      execute: vi.fn(),
+    });
 
     const result = await provider.syncWebhookEvent(mockDb, {
       ownerExternalId: "1",
@@ -1990,7 +1995,7 @@ describe("StravaProvider.sync", () => {
     const provider = new StravaProvider(mockFetch);
 
     // Mock db with loadTokens returning null
-    const mockDb = {
+    const mockDb = makeTransactionalTestDatabase({
       select: vi.fn().mockReturnValue({
         from: vi.fn().mockReturnValue({
           where: vi.fn().mockReturnValue({
@@ -2001,7 +2006,7 @@ describe("StravaProvider.sync", () => {
       insert: vi.fn(),
       delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
       execute: vi.fn().mockResolvedValue([]),
-    };
+    });
 
     const before = Date.now();
     const result = await provider.sync(
@@ -2034,7 +2039,7 @@ describe("StravaProvider.sync", () => {
 
     // Provide tokens
     const futureDate = new Date("2099-01-01");
-    const mockDb = {
+    const mockDb = makeTransactionalTestDatabase({
       select: vi.fn().mockReturnValue({
         from: vi.fn().mockReturnValue({
           where: vi.fn().mockReturnValue({
@@ -2060,7 +2065,7 @@ describe("StravaProvider.sync", () => {
       }),
       delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
       execute: vi.fn().mockResolvedValue([]),
-    };
+    });
 
     const result = await provider.sync(
       new SyncRun({ db: mockDb, window: SyncWindow.fromSince({ since: new Date("2026-01-01") }) }),
@@ -2116,7 +2121,7 @@ function hasQueryChunks(query: unknown): query is { queryChunks: unknown[] } {
 }
 
 function createMockDb(tokenRows = [VALID_TOKEN]): SyncDatabase {
-  return makeTransactionalTestDatabase<SyncDatabase>({
+  return makeTransactionalTestDatabase({
     select: vi.fn().mockReturnValue({
       from: vi.fn().mockReturnValue({
         where: vi.fn().mockReturnValue({
@@ -2390,7 +2395,7 @@ describe("StravaProvider.sync — additional coverage", () => {
     });
 
     // Need a db mock that returns a UUID for every insert
-    const mockDb = makeTransactionalTestDatabase<SyncDatabase>({
+    const mockDb = makeTransactionalTestDatabase({
       select: vi.fn().mockReturnValue({
         from: vi.fn().mockReturnValue({
           where: vi.fn().mockReturnValue({
@@ -2756,7 +2761,7 @@ describe("StravaProvider.sync — additional coverage", () => {
       return Promise.resolve(Response.json({ ...MOCK_ACTIVITY }));
     });
 
-    const mockDb = makeTransactionalTestDatabase<SyncDatabase>({
+    const mockDb = makeTransactionalTestDatabase({
       select: vi.fn().mockReturnValue({
         from: vi.fn().mockReturnValue({
           where: vi.fn().mockReturnValue({
@@ -2937,7 +2942,7 @@ describe("StravaProvider.sync — additional coverage", () => {
       };
     });
 
-    const mockDb: SyncDatabase = {
+    const mockDb: SyncDatabase = makeTransactionalTestDatabase({
       select: vi.fn().mockReturnValue({
         from: vi.fn().mockReturnValue({
           where: vi.fn().mockReturnValue({
@@ -2950,7 +2955,7 @@ describe("StravaProvider.sync — additional coverage", () => {
       }),
       delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
       execute: vi.fn().mockResolvedValue([]),
-    };
+    });
 
     const provider = new StravaProvider(mockFetch);
     const result = await provider.sync(
@@ -3012,7 +3017,7 @@ describe("StravaProvider.sync — additional coverage", () => {
       };
     });
 
-    const mockDb = makeTransactionalTestDatabase<SyncDatabase>({
+    const mockDb = makeTransactionalTestDatabase({
       select: vi.fn().mockReturnValue({
         from: vi.fn().mockReturnValue({
           where: vi.fn().mockReturnValue({
@@ -3119,7 +3124,7 @@ describe("StravaProvider.sync — additional coverage", () => {
       return Promise.resolve(Response.json(MOCK_ACTIVITY));
     });
 
-    const mockDb: SyncDatabase = {
+    const mockDb: SyncDatabase = makeTransactionalTestDatabase({
       select: vi.fn().mockReturnValue({
         from: vi.fn().mockReturnValue({
           where: vi.fn().mockReturnValue({
@@ -3141,7 +3146,7 @@ describe("StravaProvider.sync — additional coverage", () => {
       }),
       delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
       execute: vi.fn().mockResolvedValue([]),
-    };
+    });
 
     const provider = new StravaProvider(mockFetch);
     const result = await provider.sync(

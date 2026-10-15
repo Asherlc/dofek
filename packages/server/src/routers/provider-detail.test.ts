@@ -231,6 +231,7 @@ const expectedListColumns = {
     "recorded_at",
     "issued_at",
   ],
+  climbingLogEntries: 0,
 } satisfies Record<
   Exclude<(typeof dataTypeEnum.options)[number], "bodyMeasurements" | "metricStream">,
   string[]
@@ -289,8 +290,8 @@ describe("providerDetailRouter", () => {
   // ── dataTypeEnum ──
 
   describe("dataTypeEnum", () => {
-    it("contains exactly 9 data types", () => {
-      expect(dataTypeEnum.options).toHaveLength(9);
+    it("contains exactly 10 data types", () => {
+      expect(dataTypeEnum.options).toHaveLength(10);
     });
 
     it("includes all expected data types", () => {
@@ -304,6 +305,7 @@ describe("providerDetailRouter", () => {
         "metricStream",
         "nutritionDaily",
         "clinicalRecords",
+        "climbingLogEntries",
       ];
       expect(dataTypeEnum.options).toEqual(expected);
     });
@@ -312,8 +314,8 @@ describe("providerDetailRouter", () => {
   // ── PROVIDER_ACCOUNT_TABLES ──
 
   describe("PROVIDER_ACCOUNT_TABLES", () => {
-    it("contains 12 child tables", () => {
-      expect(PROVIDER_ACCOUNT_TABLES).toHaveLength(12);
+    it("contains 15 child tables", () => {
+      expect(PROVIDER_ACCOUNT_TABLES).toHaveLength(15);
     });
 
     it("includes all required child tables", () => {
@@ -865,7 +867,10 @@ describe("providerDetailRouter", () => {
 
     it.each(
       dataTypeEnum.options.filter(
-        (dataType) => dataType !== "bodyMeasurements" && dataType !== "metricStream",
+        (dataType) =>
+          dataType !== "bodyMeasurements" &&
+          dataType !== "metricStream" &&
+          dataType !== "climbingLogEntries",
       ),
     )("generates SQL with correct table and id column for %s", async (dataType) => {
       const mockExecute = vi.fn().mockResolvedValue([]);

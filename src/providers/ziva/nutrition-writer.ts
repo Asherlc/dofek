@@ -1,27 +1,14 @@
 import { eq } from "drizzle-orm";
-import type { Database, SyncDatabase } from "../../db/index.ts";
+import type { SyncDatabase } from "../../db/index.ts";
 import { foodEntry, foodEntryNutrient } from "../../db/schema/nutrition.ts";
 import type { NormalizedZivaMeal } from "./schemas.ts";
-
-type TransactionalSyncDatabase = SyncDatabase & Pick<Database, "transaction">;
-
-function hasTransaction(db: SyncDatabase): db is TransactionalSyncDatabase {
-  return "transaction" in db && typeof db.transaction === "function";
-}
-
-function requireTransactionalDatabase(db: SyncDatabase): TransactionalSyncDatabase {
-  if (!hasTransaction(db)) {
-    throw new Error("Ziva nutrition sync requires a transactional database");
-  }
-  return db;
-}
 
 export async function upsertZivaMealsForDate(
   db: SyncDatabase,
   userId: string,
   meals: NormalizedZivaMeal[],
 ): Promise<number> {
-  const transactionalDb = requireTransactionalDatabase(db);
+  const transactionalDb = db;
 
   return transactionalDb.transaction(async (transaction) => {
     for (const meal of meals) {

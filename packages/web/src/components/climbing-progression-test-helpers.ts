@@ -2,14 +2,18 @@ import type { ClimbingGradeProgressionLane } from "@dofek/training/climbing-prog
 
 /** Hand-authored server response, including zero sends and unrecorded months. */
 export function climbingProgressionFixture(
-  style: ClimbingGradeProgressionLane["style"] = "boulder",
+  climbKind: ClimbingGradeProgressionLane["climbKind"] = "boulder",
+  facts: Partial<ClimbingGradeProgressionLane> = {},
 ): ClimbingGradeProgressionLane {
-  const grades = style === "boulder" ? ["V2", "V4"] : ["5.9", "5.11a"];
+  const grades = climbKind === "boulder" ? ["V2", "V4"] : ["5.9", "5.11a"];
   const [lower = "V2", higher = "V4"] = grades;
   return {
-    style,
-    climbType: style === "boulder" ? "boulder" : "route",
-    gradeSystem: style === "boulder" ? "v_scale" : "yds",
+    attemptScope: "climb",
+    ropeMethod: null,
+    solo: null,
+    usedAid: false,
+    climbKind,
+    gradeSystem: climbKind === "boulder" ? "v_scale" : "yds",
     grades: [
       { grade: lower, gradeSortValue: 55 },
       { grade: higher, gradeSortValue: 65 },
@@ -104,5 +108,6 @@ export function climbingProgressionFixture(
         ],
       },
     ],
+    ...facts,
   };
 }

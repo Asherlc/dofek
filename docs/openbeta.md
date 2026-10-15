@@ -1,7 +1,7 @@
 # OpenBeta provider
 
 The OpenBeta integration imports a connected user's public climbing ticks into
-the canonical `fitness.climbing_entry` table. It is read-only and does not
+the canonical `fitness.climbing_log_entry` graph. It is read-only and does not
 create synthetic activities.
 
 ## Connection and API
@@ -29,10 +29,10 @@ secret-token connections stay masked according to the shared
 
 ## Stored records
 
-Each supported tick becomes one standalone `fitness.climbing_entry` row:
+Each supported tick becomes one standalone `fitness.climbing_log_entry` row:
 
 - `external_id` is `openbeta:{tick-id}`.
-- `unattached_date` is the UTC calendar date of the tick's `dateClimbed`
+- `climbed_on` is the UTC calendar date of the tick's `dateClimbed`
   integer Unix-millisecond timestamp. The original numeric value remains in `raw`.
   Date parsing accepts years 0001–9999 for the application calendar-date
   format; invalid, expanded-year, and year-zero values use the existing
@@ -42,19 +42,24 @@ Each supported tick becomes one standalone `fitness.climbing_entry` row:
   OpenBeta declares this field as its custom `Date` scalar and serializes it
   with `Date.getTime()` ([tick schema](https://github.com/OpenBeta/openbeta-graphql/blob/f1508b2479cc7658ac4341d59ec817836190d6d8/src/graphql/schema/Tick.gql),
   [scalar implementation](https://github.com/OpenBeta/openbeta-graphql/blob/f1508b2479cc7658ac4341d59ec817836190d6d8/src/graphql/common/DateScalar.ts)).
-- boulders use V-scale first, then Font; routes use YDS first, then French,
-  UIAA, Ewbank, or Brazilian Crux when available.
-- `climb_style` records the climbing method independently of `result_style`,
-  which preserves the supplied attempt-type label. The permanent read view
-  derives send status; unfamiliar labels remain unclassified.
-- `attempt_count` is unknown: a tick does not supply a total number of tries.
-- `route_name` and `source_name` are copied when present; `location_path`
-  retains the full selected hierarchy with provider-scoped area UUIDs.
+- Climb and Pitch grade fields become their ordered published-grade
+  collections; `tick.grade` becomes the log's separately reported collection.
+  Supported selections include V-scale, Font, YDS, French, UIAA, Ewbank,
+  Brazilian Crux and water ice. Uncertain syntax retains a null system.
+- Method, solo, aid and supplied attempt qualifiers become independent
+  nullable Attempt facts. Fell/Hung records a fall-or-hang fact without
+  inferring completion; unfamiliar labels remain in raw provenance.
+- A missing total produces one whole-Climb occurrence. Catalogue Pitch
+  definitions establish targets, not attempted pitches or additional tries.
+- Names and verified identities belong to shared Climb/Pitch/Area objects;
+  current Area ancestry supplies the displayed path. Source name stays on
+  the log. Neither this provider nor Mountain Project implies outdoor setting.
 - `raw` retains the selected OpenBeta GraphQL response object for provenance.
 
 The upstream [tick schema](https://github.com/OpenBeta/openbeta-graphql/blob/f1508b2479cc7658ac4341d59ec817836190d6d8/src/graphql/schema/Tick.gql)
 supplies method and attempt type as separate fields. See the shared
-[interpretation contract](climbing-context.md#interpretation).
+[interpretation contract](climbing-context.md) and the
+[current adapter](../src/providers/openbeta.ts).
 
 The provider uses a provider-scoped unique index for idempotent upserts. A
 complete non-empty pagination run soft-tombstones rows missing from the
@@ -79,9 +84,9 @@ BullMQ documents [attempts and backoff](https://docs.bullmq.io/guide/retrying-fa
 
 OpenBeta ticks use the same explicit activity-association flow as Mountain
 Project ticks. Activity detail pages suggest active, unattached climbing
-entries whose `unattached_date` matches the activity's displayed calendar day
-in the user's timezone. The user attaches each entry individually; attachment
-clears `unattached_date` and preserves the selected activity association.
+log entries whose `climbed_on` matches the activity's displayed calendar day
+in the user's timezone. The user attaches each log individually to a climbing
+or hiking Activity; attachment preserves the independent source date.
 
 The integration currently does not access private ticks, use account session
 cookies, write to OpenBeta, enrich routes outside the tick response, or create
@@ -94,7 +99,10 @@ The tick query selects `climb.pathTokens`, `climb.ancestors`, and
 the supplied arrays align and the nearest ancestor agrees with the supplied
 parent UUID. Inconsistent paths reject the sync before writes or absence
 reconciliation. Missing ancestor IDs stay null; a missing full path uses the
-known parent. Coordinates and area-classification flags remain unrequested.
+known parent. The query now requests Climb and parent Area coordinates and
+catalogue Pitches. Valid latitude/longitude pairs, including zero, become
+native PostgreSQL points; missing pairs remain unknown. Area classification
+flags are not stored. See the [adapter](../src/providers/openbeta.ts).
 OpenBeta's
 [tick schema](https://github.com/OpenBeta/openbeta-graphql/blob/f1508b2479cc7658ac4341d59ec817836190d6d8/src/graphql/schema/Tick.gql)
 permits a null `climb` when a tick has no catalogue match; those ticks cannot

@@ -97,7 +97,7 @@ describe("ClimbingTab", () => {
     const ClimbingTab = await importClimbingTab();
     render(<ClimbingTab />);
     fireEvent.click(screen.getByRole("button", { name: "All climbing" }));
-    fireEvent.change(screen.getByLabelText("Style"), { target: { value: "lead" } });
+    fireEvent.change(screen.getByLabelText("Rope method"), { target: { value: "lead" } });
     expect(screen.getByText("Loading data.")).toBeTruthy();
   });
   it("keeps cached session rows visible while a filtered request fails", async () => {
@@ -119,7 +119,7 @@ describe("ClimbingTab", () => {
     const ClimbingTab = await importClimbingTab();
     render(<ClimbingTab />);
     fireEvent.click(screen.getByRole("button", { name: "All climbing" }));
-    fireEvent.change(screen.getByLabelText("Style"), { target: { value: "lead" } });
+    fireEvent.change(screen.getByLabelText("Rope method"), { target: { value: "lead" } });
     expect(screen.getByRole("link", { name: "Cached climbing" })).toBeTruthy();
     expect(screen.getByText("Error: Climbing query unavailable")).toBeTruthy();
   });
@@ -128,7 +128,7 @@ describe("ClimbingTab", () => {
     render(<ClimbingTab />);
     const toggle = screen.getByRole("button", { name: "All climbing" });
     expect(toggle.getAttribute("aria-expanded")).toBe("false");
-    expect(screen.queryByLabelText("Protection")).toBeNull();
+    expect(screen.queryByLabelText("Protection used")).toBeNull();
     fireEvent.click(toggle);
     sessionSummaryQuery.mockReturnValue({
       data: [
@@ -145,21 +145,57 @@ describe("ClimbingTab", () => {
       isLoading: false,
       error: null,
     });
-    fireEvent.change(screen.getByLabelText("Style"), { target: { value: "lead" } });
+    fireEvent.change(screen.getByLabelText("Rope method"), { target: { value: "lead" } });
     expect(screen.getByRole("link", { name: "Trad session" }).getAttribute("href")).toBe(
       "/activity/matched",
     );
-    fireEvent.change(screen.getByLabelText("Protection"), { target: { value: "trad" } });
+    fireEvent.change(screen.getByLabelText("Protection used"), { target: { value: "trad" } });
     fireEvent.change(screen.getByLabelText("Setting"), { target: { value: "outdoor" } });
     expect(volumeByGradeQuery).toHaveBeenLastCalledWith(
-      { days: 90, style: "lead", protection: "trad", setting: "outdoor" },
+      { days: 90, ropeMethod: "lead", protectionUsed: "trad", setting: "outdoor" },
       expect.any(Object),
     );
-    fireEvent.click(screen.getByRole("button", { name: "Remove Trad filter" }));
+    fireEvent.click(screen.getByRole("button", { name: "Remove Protection used: Trad filter" }));
     expect(gradeProgressionQuery).toHaveBeenLastCalledWith(
-      { days: 90, style: "lead", setting: "outdoor" },
+      { days: 90, ropeMethod: "lead", setting: "outdoor" },
       expect.any(Object),
     );
+  });
+  it("preserves explicit false and null solo values in server requests", async () => {
+    const ClimbingTab = await importClimbingTab();
+    render(<ClimbingTab />);
+    fireEvent.click(screen.getByRole("button", { name: /All climbing/ }));
+    fireEvent.change(screen.getByLabelText("Rope method"), { target: { value: "lead" } });
+    fireEvent.change(screen.getByLabelText("Solo status"), { target: { value: "false" } });
+    expect(gradeProgressionQuery).toHaveBeenLastCalledWith(
+      { days: 90, ropeMethod: "lead", solo: false },
+      expect.any(Object),
+    );
+    fireEvent.change(screen.getByLabelText("Solo status"), { target: { value: "null" } });
+    expect(
+      screen.getByLabelText("Solo status").getAttribute("value") ??
+        Reflect.get(screen.getByLabelText("Solo status"), "value"),
+    ).toBe("null");
+    expect(gradeProgressionQuery).toHaveBeenLastCalledWith(
+      { days: 90, ropeMethod: "lead", solo: null },
+      expect.any(Object),
+    );
+    fireEvent.change(screen.getByLabelText("Solo status"), { target: { value: "" } });
+    expect(gradeProgressionQuery).toHaveBeenLastCalledWith(
+      { days: 90, ropeMethod: "lead" },
+      expect.any(Object),
+    );
+    for (const name of [
+      "Climb kind",
+      "Discipline",
+      "Attempt scope",
+      "Rope method",
+      "Solo status",
+      "Protection used",
+      "Route protection",
+      "Setting",
+    ])
+      expect(screen.getByLabelText(name)).toBeTruthy();
   });
   beforeEach(() => {
     gradeProgressionQuery.mockReset();

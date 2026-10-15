@@ -1,7 +1,7 @@
 import { UnrecoverableError } from "bullmq";
 import { withAccountErasureUserWriteFence } from "../db/account-erasure.ts";
 import { loadUserHomeTimezone } from "../db/home-timezone.ts";
-import type { Database, SyncDatabase } from "../db/index.ts";
+import type { SyncDatabase } from "../db/index.ts";
 import { runWithProviderUserIngestContext } from "../db/provider-ingest-context.ts";
 import { logSync } from "../db/sync-log.ts";
 import { ensureProvider } from "../db/tokens.ts";
@@ -24,7 +24,6 @@ import {
   recordMetricStreamBatchPublishedInTransaction,
   recordRelationalCanonicalCommits,
 } from "../processing/processing-event-store.ts";
-import type { KayaImportDatabase } from "../providers/kaya/import.ts";
 import { accountErasureAllowsQueuedUserWork } from "./account-erasure-work-guard.ts";
 import {
   createAppleHealthImportValidationError,
@@ -38,32 +37,6 @@ type ImportJob = Omit<GarminDumpImportJob, "data" | "updateData"> & {
   data: LocalImportJobData;
   updateData(data: LocalImportJobData): Promise<void>;
 };
-
-function isKayaImportDatabase(db: SyncDatabase): db is KayaImportDatabase {
-  return "transaction" in db && typeof db.transaction === "function";
-}
-
-function requireKayaImportDatabase(db: SyncDatabase): KayaImportDatabase {
-  if (!isKayaImportDatabase(db)) {
-    throw new Error("Kaya export import requires a transactional database");
-  }
-  return db;
-}
-
-function hasTransaction(
-  database: SyncDatabase,
-): database is SyncDatabase & Pick<Database, "transaction"> {
-  return "transaction" in database && typeof database.transaction === "function";
-}
-
-function requireTransactionalDatabase(
-  database: SyncDatabase,
-): SyncDatabase & Pick<Database, "transaction"> {
-  if (!hasTransaction(database)) {
-    throw new Error("Processing metric-stream publication requires a transactional database");
-  }
-  return database;
-}
 
 function processingProviderId(importType: LocalImportJobData["importType"]): string {
   if (importType === "apple-health") return "apple_health";
@@ -167,7 +140,7 @@ export async function processImportJob(job: ImportJob, db: SyncDatabase): Promis
         const transaction = currentMetricStreamWriteDatabase();
         return transaction
           ? recordMetricStreamBatchPublishedInTransaction(transaction, batch)
-          : recordMetricStreamBatchPublished(requireTransactionalDatabase(db), batch);
+          : recordMetricStreamBatchPublished(db, batch);
       },
     },
   );
@@ -307,7 +280,7 @@ export async function processImportJob(job: ImportJob, db: SyncDatabase): Promis
           const csvText = await readFile(filePath, "utf-8");
           const { importKayaExportFile } = await import("../providers/kaya/import.ts");
           await reportImportProgress(job, 25, "Importing Kaya climbing entries...");
-          const result = await importKayaExportFile(requireKayaImportDatabase(db), csvText, userId);
+          const result = await importKayaExportFile(db, csvText, userId);
           importedRecordCount = result.recordsSynced;
           await reportImportProgress(job, 90, "Kaya export import complete.");
 
@@ -418,7 +391,7 @@ export async function processImportJob(job: ImportJob, db: SyncDatabase): Promis
   );
   if (!importFailed && importedRecordCount > 0) {
     try {
-      await recordRelationalCanonicalCommits(requireTransactionalDatabase(db), {
+      await recordRelationalCanonicalCommits(db, {
         operationId: processingOperation.id,
         datasetKeys: emittedRelationalDatasetKeys,
         idempotencyKey: `worker-relational-commit:${job.id}`,
@@ -526,7 +499,7 @@ export async function processImportJob(job: ImportJob, db: SyncDatabase): Promis
 
   try {
     const { enqueueDebouncedUserRefit } = await import("./queues.ts");
-    await withAccountErasureUserWriteFence(requireTransactionalDatabase(db), userId, async () => {
+    await withAccountErasureUserWriteFence(db, userId, async () => {
       await enqueueDebouncedUserRefit(userId);
     });
   } catch (err) {

@@ -1,12 +1,15 @@
-import {
-  type ClimbingLocationNode,
-  type ClimbingMetadata,
-  climbingMetadataSchema,
-} from "@dofek/training/climbing-context";
+import { isValidClimbingGrade } from "@dofek/training/climbing-grades";
+import type { ClimbKind, GradeComponent, RopeMethod } from "@dofek/training/climbing-log";
+import { gpsCoordinatesSchema } from "@dofek/training/gps-coordinates";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import type { TokenSet } from "../auth/oauth.ts";
-import { climbingEntry } from "../db/schema/activity.ts";
+import {
+  persistClimbingLogEntries,
+  type SourceAreaDefinition,
+  type SourceClimbingAttempt,
+  type SourceClimbingLogEntry,
+} from "../db/climbing-log-sync.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider, loadTokens } from "../db/tokens.ts";
 import { captureException } from "../lib/error-reporting.ts";
@@ -56,6 +59,7 @@ const OPENBETA_TICKS_QUERY = `
         name
         pathTokens
         ancestors
+        metadata { lat lng }
         grades {
           vscale
           yds
@@ -64,6 +68,13 @@ const OPENBETA_TICKS_QUERY = `
           font
           uiaa
           brazilianCrux
+          wi
+        }
+        pitches {
+          id
+          parentId
+          pitchNumber
+          grades { vscale yds ewbank french font uiaa brazilianCrux wi }
         }
         type {
           bouldering
@@ -73,6 +84,7 @@ const OPENBETA_TICKS_QUERY = `
         parent {
           uuid
           area_name
+          metadata { lat lng }
         }
       }
     }
@@ -91,6 +103,24 @@ const openBetaProfileSchema = z.object({
   userUuid: z.string().min(1),
   username: z.string().min(1),
   displayName: z.string().nullable(),
+});
+
+const coordinateMetadataSchema = z.object({ lat: z.number().nullish(), lng: z.number().nullish() });
+const openBetaGradesSchema = z.object({
+  vscale: z.string().nullable(),
+  yds: z.string().nullable(),
+  ewbank: z.string().nullable(),
+  french: z.string().nullable(),
+  font: z.string().nullable(),
+  uiaa: z.string().nullable(),
+  brazilianCrux: z.string().nullable(),
+  wi: z.string().nullish(),
+});
+const openBetaPitchSchema = z.object({
+  id: z.string().trim().min(1),
+  parentId: z.string().trim().min(1),
+  pitchNumber: z.number().int(),
+  grades: openBetaGradesSchema.nullable(),
 });
 
 const openBetaTickSchema = z
@@ -117,17 +147,9 @@ const openBetaTickSchema = z
         name: z.string().nullable(),
         pathTokens: z.array(z.string().trim().min(1)).nullish(),
         ancestors: z.array(z.string().trim().min(1)).nullish(),
-        grades: z
-          .object({
-            vscale: z.string().nullable(),
-            yds: z.string().nullable(),
-            ewbank: z.string().nullable(),
-            french: z.string().nullable(),
-            font: z.string().nullable(),
-            uiaa: z.string().nullable(),
-            brazilianCrux: z.string().nullable(),
-          })
-          .nullable(),
+        metadata: coordinateMetadataSchema.nullish(),
+        grades: openBetaGradesSchema.nullable(),
+        pitches: z.array(openBetaPitchSchema.nullable()).nullish(),
         type: z
           .object({
             bouldering: z.boolean().nullable(),
@@ -136,12 +158,16 @@ const openBetaTickSchema = z
           })
           .nullable(),
         parent: z
-          .object({ uuid: z.string().trim().min(1).nullish(), area_name: z.string().nullable() })
+          .object({
+            uuid: z.string().trim().min(1).nullish(),
+            area_name: z.string().nullable(),
+            metadata: coordinateMetadataSchema.nullish(),
+          })
           .nullable(),
       })
       .nullable(),
   })
-  .passthrough();
+  .catchall(z.json());
 
 const openBetaUserPageResponseSchema = z.object({
   userPage: z.object({ profile: openBetaProfileSchema.nullable() }).nullable(),
@@ -159,24 +185,12 @@ type OpenBetaGradeSystem =
   | "french"
   | "uiaa"
   | "ewbank"
-  | "brazilian_crux";
-
-interface OpenBetaClimbingEntry extends ClimbingMetadata {
-  externalId: string;
-  unattachedDate: string;
-  climbType: "boulder" | "route";
-  gradeSystem: OpenBetaGradeSystem;
-  grade: string;
-  attemptCount: number | null;
-  routeName: string | null;
-  raw: OpenBetaTick;
-  routeProtection: Array<"sport" | "trad"> | null;
-}
+  | "brazilian_crux"
+  | "water_ice";
 
 interface OpenBetaTickParseResult {
-  entries: OpenBetaClimbingEntry[];
+  entries: SourceClimbingLogEntry[];
   errors: SyncError[];
-  unsupportedGradeCount: number;
 }
 
 interface GraphQLVariables {
@@ -272,50 +286,50 @@ function parseOpenBetaDate(value: number | null): string | null {
     : parsed.toISOString().slice(0, 10);
 }
 
-function gradeFromTick(
-  tick: OpenBetaTick,
-  climbType: "boulder" | "route",
-): { gradeSystem: OpenBetaGradeSystem; grade: string } | null {
-  const grades = tick.climb?.grades;
-  const candidates: Array<{ gradeSystem: OpenBetaGradeSystem; grade: string | null }> =
-    climbType === "boulder"
-      ? [
-          { gradeSystem: "v_scale", grade: grades?.vscale ?? null },
-          { gradeSystem: "font", grade: grades?.font ?? null },
-        ]
-      : [
-          { gradeSystem: "yds", grade: grades?.yds ?? null },
-          { gradeSystem: "french", grade: grades?.french ?? null },
-          { gradeSystem: "uiaa", grade: grades?.uiaa ?? null },
-          { gradeSystem: "ewbank", grade: grades?.ewbank ?? null },
-          { gradeSystem: "brazilian_crux", grade: grades?.brazilianCrux ?? null },
-        ];
-
-  for (const candidate of candidates) {
-    const grade = nullableText(candidate.grade);
-    if (grade) return { gradeSystem: candidate.gradeSystem, grade };
-  }
-
-  const tickGrade = nullableText(tick.grade);
-  if (!tickGrade) return null;
-  if (climbType === "boulder" && /^v\d+(?:[+-])?$/i.test(tickGrade)) {
-    return { gradeSystem: "v_scale", grade: tickGrade };
-  }
-  if (climbType === "boulder" && /^\d+[a-c](?:[+-])?$/i.test(tickGrade)) {
-    return { gradeSystem: "font", grade: tickGrade };
-  }
-  if (climbType === "route" && /^5\./.test(tickGrade)) {
-    return { gradeSystem: "yds", grade: tickGrade };
-  }
-  if (climbType === "route" && /^\d+[a-c](?:[+-])?$/i.test(tickGrade)) {
-    return { gradeSystem: "french", grade: tickGrade };
-  }
-  return null;
+function publishedGrades(
+  grades: z.infer<typeof openBetaGradesSchema> | null | undefined,
+): GradeComponent[] {
+  const fields: readonly [keyof z.infer<typeof openBetaGradesSchema>, OpenBetaGradeSystem][] = [
+    ["vscale", "v_scale"],
+    ["font", "font"],
+    ["yds", "yds"],
+    ["french", "french"],
+    ["uiaa", "uiaa"],
+    ["ewbank", "ewbank"],
+    ["brazilianCrux", "brazilian_crux"],
+    ["wi", "water_ice"],
+  ];
+  return fields.flatMap(([field, system]) => {
+    const value = nullableText(grades?.[field]);
+    return value ? [{ value, system: isValidClimbingGrade(value, system) ? system : null }] : [];
+  });
 }
 
-function locationPathForTick(tick: OpenBetaTick): ClimbingLocationNode[] {
+function reportedGrades(value: string | null, kind: ClimbKind | null): GradeComponent[] {
+  const grade = nullableText(value);
+  if (!grade) return [];
+  const candidates: readonly OpenBetaGradeSystem[] =
+    kind === "boulder" ? ["v_scale", "font"] : ["yds", "french"];
+  return [
+    {
+      value: grade,
+      system: candidates.find((system) => isValidClimbingGrade(grade, system)) ?? null,
+    },
+  ];
+}
+
+function sourceCoordinates(metadata: z.infer<typeof coordinateMetadataSchema> | null | undefined) {
+  if (metadata?.lat == null || metadata.lng == null) return undefined;
+  return gpsCoordinatesSchema.parse({ latitude: metadata.lat, longitude: metadata.lng });
+}
+
+function locationPathForTick(tick: OpenBetaTick): SourceAreaDefinition[] {
   const climb = tick.climb;
   if (!climb) return [];
+  if (tick.climbId != null && climb.uuid != null && tick.climbId.trim() !== climb.uuid.trim())
+    throw new Error(
+      `OpenBeta tick ${tick._id} has inconsistent climb identity. Re-sync after the source reference is corrected.`,
+    );
   const names = climb.pathTokens;
   const ids = climb.ancestors;
   const parent = climb.parent;
@@ -324,73 +338,141 @@ function locationPathForTick(tick: OpenBetaTick): ClimbingLocationNode[] {
     ids &&
     (names.length !== ids.length ||
       (ids.length > 0 && parent?.uuid != null && ids.at(-1) !== parent.uuid))
-  ) {
+  )
     throw new Error(
       `OpenBeta tick ${tick._id} has inconsistent location path names and identities. Re-sync after the source location is corrected.`,
     );
-  }
+  const coordinates = sourceCoordinates(parent?.metadata);
   if (names && names.length > 0)
-    return names.map((name, index) => ({ name, externalId: ids?.[index] ?? null, kind: null }));
+    return names.map((name, index) => ({
+      name,
+      externalId: ids?.[index] ?? null,
+      ...(coordinates !== undefined && parent?.uuid != null && ids?.[index] === parent.uuid
+        ? { coordinates }
+        : {}),
+    }));
   const name = nullableText(parent?.area_name);
-  return name ? [{ name, externalId: parent?.uuid ?? null, kind: null }] : [];
+  return name
+    ? [
+        {
+          name,
+          externalId: parent?.uuid ?? null,
+          ...(coordinates === undefined ? {} : { coordinates }),
+        },
+      ]
+    : [];
+}
+
+function sourceQualifier(value: string | null, aid: boolean): SourceClimbingAttempt["qualifier"] {
+  switch (value?.trim().toLowerCase()) {
+    case "onsight":
+      return aid ? "aid-onsight" : "free-onsight";
+    case "flash":
+      return aid ? "aid-flash" : "free-flash";
+    case "send":
+    case "redpoint":
+    case "pinkpoint":
+      return aid ? undefined : "free-send";
+    case "fell/hung":
+      return "fell-hung";
+    default:
+      return undefined;
+  }
 }
 
 function parseOpenBetaTicks(ticks: OpenBetaTick[]): OpenBetaTickParseResult {
-  const entries: OpenBetaClimbingEntry[] = [];
+  const entries: SourceClimbingLogEntry[] = [];
   const errors: SyncError[] = [];
-  let unsupportedGradeCount = 0;
-
   for (const tick of ticks) {
-    const unattachedDate = parseOpenBetaDate(tick.dateClimbed);
-    if (!unattachedDate) {
+    const climbedOn = parseOpenBetaDate(tick.dateClimbed);
+    if (tick.dateClimbed !== null && climbedOn === null) {
       errors.push({
-        message: `Skipped OpenBeta tick ${tick.name ?? tick._id}: invalid date ${tick.dateClimbed ?? "(empty)"}.`,
+        message: `Skipped OpenBeta tick ${tick.name ?? tick._id}: invalid date ${tick.dateClimbed}.`,
         externalId: tick._id,
       });
       continue;
     }
-
-    const climbType = tick.climb?.type?.bouldering === true ? "boulder" : "route";
-    const grade = gradeFromTick(tick, climbType);
-    if (!grade) {
-      unsupportedGradeCount++;
-      continue;
-    }
-
-    const methods = {
+    const sourceType = tick.climb?.type;
+    const kind: ClimbKind | null =
+      sourceType?.bouldering === true
+        ? "boulder"
+        : sourceType?.sport === true || sourceType?.trad === true
+          ? "route"
+          : tick.style === "Boulder"
+            ? "boulder"
+            : tick.style != null
+              ? "route"
+              : null;
+    const methods: Readonly<Record<NonNullable<OpenBetaTick["style"]>, RopeMethod | null>> = {
       Lead: "lead",
-      TR: "top-rope",
+      TR: "top_rope",
       Follow: "follow",
-      Solo: "solo",
-      Aid: "aid",
+      Solo: null,
+      Aid: null,
       Boulder: null,
-    } as const;
-    const routeType = tick.climb?.type;
+    };
     const routeProtection =
-      routeType == null || (routeType.sport == null && routeType.trad == null)
+      sourceType == null || (sourceType.sport == null && sourceType.trad == null)
         ? null
-        : (["sport", "trad"] as const).filter((protection) => routeType[protection] === true);
+        : (["sport", "trad"] as const).filter((protection) => sourceType[protection] === true);
+    const areas = locationPathForTick(tick);
+    const targetId =
+      nullableText(tick.climb?.uuid) ??
+      (tick.source === "OB" && z.uuid().safeParse(tick.climbId).success ? tick.climbId : null);
+    const coordinates = sourceCoordinates(tick.climb?.metadata);
+    const qualifier = sourceQualifier(tick.attemptType, tick.style === "Aid");
+    const pitches = tick.climb?.pitches
+      ?.filter((value) => value !== null)
+      .map((value) => {
+        if (value.parentId !== tick.climb?.uuid)
+          throw new Error(`OpenBeta tick ${tick._id} has an inconsistent pitch parent identity.`);
+        return {
+          externalId: value.id,
+          ...(value.pitchNumber > 0 ? { number: value.pitchNumber } : {}),
+          publishedGrades: publishedGrades(value.grades),
+        };
+      });
     entries.push({
       externalId: `openbeta:${tick._id}`,
-      unattachedDate,
-      climbType,
-      gradeSystem: grade.gradeSystem,
-      grade: grade.grade,
-      ...climbingMetadataSchema.parse({
-        locationPath: locationPathForTick(tick),
-        board: null,
-        wallAngle: null,
-        climbStyle: tick.style === null ? null : methods[tick.style],
-        resultStyle: tick.attemptType,
-      }),
-      routeProtection,
-      attemptCount: null,
-      routeName: nullableText(tick.name ?? tick.climb?.name),
+      climbedOn,
+      ...(kind === null ? {} : { discipline: "rock_climbing" }),
+      notes: nullableText(tick.notes),
+      sourceName: OPENBETA_PROVIDER_NAME,
       raw: tick,
+      reportedGrades: reportedGrades(tick.grade, kind),
+      attempts: [
+        {
+          scope: "climb",
+          ropeMethod: tick.style === null ? null : methods[tick.style],
+          ...(tick.style === "Solo" ? { solo: true } : {}),
+          ...(tick.style === "Aid" || tick.attemptType?.toLowerCase() === "frenchfree"
+            ? { usedAid: true }
+            : {}),
+          ...(tick.attemptType?.toLowerCase() === "pinkpoint"
+            ? { usedPreplacedProtection: true }
+            : {}),
+          ...(qualifier === undefined ? {} : { qualifier }),
+        },
+      ],
+      climb: {
+        externalId: targetId,
+        ...(tick.climb?.name != null
+          ? { name: nullableText(tick.climb.name) }
+          : targetId === null && tick.name !== null
+            ? { name: nullableText(tick.name) }
+            : {}),
+        ...(kind === null ? {} : { kind }),
+        ...(tick.climb?.grades == null
+          ? {}
+          : { publishedGrades: publishedGrades(tick.climb.grades) }),
+        ...(tick.climb == null ? {} : { routeProtection }),
+        ...(pitches === undefined ? {} : { pitches }),
+        ...(areas.length === 0 ? {} : { areas }),
+        ...(coordinates === undefined ? {} : { coordinates }),
+      },
     });
   }
-
-  return { entries, errors, unsupportedGradeCount };
+  return { entries, errors };
 }
 
 async function exchangeOpenBetaProfile(
@@ -431,6 +513,7 @@ export class OpenBetaProvider implements SyncProvider {
     return {
       apiBaseUrl: OPENBETA_API_BASE_URL,
       manualToken: {
+        kind: "public-profile",
         label: "OpenBeta profile URL or username",
         instructionsUrl: "https://openbeta.io/",
         exchangeToken: (input) => exchangeOpenBetaProfile(input, this.#fetchFn),
@@ -516,13 +599,7 @@ export class OpenBetaProvider implements SyncProvider {
       };
     }
     errors.push(...parsed.errors);
-    if (parsed.unsupportedGradeCount > 0) {
-      errors.push({
-        message: `Skipped ${parsed.unsupportedGradeCount} OpenBeta ticks with unsupported or missing grades.`,
-        context: { unsupportedGradeCount: parsed.unsupportedGradeCount },
-      });
-    }
-    const skippedTickCount = parsed.errors.length + parsed.unsupportedGradeCount;
+    const skippedTickCount = parsed.errors.length;
     const degradations: SyncResult["degradations"] =
       skippedTickCount > 0
         ? [
@@ -534,7 +611,6 @@ export class OpenBetaProvider implements SyncProvider {
               message: `Skipped ${skippedTickCount} OpenBeta ticks during parsing.`,
               context: {
                 invalidDateCount: parsed.errors.length,
-                unsupportedGradeCount: parsed.unsupportedGradeCount,
               },
             },
           ]
@@ -547,77 +623,36 @@ export class OpenBetaProvider implements SyncProvider {
         db,
         this.id,
         "climbing_activity",
-        async () => {
-          let count = 0;
-          const presentExternalIds = parsed.entries.map((entry) => entry.externalId);
-          for (const entry of parsed.entries) {
-            await db
-              .insert(climbingEntry)
-              .values({
-                userId,
-                providerId: this.id,
-                activityId: null,
-                unattachedDate: entry.unattachedDate,
-                externalId: entry.externalId,
-                climbType: entry.climbType,
-                gradeSystem: entry.gradeSystem,
-                grade: entry.grade,
-                resultStyle: entry.resultStyle,
-                climbStyle: entry.climbStyle,
-                routeProtection: entry.routeProtection,
-                board: entry.board,
-                wallAngle: entry.wallAngle,
-                attemptCount: entry.attemptCount,
-                routeName: entry.routeName,
-                locationPath: entry.locationPath,
-                sourceName: this.name,
-                raw: entry.raw,
-              })
-              .onConflictDoUpdate({
-                target: [climbingEntry.userId, climbingEntry.providerId, climbingEntry.externalId],
-                targetWhere: sql`${climbingEntry.providerId} = 'openbeta' AND ${climbingEntry.externalId} IS NOT NULL`,
-                set: {
-                  climbType: entry.climbType,
-                  gradeSystem: entry.gradeSystem,
-                  grade: entry.grade,
-                  resultStyle: entry.resultStyle,
-                  climbStyle: entry.climbStyle,
-                  routeProtection: entry.routeProtection,
-                  board: entry.board,
-                  wallAngle: entry.wallAngle,
-                  attemptCount: entry.attemptCount,
-                  routeName: entry.routeName,
-                  locationPath: entry.locationPath,
-                  sourceName: this.name,
-                  raw: entry.raw,
-                  providerAbsentAt: null,
-                },
-              });
-            count++;
-          }
-
-          if (
-            presentExternalIds.length > 0 &&
-            parsed.errors.length === 0 &&
-            parsed.unsupportedGradeCount === 0 &&
-            pages.degradations.length === 0
-          ) {
-            const presentIdsSql = sql.join(
-              presentExternalIds.map((externalId) => sql`${externalId}`),
-              sql`, `,
-            );
-            await db.execute(sql`
-              UPDATE fitness.climbing_entry
-              SET provider_absent_at = NOW()
-              WHERE user_id = ${userId}
-                AND provider_id = ${this.id}
-                AND provider_absent_at IS NULL
-                AND external_id IS NOT NULL
-                AND external_id NOT IN (${presentIdsSql})
+        async () =>
+          db.transaction(async (transaction) => {
+            const result = await persistClimbingLogEntries(transaction, {
+              userId,
+              providerId: this.id,
+              entries: parsed.entries,
+            });
+            const present = parsed.entries.map((entry) => entry.externalId);
+            if (
+              present.length > 0 &&
+              parsed.errors.length === 0 &&
+              pages.degradations.length === 0
+            ) {
+              const presentIds = sql.join(
+                present.map((id) => sql`${id}`),
+                sql`, `,
+              );
+              await transaction.execute(sql`
+              UPDATE fitness.climbing_log_entry SET provider_absent_at = NOW()
+              WHERE user_id = ${userId} AND provider_id = ${this.id}
+                AND provider_absent_at IS NULL AND external_id IS NOT NULL
+                AND external_id NOT IN (${presentIds})
             `);
-          }
-          return { recordCount: count, result: count, degradations };
-        },
+            }
+            return {
+              recordCount: result.recordsSynced,
+              result: result.recordsSynced,
+              degradations,
+            };
+          }),
         userId,
       );
     } catch (error) {
