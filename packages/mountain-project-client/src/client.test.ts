@@ -117,7 +117,7 @@ describe("MountainProjectClient", () => {
   });
 
   it.each(["0123", "123 ", "9007199254740992"])(
-    "rejects a noncanonical or unsafe entity ID %s before a request",
+    "rejects a non-canonical or unsafe entity ID %s before a request",
     async (id) => {
       let requests = 0;
       const client = new MountainProjectClient(async () => {
