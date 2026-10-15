@@ -11,8 +11,10 @@ access.
 
 The connect form accepts a public profile URL or numeric profile ID and stores
 the numeric ID as the user's provider connection value. It does not collect a
-password, API key, or session cookie. The current scope is ticks only: no todo
-list, login flow, or per-route enrichment is used.
+password, API key, or session cookie. The scope is ticks with shared route/Area
+location enrichment through the observed [route](https://www.mountainproject.com/api/v2/routes/105734660)
+and [Area](https://www.mountainproject.com/api/v2/areas/105734057) read endpoints.
+No todo list or login flow is used.
 
 The documented legacy Data API is not used. Live probing in August 2026 found
 that its key-based tick endpoint rejects unavailable keys; Mountain Project's
@@ -111,7 +113,6 @@ the supplied route types rather than a required rock grade.
 
 The following endpoints were observed but are intentionally not used by the
 provider: `GET /user/{id}/{slug}/todo-export`, `GET /rss/user-ticks/{id}`,
-`GET /api/v2/routes/{id}`, `GET /api/v2/areas/{id}`,
 `GET /api/v2/routes/{id}/ticks`, and `GET /api/v2/search?q=`. They are
 undocumented application surfaces, not supported public API contracts.
 
@@ -123,10 +124,13 @@ public tick export already supplied the required tick fields during probing.
 
 A read-only tick-export audit on 2026-09-29 confirmed the 15 columns listed
 above. The importer splits `Location` at ` > ` into an ordered
-Area chain of nonempty names and retains the exported row in `raw`. Area
-external IDs stay null because the export supplies none; names are not used
-to merge source objects. The verified route URL identifies the Climb. The
-read view follows its current Area ancestry rather than storing a path copy.
+Area chain of nonempty names and retains the exported row in `raw`. The verified
+route URL identifies the Climb. During sync the provider now resolves that
+route's current Area chain with verified source IDs and native Area GPS from the
+[route](https://www.mountainproject.com/api/v2/routes/105734660) and
+[Area](https://www.mountainproject.com/api/v2/areas/105734057) responses.
+Names are not used to merge source objects. The read view follows current Area
+ancestry rather than storing a path copy.
 For [Cragmont Crack](https://www.mountainproject.com/route/105734660/cragmont-crack),
 the location path is:
 
@@ -143,10 +147,26 @@ Separate read-only requests to the undocumented
 and [area endpoint](https://www.mountainproject.com/api/v2/areas/105734057)
 returned a parent area ID/name, coordinates, and an area breadcrumb. The route
 parent was `{ id: 105734057, name: "Northeast Face" }`; that area's parent was
-`{ id: 105733893, name: "Cragmont Park" }`. These endpoints could supply
-structured location references through additional requests, but the importer
-currently uses only the CSV export. They remain observed application endpoints,
-not a supported API contract.
+`{ id: 105733893, name: "Cragmont Park" }`. The contract was rechecked on
+2026-10-14. The provider reads each distinct tick route and each distinct
+ancestor Area once per sync.
+It follows verified parent IDs to the root's parent ID `0`, observed in the
+[California response](https://www.mountainproject.com/api/v2/areas/105708959).
+Missing IDs, malformed coordinate tuples, HTTP failures, and ancestry cycles
+fail the sync before tick persistence or absence reconciliation. No partial
+enrichment is committed. These remain observed application endpoints, not a
+supported API contract.
+
+Area `coordinates` uses `[longitude, latitude]`. Route `parent.coordinates`
+describes that parent Area and never populates Climb GPS. The CSV keys and
+`sourceProfileId` stay at their existing raw locations; `raw.sourceEnrichment`
+contains the original route JSON and root-to-leaf Area JSON. Tick identity,
+Activity attachment, and recorded attempt identities remain stable when only
+location metadata changes. Existing CSV grades, route names, and attempt facts
+retain their mapping. Source pitch count, height, and descriptions remain raw;
+pitch counts do not create catalogue Pitch objects. The sampled
+[route response](https://www.mountainproject.com/api/v2/routes/105734660)
+supplies no independent route coordinate field.
 
 Neither the checked export nor the sampled route responses supplied a dedicated
 numeric wall-angle or board field. Route descriptions may describe a slab or

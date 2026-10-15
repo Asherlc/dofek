@@ -75,6 +75,13 @@ describe("MountainProjectProvider canonical persistence", () => {
   }
   function serve() {
     server.use(
+      http.get("https://www.mountainproject.com/api/v2/routes/:id", ({ params }) =>
+        HttpResponse.json({
+          id: Number(params.id),
+          title: "Source route",
+          parent: { id: 0, name: "" },
+        }),
+      ),
       http.get(
         exportUrl,
         () => new HttpResponse(currentExport, { headers: { "Content-Type": "text/csv" } }),
@@ -142,10 +149,43 @@ describe("MountainProjectProvider canonical persistence", () => {
       .update(climbingLogEntry)
       .set({ activityId: parent.id })
       .where(eq(climbingLogEntry.id, west.log.id));
+    server.use(
+      http.get("https://www.mountainproject.com/api/v2/routes/105751342", () =>
+        HttpResponse.json({
+          id: 105751342,
+          title: "West Overhang",
+          parent: { id: 2, name: "Eldorado Canyon", coordinates: [-120, 35] },
+          pitches: 3,
+        }),
+      ),
+      http.get("https://www.mountainproject.com/api/v2/areas/:id", ({ params }) =>
+        HttpResponse.json({
+          id: Number(params.id),
+          title: params.id === "2" ? "Eldorado Canyon" : "Colorado",
+          parent: { id: params.id === "2" ? 1 : 0, name: "Colorado" },
+          coordinates: params.id === "2" ? [-105.3, 39.9] : null,
+        }),
+      ),
+    );
     await expect(run()).resolves.toMatchObject({ recordsSynced: 3, errors: [] });
     expect((await records()).find((row) => row.log.id === west.log.id)?.log).toMatchObject({
       activityId: parent.id,
       climbedOn: "2026-08-10",
+      externalId: west.log.externalId,
+      raw: expect.objectContaining({
+        Route: "West Overhang",
+        sourceEnrichment: expect.objectContaining({
+          route: expect.objectContaining({ pitches: 3 }),
+        }),
+      }),
+    });
+    const enriched = (await records()).find((row) => row.log.id === west.log.id);
+    expect(enriched?.climb).toMatchObject({ id: west.climb?.id, coordinates: null, setting: null });
+    const areas = await ctx.db.select().from(area);
+    const crag = areas.find((row) => row.externalId === "2");
+    expect(crag).toMatchObject({
+      coordinates: { x: -105.3, y: 39.9 },
+      parentAreaId: areas.find((row) => row.externalId === "1")?.id,
     });
     expect(
       await ctx.db
@@ -154,6 +194,98 @@ describe("MountainProjectProvider canonical persistence", () => {
         .where(eq(climbingAttempt.climbingLogEntryId, west.log.id)),
     ).toEqual(attempts);
   });
+
+  it("refreshes verified Area names GPS and parentage without replacing recorded identities", async () => {
+    currentExport = fixtureCsv.split("\n").slice(0, 2).join("\n");
+    serve();
+    let refreshed = false;
+    server.use(
+      http.get("https://www.mountainproject.com/api/v2/routes/105751342", () =>
+        HttpResponse.json({
+          id: 105751342,
+          title: "West Overhang",
+          parent: { id: 2, name: "Crag" },
+        }),
+      ),
+      http.get("https://www.mountainproject.com/api/v2/areas/:id", ({ params }) =>
+        HttpResponse.json({
+          id: Number(params.id),
+          title: params.id === "2" ? (refreshed ? "Renamed crag" : "Original crag") : "Region",
+          parent: { id: params.id === "2" ? (refreshed ? 3 : 1) : 0, name: "Region" },
+          coordinates: params.id === "2" ? (refreshed ? [-105.4, 40] : [-105.3, 39.9]) : null,
+        }),
+      ),
+    );
+    await expect(run()).resolves.toMatchObject({ recordsSynced: 1, errors: [] });
+    const [before] = await records();
+    const [originalCrag] = await ctx.db.select().from(area).where(eq(area.externalId, "2"));
+    const originalAttempts = await ctx.db.select().from(climbingAttempt);
+    if (!before || !originalCrag) throw new Error("Expected original enriched record");
+    refreshed = true;
+    await expect(run()).resolves.toMatchObject({ recordsSynced: 1, errors: [] });
+    const [after] = await records();
+    const [newParent] = await ctx.db.select().from(area).where(eq(area.externalId, "3"));
+    const [currentCrag] = await ctx.db.select().from(area).where(eq(area.externalId, "2"));
+    if (!newParent) throw new Error("Expected refreshed parent Area");
+    expect(currentCrag).toMatchObject({
+      id: originalCrag.id,
+      name: "Renamed crag",
+      parentAreaId: newParent.id,
+      coordinates: { x: -105.4, y: 40 },
+    });
+    expect(after?.log).toMatchObject({
+      id: before.log.id,
+      externalId: before.log.externalId,
+      climbId: before.log.climbId,
+    });
+    expect(after?.climb).toMatchObject({
+      id: before.climb?.id,
+      areaId: originalCrag.id,
+      coordinates: null,
+    });
+    expect(await ctx.db.select().from(climbingAttempt)).toEqual(originalAttempts);
+  });
+
+  it.each(["HTTP failure", "malformed ancestor"])(
+    "leaves persisted metadata and absence untouched after later enrichment %s",
+    async (mode) => {
+      currentExport = fixtureCsv;
+      serve();
+      await expect(run()).resolves.toMatchObject({ recordsSynced: 3, errors: [] });
+      const before = await records();
+      const beforeAreas = await ctx.db.select().from(area);
+      currentExport = fixtureCsv
+        .split("\n")
+        .filter((line) => !line.includes("Jim Hall Left"))
+        .join("\n")
+        .replace("placeholder note", "Changed source note");
+      server.use(
+        http.get("https://www.mountainproject.com/api/v2/routes/110994870", () =>
+          mode === "HTTP failure"
+            ? new HttpResponse("unavailable", { status: 503 })
+            : HttpResponse.json({
+                id: 110994870,
+                title: "Still My Way",
+                parent: { id: 55, name: "Crag" },
+              }),
+        ),
+        http.get("https://www.mountainproject.com/api/v2/areas/55", () =>
+          HttpResponse.json({
+            id: 55,
+            title: "Crag",
+            parent: { id: 0, name: "" },
+            coordinates: [37],
+          }),
+        ),
+      );
+      await expect(run()).resolves.toMatchObject({
+        recordsSynced: 0,
+        errors: [expect.any(Object)],
+      });
+      expect(await records()).toEqual(before);
+      expect(await ctx.db.select().from(area)).toEqual(beforeAreas);
+    },
+  );
 
   it("keeps repeated occurrences separate on one verified climb", async () => {
     const source = fixtureCsv.split("\n")[1];

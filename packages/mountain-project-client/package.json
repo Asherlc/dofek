@@ -1,7 +1,7 @@
 {
   "name": "@dofek/mountain-project",
   "version": "0.1.0",
-  "description": "Unofficial TypeScript client for Mountain Project public tick exports",
+  "description": "Unofficial TypeScript client for Mountain Project public ticks and route/Area metadata",
   "type": "module",
   "license": "MIT",
   "repository": {

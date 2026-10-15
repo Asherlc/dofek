@@ -30,6 +30,19 @@ vi.mock("../lib/error-reporting.ts", () => ({ captureException: mocks.captureExc
 
 import { MountainProjectProvider } from "./mountain-project.ts";
 
+function provider(fetchFn: typeof fetch) {
+  return new MountainProjectProvider(async (input, init) => {
+    const match = /\/api\/v2\/routes\/(\d+)$/.exec(String(input));
+    if (match)
+      return Response.json({
+        id: Number(match[1]),
+        title: "Source route",
+        parent: { id: 0, name: "" },
+      });
+    return fetchFn(input, init);
+  });
+}
+
 const header =
   'Date,Route,Rating,Notes,URL,Pitches,Location,"Avg Stars","Your Stars",Style,"Lead Style","Route Type","Your Rating",Length,"Rating Code"';
 function csv(rows: string[]) {
@@ -77,6 +90,79 @@ afterEach(() => {
 });
 
 describe("MountainProjectProvider", () => {
+  it("reads each verified route and ancestor once and keeps native GPS on Areas", async () => {
+    const requests: string[] = [];
+    const enriched = new MountainProjectProvider(async (input) => {
+      const url = String(input);
+      requests.push(url);
+      if (url.includes("tick-export"))
+        return new Response(csv([row(), row(), row().replaceAll("105751342", "999")]));
+      if (url.includes("/routes/"))
+        return Response.json({
+          id: Number(url.split("/").at(-1)),
+          title: "Route",
+          parent: { id: 2, name: "Crag", coordinates: [-120, 35] },
+          pitches: 3,
+        });
+      const id = Number(url.split("/").at(-1));
+      return Response.json({
+        id,
+        title: id === 2 ? "Crag" : "Region",
+        parent: { id: id === 2 ? 1 : 0, name: "Region" },
+        coordinates: id === 2 ? [-122, 37] : null,
+      });
+    });
+    await expect(run(enriched)).resolves.toMatchObject({ recordsSynced: 3, errors: [] });
+    expect(requests.filter((url) => url.includes("/routes/"))).toHaveLength(2);
+    expect(requests.filter((url) => url.includes("/areas/"))).toHaveLength(2);
+    expect(entries()[0]?.climb).toMatchObject({
+      externalId: "105751342",
+      areas: [
+        { externalId: "1", name: "Region", parentExternalId: null, coordinates: null },
+        {
+          externalId: "2",
+          name: "Crag",
+          parentExternalId: "1",
+          coordinates: { latitude: 37, longitude: -122 },
+        },
+      ],
+    });
+    expect(entries()[0]?.climb?.coordinates).toBeUndefined();
+    expect(entries()[0]?.climb?.pitches).toBeUndefined();
+    expect(entries()[0]?.raw).toMatchObject({
+      Route: "West Overhang",
+      sourceProfileId: "110186720",
+      sourceEnrichment: { route: { pitches: 3 }, areas: [{ id: 1 }, { id: 2 }] },
+    });
+  });
+
+  it.each(["failure", "cycle"])(
+    "fails before writing any ticks or reconciling on enrichment %s",
+    async (mode) => {
+      const db = database();
+      const result = await run(
+        new MountainProjectProvider(async (input) => {
+          const url = String(input);
+          if (url.includes("tick-export")) return new Response(csv([row()]));
+          if (url.includes("/routes/"))
+            return Response.json({
+              id: 105751342,
+              title: "Route",
+              parent: { id: 2, name: "Crag" },
+            });
+          return mode === "failure"
+            ? new Response("unavailable", { status: 503 })
+            : Response.json({ id: 2, title: "Cycle", parent: { id: 2, name: "Cycle" } });
+        }),
+        db,
+      );
+      expect(result).toMatchObject({ recordsSynced: 0, errors: [expect.any(Object)] });
+      expect(mocks.persist).not.toHaveBeenCalled();
+      expect(db.execute).not.toHaveBeenCalled();
+      expect(mocks.captureException).toHaveBeenCalled();
+    },
+  );
+
   it.each([
     { rows: [row()], reconciles: true, synced: 1 },
     { rows: [], reconciles: false, synced: 0 },
@@ -91,7 +177,7 @@ describe("MountainProjectProvider", () => {
     async ({ rows, reconciles, synced }) => {
       const db = database();
       const result = await run(
-        new MountainProjectProvider(async () => new Response(csv(rows))),
+        provider(async () => new Response(csv(rows))),
         db,
       );
       expect(result.recordsSynced).toBe(synced);
@@ -113,12 +199,12 @@ describe("MountainProjectProvider", () => {
       "https://www.mountainproject.com/route/105751342/west-overhang",
       url,
     );
-    await run(new MountainProjectProvider(async () => new Response(csv([source]))));
+    await run(provider(async () => new Response(csv([source]))));
     expect(entries()[0]?.climb?.externalId).toBe(target);
   });
   it("classifies mixed rock route types and graded boulders while retaining source provenance", async () => {
     await run(
-      new MountainProjectProvider(
+      provider(
         async () =>
           new Response(csv([row("Lead", "", '"Ice, Trad"'), row("Lead", "", "Boulder", "V4")])),
       ),
@@ -134,16 +220,14 @@ describe("MountainProjectProvider", () => {
     });
   });
   it("connects a public profile through the existing form", async () => {
-    const setup = new MountainProjectProvider(async () => new Response(csv([]))).authSetup();
+    const setup = provider(async () => new Response(csv([]))).authSetup();
     expect(setup.manualToken?.kind).toBe("public-profile");
     await expect(
       setup.manualToken?.exchangeToken("https://www.mountainproject.com/user/110186720/example"),
     ).resolves.toMatchObject({ accessToken: "110186720", scopes: "ticks" });
   });
   it("rejects a profile response without a valid tick export", async () => {
-    const setup = new MountainProjectProvider(
-      async () => new Response("<html>Private</html>"),
-    ).authSetup();
+    const setup = provider(async () => new Response("<html>Private</html>")).authSetup();
     await expect(setup.manualToken?.exchangeToken("110186720")).rejects.toThrow(
       "Paste your public Mountain Project profile URL",
     );
@@ -155,9 +239,7 @@ describe("MountainProjectProvider", () => {
     ["Solo", { ropeMethod: null, solo: true }],
     ["Aid", { ropeMethod: null, usedAid: true }],
   ])("maps source method %s independently of result", async (style, facts) => {
-    await run(
-      new MountainProjectProvider(async () => new Response(csv([row(style, "Fell/Hung")]))),
-    );
+    await run(provider(async () => new Response(csv([row(style, "Fell/Hung")]))));
     expect(entries()[0]).toMatchObject({
       attempts: [{ scope: "climb", ...facts, qualifier: "fell-hung" }],
       notes: "Source note",
@@ -185,9 +267,7 @@ describe("MountainProjectProvider", () => {
     ["Top Rope", []],
     ["", null],
   ])("preserves supplied protection %s", async (type, protection) => {
-    await run(
-      new MountainProjectProvider(async () => new Response(csv([row("Lead", "Redpoint", type)]))),
-    );
+    await run(provider(async () => new Response(csv([row("Lead", "Redpoint", type)]))));
     expect(entries()[0]?.climb?.routeProtection).toEqual(protection);
   });
   it.each([
@@ -197,15 +277,11 @@ describe("MountainProjectProvider", () => {
     ["Pinkpoint", "free-send"],
     ["Fell/Hung", "fell-hung"],
   ])("maps source qualifier %s to attempt facts", async (source, qualifier) => {
-    await run(new MountainProjectProvider(async () => new Response(csv([row("Lead", source)]))));
+    await run(provider(async () => new Response(csv([row("Lead", source)]))));
     expect(entries()[0]?.attempts[0]?.qualifier).toBe(qualifier);
   });
   it("uses a boulder's source result while leaving rope method unknown", async () => {
-    await run(
-      new MountainProjectProvider(
-        async () => new Response(csv([row("Flash", "", "Boulder", "V4")])),
-      ),
-    );
+    await run(provider(async () => new Response(csv([row("Flash", "", "Boulder", "V4")]))));
     expect(entries()[0]).toMatchObject({
       attempts: [{ scope: "climb", ropeMethod: null, qualifier: "free-flash" }],
       climb: { kind: "boulder", publishedGrades: [{ system: "v_scale", value: "V4" }] },
@@ -213,14 +289,14 @@ describe("MountainProjectProvider", () => {
   });
   it("keeps repeated occurrences separate on one verified climb", async () => {
     const source = row();
-    await run(new MountainProjectProvider(async () => new Response(csv([source, source]))));
+    await run(provider(async () => new Response(csv([source, source]))));
     expect(entries()).toHaveLength(2);
     expect(new Set(entries().map((entry) => entry.externalId)).size).toBe(2);
     expect(entries().map((entry) => entry.climb?.externalId)).toEqual(["105751342", "105751342"]);
   });
   it("retains ungraded undated and unknown-system source logs", async () => {
     const result = await run(
-      new MountainProjectProvider(
+      provider(
         async () => new Response(csv([row("", "", "", "", ""), row("Lead", "", "Ice", "WI4")])),
       ),
     );
@@ -243,7 +319,7 @@ describe("MountainProjectProvider", () => {
       "Trad,,,1800",
       "Trad,5.9,100,1800",
     );
-    await run(new MountainProjectProvider(async () => new Response(csv([source]))));
+    await run(provider(async () => new Response(csv([source]))));
     expect(entries()[0]).toMatchObject({
       reportedGrades: [{ value: "5.9", system: "yds" }],
       climb: {
@@ -256,11 +332,7 @@ describe("MountainProjectProvider", () => {
     });
   });
   it("records Pinkpoint's preplaced protection separately from the route's protection", async () => {
-    await run(
-      new MountainProjectProvider(
-        async () => new Response(csv([row("Lead", "Pinkpoint", "Sport")])),
-      ),
-    );
+    await run(provider(async () => new Response(csv([row("Lead", "Pinkpoint", "Sport")]))));
     expect(entries()[0]).toMatchObject({
       climb: { routeProtection: ["sport"] },
       attempts: [{ usedPreplacedProtection: true, qualifier: "free-send" }],
@@ -268,7 +340,7 @@ describe("MountainProjectProvider", () => {
   });
   it("rejects malformed supplied dates while preserving the valid records", async () => {
     const result = await run(
-      new MountainProjectProvider(
+      provider(
         async () =>
           new Response(csv([row(), row("Lead", "Redpoint", "Trad", "5.9", "2026-02-30")])),
       ),
@@ -280,16 +352,14 @@ describe("MountainProjectProvider", () => {
     expect(entries()).toHaveLength(1);
   });
   it.each([503, 404])("returns an actionable export failure for HTTP %s", async (status) => {
-    const result = await run(
-      new MountainProjectProvider(async () => new Response("unavailable", { status })),
-    );
+    const result = await run(provider(async () => new Response("unavailable", { status })));
     expect(result.errors).toHaveLength(1);
     expect(mocks.persist).not.toHaveBeenCalled();
     if (status === 503) expect(mocks.captureException).toHaveBeenCalled();
   });
   it("reports persistence errors with provider context", async () => {
     mocks.persist.mockRejectedValueOnce(new Error("database offline"));
-    const result = await run(new MountainProjectProvider(async () => new Response(csv([row()]))));
+    const result = await run(provider(async () => new Response(csv([row()]))));
     expect(result).toMatchObject({
       recordsSynced: 0,
       errors: [expect.objectContaining({ message: "database offline" })],
