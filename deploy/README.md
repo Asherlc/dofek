@@ -160,6 +160,12 @@ If direct SSH fails with `Permission denied`, verify you are using the matching 
 - `IMAGE_TAG` is shared across GHCR images built from main:
   - `ghcr.io/asherlc/dofek:<tag>` (production stack)
   - `ghcr.io/asherlc/dofek-ml:<tag>` (local ML tooling; not deployed to the stack)
+- The deployment resolves the requested app tag once to a manifest digest.
+  `APP_IMAGE` is the resulting full immutable reference, required when rendering
+  the production stack. Asset extraction, migrations, readiness/CDC operations,
+  and the requested-image rollouts all consume that reference. Docker documents
+  [digest pinning](https://docs.docker.com/reference/cli/docker/image/pull/#pull-an-image-by-digest-immutable-identifier)
+  and the [registry manifest descriptor](https://docs.docker.com/reference/cli/docker/buildx/imagetools/inspect/#json-output).
 - `docker stack deploy` is the only production rollout command for web deploys. It updates `web` and `worker` together from `deploy/stack.yml`.
 - Swarm rollback is **image rollback only**. It does not roll back database schema changes that were already applied.
 - Migrations run after the non-pruning pre-migration stack apply and after the
@@ -365,7 +371,17 @@ the running Swarm image tag and inspect the production job's actual conclusion.
       - Optional: `CREDENTIAL_ENCRYPTION_KEY_NAMESPACE` (default `dofek`) and `CREDENTIAL_ENCRYPTION_KEY_NAME` (default `provider-credentials`).
    2. Point Docker CLI at the remote daemon with `DOCKER_HOST=ssh://ubuntu@<host>`.
    3. Login to GHCR on the CI runner.
-   4. `docker pull ghcr.io/asherlc/dofek:<tag>`.
+   4. Resolve `ghcr.io/asherlc/dofek:<tag>` to its registry manifest digest with
+      `scripts/resolve-deploy-image.ts`, then pull and inspect that immutable
+      reference on the remote Docker daemon. Its full `SENTRY_RELEASE` must
+      equal the checked-out commit. The resolver retains the existing web
+      service's complete desired digest reference for the pre-migration phase;
+      an existing tag-only reference fails instead of being resolved again.
+      Docker's [stack deployment](https://docs.docker.com/reference/cli/docker/stack/deploy/)
+      normally resolves tags against the registry, so every subsequent command
+      receives the selected digest. Stack interpolation sets the derived
+      `APP_IMAGE` after loading dotenv, preventing exported configuration from
+      replacing it. The workflow then validates the rendered stack files.
       The workflow also ensures pinned third-party stack images exist on the
       host, but skips those pulls when the exact image is already present.
       Image cleanup is controlled by this deploy workflow: it prunes unused
@@ -411,14 +427,14 @@ the running Swarm image tag and inspect the production job's actual conclusion.
    7. Apply the stack configuration before migrations with a non-prune,
       detached `docker stack deploy`, the temporary five-service quiesce
       overlay, and the migration quiesce overlay. On existing stacks
-      this uses the currently deployed app image tag, so database, ClickHouse,
+      this preserves the web service's complete desired image digest, so database, ClickHouse,
       network, config, and resource-limit changes are applied before migrations
       without rolling new app code ahead of schema changes. The overlays keep
       `analytics-worker`, all three metric-stream ClickHouse sinks,
       `processing-reconciliation`, and the migration-running `worker` at zero
       replicas during the migration window; see the
       [worker entrypoint](../entrypoint.sh). On clean-slate hosts the
-      stack apply uses the deploy image tag so the DB service and overlay network
+      stack apply uses the requested immutable image so the DB service and overlay network
       exist before readiness checks. After migrations, the workflow deploys the
       requested app image with only the five-service quiesce overlay still applied,
       which restores `worker` using the same image that ran the migrations while
@@ -427,6 +443,12 @@ the running Swarm image tag and inspect the production job's actual conclusion.
       The deploy workflow waits explicitly for Postgres and ClickHouse instead
       of keeping a long-lived Docker-over-SSH stack-deploy wait open while the
       single-node host restarts services.
+      At convergence, `scripts/verify-deploy-image.ts` checks each app service's
+      desired manifest identity, desired replica count, and every running task's
+      image reference. An optional tag does not change the repository/digest
+      identity; a local image configuration ID is not a manifest digest. Docker
+      describes the service/task relationship in
+      [Swarm services and tasks](https://docs.docker.com/engine/swarm/how-swarm-mode-works/services/).
    8. Wait until Postgres is writable (`SELECT NOT pg_is_in_recovery()`) and
       ClickHouse answers `/ping`; wait for PeerDB SQL and its Flow API, then
       run `peerdb-cdc-contract prepare` against existing mapping identities

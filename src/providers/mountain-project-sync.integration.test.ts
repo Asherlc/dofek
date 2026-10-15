@@ -1,9 +1,11 @@
+import { fork } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { z } from "zod";
 import { activity } from "../db/schema/activity.ts";
 import {
   area,
@@ -16,6 +18,11 @@ import {
 import { TEST_USER_ID as userId } from "../db/schema/core.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
+import { executeWithSchema } from "../db/typed-sql.ts";
+import {
+  createAccountErasureWorkLockPool,
+  runQueuedUserWorkUnlessAccountErasing,
+} from "../jobs/account-erasure-work-guard.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
 import { MountainProjectProvider } from "./mountain-project.ts";
 import { SyncRun } from "./sync-run.ts";
@@ -94,6 +101,227 @@ describe("MountainProjectProvider canonical persistence", () => {
       .from(climbingLogEntry)
       .leftJoin(climb, eq(climb.id, climbingLogEntry.climbId));
   }
+
+  it("orders overlapping source snapshots before fetching so older metadata cannot hide newer ticks", async () => {
+    const workLockPool = createAccountErasureWorkLockPool(ctx.connectionString);
+    ctx.addCleanup(() => workLockPool.close());
+    const [header, oldTick] = fixtureCsv.split("\n");
+    if (!header || !oldTick) throw new Error("Expected a complete source tick fixture");
+    const oldExport = [header, oldTick].join("\n");
+    const newExport = [header, oldTick, oldTick.replace("2026-08-10", "2026-08-11")].join("\n");
+    let releaseOldResponse: () => void = () => {
+      throw new Error("Old response release was not initialized");
+    };
+    const oldResponseReleased = new Promise<void>((resolve) => {
+      releaseOldResponse = resolve;
+    });
+    let reportOldSnapshot: () => void = () => {
+      throw new Error("Old snapshot signal was not initialized");
+    };
+    const oldSnapshotRead = new Promise<void>((resolve) => {
+      reportOldSnapshot = resolve;
+    });
+    let exportReads = 0;
+    let areaReads = 0;
+    server.use(
+      http.get(exportUrl, () => new HttpResponse(++exportReads === 1 ? oldExport : newExport)),
+      http.get("https://www.mountainproject.com/api/v2/routes/:id", ({ params }) =>
+        HttpResponse.json({
+          id: Number(params.id),
+          title: "Route",
+          parent: { id: 2, name: "Crag" },
+        }),
+      ),
+      http.get("https://www.mountainproject.com/api/v2/areas/2", async () => {
+        const oldSnapshot = ++areaReads === 1;
+        if (oldSnapshot) {
+          reportOldSnapshot();
+          await oldResponseReleased;
+        }
+        return HttpResponse.json({
+          id: 2,
+          title: oldSnapshot ? "Old crag" : "Current crag",
+          parent: { id: 0, name: "" },
+          coordinates: oldSnapshot ? [-105, 39] : [-106, 40],
+        });
+      }),
+    );
+    const executeRefresh = (origin: string) =>
+      runQueuedUserWorkUnlessAccountErasing(
+        workLockPool,
+        ctx.db,
+        userId,
+        origin,
+        run,
+        "mountain-project",
+      );
+    const oldRefresh = executeRefresh("scheduled provider sync");
+    await oldSnapshotRead;
+    let newerFinished = false;
+    const newerRefresh = executeRefresh("manual full provider sync").finally(() => {
+      newerFinished = true;
+    });
+    try {
+      const deadline = Date.now() + 5_000;
+      while (!newerFinished) {
+        const [state] = await executeWithSchema(
+          ctx.db,
+          z.object({ waiting: z.boolean() }),
+          sql`SELECT EXISTS (
+            SELECT 1 FROM pg_locks AS locks
+            JOIN pg_stat_activity AS sessions ON sessions.pid = locks.pid
+            WHERE locks.locktype = 'advisory' AND NOT locks.granted
+              AND sessions.datname = current_database()
+              AND sessions.application_name = 'dofek-account-erasure-work-lock'
+          ) AS waiting`,
+        );
+        if (state?.waiting) {
+          expect(exportReads).toBe(1);
+          break;
+        }
+        if (Date.now() >= deadline) throw new Error("Second refresh neither waited nor finished");
+        await new Promise<void>((resolve) => setImmediate(resolve));
+      }
+    } finally {
+      releaseOldResponse();
+    }
+    await expect(oldRefresh).resolves.toMatchObject({ recordsSynced: 1, errors: [] });
+    await expect(newerRefresh).resolves.toMatchObject({ recordsSynced: 2, errors: [] });
+    expect(await ctx.db.select().from(area)).toEqual([
+      expect.objectContaining({
+        externalId: "2",
+        name: "Current crag",
+        coordinates: { x: -106, y: 40 },
+      }),
+    ]);
+    const stored = await records();
+    expect(stored).toHaveLength(2);
+    expect(stored.every(({ log }) => log.providerAbsentAt === null)).toBe(true);
+    expect(stored.map(({ log }) => log.climbedOn).sort()).toEqual(["2026-08-10", "2026-08-11"]);
+  });
+
+  it("stops a source writer immediately when its lock session disconnects during HTTP", async () => {
+    const [header, oldTick] = fixtureCsv.split("\n");
+    if (!header || !oldTick) throw new Error("Expected a complete source tick fixture");
+    const child = fork(new URL("../jobs/fixtures/provider-sync-lock-loss.ts", import.meta.url), {
+      execArgv: ["--import", "tsx"],
+      stdio: ["ignore", "pipe", "pipe", "ipc"],
+    });
+    let diagnostics = "";
+    child.stdout?.on("data", (chunk) => {
+      diagnostics += String(chunk);
+    });
+    child.stderr?.on("data", (chunk) => {
+      diagnostics += String(chunk);
+    });
+    const signal = () => {
+      let notify: () => void = () => {
+        throw new Error("Child signal was not initialized");
+      };
+      const promise = new Promise<void>((resolve) => {
+        notify = resolve;
+      });
+      return { promise, notify: () => notify() };
+    };
+    const httpPending = signal();
+    const fatalCaptured = signal();
+    const callbackFinished = signal();
+    const exited = new Promise<number | null>((resolve) => child.once("exit", resolve));
+    child.on("message", (message) => {
+      diagnostics += `\nIPC: ${JSON.stringify(message)}`;
+      if (message === "http_pending") httpPending.notify();
+      if (message === "fatal_captured") fatalCaptured.notify();
+      if (message === "callback_finished") callbackFinished.notify();
+    });
+    child.send({
+      connectionString: ctx.connectionString,
+      userId,
+      csv: [header, oldTick].join("\n"),
+    });
+    try {
+      await Promise.race([
+        httpPending.promise,
+        exited.then((code) => {
+          throw new Error(`Source fixture exited before HTTP: ${code}; ${diagnostics}`);
+        }),
+      ]);
+      const holders = await executeWithSchema(
+        ctx.db,
+        z.object({ pid: z.number().int() }),
+        sql`SELECT DISTINCT sessions.pid FROM pg_stat_activity AS sessions
+          JOIN pg_locks AS locks ON locks.pid = sessions.pid
+          WHERE sessions.datname = current_database()
+            AND sessions.application_name = 'dofek-account-erasure-work-lock'
+            AND locks.locktype = 'advisory' AND locks.granted`,
+      );
+      expect(holders).toHaveLength(1);
+      const holder = holders[0];
+      if (!holder) throw new Error("Expected the child source-refresh lock session");
+      const terminated = await executeWithSchema(
+        ctx.db,
+        z.object({ terminated: z.boolean() }),
+        sql`SELECT pg_terminate_backend(${holder.pid}) AS terminated`,
+      );
+      expect(terminated).toEqual([{ terminated: true }]);
+      await Promise.race([fatalCaptured.promise, exited]);
+
+      currentExport = [header, oldTick, oldTick.replace("2026-08-10", "2026-08-11")].join("\n");
+      serve();
+      server.use(
+        http.get("https://www.mountainproject.com/api/v2/routes/:id", ({ params }) =>
+          HttpResponse.json({
+            id: Number(params.id),
+            title: "Route",
+            parent: { id: 2, name: "Crag" },
+          }),
+        ),
+        http.get("https://www.mountainproject.com/api/v2/areas/2", () =>
+          HttpResponse.json({
+            id: 2,
+            title: "Current crag",
+            parent: { id: 0, name: "" },
+            coordinates: [-106, 40],
+          }),
+        ),
+      );
+      const replacementPool = createAccountErasureWorkLockPool(ctx.connectionString);
+      ctx.addCleanup(() => replacementPool.close());
+      await expect(
+        runQueuedUserWorkUnlessAccountErasing(
+          replacementPool,
+          ctx.db,
+          userId,
+          "replacement provider sync",
+          run,
+          "mountain-project",
+        ),
+      ).resolves.toMatchObject({ recordsSynced: 2, errors: [] });
+      if (child.connected) child.send("release_http");
+      const outcome = await Promise.race([
+        callbackFinished.promise.then(() => ({ status: "callback_finished" })),
+        exited.then((code) => ({ status: "exited", code })),
+      ]);
+      const stored = await records();
+      expect({
+        outcome,
+        areas: (await ctx.db.select().from(area)).map(({ name, coordinates }) => ({
+          name,
+          coordinates,
+        })),
+        activeDates: stored
+          .filter(({ log }) => log.providerAbsentAt === null)
+          .map(({ log }) => log.climbedOn)
+          .sort(),
+      }).toEqual({
+        outcome: { status: "exited", code: 1 },
+        areas: [{ name: "Current crag", coordinates: { x: -106, y: 40 } }],
+        activeDates: ["2026-08-10", "2026-08-11"],
+      });
+    } finally {
+      if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+      await exited;
+    }
+  });
 
   it("maps source qualifiers and current shared metadata while preserving attachment and source date", async () => {
     currentExport = fixtureCsv;

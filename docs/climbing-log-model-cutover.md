@@ -137,12 +137,14 @@ resuming analytics. See the [model guide](climbing-context.md),
 
 Restart only matching application processes and clients after these checks.
 Before resuming the canonical deployment, verify that the stopped web service's
-desired image is the selected release and that its tag still resolves to the
-rehearsed digest. The [pre-migration stack apply](../.github/workflows/deploy-web-stack.yml)
-reads that desired image even at zero replicas, strips its digest suffix and
-restores web replicas. Leaving the legacy desired image would restart old code
+desired image is the selected release pinned to the rehearsed manifest digest.
+The [pre-migration stack apply](../.github/workflows/deploy-web-stack.yml)
+retains that immutable desired reference even at zero replicas and restores web
+replicas using it. Leaving the legacy desired image would restart old code
 against finalized storage. Keep web stopped while updating and verifying the
-selected image.
+selected image. The workflow resolves its requested image once and uses that
+validated digest for migrations and the later rollout; Docker documents
+[digest references as immutable image identifiers](https://docs.docker.com/reference/cli/docker/image/pull/#pull-an-image-by-digest-immutable-identifier).
 Do not restart the old image against finalized storage. Before 0147, keep
 legacy evidence and the verified backup available for reviewed recovery.
 After finalization, the recovery choices are a verified backup restore with
