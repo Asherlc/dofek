@@ -47,6 +47,45 @@ describe("ClimbingActivityLogEntryRepository PostgreSQL projection", () => {
       { externalId: "pitch-one", number: 1, publishedGrades: [{ value: "5.8", system: "yds" }] },
     ],
   } as const;
+  it("projects native Climb points before the nearest native Area point", async () => {
+    const first = await write({
+      externalId: "mapped-log",
+      climb: {
+        ...route,
+        coordinates: { latitude: 12, longitude: 0 },
+        areas: [
+          { externalId: "region", name: "Region", coordinates: { latitude: 40, longitude: -120 } },
+          { externalId: "crag", name: "Crag", coordinates: { latitude: 0, longitude: -122.25 } },
+          { externalId: "wall", name: "Wall" },
+        ],
+      },
+      attempts: [{ scope: "climb" }],
+    });
+    expect(first.mapLocation).toEqual({
+      coordinates: { latitude: 12, longitude: 0 },
+      scope: "climb",
+      objectId: first.climbId,
+      providerId: "openbeta",
+      name: "Route",
+    });
+    const updated = await write({
+      externalId: "mapped-log",
+      climb: { externalId: "route-one", coordinates: null },
+      attempts: [{ scope: "climb" }],
+    });
+    expect(updated.climb?.areaPath.map((area) => area.name)).toEqual(["Region", "Crag", "Wall"]);
+    const crag = updated.climb?.areaPath.find((area) => area.externalId === "crag");
+    if (!crag) throw new Error("Expected source Crag");
+    expect(updated.mapLocation).toEqual({
+      coordinates: { latitude: 0, longitude: -122.25 },
+      scope: "area",
+      objectId: crag.id,
+      providerId: "openbeta",
+      name: "Crag",
+    });
+    expect(updated.climb?.coordinates).toBeNull();
+  });
+
   it.each([
     { sourceResult: "Redpoint", outcome: "completed", labels: ["sent"] },
     { sourceResult: "failed", outcome: "failed", labels: [] },

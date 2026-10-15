@@ -3,27 +3,33 @@ import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "no
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { z } from "zod";
+import { imageRepository, immutableImageReference } from "./deploy-image-reference.ts";
 import { chooseMigrationDeployment } from "./migration-deployment.ts";
 
-const imagePrefix = "ghcr.io/asherlc/dofek:";
-const imageSchema = z
-  .string()
-  .regex(/^ghcr\.io\/asherlc\/dofek:[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}(?:@sha256:[a-f0-9]{64})?$/);
-const argumentsSchema = z.tuple([imageSchema, z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_.-]*$/)]);
+const argumentsSchema = z.tuple([
+  z.string(),
+  z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_.-]*$/),
+  z.string(),
+]);
 const maintenanceLabel = "dofek.migration-maintenance-target";
 const deployedServiceSchema = z.object({
-  Spec: z.object({
-    Labels: z
-      .object({
-        [maintenanceLabel]: z
-          .string()
-          .regex(/^[A-Za-z0-9_-]+$/)
-          .nullish(),
-      })
-      .nullish(),
-    TaskTemplate: z.object({ ContainerSpec: z.object({ Image: imageSchema }) }),
-  }),
+  image: z.string(),
+  labels: z
+    .object({
+      [maintenanceLabel]: z
+        .string()
+        .regex(/^[A-Za-z0-9_-]+$/)
+        .nullish(),
+    })
+    .nullish(),
 });
+
+function appImageReference(image: string): string {
+  const reference = immutableImageReference(image);
+  if (imageRepository(reference) !== "ghcr.io/asherlc/dofek")
+    throw new Error("Migration inspection requires an immutable ghcr.io/asherlc/dofek image.");
+  return reference;
+}
 
 function docker(args: string[]): string {
   return execFileSync("docker", args, {
@@ -45,7 +51,11 @@ function withInspectionContainer(image: string, inspect: (container: string) => 
 }
 
 async function main(): Promise<void> {
-  const [requestedImage, stackName] = argumentsSchema.parse(process.argv.slice(2));
+  const [requestedReference, stackName, expectedReference] = argumentsSchema.parse(
+    process.argv.slice(2),
+  );
+  const requestedImage = appImageReference(requestedReference);
+  const expectedImage = appImageReference(expectedReference);
   const outputPath = process.env.GITHUB_OUTPUT;
   if (!outputPath) throw new Error("GITHUB_OUTPUT is required.");
 
@@ -63,14 +73,24 @@ async function main(): Promise<void> {
   let deployedImage: string | null = null;
   let maintenanceBoundary: string | null = null;
   if (services.includes(webService)) {
-    const [service] = z
-      .tuple([deployedServiceSchema])
-      .parse(JSON.parse(docker(["service", "inspect", webService])));
-    deployedImage = service.Spec.TaskTemplate.ContainerSpec.Image;
-    maintenanceBoundary = service.Spec.Labels?.[maintenanceLabel] ?? null;
+    const service = deployedServiceSchema.parse(
+      JSON.parse(
+        docker([
+          "service",
+          "inspect",
+          webService,
+          "--format",
+          '{"image":{{json .Spec.TaskTemplate.ContainerSpec.Image}},"labels":{{json .Spec.Labels}}}',
+        ]),
+      ),
+    );
+    if (appImageReference(service.image) !== expectedImage)
+      throw new Error("The deployed web image changed after release selection.");
+    deployedImage = expectedImage;
+    maintenanceBoundary = service.labels?.[maintenanceLabel] ?? null;
+  } else if (expectedImage !== requestedImage) {
+    throw new Error("The deployed web service changed after release selection.");
   }
-  if (deployedImage !== null && !deployedImage.includes("@sha256:"))
-    throw new Error("The deployed web image must include its immutable sha256 digest.");
 
   const directory = mkdtempSync(join(tmpdir(), "dofek-migration-deployment-"));
   let decision: Awaited<ReturnType<typeof chooseMigrationDeployment>>;
@@ -101,7 +121,7 @@ async function main(): Promise<void> {
 
   appendFileSync(
     outputPath,
-    `mode=${decision.mode}\npre_migration_image_tag=${(deployedImage ?? requestedImage).slice(imagePrefix.length)}\nmaintenance_boundary=${decision.targetMigrationTag}\n`,
+    `mode=${decision.mode}\nmaintenance_boundary=${decision.targetMigrationTag}\n`,
   );
 }
 

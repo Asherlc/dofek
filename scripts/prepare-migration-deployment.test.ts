@@ -13,8 +13,10 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
-const requestedImage = "ghcr.io/asherlc/dofek:sha-new";
+const requestedImage = `ghcr.io/asherlc/dofek:sha-new@sha256:${"b".repeat(64)}`;
 const deployedImage = `ghcr.io/asherlc/dofek:sha-old@sha256:${"a".repeat(64)}`;
+const bareRequestedImage = `ghcr.io/asherlc/dofek@sha256:${"b".repeat(64)}`;
+const bareDeployedImage = `ghcr.io/asherlc/dofek@sha256:${"a".repeat(64)}`;
 const oldEntry = { idx: 0, tag: "0000_baseline", when: 1 };
 const newEntry = { idx: 1, tag: "0001_contract_change", when: 2 };
 
@@ -22,6 +24,7 @@ function prepareDeployment({
   serviceNames = ["dofek_web"],
   currentImage = deployedImage,
   targetImage = requestedImage,
+  expectedImage = serviceNames.includes("dofek_web") ? deployedImage : targetImage,
   failure,
   marked = true,
   oldJournal = JSON.stringify({ entries: [oldEntry] }),
@@ -33,6 +36,7 @@ function prepareDeployment({
   serviceNames?: string[];
   currentImage?: string;
   targetImage?: string;
+  expectedImage?: string;
   failure?: string;
   marked?: boolean;
   oldJournal?: string;
@@ -90,23 +94,22 @@ const deployedId = "c".repeat(64);
 let operation;
 if (args[0] === "service" && args[1] === "ls") operation = "list";
 else if (args[0] === "service" && args[1] === "inspect") operation = "inspect";
-else if (args[0] === "create") operation = args.at(-1) === scenario.targetImage ? "create-target" : "create-deployed";
+else if (args[0] === "create") operation = args.at(-1).split("@")[1] === scenario.targetImage.split("@")[1] ? "create-target" : "create-deployed";
 else if (args[0] === "cp") operation = args[1].startsWith(targetId + ":") ? "copy-target" : "copy-deployed";
 else if (args[0] === "rm") operation = args.at(-1) === targetId ? "remove-target" : "remove-deployed";
 else { console.error("Unexpected Docker operation"); process.exit(65); }
 if (scenario.failure === operation) { console.error("Docker " + operation + " failed"); process.exit(23); }
 if (operation === "list") process.stdout.write(scenario.serviceNames.join("\\n"));
 else if (operation === "inspect") {
-  if (args.includes("--format")) process.stdout.write(scenario.currentImage);
-  else process.stdout.write(JSON.stringify([{
-    Spec: {
-      Labels: {
-        "com.docker.stack.namespace": "dofek",
-        ...(scenario.maintenanceBoundary === undefined ? {} : { "dofek.migration-maintenance-target": scenario.maintenanceBoundary }),
-      },
-      TaskTemplate: { ContainerSpec: { Image: scenario.currentImage } },
-    },
-  }]));
+  const format = '{"image":{{json .Spec.TaskTemplate.ContainerSpec.Image}},"labels":{{json .Spec.Labels}}}';
+  if (args[args.indexOf("--format") + 1] !== format || !args.includes("--format")) {
+    console.error("Service inspection must request only image and maintenance boundary");
+    process.exit(68);
+  }
+  process.stdout.write(JSON.stringify({
+    image: scenario.currentImage,
+    labels: scenario.maintenanceBoundary === undefined ? {} : { "dofek.migration-maintenance-target": scenario.maintenanceBoundary },
+  }));
 }
 else if (operation.startsWith("create-")) {
   const id = operation === "create-target" ? targetId : deployedId;
@@ -139,6 +142,7 @@ else if (operation.startsWith("create-")) {
         resolve("scripts/prepare-migration-deployment.ts"),
         targetImage,
         stackName,
+        expectedImage,
       ],
       { env: environment, encoding: "utf8" },
     );
@@ -162,18 +166,51 @@ else if (operation.startsWith("create-")) {
 }
 
 describe("prepare migration deployment command", () => {
-  it("selects maintenance across a marked boundary and preserves the inspected image digest", () => {
+  it("selects maintenance across a marked boundary using the selected immutable journals", () => {
     const result = prepareDeployment();
     expect(result.status).toBe(0);
     expect(result.output).toBe(
-      `existing=value\nmode=maintenance\npre_migration_image_tag=sha-old@sha256:${"a".repeat(64)}\nmaintenance_boundary=0001_contract_change\n`,
+      "existing=value\nmode=maintenance\nmaintenance_boundary=0001_contract_change\n",
     );
     expect(result.remainingContainers).toEqual([]);
     expect(result.remainingTemporaryDirectories).toEqual([]);
     expect(result.copiedFixturesRemain).toBe(true);
     expect(
       result.calls.filter(([command]) => command === "create").map((call) => call.at(-1)),
-    ).toEqual([requestedImage, deployedImage]);
+    ).toEqual([bareRequestedImage, bareDeployedImage]);
+  });
+
+  it("accepts selected bare digest references for both requested and deployed images", () => {
+    const result = prepareDeployment({
+      targetImage: bareRequestedImage,
+      currentImage: bareDeployedImage,
+      expectedImage: bareDeployedImage,
+    });
+    expect(result.status).toBe(0);
+    expect(result.output).toBe(
+      "existing=value\nmode=maintenance\nmaintenance_boundary=0001_contract_change\n",
+    );
+    expect(result.calls.filter(([command]) => command === "create")).toEqual([
+      ["create", bareRequestedImage],
+      ["create", bareDeployedImage],
+    ]);
+  });
+
+  it("rejects a desired image that changed after immutable release selection", () => {
+    const result = prepareDeployment({ currentImage: requestedImage });
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain("changed after release selection");
+    expect(result.output).toBe("existing=value\n");
+    expect(result.calls.some(([command]) => command === "create")).toBe(false);
+  });
+
+  it("accepts a differently tagged desired image at the selected digest", () => {
+    const result = prepareDeployment({ currentImage: deployedImage.replace("sha-old", "renamed") });
+    expect(result.status).toBe(0);
+    expect(result.calls.filter(([command]) => command === "create")).toEqual([
+      ["create", bareRequestedImage],
+      ["create", bareDeployedImage],
+    ]);
   });
 
   it("selects rolling when the image histories have no pending maintenance boundary", () => {
@@ -224,10 +261,21 @@ describe("prepare migration deployment command", () => {
     const result = prepareDeployment({ serviceNames: ["dofek_web-preview"] });
     expect(result.status).toBe(0);
     expect(result.output).toBe(
-      "existing=value\nmode=maintenance\npre_migration_image_tag=sha-new\nmaintenance_boundary=0001_contract_change\n",
+      "existing=value\nmode=maintenance\nmaintenance_boundary=0001_contract_change\n",
     );
     expect(result.calls.some((call) => call[0] === "service" && call[1] === "inspect")).toBe(false);
     expect(result.remainingContainers).toEqual([]);
+    expect(result.calls.filter(([command]) => command === "create")).toEqual([
+      ["create", bareRequestedImage],
+    ]);
+  });
+
+  it("fails closed when the selected deployed service disappeared before journal inspection", () => {
+    const result = prepareDeployment({ serviceNames: [], expectedImage: deployedImage });
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain("changed after release selection");
+    expect(result.output).toBe("existing=value\n");
+    expect(result.calls.some(([command]) => command === "create")).toBe(false);
   });
 
   it.each(["list", "inspect", "create-target", "copy-target", "create-deployed", "copy-deployed"])(
@@ -260,10 +308,21 @@ describe("prepare migration deployment command", () => {
     expect(result.calls.some(([command]) => command === "create")).toBe(false);
   });
 
-  it.each(["ghcr.io/other/dofek:sha-new", "ghcr.io/asherlc/dofek:sha-new\nmode=rolling"])(
-    "rejects an invalid requested image before calling Docker",
-    (targetImage) => {
-      const result = prepareDeployment({ targetImage });
+  it.each([
+    "ghcr.io/other/dofek:sha-new",
+    "ghcr.io/asherlc/dofek:sha-new\nmode=rolling",
+    "ghcr.io/asherlc/dofek:sha-new",
+  ])("rejects an invalid requested image before calling Docker", (targetImage) => {
+    const result = prepareDeployment({ targetImage });
+    expect(result.status).not.toBe(0);
+    expect(result.output).toBe("existing=value\n");
+    expect(result.calls).toEqual([]);
+  });
+
+  it.each(["ghcr.io/asherlc/dofek:sha-old", `ghcr.io/other/dofek@sha256:${"a".repeat(64)}`])(
+    "rejects an unverifiable selected pre-migration image %s before calling Docker",
+    (expectedImage) => {
+      const result = prepareDeployment({ expectedImage });
       expect(result.status).not.toBe(0);
       expect(result.output).toBe("existing=value\n");
       expect(result.calls).toEqual([]);

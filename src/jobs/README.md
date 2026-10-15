@@ -36,6 +36,32 @@ This directory contains background job processing logic using BullMQ and Redis.
   `sync-provider-failure.ts` applies failure and retry policy. Each module has
   a matching colocated unit test.
 
+## Provider execution ordering
+
+Provider workers, the shared sync worker, and the inline CLI worker serialize
+one complete execution for each owner/provider before its first source request
+through persistence. Independent keys can proceed concurrently within the
+existing four-session guard pool. A waiting execution consumes one of those
+sessions; this change adds no connections. A coordinator without a provider
+continues to fan out through provider queues. PostgreSQL session advisory locks
+provide exclusion across processes without holding a database transaction during
+HTTP work ([PostgreSQL advisory locks](https://www.postgresql.org/docs/current/explicit-locking.html#ADVISORY-LOCKS)).
+
+The guard acquires the provider lock before the shared account-erasure work
+barrier, checks the erasure fence, and releases both in reverse order after the
+callback. It verifies each unlock and destroys a session whose ownership cannot
+be confirmed. If the checked-out provider lock session disconnects, the worker
+reports the exception and exits synchronously to prevent an outstanding HTTP
+callback from persisting after exclusion is lost. Telemetry delivery is best
+effort at that boundary: immediate exit cannot wait for asynchronous flushing
+([node-postgres client errors](https://node-postgres.com/apis/client#events),
+[Node.js process.exit](https://nodejs.org/api/process.html#processexitcode)).
+
+Mountain Project fetches and persists its full snapshot in one execution, so the
+guard orders that complete refresh. WHOOP and Garmin carry checkpoints across
+separate jobs; execution locking does not order an entire logical refresh across
+those continuations ([BullMQ step jobs](https://docs.bullmq.io/patterns/process-step-jobs)).
+
 ## Configuration
 
 - **Provider Tiers**: Sync frequency and priority are defined in `provider-queue-config.ts`.

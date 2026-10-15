@@ -19,6 +19,9 @@ The backend API and background job processor for Dofek. Built with Node.js, Expr
   serves grade analytics and session summaries, and delegates activity detail hydration and
   cross-provider entry consolidation to
   [`ClimbingActivityLogEntryRepository`](./src/repositories/climbing-activity-log-entry-repository.ts).
+  Entry hydration returns `mapLocation` from native Climb coordinates, otherwise
+  the nearest coordinate-bearing Area in the selected source graph; consolidation
+  retains that graph's map ownership. See the [map contract](../training/src/climbing-map.ts).
   Both use the same [grade display conversion](./src/repositories/climbing-grade-display.ts).
   Rock metrics select one compatible published grade per target and derive free-send
   evidence from its recorded attempts, through the [shared projection](src/repositories/climbing-rock-observations.ts).

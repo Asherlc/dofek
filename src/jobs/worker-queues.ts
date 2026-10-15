@@ -88,6 +88,7 @@ export function createWorkerQueues({
             job.data.userId,
             "provider sync",
             () => processSyncJob(job, db, signal),
+            job.data.providerId,
           ),
         ),
       {
@@ -123,6 +124,7 @@ export function createWorkerQueues({
               throw error;
             }
           },
+          job.data.providerId,
         ),
       ),
     { autorun: false, connection },

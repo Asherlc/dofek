@@ -38,6 +38,84 @@ function repository(logs: ClimbingLogEntryDetail[]) {
   );
 }
 describe("ClimbingActivityLogEntryRepository", () => {
+  it("uses native Climb GPS before Area GPS, including zero coordinates", async () => {
+    const log = named("openbeta");
+    if (!log.climb?.areaPath[0]) throw new Error("Expected catalogue fixture");
+    log.climb.coordinates = { latitude: 0, longitude: 0 };
+    log.climb.areaPath[0].coordinates = { latitude: 37, longitude: -122 };
+    const [result] = await repository([log]).getLogEntries([log.id]);
+    expect(result?.toDetail().mapLocation).toEqual({
+      coordinates: { latitude: 0, longitude: 0 },
+      scope: "climb",
+      objectId: log.climb.id,
+      providerId: "openbeta",
+      name: "Corner",
+    });
+  });
+  it("uses the nearest coordinate-bearing Area while keeping the source path order", async () => {
+    const log = named("mountain-project");
+    const area = log.climb?.areaPath[0];
+    if (!log.climb || !area) throw new Error("Expected catalogue fixture");
+    log.climb.areaPath = [
+      {
+        ...area,
+        id: "20000000-0000-4000-8000-000000000010",
+        name: "Region",
+        coordinates: { latitude: 40, longitude: -120 },
+      },
+      {
+        ...area,
+        id: "20000000-0000-4000-8000-000000000011",
+        name: "Crag",
+        coordinates: { latitude: 37, longitude: 0 },
+      },
+      { ...area, name: "Wall", coordinates: null },
+    ];
+    const [result] = await repository([log]).getLogEntries([log.id]);
+    expect(result?.toDetail().mapLocation).toEqual({
+      coordinates: { latitude: 37, longitude: 0 },
+      scope: "area",
+      objectId: "20000000-0000-4000-8000-000000000011",
+      providerId: "mountain-project",
+      name: "Crag",
+    });
+    expect(result?.toDetail().climb?.areaPath.map((area) => area.name)).toEqual([
+      "Region",
+      "Crag",
+      "Wall",
+    ]);
+  });
+  it.each([true, false])(
+    "returns no map location when native coordinates are absent (Climb: %s)",
+    async (hasClimb) => {
+      const log = hasClimb ? named("openbeta") : climbingLogEntryFixture();
+      const [result] = await repository([log]).getLogEntries([log.id]);
+      expect(result?.toDetail().mapLocation).toBeNull();
+    },
+  );
+  it.each([true, false])(
+    "keeps map ownership with the preferred complete provider graph (GPS: %s)",
+    async (hasCoordinates) => {
+      const earlier = named("mountain-project");
+      const preferred = named("openbeta", "20000000-0000-4000-8000-000000000006", true);
+      if (!earlier.climb || !preferred.climb) throw new Error("Expected catalogue fixtures");
+      earlier.climb.coordinates = { latitude: 45, longitude: -100 };
+      preferred.climb.coordinates = hasCoordinates ? { latitude: 37, longitude: -122 } : null;
+      const [result] = await repository([earlier, preferred]).getActivityLogEntries("activity");
+      expect(result?.toDetail().providerId).toBe("openbeta");
+      expect(result?.toDetail().mapLocation).toEqual(
+        hasCoordinates
+          ? {
+              coordinates: { latitude: 37, longitude: -122 },
+              scope: "climb",
+              objectId: preferred.climb.id,
+              providerId: "openbeta",
+              name: "Corner",
+            }
+          : null,
+      );
+    },
+  );
   it.each([
     { facts: {}, labels: ["sent"] },
     { facts: { attemptIndex: 1, receivedBeta: false }, labels: ["sent", "Onsight"] },

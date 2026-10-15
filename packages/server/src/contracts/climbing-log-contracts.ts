@@ -7,7 +7,17 @@ import {
   climbSchema,
   pitchSchema,
 } from "@dofek/training/climbing-log";
+import type { ClimbingMapLocation } from "@dofek/training/climbing-map";
+import { gpsCoordinatesSchema } from "@dofek/training/gps-coordinates";
 import { z } from "zod";
+
+const climbingMapLocationSchema = z.strictObject({
+  coordinates: gpsCoordinatesSchema,
+  scope: z.enum(["climb", "area"]),
+  objectId: z.guid(),
+  providerId: z.string(),
+  name: z.string().nullable(),
+}) satisfies z.ZodType<ClimbingMapLocation>;
 export const climbingLogAttemptDetailSchema = climbingAttemptSchema.safeExtend({
   rockResultLabels: z.array(z.enum(["sent", "Onsight", "Flash", "Pinkpoint"])),
 });
@@ -24,6 +34,7 @@ export const climbingPitchResultSchema = z.strictObject({
 });
 export const climbingLogEntryDetailSchema = climbingLogEntrySchema.extend({
   climb: climbingLogClimbDetailSchema.nullable(),
+  mapLocation: climbingMapLocationSchema.nullable(),
   attempts: z.array(climbingLogAttemptDetailSchema),
   recordedClimbAttemptCount: z.number().int().nonnegative(),
   recordedPitchAttemptCount: z.number().int().nonnegative(),

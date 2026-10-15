@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
 import {
+  type MountainProjectArea,
   MountainProjectClient,
+  type MountainProjectRoute,
   MountainProjectTickExportError,
   parseMountainProjectProfileId,
 } from "@dofek/mountain-project/client";
@@ -20,6 +22,7 @@ import {
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider, loadTokens } from "../db/tokens.ts";
 import { captureException } from "../lib/error-reporting.ts";
+import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
 import { ProviderStoredIdentityMissingError, ProviderTokenRejectedError } from "./auth-errors.ts";
 import type { SyncRun } from "./sync-run.ts";
 import type { ProviderAuthSetup, SyncError, SyncProvider, SyncResult } from "./types.ts";
@@ -29,9 +32,14 @@ const MOUNTAIN_PROJECT_PROVIDER_ID = "mountain-project";
 const MOUNTAIN_PROJECT_PROVIDER_NAME = "Mountain Project";
 
 interface TickExportParseResult {
-  entries: SourceClimbingLogEntry[];
+  entries: MountainProjectLogEntry[];
   errors: SyncError[];
 }
+
+type MountainProjectLogEntry = Omit<SourceClimbingLogEntry, "raw" | "climb"> & {
+  raw: MountainProjectRoute["raw"];
+  climb: NonNullable<SourceClimbingLogEntry["climb"]>;
+};
 
 export class MountainProjectProvider implements SyncProvider {
   readonly id = MOUNTAIN_PROJECT_PROVIDER_ID;
@@ -39,7 +47,7 @@ export class MountainProjectProvider implements SyncProvider {
   readonly #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.#fetchFn = fetchFn;
+    this.#fetchFn = createProviderRateLimitFetch(this.id, fetchFn);
   }
 
   validate(): string | null {
@@ -117,14 +125,18 @@ export class MountainProjectProvider implements SyncProvider {
     }
 
     let parsed: TickExportParseResult;
+    let phase = "tick_export";
     try {
-      const csv = await new MountainProjectClient(this.#fetchFn).getTickExport(tokens.accessToken);
+      const client = new MountainProjectClient(this.#fetchFn);
+      const csv = await client.getTickExport(tokens.accessToken);
       const decoded = decodeMountainProjectTickExport(csv);
       if (!decoded.ok) throw new Error(`Mountain Project tick export ${decoded.message}.`);
       parsed = parseMountainProjectTicks(decoded.ticks, tokens.accessToken);
+      phase = "area_enrichment";
+      await enrichMountainProjectAreas(client, parsed.entries);
     } catch (error) {
       if (!(error instanceof MountainProjectTickExportError && error.status === 404)) {
-        captureException(error, { tags: { provider: this.id, phase: "tick_export" } });
+        captureException(error, { tags: { provider: this.id, phase } });
       }
       return {
         provider: this.id,
@@ -177,11 +189,71 @@ export class MountainProjectProvider implements SyncProvider {
   }
 }
 
+/** Resolve the complete source graph before persistence or absence reconciliation. */
+async function enrichMountainProjectAreas(
+  client: MountainProjectClient,
+  entries: MountainProjectLogEntry[],
+): Promise<void> {
+  const routes = new Map<string, MountainProjectRoute>();
+  const areas = new Map<string, MountainProjectArea>();
+  for (const entry of entries) {
+    const routeId = entry.climb.externalId;
+    if (!routeId) continue;
+    let route = routes.get(routeId);
+    if (!route) {
+      route = await client.getRoute(routeId);
+      routes.set(routeId, route);
+    }
+    const chain: MountainProjectArea[] = [];
+    const seen = new Set<string>();
+    let areaId = route.parent.id;
+    while (areaId !== 0) {
+      const id = String(areaId);
+      if (seen.has(id))
+        throw new Error(`Mountain Project Area ancestry contains a cycle at ${id}.`);
+      seen.add(id);
+      let area = areas.get(id);
+      if (!area) {
+        area = await client.getArea(id);
+        areas.set(id, area);
+      }
+      chain.push(area);
+      areaId = area.parent.id;
+    }
+    chain.reverse();
+    if (chain.length) {
+      entry.climb = {
+        ...entry.climb,
+        areas: chain.map((area) => ({
+          externalId: String(area.id),
+          name: area.title,
+          parentExternalId: area.parent.id === 0 ? null : String(area.parent.id),
+          ...(area.coordinates === undefined
+            ? {}
+            : {
+                coordinates:
+                  area.coordinates === null
+                    ? null
+                    : {
+                        longitude: area.coordinates[0],
+                        latitude: area.coordinates[1],
+                      },
+              }),
+        })),
+      };
+    }
+    entry.raw = {
+      ...entry.raw,
+      sourceEnrichment: { route: route.raw, areas: chain.map((area) => area.raw) },
+    };
+  }
+}
+
 function parseMountainProjectTicks(
   ticks: MountainProjectTick[],
   profileId: string,
 ): TickExportParseResult {
-  const entries: SourceClimbingLogEntry[] = [];
+  const entries: MountainProjectLogEntry[] = [];
   const occurrenceByFingerprint = new Map<string, number>();
   const errors: SyncError[] = [];
   for (const tick of ticks) {

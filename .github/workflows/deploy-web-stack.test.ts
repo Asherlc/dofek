@@ -1,3 +1,4 @@
+import { deployTestDigest, deployTestOldImage, deployTestRepository, runDeployImageFixture } from "../../scripts/deploy-image-test-helpers.ts";
 import { spawnSync } from "node:child_process";
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -162,7 +163,7 @@ function serializeScenario(observations: readonly ServiceObservation[]): string 
     .map(
       ({
         desiredReplicas = "1",
-        image = "ghcr.io/asherlc/dofek:test",
+        image = "ghcr.io/asherlc/dofek@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         replicas,
         taskId,
         updateState,
@@ -185,10 +186,13 @@ function runDeployConsumers(scenarios: ConsumerScenarios, options: DeployConsume
     writeFileSync(dockerPath, MOCK_DOCKER);
     writeFileSync(
       nodePath,
-      "#!/usr/bin/env bash\nif [ \"$2\" = docker ]; then shift; exec \"$@\"; fi\nexit 0\n",
+      "#!/usr/bin/env bash\nif [ \"$2\" = docker ] || [ \"$2\" = env ]; then shift; exec \"$@\"; fi\nexit 0\n",
     );
     chmodSync(dockerPath, 0o755);
     chmodSync(nodePath, 0o755);
+    const pnpmPath = join(temporaryDirectory, "pnpm");
+    writeFileSync(pnpmPath, "#!/usr/bin/env bash\n[ \"$1\" = tsx ] && [ \"$2\" = scripts/verify-deploy-image.ts ]\n");
+    chmodSync(pnpmPath, 0o755);
     writeFileSync(
       join(scenarioDirectory, "dofek_analytics-worker"),
       serializeScenario(scenarios.analyticsWorker),
@@ -235,7 +239,7 @@ ${deployConsumersRunScript()}`,
           ...process.env,
           PATH: `${temporaryDirectory}:${process.env.PATH ?? ""}`,
           FAIL_TASK_INSPECTION: options.failTaskInspection ? "1" : "0",
-          IMAGE_TAG: "test",
+          APP_IMAGE: deployTestRepository + "@" + deployTestDigest,
           MOCK_SLEEP_SECONDS: (options.sleepSeconds ?? 10).toString(),
           STACK_DEPLOY_CAPTURE: stackDeployCapturePath,
           WEB_CONVERGENCE_FAILED: options.webConvergenceFailed ? "true" : "false",
@@ -274,13 +278,17 @@ function runDeployQuiesced(
     writeFileSync(dockerPath, MOCK_DOCKER);
     writeFileSync(
       nodePath,
-      "#!/usr/bin/env bash\nif [ \"$2\" = docker ]; then shift; exec \"$@\"; fi\nexit 0\n",
+      "#!/usr/bin/env bash\nif [ \"$2\" = docker ] || [ \"$2\" = env ]; then shift; exec \"$@\"; fi\nexit 0\n",
     );
     chmodSync(dockerPath, 0o755);
     chmodSync(nodePath, 0o755);
+    const pnpmPath = join(temporaryDirectory, "pnpm");
+    writeFileSync(pnpmPath, "#!/usr/bin/env bash\n[ \"$1\" = tsx ] && [ \"$2\" = scripts/verify-deploy-image.ts ]\n");
+    chmodSync(pnpmPath, 0o755);
     const defaultServiceNames = [
       "dofek_web",
       "dofek_worker",
+      "dofek_cdc-health",
       "dofek_analytics-worker",
       "dofek_metric-stream-clickhouse-sink",
       "dofek_metric-stream-live-clickhouse-sink",
@@ -316,7 +324,7 @@ function runDeployQuiesced(
       env: {
         ...process.env,
         FAIL_TASK_INSPECTION: options.failTaskInspection ? "1" : "0",
-        IMAGE_TAG: "test",
+        APP_IMAGE: deployTestRepository + "@" + deployTestDigest,
         STACK_DEPLOY_STATUS: (options.stackDeployStatus ?? 0).toString(),
         MIGRATION_DEPLOYMENT_MODE: options.deploymentMode ?? "rolling",
         STACK_DEPLOY_CAPTURE: stackDeployCapturePath,
@@ -407,9 +415,9 @@ describe("deploy-web-stack workflow contract", () => {
   );
 
   it.each([
-    ["Apply dependency stack before migrations", "web-pre-migration.env", "previous"],
-    ["Deploy stack without ClickHouse consumers", "web.env", "test"],
-    ["Deploy ClickHouse consumer services", "web.env", "test"],
+    ["Apply dependency stack before migrations", "web-pre-migration.env", deployTestOldImage],
+    ["Deploy stack without ClickHouse consumers", "web.env", deployTestRepository + "@" + deployTestDigest],
+    ["Deploy ClickHouse consumer services", "web.env", deployTestRepository + "@" + deployTestDigest],
   ])("selects the correct web environment in %s", (step, expectedFile, expectedImage) => {
     const result = spawnSync(
       "bash",
@@ -418,13 +426,13 @@ describe("deploy-web-stack workflow contract", () => {
         `
 docker() {
   if [ "$1" = service ] && [ "$2" = inspect ]; then
-    printf '%s\\n' 'ghcr.io/asherlc/dofek:previous'
+    printf '%s\\n' 'ghcr.io/asherlc/dofek:previous@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
     return 0
   fi
   return 1
 }
 node() {
-  printf 'selected-web-env=%s image=%s\\n' "$WEB_ENV_FILE" "$IMAGE_TAG"
+  printf 'selected-web-env=%s image=%s\\n' "$WEB_ENV_FILE" "$APP_IMAGE"
   return 23
 }
 timeout() { shift; "$@"; }
@@ -435,10 +443,8 @@ ${workflowRunScript(step)}
         encoding: "utf8",
         env: {
           ...process.env,
-          REQUESTED_IMAGE_TAG: "test",
-          PRE_MIGRATION_IMAGE_TAG: "previous",
+          APP_IMAGE: expectedImage,
           MIGRATION_DEPLOYMENT_MODE: "rolling",
-          IMAGE_TAG: "test",
           WEB_ENV_FILE: "/synthetic/web.env",
           WEB_PRE_MIGRATION_ENV_FILE: "/synthetic/web-pre-migration.env",
           RUNNER_TEMP: "/synthetic",
@@ -458,7 +464,7 @@ ${workflowRunScript(step)}
       [
         {
           desiredReplicas: "0",
-          image: "ghcr.io/asherlc/dofek:test",
+          image: "ghcr.io/asherlc/dofek@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
           replicas: "0/0",
           taskId: "",
           updateState: "completed",
@@ -467,9 +473,9 @@ ${workflowRunScript(step)}
       { sleepSeconds: 2100 },
     );
 
-    expect(result.status).toBe(0);
+    expect(result.status, result.stderr).toBe(0);
     expect(result.stdout).toContain(
-      "dofek_processing-reconciliation image=ghcr.io/asherlc/dofek:test replicas=0/0",
+      "dofek_processing-reconciliation image=ghcr.io/asherlc/dofek@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa replicas=0/0",
     );
   });
 
@@ -478,7 +484,7 @@ ${workflowRunScript(step)}
       [
         {
           desiredReplicas: "0",
-          image: "ghcr.io/asherlc/dofek:previous",
+          image: "ghcr.io/asherlc/dofek:previous@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
           replicas: "0/0",
           taskId: "",
           updateState: "completed",
@@ -489,7 +495,7 @@ ${workflowRunScript(step)}
 
     expect(result.status).toBe(1);
     expect(result.stdout).toContain(
-      "dofek_processing-reconciliation is using ghcr.io/asherlc/dofek:previous, expected ghcr.io/asherlc/dofek:test",
+      "dofek_processing-reconciliation is using ghcr.io/asherlc/dofek:previous@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb, expected ghcr.io/asherlc/dofek@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     );
   });
 
@@ -498,7 +504,7 @@ ${workflowRunScript(step)}
       serviceObservations: {
         dofek_web: [{
           ...STABLE_OBSERVATION,
-          image: "ghcr.io/asherlc/dofek:previous",
+          image: "ghcr.io/asherlc/dofek:previous@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
           taskId: "failed-web-task",
           updateState: "rollback_completed",
         }],
@@ -506,7 +512,7 @@ ${workflowRunScript(step)}
     });
 
     expect(result.stderr).toBe("");
-    expect(result.status).toBe(0);
+    expect(result.status, result.stderr).toBe(0);
     expect(result.stdout).toContain("terminal rollback or reverted image");
     expect(result.stdout).toContain("diagnostic task output for dofek_web");
     expect(result.githubOutput).toContain("web_convergence_failed=true");
@@ -543,19 +549,19 @@ ${workflowRunScript(step)}
           {
             ...STABLE_OBSERVATION,
             replicas: "0/1",
-            image: "ghcr.io/asherlc/dofek:previous",
+            image: "ghcr.io/asherlc/dofek:previous@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
             updateState: "rollback_completed",
           },
           {
             ...STABLE_OBSERVATION,
-            image: "ghcr.io/asherlc/dofek:previous",
+            image: "ghcr.io/asherlc/dofek:previous@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
             updateState: "rollback_completed",
           },
         ],
       },
     });
 
-    expect(result.status).toBe(0);
+    expect(result.status, result.stderr).toBe(0);
     expect(result.stdout).toContain("waiting for the rolled-back web replicas to converge");
     expect(result.githubOutput).toContain("web_convergence_failed=true");
   });
@@ -567,14 +573,14 @@ ${workflowRunScript(step)}
           { ...STABLE_OBSERVATION, updateState: "rollback_started" },
           {
             ...STABLE_OBSERVATION,
-            image: "ghcr.io/asherlc/dofek:previous",
+            image: "ghcr.io/asherlc/dofek:previous@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
             updateState: "rollback_completed",
           },
         ],
       },
     });
 
-    expect(result.status).toBe(0);
+    expect(result.status, result.stderr).toBe(0);
     expect(result.stdout).toContain("waiting for the web rollback to settle");
     expect(result.githubOutput).toContain("web_convergence_failed=true");
   });
@@ -619,26 +625,26 @@ ${workflowRunScript(step)}
       serviceObservations: {
         dofek_web: [{
           ...STABLE_OBSERVATION,
-          image: "ghcr.io/asherlc/dofek:previous",
+          image: "ghcr.io/asherlc/dofek:previous@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
           updateState: "",
         }],
       },
     });
 
     expect(result.status).toBe(1);
-    expect(result.stdout).toContain("dofek_web is using ghcr.io/asherlc/dofek:previous");
+    expect(result.stdout).toContain("dofek_web is using ghcr.io/asherlc/dofek:previous@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
     expect(result.githubOutput).toContain("web_convergence_failed=false");
   });
 
   it("keeps a non-web convergence failure fatal", () => {
     const result = runDeployQuiesced([STABLE_OBSERVATION], {
       serviceObservations: {
-        dofek_worker: [{ ...STABLE_OBSERVATION, image: "ghcr.io/asherlc/dofek:previous" }],
+        dofek_worker: [{ ...STABLE_OBSERVATION, image: "ghcr.io/asherlc/dofek:previous@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" }],
       },
     });
 
     expect(result.status).toBe(1);
-    expect(result.stdout).toContain("dofek_worker is using ghcr.io/asherlc/dofek:previous");
+    expect(result.stdout).toContain("dofek_worker is using ghcr.io/asherlc/dofek:previous@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
     expect(result.githubOutput).not.toContain("web_convergence_failed=true");
   });
 
@@ -705,7 +711,7 @@ ${workflowRunScript(step)}
       metricStreamClickhouseSink: [STABLE_OBSERVATION],
     });
 
-    expect(result.status).toBe(0);
+    expect(result.status, result.stderr).toBe(0);
     expect(result.stdout).toContain(
       "dofek_analytics-worker task stable-task has remained converged for 60s",
     );
@@ -725,7 +731,7 @@ ${workflowRunScript(step)}
       },
     );
 
-    expect(result.status).toBe(0);
+    expect(result.status, result.stderr).toBe(0);
     expect(result.stackDeployArgs).not.toContain("--prune");
     expect(workflowText).toContain("delete config.services.web");
     expect(workflowText).toContain("docker stack config --skip-interpolation");
@@ -737,7 +743,7 @@ ${workflowRunScript(step)}
       metricStreamClickhouseSink: [STABLE_OBSERVATION],
     });
 
-    expect(result.status).toBe(0);
+    expect(result.status, result.stderr).toBe(0);
     expect(result.stackDeployArgs).toContain("--prune");
   });
 
@@ -750,7 +756,7 @@ ${workflowRunScript(step)}
       metricStreamClickhouseSink: [STABLE_OBSERVATION],
     });
 
-    expect(result.status).toBe(0);
+    expect(result.status, result.stderr).toBe(0);
     expect(result.stdout).toContain(
       "[10s] dofek_analytics-worker task changed from replaced-task to replacement-task; resetting stability window",
     );
@@ -769,7 +775,7 @@ ${workflowRunScript(step)}
       metricStreamClickhouseSink: [STABLE_OBSERVATION],
     });
 
-    expect(result.status).toBe(0);
+    expect(result.status, result.stderr).toBe(0);
     expect(result.stdout).toContain(
       "[10s] dofek_analytics-worker lost convergence; resetting stability window for task stable-task",
     );
@@ -820,5 +826,98 @@ ${workflowRunScript(step)}
     expect(result.status).toBe(64);
     expect(result.stderr).toContain("mock task inspection failed");
     expect(result.stdout).not.toContain("did not converge before timeout");
+  });
+});
+
+
+function runImageSelection() {
+  return runDeployImageFixture({ script: workflowRunScript("Pull deploy images") });
+}
+
+describe("deploy workflow image selection", () => {
+  it("passes both pinned images to migration history selection", () => {
+    const requested = `${deployTestRepository}@${deployTestDigest}`;
+    const result = spawnSync(
+      "bash",
+      [
+        "-e", "-o", "pipefail", "-c",
+        `
+pnpm() { printf '%s\\n' "$@"; }
+${workflowRunScript("Select migration deployment mode from image histories")}
+`,
+      ],
+      {
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          APP_IMAGE: requested,
+          PRE_MIGRATION_APP_IMAGE: deployTestOldImage,
+          STACK_NAME: "dofek",
+        },
+      },
+    );
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout.trim().split("\n")).toEqual([
+      "tsx", "scripts/prepare-migration-deployment.ts", requested, "dofek", deployTestOldImage,
+    ]);
+  });
+
+  it.each(["rolling", "maintenance"])(
+    "passes the old pinned image and old web environment through dotenv stack interpolation for %s",
+    (mode) => {
+      const script = ["Create dotenv command runner", "Apply dependency stack before migrations"]
+        .map(workflowRunScript).join("\n");
+      const result = runDeployImageFixture({
+        script,
+        environment: {
+          APP_IMAGE: deployTestOldImage,
+          MIGRATION_DEPLOYMENT_MODE: mode,
+          MIGRATION_MAINTENANCE_BOUNDARY: "0148_compute_climbing_attempt_outcome",
+        },
+      });
+      expect(result.status, result.stderr).toBe(0);
+      expect(result.stdout).toContain(`DEPLOY_IMAGE=${deployTestOldImage}`);
+      expect(result.stdout).toContain("WEB_ENV_FILE=old-web.env");
+      const apply = result.calls.find((call) => call[0] === "stack" && call[1] === "deploy");
+      expect(apply).toEqual(expect.arrayContaining([
+        "deploy/stack.cdc-quiesce.yml", "deploy/stack.migration-quiesce.yml",
+      ]));
+      expect(apply?.includes("deploy/stack.maintenance.yml")).toBe(mode === "maintenance");
+    },
+  );
+  it("pins the selected maintenance boundary through dotenv loading", () => {
+    const selectedBoundary = "0148_compute_climbing_attempt_outcome";
+    const contaminateFixture = String.raw`
+printf '%s\n' 'MIGRATION_MAINTENANCE_BOUNDARY=stale_boundary' >> "$INFISICAL_ENV_FILE"
+printf '\n%s\n' 'console.log("MAINTENANCE_BOUNDARY=" + process.env.MIGRATION_MAINTENANCE_BOUNDARY);' >> "$RUNNER_TEMP/docker"
+`;
+    const script = [
+      contaminateFixture,
+      workflowRunScript("Create dotenv command runner"),
+      workflowRunScript("Apply dependency stack before migrations"),
+    ].join("\n");
+    const result = runDeployImageFixture({
+      script,
+      environment: {
+        APP_IMAGE: deployTestOldImage,
+        MIGRATION_DEPLOYMENT_MODE: "maintenance",
+        MIGRATION_MAINTENANCE_BOUNDARY: selectedBoundary,
+      },
+    });
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout).toContain(`MAINTENANCE_BOUNDARY=${selectedBoundary}`);
+  });
+
+  it("pins the validated image even when the registry tag moves after resolution", () => {
+    const result = runImageSelection();
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.output).toContain("image_ref=" + deployTestRepository + "@" + deployTestDigest + "\n");
+    expect(result.calls).toContainEqual(["pull", deployTestRepository + "@" + deployTestDigest]);
+  });
+
+  it("preserves the existing desired digest for the pre-migration application", () => {
+    const result = runImageSelection();
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.output).toContain("pre_migration_image_ref=" + deployTestOldImage + "\n");
   });
 });
