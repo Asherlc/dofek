@@ -1,3 +1,4 @@
+-- dofek: deployment-mode=maintenance
 -- Source result labels are raw per-occurrence facts; completion is a serving projection.
 -- https://www.postgresql.org/docs/current/sql-createfunction.html
 -- The explicit trim set matches ECMAScript String.prototype.trim, including Unicode whitespace.

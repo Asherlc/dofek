@@ -100,6 +100,20 @@ for the upstream fixes, regression coverage, and scoped advisory exceptions.
 
 ## Verification & Tooling
 
+- `prepare-migration-deployment.ts`: Reads migration histories from the requested
+  image and the deployed web image without starting either app. Selects
+  maintenance for a new `-- dofek: deployment-mode=maintenance` boundary and
+  rejects divergent or older histories. The deployed image comparison preserves
+  maintenance selection after a migration committed but rollout failed; see the
+  [deployment flow](../deploy/README.md#flow-diagram) and Docker's
+  [container file copy](https://docs.docker.com/reference/cli/docker/container/cp/).
+  The web maintenance-target service label also rejects an older requested
+  history while maintenance remains incomplete; Docker defines
+  [service labels](https://docs.docker.com/reference/compose-file/deploy/#labels).
+- `wait-migration-quiescence.ts`: Blocks migrations until each selected service
+  has zero desired replicas and all actual tasks are terminal, including web in
+  maintenance mode. It allows the existing worker drain contract to finish;
+  see [Swarm task states](https://docs.docker.com/engine/swarm/how-swarm-mode-works/swarm-task-states/).
 - `select-web-deploy.ts`: Selects the latest successful main-push CI release
   after the production deployment concurrency slot is acquired. Walks the fetched
   `origin/main` first-parent history newest first, checking successful CI by
