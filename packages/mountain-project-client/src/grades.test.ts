@@ -22,6 +22,26 @@ describe("normalizeMountainProjectGrade", () => {
 });
 
 describe("parseMountainProjectGrades", () => {
+  it("preserves all independent technical scales across source whitespace", () => {
+    expect(parseMountainProjectGrades(" \tWI4\t\tAI3\nM5+  C2 \n")).toEqual([
+      { value: "WI4", system: "water_ice" },
+      { value: "AI3", system: "alpine_ice" },
+      { value: "M5+", system: "mixed" },
+      { value: "C2", system: "aid" },
+    ]);
+  });
+  it.each(["WIbad", "AIbad", "M5junk", "C2junk"])(
+    "retains invalid technical grade %s as unknown text",
+    (rating) => {
+      expect(parseMountainProjectGrades(rating)).toEqual([{ value: rating, system: null }]);
+    },
+  );
+  it("trims unknown recorded text and treats whitespace as an empty rating", () => {
+    expect(parseMountainProjectGrades(" \tMod. Snow\n ")).toEqual([
+      { value: "Mod. Snow", system: null },
+    ]);
+    expect(parseMountainProjectGrades(" \t\n ")).toEqual([]);
+  });
   it("retains each recognized component of a compound rating in source order", () => {
     expect(parseMountainProjectGrades("5.5 WI2+ M2-3 Mod. Snow")).toEqual([
       { value: "5.5", system: "yds" },

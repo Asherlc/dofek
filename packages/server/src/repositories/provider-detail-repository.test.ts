@@ -1,6 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import type { BodyClickHouseStore } from "./body-clickhouse.ts";
 import {
+  climbingAttemptFixture,
+  climbingClimbFixture,
+  climbingLogDatabaseFixture,
+  climbingLogEntryFixture,
+} from "./climbing-test-helpers.ts";
+import {
   dataTypeEnum,
   getRecordDisplayColumns,
   getRecordFilterColumns,
@@ -163,8 +169,28 @@ describe("ProviderDetailRepository", () => {
     ["bodyMeasurements", ["source_name"]],
     ["metricStream", ["source_type", "channel", "device_id"]],
     ["nutritionDaily", []],
+    ["climbingLogEntries", ["discipline", "source_name"]],
   ] as const)("returns the supported select filter columns for %s", (dataType, columns) => {
     expect(getRecordSelectFilterColumns(dataType)).toEqual(columns);
+  });
+  it("exposes the climbing record fields with a concise display projection", () => {
+    expect(getRecordFilterColumns("climbingLogEntries")).toEqual([
+      "id",
+      "name",
+      "climbed_on",
+      "result",
+      "discipline",
+      "source_name",
+      "provider_absent_at",
+      "external_id",
+      "created_at",
+    ]);
+    expect(getRecordDisplayColumns("climbingLogEntries")).toEqual([
+      "name",
+      "climbed_on",
+      "result",
+      "discipline",
+    ]);
   });
 
   // ── getRecords ──
@@ -312,6 +338,27 @@ describe("ProviderDetailRepository", () => {
   // ── getRecordDetail ──
 
   describe("getRecordDetail", () => {
+    it("hydrates a retained climbing log through the shared detail contract", async () => {
+      const climb = climbingClimbFixture("openbeta");
+      climb.coordinates = { latitude: 0, longitude: -122.25 };
+      const log = climbingLogEntryFixture({
+        climb,
+        climbId: climb.id,
+        discipline: "rock_climbing",
+        providerAbsentAt: "2026-10-01T00:00:00.000Z",
+        raw: { retained: true },
+        displayGrade: "5.10a",
+        recordedClimbAttemptCount: 1,
+        recordedClimbOutcome: "failed",
+      });
+      log.attempts = [climbingAttemptFixture(log.id, { outcome: "failed", fellOrHung: true })];
+      const { repo } = makeRepository([climbingLogDatabaseFixture(log)]);
+      expect(await repo.getRecordDetail("openbeta", "climbingLogEntries", log.id)).toEqual(log);
+    });
+    it("returns null for a missing climbing log", async () => {
+      const { repo } = makeRepository([]);
+      expect(await repo.getRecordDetail("openbeta", "climbingLogEntries", "missing")).toBeNull();
+    });
     it("returns a single record", async () => {
       const { repo } = makeRepository([
         { id: "act-1", name: "Morning Run", raw: { distance: 5000 } },
