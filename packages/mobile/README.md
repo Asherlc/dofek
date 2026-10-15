@@ -38,9 +38,13 @@ recorded GPS route and supports compact tick maps. Its production occurrence
 chooser uses Entry numbers from the full card order and can select the matching
 card, including repeated names at the same point. Colocated Storybook stories
 exercise exact Climb points, containing-Area points, missing GPS, and attachment
-states. Map previews accept explicit location inputs; the activity screen does
-not yet supply those inputs from canonical log locations. The complete log and
-attempt graph follows the [canonical response contract](../server/src/contracts/climbing-log-contracts.ts).
+states. The activity screen supplies each log's server-projected location to
+overview and compact maps even without a recorded GPS route. The
+[server projection](../server/src/repositories/climbing-activity-log-entry-repository.ts)
+uses a source Climb point or its nearest containing Area with coordinates;
+labels identify the source and distinguish Area from Climb locations.
+Unattached suggestions have their own compact source-location maps. The complete
+log and attempt graph follows the [canonical response contract](../server/src/contracts/climbing-log-contracts.ts).
 
 The Training route coordinates query states and delegates climbing payload validation, grade cards, and Hangboarding display to [ClimbingTrainingCard](./components/ClimbingTrainingCard.tsx), with focused tests and stories beside the component.
 

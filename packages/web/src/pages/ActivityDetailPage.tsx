@@ -17,6 +17,7 @@ import { processingPollInterval } from "@dofek/providers/processing-status";
 import { providerSourceLabel } from "@dofek/providers/providers";
 import { activityMetricColors, statusColors } from "@dofek/scoring/colors";
 import { isClimbingLogActivity } from "@dofek/training/climbing-log";
+import { buildClimbingMapLocations, buildClimbingMapMarkers } from "@dofek/training/climbing-map";
 import {
   computeIntensities,
   expandMuscleGroup,
@@ -33,7 +34,7 @@ import {
   isCyclingActivity,
 } from "@dofek/training/training";
 import { Link, useParams } from "@tanstack/react-router";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type ComponentProps, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ActivityDetail } from "../../../server/src/models/activity.ts";
 import type { StreamPoint, StrengthExerciseDetail } from "../../../server/src/routers/activity.ts";
 import { ActivityExportDropdown } from "../components/ActivityExportDropdown.tsx";
@@ -61,6 +62,8 @@ import { DeleteActivityButton } from "./activity-detail/components/DeleteActivit
 import { RecomputeActivityButton } from "./activity-detail/components/RecomputeActivityButton.tsx";
 import { UnattachedClimbingLogEntries } from "./activity-detail/components/UnattachedClimbingLogEntries.tsx";
 import { ProviderAbsentBanner } from "./ProviderAbsentBanner.tsx";
+
+const EMPTY_ROUTE_POINTS: ComponentProps<typeof ActivityRouteMap>["points"] = [];
 
 const CHART_COLORS = {
   heartRate: activityMetricColors.heartRate,
@@ -141,6 +144,19 @@ export function ActivityDetailPage() {
     { enabled: isClimbingActivity },
   );
   const climbingEntriesLoading = climbingEntries.isLoading && !climbingEntries.data;
+  const [selectedClimbingEntryId, setSelectedClimbingEntryId] = useState<string | null>(null);
+  const climbingLocations = useMemo(
+    () =>
+      buildClimbingMapLocations([
+        ...(climbingEntries.data ?? []),
+        ...(entrySuggestions.data ?? []),
+      ]),
+    [climbingEntries.data, entrySuggestions.data],
+  );
+  const climbMarkers = useMemo(
+    () => buildClimbingMapMarkers(climbingEntries.data ?? []),
+    [climbingEntries.data],
+  );
   const trpcUtils = trpc.useUtils();
   const [entryAttachState, setEntryAttachState] = useState<
     Record<string, { pending: boolean; error: string | null }>
@@ -228,7 +244,7 @@ export function ActivityDetailPage() {
   const activity = detail.data;
   const zones = hrZones.data ?? [];
   const exercises = strengthExercises.data ?? [];
-  const routePoints = route.data?.status === "ready" ? route.data.points : [];
+  const routePoints = route.data?.status === "ready" ? route.data.points : EMPTY_ROUTE_POINTS;
   const hasGps = routePoints.length > 0;
   const routeProcessing = route.isLoading || route.data?.status === "processing";
   const hasHr = points.some((p) => p.heartRate != null);
@@ -269,16 +285,22 @@ export function ActivityDetailPage() {
         </Section>
       ) : null}
 
-      {(route.error || routeProcessing || hasGps) && (
-        <Section title="Route Map">
+      {(route.error || routeProcessing || hasGps || climbMarkers.length > 0) && (
+        <Section title={!hasGps && climbMarkers.length > 0 ? "Climbing locations" : "Route Map"}>
           {route.error ? (
             <QueryStatePanel error={route.error} height={160} />
           ) : routeProcessing ? (
             <p role="status" className="py-8 text-center text-sm text-muted">
               {route.isLoading ? "Loading route map…" : "Processing route map…"}
             </p>
-          ) : (
-            <ActivityRouteMap points={routePoints} onRegisterHoverCallback={mapHoverRef} />
+          ) : null}
+          {(hasGps || climbMarkers.length > 0) && (
+            <ActivityRouteMap
+              points={routePoints}
+              climbMarkers={climbMarkers}
+              onSelectEntry={setSelectedClimbingEntryId}
+              onRegisterHoverCallback={mapHoverRef}
+            />
           )}
         </Section>
       )}
@@ -326,7 +348,11 @@ export function ActivityDetailPage() {
           {climbingEntriesLoading ? (
             <QueryStatePanel variant="loading" contextLabel="Climbs" height={72} />
           ) : (climbingEntries.data?.length ?? 0) > 0 ? (
-            <ClimbingLogEntryBreakdown entries={climbingEntries.data ?? []} />
+            <ClimbingLogEntryBreakdown
+              entries={climbingEntries.data ?? []}
+              locations={climbingLocations}
+              selectedEntryId={selectedClimbingEntryId}
+            />
           ) : null}
           {(entrySuggestions.error ||
             (!climbingEntriesLoading && entrySuggestions.isLoading) ||
@@ -343,6 +369,8 @@ export function ActivityDetailPage() {
             >
               <UnattachedClimbingLogEntries
                 suggestions={entrySuggestions.data}
+                locations={climbingLocations}
+                selectedEntryId={selectedClimbingEntryId}
                 error={entrySuggestions.error}
                 isLoading={entrySuggestions.isLoading}
                 state={entryAttachState}

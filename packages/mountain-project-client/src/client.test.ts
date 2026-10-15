@@ -70,6 +70,42 @@ describe("MountainProjectClient", () => {
     );
   });
 
+  it.each(["route", "area"] as const)(
+    "rejects nonfinite values in %s JSON provenance before returning it",
+    async (kind) => {
+      const client = new MountainProjectClient(
+        async () =>
+          new Response(
+            '{"id":123,"title":"Source name","parent":{"id":0,"name":""},"extra":{"rating":1e400}}',
+            { headers: { "Content-Type": "application/json" } },
+          ),
+      );
+      await expect(
+        kind === "route" ? client.getRoute("123") : client.getArea("123"),
+      ).rejects.toThrow(`Mountain Project ${kind} 123 returned invalid data`);
+    },
+  );
+
+  it.each([null, undefined])("retains unavailable native Area GPS as %s", async (coordinates) => {
+    const client = new MountainProjectClient(async () =>
+      Response.json({
+        id: 123,
+        title: "Root",
+        parent: { id: 0, name: "" },
+        ...(coordinates === undefined ? {} : { coordinates }),
+      }),
+    );
+    const area = await client.getArea("123");
+    expect(area.parent.id).toBe(0);
+    expect(area.coordinates).toBe(coordinates);
+    expect(area.raw).toEqual({
+      id: 123,
+      title: "Root",
+      parent: { id: 0, name: "" },
+      ...(coordinates === undefined ? {} : { coordinates }),
+    });
+  });
+
   it("reports endpoint failures and rejects nonnumeric entity IDs before fetching", async () => {
     const client = new MountainProjectClient(
       async () => new Response("unavailable", { status: 503 }),
@@ -79,6 +115,21 @@ describe("MountainProjectClient", () => {
       "Mountain Project area ID must be a positive integer",
     );
   });
+
+  it.each(["0123", "123 ", "9007199254740992"])(
+    "rejects a noncanonical or unsafe entity ID %s before a request",
+    async (id) => {
+      let requests = 0;
+      const client = new MountainProjectClient(async () => {
+        requests += 1;
+        return Response.json({ id: Number(id), title: "Area", parent: { id: 0, name: "" } });
+      });
+      await expect(client.getArea(id)).rejects.toThrow(
+        "Mountain Project area ID must be a positive integer",
+      );
+      expect(requests).toBe(0);
+    },
+  );
 
   it("fetches the public tick export without credentials", async () => {
     const fetchFn = vi

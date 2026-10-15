@@ -25,6 +25,7 @@ export function climbingLogEntryFixture(
     providerAbsentAt: null,
     createdAt: "2026-10-01T00:00:00.000Z",
     climb: null,
+    mapLocation: null,
     attempts: [],
     recordedClimbAttemptCount: 0,
     recordedPitchAttemptCount: 0,

@@ -35,8 +35,9 @@ interface TickExportParseResult {
   errors: SyncError[];
 }
 
-type MountainProjectLogEntry = Omit<SourceClimbingLogEntry, "raw"> & {
+type MountainProjectLogEntry = Omit<SourceClimbingLogEntry, "raw" | "climb"> & {
   raw: MountainProjectRoute["raw"];
+  climb: NonNullable<SourceClimbingLogEntry["climb"]>;
 };
 
 export class MountainProjectProvider implements SyncProvider {
@@ -195,7 +196,7 @@ async function enrichMountainProjectAreas(
   const routes = new Map<string, MountainProjectRoute>();
   const areas = new Map<string, MountainProjectArea>();
   for (const entry of entries) {
-    const routeId = entry.climb?.externalId;
+    const routeId = entry.climb.externalId;
     if (!routeId) continue;
     let route = routes.get(routeId);
     if (!route) {
@@ -219,7 +220,7 @@ async function enrichMountainProjectAreas(
       areaId = area.parent.id;
     }
     chain.reverse();
-    if (chain.length && entry.climb) {
+    if (chain.length) {
       entry.climb = {
         ...entry.climb,
         areas: chain.map((area) => ({

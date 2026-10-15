@@ -60,6 +60,93 @@ describe("atomic climbing log synchronization", () => {
       .where(eq(climbingAttempt.climbingLogEntryId, logEntryId))
       .orderBy(asc(climbingAttempt.id));
   }
+  it("preserves microsecond creation times through full and partial source updates", async () => {
+    const logId = "00000000-0000-4000-8000-000000001991";
+    const attemptId = "00000000-0000-4000-8000-000000001992";
+    await context.db.execute(sql`
+      INSERT INTO fitness.climbing_log_entry
+        (id, user_id, provider_id, external_id, title, notes, created_at)
+      VALUES (${logId}::uuid, ${TEST_USER_ID}::uuid, ${providerId}, 'precision:log',
+        'Original title', 'Original log', '2026-10-14 10:11:12.123456+00'::timestamptz)
+    `);
+    await context.db.execute(sql`
+      INSERT INTO fitness.climbing_attempt
+        (id, climbing_log_entry_id, scope, attempt_index, rope_method, solo, notes, created_at)
+      VALUES (${attemptId}::uuid, ${logId}::uuid, 'climb', 1, 'follow', true,
+        'Original attempt', '2026-10-14 10:11:12.987654+00'::timestamptz)
+    `);
+    async function snapshot() {
+      return executeWithSchema(
+        context.db,
+        z.object({
+          log_id: z.guid(),
+          attempt_id: z.guid(),
+          log_created_at: z.string(),
+          attempt_created_at: z.string(),
+          title: z.string().nullable(),
+          log_notes: z.string().nullable(),
+          rope_method: z.string().nullable(),
+          solo: z.boolean().nullable(),
+          attempt_notes: z.string().nullable(),
+        }),
+        sql`
+        SELECT entry.id AS log_id, attempt.id AS attempt_id,
+          to_char(entry.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS log_created_at,
+          to_char(attempt.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS attempt_created_at,
+          entry.title, entry.notes AS log_notes, attempt.rope_method,
+          attempt.solo, attempt.notes AS attempt_notes
+        FROM fitness.climbing_log_entry AS entry
+        JOIN fitness.climbing_attempt AS attempt ON attempt.climbing_log_entry_id = entry.id
+        WHERE entry.id = ${logId}::uuid
+      `,
+      );
+    }
+    const identity = {
+      log_id: logId,
+      attempt_id: attemptId,
+      log_created_at: "2026-10-14T10:11:12.123456Z",
+      attempt_created_at: "2026-10-14T10:11:12.987654Z",
+    };
+    expect(await snapshot()).toEqual([expect.objectContaining(identity)]);
+    await write([
+      {
+        externalId: "precision:log",
+        title: "Updated title",
+        notes: "Updated log",
+        attempts: [
+          { scope: "climb", attemptIndex: 1, ropeMethod: "lead", solo: false, notes: "Full" },
+        ],
+      },
+    ]);
+    expect(await snapshot()).toEqual([
+      {
+        ...identity,
+        title: "Updated title",
+        log_notes: "Updated log",
+        rope_method: "lead",
+        solo: false,
+        attempt_notes: "Full",
+      },
+    ]);
+    await write([
+      {
+        externalId: "precision:log",
+        title: null,
+        notes: undefined,
+        attempts: [{ scope: "climb", attemptIndex: 1, solo: undefined, notes: null }],
+      },
+    ]);
+    expect(await snapshot()).toEqual([
+      {
+        ...identity,
+        title: null,
+        log_notes: "Updated log",
+        rope_method: "lead",
+        solo: false,
+        attempt_notes: null,
+      },
+    ]);
+  });
   it("replaces ordered published collections without changing reported grades", async () => {
     const source: SourceClimbingLogEntry = {
       externalId: "grades:log",

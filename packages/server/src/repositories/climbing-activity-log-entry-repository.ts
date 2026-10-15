@@ -33,6 +33,32 @@ const databaseRowSchema = z.object({
       .pipe(climbingAttemptSchema),
   ),
 });
+function mapLocation(
+  climb: ClimbingLogEntryDetail["climb"],
+): ClimbingLogEntryDetail["mapLocation"] {
+  if (!climb) return null;
+  if (climb.coordinates)
+    return {
+      coordinates: climb.coordinates,
+      scope: "climb",
+      objectId: climb.id,
+      providerId: climb.providerId,
+      name: climb.name,
+    };
+  const area = climb.areaPath
+    .slice()
+    .reverse()
+    .find((area) => area.coordinates !== null);
+  return area?.coordinates
+    ? {
+        coordinates: area.coordinates,
+        scope: "area",
+        objectId: area.id,
+        providerId: area.providerId,
+        name: area.name,
+      }
+    : null;
+}
 function recordedOutcome(
   attempts: readonly ClimbingAttempt[],
 ): ClimbingLogEntryDetail["recordedClimbOutcome"] {
@@ -278,6 +304,7 @@ export class ClimbingActivityLogEntryRepository extends BaseRepository {
       return climbingLogEntryDetailSchema.parse({
         ...row.log,
         climb: row.climb,
+        mapLocation: mapLocation(row.climb),
         attempts: row.attempts.map((attempt) => ({
           ...attempt,
           rockResultLabels: resultLabels(row, attempt),

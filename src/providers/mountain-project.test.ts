@@ -159,9 +159,31 @@ describe("MountainProjectProvider", () => {
       expect(result).toMatchObject({ recordsSynced: 0, errors: [expect.any(Object)] });
       expect(mocks.persist).not.toHaveBeenCalled();
       expect(db.execute).not.toHaveBeenCalled();
-      expect(mocks.captureException).toHaveBeenCalled();
+      expect(mocks.captureException).toHaveBeenCalledWith(expect.any(Error), {
+        tags: { provider: "mountain-project", phase: "area_enrichment" },
+      });
     },
   );
+
+  it("retains a verified Area without native GPS instead of copying route-parent coordinates", async () => {
+    const result = await run(
+      new MountainProjectProvider(async (input) => {
+        const url = String(input);
+        if (url.includes("tick-export")) return new Response(csv([row()]));
+        if (url.includes("/routes/"))
+          return Response.json({
+            id: 105751342,
+            title: "Route",
+            parent: { id: 2, name: "Crag", coordinates: [-120, 35] },
+          });
+        return Response.json({ id: 2, title: "Crag", parent: { id: 0, name: "" } });
+      }),
+    );
+    expect(result).toMatchObject({ recordsSynced: 1, errors: [] });
+    expect(entries()[0]?.climb?.areas).toEqual([
+      { externalId: "2", name: "Crag", parentExternalId: null },
+    ]);
+  });
 
   it.each([
     { rows: [row()], reconciles: true, synced: 1 },
@@ -356,6 +378,23 @@ describe("MountainProjectProvider", () => {
     expect(result.errors).toHaveLength(1);
     expect(mocks.persist).not.toHaveBeenCalled();
     if (status === 503) expect(mocks.captureException).toHaveBeenCalled();
+    else expect(mocks.captureException).not.toHaveBeenCalled();
+  });
+  it("diagnoses malformed exports before reading route metadata or writing ticks", async () => {
+    const result = await run(provider(async () => new Response("<html>Private</html>")));
+    expect(result).toMatchObject({
+      recordsSynced: 0,
+      errors: [
+        expect.objectContaining({
+          message:
+            "Mountain Project tick export header does not match Mountain Project tick export format.",
+        }),
+      ],
+    });
+    expect(mocks.persist).not.toHaveBeenCalled();
+    expect(mocks.captureException).toHaveBeenCalledWith(expect.any(Error), {
+      tags: { provider: "mountain-project", phase: "tick_export" },
+    });
   });
   it("reports persistence errors with provider context", async () => {
     mocks.persist.mockRejectedValueOnce(new Error("database offline"));

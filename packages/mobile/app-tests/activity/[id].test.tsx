@@ -5,10 +5,11 @@ import {
 } from "../../../server/src/repositories/climbing-test-helpers.ts";
 // @vitest-environment jsdom
 
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import React from "react";
 import { Alert, Linking } from "react-native";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { RouteMap } from "../../components/RouteMap";
 import { captureException } from "../../lib/telemetry";
 
 function stripStyle({
@@ -99,8 +100,9 @@ vi.mock("../../components/MuscleGroupBodyDiagram", () => ({
 }));
 
 vi.mock("../../components/RouteMap", () => ({
-  RouteMap: ({ points }: { points: Array<{ lat: number | null; lng: number | null }> }) =>
+  RouteMap: vi.fn(({ points }: { points: Array<{ lat: number | null; lng: number | null }> }) =>
     React.createElement("span", null, `Route ends at ${points.at(-1)?.lat ?? "none"}`),
+  ),
 }));
 
 vi.mock("../../components/activity/useChartScrub", () => ({
@@ -479,6 +481,7 @@ function getPlaceholderData(value: unknown): ((previousData: unknown) => unknown
 }
 
 beforeEach(() => {
+  vi.mocked(RouteMap).mockClear();
   mockByIdQuery.mockClear();
   mockStreamQuery.mockClear();
   mockRouteQuery.mockClear();
@@ -604,6 +607,106 @@ describe("ActivityDetailScreen", () => {
     expect(
       screen.getByRole("button", { name: "Export as GPS track (GPX)" }).hasAttribute("disabled"),
     ).toBe(false);
+  });
+
+  it.each([
+    "unavailable",
+    "loading",
+    "processing",
+    "error",
+    "cached error",
+    "cached loading",
+  ] as const)("shows canonical climbing locations when the recorded route is %s", async (state) => {
+    mockByIdQuery.mockReturnValue({
+      data: { ...baseCyclingActivity, activityType: "climbing" },
+      isLoading: false,
+      error: null,
+    });
+    mockRouteQuery.mockReturnValue({
+      data: state.startsWith("cached")
+        ? { status: "ready", points: [{ lat: 7, lng: 8 }] }
+        : { status: state === "processing" ? "processing" : "unavailable" },
+      error: state.endsWith("error") ? new Error("Recorded route refresh failed") : null,
+      isLoading: state.endsWith("loading"),
+    });
+    mockClimbingEntriesQuery.mockReturnValue({
+      data: [
+        climbingLogEntryFixture({ id: "unlocated", title: "Unknown location" }),
+        climbingLogEntryFixture({
+          id: "located",
+          title: "Located climb",
+          mapLocation: {
+            coordinates: { latitude: 0, longitude: -122.25 },
+            scope: "climb",
+            objectId: "source-climb",
+            providerId: "mountain-project",
+            name: "Located climb",
+          },
+        }),
+      ],
+      error: new Error("Climbing refresh failed"),
+      isLoading: false,
+    });
+    mockEntrySuggestionsQuery.mockReturnValue({
+      data: [
+        climbingLogEntryFixture({
+          id: "suggested",
+          title: "Suggested climb",
+          mapLocation: {
+            coordinates: { latitude: 1, longitude: -122.5 },
+            scope: "area",
+            objectId: "source-area",
+            providerId: "openbeta",
+            name: "Containing area",
+          },
+        }),
+      ],
+      error: null,
+      isLoading: false,
+    });
+    const { default: ActivityDetailScreen } = await import("../../app/activity/[id]");
+
+    render(React.createElement(ActivityDetailScreen));
+
+    expect(screen.getAllByText("Route ends at none")).toHaveLength(
+      state.startsWith("cached") ? 2 : 3,
+    );
+    expect(screen.getByText("Climbing refresh failed")).toBeTruthy();
+    expect(screen.getByText("Climb location: Located climb · mountain-project")).toBeTruthy();
+    expect(screen.getByText("Area location: Containing area · openbeta")).toBeTruthy();
+    expect(screen.getByText("Entry 2")).toBeTruthy();
+    const overviewProps = vi.mocked(RouteMap).mock.calls.find(([props]) => !props.compact)?.[0];
+    expect(overviewProps?.climbMarkers).toEqual([
+      {
+        entryId: "located",
+        entryNumber: 2,
+        label: "Located climb",
+        location: {
+          coordinates: { latitude: 0, longitude: -122.25 },
+          scope: "climb",
+          objectId: "source-climb",
+          providerId: "mountain-project",
+          name: "Located climb",
+        },
+      },
+    ]);
+    act(() => overviewProps?.onSelectEntry?.("located"));
+    expect(
+      within(screen.getByLabelText("Climbing entry: Located climb")).getByText(
+        "Entry 2 · Selected",
+      ),
+    ).toBeTruthy();
+    const selectedOverviewProps = vi
+      .mocked(RouteMap)
+      .mock.calls.filter(([props]) => !props.compact)
+      .at(-1)?.[0];
+    expect(selectedOverviewProps?.points).toBe(overviewProps?.points);
+    if (state.startsWith("cached")) {
+      expect(screen.getByText("Route ends at 7")).toBeTruthy();
+    }
+    if (state.endsWith("error")) {
+      expect(screen.getByText("Recorded route refresh failed")).toBeTruthy();
+    }
   });
 
   it("invalidates Activities screen queries after deleting an activity", async () => {

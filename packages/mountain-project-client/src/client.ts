@@ -1,6 +1,22 @@
+import { z } from "zod";
+
 export const MOUNTAIN_PROJECT_BASE_URL = "https://www.mountainproject.com";
 
-type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
+const rawResponseSchema = z.record(z.string(), z.json());
+const routeResponseSchema = z.object({
+  id: z.number().int().positive(),
+  title: z.string().regex(/\S/),
+  parent: z.object({
+    id: z.number().int().nonnegative(),
+    name: z.string(),
+  }),
+});
+const areaResponseSchema = routeResponseSchema.extend({
+  coordinates: z
+    .tuple([z.number().min(-180).max(180), z.number().min(-90).max(90)])
+    .nullable()
+    .optional(),
+});
 
 export interface MountainProjectAreaReference {
   /** Zero identifies the root's missing parent in the observed API. */
@@ -12,31 +28,12 @@ export interface MountainProjectRoute {
   id: number;
   title: string;
   parent: MountainProjectAreaReference;
-  raw: Record<string, JsonValue>;
+  raw: z.infer<typeof rawResponseSchema>;
 }
 
 export interface MountainProjectArea extends MountainProjectRoute {
   /** Native Area position, in upstream longitude/latitude order. */
   coordinates?: readonly [number, number] | null;
-}
-
-function object(value: unknown): value is Record<string, JsonValue> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function validCoordinates(value: unknown): value is [number, number] | null | undefined {
-  return (
-    value === undefined ||
-    value === null ||
-    (Array.isArray(value) &&
-      value.length === 2 &&
-      typeof value[0] === "number" &&
-      Number.isFinite(value[0]) &&
-      Math.abs(value[0]) <= 180 &&
-      typeof value[1] === "number" &&
-      Number.isFinite(value[1]) &&
-      Math.abs(value[1]) <= 90)
-  );
 }
 
 export class MountainProjectTickExportError extends Error {
@@ -81,14 +78,18 @@ export class MountainProjectClient {
   }
 
   getRoute(id: string): Promise<MountainProjectRoute> {
-    return this.#getEntity("route", id);
+    return this.#getEntity("route", id, routeResponseSchema);
   }
 
   getArea(id: string): Promise<MountainProjectArea> {
-    return this.#getEntity("area", id);
+    return this.#getEntity("area", id, areaResponseSchema);
   }
 
-  async #getEntity(kind: "route" | "area", id: string): Promise<MountainProjectArea> {
+  async #getEntity<ResponseData extends z.infer<typeof routeResponseSchema>>(
+    kind: "route" | "area",
+    id: string,
+    schema: z.ZodType<ResponseData>,
+  ): Promise<ResponseData & { raw: z.infer<typeof rawResponseSchema> }> {
     if (!/^[1-9]\d*$/.test(id) || !Number.isSafeInteger(Number(id))) {
       throw new Error(`Mountain Project ${kind} ID must be a positive integer.`);
     }
@@ -100,29 +101,14 @@ export class MountainProjectClient {
         `Mountain Project ${kind} ${id} failed (${response.status}). Please try again.`,
       );
     }
-    const raw: unknown = await response.json();
-    if (
-      !object(raw) ||
-      raw.id !== Number(id) ||
-      typeof raw.title !== "string" ||
-      !raw.title.trim() ||
-      !object(raw.parent) ||
-      !Number.isSafeInteger(raw.parent.id) ||
-      typeof raw.parent.id !== "number" ||
-      raw.parent.id < 0 ||
-      typeof raw.parent.name !== "string" ||
-      (kind === "area" && !validCoordinates(raw.coordinates))
-    ) {
+    const raw = rawResponseSchema.safeParse(await response.json());
+    const parsed = schema.safeParse(raw.success ? raw.data : undefined);
+    if (!raw.success || !parsed.success || parsed.data.id !== Number(id)) {
       throw new Error(`Mountain Project ${kind} ${id} returned invalid data. Please try again.`);
     }
     return {
-      id: Number(id),
-      title: raw.title,
-      parent: { id: raw.parent.id, name: raw.parent.name },
-      raw,
-      ...(kind === "area" && validCoordinates(raw.coordinates) && raw.coordinates !== undefined
-        ? { coordinates: raw.coordinates }
-        : {}),
+      ...parsed.data,
+      raw: raw.data,
     };
   }
 

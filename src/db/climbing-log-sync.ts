@@ -724,7 +724,7 @@ async function reconcileAttempts(
       let recorded: AttemptRow;
       if (known) {
         recorded = mergeSupplied(known, values);
-        await tx.update(climbingAttempt).set(recorded).where(eq(climbingAttempt.id, known.id));
+        await tx.update(climbingAttempt).set(values).where(eq(climbingAttempt.id, known.id));
         Object.assign(known, recorded);
       } else {
         const [created] = await tx
@@ -842,11 +842,7 @@ export async function persistClimbingLogEntries(
       } = source;
       const id = known?.id ?? randomUUID();
       const changes = { ...facts, climbId: definition?.id ?? null, providerAbsentAt: null };
-      if (known)
-        await tx
-          .update(climbingLogEntry)
-          .set(mergeSupplied(known, changes))
-          .where(eq(climbingLogEntry.id, id));
+      if (known) await tx.update(climbingLogEntry).set(changes).where(eq(climbingLogEntry.id, id));
       else await tx.insert(climbingLogEntry).values({ id, ...scope, ...changes });
       await replaceLogGrades(tx, id, reportedGrades);
       resolved.push({ id, climb: definition, source });

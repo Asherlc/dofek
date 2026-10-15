@@ -65,10 +65,13 @@ approach the viewport. Its occurrence chooser uses Entry numbers from the full
 card order; selection can highlight the matching
 [climbing card](src/pages/activity-detail/components/ClimbingLogEntryCard.tsx),
 including repeated names at the same point.
-The colocated map and climbing-log Storybook stories supply explicit location
-fixtures at this component boundary. Connecting the canonical Climb/Area
-geometry to these map inputs remains a separate integration step in the
-[climbing map design](../../docs/superpowers/specs/2026-10-13-climbing-log-model-summitpost-design.md#activity-detail-climb-maps-and-grid).
+The activity screen supplies each log's server-projected location to the
+overview and compact maps, including when no recorded GPS route exists.
+The [server projection](../server/src/repositories/climbing-activity-log-entry-repository.ts)
+uses a source Climb point or its nearest containing Area with coordinates;
+labels identify the owning source and distinguish Area from Climb locations.
+Unattached suggestions show their own compact source-location maps. The
+colocated map and climbing-log Storybook stories exercise these component inputs.
 
 ```bash
 cd packages/web && pnpm dev      # Start Vite dev server (proxies /api to server)

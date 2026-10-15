@@ -15,6 +15,10 @@ can apply both migrations normally. See the [conversion implementation](../src/d
 2. Verify a fresh backup and an isolated restore using the
    [backup recovery runbook](database-backup-recovery-runbook.md). Rehearse this
    complete procedure against the restored database using the selected image.
+   For a containerized restore, inspect its mounts and `SHOW data_directory`
+   before loading data. Explicitly place the scratch data directory on a disk
+   with room for restored data, indexes and WAL; an unmounted path uses the
+   container's writable layer. See Docker's [storage guidance](https://docs.docker.com/engine/storage/).
 3. Inventory and quiesce every old reader and writer: API processes, sync/import
    workers, queued jobs, scheduled/manual imports, MCP readers and startup
    migrators. Keep them stopped throughout preparation, conversion and
@@ -45,6 +49,16 @@ pnpm migrate:climbing-log-model convert --batch-size 100
 pnpm migrate:climbing-log-model validate
 pnpm migrate:climbing-log-model finalize
 ```
+
+For an isolated restore with an explicitly supplied `DATABASE_URL`, invoke
+`pnpm exec tsx scripts/migrate-climbing-log-model.ts <command>` directly from
+the matching release checkout. The package command above calls
+[`with-env.ts`](../scripts/with-env.ts), which applies `.env.local` after the
+inherited environment and can replace that scratch target. Verify the target
+before each phase. Use the locked TypeScript runner rather than assuming
+Node's type stripping accepts every construct used by the converter; see the
+[CLI source](../scripts/migrate-climbing-log-model.ts) and
+[pnpm exec](https://pnpm.io/cli/exec).
 
 `inspect` is read-only and reports source inventory and conflicts. A conflict
 makes the command fail. Resolve the evidence before continuing. Conflicting
@@ -122,6 +136,13 @@ resuming analytics. See the [model guide](climbing-context.md),
 [read-model deployment runbook](clickhouse-read-model-deploy-runbook.md).
 
 Restart only matching application processes and clients after these checks.
+Before resuming the canonical deployment, verify that the stopped web service's
+desired image is the selected release and that its tag still resolves to the
+rehearsed digest. The [pre-migration stack apply](../.github/workflows/deploy-web-stack.yml)
+reads that desired image even at zero replicas, strips its digest suffix and
+restores web replicas. Leaving the legacy desired image would restart old code
+against finalized storage. Keep web stopped while updating and verifying the
+selected image.
 Do not restart the old image against finalized storage. Before 0147, keep
 legacy evidence and the verified backup available for reviewed recovery.
 After finalization, the recovery choices are a verified backup restore with

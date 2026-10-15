@@ -37,8 +37,8 @@ supplies the leading YDS/V-scale grade used by that parser. Published `Rating`
 and separately supplied `Your Rating` remain separate fields in the observed
 [public export](https://www.mountainproject.com/user/200232920/cole-schmidt/tick-export).
 
-`getRoute` and `getArea` validate the returned identity and parent reference;
-`getArea` also validates native longitude/latitude pairs. Their `raw` field
+`getRoute` and `getArea` parse the returned identity and parent reference with
+[Zod](https://zod.dev/); `getArea` also validates native longitude/latitude pairs. Their `raw` field
 retains the upstream JSON. The observed root Area uses parent ID `0`, which
 is a sentinel rather than a fetchable Area. Route `parent.coordinates` belongs
 to the parent Area; the client exposes native coordinates only on Area results.
