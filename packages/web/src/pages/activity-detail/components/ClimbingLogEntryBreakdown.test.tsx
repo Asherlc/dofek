@@ -74,7 +74,7 @@ it("renders the server's unknown occurrence count with its current published dis
   render(<ClimbingLogEntryBreakdown entries={[entry]} />);
   expect(screen.getByText("Corner")).toBeTruthy();
   expect(screen.getByText("5.10a")).toBeTruthy();
-  expect(screen.getByText("Whole climb outcome unknown · 1 recorded attempt")).toBeTruthy();
+  expect(screen.getByText("Whole climb · 1 recorded attempt")).toBeTruthy();
 });
 
 it("shows pitch completion with unknown whole-climb outcome", () => {
@@ -101,7 +101,7 @@ it("shows pitch completion with unknown whole-climb outcome", () => {
   ];
   render(<ClimbingLogEntryBreakdown entries={[entry]} />);
   expect(screen.getByText("Unidentified pitch completed · 1 recorded attempt")).toBeTruthy();
-  expect(screen.getByText("Whole climb outcome unknown · 1 recorded attempt")).toBeTruthy();
+  expect(screen.getByText("Whole climb · 1 recorded attempt")).toBeTruthy();
 });
 it("renders lead solo and aid independently", () => {
   const entry = climbingLogEntryFixture({
