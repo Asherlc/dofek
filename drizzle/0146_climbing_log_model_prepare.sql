@@ -135,6 +135,9 @@ CREATE TABLE fitness.climbing_log_entry_grade (
 ALTER TABLE fitness.climbing_entry RENAME COLUMN climb_style TO legacy_climb_style;
 --> statement-breakpoint
 ALTER TABLE fitness.climbing_entry
+-- Quiesced conversion replaces the legacy association rule; final owner constraints are validated before consumers resume.
+-- https://www.postgresql.org/docs/current/sql-altertable.html
+-- squawk-ignore ban-drop-constraint
 DROP CONSTRAINT climbing_entry_activity_unattached_date_pair,
 ADD COLUMN climb_id uuid,
 ADD COLUMN discipline fitness.climbing_discipline,
@@ -145,6 +148,9 @@ ADD CONSTRAINT climbing_entry_climb_owner_provider_fk FOREIGN KEY (user_id, prov
 REFERENCES fitness.climb (user_id, provider_id, id) NOT VALID;
 --> statement-breakpoint
 -- Preserve the legacy meaning before creating the canonical outcome enum.
+-- Quiesced cutover renames this object while preserving its definition; consumers resume together on the canonical model.
+-- https://www.postgresql.org/docs/current/sql-altertype.html
+-- squawk-ignore renaming-object
 ALTER TYPE fitness.climbing_attempt_outcome RENAME TO legacy_climbing_attempt_outcome;
 --> statement-breakpoint
 CREATE TYPE fitness.attempt_outcome AS ENUM ('completed', 'failed');
@@ -161,6 +167,9 @@ ALTER TABLE fitness.climbing_attempt RENAME COLUMN outcome TO legacy_outcome;
 ALTER TABLE fitness.climbing_attempt RENAME COLUMN failure_reason TO legacy_failure_reason;
 --> statement-breakpoint
 ALTER TABLE fitness.climbing_attempt
+-- Quiesced cutover renames the constraint without changing its guarantee; consumers resume together on the canonical model.
+-- https://www.postgresql.org/docs/current/sql-altertable.html
+-- squawk-ignore renaming-object
 RENAME CONSTRAINT climbing_attempt_index_positive TO climbing_attempt_legacy_index_positive;
 --> statement-breakpoint
 -- New count-only rows carry no legacy facts; existing facts remain untouched until conversion.

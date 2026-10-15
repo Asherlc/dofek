@@ -76,9 +76,15 @@ ALTER TABLE fitness.climbing_attempt VALIDATE CONSTRAINT climbing_attempt_index_
 --> statement-breakpoint
 ALTER TABLE fitness.climbing_attempt VALIDATE CONSTRAINT climbing_attempt_pitch_id_pitch_id_fk;
 --> statement-breakpoint
+-- Quiesced readers resume on v_climbing_log_entry; remove the legacy projection before its source columns.
+-- https://www.postgresql.org/docs/current/sql-dropview.html
+-- squawk-ignore ban-drop-view
 DROP VIEW fitness.v_climbing_entry;
 --> statement-breakpoint
 ALTER TABLE fitness.climbing_entry
+-- Quiesced conversion replaces the legacy association rule; final owner constraints are validated before consumers resume.
+-- https://www.postgresql.org/docs/current/sql-altertable.html
+-- squawk-ignore ban-drop-constraint
 DROP CONSTRAINT climbing_entry_activity_owner_fk;
 --> statement-breakpoint
 -- Quiesced transactional cutover: CONCURRENTLY cannot run inside this transaction.
@@ -121,27 +127,51 @@ ALTER TABLE fitness.climbing_entry RENAME TO climbing_log_entry;
 ALTER TABLE fitness.climbing_log_entry RENAME COLUMN unattached_date TO climbed_on;
 --> statement-breakpoint
 ALTER TABLE fitness.climbing_log_entry
+-- Quiesced cutover renames the constraint without changing its guarantee; consumers resume together on the canonical model.
+-- https://www.postgresql.org/docs/current/sql-altertable.html
+-- squawk-ignore renaming-object
 RENAME CONSTRAINT climbing_entry_pkey TO climbing_log_entry_pkey;
 --> statement-breakpoint
 ALTER TABLE fitness.climbing_log_entry
+-- Quiesced cutover renames the constraint without changing its guarantee; consumers resume together on the canonical model.
+-- https://www.postgresql.org/docs/current/sql-altertable.html
+-- squawk-ignore renaming-object
 RENAME CONSTRAINT climbing_entry_user_id_user_profile_id_fk TO climbing_log_entry_user_id_user_profile_id_fk;
 --> statement-breakpoint
 ALTER TABLE fitness.climbing_log_entry
+-- Quiesced cutover renames the constraint without changing its guarantee; consumers resume together on the canonical model.
+-- https://www.postgresql.org/docs/current/sql-altertable.html
+-- squawk-ignore renaming-object
 RENAME CONSTRAINT climbing_entry_provider_id_provider_id_fk TO climbing_log_entry_provider_id_provider_id_fk;
 --> statement-breakpoint
 ALTER TABLE fitness.climbing_log_entry
+-- Quiesced cutover renames the constraint without changing its guarantee; consumers resume together on the canonical model.
+-- https://www.postgresql.org/docs/current/sql-altertable.html
+-- squawk-ignore renaming-object
 RENAME CONSTRAINT climbing_entry_climb_owner_provider_fk TO climbing_log_entry_climb_owner_provider_fk;
 --> statement-breakpoint
 ALTER TABLE fitness.climbing_log_entry
+-- Quiesced cutover renames the constraint without changing its guarantee; consumers resume together on the canonical model.
+-- https://www.postgresql.org/docs/current/sql-altertable.html
+-- squawk-ignore renaming-object
 RENAME CONSTRAINT climbing_entry_external_id_nonempty TO climbing_log_entry_external_id_nonempty;
 --> statement-breakpoint
 ALTER TABLE fitness.climbing_log_entry
+-- Quiesced cutover renames the constraint without changing its guarantee; consumers resume together on the canonical model.
+-- https://www.postgresql.org/docs/current/sql-altertable.html
+-- squawk-ignore renaming-object
 RENAME CONSTRAINT climbing_entry_source_name_nonempty TO climbing_log_entry_source_name_nonempty;
 --> statement-breakpoint
 ALTER TABLE fitness.climbing_log_entry
+-- Quiesced cutover renames the constraint without changing its guarantee; consumers resume together on the canonical model.
+-- https://www.postgresql.org/docs/current/sql-altertable.html
+-- squawk-ignore renaming-object
 RENAME CONSTRAINT climbing_entry_board_valid TO climbing_log_entry_board_valid;
 --> statement-breakpoint
 ALTER TABLE fitness.climbing_log_entry
+-- Quiesced cutover renames the constraint without changing its guarantee; consumers resume together on the canonical model.
+-- https://www.postgresql.org/docs/current/sql-altertable.html
+-- squawk-ignore renaming-object
 RENAME CONSTRAINT climbing_entry_wall_angle_valid TO climbing_log_entry_wall_angle_valid;
 --> statement-breakpoint
 -- SET NULL affects only the association, retaining the log's nonnullable owner.
@@ -157,6 +187,9 @@ VALIDATE CONSTRAINT climbing_log_entry_activity_owner_fk,
 VALIDATE CONSTRAINT climbing_log_entry_title_nonempty,
 VALIDATE CONSTRAINT climbing_log_entry_notes_nonempty;
 --> statement-breakpoint
+-- Quiesced cutover renames this object while preserving its definition; consumers resume together on the canonical model.
+-- https://www.postgresql.org/docs/current/sql-alterindex.html
+-- squawk-ignore renaming-object
 ALTER INDEX fitness.climbing_entry_activity_idx RENAME TO climbing_log_entry_activity_idx;
 --> statement-breakpoint
 CREATE UNIQUE INDEX climbing_log_entry_source_external_id_idx
@@ -171,6 +204,9 @@ ON fitness.climbing_log_entry (user_id, provider_id, climbed_on);
 ALTER TABLE fitness.climbing_attempt RENAME COLUMN climbing_entry_id TO climbing_log_entry_id;
 --> statement-breakpoint
 ALTER TABLE fitness.climbing_attempt
+-- Quiesced cutover renames the constraint without changing its guarantee; consumers resume together on the canonical model.
+-- https://www.postgresql.org/docs/current/sql-altertable.html
+-- squawk-ignore renaming-object
 RENAME CONSTRAINT climbing_attempt_climbing_entry_id_fkey TO climbing_attempt_climbing_log_entry_id_climbing_log_entry_id_fk;
 --> statement-breakpoint
 -- Quiesced transactional replacement of the legacy log-local ordinal index.
@@ -204,16 +240,34 @@ VALIDATE CONSTRAINT climbing_attempt_scope_valid,
 VALIDATE CONSTRAINT climbing_attempt_parent_distinct,
 VALIDATE CONSTRAINT climbing_attempt_protection_valid;
 --> statement-breakpoint
+-- Quiesced cutover renames this object while preserving its definition; consumers resume together on the canonical model.
+-- https://www.postgresql.org/docs/current/sql-alterindex.html
+-- squawk-ignore renaming-object
 ALTER INDEX fitness.climbing_attempt_entry_idx RENAME TO climbing_attempt_log_entry_idx;
 --> statement-breakpoint
+-- Quiesced cutover removes the obsolete JSON path validator after removing its only constraint and column.
+-- https://www.postgresql.org/docs/current/sql-dropfunction.html
+-- squawk-ignore ban-drop-function
 DROP FUNCTION fitness.climbing_location_path_valid(JSONB);
 --> statement-breakpoint
+-- Quiesced cutover removes the unused legacy enum after converting its facts and removing its source column.
+-- https://www.postgresql.org/docs/current/sql-droptype.html
+-- squawk-ignore ban-drop-type
 DROP TYPE fitness.CLIMBING_CLIMB_TYPE;
 --> statement-breakpoint
+-- Quiesced cutover removes the unused legacy enum after converting its facts and removing its source column.
+-- https://www.postgresql.org/docs/current/sql-droptype.html
+-- squawk-ignore ban-drop-type
 DROP TYPE fitness.LEGACY_CLIMBING_ATTEMPT_OUTCOME;
 --> statement-breakpoint
+-- Quiesced cutover removes the unused legacy enum after converting its facts and removing its source column.
+-- https://www.postgresql.org/docs/current/sql-droptype.html
+-- squawk-ignore ban-drop-type
 DROP TYPE fitness.CLIMBING_FAILURE_REASON;
 --> statement-breakpoint
+-- Quiesced cutover removes the unused legacy enum after converting its facts and removing its source column.
+-- https://www.postgresql.org/docs/current/sql-droptype.html
+-- squawk-ignore ban-drop-type
 DROP TYPE fitness.CLIMBING_GRADE_SYSTEM;
 --> statement-breakpoint
 -- Cross-table checks lock referenced rows so simultaneous target edits cannot invalidate a try.

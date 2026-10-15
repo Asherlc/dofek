@@ -97,9 +97,13 @@ is detected before an earlier prefix is attempted. PostgreSQL describes these
 DDL operations in [ALTER TABLE](https://www.postgresql.org/docs/current/sql-altertable.html);
 the exact guards are in [0147](../drizzle/0147_climbing_log_model_finalize.sql).
 
-The SQL carries statement-level Squawk exceptions for intentional column
-renames, legacy nullability relaxation, and index removal during this quiesced
-transactional upgrade. They do not permit a rolling cutover. PostgreSQL forbids
+The SQL carries statement-level Squawk exceptions for intentional column and
+object renames, legacy nullability relaxation, replacement of association
+constraints, removal of obsolete views, functions and enums, and index removal
+during this quiesced transactional upgrade. Each exception records its
+maintenance justification beside the operation in [0146](../drizzle/0146_climbing_log_model_prepare.sql)
+or [0147](../drizzle/0147_climbing_log_model_finalize.sql).
+They do not permit a rolling cutover. PostgreSQL forbids
 [`DROP INDEX CONCURRENTLY`](https://www.postgresql.org/docs/current/sql-dropindex.html)
 inside a transaction; the remaining migration rules stay enabled. See
 [Squawk's statement-level directives](https://squawkhq.com/docs/cli#disabling-rules-via-comments).
