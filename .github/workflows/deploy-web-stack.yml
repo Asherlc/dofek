@@ -542,39 +542,37 @@ jobs:
           done
           REMOTE
 
-      - name: Apply dependency stack before migrations
+      - name: Select migration deployment mode from image histories
+        id: migration_deployment
         env:
           REQUESTED_IMAGE_TAG: ${{ steps.resolve.outputs.tag }}
         run: |
-          pre_migration_image_tag="$REQUESTED_IMAGE_TAG"
-          web_service_name="${STACK_NAME}_web"
-          if docker service inspect "$web_service_name" >/dev/null 2>&1; then
-            deployed_web_image="$(
-              docker service inspect "$web_service_name" \
-                --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}'
-            )"
-            deployed_web_image="${deployed_web_image%@*}"
-            case "$deployed_web_image" in
-              ghcr.io/asherlc/dofek:*)
-                pre_migration_image_tag="${deployed_web_image#ghcr.io/asherlc/dofek:}"
-                ;;
-              *)
-                echo "::error::Unable to derive the deployed app image tag from ${deployed_web_image}"
-                exit 1
-                ;;
-            esac
+          pnpm tsx scripts/prepare-migration-deployment.ts \
+            "ghcr.io/asherlc/dofek:${REQUESTED_IMAGE_TAG}" "$STACK_NAME"
+
+      - name: Apply dependency stack before migrations
+        env:
+          PRE_MIGRATION_IMAGE_TAG: ${{ steps.migration_deployment.outputs.pre_migration_image_tag }}
+          MIGRATION_DEPLOYMENT_MODE: ${{ steps.migration_deployment.outputs.mode }}
+          MIGRATION_MAINTENANCE_BOUNDARY: ${{ steps.migration_deployment.outputs.maintenance_boundary }}
+        run: |
+          maintenance_flags=""
+          if [ "$MIGRATION_DEPLOYMENT_MODE" = "maintenance" ]; then
+            maintenance_flags="-c deploy/stack.maintenance.yml"
           fi
 
-          echo "Applying dependency changes with app image ${pre_migration_image_tag} before migrations."
-          IMAGE_TAG="$pre_migration_image_tag" \
+          echo "Applying dependency changes with app image ${PRE_MIGRATION_IMAGE_TAG} before migrations (${MIGRATION_DEPLOYMENT_MODE})."
+          IMAGE_TAG="$PRE_MIGRATION_IMAGE_TAG" \
             WEB_ENV_FILE="${WEB_PRE_MIGRATION_ENV_FILE:?WEB_PRE_MIGRATION_ENV_FILE is required}" \
             node "$RUNNER_TEMP/run-with-dotenv-env.mjs" \
             docker stack deploy $STACK_FILE_FLAGS \
               -c deploy/stack.cdc-quiesce.yml \
               -c deploy/stack.migration-quiesce.yml \
+              $maintenance_flags \
               --with-registry-auth --detach=true "$STACK_NAME"
 
       - name: Wait for pre-migration web convergence
+        if: steps.migration_deployment.outputs.mode == 'rolling'
         run: |
           deadline=$((SECONDS + 300))
           while true; do
@@ -605,6 +603,11 @@ jobs:
             fi
             sleep 5
           done
+
+      - name: Wait for migration readers and writers to stop
+        env:
+          MIGRATION_DEPLOYMENT_MODE: ${{ steps.migration_deployment.outputs.mode }}
+        run: pnpm tsx scripts/wait-migration-quiescence.ts "$STACK_NAME" "$MIGRATION_DEPLOYMENT_MODE"
 
       - name: Wait for Postgres writable
         run: |
@@ -768,6 +771,7 @@ jobs:
         id: deploy_stack_quiesced
         env:
           IMAGE_TAG: ${{ steps.resolve.outputs.tag }}
+          MIGRATION_DEPLOYMENT_MODE: ${{ steps.migration_deployment.outputs.mode }}
         run: |
           echo "web_convergence_failed=false" >> "$GITHUB_OUTPUT"
           set +e
@@ -801,6 +805,15 @@ jobs:
                 docker service ls --filter "name=${service_name}" --format '{{.Replicas}}'
               )"
               echo "${service_name} image=${image} replicas=${replicas} update_state=${update_state:-none}"
+              if [ "$MIGRATION_DEPLOYMENT_MODE" = "maintenance" ] && [ "$service" = "web" ]; then
+                case "$update_state" in
+                  rollback_*|paused)
+                    docker service ps "$service_name" --no-trunc
+                    echo "::error::Maintenance rollout failed; the previous web specification has zero replicas. Resolve the rollout and rerun the deployment before restoring consumers."
+                    exit 1
+                    ;;
+                esac
+              fi
               if [ "$service" = "web" ] && [ "$update_state" = "rollback_started" ]; then
                 if [ "$SECONDS" -ge "$wait_deadline_seconds" ]; then
                   docker service ps "$service_name" --no-trunc
@@ -1237,6 +1250,13 @@ jobs:
           projects: dofek-web dofek-server
           release: ${{ steps.pull_images.outputs.sentry_release }}
           set_commits: skip
+
+      - name: Report incomplete maintenance deployment
+        if: failure() && steps.migration_deployment.outputs.mode == 'maintenance' && steps.deploy_stack_full.outcome != 'success'
+        run: |
+          message="Maintenance deployment did not complete. Old web and worker tasks must remain stopped after the schema boundary; rerun the canonical deployment with the requested release. Do not restore an earlier app image."
+          echo "::error::$message"
+          echo "$message" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Report quiesced processing services
         if: failure() && steps.deploy_stack_quiesced.conclusion == 'success' && steps.deploy_stack_full.conclusion == 'skipped'

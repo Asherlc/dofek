@@ -48,3 +48,8 @@ angle units remain labelled unknown. Clients render the supplied outcome and
 count; the server derives free-rock result labels from the recorded attempt
 facts. See the [shared model](../training/src/climbing-log.ts) and
 [formatters](src/climbing-context.ts).
+
+The [log formatter](src/climbing-log.ts) labels recorded rope methods once per
+card and retains whole-climb or pitch scope with recorded attempt counts. A
+missing source result adds no card status; attempt Details identifies it as
+`Not reported by source` rather than describing the actual ascent as unknown.

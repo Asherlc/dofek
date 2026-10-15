@@ -54,7 +54,7 @@ describe("ActivityRepository climbing log unlinking", () => {
           climbedOn: "2026-10-01",
           discipline: "mountaineering",
           climb: { externalId: `summit:${key}`, kind: "summit" },
-          attempts: [{ scope: "climb", outcome: "completed" }],
+          attempts: [{ scope: "climb", sourceResult: "completed" }],
         },
       ],
     });

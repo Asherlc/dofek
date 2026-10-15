@@ -345,7 +345,7 @@ function kayaLogEntry(
       {
         scope: "climb",
         ropeMethod: boulder || climb.lead == null ? null : climb.lead ? "lead" : "top_rope",
-        ...(qualifier === undefined ? {} : { qualifier }),
+        ...(qualifier === undefined ? {} : { qualifier, sourceResult: source.label }),
         ...(label === "repeat" ? { hadCompletedBefore: true } : {}),
       },
     ],

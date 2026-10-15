@@ -65,7 +65,9 @@ describe("Kaya CSV canonical persistence", () => {
           externalId: "openbeta:attached",
           activityId: session.id,
           climbedOn: "2026-09-01",
-          attempts: [{ scope: "climb", ropeMethod: "follow", usedAid: true, outcome: "completed" }],
+          attempts: [
+            { scope: "climb", ropeMethod: "follow", usedAid: true, sourceResult: "Completed" },
+          ],
         },
       ],
     });
@@ -77,11 +79,13 @@ describe("Kaya CSV canonical persistence", () => {
       .select()
       .from(climbingAttempt)
       .where(eq(climbingAttempt.climbingLogEntryId, entry.id));
-    const unknown = before.find((attempt) => attempt.outcome === null);
+    const unknown = before.find((attempt) => attempt.sourceResult === null);
+    const described = before.find((attempt) => attempt.sourceResult === "Redpoint");
     if (!unknown) throw new Error("Expected count placeholder");
+    if (!described) throw new Error("Expected source-described try");
     await context.db
       .update(climbingAttempt)
-      .set({ outcome: "failed", fellOrHung: true, notes: "Recorded failed try" })
+      .set({ sourceResult: "Failed", fellOrHung: true, notes: "Recorded failed try" })
       .where(eq(climbingAttempt.id, unknown.id));
     expect(
       await importKayaExportFile(context.db, `${header}\n${row("Redpoint", "3")}`, userId),
@@ -99,10 +103,13 @@ describe("Kaya CSV canonical persistence", () => {
       .from(climbingAttempt)
       .where(eq(climbingAttempt.climbingLogEntryId, entry.id));
     expect(after).toHaveLength(3);
+    expect(after.filter((attempt) => attempt.sourceResult === "Redpoint")).toEqual([
+      expect.objectContaining({ id: described.id, sourceResult: "Redpoint" }),
+    ]);
     expect(after).toContainEqual(
       expect.objectContaining({
         id: unknown.id,
-        outcome: "failed",
+        sourceResult: "Failed",
         fellOrHung: true,
         notes: "Recorded failed try",
       }),
@@ -128,7 +135,7 @@ describe("Kaya CSV canonical persistence", () => {
     ).toMatchObject({ recordsSynced: 1, errors: [expect.any(Object)] });
     expect((await logs()).find((log) => log.id === entry.id)?.providerAbsentAt).toBeNull();
   });
-  it("expands one occurrence without totals and normalizes only supported completion labels", async () => {
+  it("expands one occurrence without totals and retains only supported source result labels", async () => {
     const labels = ["Attempt", "Flash", "Redpoint", "Repeat", "Unfamiliar result", ""];
     expect(
       await importKayaExportFile(
@@ -154,12 +161,12 @@ describe("Kaya CSV canonical persistence", () => {
       );
       expect(source?.attempt).toMatchObject({
         scope: "climb",
-        outcome: ["Flash", "Redpoint", "Repeat"].includes(label) ? "completed" : null,
+        sourceResult: ["Flash", "Redpoint", "Repeat"].includes(label) ? label : null,
       });
     }
     expect(
-      attempts.find((result) => result.attempt.hadCompletedBefore === true)?.attempt.outcome,
-    ).toBe("completed");
+      attempts.find((result) => result.attempt.hadCompletedBefore === true)?.attempt.sourceResult,
+    ).toBe("Repeat");
   });
   it("retains undated ungraded logs without fabricating an activity or merging object names", async () => {
     const source = row("", "", "", "", "");

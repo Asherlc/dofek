@@ -158,7 +158,7 @@ describe("atomic climbing log synchronization", () => {
         {
           scope: "pitch",
           pitch: { externalId: "pitch:first" },
-          outcome: "completed",
+          sourceResult: "completed",
           ropeMethod: "lead",
           solo: true,
           hadCompletedBefore: true,
@@ -178,8 +178,13 @@ describe("atomic climbing log synchronization", () => {
       externalId: "pitch:group",
       climb: source.climb,
       attempts: [
-        { scope: "climb", sourceKey: "whole", outcome: "completed" },
-        { scope: "pitch", pitch: { number: 1 }, parentSourceKey: "whole", outcome: "completed" },
+        { scope: "climb", sourceKey: "whole", sourceResult: "completed" },
+        {
+          scope: "pitch",
+          pitch: { number: 1 },
+          parentSourceKey: "whole",
+          sourceResult: "completed",
+        },
         { scope: "pitch", parentSourceKey: "whole", notes: "Unidentified pitch" },
       ],
     };
@@ -236,6 +241,57 @@ describe("atomic climbing log synchronization", () => {
       solo: true,
     });
   });
+  it.each([" rEdPoInT ", "Send"])(
+    "preserves pitch grouping when the raw result label changes to %s",
+    async (sourceResult) => {
+      const source: SourceClimbingLogEntry = {
+        externalId: "pitch:result-refresh",
+        climb: {
+          externalId: "pitch:result-route",
+          pitches: [{ externalId: "pitch:result-one", number: 1 }],
+        },
+        attempts: [
+          { scope: "climb", sourceKey: "whole" },
+          {
+            scope: "pitch",
+            pitch: { number: 1 },
+            parentSourceKey: "whole",
+            sourceResult: "Redpoint",
+          },
+        ],
+        reportedAttemptCounts: [{ scope: "climb", count: 2 }],
+      };
+      const result = await write([source]);
+      const id = result.logEntryIds[0];
+      if (!id) throw new Error("Expected the grouped log");
+      const before = await attempts(id);
+      const child = before.find((row) => row.scope === "pitch");
+      const otherWhole = before.find(
+        (row) => row.scope === "climb" && row.id !== child?.parentAttemptId,
+      );
+      if (!child?.parentAttemptId || !otherWhole)
+        throw new Error("Expected two whole occurrences and a grouped pitch");
+      await context.db
+        .update(climbingAttempt)
+        .set({ createdAt: new Date("2000-01-01T00:00:00Z") })
+        .where(eq(climbingAttempt.id, otherWhole.id));
+      await write([
+        {
+          ...source,
+          attempts: source.attempts.map((attempt) =>
+            attempt.scope === "pitch" ? { ...attempt, sourceResult } : attempt,
+          ),
+        },
+      ]);
+      const after = await attempts(id);
+      expect(after).toHaveLength(3);
+      expect(after.find((row) => row.id === child.id)).toMatchObject({
+        sourceResult,
+        parentAttemptId: child.parentAttemptId,
+        pitchId: child.pitchId,
+      });
+    },
+  );
 
   it("protects false array history and grouping facts from count correction", async () => {
     const source: SourceClimbingLogEntry = {
@@ -277,7 +333,14 @@ describe("atomic climbing log synchronization", () => {
       const flash: SourceClimbingLogEntry = {
         externalId: "history:flash",
         climb: definition,
-        attempts: [{ scope: "pitch", pitch: { number: 1 }, qualifier: "free-flash" }],
+        attempts: [
+          {
+            scope: "pitch",
+            pitch: { number: 1 },
+            qualifier: "free-flash",
+            sourceResult: "completed",
+          },
+        ],
       };
       const unrelated: SourceClimbingLogEntry = {
         externalId: "history:other",
@@ -297,7 +360,14 @@ describe("atomic climbing log synchronization", () => {
       const otherFlash: SourceClimbingLogEntry = {
         externalId: "history:second-flash",
         climb: definition,
-        attempts: [{ scope: "pitch", pitch: { number: 1 }, qualifier: "free-flash" }],
+        attempts: [
+          {
+            scope: "pitch",
+            pitch: { number: 1 },
+            qualifier: "free-flash",
+            sourceResult: "completed",
+          },
+        ],
       };
       const later = await write([otherFlash]);
       expect((await attempts(later.logEntryIds[0] ?? ""))[0]?.receivedBeta).toBeNull();
@@ -315,9 +385,9 @@ describe("atomic climbing log synchronization", () => {
     if (!id) throw new Error("Expected an imported log");
     const before = await attempts(id);
     expect(before).toHaveLength(4);
-    expect(before.map((a) => [a.attemptIndex, a.outcome, a.fellOrHung, a.receivedBeta])).toEqual(
-      Array(4).fill([null, null, null, null]),
-    );
+    expect(
+      before.map((a) => [a.attemptIndex, a.sourceResult, a.fellOrHung, a.receivedBeta]),
+    ).toEqual(Array(4).fill([null, null, null, null]));
     const second = await write([source]);
     expect(second).toEqual({ logEntryIds: [id], recordsSynced: 1 });
     expect((await attempts(id)).map((a) => a.id)).toEqual(before.map((a) => a.id));
@@ -329,14 +399,16 @@ describe("atomic climbing log synchronization", () => {
     const id = result.logEntryIds[0];
     if (!id) throw new Error("Expected an imported log");
     expect(await attempts(id)).toHaveLength(1);
-    expect((await attempts(id))[0]).toMatchObject({ outcome: null, attemptIndex: null });
+    expect((await attempts(id))[0]).toMatchObject({ sourceResult: null, attemptIndex: null });
   });
   it("preserves aid first-try facts when a later qualified response omits method", async () => {
     const first = await write([
       {
         externalId: "aid:first",
         climb: { externalId: "aid:route" },
-        attempts: [{ scope: "climb" as const, qualifier: "aid-onsight" as const }],
+        attempts: [
+          { scope: "climb" as const, qualifier: "aid-onsight" as const, sourceResult: "completed" },
+        ],
       },
     ]);
     const id = first.logEntryIds[0];
@@ -344,7 +416,7 @@ describe("atomic climbing log synchronization", () => {
     const before = await attempts(id);
     expect(before).toEqual([
       expect.objectContaining({
-        outcome: "completed",
+        sourceResult: "completed",
         fellOrHung: null,
         usedAid: true,
         receivedBeta: false,
@@ -354,7 +426,9 @@ describe("atomic climbing log synchronization", () => {
     await write([
       {
         externalId: "aid:first",
-        attempts: [{ scope: "climb" as const, qualifier: "aid-onsight" as const }],
+        attempts: [
+          { scope: "climb" as const, qualifier: "aid-onsight" as const, sourceResult: "completed" },
+        ],
       },
     ]);
     expect(await attempts(id)).toEqual(before);
@@ -372,7 +446,7 @@ describe("atomic climbing log synchronization", () => {
       attempts: [
         {
           scope: "climb" as const,
-          outcome: "completed",
+          sourceResult: "completed",
           fellOrHung: false,
           usedAid: false,
           receivedBeta: false,
@@ -422,6 +496,35 @@ describe("atomic climbing log synchronization", () => {
       .where(eq(climb.externalId, "route:known"));
     expect(clearedClimb?.coordinates).toBeNull();
   });
+  it.each([" rEdPoInT ", "Send"])(
+    "updates the same described occurrence when its raw result changes to %s",
+    async (sourceResult) => {
+      const source: SourceClimbingLogEntry = {
+        externalId: "result:refresh",
+        attempts: [{ scope: "climb", sourceResult: "Redpoint", fellOrHung: false, usedAid: false }],
+        reportedAttemptCounts: [{ scope: "climb", count: 3 }],
+      };
+      const result = await write([source]);
+      const id = result.logEntryIds[0];
+      if (!id) throw new Error("Expected the source log");
+      const original = (await attempts(id)).find((row) => row.sourceResult !== null);
+      if (!original) throw new Error("Expected the described attempt");
+      await write([
+        { ...source, attempts: [{ ...source.attempts[0], scope: "climb", sourceResult }] },
+      ]);
+      const refreshed = await attempts(id);
+      expect(refreshed).toHaveLength(3);
+      expect(refreshed.find((row) => row.sourceResult !== null)).toMatchObject({
+        id: original.id,
+        sourceResult,
+      });
+      expect(refreshed.filter((row) => row.sourceResult === null)).toHaveLength(2);
+      await write([{ externalId: source.externalId, attempts: [{ scope: "climb" }] }]);
+      expect((await attempts(id)).find((row) => row.id === original.id)?.sourceResult).toBe(
+        sourceResult,
+      );
+    },
+  );
   it("rejects a count below described evidence", async () => {
     const result = await write([
       {
@@ -451,7 +554,7 @@ describe("atomic climbing log synchronization", () => {
     const result = await write([
       {
         externalId: "occurrence:corrected",
-        attempts: [{ scope: "climb" as const, notes: "Described try", outcome: "failed" }],
+        attempts: [{ scope: "climb" as const, notes: "Described try", sourceResult: "failed" }],
         reportedAttemptCounts: [{ scope: "climb" as const, count: 4 }],
       },
     ]);
@@ -518,14 +621,16 @@ describe("atomic climbing log synchronization", () => {
     const source: SourceClimbingLogEntry = {
       externalId: "occurrence:flash",
       climb: { externalId: "route:flash" },
-      attempts: [{ scope: "climb" as const, qualifier: "free-flash" as const }],
+      attempts: [
+        { scope: "climb" as const, qualifier: "free-flash" as const, sourceResult: "completed" },
+      ],
     };
     const result = await write([source]);
     const id = result.logEntryIds[0];
     if (!id) throw new Error("Expected an imported log");
     const before = (await attempts(id))[0];
     expect(before).toMatchObject({
-      outcome: "completed",
+      sourceResult: "completed",
       fellOrHung: false,
       usedAid: false,
       receivedBeta: true,
@@ -546,7 +651,7 @@ describe("atomic climbing log synchronization", () => {
         {
           externalId: "occurrence:later",
           climb: { externalId: "route:shared" },
-          attempts: [{ scope: "climb", qualifier: "free-flash" }],
+          attempts: [{ scope: "climb", qualifier: "free-flash", sourceResult: "completed" }],
         },
       ];
       await write(reversed ? [...source].reverse() : source);
@@ -563,7 +668,13 @@ describe("atomic climbing log synchronization", () => {
       {
         externalId: "occurrence:onsight",
         climb: { externalId: "route:onsight", kind: "route" },
-        attempts: [{ scope: "climb" as const, qualifier: "free-onsight" as const }],
+        attempts: [
+          {
+            scope: "climb" as const,
+            qualifier: "free-onsight" as const,
+            sourceResult: "completed",
+          },
+        ],
       },
       {
         externalId: "occurrence:hung",
@@ -571,7 +682,7 @@ describe("atomic climbing log synchronization", () => {
       },
       {
         externalId: "occurrence:summit",
-        attempts: [{ scope: "climb" as const, outcome: "completed" }],
+        attempts: [{ scope: "climb" as const, sourceResult: "completed" }],
       },
       {
         externalId: "occurrence:unknown-order",
@@ -584,16 +695,16 @@ describe("atomic climbing log synchronization", () => {
       const rows = await attempts(log.id);
       if (log.externalId === "occurrence:onsight")
         expect(rows[0]).toMatchObject({
-          outcome: "completed",
+          sourceResult: "completed",
           fellOrHung: false,
           usedAid: false,
           receivedBeta: false,
           attemptIndex: 1,
         });
       if (log.externalId === "occurrence:hung")
-        expect(rows[0]).toMatchObject({ outcome: null, fellOrHung: true });
+        expect(rows[0]).toMatchObject({ sourceResult: null, fellOrHung: true });
       if (log.externalId === "occurrence:summit")
-        expect(rows[0]).toMatchObject({ outcome: "completed", fellOrHung: null });
+        expect(rows[0]).toMatchObject({ sourceResult: "completed", fellOrHung: null });
       if (log.externalId === "occurrence:unknown-order")
         expect(rows.map((a) => a.attemptIndex)).toEqual([null, null]);
     }
@@ -826,11 +937,16 @@ describe("atomic climbing log synchronization", () => {
         {
           externalId: "occurrence:bad",
           attempts: [
-            { scope: "climb" as const, outcome: "failed", qualifier: "free-onsight" as const },
+            {
+              scope: "climb" as const,
+              usedAid: true,
+              qualifier: "free-onsight" as const,
+              sourceResult: "Onsight",
+            },
           ],
         },
       ]),
-    ).rejects.toThrow("outcome");
+    ).rejects.toThrow("usedAid");
     expect(await context.db.select().from(climbingLogEntry)).toEqual(logsBefore);
     expect((await context.db.select().from(climbGrade))[0]).toMatchObject({
       value: "5.10a",

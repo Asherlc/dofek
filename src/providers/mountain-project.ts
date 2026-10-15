@@ -232,7 +232,7 @@ function parseMountainProjectTicks(
           ...(resultStyle.trim().toLowerCase() === "pinkpoint"
             ? { usedPreplacedProtection: true }
             : {}),
-          ...(qualifier === undefined ? {} : { qualifier }),
+          ...(qualifier === undefined ? {} : { qualifier, sourceResult: resultStyle }),
         },
       ],
       climb: {

@@ -1037,6 +1037,13 @@
       "when": 1791943919655,
       "tag": "0147_climbing_log_model_finalize",
       "breakpoints": true
+    },
+    {
+      "idx": 148,
+      "version": "7",
+      "when": 1792076031350,
+      "tag": "0148_compute_climbing_attempt_outcome",
+      "breakpoints": true
     }
   ]
 }

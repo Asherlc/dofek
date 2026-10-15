@@ -5,6 +5,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { captureException } from "../lib/error-reporting.ts";
 import {
+  type LegacyAttemptFacts,
   LegacyClimbingFactConflict,
   type LegacyClimbingRow,
   legacyClimbingDefinition,
@@ -19,7 +20,6 @@ import {
   pitch,
   pitchGrade,
 } from "./schema/climbing.ts";
-import type { SourceAttemptFacts } from "./source-attempt-facts.ts";
 import { executeWithSchema } from "./typed-sql.ts";
 
 export interface ClimbingLogConversionReport {
@@ -374,7 +374,7 @@ async function persistTarget(
   }
   return climbId;
 }
-function baseFacts(attempt: OldAttempt): SourceAttemptFacts {
+function baseFacts(attempt: OldAttempt): LegacyAttemptFacts {
   return {
     outcome: attempt.legacy_outcome === "sent" ? "completed" : "failed",
     ...(attempt.legacy_failure_reason === "fell" ? { fellOrHung: true } : {}),
@@ -385,7 +385,7 @@ function convertedLegacyFacts(
   attempt: OldAttempt,
   definition: Definition,
   ownsSourceFacts: boolean,
-): SourceAttemptFacts {
+): LegacyAttemptFacts {
   const facts = ownsSourceFacts
     ? { ...baseFacts(attempt), ...definition.facts, notes: attempt.notes }
     : baseFacts(attempt);
@@ -396,7 +396,7 @@ async function writeAttempt(
   db: TransactionDatabase,
   row: LegacyClimbingRow,
   id: string,
-  facts: SourceAttemptFacts,
+  facts: LegacyAttemptFacts,
   existing: boolean,
 ) {
   const values = sql`'climb',${facts.attemptIndex ?? null},${facts.outcome ?? null},${facts.ropeMethod ?? null},${facts.solo ?? null},${
@@ -607,7 +607,7 @@ export async function validateClimbingLogConversion(
           "attemptCount",
           "Recorded whole-climb occurrences do not match the retained source total or detailed occurrences.",
         );
-      const matches = (actual: z.infer<typeof factSchema>, facts: SourceAttemptFacts) =>
+      const matches = (actual: z.infer<typeof factSchema>, facts: LegacyAttemptFacts) =>
         Object.entries(facts).every(
           ([key, value]) => JSON.stringify(Reflect.get(actual, key)) === JSON.stringify(value),
         );

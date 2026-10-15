@@ -27,6 +27,7 @@ interface DeployConsumerOptions {
 }
 
 interface DeployQuiescedOptions extends DeployConsumerOptions {
+  readonly deploymentMode?: "rolling" | "maintenance";
   readonly serviceObservations?: Readonly<Record<string, readonly ServiceObservation[]>>;
   readonly stackDeployStatus?: number;
 }
@@ -317,6 +318,7 @@ function runDeployQuiesced(
         FAIL_TASK_INSPECTION: options.failTaskInspection ? "1" : "0",
         IMAGE_TAG: "test",
         STACK_DEPLOY_STATUS: (options.stackDeployStatus ?? 0).toString(),
+        MIGRATION_DEPLOYMENT_MODE: options.deploymentMode ?? "rolling",
         STACK_DEPLOY_CAPTURE: stackDeployCapturePath,
         ADVANCE_ON_SERVICE_LS: "1",
         MOCK_SLEEP_SECONDS: (options.sleepSeconds ?? 10).toString(),
@@ -434,6 +436,8 @@ ${workflowRunScript(step)}
         env: {
           ...process.env,
           REQUESTED_IMAGE_TAG: "test",
+          PRE_MIGRATION_IMAGE_TAG: "previous",
+          MIGRATION_DEPLOYMENT_MODE: "rolling",
           IMAGE_TAG: "test",
           WEB_ENV_FILE: "/synthetic/web.env",
           WEB_PRE_MIGRATION_ENV_FILE: "/synthetic/web-pre-migration.env",
@@ -507,6 +511,30 @@ ${workflowRunScript(step)}
     expect(result.stdout).toContain("diagnostic task output for dofek_web");
     expect(result.githubOutput).toContain("web_convergence_failed=true");
   });
+
+  it.each(["rollback_started", "rollback_completed", "rollback_paused", "paused"])(
+    "fails maintenance rollout immediately when web is %s",
+    (updateState) => {
+      const result = runDeployQuiesced([STABLE_OBSERVATION], {
+        deploymentMode: "maintenance",
+        serviceObservations: {
+          dofek_web: [{
+            ...STABLE_OBSERVATION,
+            desiredReplicas: "0",
+            replicas: "0/0",
+            image: "ghcr.io/asherlc/dofek:previous",
+            updateState,
+          }],
+        },
+        sleepSeconds: 2100,
+      });
+
+      expect(result.status).toBe(1);
+      expect(result.stdout).toContain("Maintenance rollout failed");
+      expect(result.githubOutput).toContain("web_convergence_failed=false");
+      expect(result.githubOutput).not.toContain("web_convergence_failed=true");
+    },
+  );
 
   it("waits for the rolled-back web service to regain all desired replicas", () => {
     const result = runDeployQuiesced([STABLE_OBSERVATION], {

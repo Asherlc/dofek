@@ -4,6 +4,7 @@ import {
   climbingAttemptDetailFields,
   formatClimbingGradeComponents,
   formatClimbingRecordedResult,
+  formatClimbingRopeMethods,
   formatGpsCoordinates,
 } from "./climbing-log.ts";
 
@@ -55,13 +56,29 @@ describe("climbing log formatting", () => {
       "Pitch failed · 3 recorded attempts",
     );
     expect(formatClimbingRecordedResult("Whole climb", null, 2)).toBe(
-      "Whole climb outcome unknown · 2 recorded attempts",
+      "Whole climb · 2 recorded attempts",
     );
+    expect(formatClimbingRecordedResult("Pitch 1", null, 1)).toBe("Pitch 1 · 1 recorded attempt");
+  });
+  it("labels each recorded rope method once without exposing unreported methods", () => {
+    expect(formatClimbingRopeMethods([{ ropeMethod: "top_rope" }])).toBe("Top rope");
+    expect(
+      formatClimbingRopeMethods([
+        { ropeMethod: "lead" },
+        { ropeMethod: null },
+        { ropeMethod: "top_rope" },
+        { ropeMethod: "lead" },
+        { ropeMethod: "follow" },
+        { ropeMethod: "unroped" },
+      ]),
+    ).toBe("Lead · Top rope · Follow · Unroped");
+    expect(formatClimbingRopeMethods([{ ropeMethod: null }])).toBeNull();
+    expect(formatClimbingRopeMethods([])).toBeNull();
   });
   it("lists every unknown fact without turning missing evidence into false", () => {
     expect(climbingAttemptDetailFields(attempt())).toEqual([
       { label: "Scope", value: "Whole climb" },
-      { label: "Outcome", value: "Unknown" },
+      { label: "Outcome", value: "Not reported by source" },
       { label: "Attempt order", value: "Unknown" },
       { label: "Rope method", value: "Unknown" },
       { label: "Solo", value: "Unknown" },

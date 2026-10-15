@@ -1,4 +1,7 @@
-import { formatClimbingRecordedResult } from "@dofek/format/climbing-log";
+import {
+  formatClimbingRecordedResult,
+  formatClimbingRopeMethods,
+} from "@dofek/format/climbing-log";
 import { providerSourceLabel } from "@dofek/providers/providers";
 import type { ClimbingMapLocation, ClimbingMapMarker } from "@dofek/training/climbing-map";
 import { useId, useMemo, useState } from "react";
@@ -33,6 +36,7 @@ export function ClimbingLogEntryCard({
   const [open, setOpen] = useState(false);
   const detailId = useId();
   const name = entry.climb?.name ?? entry.title ?? "Climbing log";
+  const methods = formatClimbingRopeMethods(entry.attempts);
   const markers = useMemo<ClimbingMapMarker[]>(
     () => (location ? [{ entryId: entry.id, entryNumber, label: name, location }] : []),
     [entry.id, entryNumber, name, location],
@@ -77,6 +81,7 @@ export function ClimbingLogEntryCard({
         )}
       </div>
       <div className="space-y-1 text-xs text-subtle">
+        {methods && <p>{methods}</p>}
         {entry.recordedClimbAttemptCount > 0 && (
           <p>
             {formatClimbingRecordedResult(

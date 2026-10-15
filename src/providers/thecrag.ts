@@ -238,15 +238,18 @@ function climbingRecord(
       return true;
     })
     .map((location) => ({ name: location.name, externalId: location.id ?? null }));
-  const label = (
-    nullableText(ascent.tick?.label) ?? nullableText(ascent.tick?.name)
-  )?.toLowerCase();
+  const sourceResult = (ascent.tick?.label?.trim() ? ascent.tick.label : ascent.tick?.name) ?? null;
+  const label = sourceResult?.trim().toLowerCase();
   const usedAid =
     gearStyle === "aid" ||
     label === "french free" ||
     label === "frenchfree" ||
     label?.startsWith("aid ") === true;
   const qualifier = sourceQualifier(label ?? null, usedAid);
+  const supportedResult =
+    qualifier !== undefined ||
+    ["attempt", "dog", "hang dog", "tick"].includes(label ?? "") ||
+    (usedAid && ["clean", "send", "redpoint", "pinkpoint"].includes(label ?? ""));
   const attempt: SourceClimbingAttempt = {
     scope: "climb",
     protectionUsed,
@@ -259,12 +262,8 @@ function climbingRecord(
       : {}),
     ...(usedAid ? { usedAid: true } : {}),
     ...(qualifier === undefined ? {} : { qualifier }),
-    ...(label === "attempt" ? { outcome: "failed" } : {}),
-    ...(label === "dog" || label === "hang dog" ? { outcome: "completed", fellOrHung: true } : {}),
-    ...(label === "tick" ||
-    (usedAid && ["clean", "send", "redpoint", "pinkpoint"].includes(label ?? ""))
-      ? { outcome: "completed" }
-      : {}),
+    ...(supportedResult ? { sourceResult } : {}),
+    ...(label === "dog" || label === "hang dog" ? { fellOrHung: true } : {}),
     ...(label === "repeat" ? { hadCompletedBefore: true } : {}),
     ...(label === "ground-up redpoint" ? { priorFailedAttemptsGroundUp: true } : {}),
     ...(label === "pinkpoint" ? { usedPreplacedProtection: true } : {}),

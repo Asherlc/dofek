@@ -2548,7 +2548,7 @@ describe("ActivityDetailPage", () => {
       expect(screen.getByText("Project")).toBeDefined();
       expect(screen.getByText("Whole climb failed · 1 recorded attempt")).toBeDefined();
       expect(screen.getByText("Wall angle: 35°")).toBeDefined();
-      expect(screen.getByText("Whole climb outcome unknown · 1 recorded attempt")).toBeDefined();
+      expect(screen.getByText("Whole climb · 1 recorded attempt")).toBeDefined();
       expect(screen.getAllByText("Touchstone Pacific Pipe")).toHaveLength(3);
       fireEvent.click(screen.getByRole("button", { name: "Details for Project" }));
       expect(screen.getByText("Hold type: crimp")).toBeTruthy();

@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import {
   persistClimbingLogEntries,
@@ -47,12 +47,42 @@ describe("ClimbingActivityLogEntryRepository PostgreSQL projection", () => {
       { externalId: "pitch-one", number: 1, publishedGrades: [{ value: "5.8", system: "yds" }] },
     ],
   } as const;
+  it.each([
+    { sourceResult: "Redpoint", outcome: "completed", labels: ["sent"] },
+    { sourceResult: "failed", outcome: "failed", labels: [] },
+    { sourceResult: null, outcome: null, labels: [] },
+  ])("computes $outcome from stored source evidence", async ({ sourceResult, outcome, labels }) => {
+    const before = await write({
+      externalId: "source-result",
+      discipline: "rock_climbing",
+      climb: route,
+      attempts: [{ scope: "climb", fellOrHung: false, usedAid: false }],
+    });
+    await context.db.execute(sql`
+      UPDATE fitness.climbing_attempt SET source_result = ${sourceResult}
+      WHERE climbing_log_entry_id = ${before.id}::uuid
+    `);
+    const [entry] = await repo().getLogEntries([before.id]);
+    expect(entry?.toDetail()).toMatchObject({
+      recordedClimbAttemptCount: 1,
+      recordedPitchAttemptCount: 0,
+      recordedClimbOutcome: outcome,
+      attempts: [{ outcome, rockResultLabels: labels }],
+    });
+  });
   it("projects a completed pitch without claiming route completion", async () => {
     const log = await write({
       externalId: "pitch-only",
       discipline: "rock_climbing",
       climb: route,
-      attempts: [{ scope: "pitch", pitch: { number: 1 }, qualifier: "free-onsight" }],
+      attempts: [
+        {
+          scope: "pitch",
+          pitch: { number: 1 },
+          sourceResult: "Onsight",
+          qualifier: "free-onsight",
+        },
+      ],
       reportedAttemptCounts: [{ scope: "pitch", pitch: { number: 1 }, count: 2 }],
     });
     expect(log).toMatchObject({
@@ -72,9 +102,14 @@ describe("ClimbingActivityLogEntryRepository PostgreSQL projection", () => {
       externalId: "grouped",
       climb: route,
       attempts: [
-        { scope: "climb", sourceKey: "whole", outcome: "completed", usedAid: true },
-        { scope: "pitch", pitch: { number: 1 }, parentSourceKey: "whole", outcome: "completed" },
-        { scope: "pitch", parentSourceKey: "whole", outcome: "failed" },
+        { scope: "climb", sourceKey: "whole", sourceResult: "completed", usedAid: true },
+        {
+          scope: "pitch",
+          pitch: { number: 1 },
+          parentSourceKey: "whole",
+          sourceResult: "completed",
+        },
+        { scope: "pitch", parentSourceKey: "whole", sourceResult: "failed" },
       ],
     });
     expect(log).toMatchObject({
@@ -95,8 +130,8 @@ describe("ClimbingActivityLogEntryRepository PostgreSQL projection", () => {
       externalId: "unidentified",
       climb: route,
       attempts: [
-        { scope: "pitch", outcome: "completed", notes: "First unidentified pitch" },
-        { scope: "pitch", outcome: "failed", notes: "Another unidentified pitch" },
+        { scope: "pitch", sourceResult: "completed", notes: "First unidentified pitch" },
+        { scope: "pitch", sourceResult: "failed", notes: "Another unidentified pitch" },
       ],
     });
     expect(log.pitchResults).toHaveLength(2);
@@ -128,7 +163,7 @@ describe("ClimbingActivityLogEntryRepository PostgreSQL projection", () => {
           { externalId: "wall", name: "Wall", coordinates: { latitude: 0, longitude: -122.25 } },
         ],
       },
-      attempts: [{ scope: "climb", qualifier: "free-send" }],
+      attempts: [{ scope: "climb", sourceResult: "Send", qualifier: "free-send" }],
     });
     await write({
       externalId: "new",
@@ -162,7 +197,7 @@ describe("ClimbingActivityLogEntryRepository PostgreSQL projection", () => {
       externalId: "summit",
       discipline: "mountaineering",
       climb: { externalId: "summit-one", kind: "summit", name: "Summit" },
-      attempts: [{ scope: "climb", outcome: "completed" }],
+      attempts: [{ scope: "climb", sourceResult: "completed" }],
     });
     expect(summit).toMatchObject({
       climbedOn: null,
@@ -180,7 +215,15 @@ describe("ClimbingActivityLogEntryRepository PostgreSQL projection", () => {
         kind: "boulder",
         publishedGrades: [{ value: "V4", system: "v_scale" }],
       },
-      attempts: [{ scope: "climb", qualifier: "dab", fellOrHung: false, usedAid: false }],
+      attempts: [
+        {
+          scope: "climb",
+          sourceResult: "Dab",
+          qualifier: "dab",
+          fellOrHung: false,
+          usedAid: false,
+        },
+      ],
     });
     expect(dab).toMatchObject({ recordedClimbOutcome: "completed" });
     expect(dab.attempts[0]?.rockResultLabels).toEqual([]);
@@ -204,7 +247,7 @@ describe("ClimbingActivityLogEntryRepository PostgreSQL projection", () => {
       climbedOn: "2026-10-01",
       discipline: "mountaineering",
       climb: { externalId: "summit", kind: "summit" },
-      attempts: [{ scope: "climb", outcome: "completed" }],
+      attempts: [{ scope: "climb", sourceResult: "completed" }],
     });
     expect(
       (await repo().getActivityLogEntries(parent.groupId)).map((entry) => entry.toDetail()),

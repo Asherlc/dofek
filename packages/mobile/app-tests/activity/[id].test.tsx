@@ -819,11 +819,12 @@ describe("ActivityDetailScreen", () => {
     expect(screen.getByText("Mountain Project")).toBeTruthy();
     expect(screen.getByText("OpenBeta")).toBeTruthy();
     expect(screen.getByText("Blue Circuit")).toBeTruthy();
+    expect(screen.getByText("Top rope")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Details for Project" }));
     expect(screen.getByText("Country > State > Region > Park > Crag > Wall")).toBeTruthy();
-    expect(screen.getByText("Top rope")).toBeTruthy();
+    expect(screen.getAllByText("Top rope")).toHaveLength(2);
     expect(screen.getByText("Fell or hung")).toBeTruthy();
-    expect(screen.getByText("Whole climb outcome unknown · 1 recorded attempt")).toBeTruthy();
+    expect(screen.getByText("Whole climb · 1 recorded attempt")).toBeTruthy();
     const controls = within(climbsCard).getAllByRole("button", {
       name: /^Attach entry \d+, .* to this activity$/,
     });
@@ -1531,13 +1532,15 @@ describe("ActivityDetailScreen", () => {
     );
     expect(screen.getAllByText("5.4", { exact: true })).toHaveLength(2);
     expect(screen.getAllByText("Goat Rock")).toHaveLength(2);
+    expect(screen.getAllByText("Top rope")).toHaveLength(2);
     for (const control of screen.getAllByRole("button", { name: "Details for Swiss Cheese" }))
       fireEvent.click(control);
     expect(screen.getAllByText("California > Goat Rock")).toHaveLength(2);
-    expect(screen.getAllByText("Top rope")).toHaveLength(2);
+    expect(screen.getAllByText("Top rope")).toHaveLength(4);
+    expect(screen.getAllByText("Not reported by source")).toHaveLength(2);
     expect(screen.getAllByText("Mountain Project")).toHaveLength(2);
     expect(screen.queryByText("Result unknown")).toBeNull();
-    expect(screen.getAllByText("Whole climb outcome unknown · 1 recorded attempt")).toHaveLength(2);
+    expect(screen.getAllByText("Whole climb · 1 recorded attempt")).toHaveLength(2);
   });
 
   it("shows the climbs attached to a canonical climbing activity", async () => {
@@ -1732,7 +1735,7 @@ describe("ActivityDetailScreen", () => {
     expect(screen.getByText("Project")).toBeTruthy();
     expect(screen.getByText("Whole climb failed · 1 recorded attempt")).toBeTruthy();
     expect(screen.getByText("Wall angle: 35°")).toBeTruthy();
-    expect(screen.getByText("Whole climb outcome unknown · 1 recorded attempt")).toBeTruthy();
+    expect(screen.getByText("Whole climb · 1 recorded attempt")).toBeTruthy();
     expect(screen.getAllByText("Touchstone Pacific Pipe")).toHaveLength(3);
     fireEvent.click(screen.getByRole("button", { name: "Details for Project" }));
     expect(screen.getByText("Hold type: crimp")).toBeTruthy();

@@ -104,7 +104,7 @@ describe("OpenBetaProvider canonical persistence", () => {
         .where(eq(climbingAttempt.climbingLogEntryId, flash.id)),
     ).toEqual([
       expect.objectContaining({
-        outcome: "completed",
+        sourceResult: "Flash",
         fellOrHung: false,
         usedAid: false,
         receivedBeta: null,
@@ -181,7 +181,7 @@ describe("OpenBetaProvider canonical persistence", () => {
     ]);
     expect(await context.db.select().from(climbGrade)).toEqual([]);
     expect(await context.db.select().from(climbingAttempt)).toEqual([
-      expect.objectContaining({ outcome: null, fellOrHung: null, attemptIndex: null }),
+      expect.objectContaining({ sourceResult: null, fellOrHung: null, attemptIndex: null }),
     ]);
   });
   it("retains an unmatched tick name without overwriting a shared catalogue name", async () => {
