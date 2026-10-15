@@ -86,6 +86,43 @@ describe("MountainProjectClient", () => {
     },
   );
 
+  it.each([
+    ["route", "<html>Check your browser</html>"],
+    ["area", "<html>Check your browser</html>"],
+    ["route", '{"id":'],
+    ["area", '{"id":'],
+  ] as const)("contextualizes invalid %s response JSON: %s", async (kind, body) => {
+    const client = new MountainProjectClient(async () => new Response(body, { status: 200 }));
+    await expect(
+      kind === "route" ? client.getRoute("123") : client.getArea("123"),
+    ).rejects.toMatchObject({
+      message: `Mountain Project ${kind} 123 returned invalid data. Please try again.`,
+      cause: expect.any(SyntaxError),
+    });
+  });
+
+  it.each([
+    ["route", "AbortError"],
+    ["area", "AbortError"],
+    ["route", "TimeoutError"],
+    ["area", "TimeoutError"],
+  ] as const)("preserves %s response body %s failures", async (kind, name) => {
+    const failure = new DOMException("Response body interrupted", name);
+    const client = new MountainProjectClient(
+      async () =>
+        new Response(
+          new ReadableStream({
+            start(controller) {
+              controller.error(failure);
+            },
+          }),
+        ),
+    );
+    await expect(kind === "route" ? client.getRoute("123") : client.getArea("123")).rejects.toBe(
+      failure,
+    );
+  });
+
   it.each([null, undefined])("retains unavailable native Area GPS as %s", async (coordinates) => {
     const client = new MountainProjectClient(async () =>
       Response.json({

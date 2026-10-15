@@ -101,7 +101,16 @@ export class MountainProjectClient {
         `Mountain Project ${kind} ${id} failed (${response.status}). Please try again.`,
       );
     }
-    const raw = rawResponseSchema.safeParse(await response.json());
+    let body: unknown;
+    try {
+      body = await response.json();
+    } catch (error) {
+      if (!(error instanceof SyntaxError)) throw error;
+      throw new Error(`Mountain Project ${kind} ${id} returned invalid data. Please try again.`, {
+        cause: error,
+      });
+    }
+    const raw = rawResponseSchema.safeParse(body);
     const parsed = schema.safeParse(raw.success ? raw.data : undefined);
     if (!raw.success || !parsed.success || parsed.data.id !== Number(id)) {
       throw new Error(`Mountain Project ${kind} ${id} returned invalid data. Please try again.`);
