@@ -28,6 +28,7 @@ interface DeployConsumerOptions {
 }
 
 interface DeployQuiescedOptions extends DeployConsumerOptions {
+  readonly deploymentMode?: "rolling" | "maintenance";
   readonly serviceObservations?: Readonly<Record<string, readonly ServiceObservation[]>>;
   readonly stackDeployStatus?: number;
 }
@@ -325,6 +326,7 @@ function runDeployQuiesced(
         FAIL_TASK_INSPECTION: options.failTaskInspection ? "1" : "0",
         APP_IMAGE: deployTestRepository + "@" + deployTestDigest,
         STACK_DEPLOY_STATUS: (options.stackDeployStatus ?? 0).toString(),
+        MIGRATION_DEPLOYMENT_MODE: options.deploymentMode ?? "rolling",
         STACK_DEPLOY_CAPTURE: stackDeployCapturePath,
         ADVANCE_ON_SERVICE_LS: "1",
         MOCK_SLEEP_SECONDS: (options.sleepSeconds ?? 10).toString(),
@@ -442,6 +444,7 @@ ${workflowRunScript(step)}
         env: {
           ...process.env,
           APP_IMAGE: expectedImage,
+          MIGRATION_DEPLOYMENT_MODE: "rolling",
           WEB_ENV_FILE: "/synthetic/web.env",
           WEB_PRE_MIGRATION_ENV_FILE: "/synthetic/web-pre-migration.env",
           RUNNER_TEMP: "/synthetic",
@@ -514,6 +517,30 @@ ${workflowRunScript(step)}
     expect(result.stdout).toContain("diagnostic task output for dofek_web");
     expect(result.githubOutput).toContain("web_convergence_failed=true");
   });
+
+  it.each(["rollback_started", "rollback_completed", "rollback_paused", "paused"])(
+    "fails maintenance rollout immediately when web is %s",
+    (updateState) => {
+      const result = runDeployQuiesced([STABLE_OBSERVATION], {
+        deploymentMode: "maintenance",
+        serviceObservations: {
+          dofek_web: [{
+            ...STABLE_OBSERVATION,
+            desiredReplicas: "0",
+            replicas: "0/0",
+            image: "ghcr.io/asherlc/dofek:previous",
+            updateState,
+          }],
+        },
+        sleepSeconds: 2100,
+      });
+
+      expect(result.status).toBe(1);
+      expect(result.stdout).toContain("Maintenance rollout failed");
+      expect(result.githubOutput).toContain("web_convergence_failed=false");
+      expect(result.githubOutput).not.toContain("web_convergence_failed=true");
+    },
+  );
 
   it("waits for the rolled-back web service to regain all desired replicas", () => {
     const result = runDeployQuiesced([STABLE_OBSERVATION], {
@@ -808,14 +835,79 @@ function runImageSelection() {
 }
 
 describe("deploy workflow image selection", () => {
-  it("passes the old pinned image and old web environment through dotenv stack interpolation", () => {
-    const script = ["Create dotenv command runner", "Apply dependency stack before migrations"]
-      .map(workflowRunScript).join("\n");
-    const result = runDeployImageFixture({ script, environment: { APP_IMAGE: deployTestOldImage } });
+  it("passes both pinned images to migration history selection", () => {
+    const requested = `${deployTestRepository}@${deployTestDigest}`;
+    const result = spawnSync(
+      "bash",
+      [
+        "-e", "-o", "pipefail", "-c",
+        `
+pnpm() { printf '%s\\n' "$@"; }
+${workflowRunScript("Select migration deployment mode from image histories")}
+`,
+      ],
+      {
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          APP_IMAGE: requested,
+          PRE_MIGRATION_APP_IMAGE: deployTestOldImage,
+          STACK_NAME: "dofek",
+        },
+      },
+    );
     expect(result.status, result.stderr).toBe(0);
-    expect(result.stdout).toContain(`DEPLOY_IMAGE=${deployTestOldImage}`);
-    expect(result.stdout).toContain("WEB_ENV_FILE=old-web.env");
+    expect(result.stdout.trim().split("\n")).toEqual([
+      "tsx", "scripts/prepare-migration-deployment.ts", requested, "dofek", deployTestOldImage,
+    ]);
   });
+
+  it.each(["rolling", "maintenance"])(
+    "passes the old pinned image and old web environment through dotenv stack interpolation for %s",
+    (mode) => {
+      const script = ["Create dotenv command runner", "Apply dependency stack before migrations"]
+        .map(workflowRunScript).join("\n");
+      const result = runDeployImageFixture({
+        script,
+        environment: {
+          APP_IMAGE: deployTestOldImage,
+          MIGRATION_DEPLOYMENT_MODE: mode,
+          MIGRATION_MAINTENANCE_BOUNDARY: "0148_compute_climbing_attempt_outcome",
+        },
+      });
+      expect(result.status, result.stderr).toBe(0);
+      expect(result.stdout).toContain(`DEPLOY_IMAGE=${deployTestOldImage}`);
+      expect(result.stdout).toContain("WEB_ENV_FILE=old-web.env");
+      const apply = result.calls.find((call) => call[0] === "stack" && call[1] === "deploy");
+      expect(apply).toEqual(expect.arrayContaining([
+        "deploy/stack.cdc-quiesce.yml", "deploy/stack.migration-quiesce.yml",
+      ]));
+      expect(apply?.includes("deploy/stack.maintenance.yml")).toBe(mode === "maintenance");
+    },
+  );
+  it("pins the selected maintenance boundary through dotenv loading", () => {
+    const selectedBoundary = "0148_compute_climbing_attempt_outcome";
+    const contaminateFixture = String.raw`
+printf '%s\n' 'MIGRATION_MAINTENANCE_BOUNDARY=stale_boundary' >> "$INFISICAL_ENV_FILE"
+printf '\n%s\n' 'console.log("MAINTENANCE_BOUNDARY=" + process.env.MIGRATION_MAINTENANCE_BOUNDARY);' >> "$RUNNER_TEMP/docker"
+`;
+    const script = [
+      contaminateFixture,
+      workflowRunScript("Create dotenv command runner"),
+      workflowRunScript("Apply dependency stack before migrations"),
+    ].join("\n");
+    const result = runDeployImageFixture({
+      script,
+      environment: {
+        APP_IMAGE: deployTestOldImage,
+        MIGRATION_DEPLOYMENT_MODE: "maintenance",
+        MIGRATION_MAINTENANCE_BOUNDARY: selectedBoundary,
+      },
+    });
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout).toContain(`MAINTENANCE_BOUNDARY=${selectedBoundary}`);
+  });
+
   it("pins the validated image even when the registry tag moves after resolution", () => {
     const result = runImageSelection();
     expect(result.status, result.stderr).toBe(0);

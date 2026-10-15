@@ -1,5 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
+import { climbingAttemptFixture } from "../../server/src/repositories/climbing-test-helpers.ts";
 import { ClimbingLogEntryCard } from "./ClimbingLogEntryCard";
 import {
   areaClimbingLocation,
@@ -8,6 +9,34 @@ import {
 } from "./climbing-log-entry-fixtures";
 
 describe("ClimbingLogEntryCard", () => {
+  it("shows the recorded top-rope method when the source omits a completion result", () => {
+    if (!climbingLogFixture.climb) throw new Error("Expected a named climb fixture");
+    render(
+      <ClimbingLogEntryCard
+        entry={{
+          ...climbingLogFixture,
+          climb: { ...climbingLogFixture.climb, name: "Havarti Cheese" },
+          recordedClimbOutcome: null,
+          recordedClimbAttemptCount: 1,
+          attempts: [
+            climbingAttemptFixture(climbingLogFixture.id, {
+              ropeMethod: "top_rope",
+              outcome: null,
+            }),
+          ],
+        }}
+      />,
+    );
+    expect(screen.getByText("Havarti Cheese")).toBeTruthy();
+    expect(screen.getByText("Top rope")).toBeTruthy();
+    expect(screen.getByText("Whole climb · 1 recorded attempt")).toBeTruthy();
+    const details = screen.getByRole("button", { name: "Details for Havarti Cheese" });
+    expect(details.getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(details);
+    expect(screen.getByText("Not reported by source")).toBeTruthy();
+    expect(screen.getAllByText("Top rope")).toHaveLength(2);
+  });
+
   it("exposes a pending attachment as busy and disabled to assistive technology", () => {
     const onAttach = vi.fn();
     render(

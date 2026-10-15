@@ -92,28 +92,55 @@ describe("OpenBetaProvider", () => {
     {
       style: "Lead",
       label: "Onsight",
-      expected: { scope: "climb", ropeMethod: "lead", qualifier: "free-onsight" },
+      expected: {
+        scope: "climb",
+        ropeMethod: "lead",
+        qualifier: "free-onsight",
+        sourceResult: "Onsight",
+      },
     },
     {
       style: "TR",
       label: "Flash",
-      expected: { scope: "climb", ropeMethod: "top_rope", qualifier: "free-flash" },
+      expected: {
+        scope: "climb",
+        ropeMethod: "top_rope",
+        qualifier: "free-flash",
+        sourceResult: "Flash",
+      },
     },
     {
       style: "Follow",
       label: "Redpoint",
-      expected: { scope: "climb", ropeMethod: "follow", qualifier: "free-send" },
+      expected: {
+        scope: "climb",
+        ropeMethod: "follow",
+        qualifier: "free-send",
+        sourceResult: "Redpoint",
+      },
     },
     { style: "Solo", label: null, expected: { scope: "climb", ropeMethod: null, solo: true } },
     {
       style: "Aid",
       label: "Onsight",
-      expected: { scope: "climb", ropeMethod: null, usedAid: true, qualifier: "aid-onsight" },
+      expected: {
+        scope: "climb",
+        ropeMethod: null,
+        usedAid: true,
+        qualifier: "aid-onsight",
+        sourceResult: "Onsight",
+      },
     },
     {
       style: "Aid",
       label: "Flash",
-      expected: { scope: "climb", ropeMethod: null, usedAid: true, qualifier: "aid-flash" },
+      expected: {
+        scope: "climb",
+        ropeMethod: null,
+        usedAid: true,
+        qualifier: "aid-flash",
+        sourceResult: "Flash",
+      },
     },
     {
       style: "Aid",
@@ -127,19 +154,42 @@ describe("OpenBetaProvider", () => {
     },
     {
       style: "Lead",
+      label: " Frenchfree ",
+      expected: { scope: "climb", ropeMethod: "lead", usedAid: true },
+    },
+    {
+      style: "Lead",
       label: "Pinkpoint",
       expected: {
         scope: "climb",
         ropeMethod: "lead",
         usedPreplacedProtection: true,
         qualifier: "free-send",
+        sourceResult: "Pinkpoint",
+      },
+    },
+    {
+      style: "Lead",
+      label: " Pinkpoint ",
+      expected: {
+        scope: "climb",
+        ropeMethod: "lead",
+        usedPreplacedProtection: true,
+        qualifier: "free-send",
+        sourceResult: " Pinkpoint ",
       },
     },
     { style: null, label: "Unknown", expected: { scope: "climb", ropeMethod: null } },
+    { style: "Lead", label: "Attempt", expected: { scope: "climb", ropeMethod: "lead" } },
     {
       style: "Lead",
       label: " oNsIgHt ",
-      expected: { scope: "climb", ropeMethod: "lead", qualifier: "free-onsight" },
+      expected: {
+        scope: "climb",
+        ropeMethod: "lead",
+        qualifier: "free-onsight",
+        sourceResult: " oNsIgHt ",
+      },
     },
   ])(
     "preserves exact independent attempt facts $style/$label",
@@ -580,12 +630,13 @@ describe("OpenBetaProvider", () => {
     ["Redpoint", "free-send"],
     ["Send", "free-send"],
     ["Fell/Hung", "fell-hung"],
-  ])("maps qualifier %s without storing a result label", async (attemptType, qualifier) => {
+  ])("maps qualifier %s while retaining the raw source result", async (attemptType, qualifier) => {
     const { db } = makeDb();
     await new OpenBetaProvider(async () =>
       graphqlResponse({ userTicks: [tick({ attemptType })] }),
     ).sync(makeRun(db));
     expect(entries()[0]?.attempts[0]?.qualifier).toBe(qualifier);
+    expect(entries()[0]?.attempts[0]?.sourceResult).toBe(attemptType);
   });
   it.each(["OB", "MP"])("uses the OpenBeta UUID namespace for source %s", async (source) => {
     const { db } = makeDb();

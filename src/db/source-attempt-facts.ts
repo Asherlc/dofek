@@ -1,10 +1,10 @@
-import type { ClimbingAttempt, ClimbKind } from "@dofek/training/climbing-log";
+import type { ClimbKind, RecordedClimbingAttempt } from "@dofek/training/climbing-log";
 
 export type SourceAttemptFacts = Partial<
   Pick<
-    ClimbingAttempt,
+    RecordedClimbingAttempt,
     | "attemptIndex"
-    | "outcome"
+    | "sourceResult"
     | "ropeMethod"
     | "solo"
     | "protectionUsed"
@@ -44,9 +44,6 @@ export function normalizeSourceAttemptFacts(
   const aid = qualifier === "aid-onsight" || qualifier === "aid-flash";
   const onsight = qualifier === "free-onsight" || qualifier === "aid-onsight";
   const flash = qualifier === "free-flash" || qualifier === "aid-flash";
-  if (free || aid || qualifier === "dab") {
-    inferred.outcome = "completed";
-  }
   if (free) {
     inferred.fellOrHung = false;
     inferred.usedAid = false;
@@ -60,14 +57,7 @@ export function normalizeSourceAttemptFacts(
   if (qualifier === "fell-hung") inferred.fellOrHung = true;
   if (qualifier === "dab") inferred.dabbed = true;
 
-  for (const key of [
-    "attemptIndex",
-    "outcome",
-    "fellOrHung",
-    "usedAid",
-    "dabbed",
-    "receivedBeta",
-  ] as const) {
+  for (const key of ["attemptIndex", "fellOrHung", "usedAid", "dabbed", "receivedBeta"] as const) {
     if (inferred[key] != null && supplied[key] != null && supplied[key] !== inferred[key]) {
       throw new Error(`Source ${qualifier} qualifier conflicts with the recorded ${key} fact.`);
     }

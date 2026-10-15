@@ -364,7 +364,7 @@ describe("MountainProjectProvider", () => {
       },
     });
     expect(entries()[0]?.attempts).toStrictEqual([
-      { scope: "climb", ...facts, qualifier: "fell-hung" },
+      { scope: "climb", ...facts, qualifier: "fell-hung", sourceResult: "Fell/Hung" },
     ]);
   });
   it.each([
@@ -386,6 +386,24 @@ describe("MountainProjectProvider", () => {
   ])("maps source qualifier %s to attempt facts", async (source, qualifier) => {
     await run(provider(async () => new Response(csv([row("Lead", source)]))));
     expect(entries()[0]?.attempts[0]?.qualifier).toBe(qualifier);
+    expect(entries()[0]?.attempts[0]?.sourceResult).toBe(source);
+  });
+  it("retains the source spelling of a supported result", async () => {
+    await expect(
+      run(provider(async () => new Response(csv([row("Lead", " rEdPoInT ")])))),
+    ).resolves.toMatchObject({ recordsSynced: 1, errors: [] });
+    expect(entries()[0]?.attempts[0]).toMatchObject({
+      qualifier: "free-send",
+      sourceResult: " rEdPoInT ",
+    });
+  });
+  it("retains aid use without promoting an unsupported aid Redpoint result", async () => {
+    await expect(
+      run(provider(async () => new Response(csv([row("Aid", "Redpoint")])))),
+    ).resolves.toMatchObject({ recordsSynced: 1, errors: [] });
+    expect(entries()[0]?.attempts).toStrictEqual([
+      { scope: "climb", ropeMethod: null, usedAid: true },
+    ]);
   });
   it("uses a boulder's source result while leaving rope method unknown", async () => {
     await run(provider(async () => new Response(csv([row("Flash", "", "Boulder", "V4")]))));

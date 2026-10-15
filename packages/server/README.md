@@ -26,6 +26,10 @@ The backend API and background job processor for Dofek. Built with Node.js, Expr
   Rock metrics select one compatible published grade per target and derive free-send
   evidence from its recorded attempts, through the [shared projection](src/repositories/climbing-rock-observations.ts).
   Whole-climb and pitch attempts remain separately scoped; unknown facts remain unknown.
+  Attempt outcomes come from `fitness.v_climbing_attempt`, which computes them
+  from retained source labels through the [canonical SQL function](../../drizzle/0148_compute_climbing_attempt_outcome.sql).
+  The [API contract](src/contracts/climbing-log-contracts.ts) continues returning
+  `completed`, `failed`, or null to web, mobile, and MCP clients.
 - **Provider climbing records**: The [provider detail repository](src/repositories/provider-detail-repository.ts)
   lists retained logs, including undated records and provider-absence tombstones,
   and loads the full owned graph for a selected record. The [sync repository](src/repositories/sync-repository.ts)

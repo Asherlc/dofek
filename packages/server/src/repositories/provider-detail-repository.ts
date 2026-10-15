@@ -530,7 +530,7 @@ export class ProviderDetailRepository {
           'Whole climb ' || COALESCE(entry.recorded_climb_outcome, 'outcome unknown')
         ELSE 'Pitch ' || COALESCE((SELECT CASE WHEN BOOL_OR(attempt.outcome = 'completed') THEN 'completed'
           WHEN BOOL_AND(COALESCE(attempt.outcome = 'failed', false)) THEN 'failed' END
-          FROM fitness.climbing_attempt AS attempt WHERE attempt.climbing_log_entry_id = entry.id AND attempt.scope = 'pitch'), 'outcome unknown') END AS result
+          FROM fitness.v_climbing_attempt AS attempt WHERE attempt.climbing_log_entry_id = entry.id AND attempt.scope = 'pitch'), 'outcome unknown') END AS result
       FROM fitness.v_climbing_log_entry AS entry
     ) AS log_records`
         : sql`${sql.raw(info.table)}`;

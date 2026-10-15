@@ -315,6 +315,7 @@ describe("bounded populated climbing conversion", () => {
       external_id: "kaya:session:1000:attempted:1000_2001",
       count: 3,
     });
+    await context.migrateToCurrent();
     const result = await persistClimbingLogEntries(context.db, {
       userId: TEST_USER_ID,
       providerId: "kaya",

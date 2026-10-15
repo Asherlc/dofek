@@ -131,7 +131,10 @@ const openBetaTickSchema = z
     notes: z.string().nullable(),
     climbId: z.string().nullable(),
     style: z.enum(["Lead", "Solo", "TR", "Follow", "Aid", "Boulder"]).nullable(),
-    attemptType: z.string().trim().min(1).nullable(),
+    attemptType: z
+      .string()
+      .refine((value) => value.trim().length > 0)
+      .nullable(),
     dateClimbed: z.number().int().nullable(),
     grade: z.string().nullable(),
     source: z.enum(["OB", "MP"]).nullable(),
@@ -421,6 +424,7 @@ function parseOpenBetaTicks(ticks: OpenBetaTick[]): OpenBetaTickParseResult {
       (tick.source === "OB" && z.uuid().safeParse(tick.climbId).success ? tick.climbId : null);
     const coordinates = sourceCoordinates(tick.climb?.metadata);
     const qualifier = sourceQualifier(tick.attemptType, tick.style === "Aid");
+    const resultLabel = tick.attemptType?.trim().toLowerCase();
     const pitches = tick.climb?.pitches
       ?.filter((value) => value !== null)
       .map((value) => {
@@ -445,13 +449,9 @@ function parseOpenBetaTicks(ticks: OpenBetaTick[]): OpenBetaTickParseResult {
           scope: "climb",
           ropeMethod: tick.style === null ? null : methods[tick.style],
           ...(tick.style === "Solo" ? { solo: true } : {}),
-          ...(tick.style === "Aid" || tick.attemptType?.toLowerCase() === "frenchfree"
-            ? { usedAid: true }
-            : {}),
-          ...(tick.attemptType?.toLowerCase() === "pinkpoint"
-            ? { usedPreplacedProtection: true }
-            : {}),
-          ...(qualifier === undefined ? {} : { qualifier }),
+          ...(tick.style === "Aid" || resultLabel === "frenchfree" ? { usedAid: true } : {}),
+          ...(resultLabel === "pinkpoint" ? { usedPreplacedProtection: true } : {}),
+          ...(qualifier === undefined ? {} : { qualifier, sourceResult: tick.attemptType }),
         },
       ],
       climb: {

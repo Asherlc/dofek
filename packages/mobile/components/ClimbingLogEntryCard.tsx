@@ -1,4 +1,7 @@
-import { formatClimbingRecordedResult } from "@dofek/format/climbing-log";
+import {
+  formatClimbingRecordedResult,
+  formatClimbingRopeMethods,
+} from "@dofek/format/climbing-log";
 import { providerSourceLabel } from "@dofek/providers/providers";
 import type { ClimbingMapLocation } from "@dofek/training/climbing-map";
 import { useState } from "react";
@@ -33,6 +36,7 @@ export function ClimbingLogEntryCard({
   const [open, setOpen] = useState(false);
   const name = entry.climb?.name ?? entry.title ?? "Climbing log";
   const attachmentPending = attachmentState?.pending ?? false;
+  const ropeMethods = formatClimbingRopeMethods(entry.attempts);
   return (
     <View
       style={[styles.card, selected && styles.selectedCard]}
@@ -68,6 +72,7 @@ export function ClimbingLogEntryCard({
           />
         </View>
       )}
+      {ropeMethods && <Text style={styles.summary}>{ropeMethods}</Text>}
       {entry.recordedClimbAttemptCount > 0 && (
         <Text style={styles.summary}>
           {formatClimbingRecordedResult(

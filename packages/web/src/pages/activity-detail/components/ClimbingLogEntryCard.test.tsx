@@ -1,11 +1,38 @@
 /** @vitest-environment jsdom */
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import {
+  climbingAttemptFixture,
   climbingClimbFixture,
   climbingLogEntryFixture,
 } from "../../../../../server/src/repositories/climbing-test-helpers.ts";
 import { ClimbingLogEntryCard } from "./ClimbingLogEntryCard.tsx";
+
+it("shows Havarti Cheese's recorded top-rope method and keeps missing source completion in Details", () => {
+  const climb = { ...climbingClimbFixture("mountain-project"), name: "Havarti Cheese" };
+  const entry = climbingLogEntryFixture({
+    providerId: "mountain-project",
+    sourceName: "Mountain Project",
+    climbId: climb.id,
+    climb,
+    recordedClimbAttemptCount: 1,
+    recordedClimbOutcome: null,
+  });
+  entry.attempts = [climbingAttemptFixture(entry.id, { ropeMethod: "top_rope" })];
+  render(
+    <ul>
+      <ClimbingLogEntryCard entry={entry} />
+    </ul>,
+  );
+  expect(screen.getByText("Havarti Cheese")).toBeInTheDocument();
+  expect(screen.getByText("Top rope")).toBeInTheDocument();
+  expect(screen.getByText("Whole climb · 1 recorded attempt")).toBeInTheDocument();
+  expect(screen.queryByText("Not reported by source")).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Details for Havarti Cheese" }));
+  const outcome = screen.getByText("Outcome").parentElement;
+  if (!outcome) throw new Error("Expected the completion fact row");
+  expect(within(outcome).getByText("Not reported by source")).toBeInTheDocument();
+});
 
 it.each([undefined, 3])(
   "identifies its Attach action and announces pending state for entry number %s",

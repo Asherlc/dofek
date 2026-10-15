@@ -176,11 +176,16 @@ describe("PerformanceComparisonRepository database semantics", () => {
                 solo: false,
                 ...(index === 0
                   ? completed
-                    ? { qualifier: "free-send" as const }
-                    : { outcome: "failed" as const }
+                    ? { sourceResult: "Send", qualifier: "free-send" as const }
+                    : { sourceResult: "failed" as const }
                   : {}),
               })),
-              { scope: "pitch", pitch: { number: 1 }, qualifier: "free-send" },
+              {
+                scope: "pitch",
+                pitch: { number: 1 },
+                sourceResult: "Send",
+                qualifier: "free-send",
+              },
             ],
           },
         ],

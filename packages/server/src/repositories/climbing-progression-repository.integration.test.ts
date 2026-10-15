@@ -70,7 +70,14 @@ describe("ClimbingProgressionRepository database semantics", () => {
                 },
               ],
             },
-            attempts: [{ scope: "climb", ...(qualifier === null ? {} : { qualifier }) }],
+            attempts: [
+              {
+                scope: "climb",
+                ...(qualifier === null
+                  ? {}
+                  : { qualifier, sourceResult: qualifier === "free-flash" ? "Flash" : "Send" }),
+              },
+            ],
             reportedAttemptCounts: [{ scope: "climb", count }],
           },
         ],
@@ -202,7 +209,7 @@ describe("ClimbingProgressionRepository database semantics", () => {
             name: "Vertical",
             publishedGrades: [{ value: "V2", system: "v_scale" }],
           },
-          attempts: [{ scope: "climb", qualifier: "free-send" }],
+          attempts: [{ scope: "climb", sourceResult: "Send", qualifier: "free-send" }],
         },
         {
           externalId: "unverified-angle",
@@ -215,7 +222,7 @@ describe("ClimbingProgressionRepository database semantics", () => {
             name: "Board",
             publishedGrades: [{ value: "V3", system: "v_scale" }],
           },
-          attempts: [{ scope: "climb", qualifier: "free-send" }],
+          attempts: [{ scope: "climb", sourceResult: "Send", qualifier: "free-send" }],
         },
       ],
     });
@@ -280,11 +287,24 @@ describe("ClimbingProgressionRepository database semantics", () => {
             ],
           },
           attempts: [
-            { scope: "climb", outcome: "completed", ropeMethod: "lead", solo: true, usedAid: true },
-            { scope: "climb", qualifier: "free-send", ropeMethod: "top_rope", solo: false },
+            {
+              scope: "climb",
+              sourceResult: "completed",
+              ropeMethod: "lead",
+              solo: true,
+              usedAid: true,
+            },
+            {
+              scope: "climb",
+              sourceResult: "Send",
+              qualifier: "free-send",
+              ropeMethod: "top_rope",
+              solo: false,
+            },
             {
               scope: "pitch",
               pitch: { externalId: "p1" },
+              sourceResult: "Send",
               qualifier: "free-send",
               ropeMethod: "follow",
               solo: false,

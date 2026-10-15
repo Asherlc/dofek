@@ -396,7 +396,7 @@ function csvAttempt(value: string): SourceClimbingAttempt {
           : undefined;
   return {
     scope: "climb",
-    ...(qualifier ? { qualifier } : {}),
+    ...(qualifier ? { qualifier, sourceResult: value } : {}),
     ...(label === "repeat" ? { hadCompletedBefore: true } : {}),
   };
 }

@@ -227,7 +227,9 @@ CI (main) -> build dofek (+ dofek-ml for local ML tooling)
               -> upload immutable web assets
               -> sweep expired backups
               -> validate host bind sources
+              -> compare deployed/requested image migration histories; select rolling or maintenance
               -> non-pruning stack apply with analytics-worker, all metric-stream ClickHouse sinks, and processing-reconciliation quiesced
+              -> wait for quiesced tasks to stop (also web in maintenance mode)
               -> wait for Postgres, ClickHouse, and PeerDB
               -> reconcile live PeerDB mappings; validate the old destination schema
               -> migrate requested image on <stack>_default
@@ -442,6 +444,28 @@ resolved `APP_IMAGE`, and inspect the production job's actual conclusion in the
       which restores `worker` using the same image that ran the migrations while
       `analytics-worker`, all three metric-stream ClickHouse sinks, and
       `processing-reconciliation` remain stopped until the final stack deploy.
+      Migrations whose first line is `-- dofek: deployment-mode=maintenance`
+      also apply `stack.maintenance.yml`, stopping web before the schema changes.
+      The workflow compares the requested image's journal with the deployed web
+      image's journal, so a retry after a committed migration still selects
+      maintenance until the app image advances. Missing or divergent image
+      histories fail before the stack apply. Fresh stacks use maintenance mode.
+      The maintenance apply records the requested journal's final tag in web's
+      `dofek.migration-maintenance-target` service label. A subsequent request
+      must include that boundary, so an older release cannot restart old readers
+      after the database advances. The matching-image apply removes the label;
+      rollback restores it with the stopped old specification. Docker documents
+      [service labels](https://docs.docker.com/reference/compose-file/deploy/#labels).
+      Before any migration, CI verifies zero desired replicas and terminal
+      actual task states for every quiesced service, allowing the worker's
+      30-minute graceful drain to finish. A desired shutdown alone does not prove
+      that a task stopped; see [Swarm task states](https://docs.docker.com/engine/swarm/how-swarm-mode-works/swarm-task-states/).
+      The old web and worker specifications remain at zero until migrations
+      succeed, so Swarm rollback restores a stopped specification. A maintenance
+      rollout failure fails immediately and leaves consumers gated; rerun the
+      canonical workflow with the matching release rather than restoring the old
+      image. Docker documents [service rollback](https://docs.docker.com/reference/cli/docker/service/rollback/)
+      and [stack overlay application](https://docs.docker.com/reference/cli/docker/stack/deploy/).
       The deploy workflow waits explicitly for Postgres and ClickHouse instead
       of keeping a long-lived Docker-over-SSH stack-deploy wait open while the
       single-node host restarts services.
@@ -529,7 +553,13 @@ resource's `triggers_replace` value so Terraform actually reruns the remote
 - A failed swarm rollout can revert service specs and image versions.
 - It does **not** revert already-applied database migrations.
 - Treat migrations as forward-only production changes.
-- If a release includes schema changes, use expand/contract discipline: deploy additive/backward-compatible schema first, then ship code that depends on it, and only remove old schema in a later release.
+- Prefer expand/contract for schema changes: deploy additive/backward-compatible
+  schema first, then ship dependent code and remove old schema in a later release.
+  An approved schema-breaking migration must carry the maintenance marker above
+  so the canonical workflow stops old readers and writers before applying it.
+  Maintenance includes an availability interruption; do not roll back to the
+  removed schema's app image after migration. See Docker's
+  [rollback boundary](https://docs.docker.com/reference/cli/docker/service/rollback/).
 
 ### ClickHouse Read Models
 
@@ -657,6 +687,14 @@ references selected by the [image resolver](../scripts/resolve-deploy-image.ts):
   `analytics-worker`, all three metric-stream ClickHouse sinks, and
   `processing-reconciliation` to zero so all five remain stopped until the
   final stack deploy.
+- For a pending maintenance-marked schema boundary, the pre-migration apply
+  additionally stops web and verifies that all quiesced tasks actually exit.
+  Selection uses the deployed image journal, including when the database already
+  committed the migration during an earlier failed deployment. The web service's
+  maintenance-target label rejects older release requests until a matching image
+  replaces it. See the
+  [canonical workflow](../.github/workflows/deploy-web-stack.yml) and Docker's
+  [task-state lifecycle](https://docs.docker.com/engine/swarm/how-swarm-mode-works/swarm-task-states/).
 - On clean-slate hosts, the pre-migration deploy uses the requested immutable
   image (`APP_IMAGE`) because there is no old release to preserve; the migration quiesce overlay
   still keeps `worker` stopped until the one-shot migration completes, and the

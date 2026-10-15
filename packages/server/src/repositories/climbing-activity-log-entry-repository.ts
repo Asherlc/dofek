@@ -268,7 +268,7 @@ export class ClimbingActivityLogEntryRepository extends BaseRepository {
         'fellOrHung',attempt.fell_or_hung,'dabbed',attempt.dabbed,'receivedBeta',attempt.received_beta,
         'hadCompletedBefore',attempt.had_completed_before,'priorFailedAttemptsGroundUp',attempt.prior_failed_attempts_ground_up,
         'notes',attempt.notes,'createdAt',attempt.created_at
-      ) ORDER BY attempt.attempt_index NULLS LAST,attempt.created_at,attempt.id) FROM fitness.climbing_attempt AS attempt WHERE attempt.climbing_log_entry_id=entry.id),'[]'::jsonb) AS attempts
+      ) ORDER BY attempt.attempt_index NULLS LAST,attempt.created_at,attempt.id) FROM fitness.v_climbing_attempt AS attempt WHERE attempt.climbing_log_entry_id=entry.id),'[]'::jsonb) AS attempts
       FROM fitness.v_climbing_log_entry AS entry
       LEFT JOIN fitness.climb AS catalogue ON catalogue.id=entry.climb_id
       LEFT JOIN fitness.activity AS attached ON attached.id=entry.activity_id AND attached.user_id=entry.user_id

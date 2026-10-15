@@ -17,7 +17,6 @@ import { clinicalRecord } from "./schema/clinical.ts";
 import { TEST_USER_ID } from "./schema/core.ts";
 import {
   activityModalityEnum,
-  attemptOutcomeEnum,
   attemptScopeEnum,
   canonicalActivityTypeEnum,
   climbingDisciplineEnum,
@@ -79,7 +78,6 @@ describe("drizzleSchema", () => {
   it("aggregates climbing log entities and enums", () => {
     expect(drizzleSchema).toMatchObject({
       climbingAttempt,
-      attemptOutcomeEnum,
       area,
       climb,
       pitch,

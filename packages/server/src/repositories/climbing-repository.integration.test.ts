@@ -46,7 +46,7 @@ describe("ClimbingRepository PostgreSQL scoped rock summaries", () => {
       climbedOn: await climbingTestDate(context.db),
       discipline: "rock_climbing",
       climb: route,
-      attempts: [{ scope: "climb", qualifier: "free-send" }],
+      attempts: [{ scope: "climb", sourceResult: "Send", qualifier: "free-send" }],
       ...source,
     });
   }
@@ -81,7 +81,9 @@ describe("ClimbingRepository PostgreSQL scoped rock summaries", () => {
           { externalId: "pitch", number: 1, publishedGrades: [{ value: "5.12a", system: "yds" }] },
         ],
       },
-      attempts: [{ scope: "pitch", pitch: { number: 1 }, qualifier: "free-send" }],
+      attempts: [
+        { scope: "pitch", pitch: { number: 1 }, sourceResult: "Send", qualifier: "free-send" },
+      ],
     });
     expect(await volume()).toEqual([]);
     expect(await volume({ attemptScope: "pitch" })).toEqual([
@@ -107,7 +109,7 @@ describe("ClimbingRepository PostgreSQL scoped rock summaries", () => {
   });
   it("keeps aid completion and dabs out of free-send metrics", async () => {
     await write({
-      attempts: [{ scope: "climb", outcome: "completed", usedAid: true, fellOrHung: false }],
+      attempts: [{ scope: "climb", sourceResult: "completed", usedAid: true, fellOrHung: false }],
     });
     await write({
       externalId: "dab",
@@ -116,7 +118,15 @@ describe("ClimbingRepository PostgreSQL scoped rock summaries", () => {
         kind: "boulder",
         publishedGrades: [{ value: "V4", system: "v_scale" }],
       },
-      attempts: [{ scope: "climb", qualifier: "dab", usedAid: false, fellOrHung: false }],
+      attempts: [
+        {
+          scope: "climb",
+          sourceResult: "Dab",
+          qualifier: "dab",
+          usedAid: false,
+          fellOrHung: false,
+        },
+      ],
     });
     expect(await volume()).toEqual(
       expect.arrayContaining([
@@ -185,9 +195,9 @@ describe("ClimbingRepository PostgreSQL scoped rock summaries", () => {
   it("counts each recorded attempt once and preserves multiple completed attempts", async () => {
     await write({
       attempts: [
-        { scope: "climb", qualifier: "free-send" },
-        { scope: "climb", qualifier: "free-send" },
-        { scope: "climb", outcome: "failed" },
+        { scope: "climb", sourceResult: "Send", qualifier: "free-send" },
+        { scope: "climb", sourceResult: "Send", qualifier: "free-send" },
+        { scope: "climb", sourceResult: "failed" },
       ],
     });
     expect(await volume()).toEqual([
@@ -356,8 +366,8 @@ describe("ClimbingRepository PostgreSQL scoped rock summaries", () => {
         ],
       },
       attempts: [
-        { scope: "climb", qualifier: "free-send" },
-        { scope: "pitch", pitch: { number: 1 }, qualifier: "free-send" },
+        { scope: "climb", sourceResult: "Send", qualifier: "free-send" },
+        { scope: "pitch", pitch: { number: 1 }, sourceResult: "Send", qualifier: "free-send" },
       ],
       reportedAttemptCounts: [{ scope: "climb", count: 3 }],
     });

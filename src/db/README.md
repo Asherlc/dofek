@@ -68,7 +68,9 @@ identity. Coordinates use native PostgreSQL
 
 The [transactional writer](climbing-log-sync.ts) expands reported counts into
 scoped occurrences and retains one partially described occurrence when a total
-is missing. Recorded booleans and outcomes remain independently nullable.
+is missing. Recorded booleans and raw source result labels remain independently
+nullable. `fitness.v_climbing_attempt` computes outcome from each occurrence's
+original supported label through the [canonical result function](../../drizzle/0148_compute_climbing_attempt_outcome.sql).
 The readonly `fitness.v_climbing_log_entry` projection derives current paths,
 owned grade arrays, counts, and compatible free-send status; PostgreSQL
 [views](https://www.postgresql.org/docs/current/sql-createview.html) provide this
@@ -78,3 +80,7 @@ Populated upgrades use `pnpm migrate:climbing-log-model` and the
 [maintenance runbook](../../docs/climbing-log-model-cutover.md). Preparation,
 bounded conversion, validation, and finalization require quiesced old readers
 and writers. Fresh empty installations apply both schema stages directly.
+The subsequent [computed-outcome migration](../../drizzle/0148_compute_climbing_attempt_outcome.sql)
+also requires quiescing old readers and writers; it verifies raw evidence before
+removing the stored outcome. The [model guide](../../docs/climbing-context.md#maintenance-cutover)
+describes that boundary.

@@ -96,7 +96,7 @@ describe("parseKayaExport", () => {
         climbedOn: "2026-09-01",
         reportedGrades: [{ value: "V3", system: "v_scale" }],
         reportedAttemptCounts: [{ scope: "climb", count: 1 }],
-        attempts: [{ scope: "climb", qualifier: "free-flash" }],
+        attempts: [{ scope: "climb", qualifier: "free-flash", sourceResult: "Flash" }],
         climb: {
           externalId: null,
           name: "Test Climb",
@@ -163,6 +163,12 @@ describe("parseKayaExport", () => {
       });
     },
   );
+  it("retains the original result label on the described occurrence", () => {
+    expect(entries(parseKayaExport(csv(row(" rEdPoInT ", "3"))))[0]).toMatchObject({
+      attempts: [{ scope: "climb", qualifier: "free-send", sourceResult: " rEdPoInT " }],
+      reportedAttemptCounts: [{ scope: "climb", count: 3 }],
+    });
+  });
   it.each([
     ["not-a-date", "2", "date is not a valid Kaya date"],
     ["2026-02-30", "2", "date is not a valid Kaya date"],

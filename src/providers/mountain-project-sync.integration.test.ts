@@ -376,7 +376,7 @@ describe("MountainProjectProvider canonical persistence", () => {
       expect.objectContaining({
         scope: "climb",
         ropeMethod: "lead",
-        outcome: "completed",
+        sourceResult: "Onsight",
         fellOrHung: false,
         usedAid: false,
         receivedBeta: false,
@@ -596,7 +596,7 @@ describe("MountainProjectProvider canonical persistence", () => {
     expect(record?.climb).toMatchObject({ areaId: null, setting: null });
     expect(await ctx.db.select().from(climbGrade)).toEqual([]);
     expect(await ctx.db.select().from(climbingAttempt)).toEqual([
-      expect.objectContaining({ attemptIndex: null, outcome: null }),
+      expect.objectContaining({ attemptIndex: null, sourceResult: null }),
     ]);
   });
   it("persists published compound grades separately from a supplied route rating opinion", async () => {
@@ -624,7 +624,7 @@ describe("MountainProjectProvider canonical persistence", () => {
         scope: "climb",
         usedAid: true,
         fellOrHung: null,
-        outcome: "completed",
+        sourceResult: "Flash",
         receivedBeta: true,
       }),
     ]);
