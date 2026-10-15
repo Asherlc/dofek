@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => {
   const poolClient = {
+    off: vi.fn(),
+    on: vi.fn(),
     query: vi.fn(),
     release: vi.fn(),
   };
@@ -242,6 +244,64 @@ describe("PostgreSQL queued-work lock pool", () => {
       ["account-erasure-queued-user-work:user-1"],
     );
     expect(mocks.poolClient.release).toHaveBeenCalledWith();
+  });
+
+  it("fails the job and destroys the client when PostgreSQL ends the lock session", async () => {
+    const workLockPool = createAccountErasureWorkLockPool("postgres://database.test/dofek");
+    const sessionFailure = new Error("terminating connection due to administrator command");
+
+    const error = await workLockPool
+      .runWithSharedUserLock("user-1", async () => {
+        const [event, listener] = mocks.poolClient.on.mock.calls[0] ?? [];
+        expect(event).toBe("error");
+        listener(sessionFailure);
+        return "completed";
+      })
+      .catch((failure: unknown) => failure);
+
+    expect(error).toMatchObject({
+      cause: sessionFailure,
+      message: "Queued user work advisory lock was lost with its PostgreSQL session",
+    });
+    expect(mocks.poolClient.query).toHaveBeenCalledTimes(1);
+    expect(mocks.poolClient.release).toHaveBeenCalledWith(true);
+    expect(mocks.poolClient.off).not.toHaveBeenCalled();
+    expect(mocks.captureException).toHaveBeenCalledWith(sessionFailure, {
+      tags: {
+        accountErasureWorkLockStep: "session",
+        source: "account-erasure-work-lock",
+      },
+    });
+  });
+
+  it("preserves a callback failure when PostgreSQL ends the lock session", async () => {
+    const workLockPool = createAccountErasureWorkLockPool("postgres://database.test/dofek");
+    const workFailure = new Error("job failed");
+
+    await expect(
+      workLockPool.runWithSharedUserLock("user-1", async () => {
+        const [, listener] = mocks.poolClient.on.mock.calls[0] ?? [];
+        listener(new Error("Connection terminated unexpectedly"));
+        throw workFailure;
+      }),
+    ).rejects.toBe(workFailure);
+
+    expect(mocks.poolClient.release).toHaveBeenCalledWith(true);
+  });
+
+  it("detaches its session error listener before returning a healthy client to the pool", async () => {
+    const workLockPool = createAccountErasureWorkLockPool("postgres://database.test/dofek");
+
+    await expect(workLockPool.runWithSharedUserLock("user-1", async () => "done")).resolves.toBe(
+      "done",
+    );
+
+    const [event, listener] = mocks.poolClient.on.mock.calls[0] ?? [];
+    expect(event).toBe("error");
+    expect(mocks.poolClient.off).toHaveBeenCalledWith("error", listener);
+    expect(mocks.poolClient.off.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.poolClient.release.mock.invocationCallOrder[0] ?? 0,
+    );
   });
 
   it("releases the shared session lock when a job throws synchronously", async () => {

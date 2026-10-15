@@ -70,6 +70,17 @@ class PostgresAccountErasureWorkLockPool implements AccountErasureWorkLockPool {
     const releaseConnectionPermit = await this.#connectionPermits.acquire();
     try {
       const client = await this.#pool.connect();
+      let sessionError: Error | undefined;
+      const onSessionError = (error: Error) => {
+        sessionError ??= error;
+        Sentry.captureException(error, {
+          tags: {
+            accountErasureWorkLockStep: "session",
+            source: "account-erasure-work-lock",
+          },
+        });
+      };
+      client.on("error", onSessionError);
       const database = drizzle(client);
       try {
         await executeWithSchema(
@@ -97,6 +108,16 @@ class PostgresAccountErasureWorkLockPool implements AccountErasureWorkLockPool {
           (error: unknown): WorkOutcome<T> => ({ error, status: "failed" }),
         );
 
+      if (sessionError !== undefined) {
+        client.release(true);
+        if (outcome.status === "failed") {
+          throw outcome.error;
+        }
+        throw new Error("Queued user work advisory lock was lost with its PostgreSQL session", {
+          cause: sessionError,
+        });
+      }
+
       try {
         const unlockRows = await executeWithSchema(
           database,
@@ -122,6 +143,7 @@ class PostgresAccountErasureWorkLockPool implements AccountErasureWorkLockPool {
         }
         throw error;
       }
+      client.off("error", onSessionError);
       client.release();
 
       if (outcome.status === "failed") {
