@@ -238,8 +238,7 @@ function climbingRecord(
       return true;
     })
     .map((location) => ({ name: location.name, externalId: location.id ?? null }));
-  const sourceResult =
-    (nullableText(ascent.tick?.label) ? ascent.tick?.label : ascent.tick?.name) ?? null;
+  const sourceResult = (ascent.tick?.label?.trim() ? ascent.tick.label : ascent.tick?.name) ?? null;
   const label = sourceResult?.trim().toLowerCase();
   const usedAid =
     gearStyle === "aid" ||

@@ -249,6 +249,7 @@ describe("TheCragProvider logbook sync", () => {
   it.each([
     ["attempt", [{ scope: "climb", sourceResult: "attempt" }]],
     ["dog", [{ scope: "climb", sourceResult: "dog", fellOrHung: true }]],
+    ["hang dog", [{ scope: "climb", sourceResult: "hang dog", fellOrHung: true }]],
     ["tick", [{ scope: "climb", sourceResult: "tick" }]],
   ])("retains explicit source result %s independently of fall or hang", async (label, attempts) => {
     const database = createMockDatabase();
@@ -258,7 +259,47 @@ describe("TheCragProvider logbook sync", () => {
         .mockResolvedValue(response([theCragAscent({ tick: { label, name: label } })])),
     ).sync(makeRun(database.db));
     expect(result).toMatchObject({ recordsSynced: 1, errors: [] });
-    expect(writtenRecords()[0]).toMatchObject({ notes: "Personal ascent notes", attempts });
+    expect(writtenRecords()[0]?.notes).toBe("Personal ascent notes");
+    expect(writtenRecords()[0]?.attempts).toStrictEqual(
+      attempts.map((attempt) => ({ protectionUsed: ["sport"], ...attempt })),
+    );
+  });
+  it.each([
+    [" clean ", { sourceResult: " clean " }],
+    ["Send", { sourceResult: "Send" }],
+    ["Redpoint", { sourceResult: "Redpoint" }],
+    ["Pinkpoint", { sourceResult: "Pinkpoint", usedPreplacedProtection: true }],
+    ["unfamiliar-result", {}],
+  ])("retains aid result %j without introducing free-send or fall facts", async (label, facts) => {
+    const database = createMockDatabase();
+    const result = await new TheCragProvider(async () =>
+      response([theCragAscent({ climbedGearStyle: "aid", tick: { label } })]),
+    ).sync(makeRun(database.db));
+    expect(result).toMatchObject({ recordsSynced: 1, errors: [] });
+    expect(writtenRecords()[0]?.attempts).toStrictEqual([
+      { scope: "climb", protectionUsed: null, usedAid: true, ...facts },
+    ]);
+  });
+  it.each([
+    [{ name: " Tick " }, { sourceResult: " Tick " }],
+    [
+      { label: null, name: " Hang Dog " },
+      { sourceResult: " Hang Dog ", fellOrHung: true },
+    ],
+    [{ label: "  ", name: " Attempt " }, { sourceResult: " Attempt " }],
+    [
+      { label: " rEdPoInT ", name: "Tick" },
+      { qualifier: "free-send", sourceResult: " rEdPoInT " },
+    ],
+  ])("uses the reported result label or its name fallback (%j)", async (tick, facts) => {
+    const database = createMockDatabase();
+    const result = await new TheCragProvider(async () => response([theCragAscent({ tick })])).sync(
+      makeRun(database.db),
+    );
+    expect(result).toMatchObject({ recordsSynced: 1, errors: [] });
+    expect(writtenRecords()[0]?.attempts).toStrictEqual([
+      { scope: "climb", protectionUsed: ["sport"], ...facts },
+    ]);
   });
   it("maps an aid Onsight without inferring falling or hanging", async () => {
     const database = createMockDatabase();
@@ -464,6 +505,9 @@ describe("TheCragProvider logbook sync", () => {
     ["ground-up redpoint", { priorFailedAttemptsGroundUp: true }],
     ["pinkpoint", { usedPreplacedProtection: true }],
     ["french free", { usedAid: true }],
+    ["frenchfree", { usedAid: true }],
+    ["aid onsight", { usedAid: true, qualifier: "aid-onsight", sourceResult: "aid onsight" }],
+    ["aid flash", { usedAid: true, qualifier: "aid-flash", sourceResult: "aid flash" }],
     ["dab", { qualifier: "dab" }],
     ["fell/hung", { qualifier: "fell-hung" }],
   ])("maps independent source facts for %s", async (label, facts) => {
