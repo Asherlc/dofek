@@ -27,6 +27,7 @@ export function ActivityRouteMap({
   const [previewVisible, setPreviewVisible] = useState(presentation === "detail");
   const [inspectedPoint, setInspectedPoint] = useState<GpsCoordinates | null>(null);
   const [selectedEntryId, setSelectedEntryId] = useState<string | null>(null);
+  const [tileWarning, setTileWarning] = useState<string | null>(null);
 
   useEffect(() => {
     if (presentation !== "compact" || previewVisible || !mapRef.current) return;
@@ -54,6 +55,7 @@ export function ActivityRouteMap({
 
     if (points.length === 0 && climbMarkers.length === 0) return;
     setMapState({ loading: true, error: null });
+    setTileWarning(null);
 
     let cancelled = false;
 
@@ -84,7 +86,7 @@ export function ActivityRouteMap({
           tileErrorReported = true;
           const error = new Error("Map tiles could not load. Check your connection.");
           captureException(error, { component: "ActivityRouteMap" });
-          setMapState({ loading: false, error: error.message });
+          setTileWarning("Some map tiles could not load. Check your connection.");
         });
         tiles.addTo(map);
 
@@ -258,6 +260,11 @@ export function ActivityRouteMap({
           Loading map...
         </p>
       ) : null}
+      {!empty && !mapState.error && tileWarning && (
+        <p role="status" className="text-sm text-muted">
+          {tileWarning}
+        </p>
+      )}
     </div>
   );
 }

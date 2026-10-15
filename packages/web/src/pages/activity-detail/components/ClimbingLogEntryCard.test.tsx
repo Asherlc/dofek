@@ -7,6 +7,45 @@ import {
 } from "../../../../../server/src/repositories/climbing-test-helpers.ts";
 import { ClimbingLogEntryCard } from "./ClimbingLogEntryCard.tsx";
 
+it.each([undefined, 3])(
+  "identifies its Attach action and announces pending state for entry number %s",
+  (entryNumber) => {
+    const entry = climbingLogEntryFixture({ climb: climbingClimbFixture() });
+    const onAttach = vi.fn();
+    const name =
+      entryNumber == null
+        ? "Attach Corner to this activity"
+        : "Attach entry 3, Corner to this activity";
+    const view = render(
+      <ul>
+        <ClimbingLogEntryCard
+          entry={entry}
+          entryNumber={entryNumber}
+          onAttach={onAttach}
+          attachmentState={{ pending: false, error: null }}
+        />
+      </ul>,
+    );
+    const button = screen.getByRole("button", { name });
+    expect(button).toHaveAttribute("aria-busy", "false");
+    fireEvent.click(button);
+    expect(onAttach).toHaveBeenCalledWith(entry.id);
+    view.rerender(
+      <ul>
+        <ClimbingLogEntryCard
+          entry={entry}
+          entryNumber={entryNumber}
+          onAttach={onAttach}
+          attachmentState={{ pending: true, error: null }}
+        />
+      </ul>,
+    );
+    expect(screen.getByRole("button", { name })).toHaveAttribute("aria-busy", "true");
+    expect(screen.getByRole("button", { name })).toBeDisabled();
+    expect(screen.getByRole("button", { name })).toHaveTextContent("Attaching...");
+  },
+);
+
 it("keeps canonical source links and independent recorded facts accessible without GPS", () => {
   const entry = climbingLogEntryFixture({
     climb: climbingClimbFixture(),
@@ -28,7 +67,7 @@ it("keeps canonical source links and independent recorded facts accessible witho
   fireEvent.click(screen.getByRole("button", { name: "Details for Corner" }));
   expect(screen.getByText("Published climb grades")).toBeInTheDocument();
   expect(screen.getByText("5.10a (Yosemite Decimal System)")).toBeInTheDocument();
-  fireEvent.click(screen.getByRole("button", { name: "Attach to this activity" }));
+  fireEvent.click(screen.getByRole("button", { name: "Attach entry 3, Corner to this activity" }));
   expect(onAttach).toHaveBeenCalledWith(entry.id);
 });
 

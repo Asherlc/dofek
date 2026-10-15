@@ -1,27 +1,26 @@
 # Climbing Map Components Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox syntax for tracking.
+<!-- cspell:words activityroutemap routemap -->
 
-**Goal:** Implement activity-detail climb dots, tick point maps, and responsive tick grids, then validate them with Storybook fixtures on web and mobile.
+**Goal:** Implement activity-detail climb dots, point-map previews, and responsive climbing-log grids, then validate them with Storybook fixtures on web and mobile.
 
-**Architecture:** Components consume explicit source-location inputs alongside existing climbing entries. Reuse the current Leaflet and native map components for route and dot rendering. The user explicitly scoped this iteration to components and Storybook; canonical storage, provider ingestion, coordinate resolution, and live API wiring remain a separate implementation.
+**Architecture:** Components consume explicit source-location inputs alongside the canonical [climbing-log detail contract](../../../packages/server/src/contracts/climbing-log-contracts.ts). Reuse the [web route map](../../../packages/web/src/components/ActivityRouteMap.tsx) and [native route map](../../../packages/mobile/components/RouteMap.tsx) for route and dot rendering. This iteration covers components and Storybook; coordinate resolution and live GPS API wiring remain separate.
 
-**Tech Stack:** Existing React, TypeScript, Leaflet, React Native Maps, Vitest, and Storybook dependencies.
+**Tech Stack:** Existing React, TypeScript, Leaflet, React Native Maps, Vitest, and Storybook dependencies declared in the [web](../../../packages/web/package.json), [mobile](../../../packages/mobile/package.json), and [root](../../../package.json) manifests.
 
 **Spec:** [Activity-detail maps and grid](../specs/2026-10-13-climbing-log-model-summitpost-design.md#activity-detail-climb-maps-and-grid), with the component-only scope confirmed by the user on 2026-10-13.
 
+This completed plan was updated during integration with the [canonical climbing model cutover](../../climbing-log-model-cutover.md). Paths and verification commands below refer to the resulting components. Run commands from the repository root after following the [development setup](../../../README.md#quick-start) and [testing guide](../../testing.md).
+
 ## Global Constraints
 
-- Work in the existing `feat/climbs-map-gps-dots` worktree; do not switch branches.
 - Implement equivalent components and stories on web and mobile.
-- No provider, database, server API, or dependency changes in this iteration.
+- Keep this change within component presentation and Storybook fixtures; use the canonical model already supplied by the base branch. Provider ingestion, storage, server APIs, and dependencies are outside this component work.
 - Preserve source order, repeated occurrences, source links, and independent Attach pending/error states.
 - A containing place is labeled **Area location**; activity sensor GPS never supplies a missing tick location.
 - Source dots are independent of the sensor polyline; one-point previews have one source dot and no Start/Finish pins.
-- Keep sensor GPS export and chart-scrubbing eligibility unchanged.
-- Follow repository TDD and component-story requirements. Read package READMEs and local instructions; prefix shell commands with `rtk`.
-- Root coordinates commits after required checks and pushes every commit automatically.
-- Every development server has a persistent quick tunnel; user-facing preview links use its emitted `https://…trycloudflare.com` URL.
+- Preserve lifecycle queries, recorded-route loading/error states, sensor GPS export, and chart-scrubbing eligibility in the existing [web page](../../../packages/web/src/pages/ActivityDetailPage.tsx) and [mobile screen](../../../packages/mobile/app/activity/[id].tsx).
+- Write failing behavior tests before implementation and keep component stories beside their source files, following the [testing guide](../../testing.md).
 
 ## Review Focus
 
@@ -34,73 +33,100 @@
 ### Task 1: Shared location inputs and web components
 
 **Files:**
+
 - Create `packages/training/src/climbing-map.ts` with type-only location/marker contracts.
 - Create `packages/web/src/components/ActivityRouteMap.tsx`, its colocated tests and stories.
 - Modify `packages/web/src/pages/ActivityDetailPage.tsx` to consume the extracted route component, preserving existing query and sensor behavior.
-- Modify `packages/web/src/pages/activity-detail/components/ClimbingEntryBreakdown.tsx` and `UnattachedClimbingEntries.tsx`, plus their existing tests and stories.
-- Create a focused web tick-card component only if shared attached/suggestion presentation needs it, with colocated tests/stories.
+- Create `packages/web/src/pages/activity-detail/components/ClimbingLogEntryCard.tsx`, with colocated tests and stories.
+- Modify `packages/web/src/pages/activity-detail/components/ClimbingLogEntryBreakdown.tsx` and `UnattachedClimbingLogEntries.tsx`, plus their colocated tests and stories.
+
+The [card](../../../packages/web/src/pages/activity-detail/components/ClimbingLogEntryCard.tsx) preserves canonical source links, scoped whole-climb/pitch summaries, and the existing details disclosure. The [breakdown](../../../packages/web/src/pages/activity-detail/components/ClimbingLogEntryBreakdown.tsx) renders the grid; the [unattached wrapper](../../../packages/web/src/pages/activity-detail/components/UnattachedClimbingLogEntries.tsx) supplies attachment state and actions.
 
 **Interfaces:**
-- Shared `GpsCoordinates = { latitude: number; longitude: number }`.
+
+- Import the canonical [`GpsCoordinates`](../../../packages/training/src/gps-coordinates.ts) type rather than declaring another coordinate type.
 - Shared `ClimbingMapLocation = { coordinates: GpsCoordinates; scope: "climb" | "area"; objectId: string; providerId: string; name: string | null }`.
 - Shared `ClimbingMapMarker = { entryId: string; entryNumber?: number; label: string; location: ClimbingMapLocation }`. The presentation number follows the full card order, including cards without GPS.
-- `ActivityRouteMap` consumes existing `points: { lat: number; lng: number }[]`, optional `climbMarkers: readonly ClimbingMapMarker[]`, and the existing hover-callback ref. Support concrete detail and compact-card presentations.
-- Entry grid components accept optional `locations: Readonly<Record<string, ClimbingMapLocation>>`, keyed by entry ID. Existing live callers continue to render their supplied entries; stories supply GPS locations explicitly.
+- [`ActivityRouteMap`](../../../packages/web/src/components/ActivityRouteMap.tsx) consumes existing `points: { lat: number; lng: number }[]`, optional `climbMarkers: readonly ClimbingMapMarker[]`, the existing hover-callback ref, and optional `onSelectEntry`. It supports detail and compact-card presentations.
+- Entry grid components consume `ClimbingLogEntryDetail` and accept optional `locations: Readonly<Record<string, ClimbingMapLocation>>`, keyed by entry ID, plus `selectedEntryId` for occurrence highlighting. Existing live callers render their supplied logs; stories supply GPS locations explicitly. See the [shared map contracts](../../../packages/training/src/climbing-map.ts).
 
 - [x] Write failing behavior tests for source markers without a route, combined route/dots, single-point previews, area labels, repeated IDs at one point, safe tooltip text, independent Attach states, and preserved links.
 - [x] Run the focused web tests and verify failures describe the missing behavior.
 - [x] Implement shared input types, extract the existing Leaflet map, and render the attached/suggested tick grids. Preserve the route, start/end, attribution, hover cleanup, and sensor-only page gating. Report unexpected map initialization failures to Sentry and keep the cards usable on map errors.
 - [x] Add default, loading, empty, error, route-plus-dots, points-only, exact-climb, area, mixed-GPS, long-name, repeated-point, and narrow/wide Storybook cases as applicable.
-- [x] Run focused web tests and web/training typechecks; obtain independent spec and quality review before proceeding.
+- [x] Run focused web tests and web/training typechecks; review behavior against the specification.
 
-Run: `pnpm exec vitest run --project unit packages/web/src/components/ActivityRouteMap.test.tsx packages/web/src/pages/activity-detail/components/ClimbingEntryBreakdown.test.tsx packages/web/src/pages/activity-detail/components/UnattachedClimbingEntries.test.tsx packages/web/src/pages/ActivityDetailPage.test.tsx`.
+Run: `pnpm exec vitest run --project unit packages/web/src/components/ActivityRouteMap.test.tsx packages/web/src/pages/activity-detail/components/ClimbingLogEntryCard.test.tsx packages/web/src/pages/activity-detail/components/ClimbingLogEntryBreakdown.test.tsx packages/web/src/pages/activity-detail/components/UnattachedClimbingLogEntries.test.tsx packages/web/src/pages/ActivityDetailPage.test.tsx`.
 Expected: all selected tests pass.
 
 ### Task 2: Mobile map and tick-grid equivalents
 
 **Files:**
+
 - Modify `packages/mobile/components/RouteMap.tsx`, its colocated tests and stories.
-- Create focused `packages/mobile/components/ClimbingEntryCard.tsx` and `ClimbingEntryGrid.tsx`, with colocated tests and stories.
-- Modify `packages/mobile/app/activity/[id].tsx` to consume the card/grid presentation while preserving its current data/query behavior.
-- Modify `packages/mobile/app-tests/activity/[id].test.tsx` for the changed presentation and existing Attach interactions.
+- Create `packages/mobile/components/ClimbingLogEntryCard.tsx`, with colocated tests and stories.
+- Modify `packages/mobile/components/ClimbingLogEntryBreakdown.tsx` to render the grid and `UnattachedClimbingLogEntries.tsx` to supply attachment state and actions, with colocated tests and stories.
 - Update `packages/mobile/.storybook/mocks/react-native-maps.tsx` if needed so coordinates and distinct markers can be visually inspected; test any new mock runtime behavior next to that file.
 
+The canonical [activity screen](../../../packages/mobile/app/activity/[id].tsx) already consumes the [breakdown](../../../packages/mobile/components/ClimbingLogEntryBreakdown.tsx) and [unattached wrapper](../../../packages/mobile/components/UnattachedClimbingLogEntries.tsx). Integration updates those shared presentation components; the screen remains identical to the base branch. Its [route test](../../../packages/mobile/app-tests/activity/[id].test.tsx) now identifies Attach controls by their entry-specific accessible names. Lifecycle, query, and sensor behavior remain unchanged.
+
 **Interfaces:**
+
 - Consume the shared location and marker inputs from Task 1.
-- `RouteMap` retains its `points` and `hoveredPosition` inputs, adds optional `climbMarkers`, and supports a compact single-point preview.
-- Tick card/grid components consume the existing attached/suggestion entry contracts, optional location inputs, and explicit attachment state/action props. Do not fabricate API fields.
+- [`RouteMap`](../../../packages/mobile/components/RouteMap.tsx) retains its `points` and `hoveredPosition` inputs, adds optional `climbMarkers` and `onSelectEntry`, and supports a compact single-point preview.
+- The [card](../../../packages/mobile/components/ClimbingLogEntryCard.tsx) and grid consume `ClimbingLogEntryDetail`, optional location inputs, selected entry identity, and explicit attachment state/action props. Preserve canonical scoped results, source links, and the existing details disclosure.
 
 - [x] Write and run failing tests for points-only native maps, separate source markers, area provenance, one-point cards, stable entry order, long-name grids, and independent attachment errors/pending states.
 - [x] Implement native source dots and card grids. Preserve the measured-width map mounting gate, existing sensor route/hover behavior, and sensor-only GPX/TCX eligibility.
 - [x] Add paired mobile Storybook states matching the web cases. The web map adapter must represent supplied coordinates so separate dots can be inspected.
-- [x] Run focused mobile tests and mobile typecheck; obtain independent spec and quality review.
+- [x] Run focused mobile tests and mobile typecheck; review behavior against the specification.
 
-Run: `pnpm exec vitest run --project mobile packages/mobile/components/RouteMap.test.tsx packages/mobile/components/ClimbingEntryCard.test.tsx packages/mobile/components/ClimbingEntryGrid.test.tsx 'packages/mobile/app-tests/activity/[id].test.tsx'`.
+Run: `pnpm exec vitest run --project mobile packages/mobile/components/RouteMap.test.tsx packages/mobile/components/ClimbingLogEntryCard.test.tsx packages/mobile/components/ClimbingLogEntryBreakdown.test.tsx packages/mobile/components/UnattachedClimbingLogEntries.test.tsx packages/mobile/.storybook/mocks/react-native-maps.test.tsx 'packages/mobile/app-tests/activity/[id].test.tsx'`.
 Expected: all selected tests pass.
 
 ### Task 3: Storybook validation and delivery
 
 **Files:**
-- Update `packages/web/README.md` and `packages/mobile/README.md` to identify the component stories and the explicit location-input boundary, citing source components and the design.
-- Record task reviews and visual findings in this plan's `.superpowers/sdd/` progress ledger.
 
-- [x] Start web and mobile Storybook development servers with a quick tunnel for each server's lifetime.
-- [x] Use browser tooling to inspect route-plus-dots, points-only, mixed-GPS grids, long names, Attach pending/error, and narrow/wide layouts. Inspect accessible labels and console errors; fix observed problems with focused regression tests.
+- Update `packages/web/README.md` and `packages/mobile/README.md` to identify the component stories and the explicit location-input boundary, citing source components and the design.
+
+- [x] Inspect web and mobile Storybook previews for route-plus-dots, points-only, mixed-GPS grids, long names, Attach pending/error, and narrow/wide layouts. Check accessible labels and console errors; fix observed problems with focused regression tests.
 - [x] Run `pnpm lint`, root and all package typechecks, relevant unit/mobile suites, and both Storybook production builds. Expected: every command exits successfully.
-- [x] Obtain a fresh whole-change review against this plan and the user-approved component-only scope.
-- [x] Commit and push the implementation, verify clean Git status, and deliver the two tunnel preview links with an explicit statement that live GPS wiring remains separate.
+- [x] Review the complete change against this plan and its component-only scope.
+
+Reproduce static checks and builds with the [repository scripts](../../../package.json):
+
+```sh
+pnpm lint
+pnpm typecheck
+pnpm --recursive --if-present typecheck
+pnpm --dir packages/web build
+pnpm storybook:web:build
+pnpm storybook:mobile:build
+```
+
+For interactive review, use `pnpm storybook:web` and `pnpm storybook:mobile:web`. Append `?path=/story/<story-id>` to the preview's base URL. The following IDs match the current [web map stories](../../../packages/web/src/components/ActivityRouteMap.stories.tsx), [web log stories](../../../packages/web/src/pages/activity-detail/components/ClimbingLogEntryBreakdown.stories.tsx), [web suggestions](../../../packages/web/src/pages/activity-detail/components/UnattachedClimbingLogEntries.stories.tsx), [mobile map stories](../../../packages/mobile/components/RouteMap.stories.tsx), and [mobile log stories](../../../packages/mobile/components/ClimbingLogEntryBreakdown.stories.tsx):
+
+| Review case | Web story ID | Mobile story ID |
+| --- | --- | --- |
+| Source points without a sensor route | `activity-detail-activityroutemap--points-only` | `activity-routemap--points-only` |
+| Sensor route and source dots | `activity-detail-activityroutemap--route-plus-dots` | `activity-routemap--route-plus-dots` |
+| Repeated occurrence selection across a log without GPS | `climbing-log-entry-breakdown--repeated-point` | `climbing-log-entry-breakdown--repeated-point` |
+| Mixed source locations | `climbing-log-entry-breakdown--mixed-gps` | `climbing-log-entry-breakdown--mixed-gps` |
+| Narrow activity layout | `climbing-log-entry-breakdown--activity-detail-narrow` | `climbing-log-entry-breakdown--activity-detail-narrow` |
+| Wide activity layout | `climbing-log-entry-breakdown--activity-detail-wide` | `climbing-log-entry-breakdown--activity-detail-wide` |
+| Attachment pending/error states | `climbing-unattached-logs--attach-states` | `climbing-log-entry-breakdown--attach-states` |
 
 ### Task 4: Requested climbing copy refinement
 
-The user requested removal of "attempt count not recorded" during delivery.
-Update the [shared climbing result formatter](../../../packages/format/src/format.ts)
-so web and mobile retain recorded results and known counts without that missing-count
-message. Preserve existing source-context distinctions and avoid inventing counts.
+The original component delivery included a request for more concise climbing summary copy. The later [canonical model cutover](../../climbing-log-model-cutover.md) retired that legacy formatter. Both card components now use [`formatClimbingRecordedResult`](../../../packages/format/src/climbing-log.ts) for the server's scoped whole-climb and pitch outcomes and recorded counts. Preserve those canonical summaries and the independent facts in the details disclosure; do not infer additional counts or outcomes in clients.
 
-- [x] Update existing formatter assertions, verify RED, implement concise labels, and update affected web/mobile assertions.
-- [x] Run covering tests and static checks; review the change and verify the visible Storybook copy on both platforms.
+- [x] Preserve the canonical formatter and its [existing tests](../../../packages/format/src/climbing-log.test.ts) during base integration.
+- [x] Verify the visible copy and scoped results through the web and mobile card/breakdown tests and the `climbing-log-entry-breakdown--unknown-execution` story on both platforms.
 
-Verified on 2026-10-13: 17,483 unit tests and 1,458 mobile tests passed, along
+Run: `pnpm exec vitest run --project unit packages/format/src/climbing-log.test.ts packages/web/src/pages/activity-detail/components/ClimbingLogEntryCard.test.tsx packages/web/src/pages/activity-detail/components/ClimbingLogEntryBreakdown.test.tsx` and `pnpm exec vitest run --project mobile packages/mobile/components/ClimbingLogEntryCard.test.tsx packages/mobile/components/ClimbingLogEntryBreakdown.test.tsx`.
+
+Original delivery verification on 2026-10-13: 17,483 unit tests and 1,458 mobile tests passed, along
 with lint, root/all-package typechecks, web production build, and both
 Storybook production builds. Browser checks covered narrow/wide grids,
 source-only and combined maps, source provenance, production occurrence

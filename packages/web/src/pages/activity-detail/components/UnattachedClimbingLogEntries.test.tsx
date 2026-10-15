@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { afterEach, beforeAll, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, expect, it, vi } from "vitest";
 import {
   climbingClimbFixture,
   climbingLogEntryFixture,
@@ -39,12 +39,21 @@ it("highlights the selected suggestion using the full order across a missing-GPS
 });
 
 afterEach(() => vi.unstubAllGlobals());
-beforeAll(() =>
+let originalCreateSvgRect: PropertyDescriptor | undefined;
+beforeAll(() => {
+  originalCreateSvgRect = Object.getOwnPropertyDescriptor(SVGSVGElement.prototype, "createSVGRect");
   Object.defineProperty(SVGSVGElement.prototype, "createSVGRect", {
     configurable: true,
     value: () => ({}),
-  }),
-);
+  });
+});
+afterAll(() => {
+  if (originalCreateSvgRect) {
+    Object.defineProperty(SVGSVGElement.prototype, "createSVGRect", originalCreateSvgRect);
+  } else {
+    Reflect.deleteProperty(SVGSVGElement.prototype, "createSVGRect");
+  }
+});
 
 it("loads a canonical suggestion's preview near the viewport and keeps its map during Attach updates", async () => {
   let enterViewport = () => {};
@@ -117,10 +126,14 @@ it("keeps located repeated suggestions in a shared grid with independent Attach 
   const repeatCard = grid.children[1];
   if (!(firstCard instanceof HTMLElement) || !(repeatCard instanceof HTMLElement))
     throw new Error("Expected two cards");
-  expect(within(firstCard).getByRole("button", { name: "Attach to this activity" })).toBeDisabled();
+  expect(
+    within(firstCard).getByRole("button", { name: "Attach entry 1, Corner to this activity" }),
+  ).toBeDisabled();
   expect(within(firstCard).getByRole("alert")).toHaveTextContent("Refresh this log.");
   expect(within(repeatCard).queryByRole("alert")).toBeNull();
-  fireEvent.click(within(repeatCard).getByRole("button", { name: "Attach to this activity" }));
+  fireEvent.click(
+    within(repeatCard).getByRole("button", { name: "Attach entry 2, Corner to this activity" }),
+  );
   expect(onAttach).toHaveBeenCalledWith("repeat");
   expect(screen.getAllByRole("region", { name: "Climbing locations" })).toHaveLength(2);
 });
@@ -139,7 +152,7 @@ it("preserves cached suggestions and a specific refresh error while attaching th
   );
   expect(screen.getByText("Corner")).toBeTruthy();
   expect(screen.getByText("Source is unavailable. Retry the sync.")).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "Attach to this activity" }));
+  fireEvent.click(screen.getByRole("button", { name: "Attach entry 1, Corner to this activity" }));
   expect(onAttach).toHaveBeenCalledWith(entry.id);
 });
 it("displays a pending attachment with its server error", () => {

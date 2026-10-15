@@ -1,7 +1,10 @@
 import type { Meta, StoryObj } from "@storybook/react-native";
 import { View } from "react-native";
 import { fn } from "storybook/test";
-import { climbingAttemptFixture } from "../../server/src/repositories/climbing-test-helpers.ts";
+import {
+  climbingAttemptFixture,
+  climbingLogEntryFixture,
+} from "../../server/src/repositories/climbing-test-helpers.ts";
 import { ClimbingLogEntryCard } from "./ClimbingLogEntryCard";
 import {
   areaClimbingLocation,
@@ -26,6 +29,7 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const Default: Story = {};
+export const MinimalEntry: Story = { args: { entry: climbingLogEntryFixture() } };
 export const ExactClimb: Story = { args: { location: exactClimbingLocation } };
 export const AreaLocation: Story = { args: { location: areaClimbingLocation } };
 export const UnknownOutcome: Story = {

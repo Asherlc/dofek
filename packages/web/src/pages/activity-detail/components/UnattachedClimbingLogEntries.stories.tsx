@@ -62,10 +62,14 @@ export const AttachStates: Story = {
     if (!(first instanceof HTMLElement) || !(second instanceof HTMLElement))
       throw new Error("Expected suggestion cards");
     await expect(
-      within(first).getByRole("button", { name: "Attach to this activity" }),
+      within(first).getByRole("button", { name: "Attach entry 1, Swiss Cheese to this activity" }),
     ).toBeDisabled();
     await expect(within(second).getByRole("alert")).toHaveTextContent("Choose a climbing activity");
-    await userEvent.click(within(second).getByRole("button", { name: "Attach to this activity" }));
+    await userEvent.click(
+      within(second).getByRole("button", {
+        name: /^Attach entry 2, The unusually long ridge traverse/,
+      }),
+    );
     await expect(args.onAttach).toHaveBeenCalledWith("tick-2");
   },
 };

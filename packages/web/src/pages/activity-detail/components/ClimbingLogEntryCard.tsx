@@ -136,7 +136,8 @@ export function ClimbingLogEntryCard({
           <button
             type="button"
             className="self-start rounded bg-accent px-3 py-2 text-sm font-semibold text-white disabled:opacity-60"
-            aria-label="Attach to this activity"
+            aria-label={`Attach ${entryNumber == null ? name : `entry ${entryNumber}, ${name}`} to this activity`}
+            aria-busy={attachmentState?.pending ?? false}
             disabled={attachmentState?.pending}
             onClick={() => onAttach(entry.id)}
           >

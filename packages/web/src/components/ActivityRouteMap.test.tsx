@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { ActivityRouteMap } from "./ActivityRouteMap.tsx";
 
 const captureException = vi.hoisted(() => vi.fn());
@@ -9,11 +9,22 @@ beforeEach(() => captureException.mockClear());
 afterEach(() => vi.unstubAllGlobals());
 
 // Leaflet detects SVG support through this browser API, which jsdom omits.
+const originalCreateSvgRect = Object.getOwnPropertyDescriptor(
+  SVGSVGElement.prototype,
+  "createSVGRect",
+);
 beforeAll(() => {
   Object.defineProperty(SVGSVGElement.prototype, "createSVGRect", {
     configurable: true,
     value: () => ({}),
   });
+});
+afterAll(() => {
+  if (originalCreateSvgRect) {
+    Object.defineProperty(SVGSVGElement.prototype, "createSVGRect", originalCreateSvgRect);
+  } else {
+    Reflect.deleteProperty(SVGSVGElement.prototype, "createSVGRect");
+  }
 });
 
 const exact = {
@@ -167,11 +178,17 @@ describe("ActivityRouteMap", () => {
     });
   });
 
-  it("surfaces tile failures while leaving surrounding tick actions usable", async () => {
+  it("keeps the recorded route and source points usable after a tile fails", async () => {
     const onAttach = vi.fn();
     const { container } = render(
       <div>
-        <ActivityRouteMap points={[]} climbMarkers={[exact]} />
+        <ActivityRouteMap
+          points={[
+            { lat: 37.79, lng: -122.41 },
+            { lat: 37.81, lng: -122.39 },
+          ]}
+          climbMarkers={[exact]}
+        />
         <button type="button" onClick={onAttach}>
           Attach
         </button>
@@ -182,10 +199,21 @@ describe("ActivityRouteMap", () => {
     if (!tile) throw new Error("Expected a map tile");
     fireEvent.error(tile);
     expect(await screen.findByRole("status")).toHaveTextContent(
-      "Map unavailable: Map tiles could not load. Check your connection.",
+      "Some map tiles could not load. Check your connection.",
     );
+    const region = screen.getByRole("region", { name: "Climbing locations" });
+    expect(region).not.toHaveClass("hidden");
+    expect(region.querySelectorAll(".leaflet-overlay-pane path")).toHaveLength(4);
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Entry 1 · Blue Arete · Climb location: Blue Arete · Mountain Project",
+      }),
+    );
+    expect(screen.getByRole("button", { name: "Entry 1 · Blue Arete" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Attach" }));
     expect(onAttach).toHaveBeenCalledOnce();
+    fireEvent.error(tile);
+    expect(captureException).toHaveBeenCalledOnce();
     expect(captureException).toHaveBeenCalledWith(expect.any(Error), {
       component: "ActivityRouteMap",
     });

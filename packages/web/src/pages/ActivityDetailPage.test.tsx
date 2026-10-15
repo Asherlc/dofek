@@ -1902,7 +1902,9 @@ describe("ActivityDetailPage", () => {
       expect(screen.getByText("Ridge traverse")).toBeInTheDocument();
       expect(screen.getByText("Log refresh failed")).toBeInTheDocument();
       expect(screen.getByText("Suggestions refresh failed")).toBeInTheDocument();
-      expect(screen.getByRole("button", { name: "Attach to this activity" })).toBeEnabled();
+      expect(
+        screen.getByRole("button", { name: "Attach entry 1, Ridge traverse to this activity" }),
+      ).toBeEnabled();
     });
     it("waits for attached climbs before showing the empty suggestions notice", async () => {
       Object.assign(mockActivity, { activityType: "climbing", name: "Morning Rock Climb" });
@@ -2129,14 +2131,18 @@ describe("ActivityDetailPage", () => {
       expect(within(climbsSection).getByText("Blue Circuit")).toBeInTheDocument();
       expect(within(climbsSection).getByText("Project")).toBeInTheDocument();
       expect(
-        within(climbsSection).getAllByRole("button", { name: "Attach to this activity" }),
+        within(climbsSection).getAllByRole("button", {
+          name: /^Attach entry [12], (Blue Circuit|Project) to this activity$/,
+        }),
       ).toHaveLength(2);
       expect(screen.getByText("Mountain Project")).toBeDefined();
       expect(screen.getByText("OpenBeta")).toBeDefined();
       expect(screen.getByText("Blue Circuit")).toBeDefined();
       expect(screen.getByText("V4", { exact: true })).toBeDefined();
       expect(screen.getAllByText("Flash")).toHaveLength(2);
-      const controls = screen.getAllByRole("button", { name: "Attach to this activity" });
+      const controls = screen.getAllByRole("button", {
+        name: /^Attach entry [12], (Blue Circuit|Project) to this activity$/,
+      });
       expect(controls).toHaveLength(2);
       const secondControl = controls.at(1);
       if (!secondControl) throw new Error("Expected a second attach control");
@@ -2237,7 +2243,7 @@ describe("ActivityDetailPage", () => {
         expect(within(climbsSection).getByText("Available Arete")).toBeInTheDocument();
         if (error) expect(within(climbsSection).getByText(error.message)).toBeInTheDocument();
         const attachButton = within(climbsSection).getByRole("button", {
-          name: "Attach to this activity",
+          name: "Attach entry 1, Available Arete to this activity",
         });
         expect(attachButton).toBeEnabled();
         fireEvent.click(attachButton);
@@ -2314,7 +2320,9 @@ describe("ActivityDetailPage", () => {
       const ActivityDetailPage = await importPage();
       renderWithUnits(<ActivityDetailPage />);
 
-      fireEvent.click(screen.getByRole("button", { name: "Attach to this activity" }));
+      fireEvent.click(
+        screen.getByRole("button", { name: "Attach entry 1, The Corner to this activity" }),
+      );
 
       await waitFor(() =>
         expect(screen.getByRole("alert")).toHaveTextContent(

@@ -99,12 +99,15 @@ export const Wide: Story = {
   ],
 };
 export const TileError: Story = {
-  ...ExactClimb,
+  ...RoutePlusDots,
   play: async ({ canvasElement }) => {
     await waitFor(() => expect(canvasElement.querySelector("img.leaflet-tile")).not.toBeNull());
     canvasElement.querySelector("img.leaflet-tile")?.dispatchEvent(new Event("error"));
     await expect(within(canvasElement).findByRole("status")).resolves.toHaveTextContent(
-      "Map unavailable",
+      "Some map tiles could not load",
     );
+    await expect(
+      within(canvasElement).getByRole("region", { name: "Climbing locations" }),
+    ).toBeVisible();
   },
 };

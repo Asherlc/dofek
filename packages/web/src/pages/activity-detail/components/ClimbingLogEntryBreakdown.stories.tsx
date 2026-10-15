@@ -38,11 +38,17 @@ const meta = {
 } satisfies Meta<typeof ClimbingLogEntryBreakdown>;
 export default meta;
 type Story = StoryObj<typeof meta>;
-export const UnknownExecution: Story = { args: { entries: climbingMapLogs.slice(0, 1) } };
+export const UnknownExecution: Story = {
+  args: { entries: climbingMapLogs.slice(0, 1), locations: {} },
+};
 export const MixedGPS: Story = {};
-export const ExactClimb: Story = { ...UnknownExecution };
-export const Area: Story = { args: { entries: climbingMapLogs.slice(1, 2) } };
-export const LongName: Story = { ...Area };
+export const ExactClimb: Story = { args: { entries: climbingMapLogs.slice(0, 1) } };
+export const Area: Story = {
+  args: {
+    entries: climbingMapLogs.slice(1, 2).map((entry) => ({ ...entry, title: "Left Arete" })),
+  },
+};
+export const LongName: Story = { args: { entries: climbingMapLogs.slice(1, 2) } };
 export const Empty: Story = { args: { entries: [] } };
 export const Narrow: Story = {
   decorators: [

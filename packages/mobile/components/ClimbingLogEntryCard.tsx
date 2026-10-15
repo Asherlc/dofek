@@ -32,6 +32,7 @@ export function ClimbingLogEntryCard({
 }) {
   const [open, setOpen] = useState(false);
   const name = entry.climb?.name ?? entry.title ?? "Climbing log";
+  const attachmentPending = attachmentState?.pending ?? false;
   return (
     <View
       style={[styles.card, selected && styles.selectedCard]}
@@ -118,14 +119,13 @@ export function ClimbingLogEntryCard({
           )}
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="Attach to this activity"
-            disabled={attachmentState?.pending}
+            accessibilityLabel={`Attach ${entryNumber == null ? name : `entry ${entryNumber}, ${name}`} to this activity`}
+            accessibilityState={{ disabled: attachmentPending, busy: attachmentPending }}
+            disabled={attachmentPending}
             style={styles.attachButton}
             onPress={() => onAttach(entry.id)}
           >
-            <Text style={styles.attachAction}>
-              {attachmentState?.pending ? "Attaching..." : "Attach"}
-            </Text>
+            <Text style={styles.attachAction}>{attachmentPending ? "Attaching..." : "Attach"}</Text>
           </Pressable>
         </View>
       )}

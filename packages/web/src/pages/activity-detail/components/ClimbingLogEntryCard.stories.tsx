@@ -29,4 +29,7 @@ type Story = StoryObj<typeof meta>;
 export const Default: Story = {};
 export const Area: Story = { args: { location: areaClimbingLocation } };
 export const NoGPS: Story = { args: { location: undefined } };
+export const MinimalEntry: Story = {
+  args: { entry: climbingLogEntryFixture(), location: undefined, entryNumber: undefined },
+};
 export const SelectedOccurrence: Story = { args: { entryNumber: 3, selected: true } };

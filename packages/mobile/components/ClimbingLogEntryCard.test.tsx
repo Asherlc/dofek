@@ -8,6 +8,45 @@ import {
 } from "./climbing-log-entry-fixtures";
 
 describe("ClimbingLogEntryCard", () => {
+  it("exposes a pending attachment as busy and disabled to assistive technology", () => {
+    const onAttach = vi.fn();
+    render(
+      <ClimbingLogEntryCard
+        entry={climbingLogFixture}
+        onAttach={onAttach}
+        attachmentState={{ pending: true, error: null }}
+      />,
+    );
+    const control = screen.getByText("Attaching...").closest("button");
+    expect(control?.getAttribute("aria-busy")).toBe("true");
+    expect(control?.getAttribute("aria-disabled")).toBe("true");
+    if (!control) throw new Error("Expected an Attach control");
+    fireEvent.click(control);
+    expect(onAttach).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [undefined, "Attach Swiss Cheese to this activity"],
+    [3, "Attach entry 3, Swiss Cheese to this activity"],
+  ] as const)(
+    "identifies an available Attach action by name and optional ordinal (%s)",
+    (entryNumber, accessibleName) => {
+      const onAttach = vi.fn();
+      render(
+        <ClimbingLogEntryCard
+          entry={climbingLogFixture}
+          entryNumber={entryNumber}
+          onAttach={onAttach}
+        />,
+      );
+      const control = screen.getByRole("button", { name: accessibleName });
+      expect(control.getAttribute("aria-busy")).toBe("false");
+      expect(control.getAttribute("aria-disabled")).toBe("false");
+      fireEvent.click(control);
+      expect(onAttach).toHaveBeenCalledWith("tick-1");
+    },
+  );
+
   it("preserves source links, climbing context and attached attempt details", () => {
     render(<ClimbingLogEntryCard entry={climbingLogFixture} />);
     expect(screen.getByRole("link", { name: "Swiss Cheese on Mountain Project" })).toBeTruthy();
@@ -52,7 +91,7 @@ describe("ClimbingLogEntryCard", () => {
       />,
     );
     expect(screen.getByText("Refresh this activity and try again.")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Attach to this activity" }));
+    fireEvent.click(screen.getByRole("button", { name: "Attach Swiss Cheese to this activity" }));
     expect(onAttach).toHaveBeenCalledWith("tick-1");
   });
 });

@@ -47,19 +47,25 @@ const locations: Readonly<Record<string, ClimbingMapLocation>> = {
   "tick-2": areaClimbingLocation,
   "tick-4": exactClimbingLocation,
 };
-const markers: ClimbingMapMarker[] = entries.flatMap((entry, index) => {
-  const location = locations[entry.id];
-  return location
-    ? [
-        {
-          entryId: entry.id,
-          entryNumber: index + 1,
-          label: entry.climb?.name ?? entry.title ?? "Climbing log",
-          location,
-        },
-      ]
-    : [];
-});
+function markersForEntries(
+  entries: readonly ClimbingLogEntryDetail[],
+  locations: Readonly<Record<string, ClimbingMapLocation>> | undefined,
+): ClimbingMapMarker[] {
+  return entries.flatMap((entry, index) => {
+    const location = locations?.[entry.id];
+    return location
+      ? [
+          {
+            entryId: entry.id,
+            entryNumber: index + 1,
+            label: entry.climb?.name ?? entry.title ?? "Climbing log",
+            location,
+          },
+        ]
+      : [];
+  });
+}
+const markers = markersForEntries(entries, locations);
 const meta = {
   title: "Climbing/Log Entry Breakdown",
   component: ClimbingLogEntryBreakdown,
@@ -97,20 +103,7 @@ export const RepeatedPoint: Story = {
 function RepeatedPointArrangement(args: ComponentProps<typeof ClimbingLogEntryBreakdown>) {
   const [selectedEntryId, selectEntry] = useState<string | null>(null);
   const repeatMarkers = useMemo(
-    () =>
-      args.entries.flatMap((entry, index) => {
-        const location = args.locations?.[entry.id];
-        return location
-          ? [
-              {
-                entryId: entry.id,
-                entryNumber: index + 1,
-                label: entry.climb?.name ?? entry.title ?? "Climbing log",
-                location,
-              },
-            ]
-          : [];
-      }),
+    () => markersForEntries(args.entries, args.locations),
     [args.entries, args.locations],
   );
   return (
@@ -156,6 +149,19 @@ export const AttachStates: Story = {
         error: "Refresh this activity and try attaching this entry again.",
       },
     },
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const pending = canvas.getByRole("button", {
+      name: "Attach entry 1, Swiss Cheese to this activity",
+    });
+    const repeat = canvas.getByRole("button", {
+      name: "Attach entry 4, Swiss Cheese to this activity",
+    });
+    await expect(pending).toHaveAttribute("aria-busy", "true");
+    await expect(pending).toHaveAttribute("aria-disabled", "true");
+    await expect(repeat).toHaveAttribute("aria-busy", "false");
+    await expect(repeat).toHaveAttribute("aria-disabled", "false");
   },
 };
 export const Loading: Story = {

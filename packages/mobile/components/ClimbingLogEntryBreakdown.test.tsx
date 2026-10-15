@@ -199,7 +199,9 @@ describe("ClimbingLogEntryBreakdown", () => {
     expect(card.parentElement?.style.flexShrink).toBe("1");
     expect(
       within(card)
-        .getByRole("button", { name: "Attach to this activity" })
+        .getByRole("button", {
+          name: "Attach entry 1, Long route name across the entire California coastal climbing area to this activity",
+        })
         .getAttribute("disabled"),
     ).toBeNull();
   });
@@ -226,12 +228,16 @@ describe("ClimbingLogEntryBreakdown", () => {
     const first = cards[0];
     const second = cards[1];
     if (!first || !second) throw new Error("Expected two tick cards");
-    const firstControl = within(first).getByRole("button", { name: "Attach to this activity" });
+    const firstControl = within(first).getByRole("button", {
+      name: `Attach entry 1, ${name} to this activity`,
+    });
     expect(firstControl.getAttribute("disabled")).not.toBeNull();
     expect(within(first).getByText("Attaching...")).toBeTruthy();
     expect(within(first).queryByText("Choose a climbing activity.")).toBeNull();
     expect(within(second).getByText("Choose a climbing activity.")).toBeTruthy();
-    fireEvent.click(within(second).getByRole("button", { name: "Attach to this activity" }));
+    fireEvent.click(
+      within(second).getByRole("button", { name: "Attach entry 2, Second route to this activity" }),
+    );
     expect(onAttach).toHaveBeenCalledWith("tick-2");
   });
 });
