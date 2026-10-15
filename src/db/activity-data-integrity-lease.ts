@@ -41,14 +41,13 @@ export async function withActivityIntegrityLease<T>(
     outcome = { succeeded: false, error };
   }
 
-  let cleanupError: unknown;
-  if (sessionError !== undefined) {
-    cleanupError = new Error("activity integrity lease was lost with its PostgreSQL session", {
+  let cleanupError: unknown =
+    sessionError &&
+    new Error("activity integrity lease was lost with its PostgreSQL session", {
       cause: sessionError,
     });
-  }
   try {
-    if (acquired && cleanupError === undefined) {
+    if (acquired && sessionError === undefined) {
       await connection.query("SELECT pg_advisory_unlock(hashtextextended($1::text, 0))", [
         ACTIVITY_INTEGRITY_LEASE_NAME,
       ]);
