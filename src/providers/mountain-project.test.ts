@@ -1,4 +1,8 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  ProviderRateLimitError,
+  ProviderRequestTimeoutError,
+} from "@dofek/provider-http/rate-limit";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ClimbingLogSyncInput } from "../db/climbing-log-sync.ts";
 import type { SyncDatabase } from "../db/index.ts";
 import { SyncRun } from "./sync-run.ts";
@@ -79,7 +83,17 @@ function entries() {
   if (!input) throw new Error("Expected source batch");
   return input.entries;
 }
+beforeEach(() => {
+  vi.stubGlobal(
+    "fetch",
+    vi
+      .fn<typeof fetch>()
+      .mockRejectedValue(new Error("Unexpected Mountain Project network request")),
+  );
+});
 afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
   vi.clearAllMocks();
   mocks.loadTokens.mockResolvedValue({
     accessToken: "110186720",
@@ -90,6 +104,77 @@ afterEach(() => {
 });
 
 describe("MountainProjectProvider", () => {
+  it.each(["routes", "areas"])(
+    "preserves a typed rate limit from %s without persisting a partial graph",
+    async (target) => {
+      const db = database();
+      const result = await run(
+        new MountainProjectProvider(async (input) => {
+          const url = String(input);
+          if (url.includes("tick-export")) return new Response(csv([row()]));
+          if (url.includes(`/${target}/`))
+            return new Response("rate limited", {
+              status: 429,
+              headers: { "Retry-After": "7" },
+            });
+          return Response.json({
+            id: 105751342,
+            title: "Route",
+            parent: { id: 2, name: "Crag" },
+          });
+        }),
+        db,
+      );
+      expect(result.recordsSynced).toBe(0);
+      expect(result.errors).toHaveLength(1);
+      expect(result.errors[0]?.cause).toBeInstanceOf(ProviderRateLimitError);
+      expect(result.errors[0]?.cause).toMatchObject({
+        providerId: "mountain-project",
+        statusCode: 429,
+        retryAfterSeconds: 7,
+      });
+      expect(mocks.persist).not.toHaveBeenCalled();
+      expect(db.execute).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(["routes", "areas"])(
+    "reports the shared deadline expiring during %s before any graph writes",
+    async (target) => {
+      const deadline = new AbortController();
+      vi.spyOn(AbortSignal, "timeout").mockReturnValue(deadline.signal);
+      const db = database();
+      const result = await run(
+        new MountainProjectProvider(async (input, init) => {
+          const url = String(input);
+          if (url.includes("tick-export")) return new Response(csv([row()]));
+          if (url.includes(`/${target}/`)) {
+            deadline.abort(new DOMException("Request deadline expired", "TimeoutError"));
+            init?.signal?.throwIfAborted();
+          }
+          return Response.json({
+            id: url.includes("/routes/") ? 105751342 : 2,
+            title: "Source object",
+            parent: { id: url.includes("/routes/") ? 2 : 0, name: "" },
+          });
+        }),
+        db,
+      );
+      expect(result.recordsSynced).toBe(0);
+      expect(result.errors).toHaveLength(1);
+      expect(result.errors[0]?.cause).toBeInstanceOf(ProviderRequestTimeoutError);
+      expect(result.errors[0]?.cause).toMatchObject({
+        providerId: "mountain-project",
+        code: "ETIMEDOUT",
+      });
+      expect(mocks.persist).not.toHaveBeenCalled();
+      expect(db.execute).not.toHaveBeenCalled();
+      expect(mocks.captureException).toHaveBeenCalledWith(result.errors[0]?.cause, {
+        tags: { provider: "mountain-project", phase: "area_enrichment" },
+      });
+    },
+  );
+
   it("reads each verified route and ancestor once and keeps native GPS on Areas", async () => {
     const requests: string[] = [];
     const enriched = new MountainProjectProvider(async (input) => {

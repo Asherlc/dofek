@@ -22,6 +22,7 @@ import {
 import { withSyncLog } from "../db/sync-log.ts";
 import { ensureProvider, loadTokens } from "../db/tokens.ts";
 import { captureException } from "../lib/error-reporting.ts";
+import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
 import { ProviderStoredIdentityMissingError, ProviderTokenRejectedError } from "./auth-errors.ts";
 import type { SyncRun } from "./sync-run.ts";
 import type { ProviderAuthSetup, SyncError, SyncProvider, SyncResult } from "./types.ts";
@@ -46,7 +47,7 @@ export class MountainProjectProvider implements SyncProvider {
   readonly #fetchFn: typeof globalThis.fetch;
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.#fetchFn = fetchFn;
+    this.#fetchFn = createProviderRateLimitFetch(this.id, fetchFn);
   }
 
   validate(): string | null {

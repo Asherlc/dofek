@@ -157,6 +157,12 @@ fail the sync before tick persistence or absence reconciliation. No partial
 enrichment is committed. These remain observed application endpoints, not a
 supported API contract.
 
+Export, route and Area requests use the [shared provider HTTP handler](../src/lib/provider-rate-limit-fetch.ts).
+Its existing request deadline and typed rate-limit errors remain visible in
+sync failures; failed catalogue requests never commit a partial graph or run
+absence reconciliation. The [HTTP contract](../packages/provider-http/README.md)
+defines the common behavior.
+
 Area `coordinates` uses `[longitude, latitude]`. Route `parent.coordinates`
 describes that parent Area and never populates Climb GPS. The CSV keys and
 `sourceProfileId` stay at their existing raw locations; `raw.sourceEnrichment`
