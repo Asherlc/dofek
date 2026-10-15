@@ -29,6 +29,19 @@ source data. Provider records use server columns and filters, fetch the selected
 log's complete graph, and retain cached rows during refresh errors. Labels match
 web through shared formatters. See the [canonical response contract](../server/src/contracts/climbing-log-contracts.ts).
 
+Activity-detail climbing entries and suggestions use
+[ClimbingLogEntryBreakdown](./components/ClimbingLogEntryBreakdown.tsx) and
+[ClimbingLogEntryCard](./components/ClimbingLogEntryCard.tsx). Their source-location
+inputs share the web client's [coordinate and provenance types](../training/src/climbing-map.ts).
+[RouteMap](./components/RouteMap.tsx) renders source dots independently of the
+recorded GPS route and supports compact tick maps. Its production occurrence
+chooser uses Entry numbers from the full card order and can select the matching
+card, including repeated names at the same point. Colocated Storybook stories
+exercise exact Climb points, containing-Area points, missing GPS, and attachment
+states. Map previews accept explicit location inputs; the activity screen does
+not yet supply those inputs from canonical log locations. The complete log and
+attempt graph follows the [canonical response contract](../server/src/contracts/climbing-log-contracts.ts).
+
 The Training route coordinates query states and delegates climbing payload validation, grade cards, and Hangboarding display to [ClimbingTrainingCard](./components/ClimbingTrainingCard.tsx), with focused tests and stories beside the component.
 
 - `app/`: Expo Router screens (file-based routing). Keep this route-only; Expo documents `app` as route-exclusive and non-route files there can be treated as routes: <https://docs.expo.dev/router/basics/core-concepts/#6-non-navigation-components-live-outside-the-srcapp-directory>.

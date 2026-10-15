@@ -554,7 +554,9 @@ describe("ActivityDetailScreen", () => {
     expect(screen.getByText("Ridge traverse")).toBeTruthy();
     expect(screen.getByText("Log refresh failed")).toBeTruthy();
     expect(screen.getByText("Suggestions refresh failed")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Attach to this activity" })).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Attach entry 1, Ridge traverse to this activity" }),
+    ).toBeTruthy();
   });
   it("shows route processing and disables GPX while cached sensor points are partial", async () => {
     mockStreamQuery.mockReturnValue({
@@ -822,7 +824,9 @@ describe("ActivityDetailScreen", () => {
     expect(screen.getByText("Top rope")).toBeTruthy();
     expect(screen.getByText("Fell or hung")).toBeTruthy();
     expect(screen.getByText("Whole climb outcome unknown · 1 recorded attempt")).toBeTruthy();
-    const controls = within(climbsCard).getAllByRole("button", { name: "Attach to this activity" });
+    const controls = within(climbsCard).getAllByRole("button", {
+      name: /^Attach entry \d+, .* to this activity$/,
+    });
     expect(controls).toHaveLength(2);
     const secondControl = controls.at(1);
     if (!secondControl) throw new Error("Expected a second attach control");
@@ -934,7 +938,11 @@ describe("ActivityDetailScreen", () => {
     if (!climbsCard) throw new Error("Expected a climbs card");
     expect(within(climbsCard).getByText("Suggested Boulder")).toBeTruthy();
     expect(climbsCard.querySelectorAll('[testid="query-state-loading"]')).toHaveLength(1);
-    fireEvent.click(within(climbsCard).getByRole("button", { name: "Attach to this activity" }));
+    fireEvent.click(
+      within(climbsCard).getByRole("button", {
+        name: "Attach entry 1, Suggested Boulder to this activity",
+      }),
+    );
     expect(mockAttachEntryMutate).toHaveBeenCalledWith({
       activityId: baseCyclingActivity.id,
       climbingLogEntryId: "suggested-climb",

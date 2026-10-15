@@ -733,6 +733,58 @@ rock observations may contribute to participation; undated records do not
 acquire dates for trends. Update activity-type gates and attachment validation
 so legitimate hiking/mountaineering associations remain visible.
 
+### Activity-detail climb maps and grid
+
+The map and grid changes belong on the activity details page, in its Climbs
+section. Attached climbing logs and unattached suggestions use responsive card
+grids on web and mobile. Preserve source order, separate log occurrences,
+source links, scoped recorded results, Details disclosures, and each
+suggestion's independent Attach action, pending state, and actionable error.
+Use one column where needed for readable cards and more columns as available
+width permits. The canonical card implementations are
+[web](../../../packages/web/src/pages/activity-detail/components/ClimbingLogEntryCard.tsx)
+and [mobile](../../../packages/mobile/components/ClimbingLogEntryCard.tsx).
+
+The activity overview shows attached logs with verified source coordinates as
+dots. Retain the activity's recorded GPS route when present and overlay source
+dots; source points also support a map without sensor GPS. Fit the available
+route and points without connecting unrelated climb points into a route.
+Only attached logs contribute to this overview. Once live map wiring is added,
+attaching a suggestion updates its membership. Dots identify the corresponding
+cards, including separate same-name occurrences at identical coordinates.
+
+Every attached log and suggestion with a verified source location also shows a
+compact map with one dot. Cards without coordinates remain usable without a
+map. Resolve a source location on the server from Climb coordinates, or the
+nearest containing Area with coordinates when the Climb has none. Return the
+owning object's identity, name, provider, and point scope with the coordinates.
+Label containing places as Area locations so they cannot appear to be exact
+Climb points. Coordinates stay on their canonical owners; serving projections
+do not copy them into log storage.
+
+Sensor GPS never supplies a missing source location, and source points never
+establish a measured route or enable sensor-only exports or chart scrubbing.
+Use the same location contract for attached logs and suggestions while
+preserving user/provider ownership and activity visibility. Missing locations
+remain absent; zero coordinates are valid, and invalid pairs fail boundary
+validation through the [canonical GPS schema](../../../packages/training/src/gps-coordinates.ts).
+
+Reuse the existing map stack, with separate Leaflet
+[circle markers](https://leafletjs.com/reference.html#circlemarker) and native
+[markers](https://github.com/react-native-maps/react-native-maps/blob/master/docs/marker.md).
+Keep attribution visible and load compact previews near the viewport, following
+the [OpenStreetMap tile policy](https://operations.osmfoundation.org/policies/tiles/).
+A partial tile failure shows a notice while leaving route overlays, dots,
+cards, and Attach actions usable. Initialization failures show a specific
+map-unavailable state. Keep identity and actions accessible through the cards.
+
+The current component and Storybook slice accepts explicit
+[source-location inputs](../../../packages/training/src/climbing-map.ts).
+The [web map](../../../packages/web/src/components/ActivityRouteMap.tsx),
+[native map](../../../packages/mobile/components/RouteMap.tsx), and paired
+stories implement rendering and selection. Source-coordinate resolution and
+connecting activity queries to these map inputs remain separate work.
+
 ## Complete cutover and cleanup
 
 The user explicitly requires no obsolete naming or storage paths. Update all

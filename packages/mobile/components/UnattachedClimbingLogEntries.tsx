@@ -1,5 +1,6 @@
 import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import type { ClimbingMapLocation } from "@dofek/training/climbing-map";
+import { StyleSheet, Text, View } from "react-native";
 import type { ClimbingLogEntryDetail } from "../../server/src/contracts/climbing-log-contracts.ts";
 import { colors } from "../theme";
 import { ClimbingLogEntryBreakdown } from "./ClimbingLogEntryBreakdown";
@@ -11,12 +12,16 @@ export function UnattachedClimbingLogEntries({
   isLoading,
   state,
   onAttach,
+  locations,
+  selectedEntryId,
 }: {
   suggestions: readonly ClimbingLogEntryDetail[] | undefined;
   error: unknown | null;
   isLoading: boolean;
   state: LogEntryAttachState;
   onAttach: (climbingLogEntryId: string) => void;
+  locations?: Readonly<Record<string, ClimbingMapLocation>>;
+  selectedEntryId?: string | null;
 }) {
   return (
     <View style={styles.container}>
@@ -32,27 +37,13 @@ export function UnattachedClimbingLogEntries({
       ) : (
         <>
           <Text style={styles.label}>Unattached</Text>
-          {suggestions.map((entry) => (
-            <View key={entry.id} style={styles.container}>
-              <ClimbingLogEntryBreakdown entries={[entry]} />
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Attach to this activity"
-                disabled={state[entry.id]?.pending}
-                style={styles.button}
-                onPress={() => onAttach(entry.id)}
-              >
-                <Text style={styles.action}>
-                  {state[entry.id]?.pending ? "Attaching..." : "Attach"}
-                </Text>
-              </Pressable>
-              {state[entry.id]?.error && (
-                <Text accessibilityRole="alert" style={styles.error}>
-                  {state[entry.id]?.error}
-                </Text>
-              )}
-            </View>
-          ))}
+          <ClimbingLogEntryBreakdown
+            entries={suggestions}
+            locations={locations}
+            selectedEntryId={selectedEntryId}
+            attachmentStates={state}
+            onAttach={onAttach}
+          />
         </>
       )}
     </View>
@@ -62,12 +53,4 @@ const styles = StyleSheet.create({
   container: { gap: 8 },
   label: { fontSize: 12, color: colors.textSecondary },
   error: { fontSize: 12, color: colors.negative },
-  button: {
-    alignSelf: "flex-end",
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 6,
-    backgroundColor: colors.accent,
-  },
-  action: { color: colors.text, fontSize: 13, fontWeight: "600" },
 });
