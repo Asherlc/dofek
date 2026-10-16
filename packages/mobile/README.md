@@ -20,10 +20,12 @@ The mobile app for Dofek. Built with Expo and React Native, with native Swift mo
 
 ## Project Structure
 
-The Activities list reuses its compact bike-ride map preview for climbing-source
-locations when an activity has no recorded GPS track. Source points retain
-Climb/Area and provider attribution without creating a route or implying
-distance/elevation measurements. The
+The [Activities list](<app/(tabs)/activities.tsx>) shows a full-width 16:9 map
+below each activity's details when location data is available, matching the
+readable map panels on the [web Activities list](../web/src/components/ActivityCardContent.tsx).
+Activities without a recorded GPS track can show climbing-source locations;
+source points retain Climb/Area and provider attribution without creating a
+route or implying distance/elevation measurements. The
 [calendar repository](../server/src/repositories/activities-calendar-repository.ts)
 projects map geometry on the server, and recorded GPS takes precedence.
 

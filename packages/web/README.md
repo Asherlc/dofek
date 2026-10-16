@@ -55,11 +55,14 @@ refresh errors. See the [canonical response contract](../server/src/contracts/cl
 The recent climbing activity table omits distance and keeps its climbing metrics,
 as configured by the [climbing page](src/routes/training/climbing.tsx).
 
-The Activities list uses its existing compact
-[map tile](src/components/ActivityMapTile.tsx) for climbing-source locations when
-an activity has no recorded GPS track. Source points retain Climb/Area and
-provider attribution; they are not connected into a route and do not imply
-recorded distance or elevation. The
+The [Activities cards](src/components/ActivityCardContent.tsx) show an inset map
+panel beside activity details on wider screens and below them on narrow screens.
+The [mobile Activities list](<../mobile/app/(tabs)/activities.tsx>) shows the same
+server-projected preview in a full-width 16:9 panel below each activity's details.
+The [map tile](src/components/ActivityMapTile.tsx) also displays climbing-source
+locations when an activity has no recorded GPS track. Source points retain
+Climb/Area and provider attribution; they are not connected into a route and do
+not imply recorded distance or elevation. The
 [calendar repository](../server/src/repositories/activities-calendar-repository.ts)
 projects map geometry on the server, and recorded GPS takes precedence.
 
