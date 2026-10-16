@@ -24,6 +24,7 @@ describe("activity map readiness", () => {
   });
   let context: TestContext;
   let calendar: ActivitiesCalendarRepository;
+  let activities: ActivityRepository;
   let pendingGroup: string;
   let readyGroup: string;
   let unknownGroup: string;
@@ -178,6 +179,7 @@ describe("activity map readiness", () => {
         ]),
     });
     calendar = new ActivitiesCalendarRepository(context.db, userId, "UTC", sensorStore);
+    activities = new ActivityRepository(context.db, userId, "UTC", undefined, sensorStore);
   });
   afterAll(async () => {
     await client.command({ query: `DROP DATABASE IF EXISTS ${database} SYNC` });
@@ -205,6 +207,13 @@ describe("activity map readiness", () => {
     expect(entries.find((entry) => entry.id === sourceGroup)?.location?.kind).toBe(
       "climbing_source",
     );
+    await expect(activities.findById(absentGroup)).resolves.toMatchObject({
+      location: { kind: "processing" },
+    });
+    await expect(activities.findById(readyGroup)).resolves.toMatchObject({
+      location: { kind: "recorded_gps" },
+    });
+    await expect(activities.findById(unknownGroup)).resolves.toMatchObject({ location: null });
   });
   it("uses the canonical location contract in the recent activity list", async () => {
     const result = await new ActivityRepository(
@@ -263,6 +272,7 @@ describe("activity map readiness", () => {
     expect(
       days.flatMap((day) => day.activities).find((entry) => entry.id === absentId)?.location,
     ).toBeNull();
+    await expect(activities.findById(absentGroup)).resolves.toMatchObject({ location: null });
   });
   it("settles provider-absent source maps when the canonical route retains another source's GPS", async () => {
     await client.command({
@@ -278,5 +288,6 @@ describe("activity map readiness", () => {
     expect(
       days.flatMap((day) => day.activities).find((entry) => entry.id === absentId)?.location,
     ).toBeNull();
+    await expect(activities.findById(absentGroup)).resolves.toMatchObject({ location: null });
   });
 });

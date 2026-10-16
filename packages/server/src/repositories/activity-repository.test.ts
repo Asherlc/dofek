@@ -1118,93 +1118,100 @@ describe("ActivityRepository", () => {
       expect(result).toBeNull();
     });
 
-    it("falls back to provider-absent activities when the canonical view excludes them", async () => {
-      const execute = vi
-        .fn()
-        .mockResolvedValueOnce([
-          {
-            requested_id: "tombstoned-id",
-            resolved_group_id: "tombstoned-id",
-            resolution_kind: "group",
-          },
-        ])
-        .mockResolvedValueOnce([])
-        .mockResolvedValueOnce([
-          {
-            id: "tombstoned-id",
-            canonical_type: "running",
-            raw_type: "running",
-            started_at: "2024-01-15T10:00:00.000Z",
-            displayed_date: "2024-01-15",
-            ended_at: "2024-01-15T10:45:00.000Z",
-            timezone: null,
-            start_utc_offset_minutes: null,
-            end_utc_offset_minutes: null,
-            local_time_source: "unknown",
-            name: "Deleted Run",
-            notes: null,
-            perceived_exertion: null,
-            provider_id: "strava",
-            subsource: null,
-            source_providers: ["strava"],
-            source_external_ids: [{ providerId: "strava", externalId: "123" }],
-            member_activity_ids: ["tombstoned-id"],
-            avg_hr: null,
-            max_hr: null,
-            avg_power: null,
-            max_power: null,
-            avg_speed: null,
-            max_speed: null,
-            avg_cadence: null,
-            total_distance: null,
-            elevation_gain_m: null,
-            elevation_loss_m: null,
-            sample_count: null,
-            provider_absent_at: "2024-01-16T08:00:00.000Z",
-          },
-        ]);
-      const database = { execute };
-      const sensorStore = {
-        query: vi.fn().mockResolvedValue([]),
-        getActivitySummaries: vi.fn().mockResolvedValue([]),
-        getStream: vi.fn().mockResolvedValue([]),
-        getHeartRateZoneSeconds: vi.fn().mockResolvedValue([]),
-        getPowerZoneSeconds: vi.fn().mockResolvedValue([]),
-      };
-      const repo = new ActivityRepository(database, "user-1", "UTC", undefined, sensorStore);
+    it.each(["processing", "awaiting_summary", "unavailable"] as const)(
+      "falls back to provider-absent activities with map readiness %s",
+      async (status) => {
+        const execute = vi
+          .fn()
+          .mockResolvedValueOnce([
+            {
+              requested_id: "tombstoned-id",
+              resolved_group_id: "tombstoned-id",
+              resolution_kind: "group",
+            },
+          ])
+          .mockResolvedValueOnce([])
+          .mockResolvedValueOnce([
+            {
+              id: "tombstoned-id",
+              canonical_type: "running",
+              raw_type: "running",
+              started_at: "2024-01-15T10:00:00.000Z",
+              displayed_date: "2024-01-15",
+              ended_at: "2024-01-15T10:45:00.000Z",
+              timezone: null,
+              start_utc_offset_minutes: null,
+              end_utc_offset_minutes: null,
+              local_time_source: "unknown",
+              name: "Deleted Run",
+              notes: null,
+              perceived_exertion: null,
+              provider_id: "strava",
+              subsource: null,
+              source_providers: ["strava"],
+              source_external_ids: [{ providerId: "strava", externalId: "123" }],
+              member_activity_ids: ["tombstoned-id"],
+              avg_hr: null,
+              max_hr: null,
+              avg_power: null,
+              max_power: null,
+              avg_speed: null,
+              max_speed: null,
+              avg_cadence: null,
+              total_distance: null,
+              elevation_gain_m: null,
+              elevation_loss_m: null,
+              sample_count: null,
+              provider_absent_at: "2024-01-16T08:00:00.000Z",
+            },
+          ]);
+        const database = { execute };
+        const sensorStore = {
+          query: vi.fn().mockResolvedValue([]),
+          getActivitySummaries: vi.fn().mockResolvedValue([]),
+          getStream: vi.fn().mockResolvedValue([]),
+          getHeartRateZoneSeconds: vi.fn().mockResolvedValue([]),
+          getPowerZoneSeconds: vi.fn().mockResolvedValue([]),
+        };
+        const repo = new ActivityRepository(database, "user-1", "UTC", undefined, sensorStore);
+        vi.mocked(getActivityMapReadiness).mockResolvedValueOnce(
+          new Map([["tombstoned-id", status]]),
+        );
 
-      const result = await repo.findById("tombstoned-id");
+        const result = await repo.findById("tombstoned-id");
 
-      expect(result).toMatchObject({
-        id: "tombstoned-id",
-        provider_id: "strava",
-        provider_absent_at: "2024-01-16T08:00:00.000Z",
-      });
-      const fallbackQuery = dialect.sqlToQuery(execute.mock.calls[2]?.[0]);
-      expect(fallbackQuery.sql).toContain("provider_absent_at IS NOT NULL");
-      expect(fallbackQuery.sql).toContain("a.deleted_at IS NULL");
-      expect(fallbackQuery.sql).toContain("LEFT JOIN fitness.provider_priority");
-      expect(fallbackQuery.sql).toContain("LEFT JOIN LATERAL");
-      expect(fallbackQuery.sql).toContain("s.set_type = 'working'");
-      expect(fallbackQuery.sql).toContain("s.weight_kg IS NOT NULL");
-      expect(fallbackQuery.sql).toContain("COUNT(*) AS set_count");
-      expect(fallbackQuery.sql).toContain("COUNT(DISTINCT s.exercise_id) AS exercise_count");
-      expect(fallbackQuery.sql).toContain("a.canonical_type NOT IN");
-      expect(fallbackQuery.sql).toContain("NULLIF(LOWER(TRIM(a.provider_type)), '')");
-      expect(fallbackQuery.sql).toContain("COALESCE(dp.priority, pp.priority, 100)");
-      expect(fallbackQuery.sql).toContain("a.id ASC");
-      expect(fallbackQuery.sql).not.toContain("ORDER BY (a.id =");
-      const fallbackOrder = fallbackQuery.sql.slice(fallbackQuery.sql.indexOf("ORDER BY"));
-      expect(fallbackOrder.indexOf("payload.complete_working_set_count DESC")).toBeLessThan(
-        fallbackOrder.indexOf("payload.set_count DESC"),
-      );
-      expect(fallbackOrder.indexOf("payload.set_count DESC")).toBeLessThan(
-        fallbackOrder.indexOf("payload.exercise_count DESC"),
-      );
-      expect(fallbackOrder.indexOf("payload.exercise_count DESC")).toBeLessThan(
-        fallbackOrder.indexOf("a.canonical_type NOT IN"),
-      );
-    });
+        expect(result).toMatchObject({
+          id: "tombstoned-id",
+          provider_id: "strava",
+          provider_absent_at: "2024-01-16T08:00:00.000Z",
+          location: status === "processing" ? { kind: "processing" } : null,
+        });
+        const fallbackQuery = dialect.sqlToQuery(execute.mock.calls[2]?.[0]);
+        expect(fallbackQuery.sql).toContain("provider_absent_at IS NOT NULL");
+        expect(fallbackQuery.sql).toContain("a.deleted_at IS NULL");
+        expect(fallbackQuery.sql).toContain("LEFT JOIN fitness.provider_priority");
+        expect(fallbackQuery.sql).toContain("LEFT JOIN LATERAL");
+        expect(fallbackQuery.sql).toContain("s.set_type = 'working'");
+        expect(fallbackQuery.sql).toContain("s.weight_kg IS NOT NULL");
+        expect(fallbackQuery.sql).toContain("COUNT(*) AS set_count");
+        expect(fallbackQuery.sql).toContain("COUNT(DISTINCT s.exercise_id) AS exercise_count");
+        expect(fallbackQuery.sql).toContain("a.canonical_type NOT IN");
+        expect(fallbackQuery.sql).toContain("NULLIF(LOWER(TRIM(a.provider_type)), '')");
+        expect(fallbackQuery.sql).toContain("COALESCE(dp.priority, pp.priority, 100)");
+        expect(fallbackQuery.sql).toContain("a.id ASC");
+        expect(fallbackQuery.sql).not.toContain("ORDER BY (a.id =");
+        const fallbackOrder = fallbackQuery.sql.slice(fallbackQuery.sql.indexOf("ORDER BY"));
+        expect(fallbackOrder.indexOf("payload.complete_working_set_count DESC")).toBeLessThan(
+          fallbackOrder.indexOf("payload.set_count DESC"),
+        );
+        expect(fallbackOrder.indexOf("payload.set_count DESC")).toBeLessThan(
+          fallbackOrder.indexOf("payload.exercise_count DESC"),
+        );
+        expect(fallbackOrder.indexOf("payload.exercise_count DESC")).toBeLessThan(
+          fallbackOrder.indexOf("a.canonical_type NOT IN"),
+        );
+      },
+    );
 
     it("returns a row without summaries when no sensor store is configured", async () => {
       const { repo } = makeRepository([

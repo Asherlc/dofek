@@ -801,6 +801,7 @@ export class ActivityRepository extends BaseRepository {
     TRow extends {
       id: string;
       member_activity_ids: string[];
+      provider_absent_at?: string | null;
     },
   >(rows: TRow[]): Promise<Array<TRow & { location: ActivityLocation | null }>> {
     const sensorStore = this.#sensorStore;
@@ -840,7 +841,10 @@ export class ActivityRepository extends BaseRepository {
       const summary = summaryByActivityId.get(row.id);
       const mapReadiness = mapReadinessByActivityId.get(row.id);
       const pendingLocation: ActivityLocation | null =
-        mapReadiness != null && mapReadiness !== "unavailable" ? { kind: "processing" } : null;
+        mapReadiness === "processing" ||
+        (mapReadiness === "awaiting_summary" && row.provider_absent_at == null)
+          ? { kind: "processing" }
+          : null;
       if (!summary) {
         return { ...row, location: pendingLocation };
       }
