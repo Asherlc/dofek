@@ -1654,9 +1654,14 @@ describe("PelotonProvider.sync — token refresh", () => {
     },
   );
 
-  it.each(["current user", "workouts"])(
-    "refreshes again when the token approaches expiry after fetching %s",
-    async (advanceAfter) => {
+  it.each([
+    ["current user", 60_000],
+    ["current user", 180_000],
+    ["workouts", 60_000],
+    ["workouts", 180_000],
+  ])(
+    "refreshes again when the token approaches expiry after fetching %s with %i ms elapsed",
+    async (advanceAfter, elapsedMs) => {
       vi.useFakeTimers({ toFake: ["Date"] });
       vi.setSystemTime(new Date("2026-10-14T19:30:00.000Z"));
       const initialExpiry = new Date(Date.now() + 180_000);
@@ -1679,13 +1684,13 @@ describe("PelotonProvider.sync — token refresh", () => {
         }
         if (url.pathname === "/api/me") {
           if (advanceAfter === "current user") {
-            vi.setSystemTime(new Date("2026-10-14T19:33:00.000Z"));
+            vi.setSystemTime(new Date(Date.now() + elapsedMs));
           }
           return Response.json({ id: "user-123" });
         }
         if (url.pathname.endsWith("/workouts")) {
           if (advanceAfter === "workouts") {
-            vi.setSystemTime(new Date("2026-10-14T19:33:00.000Z"));
+            vi.setSystemTime(new Date(Date.now() + elapsedMs));
           }
           return Response.json(makeWorkoutListResponse([workout]));
         }

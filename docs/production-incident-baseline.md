@@ -31711,6 +31711,11 @@ The approved patch now limits preparation to desired mappings whose source and d
 - **Scope / impact:** The 90-day Sentry search found 15 unresolved Dofek issues.
   Investigation used Sentry events and attachments, production sync outcomes,
   retained local audit logs, and PostHog exception copies and structured logs.
+  Separate searches covered all five accessible projects in the only accessible
+  organization; the other projects had no open issues in that window. Older
+  inactive issues remain unverified: the exposed search schema caps the period
+  at 90 days and direct API access returns 403. The period filters included
+  issues, as shown in [Sentry's MCP client](https://github.com/getsentry/sentry-mcp/blob/main/packages/mcp-core/src/api-client/client.ts).
   The deployed server revision was `1621f5579122f09c54d1aebbc2948d658377b89c`.
   No production credentials, health records, or provider connections changed.
 - **Proven token failures:** [Peloton 6R](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-6R)
@@ -31789,7 +31794,12 @@ The approved patch now limits preparation to desired mappings whose source and d
   PostHog mobile/server log retention begins October 2; Axiom's available
   token is ingest-only and rejects queries with 403. The paired physical
   iPhone is unavailable, and installed Simulator runtimes do not match the
-  historical iOS 27 device. Diagnostic improvements are not claimed as fixes.
+  historical iOS 27 device. The user confirmed that neither an affected phone
+  nor read-capable Axiom access is available. The PostHog replay lookup also
+  rejects this connection for missing `session_recording:read`; recordings
+  remain unassessed, rather than proven absent. Additional Sentry attachment
+  and issue-activity searches recovered no underlying native cause or vendor
+  request ID. Diagnostic improvements are not claimed as fixes.
 - **Validation / release gates:** Native HealthKit tests pass 93 assertions;
   the four focused mobile suites pass 98. All workspace TypeScript checks and
   full lint pass. Earlier full unit/mobile runs passed 19,470 and 19,487 assertions
@@ -31801,7 +31811,15 @@ The approved patch now limits preparation to desired mappings whose source and d
   isolation error; no production behavior or global retry setting changed.
   The final combined run passes **19,493 assertions with 19 existing skips**
   and retries disabled. Independent review reran the admission-delay
-  reproduction and confirmed fresh credentials at dispatch. The existing Wahoo recovery remains
+  reproduction and confirmed fresh credentials at dispatch. A subsequent
+  changed-line mutation run exposed a missing exact-boundary assertion; both
+  current-user and workout requests now test exactly two minutes of remaining
+  validity as well as an expired token. All 94 focused Peloton tests pass with
+  retries disabled. Targeted Stryker passes at 96.55%: all changed HTTP-wrapper
+  and provider mutants are killed. The one remaining optional-init mutation
+  is equivalent through the client API because its private request method
+  always supplies the initialization object; no artificial test path or
+  mutation exclusion was added. The existing Wahoo recovery remains
   bounded to one refresh after rejection; no additional retry, wait, or timeout
   was introduced.
 - **Local validation prerequisite:** `pnpm compose -- up -d --wait clickhouse`
@@ -31813,13 +31831,17 @@ The approved patch now limits preparation to desired mappings whose source and d
   labeled network on that subnet let the unchanged Compose command pass and
   ClickHouse become healthy. Other workspace resources and all existing volumes
   were preserved; no daemon or timeout setting changed.
+  The optional local mutation run initially failed copying Swift's generated
+  `.build/debug` symlink with `ENOTSUP`; `swift package clean` removed the
+  rebuildable native artifacts and the unchanged mutation command then passed.
 - **Hosted validation still pending:** [PR #2986](https://github.com/Asherlc/dofek/pull/2986)
   contains the fixes and remains a draft pending hosted checks and release
   validation. Its first change-detection job was queued without an assigned
   runner or any executed step. The [concurrent main run](https://github.com/Asherlc/dofek/actions/runs/38917490469)
   still reported a queued run status while its jobs API showed 88 of 93 jobs
   completed and a macOS worker running. Run-level queue status alone therefore
-  did not establish stalled execution. No workflow was rerun or modified as a
+  did not establish stalled execution. PR change detection subsequently passed
+  and its build and test jobs advanced normally. No workflow was rerun or modified as a
   queue workaround; inspect individual jobs before interpreting run summaries.
 - **Retrospective / follow-up:** Duplicate monitoring retained decisive expiry
   details after Sentry redaction, while generic replacement exceptions made
