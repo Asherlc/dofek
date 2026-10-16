@@ -170,7 +170,7 @@ function makeCallerWithoutSensorStore(rows: Record<string, unknown>[] = []) {
 
 function makeSensorStoreStub(overrides: Partial<Record<string, unknown>> = {}) {
   return {
-    query: vi.fn().mockResolvedValue([{ date: "2026-04-01", resting_hr: 55 }]),
+    query: vi.fn().mockResolvedValue([]),
     getActivitySummaries: vi.fn().mockResolvedValue([]),
     getStream: vi.fn().mockResolvedValue([]),
     getHeartRateZoneSeconds: vi.fn().mockResolvedValue([]),
@@ -272,6 +272,7 @@ describe("activityRouter", () => {
           name: "Morning Ride",
           provider_id: "wahoo",
           source_providers: ["wahoo"],
+          member_activity_ids: ["a1"],
           avg_hr: 150,
           max_hr: 180,
           avg_power: 200,
@@ -307,6 +308,7 @@ describe("activityRouter", () => {
           name: "Easy Run",
           provider_id: "apple_health",
           source_providers: ["apple_health"],
+          member_activity_ids: ["a1"],
           avg_hr: 142,
           max_hr: 165,
           avg_power: null,
@@ -420,6 +422,7 @@ describe("activityRouter", () => {
         provider_id: "wahoo",
         subsource: null,
         source_providers: ["strava", "wahoo"],
+        member_activity_ids: ["abc-123"],
         source_external_ids: [
           { providerId: "strava", externalId: "99999" },
           { providerId: "wahoo", externalId: "42" },
@@ -483,6 +486,7 @@ describe("activityRouter", () => {
         provider_id: "manual",
         subsource: null,
         source_providers: null,
+        member_activity_ids: ["abc-123"],
         source_external_ids: null,
         avg_hr: null,
         max_hr: null,
@@ -1280,10 +1284,13 @@ describe("activityRouter", () => {
 
       const caller = makeResolvedCaller(
         [
-          makeActivityRow({
-            id: stableGroupId,
-            resolved_from: requestedStrongMemberId,
-          }),
+          {
+            ...makeActivityRow({
+              id: stableGroupId,
+              resolved_from: requestedStrongMemberId,
+            }),
+            member_activity_ids: [requestedStrongMemberId],
+          },
         ],
         undefined,
         requestedStrongMemberId,

@@ -800,7 +800,7 @@ export class ActivityRepository extends BaseRepository {
   async #withActivitySummaries<
     TRow extends {
       id: string;
-      member_activity_ids?: string[];
+      member_activity_ids: string[];
     },
   >(rows: TRow[]): Promise<Array<TRow & { location: ActivityLocation | null }>> {
     const sensorStore = this.#sensorStore;
@@ -833,7 +833,7 @@ export class ActivityRepository extends BaseRepository {
         .map((row) => ({
           id: row.id,
           routeActivityId: row.id,
-          memberActivityIds: row.member_activity_ids ?? [],
+          memberActivityIds: row.member_activity_ids,
         })),
     );
     return rows.map((row) => {
