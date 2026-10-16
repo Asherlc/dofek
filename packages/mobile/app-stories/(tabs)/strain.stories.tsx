@@ -11,6 +11,7 @@ import {
   createProcessingStatusStoryLink,
   seedReadyProcessingStatus,
 } from "../../app-fixtures/(tabs)/processing-status-story-fixture";
+import { climbingLocationMapFixture } from "../../components/climbing-location-map-fixtures";
 import { trpc } from "../../lib/trpc";
 
 const STRAIN_COMPANION_RESPONSES = {
@@ -242,6 +243,11 @@ function createSeededProviders(
       fixture.data,
     );
   }
+
+  queryClient.setQueryData(
+    [["climbing", "locationMap"], { input: { days: 90 }, type: "query" }],
+    climbingLocationMapFixture,
+  );
 
   const processingStatus = seedReadyProcessingStatus(queryClient, [
     "activity",
