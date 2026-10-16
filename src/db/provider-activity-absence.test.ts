@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { makeTransactionalTestDatabase } from "../providers/test-helpers.ts";
 
 const mockInvalidateByPrefix = vi.fn().mockResolvedValue(undefined);
 const mockExecute = vi.fn().mockResolvedValue([]);
@@ -21,12 +22,12 @@ import {
 const userId = "00000000-0000-0000-0000-000000000001";
 
 function makeMockDb(): SyncDatabase {
-  return {
+  return makeTransactionalTestDatabase({
     select: vi.fn(),
     insert: vi.fn(),
     delete: vi.fn(),
     execute: mockExecute,
-  };
+  });
 }
 
 describe("hasProviderActivityListSyncErrors", () => {

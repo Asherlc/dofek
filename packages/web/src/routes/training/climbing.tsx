@@ -1,5 +1,7 @@
 import {
   type ClimbingFilters,
+  climbingFilterKeys,
+  climbingFilterLabels,
   climbingFilterOptions,
   climbingFiltersSchema,
 } from "@dofek/training/climbing-filters";
@@ -10,6 +12,7 @@ import { useId, useState } from "react";
 import type { Activity } from "../../components/ActivityList.tsx";
 import type { ActivityTableColumn } from "../../components/ActivityTable.tsx";
 import { ClimbingGradeProgressionChart } from "../../components/ClimbingGradeProgressionChart.tsx";
+import { ClimbingLocationMap } from "../../components/ClimbingLocationMap.tsx";
 import { ClimbingVolumeByGradeChart } from "../../components/ClimbingVolumeByGradeChart.tsx";
 import { HangboardingSummary } from "../../components/HangboardingSummary.tsx";
 import { QueryStatePanel } from "../../components/QueryStatePanel.tsx";
@@ -89,6 +92,7 @@ export function ClimbingTab() {
     climbingQueryOptions,
   );
   const volumeByGrade = trpc.climbing.volumeByGrade.useQuery(rangeInput, climbingQueryOptions);
+  const locationMap = trpc.climbing.locationMap.useQuery(rangeInput, climbingQueryOptions);
   const sessionSummary = trpc.climbing.sessionSummary.useQuery(rangeInput, climbingQueryOptions);
   const hangboardingSummary = trpc.climbing.hangboardingSummary.useQuery(
     climbingRangeInput(days),
@@ -109,13 +113,13 @@ export function ClimbingTab() {
             {Object.keys(filters).length ? "Filter climbing" : "All climbing"}{" "}
             <span aria-hidden="true">▾</span>
           </button>
-          {(["style", "protection", "setting"] as const).map((key) => {
+          {climbingFilterKeys.map((key) => {
             const label = climbingFilterOptions[key].find(([value]) => value === filters[key])?.[1];
             return label ? (
               <button
                 key={key}
                 type="button"
-                aria-label={`Remove ${label} filter`}
+                aria-label={`Remove ${climbingFilterLabels[key]}: ${label} filter`}
                 className="rounded-full bg-surface-hover px-3 py-1 text-xs"
                 onClick={() =>
                   setFilters((current) => {
@@ -125,32 +129,35 @@ export function ClimbingTab() {
                   })
                 }
               >
-                {label} <span aria-hidden="true">×</span>
+                {climbingFilterLabels[key]}: {label} <span aria-hidden="true">×</span>
               </button>
             ) : null;
           })}
         </div>
         {filtersOpen ? (
           <div id={filtersId} className="flex flex-wrap gap-4 rounded-lg border border-border p-3">
-            {(["style", "protection", "setting"] as const).map((key) => (
+            {climbingFilterKeys.map((key) => (
               <label key={key} className="flex flex-col gap-1 text-xs text-muted">
-                {key === "style" ? "Style" : key === "protection" ? "Protection" : "Setting"}
+                {climbingFilterLabels[key]}
                 <select
                   className="rounded border border-border bg-surface px-2 py-2 text-sm"
-                  value={filters[key] ?? ""}
+                  value={filters[key] === undefined ? "" : String(filters[key])}
                   onChange={(event) =>
                     setFilters((current) => {
                       const next = { ...current };
                       delete next[key];
+                      const selected = climbingFilterOptions[key].find(
+                        ([option]) => String(option) === event.target.value,
+                      );
                       return climbingFiltersSchema.parse(
-                        event.target.value ? { ...next, [key]: event.target.value } : next,
+                        selected ? { ...next, [key]: selected[0] } : next,
                       );
                     })
                   }
                 >
                   <option value="">All</option>
                   {climbingFilterOptions[key].map(([value, label]) => (
-                    <option key={value} value={value}>
+                    <option key={String(value)} value={String(value)}>
                       {label}
                     </option>
                   ))}
@@ -160,12 +167,22 @@ export function ClimbingTab() {
           </div>
         ) : null}
       </div>
-      {gradeProgression.isFetching || volumeByGrade.isFetching || sessionSummary.isFetching ? (
+      {gradeProgression.isFetching ||
+      volumeByGrade.isFetching ||
+      sessionSummary.isFetching ||
+      locationMap.isFetching ? (
         <p role="status" className="mb-3 text-xs text-muted">
           Updating climbing…
         </p>
       ) : null}
       <div className="grid grid-cols-1 gap-6">
+        <Section title="Climbing Locations">
+          {locationMap.error ? <QueryStatePanel error={locationMap.error} height={0} /> : null}
+          {locationMap.error && !locationMap.data ? null : (
+            <ClimbingLocationMap data={locationMap.data} loading={locationMap.isLoading} />
+          )}
+        </Section>
+
         <Section title="Grade Progression">
           {gradeProgression.error ? (
             <QueryStatePanel error={gradeProgression.error} height={0} />

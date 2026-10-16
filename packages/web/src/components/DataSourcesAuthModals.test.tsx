@@ -48,6 +48,22 @@ beforeEach(() => {
 });
 
 describe("data source auth dialogs", () => {
+  it("shows an unfamiliar public profile identity as visible text", async () => {
+    const { TokenAuthModal } = await import("./DataSourcesAuthModals.tsx");
+    render(
+      <TokenAuthModal
+        kind="public-profile"
+        providerId="public-profile"
+        providerName="Public Profile"
+        tokenLabel="Public profile URL"
+        instructionsUrl="https://example.com/profiles"
+        onClose={vi.fn()}
+        onSuccess={vi.fn()}
+      />,
+    );
+    expect(screen.getByLabelText("Public profile URL")).toHaveAttribute("type", "text");
+  });
+
   it("trims credential usernames before submitting them", async () => {
     render(
       <CredentialAuthModal
@@ -161,6 +177,7 @@ describe("Data source authentication telemetry", () => {
     const { TokenAuthModal } = await import("./DataSourcesAuthModals.tsx");
     render(
       <TokenAuthModal
+        kind={providerId === "openbeta" ? "public-profile" : "access-token"}
         providerId={providerId}
         providerName={providerId}
         tokenLabel={label}
@@ -181,6 +198,7 @@ describe("Data source authentication telemetry", () => {
 
     render(
       <TokenAuthModal
+        kind="access-token"
         providerId="wger"
         providerName="Wger"
         tokenLabel="JWT refresh token"
@@ -210,6 +228,7 @@ describe("Data source authentication telemetry", () => {
 
     render(
       <TokenAuthModal
+        kind="access-token"
         providerId="wger"
         providerName="Wger"
         tokenLabel="JWT refresh token"
@@ -242,6 +261,7 @@ describe("Data source authentication telemetry", () => {
 
     render(
       <TokenAuthModal
+        kind="access-token"
         providerId="ultrahuman"
         providerName="Ultrahuman"
         tokenLabel="Personal API token"
@@ -276,6 +296,7 @@ describe("Data source authentication telemetry", () => {
 
     render(
       <TokenAuthModal
+        kind="access-token"
         providerId="wger"
         providerName="Wger"
         tokenLabel="JWT refresh token"

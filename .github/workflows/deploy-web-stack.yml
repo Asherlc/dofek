@@ -350,13 +350,6 @@ jobs:
           )"
           echo "CLICKHOUSE_PASSWORD_ENCODED=$encoded_clickhouse_password" >> "$GITHUB_ENV"
 
-      - name: Validate rendered stack files
-        run: |
-          node "$RUNNER_TEMP/run-with-dotenv-env.mjs" \
-            docker stack config $STACK_FILE_FLAGS >/dev/null
-          node "$RUNNER_TEMP/run-with-dotenv-env.mjs" \
-            docker stack config $STACK_FILE_FLAGS -c deploy/stack.cdc-quiesce.yml >/dev/null
-
       - name: Login to GHCR
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
@@ -407,24 +400,8 @@ jobs:
           IMAGE_TAG: ${{ steps.resolve.outputs.tag }}
         run: |
           echo "Starting deploy with IMAGE_TAG=${IMAGE_TAG}"
-          docker pull "ghcr.io/asherlc/dofek:${IMAGE_TAG}"
-
-          sentry_release="$(
-            docker image inspect "ghcr.io/asherlc/dofek:${IMAGE_TAG}" \
-              --format '{{range .Config.Env}}{{println .}}{{end}}' \
-              | sed -n 's/^SENTRY_RELEASE=//p' \
-              | head -n 1
-          )"
-          if [ -z "$sentry_release" ]; then
-            echo "::error::Image ghcr.io/asherlc/dofek:${IMAGE_TAG} does not declare SENTRY_RELEASE"
-            exit 1
-          fi
-          checked_out_sha="$(git rev-parse HEAD)"
-          if [ "$sentry_release" != "$checked_out_sha" ]; then
-            echo "::error::Checked-out commit ${checked_out_sha} does not match image SENTRY_RELEASE ${sentry_release}; dispatch the workflow from the image's source commit."
-            exit 1
-          fi
-          echo "sentry_release=$sentry_release" >> "$GITHUB_OUTPUT"
+          pnpm tsx scripts/resolve-deploy-image.ts \
+            "ghcr.io/asherlc/dofek:${IMAGE_TAG}" "$(git rev-parse HEAD)" "${STACK_NAME}_web"
 
           server_host="${DOCKER_HOST#ssh://${SSH_USER}@}"
           if [ -z "$server_host" ] || [ "$server_host" = "$DOCKER_HOST" ]; then
@@ -456,9 +433,18 @@ jobs:
           pull_if_missing "dbeaver/cloudbeaver:26.0.3@sha256:3daa6269a49198363af3f0fcd8af58def9a32fa38152b9ab37854dc80c16a4a4"
           REMOTE
 
+      - name: Validate rendered stack files
+        env:
+          APP_IMAGE: ${{ steps.pull_images.outputs.image_ref }}
+        run: |
+          node "$RUNNER_TEMP/run-with-dotenv-env.mjs" \
+            env APP_IMAGE="$APP_IMAGE" docker stack config $STACK_FILE_FLAGS >/dev/null
+          node "$RUNNER_TEMP/run-with-dotenv-env.mjs" \
+            env APP_IMAGE="$APP_IMAGE" docker stack config $STACK_FILE_FLAGS -c deploy/stack.cdc-quiesce.yml >/dev/null
+
       - name: Upload web assets to R2
         env:
-          IMAGE_TAG: ${{ steps.resolve.outputs.tag }}
+          APP_IMAGE: ${{ steps.pull_images.outputs.image_ref }}
           WEB_ASSETS_R2_BUCKET: dofek-web-assets
           AWS_DEFAULT_REGION: auto
         run: |
@@ -474,20 +460,20 @@ jobs:
           AWS_SECRET_ACCESS_KEY="$(env_value R2_SECRET_ACCESS_KEY)"
           export AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY
 
-          web_dist_dir="$RUNNER_TEMP/web-dist-${IMAGE_TAG}"
+          web_dist_dir="$RUNNER_TEMP/web-dist-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           rm -rf "$web_dist_dir"
           mkdir -p "$web_dist_dir"
 
-          docker run --rm --entrypoint sh "ghcr.io/asherlc/dofek:${IMAGE_TAG}" \
+          docker run --rm --entrypoint sh "${APP_IMAGE}" \
             -euc 'cd /app/packages/web/dist && tar -cf - .' \
             | tar -xf - -C "$web_dist_dir"
 
           if [ -z "$(find "$web_dist_dir" -type f ! -name "index.html" -print -quit)" ]; then
-            echo "::error::No built web asset files found in image ghcr.io/asherlc/dofek:${IMAGE_TAG}"
+            echo "::error::No built web asset files found in image ${APP_IMAGE}"
             exit 1
           fi
           if [ ! -f "$web_dist_dir/index.html" ]; then
-            echo "::error::Built web index.html not found in image ghcr.io/asherlc/dofek:${IMAGE_TAG}"
+            echo "::error::Built web index.html not found in image ${APP_IMAGE}"
             exit 1
           fi
 
@@ -542,39 +528,41 @@ jobs:
           done
           REMOTE
 
+      - name: Select migration deployment mode from image histories
+        id: migration_deployment
+        env:
+          APP_IMAGE: ${{ steps.pull_images.outputs.image_ref }}
+          PRE_MIGRATION_APP_IMAGE: ${{ steps.pull_images.outputs.pre_migration_image_ref }}
+        run: |
+          pnpm tsx scripts/prepare-migration-deployment.ts \
+            "$APP_IMAGE" "$STACK_NAME" "$PRE_MIGRATION_APP_IMAGE"
+
       - name: Apply dependency stack before migrations
         env:
-          REQUESTED_IMAGE_TAG: ${{ steps.resolve.outputs.tag }}
+          APP_IMAGE: ${{ steps.pull_images.outputs.pre_migration_image_ref }}
+          MIGRATION_DEPLOYMENT_MODE: ${{ steps.migration_deployment.outputs.mode }}
+          MIGRATION_MAINTENANCE_BOUNDARY: ${{ steps.migration_deployment.outputs.maintenance_boundary }}
         run: |
-          pre_migration_image_tag="$REQUESTED_IMAGE_TAG"
-          web_service_name="${STACK_NAME}_web"
-          if docker service inspect "$web_service_name" >/dev/null 2>&1; then
-            deployed_web_image="$(
-              docker service inspect "$web_service_name" \
-                --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}'
-            )"
-            deployed_web_image="${deployed_web_image%@*}"
-            case "$deployed_web_image" in
-              ghcr.io/asherlc/dofek:*)
-                pre_migration_image_tag="${deployed_web_image#ghcr.io/asherlc/dofek:}"
-                ;;
-              *)
-                echo "::error::Unable to derive the deployed app image tag from ${deployed_web_image}"
-                exit 1
-                ;;
-            esac
+          maintenance_flags=""
+          if [ "$MIGRATION_DEPLOYMENT_MODE" = "maintenance" ]; then
+            maintenance_flags="-c deploy/stack.maintenance.yml"
           fi
 
-          echo "Applying dependency changes with app image ${pre_migration_image_tag} before migrations."
-          IMAGE_TAG="$pre_migration_image_tag" \
-            WEB_ENV_FILE="${WEB_PRE_MIGRATION_ENV_FILE:?WEB_PRE_MIGRATION_ENV_FILE is required}" \
+          echo "Applying dependency changes with app image ${APP_IMAGE} before migrations (${MIGRATION_DEPLOYMENT_MODE})."
+          WEB_ENV_FILE="${WEB_PRE_MIGRATION_ENV_FILE:?WEB_PRE_MIGRATION_ENV_FILE is required}" \
             node "$RUNNER_TEMP/run-with-dotenv-env.mjs" \
+            env APP_IMAGE="$APP_IMAGE" WEB_ENV_FILE="$WEB_PRE_MIGRATION_ENV_FILE" \
+              MIGRATION_MAINTENANCE_BOUNDARY="$MIGRATION_MAINTENANCE_BOUNDARY" \
             docker stack deploy $STACK_FILE_FLAGS \
               -c deploy/stack.cdc-quiesce.yml \
               -c deploy/stack.migration-quiesce.yml \
+              $maintenance_flags \
               --with-registry-auth --detach=true "$STACK_NAME"
 
       - name: Wait for pre-migration web convergence
+        if: steps.migration_deployment.outputs.mode == 'rolling'
+        env:
+          APP_IMAGE: ${{ steps.pull_images.outputs.pre_migration_image_ref }}
         run: |
           deadline=$((SECONDS + 300))
           while true; do
@@ -596,6 +584,7 @@ jobs:
             if [ "$replicas" = "2/2" ] && {
               [ -z "$update_state" ] || [ "$update_state" = "completed" ]
             }; then
+              pnpm tsx scripts/verify-deploy-image.ts "$APP_IMAGE" "${STACK_NAME}_web"
               break
             fi
             if [ "$SECONDS" -ge "$deadline" ]; then
@@ -605,6 +594,11 @@ jobs:
             fi
             sleep 5
           done
+
+      - name: Wait for migration readers and writers to stop
+        env:
+          MIGRATION_DEPLOYMENT_MODE: ${{ steps.migration_deployment.outputs.mode }}
+        run: pnpm tsx scripts/wait-migration-quiescence.ts "$STACK_NAME" "$MIGRATION_DEPLOYMENT_MODE"
 
       - name: Wait for Postgres writable
         run: |
@@ -681,18 +675,18 @@ jobs:
       - name: Prepare PeerDB CDC contract
         id: prepare_peerdb_cdc_contract
         env:
-          IMAGE_TAG: ${{ steps.resolve.outputs.tag }}
+          APP_IMAGE: ${{ steps.pull_images.outputs.image_ref }}
         run: |
           docker run --rm --network "${STACK_NAME}_default" \
             --env-file "$CDC_OPERATIONS_ENV_FILE" \
             --env "CLICKHOUSE_PASSWORD_ENCODED=$CLICKHOUSE_PASSWORD_ENCODED" \
             --entrypoint sh \
-            "ghcr.io/asherlc/dofek:${IMAGE_TAG}" \
+            "${APP_IMAGE}" \
             -euc 'export DATABASE_URL="postgres://health:${POSTGRES_PASSWORD}@db:5432/health"; export CLICKHOUSE_URL="http://default:${CLICKHOUSE_PASSWORD_ENCODED}@clickhouse:8123"; exec ./entrypoint.sh peerdb-cdc-contract prepare'
 
       - name: Run migrations
         env:
-          IMAGE_TAG: ${{ steps.resolve.outputs.tag }}
+          APP_IMAGE: ${{ steps.pull_images.outputs.image_ref }}
         run: |
           migration_container="${STACK_NAME}_migrate_${GITHUB_RUN_ID}_${GITHUB_RUN_ATTEMPT}"
           cleanup_migration_container() {
@@ -711,7 +705,7 @@ jobs:
             --env-file "$DATABASE_OPERATIONS_ENV_FILE" \
             --env "CLICKHOUSE_PASSWORD_ENCODED=$CLICKHOUSE_PASSWORD_ENCODED" \
             --entrypoint sh \
-            "ghcr.io/asherlc/dofek:${IMAGE_TAG}" \
+            "${APP_IMAGE}" \
              -euc 'export DATABASE_URL="postgres://health:${POSTGRES_PASSWORD}@db:5432/health"; export CLICKHOUSE_URL="http://default:${CLICKHOUSE_PASSWORD_ENCODED}@clickhouse:8123"; exec node --experimental-strip-types --enable-source-maps --disable-warning=ExperimentalWarning --import ./src/opentelemetry-hook.mjs --import ./src/instrumentation.ts src/db/run-migrate.ts'
 
            inspect_failure_count=0
@@ -767,11 +761,12 @@ jobs:
       - name: Deploy stack without ClickHouse consumers
         id: deploy_stack_quiesced
         env:
-          IMAGE_TAG: ${{ steps.resolve.outputs.tag }}
+          APP_IMAGE: ${{ steps.pull_images.outputs.image_ref }}
+          MIGRATION_DEPLOYMENT_MODE: ${{ steps.migration_deployment.outputs.mode }}
         run: |
           echo "web_convergence_failed=false" >> "$GITHUB_OUTPUT"
           set +e
-          timeout 35m node "$RUNNER_TEMP/run-with-dotenv-env.mjs" docker stack deploy $STACK_FILE_FLAGS -c deploy/stack.cdc-quiesce.yml --with-registry-auth --prune --detach=true "$STACK_NAME"
+          timeout 35m node "$RUNNER_TEMP/run-with-dotenv-env.mjs" env APP_IMAGE="$APP_IMAGE" docker stack deploy $STACK_FILE_FLAGS -c deploy/stack.cdc-quiesce.yml --with-registry-auth --prune --detach=true "$STACK_NAME"
           status=$?
           set -e
           if [ "$status" -eq 124 ]; then
@@ -782,7 +777,7 @@ jobs:
           fi
 
           wait_deadline_seconds=$((SECONDS + 2100))
-          for service in web worker analytics-worker metric-stream-clickhouse-sink metric-stream-live-clickhouse-sink metric-stream-history-clickhouse-sink metric-stream-r2-archive metric-stream-live-r2-archive metric-stream-history-r2-archive processing-reconciliation clickhouse databasus; do
+          for service in web worker cdc-health analytics-worker metric-stream-clickhouse-sink metric-stream-live-clickhouse-sink metric-stream-history-clickhouse-sink metric-stream-r2-archive metric-stream-live-r2-archive metric-stream-history-r2-archive processing-reconciliation clickhouse databasus; do
             service_name="${STACK_NAME}_${service}"
             while true; do
               update_state="$(
@@ -801,6 +796,15 @@ jobs:
                 docker service ls --filter "name=${service_name}" --format '{{.Replicas}}'
               )"
               echo "${service_name} image=${image} replicas=${replicas} update_state=${update_state:-none}"
+              if [ "$MIGRATION_DEPLOYMENT_MODE" = "maintenance" ] && [ "$service" = "web" ]; then
+                case "$update_state" in
+                  rollback_*|paused)
+                    docker service ps "$service_name" --no-trunc
+                    echo "::error::Maintenance rollout failed; the previous web specification has zero replicas. Resolve the rollout and rerun the deployment before restoring consumers."
+                    exit 1
+                    ;;
+                esac
+              fi
               if [ "$service" = "web" ] && [ "$update_state" = "rollback_started" ]; then
                 if [ "$SECONDS" -ge "$wait_deadline_seconds" ]; then
                   docker service ps "$service_name" --no-trunc
@@ -813,7 +817,7 @@ jobs:
               fi
               if [ "$service" = "web" ] && {
                 [ "$update_state" = "rollback_completed" ] || {
-                  [ "${image%@*}" != "ghcr.io/asherlc/dofek:${IMAGE_TAG}" ] && {
+                  [ "${image##*@}" != "${APP_IMAGE##*@}" ] && {
                     [ "$update_state" = "completed" ]
                   }
                 }
@@ -834,9 +838,9 @@ jobs:
                 break
               fi
               case "$service" in
-                web|worker|analytics-worker|metric-stream-clickhouse-sink|metric-stream-live-clickhouse-sink|metric-stream-history-clickhouse-sink|processing-reconciliation)
-                  expected_image="ghcr.io/asherlc/dofek:${IMAGE_TAG}"
-                  if [ "${image%@*}" != "$expected_image" ]; then
+                web|worker|cdc-health|analytics-worker|metric-stream-clickhouse-sink|metric-stream-live-clickhouse-sink|metric-stream-history-clickhouse-sink|processing-reconciliation)
+                  expected_image="${APP_IMAGE}"
+                  if [ "${image##*@}" != "${expected_image##*@}" ]; then
                     docker service ps "$service_name" --no-trunc
                     echo "::error::${service_name} is using ${image}, expected ${expected_image}"
                     exit 1
@@ -858,6 +862,11 @@ jobs:
               if [ "$replicas" = "${desired_replicas}/${desired_replicas}" ] && {
                 [ -z "$update_state" ] || [ "$update_state" = "completed" ]
               }; then
+                case "$service" in
+                  web|worker|cdc-health|analytics-worker|metric-stream-clickhouse-sink|metric-stream-live-clickhouse-sink|metric-stream-history-clickhouse-sink|processing-reconciliation)
+                    pnpm tsx scripts/verify-deploy-image.ts "$APP_IMAGE" "$service_name"
+                    ;;
+                esac
                 break
               fi
               if [ "$SECONDS" -ge "$wait_deadline_seconds" ]; then
@@ -897,12 +906,12 @@ jobs:
 
       - name: Backfill and cut over provider connections
         env:
-          IMAGE_TAG: ${{ steps.resolve.outputs.tag }}
+          APP_IMAGE: ${{ steps.pull_images.outputs.image_ref }}
         run: |
           docker run --rm --network "${STACK_NAME}_default" \
             --env-file "$DATABASE_OPERATIONS_ENV_FILE" \
             --entrypoint sh \
-            "ghcr.io/asherlc/dofek:${IMAGE_TAG}" \
+            "${APP_IMAGE}" \
             -euc 'export DATABASE_URL="postgres://health:${POSTGRES_PASSWORD}@db:5432/health"; exec ./entrypoint.sh provider-connection-cutover'
 
       - name: Wait for ClickHouse after stack deploy
@@ -1028,19 +1037,19 @@ jobs:
       - name: Configure ClickHouse CDC
         id: configure_clickhouse_cdc
         env:
-          IMAGE_TAG: ${{ steps.resolve.outputs.tag }}
+          APP_IMAGE: ${{ steps.pull_images.outputs.image_ref }}
         run: |
           docker run --rm --network "${STACK_NAME}_default" \
             --env-file "$CDC_OPERATIONS_ENV_FILE" \
             --env "CLICKHOUSE_PASSWORD_ENCODED=$CLICKHOUSE_PASSWORD_ENCODED" \
             --entrypoint sh \
-            "ghcr.io/asherlc/dofek:${IMAGE_TAG}" \
+            "${APP_IMAGE}" \
              -euc 'export DATABASE_URL="postgres://health:${POSTGRES_PASSWORD}@db:5432/health"; export CLICKHOUSE_URL="http://default:${CLICKHOUSE_PASSWORD_ENCODED}@clickhouse:8123"; exec node --experimental-strip-types --enable-source-maps --disable-warning=ExperimentalWarning --import ./src/opentelemetry-hook.mjs --import ./src/instrumentation.ts src/db/setup-clickhouse-cdc.ts'
 
       - name: Finalize PeerDB CDC contract
         id: finalize_peerdb_cdc_contract
         env:
-          IMAGE_TAG: ${{ steps.resolve.outputs.tag }}
+          APP_IMAGE: ${{ steps.pull_images.outputs.image_ref }}
         run: |
           docker run --rm --network "${STACK_NAME}_default" \
             --user 0:0 \
@@ -1048,13 +1057,13 @@ jobs:
             --env "CLICKHOUSE_PASSWORD_ENCODED=$CLICKHOUSE_PASSWORD_ENCODED" \
             --mount "type=volume,source=${PEERDB_CDC_CANARY_VOLUME},target=/run/dofek-peerdb-cdc" \
             --entrypoint sh \
-            "ghcr.io/asherlc/dofek:${IMAGE_TAG}" \
+            "${APP_IMAGE}" \
             -euc 'export DATABASE_URL="postgres://health:${POSTGRES_PASSWORD}@db:5432/health"; export CLICKHOUSE_URL="http://default:${CLICKHOUSE_PASSWORD_ENCODED}@clickhouse:8123"; exec ./entrypoint.sh peerdb-cdc-contract finalize /run/dofek-peerdb-cdc/artifact.json'
 
       - name: Verify PeerDB CDC causal markers
         id: verify_peerdb_cdc_contract
         env:
-          IMAGE_TAG: ${{ steps.resolve.outputs.tag }}
+          APP_IMAGE: ${{ steps.pull_images.outputs.image_ref }}
         run: |
           docker run --rm --network "${STACK_NAME}_default" \
             --user 0:0 \
@@ -1062,14 +1071,14 @@ jobs:
             --env "CLICKHOUSE_PASSWORD_ENCODED=$CLICKHOUSE_PASSWORD_ENCODED" \
             --mount "type=volume,source=${PEERDB_CDC_CANARY_VOLUME},target=/run/dofek-peerdb-cdc,readonly" \
             --entrypoint sh \
-            "ghcr.io/asherlc/dofek:${IMAGE_TAG}" \
+            "${APP_IMAGE}" \
             -euc 'export DATABASE_URL="postgres://health:${POSTGRES_PASSWORD}@db:5432/health"; export CLICKHOUSE_URL="http://default:${CLICKHOUSE_PASSWORD_ENCODED}@clickhouse:8123"; exec ./entrypoint.sh peerdb-cdc-contract verify /run/dofek-peerdb-cdc/artifact.json'
 
       - name: Deploy ClickHouse consumer services
         id: deploy_stack_full
         if: success() && steps.deploy_stack_quiesced.conclusion == 'success' && steps.configure_clickhouse_cdc.conclusion == 'success' && steps.verify_peerdb_cdc_contract.conclusion == 'success'
         env:
-          IMAGE_TAG: ${{ steps.resolve.outputs.tag }}
+          APP_IMAGE: ${{ steps.pull_images.outputs.image_ref }}
           WEB_CONVERGENCE_FAILED: ${{ steps.deploy_stack_quiesced.outputs.web_convergence_failed }}
         run: |
           stack_file_flags=()
@@ -1077,7 +1086,7 @@ jobs:
           if [ "$WEB_CONVERGENCE_FAILED" = "true" ]; then
             web_excluded_stack_config="$RUNNER_TEMP/stack-without-web.yml"
             node "$RUNNER_TEMP/run-with-dotenv-env.mjs" \
-              docker stack config --skip-interpolation "${stack_file_flags[@]}" \
+              env APP_IMAGE="$APP_IMAGE" docker stack config --skip-interpolation "${stack_file_flags[@]}" \
               | node --input-type=module -e '
                 import { parse, stringify } from "yaml";
                 let input = "";
@@ -1092,7 +1101,7 @@ jobs:
             stack_file_flags+=(--prune)
           fi
           set +e
-          timeout 20m node "$RUNNER_TEMP/run-with-dotenv-env.mjs" docker stack deploy "${stack_file_flags[@]}" --with-registry-auth --detach=true "$STACK_NAME"
+          timeout 20m node "$RUNNER_TEMP/run-with-dotenv-env.mjs" env APP_IMAGE="$APP_IMAGE" docker stack deploy "${stack_file_flags[@]}" --with-registry-auth --detach=true "$STACK_NAME"
           status=$?
           set -e
           if [ "$status" -eq 124 ]; then
@@ -1133,8 +1142,8 @@ jobs:
               echo "${service_name} image=${image} replicas=${replicas} update_state=${update_state:-none} task_id=${task_id:-none}"
               case "$service" in
                 analytics-worker|metric-stream-clickhouse-sink|metric-stream-live-clickhouse-sink|metric-stream-history-clickhouse-sink|processing-reconciliation)
-                  expected_image="ghcr.io/asherlc/dofek:${IMAGE_TAG}"
-                  if [ "${image%@*}" != "$expected_image" ]; then
+                  expected_image="${APP_IMAGE}"
+                  if [ "${image##*@}" != "${expected_image##*@}" ]; then
                     docker service ps "$service_name" --no-trunc
                     echo "::error::${service_name} is using ${image}, expected ${expected_image}"
                     exit 1
@@ -1173,6 +1182,11 @@ jobs:
 
                 stable_elapsed_seconds=$((SECONDS - stable_since_seconds))
                 if [ "$stable_elapsed_seconds" -ge "$stability_window_seconds" ]; then
+                  case "$service" in
+                    analytics-worker|metric-stream-clickhouse-sink|metric-stream-live-clickhouse-sink|metric-stream-history-clickhouse-sink|processing-reconciliation)
+                      pnpm tsx scripts/verify-deploy-image.ts "$APP_IMAGE" "$service_name"
+                      ;;
+                  esac
                   echo "${service_name} task ${task_id} has remained converged for ${stability_window_seconds}s"
                   break
                 fi
@@ -1190,6 +1204,13 @@ jobs:
               fi
               sleep 10
             done
+          done
+
+          for service in web worker cdc-health; do
+            if [ "$service" = "web" ] && [ "$WEB_CONVERGENCE_FAILED" = "true" ]; then
+              continue
+            fi
+            pnpm tsx scripts/verify-deploy-image.ts "$APP_IMAGE" "${STACK_NAME}_${service}"
           done
 
       - name: Remove unused Apple private key Swarm secrets
@@ -1215,19 +1236,19 @@ jobs:
       - name: Verify database backup freshness
         if: steps.deploy_stack_full.outcome == 'success' && (env.DEPLOY_ENVIRONMENT == 'prod' || env.DEPLOY_ENVIRONMENT == 'production')
         env:
-          IMAGE_TAG: ${{ steps.resolve.outputs.tag }}
+          APP_IMAGE: ${{ steps.pull_images.outputs.image_ref }}
         run: |
           docker run --rm \
             --env-file "$R2_OPERATIONS_ENV_FILE" \
             --entrypoint node \
-            "ghcr.io/asherlc/dofek:${IMAGE_TAG}" \
+            "${APP_IMAGE}" \
             --experimental-strip-types \
             --enable-source-maps \
             scripts/check-database-backup-freshness.ts
 
       - name: Record Sentry production release
         if: steps.deploy_stack_full.outcome == 'success' && steps.deploy_stack_quiesced.outputs.web_convergence_failed != 'true' && (env.DEPLOY_ENVIRONMENT == 'prod' || env.DEPLOY_ENVIRONMENT == 'production')
-        uses: getsentry/action-release@ff07929a6537bac57790c3451cf4d364aca38528 # v3.7.0
+        uses: getsentry/action-release@6fb9aeade7061441cf3864e34fbe11a1457ad7dc # v3.7.1
         env:
           DOCKER_HOST: unix:///var/run/docker.sock
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
@@ -1237,6 +1258,13 @@ jobs:
           projects: dofek-web dofek-server
           release: ${{ steps.pull_images.outputs.sentry_release }}
           set_commits: skip
+
+      - name: Report incomplete maintenance deployment
+        if: failure() && steps.migration_deployment.outputs.mode == 'maintenance' && steps.deploy_stack_full.outcome != 'success'
+        run: |
+          message="Maintenance deployment did not complete. Old web and worker tasks must remain stopped after the schema boundary; rerun the canonical deployment with the requested release. Do not restore an earlier app image."
+          echo "::error::$message"
+          echo "$message" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Report quiesced processing services
         if: failure() && steps.deploy_stack_quiesced.conclusion == 'success' && steps.deploy_stack_full.conclusion == 'skipped'

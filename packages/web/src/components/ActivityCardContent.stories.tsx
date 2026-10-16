@@ -1,6 +1,7 @@
 import { UnitConverter } from "@dofek/format/units";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { ActivityCardContent, type ActivityCardData } from "./ActivityCardContent.tsx";
+import { climbingSourceLocation } from "./ActivityMapTile.fixtures.ts";
 
 const units = new UnitConverter("metric");
 
@@ -76,6 +77,9 @@ const mappedActivity: ActivityCardData = {
   elevationGainM: 493,
   elevationState: { status: "available" },
   location: {
+    kind: "recorded_gps",
+    centroidLat: 37.7749,
+    centroidLng: -122.4194,
     mapPreview: {
       width: 512,
       height: 512,
@@ -163,6 +167,23 @@ export const MappedActivity: Story = {
       </div>
     ),
   ],
+};
+
+export const ClimbingSourceLocations: Story = {
+  parameters: { layout: "fullscreen" },
+  args: {
+    activity: {
+      ...strengthActivity,
+      id: "climbing-1",
+      name: "Afternoon climbing",
+      activityType: "climbing",
+      durationMin: 120,
+      source: { primarySourceLabel: "Mountain Project", sourceCount: 1, overlapSummary: null },
+      stats: [{ status: "available", label: "Climbs", value: "3" }],
+      location: climbingSourceLocation,
+    },
+  },
+  decorators: MappedActivity.decorators,
 };
 
 export const UnavailableTrainingStress: Story = {

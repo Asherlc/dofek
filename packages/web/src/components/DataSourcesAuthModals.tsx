@@ -1,5 +1,5 @@
 import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
-import { providerCatalogEntry } from "@dofek/providers/provider-catalog";
+import type { ProviderManualConnectionKind } from "@dofek/providers/provider-connection";
 import type React from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { locallyReportedErrorMeta } from "../lib/query-client.ts";
@@ -155,6 +155,7 @@ export function CredentialAuthModal({
 // -- Personal Token Auth Modal --
 
 export function TokenAuthModal({
+  kind,
   providerId,
   providerName,
   tokenLabel,
@@ -162,6 +163,7 @@ export function TokenAuthModal({
   onClose,
   onSuccess,
 }: {
+  kind: ProviderManualConnectionKind;
   providerId: string;
   providerName: string;
   tokenLabel: string;
@@ -257,7 +259,7 @@ export function TokenAuthModal({
           <input
             ref={tokenRef}
             id={`${providerId}-token`}
-            type={providerCatalogEntry(providerId)?.connectionInputType ?? "password"}
+            type={kind === "public-profile" ? "text" : "password"}
             value={token}
             onChange={(event) => setToken(event.target.value)}
             required

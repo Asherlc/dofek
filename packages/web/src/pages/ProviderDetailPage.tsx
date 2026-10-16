@@ -236,6 +236,7 @@ export function ProviderDetailPage() {
       case "credential":
         setReconnectModal("credential");
         return;
+      case "public-profile":
       case "token": {
         if (provider.tokenAuth) {
           setReconnectModal("token");
@@ -599,6 +600,7 @@ export function ProviderDetailPage() {
       ) : null}
       {provider?.tokenAuth && reconnectModal === "token" ? (
         <TokenAuthModal
+          kind={provider.tokenAuth.kind}
           providerId={provider.id}
           providerName={provider.name}
           tokenLabel={provider.tokenAuth.label}

@@ -9,8 +9,11 @@ import {
 } from "./climbing-progression.ts";
 
 const boulderingLane: ClimbingGradeProgressionLane = {
-  style: "boulder",
-  climbType: "boulder",
+  attemptScope: "climb",
+  ropeMethod: null,
+  solo: null,
+  usedAid: null,
+  climbKind: "boulder",
   gradeSystem: "v_scale",
   grades: [],
   settings: ["indoor"],
@@ -21,6 +24,22 @@ const boulderingLane: ClimbingGradeProgressionLane = {
 };
 
 describe("climbingProgressionLaneLabel", () => {
+  it("distinguishes unknown solo and aid facts when otherwise matching lanes are present", () => {
+    const known: ClimbingGradeProgressionLane = {
+      ...boulderingLane,
+      climbKind: "route",
+      ropeMethod: "lead",
+      solo: false,
+      usedAid: false,
+    };
+    const unknown: ClimbingGradeProgressionLane = { ...known, solo: null, usedAid: null };
+    expect(climbingProgressionLaneLabel(known, [known, unknown])).toBe(
+      "Lead · With belayer · Without aid",
+    );
+    expect(climbingProgressionLaneLabel(unknown, [known, unknown])).toBe(
+      "Lead · Solo unknown · Aid unknown",
+    );
+  });
   it("uses the style label when matching lanes share a grade scale", () => {
     expect(climbingProgressionLaneLabel(boulderingLane, [boulderingLane])).toBe("Bouldering");
     expect(climbingProgressionLaneLabel(boulderingLane, [boulderingLane, boulderingLane])).toBe(
@@ -38,13 +57,25 @@ describe("climbingProgressionLaneLabel", () => {
   it("keeps different styles concise even when their grade systems differ", () => {
     const leadLane: ClimbingGradeProgressionLane = {
       ...boulderingLane,
-      style: "lead",
-      climbType: "route",
+      ropeMethod: "lead",
+      climbKind: "route",
       gradeSystem: "yds",
     };
     const lanes = [boulderingLane, leadLane];
     expect(climbingProgressionLaneLabel(boulderingLane, lanes)).toBe("Bouldering");
     expect(climbingProgressionLaneLabel(leadLane, lanes)).toBe("Lead");
+  });
+  it("labels method solo aid and pitch scope independently", () => {
+    const lane: ClimbingGradeProgressionLane = {
+      ...boulderingLane,
+      climbKind: "route",
+      ropeMethod: "lead",
+      solo: true,
+      usedAid: true,
+      attemptScope: "pitch",
+      gradeSystem: "yds",
+    };
+    expect(climbingProgressionLaneLabel(lane, [lane])).toBe("Lead · Solo · Aid · Pitch");
   });
 });
 

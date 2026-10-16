@@ -1,5 +1,6 @@
 import * as accountSchema from "./schema/account.ts";
 import * as activitySchema from "./schema/activity.ts";
+import * as climbingSchema from "./schema/climbing.ts";
 import * as clinicalSchema from "./schema/clinical.ts";
 import * as coreSchema from "./schema/core.ts";
 import * as enumSchema from "./schema/enums.ts";
@@ -16,6 +17,7 @@ export const drizzleSchema = {
   ...enumSchema,
   ...referenceSchema,
   ...activitySchema,
+  ...climbingSchema,
   ...nutritionSchema,
   ...mcpSchema,
   ...clinicalSchema,

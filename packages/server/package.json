@@ -53,7 +53,8 @@
     "oidc-provider": "9.12.2",
     "qrcode": "1.5.4",
     "simple-statistics": "7.10.2",
-    "zod": "4.4.3"
+    "supercluster": "9.1.0",
+    "zod": "4.6.7"
   },
   "devDependencies": {
     "@types/compression": "1.8.1",

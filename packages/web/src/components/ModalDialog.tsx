@@ -24,7 +24,7 @@ export function ModalDialog({
   open,
   overlayClassName = "bg-black/60 backdrop-blur-sm",
 }: ModalDialogProps) {
-  const returnFocusRef = useRef<HTMLElement | null>(null);
+  const returnFocusRef = useRef<HTMLElement | SVGElement | null>(null);
 
   function restoreFocus() {
     if (returnFocusRef.current?.isConnected) {
@@ -68,7 +68,10 @@ export function ModalDialog({
             restoreFocus();
           }}
           onOpenAutoFocus={(event) => {
-            if (document.activeElement instanceof HTMLElement) {
+            if (
+              document.activeElement instanceof HTMLElement ||
+              document.activeElement instanceof SVGElement
+            ) {
               returnFocusRef.current = document.activeElement;
             }
             if (!initialFocusRef?.current) return;

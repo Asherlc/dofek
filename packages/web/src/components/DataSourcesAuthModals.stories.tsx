@@ -140,6 +140,7 @@ export const Whoop: Story = {
 export const PersonalToken: Story = {
   render: () => (
     <TokenAuthModal
+      kind="access-token"
       providerId="wger"
       providerName="Wger"
       tokenLabel="JWT refresh token"

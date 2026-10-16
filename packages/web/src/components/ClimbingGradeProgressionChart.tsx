@@ -1,6 +1,7 @@
 import {
   type ClimbingGradeProgressionLane,
   climbingProgressionGradeColor,
+  climbingProgressionLaneKey,
   climbingProgressionLaneLabel,
   climbingProgressionPeriodLabel,
   climbingProgressionSettingLabels,
@@ -24,7 +25,7 @@ interface ClimbingGradeProgressionChartProps {
 }
 
 function laneKey(lane: ClimbingGradeProgressionLane) {
-  return `${lane.style}:${lane.gradeSystem}`;
+  return JSON.stringify([climbingProgressionLaneKey(lane), lane.gradeSystem]);
 }
 
 function settingPattern(setting: ClimbingGradeProgressionLane["settings"][number]) {
@@ -56,7 +57,7 @@ function settingSwatch(setting: ClimbingGradeProgressionLane["settings"][number]
 function laneOption(
   lane: ClimbingGradeProgressionLane,
   selectedSetting: string,
-  styleLabel: string,
+  laneLabel: string,
 ) {
   const settings = lane.settings.filter(
     (setting) => selectedSetting === "all" || setting === selectedSetting,
@@ -64,7 +65,7 @@ function laneOption(
   return {
     aria: {
       label: {
-        description: `${styleLabel}: sends per climbing day`,
+        description: `${laneLabel}: sends per climbing day`,
       },
     },
     grid: dofekGrid("single", { top: 10, bottom: 30, left: 32, right: 8, containLabel: true }),
@@ -79,7 +80,7 @@ function laneOption(
         const period = lane.periods[params[0]?.dataIndex ?? -1];
         if (!period) return "";
         return [
-          `<strong>${escapeTooltipHtml(climbingProgressionPeriodLabel(period, true))} · ${styleLabel}</strong>`,
+          `<strong>${escapeTooltipHtml(climbingProgressionPeriodLabel(period, true))} · ${laneLabel}</strong>`,
           ...period.settings
             .filter((setting) => settings.includes(setting.setting))
             .flatMap((setting) => [
@@ -98,7 +99,7 @@ function laneOption(
     series: settings.flatMap((setting) =>
       lane.grades.map(({ grade }, index) => ({
         ...dofekSeries.bar(
-          `${styleLabel} · ${climbingProgressionSettingLabels[setting]} · ${grade}`,
+          `${laneLabel} · ${climbingProgressionSettingLabels[setting]} · ${grade}`,
           lane.periods.map((period) => {
             const point = period.settings.find((point) => point.setting === setting);
             const segment = point?.segments.find((segment) => segment.grade === grade);
@@ -191,7 +192,7 @@ export function ClimbingGradeProgressionChart({
                 setSelectedSetting("all");
               }}
             >
-              All styles
+              All climbs
             </button>
             <label className="flex items-center gap-2">
               Setting

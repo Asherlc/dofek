@@ -19,11 +19,7 @@ describe("ChartDescriptionTooltip", () => {
       name: "About this chart",
       description: "Weekly training load in hours.",
     });
-    const descriptionId = dialog.getAttribute("aria-describedby");
-    expect(descriptionId).not.toBeNull();
-    expect(document.getElementById(descriptionId ?? "")).toHaveTextContent(
-      "Weekly training load in hours.",
-    );
+    expect(dialog).toHaveAccessibleDescription("Weekly training load in hours.");
     expect(screen.getByText("Weekly training load in hours.")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Close chart explanation" }));

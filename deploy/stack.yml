@@ -43,7 +43,7 @@ services:
         - traefik.enable=true
 
   web:
-    image: ghcr.io/asherlc/dofek:${IMAGE_TAG:-latest}
+    image: ${APP_IMAGE:?APP_IMAGE must be the resolved immutable deployment image}
     command: ["web"]
     env_file: ${WEB_ENV_FILE:?WEB_ENV_FILE is required}
     secrets:
@@ -105,7 +105,7 @@ services:
         - traefik.http.services.web.loadbalancer.healthcheck.timeout=3s
 
   worker:
-    image: ghcr.io/asherlc/dofek:${IMAGE_TAG:-latest}
+    image: ${APP_IMAGE:?APP_IMAGE must be the resolved immutable deployment image}
     command: ["worker"]
     stop_grace_period: 30m
     env_file: ${WORKER_ENV_FILE:?WORKER_ENV_FILE is required}
@@ -155,7 +155,7 @@ services:
         monitor: 45s
 
   analytics-worker:
-    image: ghcr.io/asherlc/dofek:${IMAGE_TAG:-latest}
+    image: ${APP_IMAGE:?APP_IMAGE must be the resolved immutable deployment image}
     command: ["analytics-worker"]
     env_file: ${ANALYTICS_WORKER_ENV_FILE:?ANALYTICS_WORKER_ENV_FILE is required}
     environment:
@@ -196,7 +196,7 @@ services:
         failure_action: rollback
 
   cdc-health:
-    image: ghcr.io/asherlc/dofek:${IMAGE_TAG:-latest}
+    image: ${APP_IMAGE:?APP_IMAGE must be the resolved immutable deployment image}
     command: ["cdc-health"]
     env_file: ${CDC_HEALTH_ENV_FILE:?CDC_HEALTH_ENV_FILE is required}
     environment:
@@ -234,7 +234,7 @@ services:
         failure_action: rollback
 
   processing-reconciliation:
-    image: ghcr.io/asherlc/dofek:${IMAGE_TAG:-latest}
+    image: ${APP_IMAGE:?APP_IMAGE must be the resolved immutable deployment image}
     command: ["processing-reconciliation"]
     env_file: ${CDC_HEALTH_ENV_FILE:?CDC_HEALTH_ENV_FILE is required}
     environment:
@@ -376,7 +376,7 @@ services:
           memory: 1500M
 
   metric-stream-clickhouse-sink: &metric-stream-clickhouse-sink
-    image: ghcr.io/asherlc/dofek:${IMAGE_TAG:-latest}
+    image: ${APP_IMAGE:?APP_IMAGE must be the resolved immutable deployment image}
     command: ["metric-stream-clickhouse-sink"]
     env_file: ${METRIC_STREAM_CLICKHOUSE_SINK_ENV_FILE:?METRIC_STREAM_CLICKHOUSE_SINK_ENV_FILE is required}
     environment: &metric-stream-clickhouse-sink-environment

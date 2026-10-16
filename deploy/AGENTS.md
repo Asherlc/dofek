@@ -20,6 +20,15 @@
   these phases. Docker documents the overlay merge behavior used by
   `docker stack deploy`:
   [stack deploy](https://docs.docker.com/reference/cli/docker/stack/deploy/).
+- **Schema-breaking migrations require maintenance**: Mark an approved breaking
+  migration's first line `-- dofek: deployment-mode=maintenance`. The canonical
+  workflow compares requested and deployed image journals, applies
+  `stack.maintenance.yml` with the other quiesce overlays, and waits for actual
+  old tasks to stop before migrating. Keep old app specifications at zero until
+  the matching image rolls out; preserve the web maintenance-target label so
+  retries reject older release histories. Rerun that release after a failure. Never restore
+  old readers after the schema boundary. See [Swarm task states](https://docs.docker.com/engine/swarm/how-swarm-mode-works/swarm-task-states/)
+  and [service rollback](https://docs.docker.com/reference/cli/docker/service/rollback/).
 - **No Server-Side Deploy Scripts**: The server only runs `dockerd` + swarm. All deploy logic lives in CI and talks to the remote Docker API over SSH. Do not add bash helpers to `/opt/dofek`.
 - **DNS Consistency**: Every domain added to `stack.yml` MUST have a corresponding `cloudflare_dns_record` in `dns.tf`. `scripts/check-dns-records.sh` enforces this in CI.
 

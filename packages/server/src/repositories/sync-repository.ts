@@ -63,6 +63,11 @@ const clickHouseProviderStatsRowSchema = z.object({
   clinical_records: z.coerce.number(),
 });
 
+const climbingLogCountSchema = z.object({
+  provider_id: z.string(),
+  count: z.coerce.number().int().nonnegative(),
+});
+
 // ---------------------------------------------------------------------------
 // Domain types
 // ---------------------------------------------------------------------------
@@ -97,6 +102,7 @@ export interface ProviderStatRow {
   metricStream: number;
   nutritionDaily: number;
   clinicalRecords: number;
+  climbingLogEntries: number;
 }
 
 export interface SyncLogRow {
@@ -371,8 +377,30 @@ export class SyncRepository {
   /** Per-provider record counts broken down by table. */
   async getProviderStats(): Promise<ProviderStatRow[]> {
     const rows = await this.#getClickHouseProviderStats();
-
-    return rows.map((row) => ({
+    const logRows = await executeWithSchema(
+      this.#db,
+      climbingLogCountSchema,
+      sql`SELECT provider_id, COUNT(*)::int AS count FROM fitness.climbing_log_entry
+        WHERE user_id = ${this.#userId}::uuid GROUP BY provider_id ORDER BY provider_id`,
+    );
+    const logCounts = new Map(logRows.map((row) => [row.provider_id, row.count]));
+    const combined = [...rows];
+    for (const providerId of logCounts.keys()) {
+      if (!rows.some((row) => row.provider_id === providerId))
+        combined.push({
+          provider_id: providerId,
+          activities: 0,
+          daily_metrics: 0,
+          sleep_sessions: 0,
+          body_measurements: 0,
+          food_entries: 0,
+          health_events: 0,
+          metric_stream: 0,
+          nutrition_daily: 0,
+          clinical_records: 0,
+        });
+    }
+    return combined.map((row) => ({
       providerId: row.provider_id,
       totalRecords:
         row.activities +
@@ -383,7 +411,8 @@ export class SyncRepository {
         row.health_events +
         row.metric_stream +
         row.nutrition_daily +
-        row.clinical_records,
+        row.clinical_records +
+        (logCounts.get(row.provider_id) ?? 0),
       activities: row.activities,
       dailyMetrics: row.daily_metrics,
       sleepSessions: row.sleep_sessions,
@@ -393,6 +422,7 @@ export class SyncRepository {
       metricStream: row.metric_stream,
       nutritionDaily: row.nutrition_daily,
       clinicalRecords: row.clinical_records,
+      climbingLogEntries: logCounts.get(row.provider_id) ?? 0,
     }));
   }
 

@@ -5,6 +5,7 @@ import type { SyncDatabase } from "../../db/index.ts";
 import { createMetricStreamEvent, type MetricStreamRowInput } from "../../metric-stream/events.ts";
 import type { MetricStreamPublishOptions } from "../../metric-stream/redpanda-producer.ts";
 import type { ProcessingDatasetKey } from "../../processing/dataset-contracts.ts";
+import { makeTransactionalTestDatabase } from "../../providers/test-helpers.ts";
 import type { SyncProvider, SyncResult } from "../../providers/types.ts";
 
 export type MockCooldownRecord = {
@@ -306,13 +307,12 @@ vi.mock("../provider-rate-limit-cooldown.ts", async (importOriginal) => {
 });
 
 // All DB functions are mocked at module level, so the db object is never actually called.
-export const mockDb: SyncDatabase & { transaction: CallableVitestMock } = {
+export const mockDb: SyncDatabase = makeTransactionalTestDatabase({
   select: vi.fn(),
   insert: vi.fn(),
   delete: vi.fn(),
   execute: vi.fn(),
-  transaction: vi.fn<(...args: unknown[]) => unknown>(),
-};
+});
 
 export interface MockJob {
   attemptsMade: number;

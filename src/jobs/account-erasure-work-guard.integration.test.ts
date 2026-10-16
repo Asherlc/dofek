@@ -130,6 +130,100 @@ describe("account-erasure queued-work barrier (integration)", () => {
     expect(postFenceWork).not.toHaveBeenCalled();
   });
 
+  it("excludes the same owner/provider across pools while independent keys progress within four sessions", async () => {
+    const firstPool = createAccountErasureWorkLockPool(context.connectionString);
+    const secondPool = createAccountErasureWorkLockPool(context.connectionString);
+    context.addCleanup(() => firstPool.close());
+    context.addCleanup(() => secondPool.close());
+    let releaseFirst = () => {};
+    const firstReleased = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    let reportStarted = () => {};
+    const started = new Promise<void>((resolve) => {
+      reportStarted = resolve;
+    });
+    const sequence: string[] = [];
+    const first = firstPool.runWithSharedUserLock(
+      concurrentWorkUserId,
+      async () => {
+        sequence.push("first start");
+        reportStarted();
+        await firstReleased;
+        sequence.push("first finish");
+      },
+      "mountain-project",
+    );
+    await started;
+    const second = secondPool.runWithSharedUserLock(
+      concurrentWorkUserId,
+      async () => {
+        sequence.push("second");
+      },
+      "mountain-project",
+    );
+    const observer = new Client({ connectionString: context.connectionString });
+    await observer.connect();
+    try {
+      const deadline = Date.now() + 5000;
+      let waiting = false;
+      while (Date.now() < deadline) {
+        const result = await observer.query<{ waiting: boolean }>(
+          `SELECT EXISTS (SELECT 1 FROM pg_locks JOIN pg_stat_activity USING(pid) WHERE datname=current_database() AND locktype='advisory' AND NOT granted) AS waiting`,
+        );
+        if (result.rows[0]?.waiting) {
+          waiting = true;
+          break;
+        }
+        await new Promise((resolve) => setImmediate(resolve));
+      }
+      expect(waiting).toBe(true);
+      await Promise.all([
+        secondPool.runWithSharedUserLock(
+          concurrentWorkUserId,
+          async () => {
+            sequence.push("other provider");
+          },
+          "openbeta",
+        ),
+        secondPool.runWithSharedUserLock(
+          shutdownUserId,
+          async () => {
+            sequence.push("other owner");
+          },
+          "mountain-project",
+        ),
+      ]);
+      expect(sequence).toEqual([
+        "first start",
+        expect.stringMatching(/^other /),
+        expect.stringMatching(/^other /),
+      ]);
+    } finally {
+      releaseFirst();
+      await Promise.all([first, second]);
+      await observer.end();
+    }
+    expect(sequence.slice(-2)).toEqual(["first finish", "second"]);
+    const failure = new Error("provider callback failed");
+    await expect(
+      firstPool.runWithSharedUserLock(
+        concurrentWorkUserId,
+        async () => {
+          throw failure;
+        },
+        "mountain-project",
+      ),
+    ).rejects.toBe(failure);
+    await expect(
+      secondPool.runWithSharedUserLock(
+        concurrentWorkUserId,
+        async () => "next",
+        "mountain-project",
+      ),
+    ).resolves.toBe("next");
+  });
+
   it("allows concurrent queued jobs for the same unfenced user", async () => {
     const workLockPool = createAccountErasureWorkLockPool(context.connectionString);
     context.addCleanup(() => workLockPool.close());
@@ -249,8 +343,18 @@ describe("account-erasure queued-work barrier (integration)", () => {
         await userWriteAllowed;
         await withAccountErasureUserWriteFence(context.db, lockOrderUserId, async () => undefined);
       },
+      "mountain-project",
     );
     await workStarted;
+    const waitingWork = vi.fn(async () => "must not fetch");
+    const waiter = runQueuedUserWorkUnlessAccountErasing(
+      workLockPool,
+      context.db,
+      lockOrderUserId,
+      "waiting provider sync",
+      waitingWork,
+      "mountain-project",
+    );
 
     const initiation = initiateAccountErasure(
       context.db,
@@ -265,6 +369,8 @@ describe("account-erasure queued-work barrier (integration)", () => {
     await expect(initiation).resolves.toEqual(
       expect.objectContaining({ requestId: expect.any(String) }),
     );
+    await expect(waiter).resolves.toBeUndefined();
+    expect(waitingWork).not.toHaveBeenCalled();
   });
 
   it("waits for active work during shutdown and releases its session lock", async () => {

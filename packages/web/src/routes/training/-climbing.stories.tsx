@@ -11,49 +11,53 @@ import {
 import type { OperationResultObservable, TRPCLink } from "@trpc/client";
 import type { AppRouter } from "dofek-server/router";
 import { useMemo } from "react";
+import "leaflet/dist/leaflet.css";
+import { climbingLocationMapFixture } from "../../components/climbing-location-map-test-helpers.ts";
 import { trpc } from "../../lib/trpc.ts";
 import { ClimbingTab } from "./climbing.tsx";
 
 const mockLink: TRPCLink<AppRouter> =
   () =>
   ({ op }) => {
-    const grade = { climbType: "route", gradeSystem: "yds", grade: "5.10a", gradeSortValue: 10 };
+    const grade = { climbKind: "route", gradeSystem: "yds", grade: "5.10a", gradeSortValue: 10 };
     const data =
-      op.path === "climbing.gradeProgression"
-        ? [{ ...grade, date: "2026-10-04" }]
-        : op.path === "climbing.volumeByGrade"
-          ? [{ ...grade, attempts: 3, sends: 2 }]
-          : op.path === "climbing.sessionSummary"
-            ? [
-                {
-                  activityId: "demo",
-                  date: "2026-10-04",
-                  name: "Afternoon climbing",
-                  locationName: "Crag",
-                  attempts: 3,
-                  sends: 2,
-                  hardestBoulderGrade: null,
-                  hardestBoulderGradeSortValue: null,
-                  hardestRouteGrade: "5.10a",
-                  hardestRouteGradeSortValue: 10,
-                },
-              ]
-            : op.path === "activity.list"
-              ? { items: [], totalCount: 0 }
-              : op.path === "climbing.hangboardingSummary"
-                ? {
-                    sessionCount: 0,
-                    totalDurationSeconds: 0,
-                    averageDurationSeconds: null,
-                    totalWorkDurationSeconds: null,
-                    totalRestDurationSeconds: null,
-                    workIntervalCount: null,
-                    averageHeartRate: null,
-                    peakHeartRate: null,
-                    latestSession: null,
-                    daily: [],
-                  }
-                : null;
+      op.path === "climbing.locationMap"
+        ? climbingLocationMapFixture
+        : op.path === "climbing.gradeProgression"
+          ? [{ ...grade, date: "2026-10-04" }]
+          : op.path === "climbing.volumeByGrade"
+            ? [{ ...grade, attempts: 3, sends: 2 }]
+            : op.path === "climbing.sessionSummary"
+              ? [
+                  {
+                    activityId: "demo",
+                    date: "2026-10-04",
+                    name: "Afternoon climbing",
+                    locationName: "Crag",
+                    attempts: 3,
+                    sends: 2,
+                    hardestBoulderGrade: null,
+                    hardestBoulderGradeSortValue: null,
+                    hardestRouteGrade: "5.10a",
+                    hardestRouteGradeSortValue: 10,
+                  },
+                ]
+              : op.path === "activity.list"
+                ? { items: [], totalCount: 0 }
+                : op.path === "climbing.hangboardingSummary"
+                  ? {
+                      sessionCount: 0,
+                      totalDurationSeconds: 0,
+                      averageDurationSeconds: null,
+                      totalWorkDurationSeconds: null,
+                      totalRestDurationSeconds: null,
+                      workIntervalCount: null,
+                      averageHeartRate: null,
+                      peakHeartRate: null,
+                      latestSession: null,
+                      daily: [],
+                    }
+                  : null;
     const result: OperationResultObservable<AppRouter, unknown> = {
       subscribe(observer) {
         observer.next?.({ result: { data } });

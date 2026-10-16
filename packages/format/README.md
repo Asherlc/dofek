@@ -42,18 +42,14 @@ Server-authored activity values use a discriminated state: `available`, `missing
 
 ### Climbing Context (`climbing-context.ts`)
 
-Formats ordered location paths, recorded methods/results, and wall angles for
-web and mobile. Unknown angle units remain labeled unknown; result labels do
-not compute send status or attempt counts. See the
-[climbing context design](../../docs/superpowers/specs/2026-09-29-climbing-context-design.md).
+Formats current Area paths, independent rope methods, scope-labelled recorded
+outcomes, recorded attempt counts, and wall angles for web and mobile. Unknown
+angle units remain labelled unknown. Clients render the supplied outcome and
+count; the server derives free-rock result labels from the recorded attempt
+facts. See the [shared model](../training/src/climbing-log.ts) and
+[formatters](src/climbing-context.ts).
 
-The [climbing result formatter](src/format.ts) lets a successful Onsight or Flash
-badge convey the result without an attempt summary. A successful Repeat without
-a recorded attempt count also omits the attempt summary. Redpoint, Pinkpoint,
-and Repeat badges convey the send while the summary retains recorded attempt
-information.
-Other results keep explicit labels based on the outcome and count supplied by the server.
-Passing the entry's source context omits absent result/count placeholders for
-Mountain Project top-rope ticks, as described in the
-[source coverage audit](../../docs/mountain-project.md#climbing-style-and-result-coverage).
-Recorded values still display, and other sources retain explicit unknown labels.
+The [log formatter](src/climbing-log.ts) labels recorded rope methods once per
+card and retains whole-climb or pitch scope with recorded attempt counts. A
+missing source result adds no card status; attempt Details identifies it as
+`Not reported by source` rather than describing the actual ascent as unknown.

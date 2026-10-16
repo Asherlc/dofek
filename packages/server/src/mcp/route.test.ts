@@ -6,11 +6,13 @@ import express from "express";
 import type { Options as RateLimitOptions } from "express-rate-limit";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
+import { climbingAttemptFixture } from "../repositories/climbing-test-helpers.ts";
 import { makeMockSensorStore } from "../routers/test-helpers.ts";
 import { verifyMcpAccessToken } from "./access-token-verifier.ts";
 import { getMcpResourceUrl } from "./oauth-config.ts";
 import { mcpClientCorrelationId } from "./request-telemetry.ts";
 import { createMcpRouter } from "./route.ts";
+import { attachedRockClimbingObservationFixture, climbingSessionDetail } from "./test-helpers.ts";
 import {
   activityDetailsOutputSchema,
   activitySummaryOutputSchema,
@@ -36,7 +38,8 @@ const toolTestMocks = vi.hoisted(() => {
     activityGetStream: vi.fn(),
     activityTimeseriesList: vi.fn(),
     bodyListReconciledRange: vi.fn(),
-    climbingActivityEntries: vi.fn(),
+    climbingActivityLogEntries: vi.fn(),
+    attachedRockClimbingObservations: vi.fn(),
     climbingProgressionListRange: vi.fn(),
     cyclingPerformanceListRange: vi.fn(),
     cyclingPowerCurveListRange: vi.fn(),
@@ -102,7 +105,10 @@ vi.mock("../repositories/activity-timeseries-repository.ts", () => ({
 
 vi.mock("../repositories/climbing-repository.ts", () => ({
   ClimbingRepository: vi.fn(function vitestConstructor() {
-    return { getActivityEntries: toolTestMocks.climbingActivityEntries };
+    return {
+      getActivityLogEntries: toolTestMocks.climbingActivityLogEntries,
+      getAttachedRockObservations: toolTestMocks.attachedRockClimbingObservations,
+    };
   }),
 }));
 
@@ -348,7 +354,7 @@ function createTestApp(
     "/api/mcp",
     createMcpRouter({
       provider: { AccessToken: { find: vi.fn() } },
-      db: { execute: vi.fn(), select: vi.fn(), transaction: vi.fn() },
+      db: { execute: vi.fn().mockResolvedValue([]), select: vi.fn(), transaction: vi.fn() },
       rateLimit,
       sensorStore,
     }),
@@ -586,7 +592,8 @@ describe("createMcpRouter", () => {
       nextCursor: null,
     });
     toolTestMocks.bodyListReconciledRange.mockResolvedValue([]);
-    toolTestMocks.climbingActivityEntries.mockResolvedValue([]);
+    toolTestMocks.climbingActivityLogEntries.mockResolvedValue([]);
+    toolTestMocks.attachedRockClimbingObservations.mockResolvedValue([]);
     toolTestMocks.dailyMetricsList.mockResolvedValue([]);
     toolTestMocks.dailyMetricsListRange.mockResolvedValue([]);
     toolTestMocks.dataCoverageList.mockResolvedValue([]);
@@ -1280,7 +1287,7 @@ describe("createMcpRouter", () => {
     });
     expect(findListedTool(tools, "get_climbing_progression").inputSchema).toMatchObject({
       properties: {
-        disciplines: { type: "array" },
+        filters: { type: "object" },
         grade_systems: { type: "array" },
         providers: { type: "array" },
       },
@@ -1744,7 +1751,7 @@ describe("createMcpRouter", () => {
     });
   });
 
-  it("returns climbing sessions with grade and send aggregates", async () => {
+  it("returns climbing sessions with published-grade and confirmed-send aggregates", async () => {
     authorizeMcpToken();
     toolTestMocks.activityListRange.mockResolvedValue([
       {
@@ -1753,37 +1760,33 @@ describe("createMcpRouter", () => {
         id: "activity-1",
         name: "Pacific Pipe",
         started_at: "2026-07-09T19:00:00.000Z",
+        canonical_type: "climbing",
       },
     ]);
-    toolTestMocks.climbingActivityEntries.mockResolvedValue([
-      {
-        toDetail: () => ({
-          ascentType: null,
-          attemptCount: 3,
-          attempts: [],
-          climbType: "boulder",
-          grade: "V5",
-          gradeSystem: "v_scale",
-          holdType: null,
-          id: "climb-1",
-          lead: null,
-          locationName: "Pacific Pipe",
-          routeName: "Blue Circuit",
-          sent: true,
-          sourceName: "kaya",
-          wallAngleDegrees: 30,
-          context: {
-            providerId: "kaya",
-            locationPath: [{ name: "Pacific Pipe", externalId: null, kind: null }],
-            board: null,
-            wallAngle: { value: 30, unit: "degrees" },
-            climbStyle: null,
-            resultStyle: "Send",
-          },
-        }),
-      },
+    const log = climbingSessionDetail();
+    if (!log.climb) throw new Error("Expected catalogue fixture");
+    log.climb.kind = "boulder";
+    log.climb.name = "Blue Circuit";
+    log.climb.publishedGrades = [{ value: "V5", system: "v_scale" }];
+    log.wallAngle = { value: 30, unit: "degrees" };
+    log.displayGrade = "V5";
+    log.recordedClimbAttemptCount = 3;
+    log.recordedClimbOutcome = "completed";
+    log.attempts = [
+      climbingAttemptFixture(log.id, {
+        outcome: "completed",
+        usedAid: false,
+        fellOrHung: false,
+        dabbed: false,
+        rockResultLabels: ["sent"],
+      }),
+      climbingAttemptFixture(log.id),
+      climbingAttemptFixture(log.id),
+    ];
+    toolTestMocks.climbingActivityLogEntries.mockResolvedValue([{ toDetail: () => log }]);
+    toolTestMocks.attachedRockClimbingObservations.mockResolvedValue([
+      attachedRockClimbingObservationFixture(),
     ]);
-
     const response = await request(createTestApp(), {
       authorization: "Bearer good-token",
       body: createToolCallRequest("get_climbing_sessions", {
@@ -1791,50 +1794,44 @@ describe("createMcpRouter", () => {
         start_date: "2026-07-01",
       }),
     });
-
-    expect(parseToolCallText(response.text)).toEqual({
+    expect(parseToolCallText(response.text)).toMatchObject({
       aggregates: {
         coverage: {
-          attempt_data: "complete",
-          entries: 1,
-          entries_with_attempts: 1,
-          entries_with_observed_outcome: 1,
+          rock_log_entries: 1,
+          observed_free_send_outcomes: 1,
+          unknown_free_send_outcomes: 2,
         },
         grade_distribution: [
           {
-            attempts: 3,
-            discipline: "boulder",
+            recorded_attempts: 3,
+            climb_kind: "boulder",
             grade: "V5",
             grade_system: "v_scale",
             sends: 1,
           },
         ],
-        max_grade_by_discipline: { boulder: "V5", route: null },
+        max_grade_by_kind: { boulder: "V5", route: null },
         send_rate: 1,
-        volume: { attempts: 3, climbs: 1, sends: 1, total_vertical_m: null },
+        volume: { recorded_attempts: 3, rock_log_entries: 1, sends: 1 },
       },
       sessions: [
-        expect.objectContaining({
+        {
           activity_id: "activity-1",
           avg_hr: 126,
           duration_minutes: 90,
-          gym_vs_crag: null,
-          climbs: [
-            expect.objectContaining({
-              discipline: "boulder",
-              wall_angle_degrees: 30,
-            }),
+          climbing_log_entries: [
+            { climb: { name: "Blue Circuit" }, wallAngle: { value: 30, unit: "degrees" } },
           ],
-          total_vertical_m: null,
-        }),
+        },
       ],
     });
     expect(toolTestMocks.activityListRange).toHaveBeenCalledWith("2026-07-01", "2026-07-10", [
       "climbing",
+      "hiking",
     ]);
   });
 
-  it("keeps unrecorded climbing attempts and outcomes distinct from zero and failure", async () => {
+  it("counts an occurrence while preserving unknown execution facts", async () => {
     authorizeMcpToken();
     toolTestMocks.activityListRange.mockResolvedValue([
       {
@@ -1843,37 +1840,22 @@ describe("createMcpRouter", () => {
         id: "activity-unknown",
         name: "Imported climbing",
         started_at: "2026-07-09T19:00:00.000Z",
+        canonical_type: "climbing",
       },
     ]);
-    toolTestMocks.climbingActivityEntries.mockResolvedValue([
-      {
-        toDetail: () => ({
-          ascentType: null,
-          attemptCount: null,
-          attempts: [],
-          climbType: "boulder",
-          grade: "V4",
-          gradeSystem: "v_scale",
-          holdType: null,
-          id: "climb-unknown",
-          lead: null,
-          locationName: null,
-          routeName: null,
-          sent: null,
-          sourceName: null,
-          wallAngleDegrees: null,
-          context: {
-            providerId: "kaya",
-            locationPath: [],
-            board: null,
-            wallAngle: null,
-            climbStyle: null,
-            resultStyle: null,
-          },
-        }),
-      },
+    const log = climbingSessionDetail();
+    log.sourceName = null;
+    log.attempts = [climbingAttemptFixture(log.id)];
+    toolTestMocks.climbingActivityLogEntries.mockResolvedValue([{ toDetail: () => log }]);
+    toolTestMocks.attachedRockClimbingObservations.mockResolvedValue([
+      attachedRockClimbingObservationFixture({
+        activityId: "activity-unknown",
+        recordedAttempts: 1,
+        sends: 0,
+        observedOutcomes: 0,
+        unknownOutcomes: 1,
+      }),
     ]);
-
     const response = await request(createTestApp(), {
       authorization: "Bearer good-token",
       body: createToolCallRequest("get_climbing_sessions", {
@@ -1881,24 +1863,33 @@ describe("createMcpRouter", () => {
         start_date: "2026-07-09",
       }),
     });
-
     expect(parseToolCallText(response.text)).toMatchObject({
       aggregates: {
         coverage: {
-          attempt_data: "unavailable",
-          entries: 1,
-          entries_with_attempts: 0,
-          entries_with_observed_outcome: 0,
+          rock_log_entries: 1,
+          observed_free_send_outcomes: 0,
+          unknown_free_send_outcomes: 1,
         },
-        grade_distribution: [{ attempts: null, sends: null }],
+        grade_distribution: [{ recorded_attempts: 1, sends: 0 }],
         send_rate: null,
-        volume: { attempts: null, climbs: 1, sends: null },
+        volume: { recorded_attempts: 1, rock_log_entries: 1, sends: 0 },
       },
-      sessions: [{ climbs: [{ attempt_count: null, sent: null, source_name: null }] }],
+      sessions: [
+        {
+          climbing_log_entries: [
+            {
+              recordedClimbAttemptCount: 1,
+              recordedClimbOutcome: null,
+              sourceName: null,
+              attempts: [{ outcome: null }],
+            },
+          ],
+        },
+      ],
     });
   });
 
-  it("preserves route disciplines and incomplete climbing-session data", async () => {
+  it("preserves independent route methods and unconvertible published text", async () => {
     authorizeMcpToken();
     toolTestMocks.activityListRange.mockResolvedValue([
       {
@@ -1907,141 +1898,60 @@ describe("createMcpRouter", () => {
         id: "activity-2",
         name: null,
         started_at: "2026-07-11T19:00:00.000Z",
+        canonical_type: "climbing",
       },
     ]);
-    toolTestMocks.climbingActivityEntries.mockResolvedValue([
-      {
-        toDetail: () => ({
-          ascentType: "redpoint",
-          attemptCount: 1,
-          attempts: [],
-          climbType: "route",
-          grade: "5.10",
-          gradeSystem: "yds",
-          holdType: null,
-          id: "climb-1",
-          lead: true,
-          locationName: null,
-          routeName: "Lead route",
-          sent: true,
-          sourceName: "kaya",
-          wallAngleDegrees: null,
-          context: {
-            providerId: "kaya",
-            locationPath: [],
-            board: null,
-            wallAngle: null,
-            climbStyle: "lead",
-            resultStyle: "redpoint",
-          },
+    const definitions = [
+      { grade: "5.10", ropeMethod: "lead", outcome: "completed", free: true, count: 1 },
+      { grade: "5.11", ropeMethod: "top_rope", outcome: "failed", free: false, count: 2 },
+      { grade: "5.12", ropeMethod: null, outcome: "completed", free: true, count: 1 },
+      { grade: "not-a-grade", ropeMethod: "lead", outcome: "completed", free: true, count: 1 },
+      { grade: "5.10", ropeMethod: "lead", outcome: "failed", free: false, count: 1 },
+    ] as const;
+    const logs = definitions.map((definition, index) => {
+      const log = climbingSessionDetail();
+      if (!log.climb) throw new Error("Expected catalogue fixture");
+      log.id = `20000000-0000-4000-8000-${String(index + 11).padStart(12, "0")}`;
+      log.climb.publishedGrades = [{ value: definition.grade, system: index === 3 ? null : "yds" }];
+      log.displayGrade = definition.grade;
+      log.recordedClimbAttemptCount = definition.count;
+      log.recordedClimbOutcome = definition.outcome;
+      log.climb.areaPath = [];
+      log.attempts = Array.from({ length: definition.count }, () =>
+        climbingAttemptFixture(log.id, {
+          ropeMethod: definition.ropeMethod,
+          outcome: definition.outcome,
+          usedAid: false,
+          fellOrHung: !definition.free,
+          rockResultLabels: definition.free ? ["sent"] : [],
         }),
-      },
-      {
-        toDetail: () => ({
-          ascentType: null,
-          attemptCount: 2,
-          attempts: [],
-          climbType: "route",
-          grade: "5.11",
-          gradeSystem: "yds",
-          holdType: null,
-          id: "climb-2",
-          lead: false,
-          locationName: null,
-          routeName: "Top-rope route",
-          sent: false,
-          sourceName: "kaya",
-          wallAngleDegrees: null,
-          context: {
-            providerId: "kaya",
-            locationPath: [],
-            board: null,
-            wallAngle: null,
-            climbStyle: "top-rope",
-            resultStyle: "Attempt",
-          },
+      );
+      return log;
+    });
+    toolTestMocks.climbingActivityLogEntries.mockResolvedValue(
+      logs.map((log) => ({ toDetail: () => log })),
+    );
+    toolTestMocks.attachedRockClimbingObservations.mockResolvedValue(
+      definitions.map((definition, index) =>
+        attachedRockClimbingObservationFixture({
+          activityId: "activity-2",
+          date: "2026-07-11",
+          climbKind: "route",
+          displayGrade:
+            index === 3
+              ? null
+              : {
+                  grade: definition.grade,
+                  gradeSystem: "yds",
+                  gradeSortValue: index === 2 ? 85 : index === 1 ? 75 : 65,
+                },
+          recordedAttempts: definition.count,
+          sends: definition.free ? 1 : 0,
+          observedOutcomes: definition.count,
+          unknownOutcomes: 0,
         }),
-      },
-      {
-        toDetail: () => ({
-          ascentType: "onsight",
-          attemptCount: 1,
-          attempts: [],
-          climbType: "route",
-          grade: "5.12",
-          gradeSystem: "yds",
-          holdType: null,
-          id: "climb-3",
-          lead: null,
-          locationName: null,
-          routeName: "Unspecified route",
-          sent: true,
-          sourceName: "mountain_project",
-          wallAngleDegrees: null,
-          context: {
-            providerId: "mountain-project",
-            locationPath: [],
-            board: null,
-            wallAngle: null,
-            climbStyle: null,
-            resultStyle: "onsight",
-          },
-        }),
-      },
-      {
-        toDetail: () => ({
-          ascentType: null,
-          attemptCount: 1,
-          attempts: [],
-          climbType: "route",
-          grade: "not-a-grade",
-          gradeSystem: "yds",
-          holdType: null,
-          id: "climb-4",
-          lead: true,
-          locationName: null,
-          routeName: null,
-          sent: true,
-          sourceName: "kaya",
-          wallAngleDegrees: null,
-          context: {
-            providerId: "kaya",
-            locationPath: [],
-            board: null,
-            wallAngle: null,
-            climbStyle: "lead",
-            resultStyle: "Send",
-          },
-        }),
-      },
-      {
-        toDetail: () => ({
-          ascentType: null,
-          attemptCount: 1,
-          attempts: [],
-          climbType: "route",
-          grade: "5.10",
-          gradeSystem: "yds",
-          holdType: null,
-          id: "climb-5",
-          lead: true,
-          locationName: null,
-          routeName: "Lead route",
-          sent: false,
-          sourceName: "kaya",
-          wallAngleDegrees: null,
-          context: {
-            providerId: "kaya",
-            locationPath: [],
-            board: null,
-            wallAngle: null,
-            climbStyle: "lead",
-            resultStyle: "Attempt",
-          },
-        }),
-      },
-    ]);
-
+      ),
+    );
     const response = await request(createTestApp(), {
       authorization: "Bearer good-token",
       body: createToolCallRequest("get_climbing_sessions", {
@@ -2049,57 +1959,35 @@ describe("createMcpRouter", () => {
         start_date: "2026-07-11",
       }),
     });
-
-    expect(parseToolCallText(response.text)).toEqual({
+    expect(parseToolCallText(response.text)).toMatchObject({
       aggregates: {
         coverage: {
-          attempt_data: "complete",
-          entries: 5,
-          entries_with_attempts: 5,
-          entries_with_observed_outcome: 5,
+          rock_log_entries: 5,
+          observed_free_send_outcomes: 6,
+          unknown_free_send_outcomes: 0,
         },
         grade_distribution: [
-          {
-            attempts: 2,
-            discipline: "lead",
-            grade: "5.10",
-            grade_system: "yds",
-            sends: 1,
-          },
-          {
-            attempts: 2,
-            discipline: "top_rope",
-            grade: "5.11",
-            grade_system: "yds",
-            sends: 0,
-          },
-          {
-            attempts: 1,
-            discipline: "route",
-            grade: "5.12",
-            grade_system: "yds",
-            sends: 1,
-          },
-          {
-            attempts: 1,
-            discipline: "lead",
-            grade: "not-a-grade",
-            grade_system: "yds",
-            sends: 1,
-          },
+          { recorded_attempts: 2, climb_kind: "route", grade: "5.10", sends: 1 },
+          { recorded_attempts: 2, climb_kind: "route", grade: "5.11", sends: 0 },
+          { recorded_attempts: 1, climb_kind: "route", grade: "5.12", sends: 1 },
         ],
-        max_grade_by_discipline: { boulder: null, route: "5.12" },
-        send_rate: 0.6,
-        volume: { attempts: 6, climbs: 5, sends: 3, total_vertical_m: null },
+        max_grade_by_kind: { boulder: null, route: "5.12" },
+        send_rate: 0.5,
+        volume: { recorded_attempts: 6, rock_log_entries: 5, sends: 3 },
       },
       sessions: [
-        expect.objectContaining({
+        {
           activity_id: "activity-2",
-          avg_hr: null,
           duration_minutes: null,
           location: null,
-          name: null,
-        }),
+          climbing_log_entries: [
+            { attempts: [{ ropeMethod: "lead" }] },
+            { attempts: [{ ropeMethod: "top_rope" }, { ropeMethod: "top_rope" }] },
+            { attempts: [{ ropeMethod: null }] },
+            { climb: { publishedGrades: [{ value: "not-a-grade", system: null }] } },
+            { attempts: [{ outcome: "failed" }] },
+          ],
+        },
       ],
     });
   });
@@ -3971,33 +3859,8 @@ describe("createMcpRouter", () => {
         }),
       },
     ]);
-    toolTestMocks.climbingActivityEntries.mockResolvedValue([
-      {
-        toDetail: () => ({
-          ascentType: null,
-          attemptCount: 1,
-          attempts: [],
-          climbType: "boulder",
-          grade: "V5",
-          gradeSystem: "v_scale",
-          holdType: null,
-          id: "climb-1",
-          lead: null,
-          locationName: null,
-          routeName: "Blue Circuit",
-          sent: true,
-          sourceName: "kaya",
-          wallAngleDegrees: null,
-          context: {
-            providerId: "kaya",
-            locationPath: [],
-            board: null,
-            wallAngle: null,
-            climbStyle: null,
-            resultStyle: "Send",
-          },
-        }),
-      },
+    toolTestMocks.climbingActivityLogEntries.mockResolvedValue([
+      { toDetail: () => climbingSessionDetail() },
     ]);
     toolTestMocks.fingerLoadingActivity.mockResolvedValue([
       {
@@ -4027,7 +3890,7 @@ describe("createMcpRouter", () => {
 
     expect(parseToolCallText(response.text)).toMatchObject({
       activity: { canonical_type: "strength", id: activityId, name: "Training" },
-      climbing_entries: [{ grade: "V5", routeName: "Blue Circuit" }],
+      climbing_log_entries: [{ displayGrade: "5.10a", climb: { name: "Corner" } }],
       finger_loading: [{ exercise: "max_hang", effectiveLoadKg: 95 }],
       strength_exercises: [{ exerciseName: "Pull-up", muscleGroups: ["back"] }],
     });
@@ -4216,7 +4079,7 @@ describe("createMcpRouter", () => {
       ],
     });
     expect(toolTestMocks.strengthExercises).toHaveBeenCalledWith(stableGroupId);
-    expect(toolTestMocks.climbingActivityEntries).toHaveBeenCalledWith(stableGroupId);
+    expect(toolTestMocks.climbingActivityLogEntries).toHaveBeenCalledWith(stableGroupId);
     expect(toolTestMocks.fingerLoadingActivity).toHaveBeenCalledWith(
       expect.objectContaining({ activityId: stableGroupId }),
     );

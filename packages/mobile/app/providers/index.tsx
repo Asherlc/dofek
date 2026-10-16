@@ -3,6 +3,7 @@ import {
   userFacingErrorMessage,
 } from "@dofek/format/user-facing-error";
 import { groupProviderEntries, providerFamily } from "@dofek/providers/provider-catalog";
+import type { ProviderManualConnectionMetadata } from "@dofek/providers/provider-connection";
 import type { ProviderStats } from "@dofek/providers/provider-stats";
 import { ROUTINE_SYNC_DAYS } from "@dofek/providers/sync-actions";
 import { randomUUID } from "expo-crypto";
@@ -126,12 +127,13 @@ export default function ProvidersScreen() {
     id: string;
     name: string;
   } | null>(null);
-  const [tokenAuthProvider, setTokenAuthProvider] = useState<{
-    id: string;
-    name: string;
-    label: string;
-    instructionsUrl: string;
-  } | null>(null);
+  const [tokenAuthProvider, setTokenAuthProvider] = useState<
+    | (ProviderManualConnectionMetadata & {
+        id: string;
+        name: string;
+      })
+    | null
+  >(null);
   const [whoopAuthOpen, setWhoopAuthOpen] = useState(false);
   const [garminAuthOpen, setGarminAuthOpen] = useState(false);
 
@@ -597,7 +599,7 @@ export default function ProvidersScreen() {
       id: string;
       label: string;
       authType: string;
-      tokenAuth?: { label: string; instructionsUrl: string } | null;
+      tokenAuth?: ProviderManualConnectionMetadata | null;
     }) => {
       switch (provider.authType) {
         case "oauth":
@@ -625,9 +627,11 @@ export default function ProvidersScreen() {
         case "credential":
           setCredentialAuthProvider({ id: provider.id, name: provider.label });
           break;
+        case "public-profile":
         case "token":
           if (provider.tokenAuth) {
             setTokenAuthProvider({
+              kind: provider.tokenAuth.kind,
               id: provider.id,
               name: provider.label,
               label: provider.tokenAuth.label,
@@ -1006,6 +1010,7 @@ export default function ProvidersScreen() {
       )}
       {tokenAuthProvider && (
         <TokenAuthModal
+          kind={tokenAuthProvider.kind}
           providerId={tokenAuthProvider.id}
           providerName={tokenAuthProvider.name}
           tokenLabel={tokenAuthProvider.label}

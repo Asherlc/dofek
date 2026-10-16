@@ -126,7 +126,7 @@ describe("loadMobileTrainingTab", () => {
       .mockResolvedValue([new ClimbingGradeProgression(climbingProgressionFixture)]);
     const volumeByGradeSpy = vi.spyOn(repository, "getVolumeByGrade").mockResolvedValue([
       new ClimbingVolumeByGrade({
-        climbType: "route",
+        climbKind: "route",
         gradeSystem: "yds",
         grade: "5.10a",
         gradeSortValue: 5101,
@@ -314,7 +314,7 @@ describe("loadMobileTrainingTab", () => {
       gradeProgression: [climbingProgressionFixture],
       volumeByGrade: [
         {
-          climbType: "route",
+          climbKind: "route",
           gradeSystem: "yds",
           grade: "5.10a",
           gradeSortValue: 5101,

@@ -89,6 +89,7 @@ describe("tokenAuthRouter", () => {
       name: "Wger",
       authSetup: () => ({
         manualToken: {
+          kind: "access-token",
           label: "Refresh token",
           instructionsUrl: "https://wger.de/en/software/api",
           exchangeToken,
@@ -120,6 +121,50 @@ describe("tokenAuthRouter", () => {
     expect(mockInvalidateByPrefix).toHaveBeenCalledWith("user-123:sync.providers");
   });
 
+  it("persists public profile identity through the existing connect handler", async () => {
+    const identity = {
+      accessToken: "182146",
+      providerAccountId: "182146",
+      refreshToken: null,
+      expiresAt: new Date("2099-01-01T00:00:00Z"),
+      scopes: null,
+    };
+    const provider = stubProvider({
+      id: "public-profile",
+      name: "Public Profile",
+      authSetup: () => ({
+        apiBaseUrl: "https://example.com",
+        manualToken: {
+          kind: "public-profile",
+          label: "Public profile URL",
+          instructionsUrl: "https://example.com/profiles",
+          exchangeToken: async () => identity,
+        },
+      }),
+    });
+    mockGetAllProviders.mockReturnValue([provider]);
+    mockConnectProviderWithTokens.mockResolvedValue(undefined);
+    mockInvalidateByPrefix.mockResolvedValue(undefined);
+    const db = { execute: vi.fn() };
+    const caller = createCaller({ db, userId: "profile-owner", timezone: "UTC" });
+
+    expect(await caller.connect({ providerId: "public-profile", token: "182146" })).toEqual({
+      success: true,
+    });
+    expect(mockConnectProviderWithTokens).toHaveBeenCalledWith(
+      db,
+      { id: "public-profile", name: "Public Profile", apiBaseUrl: "https://example.com" },
+      {
+        accessToken: "182146",
+        providerAccountId: "182146",
+        refreshToken: null,
+        expiresAt: new Date("2099-01-01T00:00:00Z"),
+        scopes: null,
+      },
+      "profile-owner",
+    );
+  });
+
   it("selects the requested provider when multiple providers support personal tokens", async () => {
     const firstExchange = vi.fn().mockResolvedValue({
       accessToken: "wrong-access",
@@ -140,6 +185,7 @@ describe("tokenAuthRouter", () => {
         name: "First Provider",
         authSetup: () => ({
           manualToken: {
+            kind: "access-token",
             label: "First token",
             instructionsUrl: "https://first.example.com/token",
             exchangeToken: firstExchange,
@@ -152,6 +198,7 @@ describe("tokenAuthRouter", () => {
         name: "Requested Provider",
         authSetup: () => ({
           manualToken: {
+            kind: "access-token",
             label: "Requested token",
             instructionsUrl: "https://requested.example.com/token",
             exchangeToken: requestedExchange,
@@ -197,6 +244,7 @@ describe("tokenAuthRouter", () => {
       name: "Wger",
       authSetup: () => ({
         manualToken: {
+          kind: "access-token",
           label: "Refresh token",
           instructionsUrl: "https://wger.de/en/software/api",
           exchangeToken: vi.fn().mockResolvedValue(tokens),
@@ -244,6 +292,7 @@ describe("tokenAuthRouter", () => {
       name: "Wger",
       authSetup: () => ({
         manualToken: {
+          kind: "access-token",
           label: "Refresh token",
           instructionsUrl: "https://wger.de/en/software/api",
           exchangeToken: vi.fn().mockResolvedValue(tokens),
@@ -309,6 +358,7 @@ describe("tokenAuthRouter", () => {
       name: "Ultrahuman",
       authSetup: () => ({
         manualToken: {
+          kind: "access-token",
           label: "Personal API token",
           instructionsUrl: "https://vision.ultrahuman.com/developer-docs",
           exchangeToken: vi
@@ -345,6 +395,7 @@ describe("tokenAuthRouter", () => {
       id: "wger",
       authSetup: () => ({
         manualToken: {
+          kind: "access-token",
           label: "Refresh token",
           instructionsUrl: "https://wger.de/en/software/api",
           exchangeToken: vi.fn().mockRejectedValue(rateLimitError),
@@ -378,6 +429,7 @@ describe("tokenAuthRouter", () => {
       name: "Ultrahuman",
       authSetup: () => ({
         manualToken: {
+          kind: "access-token",
           label: "Personal API token",
           instructionsUrl: "https://vision.ultrahuman.com/developer-docs",
           exchangeToken: vi.fn().mockRejectedValue(outage),
@@ -407,6 +459,7 @@ describe("tokenAuthRouter", () => {
       name: "Ultrahuman",
       authSetup: () => ({
         manualToken: {
+          kind: "access-token",
           label: "Personal API token",
           instructionsUrl: "https://vision.ultrahuman.com/developer-docs",
           exchangeToken: vi.fn().mockRejectedValue(new Error("raw upstream response secret")),
@@ -437,6 +490,7 @@ describe("tokenAuthRouter", () => {
       name: "Misconfigured Provider",
       authSetup: () => ({
         manualToken: {
+          kind: "access-token",
           label: "Personal API token",
           instructionsUrl: "https://example.com/token",
           exchangeToken,

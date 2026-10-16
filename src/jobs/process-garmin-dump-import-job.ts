@@ -1,7 +1,7 @@
 import { WaitingChildrenError } from "bullmq";
 import { z } from "zod";
 import { withAccountErasureUserWriteFence } from "../db/account-erasure.ts";
-import type { Database, SyncDatabase } from "../db/index.ts";
+import type { SyncDatabase } from "../db/index.ts";
 import { captureException } from "../lib/error-reporting.ts";
 import { logger } from "../logger.ts";
 import {
@@ -44,21 +44,6 @@ export interface GarminDumpImportJob {
   extendLock(durationMs: number): Promise<void>;
   updateProgress(data: object): Promise<void>;
   log(message: string): Promise<void>;
-}
-
-function hasTransaction(
-  database: SyncDatabase,
-): database is SyncDatabase & Pick<Database, "transaction"> {
-  return "transaction" in database && typeof database.transaction === "function";
-}
-
-function requireTransactionalDatabase(
-  database: SyncDatabase,
-): SyncDatabase & Pick<Database, "transaction"> {
-  if (!hasTransaction(database)) {
-    throw new Error("Garmin import flow dispatch requires a transactional database");
-  }
-  return database;
 }
 
 async function logGarminImportPhase(job: GarminDumpImportJob, message: string): Promise<void> {
@@ -168,16 +153,12 @@ export async function processGarminDumpImportJob(
       job,
       `[phase] Prepared Garmin dump batch ${checkpoint.batchId} with ${fitFileLabel(checkpoint.totalFitFiles)}`,
     );
-    await withAccountErasureUserWriteFence(
-      requireTransactionalDatabase(db),
-      job.data.userId,
-      async () => {
-        await attachGarminFitImportFlow(
-          { ...preparedImport, tempDirectories },
-          { id: job.id, queue: job.queueQualifiedName },
-        );
-      },
-    );
+    await withAccountErasureUserWriteFence(db, job.data.userId, async () => {
+      await attachGarminFitImportFlow(
+        { ...preparedImport, tempDirectories },
+        { id: job.id, queue: job.queueQualifiedName },
+      );
+    });
     const batchCount = Math.ceil(preparedImport.totalFitFiles / FLOW_BATCH_SIZE);
     const batchIds = Array.from({ length: batchCount }, (_, i) => createBatchId(preparedImport, i));
     checkpoint = { ...checkpoint, phase: "waiting-children", batchIds };

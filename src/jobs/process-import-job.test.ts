@@ -6,7 +6,6 @@ import type { SyncDatabase } from "../db/index.ts";
 import { getProviderIngestContext } from "../db/provider-ingest-context.ts";
 import { createMetricStreamEvent, type MetricStreamRowInput } from "../metric-stream/events.ts";
 import type { MetricStreamPublishOptions } from "../metric-stream/redpanda-producer.ts";
-import type { KayaImportDatabase } from "../providers/kaya/import.ts";
 import {
   APPLE_HEALTH_IMPORT_VALIDATION_ERROR_NAME,
   STRONG_CSV_IMPORT_VALIDATION_ERROR_NAME,
@@ -200,7 +199,7 @@ vi.mock("./process-fit-file-import-job.ts", () => ({
 // Import after mocks
 const { processImportJob } = await import("./process-import-job.ts");
 // All DB functions are mocked at module level, so the db object is never actually called.
-const mockDb: KayaImportDatabase = {
+const mockDb: SyncDatabase = {
   select: vi.fn(),
   insert: vi.fn(),
   delete: vi.fn(),
@@ -498,50 +497,6 @@ describe("processImportJob", () => {
         percentage: 9,
         message: "Importing health data...",
       });
-    });
-
-    it("fails metric publication when the database has no transaction support", async () => {
-      mockImportAppleHealthFile.mockImplementationOnce(
-        async (
-          _database: unknown,
-          _filePath: unknown,
-          _since: unknown,
-          _onProgress: unknown,
-          metricStreamPublisher: {
-            publishRows(
-              rows: readonly MetricStreamRowInput[],
-              options: MetricStreamPublishOptions,
-            ): Promise<unknown>;
-          },
-        ) => {
-          await metricStreamPublisher.publishRows(
-            [
-              {
-                recordedAt: "2026-06-02T10:00:00.000Z",
-                userId: "00000000-0000-4000-8000-000000000001",
-                providerId: "apple_health",
-                externalId: "heart-rate-1",
-                sourceType: "file",
-                channel: "heart_rate",
-                scalar: 72,
-              },
-            ],
-            { operationRevision: "1000000000000000" },
-          );
-          return { recordsSynced: 0, errors: [] };
-        },
-      );
-      const nonTransactionalDatabase: SyncDatabase = {
-        select: vi.fn(),
-        insert: vi.fn(),
-        delete: vi.fn(),
-        execute: vi.fn(),
-      };
-      const job = createMockJob({ filePath: tempFilePath, importType: "apple-health" });
-
-      await expect(runImportJob(job, nonTransactionalDatabase)).rejects.toThrow(
-        "Processing metric-stream publication requires a transactional database",
-      );
     });
 
     it("does not fabricate relational or no-output events for a metric-only result", async () => {
@@ -930,21 +885,6 @@ describe("processImportJob", () => {
       expect(mockLoggerInfo).toHaveBeenCalledWith(
         expect.stringContaining("4 climbing entries imported"),
       );
-    });
-    it("fails loudly when Kaya import runs without transactional database support", async () => {
-      await writeFile(tempFilePath, "csv data");
-      const nonTransactionalDb: SyncDatabase = {
-        select: vi.fn(),
-        insert: vi.fn(),
-        delete: vi.fn(),
-        execute: vi.fn(),
-      };
-      const job = createMockJob({ filePath: tempFilePath, importType: "kaya-export" });
-
-      await expect(runImportJob(job, nonTransactionalDb)).rejects.toThrow(
-        "Kaya export import requires a transactional database",
-      );
-      expect(mockImportKayaExportFile).not.toHaveBeenCalled();
     });
     it("logs Kaya errors and duration precisely", async () => {
       await writeFile(tempFilePath, "csv data");

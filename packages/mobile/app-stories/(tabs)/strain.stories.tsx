@@ -11,6 +11,7 @@ import {
   createProcessingStatusStoryLink,
   seedReadyProcessingStatus,
 } from "../../app-fixtures/(tabs)/processing-status-story-fixture";
+import { climbingLocationMapFixture } from "../../components/climbing-location-map-fixtures";
 import { trpc } from "../../lib/trpc";
 
 const STRAIN_COMPANION_RESPONSES = {
@@ -191,7 +192,7 @@ function createSeededProviders(
           withUnknownClimbingAttempts || withRecordedClimbingAttempts
             ? [
                 {
-                  climbType: "boulder",
+                  climbKind: "boulder",
                   gradeSystem: "v_scale",
                   grade: "VB",
                   gradeSortValue: -1,
@@ -200,7 +201,7 @@ function createSeededProviders(
                   sends: 1,
                 },
                 {
-                  climbType: "boulder",
+                  climbKind: "boulder",
                   gradeSystem: "v_scale",
                   grade: "V0",
                   gradeSortValue: 0,
@@ -209,7 +210,7 @@ function createSeededProviders(
                   sends: 0,
                 },
                 {
-                  climbType: "boulder",
+                  climbKind: "boulder",
                   gradeSystem: "v_scale",
                   grade: "V1",
                   gradeSortValue: 1,
@@ -242,6 +243,11 @@ function createSeededProviders(
       fixture.data,
     );
   }
+
+  queryClient.setQueryData(
+    [["climbing", "locationMap"], { input: { days: 90 }, type: "query" }],
+    climbingLocationMapFixture,
+  );
 
   const processingStatus = seedReadyProcessingStatus(queryClient, [
     "activity",

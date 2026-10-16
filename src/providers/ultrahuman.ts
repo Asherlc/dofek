@@ -180,6 +180,7 @@ export class UltrahumanProvider implements SyncProvider {
     const fetchFn = this.#fetchFn;
     return {
       manualToken: {
+        kind: "access-token",
         label: "Personal API token",
         instructionsUrl: "https://vision.ultrahuman.com/developer-docs",
         exchangeToken: async (token) => {

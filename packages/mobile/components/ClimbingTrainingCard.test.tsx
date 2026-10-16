@@ -41,7 +41,7 @@ describe("ClimbingTrainingCard", () => {
         gradeProgression: [climbingProgressionFixture()],
         volumeByGrade: [
           {
-            climbType: "boulder",
+            climbKind: "boulder",
             gradeSystem: "v_scale",
             grade: "V4",
             gradeSortValue: 4,
@@ -82,7 +82,7 @@ describe("ClimbingTrainingCard", () => {
       ...defaultMockTrainingData(),
       climbing: {
         gradeProgression: [climbingProgressionFixture()],
-        volumeByGrade: [{ climbType: "boulder", grade: "V4", gradeSortValue: "bad" }],
+        volumeByGrade: [{ climbKind: "boulder", grade: "V4", gradeSortValue: "bad" }],
         sessionSummary: [],
       },
     };
@@ -106,7 +106,7 @@ describe("ClimbingTrainingCard", () => {
         gradeProgression: [],
         volumeByGrade: [
           {
-            climbType: "boulder",
+            climbKind: "boulder",
             gradeSystem: "v_scale",
             grade: "VB",
             gradeSortValue: -1,
@@ -115,7 +115,7 @@ describe("ClimbingTrainingCard", () => {
             sends: 1,
           },
           {
-            climbType: "boulder",
+            climbKind: "boulder",
             gradeSystem: "v_scale",
             grade: "V0",
             gradeSortValue: 0,
@@ -157,7 +157,7 @@ describe("ClimbingTrainingCard", () => {
         ...defaultMockTrainingData().climbing,
         volumeByGrade: [
           {
-            climbType: "boulder",
+            climbKind: "boulder",
             gradeSystem: "v_scale",
             grade: "VB",
             gradeSortValue: -1,
@@ -166,7 +166,7 @@ describe("ClimbingTrainingCard", () => {
             sends: 1,
           },
           {
-            climbType: "boulder",
+            climbKind: "boulder",
             gradeSystem: "v_scale",
             grade: "V0",
             gradeSortValue: 0,

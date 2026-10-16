@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { FileUpload } from "../db/file-upload.ts";
 import type { SyncDatabase } from "../db/index.ts";
 import type { ImportUploadStorage } from "../file-upload-storage.ts";
+import { makeTransactionalTestDatabase } from "../providers/test-helpers.ts";
 import { createAppleHealthImportValidationError } from "./import-validation-error.ts";
 import type { ImportJobData } from "./queues.ts";
 
@@ -46,12 +47,12 @@ const { processFileUploadImportJob } = await import("./process-file-upload-impor
 const body = Buffer.from("verified upload body");
 const digest = createHash("sha256").update(body).digest("hex");
 const uploadId = "00000000-0000-4000-8000-0000000000f4";
-const database: SyncDatabase = {
+const database: SyncDatabase = makeTransactionalTestDatabase({
   delete: vi.fn(),
   execute: vi.fn(),
   insert: vi.fn(),
   select: vi.fn(),
-};
+});
 
 function upload(overrides: Partial<FileUpload> = {}): FileUpload {
   return {

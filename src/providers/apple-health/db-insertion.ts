@@ -1,7 +1,7 @@
 import { selectDailyHeartRateVariability } from "@dofek/heart-rate-variability";
 import { isIndoorCyclingModality } from "@dofek/training/endurance-types";
 import { eq, sql } from "drizzle-orm";
-import type { Database, SyncDatabase } from "../../db/index.ts";
+import type { SyncDatabase } from "../../db/index.ts";
 import {
   type MetricStreamSourceRow,
   writeMetricStreamBatch,
@@ -21,19 +21,6 @@ import { replaceHangTenIntervals } from "./hang-ten-intervals.ts";
 import type { HealthRecord } from "./records.ts";
 import type { SleepAnalysisRecord } from "./sleep.ts";
 import { type HealthWorkout, workoutExternalId } from "./workouts.ts";
-
-type TransactionalSyncDatabase = SyncDatabase & Pick<Database, "transaction">;
-
-function hasTransaction(db: SyncDatabase): db is TransactionalSyncDatabase {
-  return "transaction" in db && typeof db.transaction === "function";
-}
-
-export function requireTransactionalDatabase(db: SyncDatabase): TransactionalSyncDatabase {
-  if (!hasTransaction(db)) {
-    throw new Error("Apple Health import requires a transactional database");
-  }
-  return db;
-}
 
 /**
  * Deduplicate rows by their conflict key, keeping the last occurrence.
@@ -694,7 +681,7 @@ export async function upsertWorkoutBatch(
   }
   const uniqueWorkouts = [...dedupMap.values()];
 
-  const transactionalDb = requireTransactionalDatabase(db);
+  const transactionalDb = db;
   // Keep activity metadata and Hang Ten intervals in the same transaction so a
   // failed replacement cannot leave the activity row ahead of its intervals.
   const activityResults = await transactionalDb.transaction(async (transactionDb) => {

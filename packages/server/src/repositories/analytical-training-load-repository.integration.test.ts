@@ -3,6 +3,7 @@ import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { createClickHouseClientFromEnv } from "../../../../src/db/clickhouse.ts";
+import { persistClimbingLogEntries } from "../../../../src/db/climbing-log-sync.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
 import { AnalyticalTrainingLoadRepository } from "./analytical-training-load-repository.ts";
@@ -82,11 +83,45 @@ describe("AnalyticalTrainingLoadRepository database semantics", () => {
           'walking', 'walking', '2026-06-16T15:00:00Z',
           '2026-06-16T16:00:00Z', NULL, '{}'::jsonb)
     `);
-    await postgres.db.execute(sql`
-      INSERT INTO fitness.climbing_entry (user_id, provider_id, activity_id, climb_type, grade_system, grade, result_style, attempt_count) VALUES
-        (${userId}::uuid, ${providerId}, ${climbingActivityId}::uuid, 'boulder', 'v_scale', 'V5', 'Send', 3),
-        (${userId}::uuid, ${providerId}, ${climbingActivityId}::uuid, 'boulder', 'v_scale', 'V6', NULL, NULL)
-`);
+    await persistClimbingLogEntries(postgres.db, {
+      userId,
+      providerId,
+      entries: [
+        {
+          externalId: "graded",
+          activityId: climbingActivityId,
+          discipline: "rock_climbing",
+          climb: {
+            externalId: "boulder",
+            kind: "boulder",
+            publishedGrades: [{ value: "V5", system: "v_scale" }],
+          },
+          attempts: [{ scope: "climb", sourceResult: "Send", qualifier: "free-send" }],
+          reportedAttemptCounts: [{ scope: "climb", count: 3 }],
+        },
+        {
+          externalId: "ungraded",
+          activityId: climbingActivityId,
+          discipline: "rock_climbing",
+          climb: { externalId: "ungraded-boulder", kind: "boulder" },
+          attempts: [{ scope: "climb" }],
+        },
+        {
+          externalId: "summit",
+          activityId: climbingActivityId,
+          discipline: "mountaineering",
+          climb: { externalId: "summit", kind: "summit" },
+          attempts: [{ scope: "climb", sourceResult: "completed" }],
+        },
+        {
+          externalId: "pitch",
+          activityId: climbingActivityId,
+          discipline: "rock_climbing",
+          climb: { externalId: "pitch-route", kind: "route" },
+          attempts: [{ scope: "pitch", sourceResult: "completed" }],
+        },
+      ],
+    });
     await postgres.db.execute(sql`
       UPDATE fitness.activity
       SET
@@ -243,9 +278,9 @@ describe("AnalyticalTrainingLoadRepository database semantics", () => {
         coverage: { contributing_records: 4, supported_records: 1 },
       },
       climbing_attempts: {
-        daily_value: 3,
-        status: "partial",
-        coverage: { contributing_records: 2, supported_records: 1 },
+        daily_value: 4,
+        status: "available",
+        coverage: { contributing_records: 3, supported_records: 3 },
       },
       finger_load: {
         daily_value: null,

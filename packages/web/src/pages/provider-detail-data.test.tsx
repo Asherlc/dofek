@@ -2,6 +2,10 @@
 
 import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  climbingClimbFixture,
+  climbingLogEntryFixture,
+} from "../../../server/src/repositories/climbing-test-helpers.ts";
 import { RecordsBrowser, SyncHistory } from "./provider-detail-data.tsx";
 
 const mocks = vi.hoisted(() => ({
@@ -10,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   logsUseQuery: vi.fn(),
   recordFilterOptionsUseQuery: vi.fn(),
   recordsUseQuery: vi.fn(),
+  recordDetailUseQuery: vi.fn(),
 }));
 
 vi.mock("../lib/trpc.ts", () => ({
@@ -24,6 +29,7 @@ vi.mock("../lib/trpc.ts", () => ({
       records: {
         useQuery: mocks.recordsUseQuery,
       },
+      recordDetail: { useQuery: mocks.recordDetailUseQuery },
       logFilterOptions: {
         useQuery: mocks.logFilterOptionsUseQuery,
       },
@@ -42,6 +48,12 @@ vi.mock("@tanstack/react-router", () => ({
 
 describe("RecordsBrowser", () => {
   beforeEach(() => {
+    mocks.recordDetailUseQuery.mockReset();
+    mocks.recordDetailUseQuery.mockReturnValue({
+      data: { id: "activity-1", raw: { provider: "wahoo" } },
+      error: null,
+      isLoading: false,
+    });
     mocks.availableDataTypesUseQuery.mockReset();
     mocks.availableDataTypesUseQuery.mockReturnValue({
       data: ["activities", "sleepSessions"],
@@ -67,6 +79,54 @@ describe("RecordsBrowser", () => {
       isLoading: false,
       error: null,
     });
+  });
+
+  it("keeps cached climbing rows and requests the full graph from the View control", () => {
+    mocks.availableDataTypesUseQuery.mockReturnValue({
+      data: ["climbingLogEntries"],
+      isLoading: false,
+      isError: true,
+      error: new Error("Availability refresh failed"),
+    });
+    const log = climbingLogEntryFixture({
+      climb: climbingClimbFixture(),
+      climbId: climbingClimbFixture().id,
+    });
+    mocks.recordDetailUseQuery.mockReturnValue({ data: log, error: null, isLoading: false });
+    mocks.recordsUseQuery.mockReturnValue({
+      data: {
+        rows: [
+          {
+            id: log.id,
+            name: "Corner",
+            climbed_on: null,
+            result: "Pitch completed",
+            discipline: null,
+          },
+        ],
+        columns: ["name", "climbed_on", "result", "discipline"],
+        filterColumns: ["name"],
+      },
+      isLoading: false,
+      isError: true,
+      error: new Error("Records refresh failed"),
+    });
+    render(<RecordsBrowser providerId="openbeta" stats={undefined} />);
+    expect(screen.getByText("Corner")).toBeTruthy();
+    expect(screen.getByText("Pitch completed")).toBeTruthy();
+    expect(screen.getByText("Availability refresh failed")).toBeTruthy();
+    expect(screen.getByText("Records refresh failed")).toBeTruthy();
+    const control = screen.getByRole("button", { name: "View" });
+    control.focus();
+    fireEvent.click(control);
+    expect(mocks.recordDetailUseQuery).toHaveBeenCalledWith({
+      providerId: "openbeta",
+      dataType: "climbingLogEntries",
+      recordId: log.id,
+    });
+    expect(screen.getByRole("dialog")).toHaveTextContent("Published climb grades");
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    expect(control).toHaveFocus();
   });
 
   it("exposes record types as tabs with the active type selected", () => {
@@ -175,6 +235,7 @@ describe("RecordsBrowser", () => {
           metricStream: 0,
           nutritionDaily: 0,
           sleepSessions: 0,
+          climbingLogEntries: 0,
         }}
       />,
     );
@@ -211,6 +272,7 @@ describe("RecordsBrowser", () => {
           metricStream: 0,
           nutritionDaily: 0,
           sleepSessions: 0,
+          climbingLogEntries: 0,
         }}
       />,
     );
@@ -255,6 +317,7 @@ describe("RecordsBrowser", () => {
           metricStream: 0,
           nutritionDaily: 0,
           sleepSessions: 0,
+          climbingLogEntries: 0,
         }}
       />,
     );

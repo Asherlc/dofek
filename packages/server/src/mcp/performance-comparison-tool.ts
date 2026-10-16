@@ -1,7 +1,9 @@
 import { ACTIVITY_MODALITIES, CANONICAL_ACTIVITY_TYPES } from "@dofek/training/activity-types";
-import { CLIMBING_GRADE_SYSTEMS } from "@dofek/training/climbing-grades";
+import { FREE_ROCK_GRADE_SYSTEMS } from "@dofek/training/climbing-grades";
+import { attemptScopeSchema, ropeMethodSchema } from "@dofek/training/climbing-log";
 import type { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
+import { loadClimbingGradePreference } from "../climbing-grade-preferences.ts";
 import { dateSchema } from "../lib/date-schema.ts";
 import { PerformanceComparisonRepository } from "../repositories/performance-comparison-repository.ts";
 import {
@@ -36,12 +38,15 @@ export const performanceComparisonEquivalenceInputSchema = z.union([
   z
     .object({
       kind: z.literal("climb"),
-      climb_type: z.enum(["boulder", "route"]),
-      grade_system: z.enum(CLIMBING_GRADE_SYSTEMS),
+      climb_kind: z.enum(["boulder", "route"]),
+      grade_system: z.enum(FREE_ROCK_GRADE_SYSTEMS),
       grade: z.string().min(1),
-      route_name: z.string().min(1),
+      climb_name: z.string().min(1),
       location_name: z.string().min(1),
-      lead: z.boolean().nullable().optional(),
+      rope_method: ropeMethodSchema.nullable().default(null),
+      solo: z.boolean().nullable().default(null),
+      attempt_scope: attemptScopeSchema.default("climb"),
+      pitch_number: z.number().int().positive().nullable().default(null),
     })
     .strict(),
   z.object({ kind: z.literal("strength_exercise_id"), exercise_id: z.uuid() }).strict(),
@@ -94,12 +99,15 @@ export function toRepositoryEquivalence(input: ToolEquivalence): PerformanceEqui
   if (input.kind === "climb") {
     return {
       kind: input.kind,
-      climbType: input.climb_type,
+      climbKind: input.climb_kind,
       gradeSystem: input.grade_system,
       grade: input.grade,
-      routeName: input.route_name,
+      climbName: input.climb_name,
       locationName: input.location_name,
-      lead: input.lead ?? null,
+      ropeMethod: input.rope_method,
+      solo: input.solo,
+      attemptScope: input.attempt_scope,
+      pitchNumber: input.pitch_number,
     };
   }
   return input;
@@ -155,6 +163,7 @@ export function registerPerformanceComparisonTool(
           context.sensorStore,
           context.userId,
           context.timezone,
+          await loadClimbingGradePreference(context.db, context.userId),
         ).compare({
           startDate: start_date,
           endDate: end_date,

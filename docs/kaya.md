@@ -7,43 +7,46 @@ application API. `kaya-export` remains a separate CSV-import provider.
 The contract in [kaya-api.openapi.yaml](kaya-api.openapi.yaml) records responses
 observed from the authenticated [Kaya web app](https://kaya-app.kayaclimb.com/).
 
-For routes, Kaya’s explicit `climb.lead` boolean maps to canonical
-`climb_style`: `true` is `lead` and `false` is `top-rope`. Boulder methods remain
-unknown because Kaya returns `false` for them without a rope-style meaning.
-The [read projection](climbing-context.md#interpretation) derives the nullable
-lead flag. See the observed [application API](https://kaya-beta.kayaclimb.com/graphql).
+For routes, Kaya’s explicit `climb.lead` boolean supplies the Attempt's rope
+method: `true` is lead and `false` is top-rope. Boulder methods remain unknown
+because that boolean does not establish a rope method for boulders. Published
+`climb.grade` belongs to Climb; an ascent's own grade belongs to its log. See
+the [adapter](../src/providers/kaya-sync.ts), [model](climbing-context.md), and
+observed [application API](https://kaya-beta.kayaclimb.com/graphql).
 
-## Attempts and unknown counts
+## Attempt occurrences
 
 The session request includes `attempted_climbs` alongside the separate
 `ascentsForUser` request. An attempted climb is a climb record whose ID combines
-the session and climb IDs, rather than an individual try. It imports as an unsent
-`climbing_entry`; ascent records keep their own source IDs. A shared climb
+the session and climb IDs, rather than an individual try. It imports as a
+ClimbingLogEntry; ascent records keep their own source IDs. A shared climb
 reference alone does not establish duplicate effort or overlapping counts.
-The [source-scoped writer](../src/db/climbing-entry-sync.ts) preserves record
+The [source-scoped writer](../src/db/climbing-log-sync.ts) preserves record
 identity; any effort relationship needs separate evidence before query-time
 reconciliation. Attempted climbs report their per-climb session count in
 `session_attempts`; their `attempts` field can be null even when that count is
-known. The session query selects `attempts: session_attempts`, using a permanent
+known. The session query selects `attempts: session_attempts`, using a
 [GraphQL response alias](https://graphql.org/learn/queries/#aliases) to retain the
 client's typed `attempts` property. The separate ascent feed uses its own
 `attempts` field, which can be null, including for Repeat ascents. Preserve
-unknown counts, and do not infer individual tries or failure reasons.
+the reported positive count by creating that many whole-Climb Attempt rows.
+A missing total creates one partially described occurrence; it does not
+establish complete lifetime history or a failed attempt. Only supported source
+facts describe individual outcomes. Attempted-climb summaries and ascent
+records remain separate source observations until evidence establishes overlap.
 This contract was verified against the authenticated [Kaya GraphQL endpoint](https://kaya-beta.kayaclimb.com/graphql)
 and [Kaya application](https://kaya-app.kayaclimb.com/) on 2026-09-29; the
 attempted-climb count field was verified again on 2026-10-13.
 
-Climbing summaries include these records and retain known send counts. An
-attempt total is `null` when any contributing count is unknown. Grade volume
-also exposes `recordedAttempts`, the subtotal of known counts, or `null` when
-none are recorded. Web and mobile grade cards label incomplete subtotals as
-"N recorded attempts", use "N attempts" for complete totals, and omit attempts
-when no counts are known. Recorded zero remains visible and sends are retained.
-See the [web grade card](../packages/web/src/components/ClimbingVolumeByGradeChart.tsx)
-and [mobile climbing section](../packages/mobile/app/(tabs)/strain.tsx).
-The outcome and count are independently
-nullable in PostgreSQL, whose [check constraints](https://www.postgresql.org/docs/current/ddl-constraints.html#DDL-CONSTRAINTS-CHECK-CONSTRAINTS)
-allow unknown values while retaining the positive-count constraint.
+Server summaries count retained scoped occurrences and confirmed free sends.
+Unknown completion and execution facts remain explicit; a generic completed
+attempt does not prove a free send. No aggregate attempt count or completeness
+flag is stored. Dofek qualifies verified API occurrence IDs as
+`kaya:ascent:<id>` and `kaya:session:<session>:attempted:<record-id>` independently
+of Activity attachment. This is Dofek's identity policy; ascent-ID persistence
+through upstream session reassignment has not been independently verified.
+See the [writer](../src/db/climbing-log-sync.ts) and
+[analytics projection](../packages/server/src/repositories/climbing-rock-observations.ts).
 
 ## Confirmed request coverage
 
@@ -55,8 +58,9 @@ the remaining omissions are shown below:
 | Record | Fields |
 | --- | --- |
 | Climb, not requested | `slug`, `color { name }`, `description` |
-| Climb, requested | `angle`; `board`, `destination`, `area`, `subarea` (IDs and names) |
-| Ascent | Its own `grade`, `photo { photo_url thumb_url }`, `video { video_url thumb_url }` |
+| Climb, requested | `lead`, `grade`, `angle`; `board`, `destination`, `area`, `subarea` (IDs and names) |
+| Ascent, requested | Its own `grade`, comments, ratings and stiffness |
+| Ascent, not requested | `photo { photo_url thumb_url }`, `video { video_url thumb_url }` |
 
 For the reported session, climb colors and slugs were populated; the other
 listed metadata was null, and ascent grades matched the climb grades. Session
@@ -93,12 +97,15 @@ also returned `25`. Missing values remain `null`. The reviewed Kaya resources
 do not establish the angle's units, zero, or sign convention; retain the
 reported integer until those semantics are verified.
 
-The importer stores outdoor nodes in destination/area/subarea order and keeps
-their Kaya IDs and explicit roles. When no outdoor path is supplied, the gym
+The importer stores supplied nodes in destination/area/subarea order as an
+Area parent chain with their Kaya IDs. When no such path is supplied, the gym
 fallback uses the climb, ascent, then session gym. Board metadata comes from
 the climb reference. Angles retain `unit: null`, including zero and negative
 values; degree analytics exclude them. Kaya CSV exports preserve their gym
-name with unknown ID, their ascent label, and only recorded attempt counts.
+name with unknown ID and normalize ascent labels and counts into Attempt facts.
+CSV grades are conservatively stored as separately reported grades because
+the row supplies no independently identified catalogue definition; this does
+not claim that Kaya labels the column as a personal grade opinion.
 See the [context contract and migration](climbing-context.md) and
 [provider mapping](../src/providers/kaya-sync.ts).
 
@@ -107,10 +114,13 @@ entry IDs, activity associations, and detailed attempts. They preserve entries
 attached from other providers. Complete session responses mark missing records
 from that source as absent; an export with parse errors cannot establish absence
 and retains the earlier records. Reappearing records recover their original IDs.
-The [shared database writer](../src/db/climbing-entry-sync.ts) enforces source
+The [shared database writer](../src/db/climbing-log-sync.ts) enforces source
 scope inside the import transaction; executable [API](../packages/server/src/repositories/kaya-sync.integration.test.ts)
 and [CSV](../src/providers/kaya/import.integration.test.ts) regressions cover
-refreshes, partial exports, and record preservation.
+refreshes, partial exports, and record preservation. The API fetches full
+feeds: sessions are filtered locally by `since`, while standalone ascents use
+both `since` and `until`. These are current client bounds rather than an
+upstream bounded-query guarantee. See the [sync implementation](../src/providers/kaya-sync.ts).
 
 Board names can describe a model/layout, such as
 [Moonboard (2016)](https://kaya-app.kayaclimb.com/location/Moonboard-2016-701910),

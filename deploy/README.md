@@ -160,6 +160,12 @@ If direct SSH fails with `Permission denied`, verify you are using the matching 
 - `IMAGE_TAG` is shared across GHCR images built from main:
   - `ghcr.io/asherlc/dofek:<tag>` (production stack)
   - `ghcr.io/asherlc/dofek-ml:<tag>` (local ML tooling; not deployed to the stack)
+- The deployment resolves the requested app tag once to a manifest digest.
+  `APP_IMAGE` is the resulting full immutable reference, required when rendering
+  the production stack. Asset extraction, migrations, readiness/CDC operations,
+  and the requested-image rollouts all consume that reference. Docker documents
+  [digest pinning](https://docs.docker.com/reference/cli/docker/image/pull/#pull-an-image-by-digest-immutable-identifier)
+  and the [registry manifest descriptor](https://docs.docker.com/reference/cli/docker/buildx/imagetools/inspect/#json-output).
 - `docker stack deploy` is the only production rollout command for web deploys. It updates `web` and `worker` together from `deploy/stack.yml`.
 - Swarm rollback is **image rollback only**. It does not roll back database schema changes that were already applied.
 - Migrations run after the non-pruning pre-migration stack apply and after the
@@ -221,7 +227,9 @@ CI (main) -> build dofek (+ dofek-ml for local ML tooling)
               -> upload immutable web assets
               -> sweep expired backups
               -> validate host bind sources
+              -> compare deployed/requested image migration histories; select rolling or maintenance
               -> non-pruning stack apply with analytics-worker, all metric-stream ClickHouse sinks, and processing-reconciliation quiesced
+              -> wait for quiesced tasks to stop (also web in maintenance mode)
               -> wait for Postgres, ClickHouse, and PeerDB
               -> reconcile live PeerDB mappings; validate the old destination schema
               -> migrate requested image on <stack>_default
@@ -265,9 +273,11 @@ green indicates that the production release ran successfully. GitHub documents
 the cancellation API and its required Actions write permission:
 <https://docs.github.com/en/rest/actions/workflow-runs#cancel-a-workflow-run>.
 For a reported stale page, compare the live HTML's `web/<tag>/` asset prefix with
-the running Swarm image tag and inspect the production job's actual conclusion.
+the selected workflow tag, verify the running Swarm image digest matches the
+resolved `APP_IMAGE`, and inspect the production job's actual conclusion in the
+[canonical deployment workflow](../.github/workflows/deploy-web-stack.yml).
 
-1. **Build**: GitHub Actions builds the `server` image for every `main` push and pushes it to GHCR with the commit-derived tag (`<tag>`). A successful main CI completion requests deployment; when its slot starts, `Deploy Web` selects the latest passing main push and deploys that tag. The web build inside the image uses `VITE_ASSET_BASE_URL=https://assets.dofek.fit/web/<tag>/`, so Vite-generated JavaScript and CSS references point at immutable R2-backed CDN assets instead of the Express origin; Vite's `base` option controls the public base path for built assets: https://vite.dev/config/shared-options.html#base. `<tag>` is the image tag used consistently for both the GHCR image and the web asset prefix. See GitHub's `workflow_run` event documentation for the trigger behavior: https://docs.github.com/en/actions/reference/events-that-trigger-workflows#workflow_run. The `ml` image is built only when ML image inputs change.
+1. **Build**: GitHub Actions builds the `server` image for every `main` push and pushes it to GHCR with the commit-derived tag (`<tag>`). A successful main CI completion requests deployment; when its slot starts, `Deploy Web` selects the latest passing main push and resolves that tag to the immutable image it deploys. The web build inside the image uses `VITE_ASSET_BASE_URL=https://assets.dofek.fit/web/<tag>/`, so Vite-generated JavaScript and CSS references point at immutable R2-backed CDN assets instead of the Express origin; Vite's `base` option controls the public base path for built assets: https://vite.dev/config/shared-options.html#base. `<tag>` is the image tag used consistently for both the GHCR image and the web asset prefix. See GitHub's `workflow_run` event documentation for the trigger behavior: https://docs.github.com/en/actions/reference/events-that-trigger-workflows#workflow_run. The `ml` image is built only when ML image inputs change.
    Automatic deploys check out the selected CI run's full commit SHA for both
    Terraform and stack configuration. GitHub documents that a
    `workflow_run` workflow's `GITHUB_SHA` is the last commit on the default
@@ -365,7 +375,17 @@ the running Swarm image tag and inspect the production job's actual conclusion.
       - Optional: `CREDENTIAL_ENCRYPTION_KEY_NAMESPACE` (default `dofek`) and `CREDENTIAL_ENCRYPTION_KEY_NAME` (default `provider-credentials`).
    2. Point Docker CLI at the remote daemon with `DOCKER_HOST=ssh://ubuntu@<host>`.
    3. Login to GHCR on the CI runner.
-   4. `docker pull ghcr.io/asherlc/dofek:<tag>`.
+   4. Resolve `ghcr.io/asherlc/dofek:<tag>` to its registry manifest digest with
+      `scripts/resolve-deploy-image.ts`, then pull and inspect that immutable
+      reference on the remote Docker daemon. Its full `SENTRY_RELEASE` must
+      equal the checked-out commit. The resolver retains the existing web
+      service's complete desired digest reference for the pre-migration phase;
+      an existing tag-only reference fails instead of being resolved again.
+      Docker's [stack deployment](https://docs.docker.com/reference/cli/docker/stack/deploy/)
+      normally resolves tags against the registry, so every subsequent command
+      receives the selected digest. Stack interpolation sets the derived
+      `APP_IMAGE` after loading dotenv, preventing exported configuration from
+      replacing it. The workflow then validates the rendered stack files.
       The workflow also ensures pinned third-party stack images exist on the
       host, but skips those pulls when the exact image is already present.
       Image cleanup is controlled by this deploy workflow: it prunes unused
@@ -411,22 +431,50 @@ the running Swarm image tag and inspect the production job's actual conclusion.
    7. Apply the stack configuration before migrations with a non-prune,
       detached `docker stack deploy`, the temporary five-service quiesce
       overlay, and the migration quiesce overlay. On existing stacks
-      this uses the currently deployed app image tag, so database, ClickHouse,
+      this preserves the web service's complete desired image digest, so database, ClickHouse,
       network, config, and resource-limit changes are applied before migrations
       without rolling new app code ahead of schema changes. The overlays keep
       `analytics-worker`, all three metric-stream ClickHouse sinks,
       `processing-reconciliation`, and the migration-running `worker` at zero
       replicas during the migration window; see the
       [worker entrypoint](../entrypoint.sh). On clean-slate hosts the
-      stack apply uses the deploy image tag so the DB service and overlay network
+      stack apply uses the requested immutable image so the DB service and overlay network
       exist before readiness checks. After migrations, the workflow deploys the
       requested app image with only the five-service quiesce overlay still applied,
       which restores `worker` using the same image that ran the migrations while
       `analytics-worker`, all three metric-stream ClickHouse sinks, and
       `processing-reconciliation` remain stopped until the final stack deploy.
+      Migrations whose first line is `-- dofek: deployment-mode=maintenance`
+      also apply `stack.maintenance.yml`, stopping web before the schema changes.
+      The workflow compares the requested image's journal with the deployed web
+      image's journal, so a retry after a committed migration still selects
+      maintenance until the app image advances. Missing or divergent image
+      histories fail before the stack apply. Fresh stacks use maintenance mode.
+      The maintenance apply records the requested journal's final tag in web's
+      `dofek.migration-maintenance-target` service label. A subsequent request
+      must include that boundary, so an older release cannot restart old readers
+      after the database advances. The matching-image apply removes the label;
+      rollback restores it with the stopped old specification. Docker documents
+      [service labels](https://docs.docker.com/reference/compose-file/deploy/#labels).
+      Before any migration, CI verifies zero desired replicas and terminal
+      actual task states for every quiesced service, allowing the worker's
+      30-minute graceful drain to finish. A desired shutdown alone does not prove
+      that a task stopped; see [Swarm task states](https://docs.docker.com/engine/swarm/how-swarm-mode-works/swarm-task-states/).
+      The old web and worker specifications remain at zero until migrations
+      succeed, so Swarm rollback restores a stopped specification. A maintenance
+      rollout failure fails immediately and leaves consumers gated; rerun the
+      canonical workflow with the matching release rather than restoring the old
+      image. Docker documents [service rollback](https://docs.docker.com/reference/cli/docker/service/rollback/)
+      and [stack overlay application](https://docs.docker.com/reference/cli/docker/stack/deploy/).
       The deploy workflow waits explicitly for Postgres and ClickHouse instead
       of keeping a long-lived Docker-over-SSH stack-deploy wait open while the
       single-node host restarts services.
+      At convergence, `scripts/verify-deploy-image.ts` checks each app service's
+      desired manifest identity, desired replica count, and every running task's
+      image reference. An optional tag does not change the repository/digest
+      identity; a local image configuration ID is not a manifest digest. Docker
+      describes the service/task relationship in
+      [Swarm services and tasks](https://docs.docker.com/engine/swarm/how-swarm-mode-works/services/).
    8. Wait until Postgres is writable (`SELECT NOT pg_is_in_recovery()`) and
       ClickHouse answers `/ping`; wait for PeerDB SQL and its Flow API, then
       run `peerdb-cdc-contract prepare` against existing mapping identities
@@ -505,7 +553,13 @@ resource's `triggers_replace` value so Terraform actually reruns the remote
 - A failed swarm rollout can revert service specs and image versions.
 - It does **not** revert already-applied database migrations.
 - Treat migrations as forward-only production changes.
-- If a release includes schema changes, use expand/contract discipline: deploy additive/backward-compatible schema first, then ship code that depends on it, and only remove old schema in a later release.
+- Prefer expand/contract for schema changes: deploy additive/backward-compatible
+  schema first, then ship dependent code and remove old schema in a later release.
+  An approved schema-breaking migration must carry the maintenance marker above
+  so the canonical workflow stops old readers and writers before applying it.
+  Maintenance includes an availability interruption; do not roll back to the
+  removed schema's app image after migration. See Docker's
+  [rollback boundary](https://docs.docker.com/reference/cli/docker/service/rollback/).
 
 ### ClickHouse Read Models
 
@@ -621,25 +675,34 @@ Missing keys fail the workflow immediately with an explicit key name.
 
 If a deploy is running against a fresh host (or after removing previous non-swarm containers), `<stack>_db` and `<stack>_default` may not exist yet. In that case, waiting for Postgres before any stack deploy will fail forever because there is no DB service to reach.
 
-The deploy workflow handles this by always applying the stack configuration
-before migrations:
+The [deploy workflow](../.github/workflows/deploy-web-stack.yml) handles this by
+always applying the stack configuration before migrations, using the immutable
+references selected by the [image resolver](../scripts/resolve-deploy-image.ts):
 
-- On existing stacks, the pre-migration deploy uses the currently running app
-  image tag so infrastructure/config changes are applied while app code remains
-  on the old release. The migration quiesce overlay sets `worker` to zero so
+- On existing stacks, the pre-migration deploy uses the web service's existing
+  desired image digest reference so infrastructure/config changes are applied
+  while app code remains on that release. The migration quiesce overlay sets `worker` to zero so
   that old release cannot run its startup migration against a database that the
   requested image will advance. The CDC quiesce overlay also sets
   `analytics-worker`, all three metric-stream ClickHouse sinks, and
   `processing-reconciliation` to zero so all five remain stopped until the
   final stack deploy.
-- On clean-slate hosts, the pre-migration deploy uses the requested deploy tag
-  because there is no old release to preserve; the migration quiesce overlay
+- For a pending maintenance-marked schema boundary, the pre-migration apply
+  additionally stops web and verifies that all quiesced tasks actually exit.
+  Selection uses the deployed image journal, including when the database already
+  committed the migration during an earlier failed deployment. The web service's
+  maintenance-target label rejects older release requests until a matching image
+  replaces it. See the
+  [canonical workflow](../.github/workflows/deploy-web-stack.yml) and Docker's
+  [task-state lifecycle](https://docs.docker.com/engine/swarm/how-swarm-mode-works/swarm-task-states/).
+- On clean-slate hosts, the pre-migration deploy uses the requested immutable
+  image (`APP_IMAGE`) because there is no old release to preserve; the migration quiesce overlay
   still keeps `worker` stopped until the one-shot migration completes, and the
   CDC quiesce overlay keeps `analytics-worker`,
   all three metric-stream ClickHouse sinks, and `processing-reconciliation` stopped.
 - After the pre-migration stack apply, the workflow waits for Postgres and
   ClickHouse, runs migrations, and then performs the pruned deploy with the
-  requested image tag while `analytics-worker`,
+  requested immutable image (`APP_IMAGE`) while `analytics-worker`,
   all three metric-stream ClickHouse sinks, and `processing-reconciliation` remain
   quiesced. The final stack deploy restores all five.
 

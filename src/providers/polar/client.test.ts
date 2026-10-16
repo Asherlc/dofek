@@ -172,7 +172,9 @@ describe("PolarClient — API error responses", () => {
 
     const client = new PolarClient("access-token", fetchFn);
 
-    await expect(client.getExercises()).rejects.toThrow('Polar API error (500): {"message":"bad"}');
+    await expect(client.getExercises()).rejects.toThrow(
+      'Polar API error (500) for /exercises: {"message":"bad"}',
+    );
   });
 
   it("handles API errors with JSON content-type but empty body", async () => {
@@ -185,7 +187,7 @@ describe("PolarClient — API error responses", () => {
     const client = new PolarClient("access-token", fetchFn);
 
     await expect(client.getExercises()).rejects.toThrow(
-      "Polar API error (500): (empty JSON error body)",
+      "Polar API error (500) for /exercises: (empty error body)",
     );
   });
 
@@ -198,7 +200,9 @@ describe("PolarClient — API error responses", () => {
 
     const client = new PolarClient("access-token", fetchFn);
 
-    await expect(client.getExercises()).rejects.toThrow("Polar API error (500): (HTML error page)");
+    await expect(client.getExercises()).rejects.toThrow(
+      "Polar API error (500) for /exercises: (HTML error page)",
+    );
   });
 
   it("includes plain-text error bodies in API error messages", async () => {
@@ -211,7 +215,31 @@ describe("PolarClient — API error responses", () => {
     const client = new PolarClient("access-token", fetchFn);
 
     await expect(client.getExercises()).rejects.toThrow(
-      "Polar API error (500): upstream unavailable",
+      "Polar API error (500) for /exercises: upstream unavailable",
+    );
+  });
+
+  it("names the path and an empty-body placeholder when a 500 has no body or content type", async () => {
+    const fetchFn: typeof globalThis.fetch = async () => new Response(null, { status: 500 });
+
+    const client = new PolarClient("access-token", fetchFn);
+
+    await expect(client.getSleep()).rejects.toThrow(
+      "Polar API error (500) for /users/sleep: (empty error body)",
+    );
+  });
+
+  it("uses the empty-body placeholder for a whitespace-only plain-text error body", async () => {
+    const fetchFn: typeof globalThis.fetch = async () =>
+      new Response("  \n", {
+        status: 500,
+        headers: { "content-type": "text/plain" },
+      });
+
+    const client = new PolarClient("access-token", fetchFn);
+
+    await expect(client.getDailyActivity()).rejects.toThrow(
+      "Polar API error (500) for /users/activities: (empty error body)",
     );
   });
 });

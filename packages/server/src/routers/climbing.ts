@@ -1,18 +1,16 @@
 import { climbingFiltersSchema } from "@dofek/training/climbing-filters";
+import { climbingLocationMapSchema } from "@dofek/training/climbing-location-map";
 import { TRPCError } from "@trpc/server";
 import { queryCache } from "dofek/lib/cache";
 import { captureException } from "dofek/lib/error-reporting";
 import { z } from "zod";
 import { loadClimbingGradePreference } from "../climbing-grade-preferences.ts";
-import {
-  climbingActivityEntryDetailSchema,
-  climbingEntrySuggestionSchema,
-} from "../contracts/climbing-context-contracts.ts";
+import { climbingLogEntryDetailSchema } from "../contracts/climbing-log-contracts.ts";
 import { ActivityRepository } from "../repositories/activity-repository.ts";
-import { ClimbingEntryAssociator } from "../repositories/climbing-entry-associator.ts";
+import { ClimbingLogEntryAssociator } from "../repositories/climbing-log-entry-associator.ts";
 import {
-  type ClimbingActivityEntryRow,
   type ClimbingGradeProgressionRow,
+  type ClimbingLogEntryDetail,
   ClimbingRepository,
   type ClimbingSessionSummaryRow,
   type ClimbingVolumeByGradeRow,
@@ -22,6 +20,7 @@ import {
 } from "../repositories/climbing-repository.ts";
 import { ClimbingTrainingLogRepository } from "../repositories/climbing-training-log-repository.ts";
 import { HangboardingRepository } from "../repositories/hangboarding-repository.ts";
+import { buildClimbingLocationMap } from "../services/climbing-location-map.ts";
 import {
   type AuthenticatedContext,
   CacheTTL,
@@ -93,13 +92,13 @@ export const climbingRouter = router({
       return repository.getFingerLoadingHistory(input.days);
     }),
 
-  activityEntries: cachedProtectedQuery({
+  activityLogEntries: cachedProtectedQuery({
     maxAge: CacheTTL.LONG,
-    keyVersion: "climbing-activity-context-v3",
+    keyVersion: "climbing-activity-log-model-v2",
   })
-    .input(z.object({ id: z.guid() }))
-    .output(z.array(climbingActivityEntryDetailSchema))
-    .query(async ({ ctx, input }): Promise<ClimbingActivityEntryRow[]> => {
+    .input(z.object({ activityId: z.guid() }))
+    .output(z.array(climbingLogEntryDetailSchema))
+    .query(async ({ ctx, input }): Promise<ClimbingLogEntryDetail[]> => {
       return runClimbingQuery(async () => {
         const activity = await new ActivityRepository(
           ctx.db,
@@ -107,24 +106,24 @@ export const climbingRouter = router({
           ctx.timezone,
           ctx.accessWindow,
           ctx.sensorStore,
-        ).findById(input.id);
+        ).findById(input.activityId);
         if (!activity) {
           throw new TRPCError({ code: "NOT_FOUND", message: "Activity not found" });
         }
         const repository = await createClimbingRepository(ctx);
-        return (await repository.getActivityEntries(activity.id)).map((row) => row.toDetail());
+        return (await repository.getActivityLogEntries(activity.id)).map((row) => row.toDetail());
       });
     }),
 
-  unattachedClimbingEntries: cachedProtectedQuery({
+  unattachedClimbingLogEntries: cachedProtectedQuery({
     maxAge: CacheTTL.SHORT,
-    keyVersion: "climbing-suggestions-context-v2",
+    keyVersion: "climbing-log-suggestions-v2",
   })
     .input(z.object({ activityId: z.guid() }))
-    .output(z.array(climbingEntrySuggestionSchema))
+    .output(z.array(climbingLogEntryDetailSchema))
     .query(async ({ ctx, input }) =>
       runClimbingQuery(() =>
-        new ClimbingEntryAssociator(
+        new ClimbingLogEntryAssociator(
           ctx.db,
           ctx.userId,
           ctx.timezone,
@@ -133,22 +132,23 @@ export const climbingRouter = router({
       ),
     ),
 
-  attachClimbingEntry: protectedProcedure
-    .input(z.object({ activityId: z.guid(), entryId: z.guid() }))
+  attachClimbingLogEntry: protectedProcedure
+    .input(z.object({ activityId: z.guid(), climbingLogEntryId: z.guid() }))
     .mutation(async ({ ctx, input }) =>
       runClimbingQuery(async () => {
-        await new ClimbingEntryAssociator(
+        await new ClimbingLogEntryAssociator(
           ctx.db,
           ctx.userId,
           ctx.timezone,
           ctx.accessWindow,
-        ).attachEntry(input);
+        ).attachLogEntry(input);
         await Promise.all([
-          queryCache.invalidateByPrefix(`${ctx.userId}:climbing.activityEntries:`),
+          queryCache.invalidateByPrefix(`${ctx.userId}:climbing.activityLogEntries:`),
           queryCache.invalidateByPrefix(`${ctx.userId}:climbing.sessionSummary:`),
           queryCache.invalidateByPrefix(`${ctx.userId}:climbing.gradeProgression:`),
           queryCache.invalidateByPrefix(`${ctx.userId}:climbing.volumeByGrade:`),
-          queryCache.invalidateByPrefix(`${ctx.userId}:climbing.unattachedClimbingEntries:`),
+          queryCache.invalidateByPrefix(`${ctx.userId}:climbing.locationMap:`),
+          queryCache.invalidateByPrefix(`${ctx.userId}:climbing.unattachedClimbingLogEntries:`),
         ]);
         return { attached: true as const };
       }),
@@ -156,7 +156,7 @@ export const climbingRouter = router({
 
   gradeProgression: cachedProtectedQuery({
     maxAge: CacheTTL.LONG,
-    keyVersion: "climbing-grade-lanes-v1",
+    keyVersion: "climbing-scoped-grade-lanes-v1",
   })
     .input(climbingInputSchema)
     .output(z.array(climbingGradeProgressionSchema))
@@ -171,7 +171,7 @@ export const climbingRouter = router({
 
   volumeByGrade: cachedProtectedQuery({
     maxAge: CacheTTL.LONG,
-    keyVersion: "climbing-canonical-observations-v2",
+    keyVersion: "climbing-canonical-log-observations-v1",
   })
     .input(climbingInputSchema)
     .output(z.array(climbingVolumeByGradeSchema))
@@ -184,7 +184,7 @@ export const climbingRouter = router({
 
   sessionSummary: cachedProtectedQuery({
     maxAge: CacheTTL.LONG,
-    keyVersion: "climbing-canonical-observations-v1",
+    keyVersion: "climbing-canonical-log-sessions-v1",
   })
     .input(climbingInputSchema)
     .output(z.array(climbingSessionSummarySchema))
@@ -196,6 +196,19 @@ export const climbingRouter = router({
         );
       });
     }),
+
+  locationMap: cachedProtectedQuery({
+    maxAge: CacheTTL.LONG,
+    keyVersion: "climbing-location-map-v1",
+  })
+    .input(climbingInputSchema)
+    .output(climbingLocationMapSchema)
+    .query(async ({ ctx, input }) =>
+      runClimbingQuery(async () => {
+        const repository = await createClimbingRepository(ctx);
+        return buildClimbingLocationMap(await repository.getMapEntries(input.days, input));
+      }),
+    ),
 
   hangboardingSummary: cachedProtectedQuery({ maxAge: CacheTTL.LONG })
     .input(daysInputSchema)

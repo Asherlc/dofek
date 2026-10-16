@@ -28,6 +28,146 @@ describe("parseMountainProjectProfileId", () => {
 });
 
 describe("MountainProjectClient", () => {
+  it.each(["Route", "Area"] as const)(
+    "reads and validates public %s JSON without credentials",
+    async (kind) => {
+      const requests: { url: string; init: RequestInit | undefined }[] = [];
+      const client = new MountainProjectClient(async (input, init) => {
+        requests.push({ url: String(input), init });
+        return Response.json({
+          id: 123,
+          title: "Source name",
+          parent: { id: 0, name: "" },
+          coordinates: [-122, 37],
+          extra: "retained",
+        });
+      });
+      const result = await (kind === "Route" ? client.getRoute("123") : client.getArea("123"));
+      expect(result).toMatchObject({
+        id: 123,
+        title: "Source name",
+        parent: { id: 0 },
+        raw: { extra: "retained" },
+      });
+      expect(requests).toEqual([
+        {
+          url: `https://www.mountainproject.com/api/v2/${kind.toLowerCase()}s/123`,
+          init: { headers: { Accept: "application/json" } },
+        },
+      ]);
+    },
+  );
+
+  it.each([
+    { id: 999, title: "Wrong entity", parent: { id: 0, name: "" } },
+    { id: 123, title: "Bad parent", parent: { id: "2", name: "Area" } },
+    { id: 123, title: "Bad GPS", parent: { id: 0, name: "" }, coordinates: [37, -122] },
+    { id: 123, title: "Short GPS", parent: { id: 0, name: "" }, coordinates: [37] },
+  ])("rejects malformed area identities and native coordinates: $title", async (payload) => {
+    const client = new MountainProjectClient(async () => Response.json(payload));
+    await expect(client.getArea("123")).rejects.toThrow(
+      "Mountain Project area 123 returned invalid data",
+    );
+  });
+
+  it.each(["route", "area"] as const)(
+    "rejects nonfinite values in %s JSON provenance before returning it",
+    async (kind) => {
+      const client = new MountainProjectClient(
+        async () =>
+          new Response(
+            '{"id":123,"title":"Source name","parent":{"id":0,"name":""},"extra":{"rating":1e400}}',
+            { headers: { "Content-Type": "application/json" } },
+          ),
+      );
+      await expect(
+        kind === "route" ? client.getRoute("123") : client.getArea("123"),
+      ).rejects.toThrow(`Mountain Project ${kind} 123 returned invalid data`);
+    },
+  );
+
+  it.each([
+    ["route", "<html>Check your browser</html>"],
+    ["area", "<html>Check your browser</html>"],
+    ["route", '{"id":'],
+    ["area", '{"id":'],
+  ] as const)("contextualizes invalid %s response JSON: %s", async (kind, body) => {
+    const client = new MountainProjectClient(async () => new Response(body, { status: 200 }));
+    await expect(
+      kind === "route" ? client.getRoute("123") : client.getArea("123"),
+    ).rejects.toMatchObject({
+      message: `Mountain Project ${kind} 123 returned invalid data. Please try again.`,
+      cause: expect.any(SyntaxError),
+    });
+  });
+
+  it.each([
+    ["route", "AbortError"],
+    ["area", "AbortError"],
+    ["route", "TimeoutError"],
+    ["area", "TimeoutError"],
+  ] as const)("preserves %s response body %s failures", async (kind, name) => {
+    const failure = new DOMException("Response body interrupted", name);
+    const client = new MountainProjectClient(
+      async () =>
+        new Response(
+          new ReadableStream({
+            start(controller) {
+              controller.error(failure);
+            },
+          }),
+        ),
+    );
+    await expect(kind === "route" ? client.getRoute("123") : client.getArea("123")).rejects.toBe(
+      failure,
+    );
+  });
+
+  it.each([null, undefined])("retains unavailable native Area GPS as %s", async (coordinates) => {
+    const client = new MountainProjectClient(async () =>
+      Response.json({
+        id: 123,
+        title: "Root",
+        parent: { id: 0, name: "" },
+        ...(coordinates === undefined ? {} : { coordinates }),
+      }),
+    );
+    const area = await client.getArea("123");
+    expect(area.parent.id).toBe(0);
+    expect(area.coordinates).toBe(coordinates);
+    expect(area.raw).toEqual({
+      id: 123,
+      title: "Root",
+      parent: { id: 0, name: "" },
+      ...(coordinates === undefined ? {} : { coordinates }),
+    });
+  });
+
+  it("reports endpoint failures and rejects nonnumeric entity IDs before fetching", async () => {
+    const client = new MountainProjectClient(
+      async () => new Response("unavailable", { status: 503 }),
+    );
+    await expect(client.getRoute("123")).rejects.toThrow("Mountain Project route 123 failed (503)");
+    await expect(client.getArea("../123")).rejects.toThrow(
+      "Mountain Project area ID must be a positive integer",
+    );
+  });
+
+  it.each(["0123", "123 ", "9007199254740992"])(
+    "rejects a non-canonical or unsafe entity ID %s before a request",
+    async (id) => {
+      let requests = 0;
+      const client = new MountainProjectClient(async () => {
+        requests += 1;
+        return Response.json({ id: Number(id), title: "Area", parent: { id: 0, name: "" } });
+      });
+      await expect(client.getArea(id)).rejects.toThrow(
+        "Mountain Project area ID must be a positive integer",
+      );
+      expect(requests).toBe(0);
+    },
+  );
+
   it("fetches the public tick export without credentials", async () => {
     const fetchFn = vi
       .fn<typeof fetch>()

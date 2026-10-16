@@ -25,7 +25,7 @@ export interface Provider {
   enabled: boolean;
   authStatus: AuthStatus;
   authType: string;
-  tokenAuth?: { label: string; instructionsUrl: string } | null;
+  tokenAuth?: ProviderManualConnectionMetadata | null;
   lastSyncAt: string | null;
   lastSuccessfulSyncAt: string | null;
   syncFreshness: ProviderSyncFreshness | null;
@@ -280,3 +280,5 @@ export function SyncLogRow({ log }: { log: SyncLog }) {
     </View>
   );
 }
+
+import type { ProviderManualConnectionMetadata } from "@dofek/providers/provider-connection";

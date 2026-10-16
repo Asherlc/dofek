@@ -1,6 +1,7 @@
 import {
   type ClimbingGradeProgressionLane,
   climbingProgressionGradeColor,
+  climbingProgressionLaneKey,
   climbingProgressionLaneLabel,
   climbingProgressionPeriodLabel,
   climbingProgressionSettingLabels,
@@ -19,7 +20,7 @@ interface Props {
 }
 
 function laneKey(lane: ClimbingGradeProgressionLane) {
-  return `${lane.style}:${lane.gradeSystem}`;
+  return JSON.stringify([climbingProgressionLaneKey(lane), lane.gradeSystem]);
 }
 
 export function ClimbingGradeProgressionChart({ data, loading }: Props) {
@@ -47,14 +48,14 @@ export function ClimbingGradeProgressionChart({ data, loading }: Props) {
         <View style={styles.controls}>
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="All styles"
+            accessibilityLabel="All climbs"
             style={styles.button}
             onPress={() => {
               setFocusedKey(null);
               setSelectedSetting("all");
             }}
           >
-            <Text style={styles.buttonText}>All styles</Text>
+            <Text style={styles.buttonText}>All climbs</Text>
           </Pressable>
           {[
             { value: "all", label: "All settings", accessibilityLabel: "All settings" },

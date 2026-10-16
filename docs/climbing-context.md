@@ -1,302 +1,60 @@
-# Climbing context
+# Climbing logs
 
-Climbing entries preserve where a climb was, its board and reported angle,
-how it was climbed, and the recorded result. Activity details and unattached
-tick suggestions expose the same context on web and mobile. The canonical
-contract is defined in [the shared schemas](../packages/training/src/climbing-context.ts)
-and [migration 0135](../drizzle/0135_climbing_context.sql).
+A climbing log entry records an occurrence on a Climb, optionally associated with a timed Activity. Areas, Climbs, and Pitches are shared source objects; attempts record execution facts. The [shared model](../packages/training/src/climbing-log.ts), [database schema](../src/db/schema/climbing.ts), and [response contract](../packages/server/src/contracts/climbing-log-contracts.ts) define the current names and nullable fields.
 
-## Canonical facts
+## Ownership and location
 
-| Field | Stored value |
+| Model | Canonical facts |
 | --- | --- |
-| `location_path` | Ordered nodes from broadest to nearest, each with `name`, nullable `externalId`, and nullable `kind` (`destination`, `area`, `subarea`, or `gym`). Unknown hierarchy is `[]`. |
-| `board` | Nullable `{ name, externalId }` describing the supplied layout/model or physical board. |
-| `wall_angle` | Nullable `{ value, unit }`; units are `degrees` or null. Finite values with unknown units are retained. Known degrees are constrained to −90 through 90. |
-| `climb_style` | Nullable method: `lead`, `top-rope`, `follow`, `solo`, or `aid`. Boulder discipline stays in `climb_type`. |
-| `result_style` | Nullable recorded label, including unrecognized labels. |
-| `attempt_count` | Nullable positive recorded count; a tick or failure label does not establish how many tries occurred. |
+| Area | Owner/provider, verified source identity, name, nullable parent Area and coordinates |
+| Climb | Owner/provider, verified source identity, nullable name/kind/Area/setting, advertised route protection, coordinates, ordered published grades |
+| Pitch | Required Climb, nullable verified identity/number/name, ordered published grades |
+| ClimbingLogEntry | Owner/provider, occurrence identity, optional Climb/Activity, independently nullable source date, discipline/title/notes, reported grades, board/angle/hold type, raw source record and retention metadata |
+| ClimbingAttempt | Required log, scope, optional Pitch/parent, nullable actual order and original source result label, independent method/solo/protection/aid/fall-or-hang/dab/beta/history facts and notes |
 
-JSONB shapes are checked in PostgreSQL and at application boundaries. They
-remain source snapshots rather than a separately reconciled place catalogue;
-PostgreSQL recommends predictable JSON document structure in its
-[JSON design guidance](https://www.postgresql.org/docs/current/datatype-json.html#JSON-DESIGN).
-Provider IDs scope all external location/board IDs. The API's `context.providerId`
-identifies the selected metadata source even when a deduplicated entry's display
-identity or combined source label comes from another source. Metadata is selected
-as a complete snapshot, not assembled from unrelated providers' IDs.
+Areas form an adjacency list through `parentAreaId`. PostgreSQL recursive queries build the current path; ownership constraints and cycle checks protect the hierarchy. Shared metadata updates apply to past logs referencing the same verified source object. Unidentified objects remain local to their log; matching names do not establish identity. See the [schema](../src/db/schema/climbing.ts) and PostgreSQL [recursive queries](https://www.postgresql.org/docs/current/queries-with.html#QUERIES-WITH-RECURSIVE).
 
-## Interpretation
+API coordinates use `GpsCoordinates { latitude, longitude }`. PostgreSQL stores one native `point`, with x = longitude and y = latitude. Coordinates must be finite and within ±180° longitude and ±90° latitude; zero is valid. See the [value type](../packages/training/src/gps-coordinates.ts) and PostgreSQL's [geometric types](https://www.postgresql.org/docs/current/datatype-geometric.html).
 
-Readers use permanent `fitness.v_climbing_entry`; providers write
-`fitness.climbing_entry`. The view computes `location_name`, `lead`, `sent`,
-`wall_angle_degrees`, and `ascent_type`. These are read-only projections with no
-duplicate stored facts, following PostgreSQL's
-[view semantics](https://www.postgresql.org/docs/current/sql-createview.html).
+Published grade components belong to their Climb or Pitch. Independently reported grades belong to the log. Each component has a value and nullable grading system, with collection order stored on its owned grade row. Progression ranks use published grades. See the [grade definitions](../packages/training/src/climbing-grades.ts) and [observation query](../packages/server/src/repositories/climbing-rock-observations.ts).
 
-| Canonical fact | Derived interpretation |
+## Attempts and interpretation
+
+Whole-Climb attempts have no Pitch or parent. Pitch attempts may reference an identified Pitch and a whole-Climb parent in the same log; unknown pitch identity is retained without creating a catalogue object. Parent relationships have one level. Catalogue pitch counts and route extent do not establish tries. The [writer](../src/db/climbing-log-sync.ts) validates these relationships and expands a reported count N into N occurrences at the reported scope. A missing total retains one occurrence with unknown details. It makes no completeness claim.
+
+`climbing_attempt.source_result` stores the original supported source result label on the described occurrence. Count-expanded anonymous occurrences have no result label. The `fitness.v_climbing_attempt` view computes `outcome` as `completed`, `failed`, or null through `fitness.climbing_attempt_outcome`; no outcome column is stored. The API continues returning the computed outcome. See the [projection and migration](../drizzle/0148_compute_climbing_attempt_outcome.sql) and PostgreSQL's [view semantics](https://www.postgresql.org/docs/current/sql-createview.html).
+
+Completion, rope method, solo, protection, aid, fall/hang, dab, and history remain independent. A top-rope method, a pitch count, or absence of falls alone does not establish completion. Aid use does not establish a fall or hang. `fellOrHung` retains the combined source condition; unknown booleans remain null. The [writer](../src/db/climbing-log-sync.ts) retains exact labels and their attempt associations across partial updates; the [fact normalizer](../src/db/source-attempt-facts.ts) interprets the separate execution qualifiers.
+
+Web and mobile cards show recorded rope methods and scoped attempt counts. A blank source result adds no outcome status to the card; Details describes it as `Not reported by source`. Known completion and failure labels remain scoped to their whole climb or pitch. See the [shared formatter](../packages/format/src/climbing-log.ts), [web card](../packages/web/src/pages/activity-detail/components/ClimbingLogEntryCard.tsx), and [mobile card](../packages/mobile/components/ClimbingLogEntryCard.tsx).
+
+The server derives a free rock send from completion with known absence of aid and falls/hangs; bouldering also requires known absence of a dab. Generic completion remains visible when execution facts are unknown. Source first-try qualifiers establish order 1 on an identified target. Flash supplies inferred beta only when no other retained log identifies the same target; independently supplied beta survives that guard. Missing prior history never becomes a stored false. The [reader](../packages/server/src/repositories/climbing-activity-log-entry-repository.ts) returns derived labels alongside complete recorded facts.
+
+## Enums
+
+| Type | Values |
 | --- | --- |
-| Method `lead` / `top-rope` | `lead = true` / `false`; follow, solo, aid, and missing methods yield null. |
-| Onsight, Flash, Redpoint, Pinkpoint, Repeat, Send | Known send. The first five also supply the existing success qualifier. |
-| Attempt, Not sent, Fell/Hung | Known unsuccessful result. Fell/Hung remains one combined label. |
-| Frenchfree, unfamiliar label, missing result | Unknown interpreted send status; recorded labels remain visible. |
-| Angle with `unit: "degrees"` | Available to degree filters and analytics, including zero. |
-| Angle with `unit: null` | Stored/displayed as reported; unavailable to degree filters and analytics. |
+| ClimbKind | `boulder`, `route`, `summit` |
+| ClimbSetting | `indoor`, `outdoor` |
+| ClimbingDiscipline | `rock_climbing`, `ice_climbing`, `mixed_climbing`, `snow_climbing`, `hiking`, `scrambling`, `mountaineering` |
+| AttemptScope | `climb`, `pitch` |
+| AttemptOutcome (computed API value) | `completed`, `failed` |
+| RopeMethod | `lead`, `top_rope`, `follow`, `unroped` |
+| ProtectionStyle | `sport`, `trad` |
+| GradeSystem | `v_scale`, `font`, `yds`, `french`, `uiaa`, `ewbank`, `saxon`, `norwegian`, `brazilian_crux`, `british_adjectival`, `british_technical`, `aid`, `water_ice`, `alpine_ice`, `mixed`, `ifas`, `nccs` |
 
-Detailed attempt records retain their existing precedence over entry-level
-outcomes/counts. A climbing method alone never implies a send. Exact labels and
-opaque provider payloads remain available for provenance. Formatting expands
-TR to “Top rope” and Fell/Hung to “Fell or hung”; an unverified angle displays
-as `Wall angle: −20 (units unknown)`. The [shared result formatter](../packages/format/src/format.ts)
-lets a successful Onsight or Flash badge convey the complete result. A successful
-Repeat with no recorded attempt count also omits attempt text; recorded Repeat
-counts still display. Other missing outcomes/counts remain explicit, except for
-absent result/count placeholders on Mountain Project top-rope entries.
-The [Mountain Project coverage audit](mountain-project.md#climbing-style-and-result-coverage)
-documents why those fields stay unknown; their omission is display-only.
+Nullable fields carry unknown state separately from these enum values. The [shared schemas](../packages/training/src/climbing-log.ts) and [grade library](../packages/training/src/climbing-grades.ts) are authoritative. The generated [UML](schema.puml) includes the database tables, enums, and ownership relationships.
 
-## Grade progression and send counts
+## Browsing, attachment, and analytics
 
-The web and mobile progression charts show grade-colored stacks of **recorded sends
-per recorded climbing day**, with separate lanes for bouldering, top rope, lead,
-follow, solo, aid, and unknown route style. Indoor, outdoor, and unknown settings
-remain separate within each lane. Increasing repeat sends at the same grade can
-therefore show progress even when the hardest recorded grade stays unchanged.
-These are recorded send frequencies, rather than success percentages: unlogged
-attempts are not inferred.
+Both clients render concise cards and expose full facts through details. Provider record details fetch the selected log's full owned graph. Cached records remain visible during refresh errors. Source date stays independent of Activity: attaching or deleting the Activity preserves it. The server suggests active, unattached logs with a matching known day for climbing or hiking Activities; attachment is explicit. See the [association service](../packages/server/src/repositories/climbing-log-entry-associator.ts) and [paired details](../packages/web/src/components/ClimbingLogEntryDetails.tsx).
 
-The [repository](../packages/server/src/repositories/climbing-repository.ts) and
-[aggregation](../packages/server/src/repositories/climbing-grade-progression.ts)
-compute the grade counts, rates, cumulative stack bounds, and common axis on the
-server. The denominator is distinct observed calendar dates for that style,
-setting, and display scale, including failed-only and unknown-outcome entries.
-Zero means recorded days with no known sends; null means no recorded days.
-All lanes share up to six calendar-month bins over the observed span, including
-gaps between observations. Grade scales that cannot be converted remain distinct
-and get qualified lane labels. Existing style, protection, and setting filters
-apply before counting.
+Analytics default to whole-Climb scope. Explicit pitch filters use pitch observations. Progression lanes separate kind, scope, rope method, solo, aid, and compatible published free-grade system; setting remains separate. Generic logs stay browseable, and ungraded known rock records retain participation. Counts and rates come from the server, with unknown execution distinguished from known failures. Source records are retained during ingestion; query-time mirror selection preserves distinct repeats and conflicting evidence. See the [observation query](../packages/server/src/repositories/climbing-rock-observations.ts) and [progression repository](../packages/server/src/repositories/climbing-progression-repository.ts).
 
-Progression, volume by grade, and session summaries share one query-time
-observation selection. Within a canonical merged activity, named climbs with
-matching source grade, style, setting, full location-name hierarchy, board name,
-angle value and unit, protection, and effective outcome are paired across sources.
-Provider-local place IDs and missing attempt coverage do not create extra sends.
-Occurrence ranks preserve genuine same-provider repeats: two matching records from
-one provider and one from another count as two, rather than three or one. The
-query uses PostgreSQL [window functions](https://www.postgresql.org/docs/current/functions-window.html)
-without changing stored records. Known attempt counts supply coverage for matched
-observations; conflicting known counts leave attempts unknown. Unnamed,
-unattached, or differing-context entries remain separate because the available
-identity does not establish an overlap. This policy is exercised against
-[PostgreSQL fixtures](../packages/server/src/repositories/climbing-repository.integration.test.ts).
-
-## Provider coverage
-
-| Source | Location | Board and angle | Method and result |
-| --- | --- | --- | --- |
-| Kaya API | Destination → area → subarea with IDs/roles, or climb/ascent/session gym fallback. | Climb board reference and signed integer angle; unverified units remain null. | Route lead boolean maps lead/top-rope. Ascent labels are preserved; attempted-climb feed records Attempt. Nullable recorded counts are retained. |
-| Kaya CSV | Exported gym name with unknown ID. | Not supplied by the checked export. | Ascent label and recorded count; absent counts stay null. |
-| Mountain Project | Complete exported path split into ordered names; IDs/roles unknown. | No dedicated board/angle field in the checked tick export. | Style records method, Lead Style records route result, Style records boulder result. Total attempts unknown. |
-| OpenBeta | Full path names paired with ancestor UUIDs when aligned; known parent fallback. | No dedicated board/angle field in the checked schemas. | Style and attempt type preserved independently. Total attempts unknown. |
-
-Evidence and remaining omissions are in the [Kaya audit](kaya.md#observed-location-and-angle-values),
-[Mountain Project audit](mountain-project.md#climbing-style-and-result-coverage),
-and [OpenBeta audit](openbeta.md#location-angle-and-board-coverage). They identify
-the observed application responses and official schema sources. Kaya's public
-examples include outdoor `angle: -20` and board angles `25`, `40`, `45`, and
-`50`; the reviewed source does not establish units or reference direction.
-Do not infer degrees or a provider-independent destination/area/subarea model
-from those values or another provider's deeper location path.
-
-## Existing records
-
-Migration 0135 converts the four legacy columns in place and adds nullable
-board metadata. It retains entry IDs, ownership, source identity, associations,
-dates, tombstones, grades, raw payloads, and individual attempt rows. Existing
-Mountain Project location strings become ordered paths; other legacy labels
-become a single known node until re-sync supplies more detail. Legacy degree
-angles keep `unit: "degrees"`. Raw method/result labels take precedence over
-generic legacy lead/send flags. Previously inferred Mountain Project/OpenBeta
-counts and CSV counts without a recorded raw value become null; recorded Kaya
-counts remain. See the executable
-[conversion regression](../src/db/climbing-context-migration.integration.test.ts).
-
-The journal preserves the already deployed Kaya migration's identity and orders
-the Apple Health migration after it. Both historical SQL files are unchanged.
-The context conversion also removes the obsolete paired count/outcome constraint
-if it remains present. Executable [upgrade-history tests](../src/db/climbing-migration-order.integration.test.ts)
-verify both applied histories and a repeat run through the
-[canonical migrator](../src/db/postgres-migrator.ts).
+The current filters independently select kind, scope, rope method, solo, aid, actual protection, advertised protection, and setting, including explicit false and unknown values. See the [filter contract](../packages/training/src/climbing-filters.ts).
 
 ## Maintenance cutover
 
-This is a coordinated application/schema release. Release approval must cover
-the reviewed commit, a maintenance window, and the provider refresh's actual
-fetch scope described below.
-PostgreSQL column type changes take locks and can rewrite table data; consult
-[ALTER TABLE](https://www.postgresql.org/docs/current/sql-altertable.html).
-An image rollback after conversion cannot restore the old column contract.
+Existing installations require the quiesced, bounded [climbing-log model cutover](climbing-log-model-cutover.md). Fresh databases can apply preparation and finalization directly because they have no legacy records. Conversion gates preserve source evidence before removing old storage; see [0146](../drizzle/0146_climbing_log_model_prepare.sql) and [0147](../drizzle/0147_climbing_log_model_finalize.sql).
 
-Before requesting release approval:
-
-1. Require the reviewed commit's tests, integration tests, mutation checks,
-   builds, and required CI gates. Record its immutable image tag/digest.
-2. Verify backup freshness and a successful isolated restore using the
-   [backup/recovery runbook](database-backup-recovery-runbook.md). Fresh object
-   metadata alone does not establish recoverability. Record evidence privately.
-3. Record table size/counts and a private pre-cutover inventory of entry IDs,
-   source IDs, associations, dates, tombstones, grades, and attempt IDs. Recheck
-   size immediately before migration. A read-only size query is:
-
-   ```sql
-   SELECT count(*) AS entries,
-          pg_size_pretty(pg_total_relation_size('fitness.climbing_entry')) AS size
-   FROM fitness.climbing_entry;
-   ```
-
-4. Inventory every running application-image process. `web` reads and can
-   attach/import entries; `worker` runs imports/syncs; `analytics-worker` and
-   `processing-reconciliation` may schedule or read related work. Include
-   outstanding one-shot sync/import/migration containers and CLI processes.
-   Record desired service replica counts before quiescence.
-5. Review the [release workflow](../.github/workflows/deploy-web-stack.yml)
-   against the [deployment runbook](../deploy/README.md#release-unit-important).
-   Its dependency apply keeps old web replicas alive before migration. The
-   standard rolling path alone does not satisfy this cutover: the approved
-   operator procedure must keep old readers/writers stopped throughout the
-   column conversion, without a later stack apply restoring them early.
-   Stage the new image and required secret files before the window. Inspect
-   actual PeerDB mappings and apply the existing CDC gates if this table is
-   mirrored; do not assume it is excluded.
-
-During the approved window:
-
-1. Stop new traffic/import submissions and drain active sync/import jobs.
-   Quiesce the inventoried old processes through the existing Docker context;
-   verify zero old tasks and no active table writers before migrating. Keep
-   backups, PostgreSQL, Redis, and the other infrastructure available.
-2. Run the canonical migration command from the staged image with the release's
-   network/secrets, as specified in the deployment runbook. The migrator wraps
-   pending SQL migrations transactionally; verify completion and the new view.
-3. Resume only the matching application image. Restore recorded desired replica
-   counts and run the existing health, CDC, and consumer-convergence gates.
-   Verify details, suggestions, summaries, progression, and degree filters.
-4. Compare the private inventory before any re-sync; require unchanged identities
-   and detailed attempts. Verify old stored scalar columns were replaced, shape
-   constraints are present, and known zero degrees/unknown units read correctly.
-5. If conversion fails, keep traffic quiesced and confirm transaction rollback
-   before resuming the old image. If conversion succeeds but the new application
-   cannot run, fix forward or use the verified recovery procedure with writes
-   still quiesced. Do not restart old binaries against the converted schema.
-
-## Provider refresh and verification
-
-After the matching release is healthy, enqueue provider refreshes through the
-existing job API. Use an approved user, provider, and date window, with approval
-covering the provider's actual fetch scope described below. The window builder
-uses inclusive UTC calendar dates as implemented by
-[the window builder](../src/jobs/sync-job-window.ts). For example, from a trusted
-operator process inside the matching image:
-
-```typescript
-import { enqueueSyncJob } from "./src/jobs/enqueue-sync-job.ts";
-import { syncJobDataFromTriggerInput } from "./src/jobs/sync-job-window.ts";
-import { closeAllQueueResources } from "./src/jobs/queues.ts";
-
-const providerId = "kaya";
-const userId = "<approved-user-id>";
-try {
-  const job = await enqueueSyncJob(providerId, {
-    userId,
-    providerId,
-    origin: "user",
-    ...syncJobDataFromTriggerInput({ sinceDate: "2026-09-29", untilDate: "2026-09-29" }),
-  });
-  if (!job) throw new Error("The requested provider refresh was not queued.");
-  console.log({ jobId: job.id });
-} finally {
-  await closeAllQueueResources();
-}
-```
-
-The current [Kaya importer](../src/providers/kaya-sync.ts) filters session starts
-by `since` and does not enforce `until`. The example therefore refreshes that
-day and newer sessions; approve that full scope before running it. Mountain
-Project and OpenBeta retain their full-list provider reconciliation semantics;
-a date window does not turn
-their endpoint into a partial export. Do not prune unrelated ticks to simulate
-a bounded fetch. CSV metadata requires re-importing an export with the matching
-provider. Check job completion, sync errors, record counts, context source IDs,
-and the known/unknown method, result, count, and angle cases. Successful syncs
-already invalidate user query caches through
-[the sync processor](../src/jobs/process-sync-job.ts); details/suggestions also
-use new versioned keys. Reload the matching web/mobile bundle before checking
-rendered context. If no OpenBeta account is connected, report fixture coverage
-separately from live account verification.
-
-## Original route and tick sources
-
-Activity details and attachment suggestions serve `sourceLinks` separately from
-the preferred context snapshot. Links are derived from each retained source
-payload before cross-provider consolidation, then unioned by provider, kind,
-and URL. Repeated entries from the same provider remain separate. Web and mobile
-link the route name to its first verified route destination and display additional
-source routes and public tick lists. See the
-[source adapter](../packages/server/src/repositories/climbing-source-links.ts) and
-[activity hydration](../packages/server/src/repositories/climbing-activity-entry-repository.ts).
-
-| Source | Route destination | Tick destination and coverage |
-| --- | --- | --- |
-| Mountain Project | Actual exported `raw.URL`, restricted to its HTTPS route pages, such as [Swiss Cheese](https://www.mountainproject.com/route/105734732/swiss-cheese) | Public profile tick list when sync has retained `sourceProfileId`. The [observed list](https://www.mountainproject.com/user/110186720/ticks/ticks) resolves by numeric profile ID; it is a logbook. The [RSS feed](https://www.mountainproject.com/rss/user-ticks/110186720) explicitly marks GUIDs as non-permalinks and links routes. |
-| OpenBeta | Recorded climb UUID, or `climbId` for an `OB` record. Its [climb page](https://github.com/OpenBeta/open-tacos/blob/develop/src/app/%28default%29/climb/%5B%5B...slug%5D%5D/page.tsx) redirects UUID links to friendly route URLs. | Recorded username links to the [public tick logbook](https://github.com/OpenBeta/open-tacos/blob/develop/src/app/%28default%29/u/%5Busername%5D/ticks/page.tsx). Its [tick list component](https://github.com/OpenBeta/open-tacos/blob/develop/src/app/%28default%29/u/%5Busername%5D/ticks/UserTicksContent.tsx) links to climbs rather than individual ticks. |
-| Kaya API | Actual nullable climb `slug`, requested and retained during sync. The [Kaya app](https://kaya-app.kayaclimb.com/) uses `/climb/:climb_slug`; [Cragmont Crack](https://kaya-app.kayaclimb.com/climb/Cragmont-Crack-5.6-Berkeley-7599113) is an observed destination. | No verified ascent/session permalink in the reviewed app router. An ascent ID does not supply a destination. |
-| Kaya CSV | No recorded destination | Import names and synthetic IDs supply no verified source link; see the [CSV import contract](kaya.md). |
-
-This source audit was performed on 2026-10-11. Existing Mountain Project rows
-already have route URLs; their tick-list identity appears after the next sync.
-Existing Kaya rows without a slug gain route links after sync supplies it.
-No account credentials are read during hydration, no route-name search guesses
-are used, and no individual-tick permalinks are invented. The
-[response contracts](../packages/server/src/contracts/climbing-context-contracts.ts)
-validate HTTPS destinations; the adapter validates the source host and path.
-
-Kaya verification inspected its [application bundle](https://kaya-app.kayaclimb.com/static/js/main.a2a87244.chunk.js)
-(version 1.3.55) and issued read-only `webClimb` GraphQL queries through its
-[endpoint](https://kaya-beta.kayaclimb.com/graphql). The Cragmont Crack slug
-resolved to internal climb ID `1062267`; its public suffix `7599113` did not
-resolve by itself. Consequently Dofek uses the actual slug rather than building
-one from a name or climb ID.
-
-## Training filters
-
-Web and mobile keep one collapsed climbing filter with independent style,
-protection, and setting selections. The server filters entries before computing
-progression, grade volume, and session summaries. Mixed sport/trad routes match
-either protection selection; selecting a climbing method does not establish
-whether a route uses bolts or removable protection.
-
-Migration [0142](../drizzle/0142_climbing_route_protection.sql) adds nullable
-`route_protection` as the single storage path for the supplied sport/trad route
-classifications. Mountain Project's exported Route Type and OpenBeta's
-[composable ClimbType flags](https://github.com/OpenBeta/openbeta-graphql/blob/develop/src/graphql/schema/Climb.gql)
-supply these values. Null means not supplied; an empty array means supplied
-without either classification. Existing protection values stay unknown until refreshed
-through the existing provider sync. The deploy migration performs no historical
-backfill. Mountain Project and OpenBeta refreshes fetch full tick lists, as
-described in [provider refresh and verification](#provider-refresh-and-verification).
-
-The [server setting filter](../packages/server/src/repositories/climbing-repository.ts)
-treats all Mountain Project and OpenBeta entries as outdoor by an explicit
-product assumption. This includes existing records and ticks without location
-metadata; no re-sync or backfill is required. For other providers, setting is a
-query-time interpretation of the recorded location path: a gym node is indoor,
-destination/area/subarea nodes are outdoor, and unclassified paths are unknown.
-This interpretation uses the
-[observed Kaya location contract](kaya.md#observed-location-and-angle-values);
-it does not store a second copy of location-derived information.
-
-The provider assumption is application policy rather than an upstream API guarantee.
-Mountain Project documents a
-[separate gym directory](https://www.mountainproject.com/forum/topic/116599729/climbing-gym-directory).
-OpenBeta's [official app listing](https://play.google.com/store/apps/details?id=io.openbeta)
-describes outdoor discovery.
+The subsequent [outcome migration](../drizzle/0148_compute_climbing_attempt_outcome.sql) reconstructs source labels from retained original records, verifies every known outcome, and rejects missing or ambiguous evidence before dropping the column. Stop all affected web readers and sync/import writers for this cutover; existing binaries still read or write the removed column. Resume only with the matching release, following the [deployment runbook](../deploy/README.md).

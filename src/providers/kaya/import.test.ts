@@ -1,477 +1,264 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { ClimbingLogSessionsSyncInput } from "../../db/climbing-log-session-sync.ts";
 import type { SyncDatabase } from "../../db/index.ts";
+import { makeTransactionalTestDatabase } from "../test-helpers.ts";
 
-const mockEnsureProvider = vi.fn().mockResolvedValue("kaya-export");
-const mockUpsertProviderActivity = vi.fn().mockResolvedValue({ id: "activity-1" });
-
-vi.mock("../../db/tokens.ts", () => ({
-  ensureProvider: (...args: unknown[]) => mockEnsureProvider(...args),
+const mocks = vi.hoisted(() => ({
+  ensureProvider: vi.fn().mockResolvedValue("kaya-export"),
+  upsertActivity: vi.fn(),
+  persist: vi.fn(async (_db: SyncDatabase, input: ClimbingLogSessionsSyncInput) => ({
+    logEntryIds: [],
+    recordsSynced:
+      input.standaloneEntries.length +
+      input.sessions.reduce((total, session) => total + session.entries.length, 0),
+  })),
 }));
-
+vi.mock("../../db/tokens.ts", () => ({ ensureProvider: mocks.ensureProvider }));
 vi.mock("../../db/provider-activity-sync.ts", () => ({
-  upsertProviderActivity: (...args: unknown[]) => mockUpsertProviderActivity(...args),
+  upsertProviderActivity: mocks.upsertActivity,
+}));
+vi.mock("../../db/climbing-log-session-sync.ts", () => ({
+  persistClimbingLogSessions: mocks.persist,
 }));
 
-import { importKayaExportFile, type KayaImportDatabase, parseKayaExport } from "./import.ts";
+import { importKayaExportFile, parseKayaExport } from "./import.ts";
 
-const fixturePath = join(import.meta.dirname, "fixtures/representative-export.csv");
-const fixtureText = readFileSync(fixturePath, "utf8");
-const kayaHeader =
+const fixture = readFileSync(
+  join(import.meta.dirname, "fixtures/representative-export.csv"),
+  "utf8",
+);
+const header =
   "date,stiffness,rating,ascent_type,attempts,grade,color,climb_name,gym,location,country";
-
-function makeTransactionalImportDb(): {
-  db: KayaImportDatabase;
-  deleteWhere: CallableVitestMock;
-  insertValues: CallableVitestMock;
-  transactionDb: SyncDatabase;
-} {
-  const deleteWhere = vi.fn().mockResolvedValue(undefined);
-  const deleteFrom = vi.fn().mockReturnValue({ where: deleteWhere });
-  const insertValues = vi.fn().mockImplementation((entries: unknown[]) => ({
-    onConflictDoUpdate: vi.fn().mockReturnValue({
-      returning: vi.fn().mockResolvedValue(entries.map(() => ({ id: "entry-1" }))),
-    }),
-  }));
-  const insertInto = vi.fn().mockReturnValue({ values: insertValues });
-  const transactionDb: SyncDatabase = {
+const row = (
+  label = "Redpoint",
+  count = "2",
+  grade = "v3",
+  date = "2026-09-01T12:00:00Z",
+  gym = "Test Gym",
+) => `${date},0,,${label},${count},${grade},Blue,Test Climb,${gym},,`;
+const csv = (...rows: string[]) => [header, ...rows].join("\n");
+const entries = (result: ReturnType<typeof parseKayaExport>) => [
+  ...result.standaloneEntries,
+  ...result.sessions.flatMap((session) => session.entries),
+];
+function database() {
+  return makeTransactionalTestDatabase({
     select: vi.fn(),
-    insert: insertInto,
-    delete: deleteFrom,
+    insert: vi.fn(),
+    delete: vi.fn(),
     execute: vi.fn(),
-  };
-
-  const db: KayaImportDatabase = {
-    ...transactionDb,
-    transaction: vi.fn(async (callback) => callback(transactionDb)),
-  };
-
-  return { db, deleteWhere, insertValues, transactionDb };
+  });
 }
-
+beforeEach(() => {
+  vi.clearAllMocks();
+  mocks.upsertActivity.mockReset().mockResolvedValue({ id: "activity-1" });
+});
 describe("parseKayaExport", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mockUpsertProviderActivity.mockReset().mockResolvedValue({ id: "activity-1" });
-  });
-
-  it("uses the observed Kaya CSV header exactly", () => {
-    expect(fixtureText.split(/\r?\n/)[0]).toBe(kayaHeader);
-  });
-
-  it("groups rows into climbing activities by gym and UTC calendar day", () => {
-    const result = parseKayaExport(fixtureText);
-
+  it("groups supplied gym and date rows into the existing UTC-day sessions", () => {
+    const result = parseKayaExport(fixture);
     expect(result.errors).toEqual([]);
-    expect(result.activities).toHaveLength(3);
     expect(
-      result.activities.map((activity) => ({
-        externalId: activity.externalId,
-        name: activity.name,
-        locationName: activity.locationName,
-        activityType: activity.activityType,
-        startedAt: activity.startedAt.toISOString(),
-        endedAt: activity.endedAt.toISOString(),
-        entryCount: activity.entries.length,
+      result.sessions.map((session) => ({
+        name: session.name,
+        count: session.entries.length,
+        start: session.startedAt.toISOString(),
+        end: session.endedAt.toISOString(),
       })),
     ).toEqual([
       {
-        externalId: expect.stringMatching(/^kaya:session:/),
         name: "Kaya climbing at Touchstone Great Western Power Company",
-        locationName: "Touchstone Great Western Power Company",
-        activityType: "rock_climbing",
-        startedAt: "2026-07-06T22:21:59.000Z",
-        endedAt: "2026-07-06T22:23:07.000Z",
-        entryCount: 2,
+        count: 2,
+        start: "2026-07-06T22:21:59.000Z",
+        end: "2026-07-06T22:23:07.000Z",
       },
       {
-        externalId: expect.stringMatching(/^kaya:session:/),
         name: "Kaya climbing at Touchstone Great Western Power Company",
-        locationName: "Touchstone Great Western Power Company",
-        activityType: "rock_climbing",
-        startedAt: "2026-07-08T15:09:12.000Z",
-        endedAt: "2026-07-08T15:09:12.000Z",
-        entryCount: 1,
+        count: 1,
+        start: "2026-07-08T15:09:12.000Z",
+        end: "2026-07-08T15:09:12.000Z",
       },
       {
-        externalId: expect.stringMatching(/^kaya:session:/),
         name: "Kaya climbing at Touchstone Pacific Pipe",
-        locationName: "Touchstone Pacific Pipe",
-        activityType: "rock_climbing",
-        startedAt: "2026-07-09T14:22:19.000Z",
-        endedAt: "2026-07-09T15:17:17.000Z",
-        entryCount: 3,
+        count: 3,
+        start: "2026-07-09T14:22:19.000Z",
+        end: "2026-07-09T15:17:17.000Z",
       },
     ]);
   });
-
-  it("maps fixture rows to canonical climbing entries without expanding attempts", () => {
-    const result = parseKayaExport(fixtureText);
-    const pacificPipeSession = result.activities.find(
-      (activity) => activity.locationName === "Touchstone Pacific Pipe",
-    );
-
-    expect(pacificPipeSession?.entries).toEqual([
+  it("keeps row grades as reported data and source counts for scoped expansion", () => {
+    const parsed = parseKayaExport(csv(row("Flash", "1")));
+    expect(parsed.errors).toEqual([]);
+    expect(entries(parsed)).toEqual([
       expect.objectContaining({
         externalId: expect.stringMatching(/^kaya:entry:/),
-        climbType: "boulder",
-        gradeSystem: "v_scale",
-        grade: "V0",
-        resultStyle: expect.any(String),
-        attemptCount: null,
-        routeName: null,
-        locationPath: [{ name: "Touchstone Pacific Pipe", externalId: null, kind: "gym" }],
-        sourceName: "Kaya",
-      }),
-      expect.objectContaining({
-        externalId: expect.stringMatching(/^kaya:entry:/),
-        climbType: "boulder",
-        gradeSystem: "v_scale",
-        grade: "V3",
-        resultStyle: expect.any(String),
-        attemptCount: 2,
-        routeName: null,
-        raw: expect.objectContaining({
-          attempts: 2,
-          ascentType: "Redpoint",
-          color: "Pink",
-          date: "Thu Jul 09 2026 14:55:40 GMT+0000 (GMT+00:00)",
-          gym: "Touchstone Pacific Pipe",
-          location: null,
-          country: null,
-          rating: null,
-          stiffness: 0,
-        }),
-      }),
-      expect.objectContaining({
-        externalId: expect.stringMatching(/^kaya:entry:/),
-        climbType: "boulder",
-        gradeSystem: "v_scale",
-        grade: "V3",
-        resultStyle: expect.any(String),
-        attemptCount: 1,
-        routeName: null,
-        raw: expect.objectContaining({
-          attempts: 1,
-          ascentType: "Onsight",
-        }),
+        climbedOn: "2026-09-01",
+        reportedGrades: [{ value: "V3", system: "v_scale" }],
+        reportedAttemptCounts: [{ scope: "climb", count: 1 }],
+        attempts: [{ scope: "climb", qualifier: "free-flash", sourceResult: "Flash" }],
+        climb: {
+          externalId: null,
+          name: "Test Climb",
+          kind: "boulder",
+          setting: "indoor",
+          areas: [{ name: "Test Gym", externalId: null }],
+        },
+        raw: expect.objectContaining({ grade: "v3", ascentType: "Flash", attempts: 1 }),
       }),
     ]);
   });
-
-  it("uses climb_name as route name when present and null when empty", () => {
-    const result = parseKayaExport(fixtureText);
-    const greatWesternSession = result.activities[0];
-
-    expect(greatWesternSession?.entries[0]?.routeName).toBeNull();
-    expect(greatWesternSession?.entries[1]?.routeName).toBe("TCS #7");
+  it("retains missing grade date and gym as standalone logs", () => {
+    const parsed = parseKayaExport(
+      csv(row("", "", "", "", ""), row("", "", "Source scale 4", "2026-09-01T12:00:00Z", "")),
+    );
+    expect(parsed.errors).toEqual([]);
+    expect(parsed.sessions).toEqual([]);
+    expect(parsed.standaloneEntries).toEqual([
+      expect.objectContaining({
+        climbedOn: null,
+        reportedGrades: [],
+        attempts: [{ scope: "climb" }],
+        climb: expect.objectContaining({
+          externalId: null,
+          name: "Test Climb",
+          kind: null,
+          setting: null,
+        }),
+      }),
+      expect.objectContaining({
+        climbedOn: "2026-09-01",
+        reportedGrades: [{ value: "Source scale 4", system: null }],
+        climb: expect.objectContaining({ kind: null, setting: null }),
+      }),
+    ]);
   });
-
-  it("generates deterministic external ids from stable row and session data", () => {
-    const first = parseKayaExport(fixtureText);
-    const second = parseKayaExport(fixtureText);
-
-    expect(first.activities.map((activity) => activity.externalId)).toEqual(
-      second.activities.map((activity) => activity.externalId),
-    );
-    expect(
-      first.activities.flatMap((activity) => activity.entries.map((entry) => entry.externalId)),
-    ).toEqual(
-      second.activities.flatMap((activity) => activity.entries.map((entry) => entry.externalId)),
-    );
-    expect(first.activities.every((activity) => activity.externalId.length === 29)).toBe(true);
-    expect(
-      first.activities.every((activity) =>
-        activity.entries.every((entry) => entry.externalId.length === 27),
+  it("uses source route names and trims location text", () => {
+    const parsed = parseKayaExport(
+      csv(
+        "2026-09-01T12:00:00Z,0,,Redpoint,,5.10a, Green , Lead Route , Test Gym , Oakland , USA ",
       ),
-    ).toBe(true);
-  });
-
-  it("uses stable entry hash inputs that distinguish route name, color, and row number", () => {
-    const csv = `${kayaHeader}
-Thu Jul 09 2026 14:22:19 GMT+0000 (GMT+00:00),0,,Redpoint,,v3,Pink,Route A,Touchstone Pacific Pipe,,
-Thu Jul 09 2026 14:22:19 GMT+0000 (GMT+00:00),0,,Redpoint,,v3,Blue,Route A,Touchstone Pacific Pipe,,
-Thu Jul 09 2026 14:22:19 GMT+0000 (GMT+00:00),0,,Redpoint,,v3,Pink,Route B,Touchstone Pacific Pipe,,`;
-
-    const entryIds = parseKayaExport(csv).activities.flatMap((activity) =>
-      activity.entries.map((entry) => entry.externalId),
     );
-
-    expect(new Set(entryIds).size).toBe(3);
-  });
-
-  it("maps Yosemite Decimal System rows to route climbs and trims nullable text fields", () => {
-    const csv = `${kayaHeader}
- Thu Jul 09 2026 14:22:19 GMT+0000 (GMT+00:00) ,0,,Redpoint,,5.10a, Green , Lead Route , Touchstone Pacific Pipe , Oakland , USA `;
-
-    const result = parseKayaExport(csv);
-
-    expect(result.errors).toEqual([]);
-    expect(result.activities[0]?.startedAt.toISOString()).toBe("2026-07-09T14:22:19.000Z");
-    expect(result.activities[0]?.locationName).toBe("Touchstone Pacific Pipe");
-    expect(result.activities[0]?.entries[0]).toMatchObject({
-      climbType: "route",
-      gradeSystem: "yds",
-      grade: "5.10a",
-      climbStyle: null,
-      resultStyle: "Redpoint",
-      attemptCount: null,
-      routeName: "Lead Route",
-      locationPath: [{ name: "Touchstone Pacific Pipe", externalId: null, kind: "gym" }],
-      raw: {
-        color: "Green",
-        climbName: "Lead Route",
-        location: "Oakland",
-        country: "USA",
-      },
+    expect(entries(parsed)[0]).toMatchObject({
+      reportedGrades: [{ value: "5.10a", system: "yds" }],
+      climb: { kind: "route", name: "Lead Route", areas: [{ name: "Test Gym", externalId: null }] },
+      raw: { color: "Green", location: "Oakland", country: "USA" },
     });
   });
-
-  it("distinguishes changes in route name and color at the same CSV row position", () => {
-    const ids = [
-      ["Route A", "Blue"],
-      ["Route B", "Blue"],
-      ["Route A", "Orange"],
-    ].map(
-      ([name, color]) =>
-        parseKayaExport(
-          `${kayaHeader}\n2026-09-01T12:00:00Z,0,,Redpoint,,v3,${color},${name},Test Gym,,`,
-        ).activities[0]?.entries[0]?.externalId,
+  it("keeps deterministic distinct row identities without inventing catalogue IDs", () => {
+    const source = csv(row(), row(), row().replace("Test Climb", "Other Climb"));
+    const first = entries(parseKayaExport(source));
+    expect(first.map((entry) => entry.externalId)).toEqual(
+      entries(parseKayaExport(source)).map((entry) => entry.externalId),
     );
-    expect(ids.every((id) => typeof id === "string")).toBe(true);
-    expect(new Set(ids).size).toBe(3);
+    expect(new Set(first.map((entry) => entry.externalId)).size).toBe(3);
+    expect(first.map((entry) => entry.climb?.externalId)).toEqual([null, null, null]);
   });
-
-  it("imports a flash as a successful first-attempt ascent", () => {
-    const csv = `${kayaHeader}\nThu Jul 09 2026 14:22:19 GMT+0000 (GMT+00:00),0,,Flash,1,v3,Pink,Named Problem,Touchstone Pacific Pipe,,`;
-
-    const result = parseKayaExport(csv);
-
-    expect(result.errors).toEqual([]);
-    expect(result.activities[0]?.entries[0]).toMatchObject({
-      resultStyle: expect.any(String),
-      attemptCount: 1,
-      routeName: "Named Problem",
-      raw: expect.objectContaining({ ascentType: "Flash" }),
+  it.each(["Project", "Attempt", "Frenchfree", "Unfamiliar result", "", " Attempt "])(
+    "retains unknown completion for %j",
+    (label) => {
+      expect(entries(parseKayaExport(csv(row(label, ""))))[0]).toMatchObject({
+        attempts: [{ scope: "climb" }],
+        raw: { ascentType: label, attempts: null },
+      });
+    },
+  );
+  it("retains the original result label on the described occurrence", () => {
+    expect(entries(parseKayaExport(csv(row(" rEdPoInT ", "3"))))[0]).toMatchObject({
+      attempts: [{ scope: "climb", qualifier: "free-send", sourceResult: " rEdPoInT " }],
+      reportedAttemptCounts: [{ scope: "climb", count: 3 }],
     });
   });
-
   it.each([
-    "Project",
-    "Attempt",
-    "Pinkpoint",
-    "Frenchfree",
-    "Unfamiliar result",
-    "",
-    "  ",
-    " Attempt ",
-  ])("preserves the reported result %j without inventing attempt counts", (label) => {
-    const result = parseKayaExport(
-      `${kayaHeader}\n2026-09-01T12:00:00Z,0,,${label},,v3,Blue,Test Climb,Test Gym,,`,
-    );
-    expect(result.errors).toEqual([]);
-    expect(result.activities[0]?.entries[0]).toMatchObject({
-      resultStyle: label.trim() || null,
-      attemptCount: null,
-      raw: { ascentType: label },
-    });
+    ["not-a-date", "2", "date is not a valid Kaya date"],
+    ["2026-02-30", "2", "date is not a valid Kaya date"],
+    ["2026-09-01", "0", "attempts must be a positive integer"],
+    ["2026-09-01", "2.5", "attempts must be a positive integer"],
+    ["2026-09-01", "2147483648", "attempts must be a positive integer"],
+  ])("rejects malformed supplied values %s/%s", (date, count, message) => {
+    expect(parseKayaExport(csv(row("Redpoint", count, "v3", date))).errors).toEqual([
+      { rowNumber: 2, message: `row 2: ${message}` },
+    ]);
   });
-
-  it("reports invalid rows with specific messages", () => {
-    const cases = [
-      {
-        csv: `${kayaHeader}\n,0,,Redpoint,,v3,Pink,,Touchstone Pacific Pipe,,`,
-        message: "row 2: date is required",
-      },
-      {
-        csv: `${kayaHeader}\nnot-a-date,0,,Redpoint,,v3,Pink,,Touchstone Pacific Pipe,,`,
-        message: "row 2: date is not a valid Kaya date",
-      },
-      {
-        csv: `${kayaHeader}\nThu Jul 09 2026 14:22:19 GMT+0000 (GMT+00:00),0,,Redpoint,,v3,Pink,,,,`,
-        message: "row 2: gym is required",
-      },
-      {
-        csv: `${kayaHeader}\nThu Jul 09 2026 14:22:19 GMT+0000 (GMT+00:00),0,,Redpoint,,VBoulder,Pink,,Touchstone Pacific Pipe,,`,
-        message: "row 2: grade is unsupported",
-      },
-      {
-        csv: `${kayaHeader}\nThu Jul 09 2026 14:22:19 GMT+0000 (GMT+00:00),0,,Redpoint,0,v3,Pink,,Touchstone Pacific Pipe,,`,
-        message: "row 2: attempts must be a positive integer",
-      },
-      {
-        csv: `${kayaHeader}\nThu Jul 09 2026 14:22:19 GMT+0000 (GMT+00:00),0,,Redpoint,2147483648,v3,Pink,,Touchstone Pacific Pipe,,`,
-        message: "row 2: attempts must be a positive integer",
-      },
-      {
-        csv: `${kayaHeader}\nThu Jul 09 2026 14:22:19 GMT+0000 (GMT+00:00),0,,Redpoint,,v3,Pink,,Touchstone Pacific Pipe`,
-        message: "row 2: malformed CSV row",
-      },
-      {
-        csv: "wrong,header\nvalue",
-        message: "header does not match Kaya export format",
-      },
-    ];
-
-    for (const testCase of cases) {
-      expect(parseKayaExport(testCase.csv).errors).toContainEqual(
-        expect.objectContaining({ message: testCase.message }),
-      );
-    }
+  it("preserves the positive Postgres count bound without expanding during parsing", () => {
+    expect(
+      entries(parseKayaExport(csv(row("Redpoint", "2147483647"))))[0]?.reportedAttemptCounts,
+    ).toEqual([{ scope: "climb", count: 2147483647 }]);
   });
-
-  it("accepts the largest Postgres integer attempt count", () => {
-    const csv = `${kayaHeader}\nThu Jul 09 2026 14:22:19 GMT+0000 (GMT+00:00),0,,Redpoint,2147483647,v3,Pink,,Touchstone Pacific Pipe,,`;
-
-    const result = parseKayaExport(csv);
-
-    expect(result.errors).toEqual([]);
-    expect(result.activities[0]?.entries[0]?.attemptCount).toBe(2_147_483_647);
-  });
-
-  it("preserves original CSV row numbers when blank lines are skipped", () => {
-    const csv = `${kayaHeader}
-Thu Jul 09 2026 14:22:19 GMT+0000 (GMT+00:00),0,,Redpoint,,v3,Pink,,Touchstone Pacific Pipe,,
-
-not-a-date,0,,Redpoint,,v3,Pink,,Touchstone Pacific Pipe,,`;
-
-    expect(parseKayaExport(csv).errors).toContainEqual(
-      expect.objectContaining({ message: "row 4: date is not a valid Kaya date" }),
-    );
-  });
-
-  it("handles BOM, CRLF rows, quoted commas, escaped quotes, and unterminated quotes", () => {
-    const csv = `\uFEFF${kayaHeader}\r
-Thu Jul 09 2026 14:22:19 GMT+0000 (GMT+00:00),0,,Redpoint,,v3,Pink,"Route, With ""Quote""",Touchstone Pacific Pipe,,\r
-`;
-
-    const result = parseKayaExport(csv);
-    expect(result.errors).toEqual([]);
-    expect(result.activities[0]?.entries[0]?.routeName).toBe('Route, With "Quote"');
-    expect(parseKayaExport(`${kayaHeader}\n"unterminated`).errors).toEqual([
+  it("handles BOM CRLF quotes commas and original error row numbers", () => {
+    const source =
+      "\uFEFF" +
+      header +
+      "\r\n" +
+      row().replace("Test Climb", '"Route, With ""Quote"""') +
+      "\r\n\r\n" +
+      row("Redpoint", "2", "v3", "not-a-date") +
+      "\r\n";
+    const parsed = parseKayaExport(source);
+    expect(entries(parsed)[0]?.climb?.name).toBe('Route, With "Quote"');
+    expect(parsed.errors[0]?.rowNumber).toBe(4);
+    expect(parseKayaExport(`${header}\n"unterminated`).errors).toEqual([
       { rowNumber: 2, message: "row 2: malformed CSV row" },
     ]);
-    expect(parseKayaExport(`${kayaHeader}\n   ,   ,   `).activities).toEqual([]);
-  });
-
-  it("imports provider activity and climbing entries inside a transaction", async () => {
-    const { db, insertValues, transactionDb } = makeTransactionalImportDb();
-
-    const result = await importKayaExportFile(db, fixtureText, "user-1");
-
-    expect(db.transaction).toHaveBeenCalledTimes(1);
-    expect(mockEnsureProvider).toHaveBeenCalledWith(
-      transactionDb,
-      "kaya-export",
-      "Kaya",
-      undefined,
-      "user-1",
-    );
-    expect(mockUpsertProviderActivity).toHaveBeenCalledWith(
-      transactionDb,
-      expect.objectContaining({ providerId: "kaya-export", userId: "user-1" }),
-      expect.any(Object),
-    );
-    expect(mockUpsertProviderActivity).toHaveBeenCalledWith(
-      transactionDb,
-      expect.objectContaining({
-        raw: { locationName: "Touchstone Great Western Power Company", source: "kaya-export" },
-      }),
-      expect.objectContaining({
-        raw: { locationName: "Touchstone Great Western Power Company", source: "kaya-export" },
-      }),
-    );
-    expect(transactionDb.execute).toHaveBeenCalledTimes(3);
-    expect(transactionDb.insert).toHaveBeenCalledTimes(3);
-    expect(insertValues).toHaveBeenCalledWith(
-      expect.arrayContaining([
-        expect.objectContaining({
-          activityId: "activity-1",
-          externalId: expect.stringMatching(/^kaya:entry:[a-f0-9]{16}$/),
-          grade: "V0",
-          attemptCount: null,
-          sourceName: "Kaya",
-        }),
-      ]),
-    );
-    expect(result.recordsSynced).toBe(6);
-  });
-
-  it("returns parse errors with row external ids and import duration", async () => {
-    const { db, transactionDb } = makeTransactionalImportDb();
-    const dateNowSpy = vi
-      .spyOn(Date, "now")
-      .mockReturnValueOnce(10_000)
-      .mockReturnValueOnce(12_500);
-
-    const result = await importKayaExportFile(
-      db,
-      `${kayaHeader}
-not-a-date,0,,Redpoint,,v3,Pink,,Touchstone Pacific Pipe,,
-Thu Jul 09 2026 14:22:19 GMT+0000 (GMT+00:00),0,,Project,,VBoulder,Pink,,Touchstone Pacific Pipe,,`,
-      "user-1",
-    );
-
-    expect(result).toMatchObject({
-      provider: "kaya-export",
-      recordsSynced: 0,
-      duration: 2500,
-      errors: [
-        { message: "row 2: date is not a valid Kaya date", externalId: "row-2" },
-        { message: "row 3: grade is unsupported", externalId: "row-3" },
-      ],
-    });
-    expect(mockEnsureProvider).toHaveBeenCalledWith(
-      transactionDb,
-      "kaya-export",
-      "Kaya",
-      undefined,
-      "user-1",
-    );
-    expect(transactionDb.delete).not.toHaveBeenCalled();
-    expect(transactionDb.insert).not.toHaveBeenCalled();
-
-    dateNowSpy.mockRestore();
-  });
-
-  it("returns header parse errors without row external ids", async () => {
-    const result = await importKayaExportFile(
-      makeTransactionalImportDb().db,
-      "wrong,header\nvalue",
-      "user-1",
-    );
-
-    expect(result.errors).toEqual([
-      {
-        message: "header does not match Kaya export format",
-        externalId: undefined,
-      },
+    expect(parseKayaExport("wrong,header\nvalue").errors).toEqual([
+      { rowNumber: null, message: "header does not match Kaya export format" },
     ]);
+    expect(entries(parseKayaExport(`${header}\n   ,   ,   `))).toEqual([]);
   });
-
-  it("skips entry writes when the activity upsert returns no record", async () => {
-    const { db, transactionDb } = makeTransactionalImportDb();
-    mockUpsertProviderActivity.mockResolvedValueOnce(undefined);
-    await expect(
-      importKayaExportFile(
-        db,
-        `${kayaHeader}\n2026-09-01T12:00:00Z,0,,Redpoint,,v3,Blue,Test Climb,Test Gym,,`,
+});
+describe("importKayaExportFile", () => {
+  it("persists the complete batch inside the activity transaction", async () => {
+    const db = database();
+    vi.spyOn(db, "transaction");
+    expect(await importKayaExportFile(db, fixture, "user-1")).toMatchObject({
+      recordsSynced: 6,
+      errors: [],
+    });
+    expect(db.transaction).toHaveBeenCalledOnce();
+    expect(mocks.ensureProvider).toHaveBeenCalledWith(
+      db,
+      "kaya-export",
+      "Kaya",
+      undefined,
+      "user-1",
+    );
+    expect(mocks.persist).toHaveBeenCalledOnce();
+    expect(mocks.persist.mock.calls[0]?.[1].sessions).toHaveLength(3);
+    expect(mocks.persist.mock.calls[0]?.[1].sessions.every((session) => session.complete)).toBe(
+      true,
+    );
+  });
+  it("imports standalone missing fields without fabricating a session", async () => {
+    expect(
+      await importKayaExportFile(database(), csv(row("", "", "", "", "")), "user-1"),
+    ).toMatchObject({ recordsSynced: 1, errors: [] });
+    expect(mocks.upsertActivity).not.toHaveBeenCalled();
+    expect(mocks.persist.mock.calls[0]?.[1].standaloneEntries).toHaveLength(1);
+  });
+  it("keeps valid records without retirement after a partial import", async () => {
+    expect(
+      await importKayaExportFile(
+        database(),
+        csv(row(), row("Redpoint", "2", "v3", "not-a-date")),
         "user-1",
       ),
-    ).resolves.toMatchObject({ recordsSynced: 0, errors: [] });
-    expect(transactionDb.insert).not.toHaveBeenCalled();
-    expect(transactionDb.execute).not.toHaveBeenCalled();
-  });
-
-  it("imports valid CSV rows without reconciling absence when another row is invalid", async () => {
-    const { db, transactionDb } = makeTransactionalImportDb();
-    const csv = `${kayaHeader}\n2026-09-01T12:00:00Z,0,,Redpoint,,v3,Blue,Test Climb,Test Gym,,\nnot-a-date,0,,Redpoint,,v3,Blue,Test Climb,Test Gym,,`;
-    await expect(importKayaExportFile(db, csv, "user-1")).resolves.toMatchObject({
+    ).toMatchObject({
       recordsSynced: 1,
       errors: [{ message: "row 3: date is not a valid Kaya date", externalId: "row-3" }],
     });
-    expect(transactionDb.insert).toHaveBeenCalledOnce();
-    expect(transactionDb.execute).not.toHaveBeenCalled();
+    expect(mocks.persist.mock.calls[0]?.[1].sessions[0]?.complete).toBe(false);
+  });
+  it("respects a suppressed activity upsert", async () => {
+    mocks.upsertActivity.mockResolvedValueOnce(undefined);
+    expect(await importKayaExportFile(database(), csv(row()), "user-1")).toMatchObject({
+      recordsSynced: 0,
+      errors: [],
+    });
+    expect(mocks.persist.mock.calls[0]?.[1].sessions).toEqual([]);
+  });
+  it("reports invalid headers with no row identity", async () => {
+    expect(
+      (await importKayaExportFile(database(), "wrong,header\nvalue", "user-1")).errors,
+    ).toEqual([{ message: "header does not match Kaya export format", externalId: undefined }]);
   });
 });

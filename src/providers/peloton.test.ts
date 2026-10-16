@@ -1027,7 +1027,7 @@ describe("PelotonProvider.sync — authentication failures", () => {
 
 describe("PelotonProvider.sync — no tokens", () => {
   it("returns token error when no tokens stored", async () => {
-    const mockDb = {
+    const mockDb = makeTransactionalTestDatabase({
       select: vi.fn().mockReturnValue({
         from: vi.fn().mockReturnValue({
           where: vi.fn().mockReturnValue({
@@ -1038,7 +1038,7 @@ describe("PelotonProvider.sync — no tokens", () => {
       insert: vi.fn(),
       delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
       execute: vi.fn().mockResolvedValue([]),
-    };
+    });
 
     const provider = new PelotonProvider();
     const result = await provider.sync(

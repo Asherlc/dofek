@@ -1,6 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import type { BodyClickHouseStore } from "./body-clickhouse.ts";
 import {
+  climbingAttemptFixture,
+  climbingClimbFixture,
+  climbingLogDatabaseFixture,
+  climbingLogEntryFixture,
+} from "./climbing-test-helpers.ts";
+import {
   dataTypeEnum,
   getRecordDisplayColumns,
   getRecordFilterColumns,
@@ -52,8 +58,8 @@ describe("tableInfo", () => {
 // ---------------------------------------------------------------------------
 
 describe("dataTypeEnum", () => {
-  it("contains exactly 9 data types", () => {
-    expect(dataTypeEnum.options).toHaveLength(9);
+  it("contains exactly 10 data types", () => {
+    expect(dataTypeEnum.options).toHaveLength(10);
   });
 
   it("includes all expected data types", () => {
@@ -67,6 +73,7 @@ describe("dataTypeEnum", () => {
       "metricStream",
       "nutritionDaily",
       "clinicalRecords",
+      "climbingLogEntries",
     ];
     expect(dataTypeEnum.options).toEqual(expected);
   });
@@ -77,8 +84,8 @@ describe("dataTypeEnum", () => {
 // ---------------------------------------------------------------------------
 
 describe("PROVIDER_ACCOUNT_TABLES", () => {
-  it("contains 12 child tables", () => {
-    expect(PROVIDER_ACCOUNT_TABLES).toHaveLength(12);
+  it("contains 15 child tables", () => {
+    expect(PROVIDER_ACCOUNT_TABLES).toHaveLength(15);
   });
 
   it("includes all required child tables", () => {
@@ -162,8 +169,28 @@ describe("ProviderDetailRepository", () => {
     ["bodyMeasurements", ["source_name"]],
     ["metricStream", ["source_type", "channel", "device_id"]],
     ["nutritionDaily", []],
+    ["climbingLogEntries", ["discipline", "source_name"]],
   ] as const)("returns the supported select filter columns for %s", (dataType, columns) => {
     expect(getRecordSelectFilterColumns(dataType)).toEqual(columns);
+  });
+  it("exposes the climbing record fields with a concise display projection", () => {
+    expect(getRecordFilterColumns("climbingLogEntries")).toEqual([
+      "id",
+      "name",
+      "climbed_on",
+      "result",
+      "discipline",
+      "source_name",
+      "provider_absent_at",
+      "external_id",
+      "created_at",
+    ]);
+    expect(getRecordDisplayColumns("climbingLogEntries")).toEqual([
+      "name",
+      "climbed_on",
+      "result",
+      "discipline",
+    ]);
   });
 
   // ── getRecords ──
@@ -311,6 +338,34 @@ describe("ProviderDetailRepository", () => {
   // ── getRecordDetail ──
 
   describe("getRecordDetail", () => {
+    it("hydrates a retained climbing log through the shared detail contract", async () => {
+      const climb = climbingClimbFixture("openbeta");
+      climb.coordinates = { latitude: 0, longitude: -122.25 };
+      const log = climbingLogEntryFixture({
+        climb,
+        climbId: climb.id,
+        mapLocation: {
+          coordinates: { latitude: 0, longitude: -122.25 },
+          scope: "climb",
+          objectId: climb.id,
+          providerId: "openbeta",
+          name: "Corner",
+        },
+        discipline: "rock_climbing",
+        providerAbsentAt: "2026-10-01T00:00:00.000Z",
+        raw: { retained: true },
+        displayGrade: "5.10a",
+        recordedClimbAttemptCount: 1,
+        recordedClimbOutcome: "failed",
+      });
+      log.attempts = [climbingAttemptFixture(log.id, { outcome: "failed", fellOrHung: true })];
+      const { repo } = makeRepository([climbingLogDatabaseFixture(log)]);
+      expect(await repo.getRecordDetail("openbeta", "climbingLogEntries", log.id)).toEqual(log);
+    });
+    it("returns null for a missing climbing log", async () => {
+      const { repo } = makeRepository([]);
+      expect(await repo.getRecordDetail("openbeta", "climbingLogEntries", "missing")).toBeNull();
+    });
     it("returns a single record", async () => {
       const { repo } = makeRepository([
         { id: "act-1", name: "Morning Run", raw: { distance: 5000 } },
@@ -673,9 +728,9 @@ describe("ProviderDetailRepository", () => {
     });
 
     it("PROVIDER_ACCOUNT_TABLES is an array (not empty array from ArrayDeclaration mutation)", () => {
-      expect(PROVIDER_ACCOUNT_TABLES.length).toBe(12);
+      expect(PROVIDER_ACCOUNT_TABLES.length).toBe(15);
       expect(PROVIDER_ACCOUNT_TABLES[0]).toBe("fitness.daily_metrics");
-      expect(PROVIDER_ACCOUNT_TABLES[11]).toBe("fitness.provider_connection");
+      expect(PROVIDER_ACCOUNT_TABLES[14]).toBe("fitness.provider_connection");
     });
 
     it("tableInfo returns three-key objects (not empty objects from ObjectLiteral mutation)", () => {
@@ -718,11 +773,11 @@ describe("ProviderDetailRepository", () => {
       expect(result).toHaveLength(2);
     });
 
-    it("dataTypeEnum has exactly 9 options", () => {
-      expect(dataTypeEnum.options).toHaveLength(9);
+    it("dataTypeEnum has exactly 10 options", () => {
+      expect(dataTypeEnum.options).toHaveLength(10);
       // Verify first and last entries specifically
       expect(dataTypeEnum.options[0]).toBe("activities");
-      expect(dataTypeEnum.options[8]).toBe("clinicalRecords");
+      expect(dataTypeEnum.options[9]).toBe("climbingLogEntries");
     });
 
     it("PROVIDER_ACCOUNT_TABLES ordering: activity comes before oauth_token", () => {

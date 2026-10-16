@@ -7,7 +7,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SyncDatabase } from "../db/index.ts";
 import { getProviderIngestContext } from "../db/provider-ingest-context.ts";
 import { RefreshTokenRevokedError } from "../providers/auth-errors.ts";
-import type { SyncRun } from "../providers/sync-run.ts";
 import type { SyncResult, WebhookEvent } from "../providers/types.ts";
 
 import {
@@ -27,7 +26,6 @@ import {
   mockLoggerInfo,
   mockLogSync,
   mockProviderQueueAdd,
-  mockRecordMetricStreamBatchPublished,
   mockRecordRelationalCanonicalCommits,
   mockSyncDuration,
   mockSyncErrorsTotal,
@@ -282,53 +280,6 @@ describe("sync-provider-execution", () => {
     expect(mockAppendProcessingStageEvent).toHaveBeenCalledWith(
       mockDb,
       expect.objectContaining({ stage: "ingest", status: "failed" }),
-    );
-  });
-
-  it("fails metric batch recording when transaction support is malformed", async () => {
-    const malformedDatabase = Object.assign(
-      {
-        select: vi.fn(),
-        insert: vi.fn(),
-        delete: vi.fn(),
-        execute: vi.fn(),
-      } satisfies SyncDatabase,
-      { transaction: "not-a-function" },
-    );
-    const provider = createMockProvider({
-      sync: vi.fn(async (run: SyncRun) => {
-        await run.options.metricStreamPublisher?.publishRows(
-          [
-            {
-              recordedAt: "2026-06-02T10:00:00.000Z",
-              userId: "00000000-0000-4000-8000-000000000001",
-              providerId: "test-provider",
-              externalId: "heart-rate-malformed-db",
-              sourceType: "api",
-              channel: "heart_rate",
-              scalar: 72,
-            },
-          ],
-          { operationRevision: "1000000000000002" },
-        );
-        return {
-          provider: "test-provider",
-          recordsSynced: 0,
-          errors: [],
-          duration: 100,
-        };
-      }),
-    });
-    mockGetEnabledSyncProviders.mockReturnValue([provider]);
-
-    await runSyncJob(createMockJob(), malformedDatabase);
-
-    expect(mockRecordMetricStreamBatchPublished).not.toHaveBeenCalled();
-    expect(mockCaptureException).toHaveBeenCalledWith(
-      expect.objectContaining({
-        message: "Processing metric-stream publication requires a transactional database",
-      }),
-      { tags: { provider: "test-provider" } },
     );
   });
 

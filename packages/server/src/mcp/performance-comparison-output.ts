@@ -1,3 +1,5 @@
+import { FREE_ROCK_GRADE_SYSTEMS } from "@dofek/training/climbing-grades";
+import { attemptScopeSchema, ropeMethodSchema } from "@dofek/training/climbing-log";
 import { z } from "zod";
 import { comparisonIdentityRowSchema } from "../repositories/performance-comparison-identity.ts";
 import { identityEquivalenceSchema } from "../repositories/performance-comparison-types.ts";
@@ -150,12 +152,15 @@ const equivalenceKeySchema = z.union([
   z
     .object({
       kind: z.literal("climb"),
-      climb_type: z.string(),
-      grade_system: z.string(),
+      climb_kind: z.enum(["boulder", "route"]),
+      grade_system: z.enum(FREE_ROCK_GRADE_SYSTEMS),
       grade: z.string(),
-      route_name: z.string(),
+      climb_name: z.string(),
       location_name: z.string(),
-      lead: z.boolean().nullable(),
+      rope_method: ropeMethodSchema.nullable(),
+      solo: z.boolean().nullable(),
+      attempt_scope: attemptScopeSchema,
+      pitch_number: z.number().int().positive().nullable(),
     })
     .strict(),
   z.object({ kind: z.literal("strength_exercise_id"), exercise_id: z.uuid() }).strict(),
@@ -206,14 +211,18 @@ const climbingSchema = z
       .array(
         z
           .object({
-            climb_type: z.string(),
-            grade_system: z.string(),
-            grade: z.string(),
-            route_name: z.string().nullable(),
+            climb_kind: z.enum(["boulder", "route"]),
+            grade_system: z.enum(FREE_ROCK_GRADE_SYSTEMS).nullable(),
+            grade: z.string().nullable(),
+            climb_name: z.string().nullable(),
             location_name: z.string().nullable(),
-            sent: z.boolean().nullable(),
-            attempt_count: z.number().int().positive().nullable(),
-            lead: z.boolean().nullable(),
+            recorded_attempt_count: z.number().int().positive(),
+            sends: z.number().int().nonnegative(),
+            unknown_outcomes: z.number().int().nonnegative(),
+            rope_method: ropeMethodSchema.nullable(),
+            solo: z.boolean().nullable(),
+            attempt_scope: attemptScopeSchema,
+            pitch_number: z.number().int().positive().nullable(),
             status: z.enum(["included", "excluded_ambiguous"]),
             source_entry_ids: z.array(z.uuid()).max(20),
             source_activity_ids: z.array(z.uuid()).max(20),
@@ -297,7 +306,7 @@ const equivalenceEvidenceSchema = z
       "user_benchmark_membership",
       "cycling_route_name_provider_type",
       "standardized_test_name_provider_type",
-      "climbing_entry",
+      "climbing_log_entry",
       "strength_set",
       "canonical_activity_name",
     ]),

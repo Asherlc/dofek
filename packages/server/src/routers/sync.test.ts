@@ -422,6 +422,7 @@ describe("syncRouter", () => {
           validate: () => null,
           authSetup: () => ({
             manualToken: {
+              kind: "access-token",
               label: "JWT refresh token",
               instructionsUrl: "https://wger.readthedocs.io/en/latest/api/api.html#jwt-tokens",
               exchangeToken: vi.fn(),
@@ -449,6 +450,7 @@ describe("syncRouter", () => {
         authType: "token",
         authorized: false,
         tokenAuth: {
+          kind: "access-token",
           label: "JWT refresh token",
           instructionsUrl: "https://wger.readthedocs.io/en/latest/api/api.html#jwt-tokens",
         },
@@ -2500,9 +2502,9 @@ describe("syncRouter", () => {
           metricStream: 100,
           nutritionDaily: 7,
           clinicalRecords: 6,
+          climbingLogEntries: 0,
         },
       ]);
-      expect(execute).not.toHaveBeenCalled();
     });
 
     it("returns empty array when no providers", async () => {
@@ -2518,7 +2520,6 @@ describe("syncRouter", () => {
 
       const result = await caller.providerStats();
       expect(result).toEqual([]);
-      expect(execute).not.toHaveBeenCalled();
     });
 
     it("throws a precondition error when ClickHouse is not configured", async () => {
