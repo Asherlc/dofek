@@ -318,8 +318,8 @@ for the approved SDK dependency tree.
 
 ### Native diagnostic runtime
 
-Runtime **1.8** uses the stable [Expo SDK 58](https://expo.dev/changelog/sdk-58)
-native dependency set with Expo 58.0.12, Expo Router 58.0.21, Expo Updates
+Runtime **1.9** uses the stable [Expo SDK 58](https://expo.dev/changelog/sdk-58)
+native dependency set with Expo 58.0.14, Expo Router 58.0.23, Expo Updates
 58.0.17, React Native 0.88.0, and React Native SVG 15.16.0, pinned in
 [package.json](./package.json). Validate SDK-managed versions with
 `pnpm tsx ../../scripts/with-env.ts -- pnpm expo install --check` from this package, following Expo's
@@ -332,7 +332,7 @@ worklets peer metadata, and the
 [`expo-glass-effect` patch](https://github.com/expo/expo/pull/51639) changes only
 TypeScript ref declarations.
 Build a new native binary containing these dependencies; do not publish this
-JavaScript to runtime 1.7 or earlier.
+JavaScript to runtime 1.8 or earlier.
 Expo requires a runtime increment when native code is updated; see
 [manual runtime version increments](https://docs.expo.dev/eas-update/runtime-versions/#manually-increment-the-runtime-version).
 Expo uses
