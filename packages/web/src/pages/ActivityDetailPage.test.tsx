@@ -31,10 +31,12 @@ const leafletMocks = vi.hoisted(() => ({
   latLngBounds: vi.fn(() => ({})),
   polyline: vi.fn(() => ({ addTo: vi.fn() })),
   circleMarker: vi.fn(() => {
-    const element = document.createElement("span");
+    const element = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.append(element);
     const marker = {
       addTo: vi.fn((map: { container: HTMLElement }) => {
-        map.container.append(element);
+        map.container.append(svg);
         return marker;
       }),
       remove: vi.fn(),
@@ -42,6 +44,10 @@ const leafletMocks = vi.hoisted(() => ({
       bindTooltip: vi.fn(() => marker),
       on: vi.fn((event: string, listener: () => void) => {
         element.addEventListener(event, listener);
+        return marker;
+      }),
+      fire: vi.fn((event: string) => {
+        element.dispatchEvent(new Event(event));
         return marker;
       }),
       getElement: vi.fn(() => element),
@@ -941,12 +947,12 @@ describe("ActivityDetailPage", () => {
       data: [
         climbingLogEntryFixture({ id: "unlocated", title: "Unknown location" }),
         climbingLogEntryFixture({
-          id: "located",
+          id: "20000000-0000-4000-8000-000000000011",
           title: "Located climb",
           mapLocation: {
             coordinates: { latitude: 0, longitude: -122.25 },
             scope: "climb",
-            objectId: "source-climb",
+            objectId: "20000000-0000-4000-8000-000000000003",
             providerId: "mountain-project",
             name: "Located climb",
           },
@@ -982,20 +988,32 @@ describe("ActivityDetailPage", () => {
     expect(screen.getByText("Climb location: Located climb · Mountain Project")).toBeDefined();
     expect(screen.getByText("Area location: Containing area · OpenBeta")).toBeDefined();
     expect(screen.getByText("Entry 2")).toBeDefined();
-    fireEvent.click(
-      await screen.findByRole("button", {
-        name: "Entry 2 · Located climb · Climb location: Located climb · Mountain Project",
-      }),
-    );
-    const createdMaps = leafletMocks.map.mock.calls.length;
-    await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "Entry 2 · Located climb" }));
+    const climbPoint = await screen.findByRole("button", {
+      name: "Entry 2 · Located climb · Climb location: Located climb · Mountain Project",
     });
+    const createdMaps = leafletMocks.map.mock.calls.length;
+    act(() => climbPoint.focus());
+    fireEvent.keyDown(climbPoint, { key: "Enter" });
+    const dialog = await screen.findByRole("dialog");
     expect(
-      within(screen.getByRole("list", { name: "Attached climbing logs" })).getByText(
+      within(within(dialog).getByRole("region", { name: "Climbing log details" })).getByText(
+        "Located climb",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      within(screen.getByRole("list", { name: "Attached climbing logs", hidden: true })).getByText(
         "Entry 2 · Selected",
       ),
     ).toBeDefined();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Close" }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    await waitFor(() => expect(climbPoint).toHaveFocus());
+    fireEvent.click(climbPoint);
+    expect(
+      within(await screen.findByRole("dialog")).getByRole("region", {
+        name: "Climbing log details",
+      }),
+    ).toBeInTheDocument();
     expect(leafletMocks.map).toHaveBeenCalledTimes(createdMaps);
     if (state.startsWith("cached")) {
       await waitFor(() => expect(leafletMocks.latLng).toHaveBeenCalledWith(7, 8));

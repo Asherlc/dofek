@@ -1,6 +1,6 @@
 import type { ClimbingMapMarker } from "@dofek/training/climbing-map";
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { expect, waitFor, within } from "storybook/test";
+import { expect, fn, userEvent, waitFor, within } from "storybook/test";
 import "leaflet/dist/leaflet.css";
 import { ActivityRouteMap } from "./ActivityRouteMap.tsx";
 
@@ -44,7 +44,17 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 export const Default: Story = {};
 export const RoutePlusDots: Story = { args: { climbMarkers: markers } };
-export const PointsOnly: Story = { args: { points: [], climbMarkers: markers } };
+export const PointsOnly: Story = {
+  args: { points: [], climbMarkers: markers, onSelectEntry: fn() },
+  play: async ({ args, canvasElement }) => {
+    await userEvent.click(
+      await within(canvasElement).findByRole("button", {
+        name: "Entry 1 · Swiss Cheese · Climb location: Swiss Cheese · Mountain Project",
+      }),
+    );
+    await expect(args.onSelectEntry).toHaveBeenLastCalledWith("tick-1");
+  },
+};
 export const ExactClimb: Story = {
   args: { points: [], climbMarkers: markers.slice(0, 1), presentation: "compact" },
 };
@@ -57,6 +67,17 @@ export const RepeatedPoint: Story = {
     climbMarkers: markers
       .slice(0, 1)
       .flatMap((marker) => [marker, { ...marker, entryId: "tick-repeat" }]),
+    onSelectEntry: fn(),
+  },
+  play: async ({ args, canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(
+      await canvas.findByRole("button", {
+        name: "Entry 2 · Swiss Cheese · Climb location: Swiss Cheese · Mountain Project",
+      }),
+    );
+    await userEvent.click(canvas.getByRole("button", { name: "Entry 2 · Swiss Cheese" }));
+    await expect(args.onSelectEntry).toHaveBeenLastCalledWith("tick-repeat");
   },
 };
 export const Empty: Story = { args: { points: [] } };

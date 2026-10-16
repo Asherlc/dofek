@@ -34,9 +34,14 @@ Activity-detail climbing entries and suggestions use
 [ClimbingLogEntryCard](./components/ClimbingLogEntryCard.tsx). Their source-location
 inputs share the web client's [coordinate and provenance types](../training/src/climbing-map.ts).
 [RouteMap](./components/RouteMap.tsx) renders source dots independently of the
-recorded GPS route and supports compact tick maps. Its production occurrence
-chooser uses Entry numbers from the full card order and can select the matching
-card, including repeated names at the same point. Colocated Storybook stories
+recorded GPS route and supports compact tick maps. The overview supports panning
+and zooming; compact maps do not intercept touches. A unique point opens its log
+details immediately; overlapping points offer an occurrence chooser using Entry
+numbers from the full card order. Selection opens the exact log's
+[record modal](./components/providers/provider-record-detail-modal.tsx) and
+highlights its card, including repeated names at the same point. The
+[activity tests](./app-tests/activity/[id].test.tsx) cover closing and reopening
+the same occurrence. Colocated Storybook stories
 exercise exact Climb points, containing-Area points, missing GPS, and attachment
 states. The activity screen supplies each log's server-projected location to
 overview and compact maps even without a recorded GPS route. The
