@@ -344,6 +344,8 @@ function createDatabase(
   const database: ActivityIntegrityDatabase = {
     $client: {
       connect: async () => ({
+        off: vi.fn(),
+        on: vi.fn(),
         query: vi.fn(async (query: string) => {
           if (query.includes("pg_try_advisory_lock")) {
             const acquired = !leaseState.held;

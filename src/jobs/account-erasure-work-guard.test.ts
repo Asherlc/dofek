@@ -139,16 +139,25 @@ describe("PostgreSQL queued-work lock pool", () => {
     },
   );
 
-  it.each(["capture", "log", "neither"])(
-    "exits synchronously on lock-session loss even if %s reporting fails",
-    async (failureStep) => {
+  it.each([
+    ["mountain-project", "capture"],
+    ["mountain-project", "log"],
+    ["mountain-project", "neither"],
+    [undefined, "capture"],
+    [undefined, "log"],
+    [undefined, "neither"],
+  ] as const)(
+    "exits synchronously for provider %s on lock-session loss even if %s reporting fails",
+    async (providerId, failureStep) => {
       const pool = createAccountErasureWorkLockPool("postgres://database.test/dofek");
       let finishWork = () => {};
       const workPending = new Promise<void>((resolve) => {
         finishWork = resolve;
       });
-      const running = pool.runWithSharedUserLock("user-1", () => workPending, "mountain-project");
-      await vi.waitFor(() => expect(mocks.poolClient.query).toHaveBeenCalledTimes(2));
+      const running = pool.runWithSharedUserLock("user-1", () => workPending, providerId);
+      await vi.waitFor(() =>
+        expect(mocks.poolClient.query).toHaveBeenCalledTimes(providerId === undefined ? 1 : 2),
+      );
       const listener = mocks.poolClient.on.mock.calls[0]?.[1];
       if (!listener) throw new Error("Expected checked-out session protection");
       const fatal = new Error("worker exited");
@@ -168,15 +177,49 @@ describe("PostgreSQL queued-work lock pool", () => {
         expect(() => listener(sessionFailure)).toThrow(fatal);
         expect(exit).toHaveBeenCalledWith(1);
         expect(mocks.captureException).toHaveBeenCalledWith(sessionFailure, {
-          tags: { source: "provider-sync-lock-session" },
+          tags:
+            providerId === undefined
+              ? {
+                  accountErasureWorkLockStep: "session",
+                  source: "account-erasure-work-lock",
+                }
+              : { source: "provider-sync-lock-session" },
         });
         expect(mocks.loggerError).toHaveBeenCalledWith(
-          "[provider-sync-lock] PostgreSQL session lost; stopping worker to prevent stale writes",
+          providerId === undefined
+            ? "[account-erasure-work-lock] PostgreSQL session lost; stopping worker to prevent stale writes"
+            : "[provider-sync-lock] PostgreSQL session lost; stopping worker to prevent stale writes",
         );
       } finally {
         exit.mockRestore();
         finishWork();
         await running;
+      }
+    },
+  );
+
+  it.each([undefined, "mountain-project"])(
+    "does not start work after losing provider %s session during acquisition",
+    async (providerId) => {
+      const pool = createAccountErasureWorkLockPool("postgres://database.test/dofek");
+      const fatal = new Error("worker exited");
+      const exit = vi.spyOn(process, "exit").mockImplementation(() => {
+        throw fatal;
+      });
+      mocks.poolClient.query.mockImplementationOnce(async () => {
+        const [, listener] = mocks.poolClient.on.mock.calls[0] ?? [];
+        listener(new Error("session disconnected"));
+        return { rows: [] };
+      });
+      const work = vi.fn(async () => "must-not-run");
+      try {
+        await expect(pool.runWithSharedUserLock("user-1", work, providerId)).rejects.toMatchObject({
+          cause: fatal,
+        });
+        expect(work).not.toHaveBeenCalled();
+        expect(exit).toHaveBeenCalledWith(1);
+      } finally {
+        exit.mockRestore();
       }
     },
   );
@@ -422,8 +465,11 @@ describe("PostgreSQL queued-work lock pool", () => {
 
     await expect(workLockPool.runWithSharedUserLock("user-1", work)).resolves.toBe("completed");
 
-    expect(mocks.poolClient.on).not.toHaveBeenCalled();
-    expect(mocks.poolClient.removeListener).not.toHaveBeenCalled();
+    expect(mocks.poolClient.on).toHaveBeenCalledWith("error", expect.any(Function));
+    expect(mocks.poolClient.removeListener).toHaveBeenCalledWith(
+      "error",
+      mocks.poolClient.on.mock.calls[0]?.[1],
+    );
     expect(mocks.poolClient.release).toHaveBeenCalledTimes(1);
     expect(mocks.poolClient.query).toHaveBeenNthCalledWith(
       1,
@@ -440,6 +486,21 @@ describe("PostgreSQL queued-work lock pool", () => {
       ["account-erasure-queued-user-work:user-1"],
     );
     expect(mocks.poolClient.release).toHaveBeenCalledWith();
+  });
+
+  it("detaches its session error listener before returning a healthy client to the pool", async () => {
+    const workLockPool = createAccountErasureWorkLockPool("postgres://database.test/dofek");
+
+    await expect(workLockPool.runWithSharedUserLock("user-1", async () => "done")).resolves.toBe(
+      "done",
+    );
+
+    const [event, listener] = mocks.poolClient.on.mock.calls[0] ?? [];
+    expect(event).toBe("error");
+    expect(mocks.poolClient.removeListener).toHaveBeenCalledWith("error", listener);
+    expect(mocks.poolClient.removeListener.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.poolClient.release.mock.invocationCallOrder[0] ?? 0,
+    );
   });
 
   it("releases the shared session lock when a job throws synchronously", async () => {
