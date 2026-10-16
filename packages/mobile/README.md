@@ -22,12 +22,13 @@ The mobile app for Dofek. Built with Expo and React Native, with native Swift mo
 
 Activity details show climbing logs and same-day attachment suggestions for
 climbing and hiking activities. Cards show current shared locations, published
-display grades, scoped results, and server-derived rock labels.
-[Details](components/ClimbingLogEntryDetails.tsx) show coordinates, published and
-reported grade collections, independent attempt facts, notes, and disclosed
-source data. Provider records use server columns and filters, fetch the selected
-log's complete graph, and retain cached rows during refresh errors. Labels match
-web through shared formatters. See the [canonical response contract](../server/src/contracts/climbing-log-contracts.ts).
+display grades, scoped results, and server-derived rock labels. Provider records
+use server columns and filters, fetch the selected log's complete graph, and
+retain cached rows during refresh errors. Their
+[detail viewer](components/ClimbingLogEntryDetails.tsx) shows coordinates,
+published and reported grade collections, independent attempt facts, notes, and
+disclosed source data. Labels match web through shared formatters. See the
+[canonical response contract](../server/src/contracts/climbing-log-contracts.ts).
 
 Activity-detail climbing entries and suggestions use
 [ClimbingLogEntryBreakdown](./components/ClimbingLogEntryBreakdown.tsx) and
@@ -84,6 +85,14 @@ workflow. Expo also documents the local iOS Simulator setup and the
 development-build workflow:
 <https://docs.expo.dev/workflow/ios-simulator/> and
 <https://docs.expo.dev/build-reference/simulators/>.
+
+From `packages/mobile`, load the required environment and check dependency
+compatibility before regenerating the native project, following
+[Expo's upgrade guide](https://docs.expo.dev/workflow/upgrading-expo-sdk-walkthrough/):
+
+```bash
+pnpm tsx ../../scripts/with-env.ts -- pnpm expo install --check
+```
 
 1. Load the required `EXPO_PUBLIC_*` build values from Infisical, then generate
    a fresh native project:
@@ -291,7 +300,7 @@ Runtime **1.7** uses the stable [Expo SDK 58](https://expo.dev/changelog/sdk-58)
 native dependency set with Expo 58.0.11, Expo Router 58.0.20, Expo Updates
 58.0.17, React Native 0.88.0, and React Native SVG 15.16.0, pinned in
 [package.json](./package.json). Validate SDK-managed versions with
-`pnpm expo install --check`, following Expo's
+`pnpm tsx ../../scripts/with-env.ts -- pnpm expo install --check` from this package, following Expo's
 [dependency validation guidance](https://docs.expo.dev/more/expo-cli/#configuring-dependency-validation).
 The native dependency set also includes ExpoNetwork, the pnpm patch to
 `expo-apple-authentication@58.0.2`, and `react-native-maps@1.29.11`.

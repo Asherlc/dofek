@@ -44,7 +44,8 @@ when the authenticated user changes.
 Activity details show attached climbing logs and same-day attachment suggestions
 for climbing and hiking activities. Cards show the current shared location,
 published display grade, scoped results, and server-derived rock labels.
-[Details](src/components/ClimbingLogEntryDetails.tsx) show current coordinates,
+The provider data viewer's
+[record details](src/components/ClimbingLogEntryDetails.tsx) show current coordinates,
 published and reported grade collections, independent attempt facts, notes, and
 disclosed source data. Missing totals retain one recorded occurrence. Provider
 records fetch the selected log's complete graph and retain cached rows during
