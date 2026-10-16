@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { makeTransactionalTestDatabase } from "./test-helpers.ts";
 
 // ============================================================
 // Mock external dependencies
@@ -113,12 +114,12 @@ function createMockDb() {
   const insertFn = vi.fn().mockReturnValue(chain);
   const deleteFn = vi.fn().mockReturnValue(whereChain);
 
-  const db: SyncDatabase = {
+  const db: SyncDatabase = makeTransactionalTestDatabase({
     select: vi.fn(),
     insert: insertFn,
     delete: deleteFn,
     execute: vi.fn(),
-  };
+  });
 
   return Object.assign(db, chain, { deleteFn, whereChain });
 }
@@ -582,7 +583,7 @@ describe("Concept2Provider", () => {
     it("returns error when no tokens", async () => {
       process.env.CONCEPT2_CLIENT_ID = "id";
       process.env.CONCEPT2_CLIENT_SECRET = "secret";
-      const mockDb = {
+      const mockDb = makeTransactionalTestDatabase({
         select: vi.fn().mockReturnValue({
           from: vi.fn().mockReturnValue({
             where: vi.fn().mockReturnValue({
@@ -600,7 +601,7 @@ describe("Concept2Provider", () => {
         }),
         delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
         execute: vi.fn().mockResolvedValue([]),
-      };
+      });
 
       const result = await new Concept2Provider().sync(
         new SyncRun({

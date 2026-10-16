@@ -1,6 +1,8 @@
-import { CLIMBING_GRADE_SYSTEMS } from "@dofek/training/climbing-grades";
+import { climbingFiltersSchema } from "@dofek/training/climbing-filters";
+import { FREE_ROCK_GRADE_SYSTEMS } from "@dofek/training/climbing-grades";
 import type { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
+import { loadClimbingGradePreference } from "../climbing-grade-preferences.ts";
 import { dateSchema } from "../lib/date-schema.ts";
 import { ClimbingProgressionRepository } from "../repositories/climbing-progression-repository.ts";
 import { registerAuthorizedTool } from "./authorized-tool.ts";
@@ -25,12 +27,9 @@ export function registerClimbingProgressionTool(server: McpServer, context: Dofe
         start_date: dateSchema,
         end_date: dateSchema,
         providers: z.array(z.string().min(1)).max(50).optional(),
-        disciplines: z
-          .array(z.enum(["boulder", "lead", "top_rope", "route"]))
-          .max(4)
-          .optional(),
+        filters: climbingFiltersSchema.optional(),
         locations: z.array(z.string().min(1)).max(50).optional(),
-        grade_systems: z.array(z.enum(CLIMBING_GRADE_SYSTEMS)).max(20).optional(),
+        grade_systems: z.array(z.enum(FREE_ROCK_GRADE_SYSTEMS)).max(20).optional(),
         cursor: z.string().min(1).optional(),
         limit: z.number().int().min(1).max(500).optional(),
       }),
@@ -40,7 +39,7 @@ export function registerClimbingProgressionTool(server: McpServer, context: Dofe
       start_date,
       end_date,
       providers,
-      disciplines,
+      filters,
       locations,
       grade_systems,
       cursor,
@@ -53,11 +52,12 @@ export function registerClimbingProgressionTool(server: McpServer, context: Dofe
           context.db,
           context.userId,
           context.timezone,
+          await loadClimbingGradePreference(context.db, context.userId),
         ).listRange({
           startDate: start_date,
           endDate: end_date,
           providers: providers ?? [],
-          disciplines: disciplines ?? [],
+          filters: filters ?? {},
           locations: locations ?? [],
           gradeSystems: grade_systems ?? [],
           cursor: cursor ?? null,

@@ -1,4 +1,13 @@
 import { ACTIVITY_MODALITIES, CANONICAL_ACTIVITY_TYPES } from "@dofek/training/activity-types";
+import { GRADE_SYSTEMS } from "@dofek/training/climbing-grades";
+import {
+  ATTEMPT_SCOPES,
+  CLIMB_KINDS,
+  CLIMB_SETTINGS,
+  CLIMBING_DISCIPLINES,
+  PROTECTION_STYLES,
+  ROPE_METHODS,
+} from "@dofek/training/climbing-log";
 import { fitness } from "./core.ts";
 
 // ============================================================
@@ -45,19 +54,13 @@ export const setTypeEnum = fitness.enum("set_type", [
   "rest",
 ]);
 
-export const climbingClimbTypeEnum = fitness.enum("climbing_climb_type", ["boulder", "route"]);
-
-export const climbingGradeSystemEnum = fitness.enum("climbing_grade_system", [
-  "v_scale",
-  "font",
-  "yds",
-  "french",
-  "uiaa",
-  "ewbank",
-  "saxon",
-  "norwegian",
-  "brazilian_crux",
-]);
+export const climbKindEnum = fitness.enum("climb_kind", CLIMB_KINDS);
+export const climbSettingEnum = fitness.enum("climb_setting", CLIMB_SETTINGS);
+export const climbingDisciplineEnum = fitness.enum("climbing_discipline", CLIMBING_DISCIPLINES);
+export const ropeMethodEnum = fitness.enum("rope_method", ROPE_METHODS);
+export const protectionStyleEnum = fitness.enum("protection_style", PROTECTION_STYLES);
+export const attemptScopeEnum = fitness.enum("attempt_scope", ATTEMPT_SCOPES);
+export const gradeSystemEnum = fitness.enum("grade_system", GRADE_SYSTEMS);
 
 export const fingerLoadingExerciseEnum = fitness.enum("finger_loading_exercise", [
   "max_hang",
@@ -88,19 +91,6 @@ export const climbingHoldTypeEnum = fitness.enum("climbing_hold_type", [
   "pinch",
   "pocket",
   "jug",
-]);
-
-export const climbingAttemptOutcomeEnum = fitness.enum("climbing_attempt_outcome", [
-  "sent",
-  "failed",
-]);
-
-export const climbingFailureReasonEnum = fitness.enum("climbing_failure_reason", [
-  "fell",
-  "pumped",
-  "skin",
-  "technique",
-  "fear",
 ]);
 
 export const sleepStageNameEnum = fitness.enum("sleep_stage_name", [

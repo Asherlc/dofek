@@ -3,7 +3,7 @@
 import { convertGrade, GradeScales, getScale } from "@openbeta/sandbag";
 import { z } from "zod";
 
-export const CLIMBING_GRADE_SYSTEMS = [
+export const FREE_ROCK_GRADE_SYSTEMS = [
   "v_scale",
   "font",
   "yds",
@@ -15,10 +15,23 @@ export const CLIMBING_GRADE_SYSTEMS = [
   "brazilian_crux",
 ] as const;
 
-export type ClimbingGradeSystem = (typeof CLIMBING_GRADE_SYSTEMS)[number];
+export const GRADE_SYSTEMS = [
+  ...FREE_ROCK_GRADE_SYSTEMS,
+  "british_adjectival",
+  "british_technical",
+  "aid",
+  "water_ice",
+  "alpine_ice",
+  "mixed",
+  "ifas",
+  "nccs",
+] as const;
+export const gradeSystemSchema = z.enum(GRADE_SYSTEMS);
+export type GradeSystem = z.infer<typeof gradeSystemSchema>;
+export type FreeRockGradeSystem = (typeof FREE_ROCK_GRADE_SYSTEMS)[number];
 export type BoulderGradeSystem = "v_scale" | "font";
-export type RouteGradeSystem = Exclude<ClimbingGradeSystem, BoulderGradeSystem>;
-export type ClimbingClimbType = "boulder" | "route";
+export type RouteGradeSystem = Exclude<FreeRockGradeSystem, BoulderGradeSystem>;
+export type RockClimbKind = "boulder" | "route";
 
 export interface ClimbingGradePreference {
   boulder: BoulderGradeSystem;
@@ -33,7 +46,7 @@ export interface ParsedClimbingGrade {
 
 export interface ConvertedClimbingGrade {
   displayGrade: string;
-  displaySystem: ClimbingGradeSystem;
+  displaySystem: FreeRockGradeSystem;
   sortValue: number;
 }
 
@@ -52,9 +65,9 @@ const systemToSandbagScale = {
   saxon: GradeScales.SAXON,
   norwegian: GradeScales.NORWEGIAN,
   brazilian_crux: GradeScales.BRAZILIAN_CRUX,
-} as const satisfies Record<ClimbingGradeSystem, (typeof GradeScales)[keyof typeof GradeScales]>;
+} as const satisfies Record<FreeRockGradeSystem, (typeof GradeScales)[keyof typeof GradeScales]>;
 
-const SYSTEM_LABELS: Record<ClimbingGradeSystem, string> = {
+const SYSTEM_LABELS: Record<GradeSystem, string> = {
   v_scale: "V Scale",
   font: "Fontainebleau",
   yds: "Yosemite Decimal System",
@@ -64,6 +77,14 @@ const SYSTEM_LABELS: Record<ClimbingGradeSystem, string> = {
   saxon: "Saxon",
   norwegian: "Norwegian",
   brazilian_crux: "Brazilian Crux",
+  british_adjectival: "British adjectival",
+  british_technical: "British technical",
+  aid: "Aid",
+  water_ice: "Water ice",
+  alpine_ice: "Alpine ice",
+  mixed: "Mixed",
+  ifas: "International French Adjectival System",
+  nccs: "National Climbing Classification System",
 };
 
 export const BOULDER_GRADE_SYSTEMS = [
@@ -85,13 +106,13 @@ export const climbingGradePreferenceSchema = z.object({
   route: z.enum(ROUTE_GRADE_SYSTEMS),
 });
 
-function sandbagScale(system: ClimbingGradeSystem) {
+function sandbagScale(system: FreeRockGradeSystem) {
   const scale = getScale(systemToSandbagScale[system]);
   if (!scale) throw new Error(`Sandbag does not support climbing grade system: ${system}`);
   return scale;
 }
 
-function canonicalGrade(grade: string, system: ClimbingGradeSystem): string | null {
+function canonicalGrade(grade: string, system: FreeRockGradeSystem): string | null {
   const trimmed = grade.trim();
   const scale = sandbagScale(system);
   if (!scale.isType(trimmed)) return null;
@@ -111,15 +132,11 @@ function canonicalGrade(grade: string, system: ClimbingGradeSystem): string | nu
   return hasKnownSubdivision ? `5.${major}${yosemiteBase[2] ?? ""}` : null;
 }
 
-export function gradeSystemsForClimbType(climbType: "boulder"): readonly BoulderGradeSystem[];
-export function gradeSystemsForClimbType(climbType: "route"): readonly RouteGradeSystem[];
-export function gradeSystemsForClimbType(
-  climbType: ClimbingClimbType,
-): readonly ClimbingGradeSystem[];
-export function gradeSystemsForClimbType(
-  climbType: ClimbingClimbType,
-): readonly ClimbingGradeSystem[] {
-  return climbType === "boulder" ? BOULDER_GRADE_SYSTEMS : ROUTE_GRADE_SYSTEMS;
+export function gradeSystemsForClimbKind(climbKind: "boulder"): readonly BoulderGradeSystem[];
+export function gradeSystemsForClimbKind(climbKind: "route"): readonly RouteGradeSystem[];
+export function gradeSystemsForClimbKind(climbKind: RockClimbKind): readonly FreeRockGradeSystem[];
+export function gradeSystemsForClimbKind(climbKind: RockClimbKind): readonly FreeRockGradeSystem[] {
+  return climbKind === "boulder" ? BOULDER_GRADE_SYSTEMS : ROUTE_GRADE_SYSTEMS;
 }
 
 export function resolveClimbingGradePreference(value: unknown): ClimbingGradePreference {
@@ -127,28 +144,49 @@ export function resolveClimbingGradePreference(value: unknown): ClimbingGradePre
   return parsed.success ? parsed.data : DEFAULT_CLIMBING_GRADE_PREFERENCE;
 }
 
-export function gradeOptionsForSystem(system: ClimbingGradeSystem): readonly string[] {
+export function gradeOptionsForSystem(system: FreeRockGradeSystem): readonly string[] {
   return sandbagScale(system).grades;
 }
 
-export function gradeSystemLabel(system: ClimbingGradeSystem): string {
+export function gradeSystemLabel(system: GradeSystem): string {
   return SYSTEM_LABELS[system];
 }
 
-export function isGradeSystemForClimbType(
-  system: ClimbingGradeSystem,
-  climbType: ClimbingClimbType,
-): boolean {
-  return climbType === "boulder"
+export function isGradeSystemForClimbKind(
+  system: GradeSystem,
+  climbKind: RockClimbKind,
+): system is FreeRockGradeSystem {
+  return climbKind === "boulder"
     ? system === "v_scale" || system === "font"
-    : system !== "v_scale" && system !== "font";
+    : ROUTE_GRADE_SYSTEMS.some((candidate) => candidate === system);
 }
 
-export function isValidClimbingGrade(grade: string, system: ClimbingGradeSystem): boolean {
-  return canonicalGrade(grade, system) !== null;
+// Source syntax includes modifiers and ranges absent from Sandbag's finite tables.
+// https://www.thecrag.com/en/article/gradesonthecrag
+const recordedGradePatterns = {
+  british_adjectival: /^(?:E|M|D|VD|HVD|MS|S|HS|VS|HVS|E[1-9]\d*)$/i,
+  british_technical: /^[1-9]\d*[abc]\+?$/i,
+  aid: /^[AC](?:0|[1-9]\d*)[+-]?(?:[/-][AC]?(?:0|[1-9]\d*)[+-]?)?$/i,
+  water_ice: /^WI[1-9]\d*[+-]?(?:[/-](?:WI)?[1-9]\d*[+-]?)?$/i,
+  alpine_ice: /^AI[1-9]\d*[+-]?(?:[/-](?:AI)?[1-9]\d*[+-]?)?$/i,
+  mixed: /^M[1-9]\d*[+-]?(?:[/-]M?[1-9]\d*[+-]?)?$/i,
+  ifas: /^(?:F|PD|AD|D|TD|ED[1-3]?|EX)[+-]?$/i,
+  nccs: /^(?=.+$)M{0,3}(?:CM|CD|D?C{0,3})(?:XC|XL|L?X{0,3})(?:IX|IV|V?I{0,3})$/i,
+};
+
+export function isValidClimbingGrade(grade: string, system: GradeSystem): boolean {
+  if (system in recordedGradePatterns) {
+    for (const [candidate, pattern] of Object.entries(recordedGradePatterns)) {
+      if (system === candidate) return pattern.test(grade.trim());
+    }
+  }
+  if (isGradeSystemForClimbKind(system, "boulder") || isGradeSystemForClimbKind(system, "route")) {
+    return canonicalGrade(grade, system) !== null;
+  }
+  return false;
 }
 
-export function gradeSortValue(grade: string, system: ClimbingGradeSystem): number | null {
+export function gradeSortValue(grade: string, system: FreeRockGradeSystem): number | null {
   const canonical = canonicalGrade(grade, system);
   if (!canonical) return null;
   const score = sandbagScale(system).getScore(canonical);
@@ -159,8 +197,8 @@ export function gradeSortValue(grade: string, system: ClimbingGradeSystem): numb
 
 export function convertClimbingGrade(input: {
   grade: string;
-  sourceSystem: ClimbingGradeSystem;
-  displaySystem: ClimbingGradeSystem;
+  sourceSystem: FreeRockGradeSystem;
+  displaySystem: FreeRockGradeSystem;
 }): ConvertedClimbingGrade | null {
   const sourceGrade = canonicalGrade(input.grade, input.sourceSystem);
   if (!sourceGrade) return null;

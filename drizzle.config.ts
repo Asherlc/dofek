@@ -5,6 +5,7 @@ export default defineConfig({
     "./src/db/schema/account.ts",
     "./src/db/schema/activity.ts",
     "./src/db/schema/clinical.ts",
+    "./src/db/schema/climbing.ts",
     "./src/db/schema/core.ts",
     "./src/db/schema/enums.ts",
     "./src/db/schema/events.ts",

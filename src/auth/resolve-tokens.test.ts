@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { reportProviderAuthDiagnostic } from "../lib/provider-diagnostics.ts";
 import { RefreshTokenRevokedError } from "../providers/auth-errors.ts";
+import { makeTransactionalTestDatabase } from "../providers/test-helpers.ts";
 import type { OAuthConfig, TokenSet } from "./oauth.ts";
 import { resolveOAuthTokens } from "./resolve-tokens.ts";
 
@@ -30,12 +31,12 @@ const mockRefreshAccessToken = vi.mocked(refreshAccessToken);
 
 import type { SyncDatabase } from "../db/index.ts";
 
-const fakeDb: SyncDatabase = {
+const fakeDb: SyncDatabase = makeTransactionalTestDatabase({
   select: vi.fn(),
   insert: vi.fn(),
   delete: vi.fn(),
   execute: vi.fn(),
-};
+});
 
 const fakeConfig: OAuthConfig = {
   clientId: "id",

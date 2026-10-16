@@ -779,7 +779,7 @@ describe("activityRouter", () => {
         id: "00000000-0000-0000-0000-000000000001",
       });
       expect(result).toEqual({ success: true });
-      expect(execute).toHaveBeenCalledTimes(2);
+      expect(execute).toHaveBeenCalledTimes(3);
     });
 
     it("invalidates activity and calendar caches after delete", async () => {
@@ -898,7 +898,7 @@ describe("activityRouter", () => {
       });
 
       expect(result).toEqual({ success: true, deletedCount: 2 });
-      expect(execute).toHaveBeenCalledTimes(2);
+      expect(execute).toHaveBeenCalledTimes(3);
       expect(mockEnqueueActivityDeleteAnalyticsRefresh).toHaveBeenCalledWith("user-1", [
         "00000000-0000-0000-0000-000000000001",
         "00000000-0000-0000-0000-000000000002",

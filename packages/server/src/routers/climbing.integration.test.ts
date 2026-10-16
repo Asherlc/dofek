@@ -1,11 +1,18 @@
-import { randomUUID } from "node:crypto";
 import { queryCache } from "dofek/lib/cache";
-import { sql } from "drizzle-orm";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { eq, sql } from "drizzle-orm";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
+import { activity } from "../../../../src/db/schema/activity.ts";
+import { area, climb, climbingLogEntry } from "../../../../src/db/schema/climbing.ts";
 import { TEST_USER_ID } from "../../../../src/db/schema/core.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
+import { ensureProvider } from "../../../../src/db/tokens.ts";
 import { executeWithSchema } from "../lib/typed-sql.ts";
+import {
+  climbingTestDate,
+  seedClimbingActivity,
+  seedClimbingLog,
+} from "../repositories/climbing-integration-test-helpers.ts";
 import { CacheTTL, requestCacheKey } from "../trpc.ts";
 import { activityRouter } from "./activity.ts";
 import { climbingRouter } from "./climbing.ts";
@@ -13,16 +20,11 @@ import { createTestCallerFactory } from "./test-helpers.ts";
 
 const createCaller = createTestCallerFactory(climbingRouter);
 const createActivityCaller = createTestCallerFactory(activityRouter);
-const activityIdRowSchema = z.object({
+const hangboardingActivityIdRowSchema = z.object({
   id: z.string(),
   external_id: z.string(),
-});
-const hangboardingActivityIdRowSchema = activityIdRowSchema.extend({
   started_at: z.string(),
 });
-const idOnlySchema = z.object({ id: z.string() });
-const activityIdentitySchema = z.object({ id: z.string(), group_id: z.string() });
-
 describe("Hangboarding climbing router integration", () => {
   let testContext: TestContext;
   let firstDate: string;
@@ -121,393 +123,217 @@ describe("Hangboarding climbing router integration", () => {
     });
   });
 });
-const countRowSchema = z.object({
-  count: z.string(),
-});
 
-describe("climbing router integration", () => {
-  let testContext: TestContext;
-  let climbingActivityId: string;
-  let visibleClimbingActivityId: string;
-  let routeActivityId: string;
-  let visibleRouteActivityId: string;
-
+describe("climbing log router PostgreSQL integration", () => {
+  let context: TestContext;
   beforeAll(async () => {
-    const dayInMilliseconds = 24 * 60 * 60 * 1_000;
-    const boulderStartedAt = new Date(Date.now() - 2 * dayInMilliseconds).toISOString();
-    const routeStartedAt = new Date(Date.now() - dayInMilliseconds).toISOString();
-    testContext = await setupTestDatabase();
-
-    await testContext.db.execute(
-      sql`INSERT INTO fitness.provider (id, name, user_id)
-          VALUES
-            ('kaya-export', 'Kaya', ${TEST_USER_ID}),
-            ('strava', 'Strava', ${TEST_USER_ID})
-          ON CONFLICT DO NOTHING`,
-    );
-
-    const insertedActivities = await executeWithSchema(
-      testContext.db,
-      activityIdRowSchema,
-      sql`INSERT INTO fitness.activity (
-            provider_id, user_id, external_id, canonical_type, provider_type, started_at, ended_at, name
-          ) VALUES
-          (
-            'kaya-export',
-            ${TEST_USER_ID},
-            'climbing-router-boulder-session',
-            'climbing',
-            'rock_climbing',
-            ${boulderStartedAt}::timestamptz,
-            (${boulderStartedAt}::timestamptz + INTERVAL '90 minutes'),
-            'Kaya climbing at Touchstone Pacific Pipe'
-          ),
-          (
-            'kaya-export',
-            ${TEST_USER_ID},
-            'climbing-router-route-session',
-            'climbing',
-            'rock_climbing',
-            ${routeStartedAt}::timestamptz,
-            (${routeStartedAt}::timestamptz + INTERVAL '90 minutes'),
-            'Kaya climbing at Mission Cliffs'
-          ),
-          (
-            'strava',
-            ${TEST_USER_ID},
-            'climbing-router-strava-overlap',
-            'climbing',
-            'rock_climbing',
-            ${boulderStartedAt}::timestamptz,
-            (${boulderStartedAt}::timestamptz + INTERVAL '90 minutes'),
-            'Morning Rock Climb'
-          )
-          RETURNING id, external_id`,
-    );
-
-    const boulderActivity = insertedActivities.find(
-      (activity) => activity.external_id === "climbing-router-boulder-session",
-    );
-    const routeActivity = insertedActivities.find(
-      (activity) => activity.external_id === "climbing-router-route-session",
-    );
-    if (!boulderActivity || !routeActivity) {
-      throw new Error("Failed to seed climbing activities");
-    }
-    climbingActivityId = boulderActivity.id;
-    routeActivityId = routeActivity.id;
-
-    const visibleActivities = await executeWithSchema(
-      testContext.db,
-      z.object({ id: z.string() }),
-      sql`SELECT id::text AS id
-          FROM fitness.v_activity
-          WHERE ${climbingActivityId}::uuid = ANY(member_activity_ids)`,
-    );
-    const visibleClimbingActivity = visibleActivities[0];
-    if (!visibleClimbingActivity) {
-      throw new Error("Failed to resolve the merged climbing activity");
-    }
-    visibleClimbingActivityId = visibleClimbingActivity.id;
-
-    const visibleRouteActivities = await executeWithSchema(
-      testContext.db,
-      z.object({ id: z.string() }),
-      sql`SELECT id::text AS id
-          FROM fitness.v_activity
-          WHERE ${routeActivityId}::uuid = ANY(member_activity_ids)`,
-    );
-    const visibleRouteActivity = visibleRouteActivities[0];
-    if (!visibleRouteActivity) {
-      throw new Error("Failed to resolve the route activity");
-    }
-    visibleRouteActivityId = visibleRouteActivity.id;
-
-    await testContext.db.execute(
-      sql`INSERT INTO fitness.climbing_entry (user_id, provider_id, activity_id, external_id, climb_type, grade_system, grade, result_style, attempt_count, route_name, location_path, source_name, raw) VALUES
-        (${TEST_USER_ID}, 'kaya-export', ${climbingActivityId}, 'climbing-router-entry-v2', 'boulder', 'v_scale', 'V2', 'Redpoint', 2, 'Warmup', '[{"name":"Touchstone Pacific Pipe","externalId":null,"kind":null}]'::jsonb, 'Kaya', '{"ascentType":"Redpoint"}'::jsonb),
-        (${TEST_USER_ID}, 'kaya-export', ${climbingActivityId}, 'climbing-router-entry-v4', 'boulder', 'v_scale', 'V4', 'Send', 3, 'Blue Circuit', '[{"name":"Touchstone Pacific Pipe","externalId":null,"kind":null}]'::jsonb, 'Kaya', '{}'::jsonb),
-        (${TEST_USER_ID}, 'kaya-export', ${climbingActivityId}, 'climbing-router-entry-v5-unsent', 'boulder', 'v_scale', 'V5', 'Not sent', 4, 'Project', '[{"name":"Touchstone Pacific Pipe","externalId":null,"kind":null}]'::jsonb, 'Kaya', '{}'::jsonb),
-        (${TEST_USER_ID}, 'kaya-export', ${routeActivityId}, 'climbing-router-entry-yds', 'route', 'yds', '5.10a', 'Send', 2, 'Lead Route', '[{"name":"Mission Cliffs","externalId":null,"kind":null}]'::jsonb, 'Kaya', '{}'::jsonb)
-`,
-    );
-  }, 60_000);
-
-  afterAll(async () => {
-    await testContext?.cleanup();
+    context = await setupTestDatabase();
+    for (const provider of ["kaya-export", "strava", "mountain-project"])
+      await ensureProvider(context.db, provider, provider, undefined, TEST_USER_ID);
   });
-
-  it("returns real Postgres summaries and recorded attempts despite a legacy cached volume response", async () => {
-    const caller = createCaller({
-      db: testContext.db,
-      userId: TEST_USER_ID,
-      timezone: "UTC",
-    });
-
-    const legacyCacheKey = requestCacheKey(TEST_USER_ID, "volumeByGrade", { days: 30 }, "UTC");
-    await queryCache.set(
-      legacyCacheKey,
-      [
+  afterEach(async () => {
+    await queryCache.invalidateByPrefix(`${TEST_USER_ID}:climbing.`);
+    await context.db.delete(climbingLogEntry);
+    await context.db.delete(climb);
+    await context.db.update(area).set({ parentAreaId: null });
+    await context.db.delete(area);
+    await context.db.delete(activity).where(eq(activity.userId, TEST_USER_ID));
+  });
+  afterAll(async () => context.cleanup());
+  const caller = (timezone = "UTC") =>
+    createCaller({ db: context.db, userId: TEST_USER_ID, timezone, cacheMode: "refresh" });
+  async function log(
+    externalId: string,
+    value: string,
+    count = 1,
+    activityId?: string,
+    completed = true,
+  ) {
+    return seedClimbingLog(context.db, "kaya-export", {
+      externalId,
+      climbedOn: await climbingTestDate(context.db),
+      activityId,
+      discipline: "rock_climbing",
+      climb: {
+        externalId: value,
+        name: value,
+        kind: "boulder",
+        setting: "indoor",
+        publishedGrades: [{ value, system: "v_scale" }],
+        areas: [{ externalId: "gym", name: "Gym" }],
+      },
+      attempts: [
         {
-          climbType: "boulder",
-          gradeSystem: "v_scale",
-          grade: "V4",
-          gradeSortValue: 65,
-          attempts: 99,
-          sends: 99,
+          scope: "climb",
+          ...(completed
+            ? { sourceResult: "Send", qualifier: "free-send" as const }
+            : { sourceResult: "failed" as const }),
         },
       ],
-      CacheTTL.LONG,
-    );
-    expect(await queryCache.get(legacyCacheKey)).toEqual([
-      expect.objectContaining({ attempts: 99, sends: 99 }),
+      reportedAttemptCounts: [{ scope: "climb", count }],
+    });
+  }
+  it("returns real summaries and recorded attempts after a cached contract change", async () => {
+    const outing = await seedClimbingActivity(context.db, "kaya-export", "session");
+    await log("v2", "V2", 2, outing.id);
+    await log("v4", "V4", 3, outing.id);
+    await log("v5", "V5", 4, outing.id, false);
+    const oldKey = requestCacheKey(TEST_USER_ID, "volumeByGrade", { days: 30 }, "UTC");
+    await queryCache.set(oldKey, [{ attempts: 99, sends: 99 }], CacheTTL.LONG);
+    const [volume, progression, summaries] = await Promise.all([
+      caller().volumeByGrade({ days: 30 }),
+      caller().gradeProgression({ days: 30 }),
+      caller().sessionSummary({ days: 30 }),
     ]);
-
-    const [gradeProgression, volumeByGrade, sessionSummary] = await Promise.all([
-      caller.gradeProgression({ days: 30 }),
-      caller.volumeByGrade({ days: 30 }),
-      caller.sessionSummary({ days: 30 }),
-    ]);
-    await queryCache.invalidate(legacyCacheKey);
-
-    expect(gradeProgression).toEqual(
+    await queryCache.invalidate(oldKey);
+    expect(volume).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          climbType: "boulder",
-          grades: expect.arrayContaining([
-            expect.objectContaining({ grade: "V4", gradeSortValue: expect.any(Number) }),
-          ]),
-        }),
-        expect.objectContaining({
-          climbType: "route",
-          grades: expect.arrayContaining([
-            expect.objectContaining({ grade: "5.10a", gradeSortValue: expect.any(Number) }),
-          ]),
-        }),
-      ]),
-    );
-    expect(volumeByGrade).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          climbType: "boulder",
+          climbKind: "boulder",
           grade: "V4",
-          attempts: 3,
           recordedAttempts: 3,
           sends: 1,
         }),
-        expect.objectContaining({
-          climbType: "boulder",
-          grade: "V5",
-          attempts: 4,
-          recordedAttempts: 4,
-          sends: 0,
-        }),
-        expect.objectContaining({
-          climbType: "route",
-          grade: "5.10a",
-          attempts: 2,
-          recordedAttempts: 2,
-          sends: 1,
-        }),
+        expect.objectContaining({ grade: "V5", recordedAttempts: 4, sends: 0 }),
       ]),
     );
-    expect(sessionSummary).toEqual(
+    expect(progression).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          activityId: visibleClimbingActivityId,
-          attempts: 9,
-          sends: 2,
-          hardestBoulderGrade: "V4",
-          hardestRouteGrade: null,
-        }),
-        expect.objectContaining({
-          activityId: visibleRouteActivityId,
-          attempts: 2,
-          sends: 1,
-          hardestBoulderGrade: null,
-          hardestRouteGrade: "5.10a",
+          climbKind: "boulder",
+          grades: expect.arrayContaining([expect.objectContaining({ grade: "V4" })]),
         }),
       ]),
     );
-  });
-
-  it("rejects non-positive climbing attempt counts", async () => {
-    await expect(
-      testContext.db.execute(sql`
-        INSERT INTO fitness.climbing_entry (user_id, provider_id, activity_id, climb_type, grade_system, grade, result_style, attempt_count) VALUES
-        (${TEST_USER_ID}, 'kaya-export', ${routeActivityId}, 'route', 'yds', '5.9', 'Not sent', 0)
-`),
-    ).rejects.toThrow("Failed query");
-  });
-
-  it("returns climbing entries attached to a merged activity member", async () => {
-    const caller = createCaller({
-      db: testContext.db,
-      userId: TEST_USER_ID,
-      timezone: "UTC",
-    });
-
-    await expect(caller.activityEntries({ id: visibleClimbingActivityId })).resolves.toEqual([
+    expect(summaries).toEqual([
       expect.objectContaining({
-        climbType: "boulder",
-        grade: "V5",
-        routeName: "Project",
-        sent: false,
-        attemptCount: 4,
-        ascentType: null,
-      }),
-      expect.objectContaining({
-        climbType: "boulder",
-        grade: "V4",
-        routeName: "Blue Circuit",
-        sent: true,
-        attemptCount: 3,
-        ascentType: null,
-      }),
-      expect.objectContaining({
-        climbType: "boulder",
-        grade: "V2",
-        routeName: "Warmup",
-        sent: true,
-        attemptCount: 2,
-        ascentType: "Redpoint",
+        activityId: outing.groupId,
+        attempts: 9,
+        sends: 2,
+        hardestBoulderGrade: "V4",
       }),
     ]);
   });
-
-  it("resolves visible group IDs, rejects cross-user and wrong-type targets, and attaches one same-day tick", async () => {
-    const runToken = crypto.randomUUID();
-    const otherUserId = "b0000000-0000-4000-8000-000000000001";
-    await testContext.db.execute(sql`INSERT INTO fitness.user_profile (id, name)
-      VALUES (${otherUserId}, 'Climbing Router Other User') ON CONFLICT (id) DO NOTHING`);
-    const otherActivityRows = await executeWithSchema(
-      testContext.db,
-      idOnlySchema,
-      sql`INSERT INTO fitness.activity (
-        provider_id, user_id, external_id, canonical_type, provider_type, started_at
-      ) VALUES ('kaya-export', ${otherUserId}, ${`other-user-climbing-${runToken}`}, 'climbing', 'rock_climbing',
-        '2026-09-20T10:00:00Z') RETURNING group_id::text AS id`,
-    );
-    const otherActivityIdRow = otherActivityRows[0];
-    if (!otherActivityIdRow) throw new Error("Failed to seed cross-user activity");
-
-    const runningRows = await executeWithSchema(
-      testContext.db,
-      idOnlySchema,
-      sql`INSERT INTO fitness.activity (
-        provider_id, user_id, external_id, canonical_type, provider_type, started_at
-      ) VALUES ('strava', ${TEST_USER_ID}, ${`wrong-type-for-tick-${runToken}`}, 'running', 'run',
-        '2026-09-20T10:00:00Z') RETURNING group_id::text AS id`,
-    );
-    const runningActivity = runningRows[0];
-    if (!runningActivity) throw new Error("Failed to seed wrong-type activity");
-
-    await testContext.db.execute(sql`INSERT INTO fitness.provider (id, name)
-      VALUES ('mountain-project', 'Mountain Project') ON CONFLICT (id) DO NOTHING`);
-    await testContext.db.execute(sql`INSERT INTO fitness.climbing_entry (user_id, provider_id, activity_id, unattached_date, external_id, climb_type, grade_system, grade, result_style, attempt_count, raw) VALUES
-        (${TEST_USER_ID}, 'mountain-project', NULL, (SELECT (started_at AT TIME ZONE 'UTC')::date FROM fitness.activity WHERE id = ${climbingActivityId}::uuid), ${`router-attach-same-day-${runToken}`}, 'boulder', 'v_scale', 'V8', 'Send', 1, '{}'::jsonb)
-`);
-    const tickRows = await executeWithSchema(
-      testContext.db,
-      idOnlySchema,
-      sql`SELECT id::text AS id FROM fitness.climbing_entry
-          WHERE user_id = ${TEST_USER_ID} AND external_id = ${`router-attach-same-day-${runToken}`}`,
-    );
-    const tick = tickRows[0];
-    if (!tick) throw new Error("Failed to seed Mountain Project tick");
-
-    const caller = createCaller({
-      db: testContext.db,
-      userId: TEST_USER_ID,
-      timezone: "UTC",
-      cacheMode: "refresh",
-    });
+  it("serves the canonical attempt graph through group and member activity identities", async () => {
+    const outing = await seedClimbingActivity(context.db, "kaya-export", "session");
+    const id = await log("v4", "V4", 3, outing.id);
+    for (const activityId of [outing.groupId, outing.id])
+      expect(await caller().activityLogEntries({ activityId })).toEqual([
+        expect.objectContaining({
+          id,
+          climb: expect.objectContaining({ name: "V4" }),
+          recordedClimbAttemptCount: 3,
+          recordedClimbOutcome: "completed",
+          attempts: expect.any(Array),
+        }),
+      ]);
+  });
+  it("matches and attaches one same-day log while preserving the source date", async () => {
+    const outing = await seedClimbingActivity(context.db, "kaya-export", "session");
+    const id = await log("v4", "V4");
+    expect(await caller().unattachedClimbingLogEntries({ activityId: outing.groupId })).toEqual([
+      expect.objectContaining({ id, displayGrade: "V4" }),
+    ]);
     await expect(
-      caller.unattachedClimbingEntries({ activityId: visibleClimbingActivityId }),
-    ).resolves.toEqual([expect.objectContaining({ id: tick.id, grade: "V8" })]);
-    await expect(
-      caller.unattachedClimbingEntries({ activityId: otherActivityIdRow.id }),
-    ).rejects.toMatchObject({ code: "NOT_FOUND" });
-    await expect(
-      caller.unattachedClimbingEntries({ activityId: runningActivity.id }),
-    ).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
-    await expect(
-      caller.attachClimbingEntry({ activityId: runningActivity.id, entryId: tick.id }),
-    ).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
-
-    await expect(
-      caller.attachClimbingEntry({ activityId: visibleClimbingActivityId, entryId: tick.id }),
+      caller().attachClimbingLogEntry({ activityId: outing.groupId, climbingLogEntryId: id }),
     ).resolves.toEqual({ attached: true });
     await expect(
-      caller.attachClimbingEntry({ activityId: visibleClimbingActivityId, entryId: tick.id }),
+      caller().attachClimbingLogEntry({ activityId: outing.groupId, climbingLogEntryId: id }),
     ).rejects.toMatchObject({ code: "CONFLICT" });
-    await expect(
-      caller.unattachedClimbingEntries({ activityId: visibleClimbingActivityId }),
-    ).resolves.toEqual([]);
+    expect(await caller().unattachedClimbingLogEntries({ activityId: outing.groupId })).toEqual([]);
+    expect((await caller().activityLogEntries({ activityId: outing.groupId }))[0]?.climbedOn).toBe(
+      await climbingTestDate(context.db),
+    );
   });
-
-  it("returns the same canonical displayed date in activity detail and tick matching across UTC midnight", async () => {
-    const suffix = randomUUID();
-    await testContext.db.execute(sql`INSERT INTO fitness.provider (id, name)
-      VALUES ('tick-date-boundary-provider', 'Tick Date Boundary'),
-             ('mountain-project', 'Mountain Project')
-      ON CONFLICT (id) DO NOTHING`);
-    const activities = await executeWithSchema(
-      testContext.db,
-      activityIdentitySchema,
-      sql`INSERT INTO fitness.activity (
-        provider_id, user_id, external_id, canonical_type, provider_type, started_at,
-        local_time_source
-      ) VALUES (
-        'tick-date-boundary-provider', ${TEST_USER_ID}, ${`tick-date-boundary-activity-${suffix}`},
-        'climbing', 'climbing', '2026-01-02T00:30:00Z', 'unknown'
-      ) RETURNING id::text AS id, group_id::text AS group_id`,
-    );
-    const activity = activities[0];
-    if (!activity) throw new Error("Failed to seed UTC-boundary climbing activity");
-    const tickRows = await executeWithSchema(
-      testContext.db,
-      idOnlySchema,
-      sql`INSERT INTO fitness.climbing_entry (user_id, provider_id, activity_id, unattached_date, external_id, climb_type, grade_system, grade, result_style, attempt_count, raw) VALUES
-        (${TEST_USER_ID}, 'mountain-project', NULL, '2026-01-01', ${`tick-date-boundary-${suffix}`}, 'boulder', 'v_scale', 'V4', 'Send', 1, '{}'::jsonb)
-RETURNING id::text AS id`,
-    );
-    const tick = tickRows[0];
-    if (!tick) throw new Error("Failed to seed UTC-boundary Mountain Project tick");
-
-    const context = { db: testContext.db, userId: TEST_USER_ID, timezone: "America/Los_Angeles" };
-    const detail = await createActivityCaller(context).byId({ id: activity.group_id });
-    const suggestions = await createCaller(context).unattachedClimbingEntries({
-      activityId: activity.group_id,
+  it("allows a mountaineering log on a hiking activity", async () => {
+    const outing = await seedClimbingActivity(context.db, "strava", "hike");
+    await context.db
+      .update(activity)
+      .set({ canonicalType: "hiking" })
+      .where(eq(activity.id, outing.id));
+    const id = await seedClimbingLog(context.db, "mountain-project", {
+      externalId: "summit",
+      climbedOn: await climbingTestDate(context.db),
+      discipline: "mountaineering",
+      climb: { externalId: "peak", name: "Peak", kind: "summit" },
+      attempts: [{ scope: "climb", sourceResult: "completed" }],
     });
-
-    expect(detail.displayedDate).toBe("2026-01-01");
-    expect(suggestions.map((suggestion) => suggestion.id)).toContain(tick.id);
+    await caller().attachClimbingLogEntry({ activityId: outing.groupId, climbingLogEntryId: id });
+    expect(await caller().activityLogEntries({ activityId: outing.groupId })).toEqual([
+      expect.objectContaining({ discipline: "mountaineering", recordedClimbOutcome: "completed" }),
+    ]);
+    expect(await caller().volumeByGrade({ days: 30 })).toEqual([]);
   });
-
-  it("cascades climbing entries when an activity is deleted", async () => {
-    await testContext.db.execute(
-      sql`DELETE FROM fitness.activity WHERE id = ${climbingActivityId}`,
+  it("rejects cross-user and ineligible activity targets with actionable errors", async () => {
+    const outing = await seedClimbingActivity(context.db, "strava", "run");
+    await context.db
+      .update(activity)
+      .set({ canonicalType: "running" })
+      .where(eq(activity.id, outing.id));
+    const id = await log("v4", "V4");
+    await expect(
+      caller().attachClimbingLogEntry({ activityId: outing.groupId, climbingLogEntryId: id }),
+    ).rejects.toMatchObject({
+      code: "PRECONDITION_FAILED",
+      message: "Choose a climbing or hiking activity to attach this climbing log.",
+    });
+    const otherUser = "b0000000-0000-4000-8000-000000000001";
+    await context.db.execute(
+      sql`INSERT INTO fitness.user_profile (id,name) VALUES (${otherUser},'Other user') ON CONFLICT DO NOTHING`,
     );
-
-    const rows = await executeWithSchema(
-      testContext.db,
-      countRowSchema,
-      sql`SELECT COUNT(*)::text AS count
-          FROM fitness.climbing_entry
-          WHERE activity_id = ${climbingActivityId}`,
+    const [other] = await context.db
+      .insert(activity)
+      .values({
+        userId: otherUser,
+        providerId: "strava",
+        externalId: "other-user",
+        canonicalType: "climbing",
+        providerType: "climbing",
+        startedAt: new Date(),
+      })
+      .returning();
+    if (!other?.groupId) throw new Error("Expected other activity group");
+    await expect(caller().activityLogEntries({ activityId: other.groupId })).rejects.toMatchObject({
+      code: "NOT_FOUND",
+    });
+    await expect(
+      caller().unattachedClimbingLogEntries({ activityId: other.groupId }),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+    await context.db.delete(activity).where(eq(activity.id, other.id));
+  });
+  it("matches the same displayed date across UTC midnight", async () => {
+    const outing = await seedClimbingActivity(
+      context.db,
+      "strava",
+      "midnight",
+      new Date("2026-01-02T00:30:00Z"),
     );
-
-    expect(rows[0]?.count).toBe("0");
-
-    const remainingActivities = await executeWithSchema(
-      testContext.db,
-      countRowSchema,
-      sql`SELECT COUNT(*)::text AS count
-          FROM fitness.activity
-          WHERE id = ${climbingActivityId}`,
-    );
-
-    expect(remainingActivities[0]?.count).toBe("0");
+    const id = await seedClimbingLog(context.db, "mountain-project", {
+      externalId: "midnight-log",
+      climbedOn: "2026-01-01",
+      attempts: [{ scope: "climb" }],
+    });
+    const detail = await createActivityCaller({
+      db: context.db,
+      userId: TEST_USER_ID,
+      timezone: "America/Los_Angeles",
+    }).byId({ id: outing.groupId });
+    expect(detail.displayedDate).toBe("2026-01-01");
+    expect(
+      await caller("America/Los_Angeles").unattachedClimbingLogEntries({
+        activityId: outing.groupId,
+      }),
+    ).toEqual([expect.objectContaining({ id })]);
+  });
+  it("unlinks logs after physical activity deletion without losing recorded attempts", async () => {
+    const outing = await seedClimbingActivity(context.db, "kaya-export", "delete");
+    const id = await log("v4", "V4", 3, outing.id);
+    await context.db.delete(activity).where(eq(activity.id, outing.id));
+    expect(
+      (await context.db.select().from(climbingLogEntry).where(eq(climbingLogEntry.id, id)))[0],
+    ).toMatchObject({ activityId: null, climbedOn: await climbingTestDate(context.db) });
+    expect(await caller().volumeByGrade({ days: 30 })).toEqual([
+      expect.objectContaining({ recordedAttempts: 3, sends: 1 }),
+    ]);
   });
 });

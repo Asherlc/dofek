@@ -246,7 +246,7 @@ function createImportMockDb(panelRows: { id: string; externalId: string | null }
 
   const execute = vi.fn().mockResolvedValue([]);
 
-  const db = makeTransactionalTestDatabase<SyncDatabase>({
+  const db = makeTransactionalTestDatabase({
     select: selectFn,
     insert: insertFn,
     delete: deleteFn,
@@ -946,7 +946,7 @@ function createRunImportMockDb() {
 
   const execute = vi.fn().mockResolvedValue([]);
 
-  const db = makeTransactionalTestDatabase<SyncDatabase>({
+  const db = makeTransactionalTestDatabase({
     select: selectFn,
     insert: insertFn,
     delete: deleteFn,
@@ -1114,7 +1114,7 @@ describe("runImport (control-flow mutation killers)", () => {
     const onConflictDoNothing = vi.fn().mockResolvedValue(undefined);
     const values = vi.fn().mockReturnValue({ onConflictDoNothing });
     const insertFn = vi.fn().mockReturnValue({ values });
-    return makeTransactionalTestDatabase<SyncDatabase>({
+    return makeTransactionalTestDatabase({
       delete: deleteFn,
       insert: insertFn,
       select: vi.fn(),
@@ -1279,7 +1279,7 @@ describe("runImport (control-flow mutation killers)", () => {
 
     const onConflictDoNothing = vi.fn().mockResolvedValue(undefined);
     const values = vi.fn().mockReturnValue({ onConflictDoNothing });
-    const db = makeTransactionalTestDatabase<SyncDatabase>({
+    const db = makeTransactionalTestDatabase({
       delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
       insert: vi.fn().mockReturnValue({ values }),
       select: vi.fn(),

@@ -6,7 +6,7 @@ import {
 import { resolveProviderActivityType } from "@dofek/training/activity-types";
 import { eq } from "drizzle-orm";
 import { resolveUserExerciseWithProvenance } from "../db/exercise-provenance.ts";
-import type { Database, SyncDatabase } from "../db/index.ts";
+import type { SyncDatabase } from "../db/index.ts";
 import { upsertProviderActivity } from "../db/provider-activity-sync.ts";
 import { strengthSet } from "../db/schema/activity.ts";
 import { ensureProvider } from "../db/tokens.ts";
@@ -21,19 +21,6 @@ export const STRONG_PROVIDER_ID = "strong-csv";
 
 export class StrongCsvValidationError extends Error {
   override name = "StrongCsvValidationError";
-}
-
-type TransactionalSyncDatabase = SyncDatabase & Pick<Database, "transaction">;
-
-function hasTransaction(db: SyncDatabase): db is TransactionalSyncDatabase {
-  return "transaction" in db && typeof db.transaction === "function";
-}
-
-function requireTransactionalDatabase(db: SyncDatabase): TransactionalSyncDatabase {
-  if (!hasTransaction(db)) {
-    throw new Error("Strong CSV import requires a transactional database");
-  }
-  return db;
 }
 
 // ============================================================
@@ -492,7 +479,7 @@ export async function importStrongCsv(
       cause: error,
     });
   }
-  const transactionalDb = requireTransactionalDatabase(db);
+  const transactionalDb = db;
   await ensureProvider(db, STRONG_PROVIDER_ID, "Strong", undefined, userId);
   const exerciseCache = new Map<string, string>();
 

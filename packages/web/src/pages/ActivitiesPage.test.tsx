@@ -566,6 +566,7 @@ describe("ActivitiesPage", () => {
           activities: [
             activity({
               location: {
+                kind: "recorded_gps",
                 centroidLat: 37.7749,
                 centroidLng: -122.4194,
                 mapPreview,
@@ -586,6 +587,52 @@ describe("ActivitiesPage", () => {
     render(<ActivitiesPage />);
 
     expect(screen.getByLabelText("Activity location map")).toBeDefined();
+  });
+
+  it("links a climbing source-point preview to its activity while retaining climbing metrics", () => {
+    mockQuery = {
+      data: [
+        {
+          date: "2026-03-18",
+          activities: [
+            activity({
+              id: "climbing-1",
+              name: "Afternoon climbing",
+              activityType: "climbing",
+              stats: [{ status: "available", label: "Climbs", value: "3" }],
+              location: {
+                kind: "climbing_source",
+                mapPreview: { ...mapPreview, routePath: null },
+                sourcePoints: [
+                  {
+                    x: 256,
+                    y: 144,
+                    location: {
+                      coordinates: { latitude: 37, longitude: -122 },
+                      scope: "area",
+                      objectId: "area-1",
+                      providerId: "mountain-project",
+                      name: "North Wall",
+                    },
+                  },
+                ],
+              },
+            }),
+          ],
+        },
+      ],
+      isLoading: false,
+      isError: false,
+      error: null,
+    };
+    render(<ActivitiesPage />);
+    const map = screen.getByRole("img", {
+      name: /Climbing source locations.*North Wall.*Mountain Project/,
+    });
+    expect(map.closest("a")).toHaveAttribute("href", "/activity/climbing-1");
+    expect(screen.getByText("Climbs")).toBeDefined();
+    expect(map.querySelectorAll("circle")).toHaveLength(1);
+    expect(map.querySelector("path")).toBeNull();
   });
 
   it("shows selection guidance while choosing activities", () => {

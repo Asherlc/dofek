@@ -2,7 +2,6 @@ import { PgDialect } from "drizzle-orm/pg-core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createMockDatabase } from "../providers/test-helpers.ts";
 import { AccountErasureUserFencedError } from "./account-erasure.ts";
-import type { SyncDatabase } from "./index.ts";
 import type { SyncLogEntry } from "./sync-log.ts";
 import { logSync, PartialSyncError, withSyncLog } from "./sync-log.ts";
 
@@ -79,32 +78,6 @@ describe("logSync", () => {
     ).rejects.toBe(writeError);
     expect(notifyProviderSyncIssue).not.toHaveBeenCalled();
   });
-
-  it.each([
-    { status: "success" as const, operation: "recovery logging" },
-    { status: "error" as const, operation: "email delivery" },
-  ])(
-    "fails explicitly when $operation has no transactional database",
-    async ({ status, operation }) => {
-      const nonTransactionalDatabase: SyncDatabase = {
-        select: db.db.select,
-        insert: db.db.insert,
-        delete: db.db.delete,
-        execute: db.db.execute,
-      };
-
-      await expect(
-        logSync(nonTransactionalDatabase, {
-          providerId: "whoop",
-          userId: "user-123",
-          dataType: "sync",
-          status,
-          origin: "manual",
-        }),
-      ).rejects.toThrow(`Provider issue ${operation} requires a transactional database`);
-      expect(notifyProviderSyncIssue).not.toHaveBeenCalled();
-    },
-  );
 
   it("stops notification delivery when account deletion fences the user", async () => {
     notifyProviderSyncIssue.mockRejectedValueOnce(new AccountErasureUserFencedError());

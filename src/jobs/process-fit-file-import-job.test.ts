@@ -12,6 +12,7 @@ import {
   type FitStreamConsumer,
   type FitStreamResult,
 } from "../fit/stream-decoder.ts";
+import { makeTransactionalTestDatabase } from "../providers/test-helpers.ts";
 import { processFitFileImportJob } from "./process-fit-file-import-job.ts";
 
 const mockCaptureException = vi.fn();
@@ -71,12 +72,12 @@ vi.mock("../logger.ts", () => ({
   },
 }));
 
-const mockDb: SyncDatabase = {
+const mockDb: SyncDatabase = makeTransactionalTestDatabase({
   select: vi.fn(),
   insert: vi.fn(),
   delete: vi.fn(),
   execute: vi.fn(),
-};
+});
 
 const createdDirectories: string[] = [];
 
@@ -1385,7 +1386,7 @@ describe("processFitFileImportJob", () => {
       ],
       "file",
     );
-    const serializedWrite = JSON.stringify(mockWriteMetricStreamBatch.mock.calls[0]);
+    const serializedWrite = JSON.stringify(mockWriteMetricStreamBatch.mock.calls[0]?.[1]);
     expect(serializedWrite).not.toContain("DI_CONNECT/asher@example.com_20260701_weight.fit");
     expect(serializedWrite).not.toContain("asher@example.com");
     await expect(readFile(filePath)).resolves.toBeInstanceOf(Buffer);

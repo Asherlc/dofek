@@ -1,4 +1,4 @@
-import type { Database, SyncDatabase } from "../db/index.ts";
+import type { SyncDatabase } from "../db/index.ts";
 import { createKafkaMetricStreamEventPublisherForRoute } from "../metric-stream/redpanda-producer.ts";
 import { metricStreamRouteForSyncJob } from "../metric-stream/routes.ts";
 import { currentMetricStreamWriteDatabase } from "../metric-stream/write-fence-context.ts";
@@ -56,21 +56,6 @@ async function ensureProcessingOperation(
   await job.updateData(nextData);
   job.data = nextData;
   return { id: operation.id, datasetKeys };
-}
-
-function hasTransaction(
-  database: SyncDatabase,
-): database is SyncDatabase & Pick<Database, "transaction"> {
-  return "transaction" in database && typeof database.transaction === "function";
-}
-
-export function requireTransactionalSyncDatabase(
-  database: SyncDatabase,
-): SyncDatabase & Pick<Database, "transaction"> {
-  if (!hasTransaction(database)) {
-    throw new Error("Processing metric-stream publication requires a transactional database");
-  }
-  return database;
 }
 
 async function recordNoOutputStageSkips(
@@ -153,7 +138,7 @@ export class SyncProcessingOperation {
                 const transaction = currentMetricStreamWriteDatabase();
                 return transaction
                   ? recordMetricStreamBatchPublishedInTransaction(transaction, batch)
-                  : recordMetricStreamBatchPublished(requireTransactionalSyncDatabase(db), batch);
+                  : recordMetricStreamBatchPublished(db, batch);
               },
             },
           )
@@ -176,7 +161,7 @@ export class SyncProcessingOperation {
     );
     if (recordsSynced > 0 && emittedRelationalDatasetKeys.length > 0) {
       this.recordingCanonicalCommit = true;
-      await recordRelationalCanonicalCommits(requireTransactionalSyncDatabase(db), {
+      await recordRelationalCanonicalCommits(db, {
         operationId: this.id,
         datasetKeys: emittedRelationalDatasetKeys,
         idempotencyKey: `worker-relational-commit:${job.id ?? "unidentified-job"}`,

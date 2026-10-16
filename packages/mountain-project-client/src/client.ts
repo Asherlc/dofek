@@ -1,4 +1,40 @@
+import { z } from "zod";
+
 export const MOUNTAIN_PROJECT_BASE_URL = "https://www.mountainproject.com";
+
+const rawResponseSchema = z.record(z.string(), z.json());
+const routeResponseSchema = z.object({
+  id: z.number().int().positive(),
+  title: z.string().regex(/\S/),
+  parent: z.object({
+    id: z.number().int().nonnegative(),
+    name: z.string(),
+  }),
+});
+const areaResponseSchema = routeResponseSchema.extend({
+  coordinates: z
+    .tuple([z.number().min(-180).max(180), z.number().min(-90).max(90)])
+    .nullable()
+    .optional(),
+});
+
+export interface MountainProjectAreaReference {
+  /** Zero identifies the root's missing parent in the observed API. */
+  id: number;
+  name: string;
+}
+
+export interface MountainProjectRoute {
+  id: number;
+  title: string;
+  parent: MountainProjectAreaReference;
+  raw: z.infer<typeof rawResponseSchema>;
+}
+
+export interface MountainProjectArea extends MountainProjectRoute {
+  /** Native Area position, in upstream longitude/latitude order. */
+  coordinates?: readonly [number, number] | null;
+}
 
 export class MountainProjectTickExportError extends Error {
   readonly status: number;
@@ -39,6 +75,50 @@ export class MountainProjectClient {
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
     this.#fetchFn = fetchFn;
+  }
+
+  getRoute(id: string): Promise<MountainProjectRoute> {
+    return this.#getEntity("route", id, routeResponseSchema);
+  }
+
+  getArea(id: string): Promise<MountainProjectArea> {
+    return this.#getEntity("area", id, areaResponseSchema);
+  }
+
+  async #getEntity<ResponseData extends z.infer<typeof routeResponseSchema>>(
+    kind: "route" | "area",
+    id: string,
+    schema: z.ZodType<ResponseData>,
+  ): Promise<ResponseData & { raw: z.infer<typeof rawResponseSchema> }> {
+    if (!/^[1-9]\d*$/.test(id) || !Number.isSafeInteger(Number(id))) {
+      throw new Error(`Mountain Project ${kind} ID must be a positive integer.`);
+    }
+    const response = await this.#fetchFn(`${MOUNTAIN_PROJECT_BASE_URL}/api/v2/${kind}s/${id}`, {
+      headers: { Accept: "application/json" },
+    });
+    if (!response.ok) {
+      throw new Error(
+        `Mountain Project ${kind} ${id} failed (${response.status}). Please try again.`,
+      );
+    }
+    let body: unknown;
+    try {
+      body = await response.json();
+    } catch (error) {
+      if (!(error instanceof SyntaxError)) throw error;
+      throw new Error(`Mountain Project ${kind} ${id} returned invalid data. Please try again.`, {
+        cause: error,
+      });
+    }
+    const raw = rawResponseSchema.safeParse(body);
+    const parsed = schema.safeParse(raw.success ? raw.data : undefined);
+    if (!raw.success || !parsed.success || parsed.data.id !== Number(id)) {
+      throw new Error(`Mountain Project ${kind} ${id} returned invalid data. Please try again.`);
+    }
+    return {
+      ...parsed.data,
+      raw: raw.data,
+    };
   }
 
   async getTickExport(userId: string): Promise<string> {

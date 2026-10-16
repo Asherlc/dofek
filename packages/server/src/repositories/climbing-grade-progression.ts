@@ -1,18 +1,22 @@
 import {
   type ClimbingGradeProgressionLane,
+  climbingProgressionLaneKey,
   climbingProgressionSettings,
-  climbingProgressionStyles,
 } from "@dofek/training/climbing-progression";
 
 export interface ClimbingProgressionEntry {
   date: string;
-  style: ClimbingGradeProgressionLane["style"];
-  climbType: ClimbingGradeProgressionLane["climbType"];
+  climbKind: ClimbingGradeProgressionLane["climbKind"];
+  attemptScope: ClimbingGradeProgressionLane["attemptScope"];
+  ropeMethod: ClimbingGradeProgressionLane["ropeMethod"];
+  solo: ClimbingGradeProgressionLane["solo"];
+  usedAid: ClimbingGradeProgressionLane["usedAid"];
   setting: ClimbingGradeProgressionLane["settings"][number];
   gradeSystem: ClimbingGradeProgressionLane["gradeSystem"];
   grade: string;
   gradeSortValue: number;
-  sent: boolean | null;
+  sends: number;
+  unknownOutcomes: number;
 }
 
 interface RecordedPeriod {
@@ -22,8 +26,11 @@ interface RecordedPeriod {
 }
 
 interface RecordedLane {
-  style: ClimbingProgressionEntry["style"];
-  climbType: ClimbingProgressionEntry["climbType"];
+  climbKind: ClimbingProgressionEntry["climbKind"];
+  attemptScope: ClimbingProgressionEntry["attemptScope"];
+  ropeMethod: ClimbingProgressionEntry["ropeMethod"];
+  solo: ClimbingProgressionEntry["solo"];
+  usedAid: ClimbingProgressionEntry["usedAid"];
   gradeSystem: ClimbingProgressionEntry["gradeSystem"];
   grades: Map<string, number>;
   settings: Set<ClimbingProgressionEntry["setting"]>;
@@ -60,12 +67,15 @@ export function buildClimbingGradeProgression(
   const byLane = new Map<string, RecordedLane>();
   for (const entry of entries) {
     // Conversion can retain a source scale; keep those scales in separate lanes.
-    const key = `${entry.style}:${entry.gradeSystem}`;
+    const key = `${climbingProgressionLaneKey(entry)}:${entry.gradeSystem}`;
     let lane = byLane.get(key);
     if (!lane) {
       lane = {
-        style: entry.style,
-        climbType: entry.climbType,
+        climbKind: entry.climbKind,
+        attemptScope: entry.attemptScope,
+        ropeMethod: entry.ropeMethod,
+        solo: entry.solo,
+        usedAid: entry.usedAid,
         gradeSystem: entry.gradeSystem,
         grades: new Map(),
         settings: new Set(),
@@ -86,16 +96,17 @@ export function buildClimbingGradeProgression(
       lane.periods.set(periodKey, recorded);
     }
     recorded.days.add(entry.date);
-    if (entry.sent === true) {
-      recorded.sendsByGrade.set(entry.grade, (recorded.sendsByGrade.get(entry.grade) ?? 0) + 1);
-    } else if (entry.sent === null) recorded.unknownOutcomes++;
+    recorded.sendsByGrade.set(
+      entry.grade,
+      (recorded.sendsByGrade.get(entry.grade) ?? 0) + entry.sends,
+    );
+    recorded.unknownOutcomes += entry.unknownOutcomes;
   }
 
   const lanes = [...byLane.values()]
     .sort(
       (left, right) =>
-        climbingProgressionStyles.indexOf(left.style) -
-          climbingProgressionStyles.indexOf(right.style) ||
+        climbingProgressionLaneKey(left).localeCompare(climbingProgressionLaneKey(right)) ||
         left.gradeSystem.localeCompare(right.gradeSystem),
     )
     .map((recorded) => {
@@ -109,8 +120,11 @@ export function buildClimbingGradeProgression(
         recorded.settings.has(setting),
       );
       return {
-        style: recorded.style,
-        climbType: recorded.climbType,
+        climbKind: recorded.climbKind,
+        attemptScope: recorded.attemptScope,
+        ropeMethod: recorded.ropeMethod,
+        solo: recorded.solo,
+        usedAid: recorded.usedAid,
         gradeSystem: recorded.gradeSystem,
         grades,
         settings,

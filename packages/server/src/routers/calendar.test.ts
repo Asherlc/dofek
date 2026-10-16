@@ -253,6 +253,7 @@ describe("calendarRouter", () => {
             elevationGainM: 120,
             elevationState: { status: "available" },
             location: {
+              kind: "recorded_gps",
               centroidLat: 37.7749,
               centroidLng: -122.4194,
               mapPreview: {
@@ -299,6 +300,7 @@ describe("calendarRouter", () => {
         activities: [
           expect.objectContaining({
             location: {
+              kind: "recorded_gps",
               centroidLat: 37.7749,
               centroidLng: -122.4194,
               mapPreview: {

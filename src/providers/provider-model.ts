@@ -1,4 +1,6 @@
+import { PROVIDER_MANUAL_CONNECTION_KINDS } from "@dofek/providers/provider-connection";
 import { z } from "zod";
+import { captureException } from "../lib/error-reporting.ts";
 import { classifyProviderAuth } from "./types.ts";
 
 /**
@@ -11,6 +13,7 @@ function isHttpsUrl(value: string): boolean {
 }
 
 export const providerTokenAuthSchema = z.object({
+  kind: z.enum(PROVIDER_MANUAL_CONNECTION_KINDS),
   label: z.string(),
   instructionsUrl: z.url().refine(isHttpsUrl, {
     message: "Token instructions URL must use HTTPS",
@@ -22,7 +25,7 @@ export class ProviderModel {
   readonly name: string;
   readonly importOnly: boolean;
   readonly authType: string;
-  readonly tokenAuth: { label: string; instructionsUrl: string } | null;
+  readonly tokenAuth: z.infer<typeof providerTokenAuthSchema> | null;
   readonly isConnected: boolean;
   readonly lastSyncedAt: string | null;
 
@@ -58,14 +61,14 @@ export class ProviderModel {
           authType = classifyProviderAuth({
             automatedLogin: typeof Reflect.get(setup, "automatedLogin") === "function",
             oauth1: Boolean(Reflect.get(setup, "oauth1Flow")),
-            manualToken: parsedManualToken.success,
+            manualToken: parsedManualToken.success ? parsedManualToken.data.kind : null,
             oauth:
               Boolean(Reflect.get(setup, "oauthConfig")) &&
               typeof Reflect.get(setup, "exchangeCode") === "function",
           });
         }
-      } catch {
-        /* credentials not configured */
+      } catch (error: unknown) {
+        captureException(error, { tags: { provider: provider.id, phase: "auth_setup" } });
       }
     }
 

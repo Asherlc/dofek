@@ -318,8 +318,11 @@ function validTrainingFixture(): z.input<typeof mobileTrainingFixtureSchema> {
       climbing: {
         gradeProgression: [
           {
-            style: "boulder",
-            climbType: "boulder",
+            attemptScope: "climb",
+            ropeMethod: null,
+            solo: null,
+            usedAid: false,
+            climbKind: "boulder",
             gradeSystem: "v_scale",
             grades: [{ grade: "V4", gradeSortValue: 65 }],
             settings: ["indoor"],
@@ -756,7 +759,7 @@ describe("mobileTrainingFixtureSchema", () => {
   it("preserves recorded attempt subtotals when a grade's complete total is unknown", () => {
     const fixture = validTrainingFixture();
     const volume = {
-      climbType: "boulder" as const,
+      climbKind: "boulder" as const,
       gradeSystem: "v_scale" as const,
       grade: "V5",
       gradeSortValue: 69,
@@ -1017,16 +1020,16 @@ describe("mobileTrainingFixtureSchema", () => {
     ["volume by grade", "volumeByGrade", "route", "font", "6a", 65],
   ] as const)(
     "rejects %s systems from the wrong discipline",
-    (_label, target, climbType, gradeSystem, grade, gradeSortValue) => {
+    (_label, target, climbKind, gradeSystem, grade, gradeSortValue) => {
       const fixture = validTrainingFixture();
       if (target === "gradeProgression") {
         const lane = fixture.data.climbing.gradeProgression[0];
         if (!lane) throw new Error("Missing climbing progression fixture");
-        lane.climbType = climbType;
+        lane.climbKind = climbKind;
         lane.gradeSystem = gradeSystem;
       } else
         fixture.data.climbing.volumeByGrade.push({
-          climbType,
+          climbKind,
           gradeSystem,
           grade,
           gradeSortValue,
@@ -1038,7 +1041,7 @@ describe("mobileTrainingFixtureSchema", () => {
       expectIssue(
         mobileTrainingFixtureSchema.safeParse(fixture),
         ["data", "climbing", target, 0, "gradeSystem"],
-        "Grade system must match the climb type",
+        "Grade system must match the climb kind",
       );
     },
   );

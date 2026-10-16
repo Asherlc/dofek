@@ -1,4 +1,4 @@
-import type { inferRouterOutputs } from "@trpc/server";
+import type { inferRouterInputs, inferRouterOutputs } from "@trpc/server";
 import { accountErasureRouter } from "./routers/account-erasure.ts";
 import { activityRouter } from "./routers/activity.ts";
 import { adminRouter } from "./routers/admin.ts";
@@ -131,4 +131,5 @@ export function createAppRouter(syncRouterOverride: typeof syncRouter) {
 export const appRouter = createAppRouter(syncRouter);
 
 export type AppRouter = typeof appRouter;
+export type AppRouterInputs = inferRouterInputs<AppRouter>;
 export type AppRouterOutputs = inferRouterOutputs<AppRouter>;

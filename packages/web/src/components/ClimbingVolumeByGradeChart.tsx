@@ -66,7 +66,7 @@ export function ClimbingVolumeByGradeChart({ data, loading }: ClimbingVolumeByGr
           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
             {model.rows.map((row) => (
               <div
-                key={`${row.climbType}-${row.gradeSystem}-${row.grade}`}
+                key={`${row.climbKind}-${row.gradeSystem}-${row.grade}`}
                 className="rounded border border-border bg-surface px-3 py-2"
               >
                 <div className="font-semibold text-foreground">{row.grade}</div>

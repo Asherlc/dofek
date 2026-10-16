@@ -1,4 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-native";
+import { fn } from "storybook/test";
+import { areaClimbingLocation, exactClimbingLocation } from "./climbing-log-entry-fixtures";
 import { RouteMap } from "./RouteMap";
 
 const meta = {
@@ -61,5 +63,39 @@ export const SparseGps: Story = {
 export const NoGpsData: Story = {
   args: {
     points: [],
+  },
+};
+
+const sourceDots = [
+  { entryId: "tick-1", label: "Swiss Cheese", location: exactClimbingLocation },
+  { entryId: "tick-2", label: "Left Arete", location: areaClimbingLocation },
+];
+export const PointsOnly: Story = {
+  args: { points: [], climbMarkers: sourceDots, onSelectEntry: fn() },
+};
+export const RoutePlusDots: Story = {
+  args: {
+    points: [
+      { lat: 37.227, lng: -122.097 },
+      { lat: 37.2285, lng: -122.094 },
+      { lat: 37.231, lng: -122.091 },
+    ],
+    climbMarkers: sourceDots,
+  },
+};
+export const SingleClimb: Story = {
+  args: { points: [], climbMarkers: sourceDots.slice(0, 1), compact: true },
+};
+export const AreaLocation: Story = {
+  args: { points: [], climbMarkers: sourceDots.slice(1), compact: true },
+};
+export const RepeatedPoint: Story = {
+  args: {
+    points: [],
+    climbMarkers: [
+      { entryId: "tick-1", label: "Swiss Cheese", location: exactClimbingLocation },
+      { entryId: "tick-4", label: "Swiss Cheese", location: exactClimbingLocation },
+    ],
+    onSelectEntry: fn(),
   },
 };

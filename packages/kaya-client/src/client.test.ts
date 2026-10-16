@@ -24,6 +24,23 @@ const emptyClimbContext = {
 };
 
 describe("KayaClient", () => {
+  it("retains an unreported rope method on an attempted climb", async () => {
+    const fetchFn = vi.fn<typeof fetch>().mockResolvedValue(
+      jsonResponse({
+        data: {
+          sessionsForUser: [
+            {
+              ...session("1000"),
+              attempted_climbs: [{ ...attemptedClimb("1000_2001", null), lead: null }],
+            },
+          ],
+        },
+      }),
+    );
+    expect(
+      (await new KayaClient("token", fetchFn).listSessions("42"))[0]?.attempted_climbs[0]?.lead,
+    ).toBeNull();
+  });
   it("authenticates then fetches sessions and ascents with Kaya's lead field", async () => {
     const fetchFn = vi
       .fn<typeof fetch>()
@@ -244,8 +261,8 @@ describe("KayaClient", () => {
   it("requests and retains outdoor context and board on both climb feeds", async () => {
     const context = {
       slug: "Test-Route-5.6-Test-Destination-12345",
-      destination: { id: 101, name: "Test destination" },
-      area: { id: 102, name: "Test area" },
+      destination: { id: 101, name: "Test destination", latitude: 0, longitude: -122.25 },
+      area: { id: 102, name: "Test area", latitude: 37.5, longitude: 0 },
       subarea: { id: 103, name: "Test face" },
       board: { id: 104, name: "Test board" },
       angle: -20,
@@ -279,8 +296,8 @@ describe("KayaClient", () => {
     const ascents = await client.listAscents("42");
     const expected = {
       slug: "Test-Route-5.6-Test-Destination-12345",
-      destination: { id: "101", name: "Test destination" },
-      area: { id: "102", name: "Test area" },
+      destination: { id: "101", name: "Test destination", latitude: 0, longitude: -122.25 },
+      area: { id: "102", name: "Test area", latitude: 37.5, longitude: 0 },
       subarea: { id: "103", name: "Test face" },
       board: { id: "104", name: "Test board" },
       angle: -20,
@@ -291,7 +308,9 @@ describe("KayaClient", () => {
       const query = String(JSON.parse(String(init?.body)).query).replace(/\s+/g, " ");
       const selection = query.slice(query.indexOf(index === 0 ? "attempted_climbs {" : "climb {"));
       for (const field of ["destination", "area", "subarea", "board"]) {
-        expect(selection).toContain(`${field} { id name }`);
+        expect(selection).toContain(
+          field === "board" ? `${field} { id name }` : `${field} { id name latitude longitude }`,
+        );
       }
       expect(selection).toContain("angle");
     }

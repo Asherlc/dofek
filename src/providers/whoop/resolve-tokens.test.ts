@@ -1,6 +1,7 @@
 import { WhoopClient } from "@dofek/whoop/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SyncDatabase } from "../../db/index.ts";
+import { makeTransactionalTestDatabase } from "../test-helpers.ts";
 import {
   buildWhoopTokenSet,
   parseWhoopUserIdFromScopes,
@@ -17,12 +18,12 @@ vi.mock("../../db/tokens.ts", () => ({
 const { deleteTokens, loadTokens, saveTokens } = await import("../../db/tokens.ts");
 
 function makeDb(): SyncDatabase {
-  return {
+  return makeTransactionalTestDatabase({
     select: vi.fn(),
     insert: vi.fn(),
     delete: vi.fn(),
     execute: vi.fn(),
-  };
+  });
 }
 
 describe("parseWhoopUserIdFromScopes", () => {

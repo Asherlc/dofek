@@ -1,0 +1,9 @@
+# Schema-breaking migrations stop the old web image before changing the schema.
+# The migration and CDC overlays stop workers; the requested-image apply restores
+# web and worker only after the one-shot migration succeeds.
+services:
+  web:
+    deploy:
+      replicas: 0
+      labels:
+        dofek.migration-maintenance-target: ${MIGRATION_MAINTENANCE_BOUNDARY:?MIGRATION_MAINTENANCE_BOUNDARY is required}

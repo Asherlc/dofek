@@ -6,7 +6,6 @@ import { logger } from "../logger.ts";
 import { enqueueSyncJob } from "./enqueue-sync-job.ts";
 import type { SyncJob } from "./queues.ts";
 import { SyncJobContext } from "./sync-job-context.ts";
-import { requireTransactionalSyncDatabase } from "./sync-processing-operation.ts";
 import { executeSyncProvider } from "./sync-provider-execution.ts";
 import { syncCoordinatorHasDispatchedProvider } from "./sync-request-job.ts";
 
@@ -68,19 +67,15 @@ export async function processSyncJob(
           job.data.userId,
         )
       ) {
-        await withAccountErasureUserWriteFence(
-          requireTransactionalSyncDatabase(db),
-          job.data.userId,
-          async () => {
-            signal?.throwIfAborted();
-            await enqueueSyncJob(
-              provider.id,
-              { ...job.data, providerId: provider.id },
-              { coordinator },
-            );
-            signal?.throwIfAborted();
-          },
-        );
+        await withAccountErasureUserWriteFence(db, job.data.userId, async () => {
+          signal?.throwIfAborted();
+          await enqueueSyncJob(
+            provider.id,
+            { ...job.data, providerId: provider.id },
+            { coordinator },
+          );
+          signal?.throwIfAborted();
+        });
       }
       context.completedCount++;
       context.providerStatus[provider.id] = { status: "done", message: "Provider sync queued" };
@@ -120,15 +115,11 @@ export async function processSyncJob(
   signal?.throwIfAborted();
   try {
     const { enqueueDebouncedUserRefit } = await import("./queues.ts");
-    await withAccountErasureUserWriteFence(
-      requireTransactionalSyncDatabase(db),
-      job.data.userId,
-      async () => {
-        signal?.throwIfAborted();
-        await enqueueDebouncedUserRefit(job.data.userId);
-        signal?.throwIfAborted();
-      },
-    );
+    await withAccountErasureUserWriteFence(db, job.data.userId, async () => {
+      signal?.throwIfAborted();
+      await enqueueDebouncedUserRefit(job.data.userId);
+      signal?.throwIfAborted();
+    });
     signal?.throwIfAborted();
   } catch (err) {
     signal?.throwIfAborted();

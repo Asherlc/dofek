@@ -58,26 +58,29 @@ This directory contains the Drizzle ORM schema, migrations, and database connect
   The [SQLFluff CI job](../../.github/workflows/test.yml) lints added migration files;
   the root [`pnpm lint` command](../../package.json) runs analytics SQL lint instead.
 
-## Climbing context and attempt counts
+## Climbing logs
 
-`fitness.climbing_entry` stores the canonical location path, board, angle and
-unit, climbing method, and recorded result. Readers use the permanent
-`fitness.v_climbing_entry` projection for legacy display/filter scalars, which
-PostgreSQL [views](https://www.postgresql.org/docs/current/sql-createview.html)
-derive without duplicate storage. Migration `0135_climbing_context` converts
-the old columns and requires a coordinated maintenance cutover; follow the
-[climbing context runbook](../../docs/climbing-context.md#maintenance-cutover).
+The [canonical graph](schema/climbing.ts) stores Area, Climb, Pitch, their owned
+grade collections, ClimbingLogEntry, and scoped ClimbingAttempt records. Areas
+use parent references; source objects are shared by verified owner/provider
+identity. Coordinates use native PostgreSQL
+[points](https://www.postgresql.org/docs/current/datatype-geometric.html).
 
-Climbing outcomes and attempt counts are independently nullable: a provider can
-record an unsent climb or a send without recording its count. Preserve that
-unknown count rather than defaulting it to one. Summaries retain known sends
-and report an unknown attempt total when any contributing count is missing.
-The positive-count constraint still applies to recorded counts; see
-[PostgreSQL check constraints](https://www.postgresql.org/docs/current/ddl-constraints.html#DDL-CONSTRAINTS-CHECK-CONSTRAINTS)
-and the observed [Kaya contract](../../docs/kaya.md#attempts-and-unknown-counts).
+The [transactional writer](climbing-log-sync.ts) expands reported counts into
+scoped occurrences and retains one partially described occurrence when a total
+is missing. Recorded booleans and raw source result labels remain independently
+nullable. `fitness.v_climbing_attempt` computes outcome from each occurrence's
+original supported label through the [canonical result function](../../drizzle/0148_compute_climbing_attempt_outcome.sql).
+The readonly `fitness.v_climbing_log_entry` projection derives current paths,
+owned grade arrays, counts, and compatible free-send status; PostgreSQL
+[views](https://www.postgresql.org/docs/current/sql-createview.html) provide this
+projection without duplicate stored metrics.
 
-After deploying migration `0055_climbing_attempt_count`, preview the Kaya backfill with
-`pnpm backfill:climbing-attempt-count`. Run it again with `--execute` to copy valid positive
-integer attempt counts from preserved Kaya raw payloads into the canonical `attempt_count`
-column. The operation is idempotent and reports how many rows would change or changed; see
-the [backfill implementation](../../scripts/backfill-climbing-attempt-count.ts).
+Populated upgrades use `pnpm migrate:climbing-log-model` and the
+[maintenance runbook](../../docs/climbing-log-model-cutover.md). Preparation,
+bounded conversion, validation, and finalization require quiesced old readers
+and writers. Fresh empty installations apply both schema stages directly.
+The subsequent [computed-outcome migration](../../drizzle/0148_compute_climbing_attempt_outcome.sql)
+also requires quiescing old readers and writers; it verifies raw evidence before
+removing the stored outcome. The [model guide](../../docs/climbing-context.md#maintenance-cutover)
+describes that boundary.

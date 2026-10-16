@@ -1,8 +1,11 @@
 import type { ClimbingGradeProgressionLane } from "@dofek/training/climbing-progression";
 
 export const climbingProgressionFixture: ClimbingGradeProgressionLane = {
-  style: "boulder",
-  climbType: "boulder",
+  attemptScope: "climb",
+  ropeMethod: null,
+  solo: null,
+  usedAid: false,
+  climbKind: "boulder",
   gradeSystem: "v_scale",
   grades: [{ grade: "V4", gradeSortValue: 65 }],
   settings: ["indoor"],

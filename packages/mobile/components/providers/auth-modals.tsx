@@ -1,5 +1,5 @@
 import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
-import { providerCatalogEntry } from "@dofek/providers/provider-catalog";
+import type { ProviderManualConnectionKind } from "@dofek/providers/provider-connection";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -139,6 +139,7 @@ export function CredentialAuthModal({
 // ── Personal Token Auth Modal ──
 
 export function TokenAuthModal({
+  kind,
   providerId,
   providerName,
   tokenLabel,
@@ -146,6 +147,7 @@ export function TokenAuthModal({
   onClose,
   onSuccess,
 }: {
+  kind: ProviderManualConnectionKind;
   providerId: string;
   providerName: string;
   tokenLabel: string;
@@ -245,7 +247,7 @@ export function TokenAuthModal({
             onChangeText={setToken}
             autoCapitalize="none"
             autoCorrect={false}
-            secureTextEntry={providerCatalogEntry(providerId)?.connectionInputType !== "text"}
+            secureTextEntry={kind === "access-token"}
           />
           {connectHint ? <Text style={styles.disabledHint}>{connectHint}</Text> : null}
           <TouchableOpacity
@@ -286,6 +288,7 @@ export function ProviderDetailAuthModals({ modals }: { modals: ProviderDetailMod
       )}
       {modals.tokenAuthProvider && (
         <TokenAuthModal
+          kind={modals.tokenAuthProvider.kind}
           providerId={modals.tokenAuthProvider.id}
           providerName={modals.tokenAuthProvider.name}
           tokenLabel={modals.tokenAuthProvider.label}

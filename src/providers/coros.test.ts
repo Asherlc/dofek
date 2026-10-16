@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { makeTransactionalTestDatabase } from "./test-helpers.ts";
 
 // ============================================================
 // Mock external dependencies
@@ -388,7 +389,7 @@ describe("CorosProvider", () => {
     it("returns error when no tokens", async () => {
       process.env.COROS_CLIENT_ID = "id";
       process.env.COROS_CLIENT_SECRET = "secret";
-      const mockDb = {
+      const mockDb = makeTransactionalTestDatabase({
         select: vi.fn().mockReturnValue({
           from: vi.fn().mockReturnValue({
             where: vi.fn().mockReturnValue({
@@ -406,7 +407,7 @@ describe("CorosProvider", () => {
         }),
         delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
         execute: vi.fn().mockResolvedValue([]),
-      };
+      });
 
       const result = await new CorosProvider().sync(
         new SyncRun({
@@ -511,12 +512,12 @@ describe("CorosProvider", () => {
 
         const deleteFn = vi.fn().mockReturnValue(chain);
 
-        const mockDb: SyncDatabase = {
+        const mockDb: SyncDatabase = makeTransactionalTestDatabase({
           select: vi.fn(),
           insert: vi.fn().mockReturnValue(chain),
           delete: deleteFn,
           execute: vi.fn(),
-        };
+        });
         const metricStreamPublisher = {
           publishRows: vi.fn(async () => []),
         };

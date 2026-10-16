@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SyncDatabase } from "../../db/index.ts";
 import { dailyMetrics, sleepSession } from "../../db/schema/activity.ts";
 import { syncApiQueryKey } from "../../lib/sync-api-query.ts";
+import { makeTransactionalTestDatabase } from "../test-helpers.ts";
 import {
   iterateUtcDates,
   listWhoopHeartRateWindows,
@@ -54,12 +55,12 @@ function makeDb(selectedRows: unknown[] = []) {
   );
   chain.limit.mockResolvedValue(selectedRows);
 
-  const db: SyncDatabase = {
+  const db: SyncDatabase = makeTransactionalTestDatabase({
     insert: vi.fn().mockReturnValue(chain),
     select: vi.fn().mockReturnValue(chain),
     delete: vi.fn().mockReturnValue(chain),
     execute: vi.fn().mockResolvedValue([]),
-  };
+  });
 
   return { db, chain, select: db.select };
 }

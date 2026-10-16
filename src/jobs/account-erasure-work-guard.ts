@@ -51,7 +51,7 @@ type WorkOutcome<T> =
 
 export interface AccountErasureWorkLockPool {
   close(): Promise<void>;
-  runWithSharedUserLock<T>(userId: string, work: () => Promise<T>): Promise<T>;
+  runWithSharedUserLock<T>(userId: string, work: () => Promise<T>, providerId?: string): Promise<T>;
 }
 
 class PostgresAccountErasureWorkLockPool implements AccountErasureWorkLockPool {
@@ -66,12 +66,44 @@ class PostgresAccountErasureWorkLockPool implements AccountErasureWorkLockPool {
     return this.#pool.end();
   }
 
-  async runWithSharedUserLock<T>(userId: string, work: () => Promise<T>): Promise<T> {
+  async runWithSharedUserLock<T>(
+    userId: string,
+    work: () => Promise<T>,
+    providerId?: string,
+  ): Promise<T> {
     const releaseConnectionPermit = await this.#connectionPermits.acquire();
     try {
       const client = await this.#pool.connect();
+      const providerLockName =
+        providerId === undefined ? undefined : `provider-sync:${userId}:${providerId}`;
+      const onSessionError = (error: Error): never => {
+        try {
+          Sentry.captureException(error, { tags: { source: "provider-sync-lock-session" } });
+        } finally {
+          try {
+            logger.error(
+              "[provider-sync-lock] PostgreSQL session lost; stopping worker to prevent stale writes",
+            );
+          } finally {
+            process.exit(1);
+          }
+        }
+      };
+      if (providerLockName !== undefined) client.on("error", onSessionError);
+      const releaseClient = (destroy = false): void => {
+        if (destroy) client.release(true);
+        if (providerLockName !== undefined) client.removeListener("error", onSessionError);
+        if (!destroy) client.release();
+      };
       const database = drizzle(client);
       try {
+        if (providerLockName !== undefined) {
+          await executeWithSchema(
+            database,
+            z.object({}),
+            sql`SELECT pg_advisory_lock(hashtextextended(${providerLockName}::text, 0))`,
+          );
+        }
         await executeWithSchema(
           database,
           z.object({}),
@@ -80,7 +112,7 @@ class PostgresAccountErasureWorkLockPool implements AccountErasureWorkLockPool {
               )`,
         );
       } catch (error: unknown) {
-        client.release(true);
+        releaseClient(true);
         Sentry.captureException(error, {
           tags: {
             accountErasureWorkLockStep: "acquire",
@@ -109,8 +141,18 @@ class PostgresAccountErasureWorkLockPool implements AccountErasureWorkLockPool {
         if (!unlockRow?.unlocked) {
           throw new Error("Queued user work advisory lock was not held by its PostgreSQL session");
         }
+        if (providerLockName !== undefined) {
+          const providerUnlockRows = await executeWithSchema(
+            database,
+            advisoryUnlockRowSchema,
+            sql`SELECT pg_advisory_unlock(hashtextextended(${providerLockName}::text, 0)) AS unlocked`,
+          );
+          if (!providerUnlockRows[0]?.unlocked) {
+            throw new Error("Provider sync advisory lock was not held by its PostgreSQL session");
+          }
+        }
       } catch (error: unknown) {
-        client.release(true);
+        releaseClient(true);
         Sentry.captureException(error, {
           tags: {
             accountErasureWorkLockStep: "release",
@@ -122,7 +164,7 @@ class PostgresAccountErasureWorkLockPool implements AccountErasureWorkLockPool {
         }
         throw error;
       }
-      client.release();
+      releaseClient();
 
       if (outcome.status === "failed") {
         throw outcome.error;
@@ -181,11 +223,16 @@ export async function runQueuedUserWorkUnlessAccountErasing<T>(
   userId: string,
   workKind: string,
   work: () => Promise<T>,
+  providerId?: string,
 ): Promise<T | undefined> {
-  return workLockPool.runWithSharedUserLock(userId, async () => {
-    if (!(await accountErasureAllowsQueuedUserWork(database, userId, workKind))) {
-      return undefined;
-    }
-    return work();
-  });
+  return workLockPool.runWithSharedUserLock(
+    userId,
+    async () => {
+      if (!(await accountErasureAllowsQueuedUserWork(database, userId, workKind))) {
+        return undefined;
+      }
+      return work();
+    },
+    providerId,
+  );
 }

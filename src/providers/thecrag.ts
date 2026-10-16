@@ -1,13 +1,19 @@
 import { validateHeaderValue } from "node:http";
 import {
-  type ClimbingClimbType,
-  type ClimbingGradeSystem,
-  isGradeSystemForClimbType,
+  FREE_ROCK_GRADE_SYSTEMS,
+  type GradeSystem,
+  isGradeSystemForClimbKind,
   isValidClimbingGrade,
 } from "@dofek/training/climbing-grades";
+import type { ClimbKind, GradeComponent, ProtectionStyle } from "@dofek/training/climbing-log";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import type { TokenSet } from "../auth/oauth.ts";
+import {
+  persistClimbingLogEntries,
+  type SourceClimbingAttempt,
+  type SourceClimbingLogEntry,
+} from "../db/climbing-log-sync.ts";
 import { executeWithSchema } from "../db/execute-with-schema.ts";
 import type { SyncDatabase } from "../db/index.ts";
 import { withSyncLog } from "../db/sync-log.ts";
@@ -53,8 +59,9 @@ const ascentSchema = z
   .object({
     id: identifierSchema,
     epoch: unsignedIntegerSchema,
-    date: z.string(),
+    date: z.string().nullish(),
     climbedGearStyle: z.string().nullish(),
+    markdown: z.string().nullish(),
     tick: z
       .object({ name: z.string().nullish(), label: z.string().nullish() })
       .passthrough()
@@ -63,7 +70,7 @@ const ascentSchema = z
       .object({
         id: identifierSchema,
         name: z.string().nullish(),
-        grade: z.string(),
+        grade: z.string().nullish(),
         style: z.string().nullish(),
         ancestors: z.record(z.string(), locationSchema.nullable()).nullish(),
       })
@@ -71,13 +78,13 @@ const ascentSchema = z
   })
   .passthrough();
 const cursorRowSchema = z.object({ epoch: unsignedIntegerSchema.nullable() });
-const writtenRowSchema = z.object({ id: z.string().min(1) });
 
 function nullableText(value: string | null | undefined): string | null {
   return value?.trim() || null;
 }
 
-function sourceDate(value: string, ascentId: string): string {
+function sourceDate(value: string | null | undefined, ascentId: string): string | null {
+  if (value == null || value.trim() === "") return null;
   const day = value.slice(0, 10);
   const isCompleteIsoDate = z.iso.date().safeParse(value).success;
   const isCompleteIsoTimestamp = z.iso
@@ -95,31 +102,46 @@ function sourceDate(value: string, ascentId: string): string {
   return day;
 }
 
-function sourceClimbType(ascent: z.infer<typeof ascentSchema>): ClimbingClimbType {
+function sourceClimbKind(ascent: z.infer<typeof ascentSchema>): ClimbKind | null {
   const styles = [ascent.climbedGearStyle, ascent.route.style].map((style) =>
     style?.trim().toLowerCase(),
   );
   const isBoulder = styles.includes("boulder");
-  const isRoute = styles.some((style) => style === "sport" || style === "trad");
+  const isRoute = styles.some((style) => style === "sport" || style === "trad" || style === "aid");
   if (isBoulder && !isRoute) return "boulder";
   if (isRoute && !isBoulder) return "route";
+  if (!isRoute && !isBoulder) return null;
   throw new Error(
     `theCrag ascent ${ascent.id} has an unsupported or inconsistent climbing discipline. Review the route style or contact support before syncing this logbook.`,
   );
 }
 
 function sourceGrade(
-  rawGrade: string,
-  climbType: ClimbingClimbType,
+  rawGrade: string | null | undefined,
+  kind: ClimbKind | null,
   ascentId: string,
-): { gradeSystem: ClimbingGradeSystem; grade: string } {
-  let grade = rawGrade.trim();
-  let gradeSystem: ClimbingGradeSystem | null = null;
+): GradeComponent[] {
+  let grade = rawGrade?.trim() ?? "";
+  if (grade === "") return [];
+  const components =
+    /^(?:V(?:B|\d)|5\.|(?:FR|FB|AU|UIAA|YDS|BLDV|AID|AIDC|WICE|AICE|MIXED|IFAS|NCCS|UK|UKT)(?:\s*:\s*|\s+))/i.test(
+      grade,
+    )
+      ? grade.split(
+          /\s+(?=(?:FR|FB|AU|UIAA|YDS|BLDV|AID|AIDC|WICE|AICE|MIXED|IFAS|NCCS|UK|UKT)(?:\s*:\s*|\s+))/i,
+        )
+      : [grade];
+  if (components.length > 1)
+    return components.flatMap((component) => sourceGrade(component, kind, ascentId));
+  let gradeSystem: GradeSystem | null = null;
   if (/^V(?:B|\d+)(?:[+-])?$/i.test(grade)) gradeSystem = "v_scale";
   else if (/^5\./.test(grade)) gradeSystem = "yds";
   else {
     // theCrag documents these scale labels. gradeAtom.type is undocumented.
-    const explicitScale = /^(FR|FB|AU|UIAA|YDS|BLDV)(?:\s*:\s*|\s+)(.+)$/i.exec(grade);
+    const explicitScale =
+      /^(FR|FB|AU|UIAA|YDS|BLDV|AID|AIDC|WICE|AICE|MIXED|IFAS|NCCS|UK|UKT)(?:\s*:\s*|\s+)(.+)$/i.exec(
+        grade,
+      );
     if (explicitScale) {
       switch (explicitScale[1]?.toUpperCase()) {
         case "FR":
@@ -140,68 +162,157 @@ function sourceGrade(
         case "BLDV":
           gradeSystem = "v_scale";
           break;
+        case "AID":
+        case "AIDC":
+          gradeSystem = "aid";
+          break;
+        case "WICE":
+          gradeSystem = "water_ice";
+          break;
+        case "AICE":
+          gradeSystem = "alpine_ice";
+          break;
+        case "MIXED":
+          gradeSystem = "mixed";
+          break;
+        case "IFAS":
+          gradeSystem = "ifas";
+          break;
+        case "NCCS":
+          gradeSystem = "nccs";
+          break;
+        case "UK":
+          gradeSystem = "british_adjectival";
+          break;
+        case "UKT":
+          gradeSystem = "british_technical";
+          break;
       }
       grade = explicitScale[2]?.trim() ?? grade;
     }
   }
   if (
-    gradeSystem === null ||
-    !isGradeSystemForClimbType(gradeSystem, climbType) ||
-    !isValidClimbingGrade(grade, gradeSystem)
+    gradeSystem !== null &&
+    (kind === "boulder" || kind === "route") &&
+    FREE_ROCK_GRADE_SYSTEMS.some((system) => system === gradeSystem) &&
+    !isGradeSystemForClimbKind(gradeSystem, kind)
   ) {
     throw new Error(
       `theCrag ascent ${ascentId} has an unsupported or ambiguous grade. Use a grade with an explicit supported scale in theCrag, or contact support before syncing this logbook.`,
     );
   }
-  return { gradeSystem, grade };
+  if (gradeSystem !== null && !isValidClimbingGrade(grade, gradeSystem)) {
+    gradeSystem = null;
+    grade = rawGrade?.trim() ?? "";
+  }
+  return [{ system: gradeSystem, value: grade }];
 }
 
-function climbingRecord(raw: z.infer<typeof rawAscentSchema>, accountId: string) {
+function climbingRecord(
+  raw: z.infer<typeof rawAscentSchema>,
+  accountId: string,
+): SourceClimbingLogEntry {
   const parsed = ascentSchema.safeParse(raw);
-  if (!parsed.success) {
+  if (!parsed.success)
     throw new Error(
       "theCrag returned an unsupported ascent response. Contact support before syncing this logbook.",
-      {
-        cause: parsed.error,
-      },
+      { cause: parsed.error },
     );
-  }
   const ascent = parsed.data;
-  const climbType = sourceClimbType(ascent);
-  const grade = sourceGrade(ascent.route.grade, climbType, ascent.id);
+  const kind = sourceClimbKind(ascent);
+  const grades = sourceGrade(ascent.route.grade, kind, ascent.id);
   const gearStyle = ascent.climbedGearStyle?.trim().toLowerCase();
-  const routeProtection = gearStyle === "sport" || gearStyle === "trad" ? [gearStyle] : null;
+  const protectionUsed: ProtectionStyle[] | null =
+    gearStyle === "sport" || gearStyle === "trad" ? [gearStyle] : null;
+  const routeStyle = ascent.route.style?.trim().toLowerCase();
+  const routeProtection: ProtectionStyle[] | null =
+    routeStyle === "sport" || routeStyle === "trad" ? [routeStyle] : null;
   const locationIds = new Set<string>();
-  const locations = Object.values(ascent.route.ancestors ?? {})
+  const areas = Object.values(ascent.route.ancestors ?? {})
     .filter((location) => location !== null)
-    .sort((left, right) => left.depth - right.depth)
+    .sort((a, b) => a.depth - b.depth)
     .filter((location) => {
       if (location.id == null) return true;
       if (locationIds.has(location.id)) return false;
       locationIds.add(location.id);
       return true;
-    });
-  return {
-    external_id: `thecrag:${ascent.id}`,
-    unattached_date: sourceDate(ascent.date, ascent.id),
-    climb_type: climbType,
-    grade_system: grade.gradeSystem,
-    grade: grade.grade,
-    result_style: nullableText(ascent.tick?.name) ?? nullableText(ascent.tick?.label),
-    attempt_count: null,
-    climb_style: null,
-    route_protection: routeProtection,
-    board: null,
-    wall_angle: null,
-    route_name: nullableText(ascent.route.name),
-    location_path: locations.map((location) => ({
-      name: location.name,
-      externalId: location.id ?? null,
-      kind: null,
-    })),
-    source_name: "theCrag",
-    raw: { accountId, ascent: raw },
+    })
+    .map((location) => ({ name: location.name, externalId: location.id ?? null }));
+  const sourceResult = (ascent.tick?.label?.trim() ? ascent.tick.label : ascent.tick?.name) ?? null;
+  const label = sourceResult?.trim().toLowerCase();
+  const usedAid =
+    gearStyle === "aid" ||
+    label === "french free" ||
+    label === "frenchfree" ||
+    label?.startsWith("aid ") === true;
+  const qualifier = sourceQualifier(label ?? null, usedAid);
+  const supportedResult =
+    qualifier !== undefined ||
+    ["attempt", "dog", "hang dog", "tick"].includes(label ?? "") ||
+    (usedAid && ["clean", "send", "redpoint", "pinkpoint"].includes(label ?? ""));
+  const attempt: SourceClimbingAttempt = {
+    scope: "climb",
+    protectionUsed,
+    ...(["lead solo", "top rope solo", "aid solo"].includes(label ?? "")
+      ? ({
+          solo: true,
+          ropeMethod:
+            label === "lead solo" ? "lead" : label === "top rope solo" ? "top_rope" : null,
+        } as const)
+      : {}),
+    ...(usedAid ? { usedAid: true } : {}),
+    ...(qualifier === undefined ? {} : { qualifier }),
+    ...(supportedResult ? { sourceResult } : {}),
+    ...(label === "dog" || label === "hang dog" ? { fellOrHung: true } : {}),
+    ...(label === "repeat" ? { hadCompletedBefore: true } : {}),
+    ...(label === "ground-up redpoint" ? { priorFailedAttemptsGroundUp: true } : {}),
+    ...(label === "pinkpoint" ? { usedPreplacedProtection: true } : {}),
   };
+  return {
+    externalId: `thecrag:${ascent.id}`,
+    climbedOn: sourceDate(ascent.date, ascent.id),
+    ...(kind === null ? {} : { discipline: "rock_climbing" }),
+    attempts: [attempt],
+    ...(ascent.markdown === undefined ? {} : { notes: nullableText(ascent.markdown) }),
+    sourceName: "theCrag",
+    raw: { accountId, ascent: raw },
+    climb: {
+      externalId: ascent.route.id,
+      ...(ascent.route.name == null ? {} : { name: nullableText(ascent.route.name) }),
+      ...(kind === null ? {} : { kind }),
+      routeProtection,
+      ...(ascent.route.grade == null || ascent.route.grade.trim() === ""
+        ? {}
+        : { publishedGrades: grades }),
+      ...(areas.length === 0 ? {} : { areas }),
+    },
+  };
+}
+
+function sourceQualifier(value: string | null, aid: boolean): SourceClimbingAttempt["qualifier"] {
+  switch (value?.trim().toLowerCase()) {
+    case "aid onsight":
+    case "onsight":
+    case "on sight":
+      return aid ? "aid-onsight" : "free-onsight";
+    case "aid flash":
+    case "flash":
+      return aid ? "aid-flash" : "free-flash";
+    case "clean":
+    case "send":
+    case "redpoint":
+    case "pinkpoint":
+    case "greenpoint":
+    case "repeat":
+    case "ground-up redpoint":
+      return aid ? undefined : "free-send";
+    case "fell/hung":
+      return "fell-hung";
+    case "dab":
+      return "dab";
+    default:
+      return undefined;
+  }
 }
 
 async function incrementalSince(
@@ -215,7 +326,7 @@ async function incrementalSince(
     cursorRowSchema,
     sql`
     SELECT max((raw -> 'ascent' ->> 'epoch')::bigint) AS epoch
-    FROM fitness.climbing_entry
+    FROM fitness.climbing_log_entry
     WHERE user_id = ${userId}::uuid AND provider_id = ${providerId}
       AND raw ->> 'accountId' = ${accountId}
   `,
@@ -231,46 +342,13 @@ async function writeClimbingRecords(
   records: ReturnType<typeof climbingRecord>[],
 ): Promise<number> {
   if (records.length === 0) return 0;
-  // One PostgreSQL statement commits all ascents or none, including their raw epochs.
-  // JSON keeps the batch below PostgreSQL's bind-parameter limit for large logbooks.
   try {
-    const written = await executeWithSchema(
-      database,
-      writtenRowSchema,
-      sql`
-    INSERT INTO fitness.climbing_entry (
-      user_id, provider_id, activity_id, unattached_date, external_id,
-      climb_type, grade_system, grade, result_style, attempt_count, climb_style,
-      route_protection, board, wall_angle, route_name, location_path, source_name, raw
-    )
-    SELECT ${userId}::uuid, ${providerId}, NULL::uuid, record.unattached_date::date,
-      record.external_id, record.climb_type::fitness.climbing_climb_type,
-      record.grade_system::fitness.climbing_grade_system, record.grade,
-      record.result_style, record.attempt_count, record.climb_style,
-      record.route_protection, record.board, record.wall_angle, record.route_name,
-      record.location_path, record.source_name, record.raw
-    FROM jsonb_to_recordset(${JSON.stringify(records)}::jsonb) AS record(
-      external_id text, unattached_date text, climb_type text, grade_system text,
-      grade text, result_style text, attempt_count integer, climb_style text,
-      route_protection text[], board jsonb, wall_angle jsonb, route_name text,
-      location_path jsonb, source_name text, raw jsonb
-    )
-    ON CONFLICT (user_id, provider_id, external_id)
-      WHERE provider_id = 'thecrag' AND external_id IS NOT NULL
-    DO UPDATE SET
-      unattached_date = CASE WHEN climbing_entry.activity_id IS NULL
-        THEN excluded.unattached_date ELSE NULL END,
-      climb_type = excluded.climb_type, grade_system = excluded.grade_system,
-      grade = excluded.grade, result_style = excluded.result_style,
-      attempt_count = excluded.attempt_count, climb_style = excluded.climb_style,
-      route_protection = excluded.route_protection, board = excluded.board,
-      wall_angle = excluded.wall_angle, route_name = excluded.route_name,
-      location_path = excluded.location_path, source_name = excluded.source_name,
-      raw = excluded.raw
-    RETURNING id
-  `,
-    );
-    return written.length;
+    const written = await persistClimbingLogEntries(database, {
+      userId,
+      providerId,
+      entries: records,
+    });
+    return written.recordsSynced;
   } catch (error) {
     // Drizzle query errors include the complete bound logbook payload.
     const sanitized = new Error(
@@ -355,6 +433,7 @@ export class TheCragProvider implements SyncProvider {
     return {
       apiBaseUrl: API_BASE_URL,
       manualToken: {
+        kind: "access-token",
         label: "Personal API key (active supporter required)",
         instructionsUrl: "https://www.thecrag.com/en/article/logbookreadapi",
         exchangeToken: async (input): Promise<TokenSet> => {
@@ -458,7 +537,7 @@ export class TheCragProvider implements SyncProvider {
             );
           }
           const records = pages.items.map((ascent) => climbingRecord(ascent, accountId.data));
-          if (new Set(records.map((record) => record.external_id)).size !== records.length) {
+          if (new Set(records.map((record) => record.externalId)).size !== records.length) {
             throw new Error("theCrag returned duplicate ascent identities. Try syncing again.");
           }
           const recordCount = await writeClimbingRecords(db, userId, this.id, records);

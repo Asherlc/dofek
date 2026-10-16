@@ -1,9 +1,9 @@
 # Dofek Server
 
-Climbing details, attachment suggestions, and MCP session output expose required
-provider-scoped `context`. Canonical metadata is selected as one source snapshot;
-scalar filters read `fitness.v_climbing_entry`. See the
-[climbing contract and schema cutover](../../docs/climbing-context.md).
+Climbing details, attachment suggestions, and MCP session output expose
+ClimbingLogEntry records with current shared Area, Climb, and Pitch definitions,
+separate published and reported grades, and scoped attempt facts. See the
+[canonical contract](src/contracts/climbing-log-contracts.ts).
 
 The backend API and background job processor for Dofek. Built with Node.js, Express, tRPC, and Drizzle ORM.
 
@@ -18,11 +18,22 @@ The backend API and background job processor for Dofek. Built with Node.js, Expr
 - **Climbing data access**: [`ClimbingRepository`](./src/repositories/climbing-repository.ts)
   serves grade analytics and session summaries, and delegates activity detail hydration and
   cross-provider entry consolidation to
-  [`ClimbingActivityEntryRepository`](./src/repositories/climbing-activity-entry-repository.ts).
+  [`ClimbingActivityLogEntryRepository`](./src/repositories/climbing-activity-log-entry-repository.ts).
+  Entry hydration returns `mapLocation` from native Climb coordinates, otherwise
+  the nearest coordinate-bearing Area in the selected source graph; consolidation
+  retains that graph's map ownership. See the [map contract](../training/src/climbing-map.ts).
   Both use the same [grade display conversion](./src/repositories/climbing-grade-display.ts).
-  Progression, volume, and session summaries share canonical send observations;
-  [progression semantics](../../docs/climbing-context.md#grade-progression-and-send-counts)
-  define recorded-day denominators and repeat-preserving provider consolidation.
+  Rock metrics select one compatible published grade per target and derive free-send
+  evidence from its recorded attempts, through the [shared projection](src/repositories/climbing-rock-observations.ts).
+  Whole-climb and pitch attempts remain separately scoped; unknown facts remain unknown.
+  Attempt outcomes come from `fitness.v_climbing_attempt`, which computes them
+  from retained source labels through the [canonical SQL function](../../drizzle/0148_compute_climbing_attempt_outcome.sql).
+  The [API contract](src/contracts/climbing-log-contracts.ts) continues returning
+  `completed`, `failed`, or null to web, mobile, and MCP clients.
+- **Provider climbing records**: The [provider detail repository](src/repositories/provider-detail-repository.ts)
+  lists retained logs, including undated records and provider-absence tombstones,
+  and loads the full owned graph for a selected record. The [sync repository](src/repositories/sync-repository.ts)
+  adds user/provider-scoped PostgreSQL log counts to existing provider statistics.
 - **Insights Engine**: Complex data analysis and correlation logic located in `src/insights/`.
 - **Machine Learning**: Predictive modeling (e.g., weight prediction, activity features) in `src/ml/`.
 
@@ -208,9 +219,11 @@ not Edwards' original fixed percentages of maximum HR. Sample spans are capped a
 dropouts are not silently treated as continuous exposure.
 
 Session-RPE load is session duration in minutes multiplied by recorded RPE, following Foster's
-method ([Foster 1998](https://pubmed.ncbi.nlm.nih.gov/9662690/)). Climbing load uses only recorded
-attempt counts; an entry without attempt information is missing rather than a failed attempt or
-zero. Finger effective load is `bodyweight_kg + external_load_kg`, preserving signed assistance.
+method ([Foster 1998](https://pubmed.ncbi.nlm.nih.gov/9662690/)). Climbing exposure counts recorded
+whole-Climb attempts from eligible known-rock logs, including ungraded records. Pitch attempts
+remain separately scoped; completion does not establish a free send or complete lifetime history.
+See the [analytical query](src/repositories/analytical-training-load-repository.ts).
+Finger effective load is `bodyweight_kg + external_load_kg`, preserving signed assistance.
 Exact kg-second volume would additionally require `hang_seconds × repetitions × sets`; the
 analytical channel returns it as unavailable because the raw schema lacks repetitions per set.
 Strength volume includes non-warmup/non-rest sets only when
@@ -306,7 +319,10 @@ preserving full counts and truncation flags. See the
 `get_climbing_progression` requires `activity:read` and an inclusive date range. It calculates
 whole-range daily and grade aggregates while cursor-paginating only the detailed sessions, so an
 analyst does not need to fetch every climbing activity individually. Optional provider,
-discipline, location, and grade-system filters apply to both aggregates and coverage. The response
+location, grade-system, and shared climbing filters apply to both aggregates and coverage. Kind,
+scope, rope method, solo, actual protection, advertised protection, and setting remain independent.
+Grade analysis selects compatible published components; ungraded known-rock logs remain eligible
+for participation. See the [projection](src/repositories/climbing-rock-observations.ts). The response
 includes session frequency, rest and consecutive days, trailing 7/28-day exposure days, grade
 distribution, observed send rate, attempts per send, hardest send/flash/onsight evidence, and a
 descriptive `volume_below_range_hardest_send` measure. The latter means known attempts on grades
@@ -315,16 +331,14 @@ intensity. The server reads the preceding 27 days plus the uninterrupted pre-ran
 calculating the first returned rolling/streak value; lookback sessions do not leak into requested-
 range grade, volume, coverage, or detail totals.
 
-Climbing attempts and outcomes retain three distinct states: a recorded positive/count value, an
-observed zero at an aggregate level, or missing source information. A climb with null
-`attempt_count` and null `sent` remains null and does not become a failed attempt. Attempt totals
-are labeled `complete`, `partial`, or `unavailable`, and send rate uses only entries with an
-observed outcome as its denominator. The existing `get_climbing_sessions` tool is preserved and
-now uses the same missing-value semantics. Attempts per send is null unless both attempt and outcome
-coverage for that grade are complete. Source grade/system values remain intact, while normalized
-display grades use Dofek's default V Scale for boulders and YDS for routes. `grade_progression`
-returns the hardest observed send for each date and discipline rather than reducing the entire
-range to one value.
+Recorded attempts and confirmed free-rock sends are counted per attempt at the selected scope.
+Send rate divides confirmed sends by attempts with a known free-send result; unknown execution
+facts remain outside that denominator. Explicit failures are separate from completed aid climbs
+or dabs. Attempts per send remains unavailable when required outcome coverage is incomplete.
+Hardest send, flash and onsight evidence uses compatible published grades and recorded facts.
+Progression lanes preserve independent kind, scope, rope method, solo and aid values, plus grade
+system. See the [progression repository](src/repositories/climbing-progression-repository.ts) and
+[wire contract](src/mcp/climbing-progression-output.ts).
 
 Canonical activity groups count as one session. Exact matching entry observations from different
 member activities/providers are consolidated once while retaining every contributing entry,

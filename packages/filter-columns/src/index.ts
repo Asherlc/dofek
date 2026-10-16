@@ -1,4 +1,4 @@
-const DATE_FILTER_COLUMNS = new Set(["date", "start_date", "end_date"]);
+const DATE_FILTER_COLUMNS = new Set(["date", "start_date", "end_date", "climbed_on"]);
 
 export type FilterInputType = "text" | "date" | "datetime-local";
 

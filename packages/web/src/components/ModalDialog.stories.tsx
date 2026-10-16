@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ModalDialog, ModalDialogDescription, ModalDialogTitle } from "./ModalDialog.tsx";
 
 function DialogStory({ protectedOperation = false }: { protectedOperation?: boolean }) {
@@ -46,6 +46,52 @@ function DialogStory({ protectedOperation = false }: { protectedOperation?: bool
   );
 }
 
+function SvgTriggerStory() {
+  const [open, setOpen] = useState(false);
+  const svgRef = useRef<SVGSVGElement>(null);
+  useEffect(() => {
+    const marker = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+    marker.setAttribute("cx", "80");
+    marker.setAttribute("cy", "40");
+    marker.setAttribute("r", "10");
+    marker.setAttribute("fill", "currentColor");
+    marker.setAttribute("role", "button");
+    marker.setAttribute("aria-label", "Open Blue Arete details");
+    marker.setAttribute("tabindex", "0");
+    marker.addEventListener("click", () => setOpen(true));
+    marker.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        setOpen(true);
+      }
+    });
+    svgRef.current?.append(marker);
+    return () => marker.remove();
+  }, []);
+  return (
+    <div className="p-8">
+      <svg ref={svgRef} viewBox="0 0 160 80" className="h-40 w-80 rounded bg-surface text-accent">
+        <title>Climbing locations</title>
+      </svg>
+      {open && (
+        <ModalDialog
+          open
+          onClose={() => setOpen(false)}
+          contentClassName="w-[calc(100%-2rem)] max-w-sm rounded-xl border border-border bg-surface-solid p-6 shadow-2xl"
+        >
+          <ModalDialogTitle>Blue Arete</ModalDialogTitle>
+          <ModalDialogDescription>
+            Close these details to return keyboard focus to the map point.
+          </ModalDialogDescription>
+          <button type="button" onClick={() => setOpen(false)} className="mt-4 text-accent">
+            Close
+          </button>
+        </ModalDialog>
+      )}
+    </div>
+  );
+}
+
 const meta = {
   title: "Components/ModalDialog",
   component: ModalDialog,
@@ -72,4 +118,9 @@ export const ProtectedOperation: Story = {
     children: null,
   },
   render: () => <DialogStory protectedOperation />,
+};
+
+export const SvgTrigger: Story = {
+  args: { open: false, onClose: () => {}, children: null },
+  render: () => <SvgTriggerStory />,
 };
