@@ -62,6 +62,7 @@ import { DeleteActivityButton } from "./activity-detail/components/DeleteActivit
 import { RecomputeActivityButton } from "./activity-detail/components/RecomputeActivityButton.tsx";
 import { UnattachedClimbingLogEntries } from "./activity-detail/components/UnattachedClimbingLogEntries.tsx";
 import { ProviderAbsentBanner } from "./ProviderAbsentBanner.tsx";
+import { RecordDetailModal } from "./RecordDetailModal.tsx";
 
 const EMPTY_ROUTE_POINTS: ComponentProps<typeof ActivityRouteMap>["points"] = [];
 
@@ -145,6 +146,9 @@ export function ActivityDetailPage() {
   );
   const climbingEntriesLoading = climbingEntries.isLoading && !climbingEntries.data;
   const [selectedClimbingEntryId, setSelectedClimbingEntryId] = useState<string | null>(null);
+  const selectedClimbingEntry = climbingEntries.data?.find(
+    (entry) => entry.id === selectedClimbingEntryId,
+  );
   const climbingLocations = useMemo(
     () =>
       buildClimbingMapLocations([
@@ -377,6 +381,13 @@ export function ActivityDetailPage() {
                 onAttach={handleAttachEntry}
               />
             </div>
+          )}
+          {selectedClimbingEntry && (
+            <RecordDetailModal
+              dataType="climbingLogEntries"
+              state={{ data: selectedClimbingEntry, error: null, isLoading: false }}
+              onClose={() => setSelectedClimbingEntryId(null)}
+            />
           )}
         </Section>
       )}

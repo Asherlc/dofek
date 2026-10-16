@@ -56,6 +56,14 @@ refresh errors. See the [canonical response contract](../server/src/contracts/cl
 The recent climbing activity table omits distance and keeps its climbing metrics,
 as configured by the [climbing page](src/routes/training/climbing.tsx).
 
+The Activities list uses its existing compact
+[map tile](src/components/ActivityMapTile.tsx) for climbing-source locations when
+an activity has no recorded GPS track. Source points retain Climb/Area and
+provider attribution; they are not connected into a route and do not imply
+recorded distance or elevation. The
+[calendar repository](../server/src/repositories/activities-calendar-repository.ts)
+projects map geometry on the server, and recorded GPS takes precedence.
+
 Activity-detail climbing logs and attachment suggestions share the
 [canonical log-card grid](src/pages/activity-detail/components/ClimbingLogEntryBreakdown.tsx).
 Their component inputs accept source locations keyed by entry ID; the
@@ -63,10 +71,14 @@ Their component inputs accept source locations keyed by entry ID; the
 the owning Climb or Area, and provider attribution.
 [ActivityRouteMap](src/components/ActivityRouteMap.tsx) renders source dots
 independently of recorded GPS tracks and loads compact tick maps as they
-approach the viewport. Its occurrence chooser uses Entry numbers from the full
-card order; selection can highlight the matching
+approach the viewport. A unique point opens its climbing log details immediately;
+overlapping points offer an occurrence chooser using Entry numbers from the full
+card order. Selection opens the exact log's
+[record dialog](src/pages/RecordDetailModal.tsx) and highlights its
 [climbing card](src/pages/activity-detail/components/ClimbingLogEntryCard.tsx),
-including repeated names at the same point.
+including repeated names at the same point. Closing the dialog returns keyboard
+focus to its triggering map point or occurrence button; the [activity tests](src/pages/ActivityDetailPage.test.tsx)
+cover closing and reopening the same occurrence.
 The activity screen supplies each log's server-projected location to the
 overview and compact maps, including when no recorded GPS route exists.
 The [server projection](../server/src/repositories/climbing-activity-log-entry-repository.ts)

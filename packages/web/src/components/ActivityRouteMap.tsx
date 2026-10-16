@@ -139,7 +139,21 @@ export function ActivityRouteMap({
             .bindTooltip(tooltip)
             .addTo(map);
           if (presentation === "detail") {
-            dot.on("click", () => setInspectedPoint(marker.location.coordinates));
+            dot.on("click", () => {
+              const overlapping = climbMarkers.some(
+                (other) =>
+                  other.entryId !== marker.entryId &&
+                  other.location.coordinates.latitude === latitude &&
+                  other.location.coordinates.longitude === longitude,
+              );
+              if (overlapping) {
+                setInspectedPoint(marker.location.coordinates);
+              } else {
+                setInspectedPoint(null);
+                setSelectedEntryId(marker.entryId);
+                onSelectEntry?.(marker.entryId);
+              }
+            });
           }
           return { point, dot, label, entryId: marker.entryId };
         });
@@ -214,7 +228,7 @@ export function ActivityRouteMap({
         mapInstanceRef.current = null;
       }
     };
-  }, [points, climbMarkers, presentation, onRegisterHoverCallback, previewVisible]);
+  }, [points, climbMarkers, presentation, onRegisterHoverCallback, previewVisible, onSelectEntry]);
 
   const empty = points.length === 0 && climbMarkers.length === 0;
   return (
@@ -222,7 +236,7 @@ export function ActivityRouteMap({
       <section
         ref={mapRef}
         aria-label={climbMarkers.length > 0 ? "Climbing locations" : "Recorded activity route"}
-        className={`w-full rounded-lg ${presentation === "compact" ? "h-[160px]" : "h-[400px]"}${empty || mapState.error ? " hidden" : ""}`}
+        className={`isolate w-full rounded-lg ${presentation === "compact" ? "h-[160px]" : "h-[400px]"}${empty || mapState.error ? " hidden" : ""}`}
       />
       {presentation === "detail" && inspectedPoint && (
         <ul aria-label="Climbing entries at this location" className="mt-2 flex flex-wrap gap-2">

@@ -1,0 +1,133 @@
+import type { ActivityLocation } from "dofek-server/types";
+
+export const climbingSourceLocation = {
+  kind: "climbing_source",
+  mapPreview: {
+    width: 1024,
+    height: 576,
+    tiles: [
+      {
+        url: "https://tile.openstreetmap.org/14/3393/6201.png",
+        x: -32.996,
+        y: -25.606,
+        width: 256,
+        height: 256,
+      },
+      {
+        url: "https://tile.openstreetmap.org/14/3394/6201.png",
+        x: 223.004,
+        y: -25.606,
+        width: 256,
+        height: 256,
+      },
+      {
+        url: "https://tile.openstreetmap.org/14/3395/6201.png",
+        x: 479.004,
+        y: -25.606,
+        width: 256,
+        height: 256,
+      },
+      {
+        url: "https://tile.openstreetmap.org/14/3396/6201.png",
+        x: 735.004,
+        y: -25.606,
+        width: 256,
+        height: 256,
+      },
+      {
+        url: "https://tile.openstreetmap.org/14/3397/6201.png",
+        x: 991.004,
+        y: -25.606,
+        width: 256,
+        height: 256,
+      },
+      {
+        url: "https://tile.openstreetmap.org/14/3393/6202.png",
+        x: -32.996,
+        y: 230.394,
+        width: 256,
+        height: 256,
+      },
+      {
+        url: "https://tile.openstreetmap.org/14/3394/6202.png",
+        x: 223.004,
+        y: 230.394,
+        width: 256,
+        height: 256,
+      },
+      {
+        url: "https://tile.openstreetmap.org/14/3395/6202.png",
+        x: 479.004,
+        y: 230.394,
+        width: 256,
+        height: 256,
+      },
+      {
+        url: "https://tile.openstreetmap.org/14/3396/6202.png",
+        x: 735.004,
+        y: 230.394,
+        width: 256,
+        height: 256,
+      },
+      {
+        url: "https://tile.openstreetmap.org/14/3397/6202.png",
+        x: 991.004,
+        y: 230.394,
+        width: 256,
+        height: 256,
+      },
+      {
+        url: "https://tile.openstreetmap.org/14/3393/6203.png",
+        x: -32.996,
+        y: 486.394,
+        width: 256,
+        height: 256,
+      },
+      {
+        url: "https://tile.openstreetmap.org/14/3394/6203.png",
+        x: 223.004,
+        y: 486.394,
+        width: 256,
+        height: 256,
+      },
+      {
+        url: "https://tile.openstreetmap.org/14/3395/6203.png",
+        x: 479.004,
+        y: 486.394,
+        width: 256,
+        height: 256,
+      },
+      {
+        url: "https://tile.openstreetmap.org/14/3396/6203.png",
+        x: 735.004,
+        y: 486.394,
+        width: 256,
+        height: 256,
+      },
+      {
+        url: "https://tile.openstreetmap.org/14/3397/6203.png",
+        x: 991.004,
+        y: 486.394,
+        width: 256,
+        height: 256,
+      },
+    ],
+    routePath: null,
+  },
+  sourcePoints: [
+    {
+      x: 512,
+      y: 288,
+      location: {
+        coordinates: {
+          latitude: 40.007,
+          longitude: -105.4,
+        },
+        scope: "area",
+        objectId: "a1220000-0000-4000-8000-000000000002",
+        providerId: "mountain-project",
+        name: "Boulder Canyon",
+      },
+    },
+  ],
+} satisfies ActivityLocation;

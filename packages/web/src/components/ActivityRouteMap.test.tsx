@@ -40,6 +40,41 @@ const exact = {
 };
 
 describe("ActivityRouteMap", () => {
+  it.each(["click", "Enter", " "])(
+    "opens a unique location immediately with %s",
+    async (activation) => {
+      const onSelectEntry = vi.fn();
+      render(
+        <ActivityRouteMap
+          points={[]}
+          climbMarkers={[
+            exact,
+            {
+              ...exact,
+              entryId: "different-longitude",
+              location: { ...exact.location, coordinates: { latitude: 37.8, longitude: -122.5 } },
+            },
+            {
+              ...exact,
+              entryId: "different-latitude",
+              location: { ...exact.location, coordinates: { latitude: 37.9, longitude: -122.4 } },
+            },
+          ]}
+          onSelectEntry={onSelectEntry}
+        />,
+      );
+      const dot = await screen.findByRole("button", {
+        name: "Entry 1 · Blue Arete · Climb location: Blue Arete · Mountain Project",
+      });
+      fireEvent.keyDown(dot, { key: "Escape" });
+      expect(onSelectEntry).not.toHaveBeenCalled();
+      if (activation === "click") fireEvent.click(dot);
+      else fireEvent.keyDown(dot, { key: activation });
+      expect(onSelectEntry).toHaveBeenCalledExactlyOnceWith("tick-1");
+      expect(screen.queryByRole("list", { name: "Climbing entries at this location" })).toBeNull();
+    },
+  );
+
   it("reserves an offscreen compact preview until it approaches the viewport, then mounts once", async () => {
     let enterViewport = () => {};
     const disconnect = vi.fn();
@@ -95,6 +130,7 @@ describe("ActivityRouteMap", () => {
     const topDot = container.querySelector('[data-entry-id="repeat"]');
     if (!topDot) throw new Error("Expected the top overlapping dot");
     fireEvent.click(topDot);
+    expect(onSelectEntry).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "Entry 1 · Blue Arete" }));
     expect(onSelectEntry).toHaveBeenLastCalledWith("tick-1");
     fireEvent.click(screen.getByRole("button", { name: "Entry 3 · Blue Arete" }));
@@ -107,16 +143,24 @@ describe("ActivityRouteMap", () => {
   });
 
   it.each(["Enter", " "])("opens coincident occurrences using the %s key", async (key) => {
+    const onSelectEntry = vi.fn();
     render(
-      <ActivityRouteMap points={[]} climbMarkers={[exact, { ...exact, entryId: "repeat" }]} />,
+      <ActivityRouteMap
+        points={[]}
+        climbMarkers={[exact, { ...exact, entryId: "repeat" }]}
+        onSelectEntry={onSelectEntry}
+      />,
     );
     const dot = await screen.findByRole("button", {
       name: "Entry 2 · Blue Arete · Climb location: Blue Arete · Mountain Project",
     });
     expect(screen.queryByRole("list", { name: "Climbing entries at this location" })).toBeNull();
     fireEvent.keyDown(dot, { key });
+    expect(onSelectEntry).not.toHaveBeenCalled();
     expect(screen.getByRole("button", { name: "Entry 1 · Blue Arete" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Entry 2 · Blue Arete" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Entry 1 · Blue Arete" }));
+    expect(onSelectEntry).toHaveBeenCalledExactlyOnceWith("tick-1");
   });
   it("keeps opaque tick identities separate from readable source-dot labels", async () => {
     const firstId = "f0e5f441-1c6d-4e20-a2a3-41103e7314a0";
@@ -180,6 +224,7 @@ describe("ActivityRouteMap", () => {
 
   it("keeps the recorded route and source points usable after a tile fails", async () => {
     const onAttach = vi.fn();
+    const onSelectEntry = vi.fn();
     const { container } = render(
       <div>
         <ActivityRouteMap
@@ -188,6 +233,7 @@ describe("ActivityRouteMap", () => {
             { lat: 37.81, lng: -122.39 },
           ]}
           climbMarkers={[exact]}
+          onSelectEntry={onSelectEntry}
         />
         <button type="button" onClick={onAttach}>
           Attach
@@ -209,7 +255,7 @@ describe("ActivityRouteMap", () => {
         name: "Entry 1 · Blue Arete · Climb location: Blue Arete · Mountain Project",
       }),
     );
-    expect(screen.getByRole("button", { name: "Entry 1 · Blue Arete" })).toBeInTheDocument();
+    expect(onSelectEntry).toHaveBeenCalledExactlyOnceWith("tick-1");
     fireEvent.click(screen.getByRole("button", { name: "Attach" }));
     expect(onAttach).toHaveBeenCalledOnce();
     fireEvent.error(tile);

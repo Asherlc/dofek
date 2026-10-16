@@ -12,6 +12,7 @@ import {
 import { TRPCError } from "@trpc/server";
 import { captureException } from "dofek/lib/error-reporting";
 import { z } from "zod";
+import { activityLocationSchema } from "../contracts/activity-location.ts";
 import { selectedChartRangeQuery } from "../lib/chart-range.ts";
 import { endDateSchema } from "../lib/date-window.ts";
 import { dateStringSchema, timestampStringSchema } from "../lib/typed-sql.ts";
@@ -28,32 +29,6 @@ export interface CalendarDay {
   trainingTimeBand: ActivityHeatmapBandId;
   trainingTimeMeaning: string;
 }
-
-const routePathPointSchema = z.object({
-  x: z.number(),
-  y: z.number(),
-});
-
-const mapPreviewTileSchema = z.object({
-  url: z.string(),
-  x: z.number(),
-  y: z.number(),
-  width: z.number(),
-  height: z.number(),
-});
-
-const mapPreviewSchema = z.object({
-  width: z.number(),
-  height: z.number(),
-  tiles: z.array(mapPreviewTileSchema),
-  routePath: z.array(routePathPointSchema).nullable(),
-});
-
-const activityLocationSchema = z.object({
-  centroidLat: z.number(),
-  centroidLng: z.number(),
-  mapPreview: mapPreviewSchema,
-});
 
 const activityStatSchema = z.discriminatedUnion("status", [
   z.object({
@@ -163,7 +138,7 @@ export const calendarRouter = router({
 
   weekList: cachedProtectedQuery({
     maxAge: CacheTTL.MEDIUM,
-    keyVersion: "activity-calendar-states-v1",
+    keyVersion: "activity-calendar-locations-v2",
   })
     .input(activityListInputSchema)
     .output(z.array(calendarDayActivitiesSchema))
