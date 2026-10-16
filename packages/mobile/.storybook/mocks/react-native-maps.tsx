@@ -2,10 +2,12 @@ import { statusColors } from "@dofek/scoring/colors";
 import {
   Children,
   createContext,
+  forwardRef,
   isValidElement,
   type ReactElement,
   type ReactNode,
   useContext,
+  useImperativeHandle,
   useState,
 } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
@@ -21,6 +23,12 @@ interface MapViewProps {
   style?: unknown;
   initialRegion?: Region;
   region?: Region;
+  onRegionChangeComplete?: (region: Region) => void;
+  zoomEnabled?: boolean;
+}
+
+interface MapPreviewHandle {
+  animateToRegion: (region: Region, duration?: number) => void;
 }
 
 interface Region extends Coordinate {
@@ -67,10 +75,18 @@ function markerId({ identifier, title, coordinate }: MarkerProps) {
   return identifier ?? `${title ?? "Map point"}:${coordinate.latitude}:${coordinate.longitude}`;
 }
 
-export default function MapView({ children, style, initialRegion, region }: MapViewProps) {
-  const [mountedRegion] = useState(initialRegion);
+const MapView = forwardRef<MapPreviewHandle, MapViewProps>(function MapView(
+  { children, style, initialRegion, region, onRegionChangeComplete, zoomEnabled },
+  ref,
+) {
+  const [mountedRegion, setMountedRegion] = useState(initialRegion);
   const [selectedId, select] = useState<string | null>(null);
   const viewport = region ?? mountedRegion;
+  function updateRegion(nextRegion: Region) {
+    setMountedRegion(nextRegion);
+    onRegionChangeComplete?.(nextRegion);
+  }
+  useImperativeHandle(ref, () => ({ animateToRegion: updateRegion }));
   if (!viewport) throw new Error("Storybook MapView requires region or initialRegion.");
   const markers = Children.toArray(children).filter(
     (child): child is ReactElement<MarkerProps> =>
@@ -83,6 +99,32 @@ export default function MapView({ children, style, initialRegion, region }: MapV
         <View style={styles.grid} />
         <MapPreview.Provider value={{ region: viewport, select }}>{children}</MapPreview.Provider>
       </View>
+      {zoomEnabled && (
+        <View style={styles.zoomControls}>
+          {(
+            [
+              ["Zoom in", 0.5],
+              ["Zoom out", 2],
+            ] as const
+          ).map(([label, scale]) => (
+            <Pressable
+              key={label}
+              accessibilityRole="button"
+              accessibilityLabel={label}
+              onPress={() =>
+                updateRegion({
+                  ...viewport,
+                  latitudeDelta: viewport.latitudeDelta * scale,
+                  longitudeDelta: viewport.longitudeDelta * scale,
+                })
+              }
+              style={styles.zoomButton}
+            >
+              <Text>{label}</Text>
+            </Pressable>
+          ))}
+        </View>
+      )}
       {markers.length > 0 && (
         <View style={styles.inspection}>
           {selected && (
@@ -100,7 +142,9 @@ export default function MapView({ children, style, initialRegion, region }: MapV
       )}
     </View>
   );
-}
+});
+
+export default MapView;
 
 export function Polyline({ coordinates = [], strokeColor = statusColors.positive }: PolylineProps) {
   const { region } = useMapPreview();
@@ -156,6 +200,8 @@ export function Marker({
 }
 
 const styles = StyleSheet.create({
+  zoomControls: { flexDirection: "row", gap: 8, padding: 8, backgroundColor: "#edf3ee" },
+  zoomButton: { padding: 8, borderWidth: 1, borderColor: "#214034", borderRadius: 6 },
   preview: { minWidth: 0, maxWidth: "100%" },
   inspection: { gap: 8, padding: 8, backgroundColor: "#edf3ee", minWidth: 0 },
   details: { gap: 3, minWidth: 0 },
@@ -174,6 +220,7 @@ const styles = StyleSheet.create({
     height: 14,
     transform: [{ translateX: -7 }, { translateY: -7 }],
     alignItems: "center",
+    justifyContent: "center",
   },
   description: { color: "#214034", fontSize: 11, flexShrink: 1 },
   marker: {

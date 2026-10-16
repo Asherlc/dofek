@@ -8,6 +8,7 @@ const gradeProgressionQuery = vi.hoisted(() => vi.fn());
 const volumeByGradeQuery = vi.hoisted(() => vi.fn());
 const sessionSummaryQuery = vi.hoisted(() => vi.fn());
 const hangboardingSummaryQuery = vi.hoisted(() => vi.fn());
+const locationMapQuery = vi.hoisted(() => vi.fn());
 const recentActivitiesSection = vi.hoisted(() => vi.fn());
 const trainingDaysState = vi.hoisted<{ days: number | null }>(() => ({ days: 90 }));
 
@@ -25,6 +26,18 @@ vi.mock("../../components/ClimbingGradeProgressionChart.tsx", () => ({
 
 vi.mock("../../components/ClimbingVolumeByGradeChart.tsx", () => ({
   ClimbingVolumeByGradeChart: () => <div>Volume by Grade component</div>,
+}));
+
+vi.mock("../../components/ClimbingLocationMap.tsx", () => ({
+  ClimbingLocationMap: ({ data, loading }: { data?: unknown; loading?: boolean }) => (
+    <div>
+      {data
+        ? "Cached climbing locations"
+        : loading
+          ? "Loading climbing locations"
+          : "Empty climbing locations"}
+    </div>
+  ),
 }));
 
 vi.mock("../../components/RecentActivitiesSection.tsx", () => ({
@@ -64,6 +77,7 @@ vi.mock("../../lib/trpc.ts", () => ({
       volumeByGrade: { useQuery: volumeByGradeQuery },
       sessionSummary: { useQuery: sessionSummaryQuery },
       hangboardingSummary: { useQuery: hangboardingSummaryQuery },
+      locationMap: { useQuery: locationMapQuery },
     },
   },
 }));
@@ -74,6 +88,37 @@ async function importClimbingTab() {
 }
 
 describe("ClimbingTab", () => {
+  it("keeps a cached location map above the grade chart while refresh errors remain visible", async () => {
+    locationMapQuery.mockReturnValue({
+      data: { bounds: null, nodes: [] },
+      isLoading: false,
+      isFetching: true,
+      error: new Error("Reconnect the location provider"),
+    });
+    const ClimbingTab = await importClimbingTab();
+    render(<ClimbingTab />);
+    const map = screen.getByText("Cached climbing locations");
+    const chart = screen.getByText("Grade Progression component");
+    expect(map.compareDocumentPosition(chart) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getByText("Error: Reconnect the location provider")).toBeVisible();
+    expect(screen.getByRole("status")).toHaveTextContent("Updating climbing");
+    expect(locationMapQuery).toHaveBeenCalledWith(
+      { days: 90 },
+      expect.objectContaining({ placeholderData: expect.any(Function) }),
+    );
+  });
+
+  it("shows initial map errors without an empty-state substitute", async () => {
+    locationMapQuery.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      error: new Error("Climbing locations unavailable"),
+    });
+    const ClimbingTab = await importClimbingTab();
+    render(<ClimbingTab />);
+    expect(screen.getByText("Error: Climbing locations unavailable")).toBeVisible();
+    expect(screen.queryByText("Empty climbing locations")).toBeNull();
+  });
   it("shows actionable refresh errors alongside retained charts", async () => {
     gradeProgressionQuery.mockReturnValue({
       data: [],
@@ -155,6 +200,10 @@ describe("ClimbingTab", () => {
       { days: 90, ropeMethod: "lead", protectionUsed: "trad", setting: "outdoor" },
       expect.any(Object),
     );
+    expect(locationMapQuery).toHaveBeenLastCalledWith(
+      { days: 90, ropeMethod: "lead", protectionUsed: "trad", setting: "outdoor" },
+      expect.any(Object),
+    );
     fireEvent.click(screen.getByRole("button", { name: "Remove Protection used: Trad filter" }));
     expect(gradeProgressionQuery).toHaveBeenLastCalledWith(
       { days: 90, ropeMethod: "lead", setting: "outdoor" },
@@ -202,12 +251,18 @@ describe("ClimbingTab", () => {
     volumeByGradeQuery.mockReset();
     sessionSummaryQuery.mockReset();
     hangboardingSummaryQuery.mockReset();
+    locationMapQuery.mockReset();
     recentActivitiesSection.mockReset();
     trainingDaysState.days = 90;
     gradeProgressionQuery.mockReturnValue({ data: [], isLoading: false, error: null });
     volumeByGradeQuery.mockReturnValue({ data: [], isLoading: false, error: null });
     sessionSummaryQuery.mockReturnValue({ data: [], isLoading: false, error: null });
     hangboardingSummaryQuery.mockReturnValue({ data: undefined, isLoading: false, error: null });
+    locationMapQuery.mockReturnValue({
+      data: { bounds: null, nodes: [] },
+      isLoading: false,
+      error: null,
+    });
   });
 
   afterEach(() => {
@@ -258,6 +313,7 @@ describe("ClimbingTab", () => {
     expect(volumeByGradeQuery).toHaveBeenCalledWith({}, expect.any(Object));
     expect(sessionSummaryQuery).toHaveBeenCalledWith({}, expect.any(Object));
     expect(hangboardingSummaryQuery).toHaveBeenCalledWith({}, expect.any(Object));
+    expect(locationMapQuery).toHaveBeenCalledWith({}, expect.any(Object));
   });
 
   it("renders one recent climbing table", async () => {

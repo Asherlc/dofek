@@ -13,6 +13,49 @@ function repository(rows: Record<string, unknown>[], preference?: ClimbingGradeP
 }
 const boulder = { climb_kind: "boulder", grade_system: "v_scale", grade: "V4" };
 const route = { climb_kind: "route", grade_system: "yds", grade: "5.10c" };
+describe("ClimbingRepository map entries", () => {
+  const location = {
+    coordinates: { latitude: 0, longitude: -122.25 },
+    scope: "area",
+    objectId: "area",
+    providerId: "openbeta",
+    name: "Crag",
+  };
+  const entry = {
+    id: "log",
+    activity_id: null,
+    session_date: "2026-10-01",
+    label: "Corner",
+    location,
+    ...route,
+  };
+  it("returns a display-ready grade in the user's selected grade system", async () => {
+    expect(
+      await repository([entry], { boulder: "font", route: "french" }).getMapEntries(30),
+    ).toEqual([
+      {
+        id: "log",
+        activityId: null,
+        date: "2026-10-01",
+        label: "Corner",
+        grade: "6b",
+        location,
+      },
+    ]);
+  });
+  it.each([
+    { grade: null, grade_system: "yds" },
+    { grade: "5.10c", grade_system: null },
+    { grade: "unknown", grade_system: "yds" },
+  ])("keeps located participation when its published grade is unavailable: %j", async (grade) => {
+    expect(await repository([{ ...entry, ...grade }]).getMapEntries(30)).toEqual([
+      expect.objectContaining({ id: "log", grade: null, location }),
+    ]);
+  });
+  it("returns no map entries without located observations", async () => {
+    expect(await repository([]).getMapEntries(30)).toEqual([]);
+  });
+});
 describe("ClimbingRepository display-grade aggregation", () => {
   it.each(["getGradeProgression", "getVolumeByGrade", "getSessionSummaries"] as const)(
     "returns empty %s for no observations",
