@@ -1,8 +1,29 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
+import { act, type ComponentRef, createRef } from "react";
 import { describe, expect, it, vi } from "vitest";
 import MapView, { Marker, Polyline } from "./react-native-maps";
 
 describe("Storybook native-map adapter", () => {
+  it("changes the preview viewport through the native region API and reports the new zoom region", () => {
+    const map = createRef<ComponentRef<typeof MapView>>();
+    const onRegionChangeComplete = vi.fn();
+    render(
+      <MapView
+        ref={map}
+        initialRegion={{ latitude: 37, longitude: -122, latitudeDelta: 0.02, longitudeDelta: 0.04 }}
+        onRegionChangeComplete={onRegionChangeComplete}
+      >
+        <Marker title="Climb" coordinate={{ latitude: 37, longitude: -122 }} />
+      </MapView>,
+    );
+    const changed = { latitude: 37, longitude: -122.02, latitudeDelta: 0.02, longitudeDelta: 0.04 };
+    act(() => map.current?.animateToRegion(changed, 300));
+    expect(
+      screen.getByLabelText("Climb, latitude 37, longitude -122").getAttribute("style"),
+    ).toContain("left: 100%");
+    expect(onRegionChangeComplete).toHaveBeenCalledWith(changed);
+  });
+
   it("positions separate source coordinates within the supplied region", () => {
     render(
       <MapView
