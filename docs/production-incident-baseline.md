@@ -31708,7 +31708,7 @@ The approved patch now limits preparation to desired mappings whose source and d
 
 ## 2026-10-16 — Sentry sweep: token expiry, background requests, and pending HealthKit authorization
 
-- **Scope / impact:** The 90-day Sentry search found 15 unresolved Dofek issues.
+- **Scope / impact:** The initial 90-day Sentry search found 15 unresolved Dofek issues.
   Investigation used Sentry events and attachments, production sync outcomes,
   retained local audit logs, and PostHog exception copies and structured logs.
   Separate searches covered all five accessible projects in the only accessible
@@ -31716,6 +31716,13 @@ The approved patch now limits preparation to desired mappings whose source and d
   inactive issues remain unverified: the exposed search schema caps the period
   at 90 days and direct API access returns 403. The period filters included
   issues, as shown in [Sentry's MCP client](https://github.com/getsentry/sentry-mcp/blob/main/packages/mcp-core/src/api-client/client.ts).
+  A separate 365-day event query returned 699 retained errors across 39 groups,
+  with no returned event older than September 16. All 12 open groups matched
+  the refreshed 90-day inventory; the other 27 groups were already resolved.
+  This verifies retained-event coverage, without establishing that dormant
+  groups outside retention do not exist. The increase from 11 to 12 open
+  issues came from the fresh MOBILE-19 regression described below; four earlier
+  issues were resolved during this sweep.
   The deployed server revision was `1621f5579122f09c54d1aebbc2948d658377b89c`.
   No production credentials, health records, or provider connections changed.
 - **Proven token failures:** [Peloton 6R](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-6R)
@@ -31800,6 +31807,22 @@ The approved patch now limits preparation to desired mappings whose source and d
   remain unassessed, rather than proven absent. Additional Sentry attachment
   and issue-activity searches recovered no underlying native cause or vendor
   request ID. Diagnostic improvements are not claimed as fixes.
+- **Fresh connection-loss regression still unresolved:**
+  [19](https://east-bay-software.sentry.io/issues/DOFEK-MOBILE-19) recurred at
+  `2026-10-16T16:10:20.389Z` on embedded runtime 1.7/release `f70891a66`.
+  A background HealthKit `pushQuantitySamples` request lost its connection
+  after about 61 seconds; the subsequent `recordSync` request failed after
+  another seven seconds. The primary failure follows the existing background
+  transport classification, while the secondary history-write failure is
+  captured under `apple-health-sync-log`. Both telemetry destinations also
+  briefly lost connections. The next queued sync started at `16:10:20.423Z`
+  and completed at `16:10:27.174Z` with 69 inserted records and zero errors;
+  five intervening server requests returned 200 in 16–33 ms. No retained
+  request identifier, native error code, server failure, or attachment explains
+  the underlying connection loss. Recovery and the reporting inconsistency
+  are proven; the physical transport cause is not. No error filtering or
+  reporting change was made. The final inventory is 12 open issues: four
+  implemented fixes awaiting release verification and eight unproven causes.
 - **Validation / release gates:** Native HealthKit tests pass 93 assertions;
   the four focused mobile suites pass 98. All workspace TypeScript checks and
   full lint pass. Earlier full unit/mobile runs passed 19,470 and 19,487 assertions
@@ -31815,8 +31838,8 @@ The approved patch now limits preparation to desired mappings whose source and d
   changed-line mutation run exposed a missing exact-boundary assertion; both
   current-user and workout requests now test exactly two minutes of remaining
   validity as well as an expired token. All 94 focused Peloton tests pass with
-  retries disabled. Targeted Stryker passes at 96.55%: all changed HTTP-wrapper
-  and provider mutants are killed. The one remaining optional-init mutation
+  retries disabled. Targeted Stryker passes at 96.55%: all targeted HTTP-wrapper
+  and Peloton provider mutants are killed. The one remaining optional-init mutation
   is equivalent through the client API because its private request method
   always supplies the initialization object; no artificial test path or
   mutation exclusion was added. The existing Wahoo recovery remains
@@ -31841,8 +31864,12 @@ The approved patch now limits preparation to desired mappings whose source and d
   still reported a queued run status while its jobs API showed 88 of 93 jobs
   completed and a macOS worker running. Run-level queue status alone therefore
   did not establish stalled execution. PR change detection subsequently passed
-  and its build and test jobs advanced normally. No workflow was rerun or modified as a
-  queue workaround; inspect individual jobs before interpreting run summaries.
+  and its build and test jobs advanced normally. Head `4d600488a` passed hosted
+  unit/mobile tests, all four database integration shards, all four mutation
+  shards, end-to-end assertions, and security scans. Its native jobs and coverage
+  aggregation were still pending when these incident notes were updated.
+  No workflow was rerun or modified as a queue workaround; inspect individual
+  jobs before interpreting run summaries.
 - **Retrospective / follow-up:** Duplicate monitoring retained decisive expiry
   details after Sentry redaction, while generic replacement exceptions made
   several historical causes unrecoverable. A useful runbook addition would
