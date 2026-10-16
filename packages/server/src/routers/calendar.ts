@@ -17,6 +17,7 @@ import { selectedChartRangeQuery } from "../lib/chart-range.ts";
 import { endDateSchema } from "../lib/date-window.ts";
 import { dateStringSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 import { ActivitiesCalendarRepository } from "../repositories/activities-calendar-repository.ts";
+import { ActivityOverviewRepository } from "../repositories/activity-overview-repository.ts";
 import { CalendarRepository } from "../repositories/calendar-repository.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 import { ensureProvidersRegistered } from "./sync-helpers.ts";
@@ -176,7 +177,7 @@ export const calendarRouter = router({
             "Activity calendar requires the ClickHouse activity analytics store. Set CLICKHOUSE_URL and retry.",
         });
       }
-      const repo = new ActivitiesCalendarRepository(
+      const repo = new ActivityOverviewRepository(
         ctx.db,
         ctx.userId,
         ctx.timezone,

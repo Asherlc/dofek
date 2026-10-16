@@ -7,6 +7,8 @@
 
 const SCANNED_RELATIVE_PATHS = [
   "packages/server/src/repositories/activities-calendar-repository.ts",
+  "packages/server/src/repositories/activity-overview-repository.ts",
+  "packages/server/src/repositories/provider-absent-activities-calendar-repository.ts",
   "packages/server/src/repositories/efficiency-repository.ts",
   "packages/server/src/repositories/intervals-repository.ts",
   "packages/server/src/repositories/predictions-repository.ts",

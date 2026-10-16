@@ -34,7 +34,11 @@ vi.mock("../repositories/activities-calendar-repository.ts", () => ({
       repositoryInputMock(input);
       return repositoryResultMock();
     }
+  },
+}));
 
+vi.mock("../repositories/activity-overview-repository.ts", () => ({
+  ActivityOverviewRepository: class {
     getActivityOverview(input: unknown) {
       repositoryInputMock(input);
       return repositoryResultMock();
