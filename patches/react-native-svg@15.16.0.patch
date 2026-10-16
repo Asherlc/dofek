@@ -1,0 +1,148 @@
+diff --git a/lib/commonjs/lib/SvgTouchableMixin.js b/lib/commonjs/lib/SvgTouchableMixin.js
+index afecb6be19022e69a71c6bf0900344297c1e76df..4ffc105bbd5789e511ad0c49ce9f4f654729ac7a 100644
+--- a/lib/commonjs/lib/SvgTouchableMixin.js
++++ b/lib/commonjs/lib/SvgTouchableMixin.js
+@@ -5,6 +5,7 @@ Object.defineProperty(exports, "__esModule", {
+ });
+ exports.default = void 0;
+ var _reactNative = require("react-native");
++var _playTouchSound = require("./playTouchSound");
+ /**
+  * Self-contained port of the press interaction state machine from
+  * react-native's deprecated `Touchable.Mixin`. It uses the gesture responder
+@@ -437,9 +438,7 @@ const SvgTouchableMixin = {
+           this._endHighlight(e);
+         }
+         if (_reactNative.Platform.OS === 'android' && !this.props.touchSoundDisabled) {
+-          // eslint-disable-next-line @typescript-eslint/no-var-requires
+-          const soundModule = require('../fabric/NativeSvgSoundModule').default;
+-          soundModule.playTouchSound();
++          (0, _playTouchSound.default)();
+         }
+         this.touchableHandlePress(e);
+       }
+diff --git a/lib/commonjs/lib/playTouchSound.js b/lib/commonjs/lib/playTouchSound.js
+new file mode 100644
+index 0000000000000000000000000000000000000000..65af7ee1c9f00769ad345a72bb2739481c6de5bf
+--- /dev/null
++++ b/lib/commonjs/lib/playTouchSound.js
+@@ -0,0 +1,7 @@
++"use strict";
++
++Object.defineProperty(exports, "__esModule", { value: true });
++exports.default = playTouchSound;
++
++// Browsers do not have the Android touch sound.
++function playTouchSound() {}
+diff --git a/lib/commonjs/lib/playTouchSound.native.js b/lib/commonjs/lib/playTouchSound.native.js
+new file mode 100644
+index 0000000000000000000000000000000000000000..f0a7a32774fae12580c809f55ec6958fd53375fa
+--- /dev/null
++++ b/lib/commonjs/lib/playTouchSound.native.js
+@@ -0,0 +1,10 @@
++"use strict";
++
++Object.defineProperty(exports, "__esModule", { value: true });
++exports.default = playTouchSound;
++
++function playTouchSound() {
++  // Keep the Android-only binding lazy so importing this module is safe on iOS.
++  const soundModule = require('../fabric/NativeSvgSoundModule').default;
++  soundModule.playTouchSound();
++}
+diff --git a/lib/module/lib/SvgTouchableMixin.js b/lib/module/lib/SvgTouchableMixin.js
+index 2527710a700bf584fa17334673be3ea348faab44..1950a6ee80fc35cb940408e60af5da54f7ffe4a9 100644
+--- a/lib/module/lib/SvgTouchableMixin.js
++++ b/lib/module/lib/SvgTouchableMixin.js
+@@ -1,4 +1,5 @@
+ import { Platform } from 'react-native';
++import playTouchSound from './playTouchSound';
+ 
+ /**
+  * Self-contained port of the press interaction state machine from
+@@ -432,9 +433,7 @@ const SvgTouchableMixin = {
+           this._endHighlight(e);
+         }
+         if (Platform.OS === 'android' && !this.props.touchSoundDisabled) {
+-          // eslint-disable-next-line @typescript-eslint/no-var-requires
+-          const soundModule = require('../fabric/NativeSvgSoundModule').default;
+-          soundModule.playTouchSound();
++          playTouchSound();
+         }
+         this.touchableHandlePress(e);
+       }
+diff --git a/lib/module/lib/playTouchSound.js b/lib/module/lib/playTouchSound.js
+new file mode 100644
+index 0000000000000000000000000000000000000000..09d9e849c722ae8b49091ef6bdf0efcb79aba6b3
+--- /dev/null
++++ b/lib/module/lib/playTouchSound.js
+@@ -0,0 +1,2 @@
++// Browsers do not have the Android touch sound.
++export default function playTouchSound() {}
+diff --git a/lib/module/lib/playTouchSound.native.js b/lib/module/lib/playTouchSound.native.js
+new file mode 100644
+index 0000000000000000000000000000000000000000..88543710f45841dc5a5466ba7e71bc3fed98cd5b
+--- /dev/null
++++ b/lib/module/lib/playTouchSound.native.js
+@@ -0,0 +1,5 @@
++export default function playTouchSound() {
++  // Keep the Android-only binding lazy so importing this module is safe on iOS.
++  const soundModule = require('../fabric/NativeSvgSoundModule').default;
++  soundModule.playTouchSound();
++}
+diff --git a/lib/typescript/lib/playTouchSound.d.ts b/lib/typescript/lib/playTouchSound.d.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..4f1eacf9e6288cc9ce776c5ac43c1781c6356fd2
+--- /dev/null
++++ b/lib/typescript/lib/playTouchSound.d.ts
+@@ -0,0 +1 @@
++export default function playTouchSound(): void;
+diff --git a/lib/typescript/lib/playTouchSound.native.d.ts b/lib/typescript/lib/playTouchSound.native.d.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..4f1eacf9e6288cc9ce776c5ac43c1781c6356fd2
+--- /dev/null
++++ b/lib/typescript/lib/playTouchSound.native.d.ts
+@@ -0,0 +1 @@
++export default function playTouchSound(): void;
+diff --git a/src/lib/SvgTouchableMixin.ts b/src/lib/SvgTouchableMixin.ts
+index 934c2fb8fc47ee7a1a59a866173011d7b725b7fd..ebf11fcf712610ec346810d15f9d86ae98c0b783 100644
+--- a/src/lib/SvgTouchableMixin.ts
++++ b/src/lib/SvgTouchableMixin.ts
+@@ -1,5 +1,6 @@
+ import type { GestureResponderEvent, Insets } from 'react-native';
+ import { Platform } from 'react-native';
++import playTouchSound from './playTouchSound';
+ 
+ /**
+  * Self-contained port of the press interaction state machine from
+@@ -635,9 +636,7 @@ const SvgTouchableMixin = {
+           this._endHighlight(e);
+         }
+         if (Platform.OS === 'android' && !this.props.touchSoundDisabled) {
+-          // eslint-disable-next-line @typescript-eslint/no-var-requires
+-          const soundModule = require('../fabric/NativeSvgSoundModule').default;
+-          soundModule.playTouchSound();
++          playTouchSound();
+         }
+         this.touchableHandlePress(e);
+       }
+diff --git a/src/lib/playTouchSound.native.ts b/src/lib/playTouchSound.native.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..f5b4c626f40d426041e43207bd42dd0fa78d113e
+--- /dev/null
++++ b/src/lib/playTouchSound.native.ts
+@@ -0,0 +1,6 @@
++export default function playTouchSound(): void {
++  // Keep the Android-only binding lazy so importing this module is safe on iOS.
++  // eslint-disable-next-line @typescript-eslint/no-var-requires
++  const soundModule = require('../fabric/NativeSvgSoundModule').default;
++  soundModule.playTouchSound();
++}
+diff --git a/src/lib/playTouchSound.ts b/src/lib/playTouchSound.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..ac413a4438819cf5f0363a8798044d10ef34f988
+--- /dev/null
++++ b/src/lib/playTouchSound.ts
+@@ -0,0 +1,2 @@
++// Browsers do not have the Android touch sound.
++export default function playTouchSound(): void {}

@@ -305,6 +305,16 @@ runtime versions to match updates to compatible native code
 Use [pnpm patch/patch-commit](https://pnpm.io/cli/patch-commit) when updating the
 patch, then rerun the native regression and existing Release archive job.
 
+The SVG 15.16.0 dependency patch separates its Android tap-sound binding from
+the web module graph. It preserves the native press behavior introduced by
+[upstream PR 3016](https://github.com/software-mansion/react-native-svg/pull/3016)
+and uses React Native's documented
+[generic/web and `.native` module resolution](https://reactnative.dev/docs/platform-specific-code#native-specific-extensions-ie-sharing-code-with-nodejs-and-web).
+After changing SVG or its patch, run `pnpm check:svg-platform` from this package,
+verify mobile Storybook development and static export, and run the native
+Release archive. The check exercises strict web bundling and native press
+behavior; it does not replace a native build or device validation.
+
 Sentry React Native 8.29.0 and the separate watch Swift package use Cocoa 9.30.0.
 The [binary podspec](./plugins/Sentry.podspec.json) pins its release URL and
 SHA256 from Sentry's [Swift package manifest](https://github.com/getsentry/sentry-cocoa/blob/9.30.0/Package.swift).
