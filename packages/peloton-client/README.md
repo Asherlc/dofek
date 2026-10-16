@@ -115,6 +115,13 @@ const graph = await client.getPerformanceGraph(page.data[0].id, 5);
 - `getPerformanceGraph(workoutId, everyN?)` returns validated metric samples;
   `everyN` is the requested sampling interval in seconds.
 
+The constructor also accepts an asynchronous access-token supplier in place of
+the token string. The [client](src/client.ts) calls that supplier after rate-limit
+admission, immediately before each authenticated request, including the separate
+current-user and workout-list requests, so applications can refresh credentials
+during long syncs. OAuth
+defines refresh-token exchange in [RFC 6749 section 6](https://www.rfc-editor.org/rfc/rfc6749#section-6).
+
 All remote JSON crosses a
 [`zod`](https://zod.dev/) schema boundary. A successful HTTP response whose
 shape does not match the currently observed API throws

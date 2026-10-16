@@ -1,8 +1,4 @@
-import {
-  createRateLimitAwareFetch,
-  ProviderRateLimitError,
-  ProviderServiceUnavailableError,
-} from "@dofek/provider-http/rate-limit";
+import { createRateLimitAwareFetch } from "@dofek/provider-http/rate-limit";
 import { z } from "zod";
 import { PelotonAuthenticationError, PelotonResponseError, PelotonServiceError } from "./errors.ts";
 import {
@@ -17,16 +13,27 @@ export const PELOTON_API_BASE = "https://api.onepeloton.com";
 const pelotonUserSchema = z.object({ id: z.string().min(1) });
 
 export class PelotonClient {
-  #accessToken: string;
   #userId: string | null = null;
   #fetchFn: typeof globalThis.fetch;
 
-  constructor(accessToken: string, fetchFn: typeof globalThis.fetch = globalThis.fetch) {
-    this.#accessToken = accessToken;
-    this.#fetchFn = createRateLimitAwareFetch(fetchFn, { providerId: "peloton" });
+  constructor(
+    accessToken: string | (() => Promise<string>),
+    fetchFn: typeof globalThis.fetch = globalThis.fetch,
+  ) {
+    const getAccessToken = typeof accessToken === "string" ? async () => accessToken : accessToken;
+    this.#fetchFn = createRateLimitAwareFetch(fetchFn, {
+      providerId: "peloton",
+      async prepareRequest(input, init) {
+        const headers = new Headers(
+          init?.headers ?? (input instanceof Request ? input.headers : undefined),
+        );
+        headers.set("Authorization", `Bearer ${await getAccessToken()}`);
+        return { ...init, headers };
+      },
+    });
   }
 
-  async #get(path: string, params?: Record<string, string>): Promise<unknown> {
+  async #get(path: string, params?: Record<string, string>): Promise<Response> {
     const url = new URL(path, PELOTON_API_BASE);
     for (const [key, value] of Object.entries(params ?? {})) {
       url.searchParams.set(key, value);
@@ -34,7 +41,6 @@ export class PelotonClient {
 
     const response = await this.#fetchFn(url.toString(), {
       headers: {
-        Authorization: `Bearer ${this.#accessToken}`,
         "peloton-platform": "web",
       },
     });
@@ -45,68 +51,43 @@ export class PelotonClient {
       }
       throw new PelotonServiceError(response.status, responseBody);
     }
-    return response.json();
+    return response;
   }
 
   async getUserId(): Promise<string> {
     if (this.#userId) return this.#userId;
+    const response = await this.#get("/api/me");
     try {
-      const parsed = pelotonUserSchema.parse(await this.#get("/api/me"));
+      const parsed = pelotonUserSchema.parse(await response.json());
       this.#userId = parsed.id;
       return parsed.id;
     } catch (error: unknown) {
-      if (
-        error instanceof PelotonAuthenticationError ||
-        error instanceof PelotonServiceError ||
-        error instanceof ProviderRateLimitError ||
-        error instanceof ProviderServiceUnavailableError
-      ) {
-        throw error;
-      }
       throw new PelotonResponseError("current-user", error);
     }
   }
 
   async getWorkouts(page = 0, limit = 20): Promise<PelotonWorkoutListResponse> {
     const userId = await this.getUserId();
+    const response = await this.#get(`/api/user/${userId}/workouts`, {
+      page: String(page),
+      limit: String(limit),
+      sort_by: "-created_at",
+      joins: "ride",
+    });
     try {
-      return pelotonWorkoutListResponseSchema.parse(
-        await this.#get(`/api/user/${userId}/workouts`, {
-          page: String(page),
-          limit: String(limit),
-          sort_by: "-created_at",
-          joins: "ride",
-        }),
-      );
+      return pelotonWorkoutListResponseSchema.parse(await response.json());
     } catch (error: unknown) {
-      if (
-        error instanceof PelotonAuthenticationError ||
-        error instanceof PelotonServiceError ||
-        error instanceof ProviderRateLimitError ||
-        error instanceof ProviderServiceUnavailableError
-      ) {
-        throw error;
-      }
       throw new PelotonResponseError("workouts", error);
     }
   }
 
   async getPerformanceGraph(workoutId: string, everyN = 5): Promise<PelotonPerformanceGraph> {
+    const response = await this.#get(`/api/workout/${workoutId}/performance_graph`, {
+      every_n: String(everyN),
+    });
     try {
-      return pelotonPerformanceGraphSchema.parse(
-        await this.#get(`/api/workout/${workoutId}/performance_graph`, {
-          every_n: String(everyN),
-        }),
-      );
+      return pelotonPerformanceGraphSchema.parse(await response.json());
     } catch (error: unknown) {
-      if (
-        error instanceof PelotonAuthenticationError ||
-        error instanceof PelotonServiceError ||
-        error instanceof ProviderRateLimitError ||
-        error instanceof ProviderServiceUnavailableError
-      ) {
-        throw error;
-      }
       throw new PelotonResponseError("performance-graph", error);
     }
   }

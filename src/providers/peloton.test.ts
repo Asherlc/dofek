@@ -1,5 +1,9 @@
-import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  admissionDelayMs,
+  createInitialAdaptiveState,
+} from "@dofek/provider-http/adaptive-rate-limit";
+import { createRateLimitAwareFetch, ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
 import { AccessTokenExpiredError } from "./auth-errors.ts";
 import {
@@ -832,8 +836,9 @@ describe("PelotonClient — headers", () => {
     await client.getUserId();
 
     const options = mockFetch.mock.calls[0]?.[1];
-    expect(options?.headers?.Authorization).toBe("Bearer my-secret-token");
-    expect(options?.headers?.["peloton-platform"]).toBe("web");
+    const headers = new Headers(options?.headers);
+    expect(headers.get("Authorization")).toBe("Bearer my-secret-token");
+    expect(headers.get("peloton-platform")).toBe("web");
   });
 });
 
@@ -1556,6 +1561,154 @@ describe("PelotonProvider.sync — pagination", () => {
 });
 
 describe("PelotonProvider.sync — token refresh", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("refreshes after adaptive admission expires the token before actual dispatch", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-14T19:30:00Z"));
+    const expiry = new Date("2026-10-14T19:33:00Z");
+    const state = {
+      ...createInitialAdaptiveState("peloton", "provider", null, Date.now() - 60_000),
+      inferredBudget: 10,
+      requestCount: 8,
+    };
+    const requests: string[] = [];
+    const fetchFn = createRateLimitAwareFetch(
+      async (input, init) => {
+        const path = new URL(String(input)).pathname;
+        requests.push(path);
+        if (path === "/oauth/token") {
+          return Response.json({
+            access_token: "fresh-peloton-token",
+            refresh_token: "fresh-refresh-token",
+            expires_in: 172800,
+          });
+        }
+        if (new Headers(init?.headers).get("Authorization") !== "Bearer fresh-peloton-token") {
+          return new Response("Expired access token", { status: 401 });
+        }
+        return Response.json(path === "/api/me" ? { id: "user-123" } : makeWorkoutListResponse([]));
+      },
+      {
+        providerId: "peloton",
+        adaptiveStore: {
+          async awaitAdmission() {
+            vi.setSystemTime(Date.now() + admissionDelayMs(state, Date.now()));
+          },
+          async recordSuccess() {},
+          async recordRateLimit() {},
+          async getLearnedCooldownSeconds() {
+            return null;
+          },
+        },
+      },
+    );
+
+    const result = await new PelotonProvider(fetchFn).sync(
+      new SyncRun({
+        db: createMockDb([{ ...VALID_TOKEN, expiresAt: expiry }]),
+        window: SyncWindow.fromSince({ since: new Date("2026-01-01") }),
+      }),
+    );
+
+    expect(result.errors).toEqual([]);
+    expect(requests).toEqual(["/oauth/token", "/api/me", "/api/user/user-123/workouts"]);
+  });
+
+  it.each([200, 120_000])(
+    "refreshes a token with %i ms remaining before starting an API request",
+    async (remainingMs) => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(new Date("2026-10-14T19:30:01.000Z"));
+      const expiry = new Date(Date.now() + remainingMs);
+      const requests: string[] = [];
+      const provider = new PelotonProvider(async (input, init) => {
+        const url = new URL(String(input));
+        requests.push(url.pathname);
+        if (url.pathname === "/oauth/token") {
+          return Response.json({
+            access_token: "fresh-peloton-token",
+            refresh_token: "fresh-refresh-token",
+            expires_in: 172800,
+          });
+        }
+        if (new Headers(init?.headers).get("Authorization") !== "Bearer fresh-peloton-token") {
+          return new Response("Expired access token", { status: 401 });
+        }
+        return Response.json(
+          url.pathname === "/api/me" ? { id: "user-123" } : makeWorkoutListResponse([]),
+        );
+      });
+
+      const result = await provider.sync(
+        new SyncRun({
+          db: createMockDb([{ ...VALID_TOKEN, expiresAt: expiry }]),
+          window: SyncWindow.fromSince({ since: new Date("2026-01-01") }),
+        }),
+      );
+
+      expect(result.errors).toEqual([]);
+      expect(requests).toEqual(["/oauth/token", "/api/me", "/api/user/user-123/workouts"]);
+    },
+  );
+
+  it.each(["current user", "workouts"])(
+    "refreshes again when the token approaches expiry after fetching %s",
+    async (advanceAfter) => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(new Date("2026-10-14T19:30:00.000Z"));
+      const initialExpiry = new Date(Date.now() + 180_000);
+      const workout = makeSyncWorkout();
+      const requests: Array<{ path: string; authorization: string | null }> = [];
+      const provider = new PelotonProvider(async (input, init) => {
+        const url = new URL(String(input));
+        const authorization = new Headers(init?.headers).get("Authorization");
+        requests.push({ path: url.pathname, authorization });
+        if (url.pathname === "/oauth/token") {
+          return Response.json({
+            access_token: "fresh-peloton-token",
+            refresh_token: "fresh-refresh-token",
+            expires_in: 172800,
+          });
+        }
+        const needsRefresh = Date.now() + 120_000 >= initialExpiry.getTime();
+        if (needsRefresh && authorization !== "Bearer fresh-peloton-token") {
+          return new Response("Expired access token", { status: 401 });
+        }
+        if (url.pathname === "/api/me") {
+          if (advanceAfter === "current user") {
+            vi.setSystemTime(new Date("2026-10-14T19:33:00.000Z"));
+          }
+          return Response.json({ id: "user-123" });
+        }
+        if (url.pathname.endsWith("/workouts")) {
+          if (advanceAfter === "workouts") {
+            vi.setSystemTime(new Date("2026-10-14T19:33:00.000Z"));
+          }
+          return Response.json(makeWorkoutListResponse([workout]));
+        }
+        return Response.json(makeSyncPerformanceGraph());
+      });
+
+      const result = await provider.sync(
+        new SyncRun({
+          db: createMockDb([{ ...VALID_TOKEN, expiresAt: initialExpiry }]),
+          window: SyncWindow.fromSince({ since: new Date((workout.start_time - 1000) * 1000) }),
+        }),
+      );
+
+      expect(result.errors).toEqual([]);
+      expect(result.recordsSynced).toBeGreaterThan(0);
+      expect(requests.filter(({ path }) => path === "/oauth/token")).toHaveLength(1);
+      expect(requests.at(-1)).toEqual({
+        path: `/api/workout/${workout.id}/performance_graph`,
+        authorization: "Bearer fresh-peloton-token",
+      });
+    },
+  );
+
   it("refreshes an expired token before syncing", async () => {
     const workout = makeSyncWorkout();
 

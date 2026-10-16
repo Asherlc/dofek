@@ -31705,3 +31705,116 @@ The approved patch now limits preparation to desired mappings whose source and d
 - **Root cause / direct fixes:** SDK compatibility metadata advanced beyond the existing exact dependency pins; the map also introduced two legitimate technical terms absent from the [dictionary](../cspell.json). The user approved including the required patch upgrades and a new runtime boundary. Updated Expo and Router, retained all nine native patches, regenerated the lockfile, and recorded exact release-age allowances for the six required stable Expo artifacts. Runtime `1.8` requires a new native binary; see [Expo's runtime compatibility guidance](https://docs.expo.dev/eas-update/runtime-versions/). Added the two terms to the existing dictionary.
 - **Validation / remaining risk:** The unchanged Expo compatibility check, both iOS export paths, all 1,498 mobile tests, lint, and root/server/web/mobile typechecks pass locally. Spellcheck passes with the dictionary additions. Full unit/mobile verification and hosted checks for the corrected head are tracked in the [PR checks](https://github.com/Asherlc/dofek/pull/2981/checks); hosted native-build completion and actual native UI verification remain pending. No timeout, retry, exclusion, or failure suppression was added.
 - **Retrospective / follow-up:** Exact compatibility diagnostics and lockfile review bounded the dependency update. Check Expo compatibility and technical vocabulary before the next map PR, and record the runtime/build boundary alongside dependency validation in the mobile release checklist.
+
+## 2026-10-16 — Sentry sweep: token expiry, background requests, and pending HealthKit authorization
+
+- **Scope / impact:** The 90-day Sentry search found 15 unresolved Dofek issues.
+  Investigation used Sentry events and attachments, production sync outcomes,
+  retained local audit logs, and PostHog exception copies and structured logs.
+  The deployed server revision was `1621f5579122f09c54d1aebbc2948d658377b89c`.
+  No production credentials, health records, or provider connections changed.
+- **Proven token failures:** [Peloton 6R](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-6R)
+  accepted `/api/me` at `2026-10-14T19:30:00.996Z`, but its cached token expired
+  at `19:30:01.189Z` before the workout request started at `19:30:01.464Z`.
+  [Wahoo 6Q](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-6Q) started
+  its request at `2026-10-16T13:00:01.798Z`; the token expired at `13:00:02.006Z`
+  before the 401 response at `13:00:02.084Z`. Sentry redacted expiry metadata,
+  but PostHog's duplicate diagnostics retained these timestamps. Wahoo's
+  existing bounded refresh recovered all 20 diagnostic events: 448 successful
+  syncs and no sync failures since October 7. Peloton's three recent failures
+  recovered on their next scheduled syncs. Per-request token checks now use
+  the existing HTTP request budget as the minimum validity window, including
+  Peloton's internal `/me`-to-workout request and Wahoo pagination. Terminal
+  authorization diagnostics remain enabled. Independent review reproduced an
+  expired dispatch after four minutes of adaptive admission despite a two-minute
+  validity guard. Credential preparation therefore runs after admission at the
+  existing HTTP dispatch boundary, preserving a single limiter, response observer,
+  and request deadline. OAuth defines `expires_in` relative
+  to response generation, so response-processing timestamps are not proof of
+  upstream validity: [RFC 6749 section 5.1](https://www.rfc-editor.org/rfc/rfc6749#section-5.1).
+- **Proven mobile failures:** [1X](https://east-bay-software.sentry.io/issues/DOFEK-MOBILE-1X)
+  recorded a background cellular reconnect at `2026-10-12T16:18:54.398Z`, a
+  dashboard request 226 ms later, and an offline failure. Focus gating stopped
+  polling but did not stop reconnect-triggered refetches. Query availability
+  now requires both an active app and network connectivity; paused invalidation
+  preserves cached data and settles without delaying direct background uploads.
+  See [TanStack's React Native lifecycle guidance](https://tanstack.com/query/latest/docs/framework/react/react-native).
+  [1Y](https://east-bay-software.sentry.io/issues/DOFEK-MOBILE-1Y) failed the
+  first anchored BodyMass query before authorization and aborted every later
+  type. Native code now maps the exact HealthKit authorization code, and sync
+  skips only that pending type without committing its anchor. Later authorization
+  can query it again; unexpected failures still propagate. Apple documents
+  [`errorAuthorizationNotDetermined`](https://developer.apple.com/documentation/healthkit/hkerror/code/errorauthorizationnotdetermined).
+  Runtime **1.9** requires a new native binary; these four issues remain open
+  until their fixes are deployed and verified.
+- **Resolved with evidence:** [Strava 6P](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-6P)
+  has the previously proven expiry fix deployed and 450 successful syncs over
+  ten days without another failure. [Mountain Project 6T](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-6T)
+  returned an onX maintenance page at 14:00 UTC, then completed 18-record syncs
+  at 14:30 and 15:00. [1Z](https://east-bay-software.sentry.io/issues/DOFEK-MOBILE-1Z)
+  came from the development Simulator audit: its exact dashboard and activity
+  request timestamps match local ClickHouse unknown-table errors for
+  `daily_strain` and `activity_location_member_change`. The audit report confirms
+  its incomplete isolated fixtures and server were removed. No production
+  workaround was added. [1V](https://east-bay-software.sentry.io/issues/DOFEK-MOBILE-1V)
+  came from the obsolete embedded climbing parser; the same device later
+  launched downloaded release `282faff8c3cbc360a285dae4c6b4bc74e234d5a1`,
+  which contains the shared lane-schema fix. This establishes delivery to the
+  affected device; no new physical climbing-screen interaction is claimed.
+- **Recovered provider issue still unresolved:**
+  [Polar 6S](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-6S) returned
+  an empty upstream 500 in the 06:00 sleep step, then completed full syncs from
+  06:30 through 15:00. It was initially marked resolved after recovery, then
+  reopened under the user's clarified requirement to prove every cause. The
+  upstream internal cause remains unknown; successful later requests do not
+  establish a fix. The request matched Polar's documented endpoint and no
+  published incident named this window. [Polar support](https://www.polar.com/accesslink-api/#support)
+  would need its server-side error record for `/v3/users/sleep` between
+  `06:00:01.712Z` and `06:00:22.213Z`; no vendor correlation ID was retained.
+- **Historical issues still unresolved:** [1R](https://east-bay-software.sentry.io/issues/DOFEK-MOBILE-1R)
+  and [1S](https://east-bay-software.sentry.io/issues/DOFEK-MOBILE-1S) discarded
+  the native causes of four persistence failures during one September 29
+  background launch. PostHog has the same generic exceptions. The MetricKit
+  attachment for [1E](https://east-bay-software.sentry.io/issues/DOFEK-MOBILE-1E)
+  confirms approximately 1,074 MB of writes, with 91 of 97 samples in
+  AsyncStorage, but no cache key or observation interval; its breadcrumbs
+  describe the later diagnostic-upload session. Current whole-cache write
+  amplification is observable, but does not prove that historical trigger.
+  [1Q](https://east-bay-software.sentry.io/issues/DOFEK-MOBILE-1Q) lacks the
+  underlying Apple NSError. [1G](https://east-bay-software.sentry.io/issues/DOFEK-MOBILE-1G)
+  received HTML 504 after 30.077 seconds on September 17 without retained
+  origin evidence. [1W](https://east-bay-software.sentry.io/issues/DOFEK-MOBILE-1W)
+  timed out during background cellular authentication after 11.3 seconds;
+  nearby retained server logs do not establish where that request stalled.
+  PostHog mobile/server log retention begins October 2; Axiom's available
+  token is ingest-only and rejects queries with 403. The paired physical
+  iPhone is unavailable, and installed Simulator runtimes do not match the
+  historical iOS 27 device. Diagnostic improvements are not claimed as fixes.
+- **Validation / release gates:** Native HealthKit tests pass 93 assertions;
+  the four focused mobile suites pass 98. All workspace TypeScript checks and
+  full lint pass. Earlier full unit/mobile runs passed 19,470 and 19,487 assertions
+  with 19 existing skips. After the dispatch refinement, 404 focused assertions
+  pass with retries disabled. A strict combined run exposed
+  `RangeError: Maximum call stack size exceeded` in a new timeout-order test:
+  earlier timeout tests left a spy installed, so the new test's saved reference
+  recursively called that same spy. Local per-test mock/timer cleanup fixes the
+  isolation error; no production behavior or global retry setting changed.
+  Final combined validation follows this correction. The existing Wahoo recovery remains
+  bounded to one refresh after rejection; no additional retry, wait, or timeout
+  was introduced.
+- **Local validation prerequisite:** `pnpm compose -- up -d --wait clickhouse`
+  failed while creating `witty-hamster_default` with `all predefined address
+  pools have been fully subnetted`. Follow the existing
+  [address-pool recovery procedure](testing.md#docker-address-pool-exhaustion).
+  Inspection verified `10.241.20.0/24` did not overlap any Docker subnet or
+  nondefault host/VPN route. Creating only the current workspace's correctly
+  labeled network on that subnet let the unchanged Compose command pass and
+  ClickHouse become healthy. Other workspace resources and all existing volumes
+  were preserved; no daemon or timeout setting changed.
+- **Retrospective / follow-up:** Duplicate monitoring retained decisive expiry
+  details after Sentry redaction, while generic replacement exceptions made
+  several historical causes unrecoverable. A useful runbook addition would
+  distinguish a rejected HTTP attempt from a failed sync and check later
+  same-device update identifiers before declaring delivery blocked. Use the
+  Sentry, production-log, and PostHog investigation workflows together; keep
+  native-device validation separate from helper tests and uploaded binaries.

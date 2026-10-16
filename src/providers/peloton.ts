@@ -9,6 +9,7 @@ import {
 import { PelotonAuthenticationError } from "@dofek/peloton/errors";
 import { mapFitnessDiscipline, parsePerformanceGraph, parseWorkout } from "@dofek/peloton/parsing";
 import type { PelotonPerformanceGraph, PelotonWorkout } from "@dofek/peloton/types";
+import { PROVIDER_HTTP_REQUEST_TIMEOUT_MS } from "@dofek/provider-http/rate-limit";
 import type { TokenSet } from "../auth/oauth.ts";
 import { resolveOAuthTokens } from "../auth/resolve-tokens.ts";
 import type { SyncDatabase } from "../db/index.ts";
@@ -91,6 +92,7 @@ export class PelotonProvider implements SyncProvider {
       providerName: this.name,
       getOAuthConfig: () => pelotonOAuthConfig(),
       fetchFn: this.#fetchFn,
+      refreshBeforeExpiryMs: PROVIDER_HTTP_REQUEST_TIMEOUT_MS,
     });
   }
 
@@ -109,7 +111,12 @@ export class PelotonProvider implements SyncProvider {
       return { provider: this.id, recordsSynced, errors, duration: Date.now() - start };
     }
 
-    const client = new PelotonClient(tokens.accessToken, this.#fetchFn);
+    const client = new PelotonClient(async () => {
+      if (tokens.expiresAt.getTime() <= Date.now() + PROVIDER_HTTP_REQUEST_TIMEOUT_MS) {
+        tokens = await this.#resolveTokens(db);
+      }
+      return tokens.accessToken;
+    }, this.#fetchFn);
     await ensureProvider(db, this.id, this.name, PELOTON_API_BASE);
     const since = window.since;
     const syncWindowEnd = window.until;

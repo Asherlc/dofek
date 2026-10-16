@@ -70,6 +70,14 @@ coordination appropriate to their runtime.
   `response.ok`.
 - These helpers do not retry automatically. The caller decides whether and when
   to retry; an adaptive store can delay admission before a request.
+- `prepareRequest(input, init)` is an optional asynchronous callback awaited
+  after adaptive admission and before the request deadline starts. Applications
+  can use it to prepare current headers at dispatch; returning `undefined`
+  retains the existing request options. Deriving preparation from an already
+  wrapped fetch preserves its original admission, response observer and error
+  policy, with one deadline per request. The original wrapper remains unchanged,
+  and its preparation runs before the new callback. See the
+  [implementation](./src/rate-limit.ts).
 - `onResponse(response, input, init, requestStartedAtMs)` is an optional observer
   awaited before HTTP status classification. The timestamp is recorded immediately
   before Fetch runs, after adaptive admission. Applications can attach their existing

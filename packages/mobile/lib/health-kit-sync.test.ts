@@ -947,6 +947,103 @@ describe("syncHealthKitObserverChanges", () => {
     expect(healthKit.querySleepSamples).not.toHaveBeenCalled();
   });
 
+  it("continues later observed types when an anchored type awaits authorization", async () => {
+    const client = createMockClient();
+    const healthKit = createMockHealthKit();
+    healthKit.queryAnchoredSamples.mockRejectedValueOnce(
+      Object.assign(new Error("localized system message"), {
+        code: "HEALTHKIT_AUTHORIZATION_NOT_DETERMINED",
+      }),
+    );
+
+    const result = await syncHealthKitObserverChanges({
+      trpcClient: client,
+      healthKit,
+      typeIdentifiers: ["HKQuantityTypeIdentifierBodyMass", "HKQuantityTypeIdentifierHeartRate"],
+    });
+
+    expect(result).toEqual({ deleted: 1, errors: [], inserted: 1 });
+    expect(client.healthKitSync.pushQuantitySamples.mutate).toHaveBeenCalledWith({
+      samples: [expect.objectContaining({ uuid: "heart-rate-new" })],
+    });
+    expect(healthKit.completeAnchoredQuery).toHaveBeenCalledExactlyOnceWith(
+      "HKQuantityTypeIdentifierHeartRate",
+      "query-1",
+      true,
+    );
+  });
+
+  it.each(["HKQuantityTypeIdentifierBodyMass", MENSTRUAL_FLOW_TYPE_IDENTIFIER])(
+    "preserves the anchor for %s until authorization completes",
+    async (typeIdentifier) => {
+      const client = createMockClient();
+      const healthKit = createMockHealthKit();
+      healthKit.queryAnchoredSamples.mockRejectedValueOnce({
+        code: "HEALTHKIT_AUTHORIZATION_NOT_DETERMINED",
+      });
+      const options = { trpcClient: client, healthKit, typeIdentifiers: [typeIdentifier] };
+
+      expect(await syncHealthKitObserverChanges(options)).toEqual({
+        deleted: 0,
+        errors: [],
+        inserted: 0,
+      });
+      expect(healthKit.completeAnchoredQuery).not.toHaveBeenCalled();
+      expect(client.healthKitSync.pushQuantitySamples.mutate).not.toHaveBeenCalled();
+      expect(client.healthKitSync.deleteQuantitySamples.mutate).not.toHaveBeenCalled();
+
+      healthKit.queryAnchoredSamples.mockResolvedValue({
+        queryId: "query-authorized",
+        samples: [
+          {
+            type: typeIdentifier,
+            value: 2,
+            unit: "count",
+            startDate: "2026-07-27T10:00:00Z",
+            endDate: "2026-07-27T10:00:00Z",
+            sourceName: "Health source",
+            sourceBundle: "com.example.health",
+            uuid: "sample-authorized",
+          },
+        ],
+        deletedUUIDs: [],
+      });
+
+      expect(await syncHealthKitObserverChanges(options)).toEqual({
+        deleted: 0,
+        errors: [],
+        inserted: 1,
+      });
+      expect(client.healthKitSync.pushQuantitySamples.mutate).toHaveBeenCalledWith({
+        samples: [expect.objectContaining({ type: typeIdentifier, uuid: "sample-authorized" })],
+      });
+      expect(healthKit.completeAnchoredQuery).toHaveBeenCalledExactlyOnceWith(
+        typeIdentifier,
+        "query-authorized",
+        true,
+      );
+    },
+  );
+
+  it.each(["QUERY_ERROR", "HEALTHKIT_DATABASE_INACCESSIBLE", undefined])(
+    "propagates anchored query errors with code %s",
+    async (code) => {
+      const client = createMockClient();
+      const healthKit = createMockHealthKit();
+      const error = Object.assign(new Error("Authorization not determined"), { code });
+      healthKit.queryAnchoredSamples.mockRejectedValue(error);
+
+      await expect(
+        syncHealthKitObserverChanges({
+          trpcClient: client,
+          healthKit,
+          typeIdentifiers: ["HKQuantityTypeIdentifierBodyMass"],
+        }),
+      ).rejects.toBe(error);
+      expect(healthKit.completeAnchoredQuery).not.toHaveBeenCalled();
+    },
+  );
+
   it("uploads and deletes menstrual flow through the anchored observer path", async () => {
     const client = createMockClient();
     const healthKit = createMockHealthKit();

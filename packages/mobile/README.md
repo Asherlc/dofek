@@ -312,7 +312,7 @@ for the approved SDK dependency tree.
 
 ### Native diagnostic runtime
 
-Runtime **1.8** uses the stable [Expo SDK 58](https://expo.dev/changelog/sdk-58)
+Runtime **1.9** uses the stable [Expo SDK 58](https://expo.dev/changelog/sdk-58)
 native dependency set with Expo 58.0.12, Expo Router 58.0.21, Expo Updates
 58.0.17, React Native 0.88.0, and React Native SVG 15.16.0, pinned in
 [package.json](./package.json). Validate SDK-managed versions with
@@ -320,8 +320,13 @@ native dependency set with Expo 58.0.12, Expo Router 58.0.21, Expo Updates
 [dependency validation guidance](https://docs.expo.dev/more/expo-cli/#configuring-dependency-validation).
 The native dependency set also includes ExpoNetwork, the pnpm patch to
 `expo-apple-authentication@58.0.2`, and `react-native-maps@1.29.11`.
-Build a new native binary containing these dependencies; do not publish this
-JavaScript to runtime 1.7 or earlier.
+Runtime 1.9 also classifies HealthKit authorization-not-determined errors with
+the stable code consumed by anchored sync. A type awaiting authorization leaves
+its anchor unchanged and does not stop other observed types from syncing;
+unexpected query errors still fail. Apple documents this state as
+[`errorAuthorizationNotDetermined`](https://developer.apple.com/documentation/healthkit/hkerror/code/errorauthorizationnotdetermined).
+Build a new native binary containing these dependencies and HealthKit changes;
+do not publish this JavaScript to runtime 1.8 or earlier.
 Expo requires a runtime increment when native code is updated; see
 [manual runtime version increments](https://docs.expo.dev/eas-update/runtime-versions/#manually-increment-the-runtime-version).
 Expo uses

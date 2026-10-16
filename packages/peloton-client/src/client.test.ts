@@ -3,6 +3,7 @@ import {
   ProviderServiceUnavailableError,
 } from "@dofek/provider-http/rate-limit";
 import { describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 import { PelotonClient } from "./client.ts";
 import { PelotonAuthenticationError, PelotonResponseError, PelotonServiceError } from "./errors.ts";
 
@@ -18,12 +19,12 @@ describe("PelotonClient", () => {
     expect(fetchFn).toHaveBeenCalledWith(
       "https://api.onepeloton.com/api/me",
       expect.objectContaining({
-        headers: {
-          Authorization: "Bearer secret",
-          "peloton-platform": "web",
-        },
+        headers: expect.any(Headers),
       }),
     );
+    const headers = new Headers(fetchFn.mock.calls[0]?.[1]?.headers);
+    expect(headers.get("Authorization")).toBe("Bearer secret");
+    expect(headers.get("peloton-platform")).toBe("web");
   });
 
   it("caches the resolved user ID across workout requests", async () => {
@@ -53,6 +54,68 @@ describe("PelotonClient", () => {
       "/api/user/user-123/workouts?page=2&limit=50",
     );
   });
+
+  it("resolves the current bearer token for each API request", async () => {
+    let token = "before-refresh";
+    const fetchFn: typeof globalThis.fetch = async (input, init) => {
+      const isUserRequest = String(input).endsWith("/api/me");
+      const expectedToken = isUserRequest ? "before-refresh" : "after-refresh";
+      if (new Headers(init?.headers).get("Authorization") !== `Bearer ${expectedToken}`) {
+        return new Response("Expired access token", { status: 401 });
+      }
+      if (isUserRequest) {
+        token = "after-refresh";
+        return Response.json({ id: "user-123" });
+      }
+      return Response.json({
+        data: [],
+        total: 0,
+        count: 0,
+        page: 0,
+        limit: 20,
+        page_count: 0,
+        sort_by: "-created_at",
+        show_next: false,
+        show_previous: false,
+      });
+    };
+
+    const client = new PelotonClient(async () => token, fetchFn);
+
+    await expect(client.getWorkouts()).resolves.toMatchObject({ data: [], total: 0 });
+  });
+
+  describe.each(["current user", "workouts", "performance graph"])(
+    "token resolution while fetching %s",
+    (operation) => {
+      it.each([
+        new Error("Token refresh rejected"),
+        new SyntaxError("Invalid OAuth JSON"),
+        new z.ZodError([]),
+      ])("preserves %s", async (failure) => {
+        let shouldFail = operation === "current user";
+        const client = new PelotonClient(
+          async () => {
+            if (shouldFail) throw failure;
+            return "valid-token";
+          },
+          async () => Response.json({ id: "user-123" }),
+        );
+        if (!shouldFail) {
+          await client.getUserId();
+          shouldFail = true;
+        }
+        const request =
+          operation === "current user"
+            ? client.getUserId()
+            : operation === "workouts"
+              ? client.getWorkouts()
+              : client.getPerformanceGraph("workout-123");
+
+        await expect(request).rejects.toBe(failure);
+      });
+    },
+  );
 
   it("uses a typed authentication error for unauthorized API responses", async () => {
     const client = new PelotonClient("expired", async () => new Response("no", { status: 401 }));
