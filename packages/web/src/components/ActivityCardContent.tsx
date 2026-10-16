@@ -15,6 +15,7 @@ import {
   formatProviderPartialAbsenceSummary,
   type ProviderAbsentSource,
 } from "@dofek/providers/providers";
+import { isIndoorCyclingModality } from "@dofek/training/endurance-types";
 import { formatActivityTypeLabel } from "@dofek/training/training";
 import { type ActivityMapLocation, ActivityMapTile } from "./ActivityMapTile.tsx";
 import { ActivityTypeIcon } from "./ActivityTypeIcon.tsx";
@@ -23,6 +24,7 @@ export interface ActivityCardData {
   id: string;
   name: string | null;
   activityType: string;
+  modality: string | null;
   startedAt: string;
   localTimeContext: RecordLocalTimeContext;
   durationMin: number;
@@ -143,14 +145,24 @@ function ActivityMetricGrid({
 }: {
   activity: Pick<
     ActivityCardData,
-    "location" | "stats" | "distanceMeters" | "distanceState" | "elevationGainM" | "elevationState"
+    | "activityType"
+    | "modality"
+    | "location"
+    | "stats"
+    | "distanceMeters"
+    | "distanceState"
+    | "elevationGainM"
+    | "elevationState"
   >;
   units: UnitConverter;
 }) {
+  const isIndoorCycling =
+    activity.activityType === "cycling" && isIndoorCyclingModality(activity.modality);
   const hasRouteMetrics =
-    activity.location?.kind === "recorded_gps" ||
-    activity.distanceState.status === "available" ||
-    activity.elevationState.status === "available";
+    !isIndoorCycling &&
+    (activity.location?.kind === "recorded_gps" ||
+      activity.distanceState.status === "available" ||
+      activity.elevationState.status === "available");
   const metrics: ActivityCardStat[] = hasRouteMetrics
     ? [
         formatActivityMetric("Distance", activity.distanceMeters, activity.distanceState, (value) =>

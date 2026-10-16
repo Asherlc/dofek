@@ -132,6 +132,7 @@ const rawTableSyncs: RawTableSync[] = [
       "local_time_source",
       "strava_id",
       "raw",
+      "provider_absent_at",
       "created_at",
     ],
   },

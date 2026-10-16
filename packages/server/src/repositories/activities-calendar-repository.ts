@@ -58,6 +58,7 @@ export interface CalendarActivityEntry {
   id: string;
   name: string | null;
   activityType: string;
+  modality: string | null;
   startedAt: string;
   endedAt: string | null;
   localTimeContext: RecordLocalTimeContext;
@@ -101,6 +102,7 @@ const activityRowSchema = z.object({
   id: z.string(),
   name: z.string().nullable(),
   canonical_type: z.string(),
+  modality: z.string().nullable(),
   started_at: timestampStringSchema,
   ended_at: timestampStringSchema.nullable(),
   provider_id: z.string(),
@@ -240,6 +242,7 @@ export class ActivitiesCalendarRepository extends BaseRepository {
             toString(activity.activity_id) AS id,
             activity.name AS name,
             activity.canonical_type AS canonical_type,
+            activity.modality AS modality,
             toString(activity.started_at) AS started_at,
             toString(activity.ended_at) AS ended_at,
             activity.provider_id AS provider_id,
@@ -364,6 +367,7 @@ export class ActivitiesCalendarRepository extends BaseRepository {
         id: row.id,
         name: row.name,
         activityType: row.canonical_type,
+        modality: row.modality,
         startedAt: row.started_at,
         endedAt: row.ended_at,
         localTimeContext: authoritativeLocalTimeContext(row),
@@ -418,6 +422,7 @@ export class ActivitiesCalendarRepository extends BaseRepository {
           toString(activity.id) AS id,
           activity.name AS name,
           activity.canonical_type AS canonical_type,
+          activity.modality AS modality,
           toString(activity.started_at) AS started_at,
           toString(activity.ended_at) AS ended_at,
           activity.provider_id AS provider_id,
@@ -506,6 +511,7 @@ export class ActivitiesCalendarRepository extends BaseRepository {
         id: row.id,
         name: row.name,
         activityType: row.canonical_type,
+        modality: row.modality,
         startedAt: row.started_at,
         endedAt: row.ended_at,
         localTimeContext: authoritativeLocalTimeContext(row),

@@ -9,6 +9,8 @@ const meta = {
   component: ActivityMetricStrip,
   args: {
     activity: {
+      activityType: "cycling",
+      modality: "road",
       location: { kind: "recorded_gps" },
       distanceMeters: 8500,
       distanceState: { status: "available" },
@@ -29,6 +31,8 @@ export const AvailableRouteMetrics: Story = {};
 export const UnavailableRouteMetrics: Story = {
   args: {
     activity: {
+      activityType: "cycling",
+      modality: "road",
       location: { kind: "recorded_gps" },
       distanceMeters: null,
       distanceState: { status: "missing", reason: "Distance was not recorded." },
@@ -42,6 +46,8 @@ export const UnavailableRouteMetrics: Story = {
 export const Empty: Story = {
   args: {
     activity: {
+      activityType: "strength",
+      modality: null,
       location: null,
       distanceMeters: null,
       distanceState: { status: "missing", reason: "Distance is not applicable." },
@@ -55,6 +61,8 @@ export const Empty: Story = {
 export const ActivityStats: Story = {
   args: {
     activity: {
+      activityType: "strength",
+      modality: null,
       location: null,
       distanceMeters: null,
       distanceState: { status: "missing", reason: "Distance is not applicable." },
@@ -64,6 +72,36 @@ export const ActivityStats: Story = {
         { status: "available", label: "Training Stress Score", value: "100" },
         { status: "missing", label: "Average Power", reason: "Power was not recorded." },
       ],
+    },
+  },
+};
+
+export const IndoorCycling: Story = {
+  args: {
+    activity: {
+      activityType: "cycling",
+      modality: "indoor",
+      location: null,
+      distanceMeters: 0,
+      distanceState: { status: "available" },
+      elevationGainM: null,
+      elevationState: { status: "missing", reason: "Elevation was not recorded." },
+      stats: [{ status: "available", label: "Training Stress Score", value: "100" }],
+    },
+  },
+};
+
+export const VirtualCycling: Story = {
+  args: {
+    activity: {
+      activityType: "cycling",
+      modality: "virtual",
+      location: null,
+      distanceMeters: 25_000,
+      distanceState: { status: "available" },
+      elevationGainM: 400,
+      elevationState: { status: "available" },
+      stats: [{ status: "available", label: "Training Stress Score", value: "100" }],
     },
   },
 };

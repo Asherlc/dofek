@@ -186,6 +186,7 @@ function activity(overrides: Record<string, unknown> = {}) {
     id: "activity-1",
     name: "Trainer Ride",
     activityType: "indoor_cycling",
+    modality: null,
     startedAt: "2026-03-18T07:00:00.000Z",
     endedAt: "2026-03-18T08:00:00.000Z",
     localTimeContext: {
@@ -565,6 +566,8 @@ describe("ActivitiesScreen", () => {
           date: "2026-03-18",
           activities: [
             activity({
+              activityType: "cycling",
+              modality: "road",
               distanceMeters: 5000,
               distanceState: { status: "available" },
               elevationGainM: 120,
@@ -584,6 +587,90 @@ describe("ActivitiesScreen", () => {
     const activityButton = screen.getByText("Trainer Ride").closest("button");
     expect(activityButton?.getAttribute("aria-label")).toContain("Distance 5.0 km");
     expect(activityButton?.getAttribute("aria-label")).toContain("Elevation 120 m");
+  });
+
+  it.each([
+    { modality: "indoor", distanceMeters: 0, elevationGainM: null },
+    { modality: "virtual", distanceMeters: 0, elevationGainM: null },
+    { modality: "indoor", distanceMeters: 25_000, elevationGainM: 400 },
+    { modality: "virtual", distanceMeters: 25_000, elevationGainM: 400 },
+  ])(
+    "uses training stats in visible and accessible $modality cycling cards with distance $distanceMeters",
+    ({ modality, distanceMeters, elevationGainM }) => {
+      mockQuery = {
+        data: [
+          {
+            date: "2026-03-18",
+            activities: [
+              activity({
+                activityType: "cycling",
+                modality,
+                distanceMeters,
+                distanceState: { status: "available" },
+                elevationGainM,
+                elevationState:
+                  elevationGainM === null
+                    ? { status: "missing", reason: "Elevation not recorded" }
+                    : { status: "available" },
+                stats: [
+                  { status: "available", label: "Training Stress Score", value: "100" },
+                  { status: "missing", label: "Average Power", reason: "Power not recorded" },
+                ],
+              }),
+            ],
+          },
+        ],
+        isLoading: false,
+        isError: false,
+        error: null,
+      };
+
+      render(<ActivitiesScreen />);
+
+      const activityButton = screen.getByRole("button", { name: /^Open Trainer Ride/ });
+      expect(within(activityButton).getByText("Training Stress Score")).toBeDefined();
+      expect(within(activityButton).getByText("100")).toBeDefined();
+      expect(within(activityButton).queryByText("Distance")).toBeNull();
+      expect(within(activityButton).queryByText(/Elevation/)).toBeNull();
+      expect(activityButton.getAttribute("aria-label")).toContain("Training Stress Score 100");
+      expect(activityButton.getAttribute("aria-label")).toContain(
+        "Average Power unavailable: Power not recorded",
+      );
+      expect(activityButton.getAttribute("aria-label")).not.toMatch(/Distance|Elevation/);
+    },
+  );
+
+  it.each([
+    { activityType: "cycling", modality: "road" },
+    { activityType: "running", modality: "indoor" },
+  ])("keeps measured zero in accessible $modality $activityType cards", (classification) => {
+    mockQuery = {
+      data: [
+        {
+          date: "2026-03-18",
+          activities: [
+            activity({
+              ...classification,
+              distanceMeters: 0,
+              distanceState: { status: "available" },
+              elevationGainM: 0,
+              elevationState: { status: "available" },
+            }),
+          ],
+        },
+      ],
+      isLoading: false,
+      isError: false,
+      error: null,
+    };
+
+    render(<ActivitiesScreen />);
+
+    const activityButton = screen.getByRole("button", { name: /^Open Trainer Ride/ });
+    expect(activityButton.getAttribute("aria-label")).toContain("Distance 0.0 km");
+    expect(activityButton.getAttribute("aria-label")).toContain("Elevation 0 m");
+    expect(within(activityButton).getByText("Distance")).toBeDefined();
+    expect(within(activityButton).getByText("Elevation")).toBeDefined();
   });
 
   it.each([null, "Indoor Cycling"])(

@@ -53,6 +53,7 @@ const calendarActivityEntrySchema = z.object({
   id: z.string(),
   name: z.string().nullable(),
   activityType: z.string(),
+  modality: z.string().nullable(),
   startedAt: timestampStringSchema,
   endedAt: timestampStringSchema.nullable(),
   localTimeContext: recordLocalTimeContextSchema,
@@ -138,7 +139,7 @@ export const calendarRouter = router({
 
   weekList: cachedProtectedQuery({
     maxAge: CacheTTL.MEDIUM,
-    keyVersion: "activity-calendar-locations-v2",
+    keyVersion: "activity-calendar-modality-v3",
   })
     .input(activityListInputSchema)
     .output(z.array(calendarDayActivitiesSchema))

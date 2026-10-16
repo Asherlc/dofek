@@ -204,3 +204,69 @@ describe("Activities list climbing source GPS", () => {
     );
   });
 });
+
+describe("Activities list cycling modality", () => {
+  let context: TestContext;
+  let repository: ActivitiesCalendarRepository;
+
+  beforeAll(async () => {
+    context = await setupTestDatabase();
+    await ensureProvider(context.db, "wahoo", "Wahoo", undefined, userId);
+    await context.db.insert(activity).values(
+      [false, true].flatMap((isProviderAbsent) =>
+        (["indoor", "virtual", "road", null] as const).map((modality, index) => ({
+          userId,
+          providerId: "wahoo",
+          externalId: `cycling-${modality}-${isProviderAbsent}`,
+          name: `cycling-${modality}-${isProviderAbsent}`,
+          canonicalType: "cycling" as const,
+          providerType: "cycling",
+          modality,
+          startedAt: new Date(`2026-10-02T${10 + index}:00:00Z`),
+          endedAt: new Date(`2026-10-02T${10 + index}:30:00Z`),
+          providerAbsentAt: isProviderAbsent ? new Date("2026-10-03T12:00:00Z") : null,
+        })),
+      ),
+    );
+    const sensorStore = await createClickHouseTestActivitySensorStore(context);
+    repository = new ActivitiesCalendarRepository(context.db, userId, "UTC", sensorStore);
+  });
+
+  afterAll(async () => {
+    await context.cleanup();
+  });
+
+  it("preserves stored cycling modality through active and provider-absent week lists", async () => {
+    const activeDays = await repository.getWeekList({ weeks: 1, endDate: "2026-10-02" });
+    const activeEntries = activeDays
+      .flatMap((day) => day.activities)
+      .filter((entry) => entry.activityType === "cycling");
+    expect(activeEntries).toHaveLength(4);
+    expect(activeEntries).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: "cycling-indoor-false", modality: "indoor" }),
+        expect.objectContaining({ name: "cycling-virtual-false", modality: "virtual" }),
+        expect.objectContaining({ name: "cycling-road-false", modality: "road" }),
+        expect.objectContaining({ name: "cycling-null-false", modality: null }),
+      ]),
+    );
+
+    const allDays = await repository.getWeekList({
+      weeks: 1,
+      endDate: "2026-10-02",
+      includeProviderAbsent: true,
+    });
+    const absentEntries = allDays
+      .flatMap((day) => day.activities)
+      .filter((entry) => entry.activityType === "cycling" && entry.isProviderAbsent);
+    expect(absentEntries).toHaveLength(4);
+    expect(absentEntries).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: "cycling-indoor-true", modality: "indoor" }),
+        expect.objectContaining({ name: "cycling-virtual-true", modality: "virtual" }),
+        expect.objectContaining({ name: "cycling-road-true", modality: "road" }),
+        expect.objectContaining({ name: "cycling-null-true", modality: null }),
+      ]),
+    );
+  });
+});

@@ -20,6 +20,11 @@ The mobile app for Dofek. Built with Expo and React Native, with native Swift mo
 
 ## Project Structure
 
+Activity-list cards use the stored cycling modality to show training stats instead
+of distance and elevation for indoor and virtual rides, including reported zeros.
+The [metric strip](components/ActivityMetricStrip.tsx) and activity accessibility
+labels use the [shared cycling classification](../training/src/endurance-types.ts).
+
 The Activities list reuses its compact bike-ride map preview for climbing-source
 locations when an activity has no recorded GPS track. Source points retain
 Climb/Area and provider attribution without creating a route or implying

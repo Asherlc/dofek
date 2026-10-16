@@ -12,6 +12,7 @@ function activity(overrides: Partial<ActivityCardData> = {}): ActivityCardData {
     id: "activity-1",
     name: null,
     activityType: "strength",
+    modality: null,
     startedAt: "2026-07-14T08:46:00.000Z",
     localTimeContext: {
       timezone: null,
@@ -39,6 +40,66 @@ function activity(overrides: Partial<ActivityCardData> = {}): ActivityCardData {
 afterEach(cleanup);
 
 describe("ActivityCardContent", () => {
+  it.each([
+    { modality: "indoor", distanceMeters: 0, elevationGainM: null },
+    { modality: "indoor", distanceMeters: 30_000, elevationGainM: 120 },
+    { modality: "virtual", distanceMeters: 0, elevationGainM: null },
+    { modality: "virtual", distanceMeters: 30_000, elevationGainM: 120 },
+  ])(
+    "shows training stats for $modality cycling with $distanceMeters reported meters",
+    ({ modality, distanceMeters, elevationGainM }) => {
+      render(
+        <ActivityCardContent
+          activity={activity({
+            activityType: "cycling",
+            modality,
+            distanceMeters,
+            distanceState: { status: "available" },
+            elevationGainM,
+            elevationState:
+              elevationGainM === null
+                ? { status: "missing", reason: "Elevation not recorded" }
+                : { status: "available" },
+          })}
+          units={units}
+          selectMode={false}
+          selected={false}
+        />,
+      );
+
+      expect(screen.getByText("Training Stress Score")).toBeDefined();
+      expect(screen.getByText("8.5")).toBeDefined();
+      expect(screen.queryByText(/^Distance/)).toBeNull();
+      expect(screen.queryByText(/^Elevation/)).toBeNull();
+    },
+  );
+
+  it.each([
+    { activityType: "cycling", modality: "road" },
+    { activityType: "cycling", modality: null },
+    { activityType: "running", modality: "indoor" },
+  ])("keeps recorded zero route metrics for $activityType ($modality)", (classification) => {
+    render(
+      <ActivityCardContent
+        activity={activity({
+          ...classification,
+          distanceMeters: 0,
+          distanceState: { status: "available" },
+          elevationGainM: 0,
+          elevationState: { status: "available" },
+        })}
+        units={units}
+        selectMode={false}
+        selected={false}
+      />,
+    );
+
+    expect(screen.getByText("Distance")).toBeDefined();
+    expect(screen.getByText("0.0 km")).toBeDefined();
+    expect(screen.getByText("Elevation")).toBeDefined();
+    expect(screen.getByText("0 m")).toBeDefined();
+  });
+
   it("keeps climbing metrics beside a source-location preview", () => {
     render(
       <ActivityCardContent

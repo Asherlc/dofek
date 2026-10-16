@@ -94,6 +94,7 @@ function makeSensorStore(rowSets: Record<string, unknown>[][]): ActivitySensorSt
                   end_utc_offset_minutes: null,
                   local_time_source: "unknown",
                   provider_id: "wahoo",
+                  modality: null,
                   source_name: null,
                   source_external_ids: [],
                   absent_source_external_ids: [],
@@ -128,6 +129,7 @@ function makeActivityRow(overrides: Record<string, unknown> = {}) {
     id: "activity-1",
     name: "Trainer Ride",
     canonical_type: "cycling",
+    modality: null,
     started_at: "2026-03-18T07:00:00.000Z",
     ended_at: "2026-03-18T08:00:00.000Z",
     provider_id: "wahoo",
@@ -180,6 +182,7 @@ function makeCalendarEntry(
   return {
     name: overrides.name ?? overrides.id,
     activityType: overrides.activityType ?? "running",
+    modality: overrides.modality ?? null,
     endedAt: overrides.endedAt ?? overrides.startedAt,
     localTimeContext: overrides.localTimeContext ?? {
       timezone: null,
@@ -213,6 +216,42 @@ function makeCalendarEntry(
 
 describe("ActivitiesCalendarRepository", () => {
   afterEach(() => vi.restoreAllMocks());
+
+  it.each(
+    [false, true].flatMap((isProviderAbsent) =>
+      ["indoor", "virtual", "road", null].map((modality) => ({ isProviderAbsent, modality })),
+    ),
+  )(
+    "preserves stored cycling modality $modality (provider absent: $isProviderAbsent)",
+    async ({ modality, isProviderAbsent }) => {
+      const row = makeActivityRow({
+        modality,
+        ...(isProviderAbsent ? { provider_absent_at: "2026-03-19T12:00:00.000Z" } : {}),
+      });
+      const baseline = [{ max_hr: null, resting_hr: null, ftp: null }];
+      const sensorStore = makeSensorStore(
+        isProviderAbsent ? [[], baseline, [row], [], baseline, []] : [[row], baseline],
+      );
+      const repository = new ActivitiesCalendarRepository(
+        makeDatabase([]),
+        "user-1",
+        "UTC",
+        sensorStore,
+      );
+
+      const days = await repository.getWeekList({
+        weeks: 1,
+        endDate: "2026-03-20",
+        includeProviderAbsent: isProviderAbsent,
+      });
+
+      expect(days[0]?.activities[0]).toMatchObject({
+        activityType: "cycling",
+        modality,
+        ...(isProviderAbsent ? { isProviderAbsent: true } : {}),
+      });
+    },
+  );
 
   it("requests source locations only for activities missing either recorded coordinate", async () => {
     const rows = [
@@ -2180,6 +2219,7 @@ describe("ActivitiesCalendarRepository", () => {
       id: "hidden-power",
       name: "Hidden Ride",
       activityType: "cycling",
+      modality: null,
       startedAt: "2026-03-18T07:00:00.000Z",
       endedAt: "2026-03-18T08:00:00.000Z",
       localTimeContext: {
