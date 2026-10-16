@@ -1,24 +1,16 @@
+import { providerSourceLabel } from "@dofek/providers/providers";
+import type { ClimbingMapLocation } from "@dofek/training/climbing-map";
+import type { ActivityLocation } from "dofek-server/types";
 import { useState } from "react";
 
-export type RoutePathPoint = { x: number; y: number };
+export type ActivityMapLocation = ActivityLocation;
+export type ActivityMapPreview = ActivityMapLocation["mapPreview"];
+export type ActivityMapPreviewTile = ActivityMapPreview["tiles"][number];
+export type RoutePathPoint = NonNullable<ActivityMapPreview["routePath"]>[number];
 
-export interface ActivityMapPreviewTile {
-  url: string;
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-}
-
-export interface ActivityMapPreview {
-  width: number;
-  height: number;
-  tiles: ActivityMapPreviewTile[];
-  routePath: RoutePathPoint[] | null;
-}
-
-export interface ActivityMapLocation {
-  mapPreview: ActivityMapPreview;
+function sourceLocationLabel(location: ClimbingMapLocation): string {
+  const scope = location.scope === "area" ? "Area location" : "Climb location";
+  return `${scope}${location.name ? `: ${location.name}` : ""} · ${providerSourceLabel(location.providerId)}`;
 }
 
 interface ActivityMapTileProps {
@@ -136,7 +128,11 @@ export function ActivityMapTile({ location, variant = "card" }: ActivityMapTileP
           data-testid="activity-route-viewport"
           className="absolute inset-0 h-full w-full"
           role="img"
-          aria-label="Activity location map"
+          aria-label={
+            location.kind === "climbing_source"
+              ? `Climbing source locations · ${location.sourcePoints.map((point) => sourceLocationLabel(point.location)).join("; ")}`
+              : "Activity location map"
+          }
         >
           <div
             data-testid="activity-map-preview"
@@ -166,8 +162,44 @@ export function ActivityMapTile({ location, variant = "card" }: ActivityMapTileP
                 }}
               />
             ))}
-            <ActivityRouteOverlay mapPreview={location.mapPreview} />
+            {location.kind === "climbing_source" ? (
+              <div
+                className="pointer-events-none absolute inset-0 h-full w-full"
+                aria-hidden="true"
+              >
+                {location.sourcePoints.map((point) => (
+                  <svg
+                    key={`${point.location.providerId}-${point.location.scope}-${point.location.objectId}`}
+                    className="absolute -translate-x-1/2 -translate-y-1/2"
+                    width={16}
+                    height={16}
+                    viewBox="0 0 16 16"
+                    style={{
+                      left: `${(point.x / location.mapPreview.width) * 100}%`,
+                      top: `${(point.y / location.mapPreview.height) * 100}%`,
+                    }}
+                  >
+                    <title>{sourceLocationLabel(point.location)}</title>
+                    <circle
+                      cx={8}
+                      cy={8}
+                      r={6}
+                      fill={point.location.scope === "area" ? "#d97706" : "#2563eb"}
+                      stroke="white"
+                      strokeWidth={2}
+                    />
+                  </svg>
+                ))}
+              </div>
+            ) : (
+              <ActivityRouteOverlay mapPreview={location.mapPreview} />
+            )}
           </div>
+          {location.kind === "climbing_source" ? (
+            <span className="absolute bottom-2 left-2 rounded bg-surface-solid/90 px-2 py-1 text-xs text-muted">
+              Source locations
+            </span>
+          ) : null}
         </div>
       )}
     </div>

@@ -39,6 +39,42 @@ function activity(overrides: Partial<ActivityCardData> = {}): ActivityCardData {
 afterEach(cleanup);
 
 describe("ActivityCardContent", () => {
+  it("keeps climbing metrics beside a source-location preview", () => {
+    render(
+      <ActivityCardContent
+        activity={activity({
+          activityType: "climbing",
+          stats: [{ status: "available", label: "Climbs", value: "3" }],
+          location: {
+            kind: "climbing_source",
+            mapPreview: { width: 512, height: 288, tiles: [], routePath: null },
+            sourcePoints: [
+              {
+                x: 256,
+                y: 144,
+                location: {
+                  coordinates: { latitude: 37, longitude: -122 },
+                  scope: "area",
+                  objectId: "area-1",
+                  providerId: "mountain-project",
+                  name: "North Wall",
+                },
+              },
+            ],
+          },
+        })}
+        units={units}
+        selectMode={false}
+        selected={false}
+      />,
+    );
+    expect(screen.getByTestId("activity-secondary-panel")).toBeDefined();
+    expect(screen.getByText("Climbs")).toBeDefined();
+    expect(screen.getByText("3")).toBeDefined();
+    expect(screen.queryByText("Distance unavailable")).toBeNull();
+    expect(screen.queryByText("Elevation unavailable")).toBeNull();
+  });
+
   it("renders the stored record-local clock time", () => {
     render(
       <ActivityCardContent
@@ -110,6 +146,9 @@ describe("ActivityCardContent", () => {
           elevationGainM: 120,
           elevationState: { status: "available" },
           location: {
+            kind: "recorded_gps",
+            centroidLat: 37.7749,
+            centroidLng: -122.4194,
             mapPreview: {
               width: 256,
               height: 256,
@@ -144,6 +183,9 @@ describe("ActivityCardContent", () => {
           elevationGainM: null,
           elevationState: { status: "missing", reason: "Elevation not recorded" },
           location: {
+            kind: "recorded_gps",
+            centroidLat: 37.7749,
+            centroidLng: -122.4194,
             mapPreview: {
               width: 256,
               height: 256,
