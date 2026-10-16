@@ -22,12 +22,13 @@ The mobile app for Dofek. Built with Expo and React Native, with native Swift mo
 
 Activity details show climbing logs and same-day attachment suggestions for
 climbing and hiking activities. Cards show current shared locations, published
-display grades, scoped results, and server-derived rock labels.
-[Details](components/ClimbingLogEntryDetails.tsx) show coordinates, published and
-reported grade collections, independent attempt facts, notes, and disclosed
-source data. Provider records use server columns and filters, fetch the selected
-log's complete graph, and retain cached rows during refresh errors. Labels match
-web through shared formatters. See the [canonical response contract](../server/src/contracts/climbing-log-contracts.ts).
+display grades, scoped results, and server-derived rock labels. Provider records
+use server columns and filters, fetch the selected log's complete graph, and
+retain cached rows during refresh errors. Their
+[detail viewer](components/ClimbingLogEntryDetails.tsx) shows coordinates,
+published and reported grade collections, independent attempt facts, notes, and
+disclosed source data. Labels match web through shared formatters. See the
+[canonical response contract](../server/src/contracts/climbing-log-contracts.ts).
 
 Activity-detail climbing entries and suggestions use
 [ClimbingLogEntryBreakdown](./components/ClimbingLogEntryBreakdown.tsx) and

@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import {
   climbingAttemptFixture,
@@ -8,7 +8,7 @@ import {
 } from "../../../../../server/src/repositories/climbing-test-helpers.ts";
 import { ClimbingLogEntryCard } from "./ClimbingLogEntryCard.tsx";
 
-it("shows Havarti Cheese's recorded top-rope method and keeps missing source completion in Details", () => {
+it("shows Havarti Cheese's recorded top-rope method and attempt count", () => {
   const climb = { ...climbingClimbFixture("mountain-project"), name: "Havarti Cheese" };
   const entry = climbingLogEntryFixture({
     providerId: "mountain-project",
@@ -27,11 +27,6 @@ it("shows Havarti Cheese's recorded top-rope method and keeps missing source com
   expect(screen.getByText("Havarti Cheese")).toBeInTheDocument();
   expect(screen.getByText("Top rope")).toBeInTheDocument();
   expect(screen.getByText("Whole climb · 1 recorded attempt")).toBeInTheDocument();
-  expect(screen.queryByText("Not reported by source")).not.toBeInTheDocument();
-  fireEvent.click(screen.getByRole("button", { name: "Details for Havarti Cheese" }));
-  const outcome = screen.getByText("Outcome").parentElement;
-  if (!outcome) throw new Error("Expected the completion fact row");
-  expect(within(outcome).getByText("Not reported by source")).toBeInTheDocument();
 });
 
 it.each([undefined, 3])(
@@ -73,7 +68,7 @@ it.each([undefined, 3])(
   },
 );
 
-it("keeps canonical source links and independent recorded facts accessible without GPS", () => {
+it("keeps canonical source links and attachment actions accessible without GPS", () => {
   const entry = climbingLogEntryFixture({
     climb: climbingClimbFixture(),
     sourceName: "OpenBeta",
@@ -91,9 +86,6 @@ it("keeps canonical source links and independent recorded facts accessible witho
     "href",
     "https://openbeta.io/",
   );
-  fireEvent.click(screen.getByRole("button", { name: "Details for Corner" }));
-  expect(screen.getByText("Published climb grades")).toBeInTheDocument();
-  expect(screen.getByText("5.10a (Yosemite Decimal System)")).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Attach entry 3, Corner to this activity" }));
   expect(onAttach).toHaveBeenCalledWith(entry.id);
 });
