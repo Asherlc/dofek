@@ -977,9 +977,57 @@ describe("PelotonProvider.sync — happy path", () => {
 });
 
 describe("PelotonProvider.sync — authentication failures", () => {
-  it("classifies a rejected workouts request as an expired access token", async () => {
-    const mockFetch: typeof globalThis.fetch = async () =>
-      new Response("Unauthorized", { status: 401 });
+  const refreshedTokenResponse = {
+    access_token: "refreshed-access-token",
+    refresh_token: "refreshed-refresh-token",
+    expires_in: 3600,
+    token_type: "Bearer",
+    scope: "offline_access",
+  };
+
+  function isRefreshRequest(input: RequestInfo | URL): boolean {
+    return String(input).includes("/oauth/token");
+  }
+
+  function authorizationHeader(init: RequestInit | undefined): string | null {
+    return new Headers(init?.headers).get("Authorization");
+  }
+
+  it("refreshes the token and retries once when the workouts request is rejected", async () => {
+    const workout = makeSyncWorkout();
+    const mockFetch = vi.fn<typeof globalThis.fetch>(async (input, init) => {
+      if (isRefreshRequest(input)) return Response.json(refreshedTokenResponse);
+      if (authorizationHeader(init) !== "Bearer refreshed-access-token") {
+        return new Response("Unauthorized", { status: 401 });
+      }
+      const url = String(input);
+      if (url.includes("/api/me")) return Response.json({ id: "user-123" });
+      if (url.includes("/workouts")) return Response.json(makeWorkoutListResponse([workout]));
+      return Response.json(makeSyncPerformanceGraph());
+    });
+    const provider = new PelotonProvider(mockFetch);
+
+    const result = await provider.sync(
+      new SyncRun({
+        db: createMockDb(),
+        window: SyncWindow.fromSince({
+          since: new Date((workout.start_time - 1000) * 1000),
+        }),
+      }),
+    );
+
+    const refreshCalls = mockFetch.mock.calls.filter(([input]) => isRefreshRequest(input));
+    expect(refreshCalls).toHaveLength(1);
+    expect(result.errors).toHaveLength(0);
+    expect(result.recordsSynced).toBeGreaterThan(0);
+  });
+
+  it("classifies a rejected workouts request as an expired access token after one refresh", async () => {
+    const mockFetch = vi.fn<typeof globalThis.fetch>(async (input) =>
+      isRefreshRequest(input)
+        ? Response.json(refreshedTokenResponse)
+        : new Response("Unauthorized", { status: 401 }),
+    );
     const provider = new PelotonProvider(mockFetch);
 
     const error = await provider
@@ -996,6 +1044,90 @@ describe("PelotonProvider.sync — authentication failures", () => {
       throw new Error("Expected an expired access token error");
     }
     expect(error.cause).toBeInstanceOf(PelotonAuthenticationError);
+    const refreshCalls = mockFetch.mock.calls.filter(([input]) => isRefreshRequest(input));
+    expect(refreshCalls).toHaveLength(1);
+  });
+
+  it("preserves non-authentication failures without refreshing tokens", async () => {
+    const mockFetch = vi.fn<typeof globalThis.fetch>(async (input) => {
+      if (isRefreshRequest(input)) return Response.json(refreshedTokenResponse);
+      if (String(input).includes("/api/me")) return Response.json({ id: "user-123" });
+      return new Response("Invalid workout request", { status: 400 });
+    });
+
+    await expect(
+      new PelotonProvider(mockFetch).sync(
+        new SyncRun({
+          db: createMockDb(),
+          window: SyncWindow.fromSince({ since: new Date("2024-01-01") }),
+        }),
+      ),
+    ).rejects.toThrow("Peloton API error (400): Invalid workout request");
+
+    expect(mockFetch.mock.calls.filter(([input]) => isRefreshRequest(input))).toHaveLength(0);
+  });
+
+  it("does not refresh again when a later page rejects the refreshed token", async () => {
+    const workout = makeSyncWorkout({ status: "IN_PROGRESS" });
+    const mockFetch = vi.fn<typeof globalThis.fetch>(async (input, init) => {
+      if (isRefreshRequest(input)) return Response.json(refreshedTokenResponse);
+      const url = new URL(String(input));
+      if (url.pathname === "/api/me") return Response.json({ id: "user-123" });
+      if (
+        authorizationHeader(init) !== "Bearer refreshed-access-token" ||
+        url.searchParams.get("page") === "1"
+      ) {
+        return new Response("Unauthorized", { status: 401 });
+      }
+      return Response.json(makeWorkoutListResponse([workout], true));
+    });
+
+    await expect(
+      new PelotonProvider(mockFetch).sync(
+        new SyncRun({
+          db: createMockDb(),
+          window: SyncWindow.fromSince({ since: new Date("2024-01-01") }),
+        }),
+      ),
+    ).rejects.toBeInstanceOf(AccessTokenExpiredError);
+
+    expect(mockFetch.mock.calls.filter(([input]) => isRefreshRequest(input))).toHaveLength(1);
+  });
+
+  it("retries the rejected nonzero page and keeps using the refreshed token", async () => {
+    const incompleteWorkout = makeSyncWorkout({ status: "IN_PROGRESS" });
+    const completedWorkout = makeSyncWorkout({ id: "page-one-workout" });
+    const mockFetch = vi.fn<typeof globalThis.fetch>(async (input, init) => {
+      if (isRefreshRequest(input)) return Response.json(refreshedTokenResponse);
+      const url = new URL(String(input));
+      if (url.pathname === "/api/me") return Response.json({ id: "user-123" });
+      if (url.pathname.endsWith("/workouts") && url.searchParams.get("page") === "0") {
+        return Response.json(makeWorkoutListResponse([incompleteWorkout], true));
+      }
+      if (authorizationHeader(init) !== "Bearer refreshed-access-token") {
+        return new Response("Unauthorized", { status: 401 });
+      }
+      if (url.pathname.endsWith("/workouts")) {
+        return Response.json({ ...makeWorkoutListResponse([completedWorkout]), page: 1 });
+      }
+      return Response.json(makeSyncPerformanceGraph());
+    });
+
+    const result = await new PelotonProvider(mockFetch).sync(
+      new SyncRun({
+        db: createMockDb(),
+        window: SyncWindow.fromSince({ since: new Date("2024-01-01") }),
+      }),
+    );
+
+    const workoutPages = mockFetch.mock.calls
+      .map(([input]) => new URL(String(input)))
+      .filter((url) => url.pathname.endsWith("/workouts"))
+      .map((url) => url.searchParams.get("page"));
+    expect(workoutPages).toEqual(["0", "1", "1"]);
+    expect(mockFetch.mock.calls.filter(([input]) => isRefreshRequest(input))).toHaveLength(1);
+    expect(result.errors).toHaveLength(0);
+    expect(result.recordsSynced).toBe(4);
   });
 
   it("classifies a rejected performance graph request as an expired access token", async () => {

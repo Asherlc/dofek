@@ -1,9 +1,17 @@
 import type { Meta, StoryObj } from "@storybook/react-native";
+import { View } from "react-native";
 import { ActivityMapTile } from "./ActivityMapTile";
 
 const meta = {
   title: "Activity/ActivityMapTile",
   component: ActivityMapTile,
+  decorators: [
+    (Story) => (
+      <View style={{ width: 360, maxWidth: "100%" }}>
+        <Story />
+      </View>
+    ),
+  ],
 } satisfies Meta<typeof ActivityMapTile>;
 
 export default meta;

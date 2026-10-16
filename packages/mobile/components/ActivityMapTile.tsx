@@ -3,16 +3,15 @@ import type { ActivityLocation } from "dofek-server/types";
 import { useState } from "react";
 import { Image, StyleSheet, Text, View } from "react-native";
 import Svg, { Circle, Polyline } from "react-native-svg";
-import { colors, radius } from "../theme";
+import { colors, radius, spacing } from "../theme";
 import { MapProcessingState } from "./MapProcessingState";
 
 type ReadyActivityLocation = Exclude<ActivityLocation, { kind: "processing" }>;
-const TILE_SIZE = 96;
 
 export function ActivityMapTile({ location }: { location: ActivityLocation }) {
   if (location.kind === "processing") {
     return (
-      <View style={styles.container}>
+      <View style={[styles.container, { aspectRatio: 16 / 9 }]}>
         <MapProcessingState />
       </View>
     );
@@ -23,14 +22,7 @@ export function ActivityMapTile({ location }: { location: ActivityLocation }) {
 function ReadyMapTile({ location }: { location: ReadyActivityLocation }) {
   const [loadFailed, setLoadFailed] = useState(false);
   const [loadedTiles, setLoadedTiles] = useState<ReadonlySet<number>>(() => new Set());
-  const previewScale = Math.min(
-    TILE_SIZE / location.mapPreview.width,
-    TILE_SIZE / location.mapPreview.height,
-  );
-  const previewWidth = location.mapPreview.width * previewScale;
-  const previewHeight = location.mapPreview.height * previewScale;
-  const previewLeft = (TILE_SIZE - previewWidth) / 2;
-  const previewTop = (TILE_SIZE - previewHeight) / 2;
+  const { mapPreview } = location;
   const mapReady = loadedTiles.size === location.mapPreview.tiles.length;
   const accessibilityLabel =
     location.kind === "climbing_source"
@@ -43,7 +35,7 @@ function ReadyMapTile({ location }: { location: ReadyActivityLocation }) {
       : "Activity location map";
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { aspectRatio: mapPreview.width / mapPreview.height }]}>
       {loadFailed ? (
         <View style={styles.fallback} accessibilityLabel="Activity location unavailable" accessible>
           <Text style={styles.fallbackText}>Map unavailable</Text>
@@ -56,30 +48,29 @@ function ReadyMapTile({ location }: { location: ReadyActivityLocation }) {
             accessibilityLabel={mapReady ? accessibilityLabel : undefined}
             accessible={mapReady}
           >
-            {location.mapPreview.tiles.map((tile, index) => (
+            {mapPreview.tiles.map((tile, index) => (
               <Image
                 key={`${tile.url}-${tile.x}-${tile.y}`}
                 testID="activity-map-preview-tile"
                 source={{ uri: tile.url }}
                 style={{
                   position: "absolute",
-                  left: previewLeft + tile.x * previewScale,
-                  top: previewTop + tile.y * previewScale,
-                  width: tile.width * previewScale,
-                  height: tile.height * previewScale,
+                  left: `${(tile.x / mapPreview.width) * 100}%`,
+                  top: `${(tile.y / mapPreview.height) * 100}%`,
+                  width: `${(tile.width / mapPreview.width) * 100}%`,
+                  height: `${(tile.height / mapPreview.height) * 100}%`,
                 }}
                 resizeMode="cover"
                 onLoad={() => setLoadedTiles((previous) => new Set([...previous, index]))}
                 onError={() => setLoadFailed(true)}
               />
             ))}
-            <ActivityMapOverlay
-              location={location}
-              width={previewWidth}
-              height={previewHeight}
-              left={previewLeft}
-              top={previewTop}
-            />
+            <ActivityMapOverlay location={location} />
+            {location.kind === "climbing_source" && (
+              <View style={styles.sourceLocationBadge}>
+                <Text style={styles.sourceLocationBadgeText}>Source locations</Text>
+              </View>
+            )}
           </View>
           {!mapReady && (
             <View style={StyleSheet.absoluteFill}>
@@ -92,70 +83,74 @@ function ReadyMapTile({ location }: { location: ReadyActivityLocation }) {
   );
 }
 
-function ActivityMapOverlay({
-  location,
-  width,
-  height,
-  left,
-  top,
-}: {
-  location: ReadyActivityLocation;
-  width: number;
-  height: number;
-  left: number;
-  top: number;
-}) {
+function ActivityMapOverlay({ location }: { location: ReadyActivityLocation }) {
   const { mapPreview } = location;
+  if (location.kind === "climbing_source") {
+    return (
+      <View testID="activity-source-overlay" pointerEvents="none" style={StyleSheet.absoluteFill}>
+        {location.sourcePoints.map((point) => (
+          <Svg
+            key={`${point.location.providerId}-${point.location.scope}-${point.location.objectId}`}
+            testID="activity-source-marker"
+            width={16}
+            height={16}
+            viewBox="0 0 16 16"
+            style={{
+              ...styles.sourceMarker,
+              left: `${(point.x / mapPreview.width) * 100}%`,
+              top: `${(point.y / mapPreview.height) * 100}%`,
+            }}
+          >
+            <Circle
+              testID="activity-source-point"
+              cx={8}
+              cy={8}
+              r={6}
+              fill={point.location.scope === "area" ? "#d97706" : "#2563eb"}
+              stroke="#fff"
+              strokeWidth={2}
+            />
+          </Svg>
+        ))}
+      </View>
+    );
+  }
+
   const { routePath } = mapPreview;
-  if (location.kind === "recorded_gps" && (routePath == null || routePath.length < 2)) return null;
+  if (routePath == null || routePath.length < 2) return null;
 
   const points = routePath
-    ?.map((point) => `${formatRouteCoordinate(point.x)},${formatRouteCoordinate(point.y)}`)
+    .map((point) => `${formatRouteCoordinate(point.x)},${formatRouteCoordinate(point.y)}`)
     .join(" ");
   return (
     <Svg
-      testID={
-        location.kind === "climbing_source" ? "activity-source-overlay" : "activity-route-overlay"
-      }
+      testID="activity-route-overlay"
       pointerEvents="none"
-      style={{ position: "absolute", left, top, width, height }}
+      width="100%"
+      height="100%"
+      style={StyleSheet.absoluteFill}
       viewBox={`0 0 ${mapPreview.width} ${mapPreview.height}`}
       preserveAspectRatio="none"
     >
-      {location.kind === "climbing_source" ? (
-        location.sourcePoints.map((point) => (
-          <Circle
-            key={`${point.location.providerId}-${point.location.scope}-${point.location.objectId}`}
-            testID="activity-source-point"
-            cx={point.x}
-            cy={point.y}
-            r={36}
-            fill={point.location.scope === "area" ? "#d97706" : "#2563eb"}
-            stroke="#fff"
-            strokeWidth={16}
-          />
-        ))
-      ) : (
-        <>
-          <Polyline
-            points={points}
-            fill="none"
-            stroke="#fff"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={60}
-          />
-          <Polyline
-            testID="activity-route-path"
-            points={points}
-            fill="none"
-            stroke={colors.positive}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={30}
-          />
-        </>
-      )}
+      <Polyline
+        points={points}
+        fill="none"
+        stroke="#fff"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={5}
+        vectorEffect="non-scaling-stroke"
+      />
+      <Polyline
+        testID="activity-route-path"
+        points={points}
+        fill="none"
+        stroke={colors.positive}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={3}
+        vectorEffect="non-scaling-stroke"
+      />
     </Svg>
   );
 }
@@ -168,12 +163,25 @@ function formatRouteCoordinate(value: number): string {
 const styles = StyleSheet.create({
   container: {
     borderRadius: radius.md,
-    height: TILE_SIZE,
     backgroundColor: colors.surfaceSecondary,
     overflow: "hidden",
     position: "relative",
-    width: TILE_SIZE,
+    width: "100%",
   },
+  sourceMarker: {
+    position: "absolute",
+    transform: [{ translateX: -8 }, { translateY: -8 }],
+  },
+  sourceLocationBadge: {
+    position: "absolute",
+    bottom: spacing.sm,
+    left: spacing.sm,
+    backgroundColor: colors.surface,
+    borderRadius: radius.sm,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+  },
+  sourceLocationBadgeText: { color: colors.textSecondary, fontSize: 11 },
   fallback: { width: "100%", height: "100%", alignItems: "center", justifyContent: "center" },
   fallbackText: { color: colors.textSecondary, fontSize: 12, fontWeight: "600" },
 });

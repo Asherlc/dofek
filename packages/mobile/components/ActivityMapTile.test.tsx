@@ -1,6 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import type { ActivityLocation } from "dofek-server/types";
-import { describe, expect, it } from "vitest";
+import React from "react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { ActivityMapTile } from "./ActivityMapTile";
 
 const location = {
@@ -22,6 +23,41 @@ const location = {
 } satisfies ActivityLocation;
 
 describe("ActivityMapTile", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it("reserves a full-width 16:9 map panel while geometry is processing", () => {
+    const nativeElement = vi.spyOn(React, "createElement");
+    render(<ActivityMapTile location={{ kind: "processing" }} />);
+    const panel = screen.getByRole("progressbar", { name: "Processing map" }).parentElement;
+    expect(panel?.style.width).toBe("100%");
+    expect(nativeElement).toHaveBeenCalledWith(
+      "View",
+      expect.objectContaining({
+        style: expect.objectContaining({ width: "100%", aspectRatio: 16 / 9 }),
+      }),
+      expect.anything(),
+    );
+  });
+
+  it("uses the full card width and preview aspect ratio while image tiles load", () => {
+    const nativeElement = vi.spyOn(React, "createElement");
+    render(
+      <ActivityMapTile
+        location={{ ...location, mapPreview: { ...location.mapPreview, width: 800, height: 600 } }}
+      />,
+    );
+    const panel = screen.getByTestId("activity-route-viewport").parentElement;
+    expect(panel?.style.width).toBe("100%");
+    expect(nativeElement).toHaveBeenCalledWith(
+      "View",
+      expect.objectContaining({
+        style: expect.objectContaining({ width: "100%", aspectRatio: 800 / 600 }),
+      }),
+      expect.anything(),
+    );
+    expect(screen.getByRole("progressbar", { name: "Processing map" })).toBeTruthy();
+  });
+
   it("keeps processing until every tile instance loads, counting repeated load events once", () => {
     render(<ActivityMapTile location={location} />);
     expect(screen.getByRole("progressbar", { name: "Processing map" })).toBeTruthy();

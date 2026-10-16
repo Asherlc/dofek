@@ -472,12 +472,15 @@ export default function ActivitiesScreen() {
                       </Text>
                       <ActivityMetricStrip activity={activity} units={units} />
                     </View>
-                    {activity.location ? (
-                      <ActivityMapTile location={activity.location} />
-                    ) : (
+                    {!activity.location ? (
                       <ActivityTypeIcon activityType={activity.activityType} />
-                    )}
+                    ) : null}
                   </View>
+                  {activity.location ? (
+                    <View style={styles.mapPanel}>
+                      <ActivityMapTile location={activity.location} />
+                    </View>
+                  ) : null}
                 </TouchableOpacity>
               ))}
             </View>
@@ -876,5 +879,9 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     fontSize: 12,
     marginTop: 2,
+  },
+  mapPanel: {
+    paddingHorizontal: spacing.sm,
+    paddingBottom: spacing.sm,
   },
 });
