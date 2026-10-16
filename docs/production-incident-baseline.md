@@ -31799,7 +31799,9 @@ The approved patch now limits preparation to desired mappings whose source and d
   earlier timeout tests left a spy installed, so the new test's saved reference
   recursively called that same spy. Local per-test mock/timer cleanup fixes the
   isolation error; no production behavior or global retry setting changed.
-  Final combined validation follows this correction. The existing Wahoo recovery remains
+  The final combined run passes **19,493 assertions with 19 existing skips**
+  and retries disabled. Independent review reran the admission-delay
+  reproduction and confirmed fresh credentials at dispatch. The existing Wahoo recovery remains
   bounded to one refresh after rejection; no additional retry, wait, or timeout
   was introduced.
 - **Local validation prerequisite:** `pnpm compose -- up -d --wait clickhouse`
@@ -31811,6 +31813,14 @@ The approved patch now limits preparation to desired mappings whose source and d
   labeled network on that subnet let the unchanged Compose command pass and
   ClickHouse become healthy. Other workspace resources and all existing volumes
   were preserved; no daemon or timeout setting changed.
+- **Hosted validation still pending:** [PR #2986](https://github.com/Asherlc/dofek/pull/2986)
+  contains the fixes and remains a draft pending hosted checks and release
+  validation. Its first change-detection job was queued without an assigned
+  runner or any executed step. The [concurrent main run](https://github.com/Asherlc/dofek/actions/runs/38917490469)
+  still reported a queued run status while its jobs API showed 88 of 93 jobs
+  completed and a macOS worker running. Run-level queue status alone therefore
+  did not establish stalled execution. No workflow was rerun or modified as a
+  queue workaround; inspect individual jobs before interpreting run summaries.
 - **Retrospective / follow-up:** Duplicate monitoring retained decisive expiry
   details after Sentry redaction, while generic replacement exceptions made
   several historical causes unrecoverable. A useful runbook addition would
