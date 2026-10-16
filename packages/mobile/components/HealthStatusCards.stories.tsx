@@ -99,6 +99,47 @@ export const InsufficientData: Story = {
   },
 };
 
+export const MissingCurrentValue: Story = {
+  args: {
+    metrics: [
+      {
+        metric: "steps",
+        label: "Steps",
+        value: null,
+        valueText: null,
+        baseline: 6055,
+        baselineText: "6,055",
+        sampleDeviation: 2000,
+        deviation: null,
+        direction: "unknown",
+        intent: "neutral",
+        statusToken: "insufficient_data",
+        statusColor: "muted",
+        statusLabel: "Steps missing for this day",
+        evaluationRule: "Needs a step count for this day to compare with your recorded baseline",
+        explanation:
+          "No step count is available for this day; your recorded baseline is available.",
+        provenance: {
+          latestDate: "2026-10-08",
+          sourceProviders: ["apple_health"],
+          observedDays: 89,
+          windowDays: 90,
+        },
+        comparison: null,
+        baselineProgress: {
+          requiredObservationDays: 3,
+          observedObservationDays: 89,
+          hasMeasurableVariation: true,
+          blocker: "missing_source_data",
+          requirement: "A step count for this day to compare with your recorded baseline.",
+          summary: "No step count is available for this day.",
+          action: "Sync steps data again to record a step count for this day.",
+        },
+      },
+    ],
+  },
+};
+
 export const FarFromBaseline: Story = {
   args: {
     metrics: [

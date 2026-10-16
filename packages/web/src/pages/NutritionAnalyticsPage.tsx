@@ -7,15 +7,11 @@ import { NutritionDataQualityPanel } from "../components/NutritionDataQualityPan
 import { QueryStatePanel } from "../components/QueryStatePanel.tsx";
 import { TimeRangeSelector } from "../components/TimeRangeSelector.tsx";
 import { useTimeRangePreference } from "../hooks/useTimeRangePreference.ts";
-import {
-  formatTimeRangeLabel,
-  minimumSelectedRangeQueryInput,
-  selectedRangeQueryInput,
-} from "../lib/timeRange.ts";
+import { minimumSelectedRangeQueryInput, selectedRangeQueryInput } from "../lib/timeRange.ts";
 import { trpc } from "../lib/trpc.ts";
 
 export function NutritionAnalyticsPage() {
-  const { days, description, setDays } = useTimeRangePreference("nutrition");
+  const { days, setDays } = useTimeRangePreference("nutrition");
 
   const micronutrients = trpc.nutritionAnalytics.micronutrientAdequacyV2.useQuery(
     selectedRangeQueryInput(days),
@@ -48,7 +44,7 @@ export function NutritionAnalyticsPage() {
     <ChartRangeProvider days={days}>
       <div className="space-y-6 sm:space-y-8">
         <div className="flex justify-end">
-          <TimeRangeSelector days={days} description={description} onChange={setDays} />
+          <TimeRangeSelector days={days} onChange={setDays} />
         </div>
         {firstError ? (
           <div className="space-y-2">
@@ -112,7 +108,7 @@ export function NutritionAnalyticsPage() {
             {micronutrients.error == null || micronutrientsHaveSuccessfulData ? (
               <Section
                 title="Micronutrient Adequacy"
-                subtitle={`Average over recorded days as % of the U.S. Food and Drug Administration (FDA) Daily Value (${formatTimeRangeLabel(days)}); the Daily Value is a general target reference, while any Tolerable Upper Intake Level (UL) is shown separately`}
+                subtitle="Average intake on recorded days as a percentage of the U.S. Food and Drug Administration (FDA) Daily Value."
               >
                 <MicronutrientChart
                   data={micronutrients.data?.nutrients ?? []}
@@ -137,18 +133,13 @@ function Section({
   subtitle?: string;
   children: React.ReactNode;
 }) {
-  const description = subtitle ?? `${title} chart.`;
-
   return (
     <section>
       <div className="mb-1 flex items-center gap-2">
         <h2 className="text-sm font-medium text-muted uppercase tracking-wider">{title}</h2>
-        <ChartDescriptionTooltip description={description} />
+        {subtitle && <ChartDescriptionTooltip description={subtitle} />}
       </div>
-      {subtitle && <p className="text-xs text-dim mb-4">{subtitle}</p>}
-      <div className="card p-2 sm:p-4" title={description}>
-        {children}
-      </div>
+      <div className="card p-2 sm:p-4">{children}</div>
     </section>
   );
 }

@@ -572,7 +572,7 @@ describe("Router coverage", () => {
         }[];
         context: {
           label: "Recent-to-baseline workload ratio";
-          description: "Compares load from the latest 7 days with an equivalent 7-day baseline from the latest 28 days. This is descriptive context, not a safe range or an injury prediction.";
+          description: "Compares load from the latest 7 days with an equivalent 7-day baseline from the latest 28 days.";
           recentDays: 7;
           baselineDays: 28;
         };
@@ -882,7 +882,7 @@ describe("Router coverage", () => {
         expect(typeof exercise.slopeKgPerWeek).toBe("number");
         expect(exercise.trend).toBe("increasing");
         expect(exercise.slopeKgPerWeek).toBeGreaterThan(0);
-        expect(exercise.interpretation).toContain("not inherently good or bad");
+        expect(exercise.interpretation).toBe("Recorded weekly volume increased over this period.");
         expect(exercise.deloadContext).toContain("planned deload");
       }
     });

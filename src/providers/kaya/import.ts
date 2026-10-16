@@ -1,9 +1,12 @@
 import { createHash } from "node:crypto";
 import { resolveProviderActivityType } from "@dofek/training/activity-types";
-import { type ClimbingMetadata, climbingMetadataSchema } from "@dofek/training/climbing-context";
 import { parseClimbingGrade } from "@dofek/training/climbing-grades";
 import { z } from "zod";
-import { persistClimbingSessionEntries } from "../../db/climbing-entry-sync.ts";
+import {
+  type ClimbingLogSessionsSyncInput,
+  persistClimbingLogSessions,
+} from "../../db/climbing-log-session-sync.ts";
+import type { SourceClimbingAttempt, SourceClimbingLogEntry } from "../../db/climbing-log-sync.ts";
 import type { SyncDatabase } from "../../db/index.ts";
 import { upsertProviderActivity } from "../../db/provider-activity-sync.ts";
 import { ensureProvider } from "../../db/tokens.ts";
@@ -68,52 +71,36 @@ export interface KayaRawEntry {
   grade: string;
   color: string | null;
   climbName: string | null;
-  gym: string;
+  gym: string | null;
   location: string | null;
   country: string | null;
 }
 
-export interface KayaClimbingEntry extends ClimbingMetadata {
-  externalId: string;
-  climbType: "boulder" | "route";
-  gradeSystem: "v_scale" | "yds";
-  grade: string;
-  attemptCount: number | null;
-  routeName: string | null;
-  sourceName: "Kaya";
-  raw: KayaRawEntry;
-}
-
-export interface KayaClimbingActivity {
+export interface KayaExportSession {
   externalId: string;
   name: string;
   activityType: "rock_climbing";
   locationName: string;
   startedAt: Date;
   endedAt: Date;
-  entries: KayaClimbingEntry[];
+  entries: SourceClimbingLogEntry[];
 }
 
 export interface KayaParseResult {
-  activities: KayaClimbingActivity[];
+  sessions: KayaExportSession[];
+  standaloneEntries: SourceClimbingLogEntry[];
   errors: KayaParseError[];
 }
 
 interface ParsedKayaRow {
   rowNumber: number;
-  date: Date;
-  gym: string;
-  entry: KayaClimbingEntry;
-}
-
-export interface KayaImportDatabase extends SyncDatabase {
-  transaction: <TResult>(
-    callback: (transactionDb: SyncDatabase) => Promise<TResult>,
-  ) => Promise<TResult>;
+  date: Date | null;
+  gym: string | null;
+  entry: SourceClimbingLogEntry;
 }
 
 export async function importKayaExportFile(
-  db: KayaImportDatabase,
+  db: SyncDatabase,
   csvText: string,
   userId: string,
 ): Promise<SyncResult> {
@@ -121,10 +108,10 @@ export async function importKayaExportFile(
 }
 
 class KayaExportImporter {
-  readonly #db: KayaImportDatabase;
+  readonly #db: SyncDatabase;
   readonly #userId: string;
 
-  constructor(db: KayaImportDatabase, userId: string) {
+  constructor(db: SyncDatabase, userId: string) {
     this.#db = db;
     this.#userId = userId;
   }
@@ -141,15 +128,22 @@ class KayaExportImporter {
         this.#userId,
       );
 
-      let syncedRecords = 0;
-      for (const activity of parsed.activities) {
-        syncedRecords += await this.#upsertActivity(
+      const sessions: ClimbingLogSessionsSyncInput["sessions"][number][] = [];
+      for (const activity of parsed.sessions) {
+        const session = await this.#upsertActivity(
           transactionDb,
           activity,
           parsed.errors.length === 0,
         );
+        if (session) sessions.push(session);
       }
-      return syncedRecords;
+      const result = await persistClimbingLogSessions(transactionDb, {
+        userId: this.#userId,
+        providerId: KAYA_PROVIDER_ID,
+        standaloneEntries: parsed.standaloneEntries,
+        sessions,
+      });
+      return result.recordsSynced;
     });
 
     return {
@@ -162,9 +156,9 @@ class KayaExportImporter {
 
   async #upsertActivity(
     db: SyncDatabase,
-    kayaActivity: KayaClimbingActivity,
+    kayaActivity: KayaExportSession,
     complete: boolean,
-  ): Promise<number> {
+  ): Promise<ClimbingLogSessionsSyncInput["sessions"][number] | undefined> {
     const row = await upsertProviderActivity(
       db,
       {
@@ -199,17 +193,12 @@ class KayaExportImporter {
         },
       },
     );
-    if (!row) return 0;
-
-    await persistClimbingSessionEntries(db, {
-      userId: this.#userId,
-      providerId: KAYA_PROVIDER_ID,
+    if (!row) return undefined;
+    return {
       activityId: row.id,
       entries: kayaActivity.entries,
       complete,
-    });
-
-    return kayaActivity.entries.length;
+    };
   }
 
   #toSyncError(error: KayaParseError): SyncError {
@@ -235,7 +224,8 @@ class KayaExportParser {
     const decodedCsv = decodeCsv(this.#csvText);
     if (!decodedCsv.ok) {
       return {
-        activities: [],
+        sessions: [],
+        standaloneEntries: [],
         errors: [{ rowNumber: decodedCsv.rowNumber, message: decodedCsv.message }],
       };
     }
@@ -243,7 +233,8 @@ class KayaExportParser {
     const [header, ...dataRows] = decodedCsv.rows;
     if (!header || header.fields.join(",") !== KAYA_HEADER.join(",")) {
       return {
-        activities: [],
+        sessions: [],
+        standaloneEntries: [],
         errors: [{ rowNumber: null, message: "header does not match Kaya export format" }],
       };
     }
@@ -276,31 +267,30 @@ class KayaExportParser {
     });
 
     return {
-      activities: this.#buildActivities(parsedRows),
+      sessions: this.#buildSessions(parsedRows),
+      standaloneEntries: parsedRows
+        .filter((row) => row.date === null || row.gym === null)
+        .map((row) => row.entry),
       errors,
     };
   }
 
   #parseRow(row: KayaDecodedRow, rowNumber: number): ParsedKayaRow | KayaParseError {
     const dateText = row.date.trim();
-    if (dateText === "") {
-      return { rowNumber, message: `row ${rowNumber}: date is required` };
-    }
-
-    const date = new Date(dateText);
-    if (Number.isNaN(date.getTime())) {
+    const date = dateText === "" ? null : new Date(dateText);
+    if (
+      date !== null &&
+      (Number.isNaN(date.getTime()) ||
+        date.getUTCFullYear() < 1 ||
+        date.getUTCFullYear() > 9999 ||
+        (/^\d{4}-\d{2}-\d{2}/.test(dateText) &&
+          !z.iso.date().safeParse(dateText.slice(0, 10)).success))
+    ) {
       return { rowNumber, message: `row ${rowNumber}: date is not a valid Kaya date` };
     }
 
     const gym = nullableText(row.gym);
-    if (gym === null) {
-      return { rowNumber, message: `row ${rowNumber}: gym is required` };
-    }
-
     const parsedGrade = parseClimbingGrade(row.grade);
-    if (!parsedGrade) {
-      return { rowNumber, message: `row ${rowNumber}: grade is unsupported` };
-    }
 
     const raw: KayaRawEntry = {
       date: row.date,
@@ -322,9 +312,9 @@ class KayaExportParser {
     const routeName = nullableText(row.climb_name);
     const entryHash = stableHash([
       row.date,
-      gym,
+      gym ?? "",
       routeName ?? "",
-      parsedGrade.grade,
+      parsedGrade?.grade ?? row.grade.trim(),
       nullableText(row.color) ?? "",
       row.ascent_type,
       String(rowNumber),
@@ -336,28 +326,35 @@ class KayaExportParser {
       gym,
       entry: {
         externalId: `kaya:entry:${entryHash}`,
-        climbType: parsedGrade.gradeSystem === "v_scale" ? "boulder" : "route",
-        gradeSystem: parsedGrade.gradeSystem,
-        grade: parsedGrade.grade,
-        ...climbingMetadataSchema.parse({
-          locationPath: [{ name: gym, externalId: null, kind: "gym" }],
-          board: null,
-          wallAngle: null,
-          climbStyle: null,
-          resultStyle: nullableText(raw.ascentType),
-        }),
-        attemptCount,
-        routeName,
+        climbedOn: date?.toISOString().slice(0, 10) ?? null,
+        discipline: parsedGrade ? "rock_climbing" : null,
+        reportedGrades: parsedGrade
+          ? [{ value: parsedGrade.grade, system: parsedGrade.gradeSystem }]
+          : row.grade.trim()
+            ? [{ value: row.grade.trim(), system: null }]
+            : [],
+        ...(attemptCount === null
+          ? {}
+          : { reportedAttemptCounts: [{ scope: "climb", count: attemptCount }] }),
+        attempts: [csvAttempt(raw.ascentType)],
+        climb: {
+          externalId: null,
+          name: routeName,
+          kind: parsedGrade ? (parsedGrade.gradeSystem === "v_scale" ? "boulder" : "route") : null,
+          setting: gym ? "indoor" : null,
+          ...(gym ? { areas: [{ name: gym, externalId: null }] } : {}),
+        },
         sourceName: KAYA_PROVIDER_NAME,
-        raw,
+        raw: { ...raw },
       },
     };
   }
 
-  #buildActivities(rows: ParsedKayaRow[]): KayaClimbingActivity[] {
-    const activityMap = new Map<string, KayaClimbingActivity>();
+  #buildSessions(rows: ParsedKayaRow[]): KayaExportSession[] {
+    const activityMap = new Map<string, KayaExportSession>();
 
     for (const row of rows) {
+      if (row.date === null || row.gym === null) continue;
       const sessionDate = row.date.toISOString().slice(0, 10);
       const sessionKey = `${row.gym}|${sessionDate}`;
       const existingActivity = activityMap.get(sessionKey);
@@ -385,6 +382,23 @@ class KayaExportParser {
 
     return Array.from(activityMap.values());
   }
+}
+
+function csvAttempt(value: string): SourceClimbingAttempt {
+  const label = value.trim().toLowerCase();
+  const qualifier: SourceClimbingAttempt["qualifier"] =
+    label === "onsight"
+      ? "free-onsight"
+      : label === "flash"
+        ? "free-flash"
+        : ["redpoint", "send", "repeat"].includes(label)
+          ? "free-send"
+          : undefined;
+  return {
+    scope: "climb",
+    ...(qualifier ? { qualifier, sourceResult: value } : {}),
+    ...(label === "repeat" ? { hadCompletedBefore: true } : {}),
+  };
 }
 
 function nullableText(value: string): string | null {

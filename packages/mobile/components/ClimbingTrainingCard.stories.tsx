@@ -1,11 +1,12 @@
 import type { Meta, StoryObj } from "@storybook/react-native";
 import { ClimbingTrainingCard } from "./ClimbingTrainingCard";
+import { climbingProgressionFixture } from "./climbing-progression-test-helpers";
 
 const data = {
-  gradeProgression: [{ date: "2026-10-04", climbType: "boulder", grade: "V3", gradeSortValue: 3 }],
+  gradeProgression: [climbingProgressionFixture()],
   volumeByGrade: [
     {
-      climbType: "boulder",
+      climbKind: "boulder",
       grade: "V3",
       gradeSortValue: 3,
       attempts: 8,
@@ -42,7 +43,7 @@ export const UnknownAttempts: Story = {
       ...data,
       volumeByGrade: [
         {
-          climbType: "boulder",
+          climbKind: "boulder",
           grade: "VB",
           gradeSortValue: -1,
           attempts: null,
@@ -59,7 +60,7 @@ export const RecordedAttempts: Story = {
       ...data,
       volumeByGrade: [
         {
-          climbType: "boulder",
+          climbKind: "boulder",
           grade: "VB",
           gradeSortValue: -1,
           attempts: null,

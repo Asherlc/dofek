@@ -1,4 +1,6 @@
-import { render, screen } from "@testing-library/react";
+import { BODY_TREND_WEIGHT_DECISION_COPY } from "@dofek/format/body-decision-context";
+import { fireEvent, render, screen } from "@testing-library/react";
+import { Alert } from "react-native";
 import { describe, expect, it, vi } from "vitest";
 import { BodyDecisionContext } from "./BodyDecisionContext";
 
@@ -35,15 +37,22 @@ const context = {
 };
 
 describe("BodyDecisionContext", () => {
-  it("renders the same decision-quality copy as web", () => {
+  it("renders scale-reading provenance and personal variation", () => {
     render(<BodyDecisionContext context={context} />);
 
     expect(screen.getByText(/Latest scale reading: 80\.0 kg/)).toBeTruthy();
-    expect(screen.getByText(/Trend Weight moves 10%/)).toBeTruthy();
-    expect(screen.getByText(/Personalized typical measurement variation is -0\.4 kg/)).toBeTruthy();
-    expect(
-      screen.getByText("For comparable readings, use the same scale at a consistent time of day."),
-    ).toBeTruthy();
+    expect(screen.getByText(/-0\.4 kg to \+0\.6 kg/)).toBeTruthy();
+  });
+
+  it("opens the Trend Weight method from About", () => {
+    const alertSpy = vi.spyOn(Alert, "alert").mockImplementation(() => {});
+    render(<BodyDecisionContext context={context} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "About Trend Weight" }));
+    expect(alertSpy).toHaveBeenCalledWith("Trend Weight", BODY_TREND_WEIGHT_DECISION_COPY, [
+      { text: "Close" },
+    ]);
+    alertSpy.mockRestore();
   });
 
   it("explains when decision context is unavailable", () => {

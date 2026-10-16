@@ -218,7 +218,6 @@ function WeeklyVolumeChart({ data }: { data: WeeklyVolumeRow[] }) {
     <div>
       <div className="mb-2 flex items-center gap-2">
         <h3 className="text-xs font-medium text-subtle">Weekly Training Volume</h3>
-        <ChartDescriptionTooltip description="Recorded training duration per week, split by activity type." />
       </div>
       <DofekChart option={option} height={220} />
     </div>
@@ -266,13 +265,10 @@ function IntensityDonut({ distribution }: { distribution: IntensityDistribution 
           {TRAINING_TERMINOLOGY.intensityDistribution.plainLabel}
         </h3>
         <ChartDescriptionTooltip
-          description={`Technical name: ${TRAINING_TERMINOLOGY.intensityDistribution.technicalName}. ${TRAINING_TERMINOLOGY.intensityDistribution.details} ${distribution.explanation}`}
+          description={`Technical name: ${TRAINING_TERMINOLOGY.intensityDistribution.technicalName}. ${TRAINING_TERMINOLOGY.intensityDistribution.details}`}
         />
       </div>
       <DofekChart option={option} height={200} />
-      <p className="text-xs text-dim mt-1">
-        {TRAINING_TERMINOLOGY.intensityDistribution.plainDescription}
-      </p>
     </div>
   );
 }

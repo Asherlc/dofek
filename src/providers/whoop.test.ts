@@ -161,12 +161,12 @@ function makeChainableMock(resolvedValue: unknown = []) {
   insertFn.mockReturnValue(chain);
   deleteFn.mockReturnValue(chain);
 
-  const db: SyncDatabase = {
+  const db: SyncDatabase = makeTransactionalTestDatabase({
     select: selectFn,
     insert: insertFn,
     delete: deleteFn,
     execute: executeFn,
-  };
+  });
 
   // Return an object that is both SyncDatabase and has chain spies accessible
   return makeTransactionalTestDatabase(Object.assign(db, chain));

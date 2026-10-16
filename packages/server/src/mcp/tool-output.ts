@@ -1,9 +1,9 @@
 import { recordLocalTimeContextSchema } from "@dofek/format/record-local-time";
 import { healthMetricSchema } from "@dofek/mcp-contracts/health-explorer";
-import { climbingContextSchema } from "@dofek/training/climbing-context";
-import { CLIMBING_GRADE_SYSTEMS } from "@dofek/training/climbing-grades";
+import { FREE_ROCK_GRADE_SYSTEMS } from "@dofek/training/climbing-grades";
 import { z } from "zod";
 import { baselineRelativeMetricSchema } from "../contracts/baseline-relative-metrics.ts";
+import { climbingLogEntryDetailSchema } from "../contracts/climbing-log-contracts.ts";
 import { osmTilePreviewSchema } from "../lib/osm-tile.ts";
 import {
   fingerLoadingExerciseSchema,
@@ -391,28 +391,6 @@ export const activityTimeseriesOutputSchema = jsonResult(
   }),
 );
 
-const climbingAttemptSchema = z.object({
-  attemptIndex: z.number().int().positive(),
-  failureReason: z.enum(["fell", "pumped", "skin", "technique", "fear"]).nullable(),
-  notes: nullableString,
-  outcome: z.enum(["sent", "failed"]),
-});
-const climbingEntrySchema = z.object({
-  id: z.string(),
-  context: climbingContextSchema,
-  discipline: z.enum(["boulder", "lead", "top_rope", "route"]),
-  grade: z.string(),
-  grade_system: z.enum(CLIMBING_GRADE_SYSTEMS),
-  sent: z.boolean().nullable(),
-  attempt_count: z.number().int().positive().nullable(),
-  attempts: z.array(climbingAttemptSchema),
-  ascent_type: nullableString,
-  hold_type: nullableString,
-  route_name: nullableString,
-  location_name: nullableString,
-  source_name: nullableString,
-  wall_angle_degrees: nullableNumber,
-});
 export const climbingSessionsOutputSchema = jsonResult(
   z.object({
     sessions: z.array(
@@ -422,35 +400,31 @@ export const climbingSessionsOutputSchema = jsonResult(
         duration_minutes: nullableNumber,
         avg_hr: nullableNumber,
         name: nullableString,
-        gym_vs_crag: z.null(),
         location: nullableString,
-        total_vertical_m: z.null(),
-        climbs: z.array(climbingEntrySchema),
+        climbing_log_entries: z.array(climbingLogEntryDetailSchema),
       }),
     ),
     aggregates: z.object({
       grade_distribution: z.array(
         z.object({
-          discipline: z.enum(["boulder", "lead", "top_rope", "route"]),
+          climb_kind: z.enum(["boulder", "route"]),
           grade: z.string(),
-          grade_system: z.enum(CLIMBING_GRADE_SYSTEMS),
-          attempts: nullableNumber,
-          sends: nullableNumber,
+          grade_system: z.enum(FREE_ROCK_GRADE_SYSTEMS),
+          recorded_attempts: nullableNumber,
+          sends: z.number().int().nonnegative(),
         }),
       ),
       send_rate: nullableNumber,
-      max_grade_by_discipline: z.object({ boulder: nullableString, route: nullableString }),
+      max_grade_by_kind: z.object({ boulder: nullableString, route: nullableString }),
       volume: z.object({
-        climbs: z.number(),
-        attempts: nullableNumber,
-        sends: nullableNumber,
-        total_vertical_m: z.null(),
+        rock_log_entries: z.number().int().nonnegative(),
+        recorded_attempts: nullableNumber,
+        sends: z.number().int().nonnegative(),
       }),
       coverage: z.object({
-        entries: z.number().int().nonnegative(),
-        entries_with_attempts: z.number().int().nonnegative(),
-        entries_with_observed_outcome: z.number().int().nonnegative(),
-        attempt_data: z.enum(["complete", "partial", "unavailable"]),
+        rock_log_entries: z.number().int().nonnegative(),
+        observed_free_send_outcomes: z.number().int().nonnegative(),
+        unknown_free_send_outcomes: z.number().int().nonnegative(),
       }),
     }),
   }),
@@ -793,24 +767,6 @@ const activityDetailSchema = z.object({
   location: activityLocationSchema.nullable().optional(),
   provider_absent_at: nullableString,
 });
-const climbingAscentTypeSchema = z.enum(["Flash", "Onsight", "Redpoint", "Repeat"]);
-const climbingHoldTypeSchema = z.enum(["crimp", "sloper", "pinch", "pocket", "jug"]);
-const activityDetailsClimbSchema = z.object({
-  id: z.string(),
-  climbType: z.enum(["boulder", "route"]),
-  gradeSystem: z.enum(CLIMBING_GRADE_SYSTEMS),
-  grade: z.string(),
-  sent: z.boolean(),
-  attemptCount: z.number().int().positive(),
-  attempts: z.array(climbingAttemptSchema),
-  ascentType: climbingAscentTypeSchema.nullable(),
-  holdType: climbingHoldTypeSchema.nullable(),
-  routeName: nullableString,
-  locationName: nullableString,
-  lead: z.boolean().nullable(),
-  sourceName: z.string(),
-  wallAngleDegrees: nullableNumber,
-});
 const activityDetailsExerciseSchema = strengthExerciseSchema;
 const activityFingerLoadingSchema = z.object({
   activityId: z.string(),
@@ -831,7 +787,7 @@ const activityFingerLoadingSchema = z.object({
 export const activityDetailsOutputSchema = jsonResult(
   z.object({
     activity: activityDetailSchema,
-    climbing_entries: z.array(activityDetailsClimbSchema),
+    climbing_log_entries: z.array(climbingLogEntryDetailSchema),
     finger_loading: z.array(activityFingerLoadingSchema),
     strength_exercises: z.array(activityDetailsExerciseSchema),
   }),

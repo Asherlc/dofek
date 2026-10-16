@@ -39,11 +39,22 @@ ranked AS (
   SELECT
     a.*,
     COALESCE(dp.priority, pp.priority, 100) AS prio,
+    COALESCE(name_priority.priority, dp.priority, pp.priority, 100) AS name_prio,
+    COALESCE(notes_priority.priority, dp.priority, pp.priority, 100) AS notes_prio,
+    COALESCE(effort_priority.priority, dp.priority, pp.priority, 100) AS effort_prio,
     payload.complete_working_set_count,
     payload.set_count,
     payload.exercise_count
   FROM fitness.activity AS a
   LEFT JOIN fitness.provider_priority AS pp ON a.provider_id = pp.provider_id
+  LEFT JOIN fitness.provider_field_priority AS name_priority
+    ON a.provider_id = name_priority.provider_id AND name_priority.field_key = 'activity.name'
+  LEFT JOIN fitness.provider_field_priority AS notes_priority
+    ON a.provider_id = notes_priority.provider_id AND notes_priority.field_key = 'activity.notes'
+  LEFT JOIN fitness.provider_field_priority AS effort_priority
+    ON
+      a.provider_id = effort_priority.provider_id
+      AND effort_priority.field_key = 'activity.perceived_exertion'
   LEFT JOIN LATERAL (
     SELECT dp2.priority
     FROM fitness.device_priority AS dp2
@@ -328,17 +339,17 @@ merged AS (
       SELECT r.perceived_exertion
       FROM final_groups AS fg2 INNER JOIN ranked AS r ON fg2.activity_id = r.id
       WHERE fg2.group_id = b.group_id AND r.perceived_exertion IS NOT null
-      ORDER BY r.prio ASC, r.id ASC LIMIT 1
+      ORDER BY r.effort_prio ASC, r.id ASC LIMIT 1
     ) AS perceived_exertion,
     (
       SELECT r.name FROM final_groups AS fg2 INNER JOIN ranked AS r ON fg2.activity_id = r.id
       WHERE fg2.group_id = b.group_id AND r.name IS NOT null
-      ORDER BY r.prio ASC LIMIT 1
+      ORDER BY r.name_prio ASC, r.id ASC LIMIT 1
     ) AS name,
     (
       SELECT r.notes FROM final_groups AS fg2 INNER JOIN ranked AS r ON fg2.activity_id = r.id
       WHERE fg2.group_id = b.group_id AND r.notes IS NOT null
-      ORDER BY r.prio ASC LIMIT 1
+      ORDER BY r.notes_prio ASC, r.id ASC LIMIT 1
     ) AS notes,
     CASE
       WHEN context.local_time_source = 'unknown' THEN null

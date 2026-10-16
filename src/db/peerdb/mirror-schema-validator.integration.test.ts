@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { createClient } from "@clickhouse/client";
 import { Client } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { createMigration } from "../clickhouse-migrations/0101_activity_end_time_nullability.ts";
 import { buildPostgresFitnessRawTableStatements } from "../clickhouse-raw-tables.ts";
 import { setupTestDatabase, type TestContext } from "../test-helpers.ts";
 import { type PeerDbMirrorContract, peerDbMirrorContracts } from "./mirror-contracts.ts";
@@ -34,6 +35,9 @@ describe("PeerDB mirror schema compatibility", () => {
       ...contract,
       destinationDatabase: clickHouseDatabase,
     }));
+    await clickHouseClient.command({
+      query: `CREATE TABLE ${clickHouseDatabase}.deduped_activities (activity_id UUID, ended_at DateTime64(6, 'UTC')) ENGINE = MergeTree ORDER BY activity_id`,
+    });
   });
 
   afterAll(async () => {
@@ -61,6 +65,50 @@ describe("PeerDB mirror schema compatibility", () => {
         sourcePostgresClient: postgresClient,
       }),
     ).resolves.toBeUndefined();
+  });
+
+  it("rejects an activity mirror that turns missing end times into epoch timestamps", async () => {
+    await clickHouseClient.command({
+      query: `ALTER TABLE ${clickHouseDatabase}.activity MODIFY COLUMN ended_at DateTime64(6, 'UTC') DEFAULT toDateTime64(0, 6, 'UTC')`,
+    });
+    try {
+      await expect(
+        assertPeerDbMirrorSchemasCompatible({
+          clickHouseClient,
+          contracts,
+          sourcePostgresClient: postgresClient,
+        }),
+      ).rejects.toThrow("non_nullable_destination_columns=[ended_at]");
+    } finally {
+      for (const statement of createMigration().statements) {
+        await clickHouseClient.command({
+          query: statement
+            .replaceAll("postgres_fitness.", `${clickHouseDatabase}.`)
+            .replaceAll("analytics.", `${clickHouseDatabase}.`),
+        });
+      }
+    }
+    const id = randomUUID();
+    await clickHouseClient.insert({
+      table: `${clickHouseDatabase}.activity`,
+      format: "JSONEachRow",
+      values: [
+        {
+          id,
+          provider_id: "wahoo",
+          user_id: randomUUID(),
+          canonical_type: "cycling",
+          started_at: "2024-01-29 23:49:27",
+          ended_at: null,
+        },
+      ],
+    });
+    const result = await clickHouseClient.query({
+      query: `SELECT ended_at FROM ${clickHouseDatabase}.activity FINAL WHERE id = {id:UUID}`,
+      query_params: { id },
+      format: "JSONEachRow",
+    });
+    expect(await result.json()).toEqual([{ ended_at: null }]);
   });
 
   it("reproduces migration 0085 incompatibility when its exclusions are absent", async () => {

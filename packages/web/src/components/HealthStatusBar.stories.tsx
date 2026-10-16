@@ -128,6 +128,7 @@ export const Destructive: Story = {
 
 export const Unknown: Story = {
   args: {
+    baselineRelative: [],
     metrics: [
       hrvMetric({
         value: null,
@@ -136,10 +137,62 @@ export const Unknown: Story = {
         direction: "unknown",
         statusToken: "insufficient_data",
         statusColor: "muted",
-        statusLabel: "Not enough data",
-        evaluationRule: "Needs a current value, baseline, and measurable day-to-day variation",
-        explanation: "Not enough varied data yet to compare this value with your usual range.",
+        statusLabel: "Current value missing",
+        evaluationRule: "Needs a current value to compare with your recorded baseline",
+        explanation:
+          "No current Heart Rate Variability (HRV) value is available; your recorded baseline is available.",
+        baselineProgress: {
+          requiredObservationDays: 3,
+          observedObservationDays: 3,
+          hasMeasurableVariation: true,
+          blocker: "missing_source_data",
+          requirement: "A current value to compare with your recorded baseline.",
+          summary: "No current Heart Rate Variability (HRV) value is available yet.",
+          action: "Sync heart rate variability (hrv) data again to record a current value.",
+        },
       }),
+    ],
+  },
+};
+
+export const MissingCurrentValue: Story = {
+  args: {
+    baselineRelative: [],
+    metrics: [
+      {
+        metric: "steps",
+        label: "Steps",
+        value: null,
+        valueText: null,
+        baseline: 6055,
+        baselineText: "6,055",
+        sampleDeviation: 2000,
+        deviation: null,
+        direction: "unknown",
+        intent: "neutral",
+        statusToken: "insufficient_data",
+        statusColor: "muted",
+        statusLabel: "Steps missing for this day",
+        evaluationRule: "Needs a step count for this day to compare with your recorded baseline",
+        explanation:
+          "No step count is available for this day; your recorded baseline is available.",
+        provenance: {
+          latestDate: "2026-10-08",
+          sourceProviders: ["apple_health"],
+          observedDays: 89,
+          windowDays: 90,
+        },
+        comparison: null,
+        baselineProgress: {
+          requiredObservationDays: 3,
+          observedObservationDays: 89,
+          hasMeasurableVariation: true,
+          blocker: "missing_source_data",
+          requirement: "A step count for this day to compare with your recorded baseline.",
+          summary: "No step count is available for this day.",
+          action: "Sync steps data again to record a step count for this day.",
+        },
+      },
     ],
   },
 };

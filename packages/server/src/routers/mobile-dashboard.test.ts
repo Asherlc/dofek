@@ -848,6 +848,7 @@ function emptyRecoveryTabResult(): import("../services/mobile-recovery-tab.ts").
   return {
     hrvVariability: [],
     hrvBaseline: [],
+    restingHeartRateTrendDirection: null,
     readinessScore: [],
     stress: { daily: [], weekly: [], latestScore: null, trend: "stable" },
     trends: null,
@@ -1040,6 +1041,7 @@ describe("mobileDashboard.recovery", () => {
     const loadSpy = vi.spyOn(mobileRecoveryTab, "loadMobileRecoveryTab").mockResolvedValue({
       hrvVariability: [],
       hrvBaseline: [],
+      restingHeartRateTrendDirection: null,
       readinessScore: [],
       stress: { daily: [], weekly: [], latestScore: null, trend: "stable" },
       trends: null,
@@ -1122,6 +1124,7 @@ describe("mobileDashboard.recovery", () => {
     const loadSpy = vi.spyOn(mobileRecoveryTab, "loadMobileRecoveryTab").mockResolvedValue({
       hrvVariability: [],
       hrvBaseline: [],
+      restingHeartRateTrendDirection: null,
       readinessScore: [],
       stress: { daily: [], weekly: [], latestScore: null, trend: "stable" },
       trends: null,
@@ -1274,7 +1277,7 @@ describe("mobileDashboard.training", () => {
     });
     expect(cachedQueryOptions).toContainEqual({
       maxAge: 600_000,
-      keyVersion: "training-recorded-attempts-v4",
+      keyVersion: "training-climbing-lanes-v5",
     });
     const timingCall = vi
       .mocked(logger.info)
@@ -1290,7 +1293,7 @@ describe("mobileDashboard.training", () => {
         context: {
           label: "Recent-to-baseline workload ratio",
           description:
-            "Compares load from the latest 7 days with an equivalent 7-day baseline from the latest 28 days. This is descriptive context, not a safe range or an injury prediction.",
+            "Compares load from the latest 7 days with an equivalent 7-day baseline from the latest 28 days.",
           recentDays: 7,
           baselineDays: 28,
         },
@@ -1379,7 +1382,7 @@ describe("mobileDashboard.training", () => {
         context: {
           label: "Recent-to-baseline workload ratio",
           description:
-            "Compares load from the latest 7 days with an equivalent 7-day baseline from the latest 28 days. This is descriptive context, not a safe range or an injury prediction.",
+            "Compares load from the latest 7 days with an equivalent 7-day baseline from the latest 28 days.",
           recentDays: 7,
           baselineDays: 28,
         },

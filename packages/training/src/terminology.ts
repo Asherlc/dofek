@@ -21,7 +21,7 @@ export const TRAINING_TERMINOLOGY = {
     plainDescription: "Compares recent training load with the latest baseline period.",
     technicalName: "Acute-to-chronic workload ratio (ACWR)",
     details:
-      "Compares load from the latest 7 days with an equivalent 7-day baseline from the latest 28 days. This is descriptive context, not a safe range or an injury prediction.",
+      "Compares load from the latest 7 days with an equivalent 7-day baseline from the latest 28 days.",
   },
   normalizedPower: {
     plainLabel: "Effort-adjusted power",

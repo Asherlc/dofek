@@ -118,7 +118,96 @@ describe("HealthStatusCards", () => {
     ).toBeNull();
   });
 
-  it("renders server-authored baseline requirements, progress, and action", () => {
+  it("shows missing Steps for this day while retaining its recorded baseline", () => {
+    render(
+      <HealthStatusCards
+        metrics={[
+          {
+            metric: "steps",
+            label: "Steps",
+            value: null,
+            valueText: null,
+            baseline: 6055,
+            baselineText: "6,055",
+            sampleDeviation: 2000,
+            deviation: null,
+            direction: "unknown",
+            intent: "neutral",
+            statusToken: "insufficient_data",
+            statusColor: "muted",
+            statusLabel: "Steps missing for this day",
+            evaluationRule:
+              "Needs a step count for this day to compare with your recorded baseline",
+            explanation:
+              "No step count is available for this day; your recorded baseline is available.",
+            comparison: null,
+            provenance: {
+              latestDate: "2026-10-08",
+              sourceProviders: ["apple_health"],
+              observedDays: 89,
+              windowDays: 90,
+            },
+            baselineProgress: {
+              requiredObservationDays: 3,
+              observedObservationDays: 89,
+              hasMeasurableVariation: true,
+              blocker: "missing_source_data",
+              requirement: "A step count for this day to compare with your recorded baseline.",
+              summary: "No step count is available for this day.",
+              action: "Sync steps data again to record a step count for this day.",
+            },
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.getByText("—")).toBeTruthy();
+    expect(screen.getByText("baseline 6,055 · Steps missing for this day")).toBeTruthy();
+    expect(screen.getByLabelText("Steps missing for this day status").textContent).toBe("?");
+    expect(
+      screen.getByText("Needs a step count for this day to compare with your recorded baseline"),
+    ).toBeTruthy();
+    expect(
+      screen.getByText("Sync steps data again to record a step count for this day."),
+    ).toBeTruthy();
+
+    const button = screen.getByRole("button", { name: "Show details for Steps" });
+    expect(button.getAttribute("aria-expanded")).toBe("false");
+    expect(screen.queryByText("Coverage: 89/90 days")).toBeNull();
+    fireEvent.click(button);
+    expect(button.getAttribute("aria-expanded")).toBe("true");
+    expect(
+      screen.getByText(
+        "No step count is available for this day; your recorded baseline is available.",
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.getByText("A step count for this day to compare with your recorded baseline."),
+    ).toBeTruthy();
+    expect(screen.getByText("No step count is available for this day.")).toBeTruthy();
+    expect(screen.getByText("Source: Apple Health")).toBeTruthy();
+    expect(screen.getByText("Latest recorded date: 2026-10-08")).toBeTruthy();
+    expect(screen.getByText("Coverage: 89/90 days")).toBeTruthy();
+  });
+
+  it.each([
+    {
+      blocker: "collecting" as const,
+      summary:
+        "Resting Heart Rate has 1 of 3 required days recorded; the baseline is still collecting observations.",
+      action: "Keep syncing resting heart rate data for at least 2 more days.",
+    },
+    {
+      blocker: "syncing" as const,
+      summary: "Resting Heart Rate baseline data is still syncing.",
+      action: "Wait for the sync to finish, then check your baseline again.",
+    },
+    {
+      blocker: "sync_error" as const,
+      summary: "Resting Heart Rate baseline data could not sync.",
+      action: "Reconnect the data source and start the sync again.",
+    },
+  ])("renders baseline requirements and actionable guidance for $blocker", (fixture) => {
     render(
       <HealthStatusCards
         metrics={[
@@ -140,12 +229,11 @@ describe("HealthStatusCards", () => {
               requiredObservationDays: 3,
               observedObservationDays: 1,
               hasMeasurableVariation: false,
-              blocker: "collecting",
+              blocker: fixture.blocker,
               requirement:
                 "A current value plus at least 2 more recorded days with measurable variation.",
-              summary:
-                "Resting Heart Rate has 1 of 3 required days recorded; the baseline is still collecting observations.",
-              action: "Keep syncing resting heart rate data for at least 2 more days.",
+              summary: fixture.summary,
+              action: fixture.action,
             },
           },
         ]}
@@ -156,25 +244,23 @@ describe("HealthStatusCards", () => {
     expect(
       screen.getByText("Needs a current value, baseline, and measurable day-to-day variation"),
     ).toBeTruthy();
-    expect(screen.getByText("1 of 3 required days recorded")).toBeTruthy();
-    expect(
-      screen.getByText("Keep syncing resting heart rate data for at least 2 more days."),
-    ).toBeTruthy();
+    if (fixture.blocker === "syncing") {
+      expect(screen.queryByText(fixture.action)).toBeNull();
+    } else {
+      expect(screen.getByText(fixture.action)).toBeTruthy();
+    }
     fireEvent.click(screen.getByRole("button", { name: "Show details for Resting Heart Rate" }));
     expect(
       screen.getByText(
         "A current value plus at least 2 more recorded days with measurable variation.",
       ),
     ).toBeTruthy();
-    expect(screen.getByText("1 of 3 required days recorded")).toBeTruthy();
-    expect(
-      screen.getByText(
-        "Resting Heart Rate has 1 of 3 required days recorded; the baseline is still collecting observations.",
-      ),
-    ).toBeTruthy();
-    expect(
-      screen.getByText("Keep syncing resting heart rate data for at least 2 more days."),
-    ).toBeTruthy();
+    expect(screen.getByText(fixture.summary)).toBeTruthy();
+    if (fixture.blocker === "syncing") {
+      expect(screen.queryByText(fixture.action)).toBeNull();
+    } else {
+      expect(screen.getByText(fixture.action)).toBeTruthy();
+    }
   });
 
   it("does not reinterpret a server status from the numeric fields", () => {
@@ -251,9 +337,6 @@ describe("HealthStatusCards", () => {
         formatComparisonValue={(_, value) => value.toFixed(1)}
       />,
     );
-
-    expect(screen.getByText("WHOOP (Cloud) · 3/30 days · latest 2026-07-30")).toBeTruthy();
-    expect(screen.getByText("7d vs prior 28d")).toBeTruthy();
 
     const detailsButton = screen.getByRole("button", {
       name: "Show details for Blood Oxygen Saturation (SpO2)",

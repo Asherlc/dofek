@@ -22,10 +22,7 @@ import { scheduleDelayedSyncJob } from "./enqueue-sync-job.ts";
 import { providerRateLimitCooldownStore } from "./provider-rate-limit-cooldown.ts";
 import type { SyncJob } from "./queues.ts";
 import type { SyncJobContext } from "./sync-job-context.ts";
-import {
-  requireTransactionalSyncDatabase,
-  type SyncProcessingOperation,
-} from "./sync-processing-operation.ts";
+import type { SyncProcessingOperation } from "./sync-processing-operation.ts";
 
 function firstRetryableInfraSyncError(errors: SyncError[]): SyncError | null {
   return (
@@ -89,24 +86,20 @@ async function scheduleRateLimitRetry(
 ): Promise<string> {
   const cooldown = await providerRateLimitCooldownStore.record(error, job.data.userId);
   signal?.throwIfAborted();
-  return withAccountErasureUserWriteFence(
-    requireTransactionalSyncDatabase(db),
-    job.data.userId,
-    async () => {
-      signal?.throwIfAborted();
-      const retryAt = await scheduleDelayedSyncJob(
-        {
-          ...job.data,
-          providerId: error.providerId,
-          sinceIso: since.toISOString(),
-          untilIso: until.toISOString(),
-        },
-        cooldown,
-      );
-      signal?.throwIfAborted();
-      return retryAt;
-    },
-  );
+  return withAccountErasureUserWriteFence(db, job.data.userId, async () => {
+    signal?.throwIfAborted();
+    const retryAt = await scheduleDelayedSyncJob(
+      {
+        ...job.data,
+        providerId: error.providerId,
+        sinceIso: since.toISOString(),
+        untilIso: until.toISOString(),
+      },
+      cooldown,
+    );
+    signal?.throwIfAborted();
+    return retryAt;
+  });
 }
 
 export function throwRetryableSyncResultError(errors: SyncError[]): void {

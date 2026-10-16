@@ -114,8 +114,7 @@ describe("calendarRouter", () => {
           totalMinutes: 120,
           activityTypes: ["cycling", "running"],
           trainingTimeBand: "high",
-          trainingTimeMeaning:
-            "High training volume; compare with recovery before stacking another hard day.",
+          trainingTimeMeaning: "High recorded training volume",
         },
       ]);
     });

@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { authFailureReasonFromError } from "./auth-errors.ts";
 import { SyncRun } from "./sync-run.ts";
 import { SyncWindow } from "./sync-window.ts";
-import { createMockDatabase } from "./test-helpers.ts";
+import { createMockDatabase, makeTransactionalTestDatabase } from "./test-helpers.ts";
 
 vi.mock("../db/token-user-context.ts", () => ({
   getTokenUserId: () => "user-1",
@@ -274,7 +274,7 @@ describe("UltrahumanProvider", () => {
     delete process.env.ULTRAHUMAN_API_TOKEN;
     delete process.env.ULTRAHUMAN_EMAIL;
     const mockFetch = vi.fn<typeof globalThis.fetch>();
-    const mockDb = {
+    const mockDb = makeTransactionalTestDatabase({
       select: vi.fn().mockReturnValue({
         from: vi.fn().mockReturnValue({
           where: vi.fn().mockReturnValue({
@@ -292,7 +292,7 @@ describe("UltrahumanProvider", () => {
       }),
       delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
       execute: vi.fn().mockResolvedValue([]),
-    };
+    });
     const result = await new UltrahumanProvider(mockFetch).sync(
       new SyncRun({
         db: mockDb,

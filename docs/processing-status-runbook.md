@@ -61,6 +61,25 @@ only; it never contains metric payloads.
 All event writes are idempotent. Re-running the reconciler, analytics build, or
 cache warmer may reuse the same facts without duplicating lifecycle state.
 
+## Customer Alerts
+
+Failure alerts require a current recorded failed stage fact. The
+[state reducer](../src/processing/processing-state.ts) distinguishes those facts
+from an inferred `blocked` state, which means a required next stage has not
+been recorded. The [alert repository](../packages/server/src/repositories/processing-repository.ts)
+includes only failed datasets in failure alerts. Stalled updates remain visible
+as “waiting to continue” processing status on both clients, using the
+[shared presentation helpers](../packages/providers-meta/src/processing-status.ts).
+Retry, reconnect, and failure-dismissal controls belong to recorded failures.
+
+An empty alert list does not prove an earlier operation recovered. The
+[event store](../src/processing/processing-event-store.ts) loads twenty recent
+user operations within ninety days, and the repository selects the newest
+operation touching each dataset. Record the original operation ID and screenshot
+time, then inspect that operation's successful stage facts using the diagnosis
+queries below. Model-level failures can be omitted from the public timeline;
+use the durable ledger when confirming the failure or its recovery.
+
 ## Deployment Order
 
 Use the normal production deployment workflow; do not deploy these pieces
@@ -70,13 +89,16 @@ manually out of order.
    `metric-stream-clickhouse-sink`, and `processing-reconciliation` remain
    quiesced, then wait for Postgres, ClickHouse, and the PeerDB Flow API.
 2. Run `peerdb-cdc-contract prepare`. This applies only registered additive
-   `pre-cdc` ClickHouse migrations, reconciles every live mapping to the typed
-   contract, reads the mapping back, and validates the resulting PostgreSQL to
-   ClickHouse projection. An existing mirror is edited in place; it and its
-   logical replication slot are not replaced.
+   `pre-cdc` ClickHouse migrations, reconciles existing mapping identities to
+   the typed contract, reads those mappings back, and validates their PostgreSQL
+   to ClickHouse projection. New table mappings are deferred until migrations
+   and publication setup finish. An existing mirror is edited in place; it and
+   its logical replication slot are not replaced.
 3. Run the normal database migrations and deploy the requested immutable image
-   with the same consumers still quiesced. Run the checked-in CDC setup for any
-   mirror that does not exist yet.
+   with the same consumers still quiesced. Run the checked-in CDC setup to
+   configure publication membership, reconcile the full mapping contract, and
+   create any missing mirrors. See [CDC setup](../src/db/clickhouse-cdc.ts) and
+   [contract deployment](../src/db/peerdb/mirror-deployment.ts).
 4. Run `peerdb-cdc-contract finalize`. It validates the post-migration schema
    again and writes one unique processing marker for every managed mirror.
    The owner-only deploy artifact records the exact operation, dataset, flow,
@@ -207,8 +229,8 @@ and reports reconciliation failures there; the entrypoint logs the nonzero exit
 before the next scheduled retry. Alert on repeated `processing reconciliation`
 failures, outbox rows that persist across two completed reconciliation
 summaries, analytics/cache `failed` events, and operations whose latest
-nonterminal event exceeds the dataset's freshness target. Monitor `cdc-health`
-independently for a stale or failing bounded CDC result.
+event that has not reached a terminal state exceeds the dataset's freshness
+target. Monitor `cdc-health` independently for a stale or failing bounded CDC result.
 
 The ledger is append-only and is not physically purged in the first release.
 `processing.status` considers operations created in the last 90 days;
@@ -219,3 +241,40 @@ events—do not mutate or compact stage facts in place.
 Operational metadata must never contain provider payloads, metric samples,
 credentials, raw exception objects, or identifying filenames. Ordinary user
 APIs omit dbt model names and other infrastructure details.
+
+## Provider Authorization Diagnostics
+
+Search application logs for `[provider-diagnostics]` and correlate `providerId`,
+`userId`, timestamps, and the enclosing trace. The shared
+[provider HTTP boundary](../src/lib/provider-rate-limit-fetch.ts) records failed
+HTTP responses; [token storage](../src/db/tokens.ts) records loaded, saved,
+missing, and deleted credentials. Expiry timing and refresh-token availability
+are included only when the caller supplies token metadata.
+The [OAuth resolver](../src/auth/resolve-tokens.ts) records refresh attempts and
+outcomes. Custom token protocols still share HTTP and storage diagnostics.
+The [credential sign-in endpoint](../packages/server/src/routers/credential-auth.ts)
+records sign-in outcomes and queues a full sync after credentials are saved,
+using the existing single-flight queue policy for both web and mobile.
+
+HTTP diagnostics contain the origin, method, status, a SHA-256 fingerprint of
+the pathname, and an allowlisted Bearer error category. They omit URL credentials,
+query strings, fragments, raw paths, headers, and request/response bodies.
+To match a known endpoint, hash its pathname with SHA-256 and compare
+`endpointHash`. Auth diagnostics contain `event`, `providerId`, and `userId` when
+known. When token metadata is supplied, they also contain `expiresAt`,
+`expiresInSeconds`, and `hasRefreshToken`; token values are omitted.
+Successful credential mutations and sign-in/refresh outcomes are published after
+the enclosing database transaction commits, before subsequent sync dispatch or
+cache invalidation. Rolled-back transactions and savepoints discard those
+observations. See the [transaction effects implementation](../src/db/transaction-effects.ts)
+and [Drizzle transaction semantics](https://orm.drizzle.team/docs/transactions).
+Failed sign-in/refresh events and HTTP `401`/`403`
+produce sanitized Sentry warnings; the original response remains available to
+the provider. See the [shared implementation](../src/lib/provider-diagnostics.ts)
+and OpenTelemetry's [sensitive-data guidance](https://opentelemetry.io/docs/security/handling-sensitive-data/).
+
+Do not conclude that a token expired from HTTP `401` alone. OAuth's
+`invalid_token` also covers revoked and malformed tokens
+([RFC 6750, section 3.1](https://www.rfc-editor.org/rfc/rfc6750#section-3.1)).
+Compare the most recent `tokens_loaded`/`tokens_saved` expiry with the failure,
+then inspect any intervening refresh events before recommending reconnect.

@@ -93,8 +93,7 @@ function createPolarizationMethod(): PolarizationTrendResult["method"] {
       "Easy zone (Zone 1) is below 80%, threshold zone (Zone 2) is 80–<90%, and high zone (Zone 3) is at least 90% of maximum heart rate.",
     calculationChoice:
       "Dofek requires recorded time in all three zones and does not calculate the polarization index when high-zone time exceeds easy-zone time.",
-    interpretation:
-      "The >2.00 comparison is Treff's descriptive training-distribution heuristic, not a physiological or medical assessment.",
+    interpretation: "The >2.00 comparison is Treff's descriptive training-distribution heuristic.",
     source: {
       title: "Treff et al. (2019), The Polarization-Index",
       url: "https://doi.org/10.3389/fphys.2019.00707",

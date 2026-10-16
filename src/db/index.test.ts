@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterCommit } from "./transaction-effects.ts";
 
 const mockCaptureException = vi.fn();
 const mockLoggerError = vi.fn();
@@ -52,6 +53,56 @@ describe("db/index", () => {
   });
 
   describe("createDatabase", () => {
+    it("publishes root and nested observations only after the raw transaction commits", async () => {
+      const { createDatabase } = await import("./index.ts");
+      const transaction = {
+        delete: vi.fn(),
+        execute: vi.fn().mockResolvedValue({ rows: [{ value: 7 }] }),
+        insert: vi.fn(),
+        query: {},
+        select: vi.fn(),
+        transaction: vi.fn(),
+        update: vi.fn(),
+      };
+      const effect = vi.fn();
+      const rolledBack = vi.fn();
+      transaction.transaction.mockImplementation(
+        (operation: (nested: typeof transaction) => Promise<number>) => operation(transaction),
+      );
+      const rawTransaction = mockDrizzleReturn.transaction;
+      rawTransaction.mockImplementation(
+        async (operation: (tx: typeof transaction) => Promise<number>) => {
+          const result = await operation(transaction);
+          expect(effect).not.toHaveBeenCalled();
+          return result;
+        },
+      );
+      const db = createDatabase("postgres://localhost:5432/test");
+      const result = await db.transaction(
+        async (tx) => {
+          afterCommit(effect);
+          await expect(
+            tx.transaction(async () => {
+              afterCommit(rolledBack);
+              throw new Error("rollback savepoint");
+            }),
+          ).rejects.toThrow("rollback savepoint");
+          return tx.transaction(async (nested) => {
+            afterCommit(effect);
+            expect(await nested.execute("SELECT 7 AS value")).toEqual([{ value: 7 }]);
+            return 42;
+          });
+        },
+        { isolationLevel: "serializable" },
+      );
+      expect(result).toBe(42);
+      expect(effect).toHaveBeenCalledTimes(2);
+      expect(rolledBack).not.toHaveBeenCalled();
+      expect(rawTransaction).toHaveBeenCalledWith(expect.any(Function), {
+        isolationLevel: "serializable",
+      });
+    });
+
     it("creates a pool with the given connection string", async () => {
       const { createDatabase } = await import("./index.ts");
       createDatabase("postgres://localhost:5432/test");

@@ -12,8 +12,9 @@ interface RecomputeStatusIndicatorProps {
 
 function ringColor(status: ProcessingDisplayStatus): string {
   if (status === "ready") return operationalStatusColors.success.indicator;
-  if (status === "delayed") return operationalStatusColors.warning.indicator;
-  if (status === "failed" || status === "blocked") {
+  if (status === "delayed" || status === "blocked")
+    return operationalStatusColors.warning.indicator;
+  if (status === "failed") {
     return operationalStatusColors.danger.indicator;
   }
   if (status === "cancelled") return operationalStatusColors.neutral.indicator;

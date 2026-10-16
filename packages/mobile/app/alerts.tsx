@@ -1,14 +1,13 @@
 import { formatRelativeTime } from "@dofek/format/format";
 import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import {
-  PROCESSING_ALERTS_EMPTY_PREVIEW,
+  PROCESSING_ALERTS_EMPTY_MESSAGE,
   type ProcessingAlert,
   processingAlertsFailurePresentation,
 } from "@dofek/providers/processing-alerts";
 import { useRouter } from "expo-router";
 import { useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
-import { EmptyStatePreview } from "../components/EmptyStatePreview";
 import { PaginationControls } from "../components/PaginationControls";
 import { QueryStatePanel } from "../components/QueryStatePanel";
 import { trpc } from "../lib/trpc";
@@ -77,15 +76,12 @@ export default function AlertsScreen() {
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
-      <Text style={styles.intro}>
-        Problems that need your attention appear here until they are resolved.
-      </Text>
       {alertsQuery.isLoading && !alertsQuery.data ? (
         <QueryStatePanel variant="loading" />
       ) : failurePresentation && (!alertsQuery.data || alerts.length === 0) ? (
         failurePanel
       ) : alertsQuery.data?.alerts.length === 0 ? (
-        <EmptyStatePreview content={PROCESSING_ALERTS_EMPTY_PREVIEW} />
+        <QueryStatePanel variant="empty" title={PROCESSING_ALERTS_EMPTY_MESSAGE} />
       ) : (
         <View style={styles.list}>
           {failurePanel}
@@ -169,12 +165,6 @@ const styles = StyleSheet.create({
   content: {
     padding: spacing.md,
     paddingBottom: spacing.xl,
-  },
-  intro: {
-    color: colors.textSecondary,
-    fontSize: 14,
-    lineHeight: 20,
-    marginBottom: spacing.md,
   },
   list: {
     gap: spacing.sm,

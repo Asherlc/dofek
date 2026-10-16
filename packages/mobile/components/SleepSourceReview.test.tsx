@@ -60,7 +60,7 @@ describe("SleepSourceReview", () => {
     expect(screen.getByText(/5h 30m/)).toBeTruthy();
   });
 
-  it("states when the sleep record used has no overlaps", () => {
+  it("shows the selected sleep record when there are no overlaps", () => {
     render(
       <SleepSourceReview
         nights={[
@@ -85,7 +85,8 @@ describe("SleepSourceReview", () => {
       />,
     );
 
-    expect(screen.getByText("No overlapping sleep records")).toBeTruthy();
+    expect(screen.getByText("WHOOP (Cloud)")).toBeTruthy();
+    expect(screen.getByText(/8h 0m/)).toBeTruthy();
     expect(screen.queryByRole("button")).toBeNull();
   });
 

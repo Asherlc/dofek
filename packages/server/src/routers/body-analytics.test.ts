@@ -95,7 +95,7 @@ beforeEach(() => {
 describe("bodyAnalyticsRouter", () => {
   it("versions both weight response cache contracts", () => {
     expect(
-      cachedQueryOptions.filter((options) => options.keyVersion === "health-status-evidence-v4"),
+      cachedQueryOptions.filter((options) => options.keyVersion === "health-status-evidence-v5"),
     ).toHaveLength(2);
   });
 

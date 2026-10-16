@@ -39,7 +39,7 @@ describe("buildKarvonenIntensityDistribution", () => {
         { zone: 5, label: "VO2max", seconds: 200, percent: 14.3 },
       ],
       explanation:
-        "A descriptive view of endurance training time across the Karvonen five-zone heart-rate model. It does not classify training polarization.",
+        "A descriptive view of endurance training time across the Karvonen five-zone heart-rate model.",
     });
   });
 
@@ -129,7 +129,7 @@ describe("buildTreffPolarizationWeek", () => {
       totalSeconds: 6000,
       zonePercentages: { z1: 80, z2: 10, z3: 10 },
       explanation:
-        "This week's recorded cycling distribution is above Treff's descriptive 2.00 heuristic. It is not a physiological or medical assessment.",
+        "This week's recorded cycling distribution is above Treff's descriptive 2.00 heuristic.",
     });
   });
 });

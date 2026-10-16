@@ -3,7 +3,6 @@ import {
   formatBodyCompositionNumber,
   formatCalories,
   formatCaloriesMeasurement,
-  formatClimbingAttemptResult,
   formatDateForDisplay,
   formatDateLong,
   formatDateMedium,
@@ -282,50 +281,6 @@ describe("formatDurationSeconds", () => {
 
   it("returns placeholder for non-finite values", () => {
     expect(formatDurationSeconds(Number.NaN)).toBe("--");
-  });
-});
-
-describe("formatClimbingAttemptResult", () => {
-  it.each(["Onsight", "Flash"])("lets a successful %s convey the complete result", (ascentType) => {
-    expect(formatClimbingAttemptResult(true, null, ascentType)).toBeNull();
-    expect(formatClimbingAttemptResult(true, 1, ascentType)).toBeNull();
-  });
-
-  it.each(["Redpoint", "Pinkpoint", "Repeat"])(
-    "keeps attempt information without repeating the send implied by %s",
-    (ascentType) => {
-      expect(formatClimbingAttemptResult(true, 1, ascentType)).toBe("1 attempt");
-      expect(formatClimbingAttemptResult(true, 7, ascentType)).toBe("7 attempts");
-      expect(formatClimbingAttemptResult(true, null, ascentType)).toBe(
-        "Attempt count not recorded",
-      );
-    },
-  );
-
-  it("preserves observed outcomes that differ from the recorded ascent style", () => {
-    expect(formatClimbingAttemptResult(false, 3, "Flash")).toBe("Attempted 3 times");
-    expect(formatClimbingAttemptResult(null, null, "Onsight")).toBe(
-      "Outcome and attempt count not recorded",
-    );
-    expect(formatClimbingAttemptResult(true, 2, "Unrecognized result")).toBe("Sent in 2 attempts");
-  });
-
-  it("formats sent and attempted climbs with singular and plural counts", () => {
-    expect(formatClimbingAttemptResult(true, 1, null)).toBe("Sent in 1 attempt");
-    expect(formatClimbingAttemptResult(true, 7, null)).toBe("Sent in 7 attempts");
-    expect(formatClimbingAttemptResult(false, 1, null)).toBe("Attempted 1 time");
-    expect(formatClimbingAttemptResult(false, 3, null)).toBe("Attempted 3 times");
-  });
-
-  it("does not manufacture a failed attempt when the result is absent", () => {
-    expect(formatClimbingAttemptResult(null, null, null)).toBe(
-      "Outcome and attempt count not recorded",
-    );
-    expect(formatClimbingAttemptResult(true, null, null)).toBe("Sent; attempt count not recorded");
-    expect(formatClimbingAttemptResult(false, null, null)).toBe(
-      "Not sent; attempt count not recorded",
-    );
-    expect(formatClimbingAttemptResult(null, 3, null)).toBe("3 attempts; outcome not recorded");
   });
 });
 

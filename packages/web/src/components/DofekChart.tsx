@@ -127,7 +127,6 @@ function ChartDataDisclosure({
 
   return (
     <div className="mt-2 space-y-1">
-      <p className="text-xs text-dim">{summary}</p>
       {hasChartTableData(option) && (
         <details
           onToggle={(event) => setExpanded(event.currentTarget.open)}

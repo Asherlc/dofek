@@ -154,7 +154,7 @@ describe("fetchMicronutrientSafetyReviews", () => {
     });
   });
 
-  it("does not present a generic below-Daily-Value result as a deficiency assessment", async () => {
+  it("compares average intake over recorded days with the FDA Daily Value", async () => {
     const { run } = makeQuery([
       {
         nutrient_id: "vitamin_c",
@@ -170,8 +170,7 @@ describe("fetchMicronutrientSafetyReviews", () => {
 
     expect(result[0]?.toDetail().adequacy).toMatchObject({
       status: "below_daily_value",
-      message:
-        "Average intake over recorded days is below the FDA Daily Value. This generic label reference is not a personalized deficiency assessment.",
+      message: "Average intake over recorded days is below the FDA Daily Value.",
     });
     expect(result[0]?.toDetail().intake.daysTracked).toBe(5);
   });
@@ -193,8 +192,7 @@ describe("fetchMicronutrientSafetyReviews", () => {
     expect(result[0]?.toDetail().adequacy).toMatchObject({
       status: "at_or_above_daily_value",
       percentDailyValue: 100,
-      message:
-        "Average intake over recorded days meets or exceeds the FDA Daily Value. This generic label reference is not a personalized safety assessment.",
+      message: "Average intake over recorded days meets or exceeds the FDA Daily Value.",
     });
   });
 

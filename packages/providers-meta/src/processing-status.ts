@@ -19,7 +19,7 @@ export type ProcessingDisplayStage =
   | "cache_refresh";
 
 export interface ProcessingTarget {
-  action: "import" | "recompute" | "sync";
+  action: "import" | "recompute" | "sync" | "update";
   label: string;
 }
 
@@ -31,6 +31,8 @@ function activeHeading(target: ProcessingTarget): string {
       return `Recomputing ${target.label}`;
     case "sync":
       return `Syncing ${target.label}`;
+    case "update":
+      return `Updating ${target.label}`;
   }
 }
 
@@ -45,8 +47,9 @@ export function processingHeading(
   if (target) {
     switch (status) {
       case "failed":
-      case "blocked":
         return `${capitalize(target.label)} ${target.action} didn’t finish`;
+      case "blocked":
+        return `${activeHeading(target)} is waiting to continue`;
       case "delayed":
         return `${activeHeading(target)} is taking longer than expected`;
       case "active":
@@ -62,8 +65,9 @@ export function processingHeading(
   }
   switch (status) {
     case "failed":
-    case "blocked":
       return "Your data update didn’t finish";
+    case "blocked":
+      return "Your data update is waiting to continue";
     case "delayed":
       return "Processing is taking longer than expected";
     case "active":
@@ -115,7 +119,10 @@ export function processingTarget(input: {
   const relevantDatasets = unfinishedDatasets.length > 0 ? unfinishedDatasets : input.datasets;
   const targets = [...new Set(relevantDatasets.map(datasetTarget))];
 
-  return { action: "recompute", label: formatList(targets) };
+  return {
+    action: input.operationKind === "provider_sync" ? "update" : "recompute",
+    label: formatList(targets),
+  };
 }
 
 export interface ProcessingTargetOperationSummary {
@@ -134,9 +141,8 @@ export interface ProcessingTargetScope {
  * operation touching that dataset, including unrelated provider syncs that
  * happen to still be in progress. When exactly one provider is responsible
  * for every non-ready operation, attribute the target to that provider (e.g.
- * "Syncing Peloton") instead of the generic "recompute" framing, which
- * incorrectly describes an in-progress provider sync as a recompute the
- * user never requested.
+ * "Syncing Peloton"). When several providers are active, describe their
+ * combined work as an update. Reserve "recompute" for analytics operations.
  */
 export function resolveProcessingTargetScope(input: {
   scopeProviderId: string | null;
@@ -155,13 +161,28 @@ export function resolveProcessingTargetScope(input: {
       .map((operation) => operation.providerId)
       .filter((providerId): providerId is string => providerId !== null),
   );
-  if (distinctProviderIds.size === 1) {
+  if (
+    distinctProviderIds.size === 1 &&
+    nonReadyOperations.every((operation) => operation.providerId !== null)
+  ) {
     const [providerId] = distinctProviderIds;
     const operation = nonReadyOperations.find((candidate) => candidate.providerId === providerId);
     return { providerId: providerId ?? null, operationKind: operation?.kind ?? null };
   }
 
-  return { providerId: null, operationKind: input.operations[0]?.kind ?? null };
+  const allProviderUpdates =
+    nonReadyOperations.length > 0 &&
+    nonReadyOperations.every(
+      (operation) =>
+        operation.providerId !== null &&
+        (operation.kind === "provider_sync" || operation.kind === "file_import"),
+    );
+  return {
+    providerId: null,
+    operationKind: allProviderUpdates
+      ? "provider_sync"
+      : (nonReadyOperations.find((operation) => operation.providerId === null)?.kind ?? null),
+  };
 }
 
 export function processingStatusMessage(input: {
@@ -169,14 +190,14 @@ export function processingStatusMessage(input: {
   errorMessage: string | null;
 }): string | null {
   const failureGuidance = "Try the update again. If it still fails, reconnect the data source.";
-  if ((input.status === "failed" || input.status === "blocked") && input.errorMessage) {
+  if (input.status === "failed" && input.errorMessage) {
     return userFacingErrorMessage(input.errorMessage, failureGuidance);
   }
   switch (input.status) {
     case "delayed":
+    case "blocked":
       return "Your existing data is still available.";
     case "failed":
-    case "blocked":
       return failureGuidance;
     case "partial":
     case "active":
@@ -231,16 +252,12 @@ export interface ProcessingFailureGroup {
   providerId: string | null;
   providerLabel: string | null;
   datasetLabels: string[];
-  status: "blocked" | "failed";
+  status: "failed";
   failedAt: string | null;
   lastReadyAt: string | null;
   errorMessage: string | null;
   requiresReconnect: boolean;
   dismissed: boolean;
-}
-
-function isFailureStatus(status: ProcessingDisplayStatus): status is "blocked" | "failed" {
-  return status === "blocked" || status === "failed";
 }
 
 function latestTimestamp(values: readonly (string | null)[]): string | null {
@@ -264,9 +281,9 @@ export function processingFailureGroups(input: {
     }
   }
 
-  const alertableDatasets = input.datasets.filter((dataset) => isFailureStatus(dataset.status));
+  const alertableDatasets = input.datasets.filter((dataset) => dataset.status === "failed");
   return input.operations.flatMap((operation) => {
-    if (operation.dismissed || !isFailureStatus(operation.status)) return [];
+    if (operation.dismissed || operation.status !== "failed") return [];
     const operationDatasetKeys = new Set(operation.datasets);
     const groupedDatasets = alertableDatasets.filter(
       (dataset) =>
@@ -307,7 +324,7 @@ export function processingDatasetStatusLabel(status: ProcessingDisplayStatus): s
     case "delayed":
       return "Delayed";
     case "blocked":
-      return "Blocked";
+      return "Waiting to continue";
     case "failed":
       return "Failed";
     case "cancelled":

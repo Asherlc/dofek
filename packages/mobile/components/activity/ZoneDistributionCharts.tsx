@@ -10,13 +10,11 @@ import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 import Svg, { G, Rect, Text as SvgText } from "react-native-svg";
 import { colors } from "../../theme";
 import { AccessibleChart } from "../AccessibleChart";
-import { ChartTitleWithTooltip } from "../ChartTitleWithTooltip";
 import { ACTIVITY_CHART_WIDTH } from "./chartDimensions";
 
 function ZoneDistributionChart<ZoneItem extends ZoneDistributionDatum>({
   zones,
   title,
-  description,
   zoneColors,
   emptyMessage,
   loading = false,
@@ -24,7 +22,6 @@ function ZoneDistributionChart<ZoneItem extends ZoneDistributionDatum>({
 }: {
   zones: ZoneItem[];
   title: string;
-  description: string;
   zoneColors: string[];
   emptyMessage: string;
   loading?: boolean;
@@ -33,11 +30,7 @@ function ZoneDistributionChart<ZoneItem extends ZoneDistributionDatum>({
   if (loading) {
     return (
       <View style={zoneChartStyles.container}>
-        <ChartTitleWithTooltip
-          title={title}
-          description={description}
-          textStyle={zoneChartStyles.title}
-        />
+        <Text style={zoneChartStyles.title}>{title}</Text>
         <View style={zoneChartStyles.emptyState}>
           <ActivityIndicator color={colors.accent} size="small" />
         </View>
@@ -48,11 +41,7 @@ function ZoneDistributionChart<ZoneItem extends ZoneDistributionDatum>({
   if (errorMessage) {
     return (
       <View style={zoneChartStyles.container}>
-        <ChartTitleWithTooltip
-          title={title}
-          description={description}
-          textStyle={zoneChartStyles.title}
-        />
+        <Text style={zoneChartStyles.title}>{title}</Text>
         <View style={zoneChartStyles.emptyState}>
           <Text style={zoneChartStyles.errorStateText}>
             {userFacingErrorMessage(
@@ -68,11 +57,7 @@ function ZoneDistributionChart<ZoneItem extends ZoneDistributionDatum>({
   if (!hasZoneDistributionData(zones)) {
     return (
       <View style={zoneChartStyles.container}>
-        <ChartTitleWithTooltip
-          title={title}
-          description={description}
-          textStyle={zoneChartStyles.title}
-        />
+        <Text style={zoneChartStyles.title}>{title}</Text>
         <View style={zoneChartStyles.emptyState}>
           <Text style={zoneChartStyles.emptyStateText}>{emptyMessage}</Text>
         </View>
@@ -107,11 +92,7 @@ function ZoneDistributionChart<ZoneItem extends ZoneDistributionDatum>({
       rows={accessibleRows}
     >
       <View style={zoneChartStyles.container}>
-        <ChartTitleWithTooltip
-          title={title}
-          description={description}
-          textStyle={zoneChartStyles.title}
-        />
+        <Text style={zoneChartStyles.title}>{title}</Text>
         <Svg width={ACTIVITY_CHART_WIDTH} height={chartTotalHeight + 8}>
           {rows.map((row, rowIndex) => {
             const zoneItem = row.zone;
@@ -202,7 +183,6 @@ export function HrZonesChart({
     <ZoneDistributionChart
       zones={zones}
       title="Heart Rate Zones"
-      description="Bars show both recorded duration and percentage of activity time in each heart rate zone."
       zoneColors={HEART_RATE_ZONE_COLORS}
       emptyMessage="No heart rate zone data"
       loading={loading}
@@ -216,7 +196,6 @@ export function PowerZonesChart({ zones }: { zones: ActivityPowerZone[] }) {
     <ZoneDistributionChart
       zones={zones}
       title="Power Zones"
-      description="Bars show both recorded duration and percentage of activity time in each power zone."
       zoneColors={POWER_ZONE_COLORS}
       emptyMessage="No power zone data"
     />

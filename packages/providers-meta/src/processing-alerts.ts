@@ -8,13 +8,7 @@ export const PROCESSING_ALERT_ACTIONS = [
 
 export type ProcessingAlertAction = (typeof PROCESSING_ALERT_ACTIONS)[number];
 
-export const PROCESSING_ALERTS_EMPTY_PREVIEW = {
-  title: "Nothing needs your attention",
-  message: "New sync, connection, and import problems will appear here.",
-  previewTitle: "When an alert appears, it will show",
-  previewItems: ["What happened", "When it happened", "What to do next"],
-  note: "Only real problems detected for your account are shown.",
-} as const;
+export const PROCESSING_ALERTS_EMPTY_MESSAGE = "Nothing needs your attention";
 
 export interface ProcessingAlert {
   id: string;
@@ -58,7 +52,7 @@ export function processingAlertsFailurePresentation(input: {
 
   return {
     title: input.hasSnapshot ? "Alert status may be out of date" : "Alert status is unavailable",
-    message: `${statusScope} Your synced health data is still available, and this status check did not pause syncs or imports. Details: ${errorMessage}`,
+    message: `${statusScope} ${errorMessage}`,
     retryLabel: "Retry alert status",
   };
 }

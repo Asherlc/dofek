@@ -2,7 +2,10 @@ import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { type ClickHouseClient, createClickHouseClientFromEnv } from "../clickhouse.ts";
-import { buildPostgresFitnessActivityRawTableStatement } from "../clickhouse-raw-tables.ts";
+import {
+  buildPostgresFitnessActivityRawTableStatement,
+  buildPostgresFitnessProviderFieldPriorityRawTableStatement,
+} from "../clickhouse-raw-tables.ts";
 import { createMigration } from "./0081_stable_activity_read_views.ts";
 
 const userId = "00000000-0000-0000-0000-000000000001";
@@ -27,6 +30,7 @@ describe("0081 stable activity read views", () => {
     client = createClickHouseClientFromEnv();
     await client.command({ query: `CREATE DATABASE ${database}` });
     await runIsolated(buildPostgresFitnessActivityRawTableStatement());
+    await runIsolated(buildPostgresFitnessProviderFieldPriorityRawTableStatement());
     await runIsolated(`CREATE TABLE postgres_fitness.provider_priority (
       provider_id String, priority Int32, _peerdb_is_deleted Int8,
       _peerdb_version Int64) ENGINE = ReplacingMergeTree(_peerdb_version)

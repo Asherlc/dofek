@@ -20,6 +20,7 @@ describe("ProviderStatsBreakdown", () => {
           foodEntries: 0,
           nutritionDaily: 0,
           clinicalRecords: 0,
+          climbingLogEntries: 0,
         }}
       />,
     );
@@ -35,9 +36,10 @@ describe("ProviderStatsBreakdown", () => {
       "Nutrition",
       "Events",
       "Clinical Records",
+      "Climbing log",
     ]) {
       expect(screen.getByText(label)).not.toBeNull();
     }
-    expect(screen.getAllByText("0")).toHaveLength(10);
+    expect(screen.getAllByText("0")).toHaveLength(11);
   });
 });

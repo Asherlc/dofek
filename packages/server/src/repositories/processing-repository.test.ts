@@ -762,12 +762,20 @@ describe("ProcessingRepository", () => {
     });
   });
 
-  it("retries a provider sync when the dataset failed without a matching failure event", async () => {
+  it("alerts when a failed analytics model is omitted from the displayed timeline", async () => {
     mockListScopedProcessingOperations.mockResolvedValue([
       operation({
         providerId: "garmin",
         kind: "provider_sync",
-        events: [event(1, { stage: "ingest", status: "succeeded" })],
+        events: [
+          event(1, { stage: "ingest", status: "succeeded" }),
+          event(2, {
+            stage: "analytics",
+            status: "failed",
+            modelName: "activity_summary",
+            errorCode: "analytics_failed",
+          }),
+        ],
       }),
     ]);
     mockDeriveProcessingState.mockReturnValue({
@@ -1226,17 +1234,79 @@ describe("ProcessingRepository", () => {
     });
   });
 
-  it("alerts when a dataset is blocked", async () => {
-    mockListScopedProcessingOperations.mockResolvedValue([operation()]);
+  it.each(["strava", "withings", "kaya-export"])(
+    "keeps stalled %s updates in processing status without a failure alert",
+    async (providerId) => {
+      mockListScopedProcessingOperations.mockResolvedValue([
+        operation({
+          providerId,
+          kind: providerId === "kaya-export" ? "file_import" : "provider_sync",
+        }),
+      ]);
+      mockDeriveProcessingState.mockReturnValue({
+        overallStatus: "blocked",
+        datasets: [
+          {
+            datasetKey: "activity",
+            currentStage: "analytics",
+            status: "blocked",
+            progressPercentage: null,
+            lastAdvancedAt: now,
+          },
+        ],
+      });
+      const repository = new ProcessingRepository(database, userId);
+
+      const status = await repository.status({ datasets: ["activity"] });
+      expect(status.datasets[0]?.status).toBe("blocked");
+      await expect(repository.alerts()).resolves.toEqual({
+        generatedAt: "2026-07-22T18:00:00.000Z",
+        alerts: [],
+      });
+    },
+  );
+
+  it("alerts only for the failed dataset when the same operation also has a stalled update", async () => {
+    mockListScopedProcessingOperations.mockResolvedValue([
+      operation({
+        providerId: "withings",
+        kind: "provider_sync",
+        datasetKeys: ["activity", "sleep"],
+        outputManifest: {},
+        createdAt: new Date("2026-07-22T17:00:00.000Z"),
+        events: [
+          event(1, {
+            stage: "ingest",
+            status: "succeeded",
+            datasetKey: null,
+            occurredAt: new Date("2026-07-22T17:05:00.000Z"),
+          }),
+          event(2, {
+            stage: "analytics",
+            status: "failed",
+            datasetKey: "activity",
+            errorCode: "analytics_failed",
+            occurredAt: new Date("2026-07-22T17:50:00.000Z"),
+          }),
+        ],
+      }),
+    ]);
     mockDeriveProcessingState.mockReturnValue({
-      overallStatus: "blocked",
+      overallStatus: "failed",
       datasets: [
         {
           datasetKey: "activity",
           currentStage: "analytics",
+          status: "failed",
+          progressPercentage: null,
+          lastAdvancedAt: new Date("2026-07-22T17:50:00.000Z"),
+        },
+        {
+          datasetKey: "sleep",
+          currentStage: "analytics",
           status: "blocked",
           progressPercentage: null,
-          lastAdvancedAt: now,
+          lastAdvancedAt: new Date("2026-07-22T17:05:00.000Z"),
         },
       ],
     });
@@ -1244,7 +1314,15 @@ describe("ProcessingRepository", () => {
 
     await expect(repository.alerts()).resolves.toEqual({
       generatedAt: "2026-07-22T18:00:00.000Z",
-      alerts: [expect.objectContaining({ datasetKeys: ["activity"], action: "retry_import" })],
+      alerts: [
+        expect.objectContaining({
+          providerId: "withings",
+          datasetKeys: ["activity"],
+          datasetLabels: ["Activities"],
+          occurredAt: "2026-07-22T17:50:00.000Z",
+          action: "retry_sync",
+        }),
+      ],
     });
   });
 

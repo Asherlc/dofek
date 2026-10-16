@@ -46,7 +46,7 @@ function StrengthTab() {
   return (
     <>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Section title="Strength Volume" subtitle="Weekly volume load over time">
+        <Section title="Strength Volume">
           {strengthVolume.error && !strengthVolume.data ? (
             <QueryStatePanel error={strengthVolume.error} />
           ) : (
@@ -57,10 +57,7 @@ function StrengthTab() {
           )}
         </Section>
 
-        <Section
-          title="Estimated single-rep strength"
-          subtitle="Estimated maximum weight for one repetition per exercise over time"
-        >
+        <Section title="Estimated single-rep strength">
           {estimatedMax.error && !estimatedMax.data ? (
             <QueryStatePanel error={estimatedMax.error} />
           ) : (
@@ -73,7 +70,7 @@ function StrengthTab() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Section title="Muscle Group Volume" subtitle="Volume distribution by muscle group">
+        <Section title="Muscle Group Volume">
           {muscleVolume.error && !muscleVolume.data ? (
             <QueryStatePanel error={muscleVolume.error} />
           ) : (
@@ -84,7 +81,7 @@ function StrengthTab() {
           )}
         </Section>
 
-        <Section title="Exercise Volume Trends" subtitle="Weekly volume direction by exercise">
+        <Section title="Exercise Volume Trends">
           {overload.error && !overload.data ? (
             <QueryStatePanel error={overload.error} />
           ) : (
@@ -123,18 +120,13 @@ function Section({
   subtitle?: string;
   children: React.ReactNode;
 }) {
-  const description = subtitle ?? `${title} chart.`;
-
   return (
     <section>
       <div className="mb-1 flex items-center gap-2">
         <h2 className="text-sm font-medium text-muted uppercase tracking-wider">{title}</h2>
-        <ChartDescriptionTooltip description={description} />
+        {subtitle && <ChartDescriptionTooltip description={subtitle} />}
       </div>
-      {subtitle && <p className="text-xs text-dim mb-4">{subtitle}</p>}
-      <div className="card p-4" title={description}>
-        {children}
-      </div>
+      <div className="card p-4">{children}</div>
     </section>
   );
 }

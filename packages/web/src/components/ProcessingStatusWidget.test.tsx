@@ -176,7 +176,7 @@ describe("ProcessingStatusWidget", () => {
           ...snapshot,
           scope: { providerId: null, datasets: ["sleep"] },
           datasets: [{ ...activityDataset, key: "sleep", label: "Sleep" }],
-          operations: [{ ...operation, providerId: null }],
+          operations: [{ ...operation, providerId: null, kind: "analytics_build" }],
         }}
       />,
     );
@@ -200,6 +200,25 @@ describe("ProcessingStatusWidget", () => {
 
     expect(screen.getByText("Syncing Garmin")).toBeTruthy();
     expect(screen.queryByText("Recomputing sleep")).toBeNull();
+  });
+
+  it("calls concurrent provider failures an activity update", () => {
+    render(
+      <ProcessingStatusWidget
+        data={{
+          ...snapshot,
+          scope: { providerId: null, datasets: ["activity"] },
+          overallStatus: "failed",
+          datasets: [{ ...activityDataset, status: "failed", lastFailedAt: snapshot.generatedAt }],
+          operations: [
+            { ...operation, providerId: "strava", status: "failed", timeline: [] },
+            { ...operation, id: "00000000-0000-4000-8000-000000001853", providerId: "whoop" },
+          ],
+        }}
+      />,
+    );
+
+    expect(screen.getByText("Activities update didn’t finish")).toBeTruthy();
   });
 
   it("surfaces the server error message", () => {
@@ -251,35 +270,93 @@ describe("ProcessingStatusWidget", () => {
     expect(screen.queryByRole("progressbar")).toBeNull();
   });
 
-  it.each(["failed", "blocked"] as const)(
-    "surfaces %s datasets, their last ready age, and the actionable error",
-    (status) => {
-      vi.setSystemTime(new Date("2026-07-22T14:00:00.000Z"));
+  it("surfaces failed datasets, their last ready age, and the actionable error", () => {
+    const status = "failed" as const;
+    vi.setSystemTime(new Date("2026-07-22T14:00:00.000Z"));
+    render(
+      <ProcessingStatusWidget
+        data={{
+          ...snapshot,
+          overallStatus: status,
+          datasets: [
+            {
+              ...activityDataset,
+              status,
+              progressPercentage: null,
+              lastFailedAt: "2026-07-22T13:00:00.000Z",
+              lastReadyAt: "2026-07-22T12:00:00.000Z",
+            },
+          ],
+          operations: [
+            {
+              ...operation,
+              status,
+              errorMessage: "Reconnect Garmin, then start the sync again.",
+              errorCode: "provider_auth_failed",
+              timeline: [
+                {
+                  ...timelineEvent,
+                  status: "failed",
+                  errorMessage: "Reconnect Garmin, then start the sync again.",
+                },
+              ],
+            },
+          ],
+        }}
+      />,
+    );
+
+    expect(screen.getByText("Garmin sync didn’t finish")).toBeTruthy();
+    expect(screen.getByText("Activities")).toBeTruthy();
+    expect(screen.getByText("Failed: 1h ago")).toBeTruthy();
+    expect(screen.getByText("Last successful update: 2h ago")).toBeTruthy();
+    expect(screen.getByText("Reconnect Garmin, then start the sync again.")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Reconnect Garmin" }).getAttribute("href")).toBe(
+      "/providers/garmin",
+    );
+  });
+
+  it.each([
+    {
+      providerId: "garmin",
+      kind: "provider_sync",
+      key: "activity",
+      label: "Activities",
+      heading: "Syncing Garmin is waiting to continue",
+    },
+    {
+      providerId: null,
+      kind: "analytics_refresh",
+      key: "sleep",
+      label: "Sleep",
+      heading: "Recomputing sleep is waiting to continue",
+    },
+  ])(
+    "keeps blocked $kind visible as pending progress",
+    ({ providerId, kind, key, label, heading }) => {
       render(
         <ProcessingStatusWidget
           data={{
             ...snapshot,
-            overallStatus: status,
-            datasets: [
-              {
-                ...activityDataset,
-                status,
-                progressPercentage: null,
-                lastFailedAt: "2026-07-22T13:00:00.000Z",
-                lastReadyAt: "2026-07-22T12:00:00.000Z",
-              },
-            ],
+            scope: { providerId, datasets: [key] },
+            overallStatus: "blocked",
+            datasets: [{ ...activityDataset, key, label, status: "blocked", lastFailedAt: null }],
             operations: [
               {
                 ...operation,
-                status,
-                errorMessage: "Reconnect Garmin, then start the sync again.",
-                errorCode: "provider_auth_failed",
+                providerId,
+                kind,
+                status: "blocked",
+                datasets: [key],
+                errorCode: null,
+                errorMessage: null,
                 timeline: [
                   {
                     ...timelineEvent,
-                    status: "failed",
-                    errorMessage: "Reconnect Garmin, then start the sync again.",
+                    stage: "analytics",
+                    status: "started",
+                    datasetKey: key,
+                    progressPercentage: 60,
                   },
                 ],
               },
@@ -288,16 +365,18 @@ describe("ProcessingStatusWidget", () => {
         />,
       );
 
-      expect(screen.getByText("Garmin sync didn’t finish")).toBeTruthy();
-      expect(screen.getByText("Activities")).toBeTruthy();
-      expect(
-        screen.getByText(`${status === "failed" ? "Failed" : "Blocked"}: 1h ago`),
-      ).toBeTruthy();
-      expect(screen.getByText("Last successful update: 2h ago")).toBeTruthy();
-      expect(screen.getByText("Reconnect Garmin, then start the sync again.")).toBeTruthy();
-      expect(screen.getByRole("link", { name: "Reconnect Garmin" }).getAttribute("href")).toBe(
-        "/providers/garmin",
+      expect(screen.getAllByText(heading).length).toBeGreaterThan(0);
+      const progressLabel = providerId ? "Processing progress" : heading;
+      expect(screen.getByRole("progressbar", { name: progressLabel })).toHaveAttribute(
+        "aria-valuenow",
+        "60",
       );
+      if (providerId) {
+        expect(screen.getByText("Your existing data is still available.")).toBeTruthy();
+        expect(screen.getByText("Waiting to continue")).toBeTruthy();
+      }
+      expect(screen.queryByRole("button", { name: /Dismiss .* failure/ })).toBeNull();
+      expect(screen.queryByRole("link", { name: /Reconnect/ })).toBeNull();
     },
   );
 
@@ -389,6 +468,34 @@ describe("ProcessingStatusWidget", () => {
 
     expect(screen.getByText("Syncing Wahoo")).toBeTruthy();
     expect(screen.getByText("Sleep")).toBeTruthy();
+  });
+
+  it("keeps blocked sibling progress neutral after its operation failure is dismissed", () => {
+    const currentSnapshot = failedWahooSnapshot();
+    const failedDataset = currentSnapshot.datasets.at(0);
+    const blockedDataset = currentSnapshot.datasets.at(1);
+    const currentOperation = currentSnapshot.operations.at(0);
+    if (!failedDataset || !blockedDataset || !currentOperation) {
+      throw new Error("Expected current processing fixtures");
+    }
+
+    render(
+      <ProcessingStatusWidget
+        data={failedWahooSnapshot({
+          datasets: [failedDataset, { ...blockedDataset, status: "blocked", lastFailedAt: null }],
+          operations: [{ ...currentOperation, dismissed: true }],
+        })}
+      />,
+    );
+
+    expect(
+      screen.getByRole("heading", { name: "Syncing Wahoo is waiting to continue" }),
+    ).toBeTruthy();
+    expect(screen.getByText("Sleep")).toBeTruthy();
+    expect(screen.getByText("Waiting to continue")).toBeTruthy();
+    expect(screen.getByText("Your existing data is still available.")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Dismiss .* failure/ })).toBeNull();
+    expect(screen.queryByRole("link", { name: /Reconnect/ })).toBeNull();
   });
 
   it("does not render an older failed group after the dataset is ready again", () => {

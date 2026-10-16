@@ -14,13 +14,16 @@ import {
   type RecordLocalTimeContext,
 } from "@dofek/format/record-local-time";
 import type { ProviderAbsentSource } from "@dofek/providers/providers";
+import type { ClimbingMapLocation } from "@dofek/training/climbing-map";
 import { TrainingStressCalculator } from "@dofek/training/training-load";
 import type { Database } from "dofek/db";
 import { getProvider } from "dofek/providers/registry";
 import { z } from "zod";
+import { loadClimbingGradePreference } from "../climbing-grade-preferences.ts";
+import type { ActivityLocation } from "../contracts/activity-location.ts";
 import { BaseRepository } from "../lib/base-repository.ts";
 import { dateWindowEndExclusiveString, dateWindowStartString } from "../lib/date-window.ts";
-import { type OsmTilePreview, osmTilePreview } from "../lib/osm-tile.ts";
+import { osmPointMapPreview, osmTilePreview } from "../lib/osm-tile.ts";
 import { dateStringSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 import { ActivitySourceAttribution } from "../models/activity-source-attribution.ts";
 import {
@@ -31,16 +34,13 @@ import { activityMeasurementState } from "../services/activity-data-state.ts";
 import { clickHouseActivityCalendarDate } from "./activity-local-date.ts";
 import { type ActivitySensorStore, activityRepositoryFor } from "./activity-repository.ts";
 import { getActivityRoutePreviews } from "./activity-route-preview.ts";
+import { ClimbingActivityLogEntryRepository } from "./climbing-activity-log-entry-repository.ts";
 
 // ---------------------------------------------------------------------------
 // Public types
 // ---------------------------------------------------------------------------
 
-export interface ActivityLocation {
-  centroidLat: number;
-  centroidLng: number;
-  mapPreview: OsmTilePreview;
-}
+export type { ActivityLocation } from "../contracts/activity-location.ts";
 
 export type ActivityStat =
   | {
@@ -299,17 +299,49 @@ export class ActivitiesCalendarRepository extends BaseRepository {
     const locationActivityIds = filteredActivityRows
       .filter((row) => row.centroid_lat != null && row.centroid_lng != null)
       .map((row) => row.id);
-    const routePreviewByActivityId = await getActivityRoutePreviews(
-      this.#sensorStore,
-      this.userId,
-      locationActivityIds,
-    );
+    const sourceActivityIds = filteredActivityRows
+      .filter((row) => row.centroid_lat == null || row.centroid_lng == null)
+      .map((row) => row.id);
+    const [routePreviewByActivityId, sourceLocationsByActivityId] = await Promise.all([
+      getActivityRoutePreviews(this.#sensorStore, this.userId, locationActivityIds),
+      sourceActivityIds.length
+        ? loadClimbingGradePreference(this.db, this.userId).then((preference) =>
+            new ClimbingActivityLogEntryRepository(
+              this.db,
+              this.userId,
+              this.timezone,
+              this.accessWindow,
+              preference,
+            ).getActivityMapLocations(sourceActivityIds),
+          )
+        : Promise.resolve(new Map<string, ClimbingMapLocation[]>()),
+    ]);
 
     const baseline = baselineRows[0] ?? { max_hr: null, resting_hr: null, ftp: null };
     const calculator = new TrainingStressCalculator();
 
     const dayMap = new Map<string, CalendarActivityEntry[]>();
     for (const row of filteredActivityRows) {
+      const sourceLocations = sourceLocationsByActivityId.get(row.id);
+      let sourceLocation: ActivityLocation | null = null;
+      if (sourceLocations?.length) {
+        const sourcePreview = osmPointMapPreview(
+          sourceLocations.map((location) => ({
+            lat: location.coordinates.latitude,
+            lng: location.coordinates.longitude,
+            location,
+          })),
+        );
+        sourceLocation = {
+          kind: "climbing_source",
+          mapPreview: sourcePreview.preview,
+          sourcePoints: sourcePreview.points.map(({ x, y, point }) => ({
+            x,
+            y,
+            location: point.location,
+          })),
+        };
+      }
       const trainingStress = computeActivityTrainingStress({
         durationMin: row.duration_min,
         avgPower: row.avg_power,
@@ -348,13 +380,14 @@ export class ActivitiesCalendarRepository extends BaseRepository {
         location:
           row.centroid_lat != null && row.centroid_lng != null
             ? {
+                kind: "recorded_gps",
                 centroidLat: row.centroid_lat,
                 centroidLng: row.centroid_lng,
                 mapPreview:
                   routePreviewByActivityId.get(row.id) ??
                   osmTilePreview([{ lat: row.centroid_lat, lng: row.centroid_lng }]),
               }
-            : null,
+            : sourceLocation,
         tss: tss != null ? Math.round(tss * 10) / 10 : null,
         stats: formatActivityStats(trainingStress),
       };
@@ -486,6 +519,7 @@ export class ActivitiesCalendarRepository extends BaseRepository {
         location:
           row.centroid_lat != null && row.centroid_lng != null
             ? {
+                kind: "recorded_gps",
                 centroidLat: row.centroid_lat,
                 centroidLng: row.centroid_lng,
                 mapPreview:

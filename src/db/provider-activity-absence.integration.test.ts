@@ -1,6 +1,9 @@
 import { and, eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { reconcileProviderActivityAbsence } from "./provider-activity-absence.ts";
+import {
+  markProviderActivityAbsent,
+  reconcileProviderActivityAbsence,
+} from "./provider-activity-absence.ts";
 import { activity } from "./schema/activity.ts";
 import { setupTestDatabase, type TestContext } from "./test-helpers.ts";
 import { ensureProvider } from "./tokens.ts";
@@ -94,6 +97,35 @@ describe("reconcileProviderActivityAbsence", () => {
       );
 
     expect(rows[0]?.providerAbsentAt).toBeNull();
+  });
+
+  it("reports whether a targeted deletion changed an activity", async () => {
+    await ctx.db.insert(activity).values({
+      providerId: "provider-absence-test",
+      externalId: "targeted-delete-activity",
+      canonicalType: "running",
+      providerType: "running",
+      modality: null,
+      startedAt: new Date("2026-03-04T12:00:00Z"),
+    });
+    const mark = {
+      providerId: "provider-absence-test",
+      externalId: "targeted-delete-activity",
+    };
+
+    expect(await markProviderActivityAbsent(ctx.db, mark)).toBe(1);
+    expect(await markProviderActivityAbsent(ctx.db, mark)).toBe(0);
+
+    const rows = await ctx.db
+      .select()
+      .from(activity)
+      .where(
+        and(
+          eq(activity.providerId, "provider-absence-test"),
+          eq(activity.externalId, "targeted-delete-activity"),
+        ),
+      );
+    expect(rows[0]?.providerAbsentAt).toBeInstanceOf(Date);
   });
 
   it("does not tombstone activities when the provider list is empty", async () => {

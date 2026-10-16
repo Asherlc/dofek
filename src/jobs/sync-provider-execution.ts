@@ -7,7 +7,7 @@ import { invalidateAllUserQueries } from "../lib/cache.ts";
 import { providerRequiresStoredTokens } from "../lib/custom-auth-providers.ts";
 import { captureException } from "../lib/error-reporting.ts";
 import { logger } from "../logger.ts";
-import type { SyncProvider } from "../providers/types.ts";
+import { isWebhookProvider, type SyncProvider } from "../providers/types.ts";
 import {
   syncDuration,
   syncErrorsTotal,
@@ -18,10 +18,7 @@ import { accountErasureAllowsQueuedUserWork } from "./account-erasure-work-guard
 import { scheduleDelayedSyncJob } from "./enqueue-sync-job.ts";
 import { providerRateLimitCooldownStore } from "./provider-rate-limit-cooldown.ts";
 import type { SyncJobContext } from "./sync-job-context.ts";
-import {
-  requireTransactionalSyncDatabase,
-  SyncProcessingOperation,
-} from "./sync-processing-operation.ts";
+import { SyncProcessingOperation } from "./sync-processing-operation.ts";
 import {
   firstAuthFailureReason,
   handleSyncProviderFailure,
@@ -66,24 +63,20 @@ export async function executeSyncProvider(
     job.data.userId,
   );
   if (activeCooldown) {
-    const retryAt = await withAccountErasureUserWriteFence(
-      requireTransactionalSyncDatabase(db),
-      job.data.userId,
-      async () => {
-        signal?.throwIfAborted();
-        const scheduledRetryAt = await scheduleDelayedSyncJob(
-          {
-            ...job.data,
-            providerId: provider.id,
-            sinceIso: since.toISOString(),
-            untilIso: until.toISOString(),
-          },
-          activeCooldown,
-        );
-        signal?.throwIfAborted();
-        return scheduledRetryAt;
-      },
-    );
+    const retryAt = await withAccountErasureUserWriteFence(db, job.data.userId, async () => {
+      signal?.throwIfAborted();
+      const scheduledRetryAt = await scheduleDelayedSyncJob(
+        {
+          ...job.data,
+          providerId: provider.id,
+          sinceIso: since.toISOString(),
+          untilIso: until.toISOString(),
+        },
+        activeCooldown,
+      );
+      signal?.throwIfAborted();
+      return scheduledRetryAt;
+    });
     signal?.throwIfAborted();
     context.completedCount++;
     context.providerStatus[provider.id] = {
@@ -109,8 +102,30 @@ export async function executeSyncProvider(
     }
     logger.info(`[worker] Starting ${provider.name}...`);
     const homeTimezone = await loadUserHomeTimezone(db, job.data.userId);
-    const result = await runWithProviderUserIngestContext(job.data.userId, { homeTimezone }, () =>
-      provider.sync(context.createRun(provider, processingOperation.metricStreamPublisher)),
+    const result = await runWithProviderUserIngestContext(
+      job.data.userId,
+      { homeTimezone },
+      async () => {
+        const event = job.data.webhookEvent;
+        if (event && isWebhookProvider(provider) && provider.syncWebhookEvent) {
+          try {
+            return await provider.syncWebhookEvent(db, event, {
+              userId: job.data.userId,
+              metricStreamPublisher: processingOperation.metricStreamPublisher,
+            });
+          } catch (error) {
+            captureException(error, {
+              tags: { provider: provider.id, webhookPhase: "targeted-sync" },
+            });
+            logger.warn(
+              `[worker] ${provider.name} targeted webhook sync failed; running full sync: ${error}`,
+            );
+          }
+        }
+        return provider.sync(
+          context.createRun(provider, processingOperation.metricStreamPublisher),
+        );
+      },
     );
     if (result.recordsSynced > 0) {
       if (

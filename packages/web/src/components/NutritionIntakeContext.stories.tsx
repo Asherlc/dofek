@@ -5,6 +5,13 @@ const meta = {
   title: "Nutrition/NutritionIntakeContext",
   component: NutritionIntakeContext,
   tags: ["autodocs"],
+  decorators: [
+    (Story) => (
+      <div className="w-full max-w-lg">
+        <Story />
+      </div>
+    ),
+  ],
 } satisfies Meta<typeof NutritionIntakeContext>;
 
 export default meta;
@@ -21,7 +28,7 @@ export const Default: Story = {
       target: {
         calories: 2000,
         type: "configured",
-        label: "Configured daily logged-intake target",
+        label: "Target",
       },
       scale: { maximumCalories: 2000, observedPercentage: 62.5, targetPercentage: 100 },
       comparison: {
@@ -44,7 +51,7 @@ export const NoLoggedIntake: Story = {
       target: {
         calories: 2000,
         type: "default",
-        label: "Default daily logged-intake target",
+        label: "Default target",
       },
       scale: { maximumCalories: 2000, observedPercentage: 0, targetPercentage: 100 },
       comparison: {
@@ -65,7 +72,7 @@ export const AtTarget: Story = {
       target: {
         calories: 2000,
         type: "configured",
-        label: "Configured daily logged-intake target",
+        label: "Target",
       },
       scale: { maximumCalories: 2000, observedPercentage: 100, targetPercentage: 100 },
       comparison: {
@@ -85,7 +92,7 @@ export const AboveTarget: Story = {
       target: {
         calories: 2450,
         type: "configured",
-        label: "Configured daily logged-intake target",
+        label: "Target",
       },
       scale: {
         maximumCalories: 4259,

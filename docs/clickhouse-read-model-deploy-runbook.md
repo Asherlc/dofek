@@ -24,8 +24,18 @@ normal deploys must not rebuild hot Postgres read models.
 Preparation release A preserves old request readers and processing/cache
 coverage behavior. It installs the bounded pace/HR writers and the parameterized
 `activity_sensor_processing_coverage` view after both writers, plus canonical
-version-aware registered cache replay. The view reads current/prior activity
-keys and exact source pairs; it does not store another source of truth.
+version-aware registered cache replay. Release A also installs the
+parameterized `activity_sensor_key_verification` metadata view. It shares the
+canonical dirty-key state with the coverage view and returns per-key evidence
+for both compact models. Both views are registered in `PRODUCTION_DBT_MODELS`
+and in the training dataset contract in
+[dataset-contracts.ts](../src/processing/dataset-contracts.ts). Both views read
+current/prior activity keys and exact source pairs; they do not store another
+source of truth. Migration `0099_activity_sensor_day_versions` adds the
+`deduped_sensor` day-version projection that their shared dirty-key state reads.
+Its historical parts need the
+[operator gate](#deduped-sensor-day-version-projection-rollout-migration-0099)
+before any reader relies on it.
 ClickHouse documents views in [CREATE VIEW](https://clickhouse.com/docs/reference/statements/create/view)
 and dbt owns them through [view materialization](https://docs.getdbt.com/reference/resource-configs/materialized).
 Require an explicit UUID user set at every current/prior/activity/sensor-day/
@@ -48,7 +58,11 @@ Preparation A activates no production coverage consumer. Reader B must supply
 and independently test this context at its canonical production typed boundary.
 Verify pinned canonical dbt initial create and replacement, discovery,
 parameterized DESCRIBE, schema/contracts, docs, artifacts, tests and SQLFluff
-before adopting the preparation source. No custom materializer or bypass is
+for both `activity_sensor_processing_coverage` and
+`activity_sensor_key_verification` before adopting the preparation source.
+Each `activity_sensor_key_verification` read also takes explicit user UUIDs and
+user/activity pairs and the same 1/1/1 query context; empty input means no
+work. No custom materializer or bypass is
 approved. Verify EXPLAIN/read rows/memory/time with the existing semantic
 settings; user row scope and total query/worker memory are independent gates.
 The prior ordinary view read unrelated-user sources, and its approximately
@@ -92,6 +106,180 @@ The important deploy steps are:
 If the job times out, identify the last active step and inspect both GitHub
 logs and server state before retrying.
 
+## Known Failure: New PeerDB Table Added Before Its Migration
+
+For DOFEK-SERVER-3B, [deploy 37873586628](https://github.com/Asherlc/dofek/actions/runs/37873586628)
+added `fitness.provider_field_priority` during `Prepare PeerDB CDC contract`,
+before Postgres migration `0144` created it. The first fatal PeerDB activity
+reported that the table was missing from `peerdb_raw_analytics_publication`.
+The fitness mirror entered `STATUS_SNAPSHOT`,
+its existing slot became inactive, and the failed deployment left ClickHouse
+consumers quiesced. Catalog `flows.status = 1` alone did not reflect the stuck
+workflow; [PeerDB's status handler](https://github.com/PeerDB-io/peerdb/blob/v0.36.19/flow/cmd/mirror_status.go)
+queries Temporal for the current state.
+
+The durable boundary is: prepare reconciles and validates existing mapping
+identities against the old schemas; tracked migrations create new source and
+destination tables; CDC setup configures publication membership and reconciles
+the full mapping contract. Finalize/verify then prove exact causal markers
+before the final canonical deploy restores consumers. See
+[contract deployment](../src/db/peerdb/mirror-deployment.ts),
+[CDC setup](../src/db/clickhouse-cdc.ts), and
+[deployment order](processing-status-runbook.md#deployment-order).
+
+### Reviewable recovery procedure
+
+This procedure is prepared for an operator; it does not authorize production
+mutation. SSH shell diagnostics remain read-only. Execute the cancellation only
+as a separately approved remote Docker API operator action, then use the fixed
+canonical CI deployment
+for migrations, CDC setup, marker verification, and consumer restoration.
+
+PeerDB `v0.36.19` supports
+`POST /v1/flows/cdc/cancel_table_addition` in `STATUS_SETUP` or
+`STATUS_SNAPSHOT`. It restores the pre-addition catalog mapping set plus any
+completed QRep additions, checks catalog source OIDs before updating the
+catalog or replacing the workflow, and starts CDC without setup/snapshot.
+It preserves the slot and destination data; its publication cleanup skips an
+explicit user publication such as `peerdb_raw_analytics_publication`.
+These behaviors come from the pinned
+[request/response definition](https://github.com/PeerDB-io/peerdb/blob/v0.36.19/protos/route.proto#L518-L529),
+[handler](https://github.com/PeerDB-io/peerdb/blob/v0.36.19/flow/cmd/cancel_table_addition.go),
+[workflow](https://github.com/PeerDB-io/peerdb/blob/v0.36.19/flow/workflows/cancel_table_addition_flow.go), and
+[activities](https://github.com/PeerDB-io/peerdb/blob/v0.36.19/flow/activities/cancel_table_addition_activity.go).
+
+1. Preserve the failing step, log reporting missing publication membership, API
+   workflow state, slot state, and current consumer replica counts. Verify the deployed PeerDB image
+   is still `v0.36.19`. Require the existing slot's `wal_status` to be `reserved`
+   or `extended` and `restart_lsn` to be non-null; `unreserved` or `lost`
+   requires fresh recovery review. Stop if the workflow has changed or evidence
+   names a different failure. Slot fields are documented in
+   [PostgreSQL replication slots](https://www.postgresql.org/docs/current/view-pg-replication-slots.html).
+2. Decode the catalog's `flows.config_proto` with established protobuf tooling
+   and the pinned [FlowConnectionConfigs definition](https://github.com/PeerDB-io/peerdb/blob/v0.36.19/protos/flow.proto#L50-L102).
+   Require exactly the incident-specific baseline: ten mappings for `fitness.activity`,
+   `sleep_session`, `sleep_stage`, `daily_metrics`, `provider`,
+   `provider_connection`, `provider_priority`, `device_priority`,
+   `processing_flow_marker`, and `user_profile`; each destination has the same
+   unqualified table name. The pending addition is
+   `fitness.provider_field_priority` to `provider_field_priority`. Preserve all
+   live mapping properties, including the existing sleep/daily exclusions.
+   Review catalog baseline mappings separately from API/workflow mappings: the
+   [status handler](https://github.com/PeerDB-io/peerdb/blob/v0.36.19/flow/cmd/mirror_status.go)
+   replaces catalog mappings with workflow mappings when available. Require
+   Temporal evidence that the pending `AddTablesToPublication` activity names
+   only `fitness.provider_field_priority`. Stop for any different activity or
+   table set. Do not substitute a newly rendered contract or remove a baseline
+   table.
+3. Run the source and catalog queries below through the existing read-only
+   database operator connections, without exporting credentials. Decode each
+   baseline destination's `table_schema_mapping.table_schema` with the pinned
+   [TableSchema definition](https://github.com/PeerDB-io/peerdb/blob/v0.36.19/protos/flow.proto#L236-L245).
+   Require every stored `table_oid` to be nonzero and exactly equal to its live
+   source relation OID, every baseline table to belong to the publication, and
+   no completed pending addition. Print only source/destination identifiers,
+   exclusions, OIDs, and equality results; never the whole config or `env` map.
+   Catalog schema names alone are insufficient. The endpoint rejects a missing
+   catalog schema or zero catalog OID before mutation, but its
+   [OID lookup](https://github.com/PeerDB-io/peerdb/blob/v0.36.19/flow/activities/cancel_table_addition_activity.go)
+   does not compare stored OIDs with the live source. A completed addition is
+   retained by the endpoint and requires fresh review rather than this
+   baseline-only recovery.
+
+```sql
+-- Source Postgres: all ten baseline rows must have nonzero OIDs and published=true.
+SELECT source_table, to_regclass(source_table)::oid AS source_oid,
+  EXISTS (SELECT 1 FROM pg_publication_tables
+    WHERE pubname = 'peerdb_raw_analytics_publication'
+      AND schemaname || '.' || tablename = source_table) AS published
+FROM unnest(ARRAY['fitness.activity', 'fitness.sleep_session', 'fitness.sleep_stage',
+  'fitness.daily_metrics', 'fitness.provider', 'fitness.provider_connection',
+  'fitness.provider_priority', 'fitness.device_priority',
+  'fitness.processing_flow_marker', 'fitness.user_profile']) AS expected(source_table);
+SELECT slot_name, active, wal_status, restart_lsn,
+  pg_wal_lsn_diff(pg_current_wal_lsn(), restart_lsn) AS retained_wal_bytes
+FROM pg_replication_slots
+WHERE slot_name = 'peerflow_slot_dofek_fitness_raw_analytics';
+
+-- PeerDB catalog: decode each baseline schema's stored table_oid separately.
+SELECT table_name FROM public.table_schema_mapping
+WHERE flow_name = 'dofek_fitness_raw_analytics' ORDER BY table_name;
+SELECT count(*) AS pending_runs,
+  count(*) FILTER (WHERE consolidate_complete) AS completed_pending_runs
+FROM peerdb_stats.qrep_runs
+WHERE parent_mirror_name = 'dofek_fitness_raw_analytics'
+  AND source_table = 'fitness.provider_field_priority';
+```
+
+4. After operator approval, submit the following supported request. It rereads
+   live mappings, preserves their full objects, and leaves the removal override
+   false. Keep the same recorded idempotency key if the client disconnects;
+   inspect the cancellation workflow and mirror state before resubmitting.
+   The handler's idempotency key selects the Temporal cancellation workflow,
+   while its state precondition rejects a mirror that already resumed. Choose
+   the exact running web container ID with `docker --host ssh://dofek-server ps`,
+   using the [configured production SSH alias](../deploy/README.md#ssh-access-debugging-only); Node
+   reaches the internal Flow API through its existing overlay network. Print
+   only selected status fields, never the full config or its `env` map.
+
+```bash
+web_task='<reviewed-running-web-container-id>'
+docker --host ssh://dofek-server exec -i --workdir /app "$web_task" node --input-type=module <<'NODE'
+const flow = 'dofek_fitness_raw_analytics';
+const api = 'http://peerdb-flow-api:8113/v1';
+const post = async (path, body) => {
+  const response = await fetch(`${api}/${path}`, {method: 'POST',
+    headers: {'content-type': 'application/json'}, body: JSON.stringify(body)});
+  const result = await response.json();
+  if (!response.ok) throw new Error(`PeerDB HTTP ${response.status}: ${result.message ?? 'request rejected'}`);
+  return result;
+};
+const status = await post('mirrors/status',
+  {flow_job_name: flow, include_flow_info: true, exclude_batches: true});
+if (!['STATUS_SETUP', 'STATUS_SNAPSHOT'].includes(status.currentFlowState))
+  throw new Error(`Recovery precondition changed: ${status.currentFlowState}`);
+const config = status.cdcStatus.config;
+console.log(JSON.stringify({state: status.currentFlowState,
+  publication: config.publicationName, mappings: config.tableMappings,
+  snapshots: status.cdcStatus.snapshotStatus}, null, 2));
+const expected = ['activity', 'sleep_session', 'sleep_stage', 'daily_metrics',
+  'provider', 'provider_connection', 'provider_priority', 'device_priority',
+  'processing_flow_marker', 'user_profile', 'provider_field_priority'];
+if (config.publicationName !== 'peerdb_raw_analytics_publication' ||
+    config.tableMappings.length !== expected.length ||
+    expected.some(name => !config.tableMappings.some(mapping =>
+      mapping.sourceTableIdentifier === `fitness.${name}` && mapping.destinationTableIdentifier === name)))
+  throw new Error('Live mappings differ from the reviewed incident baseline');
+if (status.cdcStatus.snapshotStatus.clones.some(copy =>
+    copy.sourceTable === 'fitness.provider_field_priority' && copy.consolidateCompleted))
+  throw new Error('Pending addition completed a snapshot; review recovery again');
+const result = await post('flows/cdc/cancel_table_addition', {
+  flow_job_name: flow, currently_replicating_tables: config.tableMappings,
+  idempotency_key: 'DOFEK-SERVER-3B-2026-10-08', assume_table_removal_will_not_happen: false,
+});
+console.log(JSON.stringify({flow: result.flowJobName, runId: result.runId,
+  mappings: result.tablesAfterCancellation}, null, 2));
+NODE
+```
+
+5. Recheck API `STATUS_RUNNING`, the same active slot with non-null `restart_lsn`
+   and `wal_status` still `reserved` or `extended`, and the ten baseline mappings.
+   Run the existing health command in
+   the running `cdc-health` container:
+   `node --experimental-strip-types scripts/check-clickhouse-cdc.ts`.
+   Require a fresh passing monitor result and inspect normalization progress
+   with the [CDC health runbook](clickhouse-cdc-health-runbook.md).
+6. Deploy the tested fix through canonical CI. Require migrations, full CDC
+   setup, finalize, and exact marker verification to succeed before the final
+   stack deploy restores consumers. The [workflow](../.github/workflows/deploy-web-stack.yml)
+   then checks five consumers and three R2 archives serially, requiring each
+   service's same task to remain converged for 60 seconds. Confirm
+   `provider_field_priority` exists
+   on both databases, belongs to the publication, and is mirrored. An active
+   slot or successful cancellation alone does not prove that new mapping or
+   analytics freshness. Record the recovery evidence in the
+   [incident baseline](production-incident-baseline.md).
+
 ## Known Failure: PeerDB Destination Validation
 
 Symptom:
@@ -115,6 +303,39 @@ Fix pattern:
 1. Add the missing columns to the ClickHouse raw mirror DDL.
 2. Add or update tests that assert the mirror table includes PeerDB metadata.
 3. Rerun the deploy; do not bypass CDC setup.
+
+## Known Failure: Missing Activity Ends Become Epoch Timestamps
+
+Compare source `fitness.activity.ended_at IS NULL` with the same IDs in
+`postgres_fitness.activity FINAL`. A non-nullable destination converts missing
+timestamps into defaults; this can produce negative durations and corrupt load
+analytics. PeerDB documents [nullable column mapping](https://clickhouse.com/blog/postgres-to-clickhouse-data-modeling-tips).
+
+CDC setup persists `PEERDB_NULLABLE=true` in the PeerDB catalog's
+`public.dynamic_settings`; no application environment variable is required.
+PeerDB resolves this catalog setting after mirror-specific overrides, and its
+application mode is new mirrors: [versioned configuration implementation](https://github.com/PeerDB-io/peerdb/blob/v0.36.19/flow/internal/dynamicconf.go).
+Migration 0101 restores nullable raw and deduplicated activity end columns;
+the deployment schema validator rejects a non-nullable activity end column.
+Changing the type does not repair existing defaults: [ClickHouse Nullable](https://clickhouse.com/docs/sql-reference/data-types/nullable).
+
+For an existing mirror, capture exact mismatched source IDs, restore only those
+raw values from Postgres, and confirm a subsequent CDC update preserves NULL.
+Then rebuild the affected activity source records, deduplicated activities,
+summary rows, and daily endurance load. Use the existing user/activity refresh
+scope for activity models; do not put historical repair in runtime setup.
+Run operator dbt rebuilds in a separate one-shot container using the deployed
+image and normal ClickHouse credentials. Do not start a second dbt process
+inside a busy analytics worker: both processes share its memory limit. For a
+read-only project mount, put `--log-path` and `--target-path` in writable
+temporary directories. Remove temporary credential files after the rebuild.
+Docker documents [container memory limits](https://docs.docker.com/engine/containers/resource_constraints/#memory)
+and dbt documents [log-path](https://docs.getdbt.com/reference/global-configs/logs#log-path)
+and [target-path](https://docs.getdbt.com/reference/global-configs/json-artifacts#target-path).
+Verify unknown ends remain NULL, no active duration is negative, obsolete load
+rows are tombstoned, and registered chart caches are recomputed. Missing ends
+are excluded from duration/load totals; the bounded sensor search window must
+not become a fabricated duration. dbt supports [incremental model execution](https://docs.getdbt.com/docs/build/incremental-models).
 
 ## Known Failure: Deploy Migration Timeout
 
@@ -526,6 +747,74 @@ build as having no optimizer hints. Distinguish compact freshness reads from
 the remaining indexed geometry work, and retain query-log, readiness, and live/tombstone
 output snapshots together for recovery review. ClickHouse documents projection
 selection in the [query-log verification example](https://clickhouse.com/docs/concepts/features/projections/projections#filtering-on-columns-which-arent-in-the-primary-key).
+
+## Deduped sensor day-version projection rollout (migration 0099)
+
+Migration [`0099_activity_sensor_day_versions`](../src/db/clickhouse-migrations/0099_activity_sensor_day_versions.ts)
+sets the `rebuild` projection modes on `analytics.deduped_sensor` and adds the
+`by_user_channel_day_refresh` definition only. This avoids a deploy-time
+historical rebuild. New parts get the projection automatically. Old parts do
+not get it until an operator materializes it
+([ClickHouse projections](https://clickhouse.com/docs/concepts/features/projections/projections)).
+The shared `activity_sensor_key_state` macro reads the per-day
+`max(refresh_version)` aggregate that this projection serves. That aggregate
+feeds the compact writers, `activity_sensor_processing_coverage` and
+`activity_sensor_key_verification`. Do not let a reader rely on the projection
+until all three gates below pass.
+
+Historical materialization requires a separate approved maintenance window and
+the approved CI or remote database operator channel. The SQL below is a
+reviewable operator procedure, not permission to mutate production over SSH.
+
+1. **Bounded capacity review.** Record the inventory below with free disk,
+   memory, active mutations and current workload. The table has no partition
+   key, so its single `all` partition is the smallest native materialization
+   scope. Agree on the maximum rows/bytes before writing. If the partition is
+   larger than the approved bounds, stop and review the operation with the owner.
+
+   ```sql
+   SELECT partition_id, count() AS active_parts, sum(rows) AS rows,
+     sum(bytes_on_disk) AS bytes,
+     countIf(NOT has(projections, 'by_user_channel_day_refresh')) AS missing_projection_parts
+   FROM system.parts
+   WHERE active AND database = 'analytics' AND table = 'deduped_sensor'
+   GROUP BY partition_id;
+
+   SELECT mutation_id, command, is_done, parts_to_do, latest_fail_reason
+   FROM system.mutations
+   WHERE database = 'analytics' AND table = 'deduped_sensor' AND is_done = 0;
+   ```
+
+2. **Mutation outcome.** Submit one server-side mutation for the reviewed
+   partition, then monitor it. Record the accepted mutation as the resume
+   checkpoint. Do not resubmit while `is_done = 0`. Stop on a non-empty
+   `latest_fail_reason`. ClickHouse documents
+   [`MATERIALIZE PROJECTION`](https://clickhouse.com/docs/reference/statements/alter/projection)
+   and the [system.mutations](https://clickhouse.com/docs/operations/system-tables/mutations)
+   progress fields.
+
+   ```sql
+   ALTER TABLE analytics.deduped_sensor
+   MATERIALIZE PROJECTION by_user_channel_day_refresh
+   IN PARTITION ID '<reviewed-partition-id>' SETTINGS mutations_sync = 0;
+
+   SELECT mutation_id, command, is_done, parts_to_do, latest_fail_reason
+   FROM system.mutations
+   WHERE database = 'analytics' AND table = 'deduped_sensor'
+     AND command LIKE '%MATERIALIZE PROJECTION by_user_channel_day_refresh%'
+   ORDER BY create_time DESC;
+   ```
+
+3. **Active-part coverage.** After `is_done = 1` with no failure reason, rerun
+   the step 1 inventory. Require at least one active part and
+   `missing_projection_parts = 0` ([system.parts](https://clickhouse.com/docs/operations/system-tables/parts)).
+   Then confirm natural selection with `EXPLAIN projections = 1` on the day
+   aggregate and with `system.query_log.projections` for one bounded selector
+   run. Do not add optimizer forcing settings to compensate for missing coverage.
+
+Record the mutation ID, inventories and query-log evidence with the Release A
+population evidence. Any failed gate blocks Release B cutover and any coverage
+consumer activation.
 
 ## Activity sensor summary queue-depth check
 

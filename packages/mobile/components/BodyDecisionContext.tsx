@@ -1,6 +1,5 @@
 import {
   BODY_DECISION_CONTEXT_UNAVAILABLE,
-  BODY_SOURCE_GUIDANCE,
   BODY_TREND_WEIGHT_DECISION_COPY,
   type BodyDecisionContextView,
   formatBodyDecisionProvenance,
@@ -12,6 +11,7 @@ import { providerLabel } from "@dofek/providers/providers";
 import { StyleSheet, Text, View } from "react-native";
 import { useUnitConverter } from "../lib/units";
 import { colors } from "../theme";
+import { ChartDescriptionTooltip } from "./ChartDescriptionTooltip";
 
 interface BodyDecisionContextProps {
   context: BodyDecisionContextView | null;
@@ -41,9 +41,13 @@ export function BodyDecisionContext({ context }: BodyDecisionContextProps) {
       ) : (
         <>
           {provenance != null && <Text style={styles.text}>{provenance}</Text>}
-          <Text style={styles.text}>{BODY_TREND_WEIGHT_DECISION_COPY}</Text>
           <Text style={styles.text}>{variation}</Text>
-          <Text style={styles.text}>{BODY_SOURCE_GUIDANCE}</Text>
+          <View style={styles.method}>
+            <ChartDescriptionTooltip
+              title="Trend Weight"
+              description={BODY_TREND_WEIGHT_DECISION_COPY}
+            />
+          </View>
         </>
       )}
     </View>
@@ -61,5 +65,8 @@ const styles = StyleSheet.create({
     color: colors.textTertiary,
     fontSize: 11,
     lineHeight: 17,
+  },
+  method: {
+    alignSelf: "flex-start",
   },
 });

@@ -12,7 +12,10 @@ import {
 } from "./activity-payload-dbt-microbatch-test-helpers.ts";
 import { buildActivitySensorSummaryRowsTableSql } from "./clickhouse-activity-sensor-summary.ts";
 import { buildActivitySummaryRowsTableSql } from "./clickhouse-activity-summary.ts";
-import { buildPostgresFitnessActivityRawTableStatement } from "./clickhouse-raw-tables.ts";
+import {
+  buildPostgresFitnessActivityRawTableStatement,
+  buildPostgresFitnessProviderFieldPriorityRawTableStatement,
+} from "./clickhouse-raw-tables.ts";
 import { readModelSql, renderDbtModelSql } from "./read-model-sql-test-helpers.ts";
 
 type ClickHouseClient = ReturnType<typeof createClient>;
@@ -583,6 +586,10 @@ async function seedFixture(
     createSourceActivitySql(database),
     createProviderPrioritySql(database),
     createDevicePrioritySql(database),
+    buildPostgresFitnessProviderFieldPriorityRawTableStatement().replaceAll(
+      "postgres_fitness.",
+      `${database}.`,
+    ),
     createActivitySourceRecordsSql(database),
     createDedupedActivitiesSql(database),
     createDedupedActivityMembersSql(database),
@@ -680,6 +687,10 @@ function renderModel(
     .replaceAll(
       "{{ source('postgres_fitness', 'device_priority') }}",
       `${database}.device_priority`,
+    )
+    .replaceAll(
+      "{{ source('postgres_fitness', 'provider_field_priority') }}",
+      `${database}.provider_field_priority`,
     )
     .replaceAll("{{ activity_source_mass_tombstone_min_existing }}", "10")
     .replaceAll("{{ activity_source_mass_tombstone_ratio }}", "0.95")

@@ -102,7 +102,7 @@ export function PersonalizationPanel() {
             hrvThresholds: [number, number, number];
             rhrThresholds: [number, number, number];
           }) =>
-            `Heart Rate Variability: ${v.hrvThresholds.map(formatStandardDeviation).join(", ")} · Resting Heart Rate: ${v.rhrThresholds.map(formatStandardDeviation).join(", ")}`
+            `Heart Rate Variability (SD): ${v.hrvThresholds.map(formatStandardDeviation).join(", ")} · Resting Heart Rate (SD): ${v.rhrThresholds.map(formatStandardDeviation).join(", ")}`
           }
         />
 
@@ -154,10 +154,7 @@ function ParamCard<T>({
 }) {
   const isPersonalized = modelCard.status === "personalized";
   return (
-    <article
-      aria-label={`${modelCard.title} model evidence`}
-      className="rounded-md bg-accent/10 px-3 py-2.5 space-y-1"
-    >
+    <article aria-label={modelCard.title} className="rounded-md bg-accent/10 px-3 py-2.5 space-y-1">
       <div className="flex items-center justify-between">
         <span className="text-sm font-medium text-foreground">{modelCard.title}</span>
         <span
@@ -166,41 +163,14 @@ function ParamCard<T>({
           {isPersonalized ? "Learned" : "Default"}
         </span>
       </div>
-      <p className="text-xs text-subtle">{modelCard.description}</p>
       <p className="text-sm text-foreground font-mono">{renderValue(effective)}</p>
       {isPersonalized && <p className="text-[11px] text-dim">Default: {renderValue(defaults)}</p>}
-      <dl className="pt-2 space-y-1 text-[11px] text-subtle">
-        {modelCard.lastSuccessfulFitAt ? (
-          <EvidenceRow
-            label="Last successful update"
-            value={formatDateMedium(modelCard.lastSuccessfulFitAt)}
-          />
-        ) : (
-          <EvidenceRow label="Update status" value={modelCard.lastFitSummary} />
-        )}
-        <EvidenceRow label="Data window" value={modelCard.dataWindow} />
-        <EvidenceRow label="Available data" value={modelCard.dataSufficiency} />
-        <EvidenceRow label="Calculation details" value={modelCard.fitEvidence} />
-        <EvidenceRow label="Uncertainty" value={modelCard.uncertainty} />
-      </dl>
-      <div className="pt-1 text-[11px] text-subtle">
-        <p className="font-medium">Excluded data</p>
-        <ul className="list-disc pl-4">
-          {modelCard.excludedData.map((exclusion) => (
-            <li key={exclusion}>{exclusion}</li>
-          ))}
-        </ul>
-      </div>
+      {modelCard.lastSuccessfulFitAt ? (
+        <p className="text-[11px] text-dim">
+          Updated {formatDateMedium(modelCard.lastSuccessfulFitAt)}
+        </p>
+      ) : null}
     </article>
-  );
-}
-
-function EvidenceRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <dt className="inline font-medium">{label}: </dt>
-      <dd className="inline">{value}</dd>
-    </div>
   );
 }
 

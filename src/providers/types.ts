@@ -1,10 +1,13 @@
+import type { ProviderManualConnectionKind } from "@dofek/providers/provider-connection";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import type { SyncDatabase } from "../db/index.ts";
 import type { ProcessingDatasetKey } from "../processing/dataset-contracts.ts";
 import type { SyncDegradation } from "../sync/sync-degradation.ts";
+import type { WebhookEvent } from "../webhook-event.ts";
 import type { SyncOptions, SyncRun } from "./sync-run.ts";
 
 export type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
+export type { WebhookEvent } from "../webhook-event.ts";
 export type {
   SyncCheckpointStore,
   SyncOptions,
@@ -73,8 +76,9 @@ export interface ProviderAuthSetup {
   apiBaseUrl?: string;
   /** Automated login that drives the OAuth flow with credentials (no browser needed) */
   automatedLogin?: (email: string, password: string) => Promise<TokenSet>;
-  /** User-supplied API token flow for providers that issue personal tokens. */
+  /** User-supplied public profile identity or provider-issued access token. */
   manualToken?: {
+    kind: ProviderManualConnectionKind;
     label: string;
     instructionsUrl: `https://${string}`;
     exchangeToken: (token: string) => Promise<TokenSet>;
@@ -116,14 +120,21 @@ export interface SyncError {
  * - 'oauth': Standard OAuth 2.0 redirect flow (Strava, Fitbit, etc.)
  * - 'credential': User provides username/password, server authenticates (Eight Sleep, Zwift, etc.)
  * - 'token': User supplies a provider-issued personal token
+ * - 'public-profile': User supplies a public profile identity without a remote authorization
  * - 'file-import': No authentication needed, user uploads files
  * - 'oauth1': OAuth 1.0 3-legged flow (FatSecret)
  */
-export type ProviderAuthType = "oauth" | "credential" | "token" | "file-import" | "oauth1";
+export type ProviderAuthType =
+  | "oauth"
+  | "credential"
+  | "token"
+  | "public-profile"
+  | "file-import"
+  | "oauth1";
 
 export interface ProviderAuthCapabilities {
   automatedLogin: boolean;
-  manualToken: boolean;
+  manualToken: ProviderManualConnectionKind | null;
   oauth1: boolean;
   oauth: boolean;
 }
@@ -137,7 +148,8 @@ export function classifyProviderAuth(
 ): ProviderAuthType | "none" {
   if (capabilities.automatedLogin) return "credential";
   if (capabilities.oauth1) return "oauth1";
-  if (capabilities.manualToken) return "token";
+  if (capabilities.manualToken === "public-profile") return "public-profile";
+  if (capabilities.manualToken === "access-token") return "token";
   if (capabilities.oauth) return "oauth";
   return "none";
 }
@@ -149,7 +161,7 @@ export function getProviderAuthTypeFromSetup(
   return classifyProviderAuth({
     automatedLogin: Boolean(setup.automatedLogin),
     oauth1: Boolean(setup.oauth1Flow),
-    manualToken: Boolean(setup.manualToken),
+    manualToken: setup.manualToken?.kind ?? null,
     oauth: Boolean(setup.oauthConfig && setup.exchangeCode),
   });
 }
@@ -229,27 +241,6 @@ export function isSyncProvider(provider: Provider): provider is SyncProvider {
 // ============================================================
 // Webhook support
 // ============================================================
-
-/**
- * An event parsed from an incoming webhook payload.
- * Used to determine which user needs a sync.
- */
-export interface WebhookEvent {
-  /** Provider-specific owner/user ID (e.g., Strava athlete_id, Fitbit user_id) */
-  ownerExternalId: string;
-  /** What happened */
-  eventType: "create" | "update" | "delete";
-  /** What kind of object changed (activity, sleep, body, etc.) */
-  objectType: string;
-  /** External ID of the changed object (if available) */
-  objectId?: string;
-  /**
-   * Provider-specific metadata carried through to syncWebhookEvent().
-   * Can include the full payload (Wahoo, Concept2, Suunto), a date (Fitbit),
-   * a time range (Withings), or any other context needed for targeted sync.
-   */
-  metadata?: Record<string, unknown>;
-}
 
 /**
  * A provider that supports receiving webhook push notifications.

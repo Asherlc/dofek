@@ -633,6 +633,11 @@ async function truncateMissingInitialCopyRawAnalyticsDestinations(
 }
 
 export async function setupClickHouseCdc(options: SetupClickHouseCdcOptions): Promise<void> {
+  await options.peerDbClient.query(`
+    INSERT INTO public.dynamic_settings (config_name, config_value)
+    VALUES ('PEERDB_NULLABLE', 'true')
+    ON CONFLICT (config_name) DO UPDATE SET config_value = EXCLUDED.config_value
+  `);
   await ensureAnalyticsPeerDbColumns(options.clickHouseClient);
   await ensureAnalyticsPublication(options.sourcePostgresClient);
   await dropObsoleteMetricStreamPeerDbMirrors(options.peerDbClient);

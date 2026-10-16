@@ -3,6 +3,7 @@ import {
   heartRateZoneCountColumns,
   heartRateZoneSqlParams,
   heartRateZoneSumColumns,
+  heartRateZoneWeightedCountColumns,
 } from "./heart-rate-zone-sql.ts";
 
 describe("heart-rate-zone-sql", () => {
@@ -48,6 +49,24 @@ describe("heart-rate-zone-sql", () => {
         "sum(zone4) AS zone4",
         "sum(zone5) AS zone5",
       ].join(",\n        "),
+    );
+  });
+
+  it("weights histogram counts with the canonical inclusive lower and exclusive upper boundaries", () => {
+    expect(
+      heartRateZoneWeightedCountColumns("sample.1", "sample.2", {
+        maxHr: "am.max_hr",
+        restingHr: "am.resting_hr",
+      }),
+    ).toBe(
+      [
+        "sumIf(sample.2, sample.1 < am.resting_hr + (am.max_hr - am.resting_hr) * {heartRateZone0MaxPctHrr:Float64}) AS zone0",
+        "sumIf(sample.2, sample.1 >= am.resting_hr + (am.max_hr - am.resting_hr) * {heartRateZone1MinPctHrr:Float64}\n                AND sample.1 < am.resting_hr + (am.max_hr - am.resting_hr) * {heartRateZone1MaxPctHrr:Float64}) AS zone1",
+        "sumIf(sample.2, sample.1 >= am.resting_hr + (am.max_hr - am.resting_hr) * {heartRateZone2MinPctHrr:Float64}\n                AND sample.1 < am.resting_hr + (am.max_hr - am.resting_hr) * {heartRateZone2MaxPctHrr:Float64}) AS zone2",
+        "sumIf(sample.2, sample.1 >= am.resting_hr + (am.max_hr - am.resting_hr) * {heartRateZone3MinPctHrr:Float64}\n                AND sample.1 < am.resting_hr + (am.max_hr - am.resting_hr) * {heartRateZone3MaxPctHrr:Float64}) AS zone3",
+        "sumIf(sample.2, sample.1 >= am.resting_hr + (am.max_hr - am.resting_hr) * {heartRateZone4MinPctHrr:Float64}\n                AND sample.1 < am.resting_hr + (am.max_hr - am.resting_hr) * {heartRateZone4MaxPctHrr:Float64}) AS zone4",
+        "sumIf(sample.2, sample.1 >= am.resting_hr + (am.max_hr - am.resting_hr) * {heartRateZone5MinPctHrr:Float64}) AS zone5",
+      ].join(",\n          "),
     );
   });
 });

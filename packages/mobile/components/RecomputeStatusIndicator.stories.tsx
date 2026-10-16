@@ -31,6 +31,11 @@ export const Delayed: Story = {
   },
 };
 
+export const Blocked: Story = {
+  name: "Waiting to continue",
+  args: { label: "Recomputing sleep is waiting to continue", status: "blocked" },
+};
+
 export const Failed: Story = {
   args: {
     progress: 40,

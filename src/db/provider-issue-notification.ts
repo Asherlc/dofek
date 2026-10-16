@@ -34,7 +34,7 @@ export async function notifyProviderSyncIssue(
             ON delivery.user_id = connection.user_id
             AND delivery.provider_id = connection.provider_id
           CROSS JOIN LATERAL (
-            SELECT status
+            SELECT status, origin
             FROM fitness.sync_log
             WHERE user_id = connection.user_id
               AND provider_id = connection.provider_id
@@ -73,7 +73,7 @@ export async function notifyProviderSyncIssue(
             AND latest.status = 'error'
             AND delivery.sent_at IS NULL
             AND (
-              auth_issue.auth_failure_reason IS NOT NULL
+              auth_issue.auth_failure_reason = 'refresh_token_revoked'
               OR (
                 SELECT COUNT(*) FROM (
                   SELECT id
@@ -82,7 +82,10 @@ export async function notifyProviderSyncIssue(
                     AND provider_id = connection.provider_id
                     AND data_type = 'sync'
                     AND status = 'error'
-                    AND origin = 'scheduled'
+                    AND (
+                      origin = 'scheduled'
+                      OR (auth_failure_reason IS NOT NULL AND latest.origin = 'scheduled')
+                    )
                     AND synced_at >= connection.created_at
                     AND (recovery.synced_at IS NULL OR synced_at > recovery.synced_at)
                   ORDER BY synced_at DESC, id DESC

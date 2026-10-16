@@ -212,6 +212,28 @@ describe("PelotonClient", () => {
     );
   });
 
+  it("preserves missing sensor samples in performance graphs", async () => {
+    const graph = {
+      duration: 15,
+      is_class_plan_shown: false,
+      segment_list: [],
+      average_summaries: [],
+      summaries: [],
+      metrics: [
+        {
+          display_name: "Heart Rate",
+          slug: "heart_rate",
+          values: [120, null, 140],
+          average_value: 130,
+          max_value: 140,
+        },
+      ],
+    };
+    const client = new PelotonClient("secret", async () => Response.json(graph));
+
+    await expect(client.getPerformanceGraph("workout-1")).resolves.toEqual(graph);
+  });
+
   it("validates performance graph errors", async () => {
     const malformed = new PelotonClient("secret", async () => Response.json({ invalid: true }));
     await expect(malformed.getPerformanceGraph("workout-1")).rejects.toBeInstanceOf(

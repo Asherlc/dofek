@@ -10,14 +10,12 @@ describe("InsightEvidenceDetails", () => {
       <InsightEvidenceDetails
         evidence={{
           method: "Server method.",
-          limitations: "Server limitations.",
         }}
       />,
     );
 
     expect(screen.getByText("Server method.")).toBeTruthy();
-    expect(screen.getByText("Server limitations.")).toBeTruthy();
-    expect(container.querySelectorAll("p")).toHaveLength(2);
+    expect(container.querySelectorAll("p")).toHaveLength(1);
   });
 
   it("renders nothing when no detail fields are present", () => {

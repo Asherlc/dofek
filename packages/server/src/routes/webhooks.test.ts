@@ -725,7 +725,7 @@ describe("POST /api/webhooks/:providerName — event processing", () => {
     expect(mockEnqueueSyncJob).not.toHaveBeenCalled();
   });
 
-  it("calls syncWebhookEvent for targeted sync when available", async () => {
+  it("queues targeted webhook work for the provider worker", async () => {
     const events: WebhookEvent[] = [
       { ownerExternalId: "ext-1", eventType: "create", objectType: "activity" },
     ];
@@ -752,90 +752,14 @@ describe("POST /api/webhooks/:providerName — event processing", () => {
 
     const res = await request(createTestApp(), "post", "/api/webhooks/test-provider", '{"x":1}');
     expect(res.status).toBe(200);
-    expect(syncWebhookEvent).toHaveBeenCalledWith(expect.anything(), events[0], {
-      userId: "user-1",
-    });
-    // Should NOT enqueue full sync
-    expect(mockEnqueueSyncJob).not.toHaveBeenCalled();
-  });
-
-  it("preserves the provider receiver for targeted sync", async () => {
-    const events: WebhookEvent[] = [
-      { ownerExternalId: "ext-1", eventType: "create", objectType: "activity" },
-    ];
-    const syncWebhookEvent = vi.fn(async function (this: WebhookProvider) {
-      return {
-        provider: this.id,
-        recordsSynced: 1,
-        errors: [],
-        duration: 42,
-      };
-    });
-    const provider = createMockWebhookProvider({
-      parseWebhookPayload: vi.fn(() => events),
-      syncWebhookEvent,
-    });
-    mockGetAllProviders.mockReturnValue([provider]);
-
-    let callCount = 0;
-    mockExecuteWithSchema.mockImplementation(async () => {
-      callCount++;
-      if (callCount === 1) {
-        return [{ id: "sub-1", provider_id: "prov-1", verify_token: "tok", signing_secret: null }];
-      }
-      return [{ provider_id: "prov-1", user_id: "user-1" }];
-    });
-
-    const res = await request(createTestApp(), "post", "/api/webhooks/test-provider", '{"x":1}');
-
-    expect(res.status).toBe(200);
-    expect(syncWebhookEvent).toHaveBeenCalledWith(expect.anything(), events[0], {
-      userId: "user-1",
-    });
-    expect(mockEnqueueSyncJob).not.toHaveBeenCalled();
-  });
-
-  it("falls back to full sync when syncWebhookEvent fails", async () => {
-    const events: WebhookEvent[] = [
-      { ownerExternalId: "ext-1", eventType: "create", objectType: "activity" },
-    ];
-    const syncWebhookEvent = vi.fn(async () => {
-      throw new Error("targeted sync failed");
-    });
-    const provider = createMockWebhookProvider({
-      parseWebhookPayload: vi.fn(() => events),
-      syncWebhookEvent,
-    });
-    mockGetAllProviders.mockReturnValue([provider]);
-
-    let callCount = 0;
-    mockExecuteWithSchema.mockImplementation(async () => {
-      callCount++;
-      if (callCount === 1) {
-        return [{ id: "sub-1", provider_id: "prov-1", verify_token: "tok", signing_secret: null }];
-      }
-      return [{ provider_id: "prov-1", user_id: "user-1" }];
-    });
-
-    const res = await request(createTestApp(), "post", "/api/webhooks/test-provider", '{"x":1}');
-    expect(res.status).toBe(200);
     expect(mockEnqueueSyncJob).toHaveBeenCalledWith("prov-1", {
       origin: "manual",
       providerId: "prov-1",
       sinceDays: 1,
       userId: "user-1",
+      webhookEvent: events[0],
     });
-    expect(mockCaptureException).toHaveBeenCalledWith(
-      expect.objectContaining({ message: "targeted sync failed" }),
-      {
-        tags: {
-          provider: "test-provider",
-          webhookEventType: "create",
-          webhookObjectType: "activity",
-          webhookPhase: "targeted-sync",
-        },
-      },
-    );
+    expect(syncWebhookEvent).not.toHaveBeenCalled();
   });
 
   it("skips events when no user found for external ID", async () => {

@@ -57,9 +57,9 @@ export const pelotonWorkoutListResponseSchema = z.object({
 export const pelotonMetricSchema = z.object({
   display_name: z.string(),
   slug: z.string(),
-  values: z.array(z.number()),
-  average_value: z.number(),
-  max_value: z.number(),
+  values: z.array(z.number().nullable()),
+  average_value: z.number().nullable(),
+  max_value: z.number().nullable(),
 });
 
 const pelotonSummarySchema = z.object({

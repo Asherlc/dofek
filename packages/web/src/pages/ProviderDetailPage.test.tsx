@@ -85,7 +85,7 @@ interface MockProvider {
   description?: string;
   needsReauth?: boolean;
   pushOnly?: boolean;
-  tokenAuth?: { label: string; instructionsUrl: string } | null;
+  tokenAuth?: ProviderManualConnectionMetadata | null;
 }
 
 type MockProviderStats = ProviderStats & { providerId: string };
@@ -176,6 +176,7 @@ const mockProcessingStatusInvalidate = vi.fn();
 const mockProcessingDismissMutation = { mutate: vi.fn(), isPending: false, error: null };
 const mockPollSyncJob = vi.fn();
 const mockSyncStatusFetch = vi.fn();
+const mockRecordDetailQuery = vi.fn();
 
 vi.mock("../lib/trpc.ts", () => ({
   trpc: {
@@ -198,6 +199,7 @@ vi.mock("../lib/trpc.ts", () => ({
       logFilterOptions: { useQuery: () => ({ data: {}, isLoading: false }) },
       availableDataTypes: { useQuery: () => mockAvailableDataTypes },
       records: { useQuery: () => mockRecords },
+      recordDetail: { useQuery: (...args: unknown[]) => mockRecordDetailQuery(...args) },
       recordFilterOptions: { useQuery: () => ({ data: {}, isLoading: false }) },
     },
     settings: {
@@ -250,6 +252,7 @@ beforeEach(() => {
   mockStats.data = [];
   mockStats.error = null;
   mockRecords.data = { rows: [], columns: [] };
+  mockRecordDetailQuery.mockReset().mockReturnValue({ data: null, error: null, isLoading: false });
   mockRecords.isLoading = false;
   mockRecords.isError = false;
   mockRecords.error = null;
@@ -662,7 +665,7 @@ describe("ProviderDetailPage import-only providers", () => {
     expect(screen.getByText("Syncing Wahoo")).toBeTruthy();
   });
 
-  it("separates connection from expired authorization and promotes reconnect", async () => {
+  it("shows disconnected for expired authorization and promotes reconnect", async () => {
     mockUseParams.mockReturnValue({ id: "whoop" });
     mockProviders.data = [
       {
@@ -680,7 +683,7 @@ describe("ProviderDetailPage import-only providers", () => {
     render(<ProviderDetailPage />);
 
     expect(screen.getByText("Connection")).toBeTruthy();
-    expect(screen.getByText("Connected")).toBeTruthy();
+    expect(screen.getByText("Disconnected")).toBeTruthy();
     expect(screen.getByText("Authorization")).toBeTruthy();
     expect(screen.getByText("Reconnect required")).toBeTruthy();
     expect(screen.queryByText("Sync Controls")).toBeNull();
@@ -1239,10 +1242,38 @@ describe("ProviderDetailPage import-only providers", () => {
         lastSyncedAt: null,
         importOnly: false,
         needsReauth: true,
-        tokenAuth: { label: "Access token", instructionsUrl: "https://example.com/token" },
+        tokenAuth: {
+          kind: "access-token",
+          label: "Access token",
+          instructionsUrl: "https://example.com/token",
+        },
       },
     ];
     rerender(<ProviderDetailPage />);
+    fireEvent.click(screen.getByRole("button", { name: "Reconnect Ultrahuman" }));
+    expect(screen.getByText("Token reconnect form")).toBeTruthy();
+  });
+
+  it("reconnects a public profile through the shared connection form", async () => {
+    mockUseParams.mockReturnValue({ id: "ultrahuman" });
+    mockProviders.data = [
+      {
+        id: "ultrahuman",
+        name: "Ultrahuman",
+        authorized: false,
+        authType: "public-profile",
+        lastSyncedAt: null,
+        importOnly: false,
+        needsReauth: true,
+        tokenAuth: {
+          kind: "public-profile",
+          label: "Public profile URL",
+          instructionsUrl: "https://example.com/profiles",
+        },
+      },
+    ];
+    const { ProviderDetailPage } = await import("./ProviderDetailPage");
+    render(<ProviderDetailPage />);
     fireEvent.click(screen.getByRole("button", { name: "Reconnect Ultrahuman" }));
     expect(screen.getByText("Token reconnect form")).toBeTruthy();
   });
@@ -1358,6 +1389,11 @@ describe("ProviderDetailPage activity records", () => {
   });
 
   it("links from an activity record modal to the activity detail page", async () => {
+    mockRecordDetailQuery.mockReturnValue({
+      data: { id: "activity-123", name: "Morning Ride" },
+      error: null,
+      isLoading: false,
+    });
     mockUseParams.mockReturnValue({ id: "wahoo" });
     mockProviders.data = [
       {
@@ -1382,6 +1418,7 @@ describe("ProviderDetailPage activity records", () => {
         nutritionDaily: 0,
         healthEvents: 0,
         clinicalRecords: 0,
+        climbingLogEntries: 0,
       },
     ];
     mockRecords.data = {
@@ -1393,6 +1430,11 @@ describe("ProviderDetailPage activity records", () => {
     render(<ProviderDetailPage />);
 
     fireEvent.click(screen.getByText("Morning Ride"));
+    expect(mockRecordDetailQuery).toHaveBeenCalledWith({
+      providerId: "wahoo",
+      dataType: "activities",
+      recordId: "activity-123",
+    });
 
     expect(screen.getByRole("link", { name: "Open activity" }).getAttribute("href")).toBe(
       "/activity/activity-123",
@@ -1569,3 +1611,5 @@ describe("WhoopWearLocationPicker", () => {
     expect(mockCaptureException).toHaveBeenCalledTimes(1);
   });
 });
+
+import type { ProviderManualConnectionMetadata } from "@dofek/providers/provider-connection";

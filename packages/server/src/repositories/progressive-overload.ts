@@ -41,12 +41,12 @@ function trendForSlope(slope: number): ProgressiveOverloadTrend {
 
 function interpretationForTrend(trend: ProgressiveOverloadTrend): string {
   if (trend === "increasing") {
-    return "Recorded weekly volume increased over this period. An increase is not inherently good or bad.";
+    return "Recorded weekly volume increased over this period.";
   }
   if (trend === "decreasing") {
-    return "Recorded weekly volume decreased over this period. A decrease is not inherently good or bad.";
+    return "Recorded weekly volume decreased over this period.";
   }
-  return "Recorded weekly volume was stable over this period. Stability is not inherently good or bad.";
+  return "Recorded weekly volume was stable over this period.";
 }
 
 function estimateUncertainty(
@@ -75,8 +75,7 @@ function estimateUncertainty(
       ...UNCERTAINTY_METADATA,
       availability: "unavailable",
       reason: "no_residual_variation",
-      statement:
-        "Uncertainty is unavailable because the recorded weeks follow an exact line; that does not establish certainty.",
+      statement: "Uncertainty is unavailable because the recorded weeks follow an exact line.",
     };
   }
 
@@ -100,8 +99,7 @@ function estimateUncertainty(
     availability: "available",
     lowerKgPerWeek: roundToHundredths(interval.lower),
     upperKgPerWeek: roundToHundredths(interval.upper),
-    statement:
-      "The interval reflects variation and short-range dependence among recorded weeks; it does not measure programming intent.",
+    statement: "The interval reflects variation and short-range dependence among recorded weeks.",
   };
 }
 

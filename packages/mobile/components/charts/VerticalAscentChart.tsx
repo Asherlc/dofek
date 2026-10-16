@@ -219,9 +219,7 @@ export function VerticalAscentChart({ data, units, width: fixedWidth }: Vertical
 
       {/* Axis label */}
       <Text style={styles.axisLabel}>Vertical Ascent Rate ({elevationLabel}/h)</Text>
-      <Text style={styles.caption}>
-        Bubble size indicates elevation gain. Higher = stronger climbing.
-      </Text>
+      <Text style={styles.caption}>Bubble size: elevation gain</Text>
     </View>
   );
 

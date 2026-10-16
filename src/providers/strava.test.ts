@@ -8,7 +8,7 @@ vi.mock("../db/provider-data-deletion.ts", async (importOriginal) => {
 });
 
 const providerActivityAbsenceMocks = vi.hoisted(() => ({
-  markProviderActivityAbsent: vi.fn().mockResolvedValue(undefined),
+  markProviderActivityAbsent: vi.fn().mockResolvedValue(0),
   finishProviderActivityListSync: vi.fn().mockResolvedValue(undefined),
   upsertProviderActivity: vi.fn().mockResolvedValue({ id: "10000000-0000-4000-8000-000000000001" }),
 }));
@@ -646,7 +646,7 @@ describe("StravaClient.getActivity", () => {
       });
     };
 
-    const client = new StravaClient("token", mockFetch);
+    const client = new StravaClient(async () => "token", mockFetch);
     const result = await client.getActivity(12345678);
     expect(result.device_name).toBe("Garmin Edge 530");
     expect(result.id).toBe(12345678);
@@ -657,7 +657,7 @@ describe("StravaClient.getActivity", () => {
       return Response.json(sampleActivity);
     };
 
-    const client = new StravaClient("token", mockFetch);
+    const client = new StravaClient(async () => "token", mockFetch);
     const result = await client.getActivity(12345678);
     expect(result.device_name).toBeUndefined();
   });
@@ -669,7 +669,7 @@ describe("StravaClient — error handling", () => {
       return new Response("Rate Limit Exceeded", { status: 429 });
     };
 
-    const client = new StravaClient("token", mockFetch);
+    const client = new StravaClient(async () => "token", mockFetch);
     const err = await client.getActivities(0).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(StravaRateLimitError);
     expect(err).toBeInstanceOf(ProviderRateLimitError);
@@ -687,7 +687,7 @@ describe("StravaClient — error handling", () => {
       });
     };
 
-    const client = new StravaClient("token", mockFetch);
+    const client = new StravaClient(async () => "token", mockFetch);
     const err = await client.getActivities(0).catch((caughtError: unknown) => caughtError);
     expect(err).toBeInstanceOf(StravaRateLimitError);
     expect(err).toHaveProperty("retryAfterSeconds", 60);
@@ -699,7 +699,7 @@ describe("StravaClient — error handling", () => {
       return new Response("Server Error", { status: 500 });
     };
 
-    const client = new StravaClient("token", mockFetch);
+    const client = new StravaClient(async () => "token", mockFetch);
     await expect(client.getActivities(0)).rejects.toThrow("Strava API error (500): Server Error");
   });
 
@@ -711,7 +711,7 @@ describe("StravaClient — error handling", () => {
       });
     };
 
-    const client = new StravaClient("token", mockFetch);
+    const client = new StravaClient(async () => "token", mockFetch);
     const err = await client.getActivities(0).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(StravaNotFoundError);
     expect(err).toHaveProperty("message", expect.stringContaining("/athlete/activities"));
@@ -725,7 +725,7 @@ describe("StravaClient — error handling", () => {
       });
     };
 
-    const client = new StravaClient("token", mockFetch);
+    const client = new StravaClient(async () => "token", mockFetch);
     const err = await client.getActivities(0).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(StravaNotFoundError);
     expect(err).toHaveProperty("message", expect.stringContaining("/athlete/activities"));
@@ -739,7 +739,7 @@ describe("StravaClient — error handling", () => {
       });
     };
 
-    const client = new StravaClient("token", mockFetch);
+    const client = new StravaClient(async () => "token", mockFetch);
     const err = await client.getActivities(0).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(StravaUnauthorizedError);
     expect(err).toHaveProperty("message", expect.stringContaining("unauthorized (401)"));
@@ -750,7 +750,7 @@ describe("StravaClient — error handling", () => {
       return new Response("Forbidden", { status: 403 });
     };
 
-    const client = new StravaClient("token", mockFetch);
+    const client = new StravaClient(async () => "token", mockFetch);
     const err = await client.getActivities(0).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(StravaUnauthorizedError);
     expect(err).toHaveProperty("message", expect.stringContaining("unauthorized (403)"));
@@ -764,7 +764,7 @@ describe("StravaClient — error handling", () => {
       });
     };
 
-    const client = new StravaClient("token", mockFetch);
+    const client = new StravaClient(async () => "token", mockFetch);
     await expect(client.getActivities(0)).rejects.toThrow(
       'Strava API error (500): {"message":"bad request"}',
     );
@@ -778,7 +778,7 @@ describe("StravaClient — error handling", () => {
       });
     };
 
-    const client = new StravaClient("token", mockFetch);
+    const client = new StravaClient(async () => "token", mockFetch);
     await expect(client.getActivities(0)).rejects.toThrow(
       "Strava API error (500): (HTML error page)",
     );
@@ -790,7 +790,7 @@ describe("StravaClient — error handling", () => {
       return new Response(longText, { status: 500 });
     };
 
-    const client = new StravaClient("token", mockFetch);
+    const client = new StravaClient(async () => "token", mockFetch);
     await expect(client.getActivities(0)).rejects.toThrow(
       `Strava API error (500): ${"x".repeat(200)}…`,
     );
@@ -806,7 +806,7 @@ describe("StravaClient — request throttling", () => {
       return Response.json([]);
     };
 
-    const client = new StravaClient("token", mockFetch);
+    const client = new StravaClient(async () => "token", mockFetch);
     const pendingRequest = client.getActivities(0);
     await vi.advanceTimersByTimeAsync(0);
     await pendingRequest;
@@ -973,17 +973,18 @@ describe("StravaProvider.syncWebhookEvent", () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     process.env = { ...originalEnv };
   });
 
   it("returns immediately for non-activity objectType", async () => {
     const provider = new StravaProvider(async () => new Response());
-    const mockDb = {
+    const mockDb = makeTransactionalTestDatabase({
       select: vi.fn(),
       insert: vi.fn(),
       delete: vi.fn(),
       execute: vi.fn(),
-    };
+    });
 
     const result = await provider.syncWebhookEvent(
       mockDb,
@@ -1004,12 +1005,12 @@ describe("StravaProvider.syncWebhookEvent", () => {
 
   it("returns immediately when objectId is missing", async () => {
     const provider = new StravaProvider(async () => new Response());
-    const mockDb = {
+    const mockDb = makeTransactionalTestDatabase({
       select: vi.fn(),
       insert: vi.fn(),
       delete: vi.fn(),
       execute: vi.fn(),
-    };
+    });
 
     const result = await provider.syncWebhookEvent(
       mockDb,
@@ -1026,14 +1027,17 @@ describe("StravaProvider.syncWebhookEvent", () => {
   });
 
   it("handles delete events by marking activity provider-absent", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-08T12:00:00Z"));
     const provider = new StravaProvider(async () => new Response());
+    providerActivityAbsenceMocks.markProviderActivityAbsent.mockResolvedValueOnce(1);
 
-    const mockDb = {
+    const mockDb = makeTransactionalTestDatabase({
       select: vi.fn(),
       insert: vi.fn(),
       delete: vi.fn(),
       execute: vi.fn(),
-    };
+    });
 
     const result = await provider.syncWebhookEvent(
       mockDb,
@@ -1046,7 +1050,8 @@ describe("StravaProvider.syncWebhookEvent", () => {
       { userId: "00000000-0000-0000-0000-000000000001" },
     );
 
-    expect(result.recordsSynced).toBe(0);
+    expect(result.recordsSynced).toBe(1);
+    expect(result.duration).toBe(0);
     expect(result.errors).toHaveLength(0);
     expect(providerActivityAbsenceMocks.markProviderActivityAbsent).toHaveBeenCalledWith(mockDb, {
       providerId: "strava",
@@ -1060,12 +1065,12 @@ describe("StravaProvider.syncWebhookEvent", () => {
   it("handles delete event when activity not found", async () => {
     const provider = new StravaProvider(async () => new Response());
 
-    const mockDb = {
+    const mockDb = makeTransactionalTestDatabase({
       select: vi.fn(),
       insert: vi.fn(),
       delete: vi.fn(),
       execute: vi.fn(),
-    };
+    });
 
     const result = await provider.syncWebhookEvent(
       mockDb,
@@ -1089,12 +1094,12 @@ describe("StravaProvider.syncWebhookEvent", () => {
 
   it("returns error when token resolution fails", async () => {
     const provider = new StravaProvider(async () => new Response());
-    const mockDb = {
+    const mockDb = makeTransactionalTestDatabase({
       select: makeStravaSelectMock(null),
       insert: vi.fn(),
       delete: vi.fn(),
       execute: vi.fn(),
-    };
+    });
 
     const result = await provider.syncWebhookEvent(
       mockDb,
@@ -1221,12 +1226,12 @@ describe("StravaProvider.syncWebhookEvent", () => {
     };
 
     const mockInsert = makeStravaInsertMock();
-    const mockDb = {
+    const mockDb = makeTransactionalTestDatabase({
       select: makeStravaSelectMock(validTokenRow),
       insert: mockInsert,
       delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
       execute: vi.fn(),
-    };
+    });
 
     const provider = new StravaProvider(mockFetch);
     const result = await provider.syncWebhookEvent(
@@ -1264,12 +1269,12 @@ describe("StravaProvider.syncWebhookEvent", () => {
     };
 
     const mockInsert = makeStravaInsertMock();
-    const mockDb = {
+    const mockDb = makeTransactionalTestDatabase({
       select: makeStravaSelectMock(validTokenRow),
       insert: mockInsert,
       delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
       execute: vi.fn(),
-    };
+    });
 
     const provider = new StravaProvider(mockFetch);
     const result = await provider.syncWebhookEvent(
@@ -1303,12 +1308,12 @@ describe("StravaProvider.syncWebhookEvent", () => {
 
     providerActivityAbsenceMocks.upsertProviderActivity.mockResolvedValueOnce(undefined);
 
-    const mockDb = {
+    const mockDb = makeTransactionalTestDatabase({
       select: makeStravaSelectMock(validTokenRow),
       insert: vi.fn(),
       delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
       execute: vi.fn(),
-    };
+    });
 
     const provider = new StravaProvider(mockFetch);
     const result = await provider.syncWebhookEvent(
@@ -1586,12 +1591,12 @@ describe("StravaProvider — precise webhook string/object assertions", () => {
 
   it("syncWebhookEvent returns provider as 'strava' for all paths", async () => {
     const provider = new StravaProvider(async () => new Response());
-    const mockDb = {
+    const mockDb = makeTransactionalTestDatabase({
       select: vi.fn(),
       insert: vi.fn(),
       delete: vi.fn(),
       execute: vi.fn(),
-    };
+    });
 
     // Non-activity path
     const result = await provider.syncWebhookEvent(mockDb, {
@@ -1605,12 +1610,12 @@ describe("StravaProvider — precise webhook string/object assertions", () => {
   });
 
   it("syncWebhookEvent delete path returns provider 'strava'", async () => {
-    const mockDb = {
+    const mockDb = makeTransactionalTestDatabase({
       select: vi.fn(),
       insert: vi.fn(),
       delete: vi.fn(),
       execute: vi.fn(),
-    };
+    });
 
     const provider = new StravaProvider(async () => new Response());
     const result = await provider.syncWebhookEvent(
@@ -1637,7 +1642,12 @@ describe("StravaProvider — precise webhook string/object assertions", () => {
 
   it("syncWebhookEvent falls back to token user context when options.userId is missing", async () => {
     const provider = new StravaProvider(async () => new Response());
-    const mockDb = { select: vi.fn(), insert: vi.fn(), delete: vi.fn(), execute: vi.fn() };
+    const mockDb = makeTransactionalTestDatabase({
+      select: vi.fn(),
+      insert: vi.fn(),
+      delete: vi.fn(),
+      execute: vi.fn(),
+    });
 
     const result = await provider.syncWebhookEvent(mockDb, {
       ownerExternalId: "1",
@@ -1736,7 +1746,7 @@ describe("StravaClient.getActivityStreams", () => {
       return Response.json(apiResponse);
     };
 
-    const client = new StravaClient("token", mockFetch);
+    const client = new StravaClient(async () => "token", mockFetch);
     const streams = await client.getActivityStreams(12345);
 
     // Verify all 10 STREAM_KEYS are present in the result
@@ -1781,7 +1791,7 @@ describe("StravaClient.getActivityStreams", () => {
       return Response.json(apiResponse);
     };
 
-    const client = new StravaClient("token", mockFetch);
+    const client = new StravaClient(async () => "token", mockFetch);
     const streams = await client.getActivityStreams(1);
 
     expect(streams.time).toBeDefined();
@@ -1798,7 +1808,7 @@ describe("StravaClient.getActivityStreams", () => {
       return Response.json([]);
     };
 
-    const client = new StravaClient("token", mockFetch);
+    const client = new StravaClient(async () => "token", mockFetch);
     await client.getActivityStreams(99999);
 
     // Verify base URL is the Strava API
@@ -1837,7 +1847,7 @@ describe("StravaClient — API base URL", () => {
       return Response.json([]);
     };
 
-    const client = new StravaClient("token", mockFetch);
+    const client = new StravaClient(async () => "token", mockFetch);
     await client.getActivities(0);
 
     expect(capturedUrl).toMatch(/^https:\/\/www\.strava\.com\/api\/v3\//);
@@ -1852,7 +1862,7 @@ describe("StravaClient — API base URL", () => {
       return Response.json(sampleActivity);
     };
 
-    const client = new StravaClient("token", mockFetch);
+    const client = new StravaClient(async () => "token", mockFetch);
     await client.getActivity(42);
     expect(capturedUrl).toBe("https://www.strava.com/api/v3/activities/42");
   });
@@ -1867,7 +1877,7 @@ describe("StravaClient — API base URL", () => {
       return Response.json([]);
     };
 
-    const client = new StravaClient("my-secret-token", mockFetch);
+    const client = new StravaClient(async () => "my-secret-token", mockFetch);
     await client.getActivities(0);
     expect(capturedHeaders).toEqual({ Authorization: "Bearer my-secret-token" });
   });
@@ -1904,7 +1914,7 @@ describe("StravaClient", () => {
       ]),
     );
 
-    const client = new StravaClient("test-token", mockFetch);
+    const client = new StravaClient(async () => "test-token", mockFetch);
     const result = await client.getActivities(1000, 2, 50);
 
     expect(mockFetch).toHaveBeenCalledOnce();
@@ -1954,7 +1964,7 @@ describe("StravaClient", () => {
       ]),
     );
 
-    const client = new StravaClient("test-token", mockFetch);
+    const client = new StravaClient(async () => "test-token", mockFetch);
     const streams = await client.getActivityStreams(12345);
 
     const calledUrl = String(mockFetch.mock.calls[0]?.[0]);
@@ -1985,7 +1995,7 @@ describe("StravaProvider.sync", () => {
     const provider = new StravaProvider(mockFetch);
 
     // Mock db with loadTokens returning null
-    const mockDb = {
+    const mockDb = makeTransactionalTestDatabase({
       select: vi.fn().mockReturnValue({
         from: vi.fn().mockReturnValue({
           where: vi.fn().mockReturnValue({
@@ -1996,7 +2006,7 @@ describe("StravaProvider.sync", () => {
       insert: vi.fn(),
       delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
       execute: vi.fn().mockResolvedValue([]),
-    };
+    });
 
     const before = Date.now();
     const result = await provider.sync(
@@ -2029,7 +2039,7 @@ describe("StravaProvider.sync", () => {
 
     // Provide tokens
     const futureDate = new Date("2099-01-01");
-    const mockDb = {
+    const mockDb = makeTransactionalTestDatabase({
       select: vi.fn().mockReturnValue({
         from: vi.fn().mockReturnValue({
           where: vi.fn().mockReturnValue({
@@ -2055,7 +2065,7 @@ describe("StravaProvider.sync", () => {
       }),
       delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
       execute: vi.fn().mockResolvedValue([]),
-    };
+    });
 
     const result = await provider.sync(
       new SyncRun({ db: mockDb, window: SyncWindow.fromSince({ since: new Date("2026-01-01") }) }),
@@ -2111,7 +2121,7 @@ function hasQueryChunks(query: unknown): query is { queryChunks: unknown[] } {
 }
 
 function createMockDb(tokenRows = [VALID_TOKEN]): SyncDatabase {
-  return makeTransactionalTestDatabase<SyncDatabase>({
+  return makeTransactionalTestDatabase({
     select: vi.fn().mockReturnValue({
       from: vi.fn().mockReturnValue({
         where: vi.fn().mockReturnValue({
@@ -2385,7 +2395,7 @@ describe("StravaProvider.sync — additional coverage", () => {
     });
 
     // Need a db mock that returns a UUID for every insert
-    const mockDb = makeTransactionalTestDatabase<SyncDatabase>({
+    const mockDb = makeTransactionalTestDatabase({
       select: vi.fn().mockReturnValue({
         from: vi.fn().mockReturnValue({
           where: vi.fn().mockReturnValue({
@@ -2609,6 +2619,105 @@ describe("StravaProvider.sync — additional coverage", () => {
     expect(oauthCall).toBeDefined();
   });
 
+  it("refreshes a nearly expired token before the first activity request", async () => {
+    setupEnv();
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-08T20:00:00Z"));
+
+    try {
+      const mockFetch = vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+        if (String(url).includes("strava.com/oauth/token")) {
+          return Promise.resolve(
+            Response.json({
+              access_token: "fresh-access-token",
+              refresh_token: "fresh-refresh-token",
+              expires_at: Math.floor(new Date("2026-10-09T02:00:00Z").getTime() / 1000),
+              token_type: "Bearer",
+            }),
+          );
+        }
+        if (String(url).includes("/athlete/activities")) {
+          // The rate-limit admission can outlast a token that was valid at lookup.
+          vi.setSystemTime(new Date("2026-10-08T20:00:10Z"));
+          const authorization = new Headers(init?.headers).get("Authorization");
+          return Promise.resolve(
+            authorization === "Bearer fresh-access-token"
+              ? Response.json([])
+              : new Response("Expired access token", { status: 401 }),
+          );
+        }
+        return Promise.resolve(Response.json([]));
+      });
+
+      const provider = new StravaProvider(mockFetch);
+      const result = await provider.sync(
+        new SyncRun({
+          db: createMockDb([{ ...VALID_TOKEN, expiresAt: new Date("2026-10-08T20:00:05Z") }]),
+          window: SyncWindow.fromSince({ since: new Date("2026-01-01") }),
+        }),
+      );
+
+      expect(result.errors).toHaveLength(0);
+      expect(
+        mockFetch.mock.calls.filter(([url]) => String(url).includes("/oauth/token")),
+      ).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("refreshes at the one-hour boundary during a paced sync", async () => {
+    setupEnv();
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-08T20:00:00Z"));
+
+    try {
+      const activityHeaders: string[] = [];
+      const mockFetch = vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+        const urlString = String(url);
+        if (urlString.includes("/oauth/token")) {
+          return Promise.resolve(
+            Response.json({
+              access_token: "fresh-access-token",
+              refresh_token: "fresh-refresh-token",
+              expires_at: Math.floor(new Date("2026-10-09T03:00:00Z").getTime() / 1000),
+              token_type: "Bearer",
+            }),
+          );
+        }
+        activityHeaders.push(new Headers(init?.headers).get("Authorization") ?? "");
+        if (urlString.includes("/athlete/activities")) {
+          vi.setSystemTime(new Date("2026-10-08T21:00:00Z"));
+          return Promise.resolve(Response.json([MOCK_ACTIVITY]));
+        }
+        if (urlString.includes("/streams")) return Promise.resolve(Response.json([]));
+        return Promise.resolve(Response.json(MOCK_ACTIVITY));
+      });
+
+      vi.resetModules();
+      const { StravaProvider: ReloadedStravaProvider } = await import("./strava.ts");
+      const provider = new ReloadedStravaProvider(mockFetch);
+      const result = await provider.sync(
+        new SyncRun({
+          db: createMockDb([{ ...VALID_TOKEN, expiresAt: new Date("2026-10-08T22:00:00Z") }]),
+          window: SyncWindow.fromSince({ since: new Date("2026-01-01") }),
+        }),
+      );
+
+      expect(result.errors).toHaveLength(0);
+      expect(activityHeaders).toEqual([
+        "Bearer access-token",
+        "Bearer fresh-access-token",
+        "Bearer fresh-access-token",
+      ]);
+      expect(
+        mockFetch.mock.calls.filter(([url]) => String(url).includes("/oauth/token")),
+      ).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("does not call OAuth token refresh when access token is still valid", async () => {
     setupEnv();
 
@@ -2652,7 +2761,7 @@ describe("StravaProvider.sync — additional coverage", () => {
       return Promise.resolve(Response.json({ ...MOCK_ACTIVITY }));
     });
 
-    const mockDb = makeTransactionalTestDatabase<SyncDatabase>({
+    const mockDb = makeTransactionalTestDatabase({
       select: vi.fn().mockReturnValue({
         from: vi.fn().mockReturnValue({
           where: vi.fn().mockReturnValue({
@@ -2833,7 +2942,7 @@ describe("StravaProvider.sync — additional coverage", () => {
       };
     });
 
-    const mockDb: SyncDatabase = {
+    const mockDb: SyncDatabase = makeTransactionalTestDatabase({
       select: vi.fn().mockReturnValue({
         from: vi.fn().mockReturnValue({
           where: vi.fn().mockReturnValue({
@@ -2846,7 +2955,7 @@ describe("StravaProvider.sync — additional coverage", () => {
       }),
       delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
       execute: vi.fn().mockResolvedValue([]),
-    };
+    });
 
     const provider = new StravaProvider(mockFetch);
     const result = await provider.sync(
@@ -2908,7 +3017,7 @@ describe("StravaProvider.sync — additional coverage", () => {
       };
     });
 
-    const mockDb = makeTransactionalTestDatabase<SyncDatabase>({
+    const mockDb = makeTransactionalTestDatabase({
       select: vi.fn().mockReturnValue({
         from: vi.fn().mockReturnValue({
           where: vi.fn().mockReturnValue({
@@ -3015,7 +3124,7 @@ describe("StravaProvider.sync — additional coverage", () => {
       return Promise.resolve(Response.json(MOCK_ACTIVITY));
     });
 
-    const mockDb: SyncDatabase = {
+    const mockDb: SyncDatabase = makeTransactionalTestDatabase({
       select: vi.fn().mockReturnValue({
         from: vi.fn().mockReturnValue({
           where: vi.fn().mockReturnValue({
@@ -3037,7 +3146,7 @@ describe("StravaProvider.sync — additional coverage", () => {
       }),
       delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
       execute: vi.fn().mockResolvedValue([]),
-    };
+    });
 
     const provider = new StravaProvider(mockFetch);
     const result = await provider.sync(

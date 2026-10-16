@@ -77,6 +77,100 @@ describe("deriveProcessingState", () => {
     });
   });
 
+  describe.each(["canonical_commit", "cdc"] satisfies ProcessingStageEvent["stage"][])(
+    "%s with independently progressing output paths",
+    (stage) => {
+      it.each([
+        {
+          pendingStatus: "queued",
+          completedStatus: "succeeded",
+          elapsedMs: 1_000,
+          status: "active",
+        },
+        {
+          pendingStatus: "running",
+          completedStatus: "skipped",
+          elapsedMs: 1_000,
+          status: "active",
+        },
+        {
+          pendingStatus: "queued",
+          completedStatus: "skipped",
+          elapsedMs: 300_000,
+          status: "active",
+        },
+        {
+          pendingStatus: "running",
+          completedStatus: "succeeded",
+          elapsedMs: 300_001,
+          status: "delayed",
+        },
+        {
+          pendingStatus: "queued",
+          completedStatus: "succeeded",
+          elapsedMs: 300_001,
+          status: "delayed",
+        },
+        {
+          pendingStatus: "running",
+          completedStatus: "skipped",
+          elapsedMs: 300_001,
+          status: "delayed",
+        },
+        {
+          pendingStatus: "running",
+          completedStatus: "succeeded",
+          elapsedMs: 900_001,
+          status: "delayed",
+        },
+      ] satisfies Array<{
+        pendingStatus: ProcessingStageEvent["status"];
+        completedStatus: ProcessingStageEvent["status"];
+        elapsedMs: number;
+        status: "active" | "delayed";
+      }>)(
+        "keeps $pendingStatus work $status after its sibling is $completedStatus ($elapsedMs ms old)",
+        ({ pendingStatus, completedStatus, elapsedMs, status }) => {
+          const pendingTime = new Date(now.getTime() - elapsedMs);
+          const completionTime = new Date(now.getTime() - Math.max(0, elapsedMs - 100));
+          const precedingEvents = [event(1, "ingest", "succeeded", null)];
+          if (stage === "cdc") {
+            precedingEvents.push(
+              event(2, "canonical_commit", "succeeded", "activity", undefined, "relational"),
+              event(3, "canonical_commit", "succeeded", "activity", undefined, "metric_stream"),
+            );
+          }
+
+          const state = deriveProcessingState({
+            datasetKeys: ["activity"],
+            outputManifest: { activity: ["relational", "metric_stream"] },
+            events: [
+              ...precedingEvents,
+              event(4, stage, pendingStatus, "activity", pendingTime, "metric_stream", 40),
+              event(5, stage, completedStatus, "activity", completionTime, "relational", 100),
+            ],
+            operationStatus: "succeeded",
+            now,
+            delayedAfterMs: 300_000,
+          });
+
+          expect(state).toEqual({
+            overallStatus: status,
+            datasets: [
+              {
+                datasetKey: "activity",
+                currentStage: stage,
+                status,
+                progressPercentage: 40,
+                lastAdvancedAt: pendingTime,
+              },
+            ],
+          });
+        },
+      );
+    },
+  );
+
   it("gives failures precedence over unrelated active work", () => {
     const state = deriveProcessingState({
       datasetKeys: ["activity", "sleep"],

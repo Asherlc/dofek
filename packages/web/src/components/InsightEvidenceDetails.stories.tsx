@@ -6,10 +6,6 @@ const evidence: InsightEvidence = {
   relationship: "descriptive_association",
   label: "Descriptive association",
   method: "Observed-group mean comparison over paired observations.",
-  interpretation:
-    "This association does not prove cause. Missing data and other factors may affect it.",
-  limitations: "No confidence interval is available for this comparison.",
-  recommendation: "Use this as a hypothesis, not a prescription or treatment recommendation.",
   estimateLabel: "15% lower",
 };
 
@@ -37,7 +33,6 @@ export const PartialEvidence: Story = {
   args: {
     evidence: {
       method: evidence.method,
-      limitations: evidence.limitations,
     },
   },
 };

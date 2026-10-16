@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SyncDatabase } from "../../db/index.ts";
+import { makeTransactionalTestDatabase } from "../test-helpers.ts";
 
 const clickHouseMocks = vi.hoisted(() => {
   const query = vi.fn();
@@ -52,12 +53,12 @@ function makeDb(): SyncDatabase {
   chain.from.mockReturnValue(chain);
   chain.where.mockReturnValue(Promise.resolve([]));
 
-  return {
+  return makeTransactionalTestDatabase({
     select: vi.fn().mockReturnValue(chain),
     insert: vi.fn(),
     delete: vi.fn(),
     execute: vi.fn().mockResolvedValue([]),
-  };
+  });
 }
 
 describe("planGarminSyncSteps", () => {

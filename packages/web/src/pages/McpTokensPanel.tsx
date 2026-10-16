@@ -309,10 +309,7 @@ export function McpTokensPanel() {
         <section className="space-y-3">
           <div>
             <h2 className="text-sm font-medium text-foreground">Connected apps</h2>
-            <p className="mt-1 text-sm text-subtle">
-              Each app is shown once, even when it refreshes its access token. Disconnect it here to
-              revoke all access.
-            </p>
+            <p className="mt-1 text-sm text-subtle">Disconnect an app to revoke all access.</p>
           </div>
           <ul className="space-y-2">
             {oauthTokens.map((app) => {

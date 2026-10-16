@@ -8,13 +8,22 @@ This directory contains implementations for various data providers (fitness trac
 
 - **Provider Interface**: All providers implement the `Provider` interface (defined in `types.ts`).
 - **Sync vs Import**: Providers are either `SyncProvider` (fetches data via API) or `ImportProvider` (processes uploaded files).
-- **Authentication**: Supports OAuth 2.0 (`oauth`), OAuth 1.0 (`oauth1`), personal token (`token`), and credential-based (`credential`) authentication. **New sync providers must authenticate per user** — see `docs/adding-a-provider.md` and `provider-auth-policy.ts`.
+- **Connections**: Supports OAuth 2.0 (`oauth`), OAuth 1.0 (`oauth1`), personal token (`token`), credentials (`credential`), and public profile identity (`public-profile`). Each sync provider connects per user through the [provider contract](types.ts) and [auth policy](provider-auth-policy.ts); see [the provider guide](../../docs/adding-a-provider.md).
+- **Manual connections**: `manualToken.kind` distinguishes `public-profile` from `access-token`. Both use the existing connect form and encrypted identity/token repository; [account-erasure snapshotting](../account-erasure/remote-snapshot.ts) marks public-profile connections as `no_remote_authorization`, including identities stored before this classification was added.
 - **Webhooks**: Many providers (Strava, Fitbit, Oura) support real-time updates via webhooks (`WebhookProvider`).
 
 ## Implementation Details
 
 - **Registry**: All active providers are registered in `index.ts`.
 - **HTTP Client**: Provider fetches pass through the shared `@dofek/provider-http` boundary for adaptive rate limiting and a two-minute request deadline. The deadline composes with a caller-provided abort signal; request-start timeouts use `ETIMEDOUT`, and native response-body `TimeoutError` failures are also retryable instead of leaving a BullMQ job active indefinitely. Node.js documents [`AbortSignal.timeout()` and `AbortSignal.any()`](https://nodejs.org/api/globals.html#class-abortsignal).
+- **Authorization diagnostics**: The [shared HTTP observer](../lib/provider-diagnostics.ts)
+  reports rejected requests with provider/user attribution, HTTP status, request
+  start/duration, and an endpoint hash. When credentials were loaded in the current
+  user's sync context, it adds their expiry and seconds remaining at request start
+  and response, plus refresh-token availability. HTTP 401/403 JSON responses are
+  read through a clone and reduced to allowlisted error codes/resources/fields;
+  tokens, raw bodies, descriptions, URL paths, and queries are excluded. Bearer
+  error categories follow [RFC 6750 section 3.1](https://www.rfc-editor.org/rfc/rfc6750#section-3.1).
 - **Validation**: `validate()` may gate app-level OAuth client config, but must not gate on per-user credentials. User auth is checked at sync time via `loadTokens()`.
 - **UI visibility**: Providers that fail `validate()` are hidden until required app config is present. Users connect individually via Connect buttons.
 - **Data Mapping**: Providers transform vendor-specific JSON into Dofek's internal schema modules (see `src/db/schema/`).
@@ -22,8 +31,8 @@ This directory contains implementations for various data providers (fitness trac
 
 ## Supported Providers
 
-- **API/credential/OAuth sync providers**: Amazfit/Zepp, BodySpec, Concept2, Cycling Analytics, Eight Sleep, FatSecret, Garmin, Mountain Project, OpenBeta, Oura, Peloton, Polar, Ride with GPS, Strava, TrainerRoad, Ultrahuman, VeloHero, Wahoo, Wger, WHOOP, Withings, Xert, Ziva, Zwift.
-- **Import-only providers**: Cronometer CSV, FIT files, Garmin account exports, Kaya, Strong CSV, and Zepp OS App exports. FIT imports use Garmin's open FIT protocol and SDK-compatible files ([FIT SDK](https://developer.garmin.com/fit/overview/)).
+- **API/credential/OAuth sync providers**: Amazfit/Zepp, BodySpec, Concept2, Cycling Analytics, Eight Sleep, FatSecret, Garmin, Kaya, Mountain Project, OpenBeta, Oura, Peloton, Polar, Ride with GPS, Strava, theCrag, TrainerRoad, Ultrahuman, VeloHero, Wahoo, Wger, WHOOP, Withings, Xert, Ziva, Zwift. See the [registry](registry.ts).
+- **Import-only providers**: Cronometer CSV, FIT files, Garmin account exports, Kaya CSV (`kaya-export`), Strong CSV, and Zepp OS App exports. FIT imports use Garmin's open FIT protocol and SDK-compatible files ([FIT SDK](https://developer.garmin.com/fit/overview/)).
 - **Upload/native-mobile data sources**: Apple Health import and WHOOP BLE capture live outside this registry path in the web/mobile upload and native module flows.
 
 The Fitbit, Suunto, COROS, Komoot, MapMyFitness, and Decathlon modules remain available for
@@ -103,7 +112,7 @@ The OpenBeta GraphQL repository documents the production endpoint as
 ([OpenBeta GraphQL API](https://github.com/OpenBeta/openbeta-graphql)).
 
 The first integration imports public ticks only. Each tick is stored as an
-unattached `fitness.climbing_entry` with its original GraphQL payload in
+unattached `fitness.climbing_log_entry` with its original GraphQL payload in
 `raw`; no OpenBeta credentials, session cookies, route writes, or synthetic
 activities are used. OpenBeta's public profile pages expose a user's logbook
 and tick history ([example public tick page](https://openbeta.io/u/thickles/ticks)).
@@ -113,12 +122,30 @@ Tick dates arrive as Unix milliseconds from OpenBeta's
 The provider converts them to UTC calendar dates and preserves the numeric
 timestamps in each raw payload.
 
-OpenBeta grades are mapped from the route's published grade fields, preferring
-V-scale for boulders and YDS for routes, with the other supported grade
-systems retained when those fields are available. A complete,
+OpenBeta Climb/Pitch grades stay in owned published collections, and tick
+grades stay in the log's reported collection. Current shared Area ancestry
+and native coordinates are retained independently of attempts. See the
+[OpenBeta mapping](openbeta.ts). A complete,
 non-empty tick list reconciles missing OpenBeta ticks as soft tombstones;
 empty, malformed, partially unsupported, or failed responses do not retire
 existing rows.
+
+## theCrag
+
+theCrag imports a connected user's climbing logbook through the personal-key
+read API. Users need active supporter status and generate their own key in
+Settings → API Keys; the same secure token form connects the provider on web
+and mobile. The API includes private notes and supports pagination and
+incremental reads by ascent update time
+([official personal logbook API](https://www.thecrag.com/en/article/logbookreadapi)).
+
+The provider stores standalone climbing log entries and original source payloads,
+without creating workouts or inferring deletions from missing ascents. Dofek
+polls daily with one concurrent sync job; this is a conservative local policy
+for the API's documented weekly account budget, whose numeric limit is not
+published in the [personal API guide](https://www.thecrag.com/en/article/logbookreadapi).
+See the [theCrag provider guide](../../docs/thecrag.md) for connection,
+storage, and the limits of published-contract testing.
 
 ## OAuth authorization erasure
 

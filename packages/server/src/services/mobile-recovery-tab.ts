@@ -45,6 +45,7 @@ import {
   buildHealthStatusFromValues,
   buildWeightHealthStatus,
 } from "./health-status.ts";
+import { computeRestingHeartRateTrendDirection } from "./resting-heart-rate-trend.ts";
 
 export { type MobileRecoveryTabResult, mobileRecoveryTabOutputSchema };
 
@@ -342,6 +343,7 @@ export async function loadMobileRecoveryTab(
   return {
     hrvVariability: computeHrvVariability(dailyMetricsRows, days, endDate),
     hrvBaseline,
+    restingHeartRateTrendDirection: computeRestingHeartRateTrendDirection(hrvBaseline),
     readinessScore,
     stress,
     trends: deriveTrends(dailyMetrics),

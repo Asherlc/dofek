@@ -1,6 +1,7 @@
 import { PgDialect } from "drizzle-orm/pg-core";
 import { describe, expect, it, vi } from "vitest";
 import type { SyncDatabase } from "../../db/index.ts";
+import { makeTransactionalTestDatabase } from "../test-helpers.ts";
 import {
   buildHangTenIntervals,
   hangTenIntervalLabel,
@@ -114,12 +115,12 @@ describe("buildHangTenIntervals", () => {
 describe("replaceHangTenIntervals", () => {
   it("persists interval end times and execution semantics", async () => {
     const execute = vi.fn().mockResolvedValue([]);
-    const db: SyncDatabase = {
+    const db: SyncDatabase = makeTransactionalTestDatabase({
       delete: vi.fn(),
       execute,
       insert: vi.fn(),
       select: vi.fn(),
-    };
+    });
 
     await replaceHangTenIntervals(db, "act-1", hangTenWorkout());
 

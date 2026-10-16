@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { makeTransactionalTestDatabase } from "./test-helpers.ts";
 
 // ============================================================
 // Mock external dependencies
@@ -62,7 +63,7 @@ vi.mock("../auth/oauth.ts", () => ({
 }));
 
 const providerActivityAbsenceMocks = vi.hoisted(() => ({
-  markProviderActivityAbsent: vi.fn().mockResolvedValue(undefined),
+  markProviderActivityAbsent: vi.fn().mockResolvedValue(0),
   finishProviderActivityListSync: vi.fn().mockResolvedValue(undefined),
   upsertProviderActivity: vi.fn().mockResolvedValue({ id: "activity-id" }),
 }));
@@ -113,12 +114,12 @@ function createMockDb() {
   const insertFn = vi.fn().mockReturnValue(chain);
   const deleteFn = vi.fn().mockReturnValue(whereChain);
 
-  const db: SyncDatabase = {
+  const db: SyncDatabase = makeTransactionalTestDatabase({
     select: vi.fn(),
     insert: insertFn,
     delete: deleteFn,
     execute: vi.fn(),
-  };
+  });
 
   return Object.assign(db, chain, { deleteFn, whereChain });
 }
@@ -286,6 +287,7 @@ describe("Concept2Provider", () => {
   const originalEnv = { ...process.env };
 
   afterEach(() => {
+    vi.useRealTimers();
     process.env = { ...originalEnv };
     providerActivityAbsenceMocks.markProviderActivityAbsent.mockClear();
     providerActivityAbsenceMocks.finishProviderActivityListSync.mockClear();
@@ -514,8 +516,11 @@ describe("Concept2Provider", () => {
     });
 
     it("marks activity provider-absent on delete event", async () => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(new Date("2026-10-08T12:00:00Z"));
       const provider = new Concept2Provider();
       const db = createMockDb();
+      providerActivityAbsenceMocks.markProviderActivityAbsent.mockResolvedValueOnce(1);
 
       const event: WebhookEvent = {
         ownerExternalId: "42",
@@ -527,7 +532,9 @@ describe("Concept2Provider", () => {
       const result = await provider.syncWebhookEvent(db, event);
 
       expect(result.provider).toBe("concept2");
-      expect(result.recordsSynced).toBe(0);
+      expect(result.recordsSynced).toBe(1);
+      expect(result.errors).toHaveLength(0);
+      expect(result.duration).toBe(0);
       expect(providerActivityAbsenceMocks.markProviderActivityAbsent).toHaveBeenCalledWith(db, {
         providerId: "concept2",
         externalId: "12345",
@@ -576,7 +583,7 @@ describe("Concept2Provider", () => {
     it("returns error when no tokens", async () => {
       process.env.CONCEPT2_CLIENT_ID = "id";
       process.env.CONCEPT2_CLIENT_SECRET = "secret";
-      const mockDb = {
+      const mockDb = makeTransactionalTestDatabase({
         select: vi.fn().mockReturnValue({
           from: vi.fn().mockReturnValue({
             where: vi.fn().mockReturnValue({
@@ -594,7 +601,7 @@ describe("Concept2Provider", () => {
         }),
         delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
         execute: vi.fn().mockResolvedValue([]),
-      };
+      });
 
       const result = await new Concept2Provider().sync(
         new SyncRun({

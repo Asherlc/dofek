@@ -364,7 +364,11 @@ SELECT
         'Nullable(DateTime64(6, ''UTC''))'
     ) AS started_at,
     CAST(
-        coalesce(activity_bounds.ended_at, existing_activity_summary_for_dirty_keys.ended_at),
+        if(
+            activity_bounds.activity_id IS null,
+            existing_activity_summary_for_dirty_keys.ended_at,
+            activity_bounds.ended_at
+        ),
         'Nullable(DateTime64(6, ''UTC''))'
     ) AS ended_at,
     sensor_summary.avg_hr AS avg_hr,

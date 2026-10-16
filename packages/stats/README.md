@@ -4,8 +4,8 @@ Statistical analysis engine for finding correlations and trends in health data.
 
 ## Time-range policies
 
-`time-range.ts` is the canonical source for selectable web and mobile time-range defaults,
-visible rationale text, and stable preference keys. Screens in the same domain reuse the same
+[time-range.ts](src/time-range.ts) defines selectable web and mobile time-range defaults
+and stable preference keys. Screens in the same domain reuse the same
 key: training and strain share `training`.
 
 Web persists the selected value in `localStorage`; mobile uses AsyncStorage. Both restore the

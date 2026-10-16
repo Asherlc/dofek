@@ -293,7 +293,7 @@ describe("PolarizationTrendChart option builder", () => {
     expect(incompleteSeries).toBeUndefined();
   });
 
-  it("explains missing zones when PI is unavailable", () => {
+  it("shows zone durations for insufficient-data weeks", () => {
     const weeksWithGap = [
       makePolarizationWeek({
         week: "2024-01-01",
@@ -323,7 +323,6 @@ describe("PolarizationTrendChart option builder", () => {
       },
     ]);
     expect(html).toContain("Insufficient data");
-    expect(html).toContain("Server explanation: Insufficient data");
     expect(html).toContain("Zone 2 (threshold, 80-90% max HR): 0m");
   });
 });

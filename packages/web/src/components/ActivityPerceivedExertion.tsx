@@ -7,9 +7,8 @@ export function ActivityPerceivedExertion({ value }: { value: number | null }) {
         <h2 id="activity-rpe-heading" className="font-medium">
           Session effort
         </h2>
-        <p className="text-xs text-muted">Stored perceived exertion for this session (0–10).</p>
       </div>
-      <span className="text-lg font-medium">{value}</span>
+      <span className="text-lg font-medium">{value}/10</span>
     </section>
   );
 }

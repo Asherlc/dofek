@@ -1,5 +1,7 @@
 import {
   type ClimbingFilters,
+  climbingFilterKeys,
+  climbingFilterLabels,
   climbingFilterOptions,
   climbingFiltersSchema,
 } from "@dofek/training/climbing-filters";
@@ -9,7 +11,6 @@ import type { ClimbingSessionSummaryRow } from "dofek-server/types";
 import { useId, useState } from "react";
 import type { Activity } from "../../components/ActivityList.tsx";
 import type { ActivityTableColumn } from "../../components/ActivityTable.tsx";
-import { ChartDescriptionTooltip } from "../../components/ChartDescriptionTooltip.tsx";
 import { ClimbingGradeProgressionChart } from "../../components/ClimbingGradeProgressionChart.tsx";
 import { ClimbingVolumeByGradeChart } from "../../components/ClimbingVolumeByGradeChart.tsx";
 import { HangboardingSummary } from "../../components/HangboardingSummary.tsx";
@@ -110,13 +111,13 @@ export function ClimbingTab() {
             {Object.keys(filters).length ? "Filter climbing" : "All climbing"}{" "}
             <span aria-hidden="true">▾</span>
           </button>
-          {(["style", "protection", "setting"] as const).map((key) => {
+          {climbingFilterKeys.map((key) => {
             const label = climbingFilterOptions[key].find(([value]) => value === filters[key])?.[1];
             return label ? (
               <button
                 key={key}
                 type="button"
-                aria-label={`Remove ${label} filter`}
+                aria-label={`Remove ${climbingFilterLabels[key]}: ${label} filter`}
                 className="rounded-full bg-surface-hover px-3 py-1 text-xs"
                 onClick={() =>
                   setFilters((current) => {
@@ -126,41 +127,41 @@ export function ClimbingTab() {
                   })
                 }
               >
-                {label} <span aria-hidden="true">×</span>
+                {climbingFilterLabels[key]}: {label} <span aria-hidden="true">×</span>
               </button>
             ) : null;
           })}
         </div>
         {filtersOpen ? (
           <div id={filtersId} className="flex flex-wrap gap-4 rounded-lg border border-border p-3">
-            {(["style", "protection", "setting"] as const).map((key) => (
+            {climbingFilterKeys.map((key) => (
               <label key={key} className="flex flex-col gap-1 text-xs text-muted">
-                {key === "style" ? "Style" : key === "protection" ? "Protection" : "Setting"}
+                {climbingFilterLabels[key]}
                 <select
                   className="rounded border border-border bg-surface px-2 py-2 text-sm"
-                  value={filters[key] ?? ""}
+                  value={filters[key] === undefined ? "" : String(filters[key])}
                   onChange={(event) =>
                     setFilters((current) => {
                       const next = { ...current };
                       delete next[key];
+                      const selected = climbingFilterOptions[key].find(
+                        ([option]) => String(option) === event.target.value,
+                      );
                       return climbingFiltersSchema.parse(
-                        event.target.value ? { ...next, [key]: event.target.value } : next,
+                        selected ? { ...next, [key]: selected[0] } : next,
                       );
                     })
                   }
                 >
                   <option value="">All</option>
                   {climbingFilterOptions[key].map(([value, label]) => (
-                    <option key={value} value={value}>
+                    <option key={String(value)} value={String(value)}>
                       {label}
                     </option>
                   ))}
                 </select>
               </label>
             ))}
-            <p className="w-full text-xs text-dim">
-              Setting uses recorded location context. Missing details remain unknown.
-            </p>
           </div>
         ) : null}
       </div>
@@ -169,11 +170,12 @@ export function ClimbingTab() {
           Updating climbing…
         </p>
       ) : null}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Section title="Grade Progression" subtitle="Best sent grade by session">
-          {gradeProgression.error && !gradeProgression.data ? (
-            <QueryStatePanel error={gradeProgression.error} />
-          ) : (
+      <div className="grid grid-cols-1 gap-6">
+        <Section title="Grade Progression">
+          {gradeProgression.error ? (
+            <QueryStatePanel error={gradeProgression.error} height={0} />
+          ) : null}
+          {gradeProgression.error && !gradeProgression.data ? null : (
             <ClimbingGradeProgressionChart
               data={gradeProgression.data ?? []}
               loading={gradeProgression.isLoading}
@@ -181,10 +183,9 @@ export function ClimbingTab() {
           )}
         </Section>
 
-        <Section title="Volume by Grade" subtitle="Attempts and sends grouped by grade">
-          {volumeByGrade.error && !volumeByGrade.data ? (
-            <QueryStatePanel error={volumeByGrade.error} />
-          ) : (
+        <Section title="Volume by Grade">
+          {volumeByGrade.error ? <QueryStatePanel error={volumeByGrade.error} height={0} /> : null}
+          {volumeByGrade.error && !volumeByGrade.data ? null : (
             <ClimbingVolumeByGradeChart
               data={volumeByGrade.data ?? []}
               loading={volumeByGrade.isLoading}
@@ -193,10 +194,7 @@ export function ClimbingTab() {
         </Section>
       </div>
 
-      <Section
-        title="Recent Climbing Activities"
-        subtitle="Recent climbing activities with attempts, sends, and hardest grades"
-      >
+      <Section title="Recent Climbing Activities">
         <div className="space-y-4">
           {sessionSummary.error ? (
             <QueryStatePanel error={sessionSummary.error} height={0} />
@@ -260,10 +258,7 @@ export function ClimbingTab() {
         </div>
       </Section>
 
-      <Section
-        title="Hangboarding"
-        subtitle="Server-computed hangboard session time, intervals, and heart-rate summary"
-      >
+      <Section title="Hangboarding">
         {hangboardingSummary.error && !hangboardingSummary.data ? (
           <QueryStatePanel error={hangboardingSummary.error} />
         ) : (
@@ -280,25 +275,13 @@ export function ClimbingTab() {
   );
 }
 
-function Section({
-  title,
-  subtitle,
-  children,
-}: {
-  title: string;
-  subtitle: string;
-  children: React.ReactNode;
-}) {
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section>
       <div className="mb-1 flex items-center gap-2">
         <h2 className="text-sm font-medium text-muted uppercase tracking-wider">{title}</h2>
-        <ChartDescriptionTooltip description={subtitle} />
       </div>
-      <p className="text-xs text-dim mb-4">{subtitle}</p>
-      <div className="card p-4" title={subtitle}>
-        {children}
-      </div>
+      <div className="card p-4">{children}</div>
     </section>
   );
 }

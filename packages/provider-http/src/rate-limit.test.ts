@@ -11,6 +11,39 @@ import {
 } from "./rate-limit.ts";
 import type { AdaptiveRateLimitStore } from "./rate-limit-types.ts";
 
+it("observes HTTP responses before classification without consuming their body", async () => {
+  const onResponse = vi.fn();
+  const response = new Response("limited", { status: 429 });
+  const fetchFn = createRateLimitAwareFetch(vi.fn().mockResolvedValue(response), {
+    providerId: "example",
+    onResponse,
+  });
+  await expect(fetchFn("https://api.example.com/data")).rejects.toBeInstanceOf(
+    ProviderRateLimitError,
+  );
+  expect(onResponse).toHaveBeenCalledWith(
+    response,
+    "https://api.example.com/data",
+    expect.any(Object),
+    expect.any(Number),
+  );
+});
+
+it("awaits an asynchronous response observer before returning the readable response", async () => {
+  let observationCompleted = false;
+  const original = Response.json({ error: "invalid_token" }, { status: 401 });
+  const fetchFn = createRateLimitAwareFetch(async () => original, {
+    providerId: "example",
+    async onResponse(response) {
+      expect(await response.clone().json()).toEqual({ error: "invalid_token" });
+      observationCompleted = true;
+    },
+  });
+  const result = await fetchFn("https://api.example.com/me");
+  expect(observationCompleted).toBe(true);
+  expect(await result.json()).toEqual({ error: "invalid_token" });
+});
+
 function createMockAdaptiveStore(): AdaptiveRateLimitStore & {
   awaitAdmission: CallableVitestMock;
   recordSuccess: CallableVitestMock;

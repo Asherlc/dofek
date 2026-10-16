@@ -11,7 +11,9 @@ describe("transactional activity group reconciliation", () => {
   beforeAll(async () => {
     context = await setupTestDatabase();
     await context.db.execute(sql`INSERT INTO fitness.provider (id, name)
-      VALUES ('group-test-a', 'Group A'), ('group-test-b', 'Group B')`);
+      VALUES ('group-test-a', 'Group A'), ('group-test-b', 'Group B'),
+        ('whoop', 'WHOOP'), ('strava', 'Strava')
+      ON CONFLICT (id) DO NOTHING`);
   }, 120_000);
   afterAll(async () => {
     await context?.cleanup();
@@ -27,12 +29,13 @@ describe("transactional activity group reconciliation", () => {
     start = "2026-09-01T08:00:00Z",
     end = "2026-09-01T09:00:00Z",
     created = "2026-09-01T10:00:00Z",
+    canonicalType = "cycling",
   ) {
     const id = randomUUID();
     const groupId = randomUUID();
     await context.db.execute(sql`INSERT INTO fitness.activity
       (id, group_id, user_id, provider_id, external_id, canonical_type, provider_type, started_at, ended_at, created_at)
-      VALUES (${id}, ${groupId}, ${userId}, ${provider}, ${id}, 'cycling', 'cycling', ${start}, ${end}, ${created})`);
+      VALUES (${id}, ${groupId}, ${userId}, ${provider}, ${id}, ${canonicalType}, ${canonicalType}, ${start}, ${end}, ${created})`);
     return { id, groupId };
   }
   const reconcile = () =>
@@ -123,6 +126,32 @@ describe("transactional activity group reconciliation", () => {
     expect(await membership(second.id)).toEqual([{ group_id: first.groupId }]);
     expect(await aliases()).toEqual([
       { alias_id: second.groupId, group_id: first.groupId, reason: "merge" },
+    ]);
+  });
+
+  it("merges a late Strava run with an overlapping WHOOP activity despite different types", async () => {
+    const whoop = await activity(
+      "whoop",
+      "2026-10-08T19:41:00.070Z",
+      "2026-10-08T20:30:59Z",
+      "2026-10-08T21:01:00Z",
+      "other",
+    );
+    await reconcile();
+    const strava = await activity(
+      "strava",
+      "2026-10-08T19:41:23Z",
+      "2026-10-08T20:28:49Z",
+      "2026-10-08T21:03:41Z",
+      "running",
+    );
+
+    await reconcile();
+
+    expect(await membership(whoop.id)).toEqual([{ group_id: whoop.groupId }]);
+    expect(await membership(strava.id)).toEqual([{ group_id: whoop.groupId }]);
+    expect(await aliases()).toEqual([
+      { alias_id: strava.groupId, group_id: whoop.groupId, reason: "merge" },
     ]);
   });
 

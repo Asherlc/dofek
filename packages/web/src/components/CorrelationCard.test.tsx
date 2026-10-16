@@ -55,9 +55,6 @@ describe("CorrelationCard", () => {
         relationship: "correlation",
         label: "Descriptive correlation",
         method: "Server correlation method.",
-        interpretation: "Server interpretation: association does not establish causation.",
-        limitations: "Server limitations: missing observations and confounding remain possible.",
-        recommendation: "Server recommendation: this is not a prescription.",
       },
       dataPoints: [
         { x: 1, y: 2, date: "2025-01" },
@@ -69,13 +66,6 @@ describe("CorrelationCard", () => {
 
     expect(screen.getByText("Descriptive correlation")).toBeDefined();
     expect(screen.getByText("Server correlation method.")).toBeDefined();
-    expect(
-      screen.getByText("Server interpretation: association does not establish causation."),
-    ).toBeDefined();
-    expect(
-      screen.getByText("Server limitations: missing observations and confounding remain possible."),
-    ).toBeDefined();
-    expect(screen.getByText("Server recommendation: this is not a prescription.")).toBeDefined();
     expect(screen.queryByText("Strong")).toBeNull();
     const option = JSON.parse(screen.getByTestId("correlation-chart").dataset.option ?? "{}");
     expect(option.series).toHaveLength(1);
@@ -98,9 +88,6 @@ describe("CorrelationCard", () => {
         relationship: "descriptive_association",
         label: "Descriptive association",
         method: "Server comparison method.",
-        interpretation: "Server interpretation: association does not establish causation.",
-        limitations: "Server limitations: missing observations and confounding remain possible.",
-        recommendation: "Server recommendation: this is not a prescription.",
         estimateLabel: "Server estimate label.",
       },
     };

@@ -1,7 +1,6 @@
 import { formatNumber } from "@dofek/format/format";
 import { providerLabel } from "@dofek/providers/providers";
 import { chartColors } from "@dofek/scoring/colors";
-import { CORRELATION_AVAILABILITY_DESCRIPTION } from "@dofek/stats/correlation";
 import {
   formatCorrelationComparison,
   formatCorrelationLagOption,
@@ -9,7 +8,6 @@ import {
 import { Link } from "@tanstack/react-router";
 import type { AppRouterOutputs } from "dofek-server/router";
 import { useState } from "react";
-import { ChartDescriptionTooltip } from "../components/ChartDescriptionTooltip.tsx";
 import { ChartRangeProvider, DofekChart } from "../components/DofekChart.tsx";
 import { PageLayout } from "../components/PageLayout.tsx";
 import { QueryStatePanel } from "../components/QueryStatePanel.tsx";
@@ -323,7 +321,7 @@ function PairedObservationsTable({
 }
 
 export function CorrelationExplorerPage() {
-  const { days, description, setDays } = useTimeRangePreference("correlation");
+  const { days, setDays } = useTimeRangePreference("correlation");
   const [metricX, setMetricX] = useState("protein");
   const [metricY, setMetricY] = useState("hrv");
   const [metricXSearch, setMetricXSearch] = useState("");
@@ -366,7 +364,6 @@ export function CorrelationExplorerPage() {
         headerChildren={
           <TimeRangeSelector
             days={days}
-            description={description}
             onChange={(nextDays) => {
               setDays(nextDays);
               resetObservationCursor();
@@ -374,12 +371,10 @@ export function CorrelationExplorerPage() {
           />
         }
         title="Correlation Explorer"
-        subtitle="Pick any two metrics to see how they relate. Correlation does not imply causation."
       >
         {/* Controls */}
         {metricsQuery.data && (
           <div className="space-y-3">
-            <p className="text-[11px] text-dim">{CORRELATION_AVAILABILITY_DESCRIPTION}</p>
             <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] sm:items-end sm:gap-3">
               <MetricSelect
                 id="correlation-metric-x"
@@ -514,13 +509,9 @@ export function CorrelationExplorerPage() {
                 <CoverageSummary coverage={data.coverage} />
               </div>
 
-              {/* Insight card */}
-              <div className="card p-4 space-y-3">
-                <h3 className="text-xs text-subtle uppercase tracking-wider">Finding</h3>
-                <p className="text-sm text-foreground leading-relaxed">{data.insight}</p>
-                <p className="text-[11px] text-dim leading-relaxed">{data.interpretationWarning}</p>
-
-                {data.availability === "available" && hasMetricMetadata && (
+              {data.availability === "available" && hasMetricMetadata && (
+                <div className="card p-4 space-y-3">
+                  <h3 className="text-xs text-subtle uppercase tracking-wider">Mean ± SD</h3>
                   <div className="grid grid-cols-2 gap-3 pt-1">
                     <div>
                       <p className="text-[10px] text-dim">{xMetric.label}</p>
@@ -537,19 +528,15 @@ export function CorrelationExplorerPage() {
                       </p>
                     </div>
                   </div>
-                )}
-              </div>
+                </div>
+              )}
             </div>
 
             {/* Scatter plot */}
             {data.availability === "available" && dataPoints.length > 0 && hasMetricMetadata && (
-              <div
-                className="card p-4"
-                title="Each point is a paired observation. The trend line shows association direction; it does not prove cause."
-              >
+              <div className="card p-4">
                 <div className="mb-2 flex items-center gap-2">
                   <h3 className="text-xs text-subtle uppercase tracking-wider">Scatter Plot</h3>
-                  <ChartDescriptionTooltip description="Each point is a paired observation. The trend line shows the direction of the association; it does not prove cause." />
                 </div>
                 <ScatterPlot
                   dataPoints={dataPoints}
@@ -639,19 +626,7 @@ function UncertaintySummary({
       </p>
     );
   }
-  return (
-    <p className="text-[11px] text-dim">
-      95% block-bootstrap interval unavailable (
-      {uncertainty.reason === "degenerate_input"
-        ? "one metric did not vary"
-        : uncertainty.reason === "insufficient_pairs"
-          ? "fewer than five paired days"
-          : uncertainty.reason === "empty_input"
-            ? "no eligible calendar days"
-            : "not enough valid resamples"}
-      ).
-    </p>
-  );
+  return null;
 }
 
 function ScatterPlot({

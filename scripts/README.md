@@ -100,9 +100,46 @@ for the upstream fixes, regression coverage, and scoped advisory exceptions.
 
 ## Verification & Tooling
 
+- `resolve-deploy-image.ts`: Resolves a requested registry image once, pulls the
+  immutable manifest reference through the configured Docker daemon, verifies
+  its full source release, and retains the existing web service's desired digest
+  for pre-migration deployment. Emits `image_ref`, `pre_migration_image_ref`, and
+  `sentry_release` through `GITHUB_OUTPUT`.
+  - Usage: `pnpm tsx scripts/resolve-deploy-image.ts <image-reference> <full-source-sha> <web-service-name>`
+  - Uses Docker's [manifest descriptor JSON](https://docs.docker.com/reference/cli/docker/buildx/imagetools/inspect/#json-output)
+    and [immutable pulls](https://docs.docker.com/reference/cli/docker/image/pull/#pull-an-image-by-digest-immutable-identifier).
+- `verify-deploy-image.ts`: Verifies a converged service's desired image and
+  exact desired-running task count against the selected repository/manifest
+  digest. Zero tasks are accepted only for a service with zero desired replicas.
+  - Usage: `pnpm tsx scripts/verify-deploy-image.ts <immutable-image-reference> <service-name>`
+  - Reads Docker's [service tasks](https://docs.docker.com/reference/cli/docker/service/ps/)
+    and [inspection output](https://docs.docker.com/reference/cli/docker/inspect/).
+
+- `prepare-migration-deployment.ts`: Reads migration histories from the selected
+  immutable requested and previous images without starting either app. Requires
+  the current desired image to match the resolver's selected previous image.
+  Selects
+  maintenance for a new `-- dofek: deployment-mode=maintenance` boundary and
+  rejects divergent or older histories. The deployed image comparison preserves
+  maintenance selection after a migration committed but rollout failed; see the
+  [deployment flow](../deploy/README.md#flow-diagram) and Docker's
+  [container file copy](https://docs.docker.com/reference/cli/docker/container/cp/).
+  The web maintenance-target service label also rejects an older requested
+  history while maintenance remains incomplete; Docker defines
+  [service labels](https://docs.docker.com/reference/compose-file/deploy/#labels).
+  - Usage: `pnpm tsx scripts/prepare-migration-deployment.ts <requested-image-ref> <stack-name> <pre-migration-image-ref>`
+- `wait-migration-quiescence.ts`: Blocks migrations until each selected service
+  has zero desired replicas and all actual tasks are terminal, including web in
+  maintenance mode. It allows the existing worker drain contract to finish;
+  see [Swarm task states](https://docs.docker.com/engine/swarm/how-swarm-mode-works/swarm-task-states/).
 - `select-web-deploy.ts`: Selects the latest successful main-push CI release
-  after the production deployment concurrency slot is acquired. Manual requests
-  retain their explicit image tag. Unsuccessful CI triggers cancel their own
+  after the production deployment concurrency slot is acquired. Walks the fetched
+  `origin/main` first-parent history newest first, checking successful CI by
+  `head_sha` until it finds a passing commit, bounded by the triggering commit.
+  Requires full main history and rejects a response for another commit, branch,
+  event, or conclusion; see [`git rev-list`](https://git-scm.com/docs/git-rev-list)
+  and the [workflow-run filters](https://docs.github.com/en/rest/actions/workflow-runs#list-workflow-runs-for-a-workflow).
+  Manual requests retain their explicit image tag. Unsuccessful CI triggers cancel their own
   deployment request and never return a successful step result. The workflow
   supplies the standard GitHub event, output, summary, repository, and run-ID
   environment variables; see the [workflow-run API](https://docs.github.com/en/rest/actions/workflow-runs)

@@ -9,7 +9,6 @@ export interface ProviderCatalogEntry {
   family?: ProviderFamily;
   logo?: { id?: string; type: "png" | "svg" };
   brandColor?: string;
-  connectionInputType?: "text" | "password";
 }
 
 const garminConnect: ProviderFamily = {
@@ -97,7 +96,8 @@ export const PROVIDER_CATALOG: Readonly<Record<string, ProviderCatalogEntry>> = 
   "zos-app": { label: "Zepp OS App", family: zeppApp },
   velohero: { label: "VeloHero", brandColor: "#FF6600" },
   "mountain-project": { label: "Mountain Project", brandColor: "#1F5A88" },
-  openbeta: { label: "OpenBeta", connectionInputType: "text" },
+  openbeta: { label: "OpenBeta" },
+  thecrag: { label: "theCrag" },
   wger: { label: "Wger", logo: { type: "png" } },
   xert: { label: "Xert", logo: { type: "png" } },
   "apple-health": { label: "Apple Health" },

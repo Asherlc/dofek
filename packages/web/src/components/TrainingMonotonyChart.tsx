@@ -96,7 +96,6 @@ export function TrainingMonotonyChart({ data, loading }: TrainingMonotonyChartPr
             method.formula,
             method.calendar,
             method.activityScope,
-            method.interpretation,
           ]}
           source={method.source}
         />

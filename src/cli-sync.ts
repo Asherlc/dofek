@@ -67,6 +67,7 @@ export async function handleSyncCommand(args: string[]): Promise<number> {
         job.data.userId,
         "CLI provider sync",
         () => processSyncJob(job, db, signal),
+        job.data.providerId,
       ),
     {
       connection,

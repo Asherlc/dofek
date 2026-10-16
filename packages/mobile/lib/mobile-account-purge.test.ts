@@ -46,7 +46,6 @@ describe("purgeMobileAccountState", () => {
         purgeExportCache: operation("export-cache"),
         purgeHealthKitState: vi.fn(async (cutoff) => calls.push(`health-kit-state:${cutoff}`)),
         purgeHeartRate: vi.fn(async (cutoff) => calls.push(`heart-rate:${cutoff}`)),
-        purgeMedicationReminders: operation("medication-reminders"),
         purgeQueryCaches: operation("query-persistence"),
         purgeWatchMotion: vi.fn(async (cutoff) => calls.push(`watch-motion:${cutoff}`)),
         purgeWhoopBle: vi.fn(async (cutoff) => calls.push(`whoop:${cutoff}`)),
@@ -76,7 +75,6 @@ describe("purgeMobileAccountState", () => {
         "watch-motion:2026-07-26T12:00:00.000Z",
         "whoop:2026-07-26T12:00:00.000Z",
         "heart-rate:2026-07-26T12:00:00.000Z",
-        "medication-reminders",
         "export-cache",
         "query-persistence",
         "session",
@@ -108,7 +106,6 @@ describe("purgeMobileAccountState", () => {
         purgeExportCache: later,
         purgeHealthKitState: later,
         purgeHeartRate,
-        purgeMedicationReminders: later,
         purgeQueryCaches: later,
         purgeWatchMotion: later,
         purgeWhoopBle: later,
@@ -143,9 +140,6 @@ describe("purgeMobileAccountState", () => {
         purgeExportCache: vi.fn().mockRejectedValue(new Error("export cache failed")),
         purgeHealthKitState: laterCleanup,
         purgeHeartRate: laterCleanup,
-        purgeMedicationReminders: vi
-          .fn()
-          .mockRejectedValue(new Error("medication reminders failed")),
         purgeQueryCaches: laterCleanup,
         purgeWatchMotion: laterCleanup,
         purgeWhoopBle: laterCleanup,
@@ -162,7 +156,6 @@ describe("purgeMobileAccountState", () => {
     expect(result.errors.map((error) => error.message)).toEqual([
       "health failed",
       "motion failed",
-      "medication reminders failed",
       "export cache failed",
     ]);
     expect(laterCleanup).toHaveBeenCalled();
@@ -185,7 +178,6 @@ describe("purgeMobileAccountState", () => {
         purgeExportCache: vi.fn(),
         purgeHealthKitState: vi.fn(),
         purgeHeartRate: vi.fn(),
-        purgeMedicationReminders: vi.fn(),
         purgeQueryCaches: vi.fn(),
         purgeWatchMotion: vi.fn(),
         purgeWhoopBle: vi.fn(),
@@ -224,7 +216,6 @@ describe("purgeMobileAccountState", () => {
         purgeExportCache: vi.fn(),
         purgeHealthKitState: nativePurge,
         purgeHeartRate: nativePurge,
-        purgeMedicationReminders: vi.fn(),
         purgeQueryCaches: vi.fn(),
         purgeWatchMotion: nativePurge,
         purgeWhoopBle: nativePurge,
@@ -256,7 +247,6 @@ describe("purgeMobileAccountState", () => {
         purgeExportCache: vi.fn(),
         purgeHealthKitState: nativePurge,
         purgeHeartRate: nativePurge,
-        purgeMedicationReminders: vi.fn(),
         purgeQueryCaches: vi.fn(),
         purgeWatchMotion: nativePurge,
         purgeWhoopBle: nativePurge,
@@ -289,7 +279,6 @@ describe("purgeMobileAccountState", () => {
         purgeExportCache: operation,
         purgeHealthKitState: operation,
         purgeHeartRate: operation,
-        purgeMedicationReminders: operation,
         purgeQueryCaches: operation,
         purgeWatchMotion: operation,
         purgeWhoopBle: operation,
@@ -316,7 +305,6 @@ describe("purgeMobileAccountState", () => {
     const purgeCoreMotion = vi.fn(async () => {
       leaseCurrent = false;
     });
-    const purgeMedicationReminders = vi.fn();
     const purgeQueryCaches = vi.fn();
     const queryClient = { clear: vi.fn() };
 
@@ -331,7 +319,6 @@ describe("purgeMobileAccountState", () => {
         purgeExportCache: vi.fn(),
         purgeHealthKitState: vi.fn(),
         purgeHeartRate: vi.fn(),
-        purgeMedicationReminders,
         purgeQueryCaches,
         purgeWatchMotion: vi.fn(),
         purgeWhoopBle: vi.fn(),
@@ -350,7 +337,6 @@ describe("purgeMobileAccountState", () => {
       expect.stringMatching(/another account became active/i),
     ]);
     expect(purgeQueryCaches).not.toHaveBeenCalled();
-    expect(purgeMedicationReminders).not.toHaveBeenCalled();
     expect(clearSession).not.toHaveBeenCalled();
     expect(queryClient.clear).not.toHaveBeenCalled();
   });

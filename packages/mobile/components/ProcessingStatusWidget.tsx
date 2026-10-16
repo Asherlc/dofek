@@ -109,23 +109,14 @@ export function ProcessingStatusWidget({
     datasets: data.datasets,
     operationKind: targetScope.operationKind,
   });
-  const problemDatasets = data.datasets.filter(
-    (dataset) => dataset.status === "failed" || dataset.status === "blocked",
-  );
+  const problemDatasets = data.datasets.filter((dataset) => dataset.status === "failed");
   const failureGroups = processingFailureGroups({
     datasets: data.datasets,
     operations: data.operations,
   });
-  const statusMessage =
-    failureGroups.length > 0
-      ? null
-      : processingStatusMessage({
-          status: data.overallStatus,
-          errorMessage: null,
-        });
-  const hasFailureStatus = data.overallStatus === "failed" || data.overallStatus === "blocked";
+  const hasFailureStatus = data.overallStatus === "failed";
   const inProgressDatasets = data.datasets.filter((dataset) =>
-    ["active", "partial", "waiting", "delayed"].includes(dataset.status),
+    ["active", "partial", "waiting", "delayed", "blocked"].includes(dataset.status),
   );
   if (hasFailureStatus && failureGroups.length === 0 && inProgressDatasets.length === 0) {
     return null;
@@ -134,6 +125,13 @@ export function ProcessingStatusWidget({
     hasFailureStatus && failureGroups.length === 0
       ? (inProgressDatasets[0]?.status ?? data.overallStatus)
       : data.overallStatus;
+  const statusMessage =
+    failureGroups.length > 0
+      ? null
+      : processingStatusMessage({
+          status: displayStatus,
+          errorMessage: null,
+        });
   const heading = processingHeading(displayStatus, target);
   const datasetsWithHistory = data.datasets.filter(
     (dataset) =>

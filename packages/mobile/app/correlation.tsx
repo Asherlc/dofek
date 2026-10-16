@@ -2,7 +2,6 @@ import { formatNumber, formatSigned } from "@dofek/format/format";
 import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { providerLabel } from "@dofek/providers/providers";
 import { chartColors } from "@dofek/scoring/colors";
-import { CORRELATION_AVAILABILITY_DESCRIPTION } from "@dofek/stats/correlation";
 import {
   formatCorrelationComparison,
   formatCorrelationLagOption,
@@ -22,7 +21,6 @@ import {
 } from "react-native";
 import Svg, { Circle, Line } from "react-native-svg";
 import { AccessibleChart } from "../components/AccessibleChart";
-import { ChartTitleWithTooltip } from "../components/ChartTitleWithTooltip";
 import { DaySelector } from "../components/DaySelector";
 import { getQueryErrorMessage, QueryStatePanel } from "../components/QueryStatePanel";
 import { trpc } from "../lib/trpc";
@@ -242,19 +240,7 @@ function UncertaintySummary({
       </Text>
     );
   }
-  return (
-    <Text style={styles.statText}>
-      95% block-bootstrap interval unavailable (
-      {uncertainty.reason === "degenerate_input"
-        ? "one metric did not vary"
-        : uncertainty.reason === "insufficient_pairs"
-          ? "fewer than five paired days"
-          : uncertainty.reason === "empty_input"
-            ? "no eligible calendar days"
-            : "not enough valid resamples"}
-      ).
-    </Text>
-  );
+  return null;
 }
 
 function ObservationContributors({
@@ -512,7 +498,7 @@ function ScatterPlot({
 // ── Main Screen ──
 
 export default function CorrelationScreen() {
-  const { days, description, setDays } = useTimeRangePreference("correlation");
+  const { days, setDays } = useTimeRangePreference("correlation");
   const [metricX, setMetricX] = useState("protein");
   const [metricY, setMetricY] = useState("hrv");
   const [metricXSearch, setMetricXSearch] = useState("");
@@ -568,7 +554,6 @@ export default function CorrelationScreen() {
       <Text style={styles.sectionLabel}>Time Range</Text>
       <DaySelector
         days={days}
-        description={description}
         onChange={(nextDays) => {
           setDays(nextDays);
           resetObservationCursor();
@@ -579,7 +564,6 @@ export default function CorrelationScreen() {
       {/* Metric pickers */}
       {metrics.length > 0 && (
         <>
-          <Text style={styles.availabilityHint}>{CORRELATION_AVAILABILITY_DESCRIPTION}</Text>
           <MetricPicker
             label="X Axis"
             selected={metricX}
@@ -665,11 +649,7 @@ export default function CorrelationScreen() {
         <>
           {/* Correlation evidence card */}
           <View style={styles.card}>
-            <ChartTitleWithTooltip
-              title="Correlation Evidence"
-              description="The rank correlation, dependence-aware interval, and calendar-day coverage for the selected metrics."
-              textStyle={styles.cardTitle}
-            />
+            <Text style={styles.cardTitle}>Correlation Evidence</Text>
             <Text style={styles.statText}>{data.epistemicStatus?.label}</Text>
 
             {data.availability === "available" ? (
@@ -708,13 +688,9 @@ export default function CorrelationScreen() {
             <CoverageSummary coverage={data.coverage} />
           </View>
 
-          {/* Insight card */}
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>Finding</Text>
-            <Text style={styles.insightText}>{data.insight}</Text>
-            <Text style={styles.interpretationWarning}>{data.interpretationWarning}</Text>
-
-            {data.availability === "available" && hasMetricMetadata && (
+          {data.availability === "available" && hasMetricMetadata && (
+            <View style={styles.card}>
+              <Text style={styles.cardTitle}>Mean ± SD</Text>
               <View style={styles.statsGrid}>
                 <View style={styles.statsGridItem}>
                   <Text style={styles.statsGridLabel}>{xMetric.label}</Text>
@@ -731,17 +707,13 @@ export default function CorrelationScreen() {
                   </Text>
                 </View>
               </View>
-            )}
-          </View>
+            </View>
+          )}
 
           {/* Scatter plot */}
           {data.availability === "available" && data.dataPoints.length > 0 && hasMetricMetadata && (
             <View style={styles.card}>
-              <ChartTitleWithTooltip
-                title="Scatter Plot"
-                description="Each point is a paired observation. The trend line shows the direction of the association; it does not prove cause."
-                textStyle={styles.cardTitle}
-              />
+              <Text style={styles.cardTitle}>Scatter Plot</Text>
               <ScatterPlot
                 dataPoints={data.dataPoints}
                 regression={data.regression}
@@ -782,11 +754,6 @@ export default function CorrelationScreen() {
           )}
         </>
       )}
-
-      {/* Disclaimer */}
-      <Text style={styles.disclaimer}>
-        Correlation does not imply causation. These are observational patterns in your data.
-      </Text>
     </ScrollView>
   );
 }
@@ -917,11 +884,6 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: colors.textTertiary,
   },
-  availabilityHint: {
-    fontSize: 11,
-    color: colors.textTertiary,
-    lineHeight: 16,
-  },
 
   lagHint: {
     fontSize: 11,
@@ -960,11 +922,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: colors.text,
     lineHeight: 20,
-  },
-  interpretationWarning: {
-    color: colors.textSecondary,
-    fontSize: 12,
-    lineHeight: 18,
   },
 
   statsGrid: {
@@ -1085,14 +1042,5 @@ const styles = StyleSheet.create({
   emptyText: {
     fontSize: 14,
     color: colors.textSecondary,
-  },
-
-  // Disclaimer
-  disclaimer: {
-    fontSize: 11,
-    color: colors.textTertiary,
-    textAlign: "center",
-    fontStyle: "italic",
-    paddingTop: 8,
   },
 });

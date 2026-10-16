@@ -27,6 +27,14 @@ export const Active: Story = {};
 export const Waiting: Story = {
   args: { heading: "Waiting for analytics", message: null, progress: null, status: "waiting" },
 };
+export const Blocked: Story = {
+  name: "Waiting to continue",
+  args: {
+    heading: "Syncing Garmin is waiting to continue",
+    message: "Your existing data is still available.",
+    status: "blocked",
+  },
+};
 export const Ready: Story = {
   args: {
     heading: "Garmin is ready",

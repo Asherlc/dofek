@@ -1,9 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { getProviderAuthTypeFromSetup, type Provider } from "../providers/types.ts";
 
 // Mock registerProvider before importing the module under test
-const mockRegisterProvider = vi.fn();
+const mockRegisterProvider = vi.fn<(provider: Provider) => void>();
 vi.mock("../providers/index.ts", () => ({
-  registerProvider: (...args: unknown[]) => mockRegisterProvider(...args),
+  registerProvider: (provider: Provider) => mockRegisterProvider(provider),
 }));
 
 // Mock all provider modules to return simple objects
@@ -141,7 +142,8 @@ vi.mock("../providers/zos-app/provider.ts", () => ({
   ZosAppProvider: mockProviderConstructor(mockProviders["zos-app"]),
 }));
 
-const PROVIDER_COUNT = Object.keys(mockProviders).length;
+// theCrag uses its real constructor so registration verifies the public auth contract.
+const PROVIDER_COUNT = Object.keys(mockProviders).length + 1;
 
 describe("provider-registration", () => {
   beforeEach(() => {
@@ -160,6 +162,23 @@ describe("provider-registration", () => {
 
     expect(mockRegisterProvider).toHaveBeenCalledTimes(PROVIDER_COUNT);
     expect(mockRegisterProvider).toHaveBeenCalledWith(mockProviders.ziva);
+  });
+
+  it("registers theCrag with a usable per-user API-key connection", async () => {
+    const { ensureProvidersRegistered } = await import("./provider-registration.ts");
+    await ensureProvidersRegistered();
+
+    const provider = mockRegisterProvider.mock.calls.find(([registered]) => {
+      return registered.id === "thecrag";
+    })?.[0];
+
+    expect(provider?.validate()).toBeNull();
+    const setup = provider?.authSetup?.();
+    expect(getProviderAuthTypeFromSetup(setup)).toBe("token");
+    expect(setup?.manualToken).toMatchObject({
+      label: "Personal API key (active supporter required)",
+      instructionsUrl: "https://www.thecrag.com/en/article/logbookreadapi",
+    });
   });
 
   it("only registers once (memoization)", async () => {

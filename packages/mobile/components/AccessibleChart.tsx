@@ -29,7 +29,6 @@ export function AccessibleChart({ title, summary, rows, children }: AccessibleCh
           {children}
         </View>
       </View>
-      <Text style={styles.summary}>{summary}</Text>
       {rows.length > 0 && (
         <>
           <Pressable
@@ -65,11 +64,6 @@ export function AccessibleChart({ title, summary, rows, children }: AccessibleCh
 const styles = StyleSheet.create({
   container: {
     gap: 8,
-  },
-  summary: {
-    color: colors.textTertiary,
-    fontSize: 12,
-    lineHeight: 17,
   },
   button: {
     alignItems: "center",

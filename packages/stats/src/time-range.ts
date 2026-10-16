@@ -10,30 +10,21 @@ const persistedTimeRangePreferenceSchema = z.union([
 export const TIME_RANGE_POLICIES = {
   body: {
     defaultDays: 30,
-    description: "Recommended default: 30 days keeps recent body changes visible.",
   },
   recovery: {
     defaultDays: 30,
-    description: "Recommended default: 30 days keeps recent recovery changes visible.",
   },
   sleep: {
     defaultDays: 30,
-    description: "Recommended default: 30 days keeps recent sleep patterns visible.",
   },
   training: {
     defaultDays: 90,
-    description:
-      "Recommended default: 90 days balances recent training changes with enough history.",
   },
   nutrition: {
     defaultDays: 90,
-    description:
-      "Recommended default: 90 days provides enough intake and weight history for stable trends.",
   },
   correlation: {
     defaultDays: 365,
-    description:
-      "Recommended default: 1 year provides enough paired observations for longer-term relationships.",
   },
 } as const;
 

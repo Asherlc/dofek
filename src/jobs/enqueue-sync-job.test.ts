@@ -22,8 +22,12 @@ vi.mock("./queues.ts", () => ({
   },
 }));
 
-const { enqueueSyncJob, scheduleDelayedSyncJob, syncJobOptionsWithRateLimitCooldown } =
-  await import("./enqueue-sync-job.ts");
+const {
+  enqueueSyncJob,
+  enqueueReconnectSyncJob,
+  scheduleDelayedSyncJob,
+  syncJobOptionsWithRateLimitCooldown,
+} = await import("./enqueue-sync-job.ts");
 
 describe("enqueueSyncJob", () => {
   beforeEach(() => {
@@ -36,6 +40,110 @@ describe("enqueueSyncJob", () => {
   afterEach(() => {
     vi.useRealTimers();
   });
+
+  it("anchors an explicit relative window before enqueue", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-07T00:00:00Z"));
+    await enqueueSyncJob("garmin", {
+      userId: "user-1",
+      targetRefreshWindow: { type: "days", days: 7 },
+    });
+    expect(mockProviderQueueAdd).toHaveBeenCalledWith(
+      "sync",
+      expect.objectContaining({ requestedAtIso: "2026-10-07T00:00:00.000Z" }),
+      expect.anything(),
+    );
+  });
+
+  it.each([undefined, { type: "days" as const, days: 7 }])(
+    "keeps non-full requests out of initial full-sync deduplication",
+    async (targetRefreshWindow) => {
+      await enqueueSyncJob(
+        "garmin",
+        { userId: "user-1", targetRefreshWindow },
+        { singleFlightFullSync: true },
+      );
+      expect(mockProviderQueueAdd).toHaveBeenCalledWith(
+        "sync",
+        expect.anything(),
+        expect.not.objectContaining({ deduplication: expect.anything() }),
+      );
+    },
+  );
+
+  it.each([undefined, "wahoo"])(
+    "preserves the delayed request provider and user scope",
+    async (requestedProviderId) => {
+      const cooldown = {
+        providerId: "garmin",
+        scope: "provider" as const,
+        userId: null,
+        expiresAt: new Date("2026-10-08"),
+      };
+      await scheduleDelayedSyncJob({ userId: "user-1", providerId: requestedProviderId }, cooldown);
+      const { getProviderSyncQueue } = await import("./queues.ts");
+      const { providerRateLimitCooldownJobId } = await import("./provider-rate-limit-cooldown.ts");
+      expect(getProviderSyncQueue).toHaveBeenCalledWith(requestedProviderId ?? "garmin");
+      expect(mockProviderQueueAdd).toHaveBeenCalledWith(
+        "sync",
+        expect.objectContaining({ providerId: requestedProviderId ?? "garmin", userId: "user-1" }),
+        expect.anything(),
+      );
+      expect(providerRateLimitCooldownJobId).toHaveBeenCalledWith(cooldown, "user-1");
+    },
+  );
+
+  it("starts reconnect work immediately when no cooldown is active", async () => {
+    await enqueueReconnectSyncJob("peloton", "user-1");
+    expect(mockProviderQueueAdd).toHaveBeenCalledWith(
+      "sync",
+      {
+        providerId: "peloton",
+        userId: "user-1",
+        origin: "manual",
+        targetRefreshWindow: { type: "full" },
+      },
+      expect.objectContaining({
+        attempts: 288,
+        jobId: expect.stringMatching(/^sync-reconnect-[0-9a-f-]{36}$/),
+      }),
+    );
+    expect(mockProviderQueueAdd.mock.calls[0]?.[2].delay).toBeUndefined();
+  });
+
+  it.each(["active", "delayed"])(
+    "schedules fresh reconnect work instead of reusing a %s job",
+    async (state) => {
+      mockGetActive.mockResolvedValue({ providerId: "peloton", expiresAt: new Date("2026-10-07") });
+      mockGetJob.mockResolvedValue({ id: "old-job", getState: vi.fn().mockResolvedValue(state) });
+
+      await enqueueReconnectSyncJob("peloton", "user-1");
+      await enqueueReconnectSyncJob("peloton", "user-1");
+
+      expect(mockProviderQueueAdd).toHaveBeenCalledTimes(2);
+      const firstOptions = mockProviderQueueAdd.mock.calls[0]?.[2];
+      const secondOptions = mockProviderQueueAdd.mock.calls[1]?.[2];
+      expect(firstOptions).toEqual(
+        expect.objectContaining({
+          delay: 600_000,
+          attempts: 288,
+          jobId: expect.stringMatching(/^sync-reconnect-/),
+        }),
+      );
+      expect(firstOptions.jobId).not.toBe(secondOptions.jobId);
+      expect(firstOptions.deduplication).toBeUndefined();
+      expect(mockProviderQueueAdd).toHaveBeenCalledWith(
+        "sync",
+        {
+          providerId: "peloton",
+          userId: "user-1",
+          origin: "manual",
+          targetRefreshWindow: { type: "full" },
+        },
+        firstOptions,
+      );
+    },
+  );
 
   it("retains a terminal coordinator child even when a cooldown exists", async () => {
     const existing = {
@@ -187,6 +295,84 @@ describe("enqueueSyncJob", () => {
         jobId: "rate-limit-delayed-job",
       }),
     );
+  });
+
+  it("keeps separate targeted webhook events during a provider cooldown", async () => {
+    mockGetActive.mockResolvedValue({
+      providerId: "strava",
+      scope: "provider",
+      userId: null,
+      expiresAt: new Date("2026-10-08T22:00:00Z"),
+    });
+    const first = {
+      userId: "user-1",
+      providerId: "strava",
+      webhookEvent: {
+        ownerExternalId: "owner-1",
+        eventType: "create" as const,
+        objectType: "activity",
+        objectId: "activity-1",
+      },
+    };
+    const second = {
+      ...first,
+      webhookEvent: { ...first.webhookEvent, objectId: "activity-2" },
+    };
+
+    await enqueueSyncJob("strava", first);
+    await enqueueSyncJob("strava", second);
+
+    const firstOptions = mockProviderQueueAdd.mock.calls[0]?.[2];
+    const secondOptions = mockProviderQueueAdd.mock.calls[1]?.[2];
+    expect(firstOptions.delay).toBe(600_000);
+    expect(secondOptions.delay).toBe(600_000);
+    expect(firstOptions.jobId).not.toBe(secondOptions.jobId);
+  });
+
+  it("does not reuse a targeted webhook job ID for a later regular sync", async () => {
+    await enqueueSyncJob("strava", {
+      userId: "user-1",
+      providerId: "strava",
+      webhookEvent: {
+        ownerExternalId: "owner-1",
+        eventType: "create",
+        objectType: "activity",
+        objectId: "activity-1",
+      },
+    });
+    await enqueueSyncJob("strava", { userId: "user-1", providerId: "strava", sinceDays: 1 });
+
+    expect(mockProviderQueueAdd.mock.calls[1]?.[2].jobId).not.toMatch(/^sync-webhook-/);
+  });
+
+  it("keeps separate targeted webhook events when rescheduling an active cooldown", async () => {
+    const cooldown = {
+      providerId: "strava",
+      scope: "provider" as const,
+      userId: null,
+      expiresAt: new Date("2026-10-08T22:00:00Z"),
+    };
+    const first = {
+      userId: "user-1",
+      providerId: "strava",
+      webhookEvent: {
+        ownerExternalId: "owner-1",
+        eventType: "create" as const,
+        objectType: "activity",
+        objectId: "activity-1",
+      },
+    };
+    await scheduleDelayedSyncJob(first, cooldown);
+    await scheduleDelayedSyncJob(
+      { ...first, webhookEvent: { ...first.webhookEvent, objectId: "activity-2" } },
+      cooldown,
+    );
+
+    const firstOptions = mockProviderQueueAdd.mock.calls[0]?.[2];
+    const secondOptions = mockProviderQueueAdd.mock.calls[1]?.[2];
+    expect(firstOptions.delay).toBe(600_000);
+    expect(secondOptions.delay).toBe(600_000);
+    expect(firstOptions.jobId).not.toBe(secondOptions.jobId);
   });
 
   it("schedules a delayed retry for an existing cooldown", async () => {

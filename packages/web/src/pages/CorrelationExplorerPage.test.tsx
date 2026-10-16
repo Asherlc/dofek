@@ -1,7 +1,6 @@
 /** @vitest-environment jsdom */
 
 import { chartColors } from "@dofek/scoring/colors";
-import { CORRELATION_AVAILABILITY_DESCRIPTION } from "@dofek/stats/correlation";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -219,7 +218,6 @@ describe("CorrelationExplorerPage", () => {
 
     expect(screen.getByRole("searchbox", { name: "Search X axis metrics" })).toBeInTheDocument();
     expect(screen.getByRole("searchbox", { name: "Search Y axis metrics" })).toBeInTheDocument();
-    expect(screen.getByText(CORRELATION_AVAILABILITY_DESCRIPTION)).toBeInTheDocument();
     expect(screen.getAllByText("Needs a complete, resolved daily nutrition record.")).toHaveLength(
       1,
     );
@@ -245,17 +243,6 @@ describe("CorrelationExplorerPage", () => {
 
     expect(screen.getAllByRole("option", { name: "No matching metrics" })).toHaveLength(2);
     expect(screen.getByText("X vs Y on the same calendar day")).toBeTruthy();
-  });
-
-  it("renders the server-authored interpretation warning", async () => {
-    const { CorrelationExplorerPage } = await import("./CorrelationExplorerPage.tsx");
-    render(<CorrelationExplorerPage />);
-
-    expect(
-      screen.getByText(
-        "Measurements often persist from one day to the next (autocorrelation) or share a time trend. Either pattern can create a strong correlation without a direct relationship, so use this result to form a hypothesis—not a conclusion.",
-      ),
-    ).toBeTruthy();
   });
 
   it("renders the specific server error when a request is rejected", async () => {
@@ -317,9 +304,6 @@ describe("CorrelationExplorerPage", () => {
     expect(screen.getByText("5 more paired calendar days needed")).toBeTruthy();
     expect(screen.getByText("90 selected")).toBeTruthy();
     expect(screen.getByText("90 missing pairs")).toBeTruthy();
-    expect(
-      screen.getByText("95% block-bootstrap interval unavailable (fewer than five paired days)."),
-    ).toBeTruthy();
     expect(screen.queryByText(/block-bootstrap interval: .* to /)).toBeNull();
     expect(screen.queryByText(/Spearman/)).toBeNull();
     expect(screen.queryByText(/Pearson/)).toBeNull();
@@ -339,26 +323,6 @@ describe("CorrelationExplorerPage", () => {
 
     expect(screen.getByText("1 more paired calendar day needed")).toBeTruthy();
     expect(screen.queryByText("1 more paired calendar days needed")).toBeNull();
-  });
-
-  it("explains every unavailable bootstrap outcome", async () => {
-    const { CorrelationExplorerPage } = await import("./CorrelationExplorerPage.tsx");
-    const { rerender } = render(<CorrelationExplorerPage />);
-
-    for (const [reason, expected] of [
-      ["empty_input", "no eligible calendar days"],
-      ["degenerate_input", "one metric did not vary"],
-      ["insufficient_valid_replicates", "not enough valid resamples"],
-    ] as const) {
-      state.correlationData = {
-        ...state.correlationData,
-        uncertainty: { availability: "unavailable", reason },
-      };
-      rerender(<CorrelationExplorerPage />);
-      expect(
-        screen.getByText(`95% block-bootstrap interval unavailable (${expected}).`),
-      ).toBeTruthy();
-    }
   });
 
   it("shows coverage, dependence-aware uncertainty, and server-computed effect estimates", async () => {

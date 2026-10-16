@@ -143,15 +143,6 @@ function fakeDatabase(): SyncDatabase & Pick<Database, "transaction"> {
   };
 }
 
-function nonTransactionalDatabase(): SyncDatabase {
-  return {
-    select: vi.fn(),
-    insert: vi.fn(),
-    delete: vi.fn(),
-    execute: vi.fn(),
-  };
-}
-
 class MemoryCheckpointStore implements SyncCheckpointStore {
   value: unknown | null;
   readonly saved: unknown[] = [];
@@ -226,7 +217,6 @@ interface MissingPrerequisite {
 
 const missingPrerequisites: ReadonlyArray<readonly [string, MissingPrerequisite]> = [
   ["user ID", { userId: "" }],
-  ["transaction-capable database", { db: nonTransactionalDatabase() }],
   ["checkpoint store", { checkpoint: undefined }],
   ["continuation enqueue", { enqueueSyncContinuation: undefined }],
 ];

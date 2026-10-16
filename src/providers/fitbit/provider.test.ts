@@ -124,12 +124,12 @@ function createMockDb() {
   const insertFn = vi.fn().mockReturnValue(chain);
   const deleteFn = vi.fn().mockReturnValue(chain);
 
-  const db: SyncDatabase = {
+  const db: SyncDatabase = makeTransactionalTestDatabase({
     select: vi.fn(),
     insert: insertFn,
     delete: deleteFn,
     execute: vi.fn().mockResolvedValue([]),
-  };
+  });
 
   return makeTransactionalTestDatabase(Object.assign(db, chain));
 }

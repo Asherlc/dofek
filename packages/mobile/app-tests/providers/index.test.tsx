@@ -426,6 +426,7 @@ const tokenProvider = {
   name: "Wger",
   authType: "token",
   tokenAuth: {
+    kind: "access-token",
     label: "JWT refresh token",
     instructionsUrl: "https://wger.readthedocs.io/en/latest/api/api.html#jwt-tokens",
   },
@@ -907,6 +908,7 @@ describe("ProviderCard", () => {
           foodEntries: 0,
           nutritionDaily: 0,
           clinicalRecords: 0,
+          climbingLogEntries: 0,
         }}
         syncing={false}
         syncProgress={undefined}
@@ -1392,6 +1394,7 @@ describe("ProvidersScreen", () => {
           nutritionDaily: 0,
           healthEvents: 0,
           clinicalRecords: 0,
+          climbingLogEntries: 0,
         },
       ],
       isLoading: false,
@@ -2096,9 +2099,18 @@ describe("ProvidersScreen", () => {
     });
   });
 
-  it("opens the server-described personal token flow", async () => {
+  it.each(["token", "public-profile"])("opens the server-described %s flow", async (authType) => {
     mockProvidersQuery.mockReturnValue({
-      data: [tokenProvider],
+      data: [
+        {
+          ...tokenProvider,
+          authType,
+          tokenAuth: {
+            ...tokenProvider.tokenAuth,
+            kind: authType === "public-profile" ? "public-profile" : "access-token",
+          },
+        },
+      ],
       isLoading: false,
     });
 

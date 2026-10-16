@@ -57,7 +57,10 @@ describe("activity_sensor_summary_rows read model", () => {
         channel String,
         scalar Nullable(Float64),
         refresh_version UInt64,
-        is_deleted UInt8
+        is_deleted UInt8,
+        provider_id Nullable(String),
+        member_activity_id Nullable(UUID),
+        device_id Nullable(String)
       ) ENGINE = ReplacingMergeTree(refresh_version)
       ORDER BY (user_id, activity_id, channel, recorded_at)`,
     });

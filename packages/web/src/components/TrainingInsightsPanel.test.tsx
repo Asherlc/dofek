@@ -23,7 +23,7 @@ describe("TrainingInsightsPanel range plumbing", () => {
     expectRegistryInputs("trainingInsightsPanel", null);
   });
 
-  it("leads with a plain description and keeps the server explanation accessible", () => {
+  it("renders the zone distribution with its calculation method", () => {
     state.trainingHrZonesQuery = {
       data: {
         maxHr: 190,
@@ -57,20 +57,11 @@ describe("TrainingInsightsPanel range plumbing", () => {
     render(<TrainingInsightsPanel days={30} />);
 
     expect(screen.getByText("Heart-rate zone distribution")).toBeDefined();
-    expect(
-      screen.getByText("Shows how recorded heart-rate time is distributed across effort zones."),
-    ).toBeDefined();
-    expect(
-      screen.queryByText(
-        "Server says this is descriptive and is not a polarization classification.",
-      ),
-    ).toBeNull();
+    expect(screen.getByText("Heart-rate zone distribution")).toBeDefined();
 
     expect(screen.getByRole("button", { name: "About this chart" })).toHaveAttribute(
       "data-description",
-      expect.stringContaining(
-        "Server says this is descriptive and is not a polarization classification.",
-      ),
+      expect.stringContaining("Karvonen"),
     );
   });
 
@@ -222,8 +213,6 @@ describe("TrainingInsightsPanel range plumbing", () => {
     expect(screen.getByText("Weekly volume refresh failed")).toBeDefined();
     expect(screen.getByText("Heart-rate zones refresh failed")).toBeDefined();
     expect(screen.getByText("Weekly Training Volume")).toBeDefined();
-    expect(
-      screen.getByText("Shows how recorded heart-rate time is distributed across effort zones."),
-    ).toBeDefined();
+    expect(screen.getByText("Heart-rate zone distribution")).toBeDefined();
   });
 });

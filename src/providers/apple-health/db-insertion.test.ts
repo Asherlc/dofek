@@ -173,7 +173,7 @@ function createMockDb(returningData: Record<string, unknown>[] = []): {
     where: vi.fn().mockResolvedValue(undefined),
   };
 
-  const db = makeTransactionalTestDatabase<SyncDatabase>({
+  const db = makeTransactionalTestDatabase({
     select: vi.fn().mockReturnValue(selectChain),
     insert: insertFn,
     delete: vi.fn().mockReturnValue(deleteChain),
@@ -1400,29 +1400,6 @@ describe("upsertHealthEventBatch", () => {
 // ---------------------------------------------------------------------------
 
 describe("upsertWorkoutBatch", () => {
-  it("requires a transactional database", async () => {
-    const { db } = createMockDb();
-    const nonTransactionalDb: SyncDatabase = {
-      select: db.select,
-      insert: db.insert,
-      delete: db.delete,
-      execute: db.execute,
-    };
-
-    await expect(upsertWorkoutBatch(nonTransactionalDb, "p1", [makeWorkout()])).rejects.toThrow(
-      "Apple Health import requires a transactional database",
-    );
-  });
-
-  it("rejects a database with a non-callable transaction member", async () => {
-    const { db } = createMockDb();
-    const invalidTransactionDb = { ...db, transaction: undefined };
-
-    await expect(upsertWorkoutBatch(invalidTransactionDb, "p1", [makeWorkout()])).rejects.toThrow(
-      "Apple Health import requires a transactional database",
-    );
-  });
-
   it("runs workout upserts inside one transaction", async () => {
     const { db } = createMockDb([{ id: "10000000-0000-4000-8000-000000000001" }]);
     const transactionSpy = vi.spyOn(db, "transaction");

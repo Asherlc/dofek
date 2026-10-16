@@ -309,6 +309,51 @@ deduped_samples AS (
     WHERE scalar IS NOT null
 ),
 
+altitude_candidates AS (
+    SELECT
+        activity_id,
+        user_id,
+        recorded_at,
+        channel,
+        scalar,
+        tuple(
+            coalesce(provider_id, ''),
+            coalesce(toString(member_activity_id), ''),
+            coalesce(device_id, '')
+        ) AS altitude_source
+    FROM latest_sensor_samples
+    WHERE channel = 'altitude' AND scalar IS NOT null
+),
+
+best_altitude_source AS (
+    SELECT
+        activity_id,
+        user_id,
+        altitude_source,
+        count() AS sample_count
+    FROM altitude_candidates
+    GROUP BY activity_id, user_id, altitude_source
+    ORDER BY activity_id ASC, user_id ASC, sample_count DESC, altitude_source ASC
+    LIMIT 1 BY activity_id, user_id
+),
+
+altitude_samples AS MATERIALIZED (
+    SELECT
+        activity_id,
+        user_id,
+        recorded_at,
+        channel,
+        scalar
+    FROM altitude_candidates
+    WHERE (activity_id, user_id, altitude_source) IN (
+        SELECT
+            activity_id,
+            user_id,
+            altitude_source
+        FROM best_altitude_source
+    )
+),
+
 altitude_deltas AS (
     SELECT
         activity_id,
@@ -318,13 +363,13 @@ altitude_deltas AS (
             ORDER BY recorded_at
             ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
         ) AS prev_altitude
-    FROM deduped_samples
-    WHERE channel = 'altitude'
+    FROM altitude_samples
 ),
 
 elevation_per_activity AS (
     SELECT
         activity_id,
+        CAST(max(altitude) - min(altitude), 'Nullable(Float64)') AS elevation_gain_legacy,
         CAST(
             if(
                 countIf(isNotNull(prev_altitude)) = 0,
@@ -365,8 +410,6 @@ channel_aggs AS (
         CAST(avgIf(scalar, channel = 'speed'), 'Nullable(Float64)') AS avg_speed,
         CAST(maxIf(scalar, channel = 'speed'), 'Nullable(Float64)') AS max_speed,
         CAST(avgIf(scalar, channel = 'cadence' AND scalar > 0), 'Nullable(Float64)') AS avg_cadence,
-        CAST(maxIf(scalar, channel = 'altitude'), 'Nullable(Float64)') AS max_altitude,
-        CAST(minIf(scalar, channel = 'altitude'), 'Nullable(Float64)') AS min_altitude,
         CAST(avgIf(scalar, channel = 'left_right_balance'), 'Nullable(Float64)') AS avg_left_balance,
         CAST(
             avgIf(scalar, channel = 'left_torque_effectiveness'),
@@ -484,8 +527,7 @@ altitude_points AS (
         lagInFrame(recorded_at) OVER (
             PARTITION BY activity_id ORDER BY recorded_at
         ) AS prev_recorded_at
-    FROM latest_sensor_samples
-    WHERE channel = 'altitude'
+    FROM altitude_samples
 ),
 
 grade_activities AS (
@@ -559,11 +601,7 @@ SELECT
     channel_aggs.avg_speed AS avg_speed,
     channel_aggs.max_speed AS max_speed,
     channel_aggs.avg_cadence AS avg_cadence,
-    if(
-        channel_aggs.max_altitude IS NOT null AND channel_aggs.min_altitude IS NOT null,
-        channel_aggs.max_altitude - channel_aggs.min_altitude,
-        null
-    ) AS elevation_gain_legacy,
+    elevation_per_activity.elevation_gain_legacy AS elevation_gain_legacy,
     channel_aggs.avg_left_balance AS avg_left_balance,
     channel_aggs.avg_left_torque_eff AS avg_left_torque_eff,
     channel_aggs.avg_right_torque_eff AS avg_right_torque_eff,

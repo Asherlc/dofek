@@ -171,7 +171,8 @@ vi.mock("../../lib/useRefresh", () => ({
 vi.mock("react-native-svg", () => ({
   default: ({ children, ...props }: Record<string, unknown> & { children?: ReactNode }) =>
     createElement("svg", props, children),
-  Circle: (props: Record<string, unknown>) => createElement("circle", props),
+  Circle: ({ testID, ...props }: Record<string, unknown>) =>
+    createElement("circle", { ...props, "data-testid": testID }),
   Polyline: ({ testID, ...props }: Record<string, unknown>) =>
     createElement("polyline", { ...props, "data-testid": testID }),
 }));
@@ -304,8 +305,7 @@ describe("ActivitiesScreen", () => {
     const previousCalendarData = [{ date: "2026-03-10" }];
     expect(calendarDataOptions?.placeholderData?.(previousCalendarData)).toBe(previousCalendarData);
     expect(screen.getByText("Training time (minutes per day)")).toBeTruthy();
-    expect(screen.getByText("High training volume; compare with recovery.")).toBeTruthy();
-    expect(screen.getByRole("button", { name: /72 minutes of training time/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /72 min/ })).toBeTruthy();
   });
 
   it("uses QueryStatePanel for overview loading state", () => {
@@ -329,34 +329,6 @@ describe("ActivitiesScreen", () => {
     expect(screen.getByText("Training Stress Score")).toBeDefined();
     expect(screen.getByText("100")).toBeDefined();
     expect(screen.queryByText("TSS")).toBeNull();
-  });
-
-  it("identifies the primary source and overlapping records", () => {
-    mockQuery = {
-      data: [
-        {
-          date: "2026-03-18",
-          activities: [
-            activity({
-              source: {
-                primarySourceLabel: "Wahoo",
-                sourceCount: 2,
-                overlapSummary: "2 matched source records · Wahoo selected by source priority",
-              },
-              lastProcessedAt: "2026-03-18T08:07:00.000Z",
-            }),
-          ],
-        },
-      ],
-      isLoading: false,
-      isError: false,
-      error: null,
-    };
-
-    render(<ActivitiesScreen />);
-
-    expect(screen.getByText("Wahoo")).toBeDefined();
-    expect(screen.getByText("Source overlap")).toBeDefined();
   });
 
   it("keeps placeholder activity data visible during background refetch errors", () => {
@@ -874,6 +846,83 @@ describe("ActivitiesScreen", () => {
     expect(screen.getByText("Ride 21")).toBeDefined();
   });
 
+  it.each([1, 2])("shows %i source climbing points without inventing a route", (pointCount) => {
+    const sourcePoints = [
+      {
+        x: 512,
+        y: 288,
+        location: {
+          coordinates: { latitude: 40.015, longitude: -105.29 },
+          scope: "area",
+          objectId: "source-area-1",
+          providerId: "mountain-project",
+          name: "Boulder Canyon",
+        },
+      },
+      {
+        x: 700,
+        y: 200,
+        location: {
+          coordinates: { latitude: 40.016, longitude: -105.288 },
+          scope: "climb",
+          objectId: "source-climb-2",
+          providerId: "openbeta",
+          name: "Second climb",
+        },
+      },
+    ].slice(0, pointCount);
+    mockQuery.data = [
+      {
+        date: "2026-03-18",
+        activities: [
+          activity({
+            activityType: "climbing",
+            name: "Boulder Canyon climbing",
+            location: {
+              kind: "climbing_source",
+              mapPreview: {
+                width: 1024,
+                height: 576,
+                tiles: [
+                  {
+                    url: "https://tile.openstreetmap.org/15/6800/12400.png",
+                    x: 0,
+                    y: 0,
+                    width: 256,
+                    height: 256,
+                  },
+                ],
+                routePath: null,
+              },
+              sourcePoints,
+            },
+          }),
+        ],
+      },
+    ];
+
+    render(<ActivitiesScreen />);
+
+    const points = screen.getAllByTestId("activity-source-point");
+    expect(points).toHaveLength(pointCount);
+    expect(points[0]?.getAttribute("cx")).toBe("512");
+    expect(points[0]?.getAttribute("cy")).toBe("288");
+    expect(screen.queryByTestId("activity-route-path")).toBeNull();
+    expect(screen.getByText("Training Stress Score")).toBeDefined();
+    const row = screen.getByRole("button", { name: /Open Boulder Canyon climbing/ });
+    expect(row.getAttribute("aria-label")).toContain(
+      "Area location: Boulder Canyon · Mountain Project",
+    );
+    expect(row.getAttribute("aria-label")).not.toContain("Distance unavailable");
+    if (pointCount === 2) {
+      expect(points[1]?.getAttribute("cx")).toBe("700");
+      expect(points[1]?.getAttribute("cy")).toBe("200");
+      expect(row.getAttribute("aria-label")).toContain("Climb location: Second climb · OpenBeta");
+    }
+    fireEvent.click(row);
+    expect(routerPush).toHaveBeenCalledWith("/activity/activity-1");
+  });
+
   it("replaces failed map tiles with a fallback", () => {
     mockQuery = {
       data: [
@@ -882,6 +931,7 @@ describe("ActivitiesScreen", () => {
           activities: [
             activity({
               location: {
+                kind: "recorded_gps",
                 centroidLat: 37.7749,
                 centroidLng: -122.4194,
                 mapPreview: {
@@ -927,6 +977,7 @@ describe("ActivitiesScreen", () => {
           activities: [
             activity({
               location: {
+                kind: "recorded_gps",
                 centroidLat: 37.7749,
                 centroidLng: -122.4194,
                 mapPreview: {
@@ -984,6 +1035,7 @@ describe("ActivitiesScreen", () => {
           activities: [
             activity({
               location: {
+                kind: "recorded_gps",
                 centroidLat: 37.7749,
                 centroidLng: -122.4194,
                 mapPreview: {
@@ -1028,6 +1080,7 @@ describe("ActivitiesScreen", () => {
           activities: [
             activity({
               location: {
+                kind: "recorded_gps",
                 centroidLat: 37.7749,
                 centroidLng: -122.4194,
                 mapPreview: {

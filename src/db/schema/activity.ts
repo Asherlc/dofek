@@ -1,9 +1,3 @@
-import type {
-  ClimbingBoard,
-  ClimbingLocationNode,
-  ClimbingStyle,
-  ClimbingWallAngle,
-} from "@dofek/training/climbing-context";
 import { sql } from "drizzle-orm";
 import {
   bigint,
@@ -26,11 +20,6 @@ import { fitness, resolveImplicitUserId } from "./core.ts";
 import {
   activityModalityEnum,
   canonicalActivityTypeEnum,
-  climbingAttemptOutcomeEnum,
-  climbingClimbTypeEnum,
-  climbingFailureReasonEnum,
-  climbingGradeSystemEnum,
-  climbingHoldTypeEnum,
   fingerLoadingExerciseEnum,
   fingerLoadingGripPositionEnum,
   fingerLoadingLateralityEnum,
@@ -107,129 +96,6 @@ export const fingerLoadingEntry = fitness.table(
     check(
       "finger_loading_entry_rpe_range",
       sql`${table.rpe} IS NULL OR (${table.rpe} >= 0 AND ${table.rpe} <= 10)`,
-    ),
-  ],
-);
-
-// ============================================================
-// Rock climbing
-// ============================================================
-
-export const climbingEntry = fitness.table(
-  "climbing_entry",
-  {
-    id: uuid("id").primaryKey().defaultRandom(),
-    userId: uuid("user_id")
-      .notNull()
-      .$defaultFn(resolveImplicitUserId)
-      .references(() => userProfile.id),
-    providerId: text("provider_id")
-      .notNull()
-      .references(() => provider.id),
-    activityId: uuid("activity_id"),
-    unattachedDate: date("unattached_date"),
-    providerAbsentAt: timestamp("provider_absent_at", { withTimezone: true }),
-    externalId: text("external_id"),
-    climbType: climbingClimbTypeEnum("climb_type").notNull(),
-    gradeSystem: climbingGradeSystemEnum("grade_system").notNull(),
-    grade: text("grade").notNull(),
-    resultStyle: text("result_style"),
-    attemptCount: integer("attempt_count"),
-    climbStyle: text("climb_style").$type<ClimbingStyle>(),
-    routeProtection: text("route_protection").array().$type<Array<"sport" | "trad">>(),
-    wallAngle: jsonb("wall_angle").$type<ClimbingWallAngle>(),
-    board: jsonb("board").$type<ClimbingBoard>(),
-    holdType: climbingHoldTypeEnum("hold_type"),
-    routeName: text("route_name"),
-    locationPath: jsonb("location_path").$type<ClimbingLocationNode[]>().notNull().default([]),
-    sourceName: text("source_name"),
-    raw: jsonb("raw"),
-    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  },
-  (table) => [
-    foreignKey({
-      name: "climbing_entry_activity_owner_fk",
-      columns: [table.userId, table.activityId],
-      foreignColumns: [activity.userId, activity.id],
-    }).onDelete("cascade"),
-    index("climbing_entry_activity_idx").on(table.activityId),
-    index("climbing_entry_unattached_date_idx")
-      .on(table.userId, table.unattachedDate)
-      .where(sql`${table.activityId} IS NULL AND ${table.providerAbsentAt} IS NULL`),
-    index("climbing_entry_grade_lookup_idx").on(table.climbType, table.gradeSystem, table.grade),
-    uniqueIndex("climbing_entry_activity_external_id_idx")
-      .on(table.activityId, table.externalId)
-      .where(sql`${table.externalId} IS NOT NULL`),
-    uniqueIndex("climbing_entry_mountain_project_external_id_idx")
-      .on(table.userId, table.providerId, table.externalId)
-      .where(sql`${table.providerId} = 'mountain-project' AND ${table.externalId} IS NOT NULL`),
-    uniqueIndex("climbing_entry_openbeta_external_id_idx")
-      .on(table.userId, table.providerId, table.externalId)
-      .where(sql`${table.providerId} = 'openbeta' AND ${table.externalId} IS NOT NULL`),
-    check(
-      "climbing_entry_activity_unattached_date_pair",
-      sql`(${table.activityId} IS NULL) = (${table.unattachedDate} IS NOT NULL)`,
-    ),
-    check("climbing_entry_grade_nonempty", sql`btrim(${table.grade}) <> ''`),
-    check("climbing_entry_attempt_count_positive", sql`${table.attemptCount} > 0`),
-    check(
-      "climbing_entry_wall_angle_valid",
-      sql`fitness.climbing_wall_angle_valid(${table.wallAngle})`,
-    ),
-    check(
-      "climbing_entry_external_id_nonempty",
-      sql`${table.externalId} IS NULL OR btrim(${table.externalId}) <> ''`,
-    ),
-    check(
-      "climbing_entry_route_name_nonempty",
-      sql`${table.routeName} IS NULL OR btrim(${table.routeName}) <> ''`,
-    ),
-    check(
-      "climbing_entry_location_path_valid",
-      sql`fitness.climbing_location_path_valid(${table.locationPath})`,
-    ),
-    check("climbing_entry_board_valid", sql`fitness.climbing_board_valid(${table.board})`),
-    check(
-      "climbing_entry_climb_style_valid",
-      sql`${table.climbStyle} IN ('lead', 'top-rope', 'follow', 'solo', 'aid')`,
-    ),
-    check(
-      "climbing_entry_route_protection_valid",
-      sql`${table.routeProtection} <@ ARRAY['sport', 'trad']::text[] AND array_position(${table.routeProtection}, NULL) IS NULL`,
-    ),
-    check("climbing_entry_result_style_nonempty", sql`btrim(${table.resultStyle}) <> ''`),
-    check(
-      "climbing_entry_source_name_nonempty",
-      sql`${table.sourceName} IS NULL OR btrim(${table.sourceName}) <> ''`,
-    ),
-  ],
-);
-
-export const climbingAttempt = fitness.table(
-  "climbing_attempt",
-  {
-    id: uuid("id").primaryKey().defaultRandom(),
-    climbingEntryId: uuid("climbing_entry_id")
-      .notNull()
-      .references(() => climbingEntry.id, { onDelete: "cascade" }),
-    attemptIndex: integer("attempt_index").notNull(),
-    outcome: climbingAttemptOutcomeEnum("outcome").notNull(),
-    failureReason: climbingFailureReasonEnum("failure_reason"),
-    notes: text("notes"),
-    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  },
-  (table) => [
-    index("climbing_attempt_entry_idx").on(table.climbingEntryId),
-    uniqueIndex("climbing_attempt_entry_index_idx").on(table.climbingEntryId, table.attemptIndex),
-    check("climbing_attempt_index_positive", sql`${table.attemptIndex} > 0`),
-    check(
-      "climbing_attempt_failure_reason",
-      sql`(${table.outcome} = 'sent' AND ${table.failureReason} IS NULL)
-        OR (${table.outcome} = 'failed' AND ${table.failureReason} IS NOT NULL)`,
-    ),
-    check(
-      "climbing_attempt_notes_nonempty",
-      sql`${table.notes} IS NULL OR btrim(${table.notes}) <> ''`,
     ),
   ],
 );

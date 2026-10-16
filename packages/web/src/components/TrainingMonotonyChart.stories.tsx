@@ -7,8 +7,7 @@ const method = {
     "Monotony = 7-day mean daily cycling load ÷ population standard deviation of daily cycling load. Strain = weekly cycling load × monotony.",
   calendar: "Monday–Sunday calendar weeks include zero-load days.",
   activityScope: "Cycling activities with computed endurance training load.",
-  interpretation:
-    "These are descriptive workload-variability summaries, not an overtraining diagnosis.",
+  interpretation: "Daily training-load variability within each calendar week.",
   source: {
     title: "Foster (1998), Monitoring training in athletes",
     url: "https://pubmed.ncbi.nlm.nih.gov/9662690/",

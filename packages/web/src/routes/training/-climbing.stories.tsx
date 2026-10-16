@@ -17,7 +17,7 @@ import { ClimbingTab } from "./climbing.tsx";
 const mockLink: TRPCLink<AppRouter> =
   () =>
   ({ op }) => {
-    const grade = { climbType: "route", gradeSystem: "yds", grade: "5.10a", gradeSortValue: 10 };
+    const grade = { climbKind: "route", gradeSystem: "yds", grade: "5.10a", gradeSortValue: 10 };
     const data =
       op.path === "climbing.gradeProgression"
         ? [{ ...grade, date: "2026-10-04" }]

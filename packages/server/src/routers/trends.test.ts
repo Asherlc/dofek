@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import { createTestCallerFactory } from "./test-helpers.ts";
+import { createTestCallerFactory, makeMockSensorStore } from "./test-helpers.ts";
+import { trendsRouter } from "./trends.ts";
 
 const { mockCachedProtectedQuery } = vi.hoisted(() => ({
   mockCachedProtectedQuery: vi.fn(),
@@ -173,6 +174,94 @@ describe("trendsRouter", () => {
         "trends.weekly requires the ClickHouse activity analytics store",
       );
       expect(sensorStore.query).not.toHaveBeenCalled();
+    });
+  });
+});
+
+describe("trendsRouter numeric fixtures", () => {
+  const createCaller = createTestCallerFactory(trendsRouter);
+
+  function makeCaller(rows: Record<string, unknown>[] = []) {
+    return createCaller({
+      db: { execute: vi.fn().mockResolvedValue(rows) },
+      userId: "user-1",
+      timezone: "UTC",
+      sensorStore: makeMockSensorStore(rows),
+    });
+  }
+
+  describe("daily", () => {
+    it("returns daily trend rows", async () => {
+      const rows = [
+        {
+          date: "2024-01-15",
+          avg_hr: 145.3,
+          max_hr: 180,
+          avg_power: 200.7,
+          max_power: 350,
+          avg_cadence: 85.2,
+          avg_speed: 8.456,
+          total_samples: 3600,
+          hr_samples: 3500,
+          power_samples: 3000,
+          activity_count: 1,
+        },
+      ];
+      const caller = makeCaller(rows);
+      const result = await caller.daily({ days: 365 });
+
+      expect(result).toHaveLength(1);
+      expect(result[0]?.avgHr).toBe(145.3);
+      expect(result[0]?.avgSpeed).toBe(8.46); // rounded to 2 decimals
+    });
+
+    it("handles null values", async () => {
+      const rows = [
+        {
+          date: "2024-01-15",
+          avg_hr: null,
+          max_hr: null,
+          avg_power: null,
+          max_power: null,
+          avg_cadence: null,
+          avg_speed: null,
+          total_samples: 0,
+          hr_samples: 0,
+          power_samples: 0,
+          activity_count: 0,
+        },
+      ];
+      const caller = makeCaller(rows);
+      const result = await caller.daily({ days: 365 });
+
+      expect(result[0]?.avgHr).toBeNull();
+      expect(result[0]?.maxPower).toBeNull();
+    });
+  });
+
+  describe("weekly", () => {
+    it("returns weekly trend rows", async () => {
+      const rows = [
+        {
+          period: "2024-01-15",
+          avg_hr: 150,
+          max_hr: 185,
+          avg_power: 210,
+          max_power: 380,
+          avg_cadence: 88,
+          avg_speed: 9.12,
+          total_samples: 25000,
+          hr_samples: 24000,
+          power_samples: 20000,
+          activity_count: 5,
+        },
+      ];
+      const caller = makeCaller(rows);
+      const result = await caller.weekly({ weeks: 52 });
+
+      expect(result).toHaveLength(1);
+      expect(result[0]?.week).toBe("2024-01-15");
+      expect(result[0]?.activityCount).toBe(5);
     });
   });
 });

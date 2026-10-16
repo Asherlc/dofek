@@ -21,11 +21,6 @@ describe("recovery route range plumbing", () => {
     state.days = 30;
     await renderRoute("/training/recovery", () => import("./recovery.tsx"));
     expectRegistryInputs("recovery", 30);
-    expect(
-      screen.getByText(
-        "Composite score from heart rate variability, resting heart rate, sleep, and load balance",
-      ),
-    ).toBeTruthy();
     const decisionSummary = screen.getByRole("region", { name: "What matters today" });
     const readinessSection = screen.getByText("Readiness Score");
     expect(
@@ -33,7 +28,6 @@ describe("recovery route range plumbing", () => {
     ).toBeTruthy();
     expect(screen.getByText("Server-authored recovery action")).toBeTruthy();
     expect(screen.getByText("Heart Rate Variability Coefficient of Variation")).toBeTruthy();
-    expect(screen.getByText("7-day rolling heart rate variability")).toBeTruthy();
     expect(state.queryCalls).toContainEqual(
       expect.objectContaining({
         name: "todayPlan.get",

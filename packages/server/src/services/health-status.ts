@@ -40,7 +40,7 @@ function hasFiniteValue(
   return observation.value != null && Number.isFinite(observation.value);
 }
 
-export const HEALTH_STATUS_CACHE_KEY_VERSION = "health-status-evidence-v4";
+export const HEALTH_STATUS_CACHE_KEY_VERSION = "health-status-evidence-v5";
 
 interface HealthStatusSummaryInput {
   metric: HealthStatusMetric["metric"];
@@ -194,12 +194,21 @@ function evidenceForMetric(
 
 function insufficientData(input: HealthStatusSummaryInput): HealthStatusMetric {
   const baselineProgress = buildBaselineProgress({
+    metric: input.metric,
     label: input.label,
     value: input.value,
     observedDays: input.observedDays ?? 0,
     sampleDeviation: input.sampleDeviation,
     processingStatus: input.processingStatus ?? null,
   });
+  const currentValueMissing =
+    Number.isFinite(input.baseline) &&
+    baselineProgress.blocker === "missing_source_data" &&
+    baselineProgress.observedObservationDays >= baselineProgress.requiredObservationDays &&
+    baselineProgress.hasMeasurableVariation;
+  const missingValueLabel =
+    input.metric === "steps" ? "Steps missing for this day" : "Current value missing";
+  const requiredValue = input.metric === "steps" ? "a step count for this day" : "a current value";
 
   return {
     ...metricFields(input),
@@ -207,15 +216,24 @@ function insufficientData(input: HealthStatusSummaryInput): HealthStatusMetric {
     direction: "unknown",
     statusToken: "insufficient_data",
     statusColor: "muted",
-    statusLabel: "Not enough data",
-    evaluationRule: "Needs a current value, baseline, and measurable day-to-day variation",
-    explanation: "Not enough varied data yet to compare this value with your usual range.",
+    statusLabel: currentValueMissing ? missingValueLabel : "Not enough data",
+    evaluationRule: currentValueMissing
+      ? `Needs ${requiredValue} to compare with your recorded baseline`
+      : input.metric === "steps"
+        ? "Needs a step count for this day, a baseline, and measurable day-to-day variation"
+        : "Needs a current value, baseline, and measurable day-to-day variation",
+    explanation: currentValueMissing
+      ? input.metric === "steps"
+        ? "No step count is available for this day; your recorded baseline is available."
+        : `No current ${input.label} value is available; your recorded baseline is available.`
+      : "Not enough varied data yet to compare this value with your usual range.",
     baselineProgress,
   };
 }
 
 function baselineProgressFor(input: HealthStatusSummaryInput): BaselineProgress {
   return buildBaselineProgress({
+    metric: input.metric,
     label: input.label,
     value: input.value,
     observedDays: input.observedDays ?? 0,

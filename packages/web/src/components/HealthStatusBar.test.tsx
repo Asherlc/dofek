@@ -74,7 +74,99 @@ describe("HealthStatusBar", () => {
     expect(screen.getByText(/Moving as intended · Weight loss goal/)).toBeVisible();
   });
 
-  it("renders the server-authored blocked baseline requirement and action", () => {
+  it("shows missing Steps for this day while retaining its recorded baseline", () => {
+    render(
+      <HealthStatusBar
+        metrics={[
+          {
+            metric: "steps",
+            label: "Steps",
+            value: null,
+            valueText: null,
+            baseline: 6055,
+            baselineText: "6,055",
+            sampleDeviation: 2000,
+            deviation: null,
+            direction: "unknown",
+            intent: "neutral",
+            statusToken: "insufficient_data",
+            statusColor: "muted",
+            statusLabel: "Steps missing for this day",
+            evaluationRule:
+              "Needs a step count for this day to compare with your recorded baseline",
+            explanation:
+              "No step count is available for this day; your recorded baseline is available.",
+            comparison: null,
+            provenance: {
+              latestDate: "2026-10-08",
+              sourceProviders: ["apple_health"],
+              observedDays: 89,
+              windowDays: 90,
+            },
+            baselineProgress: {
+              requiredObservationDays: 3,
+              observedObservationDays: 89,
+              hasMeasurableVariation: true,
+              blocker: "missing_source_data",
+              requirement: "A step count for this day to compare with your recorded baseline.",
+              summary: "No step count is available for this day.",
+              action: "Sync steps data again to record a step count for this day.",
+            },
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.getByText("—")).toBeVisible();
+    expect(screen.getByText("baseline 6,055 · Steps missing for this day")).toBeVisible();
+    expect(screen.getByLabelText("Steps missing for this day status").textContent).toBe("?");
+    expect(
+      screen.getByText("Needs a step count for this day to compare with your recorded baseline"),
+    ).toBeVisible();
+    expect(
+      screen.getByText("Sync steps data again to record a step count for this day."),
+    ).toBeVisible();
+
+    const button = screen.getByRole("button", { name: "Show details for Steps" });
+    expect(button.getAttribute("aria-expanded")).toBe("false");
+    expect(screen.queryByText("Coverage: 89/90 days")).toBeNull();
+    fireEvent.click(button);
+    expect(button.getAttribute("aria-expanded")).toBe("true");
+    expect(
+      screen.getByText(
+        "No step count is available for this day; your recorded baseline is available.",
+      ),
+    ).toBeVisible();
+    expect(
+      screen.getByText("A step count for this day to compare with your recorded baseline."),
+    ).toBeVisible();
+    expect(screen.getByText("No step count is available for this day.")).toBeVisible();
+    expect(screen.getByText("Source: Apple Health")).toBeVisible();
+    expect(screen.getByText("Latest recorded date: 2026-10-08")).toBeVisible();
+    expect(screen.getByText("Coverage: 89/90 days")).toBeVisible();
+  });
+
+  it.each([
+    {
+      blocker: "collecting" as const,
+      summary:
+        "Skin Temperature has 1 of 3 required days recorded; the baseline is still collecting observations.",
+      action: "Keep syncing skin temperature data for at least 2 more days.",
+      showAction: true,
+    },
+    {
+      blocker: "syncing" as const,
+      summary: "Skin Temperature baseline data is still syncing.",
+      action: "Wait for the sync to finish, then check your baseline again.",
+      showAction: false,
+    },
+    {
+      blocker: "sync_error" as const,
+      summary: "Skin Temperature baseline data could not sync.",
+      action: "Reconnect the data source and start the sync again.",
+      showAction: true,
+    },
+  ])("renders baseline guidance for $blocker", ({ blocker, summary, action, showAction }) => {
     render(
       <HealthStatusBar
         metrics={[
@@ -96,37 +188,30 @@ describe("HealthStatusBar", () => {
               ...serverMetric.baselineProgress,
               observedObservationDays: 1,
               hasMeasurableVariation: false,
-              blocker: "collecting",
-              summary:
-                "Skin Temperature has 1 of 3 required days recorded; the baseline is still collecting observations.",
-              action: "Keep syncing skin temperature data for at least 2 more days.",
+              blocker,
+              summary,
+              action,
             },
           },
         ]}
       />,
     );
 
-    expect(screen.getByText("1 of 3 required days recorded")).toBeDefined();
     expect(
       screen.getByText("Needs a current value, baseline, and measurable day-to-day variation"),
     ).toBeVisible();
-    expect(
-      screen.getByText("Keep syncing skin temperature data for at least 2 more days."),
-    ).toBeVisible();
+    if (showAction) {
+      expect(screen.getByText(action)).toBeVisible();
+    } else {
+      expect(screen.queryByText(action)).toBeNull();
+    }
     fireEvent.click(screen.getByRole("button", { name: "Show details for Skin Temperature" }));
     expect(
       screen.getByText(
         "A current value plus at least 2 more recorded days with measurable variation.",
       ),
     ).toBeDefined();
-    expect(
-      screen.getByText(
-        "Skin Temperature has 1 of 3 required days recorded; the baseline is still collecting observations.",
-      ),
-    ).toBeDefined();
-    expect(
-      screen.getByText("Keep syncing skin temperature data for at least 2 more days."),
-    ).toBeDefined();
+    expect(screen.getByText(summary)).toBeVisible();
   });
 
   it("renders server-authored HRV and steps text instead of recomputing raw values", () => {
@@ -196,7 +281,6 @@ describe("HealthStatusBar", () => {
       />,
     );
 
-    expect(screen.getByText("30d baseline · 7d vs prior 28d")).toBeVisible();
     fireEvent.click(
       screen.getByRole("button", { name: "Show details for Heart Rate Variability (HRV)" }),
     );
@@ -251,9 +335,6 @@ describe("HealthStatusBar", () => {
           units={{ spo2: unit }}
         />,
       );
-
-      expect(screen.getByText("WHOOP (Cloud) · 3/30 days · latest 2026-07-30")).toBeDefined();
-      expect(screen.getByText("7d vs prior 28d")).toBeVisible();
 
       const detailsButton = screen.getByRole("button", {
         name: "Show details for Skin Temperature",

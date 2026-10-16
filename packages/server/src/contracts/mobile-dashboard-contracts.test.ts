@@ -62,6 +62,7 @@ function validRecoveryFixture(): z.input<typeof mobileRecoveryFixtureSchema> {
           resting_hr_mean_7d: 53,
         },
       ],
+      restingHeartRateTrendDirection: null,
       readinessScore: [
         {
           date: input.endDate,
@@ -315,7 +316,39 @@ function validTrainingFixture(): z.input<typeof mobileTrainingFixtureSchema> {
       progressiveOverload: [],
       verticalAscent: [],
       climbing: {
-        gradeProgression: [],
+        gradeProgression: [
+          {
+            attemptScope: "climb",
+            ropeMethod: null,
+            solo: null,
+            usedAid: false,
+            climbKind: "boulder",
+            gradeSystem: "v_scale",
+            grades: [{ grade: "V4", gradeSortValue: 65 }],
+            settings: ["indoor"],
+            axisMax: 3,
+            axisInterval: 1,
+            axisTicks: [0, 1, 2, 3],
+            periods: [
+              {
+                startDate: "2026-07-01",
+                endDate: "2026-07-31",
+                settings: [
+                  {
+                    setting: "indoor",
+                    climbingDays: 2,
+                    sends: 4,
+                    unknownOutcomes: 0,
+                    sendsPerDay: 2,
+                    segments: [
+                      { grade: "V4", sends: 4, sendsPerDay: 2, stackStart: 0, stackEnd: 2 },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+        ],
         volumeByGrade: [],
         sessionSummary: [],
         hangboarding: {
@@ -726,7 +759,7 @@ describe("mobileTrainingFixtureSchema", () => {
   it("preserves recorded attempt subtotals when a grade's complete total is unknown", () => {
     const fixture = validTrainingFixture();
     const volume = {
-      climbType: "boulder" as const,
+      climbKind: "boulder" as const,
       gradeSystem: "v_scale" as const,
       grade: "V5",
       gradeSortValue: 69,
@@ -955,18 +988,6 @@ describe("mobileTrainingFixtureSchema", () => {
       },
     ],
     [
-      "climbing grade progression",
-      (fixture: z.input<typeof mobileTrainingFixtureSchema>) => {
-        fixture.data.climbing.gradeProgression.push({
-          date: "2026-06-27",
-          climbType: "boulder",
-          gradeSystem: "v_scale",
-          grade: "V5",
-          gradeSortValue: 5,
-        });
-      },
-    ],
-    [
       "climbing session",
       (fixture: z.input<typeof mobileTrainingFixtureSchema>) => {
         fixture.data.climbing.sessionSummary.push({
@@ -999,25 +1020,56 @@ describe("mobileTrainingFixtureSchema", () => {
     ["volume by grade", "volumeByGrade", "route", "font", "6a", 65],
   ] as const)(
     "rejects %s systems from the wrong discipline",
-    (_label, target, climbType, gradeSystem, grade, gradeSortValue) => {
+    (_label, target, climbKind, gradeSystem, grade, gradeSortValue) => {
       const fixture = validTrainingFixture();
-      fixture.data.climbing[target].push({
-        climbType,
-        gradeSystem,
-        grade,
-        gradeSortValue,
-        ...(target === "gradeProgression"
-          ? { date: input.endDate }
-          : { attempts: 1, recordedAttempts: 1, sends: 1 }),
-      });
+      if (target === "gradeProgression") {
+        const lane = fixture.data.climbing.gradeProgression[0];
+        if (!lane) throw new Error("Missing climbing progression fixture");
+        lane.climbKind = climbKind;
+        lane.gradeSystem = gradeSystem;
+      } else
+        fixture.data.climbing.volumeByGrade.push({
+          climbKind,
+          gradeSystem,
+          grade,
+          gradeSortValue,
+          attempts: 1,
+          recordedAttempts: 1,
+          sends: 1,
+        });
 
       expectIssue(
         mobileTrainingFixtureSchema.safeParse(fixture),
         ["data", "climbing", target, 0, "gradeSystem"],
-        "Grade system must match the climb type",
+        "Grade system must match the climb kind",
       );
     },
   );
+
+  it.each([
+    ["2026-06-01", "2026-06-27"],
+    ["2026-08-01", "2026-08-31"],
+  ])("rejects a climbing period entirely outside the selected window", (startDate, endDate) => {
+    const fixture = validTrainingFixture();
+    const period = fixture.data.climbing.gradeProgression[0]?.periods[0];
+    if (!period) throw new Error("Missing climbing period fixture");
+    period.startDate = startDate;
+    period.endDate = endDate;
+    expectIssue(
+      mobileTrainingFixtureSchema.safeParse(fixture),
+      [],
+      `Fixture climbing period ${startDate}..${endDate} does not overlap 2026-06-28..2026-07-27`,
+    );
+  });
+
+  it("accepts calendar buckets that partially overlap the selected window", () => {
+    const fixture = validTrainingFixture();
+    const period = fixture.data.climbing.gradeProgression[0]?.periods[0];
+    if (!period) throw new Error("Missing climbing period fixture");
+    period.startDate = "2026-06-01";
+    period.endDate = "2026-06-30";
+    expect(mobileTrainingFixtureSchema.safeParse(fixture).success).toBe(true);
+  });
 
   it("rejects weekly volume rows that do not start on Monday", () => {
     const fixture = validTrainingFixture();

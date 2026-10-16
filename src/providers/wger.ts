@@ -188,6 +188,7 @@ export class WgerProvider implements SyncProvider {
     const fetchFn = this.#fetchFn;
     return {
       manualToken: {
+        kind: "access-token",
         label: "JWT refresh token",
         instructionsUrl: "https://wger.readthedocs.io/en/latest/api/api.html#jwt-tokens",
         exchangeToken: (token) => exchangeWgerRefreshToken(token, fetchFn),

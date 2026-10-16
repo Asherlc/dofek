@@ -15,4 +15,4 @@ export function getTabIconName(routeName: TabRouteName, focused: boolean) {
   return focused ? iconNames.focused : iconNames.unfocused;
 }
 
-export const selectedTabBackgroundColor = colors.surfaceSecondary;
+export const selectedTabBackgroundColor = colors.accentSubtle;

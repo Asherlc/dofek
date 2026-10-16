@@ -13,8 +13,11 @@ import {
 import { formatRecordLocalTime } from "@dofek/format/record-local-time";
 import type { UnitConverter } from "@dofek/format/units";
 import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
+import { processingPollInterval } from "@dofek/providers/processing-status";
 import { providerSourceLabel } from "@dofek/providers/providers";
 import { activityMetricColors, statusColors } from "@dofek/scoring/colors";
+import { isClimbingLogActivity } from "@dofek/training/climbing-log";
+import { buildClimbingMapLocations, buildClimbingMapMarkers } from "@dofek/training/climbing-map";
 import {
   computeIntensities,
   expandMuscleGroup,
@@ -31,13 +34,13 @@ import {
   isCyclingActivity,
 } from "@dofek/training/training";
 import { Link, useParams } from "@tanstack/react-router";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type ComponentProps, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ActivityDetail } from "../../../server/src/models/activity.ts";
 import type { StreamPoint, StrengthExerciseDetail } from "../../../server/src/routers/activity.ts";
 import { ActivityExportDropdown } from "../components/ActivityExportDropdown.tsx";
 import { ActivityPerceivedExertion } from "../components/ActivityPerceivedExertion.tsx";
+import { ActivityRouteMap } from "../components/ActivityRouteMap.tsx";
 import { ActivitySourceDecisionCard } from "../components/ActivitySourceDecisionCard.tsx";
-import { ChartDescriptionTooltip } from "../components/ChartDescriptionTooltip.tsx";
 import { DofekChart } from "../components/DofekChart.tsx";
 import { HangboardingDetail } from "../components/HangboardingDetail.tsx";
 import { HrZonesChart, PowerZonesChart } from "../components/HeartRateZonesChart.tsx";
@@ -54,11 +57,14 @@ import {
 } from "../lib/chartTheme.ts";
 import { trpc } from "../lib/trpc.ts";
 import { useUnitConverter } from "../lib/unitContext.ts";
-import { ClimbingEntryBreakdown } from "./activity-detail/components/ClimbingEntryBreakdown.tsx";
+import { ClimbingLogEntryBreakdown } from "./activity-detail/components/ClimbingLogEntryBreakdown.tsx";
 import { DeleteActivityButton } from "./activity-detail/components/DeleteActivityButton.tsx";
 import { RecomputeActivityButton } from "./activity-detail/components/RecomputeActivityButton.tsx";
-import { UnattachedClimbingEntries } from "./activity-detail/components/UnattachedClimbingEntries.tsx";
+import { UnattachedClimbingLogEntries } from "./activity-detail/components/UnattachedClimbingLogEntries.tsx";
 import { ProviderAbsentBanner } from "./ProviderAbsentBanner.tsx";
+import { RecordDetailModal } from "./RecordDetailModal.tsx";
+
+const EMPTY_ROUTE_POINTS: ComponentProps<typeof ActivityRouteMap>["points"] = [];
 
 const CHART_COLORS = {
   heartRate: activityMetricColors.heartRate,
@@ -105,6 +111,13 @@ export function ActivityDetailPage() {
     { id, maxPoints: 500 },
     { placeholderData: (previousData) => previousData },
   );
+  const route = trpc.activity.route.useQuery(
+    { id, maxPoints: 500 },
+    {
+      refetchInterval: (query) =>
+        query.state.data?.status === "processing" ? processingPollInterval("active") : false,
+    },
+  );
   const hrZones = trpc.activity.hrZones.useQuery(
     { id },
     { placeholderData: (previousData) => previousData },
@@ -122,28 +135,44 @@ export function ActivityDetailPage() {
     { id },
     { enabled: isStrengthActivity },
   );
-  const isClimbingActivity =
-    detail.data != null && isActivityDetailType(detail.data.activityType, "climbing");
-  const climbingEntries = trpc.climbing.activityEntries.useQuery(
-    { id },
-    { enabled: isClimbingActivity },
-  );
-  const entrySuggestions = trpc.climbing.unattachedClimbingEntries.useQuery(
+  const isClimbingActivity = detail.data != null && isClimbingLogActivity(detail.data.activityType);
+  const climbingEntries = trpc.climbing.activityLogEntries.useQuery(
     { activityId: id },
     { enabled: isClimbingActivity },
+  );
+  const entrySuggestions = trpc.climbing.unattachedClimbingLogEntries.useQuery(
+    { activityId: id },
+    { enabled: isClimbingActivity },
+  );
+  const climbingEntriesLoading = climbingEntries.isLoading && !climbingEntries.data;
+  const [selectedClimbingEntryId, setSelectedClimbingEntryId] = useState<string | null>(null);
+  const selectedClimbingEntry = climbingEntries.data?.find(
+    (entry) => entry.id === selectedClimbingEntryId,
+  );
+  const climbingLocations = useMemo(
+    () =>
+      buildClimbingMapLocations([
+        ...(climbingEntries.data ?? []),
+        ...(entrySuggestions.data ?? []),
+      ]),
+    [climbingEntries.data, entrySuggestions.data],
+  );
+  const climbMarkers = useMemo(
+    () => buildClimbingMapMarkers(climbingEntries.data ?? []),
+    [climbingEntries.data],
   );
   const trpcUtils = trpc.useUtils();
   const [entryAttachState, setEntryAttachState] = useState<
     Record<string, { pending: boolean; error: string | null }>
   >({});
-  const attachEntry = trpc.climbing.attachClimbingEntry.useMutation({
+  const attachEntry = trpc.climbing.attachClimbingLogEntry.useMutation({
     onSuccess: async (_result, input) => {
       await Promise.all([
-        trpcUtils.climbing.activityEntries.invalidate({ id: input.activityId }),
+        trpcUtils.climbing.activityLogEntries.invalidate({ activityId: input.activityId }),
         trpcUtils.climbing.sessionSummary.invalidate(),
         trpcUtils.climbing.gradeProgression.invalidate(),
         trpcUtils.climbing.volumeByGrade.invalidate(),
-        trpcUtils.climbing.unattachedClimbingEntries.invalidate({
+        trpcUtils.climbing.unattachedClimbingLogEntries.invalidate({
           activityId: input.activityId,
         }),
       ]);
@@ -152,7 +181,7 @@ export function ActivityDetailPage() {
   const handleAttachEntry = (entryId: string) => {
     setEntryAttachState((current) => ({ ...current, [entryId]: { pending: true, error: null } }));
     attachEntry.mutate(
-      { activityId: id, entryId },
+      { activityId: id, climbingLogEntryId: entryId },
       {
         onSuccess: () =>
           setEntryAttachState((current) => ({
@@ -219,7 +248,9 @@ export function ActivityDetailPage() {
   const activity = detail.data;
   const zones = hrZones.data ?? [];
   const exercises = strengthExercises.data ?? [];
-  const hasGps = points.some((p) => p.lat != null && p.lng != null);
+  const routePoints = route.data?.status === "ready" ? route.data.points : EMPTY_ROUTE_POINTS;
+  const hasGps = routePoints.length > 0;
+  const routeProcessing = route.isLoading || route.data?.status === "processing";
   const hasHr = points.some((p) => p.heartRate != null);
   const hasSpeed = points.some((p) => p.speed != null);
   const hasCadence = points.some((p) => p.cadence != null);
@@ -246,9 +277,6 @@ export function ActivityDetailPage() {
       </div>
 
       {activity.providerAbsentAt ? <ProviderAbsentBanner activity={activity} /> : null}
-      {activity.sourceDecision ? (
-        <ActivitySourceDecisionCard decision={activity.sourceDecision} />
-      ) : null}
 
       <ActivityHeader activity={activity} units={units} />
       <ActivityPerceivedExertion value={activity.perceivedExertion} />
@@ -256,25 +284,33 @@ export function ActivityDetailPage() {
       {detail.error ? <QueryStatePanel error={detail.error} height={72} /> : null}
 
       {stream.error ? (
-        <Section
-          title="Sensor Data"
-          description="The recorded route and sensor samples for this activity."
-        >
+        <Section title="Sensor Data">
           <QueryStatePanel error={stream.error} height={72} />
         </Section>
       ) : null}
 
-      {hasGps && (
-        <Section title="Route Map" description="Recorded GPS path with start and finish locations.">
-          <RouteMap points={points} onRegisterHoverCallback={mapHoverRef} />
+      {(route.error || routeProcessing || hasGps || climbMarkers.length > 0) && (
+        <Section title={!hasGps && climbMarkers.length > 0 ? "Climbing locations" : "Route Map"}>
+          {route.error ? (
+            <QueryStatePanel error={route.error} height={160} />
+          ) : routeProcessing ? (
+            <p role="status" className="py-8 text-center text-sm text-muted">
+              {route.isLoading ? "Loading route map…" : "Processing route map…"}
+            </p>
+          ) : null}
+          {(hasGps || climbMarkers.length > 0) && (
+            <ActivityRouteMap
+              points={routePoints}
+              climbMarkers={climbMarkers}
+              onSelectEntry={setSelectedClimbingEntryId}
+              onRegisterHoverCallback={mapHoverRef}
+            />
+          )}
         </Section>
       )}
 
       {(hasHr || hasPower || hasSpeed || hasCadence) && (
-        <Section
-          title="Performance"
-          description="Heart rate, power, speed, and cadence aligned over the workout."
-        >
+        <Section title="Performance">
           <MetricsChart
             points={points}
             activityType={activity.activityType}
@@ -291,10 +327,7 @@ export function ActivityDetailPage() {
 
       {isStrengthActivity &&
         (strengthExercises.isLoading || strengthExercises.error || exercises.length > 0) && (
-          <Section
-            title="Exercises"
-            description="Exercises performed during this strength workout, with details for each set."
-          >
+          <Section title="Exercises">
             {strengthExercises.error && !strengthExercisesHaveCachedData ? (
               <QueryStatePanel error={strengthExercises.error} height={160} />
             ) : strengthExercises.isLoading && !strengthExercisesHaveCachedData ? (
@@ -311,34 +344,56 @@ export function ActivityDetailPage() {
           </Section>
         )}
 
-      {isClimbingActivity && (climbingEntries.error || (climbingEntries.data?.length ?? 0) > 0) && (
-        <Section
-          title="Climbs"
-          description="The climbs recorded during this session, including grades and send status."
-        >
-          {climbingEntries.error ? (
+      {isClimbingActivity && (
+        <Section title="Climbs">
+          {climbingEntries.error && (
             <p className="text-sm text-red-400">{userFacingErrorMessage(climbingEntries.error)}</p>
-          ) : (
-            <ClimbingEntryBreakdown entries={climbingEntries.data ?? []} />
+          )}
+          {climbingEntriesLoading ? (
+            <QueryStatePanel variant="loading" contextLabel="Climbs" height={72} />
+          ) : (climbingEntries.data?.length ?? 0) > 0 ? (
+            <ClimbingLogEntryBreakdown
+              entries={climbingEntries.data ?? []}
+              locations={climbingLocations}
+              selectedEntryId={selectedClimbingEntryId}
+            />
+          ) : null}
+          {(entrySuggestions.error ||
+            (!climbingEntriesLoading && entrySuggestions.isLoading) ||
+            (entrySuggestions.data?.length ?? 0) > 0 ||
+            (climbingEntries.data !== undefined && climbingEntries.data.length === 0)) && (
+            <div
+              className={
+                climbingEntries.error ||
+                climbingEntriesLoading ||
+                (climbingEntries.data?.length ?? 0) > 0
+                  ? "mt-3 border-t border-border pt-3"
+                  : undefined
+              }
+            >
+              <UnattachedClimbingLogEntries
+                suggestions={entrySuggestions.data}
+                locations={climbingLocations}
+                selectedEntryId={selectedClimbingEntryId}
+                error={entrySuggestions.error}
+                isLoading={entrySuggestions.isLoading}
+                state={entryAttachState}
+                onAttach={handleAttachEntry}
+              />
+            </div>
+          )}
+          {selectedClimbingEntry && (
+            <RecordDetailModal
+              dataType="climbingLogEntries"
+              state={{ data: selectedClimbingEntry, error: null, isLoading: false }}
+              onClose={() => setSelectedClimbingEntryId(null)}
+            />
           )}
         </Section>
       )}
 
-      {isClimbingActivity && (
-        <UnattachedClimbingEntries
-          suggestions={entrySuggestions.data}
-          error={entrySuggestions.error}
-          isLoading={entrySuggestions.isLoading}
-          state={entryAttachState}
-          onAttach={handleAttachEntry}
-        />
-      )}
-
       {isHangboardingActivity && (
-        <Section
-          title={formatActivityTypeLabel(activity.activityType)}
-          description="The hangboard plan, board, and intervals recorded during this session."
-        >
+        <Section title={formatActivityTypeLabel(activity.activityType)}>
           <HangboardingDetail
             data={hangboardDetails.data}
             loading={hangboardDetails.isLoading}
@@ -349,7 +404,7 @@ export function ActivityDetailPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {hasAltitude && (
-          <Section title="Elevation Profile" description="Elevation over elapsed activity time.">
+          <Section title="Elevation Profile">
             <ElevationChart
               points={points}
               loading={stream.isLoading}
@@ -360,10 +415,7 @@ export function ActivityDetailPage() {
         )}
 
         {showHrZones && (
-          <Section
-            title="Heart Rate Zones"
-            description="Recorded duration and percentage of activity time in each heart rate zone."
-          >
+          <Section title="Heart Rate Zones">
             {hrZones.error && !hrZonesHaveCachedData ? (
               <QueryStatePanel error={hrZones.error} height={250} />
             ) : (
@@ -376,10 +428,7 @@ export function ActivityDetailPage() {
         )}
 
         {isCycling && hasPower && (powerZones.error || powerZones.data != null) && (
-          <Section
-            title="Power Zones"
-            description="Recorded duration and percentage of activity time in each power zone."
-          >
+          <Section title="Power Zones">
             {powerZones.error && powerZones.data == null ? (
               <QueryStatePanel error={powerZones.error} height={250} />
             ) : powerZones.data ? (
@@ -497,9 +546,14 @@ export function ActivityHeader({
         {localStartTime === "--" ? "Local time unavailable" : localStartTime}
       </p>
       {(activity.sourceLinks.length > 0 || activity.sourceProviders.length > 0) && (
-        <p className="text-xs text-subtle mb-4">
-          Source: <SourceLinks activity={activity} />
-        </p>
+        <div className="mb-4">
+          <p className="text-xs text-subtle">
+            Source: <SourceLinks activity={activity} />
+          </p>
+          {activity.sourceDecision ? (
+            <ActivitySourceDecisionCard key={activity.id} decision={activity.sourceDecision} />
+          ) : null}
+        </div>
       )}
 
       {stats.length > 0 && (
@@ -595,118 +649,6 @@ function SourceLinkLabel({ link }: { link: ActivityDetail["sourceLinks"][number]
   }
 
   return <>{link.label}</>;
-}
-
-function RouteMap({
-  points,
-  onRegisterHoverCallback,
-}: {
-  points: StreamPoint[];
-  onRegisterHoverCallback?: React.MutableRefObject<
-    (position: { lat: number; lng: number } | null) => void
-  >;
-}) {
-  const mapRef = useRef<HTMLDivElement>(null);
-  const mapInstanceRef = useRef<ReturnType<typeof import("leaflet")["map"]> | null>(null);
-
-  useEffect(() => {
-    const container = mapRef.current;
-    if (!container) return;
-
-    const gpsPoints = points.filter(
-      (p): p is StreamPoint & { lat: number; lng: number } => p.lat != null && p.lng != null,
-    );
-    if (gpsPoints.length === 0) return;
-
-    let cancelled = false;
-
-    import("leaflet").then((L) => {
-      if (cancelled || !container) return;
-
-      // Clean up any existing map instance
-      if (mapInstanceRef.current) {
-        mapInstanceRef.current.remove();
-        mapInstanceRef.current = null;
-      }
-
-      const map = L.map(container, { zoomControl: true, attributionControl: false });
-      mapInstanceRef.current = map;
-
-      L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
-        maxZoom: 19,
-      }).addTo(map);
-
-      const latLngs = gpsPoints.map((p) => L.latLng(p.lat, p.lng));
-
-      L.polyline(latLngs, {
-        color: statusColors.positive,
-        weight: 3,
-        opacity: 0.8,
-      }).addTo(map);
-
-      // Start and end markers
-      const startLatLng = latLngs[0];
-      const endLatLng = latLngs[latLngs.length - 1];
-      if (startLatLng) {
-        L.circleMarker(startLatLng, {
-          radius: 6,
-          color: statusColors.positive,
-          fillColor: statusColors.positive,
-          fillOpacity: 1,
-        }).addTo(map);
-      }
-      if (endLatLng) {
-        L.circleMarker(endLatLng, {
-          radius: 6,
-          color: statusColors.danger,
-          fillColor: statusColors.danger,
-          fillOpacity: 1,
-        }).addTo(map);
-      }
-
-      const bounds = L.latLngBounds(latLngs);
-      map.fitBounds(bounds, { padding: [30, 30] });
-
-      // Register hover marker callback so charts can update the map without React re-renders
-      if (onRegisterHoverCallback) {
-        let hoverMarker: ReturnType<typeof L.circleMarker> | null = null;
-
-        onRegisterHoverCallback.current = (position) => {
-          if (position) {
-            if (hoverMarker) {
-              hoverMarker.setLatLng([position.lat, position.lng]);
-            } else {
-              hoverMarker = L.circleMarker([position.lat, position.lng], {
-                radius: 7,
-                color: statusColors.positive,
-                fillColor: "#ffffff",
-                fillOpacity: 1,
-                weight: 3,
-              }).addTo(map);
-            }
-          } else {
-            if (hoverMarker) {
-              hoverMarker.remove();
-              hoverMarker = null;
-            }
-          }
-        };
-      }
-    });
-
-    return () => {
-      cancelled = true;
-      if (onRegisterHoverCallback) {
-        onRegisterHoverCallback.current = () => {};
-      }
-      if (mapInstanceRef.current) {
-        mapInstanceRef.current.remove();
-        mapInstanceRef.current = null;
-      }
-    };
-  }, [points, onRegisterHoverCallback]);
-
-  return <div ref={mapRef} className="w-full h-[400px] rounded-lg" />;
 }
 
 interface MetricDefinition {
@@ -1150,24 +1092,13 @@ function StrengthExerciseBreakdown({
   );
 }
 
-function Section({
-  title,
-  description,
-  children,
-}: {
-  title: string;
-  description: string;
-  children: React.ReactNode;
-}) {
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section>
       <div className="mb-2 flex items-center gap-2">
         <h2 className="text-sm font-medium text-muted uppercase tracking-wider">{title}</h2>
-        <ChartDescriptionTooltip description={description} />
       </div>
-      <div className="card p-4" title={description}>
-        {children}
-      </div>
+      <div className="card p-4">{children}</div>
     </section>
   );
 }

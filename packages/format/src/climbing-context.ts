@@ -1,28 +1,30 @@
-import type {
-  ClimbingLocationNode,
-  ClimbingStyle,
-  ClimbingWallAngle,
-} from "@dofek/training/climbing-context";
+import type { ClimbingWallAngle } from "@dofek/training/climbing-context";
+import type { Area, AttemptOutcome, AttemptScope, RopeMethod } from "@dofek/training/climbing-log";
 
-export function formatClimbingLocationPath(nodes: readonly ClimbingLocationNode[]): string | null {
+export function formatClimbingLocationPath(nodes: readonly Pick<Area, "name">[]): string | null {
   return nodes.length === 0 ? null : nodes.map((node) => node.name).join(" > ");
 }
 
-const styleLabels: Record<ClimbingStyle, string> = {
+const ropeMethodLabels: Record<RopeMethod, string> = {
   lead: "Lead",
-  "top-rope": "Top rope",
+  top_rope: "Top rope",
   follow: "Follow",
-  solo: "Solo",
-  aid: "Aid",
+  unroped: "Unroped",
 };
 
-export function formatClimbingStyle(style: ClimbingStyle | null): string | null {
-  return style === null ? null : styleLabels[style];
+export function formatClimbingRopeMethod(method: RopeMethod | null): string | null {
+  return method === null ? null : ropeMethodLabels[method];
 }
 
-export function formatClimbingResultStyle(result: string | null): string {
-  if (result === null) return "Result unknown";
-  return result.toLowerCase() === "fell/hung" ? "Fell or hung" : result;
+export function formatClimbingRecordedOutcome(
+  scope: AttemptScope,
+  outcome: AttemptOutcome | null,
+): string {
+  return `${scope === "climb" ? "Whole climb" : "Pitch"} ${outcome ?? "outcome unknown"}`;
+}
+
+export function formatClimbingAttemptCount(count: number): string {
+  return `${count} recorded ${count === 1 ? "attempt" : "attempts"}`;
 }
 
 export function formatClimbingWallAngle(angle: ClimbingWallAngle | null): string | null {

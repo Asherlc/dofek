@@ -45,12 +45,6 @@ export function TimeSeriesChart({ series, height = 200, yAxis, loading }: TimeSe
   const seriesFormatters = new Map(series.map((item) => [item.name, item.formatValue]));
 
   const option = {
-    aria: {
-      enabled: true,
-      label: {
-        description: `Time series chart. ${series.map((item) => `${item.name} is shown as a numeric line.`).join(" ")}`,
-      },
-    },
     tooltip: dofekTooltip({
       formatter: (
         params: {

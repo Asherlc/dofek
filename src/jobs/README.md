@@ -16,8 +16,11 @@ This directory contains background job processing logic using BullMQ and Redis.
 
 - **BullMQ**: Job queue management with Redis.
 - **Per-Provider Workers**: Each sync provider has its own dedicated BullMQ worker to independently manage concurrency and rate limits.
+- **Targeted webhooks**: The HTTP receiver queues each actionable targeted event for the provider worker. The worker calls the provider's targeted sync method when available, then records canonical commits and downstream processing through the same operation used by window syncs. Each event has its own queue ID so cooldowns do not merge unrelated events. Strava requires prompt webhook acknowledgement and recommends asynchronous processing ([Strava webhook documentation](https://developers.strava.com/docs/webhooks/)).
 - **Shared sync coordination**: Shared jobs fan out through the existing provider queues with one absolute sync window. BullMQ parent dependencies preserve dispatch through coordinator retries and child pruning; failed provider jobs report independently. The coordinator uses the [waiting-children processing pattern](https://docs.bullmq.io/patterns/process-step-jobs).
 - **Sync processing identity**: Each newly created queue job has its own processing operation, correlated by its queue ID, stored creation timestamp, and provider. Retries and continuations reuse the operation ID persisted in job data. A queue ID alone cannot identify a permanent processing record because BullMQ permits reusing it after job removal; see [BullMQ job IDs](https://docs.bullmq.io/guide/jobs/job-ids).
+- **Credential reconnects**: Generic, Garmin, and WHOOP credential handlers commit renewed tokens inside the account-erasure fence, then reacquire the fence to dispatch a full sync. Each reconnect uses a fresh queue ID so an older active sync or delayed bounded retry cannot absorb the request. Existing provider cooldown delays still apply; see [BullMQ job IDs](https://docs.bullmq.io/guide/jobs/job-ids) and [delayed jobs](https://docs.bullmq.io/guide/jobs/delayed).
+- **Redis command deadlines**: Shared nonblocking Redis commands and per-provider sync queue commands have a five-second deadline so stalled dispatch releases the account-erasure transaction. Worker and event-listener connections retain their blocking behavior. BullMQ distinguishes request-facing producers from persistent workers in its [connection guidance](https://docs.bullmq.io/guide/connections); ioredis defines [commandTimeout](https://github.com/redis/ioredis/blob/main/lib/redis/RedisOptions.ts) separately from the connection deadline.
 - **Queues**: Defined in `queues.ts` with typed job data interfaces.
 - **Workers**: Implemented in `worker.ts` with support for graceful shutdown and idle spin-down.
 - **Worker responsibilities**: `worker.ts` coordinates startup;
@@ -32,6 +35,32 @@ This directory contains background job processing logic using BullMQ and Redis.
   `sync-provider-execution.ts` executes and records provider results, and
   `sync-provider-failure.ts` applies failure and retry policy. Each module has
   a matching colocated unit test.
+
+## Provider execution ordering
+
+Provider workers, the shared sync worker, and the inline CLI worker serialize
+one complete execution for each owner/provider before its first source request
+through persistence. Independent keys can proceed concurrently within the
+existing four-session guard pool. A waiting execution consumes one of those
+sessions; this change adds no connections. A coordinator without a provider
+continues to fan out through provider queues. PostgreSQL session advisory locks
+provide exclusion across processes without holding a database transaction during
+HTTP work ([PostgreSQL advisory locks](https://www.postgresql.org/docs/current/explicit-locking.html#ADVISORY-LOCKS)).
+
+The guard acquires the provider lock before the shared account-erasure work
+barrier, checks the erasure fence, and releases both in reverse order after the
+callback. It verifies each unlock and destroys a session whose ownership cannot
+be confirmed. If the checked-out provider lock session disconnects, the worker
+reports the exception and exits synchronously to prevent an outstanding HTTP
+callback from persisting after exclusion is lost. Telemetry delivery is best
+effort at that boundary: immediate exit cannot wait for asynchronous flushing
+([node-postgres client errors](https://node-postgres.com/apis/client#events),
+[Node.js process.exit](https://nodejs.org/api/process.html#processexitcode)).
+
+Mountain Project fetches and persists its full snapshot in one execution, so the
+guard orders that complete refresh. WHOOP and Garmin carry checkpoints across
+separate jobs; execution locking does not order an entire logical refresh across
+those continuations ([BullMQ step jobs](https://docs.bullmq.io/patterns/process-step-jobs)).
 
 ## Configuration
 

@@ -12,7 +12,6 @@ import { captureException } from "./telemetry";
 export function useTimeRangePreference(domain: TimeRangeDomain): {
   days: number;
   defaultDays: number;
-  description: string;
   isHydrated: boolean;
   setDays: (days: number) => void;
 } {
@@ -62,7 +61,6 @@ export function useTimeRangePreference(domain: TimeRangeDomain): {
   return {
     days,
     defaultDays: policy.defaultDays,
-    description: policy.description,
     isHydrated: hydratedDomain === domain,
     setDays,
   };

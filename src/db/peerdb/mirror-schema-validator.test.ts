@@ -39,13 +39,18 @@ function sourceClient(columns: string[]) {
   };
 }
 
-function clickHouseClient(columns: string[]) {
+function clickHouseClient(columns: string[], types: Record<string, string> = {}) {
   return {
     async command() {},
     async query() {
       return {
         async json() {
-          return columns.map((name) => ({ database: "destination", name, table: "daily_metrics" }));
+          return columns.map((name) => ({
+            database: "destination",
+            name,
+            table: "daily_metrics",
+            type: types[name] ?? "String",
+          }));
         },
       };
     },
@@ -55,6 +60,69 @@ function clickHouseClient(columns: string[]) {
 const metadataColumns = ["_peerdb_is_deleted", "_peerdb_synced_at", "_peerdb_version"];
 
 describe("PeerDB mirror schema validator", () => {
+  const nullableContract = [
+    {
+      ...baseContract,
+      tableMappings: [
+        {
+          ...baseContract.tableMappings[0],
+          destinationTableIdentifier: "daily_metrics",
+          sourceTableIdentifier: "fitness.daily_metrics",
+          exclude: ["ignored_column"],
+          requiredNullableColumns: ["z_ended_at", "ended_at"],
+        },
+      ],
+    },
+  ];
+
+  it.each(["Nullable(DateTime64(6, 'UTC'))", "LowCardinality(Nullable(String))"])(
+    "accepts a required nullable column with type %s",
+    async (type) => {
+      await expect(
+        inspectPeerDbMirrorSchemas({
+          clickHouseClient: clickHouseClient(["id", "ended_at", "z_ended_at", ...metadataColumns], {
+            ended_at: type,
+            z_ended_at: type,
+          }),
+          contracts: nullableContract,
+          sourcePostgresClient: sourceClient(["id", "ended_at", "z_ended_at", "ignored_column"]),
+        }),
+      ).resolves.toEqual({ issues: [] });
+    },
+  );
+
+  it("reports all non-nullable required columns in deterministic order", async () => {
+    await expect(
+      assertPeerDbMirrorSchemasCompatible({
+        clickHouseClient: clickHouseClient(["id", "ended_at", "z_ended_at", ...metadataColumns], {
+          ended_at: "DateTime64(6, 'UTC')",
+          z_ended_at: "LowCardinality(String)",
+        }),
+        contracts: nullableContract,
+        sourcePostgresClient: sourceClient(["id", "ended_at", "z_ended_at", "ignored_column"]),
+      }),
+    ).rejects.toThrow("non_nullable_destination_columns=[ended_at,z_ended_at]");
+  });
+
+  it("reports an absent required nullable column as missing rather than as a wrong type", async () => {
+    const report = await inspectPeerDbMirrorSchemas({
+      clickHouseClient: clickHouseClient(["id", "z_ended_at", ...metadataColumns], {
+        z_ended_at: "Nullable(DateTime64(6, 'UTC'))",
+      }),
+      contracts: nullableContract,
+      sourcePostgresClient: sourceClient(["id", "ended_at", "z_ended_at", "ignored_column"]),
+    });
+    expect(report.issues).toEqual([
+      {
+        columns: ["ended_at"],
+        destinationTableIdentifier: "destination.daily_metrics",
+        kind: "missing_destination_columns",
+        mirrorName: "test_mirror",
+        sourceTableIdentifier: "fitness.daily_metrics",
+      },
+    ]);
+  });
+
   it("accepts a compatible source projection and PeerDB metadata", async () => {
     await expect(
       inspectPeerDbMirrorSchemas({

@@ -1,7 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { reportProviderAuthDiagnostic } from "../lib/provider-diagnostics.ts";
 import { RefreshTokenRevokedError } from "../providers/auth-errors.ts";
+import { makeTransactionalTestDatabase } from "../providers/test-helpers.ts";
 import type { OAuthConfig, TokenSet } from "./oauth.ts";
 import { resolveOAuthTokens } from "./resolve-tokens.ts";
+
+vi.mock("../lib/provider-diagnostics.ts", () => ({ reportProviderAuthDiagnostic: vi.fn() }));
 
 vi.mock("../db/tokens.ts", () => ({
   loadTokens: vi.fn(),
@@ -27,12 +31,12 @@ const mockRefreshAccessToken = vi.mocked(refreshAccessToken);
 
 import type { SyncDatabase } from "../db/index.ts";
 
-const fakeDb: SyncDatabase = {
+const fakeDb: SyncDatabase = makeTransactionalTestDatabase({
   select: vi.fn(),
   insert: vi.fn(),
   delete: vi.fn(),
   execute: vi.fn(),
-};
+});
 
 const fakeConfig: OAuthConfig = {
   clientId: "id",
@@ -90,6 +94,32 @@ describe("resolveOAuthTokens", () => {
     expect(mockSaveTokens).not.toHaveBeenCalled();
   });
 
+  it("refreshes a token that will expire within the requested validity window", async () => {
+    mockLoadTokens.mockResolvedValue({
+      accessToken: "nearly-expired-token",
+      refreshToken: "current-refresh-token",
+      expiresAt: futureDate(30_000),
+      scopes: null,
+    });
+    mockRefreshAccessToken.mockResolvedValue({
+      accessToken: "fresh-token",
+      refreshToken: "new-refresh-token",
+      expiresAt: futureDate(6 * 3600_000),
+      scopes: null,
+    });
+
+    const result = await resolveOAuthTokens({
+      db: fakeDb,
+      providerId: "strava",
+      providerName: "Strava",
+      getOAuthConfig: () => fakeConfig,
+      refreshBeforeExpiryMs: 3600_000,
+    });
+
+    expect(result.accessToken).toBe("fresh-token");
+    expect(mockSaveTokens).toHaveBeenCalledOnce();
+  });
+
   it("refreshes expired tokens and saves them", async () => {
     const expiredTokens: TokenSet = {
       accessToken: "old-token",
@@ -113,6 +143,19 @@ describe("resolveOAuthTokens", () => {
       providerName: "Fitbit",
       getOAuthConfig: () => fakeConfig,
     });
+
+    expect(reportProviderAuthDiagnostic).toHaveBeenCalledWith(
+      "fitbit",
+      "refresh_started",
+      undefined,
+      expiredTokens,
+    );
+    expect(reportProviderAuthDiagnostic).toHaveBeenCalledWith(
+      "fitbit",
+      "refresh_succeeded",
+      undefined,
+      expect.objectContaining({ expiresAt: refreshedTokens.expiresAt }),
+    );
 
     const resolvedTokens = { ...refreshedTokens, providerAccountId: undefined };
     expect(result).toEqual(resolvedTokens);
@@ -312,6 +355,13 @@ describe("resolveOAuthTokens", () => {
         getOAuthConfig: () => fakeConfig,
       }),
     ).rejects.toThrow("Polar refresh token was revoked or expired.");
+
+    expect(reportProviderAuthDiagnostic).toHaveBeenCalledWith(
+      "polar",
+      "refresh_failed",
+      undefined,
+      expect.objectContaining({ refreshToken: "dead-refresh" }),
+    );
 
     expect(mockDeleteTokens).toHaveBeenCalledWith(fakeDb, "polar");
     expect(mockSaveTokens).not.toHaveBeenCalled();

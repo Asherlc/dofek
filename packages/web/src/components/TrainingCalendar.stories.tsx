@@ -17,8 +17,7 @@ const data: CalendarDay[] = [
     totalMinutes: 135,
     activityTypes: ["cycling", "strength"],
     trainingTimeBand: "very_high",
-    trainingTimeMeaning:
-      "Very high training volume; recovery context matters, and duration alone does not prove overload.",
+    trainingTimeMeaning: "Very high recorded training volume",
   },
   {
     date: "2026-03-15",
@@ -34,8 +33,7 @@ const data: CalendarDay[] = [
     totalMinutes: 72,
     activityTypes: ["running"],
     trainingTimeBand: "high",
-    trainingTimeMeaning:
-      "High training volume; compare with recovery before stacking another hard day.",
+    trainingTimeMeaning: "High recorded training volume",
   },
 ];
 
@@ -48,7 +46,7 @@ const meta = {
   },
   decorators: [
     (Story) => (
-      <div className="w-[900px] bg-page p-6">
+      <div className="w-full max-w-[900px] bg-page p-6">
         <Story />
       </div>
     ),

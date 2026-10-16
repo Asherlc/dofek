@@ -1,14 +1,18 @@
+import type { ClimbingLogEntryDetail } from "../../../server/src/contracts/climbing-log-contracts.ts";
+import {
+  climbingAttemptFixture,
+  climbingClimbFixture,
+  climbingLogEntryFixture,
+} from "../../../server/src/repositories/climbing-test-helpers.ts";
 /** @vitest-environment jsdom */
 
 import { formatDateTime, formatTimeOnly } from "@dofek/format/format";
 import type { UnitSystem } from "@dofek/format/units";
 import { UnitConverter } from "@dofek/format/units";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ActivityDetail } from "../../../server/src/models/activity.ts";
-import type { ClimbingEntrySuggestion } from "../../../server/src/repositories/climbing-entry-associator.ts";
-import type { ClimbingActivityEntryRow } from "../../../server/src/repositories/climbing-repository.ts";
 import type { StrengthExerciseDetail } from "../../../server/src/routers/activity.ts";
 import { UnitContext } from "../lib/unitContext.ts";
 
@@ -17,12 +21,41 @@ const capturedEvents: Array<Record<string, (...params: Array<Record<string, unkn
   [];
 
 const leafletMocks = vi.hoisted(() => ({
-  map: vi.fn(() => ({ remove: vi.fn(), fitBounds: vi.fn() })),
-  tileLayer: vi.fn(() => ({ addTo: vi.fn() })),
+  map: vi.fn((container: HTMLElement) => ({
+    remove: vi.fn(() => container.replaceChildren()),
+    fitBounds: vi.fn(),
+    container,
+  })),
+  tileLayer: vi.fn(() => ({ addTo: vi.fn(), on: vi.fn() })),
   latLng: vi.fn((lat: number, lng: number) => ({ lat, lng })),
   latLngBounds: vi.fn(() => ({})),
   polyline: vi.fn(() => ({ addTo: vi.fn() })),
-  circleMarker: vi.fn(() => ({ addTo: vi.fn(), remove: vi.fn(), setLatLng: vi.fn() })),
+  circleMarker: vi.fn(() => {
+    const element = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.append(element);
+    const marker = {
+      addTo: vi.fn((map: { container: HTMLElement }) => {
+        map.container.append(svg);
+        return marker;
+      }),
+      remove: vi.fn(),
+      setLatLng: vi.fn(),
+      bindTooltip: vi.fn(() => marker),
+      on: vi.fn((event: string, listener: () => void) => {
+        element.addEventListener(event, listener);
+        return marker;
+      }),
+      fire: vi.fn((event: string) => {
+        element.dispatchEvent(new Event(event));
+        return marker;
+      }),
+      getElement: vi.fn(() => element),
+      openTooltip: vi.fn(),
+      closeTooltip: vi.fn(),
+    };
+    return marker;
+  }),
 }));
 
 vi.mock("echarts-for-react", () => ({
@@ -170,7 +203,7 @@ const mockClimbingEntriesUseQuery = vi.fn(
     _input?: unknown,
     _options?: { enabled?: boolean },
   ): {
-    data: ClimbingActivityEntryRow[] | undefined;
+    data: ClimbingLogEntryDetail[] | undefined;
     error: Error | null;
     isError: boolean;
     isLoading: boolean;
@@ -186,7 +219,7 @@ const mockEntrySuggestionsUseQuery = vi.fn(
     _input?: unknown,
     _options?: { enabled?: boolean },
   ): {
-    data: ClimbingEntrySuggestion[] | undefined;
+    data: ClimbingLogEntryDetail[] | undefined;
     error: unknown | null;
     isLoading: boolean;
   } => ({
@@ -253,6 +286,26 @@ const mockStreamUseQuery = vi.fn(
     isLoading: false,
   }),
 );
+type MockRouteData =
+  | { status: "processing" | "unavailable" }
+  | { status: "ready"; points: Array<{ lat: number | null; lng: number | null }> };
+const mockRouteUseQuery = vi.fn(
+  (
+    _input?: unknown,
+    _options?: unknown,
+  ): {
+    data: MockRouteData;
+    error: Error | null;
+    isLoading: boolean;
+  } => ({
+    data: {
+      status: "ready",
+      points: mockStreamPoints.map((point) => ({ lat: point.lat, lng: point.lng })),
+    },
+    error: null,
+    isLoading: false,
+  }),
+);
 const mockPowerZonesUseQuery = vi.fn(
   (_input?: unknown, _options?: { enabled?: boolean }): MockQueryResult<MockPowerZonesResult> => ({
     data: undefined,
@@ -277,6 +330,7 @@ vi.mock("../lib/trpc.ts", () => ({
     activity: {
       byId: { useQuery: mockActivityByIdUseQuery },
       stream: { useQuery: mockStreamUseQuery },
+      route: { useQuery: mockRouteUseQuery },
       hrZones: { useQuery: mockHrZonesUseQuery },
       powerZones: { useQuery: mockPowerZonesUseQuery },
       strengthExercises: { useQuery: mockStrengthExercisesUseQuery },
@@ -300,18 +354,21 @@ vi.mock("../lib/trpc.ts", () => ({
       delete: { useMutation: () => ({ mutate: vi.fn(), isPending: false }) },
     },
     climbing: {
-      activityEntries: { useQuery: mockClimbingEntriesUseQuery },
-      unattachedClimbingEntries: { useQuery: mockEntrySuggestionsUseQuery },
-      attachClimbingEntry: {
+      activityLogEntries: { useQuery: mockClimbingEntriesUseQuery },
+      unattachedClimbingLogEntries: { useQuery: mockEntrySuggestionsUseQuery },
+      attachClimbingLogEntry: {
         useMutation: (options?: {
           onSuccess?: (
             result: { attached: true },
-            input: { activityId: string; entryId: string },
+            input: { activityId: string; climbingLogEntryId: string },
           ) => Promise<void> | void;
-          onError?: (error: Error, input: { activityId: string; entryId: string }) => void;
+          onError?: (
+            error: Error,
+            input: { activityId: string; climbingLogEntryId: string },
+          ) => void;
         }) => ({
           mutate: (
-            input: { activityId: string; entryId: string },
+            input: { activityId: string; climbingLogEntryId: string },
             callbacks?: { onSuccess?: () => void; onError?: (error: Error) => void },
           ) => {
             mockAttachEntryMutate(input);
@@ -342,8 +399,8 @@ vi.mock("../lib/trpc.ts", () => ({
         activityOverview: { invalidate: mockCalendarActivityOverviewInvalidate },
       },
       climbing: {
-        activityEntries: { invalidate: mockClimbingEntriesInvalidate },
-        unattachedClimbingEntries: { invalidate: mockEntrySuggestionsInvalidate },
+        activityLogEntries: { invalidate: mockClimbingEntriesInvalidate },
+        unattachedClimbingLogEntries: { invalidate: mockEntrySuggestionsInvalidate },
         sessionSummary: { invalidate: mockClimbingSessionSummaryInvalidate },
         gradeProgression: { invalidate: mockClimbingGradeProgressionInvalidate },
         volumeByGrade: { invalidate: mockClimbingVolumeByGradeInvalidate },
@@ -376,6 +433,15 @@ afterEach(() => {
     data: mockStreamPoints,
     error: null,
     isError: false,
+    isLoading: false,
+  }));
+  mockRouteUseQuery.mockReset();
+  mockRouteUseQuery.mockImplementation((_input?: unknown, _options?: unknown) => ({
+    data: {
+      status: "ready",
+      points: mockStreamPoints.map((point) => ({ lat: point.lat, lng: point.lng })),
+    },
+    error: null,
     isLoading: false,
   }));
   mockHrZonesUseQuery.mockReset();
@@ -817,6 +883,11 @@ describe("ActivityDetailPage", () => {
       isError: false,
       isLoading: false,
     });
+    mockRouteUseQuery.mockReturnValue({
+      data: { status: "ready", points: [] },
+      error: null,
+      isLoading: false,
+    });
     const ActivityDetailPage = await importPage();
 
     renderWithUnits(<ActivityDetailPage />);
@@ -824,6 +895,198 @@ describe("ActivityDetailPage", () => {
     expect(screen.queryByText("Route Map")).toBeNull();
     const metricEvents = capturedEvents.find((events) => events.legendselectchanged != null);
     expect(metricEvents?.updateAxisPointer).toBeUndefined();
+  });
+
+  it("shows route processing instead of drawing cached partial GPS", async () => {
+    mockRouteUseQuery.mockReturnValue({
+      data: { status: "processing" },
+      error: null,
+      isLoading: false,
+    });
+    const ActivityDetailPage = await importPage();
+
+    renderWithUnits(<ActivityDetailPage />);
+
+    expect(screen.getByText("Processing route map…")).toBeDefined();
+    expect(leafletMocks.tileLayer).not.toHaveBeenCalled();
+    const routeOptions = mockRouteUseQuery.mock.calls[0]?.[1];
+    if (
+      !routeOptions ||
+      typeof routeOptions !== "object" ||
+      !("refetchInterval" in routeOptions) ||
+      typeof routeOptions.refetchInterval !== "function"
+    ) {
+      throw new Error("Expected activity route polling option");
+    }
+    expect(routeOptions.refetchInterval({ state: { data: { status: "processing" } } })).toBe(3000);
+    expect(routeOptions.refetchInterval({ state: { data: { status: "ready" } } })).toBe(false);
+  });
+
+  it.each([
+    "unavailable",
+    "loading",
+    "processing",
+    "error",
+    "cached error",
+    "cached loading",
+  ] as const)("shows canonical climbing locations when the recorded route is %s", async (state) => {
+    mockActivityByIdUseQuery.mockReturnValue({
+      data: { ...mockActivity, activityType: "climbing" },
+      error: null,
+      isError: false,
+      isLoading: false,
+    });
+    mockRouteUseQuery.mockReturnValue({
+      data: state.startsWith("cached")
+        ? { status: "ready", points: [{ lat: 7, lng: 8 }] }
+        : { status: state === "processing" ? "processing" : "unavailable" },
+      error: state.endsWith("error") ? new Error("Recorded route refresh failed") : null,
+      isLoading: state.endsWith("loading"),
+    });
+    mockClimbingEntriesUseQuery.mockReturnValue({
+      data: [
+        climbingLogEntryFixture({ id: "unlocated", title: "Unknown location" }),
+        climbingLogEntryFixture({
+          id: "20000000-0000-4000-8000-000000000011",
+          title: "Located climb",
+          mapLocation: {
+            coordinates: { latitude: 0, longitude: -122.25 },
+            scope: "climb",
+            objectId: "20000000-0000-4000-8000-000000000003",
+            providerId: "mountain-project",
+            name: "Located climb",
+          },
+        }),
+      ],
+      error: new Error("Climbing refresh failed"),
+      isError: true,
+      isLoading: false,
+    });
+    mockEntrySuggestionsUseQuery.mockReturnValue({
+      data: [
+        climbingLogEntryFixture({
+          id: "suggested",
+          title: "Suggested climb",
+          mapLocation: {
+            coordinates: { latitude: 1, longitude: -122.5 },
+            scope: "area",
+            objectId: "source-area",
+            providerId: "openbeta",
+            name: "Containing area",
+          },
+        }),
+      ],
+      error: null,
+      isLoading: false,
+    });
+    const ActivityDetailPage = await importPage();
+
+    renderWithUnits(<ActivityDetailPage />);
+
+    expect(screen.getAllByRole("region", { name: "Climbing locations" })).toHaveLength(3);
+    expect(screen.getByText("Climbing refresh failed")).toBeDefined();
+    expect(screen.getByText("Climb location: Located climb · Mountain Project")).toBeDefined();
+    expect(screen.getByText("Area location: Containing area · OpenBeta")).toBeDefined();
+    expect(screen.getByText("Entry 2")).toBeDefined();
+    const climbPoint = await screen.findByRole("button", {
+      name: "Entry 2 · Located climb · Climb location: Located climb · Mountain Project",
+    });
+    const createdMaps = leafletMocks.map.mock.calls.length;
+    act(() => climbPoint.focus());
+    fireEvent.keyDown(climbPoint, { key: "Enter" });
+    const dialog = await screen.findByRole("dialog");
+    expect(
+      within(within(dialog).getByRole("region", { name: "Climbing log details" })).getByText(
+        "Located climb",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      within(screen.getByRole("list", { name: "Attached climbing logs", hidden: true })).getByText(
+        "Entry 2 · Selected",
+      ),
+    ).toBeDefined();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Close" }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    await waitFor(() => expect(climbPoint).toHaveFocus());
+    fireEvent.click(climbPoint);
+    expect(
+      within(await screen.findByRole("dialog")).getByRole("region", {
+        name: "Climbing log details",
+      }),
+    ).toBeInTheDocument();
+    expect(leafletMocks.map).toHaveBeenCalledTimes(createdMaps);
+    if (state.startsWith("cached")) {
+      await waitFor(() => expect(leafletMocks.latLng).toHaveBeenCalledWith(7, 8));
+    }
+    if (state.endsWith("error")) {
+      expect(screen.getByText("Recorded route refresh failed")).toBeDefined();
+    }
+  });
+
+  it("shows a loading state before route freshness is known", async () => {
+    mockRouteUseQuery.mockReturnValue({
+      data: { status: "unavailable" },
+      error: null,
+      isLoading: true,
+    });
+    const ActivityDetailPage = await importPage();
+
+    renderWithUnits(<ActivityDetailPage />);
+
+    expect(screen.getByText("Loading route map…")).toBeDefined();
+    expect(leafletMocks.tileLayer).not.toHaveBeenCalled();
+  });
+
+  it("shows a route-specific error instead of drawing cached partial GPS", async () => {
+    mockRouteUseQuery.mockReturnValue({
+      data: { status: "unavailable" },
+      error: new Error("Route freshness query failed."),
+      isLoading: false,
+    });
+    const ActivityDetailPage = await importPage();
+
+    renderWithUnits(<ActivityDetailPage />);
+
+    expect(screen.getByText("Route freshness query failed.")).toBeDefined();
+    expect(leafletMocks.tileLayer).not.toHaveBeenCalled();
+  });
+
+  it("draws the ready route endpoint even when the cached sensor stream ends early", async () => {
+    mockRouteUseQuery.mockReturnValue({
+      data: {
+        status: "ready",
+        points: [
+          { lat: 1, lng: 1 },
+          { lat: 9, lng: 9 },
+        ],
+      },
+      error: null,
+      isLoading: false,
+    });
+    const ActivityDetailPage = await importPage();
+
+    renderWithUnits(<ActivityDetailPage />);
+
+    await waitFor(() => expect(leafletMocks.latLng).toHaveBeenCalledWith(9, 9));
+  });
+
+  it("shows OpenStreetMap tiles with attribution on the route map", async () => {
+    const ActivityDetailPage = await importPage();
+    renderWithUnits(<ActivityDetailPage />);
+
+    await waitFor(() =>
+      expect(leafletMocks.map).toHaveBeenCalledWith(
+        expect.any(HTMLElement),
+        expect.objectContaining({ attributionControl: true }),
+      ),
+    );
+    expect(leafletMocks.tileLayer).toHaveBeenCalledWith(
+      "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+      expect.objectContaining({
+        attribution:
+          '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+      }),
+    );
   });
 
   it("creates a route hover marker from valid chart pointer events", async () => {
@@ -868,6 +1131,11 @@ describe("ActivityDetailPage", () => {
       ],
       error: null,
       isError: false,
+      isLoading: false,
+    });
+    mockRouteUseQuery.mockReturnValue({
+      data: { status: "unavailable" },
+      error: null,
       isLoading: false,
     });
     const ActivityDetailPage = await importPage();
@@ -1410,13 +1678,14 @@ describe("ActivityDetailPage", () => {
       const ActivityDetailPage = await importPage();
       renderWithUnits(<ActivityDetailPage />);
 
-      expect(screen.getByRole("heading", { name: "How sources were combined" })).toBeTruthy();
+      const sourceContainer = screen.getByText("Source:").parentElement;
+      if (!sourceContainer) throw new Error("Expected the source list container");
+      const toggle = within(sourceContainer).getByRole("button", {
+        name: "How sources were combined",
+      });
+      expect(toggle.getAttribute("aria-expanded")).toBe("false");
+      fireEvent.click(toggle);
       expect(screen.getByText("2")).toBeTruthy();
-      expect(
-        screen.getByText(
-          "Wahoo was selected as the primary record by source priority. Missing details may come from the other matched sources.",
-        ),
-      ).toBeTruthy();
 
       Object.assign(mockActivity, originalData);
     });
@@ -1425,7 +1694,7 @@ describe("ActivityDetailPage", () => {
       const ActivityDetailPage = await importPage();
       renderWithUnits(<ActivityDetailPage />);
 
-      expect(screen.queryByRole("heading", { name: "How sources were combined" })).toBeNull();
+      expect(screen.queryByRole("button", { name: "How sources were combined" })).toBeNull();
     });
   });
 
@@ -1738,54 +2007,247 @@ describe("ActivityDetailPage", () => {
   });
 
   describe("climbing entries", () => {
-    it("renders server suggestions from both providers and attaches only the selected entry", async () => {
+    it("loads hiking logs and keeps cached records visible when both refreshes fail", async () => {
+      Object.assign(mockActivity, { activityType: "hiking" });
+      const log = climbingLogEntryFixture({ id: "cached-log", title: "Summit outing" });
+      mockClimbingEntriesUseQuery.mockReturnValue({
+        data: [log],
+        error: new Error("Log refresh failed"),
+        isError: true,
+        isLoading: false,
+      });
+      mockEntrySuggestionsUseQuery.mockReturnValue({
+        data: [climbingLogEntryFixture({ id: "suggested-log", title: "Ridge traverse" })],
+        error: new Error("Suggestions refresh failed"),
+        isLoading: false,
+      });
+      const ActivityDetailPage = await importPage();
+      renderWithUnits(<ActivityDetailPage />);
+      expect(getQueryEnabledFlag(mockClimbingEntriesUseQuery.mock.calls[0]?.[1])).toBe(true);
+      expect(mockClimbingEntriesUseQuery).toHaveBeenCalledWith(
+        { activityId: "test-123" },
+        expect.objectContaining({ enabled: true }),
+      );
+      expect(screen.getByText("Summit outing")).toBeInTheDocument();
+      expect(screen.getByText("Ridge traverse")).toBeInTheDocument();
+      expect(screen.getByText("Log refresh failed")).toBeInTheDocument();
+      expect(screen.getByText("Suggestions refresh failed")).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: "Attach entry 1, Ridge traverse to this activity" }),
+      ).toBeEnabled();
+    });
+    it("waits for attached climbs before showing the empty suggestions notice", async () => {
       Object.assign(mockActivity, { activityType: "climbing", name: "Morning Rock Climb" });
+      mockClimbingEntriesUseQuery.mockReturnValue({
+        data: undefined,
+        error: null,
+        isError: false,
+        isLoading: true,
+      });
+      const ActivityDetailPage = await importPage();
+      const view = renderWithUnits(<ActivityDetailPage />);
+      const climbsSection = screen.getByRole("heading", { name: "Climbs" }).closest("section");
+      if (!climbsSection) throw new Error("Expected a climbs section");
+      expect(
+        within(climbsSection).queryByText("No unattached climbing logs for this day."),
+      ).toBeNull();
+      expect(
+        within(climbsSection).getByRole("status", { name: "Loading climbs." }),
+      ).toBeInTheDocument();
+
+      mockClimbingEntriesUseQuery.mockReturnValue({
+        data: [],
+        error: null,
+        isError: false,
+        isLoading: false,
+      });
+      view.rerender(
+        <UnitContext.Provider value={{ unitSystem: "metric", setUnitSystem: () => {} }}>
+          <ActivityDetailPage />
+        </UnitContext.Provider>,
+      );
+      expect(
+        within(climbsSection).getByText("No unattached climbing logs for this day."),
+      ).toBeInTheDocument();
+    });
+
+    it("shows one compact loading state while both climbing queries are pending", async () => {
+      Object.assign(mockActivity, { activityType: "climbing", name: "Morning Rock Climb" });
+      mockClimbingEntriesUseQuery.mockReturnValue({
+        data: undefined,
+        error: null,
+        isError: false,
+        isLoading: true,
+      });
+      mockEntrySuggestionsUseQuery.mockReturnValue({
+        data: undefined,
+        error: null,
+        isLoading: true,
+      });
+      const ActivityDetailPage = await importPage();
+      renderWithUnits(<ActivityDetailPage />);
+      const climbsSection = screen.getByRole("heading", { name: "Climbs" }).closest("section");
+      if (!climbsSection) throw new Error("Expected a climbs section");
+      expect(within(climbsSection).getAllByRole("status")).toHaveLength(1);
+      expect(within(climbsSection).queryByText("Loading climbing logs...")).toBeNull();
+    });
+
+    it("groups attached climbs and suggestions in one section and attaches only the selected entry", async () => {
+      Object.assign(mockActivity, { activityType: "climbing", name: "Morning Rock Climb" });
+      mockClimbingEntriesUseQuery.mockReturnValue({
+        data: [
+          climbingLogEntryFixture({
+            id: "attached-climb",
+            providerId: "kaya",
+            climbId: "attached-climb-climb",
+            discipline: "rock_climbing",
+            sourceName: "Kaya",
+            sourceLinks: [],
+            displayGrade: "V3",
+            board: null,
+            wallAngle: null,
+            holdType: null,
+            recordedClimbAttemptCount: 1,
+            recordedClimbOutcome: "completed",
+            climb: {
+              ...climbingClimbFixture("kaya"),
+              ...{
+                id: "attached-climb-climb",
+                name: "Attached Arete",
+                kind: "boulder",
+                areaId: "attached-climb-area-0",
+                areaPath: [
+                  {
+                    id: "attached-climb-area-0",
+                    userId: "20000000-0000-4000-8000-000000000002",
+                    providerId: "kaya",
+                    externalId: null,
+                    name: "Pacific Pipe",
+                    parentAreaId: null,
+                    coordinates: null,
+                  },
+                ],
+                publishedGrades: [{ value: "V3", system: "v_scale" }],
+              },
+            },
+            attempts: [
+              climbingAttemptFixture("attached-climb", {
+                id: "attached-climb-attempt-0",
+                outcome: "completed",
+                ropeMethod: null,
+                usedAid: false,
+                fellOrHung: false,
+                dabbed: false,
+                rockResultLabels: ["sent", "Flash"],
+                attemptIndex: 1,
+                receivedBeta: true,
+                hadCompletedBefore: false,
+              }),
+            ],
+          }),
+        ],
+        error: null,
+        isError: false,
+        isLoading: false,
+      });
       mockEntrySuggestionsUseQuery.mockReturnValue({
         data: [
-          {
+          climbingLogEntryFixture({
             id: "tick-1",
             providerId: "mountain-project",
+            climbId: "tick-1-climb",
+            discipline: "rock_climbing",
             sourceName: "Mountain Project",
-            climbType: "boulder",
-            gradeSystem: "v_scale",
-            grade: "V4",
-            sent: true,
-            ascentType: "Flash",
-            attemptCount: 2,
-            lead: null,
-            routeName: "Blue Circuit",
-            locationName: "Pacific Pipe",
-            context: {
-              providerId: "mountain-project",
-              locationPath: [{ name: "Pacific Pipe", externalId: null, kind: null }],
-              board: null,
-              wallAngle: null,
-              climbStyle: null,
-              resultStyle: "Flash",
+            sourceLinks: [],
+            displayGrade: "V4",
+            board: null,
+            wallAngle: null,
+            holdType: null,
+            recordedClimbAttemptCount: 2,
+            recordedClimbOutcome: "completed",
+            climb: {
+              ...climbingClimbFixture("mountain-project"),
+              ...{
+                id: "tick-1-climb",
+                name: "Blue Circuit",
+                kind: "boulder",
+                areaId: "tick-1-area-0",
+                areaPath: [
+                  {
+                    id: "tick-1-area-0",
+                    userId: "20000000-0000-4000-8000-000000000002",
+                    providerId: "mountain-project",
+                    externalId: null,
+                    name: "Pacific Pipe",
+                    parentAreaId: null,
+                    coordinates: null,
+                  },
+                ],
+                publishedGrades: [{ value: "V4", system: "v_scale" }],
+              },
             },
-          },
-          {
+            attempts: [
+              climbingAttemptFixture("tick-1", {
+                id: "tick-1-attempt-0",
+                outcome: "completed",
+                ropeMethod: null,
+                usedAid: false,
+                fellOrHung: false,
+                dabbed: false,
+                rockResultLabels: ["sent", "Flash"],
+                attemptIndex: 1,
+                receivedBeta: true,
+                hadCompletedBefore: false,
+              }),
+              climbingAttemptFixture("tick-1", {
+                id: "tick-1-attempt-1",
+                outcome: null,
+                ropeMethod: null,
+              }),
+            ],
+          }),
+          climbingLogEntryFixture({
             id: "tick-2",
             providerId: "openbeta",
+            climbId: "tick-2-climb",
+            discipline: "rock_climbing",
             sourceName: "OpenBeta",
-            climbType: "route",
-            gradeSystem: "yds",
-            grade: "5.10a",
-            sent: false,
-            ascentType: null,
-            attemptCount: 1,
-            lead: true,
-            routeName: "Project",
-            locationName: "Pacific Pipe",
-            context: {
-              providerId: "openbeta",
-              locationPath: [{ name: "Pacific Pipe", externalId: null, kind: null }],
-              board: null,
-              wallAngle: null,
-              climbStyle: "lead",
-              resultStyle: "Attempt",
+            sourceLinks: [],
+            displayGrade: "5.10a",
+            board: null,
+            wallAngle: null,
+            holdType: null,
+            recordedClimbAttemptCount: 1,
+            recordedClimbOutcome: null,
+            climb: {
+              ...climbingClimbFixture("openbeta"),
+              ...{
+                id: "tick-2-climb",
+                name: "Project",
+                kind: "route",
+                areaId: "tick-2-area-0",
+                areaPath: [
+                  {
+                    id: "tick-2-area-0",
+                    userId: "20000000-0000-4000-8000-000000000002",
+                    providerId: "openbeta",
+                    externalId: null,
+                    name: "Pacific Pipe",
+                    parentAreaId: null,
+                    coordinates: null,
+                  },
+                ],
+                publishedGrades: [{ value: "5.10a", system: "yds" }],
+              },
             },
-          },
+            attempts: [
+              climbingAttemptFixture("tick-2", {
+                id: "tick-2-attempt-0",
+                outcome: null,
+                ropeMethod: "lead",
+              }),
+            ],
+          }),
         ],
         error: null,
         isLoading: false,
@@ -1793,23 +2255,34 @@ describe("ActivityDetailPage", () => {
       const ActivityDetailPage = await importPage();
       renderWithUnits(<ActivityDetailPage />);
       expect(getQueryEnabledFlag(mockEntrySuggestionsUseQuery.mock.calls[0]?.[1])).toBe(true);
-      expect(screen.getByText("Unattached climbing entries")).toBeDefined();
+      const climbsSection = screen.getByRole("heading", { name: "Climbs" }).closest("section");
+      if (!climbsSection) throw new Error("Expected a climbs section");
+      expect(within(climbsSection).getByText("Attached Arete")).toBeInTheDocument();
+      expect(within(climbsSection).getByText("Blue Circuit")).toBeInTheDocument();
+      expect(within(climbsSection).getByText("Project")).toBeInTheDocument();
+      expect(
+        within(climbsSection).getAllByRole("button", {
+          name: /^Attach entry [12], (Blue Circuit|Project) to this activity$/,
+        }),
+      ).toHaveLength(2);
       expect(screen.getByText("Mountain Project")).toBeDefined();
       expect(screen.getByText("OpenBeta")).toBeDefined();
       expect(screen.getByText("Blue Circuit")).toBeDefined();
       expect(screen.getByText("V4", { exact: true })).toBeDefined();
-      expect(screen.getByText("Flash")).toBeDefined();
-      const controls = screen.getAllByRole("button", { name: "Attach to this activity" });
+      expect(screen.getAllByText("Flash")).toHaveLength(2);
+      const controls = screen.getAllByRole("button", {
+        name: /^Attach entry [12], (Blue Circuit|Project) to this activity$/,
+      });
       expect(controls).toHaveLength(2);
       const secondControl = controls.at(1);
       if (!secondControl) throw new Error("Expected a second attach control");
       fireEvent.click(secondControl);
       expect(mockAttachEntryMutate).toHaveBeenCalledWith({
         activityId: "test-123",
-        entryId: "tick-2",
+        climbingLogEntryId: "tick-2",
       });
       await waitFor(() => {
-        expect(mockClimbingEntriesInvalidate).toHaveBeenCalledWith({ id: "test-123" });
+        expect(mockClimbingEntriesInvalidate).toHaveBeenCalledWith({ activityId: "test-123" });
         expect(mockEntrySuggestionsInvalidate).toHaveBeenCalledWith({ activityId: "test-123" });
         expect(mockClimbingSessionSummaryInvalidate).toHaveBeenCalledWith();
         expect(mockClimbingGradeProgressionInvalidate).toHaveBeenCalledWith();
@@ -1819,34 +2292,156 @@ describe("ActivityDetailPage", () => {
       expect(mockActivityStreamInvalidate).not.toHaveBeenCalled();
     });
 
+    it.each([
+      { state: "loading", error: null, isLoading: true },
+      { state: "paused", error: null, isLoading: false },
+      {
+        state: "unavailable",
+        error: new Error("Attached climbs are unavailable. Refresh to try again."),
+        isLoading: false,
+      },
+    ])(
+      "keeps suggestions actionable when attached climbs are $state",
+      async ({ error, isLoading }) => {
+        const originalActivity = { ...mockActivity };
+        Object.assign(mockActivity, { activityType: "climbing", name: "Morning Rock Climb" });
+        mockClimbingEntriesUseQuery.mockReturnValue({
+          data: undefined,
+          error,
+          isError: error !== null,
+          isLoading,
+        });
+        mockEntrySuggestionsUseQuery.mockReturnValue({
+          data: [
+            climbingLogEntryFixture({
+              id: "available-tick",
+              providerId: "openbeta",
+              climbId: "available-tick-climb",
+              discipline: "rock_climbing",
+              sourceName: "OpenBeta",
+              sourceLinks: [],
+              displayGrade: "5.10a",
+              board: null,
+              wallAngle: null,
+              holdType: null,
+              recordedClimbAttemptCount: 1,
+              recordedClimbOutcome: "completed",
+              climb: {
+                ...climbingClimbFixture("openbeta"),
+                ...{
+                  id: "available-tick-climb",
+                  name: "Available Arete",
+                  kind: "route",
+                  areaId: "available-tick-area-0",
+                  areaPath: [
+                    {
+                      id: "available-tick-area-0",
+                      userId: "20000000-0000-4000-8000-000000000002",
+                      providerId: "openbeta",
+                      externalId: null,
+                      name: "Test Crag",
+                      parentAreaId: null,
+                      coordinates: null,
+                    },
+                  ],
+                  publishedGrades: [{ value: "5.10a", system: "yds" }],
+                },
+              },
+              attempts: [
+                climbingAttemptFixture("available-tick", {
+                  id: "available-tick-attempt-0",
+                  outcome: "completed",
+                  ropeMethod: "lead",
+                  usedAid: false,
+                  fellOrHung: false,
+                  rockResultLabels: ["sent", "Onsight"],
+                  attemptIndex: 1,
+                  receivedBeta: false,
+                  hadCompletedBefore: false,
+                }),
+              ],
+            }),
+          ],
+          error: null,
+          isLoading: false,
+        });
+
+        const ActivityDetailPage = await importPage();
+        renderWithUnits(<ActivityDetailPage />);
+        const climbsSection = screen.getByRole("heading", { name: "Climbs" }).closest("section");
+        if (!climbsSection) throw new Error("Expected a climbs section");
+        expect(within(climbsSection).getByText("Available Arete")).toBeInTheDocument();
+        if (error) expect(within(climbsSection).getByText(error.message)).toBeInTheDocument();
+        const attachButton = within(climbsSection).getByRole("button", {
+          name: "Attach entry 1, Available Arete to this activity",
+        });
+        expect(attachButton).toBeEnabled();
+        fireEvent.click(attachButton);
+        expect(mockAttachEntryMutate).toHaveBeenCalledWith({
+          activityId: "test-123",
+          climbingLogEntryId: "available-tick",
+        });
+        await waitFor(() =>
+          expect(mockClimbingEntriesInvalidate).toHaveBeenCalledWith({ activityId: "test-123" }),
+        );
+        Object.assign(mockActivity, originalActivity);
+      },
+    );
+
     it("shows the server error when attaching a climbing entry fails", async () => {
       const originalActivity = { ...mockActivity };
       Object.assign(mockActivity, { activityType: "climbing", name: "Morning Rock Climb" });
       mockAttachShouldFail.mockReturnValue(true);
       mockEntrySuggestionsUseQuery.mockReturnValue({
         data: [
-          {
+          climbingLogEntryFixture({
             id: "tick-1",
             providerId: "openbeta",
+            climbId: "tick-1-climb",
+            discipline: "rock_climbing",
             sourceName: "OpenBeta",
-            climbType: "route",
-            gradeSystem: "yds",
-            grade: "5.10a",
-            sent: true,
-            ascentType: "Onsight",
-            attemptCount: 1,
-            lead: true,
-            routeName: "The Corner",
-            locationName: "Test Crag",
-            context: {
-              providerId: "openbeta",
-              locationPath: [{ name: "Test Crag", externalId: null, kind: null }],
-              board: null,
-              wallAngle: null,
-              climbStyle: "lead",
-              resultStyle: "Onsight",
+            sourceLinks: [],
+            displayGrade: "5.10a",
+            board: null,
+            wallAngle: null,
+            holdType: null,
+            recordedClimbAttemptCount: 1,
+            recordedClimbOutcome: "completed",
+            climb: {
+              ...climbingClimbFixture("openbeta"),
+              ...{
+                id: "tick-1-climb",
+                name: "The Corner",
+                kind: "route",
+                areaId: "tick-1-area-0",
+                areaPath: [
+                  {
+                    id: "tick-1-area-0",
+                    userId: "20000000-0000-4000-8000-000000000002",
+                    providerId: "openbeta",
+                    externalId: null,
+                    name: "Test Crag",
+                    parentAreaId: null,
+                    coordinates: null,
+                  },
+                ],
+                publishedGrades: [{ value: "5.10a", system: "yds" }],
+              },
             },
-          },
+            attempts: [
+              climbingAttemptFixture("tick-1", {
+                id: "tick-1-attempt-0",
+                outcome: "completed",
+                ropeMethod: "lead",
+                usedAid: false,
+                fellOrHung: false,
+                rockResultLabels: ["sent", "Onsight"],
+                attemptIndex: 1,
+                receivedBeta: false,
+                hadCompletedBefore: false,
+              }),
+            ],
+          }),
         ],
         error: null,
         isLoading: false,
@@ -1855,7 +2450,9 @@ describe("ActivityDetailPage", () => {
       const ActivityDetailPage = await importPage();
       renderWithUnits(<ActivityDetailPage />);
 
-      fireEvent.click(screen.getByRole("button", { name: "Attach to this activity" }));
+      fireEvent.click(
+        screen.getByRole("button", { name: "Attach entry 1, The Corner to this activity" }),
+      );
 
       await waitFor(() =>
         expect(screen.getByRole("alert")).toHaveTextContent(
@@ -1874,7 +2471,7 @@ describe("ActivityDetailPage", () => {
       });
       const ActivityDetailPage = await importPage();
       const view = renderWithUnits(<ActivityDetailPage />);
-      expect(screen.getByText("Loading climbing entries...")).toBeDefined();
+      expect(screen.getByText("Loading climbing logs...")).toBeDefined();
       view.unmount();
       mockEntrySuggestionsUseQuery.mockReturnValue({
         data: undefined,
@@ -1891,7 +2488,7 @@ describe("ActivityDetailPage", () => {
       mockEntrySuggestionsUseQuery.mockReturnValue({ data: [], error: null, isLoading: false });
       const ActivityDetailPage = await importPage();
       renderWithUnits(<ActivityDetailPage />);
-      expect(screen.getByText("No unattached climbing entries for this day.")).toBeDefined();
+      expect(screen.getByText("No unattached climbing logs for this day.")).toBeDefined();
     });
 
     it("shows the climbs attached to a merged rock-climbing activity", async () => {
@@ -1902,85 +2499,167 @@ describe("ActivityDetailPage", () => {
       });
       mockClimbingEntriesUseQuery.mockReturnValue({
         data: [
-          {
+          climbingLogEntryFixture({
             id: "climb-v4",
-            climbType: "boulder",
-            gradeSystem: "v_scale",
-            grade: "V4",
-            sent: true,
-            attemptCount: 7,
-            attempts: [],
-            ascentType: "Redpoint",
-            holdType: null,
-            routeName: "Blue Circuit",
-            locationName: "Touchstone Pacific Pipe",
+            providerId: "kaya",
+            climbId: "climb-v4-climb",
+            discipline: "rock_climbing",
             sourceName: "Kaya",
-            wallAngleDegrees: null,
-            lead: null,
-            context: {
-              providerId: "kaya",
-              locationPath: [{ name: "Touchstone Pacific Pipe", externalId: null, kind: null }],
-              board: null,
-              wallAngle: null,
-              climbStyle: null,
-              resultStyle: "Redpoint",
-            },
-          },
-          {
-            id: "climb-project",
-            climbType: "boulder",
-            gradeSystem: "v_scale",
-            grade: "V5",
-            sent: false,
-            attemptCount: 1,
-            attempts: [
-              {
-                attemptIndex: 1,
-                failureReason: "technique",
-                notes: null,
-                outcome: "failed",
+            sourceLinks: [],
+            displayGrade: "V4",
+            board: null,
+            wallAngle: null,
+            holdType: null,
+            recordedClimbAttemptCount: 7,
+            recordedClimbOutcome: "completed",
+            climb: {
+              ...climbingClimbFixture("kaya"),
+              ...{
+                id: "climb-v4-climb",
+                name: "Blue Circuit",
+                kind: "boulder",
+                areaId: "climb-v4-area-0",
+                areaPath: [
+                  {
+                    id: "climb-v4-area-0",
+                    userId: "20000000-0000-4000-8000-000000000002",
+                    providerId: "kaya",
+                    externalId: null,
+                    name: "Touchstone Pacific Pipe",
+                    parentAreaId: null,
+                    coordinates: null,
+                  },
+                ],
+                publishedGrades: [{ value: "V4", system: "v_scale" }],
               },
+            },
+            attempts: [
+              climbingAttemptFixture("climb-v4", {
+                id: "climb-v4-attempt-0",
+                outcome: "completed",
+                ropeMethod: null,
+                usedAid: false,
+                fellOrHung: false,
+                dabbed: false,
+                rockResultLabels: ["sent"],
+              }),
+              climbingAttemptFixture("climb-v4", {
+                id: "climb-v4-attempt-1",
+                outcome: null,
+                ropeMethod: null,
+              }),
+              climbingAttemptFixture("climb-v4", {
+                id: "climb-v4-attempt-2",
+                outcome: null,
+                ropeMethod: null,
+              }),
+              climbingAttemptFixture("climb-v4", {
+                id: "climb-v4-attempt-3",
+                outcome: null,
+                ropeMethod: null,
+              }),
+              climbingAttemptFixture("climb-v4", {
+                id: "climb-v4-attempt-4",
+                outcome: null,
+                ropeMethod: null,
+              }),
+              climbingAttemptFixture("climb-v4", {
+                id: "climb-v4-attempt-5",
+                outcome: null,
+                ropeMethod: null,
+              }),
+              climbingAttemptFixture("climb-v4", {
+                id: "climb-v4-attempt-6",
+                outcome: null,
+                ropeMethod: null,
+              }),
             ],
-            ascentType: null,
+          }),
+          climbingLogEntryFixture({
+            id: "climb-project",
+            providerId: "kaya",
+            climbId: "climb-project-climb",
+            discipline: "rock_climbing",
+            sourceName: "Kaya",
+            sourceLinks: [],
+            displayGrade: "V5",
+            board: null,
+            wallAngle: { value: 35, unit: "degrees" },
             holdType: "crimp",
-            routeName: "Project",
-            locationName: "Touchstone Pacific Pipe",
-            sourceName: "Kaya",
-            wallAngleDegrees: 35,
-            lead: null,
-            context: {
-              providerId: "kaya",
-              locationPath: [{ name: "Touchstone Pacific Pipe", externalId: null, kind: null }],
-              board: null,
-              wallAngle: { value: 35, unit: "degrees" },
-              climbStyle: null,
-              resultStyle: "Attempt",
+            recordedClimbAttemptCount: 1,
+            recordedClimbOutcome: "failed",
+            climb: {
+              ...climbingClimbFixture("kaya"),
+              ...{
+                id: "climb-project-climb",
+                name: "Project",
+                kind: "boulder",
+                areaId: "climb-project-area-0",
+                areaPath: [
+                  {
+                    id: "climb-project-area-0",
+                    userId: "20000000-0000-4000-8000-000000000002",
+                    providerId: "kaya",
+                    externalId: null,
+                    name: "Touchstone Pacific Pipe",
+                    parentAreaId: null,
+                    coordinates: null,
+                  },
+                ],
+                publishedGrades: [{ value: "V5", system: "v_scale" }],
+              },
             },
-          },
-          {
+            attempts: [
+              climbingAttemptFixture("climb-project", {
+                id: "climb-project-attempt-0",
+                outcome: "failed",
+                ropeMethod: null,
+                attemptIndex: 1,
+              }),
+            ],
+          }),
+          climbingLogEntryFixture({
             id: "kaya-unsent",
-            climbType: "boulder",
-            gradeSystem: "v_scale",
-            grade: "V3",
-            sent: false,
-            attemptCount: null,
-            attempts: [],
-            ascentType: null,
-            holdType: null,
-            routeName: null,
-            locationName: "Touchstone Pacific Pipe",
+            providerId: "kaya",
+            climbId: "kaya-unsent-climb",
+            discipline: "rock_climbing",
             sourceName: "Kaya",
-            wallAngleDegrees: null,
-            lead: null,
-            context: {
-              providerId: "kaya",
-              locationPath: [{ name: "Touchstone Pacific Pipe", externalId: null, kind: null }],
-              board: null,
-              wallAngle: null,
-              climbStyle: null,
-              resultStyle: "Attempt",
+            sourceLinks: [],
+            displayGrade: "V3",
+            board: null,
+            wallAngle: null,
+            holdType: null,
+            recordedClimbAttemptCount: 1,
+            recordedClimbOutcome: null,
+            climb: {
+              ...climbingClimbFixture("kaya"),
+              ...{
+                id: "kaya-unsent-climb",
+                name: null,
+                kind: "boulder",
+                areaId: "kaya-unsent-area-0",
+                areaPath: [
+                  {
+                    id: "kaya-unsent-area-0",
+                    userId: "20000000-0000-4000-8000-000000000002",
+                    providerId: "kaya",
+                    externalId: null,
+                    name: "Touchstone Pacific Pipe",
+                    parentAreaId: null,
+                    coordinates: null,
+                  },
+                ],
+                publishedGrades: [{ value: "V3", system: "v_scale" }],
+              },
             },
-          },
+            attempts: [
+              climbingAttemptFixture("kaya-unsent", {
+                id: "kaya-unsent-attempt-0",
+                outcome: null,
+                ropeMethod: null,
+              }),
+            ],
+          }),
         ],
         error: null,
         isError: false,
@@ -1994,15 +2673,16 @@ describe("ActivityDetailPage", () => {
       expect(screen.getByText("Climbs")).toBeDefined();
       expect(screen.getByText("V4")).toBeDefined();
       expect(screen.getByText("Blue Circuit")).toBeDefined();
-      expect(screen.getByText("Redpoint")).toBeDefined();
-      expect(screen.getByText("7 attempts")).toBeDefined();
+      expect(screen.getByText("Sent")).toBeDefined();
+      expect(screen.getByText("Whole climb completed · 7 recorded attempts")).toBeDefined();
       expect(screen.getByText("Project")).toBeDefined();
-      expect(screen.getByText("Attempted 1 time")).toBeDefined();
+      expect(screen.getByText("Whole climb failed · 1 recorded attempt")).toBeDefined();
       expect(screen.getByText("Wall angle: 35°")).toBeDefined();
-      expect(screen.getByText("Crimp")).toBeTruthy();
-      expect(screen.getByText("1: Technique")).toBeDefined();
-      expect(screen.getByText("Not sent; attempt count not recorded")).toBeDefined();
+      expect(screen.getByText("Whole climb · 1 recorded attempt")).toBeDefined();
       expect(screen.getAllByText("Touchstone Pacific Pipe")).toHaveLength(3);
+      expect(
+        screen.queryByText("No unattached climbing logs for this day."),
+      ).not.toBeInTheDocument();
 
       Object.assign(mockActivity, originalData);
     });
@@ -2260,6 +2940,11 @@ describe("ActivityDetailPage", () => {
         data: [],
         error: null,
         isError: false,
+        isLoading: false,
+      });
+      mockRouteUseQuery.mockReturnValue({
+        data: { status: "unavailable" },
+        error: null,
         isLoading: false,
       });
       const ActivityDetailPage = await importPage();

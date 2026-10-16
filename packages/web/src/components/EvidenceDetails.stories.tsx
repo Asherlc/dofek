@@ -8,11 +8,6 @@ const meta = {
   args: {
     details: [
       { key: "method", label: "Method", value: "Server-authored comparison method." },
-      {
-        key: "interpretation",
-        label: "Interpretation",
-        value: "This describes an observed association; it does not establish causation.",
-      },
       { key: "uncertainty", label: "Uncertainty", value: "No interval is available." },
     ],
   },

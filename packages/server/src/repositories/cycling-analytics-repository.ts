@@ -112,7 +112,7 @@ type EstimateEvidence = {
   method: string;
   confidence: EstimateConfidence;
   confidenceLabel: string;
-  confidenceDetail: string;
+  confidenceDetail: string | null;
   sourceWorkouts: SourceWorkout[];
   pacingGuidance: string;
 };
@@ -205,7 +205,7 @@ function buildVo2MaxEvidence(curve: PowerCurve, weightKg: number | null): Estima
     confidence: hasEstimate ? "limited" : "not_available",
     confidenceLabel: hasEstimate ? "Indirect estimate" : "Not available",
     confidenceDetail: hasEstimate
-      ? "A field estimate, not a laboratory measurement."
+      ? null
       : "A 5-minute power effort and a positive body-weight measurement are required.",
     sourceWorkouts,
     pacingGuidance:

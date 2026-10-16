@@ -36,7 +36,7 @@ export function NutritionDataQualityPanel({
       ) : null}
       <Text style={styles.body}>{messages.recorded}</Text>
       <Text style={styles.body}>{messages.coverage}</Text>
-      <Text style={styles.body}>{messages.overlap}</Text>
+      {dataQuality.overlapDays > 0 ? <Text style={styles.body}>{messages.overlap}</Text> : null}
       {dataQuality.contributingSourceLabels.length > 0 && (
         <Text style={styles.detail}>
           Contributing sources: {dataQuality.contributingSourceLabels.join(", ")}

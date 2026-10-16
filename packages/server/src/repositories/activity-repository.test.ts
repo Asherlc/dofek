@@ -1524,7 +1524,7 @@ describe("ActivityRepository", () => {
     it("calls execute", async () => {
       const { repo, execute } = makeRepository([{ member_activity_id: "activity-id" }]);
       await repo.delete("activity-id");
-      expect(execute).toHaveBeenCalledTimes(2);
+      expect(execute).toHaveBeenCalledTimes(3);
     });
 
     it("deletes every raw member returned for a selected activity group", async () => {
@@ -1540,7 +1540,7 @@ describe("ActivityRepository", () => {
       expect(selectQuery.sql).toContain("FROM fitness.activity_group_alias selected_alias");
       expect(selectQuery.params.filter((parameter) => parameter === "activity-id")).toHaveLength(3);
 
-      const sqlObject = execute.mock.calls[1]?.[0];
+      const sqlObject = execute.mock.calls[2]?.[0];
       const compiledQuery = dialect.sqlToQuery(sqlObject);
       expect(compiledQuery.sql).toContain("UPDATE fitness.activity");
       expect(compiledQuery.sql).toContain("SET deleted_at = NOW()");
@@ -1582,7 +1582,7 @@ describe("ActivityRepository", () => {
         memberActivityIds: ["activity-id", "other-id"],
       });
 
-      const sqlObject = execute.mock.calls[1]?.[0];
+      const sqlObject = execute.mock.calls[2]?.[0];
       const compiledQuery = dialect.sqlToQuery(sqlObject);
       expect(compiledQuery.sql).toContain("UPDATE fitness.activity");
       expect(compiledQuery.sql).toContain("SET deleted_at = NOW()");

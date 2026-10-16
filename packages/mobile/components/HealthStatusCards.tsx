@@ -1,9 +1,6 @@
-import { formatComparisonContext, formatComparisonPeriod } from "@dofek/format/baseline-context";
+import { formatComparisonContext } from "@dofek/format/baseline-context";
 import { formatHealthStatusLabel } from "@dofek/format/health-status";
-import {
-  formatHealthProvenanceSource,
-  formatHealthProvenanceSummary,
-} from "@dofek/providers/health-provenance";
+import { formatHealthProvenanceSource } from "@dofek/providers/health-provenance";
 import type { HealthStatusMetric } from "dofek-server/mobile-dashboard-contracts";
 import { useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
@@ -94,22 +91,12 @@ export function HealthStatusCards({
                 style={styles.progress}
               >
                 <Text style={styles.rule}>{metric.evaluationRule}</Text>
-                <Text style={styles.progressCount}>
-                  {metric.baselineProgress.observedObservationDays} of{" "}
-                  {metric.baselineProgress.requiredObservationDays} required days recorded
-                </Text>
-                <Text style={styles.action}>{metric.baselineProgress.action}</Text>
+                {metric.baselineProgress.blocker !== "syncing" ? (
+                  <Text style={styles.action}>{metric.baselineProgress.action}</Text>
+                ) : null}
               </View>
             ) : null}
-            {metric.comparison ? (
-              <Text style={styles.provenance}>{formatComparisonPeriod(metric.comparison)}</Text>
-            ) : null}
             <View style={styles.provenanceDisclosure}>
-              {provenance ? (
-                <Text style={styles.provenanceSummary}>
-                  {formatHealthProvenanceSummary(provenance)}
-                </Text>
-              ) : null}
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel={`${expanded ? "Hide" : "Show"} details for ${metric.label}`}
@@ -234,12 +221,6 @@ const styles = StyleSheet.create({
     minHeight: 44,
     minWidth: 44,
   },
-  provenanceSummary: {
-    color: colors.textTertiary,
-    flex: 1,
-    fontSize: 12,
-    lineHeight: 17,
-  },
   provenanceAction: {
     color: colors.text,
     fontSize: 12,
@@ -255,11 +236,6 @@ const styles = StyleSheet.create({
   progress: {
     gap: spacing.xs,
     marginTop: spacing.xs,
-  },
-  progressCount: {
-    color: colors.textSecondary,
-    fontSize: 12,
-    lineHeight: 17,
   },
   action: {
     color: colors.text,

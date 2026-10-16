@@ -24,6 +24,23 @@ const emptyClimbContext = {
 };
 
 describe("KayaClient", () => {
+  it("retains an unreported rope method on an attempted climb", async () => {
+    const fetchFn = vi.fn<typeof fetch>().mockResolvedValue(
+      jsonResponse({
+        data: {
+          sessionsForUser: [
+            {
+              ...session("1000"),
+              attempted_climbs: [{ ...attemptedClimb("1000_2001", null), lead: null }],
+            },
+          ],
+        },
+      }),
+    );
+    expect(
+      (await new KayaClient("token", fetchFn).listSessions("42"))[0]?.attempted_climbs[0]?.lead,
+    ).toBeNull();
+  });
   it("authenticates then fetches sessions and ascents with Kaya's lead field", async () => {
     const fetchFn = vi
       .fn<typeof fetch>()
@@ -83,6 +100,7 @@ describe("KayaClient", () => {
                   ...emptyClimbContext,
                   id: "climb-1",
                   name: "Lead Route",
+                  slug: "Lead-Route-5.11a-Kaya-Gym-12345",
                   lead: true,
                   climb_type: { id: "routes", name: "Routes" },
                   grade: { id: "grade-1", name: "5.11a", climb_type_group: "route" },
@@ -117,7 +135,7 @@ describe("KayaClient", () => {
         rating: 4,
         stiffness: 3,
         gym: { id: "gym-1", name: "Kaya Gym" },
-        climb: expect.objectContaining({ lead: true }),
+        climb: expect.objectContaining({ lead: true, slug: "Lead-Route-5.11a-Kaya-Gym-12345" }),
       }),
     ]);
 
@@ -145,6 +163,8 @@ describe("KayaClient", () => {
     expect(graphQlRequests[1]).toContain("rating");
     expect(graphQlRequests[1]).toContain("stiffness");
     expect(graphQlRequests[1]).toContain("lead");
+    expect(graphQlRequests[0]).toContain("slug");
+    expect(graphQlRequests[1]).toContain("slug");
     expect(fetchFn.mock.calls[1]?.[1]?.headers).toMatchObject({
       authorization: "Bearer kaya-access-token",
     });
@@ -179,6 +199,39 @@ describe("KayaClient", () => {
     await expect(new KayaClient("token", fetchFn).listAscents("42")).rejects.toThrow();
   });
 
+  it("reads session attempt counts when the upstream attempts field is null", async () => {
+    const upstreamClimbs = [
+      { ...attemptedClimb("climb-1", null), session_attempts: 1 },
+      { ...attemptedClimb("climb-2", null), session_attempts: 5 },
+      { ...attemptedClimb("climb-3", null), session_attempts: 1 },
+      { ...attemptedClimb("climb-4", null), session_attempts: 3 },
+    ];
+    const fetchFn = vi.fn<typeof fetch>().mockImplementation(async (_url, init) => {
+      const request = JSON.parse(String(init?.body));
+      const selectsSessionAttempts =
+        /attempted_climbs\s*\{\s*attempts\s*:\s*session_attempts\b/.test(request.query);
+      return jsonResponse({
+        data: {
+          sessionsForUser: [
+            {
+              ...session("session-1"),
+              attempted_climbs: upstreamClimbs.map(({ session_attempts, ...climb }) => ({
+                ...climb,
+                attempts: selectsSessionAttempts ? session_attempts : climb.attempts,
+              })),
+            },
+          ],
+        },
+      });
+    });
+
+    const sessions = await new KayaClient("token", fetchFn).listSessions("42");
+
+    expect(sessions[0]?.attempted_climbs.map(({ attempts }) => attempts)).toEqual([1, 5, 1, 3]);
+    const request = JSON.parse(String(fetchFn.mock.calls[0]?.[1]?.body));
+    expect(request.query).toMatch(/attempted_climbs\s*\{\s*attempts\s*:\s*session_attempts\b/);
+  });
+
   it("requests and preserves session attempts with unknown counts and normalized coordinates", async () => {
     const attemptedClimbs = [attemptedClimb("1000_2001", null), attemptedClimb("1000_2002", 3)];
     const fetchFn = vi.fn<typeof fetch>().mockResolvedValue(
@@ -207,8 +260,9 @@ describe("KayaClient", () => {
 
   it("requests and retains outdoor context and board on both climb feeds", async () => {
     const context = {
-      destination: { id: 101, name: "Test destination" },
-      area: { id: 102, name: "Test area" },
+      slug: "Test-Route-5.6-Test-Destination-12345",
+      destination: { id: 101, name: "Test destination", latitude: 0, longitude: -122.25 },
+      area: { id: 102, name: "Test area", latitude: 37.5, longitude: 0 },
       subarea: { id: 103, name: "Test face" },
       board: { id: 104, name: "Test board" },
       angle: -20,
@@ -241,8 +295,9 @@ describe("KayaClient", () => {
     const sessions = await client.listSessions("42");
     const ascents = await client.listAscents("42");
     const expected = {
-      destination: { id: "101", name: "Test destination" },
-      area: { id: "102", name: "Test area" },
+      slug: "Test-Route-5.6-Test-Destination-12345",
+      destination: { id: "101", name: "Test destination", latitude: 0, longitude: -122.25 },
+      area: { id: "102", name: "Test area", latitude: 37.5, longitude: 0 },
       subarea: { id: "103", name: "Test face" },
       board: { id: "104", name: "Test board" },
       angle: -20,
@@ -253,7 +308,9 @@ describe("KayaClient", () => {
       const query = String(JSON.parse(String(init?.body)).query).replace(/\s+/g, " ");
       const selection = query.slice(query.indexOf(index === 0 ? "attempted_climbs {" : "climb {"));
       for (const field of ["destination", "area", "subarea", "board"]) {
-        expect(selection).toContain(`${field} { id name }`);
+        expect(selection).toContain(
+          field === "board" ? `${field} { id name }` : `${field} { id name latitude longitude }`,
+        );
       }
       expect(selection).toContain("angle");
     }

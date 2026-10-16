@@ -439,7 +439,7 @@ export class ProcessingRepository {
     }
     const alertableDatasets = new Map(
       snapshot.datasets
-        .filter((dataset) => dataset.status === "failed" || dataset.status === "blocked")
+        .filter((dataset) => dataset.status === "failed")
         .map((dataset) => [dataset.key, dataset] as const),
     );
     const alerts = snapshot.operations.flatMap((operation) => {

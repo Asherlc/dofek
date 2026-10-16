@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { makeTransactionalTestDatabase } from "./test-helpers.ts";
 
 vi.mock("../db/token-user-context.ts", () => ({
   getTokenUserId: () => "user-1",
@@ -775,12 +776,12 @@ function makeWahooInsertMock(returnId = "10000000-0000-4000-8000-000000000001") 
 describe("WahooProvider.syncWebhookEvent", () => {
   it("returns immediately for non-workout objectType", async () => {
     const provider = new WahooProvider(async () => new Response());
-    const mockDb = {
+    const mockDb = makeTransactionalTestDatabase({
       select: vi.fn(),
       insert: vi.fn(),
       delete: vi.fn(),
       execute: vi.fn(),
-    };
+    });
     const result = await provider.syncWebhookEvent(mockDb, {
       ownerExternalId: "42",
       eventType: "create",
@@ -795,12 +796,12 @@ describe("WahooProvider.syncWebhookEvent", () => {
 
   it("returns error when webhook metadata is invalid", async () => {
     const provider = new WahooProvider(async () => new Response());
-    const mockDb = {
+    const mockDb = makeTransactionalTestDatabase({
       select: vi.fn(),
       insert: vi.fn(),
       delete: vi.fn(),
       execute: vi.fn(),
-    };
+    });
 
     const result = await provider.syncWebhookEvent(mockDb, {
       ownerExternalId: "42",
@@ -816,12 +817,12 @@ describe("WahooProvider.syncWebhookEvent", () => {
 
   it("returns early when payload has workout_summary but no workout", async () => {
     const provider = new WahooProvider(async () => new Response());
-    const mockDb = {
+    const mockDb = makeTransactionalTestDatabase({
       select: vi.fn(),
       insert: vi.fn(),
       delete: vi.fn(),
       execute: vi.fn(),
-    };
+    });
 
     const result = await provider.syncWebhookEvent(mockDb, {
       ownerExternalId: "42",
@@ -846,12 +847,12 @@ describe("WahooProvider.syncWebhookEvent", () => {
 
   it("returns error when payload has neither workout nor workout_summary", async () => {
     const provider = new WahooProvider(async () => new Response());
-    const mockDb = {
+    const mockDb = makeTransactionalTestDatabase({
       select: vi.fn(),
       insert: vi.fn(),
       delete: vi.fn(),
       execute: vi.fn(),
-    };
+    });
 
     const result = await provider.syncWebhookEvent(mockDb, {
       ownerExternalId: "42",
@@ -871,12 +872,12 @@ describe("WahooProvider.syncWebhookEvent", () => {
 
   it("upserts activity on happy path without FIT file", async () => {
     const mockInsert = makeWahooInsertMock();
-    const mockDb = {
+    const mockDb = makeTransactionalTestDatabase({
       select: vi.fn(),
       insert: mockInsert,
       delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
       execute: vi.fn(),
-    };
+    });
 
     const provider = new WahooProvider(async () => new Response());
     const result = await provider.syncWebhookEvent(mockDb, {
@@ -906,12 +907,12 @@ describe("WahooProvider.syncWebhookEvent", () => {
 
   it("merges standalone workout_summary into workout when workout has none", async () => {
     const mockInsert = makeWahooInsertMock();
-    const mockDb = {
+    const mockDb = makeTransactionalTestDatabase({
       select: vi.fn(),
       insert: mockInsert,
       delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
       execute: vi.fn(),
-    };
+    });
 
     const provider = new WahooProvider(async () => new Response());
     const result = await provider.syncWebhookEvent(mockDb, {
@@ -949,12 +950,12 @@ describe("WahooProvider.syncWebhookEvent", () => {
     const mockDelete = vi.fn().mockReturnValue({
       where: vi.fn().mockResolvedValue(undefined),
     });
-    const mockDb = {
+    const mockDb = makeTransactionalTestDatabase({
       select: vi.fn(),
       insert: mockInsert,
       delete: mockDelete,
       execute: vi.fn(),
-    };
+    });
 
     // FIT file URL download returns 404
     const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
@@ -1000,12 +1001,12 @@ describe("WahooProvider.syncWebhookEvent", () => {
       .spyOn(loggerModule.logger, "info")
       .mockImplementation(() => loggerModule.logger);
     const whereSpy = vi.fn().mockResolvedValue(undefined);
-    const mockDb = {
+    const mockDb = makeTransactionalTestDatabase({
       select: vi.fn(),
       insert: makeWahooInsertMock(),
       delete: vi.fn().mockReturnValue({ where: whereSpy }),
       execute: vi.fn(),
-    };
+    });
     const provider = new WahooProvider(async (input): Promise<Response> => {
       if (String(input) === "https://cdn.wahoo.com/test.fit") {
         return new Response(new Uint8Array([1, 2, 3]));
@@ -1067,12 +1068,12 @@ describe("WahooProvider.syncWebhookEvent", () => {
         }),
       }),
     });
-    const mockDb = {
+    const mockDb = makeTransactionalTestDatabase({
       select: vi.fn(),
       insert: mockInsert,
       delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
       execute: vi.fn(),
-    };
+    });
 
     const provider = new WahooProvider(async () => new Response());
     const result = await provider.syncWebhookEvent(mockDb, {
@@ -1114,12 +1115,12 @@ describe("WahooProvider.syncWebhookEvent", () => {
         }),
       }),
     });
-    const mockDb = {
+    const mockDb = makeTransactionalTestDatabase({
       select: vi.fn(),
       insert: mockInsert,
       delete: vi.fn(),
       execute: vi.fn(),
-    };
+    });
 
     const provider = new WahooProvider(async () => new Response());
     const result = await provider.syncWebhookEvent(mockDb, {
@@ -1160,12 +1161,12 @@ describe("WahooProvider.sync", () => {
     const loggerInfoSpy = vi
       .spyOn(loggerModule.logger, "info")
       .mockImplementation(() => loggerModule.logger);
-    const mockDb = {
+    const mockDb = makeTransactionalTestDatabase({
       select: vi.fn(),
       insert: makeWahooInsertMock("10000000-0000-4000-8000-000000000002"),
       delete: vi.fn(),
       execute: vi.fn(),
-    };
+    });
     const metricStreamPublisher = {
       publishRows: vi.fn(async () => []),
     };
@@ -1319,12 +1320,12 @@ describe("WahooProvider — precise webhook assertions", () => {
 
   it("syncWebhookEvent returns provider as 'wahoo' for all paths", async () => {
     const provider = new WahooProvider(async () => new Response());
-    const mockDb = {
+    const mockDb = makeTransactionalTestDatabase({
       select: vi.fn(),
       insert: vi.fn(),
       delete: vi.fn(),
       execute: vi.fn(),
-    };
+    });
 
     // Non-workout path
     const result = await provider.syncWebhookEvent(mockDb, {
@@ -1340,12 +1341,12 @@ describe("WahooProvider — precise webhook assertions", () => {
 
   it("syncWebhookEvent invalid payload path returns provider 'wahoo'", async () => {
     const provider = new WahooProvider(async () => new Response());
-    const mockDb = {
+    const mockDb = makeTransactionalTestDatabase({
       select: vi.fn(),
       insert: vi.fn(),
       delete: vi.fn(),
       execute: vi.fn(),
-    };
+    });
 
     const result = await provider.syncWebhookEvent(mockDb, {
       ownerExternalId: "1",
@@ -1359,12 +1360,12 @@ describe("WahooProvider — precise webhook assertions", () => {
 
   it("syncWebhookEvent summary-only path returns provider 'wahoo'", async () => {
     const provider = new WahooProvider(async () => new Response());
-    const mockDb = {
+    const mockDb = makeTransactionalTestDatabase({
       select: vi.fn(),
       insert: vi.fn(),
       delete: vi.fn(),
       execute: vi.fn(),
-    };
+    });
 
     const result = await provider.syncWebhookEvent(mockDb, {
       ownerExternalId: "1",
@@ -1387,12 +1388,12 @@ describe("WahooProvider — precise webhook assertions", () => {
 
   it("syncWebhookEvent no-workout-data path returns provider 'wahoo'", async () => {
     const provider = new WahooProvider(async () => new Response());
-    const mockDb = {
+    const mockDb = makeTransactionalTestDatabase({
       select: vi.fn(),
       insert: vi.fn(),
       delete: vi.fn(),
       execute: vi.fn(),
-    };
+    });
 
     const result = await provider.syncWebhookEvent(mockDb, {
       ownerExternalId: "1",
@@ -1431,12 +1432,12 @@ describe("WahooProvider — precise webhook assertions", () => {
     const mockDelete = vi.fn().mockReturnValue({
       where: vi.fn().mockResolvedValue(undefined),
     });
-    const mockDb = {
+    const mockDb = makeTransactionalTestDatabase({
       select: vi.fn(),
       insert: mockInsert,
       delete: mockDelete,
       execute: vi.fn(),
-    };
+    });
 
     // FIT file URL download throws a custom error
     const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
@@ -1486,12 +1487,12 @@ describe("WahooProvider — precise webhook assertions", () => {
         }),
       }),
     });
-    const mockDb = {
+    const mockDb = makeTransactionalTestDatabase({
       select: vi.fn(),
       insert: mockInsert,
       delete: vi.fn(),
       execute: vi.fn(),
-    };
+    });
 
     const provider = new WahooProvider(async () => new Response());
     const result = await provider.syncWebhookEvent(mockDb, {
@@ -1729,7 +1730,7 @@ describe("WahooProvider.sync — token error path", () => {
     process.env.WAHOO_CLIENT_SECRET = "secret";
 
     const provider = new WahooProvider(vi.fn());
-    const mockDb = {
+    const mockDb = makeTransactionalTestDatabase({
       select: vi.fn().mockReturnValue({
         from: vi.fn().mockReturnValue({
           where: vi.fn().mockReturnValue({
@@ -1740,7 +1741,7 @@ describe("WahooProvider.sync — token error path", () => {
       insert: vi.fn(),
       delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
       execute: vi.fn().mockResolvedValue([]),
-    };
+    });
 
     const result = await provider.sync(
       new SyncRun({ db: mockDb, window: SyncWindow.fromSince({ since: new Date("2026-01-01") }) }),
@@ -1849,12 +1850,12 @@ describe("WahooProvider.sync — happy path (no FIT file)", () => {
 
     const tokenRow = makeTokenRow();
     const mockInsert = makeInsertMock();
-    const mockDb = {
+    const mockDb = makeTransactionalTestDatabase({
       select: makeSelectMock(tokenRow),
       insert: mockInsert,
       delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
       execute: vi.fn().mockResolvedValue([]),
-    };
+    });
 
     const workoutsResponse = makeWorkoutApiResponse([sampleWahooWorkoutNoFit]);
     const mockFetch = vi.fn().mockImplementation((url: string | URL | Request) => {
@@ -1885,12 +1886,12 @@ describe("WahooProvider.sync — happy path (no FIT file)", () => {
 
     const tokenRow = makeTokenRow();
     const mockInsert = makeInsertMock();
-    const mockDb = {
+    const mockDb = makeTransactionalTestDatabase({
       select: makeSelectMock(tokenRow),
       insert: mockInsert,
       delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
       execute: vi.fn().mockResolvedValue([]),
-    };
+    });
 
     const workoutsResponse = makeWorkoutApiResponse([]);
     const mockFetch = vi.fn().mockImplementation((url: string | URL | Request) => {
@@ -1930,12 +1931,12 @@ describe("WahooProvider.sync — expired token refresh path", () => {
 
     const expiredTokenRow = makeTokenRow({ expired: true });
     const mockInsert = makeInsertMock();
-    const mockDb = {
+    const mockDb = makeTransactionalTestDatabase({
       select: makeSelectMock(expiredTokenRow),
       insert: mockInsert,
       delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
       execute: vi.fn().mockResolvedValue([]),
-    };
+    });
 
     const workoutsResponse = makeWorkoutApiResponse([sampleWahooWorkoutNoFit]);
     const mockFetch = vi
@@ -1986,137 +1987,144 @@ describe("WahooProvider.sync — expired token refresh path", () => {
     expect(mockInsert).toHaveBeenCalled();
   });
 
-  it("refreshes once and retries the rejected current workout page", async () => {
-    process.env.WAHOO_CLIENT_ID = "test-id";
-    process.env.WAHOO_CLIENT_SECRET = "test-secret";
+  it.each([['{"error":"Access token has expired"}'], [""], [" \n\t "]])(
+    "refreshes once and retries the rejected current workout page for body %j",
+    async (body) => {
+      process.env.WAHOO_CLIENT_ID = "test-id";
+      process.env.WAHOO_CLIENT_SECRET = "test-secret";
 
-    const mockDb = {
-      select: makeSelectMock(makeTokenRow()),
-      insert: makeInsertMock(),
-      delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
-      execute: vi.fn().mockResolvedValue([]),
-    };
-    const page1Workout: WahooWorkout = {
-      ...sampleWahooWorkoutNoFit,
-      id: 100,
-      starts: "2026-03-02T18:00:00.000Z",
-    };
-    const workoutRequests: Array<{ accessToken: string | null; page: string | null }> = [];
-    const mockFetch = vi
-      .fn()
-      .mockImplementation((url: string | URL | Request, init?: RequestInit) => {
-        const requestUrl = new URL(String(url));
-        if (requestUrl.pathname === "/oauth/token") {
-          return Promise.resolve(
-            Response.json({
-              access_token: "refreshed-access-token",
-              refresh_token: "refreshed-refresh-token",
-              expires_in: 7200,
-            }),
-          );
-        }
-        if (requestUrl.pathname === "/v1/workouts") {
-          const accessToken = new Headers(init?.headers).get("Authorization");
-          const page = requestUrl.searchParams.get("page");
-          workoutRequests.push({ accessToken, page });
-          if (page === "1" && accessToken === "Bearer valid-access-token") {
-            return Promise.resolve(
-              Response.json(
-                makeWorkoutApiResponse([page1Workout], { page: 1, total: 31, perPage: 30 }),
-              ),
-            );
-          }
-          if (page === "2" && accessToken === "Bearer valid-access-token") {
-            return Promise.resolve(
-              Response.json({ error: "Access token has expired" }, { status: 401 }),
-            );
-          }
-          if (page === "2" && accessToken === "Bearer refreshed-access-token") {
-            return Promise.resolve(
-              Response.json(makeWorkoutApiResponse([], { page: 2, total: 31 })),
-            );
-          }
-        }
-        throw new Error(`Unexpected fetch: ${String(url)}`);
+      const mockDb = makeTransactionalTestDatabase({
+        select: makeSelectMock(makeTokenRow()),
+        insert: makeInsertMock(),
+        delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
+        execute: vi.fn().mockResolvedValue([]),
       });
-
-    const result = await new WahooProvider(mockFetch).sync(
-      new SyncRun({
-        db: mockDb,
-        window: SyncWindow.fromSince({ since: new Date("2026-01-01T00:00:00Z") }),
-      }),
-    );
-
-    expect(result.errors).toEqual([]);
-    expect(result.recordsSynced).toBe(1);
-    expect(workoutRequests).toEqual([
-      { accessToken: "Bearer valid-access-token", page: "1" },
-      { accessToken: "Bearer valid-access-token", page: "2" },
-      { accessToken: "Bearer refreshed-access-token", page: "2" },
-    ]);
-  });
-
-  it("does not refresh again when the retried workout page is also rejected", async () => {
-    process.env.WAHOO_CLIENT_ID = "test-id";
-    process.env.WAHOO_CLIENT_SECRET = "test-secret";
-
-    const mockDb = {
-      select: makeSelectMock(makeTokenRow()),
-      insert: makeInsertMock(),
-      delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
-      execute: vi.fn().mockResolvedValue([]),
-    };
-    const mockFetch = vi
-      .fn()
-      .mockImplementation((url: string | URL | Request, init?: RequestInit) => {
-        const requestUrl = new URL(String(url));
-        if (requestUrl.pathname === "/oauth/token") {
-          return Promise.resolve(
-            Response.json({
-              access_token: "refreshed-access-token",
-              refresh_token: "refreshed-refresh-token",
-              expires_in: 7200,
-            }),
-          );
-        }
-        if (requestUrl.pathname === "/v1/workouts") {
-          const accessToken = new Headers(init?.headers).get("Authorization");
-          const page = requestUrl.searchParams.get("page");
-          if (page === "1" && accessToken === "Bearer valid-access-token") {
+      const page1Workout: WahooWorkout = {
+        ...sampleWahooWorkoutNoFit,
+        id: 100,
+        starts: "2026-03-02T18:00:00.000Z",
+      };
+      const workoutRequests: Array<{ accessToken: string | null; page: string | null }> = [];
+      const mockFetch = vi
+        .fn()
+        .mockImplementation((url: string | URL | Request, init?: RequestInit) => {
+          const requestUrl = new URL(String(url));
+          if (requestUrl.pathname === "/oauth/token") {
             return Promise.resolve(
-              Response.json({ error: "Access token has expired" }, { status: 401 }),
+              Response.json({
+                access_token: "refreshed-access-token",
+                refresh_token: "refreshed-refresh-token",
+                expires_in: 7200,
+              }),
             );
           }
-          if (page === "1" && accessToken === "Bearer refreshed-access-token") {
-            return Promise.resolve(
-              Response.json(
-                makeWorkoutApiResponse([sampleWahooWorkoutNoFit], {
-                  page: 1,
-                  total: 31,
-                  perPage: 30,
-                }),
-              ),
-            );
+          if (requestUrl.pathname === "/v1/workouts") {
+            const accessToken = new Headers(init?.headers).get("Authorization");
+            const page = requestUrl.searchParams.get("page");
+            workoutRequests.push({ accessToken, page });
+            if (page === "1" && accessToken === "Bearer valid-access-token") {
+              return Promise.resolve(
+                Response.json(
+                  makeWorkoutApiResponse([page1Workout], { page: 1, total: 31, perPage: 30 }),
+                ),
+              );
+            }
+            if (page === "2" && accessToken === "Bearer valid-access-token") {
+              return Promise.resolve(new Response(body, { status: 401 }));
+            }
+            if (page === "2" && accessToken === "Bearer refreshed-access-token") {
+              return Promise.resolve(
+                Response.json(makeWorkoutApiResponse([], { page: 2, total: 31 })),
+              );
+            }
           }
-          return Promise.resolve(
-            Response.json({ error: "Access token has expired" }, { status: 401 }),
-          );
-        }
-        throw new Error(`Unexpected fetch: ${String(url)} ${String(init?.method)}`);
+          throw new Error(`Unexpected fetch: ${String(url)}`);
+        });
+
+      const result = await new WahooProvider(mockFetch).sync(
+        new SyncRun({
+          db: mockDb,
+          window: SyncWindow.fromSince({ since: new Date("2026-01-01T00:00:00Z") }),
+        }),
+      );
+
+      expect(result.errors).toEqual([]);
+      expect(result.recordsSynced).toBe(1);
+      expect(workoutRequests).toEqual([
+        { accessToken: "Bearer valid-access-token", page: "1" },
+        { accessToken: "Bearer valid-access-token", page: "2" },
+        { accessToken: "Bearer refreshed-access-token", page: "2" },
+      ]);
+      expect(
+        mockFetch.mock.calls.filter(([url]) => new URL(String(url)).pathname === "/oauth/token"),
+      ).toHaveLength(1);
+    },
+  );
+
+  it.each([
+    ['{"error":"Access token has expired"}', "Wahoo access token expired.", false],
+    ["", "Wahoo authentication failed.", false],
+    ["", "Wahoo authentication failed.", true],
+  ])(
+    "does not refresh again after a second rejection for body %j (%s; immediate: %s)",
+    async (body, message, immediate) => {
+      process.env.WAHOO_CLIENT_ID = "test-id";
+      process.env.WAHOO_CLIENT_SECRET = "test-secret";
+
+      const mockDb = makeTransactionalTestDatabase({
+        select: makeSelectMock(makeTokenRow()),
+        insert: makeInsertMock(),
+        delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
+        execute: vi.fn().mockResolvedValue([]),
       });
+      const mockFetch = vi
+        .fn()
+        .mockImplementation((url: string | URL | Request, init?: RequestInit) => {
+          const requestUrl = new URL(String(url));
+          if (requestUrl.pathname === "/oauth/token") {
+            return Promise.resolve(
+              Response.json({
+                access_token: "refreshed-access-token",
+                refresh_token: "refreshed-refresh-token",
+                expires_in: 7200,
+              }),
+            );
+          }
+          if (requestUrl.pathname === "/v1/workouts") {
+            const accessToken = new Headers(init?.headers).get("Authorization");
+            const page = requestUrl.searchParams.get("page");
+            if (page === "1" && accessToken === "Bearer valid-access-token") {
+              return Promise.resolve(new Response(body, { status: 401 }));
+            }
+            if (page === "1" && accessToken === "Bearer refreshed-access-token" && !immediate) {
+              return Promise.resolve(
+                Response.json(
+                  makeWorkoutApiResponse([sampleWahooWorkoutNoFit], {
+                    page: 1,
+                    total: 31,
+                    perPage: 30,
+                  }),
+                ),
+              );
+            }
+            return Promise.resolve(new Response(body, { status: 401 }));
+          }
+          throw new Error(`Unexpected fetch: ${String(url)} ${String(init?.method)}`);
+        });
 
-    const sync = new WahooProvider(mockFetch).sync(
-      new SyncRun({
-        db: mockDb,
-        window: SyncWindow.fromSince({ since: new Date("2026-01-01T00:00:00Z") }),
-      }),
-    );
+      const sync = new WahooProvider(mockFetch).sync(
+        new SyncRun({
+          db: mockDb,
+          window: SyncWindow.fromSince({ since: new Date("2026-01-01T00:00:00Z") }),
+        }),
+      );
 
-    await expect(sync).rejects.toThrow("Wahoo access token expired.");
-    expect(
-      mockFetch.mock.calls.filter(([url]) => new URL(String(url)).pathname === "/oauth/token"),
-    ).toHaveLength(1);
-  });
+      await expect(sync).rejects.toThrow(message);
+      expect(
+        mockFetch.mock.calls.filter(([url]) => new URL(String(url)).pathname === "/oauth/token"),
+      ).toHaveLength(1);
+    },
+  );
 
   it("returns error when refresh token is missing on expired tokens", async () => {
     process.env.WAHOO_CLIENT_ID = "test-id";
@@ -2129,12 +2137,12 @@ describe("WahooProvider.sync — expired token refresh path", () => {
       scopes: "user_read workouts_read",
     };
 
-    const mockDb = {
+    const mockDb = makeTransactionalTestDatabase({
       select: makeSelectMock(expiredNoRefreshRow),
       insert: makeInsertMock(),
       delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
       execute: vi.fn().mockResolvedValue([]),
-    };
+    });
 
     const mockFetch = vi.fn();
     const provider = new WahooProvider(mockFetch);
@@ -2165,12 +2173,12 @@ describe("WahooProvider.sync — since date boundary", () => {
 
     const tokenRow = makeTokenRow();
     const mockInsert = makeInsertMock();
-    const mockDb = {
+    const mockDb = makeTransactionalTestDatabase({
       select: makeSelectMock(tokenRow),
       insert: mockInsert,
       delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
       execute: vi.fn().mockResolvedValue([]),
-    };
+    });
 
     // Workout starts before the since date
     const oldWorkout: WahooWorkout = {
@@ -2214,12 +2222,12 @@ describe("WahooProvider.sync — since date boundary", () => {
 
     const tokenRow = makeTokenRow();
     const mockInsert = makeInsertMock();
-    const mockDb = {
+    const mockDb = makeTransactionalTestDatabase({
       select: makeSelectMock(tokenRow),
       insert: mockInsert,
       delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
       execute: vi.fn().mockResolvedValue([]),
-    };
+    });
 
     const atEndWorkout: WahooWorkout = {
       ...sampleWahooWorkoutNoFit,
@@ -2272,12 +2280,12 @@ describe("WahooProvider.sync — onProgress callback", () => {
 
     const tokenRow = makeTokenRow();
     const mockInsert = makeInsertMock();
-    const mockDb = {
+    const mockDb = makeTransactionalTestDatabase({
       select: makeSelectMock(tokenRow),
       insert: mockInsert,
       delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
       execute: vi.fn().mockResolvedValue([]),
-    };
+    });
 
     const workoutsResponse = makeWorkoutApiResponse([sampleWahooWorkoutNoFit], { total: 1 });
     const mockFetch = vi.fn().mockImplementation((url: string | URL | Request) => {
@@ -2311,12 +2319,12 @@ describe("WahooProvider.sync — onProgress callback", () => {
 
     const tokenRow = makeTokenRow();
     const mockInsert = makeInsertMock();
-    const mockDb = {
+    const mockDb = makeTransactionalTestDatabase({
       select: makeSelectMock(tokenRow),
       insert: mockInsert,
       delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
       execute: vi.fn().mockResolvedValue([]),
-    };
+    });
 
     // total: 0 means the onProgress guard (total > 0) prevents the call
     const workoutsResponse = makeWorkoutApiResponse([sampleWahooWorkoutNoFit], { total: 0 });
@@ -2356,12 +2364,12 @@ describe("WahooProvider.sync — FIT file download error", () => {
 
     const tokenRow = makeTokenRow();
     const mockInsert = makeInsertMock();
-    const mockDb = {
+    const mockDb = makeTransactionalTestDatabase({
       select: makeSelectMock(tokenRow),
       insert: mockInsert,
       delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
       execute: vi.fn().mockResolvedValue([]),
-    };
+    });
 
     // Workout has a fitFileUrl
     const workoutsResponse = makeWorkoutApiResponse([sampleWahooWorkout]);
@@ -2421,12 +2429,12 @@ describe("WahooProvider.sync — activity insert error", () => {
       }),
     });
 
-    const mockDb = {
+    const mockDb = makeTransactionalTestDatabase({
       select: makeSelectMock(tokenRow),
       insert: mockInsert,
       delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
       execute: vi.fn().mockResolvedValue([]),
-    };
+    });
 
     const workoutsResponse = makeWorkoutApiResponse([sampleWahooWorkoutNoFit]);
     const mockFetch = vi.fn().mockImplementation((url: string | URL | Request) => {
@@ -2465,12 +2473,12 @@ describe("WahooProvider.sync — multi-page pagination", () => {
 
     const tokenRow = makeTokenRow();
     const mockInsert = makeInsertMock();
-    const mockDb = {
+    const mockDb = makeTransactionalTestDatabase({
       select: makeSelectMock(tokenRow),
       insert: mockInsert,
       delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
       execute: vi.fn().mockResolvedValue([]),
-    };
+    });
 
     const page1Workout: WahooWorkout = {
       ...sampleWahooWorkoutNoFit,
@@ -2538,12 +2546,12 @@ describe("WahooProvider.sync — result shape", () => {
     process.env.WAHOO_CLIENT_SECRET = "test-secret";
 
     const tokenRow = makeTokenRow();
-    const mockDb = {
+    const mockDb = makeTransactionalTestDatabase({
       select: makeSelectMock(tokenRow),
       insert: makeInsertMock(),
       delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
       execute: vi.fn().mockResolvedValue([]),
-    };
+    });
 
     const workoutsResponse = makeWorkoutApiResponse([]);
     const mockFetch = vi.fn().mockResolvedValue(Response.json(workoutsResponse));
@@ -2567,12 +2575,12 @@ describe("WahooProvider.sync — result shape", () => {
     process.env.WAHOO_CLIENT_SECRET = "test-secret";
 
     const tokenRow = makeTokenRow();
-    const mockDb = {
+    const mockDb = makeTransactionalTestDatabase({
       select: makeSelectMock(tokenRow),
       insert: makeInsertMock(),
       delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
       execute: vi.fn().mockResolvedValue([]),
-    };
+    });
 
     const workoutsResponse = makeWorkoutApiResponse([]);
     const mockFetch = vi.fn().mockResolvedValue(Response.json(workoutsResponse));

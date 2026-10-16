@@ -23,28 +23,11 @@ vi.mock("@tanstack/react-router", () => ({
   ),
 }));
 
-vi.mock("../components/PrimaryGoalSelector.tsx", () => ({
-  PrimaryGoalSelector: () => (
-    <div>
-      <h2>What would you like to focus on?</h2>
-      <button type="button">Race preparation</button>
-      <button type="button">Sleep consistency</button>
-      <button type="button">Strength progression</button>
-      <button type="button">Weight trend</button>
-    </div>
-  ),
-}));
-
 describe("OnboardingPage", () => {
   it("renders setup actions", () => {
     render(<OnboardingPage />);
 
     expect(screen.getByRole("heading", { name: "Set up Dofek" })).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "What would you like to focus on?" })).toBeTruthy();
-    expect(screen.getByText("Race preparation")).toBeTruthy();
-    expect(screen.getByText("Sleep consistency")).toBeTruthy();
-    expect(screen.getByText("Strength progression")).toBeTruthy();
-    expect(screen.getByText("Weight trend")).toBeTruthy();
     expect(screen.getByText("Connect your sources")).toBeTruthy();
     expect(screen.getByText("Check your dashboard")).toBeTruthy();
     expect(screen.getByRole("link", { name: "Set up data sources" }).getAttribute("href")).toBe(

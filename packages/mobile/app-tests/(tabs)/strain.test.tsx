@@ -3,6 +3,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { Alert } from "react-native";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { climbingProgressionFixture } from "../../components/climbing-progression-test-helpers";
 
 const mockRouterPush = vi.fn();
 const mockTrainingInvalidate = vi.fn();
@@ -22,7 +23,6 @@ let mockRangeQueryCalls: Record<
 >;
 let mockTimeRangePreference = {
   days: 90,
-  description: "Recommended default: 90 days balances recent training changes with enough history.",
   isHydrated: true,
   setDays: vi.fn(),
 };
@@ -74,7 +74,7 @@ function defaultMockTrainingData(): MockTrainingData {
       context: {
         label: "Recent-to-baseline workload ratio",
         description:
-          "Compares load from the latest 7 days with an equivalent 7-day baseline from the latest 28 days. This is descriptive context, not a safe range or an injury prediction.",
+          "Compares load from the latest 7 days with an equivalent 7-day baseline from the latest 28 days.",
         recentDays: 7,
         baselineDays: 28,
       },
@@ -265,8 +265,6 @@ describe("StrainScreen recent activity navigation", () => {
     };
     mockTimeRangePreference = {
       days: 90,
-      description:
-        "Recommended default: 90 days balances recent training changes with enough history.",
       isHydrated: true,
       setDays: vi.fn(),
     };
@@ -309,9 +307,9 @@ describe("StrainScreen recent activity navigation", () => {
     const { default: StrainScreen } = await import("../../app/(tabs)/strain");
     render(<StrainScreen />);
     fireEvent.click(screen.getByRole("button", { name: "All climbing" }));
-    fireEvent.click(screen.getByRole("button", { name: "Lead" }));
+    fireEvent.click(screen.getByRole("button", { name: "Rope method: Lead" }));
     expect(mockRangeQueryCalls.training.at(-1)?.input).toMatchObject({
-      climbingFilters: { style: "lead" },
+      climbingFilters: { ropeMethod: "lead" },
     });
   });
 
@@ -329,7 +327,7 @@ describe("StrainScreen recent activity navigation", () => {
     expect(mockProcessingStatusInvalidate).toHaveBeenCalledOnce();
   });
 
-  it("leads with plain labels while keeping server-owned model details accessible", async () => {
+  it("renders model labels, values, and calculation details", async () => {
     mockHrZonesState.data = {
       maxHr: 190,
       weeks: [],
@@ -398,15 +396,7 @@ describe("StrainScreen recent activity navigation", () => {
     render(<StrainScreen />);
 
     expect(screen.getByText("Heart-rate zone distribution")).toBeTruthy();
-    expect(
-      screen.getByText("Shows how recorded heart-rate time is distributed across effort zones."),
-    ).toBeTruthy();
-    expect(screen.queryByText("Mobile descriptive intensity explanation.")).toBeNull();
     expect(screen.getByText("Not polarized")).toBeTruthy();
-    expect(
-      screen.getByText("Shows the balance of easy, threshold, and high-intensity cycling."),
-    ).toBeTruthy();
-    expect(screen.queryByText("Server says exactly 2.00 is not polarized.")).toBeNull();
     expect(screen.getByText("Training variety and total load")).toBeTruthy();
     expect(screen.queryByText("Mobile Foster formula.")).toBeNull();
 
@@ -417,7 +407,7 @@ describe("StrainScreen recent activity navigation", () => {
     );
     expect(alertSpy).toHaveBeenCalledWith(
       "How this is calculated for Easy-to-hard training balance",
-      expect.stringContaining("Server says exactly 2.00 is not polarized."),
+      expect.stringContaining("Mobile Treff formula."),
       [{ text: "Close" }],
     );
     alertSpy.mockRestore();
@@ -498,9 +488,6 @@ describe("StrainScreen recent activity navigation", () => {
 
     expect(screen.getByText("Intensity refresh failed")).toBeTruthy();
     expect(screen.getByText("Polarization refresh failed")).toBeTruthy();
-    expect(
-      screen.getByText("Shows how recorded heart-rate time is distributed across effort zones."),
-    ).toBeTruthy();
     expect(screen.getByText("No easy-to-hard training balance data in this period")).toBeTruthy();
   });
 
@@ -642,7 +629,7 @@ describe("StrainScreen recent activity navigation", () => {
         context: {
           label: "Recent-to-baseline workload ratio",
           description:
-            "Compares load from the latest 7 days with an equivalent 7-day baseline from the latest 28 days. This is descriptive context, not a safe range or an injury prediction.",
+            "Compares load from the latest 7 days with an equivalent 7-day baseline from the latest 28 days.",
           recentDays: 5,
           baselineDays: 20,
         },
@@ -672,7 +659,7 @@ describe("StrainScreen recent activity navigation", () => {
     expect(screen.getByText("20-day baseline load")).toBeTruthy();
     expect(
       screen.getByText(
-        "Compares load from the latest 7 days with an equivalent 7-day baseline from the latest 28 days. This is descriptive context, not a safe range or an injury prediction.",
+        "Compares load from the latest 7 days with an equivalent 7-day baseline from the latest 28 days.",
       ),
     ).toBeTruthy();
     expect(screen.getByText("4.00")).toBeTruthy();
@@ -701,7 +688,7 @@ describe("StrainScreen recent activity navigation", () => {
         context: {
           label: "Recent-to-baseline workload ratio",
           description:
-            "Compares load from the latest 7 days with an equivalent 7-day baseline from the latest 28 days. This is descriptive context, not a safe range or an injury prediction.",
+            "Compares load from the latest 7 days with an equivalent 7-day baseline from the latest 28 days.",
           recentDays: 7,
           baselineDays: 28,
         },
@@ -822,8 +809,7 @@ describe("StrainScreen recent activity navigation", () => {
             reason: "insufficient_observations",
             statement: "Uncertainty needs at least 4 recorded weeks; this estimate has 2.",
           },
-          interpretation:
-            "Recorded weekly volume increased over this period. An increase is not inherently good or bad.",
+          interpretation: "Recorded weekly volume increased over this period.",
           deloadContext:
             "Recorded volume cannot distinguish a planned deload from missed training or incomplete data.",
         },
@@ -835,9 +821,6 @@ describe("StrainScreen recent activity navigation", () => {
 
     expect(screen.getByText("Back Squat")).toBeTruthy();
     expect(screen.getByText("Increasing 100.0 kg/week")).toBeTruthy();
-    expect(
-      screen.getByText("Uncertainty needs at least 4 recorded weeks; this estimate has 2."),
-    ).toBeTruthy();
   });
 
   it("shows one server error notice for a failed composite training query", async () => {
@@ -883,7 +866,7 @@ describe("StrainScreen recent activity navigation", () => {
           name: "About How this is calculated for Heart-rate zone distribution",
         })
         .getAttribute("aria-description"),
-    ).toContain("Independent intensity data remains available.");
+    ).toContain("Karvonen");
   });
 
   it("keeps equal messages separate when training and companion queries both fail", async () => {
@@ -904,14 +887,7 @@ describe("StrainScreen recent activity navigation", () => {
     mockTrainingState.data = {
       ...defaultMockTrainingData(),
       climbing: {
-        gradeProgression: [
-          {
-            date: "2026-07-09",
-            climbType: "boulder",
-            grade: "V4",
-            gradeSortValue: 4,
-          },
-        ],
+        gradeProgression: [climbingProgressionFixture()],
         volumeByGrade: [],
         sessionSummary: [],
       },
@@ -923,7 +899,7 @@ describe("StrainScreen recent activity navigation", () => {
     render(<StrainScreen />);
 
     expect(screen.queryByText("Climbing refresh failed")).toBeNull();
-    expect(screen.getByText("Best Boulder Grade")).toBeTruthy();
+    expect(screen.getByText("Bouldering")).toBeTruthy();
     expect(screen.getByText("V4")).toBeTruthy();
   });
 

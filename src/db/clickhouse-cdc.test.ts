@@ -363,7 +363,9 @@ describe("PeerDB ClickHouse CDC setup", () => {
     for (const rawAnalyticsTable of rawAnalyticsTables) {
       expect(sourcePostgresQueries[0]).toContain(`('${rawAnalyticsTable}')`);
     }
-    expect(peerDbQueries).toEqual(["host = 'db', password = 'pa''ss\\word'"]);
+    expect(peerDbQueries[0]).toContain("INSERT INTO public.dynamic_settings");
+    expect(peerDbQueries[0]).toContain("'PEERDB_NULLABLE', 'true'");
+    expect(peerDbQueries[1]).toEqual("host = 'db', password = 'pa''ss\\word'");
   });
 
   it("fails when the PeerDB SQL template references an unknown placeholder", async () => {
@@ -427,6 +429,7 @@ describe("PeerDB ClickHouse CDC setup", () => {
       },
     });
 
+    expect(peerDbQueries.shift()).toContain("PEERDB_NULLABLE");
     expect(peerDbQueries).toHaveLength(5);
     expect(peerDbQueries[0]).toContain("CREATE PEER IF NOT EXISTS dofek_postgres");
     expect(peerDbQueries[1]).toContain(
@@ -514,6 +517,7 @@ describe("PeerDB ClickHouse CDC setup", () => {
       },
     });
 
+    expect(peerDbQueries.shift()).toContain("PEERDB_NULLABLE");
     expect(peerDbQueries).toHaveLength(2);
     expect(peerDbQueries[0]).toContain("CREATE PEER IF NOT EXISTS dofek_postgres");
     expect(peerDbQueries[1]).toContain(
@@ -1278,6 +1282,7 @@ describe("PeerDB ClickHouse CDC setup", () => {
       "TRUNCATE TABLE IF EXISTS postgres_fitness.provider",
       "TRUNCATE TABLE IF EXISTS postgres_fitness.provider_connection",
       "TRUNCATE TABLE IF EXISTS postgres_fitness.provider_priority",
+      "TRUNCATE TABLE IF EXISTS postgres_fitness.provider_field_priority",
       "TRUNCATE TABLE IF EXISTS postgres_fitness.device_priority",
       "TRUNCATE TABLE IF EXISTS postgres_fitness.processing_flow_marker",
       "TRUNCATE TABLE IF EXISTS postgres_fitness.user_profile",
@@ -1324,7 +1329,7 @@ describe("PeerDB ClickHouse CDC setup", () => {
       },
     });
 
-    expect(peerDbQueries).toEqual(["first 'semi;quote'''", "second"]);
+    expect(peerDbQueries.slice(1)).toEqual(["first 'semi;quote'''", "second"]);
   });
 
   it("configures PeerDB CDC from environment values and closes clients", async () => {
@@ -1371,7 +1376,11 @@ describe("PeerDB ClickHouse CDC setup", () => {
     });
     const peerDbQueries = peerDbClientMocks.query.mock.calls
       .map(([queryText]) => String(queryText))
-      .filter((queryText) => !isPeerDbMirrorReconciliationQuery(queryText));
+      .filter(
+        (queryText) =>
+          !isPeerDbMirrorReconciliationQuery(queryText) &&
+          !queryText.includes("INSERT INTO public.dynamic_settings"),
+      );
     expect(peerDbQueries).toHaveLength(6);
     expect(peerDbQueries[0]).toContain("peerdb_raw_analytics_publication");
     expect(peerDbQueries[1]).toContain("host = 'postgres.example'");
@@ -1689,7 +1698,11 @@ describe("PeerDB ClickHouse CDC setup", () => {
 
     const peerDbQueries = peerDbClientMocks.query.mock.calls
       .map(([queryText]) => String(queryText))
-      .filter((queryText) => !isPeerDbMirrorReconciliationQuery(queryText));
+      .filter(
+        (queryText) =>
+          !isPeerDbMirrorReconciliationQuery(queryText) &&
+          !queryText.includes("INSERT INTO public.dynamic_settings"),
+      );
     const peerDbQueryPostgres = String(peerDbQueries[1]);
     const peerDbQueryClickhousePostgresFitness = String(peerDbQueries[2]);
     expect(peerDbQueryPostgres).toContain("host = 'db'");
@@ -1724,7 +1737,11 @@ describe("PeerDB ClickHouse CDC setup", () => {
 
     const peerDbQueries = peerDbClientMocks.query.mock.calls
       .map(([queryText]) => String(queryText))
-      .filter((queryText) => !isPeerDbMirrorReconciliationQuery(queryText));
+      .filter(
+        (queryText) =>
+          !isPeerDbMirrorReconciliationQuery(queryText) &&
+          !queryText.includes("INSERT INTO public.dynamic_settings"),
+      );
     const peerDbQueryPostgres = String(peerDbQueries[1]);
     const peerDbQueryClickhousePostgresFitness = String(peerDbQueries[2]);
     expect(peerDbQueryPostgres).toContain("host = 'postgres.internal'");

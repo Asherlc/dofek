@@ -1,8 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { eq, inArray, sql } from "drizzle-orm";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { userProfile } from "./schema/reference.ts";
 import { setupTestDatabase, type TestContext } from "./test-helpers.ts";
+import { afterCommit } from "./transaction-effects.ts";
 
 describe("normalized database wrapper (integration)", () => {
   let context: TestContext;
@@ -13,6 +14,44 @@ describe("normalized database wrapper (integration)", () => {
 
   afterAll(async () => {
     await context.cleanup();
+  });
+
+  it("publishes committed effects while discarding rolled back savepoints", async () => {
+    const effects: string[] = [];
+    await context.db.transaction(async (transaction) => {
+      afterCommit(() => effects.push("outer"));
+      await transaction.transaction(async () => {
+        afterCommit(() => effects.push("nested"));
+      });
+      await expect(
+        transaction.transaction(async () => {
+          afterCommit(() => effects.push("rolled back"));
+          throw new Error("rollback savepoint");
+        }),
+      ).rejects.toThrow("rollback savepoint");
+      expect(effects).toEqual([]);
+    });
+    expect(effects).toEqual(["outer", "nested"]);
+  });
+
+  it("discards observations when PostgreSQL rejects COMMIT after the callback succeeds", async () => {
+    const effect = vi.fn();
+    let callbackCompleted = false;
+    await expect(
+      context.db.transaction(async (transaction) => {
+        await transaction.execute(sql`CREATE TEMP TABLE commit_failure_fixture (
+        id integer UNIQUE DEFERRABLE INITIALLY DEFERRED
+      ) ON COMMIT DROP`);
+        await transaction.execute(sql`INSERT INTO commit_failure_fixture VALUES (1), (1)`);
+        afterCommit(effect);
+        callbackCompleted = true;
+      }),
+    ).rejects.toMatchObject({
+      message: expect.stringContaining("Failed query: commit"),
+      cause: expect.objectContaining({ code: "23505" }),
+    });
+    expect(callbackCompleted).toBe(true);
+    expect(effect).not.toHaveBeenCalled();
   });
 
   it("normalizes raw rows while preserving Drizzle operations and nested savepoints", async () => {

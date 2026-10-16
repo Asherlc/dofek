@@ -50,7 +50,7 @@
     "@dofek/scoring": "workspace:*",
     "@dofek/zones": "workspace:*",
     "@openbeta/sandbag": "0.0.55",
-    "zod": "4.4.3"
+    "zod": "4.6.7"
   },
   "scripts": {
     "build": "tsc",

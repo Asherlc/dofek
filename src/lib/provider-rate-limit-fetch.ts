@@ -3,6 +3,7 @@ import {
   type RateLimitAwareFetchOptions,
 } from "@dofek/provider-http/rate-limit";
 import { providerAdaptiveRateLimitStore } from "./provider-adaptive-rate-limit.ts";
+import { reportProviderHttpDiagnostic } from "./provider-diagnostics.ts";
 
 export function createProviderRateLimitFetch(
   providerId: string,
@@ -13,5 +14,16 @@ export function createProviderRateLimitFetch(
     providerId,
     adaptiveStore: providerAdaptiveRateLimitStore,
     ...options,
+    onResponse: async (response, input, init, requestStartedAtMs) => {
+      await reportProviderHttpDiagnostic(
+        providerId,
+        response,
+        input,
+        init,
+        options?.userId,
+        requestStartedAtMs,
+      );
+      await options?.onResponse?.(response, input, init, requestStartedAtMs);
+    },
   });
 }

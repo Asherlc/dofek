@@ -20,7 +20,6 @@ const storyPaths = [
   "/nutrition",
   "/body",
   "/correlation",
-  "/more",
   "/settings",
   "/admin",
 ] as const;
@@ -68,6 +67,12 @@ export const Default: Story = {
     const canvas = within(canvasElement);
     await expect(canvas.getAllByText("Dofek")).toHaveLength(2);
     await expect(canvas.queryByRole("heading", { name: "Dofek" })).not.toBeInTheDocument();
+    await expect(
+      within(canvas.getByRole("navigation", { name: "Sections" })).getByRole("link", {
+        name: "Overview",
+        current: "page",
+      }),
+    ).toHaveClass("text-accent", "bg-accent/10", "rounded-md");
   },
 };
 
@@ -79,6 +84,12 @@ export const MobileNavigationOpen: Story = {
     await userEvent.click(
       within(canvasElement).getByRole("button", { name: "Toggle navigation menu" }),
     );
+    const dialog = within(canvasElement.ownerDocument.body).getByRole("dialog", {
+      name: "Navigation",
+    });
+    await expect(
+      within(dialog).getByRole("link", { name: "Overview", current: "page" }),
+    ).toHaveClass("text-accent", "bg-accent/10", "rounded-md");
   },
 };
 

@@ -7,6 +7,7 @@ import type {} from "../bullmq-redis-client.ts";
 import type { DataExportRequest } from "../db/data-export.ts";
 import type { ProviderDataDeletionRequest } from "../db/provider-data-deletion.ts";
 import type { SyncLogOrigin } from "../db/schema/events.ts";
+import type { WebhookEvent } from "../webhook-event.ts";
 import type { ProviderSyncTier } from "./provider-queue-config.ts";
 
 // ── Job payload types ──
@@ -26,6 +27,8 @@ export interface SyncJobData {
     | { type: "range"; sinceIso: string; untilIso: string };
   userId: string;
   checkpoint?: unknown;
+  /** Targeted provider event; absent for a regular window sync. */
+  webhookEvent?: WebhookEvent;
   processingOperationIds?: Record<string, string>;
 }
 
@@ -282,6 +285,10 @@ export function getRedisConnection(): ConnectionOptions {
   };
 }
 
+function getRedisCommandConnection(): ConnectionOptions {
+  return { ...getRedisConnection(), commandTimeout: 5000 };
+}
+
 // ── Shared Redis connection ──
 
 let sharedRedisConnection: RedisConnection | null = null;
@@ -289,7 +296,7 @@ let sharedRedisConnection: RedisConnection | null = null;
 /** Get the singleton RedisConnection shared across all modules in this process. */
 export function getSharedRedisConnection(): RedisConnection {
   if (!sharedRedisConnection) {
-    sharedRedisConnection = new RedisConnection(getRedisConnection(), {
+    sharedRedisConnection = new RedisConnection(getRedisCommandConnection(), {
       shared: true,
       blocking: false,
       skipVersionCheck: true,
@@ -311,7 +318,7 @@ export function createProviderSyncQueue(
   connection?: ConnectionOptions,
 ): Queue<SyncJobData> {
   return new Queue(providerSyncQueueName(providerId), {
-    connection: connection ?? getRedisConnection(),
+    connection: connection ?? getRedisCommandConnection(),
   });
 }
 

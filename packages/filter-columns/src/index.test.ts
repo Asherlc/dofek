@@ -12,6 +12,7 @@ describe("isDateFilterColumn", () => {
     expect(isDateFilterColumn("date")).toBe(true);
     expect(isDateFilterColumn("start_date")).toBe(true);
     expect(isDateFilterColumn("end_date")).toBe(true);
+    expect(isDateFilterColumn("climbed_on")).toBe(true);
     expect(isDateFilterColumn("started_at")).toBe(false);
   });
 });

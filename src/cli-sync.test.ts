@@ -16,6 +16,7 @@ import {
   mockQueueClose,
   mockQueueEventsClose,
   mockRedisConnection,
+  mockRunQueuedUserWorkUnlessAccountErasing,
   mockSyncJobRetryOptions,
   mockWaitUntilFinished,
   mockWorkerClose,
@@ -65,6 +66,22 @@ describe("handleSyncCommand", () => {
     expect(mockCaptureException).toHaveBeenCalledWith(terminalError, {
       tags: { phase: "cli-sync" },
     });
+  });
+
+  it("scopes inline provider execution before its sync callback", async () => {
+    mockGetEnabledSyncProviders.mockReturnValue([{ id: "strava" }]);
+    await handleSyncCommand(["node", "index.ts", "sync"]);
+    await capturedWorkerCallbacks.get("sync")?.({
+      data: { userId: "test-user", providerId: "strava" },
+    });
+    expect(mockRunQueuedUserWorkUnlessAccountErasing).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      "test-user",
+      "CLI provider sync",
+      expect.any(Function),
+      "strava",
+    );
   });
 
   it("returns 0 when no providers are enabled", async () => {

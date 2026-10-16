@@ -1,7 +1,6 @@
 export const ACTIVITY_HEATMAP_MEASURE_LABEL = "Training time";
 export const ACTIVITY_HEATMAP_UNIT_LABEL = "minutes per day";
-export const ACTIVITY_HEATMAP_DESCRIPTION =
-  "Each day shows recorded training time in minutes. Use the meanings to spot possible recovery days and higher-volume days; duration alone does not measure intensity or prove overload.";
+export const ACTIVITY_HEATMAP_DESCRIPTION = "Recorded training time in minutes per day.";
 
 export const ACTIVITY_HEATMAP_BAND_IDS = [
   "none",
@@ -34,7 +33,7 @@ export const ACTIVITY_HEATMAP_BANDS: readonly ActivityHeatmapBand[] = [
     min: 0,
     max: 0,
     label: "0 min",
-    meaning: "No recorded training; this may be a recovery/rest day.",
+    meaning: "No recorded training",
   },
   {
     id: "light",
@@ -55,15 +54,14 @@ export const ACTIVITY_HEATMAP_BANDS: readonly ActivityHeatmapBand[] = [
     min: 61,
     max: 120,
     label: "61–120 min",
-    meaning: "High training volume; compare with recovery before stacking another hard day.",
+    meaning: "High recorded training volume",
   },
   {
     id: "very_high",
     min: 121,
     max: null,
     label: ">120 min",
-    meaning:
-      "Very high training volume; recovery context matters, and duration alone does not prove overload.",
+    meaning: "Very high recorded training volume",
   },
 ] as const;
 

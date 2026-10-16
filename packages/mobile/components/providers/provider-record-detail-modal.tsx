@@ -1,23 +1,32 @@
+import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { useRouter } from "expo-router";
 import { useState } from "react";
 import { Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { climbingLogEntryDetailSchema } from "../../../server/src/contracts/climbing-log-contracts.ts";
 import { colors } from "../../theme";
+import { ClimbingLogEntryDetails } from "../ClimbingLogEntryDetails";
+import { ClimbingLogEntrySources } from "../ClimbingLogEntrySources";
 import { formatCellValue, formatColumnName } from "./provider-detail-record-format";
 
 export function ProviderRecordDetailModal({
-  record,
+  state,
+  dataType,
   onClose,
   activityId,
 }: {
-  record: Record<string, unknown>;
+  state: { data: Record<string, unknown> | null | undefined; error: unknown; isLoading: boolean };
+  dataType: string;
   onClose: () => void;
   activityId?: string;
 }) {
   const router = useRouter();
-  const rawValue = record.raw;
+  const record = state.data;
+  const climbingLog =
+    dataType === "climbingLogEntries" && record ? climbingLogEntryDetailSchema.parse(record) : null;
+  const rawValue = record?.raw;
   const raw = typeof rawValue === "object" && rawValue !== null ? rawValue : null;
 
-  const fields = Object.entries(record).filter(([key]) => key !== "raw" && key !== "user_id");
+  const fields = Object.entries(record ?? {}).filter(([key]) => key !== "raw" && key !== "user_id");
   const populatedFields = fields.filter(([, value]) => value !== null && value !== undefined);
   const nullFields = fields.filter(([, value]) => value === null || value === undefined);
 
@@ -40,6 +49,19 @@ export function ProviderRecordDetailModal({
         </View>
 
         <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
+          {state.error ? (
+            <Text accessibilityRole="alert" style={styles.fieldValue}>
+              {userFacingErrorMessage(state.error)}
+            </Text>
+          ) : null}
+          {state.isLoading && record === undefined ? (
+            <Text style={styles.fieldValue}>Loading record...</Text>
+          ) : null}
+          {record == null && !state.isLoading && !state.error ? (
+            <Text style={styles.fieldValue}>
+              This record is no longer available. Refresh the records list.
+            </Text>
+          ) : null}
           {activityId && (
             <TouchableOpacity
               onPress={() => {
@@ -55,71 +77,85 @@ export function ProviderRecordDetailModal({
             </TouchableOpacity>
           )}
 
-          <Text style={styles.sectionTitle}>Fields</Text>
-          <View style={styles.fieldsCard}>
-            {populatedFields.map(([key, value], index) => (
-              <View
-                key={key}
-                style={[
-                  styles.fieldRow,
-                  index < populatedFields.length - 1 && styles.fieldRowBorder,
-                ]}
-              >
-                <Text style={styles.fieldLabel}>{formatColumnName(key)}</Text>
-                <Text style={styles.fieldValue}>{formatCellValue(value)}</Text>
-              </View>
-            ))}
-          </View>
-
-          {nullFields.length > 0 && (
-            <View style={styles.collapsibleSection}>
-              <TouchableOpacity
-                onPress={() => setShowNullFields(!showNullFields)}
-                activeOpacity={0.7}
-                accessibilityRole="button"
-                accessibilityLabel={`${showNullFields ? "Hide" : "Show"} empty fields`}
-                accessibilityState={{ expanded: showNullFields }}
-              >
-                <Text style={styles.collapsibleTitle}>
-                  {showNullFields ? "\u25bc" : "\u25b6"} Empty Fields ({nullFields.length})
-                </Text>
-              </TouchableOpacity>
-              {showNullFields && (
-                <View style={styles.nullFieldsContainer}>
-                  {nullFields.map(([key]) => (
-                    <Text key={key} style={styles.nullFieldName}>
-                      {formatColumnName(key)}
-                    </Text>
+          {record &&
+            (climbingLog ? (
+              <>
+                <ClimbingLogEntrySources
+                  name={climbingLog.climb?.name ?? climbingLog.title ?? "Climbing log"}
+                  sourceName={climbingLog.sourceName}
+                  links={climbingLog.sourceLinks}
+                />
+                <ClimbingLogEntryDetails entry={climbingLog} />
+              </>
+            ) : (
+              <>
+                <Text style={styles.sectionTitle}>Fields</Text>
+                <View style={styles.fieldsCard}>
+                  {populatedFields.map(([key, value], index) => (
+                    <View
+                      key={key}
+                      style={[
+                        styles.fieldRow,
+                        index < populatedFields.length - 1 && styles.fieldRowBorder,
+                      ]}
+                    >
+                      <Text style={styles.fieldLabel}>{formatColumnName(key)}</Text>
+                      <Text style={styles.fieldValue}>{formatCellValue(value)}</Text>
+                    </View>
                   ))}
                 </View>
-              )}
-            </View>
-          )}
 
-          {raw && (
-            <View style={styles.collapsibleSection}>
-              <TouchableOpacity
-                onPress={() => setShowRawData(!showRawData)}
-                activeOpacity={0.7}
-                accessibilityRole="button"
-                accessibilityLabel={`${showRawData ? "Hide" : "Show"} raw provider data`}
-                accessibilityState={{ expanded: showRawData }}
-              >
-                <Text style={styles.sectionTitle}>
-                  {showRawData ? "\u25bc" : "\u25b6"} Raw Provider Data
-                </Text>
-              </TouchableOpacity>
-              {showRawData && (
-                <ScrollView
-                  horizontal
-                  style={styles.rawDataScroll}
-                  contentContainerStyle={styles.rawDataContent}
-                >
-                  <Text style={styles.rawDataText}>{JSON.stringify(raw, null, 2)}</Text>
-                </ScrollView>
-              )}
-            </View>
-          )}
+                {nullFields.length > 0 && (
+                  <View style={styles.collapsibleSection}>
+                    <TouchableOpacity
+                      onPress={() => setShowNullFields(!showNullFields)}
+                      activeOpacity={0.7}
+                      accessibilityRole="button"
+                      accessibilityLabel={`${showNullFields ? "Hide" : "Show"} empty fields`}
+                      accessibilityState={{ expanded: showNullFields }}
+                    >
+                      <Text style={styles.collapsibleTitle}>
+                        {showNullFields ? "\u25bc" : "\u25b6"} Empty Fields ({nullFields.length})
+                      </Text>
+                    </TouchableOpacity>
+                    {showNullFields && (
+                      <View style={styles.nullFieldsContainer}>
+                        {nullFields.map(([key]) => (
+                          <Text key={key} style={styles.nullFieldName}>
+                            {formatColumnName(key)}
+                          </Text>
+                        ))}
+                      </View>
+                    )}
+                  </View>
+                )}
+
+                {raw && (
+                  <View style={styles.collapsibleSection}>
+                    <TouchableOpacity
+                      onPress={() => setShowRawData(!showRawData)}
+                      activeOpacity={0.7}
+                      accessibilityRole="button"
+                      accessibilityLabel={`${showRawData ? "Hide" : "Show"} raw provider data`}
+                      accessibilityState={{ expanded: showRawData }}
+                    >
+                      <Text style={styles.sectionTitle}>
+                        {showRawData ? "\u25bc" : "\u25b6"} Raw Provider Data
+                      </Text>
+                    </TouchableOpacity>
+                    {showRawData && (
+                      <ScrollView
+                        horizontal
+                        style={styles.rawDataScroll}
+                        contentContainerStyle={styles.rawDataContent}
+                      >
+                        <Text style={styles.rawDataText}>{JSON.stringify(raw, null, 2)}</Text>
+                      </ScrollView>
+                    )}
+                  </View>
+                )}
+              </>
+            ))}
         </ScrollView>
       </View>
     </Modal>

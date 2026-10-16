@@ -47,7 +47,7 @@ export interface TreffPolarizationWeek extends TreffPolarizationWeekInput {
 }
 
 const INTENSITY_EXPLANATION =
-  "A descriptive view of endurance training time across the Karvonen five-zone heart-rate model. It does not classify training polarization.";
+  "A descriptive view of endurance training time across the Karvonen five-zone heart-rate model.";
 
 export const DEFAULT_POLARIZATION_THRESHOLD = 2;
 
@@ -118,7 +118,7 @@ export function buildTreffPolarizationWeek(
       status: "polarized",
       statusLabel: "Matches polarized-pattern heuristic",
       explanation:
-        "This week's recorded cycling distribution is above Treff's descriptive 2.00 heuristic. It is not a physiological or medical assessment.",
+        "This week's recorded cycling distribution is above Treff's descriptive 2.00 heuristic.",
     };
   }
 
@@ -129,6 +129,6 @@ export function buildTreffPolarizationWeek(
     status: "not_polarized",
     statusLabel: "Does not match polarized-pattern heuristic",
     explanation:
-      "This week's recorded cycling distribution is at or below Treff's descriptive 2.00 heuristic. It is not a physiological or medical assessment.",
+      "This week's recorded cycling distribution is at or below Treff's descriptive 2.00 heuristic.",
   };
 }

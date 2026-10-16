@@ -41,10 +41,6 @@ function periodLabel(exercise: ProgressiveOverloadRow): string {
   )}`;
 }
 
-function countLabel(exercise: ProgressiveOverloadRow): string {
-  return `${exercise.period.observationCount} recorded weeks across ${exercise.period.elapsedWeekCount} calendar weeks`;
-}
-
 function accessibilityLabel(
   exercise: ProgressiveOverloadRow,
   units: UnitConverter,
@@ -54,11 +50,7 @@ function accessibilityLabel(
   const evidenceLabel = [
     rateLabel(exercise, units),
     `${formatDateMedium(exercise.period.startWeek)} to ${formatDateMedium(exercise.period.endWeek)}`,
-    countLabel(exercise),
     interval,
-    exercise.uncertainty.statement,
-    exercise.interpretation,
-    exercise.deloadContext,
   ]
     .filter((part): part is string => part !== null)
     .map((part) => part.replace(/\.$/, ""))
@@ -93,11 +85,7 @@ export function ProgressiveOverloadCards({
                 <Text style={styles.exercise}>{exerciseLabel}</Text>
                 <Text style={styles.detail}>{rateLabel(exercise, units)}</Text>
                 <Text style={styles.detail}>{periodLabel(exercise)}</Text>
-                <Text style={styles.detail}>{countLabel(exercise)}</Text>
                 {interval ? <Text style={styles.detail}>{interval}</Text> : null}
-                <Text style={styles.detail}>{exercise.uncertainty.statement}</Text>
-                <Text style={styles.detail}>{exercise.interpretation}</Text>
-                <Text style={styles.detail}>{exercise.deloadContext}</Text>
                 <SparkLine
                   data={exercise.observations.map((observation) => observation.totalVolumeKg)}
                   color={colors.accent}

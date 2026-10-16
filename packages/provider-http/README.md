@@ -70,6 +70,13 @@ coordination appropriate to their runtime.
   `response.ok`.
 - These helpers do not retry automatically. The caller decides whether and when
   to retry; an adaptive store can delay admission before a request.
+- `onResponse(response, input, init, requestStartedAtMs)` is an optional observer
+  awaited before HTTP status classification. The timestamp is recorded immediately
+  before Fetch runs, after adaptive admission. Applications can attach their existing
+  telemetry without another fetch wrapper. Observers can read a response clone,
+  leaving the original body unread for classification and the caller. See the
+  [implementation](./src/rate-limit.ts) and Fetch's
+  [`bodyUsed` contract](https://fetch.spec.whatwg.org/#dom-body-bodyused).
 
 The deadline uses Node's
 [`AbortSignal.timeout()` and `AbortSignal.any()`](https://nodejs.org/api/globals.html#class-abortsignal)

@@ -3,11 +3,9 @@ import { TIME_RANGE_OPTIONS, type TimeRangeDays } from "../lib/timeRange.ts";
 
 export function TimeRangeSelector({
   days,
-  description,
   onChange,
 }: {
   days: TimeRangeDays;
-  description: string;
   onChange: (days: TimeRangeDays) => void;
 }) {
   const groupName = `time-range-${useId()}`;
@@ -40,7 +38,6 @@ export function TimeRangeSelector({
           );
         })}
       </fieldset>
-      <p className="max-w-sm text-right text-xs text-muted">{description}</p>
     </div>
   );
 }

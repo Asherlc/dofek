@@ -39,7 +39,7 @@ vi.mock("../lib/trpc.ts", () => ({
 }));
 
 vi.mock("../hooks/useTimeRangePreference.ts", () => ({
-  useTimeRangePreference: () => ({ days: 30, description: "Last 30 days", setDays: vi.fn() }),
+  useTimeRangePreference: () => ({ days: 30, setDays: vi.fn() }),
 }));
 vi.mock("../hooks/useTodayQueryDate.ts", () => ({ useTodayQueryDate: () => "2026-03-31" }));
 vi.mock("../hooks/useProcessingStatus.ts", () => ({

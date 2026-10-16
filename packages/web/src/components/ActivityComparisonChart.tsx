@@ -78,10 +78,7 @@ export function ActivityComparisonChart({ data, loading }: ActivityComparisonCha
         height={280}
         emptyMessage="No repeated routes found (need 2+ instances with the same name)"
       />
-      <p className="text-xs text-dim mt-1">
-        Each line tracks pace over time for a repeated route. Y-axis is inverted so lower (faster)
-        pace appears higher.
-      </p>
+      <p className="text-xs text-dim mt-1">Higher points mean faster pace.</p>
     </div>
   );
 }

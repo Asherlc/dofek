@@ -24,6 +24,11 @@ enum activity_modality {
   cooldown
 }
 
+enum attempt_scope {
+  climb
+  pitch
+}
+
 enum canonical_activity_type {
   cycling
   running
@@ -117,34 +122,25 @@ enum canonical_activity_type {
   other
 }
 
-enum climbing_attempt_outcome {
-  sent
-  failed
-}
-
-enum climbing_climb_type {
+enum climb_kind {
   boulder
   route
+  summit
 }
 
-enum climbing_failure_reason {
-  fell
-  pumped
-  skin
-  technique
-  fear
+enum climb_setting {
+  indoor
+  outdoor
 }
 
-enum climbing_grade_system {
-  v_scale
-  font
-  yds
-  french
-  uiaa
-  ewbank
-  saxon
-  norwegian
-  brazilian_crux
+enum climbing_discipline {
+  rock_climbing
+  ice_climbing
+  mixed_climbing
+  snow_climbing
+  hiking
+  scrambling
+  mountaineering
 }
 
 enum climbing_hold_type {
@@ -200,6 +196,26 @@ enum food_category {
   other
 }
 
+enum grade_system {
+  v_scale
+  font
+  yds
+  french
+  uiaa
+  ewbank
+  saxon
+  norwegian
+  brazilian_crux
+  british_adjectival
+  british_technical
+  aid
+  water_ice
+  alpine_ice
+  mixed
+  ifas
+  nccs
+}
+
 enum meal {
   breakfast
   lunch
@@ -212,6 +228,18 @@ enum nutrition_entry_grain {
   itemized
   meal_aggregate
   daily_aggregate
+}
+
+enum protection_style {
+  sport
+  trad
+}
+
+enum rope_method {
+  lead
+  top_rope
+  follow
+  unroped
 }
 
 enum set_type {
@@ -347,6 +375,16 @@ table fitness.provider_connection {
   }
 }
 
+table fitness.provider_field_priority {
+  provider_id text [not null]
+  field_key text [not null]
+  priority bigint [not null]
+
+  indexes {
+    (provider_id, field_key) [pk]
+  }
+}
+
 table fitness.provider_issue_email {
   user_id uuid [not null]
   provider_id text [not null]
@@ -375,6 +413,7 @@ table fitness.provider_priority_audit {
   provider_id text [not null]
   source_name_pattern text
   channel text
+  field_key text
   old_value jsonb
   new_value jsonb
   reason text
@@ -530,71 +569,6 @@ table fitness.activity_interval {
 
   indexes {
     (activity_id, interval_index) [name: 'activity_interval_activity_idx']
-
-
-
-  }
-}
-
-table fitness.climbing_attempt {
-  id uuid [pk, not null, default: `gen_random_uuid()`]
-  climbing_entry_id uuid [not null]
-  attempt_index integer [not null]
-  outcome climbing_attempt_outcome [not null]
-  failure_reason climbing_failure_reason
-  notes text
-  created_at "timestamp with time zone" [not null, default: `now()`]
-
-  indexes {
-    climbing_entry_id [name: 'climbing_attempt_entry_idx']
-    (climbing_entry_id, attempt_index) [name: 'climbing_attempt_entry_index_idx', unique]
-
-
-
-  }
-}
-
-table fitness.climbing_entry {
-  id uuid [pk, not null, default: `gen_random_uuid()`]
-  user_id uuid [not null]
-  provider_id text [not null]
-  activity_id uuid
-  unattached_date date
-  provider_absent_at "timestamp with time zone"
-  external_id text
-  climb_type climbing_climb_type [not null]
-  grade_system climbing_grade_system [not null]
-  grade text [not null]
-  result_style text
-  attempt_count integer
-  climb_style text
-  route_protection text[]
-  wall_angle jsonb
-  board jsonb
-  hold_type climbing_hold_type
-  route_name text
-  location_path jsonb [not null, default: `[]`]
-  source_name text
-  raw jsonb
-  created_at "timestamp with time zone" [not null, default: `now()`]
-
-  indexes {
-
-    activity_id [name: 'climbing_entry_activity_idx']
-    (user_id, unattached_date) [name: 'climbing_entry_unattached_date_idx']
-    (climb_type, grade_system, grade) [name: 'climbing_entry_grade_lookup_idx']
-    (activity_id, external_id) [name: 'climbing_entry_activity_external_id_idx', unique]
-    (user_id, provider_id, external_id) [name: 'climbing_entry_mountain_project_external_id_idx', unique]
-    (user_id, provider_id, external_id) [name: 'climbing_entry_openbeta_external_id_idx', unique]
-
-
-
-
-
-
-
-
-
 
 
 
@@ -799,6 +773,179 @@ table fitness.strength_set {
 
   indexes {
     activity_id [name: 'strength_set_activity_idx']
+  }
+}
+
+table fitness.area {
+  id uuid [pk, not null, default: `gen_random_uuid()`]
+  user_id uuid [not null]
+  provider_id text [not null]
+  external_id text
+  name text [not null]
+  parent_area_id uuid
+  coordinates point
+
+  indexes {
+    (user_id, provider_id, id) [name: 'area_owner_provider_id_idx', unique]
+    (user_id, provider_id, external_id) [name: 'area_source_external_id_idx', unique]
+    parent_area_id [name: 'area_parent_idx']
+
+
+
+
+
+  }
+}
+
+table fitness.climb {
+  id uuid [pk, not null, default: `gen_random_uuid()`]
+  user_id uuid [not null]
+  provider_id text [not null]
+  external_id text
+  name text
+  kind climb_kind
+  area_id uuid
+  setting climb_setting
+  route_protection protection_style[]
+  coordinates point
+
+  indexes {
+    (user_id, provider_id, id) [name: 'climb_owner_provider_id_idx', unique]
+    (user_id, provider_id, external_id) [name: 'climb_source_external_id_idx', unique]
+    area_id [name: 'climb_area_idx']
+
+
+
+
+
+  }
+}
+
+table fitness.climb_grade {
+  climb_id uuid [not null]
+  value text [not null]
+  system grade_system
+  position bigint [not null]
+
+  indexes {
+    (climb_id, position) [pk]
+
+
+    (system, value) [name: 'climb_grade_lookup_idx']
+  }
+}
+
+table fitness.climbing_attempt {
+  id uuid [pk, not null, default: `gen_random_uuid()`]
+  climbing_log_entry_id uuid [not null]
+  scope attempt_scope [not null]
+  pitch_id uuid
+  parent_attempt_id uuid
+  attempt_index bigint
+  source_result text
+  rope_method rope_method
+  solo boolean
+  protection_used protection_style[]
+  used_preplaced_protection boolean
+  used_aid boolean
+  fell_or_hung boolean
+  dabbed boolean
+  received_beta boolean
+  had_completed_before boolean
+  prior_failed_attempts_ground_up boolean
+  notes text
+  created_at "timestamp with time zone" [not null, default: `now()`]
+
+  indexes {
+    climbing_log_entry_id [name: 'climbing_attempt_log_entry_idx']
+    pitch_id [name: 'climbing_attempt_pitch_idx']
+    parent_attempt_id [name: 'climbing_attempt_parent_idx']
+    (climbing_log_entry_id, id) [name: 'climbing_attempt_log_id_idx', unique]
+
+
+
+
+
+
+
+  }
+}
+
+table fitness.climbing_log_entry {
+  id uuid [pk, not null, default: `gen_random_uuid()`]
+  user_id uuid [not null]
+  provider_id text [not null]
+  external_id text
+  climb_id uuid
+  activity_id uuid
+  climbed_on date
+  discipline climbing_discipline
+  title text
+  notes text
+  board jsonb
+  wall_angle jsonb
+  hold_type climbing_hold_type
+  source_name text
+  raw jsonb
+  provider_absent_at "timestamp with time zone"
+  created_at "timestamp with time zone" [not null, default: `now()`]
+
+  indexes {
+
+
+    (user_id, provider_id, external_id) [name: 'climbing_log_entry_source_external_id_idx', unique]
+    activity_id [name: 'climbing_log_entry_activity_idx']
+    climb_id [name: 'climbing_log_entry_climb_idx']
+    (user_id, provider_id, climbed_on) [name: 'climbing_log_entry_source_date_idx']
+
+
+
+
+
+
+  }
+}
+
+table fitness.climbing_log_entry_grade {
+  climbing_log_entry_id uuid [not null]
+  value text [not null]
+  system grade_system
+  position bigint [not null]
+
+  indexes {
+    (climbing_log_entry_id, position) [pk]
+
+
+  }
+}
+
+table fitness.pitch {
+  id uuid [pk, not null, default: `gen_random_uuid()`]
+  climb_id uuid [not null]
+  external_id text
+  number bigint
+  name text
+
+  indexes {
+    (climb_id, external_id) [name: 'pitch_source_external_id_idx', unique]
+    (climb_id, number) [name: 'pitch_number_idx', unique]
+    climb_id [name: 'pitch_climb_idx']
+
+
+
+  }
+}
+
+table fitness.pitch_grade {
+  pitch_id uuid [not null]
+  value text [not null]
+  system grade_system
+  position bigint [not null]
+
+  indexes {
+    (pitch_id, position) [pk]
+
+
   }
 }
 
@@ -1818,14 +1965,6 @@ ref activity_interval_source_provider_provider_id_fk: fitness.activity_interval.
 
 ref activity_interval_source_activity_id_activity_id_fk: fitness.activity_interval.source_activity_id > fitness.activity.id [delete: set null, update: no action]
 
-ref climbing_attempt_climbing_entry_id_climbing_entry_id_fk: fitness.climbing_attempt.climbing_entry_id > fitness.climbing_entry.id [delete: cascade, update: no action]
-
-ref climbing_entry_user_id_user_profile_id_fk: fitness.climbing_entry.user_id > fitness.user_profile.id [delete: no action, update: no action]
-
-ref climbing_entry_provider_id_provider_id_fk: fitness.climbing_entry.provider_id > fitness.provider.id [delete: no action, update: no action]
-
-ref climbing_entry_activity_owner_fk: fitness.climbing_entry.(user_id, activity_id) > fitness.activity.(user_id, id) [delete: cascade, update: no action]
-
 ref daily_metric_value_daily_metrics_id_daily_metrics_id_fk: fitness.daily_metric_value.daily_metrics_id > fitness.daily_metrics.id [delete: cascade, update: no action]
 
 ref daily_metric_value_metric_type_id_daily_metric_type_id_fk: fitness.daily_metric_value.metric_type_id > fitness.daily_metric_type.id [delete: restrict, update: no action]
@@ -1855,6 +1994,40 @@ ref sport_settings_user_id_user_profile_id_fk: fitness.sport_settings.user_id > 
 ref strength_set_activity_id_activity_id_fk: fitness.strength_set.activity_id > fitness.activity.id [delete: cascade, update: no action]
 
 ref strength_set_exercise_id_exercise_id_fk: fitness.strength_set.exercise_id > fitness.exercise.id [delete: cascade, update: no action]
+
+ref area_user_id_user_profile_id_fk: fitness.area.user_id > fitness.user_profile.id [delete: no action, update: no action]
+
+ref area_provider_id_provider_id_fk: fitness.area.provider_id > fitness.provider.id [delete: no action, update: no action]
+
+ref area_parent_owner_provider_fk: fitness.area.(user_id, provider_id, parent_area_id) > fitness.area.(user_id, provider_id, id) [delete: no action, update: no action]
+
+ref climb_user_id_user_profile_id_fk: fitness.climb.user_id > fitness.user_profile.id [delete: no action, update: no action]
+
+ref climb_provider_id_provider_id_fk: fitness.climb.provider_id > fitness.provider.id [delete: no action, update: no action]
+
+ref climb_area_owner_provider_fk: fitness.climb.(user_id, provider_id, area_id) > fitness.area.(user_id, provider_id, id) [delete: no action, update: no action]
+
+ref climb_grade_climb_id_climb_id_fk: fitness.climb_grade.climb_id > fitness.climb.id [delete: cascade, update: no action]
+
+ref climbing_attempt_climbing_log_entry_id_climbing_log_entry_id_fk: fitness.climbing_attempt.climbing_log_entry_id > fitness.climbing_log_entry.id [delete: cascade, update: no action]
+
+ref climbing_attempt_pitch_id_pitch_id_fk: fitness.climbing_attempt.pitch_id > fitness.pitch.id [delete: no action, update: no action]
+
+ref climbing_attempt_parent_same_log_fk: fitness.climbing_attempt.(climbing_log_entry_id, parent_attempt_id) > fitness.climbing_attempt.(climbing_log_entry_id, id) [delete: no action, update: no action]
+
+ref climbing_log_entry_user_id_user_profile_id_fk: fitness.climbing_log_entry.user_id > fitness.user_profile.id [delete: no action, update: no action]
+
+ref climbing_log_entry_provider_id_provider_id_fk: fitness.climbing_log_entry.provider_id > fitness.provider.id [delete: no action, update: no action]
+
+ref climbing_log_entry_climb_owner_provider_fk: fitness.climbing_log_entry.(user_id, provider_id, climb_id) > fitness.climb.(user_id, provider_id, id) [delete: no action, update: no action]
+
+ref climbing_log_entry_activity_owner_fk: fitness.climbing_log_entry.(user_id, activity_id) > fitness.activity.(user_id, id) [delete: set null, update: no action]
+
+ref climbing_log_entry_grade_climbing_log_entry_id_climbing_log_entry_id_fk: fitness.climbing_log_entry_grade.climbing_log_entry_id > fitness.climbing_log_entry.id [delete: cascade, update: no action]
+
+ref pitch_climb_id_climb_id_fk: fitness.pitch.climb_id > fitness.climb.id [delete: cascade, update: no action]
+
+ref pitch_grade_pitch_id_pitch_id_fk: fitness.pitch_grade.pitch_id > fitness.pitch.id [delete: cascade, update: no action]
 
 ref food_entry_provider_id_provider_id_fk: fitness.food_entry.provider_id > fitness.provider.id [delete: no action, update: no action]
 

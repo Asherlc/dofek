@@ -38,9 +38,6 @@ export function McpClientSetupPanel({ endpoint }: { endpoint: string }) {
     <div className="space-y-3 rounded-md border border-border bg-surface-solid p-3">
       <div>
         <p className="text-sm font-medium text-foreground">Connect an AI client</p>
-        <p className="mt-1 text-sm text-subtle">
-          Choose a client, review the connection, then sign in to Dofek when prompted.
-        </p>
       </div>
       <div className="space-y-1">
         <p className="text-xs font-medium text-subtle">Remote MCP URL</p>

@@ -48,7 +48,27 @@ describe("DashboardEvidenceOverview helpers", () => {
     ).toBe("Waiting for baseline");
   });
 
-  it("renders the server-authored baseline requirement, progress, and action", () => {
+  it.each([
+    {
+      blocker: "collecting" as const,
+      summary:
+        "Resting Heart Rate has 1 of 3 required days recorded; the baseline is still collecting observations.",
+      action: "Keep syncing resting heart rate data for at least 2 more days.",
+      showAction: true,
+    },
+    {
+      blocker: "syncing" as const,
+      summary: "Resting Heart Rate baseline data is still syncing.",
+      action: "Wait for the sync to finish, then check your baseline again.",
+      showAction: false,
+    },
+    {
+      blocker: "sync_error" as const,
+      summary: "Resting Heart Rate baseline data could not sync.",
+      action: "Reconnect the data source and start the sync again.",
+      showAction: true,
+    },
+  ])("renders baseline guidance for $blocker", ({ blocker, summary, action, showAction }) => {
     render(
       <DashboardEvidenceOverview
         days={30}
@@ -61,12 +81,11 @@ describe("DashboardEvidenceOverview helpers", () => {
             requiredObservationDays: 3,
             observedObservationDays: 1,
             hasMeasurableVariation: false,
-            blocker: "collecting",
+            blocker,
             requirement:
               "A current value plus at least 2 more recorded days with measurable variation.",
-            summary:
-              "Resting Heart Rate has 1 of 3 required days recorded; the baseline is still collecting observations.",
-            action: "Keep syncing resting heart rate data for at least 2 more days.",
+            summary,
+            action,
           },
         }}
         healthMonitor={<div>Health monitor</div>}
@@ -79,15 +98,12 @@ describe("DashboardEvidenceOverview helpers", () => {
         "A current value plus at least 2 more recorded days with measurable variation.",
       ),
     ).toBeTruthy();
-    expect(screen.getByText("1 of 3 required days recorded")).toBeTruthy();
-    expect(
-      screen.getByText(
-        "Resting Heart Rate has 1 of 3 required days recorded; the baseline is still collecting observations.",
-      ),
-    ).toBeTruthy();
-    expect(
-      screen.getByText("Keep syncing resting heart rate data for at least 2 more days."),
-    ).toBeTruthy();
+    expect(screen.getByText(summary)).toBeTruthy();
+    if (showAction) {
+      expect(screen.getByText(action)).toBeTruthy();
+    } else {
+      expect(screen.queryByText(action)).toBeNull();
+    }
   });
 });
 
@@ -126,10 +142,6 @@ describe("DashboardEvidenceOverview", () => {
             relationship: "correlation",
             label: "Server-authored descriptive correlation",
             method: "Server correlation method.",
-            interpretation: "Server interpretation: association does not establish causation.",
-            limitations:
-              "Server limitations: missing observations and confounding remain possible.",
-            recommendation: "Server recommendation: this is not a prescription.",
             observationWindow: "Daily observations",
           },
           dataPoints: [{ x: 68, y: 82, date: "2026-05-27" }],
@@ -143,14 +155,12 @@ describe("DashboardEvidenceOverview", () => {
     expect(screen.getByText("Apr 28 - May 27")).toBeTruthy();
     expect(screen.getByText("Key correlation")).toBeTruthy();
     expect(screen.getByText("Server-authored descriptive correlation")).toBeTruthy();
-    expect(
-      screen.getByText("Server interpretation: association does not establish causation."),
-    ).toBeTruthy();
     const observationWindow = screen.getByText("Daily observations");
     expect(observationWindow.parentElement?.textContent).toContain(
       "Observation window: Daily observations",
     );
     expect(screen.getByText("Recent trend")).toBeTruthy();
+    expect(screen.getByText("7-day average")).toBeTruthy();
     expect(screen.queryByText("Compare sources")).toBeNull();
     expect(screen.queryByText("Connected source coverage")).toBeNull();
     expect(screen.getByText("Health monitor")).toBeTruthy();
@@ -183,9 +193,6 @@ describe("DashboardEvidenceOverview", () => {
             relationship: "descriptive_association",
             label: "Descriptive association",
             method: "Server comparison method.",
-            interpretation: "Server interpretation: association does not establish causation.",
-            limitations: "Server limitations.",
-            recommendation: "Server recommendation.",
             estimateLabel: "12.4% higher",
           },
         }}
@@ -325,8 +332,8 @@ describe("DashboardEvidenceOverview", () => {
     expect(screen.getByText("May 27")).toBeTruthy();
     expect(screen.getByText("57 bpm")).toBeTruthy();
     expect(screen.getByText("52 bpm")).toBeTruthy();
-    expect(screen.getByText("May 25: Resting heart rate: 57 bpm")).toBeTruthy();
-    expect(screen.getByText("May 27: Resting heart rate: 52 bpm")).toBeTruthy();
+    expect(screen.getByText("May 25: 7-day average resting heart rate: 57 bpm")).toBeTruthy();
+    expect(screen.getByText("May 27: 7-day average resting heart rate: 52 bpm")).toBeTruthy();
   });
 
   it("does not render fake chart data when API-backed points are missing", () => {

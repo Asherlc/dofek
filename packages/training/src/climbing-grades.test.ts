@@ -5,8 +5,8 @@ import {
   gradeOptionsForSystem,
   gradeSortValue,
   gradeSystemLabel,
-  gradeSystemsForClimbType,
-  isGradeSystemForClimbType,
+  gradeSystemsForClimbKind,
+  isGradeSystemForClimbKind,
   isValidClimbingGrade,
   parseClimbingGrade,
   resolveClimbingGradePreference,
@@ -14,8 +14,8 @@ import {
 
 describe("parseClimbingGrade", () => {
   it("uses Sandbag's compatible systems and conversions", () => {
-    expect(gradeSystemsForClimbType("boulder")).toEqual(["v_scale", "font"]);
-    expect(gradeSystemsForClimbType("route")).toEqual([
+    expect(gradeSystemsForClimbKind("boulder")).toEqual(["v_scale", "font"]);
+    expect(gradeSystemsForClimbKind("route")).toEqual([
       "yds",
       "french",
       "uiaa",
@@ -25,8 +25,8 @@ describe("parseClimbingGrade", () => {
       "brazilian_crux",
     ]);
     expect(gradeOptionsForSystem("font")).toContain("6a");
-    expect(isGradeSystemForClimbType("font", "boulder")).toBe(true);
-    expect(isGradeSystemForClimbType("font", "route")).toBe(false);
+    expect(isGradeSystemForClimbKind("font", "boulder")).toBe(true);
+    expect(isGradeSystemForClimbKind("font", "route")).toBe(false);
     expect(isValidClimbingGrade("6a", "font")).toBe(true);
     expect(isValidClimbingGrade("V4", "font")).toBe(false);
     expect(
@@ -76,8 +76,8 @@ describe("parseClimbingGrade", () => {
     ["norwegian", "route", "boulder"],
     ["brazilian_crux", "route", "boulder"],
   ] as const)("accepts %s only for %s climbs", (system, matchingType, mismatchingType) => {
-    expect(isGradeSystemForClimbType(system, matchingType)).toBe(true);
-    expect(isGradeSystemForClimbType(system, mismatchingType)).toBe(false);
+    expect(isGradeSystemForClimbKind(system, matchingType)).toBe(true);
+    expect(isGradeSystemForClimbKind(system, mismatchingType)).toBe(false);
   });
 
   it("uses defaults only when a grade preference is malformed or absent", () => {
@@ -98,6 +98,55 @@ describe("parseClimbingGrade", () => {
       boulder: "v_scale",
       route: "yds",
     });
+  });
+
+  it.each([
+    ["british_adjectival", "HVS"],
+    ["british_adjectival", "E11"],
+    ["british_technical", "5a"],
+    ["british_technical", "6c"],
+    ["aid", "A3"],
+    ["aid", "C2+"],
+    ["aid", "A1+"],
+    ["aid", "C1+"],
+    ["aid", "A4-"],
+    ["water_ice", "WI4"],
+    ["water_ice", "WI5-"],
+    ["water_ice", "WI14"],
+    ["water_ice", "WI5-6"],
+    ["alpine_ice", "AI3"],
+    ["alpine_ice", "AI5-"],
+    ["mixed", "M6"],
+    ["mixed", "M5-"],
+    ["mixed", "M5-6"],
+    ["ifas", "TD"],
+    ["ifas", "AD+"],
+    ["ifas", "ED2"],
+    ["nccs", "VI"],
+    ["nccs", "IV"],
+  ] as const)(
+    "validates recorded %s component %s without free-rock eligibility",
+    (system, grade) => {
+      expect(isValidClimbingGrade(grade, system)).toBe(true);
+      expect(isGradeSystemForClimbKind(system, "route")).toBe(false);
+      expect(
+        climbingGradePreferenceSchema.safeParse({ boulder: "font", route: system }).success,
+      ).toBe(false);
+    },
+  );
+
+  it.each([
+    ["aid", "5.8 A0"],
+    ["aid", "M2"],
+    ["water_ice", "5.12a"],
+    ["alpine_ice", "WI4"],
+    ["mixed", "A3"],
+    ["british_adjectival", "5a"],
+    ["british_technical", "HVS"],
+    ["ifas", "VI"],
+    ["nccs", "TD"],
+  ] as const)("rejects %s text from a different grading system: %s", (system, grade) => {
+    expect(isValidClimbingGrade(grade, system)).toBe(false);
   });
 
   it("rejects persisted preferences with grade systems from the wrong disciplines", () => {

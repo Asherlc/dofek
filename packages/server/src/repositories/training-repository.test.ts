@@ -189,7 +189,7 @@ describe("TrainingRepository", () => {
             expect.objectContaining({ zone: 0, label: "Below Zone 1", seconds: 0, percent: 0 }),
             expect.objectContaining({ zone: 5, label: "VO2max", seconds: 0, percent: 0 }),
           ]),
-          explanation: expect.stringContaining("does not classify training polarization"),
+          explanation: expect.stringContaining("endurance training time"),
         },
       });
       expect(executedSql(execute)).toContain("ended_at IS NOT NULL");
@@ -251,7 +251,7 @@ describe("TrainingRepository", () => {
             expect.objectContaining({ zone: 0, seconds: 0, percent: 0 }),
             expect.objectContaining({ zone: 5, seconds: 0, percent: 0 }),
           ]),
-          explanation: expect.stringContaining("does not classify training polarization"),
+          explanation: expect.stringContaining("endurance training time"),
         },
       });
     });
@@ -267,18 +267,18 @@ describe("TrainingRepository", () => {
       expect(query).not.toContain("{maxHr:Float64}");
     });
 
-    it("bounds heart-rate samples in the activity join", async () => {
+    it("joins the current heart-rate distribution by user and activity", async () => {
       const { repo, sensorStore } = makeRepository([], undefined, 1);
 
       await repo.getHrZones(90);
 
       const query = vi.mocked(sensorStore.query).mock.calls[0]?.[1];
       expect(query).toContain("INNER JOIN activity_meta am");
-      expect(query).toContain("ON ds.user_id = am.user_id");
-      expect(query).toContain("AND ds.recorded_at >= am.started_at");
-      expect(query).toContain(
-        "AND ds.recorded_at <= coalesce(am.ended_at, am.started_at + INTERVAL 12 HOUR)",
-      );
+      expect(query).toContain("analytics.activity_heart_rate_distribution distribution FINAL");
+      expect(query).toContain("ON distribution.user_id = am.user_id");
+      expect(query).toContain("AND distribution.activity_id = am.id");
+      expect(query).toContain("ARRAY JOIN distribution.samples AS sample");
+      expect(query).toContain("sumIf(sample.2, sample.1");
     });
 
     it("applies finite selected-range lower-bound filters", async () => {

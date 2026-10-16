@@ -25,9 +25,6 @@ export function ClimbingGradeSystemSettings({
   return (
     <View style={styles.section}>
       <Text style={styles.sectionTitle}>Climbing grades</Text>
-      <Text style={styles.sectionDescription}>
-        Choose the grade systems used for boulders and routes
-      </Text>
       {errorMessage && !preference ? (
         <Text style={styles.unitErrorText}>
           {userFacingErrorMessage(

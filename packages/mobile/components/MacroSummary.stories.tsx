@@ -19,6 +19,16 @@ type Story = StoryObj<typeof meta>;
 
 export const Default: Story = {};
 
+export const Empty: Story = {
+  args: {
+    macros: {
+      protein: { grams: 0, calories: 0, energySharePercentage: 0 },
+      carbs: { grams: 0, calories: 0, energySharePercentage: 0 },
+      fat: { grams: 0, calories: 0, energySharePercentage: 0 },
+    },
+  },
+};
+
 export const LowProgress: Story = {
   args: {
     macros: {

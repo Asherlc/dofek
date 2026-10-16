@@ -27,7 +27,7 @@ the exact section.
 - [processing-status-runbook.md](processing-status-runbook.md): durable processing evidence, deployment order, and stage diagnosis.
 - [account-erasure-runbook.md](account-erasure-runbook.md): durable account deletion, retention proof, restore reconciliation, and incident response.
 - [roadmap.md](roadmap.md): product strategy, release gates, Daily Brief,
-  goals, and trust roadmap.
+  calendar, and trust roadmap.
 - [review-fixture-scenarios.md](review-fixture-scenarios.md): paired web/mobile
   Storybook fixtures for empty, partial, conflicting-source, stale-provider,
   processing, and error review states.
@@ -37,7 +37,8 @@ the exact section.
 | Doc | What it is for |
 |-----|----------------|
 | [schema.md](schema.md) | Database layout, raw-data-only rules, and view/dedup behavior. |
-| [climbing-context.md](climbing-context.md) | Location paths, boards, angles, climbing methods/results, provider coverage, and coordinated schema cutover. |
+| [climbing-context.md](climbing-context.md) | Canonical climbing graph, grade ownership, scoped attempts, execution facts and server projections. |
+| [climbing-log-model-cutover.md](climbing-log-model-cutover.md) | Tested preparation, bounded conversion, validation and finalization for populated upgrades. |
 | [altitude-provenance.md](altitude-provenance.md) | Provider-by-provider altitude source confidence and modeling implications. |
 | [record-local-time.md](record-local-time.md) | Trusted per-record local clock context, provenance, and bounded historical activity backfill. |
 | [body-metrics-decision-context.md](body-metrics-decision-context.md) | Server-authored Trend Weight methodology, measurement provenance, and personalized variation context. |
@@ -52,7 +53,7 @@ the exact section.
 | [external-api.md](external-api.md) | Target-agnostic authenticated write API, explicit external identity linking, nutrition writes, and account-erasure coordination. |
 | [credential-encryption.md](credential-encryption.md) | Stored credential encryption, required key material, context binding, and rotation boundary. |
 | [posthog-support.md](posthog-support.md) | In-app support ticket flow, PostHog Conversations integration, and failure handling. |
-| [roadmap.md](roadmap.md) | Product strategy and release gates across the Daily Brief, goals, trust, and onboarding. |
+| [roadmap.md](roadmap.md) | Product strategy and release gates across the Daily Brief, calendar, trust, and onboarding. |
 | [apple-health.md](apple-health.md) | Apple Health import model and type mapping. |
 | [apple-watch-accelerometer.md](apple-watch-accelerometer.md) | Notes on Apple Watch accelerometer capture and interpretation. |
 
@@ -65,7 +66,8 @@ the exact section.
 | WHOOP BLE | [whoop-ble-protocol.md](whoop-ble-protocol.md) | BLE protocol, frames, CRCs, and packet formats. |
 | Apple Health | [apple-health.md](apple-health.md) | Quantity/category/workout mappings. |
 | Mountain Project | [mountain-project.md](mountain-project.md) | Observed tick-export fields, standalone tick storage, and exact-day activity matching. |
-| OpenBeta | [openbeta.md](openbeta.md) | Public-profile tick sync through the GraphQL API and standalone climbing-entry storage. |
+| OpenBeta | [openbeta.md](openbeta.md) | Public-profile GraphQL tick sync, shared definitions, GPS and standalone climbing logs. |
+| theCrag | [thecrag.md](thecrag.md) | Supporter personal keys, incremental logbook reads, climbing logs and live-contract limitations. |
 | AllTrails | [alltrails.md](alltrails.md) | Export formats, private endpoint findings, and import-only recommendation. |
 | BodySpec | [bodyspec.md](bodyspec.md) | OAuth setup and DEXA/body-composition sync. |
 | FatSecret | [fatsecret.md](fatsecret.md) | OAuth 1.0 flow and nutrition import details. |

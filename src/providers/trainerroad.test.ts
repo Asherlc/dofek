@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SyncRun } from "./sync-run.ts";
 import { SyncWindow } from "./sync-window.ts";
+import { makeTransactionalTestDatabase } from "./test-helpers.ts";
 
 vi.mock("../db/token-user-context.ts", () => ({
   getTokenUserId: () => "user-1",
@@ -22,7 +23,7 @@ describe("TrainerRoadProvider", () => {
   });
 
   it("sync returns error when no tokens stored", async () => {
-    const mockDb = {
+    const mockDb = makeTransactionalTestDatabase({
       select: vi.fn().mockReturnValue({
         from: vi.fn().mockReturnValue({
           where: vi.fn().mockReturnValue({
@@ -40,7 +41,7 @@ describe("TrainerRoadProvider", () => {
       }),
       delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
       execute: vi.fn().mockResolvedValue([]),
-    };
+    });
 
     const provider = new TrainerRoadProvider();
     const result = await provider.sync(
@@ -52,7 +53,7 @@ describe("TrainerRoadProvider", () => {
   });
 
   it("sync returns error when username missing from stored tokens", async () => {
-    const mockDb = {
+    const mockDb = makeTransactionalTestDatabase({
       select: vi.fn().mockReturnValue({
         from: vi.fn().mockReturnValue({
           where: vi.fn().mockReturnValue({
@@ -78,7 +79,7 @@ describe("TrainerRoadProvider", () => {
       }),
       delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
       execute: vi.fn().mockResolvedValue([]),
-    };
+    });
 
     const provider = new TrainerRoadProvider();
     const result = await provider.sync(
@@ -88,7 +89,7 @@ describe("TrainerRoadProvider", () => {
   });
 
   it("sync returns error when cookie expired", async () => {
-    const mockDb = {
+    const mockDb = makeTransactionalTestDatabase({
       select: vi.fn().mockReturnValue({
         from: vi.fn().mockReturnValue({
           where: vi.fn().mockReturnValue({
@@ -114,7 +115,7 @@ describe("TrainerRoadProvider", () => {
       }),
       delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
       execute: vi.fn().mockResolvedValue([]),
-    };
+    });
 
     const provider = new TrainerRoadProvider();
     const result = await provider.sync(
@@ -130,7 +131,7 @@ describe("TrainerRoadProvider", () => {
     });
 
     function tokenDb(expiresAt: Date) {
-      return {
+      return makeTransactionalTestDatabase({
         select: vi.fn().mockReturnValue({
           from: vi.fn().mockReturnValue({
             where: vi.fn().mockReturnValue({
@@ -156,7 +157,7 @@ describe("TrainerRoadProvider", () => {
         }),
         delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
         execute: vi.fn().mockResolvedValue([]),
-      };
+      });
     }
 
     it("treats a token expiring exactly now as expired (boundary: <= not <)", async () => {

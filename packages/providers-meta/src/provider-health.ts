@@ -22,7 +22,7 @@ export function providerHealth(input: {
 
   if (input.needsReauth) {
     return {
-      connection,
+      connection: { label: "Disconnected", status: "warning" },
       authorization: { label: "Reconnect required", status: "warning" },
       requiresReconnect: true,
     };

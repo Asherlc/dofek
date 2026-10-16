@@ -10,8 +10,8 @@ import {
   RecordFiltersGrid,
   useDebouncedFilters,
 } from "./ProviderDetailFilters.tsx";
+import { ProviderRecordDetail } from "./ProviderRecordDetail.tsx";
 import { formatCellValue, formatColumnName } from "./provider-detail-format.ts";
-import { RecordDetailModal } from "./RecordDetailModal.tsx";
 
 type DataType = (typeof DATA_TYPE_LABELS)[number]["key"];
 
@@ -174,7 +174,7 @@ export function RecordsBrowser({
     return availableTypes[0]?.key ?? "activities";
   }, [availableTypes, selectedTab]);
 
-  if (availability.isLoading) {
+  if (availability.isLoading && availability.data === undefined) {
     return (
       <RecordsSectionShell providerId={providerId} hasClinicalRecords={hasClinicalRecords}>
         <div className="text-xs text-subtle">Loading records...</div>
@@ -182,7 +182,7 @@ export function RecordsBrowser({
     );
   }
 
-  if (availability.isError) {
+  if (availability.isError && availability.data === undefined) {
     return (
       <RecordsSectionShell providerId={providerId} hasClinicalRecords={hasClinicalRecords}>
         <QueryStatePanel error={availability.error} height={80} />
@@ -202,6 +202,7 @@ export function RecordsBrowser({
 
   return (
     <RecordsSectionShell providerId={providerId} hasClinicalRecords={hasClinicalRecords}>
+      {availability.error && <QueryStatePanel error={availability.error} height={80} />}
       <div role="tablist" aria-label="Record types" className="flex flex-wrap gap-1 mb-3">
         {availableTypes.map((dataType) => {
           const tabId = `provider-records-tab-${providerId}-${dataType.key}`;
@@ -266,7 +267,7 @@ function RecordsTable({ providerId, dataType }: { providerId: string; dataType: 
     filters: activeFilters,
   });
 
-  const rows = records.isError ? [] : (records.data?.rows ?? []);
+  const rows = records.data?.rows ?? [];
   const visibleColumns = records.data?.columns ?? [];
   const filterColumnNames = records.data?.filterColumns ?? visibleColumns;
 
@@ -285,13 +286,11 @@ function RecordsTable({ providerId, dataType }: { providerId: string; dataType: 
     [filterOptionsQuery.data],
   );
 
-  const hasRaw = rows.some((row) => Object.hasOwn(row, "raw"));
-
-  if (records.isLoading) {
+  if (records.isLoading && records.data === undefined) {
     return <QueryStatePanel variant="loading" height={80} />;
   }
 
-  if (records.isError) {
+  if (records.isError && records.data === undefined) {
     return <QueryStatePanel error={records.error} height={80} />;
   }
 
@@ -302,6 +301,7 @@ function RecordsTable({ providerId, dataType }: { providerId: string; dataType: 
 
   return (
     <>
+      {records.error && <QueryStatePanel error={records.error} height={80} />}
       <RecordFiltersGrid
         columns={filterColumns}
         filters={filters}
@@ -322,20 +322,15 @@ function RecordsTable({ providerId, dataType }: { providerId: string; dataType: 
                   {formatColumnName(column)}
                 </th>
               ))}
-              {hasRaw && (
-                <th scope="col" className="text-left px-3 py-2 font-medium">
-                  Data
-                </th>
-              )}
+              <th scope="col" className="text-left px-3 py-2 font-medium">
+                Data
+              </th>
             </tr>
           </thead>
           <tbody>
             {rows.length === 0 ? (
               <tr>
-                <td
-                  colSpan={Math.max(visibleColumns.length + (hasRaw ? 1 : 0), 1)}
-                  className="px-3 py-6 text-subtle"
-                >
+                <td colSpan={visibleColumns.length + 1} className="px-3 py-6 text-subtle">
                   {emptyMessage}
                 </td>
               </tr>
@@ -354,20 +349,18 @@ function RecordsTable({ providerId, dataType }: { providerId: string; dataType: 
                       {formatCellValue(row[column])}
                     </td>
                   ))}
-                  {hasRaw && (
-                    <td className="px-3 py-2">
-                      <button
-                        type="button"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          setSelectedRecord(row);
-                        }}
-                        className="text-xs text-dim hover:text-muted transition-colors"
-                      >
-                        View
-                      </button>
-                    </td>
-                  )}
+                  <td className="px-3 py-2">
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        setSelectedRecord(row);
+                      }}
+                      className="text-xs text-dim hover:text-muted transition-colors"
+                    >
+                      View
+                    </button>
+                  </td>
                 </tr>
               ))
             )}
@@ -396,14 +389,17 @@ function RecordsTable({ providerId, dataType }: { providerId: string; dataType: 
       </div>
 
       {selectedRecord && (
-        <RecordDetailModal
-          record={selectedRecord}
+        <ProviderRecordDetail
+          input={{
+            providerId,
+            dataType,
+            recordId: String(
+              dataType === "dailyMetrics" || dataType === "nutritionDaily"
+                ? selectedRecord.date
+                : selectedRecord.id,
+            ),
+          }}
           onClose={() => setSelectedRecord(null)}
-          activityId={
-            dataType === "activities" && typeof selectedRecord.id === "string"
-              ? selectedRecord.id
-              : undefined
-          }
         />
       )}
     </>

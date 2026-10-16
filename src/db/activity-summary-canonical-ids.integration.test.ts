@@ -149,6 +149,29 @@ ${renderActivitySummaryRowsSelectSql(targetSchema)}`,
     ]);
   }, 180_000);
 
+  it("clears a stale summary end time when the current activity end becomes unknown", async () => {
+    const activeClient = requireClient(client);
+    await seedDedupeMappingRefreshFixture(activeClient, targetSchema);
+    await activeClient.command({
+      query: `INSERT INTO ${targetSchema}.activity_summary_rows ${renderActivitySummaryRowsSelectSql(targetSchema)}`,
+    });
+    await activeClient.command({
+      query: `ALTER TABLE ${targetSchema}.deduped_activities MODIFY COLUMN ended_at Nullable(DateTime64(6, 'UTC'))`,
+    });
+    await activeClient.command({
+      query: `ALTER TABLE ${targetSchema}.deduped_activities UPDATE ended_at = NULL WHERE 1 SETTINGS mutations_sync = 2`,
+    });
+    await activeClient.command({
+      query: `INSERT INTO ${targetSchema}.activity_summary_rows ${renderActivitySummaryRowsSelectSql(targetSchema, [canonicalActivityId])}`,
+    });
+    const result = await activeClient.query({
+      query: `SELECT ended_at, is_deleted FROM ${targetSchema}.activity_summary_rows FINAL
+      WHERE activity_id = '${canonicalActivityId}'`,
+      format: "JSONEachRow",
+    });
+    expect(await result.json()).toEqual([{ ended_at: null, is_deleted: 0 }]);
+  });
+
   it("maps a scoped member refresh to its canonical summary", async () => {
     const activeClient = requireClient(client);
     await seedDedupeMappingRefreshFixture(activeClient, targetSchema);

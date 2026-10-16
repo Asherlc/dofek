@@ -3,6 +3,7 @@ import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { createClickHouseClientFromEnv } from "../../../../src/db/clickhouse.ts";
+import { persistClimbingLogEntries } from "../../../../src/db/climbing-log-sync.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { performanceComparisonOutputSchema } from "../mcp/performance-comparison-output.ts";
 import { PerformanceComparisonRepository } from "./performance-comparison-repository.ts";
@@ -133,14 +134,63 @@ describe("PerformanceComparisonRepository database semantics", () => {
           '2026-09-27T18:00:00Z', 'Bench latest mirror', '{}'::jsonb,
           'America/Los_Angeles', -420, -420, 'provider_timezone')
     `);
-    await postgres.db.execute(sql`
-      INSERT INTO fitness.climbing_entry (user_id, provider_id, activity_id, external_id, climb_type, grade_system, grade, result_style, attempt_count, climb_style, wall_angle, route_name, location_path) VALUES
-        (${userId}::uuid, ${workoutProvider}, ${climbBaselineIds[0]}::uuid, 'route-base-a', 'route', 'yds', '5.11a', 'Send', 2, 'top-rope', '{"value":10,"unit":"degrees"}'::jsonb, 'Red Corner', '[{"name":"Test Gym","externalId":null,"kind":null}]'::jsonb),
-        (${userId}::uuid, ${mirrorProvider}, ${climbBaselineIds[1]}::uuid, 'route-base-b', 'route', 'yds', '5.11a', 'Send', 2, 'top-rope', '{"value":10,"unit":"degrees"}'::jsonb, 'Red Corner', '[{"name":"Test Gym","externalId":null,"kind":null}]'::jsonb),
-        (${userId}::uuid, ${workoutProvider}, ${climbLatestIds[0]}::uuid, 'route-latest-a', 'route', 'yds', '5.11a', 'Send', 1, 'top-rope', '{"value":10,"unit":"degrees"}'::jsonb, 'Red Corner', '[{"name":"Test Gym","externalId":null,"kind":null}]'::jsonb),
-        (${userId}::uuid, ${mirrorProvider}, ${climbLatestIds[1]}::uuid, 'route-latest-b', 'route', 'yds', '5.11a', 'Not sent', 3, 'top-rope', '{"value":10,"unit":"degrees"}'::jsonb, 'Red Corner', '[{"name":"Test Gym","externalId":null,"kind":null}]'::jsonb),
-        (${userId}::uuid, ${workoutProvider}, ${climbLeadId}::uuid, 'route-lead', 'route', 'yds', '5.11a', 'Send', 1, 'lead', '{"value":10,"unit":"degrees"}'::jsonb, 'Red Corner', '[{"name":"Test Gym","externalId":null,"kind":null}]'::jsonb)
-`);
+    for (const [providerId, activityId, externalId, count, method, completed] of [
+      [workoutProvider, climbBaselineIds[0], "route-base-a", 2, "top_rope", true],
+      [mirrorProvider, climbBaselineIds[1], "route-base-b", 2, "top_rope", true],
+      [workoutProvider, climbLatestIds[0], "route-latest-a", 1, "top_rope", true],
+      [mirrorProvider, climbLatestIds[1], "route-latest-b", 3, "top_rope", false],
+      [workoutProvider, climbLeadId, "route-lead", 1, "lead", true],
+    ] as const) {
+      await persistClimbingLogEntries(postgres.db, {
+        userId,
+        providerId,
+        entries: [
+          {
+            externalId,
+            activityId,
+            discipline: "rock_climbing",
+            wallAngle: { value: 10, unit: "degrees" },
+            climb: {
+              externalId: "corner",
+              name: "Red Corner",
+              kind: "route",
+              setting: "indoor",
+              publishedGrades: [
+                { value: "5.11a", system: "yds" },
+                { value: "6c", system: "french" },
+                { value: "A1", system: "aid" },
+              ],
+              areas: [{ externalId: "gym", name: "Test Gym" }],
+              pitches: [
+                {
+                  externalId: "pitch",
+                  number: 1,
+                  publishedGrades: [{ value: "5.13a", system: "yds" }],
+                },
+              ],
+            },
+            attempts: [
+              ...Array.from({ length: count }, (_, index) => ({
+                scope: "climb" as const,
+                ropeMethod: method,
+                solo: false,
+                ...(index === 0
+                  ? completed
+                    ? { sourceResult: "Send", qualifier: "free-send" as const }
+                    : { sourceResult: "failed" as const }
+                  : {}),
+              })),
+              {
+                scope: "pitch",
+                pitch: { number: 1 },
+                sourceResult: "Send",
+                qualifier: "free-send",
+              },
+            ],
+          },
+        ],
+      });
+    }
     await postgres.db.execute(sql`
       INSERT INTO fitness.exercise (id, name, equipment)
       VALUES (${exerciseId}::uuid, 'Performance comparison bench', 'barbell')
@@ -770,12 +820,15 @@ describe("PerformanceComparisonRepository database semantics", () => {
       referenceActivityId: null,
       equivalence: {
         kind: "climb",
-        climbType: "route",
+        climbKind: "route",
         gradeSystem: "yds",
         grade: "5.11a",
-        routeName: "Red Corner",
+        climbName: "Red Corner",
         locationName: "Test Gym",
-        lead: false,
+        ropeMethod: "top_rope",
+        solo: false,
+        attemptScope: "climb",
+        pitchNumber: null,
       },
       providers: [],
       modalities: [],
@@ -790,7 +843,16 @@ describe("PerformanceComparisonRepository database semantics", () => {
       entries: 1,
       excluded_ambiguous_entries: 0,
       attempts: 2,
-      evidence: [{ merged_duplicate: true, lead: false }],
+      sends: 1,
+      evidence: [
+        {
+          merged_duplicate: true,
+          rope_method: "top_rope",
+          solo: false,
+          attempt_scope: "climb",
+          pitch_number: null,
+        },
+      ],
     });
     expect(result.performances[1]).toMatchObject({
       metrics: {

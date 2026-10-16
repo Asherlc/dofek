@@ -10,11 +10,7 @@ interface NutritionIntakeContextProps {
 }
 
 function meterLabel(context: SelectedDateNutritionIntakeContext): string {
-  const comparisonMessage = context.comparison.message.trimEnd();
-  const comparisonWithSeparator = /[.!?…]$/.test(comparisonMessage)
-    ? comparisonMessage
-    : `${comparisonMessage}.`;
-  return `Logged intake: ${formatCalories(context.observedCalories)}. ${context.target.label}: ${formatCalories(context.target.calories)}. ${comparisonWithSeparator} Scale: 0 to ${formatCalories(context.scale.maximumCalories)}. ${context.limitation}`;
+  return `Calories: ${formatCalories(context.observedCalories)}. ${context.target.label}: ${formatCalories(context.target.calories)}. Scale: 0 to ${formatCalories(context.scale.maximumCalories)}.`;
 }
 
 export function NutritionIntakeContext({ context }: NutritionIntakeContextProps) {
@@ -36,7 +32,7 @@ export function NutritionIntakeContext({ context }: NutritionIntakeContextProps)
     >
       <div className="flex items-baseline justify-between gap-3">
         <h3 id={titleId} className="text-sm font-medium text-foreground">
-          Logged intake
+          Calories
         </h3>
         <span className="text-xl font-semibold text-foreground tabular-nums">
           {formatCalories(context.observedCalories)}
@@ -70,12 +66,8 @@ export function NutritionIntakeContext({ context }: NutritionIntakeContextProps)
       </div>
       <div className="flex justify-between text-xs text-subtle tabular-nums">
         <span>{formatCalories(0)}</span>
-        <span>{formatCalories(context.scale.maximumCalories)} scale</span>
+        <span>{formatCalories(context.scale.maximumCalories)}</span>
       </div>
-      <p className="text-sm text-muted" data-testid="calorie-comparison">
-        {context.comparison.message}
-      </p>
-      <p className="text-xs text-subtle">{context.limitation}</p>
     </section>
   );
 }
