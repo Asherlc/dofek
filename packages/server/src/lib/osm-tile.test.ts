@@ -1,5 +1,47 @@
 import { describe, expect, it } from "vitest";
-import { latLngToTile, osmTilePreview, osmTileUrl } from "./osm-tile.ts";
+import { latLngToTile, osmPointMapPreview, osmTilePreview, osmTileUrl } from "./osm-tile.ts";
+
+describe("osmPointMapPreview", () => {
+  it("keeps source identity paired with its projected coordinates", () => {
+    const area = { lat: 40.01, lng: -105.28, location: { scope: "area", objectId: "area-1" } };
+    const climb = { lat: 40.012, lng: -105.275, location: { scope: "climb", objectId: "climb-1" } };
+    const result = osmPointMapPreview([area, climb]);
+    expect(result.points.map((point) => point.point)).toEqual([area, climb]);
+    expect(result.points[0]?.x).toBeLessThan(result.points[1]?.x ?? 0);
+    expect(result.points[0]?.y).toBeGreaterThan(result.points[1]?.y ?? 0);
+    expect(result.preview.routePath).toBeNull();
+  });
+  it("projects isolated source points on the existing tile viewport without connecting them", () => {
+    const coordinates = [
+      { lat: 40.01, lng: -105.28 },
+      { lat: 40.012, lng: -105.275 },
+    ];
+    const result = osmPointMapPreview(coordinates);
+    expect(result.preview.routePath).toBeNull();
+    expect(result.points).toHaveLength(2);
+    expect(result.points[0]?.x).toBeLessThan(result.points[1]?.x ?? 0);
+    expect(result.points[0]?.y).toBeGreaterThan(result.points[1]?.y ?? 0);
+  });
+  it("centers one point and preserves zero-valued coordinates", () => {
+    const result = osmPointMapPreview([{ lat: 0, lng: 0 }]);
+    expect(result.points).toEqual([{ x: 512, y: 288, point: { lat: 0, lng: 0 } }]);
+    expect(result.preview.routePath).toBeNull();
+    expect(result.preview.tiles.length).toBeGreaterThan(0);
+    expect(osmPointMapPreview([]).points).toEqual([]);
+  });
+  it("keeps source-only points at geographic context zoom without changing recorded GPS fitting", () => {
+    const coordinates = [{ lat: 40.007, lng: -105.4 }];
+    const source = osmPointMapPreview(coordinates);
+    expect(
+      source.preview.tiles.every((tile) => new URL(tile.url).pathname.startsWith("/14/")),
+    ).toBe(true);
+    const recorded = osmTilePreview(coordinates);
+    expect(recorded.tiles.every((tile) => new URL(tile.url).pathname.startsWith("/19/"))).toBe(
+      true,
+    );
+    expect(source.points).toEqual([{ x: 512, y: 288, point: coordinates[0] }]);
+  });
+});
 
 function tilePathnames(urls: string[]): string[] {
   return urls.map((url) => new URL(url).pathname);

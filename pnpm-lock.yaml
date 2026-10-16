@@ -61,6 +61,7 @@ patchedDependencies:
   braces@3.0.3: 37f95f7d660c05bfd44d4b429ca49ceeede99dcff68389f81ee9b995a8ea24d2
   expo-apple-authentication@58.0.2: 89179b1395738b47e8285e682ae3c0b84d973d1c4870ffed89bf46d08111268a
   node-forge@1.4.0: 4fa957cddb4b4601a48b535053d0fec7ed013f9d075660a38365f285fc830fe0
+  react-native-svg@15.16.0: a96e90253e3aaf7ea45385991e74294003577dd7ef02e2e9ddfd343d5c2cff66
 
 importers:
 
@@ -660,7 +661,7 @@ importers:
         version: 4.30.0(react-native@0.88.0)(react@19.3.0)
       react-native-svg:
         specifier: 15.16.0
-        version: 15.16.0(react-native@0.88.0)(react@19.3.0)
+        version: 15.16.0(patch_hash=a96e90253e3aaf7ea45385991e74294003577dd7ef02e2e9ddfd343d5c2cff66)(react-native@0.88.0)(react@19.3.0)
       react-native-worklets:
         specifier: 0.13.0
         version: 0.13.0(@babel/core@7.29.7)(@react-native/metro-config@0.88.0)(react-native@0.88.0)(react@19.3.0)(supports-color@11.0.0)
@@ -25138,7 +25139,7 @@ snapshots:
       react-native-gesture-handler: 3.3.0(react-native@0.88.0)(react@19.3.0)
       react-native-reanimated: 4.7.1(react-native-worklets@0.13.0)(react-native@0.88.0)(react@19.3.0)
       react-native-safe-area-context: 5.10.1(react-native@0.88.0)(react@19.3.0)
-      react-native-svg: 15.16.0(react-native@0.88.0)(react@19.3.0)
+      react-native-svg: 15.16.0(patch_hash=a96e90253e3aaf7ea45385991e74294003577dd7ef02e2e9ddfd343d5c2cff66)(react-native@0.88.0)(react@19.3.0)
       storybook: 10.6.0(@types/react@19.3.0)(prettier@3.9.5)(react-dom@19.3.0)(react@19.3.0)
     transitivePeerDependencies:
       - '@types/react'
@@ -32105,7 +32106,7 @@ snapshots:
       expo-application: 58.0.4(expo@58.0.11)
       expo-file-system: 58.0.9(expo@58.0.11)(react-native@0.88.0)
       react-native-safe-area-context: 5.10.1(react-native@0.88.0)(react@19.3.0)
-      react-native-svg: 15.16.0(react-native@0.88.0)(react@19.3.0)
+      react-native-svg: 15.16.0(patch_hash=a96e90253e3aaf7ea45385991e74294003577dd7ef02e2e9ddfd343d5c2cff66)(react-native@0.88.0)(react@19.3.0)
 
   preact@10.29.8: {}
 
@@ -32349,7 +32350,7 @@ snapshots:
     dependencies:
       react: 19.3.0
       react-native: 0.88.0(@babel/core@7.29.7)(@react-native/metro-config@0.88.0)(@types/react@19.3.0)(react@19.3.0)(supports-color@11.0.0)
-      react-native-svg: 15.16.0(react-native@0.88.0)(react@19.3.0)
+      react-native-svg: 15.16.0(patch_hash=a96e90253e3aaf7ea45385991e74294003577dd7ef02e2e9ddfd343d5c2cff66)(react-native@0.88.0)(react@19.3.0)
 
   react-native-drawer-layout@4.2.12(react-native-gesture-handler@3.3.0)(react-native-reanimated@4.7.1)(react-native@0.88.0)(react@19.3.0):
     dependencies:
@@ -32406,7 +32407,7 @@ snapshots:
       react-native: 0.88.0(@babel/core@7.29.7)(@react-native/metro-config@0.88.0)(@types/react@19.3.0)(react@19.3.0)(supports-color@11.0.0)
       warn-once: 0.1.1
 
-  react-native-svg@15.16.0(react-native@0.88.0)(react@19.3.0):
+  react-native-svg@15.16.0(patch_hash=a96e90253e3aaf7ea45385991e74294003577dd7ef02e2e9ddfd343d5c2cff66)(react-native@0.88.0)(react@19.3.0):
     dependencies:
       css-select: 5.2.2
       css-tree: 1.1.3

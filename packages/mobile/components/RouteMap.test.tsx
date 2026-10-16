@@ -10,16 +10,29 @@ vi.mock("react-native-maps", () => ({
     initialRegion,
     region,
     style,
+    scrollEnabled,
+    zoomEnabled,
+    pointerEvents,
   }: {
     children: ReactNode;
     initialRegion?: unknown;
     region?: unknown;
     style: { width: number; height: number };
+    scrollEnabled?: boolean;
+    zoomEnabled?: boolean;
+    pointerEvents?: string;
   }) => {
     const [mountedRegion] = useState(initialRegion);
     return createElement(
       "div",
-      { "data-testid": "map", "data-region": JSON.stringify(region ?? mountedRegion), style },
+      {
+        "data-testid": "map",
+        "data-region": JSON.stringify(region ?? mountedRegion),
+        "data-scroll": String(scrollEnabled),
+        "data-zoom": String(zoomEnabled),
+        "data-pointer-events": pointerEvents,
+        style,
+      },
       children,
     );
   },
@@ -93,6 +106,38 @@ const gpsPoints = [
 ];
 
 describe("RouteMap", () => {
+  it("opens a uniquely located entry directly and permits overview pan and zoom", () => {
+    const onSelectEntry = vi.fn();
+    const { container } = render(
+      <RouteMap points={[]} climbMarkers={climbMarkers} onSelectEntry={onSelectEntry} />,
+    );
+    measure(container);
+    const marker = screen.getAllByTestId("marker")[1];
+    if (!marker) throw new Error("Expected a unique climb marker");
+    fireEvent.click(marker);
+    expect(onSelectEntry).toHaveBeenCalledWith("tick-2");
+    expect(screen.getByTestId("map").getAttribute("data-scroll")).toBe("true");
+    expect(screen.getByTestId("map").getAttribute("data-zoom")).toBe("true");
+  });
+
+  it("keeps compact maps noninteractive", () => {
+    const onSelectEntry = vi.fn();
+    const { container } = render(
+      <RouteMap
+        points={[]}
+        climbMarkers={climbMarkers.slice(0, 1)}
+        compact
+        onSelectEntry={onSelectEntry}
+      />,
+    );
+    measure(container);
+    fireEvent.click(screen.getByTestId("marker"));
+    expect(onSelectEntry).not.toHaveBeenCalled();
+    expect(screen.getByTestId("map").getAttribute("data-scroll")).toBe("false");
+    expect(screen.getByTestId("map").getAttribute("data-zoom")).toBe("false");
+    expect(screen.getByTestId("map").getAttribute("data-pointer-events")).toBe("none");
+  });
+
   it("opens every same-name occurrence at a tapped coordinate and selects distinct card identities", () => {
     const first = climbMarkers[0];
     if (!first) throw new Error("Expected a source fixture");

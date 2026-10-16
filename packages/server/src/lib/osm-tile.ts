@@ -100,30 +100,56 @@ export function osmTileUrl(lat: number, lng: number, zoom = 13): string {
 }
 
 export function osmTilePreview(points: LatLngPoint[]): OsmTilePreview {
+  return projectOsmTilePreview(points).preview;
+}
+
+export function osmPointMapPreview<T extends LatLngPoint>(
+  points: T[],
+): {
+  preview: OsmTilePreview & { routePath: null };
+  points: { x: number; y: number; point: T }[];
+} {
+  const projected = projectOsmTilePreview(points, 14);
+  return { ...projected, preview: { ...projected.preview, routePath: null } };
+}
+
+function projectOsmTilePreview<T extends LatLngPoint>(
+  points: T[],
+  maximumZoom = DEFAULT_ROUTE_PREVIEW_ZOOM,
+): {
+  preview: OsmTilePreview;
+  points: { x: number; y: number; point: T }[];
+} {
   const firstPoint = points[0];
   if (!firstPoint) {
     return {
-      width: ROUTE_PREVIEW_WIDTH_PX,
-      height: ROUTE_PREVIEW_HEIGHT_PX,
-      tiles: [
-        {
-          url: osmTileUrl(0, 0, 0),
-          x: (ROUTE_PREVIEW_WIDTH_PX - OSM_TILE_SIZE_PX) / 2,
-          y: (ROUTE_PREVIEW_HEIGHT_PX - OSM_TILE_SIZE_PX) / 2,
-          width: OSM_TILE_SIZE_PX,
-          height: OSM_TILE_SIZE_PX,
-        },
-      ],
-      routePath: null,
+      points: [],
+      preview: {
+        width: ROUTE_PREVIEW_WIDTH_PX,
+        height: ROUTE_PREVIEW_HEIGHT_PX,
+        tiles: [
+          {
+            url: osmTileUrl(0, 0, 0),
+            x: (ROUTE_PREVIEW_WIDTH_PX - OSM_TILE_SIZE_PX) / 2,
+            y: (ROUTE_PREVIEW_HEIGHT_PX - OSM_TILE_SIZE_PX) / 2,
+            width: OSM_TILE_SIZE_PX,
+            height: OSM_TILE_SIZE_PX,
+          },
+        ],
+        routePath: null,
+      },
     };
   }
 
-  let selectedZoom = DEFAULT_ROUTE_PREVIEW_ZOOM;
-  let selectedProjectedPoints: ProjectedTilePoint[] = [];
+  let selectedZoom = maximumZoom;
+  let selectedProjectedPoints: (ProjectedTilePoint & { point: T })[] = [];
 
-  for (let zoom = DEFAULT_ROUTE_PREVIEW_ZOOM; zoom >= MIN_ROUTE_PREVIEW_ZOOM; zoom--) {
+  for (let zoom = maximumZoom; zoom >= MIN_ROUTE_PREVIEW_ZOOM; zoom--) {
     selectedZoom = zoom;
-    const projectedPoints = points.map((point) => projectToTilePoint(point.lat, point.lng, zoom));
+    const projectedPoints = points.map((point) => ({
+      ...projectToTilePoint(point.lat, point.lng, zoom),
+      point,
+    }));
     selectedProjectedPoints = projectedPoints;
     const minPixelX = Math.min(...projectedPoints.map((point) => point.tileX * OSM_TILE_SIZE_PX));
     const maxPixelX = Math.max(...projectedPoints.map((point) => point.tileX * OSM_TILE_SIZE_PX));
@@ -177,20 +203,21 @@ export function osmTilePreview(points: LatLngPoint[]): OsmTilePreview {
     }
   }
 
-  const routePath =
-    points.length >= 2
-      ? selectedProjectedPoints.map((projectedPoint) => {
-          return {
-            x: roundPathCoordinate(projectedPoint.tileX * OSM_TILE_SIZE_PX - originPixelX),
-            y: roundPathCoordinate(projectedPoint.tileY * OSM_TILE_SIZE_PX - originPixelY),
-          };
-        })
-      : null;
+  const projectedPoints = selectedProjectedPoints.map((projectedPoint) => {
+    return {
+      x: roundPathCoordinate(projectedPoint.tileX * OSM_TILE_SIZE_PX - originPixelX),
+      y: roundPathCoordinate(projectedPoint.tileY * OSM_TILE_SIZE_PX - originPixelY),
+      point: projectedPoint.point,
+    };
+  });
 
   return {
-    width: ROUTE_PREVIEW_WIDTH_PX,
-    height: ROUTE_PREVIEW_HEIGHT_PX,
-    tiles,
-    routePath,
+    points: projectedPoints,
+    preview: {
+      width: ROUTE_PREVIEW_WIDTH_PX,
+      height: ROUTE_PREVIEW_HEIGHT_PX,
+      tiles,
+      routePath: points.length >= 2 ? projectedPoints.map(({ x, y }) => ({ x, y })) : null,
+    },
   };
 }
