@@ -28,6 +28,10 @@ source points retain Climb/Area and provider attribution without creating a
 route or implying distance/elevation measurements. The
 [calendar repository](../server/src/repositories/activities-calendar-repository.ts)
 projects map geometry on the server, and recorded GPS takes precedence.
+The [GPS-route preview](../../docs/screenshots/mobile-activity-route.png) and
+[climbing-location preview](../../docs/screenshots/mobile-activity-climbing.png)
+show the [Activities stories](<app-stories/(tabs)/activities.stories.tsx>) at a
+390-pixel browser viewport.
 
 Activity details show climbing logs and same-day attachment suggestions for
 climbing and hiking activities. Cards show current shared locations, published
