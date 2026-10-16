@@ -20,12 +20,18 @@ The mobile app for Dofek. Built with Expo and React Native, with native Swift mo
 
 ## Project Structure
 
-The Activities list reuses its compact bike-ride map preview for climbing-source
-locations when an activity has no recorded GPS track. Source points retain
-Climb/Area and provider attribution without creating a route or implying
-distance/elevation measurements. The
+The [Activities list](<app/(tabs)/activities.tsx>) shows a full-width 16:9 map
+below each activity's details when location data is available, matching the
+readable map panels on the [web Activities list](../web/src/components/ActivityCardContent.tsx).
+Activities without a recorded GPS track can show climbing-source locations;
+source points retain Climb/Area and provider attribution without creating a
+route or implying distance/elevation measurements. The
 [calendar repository](../server/src/repositories/activities-calendar-repository.ts)
 projects map geometry on the server, and recorded GPS takes precedence.
+The [GPS-route preview](../../docs/screenshots/mobile-activity-route.png) and
+[climbing-location preview](../../docs/screenshots/mobile-activity-climbing.png)
+show the [Activities stories](<app-stories/(tabs)/activities.stories.tsx>) at a
+390-pixel browser viewport.
 
 Activity details show climbing logs and same-day attachment suggestions for
 climbing and hiking activities. Cards show current shared locations, published
@@ -320,6 +326,11 @@ native dependency set with Expo 58.0.12, Expo Router 58.0.21, Expo Updates
 [dependency validation guidance](https://docs.expo.dev/more/expo-cli/#configuring-dependency-validation).
 The native dependency set also includes ExpoNetwork, the pnpm patch to
 `expo-apple-authentication@58.0.2`, and `react-native-maps@1.29.11`.
+The Expo/Router patch alignment includes a transitive
+[`expo-modules-core` patch](https://github.com/expo/expo/pull/51493) that corrects
+worklets peer metadata, and the
+[`expo-glass-effect` patch](https://github.com/expo/expo/pull/51639) changes only
+TypeScript ref declarations.
 Build a new native binary containing these dependencies; do not publish this
 JavaScript to runtime 1.7 or earlier.
 Expo requires a runtime increment when native code is updated; see
