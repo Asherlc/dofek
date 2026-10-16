@@ -66,6 +66,15 @@ log and attempt graph follows the [canonical response contract](../server/src/co
 
 The Training route coordinates query states and delegates climbing payload validation, grade cards, and Hangboarding display to [ClimbingTrainingCard](./components/ClimbingTrainingCard.tsx), with focused tests and stories beside the component.
 
+[ClimbingLocationMapCard](./components/ClimbingLocationMapCard.tsx) uses the same
+Training dates and climbing filters to render [server-computed clusters](../training/src/climbing-location-map.ts).
+Larger circles split into individual climb locations as the map zooms; repeated
+logs at one coordinate stay selectable together, with their grade, date, source,
+location scope, and activity link. Its native map preserves the viewport during
+refreshes and uses the cross-platform region API to zoom into clusters; the
+[native map camera documentation](https://github.com/react-native-maps/react-native-maps/blob/master/docs/mapview.md#types)
+distinguishes MapKit altitude from Google Maps zoom values.
+
 - `app/`: Expo Router screens (file-based routing). Keep this route-only; Expo documents `app` as route-exclusive and non-route files there can be treated as routes: <https://docs.expo.dev/router/basics/core-concepts/#6-non-navigation-components-live-outside-the-srcapp-directory>.
 - `app-tests/`: Vitest tests for Expo Router screens.
 - `app-stories/`: Storybook stories for Expo Router screens.
@@ -308,7 +317,7 @@ for the approved SDK dependency tree.
 
 ### Native diagnostic runtime
 
-Runtime **1.7** uses the stable [Expo SDK 58](https://expo.dev/changelog/sdk-58)
+Runtime **1.8** uses the stable [Expo SDK 58](https://expo.dev/changelog/sdk-58)
 native dependency set with Expo 58.0.13, Expo Router 58.0.21, Expo Updates
 58.0.17, React Native 0.88.0, and React Native SVG 15.16.0, pinned in
 [package.json](./package.json). Validate SDK-managed versions with
@@ -317,7 +326,7 @@ native dependency set with Expo 58.0.13, Expo Router 58.0.21, Expo Updates
 The native dependency set also includes ExpoNetwork, the pnpm patch to
 `expo-apple-authentication@58.0.2`, and `react-native-maps@1.29.11`.
 Build a new native binary containing these dependencies; do not publish this
-JavaScript to runtime 1.6 or earlier.
+JavaScript to runtime 1.7 or earlier.
 Expo requires a runtime increment when native code is updated; see
 [manual runtime version increments](https://docs.expo.dev/eas-update/runtime-versions/#manually-increment-the-runtime-version).
 Expo uses

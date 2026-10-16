@@ -7,6 +7,7 @@ import { climbingProgressionFixture } from "../../components/climbing-progressio
 
 const mockRouterPush = vi.fn();
 const mockTrainingInvalidate = vi.fn();
+const mockLocationMapInvalidate = vi.fn();
 const mockHrZonesInvalidate = vi.fn();
 const mockPolarizationInvalidate = vi.fn();
 const mockMonotonyInvalidate = vi.fn();
@@ -18,7 +19,7 @@ type MockRangeQueryOptions = {
   placeholderData?: (previousData: unknown) => unknown;
 };
 let mockRangeQueryCalls: Record<
-  "training" | "hrZones" | "polarization" | "monotony",
+  "training" | "hrZones" | "polarization" | "monotony" | "locationMap",
   Array<{ input: { days: number; endDate?: string }; options: MockRangeQueryOptions }>
 >;
 let mockTimeRangePreference = {
@@ -46,6 +47,14 @@ const mockTrainingState: MockTrainingState = {
 
 const mockHrZonesState: MockTrainingState = {
   data: undefined,
+  isLoading: false,
+  isFetching: false,
+  isError: false,
+  error: null,
+};
+
+const mockLocationMapState: MockTrainingState = {
+  data: { bounds: null, nodes: [] },
   isLoading: false,
   isFetching: false,
   isError: false,
@@ -128,6 +137,13 @@ function resetMockTrainingState() {
     state.isError = false;
     state.error = null;
   }
+  Object.assign(mockLocationMapState, {
+    data: { bounds: null, nodes: [] },
+    isLoading: false,
+    isFetching: false,
+    isError: false,
+    error: null,
+  });
 }
 
 vi.mock("expo-router", () => ({
@@ -136,6 +152,14 @@ vi.mock("expo-router", () => ({
 
 vi.mock("../../lib/trpc", () => ({
   trpc: {
+    climbing: {
+      locationMap: {
+        useQuery: (input: { days: number }, options: MockRangeQueryOptions) => {
+          mockRangeQueryCalls.locationMap.push({ input, options });
+          return { ...mockLocationMapState };
+        },
+      },
+    },
     mobileDashboard: {
       training: {
         useQuery: (input: { days: number; endDate?: string }, options: MockRangeQueryOptions) => {
@@ -186,6 +210,7 @@ vi.mock("../../lib/trpc", () => ({
       },
     },
     useUtils: () => ({
+      climbing: { locationMap: { invalidate: mockLocationMapInvalidate } },
       mobileDashboard: {
         training: { invalidate: mockTrainingInvalidate },
       },
@@ -246,11 +271,13 @@ describe("StrainScreen recent activity navigation", () => {
     mockRouterPush.mockReset();
     vi.mocked(captureException).mockReset();
     mockTrainingInvalidate.mockReset();
+    mockLocationMapInvalidate.mockReset();
     mockProcessingStatusInvalidate.mockReset();
     mockHrZonesInvalidate.mockReset();
     mockPolarizationInvalidate.mockReset();
     mockMonotonyInvalidate.mockReset();
     mockTrainingInvalidate.mockResolvedValue(undefined);
+    mockLocationMapInvalidate.mockResolvedValue(undefined);
     mockProcessingStatusInvalidate.mockResolvedValue(undefined);
     mockHrZonesInvalidate.mockResolvedValue(undefined);
     mockPolarizationInvalidate.mockResolvedValue(undefined);
@@ -259,6 +286,7 @@ describe("StrainScreen recent activity navigation", () => {
     mockTrainingDataDays = 90;
     mockRangeQueryCalls = {
       training: [],
+      locationMap: [],
       hrZones: [],
       polarization: [],
       monotony: [],
@@ -311,6 +339,9 @@ describe("StrainScreen recent activity navigation", () => {
     expect(mockRangeQueryCalls.training.at(-1)?.input).toMatchObject({
       climbingFilters: { ropeMethod: "lead" },
     });
+    expect(mockRangeQueryCalls.locationMap.at(-1)?.input).toEqual({ days: 90, ropeMethod: "lead" });
+    expect(mockRangeQueryCalls.locationMap.at(-1)?.options.placeholderData).toBeTypeOf("function");
+    expect(screen.getByText("Climbing locations")).toBeTruthy();
   });
 
   it("refreshes training, intensity, polarization, monotony, and processing status together", async () => {
@@ -321,6 +352,7 @@ describe("StrainScreen recent activity navigation", () => {
     await mockRefreshInvalidate?.();
 
     expect(mockTrainingInvalidate).toHaveBeenCalledOnce();
+    expect(mockLocationMapInvalidate).toHaveBeenCalledOnce();
     expect(mockHrZonesInvalidate).toHaveBeenCalledOnce();
     expect(mockPolarizationInvalidate).toHaveBeenCalledOnce();
     expect(mockMonotonyInvalidate).toHaveBeenCalledOnce();

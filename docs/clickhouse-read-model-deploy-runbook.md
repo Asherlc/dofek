@@ -24,8 +24,18 @@ normal deploys must not rebuild hot Postgres read models.
 Preparation release A preserves old request readers and processing/cache
 coverage behavior. It installs the bounded pace/HR writers and the parameterized
 `activity_sensor_processing_coverage` view after both writers, plus canonical
-version-aware registered cache replay. The view reads current/prior activity
-keys and exact source pairs; it does not store another source of truth.
+version-aware registered cache replay. Release A also installs the
+parameterized `activity_sensor_key_verification` metadata view. It shares the
+canonical dirty-key state with the coverage view and returns per-key evidence
+for both compact models. Both views are registered in `PRODUCTION_DBT_MODELS`
+and in the training dataset contract in
+[dataset-contracts.ts](../src/processing/dataset-contracts.ts). Both views read
+current/prior activity keys and exact source pairs; they do not store another
+source of truth. Migration `0099_activity_sensor_day_versions` adds the
+`deduped_sensor` day-version projection that their shared dirty-key state reads.
+Its historical parts need the
+[operator gate](#deduped-sensor-day-version-projection-rollout-migration-0099)
+before any reader relies on it.
 ClickHouse documents views in [CREATE VIEW](https://clickhouse.com/docs/reference/statements/create/view)
 and dbt owns them through [view materialization](https://docs.getdbt.com/reference/resource-configs/materialized).
 Require an explicit UUID user set at every current/prior/activity/sensor-day/
@@ -48,7 +58,11 @@ Preparation A activates no production coverage consumer. Reader B must supply
 and independently test this context at its canonical production typed boundary.
 Verify pinned canonical dbt initial create and replacement, discovery,
 parameterized DESCRIBE, schema/contracts, docs, artifacts, tests and SQLFluff
-before adopting the preparation source. No custom materializer or bypass is
+for both `activity_sensor_processing_coverage` and
+`activity_sensor_key_verification` before adopting the preparation source.
+Each `activity_sensor_key_verification` read also takes explicit user UUIDs and
+user/activity pairs and the same 1/1/1 query context; empty input means no
+work. No custom materializer or bypass is
 approved. Verify EXPLAIN/read rows/memory/time with the existing semantic
 settings; user row scope and total query/worker memory are independent gates.
 The prior ordinary view read unrelated-user sources, and its approximately
@@ -733,6 +747,74 @@ build as having no optimizer hints. Distinguish compact freshness reads from
 the remaining indexed geometry work, and retain query-log, readiness, and live/tombstone
 output snapshots together for recovery review. ClickHouse documents projection
 selection in the [query-log verification example](https://clickhouse.com/docs/concepts/features/projections/projections#filtering-on-columns-which-arent-in-the-primary-key).
+
+## Deduped sensor day-version projection rollout (migration 0099)
+
+Migration [`0099_activity_sensor_day_versions`](../src/db/clickhouse-migrations/0099_activity_sensor_day_versions.ts)
+sets the `rebuild` projection modes on `analytics.deduped_sensor` and adds the
+`by_user_channel_day_refresh` definition only. This avoids a deploy-time
+historical rebuild. New parts get the projection automatically. Old parts do
+not get it until an operator materializes it
+([ClickHouse projections](https://clickhouse.com/docs/concepts/features/projections/projections)).
+The shared `activity_sensor_key_state` macro reads the per-day
+`max(refresh_version)` aggregate that this projection serves. That aggregate
+feeds the compact writers, `activity_sensor_processing_coverage` and
+`activity_sensor_key_verification`. Do not let a reader rely on the projection
+until all three gates below pass.
+
+Historical materialization requires a separate approved maintenance window and
+the approved CI or remote database operator channel. The SQL below is a
+reviewable operator procedure, not permission to mutate production over SSH.
+
+1. **Bounded capacity review.** Record the inventory below with free disk,
+   memory, active mutations and current workload. The table has no partition
+   key, so its single `all` partition is the smallest native materialization
+   scope. Agree on the maximum rows/bytes before writing. If the partition is
+   larger than the approved bounds, stop and review the operation with the owner.
+
+   ```sql
+   SELECT partition_id, count() AS active_parts, sum(rows) AS rows,
+     sum(bytes_on_disk) AS bytes,
+     countIf(NOT has(projections, 'by_user_channel_day_refresh')) AS missing_projection_parts
+   FROM system.parts
+   WHERE active AND database = 'analytics' AND table = 'deduped_sensor'
+   GROUP BY partition_id;
+
+   SELECT mutation_id, command, is_done, parts_to_do, latest_fail_reason
+   FROM system.mutations
+   WHERE database = 'analytics' AND table = 'deduped_sensor' AND is_done = 0;
+   ```
+
+2. **Mutation outcome.** Submit one server-side mutation for the reviewed
+   partition, then monitor it. Record the accepted mutation as the resume
+   checkpoint. Do not resubmit while `is_done = 0`. Stop on a non-empty
+   `latest_fail_reason`. ClickHouse documents
+   [`MATERIALIZE PROJECTION`](https://clickhouse.com/docs/reference/statements/alter/projection)
+   and the [system.mutations](https://clickhouse.com/docs/operations/system-tables/mutations)
+   progress fields.
+
+   ```sql
+   ALTER TABLE analytics.deduped_sensor
+   MATERIALIZE PROJECTION by_user_channel_day_refresh
+   IN PARTITION ID '<reviewed-partition-id>' SETTINGS mutations_sync = 0;
+
+   SELECT mutation_id, command, is_done, parts_to_do, latest_fail_reason
+   FROM system.mutations
+   WHERE database = 'analytics' AND table = 'deduped_sensor'
+     AND command LIKE '%MATERIALIZE PROJECTION by_user_channel_day_refresh%'
+   ORDER BY create_time DESC;
+   ```
+
+3. **Active-part coverage.** After `is_done = 1` with no failure reason, rerun
+   the step 1 inventory. Require at least one active part and
+   `missing_projection_parts = 0` ([system.parts](https://clickhouse.com/docs/operations/system-tables/parts)).
+   Then confirm natural selection with `EXPLAIN projections = 1` on the day
+   aggregate and with `system.query_log.projections` for one bounded selector
+   run. Do not add optimizer forcing settings to compensate for missing coverage.
+
+Record the mutation ID, inventories and query-log evidence with the Release A
+population evidence. Any failed gate blocks Release B cutover and any coverage
+consumer activation.
 
 ## Activity sensor summary queue-depth check
 
