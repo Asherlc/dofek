@@ -310,9 +310,11 @@ for the approved SDK dependency tree.
 - `react-native-maps@1.29.11` — the [stable release](https://github.com/react-native-maps/react-native-maps/releases/tag/v1.29.11)
   uses Fabric with React Native 0.81.1 or newer, matching this app's React Native
   0.88 dependency ([upstream compatibility table](https://github.com/react-native-maps/react-native-maps/blob/v1.29.11/README.md#compatibility)).
-  SDK 58 recommends 1.29.0, so this tested native pin is managed through Expo's
-  documented [`expo.install.exclude`](https://docs.expo.dev/more/expo-cli/#configuring-dependency-validation)
-  setting. The existing Expo check still validates the remaining SDK-managed
+  Expo 58.0.14 recommends this version in its
+  [native dependency matrix](https://github.com/expo/expo/blob/expo%4058.0.14/packages/expo/bundledNativeModules.json).
+  The tested native pin remains listed in Expo's documented
+  [`expo.install.exclude`](https://docs.expo.dev/more/expo-cli/#configuring-dependency-validation)
+  setting. The existing Expo check validates the remaining SDK-managed
   packages. Maps upgrades require a fresh native binary, a matching runtime
   increment, and the signed simulator audit: route, Start/Finish pins, elevation
   hover/release, navigation/remount, and session restoration after restart
@@ -331,21 +333,25 @@ for the approved SDK dependency tree.
 
 ### Native diagnostic runtime
 
-Runtime **1.8** uses the stable [Expo SDK 58](https://expo.dev/changelog/sdk-58)
-native dependency set with Expo 58.0.12, Expo Router 58.0.21, Expo Updates
+Runtime **1.9** uses the stable [Expo SDK 58](https://expo.dev/changelog/sdk-58)
+native dependency set with Expo 58.0.14, Expo Router 58.0.23, Expo Updates
 58.0.17, React Native 0.88.0, and React Native SVG 15.16.0, pinned in
-[package.json](./package.json). Validate SDK-managed versions with
+[package.json](./package.json). The
+[Expo 58.0.14 dependency matrix](https://github.com/expo/expo/blob/expo%4058.0.14/packages/expo/bundledNativeModules.json)
+also aligns Crypto and Haptics to 58.0.7, Sharing to 58.0.19, Splash Screen to
+58.0.10, Dev Client to 58.0.14, Build Properties to 58.0.11, and Modules Core to
+58.0.22. Validate SDK-managed versions with
 `pnpm tsx ../../scripts/with-env.ts -- pnpm expo install --check` from this package, following Expo's
 [dependency validation guidance](https://docs.expo.dev/more/expo-cli/#configuring-dependency-validation).
 The native dependency set also includes ExpoNetwork, the pnpm patch to
 `expo-apple-authentication@58.0.2`, and `react-native-maps@1.29.11`.
-The Expo/Router patch alignment includes a transitive
-[`expo-modules-core` patch](https://github.com/expo/expo/pull/51493) that corrects
-worklets peer metadata, and the
-[`expo-glass-effect` patch](https://github.com/expo/expo/pull/51639) changes only
-TypeScript ref declarations.
-Build a new native binary containing these dependencies; do not publish this
-JavaScript to runtime 1.7 or earlier.
+
+This patch alignment changes native executable code: Router fixes the iOS
+[`Link.AppleZoom` dismissal transition](https://github.com/expo/expo/pull/51676),
+and Modules Core changes [synchronous worklet result handling](https://github.com/expo/expo/pull/51656)
+and the [native JavaScript class factory](https://github.com/expo/expo/pull/51582).
+Build a new native binary containing these dependencies before publishing
+updates for runtime 1.9; do not publish this dependency set to runtime 1.8 or earlier.
 Expo requires a runtime increment when native code is updated; see
 [manual runtime version increments](https://docs.expo.dev/eas-update/runtime-versions/#manually-increment-the-runtime-version).
 Expo uses
