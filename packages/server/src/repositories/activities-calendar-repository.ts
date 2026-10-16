@@ -33,7 +33,7 @@ import {
 import { activityMeasurementState } from "../services/activity-data-state.ts";
 import { clickHouseActivityCalendarDate } from "./activity-local-date.ts";
 import { type ActivitySensorStore, activityRepositoryFor } from "./activity-repository.ts";
-import { getActivityRoutePreviews } from "./activity-route-preview.ts";
+import { getActivityMapReadiness, getActivityRoutePreviews } from "./activity-route-preview.ts";
 import { ClimbingActivityLogEntryRepository } from "./climbing-activity-log-entry-repository.ts";
 
 // ---------------------------------------------------------------------------
@@ -105,6 +105,7 @@ const activityRowSchema = z.object({
   ended_at: timestampStringSchema.nullable(),
   provider_id: z.string(),
   source_name: z.string().nullable(),
+  member_activity_ids: z.array(z.string()),
   timezone: z.string().nullable(),
   start_utc_offset_minutes: z.coerce.number().nullable(),
   end_utc_offset_minutes: z.coerce.number().nullable(),
@@ -152,6 +153,7 @@ const activityTypeRowSchema = z.object({
 });
 
 const providerAbsentActivityRowSchema = activityRowSchema.extend({
+  route_activity_id: z.string(),
   provider_id: z.string(),
   provider_absent_at: timestampStringSchema,
 });
@@ -244,6 +246,7 @@ export class ActivitiesCalendarRepository extends BaseRepository {
             toString(activity.ended_at) AS ended_at,
             activity.provider_id AS provider_id,
             activity.source_name AS source_name,
+            activity.member_activity_ids AS member_activity_ids,
             activity.timezone AS timezone,
             activity.start_utc_offset_minutes AS start_utc_offset_minutes,
             activity.end_utc_offset_minutes AS end_utc_offset_minutes,
@@ -318,10 +321,27 @@ export class ActivitiesCalendarRepository extends BaseRepository {
     ]);
 
     const baseline = baselineRows[0] ?? { max_hr: null, resting_hr: null, ftp: null };
+    const mapReadinessByActivityId = await getActivityMapReadiness(
+      this.#sensorStore,
+      this.userId,
+      filteredActivityRows
+        .filter(
+          (row) =>
+            (row.centroid_lat == null || row.centroid_lng == null) &&
+            !sourceLocationsByActivityId.get(row.id)?.length,
+        )
+        .map((row) => ({
+          id: row.id,
+          routeActivityId: row.id,
+          memberActivityIds: row.member_activity_ids,
+        })),
+    );
     const calculator = new TrainingStressCalculator();
 
     const dayMap = new Map<string, CalendarActivityEntry[]>();
     for (const row of filteredActivityRows) {
+      const mapReadiness = mapReadinessByActivityId.get(row.id);
+      const isMapProcessing = mapReadiness != null && mapReadiness !== "unavailable";
       const sourceLocations = sourceLocationsByActivityId.get(row.id);
       let sourceLocation: ActivityLocation | null = null;
       if (sourceLocations?.length) {
@@ -387,7 +407,7 @@ export class ActivitiesCalendarRepository extends BaseRepository {
                   routePreviewByActivityId.get(row.id) ??
                   osmTilePreview([{ lat: row.centroid_lat, lng: row.centroid_lng }]),
               }
-            : sourceLocation,
+            : (sourceLocation ?? (isMapProcessing ? { kind: "processing" } : null)),
         tss: tss != null ? Math.round(tss * 10) / 10 : null,
         stats: formatActivityStats(trainingStress),
       };
@@ -416,12 +436,14 @@ export class ActivitiesCalendarRepository extends BaseRepository {
       providerAbsentActivityRowSchema,
       `SELECT
           toString(activity.id) AS id,
+          toString(activity.group_id) AS route_activity_id,
           activity.name AS name,
           activity.canonical_type AS canonical_type,
           toString(activity.started_at) AS started_at,
           toString(activity.ended_at) AS ended_at,
           activity.provider_id AS provider_id,
           activity.source_name AS source_name,
+          [activity.id] AS member_activity_ids,
           activity.timezone AS timezone,
           activity.start_utc_offset_minutes AS start_utc_offset_minutes,
           activity.end_utc_offset_minutes AS end_utc_offset_minutes,
@@ -486,6 +508,17 @@ export class ActivitiesCalendarRepository extends BaseRepository {
     });
 
     const baseline = baselineRows[0] ?? { max_hr: null, resting_hr: null, ftp: null };
+    const mapReadinessByActivityId = await getActivityMapReadiness(
+      this.#sensorStore,
+      this.userId,
+      enrichedRows
+        .filter((row) => row.centroid_lat == null || row.centroid_lng == null)
+        .map((row) => ({
+          id: row.id,
+          routeActivityId: row.route_activity_id,
+          memberActivityIds: row.member_activity_ids,
+        })),
+    );
     const calculator = new TrainingStressCalculator();
 
     const dayMap = new Map<string, CalendarActivityEntry[]>();
@@ -526,7 +559,9 @@ export class ActivitiesCalendarRepository extends BaseRepository {
                   routePreviewByActivityId.get(row.id) ??
                   osmTilePreview([{ lat: row.centroid_lat, lng: row.centroid_lng }]),
               }
-            : null,
+            : mapReadinessByActivityId.get(row.id) === "processing"
+              ? { kind: "processing" }
+              : null,
         tss: tss != null ? Math.round(tss * 10) / 10 : null,
         stats: formatActivityStats(trainingStress),
         isProviderAbsent: true,

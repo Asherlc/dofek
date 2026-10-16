@@ -27,6 +27,18 @@ distance/elevation measurements. The
 [calendar repository](../server/src/repositories/activities-calendar-repository.ts)
 projects map geometry on the server, and recorded GPS takes precedence.
 
+Activity maps reserve space and show “Processing map…” while server geometry,
+preview images, or native map rendering are pending. Lists poll while any map's
+geometry is processing. Preview images become ready only after every tile
+reports a successful [Image `onLoad`](https://reactnative.dev/docs/image#onload);
+native overview and compact maps show the processing panel until
+[`onMapReady`](https://github.com/react-native-maps/react-native-maps/blob/master/docs/mapview.md#events),
+then retain the native renderer's
+[`loadingEnabled` indicator](https://github.com/react-native-maps/react-native-maps/blob/master/docs/mapview.md#props)
+while its initial map rendering completes.
+Existing previews remain visible during background refreshes, and map failures
+retain their error state.
+
 Activity details show climbing logs and same-day attachment suggestions for
 climbing and hiking activities. Cards show current shared locations, published
 display grades, scoped results, and server-derived rock labels. Provider records

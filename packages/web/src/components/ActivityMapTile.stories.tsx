@@ -146,6 +146,11 @@ type Story = StoryObj<typeof meta>;
 
 export const HighResolutionRoute: Story = {};
 
+export const Processing: Story = { args: { location: { kind: "processing" } } };
+export const ProcessingThumbnail: Story = {
+  args: { location: { kind: "processing" }, variant: "thumbnail" },
+};
+
 export const NoRoute: Story = {
   args: {
     location: {

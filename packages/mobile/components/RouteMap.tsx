@@ -6,6 +6,7 @@ import { useCallback, useMemo, useState } from "react";
 import { type LayoutChangeEvent, Pressable, StyleSheet, Text, View } from "react-native";
 import MapView, { Marker, Polyline } from "react-native-maps";
 import { colors, radius, spacing } from "../theme";
+import { MapProcessingState } from "./MapProcessingState";
 
 interface GpsPoint {
   lat: number | null;
@@ -30,11 +31,13 @@ export function RouteMap({
   onSelectEntry,
 }: RouteMapProps) {
   const [mapWidth, setMapWidth] = useState<number | null>(null);
+  const [mapReady, setMapReady] = useState(false);
   const [inspectedPoint, setInspectedPoint] = useState<GpsCoordinates | null>(null);
   const [selectedEntryId, setSelectedEntryId] = useState<string | null>(null);
 
   const handleLayout = useCallback((event: LayoutChangeEvent) => {
-    setMapWidth(event.nativeEvent.layout.width);
+    const width = event.nativeEvent.layout.width;
+    if (width > 0) setMapWidth(width);
   }, []);
 
   const gpsPoints = useMemo(
@@ -94,7 +97,10 @@ export function RouteMap({
       {!compact && (
         <Text style={styles.title}>{gpsPoints.length > 0 ? "Route Map" : "Climb locations"}</Text>
       )}
-      <View style={styles.mapWrapper} onLayout={handleLayout}>
+      <View
+        style={[styles.mapWrapper, { height: compact ? 140 : MAP_HEIGHT }]}
+        onLayout={handleLayout}
+      >
         {mapWidth != null && (
           <MapView
             style={{ width: mapWidth, height: compact ? 140 : MAP_HEIGHT }}
@@ -107,6 +113,10 @@ export function RouteMap({
             toolbarEnabled={false}
             showsUserLocation={false}
             showsPointsOfInterests={false}
+            onMapReady={() => setMapReady(true)}
+            loadingEnabled
+            loadingIndicatorColor={colors.accent}
+            loadingBackgroundColor={colors.surfaceSecondary}
           >
             {coordinates.length > 0 && (
               <Polyline
@@ -167,6 +177,11 @@ export function RouteMap({
               </Marker>
             )}
           </MapView>
+        )}
+        {!mapReady && (
+          <View style={StyleSheet.absoluteFill}>
+            <MapProcessingState />
+          </View>
         )}
       </View>
       {!compact && inspectedPoint && (

@@ -138,7 +138,7 @@ export const calendarRouter = router({
 
   weekList: cachedProtectedQuery({
     maxAge: CacheTTL.MEDIUM,
-    keyVersion: "activity-calendar-locations-v2",
+    keyVersion: "activity-calendar-locations-v3",
   })
     .input(activityListInputSchema)
     .output(z.array(calendarDayActivitiesSchema))

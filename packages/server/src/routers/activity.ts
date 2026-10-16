@@ -131,6 +131,8 @@ export const activityRouter = router({
         throw error;
       }
     },
+    undefined,
+    { keyVersion: "activity-list-locations-v1" },
   ),
 
   byId: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })

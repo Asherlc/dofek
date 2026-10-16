@@ -107,6 +107,7 @@ export const LazyOffscreenPreview: Story = {
   play: async ({ canvasElement }) => {
     const preview = within(canvasElement).getByRole("region", { name: "Climbing locations" });
     await expect(preview).not.toHaveClass("leaflet-container");
+    await expect(within(canvasElement).getByRole("status")).toHaveTextContent("Processing map…");
     await expect(canvasElement.querySelector("img.leaflet-tile")).toBeNull();
     preview.scrollIntoView({ block: "center" });
     await waitFor(() => expect(preview).toHaveClass("leaflet-container"));

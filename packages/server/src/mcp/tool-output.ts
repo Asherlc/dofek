@@ -2,9 +2,14 @@ import { recordLocalTimeContextSchema } from "@dofek/format/record-local-time";
 import { healthMetricSchema } from "@dofek/mcp-contracts/health-explorer";
 import { FREE_ROCK_GRADE_SYSTEMS } from "@dofek/training/climbing-grades";
 import { z } from "zod";
+import {
+  activityLocationSchema,
+  climbingSourceActivityLocationSchema,
+  processingActivityLocationSchema,
+  recordedGpsActivityLocationSchema,
+} from "../contracts/activity-location.ts";
 import { baselineRelativeMetricSchema } from "../contracts/baseline-relative-metrics.ts";
 import { climbingLogEntryDetailSchema } from "../contracts/climbing-log-contracts.ts";
-import { osmTilePreviewSchema } from "../lib/osm-tile.ts";
 import {
   fingerLoadingExerciseSchema,
   fingerLoadingGripPositionSchema,
@@ -142,14 +147,11 @@ export const sleepSummaryOutputSchema = jsonResult(
   ),
 );
 
-const activityLocationSchema = z.object({
-  centroidLat: z.number(),
-  centroidLng: z.number(),
-  mapPreview: osmTilePreviewSchema,
-});
-const activitySearchLocationSchema = activityLocationSchema.extend({
-  mapPreview: osmTilePreviewSchema.optional(),
-});
+const activitySearchLocationSchema = z.discriminatedUnion("kind", [
+  processingActivityLocationSchema,
+  recordedGpsActivityLocationSchema.partial({ mapPreview: true }),
+  climbingSourceActivityLocationSchema.partial({ mapPreview: true }),
+]);
 const activityListItemSchema = z.object({
   id: z.string(),
   canonical_type: z.string(),

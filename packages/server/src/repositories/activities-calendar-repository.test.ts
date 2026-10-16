@@ -94,6 +94,8 @@ function makeSensorStore(rowSets: Record<string, unknown>[][]): ActivitySensorSt
                   end_utc_offset_minutes: null,
                   local_time_source: "unknown",
                   provider_id: "wahoo",
+                  member_activity_ids: [],
+                  route_activity_id: row.id,
                   source_name: null,
                   source_external_ids: [],
                   absent_source_external_ids: [],
@@ -106,7 +108,8 @@ function makeSensorStore(rowSets: Record<string, unknown>[][]): ActivitySensorSt
       ),
     );
   }
-  query.mockImplementation(() => {
+  query.mockImplementation((_schema, queryText: string) => {
+    if (queryText.includes("analytics.activity_location_member_change")) return Promise.resolve([]);
     throw new Error("Unexpected sensor query");
   });
   return {
@@ -536,6 +539,24 @@ describe("ActivitiesCalendarRepository", () => {
         { lat: 37.7756, lng: -122.4182 },
       ]),
     });
+  });
+
+  it("exposes the processing map state when source GPS is ahead of the route model", async () => {
+    const sensorStore = makeSensorStore([
+      [makeActivityRow({ id: "pending", member_activity_ids: ["pending-member"] })],
+      [{ max_hr: null, resting_hr: null, ftp: null }],
+      [{ activity_id: "pending", status: "processing" }],
+    ]);
+    const repository = new ActivitiesCalendarRepository(
+      makeDatabase([]),
+      "user-1",
+      "UTC",
+      sensorStore,
+    );
+
+    const result = await repository.getWeekList({ weeks: 1, endDate: "2026-03-20" });
+
+    expect(result[0]?.activities[0]?.location).toEqual({ kind: "processing" });
   });
 
   it("omits locations when only one centroid coordinate is present", async () => {

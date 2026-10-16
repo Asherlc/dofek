@@ -47,6 +47,23 @@ The backend API and background job processor for Dofek. Built with Node.js, Expr
 - **Redis pairing store**: Companion pairing uses Lua scripts over related Redis keys and is intended for the single-node Redis deployment used by Dofek. Redis Cluster requires every key touched by one Lua script to be in the same hash slot; supporting Cluster mode would require redesigning the pairing key names with Redis hash tags. See the Redis Cluster scaling and hash tag documentation: https://redis.io/docs/latest/operate/oss_and_stack/management/scaling/ and https://redis.io/docs/latest/operate/oss_and_stack/reference/cluster-spec/#hash-tags.
 - **Monitoring**: Integrated with Sentry for error tracking and Prometheus for performance metrics (`src/lib/metrics.ts`).
 
+### Activity map readiness contract
+
+`calendar.weekList` and activity lists use the shared
+[`ActivityLocation` contract](src/contracts/activity-location.ts). A renderable recorded GPS or
+climbing-source map takes precedence. Otherwise, `{ kind: "processing" }` indicates that ingested
+location data is newer than the route model, or route points are waiting for their summary centroid.
+`null` means there is no currently evidenced map for that record. Provider-absent source records
+finish processing when their canonical route checkpoint catches up; another source's GPS does not
+imply that the absent record is awaiting a new summary. The
+[batched readiness query](src/repositories/activity-route-preview.ts) uses member location ingestion
+timestamps and canonical route checkpoints; clients render this state without guessing from the
+activity type, distance, or overall sync status.
+
+Release this response change together with compatible web and mobile clients: older clients assume
+every non-null location has map preview data. See the [web map renderer](../web/src/components/ActivityMapTile.tsx)
+and [mobile map renderer](../mobile/components/ActivityMapTile.tsx).
+
 ### Activity training-stress availability contract
 
 `calendar.weekList` owns both Training Stress Score calculation and availability explanations.

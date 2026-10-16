@@ -6,6 +6,14 @@ import { RouteMap } from "./RouteMap";
 const meta = {
   title: "Activity/RouteMap",
   component: RouteMap,
+  parameters: {
+    docs: {
+      description: {
+        component:
+          "Maps reserve their viewport while preparing the native renderer, with a processing panel followed by the native map loading indicator.",
+      },
+    },
+  },
 } satisfies Meta<typeof RouteMap>;
 
 export default meta;
@@ -43,6 +51,10 @@ export const OutAndBack: Story = {
       { lat: 37.7749, lng: -122.4194 },
     ],
   },
+};
+
+export const CompactRecordedRoute: Story = {
+  args: { ...OutAndBack.args, compact: true },
 };
 
 /** Some points missing GPS coordinates (should be filtered out). */

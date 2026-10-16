@@ -45,6 +45,7 @@ import { DofekChart } from "../components/DofekChart.tsx";
 import { HangboardingDetail } from "../components/HangboardingDetail.tsx";
 import { HrZonesChart, PowerZonesChart } from "../components/HeartRateZonesChart.tsx";
 import { ChartLoadingSkeleton } from "../components/LoadingSkeleton.tsx";
+import { MapProcessingIndicator } from "../components/MapProcessingIndicator.tsx";
 import { PageLayout } from "../components/PageLayout.tsx";
 import { QueryStatePanel } from "../components/QueryStatePanel.tsx";
 import {
@@ -294,9 +295,17 @@ export function ActivityDetailPage() {
           {route.error ? (
             <QueryStatePanel error={route.error} height={160} />
           ) : routeProcessing ? (
-            <p role="status" className="py-8 text-center text-sm text-muted">
-              {route.isLoading ? "Loading route map…" : "Processing route map…"}
-            </p>
+            hasGps || climbMarkers.length > 0 ? (
+              <p role="status" className="text-sm text-muted">
+                {route.isLoading ? "Loading route map…" : "Processing route map…"}
+              </p>
+            ) : (
+              <div className="relative isolate h-[400px] rounded-lg">
+                <MapProcessingIndicator
+                  label={route.isLoading ? "Loading route map…" : "Processing route map…"}
+                />
+              </div>
+            )
           ) : null}
           {(hasGps || climbMarkers.length > 0) && (
             <ActivityRouteMap
