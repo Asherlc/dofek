@@ -61,12 +61,32 @@ describe("ActivityMetricStrip", () => {
     expect(screen.getByText("100")).toBeDefined();
   });
 
+  it("keeps server-authored stats for source-only climbing locations", () => {
+    render(
+      <ActivityMetricStrip
+        activity={{
+          location: { kind: "climbing_source" },
+          distanceMeters: null,
+          distanceState: { status: "missing", reason: "Distance not recorded" },
+          elevationGainM: null,
+          elevationState: { status: "missing", reason: "Elevation not recorded" },
+          stats: [{ status: "available", label: "Training Stress Score", value: "100" }],
+        }}
+        units={units}
+      />,
+    );
+
+    expect(screen.getByText("Training Stress Score")).toBeDefined();
+    expect(screen.getByText("100")).toBeDefined();
+    expect(screen.queryByText("Distance unavailable")).toBeNull();
+  });
+
   it("renders map metrics instead of activity stats when location is available", () => {
     render(
       <ActivityMetricStrip
         activity={{
           location: {
-            mapPreview: {},
+            kind: "recorded_gps",
           },
           distanceMeters: 10_000,
           distanceState: { status: "available" },
@@ -88,7 +108,7 @@ describe("ActivityMetricStrip", () => {
       <ActivityMetricStrip
         activity={{
           location: {
-            mapPreview: {},
+            kind: "recorded_gps",
           },
           distanceMeters: null,
           distanceState: { status: "missing", reason: "Distance not recorded" },

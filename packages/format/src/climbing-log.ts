@@ -8,7 +8,18 @@ export function formatClimbingRecordedResult(
   outcome: AttemptOutcome | null,
   recordedCount: number,
 ): string {
-  return `${target} ${outcome ?? "outcome unknown"} · ${formatClimbingAttemptCount(recordedCount)}`;
+  return `${target}${outcome === null ? "" : ` ${outcome}`} · ${formatClimbingAttemptCount(recordedCount)}`;
+}
+
+export function formatClimbingRopeMethods(
+  attempts: readonly Pick<ClimbingAttempt, "ropeMethod">[],
+): string | null {
+  const labels = new Set(
+    attempts
+      .map((attempt) => formatClimbingRopeMethod(attempt.ropeMethod))
+      .filter((label) => label !== null),
+  );
+  return labels.size === 0 ? null : [...labels].join(" · ");
 }
 
 export function formatClimbingGradeComponents(components: readonly GradeComponent[]): string {
@@ -36,7 +47,7 @@ export function climbingAttemptDetailFields(
       label: "Outcome",
       value:
         attempt.outcome === null
-          ? "Unknown"
+          ? "Not reported by source"
           : attempt.outcome === "completed"
             ? "Completed"
             : "Failed",

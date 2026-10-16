@@ -24,11 +24,6 @@ enum activity_modality {
   cooldown
 }
 
-enum attempt_outcome {
-  completed
-  failed
-}
-
 enum attempt_scope {
   climb
   pitch
@@ -847,7 +842,7 @@ table fitness.climbing_attempt {
   pitch_id uuid
   parent_attempt_id uuid
   attempt_index bigint
-  outcome attempt_outcome
+  source_result text
   rope_method rope_method
   solo boolean
   protection_used protection_style[]
@@ -866,6 +861,7 @@ table fitness.climbing_attempt {
     pitch_id [name: 'climbing_attempt_pitch_idx']
     parent_attempt_id [name: 'climbing_attempt_parent_idx']
     (climbing_log_entry_id, id) [name: 'climbing_attempt_log_id_idx', unique]
+
 
 
 

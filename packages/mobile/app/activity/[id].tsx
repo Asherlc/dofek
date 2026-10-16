@@ -16,6 +16,7 @@ import { processingPollInterval } from "@dofek/providers/processing-status";
 import { providerSourceLabel } from "@dofek/providers/providers";
 import { getActivityIconInfo } from "@dofek/training/activity-icons";
 import { isClimbingLogActivity } from "@dofek/training/climbing-log";
+import { buildClimbingMapLocations, buildClimbingMapMarkers } from "@dofek/training/climbing-map";
 import type { MuscleGroupInput } from "@dofek/training/muscle-groups";
 import {
   cadenceUnit,
@@ -24,7 +25,7 @@ import {
   isCyclingActivity,
 } from "@dofek/training/training";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useCallback, useState } from "react";
+import { type ComponentProps, useCallback, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -50,6 +51,7 @@ import { HrZonesChart, PowerZonesChart } from "../../components/activity/ZoneDis
 import { ClimbingLogEntryBreakdown } from "../../components/ClimbingLogEntryBreakdown";
 import { HangboardingDetail } from "../../components/HangboardingDetail";
 import { MuscleGroupBodyDiagram } from "../../components/MuscleGroupBodyDiagram";
+import { ProviderRecordDetailModal } from "../../components/providers/provider-record-detail-modal";
 import { getQueryErrorMessage, QueryStatePanel } from "../../components/QueryStatePanel";
 import { RouteMap } from "../../components/RouteMap";
 import { UnattachedClimbingLogEntries } from "../../components/UnattachedClimbingLogEntries";
@@ -59,6 +61,8 @@ import { captureException } from "../../lib/telemetry";
 import { trpc } from "../../lib/trpc";
 import { useUnitConverter } from "../../lib/units";
 import { colors } from "../../theme";
+
+const EMPTY_ROUTE_POINTS: ComponentProps<typeof RouteMap>["points"] = [];
 
 function activityIcon(type: string): string {
   return getActivityIconInfo(type).emoji;
@@ -505,6 +509,22 @@ export default function ActivityDetailScreen() {
     { enabled: !!id && isClimbingActivity },
   );
   const climbingEntriesLoading = climbingEntries.isLoading && !climbingEntries.data;
+  const [selectedClimbingEntryId, setSelectedClimbingEntryId] = useState<string | null>(null);
+  const selectedClimbingEntry = climbingEntries.data?.find(
+    (entry) => entry.id === selectedClimbingEntryId,
+  );
+  const climbingLocations = useMemo(
+    () =>
+      buildClimbingMapLocations([
+        ...(climbingEntries.data ?? []),
+        ...(entrySuggestions.data ?? []),
+      ]),
+    [climbingEntries.data, entrySuggestions.data],
+  );
+  const climbMarkers = useMemo(
+    () => buildClimbingMapMarkers(climbingEntries.data ?? []),
+    [climbingEntries.data],
+  );
   const [entryAttachState, setEntryAttachState] = useState<
     Record<string, { pending: boolean; error: string | null }>
   >({});
@@ -599,7 +619,7 @@ export default function ActivityDetailScreen() {
   );
   const zones = hrZones.data ?? [];
 
-  const routePoints = route.data?.status === "ready" ? route.data.points : [];
+  const routePoints = route.data?.status === "ready" ? route.data.points : EMPTY_ROUTE_POINTS;
   const hasGps = routePoints.length > 0;
   const hasHr = points.some((p) => p.heartRate != null);
   const hasAltitude = points.some((p) => p.altitude != null);
@@ -798,9 +818,15 @@ export default function ActivityDetailScreen() {
             {route.isLoading ? "Loading route map…" : "Processing route map…"}
           </Text>
         </View>
-      ) : hasGps ? (
-        <RouteMap points={routePoints} hoveredPosition={hoveredPosition} />
       ) : null}
+      {(hasGps || climbMarkers.length > 0) && (
+        <RouteMap
+          points={routePoints}
+          climbMarkers={climbMarkers}
+          onSelectEntry={setSelectedClimbingEntryId}
+          hoveredPosition={hoveredPosition}
+        />
+      )}
 
       {/* Strength Exercises */}
       {(strengthExercises.data?.length ?? 0) > 0 && (
@@ -817,7 +843,11 @@ export default function ActivityDetailScreen() {
             <QueryStatePanel variant="loading" minHeight={72} />
           )}
           {(climbingEntries.data?.length ?? 0) > 0 && (
-            <ClimbingLogEntryBreakdown entries={climbingEntries.data ?? []} />
+            <ClimbingLogEntryBreakdown
+              entries={climbingEntries.data ?? []}
+              locations={climbingLocations}
+              selectedEntryId={selectedClimbingEntryId}
+            />
           )}
           {isClimbingActivity &&
             (entrySuggestions.error ||
@@ -826,6 +856,8 @@ export default function ActivityDetailScreen() {
               climbingEntries.data?.length === 0) && (
               <UnattachedClimbingLogEntries
                 suggestions={entrySuggestions.data}
+                locations={climbingLocations}
+                selectedEntryId={selectedClimbingEntryId}
                 error={entrySuggestions.error ?? null}
                 isLoading={entrySuggestions.isLoading}
                 state={entryAttachState}
@@ -833,6 +865,14 @@ export default function ActivityDetailScreen() {
               />
             )}
         </View>
+      )}
+
+      {selectedClimbingEntry && (
+        <ProviderRecordDetailModal
+          dataType="climbingLogEntries"
+          state={{ data: selectedClimbingEntry, error: null, isLoading: false }}
+          onClose={() => setSelectedClimbingEntryId(null)}
+        />
       )}
 
       {/* Time-series charts (load progressively) */}

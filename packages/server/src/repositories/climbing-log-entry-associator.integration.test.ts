@@ -152,7 +152,7 @@ describe("ClimbingLogEntryAssociator PostgreSQL behavior", () => {
     const id = await log("summit", "2026-01-01", userId, {
       discipline: "mountaineering",
       climb: { externalId: "summit", kind: "summit" },
-      attempts: [{ scope: "climb", outcome: "completed" }],
+      attempts: [{ scope: "climb", sourceResult: "completed" }],
     });
     expect(await repo().getSuggestions(hikingId)).toEqual(
       expect.arrayContaining([expect.objectContaining({ id, discipline: "mountaineering" })]),

@@ -1,10 +1,17 @@
 import type { Database } from "dofek/db";
 import { PgDialect } from "drizzle-orm/pg-core";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import type { ClimbingLogEntryDetail } from "../contracts/climbing-log-contracts.ts";
 import { osmTilePreview } from "../lib/osm-tile.ts";
 import type { CalendarActivityEntry } from "./activities-calendar-repository.ts";
 import { ActivitiesCalendarRepository, mergeDayGroups } from "./activities-calendar-repository.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
+import { ClimbingActivityLogEntryRepository } from "./climbing-activity-log-entry-repository.ts";
+import {
+  climbingClimbFixture,
+  climbingLogDatabaseFixture,
+  climbingLogEntryFixture,
+} from "./climbing-test-helpers.ts";
 
 const dialect = new PgDialect();
 
@@ -16,13 +23,28 @@ function isQueuedRowSets(
   return rowsOrRowSets.some(Array.isArray);
 }
 
-function makeDatabase(rowsOrRowSets: TestDatabaseRow[] | TestDatabaseRow[][] = []) {
+function makeDatabase(
+  rowsOrRowSets: TestDatabaseRow[] | TestDatabaseRow[][] = [],
+  sourceEntries: ClimbingLogEntryDetail[] = [],
+) {
+  function sourceQueryRows(query: string): TestDatabaseRow[] | null {
+    if (query.includes("FROM fitness.user_settings")) return [];
+    if (query.includes('AS "activityId"'))
+      return sourceEntries.map((entry) => ({
+        activityId: entry.activityId,
+        memberActivityIds: [entry.activityId],
+      }));
+    if (query.includes("FROM fitness.v_climbing_log_entry AS entry"))
+      return sourceEntries.map(climbingLogDatabaseFixture);
+    return null;
+  }
   if (isQueuedRowSets(rowsOrRowSets)) {
-    const execute = vi.fn();
-    for (const rows of rowsOrRowSets) {
-      execute.mockResolvedValueOnce(rows);
-    }
-    execute.mockResolvedValue([]);
+    const queuedRows = [...rowsOrRowSets];
+    const execute = vi.fn().mockImplementation(async (query) => {
+      const sourceRows = sourceQueryRows(dialect.sqlToQuery(query).sql);
+      if (sourceRows) return sourceRows;
+      return queuedRows.shift() ?? [];
+    });
     return {
       execute,
     } satisfies Pick<Database, "execute">;
@@ -31,6 +53,8 @@ function makeDatabase(rowsOrRowSets: TestDatabaseRow[] | TestDatabaseRow[][] = [
   const execute = vi.fn().mockImplementation(async (query) => {
     const compiled = dialect.sqlToQuery(query);
     const normalizedSql = compiled.sql.replace(/\s+/g, " ");
+    const sourceRows = sourceQueryRows(normalizedSql);
+    if (sourceRows) return sourceRows;
     const isCanonicalVisibilityQuery =
       normalizedSql.includes("FROM fitness.v_activity") &&
       normalizedSql.includes("id IN") &&
@@ -188,6 +212,104 @@ function makeCalendarEntry(
 }
 
 describe("ActivitiesCalendarRepository", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it("requests source locations only for activities missing either recorded coordinate", async () => {
+    const rows = [
+      { id: "30000000-0000-4000-8000-000000000001", centroid_lat: null, centroid_lng: null },
+      { id: "30000000-0000-4000-8000-000000000002", centroid_lat: null, centroid_lng: -105.4 },
+      { id: "30000000-0000-4000-8000-000000000003", centroid_lat: 40.007, centroid_lng: null },
+      { id: "30000000-0000-4000-8000-000000000004", centroid_lat: 0, centroid_lng: 0 },
+    ];
+    const source = {
+      ...climbingClimbFixture("mountain-project"),
+      coordinates: { latitude: 40.007, longitude: -105.4 },
+    };
+    const database = makeDatabase(
+      [],
+      rows.map((row) => climbingLogEntryFixture({ activityId: row.id, climb: source })),
+    );
+    const locations = vi.spyOn(
+      ClimbingActivityLogEntryRepository.prototype,
+      "getActivityMapLocations",
+    );
+    const sensorStore = makeSensorStore([
+      rows.map((row) => makeActivityRow({ ...row, canonical_type: "climbing" })),
+      [{ max_hr: null, resting_hr: null, ftp: null }],
+      [],
+    ]);
+    const repository = new ActivitiesCalendarRepository(database, "user-1", "UTC", sensorStore);
+    const [day] = await repository.getWeekList({ weeks: 4, endDate: "2026-03-20" });
+
+    expect(locations).toHaveBeenCalledExactlyOnceWith(rows.slice(0, 3).map((row) => row.id));
+    expect(day?.activities.slice(0, 3).map((entry) => entry.location)).toEqual(
+      rows.slice(0, 3).map(() =>
+        expect.objectContaining({
+          kind: "climbing_source",
+          sourcePoints: [
+            expect.objectContaining({ location: expect.objectContaining({ objectId: source.id }) }),
+          ],
+        }),
+      ),
+    );
+    expect(day?.activities[3]?.location).toMatchObject({
+      kind: "recorded_gps",
+      centroidLat: 0,
+      centroidLng: 0,
+    });
+  });
+
+  it.each([false, true])(
+    "uses attached source GPS only when recorded GPS is absent (recorded=%s)",
+    async (recorded) => {
+      const climb = climbingClimbFixture("mountain-project");
+      const source = {
+        ...climb,
+        coordinates: { latitude: 40.007, longitude: -105.4 },
+      };
+      const activityId = "30000000-0000-4000-8000-000000000001";
+      const database = makeDatabase([], [climbingLogEntryFixture({ activityId, climb: source })]);
+      const sensorStore = makeSensorStore([
+        [
+          makeActivityRow({
+            id: activityId,
+            canonical_type: "climbing",
+            centroid_lat: recorded ? 37.8 : null,
+            centroid_lng: recorded ? -122.4 : null,
+          }),
+        ],
+        [{ max_hr: null, resting_hr: null, ftp: null }],
+        [],
+      ]);
+      const repository = new ActivitiesCalendarRepository(database, "user-1", "UTC", sensorStore);
+      const [day] = await repository.getWeekList({ weeks: 4, endDate: "2026-03-20" });
+      const location = day?.activities[0]?.location;
+      if (recorded) {
+        expect(location).toMatchObject({
+          kind: "recorded_gps",
+          centroidLat: 37.8,
+          centroidLng: -122.4,
+        });
+      } else {
+        expect(location).toMatchObject({
+          kind: "climbing_source",
+          mapPreview: { routePath: null },
+          sourcePoints: [
+            {
+              x: 512,
+              y: 288,
+              location: {
+                scope: "climb",
+                objectId: source.id,
+                providerId: "mountain-project",
+                coordinates: source.coordinates,
+              },
+            },
+          ],
+        });
+      }
+    },
+  );
   it("returns canonical source attribution and read-model processing freshness", async () => {
     const database = makeDatabase([]);
     const sensorStore = makeSensorStore([
@@ -358,6 +480,7 @@ describe("ActivitiesCalendarRepository", () => {
       }),
     );
     expect(result[0]?.activities[0]?.location).toEqual({
+      kind: "recorded_gps",
       centroidLat: 90,
       centroidLng: 180,
       mapPreview: osmTilePreview([{ lat: 90, lng: 180 }]),
@@ -1325,6 +1448,7 @@ describe("ActivitiesCalendarRepository", () => {
     expect(
       result[0]?.activities.find((activity) => activity.id === "outdoor-with-route")?.location,
     ).toEqual({
+      kind: "recorded_gps",
       centroidLat: 37.8,
       centroidLng: -122.4,
       mapPreview: osmTilePreview([{ lat: 37.8, lng: -122.4 }]),
@@ -1960,6 +2084,7 @@ describe("ActivitiesCalendarRepository", () => {
       }),
     );
     expect(result[0]?.activities[0]?.location).toEqual({
+      kind: "recorded_gps",
       centroidLat: 37.8,
       centroidLng: -122.4,
       mapPreview: routePreview,
@@ -2201,6 +2326,7 @@ describe("ActivitiesCalendarRepository", () => {
       }),
     );
     expect(result[0]?.activities[0]?.location).toEqual({
+      kind: "recorded_gps",
       centroidLat: 37.7749,
       centroidLng: -122.4194,
       mapPreview: routePreview,
@@ -2264,6 +2390,7 @@ describe("ActivitiesCalendarRepository", () => {
       }),
     );
     expect(result[0]?.activities[0]?.location).toEqual({
+      kind: "recorded_gps",
       centroidLat: 37.8,
       centroidLng: -122.4,
       mapPreview: osmTilePreview([{ lat: 37.8, lng: -122.4 }]),

@@ -7,6 +7,7 @@ import {
   gradeComponentSchema,
   isClimbingLogActivity,
   pitchSchema,
+  recordedClimbingAttemptSchema,
 } from "./climbing-log.ts";
 
 const owner = {
@@ -57,6 +58,51 @@ const attempt = {
   notes: null,
   createdAt: "2026-10-13T12:00:00Z",
 };
+const { outcome: _computedOutcome, ...recordedAttemptFields } = attempt;
+const recordedAttempt = { ...recordedAttemptFields, sourceResult: null };
+
+describe("recorded climbing attempt source facts", () => {
+  it.each(["X", "Flash", " rEdPoInT ", "\tFlash\n", "\u00a0Flash\ufeff"])(
+    "preserves the exact original source result %j",
+    (sourceResult) => {
+      expect(recordedClimbingAttemptSchema.parse({ ...recordedAttempt, sourceResult })).toEqual({
+        ...recordedAttempt,
+        sourceResult,
+      });
+    },
+  );
+
+  it("accepts an occurrence whose source result was not recorded", () => {
+    expect(recordedClimbingAttemptSchema.parse(recordedAttempt)).toEqual(recordedAttempt);
+  });
+
+  it.each(["", " ", "\t\n", "\u00a0", "\ufeff", "\u2007", "\u2028"])(
+    "rejects an empty or whitespace-only source result %j",
+    (sourceResult) => {
+      expect(
+        recordedClimbingAttemptSchema.safeParse({ ...recordedAttempt, sourceResult }).success,
+      ).toBe(false);
+    },
+  );
+
+  it.each([
+    { pitchId: owner.id },
+    { parentAttemptId: owner.id },
+    { pitchId: owner.id, parentAttemptId: summit.id },
+  ])("rejects whole-climb scope with pitch or parent references %j", (references) => {
+    expect(
+      recordedClimbingAttemptSchema.safeParse({ ...recordedAttempt, ...references }).success,
+    ).toBe(false);
+  });
+
+  it.each([
+    { pitchId: null, parentAttemptId: null },
+    { pitchId: owner.id, parentAttemptId: summit.id },
+  ])("accepts pitch scope with its recorded references %j", (references) => {
+    const scopedAttempt = { ...recordedAttempt, scope: "pitch", ...references };
+    expect(recordedClimbingAttemptSchema.parse(scopedAttempt)).toEqual(scopedAttempt);
+  });
+});
 
 describe("climbing log entities", () => {
   it("accepts an undated ungraded summit with unknown attempt facts", () => {

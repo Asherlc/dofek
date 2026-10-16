@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-native";
+import { fn } from "storybook/test";
 import { areaClimbingLocation, exactClimbingLocation } from "./climbing-log-entry-fixtures";
 import { RouteMap } from "./RouteMap";
 
@@ -69,7 +70,9 @@ const sourceDots = [
   { entryId: "tick-1", label: "Swiss Cheese", location: exactClimbingLocation },
   { entryId: "tick-2", label: "Left Arete", location: areaClimbingLocation },
 ];
-export const PointsOnly: Story = { args: { points: [], climbMarkers: sourceDots } };
+export const PointsOnly: Story = {
+  args: { points: [], climbMarkers: sourceDots, onSelectEntry: fn() },
+};
 export const RoutePlusDots: Story = {
   args: {
     points: [
@@ -93,5 +96,6 @@ export const RepeatedPoint: Story = {
       { entryId: "tick-1", label: "Swiss Cheese", location: exactClimbingLocation },
       { entryId: "tick-4", label: "Swiss Cheese", location: exactClimbingLocation },
     ],
+    onSelectEntry: fn(),
   },
 };

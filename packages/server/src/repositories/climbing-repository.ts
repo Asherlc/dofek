@@ -6,6 +6,10 @@ import {
   type FreeRockGradeSystem,
   type RockClimbKind,
 } from "@dofek/training/climbing-grades";
+import {
+  type ClimbingLocationMapEntry,
+  climbingMapLocationSchema,
+} from "@dofek/training/climbing-location-map";
 import { attemptScopeSchema, ropeMethodSchema } from "@dofek/training/climbing-log";
 import {
   type ClimbingGradeProgressionLane,
@@ -162,6 +166,16 @@ const attachedRockObservationSchema = z.object({
   observed_outcomes: z.coerce.number(),
   unknown_outcomes: z.coerce.number(),
 });
+const mapEntryRowSchema = z.object({
+  id: z.string(),
+  activity_id: z.string().nullable(),
+  session_date: dateStringSchema,
+  label: z.string(),
+  climb_kind: rockKindSchema,
+  grade_system: freeRockSystemSchema.nullable(),
+  grade: z.string().nullable(),
+  location: climbingMapLocationSchema,
+});
 
 export class ClimbingRepository extends BaseRepository {
   readonly #gradePreference: ClimbingGradePreference;
@@ -252,6 +266,51 @@ export class ClimbingRepository extends BaseRepository {
         : [];
     });
     return buildClimbingGradeProgression(entries).map((row) => new ClimbingGradeProgression(row));
+  }
+  async getMapEntries(
+    days: number,
+    filters: ClimbingFilters = {},
+  ): Promise<ClimbingLocationMapEntry[]> {
+    const rows = await executeWithSchema(
+      this.db,
+      mapEntryRowSchema,
+      sql`WITH ${this.#canonicalLogCtes(days, filters)}
+      SELECT DISTINCT ON (ce.id) ce.id::text AS id,
+        ce.canonical_activity_id::text AS activity_id, ce.session_date,
+        COALESCE(NULLIF(BTRIM(ce.climb_name), ''), NULLIF(BTRIM(ce.title), ''), 'Climbing log') AS label,
+        ce.climb_kind, ce.grade_system, ce.grade,
+        CASE WHEN ce.coordinates IS NOT NULL THEN jsonb_build_object(
+          'coordinates', jsonb_build_object('latitude', ce.coordinates[1], 'longitude', ce.coordinates[0]),
+          'scope', 'climb', 'objectId', ce.climb_id, 'providerId', ce.provider_id, 'name', ce.climb_name)
+        ELSE jsonb_build_object(
+          'coordinates', nearest_area.node->'coordinates', 'scope', 'area',
+          'objectId', nearest_area.node->>'id', 'providerId', nearest_area.node->>'providerId',
+          'name', nearest_area.node->>'name') END AS location
+      FROM canonical_logs AS ce
+      LEFT JOIN LATERAL (
+        SELECT node FROM jsonb_array_elements(ce.area_path) WITH ORDINALITY AS path(node, position)
+        WHERE node->'coordinates' IS NOT NULL AND node->'coordinates' <> 'null'::jsonb
+        ORDER BY position DESC LIMIT 1
+      ) AS nearest_area ON true
+      WHERE ce.coordinates IS NOT NULL OR nearest_area.node IS NOT NULL
+      ORDER BY ce.id, ce.pitch_number NULLS FIRST, ce.pitch_id, ce.unknown_pitch_attempt_id`,
+    );
+    return rows.map((row) => ({
+      id: row.id,
+      activityId: row.activity_id,
+      date: row.session_date,
+      label: row.label,
+      grade:
+        row.grade_system === null || row.grade === null
+          ? null
+          : (displayClimbingGrade(
+              this.#gradePreference,
+              row.climb_kind,
+              row.grade_system,
+              row.grade,
+            )?.grade ?? null),
+      location: row.location,
+    }));
   }
   async getVolumeByGrade(
     days: number,

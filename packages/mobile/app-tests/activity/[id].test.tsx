@@ -5,10 +5,11 @@ import {
 } from "../../../server/src/repositories/climbing-test-helpers.ts";
 // @vitest-environment jsdom
 
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import React from "react";
 import { Alert, Linking } from "react-native";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { RouteMap } from "../../components/RouteMap";
 import { captureException } from "../../lib/telemetry";
 
 function stripStyle({
@@ -53,6 +54,12 @@ vi.mock("react-native", () => ({
   Alert: { alert: vi.fn() },
   Modal: ({ children, visible }: Record<string, unknown>) =>
     visible ? React.createElement("div", { "data-testid": "modal" }, children) : null,
+  TouchableOpacity: ({ children, onPress, accessibilityLabel }: Record<string, unknown>) =>
+    React.createElement(
+      "button",
+      { type: "button", onClick: onPress, "aria-label": accessibilityLabel },
+      children,
+    ),
   Linking: { openURL: vi.fn() },
   StyleSheet: {
     create: <T extends Record<string, unknown>>(styles: T): T => {
@@ -99,8 +106,9 @@ vi.mock("../../components/MuscleGroupBodyDiagram", () => ({
 }));
 
 vi.mock("../../components/RouteMap", () => ({
-  RouteMap: ({ points }: { points: Array<{ lat: number | null; lng: number | null }> }) =>
+  RouteMap: vi.fn(({ points }: { points: Array<{ lat: number | null; lng: number | null }> }) =>
     React.createElement("span", null, `Route ends at ${points.at(-1)?.lat ?? "none"}`),
+  ),
 }));
 
 vi.mock("../../components/activity/useChartScrub", () => ({
@@ -479,6 +487,7 @@ function getPlaceholderData(value: unknown): ((previousData: unknown) => unknown
 }
 
 beforeEach(() => {
+  vi.mocked(RouteMap).mockClear();
   mockByIdQuery.mockClear();
   mockStreamQuery.mockClear();
   mockRouteQuery.mockClear();
@@ -604,6 +613,149 @@ describe("ActivityDetailScreen", () => {
     expect(
       screen.getByRole("button", { name: "Export as GPS track (GPX)" }).hasAttribute("disabled"),
     ).toBe(false);
+  });
+
+  it.each([
+    "unavailable",
+    "loading",
+    "processing",
+    "error",
+    "cached error",
+    "cached loading",
+  ] as const)("shows canonical climbing locations when the recorded route is %s", async (state) => {
+    mockByIdQuery.mockReturnValue({
+      data: { ...baseCyclingActivity, activityType: "climbing" },
+      isLoading: false,
+      error: null,
+    });
+    mockRouteQuery.mockReturnValue({
+      data: state.startsWith("cached")
+        ? { status: "ready", points: [{ lat: 7, lng: 8 }] }
+        : { status: state === "processing" ? "processing" : "unavailable" },
+      error: state.endsWith("error") ? new Error("Recorded route refresh failed") : null,
+      isLoading: state.endsWith("loading"),
+    });
+    mockClimbingEntriesQuery.mockReturnValue({
+      data: [
+        climbingLogEntryFixture({ id: "unlocated", title: "Unknown location" }),
+        climbingLogEntryFixture({
+          id: "10000000-0000-4000-8000-000000000301",
+          title: "Located climb",
+          mapLocation: {
+            coordinates: { latitude: 0, longitude: -122.25 },
+            scope: "climb",
+            objectId: "10000000-0000-4000-8000-000000000302",
+            providerId: "mountain-project",
+            name: "Located climb",
+          },
+        }),
+      ],
+      error: new Error("Climbing refresh failed"),
+      isLoading: false,
+    });
+    mockEntrySuggestionsQuery.mockReturnValue({
+      data: [
+        climbingLogEntryFixture({
+          id: "suggested",
+          title: "Suggested climb",
+          mapLocation: {
+            coordinates: { latitude: 1, longitude: -122.5 },
+            scope: "area",
+            objectId: "source-area",
+            providerId: "openbeta",
+            name: "Containing area",
+          },
+        }),
+      ],
+      error: null,
+      isLoading: false,
+    });
+    const { default: ActivityDetailScreen } = await import("../../app/activity/[id]");
+
+    render(React.createElement(ActivityDetailScreen));
+
+    expect(screen.getAllByText("Route ends at none")).toHaveLength(
+      state.startsWith("cached") ? 2 : 3,
+    );
+    expect(screen.getByText("Climbing refresh failed")).toBeTruthy();
+    expect(screen.getByText("Climb location: Located climb · mountain-project")).toBeTruthy();
+    expect(screen.getByText("Area location: Containing area · openbeta")).toBeTruthy();
+    expect(screen.getByText("Entry 2")).toBeTruthy();
+    const overviewProps = vi.mocked(RouteMap).mock.calls.find(([props]) => !props.compact)?.[0];
+    expect(overviewProps?.climbMarkers).toEqual([
+      {
+        entryId: "10000000-0000-4000-8000-000000000301",
+        entryNumber: 2,
+        label: "Located climb",
+        location: {
+          coordinates: { latitude: 0, longitude: -122.25 },
+          scope: "climb",
+          objectId: "10000000-0000-4000-8000-000000000302",
+          providerId: "mountain-project",
+          name: "Located climb",
+        },
+      },
+    ]);
+    act(() => overviewProps?.onSelectEntry?.("10000000-0000-4000-8000-000000000301"));
+    expect(screen.getByRole("button", { name: "Close record detail" })).toBeTruthy();
+    expect(screen.getByText("Record Detail")).toBeTruthy();
+    expect(
+      within(screen.getByLabelText("Climbing entry: Located climb")).getByText(
+        "Entry 2 · Selected",
+      ),
+    ).toBeTruthy();
+    const selectedOverviewProps = vi
+      .mocked(RouteMap)
+      .mock.calls.filter(([props]) => !props.compact)
+      .at(-1)?.[0];
+    expect(selectedOverviewProps?.points).toBe(overviewProps?.points);
+    if (state.startsWith("cached")) {
+      expect(screen.getByText("Route ends at 7")).toBeTruthy();
+    }
+    if (state.endsWith("error")) {
+      expect(screen.getByText("Recorded route refresh failed")).toBeTruthy();
+    }
+  });
+
+  it("opens the exact repeated climb in a detail modal and can reopen it after closing", async () => {
+    mockByIdQuery.mockReturnValue({
+      data: { ...baseCyclingActivity, activityType: "climbing" },
+      isLoading: false,
+      error: null,
+    });
+    const climb = climbingClimbFixture("mountain-project");
+    const firstId = "10000000-0000-4000-8000-000000000311";
+    const secondId = "10000000-0000-4000-8000-000000000312";
+    const first = climbingLogEntryFixture({
+      id: firstId,
+      climb,
+      climbId: climb.id,
+      notes: "First occurrence notes",
+      mapLocation: {
+        coordinates: { latitude: 37, longitude: -122 },
+        scope: "climb",
+        objectId: climb.id,
+        providerId: "mountain-project",
+        name: climb.name,
+      },
+    });
+    mockClimbingEntriesQuery.mockReturnValue({
+      data: [first, { ...first, id: secondId, notes: "Second occurrence notes" }],
+      isLoading: false,
+      error: null,
+    });
+    const { default: ActivityDetailScreen } = await import("../../app/activity/[id]");
+    render(<ActivityDetailScreen />);
+    const overview = vi.mocked(RouteMap).mock.calls.find(([props]) => !props.compact)?.[0];
+    expect(overview?.climbMarkers?.map((marker) => marker.entryId)).toEqual([firstId, secondId]);
+    act(() => overview?.onSelectEntry?.(secondId));
+    const detail = screen.getByTestId("modal");
+    expect(within(detail).getByText("Second occurrence notes")).toBeTruthy();
+    expect(within(detail).queryByText("First occurrence notes")).toBeNull();
+    fireEvent.click(within(detail).getByRole("button", { name: "Close record detail" }));
+    expect(screen.queryByText("Record Detail")).toBeNull();
+    act(() => overview?.onSelectEntry?.(secondId));
+    expect(within(screen.getByTestId("modal")).getByText("Second occurrence notes")).toBeTruthy();
   });
 
   it("invalidates Activities screen queries after deleting an activity", async () => {
@@ -819,11 +971,8 @@ describe("ActivityDetailScreen", () => {
     expect(screen.getByText("Mountain Project")).toBeTruthy();
     expect(screen.getByText("OpenBeta")).toBeTruthy();
     expect(screen.getByText("Blue Circuit")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Details for Project" }));
-    expect(screen.getByText("Country > State > Region > Park > Crag > Wall")).toBeTruthy();
     expect(screen.getByText("Top rope")).toBeTruthy();
-    expect(screen.getByText("Fell or hung")).toBeTruthy();
-    expect(screen.getByText("Whole climb outcome unknown · 1 recorded attempt")).toBeTruthy();
+    expect(screen.getByText("Whole climb · 1 recorded attempt")).toBeTruthy();
     const controls = within(climbsCard).getAllByRole("button", {
       name: /^Attach entry \d+, .* to this activity$/,
     });
@@ -1531,13 +1680,9 @@ describe("ActivityDetailScreen", () => {
     );
     expect(screen.getAllByText("5.4", { exact: true })).toHaveLength(2);
     expect(screen.getAllByText("Goat Rock")).toHaveLength(2);
-    for (const control of screen.getAllByRole("button", { name: "Details for Swiss Cheese" }))
-      fireEvent.click(control);
-    expect(screen.getAllByText("California > Goat Rock")).toHaveLength(2);
     expect(screen.getAllByText("Top rope")).toHaveLength(2);
-    expect(screen.getAllByText("Mountain Project")).toHaveLength(2);
     expect(screen.queryByText("Result unknown")).toBeNull();
-    expect(screen.getAllByText("Whole climb outcome unknown · 1 recorded attempt")).toHaveLength(2);
+    expect(screen.getAllByText("Whole climb · 1 recorded attempt")).toHaveLength(2);
   });
 
   it("shows the climbs attached to a canonical climbing activity", async () => {
@@ -1732,10 +1877,8 @@ describe("ActivityDetailScreen", () => {
     expect(screen.getByText("Project")).toBeTruthy();
     expect(screen.getByText("Whole climb failed · 1 recorded attempt")).toBeTruthy();
     expect(screen.getByText("Wall angle: 35°")).toBeTruthy();
-    expect(screen.getByText("Whole climb outcome unknown · 1 recorded attempt")).toBeTruthy();
+    expect(screen.getByText("Whole climb · 1 recorded attempt")).toBeTruthy();
     expect(screen.getAllByText("Touchstone Pacific Pipe")).toHaveLength(3);
-    fireEvent.click(screen.getByRole("button", { name: "Details for Project" }));
-    expect(screen.getByText("Hold type: crimp")).toBeTruthy();
   });
 
   it("does not query climbing entries for a raw provider type synonym", async () => {

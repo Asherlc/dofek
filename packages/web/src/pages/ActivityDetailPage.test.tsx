@@ -9,7 +9,7 @@ import {
 import { formatDateTime, formatTimeOnly } from "@dofek/format/format";
 import type { UnitSystem } from "@dofek/format/units";
 import { UnitConverter } from "@dofek/format/units";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ActivityDetail } from "../../../server/src/models/activity.ts";
@@ -21,12 +21,41 @@ const capturedEvents: Array<Record<string, (...params: Array<Record<string, unkn
   [];
 
 const leafletMocks = vi.hoisted(() => ({
-  map: vi.fn(() => ({ remove: vi.fn(), fitBounds: vi.fn() })),
+  map: vi.fn((container: HTMLElement) => ({
+    remove: vi.fn(() => container.replaceChildren()),
+    fitBounds: vi.fn(),
+    container,
+  })),
   tileLayer: vi.fn(() => ({ addTo: vi.fn(), on: vi.fn() })),
   latLng: vi.fn((lat: number, lng: number) => ({ lat, lng })),
   latLngBounds: vi.fn(() => ({})),
   polyline: vi.fn(() => ({ addTo: vi.fn() })),
-  circleMarker: vi.fn(() => ({ addTo: vi.fn(), remove: vi.fn(), setLatLng: vi.fn() })),
+  circleMarker: vi.fn(() => {
+    const element = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.append(element);
+    const marker = {
+      addTo: vi.fn((map: { container: HTMLElement }) => {
+        map.container.append(svg);
+        return marker;
+      }),
+      remove: vi.fn(),
+      setLatLng: vi.fn(),
+      bindTooltip: vi.fn(() => marker),
+      on: vi.fn((event: string, listener: () => void) => {
+        element.addEventListener(event, listener);
+        return marker;
+      }),
+      fire: vi.fn((event: string) => {
+        element.dispatchEvent(new Event(event));
+        return marker;
+      }),
+      getElement: vi.fn(() => element),
+      openTooltip: vi.fn(),
+      closeTooltip: vi.fn(),
+    };
+    return marker;
+  }),
 }));
 
 vi.mock("echarts-for-react", () => ({
@@ -891,6 +920,107 @@ describe("ActivityDetailPage", () => {
     }
     expect(routeOptions.refetchInterval({ state: { data: { status: "processing" } } })).toBe(3000);
     expect(routeOptions.refetchInterval({ state: { data: { status: "ready" } } })).toBe(false);
+  });
+
+  it.each([
+    "unavailable",
+    "loading",
+    "processing",
+    "error",
+    "cached error",
+    "cached loading",
+  ] as const)("shows canonical climbing locations when the recorded route is %s", async (state) => {
+    mockActivityByIdUseQuery.mockReturnValue({
+      data: { ...mockActivity, activityType: "climbing" },
+      error: null,
+      isError: false,
+      isLoading: false,
+    });
+    mockRouteUseQuery.mockReturnValue({
+      data: state.startsWith("cached")
+        ? { status: "ready", points: [{ lat: 7, lng: 8 }] }
+        : { status: state === "processing" ? "processing" : "unavailable" },
+      error: state.endsWith("error") ? new Error("Recorded route refresh failed") : null,
+      isLoading: state.endsWith("loading"),
+    });
+    mockClimbingEntriesUseQuery.mockReturnValue({
+      data: [
+        climbingLogEntryFixture({ id: "unlocated", title: "Unknown location" }),
+        climbingLogEntryFixture({
+          id: "20000000-0000-4000-8000-000000000011",
+          title: "Located climb",
+          mapLocation: {
+            coordinates: { latitude: 0, longitude: -122.25 },
+            scope: "climb",
+            objectId: "20000000-0000-4000-8000-000000000003",
+            providerId: "mountain-project",
+            name: "Located climb",
+          },
+        }),
+      ],
+      error: new Error("Climbing refresh failed"),
+      isError: true,
+      isLoading: false,
+    });
+    mockEntrySuggestionsUseQuery.mockReturnValue({
+      data: [
+        climbingLogEntryFixture({
+          id: "suggested",
+          title: "Suggested climb",
+          mapLocation: {
+            coordinates: { latitude: 1, longitude: -122.5 },
+            scope: "area",
+            objectId: "source-area",
+            providerId: "openbeta",
+            name: "Containing area",
+          },
+        }),
+      ],
+      error: null,
+      isLoading: false,
+    });
+    const ActivityDetailPage = await importPage();
+
+    renderWithUnits(<ActivityDetailPage />);
+
+    expect(screen.getAllByRole("region", { name: "Climbing locations" })).toHaveLength(3);
+    expect(screen.getByText("Climbing refresh failed")).toBeDefined();
+    expect(screen.getByText("Climb location: Located climb · Mountain Project")).toBeDefined();
+    expect(screen.getByText("Area location: Containing area · OpenBeta")).toBeDefined();
+    expect(screen.getByText("Entry 2")).toBeDefined();
+    const climbPoint = await screen.findByRole("button", {
+      name: "Entry 2 · Located climb · Climb location: Located climb · Mountain Project",
+    });
+    const createdMaps = leafletMocks.map.mock.calls.length;
+    act(() => climbPoint.focus());
+    fireEvent.keyDown(climbPoint, { key: "Enter" });
+    const dialog = await screen.findByRole("dialog");
+    expect(
+      within(within(dialog).getByRole("region", { name: "Climbing log details" })).getByText(
+        "Located climb",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      within(screen.getByRole("list", { name: "Attached climbing logs", hidden: true })).getByText(
+        "Entry 2 · Selected",
+      ),
+    ).toBeDefined();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Close" }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    await waitFor(() => expect(climbPoint).toHaveFocus());
+    fireEvent.click(climbPoint);
+    expect(
+      within(await screen.findByRole("dialog")).getByRole("region", {
+        name: "Climbing log details",
+      }),
+    ).toBeInTheDocument();
+    expect(leafletMocks.map).toHaveBeenCalledTimes(createdMaps);
+    if (state.startsWith("cached")) {
+      await waitFor(() => expect(leafletMocks.latLng).toHaveBeenCalledWith(7, 8));
+    }
+    if (state.endsWith("error")) {
+      expect(screen.getByText("Recorded route refresh failed")).toBeDefined();
+    }
   });
 
   it("shows a loading state before route freshness is known", async () => {
@@ -2548,10 +2678,8 @@ describe("ActivityDetailPage", () => {
       expect(screen.getByText("Project")).toBeDefined();
       expect(screen.getByText("Whole climb failed · 1 recorded attempt")).toBeDefined();
       expect(screen.getByText("Wall angle: 35°")).toBeDefined();
-      expect(screen.getByText("Whole climb outcome unknown · 1 recorded attempt")).toBeDefined();
+      expect(screen.getByText("Whole climb · 1 recorded attempt")).toBeDefined();
       expect(screen.getAllByText("Touchstone Pacific Pipe")).toHaveLength(3);
-      fireEvent.click(screen.getByRole("button", { name: "Details for Project" }));
-      expect(screen.getByText("Hold type: crimp")).toBeTruthy();
       expect(
         screen.queryByText("No unattached climbing logs for this day."),
       ).not.toBeInTheDocument();

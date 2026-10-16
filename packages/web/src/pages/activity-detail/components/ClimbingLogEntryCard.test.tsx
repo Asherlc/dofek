@@ -2,10 +2,32 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import {
+  climbingAttemptFixture,
   climbingClimbFixture,
   climbingLogEntryFixture,
 } from "../../../../../server/src/repositories/climbing-test-helpers.ts";
 import { ClimbingLogEntryCard } from "./ClimbingLogEntryCard.tsx";
+
+it("shows Havarti Cheese's recorded top-rope method and attempt count", () => {
+  const climb = { ...climbingClimbFixture("mountain-project"), name: "Havarti Cheese" };
+  const entry = climbingLogEntryFixture({
+    providerId: "mountain-project",
+    sourceName: "Mountain Project",
+    climbId: climb.id,
+    climb,
+    recordedClimbAttemptCount: 1,
+    recordedClimbOutcome: null,
+  });
+  entry.attempts = [climbingAttemptFixture(entry.id, { ropeMethod: "top_rope" })];
+  render(
+    <ul>
+      <ClimbingLogEntryCard entry={entry} />
+    </ul>,
+  );
+  expect(screen.getByText("Havarti Cheese")).toBeInTheDocument();
+  expect(screen.getByText("Top rope")).toBeInTheDocument();
+  expect(screen.getByText("Whole climb · 1 recorded attempt")).toBeInTheDocument();
+});
 
 it.each([undefined, 3])(
   "identifies its Attach action and announces pending state for entry number %s",
@@ -46,7 +68,7 @@ it.each([undefined, 3])(
   },
 );
 
-it("keeps canonical source links and independent recorded facts accessible without GPS", () => {
+it("keeps canonical source links and attachment actions accessible without GPS", () => {
   const entry = climbingLogEntryFixture({
     climb: climbingClimbFixture(),
     sourceName: "OpenBeta",
@@ -64,9 +86,6 @@ it("keeps canonical source links and independent recorded facts accessible witho
     "href",
     "https://openbeta.io/",
   );
-  fireEvent.click(screen.getByRole("button", { name: "Details for Corner" }));
-  expect(screen.getByText("Published climb grades")).toBeInTheDocument();
-  expect(screen.getByText("5.10a (Yosemite Decimal System)")).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Attach entry 3, Corner to this activity" }));
   expect(onAttach).toHaveBeenCalledWith(entry.id);
 });

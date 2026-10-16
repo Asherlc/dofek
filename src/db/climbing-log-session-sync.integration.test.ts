@@ -177,7 +177,13 @@ describe("authoritative climbing log sessions", () => {
             {
               externalId: "session:flash",
               climb: { externalId: "shared:route" },
-              attempts: [{ scope: "climb" as const, qualifier: "free-flash" as const }],
+              attempts: [
+                {
+                  scope: "climb" as const,
+                  qualifier: "free-flash" as const,
+                  sourceResult: "completed",
+                },
+              ],
             },
           ],
         },

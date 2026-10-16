@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { eq, inArray, sql } from "drizzle-orm";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import {
   persistClimbingLogEntries,
@@ -22,7 +22,9 @@ describe("ClimbingActivityLogEntryRepository PostgreSQL projection", () => {
     await context.db.delete(climb);
     await context.db.update(area).set({ parentAreaId: null });
     await context.db.delete(area);
-    await context.db.delete(activity).where(eq(activity.providerId, "openbeta"));
+    await context.db
+      .delete(activity)
+      .where(inArray(activity.providerId, ["openbeta", "mountain-project"]));
   });
   afterAll(async () => {
     await context.cleanup();
@@ -47,12 +49,254 @@ describe("ClimbingActivityLogEntryRepository PostgreSQL projection", () => {
       { externalId: "pitch-one", number: 1, publishedGrades: [{ value: "5.8", system: "yds" }] },
     ],
   } as const;
+  it("uses the same selected source graph as activity detail for equivalent cross-provider logs", async () => {
+    await ensureProvider(context.db, "mountain-project", "Mountain Project", undefined, userId);
+    const [first] = await context.db
+      .insert(activity)
+      .values({
+        userId,
+        providerId: "openbeta",
+        externalId: "equivalent-one",
+        canonicalType: "climbing",
+        providerType: "climbing",
+        startedAt: new Date("2026-10-02T10:00:00Z"),
+      })
+      .returning();
+    if (!first?.groupId) throw new Error("Expected group");
+    const [second] = await context.db
+      .insert(activity)
+      .values({
+        userId,
+        providerId: "mountain-project",
+        externalId: "equivalent-two",
+        groupId: first.groupId,
+        canonicalType: "climbing",
+        providerType: "climbing",
+        startedAt: new Date("2026-10-02T10:00:00Z"),
+      })
+      .returning();
+    if (!second) throw new Error("Expected member");
+    await write({
+      externalId: "equivalent-openbeta",
+      activityId: first.id,
+      climbedOn: "2026-10-02",
+      climb: {
+        ...route,
+        coordinates: { latitude: 10, longitude: 10 },
+        areas: [{ externalId: "crag", name: "Crag" }],
+      },
+      attempts: [{ scope: "climb", ropeMethod: "lead" }],
+    });
+    await persistClimbingLogEntries(context.db, {
+      userId,
+      providerId: "mountain-project",
+      entries: [
+        {
+          externalId: "equivalent-mp",
+          activityId: second.id,
+          climbedOn: "2026-10-02",
+          climb: {
+            ...route,
+            coordinates: { latitude: 40.007, longitude: -105.4 },
+            areas: [{ externalId: "crag", name: "Crag" }],
+          },
+          attempts: [
+            {
+              scope: "climb",
+              ropeMethod: "lead",
+              sourceResult: "Send",
+              qualifier: "free-send",
+              usedAid: false,
+              fellOrHung: false,
+            },
+          ],
+        },
+      ],
+    });
+    const detail = (await repo().getActivityLogEntries(first.groupId)).map((entry) =>
+      entry.toDetail(),
+    );
+    expect(detail).toHaveLength(1);
+    expect(detail[0]?.mapLocation?.providerId).toBe("mountain-project");
+    expect((await repo().getActivityMapLocations([first.groupId])).get(first.groupId)).toEqual(
+      detail.map((entry) => entry.mapLocation),
+    );
+  });
+  it("batches native source points across canonical activity members without crossing ownership", async () => {
+    const [first] = await context.db
+      .insert(activity)
+      .values({
+        userId,
+        providerId: "openbeta",
+        externalId: "map-session-one",
+        canonicalType: "climbing",
+        providerType: "rock-climbing",
+        startedAt: new Date("2026-10-02T12:00:00Z"),
+      })
+      .returning();
+    if (!first?.groupId) throw new Error("Expected canonical activity group");
+    const [second] = await context.db
+      .insert(activity)
+      .values({
+        userId,
+        providerId: "openbeta",
+        externalId: "map-session-two",
+        groupId: first.groupId,
+        canonicalType: "climbing",
+        providerType: "rock-climbing",
+        startedAt: new Date("2026-10-02T12:00:00Z"),
+      })
+      .returning();
+    if (!second) throw new Error("Expected second activity member");
+    const exact = await write({
+      externalId: "exact-map-log",
+      activityId: first.id,
+      attempts: [{ scope: "climb" }],
+      climb: { ...route, coordinates: { latitude: 0, longitude: -122.25 } },
+    });
+    const areaLog = await write({
+      externalId: "area-map-log",
+      activityId: second.id,
+      attempts: [{ scope: "climb" }],
+      climb: {
+        ...route,
+        externalId: "area-route",
+        areas: [
+          {
+            externalId: "outer-map-area",
+            name: "Outer",
+            coordinates: { latitude: 12, longitude: 0 },
+          },
+          {
+            externalId: "near-map-area",
+            name: "Nearest",
+            coordinates: { latitude: 40.01, longitude: -105.28 },
+          },
+          { externalId: "unknown-map-wall", name: "Wall" },
+        ],
+      },
+    });
+    await write({
+      externalId: "repeated-map-log",
+      activityId: second.id,
+      attempts: [{ scope: "climb" }],
+      climb: { externalId: "area-route" },
+    });
+    await write({
+      externalId: "no-map-log",
+      activityId: first.id,
+      title: "No GPS",
+      attempts: [{ scope: "climb" }],
+    });
+    await write({
+      externalId: "unattached-map-log",
+      attempts: [{ scope: "climb" }],
+      climb: {
+        ...route,
+        externalId: "unattached-route",
+        coordinates: { latitude: 50, longitude: 50 },
+      },
+    });
+    const locations = await repo().getActivityMapLocations([first.groupId]);
+    expect(locations.get(first.groupId)).toEqual(
+      expect.arrayContaining([exact.mapLocation, areaLog.mapLocation]),
+    );
+    expect(locations.get(first.groupId)).toHaveLength(2);
+    expect(
+      await new ClimbingActivityLogEntryRepository(
+        context.db,
+        "00000000-0000-4000-8000-000000000099",
+        "UTC",
+      ).getActivityMapLocations([first.groupId]),
+    ).toEqual(new Map());
+    await context.db
+      .update(climbingLogEntry)
+      .set({ providerAbsentAt: new Date() })
+      .where(eq(climbingLogEntry.id, exact.id));
+    expect((await repo().getActivityMapLocations([first.groupId])).get(first.groupId)).toEqual([
+      areaLog.mapLocation,
+    ]);
+    await context.db
+      .update(activity)
+      .set({ deletedAt: new Date() })
+      .where(eq(activity.id, second.id));
+    expect(await repo().getActivityMapLocations([first.groupId])).toEqual(new Map());
+  });
+  it("projects native Climb points before the nearest native Area point", async () => {
+    const first = await write({
+      externalId: "mapped-log",
+      climb: {
+        ...route,
+        coordinates: { latitude: 12, longitude: 0 },
+        areas: [
+          { externalId: "region", name: "Region", coordinates: { latitude: 40, longitude: -120 } },
+          { externalId: "crag", name: "Crag", coordinates: { latitude: 0, longitude: -122.25 } },
+          { externalId: "wall", name: "Wall" },
+        ],
+      },
+      attempts: [{ scope: "climb" }],
+    });
+    expect(first.mapLocation).toEqual({
+      coordinates: { latitude: 12, longitude: 0 },
+      scope: "climb",
+      objectId: first.climbId,
+      providerId: "openbeta",
+      name: "Route",
+    });
+    const updated = await write({
+      externalId: "mapped-log",
+      climb: { externalId: "route-one", coordinates: null },
+      attempts: [{ scope: "climb" }],
+    });
+    expect(updated.climb?.areaPath.map((area) => area.name)).toEqual(["Region", "Crag", "Wall"]);
+    const crag = updated.climb?.areaPath.find((area) => area.externalId === "crag");
+    if (!crag) throw new Error("Expected source Crag");
+    expect(updated.mapLocation).toEqual({
+      coordinates: { latitude: 0, longitude: -122.25 },
+      scope: "area",
+      objectId: crag.id,
+      providerId: "openbeta",
+      name: "Crag",
+    });
+    expect(updated.climb?.coordinates).toBeNull();
+  });
+
+  it.each([
+    { sourceResult: "Redpoint", outcome: "completed", labels: ["sent"] },
+    { sourceResult: "failed", outcome: "failed", labels: [] },
+    { sourceResult: null, outcome: null, labels: [] },
+  ])("computes $outcome from stored source evidence", async ({ sourceResult, outcome, labels }) => {
+    const before = await write({
+      externalId: "source-result",
+      discipline: "rock_climbing",
+      climb: route,
+      attempts: [{ scope: "climb", fellOrHung: false, usedAid: false }],
+    });
+    await context.db.execute(sql`
+      UPDATE fitness.climbing_attempt SET source_result = ${sourceResult}
+      WHERE climbing_log_entry_id = ${before.id}::uuid
+    `);
+    const [entry] = await repo().getLogEntries([before.id]);
+    expect(entry?.toDetail()).toMatchObject({
+      recordedClimbAttemptCount: 1,
+      recordedPitchAttemptCount: 0,
+      recordedClimbOutcome: outcome,
+      attempts: [{ outcome, rockResultLabels: labels }],
+    });
+  });
   it("projects a completed pitch without claiming route completion", async () => {
     const log = await write({
       externalId: "pitch-only",
       discipline: "rock_climbing",
       climb: route,
-      attempts: [{ scope: "pitch", pitch: { number: 1 }, qualifier: "free-onsight" }],
+      attempts: [
+        {
+          scope: "pitch",
+          pitch: { number: 1 },
+          sourceResult: "Onsight",
+          qualifier: "free-onsight",
+        },
+      ],
       reportedAttemptCounts: [{ scope: "pitch", pitch: { number: 1 }, count: 2 }],
     });
     expect(log).toMatchObject({
@@ -72,9 +316,14 @@ describe("ClimbingActivityLogEntryRepository PostgreSQL projection", () => {
       externalId: "grouped",
       climb: route,
       attempts: [
-        { scope: "climb", sourceKey: "whole", outcome: "completed", usedAid: true },
-        { scope: "pitch", pitch: { number: 1 }, parentSourceKey: "whole", outcome: "completed" },
-        { scope: "pitch", parentSourceKey: "whole", outcome: "failed" },
+        { scope: "climb", sourceKey: "whole", sourceResult: "completed", usedAid: true },
+        {
+          scope: "pitch",
+          pitch: { number: 1 },
+          parentSourceKey: "whole",
+          sourceResult: "completed",
+        },
+        { scope: "pitch", parentSourceKey: "whole", sourceResult: "failed" },
       ],
     });
     expect(log).toMatchObject({
@@ -95,8 +344,8 @@ describe("ClimbingActivityLogEntryRepository PostgreSQL projection", () => {
       externalId: "unidentified",
       climb: route,
       attempts: [
-        { scope: "pitch", outcome: "completed", notes: "First unidentified pitch" },
-        { scope: "pitch", outcome: "failed", notes: "Another unidentified pitch" },
+        { scope: "pitch", sourceResult: "completed", notes: "First unidentified pitch" },
+        { scope: "pitch", sourceResult: "failed", notes: "Another unidentified pitch" },
       ],
     });
     expect(log.pitchResults).toHaveLength(2);
@@ -128,7 +377,7 @@ describe("ClimbingActivityLogEntryRepository PostgreSQL projection", () => {
           { externalId: "wall", name: "Wall", coordinates: { latitude: 0, longitude: -122.25 } },
         ],
       },
-      attempts: [{ scope: "climb", qualifier: "free-send" }],
+      attempts: [{ scope: "climb", sourceResult: "Send", qualifier: "free-send" }],
     });
     await write({
       externalId: "new",
@@ -162,7 +411,7 @@ describe("ClimbingActivityLogEntryRepository PostgreSQL projection", () => {
       externalId: "summit",
       discipline: "mountaineering",
       climb: { externalId: "summit-one", kind: "summit", name: "Summit" },
-      attempts: [{ scope: "climb", outcome: "completed" }],
+      attempts: [{ scope: "climb", sourceResult: "completed" }],
     });
     expect(summit).toMatchObject({
       climbedOn: null,
@@ -180,7 +429,15 @@ describe("ClimbingActivityLogEntryRepository PostgreSQL projection", () => {
         kind: "boulder",
         publishedGrades: [{ value: "V4", system: "v_scale" }],
       },
-      attempts: [{ scope: "climb", qualifier: "dab", fellOrHung: false, usedAid: false }],
+      attempts: [
+        {
+          scope: "climb",
+          sourceResult: "Dab",
+          qualifier: "dab",
+          fellOrHung: false,
+          usedAid: false,
+        },
+      ],
     });
     expect(dab).toMatchObject({ recordedClimbOutcome: "completed" });
     expect(dab.attempts[0]?.rockResultLabels).toEqual([]);
@@ -204,7 +461,7 @@ describe("ClimbingActivityLogEntryRepository PostgreSQL projection", () => {
       climbedOn: "2026-10-01",
       discipline: "mountaineering",
       climb: { externalId: "summit", kind: "summit" },
-      attempts: [{ scope: "climb", outcome: "completed" }],
+      attempts: [{ scope: "climb", sourceResult: "completed" }],
     });
     expect(
       (await repo().getActivityLogEntries(parent.groupId)).map((entry) => entry.toDetail()),
@@ -230,6 +487,7 @@ describe("ClimbingActivityLogEntryRepository PostgreSQL projection", () => {
       externalId: "offset-access-log",
       activityId: outing.id,
       climbedOn: "2026-10-01",
+      climb: { ...route, coordinates: { latitude: 12, longitude: 0 } },
       attempts: [{ scope: "climb" }],
     });
     const limited = new ClimbingActivityLogEntryRepository(
@@ -247,5 +505,21 @@ describe("ClimbingActivityLogEntryRepository PostgreSQL projection", () => {
     expect(
       (await limited.getActivityLogEntries(outing.groupId)).map((row) => row.toDetail().id),
     ).toEqual([log.id]);
+    expect((await limited.getActivityMapLocations([outing.groupId])).get(outing.groupId)).toEqual([
+      log.mapLocation,
+    ]);
+    const outside = new ClimbingActivityLogEntryRepository(
+      context.db,
+      userId,
+      "America/Los_Angeles",
+      {
+        kind: "limited",
+        paid: false,
+        reason: "free_recent_week",
+        startDate: "2026-10-03",
+        endDateExclusive: "2026-10-04",
+      },
+    );
+    expect(await outside.getActivityMapLocations([outing.groupId])).toEqual(new Map());
   });
 });

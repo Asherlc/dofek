@@ -28,6 +28,7 @@ import {
 import { ActivityCard } from "../../components/ActivityCard";
 import { ChartTitleWithTooltip } from "../../components/ChartTitleWithTooltip";
 import { ClimbingFilters } from "../../components/ClimbingFilters";
+import { ClimbingLocationMapCard } from "../../components/ClimbingLocationMapCard";
 import { ClimbingTrainingCard } from "../../components/ClimbingTrainingCard";
 import { SparkLine } from "../../components/charts/SparkLine";
 import { StrainGauge } from "../../components/charts/StrainGauge";
@@ -86,6 +87,13 @@ export default function StrainScreen() {
       placeholderData: preservePreviousRangeData ? (previousData) => previousData : undefined,
     },
   );
+  const climbingLocationMapQuery = trpc.climbing.locationMap.useQuery(
+    { days, ...climbingFilters },
+    {
+      enabled: isHydrated,
+      placeholderData: preservePreviousRangeData ? (previousData) => previousData : undefined,
+    },
+  );
   const hrZonesQuery = trpc.training.hrZones.useQuery(
     { days },
     {
@@ -110,6 +118,7 @@ export default function StrainScreen() {
   const processingStatus = useProcessingStatus({ datasets: ["activity", "recovery", "training"] });
 
   useReportQueryError(trainingQuery);
+  useReportQueryError(climbingLocationMapQuery);
   useReportQueryError(hrZonesQuery);
   useReportQueryError(polarizationQuery);
   useReportQueryError(monotonyQuery);
@@ -186,6 +195,7 @@ export default function StrainScreen() {
     invalidate: () =>
       Promise.all([
         utils.mobileDashboard.training.invalidate(),
+        utils.climbing.locationMap.invalidate(),
         utils.training.hrZones.invalidate(),
         utils.efficiency.polarizationTrend.invalidate(),
         utils.cyclingAdvanced.trainingMonotony.invalidate(),
@@ -357,15 +367,24 @@ export default function StrainScreen() {
             loading={trainingQuery.isLoading && trainingData == null}
             units={units}
           />
+        </>
+      )}
 
-          <ClimbingFilters value={climbingFilters} onChange={setClimbingFilters} />
-          {shouldShowClimbingSection ? (
-            <ClimbingTrainingCard
-              data={trainingData?.climbing}
-              loading={trainingQuery.isLoading && trainingData == null}
-            />
-          ) : null}
+      <ClimbingFilters value={climbingFilters} onChange={setClimbingFilters} />
+      <ClimbingLocationMapCard
+        data={climbingLocationMapQuery.data}
+        loading={climbingLocationMapQuery.isLoading}
+        error={climbingLocationMapQuery.error}
+      />
+      {shouldShowClimbingSection && !isLoading ? (
+        <ClimbingTrainingCard
+          data={trainingData?.climbing}
+          loading={trainingQuery.isLoading && trainingData == null}
+        />
+      ) : null}
 
+      {!isLoading && !shouldShowTrainingQueryError && (
+        <>
           {/* Weekly volume summary */}
           {weeklyVolumeParsed.error && (
             <View style={styles.card}>

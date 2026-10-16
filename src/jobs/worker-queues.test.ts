@@ -139,6 +139,29 @@ describe("worker queues", () => {
     expect(processSyncJob).toHaveBeenCalledWith(expect.any(Object), mockDatabase, signal);
   });
 
+  it.each([
+    { source: "manual", origin: "manual" },
+    { source: "scheduled", origin: "scheduled" },
+    { source: "MCP", origin: "manual" },
+    { source: "reconnect", origin: "manual" },
+  ])("scopes $source provider executions at both worker boundaries", async ({ origin }) => {
+    const { runQueuedUserWorkUnlessAccountErasing } = await import(
+      "./account-erasure-work-guard.ts"
+    );
+    for (const queue of ["sync-strava", "sync-queue"]) {
+      vi.mocked(runQueuedUserWorkUnlessAccountErasing).mockClear();
+      await invokeProcessor(queue, { providerId: "strava", userId: "user-1", origin });
+      expect(runQueuedUserWorkUnlessAccountErasing).toHaveBeenCalledWith(
+        dependencies.accountErasureWorkLockPool,
+        mockDatabase,
+        "user-1",
+        expect.any(String),
+        expect.any(Function),
+        "strava",
+      );
+    }
+  });
+
   it("reports the coordinator waiting transition and rethrows BullMQ control flow", async () => {
     const { WaitingChildrenError } = await import("bullmq");
     const { processSyncJob } = await import("./process-sync-job.ts");

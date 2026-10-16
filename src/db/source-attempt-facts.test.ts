@@ -8,9 +8,11 @@ const target = {
 } as const;
 
 describe("source attempt evidence", () => {
-  it("normalizes free Onsight into independent completion execution beta and first try", () => {
-    expect(normalizeSourceAttemptFacts({}, "free-onsight", target)).toEqual({
-      outcome: "completed",
+  it("retains the source Onsight label with execution beta and first try", () => {
+    expect(
+      normalizeSourceAttemptFacts({ sourceResult: " Onsight " }, "free-onsight", target),
+    ).toEqual({
+      sourceResult: " Onsight ",
       fellOrHung: false,
       usedAid: false,
       receivedBeta: false,
@@ -18,15 +20,16 @@ describe("source attempt evidence", () => {
     });
   });
 
-  it("retains aid first-try completion without inventing falls or hangs", () => {
-    expect(normalizeSourceAttemptFacts({}, "aid-onsight", target)).toEqual({
-      outcome: "completed",
+  it("retains aid first-try evidence without inventing falls or hangs", () => {
+    expect(
+      normalizeSourceAttemptFacts({ sourceResult: "Aid onsight" }, "aid-onsight", target),
+    ).toEqual({
+      sourceResult: "Aid onsight",
       usedAid: true,
       receivedBeta: false,
       attemptIndex: 1,
     });
     expect(normalizeSourceAttemptFacts({ fellOrHung: true }, "aid-flash", target)).toEqual({
-      outcome: "completed",
       usedAid: true,
       fellOrHung: true,
       receivedBeta: true,
@@ -36,7 +39,6 @@ describe("source attempt evidence", () => {
 
   it("uses Flash beta only without other history on its identified target", () => {
     expect(normalizeSourceAttemptFacts({}, "free-flash", target)).toEqual({
-      outcome: "completed",
       fellOrHung: false,
       usedAid: false,
       receivedBeta: true,
@@ -44,10 +46,10 @@ describe("source attempt evidence", () => {
     });
     expect(
       normalizeSourceAttemptFacts({}, "free-flash", { ...target, hasOtherTargetHistory: true }),
-    ).toEqual({ outcome: "completed", fellOrHung: false, usedAid: false, attemptIndex: 1 });
+    ).toEqual({ fellOrHung: false, usedAid: false, attemptIndex: 1 });
     expect(
       normalizeSourceAttemptFacts({}, "aid-flash", { ...target, hasOtherTargetHistory: true }),
-    ).toEqual({ outcome: "completed", usedAid: true, attemptIndex: 1 });
+    ).toEqual({ usedAid: true, attemptIndex: 1 });
   });
 
   it("preserves separately supplied beta when history cannot supply it", () => {
@@ -57,7 +59,6 @@ describe("source attempt evidence", () => {
         hasOtherTargetHistory: true,
       }),
     ).toEqual({
-      outcome: "completed",
       fellOrHung: false,
       usedAid: false,
       receivedBeta: true,
@@ -68,18 +69,17 @@ describe("source attempt evidence", () => {
   it("keeps unidentified pitch order and conditional Flash beta unknown", () => {
     expect(
       normalizeSourceAttemptFacts({}, "free-flash", { ...target, targetIdentified: false }),
-    ).toEqual({ outcome: "completed", fellOrHung: false, usedAid: false });
+    ).toEqual({ fellOrHung: false, usedAid: false });
   });
 
   it("records free sends without assigning actual order or beta", () => {
     expect(normalizeSourceAttemptFacts({ attemptIndex: 4 }, "free-send", target)).toEqual({
-      outcome: "completed",
       fellOrHung: false,
       usedAid: false,
       attemptIndex: 4,
     });
-    expect(normalizeSourceAttemptFacts({ outcome: null }, "free-send", target)).toEqual({
-      outcome: "completed",
+    expect(normalizeSourceAttemptFacts({ sourceResult: "Redpoint" }, "free-send", target)).toEqual({
+      sourceResult: "Redpoint",
       fellOrHung: false,
       usedAid: false,
     });
@@ -88,17 +88,16 @@ describe("source attempt evidence", () => {
   it("distinguishes boulder sends from completed dabs", () => {
     expect(
       normalizeSourceAttemptFacts({}, "free-send", { ...target, climbKind: "boulder" }),
-    ).toEqual({ outcome: "completed", fellOrHung: false, usedAid: false, dabbed: false });
+    ).toEqual({ fellOrHung: false, usedAid: false, dabbed: false });
     expect(normalizeSourceAttemptFacts({}, "dab", { ...target, climbKind: "boulder" })).toEqual({
-      outcome: "completed",
       dabbed: true,
     });
   });
 
   it.each([undefined, "completed", "failed"] as const)(
-    "retains Fell/Hung independently of outcome %s",
-    (outcome) => {
-      const supplied = outcome === undefined ? {} : { outcome };
+    "retains Fell/Hung independently of the source result %s",
+    (sourceResult) => {
+      const supplied = sourceResult === undefined ? {} : { sourceResult };
       expect(normalizeSourceAttemptFacts(supplied, "fell-hung", target)).toEqual({
         ...supplied,
         fellOrHung: true,
@@ -124,19 +123,19 @@ describe("source attempt evidence", () => {
     ).toEqual({ ropeMethod: "top_rope", solo: true });
   });
 
-  it("retains summit outcomes without inventing rock execution facts", () => {
+  it("retains recorded summit results without inventing rock execution facts", () => {
     expect(
-      normalizeSourceAttemptFacts({ outcome: "completed" }, undefined, {
+      normalizeSourceAttemptFacts({ sourceResult: "completed" }, undefined, {
         ...target,
         climbKind: "summit",
       }),
-    ).toEqual({ outcome: "completed" });
+    ).toEqual({ sourceResult: "completed" });
     expect(
-      normalizeSourceAttemptFacts({ outcome: "failed" }, undefined, {
+      normalizeSourceAttemptFacts({ sourceResult: "failed" }, undefined, {
         ...target,
         climbKind: "summit",
       }),
-    ).toEqual({ outcome: "failed" });
+    ).toEqual({ sourceResult: "failed" });
   });
 
   it("preserves omissions nulls and notes independently of qualifiers", () => {
@@ -146,7 +145,6 @@ describe("source attempt evidence", () => {
     ).toEqual({ fellOrHung: null, notes: null });
     expect(normalizeSourceAttemptFacts({ notes: "Recorded note" }, "free-onsight", target)).toEqual(
       {
-        outcome: "completed",
         fellOrHung: false,
         usedAid: false,
         receivedBeta: false,
@@ -157,9 +155,6 @@ describe("source attempt evidence", () => {
   });
 
   it("rejects conflicting explicit facts without overwriting them", () => {
-    expect(() =>
-      normalizeSourceAttemptFacts({ outcome: "failed" }, "free-onsight", target),
-    ).toThrow("outcome");
     expect(() => normalizeSourceAttemptFacts({ fellOrHung: false }, "fell-hung", target)).toThrow(
       "fellOrHung",
     );

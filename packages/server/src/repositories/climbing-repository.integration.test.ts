@@ -1,7 +1,10 @@
 import type { ClimbingFilters } from "@dofek/training/climbing-filters";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import type { SourceClimbingLogEntry } from "../../../../src/db/climbing-log-sync.ts";
+import {
+  persistClimbingLogEntries,
+  type SourceClimbingLogEntry,
+} from "../../../../src/db/climbing-log-sync.ts";
 import { activity } from "../../../../src/db/schema/activity.ts";
 import { area, climb, climbingLogEntry } from "../../../../src/db/schema/climbing.ts";
 import { TEST_USER_ID } from "../../../../src/db/schema/core.ts";
@@ -46,12 +49,213 @@ describe("ClimbingRepository PostgreSQL scoped rock summaries", () => {
       climbedOn: await climbingTestDate(context.db),
       discipline: "rock_climbing",
       climb: route,
-      attempts: [{ scope: "climb", qualifier: "free-send" }],
+      attempts: [{ scope: "climb", sourceResult: "Send", qualifier: "free-send" }],
       ...source,
     });
   }
   const volume = async (filters: ClimbingFilters = {}) =>
     (await repo().getVolumeByGrade(30, filters)).map((row) => row.toDetail());
+
+  it("maps native climb coordinates before the nearest coordinate-bearing area", async () => {
+    const id = await write({
+      climb: {
+        ...route,
+        coordinates: { latitude: 12, longitude: 0 },
+        areas: [
+          { externalId: "region", name: "Region", coordinates: { latitude: 40, longitude: -120 } },
+          { externalId: "crag", name: "Crag", coordinates: { latitude: 0, longitude: -122.25 } },
+          { externalId: "wall", name: "Wall" },
+        ],
+      },
+    });
+    expect(await repo().getMapEntries(30)).toEqual([
+      {
+        id,
+        activityId: null,
+        date: await climbingTestDate(context.db),
+        label: "Corner",
+        grade: "5.10a",
+        location: {
+          coordinates: { latitude: 12, longitude: 0 },
+          scope: "climb",
+          objectId: expect.any(String),
+          providerId: "climbing-summary-test",
+          name: "Corner",
+        },
+      },
+    ]);
+    await context.db.update(climb).set({ coordinates: null });
+    expect(await repo().getMapEntries(30)).toEqual([
+      expect.objectContaining({
+        id,
+        location: {
+          coordinates: { latitude: 0, longitude: -122.25 },
+          scope: "area",
+          objectId: expect.any(String),
+          providerId: "climbing-summary-test",
+          name: "Crag",
+        },
+      }),
+    ]);
+    await context.db.update(area).set({ coordinates: null });
+    expect(await repo().getMapEntries(30)).toEqual([]);
+  });
+  it("maps one selected source graph for cross-provider duplicates and retains same-provider laps", async () => {
+    const outing = await seedClimbingActivity(context.db, "climbing-summary-test", "map-outing");
+    const mpClimb = { ...route, coordinates: { latitude: 35, longitude: -119 } };
+    const obClimb = { ...route, coordinates: { latitude: 38, longitude: -120 } };
+    const first = await write(
+      { activityId: outing.id, externalId: "mp-first", climb: mpClimb },
+      "mountain-project",
+    );
+    await write({ activityId: outing.id, externalId: "ob-first", climb: obClimb }, "openbeta");
+    const second = await write(
+      { activityId: outing.id, externalId: "mp-second", climb: mpClimb },
+      "mountain-project",
+    );
+    expect(await repo().getMapEntries(30)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: first,
+          activityId: outing.groupId,
+          location: expect.objectContaining({
+            providerId: "mountain-project",
+            coordinates: { latitude: 35, longitude: -119 },
+          }),
+        }),
+        expect.objectContaining({
+          id: second,
+          activityId: outing.groupId,
+          location: expect.objectContaining({
+            providerId: "mountain-project",
+            coordinates: { latitude: 35, longitude: -119 },
+          }),
+        }),
+      ]),
+    );
+    expect(await repo().getMapEntries(30)).toHaveLength(2);
+  });
+  it("counts a multi-pitch log once and applies filters before choosing located entries", async () => {
+    const id = await write({
+      climb: {
+        ...route,
+        setting: "outdoor",
+        routeProtection: ["sport"],
+        coordinates: { latitude: 37, longitude: -121 },
+        pitches: [
+          {
+            externalId: "first-pitch",
+            number: 1,
+            publishedGrades: [{ value: "5.10a", system: "yds" }],
+          },
+          {
+            externalId: "second-pitch",
+            number: 2,
+            publishedGrades: [{ value: "5.10b", system: "yds" }],
+          },
+        ],
+      },
+      attempts: [
+        {
+          scope: "pitch",
+          pitch: { number: 1 },
+          ropeMethod: "lead",
+          solo: false,
+          protectionUsed: ["sport"],
+        },
+        {
+          scope: "pitch",
+          pitch: { number: 2 },
+          ropeMethod: "lead",
+          solo: false,
+          protectionUsed: ["sport"],
+        },
+      ],
+    });
+    expect(await repo().getMapEntries(30)).toEqual([]);
+    expect(
+      await repo().getMapEntries(30, {
+        attemptScope: "pitch",
+        setting: "outdoor",
+        climbKind: "route",
+        ropeMethod: "lead",
+        solo: false,
+        routeProtection: "sport",
+        protectionUsed: "sport",
+      }),
+    ).toEqual([expect.objectContaining({ id, grade: "5.10a" })]);
+    expect(await repo().getMapEntries(30, { attemptScope: "pitch", setting: "indoor" })).toEqual(
+      [],
+    );
+    expect(
+      await repo().getMapEntries(30, { attemptScope: "pitch", ropeMethod: "top_rope" }),
+    ).toEqual([]);
+  });
+  it("excludes unavailable dates, absent records, other users, and entries outside the access window", async () => {
+    const mappedClimb = { ...route, coordinates: { latitude: 37, longitude: -121 } };
+    const date = await climbingTestDate(context.db);
+    const included = await write({ externalId: "included", climb: mappedClimb });
+    const earlier = await write({
+      externalId: "earlier-map",
+      climbedOn: await climbingTestDate(context.db, 10),
+      climb: mappedClimb,
+    });
+    await write({ externalId: "undated-map", climbedOn: null, climb: mappedClimb });
+    await write({
+      externalId: "old-map",
+      climbedOn: await climbingTestDate(context.db, 31),
+      climb: mappedClimb,
+    });
+    await write({ externalId: "future-map", climbedOn: "2999-01-01", climb: mappedClimb });
+    const absent = await write({ externalId: "absent-map", climb: mappedClimb });
+    await context.db
+      .update(climbingLogEntry)
+      .set({ providerAbsentAt: new Date() })
+      .where(eq(climbingLogEntry.id, absent));
+    const otherUser = "b0000000-0000-4000-8000-000000000001";
+    await context.db.execute(
+      sql`INSERT INTO fitness.user_profile (id,name) VALUES (${otherUser},'Other user') ON CONFLICT DO NOTHING`,
+    );
+    await ensureProvider(context.db, "climbing-summary-test", "Climbing", undefined, otherUser);
+    await persistClimbingLogEntries(context.db, {
+      userId: otherUser,
+      providerId: "climbing-summary-test",
+      entries: [
+        {
+          externalId: "other-map",
+          climbedOn: date,
+          discipline: "rock_climbing",
+          climb: mappedClimb,
+          attempts: [{ scope: "climb" }],
+        },
+      ],
+    });
+    expect(await repo().getMapEntries(30)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: included }),
+        expect.objectContaining({ id: earlier }),
+      ]),
+    );
+    expect(await repo().getMapEntries(30)).toHaveLength(2);
+    const limited = new ClimbingRepository(context.db, TEST_USER_ID, "UTC", {
+      kind: "limited",
+      paid: false,
+      reason: "free_recent_week",
+      startDate: date,
+      endDateExclusive: await climbingTestDate(context.db, 0),
+    });
+    expect(await limited.getMapEntries(30)).toEqual([expect.objectContaining({ id: included })]);
+    const exclusiveEnd = new ClimbingRepository(context.db, TEST_USER_ID, "UTC", {
+      kind: "limited",
+      paid: false,
+      reason: "free_recent_week",
+      startDate: await climbingTestDate(context.db, 10),
+      endDateExclusive: date,
+    });
+    expect(await exclusiveEnd.getMapEntries(30)).toEqual([
+      expect.objectContaining({ id: earlier }),
+    ]);
+  });
 
   it("counts one send despite equivalent and aid grade components", async () => {
     await write({
@@ -81,7 +285,9 @@ describe("ClimbingRepository PostgreSQL scoped rock summaries", () => {
           { externalId: "pitch", number: 1, publishedGrades: [{ value: "5.12a", system: "yds" }] },
         ],
       },
-      attempts: [{ scope: "pitch", pitch: { number: 1 }, qualifier: "free-send" }],
+      attempts: [
+        { scope: "pitch", pitch: { number: 1 }, sourceResult: "Send", qualifier: "free-send" },
+      ],
     });
     expect(await volume()).toEqual([]);
     expect(await volume({ attemptScope: "pitch" })).toEqual([
@@ -107,7 +313,7 @@ describe("ClimbingRepository PostgreSQL scoped rock summaries", () => {
   });
   it("keeps aid completion and dabs out of free-send metrics", async () => {
     await write({
-      attempts: [{ scope: "climb", outcome: "completed", usedAid: true, fellOrHung: false }],
+      attempts: [{ scope: "climb", sourceResult: "completed", usedAid: true, fellOrHung: false }],
     });
     await write({
       externalId: "dab",
@@ -116,7 +322,15 @@ describe("ClimbingRepository PostgreSQL scoped rock summaries", () => {
         kind: "boulder",
         publishedGrades: [{ value: "V4", system: "v_scale" }],
       },
-      attempts: [{ scope: "climb", qualifier: "dab", usedAid: false, fellOrHung: false }],
+      attempts: [
+        {
+          scope: "climb",
+          sourceResult: "Dab",
+          qualifier: "dab",
+          usedAid: false,
+          fellOrHung: false,
+        },
+      ],
     });
     expect(await volume()).toEqual(
       expect.arrayContaining([
@@ -185,9 +399,9 @@ describe("ClimbingRepository PostgreSQL scoped rock summaries", () => {
   it("counts each recorded attempt once and preserves multiple completed attempts", async () => {
     await write({
       attempts: [
-        { scope: "climb", qualifier: "free-send" },
-        { scope: "climb", qualifier: "free-send" },
-        { scope: "climb", outcome: "failed" },
+        { scope: "climb", sourceResult: "Send", qualifier: "free-send" },
+        { scope: "climb", sourceResult: "Send", qualifier: "free-send" },
+        { scope: "climb", sourceResult: "failed" },
       ],
     });
     expect(await volume()).toEqual([
@@ -356,8 +570,8 @@ describe("ClimbingRepository PostgreSQL scoped rock summaries", () => {
         ],
       },
       attempts: [
-        { scope: "climb", qualifier: "free-send" },
-        { scope: "pitch", pitch: { number: 1 }, qualifier: "free-send" },
+        { scope: "climb", sourceResult: "Send", qualifier: "free-send" },
+        { scope: "pitch", pitch: { number: 1 }, sourceResult: "Send", qualifier: "free-send" },
       ],
       reportedAttemptCounts: [{ scope: "climb", count: 3 }],
     });

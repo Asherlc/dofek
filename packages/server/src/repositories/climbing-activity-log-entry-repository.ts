@@ -7,6 +7,7 @@ import {
   climbingAttemptSchema,
   climbingLogEntrySchema,
 } from "@dofek/training/climbing-log";
+import type { ClimbingMapLocation } from "@dofek/training/climbing-map";
 import { type SQL, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
@@ -33,6 +34,32 @@ const databaseRowSchema = z.object({
       .pipe(climbingAttemptSchema),
   ),
 });
+function mapLocation(
+  climb: ClimbingLogEntryDetail["climb"],
+): ClimbingLogEntryDetail["mapLocation"] {
+  if (!climb) return null;
+  if (climb.coordinates)
+    return {
+      coordinates: climb.coordinates,
+      scope: "climb",
+      objectId: climb.id,
+      providerId: climb.providerId,
+      name: climb.name,
+    };
+  const area = climb.areaPath
+    .slice()
+    .reverse()
+    .find((area) => area.coordinates !== null);
+  return area?.coordinates
+    ? {
+        coordinates: area.coordinates,
+        scope: "area",
+        objectId: area.id,
+        providerId: area.providerId,
+        name: area.name,
+      }
+    : null;
+}
 function recordedOutcome(
   attempts: readonly ClimbingAttempt[],
 ): ClimbingLogEntryDetail["recordedClimbOutcome"] {
@@ -176,6 +203,49 @@ export class ClimbingActivityLogEntryRepository extends BaseRepository {
       )
     ).map((log) => new ClimbingActivityLogEntry(log));
   }
+  async getActivityMapLocations(
+    activityIds: readonly string[],
+  ): Promise<Map<string, ClimbingMapLocation[]>> {
+    if (!activityIds.length) return new Map();
+    const rows = await this.query(
+      z.object({ activityId: z.string(), memberActivityIds: z.array(z.string()) }),
+      sql`SELECT grouped.id AS "activityId", grouped.member_activity_ids AS "memberActivityIds"
+      FROM fitness.v_activity AS grouped
+      WHERE grouped.user_id=${this.userId}::uuid
+        AND grouped.id IN (${sql.join(
+          activityIds.map((id) => sql`${id}::uuid`),
+          sql`, `,
+        )})
+        ${this.dateAccessPredicate(postgresActivityCalendarDate(sql`grouped`, this.timezone))}
+      ORDER BY grouped.id`,
+    );
+    const members = [...new Set(rows.flatMap((row) => row.memberActivityIds))];
+    if (!members.length) return new Map();
+    const logs = await this.#load(
+      sql`entry.activity_id IN (${sql.join(
+        members.map((id) => sql`${id}::uuid`),
+        sql`, `,
+      )})`,
+    );
+    const grouped = new Map<string, ClimbingMapLocation[]>();
+    for (const row of rows) {
+      const memberIds = new Set(row.memberActivityIds);
+      const selected = consolidate(
+        logs.filter((log) => log.activityId !== null && memberIds.has(log.activityId)),
+      );
+      const points = new Map<string, ClimbingMapLocation>();
+      for (const log of selected) {
+        const location = log.mapLocation;
+        if (location)
+          points.set(
+            JSON.stringify([location.providerId, location.scope, location.objectId]),
+            location,
+          );
+      }
+      if (points.size) grouped.set(row.activityId, [...points.values()]);
+    }
+    return grouped;
+  }
   async getProviderLogEntry(
     providerId: string,
     id: string,
@@ -242,7 +312,7 @@ export class ClimbingActivityLogEntryRepository extends BaseRepository {
         'fellOrHung',attempt.fell_or_hung,'dabbed',attempt.dabbed,'receivedBeta',attempt.received_beta,
         'hadCompletedBefore',attempt.had_completed_before,'priorFailedAttemptsGroundUp',attempt.prior_failed_attempts_ground_up,
         'notes',attempt.notes,'createdAt',attempt.created_at
-      ) ORDER BY attempt.attempt_index NULLS LAST,attempt.created_at,attempt.id) FROM fitness.climbing_attempt AS attempt WHERE attempt.climbing_log_entry_id=entry.id),'[]'::jsonb) AS attempts
+      ) ORDER BY attempt.attempt_index NULLS LAST,attempt.created_at,attempt.id) FROM fitness.v_climbing_attempt AS attempt WHERE attempt.climbing_log_entry_id=entry.id),'[]'::jsonb) AS attempts
       FROM fitness.v_climbing_log_entry AS entry
       LEFT JOIN fitness.climb AS catalogue ON catalogue.id=entry.climb_id
       LEFT JOIN fitness.activity AS attached ON attached.id=entry.activity_id AND attached.user_id=entry.user_id
@@ -278,6 +348,7 @@ export class ClimbingActivityLogEntryRepository extends BaseRepository {
       return climbingLogEntryDetailSchema.parse({
         ...row.log,
         climb: row.climb,
+        mapLocation: mapLocation(row.climb),
         attempts: row.attempts.map((attempt) => ({
           ...attempt,
           rockResultLabels: resultLabels(row, attempt),

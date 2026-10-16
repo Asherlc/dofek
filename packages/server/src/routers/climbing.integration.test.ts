@@ -165,7 +165,9 @@ describe("climbing log router PostgreSQL integration", () => {
       attempts: [
         {
           scope: "climb",
-          ...(completed ? { qualifier: "free-send" as const } : { outcome: "failed" as const }),
+          ...(completed
+            ? { sourceResult: "Send", qualifier: "free-send" as const }
+            : { sourceResult: "failed" as const }),
         },
       ],
       reportedAttemptCounts: [{ scope: "climb", count }],
@@ -254,7 +256,7 @@ describe("climbing log router PostgreSQL integration", () => {
       climbedOn: await climbingTestDate(context.db),
       discipline: "mountaineering",
       climb: { externalId: "peak", name: "Peak", kind: "summit" },
-      attempts: [{ scope: "climb", outcome: "completed" }],
+      attempts: [{ scope: "climb", sourceResult: "completed" }],
     });
     await caller().attachClimbingLogEntry({ activityId: outing.groupId, climbingLogEntryId: id });
     expect(await caller().activityLogEntries({ activityId: outing.groupId })).toEqual([

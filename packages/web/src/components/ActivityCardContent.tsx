@@ -148,7 +148,7 @@ function ActivityMetricGrid({
   units: UnitConverter;
 }) {
   const hasRouteMetrics =
-    activity.location != null ||
+    activity.location?.kind === "recorded_gps" ||
     activity.distanceState.status === "available" ||
     activity.elevationState.status === "available";
   const metrics: ActivityCardStat[] = hasRouteMetrics

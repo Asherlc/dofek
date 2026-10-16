@@ -1,10 +1,12 @@
-import { formatClimbingRecordedResult } from "@dofek/format/climbing-log";
+import {
+  formatClimbingRecordedResult,
+  formatClimbingRopeMethods,
+} from "@dofek/format/climbing-log";
 import { providerSourceLabel } from "@dofek/providers/providers";
 import type { ClimbingMapLocation, ClimbingMapMarker } from "@dofek/training/climbing-map";
-import { useId, useMemo, useState } from "react";
+import { useMemo } from "react";
 import type { ClimbingLogEntryDetail } from "../../../../../server/src/contracts/climbing-log-contracts.ts";
 import { ActivityRouteMap } from "../../../components/ActivityRouteMap.tsx";
-import { ClimbingLogEntryDetails } from "../../../components/ClimbingLogEntryDetails.tsx";
 import { ClimbingLogEntryContext } from "./ClimbingLogEntryContext.tsx";
 import { ClimbingLogEntrySources } from "./ClimbingLogEntrySources.tsx";
 
@@ -30,9 +32,8 @@ export function ClimbingLogEntryCard({
   attachmentState?: ClimbingLogAttachmentState;
   onAttach?: (entryId: string) => void;
 }) {
-  const [open, setOpen] = useState(false);
-  const detailId = useId();
   const name = entry.climb?.name ?? entry.title ?? "Climbing log";
+  const methods = formatClimbingRopeMethods(entry.attempts);
   const markers = useMemo<ClimbingMapMarker[]>(
     () => (location ? [{ entryId: entry.id, entryNumber, label: name, location }] : []),
     [entry.id, entryNumber, name, location],
@@ -77,6 +78,7 @@ export function ClimbingLogEntryCard({
         )}
       </div>
       <div className="space-y-1 text-xs text-subtle">
+        {methods && <p>{methods}</p>}
         {entry.recordedClimbAttemptCount > 0 && (
           <p>
             {formatClimbingRecordedResult(
@@ -111,21 +113,6 @@ export function ClimbingLogEntryCard({
             ),
         )}
       </div>
-      <button
-        type="button"
-        className="text-xs text-accent"
-        aria-label={`Details for ${name}`}
-        aria-expanded={open}
-        aria-controls={detailId}
-        onClick={() => setOpen(!open)}
-      >
-        {open ? "Hide details" : "Details"}
-      </button>
-      {open && (
-        <div id={detailId} className="pt-2">
-          <ClimbingLogEntryDetails entry={entry} />
-        </div>
-      )}
       {onAttach && (
         <div className="mt-auto space-y-2">
           {attachmentState?.error && (

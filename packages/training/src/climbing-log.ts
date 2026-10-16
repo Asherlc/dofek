@@ -89,35 +89,48 @@ export const climbingLogEntrySchema = z.strictObject({
   createdAt: z.iso.datetime(),
 });
 
+const climbingAttemptFields = {
+  id: z.guid(),
+  climbingLogEntryId: z.guid(),
+  scope: attemptScopeSchema,
+  pitchId: z.guid().nullable(),
+  parentAttemptId: z.guid().nullable(),
+  attemptIndex: z.number().int().positive().nullable(),
+  ropeMethod: ropeMethodSchema.nullable(),
+  solo: z.boolean().nullable(),
+  protectionUsed: z.array(protectionStyleSchema).nullable(),
+  usedPreplacedProtection: z.boolean().nullable(),
+  usedAid: z.boolean().nullable(),
+  fellOrHung: z.boolean().nullable(),
+  dabbed: z.boolean().nullable(),
+  receivedBeta: z.boolean().nullable(),
+  hadCompletedBefore: z.boolean().nullable(),
+  priorFailedAttemptsGroundUp: z.boolean().nullable(),
+  notes: recordedTextSchema.nullable(),
+  createdAt: z.iso.datetime(),
+};
+const validAttemptScope = (attempt: {
+  scope: z.infer<typeof attemptScopeSchema>;
+  pitchId: string | null;
+  parentAttemptId: string | null;
+}) => attempt.scope === "pitch" || (attempt.pitchId === null && attempt.parentAttemptId === null);
+const validAttemptScopeMessage = {
+  message: "Whole-climb attempts cannot reference a pitch or parent attempt.",
+};
+
 export const climbingAttemptSchema = z
+  .strictObject({ ...climbingAttemptFields, outcome: attemptOutcomeSchema.nullable() })
+  .refine(validAttemptScope, validAttemptScopeMessage);
+
+export const recordedClimbingAttemptSchema = z
   .strictObject({
-    id: z.guid(),
-    climbingLogEntryId: z.guid(),
-    scope: attemptScopeSchema,
-    pitchId: z.guid().nullable(),
-    parentAttemptId: z.guid().nullable(),
-    attemptIndex: z.number().int().positive().nullable(),
-    outcome: attemptOutcomeSchema.nullable(),
-    ropeMethod: ropeMethodSchema.nullable(),
-    solo: z.boolean().nullable(),
-    protectionUsed: z.array(protectionStyleSchema).nullable(),
-    usedPreplacedProtection: z.boolean().nullable(),
-    usedAid: z.boolean().nullable(),
-    fellOrHung: z.boolean().nullable(),
-    dabbed: z.boolean().nullable(),
-    receivedBeta: z.boolean().nullable(),
-    hadCompletedBefore: z.boolean().nullable(),
-    priorFailedAttemptsGroundUp: z.boolean().nullable(),
-    notes: recordedTextSchema.nullable(),
-    createdAt: z.iso.datetime(),
+    ...climbingAttemptFields,
+    sourceResult: z
+      .string()
+      .refine((value) => value.trim().length > 0)
+      .nullable(),
   })
-  .refine(
-    (attempt) =>
-      attempt.scope === "pitch" || (attempt.pitchId === null && attempt.parentAttemptId === null),
-    {
-      message: "Whole-climb attempts cannot reference a pitch or parent attempt.",
-    },
-  );
+  .refine(validAttemptScope, validAttemptScopeMessage);
 
 export type Area = z.infer<typeof areaSchema>;
 export type Climb = z.infer<typeof climbSchema>;
@@ -125,6 +138,7 @@ export type Pitch = z.infer<typeof pitchSchema>;
 export type GradeComponent = z.infer<typeof gradeComponentSchema>;
 export type ClimbingLogEntry = z.infer<typeof climbingLogEntrySchema>;
 export type ClimbingAttempt = z.infer<typeof climbingAttemptSchema>;
+export type RecordedClimbingAttempt = z.infer<typeof recordedClimbingAttemptSchema>;
 export type ClimbKind = z.infer<typeof climbKindSchema>;
 export type ClimbSetting = z.infer<typeof climbSettingSchema>;
 export type ClimbingDiscipline = z.infer<typeof climbingDisciplineSchema>;

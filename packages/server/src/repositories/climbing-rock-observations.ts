@@ -90,7 +90,7 @@ export function rockClimbingLogProjection(
             AND (ce.climb_kind = 'route' OR attempt.dabbed = false) THEN true
           WHEN attempt.outcome = 'failed' OR attempt.fell_or_hung = true OR attempt.used_aid = true
             OR (ce.climb_kind = 'boulder' AND attempt.dabbed = true) THEN false END AS free_send
-        FROM fitness.climbing_attempt AS attempt WHERE ${sql.join(attemptPredicates, sql` AND `)}
+        FROM fitness.v_climbing_attempt AS attempt WHERE ${sql.join(attemptPredicates, sql` AND `)}
       ) AS attempt
       GROUP BY attempt.scope, attempt.pitch_id,
         CASE WHEN attempt.scope = 'pitch' AND attempt.pitch_id IS NULL THEN attempt.id END

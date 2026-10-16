@@ -9,7 +9,7 @@ const meta = {
   component: ActivityMetricStrip,
   args: {
     activity: {
-      location: { mapPreview: {} },
+      location: { kind: "recorded_gps" },
       distanceMeters: 8500,
       distanceState: { status: "available" },
       elevationGainM: 120,
@@ -29,7 +29,7 @@ export const AvailableRouteMetrics: Story = {};
 export const UnavailableRouteMetrics: Story = {
   args: {
     activity: {
-      location: { mapPreview: {} },
+      location: { kind: "recorded_gps" },
       distanceMeters: null,
       distanceState: { status: "missing", reason: "Distance was not recorded." },
       elevationGainM: null,

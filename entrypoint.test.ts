@@ -328,7 +328,7 @@ function terminateProcessGroup(entrypoint: ChildProcess): void {
     return;
   }
 
-  const termination = spawnSync("/bin/kill", ["-TERM", `-${entrypoint.pid}`], {
+  const termination = spawnSync("/bin/kill", ["-TERM", "--", `-${entrypoint.pid}`], {
     encoding: "utf8",
   });
   if (termination.status === 0) {

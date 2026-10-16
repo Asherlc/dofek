@@ -32,7 +32,7 @@ export const Default: Story = {};
 export const MinimalEntry: Story = { args: { entry: climbingLogEntryFixture() } };
 export const ExactClimb: Story = { args: { location: exactClimbingLocation } };
 export const AreaLocation: Story = { args: { location: areaClimbingLocation } };
-export const UnknownOutcome: Story = {
+export const TopRope: Story = {
   args: {
     entry: {
       ...climbingLogFixture,

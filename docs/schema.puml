@@ -437,7 +437,7 @@ entity "climbing_attempt" {
   pitch_id : uuid <<FK>>
   parent_attempt_id : uuid <<FK>>
   attempt_index : bigint
-  outcome : attempt_outcome
+  source_result : text
   rope_method : rope_method
   solo : boolean
   protection_used : protection_style[]

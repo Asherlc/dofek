@@ -20,10 +20,12 @@ export async function withActivityIntegrityLease<T>(
   operation: () => Promise<T>,
 ): Promise<T> {
   const connection = await db.$client.connect();
-  let sessionError: Error | undefined;
   const onSessionError: ConnectionErrorListener = (error) => {
-    sessionError ??= error;
-    captureException(error, { tags: { source: "activity-integrity-lease" } });
+    try {
+      captureException(error, { tags: { source: "activity-integrity-lease" } });
+    } finally {
+      process.exit(1);
+    }
   };
   connection.on("error", onSessionError);
   let acquired = false;
@@ -41,13 +43,9 @@ export async function withActivityIntegrityLease<T>(
     outcome = { succeeded: false, error };
   }
 
-  let cleanupError: unknown =
-    sessionError &&
-    new Error("activity integrity lease was lost with its PostgreSQL session", {
-      cause: sessionError,
-    });
+  let cleanupError: unknown;
   try {
-    if (acquired && sessionError === undefined) {
+    if (acquired) {
       await connection.query("SELECT pg_advisory_unlock(hashtextextended($1::text, 0))", [
         ACTIVITY_INTEGRITY_LEASE_NAME,
       ]);

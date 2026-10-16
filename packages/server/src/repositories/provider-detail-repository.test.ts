@@ -344,6 +344,13 @@ describe("ProviderDetailRepository", () => {
       const log = climbingLogEntryFixture({
         climb,
         climbId: climb.id,
+        mapLocation: {
+          coordinates: { latitude: 0, longitude: -122.25 },
+          scope: "climb",
+          objectId: climb.id,
+          providerId: "openbeta",
+          name: "Corner",
+        },
         discipline: "rock_climbing",
         providerAbsentAt: "2026-10-01T00:00:00.000Z",
         raw: { retained: true },

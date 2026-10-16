@@ -51,7 +51,8 @@ Every public module is imported as `@dofek/training/<subpath>`.
 | `activity-icons` | Normalize activity names into framework-neutral icon categories |
 | `climbing-grades` | Validate recorded grade components; order and convert supported free-rock grades with [Sandbag](https://github.com/OpenBeta/sandbag) |
 | `climbing-context` | Validate the current Climb and Area path with recorded board, wall-angle, and hold-type context |
-| `climbing-map` | [Explicit source locations and tick marker inputs](src/climbing-map.ts) shared by web and mobile maps |
+| `climbing-map` | [Source locations and shared card-location/overview-marker builders](src/climbing-map.ts) for web and mobile; preserves server-selected ownership and full card positions |
+| `climbing-location-map` | [Server-computed map circles and zoom bands](src/climbing-location-map.ts) shared by web and mobile; [Supercluster](https://github.com/mapbox/supercluster) groups nearby logged climbs while retaining individual source locations |
 | `climbing-experience` | [Shared recorded board and wall-angle schemas](src/climbing-experience.ts) |
 | `climbing-log` | [Area, Climb, Pitch, owned GradeComponent collections, ClimbingLogEntry, scoped ClimbingAttempt, and their canonical enums](src/climbing-log.ts) |
 | `gps-coordinates` | [Complete finite latitude/longitude pairs](src/gps-coordinates.ts) for [native PostgreSQL point storage](https://www.postgresql.org/docs/current/datatype-geometric.html#DATATYPE-GEOMETRIC-POINTS) using x = longitude and y = latitude |
@@ -82,10 +83,12 @@ and firsthand [mixed-grade](https://publications.americanalpineclub.org/articles
 and [ice/mixed range](https://publications.americanalpineclub.org/articles/13201213975) examples.
 
 Published components belong to Climb/Pitch; separately reported components
-belong to the log. Attempts record whole-Climb or pitch scope and independent
-completion, rope method, solo, aid, protection, fall/hang, dab, beta and source
-history facts. Server queries derive result labels and counts; see the
-[canonical model](../../docs/superpowers/specs/2026-10-13-climbing-log-model-summitpost-design.md).
+belong to the log. Recorded attempts retain whole-Climb or pitch scope, original
+source result labels, rope method, solo, aid, protection, fall/hang, dab, beta and
+source history facts. The raw record schema and computed response schema are
+separate. Server queries derive completion, result labels and counts; see the
+[current model](../../docs/climbing-context.md) and
+[schemas](src/climbing-log.ts).
 
 ### Training distributions
 

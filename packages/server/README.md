@@ -19,10 +19,22 @@ The backend API and background job processor for Dofek. Built with Node.js, Expr
   serves grade analytics and session summaries, and delegates activity detail hydration and
   cross-provider entry consolidation to
   [`ClimbingActivityLogEntryRepository`](./src/repositories/climbing-activity-log-entry-repository.ts).
+  Entry hydration returns `mapLocation` from native Climb coordinates, otherwise
+  the nearest coordinate-bearing Area in the selected source graph; consolidation
+  retains that graph's map ownership. See the [map contract](../training/src/climbing-map.ts).
   Both use the same [grade display conversion](./src/repositories/climbing-grade-display.ts).
+  The [`climbing.locationMap` query](./src/routers/climbing.ts) serves dated,
+  filtered canonical logs as server-computed circle clusters for web and mobile.
+  Its [map contract](../training/src/climbing-location-map.ts) retains each log's
+  source-owned location and labels native climb versus area coordinates; pitch
+  observations count once per selected log in the [repository](./src/repositories/climbing-repository.ts).
   Rock metrics select one compatible published grade per target and derive free-send
   evidence from its recorded attempts, through the [shared projection](src/repositories/climbing-rock-observations.ts).
   Whole-climb and pitch attempts remain separately scoped; unknown facts remain unknown.
+  Attempt outcomes come from `fitness.v_climbing_attempt`, which computes them
+  from retained source labels through the [canonical SQL function](../../drizzle/0148_compute_climbing_attempt_outcome.sql).
+  The [API contract](src/contracts/climbing-log-contracts.ts) continues returning
+  `completed`, `failed`, or null to web, mobile, and MCP clients.
 - **Provider climbing records**: The [provider detail repository](src/repositories/provider-detail-repository.ts)
   lists retained logs, including undated records and provider-absence tombstones,
   and loads the full owned graph for a selected record. The [sync repository](src/repositories/sync-repository.ts)

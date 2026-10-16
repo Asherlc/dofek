@@ -1,12 +1,13 @@
-import { formatClimbingRecordedResult } from "@dofek/format/climbing-log";
+import {
+  formatClimbingRecordedResult,
+  formatClimbingRopeMethods,
+} from "@dofek/format/climbing-log";
 import { providerSourceLabel } from "@dofek/providers/providers";
 import type { ClimbingMapLocation } from "@dofek/training/climbing-map";
-import { useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import type { ClimbingLogEntryDetail } from "../../server/src/contracts/climbing-log-contracts.ts";
 import { colors } from "../theme";
 import { ClimbingLogEntryContext } from "./ClimbingLogEntryContext";
-import { ClimbingLogEntryDetails } from "./ClimbingLogEntryDetails";
 import { ClimbingLogEntrySources } from "./ClimbingLogEntrySources";
 import { RouteMap } from "./RouteMap";
 
@@ -30,9 +31,9 @@ export function ClimbingLogEntryCard({
   entryNumber?: number;
   selected?: boolean;
 }) {
-  const [open, setOpen] = useState(false);
   const name = entry.climb?.name ?? entry.title ?? "Climbing log";
   const attachmentPending = attachmentState?.pending ?? false;
+  const ropeMethods = formatClimbingRopeMethods(entry.attempts);
   return (
     <View
       style={[styles.card, selected && styles.selectedCard]}
@@ -68,6 +69,7 @@ export function ClimbingLogEntryCard({
           />
         </View>
       )}
+      {ropeMethods && <Text style={styles.summary}>{ropeMethods}</Text>}
       {entry.recordedClimbAttemptCount > 0 && (
         <Text style={styles.summary}>
           {formatClimbingRecordedResult(
@@ -101,15 +103,6 @@ export function ClimbingLogEntryCard({
             </Text>
           ),
       )}
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={`Details for ${name}`}
-        accessibilityState={{ expanded: open }}
-        onPress={() => setOpen(!open)}
-      >
-        <Text style={styles.action}>{open ? "Hide details" : "Details"}</Text>
-      </Pressable>
-      {open && <ClimbingLogEntryDetails entry={entry} />}
       {onAttach && (
         <View style={styles.attachment}>
           {attachmentState?.error && (
@@ -156,5 +149,4 @@ const styles = StyleSheet.create({
   grade: { fontSize: 14, fontWeight: "600", color: colors.accent },
   summary: { fontSize: 12, color: colors.textSecondary },
   result: { fontSize: 12, color: colors.positive },
-  action: { fontSize: 13, color: colors.accent },
 });

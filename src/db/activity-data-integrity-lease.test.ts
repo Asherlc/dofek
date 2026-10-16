@@ -62,45 +62,64 @@ describe("withActivityIntegrityLease", () => {
     expect(release).toHaveBeenCalledWith();
   });
 
-  it("fails the operation and destroys the connection when PostgreSQL ends the lease session", async () => {
-    const sessionFailure = new Error("terminating connection due to administrator command");
-    const query = vi.fn().mockResolvedValueOnce({ rows: [{ acquired: true }] });
-    const release = vi.fn();
-    const database = leaseDatabase(query, release);
+  it.each([false, true])(
+    "stops synchronously on session loss when reporting throws: %s",
+    async (reportingThrows) => {
+      const query = vi
+        .fn()
+        .mockResolvedValueOnce({ rows: [{ acquired: true }] })
+        .mockResolvedValueOnce({ rows: [] });
+      const database = leaseDatabase(query, vi.fn());
+      const sessionFailure = new Error("session disconnected");
+      let finishOperation = () => {};
+      const operationPending = new Promise<void>((resolve) => {
+        finishOperation = resolve;
+      });
+      const running = withActivityIntegrityLease(database, () => operationPending);
+      await vi.waitFor(() => expect(query).toHaveBeenCalledOnce());
+      const [, listener] = database.connection.on.mock.calls[0] ?? [];
+      const fatal = new Error("process exited");
+      const exit = vi.spyOn(process, "exit").mockImplementation(() => {
+        throw fatal;
+      });
+      if (reportingThrows)
+        captureException.mockImplementationOnce(() => {
+          throw new Error("capture failed");
+        });
+      try {
+        expect(() => listener(sessionFailure)).toThrow(fatal);
+        expect(exit).toHaveBeenCalledWith(1);
+        expect(captureException).toHaveBeenCalledWith(sessionFailure, {
+          tags: { source: "activity-integrity-lease" },
+        });
+      } finally {
+        exit.mockRestore();
+        finishOperation();
+        await running;
+      }
+    },
+  );
 
-    const error = await withActivityIntegrityLease(database, async () => {
-      const [event, listener] = database.connection.on.mock.calls[0] ?? [];
-      expect(event).toBe("error");
-      listener(sessionFailure);
-      return "done";
-    }).catch((failure: unknown) => failure);
-
-    expect(error).toMatchObject({
-      cause: sessionFailure,
-      message: "activity integrity lease was lost with its PostgreSQL session",
+  it("does not start the operation after losing its session during lease acquisition", async () => {
+    const query = vi.fn();
+    const database = leaseDatabase(query, vi.fn());
+    const fatal = new Error("process exited");
+    const exit = vi.spyOn(process, "exit").mockImplementation(() => {
+      throw fatal;
     });
-    expect(query).toHaveBeenCalledTimes(1);
-    expect(release).toHaveBeenCalledWith(true);
-    expect(database.connection.off).not.toHaveBeenCalled();
-    expect(captureException).toHaveBeenCalledWith(sessionFailure, {
-      tags: { source: "activity-integrity-lease" },
+    query.mockImplementationOnce(async () => {
+      const [, listener] = database.connection.on.mock.calls[0] ?? [];
+      listener(new Error("session disconnected"));
+      return { rows: [{ acquired: true }] };
     });
-  });
-
-  it("preserves the operation error when PostgreSQL ends the lease session", async () => {
-    const operationError = new Error("operation failed");
-    const query = vi.fn().mockResolvedValueOnce({ rows: [{ acquired: true }] });
-    const release = vi.fn();
-    const database = leaseDatabase(query, release);
-
-    await expect(
-      withActivityIntegrityLease(database, async () => {
-        const [, listener] = database.connection.on.mock.calls[0] ?? [];
-        listener(new Error("Connection terminated unexpectedly"));
-        throw operationError;
-      }),
-    ).rejects.toBe(operationError);
-    expect(release).toHaveBeenCalledWith(true);
+    const operation = vi.fn(async () => "must-not-run");
+    try {
+      await expect(withActivityIntegrityLease(database, operation)).rejects.toBe(fatal);
+      expect(operation).not.toHaveBeenCalled();
+      expect(exit).toHaveBeenCalledWith(1);
+    } finally {
+      exit.mockRestore();
+    }
   });
 
   it("detaches its session error listener before returning a healthy connection to the pool", async () => {

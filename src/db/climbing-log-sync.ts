@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import {
   type AttemptScope,
   areaSchema,
-  climbingAttemptSchema,
+  recordedClimbingAttemptSchema as climbingAttemptSchema,
   climbingLogEntrySchema,
   climbSchema,
   type GradeComponent,
@@ -77,7 +77,7 @@ const sourceAttemptSchema = z
     parentSourceKey: z.string().trim().min(1).optional(),
     qualifier: sourceQualifierSchema.optional(),
     attemptIndex: climbingAttemptSchema.shape.attemptIndex.optional(),
-    outcome: climbingAttemptSchema.shape.outcome.optional(),
+    sourceResult: climbingAttemptSchema.shape.sourceResult.optional(),
     ropeMethod: climbingAttemptSchema.shape.ropeMethod.optional(),
     solo: climbingAttemptSchema.shape.solo.optional(),
     protectionUsed: climbingAttemptSchema.shape.protectionUsed.optional(),
@@ -427,7 +427,7 @@ async function resolveClimb(
 
 const factKeys = [
   "attemptIndex",
-  "outcome",
+  "sourceResult",
   "ropeMethod",
   "solo",
   "protectionUsed",
@@ -507,12 +507,23 @@ function matchAttempt(
   const compatible = known.filter(
     (row) =>
       factKeys.every(
-        (key) => supplied[key] == null || row[key] == null || equalFact(row[key], supplied[key]),
+        (key) =>
+          key === "sourceResult" ||
+          supplied[key] == null ||
+          row[key] == null ||
+          equalFact(row[key], supplied[key]),
       ) &&
       (supplied.parentAttemptId == null ||
         row.parentAttemptId == null ||
         supplied.parentAttemptId === row.parentAttemptId),
   );
+  if (supplied.sourceResult != null) {
+    const resultMatches = compatible.filter(
+      (row) =>
+        row.sourceResult?.trim().toLowerCase() === supplied.sourceResult?.trim().toLowerCase(),
+    );
+    if (resultMatches.length === 1) return resultMatches[0];
+  }
   if (compatible.length === 1) return compatible[0];
   if (compatible.length > 1) {
     const first = compatible[0];
@@ -639,13 +650,24 @@ function associatedParent(
   const parents = new Set<string>();
   for (const child of entry.attempts.filter((item) => item.source.parentSourceKey === sourceKey)) {
     const facts = suppliedFacts(child.source);
-    const candidates = rows.filter(
+    let candidates = rows.filter(
       (row) =>
         matchesTarget(row, child.target) &&
         factKeys.every(
-          (key) => facts[key] == null || row[key] == null || equalFact(facts[key], row[key]),
+          (key) =>
+            key === "sourceResult" ||
+            facts[key] == null ||
+            row[key] == null ||
+            equalFact(facts[key], row[key]),
         ),
     );
+    if (facts.sourceResult != null) {
+      const resultMatches = candidates.filter(
+        (row) =>
+          row.sourceResult?.trim().toLowerCase() === facts.sourceResult?.trim().toLowerCase(),
+      );
+      if (resultMatches.length) candidates = resultMatches;
+    }
     for (const candidate of candidates)
       if (candidate.parentAttemptId) parents.add(candidate.parentAttemptId);
   }
@@ -724,7 +746,7 @@ async function reconcileAttempts(
       let recorded: AttemptRow;
       if (known) {
         recorded = mergeSupplied(known, values);
-        await tx.update(climbingAttempt).set(recorded).where(eq(climbingAttempt.id, known.id));
+        await tx.update(climbingAttempt).set(values).where(eq(climbingAttempt.id, known.id));
         Object.assign(known, recorded);
       } else {
         const [created] = await tx
@@ -842,11 +864,7 @@ export async function persistClimbingLogEntries(
       } = source;
       const id = known?.id ?? randomUUID();
       const changes = { ...facts, climbId: definition?.id ?? null, providerAbsentAt: null };
-      if (known)
-        await tx
-          .update(climbingLogEntry)
-          .set(mergeSupplied(known, changes))
-          .where(eq(climbingLogEntry.id, id));
+      if (known) await tx.update(climbingLogEntry).set(changes).where(eq(climbingLogEntry.id, id));
       else await tx.insert(climbingLogEntry).values({ id, ...scope, ...changes });
       await replaceLogGrades(tx, id, reportedGrades);
       resolved.push({ id, climb: definition, source });

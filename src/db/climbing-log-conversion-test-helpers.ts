@@ -44,7 +44,9 @@ export async function setupClimbingConversionDatabase() {
     cleanup,
     prepare: () =>
       withMigrationPrefix(directory, 146, (prefix) => runMigrations(url.toString(), prefix)),
-    finalize: () => runMigrations(url.toString(), directory),
+    finalize: () =>
+      withMigrationPrefix(directory, 147, (prefix) => runMigrations(url.toString(), prefix)),
+    migrateToCurrent: () => runMigrations(url.toString(), directory),
     finalSql: () =>
       readFileSync(resolve(directory, "0147_climbing_log_model_finalize.sql"), "utf8"),
   };

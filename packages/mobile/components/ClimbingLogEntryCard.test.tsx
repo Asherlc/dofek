@@ -1,5 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
+import { climbingAttemptFixture } from "../../server/src/repositories/climbing-test-helpers.ts";
 import { ClimbingLogEntryCard } from "./ClimbingLogEntryCard";
 import {
   areaClimbingLocation,
@@ -8,6 +9,29 @@ import {
 } from "./climbing-log-entry-fixtures";
 
 describe("ClimbingLogEntryCard", () => {
+  it("shows the recorded top-rope method when the source omits a completion result", () => {
+    if (!climbingLogFixture.climb) throw new Error("Expected a named climb fixture");
+    render(
+      <ClimbingLogEntryCard
+        entry={{
+          ...climbingLogFixture,
+          climb: { ...climbingLogFixture.climb, name: "Havarti Cheese" },
+          recordedClimbOutcome: null,
+          recordedClimbAttemptCount: 1,
+          attempts: [
+            climbingAttemptFixture(climbingLogFixture.id, {
+              ropeMethod: "top_rope",
+              outcome: null,
+            }),
+          ],
+        }}
+      />,
+    );
+    expect(screen.getByText("Havarti Cheese")).toBeTruthy();
+    expect(screen.getByText("Top rope")).toBeTruthy();
+    expect(screen.getByText("Whole climb · 1 recorded attempt")).toBeTruthy();
+  });
+
   it("exposes a pending attachment as busy and disabled to assistive technology", () => {
     const onAttach = vi.fn();
     render(
@@ -47,15 +71,13 @@ describe("ClimbingLogEntryCard", () => {
     },
   );
 
-  it("preserves source links, climbing context and attached attempt details", () => {
+  it("preserves source links, climbing context and recorded attempt summary", () => {
     render(<ClimbingLogEntryCard entry={climbingLogFixture} />);
     expect(screen.getByRole("link", { name: "Swiss Cheese on Mountain Project" })).toBeTruthy();
     expect(screen.getByRole("link", { name: "Mountain Project ticks" })).toBeTruthy();
     expect(screen.getByText("Goat Rock")).toBeTruthy();
     expect(screen.getByText("5.4")).toBeTruthy();
     expect(screen.getByText("Whole climb completed · 2 recorded attempts")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Details for Swiss Cheese" }));
-    expect(screen.getByText("Recorded attempts")).toBeTruthy();
   });
 
   it("shows explicit exact-location provenance and a compact single-point map", () => {

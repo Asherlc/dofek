@@ -31,6 +31,6 @@
   },
   "dependencies": {
     "@zeppos/zml": "0.0.43",
-    "zod": "4.4.3"
+    "zod": "4.6.7"
   }
 }
