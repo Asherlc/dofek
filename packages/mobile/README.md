@@ -256,7 +256,10 @@ and hardware described there.
 
 ## Dependency pins
 
-- `@react-native-async-storage/async-storage@2.2.0` — Expo SDK 58 beta pins this
+The workspace retains exact-version [release-age exclusions](https://pnpm.io/settings/dependency-resolution#minimumreleaseageexclude)
+for the approved SDK dependency tree.
+
+- `@react-native-async-storage/async-storage@2.2.0` — Expo SDK 58 pins this
   version in its [native dependency matrix](https://api.expo.dev/v2/sdks/58.0.0/native-modules).
   AsyncStorage 3.x breaks iOS builds on recent Expo SDKs; see
   [expo/expo#43757](https://github.com/expo/expo/issues/43757).
@@ -284,11 +287,16 @@ and hardware described there.
 
 ### Native diagnostic runtime
 
-Runtime **1.6** uses the [Expo SDK 58 beta](https://expo.dev/changelog/sdk-58-beta)
-native dependency set aligned with Expo 58.0.9 and React Native 0.88.0-rc.4,
-including ExpoNetwork, the pnpm patch to `expo-apple-authentication@58.0.2`, and
-`react-native-maps@1.29.11`. Build a new native binary containing these
-dependencies; do not publish this JavaScript to runtime 1.5 or earlier.
+Runtime **1.7** uses the stable [Expo SDK 58](https://expo.dev/changelog/sdk-58)
+native dependency set with Expo 58.0.11, Expo Router 58.0.20, Expo Updates
+58.0.17, React Native 0.88.0, and React Native SVG 15.16.0, pinned in
+[package.json](./package.json). Validate SDK-managed versions with
+`pnpm expo install --check`, following Expo's
+[dependency validation guidance](https://docs.expo.dev/more/expo-cli/#configuring-dependency-validation).
+The native dependency set also includes ExpoNetwork, the pnpm patch to
+`expo-apple-authentication@58.0.2`, and `react-native-maps@1.29.11`.
+Build a new native binary containing these dependencies; do not publish this
+JavaScript to runtime 1.6 or earlier.
 Expo requires a runtime increment when native code is updated; see
 [manual runtime version increments](https://docs.expo.dev/eas-update/runtime-versions/#manually-increment-the-runtime-version).
 Expo uses
