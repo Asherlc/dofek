@@ -30,11 +30,6 @@ describe("ClimbingLogEntryCard", () => {
     expect(screen.getByText("Havarti Cheese")).toBeTruthy();
     expect(screen.getByText("Top rope")).toBeTruthy();
     expect(screen.getByText("Whole climb · 1 recorded attempt")).toBeTruthy();
-    const details = screen.getByRole("button", { name: "Details for Havarti Cheese" });
-    expect(details.getAttribute("aria-expanded")).toBe("false");
-    fireEvent.click(details);
-    expect(screen.getByText("Not reported by source")).toBeTruthy();
-    expect(screen.getAllByText("Top rope")).toHaveLength(2);
   });
 
   it("exposes a pending attachment as busy and disabled to assistive technology", () => {
@@ -76,15 +71,13 @@ describe("ClimbingLogEntryCard", () => {
     },
   );
 
-  it("preserves source links, climbing context and attached attempt details", () => {
+  it("preserves source links, climbing context and recorded attempt summary", () => {
     render(<ClimbingLogEntryCard entry={climbingLogFixture} />);
     expect(screen.getByRole("link", { name: "Swiss Cheese on Mountain Project" })).toBeTruthy();
     expect(screen.getByRole("link", { name: "Mountain Project ticks" })).toBeTruthy();
     expect(screen.getByText("Goat Rock")).toBeTruthy();
     expect(screen.getByText("5.4")).toBeTruthy();
     expect(screen.getByText("Whole climb completed · 2 recorded attempts")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Details for Swiss Cheese" }));
-    expect(screen.getByText("Recorded attempts")).toBeTruthy();
   });
 
   it("shows explicit exact-location provenance and a compact single-point map", () => {

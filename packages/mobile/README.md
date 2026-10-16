@@ -22,12 +22,13 @@ The mobile app for Dofek. Built with Expo and React Native, with native Swift mo
 
 Activity details show climbing logs and same-day attachment suggestions for
 climbing and hiking activities. Cards show current shared locations, published
-display grades, scoped results, and server-derived rock labels.
-[Details](components/ClimbingLogEntryDetails.tsx) show coordinates, published and
-reported grade collections, independent attempt facts, notes, and disclosed
-source data. Provider records use server columns and filters, fetch the selected
-log's complete graph, and retain cached rows during refresh errors. Labels match
-web through shared formatters. See the [canonical response contract](../server/src/contracts/climbing-log-contracts.ts).
+display grades, scoped results, and server-derived rock labels. Provider records
+use server columns and filters, fetch the selected log's complete graph, and
+retain cached rows during refresh errors. Their
+[detail viewer](components/ClimbingLogEntryDetails.tsx) shows coordinates,
+published and reported grade collections, independent attempt facts, notes, and
+disclosed source data. Labels match web through shared formatters. See the
+[canonical response contract](../server/src/contracts/climbing-log-contracts.ts).
 
 Activity-detail climbing entries and suggestions use
 [ClimbingLogEntryBreakdown](./components/ClimbingLogEntryBreakdown.tsx) and
@@ -79,6 +80,14 @@ workflow. Expo also documents the local iOS Simulator setup and the
 development-build workflow:
 <https://docs.expo.dev/workflow/ios-simulator/> and
 <https://docs.expo.dev/build-reference/simulators/>.
+
+From `packages/mobile`, load the required environment and check dependency
+compatibility before regenerating the native project, following
+[Expo's upgrade guide](https://docs.expo.dev/workflow/upgrading-expo-sdk-walkthrough/):
+
+```bash
+pnpm tsx ../../scripts/with-env.ts -- pnpm expo install --check
+```
 
 1. Load the required `EXPO_PUBLIC_*` build values from Infisical, then generate
    a fresh native project:
@@ -251,7 +260,7 @@ and hardware described there.
 
 ## Dependency pins
 
-- `@react-native-async-storage/async-storage@2.2.0` — Expo SDK 58 beta pins this
+- `@react-native-async-storage/async-storage@2.2.0` — Expo SDK 58 pins this
   version in its [native dependency matrix](https://api.expo.dev/v2/sdks/58.0.0/native-modules).
   AsyncStorage 3.x breaks iOS builds on recent Expo SDKs; see
   [expo/expo#43757](https://github.com/expo/expo/issues/43757).
@@ -279,11 +288,12 @@ and hardware described there.
 
 ### Native diagnostic runtime
 
-Runtime **1.6** uses the [Expo SDK 58 beta](https://expo.dev/changelog/sdk-58-beta)
-native dependency set aligned with Expo 58.0.9 and React Native 0.88.0-rc.4,
-including ExpoNetwork, the pnpm patch to `expo-apple-authentication@58.0.2`, and
+Runtime **1.7** uses the Expo SDK 58 native dependency set aligned with
+Expo 58.0.11, React Native 0.88.0, and `react-native-svg@15.16.0`, following
+[Expo's upgrade guide](https://docs.expo.dev/workflow/upgrading-expo-sdk-walkthrough/).
+It includes ExpoNetwork, the pnpm patch to `expo-apple-authentication@58.0.2`, and
 `react-native-maps@1.29.11`. Build a new native binary containing these
-dependencies; do not publish this JavaScript to runtime 1.5 or earlier.
+dependencies; do not publish this JavaScript to runtime 1.6 or earlier.
 Expo requires a runtime increment when native code is updated; see
 [manual runtime version increments](https://docs.expo.dev/eas-update/runtime-versions/#manually-increment-the-runtime-version).
 Expo uses
