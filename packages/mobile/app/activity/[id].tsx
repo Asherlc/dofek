@@ -51,6 +51,7 @@ import { HrZonesChart, PowerZonesChart } from "../../components/activity/ZoneDis
 import { ClimbingLogEntryBreakdown } from "../../components/ClimbingLogEntryBreakdown";
 import { HangboardingDetail } from "../../components/HangboardingDetail";
 import { MuscleGroupBodyDiagram } from "../../components/MuscleGroupBodyDiagram";
+import { ProviderRecordDetailModal } from "../../components/providers/provider-record-detail-modal";
 import { getQueryErrorMessage, QueryStatePanel } from "../../components/QueryStatePanel";
 import { RouteMap } from "../../components/RouteMap";
 import { UnattachedClimbingLogEntries } from "../../components/UnattachedClimbingLogEntries";
@@ -509,6 +510,9 @@ export default function ActivityDetailScreen() {
   );
   const climbingEntriesLoading = climbingEntries.isLoading && !climbingEntries.data;
   const [selectedClimbingEntryId, setSelectedClimbingEntryId] = useState<string | null>(null);
+  const selectedClimbingEntry = climbingEntries.data?.find(
+    (entry) => entry.id === selectedClimbingEntryId,
+  );
   const climbingLocations = useMemo(
     () =>
       buildClimbingMapLocations([
@@ -861,6 +865,14 @@ export default function ActivityDetailScreen() {
               />
             )}
         </View>
+      )}
+
+      {selectedClimbingEntry && (
+        <ProviderRecordDetailModal
+          dataType="climbingLogEntries"
+          state={{ data: selectedClimbingEntry, error: null, isLoading: false }}
+          onClose={() => setSelectedClimbingEntryId(null)}
+        />
       )}
 
       {/* Time-series charts (load progressively) */}

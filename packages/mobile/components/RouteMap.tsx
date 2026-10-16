@@ -98,9 +98,10 @@ export function RouteMap({
         {mapWidth != null && (
           <MapView
             style={{ width: mapWidth, height: compact ? 140 : MAP_HEIGHT }}
+            pointerEvents={compact ? "none" : "auto"}
             region={region}
-            scrollEnabled={false}
-            zoomEnabled={false}
+            scrollEnabled={!compact}
+            zoomEnabled={!compact}
             rotateEnabled={false}
             pitchEnabled={false}
             toolbarEnabled={false}
@@ -128,7 +129,26 @@ export function RouteMap({
                 title={`Entry ${entryNumber ?? index + 1} · ${label}`}
                 description={`${location.scope === "area" ? "Area location" : "Climb location"}: ${location.name ?? location.objectId} · ${providerSourceLabel(location.providerId)}`}
                 anchor={{ x: 0.5, y: 0.5 }}
-                onPress={compact ? undefined : () => setInspectedPoint(location.coordinates)}
+                onPress={
+                  compact
+                    ? undefined
+                    : () => {
+                        const occurrences = climbMarkers.filter(
+                          (marker) =>
+                            marker.location.coordinates.latitude ===
+                              location.coordinates.latitude &&
+                            marker.location.coordinates.longitude ===
+                              location.coordinates.longitude,
+                        );
+                        if (occurrences.length === 1) {
+                          setSelectedEntryId(entryId);
+                          setInspectedPoint(null);
+                          onSelectEntry?.(entryId);
+                        } else {
+                          setInspectedPoint(location.coordinates);
+                        }
+                      }
+                }
               >
                 <View
                   style={[styles.sourceMarker, location.scope === "area" && styles.areaMarker]}

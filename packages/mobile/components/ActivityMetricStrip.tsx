@@ -5,6 +5,7 @@ import {
   formatActivityMetric,
 } from "@dofek/format/activity-data-state";
 import { formatMeasurementText, type UnitConverter } from "@dofek/format/units";
+import type { ActivityLocation } from "dofek-server/types";
 import { StyleSheet, Text, View } from "react-native";
 import { colors, radius, spacing } from "../theme";
 
@@ -15,7 +16,7 @@ export function ActivityMetricStrip({
   units,
 }: {
   activity: {
-    location: { mapPreview: unknown } | null;
+    location: Pick<ActivityLocation, "kind"> | null;
     distanceMeters: number | null;
     distanceState: ActivityDataState;
     elevationGainM: number | null;
@@ -25,7 +26,7 @@ export function ActivityMetricStrip({
   units: UnitConverter;
 }) {
   const hasRouteMetrics =
-    activity.location != null ||
+    activity.location?.kind === "recorded_gps" ||
     activity.distanceState.status !== "missing" ||
     activity.elevationState.status !== "missing";
   const stats: ActivityStat[] = hasRouteMetrics

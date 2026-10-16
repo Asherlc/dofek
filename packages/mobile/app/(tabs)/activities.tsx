@@ -18,7 +18,10 @@ import {
 } from "@dofek/format/record-local-time";
 import { formatMeasurementText, type UnitConverter } from "@dofek/format/units";
 import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
+import { providerSourceLabel } from "@dofek/providers/providers";
+import type { ClimbingMapLocation } from "@dofek/training/climbing-map";
 import { formatActivityTypeLabel } from "@dofek/training/training";
+import type { ActivityLocation } from "dofek-server/types";
 import { useRouter } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -33,7 +36,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import Svg, { Polyline } from "react-native-svg";
+import Svg, { Circle, Polyline } from "react-native-svg";
 import { ActivityHeatmap } from "../../components/ActivityHeatmap";
 import { ActivityMetricStrip } from "../../components/ActivityMetricStrip";
 import { ActivityOverview } from "../../components/ActivityOverview";
@@ -57,21 +60,15 @@ const DATE_RANGE_OPTIONS = [
   { value: 12, label: "12 weeks" },
 ] as const;
 
-type RoutePathPoint = { x: number; y: number };
-type ActivityMapPreviewTile = {
-  url: string;
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-};
+function sourceLocationLabel(location: ClimbingMapLocation): string {
+  return `${location.scope === "area" ? "Area location" : "Climb location"}${location.name ? `: ${location.name}` : ""} · ${providerSourceLabel(location.providerId)}`;
+}
 
-type ActivityMapPreview = {
-  width: number;
-  height: number;
-  tiles: ActivityMapPreviewTile[];
-  routePath: RoutePathPoint[] | null;
-};
+function mapAccessibilityLabel(location: ActivityLocation): string {
+  return location.kind === "climbing_source"
+    ? `Climbing source locations: ${location.sourcePoints.map((point) => sourceLocationLabel(point.location)).join("; ")}`
+    : "Activity location map";
+}
 
 function formatRouteCoordinate(value: number): string {
   const rounded = Math.round(value * 1000) / 1000;
@@ -104,7 +101,7 @@ function formatActivityAccessibilityLabel(
     distanceState: ActivityDataState;
     elevationGainM: number | null;
     elevationState: ActivityDataState;
-    location: { mapPreview: unknown } | null;
+    location: ActivityLocation | null;
     stats: ActivityMetric[];
   },
   units: UnitConverter,
@@ -121,7 +118,7 @@ function formatActivityAccessibilityLabel(
   }
 
   const hasRouteMetrics =
-    activity.location != null ||
+    activity.location?.kind === "recorded_gps" ||
     activity.distanceState.status !== "missing" ||
     activity.elevationState.status !== "missing";
   if (hasRouteMetrics) {
@@ -156,6 +153,10 @@ function formatActivityAccessibilityLabel(
         );
       }
     }
+  }
+
+  if (activity.location?.kind === "climbing_source") {
+    labelParts.push(mapAccessibilityLabel(activity.location));
   }
 
   return `${action} ${labelParts.join(", ")}`;
@@ -690,9 +691,7 @@ function ActivityControls({
 }
 
 interface ActivityMapTileProps {
-  location: {
-    mapPreview: ActivityMapPreview;
-  };
+  location: ActivityLocation;
 }
 
 function ActivityMapTile({ location }: ActivityMapTileProps) {
@@ -720,7 +719,7 @@ function ActivityMapTile({ location }: ActivityMapTileProps) {
         <View
           testID="activity-route-viewport"
           style={styles.routeViewport}
-          accessibilityLabel="Activity location map"
+          accessibilityLabel={mapAccessibilityLabel(location)}
           accessible={true}
         >
           {location.mapPreview.tiles.map((tile) => (
@@ -739,8 +738,8 @@ function ActivityMapTile({ location }: ActivityMapTileProps) {
               onError={() => setLoadFailed(true)}
             />
           ))}
-          <ActivityRouteOverlay
-            mapPreview={location.mapPreview}
+          <ActivityMapOverlay
+            location={location}
             width={previewWidth}
             height={previewHeight}
             left={previewLeft}
@@ -752,50 +751,70 @@ function ActivityMapTile({ location }: ActivityMapTileProps) {
   );
 }
 
-function ActivityRouteOverlay({
-  mapPreview,
+function ActivityMapOverlay({
+  location,
   width,
   height,
   left,
   top,
 }: {
-  mapPreview: ActivityMapPreview;
+  location: ActivityLocation;
   width: number;
   height: number;
   left: number;
   top: number;
 }) {
+  const { mapPreview } = location;
   const { routePath } = mapPreview;
-  if (routePath == null || routePath.length < 2) return null;
+  if (location.kind === "recorded_gps" && (routePath == null || routePath.length < 2)) return null;
 
   const points = routePath
-    .map((point) => `${formatRouteCoordinate(point.x)},${formatRouteCoordinate(point.y)}`)
+    ?.map((point) => `${formatRouteCoordinate(point.x)},${formatRouteCoordinate(point.y)}`)
     .join(" ");
   return (
     <Svg
-      testID="activity-route-overlay"
+      testID={
+        location.kind === "climbing_source" ? "activity-source-overlay" : "activity-route-overlay"
+      }
       pointerEvents="none"
       style={{ ...styles.routeOverlay, left, top, width, height }}
       viewBox={`0 0 ${mapPreview.width} ${mapPreview.height}`}
       preserveAspectRatio="none"
     >
-      <Polyline
-        points={points}
-        fill="none"
-        stroke="#fff"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth={60}
-      />
-      <Polyline
-        testID="activity-route-path"
-        points={points}
-        fill="none"
-        stroke={colors.positive}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth={30}
-      />
+      {location.kind === "climbing_source" ? (
+        location.sourcePoints.map((point) => (
+          <Circle
+            key={`${point.location.providerId}-${point.location.scope}-${point.location.objectId}`}
+            testID="activity-source-point"
+            cx={point.x}
+            cy={point.y}
+            r={36}
+            fill={point.location.scope === "area" ? "#d97706" : "#2563eb"}
+            stroke="#fff"
+            strokeWidth={16}
+          />
+        ))
+      ) : (
+        <>
+          <Polyline
+            points={points}
+            fill="none"
+            stroke="#fff"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={60}
+          />
+          <Polyline
+            testID="activity-route-path"
+            points={points}
+            fill="none"
+            stroke={colors.positive}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={30}
+          />
+        </>
+      )}
     </Svg>
   );
 }

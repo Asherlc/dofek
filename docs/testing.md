@@ -44,6 +44,13 @@ replay heavyweight historical ClickHouse backfills. PeerDB documents table
 mapping column exclusions in its
 [CREATE MIRROR reference](https://docs.peerdb.io/sql/commands/create-mirror).
 
+The stack runs PeerDB's catalog migration command before starting the API,
+workers, and SQL server, following the upstream
+[migration service ordering](https://github.com/PeerDB-io/peerdb/blob/v0.37.12/docker-compose.yml).
+On startup or test failure, the runner prints container status and service logs
+before teardown, preserving evidence from failed initialization services; see
+[Compose logs](https://docs.docker.com/reference/cli/docker/compose/logs/).
+
 The Vitest projects remain separate in CI: unit, mobile, four database integration
 shards, and the PeerDB CDC integration tier are invoked explicitly. Stryker uses the Docker-free mutation config and
 must not collect `*.integration.test.ts` files. CI mutation discovery therefore

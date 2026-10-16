@@ -7,6 +7,7 @@ import {
   climbingAttemptSchema,
   climbingLogEntrySchema,
 } from "@dofek/training/climbing-log";
+import type { ClimbingMapLocation } from "@dofek/training/climbing-map";
 import { type SQL, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
@@ -201,6 +202,49 @@ export class ClimbingActivityLogEntryRepository extends BaseRepository {
         )})`,
       )
     ).map((log) => new ClimbingActivityLogEntry(log));
+  }
+  async getActivityMapLocations(
+    activityIds: readonly string[],
+  ): Promise<Map<string, ClimbingMapLocation[]>> {
+    if (!activityIds.length) return new Map();
+    const rows = await this.query(
+      z.object({ activityId: z.string(), memberActivityIds: z.array(z.string()) }),
+      sql`SELECT grouped.id AS "activityId", grouped.member_activity_ids AS "memberActivityIds"
+      FROM fitness.v_activity AS grouped
+      WHERE grouped.user_id=${this.userId}::uuid
+        AND grouped.id IN (${sql.join(
+          activityIds.map((id) => sql`${id}::uuid`),
+          sql`, `,
+        )})
+        ${this.dateAccessPredicate(postgresActivityCalendarDate(sql`grouped`, this.timezone))}
+      ORDER BY grouped.id`,
+    );
+    const members = [...new Set(rows.flatMap((row) => row.memberActivityIds))];
+    if (!members.length) return new Map();
+    const logs = await this.#load(
+      sql`entry.activity_id IN (${sql.join(
+        members.map((id) => sql`${id}::uuid`),
+        sql`, `,
+      )})`,
+    );
+    const grouped = new Map<string, ClimbingMapLocation[]>();
+    for (const row of rows) {
+      const memberIds = new Set(row.memberActivityIds);
+      const selected = consolidate(
+        logs.filter((log) => log.activityId !== null && memberIds.has(log.activityId)),
+      );
+      const points = new Map<string, ClimbingMapLocation>();
+      for (const log of selected) {
+        const location = log.mapLocation;
+        if (location)
+          points.set(
+            JSON.stringify([location.providerId, location.scope, location.objectId]),
+            location,
+          );
+      }
+      if (points.size) grouped.set(row.activityId, [...points.values()]);
+    }
+    return grouped;
   }
   async getProviderLogEntry(
     providerId: string,

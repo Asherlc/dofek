@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { climbingSourceLocation } from "./ActivityMapTile.fixtures.ts";
 import { ActivityMapTile } from "./ActivityMapTile.tsx";
 
 const mapPreview = {
@@ -124,6 +125,9 @@ const meta = {
   tags: ["autodocs"],
   args: {
     location: {
+      kind: "recorded_gps",
+      centroidLat: 37.7749,
+      centroidLng: -122.4194,
       mapPreview,
     },
   },
@@ -145,10 +149,19 @@ export const HighResolutionRoute: Story = {};
 export const NoRoute: Story = {
   args: {
     location: {
+      kind: "recorded_gps",
+      centroidLat: 37.7749,
+      centroidLng: -122.4194,
       mapPreview: {
         ...mapPreview,
         routePath: null,
       },
     },
+  },
+};
+
+export const ClimbingSourceLocations: Story = {
+  args: {
+    location: climbingSourceLocation,
   },
 };
