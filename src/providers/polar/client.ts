@@ -212,10 +212,10 @@ export class PolarClient {
   }
 
   async #readErrorBody(response: Response): Promise<string> {
-    const contentType = response.headers.get("content-type") ?? "";
-    if (contentType.includes("text/html")) return "(HTML error page)";
-    const text = await response.text();
-    return text.length > 200 ? `${text.slice(0, 200)}…` : text;
+    return formatPolarApiErrorBody(
+      response.headers.get("content-type") ?? "",
+      await response.text(),
+    );
   }
 
   async downloadTcx(exerciseId: string): Promise<string> {
@@ -249,10 +249,6 @@ function formatPolarApiErrorBody(contentType: string, textBody: string): string 
 
   if (contentType.includes("text/html")) {
     return "(HTML error page)";
-  }
-
-  if (contentType.includes("application/json")) {
-    return textBody;
   }
 
   return textBody.length > 200 ? `${textBody.slice(0, 200)}…` : textBody;
