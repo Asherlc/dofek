@@ -1,11 +1,12 @@
 import type { Database } from "dofek/db";
 import { PgDialect } from "drizzle-orm/pg-core";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ClimbingLogEntryDetail } from "../contracts/climbing-log-contracts.ts";
 import { osmTilePreview } from "../lib/osm-tile.ts";
 import type { CalendarActivityEntry } from "./activities-calendar-repository.ts";
 import { ActivitiesCalendarRepository, mergeDayGroups } from "./activities-calendar-repository.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
+import { ClimbingActivityLogEntryRepository } from "./climbing-activity-log-entry-repository.ts";
 import {
   climbingClimbFixture,
   climbingLogDatabaseFixture,
@@ -211,6 +212,53 @@ function makeCalendarEntry(
 }
 
 describe("ActivitiesCalendarRepository", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it("requests source locations only for activities missing either recorded coordinate", async () => {
+    const rows = [
+      { id: "30000000-0000-4000-8000-000000000001", centroid_lat: null, centroid_lng: null },
+      { id: "30000000-0000-4000-8000-000000000002", centroid_lat: null, centroid_lng: -105.4 },
+      { id: "30000000-0000-4000-8000-000000000003", centroid_lat: 40.007, centroid_lng: null },
+      { id: "30000000-0000-4000-8000-000000000004", centroid_lat: 0, centroid_lng: 0 },
+    ];
+    const source = {
+      ...climbingClimbFixture("mountain-project"),
+      coordinates: { latitude: 40.007, longitude: -105.4 },
+    };
+    const database = makeDatabase(
+      [],
+      rows.map((row) => climbingLogEntryFixture({ activityId: row.id, climb: source })),
+    );
+    const locations = vi.spyOn(
+      ClimbingActivityLogEntryRepository.prototype,
+      "getActivityMapLocations",
+    );
+    const sensorStore = makeSensorStore([
+      rows.map((row) => makeActivityRow({ ...row, canonical_type: "climbing" })),
+      [{ max_hr: null, resting_hr: null, ftp: null }],
+      [],
+    ]);
+    const repository = new ActivitiesCalendarRepository(database, "user-1", "UTC", sensorStore);
+    const [day] = await repository.getWeekList({ weeks: 4, endDate: "2026-03-20" });
+
+    expect(locations).toHaveBeenCalledExactlyOnceWith(rows.slice(0, 3).map((row) => row.id));
+    expect(day?.activities.slice(0, 3).map((entry) => entry.location)).toEqual(
+      rows.slice(0, 3).map(() =>
+        expect.objectContaining({
+          kind: "climbing_source",
+          sourcePoints: [
+            expect.objectContaining({ location: expect.objectContaining({ objectId: source.id }) }),
+          ],
+        }),
+      ),
+    );
+    expect(day?.activities[3]?.location).toMatchObject({
+      kind: "recorded_gps",
+      centroidLat: 0,
+      centroidLng: 0,
+    });
+  });
+
   it.each([false, true])(
     "uses attached source GPS only when recorded GPS is absent (recorded=%s)",
     async (recorded) => {

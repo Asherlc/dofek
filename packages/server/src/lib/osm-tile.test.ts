@@ -2,6 +2,15 @@ import { describe, expect, it } from "vitest";
 import { latLngToTile, osmPointMapPreview, osmTilePreview, osmTileUrl } from "./osm-tile.ts";
 
 describe("osmPointMapPreview", () => {
+  it("keeps source identity paired with its projected coordinates", () => {
+    const area = { lat: 40.01, lng: -105.28, location: { scope: "area", objectId: "area-1" } };
+    const climb = { lat: 40.012, lng: -105.275, location: { scope: "climb", objectId: "climb-1" } };
+    const result = osmPointMapPreview([area, climb]);
+    expect(result.points.map((point) => point.point)).toEqual([area, climb]);
+    expect(result.points[0]?.x).toBeLessThan(result.points[1]?.x ?? 0);
+    expect(result.points[0]?.y).toBeGreaterThan(result.points[1]?.y ?? 0);
+    expect(result.preview.routePath).toBeNull();
+  });
   it("projects isolated source points on the existing tile viewport without connecting them", () => {
     const coordinates = [
       { lat: 40.01, lng: -105.28 },
@@ -15,7 +24,7 @@ describe("osmPointMapPreview", () => {
   });
   it("centers one point and preserves zero-valued coordinates", () => {
     const result = osmPointMapPreview([{ lat: 0, lng: 0 }]);
-    expect(result.points).toEqual([{ x: 512, y: 288 }]);
+    expect(result.points).toEqual([{ x: 512, y: 288, point: { lat: 0, lng: 0 } }]);
     expect(result.preview.routePath).toBeNull();
     expect(result.preview.tiles.length).toBeGreaterThan(0);
     expect(osmPointMapPreview([]).points).toEqual([]);
@@ -30,7 +39,7 @@ describe("osmPointMapPreview", () => {
     expect(recorded.tiles.every((tile) => new URL(tile.url).pathname.startsWith("/19/"))).toBe(
       true,
     );
-    expect(source.points).toEqual([{ x: 512, y: 288 }]);
+    expect(source.points).toEqual([{ x: 512, y: 288, point: coordinates[0] }]);
   });
 });
 

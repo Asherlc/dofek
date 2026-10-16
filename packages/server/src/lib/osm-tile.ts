@@ -103,20 +103,22 @@ export function osmTilePreview(points: LatLngPoint[]): OsmTilePreview {
   return projectOsmTilePreview(points).preview;
 }
 
-export function osmPointMapPreview(points: LatLngPoint[]): {
-  preview: OsmTilePreview;
-  points: { x: number; y: number }[];
+export function osmPointMapPreview<T extends LatLngPoint>(
+  points: T[],
+): {
+  preview: OsmTilePreview & { routePath: null };
+  points: { x: number; y: number; point: T }[];
 } {
   const projected = projectOsmTilePreview(points, 14);
   return { ...projected, preview: { ...projected.preview, routePath: null } };
 }
 
-function projectOsmTilePreview(
-  points: LatLngPoint[],
+function projectOsmTilePreview<T extends LatLngPoint>(
+  points: T[],
   maximumZoom = DEFAULT_ROUTE_PREVIEW_ZOOM,
 ): {
   preview: OsmTilePreview;
-  points: { x: number; y: number }[];
+  points: { x: number; y: number; point: T }[];
 } {
   const firstPoint = points[0];
   if (!firstPoint) {
@@ -140,11 +142,14 @@ function projectOsmTilePreview(
   }
 
   let selectedZoom = maximumZoom;
-  let selectedProjectedPoints: ProjectedTilePoint[] = [];
+  let selectedProjectedPoints: (ProjectedTilePoint & { point: T })[] = [];
 
   for (let zoom = maximumZoom; zoom >= MIN_ROUTE_PREVIEW_ZOOM; zoom--) {
     selectedZoom = zoom;
-    const projectedPoints = points.map((point) => projectToTilePoint(point.lat, point.lng, zoom));
+    const projectedPoints = points.map((point) => ({
+      ...projectToTilePoint(point.lat, point.lng, zoom),
+      point,
+    }));
     selectedProjectedPoints = projectedPoints;
     const minPixelX = Math.min(...projectedPoints.map((point) => point.tileX * OSM_TILE_SIZE_PX));
     const maxPixelX = Math.max(...projectedPoints.map((point) => point.tileX * OSM_TILE_SIZE_PX));
@@ -202,6 +207,7 @@ function projectOsmTilePreview(
     return {
       x: roundPathCoordinate(projectedPoint.tileX * OSM_TILE_SIZE_PX - originPixelX),
       y: roundPathCoordinate(projectedPoint.tileY * OSM_TILE_SIZE_PX - originPixelY),
+      point: projectedPoint.point,
     };
   });
 
@@ -211,7 +217,7 @@ function projectOsmTilePreview(
       width: ROUTE_PREVIEW_WIDTH_PX,
       height: ROUTE_PREVIEW_HEIGHT_PX,
       tiles,
-      routePath: points.length >= 2 ? projectedPoints : null,
+      routePath: points.length >= 2 ? projectedPoints.map(({ x, y }) => ({ x, y })) : null,
     },
   };
 }

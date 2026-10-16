@@ -5,7 +5,6 @@ import { useState } from "react";
 
 export type ActivityMapLocation = ActivityLocation;
 export type ActivityMapPreview = ActivityMapLocation["mapPreview"];
-export type ActivityMapPreviewTile = ActivityMapPreview["tiles"][number];
 export type RoutePathPoint = NonNullable<ActivityMapPreview["routePath"]>[number];
 
 function sourceLocationLabel(location: ClimbingMapLocation): string {

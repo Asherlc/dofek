@@ -323,14 +323,25 @@ export class ActivitiesCalendarRepository extends BaseRepository {
     const dayMap = new Map<string, CalendarActivityEntry[]>();
     for (const row of filteredActivityRows) {
       const sourceLocations = sourceLocationsByActivityId.get(row.id);
-      const sourcePreview = sourceLocations?.length
-        ? osmPointMapPreview(
-            sourceLocations.map((location) => ({
-              lat: location.coordinates.latitude,
-              lng: location.coordinates.longitude,
-            })),
-          )
-        : null;
+      let sourceLocation: ActivityLocation | null = null;
+      if (sourceLocations?.length) {
+        const sourcePreview = osmPointMapPreview(
+          sourceLocations.map((location) => ({
+            lat: location.coordinates.latitude,
+            lng: location.coordinates.longitude,
+            location,
+          })),
+        );
+        sourceLocation = {
+          kind: "climbing_source",
+          mapPreview: sourcePreview.preview,
+          sourcePoints: sourcePreview.points.map(({ x, y, point }) => ({
+            x,
+            y,
+            location: point.location,
+          })),
+        };
+      }
       const trainingStress = computeActivityTrainingStress({
         durationMin: row.duration_min,
         avgPower: row.avg_power,
@@ -376,17 +387,7 @@ export class ActivitiesCalendarRepository extends BaseRepository {
                   routePreviewByActivityId.get(row.id) ??
                   osmTilePreview([{ lat: row.centroid_lat, lng: row.centroid_lng }]),
               }
-            : sourcePreview && sourceLocations
-              ? {
-                  kind: "climbing_source",
-                  mapPreview: { ...sourcePreview.preview, routePath: null },
-                  sourcePoints: sourceLocations.map((location, index) => {
-                    const point = sourcePreview.points[index];
-                    if (!point) throw new Error("Missing projected climbing source location");
-                    return { ...point, location };
-                  }),
-                }
-              : null,
+            : sourceLocation,
         tss: tss != null ? Math.round(tss * 10) / 10 : null,
         stats: formatActivityStats(trainingStress),
       };
