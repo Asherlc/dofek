@@ -128,6 +128,10 @@ try {
     exitCode = runCommand("pnpm", vitestArguments, testEnvironment);
   }
 } finally {
+  if (exitCode !== 0) {
+    runCommand("pnpm", [...peerDbComposeArguments, "ps", "--all"]);
+    runCommand("pnpm", [...peerDbComposeArguments, "logs", "--no-color"]);
+  }
   const cleanupExitCode = runCommand("pnpm", [
     ...peerDbComposeArguments,
     "down",
