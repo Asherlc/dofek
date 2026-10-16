@@ -91,9 +91,7 @@ export function RouteMap({
 
   return (
     <View style={compact ? styles.compactContainer : styles.container}>
-      {!compact && (
-        <Text style={styles.title}>{gpsPoints.length > 0 ? "Route Map" : "Climb locations"}</Text>
-      )}
+      {!compact && gpsPoints.length > 0 && <Text style={styles.title}>Route Map</Text>}
       <View style={styles.mapWrapper} onLayout={handleLayout}>
         {mapWidth != null && (
           <MapView

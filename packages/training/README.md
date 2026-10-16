@@ -54,6 +54,7 @@ Every public module is imported as `@dofek/training/<subpath>`.
 | `climbing-map` | [Source locations and shared card-location/overview-marker builders](src/climbing-map.ts) for web and mobile; preserves server-selected ownership and full card positions |
 | `climbing-experience` | [Shared recorded board and wall-angle schemas](src/climbing-experience.ts) |
 | `climbing-log` | [Area, Climb, Pitch, owned GradeComponent collections, ClimbingLogEntry, scoped ClimbingAttempt, and their canonical enums](src/climbing-log.ts) |
+| `climbing-log-groups` | [Group log cards by their closest recorded Area identity](src/climbing-log-groups.ts), preserving original entry numbers, group order, and entries without an Area |
 | `gps-coordinates` | [Complete finite latitude/longitude pairs](src/gps-coordinates.ts) for [native PostgreSQL point storage](https://www.postgresql.org/docs/current/datatype-geometric.html#DATATYPE-GEOMETRIC-POINTS) using x = longitude and y = latitude |
 | `climbing-progression` | [Server-computed grade-stack contract](src/climbing-progression.ts), independent attempt-fact lane and setting labels, and period/exact-value formatting shared by web and mobile |
 | `cycling-workout-metrics` | Coverage-aware per-activity power, heart-rate, cadence, drift, zone, load, and interval calculations |

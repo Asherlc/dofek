@@ -8,7 +8,7 @@ import {
 import { climbingLogFixture, exactClimbingLocation } from "./climbing-log-entry-fixtures";
 import { UnattachedClimbingLogEntries } from "./UnattachedClimbingLogEntries";
 
-it("keeps repeated suggested logs numbered in one grid with independent attachment states and maps", () => {
+it("keeps repeated suggested logs with independent attachment states and maps", () => {
   const onAttach = vi.fn();
   render(
     <UnattachedClimbingLogEntries
@@ -28,7 +28,7 @@ it("keeps repeated suggested logs numbered in one grid with independent attachme
   const first = cards[0];
   const repeat = cards[1];
   if (!first || !repeat) throw new Error("Expected repeated log cards");
-  expect(within(repeat).getByText("Entry 2 · Selected")).toBeTruthy();
+  expect(repeat.getAttribute("aria-selected")).toBe("true");
   const firstControl = screen.getByRole("button", {
     name: "Attach entry 1, Swiss Cheese to this activity",
   });
@@ -41,7 +41,9 @@ it("keeps repeated suggested logs numbered in one grid with independent attachme
   expect(repeatControl.getAttribute("aria-disabled")).toBe("false");
   expect(repeatControl.getAttribute("aria-busy")).toBe("false");
   expect(within(first).queryByText("Choose a climbing activity.")).toBeNull();
-  expect(within(repeat).getByText("Climb location: Swiss Cheese · Mountain Project")).toBeTruthy();
+  expect(
+    within(repeat).getByRole("link", { name: "Swiss Cheese on Mountain Project" }),
+  ).toBeTruthy();
   fireEvent.click(repeatControl);
   expect(onAttach).toHaveBeenCalledWith("repeat");
 });

@@ -290,7 +290,7 @@ export function ActivityDetailPage() {
       ) : null}
 
       {(route.error || routeProcessing || hasGps || climbMarkers.length > 0) && (
-        <Section title={!hasGps && climbMarkers.length > 0 ? "Climbing locations" : "Route Map"}>
+        <Section title={!hasGps && climbMarkers.length > 0 ? undefined : "Route Map"}>
           {route.error ? (
             <QueryStatePanel error={route.error} height={160} />
           ) : routeProcessing ? (
@@ -1092,12 +1092,14 @@ function StrengthExerciseBreakdown({
   );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({ title, children }: { title?: string; children: React.ReactNode }) {
   return (
     <section>
-      <div className="mb-2 flex items-center gap-2">
-        <h2 className="text-sm font-medium text-muted uppercase tracking-wider">{title}</h2>
-      </div>
+      {title && (
+        <div className="mb-2 flex items-center gap-2">
+          <h2 className="text-sm font-medium text-muted uppercase tracking-wider">{title}</h2>
+        </div>
+      )}
       <div className="card p-4">{children}</div>
     </section>
   );

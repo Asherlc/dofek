@@ -2,7 +2,6 @@ import {
   formatClimbingRecordedResult,
   formatClimbingRopeMethods,
 } from "@dofek/format/climbing-log";
-import { providerSourceLabel } from "@dofek/providers/providers";
 import type { ClimbingMapLocation } from "@dofek/training/climbing-map";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import type { ClimbingLogEntryDetail } from "../../server/src/contracts/climbing-log-contracts.ts";
@@ -38,13 +37,8 @@ export function ClimbingLogEntryCard({
     <View
       style={[styles.card, selected && styles.selectedCard]}
       accessibilityLabel={`Climbing entry: ${name}`}
+      accessibilityState={{ selected }}
     >
-      {entryNumber != null && (
-        <Text style={styles.summary}>
-          Entry {entryNumber}
-          {selected ? " · Selected" : ""}
-        </Text>
-      )}
       <View style={styles.header}>
         <View style={styles.identity}>
           <ClimbingLogEntrySources
@@ -58,10 +52,6 @@ export function ClimbingLogEntryCard({
       </View>
       {location && (
         <View style={styles.location}>
-          <Text style={styles.summary}>
-            {location.scope === "area" ? "Area location" : "Climb location"}:{" "}
-            {location.name ?? location.objectId} · {providerSourceLabel(location.providerId)}
-          </Text>
           <RouteMap
             points={[]}
             climbMarkers={[{ entryId: entry.id, entryNumber, label: name, location }]}
@@ -73,7 +63,7 @@ export function ClimbingLogEntryCard({
       {entry.recordedClimbAttemptCount > 0 && (
         <Text style={styles.summary}>
           {formatClimbingRecordedResult(
-            "Whole climb",
+            null,
             entry.recordedClimbOutcome,
             entry.recordedClimbAttemptCount,
           )}

@@ -5,7 +5,6 @@ import {
   formatClimbingGradeComponents,
   formatClimbingRecordedResult,
   formatClimbingRopeMethods,
-  formatGpsCoordinates,
 } from "./climbing-log.ts";
 
 function attempt(overrides: Partial<ClimbingAttempt> = {}): ClimbingAttempt {
@@ -43,22 +42,18 @@ describe("climbing log formatting", () => {
       ]),
     ).toBe("5.10a (Yosemite Decimal System) · A1 (Aid) · Source text (Scale unknown)");
   });
-  it("renders latitude and longitude including zero without changing their order", () => {
-    expect(formatGpsCoordinates({ latitude: 37.5, longitude: -122.25 })).toBe("37.5, −122.25");
-    expect(formatGpsCoordinates({ latitude: 0, longitude: 0 })).toBe("0, 0");
-    expect(formatGpsCoordinates({ latitude: 1e-7, longitude: -1e-7 })).toBe("1e-7, −1e-7");
-  });
-  it("describes a scoped result and pluralizes its recorded occurrences", () => {
+  it("describes a scoped result and labels its attempt count", () => {
     expect(formatClimbingRecordedResult("Whole climb", "completed", 1)).toBe(
-      "Whole climb completed · 1 recorded attempt",
+      "Whole climb completed · Attempts: 1",
     );
-    expect(formatClimbingRecordedResult("Pitch", "failed", 3)).toBe(
-      "Pitch failed · 3 recorded attempts",
-    );
-    expect(formatClimbingRecordedResult("Whole climb", null, 2)).toBe(
-      "Whole climb · 2 recorded attempts",
-    );
-    expect(formatClimbingRecordedResult("Pitch 1", null, 1)).toBe("Pitch 1 · 1 recorded attempt");
+    expect(formatClimbingRecordedResult("Pitch", "failed", 3)).toBe("Pitch failed · Attempts: 3");
+    expect(formatClimbingRecordedResult("Whole climb", null, 2)).toBe("Whole climb · Attempts: 2");
+    expect(formatClimbingRecordedResult("Pitch 1", null, 1)).toBe("Pitch 1 · Attempts: 1");
+  });
+  it("renders the outcome and attempt count when the target is implicit", () => {
+    expect(formatClimbingRecordedResult(null, null, 1)).toBe("Attempts: 1");
+    expect(formatClimbingRecordedResult(null, "completed", 2)).toBe("Completed · Attempts: 2");
+    expect(formatClimbingRecordedResult(null, "failed", 1)).toBe("Failed · Attempts: 1");
   });
   it("labels each recorded rope method once without exposing unreported methods", () => {
     expect(formatClimbingRopeMethods([{ ropeMethod: "top_rope" }])).toBe("Top rope");
@@ -74,25 +69,6 @@ describe("climbing log formatting", () => {
     ).toBe("Lead · Top rope · Follow · Unroped");
     expect(formatClimbingRopeMethods([{ ropeMethod: null }])).toBeNull();
     expect(formatClimbingRopeMethods([])).toBeNull();
-  });
-  it("lists every unknown fact without turning missing evidence into false", () => {
-    expect(climbingAttemptDetailFields(attempt())).toEqual([
-      { label: "Scope", value: "Whole climb" },
-      { label: "Outcome", value: "Not reported by source" },
-      { label: "Attempt order", value: "Unknown" },
-      { label: "Rope method", value: "Unknown" },
-      { label: "Solo", value: "Unknown" },
-      { label: "Protection used", value: "Unknown" },
-      { label: "Used preplaced protection", value: "Unknown" },
-      { label: "Used aid", value: "Unknown" },
-      { label: "Fell or hung", value: "Unknown" },
-      { label: "Dabbed", value: "Unknown" },
-      { label: "Received beta", value: "Unknown" },
-      { label: "Had completed before", value: "Unknown" },
-      { label: "Prior failed attempts from the ground", value: "Unknown" },
-      { label: "Pitch reference", value: "None" },
-      { label: "Parent attempt reference", value: "None" },
-    ]);
   });
   it.each([true, false])("renders independently reported boolean facts as %s", (value) => {
     const fields = climbingAttemptDetailFields(
@@ -123,7 +99,7 @@ describe("climbing log formatting", () => {
       });
     }
   });
-  it("preserves known pitch, parent, order, outcome and protection facts", () => {
+  it("preserves known outcome and protection facts", () => {
     const fields = climbingAttemptDetailFields(
       attempt({
         scope: "pitch",
@@ -134,24 +110,10 @@ describe("climbing log formatting", () => {
         protectionUsed: ["sport", "trad"],
       }),
     );
-    expect(fields).toEqual(
-      expect.arrayContaining([
-        { label: "Scope", value: "Pitch" },
-        { label: "Outcome", value: "Failed" },
-        { label: "Attempt order", value: "4" },
-        { label: "Protection used", value: "Sport, Trad" },
-        { label: "Pitch reference", value: "pitch-id" },
-        { label: "Parent attempt reference", value: "whole-attempt-id" },
-      ]),
-    );
-    expect(climbingAttemptDetailFields(attempt({ protectionUsed: [] }))).toContainEqual({
-      label: "Protection used",
-      value: "None recorded",
-    });
-    expect(climbingAttemptDetailFields(attempt({ scope: "pitch" }))).toContainEqual({
-      label: "Pitch reference",
-      value: "Unidentified",
-    });
+    expect(fields).toEqual([
+      { label: "Outcome", value: "Failed" },
+      { label: "Protection used", value: "Sport, Trad" },
+    ]);
   });
   it("labels independent method, solo, aid, and interruption facts without deriving a send", () => {
     const attempt: ClimbingAttempt = {
@@ -181,8 +143,6 @@ describe("climbing log formatting", () => {
         { label: "Rope method", value: "Lead" },
         { label: "Solo", value: "Yes" },
         { label: "Used aid", value: "Yes" },
-        { label: "Fell or hung", value: "Unknown" },
-        { label: "Attempt order", value: "Unknown" },
       ]),
     );
   });

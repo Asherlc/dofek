@@ -123,6 +123,7 @@ vi.mock("react-native", () => {
       accessibilityHint,
       accessibilityLabel,
       accessibilityRole,
+      accessibilityState,
       accessible: _accessible,
       automaticallyAdjustKeyboardInsets,
       children,
@@ -145,6 +146,7 @@ vi.mock("react-native", () => {
         name,
         {
           ...props,
+          ...ariaPropsFromAccessibilityState(accessibilityState),
           ref: elementRef,
           "aria-description": accessibilityHint,
           "aria-label": accessibilityLabel,

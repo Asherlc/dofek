@@ -8,11 +8,16 @@ import { ClimbingLogEntryContext } from "./ClimbingLogEntryContext";
 const meta = {
   title: "Climbing/Log Entry Context",
   component: ClimbingLogEntryContext,
-  args: { entry: climbingLogEntryFixture({ climb: climbingClimbFixture() }) },
+  args: {
+    entry: climbingLogEntryFixture({
+      climb: climbingClimbFixture(),
+      board: { name: "Training Board", externalId: null },
+    }),
+  },
 } satisfies Meta<typeof ClimbingLogEntryContext>;
 export default meta;
 type Story = StoryObj<typeof meta>;
-export const CurrentLocation: Story = {};
+export const Board: Story = {};
 export const UnknownAngleUnits: Story = {
   args: {
     entry: climbingLogEntryFixture({

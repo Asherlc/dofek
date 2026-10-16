@@ -34,10 +34,41 @@ describe("ClimbingLogEntrySources", () => {
       "https://openbeta.io/u/thickles/ticks",
     );
     expect(screen.getByRole("link", { name: "Swiss Cheese route on OpenBeta" }).textContent).toBe(
-      "OpenBeta",
+      "OpenBeta route",
     );
-    expect(screen.getByRole("link", { name: "OpenBeta ticks" }).textContent).toBe("OpenBeta");
+    expect(screen.getByRole("link", { name: "OpenBeta ticks" }).textContent).toBe("OpenBeta ticks");
     expect(screen.getByText("Mountain Project, OpenBeta")).toBeTruthy();
+  });
+  it("uses concise destination labels when the attribution identifies their provider", () => {
+    render(
+      <ClimbingLogEntrySources
+        name="Road Kill"
+        sourceName="OpenBeta"
+        links={[
+          { providerId: "openbeta", kind: "route", url: "https://openbeta.io/climb/road-kill" },
+          { providerId: "openbeta", kind: "ticks", url: "https://openbeta.io/u/thickles/ticks" },
+        ]}
+      />,
+    );
+    expect(screen.getByRole("link", { name: "Road Kill on OpenBeta" })).toHaveTextContent(
+      "Road Kill",
+    );
+    expect(screen.getByRole("link", { name: "OpenBeta ticks" })).toHaveTextContent(/^Ticks$/);
+    expect(screen.getByText("OpenBeta")).toBeTruthy();
+  });
+  it("identifies linked destinations when no source attribution is available", () => {
+    render(
+      <ClimbingLogEntrySources
+        name="Road Kill"
+        sourceName={null}
+        links={[
+          { providerId: "openbeta", kind: "ticks", url: "https://openbeta.io/u/thickles/ticks" },
+        ]}
+      />,
+    );
+    expect(screen.getByRole("link", { name: "OpenBeta ticks" })).toHaveTextContent(
+      "OpenBeta ticks",
+    );
   });
   it("keeps an entry without verified destinations readable", () => {
     render(<ClimbingLogEntrySources name="Imported route" sourceName="Kaya" links={[]} />);

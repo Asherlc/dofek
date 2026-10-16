@@ -145,16 +145,16 @@ export const RepeatedPoint: Story = {
     await userEvent.click(await canvas.findByRole("button", { name: "Entry 1 · Swiss Cheese" }));
     await expect(
       canvas
-        .getByRole("list", { name: "Attached climbing logs" })
+        .getByRole("region", { name: "Attached climbing logs" })
         .querySelector('[aria-current="true"]'),
-    ).toHaveTextContent("Entry 1 · Selected");
+    ).toBe(canvas.getByRole("list", { name: "Wall climbs" }).children[0]);
     canvas.getByRole("button", { name: "Entry 3 · Swiss Cheese" }).focus();
     await userEvent.keyboard("[Enter]");
     await expect(
       canvas
-        .getByRole("list", { name: "Attached climbing logs" })
+        .getByRole("region", { name: "Attached climbing logs" })
         .querySelector('[aria-current="true"]'),
-    ).toHaveTextContent("Entry 3 · Selected");
+    ).toBe(canvas.getByRole("list", { name: "Wall climbs" }).children[1]);
     await expect(canvasElement.querySelector('[data-entry-id="tick-4"]')).toBe(dot);
   },
 };

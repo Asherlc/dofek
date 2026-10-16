@@ -42,12 +42,15 @@ when the authenticated user changes.
 ## Development
 
 Activity details show attached climbing logs and same-day attachment suggestions
-for climbing and hiking activities. Cards show the current shared location,
-published display grade, scoped results, and server-derived rock labels.
+for climbing and hiking activities. Cards group under Area headings and show the
+published display grade, concise attempt counts, pitch labels, and server-derived
+rock labels through the [shared grouping helper](../training/src/climbing-log-groups.ts)
+and [card](src/pages/activity-detail/components/ClimbingLogEntryCard.tsx).
 The provider data viewer's
-[record details](src/components/ClimbingLogEntryDetails.tsx) show current coordinates,
-published and reported grade collections, independent attempt facts, notes, and
-disclosed source data. Missing totals retain one recorded occurrence. Provider
+[record details](src/components/ClimbingLogEntryDetails.tsx) show source links,
+published and reported grade collections, known attempt facts, and notes.
+Coordinates, internal references, and raw provider payloads are omitted from this
+viewer. Missing totals retain one recorded occurrence. Provider
 records fetch the selected log's complete graph and retain cached rows during
 refresh errors. See the [canonical response contract](../server/src/contracts/climbing-log-contracts.ts).
 
@@ -71,8 +74,8 @@ the owning Climb or Area, and provider attribution.
 [ActivityRouteMap](src/components/ActivityRouteMap.tsx) renders source dots
 independently of recorded GPS tracks and loads compact tick maps as they
 approach the viewport. A unique point opens its climbing log details immediately;
-overlapping points offer an occurrence chooser using Entry numbers from the full
-card order. Selection opens the exact log's
+overlapping points offer an occurrence chooser using Entry numbers from the original
+entry order, preserved across Area grouping. Selection opens the exact log's
 [record dialog](src/pages/RecordDetailModal.tsx) and highlights its
 [climbing card](src/pages/activity-detail/components/ClimbingLogEntryCard.tsx),
 including repeated names at the same point. Closing the dialog returns keyboard

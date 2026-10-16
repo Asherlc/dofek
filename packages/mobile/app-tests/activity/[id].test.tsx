@@ -22,10 +22,19 @@ function stripStyle({
 }
 
 vi.mock("react-native", () => ({
-  View: ({ children, accessibilityLabel, ...props }: Record<string, unknown>) =>
+  View: ({
+    children,
+    accessibilityLabel,
+    accessibilityState,
+    ...props
+  }: Record<string, unknown> & { accessibilityState?: { selected?: boolean } }) =>
     React.createElement(
       "div",
-      stripStyle({ ...props, "aria-label": accessibilityLabel }),
+      stripStyle({
+        ...props,
+        "aria-label": accessibilityLabel,
+        "aria-selected": accessibilityState?.selected,
+      }),
       ...(children != null ? [children] : []),
     ),
   Text: ({ children, ...props }: Record<string, unknown>) =>
@@ -678,9 +687,8 @@ describe("ActivityDetailScreen", () => {
       state.startsWith("cached") ? 2 : 3,
     );
     expect(screen.getByText("Climbing refresh failed")).toBeTruthy();
-    expect(screen.getByText("Climb location: Located climb · mountain-project")).toBeTruthy();
-    expect(screen.getByText("Area location: Containing area · openbeta")).toBeTruthy();
-    expect(screen.getByText("Entry 2")).toBeTruthy();
+    expect(screen.getByLabelText("Climbing entry: Located climb")).toBeTruthy();
+    expect(screen.getByLabelText("Climbing entry: Suggested climb")).toBeTruthy();
     const overviewProps = vi.mocked(RouteMap).mock.calls.find(([props]) => !props.compact)?.[0];
     expect(overviewProps?.climbMarkers).toEqual([
       {
@@ -700,10 +708,8 @@ describe("ActivityDetailScreen", () => {
     expect(screen.getByRole("button", { name: "Close record detail" })).toBeTruthy();
     expect(screen.getByText("Record Detail")).toBeTruthy();
     expect(
-      within(screen.getByLabelText("Climbing entry: Located climb")).getByText(
-        "Entry 2 · Selected",
-      ),
-    ).toBeTruthy();
+      screen.getByLabelText("Climbing entry: Located climb").getAttribute("aria-selected"),
+    ).toBe("true");
     const selectedOverviewProps = vi
       .mocked(RouteMap)
       .mock.calls.filter(([props]) => !props.compact)
@@ -972,7 +978,7 @@ describe("ActivityDetailScreen", () => {
     expect(screen.getByText("OpenBeta")).toBeTruthy();
     expect(screen.getByText("Blue Circuit")).toBeTruthy();
     expect(screen.getByText("Top rope")).toBeTruthy();
-    expect(screen.getByText("Whole climb · 1 recorded attempt")).toBeTruthy();
+    expect(screen.getByText("Attempts: 1")).toBeTruthy();
     const controls = within(climbsCard).getAllByRole("button", {
       name: /^Attach entry \d+, .* to this activity$/,
     });
@@ -1574,10 +1580,10 @@ describe("ActivityDetailScreen", () => {
       expect(screen.getByText("Left Arete")).toBeTruthy();
       expect(screen.getAllByText(ascentType === "Redpoint" ? "Sent" : ascentType)).toHaveLength(2);
       if (ascentType === "Redpoint") {
-        expect(screen.getAllByText("Whole climb completed · 7 recorded attempts")).toHaveLength(2);
+        expect(screen.getAllByText("Completed · Attempts: 7")).toHaveLength(2);
       } else {
         expect(screen.getAllByText("5.6", { exact: true })).toHaveLength(2);
-        expect(screen.getAllByText("Whole climb completed · 1 recorded attempt")).toHaveLength(2);
+        expect(screen.getAllByText("Completed · Attempts: 1")).toHaveLength(2);
       }
     },
   );
@@ -1682,7 +1688,7 @@ describe("ActivityDetailScreen", () => {
     expect(screen.getAllByText("Goat Rock")).toHaveLength(2);
     expect(screen.getAllByText("Top rope")).toHaveLength(2);
     expect(screen.queryByText("Result unknown")).toBeNull();
-    expect(screen.getAllByText("Whole climb · 1 recorded attempt")).toHaveLength(2);
+    expect(screen.getAllByText("Attempts: 1")).toHaveLength(2);
   });
 
   it("shows the climbs attached to a canonical climbing activity", async () => {
@@ -1873,11 +1879,11 @@ describe("ActivityDetailScreen", () => {
     expect(screen.getByText("Sent")).toBeTruthy();
     expect(screen.getByText("Board: Training Board")).toBeTruthy();
     expect(screen.getByText("Wall angle: −20 (units unknown)")).toBeTruthy();
-    expect(screen.getByText("Whole climb completed · 7 recorded attempts")).toBeTruthy();
+    expect(screen.getByText("Completed · Attempts: 7")).toBeTruthy();
     expect(screen.getByText("Project")).toBeTruthy();
-    expect(screen.getByText("Whole climb failed · 1 recorded attempt")).toBeTruthy();
+    expect(screen.getByText("Failed · Attempts: 1")).toBeTruthy();
     expect(screen.getByText("Wall angle: 35°")).toBeTruthy();
-    expect(screen.getByText("Whole climb · 1 recorded attempt")).toBeTruthy();
+    expect(screen.getByText("Attempts: 1")).toBeTruthy();
     expect(screen.getAllByText("Touchstone Pacific Pipe")).toHaveLength(3);
   });
 

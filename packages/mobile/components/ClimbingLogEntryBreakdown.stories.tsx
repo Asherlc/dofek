@@ -93,11 +93,17 @@ export const RepeatedPoint: Story = {
     const dot = await overview.findByRole("button", { name: /^Entry 3 · Swiss Cheese, latitude/ });
     await userEvent.click(dot);
     await userEvent.click(canvas.getByRole("button", { name: "Entry 1 · Swiss Cheese" }));
-    await expect(canvas.getByText("Entry 1 · Selected")).toBeVisible();
+    await expect(canvas.getAllByLabelText("Climbing entry: Swiss Cheese")[0]).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
     const repeat = canvas.getByRole("button", { name: "Entry 3 · Swiss Cheese" });
     repeat.focus();
     await userEvent.keyboard("[Enter]");
-    await expect(canvas.getByText("Entry 3 · Selected")).toBeVisible();
+    await expect(canvas.getAllByLabelText("Climbing entry: Swiss Cheese")[1]).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
   },
 };
 function RepeatedPointArrangement(args: ComponentProps<typeof ClimbingLogEntryBreakdown>) {

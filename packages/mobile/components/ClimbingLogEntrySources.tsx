@@ -15,6 +15,7 @@ export function ClimbingLogEntrySources({
 }) {
   const primaryRoute = links.find((link) => link.kind === "route");
   const additionalLinks = links.filter((link) => link !== primaryRoute);
+  const hasSingleProvider = new Set(links.map((link) => link.providerId)).size === 1;
   async function openSource(url: string) {
     if (!(await openExternalUrl(url, "climbing-entry-source"))) {
       Alert.alert("Unable to open source", `Open this source in your browser: ${url}`);
@@ -52,7 +53,11 @@ export function ClimbingLogEntrySources({
               }}
             >
               <Text style={[styles.source, styles.link]}>
-                {providerSourceLabel(link.providerId)}
+                {sourceName && hasSingleProvider
+                  ? link.kind === "route"
+                    ? "Route"
+                    : "Ticks"
+                  : `${providerSourceLabel(link.providerId)} ${link.kind}`}
               </Text>
             </Pressable>
           ))}

@@ -12,9 +12,10 @@ export function ClimbingLogEntrySources({
 }) {
   const primaryRoute = links.find((link) => link.kind === "route");
   const additionalLinks = links.filter((link) => link !== primaryRoute);
+  const hasSingleProvider = new Set(links.map((link) => link.providerId)).size === 1;
   return (
     <div className="min-w-0 space-y-0.5 break-words">
-      <p className="text-sm font-medium text-foreground">
+      <h4 className="text-sm font-medium text-foreground">
         {primaryRoute ? (
           <a
             href={primaryRoute.url}
@@ -28,7 +29,7 @@ export function ClimbingLogEntrySources({
         ) : (
           name
         )}
-      </p>
+      </h4>
       {sourceName && <p className="text-xs text-dim">{sourceName}</p>}
       {additionalLinks.length > 0 && (
         <ul className="flex flex-wrap gap-x-3 gap-y-1 text-xs">
@@ -45,7 +46,11 @@ export function ClimbingLogEntrySources({
                     : `${providerSourceLabel(link.providerId)} ticks`
                 }
               >
-                {providerSourceLabel(link.providerId)}
+                {sourceName && hasSingleProvider
+                  ? link.kind === "route"
+                    ? "Route"
+                    : "Ticks"
+                  : `${providerSourceLabel(link.providerId)} ${link.kind}`}
               </a>
             </li>
           ))}

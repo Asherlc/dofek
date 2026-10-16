@@ -23,8 +23,8 @@ it("keeps cached climbing details visible beside a refresh error", () => {
     />,
   );
   expect(screen.getByText("Detail refresh failed")).toBeTruthy();
-  expect(screen.getByText("0, −120")).toBeTruthy();
-  expect(screen.getByText("Published climb grades")).toBeTruthy();
+  expect(screen.getByText("Corner")).toBeTruthy();
+  expect(screen.getByText("Grades")).toBeTruthy();
 });
 it("keeps closing available while a detail is loading or unavailable", () => {
   const onClose = vi.fn();

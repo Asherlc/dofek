@@ -985,9 +985,6 @@ describe("ActivityDetailPage", () => {
 
     expect(screen.getAllByRole("region", { name: "Climbing locations" })).toHaveLength(3);
     expect(screen.getByText("Climbing refresh failed")).toBeDefined();
-    expect(screen.getByText("Climb location: Located climb · Mountain Project")).toBeDefined();
-    expect(screen.getByText("Area location: Containing area · OpenBeta")).toBeDefined();
-    expect(screen.getByText("Entry 2")).toBeDefined();
     const climbPoint = await screen.findByRole("button", {
       name: "Entry 2 · Located climb · Climb location: Located climb · Mountain Project",
     });
@@ -1001,10 +998,10 @@ describe("ActivityDetailPage", () => {
       ),
     ).toBeInTheDocument();
     expect(
-      within(screen.getByRole("list", { name: "Attached climbing logs", hidden: true })).getByText(
-        "Entry 2 · Selected",
-      ),
-    ).toBeDefined();
+      screen
+        .getByRole("region", { name: "Attached climbing logs", hidden: true })
+        .querySelector('[aria-current="true"]'),
+    ).toHaveAttribute("aria-current", "true");
     fireEvent.click(within(dialog).getByRole("button", { name: "Close" }));
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     await waitFor(() => expect(climbPoint).toHaveFocus());
@@ -2674,11 +2671,11 @@ describe("ActivityDetailPage", () => {
       expect(screen.getByText("V4")).toBeDefined();
       expect(screen.getByText("Blue Circuit")).toBeDefined();
       expect(screen.getByText("Sent")).toBeDefined();
-      expect(screen.getByText("Whole climb completed · 7 recorded attempts")).toBeDefined();
+      expect(screen.getByText("Completed · Attempts: 7")).toBeDefined();
       expect(screen.getByText("Project")).toBeDefined();
-      expect(screen.getByText("Whole climb failed · 1 recorded attempt")).toBeDefined();
+      expect(screen.getByText("Failed · Attempts: 1")).toBeDefined();
       expect(screen.getByText("Wall angle: 35°")).toBeDefined();
-      expect(screen.getByText("Whole climb · 1 recorded attempt")).toBeDefined();
+      expect(screen.getByText("Attempts: 1")).toBeDefined();
       expect(screen.getAllByText("Touchstone Pacific Pipe")).toHaveLength(3);
       expect(
         screen.queryByText("No unattached climbing logs for this day."),

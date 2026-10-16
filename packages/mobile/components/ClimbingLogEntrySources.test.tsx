@@ -39,9 +39,20 @@ describe("ClimbingLogEntrySources", () => {
       links.map((link) => link.url),
     );
     expect(screen.getByRole("link", { name: "Swiss Cheese route on OpenBeta" }).textContent).toBe(
-      "OpenBeta",
+      "OpenBeta route",
     );
-    expect(screen.getByRole("link", { name: "OpenBeta ticks" }).textContent).toBe("OpenBeta");
+    expect(screen.getByRole("link", { name: "OpenBeta ticks" }).textContent).toBe("OpenBeta ticks");
+  });
+  it("names a single source's extra destination by its purpose", () => {
+    render(
+      <ClimbingLogEntrySources
+        name="Swiss Cheese"
+        sourceName="OpenBeta"
+        links={links.filter((link) => link.providerId === "openbeta")}
+      />,
+    );
+    expect(screen.getByText("OpenBeta")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "OpenBeta ticks" }).textContent).toBe("Ticks");
   });
   it("reports an opening failure and shows the reason", async () => {
     const error = new Error("No browser available");

@@ -56,17 +56,13 @@ export const AttachStates: Story = {
   },
   play: async ({ canvasElement, args, userEvent }) => {
     const canvas = within(canvasElement);
-    const cards = canvas.getByRole("list", { name: "Unattached climbing logs" }).children;
-    const first = cards[0];
-    const second = cards[1];
-    if (!(first instanceof HTMLElement) || !(second instanceof HTMLElement))
-      throw new Error("Expected suggestion cards");
+    const logs = within(canvas.getByRole("region", { name: "Unattached climbing logs" }));
     await expect(
-      within(first).getByRole("button", { name: "Attach entry 1, Swiss Cheese to this activity" }),
+      logs.getByRole("button", { name: "Attach entry 1, Swiss Cheese to this activity" }),
     ).toBeDisabled();
-    await expect(within(second).getByRole("alert")).toHaveTextContent("Choose a climbing activity");
+    await expect(logs.getByRole("alert")).toHaveTextContent("Choose a climbing activity");
     await userEvent.click(
-      within(second).getByRole("button", {
+      logs.getByRole("button", {
         name: /^Attach entry 2, The unusually long ridge traverse/,
       }),
     );
