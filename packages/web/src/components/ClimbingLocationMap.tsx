@@ -101,6 +101,7 @@ export function ClimbingLocationMap({
             tooltip.textContent = label;
             Object.assign(tooltip.style, {
               display: "block",
+              width: "max-content",
               maxWidth: "240px",
               whiteSpace: "normal",
               overflowWrap: "anywhere",

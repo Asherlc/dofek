@@ -20,6 +20,12 @@ export const ExploreClimbs: Story = {
     const cluster = await canvas.findByRole("button", { name: "3 climbs. Zoom in to explore." });
     fireEvent.click(cluster);
     const dot = await canvas.findByRole("button", { name: "2 climbs. Show climb details." });
+    fireEvent.focus(dot);
+    await waitFor(() =>
+      expect(
+        canvas.getByText("2 climbs. Show climb details.").getBoundingClientRect().width,
+      ).toBeGreaterThan(100),
+    );
     fireEvent.keyDown(dot, { key: "Enter" });
     const list = await canvas.findByRole("list", { name: "Climbs at this location" });
     await expect(within(list).getByText("Left Arete")).toBeVisible();
