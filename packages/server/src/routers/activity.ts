@@ -31,6 +31,7 @@ async function invalidateActivityListCaches(userId: string): Promise<void> {
   await Promise.allSettled([
     queryCache.invalidateByPrefix(`${userId}:activity.`),
     queryCache.invalidateByPrefix(`${userId}:calendar.`),
+    queryCache.invalidateByPrefix(`${userId}:climbing.locationMap:`),
   ]);
 }
 

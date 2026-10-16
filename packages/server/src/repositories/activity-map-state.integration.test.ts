@@ -185,7 +185,7 @@ describe("activity map readiness", () => {
     await context.cleanup();
   });
 
-  it("shows processing for ingested GPS until a map is renderable and preserves ready and absent states", async () => {
+  it("shows processing for ingested GPS until a map is ready and preserves ready and absent states", async () => {
     const days = await calendar.getWeekList({
       weeks: 1,
       endDate: "2026-10-02",

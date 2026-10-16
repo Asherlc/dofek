@@ -20,6 +20,7 @@ The web dashboard for Dofek. A modern React SPA built with Vite, TypeScript, and
 - **Charts**: Custom visualization components (e.g., `TimeSeriesChart`, `PmcChart`, `Hypnogram`) built on top of ECharts and `react-native-svg` (shared patterns).
 - **Resting heart rate trend**: The dashboard renders the server's trailing seven-calendar-day average as a line without visible point markers. The card and hover labels identify the average; daily readings remain on the heart-rate detail page. See [`Dashboard`](src/pages/Dashboard.tsx) and the [server window calculation](../server/src/repositories/daily-metrics-repository.ts).
 - **Climbing progression**: Grade-colored stacked bars show sends per recorded climbing day in separate kind, scope, rope-method, solo, aid, and grade-system lanes. Patterns distinguish indoor, outdoor, and unknown settings. The server supplies counts and chart values; [shared labels](../training/src/climbing-progression.ts) keep both clients consistent. See [`ClimbingGradeProgressionChart`](src/components/ClimbingGradeProgressionChart.tsx).
+- **Climbing locations**: The training page renders server-sized circles that split into smaller groups and individual climb locations as the map zooms in. Selecting a location lists its recorded climbs, source-location scope, and attached activities. The [shared response contract](../training/src/climbing-location-map.ts) supplies the zoom bands, counts, and radii; [ClimbingLocationMap](src/components/ClimbingLocationMap.tsx) renders them with [Leaflet circle markers](https://leafletjs.com/reference.html#circlemarker).
 - **Error Boundaries**: Granular error handling using `QueryErrorBoundary` and a top-level `ErrorBoundary` in `App.tsx`.
 
 
@@ -67,9 +68,10 @@ Expected maps retain their space and show a processing status while location dat
 or initial map tiles are pending. List queries refresh while the server reports a
 pending map, and ready maps remain visible during background refreshes. The shared
 [map tile](src/components/ActivityMapTile.tsx) and
-[route map](src/components/ActivityRouteMap.tsx) expose the status to assistive
+[route map](src/components/ActivityRouteMap.tsx), and training
+[location map](src/components/ClimbingLocationMap.tsx) expose the status to assistive
 technology using the [WAI status-message pattern](https://www.w3.org/WAI/WCAG22/Techniques/aria/ARIA22.html).
-Route-map initialization waits for Leaflet's initial tile
+Interactive-map initialization waits for Leaflet's initial tile
 [`load` event](https://leafletjs.com/reference.html#gridlayer-load); tile errors
 retain their connection message and usable route/source points.
 

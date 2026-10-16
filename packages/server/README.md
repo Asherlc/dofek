@@ -23,6 +23,11 @@ The backend API and background job processor for Dofek. Built with Node.js, Expr
   the nearest coordinate-bearing Area in the selected source graph; consolidation
   retains that graph's map ownership. See the [map contract](../training/src/climbing-map.ts).
   Both use the same [grade display conversion](./src/repositories/climbing-grade-display.ts).
+  The [`climbing.locationMap` query](./src/routers/climbing.ts) serves dated,
+  filtered canonical logs as server-computed circle clusters for web and mobile.
+  Its [map contract](../training/src/climbing-location-map.ts) retains each log's
+  source-owned location and labels native climb versus area coordinates; pitch
+  observations count once per selected log in the [repository](./src/repositories/climbing-repository.ts).
   Rock metrics select one compatible published grade per target and derive free-send
   evidence from its recorded attempts, through the [shared projection](src/repositories/climbing-rock-observations.ts).
   Whole-climb and pitch attempts remain separately scoped; unknown facts remain unknown.
