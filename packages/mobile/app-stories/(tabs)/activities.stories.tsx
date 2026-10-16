@@ -530,7 +530,9 @@ type Story = StoryObj<typeof meta>;
 async function checkFullWidthMap(canvasElement: HTMLElement, activityName: string) {
   const canvas = within(canvasElement);
   const map = await canvas.findByTestId("activity-route-viewport");
-  const card = await canvas.findByRole("button", { name: new RegExp(`Open ${activityName}`) });
+  const card = await canvas.findByRole("button", {
+    name: (name) => name.startsWith(`Open ${activityName},`),
+  });
   const mapBounds = map.getBoundingClientRect();
   const cardBounds = card.getBoundingClientRect();
   const titleBounds = canvas.getByText(activityName).getBoundingClientRect();
