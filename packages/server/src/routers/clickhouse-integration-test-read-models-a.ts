@@ -226,6 +226,7 @@ SELECT
   toFloat32(toFloat64OrNull(splitByChar(',', trim(BOTH '()' FROM location_rows.point_text))[1])) AS lng,
   toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version,
   location_rows.is_deleted AS is_deleted,
+  now64(9, 'UTC') AS source_refreshed_at,
   now64(6, 'UTC') AS refreshed_at
 FROM location_rows
 INNER JOIN activity_members

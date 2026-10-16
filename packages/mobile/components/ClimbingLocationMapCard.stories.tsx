@@ -5,6 +5,14 @@ import { climbingLocationMapFixture } from "./climbing-location-map-fixtures";
 const meta = {
   title: "Training/ClimbingLocationMapCard",
   component: ClimbingLocationMapCard,
+  parameters: {
+    docs: {
+      description: {
+        component:
+          "The map reserves its viewport while the native renderer starts, showing the shared processing panel followed by the native loading indicator.",
+      },
+    },
+  },
 } satisfies Meta<typeof ClimbingLocationMapCard>;
 
 export default meta;
@@ -22,6 +30,9 @@ export const IndividualClimbsAndRepeats: Story = {
 };
 
 export const Loading: Story = { args: { data: undefined, loading: true } };
+export const CachedRefresh: Story = {
+  args: { data: climbingLocationMapFixture, loading: true },
+};
 export const Empty: Story = { args: { data: { bounds: null, nodes: [] } } };
 export const ErrorState: Story = {
   args: {

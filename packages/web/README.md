@@ -67,6 +67,17 @@ not imply recorded distance or elevation. The
 [calendar repository](../server/src/repositories/activities-calendar-repository.ts)
 projects map geometry on the server, and recorded GPS takes precedence.
 
+Expected maps retain their space and show a processing status while location data
+or initial map tiles are pending. List queries refresh while the server reports a
+pending map, and ready maps remain visible during background refreshes. The shared
+[map tile](src/components/ActivityMapTile.tsx) and
+[route map](src/components/ActivityRouteMap.tsx), and training
+[location map](src/components/ClimbingLocationMap.tsx) expose the status to assistive
+technology using the [WAI status-message pattern](https://www.w3.org/WAI/WCAG22/Techniques/aria/ARIA22.html).
+Interactive-map initialization waits for Leaflet's initial tile
+[`load` event](https://leafletjs.com/reference.html#gridlayer-load); tile errors
+retain their connection message and usable route/source points.
+
 Activity-detail climbing logs and attachment suggestions share the
 [canonical log-card grid](src/pages/activity-detail/components/ClimbingLogEntryBreakdown.tsx).
 Their component inputs accept source locations keyed by entry ID; the

@@ -1,6 +1,8 @@
 import { activityDataStateSchema } from "@dofek/format/activity-data-state";
 import { formatDateYmd } from "@dofek/format/format";
 import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
+import { processingPollInterval } from "@dofek/providers/processing-status";
+import { activityLocationSchema } from "dofek-server/activity-location";
 import { useMemo, useState } from "react";
 import { z } from "zod";
 import { useTrainingDays } from "../lib/trainingDaysContext.ts";
@@ -8,6 +10,7 @@ import { trpc } from "../lib/trpc.ts";
 import { assertRows } from "../lib/utils.ts";
 import { type Activity, ActivityList } from "./ActivityList.tsx";
 import type { ActivityTableColumn } from "./ActivityTable.tsx";
+import { QueryStatePanel } from "./QueryStatePanel.tsx";
 
 const activityRowSchema = z.object({
   id: z.string(),
@@ -21,27 +24,7 @@ const activityRowSchema = z.object({
   distance_state: activityDataStateSchema,
   elevation_gain_m: z.number().nullable(),
   elevation_state: activityDataStateSchema,
-  location: z
-    .object({
-      centroidLat: z.number(),
-      centroidLng: z.number(),
-      mapPreview: z.object({
-        width: z.number(),
-        height: z.number(),
-        tiles: z.array(
-          z.object({
-            url: z.string(),
-            x: z.number(),
-            y: z.number(),
-            width: z.number(),
-            height: z.number(),
-          }),
-        ),
-        routePath: z.array(z.object({ x: z.number(), y: z.number() })).nullable(),
-      }),
-    })
-    .nullable()
-    .optional(),
+  location: activityLocationSchema.nullable().optional(),
 });
 
 const PAGE_SIZE = 20;
@@ -66,13 +49,22 @@ export function RecentActivitiesSection({
   const endDate = useMemo(() => formatDateYmd(new Date()), []);
   const trpcUtils = trpc.useUtils();
 
-  const activities = trpc.activity.list.useQuery({
-    days,
-    endDate,
-    limit: PAGE_SIZE,
-    offset: page * PAGE_SIZE,
-    activityTypes: activityTypes ? [...activityTypes] : undefined,
-  });
+  const activities = trpc.activity.list.useQuery(
+    {
+      days,
+      endDate,
+      limit: PAGE_SIZE,
+      offset: page * PAGE_SIZE,
+      activityTypes: activityTypes ? [...activityTypes] : undefined,
+    },
+    {
+      placeholderData: (previousData) => previousData,
+      refetchInterval: (query) =>
+        query.state.data?.items.some((activity) => activity.location?.kind === "processing")
+          ? processingPollInterval("active")
+          : false,
+    },
+  );
   const bulkDelete = trpc.activity.bulkDelete.useMutation({
     onSuccess: async () => {
       await Promise.all([
@@ -82,38 +74,45 @@ export function RecentActivitiesSection({
       ]);
     },
   });
+  const items = assertRows(activities.data?.items, activityRowSchema);
+  const hasCachedItems = items.length > 0;
 
   return (
-    <ActivityList
-      activities={assertRows(activities.data?.items, activityRowSchema)}
-      additionalColumns={additionalColumns}
-      showDistance={showDistance}
-      loading={activities.isLoading || additionalDataLoading}
-      error={
-        activities.error
-          ? userFacingErrorMessage(
-              activities.error,
-              "Activities could not be loaded. Please try again.",
-            )
-          : undefined
-      }
-      emptyMessage={emptyMessage}
-      totalCount={activities.data?.totalCount}
-      page={page}
-      pageSize={PAGE_SIZE}
-      onPageChange={setPage}
-      onBulkDelete={(ids) => {
-        bulkDelete.mutate({ ids });
-      }}
-      bulkDeletePending={bulkDelete.isPending}
-      bulkDeleteError={
-        bulkDelete.error
-          ? userFacingErrorMessage(
-              bulkDelete.error,
-              "The activities could not be deleted. Please try again.",
-            )
-          : undefined
-      }
-    />
+    <>
+      {activities.error && hasCachedItems ? (
+        <QueryStatePanel error={activities.error} height={72} />
+      ) : null}
+      <ActivityList
+        activities={items}
+        additionalColumns={additionalColumns}
+        showDistance={showDistance}
+        loading={!hasCachedItems && (activities.isLoading || additionalDataLoading)}
+        error={
+          activities.error && !hasCachedItems
+            ? userFacingErrorMessage(
+                activities.error,
+                "Activities could not be loaded. Please try again.",
+              )
+            : undefined
+        }
+        emptyMessage={emptyMessage}
+        totalCount={activities.data?.totalCount}
+        page={page}
+        pageSize={PAGE_SIZE}
+        onPageChange={setPage}
+        onBulkDelete={(ids) => {
+          bulkDelete.mutate({ ids });
+        }}
+        bulkDeletePending={bulkDelete.isPending}
+        bulkDeleteError={
+          bulkDelete.error
+            ? userFacingErrorMessage(
+                bulkDelete.error,
+                "The activities could not be deleted. Please try again.",
+              )
+            : undefined
+        }
+      />
+    </>
   );
 }

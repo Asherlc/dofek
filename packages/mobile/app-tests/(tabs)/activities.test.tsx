@@ -12,6 +12,11 @@ interface MockQuery {
   error: Error | null;
 }
 
+interface WeekListQueryOptions {
+  placeholderData?: (previousData: unknown) => unknown;
+  refetchInterval?: (query: { state: { data: unknown } }) => number | false;
+}
+
 let mockQuery: MockQuery;
 let mockCalendarQuery: MockQuery;
 let mockOverviewQuery: {
@@ -46,7 +51,7 @@ let mockOverviewQuery: {
   error: Error | null;
 };
 let weekListInput: unknown;
-let weekListOptions: { placeholderData?: (previousData: unknown) => unknown } | undefined;
+let weekListOptions: WeekListQueryOptions | undefined;
 let calendarDataInput: unknown;
 let calendarDataOptions: { placeholderData?: (previousData: unknown) => unknown } | undefined;
 let overviewInput: unknown;
@@ -75,10 +80,7 @@ vi.mock("../../lib/trpc", () => ({
   trpc: {
     calendar: {
       weekList: {
-        useQuery: (
-          input: unknown,
-          options: { placeholderData?: (previousData: unknown) => unknown } | undefined,
-        ) => {
+        useQuery: (input: unknown, options: WeekListQueryOptions | undefined) => {
           weekListInput = input;
           weekListOptions = options;
           return mockQuery;
@@ -1123,5 +1125,33 @@ describe("ActivitiesScreen", () => {
     expect(previewTile.style.top).toBe("0%");
     expect(previewTile.style.width).toBe("25%");
     expect(Number.parseFloat(previewTile.style.height)).toBeCloseTo(44.44, 2);
+  });
+
+  it("shows a full-width map processing state while server map geometry is pending", () => {
+    mockQuery.data = [
+      { date: "2026-03-18", activities: [activity({ location: { kind: "processing" } })] },
+    ];
+    render(<ActivitiesScreen />);
+    expect(screen.getByRole("progressbar", { name: "Processing map" }).textContent).toBe(
+      "Processing map…",
+    );
+    expect(
+      screen.getByRole("button", { name: /Open Trainer Ride/ }).getAttribute("aria-label"),
+    ).toContain("Processing map");
+  });
+
+  it("polls pending map geometry without polling settled or absent map states", () => {
+    render(<ActivitiesScreen />);
+    expect(
+      weekListOptions?.refetchInterval?.({
+        state: { data: [{ activities: [activity({ location: { kind: "processing" } })] }] },
+      }),
+    ).toEqual(expect.any(Number));
+    expect(
+      weekListOptions?.refetchInterval?.({
+        state: { data: [{ activities: [activity({ location: null })] }] },
+      }),
+    ).toBe(false);
+    expect(weekListOptions?.refetchInterval?.({ state: { data: undefined } })).toBe(false);
   });
 });

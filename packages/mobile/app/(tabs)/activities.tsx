@@ -18,6 +18,7 @@ import {
 } from "@dofek/format/record-local-time";
 import { formatMeasurementText, type UnitConverter } from "@dofek/format/units";
 import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
+import { processingPollInterval } from "@dofek/providers/processing-status";
 import { providerSourceLabel } from "@dofek/providers/providers";
 import type { ClimbingMapLocation } from "@dofek/training/climbing-map";
 import { formatActivityTypeLabel } from "@dofek/training/training";
@@ -27,7 +28,6 @@ import { useEffect, useMemo, useState } from "react";
 import {
   AccessibilityInfo,
   Alert,
-  Image,
   Platform,
   RefreshControl,
   ScrollView,
@@ -36,8 +36,8 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import Svg, { Circle, Polyline } from "react-native-svg";
 import { ActivityHeatmap } from "../../components/ActivityHeatmap";
+import { ActivityMapTile } from "../../components/ActivityMapTile";
 import { ActivityMetricStrip } from "../../components/ActivityMetricStrip";
 import { ActivityOverview } from "../../components/ActivityOverview";
 import { ActivityTypeIcon } from "../../components/ActivityTypeIcon";
@@ -61,17 +61,6 @@ const DATE_RANGE_OPTIONS = [
 
 function sourceLocationLabel(location: ClimbingMapLocation): string {
   return `${location.scope === "area" ? "Area location" : "Climb location"}${location.name ? `: ${location.name}` : ""} · ${providerSourceLabel(location.providerId)}`;
-}
-
-function mapAccessibilityLabel(location: ActivityLocation): string {
-  return location.kind === "climbing_source"
-    ? `Climbing source locations: ${location.sourcePoints.map((point) => sourceLocationLabel(point.location)).join("; ")}`
-    : "Activity location map";
-}
-
-function formatRouteCoordinate(value: number): string {
-  const rounded = Math.round(value * 1000) / 1000;
-  return Object.is(rounded, -0) ? "0" : String(rounded);
 }
 
 function displayRecordLocalTime(
@@ -155,7 +144,11 @@ function formatActivityAccessibilityLabel(
   }
 
   if (activity.location?.kind === "climbing_source") {
-    labelParts.push(mapAccessibilityLabel(activity.location));
+    labelParts.push(
+      `Climbing source locations: ${activity.location.sourcePoints.map((point) => sourceLocationLabel(point.location)).join("; ")}`,
+    );
+  } else if (activity.location?.kind === "processing") {
+    labelParts.push("Processing map");
   }
 
   return `${action} ${labelParts.join(", ")}`;
@@ -179,6 +172,12 @@ export default function ActivitiesScreen() {
   const trpcUtils = trpc.useUtils();
   const query = trpc.calendar.weekList.useQuery(queryInput, {
     placeholderData: (previousData) => previousData,
+    refetchInterval: (query) =>
+      query.state.data?.some((day) =>
+        day.activities.some((activity) => activity.location?.kind === "processing"),
+      )
+        ? processingPollInterval("active")
+        : false,
   });
   const overviewQuery = trpc.calendar.activityOverview.useQuery(queryInput, {
     placeholderData: (previousData) => previousData,
@@ -692,131 +691,6 @@ function ActivityControls({
   );
 }
 
-interface ActivityMapTileProps {
-  location: ActivityLocation;
-}
-
-function ActivityMapTile({ location }: ActivityMapTileProps) {
-  const [loadFailed, setLoadFailed] = useState(false);
-  const { mapPreview } = location;
-
-  return (
-    <View style={[styles.tileContainer, { aspectRatio: mapPreview.width / mapPreview.height }]}>
-      {loadFailed ? (
-        <View
-          style={styles.tileFallback}
-          accessibilityLabel="Activity location unavailable"
-          accessible={true}
-        >
-          <Text style={styles.tileFallbackText}>Map unavailable</Text>
-        </View>
-      ) : (
-        <View
-          testID="activity-route-viewport"
-          style={styles.mapFill}
-          accessibilityLabel={mapAccessibilityLabel(location)}
-          accessible={true}
-        >
-          {mapPreview.tiles.map((tile) => (
-            <Image
-              key={`${tile.url}-${tile.x}-${tile.y}`}
-              testID="activity-map-preview-tile"
-              source={{ uri: tile.url }}
-              style={{
-                ...styles.previewTile,
-                left: `${(tile.x / mapPreview.width) * 100}%`,
-                top: `${(tile.y / mapPreview.height) * 100}%`,
-                width: `${(tile.width / mapPreview.width) * 100}%`,
-                height: `${(tile.height / mapPreview.height) * 100}%`,
-              }}
-              resizeMode="cover"
-              onError={() => setLoadFailed(true)}
-            />
-          ))}
-          <ActivityMapOverlay location={location} />
-          {location.kind === "climbing_source" ? (
-            <View style={styles.sourceLocationBadge}>
-              <Text style={styles.sourceLocationBadgeText}>Source locations</Text>
-            </View>
-          ) : null}
-        </View>
-      )}
-    </View>
-  );
-}
-
-function ActivityMapOverlay({ location }: { location: ActivityLocation }) {
-  const { mapPreview } = location;
-  if (location.kind === "climbing_source") {
-    return (
-      <View testID="activity-source-overlay" pointerEvents="none" style={styles.mapFill}>
-        {location.sourcePoints.map((point) => (
-          <Svg
-            key={`${point.location.providerId}-${point.location.scope}-${point.location.objectId}`}
-            testID="activity-source-marker"
-            width={16}
-            height={16}
-            viewBox="0 0 16 16"
-            style={{
-              ...styles.sourceMarker,
-              left: `${(point.x / mapPreview.width) * 100}%`,
-              top: `${(point.y / mapPreview.height) * 100}%`,
-            }}
-          >
-            <Circle
-              testID="activity-source-point"
-              cx={8}
-              cy={8}
-              r={6}
-              fill={point.location.scope === "area" ? "#d97706" : "#2563eb"}
-              stroke="#fff"
-              strokeWidth={2}
-            />
-          </Svg>
-        ))}
-      </View>
-    );
-  }
-
-  const { routePath } = mapPreview;
-  if (routePath == null || routePath.length < 2) return null;
-
-  const points = routePath
-    .map((point) => `${formatRouteCoordinate(point.x)},${formatRouteCoordinate(point.y)}`)
-    .join(" ");
-  return (
-    <Svg
-      testID="activity-route-overlay"
-      pointerEvents="none"
-      width="100%"
-      height="100%"
-      style={styles.mapFill}
-      viewBox={`0 0 ${mapPreview.width} ${mapPreview.height}`}
-      preserveAspectRatio="none"
-    >
-      <Polyline
-        points={points}
-        fill="none"
-        stroke="#fff"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth={5}
-        vectorEffect="non-scaling-stroke"
-      />
-      <Polyline
-        testID="activity-route-path"
-        points={points}
-        fill="none"
-        stroke={colors.positive}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth={3}
-        vectorEffect="non-scaling-stroke"
-      />
-    </Svg>
-  );
-}
-
 function formatDayHeader(dateStr: string): string {
   const date = parseValidDate(`${dateStr}T00:00:00`);
   if (!date) return dateStr;
@@ -1006,53 +880,8 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: 2,
   },
-  tileContainer: {
-    borderRadius: radius.md,
-    backgroundColor: colors.surfaceSecondary,
-    overflow: "hidden",
-    position: "relative",
-    width: "100%",
-  },
   mapPanel: {
     paddingHorizontal: spacing.sm,
     paddingBottom: spacing.sm,
-  },
-  mapFill: {
-    position: "absolute",
-    top: 0,
-    right: 0,
-    bottom: 0,
-    left: 0,
-  },
-  previewTile: {
-    position: "absolute",
-  },
-  sourceMarker: {
-    position: "absolute",
-    transform: [{ translateX: -8 }, { translateY: -8 }],
-  },
-  sourceLocationBadge: {
-    position: "absolute",
-    bottom: spacing.sm,
-    left: spacing.sm,
-    backgroundColor: colors.surface,
-    borderRadius: radius.sm,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
-  },
-  sourceLocationBadgeText: {
-    color: colors.textSecondary,
-    fontSize: 11,
-  },
-  tileFallback: {
-    width: "100%",
-    height: "100%",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  tileFallbackText: {
-    color: colors.textSecondary,
-    fontSize: 12,
-    fontWeight: "600",
   },
 });

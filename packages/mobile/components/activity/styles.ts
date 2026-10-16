@@ -34,6 +34,11 @@ export const styles = StyleSheet.create({
     fontSize: 13,
     color: colors.textTertiary,
   },
+  mapProcessing: {
+    height: 280,
+    borderRadius: 12,
+    overflow: "hidden",
+  },
   errorContainer: {
     flex: 1,
     backgroundColor: colors.background,

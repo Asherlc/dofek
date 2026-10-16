@@ -12,7 +12,7 @@ import {
 import { formatActivityTypeLabel } from "@dofek/training/training";
 import { useId, useState } from "react";
 import { useUnitConverter } from "../lib/unitContext.ts";
-import type { ActivityMapPreview } from "./ActivityMapTile.tsx";
+import { type ActivityMapLocation, ActivityMapTile } from "./ActivityMapTile.tsx";
 import { ActivityTable, type ActivityTableColumn } from "./ActivityTable.tsx";
 import { ActivityTypeIcon } from "./ActivityTypeIcon.tsx";
 import { ChartLoadingSkeleton } from "./LoadingSkeleton.tsx";
@@ -30,11 +30,7 @@ export interface Activity {
   distance_state: ActivityDataState;
   elevation_gain_m: number | null;
   elevation_state: ActivityDataState;
-  location?: {
-    centroidLat: number;
-    centroidLng: number;
-    mapPreview: ActivityMapPreview;
-  } | null;
+  location?: ActivityMapLocation | null;
 }
 
 interface ActivityListProps {
@@ -163,37 +159,7 @@ export function ActivityList({
         if (!activity.location) {
           return <ActivityTypeIcon activityType={activity.canonical_type} variant="compact" />;
         }
-        const { mapPreview } = activity.location;
-
-        return (
-          <div className="relative h-12 w-16 overflow-hidden rounded bg-surface-hover">
-            <div
-              data-testid="activity-route-viewport"
-              className="absolute inset-0 h-full w-full brightness-[0.95] contrast-[0.92] saturate-[0.85]"
-              role="img"
-              aria-label="Activity route map summary"
-            >
-              {mapPreview.tiles.map((tile) => (
-                <img
-                  key={`${tile.url}-${tile.x}-${tile.y}`}
-                  data-testid="activity-map-preview-tile"
-                  src={tile.url}
-                  alt=""
-                  className="absolute max-w-none"
-                  loading="lazy"
-                  referrerPolicy="origin"
-                  style={{
-                    left: `${(tile.x / mapPreview.width) * 100}%`,
-                    top: `${(tile.y / mapPreview.height) * 100}%`,
-                    width: `${(tile.width / mapPreview.width) * 100}%`,
-                    height: `${(tile.height / mapPreview.height) * 100}%`,
-                  }}
-                />
-              ))}
-              <ActivityRouteOverlay mapPreview={mapPreview} />
-            </div>
-          </div>
-        );
+        return <ActivityMapTile location={activity.location} variant="thumbnail" />;
       },
     },
     {
@@ -357,40 +323,5 @@ export function ActivityList({
         footer={footer}
       />
     </div>
-  );
-}
-
-function ActivityRouteOverlay({ mapPreview }: { mapPreview: ActivityMapPreview }) {
-  const routePath = mapPreview.routePath;
-  if (routePath == null || routePath.length < 2) return null;
-
-  const points = routePath.map((point) => `${point.x},${point.y}`).join(" ");
-  return (
-    <svg
-      className="pointer-events-none absolute inset-0 h-full w-full"
-      viewBox={`0 0 ${mapPreview.width} ${mapPreview.height}`}
-      preserveAspectRatio="none"
-    >
-      <title>Activity route path</title>
-      <polyline
-        points={points}
-        fill="none"
-        stroke="white"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth="6"
-        vectorEffect="non-scaling-stroke"
-      />
-      <polyline
-        data-testid="activity-route-path"
-        points={points}
-        fill="none"
-        stroke="rgb(22 163 74)"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth="3"
-        vectorEffect="non-scaling-stroke"
-      />
-    </svg>
   );
 }

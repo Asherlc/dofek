@@ -8,9 +8,11 @@ import { climbingLocationMapFixture } from "./climbing-location-map-fixtures";
 const nativeMap = vi.hoisted<{
   animateToRegion: ReturnType<typeof vi.fn>;
   onRegionChangeComplete: ((region: Region) => void) | null;
+  onMapReady: (() => void) | null;
 }>(() => ({
   animateToRegion: vi.fn(),
   onRegionChangeComplete: null,
+  onMapReady: null,
 }));
 const push = vi.hoisted(() => vi.fn());
 
@@ -22,21 +24,27 @@ vi.mock("react-native-maps", () => ({
       onRegionChangeComplete,
       scrollEnabled,
       zoomEnabled,
+      onMapReady,
+      loadingEnabled,
     }: {
       children: ReactNode;
       onRegionChangeComplete: (region: Region) => void;
       scrollEnabled: boolean;
       zoomEnabled: boolean;
+      onMapReady?: () => void;
+      loadingEnabled?: boolean;
     },
     ref,
   ) {
     nativeMap.onRegionChangeComplete = onRegionChangeComplete;
+    nativeMap.onMapReady = onMapReady ?? null;
     useImperativeHandle(ref, () => nativeMap);
     return createElement(
       "div",
       {
         "data-testid": "map",
         "data-interactive": scrollEnabled && zoomEnabled,
+        "data-native-loading-enabled": String(loadingEnabled),
       },
       children,
     );
@@ -59,10 +67,10 @@ vi.mock("react-native-maps", () => ({
     ),
 }));
 
-function measure(container: HTMLElement) {
+function measure(container: HTMLElement, width = 320) {
   const wrapper = container.querySelector('[data-testid="climbing-location-map-wrapper"]');
   if (!wrapper) throw new Error("Expected map layout wrapper");
-  fireEvent(wrapper, new CustomEvent("layout", { detail: { width: 320, height: 280 } }));
+  fireEvent(wrapper, new CustomEvent("layout", { detail: { width, height: 280 } }));
 }
 
 function zoomToClimbs() {
@@ -80,6 +88,22 @@ describe("ClimbingLocationMapCard", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     nativeMap.onRegionChangeComplete = null;
+    nativeMap.onMapReady = null;
+  });
+
+  it("reserves its viewport and shows processing through layout and native startup", () => {
+    const view = render(<ClimbingLocationMapCard data={climbingLocationMapFixture} />);
+    expect(screen.getByRole("progressbar", { name: "Processing map" })).toBeTruthy();
+    expect(screen.getByTestId("climbing-location-map-wrapper").style.height).toBe("280px");
+    measure(view.container, 0);
+    expect(screen.queryByTestId("map")).toBeNull();
+    expect(screen.getByRole("progressbar", { name: "Processing map" })).toBeTruthy();
+    measure(view.container);
+    const map = screen.getByTestId("map");
+    expect(screen.getByRole("progressbar", { name: "Processing map" })).toBeTruthy();
+    act(() => nativeMap.onMapReady?.());
+    expect(screen.queryByRole("progressbar", { name: "Processing map" })).toBeNull();
+    expect(map.getAttribute("data-native-loading-enabled")).toBe("true");
   });
 
   it("keeps one interactive map and the same dot color as clusters separate into climbs", () => {
@@ -155,6 +179,7 @@ describe("ClimbingLocationMapCard", () => {
     const view = render(<ClimbingLocationMapCard data={climbingLocationMapFixture} />);
     measure(view.container);
     const map = screen.getByTestId("map");
+    act(() => nativeMap.onMapReady?.());
     view.rerender(
       <ClimbingLocationMapCard
         data={climbingLocationMapFixture}
@@ -166,12 +191,28 @@ describe("ClimbingLocationMapCard", () => {
     expect(
       screen.getByText("Climbing locations are temporarily unavailable. Try again."),
     ).toBeTruthy();
-    expect(screen.queryByTestId("query-state-loading")).toBeNull();
+    expect(screen.queryByRole("progressbar", { name: "Processing map" })).toBeNull();
+  });
+
+  it("shows processing again when an empty result is replaced by a newly mounted map", () => {
+    const view = render(<ClimbingLocationMapCard data={climbingLocationMapFixture} />);
+    measure(view.container);
+    const originalMap = screen.getByTestId("map");
+    act(() => nativeMap.onMapReady?.());
+    expect(screen.queryByRole("progressbar", { name: "Processing map" })).toBeNull();
+    view.rerender(<ClimbingLocationMapCard data={{ bounds: null, nodes: [] }} />);
+    expect(screen.getByText("No climbing locations in this period")).toBeTruthy();
+    view.rerender(<ClimbingLocationMapCard data={climbingLocationMapFixture} />);
+    expect(screen.getByTestId("map")).not.toBe(originalMap);
+    expect(screen.getByRole("progressbar", { name: "Processing map" })).toBeTruthy();
+    act(() => nativeMap.onMapReady?.());
+    expect(screen.queryByRole("progressbar", { name: "Processing map" })).toBeNull();
   });
 
   it("distinguishes first-load, failed and empty map states", () => {
     const view = render(<ClimbingLocationMapCard data={undefined} loading />);
-    expect(screen.getByTestId("query-state-loading")).toBeTruthy();
+    const status = screen.getByRole("progressbar", { name: "Processing map" });
+    expect(status.parentElement?.getAttribute("style")).toContain("height: 280px");
     view.rerender(
       <ClimbingLocationMapCard data={undefined} error={{ message: "Reconnect your account." }} />,
     );
