@@ -238,7 +238,8 @@ export async function refreshAccessToken(
 
   const data = await response.json();
   const parsed: Record<string, unknown> = data;
-  return parseTokenResponse(parsed);
+  const tokens = parseTokenResponse(parsed);
+  return { ...tokens, refreshToken: tokens.refreshToken ?? refreshToken };
 }
 
 /**
