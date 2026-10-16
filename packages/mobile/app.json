@@ -4,7 +4,7 @@
     "slug": "dofek",
     "scheme": "dofek",
     "version": "1.0.0",
-    "runtimeVersion": "1.6",
+    "runtimeVersion": "1.7",
     "updates": {
       "url": "https://ota.dofek.asherlc.com/manifest",
       "enabled": true,
