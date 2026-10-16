@@ -309,7 +309,7 @@ for the approved SDK dependency tree.
 ### Native diagnostic runtime
 
 Runtime **1.7** uses the stable [Expo SDK 58](https://expo.dev/changelog/sdk-58)
-native dependency set with Expo 58.0.11, Expo Router 58.0.20, Expo Updates
+native dependency set with Expo 58.0.13, Expo Router 58.0.21, Expo Updates
 58.0.17, React Native 0.88.0, and React Native SVG 15.16.0, pinned in
 [package.json](./package.json). Validate SDK-managed versions with
 `pnpm tsx ../../scripts/with-env.ts -- pnpm expo install --check` from this package, following Expo's
