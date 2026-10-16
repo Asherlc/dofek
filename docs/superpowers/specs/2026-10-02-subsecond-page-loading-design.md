@@ -148,6 +148,12 @@ adopting this path. ClickHouse documents
 [last-inserted resolution for equal versions](https://clickhouse.com/docs/reference/engines/table-engines/mergetree-family/replacingmergetree#ver)
 and [nondeterministic argMax ties](https://clickhouse.com/docs/reference/functions/aggregate-functions/argMax).
 
+Reader adoption must pass the
+[raw heart-rate materialization gate](../../clickhouse-metric-stream.md#daily-heart-rate-source-access).
+The gate requires a successful `by_user_channel_recorded_at` materialization,
+zero active parts without the projection, and natural projection selection and
+bounded candidate-key lookup evidence.
+
 Inspect existing projections before adding one; reuse or replace an inadequate
 access path instead of retaining redundant structures. A required covering
 projection is an engine-maintained index over the canonical data, not a second

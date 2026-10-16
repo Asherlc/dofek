@@ -104,9 +104,14 @@ or raw provider recounts return.
 
 ## Daily Heart Rate Source Access
 
+Release A keeps the existing reader.
 [`HeartRateRepository.dailyBySource`](../packages/server/src/repositories/heart-rate-repository.ts)
-selects candidate raw replacement keys for one user's local calendar day using
-the `by_user_channel_recorded_at` covering projection, then reads those keys with
+reads `ingest.metric_stream FINAL` directly for one user's local calendar day,
+with user, channel and recorded-time predicates.
+
+The candidate-key reader below is the planned Release B reader. It selects
+candidate raw replacement keys for one user's local calendar day using the
+`by_user_channel_recorded_at` covering projection, then reads those keys with
 native `FINAL`. Candidate predicates use only user, channel and recorded time;
 deleted, zero and null revisions remain candidates. Deletion and positive-value
 filters follow winner selection. Sources remain separate, and minute averaging
@@ -121,7 +126,7 @@ The candidate lookup separates assigned and null activity IDs because
 
 Migration `0098_heart_rate_source_access` adds the projection definition only.
 It does not populate old parts. Release its schema preparation before releasing
-the repository reader, then perform materialization as an explicit operator
+the Release B reader, then perform materialization as an explicit operator
 action after capacity review. The current raw table has no partition expression,
 so this operation covers its single historical partition; it cannot be bounded
 by a date partition without changing the table design. Review free disk, memory,
@@ -144,7 +149,7 @@ FROM system.parts
 WHERE database = 'ingest' AND table = 'metric_stream' AND active;
 ```
 
-Do not release the reader until the materialization mutation has completed
+Do not release the Release B reader until the materialization mutation has completed
 without errors, at least one active part exists, and `missing_projection_parts`
 is zero. Verify the candidate query's normal projection selection with `EXPLAIN`
 and the complete query's `system.query_log.projections`; separately confirm
