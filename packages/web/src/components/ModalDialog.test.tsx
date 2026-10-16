@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ModalDialog, ModalDialogTitle } from "./ModalDialog.tsx";
 
@@ -39,6 +39,54 @@ function DialogHarness({ onClose = () => {} }: { onClose?: () => void }) {
 }
 
 describe("ModalDialog", () => {
+  it.each(["Escape", "Close"])(
+    "returns focus to an SVG trigger after %s unmounts the dialog",
+    async (dismissal) => {
+      function SvgDialogHarness() {
+        const [open, setOpen] = useState(false);
+        const svgRef = useRef<SVGSVGElement>(null);
+        useEffect(() => {
+          const marker = document.createElementNS("http://www.w3.org/2000/svg", "path");
+          marker.setAttribute("role", "button");
+          marker.setAttribute("aria-label", "Located climb");
+          marker.setAttribute("tabindex", "0");
+          marker.addEventListener("keydown", (event) => {
+            if (event.key === "Enter") setOpen(true);
+          });
+          svgRef.current?.append(marker);
+          return () => marker.remove();
+        }, []);
+        return (
+          <>
+            <svg ref={svgRef}>
+              <title>Climbing locations</title>
+            </svg>
+            {open && (
+              <ModalDialog open onClose={() => setOpen(false)}>
+                <ModalDialogTitle>Climb details</ModalDialogTitle>
+                <button type="button" onClick={() => setOpen(false)}>
+                  Close
+                </button>
+              </ModalDialog>
+            )}
+          </>
+        );
+      }
+      render(<SvgDialogHarness />);
+      const marker = screen.getByRole("button", { name: "Located climb" });
+      if (!(marker instanceof SVGElement)) throw new Error("Expected a real SVG source marker");
+      marker.focus();
+      expect(marker).toHaveFocus();
+      fireEvent.keyDown(marker, { key: "Enter" });
+      const close = screen.getByRole("button", { name: "Close" });
+      await waitFor(() => expect(close).toHaveFocus());
+      if (dismissal === "Escape") fireEvent.keyDown(close, { key: "Escape" });
+      else fireEvent.click(close);
+      expect(screen.queryByRole("dialog")).toBeNull();
+      await waitFor(() => expect(marker).toHaveFocus());
+    },
+  );
+
   it("announces its visible title and makes background content inaccessible", async () => {
     render(<DialogHarness />);
 

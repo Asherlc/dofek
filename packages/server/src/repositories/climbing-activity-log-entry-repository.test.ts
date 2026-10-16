@@ -38,6 +38,57 @@ function repository(logs: ClimbingLogEntryDetail[]) {
   );
 }
 describe("ClimbingActivityLogEntryRepository", () => {
+  it("returns unique native map owners for each requested canonical activity", async () => {
+    const climb = climbingClimbFixture("openbeta");
+    const source = {
+      ...climb,
+      coordinates: { latitude: 0, longitude: 0 },
+    };
+    const areaOnly = {
+      ...source,
+      id: "20000000-0000-4000-8000-000000000044",
+      coordinates: null,
+      areaPath: source.areaPath.map((area) => ({
+        ...area,
+        coordinates: { latitude: 12, longitude: 0 },
+      })),
+    };
+    const activityId = "30000000-0000-4000-8000-000000000001";
+    const unknownActivityId = "30000000-0000-4000-8000-000000000002";
+    const sourceLog = climbingLogEntryFixture({ activityId, climb: source });
+    const areaLog = climbingLogEntryFixture({ activityId, climb: areaOnly });
+    const unknownLog = climbingLogEntryFixture({ activityId: unknownActivityId, climb: null });
+    const execute = vi
+      .fn()
+      .mockResolvedValueOnce([
+        { activityId: "group-one", memberActivityIds: [activityId] },
+        { activityId: "group-two", memberActivityIds: [unknownActivityId] },
+      ])
+      .mockResolvedValueOnce(
+        [sourceLog, sourceLog, areaLog, unknownLog].map(climbingLogDatabaseFixture),
+      );
+    const repo = new ClimbingActivityLogEntryRepository({ execute }, "user", "UTC");
+    const result = await repo.getActivityMapLocations(["group-one", "group-two"]);
+    expect(result.size).toBe(1);
+    expect(result.get("group-one")).toEqual([
+      {
+        coordinates: source.coordinates,
+        scope: "climb",
+        objectId: source.id,
+        providerId: "openbeta",
+        name: source.name,
+      },
+      {
+        coordinates: { latitude: 12, longitude: 0 },
+        scope: "area",
+        objectId: source.areaPath[0]?.id,
+        providerId: "openbeta",
+        name: source.areaPath[0]?.name,
+      },
+    ]);
+    expect(await repo.getActivityMapLocations([])).toEqual(new Map());
+    expect(execute).toHaveBeenCalledTimes(2);
+  });
   it("uses native Climb GPS before Area GPS, including zero coordinates", async () => {
     const log = named("openbeta");
     if (!log.climb?.areaPath[0]) throw new Error("Expected catalogue fixture");

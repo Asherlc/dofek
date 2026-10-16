@@ -54,6 +54,12 @@ vi.mock("react-native", () => ({
   Alert: { alert: vi.fn() },
   Modal: ({ children, visible }: Record<string, unknown>) =>
     visible ? React.createElement("div", { "data-testid": "modal" }, children) : null,
+  TouchableOpacity: ({ children, onPress, accessibilityLabel }: Record<string, unknown>) =>
+    React.createElement(
+      "button",
+      { type: "button", onClick: onPress, "aria-label": accessibilityLabel },
+      children,
+    ),
   Linking: { openURL: vi.fn() },
   StyleSheet: {
     create: <T extends Record<string, unknown>>(styles: T): T => {
@@ -633,12 +639,12 @@ describe("ActivityDetailScreen", () => {
       data: [
         climbingLogEntryFixture({ id: "unlocated", title: "Unknown location" }),
         climbingLogEntryFixture({
-          id: "located",
+          id: "10000000-0000-4000-8000-000000000301",
           title: "Located climb",
           mapLocation: {
             coordinates: { latitude: 0, longitude: -122.25 },
             scope: "climb",
-            objectId: "source-climb",
+            objectId: "10000000-0000-4000-8000-000000000302",
             providerId: "mountain-project",
             name: "Located climb",
           },
@@ -678,19 +684,21 @@ describe("ActivityDetailScreen", () => {
     const overviewProps = vi.mocked(RouteMap).mock.calls.find(([props]) => !props.compact)?.[0];
     expect(overviewProps?.climbMarkers).toEqual([
       {
-        entryId: "located",
+        entryId: "10000000-0000-4000-8000-000000000301",
         entryNumber: 2,
         label: "Located climb",
         location: {
           coordinates: { latitude: 0, longitude: -122.25 },
           scope: "climb",
-          objectId: "source-climb",
+          objectId: "10000000-0000-4000-8000-000000000302",
           providerId: "mountain-project",
           name: "Located climb",
         },
       },
     ]);
-    act(() => overviewProps?.onSelectEntry?.("located"));
+    act(() => overviewProps?.onSelectEntry?.("10000000-0000-4000-8000-000000000301"));
+    expect(screen.getByRole("button", { name: "Close record detail" })).toBeTruthy();
+    expect(screen.getByText("Record Detail")).toBeTruthy();
     expect(
       within(screen.getByLabelText("Climbing entry: Located climb")).getByText(
         "Entry 2 · Selected",
@@ -707,6 +715,47 @@ describe("ActivityDetailScreen", () => {
     if (state.endsWith("error")) {
       expect(screen.getByText("Recorded route refresh failed")).toBeTruthy();
     }
+  });
+
+  it("opens the exact repeated climb in a detail modal and can reopen it after closing", async () => {
+    mockByIdQuery.mockReturnValue({
+      data: { ...baseCyclingActivity, activityType: "climbing" },
+      isLoading: false,
+      error: null,
+    });
+    const climb = climbingClimbFixture("mountain-project");
+    const firstId = "10000000-0000-4000-8000-000000000311";
+    const secondId = "10000000-0000-4000-8000-000000000312";
+    const first = climbingLogEntryFixture({
+      id: firstId,
+      climb,
+      climbId: climb.id,
+      notes: "First occurrence notes",
+      mapLocation: {
+        coordinates: { latitude: 37, longitude: -122 },
+        scope: "climb",
+        objectId: climb.id,
+        providerId: "mountain-project",
+        name: climb.name,
+      },
+    });
+    mockClimbingEntriesQuery.mockReturnValue({
+      data: [first, { ...first, id: secondId, notes: "Second occurrence notes" }],
+      isLoading: false,
+      error: null,
+    });
+    const { default: ActivityDetailScreen } = await import("../../app/activity/[id]");
+    render(<ActivityDetailScreen />);
+    const overview = vi.mocked(RouteMap).mock.calls.find(([props]) => !props.compact)?.[0];
+    expect(overview?.climbMarkers?.map((marker) => marker.entryId)).toEqual([firstId, secondId]);
+    act(() => overview?.onSelectEntry?.(secondId));
+    const detail = screen.getByTestId("modal");
+    expect(within(detail).getByText("Second occurrence notes")).toBeTruthy();
+    expect(within(detail).queryByText("First occurrence notes")).toBeNull();
+    fireEvent.click(within(detail).getByRole("button", { name: "Close record detail" }));
+    expect(screen.queryByText("Record Detail")).toBeNull();
+    act(() => overview?.onSelectEntry?.(secondId));
+    expect(within(screen.getByTestId("modal")).getByText("Second occurrence notes")).toBeTruthy();
   });
 
   it("invalidates Activities screen queries after deleting an activity", async () => {

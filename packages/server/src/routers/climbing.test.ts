@@ -138,6 +138,7 @@ describe("climbingRouter", () => {
       "gradeProgression",
       "volumeByGrade",
       "sessionSummary",
+      "locationMap",
     ])
       expect(invalidateByPrefix).toHaveBeenCalledWith(`user-1:climbing.${procedure}:`);
   });
@@ -163,6 +164,57 @@ describe("climbingRouter", () => {
         sends: 2,
       },
     ]);
+  });
+  it("returns server-built map circles with canonical climb details", async () => {
+    const { caller } = makeCallerWithResponses([
+      [],
+      [
+        {
+          id: "log",
+          activity_id: groupId,
+          session_date: "2026-10-01",
+          label: "Corner",
+          climb_kind: "route",
+          grade_system: "yds",
+          grade: "5.10c",
+          location: {
+            coordinates: { latitude: 0, longitude: -122.25 },
+            scope: "area",
+            objectId: "area",
+            providerId: "openbeta",
+            name: "Crag",
+          },
+        },
+      ],
+    ]);
+    const map = await caller.locationMap({ days: 30, setting: "outdoor" });
+    expect(map.bounds).toEqual({ south: 0, north: 0, west: -122.25, east: -122.25 });
+    expect(map.nodes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          coordinates: { latitude: 0, longitude: -122.25 },
+          count: 1,
+          entries: [
+            expect.objectContaining({
+              id: "log",
+              activityId: groupId,
+              label: "Corner",
+              grade: "5.10c",
+            }),
+          ],
+        }),
+      ]),
+    );
+  });
+  it("reports map load errors and preserves the actionable database message", async () => {
+    const error = new Error("Climbing database unavailable; retry after sync.");
+    const execute = vi.fn().mockRejectedValue(error);
+    const caller = createCaller({ db: { execute }, userId: "user-1", timezone: "UTC" });
+    await expect(caller.locationMap({ days: 30 })).rejects.toMatchObject({
+      code: "INTERNAL_SERVER_ERROR",
+      message: error.message,
+    });
+    expect(captureException).toHaveBeenCalledWith(error);
   });
   it("returns progression with independently recorded method and solo status", async () => {
     const { caller } = makeCaller([

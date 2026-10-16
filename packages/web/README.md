@@ -20,6 +20,7 @@ The web dashboard for Dofek. A modern React SPA built with Vite, TypeScript, and
 - **Charts**: Custom visualization components (e.g., `TimeSeriesChart`, `PmcChart`, `Hypnogram`) built on top of ECharts and `react-native-svg` (shared patterns).
 - **Resting heart rate trend**: The dashboard renders the server's trailing seven-calendar-day average as a line without visible point markers. The card and hover labels identify the average; daily readings remain on the heart-rate detail page. See [`Dashboard`](src/pages/Dashboard.tsx) and the [server window calculation](../server/src/repositories/daily-metrics-repository.ts).
 - **Climbing progression**: Grade-colored stacked bars show sends per recorded climbing day in separate kind, scope, rope-method, solo, aid, and grade-system lanes. Patterns distinguish indoor, outdoor, and unknown settings. The server supplies counts and chart values; [shared labels](../training/src/climbing-progression.ts) keep both clients consistent. See [`ClimbingGradeProgressionChart`](src/components/ClimbingGradeProgressionChart.tsx).
+- **Climbing locations**: The training page renders server-sized circles that split into smaller groups and individual climb locations as the map zooms in. Selecting a location lists its recorded climbs, source-location scope, and attached activities. The [shared response contract](../training/src/climbing-location-map.ts) supplies the zoom bands, counts, and radii; [ClimbingLocationMap](src/components/ClimbingLocationMap.tsx) renders them with [Leaflet circle markers](https://leafletjs.com/reference.html#circlemarker).
 - **Error Boundaries**: Granular error handling using `QueryErrorBoundary` and a top-level `ErrorBoundary` in `App.tsx`.
 
 
@@ -55,6 +56,14 @@ refresh errors. See the [canonical response contract](../server/src/contracts/cl
 The recent climbing activity table omits distance and keeps its climbing metrics,
 as configured by the [climbing page](src/routes/training/climbing.tsx).
 
+The Activities list uses its existing compact
+[map tile](src/components/ActivityMapTile.tsx) for climbing-source locations when
+an activity has no recorded GPS track. Source points retain Climb/Area and
+provider attribution; they are not connected into a route and do not imply
+recorded distance or elevation. The
+[calendar repository](../server/src/repositories/activities-calendar-repository.ts)
+projects map geometry on the server, and recorded GPS takes precedence.
+
 Activity-detail climbing logs and attachment suggestions share the
 [canonical log-card grid](src/pages/activity-detail/components/ClimbingLogEntryBreakdown.tsx).
 Their component inputs accept source locations keyed by entry ID; the
@@ -62,10 +71,14 @@ Their component inputs accept source locations keyed by entry ID; the
 the owning Climb or Area, and provider attribution.
 [ActivityRouteMap](src/components/ActivityRouteMap.tsx) renders source dots
 independently of recorded GPS tracks and loads compact tick maps as they
-approach the viewport. Its occurrence chooser uses Entry numbers from the full
-card order; selection can highlight the matching
+approach the viewport. A unique point opens its climbing log details immediately;
+overlapping points offer an occurrence chooser using Entry numbers from the full
+card order. Selection opens the exact log's
+[record dialog](src/pages/RecordDetailModal.tsx) and highlights its
 [climbing card](src/pages/activity-detail/components/ClimbingLogEntryCard.tsx),
-including repeated names at the same point.
+including repeated names at the same point. Closing the dialog returns keyboard
+focus to its triggering map point or occurrence button; the [activity tests](src/pages/ActivityDetailPage.test.tsx)
+cover closing and reopening the same occurrence.
 The activity screen supplies each log's server-projected location to the
 overview and compact maps, including when no recorded GPS route exists.
 The [server projection](../server/src/repositories/climbing-activity-log-entry-repository.ts)

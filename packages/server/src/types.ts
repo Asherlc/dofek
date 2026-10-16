@@ -11,6 +11,7 @@ export type { ActivityHrZones, StreamPoint } from "./routers/activity.ts";
 
 // Recovery router types
 
+export type { ActivityLocation } from "./contracts/activity-location.ts";
 // Sleep need router types
 export type {
   SleepNeedResult,

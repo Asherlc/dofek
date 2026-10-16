@@ -20,6 +20,13 @@ The mobile app for Dofek. Built with Expo and React Native, with native Swift mo
 
 ## Project Structure
 
+The Activities list reuses its compact bike-ride map preview for climbing-source
+locations when an activity has no recorded GPS track. Source points retain
+Climb/Area and provider attribution without creating a route or implying
+distance/elevation measurements. The
+[calendar repository](../server/src/repositories/activities-calendar-repository.ts)
+projects map geometry on the server, and recorded GPS takes precedence.
+
 Activity details show climbing logs and same-day attachment suggestions for
 climbing and hiking activities. Cards show current shared locations, published
 display grades, scoped results, and server-derived rock labels. Provider records
@@ -35,9 +42,14 @@ Activity-detail climbing entries and suggestions use
 [ClimbingLogEntryCard](./components/ClimbingLogEntryCard.tsx). Their source-location
 inputs share the web client's [coordinate and provenance types](../training/src/climbing-map.ts).
 [RouteMap](./components/RouteMap.tsx) renders source dots independently of the
-recorded GPS route and supports compact tick maps. Its production occurrence
-chooser uses Entry numbers from the full card order and can select the matching
-card, including repeated names at the same point. Colocated Storybook stories
+recorded GPS route and supports compact tick maps. The overview supports panning
+and zooming; compact maps do not intercept touches. A unique point opens its log
+details immediately; overlapping points offer an occurrence chooser using Entry
+numbers from the full card order. Selection opens the exact log's
+[record modal](./components/providers/provider-record-detail-modal.tsx) and
+highlights its card, including repeated names at the same point. The
+[activity tests](./app-tests/activity/[id].test.tsx) cover closing and reopening
+the same occurrence. Colocated Storybook stories
 exercise exact Climb points, containing-Area points, missing GPS, and attachment
 states. The activity screen supplies each log's server-projected location to
 overview and compact maps even without a recorded GPS route. The
@@ -48,6 +60,15 @@ Unattached suggestions have their own compact source-location maps. The complete
 log and attempt graph follows the [canonical response contract](../server/src/contracts/climbing-log-contracts.ts).
 
 The Training route coordinates query states and delegates climbing payload validation, grade cards, and Hangboarding display to [ClimbingTrainingCard](./components/ClimbingTrainingCard.tsx), with focused tests and stories beside the component.
+
+[ClimbingLocationMapCard](./components/ClimbingLocationMapCard.tsx) uses the same
+Training dates and climbing filters to render [server-computed clusters](../training/src/climbing-location-map.ts).
+Larger circles split into individual climb locations as the map zooms; repeated
+logs at one coordinate stay selectable together, with their grade, date, source,
+location scope, and activity link. Its native map preserves the viewport during
+refreshes and uses the cross-platform region API to zoom into clusters; the
+[native map camera documentation](https://github.com/react-native-maps/react-native-maps/blob/master/docs/mapview.md#types)
+distinguishes MapKit altitude from Google Maps zoom values.
 
 - `app/`: Expo Router screens (file-based routing). Keep this route-only; Expo documents `app` as route-exclusive and non-route files there can be treated as routes: <https://docs.expo.dev/router/basics/core-concepts/#6-non-navigation-components-live-outside-the-srcapp-directory>.
 - `app-tests/`: Vitest tests for Expo Router screens.
@@ -260,6 +281,9 @@ and hardware described there.
 
 ## Dependency pins
 
+The workspace retains exact-version [release-age exclusions](https://pnpm.io/settings/dependency-resolution#minimumreleaseageexclude)
+for the approved SDK dependency tree.
+
 - `@react-native-async-storage/async-storage@2.2.0` — Expo SDK 58 pins this
   version in its [native dependency matrix](https://api.expo.dev/v2/sdks/58.0.0/native-modules).
   AsyncStorage 3.x breaks iOS builds on recent Expo SDKs; see
@@ -288,12 +312,16 @@ and hardware described there.
 
 ### Native diagnostic runtime
 
-Runtime **1.7** uses the Expo SDK 58 native dependency set aligned with
-Expo 58.0.11, React Native 0.88.0, and `react-native-svg@15.16.0`, following
-[Expo's upgrade guide](https://docs.expo.dev/workflow/upgrading-expo-sdk-walkthrough/).
-It includes ExpoNetwork, the pnpm patch to `expo-apple-authentication@58.0.2`, and
-`react-native-maps@1.29.11`. Build a new native binary containing these
-dependencies; do not publish this JavaScript to runtime 1.6 or earlier.
+Runtime **1.8** uses the stable [Expo SDK 58](https://expo.dev/changelog/sdk-58)
+native dependency set with Expo 58.0.12, Expo Router 58.0.21, Expo Updates
+58.0.17, React Native 0.88.0, and React Native SVG 15.16.0, pinned in
+[package.json](./package.json). Validate SDK-managed versions with
+`pnpm tsx ../../scripts/with-env.ts -- pnpm expo install --check` from this package, following Expo's
+[dependency validation guidance](https://docs.expo.dev/more/expo-cli/#configuring-dependency-validation).
+The native dependency set also includes ExpoNetwork, the pnpm patch to
+`expo-apple-authentication@58.0.2`, and `react-native-maps@1.29.11`.
+Build a new native binary containing these dependencies; do not publish this
+JavaScript to runtime 1.7 or earlier.
 Expo requires a runtime increment when native code is updated; see
 [manual runtime version increments](https://docs.expo.dev/eas-update/runtime-versions/#manually-increment-the-runtime-version).
 Expo uses
@@ -301,6 +329,16 @@ runtime versions to match updates to compatible native code
 ([runtime versions](https://docs.expo.dev/eas-update/runtime-versions/)).
 Use [pnpm patch/patch-commit](https://pnpm.io/cli/patch-commit) when updating the
 patch, then rerun the native regression and existing Release archive job.
+
+The SVG 15.16.0 dependency patch separates its Android tap-sound binding from
+the web module graph. It preserves the native press behavior introduced by
+[upstream PR 3016](https://github.com/software-mansion/react-native-svg/pull/3016)
+and uses React Native's documented
+[generic/web and `.native` module resolution](https://reactnative.dev/docs/platform-specific-code#native-specific-extensions-ie-sharing-code-with-nodejs-and-web).
+After changing SVG or its patch, run `pnpm check:svg-platform` from this package,
+verify mobile Storybook development and static export, and run the native
+Release archive. The check exercises strict web bundling and native press
+behavior; it does not replace a native build or device validation.
 
 Sentry React Native 8.29.0 and the separate watch Swift package use Cocoa 9.30.0.
 The [binary podspec](./plugins/Sentry.podspec.json) pins its release URL and

@@ -26,14 +26,97 @@ const mapPreview = {
   routePath: null,
 };
 
-function location(overrides: Partial<ActivityMapLocation> = {}): ActivityMapLocation {
+function location(
+  overrides: Partial<Extract<ActivityMapLocation, { kind: "recorded_gps" }>> = {},
+): ActivityMapLocation {
   return {
+    kind: "recorded_gps",
+    centroidLat: 37.7749,
+    centroidLng: -122.4194,
     mapPreview,
     ...overrides,
   };
 }
 
 describe("ActivityMapTile", () => {
+  it("draws source-owned Area and Climb points without connecting them as a track", () => {
+    render(
+      <ActivityMapTile
+        location={{
+          kind: "climbing_source",
+          mapPreview,
+          sourcePoints: [
+            {
+              x: 100,
+              y: 200,
+              location: {
+                coordinates: { latitude: 37, longitude: -122 },
+                scope: "area",
+                objectId: "area-1",
+                providerId: "mountain-project",
+                name: "North Wall",
+              },
+            },
+            {
+              x: 300,
+              y: 400,
+              location: {
+                coordinates: { latitude: 38, longitude: -123 },
+                scope: "climb",
+                objectId: "climb-1",
+                providerId: "openbeta",
+                name: "Corner Crack",
+              },
+            },
+          ],
+        }}
+      />,
+    );
+
+    const map = screen.getByRole("img", {
+      name: /Climbing source locations.*Area location: North Wall.*Mountain Project.*Climb location: Corner Crack.*OpenBeta/,
+    });
+    const points = map.querySelectorAll("circle");
+    expect(points).toHaveLength(2);
+    expect(points[0]?.parentElement).toHaveStyle({ left: "9.765625%", top: "34.72222222222222%" });
+    expect(points[1]?.parentElement).toHaveStyle({ left: "29.296875%", top: "69.44444444444444%" });
+    for (const point of points) {
+      expect(point.parentElement).toHaveAttribute("width", "16");
+      expect(point.parentElement).toHaveAttribute("height", "16");
+    }
+    expect(map.querySelector("path")).toBeNull();
+    expect(screen.getByText("Source locations")).toBeDefined();
+  });
+
+  it("keeps unnamed source locations attributed without presenting an identifier as a place", () => {
+    render(
+      <ActivityMapTile
+        location={{
+          kind: "climbing_source",
+          mapPreview,
+          sourcePoints: [
+            {
+              x: 512,
+              y: 288,
+              location: {
+                coordinates: { latitude: 37, longitude: -122 },
+                scope: "area",
+                objectId: "area-123",
+                providerId: "mountain-project",
+                name: null,
+              },
+            },
+          ],
+        }}
+      />,
+    );
+    expect(
+      screen.getByRole("img", {
+        name: "Climbing source locations · Area location · Mountain Project",
+      }),
+    ).toBeDefined();
+  });
+
   it("fills a horizontal activity card map panel", () => {
     render(<ActivityMapTile location={location()} variant="panel" />);
 

@@ -63,7 +63,7 @@ export class PolarClient {
     if (!response.ok) {
       const contentType = response.headers.get("content-type") ?? "";
       throw new Error(
-        `Polar API error (${response.status}): ${formatPolarApiErrorBody(contentType, textBody)}`,
+        `Polar API error (${response.status}) for ${path}: ${formatPolarApiErrorBody(contentType, textBody)}`,
       );
     }
 
@@ -212,10 +212,10 @@ export class PolarClient {
   }
 
   async #readErrorBody(response: Response): Promise<string> {
-    const contentType = response.headers.get("content-type") ?? "";
-    if (contentType.includes("text/html")) return "(HTML error page)";
-    const text = await response.text();
-    return text.length > 200 ? `${text.slice(0, 200)}…` : text;
+    return formatPolarApiErrorBody(
+      response.headers.get("content-type") ?? "",
+      await response.text(),
+    );
   }
 
   async downloadTcx(exerciseId: string): Promise<string> {
@@ -243,12 +243,12 @@ function hasInvalidTokenChallenge(response: Response): boolean {
 }
 
 function formatPolarApiErrorBody(contentType: string, textBody: string): string {
-  if (contentType.includes("text/html")) {
-    return "(HTML error page)";
+  if (textBody.trim() === "") {
+    return "(empty error body)";
   }
 
-  if (contentType.includes("application/json")) {
-    return textBody.trim() === "" ? "(empty JSON error body)" : textBody;
+  if (contentType.includes("text/html")) {
+    return "(HTML error page)";
   }
 
   return textBody.length > 200 ? `${textBody.slice(0, 200)}…` : textBody;

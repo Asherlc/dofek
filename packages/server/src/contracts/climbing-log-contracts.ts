@@ -11,7 +11,7 @@ import type { ClimbingMapLocation } from "@dofek/training/climbing-map";
 import { gpsCoordinatesSchema } from "@dofek/training/gps-coordinates";
 import { z } from "zod";
 
-const climbingMapLocationSchema = z.strictObject({
+export const climbingMapLocationSchema = z.strictObject({
   coordinates: gpsCoordinatesSchema,
   scope: z.enum(["climb", "area"]),
   objectId: z.guid(),
