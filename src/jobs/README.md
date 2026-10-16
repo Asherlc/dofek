@@ -50,9 +50,10 @@ HTTP work ([PostgreSQL advisory locks](https://www.postgresql.org/docs/current/e
 The guard acquires the provider lock before the shared account-erasure work
 barrier, checks the erasure fence, and releases both in reverse order after the
 callback. It verifies each unlock and destroys a session whose ownership cannot
-be confirmed. If the checked-out provider lock session disconnects, the worker
-reports the exception and exits synchronously to prevent an outstanding HTTP
-callback from persisting after exclusion is lost. Telemetry delivery is best
+be confirmed. If any checked-out work-lock session disconnects, the worker
+reports the exception and exits synchronously to prevent an outstanding
+callback from persisting after provider exclusion or the account-erasure barrier
+is lost. This also protects account-only jobs such as imports and exports. Telemetry delivery is best
 effort at that boundary: immediate exit cannot wait for asynchronous flushing
 ([node-postgres client errors](https://node-postgres.com/apis/client#events),
 [Node.js process.exit](https://nodejs.org/api/process.html#processexitcode)).
