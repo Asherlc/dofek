@@ -63,6 +63,65 @@ it("keeps separate area groups and each attachment's original occurrence number"
   expect(onAttach).toHaveBeenCalledWith("repeat");
 });
 
+it("groups a shared area across providers while preserving both source records and attachment identities", () => {
+  const entries = [
+    { providerId: "mountain-project", sourceName: "Mountain Project", name: "Road Kill" },
+    { providerId: "openbeta", sourceName: "OpenBeta", name: "Left Arete" },
+  ].map(({ providerId, sourceName, name }, index) => {
+    const climb = climbingClimbFixture(providerId);
+    climb.name = name;
+    climb.id = `climb-${index}`;
+    climb.areaId = `area-${index}`;
+    climb.areaPath = climb.areaPath.flatMap((area) => [
+      { ...area, id: `region-${index}`, name: "Donner Summit", parentAreaId: null },
+      { ...area, id: `area-${index}`, name: "Green Phantom Rock", parentAreaId: `region-${index}` },
+    ]);
+    return climbingLogEntryFixture({
+      id: `log-${index}`,
+      providerId,
+      sourceName,
+      climb,
+      climbId: climb.id,
+      sourceLinks: [
+        {
+          providerId,
+          kind: "route",
+          url:
+            providerId === "openbeta"
+              ? "https://openbeta.io/climb/10000000-0000-4000-8000-000000000001"
+              : "https://www.mountainproject.com/route/105734732/road-kill",
+        },
+      ],
+    });
+  });
+  const onAttach = vi.fn();
+  render(
+    <ClimbingLogEntryBreakdown
+      entries={[
+        entries[0] ?? climbingLogEntryFixture(),
+        climbingLogEntryFixture({ id: "indoor", title: "Indoor" }),
+        entries[1] ?? climbingLogEntryFixture(),
+      ]}
+      onAttach={onAttach}
+    />,
+  );
+  expect(screen.getAllByRole("heading", { name: "Green Phantom Rock" })).toHaveLength(1);
+  const area = within(screen.getByRole("list", { name: "Green Phantom Rock climbs" }));
+  expect(area.getByRole("link", { name: "Road Kill on Mountain Project" })).toHaveAttribute(
+    "href",
+    "https://www.mountainproject.com/route/105734732/road-kill",
+  );
+  expect(area.getByRole("link", { name: "Left Arete on OpenBeta" })).toHaveAttribute(
+    "href",
+    "https://openbeta.io/climb/10000000-0000-4000-8000-000000000001",
+  );
+  fireEvent.click(area.getByRole("button", { name: "Attach entry 1, Road Kill to this activity" }));
+  fireEvent.click(
+    area.getByRole("button", { name: "Attach entry 3, Left Arete to this activity" }),
+  );
+  expect(onAttach.mock.calls).toEqual([["log-0"], ["log-1"]]);
+});
+
 it("keeps a completed pitch scoped to its recorded result", () => {
   const entry = climbingLogEntryFixture({
     title: "A recorded outing",

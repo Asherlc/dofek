@@ -94,6 +94,50 @@ it("shows a completed dab without a send label", () => {
 });
 
 describe("ClimbingLogEntryBreakdown", () => {
+  it("shows overlapping source areas under one heading and preserves each attachment", () => {
+    const climb = climbingLogFixture.climb;
+    if (!climb) throw new Error("Expected a climb fixture");
+    const onAttach = vi.fn();
+    render(
+      <ClimbingLogEntryBreakdown
+        entries={[
+          climbingLogFixture,
+          {
+            ...climbingLogFixture,
+            id: "openbeta-log",
+            providerId: "openbeta",
+            sourceName: "OpenBeta",
+            sourceLinks: [
+              {
+                kind: "route",
+                providerId: "openbeta",
+                url: "https://openbeta.io/climb/10000000-0000-4000-8000-000000000001",
+              },
+            ],
+            climb: {
+              ...climb,
+              providerId: "openbeta",
+              name: "Road Kill",
+              areaPath: climb.areaPath.map((area) => ({
+                ...area,
+                providerId: "openbeta",
+                id: `openbeta-${area.id}`,
+              })),
+            },
+          },
+        ]}
+        onAttach={onAttach}
+      />,
+    );
+    expect(screen.getAllByText("Goat Rock")).toHaveLength(1);
+    const group = within(screen.getByLabelText("Goat Rock"));
+    expect(group.getByRole("link", { name: "Swiss Cheese on Mountain Project" })).toBeTruthy();
+    expect(group.getByRole("link", { name: "Road Kill on OpenBeta" })).toBeTruthy();
+    fireEvent.click(
+      group.getByRole("button", { name: "Attach entry 2, Road Kill to this activity" }),
+    );
+    expect(onAttach).toHaveBeenCalledWith("openbeta-log");
+  });
   it("groups nonadjacent climbs under their area heading and keeps attachment identities", () => {
     const climb = climbingLogFixture.climb;
     const area = climb?.areaPath.at(-1);

@@ -90,6 +90,12 @@ separate. Server queries derive completion, result labels and counts; see the
 [current model](../../docs/climbing-context.md) and
 [schemas](src/climbing-log.ts).
 
+The [log-card grouping helper](src/climbing-log-groups.ts) groups areas across
+sources when their complete ordered name paths match, ignoring case and extra
+whitespace. Distinct parent paths remain separate. If one source has multiple
+Area IDs for the same path, the match is ambiguous and those areas remain
+separate. Grouping preserves every log and its original occurrence number.
+
 ### Training distributions
 
 The Treff polarization summary uses recorded cycling time in three
