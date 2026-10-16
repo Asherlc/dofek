@@ -93,6 +93,7 @@ overrides:
 packageExtensions:
   "@bacons/apple-targets@5.0.0":
     dependencies:
+      chalk: 4.1.2
       "@expo/image-utils": 0.12.5
       "@expo/plist": 0.10.1
 

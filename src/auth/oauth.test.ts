@@ -155,6 +155,21 @@ describe("OAuth", () => {
   });
 
   describe("refreshAccessToken", () => {
+    it("retains the refresh token when the server does not rotate it", async () => {
+      const mockFetch = vi.fn().mockResolvedValue(
+        Response.json({
+          access_token: "new-access-token",
+          token_type: "Bearer",
+          expires_in: 3600,
+        }),
+      );
+
+      const result = await refreshAccessToken(config, "existing-refresh-token", mockFetch);
+
+      expect(result.accessToken).toBe("new-access-token");
+      expect(result.refreshToken).toBe("existing-refresh-token");
+    });
+
     it("refreshes an expired access token", async () => {
       const mockFetch = vi.fn().mockResolvedValue({
         ok: true,

@@ -50,7 +50,7 @@ overrides:
   ws: 8.21.0
   yaml: 2.9.0
 
-packageExtensionsChecksum: sha256-zR8h17kN88uRQ5mORK3ESmRZCjKywYK9WXobAbzWTw0=
+packageExtensionsChecksum: sha256-fO9HymUlYWgNyVUBC8JSVNfpJ2K38bLEkAHKjI8IzCk=
 
 patchedDependencies:
   '@expo/plist@0.0.18': 36c34cedabd346f4ff3d0f855e931a3e36710b099d24c10f29b46a00e5ff1288
@@ -18154,6 +18154,7 @@ snapshots:
       '@expo/plist': 0.10.1(patch_hash=7cb0ce8ff97efbf09577aea33e81b939c5d9ad3ebbd4e341e14ac814df27eaae)
       '@expo/prebuild-config': 55.0.22(expo@58.0.12)(supports-color@11.0.0)(typescript@6.0.3)
       '@react-native/normalize-colors': 0.79.7
+      chalk: 4.1.2
       debug: 4.4.3(supports-color@11.0.0)
       expo: 58.0.12(@babel/core@7.29.7)(@expo/dom-webview@58.0.2)(@expo/metro-runtime@58.0.14)(expo-router@58.0.21)(react-dom@19.3.0)(react-native-web@0.21.4)(react-native-worklets@0.13.0)(react-native@0.88.0)(react@19.3.0)(supports-color@11.0.0)(typescript@6.0.3)
       glob: 10.5.0
