@@ -126,7 +126,7 @@ const mapPreview = {
   ],
 };
 
-function createStoryData() {
+function createStoryData(climbingActivity = false) {
   const today = formatDateYmd();
   const yesterday = formatDateYmd(new Date(Date.now() - 86_400_000));
   const queryInput = { weeks: 4, endDate: today };
@@ -209,14 +209,50 @@ function createStoryData() {
     },
   ];
 
+  if (climbingActivity) {
+    weekList[0].activities = [
+      {
+        id: "a1220000-0000-4000-8000-000000000001",
+        name: "Boulder Canyon climbing",
+        activityType: "climbing",
+        startedAt: `${today}T14:00:00Z`,
+        endedAt: `${today}T16:00:00Z`,
+        localTimeContext: {
+          timezone: "America/Denver",
+          startUtcOffsetMinutes: -360,
+          endUtcOffsetMinutes: -360,
+          source: "device_timezone",
+        },
+        durationMin: 120,
+        source: {
+          primarySourceLabel: "Mountain Project",
+          sourceCount: 1,
+          overlapSummary: null,
+        },
+        lastProcessedAt: `${today}T16:05:00Z`,
+        distanceMeters: null,
+        distanceState: { status: "missing", reason: "Distance not recorded" },
+        elevationGainM: null,
+        elevationState: { status: "missing", reason: "Elevation not recorded" },
+        location: null,
+        tss: null,
+        stats: [],
+      },
+    ];
+  }
+
   const activityOverview = {
     activityCount: 2,
-    totalMinutes: 135,
-    totalDistanceMeters: 32400,
-    totalDistanceState: { status: "available" },
-    totalElevationGainM: 412,
-    totalElevationState: { status: "available" },
-    activityTypes: ["road_cycling", "strength"],
+    totalMinutes: climbingActivity ? 165 : 135,
+    totalDistanceMeters: climbingActivity ? null : 32400,
+    totalDistanceState: climbingActivity
+      ? { status: "missing", reason: "Distance not recorded" }
+      : { status: "available" },
+    totalElevationGainM: climbingActivity ? null : 412,
+    totalElevationState: climbingActivity
+      ? { status: "missing", reason: "Elevation not recorded" }
+      : { status: "available" },
+    activityTypes: [climbingActivity ? "climbing" : "road_cycling", "strength"],
   };
 
   const calendarData = [
@@ -231,8 +267,8 @@ function createStoryData() {
     {
       date: today,
       activityCount: 1,
-      totalMinutes: 90,
-      activityTypes: ["road_cycling"],
+      totalMinutes: climbingActivity ? 120 : 90,
+      activityTypes: [climbingActivity ? "climbing" : "road_cycling"],
       trainingTimeBand: "high" as const,
       trainingTimeMeaning: "High recorded training volume",
     },
@@ -293,8 +329,14 @@ function createMockObservable(
   return result;
 }
 
-function MockProviders({ children }: { children: React.ReactNode }) {
-  const storyData = useMemo(() => createStoryData(), []);
+function MockProviders({
+  children,
+  climbingActivity,
+}: {
+  children: React.ReactNode;
+  climbingActivity: boolean;
+}) {
+  const storyData = useMemo(() => createStoryData(climbingActivity), [climbingActivity]);
   const queryClient = useMemo(() => {
     const client = new QueryClient({
       defaultOptions: { queries: { retry: false, staleTime: Number.POSITIVE_INFINITY } },
@@ -336,8 +378,8 @@ const meta = {
     layout: "fullscreen",
   },
   decorators: [
-    (Story) => (
-      <MockProviders>
+    (Story, context) => (
+      <MockProviders climbingActivity={context.parameters.climbingActivity === true}>
         <View style={{ flex: 1, backgroundColor: "#000" }}>
           <Story />
         </View>
@@ -357,5 +399,14 @@ export const SelectionMode: Story = {
     await userEvent.click(
       await within(canvasElement).findByRole("button", { name: "Select activities" }),
     );
+  },
+};
+
+export const ClimbingActivity: Story = {
+  parameters: { climbingActivity: true },
+  play: async ({ canvasElement }) => {
+    await within(canvasElement).findByRole("button", {
+      name: /Boulder Canyon climbing.*Climbing/,
+    });
   },
 };

@@ -47,9 +47,16 @@ export const RoutePlusDots: Story = { args: { climbMarkers: markers } };
 export const PointsOnly: Story = {
   args: { points: [], climbMarkers: markers, onSelectEntry: fn() },
   play: async ({ args, canvasElement }) => {
-    await userEvent.click(
-      await within(canvasElement).findByRole("button", {
-        name: "Entry 1 · Swiss Cheese · Climb location: Swiss Cheese · Mountain Project",
+    const dot = await within(canvasElement).findByRole("button", {
+      name: "Entry 1 · Swiss Cheese · Climb location: Swiss Cheese · Mountain Project",
+    });
+    const bounds = dot.getBoundingClientRect();
+    // Preserve enumerable native coordinates for Leaflet's preclick event copy.
+    dot.dispatchEvent(
+      new MouseEvent("click", {
+        bubbles: true,
+        clientX: bounds.x + bounds.width / 2,
+        clientY: bounds.y + bounds.height / 2,
       }),
     );
     await expect(args.onSelectEntry).toHaveBeenLastCalledWith("tick-1");
@@ -71,12 +78,19 @@ export const RepeatedPoint: Story = {
   },
   play: async ({ args, canvasElement }) => {
     const canvas = within(canvasElement);
-    await userEvent.click(
-      await canvas.findByRole("button", {
-        name: "Entry 2 · Swiss Cheese · Climb location: Swiss Cheese · Mountain Project",
+    const dot = await canvas.findByRole("button", {
+      name: "Entry 2 · Swiss Cheese · Climb location: Swiss Cheese · Mountain Project",
+    });
+    const bounds = dot.getBoundingClientRect();
+    // Preserve enumerable native coordinates for Leaflet's preclick event copy.
+    dot.dispatchEvent(
+      new MouseEvent("click", {
+        bubbles: true,
+        clientX: bounds.x + bounds.width / 2,
+        clientY: bounds.y + bounds.height / 2,
       }),
     );
-    await userEvent.click(canvas.getByRole("button", { name: "Entry 2 · Swiss Cheese" }));
+    await userEvent.click(await canvas.findByRole("button", { name: "Entry 2 · Swiss Cheese" }));
     await expect(args.onSelectEntry).toHaveBeenLastCalledWith("tick-repeat");
   },
 };
