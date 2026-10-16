@@ -63,7 +63,7 @@ export class PolarClient {
     if (!response.ok) {
       const contentType = response.headers.get("content-type") ?? "";
       throw new Error(
-        `Polar API error (${response.status}): ${formatPolarApiErrorBody(contentType, textBody)}`,
+        `Polar API error (${response.status}) for ${path}: ${formatPolarApiErrorBody(contentType, textBody)}`,
       );
     }
 
@@ -243,12 +243,16 @@ function hasInvalidTokenChallenge(response: Response): boolean {
 }
 
 function formatPolarApiErrorBody(contentType: string, textBody: string): string {
+  if (textBody.trim() === "") {
+    return "(empty error body)";
+  }
+
   if (contentType.includes("text/html")) {
     return "(HTML error page)";
   }
 
   if (contentType.includes("application/json")) {
-    return textBody.trim() === "" ? "(empty JSON error body)" : textBody;
+    return textBody;
   }
 
   return textBody.length > 200 ? `${textBody.slice(0, 200)}…` : textBody;
