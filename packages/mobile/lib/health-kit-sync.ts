@@ -608,7 +608,17 @@ async function syncAnchoredSampleType(
 ): Promise<SyncResult> {
   const { healthKit, minimumSampleDate = null, onStage, trpcClient } = options;
   onStage?.({ operation: "queryAnchoredSamples", typeIdentifier });
-  const changes = await healthKit.queryAnchoredSamples(typeIdentifier, initialStartDate);
+  const changes = await healthKit
+    .queryAnchoredSamples(typeIdentifier, initialStartDate)
+    .catch((error: unknown) => {
+      if (!isAuthorizationNotDetermined(error)) {
+        throw error;
+      }
+      return null;
+    });
+  if (changes === null) {
+    return { deleted: 0, inserted: 0, errors: [] };
+  }
 
   try {
     const uploadResult = await pushQuantitySampleBatches(

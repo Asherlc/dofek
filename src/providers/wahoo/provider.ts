@@ -1,3 +1,4 @@
+import { PROVIDER_HTTP_REQUEST_TIMEOUT_MS } from "@dofek/provider-http/rate-limit";
 import type { OAuthConfig, TokenSet } from "../../auth/oauth.ts";
 import {
   exchangeCodeForTokens,
@@ -265,6 +266,7 @@ export class WahooProvider implements WebhookProvider {
       getOAuthConfig: () => wahooOAuthConfig(),
       fetchFn: this.#fetchFn,
       forceRefresh,
+      refreshBeforeExpiryMs: PROVIDER_HTTP_REQUEST_TIMEOUT_MS,
     });
   }
 
@@ -283,7 +285,20 @@ export class WahooProvider implements WebhookProvider {
       return { provider: this.id, recordsSynced, errors, duration: Date.now() - start };
     }
 
-    let client = new WahooClient(tokens.accessToken, this.#fetchFn);
+    const fetchWithCurrentToken = createProviderRateLimitFetch(this.id, this.#fetchFn, {
+      prepareRequest: async (input, init) => {
+        const headers = new Headers(
+          init?.headers ?? (input instanceof Request ? input.headers : undefined),
+        );
+        if (!headers.has("Authorization")) return init;
+        if (tokens.expiresAt.getTime() <= Date.now() + PROVIDER_HTTP_REQUEST_TIMEOUT_MS) {
+          tokens = await this.#resolveTokens(db);
+        }
+        headers.set("Authorization", `Bearer ${tokens.accessToken}`);
+        return { ...init, headers };
+      },
+    });
+    const client = new WahooClient(tokens.accessToken, fetchWithCurrentToken);
     let retriedRejectedAccessToken = false;
     const persister = new WahooActivityPersister(
       this.id,
@@ -323,7 +338,6 @@ export class WahooProvider implements WebhookProvider {
             "[wahoo] API rejected access token, refreshing and retrying workout request...",
           );
           tokens = await this.#resolveTokens(db, true);
-          client = new WahooClient(tokens.accessToken, this.#fetchFn);
           response = await client.getWorkouts(page ?? 1);
         }
         const parsed = parseWorkoutList(response);

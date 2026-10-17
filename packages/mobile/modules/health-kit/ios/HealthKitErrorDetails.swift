@@ -3,6 +3,7 @@ import HealthKit
 
 struct HealthKitErrorDetails: Equatable {
     static let databaseInaccessibleCode = "HEALTHKIT_DATABASE_INACCESSIBLE"
+    static let authorizationNotDeterminedCode = "HEALTHKIT_AUTHORIZATION_NOT_DETERMINED"
 
     let code: String
     let reason: String
@@ -19,9 +20,13 @@ struct HealthKitErrorDetails: Equatable {
 
     init(operation: String, fallbackCode: String, error: Error) {
         let nativeError = error as NSError
-        self.code = Self.isDatabaseInaccessible(nativeError)
-            ? Self.databaseInaccessibleCode
-            : fallbackCode
+        if Self.isAuthorizationNotDetermined(error) {
+            self.code = Self.authorizationNotDeterminedCode
+        } else if Self.isDatabaseInaccessible(nativeError) {
+            self.code = Self.databaseInaccessibleCode
+        } else {
+            self.code = fallbackCode
+        }
         self.reason = "\(operation) failed: \(nativeError.localizedDescription) " +
             "(\(nativeError.domain):\(nativeError.code))"
     }

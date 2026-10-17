@@ -2,6 +2,7 @@ import { focusManager, onlineManager, QueryClient, QueryObserver } from "@tansta
 import type { NetworkState } from "expo-network";
 import { AppState, type AppStateStatus, Platform } from "react-native";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { invalidateSyncedHealthData } from "./invalidate-synced-health-data";
 import { registerMobileQueryLifecycle } from "./mobile-query-lifecycle";
 
 const network = vi.hoisted(() => ({
@@ -36,6 +37,21 @@ function pollingQuery() {
   });
   stopObserver = observer.subscribe(() => undefined);
   return fetch;
+}
+
+function staleDashboardQuery() {
+  const fetch = vi.fn(async () => "updated dashboard");
+  const observer = new QueryObserver(client, {
+    queryKey: [["mobileDashboard", "dashboardV2"], { type: "query" }],
+    queryFn: fetch,
+    initialData: "cached dashboard",
+    initialDataUpdatedAt: Date.now() - 6 * 60_000,
+    staleTime: 5 * 60_000,
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
+  });
+  stopObserver = observer.subscribe(() => undefined);
+  return { fetch, observer };
 }
 
 beforeEach(() => {
@@ -116,6 +132,50 @@ describe("registerMobileQueryLifecycle", () => {
     networkListener({ isConnected: true });
     await vi.advanceTimersByTimeAsync(1);
     expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("defers stale dashboard reconnect refetches until the app is active", async () => {
+    cleanup = registerMobileQueryLifecycle();
+    await vi.advanceTimersByTimeAsync(1);
+    const { fetch, observer } = staleDashboardQuery();
+    expect(fetch).not.toHaveBeenCalled();
+
+    AppState.currentState = "background";
+    appListener("background");
+    networkListener({ isConnected: false, isInternetReachable: false });
+    await vi.advanceTimersByTimeAsync(1);
+    networkListener({ isConnected: true, isInternetReachable: true });
+    await vi.advanceTimersByTimeAsync(1);
+
+    expect(fetch).not.toHaveBeenCalled();
+    expect(observer.getCurrentResult().data).toBe("cached dashboard");
+
+    AppState.currentState = "active";
+    appListener("active");
+    await vi.advanceTimersByTimeAsync(1);
+
+    expect(fetch).toHaveBeenCalledOnce();
+    expect(observer.getCurrentResult().data).toBe("updated dashboard");
+  });
+
+  it("settles background health invalidation while deferring dashboard work until active", async () => {
+    cleanup = registerMobileQueryLifecycle();
+    await vi.advanceTimersByTimeAsync(1);
+    const { fetch, observer } = staleDashboardQuery();
+    AppState.currentState = "background";
+    appListener("background");
+
+    await invalidateSyncedHealthData(client);
+
+    expect(fetch).not.toHaveBeenCalled();
+    expect(observer.getCurrentResult().data).toBe("cached dashboard");
+
+    AppState.currentState = "active";
+    appListener("active");
+    await vi.advanceTimersByTimeAsync(1);
+
+    expect(fetch).toHaveBeenCalledOnce();
+    expect(observer.getCurrentResult().data).toBe("updated dashboard");
   });
 
   it("does not overwrite a newer disconnect with a stale initial probe", async () => {
