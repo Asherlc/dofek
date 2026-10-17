@@ -8,14 +8,23 @@ export function registerMobileQueryLifecycle(): () => void {
 
   let disposed = false;
   let receivedNetworkEvent = false;
-  focusManager.setFocused(AppState.currentState === "active");
+  let active = AppState.currentState === "active";
+  let connected = false;
+  const updateOnline = () => onlineManager.setOnline(active && connected);
+
+  focusManager.setFocused(active);
   // Wait for the initial native connectivity snapshot before issuing requests.
-  onlineManager.setOnline(false);
+  updateOnline();
   const appSubscription = AppState.addEventListener("change", (state) => {
-    if (!disposed) focusManager.setFocused(state === "active");
+    if (disposed) return;
+    active = state === "active";
+    focusManager.setFocused(active);
+    // Focus alone does not pause reconnect or invalidation-triggered refetches.
+    updateOnline();
   });
   const updateNetwork = (state: Network.NetworkState) => {
-    onlineManager.setOnline(state.isConnected === true && state.isInternetReachable !== false);
+    connected = state.isConnected === true && state.isInternetReachable !== false;
+    updateOnline();
   };
   const networkSubscription = Network.addNetworkStateListener((state) => {
     if (disposed) return;
@@ -32,7 +41,10 @@ export function registerMobileQueryLifecycle(): () => void {
         failureKind: error instanceof Error ? "error" : "non-error",
       });
       // An unavailable snapshot is not evidence of an offline device.
-      if (!disposed && !receivedNetworkEvent) onlineManager.setOnline(true);
+      if (!disposed && !receivedNetworkEvent) {
+        connected = true;
+        updateOnline();
+      }
     });
 
   return () => {

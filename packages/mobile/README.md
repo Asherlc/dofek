@@ -338,7 +338,7 @@ for the approved SDK dependency tree.
 
 ### Native diagnostic runtime
 
-Runtime **1.9** uses the stable [Expo SDK 58](https://expo.dev/changelog/sdk-58)
+Runtime **1.10** uses the stable [Expo SDK 58](https://expo.dev/changelog/sdk-58)
 native dependency set with Expo 58.0.14, Expo Router 58.0.23, Expo Updates
 58.0.17, React Native 0.88.0, and React Native SVG 15.16.0, pinned in
 [package.json](./package.json). The
@@ -351,12 +351,18 @@ also aligns Crypto and Haptics to 58.0.7, Sharing to 58.0.19, Splash Screen to
 The native dependency set also includes ExpoNetwork, the pnpm patch to
 `expo-apple-authentication@58.0.2`, and `react-native-maps@1.29.11`.
 
+Runtime 1.10 also classifies HealthKit authorization-not-determined errors with
+the stable code consumed by anchored sync. A type awaiting authorization leaves
+its anchor unchanged and does not stop other observed types from syncing;
+unexpected query errors still fail. Apple documents this state as
+[`errorAuthorizationNotDetermined`](https://developer.apple.com/documentation/healthkit/hkerror/code/errorauthorizationnotdetermined).
 This patch alignment changes native executable code: Router fixes the iOS
 [`Link.AppleZoom` dismissal transition](https://github.com/expo/expo/pull/51676),
 and Modules Core changes [synchronous worklet result handling](https://github.com/expo/expo/pull/51656)
 and the [native JavaScript class factory](https://github.com/expo/expo/pull/51582).
-Build a new native binary containing these dependencies before publishing
-updates for runtime 1.9; do not publish this dependency set to runtime 1.8 or earlier.
+Build a new native binary containing these dependencies and HealthKit changes
+before publishing updates for runtime 1.10; do not publish this JavaScript to
+runtime 1.9 or earlier, whose native binaries lack the HealthKit classification.
 Expo requires a runtime increment when native code is updated; see
 [manual runtime version increments](https://docs.expo.dev/eas-update/runtime-versions/#manually-increment-the-runtime-version).
 Expo uses

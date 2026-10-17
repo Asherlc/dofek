@@ -58,6 +58,42 @@ final class HealthKitErrorDetailsTests: XCTestCase {
         )
     }
 
+    func testAuthorizationNotDeterminedUsesStableCodeAndNativeContext() {
+        let nativeError = NSError(
+            domain: HKErrorDomain,
+            code: HKError.Code.errorAuthorizationNotDetermined.rawValue,
+            userInfo: [NSLocalizedDescriptionKey: "Authorization not determined"]
+        )
+
+        let details = HealthKitErrorDetails(
+            operation: "queryAnchoredSamples(HKQuantityTypeIdentifierBodyMass)",
+            fallbackCode: "QUERY_ERROR",
+            error: nativeError
+        )
+
+        XCTAssertEqual(details.code, "HEALTHKIT_AUTHORIZATION_NOT_DETERMINED")
+        XCTAssertEqual(
+            details.reason,
+            "queryAnchoredSamples(HKQuantityTypeIdentifierBodyMass) failed: " +
+                "Authorization not determined (com.apple.healthkit:5)"
+        )
+    }
+
+    func testOtherDomainAuthorizationCodeKeepsFallback() {
+        let nativeError = NSError(
+            domain: "HealthKitTest",
+            code: HKError.Code.errorAuthorizationNotDetermined.rawValue
+        )
+
+        let details = HealthKitErrorDetails(
+            operation: "queryAnchoredSamples(HKQuantityTypeIdentifierBodyMass)",
+            fallbackCode: "QUERY_ERROR",
+            error: nativeError
+        )
+
+        XCTAssertEqual(details.code, "QUERY_ERROR")
+    }
+
     func testUnexpectedErrorKeepsFallbackCodeAndNativeContext() {
         let nativeError = NSError(
             domain: "HealthKitTest",

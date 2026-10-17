@@ -30,6 +30,10 @@ export interface FetchRateLimitHandlingOptions {
 }
 
 export interface RateLimitAwareFetchOptions {
+  prepareRequest?: (
+    input: RequestInfo | URL,
+    init: RequestInit | undefined,
+  ) => Promise<RequestInit | undefined>;
   onResponse?: FetchRateLimitHandlingOptions["onResponse"];
   providerId: string;
   scope?: ProviderRateLimitScope;
@@ -40,7 +44,10 @@ export interface RateLimitAwareFetchOptions {
   additionalServiceUnavailableStatusCodes?: readonly number[];
 }
 
-const rateLimitAwareFetches = new WeakSet<typeof globalThis.fetch>();
+const rateLimitAwareFetches = new WeakMap<
+  typeof globalThis.fetch,
+  { fetchFn: typeof globalThis.fetch; options: RateLimitAwareFetchOptions }
+>();
 export const PROVIDER_HTTP_REQUEST_TIMEOUT_MS = 2 * 60 * 1000;
 
 function callerAbortSignal(
@@ -183,7 +190,21 @@ export function createRateLimitAwareFetch(
   fetchFn: typeof globalThis.fetch,
   options: RateLimitAwareFetchOptions,
 ): typeof globalThis.fetch {
-  if (rateLimitAwareFetches.has(fetchFn)) return fetchFn;
+  const existing = rateLimitAwareFetches.get(fetchFn);
+  if (existing) {
+    const prepareRequest = options.prepareRequest;
+    if (!prepareRequest) return fetchFn;
+    const previousPreparation = existing.options.prepareRequest;
+    return createRateLimitAwareFetch(existing.fetchFn, {
+      ...existing.options,
+      prepareRequest: previousPreparation
+        ? async (input, init) => {
+            const prepared = (await previousPreparation(input, init)) ?? init;
+            return (await prepareRequest(input, prepared)) ?? prepared;
+          }
+        : prepareRequest,
+    });
+  }
 
   const rateLimitFetch: typeof globalThis.fetch = async (input, init) => {
     const scope = options.scope ?? "provider";
@@ -192,8 +213,11 @@ export function createRateLimitAwareFetch(
       await options.adaptiveStore.awaitAdmission(options.providerId, scope, userId);
     }
 
+    const preparedInit = options.prepareRequest
+      ? ((await options.prepareRequest(input, init)) ?? init)
+      : init;
     const timeoutSignal = AbortSignal.timeout(PROVIDER_HTTP_REQUEST_TIMEOUT_MS);
-    const upstreamSignal = callerAbortSignal(input, init);
+    const upstreamSignal = callerAbortSignal(input, preparedInit);
     const signal = upstreamSignal
       ? AbortSignal.any([upstreamSignal, timeoutSignal])
       : timeoutSignal;
@@ -202,7 +226,7 @@ export function createRateLimitAwareFetch(
       const response = await fetchWithRateLimitHandling(
         fetchFn,
         input,
-        { ...init, signal },
+        { ...preparedInit, signal },
         {
           onResponse: options.onResponse,
           createRateLimitError:
@@ -264,6 +288,6 @@ export function createRateLimitAwareFetch(
       throw err;
     }
   };
-  rateLimitAwareFetches.add(rateLimitFetch);
+  rateLimitAwareFetches.set(rateLimitFetch, { fetchFn, options });
   return rateLimitFetch;
 }

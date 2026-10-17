@@ -1,4 +1,5 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { admissionDelayMs, createInitialAdaptiveState } from "./adaptive-rate-limit.ts";
 import {
   createRateLimitAwareFetch,
   fetchWithRateLimitHandling,
@@ -10,6 +11,11 @@ import {
   parseRetryAfterHeader,
 } from "./rate-limit.ts";
 import type { AdaptiveRateLimitStore } from "./rate-limit-types.ts";
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.useRealTimers();
+});
 
 it("observes HTTP responses before classification without consuming their body", async () => {
   const onResponse = vi.fn();
@@ -518,6 +524,155 @@ describe("fetchWithRateLimitHandling", () => {
     });
 
     expect(wrappedAgain).toBe(rateLimitFetch);
+  });
+
+  it("prepares the request after adaptive admission and before its single deadline", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const stages: string[] = [];
+    const originalTimeout = AbortSignal.timeout;
+    const timeout = vi.spyOn(AbortSignal, "timeout").mockImplementation((milliseconds) => {
+      stages.push("deadline");
+      return originalTimeout(milliseconds);
+    });
+    try {
+      vi.setSystemTime(new Date("2026-10-16T13:00:00Z"));
+      const expiry = Date.now() + 180_000;
+      const state = {
+        ...createInitialAdaptiveState("example", "user", "user-9", Date.now() - 60_000),
+        inferredBudget: 10,
+        requestCount: 8,
+      };
+      const adaptiveStore = createMockAdaptiveStore();
+      adaptiveStore.awaitAdmission.mockImplementation(async () => {
+        stages.push("admission");
+        vi.setSystemTime(Date.now() + admissionDelayMs(state, Date.now()));
+      });
+      const fetchFn = createRateLimitAwareFetch(
+        async (_input, init) => {
+          stages.push("fetch");
+          return new Response(new Headers(init?.headers).get("Authorization"), { status: 200 });
+        },
+        {
+          providerId: "example",
+          adaptiveStore,
+          async prepareRequest(_input, init) {
+            stages.push("prepare");
+            const headers = new Headers(init?.headers);
+            headers.set("Authorization", Date.now() >= expiry ? "Bearer fresh" : "Bearer stale");
+            return { ...init, headers };
+          },
+        },
+      );
+
+      expect(await (await fetchFn("https://api.example.com/data")).text()).toBe("Bearer fresh");
+      expect(stages).toEqual(["admission", "prepare", "deadline", "fetch"]);
+      expect(timeout).toHaveBeenCalledTimes(1);
+    } finally {
+      timeout.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
+  it("derives isolated preparation without losing an existing wrapper's policy or observers", async () => {
+    const adaptiveStore = createMockAdaptiveStore();
+    const observations: Array<{ authorization: string | null; baseHeader: string | null }> = [];
+    const timeout = vi.spyOn(AbortSignal, "timeout");
+    try {
+      const original = createRateLimitAwareFetch(async () => new Response("ok"), {
+        providerId: "original",
+        scope: "user",
+        userId: "user-9",
+        adaptiveStore,
+        async prepareRequest(_input, init) {
+          const headers = new Headers(init?.headers);
+          headers.set("X-Base", "preserved");
+          return { ...init, headers };
+        },
+        async onResponse(_response, _input, init) {
+          const headers = new Headers(init?.headers);
+          observations.push({
+            authorization: headers.get("Authorization"),
+            baseHeader: headers.get("X-Base"),
+          });
+        },
+      });
+      const clients = ["first", "second"].map((token) =>
+        createRateLimitAwareFetch(original, {
+          providerId: "ignored",
+          async prepareRequest(_input, init) {
+            const headers = new Headers(init?.headers);
+            headers.set("Authorization", `Bearer ${token}`);
+            return { ...init, headers };
+          },
+        }),
+      );
+      for (const client of [clients[0], clients[1], clients[0], original]) {
+        if (!client) throw new Error("Expected a prepared client");
+        await client("https://api.example.com/data");
+      }
+
+      expect(observations).toEqual([
+        { authorization: "Bearer first", baseHeader: "preserved" },
+        { authorization: "Bearer second", baseHeader: "preserved" },
+        { authorization: "Bearer first", baseHeader: "preserved" },
+        { authorization: null, baseHeader: "preserved" },
+      ]);
+      expect(adaptiveStore.awaitAdmission).toHaveBeenCalledTimes(4);
+      expect(adaptiveStore.awaitAdmission).toHaveBeenCalledWith("original", "user", "user-9");
+      expect(adaptiveStore.recordSuccess).toHaveBeenCalledTimes(4);
+      expect(timeout).toHaveBeenCalledTimes(4);
+    } finally {
+      timeout.mockRestore();
+    }
+  });
+
+  it("preserves caller cancellation through prepared request headers", async () => {
+    const controller = new AbortController();
+    const fetchFn = createRateLimitAwareFetch(
+      async (_input, init) => {
+        expect(new Headers(init?.headers).get("X-Caller")).toBe("preserved");
+        expect(init?.method).toBe("POST");
+        expect(init?.body).toBe("payload");
+        controller.abort(new DOMException("Cancelled", "AbortError"));
+        init?.signal?.throwIfAborted();
+        return new Response("must not complete");
+      },
+      {
+        providerId: "example",
+        async prepareRequest(_input, init) {
+          const headers = new Headers(init?.headers);
+          headers.set("Authorization", "Bearer current");
+          return { ...init, headers };
+        },
+      },
+    );
+
+    await expect(
+      fetchFn("https://api.example.com/data", {
+        signal: controller.signal,
+        method: "POST",
+        body: "payload",
+        headers: { "X-Caller": "preserved" },
+      }),
+    ).rejects.toMatchObject({ name: "AbortError", message: "Cancelled" });
+  });
+
+  it("propagates preparation failures before starting the request deadline", async () => {
+    const failure = Object.assign(new Error("Credential request failed"), { code: "ETIMEDOUT" });
+    const timeout = vi.spyOn(AbortSignal, "timeout");
+    try {
+      const fetchFn = createRateLimitAwareFetch(async () => new Response("must not send"), {
+        providerId: "example",
+        async prepareRequest() {
+          throw failure;
+        },
+      });
+
+      await expect(fetchFn("https://api.example.com/data")).rejects.toBe(failure);
+      expect(timeout).not.toHaveBeenCalled();
+    } finally {
+      timeout.mockRestore();
+    }
   });
 
   it("wraps the same source fetch independently per options (no cross-provider reuse)", async () => {

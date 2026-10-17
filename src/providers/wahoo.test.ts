@@ -1,3 +1,8 @@
+import {
+  admissionDelayMs,
+  createInitialAdaptiveState,
+} from "@dofek/provider-http/adaptive-rate-limit";
+import { createRateLimitAwareFetch } from "@dofek/provider-http/rate-limit";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { makeTransactionalTestDatabase } from "./test-helpers.ts";
 
@@ -1922,7 +1927,169 @@ describe("WahooProvider.sync — expired token refresh path", () => {
 
   afterEach(() => {
     process.env = { ...originalEnv };
+    vi.useRealTimers();
     vi.clearAllMocks();
+  });
+
+  it("refreshes after adaptive admission expires the token before actual dispatch", async () => {
+    process.env.WAHOO_CLIENT_ID = "test-id";
+    process.env.WAHOO_CLIENT_SECRET = "test-secret";
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-16T13:00:00Z"));
+    const state = {
+      ...createInitialAdaptiveState("wahoo", "provider", null, Date.now() - 60_000),
+      inferredBudget: 10,
+      requestCount: 8,
+    };
+    const mockDb = makeTransactionalTestDatabase({
+      select: makeSelectMock({
+        ...makeTokenRow(),
+        expiresAt: new Date("2026-10-16T13:03:00Z"),
+      }),
+      insert: makeInsertMock(),
+      delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
+      execute: vi.fn().mockResolvedValue([]),
+    });
+    const requests: string[] = [];
+    const fetchFn = createRateLimitAwareFetch(
+      async (input, init) => {
+        const path = new URL(String(input)).pathname;
+        requests.push(path);
+        if (path === "/oauth/token") {
+          return Response.json({
+            access_token: "fresh-wahoo-token",
+            refresh_token: "fresh-refresh-token",
+            expires_in: 7200,
+          });
+        }
+        return new Headers(init?.headers).get("Authorization") === "Bearer fresh-wahoo-token"
+          ? Response.json(makeWorkoutApiResponse([]))
+          : new Response("", { status: 401 });
+      },
+      {
+        providerId: "wahoo",
+        adaptiveStore: {
+          async awaitAdmission() {
+            vi.setSystemTime(Date.now() + admissionDelayMs(state, Date.now()));
+          },
+          async recordSuccess() {},
+          async recordRateLimit() {},
+          async getLearnedCooldownSeconds() {
+            return null;
+          },
+        },
+      },
+    );
+
+    const result = await new WahooProvider(fetchFn).sync(
+      new SyncRun({
+        db: mockDb,
+        window: SyncWindow.fromSince({ since: new Date("2026-01-01") }),
+      }),
+    );
+
+    expect(result.errors).toEqual([]);
+    expect(requests).toEqual(["/oauth/token", "/v1/workouts"]);
+  });
+
+  it.each([200, 120_000])(
+    "refreshes a token with %i ms remaining before sending a workout request",
+    async (remainingMs) => {
+      process.env.WAHOO_CLIENT_ID = "test-id";
+      process.env.WAHOO_CLIENT_SECRET = "test-secret";
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(new Date("2026-10-16T13:00:01.798Z"));
+      const requests: string[] = [];
+      const mockDb = makeTransactionalTestDatabase({
+        select: makeSelectMock({
+          ...makeTokenRow(),
+          expiresAt: new Date(Date.now() + remainingMs),
+        }),
+        insert: makeInsertMock(),
+        delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
+        execute: vi.fn().mockResolvedValue([]),
+      });
+      const provider = new WahooProvider(async (input, init) => {
+        const path = new URL(String(input)).pathname;
+        requests.push(path);
+        if (path === "/oauth/token") {
+          return Response.json({
+            access_token: "fresh-wahoo-token",
+            refresh_token: "fresh-refresh-token",
+            expires_in: 7200,
+          });
+        }
+        if (new Headers(init?.headers).get("Authorization") !== "Bearer fresh-wahoo-token") {
+          return new Response("", { status: 401 });
+        }
+        return Response.json(makeWorkoutApiResponse([]));
+      });
+
+      const result = await provider.sync(
+        new SyncRun({
+          db: mockDb,
+          window: SyncWindow.fromSince({ since: new Date("2026-01-01") }),
+        }),
+      );
+
+      expect(result.errors).toEqual([]);
+      expect(requests).toEqual(["/oauth/token", "/v1/workouts"]);
+    },
+  );
+
+  it("refreshes before the next page when the token expires during a long sync", async () => {
+    process.env.WAHOO_CLIENT_ID = "test-id";
+    process.env.WAHOO_CLIENT_SECRET = "test-secret";
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-16T13:00:00.000Z"));
+    const mockDb = makeTransactionalTestDatabase({
+      select: makeSelectMock({
+        ...makeTokenRow(),
+        expiresAt: new Date("2026-10-16T13:03:00.000Z"),
+      }),
+      insert: makeInsertMock(),
+      delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
+      execute: vi.fn().mockResolvedValue([]),
+    });
+    const requests: Array<{ path: string; authorization: string | null }> = [];
+    const provider = new WahooProvider(async (input, init) => {
+      const url = new URL(String(input));
+      const authorization = new Headers(init?.headers).get("Authorization");
+      requests.push({ path: url.pathname, authorization });
+      if (url.pathname === "/oauth/token") {
+        return Response.json({
+          access_token: "fresh-wahoo-token",
+          refresh_token: "fresh-refresh-token",
+          expires_in: 7200,
+        });
+      }
+      if (url.searchParams.get("page") === "1") {
+        vi.setSystemTime(new Date("2026-10-16T13:03:00.000Z"));
+        return Response.json(
+          makeWorkoutApiResponse([sampleWahooWorkoutNoFit], { page: 1, total: 31 }),
+        );
+      }
+      if (authorization !== "Bearer fresh-wahoo-token") {
+        return new Response("", { status: 401 });
+      }
+      return Response.json(makeWorkoutApiResponse([], { page: 2, total: 31 }));
+    });
+
+    const result = await provider.sync(
+      new SyncRun({
+        db: mockDb,
+        window: SyncWindow.fromSince({ since: new Date("2026-01-01") }),
+      }),
+    );
+
+    expect(result.errors).toEqual([]);
+    expect(result.recordsSynced).toBe(1);
+    expect(requests.map(({ path }) => path)).toEqual([
+      "/v1/workouts",
+      "/oauth/token",
+      "/v1/workouts",
+    ]);
+    expect(requests.at(-1)?.authorization).toBe("Bearer fresh-wahoo-token");
   });
 
   it("refreshes expired tokens, saves new tokens, and continues sync", async () => {
@@ -2373,17 +2540,21 @@ describe("WahooProvider.sync — FIT file download error", () => {
 
     // Workout has a fitFileUrl
     const workoutsResponse = makeWorkoutApiResponse([sampleWahooWorkout]);
-    const mockFetch = vi.fn().mockImplementation((url: string | URL | Request) => {
-      const urlStr = String(typeof url === "object" && "toString" in url ? url.toString() : url);
-      if (urlStr.includes("/v1/workouts")) {
-        return Promise.resolve(Response.json(workoutsResponse));
-      }
-      // FIT CDN URL returns 404
-      if (urlStr === "https://cdn.wahoo.com/files/123.fit") {
+    let cdnHeaders: HeadersInit | undefined;
+    const mockFetch = vi
+      .fn()
+      .mockImplementation((url: string | URL | Request, init?: RequestInit) => {
+        const urlStr = String(typeof url === "object" && "toString" in url ? url.toString() : url);
+        if (urlStr.includes("/v1/workouts")) {
+          return Promise.resolve(Response.json(workoutsResponse));
+        }
+        // FIT CDN URL returns 404
+        if (urlStr === "https://cdn.wahoo.com/files/123.fit") {
+          cdnHeaders = init?.headers;
+          return Promise.resolve(new Response("Not Found", { status: 404 }));
+        }
         return Promise.resolve(new Response("Not Found", { status: 404 }));
-      }
-      return Promise.resolve(new Response("Not Found", { status: 404 }));
-    });
+      });
 
     const provider = new WahooProvider(mockFetch);
     const result = await provider.sync(
@@ -2399,6 +2570,7 @@ describe("WahooProvider.sync — FIT file download error", () => {
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]?.message).toContain("FIT file");
     expect(result.errors[0]?.externalId).toBe("42");
+    expect(cdnHeaders).toBeUndefined();
   });
 });
 
