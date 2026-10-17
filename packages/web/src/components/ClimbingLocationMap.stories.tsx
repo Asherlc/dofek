@@ -50,7 +50,17 @@ export const Wide: Story = {
     ),
   ],
 };
-export const Loading: Story = { args: { data: undefined, loading: true } };
+export const Loading: Story = {
+  args: { data: undefined, loading: true },
+  parameters: {
+    docs: {
+      description: {
+        story:
+          "The reserved map area shows its processing status before location data or initial map tiles are ready.",
+      },
+    },
+  },
+};
 export const Empty: Story = { args: { data: { bounds: null, nodes: [] } } };
 export const Refreshing: Story = { args: { loading: true } };
 export const TileError: Story = {

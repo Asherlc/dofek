@@ -6,6 +6,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { type LayoutChangeEvent, Pressable, StyleSheet, Text, View } from "react-native";
 import MapView, { Marker, type Region } from "react-native-maps";
 import { colors, radius, spacing } from "../theme";
+import { MapProcessingState } from "./MapProcessingState";
 import { QueryStatePanel } from "./QueryStatePanel";
 
 const MAP_HEIGHT = 280;
@@ -29,6 +30,7 @@ export function ClimbingLocationMapCard({
   const router = useRouter();
   const map = useRef<MapView>(null);
   const [mapWidth, setMapWidth] = useState<number | null>(null);
+  const [mapReady, setMapReady] = useState(false);
   const [zoom, setZoom] = useState(0);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const south = data?.bounds?.south;
@@ -59,7 +61,11 @@ export function ClimbingLocationMapCard({
   }, [south, west, north, east, mapWidth]);
 
   useEffect(() => {
-    if (!fitRegion || !mapWidth) return;
+    if (!fitRegion) {
+      setMapReady(false);
+      return;
+    }
+    if (!mapWidth) return;
     setZoom(zoomForRegion(fitRegion, mapWidth));
     setSelectedId(null);
     map.current?.animateToRegion(fitRegion, 300);
@@ -68,7 +74,8 @@ export function ClimbingLocationMapCard({
   const selected = data?.nodes.find((node) => node.id === selectedId);
 
   function handleLayout(event: LayoutChangeEvent) {
-    setMapWidth(event.nativeEvent.layout.width);
+    const width = event.nativeEvent.layout.width;
+    if (width > 0) setMapWidth(width);
   }
 
   return (
@@ -101,6 +108,10 @@ export function ClimbingLocationMapCard({
               showsUserLocation={false}
               showsPointsOfInterests={false}
               toolbarEnabled={false}
+              onMapReady={() => setMapReady(true)}
+              loadingEnabled
+              loadingIndicatorColor={colors.accent}
+              loadingBackgroundColor={colors.surfaceSecondary}
             >
               {data?.nodes
                 .filter((node) => node.minZoom <= zoom && zoom <= node.maxZoom)
@@ -158,9 +169,16 @@ export function ClimbingLocationMapCard({
                 })}
             </MapView>
           )}
+          {!mapReady && (
+            <View style={StyleSheet.absoluteFill}>
+              <MapProcessingState />
+            </View>
+          )}
         </View>
       ) : loading && data == null ? (
-        <QueryStatePanel variant="loading" minHeight={MAP_HEIGHT} />
+        <View style={styles.mapWrapper}>
+          <MapProcessingState />
+        </View>
       ) : !error ? (
         <QueryStatePanel variant="empty" message="No climbing locations in this period" />
       ) : null}
@@ -210,7 +228,7 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
     letterSpacing: 0.5,
   },
-  mapWrapper: { borderRadius: radius.lg, overflow: "hidden" },
+  mapWrapper: { height: MAP_HEIGHT, borderRadius: radius.lg, overflow: "hidden" },
   dot: {
     backgroundColor: colors.accent,
     borderColor: "#ffffff",

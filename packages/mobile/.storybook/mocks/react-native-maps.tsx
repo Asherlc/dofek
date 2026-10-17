@@ -7,10 +7,12 @@ import {
   type ReactElement,
   type ReactNode,
   useContext,
+  useEffect,
   useImperativeHandle,
+  useRef,
   useState,
 } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import Svg, { Polyline as SvgPolyline } from "react-native-svg";
 
 interface Coordinate {
@@ -24,6 +26,7 @@ interface MapViewProps {
   initialRegion?: Region;
   region?: Region;
   onRegionChangeComplete?: (region: Region) => void;
+  onMapReady?: () => void;
   zoomEnabled?: boolean;
 }
 
@@ -76,11 +79,17 @@ function markerId({ identifier, title, coordinate }: MarkerProps) {
 }
 
 const MapView = forwardRef<MapPreviewHandle, MapViewProps>(function MapView(
-  { children, style, initialRegion, region, onRegionChangeComplete, zoomEnabled },
+  { children, style, initialRegion, region, onRegionChangeComplete, onMapReady, zoomEnabled },
   ref,
 ) {
   const [mountedRegion, setMountedRegion] = useState(initialRegion);
   const [selectedId, select] = useState<string | null>(null);
+  const hasStartedRendering = useRef(false);
+  useEffect(() => {
+    if (hasStartedRendering.current) return;
+    hasStartedRendering.current = true;
+    onMapReady?.();
+  }, [onMapReady]);
   const viewport = region ?? mountedRegion;
   function updateRegion(nextRegion: Region) {
     setMountedRegion(nextRegion);
@@ -94,8 +103,8 @@ const MapView = forwardRef<MapPreviewHandle, MapViewProps>(function MapView(
   );
   const selected = markers.find((marker) => markerId(marker.props) === selectedId)?.props;
   return (
-    <View style={styles.preview}>
-      <View style={[styles.map, style]}>
+    <View style={[styles.preview, style]}>
+      <View style={styles.map}>
         <View style={styles.grid} />
         <MapPreview.Provider value={{ region: viewport, select }}>{children}</MapPreview.Provider>
       </View>
@@ -126,7 +135,7 @@ const MapView = forwardRef<MapPreviewHandle, MapViewProps>(function MapView(
         </View>
       )}
       {markers.length > 0 && (
-        <View style={styles.inspection}>
+        <ScrollView style={styles.inspection}>
           {selected && (
             <View accessibilityLabel="Selected map point" style={styles.details}>
               {selected.title && <Text style={styles.markerLabel}>{selected.title}</Text>}
@@ -138,7 +147,7 @@ const MapView = forwardRef<MapPreviewHandle, MapViewProps>(function MapView(
               </Text>
             </View>
           )}
-        </View>
+        </ScrollView>
       )}
     </View>
   );
@@ -202,10 +211,19 @@ export function Marker({
 const styles = StyleSheet.create({
   zoomControls: { flexDirection: "row", gap: 8, padding: 8, backgroundColor: "#edf3ee" },
   zoomButton: { padding: 8, borderWidth: 1, borderColor: "#214034", borderRadius: 6 },
-  preview: { minWidth: 0, maxWidth: "100%" },
-  inspection: { gap: 8, padding: 8, backgroundColor: "#edf3ee", minWidth: 0 },
+  preview: { minWidth: 0, maxWidth: "100%", overflow: "hidden" },
+  inspection: {
+    gap: 8,
+    padding: 8,
+    backgroundColor: "#edf3ee",
+    minWidth: 0,
+    maxHeight: "50%",
+    flexGrow: 0,
+  },
   details: { gap: 3, minWidth: 0 },
   map: {
+    flex: 1,
+    minHeight: 0,
     backgroundColor: "#d8e4dc",
     overflow: "hidden",
     position: "relative",

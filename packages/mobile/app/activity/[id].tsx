@@ -50,6 +50,7 @@ import { styles } from "../../components/activity/styles";
 import { HrZonesChart, PowerZonesChart } from "../../components/activity/ZoneDistributionCharts";
 import { ClimbingLogEntryBreakdown } from "../../components/ClimbingLogEntryBreakdown";
 import { HangboardingDetail } from "../../components/HangboardingDetail";
+import { MapProcessingState } from "../../components/MapProcessingState";
 import { MuscleGroupBodyDiagram } from "../../components/MuscleGroupBodyDiagram";
 import { ProviderRecordDetailModal } from "../../components/providers/provider-record-detail-modal";
 import { getQueryErrorMessage, QueryStatePanel } from "../../components/QueryStatePanel";
@@ -621,6 +622,8 @@ export default function ActivityDetailScreen() {
 
   const routePoints = route.data?.status === "ready" ? route.data.points : EMPTY_ROUTE_POINTS;
   const hasGps = routePoints.length > 0;
+  const hasMap = hasGps || climbMarkers.length > 0;
+  const routeMapPending = route.isLoading || route.data?.status === "processing";
   const hasHr = points.some((p) => p.heartRate != null);
   const hasAltitude = points.some((p) => p.altitude != null);
 
@@ -811,15 +814,19 @@ export default function ActivityDetailScreen() {
           onRetry={() => void route.refetch()}
           retrying={route.isFetching}
         />
-      ) : route.isLoading || route.data?.status === "processing" ? (
+      ) : routeMapPending && hasMap ? (
         <View style={styles.chartsLoading} accessibilityLiveRegion="polite">
           <ActivityIndicator color={colors.accent} size="small" />
           <Text style={styles.chartsLoadingText}>
             {route.isLoading ? "Loading route map…" : "Processing route map…"}
           </Text>
         </View>
+      ) : routeMapPending ? (
+        <View style={styles.mapProcessing}>
+          <MapProcessingState />
+        </View>
       ) : null}
-      {(hasGps || climbMarkers.length > 0) && (
+      {hasMap && (
         <RouteMap
           points={routePoints}
           climbMarkers={climbMarkers}

@@ -4,6 +4,7 @@ import type { ClimbingMapMarker } from "@dofek/training/climbing-map";
 import type { GpsCoordinates } from "@dofek/training/gps-coordinates";
 import { useEffect, useRef, useState } from "react";
 import { captureException } from "../lib/telemetry.ts";
+import { MapProcessingIndicator } from "./MapProcessingIndicator.tsx";
 
 const NO_CLIMB_MARKERS: readonly ClimbingMapMarker[] = [];
 
@@ -87,6 +88,10 @@ export function ActivityRouteMap({
           const error = new Error("Map tiles could not load. Check your connection.");
           captureException(error, { component: "ActivityRouteMap" });
           setTileWarning("Some map tiles could not load. Check your connection.");
+          setMapState({ loading: false, error: null });
+        });
+        tiles.once("load", () => {
+          if (!cancelled) setMapState({ loading: false, error: null });
         });
         tiles.addTo(map);
 
@@ -179,7 +184,6 @@ export function ActivityRouteMap({
             });
           }
         }
-        setMapState({ loading: false, error: null });
 
         // Register hover marker callback so charts can update the map without React re-renders
         if (onRegisterHoverCallback) {
@@ -233,11 +237,14 @@ export function ActivityRouteMap({
   const empty = points.length === 0 && climbMarkers.length === 0;
   return (
     <div>
-      <section
-        ref={mapRef}
-        aria-label={climbMarkers.length > 0 ? "Climbing locations" : "Recorded activity route"}
-        className={`isolate w-full rounded-lg ${presentation === "compact" ? "h-[160px]" : "h-[400px]"}${empty || mapState.error ? " hidden" : ""}`}
-      />
+      <div className="relative isolate rounded-lg">
+        <section
+          ref={mapRef}
+          aria-label={climbMarkers.length > 0 ? "Climbing locations" : "Recorded activity route"}
+          className={`isolate w-full rounded-lg ${presentation === "compact" ? "h-[160px]" : "h-[400px]"}${empty || mapState.error ? " hidden" : ""}`}
+        />
+        {!empty && !mapState.error && mapState.loading ? <MapProcessingIndicator /> : null}
+      </div>
       {presentation === "detail" && inspectedPoint && (
         <ul aria-label="Climbing entries at this location" className="mt-2 flex flex-wrap gap-2">
           {climbMarkers.map((marker, index) => {
@@ -268,10 +275,6 @@ export function ActivityRouteMap({
       ) : mapState.error ? (
         <p role="status" className="text-sm text-red-400">
           Map unavailable: {mapState.error}
-        </p>
-      ) : mapState.loading && (presentation === "detail" || previewVisible) ? (
-        <p role="status" className="text-sm text-muted">
-          Loading map...
         </p>
       ) : null}
       {!empty && !mapState.error && tileWarning && (

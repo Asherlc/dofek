@@ -44,7 +44,13 @@ let mockOverviewQuery: {
   error: Error | null;
 };
 let weekListInput: unknown;
-let weekListOptions: { placeholderData?: (previousData: unknown) => unknown } | undefined;
+interface WeekListOptions {
+  placeholderData?: (previousData: unknown) => unknown;
+  refetchInterval?: (query: {
+    state: { data?: Array<{ activities: Array<{ location: { kind: string } | null }> }> };
+  }) => number | false;
+}
+let weekListOptions: WeekListOptions | undefined;
 let overviewInput: unknown;
 let overviewOptions: { placeholderData?: (previousData: unknown) => unknown } | undefined;
 let bulkDeleteMutate: CallableVitestMock;
@@ -82,10 +88,7 @@ vi.mock("../lib/trpc.ts", () => ({
   trpc: {
     calendar: {
       weekList: {
-        useQuery: (
-          input: unknown,
-          options: { placeholderData?: (previousData: unknown) => unknown } | undefined,
-        ) => {
+        useQuery: (input: unknown, options: WeekListOptions | undefined) => {
           weekListInput = input;
           weekListOptions = options;
           return mockQuery;
@@ -314,6 +317,20 @@ describe("ActivitiesPage", () => {
     expect(screen.getByText("Training Stress Score")).toBeDefined();
     expect(screen.getByText("100")).toBeDefined();
     expect(screen.queryByText("TSS")).toBeNull();
+  });
+
+  it("polls pending maps until their location data is ready", () => {
+    render(<ActivitiesPage />);
+    const interval = weekListOptions?.refetchInterval;
+    expect(interval).toBeTypeOf("function");
+    expect(
+      interval?.({ state: { data: [{ activities: [{ location: { kind: "processing" } }] }] } }),
+    ).toBe(3000);
+    expect(
+      interval?.({ state: { data: [{ activities: [{ location: { kind: "recorded_gps" } }] }] } }),
+    ).toBe(false);
+    expect(interval?.({ state: { data: [{ activities: [{ location: null }] }] } })).toBe(false);
+    expect(interval?.({ state: {} })).toBe(false);
   });
 
   it("keeps placeholder activity data visible during background refetch errors", () => {

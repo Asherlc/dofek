@@ -169,6 +169,11 @@ export const MappedActivity: Story = {
   ],
 };
 
+export const ProcessingMap: Story = {
+  ...MappedActivity,
+  args: { activity: { ...mappedActivity, location: { kind: "processing" } } },
+};
+
 export const ClimbingSourceLocations: Story = {
   parameters: { layout: "fullscreen" },
   args: {

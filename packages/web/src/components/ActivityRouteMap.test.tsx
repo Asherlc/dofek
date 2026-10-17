@@ -40,6 +40,15 @@ const exact = {
 };
 
 describe("ActivityRouteMap", () => {
+  it("shows processing until the initial map tiles load", async () => {
+    const { container } = render(<ActivityRouteMap points={[]} climbMarkers={[exact]} />);
+    expect(screen.getByRole("status")).toHaveTextContent("Processing map…");
+    await waitFor(() => expect(container.querySelector("img.leaflet-tile")).not.toBeNull());
+    expect(screen.getByRole("status")).toHaveTextContent("Processing map…");
+    for (const tile of container.querySelectorAll("img.leaflet-tile")) fireEvent.load(tile);
+    await waitFor(() => expect(screen.queryByRole("status")).toBeNull());
+  });
+
   it.each(["click", "Enter", " "])(
     "opens a unique location immediately with %s",
     async (activation) => {
@@ -100,6 +109,7 @@ describe("ActivityRouteMap", () => {
     const region = screen.getByRole("region", { name: "Climbing locations" });
     expect(region).toHaveClass("h-[160px]");
     expect(region).not.toHaveClass("leaflet-container");
+    expect(screen.getByRole("status")).toHaveTextContent("Processing map…");
     expect(view.container.querySelector("img.leaflet-tile")).toBeNull();
     expect(observe).toHaveBeenCalledWith(region);
     act(() => enterViewport());
@@ -214,8 +224,10 @@ describe("ActivityRouteMap", () => {
         ]}
       />,
     );
-    expect(await screen.findByRole("status")).toHaveTextContent(
-      "Map unavailable: Invalid LatLng object",
+    await waitFor(() =>
+      expect(screen.getByRole("status")).toHaveTextContent(
+        "Map unavailable: Invalid LatLng object",
+      ),
     );
     expect(captureException).toHaveBeenCalledWith(expect.any(Error), {
       component: "ActivityRouteMap",

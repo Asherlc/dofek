@@ -2,10 +2,15 @@ import { PgDialect } from "drizzle-orm/pg-core";
 import { describe, expect, it, vi } from "vitest";
 import { osmTilePreview } from "../lib/osm-tile.ts";
 import { ActivityRepository, StreamPoint } from "./activity-repository.ts";
+import { getActivityMapReadiness } from "./activity-route-preview.ts";
 
 const loggerMocks = vi.hoisted(() => ({ info: vi.fn() }));
 
 vi.mock("../logger.ts", () => ({ logger: { info: loggerMocks.info } }));
+vi.mock("./activity-route-preview.ts", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./activity-route-preview.ts")>()),
+  getActivityMapReadiness: vi.fn().mockResolvedValue(new Map()),
+}));
 
 // ---------------------------------------------------------------------------
 // Domain models
@@ -184,6 +189,157 @@ describe("ActivityRepository", () => {
     const repo = new ActivityRepository(database, "user-1", "UTC", undefined, sensorStore);
     return { repo, execute, sensorStore };
   }
+
+  describe("map readiness", () => {
+    function activityRow(id: string, members?: string[]) {
+      return {
+        id,
+        canonical_type: "running",
+        provider_type: "running",
+        started_at: "2024-01-15T10:00:00.000Z",
+        ended_at: "2024-01-15T11:00:00.000Z",
+        name: "Morning Run",
+        notes: null,
+        subsource: null,
+        provider_id: "garmin",
+        source_providers: ["garmin"],
+        source_external_ids: [],
+        ...(members ? { member_activity_ids: members } : {}),
+        avg_hr: null,
+        max_hr: null,
+        avg_power: null,
+        max_power: null,
+        avg_speed: null,
+        max_speed: null,
+        avg_cadence: null,
+        total_distance: null,
+        distance_meters: null,
+        elevation_gain_m: null,
+        elevation_loss_m: null,
+        sample_count: null,
+        total_count: 1,
+      };
+    }
+
+    function summary(activityId: string, latitude: number | null, longitude: number | null) {
+      return {
+        activity_id: activityId,
+        avg_hr: null,
+        max_hr: null,
+        avg_power: null,
+        max_power: null,
+        avg_speed: null,
+        max_speed: null,
+        avg_cadence: null,
+        total_distance: null,
+        elevation_gain_m: null,
+        elevation_loss_m: null,
+        sample_count: null,
+        centroid_lat: latitude,
+        centroid_lng: longitude,
+      };
+    }
+
+    it("checks every incomplete map using its canonical group and all source members", async () => {
+      const { repo, sensorStore } = makeRepositoryWithSensorStore([
+        activityRow("missing-summary", ["source-a", "source-b"]),
+        activityRow("missing-latitude", ["source-c"]),
+        activityRow("missing-longitude", ["source-d"]),
+        activityRow("ready-map", ["source-e"]),
+      ]);
+      sensorStore.getActivitySummaries.mockResolvedValueOnce([
+        summary("missing-latitude", null, -122.4),
+        summary("missing-longitude", 37.8, null),
+        summary("ready-map", 37.8, -122.4),
+      ]);
+      vi.mocked(getActivityMapReadiness).mockResolvedValueOnce(
+        new Map([
+          ["missing-summary", "processing"],
+          ["missing-latitude", "processing"],
+          ["missing-longitude", "awaiting_summary"],
+        ]),
+      );
+
+      const result = await repo.list({ days: 30, endDate: "2024-02-01", limit: 20, offset: 0 });
+
+      expect(getActivityMapReadiness).toHaveBeenLastCalledWith(sensorStore, "user-1", [
+        {
+          id: "missing-summary",
+          routeActivityId: "missing-summary",
+          memberActivityIds: ["source-a", "source-b"],
+        },
+        {
+          id: "missing-latitude",
+          routeActivityId: "missing-latitude",
+          memberActivityIds: ["source-c"],
+        },
+        {
+          id: "missing-longitude",
+          routeActivityId: "missing-longitude",
+          memberActivityIds: ["source-d"],
+        },
+      ]);
+      expect(result.items.map((item) => item.location)).toEqual([
+        { kind: "processing" },
+        { kind: "processing" },
+        { kind: "processing" },
+        {
+          kind: "recorded_gps",
+          centroidLat: 37.8,
+          centroidLng: -122.4,
+          mapPreview: osmTilePreview([{ lat: 37.8, lng: -122.4 }]),
+        },
+      ]);
+    });
+
+    describe.each([
+      {
+        name: "list",
+        read: async (repo: ActivityRepository) =>
+          (await repo.list({ days: 30, endDate: "2024-02-01", limit: 20, offset: 0 })).items[0],
+      },
+      {
+        name: "search",
+        read: async (repo: ActivityRepository) =>
+          (await repo.search({ startDate: "2024-01-01", endDate: "2024-02-01" })).items[0],
+      },
+      {
+        name: "listRange",
+        read: async (repo: ActivityRepository) =>
+          (await repo.listRange("2024-01-01", "2024-02-01"))[0],
+      },
+      { name: "findById", read: (repo: ActivityRepository) => repo.findById("canonical-map") },
+    ])("$name", ({ read }) => {
+      it.each(["processing", "awaiting_summary", "unavailable", undefined] as const)(
+        "exposes the location state for readiness %s before summaries arrive",
+        async (status) => {
+          const members = status == null ? undefined : ["source-map"];
+          const { repo, sensorStore } = makeRepositoryWithSensorStore([
+            activityRow("canonical-map", members),
+          ]);
+          vi.mocked(getActivityMapReadiness).mockResolvedValueOnce(
+            status == null ? new Map() : new Map([["canonical-map", status]]),
+          );
+
+          const result = await read(repo);
+
+          expect(result).toHaveProperty(
+            "location",
+            status === "processing" || status === "awaiting_summary"
+              ? { kind: "processing" }
+              : null,
+          );
+          expect(getActivityMapReadiness).toHaveBeenLastCalledWith(sensorStore, "user-1", [
+            {
+              id: "canonical-map",
+              routeActivityId: "canonical-map",
+              memberActivityIds: members ?? [],
+            },
+          ]);
+        },
+      );
+    });
+  });
 
   describe("activity visibility", () => {
     it("resolveVisibleActivityIds returns ids present in v_activity", async () => {
@@ -962,93 +1118,100 @@ describe("ActivityRepository", () => {
       expect(result).toBeNull();
     });
 
-    it("falls back to provider-absent activities when the canonical view excludes them", async () => {
-      const execute = vi
-        .fn()
-        .mockResolvedValueOnce([
-          {
-            requested_id: "tombstoned-id",
-            resolved_group_id: "tombstoned-id",
-            resolution_kind: "group",
-          },
-        ])
-        .mockResolvedValueOnce([])
-        .mockResolvedValueOnce([
-          {
-            id: "tombstoned-id",
-            canonical_type: "running",
-            raw_type: "running",
-            started_at: "2024-01-15T10:00:00.000Z",
-            displayed_date: "2024-01-15",
-            ended_at: "2024-01-15T10:45:00.000Z",
-            timezone: null,
-            start_utc_offset_minutes: null,
-            end_utc_offset_minutes: null,
-            local_time_source: "unknown",
-            name: "Deleted Run",
-            notes: null,
-            perceived_exertion: null,
-            provider_id: "strava",
-            subsource: null,
-            source_providers: ["strava"],
-            source_external_ids: [{ providerId: "strava", externalId: "123" }],
-            member_activity_ids: ["tombstoned-id"],
-            avg_hr: null,
-            max_hr: null,
-            avg_power: null,
-            max_power: null,
-            avg_speed: null,
-            max_speed: null,
-            avg_cadence: null,
-            total_distance: null,
-            elevation_gain_m: null,
-            elevation_loss_m: null,
-            sample_count: null,
-            provider_absent_at: "2024-01-16T08:00:00.000Z",
-          },
-        ]);
-      const database = { execute };
-      const sensorStore = {
-        query: vi.fn().mockResolvedValue([]),
-        getActivitySummaries: vi.fn().mockResolvedValue([]),
-        getStream: vi.fn().mockResolvedValue([]),
-        getHeartRateZoneSeconds: vi.fn().mockResolvedValue([]),
-        getPowerZoneSeconds: vi.fn().mockResolvedValue([]),
-      };
-      const repo = new ActivityRepository(database, "user-1", "UTC", undefined, sensorStore);
+    it.each(["processing", "awaiting_summary", "unavailable"] as const)(
+      "falls back to provider-absent activities with map readiness %s",
+      async (status) => {
+        const execute = vi
+          .fn()
+          .mockResolvedValueOnce([
+            {
+              requested_id: "tombstoned-id",
+              resolved_group_id: "tombstoned-id",
+              resolution_kind: "group",
+            },
+          ])
+          .mockResolvedValueOnce([])
+          .mockResolvedValueOnce([
+            {
+              id: "tombstoned-id",
+              canonical_type: "running",
+              raw_type: "running",
+              started_at: "2024-01-15T10:00:00.000Z",
+              displayed_date: "2024-01-15",
+              ended_at: "2024-01-15T10:45:00.000Z",
+              timezone: null,
+              start_utc_offset_minutes: null,
+              end_utc_offset_minutes: null,
+              local_time_source: "unknown",
+              name: "Deleted Run",
+              notes: null,
+              perceived_exertion: null,
+              provider_id: "strava",
+              subsource: null,
+              source_providers: ["strava"],
+              source_external_ids: [{ providerId: "strava", externalId: "123" }],
+              member_activity_ids: ["tombstoned-id"],
+              avg_hr: null,
+              max_hr: null,
+              avg_power: null,
+              max_power: null,
+              avg_speed: null,
+              max_speed: null,
+              avg_cadence: null,
+              total_distance: null,
+              elevation_gain_m: null,
+              elevation_loss_m: null,
+              sample_count: null,
+              provider_absent_at: "2024-01-16T08:00:00.000Z",
+            },
+          ]);
+        const database = { execute };
+        const sensorStore = {
+          query: vi.fn().mockResolvedValue([]),
+          getActivitySummaries: vi.fn().mockResolvedValue([]),
+          getStream: vi.fn().mockResolvedValue([]),
+          getHeartRateZoneSeconds: vi.fn().mockResolvedValue([]),
+          getPowerZoneSeconds: vi.fn().mockResolvedValue([]),
+        };
+        const repo = new ActivityRepository(database, "user-1", "UTC", undefined, sensorStore);
+        vi.mocked(getActivityMapReadiness).mockResolvedValueOnce(
+          new Map([["tombstoned-id", status]]),
+        );
 
-      const result = await repo.findById("tombstoned-id");
+        const result = await repo.findById("tombstoned-id");
 
-      expect(result).toMatchObject({
-        id: "tombstoned-id",
-        provider_id: "strava",
-        provider_absent_at: "2024-01-16T08:00:00.000Z",
-      });
-      const fallbackQuery = dialect.sqlToQuery(execute.mock.calls[2]?.[0]);
-      expect(fallbackQuery.sql).toContain("provider_absent_at IS NOT NULL");
-      expect(fallbackQuery.sql).toContain("a.deleted_at IS NULL");
-      expect(fallbackQuery.sql).toContain("LEFT JOIN fitness.provider_priority");
-      expect(fallbackQuery.sql).toContain("LEFT JOIN LATERAL");
-      expect(fallbackQuery.sql).toContain("s.set_type = 'working'");
-      expect(fallbackQuery.sql).toContain("s.weight_kg IS NOT NULL");
-      expect(fallbackQuery.sql).toContain("COUNT(*) AS set_count");
-      expect(fallbackQuery.sql).toContain("COUNT(DISTINCT s.exercise_id) AS exercise_count");
-      expect(fallbackQuery.sql).toContain("a.canonical_type NOT IN");
-      expect(fallbackQuery.sql).toContain("NULLIF(LOWER(TRIM(a.provider_type)), '')");
-      expect(fallbackQuery.sql).toContain("COALESCE(dp.priority, pp.priority, 100)");
-      expect(fallbackQuery.sql).toContain("a.id ASC");
-      expect(fallbackQuery.sql).not.toContain("ORDER BY (a.id =");
-      const fallbackOrder = fallbackQuery.sql.slice(fallbackQuery.sql.indexOf("ORDER BY"));
-      expect(fallbackOrder.indexOf("payload.complete_working_set_count DESC")).toBeLessThan(
-        fallbackOrder.indexOf("payload.set_count DESC"),
-      );
-      expect(fallbackOrder.indexOf("payload.set_count DESC")).toBeLessThan(
-        fallbackOrder.indexOf("payload.exercise_count DESC"),
-      );
-      expect(fallbackOrder.indexOf("payload.exercise_count DESC")).toBeLessThan(
-        fallbackOrder.indexOf("a.canonical_type NOT IN"),
-      );
-    });
+        expect(result).toMatchObject({
+          id: "tombstoned-id",
+          provider_id: "strava",
+          provider_absent_at: "2024-01-16T08:00:00.000Z",
+          location: status === "processing" ? { kind: "processing" } : null,
+        });
+        const fallbackQuery = dialect.sqlToQuery(execute.mock.calls[2]?.[0]);
+        expect(fallbackQuery.sql).toContain("provider_absent_at IS NOT NULL");
+        expect(fallbackQuery.sql).toContain("a.deleted_at IS NULL");
+        expect(fallbackQuery.sql).toContain("LEFT JOIN fitness.provider_priority");
+        expect(fallbackQuery.sql).toContain("LEFT JOIN LATERAL");
+        expect(fallbackQuery.sql).toContain("s.set_type = 'working'");
+        expect(fallbackQuery.sql).toContain("s.weight_kg IS NOT NULL");
+        expect(fallbackQuery.sql).toContain("COUNT(*) AS set_count");
+        expect(fallbackQuery.sql).toContain("COUNT(DISTINCT s.exercise_id) AS exercise_count");
+        expect(fallbackQuery.sql).toContain("a.canonical_type NOT IN");
+        expect(fallbackQuery.sql).toContain("NULLIF(LOWER(TRIM(a.provider_type)), '')");
+        expect(fallbackQuery.sql).toContain("COALESCE(dp.priority, pp.priority, 100)");
+        expect(fallbackQuery.sql).toContain("a.id ASC");
+        expect(fallbackQuery.sql).not.toContain("ORDER BY (a.id =");
+        const fallbackOrder = fallbackQuery.sql.slice(fallbackQuery.sql.indexOf("ORDER BY"));
+        expect(fallbackOrder.indexOf("payload.complete_working_set_count DESC")).toBeLessThan(
+          fallbackOrder.indexOf("payload.set_count DESC"),
+        );
+        expect(fallbackOrder.indexOf("payload.set_count DESC")).toBeLessThan(
+          fallbackOrder.indexOf("payload.exercise_count DESC"),
+        );
+        expect(fallbackOrder.indexOf("payload.exercise_count DESC")).toBeLessThan(
+          fallbackOrder.indexOf("a.canonical_type NOT IN"),
+        );
+      },
+    );
 
     it("returns a row without summaries when no sensor store is configured", async () => {
       const { repo } = makeRepository([

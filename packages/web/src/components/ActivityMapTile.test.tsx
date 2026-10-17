@@ -39,6 +39,66 @@ function location(
 }
 
 describe("ActivityMapTile", () => {
+  it("shows processing until every map tile has loaded", () => {
+    render(<ActivityMapTile location={location()} />);
+    expect(screen.getByRole("status")).toHaveTextContent("Processing map…");
+    const tiles = screen.getAllByTestId("activity-map-preview-tile");
+    const first = tiles[0];
+    const second = tiles[1];
+    if (!first || !second) throw new Error("Expected two map tiles");
+    fireEvent.load(first);
+    fireEvent.load(first);
+    expect(screen.getByRole("status")).toHaveTextContent("Processing map…");
+    fireEvent.load(second);
+    expect(screen.queryByRole("status")).toBeNull();
+  });
+
+  it("resets processing and errors when the preview changes", () => {
+    const view = render(<ActivityMapTile location={location()} />);
+    for (const tile of screen.getAllByTestId("activity-map-preview-tile")) fireEvent.load(tile);
+    expect(screen.queryByRole("status")).toBeNull();
+    const replacement = location({
+      mapPreview: {
+        ...mapPreview,
+        tiles: [
+          {
+            url: "https://tile.openstreetmap.org/15/5243/12665.png",
+            x: 0,
+            y: 0,
+            width: 256,
+            height: 256,
+          },
+        ],
+      },
+    });
+    view.rerender(<ActivityMapTile location={replacement} />);
+    expect(screen.getByRole("status")).toHaveTextContent("Processing map…");
+    fireEvent.error(screen.getByTestId("activity-map-preview-tile"));
+    expect(screen.getByText("Map unavailable")).toBeInTheDocument();
+    expect(screen.queryByText("Processing map…")).toBeNull();
+    view.rerender(<ActivityMapTile location={location()} />);
+    expect(screen.getByRole("status")).toHaveTextContent("Processing map…");
+    for (const tile of screen.getAllByTestId("activity-map-preview-tile")) fireEvent.load(tile);
+    expect(screen.queryByText("Map unavailable")).toBeNull();
+    expect(screen.queryByRole("status")).toBeNull();
+  });
+
+  it("reserves the map panel while server location data is processing", () => {
+    render(<ActivityMapTile location={{ kind: "processing" }} variant="panel" />);
+    expect(screen.getByRole("status")).toHaveTextContent("Processing map…");
+    expect(screen.getByTestId("activity-map-tile")).toHaveClass("min-h-48");
+    expect(screen.queryByTestId("activity-map-preview-tile")).toBeNull();
+  });
+
+  it("keeps a loaded map visible when a refetch returns the same preview", () => {
+    const view = render(<ActivityMapTile location={location()} />);
+    const tiles = screen.getAllByTestId("activity-map-preview-tile");
+    for (const tile of tiles) fireEvent.load(tile);
+    view.rerender(<ActivityMapTile location={location({ mapPreview: { ...mapPreview } })} />);
+    expect(screen.getAllByTestId("activity-map-preview-tile")[0]).toBe(tiles[0]);
+    expect(screen.queryByRole("status")).toBeNull();
+  });
+
   it("draws source-owned Area and Climb points without connecting them as a track", () => {
     render(
       <ActivityMapTile

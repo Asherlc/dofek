@@ -78,21 +78,31 @@ class PostgresAccountErasureWorkLockPool implements AccountErasureWorkLockPool {
         providerId === undefined ? undefined : `provider-sync:${userId}:${providerId}`;
       const onSessionError = (error: Error): never => {
         try {
-          Sentry.captureException(error, { tags: { source: "provider-sync-lock-session" } });
+          Sentry.captureException(error, {
+            tags:
+              providerLockName === undefined
+                ? {
+                    accountErasureWorkLockStep: "session",
+                    source: "account-erasure-work-lock",
+                  }
+                : { source: "provider-sync-lock-session" },
+          });
         } finally {
           try {
             logger.error(
-              "[provider-sync-lock] PostgreSQL session lost; stopping worker to prevent stale writes",
+              providerLockName === undefined
+                ? "[account-erasure-work-lock] PostgreSQL session lost; stopping worker to prevent stale writes"
+                : "[provider-sync-lock] PostgreSQL session lost; stopping worker to prevent stale writes",
             );
           } finally {
             process.exit(1);
           }
         }
       };
-      if (providerLockName !== undefined) client.on("error", onSessionError);
+      client.on("error", onSessionError);
       const releaseClient = (destroy = false): void => {
         if (destroy) client.release(true);
-        if (providerLockName !== undefined) client.removeListener("error", onSessionError);
+        client.removeListener("error", onSessionError);
         if (!destroy) client.release();
       };
       const database = drizzle(client);

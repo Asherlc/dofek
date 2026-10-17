@@ -2,10 +2,12 @@ import { providerSourceLabel } from "@dofek/providers/providers";
 import type { ClimbingMapLocation } from "@dofek/training/climbing-map";
 import type { ActivityLocation } from "dofek-server/types";
 import { useState } from "react";
+import { MapProcessingIndicator } from "./MapProcessingIndicator.tsx";
 
 export type ActivityMapLocation = ActivityLocation;
-export type ActivityMapPreview = ActivityMapLocation["mapPreview"];
-export type RoutePathPoint = NonNullable<ActivityMapPreview["routePath"]>[number];
+type ReadyActivityMapLocation = Exclude<ActivityMapLocation, { kind: "processing" }>;
+type ActivityMapPreview = ReadyActivityMapLocation["mapPreview"];
+type RoutePathPoint = NonNullable<ActivityMapPreview["routePath"]>[number];
 
 function sourceLocationLabel(location: ClimbingMapLocation): string {
   const scope = location.scope === "area" ? "Area location" : "Climb location";
@@ -14,7 +16,7 @@ function sourceLocationLabel(location: ClimbingMapLocation): string {
 
 interface ActivityMapTileProps {
   location: ActivityMapLocation;
-  variant?: "card" | "panel";
+  variant?: "card" | "panel" | "thumbnail";
 }
 
 function formatRouteCoordinate(value: number): string {
@@ -107,19 +109,46 @@ function ActivityRouteOverlay({ mapPreview }: { mapPreview: ActivityMapPreview }
 }
 
 export function ActivityMapTile({ location, variant = "card" }: ActivityMapTileProps) {
-  const [loadFailed, setLoadFailed] = useState(false);
-  const isPanel = variant === "panel";
-
   return (
     <div
       data-testid="activity-map-tile"
       className={[
-        "relative w-full overflow-hidden bg-surface-secondary",
-        isPanel ? "h-full min-h-48" : "aspect-[16/9]",
+        "relative isolate overflow-hidden bg-surface-secondary",
+        variant === "thumbnail" ? "h-12 w-16 rounded" : "w-full",
+        variant === "panel" ? "h-full min-h-48" : variant === "card" ? "aspect-[16/9]" : "",
       ].join(" ")}
     >
+      {location.kind === "processing" ? (
+        <MapProcessingIndicator compact={variant === "thumbnail"} />
+      ) : (
+        <ReadyActivityMapTile
+          key={JSON.stringify(location.mapPreview)}
+          location={location}
+          compact={variant === "thumbnail"}
+        />
+      )}
+    </div>
+  );
+}
+
+function ReadyActivityMapTile({
+  location,
+  compact,
+}: {
+  location: ReadyActivityMapLocation;
+  compact: boolean;
+}) {
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [loadedTiles, setLoadedTiles] = useState<ReadonlySet<number>>(() => new Set());
+  const loading = loadedTiles.size < location.mapPreview.tiles.length;
+
+  return (
+    <>
       {loadFailed ? (
-        <div className="flex h-full w-full items-center justify-center text-xs text-muted">
+        <div
+          role="status"
+          className="absolute inset-0 flex items-center justify-center text-xs text-muted"
+        >
           Map unavailable
         </div>
       ) : (
@@ -130,7 +159,9 @@ export function ActivityMapTile({ location, variant = "card" }: ActivityMapTileP
           aria-label={
             location.kind === "climbing_source"
               ? `Climbing source locations · ${location.sourcePoints.map((point) => sourceLocationLabel(point.location)).join("; ")}`
-              : "Activity location map"
+              : compact
+                ? "Activity route map summary"
+                : "Activity location map"
           }
         >
           <div
@@ -143,7 +174,7 @@ export function ActivityMapTile({ location, variant = "card" }: ActivityMapTileP
               height: "100%",
             }}
           >
-            {location.mapPreview.tiles.map((tile) => (
+            {location.mapPreview.tiles.map((tile, tileIndex) => (
               <img
                 key={`${tile.url}-${tile.x}-${tile.y}`}
                 data-testid="activity-map-preview-tile"
@@ -153,6 +184,7 @@ export function ActivityMapTile({ location, variant = "card" }: ActivityMapTileP
                 loading="lazy"
                 referrerPolicy="origin"
                 onError={() => setLoadFailed(true)}
+                onLoad={() => setLoadedTiles((current) => new Set([...current, tileIndex]))}
                 style={{
                   left: `${(tile.x / location.mapPreview.width) * 100}%`,
                   top: `${(tile.y / location.mapPreview.height) * 100}%`,
@@ -201,6 +233,7 @@ export function ActivityMapTile({ location, variant = "card" }: ActivityMapTileP
           ) : null}
         </div>
       )}
-    </div>
+      {!loadFailed && loading ? <MapProcessingIndicator compact={compact} /> : null}
+    </>
   );
 }

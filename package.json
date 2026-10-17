@@ -231,7 +231,7 @@
     "check:mobile-app-routes": "pnpm tsx scripts/check-mobile-app-route-files.ts"
   },
   "dependencies": {
-    "@ai-sdk/otel": "1.0.47",
+    "@ai-sdk/otel": "1.0.142",
     "@aws-crypto/client-node": "5.0.0",
     "@aws-sdk/client-s3": "3.1146.0",
     "@aws-sdk/s3-request-presigner": "3.1146.0",
@@ -274,7 +274,7 @@
     "@opentelemetry/winston-transport": "0.31.0",
     "@posthog/ai": "8.8.0",
     "@sentry/node": "10.45.0",
-    "ai": "7.0.47",
+    "ai": "7.0.142",
     "archiver": "8.0.0",
     "bullmq": "6.3.4",
     "drizzle-orm": "0.45.2",
@@ -321,7 +321,7 @@
     "msw": "2.15.0",
     "nyc": "18.0.0",
     "plantuml-encoder": "1.4.0",
-    "sharp": "0.35.4",
+    "sharp": "0.35.5",
     "sherif": "1.13.0",
     "size-limit": "12.0.1",
     "stylelint": "17.14.0",
