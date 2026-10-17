@@ -55,6 +55,7 @@ Every public module is imported as `@dofek/training/<subpath>`.
 | `climbing-location-map` | [Server-computed map circles and zoom bands](src/climbing-location-map.ts) shared by web and mobile; [Supercluster](https://github.com/mapbox/supercluster) groups nearby logged climbs while retaining individual source locations |
 | `climbing-experience` | [Shared recorded board and wall-angle schemas](src/climbing-experience.ts) |
 | `climbing-log` | [Area, Climb, Pitch, owned GradeComponent collections, ClimbingLogEntry, scoped ClimbingAttempt, and their canonical enums](src/climbing-log.ts) |
+| `climbing-log-groups` | [Group log cards by their closest recorded Area identity](src/climbing-log-groups.ts), preserving original entry numbers, group order, and entries without an Area |
 | `gps-coordinates` | [Complete finite latitude/longitude pairs](src/gps-coordinates.ts) for [native PostgreSQL point storage](https://www.postgresql.org/docs/current/datatype-geometric.html#DATATYPE-GEOMETRIC-POINTS) using x = longitude and y = latitude |
 | `climbing-progression` | [Server-computed grade-stack contract](src/climbing-progression.ts), independent attempt-fact lane and setting labels, and period/exact-value formatting shared by web and mobile |
 | `cycling-workout-metrics` | Coverage-aware per-activity power, heart-rate, cadence, drift, zone, load, and interval calculations |
@@ -89,6 +90,12 @@ source history facts. The raw record schema and computed response schema are
 separate. Server queries derive completion, result labels and counts; see the
 [current model](../../docs/climbing-context.md) and
 [schemas](src/climbing-log.ts).
+
+The [log-card grouping helper](src/climbing-log-groups.ts) groups areas across
+sources when their complete ordered name paths match, ignoring case and extra
+whitespace. Distinct parent paths remain separate. If one source has multiple
+Area IDs for the same path, the match is ambiguous and those areas remain
+separate. Grouping preserves every log and its original occurrence number.
 
 ### Training distributions
 

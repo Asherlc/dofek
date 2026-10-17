@@ -7,14 +7,13 @@ import {
 } from "../../../../../server/src/repositories/climbing-test-helpers.ts";
 import { ClimbingLogEntryContext } from "./ClimbingLogEntryContext.tsx";
 
-it("renders the current location and recorded board with unknown angle units", () => {
+it("renders the recorded board with unknown angle units", () => {
   const entry = climbingLogEntryFixture({
     climb: climbingClimbFixture(),
     board: { name: "Training Board", externalId: null },
     wallAngle: { value: -20, unit: null },
   });
   render(<ClimbingLogEntryContext entry={entry} />);
-  expect(screen.getByText("Wall")).toBeTruthy();
   expect(screen.getByText("Board: Training Board")).toBeTruthy();
   expect(screen.getByText("Wall angle: −20 (units unknown)")).toBeTruthy();
 });

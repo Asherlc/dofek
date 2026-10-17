@@ -34,7 +34,7 @@ it("keeps a completed pitch scoped", () => {
   ];
   render(<ClimbingLogEntryBreakdown entries={[entry]} />);
   expect(screen.getByText("A recorded outing")).toBeTruthy();
-  expect(screen.getByText("Unidentified pitch completed · 1 recorded attempt")).toBeTruthy();
+  expect(screen.getByText("Unidentified pitch completed · Attempts: 1")).toBeTruthy();
 });
 it("renders the server's unknown occurrence count with its current published display grade", () => {
   const entry = climbingLogEntryFixture({
@@ -46,7 +46,7 @@ it("renders the server's unknown occurrence count with its current published dis
   render(<ClimbingLogEntryBreakdown entries={[entry]} />);
   expect(screen.getByText("Corner")).toBeTruthy();
   expect(screen.getByText("5.10a")).toBeTruthy();
-  expect(screen.getByText("Whole climb · 1 recorded attempt")).toBeTruthy();
+  expect(screen.getByText("Attempts: 1")).toBeTruthy();
 });
 
 it("shows pitch completion with unknown whole-climb outcome", () => {
@@ -72,8 +72,8 @@ it("shows pitch completion with unknown whole-climb outcome", () => {
     },
   ];
   render(<ClimbingLogEntryBreakdown entries={[entry]} />);
-  expect(screen.getByText("Unidentified pitch completed · 1 recorded attempt")).toBeTruthy();
-  expect(screen.getByText("Whole climb · 1 recorded attempt")).toBeTruthy();
+  expect(screen.getByText("Unidentified pitch completed · Attempts: 1")).toBeTruthy();
+  expect(screen.getByText("Attempts: 1")).toBeTruthy();
 });
 it("shows a completed dab without a send label", () => {
   const entry = climbingLogEntryFixture({
@@ -89,11 +89,87 @@ it("shows a completed dab without a send label", () => {
     }),
   ];
   render(<ClimbingLogEntryBreakdown entries={[entry]} />);
-  expect(screen.getByText("Whole climb completed · 1 recorded attempt")).toBeTruthy();
+  expect(screen.getByText("Completed · Attempts: 1")).toBeTruthy();
   expect(screen.queryByText("Sent")).toBeNull();
 });
 
 describe("ClimbingLogEntryBreakdown", () => {
+  it("shows overlapping source areas under one heading and preserves each attachment", () => {
+    const climb = climbingLogFixture.climb;
+    if (!climb) throw new Error("Expected a climb fixture");
+    const onAttach = vi.fn();
+    render(
+      <ClimbingLogEntryBreakdown
+        entries={[
+          climbingLogFixture,
+          {
+            ...climbingLogFixture,
+            id: "openbeta-log",
+            providerId: "openbeta",
+            sourceName: "OpenBeta",
+            sourceLinks: [
+              {
+                kind: "route",
+                providerId: "openbeta",
+                url: "https://openbeta.io/climb/10000000-0000-4000-8000-000000000001",
+              },
+            ],
+            climb: {
+              ...climb,
+              providerId: "openbeta",
+              name: "Road Kill",
+              areaPath: climb.areaPath.map((area) => ({
+                ...area,
+                providerId: "openbeta",
+                id: `openbeta-${area.id}`,
+              })),
+            },
+          },
+        ]}
+        onAttach={onAttach}
+      />,
+    );
+    expect(screen.getAllByText("Goat Rock")).toHaveLength(1);
+    const group = within(screen.getByLabelText("Goat Rock"));
+    expect(group.getByRole("link", { name: "Swiss Cheese on Mountain Project" })).toBeTruthy();
+    expect(group.getByRole("link", { name: "Road Kill on OpenBeta" })).toBeTruthy();
+    fireEvent.click(
+      group.getByRole("button", { name: "Attach entry 2, Road Kill to this activity" }),
+    );
+    expect(onAttach).toHaveBeenCalledWith("openbeta-log");
+  });
+  it("groups nonadjacent climbs under their area heading and keeps attachment identities", () => {
+    const climb = climbingLogFixture.climb;
+    const area = climb?.areaPath.at(-1);
+    if (!climb || !area) throw new Error("Expected an area fixture");
+    render(
+      <ClimbingLogEntryBreakdown
+        entries={[
+          climbingLogFixture,
+          {
+            ...climbingLogFixture,
+            id: "other-area",
+            climb: {
+              ...climb,
+              name: "Other climb",
+              areaPath: [{ ...area, id: "other-area", name: "North Wall" }],
+            },
+          },
+          { ...climbingLogFixture, id: "repeat" },
+        ]}
+        onAttach={vi.fn()}
+      />,
+    );
+    const goatRock = screen.getByLabelText("Goat Rock");
+    expect(within(goatRock).getByText("Goat Rock")).toBeTruthy();
+    expect(within(goatRock).getAllByLabelText("Climbing entry: Swiss Cheese")).toHaveLength(2);
+    expect(
+      within(goatRock).getByRole("button", {
+        name: "Attach entry 3, Swiss Cheese to this activity",
+      }),
+    ).toBeTruthy();
+    expect(within(screen.getByLabelText("North Wall")).getByText("Other climb")).toBeTruthy();
+  });
   it("identifies the selected repeated card by full entry order including a locationless entry", () => {
     render(
       <ClimbingLogEntryBreakdown
@@ -107,9 +183,12 @@ describe("ClimbingLogEntryBreakdown", () => {
       />,
     );
     const cards = screen.getAllByLabelText(/Climbing entry:/);
-    expect(cards[0]?.textContent).toContain("Entry 1");
-    expect(cards[1]?.textContent).toContain("Entry 2");
-    expect(cards[2]?.textContent).toContain("Entry 3 · Selected");
+    expect(cards.map((card) => card.getAttribute("aria-label"))).toEqual([
+      "Climbing entry: Swiss Cheese",
+      "Climbing entry: Swiss Cheese",
+      "Climbing entry: Indoor",
+    ]);
+    expect(cards[1]?.querySelector('[data-accessible="true"][aria-selected="true"]')).toBeTruthy();
   });
   it("preserves source order and repeated ticks at one point", () => {
     render(
@@ -125,7 +204,6 @@ describe("ClimbingLogEntryBreakdown", () => {
     expect(cards).toHaveLength(2);
     expect(cards[0]?.getAttribute("aria-label")).toBe("Climbing entry: First occurrence");
     expect(cards[1]?.getAttribute("aria-label")).toBe("Climbing entry: Swiss Cheese");
-    expect(screen.getAllByText("Climb location: Swiss Cheese · Mountain Project")).toHaveLength(2);
   });
 
   it("allows a 280px cell basis to shrink inside the 256px padded screen content", () => {

@@ -78,6 +78,50 @@ type Story = StoryObj<typeof meta>;
 export const Default: Story = {};
 export const MixedGps: Story = {};
 export const NoGps: Story = { args: { locations: {} } };
+export const OverlappingSources: Story = {
+  args: {
+    locations: {},
+    entries: ["mountain-project", "openbeta"].map((providerId, index) => {
+      const id = `30000000-0000-4000-8000-00000000000${index + 1}`;
+      const areaId = `40000000-0000-4000-8000-00000000000${index + 1}`;
+      const regionId = `50000000-0000-4000-8000-00000000000${index + 1}`;
+      const climb = climbingClimbFixture(providerId);
+      climb.id = `60000000-0000-4000-8000-00000000000${index + 1}`;
+      climb.name = index === 0 ? "Swiss Cheese" : "Left Arete";
+      climb.areaId = areaId;
+      climb.areaPath = climb.areaPath.flatMap((area) => [
+        { ...area, id: regionId, name: "Donner Summit", parentAreaId: null },
+        { ...area, id: areaId, name: "Green Phantom Rock", parentAreaId: regionId },
+      ]);
+      return climbingLogEntryFixture({
+        id,
+        providerId,
+        sourceName: index === 0 ? "Mountain Project" : "OpenBeta",
+        climb,
+        climbId: climb.id,
+        displayGrade: index === 0 ? "5.4" : "5.8",
+        recordedClimbAttemptCount: 1,
+        attempts: [climbingAttemptFixture(id, { ropeMethod: "lead" })],
+        sourceLinks: [
+          {
+            providerId,
+            kind: "route",
+            url:
+              index === 0
+                ? "https://www.mountainproject.com/route/105734732/swiss-cheese"
+                : "https://openbeta.io/climb/10000000-0000-4000-8000-000000000001",
+          },
+        ],
+      });
+    }),
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(canvas.getAllByRole("heading", { name: "Green Phantom Rock" })).toHaveLength(1);
+    await expect(canvas.getByLabelText("Swiss Cheese on Mountain Project")).toBeVisible();
+    await expect(canvas.getByLabelText("Left Arete on OpenBeta")).toBeVisible();
+  },
+};
 export const RepeatedPoint: Story = {
   args: {
     entries: [
@@ -93,11 +137,17 @@ export const RepeatedPoint: Story = {
     const dot = await overview.findByRole("button", { name: /^Entry 3 · Swiss Cheese, latitude/ });
     await userEvent.click(dot);
     await userEvent.click(canvas.getByRole("button", { name: "Entry 1 · Swiss Cheese" }));
-    await expect(canvas.getByText("Entry 1 · Selected")).toBeVisible();
+    await expect(canvas.getAllByLabelText("Climbing entry: Swiss Cheese")[0]).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
     const repeat = canvas.getByRole("button", { name: "Entry 3 · Swiss Cheese" });
     repeat.focus();
     await userEvent.keyboard("[Enter]");
-    await expect(canvas.getByText("Entry 3 · Selected")).toBeVisible();
+    await expect(canvas.getAllByLabelText("Climbing entry: Swiss Cheese")[1]).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
   },
 };
 function RepeatedPointArrangement(args: ComponentProps<typeof ClimbingLogEntryBreakdown>) {

@@ -2,13 +2,35 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { climbingAttemptFixture } from "../../server/src/repositories/climbing-test-helpers.ts";
 import { ClimbingLogEntryCard } from "./ClimbingLogEntryCard";
-import {
-  areaClimbingLocation,
-  climbingLogFixture,
-  exactClimbingLocation,
-} from "./climbing-log-entry-fixtures";
+import { climbingLogFixture, exactClimbingLocation } from "./climbing-log-entry-fixtures";
 
 describe("ClimbingLogEntryCard", () => {
+  it("announces selection on the climb link while retaining the source and Attach actions", () => {
+    const onAttach = vi.fn();
+    const { rerender } = render(
+      <ClimbingLogEntryCard entry={climbingLogFixture} selected onAttach={onAttach} />,
+    );
+    const climb = screen.getByRole("link", { name: "Swiss Cheese on Mountain Project" });
+    expect(climb.getAttribute("data-accessible")).toBe("true");
+    expect(climb.getAttribute("aria-selected")).toBe("true");
+    climb.focus();
+    expect(document.activeElement).toBe(climb);
+    const source = screen.getByRole("link", { name: "Mountain Project ticks" });
+    source.focus();
+    expect(document.activeElement).toBe(source);
+    fireEvent.click(screen.getByRole("button", { name: "Attach Swiss Cheese to this activity" }));
+    expect(onAttach).toHaveBeenCalledWith(climbingLogFixture.id);
+    rerender(<ClimbingLogEntryCard entry={climbingLogFixture} selected={false} />);
+    expect(climb.getAttribute("aria-selected")).toBe("false");
+  });
+
+  it("announces selection on an accessible climb name without source links", () => {
+    render(<ClimbingLogEntryCard entry={{ ...climbingLogFixture, sourceLinks: [] }} selected />);
+    const climb = screen.getByText("Swiss Cheese");
+    expect(climb.getAttribute("data-accessible")).toBe("true");
+    expect(climb.getAttribute("aria-selected")).toBe("true");
+  });
+
   it("shows the recorded top-rope method when the source omits a completion result", () => {
     if (!climbingLogFixture.climb) throw new Error("Expected a named climb fixture");
     render(
@@ -29,7 +51,7 @@ describe("ClimbingLogEntryCard", () => {
     );
     expect(screen.getByText("Havarti Cheese")).toBeTruthy();
     expect(screen.getByText("Top rope")).toBeTruthy();
-    expect(screen.getByText("Whole climb · 1 recorded attempt")).toBeTruthy();
+    expect(screen.getByText("Attempts: 1")).toBeTruthy();
   });
 
   it("exposes a pending attachment as busy and disabled to assistive technology", () => {
@@ -75,19 +97,16 @@ describe("ClimbingLogEntryCard", () => {
     render(<ClimbingLogEntryCard entry={climbingLogFixture} />);
     expect(screen.getByRole("link", { name: "Swiss Cheese on Mountain Project" })).toBeTruthy();
     expect(screen.getByRole("link", { name: "Mountain Project ticks" })).toBeTruthy();
-    expect(screen.getByText("Goat Rock")).toBeTruthy();
     expect(screen.getByText("5.4")).toBeTruthy();
-    expect(screen.getByText("Whole climb completed · 2 recorded attempts")).toBeTruthy();
+    expect(screen.getByText("Completed · Attempts: 2")).toBeTruthy();
   });
 
-  it("shows explicit exact-location provenance and a compact single-point map", () => {
+  it("shows a compact single-point map", () => {
     const { container } = render(
       <ClimbingLogEntryCard entry={climbingLogFixture} location={exactClimbingLocation} />,
     );
-    expect(screen.getByText("Climb location: Swiss Cheese · Mountain Project")).toBeTruthy();
     expect(container.querySelector("mapview")).toBeNull();
-    const wrapper = screen.getByText("Climb location: Swiss Cheese · Mountain Project")
-      .parentElement?.lastElementChild?.lastElementChild;
+    const wrapper = container.querySelector('[style*="overflow: hidden"]')?.firstElementChild;
     if (!wrapper) throw new Error("Expected the compact map layout wrapper");
     fireEvent(wrapper, new CustomEvent("layout", { detail: { width: 280, height: 140 } }));
     const map = container.querySelector("mapview");
@@ -96,11 +115,6 @@ describe("ClimbingLogEntryCard", () => {
     expect(container.querySelector("polyline")).toBeNull();
     expect(container.querySelector('[title="Start"]')).toBeNull();
     expect(container.querySelector('[title="Finish"]')).toBeNull();
-  });
-
-  it("labels the owning area and provider without implying an exact climb location", () => {
-    render(<ClimbingLogEntryCard entry={climbingLogFixture} location={areaClimbingLocation} />);
-    expect(screen.getByText("Area location: Goat Rock · OpenBeta")).toBeTruthy();
   });
 
   it("keeps the retry action available after an attachment error", () => {

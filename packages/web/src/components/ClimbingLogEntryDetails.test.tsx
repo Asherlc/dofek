@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { expect, it } from "vitest";
 import {
   climbingAttemptFixture,
@@ -8,7 +8,7 @@ import {
 } from "../../../server/src/repositories/climbing-test-helpers.ts";
 import { ClimbingLogEntryDetails } from "./ClimbingLogEntryDetails.tsx";
 
-it("renders current shared location, owned grades, pitch facts, notes and disclosed provenance", () => {
+it("renders the climb name, date, location, grades and known attempt facts", () => {
   const climb = climbingClimbFixture();
   climb.coordinates = { latitude: 37.5, longitude: -122.25 };
   climb.pitches = [
@@ -24,6 +24,7 @@ it("renders current shared location, owned grades, pitch facts, notes and disclo
   const log = climbingLogEntryFixture({
     climb,
     climbId: climb.id,
+    climbedOn: "2026-10-01",
     notes: "Source note",
     reportedGrades: [{ value: "6b", system: "french" }],
     raw: { sourceMarker: "Recorded payload" },
@@ -31,6 +32,7 @@ it("renders current shared location, owned grades, pitch facts, notes and disclo
   log.attempts = [
     climbingAttemptFixture(log.id, {
       scope: "pitch",
+      attemptIndex: 4,
       pitchId: climb.pitches[0]?.id ?? null,
       outcome: "completed",
       ropeMethod: "lead",
@@ -39,18 +41,33 @@ it("renders current shared location, owned grades, pitch facts, notes and disclo
     }),
   ];
   render(<ClimbingLogEntryDetails entry={log} />);
-  expect(screen.getByText("Date unknown")).toBeTruthy();
+  expect(screen.getByText("Corner")).toBeTruthy();
+  expect(screen.getByText("2026-10-01")).toBeTruthy();
   expect(screen.getByText("Wall")).toBeTruthy();
-  expect(screen.getByText("37.5, −122.25")).toBeTruthy();
-  expect(screen.getByText("Published climb grades")).toBeTruthy();
+  expect(screen.getByRole("heading", { name: "Grades" })).toBeTruthy();
   expect(screen.getByText("5.10a (Yosemite Decimal System)")).toBeTruthy();
-  expect(screen.getByText("Published pitch grades")).toBeTruthy();
+  expect(screen.getByRole("heading", { name: "Pitch grades" })).toBeTruthy();
   expect(screen.getByText("5.9 (Yosemite Decimal System)")).toBeTruthy();
   expect(screen.getByText("Reported grades")).toBeTruthy();
   expect(screen.getByText("6b (French)")).toBeTruthy();
   expect(screen.getByText("Used aid")).toBeTruthy();
-  expect(screen.getByText("Fell or hung")).toBeTruthy();
+  expect(screen.getByRole("heading", { name: "Lower pitch · Attempt 4" })).toBeTruthy();
   expect(screen.getByText("Source note")).toBeTruthy();
-  fireEvent.click(screen.getByText("Raw provider data"));
-  expect(screen.getByText(/Recorded payload/)).toBeTruthy();
+});
+
+it("uses the recorded attempt order when no named pitch is available", () => {
+  const log = climbingLogEntryFixture({ title: "Indoor session" });
+  log.attempts = [climbingAttemptFixture(log.id, { attemptIndex: 3, ropeMethod: "top_rope" })];
+  render(<ClimbingLogEntryDetails entry={log} />);
+  expect(screen.getByText("Indoor session")).toBeTruthy();
+  expect(screen.getByRole("heading", { name: "Attempt 3" })).toBeTruthy();
+  expect(screen.getByText("Top rope")).toBeTruthy();
+});
+
+it("identifies a pitch attempt whose pitch is unreported", () => {
+  const log = climbingLogEntryFixture({ title: "Multi-pitch outing" });
+  log.attempts = [climbingAttemptFixture(log.id, { scope: "pitch", ropeMethod: "lead" })];
+  render(<ClimbingLogEntryDetails entry={log} />);
+  expect(screen.getByRole("heading", { name: "Pitch attempt" })).toBeTruthy();
+  expect(screen.getByText("Lead")).toBeTruthy();
 });

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { expect, it } from "vitest";
 import {
   climbingAttemptFixture,
@@ -8,7 +8,7 @@ import {
 } from "../../server/src/repositories/climbing-test-helpers.ts";
 import { ClimbingLogEntryDetails } from "./ClimbingLogEntryDetails";
 
-it("renders current shared location, owned grades, pitch facts, notes and disclosed provenance", () => {
+it("renders the climb, grades, known attempt facts and notes", () => {
   const climb = climbingClimbFixture();
   climb.coordinates = { latitude: 37.5, longitude: -122.25 };
   climb.pitches = [
@@ -31,6 +31,7 @@ it("renders current shared location, owned grades, pitch facts, notes and disclo
   log.attempts = [
     climbingAttemptFixture(log.id, {
       scope: "pitch",
+      attemptIndex: 4,
       pitchId: climb.pitches[0]?.id ?? null,
       outcome: "completed",
       ropeMethod: "lead",
@@ -39,18 +40,16 @@ it("renders current shared location, owned grades, pitch facts, notes and disclo
     }),
   ];
   render(<ClimbingLogEntryDetails entry={log} />);
-  expect(screen.getByText("Date unknown")).toBeTruthy();
+  expect(screen.getByText("Corner")).toBeTruthy();
   expect(screen.getByText("Wall")).toBeTruthy();
-  expect(screen.getByText("37.5, −122.25")).toBeTruthy();
-  expect(screen.getByText("Published climb grades")).toBeTruthy();
+  expect(screen.getByText("Grades")).toBeTruthy();
   expect(screen.getByText("5.10a (Yosemite Decimal System)")).toBeTruthy();
-  expect(screen.getByText("Published pitch grades")).toBeTruthy();
+  expect(screen.getByText("Pitch grades")).toBeTruthy();
+  expect(screen.getByText("Lower pitch · Attempt 4")).toBeTruthy();
   expect(screen.getByText("5.9 (Yosemite Decimal System)")).toBeTruthy();
   expect(screen.getByText("Reported grades")).toBeTruthy();
   expect(screen.getByText("6b (French)")).toBeTruthy();
   expect(screen.getByText("Used aid")).toBeTruthy();
-  expect(screen.getByText("Fell or hung")).toBeTruthy();
+  expect(screen.getByText("Lead")).toBeTruthy();
   expect(screen.getByText("Source note")).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "Raw provider data" }));
-  expect(screen.getByText(/Recorded payload/)).toBeTruthy();
 });

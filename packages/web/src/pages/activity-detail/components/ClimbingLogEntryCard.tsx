@@ -2,7 +2,6 @@ import {
   formatClimbingRecordedResult,
   formatClimbingRopeMethods,
 } from "@dofek/format/climbing-log";
-import { providerSourceLabel } from "@dofek/providers/providers";
 import type { ClimbingMapLocation, ClimbingMapMarker } from "@dofek/training/climbing-map";
 import { useMemo } from "react";
 import type { ClimbingLogEntryDetail } from "../../../../../server/src/contracts/climbing-log-contracts.ts";
@@ -43,24 +42,8 @@ export function ClimbingLogEntryCard({
       aria-current={selected ? "true" : undefined}
       className={`flex min-w-0 flex-col gap-3 rounded-lg border p-3 ${selected ? "border-accent" : "border-border"}`}
     >
-      {entryNumber != null && (
-        <p className="text-xs text-subtle">
-          Entry {entryNumber}
-          {selected ? " · Selected" : ""}
-        </p>
-      )}
       {location && (
-        <>
-          <ActivityRouteMap
-            points={NO_SENSOR_POINTS}
-            climbMarkers={markers}
-            presentation="compact"
-          />
-          <p className="break-words text-xs text-subtle">
-            {location.scope === "area" ? "Area location" : "Climb location"}:{" "}
-            {location.name ?? location.objectId} · {providerSourceLabel(location.providerId)}
-          </p>
-        </>
+        <ActivityRouteMap points={NO_SENSOR_POINTS} climbMarkers={markers} presentation="compact" />
       )}
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 space-y-1">
@@ -82,7 +65,7 @@ export function ClimbingLogEntryCard({
         {entry.recordedClimbAttemptCount > 0 && (
           <p>
             {formatClimbingRecordedResult(
-              "Whole climb",
+              null,
               entry.recordedClimbOutcome,
               entry.recordedClimbAttemptCount,
             )}

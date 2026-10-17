@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { render, screen } from "@testing-library/react";
-import { expect, it } from "vitest";
+import { fireEvent, render, screen, within } from "@testing-library/react";
+import { expect, it, vi } from "vitest";
 import {
   climbingAttemptFixture,
   climbingClimbFixture,
@@ -8,7 +8,7 @@ import {
 } from "../../../../../server/src/repositories/climbing-test-helpers.ts";
 import { ClimbingLogEntryBreakdown } from "./ClimbingLogEntryBreakdown.tsx";
 
-it("keeps located canonical logs in ordered cards and highlights repeated occurrences across missing GPS", () => {
+it("groups located canonical logs by area and highlights repeated occurrences across missing GPS", () => {
   const first = climbingLogEntryFixture({ climb: climbingClimbFixture() });
   const repeat = { ...first, id: "repeat" };
   const location = {
@@ -25,14 +25,101 @@ it("keeps located canonical logs in ordered cards and highlights repeated occurr
       selectedEntryId="repeat"
     />,
   );
-  const cards = screen.getByRole("list", { name: "Attached climbing logs" }).children;
+  const cards = within(screen.getByRole("region", { name: "Attached climbing logs" })).getAllByRole(
+    "listitem",
+  );
   expect(cards).toHaveLength(3);
-  expect(cards[0]).toHaveTextContent("Entry 1");
-  expect(cards[1]).toHaveTextContent("Entry 2");
-  expect(cards[2]).toHaveTextContent("Entry 3 · Selected");
-  expect(cards[2]).toHaveAttribute("aria-current", "true");
+  expect(cards[0]).toHaveTextContent("Corner");
+  expect(cards[1]).toHaveTextContent("Corner");
+  expect(cards[2]).toHaveTextContent("Indoor");
+  expect(cards[1]).toHaveAttribute("aria-current", "true");
+  expect(screen.getByRole("heading", { name: "Wall" })).toBeInTheDocument();
   expect(screen.getAllByRole("region", { name: "Climbing locations" })).toHaveLength(2);
-  expect(screen.getAllByText("Area location: Goat Rock · OpenBeta")).toHaveLength(2);
+});
+
+it("keeps separate area groups and each attachment's original occurrence number", () => {
+  const firstClimb = climbingClimbFixture();
+  const otherClimb = {
+    ...firstClimb,
+    name: "Left Arete",
+    areaPath: firstClimb.areaPath.map((area) => ({ ...area, id: "other-area", name: "Boulder" })),
+  };
+  const first = climbingLogEntryFixture({ id: "first", climb: firstClimb });
+  const other = climbingLogEntryFixture({ id: "other", climb: otherClimb });
+  const repeat = climbingLogEntryFixture({ id: "repeat", climb: firstClimb });
+  const onAttach = vi.fn();
+  render(<ClimbingLogEntryBreakdown entries={[first, other, repeat]} onAttach={onAttach} />);
+  expect(
+    screen.getAllByRole("heading", { level: 3 }).map((heading) => heading.textContent),
+  ).toEqual(["Wall", "Boulder"]);
+  const wall = screen.getByRole("list", { name: "Wall climbs" });
+  expect(within(wall).getAllByText("Corner")).toHaveLength(2);
+  expect(
+    within(screen.getByRole("list", { name: "Boulder climbs" })).getByText("Left Arete"),
+  ).toBeTruthy();
+  fireEvent.click(
+    within(wall).getByRole("button", { name: "Attach entry 3, Corner to this activity" }),
+  );
+  expect(onAttach).toHaveBeenCalledWith("repeat");
+});
+
+it("groups a shared area across providers while preserving both source records and attachment identities", () => {
+  const entries = [
+    { providerId: "mountain-project", sourceName: "Mountain Project", name: "Road Kill" },
+    { providerId: "openbeta", sourceName: "OpenBeta", name: "Left Arete" },
+  ].map(({ providerId, sourceName, name }, index) => {
+    const climb = climbingClimbFixture(providerId);
+    climb.name = name;
+    climb.id = `climb-${index}`;
+    climb.areaId = `area-${index}`;
+    climb.areaPath = climb.areaPath.flatMap((area) => [
+      { ...area, id: `region-${index}`, name: "Donner Summit", parentAreaId: null },
+      { ...area, id: `area-${index}`, name: "Green Phantom Rock", parentAreaId: `region-${index}` },
+    ]);
+    return climbingLogEntryFixture({
+      id: `log-${index}`,
+      providerId,
+      sourceName,
+      climb,
+      climbId: climb.id,
+      sourceLinks: [
+        {
+          providerId,
+          kind: "route",
+          url:
+            providerId === "openbeta"
+              ? "https://openbeta.io/climb/10000000-0000-4000-8000-000000000001"
+              : "https://www.mountainproject.com/route/105734732/road-kill",
+        },
+      ],
+    });
+  });
+  const onAttach = vi.fn();
+  render(
+    <ClimbingLogEntryBreakdown
+      entries={[
+        entries[0] ?? climbingLogEntryFixture(),
+        climbingLogEntryFixture({ id: "indoor", title: "Indoor" }),
+        entries[1] ?? climbingLogEntryFixture(),
+      ]}
+      onAttach={onAttach}
+    />,
+  );
+  expect(screen.getAllByRole("heading", { name: "Green Phantom Rock" })).toHaveLength(1);
+  const area = within(screen.getByRole("list", { name: "Green Phantom Rock climbs" }));
+  expect(area.getByRole("link", { name: "Road Kill on Mountain Project" })).toHaveAttribute(
+    "href",
+    "https://www.mountainproject.com/route/105734732/road-kill",
+  );
+  expect(area.getByRole("link", { name: "Left Arete on OpenBeta" })).toHaveAttribute(
+    "href",
+    "https://openbeta.io/climb/10000000-0000-4000-8000-000000000001",
+  );
+  fireEvent.click(area.getByRole("button", { name: "Attach entry 1, Road Kill to this activity" }));
+  fireEvent.click(
+    area.getByRole("button", { name: "Attach entry 3, Left Arete to this activity" }),
+  );
+  expect(onAttach.mock.calls).toEqual([["log-0"], ["log-1"]]);
 });
 
 it("keeps a completed pitch scoped to its recorded result", () => {
@@ -59,7 +146,7 @@ it("keeps a completed pitch scoped to its recorded result", () => {
   ];
   render(<ClimbingLogEntryBreakdown entries={[entry]} />);
   expect(screen.getByText("A recorded outing")).toBeTruthy();
-  expect(screen.getByText("Unidentified pitch completed · 1 recorded attempt")).toBeTruthy();
+  expect(screen.getByText("Unidentified pitch completed · Attempts: 1")).toBeTruthy();
 });
 it("renders the server's unknown occurrence count with its current published display grade", () => {
   const entry = climbingLogEntryFixture({
@@ -71,7 +158,7 @@ it("renders the server's unknown occurrence count with its current published dis
   render(<ClimbingLogEntryBreakdown entries={[entry]} />);
   expect(screen.getByText("Corner")).toBeTruthy();
   expect(screen.getByText("5.10a")).toBeTruthy();
-  expect(screen.getByText("Whole climb · 1 recorded attempt")).toBeTruthy();
+  expect(screen.getByText("Attempts: 1")).toBeTruthy();
 });
 
 it("shows pitch completion with unknown whole-climb outcome", () => {
@@ -97,8 +184,8 @@ it("shows pitch completion with unknown whole-climb outcome", () => {
     },
   ];
   render(<ClimbingLogEntryBreakdown entries={[entry]} />);
-  expect(screen.getByText("Unidentified pitch completed · 1 recorded attempt")).toBeTruthy();
-  expect(screen.getByText("Whole climb · 1 recorded attempt")).toBeTruthy();
+  expect(screen.getByText("Unidentified pitch completed · Attempts: 1")).toBeTruthy();
+  expect(screen.getByText("Attempts: 1")).toBeTruthy();
 });
 it("shows a completed dab without a send label", () => {
   const entry = climbingLogEntryFixture({
@@ -114,6 +201,6 @@ it("shows a completed dab without a send label", () => {
     }),
   ];
   render(<ClimbingLogEntryBreakdown entries={[entry]} />);
-  expect(screen.getByText("Whole climb completed · 1 recorded attempt")).toBeTruthy();
+  expect(screen.getByText("Completed · Attempts: 1")).toBeTruthy();
   expect(screen.queryByText("Sent")).toBeNull();
 });

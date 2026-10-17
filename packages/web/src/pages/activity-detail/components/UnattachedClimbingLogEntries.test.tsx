@@ -31,10 +31,12 @@ it("highlights the selected suggestion using the full order across a missing-GPS
       onAttach={vi.fn()}
     />,
   );
-  const grid = screen.getByRole("list", { name: "Unattached climbing logs" });
-  expect(grid.children[1]).toHaveTextContent("Entry 2");
-  expect(grid.children[2]).toHaveTextContent("Entry 3 · Selected");
-  expect(grid.children[2]).toHaveAttribute("aria-current", "true");
+  const cards = within(
+    screen.getByRole("region", { name: "Unattached climbing logs" }),
+  ).getAllByRole("listitem");
+  expect(cards[2]).toHaveTextContent("Indoor");
+  expect(cards[1]).toHaveTextContent("Corner");
+  expect(cards[1]).toHaveAttribute("aria-current", "true");
   expect(screen.getAllByRole("region", { name: "Climbing locations" })).toHaveLength(2);
 });
 
@@ -121,7 +123,7 @@ it("keeps located repeated suggestions in a shared grid with independent Attach 
       onAttach={onAttach}
     />,
   );
-  const grid = screen.getByRole("list", { name: "Unattached climbing logs" });
+  const grid = screen.getByRole("list", { name: "Wall climbs" });
   const firstCard = grid.children[0];
   const repeatCard = grid.children[1];
   if (!(firstCard instanceof HTMLElement) || !(repeatCard instanceof HTMLElement))

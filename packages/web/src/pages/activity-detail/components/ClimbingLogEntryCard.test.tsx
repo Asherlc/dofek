@@ -26,7 +26,7 @@ it("shows Havarti Cheese's recorded top-rope method and attempt count", () => {
   );
   expect(screen.getByText("Havarti Cheese")).toBeInTheDocument();
   expect(screen.getByText("Top rope")).toBeInTheDocument();
-  expect(screen.getByText("Whole climb · 1 recorded attempt")).toBeInTheDocument();
+  expect(screen.getByText("Attempts: 1")).toBeInTheDocument();
 });
 
 it.each([undefined, 3])(
@@ -80,7 +80,6 @@ it("keeps canonical source links and attachment actions accessible without GPS",
       <ClimbingLogEntryCard entry={entry} entryNumber={3} selected onAttach={onAttach} />
     </ul>,
   );
-  expect(screen.getByRole("listitem")).toHaveTextContent("Entry 3 · Selected");
   expect(screen.getByRole("listitem")).toHaveAttribute("aria-current", "true");
   expect(screen.getByRole("link", { name: "Corner on OpenBeta" })).toHaveAttribute(
     "href",
@@ -90,7 +89,7 @@ it("keeps canonical source links and attachment actions accessible without GPS",
   expect(onAttach).toHaveBeenCalledWith(entry.id);
 });
 
-it("identifies the owning area even when its source omitted the name", () => {
+it("keeps the owning area's map available when its source omitted the name", () => {
   render(
     <ul>
       <ClimbingLogEntryCard
@@ -105,6 +104,5 @@ it("identifies the owning area even when its source omitted the name", () => {
       />
     </ul>,
   );
-  expect(screen.getByText("Area location: area-123 · OpenBeta")).toBeInTheDocument();
   expect(screen.getByRole("region", { name: "Climbing locations" })).toBeInTheDocument();
 });

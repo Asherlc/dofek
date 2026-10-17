@@ -12,7 +12,7 @@ const meta = {
 } satisfies Meta<typeof ClimbingLogEntryContext>;
 export default meta;
 type Story = StoryObj<typeof meta>;
-export const CurrentLocation: Story = {};
+export const Empty: Story = {};
 export const UnknownAngleUnits: Story = {
   args: {
     entry: climbingLogEntryFixture({

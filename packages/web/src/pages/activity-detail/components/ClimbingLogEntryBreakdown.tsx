@@ -1,3 +1,4 @@
+import { groupClimbingLogEntriesByArea } from "@dofek/training/climbing-log-groups";
 import type { ClimbingMapLocation } from "@dofek/training/climbing-map";
 import type { ClimbingLogEntryDetail } from "../../../../../server/src/contracts/climbing-log-contracts.ts";
 import { type ClimbingLogAttachmentState, ClimbingLogEntryCard } from "./ClimbingLogEntryCard.tsx";
@@ -18,21 +19,28 @@ export function ClimbingLogEntryBreakdown({
   label?: string;
 }) {
   return (
-    <ul
-      aria-label={label}
-      className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,260px),1fr))] gap-3"
-    >
-      {entries.map((entry, index) => (
-        <ClimbingLogEntryCard
-          key={entry.id}
-          entry={entry}
-          entryNumber={index + 1}
-          location={locations?.[entry.id]}
-          selected={entry.id === selectedEntryId}
-          attachmentState={attachmentStates?.[entry.id]}
-          onAttach={onAttach}
-        />
+    <section aria-label={label} className="space-y-4">
+      {groupClimbingLogEntriesByArea(entries).map(({ area, entries: groupEntries }) => (
+        <div key={area?.id ?? "unlocated"} className="space-y-2">
+          {area && <h3 className="text-sm font-medium text-foreground">{area.name}</h3>}
+          <ul
+            aria-label={area ? `${area.name} climbs` : "Climbing logs"}
+            className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,260px),1fr))] gap-3"
+          >
+            {groupEntries.map(({ entry, entryNumber }) => (
+              <ClimbingLogEntryCard
+                key={entry.id}
+                entry={entry}
+                entryNumber={entryNumber}
+                location={locations?.[entry.id]}
+                selected={entry.id === selectedEntryId}
+                attachmentState={attachmentStates?.[entry.id]}
+                onAttach={onAttach}
+              />
+            ))}
+          </ul>
+        </div>
       ))}
-    </ul>
+    </section>
   );
 }

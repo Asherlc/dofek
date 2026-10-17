@@ -47,13 +47,17 @@ Existing previews remain visible during background refreshes, and map failures
 retain their error state.
 
 Activity details show climbing logs and same-day attachment suggestions for
-climbing and hiking activities. Cards show current shared locations, published
-display grades, scoped results, and server-derived rock labels. Provider records
+climbing and hiking activities. Cards group under Area headings and show published
+display grades, concise attempt counts, pitch labels, and server-derived rock labels
+through the [shared grouping helper](../training/src/climbing-log-groups.ts) and
+[card](components/ClimbingLogEntryCard.tsx). Provider records
 use server columns and filters, fetch the selected log's complete graph, and
 retain cached rows during refresh errors. Their
-[detail viewer](components/ClimbingLogEntryDetails.tsx) shows coordinates,
-published and reported grade collections, independent attempt facts, notes, and
-disclosed source data. Labels match web through shared formatters. See the
+[detail viewer](components/ClimbingLogEntryDetails.tsx) shows source links,
+published and reported grade collections, known attempt facts, and notes.
+Coordinates, internal references, and raw provider payloads are omitted from this
+viewer. Labels match web through [shared formatters](../format/src/climbing-log.ts).
+See the
 [canonical response contract](../server/src/contracts/climbing-log-contracts.ts).
 
 Activity-detail climbing entries and suggestions use
@@ -64,7 +68,8 @@ inputs share the web client's [coordinate and provenance types](../training/src/
 recorded GPS route and supports compact tick maps. The overview supports panning
 and zooming; compact maps do not intercept touches. A unique point opens its log
 details immediately; overlapping points offer an occurrence chooser using Entry
-numbers from the full card order. Selection opens the exact log's
+numbers from the original entry order, preserved across Area grouping. Selection
+opens the exact log's
 [record modal](./components/providers/provider-record-detail-modal.tsx) and
 highlights its card, including repeated names at the same point. The
 [activity tests](./app-tests/activity/[id].test.tsx) cover closing and reopening

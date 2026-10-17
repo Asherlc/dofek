@@ -19,6 +19,18 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 export const Route: Story = {};
+export const RouteWithTicks: Story = {
+  args: {
+    links: [
+      ...meta.args.links,
+      {
+        providerId: "mountain-project",
+        kind: "ticks",
+        url: "https://www.mountainproject.com/user/110186720/ticks/ticks",
+      },
+    ],
+  },
+};
 export const MultipleSources: Story = {
   args: {
     sourceName: "Mountain Project, OpenBeta",

@@ -124,7 +124,7 @@ describe("RecordsBrowser", () => {
       dataType: "climbingLogEntries",
       recordId: log.id,
     });
-    expect(screen.getByRole("dialog")).toHaveTextContent("Published climb grades");
+    expect(screen.getByRole("dialog")).toHaveTextContent("Grades");
     fireEvent.click(screen.getByRole("button", { name: "Close" }));
     expect(control).toHaveFocus();
   });
