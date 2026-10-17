@@ -9,6 +9,7 @@ const strengthActivity: ActivityCardData = {
   id: "strength-1",
   name: null,
   activityType: "strength",
+  modality: null,
   startedAt: "2026-07-14T08:46:00-07:00",
   localTimeContext: {
     timezone: "America/Los_Angeles",
@@ -58,6 +59,7 @@ const mappedActivity: ActivityCardData = {
   id: "run-1",
   name: "Morning Run",
   activityType: "running",
+  modality: null,
   startedAt: "2026-07-14T07:38:00-07:00",
   localTimeContext: {
     timezone: "America/Los_Angeles",
@@ -167,6 +169,44 @@ export const MappedActivity: Story = {
       </div>
     ),
   ],
+};
+
+export const IndoorCycling: Story = {
+  args: {
+    activity: {
+      ...strengthActivity,
+      id: "indoor-ride",
+      name: "60 min Power Zone Ride",
+      activityType: "cycling",
+      modality: "indoor",
+      durationMin: 60,
+      distanceMeters: 0,
+      distanceState: { status: "available" },
+      source: { primarySourceLabel: "Peloton", sourceCount: 1, overlapSummary: null },
+      stats: [{ status: "available", label: "Training Stress Score", value: "65" }],
+    },
+  },
+  decorators: NonMapActivity.decorators,
+};
+
+export const VirtualCycling: Story = {
+  args: {
+    activity: {
+      ...strengthActivity,
+      id: "virtual-ride",
+      name: "Virtual Ride",
+      activityType: "cycling",
+      modality: "virtual",
+      durationMin: 60,
+      distanceMeters: 30_000,
+      distanceState: { status: "available" },
+      elevationGainM: 120,
+      elevationState: { status: "available" },
+      source: { primarySourceLabel: "Zwift", sourceCount: 1, overlapSummary: null },
+      stats: [{ status: "available", label: "Training Stress Score", value: "65" }],
+    },
+  },
+  decorators: NonMapActivity.decorators,
 };
 
 export const ProcessingMap: Story = {

@@ -21,6 +21,7 @@ import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { processingPollInterval } from "@dofek/providers/processing-status";
 import { providerSourceLabel } from "@dofek/providers/providers";
 import type { ClimbingMapLocation } from "@dofek/training/climbing-map";
+import { isIndoorCyclingModality } from "@dofek/training/endurance-types";
 import { formatActivityTypeLabel } from "@dofek/training/training";
 import type { ActivityLocation } from "dofek-server/types";
 import { useRouter } from "expo-router";
@@ -81,6 +82,7 @@ function formatActivityAccessibilityLabel(
   action: "Open" | "Select" | "Deselect",
   activity: {
     activityType: string;
+    modality: string | null;
     durationMin: number;
     localTimeContext: RecordLocalTimeContext;
     name: string | null;
@@ -105,10 +107,13 @@ function formatActivityAccessibilityLabel(
     labelParts.push(activityTypeLabel);
   }
 
+  const isIndoorCycling =
+    activity.activityType === "cycling" && isIndoorCyclingModality(activity.modality);
   const hasRouteMetrics =
-    activity.location?.kind === "recorded_gps" ||
-    activity.distanceState.status !== "missing" ||
-    activity.elevationState.status !== "missing";
+    !isIndoorCycling &&
+    (activity.location?.kind === "recorded_gps" ||
+      activity.distanceState.status !== "missing" ||
+      activity.elevationState.status !== "missing");
   if (hasRouteMetrics) {
     const routeMetrics = [
       formatActivityMetric(
@@ -135,7 +140,9 @@ function formatActivityAccessibilityLabel(
     }
   } else {
     for (const metric of activity.stats) {
-      if (metric.status !== "available") {
+      if (metric.status === "available") {
+        labelParts.push(`${metric.label} ${metric.value}`);
+      } else {
         labelParts.push(
           `${metric.label} ${activityDataStateLabel(metric.status)}: ${metric.reason}`,
         );

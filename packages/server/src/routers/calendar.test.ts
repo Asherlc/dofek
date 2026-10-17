@@ -34,7 +34,11 @@ vi.mock("../repositories/activities-calendar-repository.ts", () => ({
       repositoryInputMock(input);
       return repositoryResultMock();
     }
+  },
+}));
 
+vi.mock("../repositories/activity-overview-repository.ts", () => ({
+  ActivityOverviewRepository: class {
     getActivityOverview(input: unknown) {
       repositoryInputMock(input);
       return repositoryResultMock();
@@ -53,6 +57,10 @@ describe("calendarRouter", () => {
   });
 
   it("versions the activity state cache contract", () => {
+    expect(cachedQueryOptions).toHaveBeenCalledWith({
+      maxAge: 600_000,
+      keyVersion: "activity-calendar-modality-v4",
+    });
     expect(cachedQueryOptions).toHaveBeenCalledWith({
       maxAge: 600_000,
       keyVersion: "activity-calendar-states-v2",
@@ -88,73 +96,79 @@ describe("calendarRouter", () => {
     );
   });
 
-  it("normalizes weekList output date and timestamp fields at the API boundary", async () => {
-    repositoryResultMock.mockResolvedValueOnce([
-      {
-        date: new Date("2026-03-18T12:00:00.000Z"),
-        activities: [
-          {
-            id: "activity-1",
-            name: "Trainer Ride",
-            activityType: "indoor_cycling",
-            startedAt: new Date("2026-03-18T07:00:00.000Z"),
-            endedAt: "2026-03-18 08:00:00+00",
-            localTimeContext: {
-              timezone: null,
-              startUtcOffsetMinutes: null,
-              endUtcOffsetMinutes: null,
-              source: "unknown",
-            },
-            durationMin: 60,
-            source: {
-              primarySourceLabel: "Wahoo",
-              sourceCount: 2,
-              overlapSummary: "2 matched source records · Wahoo selected by source priority",
-            },
-            lastProcessedAt: "2026-03-18 08:07:00+00",
-            distanceMeters: 0,
-            distanceState: { status: "available" },
-            elevationGainM: 0,
-            elevationState: { status: "available" },
-            location: null,
-            tss: null,
-            stats: [
-              {
-                status: "missing",
-                label: "Training Stress Score",
-                reason:
-                  "Record average power and set functional threshold power, or record average heart rate and set maximum heart rate.",
+  it.each(["indoor", "virtual", "road", null])(
+    "preserves cycling modality %s and normalizes weekList dates at the API boundary",
+    async (modality) => {
+      repositoryResultMock.mockResolvedValueOnce([
+        {
+          date: new Date("2026-03-18T12:00:00.000Z"),
+          activities: [
+            {
+              id: "activity-1",
+              name: "Trainer Ride",
+              activityType: "cycling",
+              modality,
+              startedAt: new Date("2026-03-18T07:00:00.000Z"),
+              endedAt: "2026-03-18 08:00:00+00",
+              localTimeContext: {
+                timezone: null,
+                startUtcOffsetMinutes: null,
+                endUtcOffsetMinutes: null,
+                source: "unknown",
               },
-            ],
-          },
-        ],
-      },
-    ]);
-    const caller = createCaller({
-      db: {},
-      userId: "user-1",
-      timezone: "UTC",
-      sensorStore: { query: vi.fn() },
-    });
-
-    await expect(caller.weekList({ weeks: 4, endDate: "2026-03-20" })).resolves.toEqual([
-      {
-        date: "2026-03-18",
-        activities: [
-          expect.objectContaining({
-            startedAt: "2026-03-18T07:00:00.000Z",
-            endedAt: "2026-03-18T08:00:00.000Z",
-            source: {
-              primarySourceLabel: "Wahoo",
-              sourceCount: 2,
-              overlapSummary: "2 matched source records · Wahoo selected by source priority",
+              durationMin: 60,
+              source: {
+                primarySourceLabel: "Wahoo",
+                sourceCount: 2,
+                overlapSummary: "2 matched source records · Wahoo selected by source priority",
+              },
+              lastProcessedAt: "2026-03-18 08:07:00+00",
+              distanceMeters: 0,
+              distanceState: { status: "available" },
+              elevationGainM: 0,
+              elevationState: { status: "available" },
+              location: null,
+              tss: null,
+              stats: [
+                {
+                  status: "missing",
+                  label: "Training Stress Score",
+                  reason:
+                    "Record average power and set functional threshold power, or record average heart rate and set maximum heart rate.",
+                },
+              ],
             },
-            lastProcessedAt: "2026-03-18T08:07:00.000Z",
-          }),
-        ],
-      },
-    ]);
-  });
+          ],
+        },
+      ]);
+      const caller = createCaller({
+        db: {},
+        userId: "user-1",
+        timezone: "UTC",
+        sensorStore: { query: vi.fn() },
+      });
+
+      await expect(caller.weekList({ weeks: 4, endDate: "2026-03-20" })).resolves.toEqual([
+        {
+          date: "2026-03-18",
+          activities: [
+            expect.objectContaining({
+              activityType: "cycling",
+              modality,
+              startedAt: "2026-03-18T07:00:00.000Z",
+              endedAt: "2026-03-18T08:00:00.000Z",
+              source: {
+                primarySourceLabel: "Wahoo",
+                sourceCount: 2,
+                overlapSummary: "2 matched source records · Wahoo selected by source priority",
+              },
+              lastProcessedAt: "2026-03-18T08:07:00.000Z",
+            }),
+          ],
+        },
+      ]);
+    },
+  );
 
   it("accepts a server-authored unavailable activity stat at the API boundary", async () => {
     repositoryResultMock.mockResolvedValueOnce([
@@ -165,6 +179,7 @@ describe("calendarRouter", () => {
             id: "activity-1",
             name: "Trainer Ride",
             activityType: "indoor_cycling",
+            modality: "indoor",
             startedAt: "2026-03-18T07:00:00.000Z",
             endedAt: "2026-03-18T08:00:00.000Z",
             localTimeContext: {
@@ -233,6 +248,7 @@ describe("calendarRouter", () => {
             id: "activity-1",
             name: "Morning Run",
             activityType: "running",
+            modality: null,
             startedAt: "2026-03-18T07:00:00.000Z",
             endedAt: "2026-03-18T08:00:00.000Z",
             localTimeContext: {

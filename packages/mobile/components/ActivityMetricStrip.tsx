@@ -5,6 +5,7 @@ import {
   formatActivityMetric,
 } from "@dofek/format/activity-data-state";
 import { formatMeasurementText, type UnitConverter } from "@dofek/format/units";
+import { isIndoorCyclingModality } from "@dofek/training/endurance-types";
 import type { ActivityLocation } from "dofek-server/types";
 import { StyleSheet, Text, View } from "react-native";
 import { colors, radius, spacing } from "../theme";
@@ -16,6 +17,8 @@ export function ActivityMetricStrip({
   units,
 }: {
   activity: {
+    activityType: string;
+    modality: string | null;
     location: Pick<ActivityLocation, "kind"> | null;
     distanceMeters: number | null;
     distanceState: ActivityDataState;
@@ -25,10 +28,13 @@ export function ActivityMetricStrip({
   };
   units: UnitConverter;
 }) {
+  const isIndoorCycling =
+    activity.activityType === "cycling" && isIndoorCyclingModality(activity.modality);
   const hasRouteMetrics =
-    activity.location?.kind === "recorded_gps" ||
-    activity.distanceState.status !== "missing" ||
-    activity.elevationState.status !== "missing";
+    !isIndoorCycling &&
+    (activity.location?.kind === "recorded_gps" ||
+      activity.distanceState.status !== "missing" ||
+      activity.elevationState.status !== "missing");
   const stats: ActivityStat[] = hasRouteMetrics
     ? [
         formatActivityMetric("Distance", activity.distanceMeters, activity.distanceState, (value) =>
