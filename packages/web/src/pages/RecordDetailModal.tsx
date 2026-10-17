@@ -3,7 +3,6 @@ import { climbingLogEntryDetailSchema } from "../../../server/src/contracts/clim
 import { ClimbingLogEntryDetails } from "../components/ClimbingLogEntryDetails.tsx";
 import { ModalDialog, ModalDialogTitle } from "../components/ModalDialog.tsx";
 import { QueryStatePanel } from "../components/QueryStatePanel.tsx";
-import { ClimbingLogEntrySources } from "./activity-detail/components/ClimbingLogEntrySources.tsx";
 import { formatCellValue, formatColumnName } from "./provider-detail-format.ts";
 
 export function RecordDetailModal({
@@ -64,14 +63,7 @@ export function RecordDetailModal({
       )}
       {record &&
         (climbingLog ? (
-          <>
-            <ClimbingLogEntrySources
-              name={climbingLog.climb?.name ?? climbingLog.title ?? "Climbing log"}
-              sourceName={climbingLog.sourceName}
-              links={climbingLog.sourceLinks}
-            />
-            <ClimbingLogEntryDetails entry={climbingLog} />
-          </>
+          <ClimbingLogEntryDetails entry={climbingLog} />
         ) : (
           <>
             <div className="mb-4">

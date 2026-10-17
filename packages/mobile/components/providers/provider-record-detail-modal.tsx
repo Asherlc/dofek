@@ -5,7 +5,6 @@ import { Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "rea
 import { climbingLogEntryDetailSchema } from "../../../server/src/contracts/climbing-log-contracts.ts";
 import { colors } from "../../theme";
 import { ClimbingLogEntryDetails } from "../ClimbingLogEntryDetails";
-import { ClimbingLogEntrySources } from "../ClimbingLogEntrySources";
 import { formatCellValue, formatColumnName } from "./provider-detail-record-format";
 
 export function ProviderRecordDetailModal({
@@ -79,14 +78,7 @@ export function ProviderRecordDetailModal({
 
           {record &&
             (climbingLog ? (
-              <>
-                <ClimbingLogEntrySources
-                  name={climbingLog.climb?.name ?? climbingLog.title ?? "Climbing log"}
-                  sourceName={climbingLog.sourceName}
-                  links={climbingLog.sourceLinks}
-                />
-                <ClimbingLogEntryDetails entry={climbingLog} />
-              </>
+              <ClimbingLogEntryDetails entry={climbingLog} />
             ) : (
               <>
                 <Text style={styles.sectionTitle}>Fields</Text>

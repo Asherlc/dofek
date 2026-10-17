@@ -5,14 +5,14 @@ import {
 import {
   climbingAttemptDetailFields,
   formatClimbingGradeComponents,
-  formatGpsCoordinates,
 } from "@dofek/format/climbing-log";
-import { useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 import type { ClimbingLogEntryDetail } from "../../server/src/contracts/climbing-log-contracts.ts";
 import { colors } from "../theme";
+import { ClimbingLogEntrySources } from "./ClimbingLogEntrySources";
 
 function Fields({ values }: { values: Array<{ label: string; value: string }> }) {
+  if (values.length === 0) return null;
   return (
     <View style={styles.fields}>
       {values.map(({ label, value }) => (
@@ -24,36 +24,25 @@ function Fields({ values }: { values: Array<{ label: string; value: string }> })
     </View>
   );
 }
-function Disclosure({ title, children }: { title: string; children: React.ReactNode }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <View style={styles.section}>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={title}
-        accessibilityState={{ expanded: open }}
-        onPress={() => setOpen(!open)}
-      >
-        <Text style={styles.heading}>
-          {open ? "▾" : "▸"} {title}
-        </Text>
-      </Pressable>
-      {open && children}
-    </View>
-  );
-}
 
 export function ClimbingLogEntryDetails({ entry }: { entry: ClimbingLogEntryDetail }) {
   const climb = entry.climb;
   const path = formatClimbingLocationPath(climb?.areaPath ?? []);
   const angle = formatClimbingWallAngle(entry.wallAngle);
+  const gradedPitches = climb?.pitches.filter((pitch) => pitch.publishedGrades.length > 0) ?? [];
   return (
     <View style={styles.container}>
+      <ClimbingLogEntrySources
+        name={climb?.name ?? entry.title ?? "Climbing log"}
+        sourceName={entry.sourceName}
+        links={entry.sourceLinks}
+      />
       <Fields
         values={[
-          { label: "Date", value: entry.climbedOn ?? "Date unknown" },
-          { label: "Discipline", value: entry.discipline?.replaceAll("_", " ") ?? "Unknown" },
-          ...(entry.title === null ? [] : [{ label: "Log title", value: entry.title }]),
+          ...(entry.climbedOn ? [{ label: "Date", value: entry.climbedOn }] : []),
+          ...(entry.discipline
+            ? [{ label: "Discipline", value: entry.discipline.replaceAll("_", " ") }]
+            : []),
         ]}
       />
       {path && <Text style={styles.label}>{path}</Text>}
@@ -64,41 +53,32 @@ export function ClimbingLogEntryDetails({ entry }: { entry: ClimbingLogEntryDeta
         <>
           <Fields
             values={[
-              { label: "Climb kind", value: climb.kind ?? "Unknown" },
-              { label: "Setting", value: climb.setting ?? "Unknown" },
-              { label: "Route protection", value: climb.routeProtection?.join(", ") ?? "Unknown" },
-              ...(climb.coordinates === null
-                ? []
-                : [{ label: "Climb coordinates", value: formatGpsCoordinates(climb.coordinates) }]),
-              ...climb.areaPath.flatMap((area) =>
-                area.coordinates === null
-                  ? []
-                  : [
-                      {
-                        label: `${area.name} coordinates`,
-                        value: formatGpsCoordinates(area.coordinates),
-                      },
-                    ],
-              ),
+              ...(climb.kind ? [{ label: "Type", value: climb.kind }] : []),
+              ...(climb.setting ? [{ label: "Setting", value: climb.setting }] : []),
+              ...(climb.routeProtection?.length
+                ? [{ label: "Protection", value: climb.routeProtection.join(", ") }]
+                : []),
             ]}
           />
-          <View style={styles.section}>
-            <Text style={styles.heading}>Published climb grades</Text>
-            <Text style={styles.value}>
-              {formatClimbingGradeComponents(climb.publishedGrades) || "None recorded"}
-            </Text>
-          </View>
-          {climb.pitches.length > 0 && (
+          {climb.publishedGrades.length > 0 && (
             <View style={styles.section}>
-              <Text style={styles.heading}>Published pitch grades</Text>
-              {climb.pitches.map((pitch) => (
+              <Text style={styles.heading}>Grades</Text>
+              <Text style={styles.value}>
+                {formatClimbingGradeComponents(climb.publishedGrades)}
+              </Text>
+            </View>
+          )}
+          {gradedPitches.length > 0 && (
+            <View style={styles.section}>
+              <Text style={styles.heading}>Pitch grades</Text>
+              {gradedPitches.map((pitch) => (
                 <View key={pitch.id} style={styles.section}>
                   <Text style={styles.value}>
-                    {pitch.number === null ? "Pitch number unknown" : `Pitch ${pitch.number}`}
+                    {pitch.number === null ? "Pitch" : `Pitch ${pitch.number}`}
                     {pitch.name === null ? "" : ` · ${pitch.name}`}
                   </Text>
                   <Text style={styles.value}>
-                    {formatClimbingGradeComponents(pitch.publishedGrades) || "None recorded"}
+                    {formatClimbingGradeComponents(pitch.publishedGrades)}
                   </Text>
                 </View>
               ))}
@@ -106,50 +86,45 @@ export function ClimbingLogEntryDetails({ entry }: { entry: ClimbingLogEntryDeta
           )}
         </>
       )}
-      <View style={styles.section}>
-        <Text style={styles.heading}>Reported grades</Text>
-        <Text style={styles.value}>
-          {formatClimbingGradeComponents(entry.reportedGrades) || "None recorded"}
-        </Text>
-      </View>
-      <View style={styles.section}>
-        <Text style={styles.heading}>Recorded attempts</Text>
-        {entry.attempts.map((attempt) => (
-          <View key={attempt.id} style={styles.attempt}>
-            <Text style={styles.heading}>
-              {attempt.scope === "pitch" ? "Pitch attempt" : "Whole-climb attempt"}
-              {attempt.attemptIndex === null ? "" : ` · Order ${attempt.attemptIndex}`}
-            </Text>
-            {attempt.rockResultLabels.length > 0 && (
-              <Text style={styles.result}>{attempt.rockResultLabels.join(" · ")}</Text>
-            )}
-            <Fields values={climbingAttemptDetailFields(attempt)} />
-            {attempt.notes && <Text style={styles.value}>{attempt.notes}</Text>}
-          </View>
-        ))}
-      </View>
+      {entry.reportedGrades.length > 0 && (
+        <View style={styles.section}>
+          <Text style={styles.heading}>Reported grades</Text>
+          <Text style={styles.value}>{formatClimbingGradeComponents(entry.reportedGrades)}</Text>
+        </View>
+      )}
+      {entry.attempts.length > 0 && (
+        <View style={styles.section}>
+          <Text style={styles.heading}>Attempts</Text>
+          {entry.attempts.map((attempt, index) => {
+            const pitch = climb?.pitches.find((candidate) => candidate.id === attempt.pitchId);
+            const title =
+              attempt.scope === "pitch"
+                ? (pitch?.name ??
+                  (pitch?.number == null ? "Pitch attempt" : `Pitch ${pitch.number}`))
+                : `Attempt ${attempt.attemptIndex ?? index + 1}`;
+            return (
+              <View key={attempt.id} style={styles.attempt}>
+                <Text style={styles.heading}>
+                  {title}
+                  {attempt.scope === "pitch" && attempt.attemptIndex !== null
+                    ? ` · Attempt ${attempt.attemptIndex}`
+                    : ""}
+                </Text>
+                {attempt.rockResultLabels.length > 0 && (
+                  <Text style={styles.result}>{attempt.rockResultLabels.join(" · ")}</Text>
+                )}
+                <Fields values={climbingAttemptDetailFields(attempt)} />
+                {attempt.notes && <Text style={styles.value}>{attempt.notes}</Text>}
+              </View>
+            );
+          })}
+        </View>
+      )}
       {entry.notes && (
         <View style={styles.section}>
           <Text style={styles.heading}>Notes</Text>
           <Text style={styles.value}>{entry.notes}</Text>
         </View>
-      )}
-      <Disclosure title="Source record">
-        <Fields
-          values={[
-            { label: "Log identifier", value: entry.id },
-            { label: "Provider", value: entry.providerId },
-            { label: "Source identifier", value: entry.externalId ?? "Unknown" },
-            { label: "Activity reference", value: entry.activityId ?? "Unattached" },
-            { label: "Climb reference", value: entry.climbId ?? "Unidentified" },
-            { label: "Provider absence", value: entry.providerAbsentAt ?? "Not reported absent" },
-          ]}
-        />
-      </Disclosure>
-      {entry.raw !== null && (
-        <Disclosure title="Raw provider data">
-          <Text style={styles.raw}>{JSON.stringify(entry.raw, null, 2)}</Text>
-        </Disclosure>
       )}
     </View>
   );
@@ -164,5 +139,4 @@ const styles = StyleSheet.create({
   heading: { fontSize: 13, fontWeight: "600", color: colors.text },
   result: { fontSize: 12, color: colors.positive },
   attempt: { padding: 12, gap: 8, borderWidth: 1, borderColor: colors.border, borderRadius: 8 },
-  raw: { fontSize: 11, color: colors.textSecondary, fontFamily: "Menlo" },
 });

@@ -8,9 +8,9 @@ import { ClimbingLogEntryDetails } from "./ClimbingLogEntryDetails.tsx";
 
 const entry = climbingLogEntryFixture({
   climb: climbingClimbFixture(),
+  climbedOn: "2026-10-01",
   reportedGrades: [{ value: "5.10b", system: "yds" }],
   notes: "A recorded note",
-  raw: { source: "Upstream record" },
   recordedClimbAttemptCount: 1,
   recordedClimbOutcome: "completed",
 });
@@ -46,3 +46,4 @@ export const UnknownTarget: Story = {
     }),
   },
 };
+export const Empty: Story = { args: { entry: climbingLogEntryFixture() } };

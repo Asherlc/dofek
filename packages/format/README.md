@@ -50,6 +50,7 @@ facts. See the [shared model](../training/src/climbing-log.ts) and
 [formatters](src/climbing-context.ts).
 
 The [log formatter](src/climbing-log.ts) labels recorded rope methods once per
-card and retains whole-climb or pitch scope with recorded attempt counts. A
-missing source result adds no card status; attempt Details identifies it as
-`Not reported by source` rather than describing the actual ascent as unknown.
+card and formats counts as `Attempts: N`. Whole-climb summaries show the outcome
+when recorded; pitch summaries retain their pitch label. Attempt details include
+known outcomes, methods, protection, and Yes/No facts, omitting missing values
+and internal references.

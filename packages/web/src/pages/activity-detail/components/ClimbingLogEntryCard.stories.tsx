@@ -27,6 +27,21 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 export const Default: Story = {};
+export const RouteWithTicks: Story = {
+  args: {
+    entry: {
+      ...meta.args.entry,
+      sourceLinks: [
+        ...meta.args.entry.sourceLinks,
+        {
+          providerId: "mountain-project",
+          kind: "ticks",
+          url: "https://www.mountainproject.com/user/110186720/ticks/ticks",
+        },
+      ],
+    },
+  },
+};
 export const Area: Story = { args: { location: areaClimbingLocation } };
 export const NoGPS: Story = { args: { location: undefined } };
 export const MinimalEntry: Story = {

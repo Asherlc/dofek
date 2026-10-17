@@ -37,8 +37,8 @@ describe("RecordDetailModal", () => {
       />,
     );
     expect(screen.getByRole("dialog")).toHaveTextContent("Detail refresh failed");
-    expect(screen.getByRole("dialog")).toHaveTextContent("0, −120");
-    expect(screen.getByRole("dialog")).toHaveTextContent("Published climb grades");
+    expect(screen.getByRole("dialog")).toHaveTextContent("Corner");
+    expect(screen.getByRole("dialog")).toHaveTextContent("Grades");
   });
   it("keeps closing available while a detail is loading or unavailable", () => {
     const onClose = vi.fn();
