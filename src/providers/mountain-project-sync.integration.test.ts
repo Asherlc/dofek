@@ -202,11 +202,16 @@ describe("MountainProjectProvider canonical persistence", () => {
   });
 
   it.each([
-    { failure: "lock session disconnect", throughGuard: true },
-    { failure: "unrelated process exit", throughGuard: false },
+    {
+      failure: "provider lock session disconnect",
+      throughGuard: true,
+      providerId: "mountain-project",
+    },
+    { failure: "account-erasure lock session disconnect", throughGuard: true, providerId: null },
+    { failure: "unrelated process exit", throughGuard: false, providerId: "mountain-project" },
   ])(
     "identifies $failure during HTTP and prevents stale source writes",
-    async ({ throughGuard }) => {
+    async ({ throughGuard, providerId }) => {
       const [header, oldTick] = fixtureCsv.split("\n");
       if (!header || !oldTick) throw new Error("Expected a complete source tick fixture");
       const evidenceDirectory = mkdtempSync(join(tmpdir(), "dofek-provider-lock-loss-"));
@@ -247,6 +252,7 @@ describe("MountainProjectProvider canonical persistence", () => {
         userId,
         csv: [header, oldTick].join("\n"),
         evidencePath,
+        providerId,
       });
       try {
         await Promise.race([
@@ -319,7 +325,7 @@ describe("MountainProjectProvider canonical persistence", () => {
           outcome.status === "exited" &&
           outcome.code === 1 &&
           existsSync(evidencePath) &&
-          readFileSync(evidencePath, "utf8") === "provider_sync_session_lost\n";
+          readFileSync(evidencePath, "utf8") === "queued_work_session_lost\n";
         expect(exitedThroughGuard).toBe(throughGuard);
         const stored = await records();
         expect({

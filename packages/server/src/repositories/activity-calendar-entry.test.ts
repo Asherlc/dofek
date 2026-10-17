@@ -9,6 +9,28 @@ import {
 import { makeActivityRow } from "./activity-calendar-test-helpers.ts";
 
 describe("activity calendar entries", () => {
+  it.each([
+    ["processing", { kind: "processing" }, { kind: "processing" }],
+    ["awaiting_summary", { kind: "processing" }, null],
+    ["unavailable", null, null],
+    [undefined, null, null],
+  ] as const)("projects active and absent map readiness %s", (mapReadiness, active, absent) => {
+    const row = activityRowSchema.parse(makeActivityRow());
+    const context = {
+      baseline: { max_hr: null, resting_hr: null, ftp: null },
+      calculator: new TrainingStressCalculator(),
+      mapReadiness,
+    };
+
+    expect(createActiveCalendarEntry(row, context).location).toEqual(active);
+    expect(
+      createProviderAbsentCalendarEntry(
+        { ...row, provider_absent_at: "2026-03-18T09:00:00.000Z" },
+        context,
+      ).location,
+    ).toEqual(absent);
+  });
+
   it("exposes timezone fields only for authoritative timezone provenance", () => {
     const rows = [
       makeActivityRow({

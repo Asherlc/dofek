@@ -19,6 +19,7 @@ import {
   parseValidDate,
 } from "@dofek/format/format";
 import { formatMeasurementText } from "@dofek/format/units";
+import { processingPollInterval } from "@dofek/providers/processing-status";
 import { formatActivityTypeLabel } from "@dofek/training/training";
 import { Link } from "@tanstack/react-router";
 import { useId, useMemo, useState } from "react";
@@ -63,6 +64,12 @@ export function ActivitiesPage() {
   const trpcUtils = trpc.useUtils();
   const query = trpc.calendar.weekList.useQuery(queryInput, {
     placeholderData: (previousData) => previousData,
+    refetchInterval: (query) =>
+      query.state.data?.some((day) =>
+        day.activities.some((activity) => activity.location?.kind === "processing"),
+      )
+        ? processingPollInterval("active")
+        : false,
   });
   const overviewQuery = trpc.calendar.activityOverview.useQuery(queryInput, {
     placeholderData: (previousData) => previousData,

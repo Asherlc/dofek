@@ -14,6 +14,7 @@ import {
   buildDedupedSensorBackfillSql,
   buildSensorScalarSampleBackfillSql,
 } from "../../../../src/db/clickhouse-deduped-sensor.ts";
+import { createMigration as createActivityLocationMemberChangeMigration } from "../../../../src/db/clickhouse-migrations/0086_activity_location_member_change.ts";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
 import { ClickHouseActivitySensorStore } from "../repositories/clickhouse-activity-sensor-store.ts";
 import {
@@ -336,6 +337,13 @@ function rewriteClickHouseTestCommand(
   precomputedAnalyticsSelectByName: Map<string, string>,
 ): string[] {
   const rewrittenQuery = rewriteClickHouseDatabaseNames(query, databases).trim();
+  if (
+    rewrittenQuery.startsWith(
+      `CREATE MATERIALIZED VIEW IF NOT EXISTS ${databases.analytics}.activity_location_member_change_ingest`,
+    )
+  ) {
+    return [rewrittenQuery];
+  }
   const viewMatch = rewrittenQuery.match(CLICKHOUSE_TEST_VIEW_REGEX);
 
   if (viewMatch) {
@@ -611,6 +619,9 @@ async function bootstrapClickHouseTestSchema(
   };
 
   for (const statement of buildClickHouseBootstrapStatements(connectionString)) {
+    await client.command({ query: statement });
+  }
+  for (const statement of createActivityLocationMemberChangeMigration().statements.slice(0, 2)) {
     await client.command({ query: statement });
   }
   await client.command({

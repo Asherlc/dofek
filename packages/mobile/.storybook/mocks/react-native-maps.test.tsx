@@ -4,6 +4,63 @@ import { describe, expect, it, vi } from "vitest";
 import MapView, { Marker, Polyline } from "./react-native-maps";
 
 describe("Storybook native-map adapter", () => {
+  it("keeps zoom controls and selected details inside the supplied native viewport", () => {
+    const view = render(
+      <MapView
+        style={{ width: 320, height: 280 }}
+        initialRegion={{ latitude: 37, longitude: -122, latitudeDelta: 0.02, longitudeDelta: 0.04 }}
+        zoomEnabled
+      >
+        <Marker
+          title="Climb"
+          coordinate={{ latitude: 37, longitude: -122 }}
+          description="Climb details"
+        />
+      </MapView>,
+    );
+    const preview = view.container.firstElementChild;
+    expect(preview?.getAttribute("style")).toContain("height: 280px");
+    const map = preview?.firstElementChild;
+    expect(map?.getAttribute("style")).toContain("flex: 1");
+    expect(map?.getAttribute("style")).not.toContain("height: 280px");
+    expect(screen.getByRole("button", { name: "Zoom in" }).parentElement?.parentElement).toBe(
+      preview,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Climb, latitude 37, longitude -122/ }));
+    const inspection = screen.getByLabelText("Selected map point").parentElement;
+    expect(inspection?.parentElement).toBe(preview);
+    expect(inspection?.getAttribute("style")).toContain("max-height: 50%");
+    expect(screen.getByText("Climb details")).toBeTruthy();
+  });
+
+  it("reports readiness after the preview mounts and keeps it ready across viewport refreshes", () => {
+    const original = { latitude: 37, longitude: -122, latitudeDelta: 0.02, longitudeDelta: 0.04 };
+    const onMapReady = vi.fn(() => {
+      expect(
+        screen.getByRole("button", { name: "Climb, latitude 37, longitude -122" }),
+      ).toBeTruthy();
+    });
+    const view = render(
+      <MapView initialRegion={original} onMapReady={onMapReady}>
+        <Marker title="Climb" coordinate={{ latitude: 37, longitude: -122 }} />
+      </MapView>,
+    );
+    expect(onMapReady).toHaveBeenCalledOnce();
+    view.rerender(
+      <MapView
+        initialRegion={original}
+        region={{ ...original, longitude: -122.02 }}
+        onMapReady={() => onMapReady()}
+      >
+        <Marker title="Climb" coordinate={{ latitude: 37, longitude: -122 }} />
+      </MapView>,
+    );
+    expect(onMapReady).toHaveBeenCalledOnce();
+    expect(
+      screen.getByLabelText("Climb, latitude 37, longitude -122").getAttribute("style"),
+    ).toContain("left: 100%");
+  });
+
   it("changes the preview viewport through the native region API and reports the new zoom region", () => {
     const map = createRef<ComponentRef<typeof MapView>>();
     const onRegionChangeComplete = vi.fn();

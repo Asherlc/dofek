@@ -16,7 +16,7 @@ import {
 } from "./activity-calendar-entry.ts";
 import { clickHouseActivityCalendarDate } from "./activity-local-date.ts";
 import { type ActivitySensorStore, activityRepositoryFor } from "./activity-repository.ts";
-import { getActivityRoutePreviews } from "./activity-route-preview.ts";
+import { getActivityMapReadiness, getActivityRoutePreviews } from "./activity-route-preview.ts";
 import { ClimbingActivityLogEntryRepository } from "./climbing-activity-log-entry-repository.ts";
 import { ProviderAbsentActivitiesCalendarRepository } from "./provider-absent-activities-calendar-repository.ts";
 
@@ -77,6 +77,7 @@ export class ActivitiesCalendarRepository extends BaseRepository {
             toString(activity.ended_at) AS ended_at,
             activity.provider_id AS provider_id,
             activity.source_name AS source_name,
+            activity.member_activity_ids AS member_activity_ids,
             activity.timezone AS timezone,
             activity.start_utc_offset_minutes AS start_utc_offset_minutes,
             activity.end_utc_offset_minutes AS end_utc_offset_minutes,
@@ -151,6 +152,21 @@ export class ActivitiesCalendarRepository extends BaseRepository {
     ]);
 
     const baseline = baselineRows[0] ?? { max_hr: null, resting_hr: null, ftp: null };
+    const mapReadinessByActivityId = await getActivityMapReadiness(
+      this.#sensorStore,
+      this.userId,
+      filteredActivityRows
+        .filter(
+          (row) =>
+            (row.centroid_lat == null || row.centroid_lng == null) &&
+            !sourceLocationsByActivityId.get(row.id)?.length,
+        )
+        .map((row) => ({
+          id: row.id,
+          routeActivityId: row.id,
+          memberActivityIds: row.member_activity_ids,
+        })),
+    );
     const calculator = new TrainingStressCalculator();
 
     const dayMap = new Map<string, CalendarActivityEntry[]>();
@@ -160,6 +176,7 @@ export class ActivitiesCalendarRepository extends BaseRepository {
         calculator,
         routePreview: routePreviewByActivityId.get(row.id),
         sourceLocations: sourceLocationsByActivityId.get(row.id),
+        mapReadiness: mapReadinessByActivityId.get(row.id),
       });
 
       const bucket = dayMap.get(row.local_date) ?? [];

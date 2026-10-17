@@ -72,6 +72,7 @@ export const activityRowSchema = z.object({
   ended_at: timestampStringSchema.nullable(),
   provider_id: z.string(),
   source_name: z.string().nullable(),
+  member_activity_ids: z.array(z.string()),
   timezone: z.string().nullable(),
   start_utc_offset_minutes: z.coerce.number().nullable(),
   end_utc_offset_minutes: z.coerce.number().nullable(),
@@ -133,6 +134,7 @@ interface CalendarEntryContext {
   baseline: z.infer<typeof baselineRowSchema>;
   calculator: TrainingStressCalculator;
   routePreview?: ReturnType<typeof osmTilePreview>;
+  mapReadiness?: "processing" | "awaiting_summary" | "unavailable";
 }
 
 export function createActiveCalendarEntry(
@@ -170,7 +172,10 @@ export function createActiveCalendarEntry(
       row,
       context,
       buildActivityListSource(row.provider_id, row.source_name, sourceLinks, getProvider),
-      sourceLocation,
+      sourceLocation ??
+        (context.mapReadiness != null && context.mapReadiness !== "unavailable"
+          ? { kind: "processing" }
+          : null),
     ),
     partialAbsentSources: sourceAttribution.hasPartialAbsence
       ? sourceAttribution.partialAbsentSources()
@@ -187,7 +192,7 @@ export function createProviderAbsentCalendarEntry(
       row,
       context,
       buildActivityListSource(row.provider_id, row.source_name, undefined, getProvider),
-      null,
+      context.mapReadiness === "processing" ? { kind: "processing" } : null,
     ),
     isProviderAbsent: true,
     providerId: row.provider_id,

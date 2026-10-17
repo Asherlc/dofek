@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import { osmTilePreview } from "../lib/osm-tile.ts";
-import { makeDatabase, makeSensorStore, normalizeSql } from "./activity-calendar-test-helpers.ts";
+import {
+  makeActivityRow,
+  makeDatabase,
+  makeSensorStore,
+  normalizeSql,
+} from "./activity-calendar-test-helpers.ts";
 import { ProviderAbsentActivitiesCalendarRepository } from "./provider-absent-activities-calendar-repository.ts";
 
 describe("ProviderAbsentActivitiesCalendarRepository", () => {
@@ -395,5 +400,113 @@ describe("ProviderAbsentActivitiesCalendarRepository", () => {
         accessEndDateExclusive: "2026-03-31",
       }),
     );
+  });
+  it.each([
+    ["processing", { kind: "processing" }],
+    ["awaiting_summary", null],
+    ["unavailable", null],
+  ] as const)(
+    "projects absent-source map readiness %s using its canonical route",
+    async (status, location) => {
+      const sensorStore = makeSensorStore([
+        [
+          makeActivityRow({
+            id: "absent-member",
+            route_activity_id: "canonical-route",
+            member_activity_ids: ["absent-member"],
+            provider_absent_at: "2026-03-18T09:00:00.000Z",
+          }),
+        ],
+        [],
+        [{ max_hr: null, resting_hr: null, ftp: null }],
+        [],
+        [{ activity_id: "absent-member", status }],
+      ]);
+      const repository = new ProviderAbsentActivitiesCalendarRepository(
+        makeDatabase([]),
+        "user-1",
+        "UTC",
+        sensorStore,
+      );
+
+      const [day] = await repository.getWeekList({
+        weeks: 1,
+        endDate: "2026-03-20",
+        includeProviderAbsent: true,
+      });
+
+      expect(day?.activities).toEqual([
+        expect.objectContaining({ id: "absent-member", isProviderAbsent: true, location }),
+      ]);
+      expect(vi.mocked(sensorStore.query).mock.lastCall?.[2]).toEqual({
+        userId: "user-1",
+        activityIds: ["absent-member"],
+        routeActivityIds: ["canonical-route"],
+        memberActivityIds: ["absent-member"],
+      });
+    },
+  );
+
+  it("checks absent-source readiness after summary enrichment only for incomplete GPS", async () => {
+    const coordinates = [
+      { id: "no-centroid", centroid_lat: null, centroid_lng: null },
+      { id: "missing-latitude", centroid_lat: null, centroid_lng: -105.4 },
+      { id: "missing-longitude", centroid_lat: 40.007, centroid_lng: null },
+      { id: "recorded-gps", centroid_lat: 0, centroid_lng: 0 },
+    ];
+    const sensorStore = makeSensorStore([
+      coordinates.map(({ id }) =>
+        makeActivityRow({
+          id,
+          route_activity_id: `canonical-${id}`,
+          member_activity_ids: [id],
+          provider_absent_at: "2026-03-18T09:00:00.000Z",
+        }),
+      ),
+      coordinates.map((row) => ({
+        avg_hr: null,
+        max_hr: null,
+        avg_power: null,
+        total_distance: null,
+        elevation_gain_m: null,
+        ...row,
+      })),
+      [{ max_hr: null, resting_hr: null, ftp: null }],
+      [],
+      ["no-centroid", "missing-latitude", "missing-longitude"].map((id) => ({
+        activity_id: id,
+        status: "processing",
+      })),
+    ]);
+    const repository = new ProviderAbsentActivitiesCalendarRepository(
+      makeDatabase([]),
+      "user-1",
+      "UTC",
+      sensorStore,
+    );
+
+    const [day] = await repository.getWeekList({
+      weeks: 1,
+      endDate: "2026-03-20",
+      includeProviderAbsent: true,
+    });
+
+    expect(vi.mocked(sensorStore.query).mock.lastCall?.[2]).toEqual({
+      userId: "user-1",
+      activityIds: ["no-centroid", "missing-latitude", "missing-longitude"],
+      routeActivityIds: [
+        "canonical-no-centroid",
+        "canonical-missing-latitude",
+        "canonical-missing-longitude",
+      ],
+      memberActivityIds: ["no-centroid", "missing-latitude", "missing-longitude"],
+    });
+    expect(day?.activities.map((entry) => entry.location?.kind)).toEqual([
+      "processing",
+      "processing",
+      "processing",
+      "recorded_gps",
+    ]);
+    expect(day?.activities[3]?.location).toMatchObject({ centroidLat: 0, centroidLng: 0 });
   });
 });

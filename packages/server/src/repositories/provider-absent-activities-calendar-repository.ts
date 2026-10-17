@@ -14,9 +14,10 @@ import {
 } from "./activity-calendar-entry.ts";
 import { clickHouseActivityCalendarDate } from "./activity-local-date.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
-import { getActivityRoutePreviews } from "./activity-route-preview.ts";
+import { getActivityMapReadiness, getActivityRoutePreviews } from "./activity-route-preview.ts";
 
 const providerAbsentActivityRowSchema = activityRowSchema.extend({
+  route_activity_id: z.string(),
   provider_id: z.string(),
   provider_absent_at: timestampStringSchema,
 });
@@ -65,6 +66,7 @@ export class ProviderAbsentActivitiesCalendarRepository extends BaseRepository {
       providerAbsentActivityRowSchema,
       `SELECT
           toString(activity.id) AS id,
+          toString(activity.group_id) AS route_activity_id,
           activity.name AS name,
           activity.canonical_type AS canonical_type,
           activity.modality AS modality,
@@ -72,6 +74,7 @@ export class ProviderAbsentActivitiesCalendarRepository extends BaseRepository {
           toString(activity.ended_at) AS ended_at,
           activity.provider_id AS provider_id,
           activity.source_name AS source_name,
+          [activity.id] AS member_activity_ids,
           activity.timezone AS timezone,
           activity.start_utc_offset_minutes AS start_utc_offset_minutes,
           activity.end_utc_offset_minutes AS end_utc_offset_minutes,
@@ -136,6 +139,17 @@ export class ProviderAbsentActivitiesCalendarRepository extends BaseRepository {
     });
 
     const baseline = baselineRows[0] ?? { max_hr: null, resting_hr: null, ftp: null };
+    const mapReadinessByActivityId = await getActivityMapReadiness(
+      this.#sensorStore,
+      this.userId,
+      enrichedRows
+        .filter((row) => row.centroid_lat == null || row.centroid_lng == null)
+        .map((row) => ({
+          id: row.id,
+          routeActivityId: row.route_activity_id,
+          memberActivityIds: row.member_activity_ids,
+        })),
+    );
     const calculator = new TrainingStressCalculator();
 
     const dayMap = new Map<string, CalendarActivityEntry[]>();
@@ -144,6 +158,7 @@ export class ProviderAbsentActivitiesCalendarRepository extends BaseRepository {
         baseline,
         calculator,
         routePreview: routePreviewByActivityId.get(row.id),
+        mapReadiness: mapReadinessByActivityId.get(row.id),
       });
 
       const bucket = dayMap.get(row.local_date) ?? [];

@@ -2,6 +2,7 @@ import { providerSourceLabel } from "@dofek/providers/providers";
 import type { ClimbingLocationMap as ClimbingLocationMapData } from "@dofek/training/climbing-location-map";
 import { useEffect, useRef, useState } from "react";
 import { captureException } from "../lib/telemetry.ts";
+import { MapProcessingIndicator } from "./MapProcessingIndicator.tsx";
 import { QueryStatePanel } from "./QueryStatePanel.tsx";
 
 const DOT_COLOR = "#2563eb";
@@ -22,6 +23,7 @@ export function ClimbingLocationMap({
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const selected = data?.nodes.find((node) => node.id === selectedNodeId);
   const empty = !data?.bounds || data.nodes.length === 0;
+  const initialLoading = loading && !data;
 
   useEffect(
     () => () => {
@@ -58,12 +60,16 @@ export function ClimbingLocationMap({
               '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
           });
           let tileErrorReported = false;
+          tiles.once("load", () => {
+            if (mapRef.current === activeMap) setMapLoading(false);
+          });
           tiles.on("tileerror", () => {
             if (mapRef.current !== activeMap || tileErrorReported) return;
             tileErrorReported = true;
             const error = new Error("Map tiles could not load. Check your connection.");
             captureException(error, { component: "ClimbingLocationMap" });
             setTileWarning("Some map tiles could not load. Check your connection.");
+            setMapLoading(false);
           });
           tiles.addTo(map);
         }
@@ -143,7 +149,6 @@ export function ClimbingLocationMap({
         };
         renderDots();
         activeMap.on("zoomend", renderDots);
-        setMapLoading(false);
       })
       .catch((error: unknown) => {
         if (cancelled) return;
@@ -160,25 +165,24 @@ export function ClimbingLocationMap({
 
   return (
     <div>
-      <section
-        ref={containerRef}
-        aria-label="Climbing locations"
-        className={`h-[360px] w-full rounded-lg${empty || mapError ? " hidden" : ""}`}
-      />
-      {loading && !data ? (
-        <QueryStatePanel variant="loading" message="Loading climbing locations…" height={360} />
-      ) : empty ? (
+      <div
+        className={`relative isolate h-[360px] rounded-lg${!initialLoading && (empty || mapError) ? " hidden" : ""}`}
+      >
+        <section
+          ref={containerRef}
+          aria-label="Climbing locations"
+          className="h-full w-full rounded-lg"
+        />
+        {initialLoading || (!empty && !mapError && mapLoading) ? <MapProcessingIndicator /> : null}
+      </div>
+      {!initialLoading && empty ? (
         <QueryStatePanel
           variant="empty"
           message="No climbing locations match these dates and filters."
         />
-      ) : mapError ? (
+      ) : !initialLoading && mapError ? (
         <p role="status" className="text-sm text-red-400">
           Map unavailable: {mapError}
-        </p>
-      ) : mapLoading ? (
-        <p role="status" className="text-sm text-muted">
-          Loading map…
         </p>
       ) : null}
       {!empty && !mapError && tileWarning ? (

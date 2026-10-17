@@ -32,7 +32,10 @@ import {
   retireActivityIntegrityJournal,
   transitionActivityIntegrityJournal,
 } from "./activity-data-integrity-journal.ts";
-import { withActivityIntegrityLease } from "./activity-data-integrity-lease.ts";
+import {
+  type ActivityIntegrityLeaseDatabase,
+  withActivityIntegrityLease,
+} from "./activity-data-integrity-lease.ts";
 import {
   type ActivityIntegrityPostgresArtifactRow,
   type ActivityIntegrityPostgresCandidate,
@@ -157,13 +160,9 @@ export interface ActivityIntegrityRepairOptions {
 
 export type { ActivityIntegrityClickHouseClient } from "./activity-data-integrity-clickhouse.ts";
 
-export interface ActivityIntegrityDatabase extends SchemaExecutionDatabase {
-  $client: {
-    connect(): Promise<{
-      query(query: string, values?: unknown[]): Promise<{ rows: object[] }>;
-      release(): void;
-    }>;
-  };
+export interface ActivityIntegrityDatabase
+  extends SchemaExecutionDatabase,
+    ActivityIntegrityLeaseDatabase {
   transaction<T>(operation: (transaction: SchemaExecutionDatabase) => Promise<T>): Promise<T>;
 }
 

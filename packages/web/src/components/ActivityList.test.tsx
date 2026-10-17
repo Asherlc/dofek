@@ -60,6 +60,7 @@ describe("ActivityList", () => {
       elevation_gain_m: 120,
       elevation_state: { status: "available" },
       location: {
+        kind: "recorded_gps",
         centroidLat: 37.7749,
         centroidLng: -122.4194,
         mapPreview,
@@ -124,6 +125,23 @@ describe("ActivityList", () => {
     expect(image.getAttribute("src")).toBe("https://tile.openstreetmap.org/15/5241/12665.png");
   });
 
+  it("shows a compact processing state while a map is prepared and its tiles load", () => {
+    const first = mockActivities[0];
+    if (!first) throw new Error("Expected an activity");
+    const view = renderWithUnits(
+      <ActivityList activities={[{ ...first, location: { kind: "processing" } }]} />,
+    );
+    expect(screen.getByRole("status")).toHaveTextContent("Processing map…");
+    view.rerender(
+      <UnitContext.Provider value={{ unitSystem: "metric", setUnitSystem: () => {} }}>
+        <ActivityList activities={mockActivities} />
+      </UnitContext.Provider>,
+    );
+    expect(screen.getByRole("status")).toHaveTextContent("Processing map…");
+    fireEvent.load(screen.getByTestId("activity-map-preview-tile"));
+    expect(screen.queryByRole("status")).toBeNull();
+  });
+
   it("allows compact map tile requests to include the page origin as the referrer", () => {
     renderWithUnits(<ActivityList activities={mockActivities} />);
     const image = screen.getByTestId("activity-map-preview-tile");
@@ -140,6 +158,7 @@ describe("ActivityList", () => {
           {
             ...mockActivity,
             location: {
+              kind: "recorded_gps",
               centroidLat: 37.7749,
               centroidLng: -122.4194,
               mapPreview: {
@@ -156,8 +175,8 @@ describe("ActivityList", () => {
       />,
     );
 
-    expect(screen.getByTestId("activity-route-path").getAttribute("points")).toBe(
-      "278.54,379.51 292.2,370.88 305.85,359.36",
+    expect(screen.getByTestId("activity-route-path").getAttribute("d")).toBe(
+      "M 278.54 379.51 C 283.093 376.633, 287.648 374.238, 292.2 370.88 C 296.752 367.522, 301.3 363.2, 305.85 359.36",
     );
   });
 
@@ -205,6 +224,7 @@ describe("ActivityList", () => {
   it("explains bulk deletion and exposes the selected count as a status", () => {
     const onBulkDelete = vi.fn();
     renderWithUnits(<ActivityList activities={mockActivities} onBulkDelete={onBulkDelete} />);
+    fireEvent.load(screen.getByTestId("activity-map-preview-tile"));
 
     expect(screen.getByText("Choose one or more activities to delete.")).toBeDefined();
     fireEvent.click(screen.getByRole("button", { name: "Select activities" }));

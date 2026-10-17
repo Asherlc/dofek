@@ -25,12 +25,31 @@ of distance and elevation for indoor and virtual rides, including reported zeros
 The [metric strip](components/ActivityMetricStrip.tsx) and activity accessibility
 labels use the [shared cycling classification](../training/src/endurance-types.ts).
 
-The Activities list reuses its compact bike-ride map preview for climbing-source
-locations when an activity has no recorded GPS track. Source points retain
-Climb/Area and provider attribution without creating a route or implying
-distance/elevation measurements. The
+The [Activities list](<app/(tabs)/activities.tsx>) uses
+[ActivityMapTile](components/ActivityMapTile.tsx) to show a full-width 16:9 map
+below each activity's details when location data is available, matching the
+readable map panels on the [web Activities list](../web/src/components/ActivityCardContent.tsx).
+Activities without a recorded GPS track can show climbing-source locations;
+source points retain Climb/Area and provider attribution without creating a
+route or implying distance/elevation measurements. The
 [calendar repository](../server/src/repositories/activities-calendar-repository.ts)
 projects map geometry on the server, and recorded GPS takes precedence.
+The [GPS-route preview](../../docs/screenshots/mobile-activity-route.png) and
+[climbing-location preview](../../docs/screenshots/mobile-activity-climbing.png)
+show the [Activities stories](<app-stories/(tabs)/activities.stories.tsx>) at a
+390-pixel browser viewport.
+
+Activity and training maps reserve space and show “Processing map…” while server geometry,
+preview images, or native map rendering are pending. Lists poll while any map's
+geometry is processing. Preview images become ready only after every tile
+reports a successful [Image `onLoad`](https://reactnative.dev/docs/image#onload);
+native overview and compact maps show the processing panel until
+[`onMapReady`](https://github.com/react-native-maps/react-native-maps/blob/master/docs/mapview.md#events),
+then retain the native renderer's
+[`loadingEnabled` indicator](https://github.com/react-native-maps/react-native-maps/blob/master/docs/mapview.md#props)
+while its initial map rendering completes.
+Existing previews remain visible during background refreshes, and map failures
+retain their error state.
 
 Activity details show climbing logs and same-day attachment suggestions for
 climbing and hiking activities. Cards show current shared locations, published
@@ -296,9 +315,11 @@ for the approved SDK dependency tree.
 - `react-native-maps@1.29.11` — the [stable release](https://github.com/react-native-maps/react-native-maps/releases/tag/v1.29.11)
   uses Fabric with React Native 0.81.1 or newer, matching this app's React Native
   0.88 dependency ([upstream compatibility table](https://github.com/react-native-maps/react-native-maps/blob/v1.29.11/README.md#compatibility)).
-  SDK 58 recommends 1.29.0, so this tested native pin is managed through Expo's
-  documented [`expo.install.exclude`](https://docs.expo.dev/more/expo-cli/#configuring-dependency-validation)
-  setting. The existing Expo check still validates the remaining SDK-managed
+  Expo 58.0.14 recommends this version in its
+  [native dependency matrix](https://github.com/expo/expo/blob/expo%4058.0.14/packages/expo/bundledNativeModules.json).
+  The tested native pin remains listed in Expo's documented
+  [`expo.install.exclude`](https://docs.expo.dev/more/expo-cli/#configuring-dependency-validation)
+  setting. The existing Expo check validates the remaining SDK-managed
   packages. Maps upgrades require a fresh native binary, a matching runtime
   increment, and the signed simulator audit: route, Start/Finish pins, elevation
   hover/release, navigation/remount, and session restoration after restart
@@ -317,16 +338,25 @@ for the approved SDK dependency tree.
 
 ### Native diagnostic runtime
 
-Runtime **1.8** uses the stable [Expo SDK 58](https://expo.dev/changelog/sdk-58)
-native dependency set with Expo 58.0.12, Expo Router 58.0.21, Expo Updates
+Runtime **1.9** uses the stable [Expo SDK 58](https://expo.dev/changelog/sdk-58)
+native dependency set with Expo 58.0.14, Expo Router 58.0.23, Expo Updates
 58.0.17, React Native 0.88.0, and React Native SVG 15.16.0, pinned in
-[package.json](./package.json). Validate SDK-managed versions with
+[package.json](./package.json). The
+[Expo 58.0.14 dependency matrix](https://github.com/expo/expo/blob/expo%4058.0.14/packages/expo/bundledNativeModules.json)
+also aligns Crypto and Haptics to 58.0.7, Sharing to 58.0.19, Splash Screen to
+58.0.10, Dev Client to 58.0.14, Build Properties to 58.0.11, and Modules Core to
+58.0.22. Validate SDK-managed versions with
 `pnpm tsx ../../scripts/with-env.ts -- pnpm expo install --check` from this package, following Expo's
 [dependency validation guidance](https://docs.expo.dev/more/expo-cli/#configuring-dependency-validation).
 The native dependency set also includes ExpoNetwork, the pnpm patch to
 `expo-apple-authentication@58.0.2`, and `react-native-maps@1.29.11`.
-Build a new native binary containing these dependencies; do not publish this
-JavaScript to runtime 1.7 or earlier.
+
+This patch alignment changes native executable code: Router fixes the iOS
+[`Link.AppleZoom` dismissal transition](https://github.com/expo/expo/pull/51676),
+and Modules Core changes [synchronous worklet result handling](https://github.com/expo/expo/pull/51656)
+and the [native JavaScript class factory](https://github.com/expo/expo/pull/51582).
+Build a new native binary containing these dependencies before publishing
+updates for runtime 1.9; do not publish this dependency set to runtime 1.8 or earlier.
 Expo requires a runtime increment when native code is updated; see
 [manual runtime version increments](https://docs.expo.dev/eas-update/runtime-versions/#manually-increment-the-runtime-version).
 Expo uses

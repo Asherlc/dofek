@@ -803,4 +803,126 @@ describe("ActivitiesCalendarRepository", () => {
       },
     ]);
   });
+  it.each([
+    ["processing", { kind: "processing" }],
+    ["awaiting_summary", { kind: "processing" }],
+    ["unavailable", null],
+    [undefined, null],
+  ] as const)(
+    "projects active map readiness %s into its display state",
+    async (status, location) => {
+      const sensorStore = makeSensorStore([
+        [
+          makeActivityRow({
+            id: "pending",
+            member_activity_ids: status === undefined ? [] : ["pending-member"],
+          }),
+        ],
+        [{ max_hr: null, resting_hr: null, ftp: null }],
+        ...(status === undefined ? [] : [[{ activity_id: "pending", status }]]),
+      ]);
+      const repository = new ActivitiesCalendarRepository(
+        makeDatabase([]),
+        "user-1",
+        "UTC",
+        sensorStore,
+      );
+
+      const result = await repository.getWeekList({ weeks: 1, endDate: "2026-03-20" });
+
+      expect(result[0]?.activities[0]?.location).toEqual(location);
+      if (status === undefined) {
+        expect(sensorStore.query).toHaveBeenCalledTimes(2);
+      } else {
+        expect(vi.mocked(sensorStore.query).mock.lastCall?.[2]).toEqual({
+          userId: "user-1",
+          activityIds: ["pending"],
+          routeActivityIds: ["pending"],
+          memberActivityIds: ["pending-member"],
+        });
+      }
+    },
+  );
+
+  it("checks readiness only for active activities without complete GPS or a climbing map", async () => {
+    const sourceLocation = {
+      coordinates: { latitude: 40.007, longitude: -105.4 },
+      scope: "climb" as const,
+      objectId: "source-climb",
+      providerId: "mountain-project",
+      name: "Mapped climb",
+    };
+    vi.spyOn(
+      ClimbingActivityLogEntryRepository.prototype,
+      "getActivityMapLocations",
+    ).mockResolvedValue(new Map([["mapped-climb", [sourceLocation]]]));
+    const rows = [
+      { id: "no-centroid", centroid_lat: null, centroid_lng: null },
+      { id: "missing-latitude", centroid_lat: null, centroid_lng: -105.4 },
+      { id: "missing-longitude", centroid_lat: 40.007, centroid_lng: null },
+      { id: "mapped-climb", centroid_lat: null, centroid_lng: null },
+      { id: "recorded-gps", centroid_lat: 0, centroid_lng: 0 },
+    ].map((row) =>
+      makeActivityRow({
+        ...row,
+        member_activity_ids: [`${row.id}-member-1`, `${row.id}-member-2`],
+      }),
+    );
+    const sensorStore = makeSensorStore([
+      rows,
+      [{ max_hr: null, resting_hr: null, ftp: null }],
+      [],
+      ["no-centroid", "missing-latitude", "missing-longitude"].map((id) => ({
+        activity_id: id,
+        status: "processing",
+      })),
+    ]);
+    const repository = new ActivitiesCalendarRepository(
+      makeDatabase([]),
+      "user-1",
+      "UTC",
+      sensorStore,
+    );
+
+    const [day] = await repository.getWeekList({ weeks: 1, endDate: "2026-03-20" });
+
+    expect(vi.mocked(sensorStore.query).mock.lastCall?.[2]).toEqual({
+      userId: "user-1",
+      activityIds: [
+        "no-centroid",
+        "no-centroid",
+        "missing-latitude",
+        "missing-latitude",
+        "missing-longitude",
+        "missing-longitude",
+      ],
+      routeActivityIds: [
+        "no-centroid",
+        "no-centroid",
+        "missing-latitude",
+        "missing-latitude",
+        "missing-longitude",
+        "missing-longitude",
+      ],
+      memberActivityIds: [
+        "no-centroid-member-1",
+        "no-centroid-member-2",
+        "missing-latitude-member-1",
+        "missing-latitude-member-2",
+        "missing-longitude-member-1",
+        "missing-longitude-member-2",
+      ],
+    });
+    expect(day?.activities.map((entry) => entry.location?.kind)).toEqual([
+      "processing",
+      "processing",
+      "processing",
+      "climbing_source",
+      "recorded_gps",
+    ]);
+    expect(day?.activities[3]?.location).toMatchObject({
+      sourcePoints: [expect.objectContaining({ location: sourceLocation })],
+    });
+    expect(day?.activities[4]?.location).toMatchObject({ centroidLat: 0, centroidLng: 0 });
+  });
 });

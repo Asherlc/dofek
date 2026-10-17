@@ -4,49 +4,23 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { createElement, type ReactNode } from "react";
 import { AccessibilityInfo, Alert, Platform } from "react-native";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-
-interface MockQuery {
-  data: unknown[];
-  isLoading: boolean;
-  isError: boolean;
-  error: Error | null;
-}
+import {
+  activity,
+  activityListQuery,
+  climbingSourceLocation,
+  emptyActivityOverviewQuery,
+  type MockOverviewQuery,
+  type MockQuery,
+  recordedGpsLocation,
+  routeMapTiles,
+  type WeekListQueryOptions,
+} from "../../app-fixtures/(tabs)/activities-test-helpers";
 
 let mockQuery: MockQuery;
 let mockCalendarQuery: MockQuery;
-let mockOverviewQuery: {
-  data:
-    | {
-        activityCount: number;
-        totalMinutes: number;
-        totalDistanceMeters: number | null;
-        totalDistanceState: { status: "available" } | { status: "missing"; reason: string };
-        totalElevationGainM: number | null;
-        totalElevationState: { status: "available" } | { status: "missing"; reason: string };
-        activityTypes: string[];
-        comparison?: {
-          periodLabel: string;
-          activityCount: { magnitude: number; trend: "higher" | "lower" | "unchanged" };
-          totalMinutes: { magnitude: number; trend: "higher" | "lower" | "unchanged" };
-          totalDistanceMeters: {
-            magnitude: number | null;
-            trend: "higher" | "lower" | "unchanged" | "unavailable";
-            state: { status: "available" } | { status: "missing"; reason: string };
-          };
-          totalElevationGainM: {
-            magnitude: number | null;
-            trend: "higher" | "lower" | "unchanged" | "unavailable";
-            state: { status: "available" } | { status: "missing"; reason: string };
-          };
-        };
-      }
-    | undefined;
-  isLoading: boolean;
-  isError: boolean;
-  error: Error | null;
-};
+let mockOverviewQuery: MockOverviewQuery;
 let weekListInput: unknown;
-let weekListOptions: { placeholderData?: (previousData: unknown) => unknown } | undefined;
+let weekListOptions: WeekListQueryOptions | undefined;
 let calendarDataInput: unknown;
 let calendarDataOptions: { placeholderData?: (previousData: unknown) => unknown } | undefined;
 let overviewInput: unknown;
@@ -75,10 +49,7 @@ vi.mock("../../lib/trpc", () => ({
   trpc: {
     calendar: {
       weekList: {
-        useQuery: (
-          input: unknown,
-          options: { placeholderData?: (previousData: unknown) => unknown } | undefined,
-        ) => {
+        useQuery: (input: unknown, options: WeekListQueryOptions | undefined) => {
           weekListInput = input;
           weekListOptions = options;
           return mockQuery;
@@ -170,7 +141,7 @@ vi.mock("../../lib/useRefresh", () => ({
 
 vi.mock("react-native-svg", () => ({
   default: ({ children, ...props }: Record<string, unknown> & { children?: ReactNode }) =>
-    createElement("svg", props, children),
+    createElement("svg", { ...props, "data-testid": props.testID }, children),
   Circle: ({ testID, ...props }: Record<string, unknown>) =>
     createElement("circle", { ...props, "data-testid": testID }),
   Polyline: ({ testID, ...props }: Record<string, unknown>) =>
@@ -181,56 +152,11 @@ import ActivitiesScreen from "../../app/(tabs)/activities";
 
 afterEach(() => vi.useRealTimers());
 
-function activity(overrides: Record<string, unknown> = {}) {
-  return {
-    id: "activity-1",
-    name: "Trainer Ride",
-    activityType: "indoor_cycling",
-    modality: null,
-    startedAt: "2026-03-18T07:00:00.000Z",
-    endedAt: "2026-03-18T08:00:00.000Z",
-    localTimeContext: {
-      timezone: null,
-      startUtcOffsetMinutes: 60,
-      endUtcOffsetMinutes: 60,
-      source: "provider_offset",
-    },
-    durationMin: 60,
-    source: {
-      primarySourceLabel: "Wahoo",
-      sourceCount: 1,
-      overlapSummary: null,
-    },
-    lastProcessedAt: "2026-03-18T08:05:00.000Z",
-    distanceMeters: null,
-    distanceState: { status: "missing", reason: "Distance not recorded" },
-    elevationGainM: null,
-    elevationState: { status: "missing", reason: "Elevation not recorded" },
-    location: null,
-    tss: 100,
-    stats: [{ status: "available", label: "Training Stress Score", value: "100" }],
-    ...overrides,
-  };
-}
-
 describe("ActivitiesScreen", () => {
   beforeEach(() => {
     mockQuery = { data: [], isLoading: false, isError: false, error: null };
     mockCalendarQuery = { data: [], isLoading: false, isError: false, error: null };
-    mockOverviewQuery = {
-      data: {
-        activityCount: 0,
-        totalMinutes: 0,
-        totalDistanceMeters: 0,
-        totalDistanceState: { status: "available" },
-        totalElevationGainM: 0,
-        totalElevationState: { status: "available" },
-        activityTypes: [],
-      },
-      isLoading: false,
-      isError: false,
-      error: null,
-    };
+    mockOverviewQuery = emptyActivityOverviewQuery();
     weekListInput = undefined;
     calendarDataInput = undefined;
     calendarDataOptions = undefined;
@@ -318,12 +244,7 @@ describe("ActivitiesScreen", () => {
   });
 
   it("renders server-provided stat labels and values", () => {
-    mockQuery = {
-      data: [{ date: "2026-03-18", activities: [activity()] }],
-      isLoading: false,
-      isError: false,
-      error: null,
-    };
+    mockQuery = activityListQuery([activity()]);
 
     render(<ActivitiesScreen />);
 
@@ -530,12 +451,7 @@ describe("ActivitiesScreen", () => {
   });
 
   it("navigates to activity detail when not selecting activities", () => {
-    mockQuery = {
-      data: [{ date: "2026-03-18", activities: [activity()] }],
-      isLoading: false,
-      isError: false,
-      error: null,
-    };
+    mockQuery = activityListQuery([activity()]);
 
     render(<ActivitiesScreen />);
     fireEvent.click(screen.getByText("Trainer Ride"));
@@ -544,12 +460,7 @@ describe("ActivitiesScreen", () => {
   });
 
   it("includes visible activity context in each accessible action name", () => {
-    mockQuery = {
-      data: [{ date: "2026-03-18", activities: [activity()] }],
-      isLoading: false,
-      isError: false,
-      error: null,
-    };
+    mockQuery = activityListQuery([activity()]);
 
     render(<ActivitiesScreen />);
 
@@ -560,27 +471,17 @@ describe("ActivitiesScreen", () => {
   });
 
   it("includes available route measurements in each accessible action name", () => {
-    mockQuery = {
-      data: [
-        {
-          date: "2026-03-18",
-          activities: [
-            activity({
-              activityType: "cycling",
-              modality: "road",
-              distanceMeters: 5000,
-              distanceState: { status: "available" },
-              elevationGainM: 120,
-              elevationState: { status: "available" },
-              location: null,
-            }),
-          ],
-        },
-      ],
-      isLoading: false,
-      isError: false,
-      error: null,
-    };
+    mockQuery = activityListQuery([
+      activity({
+        activityType: "cycling",
+        modality: "road",
+        distanceMeters: 5000,
+        distanceState: { status: "available" },
+        elevationGainM: 120,
+        elevationState: { status: "available" },
+        location: null,
+      }),
+    ]);
 
     render(<ActivitiesScreen />);
 
@@ -597,33 +498,23 @@ describe("ActivitiesScreen", () => {
   ])(
     "uses training stats in visible and accessible $modality cycling cards with distance $distanceMeters",
     ({ modality, distanceMeters, elevationGainM }) => {
-      mockQuery = {
-        data: [
-          {
-            date: "2026-03-18",
-            activities: [
-              activity({
-                activityType: "cycling",
-                modality,
-                distanceMeters,
-                distanceState: { status: "available" },
-                elevationGainM,
-                elevationState:
-                  elevationGainM === null
-                    ? { status: "missing", reason: "Elevation not recorded" }
-                    : { status: "available" },
-                stats: [
-                  { status: "available", label: "Training Stress Score", value: "100" },
-                  { status: "missing", label: "Average Power", reason: "Power not recorded" },
-                ],
-              }),
-            ],
-          },
-        ],
-        isLoading: false,
-        isError: false,
-        error: null,
-      };
+      mockQuery = activityListQuery([
+        activity({
+          activityType: "cycling",
+          modality,
+          distanceMeters,
+          distanceState: { status: "available" },
+          elevationGainM,
+          elevationState:
+            elevationGainM === null
+              ? { status: "missing", reason: "Elevation not recorded" }
+              : { status: "available" },
+          stats: [
+            { status: "available", label: "Training Stress Score", value: "100" },
+            { status: "missing", label: "Average Power", reason: "Power not recorded" },
+          ],
+        }),
+      ]);
 
       render(<ActivitiesScreen />);
 
@@ -644,25 +535,15 @@ describe("ActivitiesScreen", () => {
     { activityType: "cycling", modality: "road" },
     { activityType: "running", modality: "indoor" },
   ])("keeps measured zero in accessible $modality $activityType cards", (classification) => {
-    mockQuery = {
-      data: [
-        {
-          date: "2026-03-18",
-          activities: [
-            activity({
-              ...classification,
-              distanceMeters: 0,
-              distanceState: { status: "available" },
-              elevationGainM: 0,
-              elevationState: { status: "available" },
-            }),
-          ],
-        },
-      ],
-      isLoading: false,
-      isError: false,
-      error: null,
-    };
+    mockQuery = activityListQuery([
+      activity({
+        ...classification,
+        distanceMeters: 0,
+        distanceState: { status: "available" },
+        elevationGainM: 0,
+        elevationState: { status: "available" },
+      }),
+    ]);
 
     render(<ActivitiesScreen />);
 
@@ -676,17 +557,7 @@ describe("ActivitiesScreen", () => {
   it.each([null, "Indoor Cycling"])(
     "labels an activity named %s without repeating its type",
     (name) => {
-      mockQuery = {
-        data: [
-          {
-            date: "2026-03-18",
-            activities: [activity({ name })],
-          },
-        ],
-        isLoading: false,
-        isError: false,
-        error: null,
-      };
+      mockQuery = activityListQuery([activity({ name })]);
 
       render(<ActivitiesScreen />);
 
@@ -701,12 +572,7 @@ describe("ActivitiesScreen", () => {
   );
 
   it("toggles selected activities instead of navigating in select mode", () => {
-    mockQuery = {
-      data: [{ date: "2026-03-18", activities: [activity()] }],
-      isLoading: false,
-      isError: false,
-      error: null,
-    };
+    mockQuery = activityListQuery([activity()]);
 
     render(<ActivitiesScreen />);
     expect(screen.queryByText("Choose activities to merge or delete.")).toBeNull();
@@ -724,12 +590,7 @@ describe("ActivitiesScreen", () => {
   });
 
   it("announces selected activity count changes on iOS", async () => {
-    mockQuery = {
-      data: [{ date: "2026-03-18", activities: [activity()] }],
-      isLoading: false,
-      isError: false,
-      error: null,
-    };
+    mockQuery = activityListQuery([activity()]);
     vi.spyOn(Platform, "OS", "get").mockReturnValue("ios");
     const announceForAccessibility = vi
       .spyOn(AccessibilityInfo, "announceForAccessibility")
@@ -748,12 +609,7 @@ describe("ActivitiesScreen", () => {
   });
 
   it("bulk deletes selected activities after confirmation", async () => {
-    mockQuery = {
-      data: [{ date: "2026-03-18", activities: [activity()] }],
-      isLoading: false,
-      isError: false,
-      error: null,
-    };
+    mockQuery = activityListQuery([activity()]);
     vi.spyOn(Alert, "alert").mockImplementation((_title, _message, buttons) => {
       buttons?.find((button) => button.text === "Delete")?.onPress?.();
     });
@@ -773,17 +629,10 @@ describe("ActivitiesScreen", () => {
   });
 
   it("merges selected same-type activities after native confirmation", async () => {
-    mockQuery = {
-      data: [
-        {
-          date: "2026-03-18",
-          activities: [activity(), activity({ id: "activity-2", name: "Second Ride" })],
-        },
-      ],
-      isLoading: false,
-      isError: false,
-      error: null,
-    };
+    mockQuery = activityListQuery([
+      activity(),
+      activity({ id: "activity-2", name: "Second Ride" }),
+    ]);
     vi.spyOn(Alert, "alert").mockImplementation((_title, _message, buttons) => {
       expect(_title).toBe("Merge Activities");
       buttons?.find((button) => button.text === "Merge")?.onPress?.();
@@ -803,20 +652,10 @@ describe("ActivitiesScreen", () => {
   });
 
   it("disables merge when fewer than two activities or mixed types are selected", () => {
-    mockQuery = {
-      data: [
-        {
-          date: "2026-03-18",
-          activities: [
-            activity(),
-            activity({ id: "activity-2", name: "Run", activityType: "running" }),
-          ],
-        },
-      ],
-      isLoading: false,
-      isError: false,
-      error: null,
-    };
+    mockQuery = activityListQuery([
+      activity(),
+      activity({ id: "activity-2", name: "Run", activityType: "running" }),
+    ]);
     render(<ActivitiesScreen />);
     fireEvent.click(screen.getByRole("button", { name: "Select activities" }));
     const merge = screen.getByRole("button", { name: "Merge selected activities" });
@@ -830,17 +669,10 @@ describe("ActivitiesScreen", () => {
 
   it("keeps selected activities selected when merge fails", async () => {
     mockMergeShouldFail = true;
-    mockQuery = {
-      data: [
-        {
-          date: "2026-03-18",
-          activities: [activity(), activity({ id: "activity-2", name: "Second Ride" })],
-        },
-      ],
-      isLoading: false,
-      isError: false,
-      error: null,
-    };
+    mockQuery = activityListQuery([
+      activity(),
+      activity({ id: "activity-2", name: "Second Ride" }),
+    ]);
     vi.spyOn(Alert, "alert").mockImplementation((_title, _message, buttons) => {
       buttons?.find((button) => button.text === "Merge")?.onPress?.();
     });
@@ -857,12 +689,7 @@ describe("ActivitiesScreen", () => {
   });
 
   it("clears selected activities when the activity type filter changes", () => {
-    mockQuery = {
-      data: [{ date: "2026-03-18", activities: [activity()] }],
-      isLoading: false,
-      isError: false,
-      error: null,
-    };
+    mockQuery = activityListQuery([activity()]);
     mockOverviewQuery = {
       data: {
         activityCount: 1,
@@ -888,12 +715,7 @@ describe("ActivitiesScreen", () => {
   });
 
   it("clears selected activities when the date range changes", () => {
-    mockQuery = {
-      data: [{ date: "2026-03-18", activities: [activity()] }],
-      isLoading: false,
-      isError: false,
-      error: null,
-    };
+    mockQuery = activityListQuery([activity()]);
 
     render(<ActivitiesScreen />);
     fireEvent.click(screen.getByRole("button", { name: "Select activities" }));
@@ -905,22 +727,14 @@ describe("ActivitiesScreen", () => {
   });
 
   it("paginates the activity card history", () => {
-    mockQuery = {
-      data: [
-        {
-          date: "2026-03-18",
-          activities: Array.from({ length: 21 }, (_, index) =>
-            activity({
-              id: `activity-${index + 1}`,
-              name: `Ride ${index + 1}`,
-            }),
-          ),
-        },
-      ],
-      isLoading: false,
-      isError: false,
-      error: null,
-    };
+    mockQuery = activityListQuery(
+      Array.from({ length: 21 }, (_, index) =>
+        activity({
+          id: `activity-${index + 1}`,
+          name: `Ride ${index + 1}`,
+        }),
+      ),
+    );
 
     render(<ActivitiesScreen />);
 
@@ -934,30 +748,6 @@ describe("ActivitiesScreen", () => {
   });
 
   it.each([1, 2])("shows %i source climbing points without inventing a route", (pointCount) => {
-    const sourcePoints = [
-      {
-        x: 512,
-        y: 288,
-        location: {
-          coordinates: { latitude: 40.015, longitude: -105.29 },
-          scope: "area",
-          objectId: "source-area-1",
-          providerId: "mountain-project",
-          name: "Boulder Canyon",
-        },
-      },
-      {
-        x: 700,
-        y: 200,
-        location: {
-          coordinates: { latitude: 40.016, longitude: -105.288 },
-          scope: "climb",
-          objectId: "source-climb-2",
-          providerId: "openbeta",
-          name: "Second climb",
-        },
-      },
-    ].slice(0, pointCount);
     mockQuery.data = [
       {
         date: "2026-03-18",
@@ -965,24 +755,7 @@ describe("ActivitiesScreen", () => {
           activity({
             activityType: "climbing",
             name: "Boulder Canyon climbing",
-            location: {
-              kind: "climbing_source",
-              mapPreview: {
-                width: 1024,
-                height: 576,
-                tiles: [
-                  {
-                    url: "https://tile.openstreetmap.org/15/6800/12400.png",
-                    x: 0,
-                    y: 0,
-                    width: 256,
-                    height: 256,
-                  },
-                ],
-                routePath: null,
-              },
-              sourcePoints,
-            },
+            location: climbingSourceLocation(pointCount),
           }),
         ],
       },
@@ -992,8 +765,9 @@ describe("ActivitiesScreen", () => {
 
     const points = screen.getAllByTestId("activity-source-point");
     expect(points).toHaveLength(pointCount);
-    expect(points[0]?.getAttribute("cx")).toBe("512");
-    expect(points[0]?.getAttribute("cy")).toBe("288");
+    const markers = screen.getAllByTestId("activity-source-marker");
+    expect(markers[0]?.style.left).toBe("50%");
+    expect(markers[0]?.style.top).toBe("50%");
     expect(screen.queryByTestId("activity-route-path")).toBeNull();
     expect(screen.getByText("Training Stress Score")).toBeDefined();
     const row = screen.getByRole("button", { name: /Open Boulder Canyon climbing/ });
@@ -1002,8 +776,8 @@ describe("ActivitiesScreen", () => {
     );
     expect(row.getAttribute("aria-label")).not.toContain("Distance unavailable");
     if (pointCount === 2) {
-      expect(points[1]?.getAttribute("cx")).toBe("700");
-      expect(points[1]?.getAttribute("cy")).toBe("200");
+      expect(Number.parseFloat(markers[1]?.style.left ?? "")).toBeCloseTo(68.36, 2);
+      expect(Number.parseFloat(markers[1]?.style.top ?? "")).toBeCloseTo(34.72, 2);
       expect(row.getAttribute("aria-label")).toContain("Climb location: Second climb · OpenBeta");
     }
     fireEvent.click(row);
@@ -1011,43 +785,15 @@ describe("ActivitiesScreen", () => {
   });
 
   it("replaces failed map tiles with a fallback", () => {
-    mockQuery = {
-      data: [
-        {
-          date: "2026-03-18",
-          activities: [
-            activity({
-              location: {
-                kind: "recorded_gps",
-                centroidLat: 37.7749,
-                centroidLng: -122.4194,
-                mapPreview: {
-                  width: 1024,
-                  height: 576,
-                  tiles: [
-                    {
-                      url: "https://tile.openstreetmap.org/15/5241/12665.png",
-                      x: 0,
-                      y: 0,
-                      width: 256,
-                      height: 256,
-                    },
-                  ],
-                  routePath: null,
-                },
-              },
-              distanceMeters: 5000,
-              elevationGainM: 120,
-              distanceState: { status: "available" },
-              elevationState: { status: "available" },
-            }),
-          ],
-        },
-      ],
-      isLoading: false,
-      isError: false,
-      error: null,
-    };
+    mockQuery = activityListQuery([
+      activity({
+        location: recordedGpsLocation(),
+        distanceMeters: 5000,
+        elevationGainM: 120,
+        distanceState: { status: "available" },
+        elevationState: { status: "available" },
+      }),
+    ]);
 
     render(<ActivitiesScreen />);
 
@@ -1057,54 +803,22 @@ describe("ActivitiesScreen", () => {
   });
 
   it("draws a route overlay when a map tile includes route path points", () => {
-    mockQuery = {
-      data: [
-        {
-          date: "2026-03-18",
-          activities: [
-            activity({
-              location: {
-                kind: "recorded_gps",
-                centroidLat: 37.7749,
-                centroidLng: -122.4194,
-                mapPreview: {
-                  width: 1024,
-                  height: 576,
-                  tiles: [
-                    {
-                      url: "https://tile.openstreetmap.org/15/5241/12665.png",
-                      x: 0,
-                      y: 0,
-                      width: 256,
-                      height: 256,
-                    },
-                    {
-                      url: "https://tile.openstreetmap.org/15/5242/12665.png",
-                      x: 256,
-                      y: 0,
-                      width: 256,
-                      height: 256,
-                    },
-                  ],
-                  routePath: [
-                    { x: 278.54, y: 379.51 },
-                    { x: 292.2, y: 370.88 },
-                    { x: 305.85, y: 359.36 },
-                  ],
-                },
-              },
-              distanceMeters: 5000,
-              elevationGainM: 120,
-              distanceState: { status: "available" },
-              elevationState: { status: "available" },
-            }),
+    mockQuery = activityListQuery([
+      activity({
+        location: recordedGpsLocation({
+          routePath: [
+            { x: 278.54, y: 379.51 },
+            { x: 292.2, y: 370.88 },
+            { x: 305.85, y: 359.36 },
           ],
-        },
-      ],
-      isLoading: false,
-      isError: false,
-      error: null,
-    };
+          tiles: routeMapTiles,
+        }),
+        distanceMeters: 5000,
+        elevationGainM: 120,
+        distanceState: { status: "available" },
+        elevationState: { status: "available" },
+      }),
+    ]);
 
     render(<ActivitiesScreen />);
 
@@ -1115,43 +829,15 @@ describe("ActivitiesScreen", () => {
   });
 
   it("does not duplicate distance and elevation badges over the map", () => {
-    mockQuery = {
-      data: [
-        {
-          date: "2026-03-18",
-          activities: [
-            activity({
-              location: {
-                kind: "recorded_gps",
-                centroidLat: 37.7749,
-                centroidLng: -122.4194,
-                mapPreview: {
-                  width: 1024,
-                  height: 576,
-                  tiles: [
-                    {
-                      url: "https://tile.openstreetmap.org/15/5241/12665.png",
-                      x: 0,
-                      y: 0,
-                      width: 256,
-                      height: 256,
-                    },
-                  ],
-                  routePath: null,
-                },
-              },
-              distanceMeters: 5000,
-              elevationGainM: 120,
-              distanceState: { status: "available" },
-              elevationState: { status: "available" },
-            }),
-          ],
-        },
-      ],
-      isLoading: false,
-      isError: false,
-      error: null,
-    };
+    mockQuery = activityListQuery([
+      activity({
+        location: recordedGpsLocation(),
+        distanceMeters: 5000,
+        elevationGainM: 120,
+        distanceState: { status: "available" },
+        elevationState: { status: "available" },
+      }),
+    ]);
 
     render(<ActivitiesScreen />);
 
@@ -1159,55 +845,57 @@ describe("ActivitiesScreen", () => {
     expect(screen.getAllByText("120 m")).toHaveLength(1);
   });
 
-  it("renders exported map preview tiles inside the thumbnail", () => {
-    mockQuery = {
-      data: [
-        {
-          date: "2026-03-18",
-          activities: [
-            activity({
-              location: {
-                kind: "recorded_gps",
-                centroidLat: 37.7749,
-                centroidLng: -122.4194,
-                mapPreview: {
-                  width: 1024,
-                  height: 576,
-                  tiles: [
-                    {
-                      url: "https://tile.openstreetmap.org/15/5241/12665.png",
-                      x: 0,
-                      y: 0,
-                      width: 256,
-                      height: 256,
-                    },
-                  ],
-                  routePath: [
-                    { x: 250, y: 300 },
-                    { x: 350, y: 400 },
-                  ],
-                },
-              },
-              distanceMeters: 5000,
-              elevationGainM: 120,
-              distanceState: { status: "available" },
-              elevationState: { status: "available" },
-            }),
+  it("aligns exported map tiles within the responsive preview", () => {
+    mockQuery = activityListQuery([
+      activity({
+        location: recordedGpsLocation({
+          routePath: [
+            { x: 250, y: 300 },
+            { x: 350, y: 400 },
           ],
-        },
-      ],
-      isLoading: false,
-      isError: false,
-      error: null,
-    };
+        }),
+        distanceMeters: 5000,
+        elevationGainM: 120,
+        distanceState: { status: "available" },
+        elevationState: { status: "available" },
+      }),
+    ]);
 
     render(<ActivitiesScreen />);
 
     const previewTile = screen.getByTestId("activity-map-preview-tile");
     expect(screen.getByTestId("activity-route-viewport")).toBeDefined();
-    expect(previewTile.getAttribute("style")).toContain("left: 0px");
-    expect(previewTile.getAttribute("style")).toContain("top: 21px");
-    expect(previewTile.getAttribute("style")).toContain("width: 24px");
-    expect(previewTile.getAttribute("style")).toContain("height: 24px");
+    expect(previewTile.style.left).toBe("0%");
+    expect(previewTile.style.top).toBe("0%");
+    expect(previewTile.style.width).toBe("25%");
+    expect(Number.parseFloat(previewTile.style.height)).toBeCloseTo(44.44, 2);
+  });
+
+  it("shows a full-width map processing state while server map geometry is pending", () => {
+    mockQuery.data = [
+      { date: "2026-03-18", activities: [activity({ location: { kind: "processing" } })] },
+    ];
+    render(<ActivitiesScreen />);
+    expect(screen.getByRole("progressbar", { name: "Processing map" }).textContent).toBe(
+      "Processing map…",
+    );
+    expect(
+      screen.getByRole("button", { name: /Open Trainer Ride/ }).getAttribute("aria-label"),
+    ).toContain("Processing map");
+  });
+
+  it("polls pending map geometry without polling settled or absent map states", () => {
+    render(<ActivitiesScreen />);
+    expect(
+      weekListOptions?.refetchInterval?.({
+        state: { data: [{ activities: [activity({ location: { kind: "processing" } })] }] },
+      }),
+    ).toEqual(expect.any(Number));
+    expect(
+      weekListOptions?.refetchInterval?.({
+        state: { data: [{ activities: [activity({ location: null })] }] },
+      }),
+    ).toBe(false);
+    expect(weekListOptions?.refetchInterval?.({ state: { data: undefined } })).toBe(false);
   });
 });

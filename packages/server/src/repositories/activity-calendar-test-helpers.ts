@@ -87,6 +87,8 @@ export function makeSensorStore(rowSets: Record<string, unknown>[][]): ActivityS
                   end_utc_offset_minutes: null,
                   local_time_source: "unknown",
                   provider_id: "wahoo",
+                  member_activity_ids: [],
+                  route_activity_id: row.id,
                   modality: null,
                   source_name: null,
                   source_external_ids: [],
@@ -100,7 +102,8 @@ export function makeSensorStore(rowSets: Record<string, unknown>[][]): ActivityS
       ),
     );
   }
-  query.mockImplementation(() => {
+  query.mockImplementation((_schema, queryText: string) => {
+    if (queryText.includes("analytics.activity_location_member_change")) return Promise.resolve([]);
     throw new Error("Unexpected sensor query");
   });
   return {
@@ -132,6 +135,7 @@ export function makeActivityRow<T extends Record<string, unknown>>(overrides?: T
     ended_at: "2026-03-18T08:00:00.000Z",
     provider_id: "wahoo",
     source_name: null,
+    member_activity_ids: [],
     source_external_ids: [
       {
         providerId: "wahoo",

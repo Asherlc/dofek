@@ -8,7 +8,11 @@ import {
 } from "@dofek/peloton/auth";
 import { PelotonAuthenticationError } from "@dofek/peloton/errors";
 import { mapFitnessDiscipline, parsePerformanceGraph, parseWorkout } from "@dofek/peloton/parsing";
-import type { PelotonPerformanceGraph, PelotonWorkout } from "@dofek/peloton/types";
+import type {
+  PelotonPerformanceGraph,
+  PelotonWorkout,
+  PelotonWorkoutListResponse,
+} from "@dofek/peloton/types";
 import type { TokenSet } from "../auth/oauth.ts";
 import { resolveOAuthTokens } from "../auth/resolve-tokens.ts";
 import type { SyncDatabase } from "../db/index.ts";
@@ -84,13 +88,14 @@ export class PelotonProvider implements SyncProvider {
     };
   }
 
-  async #resolveTokens(db: SyncDatabase): Promise<TokenSet> {
+  async #resolveTokens(db: SyncDatabase, forceRefresh = false): Promise<TokenSet> {
     return resolveOAuthTokens({
       db,
       providerId: this.id,
       providerName: this.name,
       getOAuthConfig: () => pelotonOAuthConfig(),
       fetchFn: this.#fetchFn,
+      forceRefresh,
     });
   }
 
@@ -109,7 +114,8 @@ export class PelotonProvider implements SyncProvider {
       return { provider: this.id, recordsSynced, errors, duration: Date.now() - start };
     }
 
-    const client = new PelotonClient(tokens.accessToken, this.#fetchFn);
+    let client = new PelotonClient(tokens.accessToken, this.#fetchFn);
+    let retriedRejectedAccessToken = false;
     await ensureProvider(db, this.id, this.name, PELOTON_API_BASE);
     const since = window.since;
     const syncWindowEnd = window.until;
@@ -128,7 +134,21 @@ export class PelotonProvider implements SyncProvider {
           stepName: "workouts",
           initialCursor: 0,
           fetchPage: async (page) => {
-            const response = await requestPeloton(() => client.getWorkouts(page ?? 0));
+            let response: PelotonWorkoutListResponse;
+            try {
+              response = await requestPeloton(() => client.getWorkouts(page ?? 0));
+            } catch (error) {
+              if (!(error instanceof AccessTokenExpiredError) || retriedRejectedAccessToken) {
+                throw error;
+              }
+              retriedRejectedAccessToken = true;
+              logger.info(
+                "[peloton] API rejected access token, refreshing and retrying workout request...",
+              );
+              tokens = await this.#resolveTokens(db, true);
+              client = new PelotonClient(tokens.accessToken, this.#fetchFn);
+              response = await requestPeloton(() => client.getWorkouts(page ?? 0));
+            }
             totalWorkouts = response.total;
             return {
               items: response.data,

@@ -100,6 +100,20 @@ describe("ActivityCardContent", () => {
     expect(screen.getByText("0 m")).toBeDefined();
   });
 
+  it("keeps a map panel while the server prepares location data", () => {
+    render(
+      <ActivityCardContent
+        activity={activity({ location: { kind: "processing" } })}
+        units={units}
+        selectMode={false}
+        selected={false}
+      />,
+    );
+
+    expect(screen.getByTestId("activity-secondary-panel")).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("Processing map…");
+  });
+
   it("keeps climbing metrics beside a source-location preview", () => {
     render(
       <ActivityCardContent

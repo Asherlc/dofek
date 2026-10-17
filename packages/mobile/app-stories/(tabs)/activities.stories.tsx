@@ -6,7 +6,7 @@ import type { AppRouter, AppRouterOutputs } from "dofek-server/router";
 import type { ActivityLocation } from "dofek-server/types";
 import { useMemo } from "react";
 import { View } from "react-native";
-import { within } from "storybook/test";
+import { expect, within } from "storybook/test";
 import ActivitiesScreen from "../../app/(tabs)/activities";
 import { trpc } from "../../lib/trpc";
 
@@ -530,7 +530,24 @@ export default meta;
 
 type Story = StoryObj<typeof meta>;
 
-export const Default: Story = {};
+async function checkFullWidthMap(canvasElement: HTMLElement, activityName: string) {
+  const canvas = within(canvasElement);
+  const map = await canvas.findByTestId("activity-route-viewport");
+  const card = await canvas.findByRole("button", {
+    name: (name) => name.startsWith(`Open ${activityName},`),
+  });
+  const mapBounds = map.getBoundingClientRect();
+  const cardBounds = card.getBoundingClientRect();
+  const titleBounds = canvas.getByText(activityName).getBoundingClientRect();
+
+  await expect(mapBounds.width).toBeGreaterThan(cardBounds.width * 0.8);
+  await expect(mapBounds.width / mapBounds.height).toBeCloseTo(16 / 9, 1);
+  await expect(mapBounds.top).toBeGreaterThan(titleBounds.bottom);
+}
+
+export const Default: Story = {
+  play: async ({ canvasElement }) => checkFullWidthMap(canvasElement, "Morning Ride"),
+};
 
 export const SelectionMode: Story = {
   play: async ({ canvasElement, userEvent }) => {
@@ -543,6 +560,7 @@ export const SelectionMode: Story = {
 export const ClimbingActivity: Story = {
   parameters: { climbingActivity: true },
   play: async ({ canvasElement }) => {
+    await checkFullWidthMap(canvasElement, "Boulder Canyon climbing");
     await within(canvasElement).findByRole("button", {
       name: /Boulder Canyon climbing.*Climbing/,
     });

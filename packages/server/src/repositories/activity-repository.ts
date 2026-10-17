@@ -4,6 +4,7 @@ import { TRPCError } from "@trpc/server";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import type { AccessWindow } from "../billing/entitlement.ts";
+import type { ActivityLocation } from "../contracts/activity-location.ts";
 import { BaseRepository } from "../lib/base-repository.ts";
 import {
   postgresCurrentTimestampRangeLowerBound,
@@ -17,8 +18,10 @@ import type { ActivityRow } from "../models/activity.ts";
 import { activitySourceSchema } from "../models/activity-source.ts";
 import { activityMeasurementState } from "../services/activity-data-state.ts";
 import { postgresActivityCalendarDate } from "./activity-local-date.ts";
-import { getActivityRoutePreviews } from "./activity-route-preview.ts";
+import { getActivityMapReadiness, getActivityRoutePreviews } from "./activity-route-preview.ts";
 import { ActivityVisibilityRepository } from "./activity-visibility-repository.ts";
+
+type ActivityListItem = Record<string, unknown> & { location: ActivityLocation | null };
 
 // ---------------------------------------------------------------------------
 // Zod schemas for raw DB rows
@@ -420,9 +423,7 @@ export class ActivityRepository extends BaseRepository {
   }
 
   /** Paginated activity list with summary metrics. */
-  async list(
-    input: ListInput,
-  ): Promise<{ items: Array<Record<string, unknown>>; totalCount: number }> {
+  async list(input: ListInput): Promise<{ items: ActivityListItem[]; totalCount: number }> {
     const rows = await this.#listRawRows(input);
     const hydratedRows = await this.#withActivitySummaries(rows);
     const totalCount = hydratedRows.length > 0 ? (hydratedRows[0]?.total_count ?? 0) : 0;
@@ -431,9 +432,7 @@ export class ActivityRepository extends BaseRepository {
   }
 
   /** Activities inside an exact inclusive local-date range, optionally filtered before paging. */
-  async search(
-    input: SearchInput,
-  ): Promise<{ items: Array<Record<string, unknown>>; totalCount: number }> {
+  async search(input: SearchInput): Promise<{ items: ActivityListItem[]; totalCount: number }> {
     const escapedQuery = input.query?.replace(/[%_\\]/g, (character) => `\\${character}`);
     const queryPattern = escapedQuery ? `%${escapedQuery}%` : null;
     const rows = await this.#exactRangeRows(
@@ -454,7 +453,7 @@ export class ActivityRepository extends BaseRepository {
     startDate: string,
     endDate: string,
     activityTypes?: string[],
-  ): Promise<Array<Record<string, unknown>>> {
+  ): Promise<ActivityListItem[]> {
     const rows = await this.#exactRangeRows(startDate, endDate, activityTypes);
     const hydratedRows = await this.#withActivitySummaries(rows);
     return hydratedRows.map((row) => this.#toListItem(row));
@@ -467,8 +466,9 @@ export class ActivityRepository extends BaseRepository {
       provider_type: string;
       total_count?: number;
       member_activity_ids?: string[];
+      location: ActivityLocation | null;
     },
-  >(row: TRow) {
+  >(row: TRow): ActivityListItem {
     const { total_count: _totalCount, member_activity_ids: _memberActivityIds, ...rest } = row;
     return {
       avg_hr: null,
@@ -481,7 +481,6 @@ export class ActivityRepository extends BaseRepository {
       total_distance: null,
       elevation_loss_m: null,
       sample_count: null,
-      location: null,
       ...rest,
       raw_type: row.provider_type,
       distance_state: activityMeasurementState("Distance", row.distance_meters),
@@ -801,15 +800,16 @@ export class ActivityRepository extends BaseRepository {
   async #withActivitySummaries<
     TRow extends {
       id: string;
-      member_activity_ids?: string[];
+      member_activity_ids: string[];
+      provider_absent_at?: string | null;
     },
-  >(rows: TRow[]): Promise<TRow[]> {
+  >(rows: TRow[]): Promise<Array<TRow & { location: ActivityLocation | null }>> {
     const sensorStore = this.#sensorStore;
     if (!sensorStore) {
-      return rows;
+      return rows.map((row) => ({ ...row, location: null }));
     }
     if (rows.length === 0) {
-      return rows;
+      return [];
     }
 
     const activityIds = [...new Set(rows.map((row) => row.id))];
@@ -823,10 +823,30 @@ export class ActivityRepository extends BaseRepository {
         activitySummaryReadModelRowSchema.parse(summary),
       ]),
     );
+    const mapReadinessByActivityId = await getActivityMapReadiness(
+      sensorStore,
+      this.userId,
+      rows
+        .filter((row) => {
+          const summary = summaryByActivityId.get(row.id);
+          return summary?.centroid_lat == null || summary.centroid_lng == null;
+        })
+        .map((row) => ({
+          id: row.id,
+          routeActivityId: row.id,
+          memberActivityIds: row.member_activity_ids,
+        })),
+    );
     return rows.map((row) => {
       const summary = summaryByActivityId.get(row.id);
+      const mapReadiness = mapReadinessByActivityId.get(row.id);
+      const pendingLocation: ActivityLocation | null =
+        mapReadiness === "processing" ||
+        (mapReadiness === "awaiting_summary" && row.provider_absent_at == null)
+          ? { kind: "processing" }
+          : null;
       if (!summary) {
-        return row;
+        return { ...row, location: pendingLocation };
       }
       const routePreview = routePreviewByActivityId.get(summary.activity_id);
       return {
@@ -846,13 +866,14 @@ export class ActivityRepository extends BaseRepository {
         location:
           summary.centroid_lat != null && summary.centroid_lng != null
             ? {
+                kind: "recorded_gps" as const,
                 centroidLat: summary.centroid_lat,
                 centroidLng: summary.centroid_lng,
                 mapPreview:
                   routePreview ??
                   osmTilePreview([{ lat: summary.centroid_lat, lng: summary.centroid_lng }]),
               }
-            : null,
+            : pendingLocation,
       };
     });
   }

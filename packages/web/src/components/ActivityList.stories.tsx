@@ -143,6 +143,7 @@ const activities: Activity[] = [
     elevation_gain_m: 120,
     elevation_state: { status: "available" },
     location: {
+      kind: "recorded_gps",
       centroidLat: 37.7749,
       centroidLng: -122.4194,
       mapPreview,
@@ -207,6 +208,12 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const Default: Story = {};
+
+export const ProcessingMap: Story = {
+  args: {
+    activities: activities.map((activity) => ({ ...activity, location: { kind: "processing" } })),
+  },
+};
 
 export const Climbing: Story = {
   args: {
