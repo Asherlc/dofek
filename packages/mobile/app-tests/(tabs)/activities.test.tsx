@@ -12,6 +12,11 @@ interface MockQuery {
   error: Error | null;
 }
 
+interface WeekListQueryOptions {
+  placeholderData?: (previousData: unknown) => unknown;
+  refetchInterval?: (query: { state: { data: unknown } }) => number | false;
+}
+
 let mockQuery: MockQuery;
 let mockCalendarQuery: MockQuery;
 let mockOverviewQuery: {
@@ -46,7 +51,7 @@ let mockOverviewQuery: {
   error: Error | null;
 };
 let weekListInput: unknown;
-let weekListOptions: { placeholderData?: (previousData: unknown) => unknown } | undefined;
+let weekListOptions: WeekListQueryOptions | undefined;
 let calendarDataInput: unknown;
 let calendarDataOptions: { placeholderData?: (previousData: unknown) => unknown } | undefined;
 let overviewInput: unknown;
@@ -75,10 +80,7 @@ vi.mock("../../lib/trpc", () => ({
   trpc: {
     calendar: {
       weekList: {
-        useQuery: (
-          input: unknown,
-          options: { placeholderData?: (previousData: unknown) => unknown } | undefined,
-        ) => {
+        useQuery: (input: unknown, options: WeekListQueryOptions | undefined) => {
           weekListInput = input;
           weekListOptions = options;
           return mockQuery;
@@ -170,7 +172,7 @@ vi.mock("../../lib/useRefresh", () => ({
 
 vi.mock("react-native-svg", () => ({
   default: ({ children, ...props }: Record<string, unknown> & { children?: ReactNode }) =>
-    createElement("svg", props, children),
+    createElement("svg", { ...props, "data-testid": props.testID }, children),
   Circle: ({ testID, ...props }: Record<string, unknown>) =>
     createElement("circle", { ...props, "data-testid": testID }),
   Polyline: ({ testID, ...props }: Record<string, unknown>) =>
@@ -905,8 +907,9 @@ describe("ActivitiesScreen", () => {
 
     const points = screen.getAllByTestId("activity-source-point");
     expect(points).toHaveLength(pointCount);
-    expect(points[0]?.getAttribute("cx")).toBe("512");
-    expect(points[0]?.getAttribute("cy")).toBe("288");
+    const markers = screen.getAllByTestId("activity-source-marker");
+    expect(markers[0]?.style.left).toBe("50%");
+    expect(markers[0]?.style.top).toBe("50%");
     expect(screen.queryByTestId("activity-route-path")).toBeNull();
     expect(screen.getByText("Training Stress Score")).toBeDefined();
     const row = screen.getByRole("button", { name: /Open Boulder Canyon climbing/ });
@@ -915,8 +918,8 @@ describe("ActivitiesScreen", () => {
     );
     expect(row.getAttribute("aria-label")).not.toContain("Distance unavailable");
     if (pointCount === 2) {
-      expect(points[1]?.getAttribute("cx")).toBe("700");
-      expect(points[1]?.getAttribute("cy")).toBe("200");
+      expect(Number.parseFloat(markers[1]?.style.left ?? "")).toBeCloseTo(68.36, 2);
+      expect(Number.parseFloat(markers[1]?.style.top ?? "")).toBeCloseTo(34.72, 2);
       expect(row.getAttribute("aria-label")).toContain("Climb location: Second climb · OpenBeta");
     }
     fireEvent.click(row);
@@ -1072,7 +1075,7 @@ describe("ActivitiesScreen", () => {
     expect(screen.getAllByText("120 m")).toHaveLength(1);
   });
 
-  it("renders exported map preview tiles inside the thumbnail", () => {
+  it("aligns exported map tiles within the responsive preview", () => {
     mockQuery = {
       data: [
         {
@@ -1118,9 +1121,37 @@ describe("ActivitiesScreen", () => {
 
     const previewTile = screen.getByTestId("activity-map-preview-tile");
     expect(screen.getByTestId("activity-route-viewport")).toBeDefined();
-    expect(previewTile.getAttribute("style")).toContain("left: 0px");
-    expect(previewTile.getAttribute("style")).toContain("top: 21px");
-    expect(previewTile.getAttribute("style")).toContain("width: 24px");
-    expect(previewTile.getAttribute("style")).toContain("height: 24px");
+    expect(previewTile.style.left).toBe("0%");
+    expect(previewTile.style.top).toBe("0%");
+    expect(previewTile.style.width).toBe("25%");
+    expect(Number.parseFloat(previewTile.style.height)).toBeCloseTo(44.44, 2);
+  });
+
+  it("shows a full-width map processing state while server map geometry is pending", () => {
+    mockQuery.data = [
+      { date: "2026-03-18", activities: [activity({ location: { kind: "processing" } })] },
+    ];
+    render(<ActivitiesScreen />);
+    expect(screen.getByRole("progressbar", { name: "Processing map" }).textContent).toBe(
+      "Processing map…",
+    );
+    expect(
+      screen.getByRole("button", { name: /Open Trainer Ride/ }).getAttribute("aria-label"),
+    ).toContain("Processing map");
+  });
+
+  it("polls pending map geometry without polling settled or absent map states", () => {
+    render(<ActivitiesScreen />);
+    expect(
+      weekListOptions?.refetchInterval?.({
+        state: { data: [{ activities: [activity({ location: { kind: "processing" } })] }] },
+      }),
+    ).toEqual(expect.any(Number));
+    expect(
+      weekListOptions?.refetchInterval?.({
+        state: { data: [{ activities: [activity({ location: null })] }] },
+      }),
+    ).toBe(false);
+    expect(weekListOptions?.refetchInterval?.({ state: { data: undefined } })).toBe(false);
   });
 });

@@ -47,6 +47,26 @@ afterAll(() => {
 });
 
 describe("ClimbingLocationMap", () => {
+  it("shows processing until initial tiles load, including across an early data refresh", async () => {
+    const view = render(<ClimbingLocationMap data={climbingLocationMapFixture} />);
+    await screen.findByRole("button", { name: "3 climbs. Zoom in to explore." });
+    expect(screen.getByRole("status")).toHaveTextContent("Processing map…");
+    view.rerender(<ClimbingLocationMap data={{ ...climbingLocationMapFixture }} loading />);
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "3 climbs. Zoom in to explore." })).toBeVisible(),
+    );
+    expect(screen.getByRole("status")).toHaveTextContent("Processing map…");
+    for (const tile of view.container.querySelectorAll("img.leaflet-tile")) fireEvent.load(tile);
+    await waitFor(() => expect(screen.queryByRole("status")).toBeNull());
+    const pane = view.container.querySelector(".leaflet-map-pane");
+    view.rerender(<ClimbingLocationMap data={{ ...climbingLocationMapFixture }} loading />);
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "3 climbs. Zoom in to explore." })).toBeVisible(),
+    );
+    expect(view.container.querySelector(".leaflet-map-pane")).toBe(pane);
+    expect(screen.queryByRole("status")).toBeNull();
+  });
+
   it("expands a server-sized cluster into consistent dots without remounting the map", async () => {
     const { container } = render(<ClimbingLocationMap data={climbingLocationMapFixture} />);
     const cluster = await screen.findByRole("button", { name: "3 climbs. Zoom in to explore." });
@@ -148,7 +168,9 @@ describe("ClimbingLocationMap", () => {
         }}
       />,
     );
-    expect(await screen.findByRole("status")).toHaveTextContent("Map unavailable: Invalid LatLng");
+    await waitFor(() =>
+      expect(screen.getByRole("status")).toHaveTextContent("Map unavailable: Invalid LatLng"),
+    );
     expect(captureException).toHaveBeenCalledWith(expect.any(Error), {
       component: "ClimbingLocationMap",
     });
@@ -156,7 +178,7 @@ describe("ClimbingLocationMap", () => {
 
   it("shows explicit loading and empty states", () => {
     const view = render(<ClimbingLocationMap loading />);
-    expect(screen.getByRole("status")).toHaveTextContent("Loading climbing locations");
+    expect(screen.getByRole("status")).toHaveTextContent("Processing map…");
     view.rerender(<ClimbingLocationMap data={{ bounds: null, nodes: [] }} />);
     expect(screen.getByText("No climbing locations match these dates and filters.")).toBeVisible();
   });

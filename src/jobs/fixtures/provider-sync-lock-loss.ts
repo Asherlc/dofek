@@ -19,6 +19,7 @@ const input = z
   .object({
     connectionString: z.string(),
     userId: z.string(),
+    providerId: z.string().nullable(),
     csv: z.string(),
     evidencePath: z.string(),
   })
@@ -28,9 +29,11 @@ const realLogError = logger.error;
 logger.error = (...args: unknown[]) => {
   if (
     args[0] ===
-    "[provider-sync-lock] PostgreSQL session lost; stopping worker to prevent stale writes"
+    (input.providerId === null
+      ? "[account-erasure-work-lock] PostgreSQL session lost; stopping worker to prevent stale writes"
+      : "[provider-sync-lock] PostgreSQL session lost; stopping worker to prevent stale writes")
   ) {
-    writeFileSync(input.evidencePath, "provider_sync_session_lost\n");
+    writeFileSync(input.evidencePath, "queued_work_session_lost\n");
   }
   return Reflect.apply(realLogError, logger, args);
 };
@@ -104,7 +107,7 @@ try {
       );
       process.send?.("callback_finished");
     },
-    "mountain-project",
+    input.providerId ?? undefined,
   );
 } catch (error) {
   Sentry.captureException(error);

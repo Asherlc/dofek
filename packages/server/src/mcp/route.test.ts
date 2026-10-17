@@ -2123,6 +2123,7 @@ describe("createMcpRouter", () => {
         {
           ...makeActivitySearchItem(),
           location: {
+            kind: "recorded_gps",
             centroidLat: 37.8,
             centroidLng: -122.4,
             mapPreview: makeActivityMapPreview(),
@@ -2143,6 +2144,32 @@ describe("createMcpRouter", () => {
     });
   });
 
+  it.each([{ include: undefined }, { include: ["mapPreview"] }])(
+    "returns pending map status from activity search with include $include",
+    async ({ include }) => {
+      authorizeMcpToken();
+      toolTestMocks.activitySearch.mockResolvedValue({
+        items: [makeActivitySearchItem({ location: { kind: "processing" } })],
+        totalCount: 1,
+      });
+      const response = await request(createTestApp(), {
+        authorization: "Bearer good-token",
+        body: createToolCallRequest("search_activities", {
+          to: "2026-05-18",
+          ...(include ? { include } : {}),
+        }),
+      });
+      expect(parseToolCallText(response.text)).toMatchObject({
+        items: [{ location: { kind: "processing" } }],
+      });
+      const structuredContent = toolCallResponseSchema.parse(parseJsonRpcEvent(response.text))
+        .result.structuredContent;
+      expect(
+        searchActivitiesOutputSchema.parse(structuredContent).result.items[0]?.location,
+      ).toEqual({ kind: "processing" });
+    },
+  );
+
   it("returns a complete map preview when activity search requests it", async () => {
     authorizeMcpToken();
     toolTestMocks.activitySearch.mockResolvedValue({
@@ -2150,6 +2177,7 @@ describe("createMcpRouter", () => {
         {
           ...makeActivitySearchItem(),
           location: {
+            kind: "recorded_gps",
             centroidLat: 37.8,
             centroidLng: -122.4,
             mapPreview: makeActivityMapPreview(),
@@ -3805,112 +3833,123 @@ describe("createMcpRouter", () => {
     });
   });
 
-  it("returns an activity with its strength, climbing, and finger-loading details", async () => {
-    authorizeMcpToken();
-    const activityId = "00000000-0000-4000-8000-000000000001";
-    toolTestMocks.activityFindById.mockResolvedValue({
-      absent_source_external_ids: null,
-      avg_cadence: 60,
-      avg_hr: 140,
-      avg_power: 250,
-      avg_speed: 3,
-      canonical_type: "strength",
-      distance_meters: 1000,
-      elevation_gain_m: 100,
-      elevation_loss_m: 100,
-      ended_at: "2026-08-01T11:00:00.000Z",
-      end_utc_offset_minutes: 0,
-      id: activityId,
-      local_time_source: "provider_timezone",
-      location: {
-        centroidLat: 37.8,
-        centroidLng: -122.4,
-        mapPreview: makeActivityMapPreview(),
-      },
-      max_hr: 170,
-      max_power: 500,
-      max_speed: 5,
-      modality: null,
-      name: "Training",
-      notes: null,
-      perceived_exertion: null,
-      provider_absent_at: null,
-      provider_id: "apple_health",
-      raw_type: "strength",
-      sample_count: 10,
-      source_external_ids: [],
-      source_providers: ["apple_health"],
-      start_utc_offset_minutes: 0,
-      started_at: "2026-08-01T10:00:00.000Z",
-      subsource: null,
-      timezone: "UTC",
-      total_distance: 1000,
-    });
-    toolTestMocks.strengthExercises.mockResolvedValue([
-      {
-        toDetail: () => ({
-          equipment: null,
-          activityId: "10000000-0000-4000-8000-000000000001",
-          exerciseIndex: 0,
-          exerciseName: "Pull-up",
-          exerciseType: "strength",
-          muscleGroups: ["back"],
-          sets: [],
-        }),
-      },
-    ]);
-    toolTestMocks.climbingActivityLogEntries.mockResolvedValue([
-      { toDetail: () => climbingSessionDetail() },
-    ]);
-    toolTestMocks.fingerLoadingActivity.mockResolvedValue([
-      {
-        activityId,
-        bodyweightKg: 80,
-        edgeSizeMm: 20,
-        effectiveLoadKg: 95,
-        exercise: "max_hang",
-        externalLoadKg: 15,
-        gripPosition: "half_crimp",
-        holdDurationSeconds: 10,
-        laterality: "both",
+  it.each(["recorded_gps", "processing"] as const)(
+    "returns an activity with its strength, climbing, and finger-loading details while map is %s",
+    async (mapState) => {
+      authorizeMcpToken();
+      const activityId = "00000000-0000-4000-8000-000000000001";
+      toolTestMocks.activityFindById.mockResolvedValue({
+        absent_source_external_ids: null,
+        avg_cadence: 60,
+        avg_hr: 140,
+        avg_power: 250,
+        avg_speed: 3,
+        canonical_type: "strength",
+        distance_meters: 1000,
+        elevation_gain_m: 100,
+        elevation_loss_m: 100,
+        ended_at: "2026-08-01T11:00:00.000Z",
+        end_utc_offset_minutes: 0,
+        id: activityId,
+        local_time_source: "provider_timezone",
+        location:
+          mapState === "processing"
+            ? { kind: "processing" }
+            : {
+                kind: "recorded_gps",
+                centroidLat: 37.8,
+                centroidLng: -122.4,
+                mapPreview: makeActivityMapPreview(),
+              },
+        max_hr: 170,
+        max_power: 500,
+        max_speed: 5,
+        modality: null,
+        name: "Training",
         notes: null,
-        restIntervalSeconds: 180,
-        rpe: null,
-        setCount: 5,
-        startedAt: "2026-08-01T10:00:00.000Z",
-      },
-    ]);
+        perceived_exertion: null,
+        provider_absent_at: null,
+        provider_id: "apple_health",
+        raw_type: "strength",
+        sample_count: 10,
+        source_external_ids: [],
+        source_providers: ["apple_health"],
+        start_utc_offset_minutes: 0,
+        started_at: "2026-08-01T10:00:00.000Z",
+        subsource: null,
+        timezone: "UTC",
+        total_distance: 1000,
+      });
+      toolTestMocks.strengthExercises.mockResolvedValue([
+        {
+          toDetail: () => ({
+            equipment: null,
+            activityId: "10000000-0000-4000-8000-000000000001",
+            exerciseIndex: 0,
+            exerciseName: "Pull-up",
+            exerciseType: "strength",
+            muscleGroups: ["back"],
+            sets: [],
+          }),
+        },
+      ]);
+      toolTestMocks.climbingActivityLogEntries.mockResolvedValue([
+        { toDetail: () => climbingSessionDetail() },
+      ]);
+      toolTestMocks.fingerLoadingActivity.mockResolvedValue([
+        {
+          activityId,
+          bodyweightKg: 80,
+          edgeSizeMm: 20,
+          effectiveLoadKg: 95,
+          exercise: "max_hang",
+          externalLoadKg: 15,
+          gripPosition: "half_crimp",
+          holdDurationSeconds: 10,
+          laterality: "both",
+          notes: null,
+          restIntervalSeconds: 180,
+          rpe: null,
+          setCount: 5,
+          startedAt: "2026-08-01T10:00:00.000Z",
+        },
+      ]);
 
-    const response = await request(createTestApp(), {
-      authorization: "Bearer good-token",
-      body: createToolCallRequest("get_activity_details", { activity_id: activityId }),
-    });
-    const structuredContent = toolCallResponseSchema.parse(parseJsonRpcEvent(response.text)).result
-      .structuredContent;
+      const response = await request(createTestApp(), {
+        authorization: "Bearer good-token",
+        body: createToolCallRequest("get_activity_details", { activity_id: activityId }),
+      });
+      const structuredContent = toolCallResponseSchema.parse(parseJsonRpcEvent(response.text))
+        .result.structuredContent;
 
-    expect(parseToolCallText(response.text)).toMatchObject({
-      activity: { canonical_type: "strength", id: activityId, name: "Training" },
-      climbing_log_entries: [{ displayGrade: "5.10a", climb: { name: "Corner" } }],
-      finger_loading: [{ exercise: "max_hang", effectiveLoadKg: 95 }],
-      strength_exercises: [{ exerciseName: "Pull-up", muscleGroups: ["back"] }],
-    });
-    expect(activityDetailsOutputSchema.parse(structuredContent)).toMatchObject({
-      result: {
-        activity: {
-          distance_meters: 1000,
-          location: {
-            centroidLat: 37.8,
-            centroidLng: -122.4,
-            mapPreview: makeActivityMapPreview(),
+      expect(parseToolCallText(response.text)).toMatchObject({
+        activity: { canonical_type: "strength", id: activityId, name: "Training" },
+        climbing_log_entries: [{ displayGrade: "5.10a", climb: { name: "Corner" } }],
+        finger_loading: [{ exercise: "max_hang", effectiveLoadKg: 95 }],
+        strength_exercises: [{ exerciseName: "Pull-up", muscleGroups: ["back"] }],
+      });
+      expect(activityDetailsOutputSchema.parse(structuredContent)).toMatchObject({
+        result: {
+          activity: {
+            distance_meters: 1000,
+            location:
+              mapState === "processing"
+                ? { kind: "processing" }
+                : {
+                    kind: "recorded_gps",
+                    centroidLat: 37.8,
+                    centroidLng: -122.4,
+                    mapPreview: makeActivityMapPreview(),
+                  },
           },
         },
-      },
-    });
-    expect(activityDetailsOutputSchema.parse(structuredContent).result.activity).not.toHaveProperty(
-      "resolved_from",
-    );
-    expect(toolTestMocks.activityFindById).toHaveBeenCalledWith(activityId);
-  });
+      });
+      expect(
+        activityDetailsOutputSchema.parse(structuredContent).result.activity,
+      ).not.toHaveProperty("resolved_from");
+      expect(toolTestMocks.activityFindById).toHaveBeenCalledWith(activityId);
+    },
+  );
 
   it("hydrates a non-representative Strong member from the stable group", async () => {
     authorizeMcpToken();

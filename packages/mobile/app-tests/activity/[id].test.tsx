@@ -26,6 +26,8 @@ vi.mock("react-native", () => ({
     children,
     accessibilityLabel,
     accessibilityState,
+    accessibilityRole,
+    style,
     ...props
   }: Record<string, unknown> & { accessibilityState?: { selected?: boolean } }) =>
     React.createElement(
@@ -34,6 +36,8 @@ vi.mock("react-native", () => ({
         ...props,
         "aria-label": accessibilityLabel,
         "aria-selected": accessibilityState?.selected,
+        role: accessibilityRole,
+        "data-style": JSON.stringify(style),
       }),
       ...(children != null ? [children] : []),
     ),
@@ -71,12 +75,7 @@ vi.mock("react-native", () => ({
     ),
   Linking: { openURL: vi.fn() },
   StyleSheet: {
-    create: <T extends Record<string, unknown>>(styles: T): T => {
-      for (const key of Object.keys(styles)) {
-        styles[key] = {};
-      }
-      return styles;
-    },
+    create: <T extends Record<string, unknown>>(styles: T): T => styles,
     hairlineWidth: 1,
   },
 }));
@@ -590,12 +589,31 @@ describe("ActivityDetailScreen", () => {
 
     render(React.createElement(ActivityDetailScreen));
 
-    expect(screen.getByText("Processing route map…")).toBeTruthy();
+    expect(screen.getByRole("progressbar", { name: "Processing map" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Export Activity" }));
     expect(
       screen.getByRole("button", { name: "Export as GPS track (GPX)" }).hasAttribute("disabled"),
     ).toBe(true);
   });
+
+  it.each(["loading", "processing"] as const)(
+    "reserves map space while route geometry is %s without a renderable map",
+    async (state) => {
+      mockRouteQuery.mockReturnValue({
+        data: state === "processing" ? { status: "processing" } : undefined,
+        isLoading: state === "loading",
+        error: null,
+      });
+      const { default: ActivityDetailScreen } = await import("../../app/activity/[id]");
+      render(React.createElement(ActivityDetailScreen));
+
+      const status = screen.getByRole("progressbar", { name: "Processing map" });
+      expect(status.textContent).toBe("Processing map…");
+      expect(JSON.parse(status.parentElement?.getAttribute("data-style") ?? "null")).toMatchObject({
+        height: 280,
+      });
+    },
+  );
 
   it("draws the ready route endpoint instead of the cached sensor endpoint", async () => {
     mockStreamQuery.mockReturnValue({
@@ -717,6 +735,14 @@ describe("ActivityDetailScreen", () => {
     expect(selectedOverviewProps?.points).toBe(overviewProps?.points);
     if (state.startsWith("cached")) {
       expect(screen.getByText("Route ends at 7")).toBeTruthy();
+    }
+    if (state.endsWith("loading") || state === "processing") {
+      expect(
+        screen.getByText(
+          state.endsWith("loading") ? "Loading route map…" : "Processing route map…",
+        ),
+      ).toBeTruthy();
+      expect(screen.queryByRole("progressbar", { name: "Processing map" })).toBeNull();
     }
     if (state.endsWith("error")) {
       expect(screen.getByText("Recorded route refresh failed")).toBeTruthy();

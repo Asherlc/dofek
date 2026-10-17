@@ -1,6 +1,6 @@
 import type { ClimbingMapMarker } from "@dofek/training/climbing-map";
 import { fireEvent, render, screen } from "@testing-library/react";
-import { createElement, type ReactNode, useState } from "react";
+import { createElement, type ReactNode, useEffect, useRef, useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { RouteMap } from "./RouteMap";
 
@@ -13,6 +13,8 @@ vi.mock("react-native-maps", () => ({
     scrollEnabled,
     zoomEnabled,
     pointerEvents,
+    onMapReady,
+    loadingEnabled,
   }: {
     children: ReactNode;
     initialRegion?: unknown;
@@ -21,8 +23,17 @@ vi.mock("react-native-maps", () => ({
     scrollEnabled?: boolean;
     zoomEnabled?: boolean;
     pointerEvents?: string;
+    onMapReady?: () => void;
+    loadingEnabled?: boolean;
   }) => {
     const [mountedRegion] = useState(initialRegion);
+    const mapRef = useRef<HTMLDivElement>(null);
+    useEffect(() => {
+      const map = mapRef.current;
+      if (!map || !onMapReady) return;
+      map.addEventListener("mapready", onMapReady);
+      return () => map.removeEventListener("mapready", onMapReady);
+    }, [onMapReady]);
     return createElement(
       "div",
       {
@@ -31,7 +42,9 @@ vi.mock("react-native-maps", () => ({
         "data-scroll": String(scrollEnabled),
         "data-zoom": String(zoomEnabled),
         "data-pointer-events": pointerEvents,
+        "data-native-loading-enabled": String(loadingEnabled),
         style,
+        ref: mapRef,
       },
       children,
     );
@@ -178,6 +191,32 @@ describe("RouteMap", () => {
     // In jsdom the native layout event never fires, so MapView stays unmounted.
     expect(container.querySelector("MapView")).toBeNull();
   });
+
+  it.each([false, true])(
+    "shows map processing through layout and native readiness (compact: %s)",
+    (compact) => {
+      const view = render(<RouteMap points={gpsPoints} compact={compact} />);
+      const processing = screen.getByRole("progressbar", { name: "Processing map" });
+      expect(processing.textContent).toBe("Processing map…");
+      const wrapper = view.container.querySelectorAll("view").item(1);
+      expect(wrapper?.getAttribute("style")).toContain(`height: ${compact ? 140 : 280}px`);
+
+      measure(view.container, 0);
+      expect(screen.queryByTestId("map")).toBeNull();
+      measure(view.container);
+      expect(screen.getByRole("progressbar", { name: "Processing map" })).toBeTruthy();
+      const mountedMap = screen.getByTestId("map");
+      fireEvent(mountedMap, new Event("mapready"));
+      expect(screen.queryByRole("progressbar", { name: "Processing map" })).toBeNull();
+      expect(mountedMap.getAttribute("data-native-loading-enabled")).toBe("true");
+
+      view.rerender(
+        <RouteMap points={[...gpsPoints, { lat: 40.752, lng: -73.981 }]} compact={compact} />,
+      );
+      expect(screen.getByTestId("map")).toBe(mountedMap);
+      expect(screen.queryByRole("progressbar", { name: "Processing map" })).toBeNull();
+    },
+  );
 
   it("renders nothing when given an empty array", () => {
     const { container } = render(<RouteMap points={[]} />);

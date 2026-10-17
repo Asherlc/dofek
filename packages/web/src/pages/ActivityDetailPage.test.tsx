@@ -26,7 +26,11 @@ const leafletMocks = vi.hoisted(() => ({
     fitBounds: vi.fn(),
     container,
   })),
-  tileLayer: vi.fn(() => ({ addTo: vi.fn(), on: vi.fn() })),
+  tileLayer: vi.fn(() => ({
+    addTo: vi.fn(),
+    on: vi.fn(),
+    once: vi.fn((_event: string, onLoad: () => void) => onLoad()),
+  })),
   latLng: vi.fn((lat: number, lng: number) => ({ lat, lng })),
   latLngBounds: vi.fn(() => ({})),
   polyline: vi.fn(() => ({ addTo: vi.fn() })),
@@ -908,6 +912,8 @@ describe("ActivityDetailPage", () => {
     renderWithUnits(<ActivityDetailPage />);
 
     expect(screen.getByText("Processing route map…")).toBeDefined();
+    expect(screen.getByRole("status").parentElement).toHaveClass("h-[400px]");
+    expect(screen.getByRole("status").querySelector(".animate-spin")).not.toBeNull();
     expect(leafletMocks.tileLayer).not.toHaveBeenCalled();
     const routeOptions = mockRouteUseQuery.mock.calls[0]?.[1];
     if (
