@@ -28,7 +28,7 @@ it("keeps repeated suggested logs with independent attachment states and maps", 
   const first = cards[0];
   const repeat = cards[1];
   if (!first || !repeat) throw new Error("Expected repeated log cards");
-  expect(repeat.getAttribute("aria-selected")).toBe("true");
+  expect(repeat.querySelector('[data-accessible="true"][aria-selected="true"]')).toBeTruthy();
   const firstControl = screen.getByRole("button", {
     name: "Attach entry 1, Swiss Cheese to this activity",
   });

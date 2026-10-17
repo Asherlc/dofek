@@ -188,7 +188,7 @@ describe("ClimbingLogEntryBreakdown", () => {
       "Climbing entry: Swiss Cheese",
       "Climbing entry: Indoor",
     ]);
-    expect(cards[1]?.getAttribute("aria-selected")).toBe("true");
+    expect(cards[1]?.querySelector('[data-accessible="true"][aria-selected="true"]')).toBeTruthy();
   });
   it("preserves source order and repeated ticks at one point", () => {
     render(

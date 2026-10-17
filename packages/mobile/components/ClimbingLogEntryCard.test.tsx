@@ -5,6 +5,32 @@ import { ClimbingLogEntryCard } from "./ClimbingLogEntryCard";
 import { climbingLogFixture, exactClimbingLocation } from "./climbing-log-entry-fixtures";
 
 describe("ClimbingLogEntryCard", () => {
+  it("announces selection on the climb link while retaining the source and Attach actions", () => {
+    const onAttach = vi.fn();
+    const { rerender } = render(
+      <ClimbingLogEntryCard entry={climbingLogFixture} selected onAttach={onAttach} />,
+    );
+    const climb = screen.getByRole("link", { name: "Swiss Cheese on Mountain Project" });
+    expect(climb.getAttribute("data-accessible")).toBe("true");
+    expect(climb.getAttribute("aria-selected")).toBe("true");
+    climb.focus();
+    expect(document.activeElement).toBe(climb);
+    const source = screen.getByRole("link", { name: "Mountain Project ticks" });
+    source.focus();
+    expect(document.activeElement).toBe(source);
+    fireEvent.click(screen.getByRole("button", { name: "Attach Swiss Cheese to this activity" }));
+    expect(onAttach).toHaveBeenCalledWith(climbingLogFixture.id);
+    rerender(<ClimbingLogEntryCard entry={climbingLogFixture} selected={false} />);
+    expect(climb.getAttribute("aria-selected")).toBe("false");
+  });
+
+  it("announces selection on an accessible climb name without source links", () => {
+    render(<ClimbingLogEntryCard entry={{ ...climbingLogFixture, sourceLinks: [] }} selected />);
+    const climb = screen.getByText("Swiss Cheese");
+    expect(climb.getAttribute("data-accessible")).toBe("true");
+    expect(climb.getAttribute("aria-selected")).toBe("true");
+  });
+
   it("shows the recorded top-rope method when the source omits a completion result", () => {
     if (!climbingLogFixture.climb) throw new Error("Expected a named climb fixture");
     render(

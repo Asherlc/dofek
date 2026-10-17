@@ -37,7 +37,6 @@ export function ClimbingLogEntryCard({
     <View
       style={[styles.card, selected && styles.selectedCard]}
       accessibilityLabel={`Climbing entry: ${name}`}
-      accessibilityState={{ selected }}
     >
       <View style={styles.header}>
         <View style={styles.identity}>
@@ -45,6 +44,7 @@ export function ClimbingLogEntryCard({
             name={name}
             sourceName={entry.sourceName}
             links={entry.sourceLinks}
+            selected={selected}
           />
           <ClimbingLogEntryContext entry={entry} />
         </View>

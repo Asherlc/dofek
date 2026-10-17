@@ -8,14 +8,17 @@ export function ClimbingLogEntrySources({
   name,
   sourceName,
   links,
+  selected,
 }: {
   name: string;
   sourceName: string | null;
   links: ClimbingSourceLink[];
+  selected?: boolean;
 }) {
   const primaryRoute = links.find((link) => link.kind === "route");
   const additionalLinks = links.filter((link) => link !== primaryRoute);
   const hasSingleProvider = new Set(links.map((link) => link.providerId)).size === 1;
+  const selectionState = selected === undefined ? undefined : { selected };
   async function openSource(url: string) {
     if (!(await openExternalUrl(url, "climbing-entry-source"))) {
       Alert.alert("Unable to open source", `Open this source in your browser: ${url}`);
@@ -25,7 +28,9 @@ export function ClimbingLogEntrySources({
     <View style={styles.container}>
       {primaryRoute ? (
         <Pressable
+          accessible
           accessibilityRole="link"
+          accessibilityState={selectionState}
           accessibilityLabel={`${name} on ${providerSourceLabel(primaryRoute.providerId)}`}
           onPress={() => {
             void openSource(primaryRoute.url);
@@ -34,7 +39,9 @@ export function ClimbingLogEntrySources({
           <Text style={[styles.name, styles.link]}>{name}</Text>
         </Pressable>
       ) : (
-        <Text style={styles.name}>{name}</Text>
+        <Text accessible accessibilityState={selectionState} style={styles.name}>
+          {name}
+        </Text>
       )}
       {sourceName && <Text style={styles.source}>{sourceName}</Text>}
       {additionalLinks.length > 0 && (
@@ -53,7 +60,7 @@ export function ClimbingLogEntrySources({
               }}
             >
               <Text style={[styles.source, styles.link]}>
-                {sourceName && hasSingleProvider
+                {sourceName === providerSourceLabel(link.providerId) && hasSingleProvider
                   ? link.kind === "route"
                     ? "Route"
                     : "Ticks"

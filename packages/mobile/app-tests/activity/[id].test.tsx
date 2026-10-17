@@ -25,33 +25,46 @@ vi.mock("react-native", () => ({
   View: ({
     children,
     accessibilityLabel,
-    accessibilityState,
     accessibilityRole,
     style,
     ...props
-  }: Record<string, unknown> & { accessibilityState?: { selected?: boolean } }) =>
+  }: Record<string, unknown>) =>
     React.createElement(
       "div",
       stripStyle({
         ...props,
         "aria-label": accessibilityLabel,
-        "aria-selected": accessibilityState?.selected,
         role: accessibilityRole,
         "data-style": JSON.stringify(style),
       }),
       ...(children != null ? [children] : []),
     ),
-  Text: ({ children, ...props }: Record<string, unknown>) =>
-    React.createElement("span", stripStyle(props), ...(children != null ? [children] : [])),
+  Text: ({
+    children,
+    accessible,
+    accessibilityState,
+    ...props
+  }: Record<string, unknown> & { accessibilityState?: { selected?: boolean } }) =>
+    React.createElement(
+      "span",
+      stripStyle({
+        ...props,
+        "data-accessible": accessible,
+        "aria-selected": accessibilityState?.selected,
+      }),
+      ...(children != null ? [children] : []),
+    ),
   ScrollView: ({ children, ...props }: Record<string, unknown>) =>
     React.createElement("div", stripStyle(props), ...(children != null ? [children] : [])),
   Pressable: ({
     accessibilityLabel,
     accessibilityRole,
+    accessibilityState,
+    accessible,
     children,
     onPress,
     ...props
-  }: Record<string, unknown>) =>
+  }: Record<string, unknown> & { accessibilityState?: { selected?: boolean } }) =>
     React.createElement(
       "button",
       {
@@ -60,6 +73,8 @@ vi.mock("react-native", () => ({
         onClick: onPress,
         "aria-label": accessibilityLabel,
         role: accessibilityRole,
+        "data-accessible": accessible,
+        "aria-selected": accessibilityState?.selected,
       },
       ...(children != null ? [children] : []),
     ),
@@ -726,7 +741,10 @@ describe("ActivityDetailScreen", () => {
     expect(screen.getByRole("button", { name: "Close record detail" })).toBeTruthy();
     expect(screen.getByText("Record Detail")).toBeTruthy();
     expect(
-      screen.getByLabelText("Climbing entry: Located climb").getAttribute("aria-selected"),
+      within(screen.getByLabelText("Climbing entry: Located climb"))
+        .getByText("Located climb")
+        .closest('[data-accessible="true"]')
+        ?.getAttribute("aria-selected"),
     ).toBe("true");
     const selectedOverviewProps = vi
       .mocked(RouteMap)

@@ -46,7 +46,7 @@ export function ClimbingLogEntrySources({
                     : `${providerSourceLabel(link.providerId)} ticks`
                 }
               >
-                {sourceName && hasSingleProvider
+                {sourceName === providerSourceLabel(link.providerId) && hasSingleProvider
                   ? link.kind === "route"
                     ? "Route"
                     : "Ticks"

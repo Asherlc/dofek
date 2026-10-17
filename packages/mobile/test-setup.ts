@@ -124,7 +124,7 @@ vi.mock("react-native", () => {
       accessibilityLabel,
       accessibilityRole,
       accessibilityState,
-      accessible: _accessible,
+      accessible,
       automaticallyAdjustKeyboardInsets,
       children,
       onLayout,
@@ -150,6 +150,7 @@ vi.mock("react-native", () => {
           ref: elementRef,
           "aria-description": accessibilityHint,
           "aria-label": accessibilityLabel,
+          "data-accessible": accessible,
           "data-automatically-adjust-keyboard-insets": automaticallyAdjustKeyboardInsets,
           "data-testid": testID,
           role: accessibilityRole,
@@ -174,6 +175,7 @@ vi.mock("react-native", () => {
     accessibilityRole,
     accessibilityLabel,
     accessibilityHint,
+    accessible,
     style,
     ...props
   }: Record<string, unknown>) => {
@@ -208,6 +210,7 @@ vi.mock("react-native", () => {
         role: accessibilityRole ?? "presentation",
         "aria-label": accessibilityLabel,
         "aria-description": accessibilityHint,
+        "data-accessible": accessible,
         style: flattenStyle(style),
         type: "button",
       },
