@@ -1645,60 +1645,6 @@ describe("ActivityDetailPage", () => {
       // Restore
       Object.assign(mockActivity, originalData);
     });
-
-    it("shows how sources were combined when the server returns a source decision", async () => {
-      const originalData = { ...mockActivity };
-      Object.assign(mockActivity, {
-        providerId: "wahoo",
-        subsource: null,
-        sourceProviders: ["wahoo", "strava"],
-        sourceLinks: [
-          {
-            providerId: "strava",
-            externalId: "99999",
-            subsource: null,
-            label: "Strava",
-            url: "https://www.strava.com/activities/99999",
-            providerAbsentAt: null,
-          },
-          {
-            providerId: "wahoo",
-            externalId: "42",
-            subsource: null,
-            label: "Wahoo",
-            url: "https://systm.wahoofitness.com/history/activity-details/42",
-            providerAbsentAt: null,
-          },
-        ],
-        sourceDecision: {
-          sourceCount: 2,
-          primarySourceLabel: "Wahoo",
-          explanation:
-            "Wahoo was selected as the primary record by source priority. Missing details may come from the other matched sources.",
-        },
-      });
-
-      const ActivityDetailPage = await importPage();
-      renderWithUnits(<ActivityDetailPage />);
-
-      const sourceContainer = screen.getByText("Source:").parentElement;
-      if (!sourceContainer) throw new Error("Expected the source list container");
-      const toggle = within(sourceContainer).getByRole("button", {
-        name: "How sources were combined",
-      });
-      expect(toggle.getAttribute("aria-expanded")).toBe("false");
-      fireEvent.click(toggle);
-      expect(screen.getByText("2")).toBeTruthy();
-
-      Object.assign(mockActivity, originalData);
-    });
-
-    it("hides the source decision card when sourceDecision is null", async () => {
-      const ActivityDetailPage = await importPage();
-      renderWithUnits(<ActivityDetailPage />);
-
-      expect(screen.queryByRole("button", { name: "How sources were combined" })).toBeNull();
-    });
   });
 
   describe("ElevationChart unit consistency", () => {

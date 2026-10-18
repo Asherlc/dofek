@@ -154,37 +154,6 @@ export const styles = StyleSheet.create({
     color: colors.textSecondary,
     lineHeight: 16,
   },
-  sourceDecisionCard: {
-    marginTop: 2,
-    gap: 8,
-  },
-  sourceDecisionToggle: {
-    paddingVertical: 8,
-    alignSelf: "flex-start",
-  },
-  sourceDecisionTitle: {
-    fontSize: 12,
-    color: colors.textTertiary,
-  },
-  sourceDecisionDetails: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 12,
-  },
-  sourceDecisionDetail: {
-    minWidth: 90,
-    gap: 2,
-  },
-  sourceDecisionLabel: {
-    fontSize: 10,
-    fontWeight: "700",
-    color: colors.textTertiary,
-    textTransform: "uppercase",
-  },
-  sourceDecisionValue: {
-    fontSize: 12,
-    color: colors.text,
-  },
   recomputeButton: {
     backgroundColor: colors.surface,
     borderRadius: 12,

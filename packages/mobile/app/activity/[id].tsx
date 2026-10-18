@@ -44,7 +44,6 @@ import {
   chartStyles,
   LineChart,
 } from "../../components/activity/ActivityDetailCharts";
-import { ActivitySourceDecisionCard } from "../../components/activity/ActivitySourceDecisionCard";
 import { ProviderAbsentBanner } from "../../components/activity/ProviderAbsentBanner";
 import { styles } from "../../components/activity/styles";
 import { HrZonesChart, PowerZonesChart } from "../../components/activity/ZoneDistributionCharts";
@@ -778,14 +777,9 @@ export default function ActivityDetailScreen() {
           {localStartTime === "--" ? "Local time unavailable" : localStartTime}
         </Text>
         {(activity.sourceLinks.length > 0 || activity.sourceProviders.length > 0) && (
-          <View>
-            <View style={styles.sourceRow}>
-              <Text style={styles.source}>Source: </Text>
-              <ActivitySourceLinks activity={activity} />
-            </View>
-            {activity.sourceDecision ? (
-              <ActivitySourceDecisionCard key={activity.id} decision={activity.sourceDecision} />
-            ) : null}
+          <View style={styles.sourceRow}>
+            <Text style={styles.source}>Source: </Text>
+            <ActivitySourceLinks activity={activity} />
           </View>
         )}
         {activity.providerAbsentAt && <ProviderAbsentBanner activity={activity} />}
