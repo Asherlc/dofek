@@ -15,7 +15,6 @@ import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { processingPollInterval } from "@dofek/providers/processing-status";
 import { providerSourceLabel } from "@dofek/providers/providers";
 import { getActivityIconInfo } from "@dofek/training/activity-icons";
-import { isClimbingLogActivity } from "@dofek/training/climbing-log";
 import { buildClimbingMapLocations, buildClimbingMapMarkers } from "@dofek/training/climbing-map";
 import type { MuscleGroupInput } from "@dofek/training/muscle-groups";
 import {
@@ -500,7 +499,8 @@ export default function ActivityDetailScreen() {
     { id: id ?? "" },
     { enabled: !!id && isStrengthActivity },
   );
-  const isClimbingActivity = detail.data != null && isClimbingLogActivity(detail.data.activityType);
+  const isClimbingActivity =
+    detail.data != null && isActivityDetailType(detail.data.activityType, "climbing");
   const climbingEntries = trpc.climbing.activityLogEntries.useQuery(
     { activityId: id ?? "" },
     { enabled: !!id && isClimbingActivity },
@@ -840,7 +840,7 @@ export default function ActivityDetailScreen() {
         <ExerciseBreakdown exercises={strengthExercises.data ?? []} units={units} />
       )}
 
-      {(isClimbingActivity || (climbingEntries.data?.length ?? 0) > 0) && (
+      {isClimbingActivity && (
         <View style={climbingStyles.container}>
           <Text style={chartStyles.title}>Climbs</Text>
           {isClimbingActivity && climbingEntries.error && (

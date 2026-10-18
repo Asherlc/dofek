@@ -52,7 +52,7 @@ Existing previews remain visible during background refreshes, and map failures
 retain their error state.
 
 Activity details show climbing logs and same-day attachment suggestions for
-climbing and hiking activities. Cards group under Area headings and show published
+climbing activities. Cards group under Area headings and show published
 display grades, concise attempt counts, pitch labels, and server-derived rock labels
 through the [shared grouping helper](../training/src/climbing-log-groups.ts) and
 [card](components/ClimbingLogEntryCard.tsx). Provider records

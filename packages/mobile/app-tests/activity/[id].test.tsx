@@ -559,9 +559,39 @@ beforeEach(() => {
 });
 
 describe("ActivityDetailScreen", () => {
-  it("loads hiking logs and keeps cached records visible when both refreshes fail", async () => {
+  it.each(["hiking", "running", "cycling", "strength", "hangboard"])(
+    "hides climbs for %s activities even when climbing queries have cached data",
+    async (activityType) => {
+      mockByIdQuery.mockReturnValue({
+        data: { ...baseCyclingActivity, activityType },
+        isLoading: false,
+        error: null,
+      });
+      mockClimbingEntriesQuery.mockReturnValue({
+        data: [attachedClimbingEntry],
+        isLoading: false,
+        error: null,
+      });
+      mockEntrySuggestionsQuery.mockReturnValue({
+        data: [climbingLogEntryFixture({ id: "suggested-log", title: "Suggested climb" })],
+        isLoading: false,
+        error: null,
+      });
+      const { default: ActivityDetailScreen } = await import("../../app/activity/[id]");
+
+      render(React.createElement(ActivityDetailScreen));
+
+      expect(screen.queryByText("Climbs")).toBeNull();
+      expect(screen.queryByText("Attached Boulder")).toBeNull();
+      expect(screen.queryByText("Suggested climb")).toBeNull();
+      expect(getQueryEnabledFlag(mockClimbingEntriesQuery.mock.calls[0]?.[1])).toBe(false);
+      expect(getQueryEnabledFlag(mockEntrySuggestionsQuery.mock.calls[0]?.[1])).toBe(false);
+    },
+  );
+
+  it("loads climbing logs and keeps cached records visible when both refreshes fail", async () => {
     mockByIdQuery.mockReturnValue({
-      data: { ...baseCyclingActivity, activityType: "hiking" },
+      data: { ...baseCyclingActivity, activityType: "climbing" },
       isLoading: false,
       error: null,
     });

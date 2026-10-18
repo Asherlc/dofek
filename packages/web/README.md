@@ -43,7 +43,7 @@ when the authenticated user changes.
 ## Development
 
 Activity details show attached climbing logs and same-day attachment suggestions
-for climbing and hiking activities. Cards group under Area headings and show the
+for climbing activities. Cards group under Area headings and show the
 published display grade, concise attempt counts, pitch labels, and server-derived
 rock labels through the [shared grouping helper](../training/src/climbing-log-groups.ts)
 and [card](src/pages/activity-detail/components/ClimbingLogEntryCard.tsx).
