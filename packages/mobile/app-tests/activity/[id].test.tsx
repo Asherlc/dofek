@@ -2039,63 +2039,6 @@ describe("ActivityDetailScreen", () => {
     expect(screen.getByText(/WHOOP \(Cloud\)/)).toBeTruthy();
   });
 
-  it("shows how sources were combined when the server returns a source decision", async () => {
-    mockByIdQuery.mockReturnValue({
-      data: {
-        ...baseCyclingActivity,
-        providerId: "wahoo",
-        sourceProviders: ["wahoo", "strava"],
-        sourceLinks: [
-          {
-            providerId: "strava",
-            externalId: "99999",
-            subsource: null,
-            label: "Strava",
-            url: "https://www.strava.com/activities/99999",
-            providerAbsentAt: null,
-          },
-          {
-            providerId: "wahoo",
-            externalId: "42",
-            subsource: null,
-            label: "Wahoo",
-            url: "https://example.com/wahoo/42",
-            providerAbsentAt: null,
-          },
-        ],
-        sourceDecision: {
-          sourceCount: 2,
-          primarySourceLabel: "Wahoo",
-          explanation:
-            "Wahoo was selected as the primary record by source priority. Missing details may come from the other matched sources.",
-        },
-      },
-      isLoading: false,
-      error: null,
-    });
-
-    const { default: ActivityDetailScreen } = await import("../../app/activity/[id]");
-    render(React.createElement(ActivityDetailScreen));
-
-    expect(screen.getByRole("button", { name: "How sources were combined" })).toBeTruthy();
-    expect(screen.queryByText("2")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "How sources were combined" }));
-    expect(screen.getByText("2")).toBeTruthy();
-  });
-
-  it("hides the source decision card when sourceDecision is null", async () => {
-    mockByIdQuery.mockReturnValue({
-      data: baseCyclingActivity,
-      isLoading: false,
-      error: null,
-    });
-
-    const { default: ActivityDetailScreen } = await import("../../app/activity/[id]");
-    render(React.createElement(ActivityDetailScreen));
-
-    expect(screen.queryByText("How sources were combined")).toBeNull();
-  });
-
   it("shows removed provider status for provider-absent activities", async () => {
     mockByIdQuery.mockReturnValue({
       data: {

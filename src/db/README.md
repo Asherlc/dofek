@@ -37,6 +37,20 @@ This directory contains the Drizzle ORM schema, migrations, and database connect
 - **Nutrient Columns**: Shared nutrient columns are generated via `nutrient-columns.ts`.
 - **Integration Test Databases**: `pnpm test:integration` starts the workspace Compose stack and provides `TEST_DATABASE_URL`. The test helper creates one migrated PostgreSQL template per Vitest process and clones isolated databases from it; PostgreSQL documents this behavior in [`CREATE DATABASE ... TEMPLATE`](https://www.postgresql.org/docs/current/sql-createdatabase.html).
 
+## Activity Source Priority
+
+The [Zepp priority migration](../../drizzle/0149_zepp_activity_priority.sql)
+assigns generic activity priority `1` to native `amazfit-zepp` records and Apple
+Health records whose `source_name` is exactly `Zepp`. It preserves the native
+provider's existing non-activity category priority fallbacks. The
+[activity source model](../../analytics/models/read_models/activity_source_records.sql)
+resolves matching source priorities before provider defaults.
+
+Priority remains below sensor richness and activity-type specificity in the
+[primary-record ordering](../../analytics/models/read_models/deduped_activities.sql),
+so denser recordings remain primary. Explicit field priorities still take
+precedence when selecting names and notes in that model.
+
 ## Migrations
 
 - Postgres migrations live in `drizzle/`, must be registered in

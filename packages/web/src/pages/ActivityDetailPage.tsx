@@ -39,7 +39,6 @@ import type { StreamPoint, StrengthExerciseDetail } from "../../../server/src/ro
 import { ActivityExportDropdown } from "../components/ActivityExportDropdown.tsx";
 import { ActivityPerceivedExertion } from "../components/ActivityPerceivedExertion.tsx";
 import { ActivityRouteMap } from "../components/ActivityRouteMap.tsx";
-import { ActivitySourceDecisionCard } from "../components/ActivitySourceDecisionCard.tsx";
 import { DofekChart } from "../components/DofekChart.tsx";
 import { HangboardingDetail } from "../components/HangboardingDetail.tsx";
 import { HrZonesChart, PowerZonesChart } from "../components/HeartRateZonesChart.tsx";
@@ -559,9 +558,6 @@ export function ActivityHeader({
           <p className="text-xs text-subtle">
             Source: <SourceLinks activity={activity} />
           </p>
-          {activity.sourceDecision ? (
-            <ActivitySourceDecisionCard key={activity.id} decision={activity.sourceDecision} />
-          ) : null}
         </div>
       )}
 
