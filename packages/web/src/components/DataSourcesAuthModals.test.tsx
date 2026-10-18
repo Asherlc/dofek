@@ -64,16 +64,21 @@ describe("data source auth dialogs", () => {
     expect(screen.getByLabelText("Public profile URL")).toHaveAttribute("type", "text");
   });
 
-  it("trims credential usernames before submitting them", async () => {
+  it.each([
+    { id: "polar", name: "Polar" },
+    { id: "alltrails", name: "AllTrails" },
+  ])("submits $name credentials with a trimmed email and protected password", async (provider) => {
+    const onSuccess = vi.fn();
     render(
       <CredentialAuthModal
-        providerId="polar"
-        providerName="Polar"
+        providerId={provider.id}
+        providerName={provider.name}
         onClose={vi.fn()}
-        onSuccess={vi.fn()}
+        onSuccess={onSuccess}
       />,
     );
 
+    expect(screen.getByLabelText("Password")).toHaveAttribute("type", "password");
     fireEvent.change(screen.getByLabelText("Email"), {
       target: { value: "  athlete@example.com  " },
     });
@@ -84,10 +89,11 @@ describe("data source auth dialogs", () => {
 
     await waitFor(() => {
       expect(mockCredentialSignIn).toHaveBeenCalledWith({
-        providerId: "polar",
+        providerId: provider.id,
         username: "athlete@example.com",
         password: "secret",
       });
+      expect(onSuccess).toHaveBeenCalledOnce();
     });
   });
 

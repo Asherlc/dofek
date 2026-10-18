@@ -171,11 +171,22 @@ private-history coverage. [Source: shared web source map][web-recordings].
 GET /api/alltrails/maps/{recordingId}?detail=deep&combine_segments=false
 ```
 
-These are paths observed on the website. Native `ApiHostManager` uses
-`https://api-v5.alltrails.com/api/alltrails/` as its API base, but using the web
-recording operations on that host with identity tokens still needs validation;
-the cross-client combination has not been exercised. [Sources: shared web
-source map][web-recordings], [native APK][native-apk].
+Native `ApiHostManager` uses
+`https://api-v5.alltrails.com/api/alltrails/` as its API base, and
+`IAllTrailsService` independently declares `GET users/{id}/maps` with
+`presentation_type`, `detail`, `limit`, and `after` queries plus
+`GET maps/{mapSlug}` with deep detail. `MapCollectionResponse` contains `maps`
+and nullable `pageInfo`. Native deep maps use lowercase `id`; the web's
+Algolia-shaped inventory uses uppercase `ID`. The Dofek provider requests deep
+inventory, includes the self-account private flag on every page, and requires
+explicit pagination completion. Server acceptance still needs live validation.
+[Sources: shared web source map][web-recordings], [native APK][native-apk].
+
+Native `AlltrailsMap` contains `activity: {uid, name}`, `metadata`, and `tracks`.
+`Track.lineTimedSegments` contains segment `id`, `sequence_num`, and `polyline`.
+`Metadata.created` and `Metadata.updated` are strings; `Metadata.timezone` can
+be null. The metadata fields do not establish recording-start time.
+[Source: native APK][native-apk].
 
 ## Raw Route Decoding
 
@@ -223,10 +234,24 @@ It is useful for geometry checks and cannot validate recorded activity time.
 
 ## Integration Assessment
 
-The source evidence supports an API-client/parser prototype covering login,
-refresh, inventory, and raw recording detail. It does not support describing
-that prototype as a functioning production provider. Before claiming current
-operation, validate:
+The [Dofek provider](../src/providers/alltrails.ts) implements the native
+credential flow, persisted refresh-token handling, cursor history, and raw
+six-axis recording ingestion. Both worker and server register it; the shared
+web/mobile credential form connects each user's account. The implementation
+uses `ALLTRAILS_API_KEY` and `ALLTRAILS_CLIENT_ID` as application configuration
+from Infisical, separate from the user's encrypted tokens and account ID.
+See the [provider guide](../src/providers/README.md#alltrails) and
+[credential storage contract](credential-encryption.md).
+
+Account deletion requires disconnecting AllTrails first. Dofek has no verified
+AllTrails remote-session revocation policy, so the
+[deletion prerequisite](../src/account-erasure/remote-snapshot.ts) rejects the
+request before activation instead of leaving account erasure unable to finish.
+
+The [database integration suite](../src/providers/alltrails-sync.integration.test.ts)
+uses synthetic source-shaped responses through MSW, a real Postgres database,
+and a capturing metric publisher. Local tests cannot establish current
+AllTrails server acceptance. Before claiming current operation, validate:
 
 1. Native identity login and one refresh, including receipt-relative expiry
    and persistence of the returned refresh token.
@@ -236,8 +261,8 @@ operation, validate:
    decoded raw times match the known recording start/end.
 4. The service's current challenge behavior and actionable reconnect errors.
 
-These are unperformed checks, not authorization to log in or handle account
-credentials during this source-only investigation.
+These live-service checks remain unperformed. No account login is part of the
+local test suite.
 
 An AllTrails-issued delegated authorization-code client would be preferable
 to collecting account passwords: OAuth's current security BCP disallows the
@@ -245,14 +270,14 @@ resource-owner password grant. No current third-party registration contract
 was identified here; the alpha-targeted native PKCE code does not supply one.
 [Sources: RFC 9700 section 2.4][oauth-bcp], [native APK][native-apk].
 
-If a credential-provider implementation is chosen after this research,
-Dofek's existing [provider auth interface](adding-a-provider.md) and
+Dofek's [provider auth interface](adding-a-provider.md) and
 [encrypted credential storage](credential-encryption.md) provide the account
-boundary. App configuration and per-user tokens must remain separate. Scope
-ingestion to raw recording facts and sensor points under the
+boundary. Ingestion uses raw recording facts and sensor points under the
 [canonical data rules](schema.md); provider summaries and estimated calorie
-expenditure are not substitutes for raw data. No provider, environment
-variables, credentials, or runtime behavior were added by this audit.
+expenditure are retained only within opaque upstream payloads. Split-format
+recordings without source-proven absolute sample times cannot be assigned
+fabricated times. The provider does not automate browser verification or
+implement the alpha-targeted PKCE flow.
 
 ## Other Official Surfaces
 

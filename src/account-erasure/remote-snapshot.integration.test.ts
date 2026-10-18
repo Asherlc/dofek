@@ -1,9 +1,11 @@
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
+import { initiateAccountErasure } from "../db/account-erasure.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
 import { executeWithSchema } from "../db/typed-sql.ts";
+import { AllTrailsProvider } from "../providers/alltrails.ts";
 import type { Provider } from "../providers/types.ts";
 import { isEncryptedCredentialValue } from "../security/credential-encryption.ts";
 import {
@@ -24,6 +26,7 @@ const legacyWithingsUserId = "a0000000-0000-4000-8000-000000001995";
 const withingsUserId = "b0000000-0000-4000-8000-000000001995";
 const zivaUserId = "c0000000-0000-4000-8000-000000001995";
 const publicProfileUserId = "d0000000-0000-4000-8000-000000001995";
+const allTrailsUserId = "e0000000-0000-4000-8000-000000001995";
 const storedAccountRowSchema = z.object({
   provider_account_id: z.string().min(1),
 });
@@ -101,6 +104,7 @@ describe("account-erasure remote snapshot persistence (integration)", () => {
             (${legacyWithingsUserId}::uuid, 'Legacy Withings Snapshot User'),
             (${withingsUserId}::uuid, 'Withings Snapshot User'),
             (${publicProfileUserId}::uuid, 'Public Profile Snapshot User'),
+            (${allTrailsUserId}::uuid, 'AllTrails Snapshot User'),
             (${zivaUserId}::uuid, 'Ziva Snapshot User')`,
     );
     await ensureProvider(
@@ -169,6 +173,29 @@ describe("account-erasure remote snapshot persistence (integration)", () => {
       decathlonUserId,
     );
     await ensureProvider(context.db, "ziva", "Ziva", "https://connect.ziva.fit/mcp", zivaUserId);
+    await ensureProvider(
+      context.db,
+      "alltrails",
+      "AllTrails",
+      "https://api-v5.alltrails.com",
+      allTrailsUserId,
+    );
+    await saveTokens(
+      context.db,
+      "alltrails",
+      {
+        accessToken: "alltrails-access-token",
+        refreshToken: "alltrails-refresh-token",
+        expiresAt: new Date("2099-01-01T00:00:00.000Z"),
+        providerAccountId: "alltrails-account",
+        scopes: null,
+      },
+      allTrailsUserId,
+    );
+    await context.db.execute(
+      sql`INSERT INTO fitness.session (id, user_id, expires_at)
+          VALUES ('alltrails-erasure-session', ${allTrailsUserId}::uuid, now() + interval '1 day')`,
+    );
     for (const providerId of ["mountain-project", "openbeta"]) {
       await ensureProvider(context.db, providerId, providerId, undefined, publicProfileUserId);
       await saveTokens(
@@ -445,6 +472,34 @@ describe("account-erasure remote snapshot persistence (integration)", () => {
     ).rejects.toThrow(
       "Disconnect Ziva in Dofek before deleting your account because Ziva does not advertise remote token revocation.",
     );
+  });
+
+  it("blocks connected AllTrails before erasure activation and preserves the user's session", async () => {
+    await expect(
+      initiateAccountErasure(
+        context.db,
+        allTrailsUserId,
+        (transaction) =>
+          createEncryptedAccountErasureSnapshot(transaction, allTrailsUserId, [
+            ...providers,
+            new AllTrailsProvider(),
+          ]),
+        async () => {},
+      ),
+    ).rejects.toThrow(
+      "Disconnect AllTrails in Dofek before deleting your account because Dofek cannot revoke AllTrails authorization remotely.",
+    );
+
+    const rows = await executeWithSchema(
+      context.db,
+      z.object({ sessions: z.number(), requests: z.number() }),
+      sql`SELECT
+            (SELECT count(*)::integer FROM fitness.session
+              WHERE user_id = ${allTrailsUserId}::uuid) AS sessions,
+            (SELECT count(*)::integer FROM fitness.account_erasure_request
+              WHERE user_id = ${allTrailsUserId}::uuid) AS requests`,
+    );
+    expect(rows).toEqual([{ sessions: 1, requests: 0 }]);
   });
 
   it("fails confirmation when an auth-capable connection has no revocation credentials", async () => {

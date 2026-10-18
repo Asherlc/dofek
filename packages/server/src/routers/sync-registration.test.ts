@@ -171,16 +171,32 @@ describe("ensureProvidersRegistered failure path", () => {
     expect(mockRegisterProvider).toHaveBeenCalledWith({ id: "kaya-export" });
   });
 
+  it("registers AllTrails with the credential connection shared by web and mobile", async () => {
+    const { ensureProvidersRegistered } = await import("./sync-helpers.ts");
+
+    await ensureProvidersRegistered();
+
+    const provider = mockRegisterProvider.mock.calls.find(([registered]) => {
+      return registered.id === "alltrails";
+    })?.[0];
+
+    expect(provider).toBeDefined();
+    const setup = provider?.authSetup?.();
+    expect(getProviderAuthTypeFromSetup(setup)).toBe("credential");
+    expect(setup?.automatedLogin).toBeTypeOf("function");
+  });
+
   it("registers self-service providers but omits externally gated providers", async () => {
     const { ensureProvidersRegistered } = await import("./sync-helpers.ts");
 
     await ensureProvidersRegistered();
 
     const registeredIds = mockRegisterProvider.mock.calls.map(([provider]) => provider.id);
-    expect(registeredIds).toHaveLength(32);
+    expect(registeredIds).toHaveLength(33);
     expect(registeredIds).toEqual(
       expect.arrayContaining([
         "bodyspec",
+        "alltrails",
         "cycling_analytics",
         "openbeta",
         "thecrag",

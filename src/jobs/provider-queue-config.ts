@@ -74,6 +74,7 @@ const PROVIDER_QUEUE_CONFIGS: ReadonlyMap<string, ProviderQueueConfig> = new Map
   ["whoop", frequentProvider(1, { max: 1, duration: 1_000 })],
   ["ziva", { concurrency: 1, syncTier: "frequent" }],
   ["kaya", frequentProvider(1)],
+  ["alltrails", frequentProvider(1)],
   ["oura", frequentProvider()],
   ["peloton", frequentProvider()],
   ["ultrahuman", frequentProvider()],

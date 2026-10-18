@@ -421,6 +421,11 @@ const credentialProvider = {
   lastSyncedAt: null,
 };
 
+const credentialProviders = [
+  credentialProvider,
+  { ...credentialProvider, id: "alltrails", name: "AllTrails" },
+];
+
 const tokenProvider = {
   id: "wger",
   name: "Wger",
@@ -2051,53 +2056,58 @@ describe("ProvidersScreen", () => {
     });
   });
 
-  it("opens credential auth modal when Connect is clicked on a credential provider", async () => {
+  it.each(credentialProviders)("opens $name credential auth from Connect", async (provider) => {
     mockProvidersQuery.mockReturnValue({
-      data: [credentialProvider],
+      data: [provider],
       isLoading: false,
     });
 
     await renderProvidersScreen();
 
-    const eightSleepCard = within(screen.getByTestId("provider-card-eight-sleep"));
-    fireEvent.click(eightSleepCard.getByText("Connect"));
+    const providerCard = within(screen.getByTestId(`provider-card-${provider.id}`));
+    fireEvent.click(providerCard.getByText("Connect"));
 
     await waitFor(() => {
-      expect(screen.getByText("Connect Eight Sleep")).toBeTruthy();
+      expect(screen.getByText(`Connect ${provider.name}`)).toBeTruthy();
     });
   });
 
-  it("credential auth modal calls signIn mutation with correct args", async () => {
-    mockProvidersQuery.mockReturnValue({
-      data: [credentialProvider],
-      isLoading: false,
-    });
-    mockCredentialSignIn.mockResolvedValue({});
-
-    await renderProvidersScreen();
-
-    // Open the modal
-    const eightSleepCard = within(screen.getByTestId("provider-card-eight-sleep"));
-    fireEvent.click(eightSleepCard.getByText("Connect"));
-    await waitFor(() => {
-      expect(screen.getByText("Connect Eight Sleep")).toBeTruthy();
-    });
-
-    // Fill in credentials
-    fireEvent.change(screen.getByPlaceholderText("Email"), { target: { value: "user@test.com" } });
-    fireEvent.change(screen.getByPlaceholderText("Password"), { target: { value: "secret123" } });
-
-    // Submit
-    fireEvent.click(screen.getByText("Sign In"));
-
-    await waitFor(() => {
-      expect(mockCredentialSignIn).toHaveBeenCalledWith({
-        providerId: "eight-sleep",
-        username: "user@test.com",
-        password: "secret123",
+  it.each(credentialProviders)(
+    "connects $name through the credential sign-in mutation",
+    async (provider) => {
+      mockProvidersQuery.mockReturnValue({
+        data: [provider],
+        isLoading: false,
       });
-    });
-  });
+      mockCredentialSignIn.mockResolvedValue({});
+
+      await renderProvidersScreen();
+
+      // Open the modal
+      const providerCard = within(screen.getByTestId(`provider-card-${provider.id}`));
+      fireEvent.click(providerCard.getByText("Connect"));
+      await waitFor(() => {
+        expect(screen.getByText(`Connect ${provider.name}`)).toBeTruthy();
+      });
+
+      // Fill in credentials
+      fireEvent.change(screen.getByPlaceholderText("Email"), {
+        target: { value: "user@test.com" },
+      });
+      fireEvent.change(screen.getByPlaceholderText("Password"), { target: { value: "secret123" } });
+
+      // Submit
+      fireEvent.click(screen.getByText("Sign In"));
+
+      await waitFor(() => {
+        expect(mockCredentialSignIn).toHaveBeenCalledWith({
+          providerId: provider.id,
+          username: "user@test.com",
+          password: "secret123",
+        });
+      });
+    },
+  );
 
   it.each(["token", "public-profile"])("opens the server-described %s flow", async (authType) => {
     mockProvidersQuery.mockReturnValue({
