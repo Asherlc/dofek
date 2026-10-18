@@ -1207,8 +1207,8 @@ describe("DataSourcesPanel", () => {
     mockProvidersQuery.mockReturnValue({
       data: [
         {
-          id: "credentials",
-          name: "Credentials",
+          id: "alltrails",
+          name: "AllTrails",
           authorized: false,
           authType: "credential",
           importOnly: false,
@@ -1240,8 +1240,8 @@ describe("DataSourcesPanel", () => {
 
     render(<DataSourcesPanel />);
 
-    fireEvent.click(within(screen.getByTestId("provider-card-credentials")).getByText("Sync"));
-    expect(screen.getByText("Credentials credentials")).toBeTruthy();
+    fireEvent.click(within(screen.getByTestId("provider-card-alltrails")).getByText("Sync"));
+    expect(screen.getByText("AllTrails credentials")).toBeTruthy();
     fireEvent.click(screen.getByText("Save credentials"));
     expect(mockProvidersInvalidate).toHaveBeenCalled();
 

@@ -398,6 +398,7 @@ export function datasetsForProvider(
 }
 
 const PROVIDER_DATASET_CAPABILITIES: Readonly<Record<string, readonly ProcessingDatasetKey[]>> = {
+  alltrails: ["activity", "hiking", "cycling", "recovery", "training", "providers"],
   "amazfit-zepp": [
     "activity",
     "hiking",

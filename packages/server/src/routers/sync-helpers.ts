@@ -114,6 +114,7 @@ async function doRegisterProviders() {
         ),
     ],
     ["thecrag", () => import("dofek/providers/thecrag").then((m) => new m.TheCragProvider())],
+    ["alltrails", () => import("dofek/providers/alltrails").then((m) => new m.AllTrailsProvider())],
     [
       "kaya-export",
       () => import("dofek/providers/kaya/provider").then((m) => new m.KayaProvider()),
