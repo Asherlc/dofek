@@ -843,12 +843,10 @@ export default function ActivityDetailScreen() {
       {isClimbingActivity && (
         <View style={climbingStyles.container}>
           <Text style={chartStyles.title}>Climbs</Text>
-          {isClimbingActivity && climbingEntries.error && (
+          {climbingEntries.error && (
             <Text style={styles.errorText}>{userFacingErrorMessage(climbingEntries.error)}</Text>
           )}
-          {isClimbingActivity && climbingEntriesLoading && (
-            <QueryStatePanel variant="loading" minHeight={72} />
-          )}
+          {climbingEntriesLoading && <QueryStatePanel variant="loading" minHeight={72} />}
           {(climbingEntries.data?.length ?? 0) > 0 && (
             <ClimbingLogEntryBreakdown
               entries={climbingEntries.data ?? []}
@@ -856,21 +854,20 @@ export default function ActivityDetailScreen() {
               selectedEntryId={selectedClimbingEntryId}
             />
           )}
-          {isClimbingActivity &&
-            (entrySuggestions.error ||
-              (!climbingEntriesLoading && entrySuggestions.isLoading) ||
-              (entrySuggestions.data?.length ?? 0) > 0 ||
-              climbingEntries.data?.length === 0) && (
-              <UnattachedClimbingLogEntries
-                suggestions={entrySuggestions.data}
-                locations={climbingLocations}
-                selectedEntryId={selectedClimbingEntryId}
-                error={entrySuggestions.error ?? null}
-                isLoading={entrySuggestions.isLoading}
-                state={entryAttachState}
-                onAttach={handleAttachEntry}
-              />
-            )}
+          {(entrySuggestions.error ||
+            (!climbingEntriesLoading && entrySuggestions.isLoading) ||
+            (entrySuggestions.data?.length ?? 0) > 0 ||
+            climbingEntries.data?.length === 0) && (
+            <UnattachedClimbingLogEntries
+              suggestions={entrySuggestions.data}
+              locations={climbingLocations}
+              selectedEntryId={selectedClimbingEntryId}
+              error={entrySuggestions.error ?? null}
+              isLoading={entrySuggestions.isLoading}
+              state={entryAttachState}
+              onAttach={handleAttachEntry}
+            />
+          )}
         </View>
       )}
 
