@@ -2010,8 +2010,40 @@ describe("ActivityDetailPage", () => {
   });
 
   describe("climbing entries", () => {
-    it("loads hiking logs and keeps cached records visible when both refreshes fail", async () => {
-      Object.assign(mockActivity, { activityType: "hiking" });
+    it.each(["hiking", "running", "cycling", "strength", "hangboard"])(
+      "hides climbs and disables climbing queries for %s even with cached logs",
+      async (activityType) => {
+        mockActivityByIdUseQuery.mockReturnValue({
+          data: { ...mockActivity, activityType },
+          error: null,
+          isError: false,
+          isLoading: false,
+        });
+        mockClimbingEntriesUseQuery.mockReturnValue({
+          data: [climbingLogEntryFixture({ id: "cached-log", title: "Cached climb" })],
+          error: null,
+          isError: false,
+          isLoading: false,
+        });
+        mockEntrySuggestionsUseQuery.mockReturnValue({
+          data: [climbingLogEntryFixture({ id: "suggested-log", title: "Suggested climb" })],
+          error: null,
+          isLoading: false,
+        });
+
+        const ActivityDetailPage = await importPage();
+        renderWithUnits(<ActivityDetailPage />);
+
+        expect(screen.queryByRole("heading", { name: "Climbs" })).not.toBeInTheDocument();
+        expect(screen.queryByText("Cached climb")).not.toBeInTheDocument();
+        expect(screen.queryByText("Suggested climb")).not.toBeInTheDocument();
+        expect(getQueryEnabledFlag(mockClimbingEntriesUseQuery.mock.calls[0]?.[1])).toBe(false);
+        expect(getQueryEnabledFlag(mockEntrySuggestionsUseQuery.mock.calls[0]?.[1])).toBe(false);
+      },
+    );
+
+    it("keeps cached climbing records visible when both refreshes fail", async () => {
+      Object.assign(mockActivity, { activityType: "climbing" });
       const log = climbingLogEntryFixture({ id: "cached-log", title: "Summit outing" });
       mockClimbingEntriesUseQuery.mockReturnValue({
         data: [log],

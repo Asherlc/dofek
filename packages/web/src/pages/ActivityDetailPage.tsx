@@ -16,7 +16,6 @@ import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { processingPollInterval } from "@dofek/providers/processing-status";
 import { providerSourceLabel } from "@dofek/providers/providers";
 import { activityMetricColors, statusColors } from "@dofek/scoring/colors";
-import { isClimbingLogActivity } from "@dofek/training/climbing-log";
 import { buildClimbingMapLocations, buildClimbingMapMarkers } from "@dofek/training/climbing-map";
 import {
   computeIntensities,
@@ -136,7 +135,8 @@ export function ActivityDetailPage() {
     { id },
     { enabled: isStrengthActivity },
   );
-  const isClimbingActivity = detail.data != null && isClimbingLogActivity(detail.data.activityType);
+  const isClimbingActivity =
+    detail.data != null && isActivityDetailType(detail.data.activityType, "climbing");
   const climbingEntries = trpc.climbing.activityLogEntries.useQuery(
     { activityId: id },
     { enabled: isClimbingActivity },
