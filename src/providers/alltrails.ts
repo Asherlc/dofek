@@ -1,3 +1,8 @@
+import {
+  ProviderRateLimitError,
+  ProviderServiceUnavailableError,
+  parseRetryAfterHeader,
+} from "@dofek/provider-http/rate-limit";
 import { resolveRawProviderActivityType } from "@dofek/training/activity-types";
 import { z } from "zod";
 import type { TokenSet } from "../auth/oauth.ts";
@@ -174,7 +179,24 @@ export class AllTrailsProvider implements SyncProvider {
   readonly #fetchFn: typeof fetch;
 
   constructor(fetchFn: typeof fetch = globalThis.fetch) {
-    this.#fetchFn = createProviderRateLimitFetch(this.id, fetchFn);
+    this.#fetchFn = createProviderRateLimitFetch(this.id, fetchFn, {
+      createRateLimitError: (response) =>
+        new ProviderRateLimitError({
+          message: `AllTrails request failed (HTTP ${response.status}). Try again.`,
+          providerId: this.id,
+          statusCode: response.status,
+          responseBody: "[redacted]",
+          retryAfterSeconds: parseRetryAfterHeader(response.headers.get("Retry-After")),
+        }),
+      createServiceUnavailableError: (response) =>
+        new ProviderServiceUnavailableError({
+          message: `AllTrails request failed (HTTP ${response.status}). Try again.`,
+          providerId: this.id,
+          statusCode: response.status,
+          responseBody: "[redacted]",
+          retryAfterSeconds: parseRetryAfterHeader(response.headers.get("Retry-After")),
+        }),
+    });
   }
 
   validate(): string | null {
@@ -264,11 +286,16 @@ export class AllTrailsProvider implements SyncProvider {
     } catch {
       init.signal?.throwIfAborted();
       const sanitized = new Error("AllTrails returned an invalid JSON response. Try again.");
-      captureException(sanitized, { tags: { provider: this.id } });
+      if (kind === "password") captureException(sanitized, { tags: { provider: this.id } });
       throw sanitized;
     }
     const remoteError = errorResponseSchema.safeParse(data);
-    if ((response.status === 400 || response.status === 401) && kind === "password") {
+    if (
+      (response.status === 400 || response.status === 401) &&
+      kind === "password" &&
+      remoteError.success &&
+      remoteError.data.error === "invalid_grant"
+    ) {
       throw new ProviderInvalidCredentialsError(this.name);
     }
     if (
@@ -328,7 +355,6 @@ export class AllTrailsProvider implements SyncProvider {
         } catch (error) {
           signal?.throwIfAborted();
           if (error instanceof RefreshTokenRevokedError) await deleteTokens(db, this.id, userId);
-          else captureException(error, { tags: { provider: this.id } });
           throw error;
         }
         if (rotated.providerAccountId && rotated.providerAccountId !== accountId) {
@@ -357,10 +383,7 @@ export class AllTrailsProvider implements SyncProvider {
           return await read();
         } catch (error) {
           signal?.throwIfAborted();
-          if (!(error instanceof AccessTokenExpiredError)) {
-            captureException(error, { tags: { provider: this.id } });
-            throw error;
-          }
+          if (!(error instanceof AccessTokenExpiredError)) throw error;
           await refresh();
           return read();
         }

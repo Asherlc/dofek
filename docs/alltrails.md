@@ -2,7 +2,7 @@
 
 <!-- cspell:words alltrails apkanalyzer apksigner appsflyer JADX javascripts ndimensional recaptcha -->
 
-Last checked: 2026-10-17 (America/Los_Angeles).
+Last checked: 2026-10-18 (America/Los_Angeles).
 
 ## Finding And Scope
 
@@ -26,7 +26,7 @@ available source do not establish present operation.
 | [Current web login source map][web-login] | Public Next.js assets linked by the site on the research date; inspect `sources` and `sourcesContent`. | `packages/user-auth/src/components/EmailPasswordLogin/index.tsx` |
 | [Current web API wrapper source map][web-core] | Same deployment, asset revision `7454ca94ed332d519ef5b7580cbdcdac98d1934d`. | `packages/core/src/utils/api.ts` |
 | [Deployed shared web source map][web-recordings] | Application bundle linked by the site's `/terms` page on the research date; includes legacy components, so deployment alone does not establish every component is active. | `app/javascript/application/javascripts/react_components/search/fullscreen/search_app.js`; `node_modules/@alltrails/maps/dist/utils/legacyGeoJSONConversions.js` |
-| [Android APK][native-apk] | `com.alltrails.alltrails`, version `19.0.2`, build `53629`; manifest inspected with `apkanalyzer`, signature verified with `apksigner`, targeted classes decompiled with JADX 1.5.5. | `ServiceIdentityOAuth.kt`, `EndpointIdentityOAuthTokenPassword.kt`, `EndpointIdentityOAuthTokenRefresh.kt`, auth use cases and HTTP interceptors |
+| [Android APK][native-apk] | `com.alltrails.alltrails`, version `19.0.2`, build `53629`; manifest inspected with `apkanalyzer`, signature verified with `apksigner`, targeted classes decompiled with JADX 1.5.5. | `ServiceIdentityOAuth.kt`, `EndpointIdentityOAuthTokenPassword.kt`, `EndpointIdentityOAuthTokenRefresh.kt`, auth use cases, HTTP interceptors, `MapWorker.kt`, `MapSyncTask.java`, `SyncStatusResponse.java` |
 
 The APK SHA-256 is
 `81451a8e70e2f0d8094214ad86318104fcf5c04009dcadd334860ca4b1ae7500`.
@@ -35,6 +35,9 @@ Its signer SHA-256 is
 matching AllTrails' [published Android association][assetlinks]. The download
 listing's recent timestamp does not describe the binary's version. Verify both
 hash and manifest when reproducing this audit; the mirror URL can change.
+
+The [deployed shared web source map][web-recordings] SHA-256 is
+`df97efc316c6d46988a0d9f20acdddb75cecf2ef6d609a5311cf8aca97e17797`.
 
 To inspect web originals, parse the source map JSON and locate the path in
 `sources`; its corresponding `sourcesContent` entry is the original source.
@@ -188,6 +191,38 @@ Native `AlltrailsMap` contains `activity: {uid, name}`, `metadata`, and `tracks`
 be null. The metadata fields do not establish recording-start time.
 [Source: native APK][native-apk].
 
+### Historical Incremental Sync
+
+Android 19.0.2 also exposes a separate incremental operation through
+`IAllTrailsService.syncMaps`. [Source: native APK][native-apk].
+
+```http
+GET /api/alltrails/maps/sync?last_sync_time=<previous sync timestamp>
+```
+
+`SyncStatusResponse` declares `new_ids`, `updated_ids`, and `deleted_ids`.
+`MapSyncTask` handles the listed deletions, combines new and updated IDs for
+downloads in batches of 25, and advances its persisted sync timestamp from
+the response's `meta.timestamp`. The inspected raw task class is `gq8` in
+`classes7.dex`; the response model is
+`com.alltrails.model.rpc.response.SyncStatusResponse` in `classes3.dex`.
+These are historical client semantics, not current authenticated validation.
+[Source: native APK][native-apk].
+
+The native `MapWorker` also requests deep user-map inventory and processes
+the returned map objects directly. This supports investigating reuse of
+embedded tracks, but does not establish that current inventory responses
+contain complete, uncombined native timestamped segments. The deployed web
+flow separately fetches selected deep detail with `combine_segments=false`.
+[Sources: native APK][native-apk], [shared web source map][web-recordings].
+
+Current acceptance of `maps/sync`, change retention, completeness, timestamp
+boundaries, and replay behavior have not been validated. Adopting it requires a
+validated durable timestamp and explicit deletion contract. Neither the
+inventory's observed query parameters nor its cursor loop establishes a
+filter by recording date or time ordering that permits an early cutoff.
+[Sources: native APK][native-apk], [shared web source map][web-recordings].
+
 ## Raw Route Decoding
 
 `legacyGeoJSONConversions.js` selects `routes` or `tracks`, then `lineSegments`
@@ -242,6 +277,16 @@ uses `ALLTRAILS_API_KEY` and `ALLTRAILS_CLIENT_ID` as application configuration
 from Infisical, separate from the user's encrypted tokens and account ID.
 See the [provider guide](../src/providers/README.md#alltrails) and
 [credential storage contract](credential-encryption.md).
+
+The current [sync implementation](../src/providers/alltrails.ts) enumerates
+every inventory page and fetches separate deep detail for each recording
+before applying the requested window to decoded raw GPS timestamps. Each
+poll therefore costs the inventory requests plus one detail request per
+recording, including unchanged and out-of-window recordings. Full inventory
+preserves the implemented authoritative absence contract, but repeated detail
+reads are a known request-volume limitation. The historical incremental and
+embedded-track paths above are optimization candidates that have not been
+implemented or validated against a live account.
 
 Account deletion requires disconnecting AllTrails first. Dofek has no verified
 AllTrails remote-session revocation policy, so the
