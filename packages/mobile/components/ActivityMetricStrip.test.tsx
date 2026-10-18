@@ -6,10 +6,73 @@ import { ActivityMetricStrip } from "./ActivityMetricStrip";
 const units = new UnitConverter("metric");
 
 describe("ActivityMetricStrip", () => {
+  it.each([
+    { modality: "indoor", distanceMeters: 0, elevationGainM: null },
+    { modality: "virtual", distanceMeters: 0, elevationGainM: null },
+    { modality: "indoor", distanceMeters: 25_000, elevationGainM: 400 },
+    { modality: "virtual", distanceMeters: 25_000, elevationGainM: 400 },
+  ])(
+    "uses training stats for $modality cycling with distance $distanceMeters",
+    ({ modality, distanceMeters, elevationGainM }) => {
+      render(
+        <ActivityMetricStrip
+          activity={{
+            activityType: "cycling",
+            modality,
+            location: null,
+            distanceMeters,
+            distanceState: { status: "available" },
+            elevationGainM,
+            elevationState:
+              elevationGainM === null
+                ? { status: "missing", reason: "Elevation not recorded" }
+                : { status: "available" },
+            stats: [{ status: "available", label: "Training Stress Score", value: "100" }],
+          }}
+          units={units}
+        />,
+      );
+
+      expect(screen.getByText("Training Stress Score")).toBeDefined();
+      expect(screen.getByText("100")).toBeDefined();
+      expect(screen.queryByText("Distance")).toBeNull();
+      expect(screen.queryByText(/Elevation/)).toBeNull();
+      expect(screen.queryByLabelText(/Elevation/)).toBeNull();
+    },
+  );
+
+  it.each([
+    { activityType: "cycling", modality: "road" },
+    { activityType: "running", modality: "indoor" },
+  ])("preserves measured zero for $modality $activityType", ({ activityType, modality }) => {
+    render(
+      <ActivityMetricStrip
+        activity={{
+          activityType,
+          modality,
+          location: null,
+          distanceMeters: 0,
+          distanceState: { status: "available" },
+          elevationGainM: 0,
+          elevationState: { status: "available" },
+          stats: [{ status: "available", label: "Training Stress Score", value: "100" }],
+        }}
+        units={units}
+      />,
+    );
+
+    expect(screen.getByText("0.0 km")).toBeDefined();
+    expect(screen.getByText("Distance")).toBeDefined();
+    expect(screen.getByText("0 m")).toBeDefined();
+    expect(screen.getByText("Elevation")).toBeDefined();
+  });
+
   it("renders a server-authored unavailable reason instead of a broken dash", () => {
     render(
       <ActivityMetricStrip
         activity={{
+          activityType: "cycling",
+          modality: null,
           location: null,
           distanceMeters: null,
           distanceState: { status: "missing", reason: "Distance not recorded" },
@@ -46,6 +109,8 @@ describe("ActivityMetricStrip", () => {
     render(
       <ActivityMetricStrip
         activity={{
+          activityType: "cycling",
+          modality: null,
           location: null,
           distanceMeters: null,
           distanceState: { status: "missing", reason: "Distance not recorded" },
@@ -65,6 +130,8 @@ describe("ActivityMetricStrip", () => {
     render(
       <ActivityMetricStrip
         activity={{
+          activityType: "cycling",
+          modality: null,
           location: { kind: "climbing_source" },
           distanceMeters: null,
           distanceState: { status: "missing", reason: "Distance not recorded" },
@@ -85,6 +152,8 @@ describe("ActivityMetricStrip", () => {
     render(
       <ActivityMetricStrip
         activity={{
+          activityType: "cycling",
+          modality: null,
           location: {
             kind: "recorded_gps",
           },
@@ -107,6 +176,8 @@ describe("ActivityMetricStrip", () => {
     render(
       <ActivityMetricStrip
         activity={{
+          activityType: "cycling",
+          modality: null,
           location: {
             kind: "recorded_gps",
           },
@@ -131,6 +202,8 @@ describe("ActivityMetricStrip", () => {
     render(
       <ActivityMetricStrip
         activity={{
+          activityType: "cycling",
+          modality: null,
           location: null,
           distanceMeters: null,
           distanceState: { status: "processing", reason: "Distance is still processing." },
@@ -154,6 +227,8 @@ describe("ActivityMetricStrip", () => {
       render(
         <ActivityMetricStrip
           activity={{
+            activityType: "cycling",
+            modality: null,
             location: null,
             distanceMeters: null,
             distanceState: { status: "missing", reason: "Distance not recorded" },

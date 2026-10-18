@@ -59,6 +59,11 @@ refresh errors. See the [canonical response contract](../server/src/contracts/cl
 The recent climbing activity table omits distance and keeps its climbing metrics,
 as configured by the [climbing page](src/routes/training/climbing.tsx).
 
+Activity-list cards use the stored cycling modality to show training stats instead
+of distance and elevation for indoor and virtual rides, including reported zeros.
+See [the card](src/components/ActivityCardContent.tsx) and the
+[shared cycling classification](../training/src/endurance-types.ts).
+
 The [Activities cards](src/components/ActivityCardContent.tsx) show an inset map
 panel beside activity details on wider screens and below them on narrow screens.
 The [mobile Activities list](<../mobile/app/(tabs)/activities.tsx>) shows the same

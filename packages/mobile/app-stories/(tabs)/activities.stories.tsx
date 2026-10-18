@@ -273,6 +273,7 @@ function createStoryData(climbingActivity = false) {
           id: "story-outdoor",
           name: "Morning Ride",
           activityType: "road_cycling",
+          modality: "road",
           startedAt: `${today}T07:30:00Z`,
           endedAt: `${today}T09:00:00Z`,
           localTimeContext: {
@@ -310,6 +311,7 @@ function createStoryData(climbingActivity = false) {
           id: "story-indoor",
           name: "Strength session",
           activityType: "strength",
+          modality: null,
           startedAt: `${yesterday}T17:00:00Z`,
           endedAt: `${yesterday}T17:45:00Z`,
           localTimeContext: {
@@ -350,6 +352,7 @@ function createStoryData(climbingActivity = false) {
         id: "a1220000-0000-4000-8000-000000000001",
         name: "Boulder Canyon climbing",
         activityType: "climbing",
+        modality: null,
         startedAt: `${today}T14:00:00Z`,
         endedAt: `${today}T16:00:00Z`,
         localTimeContext: {

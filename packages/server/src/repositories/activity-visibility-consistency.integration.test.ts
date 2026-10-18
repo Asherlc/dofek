@@ -13,6 +13,7 @@ import {
   syncClickHouseTestActivitySensorStore,
 } from "../routers/clickhouse-integration-test-helpers.ts";
 import { ActivitiesCalendarRepository } from "./activities-calendar-repository.ts";
+import { ActivityOverviewRepository } from "./activity-overview-repository.ts";
 import { ActivityRepository, type ActivitySensorStore } from "./activity-repository.ts";
 import { TrainingRepository } from "./training-repository.ts";
 
@@ -201,6 +202,13 @@ describe("activity visibility consistency", () => {
       sensorStore,
       ACCESS_WINDOW,
     );
+    const overviewRepository = new ActivityOverviewRepository(
+      testContext.db,
+      TEST_USER_ID,
+      "UTC",
+      sensorStore,
+      ACCESS_WINDOW,
+    );
     const activityRepository = new ActivityRepository(
       testContext.db,
       TEST_USER_ID,
@@ -220,11 +228,11 @@ describe("activity visibility consistency", () => {
       weeks: 8,
       endDate: "2026-03-20",
     });
-    const overview = await calendarRepository.getActivityOverview({
+    const overview = await overviewRepository.getActivityOverview({
       weeks: 8,
       endDate: "2026-03-20",
     });
-    const unavailableOverview = await calendarRepository.getActivityOverview({
+    const unavailableOverview = await overviewRepository.getActivityOverview({
       weeks: 8,
       endDate: "2026-03-20",
       activityType: "walking",
@@ -351,9 +359,16 @@ describe("activity visibility consistency", () => {
       sensorStore,
       ACCESS_WINDOW,
     );
+    const overviewRepository = new ActivityOverviewRepository(
+      testContext.db,
+      TEST_USER_ID,
+      "UTC",
+      sensorStore,
+      ACCESS_WINDOW,
+    );
 
     await expect(
-      repository.getActivityOverview({
+      overviewRepository.getActivityOverview({
         weeks: 8,
         endDate: "2026-03-20",
         activityType: "cycling",
@@ -392,7 +407,7 @@ describe("activity visibility consistency", () => {
   });
 
   it("bounds historical overview periods to equal-length half-open windows", async () => {
-    const repository = new ActivitiesCalendarRepository(
+    const overviewRepository = new ActivityOverviewRepository(
       testContext.db,
       TEST_USER_ID,
       "UTC",
@@ -401,7 +416,7 @@ describe("activity visibility consistency", () => {
     );
 
     await expect(
-      repository.getActivityOverview({ weeks: 1, endDate: "2026-03-15" }),
+      overviewRepository.getActivityOverview({ weeks: 1, endDate: "2026-03-15" }),
     ).resolves.toMatchObject({
       activityCount: 3,
       totalMinutes: 75,
@@ -545,7 +560,7 @@ WHERE activity_id = '${AUTHORIZED_WALK_ID}'`,
       )`,
     );
 
-    const repository = new ActivitiesCalendarRepository(
+    const overviewRepository = new ActivityOverviewRepository(
       testContext.db,
       TEST_USER_ID,
       "UTC",
@@ -553,7 +568,7 @@ WHERE activity_id = '${AUTHORIZED_WALK_ID}'`,
       ACCESS_WINDOW,
     );
     await expect(
-      repository.getActivityOverview({
+      overviewRepository.getActivityOverview({
         weeks: 8,
         endDate: "2026-03-20",
         activityType: "walking",
@@ -580,7 +595,7 @@ WHERE activity_id = '${AUTHORIZED_WALK_ID}'`,
     ).resolves.toEqual({ distanceRows: 1, elevationRows: 1 });
 
     await expect(
-      repository.getActivityOverview({
+      overviewRepository.getActivityOverview({
         weeks: 8,
         endDate: "2026-03-20",
         activityType: "walking",
@@ -609,7 +624,7 @@ WHERE activity_id = '${AUTHORIZED_WALK_ID}'`,
     });
 
     await expect(
-      repository.getActivityOverview({
+      overviewRepository.getActivityOverview({
         weeks: 8,
         endDate: "2026-03-20",
         activityType: "walking",
@@ -638,7 +653,7 @@ WHERE location.activity_id = '${AUTHORIZED_WALK_ID}'`,
       },
     ]);
     await expect(
-      repository.getActivityOverview({
+      overviewRepository.getActivityOverview({
         weeks: 8,
         endDate: "2026-03-20",
         activityType: "running",
