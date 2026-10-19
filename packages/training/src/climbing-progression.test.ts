@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   type ClimbingGradeProgressionLane,
   type ClimbingProgressionSetting,
+  climbingProgressionChartLanes,
   climbingProgressionGradeColor,
   climbingProgressionLaneLabel,
   climbingProgressionPeriodLabel,
@@ -22,6 +23,34 @@ const boulderingLane: ClimbingGradeProgressionLane = {
   axisTicks: [0, 1],
   periods: [],
 };
+
+describe("climbingProgressionChartLanes", () => {
+  it.each([false, true])("keeps bouldering with recorded aid status %s", (usedAid) => {
+    const recorded = { ...boulderingLane, usedAid };
+    expect(climbingProgressionChartLanes([boulderingLane, recorded])).toEqual([recorded]);
+  });
+
+  it.each(["lead", "top_rope", "follow", "unroped"] as const)(
+    "selects route lanes with recorded %s methods and aid status",
+    (ropeMethod) => {
+      const recorded: ClimbingGradeProgressionLane = {
+        ...boulderingLane,
+        climbKind: "route",
+        ropeMethod,
+        usedAid: false,
+      };
+      const aided = { ...recorded, usedAid: true };
+      const lanes = [
+        { ...recorded, usedAid: null },
+        recorded,
+        { ...recorded, ropeMethod: null },
+        aided,
+        { ...aided, ropeMethod: null },
+      ];
+      expect(climbingProgressionChartLanes(lanes)).toEqual([recorded, aided]);
+    },
+  );
+});
 
 describe("climbingProgressionLaneLabel", () => {
   it("distinguishes solo facts with concise climbing labels", () => {

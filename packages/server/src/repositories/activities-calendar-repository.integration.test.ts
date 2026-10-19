@@ -54,7 +54,7 @@ describe("Activities list climbing source GPS", () => {
         {
           externalId: "source-log",
           activityId: source.id,
-          attempts: [{ scope: "climb" }],
+          attempts: [{ scope: "climb", ropeMethod: "lead" }],
           climb: {
             externalId: "area-route",
             name: "Area route",
@@ -71,7 +71,7 @@ describe("Activities list climbing source GPS", () => {
         {
           externalId: "recorded-log",
           activityId: recorded.id,
-          attempts: [{ scope: "climb" }],
+          attempts: [{ scope: "climb", ropeMethod: "lead" }],
           climb: {
             externalId: "exact-route",
             name: "Exact route",
@@ -162,7 +162,7 @@ describe("Activities list climbing source GPS", () => {
           {
             externalId,
             activityId,
-            attempts: [{ scope: "climb" }],
+            attempts: [{ scope: "climb", ropeMethod: "lead" }],
             climb: {
               externalId: "area-route",
               name: "Area route",
