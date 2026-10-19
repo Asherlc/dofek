@@ -51,6 +51,35 @@ mise run cloud:init
 mise tasks run with the tools and environment declared in `mise.toml`; see the
 [mise task documentation](https://mise.jdx.dev/tasks/).
 
+## Workspace Setup And Archive
+
+[`paseo.json`](../paseo.json) installs the locked toolchain and runs
+`cloud:prebuild` during workspace setup. Its teardown and
+[Conductor's archive hook](../.conductor/settings.toml) both run
+[`scripts/workspace-archive.ts`](../scripts/workspace-archive.ts).
+Paseo reads configuration from the committed base branch and runs teardown
+during archive before removing the worktree; see its
+[worktree lifecycle documentation](https://paseo.sh/docs/worktrees#setup-and-teardown).
+Merge configuration changes into the base branch before relying on them in
+new workspaces.
+
+Archive removes containers, orphan services, networks, and declared volumes
+for `<workspace>`, `<workspace>-e2e`, and `<workspace>-peerdb-integration`.
+It includes all profiles and the PeerDB overlay, uses each project's own
+environment file when present, and fails if Docker cleanup fails; see the
+[cleanup command](../scripts/workspace-archive.ts) and
+[Compose shutdown reference](https://docs.docker.com/reference/cli/docker/compose/down/).
+Archiving discards those workspaces' local database data. Shared Docker images,
+build cache, and package stores remain available for other workspaces.
+
+To verify the lifecycle, start a disposable workspace's backing services,
+archive that workspace, then check its three exact Compose project labels
+with `docker ps -a`, `docker network ls`, and `docker volume ls --filter
+label=com.docker.compose.project=PROJECT_NAME`. Docker documents these
+[resource filters](https://docs.docker.com/engine/cli/filter/).
+Keep shared cache pruning separate from workspace archive; see
+[Docker disk recovery](testing.md#docker-disk-recovery).
+
 ## Cloud And Prebuilt Environments
 
 A cloud provider that supports the Dev Container specification needs only:

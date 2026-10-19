@@ -1,0 +1,6 @@
+{
+  "worktree": {
+    "setup": "MISE_LOCKED=1 mise install --locked && mise run cloud:prebuild",
+    "teardown": "mise exec -- pnpm tsx scripts/workspace-archive.ts"
+  }
+}
