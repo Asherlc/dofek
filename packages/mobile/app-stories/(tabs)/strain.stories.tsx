@@ -5,6 +5,7 @@ import { mobileTrainingFixtureSchema } from "dofek-server/mobile-dashboard-contr
 import type { AppRouter } from "dofek-server/router";
 import { useMemo } from "react";
 import { View } from "react-native";
+import { SafeAreaProvider } from "react-native-safe-area-context";
 import StrainScreen from "../../app/(tabs)/strain";
 import { createFixtureDates, type FixtureDates } from "../../app-fixtures/(tabs)/fixture-dates";
 import {
@@ -12,9 +13,16 @@ import {
   seedReadyProcessingStatus,
 } from "../../app-fixtures/(tabs)/processing-status-story-fixture";
 import { climbingLocationMapFixture } from "../../components/climbing-location-map-fixtures";
+import {
+  climbingAttachmentActivities,
+  climbingAttachmentSafeAreaMetrics,
+} from "../../components/climbing-log-attachment-test-helpers";
 import { trpc } from "../../lib/trpc";
 
 const STRAIN_COMPANION_RESPONSES = {
+  "climbing.attachmentActivities": climbingAttachmentActivities,
+  "climbing.attachClimbingLogEntry": { attached: true },
+  "climbing.locationMap": climbingLocationMapFixture,
   "training.hrZones": {
     maxHr: 190,
     weeks: [],
@@ -298,9 +306,11 @@ function MockProviders({
   ]);
 
   return (
-    <trpc.Provider client={trpcClient} queryClient={queryClient}>
-      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-    </trpc.Provider>
+    <SafeAreaProvider initialMetrics={climbingAttachmentSafeAreaMetrics}>
+      <trpc.Provider client={trpcClient} queryClient={queryClient}>
+        <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+      </trpc.Provider>
+    </SafeAreaProvider>
   );
 }
 

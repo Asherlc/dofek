@@ -1,11 +1,14 @@
 /** @vitest-environment jsdom */
+import { QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { trpc } from "../lib/trpc.ts";
 import { ClimbingLocationMap } from "./ClimbingLocationMap.tsx";
 import {
   climbingLocationEntries,
   climbingLocationMapFixture,
 } from "./climbing-location-map-test-helpers.ts";
+import { createClimbingAttachmentFixture } from "./climbing-log-attachment-test-helpers.ts";
 
 const captureException = vi.hoisted(() => vi.fn());
 vi.mock("../lib/telemetry.ts", () => ({ captureException }));
@@ -47,6 +50,52 @@ afterAll(() => {
 });
 
 describe("ClimbingLocationMap", () => {
+  it("attaches the selected unattached log and preserves its location while the map refreshes", async () => {
+    const fixture = createClimbingAttachmentFixture();
+    function ConnectedMap() {
+      const map = trpc.climbing.locationMap.useQuery({ days: 90 });
+      return <ClimbingLocationMap data={map.data} loading={map.isLoading} />;
+    }
+    const { container } = render(
+      <trpc.Provider client={fixture.client} queryClient={fixture.queryClient}>
+        <QueryClientProvider client={fixture.queryClient}>
+          <ConnectedMap />
+        </QueryClientProvider>
+      </trpc.Provider>,
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "3 climbs. Zoom in to explore." }));
+    fireEvent.click(await screen.findByRole("button", { name: "2 climbs. Show climb details." }));
+    const pane = container.querySelector(".leaflet-map-pane");
+    const list = screen.getByRole("list", { name: "Climbs at this location" });
+    const attachButton = within(list).getByRole("button", {
+      name: "Attach to activity for Left Arete",
+    });
+    attachButton.focus();
+    fireEvent.click(attachButton);
+    const dialog = await screen.findByRole("dialog", { name: "Attach Left Arete to activity" });
+    expect(within(dialog).getByText("2026-10-05")).toBeVisible();
+    fireEvent.click(await within(dialog).findByRole("radio", { name: /Approach hike/ }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Attach" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(
+      within(screen.getByRole("list", { name: "Climbs at this location" })).getByRole("link", {
+        name: "View activity for Left Arete",
+      }),
+    ).toHaveAttribute("href", "/activity/22222222-2222-4222-8222-222222222222");
+    await waitFor(() =>
+      expect(screen.getByRole("link", { name: "View activity for Left Arete" })).toHaveFocus(),
+    );
+    expect(container.querySelector(".leaflet-map-pane")).toBe(pane);
+    expect(fixture.requests).toContainEqual({
+      path: "climbing.attachmentActivities",
+      input: { date: "2026-10-05" },
+    });
+    expect(fixture.requests).toContainEqual({
+      path: "climbing.attachClimbingLogEntry",
+      input: { climbingLogEntryId: "tick-2", activityId: "22222222-2222-4222-8222-222222222222" },
+    });
+  });
+
   it("shows processing until initial tiles load, including across an early data refresh", async () => {
     const view = render(<ClimbingLocationMap data={climbingLocationMapFixture} />);
     await screen.findByRole("button", { name: "3 climbs. Zoom in to explore." });
