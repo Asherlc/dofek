@@ -133,6 +133,13 @@ const mockUnitSettingQuery: {
   error: null,
   refetch: mockUnitSettingRefetch,
 };
+const mockClimbingGradeSettingQuery: {
+  data: { key: string; value: unknown } | null | undefined;
+  error: Error | null;
+} = {
+  data: null,
+  error: null,
+};
 const mockZeppPairingClaim = vi.fn();
 const mockZeppConnectionRevoke = vi.fn();
 let mockZeppConnections: Array<{
@@ -289,9 +296,7 @@ vi.mock("../lib/trpc", () => ({
     settings: {
       get: {
         useQuery: (input: { key: string }) =>
-          input.key === "unitSystem"
-            ? mockUnitSettingQuery
-            : { data: { value: "metric" }, error: null, refetch: vi.fn() },
+          input.key === "unitSystem" ? mockUnitSettingQuery : mockClimbingGradeSettingQuery,
       },
       set: {
         useMutation: () => ({ mutate: mockSettingsSetMutate, isPending: false }),
@@ -331,6 +336,8 @@ beforeEach(() => {
   mockSetPasswordMutationOptions = null;
   mockUnitSettingQuery.data = { key: "unitSystem", value: "metric" };
   mockUnitSettingQuery.error = null;
+  mockClimbingGradeSettingQuery.data = null;
+  mockClimbingGradeSettingQuery.error = null;
   vi.clearAllMocks();
   mockAppStoreBilling.loadProduct.mockResolvedValue({
     productID: "com.dofek.premium.monthly",
@@ -428,6 +435,89 @@ describe("SettingsScreen categories", () => {
       expect(screen.getByText(sectionText)).toBeTruthy();
     },
   );
+});
+
+describe("SettingsScreen climbing grade systems", () => {
+  beforeEach(() => {
+    mockSearchParams = { tab: "models-units" };
+  });
+
+  it("shows editable default grades when no preference has been saved", async () => {
+    const { default: SettingsScreen } = await import("../app/settings");
+    await act(async () => {
+      render(<SettingsScreen />);
+    });
+
+    expect(screen.getByRole("button", { name: "V Scale" }).getAttribute("aria-selected")).toBe(
+      "true",
+    );
+    expect(
+      screen.getByRole("button", { name: "Yosemite Decimal System" }).getAttribute("aria-selected"),
+    ).toBe("true");
+
+    fireEvent.click(screen.getByRole("button", { name: "Fontainebleau" }));
+    expect(mockSettingsSetMutate).toHaveBeenCalledWith(
+      { key: "climbingGradeSystems", value: { boulder: "font", route: "yds" } },
+      expect.any(Object),
+    );
+  });
+
+  it("shows default grades after an initially pending request returns no saved preference", async () => {
+    mockClimbingGradeSettingQuery.data = undefined;
+    const { default: SettingsScreen } = await import("../app/settings");
+    const { rerender } = render(<SettingsScreen />);
+
+    expect(screen.queryByRole("button", { name: "V Scale" })).toBeNull();
+    await act(async () => {
+      mockClimbingGradeSettingQuery.data = null;
+      rerender(<SettingsScreen />);
+    });
+
+    expect(screen.getByRole("button", { name: "V Scale" }).getAttribute("aria-selected")).toBe(
+      "true",
+    );
+    expect(
+      screen.getByRole("button", { name: "Yosemite Decimal System" }).getAttribute("aria-selected"),
+    ).toBe("true");
+  });
+
+  it("keeps default grades and the server error visible when an unset preference fails to refresh", async () => {
+    mockClimbingGradeSettingQuery.error = new Error(
+      "Your session expired. Sign in again to refresh your settings.",
+    );
+    const { default: SettingsScreen } = await import("../app/settings");
+    await act(async () => {
+      render(<SettingsScreen />);
+    });
+
+    expect(
+      screen.getByText("Your session expired. Sign in again to refresh your settings."),
+    ).toBeTruthy();
+    expect(screen.getByRole("button", { name: "V Scale" }).getAttribute("aria-selected")).toBe(
+      "true",
+    );
+    expect(
+      screen.getByRole("button", { name: "Yosemite Decimal System" }).getAttribute("aria-selected"),
+    ).toBe("true");
+  });
+
+  it("keeps a saved preference selected", async () => {
+    mockClimbingGradeSettingQuery.data = {
+      key: "climbingGradeSystems",
+      value: { boulder: "font", route: "french" },
+    };
+    const { default: SettingsScreen } = await import("../app/settings");
+    await act(async () => {
+      render(<SettingsScreen />);
+    });
+
+    expect(
+      screen.getByRole("button", { name: "Fontainebleau" }).getAttribute("aria-selected"),
+    ).toBe("true");
+    expect(screen.getByRole("button", { name: "French" }).getAttribute("aria-selected")).toBe(
+      "true",
+    );
+  });
 });
 
 describe("SettingsScreen unit system", () => {
