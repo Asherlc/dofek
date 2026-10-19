@@ -532,6 +532,143 @@ describe("metric stream ClickHouse sink (integration)", () => {
     }
   });
 
+  it("does not amplify incoming rows against deletion scopes older than the batch", async () => {
+    const userId = randomUUID();
+    const providerId = `scope-pruning-${userId}`;
+    const scopeQueryIds: string[] = [];
+    const rows = Array.from({ length: 32 }, (_, index) =>
+      createCurrentMetricStreamEvent(
+        {
+          userId,
+          providerId,
+          externalId: `current-${index}`,
+          recordedAt: "2026-06-11T14:36:12.000Z",
+          sourceType: "api",
+          channel: "heart_rate",
+          scalar: 75,
+        },
+        "1000000000000040",
+      ),
+    );
+    const profiledClient: ClickHouseMetricStreamInsertClient = {
+      command: (options) => client.command(options),
+      insert: (options) => client.insert(options),
+      query: (options) => {
+        const queryId = randomUUID();
+        if (options.query.includes(METRIC_STREAM_DELETE_SCOPE_TABLE)) {
+          scopeQueryIds.push(queryId);
+        }
+        return client.query({
+          ...options,
+          query_id: queryId,
+          clickhouse_settings: {
+            ...options.clickhouse_settings,
+            log_queries: 1,
+            log_profile_events: 1,
+          },
+        });
+      },
+    };
+
+    try {
+      await client.insert({
+        table: METRIC_STREAM_DELETE_SCOPE_TABLE,
+        values: Array.from({ length: 512 }, (_, index) => ({
+          user_id: index % 2 === 0 ? userId : null,
+          provider_id: providerId,
+          recorded_at_start: new Date(Date.UTC(2026, 5, 10) + index * 1_000).toISOString(),
+          operation_revision: "1000000000000039",
+        })),
+        format: "JSONEachRow",
+        clickhouse_settings: { date_time_input_format: "best_effort" },
+      });
+
+      await applyMetricStreamEventsToClickHouse(profiledClient, rows);
+      const currentRows = await client.query({
+        query: `SELECT count() AS count FROM ${METRIC_STREAM_TABLE} FINAL
+          WHERE user_id = {userId:UUID} AND is_deleted = 0`,
+        query_params: { userId },
+        format: "JSONEachRow",
+      });
+      expect(
+        z.array(z.object({ count: z.coerce.number() })).parse(await currentRows.json()),
+      ).toEqual([{ count: 32 }]);
+
+      await client.command({ query: "SYSTEM FLUSH LOGS" });
+      const profileResult = await client.query({
+        query: `SELECT ProfileEvents['JoinResultRowCount'] AS join_rows
+          FROM system.query_log
+          WHERE query_id IN {queryIds:Array(String)} AND type = 'QueryFinish'`,
+        query_params: { queryIds: scopeQueryIds },
+        format: "JSONEachRow",
+      });
+      const profileSchema = z.array(z.object({ join_rows: z.coerce.number() }));
+      expect(profileSchema.parse(await profileResult.json())).toEqual([{ join_rows: 0 }]);
+    } finally {
+      await client.command({
+        query: `ALTER TABLE ${METRIC_STREAM_DELETE_SCOPE_TABLE}
+          DELETE WHERE provider_id = {providerId:String} SETTINGS mutations_sync = 1`,
+        query_params: { providerId },
+      });
+      await client.command({
+        query: `ALTER TABLE ${METRIC_STREAM_TABLE}
+          DELETE WHERE user_id = {userId:UUID} SETTINGS mutations_sync = 1`,
+        query_params: { userId },
+      });
+    }
+  });
+
+  it("guards older rows in a mixed-version batch while retaining same-operation and newer rows", async () => {
+    const userId = randomUUID();
+    const scope = { userId, providerId: "mixed-revision-test" };
+    const row = {
+      ...scope,
+      recordedAt: "2026-06-11T14:36:12.000Z",
+      sourceType: "api",
+      channel: "heart_rate",
+      scalar: 75,
+    };
+    // Put the newest row first to catch filtering by the first or maximum version.
+    const rows = [
+      createCurrentMetricStreamEvent({ ...row, externalId: "newer" }, "5000000000000102"),
+      createCurrentMetricStreamEvent({ ...row, externalId: "older" }, "5000000000000100"),
+      createCurrentMetricStreamEvent({ ...row, externalId: "same-operation" }, "5000000000000101"),
+    ];
+
+    try {
+      await applyMetricStreamEventsToClickHouse(client, [
+        createCurrentMetricStreamDeletedEvent(scope, "5000000000000101"),
+        ...rows,
+      ]);
+      const result = await client.query({
+        query: `SELECT external_id, is_deleted, toString(version) AS version
+          FROM ${METRIC_STREAM_TABLE} FINAL
+          WHERE user_id = {userId:UUID} ORDER BY external_id`,
+        query_params: { userId },
+        format: "JSONEachRow",
+      });
+      const resultSchema = z.array(
+        z.object({ external_id: z.string(), is_deleted: z.number(), version: z.string() }),
+      );
+      expect(resultSchema.parse(await result.json())).toEqual([
+        { external_id: "newer", is_deleted: 0, version: "10000000000000205" },
+        { external_id: "older", is_deleted: 1, version: "10000000000000202" },
+        { external_id: "same-operation", is_deleted: 0, version: "10000000000000203" },
+      ]);
+    } finally {
+      await client.command({
+        query: `ALTER TABLE ${METRIC_STREAM_DELETE_SCOPE_TABLE}
+          DELETE WHERE user_id = {userId:UUID} SETTINGS mutations_sync = 1`,
+        query_params: { userId },
+      });
+      await client.command({
+        query: `ALTER TABLE ${METRIC_STREAM_TABLE}
+          DELETE WHERE user_id = {userId:UUID} SETTINGS mutations_sync = 1`,
+        query_params: { userId },
+      });
+    }
+  });
+
   it("applies a long delete run within HTTP limits before its replacement rows", async () => {
     const ids = longDeleteTestEventIds;
     const scopeIndexes = [0, 100, 349];
