@@ -629,15 +629,16 @@ describe("metric stream ClickHouse sink (integration)", () => {
       scalar: 75,
     };
     // Put the newest row first to catch filtering by the first or maximum version.
+    // The minimum version rounds up to the deletion boundary if converted to Number.
     const rows = [
-      createCurrentMetricStreamEvent({ ...row, externalId: "newer" }, "5000000000000102"),
-      createCurrentMetricStreamEvent({ ...row, externalId: "older" }, "5000000000000100"),
-      createCurrentMetricStreamEvent({ ...row, externalId: "same-operation" }, "5000000000000101"),
+      createCurrentMetricStreamEvent({ ...row, externalId: "newer" }, "5000000000000103"),
+      createCurrentMetricStreamEvent({ ...row, externalId: "older" }, "5000000000000101"),
+      createCurrentMetricStreamEvent({ ...row, externalId: "same-operation" }, "5000000000000102"),
     ];
 
     try {
       await applyMetricStreamEventsToClickHouse(client, [
-        createCurrentMetricStreamDeletedEvent(scope, "5000000000000101"),
+        createCurrentMetricStreamDeletedEvent(scope, "5000000000000102"),
         ...rows,
       ]);
       const result = await client.query({
@@ -651,9 +652,9 @@ describe("metric stream ClickHouse sink (integration)", () => {
         z.object({ external_id: z.string(), is_deleted: z.number(), version: z.string() }),
       );
       expect(resultSchema.parse(await result.json())).toEqual([
-        { external_id: "newer", is_deleted: 0, version: "10000000000000205" },
-        { external_id: "older", is_deleted: 1, version: "10000000000000202" },
-        { external_id: "same-operation", is_deleted: 0, version: "10000000000000203" },
+        { external_id: "newer", is_deleted: 0, version: "10000000000000207" },
+        { external_id: "older", is_deleted: 1, version: "10000000000000204" },
+        { external_id: "same-operation", is_deleted: 0, version: "10000000000000205" },
       ]);
     } finally {
       await client.command({

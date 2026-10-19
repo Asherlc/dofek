@@ -492,7 +492,10 @@ async function tombstoneRowsWithNewerDeleteScopes(
         )) AS event)
       ) AS row
       CROSS JOIN (SELECT * FROM ${METRIC_STREAM_DELETE_SCOPE_TABLE} FINAL
-        WHERE user_id IS NULL OR user_id IN {user_ids:Array(UUID)}) AS scope
+        WHERE (user_id IS NULL OR user_id IN {user_ids:Array(UUID)})
+          AND operation_revision * 2 > arrayMin(arrayMap(
+            row_version -> toUInt64(row_version), {versions:Array(String)}
+          ))) AS scope
       WHERE (scope.user_id IS NULL OR scope.user_id = row.user_id)
         AND (scope.provider_id IS NULL OR scope.provider_id = row.provider_id)
         AND (scope.activity_id IS NULL OR scope.activity_id = row.activity_id)
