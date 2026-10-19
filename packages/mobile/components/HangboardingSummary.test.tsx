@@ -55,7 +55,7 @@ afterEach(() => {
 });
 
 describe("HangboardingSummary", () => {
-  it("renders server-provided metrics, latest metadata, and daily duration values", () => {
+  it("renders server-provided metrics and daily duration values", () => {
     render(<HangboardingSummary data={summary} loading={false} />);
 
     for (const label of [
@@ -76,15 +76,11 @@ describe("HangboardingSummary", () => {
     expect(screen.getByText("2m")).toBeTruthy();
     expect(screen.getByText("125 bpm")).toBeTruthy();
     expect(screen.getByText("150 bpm")).toBeTruthy();
-    expect(screen.getByText("Repeaters")).toBeTruthy();
-    expect(screen.getByText("Tension Board")).toBeTruthy();
-    expect(screen.getByText("15m")).toBeTruthy();
-    expect(screen.getByText(/2026/)).toBeTruthy();
     expect(sparkLineProps).toHaveLength(1);
     expect(sparkLineProps[0]?.data).toEqual([600, 900]);
   });
 
-  it("renders nullable metrics and latest metadata as em dashes", () => {
+  it("renders nullable metrics as em dashes", () => {
     render(
       <HangboardingSummary
         data={{
@@ -94,11 +90,6 @@ describe("HangboardingSummary", () => {
           workIntervalCount: null,
           averageHeartRate: null,
           peakHeartRate: null,
-          latestSession: {
-            ...summary.latestSession,
-            planName: null,
-            boardName: null,
-          },
         }}
         loading={false}
       />,
