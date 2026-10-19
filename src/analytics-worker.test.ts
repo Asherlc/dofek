@@ -13,6 +13,7 @@ function createWorkerOptions(overrides: Partial<WorkerOptions> = {}): WorkerOpti
     now: () => new Date("2026-07-24T18:00:00.000Z"),
     reportFailure: vi.fn(),
     runAnalyticsBuild: vi.fn().mockResolvedValue(undefined),
+    runRefreshJobs: vi.fn(async (processRefresh: () => Promise<void>) => processRefresh()),
     sleep: vi.fn().mockResolvedValue(undefined),
     warmQueryCache: vi.fn().mockResolvedValue(undefined),
     ...overrides,
@@ -256,21 +257,19 @@ describe("AnalyticsWorker", () => {
     });
   });
 
-  it("uses the retry delay after failure and the normal cadence after recovery", async () => {
+  it("consumes refresh requests and retries failures before completing the request", async () => {
     const controller = new AbortController();
     const runAnalyticsBuild = vi
       .fn()
       .mockRejectedValueOnce(new Error("daily_strain: database error"))
-      .mockResolvedValue(undefined);
-    const sleep = vi.fn(async () => {
-      if (sleep.mock.calls.length === 2) {
-        controller.abort();
-      }
-    });
+      .mockImplementation(async () => controller.abort());
+    const sleep = vi.fn().mockResolvedValue(undefined);
+    const runRefreshJobs = vi.fn(async (processRefresh: () => Promise<void>) => processRefresh());
     const worker = new AnalyticsWorker(
       createWorkerOptions({
         runAnalyticsBuild,
         sleep,
+        runRefreshJobs,
       }),
     );
 
@@ -278,7 +277,8 @@ describe("AnalyticsWorker", () => {
 
     expect(runAnalyticsBuild).toHaveBeenCalledTimes(2);
     expect(sleep).toHaveBeenNthCalledWith(1, 300_000, controller.signal);
-    expect(sleep).toHaveBeenNthCalledWith(2, 900_000, controller.signal);
+    expect(sleep).toHaveBeenCalledOnce();
+    expect(runRefreshJobs).toHaveBeenCalledWith(expect.any(Function), 900_000, controller.signal);
   });
 });
 
