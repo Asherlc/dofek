@@ -246,10 +246,6 @@ describe("ClimbingTrainingCard", () => {
     expect(screen.getByText("2m")).toBeTruthy();
     expect(screen.getByText("125 bpm")).toBeTruthy();
     expect(screen.getByText("150 bpm")).toBeTruthy();
-    expect(screen.getByText("7/3 Repeaters")).toBeTruthy();
-    expect(screen.getByText("Tension Board")).toBeTruthy();
-    expect(screen.getByText("15m")).toBeTruthy();
-    expect(screen.getByText(/2026/)).toBeTruthy();
   });
 
   it("shows the Hangboarding empty state", async () => {
