@@ -99,12 +99,12 @@ if (eventName === "workflow_dispatch") {
           `head_sha=${commit}`,
           "-F",
           "per_page=1",
-          "--jq",
-          ".workflow_runs[0] | if . == null then null else {id, head_sha, head_branch, event, conclusion} end",
         ],
         { encoding: "utf8", stdio: ["ignore", "pipe", "inherit"] },
       );
-      const run = successfulRunSchema.nullable().parse(JSON.parse(response));
+      const [run] = z
+        .object({ workflow_runs: z.array(successfulRunSchema) })
+        .parse(JSON.parse(response)).workflow_runs;
       if (run) {
         if (run.head_sha !== commit) {
           throw new Error(`CI lookup for ${commit} returned a different commit ${run.head_sha}`);
