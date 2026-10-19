@@ -55,6 +55,13 @@ describe("climbing log formatting", () => {
     expect(formatClimbingRecordedResult(null, "completed", 2)).toBe("Completed · Attempts: 2");
     expect(formatClimbingRecordedResult(null, "failed", 1)).toBe("Failed · Attempts: 1");
   });
+  it("preserves recorded results without inventing an unknown attempt count", () => {
+    expect(formatClimbingRecordedResult(null, "completed", null)).toBe("Completed");
+    expect(formatClimbingRecordedResult(null, "failed", null)).toBe("Failed");
+    expect(formatClimbingRecordedResult("Pitch 1", "completed", null)).toBe("Pitch 1 completed");
+    expect(formatClimbingRecordedResult("Pitch 1", null, null)).toBe("Pitch 1");
+    expect(formatClimbingRecordedResult(null, null, null)).toBeNull();
+  });
   it("labels each recorded rope method once without exposing unreported methods", () => {
     expect(formatClimbingRopeMethods([{ ropeMethod: "top_rope" }])).toBe("Top rope");
     expect(

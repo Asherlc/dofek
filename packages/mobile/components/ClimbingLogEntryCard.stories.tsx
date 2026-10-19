@@ -37,7 +37,7 @@ export const TopRope: Story = {
     entry: {
       ...climbingLogFixture,
       recordedClimbOutcome: null,
-      recordedClimbAttemptCount: 1,
+      recordedClimbAttemptCount: null,
       attempts: [climbingAttemptFixture(climbingLogFixture.id, { ropeMethod: "top_rope" })],
     },
   },

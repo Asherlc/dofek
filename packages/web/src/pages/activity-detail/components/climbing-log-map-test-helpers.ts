@@ -13,7 +13,7 @@ const first = climbingLogEntryFixture({
   providerId: "mountain-project",
   sourceName: "Mountain Project",
   displayGrade: "5.4",
-  recordedClimbAttemptCount: 1,
+  recordedClimbAttemptCount: null,
   sourceLinks: [
     {
       providerId: "mountain-project",

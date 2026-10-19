@@ -33,6 +33,14 @@ export function ClimbingLogEntryCard({
 }) {
   const name = entry.climb?.name ?? entry.title ?? "Climbing log";
   const methods = formatClimbingRopeMethods(entry.attempts);
+  const recordedResult =
+    entry.recordedClimbAttemptCount === 0
+      ? null
+      : formatClimbingRecordedResult(
+          null,
+          entry.recordedClimbOutcome,
+          entry.recordedClimbAttemptCount,
+        );
   const markers = useMemo<ClimbingMapMarker[]>(
     () => (location ? [{ entryId: entry.id, entryNumber, label: name, location }] : []),
     [entry.id, entryNumber, name, location],
@@ -62,15 +70,7 @@ export function ClimbingLogEntryCard({
       </div>
       <div className="space-y-1 text-xs text-subtle">
         {methods && <p>{methods}</p>}
-        {entry.recordedClimbAttemptCount > 0 && (
-          <p>
-            {formatClimbingRecordedResult(
-              null,
-              entry.recordedClimbOutcome,
-              entry.recordedClimbAttemptCount,
-            )}
-          </p>
-        )}
+        {recordedResult && <p>{recordedResult}</p>}
         {entry.pitchResults.map((result) => (
           <p key={result.attemptIds.join(":")}>
             {formatClimbingRecordedResult(

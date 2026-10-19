@@ -5,15 +5,21 @@ import { formatClimbingRopeMethod } from "./climbing-context.ts";
 export function formatClimbingRecordedResult(
   target: string | null,
   outcome: AttemptOutcome | null,
-  recordedCount: number,
-): string {
-  const count = `Attempts: ${recordedCount}`;
-  if (target === null) {
-    return outcome === null
-      ? count
-      : `${outcome === "completed" ? "Completed" : "Failed"} · ${count}`;
-  }
-  return `${target}${outcome === null ? "" : ` ${outcome}`} · ${count}`;
+  recordedCount: number | null,
+): string | null {
+  const result =
+    target === null
+      ? outcome === null
+        ? null
+        : outcome === "completed"
+          ? "Completed"
+          : "Failed"
+      : `${target}${outcome === null ? "" : ` ${outcome}`}`;
+  return (
+    [result, recordedCount === null ? null : `Attempts: ${recordedCount}`]
+      .filter((part) => part !== null)
+      .join(" · ") || null
+  );
 }
 
 export function formatClimbingRopeMethods(

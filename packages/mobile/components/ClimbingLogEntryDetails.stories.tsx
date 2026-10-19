@@ -39,6 +39,19 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 export const RecordedAidCompletion: Story = {};
+export const UnknownAttemptCount: Story = {
+  args: { entry: { ...entry, providerId: "mountain-project", recordedClimbAttemptCount: null } },
+};
+export const UnknownTotalWithKnownOrder: Story = {
+  args: {
+    entry: {
+      ...entry,
+      providerId: "mountain-project",
+      recordedClimbAttemptCount: null,
+      attempts: [climbingAttemptFixture(entry.id, { ropeMethod: "lead", attemptIndex: 1 })],
+    },
+  },
+};
 export const UnknownTarget: Story = {
   args: {
     entry: climbingLogEntryFixture({
