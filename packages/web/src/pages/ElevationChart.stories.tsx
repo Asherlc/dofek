@@ -1,6 +1,6 @@
 import { UnitConverter } from "@dofek/format/units";
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { ElevationChart } from "./ActivityDetailPage.tsx";
+import { ElevationChart } from "./activity-detail/components/ActivityDetailCharts.tsx";
 
 const meta = {
   title: "Pages/ActivityDetail/Elevation",
