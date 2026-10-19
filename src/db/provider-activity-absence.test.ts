@@ -96,6 +96,19 @@ describe("provider activity absence cache invalidation", () => {
     expect(mockInvalidateByPrefix).toHaveBeenCalledTimes(4);
   });
 
+  it("reconciles an explicitly authoritative empty list and invalidates visibility caches", async () => {
+    await reconcileProviderActivityAbsence(makeMockDb(), {
+      providerId: "test-provider",
+      windowStart: new Date("2026-03-01T00:00:00Z"),
+      windowEnd: new Date("2026-03-03T00:00:00Z"),
+      presentExternalIds: new Set(),
+      emptyListIsAuthoritative: true,
+      userId,
+    });
+    expect(mockExecute).toHaveBeenCalledTimes(1);
+    expect(mockInvalidateByPrefix).toHaveBeenCalledTimes(4);
+  });
+
   it("invalidates activity, calendar, and training caches after marking absent", async () => {
     await markProviderActivityAbsent(makeMockDb(), {
       providerId: "test-provider",

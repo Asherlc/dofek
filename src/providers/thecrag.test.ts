@@ -3,19 +3,18 @@ import {
   ProviderRateLimitError,
   ProviderRequestTimeoutError,
 } from "@dofek/provider-http/rate-limit";
-import { DrizzleQueryError, SQL } from "drizzle-orm";
-import { PgDialect } from "drizzle-orm/pg-core";
+import { DrizzleQueryError } from "drizzle-orm";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ClimbingLogSyncInput } from "../db/climbing-log-sync.ts";
 import type { SyncDatabase } from "../db/index.ts";
 import { authFailureReasonFromError, ProviderTokenRejectedError } from "./auth-errors.ts";
 import { SyncRun } from "./sync-run.ts";
 import { SyncWindow } from "./sync-window.ts";
-import { createMockDatabase, theCragAscent, theCragPage } from "./test-helpers.ts";
+import { createMockDatabase, theCragAscent } from "./test-helpers.ts";
+import { gradeCases, makeRun, response, tokens } from "./thecrag.test-helpers.ts";
 import { TheCragProvider } from "./thecrag.ts";
 
 const USER_ID = "00000000-0000-0000-0000-000000000001";
-const ACCOUNT_ID = "123";
 const mocks = vi.hoisted(() => ({
   persist: vi.fn(async (_db: SyncDatabase, input: ClimbingLogSyncInput) => ({
     logEntryIds: input.entries.map((entry) => entry.externalId),
@@ -36,41 +35,6 @@ vi.mock("../db/tokens.ts", () => ({
 }));
 vi.mock("../db/sync-log.ts", () => ({ withSyncLog: mocks.withSyncLog }));
 vi.mock("../lib/error-reporting.ts", () => ({ captureException: mocks.captureException }));
-
-function response(
-  ascents: Record<string, unknown>[] = [],
-  overrides: Record<string, unknown> = {},
-): Response {
-  return new Response(JSON.stringify(theCragPage(ascents, overrides)), {
-    status: 200,
-    headers: { "Content-Type": "application/json" },
-  });
-}
-
-function tokens(accountId = ACCOUNT_ID) {
-  return {
-    accessToken: "personal-key",
-    refreshToken: null,
-    expiresAt: new Date("2099-12-31T00:00:00.000Z"),
-    scopes: "logbook:read",
-    providerAccountId: accountId,
-  };
-}
-
-function makeRun(
-  database: ReturnType<typeof createMockDatabase>["db"],
-  options: { full?: boolean; origin?: "scheduled" | "manual"; userId?: string } = {},
-): SyncRun {
-  return new SyncRun({
-    db: database,
-    window:
-      options.full === false
-        ? SyncWindow.fromDateRange({ sinceDate: "2026-10-01", untilDate: "2026-10-11" })
-        : SyncWindow.full(new Date("2026-10-11T23:59:59.999Z")),
-    userId: options.userId ?? USER_ID,
-    origin: options.origin,
-  });
-}
 
 function writtenRecords() {
   const input = mocks.persist.mock.calls.at(-1)?.[1];
@@ -430,33 +394,7 @@ describe("TheCragProvider logbook sync", () => {
     ]);
   });
 
-  it.each([
-    ["V4", "Boulder", "boulder", "v_scale", "V4"],
-    [" V10 ", "Boulder", "boulder", "v_scale", "V10"],
-    ["VB+", "Boulder", "boulder", "v_scale", "VB+"],
-    ["5.10a", "Sport", "sport", "yds", "5.10a"],
-    ["FR 6a", "Sport", "sport", "french", "6a"],
-    ["FB 6A", "Boulder", "boulder", "font", "6A"],
-    ["AU 19", "Trad", "trad", "ewbank", "19"],
-    ["UIAA 7", "Trad", "trad", "uiaa", "7"],
-    ["FR:6a", "Sport", "sport", "french", "6a"],
-    ["FB:6A", "Boulder", "boulder", "font", "6A"],
-    ["AU:19", "Trad", "trad", "ewbank", "19"],
-    ["UIAA:7", "Trad", "trad", "uiaa", "7"],
-    ["YDS:5.10a", "Sport", "sport", "yds", "5.10a"],
-    ["BLDV:V3", "Boulder", "boulder", "v_scale", "V3"],
-    ["FR:  6a", "Sport", "sport", "french", "6a"],
-    ["FR \n6a", "Sport", "sport", "french", "6a"],
-    ["AID A2", "Aid", "aid", "aid", "A2"],
-    ["AIDC C2+", "Aid", "aid", "aid", "C2+"],
-    ["WICE WI4+", "Ice", "ice", "water_ice", "WI4+"],
-    ["AICE AI3", "Ice", "ice", "alpine_ice", "AI3"],
-    ["MIXED M6+", "Mixed", "mixed", "mixed", "M6+"],
-    ["IFAS AD+", "Alpine", "alpine", "ifas", "AD+"],
-    ["NCCS VI", "Alpine", "alpine", "nccs", "VI"],
-    ["UK E3", "Trad", "trad", "british_adjectival", "E3"],
-    ["UKT 5c", "Trad", "trad", "british_technical", "5c"],
-  ])(
+  it.each(gradeCases)(
     "maps evidenced grade %s without interpreting gradeAtom.type",
     async (sourceGrade, style, climbedGearStyle, gradeSystem, grade) => {
       const source = theCragAscent({
@@ -623,7 +561,6 @@ describe("TheCragProvider logbook sync", () => {
         { depth: null },
       ),
     ).not.toContain("private unsupported-ascent notes");
-    expect(database.spies.execute).not.toHaveBeenCalled();
   });
 
   it("uses the recorded route discipline when gear style is absent", async () => {
@@ -989,49 +926,6 @@ describe("TheCragProvider logbook sync", () => {
     expect(database.spies.execute).not.toHaveBeenCalled();
   });
 
-  it("uses the current account update watermark with a one-second overlap for scheduled syncs", async () => {
-    const database = createMockDatabase();
-    database.spies.execute
-      .mockResolvedValueOnce([{ epoch: 1791676800 }])
-      .mockResolvedValueOnce([{ id: "entry-1" }]);
-    const fetchFn = vi.fn<typeof fetch>().mockResolvedValue(response([theCragAscent()]));
-    const result = await new TheCragProvider(fetchFn).sync(
-      makeRun(database.db, { full: false, origin: "scheduled" }),
-    );
-    expect(result.errors).toEqual([]);
-    expect(new URL(String(fetchFn.mock.calls[0]?.[0])).searchParams.get("since")).toBe(
-      "1791676799",
-    );
-    const query = database.spies.execute.mock.calls[0]?.[0];
-    if (!(query instanceof SQL)) throw new Error("No cursor lookup was issued");
-    expect(new PgDialect().sqlToQuery(query).params).toEqual(
-      expect.arrayContaining([USER_ID, "thecrag", "123"]),
-    );
-  });
-
-  it("starts with full history when the current account has no saved epoch", async () => {
-    const database = createMockDatabase({ executeResult: [{ epoch: null }] });
-    const fetchFn = vi.fn<typeof fetch>().mockResolvedValue(response());
-    const result = await new TheCragProvider(fetchFn).sync(
-      makeRun(database.db, { full: false, origin: "scheduled" }),
-    );
-    expect(result.errors).toEqual([]);
-    expect(new URL(String(fetchFn.mock.calls[0]?.[0])).searchParams.has("since")).toBe(false);
-    expect(database.spies.execute).toHaveBeenCalledTimes(1);
-  });
-
-  it.each([
-    { full: true, origin: "scheduled" as const },
-    { full: false, origin: "manual" as const },
-  ])("fetches full history without loading an incremental cursor for %j", async (options) => {
-    const database = createMockDatabase();
-    const fetchFn = vi.fn<typeof fetch>().mockResolvedValue(response());
-    const result = await new TheCragProvider(fetchFn).sync(makeRun(database.db, options));
-    expect(result.errors).toEqual([]);
-    expect(new URL(String(fetchFn.mock.calls[0]?.[0])).searchParams.has("since")).toBe(false);
-    expect(database.spies.execute).not.toHaveBeenCalled();
-  });
-
   it("explains missing account identity before requesting data", async () => {
     mocks.loadTokens.mockResolvedValue({ ...tokens(), providerAccountId: undefined });
     const database = createMockDatabase();
@@ -1069,20 +963,6 @@ describe("TheCragProvider logbook sync", () => {
     ]);
     expect(mocks.ensureProvider).not.toHaveBeenCalled();
     expect(mocks.loadTokens).not.toHaveBeenCalled();
-    expect(fetchFn).not.toHaveBeenCalled();
-  });
-
-  it("fails visibly when the saved update-position query returns no result", async () => {
-    const database = createMockDatabase();
-    const fetchFn = vi.fn<typeof fetch>();
-    const result = await new TheCragProvider(fetchFn).sync(
-      makeRun(database.db, { full: false, origin: "scheduled" }),
-    );
-    expect(result.errors).toEqual([
-      expect.objectContaining({
-        message: expect.stringMatching(/could not read its saved update position/i),
-      }),
-    ]);
     expect(fetchFn).not.toHaveBeenCalled();
   });
 

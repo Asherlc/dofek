@@ -61,11 +61,12 @@ supplies method and attempt type as separate fields. See the shared
 [interpretation contract](climbing-context.md) and the
 [current adapter](../src/providers/openbeta.ts).
 
-The provider uses a provider-scoped unique index for idempotent upserts. A
-complete non-empty pagination run soft-tombstones rows missing from the
-current list and restores rows that reappear. Empty, failed, malformed, or
-partially unsupported responses do not reconcile absence because they are not
-proof that the upstream log was intentionally cleared.
+The [snapshot writer](../src/db/climbing-log-snapshot.ts) uses the canonical
+writer's provider-scoped identities for idempotent upserts. A complete
+pagination run, including a valid empty list, soft-tombstones missing rows and
+restores rows that reappear. Failed, malformed, or partially unsupported
+responses do not reconcile absence; see the
+[integration tests](../src/providers/openbeta-sync.integration.test.ts).
 
 ## Temporary upstream failures
 

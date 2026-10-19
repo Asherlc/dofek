@@ -272,7 +272,7 @@ describe("MountainProjectProvider", () => {
 
   it.each([
     { rows: [row()], reconciles: true, synced: 1 },
-    { rows: [], reconciles: false, synced: 0 },
+    { rows: [], reconciles: true, synced: 0 },
     {
       rows: [row(), row("Lead", "Redpoint", "Trad", "5.9", "2026-02-30")],
       reconciles: false,
@@ -280,7 +280,7 @@ describe("MountainProjectProvider", () => {
     },
     { rows: [row("Lead", "Redpoint", "Trad", "5.9", "2026-02-30")], reconciles: false, synced: 0 },
   ])(
-    "reconciles only complete valid nonempty discovery $reconciles/$synced",
+    "reconciles only complete valid discovery $reconciles/$synced",
     async ({ rows, reconciles, synced }) => {
       const db = database();
       const result = await run(
