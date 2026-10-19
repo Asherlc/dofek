@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { ZodError } from "zod";
 import {
-  type KayaApiError,
+  KayaApiError,
   KayaClient,
   KayaInvalidCredentialsError,
   refreshKayaAccessToken,
@@ -525,7 +525,19 @@ describe("KayaClient", () => {
     ).rejects.toBeInstanceOf(ZodError);
   });
 
-  it.each([{}, { data: {} }, { data: null }])(
+  it("reports an actionable Kaya error when GraphQL omits its data envelope", async () => {
+    const client = new KayaClient(
+      "token",
+      vi.fn<typeof fetch>().mockImplementation(async () => jsonResponse({})),
+    );
+    for (const list of [() => client.listSessions("42"), () => client.listAscents("42")]) {
+      const request = list();
+      await expect(request).rejects.toBeInstanceOf(KayaApiError);
+      await expect(request).rejects.toThrow("Kaya returned no logbook data. Try syncing again.");
+    }
+  });
+
+  it.each([{ data: {} }, { data: null }])(
     "rejects a missing GraphQL list instead of interpreting it as an empty logbook: %j",
     async (body) => {
       const client = new KayaClient(
@@ -561,7 +573,9 @@ describe("KayaClient", () => {
         }),
       )
       .mockResolvedValueOnce(jsonResponse({}));
-    await expect(new KayaClient("token", fetchFn).listSessions("42")).rejects.toThrow();
+    await expect(new KayaClient("token", fetchFn).listSessions("42")).rejects.toThrow(
+      "Kaya returned no logbook data. Try syncing again.",
+    );
   });
 
   it("paginates after a full page and requests the next offset", async () => {
