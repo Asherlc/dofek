@@ -15,10 +15,9 @@ function createMockLink(state: GradeSystemStoryState): TRPCLink<AppRouter> {
       createMockObservable(
         state,
         op.path === "settings.get"
-          ? {
-              key: "climbingGradeSystems",
-              value: state === "preference" ? { boulder: "font", route: "french" } : null,
-            }
+          ? state === "preference"
+            ? { key: "climbingGradeSystems", value: { boulder: "font", route: "french" } }
+            : null
           : { key: "climbingGradeSystems", value: op.input },
         state === "saving" && op.path === "settings.set",
       );
@@ -78,6 +77,11 @@ export const FontAndFrench: Story = {
 
 export const Default: Story = {
   render: () => <ClimbingGradeSystemStoryFrame state="default" />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(await canvas.findByLabelText("Boulder grades")).toHaveValue("v_scale");
+    await expect(canvas.getByLabelText("Route grades")).toHaveValue("yds");
+  },
 };
 
 export const Loading: Story = {
@@ -92,9 +96,9 @@ export const Saving: Story = {
   render: () => <ClimbingGradeSystemStoryFrame state="saving" />,
   play: async ({ canvasElement, userEvent }) => {
     const canvas = within(canvasElement);
-    await userEvent.selectOptions(canvas.getByLabelText("Boulder grade system"), "font");
+    await userEvent.selectOptions(await canvas.findByLabelText("Boulder grades"), "font");
 
-    await expect(canvas.getByLabelText("Boulder grade system")).toBeDisabled();
-    await expect(canvas.getByLabelText("Route grade system")).toBeDisabled();
+    await expect(canvas.getByLabelText("Boulder grades")).toBeDisabled();
+    await expect(canvas.getByLabelText("Route grades")).toBeDisabled();
   },
 };
