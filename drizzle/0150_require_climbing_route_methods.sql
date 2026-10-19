@@ -112,11 +112,11 @@ EXECUTE FUNCTION fitness.climbing_route_methods_valid();
 CREATE CONSTRAINT TRIGGER climbing_log_entry_route_method_guard
 AFTER UPDATE OF climb_id ON fitness.climbing_log_entry
 DEFERRABLE INITIALLY DEFERRED FOR EACH ROW
-WHEN (OLD.climb_id IS DISTINCT FROM NEW.climb_id)
+WHEN (old.climb_id IS DISTINCT FROM new.climb_id)
 EXECUTE FUNCTION fitness.climbing_route_methods_valid();
 --> statement-breakpoint
 CREATE CONSTRAINT TRIGGER climb_route_method_guard
 AFTER UPDATE OF kind ON fitness.climb
 DEFERRABLE INITIALLY DEFERRED FOR EACH ROW
-WHEN (OLD.kind IS DISTINCT FROM NEW.kind)
+WHEN (old.kind IS DISTINCT FROM new.kind)
 EXECUTE FUNCTION fitness.climbing_route_methods_valid();

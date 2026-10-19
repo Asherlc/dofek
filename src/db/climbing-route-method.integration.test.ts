@@ -218,7 +218,7 @@ describe("required climbing route methods", () => {
     });
   });
 
-  it("checks a methodless route attempt even if its ID changes before commit", async () => {
+  it("checks a route attempt without a method even if its ID changes before commit", async () => {
     await write([source()]);
     const entry = await log();
     await expect(
@@ -283,7 +283,7 @@ describe("required climbing route methods", () => {
   });
 
   it.each(["climb-kind", "log-target"] as const)(
-    "serializes %s changes against concurrent methodless writes",
+    "serializes %s changes against concurrent writes without methods",
     async (change) => {
       await write([
         source({ climb: { externalId: "unknown", kind: null } }),

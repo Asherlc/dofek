@@ -112,7 +112,7 @@ describe("required route method upgrade", () => {
     ).toEqual([{ rope_method: "top_rope" }]);
   });
 
-  it("upgrades valid routes and methodless boulders then enforces future route writes", async () => {
+  it("upgrades valid routes and boulders without methods then enforces future route writes", async () => {
     const route = await seed("route", "follow");
     await seed("boulder", null);
     await migrate();
