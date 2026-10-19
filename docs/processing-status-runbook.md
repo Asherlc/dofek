@@ -45,9 +45,14 @@ only; it never contains metric payloads.
 3. The production `processing-reconciliation` service runs the reconciliation
    script synchronously, then waits 300 seconds before the next run. It compares
    each pending operation with exact ClickHouse evidence and queues analytics
-   only after every emitted path for a dataset is present. It dispatches a
+   only after ingestion succeeds and every emitted path for a dataset is
+   present. It observes ingestion before loading the output manifest so a
+   concurrent final commit remains pending for the next pass. It dispatches a
    combined analytics-refresh request before completing reconciliation outbox
-   work. A dispatch failure leaves the outbox pending for the next run.
+   work. Active ingestion and dispatch failures leave the outbox pending for
+   the next run. A dataset with terminal analytics does not request another
+   build while other datasets are still waiting for replication. These checks
+   use the [latest operation facts](../src/processing/processing-reconciler.ts).
 4. Independently, the `cdc-health` service runs
    `scripts/check-clickhouse-cdc.ts` every five minutes and records only the
    bounded CDC result for its health probe.

@@ -10,7 +10,7 @@ import {
   type ProcessingDatasetKey,
   type ProcessingOutputPath,
 } from "./dataset-contracts.ts";
-import { appendProcessingStageEvent } from "./processing-event-store.ts";
+import { appendProcessingStageEvent, getLatestProcessingEvents } from "./processing-event-store.ts";
 
 interface ProcessingOutput {
   datasetKey: ProcessingDatasetKey;
@@ -416,14 +416,40 @@ export async function reconcilePendingProcessingOperations({
   let abandoned = 0;
   const now = Date.now();
   for (const pendingOperation of pendingOperations) {
+    // Ingestion success must be observed before loading its final output manifest.
+    const latestEvents = [
+      ...(await getLatestProcessingEvents(database, pendingOperation.operation_id)),
+    ].reverse();
     const reconciliationInput = await loadReconciliationInput(
       database,
       clickHouseClient,
       pendingOperation.operation_id,
     );
     const decisions = reconcileProcessingEvidence(reconciliationInput);
+    const datasetStates = [...new Set(decisions.map((decision) => decision.datasetKey))].map(
+      (datasetKey) => ({
+        datasetKey,
+        ingestStatus: latestEvents.find(
+          (event) =>
+            event.stage === "ingest" &&
+            (event.datasetKey === null || event.datasetKey === datasetKey),
+        )?.status,
+        analyticsStatus: latestEvents.find(
+          (event) =>
+            event.stage === "analytics" &&
+            event.datasetKey === datasetKey &&
+            event.modelName === null,
+        )?.status,
+      }),
+    );
+    const ingestionFinished = datasetStates.every(
+      ({ ingestStatus }) =>
+        ingestStatus !== undefined && ingestStatus !== "queued" && ingestStatus !== "running",
+    );
     const allSucceeded =
-      decisions.length > 0 && decisions.every((decision) => decision.status === "succeeded");
+      decisions.length > 0 &&
+      decisions.every((decision) => decision.status === "succeeded") &&
+      ingestionFinished;
 
     if (!allSucceeded) {
       const isStale =
@@ -441,8 +467,10 @@ export async function reconcilePendingProcessingOperations({
     }
 
     let analyticsReady = false;
-    const datasetKeys = new Set(decisions.map((decision) => decision.datasetKey));
-    for (const datasetKey of datasetKeys) {
+    for (const { datasetKey, ingestStatus, analyticsStatus } of datasetStates) {
+      if (ingestStatus !== "succeeded") continue;
+      if (analyticsStatus && analyticsStatus !== "queued" && analyticsStatus !== "running")
+        continue;
       const datasetDecisions = decisions.filter((decision) => decision.datasetKey === datasetKey);
       if (datasetDecisions.every((decision) => decision.status === "succeeded")) {
         const servingWatermark = datasetDecisions

@@ -4,8 +4,10 @@ import { buildPostgresFitnessRawTableStatements } from "../db/clickhouse-raw-tab
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { buildMetricStreamProcessingAcknowledgementTableSql } from "../metric-stream/clickhouse-table.ts";
 import {
+  appendProcessingStageEvent,
   createProcessingOperation,
   getLatestProcessingEvents,
+  listProcessingDatasetsAwaitingAnalytics,
   recordCanonicalCommit,
   recordMetricStreamBatchPublished,
 } from "./processing-event-store.ts";
@@ -74,6 +76,12 @@ describe("processing reconciler (integration)", () => {
       datasetKeys: ["activity"],
     });
     operationIds.push(operation.id);
+    await appendProcessingStageEvent(testContext.db, {
+      operationId: operation.id,
+      stage: "ingest",
+      status: "running",
+      idempotencyKey: "ingest-running",
+    });
     await recordCanonicalCommit(testContext.db, {
       operationId: operation.id,
       datasetKey: "activity",
@@ -101,13 +109,39 @@ describe("processing reconciler (integration)", () => {
       query_params: { operation_id: operation.id },
     });
 
+    let refreshRequests = 0;
+    const requestAnalyticsRefresh = async () => {
+      refreshRequests += 1;
+    };
     await expect(
       reconcilePendingProcessingOperations({
-        requestAnalyticsRefresh: async () => {},
+        requestAnalyticsRefresh,
+        database: testContext.db,
+        clickHouseClient,
+      }),
+    ).resolves.toMatchObject({ completed: 0, waiting: 1 });
+    expect(refreshRequests).toBe(0);
+    expect(await listProcessingDatasetsAwaitingAnalytics(testContext.db)).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ operationId: operation.id })]),
+    );
+
+    await appendProcessingStageEvent(testContext.db, {
+      operationId: operation.id,
+      stage: "ingest",
+      status: "succeeded",
+      idempotencyKey: "ingest-succeeded",
+    });
+    await expect(
+      reconcilePendingProcessingOperations({
+        requestAnalyticsRefresh,
         database: testContext.db,
         clickHouseClient,
       }),
     ).resolves.toMatchObject({ completed: 1, waiting: 0 });
+    expect(refreshRequests).toBe(1);
+    expect(await listProcessingDatasetsAwaitingAnalytics(testContext.db)).toEqual(
+      expect.arrayContaining([{ operationId: operation.id, datasetKey: "activity" }]),
+    );
     const events = await getLatestProcessingEvents(testContext.db, operation.id);
     expect(events).toEqual(
       expect.arrayContaining([
@@ -135,6 +169,12 @@ describe("processing reconciler (integration)", () => {
       datasetKeys: ["recovery"],
     });
     operationIds.push(operation.id);
+    await appendProcessingStageEvent(testContext.db, {
+      operationId: operation.id,
+      stage: "ingest",
+      status: "succeeded",
+      idempotencyKey: "ingest-succeeded",
+    });
     await recordMetricStreamBatchPublished(testContext.db, {
       operationId: operation.id,
       batchId: "metric-batch-1",
@@ -179,6 +219,12 @@ describe("processing reconciler (integration)", () => {
       datasetKeys: ["providers"],
     });
     operationIds.push(operation.id);
+    await appendProcessingStageEvent(testContext.db, {
+      operationId: operation.id,
+      stage: "ingest",
+      status: "succeeded",
+      idempotencyKey: "ingest-succeeded",
+    });
     await recordCanonicalCommit(testContext.db, {
       operationId: operation.id,
       datasetKey: "providers",
@@ -232,5 +278,73 @@ describe("processing reconciler (integration)", () => {
         clickHouseClient,
       }),
     ).resolves.toMatchObject({ completed: 1, waiting: 0 });
+  });
+
+  it("does not repeat completed analytics while another dataset waits for replication", async () => {
+    const operation = await createProcessingOperation(testContext.db, {
+      userId: null,
+      providerId: "kaya-export",
+      kind: "file_import",
+      externalCorrelationKey: "reconciler-partial-analytics",
+      datasetKeys: ["activity", "hiking"],
+    });
+    operationIds.push(operation.id);
+    await appendProcessingStageEvent(testContext.db, {
+      operationId: operation.id,
+      stage: "ingest",
+      status: "succeeded",
+      idempotencyKey: "ingest-succeeded",
+    });
+    for (const datasetKey of ["activity", "hiking"] as const) {
+      await recordCanonicalCommit(testContext.db, {
+        operationId: operation.id,
+        datasetKey,
+        sourceWatermark: "0/1854",
+        flowNames: ["dofek_fitness_raw_analytics"],
+        idempotencyKey: `partial-${datasetKey}`,
+      });
+    }
+    const replicateDataset = async (datasetKey: "activity" | "hiking") => {
+      await clickHouseClient.command({
+        query: `INSERT INTO postgres_fitness.processing_flow_marker (
+            id, operation_id, dataset_key, flow_name, batch_key, source_watermark,
+            created_at, _peerdb_version
+          ) VALUES (
+            generateUUIDv4(), {operation_id:UUID}, {dataset_key:String},
+            'dofek_fitness_raw_analytics', {batch_key:String}, '0/1854', now64(6), 1
+          )`,
+        query_params: {
+          operation_id: operation.id,
+          dataset_key: datasetKey,
+          batch_key: `partial-${datasetKey}`,
+        },
+      });
+    };
+    await replicateDataset("activity");
+    let refreshRequests = 0;
+    const reconcile = () =>
+      reconcilePendingProcessingOperations({
+        database: testContext.db,
+        clickHouseClient,
+        requestAnalyticsRefresh: async () => {
+          refreshRequests += 1;
+        },
+      });
+
+    await expect(reconcile()).resolves.toMatchObject({ completed: 0, waiting: 1 });
+    expect(refreshRequests).toBe(1);
+    await appendProcessingStageEvent(testContext.db, {
+      operationId: operation.id,
+      stage: "analytics",
+      datasetKey: "activity",
+      status: "succeeded",
+      idempotencyKey: "partial-activity-analytics-succeeded",
+    });
+    await expect(reconcile()).resolves.toMatchObject({ completed: 0, waiting: 1 });
+    expect(refreshRequests).toBe(1);
+
+    await replicateDataset("hiking");
+    await expect(reconcile()).resolves.toMatchObject({ completed: 1, waiting: 0 });
+    expect(refreshRequests).toBe(2);
   });
 });

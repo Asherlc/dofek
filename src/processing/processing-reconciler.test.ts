@@ -1,14 +1,20 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SchemaExecutionDatabase } from "../db/typed-sql.ts";
+import type { StoredProcessingStageEvent } from "./processing-event-store.ts";
 
-const { mockAppendProcessingStageEvent, mockCreateDatabaseFromEnv, mockExecuteWithSchema } =
-  vi.hoisted(() => ({
-    mockAppendProcessingStageEvent: vi.fn(
-      async (_database: unknown, _event: { stage: string; idempotencyKey: string }) => undefined,
-    ),
-    mockCreateDatabaseFromEnv: vi.fn(),
-    mockExecuteWithSchema: vi.fn(),
-  }));
+const {
+  mockAppendProcessingStageEvent,
+  mockCreateDatabaseFromEnv,
+  mockExecuteWithSchema,
+  mockGetLatestProcessingEvents,
+} = vi.hoisted(() => ({
+  mockAppendProcessingStageEvent: vi.fn(
+    async (_database: unknown, _event: { stage: string; idempotencyKey: string }) => undefined,
+  ),
+  mockCreateDatabaseFromEnv: vi.fn(),
+  mockExecuteWithSchema: vi.fn(),
+  mockGetLatestProcessingEvents: vi.fn(),
+}));
 
 vi.mock("../db/index.ts", () => ({
   createDatabaseFromEnv: mockCreateDatabaseFromEnv,
@@ -20,6 +26,7 @@ vi.mock("../db/typed-sql.ts", () => ({
 
 vi.mock("./processing-event-store.ts", () => ({
   appendProcessingStageEvent: mockAppendProcessingStageEvent,
+  getLatestProcessingEvents: mockGetLatestProcessingEvents,
 }));
 
 import {
@@ -34,8 +41,35 @@ const operationId = "30000000-0000-4000-8000-000000000001";
 const recentOperationCreatedAt = new Date();
 const staleOperationCreatedAt = new Date(Date.now() - STALE_OPERATION_THRESHOLD_MS - 60_000);
 
+function storedStageEvent(
+  overrides: Partial<StoredProcessingStageEvent> = {},
+): StoredProcessingStageEvent {
+  return {
+    id: "30000000-0000-4000-8000-000000000002",
+    operationId,
+    sequence: 1,
+    stage: "ingest",
+    status: "succeeded",
+    datasetKey: null,
+    outputPath: null,
+    modelName: null,
+    occurredAt: recentOperationCreatedAt,
+    progressPercentage: 100,
+    sourceWatermark: null,
+    servingWatermark: null,
+    message: null,
+    errorCode: null,
+    errorMessage: null,
+    metadataSchemaVersion: 1,
+    metadata: null,
+    idempotencyKey: "ingest-succeeded",
+    ...overrides,
+  };
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
+  mockGetLatestProcessingEvents.mockReset().mockResolvedValue([storedStageEvent()]);
 });
 
 describe("reconcileProcessingEvidence", () => {
@@ -278,6 +312,69 @@ describe("reconcilePendingProcessingOperations", () => {
         },
       ]);
   }
+
+  it.each([null, "queued", "running"] as const)(
+    "retains reconciliation work while ingestion is %s despite complete CDC evidence",
+    async (status) => {
+      arrangeStoredExpectations();
+      mockGetLatestProcessingEvents.mockResolvedValue(status ? [storedStageEvent({ status })] : []);
+      const reconciliationDatabase = database();
+      await expect(
+        reconcilePendingProcessingOperations({
+          requestAnalyticsRefresh,
+          database: reconciliationDatabase,
+          clickHouseClient: { query: clickHouseQueryWithEvidence(true) },
+        }),
+      ).resolves.toEqual({ checked: 1, completed: 0, abandoned: 0, waiting: 1 });
+      expect(requestAnalyticsRefresh).not.toHaveBeenCalled();
+      expect(reconciliationDatabase.execute).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(["succeeded", "failed", "cancelled", "skipped"] as const)(
+    "does not request another build for a dataset whose analytics already %s",
+    async (status) => {
+      arrangeStoredExpectations();
+      mockGetLatestProcessingEvents.mockResolvedValue([
+        storedStageEvent(),
+        storedStageEvent({ sequence: 2, stage: "analytics", datasetKey: "activity", status }),
+      ]);
+      const reconciliationDatabase = database();
+      await expect(
+        reconcilePendingProcessingOperations({
+          requestAnalyticsRefresh,
+          database: reconciliationDatabase,
+          clickHouseClient: { query: clickHouseQueryWithEvidence(true) },
+        }),
+      ).resolves.toEqual({ checked: 1, completed: 1, abandoned: 0, waiting: 0 });
+      expect(requestAnalyticsRefresh).not.toHaveBeenCalled();
+      expect(reconciliationDatabase.execute).toHaveBeenCalledOnce();
+    },
+  );
+
+  it("retains work when ingestion finishes while replication evidence is being loaded", async () => {
+    arrangeStoredExpectations();
+    let ingestionFinished = false;
+    mockGetLatestProcessingEvents.mockImplementation(async () => [
+      storedStageEvent({ status: ingestionFinished ? "succeeded" : "running" }),
+    ]);
+    const evidenceQuery = clickHouseQueryWithEvidence(true);
+    const reconciliationDatabase = database();
+    await expect(
+      reconcilePendingProcessingOperations({
+        requestAnalyticsRefresh,
+        database: reconciliationDatabase,
+        clickHouseClient: {
+          query: async () => {
+            ingestionFinished = true;
+            return evidenceQuery();
+          },
+        },
+      }),
+    ).resolves.toEqual({ checked: 1, completed: 0, abandoned: 0, waiting: 1 });
+    expect(requestAnalyticsRefresh).not.toHaveBeenCalled();
+    expect(reconciliationDatabase.execute).not.toHaveBeenCalled();
+  });
 
   it("loads exact Postgres and ClickHouse evidence, advances analytics, and completes the outbox", async () => {
     arrangeStoredExpectations();
