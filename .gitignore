@@ -11,7 +11,6 @@ packages/mobile/certs/public-key.pem
 .context/
 .worktrees/
 .codegraph/
-paseo.json
 .DS_Store
 *.swp
 *.swo

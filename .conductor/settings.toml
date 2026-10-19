@@ -9,7 +9,7 @@ file_include_globs = """
 create_pr = "Monitor the CI run. You should fix any jobs that fail, push and keep checking. As part of your monitoring, look for CR comments, and address them using the skill. You should not stop until all CR comments are resolved and all of CI is green. You should also resolve any conflicts with the parent branch."
 
 [scripts]
-archive = "mise exec -- pnpm tsx scripts/conductor-archive.ts"
+archive = "mise exec -- pnpm tsx scripts/workspace-archive.ts"
 run_mode = "concurrent"
 setup = "command -v mise >/dev/null || { echo 'mise is required: https://mise.jdx.dev/getting-started.html' >&2; exit 1; }; export MISE_LOCKED=1; mise install --locked && mise run cloud:prebuild"
 

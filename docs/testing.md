@@ -261,12 +261,13 @@ Preserve running containers belonging to other workspaces and all named database
 deleting unused cross-workspace data. Docker documents which object types each prune command
 removes in its [resource pruning guide](https://docs.docker.com/engine/manage-resources/pruning/).
 
-Conductor's archive hook runs the equivalent Compose shutdown for both the
-default `<workspace>` project and isolated `<workspace>-e2e` project using the
-archived workspace's physical directory. It removes those projects'
-containers, networks, anonymous volumes, and declared named volumes while
-preserving shared images, build cache, and resources belonging to other
-workspaces. This matches Docker Compose's documented
+Paseo teardown and Conductor archive share the
+[workspace archive command](../scripts/workspace-archive.ts). It shuts down
+the default `<workspace>`, isolated `<workspace>-e2e`, and
+`<workspace>-peerdb-integration` projects from the archived workspace's physical
+directory, including all profiles and PeerDB's declared volumes. See the
+[workspace lifecycle and verification procedure](development-environment.md#workspace-setup-and-archive)
+and Docker Compose's documented
 [`down --volumes` behavior](https://docs.docker.com/reference/cli/docker/compose/down/).
 
 Router integration tests that exercise activity sensor analytics use ClickHouse-backed
