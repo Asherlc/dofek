@@ -116,10 +116,6 @@ const accountErasureRuntime = await createAccountErasureRuntime(
 const accountErasureLeaseOwner = `account-erasure-worker:${randomUUID()}`;
 
 const { allWorkers, fitFileImportWorker, providerDataDeletionWorker } = createWorkerQueues({
-  onSyncWaitingChildren: (worker, job) => {
-    lifecycle.finishActiveJob(worker, job);
-    if (lifecycle.activeJobCount() === 0) lifecycle.startIdleTimer();
-  },
   db,
   connection,
   accountErasureWorkLockPool,
@@ -156,7 +152,7 @@ const lifecycle = createWorkerLifecycle({
   accountErasureRuntime,
   accountErasureWorkLockPool,
 });
-attachWorkerEvents(allWorkers, lifecycle, db, providerDataDeletionWorker);
+attachWorkerEvents(allWorkers, db, providerDataDeletionWorker);
 fitFileImportWorker.on("completed", (job) => {
   garminImportProgressCoordinator.observeFitJob(job);
 });
@@ -165,9 +161,6 @@ fitFileImportWorker.on("failed", (job) => {
     garminImportProgressCoordinator.observeFitJob(job);
   }
 });
-
-// Start idle timer immediately (exit if no jobs arrive within timeout)
-lifecycle.startIdleTimer();
 
 for (const worker of allWorkers) {
   void worker.run();

@@ -14,16 +14,12 @@ import {
   IMPORT_QUEUE,
   type ProviderDataDeletionJobData,
 } from "./queues.ts";
-import type { createWorkerLifecycle } from "./worker-lifecycle.ts";
 
 export function attachWorkerEvents(
   allWorkers: Worker[],
-  lifecycle: ReturnType<typeof createWorkerLifecycle>,
   db: ReturnType<typeof createDatabaseFromEnv>,
   providerDataDeletionWorker: Worker<ProviderDataDeletionJobData>,
 ) {
-  const { trackActiveJob, finishActiveJob, resetIdleTimer, startIdleTimer, activeJobCount } =
-    lifecycle;
   async function persistProviderDataDeletionFailure(
     job: Job<ProviderDataDeletionJobData>,
     failure: Error,
@@ -81,21 +77,9 @@ export function attachWorkerEvents(
   }
 
   for (const worker of allWorkers) {
-    worker.on("active", (job) => {
-      trackActiveJob(worker, job);
-      resetIdleTimer();
-    });
-
-    worker.on("completed", (job) => {
-      finishActiveJob(worker, job);
-      if (activeJobCount() === 0) startIdleTimer();
-    });
-
     worker.on("failed", (job, err) => {
-      finishActiveJob(worker, job);
       if (worker.name === ACCOUNT_ERASURE_QUEUE) {
         reportAccountErasureWorkerEvent("failed", "Account erasure job failed");
-        if (activeJobCount() === 0) startIdleTimer();
         return;
       }
       // FIT file import batch children fail as UnrecoverableError — that's expected
@@ -138,7 +122,6 @@ export function attachWorkerEvents(
           );
         });
       }
-      if (activeJobCount() === 0) startIdleTimer();
     });
 
     worker.on("stalled", (jobId, previousState) => {

@@ -7,7 +7,7 @@
 ### Development Rules
 - **Job Data Types**: Ensure `SyncJobData`, `ImportJobData`, etc., in `queues.ts` are strictly typed.
 - **Sentry Integration**: All workers must be initialized with Sentry to capture background exceptions.
-- **Idle Spin-down**: In production, workers spin down after 5 minutes of inactivity (`IDLE_TIMEOUT_MS`).
+- **Continuous Operation**: Keep the Swarm worker running while queues are idle. An idle exit ends the task and requires a replacement, interrupting the service's desired replica count ([Docker Swarm services](https://docs.docker.com/engine/swarm/how-swarm-mode-works/services/)).
 - **Graceful Shutdown**: Always handle `SIGTERM` and `SIGINT` to allow in-progress jobs to complete or be moved to the delayed queue.
 
 ### Testing Strategy

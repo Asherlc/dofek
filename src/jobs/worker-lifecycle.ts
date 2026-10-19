@@ -13,8 +13,6 @@ import type { startProviderDataDeletionOutboxDispatcher } from "./provider-data-
 import { closeAllQueueResources } from "./queues.ts";
 import type { createWorkerReadinessServer } from "./worker-readiness.ts";
 
-const IDLE_TIMEOUT_MS = 5 * 60 * 1000;
-
 export function createWorkerLifecycle({
   allWorkers,
   db,
@@ -42,54 +40,6 @@ export function createWorkerLifecycle({
   accountErasureRuntime: Awaited<ReturnType<typeof createAccountErasureRuntime>>;
   accountErasureWorkLockPool: ReturnType<typeof createAccountErasureWorkLockPoolFromEnv>;
 }) {
-  let idleTimer: NodeJS.Timeout | null = null;
-  const activeJobKeys = new Set<string>();
-  let untrackedActiveJobs = 0;
-
-  function resetIdleTimer() {
-    if (idleTimer) {
-      clearTimeout(idleTimer);
-      idleTimer = null;
-    }
-  }
-
-  function startIdleTimer() {
-    resetIdleTimer();
-    idleTimer = setTimeout(async () => {
-      logger.info("[worker] Idle timeout reached, shutting down...");
-      await shutdown();
-    }, IDLE_TIMEOUT_MS);
-  }
-
-  function activeJobCount(): number {
-    return activeJobKeys.size + untrackedActiveJobs;
-  }
-
-  function jobKey(worker: Worker, job: { id?: string | number } | undefined): string | null {
-    if (job?.id == null) return null;
-    return `${worker.name}:${job.id}`;
-  }
-
-  function trackActiveJob(worker: Worker, job: { id?: string | number } | undefined): void {
-    const key = jobKey(worker, job);
-    if (key) {
-      activeJobKeys.add(key);
-      return;
-    }
-    untrackedActiveJobs++;
-  }
-
-  function finishActiveJob(worker: Worker, job: { id?: string | number } | undefined): void {
-    const key = jobKey(worker, job);
-    if (key) {
-      activeJobKeys.delete(key);
-      return;
-    }
-    if (untrackedActiveJobs > 0) {
-      untrackedActiveJobs--;
-    }
-  }
-
   let shuttingDown = false;
 
   async function shutdown() {
@@ -133,11 +83,6 @@ export function createWorkerLifecycle({
   }
 
   return {
-    trackActiveJob,
-    finishActiveJob,
-    resetIdleTimer,
-    startIdleTimer,
-    activeJobCount,
     shutdown,
     registerProcessHandlers,
   };

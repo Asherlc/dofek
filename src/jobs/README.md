@@ -28,11 +28,11 @@ This directory contains background job processing logic using BullMQ and Redis.
 - **Credential reconnects**: Generic, Garmin, and WHOOP credential handlers commit renewed tokens inside the account-erasure fence, then reacquire the fence to dispatch a full sync. Each reconnect uses a fresh queue ID so an older active sync or delayed bounded retry cannot absorb the request. Existing provider cooldown delays still apply; see [BullMQ job IDs](https://docs.bullmq.io/guide/jobs/job-ids) and [delayed jobs](https://docs.bullmq.io/guide/jobs/delayed).
 - **Redis command deadlines**: Shared nonblocking Redis commands and per-provider sync queue commands have a five-second deadline so stalled dispatch releases the account-erasure transaction. Worker and event-listener connections retain their blocking behavior. BullMQ distinguishes request-facing producers from persistent workers in its [connection guidance](https://docs.bullmq.io/guide/connections); ioredis defines [commandTimeout](https://github.com/redis/ioredis/blob/main/lib/redis/RedisOptions.ts) separately from the connection deadline.
 - **Queues**: Defined in `queues.ts` with typed job data interfaces.
-- **Workers**: Implemented in `worker.ts` with support for graceful shutdown and idle spin-down.
+- **Workers**: Implemented in `worker.ts` and kept running while queues are idle. The Swarm service maintains a running replica; an idle process exit ends its task and creates an availability gap before replacement ([Docker Swarm services](https://docs.docker.com/engine/swarm/how-swarm-mode-works/services/)).
 - **Worker responsibilities**: `worker.ts` coordinates startup;
   `worker-queues.ts` constructs queue processors, `worker-events.ts` handles
-  job reporting and deletion redrive, and `worker-lifecycle.ts` handles idle
-  detection and shutdown.
+  job reporting and deletion redrive, and `worker-lifecycle.ts` handles graceful
+  signal shutdown and unhandled rejection reporting.
 - **Bounded shutdown**: BullMQ workers stop accepting new jobs and wait for bounded active work. Production gives that drain 30 minutes before Docker can force-kill the task; provider requests have a two-minute deadline and multi-hour provider deletion is split across durable batch jobs. See [BullMQ graceful shutdown](https://docs.bullmq.io/guide/workers/graceful-shutdown) and [Docker `stop_grace_period`](https://docs.docker.com/reference/compose-file/services/#stop_grace_period).
 - **Processor Functions**: Each job type has a dedicated processor (e.g., `process-sync-job.ts`).
 - **Sync responsibilities**: `process-sync-job.ts` coordinates provider jobs;
