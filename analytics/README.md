@@ -3,6 +3,14 @@
 This directory is a dbt project. Files under `analytics/models/` are not imported by
 TypeScript directly; dbt discovers them by path and runs them as models.
 
+Analytics tooling supports Python 3.12 and 3.13, as declared in
+[`pyproject.toml`](pyproject.toml). The locked `dbt-core==1.11.12`
+[requires `mashumaro<3.15`](https://pypi.org/pypi/dbt-core/1.11.12/json);
+that stack [fails during import on Python 3.14](https://github.com/Asherlc/dofek/actions/runs/39216065605/job/117940398476).
+uv [uses the project's Python requirement](https://docs.astral.sh/uv/concepts/python-versions/#project-python-versions)
+when choosing an interpreter for commands such as
+`uv run --project analytics dbt --version`.
+
 The call sites are:
 
 - `pnpm analytics:build` for local/manual runs.
