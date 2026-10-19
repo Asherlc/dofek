@@ -1,13 +1,13 @@
 import { inspect } from "node:util";
 import { DrizzleQueryError } from "drizzle-orm";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { MissingRouteMethodError } from "../db/source-attempt-facts.ts";
-import { createMockDatabase } from "./test-helpers.ts";
-import { writeClimbingRecords } from "./thecrag-persistence.ts";
+import { MissingRouteMethodError } from "../../db/source-attempt-facts.ts";
+import { createMockDatabase } from "../test-helpers.ts";
+import { writeClimbingRecords } from "./persistence.ts";
 
 const mocks = vi.hoisted(() => ({ persist: vi.fn(), captureException: vi.fn() }));
-vi.mock("../db/climbing-log-sync.ts", () => ({ persistClimbingLogEntries: mocks.persist }));
-vi.mock("../lib/error-reporting.ts", () => ({ captureException: mocks.captureException }));
+vi.mock("../../db/climbing-log-sync.ts", () => ({ persistClimbingLogEntries: mocks.persist }));
+vi.mock("../../lib/error-reporting.ts", () => ({ captureException: mocks.captureException }));
 
 afterEach(() => vi.resetAllMocks());
 

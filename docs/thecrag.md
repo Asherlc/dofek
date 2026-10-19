@@ -1,6 +1,6 @@
 # theCrag
 
-Dofek's [`thecrag` provider](../src/providers/thecrag.ts) reads one connected user's climbing logbook and
+Dofek's [`thecrag` provider](../src/providers/thecrag/provider.ts) reads one connected user's climbing logbook and
 stores each ascent as a standalone `fitness.climbing_log_entry`. The integration
 uses the existing personal-token connection flow on both web and mobile.
 
@@ -59,7 +59,7 @@ and tick labels supply independent execution facts; advertised route protection
 stays on the Climb. Catalogue pitch definitions and counts do not establish
 tries. Without a reported attempt total, the log records one occurrence.
 Missing method, board and angle remain unknown. See the
-[adapter](../src/providers/thecrag.ts) and [model](climbing-context.md).
+[adapter](../src/providers/thecrag/provider.ts) and [model](climbing-context.md).
 
 Dofek does not infer that an ascent was deleted when it is absent from an
 incremental response. This initial integration provides no upstream-deletion
@@ -77,7 +77,7 @@ contract. An authenticated production response has not yet been verified;
 unauthenticated research requests were blocked by Cloudflare. Passing fixture
 tests establish Dofek's handling of that contract, not live-account access.
 
-The [importer](../src/providers/thecrag.ts) recognizes supported rock, ice,
+The [importer](../src/providers/thecrag/provider.ts) recognizes supported rock, ice,
 mixed, snow, hiking, scrambling and mountaineering classifications when source
 styles establish them. theCrag supports additional valid disciplines
 ([Route Gear Styles](https://www.thecrag.com/en/article/styles)). If recorded
@@ -99,7 +99,7 @@ system. theCrag's
 shows why identical grade text can belong to different systems. The undefined
 live semantics of `gradeAtom.type` remain an acceptance-check limitation.
 
-The [importer](../src/providers/thecrag.ts) supports explicit textual scale
+The [importer](../src/providers/thecrag/provider.ts) supports explicit textual scale
 labels with colon syntax, including the following examples:
 
 | Label | System | Supported example |

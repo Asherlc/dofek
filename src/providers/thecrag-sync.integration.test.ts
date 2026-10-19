@@ -11,7 +11,7 @@ import { failOnUnhandledExternalRequest } from "../test/msw.ts";
 import { SyncRun } from "./sync-run.ts";
 import { SyncWindow } from "./sync-window.ts";
 import { theCragAscent, theCragPage } from "./test-helpers.ts";
-import { TheCragProvider } from "./thecrag.ts";
+import { TheCragProvider } from "./thecrag/provider.ts";
 
 const OTHER_USER_ID = "00000000-0000-0000-0000-000000000003";
 const endpoint = "https://www.thecrag.com/api/logbook/ascents";

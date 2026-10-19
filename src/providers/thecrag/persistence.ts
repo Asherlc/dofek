@@ -1,8 +1,11 @@
 import { z } from "zod";
-import { persistClimbingLogEntries, type SourceClimbingLogEntry } from "../db/climbing-log-sync.ts";
-import type { SyncDatabase } from "../db/index.ts";
-import { MissingRouteMethodError } from "../db/source-attempt-facts.ts";
-import { captureException } from "../lib/error-reporting.ts";
+import {
+  persistClimbingLogEntries,
+  type SourceClimbingLogEntry,
+} from "../../db/climbing-log-sync.ts";
+import type { SyncDatabase } from "../../db/index.ts";
+import { MissingRouteMethodError } from "../../db/source-attempt-facts.ts";
+import { captureException } from "../../lib/error-reporting.ts";
 
 export async function writeClimbingRecords(
   database: SyncDatabase,

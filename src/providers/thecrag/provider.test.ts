@@ -6,17 +6,17 @@ import {
 import { SQL } from "drizzle-orm";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { ClimbingLogSyncInput } from "../db/climbing-log-sync.ts";
-import type { SyncDatabase } from "../db/index.ts";
-import { authFailureReasonFromError, ProviderTokenRejectedError } from "./auth-errors.ts";
+import type { ClimbingLogSyncInput } from "../../db/climbing-log-sync.ts";
+import type { SyncDatabase } from "../../db/index.ts";
+import { authFailureReasonFromError, ProviderTokenRejectedError } from "../auth-errors.ts";
 import {
   createMockDatabase,
   theCragSyncRun as makeRun,
   theCragResponse as response,
   theCragAscent,
   theCragTokens as tokens,
-} from "./test-helpers.ts";
-import { TheCragProvider } from "./thecrag.ts";
+} from "../test-helpers.ts";
+import { TheCragProvider } from "./provider.ts";
 
 const USER_ID = "00000000-0000-0000-0000-000000000001";
 const mocks = vi.hoisted(() => ({
@@ -32,13 +32,13 @@ const mocks = vi.hoisted(() => ({
   ),
 }));
 
-vi.mock("../db/climbing-log-sync.ts", () => ({ persistClimbingLogEntries: mocks.persist }));
-vi.mock("../db/tokens.ts", () => ({
+vi.mock("../../db/climbing-log-sync.ts", () => ({ persistClimbingLogEntries: mocks.persist }));
+vi.mock("../../db/tokens.ts", () => ({
   ensureProvider: mocks.ensureProvider,
   loadTokens: mocks.loadTokens,
 }));
-vi.mock("../db/sync-log.ts", () => ({ withSyncLog: mocks.withSyncLog }));
-vi.mock("../lib/error-reporting.ts", () => ({ captureException: mocks.captureException }));
+vi.mock("../../db/sync-log.ts", () => ({ withSyncLog: mocks.withSyncLog }));
+vi.mock("../../lib/error-reporting.ts", () => ({ captureException: mocks.captureException }));
 
 function writtenRecords() {
   const input = mocks.persist.mock.calls.at(-1)?.[1];
