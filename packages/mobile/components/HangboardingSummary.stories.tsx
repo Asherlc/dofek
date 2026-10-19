@@ -53,7 +53,7 @@ export default meta;
 
 type Story = StoryObj<typeof meta>;
 
-export const Default: Story = {};
+export const Default: Story = { name: "Metrics and daily duration" };
 export const Loading: Story = { args: { data: undefined, loading: true } };
 export const Empty: Story = {
   args: { data: { ...data, sessionCount: 0, daily: [], latestSession: null }, loading: false },
