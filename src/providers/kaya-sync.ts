@@ -267,10 +267,7 @@ export class KayaSyncProvider implements SyncProvider {
             WHERE entry.user_id = ${userId} AND entry.provider_id = ${this.id}
               AND attached.provider_id = ${this.id}
               AND attached.external_id = entry.raw ->> 'session_id'
-              AND entry.external_id IN (${sql.join(
-                standaloneEntries.map((entry) => sql`${entry.externalId}`),
-                sql`, `,
-              )})
+              AND entry.external_id = ANY(${sql.param(standaloneEntries.map((entry) => entry.externalId))}::text[])
           `,
               );
         const sourceAttachedIds = new Set(sourceAttachedEntries.map((entry) => entry.externalId));

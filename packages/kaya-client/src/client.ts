@@ -165,7 +165,7 @@ export class KayaClient {
       const payload: unknown = await response.json();
       const envelope = z
         .object({
-          data: z.object({ [field]: z.array(itemSchema) }).optional(),
+          data: z.object({ [field]: z.array(itemSchema).optional() }).nullish(),
           errors: z.array(z.object({ message: z.string() })).optional(),
         })
         .parse(payload);

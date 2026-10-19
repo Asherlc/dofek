@@ -525,27 +525,18 @@ describe("KayaClient", () => {
     ).rejects.toBeInstanceOf(ZodError);
   });
 
-  it("reports an actionable Kaya error when GraphQL omits its data envelope", async () => {
-    const client = new KayaClient(
-      "token",
-      vi.fn<typeof fetch>().mockImplementation(async () => jsonResponse({})),
-    );
-    for (const list of [() => client.listSessions("42"), () => client.listAscents("42")]) {
-      const request = list();
-      await expect(request).rejects.toBeInstanceOf(KayaApiError);
-      await expect(request).rejects.toThrow("Kaya returned no logbook data. Try syncing again.");
-    }
-  });
-
-  it.each([{ data: {} }, { data: null }])(
-    "rejects a missing GraphQL list instead of interpreting it as an empty logbook: %j",
+  it.each([{}, { data: {} }, { data: null }])(
+    "reports an actionable Kaya error when GraphQL omits its list: %j",
     async (body) => {
       const client = new KayaClient(
         "token",
         vi.fn<typeof fetch>().mockImplementation(async () => jsonResponse(body)),
       );
-      await expect(client.listSessions("42")).rejects.toThrow();
-      await expect(client.listAscents("42")).rejects.toThrow();
+      for (const list of [() => client.listSessions("42"), () => client.listAscents("42")]) {
+        const request = list();
+        await expect(request).rejects.toBeInstanceOf(KayaApiError);
+        await expect(request).rejects.toThrow("Kaya returned no logbook data. Try syncing again.");
+      }
     },
   );
 

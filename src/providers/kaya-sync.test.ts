@@ -375,8 +375,7 @@ describe("KayaSyncProvider", () => {
         userId,
         "kaya",
         "kaya",
-        "kaya:ascent:source",
-        "kaya:ascent:manual",
+        ["kaya:ascent:source", "kaya:ascent:manual"],
       ]);
       return [{ externalId: "kaya:ascent:source" }];
     });
