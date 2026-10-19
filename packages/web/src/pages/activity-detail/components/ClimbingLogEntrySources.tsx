@@ -10,9 +10,17 @@ export function ClimbingLogEntrySources({
   sourceName: string | null;
   links: ClimbingSourceLink[];
 }) {
-  const primaryRoute = links.find((link) => link.kind === "route");
-  const additionalLinks = links.filter((link) => link !== primaryRoute);
-  const hasSingleProvider = new Set(links.map((link) => link.providerId)).size === 1;
+  const routeLinks = links.filter((link) => link.kind === "route");
+  const primaryRoute = routeLinks[0];
+  const sources = [
+    ...new Set([
+      ...(sourceName
+        ?.split(",")
+        .map((source) => source.trim())
+        .filter(Boolean) ?? []),
+      ...links.map((link) => providerSourceLabel(link.providerId)),
+    ]),
+  ];
   return (
     <div className="min-w-0 space-y-0.5 break-words">
       <h4 className="text-sm font-medium text-foreground">
@@ -30,31 +38,31 @@ export function ClimbingLogEntrySources({
           name
         )}
       </h4>
-      {sourceName && <p className="text-xs text-dim">{sourceName}</p>}
-      {additionalLinks.length > 0 && (
-        <ul className="flex flex-wrap gap-x-3 gap-y-1 text-xs">
-          {additionalLinks.map((link) => (
-            <li key={`${link.providerId}:${link.kind}:${link.url}`}>
-              <a
-                href={link.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-accent underline hover:no-underline"
-                aria-label={
-                  link.kind === "route"
-                    ? `${name} route on ${providerSourceLabel(link.providerId)}`
-                    : `${providerSourceLabel(link.providerId)} ticks`
-                }
-              >
-                {sourceName === providerSourceLabel(link.providerId) && hasSingleProvider
-                  ? link.kind === "route"
-                    ? "Route"
-                    : "Ticks"
-                  : `${providerSourceLabel(link.providerId)} ${link.kind}`}
-              </a>
-            </li>
-          ))}
-        </ul>
+      {sources.length > 0 && (
+        <p className="text-xs text-dim">
+          {sources.map((source, index) => {
+            const route = routeLinks.find(
+              (link) => providerSourceLabel(link.providerId) === source,
+            );
+            return (
+              <span key={source}>
+                {index > 0 && ", "}
+                {route ? (
+                  <a
+                    href={route.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-accent underline hover:no-underline"
+                  >
+                    {source}
+                  </a>
+                ) : (
+                  source
+                )}
+              </span>
+            );
+          })}
+        </p>
       )}
     </div>
   );

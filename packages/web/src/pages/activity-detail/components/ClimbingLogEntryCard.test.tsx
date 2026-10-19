@@ -8,14 +8,14 @@ import {
 } from "../../../../../server/src/repositories/climbing-test-helpers.ts";
 import { ClimbingLogEntryCard } from "./ClimbingLogEntryCard.tsx";
 
-it("shows Havarti Cheese's recorded top-rope method and attempt count", () => {
+it("shows Mountain Project's recorded top-rope method with an unknown attempt count", () => {
   const climb = { ...climbingClimbFixture("mountain-project"), name: "Havarti Cheese" };
   const entry = climbingLogEntryFixture({
     providerId: "mountain-project",
     sourceName: "Mountain Project",
     climbId: climb.id,
     climb,
-    recordedClimbAttemptCount: 1,
+    recordedClimbAttemptCount: null,
     recordedClimbOutcome: null,
   });
   entry.attempts = [climbingAttemptFixture(entry.id, { ropeMethod: "top_rope" })];
@@ -26,7 +26,23 @@ it("shows Havarti Cheese's recorded top-rope method and attempt count", () => {
   );
   expect(screen.getByText("Havarti Cheese")).toBeInTheDocument();
   expect(screen.getByText("Top rope")).toBeInTheDocument();
-  expect(screen.getByText("Attempts: 1")).toBeInTheDocument();
+  expect(screen.queryByText(/Attempts:/)).toBeNull();
+});
+
+it.each([
+  { count: null, summary: "Completed" },
+  { count: 2, summary: "Completed · Attempts: 2" },
+])("shows the recorded result with attempt count $count", ({ count, summary }) => {
+  const entry = climbingLogEntryFixture({
+    recordedClimbAttemptCount: count,
+    recordedClimbOutcome: "completed",
+  });
+  render(
+    <ul>
+      <ClimbingLogEntryCard entry={entry} />
+    </ul>,
+  );
+  expect(screen.getByText(summary)).toBeInTheDocument();
 });
 
 it.each([undefined, 3])(

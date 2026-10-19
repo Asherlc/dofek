@@ -17,14 +17,9 @@ export const climbingLogFixture = climbingLogEntryFixture({
   },
   sourceName: "Mountain Project",
   displayGrade: "5.4",
-  recordedClimbAttemptCount: 2,
+  recordedClimbAttemptCount: null,
   recordedClimbOutcome: "completed",
   attempts: [
-    climbingAttemptFixture("tick-1", {
-      id: "20000000-0000-4000-8000-000000000006",
-      outcome: "failed",
-      ropeMethod: "lead",
-    }),
     climbingAttemptFixture("tick-1", {
       outcome: "completed",
       ropeMethod: "lead",

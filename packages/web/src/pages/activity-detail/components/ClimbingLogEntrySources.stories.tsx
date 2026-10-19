@@ -19,7 +19,7 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 export const Route: Story = {};
-export const RouteWithTicks: Story = {
+export const RouteWithTickHistory: Story = {
   args: {
     links: [
       ...meta.args.links,
@@ -52,4 +52,18 @@ export const MultipleSources: Story = {
 };
 export const UnlinkedImport: Story = {
   args: { name: "Imported route", sourceName: "Kaya", links: [] },
+};
+export const MixedAttribution: Story = {
+  args: { sourceName: "Mountain Project, Kaya" },
+};
+export const TickHistoryOnly: Story = {
+  args: {
+    links: [
+      {
+        providerId: "mountain-project",
+        kind: "ticks",
+        url: "https://www.mountainproject.com/user/110186720/ticks/ticks",
+      },
+    ],
+  },
 };

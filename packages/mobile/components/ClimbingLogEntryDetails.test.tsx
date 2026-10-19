@@ -8,6 +8,18 @@ import {
 } from "../../server/src/repositories/climbing-test-helpers.ts";
 import { ClimbingLogEntryDetails } from "./ClimbingLogEntryDetails";
 
+it("shows Mountain Project facts without numbering an unrecorded attempt", () => {
+  const log = climbingLogEntryFixture({
+    providerId: "mountain-project",
+    recordedClimbAttemptCount: null,
+  });
+  log.attempts = [climbingAttemptFixture(log.id, { ropeMethod: "top_rope" })];
+  render(<ClimbingLogEntryDetails entry={log} />);
+  expect(screen.getByText("Recorded result")).toBeTruthy();
+  expect(screen.getByText("Climb")).toBeTruthy();
+  expect(screen.getByText("Top rope")).toBeTruthy();
+});
+
 it("renders the climb, grades, known attempt facts and notes", () => {
   const climb = climbingClimbFixture();
   climb.coordinates = { latitude: 37.5, longitude: -122.25 };

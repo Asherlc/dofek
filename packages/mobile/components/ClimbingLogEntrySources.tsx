@@ -15,9 +15,17 @@ export function ClimbingLogEntrySources({
   links: ClimbingSourceLink[];
   selected?: boolean;
 }) {
-  const primaryRoute = links.find((link) => link.kind === "route");
-  const additionalLinks = links.filter((link) => link !== primaryRoute);
-  const hasSingleProvider = new Set(links.map((link) => link.providerId)).size === 1;
+  const routeLinks = links.filter((link) => link.kind === "route");
+  const primaryRoute = routeLinks[0];
+  const sources = [
+    ...new Set([
+      ...(sourceName
+        ?.split(",")
+        .map((source) => source.trim())
+        .filter(Boolean) ?? []),
+      ...links.map((link) => providerSourceLabel(link.providerId)),
+    ]),
+  ];
   const selectionState = selected === undefined ? undefined : { selected };
   async function openSource(url: string) {
     if (!(await openExternalUrl(url, "climbing-entry-source"))) {
@@ -43,31 +51,29 @@ export function ClimbingLogEntrySources({
           {name}
         </Text>
       )}
-      {sourceName && <Text style={styles.source}>{sourceName}</Text>}
-      {additionalLinks.length > 0 && (
+      {sources.length > 0 && (
         <View style={styles.links}>
-          {additionalLinks.map((link) => (
-            <Pressable
-              key={`${link.providerId}:${link.kind}:${link.url}`}
-              accessibilityRole="link"
-              accessibilityLabel={
-                link.kind === "route"
-                  ? `${name} route on ${providerSourceLabel(link.providerId)}`
-                  : `${providerSourceLabel(link.providerId)} ticks`
-              }
-              onPress={() => {
-                void openSource(link.url);
-              }}
-            >
-              <Text style={[styles.source, styles.link]}>
-                {sourceName === providerSourceLabel(link.providerId) && hasSingleProvider
-                  ? link.kind === "route"
-                    ? "Route"
-                    : "Ticks"
-                  : `${providerSourceLabel(link.providerId)} ${link.kind}`}
+          {sources.map((source) => {
+            const route = routeLinks.find(
+              (link) => providerSourceLabel(link.providerId) === source,
+            );
+            return route ? (
+              <Pressable
+                key={source}
+                accessibilityRole="link"
+                accessibilityLabel={source}
+                onPress={() => {
+                  void openSource(route.url);
+                }}
+              >
+                <Text style={[styles.source, styles.link]}>{source}</Text>
+              </Pressable>
+            ) : (
+              <Text key={source} style={styles.source}>
+                {source}
               </Text>
-            </Pressable>
-          ))}
+            );
+          })}
         </View>
       )}
     </View>

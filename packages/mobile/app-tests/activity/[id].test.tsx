@@ -1597,7 +1597,7 @@ describe("ActivityDetailScreen", () => {
         board: null,
         wallAngle: null,
         holdType: null,
-        recordedClimbAttemptCount: ascentType === "Redpoint" ? 7 : 1,
+        recordedClimbAttemptCount: null,
         recordedClimbOutcome: "completed",
         climb: {
           ...climbingClimbFixture("mountain-project"),
@@ -1620,20 +1620,19 @@ describe("ActivityDetailScreen", () => {
             publishedGrades: [{ value: "5.6", system: "yds" }],
           },
         },
-        attempts: Array.from({ length: ascentType === "Redpoint" ? 7 : 1 }, (_, index) =>
+        attempts: [
           climbingAttemptFixture("first-try-climb", {
-            id: `first-try-climb-attempt-${index}`,
-            outcome: index === 0 ? "completed" : null,
+            id: "first-try-climb-attempt",
+            outcome: "completed",
             ropeMethod: "lead",
-            usedAid: index === 0 ? false : null,
-            fellOrHung: index === 0 ? false : null,
-            rockResultLabels:
-              index === 0 ? (ascentType === "Redpoint" ? ["sent"] : ["sent", ascentType]) : [],
-            attemptIndex: index === 0 && ascentType !== "Redpoint" ? 1 : null,
-            receivedBeta: index === 0 && ascentType !== "Redpoint" ? ascentType === "Flash" : null,
-            hadCompletedBefore: index === 0 && ascentType !== "Redpoint" ? false : null,
+            usedAid: false,
+            fellOrHung: false,
+            rockResultLabels: ascentType === "Redpoint" ? ["sent"] : ["sent", ascentType],
+            attemptIndex: ascentType !== "Redpoint" ? 1 : null,
+            receivedBeta: ascentType !== "Redpoint" ? ascentType === "Flash" : null,
+            hadCompletedBefore: ascentType !== "Redpoint" ? false : null,
           }),
-        ),
+        ],
       });
       mockClimbingEntriesQuery.mockReturnValue({ data: [climb], isLoading: false, error: null });
       mockEntrySuggestionsQuery.mockReturnValue({
@@ -1653,16 +1652,13 @@ describe("ActivityDetailScreen", () => {
       expect(screen.getByText("Attached Arete")).toBeTruthy();
       expect(screen.getByText("Left Arete")).toBeTruthy();
       expect(screen.getAllByText(ascentType === "Redpoint" ? "Sent" : ascentType)).toHaveLength(2);
-      if (ascentType === "Redpoint") {
-        expect(screen.getAllByText("Completed · Attempts: 7")).toHaveLength(2);
-      } else {
-        expect(screen.getAllByText("5.6", { exact: true })).toHaveLength(2);
-        expect(screen.getAllByText("Completed · Attempts: 1")).toHaveLength(2);
-      }
+      expect(screen.getAllByText("5.6", { exact: true })).toHaveLength(2);
+      expect(screen.getAllByText("Completed")).toHaveLength(2);
+      expect(screen.queryByText(/Attempts:/)).toBeNull();
     },
   );
 
-  it("shows attached and suggested Mountain Project top-rope ticks without unavailable outcomes", async () => {
+  it("shows attached and suggested Mountain Project top-rope logs with provider route links and unknown counts", async () => {
     mockByIdQuery.mockReturnValue({
       data: { ...baseCyclingActivity, activityType: "climbing" },
       isLoading: false,
@@ -1690,7 +1686,7 @@ describe("ActivityDetailScreen", () => {
       board: null,
       wallAngle: null,
       holdType: null,
-      recordedClimbAttemptCount: 1,
+      recordedClimbAttemptCount: null,
       recordedClimbOutcome: null,
       climb: {
         ...climbingClimbFixture("mountain-project"),
@@ -1750,19 +1746,16 @@ describe("ActivityDetailScreen", () => {
     expect(screen.getAllByText("Swiss Cheese")).toHaveLength(2);
     for (const link of screen.getAllByRole("link", { name: "Swiss Cheese on mountain-project" }))
       fireEvent.click(link);
-    for (const link of screen.getAllByRole("link", { name: "mountain-project ticks" }))
+    for (const link of screen.getAllByRole("link", { name: "mountain-project" }))
       fireEvent.click(link);
     expect(Linking.openURL).toHaveBeenCalledWith(
       "https://www.mountainproject.com/route/105734732/swiss-cheese",
-    );
-    expect(Linking.openURL).toHaveBeenCalledWith(
-      "https://www.mountainproject.com/user/110186720/ticks/ticks",
     );
     expect(screen.getAllByText("5.4", { exact: true })).toHaveLength(2);
     expect(screen.getAllByText("Goat Rock")).toHaveLength(2);
     expect(screen.getAllByText("Top rope")).toHaveLength(2);
     expect(screen.queryByText("Result unknown")).toBeNull();
-    expect(screen.getAllByText("Attempts: 1")).toHaveLength(2);
+    expect(screen.queryByText(/Attempts:/)).toBeNull();
   });
 
   it("shows the climbs attached to a canonical climbing activity", async () => {

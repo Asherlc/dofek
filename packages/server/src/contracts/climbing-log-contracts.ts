@@ -36,7 +36,7 @@ export const climbingLogEntryDetailSchema = climbingLogEntrySchema.extend({
   climb: climbingLogClimbDetailSchema.nullable(),
   mapLocation: climbingMapLocationSchema.nullable(),
   attempts: z.array(climbingLogAttemptDetailSchema),
-  recordedClimbAttemptCount: z.number().int().nonnegative(),
+  recordedClimbAttemptCount: z.number().int().nonnegative().nullable(),
   recordedPitchAttemptCount: z.number().int().nonnegative(),
   recordedClimbOutcome: attemptOutcomeSchema.nullable(),
   pitchResults: z.array(climbingPitchResultSchema),
