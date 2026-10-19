@@ -57,14 +57,6 @@ const mockSleepPerformanceQuery = vi.hoisted(() =>
     error: null,
   })),
 );
-const mockTodayPlanQuery = vi.hoisted(() =>
-  vi.fn<() => MockQueryResult<unknown>>(() => ({
-    data: undefined,
-    isLoading: false,
-    isFetched: false,
-    error: null,
-  })),
-);
 const mockTrendsQuery = vi.hoisted(() =>
   vi.fn<() => MockQueryResult<unknown>>(() => ({ data: undefined, isLoading: false, error: null })),
 );
@@ -129,9 +121,6 @@ vi.mock("../lib/trpc.ts", () => ({
     },
     sleepNeed: {
       performance: { useQuery: mockSleepPerformanceQuery },
-    },
-    todayPlan: {
-      get: { useQuery: mockTodayPlanQuery },
     },
     dailyMetrics: {
       trends: { useQuery: mockTrendsQuery },
@@ -266,25 +255,6 @@ describe("Dashboard", () => {
       isFetched: true,
       error: null,
     });
-    mockTodayPlanQuery.mockReturnValue({
-      data: {
-        status: "ready",
-        epistemicStatus: { kind: "suggested", label: "Suggested" },
-        date: "2026-05-27",
-        action: {
-          id: "strain_target",
-          title: "Suggested strain: 12",
-          zone: "Maintain",
-        },
-        supportingFacts: [{ label: "Recovery", value: "60/100" }],
-        caveats: [],
-        freshness: { recoveryDate: "2026-05-27", sleepDate: null },
-        missingInputs: ["sleep"],
-      },
-      isLoading: false,
-      isFetched: true,
-      error: null,
-    });
     mockTrendsQuery.mockReturnValue({ data: undefined, isLoading: false, error: null });
     mockHeartRateBaselineQuery.mockReturnValue({ data: undefined, isLoading: false, error: null });
     mockInsightsQuery.mockReturnValue({
@@ -368,7 +338,6 @@ describe("Dashboard", () => {
     expect(mockReadinessQuery).toHaveBeenCalledWith(overviewRange);
     expect(mockWorkloadQuery).toHaveBeenCalledWith(overviewRange);
     expect(mockStrainTargetQuery).toHaveBeenCalledWith(planLookback);
-    expect(mockTodayPlanQuery).toHaveBeenCalledWith(planLookback);
     expect(mockTrendsQuery).toHaveBeenCalledWith(overviewRange);
     expect(mockHeartRateBaselineQuery).toHaveBeenCalledWith(overviewRange);
     expect(mockInsightsQuery).toHaveBeenCalledWith(

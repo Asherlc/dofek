@@ -20,7 +20,6 @@ import { ProcessingStatusWidget } from "../../components/ProcessingStatusWidget"
 import { ProviderGuide } from "../../components/ProviderGuide";
 import { getQueryErrorMessage, QueryStatePanel } from "../../components/QueryStatePanel";
 import { SkeletonCircle } from "../../components/Skeleton";
-import { TodayPlanCard } from "../../components/TodayPlanCard";
 import { trpc } from "../../lib/trpc";
 import { useProcessingStatus } from "../../lib/useProcessingStatus";
 import { useProviderGuide } from "../../lib/useProviderGuide";
@@ -36,10 +35,6 @@ export default function TodayScreen() {
 
   // Consolidated dashboard data fetch
   const dashboardQuery = trpc.mobileDashboard.dashboardV2.useQuery(
-    { endDate },
-    { placeholderData: (previousData) => previousData },
-  );
-  const todayPlanQuery = trpc.todayPlan.get.useQuery(
     { endDate },
     { placeholderData: (previousData) => previousData },
   );
@@ -82,7 +77,6 @@ export default function TodayScreen() {
     refresh: async () => {
       await Promise.all([
         dashboardQuery.refetch(),
-        todayPlanQuery.refetch(),
         anomalyQuery.refetch(),
         processingStatusQuery.refetch(),
       ]);
@@ -131,12 +125,6 @@ export default function TodayScreen() {
         data={processingStatusQuery.data}
         error={processingStatusQuery.error}
         loading={processingStatusQuery.isLoading}
-      />
-
-      <TodayPlanCard
-        plan={todayPlanQuery.data}
-        loading={todayPlanQuery.isLoading}
-        error={todayPlanQuery.error}
       />
 
       {hasBackgroundError ? (
