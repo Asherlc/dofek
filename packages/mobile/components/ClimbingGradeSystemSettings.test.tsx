@@ -5,6 +5,25 @@ import { describe, expect, it, vi } from "vitest";
 import { ClimbingGradeSystemSettings } from "./ClimbingGradeSystemSettings";
 
 describe("ClimbingGradeSystemSettings", () => {
+  it("keeps the read error visible alongside available grade choices", () => {
+    render(
+      <ClimbingGradeSystemSettings
+        errorMessage="Your session expired. Sign in again to refresh your settings."
+        onChange={vi.fn()}
+        preference={{ boulder: "v_scale", route: "yds" }}
+        saving={false}
+      />,
+    );
+
+    expect(
+      screen.getByText("Your session expired. Sign in again to refresh your settings."),
+    ).toBeTruthy();
+    expect(screen.getByLabelText("V Scale").getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByLabelText("Yosemite Decimal System").getAttribute("aria-selected")).toBe(
+      "true",
+    );
+  });
+
   it("updates the selected route grading system", () => {
     const onChange = vi.fn();
 

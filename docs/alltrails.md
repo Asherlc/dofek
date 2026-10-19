@@ -324,6 +324,39 @@ recordings without source-proven absolute sample times cannot be assigned
 fabricated times. The provider does not automate browser verification or
 implement the alpha-targeted PKCE flow.
 
+## Operator Setup And Live Validation
+
+`ALLTRAILS_API_KEY` and `ALLTRAILS_CLIENT_ID` are application configuration
+maintained centrally in Infisical. Users connect their own account through
+Dofek's existing email/password form; they do not obtain these settings.
+The [service environment renderer](../scripts/deploy-service-environment.ts)
+forwards both settings to web, migration-phase web, and worker, which consume
+the same [AllTrails provider](../src/providers/alltrails.ts).
+
+On 2026-10-18, both settings were already present and nonempty in Infisical
+production, but absent from the running `dofek_web` service environment. The
+renderer allowlist omitted them. The configured app key matches the audited
+Android 19.0.2 `api_key` resource, and the configured client ID occurs in that
+build's `ServiceIdentityOAuth` implementation. Its signer remains listed in
+the current first-party [Android association][assetlinks]. These checks
+establish provenance, not present server acceptance or current-build identity.
+
+Diagnostic POSTs to the [native identity endpoint](#initial-login) from the
+workstation and production host both returned HTTP `403` with a DataDome
+human-verification response. They supplied the app configuration and password
+grant type, but deliberately omitted user credentials. No account login was
+attempted and no tokens were obtained. This result does not establish the
+outcome of a real credential login; that remains an explicit release check.
+
+After verifying deployment forwarding, use the existing Dofek connection
+form with a test account containing a genuine recording. Verify initial
+login, one persisted refresh, complete history pagination including private
+recordings, and one recording's raw timestamps against its known start/end.
+Record the app version, validation date, and exact outcome here. Keep
+configuration values, passwords, tokens, and challenge responses out of
+logs and documentation. The [provider's error handling](../src/providers/alltrails.ts)
+surfaces verification failures without retaining the response body.
+
 ## Other Official Surfaces
 
 AllTrails documents [manual activity/route file downloads][exports], including

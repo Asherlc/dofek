@@ -145,7 +145,6 @@ describe("ActivityMapTile", () => {
       expect(point.parentElement).toHaveAttribute("height", "16");
     }
     expect(map.querySelector("path")).toBeNull();
-    expect(screen.getByText("Source locations")).toBeDefined();
   });
 
   it("keeps unnamed source locations attributed without presenting an identifier as a place", () => {

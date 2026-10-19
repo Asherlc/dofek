@@ -48,3 +48,39 @@ export const RecordedRoute: Story = {
     },
   },
 };
+
+export const ClimbingSourceLocations: Story = {
+  name: "Climbing source points",
+  args: {
+    location: {
+      kind: "climbing_source",
+      mapPreview: {
+        width: 256,
+        height: 256,
+        tiles: [
+          {
+            url: "https://tile.openstreetmap.org/12/655/1583.png",
+            x: 0,
+            y: 0,
+            width: 256,
+            height: 256,
+          },
+        ],
+        routePath: null,
+      },
+      sourcePoints: [
+        {
+          x: 128,
+          y: 128,
+          location: {
+            coordinates: { latitude: 37.7749, longitude: -122.4194 },
+            scope: "area",
+            objectId: "north-wall",
+            providerId: "mountain-project",
+            name: "North Wall",
+          },
+        },
+      ],
+    },
+  },
+};

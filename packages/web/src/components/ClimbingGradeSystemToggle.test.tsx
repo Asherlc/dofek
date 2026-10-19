@@ -43,6 +43,35 @@ afterEach(() => {
 });
 
 describe("ClimbingGradeSystemToggle", () => {
+  it("shows editable defaults when the first settings request returns no saved preference", () => {
+    mockSettingsQuery.mockReturnValue({ data: undefined, error: null });
+    const { rerender } = render(<ClimbingGradeSystemToggle />);
+
+    mockSettingsQuery.mockReturnValue({ data: null, error: null });
+    mockGetData.mockReturnValue(null);
+    rerender(<ClimbingGradeSystemToggle />);
+
+    expect(screen.getByLabelText("Boulder grades")).toHaveValue("v_scale");
+    expect(screen.getByLabelText("Route grades")).toHaveValue("yds");
+
+    fireEvent.change(screen.getByLabelText("Boulder grades"), { target: { value: "font" } });
+    expect(mockSettingsMutate).toHaveBeenCalledWith(
+      { key: "climbingGradeSystems", value: { boulder: "font", route: "yds" } },
+      expect.any(Object),
+    );
+  });
+
+  it("keeps default controls visible when refreshing an unset preference fails", () => {
+    const readError = new Error("Climbing settings could not be refreshed.");
+    mockSettingsQuery.mockReturnValue({ data: null, error: readError });
+
+    render(<ClimbingGradeSystemToggle />);
+
+    expect(screen.getByLabelText("Boulder grades")).toHaveValue("v_scale");
+    expect(screen.getByLabelText("Route grades")).toHaveValue("yds");
+    expect(screen.getByRole("alert")).toHaveTextContent(readError.message);
+  });
+
   it("renders loading and read-error states while reporting each read failure once", async () => {
     mockSettingsQuery.mockReturnValue({ data: undefined, error: null });
     const { rerender } = render(<ClimbingGradeSystemToggle />);
