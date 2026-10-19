@@ -88,6 +88,15 @@ log entries whose `climbed_on` matches the activity's displayed calendar day
 in the user's timezone. The user attaches each log individually to a climbing
 or hiking Activity; attachment preserves the independent source date.
 
+The climbing page also offers **Attach to activity** for an unattached log in
+the selected location's climb list. Its picker lists the user's active climbing
+and hiking activity groups on that same displayed calendar day, with local
+start times and source labels. If there are no eligible activities, the picker
+explains that none were recorded on that date; it does not offer a different
+day. Successful attachment refreshes the activity link and affected climbing
+and activity-list queries. See the [association query](../packages/server/src/repositories/climbing-log-entry-associator.ts)
+and [attachment API](../packages/server/src/routers/climbing.ts).
+
 The integration currently does not access private ticks, use account session
 cookies, write to OpenBeta, enrich routes outside the tick response, or create
 activities for tick dates.

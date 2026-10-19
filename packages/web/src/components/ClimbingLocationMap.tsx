@@ -2,6 +2,7 @@ import { providerSourceLabel } from "@dofek/providers/providers";
 import type { ClimbingLocationMap as ClimbingLocationMapData } from "@dofek/training/climbing-location-map";
 import { useEffect, useRef, useState } from "react";
 import { captureException } from "../lib/telemetry.ts";
+import { ClimbingLogAttachment } from "./ClimbingLogAttachment.tsx";
 import { MapProcessingIndicator } from "./MapProcessingIndicator.tsx";
 import { QueryStatePanel } from "./QueryStatePanel.tsx";
 
@@ -15,13 +16,16 @@ export function ClimbingLocationMap({
   loading?: boolean;
 }) {
   const containerRef = useRef<HTMLElement>(null);
+  const attachmentEntryElementRef = useRef<HTMLLIElement>(null);
   const mapRef = useRef<ReturnType<typeof import("leaflet")["map"]> | null>(null);
   const fittedBoundsRef = useRef<ClimbingLocationMapData["bounds"]>(null);
   const [mapLoading, setMapLoading] = useState(true);
   const [mapError, setMapError] = useState<string | null>(null);
   const [tileWarning, setTileWarning] = useState<string | null>(null);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [attachmentEntryId, setAttachmentEntryId] = useState<string | null>(null);
   const selected = data?.nodes.find((node) => node.id === selectedNodeId);
+  const attachmentEntry = selected?.entries.find((entry) => entry.id === attachmentEntryId);
   const empty = !data?.bounds || data.nodes.length === 0;
   const initialLoading = loading && !data;
 
@@ -193,7 +197,11 @@ export function ClimbingLocationMap({
       {!empty && !mapError && selected ? (
         <ul aria-label="Climbs at this location" className="mt-3 space-y-3">
           {selected.entries.map((entry) => (
-            <li key={entry.id} className="rounded-lg border border-border p-3 text-sm">
+            <li
+              key={entry.id}
+              ref={entry.id === attachmentEntryId ? attachmentEntryElementRef : undefined}
+              className="rounded-lg border border-border p-3 text-sm"
+            >
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                 <span className="font-medium">{entry.label}</span>
                 {entry.grade ? <span>{entry.grade}</span> : null}
@@ -214,10 +222,32 @@ export function ClimbingLocationMap({
                 >
                   View activity
                 </a>
-              ) : null}
+              ) : (
+                <button
+                  type="button"
+                  className="mt-2 inline-block text-accent hover:underline"
+                  aria-label={`Attach to activity for ${entry.label}`}
+                  onClick={() => setAttachmentEntryId(entry.id)}
+                >
+                  Attach to activity
+                </button>
+              )}
             </li>
           ))}
         </ul>
+      ) : null}
+      {attachmentEntry ? (
+        <ClimbingLogAttachment
+          key={attachmentEntry.id}
+          entry={attachmentEntry}
+          onClose={() => {
+            const entryElement = attachmentEntryElementRef.current;
+            setAttachmentEntryId(null);
+            requestAnimationFrame(() => {
+              entryElement?.querySelector<HTMLAnchorElement>("a")?.focus({ preventScroll: true });
+            });
+          }}
+        />
       ) : null}
     </div>
   );
