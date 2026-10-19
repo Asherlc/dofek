@@ -134,9 +134,12 @@ if (process.env.DEPLOY_TEST_API_STATUS !== "0") {
 if (!process.argv.includes("POST")) {
   const response = JSON.parse(readFileSync(process.env.DEPLOY_TEST_RESPONSE, "utf8"));
   const commitFilter = process.argv.find(argument => argument.startsWith("head_sha="));
-  process.stdout.write(JSON.stringify(commitFilter
+  const run = commitFilter
     ? response.byCommit[commitFilter.slice("head_sha=".length)] ?? null
-    : response.staleRun));
+    : response.staleRun;
+  process.stdout.write(process.argv.includes("--jq")
+    ? (run ? JSON.stringify(run) : "\\n")
+    : JSON.stringify({ workflow_runs: run ? [run] : [] }));
 }
 `,
   );
@@ -206,8 +209,6 @@ describe("select-web-deploy", () => {
         `head_sha=${result.commits.newest}`,
         "-F",
         "per_page=1",
-        "--jq",
-        ".workflow_runs[0] | if . == null then null else {id, head_sha, head_branch, event, conclusion} end",
       ],
     ]);
   });

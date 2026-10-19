@@ -29,13 +29,20 @@ describe("ClimbingLogEntrySources", () => {
     "opens each provider name's tick history with attribution %s",
     (sourceName) => {
       render(<ClimbingLogEntrySources name="Swiss Cheese" sourceName={sourceName} links={links} />);
-      for (const label of ["Swiss Cheese on Mountain Project", "Mountain Project", "OpenBeta"]) {
+      expect(screen.getAllByRole("link")).toHaveLength(4);
+      for (const label of [
+        "Swiss Cheese on Mountain Project",
+        "Mountain Project",
+        "OpenBeta",
+        "Swiss Cheese route on OpenBeta",
+      ]) {
         fireEvent.click(screen.getByRole("link", { name: label }));
       }
       expect(vi.mocked(Linking.openURL).mock.calls.map(([url]) => url)).toEqual([
         links[0]?.url,
         links[3]?.url,
         links[2]?.url,
+        links[1]?.url,
       ]);
     },
   );

@@ -1,8 +1,13 @@
 import { gradeComponentSchema } from "@dofek/training/climbing-log";
-import { and, asc, eq, inArray, sql } from "drizzle-orm";
+import { asc, eq, sql } from "drizzle-orm";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { persistClimbingLogEntries, type SourceClimbingLogEntry } from "./climbing-log-sync.ts";
+import {
+  clearClimbingLogSyncTestContext,
+  createClimbingLogSyncTestContext,
+  CLIMBING_SYNC_PROVIDER_ID as providerId,
+} from "./climbing-log-sync-test-helpers.ts";
 import {
   area,
   climb,
@@ -13,17 +18,9 @@ import {
   pitchGrade,
 } from "./schema/climbing.ts";
 import { TEST_USER_ID } from "./schema/core.ts";
-import {
-  createTestBarrier,
-  hasDatabaseLockWaiter,
-  setupTestDatabase,
-  type TestContext,
-} from "./test-helpers.ts";
+import type { TestContext } from "./test-helpers.ts";
 import { executeWithSchema } from "./typed-sql.ts";
 
-const providerId = "climbing-sync-test";
-const otherProviderId = "climbing-sync-other";
-const otherUserId = "00000000-0000-4000-8000-000000001997";
 const projectionSchema = z.object({
   published_grades: z.array(gradeComponentSchema),
   area_path: z.array(z.object({ name: z.string() })),
@@ -31,21 +28,10 @@ const projectionSchema = z.object({
 describe("atomic climbing log synchronization", () => {
   let context: TestContext;
   beforeAll(async () => {
-    context = await setupTestDatabase();
-    await context.db.execute(sql`
-      INSERT INTO fitness.provider (id, name) VALUES
-      (${providerId}, 'Climbing sync test'), (${otherProviderId}, 'Other climbing sync test')
-    `);
-    await context.db.execute(sql`
-      INSERT INTO fitness.user_profile (id, name) VALUES (${otherUserId}::uuid, 'Other climbing owner')
-    `);
+    context = await createClimbingLogSyncTestContext();
   });
   afterEach(async () => {
-    const scope = inArray(climbingLogEntry.providerId, [providerId, otherProviderId]);
-    await context.db.delete(climbingLogEntry).where(scope);
-    await context.db.delete(climb).where(inArray(climb.providerId, [providerId, otherProviderId]));
-    await context.db.update(area).set({ parentAreaId: null });
-    await context.db.delete(area).where(inArray(area.providerId, [providerId, otherProviderId]));
+    await clearClimbingLogSyncTestContext(context);
   });
   afterAll(async () => {
     await context.cleanup();
@@ -166,7 +152,7 @@ describe("atomic climbing log synchronization", () => {
         ],
       },
       reportedGrades: [{ value: "5.12b", system: "yds" }],
-      attempts: [{ scope: "climb" }],
+      attempts: [{ scope: "climb", ropeMethod: "lead" }],
     };
     const first = await write([source]);
     const [log] = await context.db
@@ -201,7 +187,7 @@ describe("atomic climbing log synchronization", () => {
             { value: "5.12c", system: "yds" },
           ],
         },
-        attempts: [{ scope: "climb" }],
+        attempts: [{ scope: "climb", ropeMethod: "lead" }],
       },
     ]);
     expect(
@@ -250,6 +236,8 @@ describe("atomic climbing log synchronization", () => {
           solo: true,
           hadCompletedBefore: true,
         },
+        { scope: "pitch", pitch: { externalId: "pitch:first" }, ropeMethod: "lead" },
+        { scope: "pitch", pitch: { externalId: "pitch:first" }, ropeMethod: "lead" },
       ],
       reportedAttemptCounts: [{ scope: "pitch", pitch: { externalId: "pitch:first" }, count: 3 }],
     };
@@ -265,14 +253,20 @@ describe("atomic climbing log synchronization", () => {
       externalId: "pitch:group",
       climb: source.climb,
       attempts: [
-        { scope: "climb", sourceKey: "whole", sourceResult: "completed" },
+        { scope: "climb", sourceKey: "whole", sourceResult: "completed", ropeMethod: "lead" },
         {
           scope: "pitch",
           pitch: { number: 1 },
           parentSourceKey: "whole",
           sourceResult: "completed",
+          ropeMethod: "lead",
         },
-        { scope: "pitch", parentSourceKey: "whole", notes: "Unidentified pitch" },
+        {
+          scope: "pitch",
+          parentSourceKey: "whole",
+          notes: "Unidentified pitch",
+          ropeMethod: "lead",
+        },
       ],
     };
     const second = await write([grouped]);
@@ -424,6 +418,7 @@ describe("atomic climbing log synchronization", () => {
           {
             scope: "pitch",
             pitch: { number: 1 },
+            ropeMethod: "lead",
             qualifier: "free-flash",
             sourceResult: "completed",
           },
@@ -432,7 +427,10 @@ describe("atomic climbing log synchronization", () => {
       const unrelated: SourceClimbingLogEntry = {
         externalId: "history:other",
         climb: definition,
-        attempts: [{ scope: "climb" }, { scope: "pitch", pitch: { number: 2 } }],
+        attempts: [
+          { scope: "climb", ropeMethod: "lead" },
+          { scope: "pitch", pitch: { number: 2 }, ropeMethod: "lead" },
+        ],
       };
       const result = await write(reverse ? [unrelated, flash] : [flash, unrelated]);
       const id = result.logEntryIds[reverse ? 1 : 0];
@@ -451,6 +449,7 @@ describe("atomic climbing log synchronization", () => {
           {
             scope: "pitch",
             pitch: { number: 1 },
+            ropeMethod: "lead",
             qualifier: "free-flash",
             sourceResult: "completed",
           },
@@ -760,6 +759,7 @@ describe("atomic climbing log synchronization", () => {
             scope: "climb" as const,
             qualifier: "free-onsight" as const,
             sourceResult: "completed",
+            ropeMethod: "lead",
           },
         ],
       },
@@ -831,7 +831,7 @@ describe("atomic climbing log synchronization", () => {
       {
         externalId: "occurrence:historical",
         climb: definition,
-        attempts: [{ scope: "climb" as const }],
+        attempts: [{ scope: "climb" as const, ropeMethod: "lead" }],
       },
     ]);
     const id = first.logEntryIds[0];
@@ -847,7 +847,7 @@ describe("atomic climbing log synchronization", () => {
           ],
           publishedGrades: [{ value: "5.11a", system: "yds" as const }],
         },
-        attempts: [{ scope: "climb" as const }],
+        attempts: [{ scope: "climb" as const, ropeMethod: "lead" }],
       },
     ]);
     const [projection] = await executeWithSchema(
@@ -861,143 +861,6 @@ describe("atomic climbing log synchronization", () => {
       "Updated crag",
     ]);
     expect(await context.db.select().from(climb)).toHaveLength(1);
-  });
-  it("retains verified area identity through an associated path when later responses lack identifiers", async () => {
-    await write([
-      {
-        externalId: "occurrence:missing-ids",
-        climb: {
-          externalId: "route:retained",
-          areas: [
-            {
-              externalId: "area:retained",
-              name: "Known area",
-              coordinates: { longitude: -122.25, latitude: 37.5 },
-            },
-          ],
-        },
-        attempts: [{ scope: "climb" as const }],
-      },
-    ]);
-    const [before] = await context.db.select().from(area);
-    await write([
-      {
-        externalId: "occurrence:missing-ids",
-        climb: { externalId: null, areas: [{ externalId: null, name: "Known area" }] },
-        attempts: [{ scope: "climb" as const }],
-      },
-    ]);
-    expect(await context.db.select().from(area)).toEqual([before]);
-    expect((await context.db.select().from(climb))[0]?.externalId).toBe("route:retained");
-  });
-  it("removes replaced unreferenced local chains", async () => {
-    await write([
-      {
-        externalId: "occurrence:move",
-        climb: {
-          externalId: "route:moved",
-          areas: [
-            { externalId: null, name: "Old region" },
-            { externalId: null, name: "Old gym" },
-          ],
-        },
-        attempts: [{ scope: "climb" as const }],
-      },
-    ]);
-    await write([
-      {
-        externalId: "occurrence:move",
-        climb: {
-          externalId: "route:moved",
-          areas: [
-            { externalId: null, name: "New region" },
-            { externalId: null, name: "New gym" },
-          ],
-        },
-        attempts: [{ scope: "climb" as const }],
-      },
-    ]);
-    expect((await context.db.select().from(area)).map((a) => a.name).sort()).toEqual([
-      "New gym",
-      "New region",
-    ]);
-    await write([
-      {
-        externalId: "occurrence:move",
-        climb: { externalId: "route:moved", areas: [] },
-        attempts: [{ scope: "climb" as const }],
-      },
-    ]);
-    expect(await context.db.select().from(area)).toHaveLength(0);
-    expect((await context.db.select().from(climb))[0]?.areaId).toBeNull();
-  });
-  it("isolates equal source keys and names by owner and provider", async () => {
-    const entries: SourceClimbingLogEntry[] = [
-      {
-        externalId: "occurrence:same",
-        attempts: [{ scope: "climb" }],
-        climb: {
-          externalId: "route:same",
-          areas: [{ externalId: "area:same", name: "Same place" }],
-        },
-      },
-    ];
-    await write(entries);
-    await persistClimbingLogEntries(context.db, { userId: otherUserId, providerId, entries });
-    await persistClimbingLogEntries(context.db, {
-      userId: TEST_USER_ID,
-      providerId: otherProviderId,
-      entries,
-    });
-    expect(await context.db.select().from(climbingLogEntry)).toHaveLength(3);
-    expect(await context.db.select().from(climb)).toHaveLength(3);
-    expect(await context.db.select().from(area)).toHaveLength(3);
-  });
-  it("clears a shared area's parent only from explicit source evidence", async () => {
-    await write([
-      {
-        externalId: "occurrence:root-change",
-        climb: {
-          externalId: "route:root-change",
-          areas: [
-            { externalId: "area:former-parent", name: "Former parent" },
-            { externalId: "area:now-root", name: "Recorded place" },
-          ],
-        },
-        attempts: [{ scope: "climb" as const }],
-      },
-    ]);
-    await write([
-      {
-        externalId: "occurrence:root-change",
-        climb: {
-          externalId: "route:root-change",
-          areas: [{ externalId: "area:now-root", name: "Recorded place" }],
-        },
-        attempts: [{ scope: "climb" as const }],
-      },
-    ]);
-    const [preserved] = await context.db
-      .select()
-      .from(area)
-      .where(eq(area.externalId, "area:now-root"));
-    expect(preserved?.parentAreaId).not.toBeNull();
-    await write([
-      {
-        externalId: "occurrence:root-change",
-        climb: {
-          externalId: "route:root-change",
-          areas: [{ externalId: "area:now-root", name: "Recorded place", parentExternalId: null }],
-        },
-        attempts: [{ scope: "climb" as const }],
-      },
-    ]);
-    const [cleared] = await context.db
-      .select()
-      .from(area)
-      .where(eq(area.externalId, "area:now-root"));
-    expect(cleared?.parentAreaId).toBeNull();
-    expect((await context.db.select().from(area)).map((a) => a.name)).toEqual(["Recorded place"]);
   });
   it("rolls back all graph writes when a batch entry is invalid", async () => {
     await write([
@@ -1039,77 +902,5 @@ describe("atomic climbing log synchronization", () => {
       value: "5.10a",
       system: "yds",
     });
-  });
-  it("serializes opposite reparentings to reject a concurrent cycle", async () => {
-    await write([
-      {
-        externalId: "occurrence:a",
-        climb: { externalId: "route:a", areas: [{ externalId: "area:a", name: "A" }] },
-        attempts: [{ scope: "climb" as const }],
-      },
-      {
-        externalId: "occurrence:b",
-        climb: { externalId: "route:b", areas: [{ externalId: "area:b", name: "B" }] },
-        attempts: [{ scope: "climb" as const }],
-      },
-    ]);
-    const locked = createTestBarrier();
-    const release = createTestBarrier();
-    const first = context.db.transaction(async (tx) => {
-      await tx.execute(
-        sql`SELECT pg_advisory_xact_lock(hashtextextended(${`climbing-graph:${TEST_USER_ID}:${providerId}`}, 0))`,
-      );
-      locked.resolve();
-      await release.promise;
-      return persistClimbingLogEntries(tx, {
-        userId: TEST_USER_ID,
-        providerId,
-        entries: [
-          {
-            externalId: "occurrence:a",
-            climb: {
-              externalId: "route:a",
-              areas: [
-                { externalId: "area:b", name: "B" },
-                { externalId: "area:a", name: "A" },
-              ],
-            },
-            attempts: [{ scope: "climb" as const }],
-          },
-        ],
-      });
-    });
-    await locked.promise;
-    const second = write([
-      {
-        externalId: "occurrence:b",
-        climb: {
-          externalId: "route:b",
-          areas: [
-            { externalId: "area:a", name: "A" },
-            { externalId: "area:b", name: "B" },
-          ],
-        },
-        attempts: [{ scope: "climb" as const }],
-      },
-    ]);
-    const settled = Promise.allSettled([first, second]);
-    try {
-      await expect.poll(() => hasDatabaseLockWaiter(context.db)).toBe(true);
-    } finally {
-      release.resolve();
-    }
-    const result = await settled;
-    expect(result.map((r) => r.status)).toEqual(["fulfilled", "rejected"]);
-    const [a] = await context.db
-      .select()
-      .from(area)
-      .where(and(eq(area.providerId, providerId), eq(area.externalId, "area:a")));
-    const [b] = await context.db
-      .select()
-      .from(area)
-      .where(and(eq(area.providerId, providerId), eq(area.externalId, "area:b")));
-    expect(a?.parentAreaId).toBe(b?.id);
-    expect(b?.parentAreaId).toBeNull();
   });
 });

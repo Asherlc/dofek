@@ -22,7 +22,11 @@ import {
   pitch,
   pitchGrade,
 } from "./schema/climbing.ts";
-import { normalizeSourceAttemptFacts, type SourceAttemptFacts } from "./source-attempt-facts.ts";
+import {
+  assertSourceAttemptRopeMethod,
+  normalizeSourceAttemptFacts,
+  type SourceAttemptFacts,
+} from "./source-attempt-facts.ts";
 import { executeWithSchema } from "./typed-sql.ts";
 
 export type { SourceAttemptFacts } from "./source-attempt-facts.ts";
@@ -494,6 +498,7 @@ function matchAttempt(
   rows: AttemptRow[],
   supplied: AttemptEvidence,
   matched: Set<string>,
+  reportedCount: number | undefined,
 ): AttemptRow | undefined {
   const remaining = rows.filter((row) => !matched.has(row.id));
   if (!described(supplied)) return remaining[0];
@@ -504,7 +509,7 @@ function matchAttempt(
     if (indexed[0]) return indexed[0];
   }
   const known = remaining.filter((row) => described(row));
-  const compatible = known.filter(
+  let compatible = known.filter(
     (row) =>
       factKeys.every(
         (key) =>
@@ -517,6 +522,15 @@ function matchAttempt(
         row.parentAttemptId == null ||
         supplied.parentAttemptId === row.parentAttemptId),
   );
+  // A method shared by counted tries does not identify an individual occurrence.
+  if (
+    reportedCount !== undefined &&
+    compatible.length &&
+    compatible.every((row) => row.ropeMethod === compatible[0]?.ropeMethod)
+  ) {
+    const detailed = compatible.filter((row) => described({ ...row, ropeMethod: null }));
+    if (detailed.length) compatible = detailed;
+  }
   if (supplied.sourceResult != null) {
     const resultMatches = compatible.filter(
       (row) =>
@@ -709,7 +723,14 @@ async function reconcileAttempts(
   )) {
     const scopedRows = rows.filter((row) => matchesTarget(row, group.target));
     const parents = new Set(rows.map((row) => row.parentAttemptId).filter((id) => id !== null));
-    const protectedRow = (row: AttemptRow) => described(row) || parents.has(row.id);
+    const individuallyDescribed = (row: AttemptRow) =>
+      described({
+        ...row,
+        ropeMethod: group.attempts.some((attempt) => attempt.source.ropeMethod === row.ropeMethod)
+          ? null
+          : row.ropeMethod,
+      });
+    const protectedRow = (row: AttemptRow) => individuallyDescribed(row) || parents.has(row.id);
     if (
       group.count !== undefined &&
       (group.count < group.attempts.length || group.count < scopedRows.filter(protectedRow).length)
@@ -737,7 +758,7 @@ async function reconcileAttempts(
       const hint = associatedParent(item.source.sourceKey, entry, rows);
       const known = hint
         ? scopedRows.find((row) => row.id === hint && !matched.has(row.id))
-        : matchAttempt(scopedRows, evidence, matched);
+        : matchAttempt(scopedRows, evidence, matched, group.count);
       const values = {
         ...evidence,
         scope: group.target.scope,
@@ -767,7 +788,7 @@ async function reconcileAttempts(
         rows.map((row) => row.parentAttemptId).filter((id) => id !== null),
       );
       const removable = scopedRows.filter(
-        (row) => !matched.has(row.id) && !described(row) && !currentParents.has(row.id),
+        (row) => !matched.has(row.id) && !individuallyDescribed(row) && !currentParents.has(row.id),
       );
       const surplus = scopedRows.length - total;
       if (removable.length < surplus)
@@ -793,6 +814,12 @@ async function reconcileAttempts(
       rows.push(...created);
     }
   }
+  for (const row of rows)
+    assertSourceAttemptRopeMethod(
+      entry.climb?.kind ?? null,
+      row.ropeMethod,
+      entry.source.externalId,
+    );
 }
 
 async function removeSupersededObjects(

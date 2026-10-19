@@ -174,7 +174,13 @@ describe("ProcessingStatusWidget", () => {
     expect(
       screen.queryByText("Your existing data stays available while this update finishes."),
     ).toBeNull();
-    expect(screen.queryByRole("button", { name: "Show processing details" })).toBeNull();
+    const detailsToggle = screen.getByRole("button", {
+      name: "Show processing details",
+      expanded: false,
+    });
+    expect(screen.queryByText("Activities")).toBeNull();
+    fireEvent.click(detailsToggle);
+    expect(screen.getByText("Activities")).toBeTruthy();
     expect(screen.queryByText("Receiving data")).toBeNull();
   });
 
@@ -369,6 +375,7 @@ describe("ProcessingStatusWidget", () => {
       expect(screen.getByRole("progressbar", { name: progressLabel })).toBeTruthy();
       if (providerId) {
         expect(screen.getByText("Your existing data is still available.")).toBeTruthy();
+        fireEvent.click(screen.getByRole("button", { name: "Show processing details" }));
         expect(screen.getByText("Waiting to continue")).toBeTruthy();
       }
       expect(screen.queryByRole("button", { name: /Dismiss .* failure|Reconnect/ })).toBeNull();
@@ -467,6 +474,7 @@ describe("ProcessingStatusWidget", () => {
     );
 
     expect(screen.getByText("Syncing Wahoo")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Show processing details" }));
     expect(screen.getByText("Sleep")).toBeTruthy();
   });
 
@@ -489,6 +497,7 @@ describe("ProcessingStatusWidget", () => {
     );
 
     expect(screen.getByText("Syncing Wahoo is waiting to continue")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Show processing details" }));
     expect(screen.getByText("Sleep")).toBeTruthy();
     expect(screen.getByText("Waiting to continue")).toBeTruthy();
     expect(screen.getByText("Your existing data is still available.")).toBeTruthy();

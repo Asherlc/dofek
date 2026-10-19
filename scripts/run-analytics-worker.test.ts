@@ -6,6 +6,7 @@ function createDependencies() {
     now: () => new Date("2026-07-24T18:00:00.000Z"),
     reportFailure: vi.fn(),
     runAnalyticsBuildFromEnvironment: vi.fn().mockResolvedValue(undefined),
+    runRefreshJobs: vi.fn(async (processRefresh: () => Promise<void>) => processRefresh()),
     sleep: vi.fn().mockResolvedValue(undefined),
     warmQueryCacheFromEnvironment: vi.fn().mockResolvedValue(undefined),
   };
@@ -16,9 +17,7 @@ describe("createAnalyticsWorkerFromEnvironment", () => {
     const controller = new AbortController();
     const dependencies = createDependencies();
     dependencies.sleep.mockImplementation(async () => {
-      if (dependencies.sleep.mock.calls.length === 2) {
-        controller.abort();
-      }
+      return undefined;
     });
     const worker = createAnalyticsWorkerFromEnvironment(
       {
@@ -34,7 +33,12 @@ describe("createAnalyticsWorkerFromEnvironment", () => {
     expect(dependencies.runAnalyticsBuildFromEnvironment).toHaveBeenCalledOnce();
     expect(dependencies.warmQueryCacheFromEnvironment).toHaveBeenCalledOnce();
     expect(dependencies.sleep).toHaveBeenNthCalledWith(1, 4_000, controller.signal);
-    expect(dependencies.sleep).toHaveBeenNthCalledWith(2, 2_000, controller.signal);
+    expect(dependencies.sleep).toHaveBeenCalledOnce();
+    expect(dependencies.runRefreshJobs).toHaveBeenCalledWith(
+      expect.any(Function),
+      2_000,
+      controller.signal,
+    );
   });
 
   it("honors the configured retry duration after a failed refresh", async () => {

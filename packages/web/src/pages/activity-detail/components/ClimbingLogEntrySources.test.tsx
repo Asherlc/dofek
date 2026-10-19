@@ -42,6 +42,11 @@ describe("ClimbingLogEntrySources", () => {
         "href",
         "https://openbeta.io/u/thickles/ticks",
       );
+      expect(screen.getByRole("link", { name: "Swiss Cheese route on OpenBeta" })).toHaveAttribute(
+        "href",
+        "https://openbeta.io/climb/10000000-0000-4000-8000-000000000001",
+      );
+      expect(screen.getAllByRole("link")).toHaveLength(4);
     },
   );
   it("links the climb name to the route and provider name to tick history", () => {

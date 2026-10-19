@@ -11,6 +11,7 @@ export function ClimbingLogEntrySources({
   links: ClimbingSourceLink[];
 }) {
   const primaryRoute = links.find((link) => link.kind === "route");
+  const additionalRoutes = links.filter((link) => link.kind === "route" && link !== primaryRoute);
   const sources = [
     ...new Set([
       ...(sourceName
@@ -62,6 +63,23 @@ export function ClimbingLogEntrySources({
             );
           })}
         </p>
+      )}
+      {additionalRoutes.length > 0 && (
+        <ul className="flex flex-wrap gap-x-3 gap-y-1 text-xs">
+          {additionalRoutes.map((link) => (
+            <li key={`${link.providerId}:${link.url}`}>
+              <a
+                href={link.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label={`${name} route on ${providerSourceLabel(link.providerId)}`}
+                className="text-accent underline hover:no-underline"
+              >
+                Route on {providerSourceLabel(link.providerId)}
+              </a>
+            </li>
+          ))}
+        </ul>
       )}
     </div>
   );

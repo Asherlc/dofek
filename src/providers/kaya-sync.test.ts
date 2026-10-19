@@ -1,18 +1,25 @@
+import { PgDialect } from "drizzle-orm/pg-core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { ClimbingLogSessionsSyncInput } from "../db/climbing-log-session-sync.ts";
+import type { ClimbingLogSyncInput } from "../db/climbing-log-sync.ts";
 import type { SyncDatabase } from "../db/index.ts";
 import { ProviderInvalidCredentialsError } from "./auth-errors.ts";
+import {
+  ascent,
+  database,
+  routeAttemptCases,
+  run,
+  session,
+  userId,
+} from "./kaya-sync.test-helpers.ts";
 import { SyncRun } from "./sync-run.ts";
 import { SyncWindow } from "./sync-window.ts";
-import { makeTransactionalTestDatabase } from "./test-helpers.ts";
 
 const mocks = vi.hoisted(() => ({
-  persistSessions: vi.fn(async (_db: SyncDatabase, input: ClimbingLogSessionsSyncInput) => ({
+  persist: vi.fn(async (_db: SyncDatabase, input: ClimbingLogSyncInput) => ({
     logEntryIds: [],
-    recordsSynced:
-      input.standaloneEntries.length +
-      input.sessions.reduce((count, session) => count + session.entries.length, 0),
+    recordsSynced: input.entries.length,
   })),
+  reconcileActivities: vi.fn(),
   ascents: vi.fn(),
   captureException: vi.fn(),
   ensureProvider: vi.fn(),
@@ -24,9 +31,8 @@ const mocks = vi.hoisted(() => ({
   signIn: vi.fn(),
   upsertActivity: vi.fn(),
 }));
-
-vi.mock("../db/climbing-log-session-sync.ts", () => ({
-  persistClimbingLogSessions: mocks.persistSessions,
+vi.mock("../db/climbing-log-snapshot.ts", () => ({
+  persistClimbingLogSnapshot: mocks.persist,
 }));
 vi.mock("@dofek/kaya-client", () => {
   class KayaApiError extends Error {
@@ -53,8 +59,8 @@ vi.mock("@dofek/kaya-client", () => {
     signInToKaya: mocks.signIn,
   };
 });
-
 vi.mock("../db/provider-activity-sync.ts", () => ({
+  finishProviderActivityListSync: mocks.reconcileActivities,
   upsertProviderActivity: mocks.upsertActivity,
 }));
 vi.mock("../db/tokens.ts", () => ({
@@ -67,92 +73,51 @@ vi.mock("../lib/error-reporting.ts", () => ({ captureException: mocks.captureExc
 import { KayaApiError, KayaInvalidCredentialsError } from "@dofek/kaya-client";
 import { KayaSyncProvider } from "./kaya-sync.ts";
 
-const userId = "00000000-0000-4000-8000-000000000001";
-
 describe("KayaSyncProvider", () => {
-  it.each([
-    {
-      label: " Onsight ",
-      attempt: {
-        scope: "climb",
-        ropeMethod: "lead",
-        qualifier: "free-onsight",
-        sourceResult: " Onsight ",
-      },
+  it.each(routeAttemptCases)(
+    "preserves $label with $count reported route attempts",
+    async ({ count, additionalAttempts, label, attempt }) => {
+      const db = database();
+      const source = ascent("facts", {
+        lead: true,
+        climbType: "Routes",
+        grade: " 5.10a ",
+        attempts: count,
+        ascentType: label,
+      });
+      mocks.loadTokens.mockResolvedValue({
+        accessToken: "token",
+        scopes: JSON.stringify({ kayaUserId: "42" }),
+      });
+      mocks.listSessions.mockResolvedValue([session("session-1")]);
+      mocks.ascents.mockResolvedValue([source]);
+      mocks.upsertActivity.mockResolvedValue({ id: "activity-1" });
+      expect(await new KayaSyncProvider().sync(run(db))).toMatchObject({
+        recordsSynced: 1,
+        errors: [],
+      });
+      expect(mocks.persist.mock.calls[0]?.[1].entries[0]).toStrictEqual({
+        externalId: "kaya:ascent:facts",
+        activityId: "activity-1",
+        climbedOn: "2026-08-01",
+        discipline: "rock_climbing",
+        sourceName: "Kaya",
+        raw: source,
+        board: null,
+        wallAngle: null,
+        ...(count === null ? {} : { reportedAttemptCounts: [{ scope: "climb", count }] }),
+        attempts: [attempt, ...additionalAttempts],
+        climb: {
+          externalId: "climb-facts",
+          name: "Kaya Climb",
+          kind: "route",
+          setting: "indoor",
+          publishedGrades: [{ value: "5.10a", system: "yds" }],
+          areas: [{ externalId: "gym-1", name: "Kaya Gym" }],
+        },
+      });
     },
-    {
-      label: "Flash",
-      attempt: {
-        scope: "climb",
-        ropeMethod: "lead",
-        qualifier: "free-flash",
-        sourceResult: "Flash",
-      },
-    },
-    {
-      label: "Redpoint",
-      attempt: {
-        scope: "climb",
-        ropeMethod: "lead",
-        qualifier: "free-send",
-        sourceResult: "Redpoint",
-      },
-    },
-    {
-      label: "Send",
-      attempt: { scope: "climb", ropeMethod: "lead", qualifier: "free-send", sourceResult: "Send" },
-    },
-    {
-      label: "Repeat",
-      attempt: {
-        scope: "climb",
-        ropeMethod: "lead",
-        qualifier: "free-send",
-        sourceResult: "Repeat",
-        hadCompletedBefore: true,
-      },
-    },
-    { label: "Unfamiliar", attempt: { scope: "climb", ropeMethod: "lead" } },
-  ])("preserves the exact source meaning of $label", async ({ label, attempt }) => {
-    const db = database();
-    const source = ascent("facts", {
-      lead: true,
-      climbType: "Routes",
-      grade: " 5.10a ",
-      attempts: null,
-      ascentType: label,
-    });
-    mocks.loadTokens.mockResolvedValue({
-      accessToken: "token",
-      scopes: JSON.stringify({ kayaUserId: "42" }),
-    });
-    mocks.listSessions.mockResolvedValue([session("session-1")]);
-    mocks.ascents.mockResolvedValue([source]);
-    mocks.upsertActivity.mockResolvedValue({ id: "activity-1" });
-    expect(await new KayaSyncProvider().sync(run(db))).toMatchObject({
-      recordsSynced: 1,
-      errors: [],
-    });
-    expect(mocks.persistSessions.mock.calls[0]?.[1].sessions[0]).toMatchObject({ complete: true });
-    expect(mocks.persistSessions.mock.calls[0]?.[1].sessions[0]?.entries[0]).toStrictEqual({
-      externalId: "kaya:ascent:facts",
-      climbedOn: "2026-08-01",
-      discipline: "rock_climbing",
-      sourceName: "Kaya",
-      raw: source,
-      board: null,
-      wallAngle: null,
-      attempts: [attempt],
-      climb: {
-        externalId: "climb-facts",
-        name: "Kaya Climb",
-        kind: "route",
-        setting: "indoor",
-        publishedGrades: [{ value: "5.10a", system: "yds" }],
-        areas: [{ externalId: "gym-1", name: "Kaya Gym" }],
-      },
-    });
-  });
+  );
   it("retains board, zero angle and explicit null notes and count on a standalone top-rope occurrence", async () => {
     const db = database();
     const base = ascent("board", { lead: false, climbType: "Routes", grade: "5.10a", attempts: 3 });
@@ -169,14 +134,16 @@ describe("KayaSyncProvider", () => {
     mocks.listSessions.mockResolvedValue([]);
     mocks.ascents.mockResolvedValue([source]);
     await new KayaSyncProvider().sync(run(db));
-    expect(mocks.persistSessions.mock.calls[0]?.[1].standaloneEntries[0]).toMatchObject({
+    expect(mocks.persist.mock.calls[0]?.[1].entries[0]).toMatchObject({
       notes: null,
       board: { name: "Board", externalId: "board-1" },
       wallAngle: { value: 0, unit: null },
       reportedAttemptCounts: [{ scope: "climb", count: 3 }],
     });
-    expect(mocks.persistSessions.mock.calls[0]?.[1].standaloneEntries[0]?.attempts).toStrictEqual([
+    expect(mocks.persist.mock.calls[0]?.[1].entries[0]?.attempts).toStrictEqual([
       { scope: "climb", ropeMethod: "top_rope", qualifier: "free-send", sourceResult: "Redpoint" },
+      { scope: "climb", ropeMethod: "top_rope" },
+      { scope: "climb", ropeMethod: "top_rope" },
     ]);
   });
   it.each(["0000-01-01", "2026-02-30", "malformed"])(
@@ -197,10 +164,10 @@ describe("KayaSyncProvider", () => {
       const result = await new KayaSyncProvider().sync(run(db));
       expect(result.errors[0]?.message).toContain("invalid climb date");
       expect(mocks.captureException).toHaveBeenCalled();
-      expect(mocks.persistSessions).not.toHaveBeenCalled();
+      expect(mocks.persist).not.toHaveBeenCalled();
     },
   );
-  it("includes standalone boundary occurrences and keeps undated records without duplicating known sessions", async () => {
+  it("includes the complete standalone history and undated records without duplicating known sessions", async () => {
     const db = database();
     const base = ascent("base", { lead: true, climbType: "Routes", grade: "5.10a" });
     const sources = [
@@ -220,17 +187,23 @@ describe("KayaSyncProvider", () => {
     mocks.upsertActivity.mockResolvedValue({ id: "activity-1" });
     expect(await new KayaSyncProvider().sync(run(db))).toMatchObject({
       errors: [],
-      recordsSynced: 4,
+      recordsSynced: 6,
     });
-    const input = mocks.persistSessions.mock.calls[0]?.[1];
-    expect(input?.standaloneEntries.map((entry) => [entry.externalId, entry.climbedOn])).toEqual([
+    const input = mocks.persist.mock.calls[0]?.[1];
+    expect(
+      input?.entries
+        .filter((entry) => entry.activityId == null)
+        .map((entry) => [entry.externalId, entry.climbedOn]),
+    ).toEqual([
       ["kaya:ascent:since", "2026-08-01"],
       ["kaya:ascent:until", "2026-08-02"],
+      ["kaya:ascent:before", "2026-07-31"],
+      ["kaya:ascent:after", "2026-08-02"],
       ["kaya:ascent:undated", null],
     ]);
-    expect(input?.sessions[0]?.entries.map((entry) => entry.externalId)).toEqual([
-      "kaya:ascent:attached",
-    ]);
+    expect(
+      input?.entries.filter((entry) => entry.activityId != null).map((entry) => entry.externalId),
+    ).toEqual(["kaya:ascent:attached"]);
   });
   it("maps separate send and attempted-summary occurrences to one actual climb", async () => {
     const db = database();
@@ -255,8 +228,8 @@ describe("KayaSyncProvider", () => {
       recordsSynced: 2,
       errors: [],
     });
-    const input = mocks.persistSessions.mock.calls[0]?.[1];
-    expect(input?.sessions[0]?.entries).toEqual([
+    const input = mocks.persist.mock.calls[0]?.[1];
+    expect(input?.entries).toEqual([
       expect.objectContaining({
         externalId: "kaya:ascent:10",
         attempts: [expect.objectContaining({ scope: "climb", qualifier: "free-flash" })],
@@ -277,27 +250,33 @@ describe("KayaSyncProvider", () => {
       }),
     ]);
   });
-  it("retains missing grade and method on a recorded source occurrence", async () => {
-    const db = database();
-    const base = ascent("ungraded", { lead: true, climbType: "Routes", grade: null });
-    const source = { ...base, comment: "Source note", climb: { ...base.climb, lead: null } };
-    mocks.loadTokens.mockResolvedValue({
-      accessToken: "token",
-      scopes: JSON.stringify({ kayaUserId: "42" }),
-    });
-    mocks.listSessions.mockResolvedValue([session("session-1")]);
-    mocks.ascents.mockResolvedValue([source]);
-    mocks.upsertActivity.mockResolvedValue({ id: "activity-1" });
-    expect(await new KayaSyncProvider().sync(run(db))).toMatchObject({
-      recordsSynced: 1,
-      errors: [],
-    });
-    expect(mocks.persistSessions.mock.calls[0]?.[1].sessions[0]?.entries[0]).toMatchObject({
-      notes: "Source note",
-      climbedOn: "2026-08-01",
-      climb: { externalId: "climb-ungraded", kind: "route" },
-    });
-  });
+  it.each([null, undefined])(
+    "retains missing grade and method %s on a source occurrence",
+    async (lead) => {
+      const db = database();
+      const base = ascent("ungraded", { lead: true, climbType: "Routes", grade: null });
+      const source = { ...base, comment: "Source note", climb: { ...base.climb, lead } };
+      mocks.loadTokens.mockResolvedValue({
+        accessToken: "token",
+        scopes: JSON.stringify({ kayaUserId: "42" }),
+      });
+      mocks.listSessions.mockResolvedValue([session("session-1")]);
+      mocks.ascents.mockResolvedValue([source]);
+      mocks.upsertActivity.mockResolvedValue({ id: "activity-1" });
+      expect(await new KayaSyncProvider().sync(run(db))).toMatchObject({
+        recordsSynced: 1,
+        errors: [],
+      });
+      expect(mocks.persist.mock.calls[0]?.[1].entries[0]).toMatchObject({
+        notes: "Source note",
+        climbedOn: "2026-08-01",
+        climb: { externalId: "climb-ungraded", kind: "route" },
+        attempts: [
+          { scope: "climb", ropeMethod: null, qualifier: "free-send", sourceResult: "Redpoint" },
+        ],
+      });
+    },
+  );
   it("stores gym and outdoor location coordinates on their own areas", async () => {
     const db = database();
     const base = ascent("outdoor", { lead: true, climbType: "Routes", grade: "5.10a" });
@@ -321,7 +300,7 @@ describe("KayaSyncProvider", () => {
       recordsSynced: 1,
       errors: [],
     });
-    expect(mocks.persistSessions.mock.calls[0]?.[1].sessions[0]?.entries[0]?.climb?.areas).toEqual([
+    expect(mocks.persist.mock.calls[0]?.[1].entries[0]?.climb?.areas).toEqual([
       {
         name: "Destination",
         externalId: "destination",
@@ -346,7 +325,7 @@ describe("KayaSyncProvider", () => {
       mocks.upsertActivity.mockResolvedValue({ id: "activity-1" });
       const result = await new KayaSyncProvider().sync(run(db));
       expect(result.errors[0]?.message).toContain("climb identity");
-      expect(mocks.persistSessions).not.toHaveBeenCalled();
+      expect(mocks.persist).not.toHaveBeenCalled();
     },
   );
   it("retains an ascent without an upstream session", async () => {
@@ -362,7 +341,7 @@ describe("KayaSyncProvider", () => {
       recordsSynced: 1,
       errors: [],
     });
-    expect(mocks.persistSessions.mock.calls[0]?.[1].standaloneEntries).toEqual([
+    expect(mocks.persist.mock.calls[0]?.[1].entries).toEqual([
       expect.objectContaining({ externalId: "kaya:ascent:standalone", climbedOn: "2026-08-01" }),
     ]);
     expect(mocks.upsertActivity).not.toHaveBeenCalled();
@@ -378,13 +357,101 @@ describe("KayaSyncProvider", () => {
     mocks.ascents.mockResolvedValue([source]);
     mocks.upsertActivity.mockResolvedValue({ id: "activity-1" });
     await new KayaSyncProvider().sync(run(db));
-    const attached = mocks.persistSessions.mock.calls[0]?.[1].sessions[0]?.entries[0];
+    const attached = mocks.persist.mock.calls[0]?.[1].entries[0];
     mocks.listSessions.mockResolvedValue([]);
     mocks.ascents.mockResolvedValue([{ ...source, session_id: null }]);
     await new KayaSyncProvider().sync(run(db));
-    expect(mocks.persistSessions.mock.calls[1]?.[1].standaloneEntries[0]?.externalId).toBe(
-      attached?.externalId,
-    );
+    expect(mocks.persist.mock.calls[1]?.[1].entries[0]?.externalId).toBe(attached?.externalId);
+  });
+
+  it("detaches source-owned outings while preserving user-selected standalone attachments", async () => {
+    const db = database();
+    const base = ascent("source", { lead: true, climbType: "Routes", grade: "5.10a" });
+    mocks.loadTokens.mockResolvedValue({
+      accessToken: "token",
+      scopes: JSON.stringify({ kayaUserId: "42" }),
+    });
+    mocks.listSessions.mockResolvedValue([]);
+    mocks.ascents.mockResolvedValue([
+      { ...base, session_id: null },
+      { ...base, id: "manual", session_id: null },
+    ]);
+    vi.mocked(db.execute).mockImplementationOnce(async (query) => {
+      if (typeof query === "string") throw new Error("Expected a parameterized attachment lookup");
+      expect(new PgDialect().sqlToQuery(query.getSQL()).params).toEqual([
+        userId,
+        "kaya",
+        "kaya",
+        ["kaya:ascent:source", "kaya:ascent:manual"],
+      ]);
+      return [{ externalId: "kaya:ascent:source" }];
+    });
+
+    expect(await new KayaSyncProvider().sync(run(db))).toMatchObject({
+      recordsSynced: 2,
+      errors: [],
+    });
+    const entries = mocks.persist.mock.calls[0]?.[1].entries;
+    expect(entries?.[0]).toMatchObject({
+      externalId: "kaya:ascent:source",
+      activityId: null,
+      raw: { id: "source" },
+    });
+    expect(entries?.[1]).toMatchObject({ externalId: "kaya:ascent:manual", raw: { id: "manual" } });
+    expect(entries?.[1]).not.toHaveProperty("activityId");
+  });
+
+  it.each([
+    {
+      start: "invalid",
+      row: { id: "activity-1" },
+      message: "Kaya session session-1 has an invalid start time. Try syncing again.",
+    },
+    {
+      start: "2026-08-01T10:00:00.000Z",
+      row: undefined,
+      message: "Kaya session session-1 could not be saved. Try syncing again.",
+    },
+  ])("stops reconciliation when $message", async ({ start, row, message }) => {
+    const db = database();
+    mocks.loadTokens.mockResolvedValue({
+      accessToken: "token",
+      scopes: JSON.stringify({ kayaUserId: "42" }),
+    });
+    mocks.listSessions.mockResolvedValue([{ ...session("session-1"), start_time: start }]);
+    mocks.ascents.mockResolvedValue([]);
+    mocks.upsertActivity.mockResolvedValue(row);
+
+    expect(await new KayaSyncProvider().sync(run(db))).toMatchObject({
+      recordsSynced: 0,
+      errors: [{ message }],
+    });
+    expect(mocks.captureException).toHaveBeenCalledWith(expect.objectContaining({ message }));
+    expect(mocks.persist).not.toHaveBeenCalled();
+    expect(mocks.reconcileActivities).not.toHaveBeenCalled();
+  });
+
+  it("reconciles a complete empty logbook and session list without a standalone lookup", async () => {
+    const db = database();
+    mocks.loadTokens.mockResolvedValue({
+      accessToken: "token",
+      scopes: JSON.stringify({ kayaUserId: "42" }),
+    });
+    mocks.listSessions.mockResolvedValue([]);
+    mocks.ascents.mockResolvedValue([]);
+    const sync = run(db);
+
+    expect(await new KayaSyncProvider().sync(sync)).toMatchObject({ recordsSynced: 0, errors: [] });
+    expect(mocks.persist).toHaveBeenCalledWith(db, { userId, providerId: "kaya", entries: [] });
+    expect(mocks.reconcileActivities).toHaveBeenCalledWith(db, {
+      userId,
+      providerId: "kaya",
+      windowStart: new Date(0),
+      windowEnd: sync.window.until,
+      presentExternalIds: new Set(),
+      emptyListIsAuthoritative: true,
+    });
+    expect(db.execute).not.toHaveBeenCalled();
   });
   beforeEach(() => {
     vi.clearAllMocks();
@@ -774,7 +841,7 @@ describe("KayaSyncProvider", () => {
     expect(mocks.ensureProvider).not.toHaveBeenCalled();
   });
 
-  it("skips sessions before the requested window and keeps a session at its start", async () => {
+  it("refreshes historical sessions alongside sessions in the requested window", async () => {
     const db = database();
     const boundary = session("session-1");
     boundary.start_time = "2026-08-01T00:00:00.000Z";
@@ -792,7 +859,7 @@ describe("KayaSyncProvider", () => {
     mocks.upsertActivity.mockResolvedValue({ id: "activity-1" });
 
     await expect(new KayaSyncProvider().sync(run(db))).resolves.toMatchObject({ recordsSynced: 1 });
-    expect(mocks.upsertActivity).toHaveBeenCalledTimes(1);
+    expect(mocks.upsertActivity).toHaveBeenCalledTimes(2);
   });
 
   it("reports missing stored credentials or Kaya identity", async () => {
@@ -931,75 +998,3 @@ describe("KayaSyncProvider", () => {
     expect(mocks.captureException).toHaveBeenCalledWith(error);
   });
 });
-
-function run(db: ReturnType<typeof database>, window = defaultWindow()): SyncRun {
-  return new SyncRun({
-    db,
-    userId,
-    window,
-  });
-}
-
-function defaultWindow(): SyncWindow {
-  return SyncWindow.fromIsoRange({
-    sinceIso: "2026-08-01T00:00:00.000Z",
-    untilIso: "2026-08-02T00:00:00.000Z",
-  });
-}
-
-function database() {
-  return makeTransactionalTestDatabase({
-    select: vi.fn(),
-    insert: vi.fn(),
-    delete: vi.fn(),
-    execute: vi.fn(),
-  });
-}
-
-function session(id: string) {
-  return {
-    id,
-    start_time: "2026-08-01T10:00:00.000Z",
-    end_time: "2026-08-01T11:00:00.000Z",
-    gym: { id: "gym-1", name: "Kaya Gym" },
-    attempted_climbs: [],
-  };
-}
-
-function ascent(
-  id: string,
-  options: {
-    lead: boolean;
-    climbType: string;
-    grade: string | null;
-    ascentType?: string;
-    attempts?: number | null;
-  },
-) {
-  return {
-    id,
-    session_id: "session-1",
-    date: "2026-08-01T10:30:00.000Z",
-    attempts: options.attempts === undefined ? 2 : options.attempts,
-    ascent_type: { id: "redpoint", name: options.ascentType ?? "Redpoint" },
-    climb: {
-      id: `climb-${id}`,
-      name: "Kaya Climb",
-      lead: options.lead,
-      climb_type: { id: options.climbType, name: options.climbType },
-      grade: options.grade
-        ? { id: `grade-${id}`, name: options.grade, climb_type_group: "route" }
-        : null,
-      gym: climbGym(),
-      destination: null,
-      area: null,
-      subarea: null,
-      board: null,
-      angle: null,
-    },
-  };
-}
-
-function climbGym(): { id: string; name: string } | null {
-  return { id: "gym-1", name: "Kaya Gym" };
-}

@@ -84,7 +84,7 @@ function StoryFrame({ children }: { children: ReactNode }) {
   return (
     <trpc.Provider client={trpcClient} queryClient={queryClient}>
       <QueryClientProvider client={queryClient}>
-        <View style={{ width: 360, padding: 16 }}>{children}</View>
+        <View style={{ width: "100%", maxWidth: 760, padding: 16 }}>{children}</View>
       </QueryClientProvider>
     </trpc.Provider>
   );
@@ -94,6 +94,7 @@ const meta = {
   title: "State/ProcessingStatusWidget",
   component: ProcessingStatusWidget,
   decorators: [(Story) => <StoryFrame>{Story()}</StoryFrame>],
+  parameters: { layout: "fullscreen" },
   args: { data: activeSnapshot },
 } satisfies Meta<typeof ProcessingStatusWidget>;
 export default meta;
@@ -101,6 +102,32 @@ type Story = StoryObj<typeof meta>;
 export const Active: Story = {
   name: "Processing",
   tags: ["review-scenario", "review-scenario-processing"],
+};
+export const MultipleUpdates: Story = {
+  args: {
+    data: {
+      ...activeSnapshot,
+      scope: { providerId: null, datasets: ["activity", "recovery", "training"] },
+      datasets: [
+        { key: "activity", label: "Activities" },
+        { key: "recovery", label: "Recovery" },
+        { key: "training", label: "Training" },
+      ].map((dataset) => ({
+        ...activeDataset,
+        ...dataset,
+        progressPercentage: null,
+      })),
+      operations: [
+        { ...activeOperation, datasets: ["activity", "recovery", "training"] },
+        {
+          ...activeOperation,
+          id: "00000000-0000-4000-8000-000000001853",
+          providerId: "wahoo",
+          datasets: ["activity", "recovery", "training"],
+        },
+      ],
+    },
+  },
 };
 export const SleepUpdate: Story = {
   name: "Sleep update",

@@ -38,7 +38,6 @@ import { HealthStatusCards } from "../../components/HealthStatusCards";
 import { MetricCard } from "../../components/MetricCard";
 import { ProcessingStatusWidget } from "../../components/ProcessingStatusWidget";
 import { getQueryErrorMessage, QueryStatePanel } from "../../components/QueryStatePanel";
-import { TodayPlanCard } from "../../components/TodayPlanCard";
 import { trpc } from "../../lib/trpc";
 import { useUnitConverter } from "../../lib/units";
 import { useProcessingStatus } from "../../lib/useProcessingStatus";
@@ -207,10 +206,6 @@ export default function RecoveryScreen() {
       placeholderData: preservePreviousRangeData ? (previousData) => previousData : undefined,
     },
   );
-  const todayPlanQuery = trpc.todayPlan.get.useQuery(
-    { days: 30, endDate },
-    { enabled: isHydrated },
-  );
   const processingStatus = useProcessingStatus({ datasets: ["activity", "sleep", "recovery"] });
   const recoveryData = isHydrated ? recoveryQuery.data : undefined;
 
@@ -295,7 +290,6 @@ export default function RecoveryScreen() {
     invalidate: () =>
       Promise.all([
         utils.mobileDashboard.recovery.invalidate(),
-        utils.todayPlan.get.invalidate(),
         utils.processing.status.invalidate(),
       ]).then(() => undefined),
   });
@@ -322,12 +316,6 @@ export default function RecoveryScreen() {
         data={processingStatus.data}
         error={processingStatus.error}
         loading={processingStatus.isLoading}
-      />
-
-      <TodayPlanCard
-        plan={todayPlanQuery.data}
-        loading={todayPlanQuery.isLoading}
-        error={todayPlanQuery.error}
       />
 
       {recoveryQuery.isError ? (

@@ -12,7 +12,6 @@ const unbatchedDashboardQueryPaths = new Set([
   "recovery.workloadRatio",
   "recovery.strainTarget",
   "sleepNeed.performance",
-  "todayPlan.get",
 ]);
 
 export function createTRPCClient() {

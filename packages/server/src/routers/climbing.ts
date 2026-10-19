@@ -5,7 +5,10 @@ import { queryCache } from "dofek/lib/cache";
 import { captureException } from "dofek/lib/error-reporting";
 import { z } from "zod";
 import { loadClimbingGradePreference } from "../climbing-grade-preferences.ts";
-import { climbingLogEntryDetailSchema } from "../contracts/climbing-log-contracts.ts";
+import {
+  climbingAttachmentActivitySchema,
+  climbingLogEntryDetailSchema,
+} from "../contracts/climbing-log-contracts.ts";
 import { ActivityRepository } from "../repositories/activity-repository.ts";
 import { ClimbingLogEntryAssociator } from "../repositories/climbing-log-entry-associator.ts";
 import {
@@ -132,6 +135,20 @@ export const climbingRouter = router({
       ),
     ),
 
+  attachmentActivities: protectedProcedure
+    .input(z.object({ date: z.iso.date() }))
+    .output(z.array(climbingAttachmentActivitySchema))
+    .query(async ({ ctx, input }) =>
+      runClimbingQuery(() =>
+        new ClimbingLogEntryAssociator(
+          ctx.db,
+          ctx.userId,
+          ctx.timezone,
+          ctx.accessWindow,
+        ).getAttachmentActivities(input.date),
+      ),
+    ),
+
   attachClimbingLogEntry: protectedProcedure
     .input(z.object({ activityId: z.guid(), climbingLogEntryId: z.guid() }))
     .mutation(async ({ ctx, input }) =>
@@ -149,6 +166,8 @@ export const climbingRouter = router({
           queryCache.invalidateByPrefix(`${ctx.userId}:climbing.volumeByGrade:`),
           queryCache.invalidateByPrefix(`${ctx.userId}:climbing.locationMap:`),
           queryCache.invalidateByPrefix(`${ctx.userId}:climbing.unattachedClimbingLogEntries:`),
+          queryCache.invalidateByPrefix(`${ctx.userId}:activity.list:`),
+          queryCache.invalidateByPrefix(`${ctx.userId}:calendar.weekList:`),
         ]);
         return { attached: true as const };
       }),

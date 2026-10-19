@@ -7,6 +7,16 @@ import {
 } from "../src/processing/processing-reconciler.ts";
 import { main } from "./reconcile-pending-processing.ts";
 
+const queueMocks = vi.hoisted(() => ({
+  close: vi.fn().mockResolvedValue(undefined),
+  on: vi.fn(),
+  enqueue: vi.fn().mockResolvedValue(undefined),
+}));
+vi.mock("../src/analytics-refresh-queue.ts", () => ({
+  createAnalyticsRefreshQueue: () => ({ close: queueMocks.close, on: queueMocks.on }),
+  enqueueAnalyticsRefresh: queueMocks.enqueue,
+}));
+
 vi.mock("../src/db/clickhouse.ts", () => ({
   createClickHouseClientFromEnv: vi.fn(),
 }));
@@ -73,7 +83,12 @@ describe("reconcile-pending-processing", () => {
     expect(mockedReconcilePendingProcessingOperations).toHaveBeenCalledWith({
       clickHouseClient,
       database: reconciliationDatabase,
+      requestAnalyticsRefresh: expect.any(Function),
     });
+    const input = mockedReconcilePendingProcessingOperations.mock.calls[0]?.[0];
+    await input?.requestAnalyticsRefresh();
+    expect(queueMocks.enqueue).toHaveBeenCalledOnce();
+    expect(queueMocks.close).toHaveBeenCalledOnce();
     expect(consoleLog).toHaveBeenCalledWith(
       "[processing-reconciliation] checked 2, completed 1, abandoned 0, waiting 1",
     );

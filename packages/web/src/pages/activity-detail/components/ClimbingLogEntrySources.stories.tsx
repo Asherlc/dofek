@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { expect, within } from "storybook/test";
 import { ClimbingLogEntrySources } from "./ClimbingLogEntrySources.tsx";
 
 const meta = {
@@ -48,6 +49,20 @@ export const MultipleSources: Story = {
       },
       { providerId: "openbeta", kind: "ticks", url: "https://openbeta.io/u/thickles/ticks" },
     ],
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(canvas.getByRole("link", { name: "Mountain Project" })).toHaveAttribute(
+      "href",
+      "https://www.mountainproject.com/user/110186720/ticks/ticks",
+    );
+    await expect(canvas.getByRole("link", { name: "OpenBeta" })).toHaveAttribute(
+      "href",
+      "https://openbeta.io/u/thickles/ticks",
+    );
+    await expect(
+      canvas.getByRole("link", { name: "Swiss Cheese route on OpenBeta" }),
+    ).toBeVisible();
   },
 };
 export const UnlinkedImport: Story = {

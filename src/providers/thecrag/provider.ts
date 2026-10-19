@@ -6,25 +6,19 @@ import {
   isValidClimbingGrade,
 } from "@dofek/training/climbing-grades";
 import type { ClimbKind, GradeComponent, ProtectionStyle } from "@dofek/training/climbing-log";
-import { sql } from "drizzle-orm";
 import { z } from "zod";
-import type { TokenSet } from "../auth/oauth.ts";
-import {
-  persistClimbingLogEntries,
-  type SourceClimbingAttempt,
-  type SourceClimbingLogEntry,
-} from "../db/climbing-log-sync.ts";
-import { executeWithSchema } from "../db/execute-with-schema.ts";
-import type { SyncDatabase } from "../db/index.ts";
-import { withSyncLog } from "../db/sync-log.ts";
-import { ensureProvider, loadTokens } from "../db/tokens.ts";
-import { captureException } from "../lib/error-reporting.ts";
-import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
-import { findProviderTransportError } from "../lib/provider-transport-error.ts";
-import { fetchProviderPages } from "../sync/pagination.ts";
-import { ProviderStoredIdentityMissingError, ProviderTokenRejectedError } from "./auth-errors.ts";
-import type { SyncRun } from "./sync-run.ts";
-import type { ProviderAuthSetup, SyncProvider, SyncResult } from "./types.ts";
+import type { TokenSet } from "../../auth/oauth.ts";
+import type { SourceClimbingAttempt, SourceClimbingLogEntry } from "../../db/climbing-log-sync.ts";
+import { withSyncLog } from "../../db/sync-log.ts";
+import { ensureProvider, loadTokens } from "../../db/tokens.ts";
+import { captureException } from "../../lib/error-reporting.ts";
+import { createProviderRateLimitFetch } from "../../lib/provider-rate-limit-fetch.ts";
+import { findProviderTransportError } from "../../lib/provider-transport-error.ts";
+import { fetchProviderPages } from "../../sync/pagination.ts";
+import { ProviderStoredIdentityMissingError, ProviderTokenRejectedError } from "../auth-errors.ts";
+import type { SyncRun } from "../sync-run.ts";
+import type { ProviderAuthSetup, SyncProvider, SyncResult } from "../types.ts";
+import { writeClimbingRecords } from "./persistence.ts";
 
 const API_BASE_URL = "https://www.thecrag.com/api";
 const LOGBOOK_URL = `${API_BASE_URL}/logbook/ascents`;
@@ -77,7 +71,6 @@ const ascentSchema = z
       .passthrough(),
   })
   .passthrough();
-const cursorRowSchema = z.object({ epoch: unsignedIntegerSchema.nullable() });
 
 function nullableText(value: string | null | undefined): string | null {
   return value?.trim() || null;
@@ -315,68 +308,14 @@ function sourceQualifier(value: string | null, aid: boolean): SourceClimbingAtte
   }
 }
 
-async function incrementalSince(
-  database: SyncDatabase,
-  userId: string,
-  providerId: string,
-  accountId: string,
-): Promise<number | undefined> {
-  const [cursor] = await executeWithSchema(
-    database,
-    cursorRowSchema,
-    sql`
-    SELECT max((raw -> 'ascent' ->> 'epoch')::bigint) AS epoch
-    FROM fitness.climbing_log_entry
-    WHERE user_id = ${userId}::uuid AND provider_id = ${providerId}
-      AND raw ->> 'accountId' = ${accountId}
-  `,
-  );
-  if (!cursor) throw new Error("theCrag sync could not read its saved update position. Try again.");
-  return cursor.epoch === null ? undefined : Math.max(0, cursor.epoch - 1);
-}
-
-async function writeClimbingRecords(
-  database: SyncDatabase,
-  userId: string,
-  providerId: string,
-  records: ReturnType<typeof climbingRecord>[],
-): Promise<number> {
-  if (records.length === 0) return 0;
-  try {
-    const written = await persistClimbingLogEntries(database, {
-      userId,
-      providerId,
-      entries: records,
-    });
-    return written.recordsSynced;
-  } catch (error) {
-    // Drizzle query errors include the complete bound logbook payload.
-    const sanitized = new Error(
-      "theCrag could not save your logbook. Try again or contact support.",
-    );
-    const postgresCode = z
-      .object({ code: z.string().regex(/^[0-9A-Z]{5}$/) })
-      .safeParse(error instanceof Error ? (error.cause ?? error) : error);
-    captureException(sanitized, {
-      tags: {
-        provider: providerId,
-        phase: "logbook_save",
-        ...(postgresCode.success ? { postgresCode: postgresCode.data.code } : {}),
-      },
-    });
-    throw sanitized;
-  }
-}
-
 async function fetchLogbookPage(
   fetchFn: typeof globalThis.fetch,
   token: string,
   page: number,
-  options: { since?: number; signal?: AbortSignal } = {},
+  options: { signal?: AbortSignal } = {},
 ): Promise<z.infer<typeof logbookSchema>["data"]> {
   const url = new URL(LOGBOOK_URL);
   url.searchParams.set("page", String(page));
-  if (options.since !== undefined) url.searchParams.set("since", String(options.since));
   const response = await fetchFn(url.href, {
     headers: { Accept: "application/json", "X-CData-Key": `key=${token}` },
     signal: options.signal,
@@ -463,7 +402,7 @@ export class TheCragProvider implements SyncProvider {
 
   async sync(run: SyncRun): Promise<SyncResult> {
     const startedAt = Date.now();
-    const { db, options, window } = run;
+    const { db, options } = run;
     let recordsSynced = 0;
     try {
       const userId = options.userId;
@@ -482,10 +421,6 @@ export class TheCragProvider implements SyncProvider {
           "account identity — reconnect in Data Sources",
         );
       }
-      const since =
-        options.origin === "scheduled" && window.kind === "bounded"
-          ? await incrementalSince(db, userId, this.id, accountId.data)
-          : undefined;
       recordsSynced = await withSyncLog(
         db,
         this.id,
@@ -500,7 +435,6 @@ export class TheCragProvider implements SyncProvider {
             initialCursor: 1,
             fetchPage: async (page = 1) => {
               const data = await fetchLogbookPage(this.#fetchFn, tokens.accessToken, page, {
-                since,
                 signal: options.signal,
               });
               if (data.account.id !== accountId.data) {

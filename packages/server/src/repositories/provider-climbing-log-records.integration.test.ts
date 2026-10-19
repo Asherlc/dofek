@@ -90,9 +90,15 @@ describe("provider climbing log records", () => {
                     scope: "pitch" as const,
                     pitch: { externalId: "p1" },
                     sourceResult: "completed" as const,
+                    ropeMethod: "lead" as const,
+                  },
+                  {
+                    scope: "pitch" as const,
+                    pitch: { externalId: "p1" },
+                    ropeMethod: "lead" as const,
                   },
                 ]
-              : [{ scope: "climb" as const }],
+              : [{ scope: "climb" as const, ropeMethod: "lead" as const }],
           reportedAttemptCounts:
             index === 0 ? [{ scope: "pitch" as const, pitch: { externalId: "p1" }, count: 2 }] : [],
         })),
@@ -105,7 +111,7 @@ describe("provider climbing log records", () => {
         {
           externalId: "foreign-log",
           climb: { externalId: "route", kind: "route", name: "Other owner's Corner" },
-          attempts: [{ scope: "climb" }],
+          attempts: [{ scope: "climb", ropeMethod: "lead" }],
         },
       ],
     });
@@ -206,7 +212,7 @@ describe("provider climbing log records", () => {
           externalId: "retained-log",
           activityId,
           climbedOn: "2026-10-01",
-          attempts: [{ scope: "climb" }],
+          attempts: [{ scope: "climb", ropeMethod: "lead" }],
           climb: { externalId: "retained-route", name: "Retained route", kind: "route" },
         },
       ],

@@ -103,7 +103,7 @@ export function ClimbingLogEntryDetails({ entry }: { entry: ClimbingLogEntryDeta
               attempt.scope === "pitch"
                 ? (pitch?.name ??
                   (pitch?.number == null ? "Pitch attempt" : `Pitch ${pitch.number}`))
-                : entry.recordedClimbAttemptCount === null
+                : entry.recordedClimbAttemptCount === null && attempt.attemptIndex === null
                   ? "Climb"
                   : `Attempt ${attempt.attemptIndex ?? index + 1}`;
             return (

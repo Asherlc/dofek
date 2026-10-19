@@ -77,7 +77,7 @@ describe("activity map readiness", () => {
         {
           externalId: "source-log",
           activityId: source.id,
-          attempts: [{ scope: "climb" }],
+          attempts: [{ scope: "climb", ropeMethod: "lead" }],
           climb: {
             externalId: "source-climb",
             kind: "route",

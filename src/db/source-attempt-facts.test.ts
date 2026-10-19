@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { normalizeSourceAttemptFacts } from "./source-attempt-facts.ts";
+import {
+  assertSourceAttemptRopeMethod,
+  MissingRouteMethodError,
+  normalizeSourceAttemptFacts,
+} from "./source-attempt-facts.ts";
 
 const target = {
   climbKind: "route",
@@ -8,6 +12,31 @@ const target = {
 } as const;
 
 describe("source attempt evidence", () => {
+  it("requires an actionable recorded method for a route attempt", () => {
+    expect(() => assertSourceAttemptRopeMethod("route", null, "provider:route-42")).toThrow(
+      MissingRouteMethodError,
+    );
+    expect(() => assertSourceAttemptRopeMethod("route", null, "provider:route-42")).toThrow(
+      "provider:route-42",
+    );
+  });
+
+  it.each(["lead", "top_rope", "follow", "unroped"] as const)(
+    "accepts a route's recorded %s method",
+    (method) => {
+      expect(() =>
+        assertSourceAttemptRopeMethod("route", method, "provider:route-42"),
+      ).not.toThrow();
+    },
+  );
+
+  it.each(["boulder", "summit", null] as const)(
+    "preserves a missing method for %s climbs",
+    (kind) => {
+      expect(() => assertSourceAttemptRopeMethod(kind, null, "provider:climb-42")).not.toThrow();
+    },
+  );
+
   it("retains the source Onsight label with execution beta and first try", () => {
     expect(
       normalizeSourceAttemptFacts({ sourceResult: " Onsight " }, "free-onsight", target),

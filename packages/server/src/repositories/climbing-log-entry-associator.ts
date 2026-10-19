@@ -2,12 +2,45 @@ import { isClimbingLogActivity } from "@dofek/training/climbing-log";
 import { TRPCError } from "@trpc/server";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import type { ClimbingLogEntryDetail } from "../contracts/climbing-log-contracts.ts";
+import {
+  type ClimbingLogEntryDetail,
+  climbingAttachmentActivitySchema,
+} from "../contracts/climbing-log-contracts.ts";
 import { BaseRepository } from "../lib/base-repository.ts";
+import {
+  postgresActivityCalendarDate,
+  postgresActivityDateIsAuthoritative,
+} from "./activity-local-date.ts";
 import { ActivityRepository } from "./activity-repository.ts";
 import { ClimbingActivityLogEntryRepository } from "./climbing-activity-log-entry-repository.ts";
 
 export class ClimbingLogEntryAssociator extends BaseRepository {
+  getAttachmentActivities(date: string) {
+    return this.query(
+      climbingAttachmentActivitySchema,
+      sql`
+        SELECT grouped.id, grouped.name, grouped.canonical_type AS "activityType",
+          grouped.provider_id AS "providerId",
+          to_char(CASE WHEN ${postgresActivityDateIsAuthoritative(sql`grouped`)}
+            THEN (grouped.started_at AT TIME ZONE 'UTC')
+              + grouped.start_utc_offset_minutes * INTERVAL '1 minute'
+            ELSE grouped.started_at AT TIME ZONE ${this.timezone}
+          END, 'HH24:MI') AS "startTime"
+        FROM fitness.v_activity AS grouped
+        WHERE grouped.user_id = ${this.userId}::uuid
+          AND grouped.canonical_type IN ('climbing', 'hiking')
+          AND ${postgresActivityCalendarDate(sql`grouped`, this.timezone)} = ${date}::date
+          ${this.timestampAccessPredicate(sql`grouped.started_at`)}
+          AND EXISTS (
+            SELECT 1 FROM fitness.activity AS member
+            WHERE member.user_id = grouped.user_id AND member.group_id = grouped.id
+              AND member.canonical_type IN ('climbing', 'hiking')
+              AND member.deleted_at IS NULL AND member.provider_absent_at IS NULL
+          )
+        ORDER BY grouped.started_at, grouped.id
+      `,
+    );
+  }
   async #activity(activityId: string) {
     const activity = await new ActivityRepository(
       this.db,

@@ -16,6 +16,7 @@ export function ClimbingLogEntrySources({
   selected?: boolean;
 }) {
   const primaryRoute = links.find((link) => link.kind === "route");
+  const additionalRoutes = links.filter((link) => link.kind === "route" && link !== primaryRoute);
   const sources = [
     ...new Set([
       ...(sourceName
@@ -73,6 +74,24 @@ export function ClimbingLogEntrySources({
               </Text>
             );
           })}
+        </View>
+      )}
+      {additionalRoutes.length > 0 && (
+        <View style={styles.links}>
+          {additionalRoutes.map((link) => (
+            <Pressable
+              key={`${link.providerId}:${link.url}`}
+              accessibilityRole="link"
+              accessibilityLabel={`${name} route on ${providerSourceLabel(link.providerId)}`}
+              onPress={() => {
+                void openSource(link.url);
+              }}
+            >
+              <Text style={[styles.source, styles.link]}>
+                Route on {providerSourceLabel(link.providerId)}
+              </Text>
+            </Pressable>
+          ))}
         </View>
       )}
     </View>

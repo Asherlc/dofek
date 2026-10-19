@@ -1,5 +1,6 @@
 import {
   type ClimbingGradeProgressionLane,
+  climbingProgressionChartLanes,
   climbingProgressionGradeColor,
   climbingProgressionLaneKey,
   climbingProgressionLaneLabel,
@@ -26,15 +27,16 @@ function laneKey(lane: ClimbingGradeProgressionLane) {
 export function ClimbingGradeProgressionChart({ data, loading }: Props) {
   const [focusedKey, setFocusedKey] = useState<string | null>(null);
   const [selectedSetting, setSelectedSetting] = useState("all");
-  const focused = data.find((lane) => laneKey(lane) === focusedKey);
-  const visible = focused ? [focused] : data;
+  const lanes = climbingProgressionChartLanes(data);
+  const focused = lanes.find((lane) => laneKey(lane) === focusedKey);
+  const visible = focused ? [focused] : lanes;
   const setting = focused?.settings.some((value) => value === selectedSetting)
     ? selectedSetting
     : "all";
   const availableSettings = climbingProgressionSettings.filter((setting) =>
     visible.some((lane) => lane.settings.includes(setting)),
   );
-  if (data.length === 0)
+  if (lanes.length === 0)
     return (
       <Text style={styles.empty}>
         {loading ? "Loading climbing grades…" : "No recorded climbing grades"}
@@ -91,7 +93,7 @@ export function ClimbingGradeProgressionChart({ data, loading }: Props) {
         <ClimbingLane
           key={laneKey(lane)}
           lane={lane}
-          label={climbingProgressionLaneLabel(lane, data)}
+          label={climbingProgressionLaneLabel(lane, lanes)}
           setting={setting}
           focused={Boolean(focused)}
           onFocus={() => {

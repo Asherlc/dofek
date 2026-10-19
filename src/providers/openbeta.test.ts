@@ -581,7 +581,7 @@ describe("OpenBetaProvider", () => {
       { tags: { provider: "openbeta", phase: "climbing_activity" } },
     );
   });
-  it("does not retire existing ticks after an empty public tick list", async () => {
+  it("reconciles an explicitly empty public tick list", async () => {
     const { db } = makeDb();
     const provider = new OpenBetaProvider(
       vi.fn().mockResolvedValue(graphqlResponse({ userTicks: [] })),
@@ -590,7 +590,7 @@ describe("OpenBetaProvider", () => {
     const result = await provider.sync(makeRun(db));
 
     expect(result).toMatchObject({ provider: "openbeta", recordsSynced: 0, errors: [] });
-    expect(db.execute).not.toHaveBeenCalled();
+    expect(db.execute).toHaveBeenCalledTimes(1);
   });
   it("reports that OpenBeta is always configured and exposes manual profile auth", () => {
     const provider = new OpenBetaProvider(vi.fn());
