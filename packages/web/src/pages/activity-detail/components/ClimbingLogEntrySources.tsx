@@ -10,8 +10,7 @@ export function ClimbingLogEntrySources({
   sourceName: string | null;
   links: ClimbingSourceLink[];
 }) {
-  const routeLinks = links.filter((link) => link.kind === "route");
-  const primaryRoute = routeLinks[0];
+  const primaryRoute = links.find((link) => link.kind === "route");
   const sources = [
     ...new Set([
       ...(sourceName
@@ -41,15 +40,15 @@ export function ClimbingLogEntrySources({
       {sources.length > 0 && (
         <p className="text-xs text-dim">
           {sources.map((source, index) => {
-            const route = routeLinks.find(
-              (link) => providerSourceLabel(link.providerId) === source,
+            const tickSource = links.find(
+              (link) => link.kind === "ticks" && providerSourceLabel(link.providerId) === source,
             );
             return (
               <span key={source}>
                 {index > 0 && ", "}
-                {route ? (
+                {tickSource ? (
                   <a
-                    href={route.url}
+                    href={tickSource.url}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-accent underline hover:no-underline"

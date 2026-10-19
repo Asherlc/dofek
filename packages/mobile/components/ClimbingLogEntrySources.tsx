@@ -15,8 +15,7 @@ export function ClimbingLogEntrySources({
   links: ClimbingSourceLink[];
   selected?: boolean;
 }) {
-  const routeLinks = links.filter((link) => link.kind === "route");
-  const primaryRoute = routeLinks[0];
+  const primaryRoute = links.find((link) => link.kind === "route");
   const sources = [
     ...new Set([
       ...(sourceName
@@ -54,16 +53,16 @@ export function ClimbingLogEntrySources({
       {sources.length > 0 && (
         <View style={styles.links}>
           {sources.map((source) => {
-            const route = routeLinks.find(
-              (link) => providerSourceLabel(link.providerId) === source,
+            const tickSource = links.find(
+              (link) => link.kind === "ticks" && providerSourceLabel(link.providerId) === source,
             );
-            return route ? (
+            return tickSource ? (
               <Pressable
                 key={source}
                 accessibilityRole="link"
                 accessibilityLabel={source}
                 onPress={() => {
-                  void openSource(route.url);
+                  void openSource(tickSource.url);
                 }}
               >
                 <Text style={[styles.source, styles.link]}>{source}</Text>

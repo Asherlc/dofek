@@ -1751,6 +1751,9 @@ describe("ActivityDetailScreen", () => {
     expect(Linking.openURL).toHaveBeenCalledWith(
       "https://www.mountainproject.com/route/105734732/swiss-cheese",
     );
+    expect(Linking.openURL).toHaveBeenCalledWith(
+      "https://www.mountainproject.com/user/110186720/ticks/ticks",
+    );
     expect(screen.getAllByText("5.4", { exact: true })).toHaveLength(2);
     expect(screen.getAllByText("Goat Rock")).toHaveLength(2);
     expect(screen.getAllByText("Top rope")).toHaveLength(2);
