@@ -182,6 +182,7 @@ describe("PerformanceComparisonRepository database semantics", () => {
               })),
               {
                 scope: "pitch",
+                ropeMethod: method,
                 pitch: { number: 1 },
                 sourceResult: "Send",
                 qualifier: "free-send",

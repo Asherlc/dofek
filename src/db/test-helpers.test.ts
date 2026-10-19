@@ -5,11 +5,13 @@ const pgState = vi.hoisted<{
   endedConnections: string[];
   queryFailures: Array<{ error: Error; remainingFailures: number; sqlIncludes: string }>;
   queries: Array<{ connectionString: string; sql: string }>;
+  activeConnections: Map<symbol, string>;
 }>(() => ({
   connections: [],
   endedConnections: [],
   queryFailures: [],
   queries: [],
+  activeConnections: new Map(),
 }));
 
 const createDatabaseState = vi.hoisted<{
@@ -21,6 +23,7 @@ const createDatabaseState = vi.hoisted<{
 vi.mock("pg", () => {
   class MockClient {
     readonly connectionString: string;
+    readonly connectionId = Symbol("test connection");
 
     constructor(config: { connectionString: string }) {
       this.connectionString = config.connectionString;
@@ -28,6 +31,7 @@ vi.mock("pg", () => {
 
     async connect(): Promise<void> {
       pgState.connections.push(this.connectionString);
+      pgState.activeConnections.set(this.connectionId, this.connectionString);
     }
 
     async query(statement: string): Promise<{ rows: [] }> {
@@ -44,6 +48,7 @@ vi.mock("pg", () => {
 
     async end(): Promise<void> {
       pgState.endedConnections.push(this.connectionString);
+      pgState.activeConnections.delete(this.connectionId);
     }
   }
 
@@ -107,6 +112,7 @@ describe("setupTestDatabase", () => {
     pgState.endedConnections.length = 0;
     pgState.queryFailures.length = 0;
     pgState.queries.length = 0;
+    pgState.activeConnections.clear();
     createDatabaseState.endedConnections.length = 0;
     vi.resetModules();
   });
@@ -160,6 +166,22 @@ describe("setupTestDatabase", () => {
     expect(dropDatabaseStatements).toHaveLength(2);
     expect(templateConnectionLockStatements).toHaveLength(1);
     expect(templateBackendTerminationStatements.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("closes the migration connection when template migration fails", async () => {
+    process.env.TEST_DATABASE_URL = "postgres://test:test@localhost:5432/test";
+    pgState.queryFailures.push({
+      error: new Error("Route method migration failed"),
+      remainingFailures: 1,
+      sqlIncludes: "CREATE FUNCTION fitness.assert_climbing_route_methods",
+    });
+    const { setupTestDatabase } = await import("./test-helpers.ts");
+    await expect(setupTestDatabase()).rejects.toThrow("Route method migration failed");
+    expect(
+      [...pgState.activeConnections.values()].filter((connectionString) =>
+        connectionString.includes("/dofek_integration_template_"),
+      ),
+    ).toEqual([]);
   });
 
   it("uses distinct template databases for isolated module instances in one process", async () => {

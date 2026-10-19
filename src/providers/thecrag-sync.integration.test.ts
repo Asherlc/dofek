@@ -11,11 +11,15 @@ import { failOnUnhandledExternalRequest } from "../test/msw.ts";
 import { SyncRun } from "./sync-run.ts";
 import { SyncWindow } from "./sync-window.ts";
 import { theCragAscent, theCragPage } from "./test-helpers.ts";
-import { TheCragProvider } from "./thecrag.ts";
+import { TheCragProvider } from "./thecrag/provider.ts";
 
 const OTHER_USER_ID = "00000000-0000-0000-0000-000000000003";
 const endpoint = "https://www.thecrag.com/api/logbook/ascents";
 const server = setupServer();
+
+function routeAscent(overrides: Record<string, unknown> = {}) {
+  return theCragAscent({ tick: { label: "lead solo", name: "Lead Solo" }, ...overrides });
+}
 
 describe("TheCragProvider.sync (PostgreSQL)", () => {
   let context: TestContext;
@@ -74,50 +78,103 @@ describe("TheCragProvider.sync (PostgreSQL)", () => {
     if (context) await context.cleanup();
   });
 
-  it("upserts an ascent without creating a workout or losing its source payload", async () => {
-    const ascent = theCragAscent();
+  it.each([
+    ["lead solo", "Lead Solo", "lead"],
+    ["top rope solo", "Top Rope Solo", "top_rope"],
+  ] as const)(
+    "upserts a %s ascent without a workout or losing its raw payload",
+    async (label, name, ropeMethod) => {
+      const ascent = routeAscent({ tick: { label, name } });
+      server.use(http.get(endpoint, () => HttpResponse.json(theCragPage([ascent]))));
+      expect(await run()).toMatchObject({ recordsSynced: 1, errors: [] });
+      expect(await run()).toMatchObject({ recordsSynced: 1, errors: [] });
+      expect(await entries()).toEqual([
+        expect.objectContaining({
+          userId: TEST_USER_ID,
+          externalId: "thecrag:1001",
+          activityId: null,
+          climbedOn: "2026-10-10",
+          discipline: "rock_climbing",
+          raw: { accountId: "123", ascent },
+        }),
+      ]);
+      expect(await context.db.select().from(climb).where(eq(climb.providerId, "thecrag"))).toEqual([
+        expect.objectContaining({
+          externalId: "2001",
+          kind: "route",
+          name: "Sunset Arete",
+          routeProtection: ["sport"],
+        }),
+      ]);
+      expect(await context.db.select().from(climbGrade)).toEqual([
+        expect.objectContaining({ system: "yds", value: "5.10a" }),
+      ]);
+      expect(await context.db.select().from(climbingAttempt)).toEqual([
+        expect.objectContaining({
+          scope: "climb",
+          ropeMethod,
+          solo: true,
+          sourceResult: null,
+          fellOrHung: null,
+          usedAid: null,
+          protectionUsed: ["sport"],
+          receivedBeta: null,
+          attemptIndex: null,
+        }),
+      ]);
+      expect(
+        await context.db.select().from(activity).where(eq(activity.providerId, "thecrag")),
+      ).toHaveLength(0);
+    },
+  );
+
+  it("retains a boulder Redpoint without a rope method", async () => {
+    const ascent = theCragAscent({
+      climbedGearStyle: "boulder",
+      route: { id: "2001", name: "Boulder", grade: "V4", style: "Boulder" },
+    });
     server.use(http.get(endpoint, () => HttpResponse.json(theCragPage([ascent]))));
     expect(await run()).toMatchObject({ recordsSynced: 1, errors: [] });
-    expect(await run()).toMatchObject({ recordsSynced: 1, errors: [] });
-    expect(await entries()).toEqual([
-      expect.objectContaining({
-        userId: TEST_USER_ID,
-        externalId: "thecrag:1001",
-        activityId: null,
-        climbedOn: "2026-10-10",
-        discipline: "rock_climbing",
-        raw: { accountId: "123", ascent },
-      }),
-    ]);
-    expect(await context.db.select().from(climb).where(eq(climb.providerId, "thecrag"))).toEqual([
-      expect.objectContaining({
-        externalId: "2001",
-        kind: "route",
-        name: "Sunset Arete",
-        routeProtection: ["sport"],
-      }),
-    ]);
-    expect(await context.db.select().from(climbGrade)).toEqual([
-      expect.objectContaining({ system: "yds", value: "5.10a" }),
-    ]);
     expect(await context.db.select().from(climbingAttempt)).toEqual([
       expect.objectContaining({
-        scope: "climb",
+        ropeMethod: null,
         sourceResult: "redpoint",
         fellOrHung: false,
         usedAid: false,
-        protectionUsed: ["sport"],
-        receivedBeta: null,
-        attemptIndex: null,
+        dabbed: false,
       }),
     ]);
-    expect(
-      await context.db.select().from(activity).where(eq(activity.providerId, "thecrag")),
-    ).toHaveLength(0);
+  });
+
+  it("rejects a route Redpoint without a method and preserves the prior import", async () => {
+    server.use(http.get(endpoint, () => HttpResponse.json(theCragPage([routeAscent()]))));
+    expect(await run()).toMatchObject({ recordsSynced: 1, errors: [] });
+    const previous = await entries();
+    const previousAttempts = await context.db.select().from(climbingAttempt);
+    server.use(
+      http.get(endpoint, () =>
+        HttpResponse.json(
+          theCragPage([
+            routeAscent({ epoch: 1791676999, markdown: "Updated source note" }),
+            theCragAscent({ id: "1002", epoch: 1791676998 }),
+          ]),
+        ),
+      ),
+    );
+    expect(await run({ scheduled: true })).toMatchObject({
+      recordsSynced: 0,
+      errors: [
+        expect.objectContaining({
+          message: expect.stringMatching(/missing a rope method.*record.+source.+import/i),
+        }),
+      ],
+    });
+    expect(await entries()).toEqual(previous);
+    expect(await context.db.select().from(climbingAttempt)).toEqual(previousAttempts);
   });
 
   it("updates a corrected climb day while preserving a user-selected activity attachment", async () => {
-    let ascents = [theCragAscent(), theCragAscent({ id: "1002" })];
+    let ascents = [routeAscent(), routeAscent({ id: "1002" })];
     server.use(http.get(endpoint, () => HttpResponse.json(theCragPage(ascents))));
     expect(await run()).toMatchObject({ recordsSynced: 2, errors: [] });
     const [workout] = await context.db
@@ -137,8 +194,8 @@ describe("TheCragProvider.sync (PostgreSQL)", () => {
       .set({ activityId: workout.id })
       .where(eq(climbingLogEntry.externalId, "thecrag:1002"));
     ascents = [
-      theCragAscent({ date: "2026-10-09", epoch: 1791676810 }),
-      theCragAscent({ id: "1002", date: "2026-10-09", epoch: 1791676810 }),
+      routeAscent({ date: "2026-10-09", epoch: 1791676810 }),
+      routeAscent({ id: "1002", date: "2026-10-09", epoch: 1791676810 }),
     ];
     expect(await run()).toMatchObject({ recordsSynced: 2, errors: [] });
     expect(await entries()).toEqual(
@@ -156,7 +213,7 @@ describe("TheCragProvider.sync (PostgreSQL)", () => {
 
   it("refreshes the full logbook during scheduled syncs and imports backdated edits", async () => {
     const requestedSince: Array<string | null> = [];
-    let ascents = [theCragAscent()];
+    let ascents = [routeAscent()];
     server.use(
       http.get(endpoint, ({ request }) => {
         requestedSince.push(new URL(request.url).searchParams.get("since"));
@@ -164,7 +221,7 @@ describe("TheCragProvider.sync (PostgreSQL)", () => {
       }),
     );
     expect(await run({ scheduled: true })).toMatchObject({ recordsSynced: 1, errors: [] });
-    ascents = [theCragAscent({ date: "2020-01-20", epoch: 1791676810 })];
+    ascents = [routeAscent({ date: "2020-01-20", epoch: 1791676810 })];
     expect(await run({ scheduled: true })).toMatchObject({ recordsSynced: 1, errors: [] });
     expect(requestedSince).toEqual([null, null]);
     expect(await entries()).toEqual([
@@ -179,7 +236,7 @@ describe("TheCragProvider.sync (PostgreSQL)", () => {
 
   it("keeps identical source IDs isolated between Dofek users", async () => {
     await connect(OTHER_USER_ID);
-    server.use(http.get(endpoint, () => HttpResponse.json(theCragPage([theCragAscent()]))));
+    server.use(http.get(endpoint, () => HttpResponse.json(theCragPage([routeAscent()]))));
     expect(await run()).toMatchObject({ recordsSynced: 1, errors: [] });
     expect(await run({ userId: OTHER_USER_ID })).toMatchObject({ recordsSynced: 1, errors: [] });
     const stored = await entries();
@@ -196,7 +253,7 @@ describe("TheCragProvider.sync (PostgreSQL)", () => {
   });
 
   it("reconciles a newly connected account while retaining the previous account's raw records", async () => {
-    server.use(http.get(endpoint, () => HttpResponse.json(theCragPage([theCragAscent()]))));
+    server.use(http.get(endpoint, () => HttpResponse.json(theCragPage([routeAscent()]))));
     expect(await run({ scheduled: true })).toMatchObject({ errors: [] });
     await connect(TEST_USER_ID, "999");
     let requestedSince: string | null | undefined;
@@ -204,7 +261,7 @@ describe("TheCragProvider.sync (PostgreSQL)", () => {
       http.get(endpoint, ({ request }) => {
         requestedSince = new URL(request.url).searchParams.get("since");
         return HttpResponse.json(
-          theCragPage([theCragAscent({ id: "1009", epoch: 100 })], {
+          theCragPage([routeAscent({ id: "1009", epoch: 100 })], {
             account: { id: "999", name: "Other account", login: "other" },
           }),
         );
@@ -222,14 +279,14 @@ describe("TheCragProvider.sync (PostgreSQL)", () => {
   });
 
   it("leaves stored data intact when a later API page fails", async () => {
-    server.use(http.get(endpoint, () => HttpResponse.json(theCragPage([theCragAscent()]))));
+    server.use(http.get(endpoint, () => HttpResponse.json(theCragPage([routeAscent()]))));
     expect(await run()).toMatchObject({ errors: [] });
     const previous = await entries();
     server.use(
       http.get(endpoint, ({ request }) =>
         new URL(request.url).searchParams.get("page") === "1"
           ? HttpResponse.json(
-              theCragPage([theCragAscent({ epoch: 1791676999 })], { perPage: 1, numberAscents: 2 }),
+              theCragPage([routeAscent({ epoch: 1791676999 })], { perPage: 1, numberAscents: 2 }),
             )
           : new HttpResponse(null, { status: 400 }),
       ),
@@ -242,7 +299,7 @@ describe("TheCragProvider.sync (PostgreSQL)", () => {
   });
 
   it("rolls back all ascent writes when a PostgreSQL constraint rejects one record", async () => {
-    server.use(http.get(endpoint, () => HttpResponse.json(theCragPage([theCragAscent()]))));
+    server.use(http.get(endpoint, () => HttpResponse.json(theCragPage([routeAscent()]))));
     expect(await run()).toMatchObject({ errors: [] });
     const previous = await entries();
     await context.db.execute(sql`ALTER TABLE fitness.climbing_log_entry ADD CONSTRAINT test_reject_ascent
@@ -252,8 +309,8 @@ describe("TheCragProvider.sync (PostgreSQL)", () => {
         http.get(endpoint, () =>
           HttpResponse.json(
             theCragPage([
-              theCragAscent({ epoch: 1791676999 }),
-              theCragAscent({ id: "1002", epoch: 1791676998 }),
+              routeAscent({ epoch: 1791676999 }),
+              routeAscent({ id: "1002", epoch: 1791676998 }),
             ]),
           ),
         ),
@@ -270,12 +327,12 @@ describe("TheCragProvider.sync (PostgreSQL)", () => {
   });
 
   it("retires a removed ascent during scheduled syncs and restores the same record", async () => {
-    let ascents = [theCragAscent(), theCragAscent({ id: "1002" })];
+    let ascents = [routeAscent(), routeAscent({ id: "1002" })];
     server.use(http.get(endpoint, () => HttpResponse.json(theCragPage(ascents))));
     expect(await run()).toMatchObject({ errors: [] });
     const previous = await entries();
     const removed = previous.find((entry) => entry.externalId === "thecrag:1002");
-    ascents = [theCragAscent()];
+    ascents = [routeAscent()];
     expect(await run({ scheduled: true })).toMatchObject({ recordsSynced: 1, errors: [] });
     expect(await entries()).toEqual(
       expect.arrayContaining([
@@ -283,13 +340,13 @@ describe("TheCragProvider.sync (PostgreSQL)", () => {
         { ...removed, providerAbsentAt: expect.any(Date) },
       ]),
     );
-    ascents = [theCragAscent(), theCragAscent({ id: "1002" })];
+    ascents = [routeAscent(), routeAscent({ id: "1002" })];
     expect(await run({ scheduled: true })).toMatchObject({ recordsSynced: 2, errors: [] });
     expect(await entries()).toEqual(previous);
   });
 
   it("retires the final ascents when the complete logbook becomes empty", async () => {
-    server.use(http.get(endpoint, () => HttpResponse.json(theCragPage([theCragAscent()]))));
+    server.use(http.get(endpoint, () => HttpResponse.json(theCragPage([routeAscent()]))));
     expect(await run()).toMatchObject({ errors: [] });
     const previous = await entries();
     const attempts = await context.db.select().from(climbingAttempt);
@@ -305,7 +362,7 @@ describe("TheCragProvider.sync (PostgreSQL)", () => {
     server.use(
       http.get(endpoint, () =>
         HttpResponse.json(
-          theCragPage([theCragAscent()], {
+          theCragPage([routeAscent()], {
             account: { id: "456", name: "Wrong account", login: "wrong" },
           }),
         ),

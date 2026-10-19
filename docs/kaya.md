@@ -30,6 +30,10 @@ known. The session query selects `attempts: session_attempts`, using a
 client's typed `attempts` property. The separate ascent feed uses its own
 `attempts` field, which can be null, including for Repeat ascents. Preserve
 the reported positive count by creating that many whole-Climb Attempt rows.
+A route's explicit `lead` flag supplies the recorded method on every counted
+occurrence; source result, qualifier, and repeat facts describe only one try.
+The [adapter](../src/providers/kaya-sync.ts) supplies those method-bearing
+occurrences to the shared writer instead of creating methodless route rows.
 A missing total creates one partially described occurrence; it does not
 establish complete lifetime history or a failed attempt. Only supported source
 facts describe individual outcomes. Attempted-climb summaries and ascent
@@ -106,6 +110,10 @@ name with unknown ID and normalize ascent labels and counts into Attempt facts.
 CSV grades are conservatively stored as separately reported grades because
 the row supplies no independently identified catalogue definition; this does
 not claim that Kaya labels the column as a personal grade opinion.
+CSV exports containing route attempts without a rope method cannot satisfy the
+[required route-method contract](climbing-context.md) and are rejected. The
+[CSV parser](../src/providers/kaya/import.ts) has no method column; use an API
+source with recorded route methods. Bouldering CSV imports remain supported.
 See the [context contract and migration](climbing-context.md) and
 [provider mapping](../src/providers/kaya-sync.ts).
 

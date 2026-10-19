@@ -1,5 +1,6 @@
 import {
   type ClimbingGradeProgressionLane,
+  climbingProgressionChartLanes,
   climbingProgressionGradeColor,
   climbingProgressionLaneKey,
   climbingProgressionLaneLabel,
@@ -158,8 +159,9 @@ export function ClimbingGradeProgressionChart({
 }: ClimbingGradeProgressionChartProps) {
   const [focusedKey, setFocusedKey] = useState<string | null>(null);
   const [selectedSetting, setSelectedSetting] = useState("all");
-  const focused = data.find((lane) => laneKey(lane) === focusedKey);
-  const visible = focused ? [focused] : data;
+  const lanes = climbingProgressionChartLanes(data);
+  const focused = lanes.find((lane) => laneKey(lane) === focusedKey);
+  const visible = focused ? [focused] : lanes;
   const setting = focused?.settings.some((value) => value === selectedSetting)
     ? selectedSetting
     : "all";
@@ -167,7 +169,7 @@ export function ClimbingGradeProgressionChart({
     visible.some((lane) => lane.settings.includes(setting)),
   );
 
-  if (data.length === 0)
+  if (lanes.length === 0)
     return (
       <DofekChart
         option={{ series: [] }}
@@ -228,12 +230,12 @@ export function ClimbingGradeProgressionChart({
       {visible.map((lane) => (
         <section
           key={laneKey(lane)}
-          aria-label={climbingProgressionLaneLabel(lane, data)}
+          aria-label={climbingProgressionLaneLabel(lane, lanes)}
           className="border-t border-border pt-3"
         >
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h3 className="text-sm font-semibold text-foreground">
-              {climbingProgressionLaneLabel(lane, data)}
+              {climbingProgressionLaneLabel(lane, lanes)}
             </h3>
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted">
               {lane.grades.map(({ grade }, index) => (
@@ -252,7 +254,7 @@ export function ClimbingGradeProgressionChart({
             {!focused && (
               <button
                 type="button"
-                aria-label={`Focus ${climbingProgressionLaneLabel(lane, data)}`}
+                aria-label={`Focus ${climbingProgressionLaneLabel(lane, lanes)}`}
                 className="min-h-10 rounded px-3 text-xs font-medium text-accent hover:bg-surface-hover"
                 onClick={() => {
                   setFocusedKey(laneKey(lane));
@@ -264,7 +266,7 @@ export function ClimbingGradeProgressionChart({
             )}
           </div>
           <DofekChart
-            option={laneOption(lane, setting, climbingProgressionLaneLabel(lane, data))}
+            option={laneOption(lane, setting, climbingProgressionLaneLabel(lane, lanes))}
             height={focused ? 300 : 170}
           />
         </section>

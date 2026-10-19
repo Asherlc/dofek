@@ -358,6 +358,18 @@ function kayaLogEntry(
           : undefined;
   const grade = climb.grade?.name.trim();
   const system = boulder ? "v_scale" : "yds";
+  const ropeMethod = boulder || climb.lead == null ? null : climb.lead ? "lead" : "top_rope";
+  const attempts: SourceClimbingAttempt[] = [
+    {
+      scope: "climb",
+      ropeMethod,
+      ...(qualifier === undefined ? {} : { qualifier, sourceResult: source.label }),
+      ...(label === "repeat" ? { hadCompletedBefore: true } : {}),
+    },
+  ];
+  if (ropeMethod !== null && source.attempts !== null)
+    for (let attemptCount = 1; attemptCount < source.attempts; attemptCount++)
+      attempts.push({ scope: "climb", ropeMethod });
   return {
     externalId: source.externalId,
     climbedOn,
@@ -370,14 +382,7 @@ function kayaLogEntry(
     ...(source.attempts === null
       ? {}
       : { reportedAttemptCounts: [{ scope: "climb", count: source.attempts }] }),
-    attempts: [
-      {
-        scope: "climb",
-        ropeMethod: boulder || climb.lead == null ? null : climb.lead ? "lead" : "top_rope",
-        ...(qualifier === undefined ? {} : { qualifier, sourceResult: source.label }),
-        ...(label === "repeat" ? { hadCompletedBefore: true } : {}),
-      },
-    ],
+    attempts,
     climb: {
       externalId: climb.id,
       name: climb.name,

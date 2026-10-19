@@ -76,6 +76,7 @@ export async function seedOwnedClimbingGraph(db: Database, userId: string, provi
     climbingLogEntryId: ids.log,
     scope: "climb",
     sourceResult: "completed",
+    ropeMethod: "lead",
     usedAid: true,
   });
   await db.insert(climbingAttempt).values({

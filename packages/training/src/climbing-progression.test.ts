@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   type ClimbingGradeProgressionLane,
   type ClimbingProgressionSetting,
+  climbingProgressionChartLanes,
   climbingProgressionGradeColor,
   climbingProgressionLaneLabel,
   climbingProgressionPeriodLabel,
@@ -23,8 +24,36 @@ const boulderingLane: ClimbingGradeProgressionLane = {
   periods: [],
 };
 
+describe("climbingProgressionChartLanes", () => {
+  it.each([false, true])("keeps bouldering with recorded aid status %s", (usedAid) => {
+    const recorded = { ...boulderingLane, usedAid };
+    expect(climbingProgressionChartLanes([boulderingLane, recorded])).toEqual([recorded]);
+  });
+
+  it.each(["lead", "top_rope", "follow", "unroped"] as const)(
+    "selects route lanes with recorded %s methods and aid status",
+    (ropeMethod) => {
+      const recorded: ClimbingGradeProgressionLane = {
+        ...boulderingLane,
+        climbKind: "route",
+        ropeMethod,
+        usedAid: false,
+      };
+      const aided = { ...recorded, usedAid: true };
+      const lanes = [
+        { ...recorded, usedAid: null },
+        recorded,
+        { ...recorded, ropeMethod: null },
+        aided,
+        { ...aided, ropeMethod: null },
+      ];
+      expect(climbingProgressionChartLanes(lanes)).toEqual([recorded, aided]);
+    },
+  );
+});
+
 describe("climbingProgressionLaneLabel", () => {
-  it("distinguishes unknown solo and aid facts when otherwise matching lanes are present", () => {
+  it("distinguishes solo facts with concise climbing labels", () => {
     const known: ClimbingGradeProgressionLane = {
       ...boulderingLane,
       climbKind: "route",
@@ -33,12 +62,8 @@ describe("climbingProgressionLaneLabel", () => {
       usedAid: false,
     };
     const unknown: ClimbingGradeProgressionLane = { ...known, solo: null, usedAid: null };
-    expect(climbingProgressionLaneLabel(known, [known, unknown])).toBe(
-      "Lead · With belayer · Without aid",
-    );
-    expect(climbingProgressionLaneLabel(unknown, [known, unknown])).toBe(
-      "Lead · Solo unknown · Aid unknown",
-    );
+    expect(climbingProgressionLaneLabel(known, [known, unknown])).toBe("Lead · With belayer");
+    expect(climbingProgressionLaneLabel(unknown, [known, unknown])).toBe("Lead · Solo unknown");
   });
   it("uses the style label when matching lanes share a grade scale", () => {
     expect(climbingProgressionLaneLabel(boulderingLane, [boulderingLane])).toBe("Bouldering");

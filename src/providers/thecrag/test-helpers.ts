@@ -1,6 +1,6 @@
-import { SyncRun } from "./sync-run.ts";
-import { SyncWindow } from "./sync-window.ts";
-import { type createMockDatabase, theCragPage } from "./test-helpers.ts";
+import { SyncRun } from "../sync-run.ts";
+import { SyncWindow } from "../sync-window.ts";
+import { type createMockDatabase, theCragPage } from "../test-helpers.ts";
 
 export function response(
   ascents: Record<string, unknown>[] = [],
@@ -24,7 +24,7 @@ export function tokens(accountId = "123") {
 
 export function makeRun(
   database: ReturnType<typeof createMockDatabase>["db"],
-  options: { full?: boolean; origin?: "scheduled" | "manual"; userId?: string } = {},
+  options: { full?: boolean; origin?: "scheduled" | "manual"; userId?: string | null } = {},
 ): SyncRun {
   return new SyncRun({
     db: database,
@@ -32,7 +32,10 @@ export function makeRun(
       options.full === false
         ? SyncWindow.fromDateRange({ sinceDate: "2026-10-01", untilDate: "2026-10-11" })
         : SyncWindow.full(new Date("2026-10-11T23:59:59.999Z")),
-    userId: options.userId ?? "00000000-0000-0000-0000-000000000001",
+    userId:
+      options.userId === null
+        ? undefined
+        : (options.userId ?? "00000000-0000-0000-0000-000000000001"),
     origin: options.origin,
   });
 }

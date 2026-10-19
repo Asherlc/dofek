@@ -173,7 +173,7 @@ and mobile. The API includes private notes and supports pagination and
 incremental reads by ascent update time
 ([official personal logbook API](https://www.thecrag.com/en/article/logbookreadapi)).
 
-The [provider](thecrag.ts) stores standalone climbing log entries and original
+The [provider](thecrag/provider.ts) stores standalone climbing log entries and original
 source payloads without creating workouts. Every sync reads the complete
 paginated logbook so removed ascents can be marked absent. Dofek polls daily
 with one concurrent sync job. Full reads use more of the API's weekly account

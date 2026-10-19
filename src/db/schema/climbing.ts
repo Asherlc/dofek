@@ -278,6 +278,7 @@ export const climbingAttempt = fitness.table(
     parentAttemptId: uuid("parent_attempt_id"),
     attemptIndex: bigint("attempt_index", { mode: "number" }),
     sourceResult: text("source_result"),
+    // Migration 0150 requires a method when the owning log's Climb is a route.
     ropeMethod: ropeMethodEnum("rope_method"),
     solo: boolean("solo"),
     protectionUsed: protectionStyleEnum("protection_used").array(),

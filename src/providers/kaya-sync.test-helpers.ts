@@ -6,7 +6,19 @@ import { makeTransactionalTestDatabase } from "./test-helpers.ts";
 
 export const userId = "00000000-0000-4000-8000-000000000001";
 
-export const sourceOutcomeCases = [
+const routeAttemptCountCases = [
+  { count: null, additionalAttempts: [] },
+  { count: 1, additionalAttempts: [] },
+  {
+    count: 3,
+    additionalAttempts: [
+      { scope: "climb", ropeMethod: "lead" },
+      { scope: "climb", ropeMethod: "lead" },
+    ],
+  },
+];
+
+const sourceOutcomeCases = [
   {
     label: " Onsight ",
     attempt: {
@@ -50,6 +62,10 @@ export const sourceOutcomeCases = [
   },
   { label: "Unfamiliar", attempt: { scope: "climb", ropeMethod: "lead" } },
 ];
+
+export const routeAttemptCases = routeAttemptCountCases.flatMap((count) =>
+  sourceOutcomeCases.map((outcome) => ({ ...count, ...outcome })),
+);
 
 export function run(db: ReturnType<typeof database>, window = defaultWindow()): SyncRun {
   return new SyncRun({ db, userId, window });
