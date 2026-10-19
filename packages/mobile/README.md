@@ -104,6 +104,15 @@ refreshes and uses the cross-platform region API to zoom into clusters; the
 [native map camera documentation](https://github.com/react-native-maps/react-native-maps/blob/master/docs/mapview.md#types)
 distinguishes MapKit altitude from Google Maps zoom values.
 
+Unattached logs in the selected location list offer **Attach to activity**.
+The [activity picker](components/ClimbingLogAttachment.tsx) shows eligible
+climbing and hiking activity groups on the log's date, including their local
+start time and source. Attachment keeps the original log date and refreshes
+the affected climbing and activity queries. Loading, no same-day activity,
+lookup errors, and attachment errors have separate states; cancellation does
+not attach a log. The shared [server association gate](../server/src/repositories/climbing-log-entry-associator.ts)
+enforces the same-day rule for both clients.
+
 - `app/`: Expo Router screens (file-based routing). Keep this route-only; Expo documents `app` as route-exclusive and non-route files there can be treated as routes: <https://docs.expo.dev/router/basics/core-concepts/#6-non-navigation-components-live-outside-the-srcapp-directory>.
 - `app-tests/`: Vitest tests for Expo Router screens.
 - `app-stories/`: Storybook stories for Expo Router screens.

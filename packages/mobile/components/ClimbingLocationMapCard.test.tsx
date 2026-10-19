@@ -1,9 +1,12 @@
+import { QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { createElement, forwardRef, type ReactNode, useImperativeHandle } from "react";
 import type { Region } from "react-native-maps";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { trpc } from "../lib/trpc";
 import { ClimbingLocationMapCard } from "./ClimbingLocationMapCard";
 import { climbingLocationMapFixture } from "./climbing-location-map-fixtures";
+import { createClimbingAttachmentTestClient } from "./climbing-log-attachment-test-helpers";
 
 const nativeMap = vi.hoisted<{
   animateToRegion: ReturnType<typeof vi.fn>;
@@ -153,6 +156,35 @@ describe("ClimbingLocationMapCard", () => {
     ).toBeNull();
     fireEvent.click(screen.getByTitle("Left Arete"));
     expect(screen.getByText("Area location: Goat Rock · OpenBeta")).toBeTruthy();
+  });
+
+  it("opens a cancellable activity picker for the exact unattached climb", () => {
+    const fixture = createClimbingAttachmentTestClient();
+    const view = render(
+      <trpc.Provider client={fixture.client} queryClient={fixture.queryClient}>
+        <QueryClientProvider client={fixture.queryClient}>
+          <ClimbingLocationMapCard data={climbingLocationMapFixture} />
+        </QueryClientProvider>
+      </trpc.Provider>,
+    );
+    measure(view.container);
+    zoomToClimbs();
+    fireEvent.click(screen.getByTitle("2 climbs at this location"));
+
+    expect(fixture.requests).toHaveLength(0);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Attach to activity for Swiss Cheese repeat" }),
+    );
+    expect(screen.getByRole("header").textContent).toBe("Attach to activity");
+    expect(screen.getByText("Swiss Cheese repeat · 2026-10-11")).toBeTruthy();
+    expect(
+      screen.getByText("Choose a recorded climbing or hiking activity from this day."),
+    ).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Cancel attachment" }));
+    expect(screen.queryByRole("header")).toBeNull();
+    expect(screen.getByText("Swiss Cheese repeat")).toBeTruthy();
+    expect(screen.getByTestId("map")).toBeTruthy();
   });
 
   it("refits the mounted map when the filtered location bounds change", () => {

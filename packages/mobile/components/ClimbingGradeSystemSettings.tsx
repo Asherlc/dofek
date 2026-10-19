@@ -25,7 +25,7 @@ export function ClimbingGradeSystemSettings({
   return (
     <View style={styles.section}>
       <Text style={styles.sectionTitle}>Climbing grades</Text>
-      {errorMessage && !preference ? (
+      {errorMessage ? (
         <Text style={styles.unitErrorText}>
           {userFacingErrorMessage(
             errorMessage,

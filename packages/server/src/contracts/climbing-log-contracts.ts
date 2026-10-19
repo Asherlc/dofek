@@ -45,3 +45,12 @@ export const climbingLogEntryDetailSchema = climbingLogEntrySchema.extend({
 });
 export type ClimbingLogEntryDetail = z.infer<typeof climbingLogEntryDetailSchema>;
 export type ClimbingPitchResult = z.infer<typeof climbingPitchResultSchema>;
+
+export const climbingAttachmentActivitySchema = z.object({
+  id: z.guid(),
+  name: z.string().nullable(),
+  activityType: z.enum(["climbing", "hiking"]),
+  providerId: z.string(),
+  startTime: z.string(),
+});
+export type ClimbingAttachmentActivity = z.infer<typeof climbingAttachmentActivitySchema>;
