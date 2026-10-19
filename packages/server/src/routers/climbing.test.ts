@@ -124,6 +124,35 @@ describe("climbingRouter", () => {
     expect(await caller.unattachedClimbingLogEntries({ activityId: groupId })).toEqual([detail]);
     expect(lookup).toHaveBeenCalledWith(groupId);
   });
+  it("returns activity attachment choices with their local start times", async () => {
+    const options = [
+      {
+        id: groupId,
+        name: "Morning climbing",
+        activityType: "climbing",
+        providerId: "whoop",
+        startTime: "09:16",
+      },
+    ];
+    const { caller } = makeCaller(options);
+    expect(await caller.attachmentActivities({ date: "2026-10-04" })).toEqual(options);
+  });
+  it("rejects invalid attachment dates before querying activities", async () => {
+    const { caller, execute } = makeCaller();
+    await expect(caller.attachmentActivities({ date: "2026-02-30" })).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+    });
+    expect(execute).not.toHaveBeenCalled();
+  });
+  it("reports activity attachment lookup failures with the server error", async () => {
+    const { caller, execute } = makeCaller();
+    execute.mockRejectedValue(new Error("Activity lookup is unavailable. Try again."));
+    await expect(caller.attachmentActivities({ date: "2026-10-04" })).rejects.toMatchObject({
+      code: "INTERNAL_SERVER_ERROR",
+      message: "Activity lookup is unavailable. Try again.",
+    });
+    expect(captureException).toHaveBeenCalled();
+  });
   it("attaches a log and invalidates every affected climbing cache", async () => {
     const attach = vi
       .spyOn(ClimbingLogEntryAssociator.prototype, "attachLogEntry")
@@ -141,6 +170,8 @@ describe("climbingRouter", () => {
       "locationMap",
     ])
       expect(invalidateByPrefix).toHaveBeenCalledWith(`user-1:climbing.${procedure}:`);
+    expect(invalidateByPrefix).toHaveBeenCalledWith("user-1:activity.list:");
+    expect(invalidateByPrefix).toHaveBeenCalledWith("user-1:calendar.weekList:");
   });
   it("returns server-computed volume with the canonical kind", async () => {
     const { caller } = makeCaller([

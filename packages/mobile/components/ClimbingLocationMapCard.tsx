@@ -1,11 +1,15 @@
 import { formatDateShort } from "@dofek/format/format";
 import { providerSourceLabel } from "@dofek/providers/providers";
-import type { ClimbingLocationMap } from "@dofek/training/climbing-location-map";
+import type {
+  ClimbingLocationMap,
+  ClimbingLocationMapEntry,
+} from "@dofek/training/climbing-location-map";
 import { useRouter } from "expo-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { type LayoutChangeEvent, Pressable, StyleSheet, Text, View } from "react-native";
 import MapView, { Marker, type Region } from "react-native-maps";
 import { colors, radius, spacing } from "../theme";
+import { ClimbingLogAttachment } from "./ClimbingLogAttachment";
 import { MapProcessingState } from "./MapProcessingState";
 import { QueryStatePanel } from "./QueryStatePanel";
 
@@ -33,6 +37,7 @@ export function ClimbingLocationMapCard({
   const [mapReady, setMapReady] = useState(false);
   const [zoom, setZoom] = useState(0);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [attachmentEntry, setAttachmentEntry] = useState<ClimbingLocationMapEntry | null>(null);
   const south = data?.bounds?.south;
   const west = data?.bounds?.west;
   const north = data?.bounds?.north;
@@ -196,7 +201,7 @@ export function ClimbingLocationMapCard({
                 {entry.location.name ?? entry.location.objectId} ·{" "}
                 {providerSourceLabel(entry.location.providerId)}
               </Text>
-              {entry.activityId && (
+              {entry.activityId ? (
                 <Pressable
                   accessibilityRole="button"
                   accessibilityLabel={`View activity for ${entry.label}`}
@@ -205,10 +210,22 @@ export function ClimbingLocationMapCard({
                 >
                   <Text style={styles.activityLinkText}>View activity</Text>
                 </Pressable>
+              ) : (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={`Attach to activity for ${entry.label}`}
+                  onPress={() => setAttachmentEntry(entry)}
+                  style={styles.activityLink}
+                >
+                  <Text style={styles.activityLinkText}>Attach to activity</Text>
+                </Pressable>
               )}
             </View>
           ))}
         </View>
+      )}
+      {attachmentEntry && (
+        <ClimbingLogAttachment entry={attachmentEntry} onClose={() => setAttachmentEntry(null)} />
       )}
     </View>
   );

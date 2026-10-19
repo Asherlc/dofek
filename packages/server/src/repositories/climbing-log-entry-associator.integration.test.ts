@@ -112,6 +112,83 @@ describe("ClimbingLogEntryAssociator PostgreSQL behavior", () => {
       ]),
     );
   });
+  it("lists owned same-day climbing and hiking activity groups with local times", async () => {
+    await ensureProvider(context.db, "apple_health", "Apple Health", undefined, userId);
+    await context.db.insert(activity).values({
+      userId,
+      groupId,
+      providerId: "apple_health",
+      externalId: "overlapping-climbing-recording",
+      canonicalType: "climbing",
+      providerType: "climbing",
+      startedAt: new Date("2026-01-02T00:30:00Z"),
+    });
+    expect(await repo().getAttachmentActivities("2026-01-01")).toEqual(
+      expect.arrayContaining([
+        {
+          id: groupId,
+          name: null,
+          activityType: "climbing",
+          providerId: "apple_health",
+          startTime: "16:30",
+        },
+        {
+          id: hikingId,
+          name: null,
+          activityType: "hiking",
+          providerId: "openbeta",
+          startTime: "16:30",
+        },
+      ]),
+    );
+    expect(await repo().getAttachmentActivities("2026-01-01")).toHaveLength(2);
+    expect(await repo().getAttachmentActivities("2025-12-31")).toEqual([]);
+  });
+  it("filters activity options by source-local date, ownership, availability, and access", async () => {
+    const sources = [
+      {
+        externalId: "offset-choice",
+        startUtcOffsetMinutes: 120,
+        localTimeSource: "provider_offset",
+        userId,
+      },
+      { externalId: "foreign-choice", userId: otherUser },
+      { externalId: "deleted-choice", userId, deletedAt: new Date() },
+      { externalId: "absent-choice", userId, providerAbsentAt: new Date() },
+    ];
+    const rows = await context.db
+      .insert(activity)
+      .values(
+        sources.map((source) => ({
+          providerId: "openbeta",
+          canonicalType: "climbing" as const,
+          providerType: "climbing",
+          startedAt: new Date("2026-01-01T23:30:00Z"),
+          ...source,
+        })),
+      )
+      .returning();
+    const selected = rows.find((row) => row.externalId === "offset-choice");
+    if (!selected) throw new Error("Expected source-local activity fixture");
+    expect(await repo().getAttachmentActivities("2026-01-02")).toEqual([
+      {
+        id: selected.groupId,
+        name: null,
+        activityType: "climbing",
+        providerId: "openbeta",
+        startTime: "01:30",
+      },
+    ]);
+    expect(await repo().getAttachmentActivities("2026-01-01")).toHaveLength(2);
+    const restricted = new ClimbingLogEntryAssociator(context.db, userId, "America/Los_Angeles", {
+      kind: "limited",
+      startDate: "2026-01-03",
+      endDateExclusive: "2026-02-01",
+      paid: false,
+      reason: "free_recent_week",
+    });
+    expect(await restricted.getAttachmentActivities("2026-01-02")).toEqual([]);
+  });
   it("attaches to the real group member while preserving the source day", async () => {
     await repo().attachLogEntry({ climbingLogEntryId: localId, activityId: groupId });
     expect(

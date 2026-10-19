@@ -248,9 +248,10 @@ export default function SettingsScreen() {
 
   const currentUnitSystem: UnitSystem =
     unitSetting.data?.value === "imperial" ? "imperial" : "metric";
-  const climbingGradePreference = climbingGradeSetting.data
-    ? resolveClimbingGradePreference(climbingGradeSetting.data.value)
-    : null;
+  const climbingGradePreference =
+    climbingGradeSetting.data === undefined
+      ? null
+      : resolveClimbingGradePreference(climbingGradeSetting.data?.value);
 
   function beginAppStoreBillingAction(action: AppStoreBillingAction): void {
     setAppStoreBillingAction(action);

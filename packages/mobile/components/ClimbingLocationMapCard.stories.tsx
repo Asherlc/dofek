@@ -1,15 +1,41 @@
 import type { Meta, StoryObj } from "@storybook/react-native";
+import { QueryClientProvider } from "@tanstack/react-query";
+import { type ReactNode, useMemo } from "react";
+import { SafeAreaProvider } from "react-native-safe-area-context";
+import { trpc } from "../lib/trpc";
 import { ClimbingLocationMapCard } from "./ClimbingLocationMapCard";
 import { climbingLocationMapFixture } from "./climbing-location-map-fixtures";
+import {
+  climbingAttachmentSafeAreaMetrics,
+  createClimbingAttachmentTestClient,
+} from "./climbing-log-attachment-test-helpers";
+
+function StoryFrame({ children }: { children: ReactNode }) {
+  const fixture = useMemo(() => createClimbingAttachmentTestClient(), []);
+  return (
+    <SafeAreaProvider initialMetrics={climbingAttachmentSafeAreaMetrics}>
+      <trpc.Provider client={fixture.client} queryClient={fixture.queryClient}>
+        <QueryClientProvider client={fixture.queryClient}>{children}</QueryClientProvider>
+      </trpc.Provider>
+    </SafeAreaProvider>
+  );
+}
 
 const meta = {
   title: "Training/ClimbingLocationMapCard",
   component: ClimbingLocationMapCard,
+  decorators: [
+    (Story) => (
+      <StoryFrame>
+        <Story />
+      </StoryFrame>
+    ),
+  ],
   parameters: {
     docs: {
       description: {
         component:
-          "The map reserves its viewport while the native renderer starts, showing the shared processing panel followed by the native loading indicator.",
+          "The map reserves its viewport while the native renderer starts. Select an unattached climb to choose a recorded climbing or hiking activity from the same day.",
       },
     },
   },
