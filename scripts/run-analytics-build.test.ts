@@ -69,6 +69,41 @@ beforeEach(() => {
 });
 
 describe("runAnalyticsBuild", () => {
+  it("snapshots pending operations before starting dbt so later updates need another build", async () => {
+    const pending: Array<{ operationId: string; datasetKey: "providers" }> = [
+      { operationId: "30000000-0000-4000-8000-000000000001", datasetKey: "providers" },
+    ];
+    const recordRun = vi.fn(async () => ({ datasets: 1, failed: 0 }));
+    await runAnalyticsBuild({
+      selectedModels: ["provider_stats"],
+      artifactDirectory: "/tmp/dofek-dbt-snapshot",
+      microbatchBounds: TEST_MICROBATCH_BOUNDS,
+      loadPendingDatasets: async () => [...pending],
+      runDbt: async () => {
+        pending.push({
+          operationId: "30000000-0000-4000-8000-000000000002",
+          datasetKey: "providers",
+        });
+        return 0;
+      },
+      readArtifact: createArtifactReader("snapshot-run", [
+        {
+          uniqueId: "model.dofek.provider_stats",
+          name: "provider_stats",
+          status: "success",
+          executionTime: 1,
+          message: null,
+        },
+      ]),
+      recordRun,
+    });
+    expect(recordRun).toHaveBeenCalledWith(
+      expect.objectContaining({
+        pendingDatasets: [pending[0]],
+      }),
+    );
+  });
+
   it("cleans acquired resources when ClickHouse initialization fails", async () => {
     const initializationError = new Error("CLICKHOUSE_URL is required");
     const endDatabase = vi.fn().mockResolvedValue(undefined);
@@ -105,6 +140,7 @@ describe("runAnalyticsBuild", () => {
 
     await expect(
       runAnalyticsBuild({
+        loadPendingDatasets: async () => [],
         selectedModels: ["provider_stats"],
         artifactDirectory: "/tmp/dofek-dbt-test",
         microbatchBounds: TEST_MICROBATCH_BOUNDS,
@@ -131,6 +167,7 @@ describe("runAnalyticsBuild", () => {
     ]);
     expect(recordRun).toHaveBeenCalledWith({
       runId: "dbt-run-1",
+      pendingDatasets: [],
       modelResults: [expect.objectContaining({ name: "provider_stats", status: "succeeded" })],
     });
   });
@@ -140,6 +177,7 @@ describe("runAnalyticsBuild", () => {
 
     await expect(
       runAnalyticsBuild({
+        loadPendingDatasets: async () => [],
         selectedModels: ["provider_stats"],
         artifactDirectory: "/tmp/dofek-dbt-test",
         microbatchBounds: TEST_MICROBATCH_BOUNDS,
@@ -179,6 +217,7 @@ describe("runAnalyticsBuild", () => {
 
     await expect(
       runAnalyticsBuild({
+        loadPendingDatasets: async () => [],
         selectedModels: ["provider_stats"],
         artifactDirectory: "/tmp/dofek-dbt-test",
         microbatchBounds: TEST_MICROBATCH_BOUNDS,
@@ -229,6 +268,7 @@ describe("runAnalyticsBuild", () => {
 
     await expect(
       runAnalyticsBuild({
+        loadPendingDatasets: async () => [],
         selectedModels: ["provider_stats"],
         artifactDirectory: "/tmp/dofek-dbt-test",
         microbatchBounds: TEST_MICROBATCH_BOUNDS,
@@ -261,6 +301,7 @@ describe("runAnalyticsBuild", () => {
 
     await expect(
       runAnalyticsBuild({
+        loadPendingDatasets: async () => [],
         selectedModels: ["provider_stats"],
         artifactDirectory: "/tmp/dofek-dbt-test",
         microbatchBounds: TEST_MICROBATCH_BOUNDS,
@@ -289,6 +330,7 @@ describe("runAnalyticsBuild", () => {
 
     await expect(
       runAnalyticsBuild({
+        loadPendingDatasets: async () => [],
         selectedModels: ["provider_stats"],
         artifactDirectory: "/tmp/dofek-dbt-test",
         microbatchBounds: TEST_MICROBATCH_BOUNDS,
@@ -313,6 +355,7 @@ describe("runAnalyticsBuild", () => {
     const recordRun = vi.fn(async () => ({ datasets: 2, failed: 2 }));
 
     const error = await runAnalyticsBuild({
+      loadPendingDatasets: async () => [],
       selectedModels: ["provider_stats", "provider_stats_downstream"],
       artifactDirectory: "/tmp/dofek-dbt-test",
       microbatchBounds: TEST_MICROBATCH_BOUNDS,
@@ -351,6 +394,7 @@ describe("runAnalyticsBuild", () => {
 
     await expect(
       runAnalyticsBuild({
+        loadPendingDatasets: async () => [],
         selectedModels: ["provider_stats"],
         artifactDirectory: "/tmp/dofek-dbt-test",
         microbatchBounds: TEST_MICROBATCH_BOUNDS,

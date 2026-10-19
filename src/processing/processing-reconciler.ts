@@ -103,6 +103,7 @@ const observedMetricBatchRowsSchema = z.array(
 export interface ReconcilePendingProcessingOperationsInput {
   database: SchemaExecutionDatabase;
   clickHouseClient: Pick<ClickHouseClient, "query">;
+  requestAnalyticsRefresh(): Promise<void>;
   limit?: number;
 }
 
@@ -394,6 +395,7 @@ async function abandonStalledOperation(
 export async function reconcilePendingProcessingOperations({
   database,
   clickHouseClient,
+  requestAnalyticsRefresh,
   limit = 100,
 }: ReconcilePendingProcessingOperationsInput): Promise<ProcessingReconciliationResult> {
   const parsedLimit = z.number().int().min(1).max(1_000).parse(limit);
@@ -438,6 +440,7 @@ export async function reconcilePendingProcessingOperations({
       await persistEvidenceDecision(database, decision, pendingOperation.operation_id);
     }
 
+    let analyticsReady = false;
     const datasetKeys = new Set(decisions.map((decision) => decision.datasetKey));
     for (const datasetKey of datasetKeys) {
       const datasetDecisions = decisions.filter((decision) => decision.datasetKey === datasetKey);
@@ -455,8 +458,11 @@ export async function reconcilePendingProcessingOperations({
           message: "Waiting for analytics calculations",
           idempotencyKey: `analytics:${datasetKey}:${servingWatermark || "no-cdc-transport"}`,
         });
+        analyticsReady = true;
       }
     }
+
+    if (analyticsReady) await requestAnalyticsRefresh();
 
     if (allSucceeded) {
       await database.execute(sql`UPDATE fitness.processing_queue_outbox

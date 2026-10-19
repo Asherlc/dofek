@@ -217,6 +217,7 @@ describe("reconcileProcessingEvidence", () => {
 });
 
 describe("reconcilePendingProcessingOperations", () => {
+  const requestAnalyticsRefresh = vi.fn().mockResolvedValue(undefined);
   function database(): SchemaExecutionDatabase {
     return { execute: vi.fn(async () => []) };
   }
@@ -282,9 +283,11 @@ describe("reconcilePendingProcessingOperations", () => {
     arrangeStoredExpectations();
     const reconciliationDatabase = database();
     const query = clickHouseQueryWithEvidence(true);
+    const requestAnalyticsRefresh = vi.fn().mockResolvedValue(undefined);
 
     await expect(
       reconcilePendingProcessingOperations({
+        requestAnalyticsRefresh,
         database: reconciliationDatabase,
         clickHouseClient: { query },
         limit: 25,
@@ -344,6 +347,10 @@ describe("reconcilePendingProcessingOperations", () => {
       ],
     ]);
     expect(reconciliationDatabase.execute).toHaveBeenCalledOnce();
+    expect(requestAnalyticsRefresh).toHaveBeenCalledOnce();
+    expect(requestAnalyticsRefresh.mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(reconciliationDatabase.execute).mock.invocationCallOrder[0] ?? 0,
+    );
   });
 
   it("queues distinct analytics events when datasets share a serving watermark", async () => {
@@ -393,6 +400,7 @@ describe("reconcilePendingProcessingOperations", () => {
       .mockResolvedValueOnce({ json: async () => [] });
 
     await reconcilePendingProcessingOperations({
+      requestAnalyticsRefresh,
       database: database(),
       clickHouseClient: { query },
     });
@@ -411,6 +419,7 @@ describe("reconcilePendingProcessingOperations", () => {
 
     await expect(
       reconcilePendingProcessingOperations({
+        requestAnalyticsRefresh,
         database: reconciliationDatabase,
         clickHouseClient: { query: clickHouseQueryWithEvidence(false) },
       }),
@@ -426,6 +435,21 @@ describe("reconcilePendingProcessingOperations", () => {
         message: "Waiting for stored data to become available for analysis",
       }),
     );
+    expect(reconciliationDatabase.execute).not.toHaveBeenCalled();
+    expect(requestAnalyticsRefresh).not.toHaveBeenCalled();
+  });
+
+  it("leaves reconciliation pending when the analytics queue rejects dispatch", async () => {
+    arrangeStoredExpectations();
+    const reconciliationDatabase = database();
+    const failure = new Error("Redis dispatch unavailable");
+    await expect(
+      reconcilePendingProcessingOperations({
+        database: reconciliationDatabase,
+        clickHouseClient: { query: clickHouseQueryWithEvidence(true) },
+        requestAnalyticsRefresh: vi.fn().mockRejectedValue(failure),
+      }),
+    ).rejects.toBe(failure);
     expect(reconciliationDatabase.execute).not.toHaveBeenCalled();
   });
 
@@ -448,6 +472,7 @@ describe("reconcilePendingProcessingOperations", () => {
 
     await expect(
       reconcilePendingProcessingOperations({
+        requestAnalyticsRefresh,
         database: reconciliationDatabase,
         clickHouseClient: { query },
       }),
@@ -471,6 +496,7 @@ describe("reconcilePendingProcessingOperations", () => {
   it.each([0, 1_001, 1.5])("rejects an invalid reconciliation limit of %s", async (limit) => {
     await expect(
       reconcilePendingProcessingOperations({
+        requestAnalyticsRefresh,
         database: database(),
         clickHouseClient: { query: vi.fn() },
         limit,

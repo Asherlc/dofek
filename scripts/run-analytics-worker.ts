@@ -2,8 +2,13 @@ import type { Server } from "node:http";
 import { pathToFileURL } from "node:url";
 import * as Sentry from "@sentry/node";
 import { z } from "zod";
+import {
+  createAnalyticsRefreshQueue,
+  runAnalyticsRefreshJobs,
+} from "../src/analytics-refresh-queue.ts";
 import type { AnalyticsRefreshStep } from "../src/analytics-worker.ts";
 import { AnalyticsWorker, createAnalyticsWorkerHealthServer } from "../src/analytics-worker.ts";
+import { getRedisConnection } from "../src/jobs/queues.ts";
 import { captureException } from "../src/lib/error-reporting.ts";
 import { initProductionSentry } from "../src/lib/sentry.ts";
 import { logger } from "../src/logger.ts";
@@ -62,6 +67,11 @@ interface AnalyticsWorkerDependencies {
   now(): Date;
   reportFailure(error: unknown, tags: { analyticsRefreshStep: AnalyticsRefreshStep }): void;
   runAnalyticsBuildFromEnvironment(): Promise<void>;
+  runRefreshJobs(
+    processRefresh: () => Promise<void>,
+    intervalMilliseconds: number,
+    signal: AbortSignal,
+  ): Promise<void>;
   sleep(milliseconds: number, signal: AbortSignal): Promise<void>;
   warmQueryCacheFromEnvironment(): Promise<void>;
 }
@@ -89,6 +99,7 @@ export function createAnalyticsWorkerFromEnvironment(
     now: dependencies.now,
     reportFailure: dependencies.reportFailure,
     runAnalyticsBuild: dependencies.runAnalyticsBuildFromEnvironment,
+    runRefreshJobs: dependencies.runRefreshJobs,
     sleep: dependencies.sleep,
     warmQueryCache: dependencies.warmQueryCacheFromEnvironment,
   });
@@ -97,6 +108,13 @@ export function createAnalyticsWorkerFromEnvironment(
 export async function runAnalyticsWorker(): Promise<void> {
   const sentryDsn = process.env.SENTRY_DSN || process.env.SENTRY_DSN_unencrypted;
   initProductionSentry(sentryDsn);
+
+  const refreshQueue = createAnalyticsRefreshQueue();
+  const reportQueueFailure = (error: Error) => {
+    captureException(error, { tags: { phase: "analytics-refresh-queue" } });
+    logger.error(`[analytics-worker] Refresh queue failed: ${error.message}`);
+  };
+  refreshQueue.on("error", reportQueueFailure);
 
   const worker = createAnalyticsWorkerFromEnvironment(process.env, {
     now: () => new Date(),
@@ -111,6 +129,15 @@ export async function runAnalyticsWorker(): Promise<void> {
       await runAnalyticsBuildFromEnvironment();
     },
     sleep,
+    runRefreshJobs: (processRefresh, intervalMilliseconds, signal) =>
+      runAnalyticsRefreshJobs({
+        queue: refreshQueue,
+        connection: getRedisConnection(),
+        processRefresh,
+        intervalMilliseconds,
+        reportFailure: reportQueueFailure,
+        signal,
+      }),
     warmQueryCacheFromEnvironment: async () => {
       const { warmQueryCacheFromEnvironment } = await import("./warm-query-cache.ts");
       await warmQueryCacheFromEnvironment();
@@ -126,7 +153,11 @@ export async function runAnalyticsWorker(): Promise<void> {
   process.once("SIGTERM", stop);
   try {
     await worker.run(abortController.signal);
+  } catch (error: unknown) {
+    captureException(error, { tags: { phase: "analytics-refresh-queue" } });
+    throw error;
   } finally {
+    await refreshQueue.close();
     await closeServer(healthServer);
     await Sentry.close(2_000);
   }

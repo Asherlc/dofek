@@ -84,6 +84,7 @@ describe("processing reconciler (integration)", () => {
 
     await expect(
       reconcilePendingProcessingOperations({
+        requestAnalyticsRefresh: async () => {},
         database: testContext.db,
         clickHouseClient,
       }),
@@ -102,6 +103,7 @@ describe("processing reconciler (integration)", () => {
 
     await expect(
       reconcilePendingProcessingOperations({
+        requestAnalyticsRefresh: async () => {},
         database: testContext.db,
         clickHouseClient,
       }),
@@ -142,6 +144,7 @@ describe("processing reconciler (integration)", () => {
 
     await expect(
       reconcilePendingProcessingOperations({
+        requestAnalyticsRefresh: async () => {},
         database: testContext.db,
         clickHouseClient,
       }),
@@ -160,6 +163,7 @@ describe("processing reconciler (integration)", () => {
 
     await expect(
       reconcilePendingProcessingOperations({
+        requestAnalyticsRefresh: async () => {},
         database: testContext.db,
         clickHouseClient,
       }),
@@ -203,6 +207,7 @@ describe("processing reconciler (integration)", () => {
 
     await expect(
       reconcilePendingProcessingOperations({
+        requestAnalyticsRefresh: async () => {},
         database: testContext.db,
         clickHouseClient,
       }),
@@ -222,6 +227,7 @@ describe("processing reconciler (integration)", () => {
 
     await expect(
       reconcilePendingProcessingOperations({
+        requestAnalyticsRefresh: async () => {},
         database: testContext.db,
         clickHouseClient,
       }),

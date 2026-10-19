@@ -2,7 +2,6 @@ import type { SchemaExecutionDatabase } from "../db/typed-sql.ts";
 import { DATASET_CONTRACTS, type ProcessingDatasetKey } from "./dataset-contracts.ts";
 import {
   appendProcessingStageEvent,
-  listProcessingDatasetsAwaitingAnalytics,
   type ProcessingOperationDataset,
 } from "./processing-event-store.ts";
 
@@ -110,12 +109,15 @@ export function buildProcessingAnalyticsEvents({
   return events;
 }
 
-export async function recordAnalyticsRunForPendingProcessing(
+export async function recordProcessingAnalyticsRun(
   database: SchemaExecutionDatabase,
-  input: { runId: string; modelResults: readonly ProcessingDbtModelResult[] },
+  input: {
+    runId: string;
+    modelResults: readonly ProcessingDbtModelResult[];
+    pendingDatasets: readonly ProcessingOperationDataset[];
+  },
 ): Promise<{ datasets: number; failed: number }> {
-  const pendingDatasets = await listProcessingDatasetsAwaitingAnalytics(database);
-  const events = buildProcessingAnalyticsEvents({ ...input, pendingDatasets });
+  const events = buildProcessingAnalyticsEvents(input);
   for (const event of events) {
     await appendProcessingStageEvent(database, {
       operationId: event.operationId,

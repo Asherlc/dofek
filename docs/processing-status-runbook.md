@@ -45,12 +45,22 @@ only; it never contains metric payloads.
 3. The production `processing-reconciliation` service runs the reconciliation
    script synchronously, then waits 300 seconds before the next run. It compares
    each pending operation with exact ClickHouse evidence and queues analytics
-   only after every emitted path for a dataset is present.
+   only after every emitted path for a dataset is present. It dispatches a
+   combined analytics-refresh request before completing reconciliation outbox
+   work. A dispatch failure leaves the outbox pending for the next run.
 4. Independently, the `cdc-health` service runs
    `scripts/check-clickhouse-cdc.ts` every five minutes and records only the
    bounded CDC result for its health probe.
-5. The analytics worker runs every production dbt model sequentially and records
-   the status of every selected model. dbt writes execution status only for
+5. The analytics worker consumes immediate refresh requests and periodic
+   maintenance requests through one BullMQ queue. Pending requests combine
+   until a job starts; requests arriving during a build create one subsequent
+   batch. Queue-wide concurrency of one keeps these builds sequential across
+   consumers. See BullMQ's [deduplication pattern](https://docs.bullmq.io/patterns/deduplication)
+   and [global concurrency](https://docs.bullmq.io/guide/queues/global-concurrency).
+   Each build snapshots eligible operations before starting dbt and records
+   results only for that snapshot, so an update arriving mid-build waits for
+   the next build. The worker runs every production dbt model sequentially and
+   records the status of every selected model. dbt writes execution status only for
    executed nodes to `run_results.json`; those identifiers are resolved through
    the full project `manifest.json` ([dbt run results](https://docs.getdbt.com/reference/artifacts/run-results-json),
    [dbt manifest](https://docs.getdbt.com/reference/artifacts/manifest-json)).
@@ -220,6 +230,15 @@ ORDER BY created_at;
 For analytics or cache failures, query the corresponding stage events and then
 inspect `analytics-worker` logs. Persisted user messages are sanitized; raw
 exceptions remain in Sentry/logs rather than the ledger.
+
+For a delayed analytics stage, compare its queued timestamp with build start
+and completion timestamps before changing freshness thresholds. The
+[worker](../src/analytics-refresh-queue.ts) should start a queued refresh as soon
+as the preceding build finishes. Inspect the `analytics-refresh` queue's
+waiting/active jobs and the reconciliation service's dispatch errors if it
+does not. Periodic maintenance uses the same queue and does not impose an idle
+wait after a successful build. See the
+[October 18 cadence evidence](production-incident-baseline.md#2026-10-18--recurring-activity-delay-warnings-during-successful-analytics-cycles).
 
 ## Monitoring and Retention
 
