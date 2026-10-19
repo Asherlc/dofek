@@ -30,6 +30,22 @@ This directory contains implementations for various data providers (fitness trac
 - **Data Mapping**: Providers transform vendor-specific JSON into Dofek's internal schema modules (see `src/db/schema/`).
 - **Activity absence tombstones**: Use `src/db/provider-activity-sync.ts`. Upsert activities with `upsertProviderActivity()` or `ProviderActivityListSync.upsert()`. After a completed authoritative activity-list fetch for the sync window, call `finishProviderActivityListSync()` or `ProviderActivityListSync.reconcile()`. Explicit delete/removed webhook events should call `markProviderActivityAbsent()`. Shared upserts never set `providerAbsentAt: null`; reconciliation clears tombstones for activities still present in the provider list. Do not reconcile when a provider response is partial because of rate limits, auth failures, or other fetch errors.
 
+## Climbing tick removals
+
+Mountain Project, OpenBeta, Kaya, and theCrag reconcile their complete logbooks
+on each successful sync, including valid empty lists. The
+[snapshot writer](../db/climbing-log-snapshot.ts) marks missing source records
+with `providerAbsentAt`, preserves their raw payloads and attempts, and restores
+the same records if they return. Normal climbing views and statistics exclude
+absent records; the provider record browser retains them. See the
+[active-log projection](../../packages/server/src/repositories/climbing-rock-observations.ts)
+and [provider records](../../packages/server/src/repositories/provider-detail-repository.ts).
+Failed, malformed, or incomplete discovery never retires records.
+
+CSV uploads retain their existing session-scoped reconciliation because an
+upload need not contain the complete remote logbook; see the
+[Kaya importer](kaya/import.ts).
+
 ## Supported Providers
 
 - **API/credential/OAuth sync providers**: AllTrails, Amazfit/Zepp, BodySpec, Concept2, Cycling Analytics, Eight Sleep, FatSecret, Garmin, Kaya, Mountain Project, OpenBeta, Oura, Peloton, Polar, Ride with GPS, Strava, theCrag, TrainerRoad, Ultrahuman, VeloHero, Wahoo, Wger, WHOOP, Withings, Xert, Ziva, Zwift. See the [registry](registry.ts).
@@ -144,10 +160,9 @@ timestamps in each raw payload.
 OpenBeta Climb/Pitch grades stay in owned published collections, and tick
 grades stay in the log's reported collection. Current shared Area ancestry
 and native coordinates are retained independently of attempts. See the
-[OpenBeta mapping](openbeta.ts). A complete,
-non-empty tick list reconciles missing OpenBeta ticks as soft tombstones;
-empty, malformed, partially unsupported, or failed responses do not retire
-existing rows.
+[OpenBeta mapping](openbeta.ts). A complete tick list, including an explicitly
+empty list, reconciles missing OpenBeta ticks as soft tombstones. Malformed,
+partially unsupported, or failed responses do not retire existing rows.
 
 ## theCrag
 
@@ -158,10 +173,11 @@ and mobile. The API includes private notes and supports pagination and
 incremental reads by ascent update time
 ([official personal logbook API](https://www.thecrag.com/en/article/logbookreadapi)).
 
-The provider stores standalone climbing log entries and original source payloads,
-without creating workouts or inferring deletions from missing ascents. Dofek
-polls daily with one concurrent sync job; this is a conservative local policy
-for the API's documented weekly account budget, whose numeric limit is not
+The [provider](thecrag/provider.ts) stores standalone climbing log entries and original
+source payloads without creating workouts. Every sync reads the complete
+paginated logbook so removed ascents can be marked absent. Dofek polls daily
+with one concurrent sync job. Full reads use more of the API's weekly account
+budget than its recommended incremental reads; the numeric budget is not
 published in the [personal API guide](https://www.thecrag.com/en/article/logbookreadapi).
 See the [theCrag provider guide](../../docs/thecrag.md) for connection,
 storage, and the limits of published-contract testing.

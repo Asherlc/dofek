@@ -100,7 +100,8 @@ describe("MountainProjectProvider canonical persistence", () => {
     return ctx.db
       .select({ log: climbingLogEntry, climb })
       .from(climbingLogEntry)
-      .leftJoin(climb, eq(climb.id, climbingLogEntry.climbId));
+      .leftJoin(climb, eq(climb.id, climbingLogEntry.climbId))
+      .orderBy(climbingLogEntry.id);
   }
 
   it("orders overlapping source snapshots before fetching so older metadata cannot hide newer ticks", async () => {
@@ -559,7 +560,7 @@ describe("MountainProjectProvider canonical persistence", () => {
     );
   });
 
-  it("reconciles full lists while preserving records after incomplete empty or failed discovery", async () => {
+  it("reconciles full lists while preserving records after incomplete or failed discovery", async () => {
     currentExport = fixtureCsv;
     serve();
     await run();
@@ -582,12 +583,28 @@ describe("MountainProjectProvider canonical persistence", () => {
     ].join("\n");
     await expect(run()).resolves.toMatchObject({ recordsSynced: 1, errors: [expect.any(Object)] });
     expect((await records()).every((row) => row.log.providerAbsentAt === null)).toBe(true);
-    currentExport = fixtureCsv.split("\n")[0] ?? "";
-    await expect(run()).resolves.toMatchObject({ recordsSynced: 0, errors: [] });
-    expect(await records()).toHaveLength(3);
     server.use(http.get(exportUrl, () => new HttpResponse("unavailable", { status: 503 })));
     await expect(run()).resolves.toMatchObject({ recordsSynced: 0, errors: [expect.any(Object)] });
     expect((await records()).every((row) => row.log.providerAbsentAt === null)).toBe(true);
+  });
+
+  it("retires the final ticks after an empty export and restores their original records", async () => {
+    currentExport = fixtureCsv;
+    serve();
+    await expect(run()).resolves.toMatchObject({ recordsSynced: 3, errors: [] });
+    const before = await records();
+    const attempts = await ctx.db.select().from(climbingAttempt);
+
+    currentExport = fixtureCsv.split("\n")[0] ?? "";
+    await expect(run()).resolves.toMatchObject({ recordsSynced: 0, errors: [] });
+    expect((await records()).map((row) => row.log)).toEqual(
+      before.map(({ log }) => ({ ...log, providerAbsentAt: expect.any(Date) })),
+    );
+    expect(await ctx.db.select().from(climbingAttempt)).toEqual(attempts);
+
+    currentExport = fixtureCsv;
+    await expect(run()).resolves.toMatchObject({ recordsSynced: 3, errors: [] });
+    expect(await records()).toEqual(before);
   });
 
   it("retains missing grade date and location without inventing rock classification", async () => {

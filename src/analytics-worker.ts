@@ -15,6 +15,11 @@ interface AnalyticsWorkerOptions {
   now(): Date;
   reportFailure(error: unknown, tags: { analyticsRefreshStep: AnalyticsRefreshStep }): void;
   runAnalyticsBuild(): Promise<void>;
+  runRefreshJobs(
+    processRefresh: () => Promise<void>,
+    intervalMilliseconds: number,
+    signal: AbortSignal,
+  ): Promise<void>;
   sleep(milliseconds: number, signal: AbortSignal): Promise<void>;
   warmQueryCache(): Promise<void>;
 }
@@ -126,16 +131,16 @@ export class AnalyticsWorker {
       await this.#options.sleep(this.#options.startupDelayMilliseconds, signal);
     }
 
-    while (!signal.aborted) {
-      const succeeded = await this.runCycle();
-      if (signal.aborted) {
-        return;
-      }
-      await this.#options.sleep(
-        succeeded ? this.#options.intervalMilliseconds : this.#options.retryDelayMilliseconds,
-        signal,
-      );
-    }
+    await this.#options.runRefreshJobs(
+      async () => {
+        while (!signal.aborted) {
+          if (await this.runCycle()) return;
+          await this.#options.sleep(this.#options.retryDelayMilliseconds, signal);
+        }
+      },
+      this.#options.intervalMilliseconds,
+      signal,
+    );
   }
 }
 

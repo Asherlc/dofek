@@ -158,6 +158,34 @@ describe("reconcileProviderActivityAbsence", () => {
     expect(rows[0]?.providerAbsentAt).toBeNull();
   });
 
+  it("tombstones an explicitly authoritative empty activity window", async () => {
+    await ctx.db.insert(activity).values({
+      providerId: "provider-absence-test",
+      externalId: "authoritative-empty-activity",
+      canonicalType: "climbing",
+      providerType: "climbing",
+      modality: null,
+      startedAt: new Date("2026-03-08T10:00:00Z"),
+    });
+    await reconcileProviderActivityAbsence(ctx.db, {
+      providerId: "provider-absence-test",
+      windowStart: new Date("2026-03-08T00:00:00Z"),
+      windowEnd: new Date("2026-03-09T00:00:00Z"),
+      presentExternalIds: new Set(),
+      emptyListIsAuthoritative: true,
+    });
+    const rows = await ctx.db
+      .select()
+      .from(activity)
+      .where(
+        and(
+          eq(activity.providerId, "provider-absence-test"),
+          eq(activity.externalId, "authoritative-empty-activity"),
+        ),
+      );
+    expect(rows).toEqual([expect.objectContaining({ providerAbsentAt: expect.any(Date) })]);
+  });
+
   it("does not tombstone older apple_health duplicates when the sync identifier is still present", async () => {
     await ensureProvider(ctx.db, "apple_health", "Apple Health");
 

@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SchemaExecutionDatabase } from "../db/typed-sql.ts";
 import {
   buildProcessingAnalyticsEvents,
-  recordAnalyticsRunForPendingProcessing,
+  recordProcessingAnalyticsRun,
 } from "./analytics-processing.ts";
 
 const processingEventStoreMocks = vi.hoisted(() => ({
@@ -239,7 +239,7 @@ describe("buildProcessingAnalyticsEvents", () => {
   });
 });
 
-describe("recordAnalyticsRunForPendingProcessing", () => {
+describe("recordProcessingAnalyticsRun", () => {
   const database: SchemaExecutionDatabase = {
     execute: vi.fn(),
   };
@@ -248,14 +248,29 @@ describe("recordAnalyticsRunForPendingProcessing", () => {
     vi.clearAllMocks();
   });
 
+  it("records only the operations selected before the model build began", async () => {
+    processingEventStoreMocks.listProcessingDatasetsAwaitingAnalytics.mockResolvedValue([
+      { operationId, datasetKey: "providers" },
+      { operationId: "30000000-0000-4000-8000-000000000002", datasetKey: "providers" },
+    ]);
+    await expect(
+      recordProcessingAnalyticsRun(database, {
+        pendingDatasets: [{ operationId, datasetKey: "providers" }],
+        runId: "snapshot-run",
+        modelResults: succeededProviderModels,
+      }),
+    ).resolves.toEqual({ datasets: 1, failed: 0 });
+  });
+
   it("records model and aggregate outcomes and queues cache refresh only after success", async () => {
     processingEventStoreMocks.listProcessingDatasetsAwaitingAnalytics.mockResolvedValue([
       { operationId, datasetKey: "providers" },
     ]);
 
     await expect(
-      recordAnalyticsRunForPendingProcessing(database, {
+      recordProcessingAnalyticsRun(database, {
         runId: "dbt-run-1",
+        pendingDatasets: [{ operationId, datasetKey: "providers" }],
         modelResults: succeededProviderModels,
       }),
     ).resolves.toEqual({ datasets: 1, failed: 0 });
@@ -297,8 +312,9 @@ describe("recordAnalyticsRunForPendingProcessing", () => {
     ]);
 
     await expect(
-      recordAnalyticsRunForPendingProcessing(database, {
+      recordProcessingAnalyticsRun(database, {
         runId: "dbt-run-2",
+        pendingDatasets: [{ operationId, datasetKey: "providers" }],
         modelResults: [],
       }),
     ).resolves.toEqual({ datasets: 1, failed: 1 });
@@ -315,8 +331,9 @@ describe("recordAnalyticsRunForPendingProcessing", () => {
     ]);
 
     await expect(
-      recordAnalyticsRunForPendingProcessing(database, {
+      recordProcessingAnalyticsRun(database, {
         runId: "dbt-run-3",
+        pendingDatasets: [{ operationId, datasetKey: "nutrition" }],
         modelResults: [],
       }),
     ).resolves.toEqual({ datasets: 1, failed: 0 });

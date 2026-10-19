@@ -6,7 +6,7 @@ import { createMockDatabase } from "../test-helpers.ts";
 import { writeClimbingRecords } from "./persistence.ts";
 
 const mocks = vi.hoisted(() => ({ persist: vi.fn(), captureException: vi.fn() }));
-vi.mock("../../db/climbing-log-sync.ts", () => ({ persistClimbingLogEntries: mocks.persist }));
+vi.mock("../../db/climbing-log-snapshot.ts", () => ({ persistClimbingLogSnapshot: mocks.persist }));
 vi.mock("../../lib/error-reporting.ts", () => ({ captureException: mocks.captureException }));
 
 afterEach(() => vi.resetAllMocks());
@@ -25,6 +25,17 @@ describe("theCrag log persistence", () => {
       userId: "user-42",
       providerId: "thecrag",
       entries: [record],
+    });
+  });
+
+  it("reconciles a complete empty logbook through the canonical writer", async () => {
+    const { db } = createMockDatabase();
+    mocks.persist.mockResolvedValueOnce({ recordsSynced: 0, logEntryIds: [] });
+    await expect(writeClimbingRecords(db, "user-42", "thecrag", [])).resolves.toBe(0);
+    expect(mocks.persist).toHaveBeenCalledWith(db, {
+      userId: "user-42",
+      providerId: "thecrag",
+      entries: [],
     });
   });
 

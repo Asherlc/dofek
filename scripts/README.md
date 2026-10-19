@@ -136,6 +136,8 @@ for the upstream fixes, regression coverage, and scoped advisory exceptions.
   after the production deployment concurrency slot is acquired. Walks the fetched
   `origin/main` first-parent history newest first, checking successful CI by
   `head_sha` until it finds a passing commit, bounded by the triggering commit.
+  Reads the API's `workflow_runs` array; an empty array means that commit has no
+  matching successful run.
   Requires full main history and rejects a response for another commit, branch,
   event, or conclusion; see [`git rev-list`](https://git-scm.com/docs/git-rev-list)
   and the [workflow-run filters](https://docs.github.com/en/rest/actions/workflow-runs#list-workflow-runs-for-a-workflow).

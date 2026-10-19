@@ -42,12 +42,11 @@ notes are included. See the [published request and response reference](https://w
 
 ## Sync and storage
 
-The first sync and explicit manual/full syncs read the full paginated logbook.
-Later scheduled syncs use the connected account's newest imported update epoch,
-with a one-second overlap, to request new and edited ascents. The cursor follows
-source update time, so an edited historical ascent can arrive independently of
-its climb date. A sync validates the complete fetched batch before saving it in
-one database transaction through the [canonical writer](../src/db/climbing-log-sync.ts).
+Every sync reads the full paginated logbook, including scheduled syncs, so
+removed ascents and edited historical ascents are discovered independently of
+their climb dates. A sync validates the complete fetched batch before saving it
+and reconciling missing ascents in one database transaction through the
+[snapshot writer](../src/db/climbing-log-snapshot.ts).
 
 The original ascent payload remains available in `raw.ascent`, and
 `raw.accountId` identifies its source account. The payload retains provider IDs,
@@ -61,14 +60,19 @@ tries. Without a reported attempt total, the log records one occurrence.
 Missing method, board and angle remain unknown. See the
 [adapter](../src/providers/thecrag/provider.ts) and [model](climbing-context.md).
 
-Dofek does not infer that an ascent was deleted when it is absent from an
-incremental response. This initial integration provides no upstream-deletion
-reconciliation.
+After a complete successful fetch, missing ascents receive a `providerAbsentAt`
+timestamp. A valid empty logbook retires every previously imported source
+ascent for that Dofek user and provider. Raw payloads, attempts, and attachments
+remain stored; reappearing ascents restore their original records. Incomplete
+pagination, invalid records, and fetch failures leave existing records intact.
+See the [provider integration tests](../src/providers/thecrag-sync.integration.test.ts).
 
 The [queue policy](../src/jobs/provider-queue-config.ts) uses daily polling and concurrency one. These settings reduce
 request volume; they are not an upstream quota guarantee. theCrag documents
 a weekly per-account budget without a numeric allowance in its
-[personal API guide](https://www.thecrag.com/en/article/logbookreadapi).
+[personal API guide](https://www.thecrag.com/en/article/logbookreadapi). That
+guide recommends incremental reads to minimize token usage; Dofek deliberately
+uses full reads to detect upstream deletions, consuming more of that budget.
 
 ## Evidence and limitations
 
@@ -83,7 +87,7 @@ styles establish them. theCrag supports additional valid disciplines
 ([Route Gear Styles](https://www.thecrag.com/en/article/styles)). If recorded
 gear and route styles cannot establish a supported discipline, or conflict,
 the entire batch stops without changing saved entries. No ascents are skipped,
-so an incremental cursor cannot advance past an unsaved ascent. A top-rope tick
+so incomplete discovery cannot retire saved ascents. A top-rope tick
 can still be classified when its route supplies a sport or trad style.
 
 The reference names `date` and `logDate` as ISO-8601 values but does not
@@ -124,6 +128,6 @@ prefixes. They are not a verified `gradeAtom.type` mapping.
 
 A first live acceptance check should confirm key issuance and supporter
 eligibility, authenticated pagination, date representation, native grade
-metadata, and an edited historical ascent appearing in a subsequent
-incremental read. Use a private fixture account and keep its key and personal
+metadata, and an edited historical ascent or deletion appearing in a subsequent
+full sync. Use a private fixture account and keep its key and personal
 notes out of logs and shared test fixtures.

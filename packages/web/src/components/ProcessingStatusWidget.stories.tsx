@@ -1,4 +1,9 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import type { OperationResultObservable, TRPCLink } from "@trpc/client";
+import type { AppRouter } from "dofek-server/router";
+import { type ReactNode, useMemo } from "react";
+import { trpc } from "../lib/trpc.ts";
 import {
   type ProcessingStatusSnapshot,
   ProcessingStatusWidget,
@@ -61,10 +66,44 @@ const longRecomputeDatasetLabels = [
   ["body", "Body"],
 ] satisfies ReadonlyArray<readonly [string, string]>;
 
+function createMockLink(): TRPCLink<AppRouter> {
+  return () =>
+    ({ op }) => {
+      const result: OperationResultObservable<AppRouter, unknown> = {
+        subscribe(observer) {
+          if (op.path !== "processing.dismiss") {
+            throw new Error(`Unhandled processing status story tRPC operation: ${op.path}`);
+          }
+          observer.next?.({ result: { data: { dismissed: true } } });
+          observer.complete?.();
+          return { unsubscribe: () => {} };
+        },
+        pipe() {
+          return result;
+        },
+      };
+      return result;
+    };
+}
+
+function StoryFrame({ children }: { children: ReactNode }) {
+  const queryClient = useMemo(() => new QueryClient(), []);
+  const trpcClient = useMemo(() => trpc.createClient({ links: [createMockLink()] }), []);
+
+  return (
+    <trpc.Provider client={trpcClient} queryClient={queryClient}>
+      <QueryClientProvider client={queryClient}>
+        <div className="w-full max-w-[760px] p-4">{children}</div>
+      </QueryClientProvider>
+    </trpc.Provider>
+  );
+}
+
 const meta = {
   title: "State/ProcessingStatusWidget",
   component: ProcessingStatusWidget,
-  decorators: [(Story) => <div className="w-[760px] p-4">{Story()}</div>],
+  decorators: [(Story) => <StoryFrame>{Story()}</StoryFrame>],
+  parameters: { layout: "fullscreen" },
   args: { data: activeSnapshot },
 } satisfies Meta<typeof ProcessingStatusWidget>;
 export default meta;
@@ -72,6 +111,32 @@ type Story = StoryObj<typeof meta>;
 export const Active: Story = {
   name: "Processing",
   tags: ["review-scenario", "review-scenario-processing"],
+};
+export const MultipleUpdates: Story = {
+  args: {
+    data: {
+      ...activeSnapshot,
+      scope: { providerId: null, datasets: ["activity", "recovery", "training"] },
+      datasets: [
+        { key: "activity", label: "Activities" },
+        { key: "recovery", label: "Recovery" },
+        { key: "training", label: "Training" },
+      ].map((dataset) => ({
+        ...activeDataset,
+        ...dataset,
+        progressPercentage: null,
+      })),
+      operations: [
+        { ...activeOperation, datasets: ["activity", "recovery", "training"] },
+        {
+          ...activeOperation,
+          id: "00000000-0000-4000-8000-000000001853",
+          providerId: "wahoo",
+          datasets: ["activity", "recovery", "training"],
+        },
+      ],
+    },
+  },
 };
 export const SleepUpdate: Story = {
   name: "Sleep update",

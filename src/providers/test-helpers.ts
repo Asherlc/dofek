@@ -22,12 +22,8 @@ import {
   type MetricStreamRowInput,
 } from "../metric-stream/events.ts";
 import type { MetricStreamEventPublisher } from "../metric-stream/redpanda-producer.ts";
-import { SyncRun } from "./sync-run.ts";
-import { SyncWindow } from "./sync-window.ts";
 
 export const OPENBETA_TEST_USER_UUID = "00000000-0000-0000-0000-000000000002";
-const THECRAG_TEST_USER_ID = "00000000-0000-0000-0000-000000000001";
-const THECRAG_TEST_ACCOUNT_ID = "123";
 
 /** Synthetic fixtures for the published personal-logbook contract; not live API captures. */
 export function theCragAscent(overrides: Record<string, unknown> = {}): Record<string, unknown> {
@@ -81,41 +77,6 @@ export function theCragPage(
       ...overrides,
     },
   };
-}
-
-export function theCragResponse(
-  ascents: Record<string, unknown>[] = [],
-  overrides: Record<string, unknown> = {},
-): Response {
-  return new Response(JSON.stringify(theCragPage(ascents, overrides)), {
-    status: 200,
-    headers: { "Content-Type": "application/json" },
-  });
-}
-
-export function theCragTokens(accountId = THECRAG_TEST_ACCOUNT_ID) {
-  return {
-    accessToken: "personal-key",
-    refreshToken: null,
-    expiresAt: new Date("2099-12-31T00:00:00.000Z"),
-    scopes: "logbook:read",
-    providerAccountId: accountId,
-  };
-}
-
-export function theCragSyncRun(
-  database: ReturnType<typeof createMockDatabase>["db"],
-  options: { full?: boolean; origin?: "scheduled" | "manual"; userId?: string | null } = {},
-): SyncRun {
-  return new SyncRun({
-    db: database,
-    window:
-      options.full === false
-        ? SyncWindow.fromDateRange({ sinceDate: "2026-10-01", untilDate: "2026-10-11" })
-        : SyncWindow.full(new Date("2026-10-11T23:59:59.999Z")),
-    userId: options.userId === null ? undefined : (options.userId ?? THECRAG_TEST_USER_ID),
-    origin: options.origin,
-  });
 }
 
 export function openBetaGrades(overrides: Record<string, unknown> = {}): Record<string, unknown> {
