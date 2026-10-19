@@ -3,7 +3,7 @@ import type { ActivityLocation } from "dofek-server/types";
 import { useState } from "react";
 import { Image, StyleSheet, Text, View } from "react-native";
 import Svg, { Circle, Polyline } from "react-native-svg";
-import { colors, radius, spacing } from "../theme";
+import { colors, radius } from "../theme";
 import { MapProcessingState } from "./MapProcessingState";
 
 type ReadyActivityLocation = Exclude<ActivityLocation, { kind: "processing" }>;
@@ -66,11 +66,6 @@ function ReadyMapTile({ location }: { location: ReadyActivityLocation }) {
               />
             ))}
             <ActivityMapOverlay location={location} />
-            {location.kind === "climbing_source" && (
-              <View style={styles.sourceLocationBadge}>
-                <Text style={styles.sourceLocationBadgeText}>Source locations</Text>
-              </View>
-            )}
           </View>
           {!mapReady && (
             <View style={StyleSheet.absoluteFill}>
@@ -172,16 +167,6 @@ const styles = StyleSheet.create({
     position: "absolute",
     transform: [{ translateX: -8 }, { translateY: -8 }],
   },
-  sourceLocationBadge: {
-    position: "absolute",
-    bottom: spacing.sm,
-    left: spacing.sm,
-    backgroundColor: colors.surface,
-    borderRadius: radius.sm,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
-  },
-  sourceLocationBadgeText: { color: colors.textSecondary, fontSize: 11 },
   fallback: { width: "100%", height: "100%", alignItems: "center", justifyContent: "center" },
   fallbackText: { color: colors.textSecondary, fontSize: 12, fontWeight: "600" },
 });
