@@ -220,6 +220,7 @@ export function ProcessingStatusWidget({
       </ul>
     ) : null;
   const datasetDetails = failureGroupDetails ?? historicalDatasetDetails;
+  const collapseDatasetDetails = !alwaysVisible && failureGroups.length === 0;
 
   if (target.action === "recompute" && failureGroups.length === 0) {
     return <RecomputeStatusIndicator label={heading} progress={progress} status={displayStatus} />;
@@ -232,8 +233,9 @@ export function ProcessingStatusWidget({
       message={statusMessage}
       progress={progress}
       status={displayStatus}
+      details={collapseDatasetDetails ? historicalDatasetDetails : null}
     >
-      {datasetDetails}
+      {collapseDatasetDetails ? null : datasetDetails}
       {dismissMutation.error ? (
         <p className="mt-2 text-xs font-medium text-red-700" role="alert">
           {userFacingErrorMessage(

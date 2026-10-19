@@ -1,4 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-native";
+import { Text } from "react-native";
+import { colors } from "../theme";
 import { SourceProcessingStatusCard } from "./SourceProcessingStatusCard";
 
 const meta = {
@@ -18,6 +20,12 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const Active: Story = {};
+export const WithDetails: Story = {
+  args: {
+    message: null,
+    details: <Text style={{ color: colors.textSecondary, fontSize: 12 }}>Last ready: 5m ago</Text>,
+  },
+};
 
 export const Waiting: Story = {
   args: {
