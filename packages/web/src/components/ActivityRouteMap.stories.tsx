@@ -68,6 +68,43 @@ export const ExactClimb: Story = {
 export const Area: Story = {
   args: { points: [], climbMarkers: markers.slice(1), presentation: "compact" },
 };
+export const AreaTooltip: Story = {
+  args: {
+    points: [],
+    climbMarkers: [
+      {
+        entryId: "bits-and-bits",
+        label: "Bits and Bits",
+        location: {
+          coordinates: { latitude: 39.323, longitude: -120.599 },
+          scope: "area",
+          objectId: "johnny-wall",
+          providerId: "mountain-project",
+          name: "Johnny Wall",
+        },
+      },
+    ],
+  },
+  decorators: [
+    (Story) => (
+      <div style={{ width: 560, maxWidth: "100%" }}>
+        <Story />
+      </div>
+    ),
+  ],
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const dot = await canvas.findByLabelText(
+      "Entry 1 · Bits and Bits · Area location: Johnny Wall · Mountain Project",
+    );
+    await userEvent.hover(dot);
+    const tooltip = await canvas.findByRole("tooltip");
+    const bounds = tooltip.getBoundingClientRect();
+    await expect(bounds.width).toBeGreaterThan(200);
+    await expect(bounds.width).toBeLessThan(280);
+    await expect(bounds.height).toBeLessThan(100);
+  },
+};
 export const RepeatedPoint: Story = {
   args: {
     points: [],

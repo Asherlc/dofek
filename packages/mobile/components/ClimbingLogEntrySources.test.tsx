@@ -17,32 +17,36 @@ const links = [
     url: "https://openbeta.io/climb/10000000-0000-4000-8000-000000000001",
   },
   { providerId: "openbeta", kind: "ticks" as const, url: "https://openbeta.io/u/thickles/ticks" },
+  {
+    providerId: "mountain-project",
+    kind: "ticks" as const,
+    url: "https://www.mountainproject.com/user/110186720/ticks/ticks",
+  },
 ];
 describe("ClimbingLogEntrySources", () => {
   beforeEach(() => vi.clearAllMocks());
   it.each(["Mountain Project, OpenBeta", "OpenBeta"])(
-    "opens distinct source destinations with attribution %s",
+    "opens each provider name's tick history with attribution %s",
     (sourceName) => {
       render(<ClimbingLogEntrySources name="Swiss Cheese" sourceName={sourceName} links={links} />);
+      expect(screen.getAllByRole("link")).toHaveLength(4);
       for (const label of [
         "Swiss Cheese on Mountain Project",
+        "Mountain Project",
+        "OpenBeta",
         "Swiss Cheese route on OpenBeta",
-        "OpenBeta ticks",
       ]) {
         fireEvent.click(screen.getByRole("link", { name: label }));
       }
-      expect(vi.mocked(Linking.openURL).mock.calls.map(([url]) => url)).toEqual(
-        links.map((link) => link.url),
-      );
-      expect(screen.getByRole("link", { name: "Swiss Cheese route on OpenBeta" }).textContent).toBe(
-        "OpenBeta route",
-      );
-      expect(screen.getByRole("link", { name: "OpenBeta ticks" }).textContent).toBe(
-        "OpenBeta ticks",
-      );
+      expect(vi.mocked(Linking.openURL).mock.calls.map(([url]) => url)).toEqual([
+        links[0]?.url,
+        links[3]?.url,
+        links[2]?.url,
+        links[1]?.url,
+      ]);
     },
   );
-  it("names a single source's extra destination by its purpose", () => {
+  it("links a single provider's attribution to its tick history", () => {
     render(
       <ClimbingLogEntrySources
         name="Swiss Cheese"
@@ -50,8 +54,8 @@ describe("ClimbingLogEntrySources", () => {
         links={links.filter((link) => link.providerId === "openbeta")}
       />,
     );
-    expect(screen.getByText("OpenBeta")).toBeTruthy();
-    expect(screen.getByRole("link", { name: "OpenBeta ticks" }).textContent).toBe("Ticks");
+    fireEvent.click(screen.getByRole("link", { name: "OpenBeta" }));
+    expect(Linking.openURL).toHaveBeenCalledWith(links[2]?.url);
   });
   it("reports an opening failure and shows the reason", async () => {
     const error = new Error("No browser available");
@@ -59,7 +63,7 @@ describe("ClimbingLogEntrySources", () => {
     render(
       <ClimbingLogEntrySources name="Swiss Cheese" sourceName="Mountain Project" links={links} />,
     );
-    fireEvent.click(screen.getByRole("link", { name: "Swiss Cheese on Mountain Project" }));
+    fireEvent.click(screen.getByRole("link", { name: "Mountain Project" }));
     await waitFor(() =>
       expect(captureException).toHaveBeenCalledWith(error, {
         source: "open-external-url",
@@ -68,10 +72,23 @@ describe("ClimbingLogEntrySources", () => {
     );
     expect(Alert.alert).toHaveBeenCalledWith(
       "Unable to open source",
-      `Open this source in your browser: ${links[0]?.url}`,
+      `Open this source in your browser: ${links[3]?.url}`,
     );
   });
-  it("identifies a link provider when the displayed attribution names another source", () => {
+  it("opens the provider's tick history when no route is available", () => {
+    render(
+      <ClimbingLogEntrySources
+        name="Swiss Cheese"
+        sourceName={null}
+        links={links.filter((link) => link.kind === "ticks" && link.providerId === "openbeta")}
+      />,
+    );
+    expect(screen.getByText("Swiss Cheese")).toBeTruthy();
+    expect(screen.getByText("OpenBeta")).toBeTruthy();
+    fireEvent.click(screen.getByRole("link", { name: "OpenBeta" }));
+    expect(Linking.openURL).toHaveBeenCalledWith(links[2]?.url);
+  });
+  it("preserves an unlinked source beside a different provider's tick history", () => {
     render(
       <ClimbingLogEntrySources
         name="Swiss Cheese"
@@ -80,11 +97,41 @@ describe("ClimbingLogEntrySources", () => {
       />,
     );
     expect(screen.getByText("Kaya")).toBeTruthy();
-    expect(screen.getByRole("link", { name: "OpenBeta ticks" }).textContent).toBe("OpenBeta ticks");
+    expect(screen.queryByRole("link", { name: "Kaya" })).toBeNull();
+    fireEvent.click(screen.getByRole("link", { name: "OpenBeta" }));
+    expect(Linking.openURL).toHaveBeenCalledWith(links[2]?.url);
+  });
+  it("keeps mixed attribution readable when one provider has no tick history", () => {
+    render(
+      <ClimbingLogEntrySources
+        name="Swiss Cheese"
+        sourceName="Mountain Project, Kaya"
+        links={links.filter((link) => link.providerId === "mountain-project")}
+      />,
+    );
+    fireEvent.click(screen.getByRole("link", { name: "Mountain Project" }));
+    expect(Linking.openURL).toHaveBeenCalledWith(links[3]?.url);
+    expect(screen.getByText("Kaya")).toBeTruthy();
+    expect(screen.queryByRole("link", { name: "Kaya" })).toBeNull();
   });
   it("keeps an entry without verified destinations readable", () => {
     render(<ClimbingLogEntrySources name="Imported route" sourceName="Kaya" links={[]} />);
     expect(screen.getByText("Imported route")).toBeTruthy();
+    expect(screen.getByText("Kaya")).toBeTruthy();
     expect(screen.queryByRole("link")).toBeNull();
+  });
+  it("keeps provider provenance as text when only a route destination is known", () => {
+    render(
+      <ClimbingLogEntrySources
+        name="Swiss Cheese"
+        sourceName="Mountain Project"
+        links={links.filter(
+          (link) => link.kind === "route" && link.providerId === "mountain-project",
+        )}
+      />,
+    );
+    expect(screen.getByRole("link", { name: "Swiss Cheese on Mountain Project" })).toBeTruthy();
+    expect(screen.getByText("Mountain Project")).toBeTruthy();
+    expect(screen.queryByRole("link", { name: "Mountain Project" })).toBeNull();
   });
 });

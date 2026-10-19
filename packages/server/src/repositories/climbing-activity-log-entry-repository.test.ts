@@ -242,6 +242,19 @@ describe("ClimbingActivityLogEntryRepository", () => {
     expect(result?.toDetail().recordedClimbOutcome).toBe(expected);
     expect(result?.toDetail().recordedClimbAttemptCount).toBe(outcomes.length);
   });
+  it.each([null, "completed", "failed"] as const)(
+    "leaves Mountain Project attempt counts unknown while retaining the %s result and rope method",
+    async (outcome) => {
+      const log = named("mountain-project");
+      log.attempts = [climbingAttemptFixture(log.id, { outcome, ropeMethod: "top_rope" })];
+      const [result] = await repository([log]).getLogEntries([log.id]);
+      expect(result?.toDetail()).toMatchObject({
+        recordedClimbAttemptCount: null,
+        recordedClimbOutcome: outcome,
+        attempts: [{ outcome, ropeMethod: "top_rope" }],
+      });
+    },
+  );
   it("groups repeated identified pitches while retaining separate unidentified pitch occurrences", async () => {
     const log = named("openbeta");
     if (!log.climb) throw new Error("Expected catalogue fixture");

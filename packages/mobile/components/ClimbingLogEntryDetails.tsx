@@ -94,14 +94,18 @@ export function ClimbingLogEntryDetails({ entry }: { entry: ClimbingLogEntryDeta
       )}
       {entry.attempts.length > 0 && (
         <View style={styles.section}>
-          <Text style={styles.heading}>Attempts</Text>
+          <Text style={styles.heading}>
+            {entry.recordedClimbAttemptCount === null ? "Recorded result" : "Attempts"}
+          </Text>
           {entry.attempts.map((attempt, index) => {
             const pitch = climb?.pitches.find((candidate) => candidate.id === attempt.pitchId);
             const title =
               attempt.scope === "pitch"
                 ? (pitch?.name ??
                   (pitch?.number == null ? "Pitch attempt" : `Pitch ${pitch.number}`))
-                : `Attempt ${attempt.attemptIndex ?? index + 1}`;
+                : entry.recordedClimbAttemptCount === null && attempt.attemptIndex === null
+                  ? "Climb"
+                  : `Attempt ${attempt.attemptIndex ?? index + 1}`;
             return (
               <View key={attempt.id} style={styles.attempt}>
                 <Text style={styles.heading}>

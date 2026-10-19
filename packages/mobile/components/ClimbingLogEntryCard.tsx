@@ -33,6 +33,14 @@ export function ClimbingLogEntryCard({
   const name = entry.climb?.name ?? entry.title ?? "Climbing log";
   const attachmentPending = attachmentState?.pending ?? false;
   const ropeMethods = formatClimbingRopeMethods(entry.attempts);
+  const recordedResult =
+    entry.recordedClimbAttemptCount === 0
+      ? null
+      : formatClimbingRecordedResult(
+          null,
+          entry.recordedClimbOutcome,
+          entry.recordedClimbAttemptCount,
+        );
   return (
     <View
       style={[styles.card, selected && styles.selectedCard]}
@@ -60,15 +68,7 @@ export function ClimbingLogEntryCard({
         </View>
       )}
       {ropeMethods && <Text style={styles.summary}>{ropeMethods}</Text>}
-      {entry.recordedClimbAttemptCount > 0 && (
-        <Text style={styles.summary}>
-          {formatClimbingRecordedResult(
-            null,
-            entry.recordedClimbOutcome,
-            entry.recordedClimbAttemptCount,
-          )}
-        </Text>
-      )}
+      {recordedResult && <Text style={styles.summary}>{recordedResult}</Text>}
       {entry.pitchResults.map((result) => (
         <Text key={result.attemptIds.join(":")} style={styles.summary}>
           {formatClimbingRecordedResult(

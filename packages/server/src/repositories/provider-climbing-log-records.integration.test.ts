@@ -165,7 +165,7 @@ describe("provider climbing log records", () => {
       notes: "Recorded source note",
       providerAbsentAt: expect.any(String),
       reportedGrades: [{ value: "5.11a", system: "yds" }],
-      recordedClimbAttemptCount: 0,
+      recordedClimbAttemptCount: null,
       recordedClimbOutcome: null,
       recordedPitchAttemptCount: 2,
       climb: {

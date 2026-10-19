@@ -90,7 +90,9 @@ export function ClimbingLogEntryDetails({ entry }: { entry: ClimbingLogEntryDeta
       )}
       {entry.attempts.length > 0 && (
         <section className="space-y-3">
-          <h4 className="font-medium">Attempts</h4>
+          <h4 className="font-medium">
+            {entry.recordedClimbAttemptCount === null ? "Recorded result" : "Attempts"}
+          </h4>
           {entry.attempts.map((attempt, index) => {
             const pitch = climb?.pitches.find((candidate) => candidate.id === attempt.pitchId);
             const name =
@@ -99,7 +101,9 @@ export function ClimbingLogEntryDetails({ entry }: { entry: ClimbingLogEntryDeta
                 ? `Pitch ${pitch.number}`
                 : attempt.scope === "pitch"
                   ? "Pitch attempt"
-                  : `Attempt ${attempt.attemptIndex ?? index + 1}`);
+                  : entry.recordedClimbAttemptCount === null && attempt.attemptIndex === null
+                    ? "Climb"
+                    : `Attempt ${attempt.attemptIndex ?? index + 1}`);
             return (
               <div key={attempt.id} className="space-y-2 rounded border border-border p-3">
                 <h5 className="text-xs font-medium">

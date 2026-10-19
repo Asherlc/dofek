@@ -5,7 +5,7 @@ import { ClimbingLogEntrySources } from "./ClimbingLogEntrySources.tsx";
 
 describe("ClimbingLogEntrySources", () => {
   it.each(["Mountain Project, OpenBeta", "OpenBeta"])(
-    "links distinct source destinations with attribution %s",
+    "links each provider name to its tick history with attribution %s",
     (sourceName) => {
       render(
         <ClimbingLogEntrySources
@@ -16,6 +16,11 @@ describe("ClimbingLogEntrySources", () => {
               providerId: "mountain-project",
               kind: "route",
               url: "https://www.mountainproject.com/route/105734732/swiss-cheese",
+            },
+            {
+              providerId: "mountain-project",
+              kind: "ticks",
+              url: "https://www.mountainproject.com/user/110186720/ticks/ticks",
             },
             {
               providerId: "openbeta",
@@ -29,22 +34,22 @@ describe("ClimbingLogEntrySources", () => {
       expect(
         screen.getByRole("link", { name: "Swiss Cheese on Mountain Project" }).getAttribute("href"),
       ).toBe("https://www.mountainproject.com/route/105734732/swiss-cheese");
-      expect(
-        screen.getByRole("link", { name: "Swiss Cheese route on OpenBeta" }).getAttribute("href"),
-      ).toContain("openbeta.io/climb/");
-      expect(screen.getByRole("link", { name: "OpenBeta ticks" }).getAttribute("href")).toBe(
+      expect(screen.getByRole("link", { name: "Mountain Project" })).toHaveAttribute(
+        "href",
+        "https://www.mountainproject.com/user/110186720/ticks/ticks",
+      );
+      expect(screen.getByRole("link", { name: "OpenBeta" })).toHaveAttribute(
+        "href",
         "https://openbeta.io/u/thickles/ticks",
       );
-      expect(screen.getByRole("link", { name: "Swiss Cheese route on OpenBeta" }).textContent).toBe(
-        "OpenBeta route",
+      expect(screen.getByRole("link", { name: "Swiss Cheese route on OpenBeta" })).toHaveAttribute(
+        "href",
+        "https://openbeta.io/climb/10000000-0000-4000-8000-000000000001",
       );
-      expect(screen.getByRole("link", { name: "OpenBeta ticks" }).textContent).toBe(
-        "OpenBeta ticks",
-      );
-      expect(screen.getByText(sourceName)).toBeTruthy();
+      expect(screen.getAllByRole("link")).toHaveLength(4);
     },
   );
-  it("uses concise destination labels when the attribution identifies their provider", () => {
+  it("links the climb name to the route and provider name to tick history", () => {
     render(
       <ClimbingLogEntrySources
         name="Road Kill"
@@ -58,10 +63,12 @@ describe("ClimbingLogEntrySources", () => {
     expect(screen.getByRole("link", { name: "Road Kill on OpenBeta" })).toHaveTextContent(
       "Road Kill",
     );
-    expect(screen.getByRole("link", { name: "OpenBeta ticks" })).toHaveTextContent(/^Ticks$/);
-    expect(screen.getByText("OpenBeta")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "OpenBeta" })).toHaveAttribute(
+      "href",
+      "https://openbeta.io/u/thickles/ticks",
+    );
   });
-  it("identifies linked destinations when no source attribution is available", () => {
+  it("links the provider's tick history when no route is available", () => {
     render(
       <ClimbingLogEntrySources
         name="Road Kill"
@@ -71,11 +78,14 @@ describe("ClimbingLogEntrySources", () => {
         ]}
       />,
     );
-    expect(screen.getByRole("link", { name: "OpenBeta ticks" })).toHaveTextContent(
-      "OpenBeta ticks",
+    expect(screen.getByText("Road Kill")).toBeTruthy();
+    expect(screen.getByText("OpenBeta")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "OpenBeta" })).toHaveAttribute(
+      "href",
+      "https://openbeta.io/u/thickles/ticks",
     );
   });
-  it("names the linked provider when it differs from the source attribution", () => {
+  it("preserves an unlinked source beside a different provider's tick history", () => {
     render(
       <ClimbingLogEntrySources
         name="Road Kill"
@@ -87,18 +97,63 @@ describe("ClimbingLogEntrySources", () => {
       />,
     );
     expect(screen.getByText("Kaya")).toBeTruthy();
-    expect(screen.getByRole("link", { name: "Road Kill on OpenBeta" })).toHaveAttribute(
+    expect(screen.queryByRole("link", { name: "Kaya" })).toBeNull();
+    expect(screen.getByRole("link", { name: "OpenBeta" })).toHaveAttribute(
       "href",
-      "https://openbeta.io/climb/road-kill",
+      "https://openbeta.io/u/thickles/ticks",
     );
-    expect(screen.getByRole("link", { name: "OpenBeta ticks" })).toHaveTextContent(
-      /^OpenBeta ticks$/,
+  });
+  it("keeps mixed attribution readable when one provider has no tick history", () => {
+    render(
+      <ClimbingLogEntrySources
+        name="Swiss Cheese"
+        sourceName="Mountain Project, Kaya"
+        links={[
+          {
+            providerId: "mountain-project",
+            kind: "route",
+            url: "https://www.mountainproject.com/route/105734732/swiss-cheese",
+          },
+          {
+            providerId: "mountain-project",
+            kind: "ticks",
+            url: "https://www.mountainproject.com/user/110186720/ticks/ticks",
+          },
+        ]}
+      />,
     );
+    expect(screen.getByRole("link", { name: "Mountain Project" })).toHaveAttribute(
+      "href",
+      "https://www.mountainproject.com/user/110186720/ticks/ticks",
+    );
+    expect(screen.getByRole("paragraph")).toHaveTextContent("Mountain Project, Kaya");
+    expect(screen.queryByRole("link", { name: "Kaya" })).toBeNull();
   });
   it("keeps an entry without verified destinations readable", () => {
     render(<ClimbingLogEntrySources name="Imported route" sourceName="Kaya" links={[]} />);
     expect(screen.getByText("Imported route")).toBeTruthy();
     expect(screen.getByText("Kaya")).toBeTruthy();
     expect(screen.queryByRole("link")).toBeNull();
+  });
+  it("keeps the provider as text when only a route destination is known", () => {
+    render(
+      <ClimbingLogEntrySources
+        name="Swiss Cheese"
+        sourceName="Mountain Project"
+        links={[
+          {
+            providerId: "mountain-project",
+            kind: "route",
+            url: "https://www.mountainproject.com/route/105734732/swiss-cheese",
+          },
+        ]}
+      />,
+    );
+    expect(screen.getByRole("link", { name: "Swiss Cheese on Mountain Project" })).toHaveAttribute(
+      "href",
+      "https://www.mountainproject.com/route/105734732/swiss-cheese",
+    );
+    expect(screen.getByText("Mountain Project")).toBeTruthy();
+    expect(screen.queryByRole("link", { name: "Mountain Project" })).toBeNull();
   });
 });

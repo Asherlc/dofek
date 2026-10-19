@@ -50,7 +50,9 @@ facts. See the [shared model](../training/src/climbing-log.ts) and
 [formatters](src/climbing-context.ts).
 
 The [log formatter](src/climbing-log.ts) labels recorded rope methods once per
-card and formats counts as `Attempts: N`. Whole-climb summaries show the outcome
+card and formats known counts as `Attempts: N`, omitting unknown counts supplied
+as null by the [server contract](../server/src/contracts/climbing-log-contracts.ts).
+Whole-climb summaries show the outcome
 when recorded; pitch summaries retain their pitch label. Attempt details include
 known outcomes, methods, protection, and Yes/No facts, omitting missing values
 and internal references.

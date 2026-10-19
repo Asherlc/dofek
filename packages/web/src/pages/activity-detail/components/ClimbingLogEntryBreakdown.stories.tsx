@@ -69,7 +69,7 @@ export const OverlappingSources: Story = {
         climb,
         climbId: climb.id,
         displayGrade: index === 0 ? "5.4" : "5.8",
-        recordedClimbAttemptCount: 1,
+        recordedClimbAttemptCount: providerId === "mountain-project" ? null : 1,
         attempts: [climbingAttemptFixture(id, { ropeMethod: "lead" })],
         sourceLinks: [
           {

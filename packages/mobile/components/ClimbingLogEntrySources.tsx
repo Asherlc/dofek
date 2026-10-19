@@ -1,5 +1,6 @@
 import { providerSourceLabel } from "@dofek/providers/providers";
 import type { ClimbingSourceLink } from "@dofek/training/climbing-context";
+import { selectClimbingSources } from "@dofek/training/climbing-sources";
 import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
 import { openExternalUrl } from "../lib/open-external-url";
 import { colors } from "../theme";
@@ -15,9 +16,11 @@ export function ClimbingLogEntrySources({
   links: ClimbingSourceLink[];
   selected?: boolean;
 }) {
-  const primaryRoute = links.find((link) => link.kind === "route");
-  const additionalLinks = links.filter((link) => link !== primaryRoute);
-  const hasSingleProvider = new Set(links.map((link) => link.providerId)).size === 1;
+  const { primaryRoute, additionalRoutes, sources } = selectClimbingSources(
+    sourceName,
+    links,
+    providerSourceLabel,
+  );
   const selectionState = selected === undefined ? undefined : { selected };
   async function openSource(url: string) {
     if (!(await openExternalUrl(url, "climbing-entry-source"))) {
@@ -43,28 +46,41 @@ export function ClimbingLogEntrySources({
           {name}
         </Text>
       )}
-      {sourceName && <Text style={styles.source}>{sourceName}</Text>}
-      {additionalLinks.length > 0 && (
+      {sources.length > 0 && (
         <View style={styles.links}>
-          {additionalLinks.map((link) => (
+          {sources.map(({ label, tickSource }) =>
+            tickSource ? (
+              <Pressable
+                key={label}
+                accessibilityRole="link"
+                accessibilityLabel={label}
+                onPress={() => {
+                  void openSource(tickSource.url);
+                }}
+              >
+                <Text style={[styles.source, styles.link]}>{label}</Text>
+              </Pressable>
+            ) : (
+              <Text key={label} style={styles.source}>
+                {label}
+              </Text>
+            ),
+          )}
+        </View>
+      )}
+      {additionalRoutes.length > 0 && (
+        <View style={styles.links}>
+          {additionalRoutes.map((link) => (
             <Pressable
-              key={`${link.providerId}:${link.kind}:${link.url}`}
+              key={`${link.providerId}:${link.url}`}
               accessibilityRole="link"
-              accessibilityLabel={
-                link.kind === "route"
-                  ? `${name} route on ${providerSourceLabel(link.providerId)}`
-                  : `${providerSourceLabel(link.providerId)} ticks`
-              }
+              accessibilityLabel={`${name} route on ${providerSourceLabel(link.providerId)}`}
               onPress={() => {
                 void openSource(link.url);
               }}
             >
               <Text style={[styles.source, styles.link]}>
-                {sourceName === providerSourceLabel(link.providerId) && hasSingleProvider
-                  ? link.kind === "route"
-                    ? "Route"
-                    : "Ticks"
-                  : `${providerSourceLabel(link.providerId)} ${link.kind}`}
+                Route on {providerSourceLabel(link.providerId)}
               </Text>
             </Pressable>
           ))}

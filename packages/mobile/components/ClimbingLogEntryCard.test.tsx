@@ -15,7 +15,7 @@ describe("ClimbingLogEntryCard", () => {
     expect(climb.getAttribute("aria-selected")).toBe("true");
     climb.focus();
     expect(document.activeElement).toBe(climb);
-    const source = screen.getByRole("link", { name: "Mountain Project ticks" });
+    const source = screen.getByRole("link", { name: "Mountain Project" });
     source.focus();
     expect(document.activeElement).toBe(source);
     fireEvent.click(screen.getByRole("button", { name: "Attach Swiss Cheese to this activity" }));
@@ -39,7 +39,7 @@ describe("ClimbingLogEntryCard", () => {
           ...climbingLogFixture,
           climb: { ...climbingLogFixture.climb, name: "Havarti Cheese" },
           recordedClimbOutcome: null,
-          recordedClimbAttemptCount: 1,
+          recordedClimbAttemptCount: null,
           attempts: [
             climbingAttemptFixture(climbingLogFixture.id, {
               ropeMethod: "top_rope",
@@ -51,7 +51,7 @@ describe("ClimbingLogEntryCard", () => {
     );
     expect(screen.getByText("Havarti Cheese")).toBeTruthy();
     expect(screen.getByText("Top rope")).toBeTruthy();
-    expect(screen.getByText("Attempts: 1")).toBeTruthy();
+    expect(screen.queryByText(/Attempts:/)).toBeNull();
   });
 
   it("exposes a pending attachment as busy and disabled to assistive technology", () => {
@@ -96,8 +96,17 @@ describe("ClimbingLogEntryCard", () => {
   it("preserves source links, climbing context and recorded attempt summary", () => {
     render(<ClimbingLogEntryCard entry={climbingLogFixture} />);
     expect(screen.getByRole("link", { name: "Swiss Cheese on Mountain Project" })).toBeTruthy();
-    expect(screen.getByRole("link", { name: "Mountain Project ticks" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Mountain Project" })).toBeTruthy();
     expect(screen.getByText("5.4")).toBeTruthy();
+    expect(screen.getByText("Completed")).toBeTruthy();
+  });
+
+  it("shows a known recorded attempt count alongside its outcome", () => {
+    render(
+      <ClimbingLogEntryCard
+        entry={{ ...climbingLogFixture, providerId: "kaya", recordedClimbAttemptCount: 2 }}
+      />,
+    );
     expect(screen.getByText("Completed · Attempts: 2")).toBeTruthy();
   });
 

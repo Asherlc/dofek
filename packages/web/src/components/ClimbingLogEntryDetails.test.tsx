@@ -64,6 +64,29 @@ it("uses the recorded attempt order when no named pitch is available", () => {
   expect(screen.getByText("Top rope")).toBeTruthy();
 });
 
+it("shows Mountain Project facts without numbering an unrecorded attempt", () => {
+  const log = climbingLogEntryFixture({
+    providerId: "mountain-project",
+    recordedClimbAttemptCount: null,
+  });
+  log.attempts = [climbingAttemptFixture(log.id, { ropeMethod: "top_rope" })];
+  render(<ClimbingLogEntryDetails entry={log} />);
+  expect(screen.getByRole("heading", { name: "Recorded result" })).toBeTruthy();
+  expect(screen.getByRole("heading", { name: "Climb" })).toBeTruthy();
+  expect(screen.getByText("Top rope")).toBeTruthy();
+});
+
+it.each([1, 3])("preserves known attempt order %s when the total is unknown", (attemptIndex) => {
+  const log = climbingLogEntryFixture({
+    providerId: "mountain-project",
+    recordedClimbAttemptCount: null,
+  });
+  log.attempts = [climbingAttemptFixture(log.id, { attemptIndex, ropeMethod: "lead" })];
+  render(<ClimbingLogEntryDetails entry={log} />);
+  expect(screen.getByRole("heading", { name: "Recorded result" })).toBeTruthy();
+  expect(screen.getByRole("heading", { name: `Attempt ${attemptIndex}` })).toBeTruthy();
+});
+
 it("identifies a pitch attempt whose pitch is unreported", () => {
   const log = climbingLogEntryFixture({ title: "Multi-pitch outing" });
   log.attempts = [climbingAttemptFixture(log.id, { scope: "pitch", ropeMethod: "lead" })];
