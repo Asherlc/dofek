@@ -5,11 +5,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockRouterPush = vi.fn();
 const mockDashboardRefetch = vi.fn(() => Promise.resolve());
-const mockTodayPlanRefetch = vi.fn(() => Promise.resolve());
 const mockAnomalyRefetch = vi.fn(() => Promise.resolve());
 const mockDashboardUseQuery = vi.fn();
 const mockDashboardV2UseQuery = vi.fn();
-const mockTodayPlanUseQuery = vi.fn();
 const mockAnomalyUseQuery = vi.fn();
 const mockDataHealthUseQuery = vi.fn();
 const mockInvalidate = vi.fn();
@@ -21,9 +19,6 @@ let mockDashboardLoading = false;
 let mockDashboardFetching = false;
 let mockDashboardData: unknown;
 let mockDashboardError: Error | null = null;
-let mockTodayPlanData: unknown;
-let mockTodayPlanLoading = false;
-let mockTodayPlanError: Error | null = null;
 let mockAnomalyData: unknown;
 let mockDataHealthData: unknown;
 let mockProviderGuideError: Error | null = null;
@@ -59,21 +54,6 @@ vi.mock("../../lib/trpc", () => ({
             isError: !!mockDashboardError,
             error: mockDashboardError,
             refetch: mockDashboardRefetch,
-          };
-        },
-      },
-    },
-    todayPlan: {
-      get: {
-        useQuery: (...parameters: unknown[]) => {
-          mockTodayPlanUseQuery(...parameters);
-          return {
-            data: mockTodayPlanData,
-            isLoading: mockTodayPlanLoading,
-            isFetching: false,
-            isError: !!mockTodayPlanError,
-            error: mockTodayPlanError,
-            refetch: mockTodayPlanRefetch,
           };
         },
       },
@@ -174,31 +154,10 @@ describe("TodayScreen independent loading states", () => {
     mockDashboardLoading = false;
     mockDashboardFetching = false;
     mockDashboardRefetch.mockClear();
-    mockTodayPlanRefetch.mockClear();
     mockAnomalyRefetch.mockClear();
     mockDashboardUseQuery.mockClear();
     mockDashboardV2UseQuery.mockClear();
-    mockTodayPlanUseQuery.mockClear();
     mockAnomalyUseQuery.mockClear();
-    mockTodayPlanLoading = false;
-    mockTodayPlanError = null;
-    mockTodayPlanData = {
-      status: "ready",
-      epistemicStatus: { kind: "suggested", label: "Suggested" },
-      date: "2026-03-21",
-      action: {
-        id: "strain_target",
-        title: "Suggested strain: 12",
-        zone: "Maintain",
-      },
-      supportingFacts: [
-        { label: "Recovery", value: "85/100" },
-        { label: "Sleep performance", value: "88 (Good)" },
-      ],
-      caveats: [],
-      freshness: { recoveryDate: "2026-03-21", sleepDate: "2026-03-20" },
-      missingInputs: [],
-    };
     mockDashboardData = {
       readiness: {
         score: 85,

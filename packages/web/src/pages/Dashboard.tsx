@@ -13,7 +13,6 @@ import { HealthStatusBar } from "../components/HealthStatusBar.tsx";
 import { PageLayout } from "../components/PageLayout.tsx";
 import { ProcessingStatusWidget } from "../components/ProcessingStatusWidget.tsx";
 import { QueryStatePanel } from "../components/QueryStatePanel.tsx";
-import { TodayPlanCard } from "../components/TodayPlanCard.tsx";
 import { useProcessingStatus } from "../hooks/useProcessingStatus.ts";
 import { useTodayQueryDate } from "../hooks/useTodayQueryDate.ts";
 import { usePageLoadDomSection } from "../lib/page-load-context.tsx";
@@ -81,7 +80,6 @@ export function Dashboard() {
   const workloadRatio = trpc.recovery.workloadRatio.useQuery({ days: overviewDays, endDate });
   const strainTarget = trpc.recovery.strainTarget.useQuery({ days: planLookbackDays, endDate });
   const sleepPerformance = trpc.sleepNeed.performance.useQuery({ endDate });
-  const todayPlan = trpc.todayPlan.get.useQuery({ days: planLookbackDays, endDate });
   const trends = trpc.dailyMetrics.trends.useQuery({ days: overviewDays, endDate });
   const heartRateBaseline = trpc.dailyMetrics.hrvBaseline.useQuery({
     days: overviewDays,
@@ -138,7 +136,7 @@ export function Dashboard() {
     [restingHeartRateRows],
   );
 
-  const cardQueries = [readinessData, workloadRatio, strainTarget, sleepPerformance, todayPlan];
+  const cardQueries = [readinessData, workloadRatio, strainTarget, sleepPerformance];
   usePageLoadDomSection(
     "cards",
     cardQueries.some((query) => query.error)
@@ -231,7 +229,6 @@ export function Dashboard() {
         error={processingStatus.error}
         loading={processingStatus.isLoading}
       />
-      <TodayPlanCard plan={todayPlan.data} loading={todayPlan.isLoading} error={todayPlan.error} />
       <DailyOverview
         endDate={endDate}
         summaryDateContext={sleepPerformance.data?.summaryDateContext}

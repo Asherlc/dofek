@@ -112,37 +112,6 @@ function createSeededProviders(sleepDataUnavailable: boolean) {
     },
   );
 
-  queryClient.setQueryData(
-    [["todayPlan", "get"], { input: { endDate: todayDate }, type: "query" }],
-    {
-      status: "ready",
-      epistemicStatus: { kind: "suggested", label: "Suggested" },
-      date: todayDate,
-      action: {
-        id: "strain_target",
-        title: "Suggested strain: 16.2",
-        zone: "Push",
-      },
-      supportingFacts: sleepDataUnavailable
-        ? [
-            { label: "Recovery", value: "82/100" },
-            { label: "Recent-to-baseline workload ratio", value: "0.91" },
-          ]
-        : [
-            { label: "Recovery", value: "82/100" },
-            { label: "Sleep performance", value: "88 (Good)" },
-          ],
-      caveats: sleepDataUnavailable
-        ? ["Sleep performance was unavailable; recent workload is shown for context."]
-        : [],
-      freshness: {
-        recoveryDate: todayDate,
-        sleepDate: sleepDataUnavailable ? null : localDateString(-1),
-      },
-      missingInputs: sleepDataUnavailable ? ["sleep"] : [],
-    },
-  );
-
   queryClient.setQueryData([["providerGuide", "status"], { type: "query" }], {
     dismissed: true,
   });
