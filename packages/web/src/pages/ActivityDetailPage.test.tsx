@@ -1648,6 +1648,38 @@ describe("ActivityDetailPage", () => {
   });
 
   describe("ElevationChart unit consistency", () => {
+    it.each([
+      { unitSystem: "metric", lowerBound: 2300, upperBound: 2600 },
+      { unitSystem: "imperial", lowerBound: 7500, upperBound: 8500 },
+    ] satisfies Array<{ unitSystem: UnitSystem; lowerBound: number; upperBound: number }>)(
+      "fits the elevation axis to the recorded range in $unitSystem units",
+      async ({ unitSystem, lowerBound, upperBound }) => {
+        for (const [index, point] of mockStreamPoints.entries()) {
+          point.altitude = 2400 + index * 50;
+        }
+        const ActivityDetailPage = await importPage();
+        await act(async () => {
+          renderWithUnits(<ActivityDetailPage />, unitSystem);
+        });
+
+        const option = findOptionByYAxisName("Elevation");
+        if (!option) throw new Error("Expected elevation chart");
+        const { init } = await import("echarts");
+        const canvasContext = vi
+          .spyOn(HTMLCanvasElement.prototype, "getContext")
+          .mockReturnValue(null);
+        const chart = init(null, null, { renderer: "svg", ssr: true, width: 600, height: 200 });
+        try {
+          chart.setOption(option);
+          expect(chart.convertFromPixel({ yAxisIndex: 0 }, 170)).toBeGreaterThan(lowerBound);
+          expect(chart.convertFromPixel({ yAxisIndex: 0 }, 10)).toBeLessThan(upperBound);
+        } finally {
+          chart.dispose();
+          canvasContext.mockRestore();
+        }
+      },
+    );
+
     it("converts both series data and tooltip to the same unit system", async () => {
       const ActivityDetailPage = await importPage();
       renderWithUnits(<ActivityDetailPage />, "imperial");
