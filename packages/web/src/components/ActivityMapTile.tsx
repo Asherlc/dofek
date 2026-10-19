@@ -226,11 +226,6 @@ function ReadyActivityMapTile({
               <ActivityRouteOverlay mapPreview={location.mapPreview} />
             )}
           </div>
-          {location.kind === "climbing_source" ? (
-            <span className="absolute bottom-2 left-2 rounded bg-surface-solid/90 px-2 py-1 text-xs text-muted">
-              Source locations
-            </span>
-          ) : null}
         </div>
       )}
       {!loadFailed && loading ? <MapProcessingIndicator compact={compact} /> : null}

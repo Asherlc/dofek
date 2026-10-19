@@ -276,7 +276,7 @@ merged AS (
         argMinIf(
             ranked.name,
             tuple(ranked.name_priority, toString(ranked.activity_id)),
-            ranked.name IS NOT null
+            nullIf(trim(BOTH ' ' FROM ranked.name), '') IS NOT null
         ) AS name,
         argMinIf(
             ranked.notes,

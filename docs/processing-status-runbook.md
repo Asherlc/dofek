@@ -245,6 +245,26 @@ does not. Periodic maintenance uses the same queue and does not impose an idle
 wait after a successful build. See the
 [October 18 cadence evidence](production-incident-baseline.md#2026-10-18--recurring-activity-delay-warnings-during-successful-analytics-cycles).
 
+### Activity Route Processing
+
+“Processing route map” comes from the separate
+[activity route readiness query](../packages/server/src/repositories/activity-route-repository.ts).
+Resolve the URL to its canonical activity and member IDs, then compare the
+members' latest `analytics.activity_location_member_change.changed_at` with the
+canonical activity's latest `analytics.activity_location_sample.source_refreshed_at`.
+The endpoint continues reporting processing while that source watermark is newer,
+even when an earlier complete route exists and HTTP requests finish quickly.
+
+Check live-topic consumer lag using the
+[metric-stream freshness checks](metric-stream-redpanda-r2-runbook.md#freshness-checks)
+before changing the map UI. Inspect slow sink queries and their
+`ProfileEvents['JoinResultRowCount']` in
+[`system.query_log`](https://clickhouse.com/docs/operations/system-tables/query_log)
+to distinguish ingestion work from the route read itself. The
+[October 18 incident](production-incident-baseline.md#2026-10-18--activity-route-processing-delayed-by-deletion-scope-comparisons)
+records a deletion-scope cross join that produced 296 million intermediate rows
+per batch and prevented location freshness from catching up.
+
 ## Monitoring and Retention
 
 The `processing-reconciliation` service logs a summary after each synchronous

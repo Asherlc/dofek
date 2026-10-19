@@ -2,7 +2,7 @@ import type { Meta, StoryObj } from "@storybook/react-native";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { httpBatchLink } from "@trpc/client";
 import { View } from "react-native";
-import { within } from "storybook/test";
+import { expect, within } from "storybook/test";
 import SettingsScreen from "../app/settings";
 import { AuthProvider } from "../lib/auth-context";
 import { trpc } from "../lib/trpc";
@@ -106,6 +106,10 @@ function createSeededProviders() {
     key: "unitSystem",
     value: "metric",
   });
+  queryClient.setQueryData(
+    [["settings", "get"], { input: { key: "climbingGradeSystems" }, type: "query" }],
+    null,
+  );
 
   // personalization.status (used by PersonalizationPanel)
   queryClient.setQueryData([["personalization", "status"], { type: "query" }], {
@@ -198,6 +202,21 @@ export const Default: Story = {};
 export const AccountPassword: Story = {
   play: async ({ canvasElement, userEvent }) => {
     await userEvent.click(await within(canvasElement).findByRole("button", { name: "Account" }));
+  },
+};
+
+export const ModelsAndUnits: Story = {
+  play: async ({ canvasElement, userEvent }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByRole("button", { name: "Models & Units" }));
+    await expect(await canvas.findByRole("button", { name: "V Scale" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    await expect(canvas.getByRole("button", { name: "Yosemite Decimal System" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
   },
 };
 
