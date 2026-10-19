@@ -84,6 +84,24 @@ describe("OpenBetaProvider canonical persistence", () => {
     return context.db.select().from(climbingLogEntry).orderBy(climbingLogEntry.externalId);
   }
 
+  it("retires every tick after a complete empty logbook and restores the same records", async () => {
+    await expect(run()).resolves.toMatchObject({ recordsSynced: 2, errors: [] });
+    const before = await records();
+    const attempts = await context.db.select().from(climbingAttempt);
+    const ticks = currentTicks;
+
+    currentTicks = [];
+    await expect(run()).resolves.toMatchObject({ recordsSynced: 0, errors: [] });
+    expect(await records()).toEqual(
+      before.map((entry) => ({ ...entry, providerAbsentAt: expect.any(Date) })),
+    );
+    expect(await context.db.select().from(climbingAttempt)).toEqual(attempts);
+
+    currentTicks = ticks;
+    await expect(run()).resolves.toMatchObject({ recordsSynced: 2, errors: [] });
+    expect(await records()).toEqual(before);
+  });
+
   it("keeps repeated occurrences separate on one verified climb and reconciles complete lists", async () => {
     await expect(run()).resolves.toMatchObject({ recordsSynced: 2, errors: [] });
     const before = await records();
@@ -122,7 +140,7 @@ describe("OpenBetaProvider canonical persistence", () => {
     await run();
     expect(
       (await records()).find((row) => row.externalId === "openbeta:tick-1")?.providerAbsentAt,
-    ).toBeNull();
+    ).toBeInstanceOf(Date);
     currentTicks = [openBetaTick({ _id: "tick-repeat", attemptType: "Flash" })];
     await run();
     expect((await records()).find((row) => row.id === flash.id)?.providerAbsentAt).toBeNull();

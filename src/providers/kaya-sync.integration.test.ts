@@ -71,17 +71,132 @@ describe("KayaSyncProvider canonical persistence", () => {
     server.close();
     await context.cleanup();
   });
-  function run() {
+  function run(window = SyncWindow.full(new Date("2026-08-02T00:00:00Z"))) {
     return new KayaSyncProvider().sync(
       new SyncRun({
         db: context.db,
         userId,
-        window: SyncWindow.full(new Date("2026-08-02T00:00:00Z")),
+        window,
       }),
     );
   }
   const logs = () =>
     context.db.select().from(climbingLogEntry).orderBy(climbingLogEntry.externalId);
+
+  it("retires standalone ascents when the complete logbook becomes empty", async () => {
+    sessions = [];
+    ascents = [kayaAscentFixture({ session_id: null })];
+    expect(await run()).toMatchObject({ recordsSynced: 1, errors: [] });
+    const before = await logs();
+    const attempts = await context.db.select().from(climbingAttempt);
+
+    ascents = [];
+    expect(await run()).toMatchObject({ recordsSynced: 0, errors: [] });
+    expect(await logs()).toEqual(
+      before.map((entry) => ({ ...entry, providerAbsentAt: expect.any(Date) })),
+    );
+    expect(await context.db.select().from(climbingAttempt)).toEqual(attempts);
+
+    ascents = [kayaAscentFixture({ session_id: null })];
+    expect(await run()).toMatchObject({ recordsSynced: 1, errors: [] });
+    expect(await logs()).toEqual(before);
+  });
+
+  it("reconciles missing ticks in historical sessions during scheduled syncs", async () => {
+    expect(await run()).toMatchObject({ recordsSynced: 2, errors: [] });
+    ascents = [];
+    const window = SyncWindow.lastDays(7, { now: new Date("2026-10-11T00:00:00Z") });
+    expect(await run(window)).toMatchObject({ recordsSynced: 1, errors: [] });
+    expect(await logs()).toEqual([
+      expect.objectContaining({
+        externalId: "kaya:ascent:3001",
+        providerAbsentAt: expect.any(Date),
+      }),
+      expect.objectContaining({
+        externalId: "kaya:session:1000:attempted:1000_2001",
+        providerAbsentAt: null,
+      }),
+    ]);
+  });
+
+  it("retires ticks from sessions removed from the provider", async () => {
+    expect(await run()).toMatchObject({ recordsSynced: 2, errors: [] });
+    const before = await logs();
+    sessions = [];
+    ascents = [];
+    expect(await run()).toMatchObject({ recordsSynced: 0, errors: [] });
+    expect(await logs()).toEqual(
+      before.map((entry) => ({ ...entry, providerAbsentAt: expect.any(Date) })),
+    );
+    expect(await context.db.select().from(activity)).toEqual([
+      expect.objectContaining({ externalId: "1000", providerAbsentAt: expect.any(Date) }),
+    ]);
+
+    sessions = [
+      kayaSessionFixture({
+        attempted_climbs: [{ ...kayaClimbFixture(), id: "1000_2001", attempts: 4 }],
+      }),
+    ];
+    ascents = [kayaAscentFixture()];
+    expect(await run()).toMatchObject({ recordsSynced: 2, errors: [] });
+    expect(await logs()).toEqual(before);
+    expect(await context.db.select().from(activity)).toEqual([
+      expect.objectContaining({ externalId: "1000", providerAbsentAt: null }),
+    ]);
+  });
+
+  it("preserves saved ticks when a GraphQL response omits the requested list", async () => {
+    expect(await run()).toMatchObject({ recordsSynced: 2, errors: [] });
+    const before = await logs();
+    server.use(http.post("https://kaya-beta.kayaclimb.com/graphql", () => HttpResponse.json({})));
+    expect(await run()).toMatchObject({ recordsSynced: 0, errors: [expect.any(Object)] });
+    expect(await logs()).toEqual(before);
+  });
+
+  it("preserves saved ticks when a session has an invalid start time", async () => {
+    expect(await run()).toMatchObject({ recordsSynced: 2, errors: [] });
+    const before = await logs();
+    sessions = [kayaSessionFixture({ start_time: "invalid" })];
+    expect(await run()).toMatchObject({ recordsSynced: 0, errors: [expect.any(Object)] });
+    expect(await logs()).toEqual(before);
+  });
+
+  it("keeps a surviving ascent active when its provider session is removed", async () => {
+    expect(await run()).toMatchObject({ recordsSynced: 2, errors: [] });
+    const original = (await logs()).find((entry) => entry.externalId === "kaya:ascent:3001");
+    sessions = [];
+    ascents = [kayaAscentFixture({ session_id: null })];
+    expect(await run()).toMatchObject({ recordsSynced: 1, errors: [] });
+    expect((await logs()).find((entry) => entry.externalId === "kaya:ascent:3001")).toMatchObject({
+      id: original?.id,
+      activityId: null,
+      providerAbsentAt: null,
+    });
+  });
+
+  it("preserves a user-selected outing when the ascent's original source session disappears", async () => {
+    const selectedSession = kayaSessionFixture({ id: "user-picked", attempted_climbs: [] });
+    sessions.push(selectedSession);
+    expect(await run()).toMatchObject({ recordsSynced: 2, errors: [] });
+    const [selectedActivity] = await context.db
+      .select()
+      .from(activity)
+      .where(eq(activity.externalId, "user-picked"));
+    if (!selectedActivity) throw new Error("Expected the selected outing");
+    await context.db
+      .update(climbingLogEntry)
+      .set({ activityId: selectedActivity.id })
+      .where(eq(climbingLogEntry.externalId, "kaya:ascent:3001"));
+    const selectedEntry = (await logs()).find((entry) => entry.externalId === "kaya:ascent:3001");
+    sessions = [selectedSession];
+    ascents = [kayaAscentFixture({ session_id: null })];
+    expect(await run()).toMatchObject({ recordsSynced: 1, errors: [] });
+    expect((await logs()).find((entry) => entry.externalId === "kaya:ascent:3001")).toMatchObject({
+      id: selectedEntry?.id,
+      activityId: selectedActivity.id,
+      providerAbsentAt: null,
+    });
+  });
   it("preserves separate source occurrences on one climb and expands only the reported count", async () => {
     expect(await run()).toMatchObject({ recordsSynced: 2, errors: [] });
     const before = await logs();

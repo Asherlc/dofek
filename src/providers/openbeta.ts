@@ -1,9 +1,9 @@
 import { isValidClimbingGrade } from "@dofek/training/climbing-grades";
 import type { ClimbKind, GradeComponent, RopeMethod } from "@dofek/training/climbing-log";
 import { gpsCoordinatesSchema } from "@dofek/training/gps-coordinates";
-import { sql } from "drizzle-orm";
 import { z } from "zod";
 import type { TokenSet } from "../auth/oauth.ts";
+import { persistClimbingLogSnapshot } from "../db/climbing-log-snapshot.ts";
 import {
   persistClimbingLogEntries,
   type SourceAreaDefinition,
@@ -623,36 +623,22 @@ export class OpenBetaProvider implements SyncProvider {
         db,
         this.id,
         "climbing_activity",
-        async () =>
-          db.transaction(async (transaction) => {
-            const result = await persistClimbingLogEntries(transaction, {
-              userId,
-              providerId: this.id,
-              entries: parsed.entries,
-            });
-            const present = parsed.entries.map((entry) => entry.externalId);
-            if (
-              present.length > 0 &&
-              parsed.errors.length === 0 &&
-              pages.degradations.length === 0
-            ) {
-              const presentIds = sql.join(
-                present.map((id) => sql`${id}`),
-                sql`, `,
-              );
-              await transaction.execute(sql`
-              UPDATE fitness.climbing_log_entry SET provider_absent_at = NOW()
-              WHERE user_id = ${userId} AND provider_id = ${this.id}
-                AND provider_absent_at IS NULL AND external_id IS NOT NULL
-                AND external_id NOT IN (${presentIds})
-            `);
-            }
-            return {
-              recordCount: result.recordsSynced,
-              result: result.recordsSynced,
-              degradations,
-            };
-          }),
+        async () => {
+          const persist =
+            pages.completed && parsed.errors.length === 0 && pages.degradations.length === 0
+              ? persistClimbingLogSnapshot
+              : persistClimbingLogEntries;
+          const result = await persist(db, {
+            userId,
+            providerId: this.id,
+            entries: parsed.entries,
+          });
+          return {
+            recordCount: result.recordsSynced,
+            result: result.recordsSynced,
+            degradations,
+          };
+        },
         userId,
       );
     } catch (error) {

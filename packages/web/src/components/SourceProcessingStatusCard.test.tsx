@@ -1,10 +1,42 @@
 /** @vitest-environment jsdom */
 import { operationalStatusColors } from "@dofek/scoring/colors";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { SourceProcessingStatusCard } from "./SourceProcessingStatusCard.tsx";
 
 describe("SourceProcessingStatusCard", () => {
+  it("discloses supporting details while keeping the summary and progress visible", () => {
+    render(
+      <SourceProcessingStatusCard
+        heading="Updating activities, recovery, and training"
+        message="Your existing data is still available."
+        progress={60}
+        status="active"
+        details={<p>Last ready: 5m ago</p>}
+      />,
+    );
+
+    const toggle = screen.getByRole("button", { name: "Show processing details", expanded: false });
+    expect(screen.queryByText("Last ready: 5m ago")).toBeNull();
+    expect(screen.getByText("Your existing data is still available.")).toBeVisible();
+    expect(screen.getByRole("progressbar")).toBeVisible();
+
+    fireEvent.click(toggle);
+
+    expect(screen.getByRole("button", { name: "Hide processing details", expanded: true })).toBe(
+      toggle,
+    );
+    expect(screen.getByText("Last ready: 5m ago")).toBeVisible();
+    expect(document.getElementById(toggle.getAttribute("aria-controls") ?? "")).toContainElement(
+      screen.getByText("Last ready: 5m ago"),
+    );
+
+    fireEvent.click(toggle);
+
+    expect(screen.queryByText("Last ready: 5m ago")).toBeNull();
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+  });
+
   it("shows source progress in a full status card", () => {
     render(
       <SourceProcessingStatusCard

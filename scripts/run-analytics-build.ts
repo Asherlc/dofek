@@ -9,19 +9,25 @@ import {
   type AnalyticsMicrobatchBounds,
   resolveAnalyticsMicrobatchBounds,
 } from "../src/processing/analytics-microbatch-bounds.ts";
-import { recordAnalyticsRunForPendingProcessing } from "../src/processing/analytics-processing.ts";
+import { recordProcessingAnalyticsRun } from "../src/processing/analytics-processing.ts";
 import { PRODUCTION_DBT_MODELS } from "../src/processing/dataset-contracts.ts";
 import { parseDbtRunArtifacts } from "../src/processing/dbt-run-results.ts";
+import {
+  listProcessingDatasetsAwaitingAnalytics,
+  type ProcessingOperationDataset,
+} from "../src/processing/processing-event-store.ts";
 import { AnalyticsBuildError, createAnalyticsBuildFailure } from "./analytics-build-error.ts";
 
 interface RunAnalyticsBuildInput {
   selectedModels: readonly string[];
   artifactDirectory: string;
   microbatchBounds: AnalyticsMicrobatchBounds;
+  loadPendingDatasets(): Promise<ProcessingOperationDataset[]>;
   runDbt(argumentsList: readonly string[]): Promise<number>;
   readArtifact(name: "manifest.json" | "run_results.json"): Promise<unknown>;
   recordRun(input: {
     runId: string;
+    pendingDatasets: readonly ProcessingOperationDataset[];
     modelResults: ReturnType<typeof parseDbtRunArtifacts>["models"];
   }): Promise<{ datasets: number; failed: number }>;
 }
@@ -55,6 +61,7 @@ export async function runAnalyticsBuild({
   selectedModels,
   artifactDirectory,
   microbatchBounds,
+  loadPendingDatasets,
   runDbt,
   readArtifact,
   recordRun,
@@ -77,6 +84,7 @@ export async function runAnalyticsBuild({
     "--select",
     selectedModels.join(" "),
   ];
+  const pendingDatasets = await loadPendingDatasets();
   const exitCode = await runDbt(commandArguments);
   const artifacts = parseDbtRunArtifacts({
     manifest: await readDbtArtifact(readArtifact, "manifest.json", exitCode),
@@ -89,6 +97,7 @@ export async function runAnalyticsBuild({
   });
   const processingResult = await recordRun({
     runId: artifacts.invocationId,
+    pendingDatasets,
     modelResults: artifacts.models,
   });
   const incompleteModels = artifacts.models.filter((model) => model.status !== "succeeded");
@@ -138,18 +147,20 @@ export async function runAnalyticsBuildFromEnvironment(): Promise<void> {
     try {
       const clickHouse = createClickHouseClientFromEnv();
       try {
+        const pendingDatasets = await listProcessingDatasetsAwaitingAnalytics(database);
         const microbatchBounds = await resolveAnalyticsMicrobatchBounds(clickHouse);
         const result = await runAnalyticsBuild({
           selectedModels: PRODUCTION_DBT_MODELS,
           artifactDirectory,
           microbatchBounds,
+          loadPendingDatasets: async () => pendingDatasets,
           runDbt: runDbtProcess,
           readArtifact: async (name) => {
             const serializedArtifact = await readFile(join(artifactDirectory, name), "utf8");
             const parsedArtifact: unknown = JSON.parse(serializedArtifact);
             return parsedArtifact;
           },
-          recordRun: (run) => recordAnalyticsRunForPendingProcessing(database, run),
+          recordRun: (run) => recordProcessingAnalyticsRun(database, run),
         });
         console.log(
           `[analytics-processing] recorded ${result.datasets} datasets; ${result.failed} failed`,

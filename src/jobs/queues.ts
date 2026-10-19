@@ -133,6 +133,10 @@ export interface ScheduledSyncJobData {
   intervalMs?: number;
 }
 
+export interface AnalyticsRefreshJobData {
+  type: "analytics-refresh";
+}
+
 export interface GlobalMaintenancePostSyncJobData {
   type: "global-maintenance";
 }
@@ -225,6 +229,7 @@ export const ZIP_ENTRY_EXTRACT_QUEUE = "zip-entry-extract";
 export const EXPORT_QUEUE = "export";
 export const SCHEDULED_SYNC_QUEUE = "scheduled-sync";
 export const POST_SYNC_QUEUE = "post-sync";
+export const ANALYTICS_REFRESH_QUEUE = "analytics-refresh";
 export const PROVIDER_DATA_DELETION_QUEUE = "provider-data-deletion";
 export const ACCOUNT_ERASURE_QUEUE = "account-erasure";
 export const ACTIVITY_DELETE_ANALYTICS_QUEUE = "activity-delete-analytics";
@@ -285,7 +290,7 @@ export function getRedisConnection(): ConnectionOptions {
   };
 }
 
-function getRedisCommandConnection(): ConnectionOptions {
+export function getRedisCommandConnection(): ConnectionOptions {
   return { ...getRedisConnection(), commandTimeout: 5000 };
 }
 
