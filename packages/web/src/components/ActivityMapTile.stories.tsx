@@ -166,6 +166,7 @@ export const NoRoute: Story = {
 };
 
 export const ClimbingSourceLocations: Story = {
+  name: "Climbing source points",
   args: {
     location: climbingSourceLocation,
   },

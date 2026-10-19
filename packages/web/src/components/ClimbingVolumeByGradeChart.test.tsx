@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const chartOptions = vi.hoisted(() => vi.fn());
@@ -42,7 +42,7 @@ describe("ClimbingVolumeByGradeChart", () => {
     expect(screen.getByText("Loading chart")).toBeTruthy();
   });
 
-  it("omits unknown attempts while retaining known sends and recorded zero attempts", () => {
+  it("plots unknown attempts as gaps while retaining known sends and zero attempts", () => {
     render(
       <ClimbingVolumeByGradeChart
         data={[
@@ -68,23 +68,17 @@ describe("ClimbingVolumeByGradeChart", () => {
       />,
     );
 
-    const unknownGrade = screen.getByText("VB").parentElement;
-    expect(unknownGrade).toBeTruthy();
-    if (!unknownGrade) throw new Error("Missing VB grade card");
-    expect(within(unknownGrade).queryByText(/attempt/i)).toBeNull();
-    expect(within(unknownGrade).getByText("1 sends")).toBeTruthy();
-    expect(screen.getByText("0 attempts")).toBeTruthy();
-    expect(screen.getByText("0 sends")).toBeTruthy();
     expect(chartOptions).toHaveBeenLastCalledWith(
       expect.objectContaining({
         series: expect.arrayContaining([
           expect.objectContaining({ name: "Recorded attempts", data: [null, 0] }),
+          expect.objectContaining({ name: "Sends", data: [1, 0] }),
         ]),
       }),
     );
   });
 
-  it("renders per-grade sends/attempts ordered by sort value", () => {
+  it("plots per-grade sends and attempts ordered by sort value", () => {
     render(
       <ClimbingVolumeByGradeChart
         data={[
@@ -110,16 +104,18 @@ describe("ClimbingVolumeByGradeChart", () => {
       />,
     );
 
-    const gradeOne = screen.getByText("V1");
-    const gradeFour = screen.getByText("V4");
-    expect(
-      gradeOne.compareDocumentPosition(gradeFour) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
-    expect(screen.getByText("5 attempts")).toBeTruthy();
-    expect(screen.getByText("2 sends")).toBeTruthy();
+    expect(chartOptions).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        xAxis: expect.objectContaining({ data: ["V1", "V4"] }),
+        series: expect.arrayContaining([
+          expect.objectContaining({ name: "Recorded attempts", data: [5, 3] }),
+          expect.objectContaining({ name: "Sends", data: [5, 2] }),
+        ]),
+      }),
+    );
   });
 
-  it("renders and plots recorded attempts when the complete total is unknown", () => {
+  it("plots recorded attempts when the complete total is unknown", () => {
     render(
       <ClimbingVolumeByGradeChart
         data={[
@@ -145,13 +141,11 @@ describe("ClimbingVolumeByGradeChart", () => {
       />,
     );
 
-    expect(screen.getByText("4 recorded attempts")).toBeTruthy();
-    expect(screen.getByText("1 sends")).toBeTruthy();
-    expect(screen.getByText("0 recorded attempts")).toBeTruthy();
     expect(chartOptions).toHaveBeenLastCalledWith(
       expect.objectContaining({
         series: expect.arrayContaining([
           expect.objectContaining({ name: "Recorded attempts", data: [4, 0] }),
+          expect.objectContaining({ name: "Sends", data: [1, 0] }),
         ]),
       }),
     );
