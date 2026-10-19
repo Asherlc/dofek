@@ -72,11 +72,17 @@ environment file when present, and fails if Docker cleanup fails; see the
 Archiving discards those workspaces' local database data. Shared Docker images,
 build cache, and package stores remain available for other workspaces.
 
-To verify the lifecycle, start a disposable workspace's backing services,
-archive that workspace, then check its three exact Compose project labels
-with `docker ps -a`, `docker network ls`, and `docker volume ls --filter
-label=com.docker.compose.project=PROJECT_NAME`. Docker documents these
-[resource filters](https://docs.docker.com/engine/cli/filter/).
+To verify the lifecycle, start a disposable workspace's backing services and
+archive it. For each of the three project names above, replace `PROJECT_NAME`
+below and verify that no resources remain:
+
+```bash
+docker container ls --all --filter label=com.docker.compose.project=PROJECT_NAME
+docker network ls --filter label=com.docker.compose.project=PROJECT_NAME
+docker volume ls --filter label=com.docker.compose.project=PROJECT_NAME
+```
+
+Docker documents these [resource filters](https://docs.docker.com/engine/cli/filter/).
 Keep shared cache pruning separate from workspace archive; see
 [Docker disk recovery](testing.md#docker-disk-recovery).
 
