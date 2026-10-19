@@ -9,11 +9,7 @@ import type { ClimbKind, GradeComponent, ProtectionStyle } from "@dofek/training
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import type { TokenSet } from "../auth/oauth.ts";
-import {
-  persistClimbingLogEntries,
-  type SourceClimbingAttempt,
-  type SourceClimbingLogEntry,
-} from "../db/climbing-log-sync.ts";
+import type { SourceClimbingAttempt, SourceClimbingLogEntry } from "../db/climbing-log-sync.ts";
 import { executeWithSchema } from "../db/execute-with-schema.ts";
 import type { SyncDatabase } from "../db/index.ts";
 import { withSyncLog } from "../db/sync-log.ts";
@@ -24,6 +20,7 @@ import { findProviderTransportError } from "../lib/provider-transport-error.ts";
 import { fetchProviderPages } from "../sync/pagination.ts";
 import { ProviderStoredIdentityMissingError, ProviderTokenRejectedError } from "./auth-errors.ts";
 import type { SyncRun } from "./sync-run.ts";
+import { writeClimbingRecords } from "./thecrag-persistence.ts";
 import type { ProviderAuthSetup, SyncProvider, SyncResult } from "./types.ts";
 
 const API_BASE_URL = "https://www.thecrag.com/api";
@@ -333,39 +330,6 @@ async function incrementalSince(
   );
   if (!cursor) throw new Error("theCrag sync could not read its saved update position. Try again.");
   return cursor.epoch === null ? undefined : Math.max(0, cursor.epoch - 1);
-}
-
-async function writeClimbingRecords(
-  database: SyncDatabase,
-  userId: string,
-  providerId: string,
-  records: ReturnType<typeof climbingRecord>[],
-): Promise<number> {
-  if (records.length === 0) return 0;
-  try {
-    const written = await persistClimbingLogEntries(database, {
-      userId,
-      providerId,
-      entries: records,
-    });
-    return written.recordsSynced;
-  } catch (error) {
-    // Drizzle query errors include the complete bound logbook payload.
-    const sanitized = new Error(
-      "theCrag could not save your logbook. Try again or contact support.",
-    );
-    const postgresCode = z
-      .object({ code: z.string().regex(/^[0-9A-Z]{5}$/) })
-      .safeParse(error instanceof Error ? (error.cause ?? error) : error);
-    captureException(sanitized, {
-      tags: {
-        provider: providerId,
-        phase: "logbook_save",
-        ...(postgresCode.success ? { postgresCode: postgresCode.data.code } : {}),
-      },
-    });
-    throw sanitized;
-  }
 }
 
 async function fetchLogbookPage(

@@ -282,22 +282,31 @@ describe("canonical climbing log model (integration)", () => {
     const route = await recordedRoute();
     const other = await recordedRoute();
     const parentId = randomUUID();
-    await context.db
-      .insert(climbingAttempt)
-      .values({ id: parentId, climbingLogEntryId: other.logId, scope: "climb" });
+    await context.db.insert(climbingAttempt).values({
+      id: parentId,
+      climbingLogEntryId: other.logId,
+      scope: "climb",
+      ropeMethod: "lead",
+    });
     await expect(
-      context.db
-        .insert(climbingAttempt)
-        .values({ climbingLogEntryId: route.logId, scope: "pitch", pitchId: other.pitchId }),
+      context.db.insert(climbingAttempt).values({
+        climbingLogEntryId: route.logId,
+        scope: "pitch",
+        pitchId: other.pitchId,
+        ropeMethod: "lead",
+      }),
     ).rejects.toMatchObject({ cause: { code: "23514" } });
     await expect(
-      context.db
-        .insert(climbingAttempt)
-        .values({ climbingLogEntryId: route.logId, scope: "pitch", parentAttemptId: parentId }),
+      context.db.insert(climbingAttempt).values({
+        climbingLogEntryId: route.logId,
+        scope: "pitch",
+        parentAttemptId: parentId,
+        ropeMethod: "lead",
+      }),
     ).rejects.toMatchObject({ cause: { code: "23503" } });
     const [unidentified] = await context.db
       .insert(climbingAttempt)
-      .values({ climbingLogEntryId: route.logId, scope: "pitch" })
+      .values({ climbingLogEntryId: route.logId, scope: "pitch", ropeMethod: "lead" })
       .returning();
     expect(unidentified).toMatchObject({
       scope: "pitch",
@@ -311,25 +320,35 @@ describe("canonical climbing log model (integration)", () => {
     const route = await recordedRoute();
     const parentId = randomUUID();
     const childId = randomUUID();
-    await context.db
-      .insert(climbingAttempt)
-      .values({ id: parentId, climbingLogEntryId: route.logId, scope: "climb" });
+    await context.db.insert(climbingAttempt).values({
+      id: parentId,
+      climbingLogEntryId: route.logId,
+      scope: "climb",
+      ropeMethod: "lead",
+    });
     await context.db.insert(climbingAttempt).values({
       id: childId,
       climbingLogEntryId: route.logId,
       scope: "pitch",
       pitchId: route.pitchId,
       parentAttemptId: parentId,
+      ropeMethod: "lead",
     });
     await expect(
-      context.db
-        .insert(climbingAttempt)
-        .values({ climbingLogEntryId: route.logId, scope: "pitch", parentAttemptId: childId }),
+      context.db.insert(climbingAttempt).values({
+        climbingLogEntryId: route.logId,
+        scope: "pitch",
+        parentAttemptId: childId,
+        ropeMethod: "lead",
+      }),
     ).rejects.toMatchObject({ cause: { code: "23514" } });
     await expect(
-      context.db
-        .insert(climbingAttempt)
-        .values({ climbingLogEntryId: route.logId, scope: "climb", pitchId: route.pitchId }),
+      context.db.insert(climbingAttempt).values({
+        climbingLogEntryId: route.logId,
+        scope: "climb",
+        pitchId: route.pitchId,
+        ropeMethod: "lead",
+      }),
     ).rejects.toMatchObject({ cause: { code: "23514" } });
     await expect(
       context.db

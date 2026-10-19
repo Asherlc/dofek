@@ -593,7 +593,7 @@ describe("MountainProjectProvider canonical persistence", () => {
   it("retains missing grade date and location without inventing rock classification", async () => {
     currentExport = [
       fixtureCsv.split("\n")[0],
-      ",Unknown summit,,Source note,https://www.mountainproject.com/route/123/unknown,1,,2,-1,,,,,,0",
+      ",Unknown summit,,Source note,https://www.mountainproject.com/route/123/unknown,1,,2,-1,Lead,,,,,0",
     ].join("\n");
     serve();
     await expect(run()).resolves.toMatchObject({ recordsSynced: 1, errors: [] });
@@ -602,13 +602,13 @@ describe("MountainProjectProvider canonical persistence", () => {
     expect(record?.climb).toMatchObject({ areaId: null, setting: null });
     expect(await ctx.db.select().from(climbGrade)).toEqual([]);
     expect(await ctx.db.select().from(climbingAttempt)).toEqual([
-      expect.objectContaining({ attemptIndex: null, sourceResult: null }),
+      expect.objectContaining({ ropeMethod: "lead", attemptIndex: null, sourceResult: null }),
     ]);
   });
   it("persists published compound grades separately from a supplied route rating opinion", async () => {
     currentExport = [
       fixtureCsv.split("\n")[0],
-      "2026-08-10,Compound,5.10 A2,,https://www.mountainproject.com/route/123/compound,3,Crag,2,-1,Aid,Flash,Trad,5.9,,3000",
+      "2026-08-10,Compound,5.10 A2,,https://www.mountainproject.com/route/123/compound,3,Crag,2,-1,Lead,Flash,Trad,5.9,,3000",
     ].join("\n");
     serve();
     await expect(run()).resolves.toMatchObject({ recordsSynced: 1, errors: [] });
@@ -628,11 +628,35 @@ describe("MountainProjectProvider canonical persistence", () => {
     expect(await ctx.db.select().from(climbingAttempt)).toEqual([
       expect.objectContaining({
         scope: "climb",
-        usedAid: true,
-        fellOrHung: null,
+        ropeMethod: "lead",
+        usedAid: false,
+        fellOrHung: false,
         sourceResult: "Flash",
         receivedBeta: true,
       }),
     ]);
+  });
+
+  it("rejects an Aid route tick without a method and preserves the prior import", async () => {
+    currentExport = fixtureCsv;
+    serve();
+    await expect(run()).resolves.toMatchObject({ recordsSynced: 3, errors: [] });
+    const previous = await records();
+    const previousAttempts = await ctx.db.select().from(climbingAttempt);
+    currentExport = [
+      fixtureCsv.split("\n")[0],
+      fixtureCsv.split("\n")[1]?.replace("placeholder note", "Updated source note"),
+      "2026-08-10,Aid route,5.10 A2,,https://www.mountainproject.com/route/123/aid-route,3,Crag,2,-1,Aid,Flash,Trad,5.9,,3000",
+    ].join("\n");
+    await expect(run()).resolves.toMatchObject({
+      recordsSynced: 0,
+      errors: [
+        expect.objectContaining({
+          message: expect.stringMatching(/missing a rope method.*record.+source.+import/i),
+        }),
+      ],
+    });
+    expect(await records()).toEqual(previous);
+    expect(await ctx.db.select().from(climbingAttempt)).toEqual(previousAttempts);
   });
 });

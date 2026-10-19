@@ -118,7 +118,7 @@ describe("AnalyticalTrainingLoadRepository database semantics", () => {
           activityId: climbingActivityId,
           discipline: "rock_climbing",
           climb: { externalId: "pitch-route", kind: "route" },
-          attempts: [{ scope: "pitch", sourceResult: "completed" }],
+          attempts: [{ scope: "pitch", sourceResult: "completed", ropeMethod: "lead" }],
         },
       ],
     });

@@ -49,7 +49,9 @@ describe("ClimbingRepository PostgreSQL scoped rock summaries", () => {
       climbedOn: await climbingTestDate(context.db),
       discipline: "rock_climbing",
       climb: route,
-      attempts: [{ scope: "climb", sourceResult: "Send", qualifier: "free-send" }],
+      attempts: [
+        { scope: "climb", ropeMethod: "lead", sourceResult: "Send", qualifier: "free-send" },
+      ],
       ...source,
     });
   }
@@ -226,7 +228,7 @@ describe("ClimbingRepository PostgreSQL scoped rock summaries", () => {
           climbedOn: date,
           discipline: "rock_climbing",
           climb: mappedClimb,
-          attempts: [{ scope: "climb" }],
+          attempts: [{ scope: "climb", ropeMethod: "lead" }],
         },
       ],
     });
@@ -286,7 +288,13 @@ describe("ClimbingRepository PostgreSQL scoped rock summaries", () => {
         ],
       },
       attempts: [
-        { scope: "pitch", pitch: { number: 1 }, sourceResult: "Send", qualifier: "free-send" },
+        {
+          scope: "pitch",
+          pitch: { number: 1 },
+          ropeMethod: "lead",
+          sourceResult: "Send",
+          qualifier: "free-send",
+        },
       ],
     });
     expect(await volume()).toEqual([]);
@@ -313,7 +321,15 @@ describe("ClimbingRepository PostgreSQL scoped rock summaries", () => {
   });
   it("keeps aid completion and dabs out of free-send metrics", async () => {
     await write({
-      attempts: [{ scope: "climb", sourceResult: "completed", usedAid: true, fellOrHung: false }],
+      attempts: [
+        {
+          scope: "climb",
+          ropeMethod: "lead",
+          sourceResult: "completed",
+          usedAid: true,
+          fellOrHung: false,
+        },
+      ],
     });
     await write({
       externalId: "dab",
@@ -342,7 +358,7 @@ describe("ClimbingRepository PostgreSQL scoped rock summaries", () => {
   it("keeps advertised protection separate from actual protection", async () => {
     await write({
       climb: { ...route, routeProtection: ["sport"] },
-      attempts: [{ scope: "climb", protectionUsed: ["trad"] }],
+      attempts: [{ scope: "climb", ropeMethod: "lead", protectionUsed: ["trad"] }],
     });
     expect(await volume({ routeProtection: "sport" })).toHaveLength(1);
     expect(await volume({ protectionUsed: "sport" })).toEqual([]);
@@ -371,6 +387,7 @@ describe("ClimbingRepository PostgreSQL scoped rock summaries", () => {
       externalId: "summit",
       discipline: "mountaineering",
       climb: { externalId: "summit", kind: "summit" },
+      attempts: [{ scope: "climb", sourceResult: "Send", qualifier: "free-send" }],
     });
     expect(await volume()).toEqual([]);
     expect(await repo().getGradeProgression(30)).toEqual([]);
@@ -399,9 +416,9 @@ describe("ClimbingRepository PostgreSQL scoped rock summaries", () => {
   it("counts each recorded attempt once and preserves multiple completed attempts", async () => {
     await write({
       attempts: [
-        { scope: "climb", sourceResult: "Send", qualifier: "free-send" },
-        { scope: "climb", sourceResult: "Send", qualifier: "free-send" },
-        { scope: "climb", sourceResult: "failed" },
+        { scope: "climb", ropeMethod: "lead", sourceResult: "Send", qualifier: "free-send" },
+        { scope: "climb", ropeMethod: "lead", sourceResult: "Send", qualifier: "free-send" },
+        { scope: "climb", ropeMethod: "lead", sourceResult: "failed" },
       ],
     });
     expect(await volume()).toEqual([
@@ -409,7 +426,7 @@ describe("ClimbingRepository PostgreSQL scoped rock summaries", () => {
     ]);
   });
   it("retains one unknown attempt when the provider gives no total", async () => {
-    await write({ attempts: [{ scope: "climb" }] });
+    await write({ attempts: [{ scope: "climb", ropeMethod: "lead" }] });
     expect(await volume()).toEqual([
       expect.objectContaining({ attempts: 1, recordedAttempts: 1, sends: 0 }),
     ]);
@@ -422,7 +439,14 @@ describe("ClimbingRepository PostgreSQL scoped rock summaries", () => {
   });
   it("retains attached and standalone rock metrics", async () => {
     const outing = await seedClimbingActivity(context.db, "climbing-summary-test", "outing");
-    await write({ activityId: outing.id, reportedAttemptCounts: [{ scope: "climb", count: 2 }] });
+    await write({
+      activityId: outing.id,
+      attempts: [
+        { scope: "climb", ropeMethod: "lead", sourceResult: "Send", qualifier: "free-send" },
+        { scope: "climb", ropeMethod: "lead" },
+      ],
+      reportedAttemptCounts: [{ scope: "climb", count: 2 }],
+    });
     await write({
       externalId: "standalone",
       climb: {
@@ -430,6 +454,7 @@ describe("ClimbingRepository PostgreSQL scoped rock summaries", () => {
         kind: "boulder",
         publishedGrades: [{ value: "V4", system: "v_scale" }],
       },
+      attempts: [{ scope: "climb", sourceResult: "Send", qualifier: "free-send" }],
       reportedAttemptCounts: [{ scope: "climb", count: 3 }],
     });
     expect(await volume()).toEqual(
@@ -452,11 +477,27 @@ describe("ClimbingRepository PostgreSQL scoped rock summaries", () => {
   it("retains conflicting provider attempt totals as an unknown canonical total", async () => {
     const outing = await seedClimbingActivity(context.db, "climbing-summary-test", "outing");
     await write(
-      { activityId: outing.id, reportedAttemptCounts: [{ scope: "climb", count: 2 }] },
+      {
+        activityId: outing.id,
+        attempts: [
+          { scope: "climb", ropeMethod: "lead", sourceResult: "Send", qualifier: "free-send" },
+          { scope: "climb", ropeMethod: "lead" },
+        ],
+        reportedAttemptCounts: [{ scope: "climb", count: 2 }],
+      },
       "mountain-project",
     );
     await write(
-      { activityId: outing.id, reportedAttemptCounts: [{ scope: "climb", count: 4 }] },
+      {
+        activityId: outing.id,
+        attempts: [
+          { scope: "climb", ropeMethod: "lead", sourceResult: "Send", qualifier: "free-send" },
+          { scope: "climb", ropeMethod: "lead" },
+          { scope: "climb", ropeMethod: "lead" },
+          { scope: "climb", ropeMethod: "lead" },
+        ],
+        reportedAttemptCounts: [{ scope: "climb", count: 4 }],
+      },
       "openbeta",
     );
     expect(await volume()).toEqual([
@@ -570,8 +611,16 @@ describe("ClimbingRepository PostgreSQL scoped rock summaries", () => {
         ],
       },
       attempts: [
-        { scope: "climb", sourceResult: "Send", qualifier: "free-send" },
-        { scope: "pitch", pitch: { number: 1 }, sourceResult: "Send", qualifier: "free-send" },
+        { scope: "climb", ropeMethod: "lead", sourceResult: "Send", qualifier: "free-send" },
+        { scope: "climb", ropeMethod: "lead" },
+        { scope: "climb", ropeMethod: "lead" },
+        {
+          scope: "pitch",
+          pitch: { number: 1 },
+          ropeMethod: "lead",
+          sourceResult: "Send",
+          qualifier: "free-send",
+        },
       ],
       reportedAttemptCounts: [{ scope: "climb", count: 3 }],
     });

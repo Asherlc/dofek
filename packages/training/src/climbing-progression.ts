@@ -67,6 +67,14 @@ export type ClimbingGradeProgressionLane = z.infer<typeof climbingGradeProgressi
 export type ClimbingProgressionPeriod = ClimbingGradeProgressionLane["periods"][number];
 export type ClimbingProgressionSetting = ClimbingProgressionPeriod["settings"][number];
 
+export function climbingProgressionChartLanes(
+  lanes: ClimbingGradeProgressionLane[],
+): ClimbingGradeProgressionLane[] {
+  return lanes.filter(
+    (lane) => lane.usedAid !== null && (lane.climbKind === "boulder" || lane.ropeMethod !== null),
+  );
+}
+
 export function climbingProgressionLaneKey(
   lane: Pick<
     ClimbingGradeProgressionLane,
@@ -105,8 +113,6 @@ export function climbingProgressionLaneLabel(
   else if (matching.some((other) => other.solo !== lane.solo))
     parts.push(lane.solo === false ? "With belayer" : "Solo unknown");
   if (lane.usedAid === true) parts.push("Aid");
-  else if (matching.some((other) => other.usedAid !== lane.usedAid))
-    parts.push(lane.usedAid === false ? "Without aid" : "Aid unknown");
   if (lane.attemptScope === "pitch") parts.push("Pitch");
   if (
     lanes.some(

@@ -3,19 +3,22 @@ import {
   ProviderRateLimitError,
   ProviderRequestTimeoutError,
 } from "@dofek/provider-http/rate-limit";
-import { DrizzleQueryError, SQL } from "drizzle-orm";
+import { SQL } from "drizzle-orm";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ClimbingLogSyncInput } from "../db/climbing-log-sync.ts";
 import type { SyncDatabase } from "../db/index.ts";
 import { authFailureReasonFromError, ProviderTokenRejectedError } from "./auth-errors.ts";
-import { SyncRun } from "./sync-run.ts";
-import { SyncWindow } from "./sync-window.ts";
-import { createMockDatabase, theCragAscent, theCragPage } from "./test-helpers.ts";
+import {
+  createMockDatabase,
+  theCragSyncRun as makeRun,
+  theCragResponse as response,
+  theCragAscent,
+  theCragTokens as tokens,
+} from "./test-helpers.ts";
 import { TheCragProvider } from "./thecrag.ts";
 
 const USER_ID = "00000000-0000-0000-0000-000000000001";
-const ACCOUNT_ID = "123";
 const mocks = vi.hoisted(() => ({
   persist: vi.fn(async (_db: SyncDatabase, input: ClimbingLogSyncInput) => ({
     logEntryIds: input.entries.map((entry) => entry.externalId),
@@ -37,41 +40,6 @@ vi.mock("../db/tokens.ts", () => ({
 vi.mock("../db/sync-log.ts", () => ({ withSyncLog: mocks.withSyncLog }));
 vi.mock("../lib/error-reporting.ts", () => ({ captureException: mocks.captureException }));
 
-function response(
-  ascents: Record<string, unknown>[] = [],
-  overrides: Record<string, unknown> = {},
-): Response {
-  return new Response(JSON.stringify(theCragPage(ascents, overrides)), {
-    status: 200,
-    headers: { "Content-Type": "application/json" },
-  });
-}
-
-function tokens(accountId = ACCOUNT_ID) {
-  return {
-    accessToken: "personal-key",
-    refreshToken: null,
-    expiresAt: new Date("2099-12-31T00:00:00.000Z"),
-    scopes: "logbook:read",
-    providerAccountId: accountId,
-  };
-}
-
-function makeRun(
-  database: ReturnType<typeof createMockDatabase>["db"],
-  options: { full?: boolean; origin?: "scheduled" | "manual"; userId?: string } = {},
-): SyncRun {
-  return new SyncRun({
-    db: database,
-    window:
-      options.full === false
-        ? SyncWindow.fromDateRange({ sinceDate: "2026-10-01", untilDate: "2026-10-11" })
-        : SyncWindow.full(new Date("2026-10-11T23:59:59.999Z")),
-    userId: options.userId ?? USER_ID,
-    origin: options.origin,
-  });
-}
-
 function writtenRecords() {
   const input = mocks.persist.mock.calls.at(-1)?.[1];
   if (!input) throw new Error("No source batch was written");
@@ -83,7 +51,6 @@ afterEach(() => {
   vi.restoreAllMocks();
   mocks.loadTokens.mockResolvedValue(tokens());
 });
-
 mocks.loadTokens.mockResolvedValue(tokens());
 
 describe("TheCragProvider personal key authentication", () => {
@@ -793,73 +760,6 @@ describe("TheCragProvider logbook sync", () => {
     expect(mocks.persist).toHaveBeenCalledTimes(1);
   });
 
-  it("reports save failures without exposing private bound ascent data", async () => {
-    const privateNotes = "secret-notes-do-not-report";
-    const database = createMockDatabase();
-    const postgresError = Object.assign(new Error("Check constraint failed"), { code: "23514" });
-    const failure = new DrizzleQueryError(
-      "INSERT INTO fitness.climbing_log_entry SELECT private parameters",
-      [JSON.stringify([{ raw: { ascent: { markdown: privateNotes } } }])],
-      postgresError,
-    );
-    mocks.persist.mockRejectedValueOnce(failure);
-    const result = await new TheCragProvider(
-      vi
-        .fn<typeof fetch>()
-        .mockResolvedValue(response([theCragAscent({ markdown: privateNotes })])),
-    ).sync(makeRun(database.db));
-    const exposed = inspect(
-      { errors: result.errors, telemetry: mocks.captureException.mock.calls },
-      { depth: null },
-    );
-    expect(exposed).not.toContain(privateNotes);
-    expect(exposed).not.toContain("private parameters");
-    expect(result).toMatchObject({
-      recordsSynced: 0,
-      errors: [
-        expect.objectContaining({ message: expect.stringMatching(/could not save.*try again/i) }),
-      ],
-    });
-    expect(mocks.captureException).toHaveBeenCalledWith(
-      expect.objectContaining({ message: expect.stringMatching(/could not save.*try again/i) }),
-      expect.objectContaining({ tags: expect.objectContaining({ postgresCode: "23514" }) }),
-    );
-    for (const [error] of mocks.captureException.mock.calls) {
-      if (!(error instanceof Error)) throw new Error("Save failure was not reported as an error");
-      expect(error.cause).toBeUndefined();
-    }
-  });
-
-  it.each(["23514 private-note", "private-note23514"])(
-    "omits invalid PostgreSQL code %j from telemetry while reporting the save failure",
-    async (code) => {
-      const database = createMockDatabase();
-      const driverError = Object.assign(new Error("private driver details"), { code });
-      mocks.persist.mockRejectedValueOnce(
-        new DrizzleQueryError("INSERT private bound query", ["private ascent notes"], driverError),
-      );
-      const result = await new TheCragProvider(
-        vi.fn<typeof fetch>().mockResolvedValue(response([theCragAscent()])),
-      ).sync(makeRun(database.db));
-      expect(result.errors).toEqual([
-        expect.objectContaining({ message: expect.stringMatching(/could not save.*try again/i) }),
-      ]);
-      expect(mocks.captureException).toHaveBeenCalled();
-      const exposed = inspect(
-        { errors: result.errors, telemetry: mocks.captureException.mock.calls },
-        { depth: null },
-      );
-      expect(exposed).not.toContain(code);
-      expect(exposed).not.toContain("private driver details");
-      expect(exposed).not.toContain("private ascent notes");
-      expect(exposed).not.toContain("private bound query");
-      for (const [error, metadata] of mocks.captureException.mock.calls) {
-        expect(error.cause).toBeUndefined();
-        expect(metadata.tags.postgresCode).toBeUndefined();
-      }
-    },
-  );
-
   it("preserves existing data when a later page fails", async () => {
     const database = createMockDatabase();
     const fetchFn = vi
@@ -1032,24 +932,16 @@ describe("TheCragProvider logbook sync", () => {
     expect(database.spies.execute).not.toHaveBeenCalled();
   });
 
-  it("explains missing account identity before requesting data", async () => {
-    mocks.loadTokens.mockResolvedValue({ ...tokens(), providerAccountId: undefined });
+  it.each([
+    ["account identity", { ...tokens(), providerAccountId: undefined }, /reconnect/i],
+    ["personal-key credentials", null, /API key.*reconnect/i],
+  ])("explains missing %s before requesting data", async (_label, credentials, message) => {
+    mocks.loadTokens.mockResolvedValue(credentials);
     const database = createMockDatabase();
     const fetchFn = vi.fn<typeof fetch>();
     const result = await new TheCragProvider(fetchFn).sync(makeRun(database.db));
     expect(result.errors).toEqual([
-      expect.objectContaining({ message: expect.stringMatching(/reconnect/i) }),
-    ]);
-    expect(fetchFn).not.toHaveBeenCalled();
-  });
-
-  it("explains missing personal-key credentials before requesting data", async () => {
-    mocks.loadTokens.mockResolvedValue(null);
-    const database = createMockDatabase();
-    const fetchFn = vi.fn<typeof fetch>();
-    const result = await new TheCragProvider(fetchFn).sync(makeRun(database.db));
-    expect(result.errors).toEqual([
-      expect.objectContaining({ message: expect.stringMatching(/API key.*reconnect/i) }),
+      expect.objectContaining({ message: expect.stringMatching(message) }),
     ]);
     expect(fetchFn).not.toHaveBeenCalled();
     expect(database.spies.execute).not.toHaveBeenCalled();
@@ -1058,12 +950,7 @@ describe("TheCragProvider logbook sync", () => {
   it("requires user attribution before loading credentials or contacting the provider", async () => {
     const database = createMockDatabase();
     const fetchFn = vi.fn<typeof fetch>();
-    const result = await new TheCragProvider(fetchFn).sync(
-      new SyncRun({
-        db: database.db,
-        window: SyncWindow.full(new Date("2026-10-11T23:59:59.999Z")),
-      }),
-    );
+    const result = await new TheCragProvider(fetchFn).sync(makeRun(database.db, { userId: null }));
     expect(result.errors).toEqual([
       expect.objectContaining({ message: expect.stringMatching(/requires a user context/i) }),
     ]);

@@ -95,7 +95,14 @@ describe("ClimbingGradeProgressionChart", () => {
   it("retains loading and empty states", () => {
     const { rerender } = render(<ClimbingGradeProgressionChart data={[]} loading />);
     expect(screen.getByText("Loading climbing chart")).toBeTruthy();
-    rerender(<ClimbingGradeProgressionChart data={[]} />);
+    rerender(
+      <ClimbingGradeProgressionChart
+        data={[
+          climbingProgressionFixture("boulder", { usedAid: null }),
+          climbingProgressionFixture("route"),
+        ]}
+      />,
+    );
     expect(screen.getByText("No recorded climbing grades")).toBeTruthy();
   });
   it("renders distinct style lanes with grade stacks and patterned outdoor bars on a common scale", () => {
@@ -105,12 +112,17 @@ describe("ClimbingGradeProgressionChart", () => {
           climbingProgressionFixture(),
           climbingProgressionFixture("route", { ropeMethod: "top_rope" }),
           climbingProgressionFixture("route", { ropeMethod: "lead" }),
+          climbingProgressionFixture("boulder", { usedAid: null }),
+          climbingProgressionFixture("route", { ropeMethod: "lead", usedAid: null }),
+          climbingProgressionFixture("route", { ropeMethod: "lead", usedAid: true }),
+          climbingProgressionFixture("route"),
         ]}
       />,
     );
     expect(screen.getByRole("button", { name: "Focus Bouldering" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Focus Top rope" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Focus Lead" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Focus Lead · Aid" })).toBeTruthy();
     const option = boulderOption();
     expect(option.xAxis).toMatchObject({ show: true, data: ["Jun", "Jul", "Aug"] });
     expect(option.yAxis).toMatchObject({ min: 0, max: 6, interval: 2 });
@@ -173,7 +185,7 @@ describe("ClimbingGradeProgressionChart", () => {
     ]);
   });
   it("preserves unknown categories and escapes returned grade labels", () => {
-    const lane = climbingProgressionFixture("route");
+    const lane = climbingProgressionFixture("route", { ropeMethod: "lead" });
     lane.settings = ["unknown"];
     lane.periods = lane.periods.map((period) => ({
       ...period,
@@ -188,9 +200,9 @@ describe("ClimbingGradeProgressionChart", () => {
       })),
     }));
     render(<ClimbingGradeProgressionChart data={[lane]} />);
-    expect(screen.getByRole("button", { name: "Focus Routes" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Focus Lead" })).toBeTruthy();
     expect(screen.getByText("Unknown setting")).toBeTruthy();
-    const tooltip = charts.get("Routes")?.tooltip.formatter([{ dataIndex: 0 }]);
+    const tooltip = charts.get("Lead")?.tooltip.formatter([{ dataIndex: 0 }]);
     expect(tooltip).toContain("&lt;test&gt;");
     expect(tooltip).toContain("1 outcome unrecorded");
   });

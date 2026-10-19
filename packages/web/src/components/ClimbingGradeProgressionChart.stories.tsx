@@ -6,6 +6,7 @@ const progression = [
   climbingProgressionFixture(),
   climbingProgressionFixture("route", { ropeMethod: "top_rope" }),
   climbingProgressionFixture("route", { ropeMethod: "lead" }),
+  climbingProgressionFixture("route"),
 ];
 const meta = {
   title: "Components/ClimbingGradeProgressionChart",
@@ -28,18 +29,29 @@ type Story = StoryObj<typeof meta>;
 export const Default: Story = {};
 export const BoulderOnly: Story = { args: { data: progression.slice(0, 1) } };
 export const RouteOnly: Story = { args: { data: progression.slice(1) } };
+export const AidStyles: Story = {
+  args: {
+    data: [
+      climbingProgressionFixture("route", { ropeMethod: "lead" }),
+      climbingProgressionFixture("route", { ropeMethod: "lead", usedAid: true }),
+      climbingProgressionFixture("route", { ropeMethod: "lead", usedAid: null }),
+    ],
+  },
+};
 export const UnknownCategories: Story = {
   args: {
     data: [
       {
-        ...climbingProgressionFixture("route"),
+        ...climbingProgressionFixture("route", { ropeMethod: "lead" }),
         settings: ["unknown"],
-        periods: climbingProgressionFixture("route").periods.map((period) => ({
-          ...period,
-          settings: period.settings
-            .slice(0, 1)
-            .map((setting) => ({ ...setting, setting: "unknown", unknownOutcomes: 2 })),
-        })),
+        periods: climbingProgressionFixture("route", { ropeMethod: "lead" }).periods.map(
+          (period) => ({
+            ...period,
+            settings: period.settings
+              .slice(0, 1)
+              .map((setting) => ({ ...setting, setting: "unknown", unknownOutcomes: 2 })),
+          }),
+        ),
       },
     ],
   },

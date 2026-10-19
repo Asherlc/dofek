@@ -24,7 +24,7 @@ const boulderingLane: ClimbingGradeProgressionLane = {
 };
 
 describe("climbingProgressionLaneLabel", () => {
-  it("distinguishes unknown solo and aid facts when otherwise matching lanes are present", () => {
+  it("distinguishes solo facts with concise climbing labels", () => {
     const known: ClimbingGradeProgressionLane = {
       ...boulderingLane,
       climbKind: "route",
@@ -33,12 +33,8 @@ describe("climbingProgressionLaneLabel", () => {
       usedAid: false,
     };
     const unknown: ClimbingGradeProgressionLane = { ...known, solo: null, usedAid: null };
-    expect(climbingProgressionLaneLabel(known, [known, unknown])).toBe(
-      "Lead · With belayer · Without aid",
-    );
-    expect(climbingProgressionLaneLabel(unknown, [known, unknown])).toBe(
-      "Lead · Solo unknown · Aid unknown",
-    );
+    expect(climbingProgressionLaneLabel(known, [known, unknown])).toBe("Lead · With belayer");
+    expect(climbingProgressionLaneLabel(unknown, [known, unknown])).toBe("Lead · Solo unknown");
   });
   it("uses the style label when matching lanes share a grade scale", () => {
     expect(climbingProgressionLaneLabel(boulderingLane, [boulderingLane])).toBe("Bouldering");

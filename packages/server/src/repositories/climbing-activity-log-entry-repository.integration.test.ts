@@ -151,13 +151,13 @@ describe("ClimbingActivityLogEntryRepository PostgreSQL projection", () => {
     const exact = await write({
       externalId: "exact-map-log",
       activityId: first.id,
-      attempts: [{ scope: "climb" }],
+      attempts: [{ scope: "climb", ropeMethod: "lead" }],
       climb: { ...route, coordinates: { latitude: 0, longitude: -122.25 } },
     });
     const areaLog = await write({
       externalId: "area-map-log",
       activityId: second.id,
-      attempts: [{ scope: "climb" }],
+      attempts: [{ scope: "climb", ropeMethod: "lead" }],
       climb: {
         ...route,
         externalId: "area-route",
@@ -179,7 +179,7 @@ describe("ClimbingActivityLogEntryRepository PostgreSQL projection", () => {
     await write({
       externalId: "repeated-map-log",
       activityId: second.id,
-      attempts: [{ scope: "climb" }],
+      attempts: [{ scope: "climb", ropeMethod: "lead" }],
       climb: { externalId: "area-route" },
     });
     await write({
@@ -190,7 +190,7 @@ describe("ClimbingActivityLogEntryRepository PostgreSQL projection", () => {
     });
     await write({
       externalId: "unattached-map-log",
-      attempts: [{ scope: "climb" }],
+      attempts: [{ scope: "climb", ropeMethod: "lead" }],
       climb: {
         ...route,
         externalId: "unattached-route",
@@ -234,7 +234,7 @@ describe("ClimbingActivityLogEntryRepository PostgreSQL projection", () => {
           { externalId: "wall", name: "Wall" },
         ],
       },
-      attempts: [{ scope: "climb" }],
+      attempts: [{ scope: "climb", ropeMethod: "lead" }],
     });
     expect(first.mapLocation).toEqual({
       coordinates: { latitude: 12, longitude: 0 },
@@ -246,7 +246,7 @@ describe("ClimbingActivityLogEntryRepository PostgreSQL projection", () => {
     const updated = await write({
       externalId: "mapped-log",
       climb: { externalId: "route-one", coordinates: null },
-      attempts: [{ scope: "climb" }],
+      attempts: [{ scope: "climb", ropeMethod: "lead" }],
     });
     expect(updated.climb?.areaPath.map((area) => area.name)).toEqual(["Region", "Crag", "Wall"]);
     const crag = updated.climb?.areaPath.find((area) => area.externalId === "crag");
@@ -270,7 +270,7 @@ describe("ClimbingActivityLogEntryRepository PostgreSQL projection", () => {
       externalId: "source-result",
       discipline: "rock_climbing",
       climb: route,
-      attempts: [{ scope: "climb", fellOrHung: false, usedAid: false }],
+      attempts: [{ scope: "climb", ropeMethod: "lead", fellOrHung: false, usedAid: false }],
     });
     await context.db.execute(sql`
       UPDATE fitness.climbing_attempt SET source_result = ${sourceResult}
@@ -293,9 +293,11 @@ describe("ClimbingActivityLogEntryRepository PostgreSQL projection", () => {
         {
           scope: "pitch",
           pitch: { number: 1 },
+          ropeMethod: "lead",
           sourceResult: "Onsight",
           qualifier: "free-onsight",
         },
+        { scope: "pitch", pitch: { number: 1 }, ropeMethod: "lead" },
       ],
       reportedAttemptCounts: [{ scope: "pitch", pitch: { number: 1 }, count: 2 }],
     });
@@ -316,14 +318,21 @@ describe("ClimbingActivityLogEntryRepository PostgreSQL projection", () => {
       externalId: "grouped",
       climb: route,
       attempts: [
-        { scope: "climb", sourceKey: "whole", sourceResult: "completed", usedAid: true },
+        {
+          scope: "climb",
+          sourceKey: "whole",
+          ropeMethod: "lead",
+          sourceResult: "completed",
+          usedAid: true,
+        },
         {
           scope: "pitch",
           pitch: { number: 1 },
           parentSourceKey: "whole",
+          ropeMethod: "lead",
           sourceResult: "completed",
         },
-        { scope: "pitch", parentSourceKey: "whole", sourceResult: "failed" },
+        { scope: "pitch", parentSourceKey: "whole", ropeMethod: "lead", sourceResult: "failed" },
       ],
     });
     expect(log).toMatchObject({
@@ -344,8 +353,18 @@ describe("ClimbingActivityLogEntryRepository PostgreSQL projection", () => {
       externalId: "unidentified",
       climb: route,
       attempts: [
-        { scope: "pitch", sourceResult: "completed", notes: "First unidentified pitch" },
-        { scope: "pitch", sourceResult: "failed", notes: "Another unidentified pitch" },
+        {
+          scope: "pitch",
+          ropeMethod: "lead",
+          sourceResult: "completed",
+          notes: "First unidentified pitch",
+        },
+        {
+          scope: "pitch",
+          ropeMethod: "lead",
+          sourceResult: "failed",
+          notes: "Another unidentified pitch",
+        },
       ],
     });
     expect(log.pitchResults).toHaveLength(2);
@@ -377,7 +396,9 @@ describe("ClimbingActivityLogEntryRepository PostgreSQL projection", () => {
           { externalId: "wall", name: "Wall", coordinates: { latitude: 0, longitude: -122.25 } },
         ],
       },
-      attempts: [{ scope: "climb", sourceResult: "Send", qualifier: "free-send" }],
+      attempts: [
+        { scope: "climb", ropeMethod: "lead", sourceResult: "Send", qualifier: "free-send" },
+      ],
     });
     await write({
       externalId: "new",
@@ -390,7 +411,7 @@ describe("ClimbingActivityLogEntryRepository PostgreSQL projection", () => {
           { externalId: "wall", name: "Renamed wall" },
         ],
       },
-      attempts: [{ scope: "climb" }],
+      attempts: [{ scope: "climb", ropeMethod: "lead" }],
     });
     const [entry] = await repo().getLogEntries([first.id]);
     expect(entry?.toDetail()).toMatchObject({
@@ -488,7 +509,7 @@ describe("ClimbingActivityLogEntryRepository PostgreSQL projection", () => {
       activityId: outing.id,
       climbedOn: "2026-10-01",
       climb: { ...route, coordinates: { latitude: 12, longitude: 0 } },
-      attempts: [{ scope: "climb" }],
+      attempts: [{ scope: "climb", ropeMethod: "lead" }],
     });
     const limited = new ClimbingActivityLogEntryRepository(
       context.db,

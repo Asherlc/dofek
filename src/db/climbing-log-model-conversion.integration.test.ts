@@ -285,7 +285,13 @@ describe("bounded populated climbing conversion", () => {
     expect(retained).toEqual({ reason: "technique" });
   });
   it("recovers a KAYA compound target and source count while retaining identities on subsequent canonical sync", async () => {
-    const raw = { id: "1000_2001", attempts: 3, climb_type: { name: "Route" }, gym: null };
+    const raw = {
+      id: "1000_2001",
+      attempts: 3,
+      lead: false,
+      climb_type: { name: "Route" },
+      gym: null,
+    };
     const id = await seed(raw, { provider: "kaya", result: "Attempt" });
     const activityId = randomUUID();
     await context.db.execute(
@@ -315,6 +321,10 @@ describe("bounded populated climbing conversion", () => {
       external_id: "kaya:session:1000:attempted:1000_2001",
       count: 3,
     });
+    // Correct confirmed methods on anonymous legacy tries before enforcing the invariant.
+    await context.db.execute(
+      sql`UPDATE fitness.climbing_attempt SET rope_method='top_rope' WHERE climbing_log_entry_id=${id}::uuid`,
+    );
     await context.migrateToCurrent();
     const result = await persistClimbingLogEntries(context.db, {
       userId: TEST_USER_ID,

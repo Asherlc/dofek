@@ -90,6 +90,11 @@ log and attempt graph follows the [canonical response contract](../server/src/co
 
 The Training route coordinates query states and delegates climbing payload validation, grade cards, and Hangboarding display to [ClimbingTrainingCard](./components/ClimbingTrainingCard.tsx), with focused tests and stories beside the component.
 
+Climbing grade charts use the [shared chart selection and labels](../training/src/climbing-progression.ts)
+to display bouldering and routes with recorded rope methods, each with recorded
+aid status. Ordinary climbs use their style name; aided climbs retain an "Aid"
+qualifier.
+
 [ClimbingLocationMapCard](./components/ClimbingLocationMapCard.tsx) uses the same
 Training dates and climbing filters to render [server-computed clusters](../training/src/climbing-location-map.ts).
 Larger circles split into individual climb locations as the map zooms; repeated

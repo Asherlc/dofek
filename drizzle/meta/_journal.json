@@ -1051,6 +1051,13 @@
       "when": 1792287781982,
       "tag": "0149_zepp_activity_priority",
       "breakpoints": true
+    },
+    {
+      "idx": 150,
+      "version": "7",
+      "when": 1792360800000,
+      "tag": "0150_require_climbing_route_methods",
+      "breakpoints": true
     }
   ]
 }

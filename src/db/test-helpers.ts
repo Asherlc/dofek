@@ -184,84 +184,94 @@ async function waitForDatabase(connectionString: string): Promise<void> {
 async function migrateTestDatabase(connectionString: string): Promise<void> {
   const migrationClient = new Client({ connectionString });
   await migrationClient.connect();
-  const drizzleDir = resolve(import.meta.dirname, "../../drizzle");
-  const migrationFiles = readdirSync(drizzleDir)
-    .filter((file) => file.endsWith(".sql"))
-    .sort();
-
-  for (const file of migrationFiles) {
-    const content = readFileSync(resolve(drizzleDir, file), "utf-8");
-    const statements = content
-      .split("--> statement-breakpoint")
-      .map((statement) => statement.trim())
-      .filter(isRunnableMigrationStatement);
-
-    for (const statement of statements) {
-      await migrationClient.query(statement);
-    }
-  }
-
-  // Recreate canonical fitness views from their checked-in definitions.
-  const viewsDir = join(drizzleDir, "_views");
-  if (existsSync(viewsDir)) {
-    const viewFiles = readdirSync(viewsDir)
+  try {
+    const drizzleDir = resolve(import.meta.dirname, "../../drizzle");
+    const migrationFiles = readdirSync(drizzleDir)
       .filter((file) => file.endsWith(".sql"))
       .sort();
 
-    // Parse view files upfront so we know which views to drop.
-    // Only files containing CREATE MATERIALIZED VIEW are matviews; CREATE OR
-    // REPLACE VIEW files are plain views (handled differently below).
-    const parsedViews = viewFiles.map((file) => {
-      const content = readFileSync(join(viewsDir, file), "utf-8");
-      const match = content.match(
-        /CREATE\s+MATERIALIZED\s+VIEW\s+(?:IF\s+NOT\s+EXISTS\s+)?fitness\.(\w+)/i,
-      );
-      return { content, viewName: match?.[1] };
-    });
-
-    // Drop managed matviews in reverse order (dependents first). CASCADE is
-    // used so dependencies are removed before canonical definitions are
-    // recreated below.
-    for (const { viewName } of [...parsedViews].reverse()) {
-      if (!viewName) continue;
-      await migrationClient.query(
-        `DROP MATERIALIZED VIEW IF EXISTS ${escapeIdentifier("fitness")}.${escapeIdentifier(viewName)} CASCADE`,
-      );
-    }
-
-    // Recreate in filename order so base views exist before dependents.
-    for (const { content } of parsedViews) {
+    for (const file of migrationFiles) {
+      const content = readFileSync(resolve(drizzleDir, file), "utf-8");
       const statements = content
         .split("--> statement-breakpoint")
         .map((statement) => statement.trim())
-        .filter(Boolean);
-      for (const statement of statements) {
-        await migrationClient.query(statement);
+        .filter(isRunnableMigrationStatement);
+
+      await migrationClient.query("BEGIN");
+      let committed = false;
+      try {
+        for (const statement of statements) {
+          await migrationClient.query(statement);
+        }
+        await migrationClient.query("COMMIT");
+        committed = true;
+      } finally {
+        if (!committed) await migrationClient.query("ROLLBACK");
       }
     }
-  }
 
-  // Keep the final template schema fenced exactly like production.
-  await migrationClient.query("SELECT fitness.refresh_account_erasure_write_fences()");
+    // Recreate canonical fitness views from their checked-in definitions.
+    const viewsDir = join(drizzleDir, "_views");
+    if (existsSync(viewsDir)) {
+      const viewFiles = readdirSync(viewsDir)
+        .filter((file) => file.endsWith(".sql"))
+        .sort();
 
-  // Seed the canonical integration-test user.
-  // Many integration tests use TEST_USER_ID fixtures and expect this row to exist.
-  await migrationClient.query(
-    `INSERT INTO fitness.user_profile (id, name)
+      // Parse view files upfront so we know which views to drop.
+      // Only files containing CREATE MATERIALIZED VIEW are matviews; CREATE OR
+      // REPLACE VIEW files are plain views (handled differently below).
+      const parsedViews = viewFiles.map((file) => {
+        const content = readFileSync(join(viewsDir, file), "utf-8");
+        const match = content.match(
+          /CREATE\s+MATERIALIZED\s+VIEW\s+(?:IF\s+NOT\s+EXISTS\s+)?fitness\.(\w+)/i,
+        );
+        return { content, viewName: match?.[1] };
+      });
+
+      // Drop managed matviews in reverse order (dependents first). CASCADE is
+      // used so dependencies are removed before canonical definitions are
+      // recreated below.
+      for (const { viewName } of [...parsedViews].reverse()) {
+        if (!viewName) continue;
+        await migrationClient.query(
+          `DROP MATERIALIZED VIEW IF EXISTS ${escapeIdentifier("fitness")}.${escapeIdentifier(viewName)} CASCADE`,
+        );
+      }
+
+      // Recreate in filename order so base views exist before dependents.
+      for (const { content } of parsedViews) {
+        const statements = content
+          .split("--> statement-breakpoint")
+          .map((statement) => statement.trim())
+          .filter(Boolean);
+        for (const statement of statements) {
+          await migrationClient.query(statement);
+        }
+      }
+    }
+
+    // Keep the final template schema fenced exactly like production.
+    await migrationClient.query("SELECT fitness.refresh_account_erasure_write_fences()");
+
+    // Seed the canonical integration-test user.
+    // Many integration tests use TEST_USER_ID fixtures and expect this row to exist.
+    await migrationClient.query(
+      `INSERT INTO fitness.user_profile (id, name)
      VALUES ($1, 'Test User')
      ON CONFLICT (id) DO NOTHING`,
-    [schema.TEST_USER_ID],
-  );
+      [schema.TEST_USER_ID],
+    );
 
-  // Seed billing record with existing_account grant so tests get full access.
-  await migrationClient.query(
-    `INSERT INTO fitness.user_billing (user_id, paid_grant_reason)
+    // Seed billing record with existing_account grant so tests get full access.
+    await migrationClient.query(
+      `INSERT INTO fitness.user_billing (user_id, paid_grant_reason)
      VALUES ($1, 'existing_account')
      ON CONFLICT (user_id) DO NOTHING`,
-    [schema.TEST_USER_ID],
-  );
-
-  await migrationClient.end();
+      [schema.TEST_USER_ID],
+    );
+  } finally {
+    await migrationClient.end();
+  }
 }
 
 /**
