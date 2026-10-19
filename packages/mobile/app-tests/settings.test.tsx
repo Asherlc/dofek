@@ -481,6 +481,26 @@ describe("SettingsScreen climbing grade systems", () => {
     ).toBe("true");
   });
 
+  it("keeps default grades and the server error visible when an unset preference fails to refresh", async () => {
+    mockClimbingGradeSettingQuery.error = new Error(
+      "Your session expired. Sign in again to refresh your settings.",
+    );
+    const { default: SettingsScreen } = await import("../app/settings");
+    await act(async () => {
+      render(<SettingsScreen />);
+    });
+
+    expect(
+      screen.getByText("Your session expired. Sign in again to refresh your settings."),
+    ).toBeTruthy();
+    expect(screen.getByRole("button", { name: "V Scale" }).getAttribute("aria-selected")).toBe(
+      "true",
+    );
+    expect(
+      screen.getByRole("button", { name: "Yosemite Decimal System" }).getAttribute("aria-selected"),
+    ).toBe("true");
+  });
+
   it("keeps a saved preference selected", async () => {
     mockClimbingGradeSettingQuery.data = {
       key: "climbingGradeSystems",
