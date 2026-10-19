@@ -36,14 +36,14 @@ export function ClimbingGradeSystemToggle() {
     }
   }, [setting.error]);
 
-  if (!setting.data) {
+  if (setting.data === undefined) {
     if (setting.error) {
       return <p role="alert">{userFacingErrorMessage(setting.error)}</p>;
     }
     return <p aria-busy="true">Loading climbing grade systems…</p>;
   }
 
-  const preference = resolveClimbingGradePreference(setting.data.value);
+  const preference = resolveClimbingGradePreference(setting.data?.value);
 
   function setPreference(next: ClimbingGradePreference): void {
     const previous = utils.settings.get.getData({ key: SETTINGS_KEY });
