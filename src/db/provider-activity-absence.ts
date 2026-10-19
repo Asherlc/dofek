@@ -12,6 +12,8 @@ export interface ProviderActivityAbsenceReconciliation {
   windowStart: Date;
   windowEnd: Date;
   presentExternalIds: ReadonlySet<string>;
+  /** Set only after a complete, validated source list proves that no activities remain. */
+  emptyListIsAuthoritative?: boolean;
   /** When reconciling Apple Health, identities present in the current workout push. */
   presentAppleHealthIdentities?: readonly AppleHealthWorkoutIdentity[];
   userId?: string;
@@ -121,7 +123,7 @@ export async function reconcileProviderActivityAbsence(
   const userId = resolveUserId(reconciliation.userId);
   const presentExternalIds = presentExternalIdValues(reconciliation.presentExternalIds);
 
-  if (presentExternalIds.length === 0) {
+  if (presentExternalIds.length === 0 && !reconciliation.emptyListIsAuthoritative) {
     // An empty provider list is ambiguous: the user may have deleted everything in
     // the window, or HealthKit/API may have returned no rows transiently. Skip
     // tombstoning so we do not hide workouts that still exist upstream.
@@ -134,7 +136,8 @@ export async function reconcileProviderActivityAbsence(
       ? appleHealthDuplicateTombstoneGuardSql(reconciliation.presentAppleHealthIdentities ?? [])
       : sql``;
 
-  await db.execute(sql`
+  if (presentExternalIds.length > 0)
+    await db.execute(sql`
     UPDATE fitness.activity
     SET provider_absent_at = NULL
     WHERE user_id = ${userId}
@@ -155,7 +158,7 @@ export async function reconcileProviderActivityAbsence(
       AND external_id <> ''
       AND started_at >= ${reconciliation.windowStart}
       AND started_at < ${reconciliation.windowEnd}
-      AND external_id NOT IN (${externalIdListSql(presentExternalIds)})
+      ${presentExternalIds.length === 0 ? sql`` : sql`AND external_id NOT IN (${externalIdListSql(presentExternalIds)})`}
     ${appleHealthDuplicateGuard}
   `);
 

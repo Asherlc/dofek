@@ -1,18 +1,18 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { ClimbingLogSessionsSyncInput } from "../db/climbing-log-session-sync.ts";
+import type { ClimbingLogSyncInput } from "../db/climbing-log-sync.ts";
 import type { SyncDatabase } from "../db/index.ts";
 import { ProviderInvalidCredentialsError } from "./auth-errors.ts";
+import { ascent, session } from "./kaya-sync.test-helpers.ts";
 import { SyncRun } from "./sync-run.ts";
 import { SyncWindow } from "./sync-window.ts";
 import { makeTransactionalTestDatabase } from "./test-helpers.ts";
 
 const mocks = vi.hoisted(() => ({
-  persistSessions: vi.fn(async (_db: SyncDatabase, input: ClimbingLogSessionsSyncInput) => ({
+  persist: vi.fn(async (_db: SyncDatabase, input: ClimbingLogSyncInput) => ({
     logEntryIds: [],
-    recordsSynced:
-      input.standaloneEntries.length +
-      input.sessions.reduce((count, session) => count + session.entries.length, 0),
+    recordsSynced: input.entries.length,
   })),
+  reconcileActivities: vi.fn(),
   ascents: vi.fn(),
   captureException: vi.fn(),
   ensureProvider: vi.fn(),
@@ -25,8 +25,8 @@ const mocks = vi.hoisted(() => ({
   upsertActivity: vi.fn(),
 }));
 
-vi.mock("../db/climbing-log-session-sync.ts", () => ({
-  persistClimbingLogSessions: mocks.persistSessions,
+vi.mock("../db/climbing-log-snapshot.ts", () => ({
+  persistClimbingLogSnapshot: mocks.persist,
 }));
 vi.mock("@dofek/kaya-client", () => {
   class KayaApiError extends Error {
@@ -55,6 +55,7 @@ vi.mock("@dofek/kaya-client", () => {
 });
 
 vi.mock("../db/provider-activity-sync.ts", () => ({
+  finishProviderActivityListSync: mocks.reconcileActivities,
   upsertProviderActivity: mocks.upsertActivity,
 }));
 vi.mock("../db/tokens.ts", () => ({
@@ -133,9 +134,9 @@ describe("KayaSyncProvider", () => {
       recordsSynced: 1,
       errors: [],
     });
-    expect(mocks.persistSessions.mock.calls[0]?.[1].sessions[0]).toMatchObject({ complete: true });
-    expect(mocks.persistSessions.mock.calls[0]?.[1].sessions[0]?.entries[0]).toStrictEqual({
+    expect(mocks.persist.mock.calls[0]?.[1].entries[0]).toStrictEqual({
       externalId: "kaya:ascent:facts",
+      activityId: "activity-1",
       climbedOn: "2026-08-01",
       discipline: "rock_climbing",
       sourceName: "Kaya",
@@ -169,13 +170,13 @@ describe("KayaSyncProvider", () => {
     mocks.listSessions.mockResolvedValue([]);
     mocks.ascents.mockResolvedValue([source]);
     await new KayaSyncProvider().sync(run(db));
-    expect(mocks.persistSessions.mock.calls[0]?.[1].standaloneEntries[0]).toMatchObject({
+    expect(mocks.persist.mock.calls[0]?.[1].entries[0]).toMatchObject({
       notes: null,
       board: { name: "Board", externalId: "board-1" },
       wallAngle: { value: 0, unit: null },
       reportedAttemptCounts: [{ scope: "climb", count: 3 }],
     });
-    expect(mocks.persistSessions.mock.calls[0]?.[1].standaloneEntries[0]?.attempts).toStrictEqual([
+    expect(mocks.persist.mock.calls[0]?.[1].entries[0]?.attempts).toStrictEqual([
       { scope: "climb", ropeMethod: "top_rope", qualifier: "free-send", sourceResult: "Redpoint" },
     ]);
   });
@@ -197,10 +198,10 @@ describe("KayaSyncProvider", () => {
       const result = await new KayaSyncProvider().sync(run(db));
       expect(result.errors[0]?.message).toContain("invalid climb date");
       expect(mocks.captureException).toHaveBeenCalled();
-      expect(mocks.persistSessions).not.toHaveBeenCalled();
+      expect(mocks.persist).not.toHaveBeenCalled();
     },
   );
-  it("includes standalone boundary occurrences and keeps undated records without duplicating known sessions", async () => {
+  it("includes the complete standalone history and undated records without duplicating known sessions", async () => {
     const db = database();
     const base = ascent("base", { lead: true, climbType: "Routes", grade: "5.10a" });
     const sources = [
@@ -220,17 +221,23 @@ describe("KayaSyncProvider", () => {
     mocks.upsertActivity.mockResolvedValue({ id: "activity-1" });
     expect(await new KayaSyncProvider().sync(run(db))).toMatchObject({
       errors: [],
-      recordsSynced: 4,
+      recordsSynced: 6,
     });
-    const input = mocks.persistSessions.mock.calls[0]?.[1];
-    expect(input?.standaloneEntries.map((entry) => [entry.externalId, entry.climbedOn])).toEqual([
+    const input = mocks.persist.mock.calls[0]?.[1];
+    expect(
+      input?.entries
+        .filter((entry) => entry.activityId == null)
+        .map((entry) => [entry.externalId, entry.climbedOn]),
+    ).toEqual([
       ["kaya:ascent:since", "2026-08-01"],
       ["kaya:ascent:until", "2026-08-02"],
+      ["kaya:ascent:before", "2026-07-31"],
+      ["kaya:ascent:after", "2026-08-02"],
       ["kaya:ascent:undated", null],
     ]);
-    expect(input?.sessions[0]?.entries.map((entry) => entry.externalId)).toEqual([
-      "kaya:ascent:attached",
-    ]);
+    expect(
+      input?.entries.filter((entry) => entry.activityId != null).map((entry) => entry.externalId),
+    ).toEqual(["kaya:ascent:attached"]);
   });
   it("maps separate send and attempted-summary occurrences to one actual climb", async () => {
     const db = database();
@@ -255,8 +262,8 @@ describe("KayaSyncProvider", () => {
       recordsSynced: 2,
       errors: [],
     });
-    const input = mocks.persistSessions.mock.calls[0]?.[1];
-    expect(input?.sessions[0]?.entries).toEqual([
+    const input = mocks.persist.mock.calls[0]?.[1];
+    expect(input?.entries).toEqual([
       expect.objectContaining({
         externalId: "kaya:ascent:10",
         attempts: [expect.objectContaining({ scope: "climb", qualifier: "free-flash" })],
@@ -292,7 +299,7 @@ describe("KayaSyncProvider", () => {
       recordsSynced: 1,
       errors: [],
     });
-    expect(mocks.persistSessions.mock.calls[0]?.[1].sessions[0]?.entries[0]).toMatchObject({
+    expect(mocks.persist.mock.calls[0]?.[1].entries[0]).toMatchObject({
       notes: "Source note",
       climbedOn: "2026-08-01",
       climb: { externalId: "climb-ungraded", kind: "route" },
@@ -321,7 +328,7 @@ describe("KayaSyncProvider", () => {
       recordsSynced: 1,
       errors: [],
     });
-    expect(mocks.persistSessions.mock.calls[0]?.[1].sessions[0]?.entries[0]?.climb?.areas).toEqual([
+    expect(mocks.persist.mock.calls[0]?.[1].entries[0]?.climb?.areas).toEqual([
       {
         name: "Destination",
         externalId: "destination",
@@ -346,7 +353,7 @@ describe("KayaSyncProvider", () => {
       mocks.upsertActivity.mockResolvedValue({ id: "activity-1" });
       const result = await new KayaSyncProvider().sync(run(db));
       expect(result.errors[0]?.message).toContain("climb identity");
-      expect(mocks.persistSessions).not.toHaveBeenCalled();
+      expect(mocks.persist).not.toHaveBeenCalled();
     },
   );
   it("retains an ascent without an upstream session", async () => {
@@ -362,7 +369,7 @@ describe("KayaSyncProvider", () => {
       recordsSynced: 1,
       errors: [],
     });
-    expect(mocks.persistSessions.mock.calls[0]?.[1].standaloneEntries).toEqual([
+    expect(mocks.persist.mock.calls[0]?.[1].entries).toEqual([
       expect.objectContaining({ externalId: "kaya:ascent:standalone", climbedOn: "2026-08-01" }),
     ]);
     expect(mocks.upsertActivity).not.toHaveBeenCalled();
@@ -378,13 +385,11 @@ describe("KayaSyncProvider", () => {
     mocks.ascents.mockResolvedValue([source]);
     mocks.upsertActivity.mockResolvedValue({ id: "activity-1" });
     await new KayaSyncProvider().sync(run(db));
-    const attached = mocks.persistSessions.mock.calls[0]?.[1].sessions[0]?.entries[0];
+    const attached = mocks.persist.mock.calls[0]?.[1].entries[0];
     mocks.listSessions.mockResolvedValue([]);
     mocks.ascents.mockResolvedValue([{ ...source, session_id: null }]);
     await new KayaSyncProvider().sync(run(db));
-    expect(mocks.persistSessions.mock.calls[1]?.[1].standaloneEntries[0]?.externalId).toBe(
-      attached?.externalId,
-    );
+    expect(mocks.persist.mock.calls[1]?.[1].entries[0]?.externalId).toBe(attached?.externalId);
   });
   beforeEach(() => {
     vi.clearAllMocks();
@@ -774,7 +779,7 @@ describe("KayaSyncProvider", () => {
     expect(mocks.ensureProvider).not.toHaveBeenCalled();
   });
 
-  it("skips sessions before the requested window and keeps a session at its start", async () => {
+  it("refreshes historical sessions alongside sessions in the requested window", async () => {
     const db = database();
     const boundary = session("session-1");
     boundary.start_time = "2026-08-01T00:00:00.000Z";
@@ -792,7 +797,7 @@ describe("KayaSyncProvider", () => {
     mocks.upsertActivity.mockResolvedValue({ id: "activity-1" });
 
     await expect(new KayaSyncProvider().sync(run(db))).resolves.toMatchObject({ recordsSynced: 1 });
-    expect(mocks.upsertActivity).toHaveBeenCalledTimes(1);
+    expect(mocks.upsertActivity).toHaveBeenCalledTimes(2);
   });
 
   it("reports missing stored credentials or Kaya identity", async () => {
@@ -952,54 +957,6 @@ function database() {
     select: vi.fn(),
     insert: vi.fn(),
     delete: vi.fn(),
-    execute: vi.fn(),
+    execute: vi.fn().mockResolvedValue([]),
   });
-}
-
-function session(id: string) {
-  return {
-    id,
-    start_time: "2026-08-01T10:00:00.000Z",
-    end_time: "2026-08-01T11:00:00.000Z",
-    gym: { id: "gym-1", name: "Kaya Gym" },
-    attempted_climbs: [],
-  };
-}
-
-function ascent(
-  id: string,
-  options: {
-    lead: boolean;
-    climbType: string;
-    grade: string | null;
-    ascentType?: string;
-    attempts?: number | null;
-  },
-) {
-  return {
-    id,
-    session_id: "session-1",
-    date: "2026-08-01T10:30:00.000Z",
-    attempts: options.attempts === undefined ? 2 : options.attempts,
-    ascent_type: { id: "redpoint", name: options.ascentType ?? "Redpoint" },
-    climb: {
-      id: `climb-${id}`,
-      name: "Kaya Climb",
-      lead: options.lead,
-      climb_type: { id: options.climbType, name: options.climbType },
-      grade: options.grade
-        ? { id: `grade-${id}`, name: options.grade, climb_type_group: "route" }
-        : null,
-      gym: climbGym(),
-      destination: null,
-      area: null,
-      subarea: null,
-      board: null,
-      angle: null,
-    },
-  };
-}
-
-function climbGym(): { id: string; name: string } | null {
-  return { id: "gym-1", name: "Kaya Gym" };
 }

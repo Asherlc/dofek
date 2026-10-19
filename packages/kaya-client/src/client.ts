@@ -171,7 +171,9 @@ export class KayaClient {
         .parse(payload);
       if (envelope.errors?.length)
         throw new KayaApiError(envelope.errors.map(({ message }) => message).join("; "));
-      const page = envelope.data?.[field] ?? [];
+      const page = envelope.data?.[field];
+      if (page === undefined)
+        throw new KayaApiError("Kaya returned no logbook data. Try syncing again.");
       items.push(...page);
       if (page.length < PAGE_SIZE) return items;
     }

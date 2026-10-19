@@ -15,20 +15,22 @@ import {
 import { resolveProviderActivityType } from "@dofek/training/activity-types";
 import { isValidClimbingGrade } from "@dofek/training/climbing-grades";
 import { gpsCoordinatesSchema } from "@dofek/training/gps-coordinates";
+import { sql } from "drizzle-orm";
 import timezoneAt from "tz-lookup";
 import { z } from "zod";
-import {
-  type ClimbingLogSessionsSyncInput,
-  persistClimbingLogSessions,
-} from "../db/climbing-log-session-sync.ts";
+import { persistClimbingLogSnapshot } from "../db/climbing-log-snapshot.ts";
 import type {
   SourceAreaDefinition,
   SourceClimbingAttempt,
   SourceClimbingLogEntry,
 } from "../db/climbing-log-sync.ts";
 import type { SyncDatabase } from "../db/index.ts";
-import { upsertProviderActivity } from "../db/provider-activity-sync.ts";
+import {
+  finishProviderActivityListSync,
+  upsertProviderActivity,
+} from "../db/provider-activity-sync.ts";
 import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
+import { executeWithSchema } from "../db/typed-sql.ts";
 import { captureException } from "../lib/error-reporting.ts";
 import {
   ProviderInvalidCredentialsError,
@@ -44,7 +46,6 @@ const KAYA_ACCESS_TOKEN_REFRESH_INTERVAL_MS = 25 * 60_000;
 export class KayaSyncProvider implements SyncProvider {
   readonly id = "kaya";
   readonly name = "Kaya";
-  readonly scheduledSyncLookbackDays = 30;
   readonly fetchFn: typeof fetch;
 
   constructor(fetchFn: typeof fetch = globalThis.fetch) {
@@ -157,11 +158,14 @@ export class KayaSyncProvider implements SyncProvider {
         ascentsBySession.set(ascent.session_id, list);
       }
       recordsSynced = await database.transaction(async (transaction) => {
-        const sessionInputs: ClimbingLogSessionsSyncInput["sessions"][number][] = [];
+        const entries: SourceClimbingLogEntry[] = [];
         const knownSessions = new Set(sessions.map((session) => session.id));
         for (const session of sessions) {
           const started = new Date(session.start_time);
-          if (Number.isNaN(started.valueOf()) || started < run.window.since) continue;
+          if (Number.isNaN(started.valueOf()))
+            throw new Error(
+              `Kaya session ${session.id} has an invalid start time. Try syncing again.`,
+            );
           const parsedEnd = session.end_time ? new Date(session.end_time) : null;
           const ended =
             parsedEnd && !Number.isNaN(parsedEnd.valueOf()) && parsedEnd > started
@@ -200,9 +204,10 @@ export class KayaSyncProvider implements SyncProvider {
               raw: session,
             },
           );
-          if (!row) continue;
+          if (!row)
+            throw new Error(`Kaya session ${session.id} could not be saved. Try syncing again.`);
           const sessionAscents = ascentsBySession.get(session.id) ?? [];
-          const entries = [
+          const sessionEntries = [
             ...sessionAscents.map((ascent) =>
               kayaLogEntry(ascent.climb, {
                 externalId: `kaya:ascent:${ascent.id}`,
@@ -233,16 +238,10 @@ export class KayaSyncProvider implements SyncProvider {
               );
             }),
           ];
-          sessionInputs.push({ activityId: row.id, entries, complete: true });
+          entries.push(...sessionEntries.map((entry) => ({ ...entry, activityId: row.id })));
         }
         const standaloneEntries = ascents
           .filter((ascent) => !ascent.session_id || !knownSessions.has(ascent.session_id))
-          .filter((ascent) => {
-            const date = new Date(ascent.date);
-            return (
-              Number.isNaN(date.valueOf()) || (date >= run.window.since && date <= run.window.until)
-            );
-          })
           .map((ascent) =>
             kayaLogEntry(ascent.climb, {
               externalId: `kaya:ascent:${ascent.id}`,
@@ -254,11 +253,44 @@ export class KayaSyncProvider implements SyncProvider {
               raw: ascent,
             }),
           );
-        const result = await persistClimbingLogSessions(transaction, {
+        // Only replace an old source-owned link; user-selected outings remain attached.
+        const sourceAttachedEntries =
+          standaloneEntries.length === 0
+            ? []
+            : await executeWithSchema(
+                transaction,
+                z.object({ externalId: z.string() }),
+                sql`
+            SELECT entry.external_id AS "externalId"
+            FROM fitness.climbing_log_entry AS entry
+            JOIN fitness.activity AS attached ON attached.id = entry.activity_id
+            WHERE entry.user_id = ${userId} AND entry.provider_id = ${this.id}
+              AND attached.provider_id = ${this.id}
+              AND attached.external_id = entry.raw ->> 'session_id'
+              AND entry.external_id IN (${sql.join(
+                standaloneEntries.map((entry) => sql`${entry.externalId}`),
+                sql`, `,
+              )})
+          `,
+              );
+        const sourceAttachedIds = new Set(sourceAttachedEntries.map((entry) => entry.externalId));
+        const result = await persistClimbingLogSnapshot(transaction, {
           userId,
           providerId: this.id,
-          standaloneEntries,
-          sessions: sessionInputs,
+          entries: [
+            ...entries,
+            ...standaloneEntries.map((entry) =>
+              sourceAttachedIds.has(entry.externalId) ? { ...entry, activityId: null } : entry,
+            ),
+          ],
+        });
+        await finishProviderActivityListSync(transaction, {
+          userId,
+          providerId: this.id,
+          windowStart: new Date(0),
+          windowEnd: run.window.until,
+          presentExternalIds: knownSessions,
+          emptyListIsAuthoritative: true,
         });
         return result.recordsSynced;
       });

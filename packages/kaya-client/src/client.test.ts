@@ -516,20 +516,52 @@ describe("KayaClient", () => {
     ).rejects.toThrow("session not authorized");
   });
 
-  it("validates GraphQL error messages and accepts an empty data envelope", async () => {
+  it("validates GraphQL error messages", async () => {
     await expect(
       new KayaClient(
         "token",
         vi.fn<typeof fetch>().mockResolvedValue(jsonResponse({ errors: [{}] })),
       ).listSessions("42"),
     ).rejects.toBeInstanceOf(ZodError);
+  });
 
-    await expect(
-      new KayaClient(
+  it.each([{}, { data: {} }, { data: null }])(
+    "rejects a missing GraphQL list instead of interpreting it as an empty logbook: %j",
+    async (body) => {
+      const client = new KayaClient(
         "token",
-        vi.fn<typeof fetch>().mockResolvedValue(jsonResponse({})),
-      ).listSessions("42"),
-    ).resolves.toEqual([]);
+        vi.fn<typeof fetch>().mockImplementation(async () => jsonResponse(body)),
+      );
+      await expect(client.listSessions("42")).rejects.toThrow();
+      await expect(client.listAscents("42")).rejects.toThrow();
+    },
+  );
+
+  it("accepts explicitly empty session and ascent lists", async () => {
+    const client = new KayaClient(
+      "token",
+      vi
+        .fn<typeof fetch>()
+        .mockImplementation(async () =>
+          jsonResponse({ data: { sessionsForUser: [], ascentsForUser: [] } }),
+        ),
+    );
+    await expect(client.listSessions("42")).resolves.toEqual([]);
+    await expect(client.listAscents("42")).resolves.toEqual([]);
+  });
+
+  it("rejects a malformed continuation instead of returning a partial logbook", async () => {
+    const fetchFn = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        jsonResponse({
+          data: {
+            sessionsForUser: Array.from({ length: 100 }, (_, index) => session(`session-${index}`)),
+          },
+        }),
+      )
+      .mockResolvedValueOnce(jsonResponse({}));
+    await expect(new KayaClient("token", fetchFn).listSessions("42")).rejects.toThrow();
   });
 
   it("paginates after a full page and requests the next offset", async () => {
