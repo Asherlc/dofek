@@ -21,10 +21,6 @@ class ClimbingVolumeByGradeChartModel {
     this.#rows = [...rows].sort((left, right) => left.gradeSortValue - right.gradeSortValue);
   }
 
-  get rows(): ClimbingVolumeByGradeRow[] {
-    return this.#rows;
-  }
-
   option(): Record<string, unknown> {
     const grades = this.#rows.map((row) => row.grade);
     return {
@@ -53,36 +49,12 @@ export function ClimbingVolumeByGradeChart({ data, loading }: ClimbingVolumeByGr
   const model = new ClimbingVolumeByGradeChartModel(data);
 
   return (
-    <div className="space-y-3">
-      <DofekChart
-        option={model.option()}
-        loading={loading}
-        empty={data.length === 0}
-        emptyMessage="No climbing volume by grade"
-        height={280}
-      />
-      {data.length > 0 && (
-        <div className="space-y-2">
-          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-            {model.rows.map((row) => (
-              <div
-                key={`${row.climbKind}-${row.gradeSystem}-${row.grade}`}
-                className="rounded border border-border bg-surface px-3 py-2"
-              >
-                <div className="font-semibold text-foreground">{row.grade}</div>
-                {(row.attempts ?? row.recordedAttempts) !== null && (
-                  <div className="text-xs text-dim">
-                    {row.attempts !== null
-                      ? `${row.attempts} attempts`
-                      : `${row.recordedAttempts} recorded attempts`}
-                  </div>
-                )}
-                <div className="text-xs text-dim">{row.sends} sends</div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
+    <DofekChart
+      option={model.option()}
+      loading={loading}
+      empty={data.length === 0}
+      emptyMessage="No climbing volume by grade"
+      height={280}
+    />
   );
 }

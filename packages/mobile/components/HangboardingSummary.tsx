@@ -1,4 +1,4 @@
-import { formatDateTime, formatDurationSeconds, formatNumber } from "@dofek/format/format";
+import { formatDurationSeconds, formatNumber } from "@dofek/format/format";
 import { StyleSheet, Text, View } from "react-native";
 import type { HangboardingSummary as HangboardingSummaryData } from "../../server/src/repositories/hangboarding-repository.ts";
 import { colors, spacing } from "../theme";
@@ -70,32 +70,6 @@ export function HangboardingSummary({ data, loading }: HangboardingSummaryProps)
           <Text style={styles.emptyText}>No daily Hangboarding duration to display</Text>
         )}
       </View>
-
-      {data.latestSession ? (
-        <View style={styles.latestCard}>
-          <Text style={styles.sectionLabel}>Latest Session</Text>
-          <Text style={styles.latestTitle}>
-            {data.latestSession.planName ?? "Hangboarding session"}
-          </Text>
-          {data.latestSession.boardName ? (
-            <Text style={styles.latestBoard}>{data.latestSession.boardName}</Text>
-          ) : null}
-          <View style={styles.latestMetadata}>
-            <View style={styles.latestMetadataItem}>
-              <Text style={styles.metadataLabel}>Started</Text>
-              <Text style={styles.metadataValue}>
-                {formatDateTime(data.latestSession.startedAt)}
-              </Text>
-            </View>
-            <View style={styles.latestMetadataItem}>
-              <Text style={styles.metadataLabel}>Duration</Text>
-              <Text style={styles.metadataValue}>
-                {formatDurationSeconds(data.latestSession.durationSeconds)}
-              </Text>
-            </View>
-          </View>
-        </View>
-      ) : null}
     </View>
   );
 }
@@ -136,16 +110,4 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
   },
   emptyText: { color: colors.textSecondary, fontSize: 13 },
-  latestCard: {
-    backgroundColor: colors.surface,
-    borderRadius: 12,
-    gap: spacing.sm,
-    padding: spacing.md,
-  },
-  latestTitle: { color: colors.text, fontSize: 15, fontWeight: "600" },
-  latestBoard: { color: colors.textSecondary, fontSize: 13 },
-  latestMetadata: { flexDirection: "row", gap: spacing.lg },
-  latestMetadataItem: { flex: 1, gap: spacing.xs },
-  metadataLabel: { color: colors.textTertiary, fontSize: 12 },
-  metadataValue: { color: colors.text, fontSize: 13 },
 });
