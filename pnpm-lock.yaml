@@ -17484,7 +17484,7 @@ snapshots:
 
   '@babel/helper-member-expression-to-functions@7.29.7(supports-color@11.0.0)':
     dependencies:
-      '@babel/traverse': 7.29.8(supports-color@11.0.0)
+      '@babel/traverse': 7.29.10(supports-color@11.0.0)
       '@babel/types': 7.29.8
     transitivePeerDependencies:
       - supports-color
@@ -32202,7 +32202,7 @@ snapshots:
 
   polished@4.3.1:
     dependencies:
-      '@babel/runtime': 7.29.7
+      '@babel/runtime': 7.29.10
 
   possible-typed-array-names@1.1.0: {}
 
