@@ -24,6 +24,12 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const Active: Story = {};
+export const WithDetails: Story = {
+  args: {
+    message: null,
+    details: <p className="mt-2 text-xs text-muted">Last ready: 5m ago</p>,
+  },
+};
 export const Waiting: Story = {
   args: { heading: "Waiting for analytics", message: null, progress: null, status: "waiting" },
 };
