@@ -843,7 +843,7 @@ export function MetricsChart({
   );
 }
 
-function ElevationChart({
+export function ElevationChart({
   points,
   loading,
   units,
@@ -878,7 +878,7 @@ function ElevationChart({
         formatter: (v: string) => formatTimeOnly(v),
       },
     }),
-    yAxis: dofekAxis.value({ name: `Elevation (${units.elevationLabel})` }),
+    yAxis: { ...dofekAxis.value({ name: `Elevation (${units.elevationLabel})` }), scale: true },
     series: [
       {
         type: "line",
