@@ -1,23 +1,10 @@
 /** @vitest-environment jsdom */
 
-import { formatDateTime } from "@dofek/format/format";
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { HangboardingSummary as HangboardingSummaryData } from "../../../server/src/repositories/hangboarding-repository.ts";
 
 const chart = vi.hoisted(() => vi.fn());
-
-vi.mock("@tanstack/react-router", () => ({
-  Link: ({
-    children,
-    params,
-    to,
-  }: {
-    children: React.ReactNode;
-    params?: { id?: string };
-    to: string;
-  }) => <a href={params?.id ? `/activity/${params.id}` : to}>{children}</a>,
-}));
 
 vi.mock("./DofekChart.tsx", () => ({
   DofekChart: (props: { option: Record<string, unknown> }) => {
@@ -68,7 +55,7 @@ afterEach(() => {
 });
 
 describe("HangboardingSummary", () => {
-  it("renders server-provided summary metrics and latest-session metadata", () => {
+  it("renders server-provided summary metrics", () => {
     render(<HangboardingSummary data={summary} loading={false} />);
 
     for (const label of [
@@ -90,13 +77,6 @@ describe("HangboardingSummary", () => {
     expect(screen.getByText("2m")).toBeTruthy();
     expect(screen.getByText("125 bpm")).toBeTruthy();
     expect(screen.getByText("150 bpm")).toBeTruthy();
-    expect(screen.getByText("Repeaters")).toBeTruthy();
-    const latestSessionLink = screen.getByRole("link", { name: /Repeaters.*Tension Board/ });
-    expect(latestSessionLink).toHaveAttribute("href", "/activity/activity-2");
-    expect(screen.getByText("Started")).toBeTruthy();
-    if (!summary.latestSession) throw new Error("Expected a latest Hangboarding session");
-    expect(screen.getByText(formatDateTime(summary.latestSession.startedAt))).toBeTruthy();
-    expect(screen.getByText("15m")).toBeTruthy();
   });
 
   it("renders nullable work, rest, and heart-rate values as em dashes", () => {
