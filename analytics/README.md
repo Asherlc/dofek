@@ -57,9 +57,13 @@ within the inclusive normalized window; overlapping same-provider members do not
 share payload credit. The group's served sample union accepts unlinked ambient
 samples and samples linked to any current member, never only the representative.
 The [activity model](models/read_models/deduped_activities.sql) selects each
-non-null display name and note by the provider's field priority when present,
+nonblank display name and non-null note by the provider's field priority when present,
 then by the existing generic source priority and source activity ID. Canonical
 provider and type selection, and raw provenance, retain their separate rules.
+Names containing only spaces are absent candidates; if no named source remains,
+the model returns `null` so web and mobile display the activity type. The name
+condition uses [ClickHouse conditional aggregation](https://clickhouse.com/docs/reference/functions/aggregate-functions/combinators#-if)
+with a nullable argument, preserving [argMin's null handling](https://clickhouse.com/docs/reference/functions/aggregate-functions/argMin).
 Incremental `deduped_activities` builds compare the complete current group row
 with the latest target state. Target-equivalent rows are not appended and keep
 their lifecycle version; membership, representative, display, ranking, sensor,

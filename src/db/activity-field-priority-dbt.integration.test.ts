@@ -274,37 +274,100 @@ describe("dbt merged activity field priorities", () => {
     ]);
   });
 
-  it("skips a null preferred name and uses the next named source", async () => {
+  it.each([null, "", "   "])(
+    "skips a blank preferred name (%j) and uses the next named source",
+    async (name) => {
+      const id = randomUUID();
+      await insertSources([
+        {
+          id: randomUUID(),
+          groupId: id,
+          providerId: "kaya",
+          canonicalType: "climbing",
+          providerType: "rock_climbing",
+          name,
+          priority: 100,
+        },
+        {
+          id: randomUUID(),
+          groupId: id,
+          providerId: "peloton",
+          canonicalType: "cardio",
+          providerType: "Cardio",
+          name: "Peloton fallback",
+          priority: 20,
+        },
+      ]);
+      await refreshDeduped(true);
+      expect(await mergedFields(id)).toEqual([
+        {
+          name: "Peloton fallback",
+          notes: null,
+          provider_id: "kaya",
+          canonical_type: "climbing",
+        },
+      ]);
+    },
+  );
+
+  it("skips an empty device name when choosing among named providers", async () => {
     const id = randomUUID();
     await insertSources([
       {
         id: randomUUID(),
         groupId: id,
-        providerId: "kaya",
-        canonicalType: "climbing",
-        providerType: "rock_climbing",
-        name: null,
-        priority: 100,
+        providerId: "apple_health",
+        canonicalType: "hiking",
+        providerType: "24",
+        sourceName: "Zepp",
+        name: "",
+        priority: 1,
       },
       {
         id: randomUUID(),
         groupId: id,
         providerId: "peloton",
-        canonicalType: "cardio",
-        providerType: "Cardio",
-        name: "Peloton fallback",
+        canonicalType: "hiking",
+        providerType: "hiking",
+        name: "232 min 26 sec Outdoor Hiking",
         priority: 20,
+      },
+      {
+        id: randomUUID(),
+        groupId: id,
+        providerId: "strava",
+        canonicalType: "hiking",
+        providerType: "Hike",
+        name: "Morning Hike",
+        priority: 40,
       },
     ]);
     await refreshDeduped(true);
     expect(await mergedFields(id)).toEqual([
       {
-        name: "Peloton fallback",
+        name: "232 min 26 sec Outdoor Hiking",
         notes: null,
-        provider_id: "kaya",
-        canonical_type: "climbing",
+        provider_id: "apple_health",
+        canonical_type: "hiking",
       },
     ]);
+  });
+
+  it("returns null when every source name is blank", async () => {
+    const id = randomUUID();
+    await insertSources(
+      ["", "   ", null].map((name) => ({
+        id: randomUUID(),
+        groupId: id,
+        providerId: "apple_health",
+        canonicalType: "hiking",
+        providerType: "24",
+        name,
+        priority: 1,
+      })),
+    );
+    await refreshDeduped(true);
+    expect((await mergedFields(id))[0]?.name).toBeNull();
   });
 
   it("selects notes independently through an arbitrary provider's 64-bit priority", async () => {

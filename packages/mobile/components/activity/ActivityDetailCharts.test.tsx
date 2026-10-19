@@ -53,4 +53,23 @@ describe("ActivityDetailCharts", () => {
     expect(screen.getByLabelText(`Sample 1 · ${timestamp}: 130 beats per minute`)).toBeDefined();
     expect(screen.getByLabelText(`Sample 2 · ${timestamp}: 130 beats per minute`)).toBeDefined();
   });
+
+  it("scales the elevation profile to the recorded altitude range", () => {
+    render(
+      <AreaChart
+        data={[
+          { recordedAt: "2026-10-04T16:52:51.440Z", value: 7400 },
+          { recordedAt: "2026-10-04T16:53:51.440Z", value: 7900 },
+          { recordedAt: "2026-10-04T16:54:51.440Z", value: 8400 },
+        ]}
+        color="#6b7280"
+        label="Elevation Profile"
+        unit="ft"
+      />,
+    );
+
+    for (const tick of ["7400", "7650", "7900", "8150", "8400"]) {
+      expect(screen.getByText(tick)).toBeDefined();
+    }
+  });
 });
