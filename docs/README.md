@@ -67,7 +67,7 @@ the exact section.
 | Apple Health | [apple-health.md](apple-health.md) | Quantity/category/workout mappings. |
 | Mountain Project | [mountain-project.md](mountain-project.md) | Observed tick-export fields, standalone tick storage, and exact-day activity matching. |
 | OpenBeta | [openbeta.md](openbeta.md) | Public-profile GraphQL tick sync, shared definitions, GPS and standalone climbing logs. |
-| theCrag | [thecrag.md](thecrag.md) | Supporter personal keys, incremental logbook reads, climbing logs and live-contract limitations. |
+| theCrag | [thecrag.md](thecrag.md) | Supporter personal keys, full logbook reconciliation, climbing logs and live-contract limitations. |
 | AllTrails | [alltrails.md](alltrails.md) | Native identity login/refresh, recording API and raw polyline contracts, and remaining validation. |
 | BodySpec | [bodyspec.md](bodyspec.md) | OAuth setup and DEXA/body-composition sync. |
 | FatSecret | [fatsecret.md](fatsecret.md) | OAuth 1.0 flow and nutrition import details. |

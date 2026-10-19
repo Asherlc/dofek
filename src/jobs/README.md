@@ -10,6 +10,12 @@ This directory contains background job processing logic using BullMQ and Redis.
 - **Scheduled Sync**: High-level orchestrator for triggering periodic syncs based on tiers.
 - **Post-Sync**: Downstream tasks (e.g., recomputing metrics, cache invalidation) triggered after a successful sync.
 - **Activity Delete Analytics**: Rebuilds ClickHouse activity read models after user-initiated deletes.
+- **Analytics Refresh**: Reconciled data dispatches a combined refresh request to
+  the dedicated analytics worker. Scheduled maintenance uses the same queue;
+  queue-wide concurrency of one serializes these builds. Requests arriving
+  during a build form the next batch, following BullMQ's
+  [deduplication pattern](https://docs.bullmq.io/patterns/deduplication) and
+  [global concurrency](https://docs.bullmq.io/guide/queues/global-concurrency).
 - **Provider Data Deletion**: Advances the provider generation fence and tombstones at most 1,000 metric-stream rows per durable continuation job before acknowledging completion.
 
 ## Architecture
