@@ -1,4 +1,4 @@
-import { Job, UnrecoverableError, WaitingChildrenError, Worker } from "bullmq";
+import { Job, UnrecoverableError, Worker } from "bullmq";
 import type { createClickHouseClientFromEnv } from "../db/clickhouse.ts";
 import type { createDatabaseFromEnv } from "../db/index.ts";
 import type { createRefitSensorStore } from "../db/refit-sensor-store.ts";
@@ -59,9 +59,7 @@ export function createWorkerQueues({
   refreshPostSyncBodyMeasurements,
   accountErasureLeaseOwner,
   accountErasureRuntime,
-  onSyncWaitingChildren,
 }: {
-  onSyncWaitingChildren: (worker: Worker, job: Job<SyncJobData>) => void;
   db: ReturnType<typeof createDatabaseFromEnv>;
   connection: ReturnType<typeof getRedisConnection>;
   accountErasureWorkLockPool: ReturnType<typeof createAccountErasureWorkLockPoolFromEnv>;
@@ -114,16 +112,7 @@ export function createWorkerQueues({
           db,
           job.data.userId,
           "CLI provider sync",
-          async () => {
-            try {
-              await processSyncJob(job, db, signal);
-            } catch (error) {
-              if (error instanceof WaitingChildrenError) {
-                onSyncWaitingChildren(sharedSyncWorker, job);
-              }
-              throw error;
-            }
-          },
+          () => processSyncJob(job, db, signal),
           job.data.providerId,
         ),
       ),

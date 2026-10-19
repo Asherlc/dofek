@@ -9,7 +9,6 @@ import {
   STRONG_CSV_IMPORT_VALIDATION_ERROR_NAME,
 } from "./import-validation-error.ts";
 import { attachWorkerEvents } from "./worker-events.ts";
-import { createWorkerLifecycle } from "./worker-lifecycle.ts";
 import { createWorkerQueues } from "./worker-queues.ts";
 import {
   getFitWorkerFailedHandler,
@@ -19,21 +18,12 @@ import {
   getWorkerHandler,
   hoisted,
   mockAddJobLog,
-  setTimeoutSpy,
-  workerLifecycleDependencies,
   workerQueueDependencies,
 } from "./worker-test/test-helpers.ts";
 
 const dependencies = await workerQueueDependencies();
 const queues = createWorkerQueues(dependencies);
-const lifecycle = createWorkerLifecycle(await workerLifecycleDependencies(queues, dependencies));
-attachWorkerEvents(
-  queues.allWorkers,
-  lifecycle,
-  dependencies.db,
-  queues.providerDataDeletionWorker,
-);
-lifecycle.startIdleTimer();
+attachWorkerEvents(queues.allWorkers, dependencies.db, queues.providerDataDeletionWorker);
 
 describe("worker events", () => {
   it("failed event handler reports to Sentry and logs the error", async () => {
@@ -42,14 +32,11 @@ describe("worker events", () => {
     vi.mocked(Sentry.captureException).mockClear();
     vi.mocked(logger.error).mockClear();
 
-    getWorkerHandler("active")();
     const error = new Error("test failure");
-    const setTimeoutBefore = setTimeoutSpy.mock.calls.length;
     getWorkerHandler("failed")(undefined, error);
 
     expect(Sentry.captureException).toHaveBeenCalledWith(error);
     expect(logger.error).toHaveBeenCalledWith("[worker] Job failed: test failure");
-    expect(setTimeoutSpy.mock.calls.length).toBeGreaterThan(setTimeoutBefore);
   });
 
   it("failed event handler appends the detailed cause to the BullMQ job log", async () => {
@@ -169,7 +156,6 @@ describe("worker events", () => {
       vi.mocked(Sentry.captureException).mockClear();
       vi.mocked(logger.warn).mockClear();
 
-      getWorkerHandler("active")();
       const error = new ProviderServiceUnavailableError({
         message: "Zepp API service unavailable (500): upstream outage",
         providerId: "amazfit-zepp",

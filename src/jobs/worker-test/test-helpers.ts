@@ -111,8 +111,6 @@ const hoisted = vi.hoisted(() => {
 
   return {
     exitSpy: vi.spyOn(process, "exit").mockImplementation(noOpExit),
-    setTimeoutSpy: vi.spyOn(globalThis, "setTimeout"),
-    clearTimeoutSpy: vi.spyOn(globalThis, "clearTimeout"),
     mockOn,
     mockClose,
     mockRun,
@@ -400,8 +398,6 @@ vi.mock("../../logger.ts", () => ({
 
 export const {
   exitSpy,
-  setTimeoutSpy,
-  clearTimeoutSpy,
   mockOn,
   mockClose,
   mockRun,
@@ -533,8 +529,6 @@ export async function workerQueueDependencies() {
     accountErasureWorkLockPool,
     accountErasureRuntime,
     accountErasureLeaseOwner: "account-erasure-worker:test-owner",
-    onSyncWaitingChildren:
-      vi.fn<(worker: import("bullmq").Worker, job: import("bullmq").Job) => void>(),
     getClickHouseClient: () => clickHouse,
     getImportUploadStorage: () => storage,
     getRefitSensorStore: () => createRefitSensorStore(clickHouse),

@@ -2,18 +2,17 @@ import "./worker-test/test-helpers.ts";
 import { describe, expect, it, vi } from "vitest";
 import {
   EXPECTED_WORKER_COUNT,
-  getQueueWorkerHandler,
   hoisted,
   invokeProcessor,
   mockClickHouseClient,
   mockDatabase,
   mockObserveFitJob,
   mockOn,
+  mockReadinessClose,
   mockReadinessListen,
   mockReconcileGarminProgress,
   mockRun,
   reconcileGarminProgressError,
-  setTimeoutSpy,
 } from "./worker-test/test-helpers.ts";
 import "./worker.ts";
 
@@ -108,10 +107,9 @@ describe("worker startup", () => {
   });
 
   it("registers standard handlers plus FIT progress observers", () => {
-    expect(mockOn).toHaveBeenCalledTimes(6 * EXPECTED_WORKER_COUNT + 3);
+    expect(mockOn).toHaveBeenCalledTimes(4 * EXPECTED_WORKER_COUNT + 3);
     const events = mockOn.mock.calls.map((call) => String(call[0]));
-    expect(events.filter((e: string) => e === "active")).toHaveLength(EXPECTED_WORKER_COUNT);
-    expect(events.filter((e: string) => e === "completed")).toHaveLength(EXPECTED_WORKER_COUNT + 1);
+    expect(events.filter((e: string) => e === "completed")).toHaveLength(1);
     expect(events.filter((e: string) => e === "failed")).toHaveLength(EXPECTED_WORKER_COUNT + 2);
     expect(events.filter((e: string) => e === "stalled")).toHaveLength(EXPECTED_WORKER_COUNT);
     expect(events.filter((e: string) => e === "lockRenewalFailed")).toHaveLength(
@@ -206,39 +204,6 @@ describe("worker startup", () => {
     expect(refreshBodyMeasurementReadModel).toHaveBeenCalledOnce();
   });
 
-  it("releases a waiting coordinator for idle shutdown and reactivates it when resumed", async () => {
-    const { WaitingChildrenError } = await import("bullmq");
-    const { processSyncJob } = await import("./process-sync-job.ts");
-    const job = { id: "coordinator-idle", data: { userId: "user-1" } };
-    getQueueWorkerHandler("sync-queue", "active")(job);
-    const before = setTimeoutSpy.mock.calls.length;
-    vi.mocked(processSyncJob).mockRejectedValueOnce(new WaitingChildrenError());
-    await expect(invokeProcessor("sync-queue", job.data, "token", job)).rejects.toBeInstanceOf(
-      WaitingChildrenError,
-    );
-    expect(setTimeoutSpy.mock.calls.length).toBe(before + 1);
-    getQueueWorkerHandler("sync-queue", "active")(job);
-    getQueueWorkerHandler("sync-queue", "completed")(job);
-    expect(setTimeoutSpy.mock.calls.length).toBe(before + 2);
-  });
-
-  it("keeps an active sibling from starting the idle timer while a coordinator waits", async () => {
-    const { WaitingChildrenError } = await import("bullmq");
-    const { processSyncJob } = await import("./process-sync-job.ts");
-    const coordinator = { id: "coordinator-sibling", data: { userId: "user-1" } };
-    const sibling = { id: "active-provider" };
-    getQueueWorkerHandler("sync-queue", "active")(coordinator);
-    getQueueWorkerHandler("sync-strava", "active")(sibling);
-    const before = setTimeoutSpy.mock.calls.length;
-    vi.mocked(processSyncJob).mockRejectedValueOnce(new WaitingChildrenError());
-    await expect(
-      invokeProcessor("sync-queue", coordinator.data, "token", coordinator),
-    ).rejects.toBeInstanceOf(WaitingChildrenError);
-    expect(setTimeoutSpy.mock.calls.length).toBe(before);
-    getQueueWorkerHandler("sync-strava", "completed")(sibling);
-    expect(setTimeoutSpy.mock.calls.length).toBe(before + 1);
-  });
-
   it("fails startup before registering sync when the interval is invalid", async () => {
     const previousSyncInterval = process.env.SYNC_INTERVAL_MINUTES;
     const workerRunCount = mockRun.mock.calls.length;
@@ -284,5 +249,37 @@ describe("worker startup", () => {
     });
     expect(mockRun).toHaveBeenCalledTimes(workerRunCount);
     expect(mockReadinessListen).toHaveBeenCalledTimes(readinessListenCount);
+  });
+
+  it("keeps readiness available and processes new jobs after an extended idle period", async () => {
+    const { processPostSyncJob } = await import("./process-post-sync-job.ts");
+    const closeImplementation = mockReadinessClose.getMockImplementation();
+    let readinessAvailable = true;
+    mockReadinessClose.mockImplementation((callback) => {
+      readinessAvailable = false;
+      callback();
+    });
+    hoisted.scheduledSyncState.error = null;
+    mockReconcileGarminProgress.mockResolvedValue(undefined);
+    vi.useFakeTimers();
+    vi.resetModules();
+
+    try {
+      await import("./worker.ts");
+      await vi.advanceTimersByTimeAsync(10 * 60 * 1000);
+
+      expect(readinessAvailable).toBe(true);
+      vi.mocked(processPostSyncJob).mockClear();
+      await invokeProcessor("post-sync-queue", { type: "user-refit", userId: "idle-user" });
+      expect(processPostSyncJob).toHaveBeenCalledWith(
+        expect.objectContaining({ data: { type: "user-refit", userId: "idle-user" } }),
+        mockDatabase,
+        expect.any(Function),
+        expect.any(Function),
+      );
+    } finally {
+      vi.useRealTimers();
+      if (closeImplementation) mockReadinessClose.mockImplementation(closeImplementation);
+    }
   });
 });
