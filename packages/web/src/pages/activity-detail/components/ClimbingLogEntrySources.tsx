@@ -1,5 +1,6 @@
 import { providerSourceLabel } from "@dofek/providers/providers";
 import type { ClimbingSourceLink } from "@dofek/training/climbing-context";
+import { selectClimbingSources } from "@dofek/training/climbing-sources";
 
 export function ClimbingLogEntrySources({
   name,
@@ -10,17 +11,11 @@ export function ClimbingLogEntrySources({
   sourceName: string | null;
   links: ClimbingSourceLink[];
 }) {
-  const primaryRoute = links.find((link) => link.kind === "route");
-  const additionalRoutes = links.filter((link) => link.kind === "route" && link !== primaryRoute);
-  const sources = [
-    ...new Set([
-      ...(sourceName
-        ?.split(",")
-        .map((source) => source.trim())
-        .filter(Boolean) ?? []),
-      ...links.map((link) => providerSourceLabel(link.providerId)),
-    ]),
-  ];
+  const { primaryRoute, additionalRoutes, sources } = selectClimbingSources(
+    sourceName,
+    links,
+    providerSourceLabel,
+  );
   return (
     <div className="min-w-0 space-y-0.5 break-words">
       <h4 className="text-sm font-medium text-foreground">
@@ -40,28 +35,23 @@ export function ClimbingLogEntrySources({
       </h4>
       {sources.length > 0 && (
         <p className="text-xs text-dim">
-          {sources.map((source, index) => {
-            const tickSource = links.find(
-              (link) => link.kind === "ticks" && providerSourceLabel(link.providerId) === source,
-            );
-            return (
-              <span key={source}>
-                {index > 0 && ", "}
-                {tickSource ? (
-                  <a
-                    href={tickSource.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-accent underline hover:no-underline"
-                  >
-                    {source}
-                  </a>
-                ) : (
-                  source
-                )}
-              </span>
-            );
-          })}
+          {sources.map(({ label, tickSource }, index) => (
+            <span key={label}>
+              {index > 0 && ", "}
+              {tickSource ? (
+                <a
+                  href={tickSource.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-accent underline hover:no-underline"
+                >
+                  {label}
+                </a>
+              ) : (
+                label
+              )}
+            </span>
+          ))}
         </p>
       )}
       {additionalRoutes.length > 0 && (

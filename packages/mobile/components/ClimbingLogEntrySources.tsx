@@ -1,5 +1,6 @@
 import { providerSourceLabel } from "@dofek/providers/providers";
 import type { ClimbingSourceLink } from "@dofek/training/climbing-context";
+import { selectClimbingSources } from "@dofek/training/climbing-sources";
 import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
 import { openExternalUrl } from "../lib/open-external-url";
 import { colors } from "../theme";
@@ -15,17 +16,11 @@ export function ClimbingLogEntrySources({
   links: ClimbingSourceLink[];
   selected?: boolean;
 }) {
-  const primaryRoute = links.find((link) => link.kind === "route");
-  const additionalRoutes = links.filter((link) => link.kind === "route" && link !== primaryRoute);
-  const sources = [
-    ...new Set([
-      ...(sourceName
-        ?.split(",")
-        .map((source) => source.trim())
-        .filter(Boolean) ?? []),
-      ...links.map((link) => providerSourceLabel(link.providerId)),
-    ]),
-  ];
+  const { primaryRoute, additionalRoutes, sources } = selectClimbingSources(
+    sourceName,
+    links,
+    providerSourceLabel,
+  );
   const selectionState = selected === undefined ? undefined : { selected };
   async function openSource(url: string) {
     if (!(await openExternalUrl(url, "climbing-entry-source"))) {
@@ -53,27 +48,24 @@ export function ClimbingLogEntrySources({
       )}
       {sources.length > 0 && (
         <View style={styles.links}>
-          {sources.map((source) => {
-            const tickSource = links.find(
-              (link) => link.kind === "ticks" && providerSourceLabel(link.providerId) === source,
-            );
-            return tickSource ? (
+          {sources.map(({ label, tickSource }) =>
+            tickSource ? (
               <Pressable
-                key={source}
+                key={label}
                 accessibilityRole="link"
-                accessibilityLabel={source}
+                accessibilityLabel={label}
                 onPress={() => {
                   void openSource(tickSource.url);
                 }}
               >
-                <Text style={[styles.source, styles.link]}>{source}</Text>
+                <Text style={[styles.source, styles.link]}>{label}</Text>
               </Pressable>
             ) : (
-              <Text key={source} style={styles.source}>
-                {source}
+              <Text key={label} style={styles.source}>
+                {label}
               </Text>
-            );
-          })}
+            ),
+          )}
         </View>
       )}
       {additionalRoutes.length > 0 && (
