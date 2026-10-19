@@ -37,3 +37,17 @@ export const MissingSamples: Story = {
   },
 };
 export const Area: Story = { render: (args) => <AreaChart {...args} /> };
+export const HighElevation: Story = {
+  render: (args) => <AreaChart {...args} />,
+  args: {
+    data: [8000, 8050, 8000, 8200, 8350, 8150, 7900, 7600, 7450, 7550, 7400].map(
+      (value, index) => ({
+        recordedAt: new Date(Date.UTC(2026, 9, 4, 16, index * 5)).toISOString(),
+        value,
+      }),
+    ),
+    color: CHART_COLORS.altitude,
+    label: "Elevation Profile",
+    unit: "ft",
+  },
+};
