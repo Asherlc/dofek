@@ -5,7 +5,7 @@ import {
   ACTIVITY_CHART_METRICS,
   type ActivityMetricSources,
 } from "../contracts/activity-metric-sources.ts";
-import type { ActivitySensorStore, ActivitySensorWindow } from "./activity-repository.ts";
+import type { ActivitySensorQueryStore, ActivitySensorWindow } from "./activity-sensor-types.ts";
 import { heartRateZoneCountColumns, heartRateZoneSqlParams } from "./heart-rate-zone-sql.ts";
 
 /** Includes standalone recordings, but excludes recordings attached to unrelated activities. */
@@ -44,7 +44,7 @@ const sourceRowSchema = z.object({
 });
 
 export async function getActivityMetricSources(
-  store: Pick<ActivitySensorStore, "query">,
+  store: ActivitySensorQueryStore,
   window: ActivitySensorWindow,
 ): Promise<ActivityMetricSources> {
   const rows = await store.query(
@@ -94,7 +94,7 @@ const zoneCountsSchema = z.object({
 
 /** Uses the same pre-activity resting HR baseline and Karvonen thresholds as the default zones. */
 export async function getActivitySourceHrZones(
-  store: Pick<ActivitySensorStore, "query">,
+  store: ActivitySensorQueryStore,
   window: ActivitySensorWindow,
   heartRateSourceId: string,
 ) {
