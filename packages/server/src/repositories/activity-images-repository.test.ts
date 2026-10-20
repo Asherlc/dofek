@@ -49,7 +49,7 @@ describe("owned activity image access", () => {
 
 it("does not read storage for an empty set of visible members", async () => {
   const { listActivityImages } = await import("./activity-images-repository.ts");
-  const { createMockDatabase } = await import("../../../../../src/providers/test-helpers.ts");
+  const { createMockDatabase } = await import("../../../../src/providers/test-helpers.ts");
   const { db, spies } = createMockDatabase();
   expect(await listActivityImages(db, { userId: "owner", memberActivityIds: [] })).toEqual({
     images: [],
@@ -60,7 +60,7 @@ it("does not read storage for an empty set of visible members", async () => {
 });
 it("parses stored media, discovery coverage and acquisition state together", async () => {
   const { listActivityImages } = await import("./activity-images-repository.ts");
-  const { createMockDatabase } = await import("../../../../../src/providers/test-helpers.ts");
+  const { createMockDatabase } = await import("../../../../src/providers/test-helpers.ts");
   const { db, spies } = createMockDatabase();
   const image = {
     id: "object",
