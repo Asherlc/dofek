@@ -39,3 +39,104 @@ describe("activity image storage", () => {
     await expect(eraseActivityImageObjects(a)).rejects.toThrow("R2 unavailable");
   });
 });
+
+const signing = vi.hoisted(() => vi.fn(async () => "https://private.test/signed"));
+vi.mock("@aws-sdk/s3-request-presigner", () => ({ getSignedUrl: signing }));
+
+it.each(["A".repeat(64), "a".repeat(63), "a".repeat(65), "g".repeat(64)])(
+  "rejects invalid storage hashes (%s)",
+  (hash) =>
+    expect(() => activityImageObjectKey("00000000-0000-4000-8000-000000000001", hash)).toThrow(),
+);
+it("uploads original bytes with their exact storage metadata and releases the client", async () => {
+  const { mkdtemp, writeFile, rm } = await import("node:fs/promises");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const { storeActivityImage } = await import("./storage.ts");
+  const dir = await mkdtemp(join(tmpdir(), "image-storage-"));
+  const filePath = join(dir, "image");
+  const bytes = Buffer.from("original image bytes");
+  await writeFile(filePath, bytes);
+  send.mockReset();
+  destroy.mockClear();
+  send.mockImplementationOnce(async (command) => {
+    const chunks = [];
+    for await (const chunk of command.input.Body) chunks.push(chunk);
+    expect(Buffer.concat(chunks)).toEqual(bytes);
+    expect(command.input).toMatchObject({
+      Bucket: "private-media",
+      Key: `images/00000000-0000-4000-8000-000000000001/${"a".repeat(64)}`,
+      ContentLength: bytes.length,
+      ContentType: "image/png",
+    });
+  });
+  try {
+    expect(
+      await storeActivityImage({
+        userId: "00000000-0000-4000-8000-000000000001",
+        image: {
+          filePath,
+          sha256: "a".repeat(64),
+          sizeBytes: bytes.length,
+          mimeType: "image/png",
+          width: 1,
+          height: 1,
+          cleanup: async () => undefined,
+        },
+      }),
+    ).toEqual({ objectKey: `images/00000000-0000-4000-8000-000000000001/${"a".repeat(64)}` });
+    expect(destroy).toHaveBeenCalledOnce();
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+it("signs a five-minute read URL and deletes only the selected object", async () => {
+  const { createActivityImageUrl, deleteActivityImageObject } = await import("./storage.ts");
+  destroy.mockClear();
+  signing.mockClear();
+  send.mockReset().mockResolvedValue({});
+  expect(await createActivityImageUrl("images/owner/hash")).toBe("https://private.test/signed");
+  expect(signing).toHaveBeenCalledWith(
+    expect.objectContaining({ send }),
+    expect.objectContaining({ input: { Bucket: "private-media", Key: "images/owner/hash" } }),
+    { expiresIn: 300 },
+  );
+  await deleteActivityImageObject("images/owner/hash");
+  expect(send).toHaveBeenCalledWith(
+    expect.objectContaining({ input: { Bucket: "private-media", Key: "images/owner/hash" } }),
+  );
+  expect(destroy).toHaveBeenCalledTimes(2);
+});
+it.each([{ Contents: [], IsTruncated: true }, { Contents: [{ Key: "leftover" }] }])(
+  "does not acknowledge incomplete erasure listings",
+  async (page) => {
+    const user = "00000000-0000-4000-8000-000000000001";
+    send.mockReset();
+    destroy.mockClear();
+    if (page.IsTruncated) send.mockResolvedValueOnce(page);
+    else send.mockResolvedValueOnce({}).mockResolvedValueOnce(page);
+    await expect(eraseActivityImageObjects(user)).rejects.toThrow(
+      /Incomplete media deletion listing|Activity media deletion incomplete/,
+    );
+    expect(destroy).toHaveBeenCalledOnce();
+  },
+);
+it("scopes empty erasure listings and skips entries without object keys", async () => {
+  const user = "00000000-0000-4000-8000-000000000001";
+  send
+    .mockReset()
+    .mockResolvedValueOnce({ Contents: [{}], IsTruncated: false, NextContinuationToken: "ignored" })
+    .mockResolvedValueOnce({});
+  await eraseActivityImageObjects(user);
+  expect(send).toHaveBeenCalledTimes(2);
+  expect(send.mock.calls[0]?.[0].input).toEqual({
+    Bucket: "private-media",
+    Prefix: `images/${user}/`,
+    ContinuationToken: undefined,
+  });
+  expect(send.mock.calls[1]?.[0].input).toEqual({
+    Bucket: "private-media",
+    Prefix: `images/${user}/`,
+    MaxKeys: 1,
+  });
+});

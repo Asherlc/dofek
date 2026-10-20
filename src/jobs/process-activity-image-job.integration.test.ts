@@ -43,7 +43,10 @@ describe("account erasure racing with image acquisition", () => {
     bucket = "media-erasure-race";
   beforeAll(async () => {
     ctx = await setupTestDatabase();
-    container = await createSeaweedFsS3Container().start();
+    container = await createSeaweedFsS3Container({
+      accessKeyId: "media",
+      secretAccessKey: "media-secret",
+    }).start();
     const endpoint = `http://${container.getHost()}:${container.getMappedPort(9000)}`;
     client = new S3Client({
       endpoint,

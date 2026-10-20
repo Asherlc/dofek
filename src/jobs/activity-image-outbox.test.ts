@@ -81,3 +81,102 @@ it("does not retain a failed Redis ID that would absorb durable dispatch again",
   await dispatchActivityImageOutbox(db, queue);
   expect(launches).toBe(2);
 });
+
+vi.mock("../lib/error-reporting.ts", () => ({ captureException: vi.fn() }));
+
+it("reconciles periodically and stops polling when closed", async () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date("2026-10-20"));
+  mocks.pending.mockResolvedValue([]);
+  const { startActivityImageOutboxDispatcher } = await import("./activity-image-outbox.ts");
+  const { reconcileActivityImageWork } = await import("../db/activity-images.ts");
+  const reconcile = vi.fn(async () => undefined),
+    backfill = vi.fn(async () => undefined);
+  const dispatcher = startActivityImageOutboxDispatcher(db, { add: vi.fn() }, reconcile, backfill);
+  try {
+    await vi.advanceTimersByTimeAsync(0);
+    expect(reconcile).toHaveBeenCalledOnce();
+    expect(reconcileActivityImageWork).toHaveBeenCalledWith(db);
+    expect(backfill).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(4999);
+    expect(backfill).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(backfill).toHaveBeenCalledTimes(2);
+    expect(reconcile).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(295000);
+    expect(reconcile).toHaveBeenCalledTimes(2);
+    await dispatcher.close();
+    const count = backfill.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(10000);
+    expect(backfill).toHaveBeenCalledTimes(count);
+  } finally {
+    await dispatcher.close();
+    vi.useRealTimers();
+  }
+});
+it("does not overlap polls and waits for in-flight work on close", async () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date("2026-10-20"));
+  let finish: () => void = () => {};
+  const pending = new Promise<void>((resolve) => {
+    finish = resolve;
+  });
+  mocks.pending.mockImplementation(async () => {
+    await pending;
+    return [];
+  });
+  const { startActivityImageOutboxDispatcher } = await import("./activity-image-outbox.ts");
+  const backfill = vi.fn(async () => undefined);
+  const dispatcher = startActivityImageOutboxDispatcher(
+    db,
+    { add: vi.fn() },
+    async () => {},
+    backfill,
+  );
+  try {
+    await vi.advanceTimersByTimeAsync(20000);
+    expect(mocks.pending).toHaveBeenCalledOnce();
+    let closed = false;
+    const closing = dispatcher.close().then(() => {
+      closed = true;
+    });
+    await Promise.resolve();
+    expect(closed).toBe(false);
+    finish();
+    await closing;
+    expect(closed).toBe(true);
+    expect(backfill).toHaveBeenCalledOnce();
+  } finally {
+    finish();
+    await dispatcher.close();
+    vi.useRealTimers();
+    mocks.pending.mockReset();
+  }
+});
+it("reports a polling failure and recovers on the next tick", async () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date("2026-10-20"));
+  const error = Error("database down");
+  mocks.pending.mockRejectedValueOnce(error).mockResolvedValue([]);
+  const { startActivityImageOutboxDispatcher } = await import("./activity-image-outbox.ts");
+  const { captureException } = await import("../lib/error-reporting.ts");
+  const backfill = vi.fn(async () => undefined);
+  const dispatcher = startActivityImageOutboxDispatcher(
+    db,
+    { add: vi.fn() },
+    async () => {},
+    backfill,
+  );
+  try {
+    await vi.advanceTimersByTimeAsync(0);
+    expect(captureException).toHaveBeenCalledWith(error, {
+      tags: { source: "activity-image-outbox" },
+    });
+    expect(backfill).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(backfill).toHaveBeenCalledOnce();
+  } finally {
+    await dispatcher.close();
+    vi.useRealTimers();
+  }
+});

@@ -6,10 +6,14 @@ export const seaweedFsS3Image =
 
 /**
  * Single-node SeaweedFS with the S3 API on port 9000 (path-style).
- * Without an IAM config file SeaweedFS accepts any access/secret key pair.
+ * Signed streaming uploads require explicit identities even when ordinary
+ * anonymous S3 requests work without an IAM config.
  */
-export function createSeaweedFsS3Container(): GenericContainer {
-  return new GenericContainer(seaweedFsS3Image)
+export function createSeaweedFsS3Container(credentials?: {
+  accessKeyId: string;
+  secretAccessKey: string;
+}): GenericContainer {
+  const container = new GenericContainer(seaweedFsS3Image)
     .withCommand([
       "server",
       "-ip=127.0.0.1",
@@ -21,7 +25,26 @@ export function createSeaweedFsS3Container(): GenericContainer {
       "-s3.port.lance=0",
       "-master.volumeSizeLimitMB=1024",
       "-master.telemetry=false",
+      ...(credentials ? ["-s3.config=/tmp/s3-test-identity.json"] : []),
     ])
     .withExposedPorts(9000)
     .withWaitStrategy(Wait.forLogMessage(/Start Seaweed S3 API Server/));
+  if (credentials)
+    container.withCopyContentToContainer([
+      {
+        target: "/tmp/s3-test-identity.json",
+        content: JSON.stringify({
+          identities: [
+            {
+              name: "storage-test",
+              credentials: [
+                { accessKey: credentials.accessKeyId, secretKey: credentials.secretAccessKey },
+              ],
+              actions: ["Admin", "Read", "Write", "List", "Tagging"],
+            },
+          ],
+        }),
+      },
+    ]);
+  return container;
 }

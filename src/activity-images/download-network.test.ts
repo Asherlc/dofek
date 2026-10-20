@@ -24,7 +24,9 @@ function respond(status: number, headers: Record<string, string>, bytes = png) {
         statusCode: status,
         headers,
         resume() {},
-        destroy() {},
+        destroy(error?: Error) {
+          if (error) response.emit("error", error);
+        },
       });
       const req = Object.assign(new EventEmitter(), {
         end() {
@@ -88,4 +90,102 @@ describe("image network boundary", () => {
       await image.cleanup();
     }
   });
+});
+
+it("fails before opening a socket when DNS returns no addresses", async () => {
+  mocks.lookup.mockResolvedValue([]);
+  await expect(
+    downloadActivityImage({ url: "https://cdn.test/a", allowedOrigins: ["https://cdn.test"] }),
+  ).rejects.toThrow("image_address_rejected");
+  expect(mocks.request).not.toHaveBeenCalled();
+});
+it.each([301, 302, 303, 307, 308])(
+  "follows relative redirect status %i within the allowed origin",
+  async (status) => {
+    respond(status, { location: "/final" });
+    respond(200, { "content-type": "image/png" });
+    const image = await downloadActivityImage({
+      url: "https://cdn.test/start",
+      allowedOrigins: ["https://cdn.test"],
+    });
+    try {
+      expect(mocks.request.mock.calls[1]?.[0].href).toBe("https://cdn.test/final");
+    } finally {
+      await image.cleanup();
+    }
+  },
+);
+it("limits redirect chains to four requests", async () => {
+  for (let n = 0; n < 4; n++) respond(302, { location: "/again" });
+  await expect(
+    downloadActivityImage({ url: "https://cdn.test/start", allowedOrigins: ["https://cdn.test"] }),
+  ).rejects.toThrow("image_redirect_limit");
+  expect(mocks.request).toHaveBeenCalledTimes(4);
+});
+it.each([408, 429, 500, 503, 404, 403, 302])(
+  "classifies retry behavior for HTTP %i without a redirect target",
+  async (status) => {
+    respond(status, {});
+    await expect(
+      downloadActivityImage({ url: "https://cdn.test/a", allowedOrigins: ["https://cdn.test"] }),
+    ).rejects.toMatchObject({
+      code: `image_http_${status}`,
+      retryable: [408, 429].includes(status) || status >= 500,
+      retryAfterSeconds: 0,
+    });
+  },
+);
+it("supports HTTP-date Retry-After values", async () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
+  respond(429, { "retry-after": "Thu, 01 Jan 2026 00:10:00 GMT" });
+  try {
+    await expect(
+      downloadActivityImage({ url: "https://cdn.test/a", allowedOrigins: ["https://cdn.test"] }),
+    ).rejects.toMatchObject({ retryAfterSeconds: 600 });
+  } finally {
+    vi.useRealTimers();
+  }
+});
+it("rejects declared or streamed bodies above the size limit", async () => {
+  respond(200, { "content-type": "image/png", "content-length": String(50 * 1024 * 1024 + 1) });
+  await expect(
+    downloadActivityImage({ url: "https://cdn.test/a", allowedOrigins: ["https://cdn.test"] }),
+  ).rejects.toThrow("image_size_limit");
+  respond(200, { "content-type": "image/png" }, Buffer.alloc(50 * 1024 * 1024 + 1));
+  await expect(
+    downloadActivityImage({ url: "https://cdn.test/a", allowedOrigins: ["https://cdn.test"] }),
+  ).rejects.toThrow("image_size_limit");
+});
+it.each(["8.8.8.8", "[2606:4700:4700::1111]"])(
+  "validates literal public address %s without DNS lookup",
+  async (host) => {
+    respond(200, { "content-type": "image/png" });
+    const origin = `https://${host}`;
+    const image = await downloadActivityImage({ url: `${origin}/a`, allowedOrigins: [origin] });
+    try {
+      expect(mocks.lookup).not.toHaveBeenCalled();
+    } finally {
+      await image.cleanup();
+    }
+  },
+);
+it("includes the caller's abort signal and disables pooled connections", async () => {
+  const controller = new AbortController();
+  respond(200, { "content-type": "image/png" });
+  const image = await downloadActivityImage({
+    url: "https://cdn.test/a",
+    allowedOrigins: ["https://cdn.test"],
+    signal: controller.signal,
+  });
+  try {
+    const options = mocks.request.mock.calls[0]?.[1];
+    expect(options.agent).toBe(false);
+    expect(options.family).toBe(4);
+    expect(options.signal.aborted).toBe(false);
+    controller.abort();
+    expect(options.signal.aborted).toBe(true);
+  } finally {
+    await image.cleanup();
+  }
 });

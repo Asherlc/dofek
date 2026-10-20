@@ -28,3 +28,25 @@ it("keeps semantic query parameters in fallback image identities", () => {
     sourceImageIdentity("https://cdn.test/image?id=two&signature=new"),
   );
 });
+
+it("ranks by pixel area with missing dimensions and leaves the input intact", () => {
+  const variants = [
+    { url: "unknown", width: null, height: null },
+    { url: "wide", width: 1000, height: 1 },
+    { url: "square", width: 100, height: 100 },
+    { url: "missingHeight", width: 20000, height: null },
+    { url: "missingWidth", width: null, height: 20000 },
+  ];
+  expect(selectImageVariant(variants).url).toBe("square");
+  expect(variants[0]?.url).toBe("unknown");
+});
+it("normalizes all signing keys and semantic parameter ordering", () => {
+  const base = "https://cdn.test/image?a=1&b=2";
+  expect(
+    sourceImageIdentity(
+      base +
+        "&X-Amz-Signature=old&X-Goog-Credential=old&Signature=s&Expires=3&Token=t&Policy=p&Key-Pair-Id=k",
+    ),
+  ).toBe(sourceImageIdentity("https://cdn.test/image?b=2&a=1"));
+  expect(sourceImageIdentity(`${base}&mytoken=semantic`)).not.toBe(sourceImageIdentity(base));
+});

@@ -926,3 +926,57 @@ describe("ZwiftProvider", () => {
     expect(result.errors[0]?.cause).toMatchObject({ authFailureReason: "authentication_failed" });
   });
 });
+
+vi.mock("../db/activity-images.ts", () => ({
+  recordActivityImageDiscovery: vi.fn(async () => undefined),
+}));
+it.each([false, true])(
+  "preserves Zwift media discovery and reports persistence failures (%s)",
+  async (fail) => {
+    const { recordActivityImageDiscovery } = await import("../db/activity-images.ts");
+    vi.mocked(recordActivityImageDiscovery).mockClear();
+    if (fail)
+      vi.mocked(recordActivityImageDiscovery).mockRejectedValueOnce(Error("storage unavailable"));
+    MockZwiftClient.activities = [
+      { ...sampleActivity, primaryImageUrl: "https://cdn.test/ride.jpg" },
+    ];
+    MockZwiftClient.repeatActivitiesForEveryOffset = false;
+    MockZwiftClient.activityDetailError = null;
+    MockZwiftClient.fitnessData = {};
+    MockZwiftClient.activityDetail = {};
+    providerActivityAbsenceMocks.upsertProviderActivity.mockResolvedValue({ id: "activity-id" });
+    const db = makeMockDb({
+      tokens: {
+        accessToken: "valid-token",
+        refreshToken: "refresh",
+        expiresAt: new Date("2099-01-01"),
+        scopes: "athleteId:12345",
+      },
+    });
+    const result = await new ZwiftProvider().sync(
+      new SyncRun({
+        db,
+        userId: "user-1",
+        window: SyncWindow.fromSince({ since: new Date("2026-01-01") }),
+      }),
+    );
+    expect(recordActivityImageDiscovery).toHaveBeenCalledWith(
+      db,
+      expect.objectContaining({
+        userId: "user-1",
+        activityId: "activity-id",
+        providerId: "zwift",
+        discovery: expect.objectContaining({
+          images: [
+            expect.objectContaining({
+              variants: [expect.objectContaining({ url: "https://cdn.test/ride.jpg" })],
+            }),
+          ],
+        }),
+      }),
+    );
+    expect(
+      result.errors.some((error) => error.message === "Zwift image discovery persistence failed"),
+    ).toBe(fail);
+  },
+);

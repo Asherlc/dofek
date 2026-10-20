@@ -1,3 +1,4 @@
+<!-- cspell:ignore Stravalib EXIF -->
 # Provider activity image copies
 
 Dofek stores original provider images in a private R2 bucket and keeps every
@@ -129,3 +130,9 @@ Database and real S3 integration tests are checked in for ownership,
 checkpoints, byte preservation, and account isolation. Authenticated live
 provider calls, production R2 provisioning, and Infisical changes require the
 corresponding runtime access; they were not performed during implementation.
+
+S3 integration fixtures configure explicit SeaweedFS identities: ordinary requests
+can succeed anonymously while SigV4 streaming uploads fail with
+`InvalidAccessKeyId`. The storage and erasure-race fixtures use the same explicit
+credentials. This was reproduced with SeaweedFS 4.47 running natively and verified
+with original-byte upload, retrieval, and prefix erasure.

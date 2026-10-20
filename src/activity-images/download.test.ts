@@ -83,3 +83,55 @@ it.each(["jpeg", "png", "webp", "gif", "avif"])(
     expect(metadata).toMatchObject({ width: 2, height: 2, mimeType: `image/${format}` });
   },
 );
+
+it.each([
+  "0.1.2.3",
+  "172.16.0.1",
+  "172.31.255.255",
+  "192.0.0.1",
+  "192.0.2.1",
+  "198.18.0.1",
+  "198.51.100.1",
+  "203.0.113.1",
+  "224.0.0.1",
+  "240.0.0.1",
+  "255.255.255.255",
+  "2001::1",
+  "2002::1",
+  "not-an-ip",
+  "fe80::1",
+])("blocks special-use image address %s", (ip) => expect(isPublicImageAddress(ip)).toBe(false));
+it.each(["172.15.255.255", "172.32.0.1", "192.1.1.1", "2001:4860:4860::8888", "3000::1"])(
+  "allows routable image address %s",
+  (ip) => expect(isPublicImageAddress(ip)).toBe(true),
+);
+it("normalizes a declared image type including whitespace and MIME parameters", async () => {
+  expect(await inspectImageBytes(png, "  IMAGE/PNG  ; charset=binary")).toMatchObject({
+    mimeType: "image/png",
+    width: 1,
+    height: 1,
+    sizeBytes: png.length,
+  });
+  await expect(inspectImageBytes(Buffer.alloc(0), "image/png")).rejects.toThrow("image_size_limit");
+  await expect(inspectImageBytes(Buffer.alloc(50 * 1024 * 1024 + 1), "image/png")).rejects.toThrow(
+    "image_size_limit",
+  );
+});
+
+it("enforces transport restrictions independently of the provider origin allowlist", () => {
+  for (const [url, origin] of [
+    ["http://cdn.test/a", "http://cdn.test"],
+    ["https://cdn.test:444/a", "https://cdn.test:444"],
+    ["https://user@cdn.test/a", "https://cdn.test"],
+    ["https://:pass@cdn.test/a", "https://cdn.test"],
+  ])
+    expect(() => validateImageUrl(url ?? "", [origin ?? ""])).toThrow("image_origin_rejected");
+  expect(isPublicImageAddress("2-not-an-ip")).toBe(false);
+});
+it("accepts an original at the exact byte limit", async () => {
+  const bytes = Buffer.concat([png, Buffer.alloc(50 * 1024 * 1024 - png.length)]);
+  expect(await inspectImageBytes(bytes, "image/png")).toMatchObject({
+    sizeBytes: 50 * 1024 * 1024,
+    mimeType: "image/png",
+  });
+});

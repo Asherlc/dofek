@@ -10,7 +10,7 @@ import {
   withAccountErasureUserWriteFence,
 } from "../db/account-erasure.ts";
 import type { ActivityImageDatabase } from "../db/activity-images.ts";
-import type { Database } from "../db/index.ts";
+import type { SyncDatabase } from "../db/index.ts";
 import { executeWithSchema } from "../db/typed-sql.ts";
 import { SyncRun } from "../providers/sync-run.ts";
 import { SyncWindow } from "../providers/sync-window.ts";
@@ -113,7 +113,7 @@ export async function dispatchActivityImageBackfills(
   }
 }
 export async function processActivityImageBackfillJob(
-  db: Database,
+  db: SyncDatabase,
   data: { backfillId: string; userId: string },
 ): Promise<void> {
   // Wait for the outbox's transaction even if Redis delivers before it commits.

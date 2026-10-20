@@ -220,3 +220,19 @@ lint exceptions. Moved Strava modules into one provider directory to satisfy
 import boundaries, removed an unused type export, corrected test wording, and
 promoted Sharp to a production dependency. Import boundaries, Knip, sandbox lint,
 root/server/web typechecks, and 295 affected unit tests pass locally.
+
+CI coverage follow-up: the full unit job, web E2E, and three integration shards
+passed. The remaining shard exposed SeaweedFS's anonymous-mode rejection of
+signed streaming uploads. Reproduced it with the same native SeaweedFS 4.47
+release; explicit IAM test credentials then allowed upload, byte-for-byte read,
+and prefix erasure. Both media S3 fixtures now configure explicit identities.
+
+Added behavioral tests for source variant metadata, transport/pixel/byte limits,
+image-client requests, token refresh boundaries, worker/route wiring, durable
+backfill lifecycle, polling recovery, storage signing and deletion. All 420
+focused tests pass. Every previously failing mutation target now passes locally:
+identity 84%, storage 94.87%, outbox 93.94%, backfill 90.32%, image repository
+94.74%, providers 91.98%, download 86.59%, worker queue 76.92%, Peloton adapter
+86.67%, Zwift adapter 88.64%, and client/router/startup callback 100%. Mutation
+runs use CI's configuration with only the local Python virtual environment
+excluded from sandbox copying. No mutation threshold or source exclusion changed.
