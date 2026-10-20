@@ -7,6 +7,12 @@ import { ActivityTypeIcon } from "./ActivityTypeIcon";
 afterEach(cleanup);
 
 describe("ActivityTypeIcon", () => {
+  it("renders the hangboard illustration with an accessible activity label", () => {
+    render(<ActivityTypeIcon activityType="hangboard" />);
+    const icon = screen.getByRole("img", { name: "Hangboarding activity" });
+    expect(icon.querySelector("img")?.getAttribute("src")).toMatch(/^data:image\/svg\+xml/);
+    expect(icon.textContent).not.toContain("⚡");
+  });
   it("renders a card-sized placeholder with an activity icon", () => {
     render(<ActivityTypeIcon activityType="indoor_cycling" variant="card" />);
 

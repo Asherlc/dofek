@@ -12,7 +12,7 @@ export function ActivityTypeIcon({
   variant = "card",
   className = "",
 }: ActivityTypeIconProps) {
-  const { emoji, gradientFrom, gradientTo } = getActivityIconInfo(activityType);
+  const { emoji, svg, gradientFrom, gradientTo } = getActivityIconInfo(activityType);
   const label = formatActivityTypeLabel(activityType);
   const isCompact = variant === "compact";
   const isPlain = variant === "plain";
@@ -49,7 +49,15 @@ export function ActivityTypeIcon({
           }
           aria-hidden="true"
         >
-          {emoji}
+          {svg ? (
+            <img
+              src={`data:image/svg+xml,${encodeURIComponent(svg)}`}
+              alt=""
+              className="h-[1.5em] w-[1.5em]"
+            />
+          ) : (
+            emoji
+          )}
         </span>
       </div>
     </div>

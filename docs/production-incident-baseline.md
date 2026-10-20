@@ -1,5 +1,21 @@
 # Production Incident Baseline
 
+## 2026-10-20 — Hangboarding detail lookup omitted activity group IDs
+
+- **Impact / evidence:** The reported activity `7a007a2d-2fea-4c8d-86eb-fa9c09f3c326`
+  displayed `Hangboarding details not found`. The activity view exposes group IDs,
+  while the [Hangboarding query](../packages/server/src/repositories/hangboarding-repository.ts)
+  only matched member IDs. A regression test reproduced the missing group-ID predicate.
+- **Fix:** Accept either the displayed group ID or a member ID, retaining ownership,
+  canonical-type, and access-window checks. No retries or fallback suppression were added.
+- **Validation / limits:** Focused repository and web/mobile icon tests pass. The
+  [database regression](../packages/server/src/repositories/hangboarding-repository.integration.test.ts)
+  checks that group and member IDs return identical details and rejects another user;
+  it requires the database-backed CI tier and was not run locally. The reported live
+  record has not been queried or rechecked after deployment.
+- **Follow-up:** For specialized activity detail queries, include distinct group/member
+  IDs in fixtures so identity mismatches cannot be hidden by matching fixture IDs.
+
 ## 2026-10-18 — Dashboard removal validation hit Docker address-pool exhaustion
 
 - **Impact / evidence:** Local PR validation was delayed; production was unaffected. `pnpm lint` failed in `lint:analytics-sql` with `dbt tried to connect to the database and failed.` and a connection refusal at `127.0.0.1:8123`. Starting this workspace's ClickHouse with `pnpm compose -- up -d --wait clickhouse` then failed at network creation: `all predefined address pools have been fully subnetted`.

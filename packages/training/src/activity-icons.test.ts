@@ -2,6 +2,10 @@ import { describe, expect, it } from "vitest";
 import { getActivityIconInfo, resolveActivityIconCategory } from "./activity-icons.ts";
 
 describe("resolveActivityIconCategory", () => {
+  it("gives hangboarding its own icon category", () => {
+    expect(resolveActivityIconCategory("hangboard")).toBe("hangboard");
+    expect(resolveActivityIconCategory(" Hangboarding ")).toBe("hangboard");
+  });
   it("trims whitespace before matching", () => {
     expect(resolveActivityIconCategory("  running  ")).toBe("running");
     expect(resolveActivityIconCategory(" cycling")).toBe("cycling");
