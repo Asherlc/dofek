@@ -396,6 +396,76 @@ entity "strength_set" {
   created_at : timestamp
 }
 
+entity "activity_image" {
+  * id : uuid <<PK>>
+  --
+  user_id : uuid <<FK>>
+  activity_id : uuid <<FK>>
+  provider_id : text <<FK>>
+  source_id : text
+  candidate : jsonb
+  generation : integer
+  object_id : uuid <<FK>>
+  retired_at : timestamp
+  created_at : timestamp
+  updated_at : timestamp
+}
+
+entity "activity_image_backfill" {
+  * id : uuid <<PK>>
+  --
+  user_id : uuid <<FK>>
+  provider_id : text <<FK>>
+  cursor_started_at : timestamp
+  cursor_id : uuid
+  high_water_at : timestamp
+  scanned : integer
+  discovered : integer
+  failed : integer
+  state : text
+  updated_at : timestamp
+}
+
+entity "activity_image_discovery" {
+  * id : uuid <<PK>>
+  --
+  user_id : uuid <<FK>>
+  activity_id : uuid <<FK>>
+  provider_id : text <<FK>>
+  coverage : text
+  expected_count : integer
+  reason : text
+  checked_at : timestamp
+}
+
+entity "activity_image_object" {
+  * id : uuid <<PK>>
+  --
+  user_id : uuid <<FK>>
+  sha256 : text
+  object_key : text
+  mime_type : text
+  size_bytes : bigint
+  width : integer
+  height : integer
+  created_at : timestamp
+}
+
+entity "activity_image_work" {
+  * id : uuid <<PK>>
+  --
+  user_id : uuid <<FK>>
+  image_id : uuid <<FK>>
+  generation : integer
+  state : text
+  attempts : integer
+  available_at : timestamp
+  dispatched_at : timestamp
+  processing_at : timestamp
+  error_code : text
+  created_at : timestamp
+}
+
 entity "area" {
   * id : uuid <<PK>>
   --
@@ -1239,6 +1309,15 @@ sleep_session ||--o{ sleep_stage
 user_profile ||--o{ sport_settings
 activity ||--o{ strength_set
 exercise ||--o{ strength_set
+provider ||--o{ activity_image
+activity ||--o{ activity_image
+activity_image_object ||--o{ activity_image
+user_profile ||--o{ activity_image_backfill
+provider ||--o{ activity_image_backfill
+provider ||--o{ activity_image_discovery
+activity ||--o{ activity_image_discovery
+user_profile ||--o{ activity_image_object
+activity_image ||--o{ activity_image_work
 user_profile ||--o{ area
 provider ||--o{ area
 area ||--o{ area

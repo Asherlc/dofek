@@ -134,7 +134,8 @@
     "./sync-metrics": "./src/sync-metrics.ts",
     "./exercise-metadata": "./src/exercise-metadata.ts",
     "./lib/cache": "./src/lib/cache.ts",
-    "./admin/provider-rate-limit-status": "./src/admin/provider-rate-limit-status.ts"
+    "./admin/provider-rate-limit-status": "./src/admin/provider-rate-limit-status.ts",
+    "./db/activity-images": "./src/db/activity-images.ts"
   },
   "scripts": {
     "dev": "tsx scripts/with-env.ts -- tsx src/index.ts",
