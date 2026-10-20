@@ -6,6 +6,7 @@ import {
   climbingAttemptDetailFields,
   formatClimbingGradeComponents,
 } from "@dofek/format/climbing-log";
+import { climbingLogEntryName } from "@dofek/training/climbing-log";
 import type { ClimbingLogEntryDetail } from "../../../server/src/contracts/climbing-log-contracts.ts";
 import { ClimbingLogEntrySources } from "../pages/activity-detail/components/ClimbingLogEntrySources.tsx";
 
@@ -31,7 +32,7 @@ export function ClimbingLogEntryDetails({ entry }: { entry: ClimbingLogEntryDeta
   return (
     <section className="space-y-4 text-sm" aria-label="Climbing log details">
       <ClimbingLogEntrySources
-        name={climb?.name ?? entry.title ?? "Climbing log"}
+        name={climbingLogEntryName(entry)}
         sourceName={entry.sourceName}
         links={entry.sourceLinks}
       />

@@ -1556,42 +1556,52 @@ describe("activityRouter", () => {
       findByIdSpy.mockRestore();
     });
 
-    it("returns zones and ftp for cycling activities with power data", async () => {
-      const zones = [
-        { zone: 1, label: "Active Recovery", minPct: 0, maxPct: 55, seconds: 60, percent: 33.3 },
-        { zone: 2, label: "Endurance", minPct: 55, maxPct: 75, seconds: 120, percent: 66.7 },
-      ];
-      const findByIdSpy = vi
-        .spyOn(ActivityRepository.prototype, "findById")
-        .mockResolvedValue(
-          makeActivityRow({ canonical_type: "cycling", avg_power: 210, max_power: 360 }),
-        );
-      const getEftpTrendSpy = vi
-        .spyOn(PowerRepository.prototype, "getEftpTrend")
-        .mockResolvedValue({
-          trend: [],
-          currentEftp: 265,
-          model: null,
+    it.each([undefined, "wahoo"])(
+      "returns zones and ftp for cycling activities using power source %s",
+      async (powerSourceId) => {
+        const zones = [
+          { zone: 1, label: "Active Recovery", minPct: 0, maxPct: 55, seconds: 60, percent: 33.3 },
+          { zone: 2, label: "Endurance", minPct: 55, maxPct: 75, seconds: 120, percent: 66.7 },
+        ];
+        const findByIdSpy = vi
+          .spyOn(ActivityRepository.prototype, "findById")
+          .mockResolvedValue(
+            makeActivityRow({ canonical_type: "cycling", avg_power: 210, max_power: 360 }),
+          );
+        const getEftpTrendSpy = vi
+          .spyOn(PowerRepository.prototype, "getEftpTrend")
+          .mockResolvedValue({
+            trend: [],
+            currentEftp: 265,
+            model: null,
+          });
+        const getPowerZonesSpy = vi
+          .spyOn(ActivityRepository.prototype, "getPowerZones")
+          .mockResolvedValue(zones);
+
+        const caller = makeCaller([], {
+          getPowerCurveSamples: vi.fn(),
+          getNormalizedPowerSamples: vi.fn(),
         });
-      const getPowerZonesSpy = vi
-        .spyOn(ActivityRepository.prototype, "getPowerZones")
-        .mockResolvedValue(zones);
+        const result = await caller.powerZones({
+          id: "00000000-0000-0000-0000-000000000001",
+          powerSourceId,
+        });
 
-      const caller = makeCaller([], {
-        getPowerCurveSamples: vi.fn(),
-        getNormalizedPowerSamples: vi.fn(),
-      });
-      const result = await caller.powerZones({ id: "00000000-0000-0000-0000-000000000001" });
+        const [range] = getEftpTrendSpy.mock.calls[0] ?? [];
+        expect(range?.days).toBe(90);
+        expect(getPowerZonesSpy).toHaveBeenCalledWith(
+          "00000000-0000-0000-0000-000000000001",
+          265,
+          powerSourceId,
+        );
+        expect(result).toEqual({ zones, ftp: 265 });
 
-      const [range] = getEftpTrendSpy.mock.calls[0] ?? [];
-      expect(range?.days).toBe(90);
-      expect(getPowerZonesSpy).toHaveBeenCalledWith("00000000-0000-0000-0000-000000000001", 265);
-      expect(result).toEqual({ zones, ftp: 265 });
-
-      findByIdSpy.mockRestore();
-      getEftpTrendSpy.mockRestore();
-      getPowerZonesSpy.mockRestore();
-    });
+        findByIdSpy.mockRestore();
+        getEftpTrendSpy.mockRestore();
+        getPowerZonesSpy.mockRestore();
+      },
+    );
 
     it("throws NOT_FOUND when activity does not exist", async () => {
       const findByIdSpy = vi

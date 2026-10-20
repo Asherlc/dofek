@@ -6,6 +6,7 @@ import {
   climbingAttemptDetailFields,
   formatClimbingGradeComponents,
 } from "@dofek/format/climbing-log";
+import { climbingLogEntryName } from "@dofek/training/climbing-log";
 import { StyleSheet, Text, View } from "react-native";
 import type { ClimbingLogEntryDetail } from "../../server/src/contracts/climbing-log-contracts.ts";
 import { colors } from "../theme";
@@ -33,7 +34,7 @@ export function ClimbingLogEntryDetails({ entry }: { entry: ClimbingLogEntryDeta
   return (
     <View style={styles.container}>
       <ClimbingLogEntrySources
-        name={climb?.name ?? entry.title ?? "Climbing log"}
+        name={climbingLogEntryName(entry)}
         sourceName={entry.sourceName}
         links={entry.sourceLinks}
       />

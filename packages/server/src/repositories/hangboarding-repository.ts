@@ -204,7 +204,7 @@ export class HangboardingRepository {
             ON interval.activity_id = member.hang_ten_activity_id
           WHERE a.user_id = ${this.#userId}::uuid
             AND a.canonical_type = 'hangboard'
-            AND ${activityId}::uuid = ANY(a.member_activity_ids)
+            AND (a.id = ${activityId}::uuid OR ${activityId}::uuid = ANY(a.member_activity_ids))
             ${this.#timestampAccessPredicate(sql`a.started_at`)}
           ORDER BY interval.interval_index NULLS LAST, interval.id`,
     );

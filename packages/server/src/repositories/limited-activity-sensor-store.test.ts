@@ -288,4 +288,73 @@ describe("LimitedActivitySensorStore", () => {
       },
     );
   });
+  it("forwards independent metric source selections and returns recorded stream values", async () => {
+    const window = makeSensorWindow();
+    const sources = { heartRate: "whoop", power: "wahoo", altitude: "garmin" };
+    const rows: StreamPointRow[] = [
+      {
+        recorded_at: window.startedAt,
+        heart_rate: 143,
+        power: 215,
+        speed: 8,
+        cadence: 87,
+        altitude: 105,
+        lat: null,
+        lng: null,
+      },
+    ];
+    const delegate = makeDelegate({ getStream: vi.fn().mockResolvedValue(rows) });
+    const store = new LimitedActivitySensorStore(delegate, 1);
+
+    await expect(store.getStream(window, 250, sources)).resolves.toEqual(rows);
+    expect(delegate.getStream).toHaveBeenCalledExactlyOnceWith(window, 250, sources);
+  });
+
+  it.each([undefined, {}])(
+    "preserves default stream delegation for sources %j",
+    async (sources) => {
+      const window = makeSensorWindow();
+      const rows: StreamPointRow[] = [
+        {
+          recorded_at: window.startedAt,
+          heart_rate: 150,
+          power: 200,
+          speed: null,
+          cadence: null,
+          altitude: null,
+          lat: null,
+          lng: null,
+        },
+      ];
+      const delegate = makeDelegate({ getStream: vi.fn().mockResolvedValue(rows) });
+      const store = new LimitedActivitySensorStore(delegate, 1);
+
+      const result =
+        sources === undefined
+          ? store.getStream(window, 500)
+          : store.getStream(window, 500, sources);
+      await expect(result).resolves.toEqual(rows);
+      expect(delegate.getStream).toHaveBeenCalledExactlyOnceWith(window, 500);
+    },
+  );
+
+  it("forwards the selected power source and returns its zone seconds", async () => {
+    const window = makeSensorWindow();
+    const rows = [{ zone: 2, seconds: 480 }];
+    const delegate = makeDelegate({ getPowerZoneSeconds: vi.fn().mockResolvedValue(rows) });
+    const store = new LimitedActivitySensorStore(delegate, 1);
+
+    await expect(store.getPowerZoneSeconds(window, 250, "wahoo")).resolves.toEqual(rows);
+    expect(delegate.getPowerZoneSeconds).toHaveBeenCalledExactlyOnceWith(window, 250, "wahoo");
+  });
+
+  it("preserves default power zone delegation when no source is selected", async () => {
+    const window = makeSensorWindow();
+    const rows = [{ zone: 3, seconds: 120 }];
+    const delegate = makeDelegate({ getPowerZoneSeconds: vi.fn().mockResolvedValue(rows) });
+    const store = new LimitedActivitySensorStore(delegate, 1);
+
+    await expect(store.getPowerZoneSeconds(window, 275)).resolves.toEqual(rows);
+    expect(delegate.getPowerZoneSeconds).toHaveBeenCalledExactlyOnceWith(window, 275);
+  });
 });

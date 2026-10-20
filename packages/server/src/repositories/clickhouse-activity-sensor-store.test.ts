@@ -91,6 +91,20 @@ describe("ClickHouseActivitySensorStore", () => {
     expect(queryText).not.toContain("analytics.deduped_location");
   });
 
+  it("selects HR and power independently while preserving other chart channels", async () => {
+    const { store, query } = makeStore([]);
+    await store.getStream(window, 500, { heartRate: "garmin", power: "wahoo" });
+    const options = query.mock.calls[0]?.[0];
+    expect(options.query_params).toMatchObject({
+      selectedChannels: ["heart_rate", "power"],
+      selectedSources: ["garmin", "wahoo"],
+      memberActivityIds: window.memberActivityIds,
+    });
+    expect(options.query).toContain("analytics.sensor_scalar_sample FINAL");
+    expect(options.query).toContain("{selectedChannels:Array(String)}");
+    expect(options.query).toContain("CAST(NULL, 'Nullable(Float64)') AS heart_rate");
+  });
+
   it("returns no stream points when the read model has no rows", async () => {
     const { store } = makeStore([]);
 

@@ -150,3 +150,34 @@ export function isClimbingLogActivity(activityType: string): boolean {
 }
 export type AttemptScope = z.infer<typeof attemptScopeSchema>;
 export type AttemptOutcome = z.infer<typeof attemptOutcomeSchema>;
+
+const kayaColorSchema = z.union([
+  recordedTextSchema,
+  z.object({ name: recordedTextSchema }).transform((color) => color.name),
+]);
+const kayaClimbColorSchema = z.object({
+  color: kayaColorSchema.nullish(),
+  climb: z.object({ color: kayaColorSchema.nullish() }).nullish(),
+});
+
+/** Format retained source facts without turning an unnamed climb into a named catalogue entry. */
+export function climbingLogEntryName(entry: {
+  providerId?: string;
+  raw?: unknown;
+  title: string | null;
+  climb: { name: string | null; kind?: ClimbKind | null } | null;
+}): string {
+  const name = entry.climb?.name?.trim();
+  const title = entry.title?.trim();
+  if (name) return name;
+  if (title) return title;
+  if (entry.providerId === "kaya") {
+    const parsed = kayaClimbColorSchema.safeParse(entry.raw);
+    if (parsed.success) {
+      const color = parsed.data.climb?.color ?? parsed.data.color;
+      if (color)
+        return `${color.charAt(0).toUpperCase()}${color.slice(1)} ${entry.climb?.kind ?? "climb"}`;
+    }
+  }
+  return "Climbing log";
+}

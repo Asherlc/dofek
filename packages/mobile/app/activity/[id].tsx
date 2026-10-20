@@ -36,12 +36,17 @@ import {
   Text,
   View,
 } from "react-native";
+import type {
+  ActivityMetricSourceSelection,
+  ActivityMetric as SourceMetric,
+} from "../../../server/src/contracts/activity-metric-sources.ts";
 import { ActivityPerceivedExertion } from "../../components/ActivityPerceivedExertion";
 import {
   AreaChart,
   CHART_COLORS,
   chartStyles,
   LineChart,
+  MetricSourcePicker,
 } from "../../components/activity/ActivityDetailCharts";
 import { ProviderAbsentBanner } from "../../components/activity/ProviderAbsentBanner";
 import { styles } from "../../components/activity/styles";
@@ -466,8 +471,32 @@ export default function ActivityDetailScreen() {
   };
 
   const detail = trpc.activity.byId.useQuery({ id: id ?? "" }, { enabled: !!id });
+  const metricSources = trpc.activity.metricSources.useQuery({ id: id ?? "" }, { enabled: !!id });
+  const [sourceSelection, setSourceSelection] = useState<{
+    activityId: string;
+    sources: ActivityMetricSourceSelection;
+  } | null>(null);
+  const sources: ActivityMetricSourceSelection = {};
+  for (const metric of metricSources.data ?? []) {
+    const selected =
+      sourceSelection?.activityId === id ? sourceSelection.sources[metric.key] : undefined;
+    sources[metric.key] = metric.sources.some((source) => source.id === selected)
+      ? selected
+      : metric.defaultSourceId;
+  }
+  const selectSource = (metric: SourceMetric, sourceId: string) =>
+    setSourceSelection((previous) => ({
+      activityId: id ?? "",
+      sources: { ...(previous?.activityId === id ? previous.sources : {}), [metric]: sourceId },
+    }));
+  const sourceControls = (metricSources.data ?? []).map((metric) => ({
+    ...metric,
+    selectedId: sources[metric.key] ?? metric.defaultSourceId,
+    onChange: (sourceId: string) => selectSource(metric.key, sourceId),
+  }));
+  const heartRateSourceInput = sources.heartRate ? { heartRateSourceId: sources.heartRate } : {};
   const stream = trpc.activity.stream.useQuery(
-    { id: id ?? "", maxPoints: 200 },
+    { id: id ?? "", maxPoints: 200, sources },
     { enabled: !!id, placeholderData: (previousData) => previousData },
   );
   const route = trpc.activity.route.useQuery(
@@ -479,14 +508,14 @@ export default function ActivityDetailScreen() {
     },
   );
   const hrZones = trpc.activity.hrZones.useQuery(
-    { id: id ?? "" },
+    { id: id ?? "", ...heartRateSourceInput },
     { enabled: !!id, placeholderData: (previousData) => previousData },
   );
   const points = stream.data ?? [];
   const hasPower = points.some((p) => p.power != null);
   const isCycling = detail.data != null && isCyclingActivity(detail.data.activityType);
   const powerZones = trpc.activity.powerZones.useQuery(
-    { id: id ?? "" },
+    { id: id ?? "", powerSourceId: sources.power },
     {
       enabled: !!id && isCycling && hasPower,
       placeholderData: (previousData) => previousData,
@@ -873,80 +902,162 @@ export default function ActivityDetailScreen() {
         />
       )}
 
-      {/* Time-series charts (load progressively) */}
+      {metricSources.error && (
+        <QueryStatePanel variant="error" message={metricSources.error.message} />
+      )}
+      {stream.error && <QueryStatePanel variant="error" message={stream.error.message} />}
+      {sourceControls.length > 0 &&
+        (stream.isFetching || hrZones.isFetching || powerZones.isFetching) && (
+          <Text accessibilityLiveRegion="polite" style={{ color: colors.textSecondary }}>
+            Updating metrics…
+          </Text>
+        )}
       {stream.isLoading ? (
         <View style={styles.chartsLoading}>
           <ActivityIndicator color={colors.accent} size="small" />
           <Text style={styles.chartsLoadingText}>Loading charts...</Text>
         </View>
-      ) : (
-        <>
-          {/* Heart Rate Chart */}
-          {hasHr && (
-            <LineChart
-              data={points.map((p) => ({ recordedAt: p.recordedAt, value: p.heartRate }))}
-              color={CHART_COLORS.heartRate}
-              label="Heart Rate"
-              unit="bpm"
-              onHoverIndex={hasGps ? handleHoverIndex : undefined}
-              onScrubStart={hasGps ? handleScrubStart : undefined}
-              onScrubEnd={hasGps ? handleScrubEnd : undefined}
-            />
-          )}
-
-          {/* Power Chart */}
-          {hasPower && (
-            <LineChart
-              data={points.map((p) => ({ recordedAt: p.recordedAt, value: p.power }))}
-              color={CHART_COLORS.power}
-              label="Power"
-              unit="W"
-              onHoverIndex={hasGps ? handleHoverIndex : undefined}
-              onScrubStart={hasGps ? handleScrubStart : undefined}
-              onScrubEnd={hasGps ? handleScrubEnd : undefined}
-            />
-          )}
-
-          {/* Elevation Profile */}
-          {hasAltitude && (
-            <AreaChart
-              data={points.map((p) => ({
-                recordedAt: p.recordedAt,
-                value: p.altitude != null ? units.convertElevation(p.altitude) : null,
-              }))}
-              color={CHART_COLORS.altitude}
-              label="Elevation Profile"
-              unit={units.elevationLabel}
-              onHoverIndex={hasGps ? handleHoverIndex : undefined}
-              onScrubStart={hasGps ? handleScrubStart : undefined}
-              onScrubEnd={hasGps ? handleScrubEnd : undefined}
-            />
-          )}
-
-          {/* HR Zones */}
-          {(hasHr || zones.length > 0) && (
-            <HrZonesChart
-              zones={zones}
-              loading={hrZones.isLoading}
-              errorMessage={
-                hrZones.error
-                  ? userFacingErrorMessage(
-                      hrZones.error,
-                      "Heart rate zones could not be loaded. Please try again.",
-                    )
-                  : undefined
-              }
-            />
-          )}
-
-          {/* Power Zones (cycling only, requires eFTP) */}
-          {isCycling && hasPower && powerZones.data != null && (
-            <PowerZonesChart zones={powerZones.data.zones} />
-          )}
-        </>
+      ) : null}
+      {sourceControls
+        .filter((metric) => metric.key === "heartRate")
+        .map((metric) => (
+          <MetricSourcePicker
+            key={metric.key}
+            label={metric.label}
+            sources={metric.sources}
+            selectedId={metric.selectedId}
+            onChange={metric.onChange}
+          />
+        ))}
+      {hasHr && (
+        <LineChart
+          data={points.map((p) => ({ recordedAt: p.recordedAt, value: p.heartRate }))}
+          color={CHART_COLORS.heartRate}
+          label="Heart Rate"
+          unit="bpm"
+          onHoverIndex={hasGps ? handleHoverIndex : undefined}
+          onScrubStart={hasGps ? handleScrubStart : undefined}
+          onScrubEnd={hasGps ? handleScrubEnd : undefined}
+        />
       )}
 
-      {/* Export Activity */}
+      {sourceControls
+        .filter((metric) => metric.key === "power")
+        .map((metric) => (
+          <MetricSourcePicker
+            key={metric.key}
+            label={metric.label}
+            sources={metric.sources}
+            selectedId={metric.selectedId}
+            onChange={metric.onChange}
+          />
+        ))}
+      {hasPower && (
+        <LineChart
+          data={points.map((p) => ({ recordedAt: p.recordedAt, value: p.power }))}
+          color={CHART_COLORS.power}
+          label="Power"
+          unit="W"
+          onHoverIndex={hasGps ? handleHoverIndex : undefined}
+          onScrubStart={hasGps ? handleScrubStart : undefined}
+          onScrubEnd={hasGps ? handleScrubEnd : undefined}
+        />
+      )}
+
+      {sourceControls
+        .filter((metric) => metric.key === "speed")
+        .map((metric) => (
+          <MetricSourcePicker
+            key={metric.key}
+            label={metric.label}
+            sources={metric.sources}
+            selectedId={metric.selectedId}
+            onChange={metric.onChange}
+          />
+        ))}
+      {points.some((point) => point.speed != null) && (
+        <LineChart
+          data={points.map((p) => ({
+            recordedAt: p.recordedAt,
+            value: p.speed != null ? units.convertSpeed(p.speed * 3.6) : null,
+          }))}
+          color={CHART_COLORS.speed}
+          label="Speed"
+          unit={units.speedLabel}
+          onHoverIndex={hasGps ? handleHoverIndex : undefined}
+          onScrubStart={hasGps ? handleScrubStart : undefined}
+          onScrubEnd={hasGps ? handleScrubEnd : undefined}
+        />
+      )}
+      {sourceControls
+        .filter((metric) => metric.key === "cadence")
+        .map((metric) => (
+          <MetricSourcePicker
+            key={metric.key}
+            label={metric.label}
+            sources={metric.sources}
+            selectedId={metric.selectedId}
+            onChange={metric.onChange}
+          />
+        ))}
+      {points.some((point) => point.cadence != null) && (
+        <LineChart
+          data={points.map((p) => ({ recordedAt: p.recordedAt, value: p.cadence }))}
+          color={CHART_COLORS.cadence}
+          label="Cadence"
+          unit={cadenceUnit(activity.activityType)}
+          onHoverIndex={hasGps ? handleHoverIndex : undefined}
+          onScrubStart={hasGps ? handleScrubStart : undefined}
+          onScrubEnd={hasGps ? handleScrubEnd : undefined}
+        />
+      )}
+      {sourceControls
+        .filter((metric) => metric.key === "altitude")
+        .map((metric) => (
+          <MetricSourcePicker
+            key={metric.key}
+            label={metric.label}
+            sources={metric.sources}
+            selectedId={metric.selectedId}
+            onChange={metric.onChange}
+          />
+        ))}
+      {hasAltitude && (
+        <AreaChart
+          data={points.map((p) => ({
+            recordedAt: p.recordedAt,
+            value: p.altitude != null ? units.convertElevation(p.altitude) : null,
+          }))}
+          color={CHART_COLORS.altitude}
+          label="Elevation Profile"
+          unit={units.elevationLabel}
+          onHoverIndex={hasGps ? handleHoverIndex : undefined}
+          onScrubStart={hasGps ? handleScrubStart : undefined}
+          onScrubEnd={hasGps ? handleScrubEnd : undefined}
+        />
+      )}
+
+      {(hasHr || zones.length > 0) && (
+        <HrZonesChart
+          zones={zones}
+          loading={hrZones.isLoading}
+          errorMessage={
+            hrZones.error
+              ? userFacingErrorMessage(
+                  hrZones.error,
+                  "Heart rate zones could not be loaded. Please try again.",
+                )
+              : undefined
+          }
+        />
+      )}
+
+      {/* Power Zones (cycling only, requires eFTP) */}
+      {powerZones.error && <QueryStatePanel variant="error" message={powerZones.error.message} />}
+      {isCycling && hasPower && powerZones.data != null && (
+        <PowerZonesChart zones={powerZones.data.zones} />
+      )}
+
       <Pressable
         onPress={handleRecompute}
         disabled={recomputeMutation.isPending || isRecomputing}

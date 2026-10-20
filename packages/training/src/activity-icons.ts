@@ -12,6 +12,7 @@ export type ActivityIconCategory =
   | "rowing"
   | "winter"
   | "climbing"
+  | "hangboard"
   | "water"
   | "team"
   | "dance"
@@ -20,13 +21,14 @@ export type ActivityIconCategory =
 export interface ActivityIconInfo {
   category: ActivityIconCategory;
   emoji: string;
+  svg?: string;
   gradientFrom: string;
   gradientTo: string;
 }
 
 const CATEGORY_INFO: Record<
   ActivityIconCategory,
-  Pick<ActivityIconInfo, "emoji" | "gradientFrom" | "gradientTo">
+  Pick<ActivityIconInfo, "emoji" | "svg" | "gradientFrom" | "gradientTo">
 > = {
   cycling: { emoji: "\u{1F6B4}", gradientFrom: "#2563eb", gradientTo: "#1d4ed8" },
   running: { emoji: "\u{1F3C3}", gradientFrom: "#ea580c", gradientTo: "#c2410c" },
@@ -43,6 +45,12 @@ const CATEGORY_INFO: Record<
   rowing: { emoji: "\u{1F6A3}", gradientFrom: "#0284c7", gradientTo: "#0369a1" },
   winter: { emoji: "\u{26F7}\u{FE0F}", gradientFrom: "#6366f1", gradientTo: "#4f46e5" },
   climbing: { emoji: "\u{1F9D7}", gradientFrom: "#78716c", gradientTo: "#57534e" },
+  hangboard: {
+    emoji: "\u{1F590}\u{FE0F}",
+    gradientFrom: "#78716c",
+    gradientTo: "#57534e",
+    svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect x="4" y="9" width="56" height="24" rx="6" fill="#ff981a"/><g fill="#1c252b"><rect x="10" y="15" width="19" height="5" rx="2.5"/><rect x="35" y="15" width="19" height="5" rx="2.5"/><path d="M12 35v-7a2 2 0 0 1 4 0v-3a2 2 0 0 1 4 0v-1a2 2 0 0 1 4 0v2a2 2 0 0 1 4 0v9c0 5-3 7-3 11v9H15v-9c0-4-3-6-3-11Z"/><path d="M36 35v-9a2 2 0 0 1 4 0v-2a2 2 0 0 1 4 0v1a2 2 0 0 1 4 0v3a2 2 0 0 1 4 0v7c0 5-3 7-3 11v9H39v-9c0-4-3-6-3-11Z"/></g></svg>',
+  },
   water: { emoji: "\u{1F3C4}", gradientFrom: "#06b6d4", gradientTo: "#0891b2" },
   team: { emoji: "\u{26BD}", gradientFrom: "#65a30d", gradientTo: "#4d7c0f" },
   dance: { emoji: "\u{1F483}", gradientFrom: "#d946ef", gradientTo: "#a21caf" },
@@ -53,6 +61,7 @@ export function resolveActivityIconCategory(activityType: string): ActivityIconC
   const lower = activityType.trim().toLowerCase();
 
   if (isCyclingActivity(lower)) return "cycling";
+  if (lower === "hangboard" || lower === "hangboarding") return "hangboard";
   if (lower.includes("run") || lower.includes("trail")) return "running";
   if (lower.includes("swim") || lower.includes("triathlon")) return "swimming";
   if (lower.includes("walk") || lower.includes("hiking") || lower.includes("stair"))

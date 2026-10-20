@@ -12,6 +12,10 @@ import { queryCache } from "dofek/lib/cache";
 import { getProvider } from "dofek/providers/registry";
 import { z } from "zod";
 import {
+  activityMetricSourceSelectionSchema,
+  activityMetricSourcesSchema,
+} from "../contracts/activity-metric-sources.ts";
+import {
   ChartRange,
   selectedChartCustomRangeQuery,
   selectedChartRangeSchema,
@@ -197,6 +201,7 @@ export const activityRouter = router({
       z.object({
         id: z.guid(),
         maxPoints: z.number().int().min(10).max(10000).default(500),
+        sources: activityMetricSourceSelectionSchema.optional(),
       }),
     )
     .query(async ({ ctx, input }): Promise<StreamPoint[]> => {
@@ -214,7 +219,7 @@ export const activityRouter = router({
         ctx.accessWindow,
         ctx.sensorStore,
       );
-      const points = await repo.getStream(input.id, input.maxPoints);
+      const points = await repo.getStream(input.id, input.maxPoints, input.sources);
       return points.map((point) => point.toDetail());
     }),
 
@@ -247,8 +252,21 @@ export const activityRouter = router({
       return getActivityRoute(ctx.sensorStore, window, input.maxPoints);
     }),
 
-  hrZones: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })
+  metricSources: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })
     .input(z.object({ id: z.guid() }))
+    .output(activityMetricSourcesSchema)
+    .query(({ ctx, input }) =>
+      new ActivityRepository(
+        ctx.db,
+        ctx.userId,
+        ctx.timezone,
+        ctx.accessWindow,
+        ctx.sensorStore,
+      ).getMetricSources(input.id),
+    ),
+
+  hrZones: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })
+    .input(z.object({ id: z.guid(), heartRateSourceId: z.string().min(1).max(4096).optional() }))
     .query(async ({ ctx, input }): Promise<ActivityHrZones> => {
       if (!ctx.sensorStore) {
         throw new TRPCError({
@@ -264,11 +282,11 @@ export const activityRouter = router({
         ctx.accessWindow,
         ctx.sensorStore,
       );
-      return repo.getHrZones(input.id);
+      return repo.getHrZones(input.id, input.heartRateSourceId);
     }),
 
   powerZones: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })
-    .input(z.object({ id: z.guid() }))
+    .input(z.object({ id: z.guid(), powerSourceId: z.string().min(1).max(4096).optional() }))
     .query(async ({ ctx, input }): Promise<ActivityPowerZonesResult | null> => {
       const activityRepo = new ActivityRepository(
         ctx.db,
@@ -295,7 +313,7 @@ export const activityRouter = router({
       const { currentEftp } = await powerRepo.getEftpTrend(ChartRange.fromDays(90));
       if (currentEftp == null) return null;
 
-      const zones = await activityRepo.getPowerZones(activity.id, currentEftp);
+      const zones = await activityRepo.getPowerZones(activity.id, currentEftp, input.powerSourceId);
       return { zones, ftp: currentEftp };
     }),
 

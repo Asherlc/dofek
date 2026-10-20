@@ -49,6 +49,11 @@ The backend API and background job processor for Dofek. Built with Node.js, Expr
 
 ## Key Implementation Details
 
+- **Hangboarding details**: The [repository](src/repositories/hangboarding-repository.ts)
+  accepts the displayed activity group ID and provider member IDs. Both lookups
+  retain user ownership, canonical hangboard type, and access-window restrictions;
+  interval data comes from the group's Hang Ten member.
+
 - **Safe SQL**: Uses `executeWithSchema` (in `src/lib/typed-sql.ts`) which combines Drizzle's `sql` template literal with Zod schema validation to ensure runtime type safety and catch schema drift.
 - **Caching**: Implements a `queryCache` middleware for tRPC procedures (`src/trpc.ts`), with per-user isolation and configurable TTLs.
 - **Nutrition AI Parsing**: `food.analyzeWithAi` estimates one entry, while `food.analyzeItemsWithAi` parses a natural-language meal into multiple itemized entries for client-side logging flows.
@@ -477,3 +482,18 @@ and mobile removal together: older clients can no longer call the report APIs.
 `fitness.shared_report` and its stored snapshots. PostgreSQL's
 [`DROP TABLE`](https://www.postgresql.org/docs/current/sql-droptable.html)
 also removes that table's indexes and constraints.
+
+## Activity metric sources
+
+Activity views offer independent source controls for heart rate, power, speed,
+cadence, and elevation. Each control preselects its existing priority winner
+without an Auto option. Choices distinguish providers and devices and apply
+only to the current view; saved priorities are unchanged. Heart-rate and power
+zones follow their respective selected sources.
+
+`activity.metricSources` lists available sources in the owned activity window,
+including standalone recordings and canonical member activities. `activity.stream`
+accepts a `sources` map; zone endpoints accept their metric's source ID.
+The [source repository](src/repositories/activity-metric-sources-repository.ts) retains zero power, speed, and cadence samples
+and negative elevations, excludes invalid heart-rate samples, and preserves
+activity ownership and stream downsampling.

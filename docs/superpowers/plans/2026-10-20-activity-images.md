@@ -196,7 +196,7 @@ entries disclose upstream limits rather than claiming missing images were saved.
 Implemented on branch `work`, including the final review fixes: failed-job
 redrive, delayed transient-discovery retries without losing checkpoints, live
 Zwift URL refresh, preservation of Strava detailed raw metadata, and the database
-ownership-test fixture correction. Migration 0152 adds the durable backfill retry
+ownership-test fixture correction. Migration 0153 adds the durable backfill retry
 deadline. Sandbox lint, migration policy, and root/server/web TypeScript checks
 pass. Relevant unit regressions run directly on Node 26.12.0.
 

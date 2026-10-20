@@ -68,6 +68,13 @@ The [activity model](models/read_models/deduped_activities.sql) selects each
 nonblank display name and non-null note by the provider's field priority when present,
 then by the existing generic source priority and source activity ID. Canonical
 provider and type selection, and raw provenance, retain their separate rules.
+For strength source records, nonblank Strong titles take precedence over other
+names: native strong-csv imports and Apple Health records with source name
+Strong qualify. Missing or blank Strong titles fall back to the normal name
+ordering. Notes and primary-record selection retain their own ordering. The
+[Postgres view](../drizzle/_views/01_v_activity.sql) and the
+[ClickHouse activity model](models/read_models/deduped_activities.sql) implement
+this rule.
 Names containing only spaces are absent candidates; if no named source remains,
 the model returns `null` so web and mobile display the activity type. The name
 condition uses [ClickHouse conditional aggregation](https://clickhouse.com/docs/reference/functions/aggregate-functions/combinators#-if)

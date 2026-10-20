@@ -11,7 +11,7 @@ import type { Meta, StoryObj } from "@storybook/react-native";
 import { useState } from "react";
 import { Modal, Pressable, Text, View } from "react-native";
 import { colors } from "../../theme";
-import { AreaChart, CHART_COLORS, LineChart } from "./ActivityDetailCharts";
+import { AreaChart, CHART_COLORS, LineChart, MetricSourcePicker } from "./ActivityDetailCharts";
 
 const meta = {
   title: "Activity/ActivityDetailCharts",
@@ -142,7 +142,7 @@ function MetricSourcePreview() {
               </Pressable>
               <Pressable
                 accessibilityRole="button"
-                accessibilityLabel={`${metric.label} source: ${source.id === "automatic" ? "Automatic, " : ""}${source.sourceLabel}`}
+                accessibilityLabel={`${metric.label} source: ${source.sourceLabel}`}
                 aria-haspopup="dialog"
                 aria-expanded={activeMetric?.key === metric.key}
                 onPress={() => setActiveMetric(metric)}
@@ -268,9 +268,7 @@ function MetricSourcePreview() {
                         backgroundColor: selected ? colors.surfaceSecondary : undefined,
                       }}
                     >
-                      <Text style={{ color: colors.text, fontSize: 14 }}>
-                        {item.id === "automatic" ? `Auto · ${item.sourceLabel}` : item.label}
-                      </Text>
+                      <Text style={{ color: colors.text, fontSize: 14 }}>{item.label}</Text>
                       {selected && <Text style={{ color: colors.accent }}>✓</Text>}
                     </Pressable>
                   );
@@ -292,3 +290,20 @@ export const MetricSources = {
   parameters: { layout: "fullscreen" },
   render: () => <MetricSourcePreview />,
 } satisfies Story;
+
+export const HeartRateSources = {
+  render: function HeartRateSourcesStory() {
+    const [selectedId, setSelectedId] = useState("whoop");
+    return (
+      <MetricSourcePicker
+        label="Heart Rate"
+        sources={[
+          { id: "whoop", label: "WHOOP" },
+          { id: "garmin", label: "Garmin" },
+        ]}
+        selectedId={selectedId}
+        onChange={setSelectedId}
+      />
+    );
+  },
+};

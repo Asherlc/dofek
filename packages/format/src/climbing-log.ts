@@ -6,20 +6,28 @@ export function formatClimbingRecordedResult(
   target: string | null,
   outcome: AttemptOutcome | null,
   recordedCount: number | null,
+  resultLabels: readonly string[] = [],
 ): string | null {
   const result =
     target === null
-      ? outcome === null
-        ? null
-        : outcome === "completed"
-          ? "Completed"
-          : "Failed"
-      : `${target}${outcome === null ? "" : ` ${outcome}`}`;
+      ? outcome === "failed"
+        ? "Failed"
+        : null
+      : `${target}${outcome === "failed" ? " failed" : ""}`;
   return (
-    [result, recordedCount === null ? null : `Attempts: ${recordedCount}`]
+    [
+      result,
+      recordedCount === null || isFirstTryClimbingResult(resultLabels)
+        ? null
+        : `Attempts: ${recordedCount}`,
+    ]
       .filter((part) => part !== null)
       .join(" · ") || null
   );
+}
+
+export function isFirstTryClimbingResult(labels: readonly string[]): boolean {
+  return labels.some((label) => label === "Onsight" || label === "Flash");
 }
 
 export function formatClimbingRopeMethods(

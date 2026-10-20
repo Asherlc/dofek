@@ -36,6 +36,13 @@ function queryText(db: ReturnType<typeof makeDb>, callIndex = 0) {
 }
 
 describe("HangboardingRepository", () => {
+  it("looks up the displayed activity group as well as source member IDs", async () => {
+    const db = makeDb([]);
+    await new HangboardingRepository(db, "user-1", "UTC").getDetail("group-1");
+    const query = queryText(db);
+    expect(query.sql).toMatch(/a\.id = \$\d+::uuid/);
+    expect(query.sql).toContain("ANY(a.member_activity_ids)");
+  });
   it("returns a user-facing Hang Ten session summary", async () => {
     const db = makeDb([
       [
@@ -116,7 +123,7 @@ describe("HangboardingRepository", () => {
     ).resolves.toBeNull();
 
     const query = queryText(db);
-    expect(query.sql).toContain("CAST($3::date AS timestamp without time zone)");
+    expect(query.sql).toContain("CAST($4::date AS timestamp without time zone)");
     expect(query.params).toContain("2026-08-01");
     expect(query.params).toContain("2026-08-08");
   });
