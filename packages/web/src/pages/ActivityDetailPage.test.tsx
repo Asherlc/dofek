@@ -1,3 +1,4 @@
+import type { ActivityMetricSources } from "../../../server/src/contracts/activity-metric-sources.ts";
 import type { ClimbingLogEntryDetail } from "../../../server/src/contracts/climbing-log-contracts.ts";
 import {
   climbingAttemptFixture,
@@ -318,6 +319,14 @@ const mockPowerZonesUseQuery = vi.fn(
     isLoading: false,
   }),
 );
+const mockMetricSourcesUseQuery = vi.fn(
+  (): MockQueryResult<ActivityMetricSources> => ({
+    data: [],
+    error: null,
+    isError: false,
+    isLoading: false,
+  }),
+);
 const mockRecomputeMutate = vi.fn();
 const mockRecomputeShouldFail = vi.fn(() => false);
 const mockActivityByIdInvalidate = vi.fn().mockResolvedValue(undefined);
@@ -334,6 +343,7 @@ vi.mock("../lib/trpc.ts", () => ({
     activity: {
       byId: { useQuery: mockActivityByIdUseQuery },
       stream: { useQuery: mockStreamUseQuery },
+      metricSources: { useQuery: mockMetricSourcesUseQuery },
       route: { useQuery: mockRouteUseQuery },
       hrZones: { useQuery: mockHrZonesUseQuery },
       powerZones: { useQuery: mockPowerZonesUseQuery },
@@ -425,6 +435,13 @@ vi.mock("react-body-highlighter", () => ({
 }));
 
 afterEach(() => {
+  mockMetricSourcesUseQuery.mockReset();
+  mockMetricSourcesUseQuery.mockReturnValue({
+    data: [],
+    error: null,
+    isError: false,
+    isLoading: false,
+  });
   mockActivityByIdUseQuery.mockReset();
   mockActivityByIdUseQuery.mockReturnValue({
     data: mockActivity,
@@ -2687,7 +2704,7 @@ describe("ActivityDetailPage", () => {
       expect(screen.getByText("V4")).toBeDefined();
       expect(screen.getByText("Blue Circuit")).toBeDefined();
       expect(screen.getByText("Sent")).toBeDefined();
-      expect(screen.getByText("Completed · Attempts: 7")).toBeDefined();
+      expect(screen.getByText("Attempts: 7")).toBeDefined();
       expect(screen.getByText("Project")).toBeDefined();
       expect(screen.getByText("Failed · Attempts: 1")).toBeDefined();
       expect(screen.getByText("Wall angle: 35°")).toBeDefined();
@@ -2970,4 +2987,151 @@ describe("ActivityDetailPage", () => {
       expect(screen.queryByText("Heart Rate Zones")).toBeNull();
     });
   });
+});
+
+describe("activity heart-rate sources", () => {
+  it("preselects the default source and switches the trace and zones together", async () => {
+    mockMetricSourcesUseQuery.mockReturnValue({
+      data: [
+        {
+          key: "heartRate",
+          label: "Heart Rate",
+          sources: [
+            { id: "whoop", label: "WHOOP" },
+            { id: "garmin", label: "Garmin" },
+          ],
+          defaultSourceId: "whoop",
+        },
+      ],
+      error: null,
+      isError: false,
+      isLoading: false,
+    });
+    const { ActivityDetailPage } = await import("./ActivityDetailPage.tsx");
+    renderWithUnits(<ActivityDetailPage />);
+    const select = screen.getByRole("combobox", { name: "Heart Rate source" });
+    expect(select).toHaveValue("whoop");
+    expect(within(select).queryByRole("option", { name: /auto/i })).not.toBeInTheDocument();
+    fireEvent.change(select, { target: { value: "garmin" } });
+    expect(select).toHaveValue("garmin");
+    expect(mockStreamUseQuery).toHaveBeenLastCalledWith(
+      { id: "test-123", maxPoints: 500, sources: { heartRate: "garmin" } },
+      expect.anything(),
+    );
+    expect(mockHrZonesUseQuery).toHaveBeenLastCalledWith(
+      { id: "test-123", heartRateSourceId: "garmin" },
+      expect.anything(),
+    );
+  });
+});
+
+it("keeps the HR source picker available to recover from a failed source switch", async () => {
+  mockMetricSourcesUseQuery.mockReturnValue({
+    data: [
+      {
+        key: "heartRate",
+        label: "Heart Rate",
+        sources: [
+          { id: "whoop", label: "WHOOP" },
+          { id: "garmin", label: "Garmin" },
+        ],
+        defaultSourceId: "whoop",
+      },
+    ],
+    error: null,
+    isError: false,
+    isLoading: false,
+  });
+  mockStreamUseQuery.mockImplementation((input: unknown) => {
+    if (
+      input &&
+      typeof input === "object" &&
+      "sources" in input &&
+      input.sources !== null &&
+      typeof input.sources === "object" &&
+      "heartRate" in input.sources &&
+      input.sources.heartRate === "garmin"
+    ) {
+      return {
+        data: undefined,
+        error: new Error("Garmin samples could not be read"),
+        isError: true,
+        isLoading: false,
+      };
+    }
+    return { data: mockStreamPoints, error: null, isError: false, isLoading: false };
+  });
+  const { ActivityDetailPage } = await import("./ActivityDetailPage.tsx");
+  renderWithUnits(<ActivityDetailPage />);
+  fireEvent.change(screen.getByRole("combobox", { name: "Heart Rate source" }), {
+    target: { value: "garmin" },
+  });
+  expect(screen.getByText("Garmin samples could not be read")).toBeInTheDocument();
+  expect(screen.queryByText("No samples for the selected sources.")).not.toBeInTheDocument();
+  fireEvent.change(screen.getByRole("combobox", { name: "Heart Rate source" }), {
+    target: { value: "whoop" },
+  });
+  expect(screen.getByRole("combobox", { name: "Heart Rate source" })).toHaveValue("whoop");
+});
+
+it("selects independent metric sources and sends elevation and zone choices", async () => {
+  mockMetricSourcesUseQuery.mockReturnValue({
+    data: [
+      {
+        key: "heartRate",
+        label: "Heart Rate",
+        sources: [
+          { id: "whoop", label: "WHOOP" },
+          { id: "garmin", label: "Garmin" },
+        ],
+        defaultSourceId: "whoop",
+      },
+      {
+        key: "power",
+        label: "Power",
+        sources: [
+          { id: "wahoo", label: "Wahoo" },
+          { id: "garmin", label: "Garmin" },
+        ],
+        defaultSourceId: "wahoo",
+      },
+      {
+        key: "altitude",
+        label: "Elevation",
+        sources: [
+          { id: "wahoo", label: "Wahoo" },
+          { id: "garmin", label: "Garmin" },
+        ],
+        defaultSourceId: "wahoo",
+      },
+    ],
+    error: null,
+    isError: false,
+    isLoading: false,
+  });
+  const { ActivityDetailPage } = await import("./ActivityDetailPage.tsx");
+  renderWithUnits(<ActivityDetailPage />);
+  fireEvent.change(screen.getByRole("combobox", { name: "Power source" }), {
+    target: { value: "garmin" },
+  });
+  fireEvent.change(screen.getByRole("combobox", { name: "Elevation source" }), {
+    target: { value: "garmin" },
+  });
+  expect(screen.getByRole("combobox", { name: "Heart Rate source" })).toHaveValue("whoop");
+  expect(mockStreamUseQuery).toHaveBeenLastCalledWith(
+    {
+      id: "test-123",
+      maxPoints: 500,
+      sources: { heartRate: "whoop", power: "garmin", altitude: "garmin" },
+    },
+    expect.anything(),
+  );
+  expect(mockPowerZonesUseQuery).toHaveBeenLastCalledWith(
+    { id: "test-123", powerSourceId: "garmin" },
+    expect.anything(),
+  );
+  expect(mockHrZonesUseQuery).toHaveBeenLastCalledWith(
+    { id: "test-123", heartRateSourceId: "whoop" },
+    expect.anything(),
+  );
 });

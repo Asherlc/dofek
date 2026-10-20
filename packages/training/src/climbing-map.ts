@@ -1,3 +1,4 @@
+import { type ClimbKind, climbingLogEntryName } from "./climbing-log.ts";
 import type { GpsCoordinates } from "./gps-coordinates.ts";
 
 export interface ClimbingMapLocation {
@@ -53,7 +54,9 @@ export function groupClimbingMapMarkers(
 
 interface ClimbingMapEntry {
   id: string;
-  climb: { name: string | null } | null;
+  providerId?: string;
+  raw?: unknown;
+  climb: { name: string | null; kind?: ClimbKind | null } | null;
   title: string | null;
   mapLocation: ClimbingMapLocation | null;
 }
@@ -73,7 +76,7 @@ export function buildClimbingMapMarkers(entries: readonly ClimbingMapEntry[]): C
           {
             entryId: entry.id,
             entryNumber: index + 1,
-            label: entry.climb?.name ?? entry.title ?? "Climbing log",
+            label: climbingLogEntryName(entry),
             location: entry.mapLocation,
           },
         ]

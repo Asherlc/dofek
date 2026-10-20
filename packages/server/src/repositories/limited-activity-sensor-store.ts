@@ -1,5 +1,6 @@
 import { trace } from "@opentelemetry/api";
 import type { z } from "zod";
+import type { ActivityMetricSourceSelection } from "../contracts/activity-metric-sources.ts";
 import { ConcurrencyLimiter, type LimitedOperation } from "../lib/concurrency-limiter.ts";
 import type { RangeDays } from "../lib/date-window.ts";
 import { logger } from "../logger.ts";
@@ -145,16 +146,28 @@ export class LimitedActivitySensorStore implements ActivitySensorStore {
     return this.#regularLimiter.run(() => this.#delegate.getPaceCurveRows(days, userId, timezone));
   }
 
-  getStream(window: ActivitySensorWindow, maxPoints: number): Promise<StreamPointRow[]> {
-    return this.#regularLimiter.run(() => this.#delegate.getStream(window, maxPoints));
+  getStream(
+    window: ActivitySensorWindow,
+    maxPoints: number,
+    sources?: ActivityMetricSourceSelection,
+  ): Promise<StreamPointRow[]> {
+    return this.#regularLimiter.run(() =>
+      sources && Object.keys(sources).length > 0
+        ? this.#delegate.getStream(window, maxPoints, sources)
+        : this.#delegate.getStream(window, maxPoints),
+    );
   }
 
   getHeartRateZoneSeconds(window: ActivitySensorWindow) {
     return this.#regularLimiter.run(() => this.#delegate.getHeartRateZoneSeconds(window));
   }
 
-  getPowerZoneSeconds(window: ActivitySensorWindow, ftp: number) {
-    return this.#regularLimiter.run(() => this.#delegate.getPowerZoneSeconds(window, ftp));
+  getPowerZoneSeconds(window: ActivitySensorWindow, ftp: number, powerSourceId?: string) {
+    return this.#regularLimiter.run(() =>
+      powerSourceId
+        ? this.#delegate.getPowerZoneSeconds(window, ftp, powerSourceId)
+        : this.#delegate.getPowerZoneSeconds(window, ftp),
+    );
   }
 
   refreshBodyMeasurements() {

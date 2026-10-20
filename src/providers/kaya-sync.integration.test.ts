@@ -83,6 +83,23 @@ describe("KayaSyncProvider canonical persistence", () => {
   const logs = () =>
     context.db.select().from(climbingLogEntry).orderBy(climbingLogEntry.externalId);
 
+  it("persists recorded colors from both feeds while keeping unnamed climbs unnamed", async () => {
+    const coloredClimb = kayaClimbFixture({ name: null, color: { name: "Blue" } });
+    sessions = [
+      kayaSessionFixture({ attempted_climbs: [{ ...coloredClimb, id: "1000_2001", attempts: 1 }] }),
+    ];
+    ascents = [kayaAscentFixture({ climb: coloredClimb })];
+    expect(await run()).toMatchObject({ errors: [] });
+    const retained = await logs();
+    expect(retained).toHaveLength(2);
+    expect(retained.map((entry) => entry.raw)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ climb: expect.objectContaining({ color: { name: "Blue" } }) }),
+        expect.objectContaining({ color: { name: "Blue" } }),
+      ]),
+    );
+    expect((await context.db.select().from(climb)).every((row) => row.name === null)).toBe(true);
+  });
   it("retires standalone ascents when the complete logbook becomes empty", async () => {
     sessions = [];
     ascents = [kayaAscentFixture({ session_id: null })];

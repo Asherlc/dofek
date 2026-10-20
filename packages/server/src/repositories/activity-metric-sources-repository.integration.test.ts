@@ -1,0 +1,191 @@
+import { randomUUID } from "node:crypto";
+import { sql } from "drizzle-orm";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
+import {
+  createClickHouseTestActivitySensorStore,
+  executeClickHouseTestCommand,
+} from "../routers/clickhouse-integration-test-helpers.ts";
+import {
+  getActivityMetricSources,
+  getActivitySourceHrZones,
+} from "./activity-metric-sources-repository.ts";
+import type { ActivitySensorStore } from "./activity-repository.ts";
+
+const userId = "00000000-0000-0000-0000-000000000001";
+const activityId = randomUUID();
+const window = {
+  activityId,
+  userId,
+  startedAt: "2026-10-20T12:00:00.000Z",
+  endedAt: "2026-10-20T13:00:00.000Z",
+  memberActivityIds: [activityId],
+};
+
+describe("activity metric source selection", () => {
+  let context: TestContext;
+  let store: ActivitySensorStore;
+  beforeAll(async () => {
+    context = await setupTestDatabase();
+    await context.db.execute(
+      sql`UPDATE fitness.user_profile SET max_hr = 200, resting_hr = 60 WHERE id = ${userId}::uuid`,
+    );
+    store = await createClickHouseTestActivitySensorStore(context);
+    await executeClickHouseTestCommand(
+      context,
+      `INSERT INTO analytics.sensor_scalar_sample
+      (id, activity_id, user_id, recorded_at, recorded_date, channel, provider_id, scalar, provider_priority, _peerdb_is_deleted, _peerdb_version)
+      VALUES
+      (generateUUIDv4(), '${activityId}', '${userId}', '2026-10-20 12:00:00', '2026-10-20', 'power', 'garmin', 0, 1, 0, 1),
+      (generateUUIDv4(), '${activityId}', '${userId}', '2026-10-20 12:00:00', '2026-10-20', 'power', 'wahoo', 250, 2, 0, 1),
+      (generateUUIDv4(), '${activityId}', '${userId}', '2026-10-20 12:00:00', '2026-10-20', 'speed', 'garmin', 0, 1, 0, 1),
+      (generateUUIDv4(), '${activityId}', '${userId}', '2026-10-20 12:00:00', '2026-10-20', 'speed', 'whoop', 3, 2, 0, 1),
+      (generateUUIDv4(), '${activityId}', '${userId}', '2026-10-20 12:00:00', '2026-10-20', 'cadence', 'garmin', 0, 1, 0, 1),
+      (generateUUIDv4(), '${activityId}', '${userId}', '2026-10-20 12:00:00', '2026-10-20', 'cadence', 'whoop', 85, 2, 0, 1),
+      (generateUUIDv4(), '${activityId}', '${userId}', '2026-10-20 12:00:00', '2026-10-20', 'altitude', 'garmin', -10, 1, 0, 1),
+      (generateUUIDv4(), '${activityId}', '${userId}', '2026-10-20 12:00:00', '2026-10-20', 'altitude', 'whoop', 35, 2, 0, 1),
+      (generateUUIDv4(), '${activityId}', '${userId}', '2026-10-20 12:00:00', '2026-10-20', 'heart_rate', 'garmin', 100, 2, 0, 1),
+      (generateUUIDv4(), NULL, '${userId}', '2026-10-20 12:00:00', '2026-10-20', 'heart_rate', 'whoop', 150, 1, 0, 1),
+      (generateUUIDv4(), NULL, '${userId}', '2026-10-20 12:00:01', '2026-10-20', 'heart_rate', 'whoop', 180, 1, 0, 1),
+      (generateUUIDv4(), '${randomUUID()}', '${userId}', '2026-10-20 12:00:00', '2026-10-20', 'heart_rate', 'unrelated', 190, 0, 0, 1),
+      (generateUUIDv4(), NULL, '${randomUUID()}', '2026-10-20 12:00:00', '2026-10-20', 'heart_rate', 'other_user', 190, 0, 0, 1),
+      (generateUUIDv4(), NULL, '${userId}', '2026-10-20 11:59:59', '2026-10-20', 'heart_rate', 'outside_window', 190, 0, 0, 1),
+      (generateUUIDv4(), NULL, '${userId}', '2026-10-20 12:00:00', '2026-10-20', 'heart_rate', 'deleted', 190, 0, 1, 1),
+      (generateUUIDv4(), NULL, '${userId}', '2026-10-20 12:00:00', '2026-10-20', 'temperature', 'temperature_only', 190, 0, 0, 1)`,
+    );
+    await executeClickHouseTestCommand(
+      context,
+      `INSERT INTO analytics.activity_stream_points
+      (user_id, activity_id, points, refresh_version, is_deleted, refreshed_at) VALUES
+      ('${userId}', '${activityId}',
+       [(toDateTime64('2026-10-20 12:00:00', 6, 'UTC'), 150, 200, NULL, NULL, NULL, NULL, NULL)],
+       1, 0, now64(9))`,
+    );
+  });
+  afterAll(async () => {
+    await context?.cleanup();
+  });
+
+  it("offers all eligible providers, including standalone recordings, in default priority order", async () => {
+    const metrics = await getActivityMetricSources(store, window);
+    expect(metrics.map((metric) => [metric.key, metric.defaultSourceId])).toEqual([
+      ["heartRate", "whoop"],
+      ["power", "garmin"],
+      ["speed", "garmin"],
+      ["cadence", "garmin"],
+      ["altitude", "garmin"],
+    ]);
+    expect(
+      metrics.find((metric) => metric.key === "heartRate")?.sources.map((source) => source.id),
+    ).toEqual(["whoop", "garmin"]);
+    expect(
+      metrics.find((metric) => metric.key === "power")?.sources.map((source) => source.id),
+    ).toEqual(["garmin", "wahoo"]);
+  });
+  it("replaces HR with the requested source without mixing in default HR or losing power", async () => {
+    const points = await store.getStream(window, 500, { heartRate: "garmin" });
+    expect(points).toHaveLength(1);
+    expect(points[0]).toMatchObject({ heart_rate: 100, power: 200 });
+    const whoop = await store.getStream(window, 500, { heartRate: "whoop" });
+    expect(whoop.map((point) => point.heart_rate)).toEqual([150, 180]);
+    expect(whoop[0]?.power).toBe(200);
+  });
+  it("selects every metric independently and retains zero readings and negative elevation", async () => {
+    const points = await store.getStream(window, 500, {
+      heartRate: "garmin",
+      power: "wahoo",
+      speed: "garmin",
+      cadence: "garmin",
+      altitude: "garmin",
+    });
+    expect(points).toHaveLength(1);
+    expect(points[0]).toMatchObject({
+      heart_rate: 100,
+      power: 250,
+      speed: 0,
+      cadence: 0,
+      altitude: -10,
+    });
+  });
+  it("uses the selected power source for zones and does not invent samples for an empty source", async () => {
+    const zeroPower = await store.getPowerZoneSeconds(window, 200, "garmin");
+    expect(zeroPower.find((zone) => zone.zone === 1)?.seconds).toBe(1);
+    const wahoo = await store.getPowerZoneSeconds(window, 200, "wahoo");
+    expect(wahoo.find((zone) => zone.zone === 6)?.seconds).toBe(1);
+    expect(wahoo.find((zone) => zone.zone === 1)?.seconds).toBe(0);
+    const missing = await store.getPowerZoneSeconds(window, 200, "not-a-source");
+    expect(missing.every((zone) => zone.seconds === 0)).toBe(true);
+  });
+  it("calculates zones from the selected provider, excluding other providers", async () => {
+    const zones = await getActivitySourceHrZones(store, window, "garmin");
+    expect(zones.find((zone) => zone.zone === 0)).toMatchObject({ seconds: 1, percent: 100 });
+    expect(zones.reduce((sum, zone) => sum + zone.seconds, 0)).toBe(1);
+  });
+  it("does not expose another user's sources or samples", async () => {
+    const otherWindow = { ...window, userId: randomUUID() };
+    expect(await getActivityMetricSources(store, otherWindow)).toEqual([]);
+    expect(await store.getStream(otherWindow, 500, { heartRate: "whoop" })).toEqual([]);
+  });
+
+  it("selects distinct Apple Health devices using the opaque source IDs returned by SQL", async () => {
+    const deviceActivityId = randomUUID();
+    const deviceWindow = {
+      activityId: deviceActivityId,
+      userId,
+      startedAt: "2026-10-20T14:00:00.000Z",
+      endedAt: "2026-10-20T14:01:00.000Z",
+      memberActivityIds: [deviceActivityId],
+    };
+    await executeClickHouseTestCommand(
+      context,
+      `INSERT INTO analytics.sensor_scalar_sample
+      (id, activity_id, user_id, recorded_at, recorded_date, channel, provider_id, device_id, scalar, provider_priority, _peerdb_is_deleted, _peerdb_version)
+      VALUES
+      (generateUUIDv4(), '${deviceActivityId}', '${userId}', '2026-10-20 14:00:00', '2026-10-20', 'heart_rate', 'apple_health', 'Zepp', 130, 1, 0, 1),
+      (generateUUIDv4(), '${deviceActivityId}', '${userId}', '2026-10-20 14:00:00', '2026-10-20', 'heart_rate', 'apple_health', 'Apple Watch / Series 8', 155, 2, 0, 1)`,
+    );
+    const metrics = await getActivityMetricSources(store, deviceWindow);
+    expect(metrics).toHaveLength(1);
+    const heartRate = metrics[0];
+    expect(heartRate?.key).toBe("heartRate");
+    expect(heartRate?.sources).toHaveLength(2);
+    const zepp = heartRate?.sources.find((source) => source.label.includes("Zepp"));
+    const watch = heartRate?.sources.find((source) =>
+      source.label.includes("Apple Watch / Series 8"),
+    );
+    expect(zepp).toBeDefined();
+    expect(watch).toBeDefined();
+    if (!zepp || !watch) throw new Error("Expected both Apple Health device sources");
+    expect(zepp.id).not.toBe(watch.id);
+    expect(heartRate?.defaultSourceId).toBe(zepp.id);
+    const points = await store.getStream(deviceWindow, 500, { heartRate: watch.id });
+    expect(points.map((point) => point.heart_rate)).toEqual([155]);
+    const zones = await getActivitySourceHrZones(store, deviceWindow, watch.id);
+    expect(zones.find((zone) => zone.zone === 2)?.seconds).toBe(1);
+    expect(zones.reduce((sum, zone) => sum + zone.seconds, 0)).toBe(1);
+  });
+
+  it("caps a selected raw power stream while retaining zero and the first and last readings", async () => {
+    const powerActivityId = randomUUID();
+    const powerWindow = {
+      activityId: powerActivityId,
+      userId,
+      startedAt: "2026-10-20T15:00:00.000Z",
+      endedAt: "2026-10-20T15:01:00.000Z",
+      memberActivityIds: [powerActivityId],
+    };
+    await executeClickHouseTestCommand(
+      context,
+      `INSERT INTO analytics.sensor_scalar_sample
+      (id, activity_id, user_id, recorded_at, recorded_date, channel, provider_id, scalar, provider_priority, _peerdb_is_deleted, _peerdb_version)
+      SELECT generateUUIDv4(), toUUID('${powerActivityId}'), toUUID('${userId}'),
+        toDateTime64('2026-10-20 15:00:00', 6, 'UTC') + toIntervalSecond(number),
+        toDate('2026-10-20'), 'power', 'garmin', toFloat64(number), 1, 0, 1
+      FROM numbers(30)`,
+    );
+    const points = await store.getStream(powerWindow, 10, { power: "garmin" });
+    expect(points).toHaveLength(10);
+    expect(points[0]?.power).toBe(0);
+    expect(points.at(-1)?.power).toBe(29);
+  });
+});

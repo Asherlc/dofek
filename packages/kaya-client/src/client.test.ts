@@ -24,6 +24,25 @@ const emptyClimbContext = {
 };
 
 describe("KayaClient", () => {
+  it("retains hold colors on unnamed attempted climbs", async () => {
+    const fetchFn = vi.fn<typeof fetch>().mockResolvedValue(
+      jsonResponse({
+        data: {
+          sessionsForUser: [
+            {
+              ...session("1000"),
+              attempted_climbs: [
+                { ...attemptedClimb("1000_2001", 1), name: null, color: { name: "Blue" } },
+              ],
+            },
+          ],
+        },
+      }),
+    );
+    const result = await new KayaClient("token", fetchFn).listSessions("42");
+    expect(result[0]?.attempted_climbs[0]).toMatchObject({ name: null, color: { name: "Blue" } });
+  });
+
   it("retains an unreported rope method on an attempted climb", async () => {
     const fetchFn = vi.fn<typeof fetch>().mockResolvedValue(
       jsonResponse({
@@ -163,6 +182,8 @@ describe("KayaClient", () => {
     expect(graphQlRequests[1]).toContain("rating");
     expect(graphQlRequests[1]).toContain("stiffness");
     expect(graphQlRequests[1]).toContain("lead");
+    expect(graphQlRequests[0]).toContain("color { name }");
+    expect(graphQlRequests[1]).toContain("color { name }");
     expect(graphQlRequests[0]).toContain("slug");
     expect(graphQlRequests[1]).toContain("slug");
     expect(fetchFn.mock.calls[1]?.[1]?.headers).toMatchObject({

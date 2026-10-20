@@ -10,7 +10,11 @@ import {
   type ClimbingLocationMapEntry,
   climbingMapLocationSchema,
 } from "@dofek/training/climbing-location-map";
-import { attemptScopeSchema, ropeMethodSchema } from "@dofek/training/climbing-log";
+import {
+  attemptScopeSchema,
+  climbingLogEntryName,
+  ropeMethodSchema,
+} from "@dofek/training/climbing-log";
 import {
   type ClimbingGradeProgressionLane,
   climbingGradeProgressionSchema,
@@ -170,7 +174,10 @@ const mapEntryRowSchema = z.object({
   id: z.string(),
   activity_id: z.string().nullable(),
   session_date: dateStringSchema,
-  label: z.string(),
+  climb_name: z.string().nullable(),
+  title: z.string().nullable(),
+  provider_id: z.string(),
+  raw: z.json().nullable(),
   climb_kind: rockKindSchema,
   grade_system: freeRockSystemSchema.nullable(),
   grade: z.string().nullable(),
@@ -277,7 +284,7 @@ export class ClimbingRepository extends BaseRepository {
       sql`WITH ${this.#canonicalLogCtes(days, filters)}
       SELECT DISTINCT ON (ce.id) ce.id::text AS id,
         ce.canonical_activity_id::text AS activity_id, ce.session_date,
-        COALESCE(NULLIF(BTRIM(ce.climb_name), ''), NULLIF(BTRIM(ce.title), ''), 'Climbing log') AS label,
+        ce.climb_name, ce.title, ce.provider_id, ce.raw,
         ce.climb_kind, ce.grade_system, ce.grade,
         CASE WHEN ce.coordinates IS NOT NULL THEN jsonb_build_object(
           'coordinates', jsonb_build_object('latitude', ce.coordinates[1], 'longitude', ce.coordinates[0]),
@@ -299,7 +306,12 @@ export class ClimbingRepository extends BaseRepository {
       id: row.id,
       activityId: row.activity_id,
       date: row.session_date,
-      label: row.label,
+      label: climbingLogEntryName({
+        providerId: row.provider_id,
+        raw: row.raw,
+        title: row.title,
+        climb: { name: row.climb_name, kind: row.climb_kind },
+      }),
       grade:
         row.grade_system === null || row.grade === null
           ? null

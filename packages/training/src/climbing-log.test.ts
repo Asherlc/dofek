@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   areaSchema,
   climbingAttemptSchema,
+  climbingLogEntryName,
   climbingLogEntrySchema,
   climbSchema,
   gradeComponentSchema,
@@ -289,5 +290,47 @@ describe("climbing log entities", () => {
       areaSchema.safeParse({ ...owner, name: " ", parentAreaId: null, coordinates: null }).success,
     ).toBe(false);
     expect(climbSchema.safeParse({ ...summit, coordinates: { latitude: 0 } }).success).toBe(false);
+  });
+});
+
+describe("climbing log labels", () => {
+  const entry = {
+    providerId: "kaya",
+    title: null,
+    climb: { name: null, kind: "boulder" as const },
+    raw: { color: { name: "blue" } },
+  };
+  it("labels unnamed Kaya climbs with their recorded color and kind", () => {
+    expect(climbingLogEntryName(entry)).toBe("Blue boulder");
+    expect(
+      climbingLogEntryName({
+        ...entry,
+        raw: { climb: { color: { name: "Yellow" } } },
+        climb: { name: null, kind: "route" },
+      }),
+    ).toBe("Yellow route");
+  });
+  it("preserves actual names and titles", () => {
+    expect(climbingLogEntryName({ ...entry, climb: { name: "The Arete", kind: "boulder" } })).toBe(
+      "The Arete",
+    );
+    expect(climbingLogEntryName({ ...entry, title: "Recorded title" })).toBe("Recorded title");
+  });
+  it.each(["Green", " green "])("uses retained CSV color strings: %j", (color) => {
+    expect(climbingLogEntryName({ ...entry, raw: { color } })).toBe("Green boulder");
+  });
+  it.each([
+    null,
+    {},
+    { color: null },
+    { color: "  " },
+    { color: 123 },
+    { color: { name: "  " } },
+    { color: { name: 123 } },
+  ])("retains the generic label when color is unreported or invalid: %j", (raw) => {
+    expect(climbingLogEntryName({ ...entry, raw })).toBe("Climbing log");
+  });
+  it("does not interpret other providers' raw payloads as Kaya metadata", () => {
+    expect(climbingLogEntryName({ ...entry, providerId: "openbeta" })).toBe("Climbing log");
   });
 });

@@ -3,10 +3,20 @@ import type { ClickHouseCommandClient } from "dofek/db/clickhouse";
 import { refreshBodyMeasurementReadModel } from "dofek/db/clickhouse-read-model-refresh";
 import { z } from "zod";
 import {
+  ACTIVITY_CHART_METRICS,
+  type ActivityMetric,
+  type ActivityMetricSourceSelection,
+} from "../contracts/activity-metric-sources.ts";
+import {
   clickHouseToIntervalDayLowerBound,
   type RangeDays,
   rangeDaysParams,
 } from "../lib/date-window.ts";
+import {
+  activityMetricParams,
+  activityMetricSamplesSql,
+  activityMetricSourceIdSql,
+} from "./activity-metric-sources-repository.ts";
 import type {
   ActivitySensorQueryOptions,
   ActivitySensorStore,
@@ -359,17 +369,33 @@ export class ClickHouseActivitySensorStore implements ActivitySensorStore {
     return result.json();
   }
 
-  async getStream(window: ActivitySensorWindow, maxPoints: number): Promise<StreamPointRow[]> {
+  async getStream(
+    window: ActivitySensorWindow,
+    maxPoints: number,
+    sources?: ActivityMetricSourceSelection,
+  ): Promise<StreamPointRow[]> {
+    const selected = ACTIVITY_CHART_METRICS.flatMap((metric) => {
+      const provider = sources?.[metric.key];
+      return provider ? [{ ...metric, provider }] : [];
+    });
+    const pointExpression = (key: ActivityMetric, index: number) =>
+      selected.some((metric) => metric.key === key)
+        ? "CAST(NULL, 'Nullable(Float64)')"
+        : `point.${index}`;
+    const selectedPoints = ACTIVITY_CHART_METRICS.map(
+      (metric) =>
+        `if(countIf(channel = '${metric.channel}') = 0, NULL, anyIf(scalar, channel = '${metric.channel}')) AS ${metric.channel}`,
+    ).join(",\n            ");
     const result = await this.#client.query<Record<string, unknown>>({
       query: `
         WITH expanded_points AS (
           SELECT
             point.1 AS recorded_at,
-            point.2 AS heart_rate,
-            point.3 AS power,
-            point.4 AS speed,
-            point.5 AS cadence,
-            point.6 AS altitude,
+            ${pointExpression("heartRate", 2)} AS heart_rate,
+            ${pointExpression("power", 3)} AS power,
+            ${pointExpression("speed", 4)} AS speed,
+            ${pointExpression("cadence", 5)} AS cadence,
+            ${pointExpression("altitude", 6)} AS altitude,
             point.7 AS lat,
             point.8 AS lng
           FROM analytics.activity_stream_points FINAL
@@ -379,11 +405,25 @@ export class ClickHouseActivitySensorStore implements ActivitySensorStore {
             AND is_deleted = 0
             AND point.1 >= parseDateTime64BestEffort({windowStartedAt:String})
             AND point.1 <= parseDateTime64BestEffort({windowEndedAt:String})
+          ${
+            selected.length > 0
+              ? `UNION ALL
+          SELECT recorded_at, ${selectedPoints}, NULL AS lat, NULL AS lng
+          FROM (
+            SELECT recorded_at, channel, argMin(scalar, (provider_priority, provider_id, id)) AS scalar
+            FROM (${activityMetricSamplesSql})
+            WHERE channel IN {selectedChannels:Array(String)}
+              AND ${activityMetricSourceIdSql} = arrayElement({selectedSources:Array(String)}, indexOf({selectedChannels:Array(String)}, channel))
+            GROUP BY recorded_at, channel
+          )
+          GROUP BY recorded_at`
+              : ""
+          }
         ),
         grouped_point_tuples AS (
           SELECT
             recorded_at,
-            any(tuple(heart_rate, power, speed, cadence, altitude, lat, lng)) AS point_values
+            ${selected.length > 0 ? "tuple(any(heart_rate), any(power), any(speed), any(cadence), any(altitude), any(lat), any(lng))" : "any(tuple(heart_rate, power, speed, cadence, altitude, lat, lng))"} AS point_values
           FROM expanded_points
           GROUP BY recorded_at
         ),
@@ -496,7 +536,16 @@ export class ClickHouseActivitySensorStore implements ActivitySensorStore {
         ORDER BY recorded_at
       `,
       format: "JSONEachRow",
-      query_params: queryParams(window, { maxPoints }),
+      query_params: queryParams(window, {
+        maxPoints,
+        ...(selected.length > 0
+          ? {
+              ...activityMetricParams(window),
+              selectedChannels: selected.map((metric) => metric.channel),
+              selectedSources: selected.map((metric) => metric.provider),
+            }
+          : {}),
+      }),
     });
     const rows = await result.json();
     return rows.map((row) => {
@@ -532,23 +581,31 @@ export class ClickHouseActivitySensorStore implements ActivitySensorStore {
   async getPowerZoneSeconds(
     window: ActivitySensorWindow,
     ftp: number,
+    powerSourceId?: string,
   ): Promise<PowerZoneSecondRow[]> {
     const result = await this.#client.query<PowerZoneSecondRow>({
       query: `
         WITH power_samples AS (
-          SELECT scalar
+          ${
+            powerSourceId
+              ? `SELECT recorded_at, argMin(scalar, (provider_priority, provider_id, id)) AS scalar, 1 AS has_sample
+          FROM (${activityMetricSamplesSql})
+          WHERE channel = 'power' AND ${activityMetricSourceIdSql} = {powerSourceId:String}
+          GROUP BY recorded_at`
+              : `SELECT scalar
           FROM analytics.activity_sensor_sample FINAL
           WHERE user_id = {userId:UUID}
             AND activity_id = {activityId:UUID}
             AND recorded_at >= parseDateTime64BestEffort({windowStartedAt:String})
             AND recorded_at <= parseDateTime64BestEffort({windowEndedAt:String})
             AND channel = 'power'
-            AND is_deleted = 0
+            AND is_deleted = 0`
+          }
         )
         SELECT
           zone,
           countIf(
-            CASE zone
+            ${powerSourceId ? "power_samples.has_sample = 1 AND " : ""}CASE zone
               WHEN 1 THEN scalar < {ftp:Float64} * 0.55
               WHEN 2 THEN scalar >= {ftp:Float64} * 0.55 AND scalar < {ftp:Float64} * 0.75
               WHEN 3 THEN scalar >= {ftp:Float64} * 0.75 AND scalar < {ftp:Float64} * 0.9
@@ -565,7 +622,10 @@ export class ClickHouseActivitySensorStore implements ActivitySensorStore {
         ORDER BY zone
       `,
       format: "JSONEachRow",
-      query_params: queryParams(window, { ftp }),
+      query_params: queryParams(window, {
+        ftp,
+        ...(powerSourceId ? { ...activityMetricParams(window), powerSourceId } : {}),
+      }),
     });
     return result.json();
   }

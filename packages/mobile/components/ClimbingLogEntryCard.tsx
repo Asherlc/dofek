@@ -2,6 +2,7 @@ import {
   formatClimbingRecordedResult,
   formatClimbingRopeMethods,
 } from "@dofek/format/climbing-log";
+import { climbingLogEntryName } from "@dofek/training/climbing-log";
 import type { ClimbingMapLocation } from "@dofek/training/climbing-map";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import type { ClimbingLogEntryDetail } from "../../server/src/contracts/climbing-log-contracts.ts";
@@ -30,7 +31,7 @@ export function ClimbingLogEntryCard({
   entryNumber?: number;
   selected?: boolean;
 }) {
-  const name = entry.climb?.name ?? entry.title ?? "Climbing log";
+  const name = climbingLogEntryName(entry);
   const attachmentPending = attachmentState?.pending ?? false;
   const ropeMethods = formatClimbingRopeMethods(entry.attempts);
   const recordedResult =
@@ -40,6 +41,9 @@ export function ClimbingLogEntryCard({
           null,
           entry.recordedClimbOutcome,
           entry.recordedClimbAttemptCount,
+          entry.attempts
+            .filter((attempt) => attempt.scope === "climb")
+            .flatMap((attempt) => attempt.rockResultLabels),
         );
   return (
     <View
@@ -79,6 +83,9 @@ export function ClimbingLogEntryCard({
                 : `Pitch ${result.pitch.number}`,
             result.recordedOutcome,
             result.recordedAttemptCount,
+            entry.attempts
+              .filter((attempt) => result.attemptIds.includes(attempt.id))
+              .flatMap((attempt) => attempt.rockResultLabels),
           )}
         </Text>
       ))}
