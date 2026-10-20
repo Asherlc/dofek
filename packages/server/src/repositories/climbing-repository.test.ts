@@ -25,7 +25,10 @@ describe("ClimbingRepository map entries", () => {
     id: "log",
     activity_id: null,
     session_date: "2026-10-01",
-    label: "Corner",
+    climb_name: "Corner",
+    title: null,
+    provider_id: "openbeta",
+    raw: null,
     location,
     ...route,
   };
@@ -51,6 +54,19 @@ describe("ClimbingRepository map entries", () => {
     expect(await repository([{ ...entry, ...grade }]).getMapEntries(30)).toEqual([
       expect.objectContaining({ id: "log", grade: null, location }),
     ]);
+  });
+  it("uses a retained Kaya color for an unnamed map entry", async () => {
+    expect(
+      await repository([
+        {
+          ...entry,
+          climb_name: null,
+          provider_id: "kaya",
+          raw: { climb: { color: { name: "Blue" } } },
+          ...boulder,
+        },
+      ]).getMapEntries(30),
+    ).toMatchObject([{ label: "Blue boulder" }]);
   });
   it("returns no map entries without located observations", async () => {
     expect(await repository([]).getMapEntries(30)).toEqual([]);

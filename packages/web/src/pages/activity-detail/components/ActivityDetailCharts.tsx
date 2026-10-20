@@ -69,6 +69,8 @@ export function MetricsChart({
   units,
   onHoverPosition,
   renderLegend,
+  metricSources = [],
+  error,
 }: {
   points: StreamPoint[];
   activityType: string;
@@ -79,6 +81,14 @@ export function MetricsChart({
   loading: boolean;
   units: UnitConverter;
   onHoverPosition?: (position: { lat: number; lng: number } | null) => void;
+  error?: { message: string } | null;
+  metricSources?: Array<{
+    key: string;
+    label: string;
+    sources: Array<{ id: string; label: string }>;
+    selectedId: string;
+    onChange: (sourceId: string) => void;
+  }>;
   renderLegend?: (controls: {
     isVisible: (name: string) => boolean;
     toggle: (name: string) => void;
@@ -110,25 +120,25 @@ export function MetricsChart({
     [points, onHoverPosition, handleLegendChange],
   );
 
-  if (loading) return <ChartLoadingSkeleton height={300} />;
-  if (points.length === 0) return null;
+  if (loading && metricSources.length === 0) return <ChartLoadingSkeleton height={300} />;
+  if (points.length === 0 && metricSources.length === 0) return null;
 
   const metrics: MetricDefinition[] = [];
-  if (hasHr)
+  if (hasHr || metricSources.some((source) => source.key === "heartRate"))
     metrics.push({
       name: "Heart Rate",
       axisName: "Heart Rate (bpm)",
       color: CHART_COLORS.heartRate,
       data: points.map((p) => p.heartRate),
     });
-  if (hasPower)
+  if (hasPower || metricSources.some((source) => source.key === "power"))
     metrics.push({
       name: "Power",
       axisName: "Power (W)",
       color: CHART_COLORS.power,
       data: points.map((p) => p.power),
     });
-  if (hasSpeed)
+  if (hasSpeed || metricSources.some((source) => source.key === "speed"))
     metrics.push({
       name: "Speed",
       axisName: `Speed (${units.speedLabel})`,
@@ -137,13 +147,67 @@ export function MetricsChart({
         p.speed != null ? +formatNumber(units.convertSpeed(p.speed * 3.6)) : null,
       ),
     });
-  if (hasCadence)
+  if (hasCadence || metricSources.some((source) => source.key === "cadence"))
     metrics.push({
       name: "Cadence",
       axisName: cadenceAxisLabel(activityType),
       color: CHART_COLORS.cadence,
       data: points.map((p) => p.cadence),
     });
+
+  const customLegend =
+    renderLegend ??
+    (metricSources.length > 0
+      ? ({
+          isVisible,
+          toggle,
+        }: {
+          isVisible: (name: string) => boolean;
+          toggle: (name: string) => void;
+        }) => (
+          <fieldset className="m-0 flex flex-wrap gap-2 border-0 p-0">
+            <legend className="sr-only">Chart controls</legend>
+            {metrics.map((metric) => (
+              <div
+                key={metric.name}
+                className="inline-flex min-w-0 items-center rounded-md border border-border"
+              >
+                <button
+                  type="button"
+                  aria-label={`Toggle ${metric.name}`}
+                  aria-pressed={isVisible(metric.name)}
+                  onClick={() => toggle(metric.name)}
+                  className={`flex min-h-9 items-center gap-1.5 px-2 text-xs font-medium ${isVisible(metric.name) ? "text-foreground" : "text-dim line-through"}`}
+                >
+                  <span
+                    className="h-2 w-2 rounded-full"
+                    style={{ backgroundColor: metric.color }}
+                    aria-hidden="true"
+                  />
+                  {metric.name === "Heart Rate" ? "HR" : metric.name}
+                </button>
+                {metricSources
+                  .filter((source) => source.label === metric.name)
+                  .map((metricSource) => (
+                    <select
+                      key={metricSource.key}
+                      aria-label={`${metric.name} source`}
+                      value={metricSource.selectedId}
+                      onChange={(event) => metricSource.onChange(event.target.value)}
+                      className="min-h-9 min-w-0 max-w-44 rounded-r-md border-l border-border bg-transparent py-1 pl-2 pr-1 text-xs text-muted"
+                    >
+                      {metricSource.sources.map((source) => (
+                        <option key={source.id} value={source.id}>
+                          {source.label}
+                        </option>
+                      ))}
+                    </select>
+                  ))}
+              </div>
+            ))}
+          </fieldset>
+        )
+      : undefined);
 
   const isVisible = (name: string) => legendSelected[name] !== false;
 
@@ -184,7 +248,7 @@ export function MetricsChart({
 
   const option = {
     grid: {
-      top: renderLegend ? 24 : 40,
+      top: customLegend ? 24 : 40,
       right: 60 + Math.max(0, visibleRightAxisCount - 1) * 60,
       bottom: 86,
       left: 60,
@@ -196,7 +260,7 @@ export function MetricsChart({
         },
       },
     }),
-    legend: { ...dofekLegend(renderLegend === undefined), selected: legendSelected },
+    legend: { ...dofekLegend(customLegend === undefined), selected: legendSelected },
     dataZoom: [
       { type: "inside", xAxisIndex: 0, start: 0, end: 100 },
       {
@@ -237,12 +301,20 @@ export function MetricsChart({
 
   return (
     <figure className="m-0">
-      {renderLegend?.({ isVisible, toggle: toggleMetric })}
-      <DofekChart option={option} height={380} onEvents={chartEvents} />
-      <figcaption className="mt-1 flex flex-wrap items-baseline gap-x-2 px-[60px] text-xs text-dim">
-        <span className="font-medium text-muted">Zoom timeline</span>
-        <span>Drag the handles to focus on part of the activity.</span>
-      </figcaption>
+      {customLegend?.({ isVisible, toggle: toggleMetric })}
+      {loading ? (
+        <ChartLoadingSkeleton height={300} />
+      ) : points.length === 0 && error ? null : points.length === 0 ? (
+        <p className="py-6 text-sm text-muted">No samples for the selected sources.</p>
+      ) : (
+        <DofekChart option={option} height={380} onEvents={chartEvents} />
+      )}
+      {points.length > 0 && (
+        <figcaption className="mt-1 flex flex-wrap items-baseline gap-x-2 px-[60px] text-xs text-dim">
+          <span className="font-medium text-muted">Zoom timeline</span>
+          <span>Drag the handles to focus on part of the activity.</span>
+        </figcaption>
+      )}
     </figure>
   );
 }

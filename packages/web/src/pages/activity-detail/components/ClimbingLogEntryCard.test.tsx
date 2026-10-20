@@ -30,8 +30,8 @@ it("shows Mountain Project's recorded top-rope method with an unknown attempt co
 });
 
 it.each([
-  { count: null, summary: "Completed" },
-  { count: 2, summary: "Completed · Attempts: 2" },
+  { count: null, summary: null },
+  { count: 2, summary: "Attempts: 2" },
 ])("shows the recorded result with attempt count $count", ({ count, summary }) => {
   const entry = climbingLogEntryFixture({
     recordedClimbAttemptCount: count,
@@ -42,7 +42,8 @@ it.each([
       <ClimbingLogEntryCard entry={entry} />
     </ul>,
   );
-  expect(screen.getByText(summary)).toBeInTheDocument();
+  if (summary === null) expect(screen.queryByText("Completed")).not.toBeInTheDocument();
+  else expect(screen.getByText(summary)).toBeInTheDocument();
 });
 
 it.each([undefined, 3])(
@@ -122,3 +123,28 @@ it("keeps the owning area's map available when its source omitted the name", () 
   );
   expect(screen.getByRole("region", { name: "Climbing locations" })).toBeInTheDocument();
 });
+
+it.each(["Onsight", "Flash"] as const)(
+  "shows Kaya color and %s without a count or completed label",
+  (label) => {
+    const entry = climbingLogEntryFixture({
+      providerId: "kaya",
+      title: null,
+      climb: { ...climbingClimbFixture("kaya"), name: null, kind: "boulder" },
+      raw: { climb: { color: { name: "Blue" } } },
+      displayGrade: "V5",
+      recordedClimbOutcome: "completed",
+      recordedClimbAttemptCount: 1,
+    });
+    entry.attempts = [climbingAttemptFixture(entry.id, { rockResultLabels: ["sent", label] })];
+    render(
+      <ul>
+        <ClimbingLogEntryCard entry={entry} />
+      </ul>,
+    );
+    expect(screen.getByText("Blue boulder")).toBeInTheDocument();
+    expect(screen.getByText("V5")).toBeInTheDocument();
+    expect(screen.getByText(label)).toBeInTheDocument();
+    expect(screen.queryByText(/Attempts:|completed/i)).not.toBeInTheDocument();
+  },
+);

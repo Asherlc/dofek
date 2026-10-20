@@ -61,8 +61,8 @@ the remaining omissions are shown below:
 
 | Record | Fields |
 | --- | --- |
-| Climb, not requested | `slug`, `color { name }`, `description` |
-| Climb, requested | `lead`, `grade`, `angle`; `board`, `destination`, `area`, `subarea` (IDs and names) |
+| Climb, not requested | `description` |
+| Climb, requested | `slug`, `color { name }`, `lead`, `grade`, `angle`; `board`, `destination`, `area`, `subarea` (IDs and names) |
 | Ascent, requested | Its own `grade`, comments, ratings and stiffness |
 | Ascent, not requested | `photo { photo_url thumb_url }`, `video { video_url thumb_url }` |
 
@@ -138,3 +138,20 @@ The location search returned several distinct `Cragmont Park` records with
 different IDs and hierarchy levels. Preserve provider IDs alongside names;
 names alone do not identify a location. Source: the read-only
 [Kaya location search](https://kaya-beta.kayaclimb.com/graphql), observed 2026-09-29.
+
+
+## Unnamed climb labels
+
+The [client](../packages/kaya-client/src/client.ts) requests `color { name }`
+for both ascents and attempted climbs. Color remains part of each log's raw
+source payload; missing climb names remain null in the catalogue. The shared
+[label formatter](../packages/training/src/climbing-log.ts) uses an existing
+climb name or log title first, then a recorded color and climb kind, such as
+“Blue boulder.” Cards, record details, and map labels use this presentation on
+both platforms. Existing records acquire color when Kaya sync fetches them again.
+The [API audit above](#confirmed-request-coverage) is the evidence for the color field.
+
+Climbing card summaries show Onsight or Flash without the redundant attempts
+count and omit the generic “Completed” wording. Other reported counts and
+failure results remain visible; the underlying attempts and outcomes are unchanged.
+See the [shared formatter](../packages/format/src/climbing-log.ts).

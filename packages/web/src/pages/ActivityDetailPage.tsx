@@ -31,6 +31,10 @@ import {
 } from "@dofek/training/training";
 import { Link, useParams } from "@tanstack/react-router";
 import { type ComponentProps, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type {
+  ActivityMetricSourceSelection,
+  ActivityMetric as SourceMetric,
+} from "../../../server/src/contracts/activity-metric-sources.ts";
 import type { ActivityDetail } from "../../../server/src/models/activity.ts";
 import type { StrengthExerciseDetail } from "../../../server/src/routers/activity.ts";
 import { ActivityExportDropdown } from "../components/ActivityExportDropdown.tsx";
@@ -62,8 +66,32 @@ export function ActivityDetailPage() {
 
   const units = useUnitConverter();
   const detail = trpc.activity.byId.useQuery({ id });
+  const metricSources = trpc.activity.metricSources.useQuery({ id: id ?? "" });
+  const [sourceSelection, setSourceSelection] = useState<{
+    activityId: string;
+    sources: ActivityMetricSourceSelection;
+  } | null>(null);
+  const sources: ActivityMetricSourceSelection = {};
+  for (const metric of metricSources.data ?? []) {
+    const selected =
+      sourceSelection?.activityId === id ? sourceSelection.sources[metric.key] : undefined;
+    sources[metric.key] = metric.sources.some((source) => source.id === selected)
+      ? selected
+      : metric.defaultSourceId;
+  }
+  const selectSource = (metric: SourceMetric, sourceId: string) =>
+    setSourceSelection((previous) => ({
+      activityId: id ?? "",
+      sources: { ...(previous?.activityId === id ? previous.sources : {}), [metric]: sourceId },
+    }));
+  const sourceControls = (metricSources.data ?? []).map((metric) => ({
+    ...metric,
+    selectedId: sources[metric.key] ?? metric.defaultSourceId,
+    onChange: (sourceId: string) => selectSource(metric.key, sourceId),
+  }));
+  const heartRateSourceInput = sources.heartRate ? { heartRateSourceId: sources.heartRate } : {};
   const stream = trpc.activity.stream.useQuery(
-    { id, maxPoints: 500 },
+    { id, maxPoints: 500, sources },
     { placeholderData: (previousData) => previousData },
   );
   const route = trpc.activity.route.useQuery(
@@ -74,14 +102,14 @@ export function ActivityDetailPage() {
     },
   );
   const hrZones = trpc.activity.hrZones.useQuery(
-    { id },
+    { id, ...heartRateSourceInput },
     { placeholderData: (previousData) => previousData },
   );
   const points = stream.data ?? [];
   const hasPower = points.some((p) => p.power != null);
   const isCycling = detail.data != null && isCyclingActivity(detail.data.activityType);
   const powerZones = trpc.activity.powerZones.useQuery(
-    { id },
+    { id, powerSourceId: sources.power },
     { enabled: isCycling && hasPower, placeholderData: (previousData) => previousData },
   );
   const isStrengthActivity =
@@ -239,6 +267,7 @@ export function ActivityDetailPage() {
 
       {detail.error ? <QueryStatePanel error={detail.error} height={72} /> : null}
 
+      {metricSources.error && <QueryStatePanel error={metricSources.error} height={72} />}
       {stream.error ? (
         <Section title="Sensor Data">
           <QueryStatePanel error={stream.error} height={72} />
@@ -273,8 +302,18 @@ export function ActivityDetailPage() {
         </Section>
       )}
 
-      {(hasHr || hasPower || hasSpeed || hasCadence) && (
+      {(hasHr ||
+        hasPower ||
+        hasSpeed ||
+        hasCadence ||
+        sourceControls.some((metric) => metric.key !== "altitude")) && (
         <Section title="Performance">
+          {sourceControls.length > 0 &&
+            (stream.isFetching || hrZones.isFetching || powerZones.isFetching) && (
+              <p role="status" className="mb-2 text-xs text-muted">
+                Updating metrics…
+              </p>
+            )}
           <MetricsChart
             points={points}
             activityType={activity.activityType}
@@ -283,6 +322,8 @@ export function ActivityDetailPage() {
             hasSpeed={hasSpeed}
             hasCadence={hasCadence}
             loading={stream.isLoading}
+            error={stream.error}
+            metricSources={sourceControls.filter((metric) => metric.key !== "altitude")}
             units={units}
             onHoverPosition={hasGps ? handleChartHover : undefined}
           />
@@ -367,8 +408,27 @@ export function ActivityDetailPage() {
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {hasAltitude && (
+        {(hasAltitude || sources.altitude) && (
           <Section title="Elevation Profile">
+            {sourceControls
+              .filter((metric) => metric.key === "altitude")
+              .map((metric) => (
+                <label key={metric.key} className="mb-2 block text-xs text-muted">
+                  Elevation source
+                  <select
+                    aria-label="Elevation source"
+                    className="ml-2 min-h-9 min-w-0 max-w-44 rounded-md border border-border bg-transparent py-1 pl-2 pr-1 text-xs text-muted focus-visible:outline-2 focus-visible:outline-offset-2"
+                    value={metric.selectedId}
+                    onChange={(event) => metric.onChange(event.target.value)}
+                  >
+                    {metric.sources.map((source) => (
+                      <option key={source.id} value={source.id}>
+                        {source.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ))}
             <ElevationChart
               points={points}
               loading={stream.isLoading}

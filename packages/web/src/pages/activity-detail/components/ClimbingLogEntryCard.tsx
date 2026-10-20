@@ -2,6 +2,7 @@ import {
   formatClimbingRecordedResult,
   formatClimbingRopeMethods,
 } from "@dofek/format/climbing-log";
+import { climbingLogEntryName } from "@dofek/training/climbing-log";
 import type { ClimbingMapLocation, ClimbingMapMarker } from "@dofek/training/climbing-map";
 import { useMemo } from "react";
 import type { ClimbingLogEntryDetail } from "../../../../../server/src/contracts/climbing-log-contracts.ts";
@@ -31,7 +32,7 @@ export function ClimbingLogEntryCard({
   attachmentState?: ClimbingLogAttachmentState;
   onAttach?: (entryId: string) => void;
 }) {
-  const name = entry.climb?.name ?? entry.title ?? "Climbing log";
+  const name = climbingLogEntryName(entry);
   const methods = formatClimbingRopeMethods(entry.attempts);
   const recordedResult =
     entry.recordedClimbAttemptCount === 0
@@ -40,6 +41,9 @@ export function ClimbingLogEntryCard({
           null,
           entry.recordedClimbOutcome,
           entry.recordedClimbAttemptCount,
+          entry.attempts
+            .filter((attempt) => attempt.scope === "climb")
+            .flatMap((attempt) => attempt.rockResultLabels),
         );
   const markers = useMemo<ClimbingMapMarker[]>(
     () => (location ? [{ entryId: entry.id, entryNumber, label: name, location }] : []),
@@ -81,6 +85,9 @@ export function ClimbingLogEntryCard({
                   : `Pitch ${result.pitch.number}`,
               result.recordedOutcome,
               result.recordedAttemptCount,
+              entry.attempts
+                .filter((attempt) => result.attemptIds.includes(attempt.id))
+                .flatMap((attempt) => attempt.rockResultLabels),
             )}
           </p>
         ))}

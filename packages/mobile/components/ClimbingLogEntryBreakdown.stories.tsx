@@ -1,3 +1,4 @@
+import { climbingLogEntryName } from "@dofek/training/climbing-log";
 import type { ClimbingMapLocation, ClimbingMapMarker } from "@dofek/training/climbing-map";
 import type { Meta, StoryObj } from "@storybook/react-native";
 import { type ComponentProps, useMemo, useState } from "react";
@@ -58,7 +59,7 @@ function markersForEntries(
           {
             entryId: entry.id,
             entryNumber: index + 1,
-            label: entry.climb?.name ?? entry.title ?? "Climbing log",
+            label: climbingLogEntryName(entry),
             location,
           },
         ]
@@ -273,3 +274,30 @@ const unknownLog = climbingLogEntryFixture({
 });
 unknownLog.attempts = [climbingAttemptFixture(unknownLog.id, { ropeMethod: "top_rope" })];
 export const UnknownExecution: Story = { args: { entries: [unknownLog], locations: {} } };
+
+export const KayaColors: Story = {
+  args: {
+    locations: {},
+    entries: (["Flash", "Onsight", "sent"] as const).map((result, index) => {
+      const id = `kaya-colored-${index}`;
+      const color = ["Blue", "Yellow", "Purple"][index] ?? "Blue";
+      const entry = climbingLogEntryFixture({
+        id,
+        providerId: "kaya",
+        sourceName: "Kaya",
+        title: null,
+        climb: { ...climbingClimbFixture("kaya"), name: null, kind: "boulder", areaPath: [] },
+        raw: { climb: { color: { name: color } } },
+        displayGrade: "V5",
+        recordedClimbOutcome: "completed",
+        recordedClimbAttemptCount: result === "sent" ? 3 : 1,
+      });
+      entry.attempts = [
+        climbingAttemptFixture(id, {
+          rockResultLabels: result === "sent" ? ["sent"] : ["sent", result],
+        }),
+      ];
+      return entry;
+    }),
+  },
+};

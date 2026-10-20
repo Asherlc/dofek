@@ -21,7 +21,7 @@ describe("ClimbingRepository PostgreSQL scoped rock summaries", () => {
   let context: TestContext;
   beforeAll(async () => {
     context = await setupTestDatabase();
-    for (const provider of ["climbing-summary-test", "mountain-project", "openbeta"])
+    for (const provider of ["climbing-summary-test", "mountain-project", "openbeta", "kaya"])
       await ensureProvider(context.db, provider, provider, undefined, TEST_USER_ID);
   });
   afterEach(async () => {
@@ -58,6 +58,26 @@ describe("ClimbingRepository PostgreSQL scoped rock summaries", () => {
   const volume = async (filters: ClimbingFilters = {}) =>
     (await repo().getVolumeByGrade(30, filters)).map((row) => row.toDetail());
 
+  it("labels an unnamed Kaya climb from raw color without inventing a catalogue name", async () => {
+    const id = await write(
+      {
+        raw: { climb: { color: { name: "Blue" } } },
+        climb: {
+          ...route,
+          name: null,
+          kind: "boulder",
+          publishedGrades: [{ value: "V5", system: "v_scale" }],
+          coordinates: { latitude: 37, longitude: -122 },
+        },
+      },
+      "kaya",
+    );
+    expect(await repo().getMapEntries(30)).toEqual([
+      expect.objectContaining({ id, label: "Blue boulder", grade: "V5" }),
+    ]);
+    const [stored] = await context.db.select().from(climb);
+    expect(stored?.name).toBeNull();
+  });
   it("maps native climb coordinates before the nearest coordinate-bearing area", async () => {
     const id = await write({
       climb: {
