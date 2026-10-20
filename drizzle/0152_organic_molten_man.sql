@@ -1,0 +1,1 @@
+ALTER TABLE "fitness"."activity_image_backfill" ADD COLUMN "available_at" timestamp with time zone DEFAULT now() NOT NULL;

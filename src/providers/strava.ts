@@ -856,7 +856,9 @@ export class StravaProvider implements WebhookProvider {
               endedAt: act.endedAt,
               name: act.name,
               sourceName: sql`coalesce(excluded.source_name, ${activity.sourceName})`,
-              raw: rawActivities.find((r) => String(r.id) === act.externalId),
+              raw:
+                detailedActivity ??
+                sql`${activity.raw} || ${JSON.stringify(rawActivities.find((r) => String(r.id) === act.externalId) ?? {})}::jsonb`,
             },
           );
 

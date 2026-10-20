@@ -149,6 +149,29 @@ export function pelotonImageDiscovery(workout: unknown): ImageDiscovery {
     images,
   };
 }
+export function imageDiscoveryFailure(
+  error: unknown,
+): Pick<ImageDiscovery, "coverage" | "retryable" | "retryAfterSeconds"> {
+  const parsed = z
+    .object({
+      statusCode: z.number().optional(),
+      status: z.number().optional(),
+      retryAfterSeconds: z.number().nullish(),
+      name: z.string().optional(),
+    })
+    .safeParse(error);
+  const detail = parsed.success ? parsed.data : {};
+  const status = detail.statusCode ?? detail.status;
+  if (status === 404 || status === 410 || detail.name === "StravaNotFoundError")
+    return { coverage: "unavailable", retryable: false };
+  const retryable =
+    !(error instanceof z.ZodError) && (status === undefined || status === 429 || status >= 500);
+  return {
+    coverage: "failed",
+    retryable,
+    ...(retryable ? { retryAfterSeconds: Math.max(1, detail.retryAfterSeconds ?? 300) } : {}),
+  };
+}
 export async function discoverAndRecordActivityImages(
   run: SyncRun,
   activityId: string,
@@ -169,9 +192,9 @@ export async function discoverAndRecordActivityImages(
             reason: "provider_media_not_verified",
             images: [],
           };
-  } catch {
+  } catch (error) {
     discovery = {
-      coverage: "failed",
+      ...imageDiscoveryFailure(error),
       expectedCount: null,
       reason: "provider_media_request_failed",
       images: [],
@@ -187,7 +210,9 @@ export async function refreshActivityImage(
   const provider = getProvider(work.providerId);
   if (!provider || !isSyncProvider(provider) || !provider.discoverActivityImages)
     throw Error("Image refresh unavailable");
-  const discovery = await provider.discoverActivityImages(run, work.activityExternalId);
+  const discovery = await provider.discoverActivityImages(run, work.activityExternalId, {
+    refresh: true,
+  });
   const candidate = discovery.images.find((image) => image.sourceId === work.candidate.sourceId);
   if (!candidate) throw Error("Source image no longer exposed");
   return candidate;
@@ -201,6 +226,7 @@ export async function fetchStravaActivityImages(
   const photos: unknown[] = [];
   const seen = new Set<string>();
   let finished = false;
+  let failure: ReturnType<typeof imageDiscoveryFailure> | undefined;
   for (let page = 1; page <= 100; page++) {
     try {
       const batch = stravaPhotoListSchema.parse(await fetchPage(page));
@@ -214,12 +240,18 @@ export async function fetchStravaActivityImages(
         finished = true;
         break;
       }
-    } catch {
+    } catch (error) {
+      failure = imageDiscoveryFailure(error);
       break;
     }
   }
   if (primary) photos.push(primary);
-  return stravaImageDiscovery(photos, expectedCount, finished);
+  return {
+    ...stravaImageDiscovery(photos, expectedCount, finished),
+    ...(failure
+      ? { retryable: failure.retryable, retryAfterSeconds: failure.retryAfterSeconds }
+      : {}),
+  };
 }
 
 export function zwiftImageDiscovery(value: unknown): ImageDiscovery {

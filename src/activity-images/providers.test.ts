@@ -112,3 +112,17 @@ it("detects repeated Strava pages instead of looping indefinitely", async () => 
   expect(result.coverage).toBe("partial");
   expect(fetchPage).toHaveBeenCalledTimes(2);
 });
+
+describe("discovery retry classification", () => {
+  it("keeps a provider Retry-After and treats historical missing records as unavailable", async () => {
+    const { imageDiscoveryFailure } = await import("./providers.ts");
+    expect(imageDiscoveryFailure({ statusCode: 429, retryAfterSeconds: 900 })).toMatchObject({
+      retryable: true,
+      retryAfterSeconds: 900,
+    });
+    expect(imageDiscoveryFailure({ statusCode: 404, retryAfterSeconds: null })).toEqual({
+      coverage: "unavailable",
+      retryable: false,
+    });
+  });
+});

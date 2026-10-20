@@ -138,6 +138,7 @@ export const activityImageBackfill = fitness.table("activity_image_backfill", {
   providerId: text("provider_id")
     .notNull()
     .references(() => provider.id),
+  availableAt: timestamp("available_at", { withTimezone: true }).notNull().defaultNow(),
   cursorStartedAt: timestamp("cursor_started_at", { withTimezone: true }),
   cursorId: uuid("cursor_id"),
   highWaterAt: timestamp("high_water_at", { withTimezone: true }).notNull().defaultNow(),

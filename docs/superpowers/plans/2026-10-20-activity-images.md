@@ -190,3 +190,24 @@ coverage is not established by implementing only Peloton and Strava: every
 registered activity provider must have an evidence-backed capability entry,
 and every verified image path must be collected. Explicit partial/unavailable
 entries disclose upstream limits rather than claiming missing images were saved.
+
+## Execution and validation
+
+Implemented on branch `work`, including the final review fixes: failed-job
+redrive, delayed transient-discovery retries without losing checkpoints, live
+Zwift URL refresh, preservation of Strava detailed raw metadata, and the database
+ownership-test fixture correction. Migration 0152 adds the durable backfill retry
+deadline. Sandbox lint, migration policy, and root/server/web TypeScript checks
+pass. Relevant unit regressions run directly on Node 26.12.0.
+
+Database/R2/Redis integration tests are written but cannot be certified in this
+workspace: Docker and TEST_DATABASE_URL are unavailable. Analytics SQL lint needs
+ClickHouse; Terraform/stack validation needs deployment services and Infisical.
+The branch is not pushed or deployed until those required checks can run. Other
+providers' galleries remain explicitly unverified in the coverage matrix.
+
+Retrospective: independent review and failure-path reproductions caught retry
+and refresh defects. A provider-media contract checklist with sample payloads,
+URL-expiry behavior, pagination, and retention permissions would make future
+adapters faster to investigate; add it to the provider integration documentation
+and reuse the systematic-debugging and verification skills.

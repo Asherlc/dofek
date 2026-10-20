@@ -1,6 +1,9 @@
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { discoverAndRecordActivityImages } from "../activity-images/providers.ts";
+import {
+  discoverAndRecordActivityImages,
+  imageDiscoveryFailure,
+} from "../activity-images/providers.ts";
 import type { ImageDiscovery } from "../activity-images/types.ts";
 import {
   AccountErasureUserFencedError,
@@ -30,20 +33,39 @@ interface BackfillActivity {
 }
 export async function processImageBackfillPage(
   activities: BackfillActivity[],
-  discover: (activity: BackfillActivity) => Promise<Pick<ImageDiscovery, "coverage" | "images">>,
+  discover: (
+    activity: BackfillActivity,
+  ) => Promise<Pick<ImageDiscovery, "coverage" | "images" | "retryable" | "retryAfterSeconds">>,
 ) {
   let discovered = 0;
   let failed = 0;
+  let scanned = 0;
+  let cursor: BackfillActivity | null = null;
+  let retryAfterSeconds = 0;
   for (const activity of activities) {
     try {
       const result = await discover(activity);
       discovered += result.images.length;
       if (result.coverage === "failed" || result.coverage === "partial") failed++;
-    } catch {
+      if (
+        result.retryable === true ||
+        (result.coverage === "failed" && result.retryable !== false)
+      ) {
+        retryAfterSeconds = result.retryAfterSeconds ?? 300;
+        break;
+      }
+    } catch (error) {
       failed++;
+      const failure = imageDiscoveryFailure(error);
+      if (failure.retryable) {
+        retryAfterSeconds = failure.retryAfterSeconds ?? 300;
+        break;
+      }
     }
+    scanned++;
+    cursor = activity;
   }
-  return { scanned: activities.length, discovered, failed, cursor: activities.at(-1) ?? null };
+  return { scanned, discovered, failed, cursor, retryAfterSeconds };
 }
 export async function loadActivityImageBackfillProvider(
   db: ActivityImageDatabase,
@@ -64,7 +86,7 @@ export async function dispatchActivityImageBackfills(
   const rows = await executeWithSchema(
     db,
     rowSchema,
-    sql`SELECT * FROM fitness.activity_image_backfill WHERE state='pending' OR (state='queued' AND updated_at<now()-interval '15 minutes') ORDER BY updated_at LIMIT 100`,
+    sql`SELECT * FROM fitness.activity_image_backfill WHERE (state='pending' AND available_at<=now()) OR (state='queued' AND updated_at<now()-interval '15 minutes') ORDER BY updated_at LIMIT 100`,
   );
   for (const row of rows) {
     try {
@@ -72,7 +94,7 @@ export async function dispatchActivityImageBackfills(
         const claimed = await executeWithSchema(
           tx,
           z.object({ id: z.string() }),
-          sql`UPDATE fitness.activity_image_backfill SET state='queued',updated_at=now() WHERE id=${row.id}::uuid AND scanned=${row.scanned} AND (state='pending' OR (state='queued' AND updated_at<now()-interval '15 minutes')) RETURNING id`,
+          sql`UPDATE fitness.activity_image_backfill SET state='queued',updated_at=now() WHERE id=${row.id}::uuid AND scanned=${row.scanned} AND ((state='pending' AND available_at<=now()) OR (state='queued' AND updated_at<now()-interval '15 minutes')) RETURNING id`,
         );
         if (!claimed.length) return;
         await queue.add(
@@ -81,7 +103,7 @@ export async function dispatchActivityImageBackfills(
           {
             jobId: `activity-image-backfill-${row.id}-${row.scanned}`,
             removeOnComplete: true,
-            removeOnFail: 100,
+            removeOnFail: true,
           },
         );
       });
@@ -136,7 +158,7 @@ export async function processActivityImageBackfillJob(
   );
   await withAccountErasureUserWriteFence(db, data.userId, async (tx) => {
     await tx.execute(
-      sql`UPDATE fitness.activity_image_backfill SET scanned=scanned+${progress.scanned},discovered=discovered+${progress.discovered},failed=failed+${progress.failed},cursor_started_at=coalesce(${progress.cursor?.startedAt ?? null}::timestamptz,cursor_started_at),cursor_id=coalesce(${progress.cursor?.id ?? null}::uuid,cursor_id),state=${activities.length === 100 ? "pending" : "completed"},updated_at=now() WHERE id=${row.id}::uuid AND user_id=${data.userId}::uuid AND scanned=${row.scanned}`,
+      sql`UPDATE fitness.activity_image_backfill SET scanned=scanned+${progress.scanned},discovered=discovered+${progress.discovered},failed=failed+${progress.failed},cursor_started_at=coalesce(${progress.cursor?.startedAt ?? null}::timestamptz,cursor_started_at),cursor_id=coalesce(${progress.cursor?.id ?? null}::uuid,cursor_id),state=${progress.retryAfterSeconds > 0 || activities.length === 100 ? "pending" : "completed"},available_at=now()+(${progress.retryAfterSeconds} * interval '1 second'),updated_at=now() WHERE id=${row.id}::uuid AND user_id=${data.userId}::uuid AND scanned=${row.scanned}`,
     );
   });
 }

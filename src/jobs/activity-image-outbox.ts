@@ -30,7 +30,7 @@ export async function dispatchActivityImageOutbox(
         await queue.add(
           "acquire",
           { workId: work.id, userId: work.userId },
-          { jobId: `activity-image-${work.id}`, removeOnComplete: true, removeOnFail: 100 },
+          { jobId: `activity-image-${work.id}`, removeOnComplete: true, removeOnFail: true },
         );
         await markActivityImageDispatched(tx, work.id);
       });

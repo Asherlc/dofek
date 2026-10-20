@@ -2225,6 +2225,35 @@ describe("StravaProvider.sync — additional coverage", () => {
     );
   });
 
+  it("preserves detailed raw photos on conflict updates", async () => {
+    setupEnv();
+    const detail = {
+      ...MOCK_ACTIVITY,
+      device_name: "Wahoo",
+      photos: {
+        count: 1,
+        primary: { unique_id: "photo", urls: { 600: "https://cdn.test/photo" } },
+      },
+    };
+    const mockFetch = vi.fn().mockImplementation((url: string) => {
+      const value = String(url);
+      if (value.includes("/athlete/activities"))
+        return Promise.resolve(Response.json([MOCK_ACTIVITY]));
+      if (value.includes("/streams")) return Promise.resolve(Response.json(MOCK_STREAMS));
+      return Promise.resolve(Response.json(detail));
+    });
+    const provider = new StravaProvider(mockFetch);
+    await provider.sync(
+      new SyncRun({
+        db: createMockDb(),
+        window: SyncWindow.fromSince({ since: new Date("2026-01-01") }),
+      }),
+    );
+    expect(providerActivityAbsenceMocks.upsertProviderActivity.mock.calls[0]?.[2].raw).toEqual(
+      detail,
+    );
+  });
+
   it("writes expected upsert payloads for activity records", async () => {
     setupEnv();
 

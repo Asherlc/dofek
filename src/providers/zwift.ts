@@ -208,7 +208,11 @@ export class ZwiftProvider implements SyncProvider {
     return /\(401\)|\b401\b|\(403\)|\b403\b|unauthorized|invalid_token/i.test(error.message);
   }
 
-  async discoverActivityImages(run: SyncRun, activityExternalId: string): Promise<ImageDiscovery> {
+  async discoverActivityImages(
+    run: SyncRun,
+    activityExternalId: string,
+    options?: { refresh?: boolean },
+  ): Promise<ImageDiscovery> {
     const userId = run.options.userId;
     if (!userId) throw Error("Zwift image discovery requires an owner");
     const rows = await executeWithSchema(
@@ -217,7 +221,7 @@ export class ZwiftProvider implements SyncProvider {
       sql`SELECT raw FROM fitness.activity WHERE user_id=${userId}::uuid AND provider_id='zwift' AND external_id=${activityExternalId} AND deleted_at IS NULL AND provider_absent_at IS NULL`,
     );
     const stored = rows[0]?.raw;
-    if (stored?.primaryImageUrl) return zwiftImageDiscovery(stored);
+    if (!options?.refresh && stored?.primaryImageUrl) return zwiftImageDiscovery(stored);
     const { accessToken, athleteId } = await this.#resolveTokens(run.db);
     const client = new ZwiftClient(accessToken, athleteId, this.#fetchFn);
     for (

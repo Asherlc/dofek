@@ -56,3 +56,28 @@ describe("activity image durable outbox", () => {
     );
   });
 });
+
+it("does not retain a failed Redis ID that would absorb durable redispatch", async () => {
+  mocks.pending.mockResolvedValue([{ id: "work", userId: "owner" }]);
+  let launches = 0;
+  const failed = new Set<string>();
+  const queue = {
+    add: vi.fn(
+      async (
+        _name: string,
+        _data: unknown,
+        options?: { jobId?: string; removeOnFail?: unknown },
+      ) => {
+        const id = options?.jobId ?? "";
+        if (!failed.has(id)) {
+          launches++;
+          if (options?.removeOnFail !== true) failed.add(id);
+        }
+        return {};
+      },
+    ),
+  };
+  await dispatchActivityImageOutbox(db, queue);
+  await dispatchActivityImageOutbox(db, queue);
+  expect(launches).toBe(2);
+});

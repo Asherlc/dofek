@@ -90,7 +90,11 @@ pass. Disconnected providers stop with a disconnected status; start a new pass
 after reconnection. Scanned/discovered/failed are run counters. Stored and
 coverage are current provider-wide totals, not a claim that discovery completed
 all downloads in that run. Partial/failed rows identify records requiring a
-later pass or provider-contract investigation.
+provider-contract investigation. Transient discovery failures pause before the failed
+activity and retry after the provider’s Retry-After deadline (five minutes by
+default). Failure counters count attempts; unavailable historical records advance
+the checkpoint. PostgreSQL retains failure history, while failed Redis jobs are
+removed so the durable dispatcher can recreate them.
 
 `activity.images({id})` uses the existing activity visibility and entitlement
 resolution, then reads images from every contributing source activity. The

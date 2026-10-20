@@ -416,6 +416,7 @@ entity "activity_image_backfill" {
   --
   user_id : uuid <<FK>>
   provider_id : text <<FK>>
+  available_at : timestamp
   cursor_started_at : timestamp
   cursor_id : uuid
   high_water_at : timestamp

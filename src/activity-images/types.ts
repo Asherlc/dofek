@@ -15,6 +15,8 @@ export interface ProviderImageCandidate {
   raw: Record<string, unknown>;
 }
 export interface ImageDiscovery {
+  retryable?: boolean;
+  retryAfterSeconds?: number;
   coverage: "complete" | "partial" | "unavailable" | "failed";
   expectedCount: number | null;
   reason: string | null;

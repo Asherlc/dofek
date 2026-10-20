@@ -802,6 +802,7 @@ table fitness.activity_image_backfill {
   id uuid [pk, not null, default: `gen_random_uuid()`]
   user_id uuid [not null]
   provider_id text [not null]
+  available_at "timestamp with time zone" [not null, default: `now()`]
   cursor_started_at "timestamp with time zone"
   cursor_id uuid
   high_water_at "timestamp with time zone" [not null, default: `now()`]

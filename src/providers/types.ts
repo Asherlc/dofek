@@ -208,7 +208,11 @@ interface BaseProvider {
  * credentials with `loadTokens()` during sync. See `docs/adding-a-provider.md`.
  */
 export interface SyncProvider extends BaseProvider {
-  discoverActivityImages?(run: SyncRun, activityExternalId: string): Promise<ImageDiscovery>;
+  discoverActivityImages?(
+    run: SyncRun,
+    activityExternalId: string,
+    options?: { refresh?: boolean },
+  ): Promise<ImageDiscovery>;
   /**
    * Number of days scheduled sync jobs should request by default.
    * Omit to use the framework default.
