@@ -36,6 +36,7 @@ the exact section.
 
 | Doc | What it is for |
 |-----|----------------|
+| [activity-images.md](activity-images.md) | Private provider image copies, coverage, backfill, and deletion. |
 | [schema.md](schema.md) | Database layout, raw-data-only rules, and view/dedup behavior. |
 | [climbing-context.md](climbing-context.md) | Canonical climbing graph, grade ownership, scoped attempts, execution facts and server projections. |
 | [climbing-log-model-cutover.md](climbing-log-model-cutover.md) | Tested preparation, bounded conversion, validation and finalization for populated upgrades. |

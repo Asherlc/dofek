@@ -19,6 +19,8 @@ export interface ZwiftProfile {
 }
 
 export interface ZwiftActivitySummary {
+  primaryImageUrl?: string | null;
+  snapshotList?: unknown;
   id: number;
   id_str: string;
   profileId: number;
@@ -41,6 +43,7 @@ export interface ZwiftActivitySummary {
 }
 
 export interface ZwiftActivityDetail {
+  snapshotThumbnails?: unknown[];
   id: number;
   id_str: string;
   profileId: number;

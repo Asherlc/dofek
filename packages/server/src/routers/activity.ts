@@ -1,5 +1,6 @@
 import { isCyclingActivity } from "@dofek/training/training";
 import { TRPCError } from "@trpc/server";
+import { createActivityImageUrl } from "dofek/activity-images/storage";
 import { withAccountErasureUserWriteFence } from "dofek/db/account-erasure";
 import { isRelationMissingError } from "dofek/db/dedup";
 import {
@@ -17,6 +18,11 @@ import {
 } from "../lib/chart-range.ts";
 import { endDateSchema } from "../lib/date-window.ts";
 import { Activity, type ActivityDetail } from "../models/activity.ts";
+import {
+  activityImagesOutputSchema,
+  getOwnedActivityImages,
+  listActivityImages,
+} from "../repositories/activity-images-repository.ts";
 import { ActivityRepository } from "../repositories/activity-repository.ts";
 import { getActivityRoute } from "../repositories/activity-route-repository.ts";
 import { HangboardingRepository } from "../repositories/hangboarding-repository.ts";
@@ -101,6 +107,17 @@ export interface ActivityPowerZonesResult {
 }
 
 export const activityRouter = router({
+  images: protectedProcedure
+    .input(z.object({ id: z.guid() }))
+    .output(activityImagesOutputSchema)
+    .query(async ({ ctx, input }) => {
+      const repository = new ActivityRepository(ctx.db, ctx.userId, ctx.timezone, ctx.accessWindow);
+      return getOwnedActivityImages(input.id, {
+        members: (id) => repository.getActivityMemberIds(id),
+        read: (ids) => listActivityImages(ctx.db, { userId: ctx.userId, memberActivityIds: ids }),
+        sign: createActivityImageUrl,
+      });
+    }),
   list: selectedChartCustomRangeQuery(
     "activity.list",
     CacheTTL.MEDIUM,

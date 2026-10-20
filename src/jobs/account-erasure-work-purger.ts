@@ -5,12 +5,14 @@ import { DeleteObjectCommand, S3ServiceException } from "@aws-sdk/client-s3";
 import type { JobType, Queue } from "bullmq";
 import { purgeAccountRedisStateForSnapshot } from "../account-erasure/redis-erasure-runtime.ts";
 import { type ErasureQueue, purgeAccountWork } from "../account-erasure/work-erasure.ts";
+import { eraseActivityImageObjects } from "../activity-images/storage.ts";
 import { R2ImportUploadStorage } from "../file-upload-storage.ts";
 import { createR2Client, requiredR2EnvironmentVariable } from "../r2-storage.ts";
 import type { AccountErasureWorkPurger } from "./account-erasure-runtime.ts";
 import { getConfiguredProviderIds } from "./provider-queue-config.ts";
 import {
   createActivityDeleteAnalyticsQueue,
+  createActivityImageQueue,
   createExportQueue,
   createFitFileImportBatchQueue,
   createFitFileImportQueue,
@@ -98,6 +100,7 @@ export function createAccountErasureWorkPurgerFromEnv(): AccountErasureWorkPurge
   for (const providerId of getConfiguredProviderIds()) {
     addQueue(createProviderSyncQueue(providerId, connection));
   }
+  addQueue(createActivityImageQueue(connection));
   addQueue(createImportQueue(connection));
   addQueue(createFitFileImportQueue(connection));
   addQueue(createFitFileImportBatchQueue(connection));
@@ -124,8 +127,8 @@ export function createAccountErasureWorkPurgerFromEnv(): AccountErasureWorkPurge
         r2Client.destroy();
       }
     },
-    purge: (snapshot) =>
-      purgeAccountWork(
+    purge: async (snapshot) => {
+      await purgeAccountWork(
         {
           exportObjects: snapshot.localIdentifiers.exportObjects,
           fileUploads: snapshot.localIdentifiers.fileUploads,
@@ -150,6 +153,8 @@ export function createAccountErasureWorkPurgerFromEnv(): AccountErasureWorkPurge
           queues: ownedQueues.map((queue) => queue.erasureQueue),
           removeLocalPath: (path) => rm(path, { force: true, recursive: true }),
         },
-      ),
+      );
+      await eraseActivityImageObjects(snapshot.localIdentifiers.userId);
+    },
   };
 }

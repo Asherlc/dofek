@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { lookup } from "node:dns/promises";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { request } from "node:https";
 import { BlockList, isIP } from "node:net";
 import { tmpdir } from "node:os";
@@ -216,7 +216,4 @@ export async function downloadActivityImage(input: {
     }
   }
   throw new ImageDownloadError("image_redirect_limit");
-}
-export async function readDownloadedImage(image: DownloadedImage): Promise<Buffer> {
-  return readFile(image.filePath);
 }

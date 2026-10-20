@@ -1,4 +1,5 @@
 import type { ProviderManualConnectionKind } from "@dofek/providers/provider-connection";
+import type { ImageDiscovery } from "../activity-images/types.ts";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import type { SyncDatabase } from "../db/index.ts";
 import type { ProcessingDatasetKey } from "../processing/dataset-contracts.ts";
@@ -207,6 +208,7 @@ interface BaseProvider {
  * credentials with `loadTokens()` during sync. See `docs/adding-a-provider.md`.
  */
 export interface SyncProvider extends BaseProvider {
+  discoverActivityImages?(run: SyncRun, activityExternalId: string): Promise<ImageDiscovery>;
   /**
    * Number of days scheduled sync jobs should request by default.
    * Omit to use the framework default.

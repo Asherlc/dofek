@@ -1687,7 +1687,7 @@ describe("ActivityRepository", () => {
     it("calls execute", async () => {
       const { repo, execute } = makeRepository([{ member_activity_id: "activity-id" }]);
       await repo.delete("activity-id");
-      expect(execute).toHaveBeenCalledTimes(3);
+      expect(execute).toHaveBeenCalledTimes(4);
     });
 
     it("deletes every raw member returned for a selected activity group", async () => {

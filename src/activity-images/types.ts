@@ -42,5 +42,16 @@ export function selectImageVariant(variants: ImageVariant[]): ImageVariant {
 /** Fallback only: adapters should use the provider's stable media ID. */
 export function sourceImageIdentity(url: string): string {
   const parsed = new URL(url);
-  return createHash("sha256").update(`${parsed.origin}${parsed.pathname}`).digest("hex");
+  for (const key of [...parsed.searchParams.keys()]) {
+    if (
+      /^(x-amz-|x-goog-)/i.test(key) ||
+      /^(signature|expires|token|policy|key-pair-id)$/i.test(key)
+    ) {
+      parsed.searchParams.delete(key);
+    }
+  }
+  parsed.searchParams.sort();
+  return createHash("sha256")
+    .update(`${parsed.origin}${parsed.pathname}${parsed.search}`)
+    .digest("hex");
 }

@@ -1,7 +1,11 @@
 import { ZWIFT_API_BASE, ZwiftClient } from "@dofek/zwift/client";
 import { parseZwiftActivity, parseZwiftFitnessData } from "@dofek/zwift/parsing";
 import type { ZwiftActivitySummary } from "@dofek/zwift/types";
+import { sql } from "drizzle-orm";
 import { z } from "zod";
+import { zwiftImageDiscovery } from "../activity-images/providers.ts";
+import type { ImageDiscovery } from "../activity-images/types.ts";
+import { recordActivityImageDiscovery } from "../db/activity-images.ts";
 import type { SyncDatabase } from "../db/index.ts";
 import { writeMetricStreamBatch } from "../db/metric-stream-writer.ts";
 import {
@@ -12,6 +16,7 @@ import { SOURCE_TYPE_API } from "../db/sensor-channels.ts";
 import { withSyncLog } from "../db/sync-log.ts";
 import { getTokenUserId } from "../db/token-user-context.ts";
 import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
+import { executeWithSchema } from "../db/typed-sql.ts";
 import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
 import { logger } from "../logger.ts";
 import { fetchProviderPages } from "../sync/pagination.ts";
@@ -203,6 +208,38 @@ export class ZwiftProvider implements SyncProvider {
     return /\(401\)|\b401\b|\(403\)|\b403\b|unauthorized|invalid_token/i.test(error.message);
   }
 
+  async discoverActivityImages(run: SyncRun, activityExternalId: string): Promise<ImageDiscovery> {
+    const userId = run.options.userId;
+    if (!userId) throw Error("Zwift image discovery requires an owner");
+    const rows = await executeWithSchema(
+      run.db,
+      z.object({ raw: z.record(z.string(), z.unknown()) }),
+      sql`SELECT raw FROM fitness.activity WHERE user_id=${userId}::uuid AND provider_id='zwift' AND external_id=${activityExternalId} AND deleted_at IS NULL AND provider_absent_at IS NULL`,
+    );
+    const stored = rows[0]?.raw;
+    if (stored?.primaryImageUrl) return zwiftImageDiscovery(stored);
+    const { accessToken, athleteId } = await this.#resolveTokens(run.db);
+    const client = new ZwiftClient(accessToken, athleteId, this.#fetchFn);
+    for (
+      let offset = 0;
+      offset < ZWIFT_MAX_ACTIVITY_PAGES * ZWIFT_ACTIVITY_PAGE_SIZE;
+      offset += ZWIFT_ACTIVITY_PAGE_SIZE
+    ) {
+      const summaries = await client.getActivities(offset, ZWIFT_ACTIVITY_PAGE_SIZE);
+      const found = summaries.find(
+        (summary) => (summary.id_str || String(summary.id)) === activityExternalId,
+      );
+      if (found) return zwiftImageDiscovery(found);
+      if (summaries.length < ZWIFT_ACTIVITY_PAGE_SIZE) break;
+    }
+    return {
+      coverage: "partial",
+      expectedCount: null,
+      reason: "zwift_summary_not_found",
+      images: [],
+    };
+  }
+
   async sync(run: SyncRun): Promise<SyncResult> {
     const { db, window, options } = run;
     const start = Date.now();
@@ -285,7 +322,7 @@ export class ZwiftProvider implements SyncProvider {
                 const parsed = parseZwiftActivity(raw);
                 presentActivityExternalIds.add(parsed.externalId);
                 try {
-                  await upsertProviderActivity(
+                  const imageActivity = await upsertProviderActivity(
                     db,
                     {
                       providerId: this.id,
@@ -304,6 +341,21 @@ export class ZwiftProvider implements SyncProvider {
                       raw: parsed.raw,
                     },
                   );
+                  if (imageActivity?.id && userId && raw.primaryImageUrl) {
+                    try {
+                      await recordActivityImageDiscovery(db, {
+                        userId,
+                        activityId: imageActivity.id,
+                        providerId: this.id,
+                        discovery: zwiftImageDiscovery(raw),
+                      });
+                    } catch (error) {
+                      errors.push({
+                        message: "Zwift image discovery persistence failed",
+                        cause: error,
+                      });
+                    }
+                  }
                   count++;
 
                   try {

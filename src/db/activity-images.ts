@@ -71,7 +71,7 @@ export async function listPendingActivityImageWork(
   const rows = await executeWithSchema(
     db,
     z.object({ id: z.string(), user_id: z.string() }),
-    sql`SELECT w.id,w.user_id FROM fitness.activity_image_work w JOIN fitness.activity_image i ON i.id=w.image_id JOIN fitness.activity a ON a.id=i.activity_id WHERE w.state IN ('pending','retryable_failure') AND w.available_at<=now() AND w.dispatched_at IS NULL AND i.retired_at IS NULL AND i.generation=w.generation AND a.deleted_at IS NULL AND a.provider_absent_at IS NULL ORDER BY w.created_at LIMIT ${limit}`,
+    sql`SELECT w.id,w.user_id FROM fitness.activity_image_work w JOIN fitness.activity_image i ON i.id=w.image_id JOIN fitness.activity a ON a.id=i.activity_id JOIN fitness.provider_connection c ON c.user_id=i.user_id AND c.provider_id=i.provider_id WHERE w.state IN ('pending','retryable_failure') AND w.available_at<=now() AND w.dispatched_at IS NULL AND i.retired_at IS NULL AND i.generation=w.generation AND a.deleted_at IS NULL AND a.provider_absent_at IS NULL ORDER BY w.created_at LIMIT ${limit}`,
   );
   return rows.map((row) => ({ id: row.id, userId: row.user_id }));
 }
@@ -80,7 +80,7 @@ export async function markActivityImageDispatched(
   id: string,
 ): Promise<void> {
   await db.execute(
-    sql`UPDATE fitness.activity_image_work SET dispatched_at=now() WHERE id=${id}::uuid AND state IN ('pending','retryable_failure')`,
+    sql`UPDATE fitness.activity_image_work SET dispatched_at=now() WHERE id=${id}::uuid AND state IN ('pending','retryable_failure') AND available_at<=now()`,
   );
 }
 export async function loadActivityImageWork(
@@ -91,7 +91,7 @@ export async function loadActivityImageWork(
   const rows = await executeWithSchema(
     db,
     workRow,
-    sql`SELECT w.*,i.provider_id,i.activity_id,i.candidate,a.external_id FROM fitness.activity_image_work w JOIN fitness.activity_image i ON i.id=w.image_id AND i.user_id=w.user_id JOIN fitness.activity a ON a.id=i.activity_id WHERE w.id=${id}::uuid AND w.user_id=${userId}::uuid AND i.retired_at IS NULL AND i.generation=w.generation AND a.deleted_at IS NULL AND a.provider_absent_at IS NULL AND w.state IN ('pending','retryable_failure','processing')`,
+    sql`SELECT w.*,i.provider_id,i.activity_id,i.candidate,a.external_id FROM fitness.activity_image_work w JOIN fitness.activity_image i ON i.id=w.image_id AND i.user_id=w.user_id JOIN fitness.activity a ON a.id=i.activity_id JOIN fitness.provider_connection c ON c.user_id=i.user_id AND c.provider_id=i.provider_id WHERE w.id=${id}::uuid AND w.user_id=${userId}::uuid AND i.retired_at IS NULL AND i.generation=w.generation AND a.deleted_at IS NULL AND a.provider_absent_at IS NULL AND w.state IN ('pending','retryable_failure','processing')`,
   );
   const row = rows[0];
   return row

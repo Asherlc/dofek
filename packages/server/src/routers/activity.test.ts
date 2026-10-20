@@ -784,7 +784,7 @@ describe("activityRouter", () => {
         id: "00000000-0000-0000-0000-000000000001",
       });
       expect(result).toEqual({ success: true });
-      expect(execute).toHaveBeenCalledTimes(3);
+      expect(execute).toHaveBeenCalledTimes(4);
     });
 
     it("invalidates activity, calendar, and climbing map caches after delete", async () => {
@@ -904,7 +904,7 @@ describe("activityRouter", () => {
       });
 
       expect(result).toEqual({ success: true, deletedCount: 2 });
-      expect(execute).toHaveBeenCalledTimes(3);
+      expect(execute).toHaveBeenCalledTimes(4);
       expect(mockEnqueueActivityDeleteAnalyticsRefresh).toHaveBeenCalledWith("user-1", [
         "00000000-0000-0000-0000-000000000001",
         "00000000-0000-0000-0000-000000000002",

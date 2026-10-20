@@ -1,6 +1,7 @@
 import { localTimeSourceSchema } from "@dofek/format/record-local-time";
 import { mapHrZones, mapPowerZones } from "@dofek/zones/zones";
 import { TRPCError } from "@trpc/server";
+import { retireActivityImages } from "dofek/db/activity-images";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import type { AccessWindow } from "../billing/entitlement.ts";
@@ -1033,6 +1034,7 @@ export class ActivityRepository extends BaseRepository {
           AND deleted_at IS NULL
       `);
     }
+    await retireActivityImages(this.db, { userId: this.userId, activityIds: memberActivityIds });
     return { deletedCount: uniqueActivityIds.length, memberActivityIds };
   }
 

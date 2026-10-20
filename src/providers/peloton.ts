@@ -14,8 +14,10 @@ import type {
   PelotonWorkoutListResponse,
 } from "@dofek/peloton/types";
 import { PROVIDER_HTTP_REQUEST_TIMEOUT_MS } from "@dofek/provider-http/rate-limit";
+import { pelotonImageDiscovery } from "../activity-images/providers.ts";
 import type { TokenSet } from "../auth/oauth.ts";
 import { resolveOAuthTokens } from "../auth/resolve-tokens.ts";
+import { recordActivityImageDiscovery } from "../db/activity-images.ts";
 import type { SyncDatabase } from "../db/index.ts";
 import { replaceMetricStreamBatch } from "../db/metric-stream-writer.ts";
 import {
@@ -99,6 +101,16 @@ export class PelotonProvider implements SyncProvider {
       refreshBeforeExpiryMs: PROVIDER_HTTP_REQUEST_TIMEOUT_MS,
       forceRefresh,
     });
+  }
+
+  async discoverActivityImages(run: SyncRun, activityExternalId: string) {
+    let tokens = await this.#resolveTokens(run.db);
+    const client = new PelotonClient(async () => {
+      if (tokens.expiresAt.getTime() <= Date.now() + PROVIDER_HTTP_REQUEST_TIMEOUT_MS)
+        tokens = await this.#resolveTokens(run.db);
+      return tokens.accessToken;
+    }, this.#fetchFn);
+    return pelotonImageDiscovery(await client.getWorkout(activityExternalId));
   }
 
   async sync(run: SyncRun): Promise<SyncResult> {
@@ -199,6 +211,22 @@ export class PelotonProvider implements SyncProvider {
                 );
 
                 activityId = row?.id ?? null;
+                if (activityId && userId) {
+                  try {
+                    await recordActivityImageDiscovery(db, {
+                      userId,
+                      activityId,
+                      providerId: this.id,
+                      discovery: pelotonImageDiscovery(workout),
+                    });
+                  } catch (error) {
+                    errors.push({
+                      message: "Peloton image discovery persistence failed",
+                      externalId: parsed.externalId,
+                      cause: error,
+                    });
+                  }
+                }
                 workoutCount++;
                 // no-mutate: Progress reporting is UX-only and can't fail in a testable way
                 if (onProgress && totalWorkouts > 0) {

@@ -1,3 +1,17 @@
+import type {
+  StravaActivity,
+  StravaDetailedActivity,
+  StravaStream,
+  StravaStreamSet,
+} from "./strava-api-types.ts";
+
+export type {
+  StravaActivity,
+  StravaDetailedActivity,
+  StravaStream,
+  StravaStreamSet,
+} from "./strava-api-types.ts";
+
 import { ProviderRateLimitError, parseRetryAfterHeader } from "@dofek/provider-http/rate-limit";
 import {
   type ProviderActivityType,
@@ -7,9 +21,12 @@ import { isIndoorCyclingModality } from "@dofek/training/endurance-types";
 import { createActivityTypeMapper, STRAVA_ACTIVITY_TYPE_MAP } from "@dofek/training/training";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import { fetchStravaActivityImages } from "../activity-images/providers.ts";
+import type { ImageDiscovery } from "../activity-images/types.ts";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import { exchangeCodeForTokens, getOAuthRedirectUri } from "../auth/oauth.ts";
 import { resolveOAuthTokens } from "../auth/resolve-tokens.ts";
+import { recordActivityImageDiscovery } from "../db/activity-images.ts";
 import type { SyncDatabase } from "../db/index.ts";
 import {
   type MetricStreamSourceRow,
@@ -28,6 +45,7 @@ import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.t
 import { logger } from "../logger.ts";
 import type { SyncDegradation } from "../sync/sync-degradation.ts";
 import { ProviderAuthorizationFailedError } from "./auth-errors.ts";
+import { isStreamKey } from "./strava-streams.ts";
 import type { SyncRun } from "./sync-run.ts";
 import type {
   ProviderAuthSetup,
@@ -42,80 +60,6 @@ import type {
 // ============================================================
 // Strava API types
 // ============================================================
-
-export interface StravaActivity {
-  id: number;
-  name: string;
-  type: string;
-  sport_type: string;
-  start_date: string;
-  elapsed_time: number;
-  moving_time: number;
-  distance: number;
-  total_elevation_gain: number;
-  average_speed?: number;
-  max_speed?: number;
-  average_heartrate?: number;
-  max_heartrate?: number;
-  average_watts?: number;
-  max_watts?: number;
-  weighted_average_watts?: number;
-  kilojoules?: number;
-  average_cadence?: number;
-  suffer_score?: number;
-  calories?: number;
-  start_latlng?: [number, number];
-  end_latlng?: [number, number];
-  trainer: boolean;
-  commute: boolean;
-  manual: boolean;
-  gear_id?: string;
-  device_watts?: boolean;
-  /** Recording device name — only present on detailed activity responses. */
-  device_name?: string;
-}
-
-/** Detailed activity response from GET /activities/{id}. */
-export interface StravaDetailedActivity extends StravaActivity {
-  device_name?: string;
-}
-
-export interface StravaStream {
-  data: number[] | [number, number][];
-  series_type: string;
-  resolution: string;
-  original_size: number;
-}
-
-export interface StravaStreamSet {
-  time?: StravaStream;
-  heartrate?: StravaStream;
-  watts?: StravaStream;
-  cadence?: StravaStream;
-  velocity_smooth?: StravaStream;
-  latlng?: StravaStream;
-  altitude?: StravaStream;
-  distance?: StravaStream;
-  temp?: StravaStream;
-  grade_smooth?: StravaStream;
-}
-
-const STREAM_KEYS = new Set<string>([
-  "time",
-  "heartrate",
-  "watts",
-  "cadence",
-  "velocity_smooth",
-  "latlng",
-  "altitude",
-  "distance",
-  "temp",
-  "grade_smooth",
-]);
-
-function isStreamKey(key: string): key is keyof StravaStreamSet {
-  return STREAM_KEYS.has(key);
-}
 
 // ============================================================
 // Activity type mapping
@@ -325,6 +269,24 @@ export class StravaClient {
       page: String(page),
       per_page: String(perPage),
     });
+  }
+
+  async getActivityImages(
+    activityId: number,
+    expectedCount: number | null,
+    primary: unknown = null,
+  ): Promise<ImageDiscovery> {
+    return fetchStravaActivityImages(
+      (page) =>
+        this.#get(`activities/${activityId}/photos`, {
+          page: String(page),
+          per_page: "200",
+          size: "4096",
+          photo_sources: "true",
+        }),
+      expectedCount,
+      primary,
+    );
   }
 
   async getActivityStreams(activityId: number): Promise<StravaStreamSet> {
@@ -697,6 +659,22 @@ export class StravaProvider implements WebhookProvider {
         raw: detail,
       },
     );
+    if (row?.id && scopedUserId && detail.photos) {
+      try {
+        await recordActivityImageDiscovery(db, {
+          userId: scopedUserId,
+          activityId: row.id,
+          providerId: this.id,
+          discovery: await client.getActivityImages(
+            activityExternalId,
+            detail.photos?.count ?? null,
+            detail.photos?.primary,
+          ),
+        });
+      } catch (error) {
+        errors.push({ message: "Strava image discovery persistence failed", cause: error });
+      }
+    }
 
     recordsSynced++;
     const activityId = row?.id;
@@ -744,9 +722,19 @@ export class StravaProvider implements WebhookProvider {
     return { provider: this.id, recordsSynced, errors, duration: Date.now() - start };
   }
 
+  async discoverActivityImages(run: SyncRun, activityExternalId: string): Promise<ImageDiscovery> {
+    const client = await this.#createClient(run.db);
+    const detail = await client.getActivity(Number(activityExternalId));
+    return client.getActivityImages(
+      Number(activityExternalId),
+      detail.photos?.count ?? null,
+      detail.photos?.primary,
+    );
+  }
+
   async sync(run: SyncRun): Promise<SyncResult> {
     const { db, window, options } = run;
-    const onProgress = options.onProgress;
+    const { onProgress, userId } = options;
     const start = Date.now();
     const errors: SyncError[] = [];
     let recordsSynced = 0;
@@ -816,9 +804,11 @@ export class StravaProvider implements WebhookProvider {
         try {
           // Fetch detailed activity to get device_name for source tracking
           let sourceName: string | undefined = act.sourceName;
+          let detailedActivity: StravaDetailedActivity | undefined;
           try {
             const detail = await client.getActivity(Number(act.externalId));
             sourceName = detail.device_name;
+            detailedActivity = detail;
           } catch (detailErr) {
             if (detailErr instanceof StravaRateLimitError) {
               errors.push({
@@ -858,7 +848,7 @@ export class StravaProvider implements WebhookProvider {
               endedAt: act.endedAt,
               name: act.name,
               sourceName,
-              raw: rawActivities.find((r) => String(r.id) === act.externalId),
+              raw: detailedActivity ?? rawActivities.find((r) => String(r.id) === act.externalId),
             },
             {
               activityType: act.activityType,
@@ -870,6 +860,26 @@ export class StravaProvider implements WebhookProvider {
             },
           );
 
+          if (row?.id && userId && detailedActivity?.photos) {
+            try {
+              await recordActivityImageDiscovery(db, {
+                userId,
+                activityId: row.id,
+                providerId: this.id,
+                discovery: await client.getActivityImages(
+                  Number(act.externalId),
+                  detailedActivity?.photos?.count ?? null,
+                  detailedActivity?.photos?.primary,
+                ),
+              });
+            } catch (error) {
+              errors.push({
+                message: "Strava image discovery persistence failed",
+                externalId: act.externalId,
+                cause: error,
+              });
+            }
+          }
           recordsSynced++;
           // no-mutate: Progress reporting is UX-only and can't fail in a testable way
           if (onProgress) {

@@ -51,3 +51,35 @@ describe("private image downloads", () => {
     await expect(inspectImageBytes(png, "image/jpeg")).rejects.toThrow("MIME");
   });
 });
+
+it.each(["jpeg", "png", "webp", "gif", "avif"])(
+  "recognizes %s originals without recompressing them",
+  async (format) => {
+    const { default: sharp } = await import("sharp");
+    let image = sharp({
+      create: { width: 2, height: 2, channels: 3, background: { r: 1, g: 2, b: 3 } },
+    });
+    switch (format) {
+      case "jpeg":
+        image = image.jpeg();
+        break;
+      case "png":
+        image = image.png();
+        break;
+      case "webp":
+        image = image.webp();
+        break;
+      case "gif":
+        image = image.gif();
+        break;
+      case "avif":
+        image = image.avif();
+        break;
+    }
+    const bytes = await image.toBuffer();
+    const before = Buffer.from(bytes);
+    const metadata = await inspectImageBytes(bytes, `image/${format}`);
+    expect(bytes).toEqual(before);
+    expect(metadata).toMatchObject({ width: 2, height: 2, mimeType: `image/${format}` });
+  },
+);

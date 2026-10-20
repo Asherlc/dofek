@@ -42,6 +42,9 @@ describe("activity image persistence", () => {
       sql`INSERT INTO fitness.provider(id,name) VALUES('image-test','Image test') ON CONFLICT DO NOTHING`,
     );
     await ctx.db.execute(
+      sql`INSERT INTO fitness.provider_connection(user_id,provider_id) VALUES(${user},'image-test'),(${other},'image-test')`,
+    );
+    await ctx.db.execute(
       sql`INSERT INTO fitness.activity(id,user_id,provider_id,external_id,canonical_type,provider_type,started_at) VALUES(${a},${user},'image-test','a','cycling','Ride',now()),(${b},${other},'image-test','b','cycling',now())`,
     );
   });

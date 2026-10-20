@@ -22,3 +22,9 @@ describe("provider image identity and variants", () => {
     expect(() => selectImageVariant([])).toThrow("No image variants");
   });
 });
+
+it("keeps semantic query parameters in fallback image identities", () => {
+  expect(sourceImageIdentity("https://cdn.test/image?id=one&signature=old")).not.toBe(
+    sourceImageIdentity("https://cdn.test/image?id=two&signature=new"),
+  );
+});
