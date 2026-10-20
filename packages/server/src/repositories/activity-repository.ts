@@ -4,6 +4,7 @@ import { sql } from "drizzle-orm";
 import { z } from "zod";
 import type { AccessWindow } from "../billing/entitlement.ts";
 import type { ActivityLocation } from "../contracts/activity-location.ts";
+import type { ActivityMetricSourceSelection } from "../contracts/activity-metric-sources.ts";
 import { BaseRepository } from "../lib/base-repository.ts";
 import {
   postgresCurrentTimestampRangeLowerBound,
@@ -17,6 +18,10 @@ import type { ActivityRow } from "../models/activity.ts";
 import { activityMeasurementState } from "../services/activity-data-state.ts";
 import { postgresActivityCalendarDate } from "./activity-local-date.ts";
 import {
+  getActivityMetricSources,
+  getActivitySourceHrZones,
+} from "./activity-metric-sources-repository.ts";
+import {
   type ActivityIdResolution,
   activityDetailRowSchema,
   activityIdResolutionSchema,
@@ -29,13 +34,13 @@ import {
   streamPointRowSchema,
 } from "./activity-repository-schemas.ts";
 import { getActivityMapReadiness, getActivityRoutePreviews } from "./activity-route-preview.ts";
+import type { ActivitySensorQueryStore, ActivitySensorWindow } from "./activity-sensor-types.ts";
+
+export type { ActivitySensorQueryOptions, ActivitySensorWindow } from "./activity-sensor-types.ts";
+
 import { ActivityVisibilityRepository } from "./activity-visibility-repository.ts";
 
 type ActivityListItem = Record<string, unknown> & { location: ActivityLocation | null };
-
-// ---------------------------------------------------------------------------
-// Zod schemas for raw DB rows
-// ---------------------------------------------------------------------------
 
 function activityNotFoundError(): TRPCError {
   return new TRPCError({ code: "NOT_FOUND", message: "Activity not found" });
@@ -78,32 +83,7 @@ export interface StreamPointRow {
   lng: number | null;
 }
 
-export interface ActivitySensorWindow {
-  activityId: string;
-  userId: string;
-  startedAt: string;
-  endedAt: string | null;
-  memberActivityIds: string[];
-}
-
-export interface ActivitySensorQueryOptions {
-  priority?: "dashboard";
-  abortSignal?: AbortSignal | undefined;
-}
-
-export interface ActivitySensorStore {
-  /**
-   * Run a raw ClickHouse query against the analytics database and parse rows
-   * with the supplied Zod schema. Used by repositories that previously joined
-   * fitness.deduped_sensor / fitness.activity_summary and now read from
-   * analytics.deduped_sensor / analytics.activity_summary.
-   */
-  query<TSchema extends z.ZodType>(
-    schema: TSchema,
-    query: string,
-    params?: Record<string, unknown>,
-    options?: ActivitySensorQueryOptions,
-  ): Promise<z.infer<TSchema>[]>;
+export interface ActivitySensorStore extends ActivitySensorQueryStore {
   getActivitySummaries(
     activityIds: string[],
   ): Promise<z.infer<typeof activitySummaryReadModelRowSchema>[]>;
@@ -135,11 +115,16 @@ export interface ActivitySensorStore {
     userId: string,
     timezone: string,
   ): Promise<Array<{ duration_seconds: number; best_pace: number; activity_date: string }>>;
-  getStream(window: ActivitySensorWindow, maxPoints: number): Promise<StreamPointRow[]>;
+  getStream(
+    window: ActivitySensorWindow,
+    maxPoints: number,
+    sources?: ActivityMetricSourceSelection,
+  ): Promise<StreamPointRow[]>;
   getHeartRateZoneSeconds(window: ActivitySensorWindow): Promise<z.infer<typeof hrZoneRowSchema>[]>;
   getPowerZoneSeconds(
     window: ActivitySensorWindow,
     ftp: number,
+    powerSourceId?: string,
   ): Promise<z.infer<typeof powerZoneRowSchema>[]>;
   refreshBodyMeasurements(): Promise<void>;
 }
@@ -764,31 +749,53 @@ export class ActivityRepository extends BaseRepository {
   }
 
   /** Downsampled metric stream for a single activity. */
-  async getStream(activityId: string, maxPoints: number): Promise<StreamPoint[]> {
+  async getStream(
+    activityId: string,
+    maxPoints: number,
+    sources?: ActivityMetricSourceSelection,
+  ): Promise<StreamPoint[]> {
     const sensorStore = this.#requireSensorStore("activity streams");
     const window = await this.findSensorWindow(activityId);
     if (!window) throw activityNotFoundError();
-    const rows = await sensorStore.getStream(window, maxPoints);
+    const rows = await (sources && Object.keys(sources).length > 0
+      ? sensorStore.getStream(window, maxPoints, sources)
+      : sensorStore.getStream(window, maxPoints));
     return rows.map((row) => new StreamPoint(streamPointRowSchema.parse(row)));
   }
 
+  async getMetricSources(activityId: string) {
+    const window = await this.findSensorWindow(activityId);
+    if (!window) throw activityNotFoundError();
+    return getActivityMetricSources(this.#requireSensorStore("metric sources"), window);
+  }
+
   /** HR zone distribution for a single activity using the canonical Karvonen model. */
-  async getHrZones(activityId: string): Promise<import("@dofek/zones/zones").ActivityHrZone[]> {
+  async getHrZones(
+    activityId: string,
+    heartRateSourceId?: string,
+  ): Promise<import("@dofek/zones/zones").ActivityHrZone[]> {
     const sensorStore = this.#requireSensorStore("heart-rate zones");
     const window = await this.findSensorWindow(activityId);
     if (!window) throw activityNotFoundError();
-    return mapHrZones(await sensorStore.getHeartRateZoneSeconds(window));
+    return heartRateSourceId
+      ? getActivitySourceHrZones(sensorStore, window, heartRateSourceId)
+      : mapHrZones(await sensorStore.getHeartRateZoneSeconds(window));
   }
 
   /** Cycling power zone distribution for a single activity using 7 zones relative to FTP. */
   async getPowerZones(
     activityId: string,
     ftp: number,
+    powerSourceId?: string,
   ): Promise<import("@dofek/zones/zones").ActivityPowerZone[]> {
     const sensorStore = this.#requireSensorStore("power zones");
     const window = await this.findSensorWindow(activityId);
     if (!window) throw activityNotFoundError();
-    return mapPowerZones(await sensorStore.getPowerZoneSeconds(window, ftp));
+    return mapPowerZones(
+      await (powerSourceId
+        ? sensorStore.getPowerZoneSeconds(window, ftp, powerSourceId)
+        : sensorStore.getPowerZoneSeconds(window, ftp)),
+    );
   }
 
   #requireSensorStore(featureName: string): ActivitySensorStore {

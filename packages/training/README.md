@@ -73,6 +73,12 @@ Every public module is imported as `@dofek/training/<subpath>`.
 
 ## Model details
 
+### Activity icons
+
+The [activity icon metadata](src/activity-icons.ts) includes a shared SVG for
+hangboarding, rendered by web and mobile ActivityTypeIcon components. Inline
+emoji consumers use a hand fallback rather than the generic activity symbol.
+
 ### Climbing grades and attempts
 
 `GradeSystem` covers recorded free, British, aid, ice, mixed, and commitment

@@ -56,3 +56,10 @@ Whole-climb summaries show the outcome
 when recorded; pitch summaries retain their pitch label. Attempt details include
 known outcomes, methods, protection, and Yes/No facts, omitting missing values
 and internal references.
+
+
+### Climbing cards
+
+[Climbing summaries](src/climbing-log.ts) omit generic “Completed” wording and
+suppress redundant attempt counts for the server's Onsight and Flash labels.
+Other recorded attempt counts and explicit failure results stay visible.

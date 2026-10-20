@@ -113,7 +113,7 @@ function MetricControl({
       >
         {metric.sources.map((item) => (
           <option key={item.id} value={item.id}>
-            {item.id === "automatic" ? `Auto · ${item.sourceLabel}` : item.label}
+            {item.label}
           </option>
         ))}
       </select>
@@ -154,26 +154,15 @@ function MetricSourcePreview() {
           hasCadence
           loading={false}
           units={units}
-          renderLegend={({ isVisible, toggle }) => (
-            <fieldset className="m-0 flex flex-wrap gap-2 border-0 p-0">
-              <legend className="sr-only">Chart controls</legend>
-              {activityMetricSourcePreview
-                .filter((metric) => metric.key !== "altitude")
-                .map((metric) => {
-                  const seriesName = metric.key === "heartRate" ? "Heart Rate" : metric.label;
-                  return (
-                    <MetricControl
-                      key={metric.key}
-                      metric={metric}
-                      sourceId={selection[metric.key]}
-                      visible={isVisible(seriesName)}
-                      onToggle={() => toggle(seriesName)}
-                      onChange={(sourceId) => selectSource(metric.key, sourceId)}
-                    />
-                  );
-                })}
-            </fieldset>
-          )}
+          metricSources={activityMetricSourcePreview
+            .filter((metric) => metric.key !== "altitude")
+            .map((metric) => ({
+              key: metric.key,
+              label: metric.key === "heartRate" ? "Heart Rate" : metric.label,
+              sources: metric.sources,
+              selectedId: selection[metric.key],
+              onChange: (sourceId: string) => selectSource(metric.key, sourceId),
+            }))}
         />
       </section>
 
@@ -201,4 +190,27 @@ function MetricSourcePreview() {
 export const MetricSources: Story = {
   name: "Metric source switchers",
   render: () => <MetricSourcePreview />,
+};
+
+export const HeartRateSources: Story = {
+  render: function HeartRateSourcesStory(args) {
+    const [selectedId, setSelectedId] = useState("whoop");
+    return (
+      <MetricsChart
+        {...args}
+        metricSources={[
+          {
+            key: "heartRate",
+            label: "Heart Rate",
+            sources: [
+              { id: "whoop", label: "WHOOP (Cloud)" },
+              { id: "garmin", label: "Garmin" },
+            ],
+            selectedId,
+            onChange: setSelectedId,
+          },
+        ]}
+      />
+    );
+  },
 };

@@ -14,7 +14,7 @@ export function createMigration(): ClickHouseMigration {
     ...buildActivityOriginReadModelRefreshStatements(),
   ];
   return {
-    id: "0103_activity_origin",
+    id: "0104_activity_origin",
     statements,
     run: async (client) => {
       if (!client.query)

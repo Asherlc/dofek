@@ -3,7 +3,7 @@ import { createClient } from "@clickhouse/client";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
 import type { ClickHouseCommandClient } from "../clickhouse.ts";
-import { createMigration } from "./0103_activity_origin.ts";
+import { createMigration } from "./0104_activity_origin.ts";
 
 describe("populated activity origin migration", () => {
   const client = createClient({

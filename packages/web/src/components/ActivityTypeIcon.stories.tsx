@@ -16,3 +16,10 @@ export const Card: Story = {};
 export const Compact: Story = { args: { variant: "compact" } };
 export const Plain: Story = { args: { variant: "plain" } };
 export const StrengthTraining: Story = { args: { activityType: "strength_training" } };
+export const Hangboarding: Story = { args: { activityType: "hangboard" } };
+export const HangboardingCompact: Story = {
+  args: { activityType: "hangboard", variant: "compact" },
+};
+export const HangboardingPlain: Story = {
+  args: { activityType: "hangboard", variant: "plain" },
+};

@@ -1,6 +1,9 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { climbingAttemptFixture } from "../../server/src/repositories/climbing-test-helpers.ts";
+import {
+  climbingAttemptFixture,
+  climbingClimbFixture,
+} from "../../server/src/repositories/climbing-test-helpers.ts";
 import { ClimbingLogEntryCard } from "./ClimbingLogEntryCard";
 import { climbingLogFixture, exactClimbingLocation } from "./climbing-log-entry-fixtures";
 
@@ -98,7 +101,7 @@ describe("ClimbingLogEntryCard", () => {
     expect(screen.getByRole("link", { name: "Swiss Cheese on Mountain Project" })).toBeTruthy();
     expect(screen.getByRole("link", { name: "Mountain Project" })).toBeTruthy();
     expect(screen.getByText("5.4")).toBeTruthy();
-    expect(screen.getByText("Completed")).toBeTruthy();
+    expect(screen.queryByText("Completed")).toBeNull();
   });
 
   it("shows a known recorded attempt count alongside its outcome", () => {
@@ -107,7 +110,7 @@ describe("ClimbingLogEntryCard", () => {
         entry={{ ...climbingLogFixture, providerId: "kaya", recordedClimbAttemptCount: 2 }}
       />,
     );
-    expect(screen.getByText("Completed · Attempts: 2")).toBeTruthy();
+    expect(screen.getByText("Attempts: 2")).toBeTruthy();
   });
 
   it("shows a compact single-point map", () => {
@@ -140,3 +143,27 @@ describe("ClimbingLogEntryCard", () => {
     expect(onAttach).toHaveBeenCalledWith("tick-1");
   });
 });
+
+it.each(["Onsight", "Flash"] as const)(
+  "labels an unnamed colored Kaya boulder and keeps only %s",
+  (label) => {
+    const entry = {
+      ...climbingLogFixture,
+      providerId: "kaya",
+      title: null,
+      sourceLinks: [],
+      climb: { ...climbingClimbFixture("kaya"), name: null, kind: "boulder" as const },
+      raw: { color: { name: "Blue" } },
+      displayGrade: "V5",
+      recordedClimbAttemptCount: 1,
+      attempts: [
+        climbingAttemptFixture(climbingLogFixture.id, { rockResultLabels: ["sent", label] }),
+      ],
+    };
+    render(<ClimbingLogEntryCard entry={entry} />);
+    expect(screen.getByText("Blue boulder")).toBeTruthy();
+    expect(screen.getByText("V5")).toBeTruthy();
+    expect(screen.getByText(label)).toBeTruthy();
+    expect(screen.queryByText(/Attempts:|completed/i)).toBeNull();
+  },
+);

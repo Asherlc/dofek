@@ -133,3 +133,18 @@ recording when provenance resolves a primary. Unresolved origin has no primary
 logo. Field and sensor priorities remain independent. The card reuses
 [ProviderLogo](src/components/ProviderLogo.tsx); see the
 [origin schema](../providers-meta/src/activity-origin.ts).
+
+## Activity metric sources
+
+Activity views offer independent source controls for heart rate, power, speed,
+cadence, and elevation. Each control preselects its existing priority winner
+without an Auto option. Choices distinguish providers and devices and apply
+only to the current view; saved priorities are unchanged. Heart-rate and power
+zones follow their respective selected sources.
+
+`activity.metricSources` lists available sources in the owned activity window,
+including standalone recordings and canonical member activities. `activity.stream`
+accepts a `sources` map; zone endpoints accept their metric's source ID.
+The [source repository](../server/src/repositories/activity-metric-sources-repository.ts) retains zero power, speed, and cadence samples
+and negative elevations, excludes invalid heart-rate samples, and preserves
+activity ownership and stream downsampling.

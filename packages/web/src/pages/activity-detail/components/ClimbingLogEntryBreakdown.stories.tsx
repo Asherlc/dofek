@@ -1,3 +1,4 @@
+import { climbingLogEntryName } from "@dofek/training/climbing-log";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { type ComponentProps, useMemo, useState } from "react";
 import { expect, within } from "storybook/test";
@@ -138,7 +139,7 @@ function ActivityArrangement({
               {
                 entryId: entry.id,
                 entryNumber: index + 1,
-                label: entry.climb?.name ?? entry.title ?? "Climbing log",
+                label: climbingLogEntryName(entry),
                 location,
               },
             ]
@@ -224,3 +225,30 @@ export const ActivityDetailNarrow: Story = {
   decorators: Narrow.decorators,
 };
 export const ActivityDetailWide: Story = { ...ActivityDetailClimbs, decorators: Wide.decorators };
+
+export const KayaColors: Story = {
+  args: {
+    locations: {},
+    entries: (["Flash", "Onsight", "sent"] as const).map((result, index) => {
+      const id = `kaya-colored-${index}`;
+      const color = ["Blue", "Yellow", "Purple"][index] ?? "Blue";
+      const entry = climbingLogEntryFixture({
+        id,
+        providerId: "kaya",
+        sourceName: "Kaya",
+        title: null,
+        climb: { ...climbingClimbFixture("kaya"), name: null, kind: "boulder", areaPath: [] },
+        raw: { climb: { color: { name: color } } },
+        displayGrade: "V5",
+        recordedClimbOutcome: "completed",
+        recordedClimbAttemptCount: result === "sent" ? 3 : 1,
+      });
+      entry.attempts = [
+        climbingAttemptFixture(id, {
+          rockResultLabels: result === "sent" ? ["sent"] : ["sent", result],
+        }),
+      ];
+      return entry;
+    }),
+  },
+};

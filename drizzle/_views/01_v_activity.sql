@@ -38,6 +38,10 @@ WITH apple_health_revisions AS (
 ranked AS (
   SELECT
     a.*,
+    COALESCE(a.canonical_type = 'strength' AND (
+      a.provider_id = 'strong-csv'
+      OR (a.provider_id = 'apple_health' AND TRIM(a.source_name) = 'Strong')
+    ), false) AS is_strong_strength,
     COALESCE(dp.priority, pp.priority, 100) AS prio,
     COALESCE(name_priority.priority, dp.priority, pp.priority, 100) AS name_prio,
     COALESCE(notes_priority.priority, dp.priority, pp.priority, 100) AS notes_prio,
@@ -354,8 +358,10 @@ merged AS (
     ) AS perceived_exertion,
     (
       SELECT r.name FROM final_groups AS fg2 INNER JOIN ranked AS r ON fg2.activity_id = r.id
-      WHERE fg2.group_id = b.group_id AND r.name IS NOT null
-      ORDER BY r.name_prio ASC, r.id ASC LIMIT 1
+      WHERE
+        fg2.group_id = b.group_id AND r.name IS NOT null
+        AND (NOT r.is_strong_strength OR NULLIF(TRIM(r.name), '') IS NOT null)
+      ORDER BY r.is_strong_strength DESC, r.name_prio ASC, r.id ASC LIMIT 1
     ) AS name,
     (
       SELECT r.notes FROM final_groups AS fg2 INNER JOIN ranked AS r ON fg2.activity_id = r.id

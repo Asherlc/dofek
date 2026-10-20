@@ -60,6 +60,101 @@ describe("merged activity field priorities", () => {
        '2026-09-01T18:42:00Z', ${kayaName}, 'Kaya')`);
   });
 
+  it.each([
+    {
+      providerId: "strong-csv",
+      sourceName: "Strong",
+      canonicalType: "strength",
+      name: "Push day",
+      expected: "Push day",
+    },
+    {
+      providerId: "apple_health",
+      sourceName: "Strong",
+      canonicalType: "strength",
+      name: "Pull day",
+      expected: "Pull day",
+    },
+    {
+      providerId: "apple_health",
+      sourceName: "Strong",
+      canonicalType: "strength",
+      name: null,
+      expected: "Peloton title",
+    },
+    {
+      providerId: "apple_health",
+      sourceName: "Strong",
+      canonicalType: "strength",
+      name: "",
+      expected: "Peloton title",
+    },
+    {
+      providerId: "apple_health",
+      sourceName: "Strong",
+      canonicalType: "strength",
+      name: "   ",
+      expected: "Peloton title",
+    },
+    {
+      providerId: "apple_health",
+      sourceName: "Strong",
+      canonicalType: "cycling",
+      name: "Strong ride",
+      expected: "Peloton title",
+    },
+    {
+      providerId: "apple_health",
+      sourceName: "Other app",
+      canonicalType: "strength",
+      name: "Other title",
+      expected: "Peloton title",
+    },
+  ])(
+    "selects $expected for $providerId / $sourceName / $canonicalType / $name",
+    async ({ providerId, sourceName, canonicalType, name, expected }) => {
+      const id = randomUUID();
+      await context.db.execute(sql`INSERT INTO fitness.provider (id, name)
+        VALUES ('strong-csv', 'Strong') ON CONFLICT DO NOTHING`);
+      await context.db.execute(sql`INSERT INTO fitness.activity_group (id, user_id)
+        VALUES (${id}, ${TEST_USER_ID})`);
+      await context.db.execute(sql`INSERT INTO fitness.activity (
+        group_id, provider_id, user_id, external_id, canonical_type, provider_type,
+        started_at, ended_at, name, notes, source_name
+      ) VALUES
+        (${id}, ${providerId}, ${TEST_USER_ID}, ${randomUUID()}, ${canonicalType}::fitness.canonical_activity_type,
+         ${canonicalType}, '2026-10-20T14:00:00Z', '2026-10-20T15:00:00Z', ${name}, 'Strong note', ${sourceName}),
+        (${id}, 'peloton', ${TEST_USER_ID}, ${randomUUID()}, ${canonicalType}::fitness.canonical_activity_type,
+         ${canonicalType}, '2026-10-20T14:00:00Z', '2026-10-20T15:00:00Z', 'Peloton title', 'Peloton note', 'Peloton')`);
+      const rows = await executeWithSchema(
+        context.db,
+        z.object({ name: z.string().nullable(), notes: z.string().nullable() }),
+        sql`SELECT name, notes FROM fitness.v_activity WHERE id = ${id}`,
+      );
+      expect(rows).toEqual([{ name: expected, notes: "Peloton note" }]);
+    },
+  );
+
+  it("preserves blank-name priority outside Strong strength workouts", async () => {
+    const id = randomUUID();
+    await context.db.execute(sql`INSERT INTO fitness.activity_group (id, user_id)
+      VALUES (${id}, ${TEST_USER_ID})`);
+    await context.db.execute(sql`INSERT INTO fitness.activity (
+      group_id, provider_id, user_id, external_id, canonical_type, provider_type,
+      started_at, ended_at, name, source_name
+    ) VALUES
+      (${id}, 'apple_health', ${TEST_USER_ID}, ${randomUUID()}, 'cycling', 'cycling',
+       '2026-10-20T14:00:00Z', '2026-10-20T15:00:00Z', 'Strong ride', 'Strong'),
+      (${id}, 'peloton', ${TEST_USER_ID}, ${randomUUID()}, 'cycling', 'cycling',
+       '2026-10-20T14:00:00Z', '2026-10-20T15:00:00Z', '', 'Peloton')`);
+    const rows = await executeWithSchema(
+      context.db,
+      z.object({ name: z.string().nullable() }),
+      sql`SELECT name FROM fitness.v_activity WHERE id = ${id}`,
+    );
+    expect(rows).toEqual([{ name: "" }]);
+  });
+
   afterAll(async () => {
     await context?.cleanup();
   });

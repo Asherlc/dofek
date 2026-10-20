@@ -192,6 +192,10 @@ function makeActivityRow(overrides: Partial<ActivityRow>): ActivityRow {
     name: "Ride",
     notes: null,
     perceived_exertion: null,
+    primary_activity_id: "00000000-0000-4000-8000-000000000001",
+    primary_provider_id: "wahoo",
+    primary_source_name: null,
+    origin_candidate_member_ids: [],
     provider_id: "wahoo",
     source_providers: ["wahoo"],
     source_external_ids: null,
@@ -270,6 +274,10 @@ describe("activityRouter", () => {
           ended_at: "2024-01-01 11:00:00+00",
           canonical_type: "cycling",
           name: "Morning Ride",
+          primary_activity_id: "00000000-0000-4000-8000-000000000001",
+          primary_provider_id: "wahoo",
+          primary_source_name: null,
+          origin_candidate_member_ids: [],
           provider_id: "wahoo",
           source_providers: ["wahoo"],
           member_activity_ids: ["a1"],
@@ -419,6 +427,10 @@ describe("activityRouter", () => {
         ended_at: "2024-01-01T11:00:00Z",
         name: "Morning Ride",
         notes: null,
+        primary_activity_id: "00000000-0000-4000-8000-000000000001",
+        primary_provider_id: "wahoo",
+        primary_source_name: null,
+        origin_candidate_member_ids: [],
         provider_id: "wahoo",
         subsource: null,
         source_providers: ["strava", "wahoo"],
@@ -483,6 +495,10 @@ describe("activityRouter", () => {
         ended_at: null,
         name: null,
         notes: null,
+        primary_activity_id: null,
+        primary_provider_id: null,
+        primary_source_name: null,
+        origin_candidate_member_ids: [],
         provider_id: "manual",
         subsource: null,
         source_providers: null,
@@ -1556,42 +1572,52 @@ describe("activityRouter", () => {
       findByIdSpy.mockRestore();
     });
 
-    it("returns zones and ftp for cycling activities with power data", async () => {
-      const zones = [
-        { zone: 1, label: "Active Recovery", minPct: 0, maxPct: 55, seconds: 60, percent: 33.3 },
-        { zone: 2, label: "Endurance", minPct: 55, maxPct: 75, seconds: 120, percent: 66.7 },
-      ];
-      const findByIdSpy = vi
-        .spyOn(ActivityRepository.prototype, "findById")
-        .mockResolvedValue(
-          makeActivityRow({ canonical_type: "cycling", avg_power: 210, max_power: 360 }),
-        );
-      const getEftpTrendSpy = vi
-        .spyOn(PowerRepository.prototype, "getEftpTrend")
-        .mockResolvedValue({
-          trend: [],
-          currentEftp: 265,
-          model: null,
+    it.each([undefined, "wahoo"])(
+      "returns zones and ftp for cycling activities using power source %s",
+      async (powerSourceId) => {
+        const zones = [
+          { zone: 1, label: "Active Recovery", minPct: 0, maxPct: 55, seconds: 60, percent: 33.3 },
+          { zone: 2, label: "Endurance", minPct: 55, maxPct: 75, seconds: 120, percent: 66.7 },
+        ];
+        const findByIdSpy = vi
+          .spyOn(ActivityRepository.prototype, "findById")
+          .mockResolvedValue(
+            makeActivityRow({ canonical_type: "cycling", avg_power: 210, max_power: 360 }),
+          );
+        const getEftpTrendSpy = vi
+          .spyOn(PowerRepository.prototype, "getEftpTrend")
+          .mockResolvedValue({
+            trend: [],
+            currentEftp: 265,
+            model: null,
+          });
+        const getPowerZonesSpy = vi
+          .spyOn(ActivityRepository.prototype, "getPowerZones")
+          .mockResolvedValue(zones);
+
+        const caller = makeCaller([], {
+          getPowerCurveSamples: vi.fn(),
+          getNormalizedPowerSamples: vi.fn(),
         });
-      const getPowerZonesSpy = vi
-        .spyOn(ActivityRepository.prototype, "getPowerZones")
-        .mockResolvedValue(zones);
+        const result = await caller.powerZones({
+          id: "00000000-0000-0000-0000-000000000001",
+          powerSourceId,
+        });
 
-      const caller = makeCaller([], {
-        getPowerCurveSamples: vi.fn(),
-        getNormalizedPowerSamples: vi.fn(),
-      });
-      const result = await caller.powerZones({ id: "00000000-0000-0000-0000-000000000001" });
+        const [range] = getEftpTrendSpy.mock.calls[0] ?? [];
+        expect(range?.days).toBe(90);
+        expect(getPowerZonesSpy).toHaveBeenCalledWith(
+          "00000000-0000-0000-0000-000000000001",
+          265,
+          powerSourceId,
+        );
+        expect(result).toEqual({ zones, ftp: 265 });
 
-      const [range] = getEftpTrendSpy.mock.calls[0] ?? [];
-      expect(range?.days).toBe(90);
-      expect(getPowerZonesSpy).toHaveBeenCalledWith("00000000-0000-0000-0000-000000000001", 265);
-      expect(result).toEqual({ zones, ftp: 265 });
-
-      findByIdSpy.mockRestore();
-      getEftpTrendSpy.mockRestore();
-      getPowerZonesSpy.mockRestore();
-    });
+        findByIdSpy.mockRestore();
+        getEftpTrendSpy.mockRestore();
+        getPowerZonesSpy.mockRestore();
+      },
+    );
 
     it("throws NOT_FOUND when activity does not exist", async () => {
       const findByIdSpy = vi
@@ -1632,6 +1658,10 @@ describe("Activity model (via router integration)", () => {
     ended_at: "2026-03-01T11:30:00+00:00",
     name: "Morning Ride",
     notes: "Felt good",
+    primary_activity_id: "00000000-0000-4000-8000-000000000001",
+    primary_provider_id: "wahoo",
+    primary_source_name: null,
+    origin_candidate_member_ids: [],
     provider_id: "wahoo",
     source_providers: ["wahoo", "strava"],
     source_external_ids: [
@@ -1665,10 +1695,16 @@ describe("Activity model (via router integration)", () => {
     expect(detail.sourceLinks).toHaveLength(2);
     expect(detail.sourceLinks[0]?.label).toBe("Strava");
     expect(detail.sourceDecision).toEqual({
+      origin: {
+        status: "resolved",
+        memberActivityId: fullRow.primary_activity_id,
+        providerId: "wahoo",
+        sourceName: null,
+      },
       sourceCount: 2,
       primarySourceLabel: "Wahoo",
       explanation:
-        "Wahoo was selected as the primary record by source priority. Missing details may come from the other matched sources.",
+        "Wahoo is the closest available record to the original recording. Individual details may come from other matched sources.",
     });
     expect(detail.avgHr).toBe(145);
     expect(detail.maxHr).toBe(175);

@@ -25,12 +25,6 @@ function recording(valueAtMinute: (minute: number) => number | null) {
   return timestamps.map((_, minute) => valueAtMinute(minute));
 }
 
-function withAutomatic(sources: PreviewSource[]): PreviewSource[] {
-  const preferred = sources[0];
-  if (!preferred) throw new Error("The source preview requires a preferred recording.");
-  return [{ ...preferred, id: "automatic", label: "Automatic" }, ...sources];
-}
-
 const zepp = recording((minute) =>
   minute >= 44 && minute <= 46
     ? null
@@ -50,7 +44,7 @@ export const activityMetricSourcePreview: PreviewMetric[] = [
     key: "heartRate",
     label: "Heart rate",
     unit: "bpm",
-    sources: withAutomatic([
+    sources: [
       {
         id: "zepp",
         label: "Zepp via Apple Health",
@@ -72,86 +66,76 @@ export const activityMetricSourcePreview: PreviewMetric[] = [
         attribution: "Matched by recording time",
         values: appleWatch,
       },
-    ]),
+    ],
   },
   {
     key: "power",
     label: "Power",
     unit: "W",
-    sources: withAutomatic(
-      ["Wahoo", "Garmin"].map((provider, index) => ({
-        id: provider.toLowerCase(),
-        label: provider,
-        sourceLabel: provider,
-        attribution: "Recorded with this activity",
-        values: recording((minute) =>
-          minute % 23 >= 20
-            ? 0
-            : Math.round(185 + Math.sin(minute / 8) * 65 + Math.sin(minute / 2) * 20 + index * 14),
-        ),
-      })),
-    ),
+    sources: ["Wahoo", "Garmin"].map((provider, index) => ({
+      id: provider.toLowerCase(),
+      label: provider,
+      sourceLabel: provider,
+      attribution: "Recorded with this activity",
+      values: recording((minute) =>
+        minute % 23 >= 20
+          ? 0
+          : Math.round(185 + Math.sin(minute / 8) * 65 + Math.sin(minute / 2) * 20 + index * 14),
+      ),
+    })),
   },
   {
     key: "speed",
     label: "Speed",
     unit: "km/h",
-    sources: withAutomatic(
-      ["Wahoo", "Garmin", "Strava"].map((provider, index) => ({
-        id: provider.toLowerCase(),
-        label: provider,
-        sourceLabel: provider,
-        attribution: "Recorded with this activity",
-        values: recording((minute) =>
-          Number(
-            (8.2 + Math.sin(minute / 11) * 2.1 + Math.cos(minute / 4) * 0.5 + index * 0.3).toFixed(
-              2,
-            ),
-          ),
+    sources: ["Wahoo", "Garmin", "Strava"].map((provider, index) => ({
+      id: provider.toLowerCase(),
+      label: provider,
+      sourceLabel: provider,
+      attribution: "Recorded with this activity",
+      values: recording((minute) =>
+        Number(
+          (8.2 + Math.sin(minute / 11) * 2.1 + Math.cos(minute / 4) * 0.5 + index * 0.3).toFixed(2),
         ),
-      })),
-    ),
+      ),
+    })),
   },
   {
     key: "cadence",
     label: "Cadence",
     unit: "rpm",
-    sources: withAutomatic(
-      ["Wahoo", "Garmin"].map((provider, index) => ({
-        id: provider.toLowerCase(),
-        label: provider,
-        sourceLabel: provider,
-        attribution: "Recorded with this activity",
-        values: recording((minute) =>
-          minute % 23 >= 20 ? 0 : Math.round(82 + Math.sin(minute / 6) * 9 + index * 4),
-        ),
-      })),
-    ),
+    sources: ["Wahoo", "Garmin"].map((provider, index) => ({
+      id: provider.toLowerCase(),
+      label: provider,
+      sourceLabel: provider,
+      attribution: "Recorded with this activity",
+      values: recording((minute) =>
+        minute % 23 >= 20 ? 0 : Math.round(82 + Math.sin(minute / 6) * 9 + index * 4),
+      ),
+    })),
   },
   {
     key: "altitude",
     label: "Elevation",
     unit: "m",
-    sources: withAutomatic(
-      ["Garmin", "Wahoo"].map((provider, index) => ({
-        id: provider.toLowerCase(),
-        label: provider,
-        sourceLabel: provider,
-        attribution: "Recorded with this activity",
-        values: recording((minute) =>
-          Math.round(230 + Math.sin(minute / 25) * 95 + minute * 0.8 + index * 8),
-        ),
-      })),
-    ),
+    sources: ["Garmin", "Wahoo"].map((provider, index) => ({
+      id: provider.toLowerCase(),
+      label: provider,
+      sourceLabel: provider,
+      attribution: "Recorded with this activity",
+      values: recording((minute) =>
+        Math.round(230 + Math.sin(minute / 25) * 95 + minute * 0.8 + index * 8),
+      ),
+    })),
   },
 ];
 
 export const defaultActivityMetricSources: Record<ActivityPreviewMetric, string> = {
-  heartRate: "automatic",
-  power: "automatic",
-  speed: "automatic",
-  cadence: "automatic",
-  altitude: "automatic",
+  heartRate: "zepp",
+  power: "wahoo",
+  speed: "wahoo",
+  cadence: "wahoo",
+  altitude: "garmin",
 };
 
 export function activityPreviewSource(metric: PreviewMetric, sourceId: string): PreviewSource {

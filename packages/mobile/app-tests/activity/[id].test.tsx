@@ -1,3 +1,4 @@
+import type { ActivityMetricSources } from "../../../server/src/contracts/activity-metric-sources.ts";
 import {
   climbingAttemptFixture,
   climbingClimbFixture,
@@ -289,6 +290,16 @@ const mockEntrySuggestionsQuery = vi.fn((_input?: unknown, _options?: unknown) =
   error: null,
   isLoading: false,
 }));
+const mockMetricSourcesQuery = vi.fn(
+  (
+    _input?: unknown,
+    _options?: unknown,
+  ): {
+    data: ActivityMetricSources;
+    error: Error | null;
+    isLoading: boolean;
+  } => ({ data: [], error: null, isLoading: false }),
+);
 const mockAttachEntryMutate = vi.fn();
 const mockClimbingEntriesInvalidate = vi.fn().mockResolvedValue(undefined);
 const mockEntrySuggestionsInvalidate = vi.fn().mockResolvedValue(undefined);
@@ -300,6 +311,7 @@ vi.mock("../../lib/trpc", () => ({
   trpc: {
     activity: {
       byId: { useQuery: (...args: unknown[]) => mockByIdQuery(...args) },
+      metricSources: { useQuery: (...args: unknown[]) => mockMetricSourcesQuery(...args) },
       stream: { useQuery: (...args: unknown[]) => mockStreamQuery(...args) },
       route: { useQuery: (...args: unknown[]) => mockRouteQuery(...args) },
       hrZones: { useQuery: (...args: unknown[]) => mockHrZonesQuery(...args) },
@@ -510,6 +522,11 @@ function getPlaceholderData(value: unknown): ((previousData: unknown) => unknown
 }
 
 beforeEach(() => {
+  mockMetricSourcesQuery.mockReturnValue({
+    data: [],
+    error: null,
+    isLoading: false,
+  });
   vi.mocked(RouteMap).mockClear();
   mockByIdQuery.mockClear();
   mockStreamQuery.mockClear();
@@ -1653,7 +1670,7 @@ describe("ActivityDetailScreen", () => {
       expect(screen.getByText("Left Arete")).toBeTruthy();
       expect(screen.getAllByText(ascentType === "Redpoint" ? "Sent" : ascentType)).toHaveLength(2);
       expect(screen.getAllByText("5.6", { exact: true })).toHaveLength(2);
-      expect(screen.getAllByText("Completed")).toHaveLength(2);
+      expect(screen.queryByText("Completed")).toBeNull();
       expect(screen.queryByText(/Attempts:/)).toBeNull();
     },
   );
@@ -1949,7 +1966,7 @@ describe("ActivityDetailScreen", () => {
     expect(screen.getByText("Sent")).toBeTruthy();
     expect(screen.getByText("Board: Training Board")).toBeTruthy();
     expect(screen.getByText("Wall angle: −20 (units unknown)")).toBeTruthy();
-    expect(screen.getByText("Completed · Attempts: 7")).toBeTruthy();
+    expect(screen.getByText("Attempts: 7")).toBeTruthy();
     expect(screen.getByText("Project")).toBeTruthy();
     expect(screen.getByText("Failed · Attempts: 1")).toBeTruthy();
     expect(screen.getByText("Wall angle: 35°")).toBeTruthy();
@@ -2054,4 +2071,197 @@ describe("ActivityDetailScreen", () => {
     expect(screen.getByText("Strava")).toBeTruthy();
     expect(screen.getByText(/March 5, 2026/)).toBeTruthy();
   });
+});
+
+it("preselects the default HR source and switches mobile streams and zones", async () => {
+  mockMetricSourcesQuery.mockReturnValue({
+    data: [
+      {
+        key: "heartRate",
+        label: "Heart Rate",
+        sources: [
+          { id: "whoop", label: "WHOOP" },
+          { id: "garmin", label: "Garmin" },
+        ],
+        defaultSourceId: "whoop",
+      },
+    ],
+    error: null,
+    isLoading: false,
+  });
+  const { default: ActivityDetailScreen } = await import("../../app/activity/[id]");
+  render(<ActivityDetailScreen />);
+  fireEvent.click(screen.getByRole("button", { name: "Heart Rate source: WHOOP" }));
+  expect(screen.queryByRole("radio", { name: /auto/i })).toBeNull();
+  fireEvent.click(screen.getByRole("radio", { name: "Garmin" }));
+  expect(screen.getByRole("button", { name: "Heart Rate source: Garmin" })).toBeTruthy();
+  expect(mockStreamQuery).toHaveBeenLastCalledWith(
+    expect.objectContaining({ sources: { heartRate: "garmin" } }),
+    expect.anything(),
+  );
+  expect(mockHrZonesQuery).toHaveBeenLastCalledWith(
+    expect.objectContaining({ heartRateSourceId: "garmin" }),
+    expect.anything(),
+  );
+});
+
+it("keeps mobile metric choices independent and propagates power and elevation", async () => {
+  mockMetricSourcesQuery.mockReturnValue({
+    data: [
+      {
+        key: "heartRate",
+        label: "Heart Rate",
+        sources: [{ id: "whoop", label: "WHOOP" }],
+        defaultSourceId: "whoop",
+      },
+      {
+        key: "power",
+        label: "Power",
+        sources: [
+          { id: "wahoo", label: "Wahoo" },
+          { id: "garmin", label: "Garmin" },
+        ],
+        defaultSourceId: "wahoo",
+      },
+      {
+        key: "altitude",
+        label: "Elevation",
+        sources: [
+          { id: "wahoo", label: "Wahoo" },
+          { id: "garmin", label: "Garmin" },
+        ],
+        defaultSourceId: "wahoo",
+      },
+    ],
+    error: null,
+    isLoading: false,
+  });
+  const { default: ActivityDetailScreen } = await import("../../app/activity/[id]");
+  render(<ActivityDetailScreen />);
+  fireEvent.click(screen.getByRole("button", { name: "Power source: Wahoo" }));
+  fireEvent.click(screen.getByRole("radio", { name: "Garmin" }));
+  fireEvent.click(screen.getByRole("button", { name: "Elevation source: Wahoo" }));
+  fireEvent.click(screen.getByRole("radio", { name: "Garmin" }));
+  expect(screen.getByRole("button", { name: "Heart Rate source: WHOOP" })).toBeTruthy();
+  expect(mockStreamQuery).toHaveBeenLastCalledWith(
+    expect.objectContaining({
+      sources: { heartRate: "whoop", power: "garmin", altitude: "garmin" },
+    }),
+    expect.anything(),
+  );
+  expect(mockPowerZonesQuery).toHaveBeenLastCalledWith(
+    expect.objectContaining({ powerSourceId: "garmin" }),
+    expect.anything(),
+  );
+});
+
+it("keeps mobile pickers available after a source read fails", async () => {
+  mockMetricSourcesQuery.mockReturnValue({
+    data: [
+      {
+        key: "heartRate",
+        label: "Heart Rate",
+        sources: [
+          { id: "whoop", label: "WHOOP" },
+          { id: "garmin", label: "Garmin" },
+        ],
+        defaultSourceId: "whoop",
+      },
+    ],
+    error: null,
+    isLoading: false,
+  });
+  const originalStream = mockStreamQuery.getMockImplementation();
+  mockStreamQuery.mockImplementation((input?: unknown, options?: unknown) => {
+    if (
+      input &&
+      typeof input === "object" &&
+      "sources" in input &&
+      input.sources &&
+      typeof input.sources === "object" &&
+      "heartRate" in input.sources &&
+      input.sources.heartRate === "garmin"
+    ) {
+      return {
+        data: undefined,
+        error: new Error("Garmin samples could not be read"),
+        isLoading: false,
+      };
+    }
+    return originalStream?.(input, options) ?? { data: [], error: null, isLoading: false };
+  });
+  const { default: ActivityDetailScreen } = await import("../../app/activity/[id]");
+  render(<ActivityDetailScreen />);
+  fireEvent.click(screen.getByRole("button", { name: "Heart Rate source: WHOOP" }));
+  fireEvent.click(screen.getByRole("radio", { name: "Garmin" }));
+  expect(screen.getByText("Garmin samples could not be read")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Heart Rate source: Garmin" }));
+  fireEvent.click(screen.getByRole("radio", { name: "WHOOP" }));
+  expect(screen.getByRole("button", { name: "Heart Rate source: WHOOP" })).toBeTruthy();
+  expect(screen.queryByText("Garmin samples could not be read")).toBeNull();
+});
+
+it.each([false, true])(
+  "shows power zone source failures while retaining cached zones: %s",
+  async (cached) => {
+    mockMetricSourcesQuery.mockReturnValue({
+      data: [
+        {
+          key: "power",
+          label: "Power",
+          sources: [
+            { id: "wahoo", label: "Wahoo" },
+            { id: "garmin", label: "Garmin" },
+          ],
+          defaultSourceId: "wahoo",
+        },
+      ],
+      error: null,
+      isLoading: false,
+    });
+    const zones = {
+      ftp: 250,
+      zones: [{ zone: 2, label: "Endurance", minPct: 56, maxPct: 75, seconds: 600, percent: 100 }],
+    };
+    mockPowerZonesQuery.mockImplementation((input: { powerSourceId?: string }) => ({
+      data: input.powerSourceId === "garmin" && !cached ? undefined : zones,
+      error:
+        input.powerSourceId === "garmin"
+          ? new Error("Garmin power zones could not be read. Choose another source.")
+          : null,
+      isLoading: false,
+    }));
+    const { default: ActivityDetailScreen } = await import("../../app/activity/[id]");
+    render(<ActivityDetailScreen />);
+    fireEvent.click(screen.getByRole("button", { name: "Power source: Wahoo" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Garmin" }));
+    expect(
+      screen.getByText("Garmin power zones could not be read. Choose another source."),
+    ).toBeTruthy();
+    if (cached) expect(screen.getByText("Endurance")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Power source: Garmin" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Wahoo" }));
+    expect(
+      screen.queryByText("Garmin power zones could not be read. Choose another source."),
+    ).toBeNull();
+  },
+);
+
+it.each([
+  ["running", "steps/min"],
+  ["cycling", "rpm"],
+])("labels %s cadence chart values in %s", async (activityType, unit) => {
+  mockByIdQuery.mockReturnValue({
+    data: { ...baseCyclingActivity, activityType },
+    error: null,
+    isLoading: false,
+  });
+  mockStreamQuery.mockReturnValue({
+    data: streamPointsWithHrAndPower.map((point) => ({ ...point, cadence: 85 })),
+    isLoading: false,
+  });
+  const { default: ActivityDetailScreen } = await import("../../app/activity/[id]");
+  render(<ActivityDetailScreen />);
+  fireEvent.click(screen.getByRole("button", { name: "View Cadence data" }));
+  expect(screen.getAllByText(`85 ${unit}`).length).toBeGreaterThan(0);
 });

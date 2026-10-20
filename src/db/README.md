@@ -116,8 +116,8 @@ closest available recording from provenance within a group. The
 identity separately from representative_activity_id, which retains the former
 field representative. Origin never falls back to field priority.
 
-PostgreSQL migration 0151_activity_origin installs the function and updates the
-view. ClickHouse migration 0103_activity_origin adds the serving columns and the
+PostgreSQL migration 0152_activity_origin installs the function and updates the
+view. ClickHouse migration 0104_activity_origin adds the serving columns and the
 [origin projection](clickhouse-activity-origin.ts). Existing ClickHouse rows have
 no proven primary provider until dbt recomputes origin; their former representative
 is retained. See the [selector](../../analytics/macros/activity_origin.sql) for

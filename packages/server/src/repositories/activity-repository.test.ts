@@ -1536,6 +1536,103 @@ describe("ActivityRepository", () => {
     });
   });
 
+  describe("metric source selection", () => {
+    const row = {
+      id: "canonical-id",
+      user_id: "user-1",
+      started_at: "2024-01-15T10:00:00.000Z",
+      ended_at: "2024-01-15T11:00:00.000Z",
+      member_activity_ids: ["member-id"],
+    };
+    const window = {
+      activityId: row.id,
+      userId: row.user_id,
+      startedAt: row.started_at,
+      endedAt: row.ended_at,
+      memberActivityIds: row.member_activity_ids,
+    };
+
+    it("forwards a nonempty metric source selection with the canonical stream window", async () => {
+      const { repo, sensorStore } = makeRepositoryWithSensorStore([row]);
+      const sources = { heartRate: "whoop", power: "garmin" };
+      const points = await repo.getStream("member-id", 100, sources);
+      expect(points[0]?.toDetail().heartRate).toBe(140);
+      expect(sensorStore.getStream).toHaveBeenCalledExactlyOnceWith(window, 100, sources);
+    });
+
+    it("uses the two-argument stream call for an empty selection", async () => {
+      const { repo, sensorStore } = makeRepositoryWithSensorStore([row]);
+      await repo.getStream("member-id", 100, {});
+      expect(sensorStore.getStream).toHaveBeenCalledExactlyOnceWith(window, 100);
+    });
+
+    it("lists sources within the owned canonical activity window", async () => {
+      const { repo, sensorStore, execute } = makeRepositoryWithSensorStore([row]);
+      sensorStore.query.mockResolvedValueOnce([
+        { channel: "heart_rate", provider_id: "garmin", device_id: null, source_id: "garmin" },
+      ]);
+      await expect(repo.getMetricSources("member-id")).resolves.toEqual([
+        {
+          key: "heartRate",
+          label: "Heart Rate",
+          sources: [{ id: "garmin", label: "Garmin" }],
+          defaultSourceId: "garmin",
+        },
+      ]);
+      expect(sensorStore.query).toHaveBeenCalledExactlyOnceWith(
+        expect.anything(),
+        expect.any(String),
+        {
+          userId: window.userId,
+          windowStartedAt: window.startedAt,
+          windowEndedAt: window.endedAt,
+          memberActivityIds: window.memberActivityIds,
+        },
+      );
+      const windowQuery = dialect.sqlToQuery(execute.mock.calls[1]?.[0]);
+      expect(windowQuery.params).toEqual(expect.arrayContaining(["canonical-id", "user-1"]));
+    });
+
+    it("rejects missing activities before querying metric sources", async () => {
+      const { repo, sensorStore } = makeRepositoryWithSensorStore([]);
+      await expect(repo.getMetricSources("missing-id")).rejects.toMatchObject({
+        code: "NOT_FOUND",
+        message: "Activity not found",
+      });
+      expect(sensorStore.query).not.toHaveBeenCalled();
+    });
+
+    it("queries HR zones for the selected source rather than canonical zones", async () => {
+      const { repo, sensorStore } = makeRepositoryWithSensorStore([row]);
+      sensorStore.query.mockResolvedValueOnce([
+        { zone0: 0, zone1: 3, zone2: 0, zone3: 0, zone4: 0, zone5: 0 },
+      ]);
+      const zones = await repo.getHrZones("member-id", "whoop");
+      expect(zones.find((zone) => zone.zone === 1)?.seconds).toBe(3);
+      expect(sensorStore.getHeartRateZoneSeconds).not.toHaveBeenCalled();
+      expect(sensorStore.query).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.any(String),
+        expect.objectContaining({
+          userId: "user-1",
+          memberActivityIds: ["member-id"],
+          heartRateSourceId: "whoop",
+        }),
+      );
+    });
+
+    it("forwards the selected power source and FTP with the canonical window", async () => {
+      const { repo, sensorStore } = makeRepositoryWithSensorStore([row]);
+      const zones = await repo.getPowerZones("member-id", 275, "garmin");
+      expect(zones.find((zone) => zone.zone === 1)?.seconds).toBe(3);
+      expect(sensorStore.getPowerZoneSeconds).toHaveBeenCalledExactlyOnceWith(
+        window,
+        275,
+        "garmin",
+      );
+    });
+  });
+
   describe("getHrZones", () => {
     it("returns mapped HR zones from the configured sensor store", async () => {
       const { repo, execute, sensorStore } = makeRepositoryWithSensorStore([]);

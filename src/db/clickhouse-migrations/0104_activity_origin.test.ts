@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createMigration } from "./0103_activity_origin.ts";
+import { createMigration } from "./0104_activity_origin.ts";
 
 describe("activity origin schema migration", () => {
   it.each([false, true])(

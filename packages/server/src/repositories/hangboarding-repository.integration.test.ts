@@ -189,6 +189,20 @@ describe("HangboardingRepository integration", () => {
     });
   });
 
+  it("returns the same details for a displayed group ID and a source member ID", async () => {
+    const repository = new HangboardingRepository(testContext.db, TEST_USER_ID, "UTC");
+    const memberDetail = await repository.getDetail(groupedOtherActivityId);
+    expect(memberDetail).not.toBeNull();
+    await expect(repository.getDetail(groupedActivityId)).resolves.toEqual(memberDetail);
+    await expect(
+      new HangboardingRepository(
+        testContext.db,
+        "00000000-0000-0000-0000-000000000002",
+        "UTC",
+      ).getDetail(groupedActivityId),
+    ).resolves.toBeNull();
+  });
+
   it("computes exact session, interval, heart-rate, latest-session, and daily totals", async () => {
     const repository = new HangboardingRepository(testContext.db, TEST_USER_ID, "UTC");
 

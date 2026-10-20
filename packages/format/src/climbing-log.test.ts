@@ -44,7 +44,7 @@ describe("climbing log formatting", () => {
   });
   it("describes a scoped result and labels its attempt count", () => {
     expect(formatClimbingRecordedResult("Whole climb", "completed", 1)).toBe(
-      "Whole climb completed · Attempts: 1",
+      "Whole climb · Attempts: 1",
     );
     expect(formatClimbingRecordedResult("Pitch", "failed", 3)).toBe("Pitch failed · Attempts: 3");
     expect(formatClimbingRecordedResult("Whole climb", null, 2)).toBe("Whole climb · Attempts: 2");
@@ -52,13 +52,13 @@ describe("climbing log formatting", () => {
   });
   it("renders the outcome and attempt count when the target is implicit", () => {
     expect(formatClimbingRecordedResult(null, null, 1)).toBe("Attempts: 1");
-    expect(formatClimbingRecordedResult(null, "completed", 2)).toBe("Completed · Attempts: 2");
+    expect(formatClimbingRecordedResult(null, "completed", 2)).toBe("Attempts: 2");
     expect(formatClimbingRecordedResult(null, "failed", 1)).toBe("Failed · Attempts: 1");
   });
   it("preserves recorded results without inventing an unknown attempt count", () => {
-    expect(formatClimbingRecordedResult(null, "completed", null)).toBe("Completed");
+    expect(formatClimbingRecordedResult(null, "completed", null)).toBeNull();
     expect(formatClimbingRecordedResult(null, "failed", null)).toBe("Failed");
-    expect(formatClimbingRecordedResult("Pitch 1", "completed", null)).toBe("Pitch 1 completed");
+    expect(formatClimbingRecordedResult("Pitch 1", "completed", null)).toBe("Pitch 1");
     expect(formatClimbingRecordedResult("Pitch 1", null, null)).toBe("Pitch 1");
     expect(formatClimbingRecordedResult(null, null, null)).toBeNull();
   });
@@ -153,4 +153,9 @@ describe("climbing log formatting", () => {
       ]),
     );
   });
+});
+
+it.each(["Onsight", "Flash"])("omits the redundant attempts count for %s", (label) => {
+  expect(formatClimbingRecordedResult(null, "completed", 1, ["sent", label])).toBeNull();
+  expect(formatClimbingRecordedResult("Pitch 1", "completed", 1, [label])).toBe("Pitch 1");
 });

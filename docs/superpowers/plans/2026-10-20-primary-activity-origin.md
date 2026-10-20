@@ -56,7 +56,7 @@
 
 ### Task 2: Resolve ClickHouse primary identity independently
 
-**Files:** Create `analytics/macros/activity_origin.sql`, `src/db/activity-origin-read-model.integration.test.ts`, `src/db/clickhouse-migrations/0103_activity_origin.ts` and its tests; modify `analytics/models/read_models/deduped_activities.sql`, `src/db/clickhouse-read-models.ts`, migration registry, existing representative behavior suites, and `analytics/README.md`.
+**Files:** Create `analytics/macros/activity_origin.sql`, `src/db/activity-origin-read-model.integration.test.ts`, `src/db/clickhouse-migrations/0104_activity_origin.ts` and its tests; modify `analytics/models/read_models/deduped_activities.sql`, `src/db/clickhouse-read-models.ts`, migration registry, existing representative behavior suites, and `analytics/README.md`.
 
 **Interfaces:** Persist `representative_activity_id UUID` for the previous field representative; change `primary_activity_id` to `Nullable(UUID)` for actual origin; add `primary_provider_id Nullable(String)`, `primary_source_name Nullable(String)`, `origin_candidate_member_ids Array(UUID)`, and `origin_evidence Array(Map(String,String))`. Primary is resolved exactly when its ID/provider are non-null. Keep existing `provider_id` and merged values on their current field-selection semantics.
 
@@ -74,7 +74,7 @@
 
 ### Task 3: Match PostgreSQL origin semantics
 
-**Files:** Modify `drizzle/_views/01_v_activity.sql`; create `drizzle/0151_activity_origin.sql` and `src/db/activity-origin.integration.test.ts`; update `drizzle/meta/_journal.json`, `src/db/README.md`, representative integration assertions, and account-erasure attribution where required.
+**Files:** Modify `drizzle/_views/01_v_activity.sql`; create `drizzle/0152_activity_origin.sql` and `src/db/activity-origin.integration.test.ts`; update `drizzle/meta/_journal.json`, `src/db/README.md`, representative integration assertions, and account-erasure attribution where required.
 
 **Interfaces:** PostgreSQL exposes the same `representative_activity_id`, nullable `primary_activity_id`, `primary_provider_id`, `primary_source_name`, candidate IDs, and evidence semantics as Task 2. Existing fields, provider attribution used for field selection, and group IDs remain intact.
 

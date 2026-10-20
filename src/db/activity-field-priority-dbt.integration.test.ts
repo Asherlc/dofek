@@ -243,6 +243,92 @@ describe("dbt merged activity field priorities", () => {
     });
   });
 
+  it.each([
+    {
+      providerId: "strong-csv",
+      sourceName: "Strong",
+      canonicalType: "strength",
+      name: "Push day",
+      expected: "Push day",
+    },
+    {
+      providerId: "apple_health",
+      sourceName: "Strong",
+      canonicalType: "strength",
+      name: "Pull day",
+      expected: "Pull day",
+    },
+    {
+      providerId: "apple_health",
+      sourceName: "Strong",
+      canonicalType: "strength",
+      name: null,
+      expected: "Peloton title",
+    },
+    {
+      providerId: "apple_health",
+      sourceName: "Strong",
+      canonicalType: "strength",
+      name: "",
+      expected: "Peloton title",
+    },
+    {
+      providerId: "apple_health",
+      sourceName: "Strong",
+      canonicalType: "strength",
+      name: "   ",
+      expected: "Peloton title",
+    },
+    {
+      providerId: "apple_health",
+      sourceName: "Strong",
+      canonicalType: "cycling",
+      name: "Strong ride",
+      expected: "Peloton title",
+    },
+    {
+      providerId: "apple_health",
+      sourceName: "Other app",
+      canonicalType: "strength",
+      name: "Other title",
+      expected: "Peloton title",
+    },
+  ])(
+    "selects $expected for $providerId / $sourceName / $canonicalType / $name",
+    async ({ providerId, sourceName, canonicalType, name, expected }) => {
+      const id = randomUUID();
+      await insertSources([
+        {
+          id: randomUUID(),
+          groupId: id,
+          providerId,
+          canonicalType,
+          providerType: canonicalType,
+          priority: 100,
+          sourceName,
+          name,
+          notes: "Strong note",
+        },
+        {
+          id: randomUUID(),
+          groupId: id,
+          providerId: "peloton",
+          canonicalType,
+          providerType: canonicalType,
+          priority: 20,
+          name: "Peloton title",
+          notes: "Peloton note",
+        },
+      ]);
+      await refreshDeduped(true);
+      const rows = await mergedFields(id);
+      expect(rows[0]?.name).toBe(expected);
+      expect(rows[0]?.notes).toBe("Peloton note");
+      await refreshSummary(true);
+      expect(await summaryName(id)).toEqual([{ name: expected }]);
+    },
+  );
+
   afterAll(async () => {
     await client?.command({ query: `DROP DATABASE IF EXISTS ${database} SYNC` });
     await client?.close();

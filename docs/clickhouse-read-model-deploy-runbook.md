@@ -914,7 +914,7 @@ impact, evidence, root cause, fix, remaining risk, and follow-up work.
 
 ## Recording-origin rollout
 
-Apply PostgreSQL `0151_activity_origin` and ClickHouse `0103_activity_origin`
+Apply PostgreSQL `0152_activity_origin` and ClickHouse `0104_activity_origin`
 before deploying readers that require the origin columns. The
 [PostgreSQL function](../drizzle/_views/00_activity_origin.sql) resolves current
 group members; the [dbt selector](../analytics/macros/activity_origin.sql) derives
