@@ -107,3 +107,18 @@ The subsequent [computed-outcome migration](../../drizzle/0148_compute_climbing_
 also requires quiescing old readers and writers; it verifies raw evidence before
 removing the stored outcome. The [model guide](../../docs/climbing-context.md#maintenance-cutover)
 describes that boundary.
+
+## Activity recording origin
+
+The [origin function](../../drizzle/_views/00_activity_origin.sql) chooses the
+closest available recording from provenance within a group. The
+[activity view](../../drizzle/_views/01_v_activity.sql) exposes nullable primary
+identity separately from representative_activity_id, which retains the former
+field representative. Origin never falls back to field priority.
+
+PostgreSQL migration 0151_activity_origin installs the function and updates the
+view. ClickHouse migration 0103_activity_origin adds the serving columns and the
+[origin projection](clickhouse-activity-origin.ts). Existing ClickHouse rows have
+no proven primary provider until dbt recomputes origin; their former representative
+is retained. See the [selector](../../analytics/macros/activity_origin.sql) for
+supported evidence and the [rollout runbook](../../docs/clickhouse-read-model-deploy-runbook.md#recording-origin-rollout).

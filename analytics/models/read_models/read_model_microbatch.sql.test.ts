@@ -215,7 +215,7 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("materialized='incremental'");
     expect(sql).toContain("engine='ReplacingMergeTree(refresh_version)'");
     expect(sql).toContain("ref('activity_source_records')");
-    expect(sql).toContain("assumeNotNull(group_id) AS activity_id");
+    expect(sql).toContain("assumeNotNull(merged.group_id) AS activity_id");
     expect(sql).toContain("ref('deduped_sensor')");
     expect(sql).toContain("current_deduped_activities AS");
     expect(sql).toContain("member_activity_ids");
@@ -226,7 +226,7 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("{% if is_incremental() %}");
     expect(sql).toContain("'join_use_nulls': 1");
     expect(normalizedSql).toContain(
-      "source_external_ids, absent_source_external_ids, member_activity_ids, lifecycle_refresh_version AS refresh_version, 0 AS is_deleted, lifecycle_refreshed_at AS refreshed_at FROM versioned_current_deduped_activities",
+      "source_external_ids, absent_source_external_ids, member_activity_ids, representative_activity_id, primary_provider_id, primary_source_name, origin_candidate_member_ids, origin_evidence, lifecycle_refresh_version AS refresh_version, 0 AS is_deleted, lifecycle_refreshed_at AS refreshed_at FROM versioned_current_deduped_activities",
     );
     expect(normalizedSql).toContain(
       "greatest( stale_deduped_activities.refresh_version + 1, refresh_clock.refresh_version ) AS refresh_version, 1 AS is_deleted",

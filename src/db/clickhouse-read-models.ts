@@ -1,4 +1,5 @@
 import { METRIC_STREAM_TABLE } from "../metric-stream/clickhouse-table.ts";
+import { buildActivityOriginViewSql } from "./clickhouse-activity-origin.ts";
 import { buildProviderStatsTableSql } from "./clickhouse-provider-stats.ts";
 import {
   peerDbMetadataColumnDefinitions,
@@ -414,6 +415,18 @@ SELECT
   absent_source_external_ids,
   member_activity_ids
 FROM merged`;
+}
+
+/** Current view; historical migration builders below retain their original inputs. */
+export function buildActivityOriginReadModelRefreshStatements(): string[] {
+  return [
+    "DROP VIEW IF EXISTS analytics.v_activity_members",
+    "DROP VIEW IF EXISTS analytics.v_activity",
+    buildActivityOriginViewSql(
+      buildActivityReadModelSql().slice(standardViewHeader("analytics.v_activity").length),
+    ),
+    buildActivityMembersReadModelSql(),
+  ];
 }
 
 export function buildActivityReadModelRefreshStatements(): string[] {

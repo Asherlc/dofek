@@ -768,6 +768,9 @@ importers:
       '@dofek/format':
         specifier: workspace:*
         version: link:../format
+      zod:
+        specifier: 4.6.7
+        version: 4.6.7
 
   packages/recovery: {}
 

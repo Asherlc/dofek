@@ -1,13 +1,23 @@
 import { randomBytes } from "node:crypto";
 import { createClient } from "@clickhouse/client";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { buildPostgresFitnessProviderFieldPriorityRawTableStatement } from "./clickhouse-raw-tables.ts";
+import { z } from "zod";
+import { buildActivityOriginViewSql } from "./clickhouse-activity-origin.ts";
+import {
+  activityId,
+  groupId,
+  linkedActivityId,
+  renderDedupedActivitiesSelectSql,
+  requireClickHouseUrl,
+  requireClient,
+  seedMissingSourceNameFixture,
+  seedNamedTimezoneContextFixture,
+  seedSensorBearingRepresentativeFixture,
+  seedSpecificActivityTypeFixture,
+  testUserId,
+  waitForClickHouse,
+} from "./deduped-activities-test-helpers.ts";
 import { extractCteSql, readModelSql, renderDbtModelSql } from "./read-model-sql-test-helpers.ts";
-
-const activityId = "00000000-0000-0000-0000-000000000101";
-const linkedActivityId = "00000000-0000-0000-0000-000000000102";
-const groupId = "00000000-0000-0000-0000-000000000202";
-const testUserId = "00000000-0000-0000-0000-000000000303";
 
 type ClickHouseClient = ReturnType<typeof createClient>;
 
@@ -48,6 +58,148 @@ describe("deduped_activities read model", () => {
       await client.command({ query: `DROP DATABASE IF EXISTS ${targetSchema} SYNC` });
       await client.close();
     }
+  });
+
+  it("reattributes origin incrementally without changing merged fields or unchanged rebuild versions", async () => {
+    const activeClient = requireClient(client);
+    await seedSpecificActivityTypeFixture(activeClient, targetSchema, "cycling", "cycling");
+    await activeClient.command({
+      query: `ALTER TABLE ${targetSchema}.activity_source_records UPDATE
+      provider_id = if(activity_id = toUUID('${activityId}'), 'garmin', 'apple_health'),
+      source_name = if(activity_id = toUUID('${activityId}'), 'Garmin Edge 530', 'Garmin'),
+      raw = if(activity_id = toUUID('${activityId}'), '{"stable":true}', '{"sourceBundle":"com.strava.strava"}')
+      WHERE 1 SETTINGS mutations_sync = 2`,
+    });
+    const build = async () => {
+      await activeClient.command({
+        query: `INSERT INTO ${targetSchema}.deduped_activities ${renderDedupedActivitiesSelectSql(targetSchema)}`,
+      });
+    };
+    const read = async () => {
+      const result = await activeClient.query({
+        query: `SELECT * FROM ${targetSchema}.deduped_activities FINAL WHERE is_deleted=0`,
+        format: "JSONEachRow",
+      });
+      const rows = z.array(z.record(z.string(), z.unknown())).parse(await result.json());
+      if (rows.length !== 1 || !rows[0]) throw new Error("Expected one activity group");
+      return rows[0];
+    };
+    const selectedFields = (row: Record<string, unknown>) =>
+      Object.fromEntries(
+        Object.entries(row).filter(
+          ([key]) =>
+            !new Set([
+              "primary_activity_id",
+              "primary_provider_id",
+              "primary_source_name",
+              "origin_candidate_member_ids",
+              "origin_evidence",
+              "refresh_version",
+              "refreshed_at",
+            ]).has(key),
+        ),
+      );
+    await build();
+    const before = await read();
+    expect(before.primary_activity_id).toBeNull();
+    await activeClient.command({
+      query: `ALTER TABLE ${targetSchema}.activity_source_records UPDATE raw='{}'
+      WHERE activity_id=toUUID('${linkedActivityId}') SETTINGS mutations_sync=2`,
+    });
+    await build();
+    const after = await read();
+    expect(after.primary_activity_id).toBe(activityId);
+    expect(selectedFields(after)).toEqual(selectedFields(before));
+    expect(BigInt(String(after.refresh_version))).toBeGreaterThan(
+      BigInt(String(before.refresh_version)),
+    );
+    await build();
+    expect(await read()).toEqual(after);
+    await activeClient.command({
+      query: `ALTER TABLE ${targetSchema}.activity_source_records UPDATE priority=0,name='Edited downstream title'
+      WHERE activity_id=toUUID('${linkedActivityId}') SETTINGS mutations_sync=2`,
+    });
+    await build();
+    const fieldUpdate = await read();
+    expect(fieldUpdate.primary_activity_id).toBe(activityId);
+    expect(fieldUpdate.name).toBe("Edited downstream title");
+    expect(fieldUpdate.activity_id).toBe(groupId);
+  });
+
+  it("resolves late originals and removed members while preserving group identity and legacy fields", async () => {
+    const activeClient = requireClient(client);
+    await seedSpecificActivityTypeFixture(activeClient, targetSchema, "cycling", "cycling");
+    await activeClient.command({
+      query: `ALTER TABLE ${targetSchema}.activity_source_records UPDATE
+      provider_id=if(activity_id=toUUID('${activityId}'),'garmin','strava'),source_name='Garmin Edge 530',
+      is_deleted=if(activity_id=toUUID('${activityId}'),1,0) WHERE 1 SETTINGS mutations_sync=2`,
+    });
+    const build = async () => {
+      await activeClient.command({
+        query: `INSERT INTO ${targetSchema}.deduped_activities ${renderDedupedActivitiesSelectSql(targetSchema)}`,
+      });
+    };
+    const read = async () => {
+      const result = await activeClient.query({
+        query: `SELECT toString(activity_id) AS id,toString(primary_activity_id) AS primary
+        FROM ${targetSchema}.deduped_activities FINAL WHERE is_deleted=0`,
+        format: "JSONEachRow",
+      });
+      return z
+        .array(z.object({ id: z.string(), primary: z.string().nullable() }))
+        .parse(await result.json());
+    };
+    await build();
+    expect(await read()).toEqual([{ id: groupId, primary: linkedActivityId }]);
+    await activeClient.command({
+      query: `ALTER TABLE ${targetSchema}.activity_source_records UPDATE is_deleted=0
+      WHERE activity_id=toUUID('${activityId}') SETTINGS mutations_sync=2`,
+    });
+    await build();
+    expect(await read()).toEqual([{ id: groupId, primary: activityId }]);
+    const legacyQuery = `SELECT * EXCEPT(primary_activity_id,name),activity_id AS id,
+      representative_activity_id AS primary_activity_id,'Legacy display title' AS name
+      FROM ${targetSchema}.deduped_activities FINAL WHERE is_deleted=0`;
+    await activeClient.command({
+      query: buildActivityOriginViewSql(legacyQuery).replaceAll("analytics.", `${targetSchema}.`),
+    });
+    const legacy = await activeClient.query({
+      query: `SELECT toString(id) AS id,toString(primary_activity_id) AS primary,name
+      FROM ${targetSchema}.v_activity`,
+      format: "JSONEachRow",
+    });
+    expect(
+      z
+        .array(z.object({ id: z.string(), primary: z.string().nullable(), name: z.string() }))
+        .parse(await legacy.json()),
+    ).toEqual([{ id: groupId, primary: activityId, name: "Legacy display title" }]);
+    await activeClient.command({ query: `DROP VIEW ${targetSchema}.v_activity` });
+    const changedMembership = `SELECT * EXCEPT(primary_activity_id,name,member_activity_ids),activity_id AS id,
+      representative_activity_id AS primary_activity_id,'Legacy display title' AS name,
+      [toUUID('${linkedActivityId}')] AS member_activity_ids
+      FROM ${targetSchema}.deduped_activities FINAL WHERE is_deleted=0`;
+    await activeClient.command({
+      query: buildActivityOriginViewSql(changedMembership).replaceAll(
+        "analytics.",
+        `${targetSchema}.`,
+      ),
+    });
+    const stale = await activeClient.query({
+      query: `SELECT toString(primary_activity_id) AS primary,length(origin_evidence) AS evidenceCount
+      FROM ${targetSchema}.v_activity`,
+      format: "JSONEachRow",
+    });
+    expect(
+      z
+        .array(z.object({ primary: z.string().nullable(), evidenceCount: z.number() }))
+        .parse(await stale.json()),
+    ).toEqual([{ primary: null, evidenceCount: 0 }]);
+    await activeClient.command({
+      query: `ALTER TABLE ${targetSchema}.activity_source_records UPDATE is_deleted=1
+      WHERE activity_id=toUUID('${activityId}') SETTINGS mutations_sync=2`,
+    });
+    await build();
+    expect(await read()).toEqual([{ id: groupId, primary: linkedActivityId }]);
   });
 
   it("materializes source links when source name fields are absent", async () => {
@@ -218,12 +370,12 @@ ${renderDedupedActivitiesSelectSql(targetSchema)}`,
       query: `INSERT INTO ${targetSchema}.deduped_activities ${renderDedupedActivitiesSelectSql(targetSchema)}`,
     });
     const before = await activeClient.query({
-      query: `SELECT primary_activity_id, provider_id, canonical_type, name FROM ${targetSchema}.deduped_activities FINAL`,
+      query: `SELECT representative_activity_id, provider_id, canonical_type, name FROM ${targetSchema}.deduped_activities FINAL`,
       format: "JSONEachRow",
     });
     expect(await before.json()).toEqual([
       {
-        primary_activity_id: linkedActivityId,
+        representative_activity_id: linkedActivityId,
         provider_id: "whoop",
         canonical_type: "cycling",
         name: "Power Zone Ride",
@@ -239,7 +391,7 @@ ${renderDedupedActivitiesSelectSql(targetSchema)}`,
       query: `INSERT INTO ${targetSchema}.deduped_activities ${renderDedupedActivitiesSelectSql(targetSchema)}`,
     });
     const result = await activeClient.query({
-      query: `SELECT toString(activity_id) AS activityId, toString(primary_activity_id) AS primaryId,
+      query: `SELECT toString(activity_id) AS activityId, toString(representative_activity_id) AS primaryId,
         provider_id AS providerId, canonical_type AS activityType, name,
         arraySort(member_activity_ids) AS members, is_deleted AS isDeleted
         FROM ${targetSchema}.deduped_activities FINAL`,
@@ -287,7 +439,10 @@ ${renderDedupedActivitiesSelectSql(targetSchema)}`,
       format: "JSONEachRow",
     });
     expect(await result.json()).toEqual([
-      expect.objectContaining({ activity_id: groupId, primary_activity_id: linkedActivityId }),
+      expect.objectContaining({
+        activity_id: groupId,
+        representative_activity_id: linkedActivityId,
+      }),
     ]);
   });
 
@@ -484,376 +639,3 @@ ${renderDedupedActivitiesSelectSql(targetSchema)}`,
     ).rejects.toThrow("missing persisted group_id");
   });
 });
-
-function requireClickHouseUrl(): string {
-  const url = process.env.CLICKHOUSE_URL?.trim();
-  if (!url) {
-    throw new Error("CLICKHOUSE_URL is required for deduped activities integration tests");
-  }
-  return url;
-}
-
-function requireClient(client: ClickHouseClient | undefined): ClickHouseClient {
-  if (!client) {
-    throw new Error("ClickHouse client was not initialized");
-  }
-  return client;
-}
-
-async function waitForClickHouse(client: ClickHouseClient): Promise<void> {
-  let lastError: unknown;
-  for (let attemptIndex = 0; attemptIndex < 60; attemptIndex += 1) {
-    try {
-      await client.query({ query: "SELECT 1", format: "JSONEachRow" });
-      return;
-    } catch (error) {
-      lastError = error;
-      await new Promise((resolveAfterDelay) => setTimeout(resolveAfterDelay, 1_000));
-    }
-  }
-  throw lastError instanceof Error ? lastError : new Error("ClickHouse did not become ready");
-}
-
-function renderDedupedActivitiesSelectSql(targetSchema: string, scopedIds?: string[]): string {
-  return renderDbtModelSql(readModelSql("deduped_activities.sql"), {
-    isIncremental: true,
-    activityRefreshScoped: scopedIds !== undefined,
-  })
-    .replaceAll('{{ var("activity_refresh_user_id") }}', testUserId)
-    .replaceAll(
-      "{{ activity_refresh_ids() }}",
-      `CAST([${(scopedIds ?? []).map((id) => `'${id}'`).join(",")}], 'Array(UUID)')`,
-    )
-    .replace(/{{ ref\('activity_source_records'\) }}/g, `${targetSchema}.activity_source_records`)
-    .replace(/{{ ref\('deduped_sensor'\) }}/g, `${targetSchema}.deduped_sensor`)
-    .replace(
-      /{{ ref\('activity_duplicate_groups'\) }}/g,
-      `${targetSchema}.activity_duplicate_groups`,
-    )
-    .replace(/{{ this }}/g, `${targetSchema}.deduped_activities`)
-    .replace(/{{ source\('postgres_fitness', 'activity'\) }}/g, `${targetSchema}.source_activity`)
-    .replace(
-      /{{ source\('postgres_fitness', 'provider_field_priority'\) }}/g,
-      `${targetSchema}.provider_field_priority`,
-    )
-    .replace(/{{ source\('ingest', 'metric_stream_current'\) }}/g, `${targetSchema}.metric_stream`)
-    .concat("\nSETTINGS max_threads = 1, join_use_nulls = 1");
-}
-
-async function seedMissingSourceNameFixture(
-  client: ClickHouseClient,
-  targetSchema: string,
-): Promise<void> {
-  await seedTablesAndMembership(client, targetSchema, [
-    `DROP DATABASE IF EXISTS ${targetSchema} SYNC`,
-    `CREATE DATABASE ${targetSchema}`,
-    createActivitySourceRecordsTableSql(targetSchema),
-    createActivityDuplicateGroupsTableSql(targetSchema),
-    createSourceActivityTableSql(targetSchema),
-    createMetricStreamTableSql(targetSchema),
-    createDedupedActivitiesTableSql(targetSchema),
-    insertActivitySourceRecordSql(targetSchema),
-    insertActivityDuplicateGroupSql(targetSchema),
-  ]);
-}
-
-async function seedSpecificActivityTypeFixture(
-  client: ClickHouseClient,
-  targetSchema: string,
-  linkedProviderType = "commuting",
-  pelotonActivityType = "cardio",
-): Promise<void> {
-  await seedTablesAndMembership(client, targetSchema, [
-    `DROP DATABASE IF EXISTS ${targetSchema} SYNC`,
-    `CREATE DATABASE ${targetSchema}`,
-    createActivitySourceRecordsTableSql(targetSchema),
-    createActivityDuplicateGroupsTableSql(targetSchema),
-    createSourceActivityTableSql(targetSchema),
-    createMetricStreamTableSql(targetSchema),
-    createDedupedActivitiesTableSql(targetSchema),
-    insertActivitySourceRecordSql(targetSchema, pelotonActivityType),
-    `INSERT INTO ${targetSchema}.activity_source_records VALUES (
-  '${linkedActivityId}',
-  'whoop',
-  '${testUserId}',
-  'whoop-rock-climbing-workout',
-  'cycling',
-  '${linkedProviderType}',
-  CAST(NULL, 'Nullable(String)'),
-  toDateTime64('2026-07-05 16:00:00', 6, 'UTC'),
-  toDateTime64('2026-07-05 17:00:00', 6, 'UTC'),
-  CAST(NULL, 'Nullable(String)'),
-  CAST(NULL, 'Nullable(String)'),
-  CAST(NULL, 'Nullable(String)'),
-  'America/Los_Angeles',
-  -480,
-  -420,
-  'provider_timezone',
-  CAST(NULL, 'Nullable(String)'),
-  toDateTime64('2026-07-05 17:01:00', 9, 'UTC'),
-  20,
-  1,
-  0,
-  toDateTime64('2026-07-05 17:02:00', 9, 'UTC')
-)`,
-    insertActivityDuplicateGroupSql(targetSchema),
-    `INSERT INTO ${targetSchema}.activity_duplicate_groups VALUES (
-  '${linkedActivityId}',
-  '${groupId}',
-  1,
-  0,
-  toDateTime64('2026-07-05 17:02:00', 9, 'UTC')
-)`,
-    `INSERT INTO ${targetSchema}.metric_stream VALUES ('${testUserId}', '${linkedActivityId}', 0)`,
-  ]);
-}
-
-async function seedSensorBearingRepresentativeFixture(
-  client: ClickHouseClient,
-  targetSchema: string,
-): Promise<void> {
-  await seedSpecificActivityTypeFixture(client, targetSchema, "cycling", "cycling");
-}
-
-async function seedNamedTimezoneContextFixture(
-  client: ClickHouseClient,
-  targetSchema: string,
-): Promise<void> {
-  await seedTablesAndMembership(client, targetSchema, [
-    `DROP DATABASE IF EXISTS ${targetSchema} SYNC`,
-    `CREATE DATABASE ${targetSchema}`,
-    createActivitySourceRecordsTableSql(targetSchema),
-    createActivityDuplicateGroupsTableSql(targetSchema),
-    createSourceActivityTableSql(targetSchema),
-    createMetricStreamTableSql(targetSchema),
-    createDedupedActivitiesTableSql(targetSchema),
-    `INSERT INTO ${targetSchema}.activity_source_records VALUES (
-  '${activityId}',
-  'peloton',
-  '${testUserId}',
-  'peloton-offset-only',
-  'strength',
-  'strength',
-  CAST(NULL, 'Nullable(String)'),
-  toDateTime64('2026-09-01 14:55:54', 6, 'UTC'),
-  toDateTime64('2026-09-01 15:55:54', 6, 'UTC'),
-  CAST(NULL, 'Nullable(String)'),
-  CAST(NULL, 'Nullable(String)'),
-  CAST(NULL, 'Nullable(String)'),
-  CAST(NULL, 'Nullable(String)'),
-  -240,
-  -240,
-  'provider_offset',
-  CAST(NULL, 'Nullable(String)'),
-  toDateTime64('2026-09-01 16:00:00', 9, 'UTC'),
-  10,
-  1,
-  0,
-  toDateTime64('2026-09-01 16:01:00', 9, 'UTC')
-)`,
-    `INSERT INTO ${targetSchema}.activity_source_records VALUES (
-  '${linkedActivityId}',
-  'strong-csv',
-  '${testUserId}',
-  'strong-named-zone',
-  'strength',
-  'strength',
-  CAST(NULL, 'Nullable(String)'),
-  toDateTime64('2026-09-01 14:55:54', 6, 'UTC'),
-  toDateTime64('2026-09-01 15:55:54', 6, 'UTC'),
-  CAST(NULL, 'Nullable(String)'),
-  CAST(NULL, 'Nullable(String)'),
-  CAST(NULL, 'Nullable(String)'),
-  'America/Los_Angeles',
-  -420,
-  -420,
-  'device_timezone',
-  CAST(NULL, 'Nullable(String)'),
-  toDateTime64('2026-09-01 16:00:00', 9, 'UTC'),
-  20,
-  1,
-  0,
-  toDateTime64('2026-09-01 16:01:00', 9, 'UTC')
-)`,
-    insertActivityDuplicateGroupSql(targetSchema),
-    `INSERT INTO ${targetSchema}.activity_duplicate_groups VALUES (
-  '${linkedActivityId}',
-  '${groupId}',
-  1,
-  0,
-  toDateTime64('2026-09-01 16:01:00', 9, 'UTC')
-)`,
-  ]);
-}
-
-async function seedTablesAndMembership(
-  client: ClickHouseClient,
-  database: string,
-  statements: string[],
-): Promise<void> {
-  for (const statement of statements) {
-    await client.command({ query: statement });
-  }
-  await client.command({
-    query: buildPostgresFitnessProviderFieldPriorityRawTableStatement().replaceAll(
-      "postgres_fitness.",
-      `${database}.`,
-    ),
-  });
-  await client.command({
-    query: `ALTER TABLE ${database}.activity_source_records ADD COLUMN group_id Nullable(UUID) DEFAULT '${groupId}'`,
-  });
-  await client.command({
-    query: `ALTER TABLE ${database}.source_activity ADD COLUMN group_id Nullable(UUID) DEFAULT '${groupId}'`,
-  });
-  await client.command({
-    query: `CREATE TABLE ${database}.deduped_sensor (
-    user_id UUID, provider_id String, recorded_at DateTime64(6, 'UTC'), channel String,
-    source_activity_id Nullable(UUID) DEFAULT if(provider_id = 'peloton', toUUID('${activityId}'), toUUID('${linkedActivityId}')),
-    is_deleted UInt8 DEFAULT 0, refresh_version UInt64 DEFAULT 1
-  ) ENGINE = ReplacingMergeTree(refresh_version) ORDER BY (user_id, channel, recorded_at)`,
-  });
-  await client.command({
-    query: `INSERT INTO ${database}.deduped_sensor (user_id, provider_id, recorded_at, channel)
-    SELECT user_id, 'whoop', toDateTime64('2026-07-05 16:05:00', 6, 'UTC'), 'heart_rate'
-    FROM ${database}.metric_stream WHERE is_deleted = 0`,
-  });
-}
-
-function createActivitySourceRecordsTableSql(targetSchema: string): string {
-  return `CREATE TABLE ${targetSchema}.activity_source_records (
-  activity_id UUID,
-  provider_id Nullable(String),
-  user_id Nullable(UUID),
-  external_id Nullable(String),
-  canonical_type Nullable(String),
-  provider_type Nullable(String),
-  modality Nullable(String),
-  started_at Nullable(DateTime64(6, 'UTC')),
-  ended_at Nullable(DateTime64(6, 'UTC')),
-  source_name Nullable(String),
-  name Nullable(String),
-  notes Nullable(String),
-  timezone Nullable(String),
-  start_utc_offset_minutes Nullable(Int16),
-  end_utc_offset_minutes Nullable(Int16),
-  local_time_source LowCardinality(String),
-  raw Nullable(String),
-  source_synced_at Nullable(DateTime64(9, 'UTC')),
-  priority Nullable(Int32),
-  refresh_version UInt64,
-  is_deleted UInt8,
-  refreshed_at DateTime64(9, 'UTC')
-)
-ENGINE = ReplacingMergeTree(refresh_version)
-ORDER BY activity_id`;
-}
-
-function createDedupedActivitiesTableSql(targetSchema: string): string {
-  return `CREATE TABLE ${targetSchema}.deduped_activities (
-  activity_id UUID,
-  provider_id String,
-  user_id UUID,
-  primary_activity_id UUID,
-  canonical_type String,
-  provider_type String,
-  modality Nullable(String),
-  started_at DateTime64(6, 'UTC'),
-  ended_at Nullable(DateTime64(6, 'UTC')),
-  source_name Nullable(String),
-  name Nullable(String),
-  notes Nullable(String),
-  timezone Nullable(String),
-  start_utc_offset_minutes Nullable(Int16),
-  end_utc_offset_minutes Nullable(Int16),
-  local_time_source LowCardinality(String) DEFAULT 'unknown',
-  raw Nullable(String),
-  source_synced_at DateTime64(9, 'UTC'),
-  source_providers Array(String),
-  source_external_ids Array(Map(String, String)),
-  absent_source_external_ids Array(Map(String, String)),
-  member_activity_ids Array(UUID),
-  refresh_version UInt64,
-  is_deleted UInt8,
-  refreshed_at DateTime64(9, 'UTC')
-)
-ENGINE = ReplacingMergeTree(refresh_version)
-ORDER BY (user_id, activity_id)`;
-}
-
-function createActivityDuplicateGroupsTableSql(targetSchema: string): string {
-  return `CREATE TABLE ${targetSchema}.activity_duplicate_groups (
-  activity_id UUID,
-  group_id UUID,
-  refresh_version UInt64,
-  is_deleted UInt8,
-  refreshed_at DateTime64(9, 'UTC')
-)
-ENGINE = ReplacingMergeTree(refresh_version)
-ORDER BY activity_id`;
-}
-
-function createSourceActivityTableSql(targetSchema: string): string {
-  return `CREATE TABLE ${targetSchema}.source_activity (
-  id UUID,
-  user_id UUID,
-  provider_id Nullable(String),
-  external_id Nullable(String),
-  source_name Nullable(String),
-  raw Nullable(String),
-  provider_absent_at Nullable(DateTime64(6, 'UTC')),
-  deleted_at Nullable(DateTime64(6, 'UTC')),
-  created_at DateTime64(6, 'UTC'),
-  _peerdb_is_deleted UInt8
-)
-ENGINE = ReplacingMergeTree()
-ORDER BY id`;
-}
-
-function createMetricStreamTableSql(targetSchema: string): string {
-  return `CREATE TABLE ${targetSchema}.metric_stream (
-  user_id UUID,
-  activity_id Nullable(UUID),
-  is_deleted UInt8
-)
-ENGINE = ReplacingMergeTree()
-ORDER BY (user_id, activity_id)
-SETTINGS allow_nullable_key = 1`;
-}
-
-function insertActivitySourceRecordSql(targetSchema: string, activityType = "cycling"): string {
-  return `INSERT INTO ${targetSchema}.activity_source_records VALUES (
-  '${activityId}',
-  'peloton',
-  '${testUserId}',
-  'peloton-workout-without-source-name',
-  '${activityType}',
-  '${activityType}',
-  CAST(NULL, 'Nullable(String)'),
-  toDateTime64('2026-07-05 16:00:00', 6, 'UTC'),
-  toDateTime64('2026-07-05 17:00:00', 6, 'UTC'),
-  CAST(NULL, 'Nullable(String)'),
-  'Power Zone Ride',
-  CAST(NULL, 'Nullable(String)'),
-  'America/Los_Angeles',
-  -480,
-  -420,
-  'provider_timezone',
-  '{"classTitle":"Power Zone Ride"}',
-  toDateTime64('2026-07-05 17:01:00', 9, 'UTC'),
-  10,
-  1,
-  0,
-  toDateTime64('2026-07-05 17:02:00', 9, 'UTC')
-)`;
-}
-
-function insertActivityDuplicateGroupSql(targetSchema: string): string {
-  return `INSERT INTO ${targetSchema}.activity_duplicate_groups VALUES (
-  '${activityId}',
-  '${groupId}',
-  1,
-  0,
-  toDateTime64('2026-07-05 17:02:00', 9, 'UTC')
-)`;
-}

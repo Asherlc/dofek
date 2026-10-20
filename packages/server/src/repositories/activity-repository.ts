@@ -1,4 +1,3 @@
-import { localTimeSourceSchema } from "@dofek/format/record-local-time";
 import { mapHrZones, mapPowerZones } from "@dofek/zones/zones";
 import { TRPCError } from "@trpc/server";
 import { sql } from "drizzle-orm";
@@ -15,9 +14,20 @@ import { osmTilePreview } from "../lib/osm-tile.ts";
 import { dateStringSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 import { logger } from "../logger.ts";
 import type { ActivityRow } from "../models/activity.ts";
-import { activitySourceSchema } from "../models/activity-source.ts";
 import { activityMeasurementState } from "../services/activity-data-state.ts";
 import { postgresActivityCalendarDate } from "./activity-local-date.ts";
+import {
+  type ActivityIdResolution,
+  activityDetailRowSchema,
+  activityIdResolutionSchema,
+  activityListColumns,
+  activityListRowSchema,
+  activitySensorWindowRowSchema,
+  activitySummaryReadModelRowSchema,
+  type hrZoneRowSchema,
+  type powerZoneRowSchema,
+  streamPointRowSchema,
+} from "./activity-repository-schemas.ts";
 import { getActivityMapReadiness, getActivityRoutePreviews } from "./activity-route-preview.ts";
 import { ActivityVisibilityRepository } from "./activity-visibility-repository.ts";
 
@@ -26,141 +36,6 @@ type ActivityListItem = Record<string, unknown> & { location: ActivityLocation |
 // ---------------------------------------------------------------------------
 // Zod schemas for raw DB rows
 // ---------------------------------------------------------------------------
-
-const activityListRowSchema = z.object({
-  id: z.string(),
-  canonical_type: z.string(),
-  provider_type: z.string(),
-  modality: z.string().nullable().optional().default(null),
-  started_at: timestampStringSchema,
-  ended_at: timestampStringSchema.nullable(),
-  name: z.string().nullable(),
-  provider_id: z.string(),
-  timezone: z.string().nullable(),
-  start_utc_offset_minutes: z.coerce.number().nullable(),
-  end_utc_offset_minutes: z.coerce.number().nullable(),
-  local_time_source: localTimeSourceSchema,
-  source_providers: z.array(z.string()),
-  member_activity_ids: z.array(z.string()).optional().default([]),
-  avg_hr: z.number().nullable(),
-  max_hr: z.number().nullable(),
-  avg_power: z.number().nullable(),
-  distance_meters: z.number().nullable(),
-  elevation_gain_m: z.number().nullable().default(null),
-  total_count: z.coerce.number(),
-});
-
-const activityListColumns = sql`
-  a.id,
-  a.canonical_type,
-  a.provider_type,
-  a.modality::text AS modality,
-  a.started_at::text AS started_at,
-  a.ended_at::text AS ended_at,
-  a.name,
-  a.provider_id,
-  a.timezone,
-  a.start_utc_offset_minutes,
-  a.end_utc_offset_minutes,
-  a.local_time_source,
-  a.source_providers,
-  a.member_activity_ids,
-  NULL::double precision AS avg_hr,
-  NULL::smallint AS max_hr,
-  NULL::double precision AS avg_power,
-  NULL::double precision AS distance_meters,
-  NULL::double precision AS elevation_gain_m,
-  COUNT(*) OVER()::int AS total_count
-`;
-
-const activityDetailRowSchema = z.object({
-  id: z.string(),
-  displayed_date: dateStringSchema,
-  canonical_type: z.string(),
-  raw_type: z.string(),
-  modality: z.string().nullable().optional().default(null),
-  started_at: timestampStringSchema,
-  ended_at: timestampStringSchema.nullable(),
-  name: z.string().nullable(),
-  notes: z.string().nullable(),
-  perceived_exertion: z.number().nullable(),
-  provider_id: z.string(),
-  timezone: z.string().nullable(),
-  start_utc_offset_minutes: z.coerce.number().nullable(),
-  end_utc_offset_minutes: z.coerce.number().nullable(),
-  local_time_source: localTimeSourceSchema,
-  subsource: z.string().nullable(),
-  source_providers: z.array(z.string()),
-  source_external_ids: z.array(activitySourceSchema).nullable(),
-  absent_source_external_ids: z.array(activitySourceSchema).nullable().default(null),
-  member_activity_ids: z.array(z.string()).optional().default([]),
-  avg_hr: z.number().nullable(),
-  max_hr: z.number().nullable(),
-  avg_power: z.number().nullable(),
-  max_power: z.number().nullable(),
-  avg_speed: z.number().nullable(),
-  max_speed: z.number().nullable(),
-  avg_cadence: z.number().nullable(),
-  total_distance: z.number().nullable(),
-  elevation_gain_m: z.number().nullable(),
-  elevation_loss_m: z.number().nullable(),
-  sample_count: z.number().nullable(),
-  provider_absent_at: timestampStringSchema.nullable().optional().default(null),
-});
-
-const streamPointRowSchema = z.object({
-  recorded_at: timestampStringSchema,
-  heart_rate: z.number().nullable(),
-  power: z.number().nullable(),
-  speed: z.number().nullable(),
-  cadence: z.number().nullable(),
-  altitude: z.number().nullable(),
-  lat: z.number().nullable(),
-  lng: z.number().nullable(),
-});
-
-const hrZoneRowSchema = z.object({
-  zone: z.coerce.number(),
-  seconds: z.coerce.number(),
-});
-
-const powerZoneRowSchema = z.object({
-  zone: z.coerce.number(),
-  seconds: z.coerce.number(),
-});
-
-const activitySensorWindowRowSchema = z.object({
-  id: z.string(),
-  user_id: z.string(),
-  started_at: timestampStringSchema,
-  ended_at: timestampStringSchema.nullable(),
-  member_activity_ids: z.array(z.string()),
-});
-
-const activitySummaryReadModelRowSchema = z.object({
-  activity_id: z.string(),
-  avg_hr: z.number().nullable(),
-  max_hr: z.number().nullable(),
-  avg_power: z.number().nullable(),
-  max_power: z.number().nullable(),
-  avg_speed: z.number().nullable(),
-  max_speed: z.number().nullable(),
-  avg_cadence: z.number().nullable(),
-  total_distance: z.number().nullable(),
-  elevation_gain_m: z.number().nullable(),
-  elevation_loss_m: z.number().nullable(),
-  sample_count: z.number().nullable(),
-  centroid_lat: z.number().nullable().default(null),
-  centroid_lng: z.number().nullable().default(null),
-});
-
-const activityIdResolutionSchema = z.object({
-  requested_id: z.string(),
-  resolved_group_id: z.string(),
-  resolution_kind: z.enum(["group", "member", "alias"]),
-});
-
-type ActivityIdResolution = z.infer<typeof activityIdResolutionSchema>;
 
 function activityNotFoundError(): TRPCError {
   return new TRPCError({ code: "NOT_FOUND", message: "Activity not found" });
@@ -651,6 +526,10 @@ export class ActivityRepository extends BaseRepository {
             a.notes,
             a.perceived_exertion,
             a.provider_id,
+            a.primary_activity_id::text AS primary_activity_id,
+            a.primary_provider_id,
+            a.primary_source_name,
+            a.origin_candidate_member_ids::text[] AS origin_candidate_member_ids,
             a.timezone,
             a.start_utc_offset_minutes,
             a.end_utc_offset_minutes,
@@ -699,6 +578,12 @@ export class ActivityRepository extends BaseRepository {
             a.notes,
             a.perceived_exertion,
             a.provider_id,
+            NULL::text AS primary_activity_id,
+            NULL::text AS primary_provider_id,
+            NULL::text AS primary_source_name,
+            ARRAY(SELECT member.id::text FROM fitness.activity AS member
+              WHERE member.user_id = a.user_id AND member.group_id = a.group_id
+                AND member.deleted_at IS NULL ORDER BY member.id) AS origin_candidate_member_ids,
             CASE
               WHEN a.local_time_source IN ('provider_timezone', 'device_timezone', 'user_home_timezone')
               THEN a.timezone

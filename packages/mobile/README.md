@@ -549,3 +549,10 @@ Source-map and release correlation:
 - Keep native archive uploads and OTA uploads separate: an OTA map must be
   uploaded from the export that produced the published update, while native
   symbols belong to the archive build.
+
+The activities screen shows a 20 px logo for the actual provider of the closest
+available recording when provenance resolves a primary. Unresolved origin has no
+primary logo. It reuses [ProviderLogo](components/ProviderLogo.tsx), including its
+existing letter fallback for SVG or missing assets. The
+[origin contract](../providers-meta/src/activity-origin.ts) is shared with web;
+field and sensor selection do not determine recording origin.

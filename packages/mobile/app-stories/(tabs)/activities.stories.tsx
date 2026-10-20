@@ -1,4 +1,5 @@
 import { formatDateYmd } from "@dofek/format/format";
+import { providerLabel } from "@dofek/providers/providers";
 import type { Meta, StoryObj } from "@storybook/react-native";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { OperationResultObservable, TRPCLink } from "@trpc/client";
@@ -260,7 +261,7 @@ const climbingSourceLocation = {
   ],
 } satisfies ActivityLocation;
 
-function createStoryData(climbingActivity = false) {
+function createStoryData(climbingActivity = false, originProvider: string | null = "garmin") {
   const today = formatDateYmd();
   const yesterday = formatDateYmd(new Date(Date.now() - 86_400_000));
   const queryInput = { weeks: 4, endDate: today };
@@ -284,9 +285,18 @@ function createStoryData(climbingActivity = false) {
           },
           durationMin: 90,
           source: {
-            primarySourceLabel: "Garmin Connect",
+            origin:
+              originProvider === null
+                ? { status: "unresolved", candidateMemberActivityIds: [] }
+                : {
+                    status: "resolved",
+                    memberActivityId: "00000000-0000-4000-8000-000000000001",
+                    providerId: originProvider,
+                    sourceName: "Garmin Edge 530",
+                  },
+            primarySourceLabel: originProvider === null ? null : providerLabel(originProvider),
             sourceCount: 2,
-            overlapSummary: "2 matched source records · Garmin Connect selected by source priority",
+            overlapSummary: "2 matched source records",
           },
           lastProcessedAt: `${today}T09:05:00Z`,
           distanceMeters: 32400,
@@ -322,6 +332,7 @@ function createStoryData(climbingActivity = false) {
           },
           durationMin: 45,
           source: {
+            origin: { status: "unresolved", candidateMemberActivityIds: [] },
             primarySourceLabel: "Strong (via Apple Health)",
             sourceCount: 1,
             overlapSummary: null,
@@ -363,6 +374,7 @@ function createStoryData(climbingActivity = false) {
         },
         durationMin: 120,
         source: {
+          origin: { status: "unresolved", candidateMemberActivityIds: [] },
           primarySourceLabel: "Mountain Project",
           sourceCount: 1,
           overlapSummary: null,
@@ -470,11 +482,16 @@ function createMockObservable(
 function MockProviders({
   children,
   climbingActivity,
+  originProvider,
 }: {
   children: React.ReactNode;
   climbingActivity: boolean;
+  originProvider: string | null;
 }) {
-  const storyData = useMemo(() => createStoryData(climbingActivity), [climbingActivity]);
+  const storyData = useMemo(
+    () => createStoryData(climbingActivity, originProvider),
+    [climbingActivity, originProvider],
+  );
   const queryClient = useMemo(() => {
     const client = new QueryClient({
       defaultOptions: { queries: { retry: false, staleTime: Number.POSITIVE_INFINITY } },
@@ -517,7 +534,14 @@ const meta = {
   },
   decorators: [
     (Story, context) => (
-      <MockProviders climbingActivity={context.parameters.climbingActivity === true}>
+      <MockProviders
+        climbingActivity={context.parameters.climbingActivity === true}
+        originProvider={
+          context.parameters.originProvider === null
+            ? null
+            : (context.parameters.originProvider ?? "garmin")
+        }
+      >
         <View style={{ flex: 1, backgroundColor: "#000" }}>
           <Story />
         </View>
@@ -566,3 +590,7 @@ export const ClimbingActivity: Story = {
     });
   },
 };
+
+export const UnresolvedRecordingOrigin: Story = { parameters: { originProvider: null } };
+export const OnlyStravaCopyAvailable: Story = { parameters: { originProvider: "strava" } };
+export const PrimaryProviderWithoutLogo: Story = { parameters: { originProvider: "velohero" } };

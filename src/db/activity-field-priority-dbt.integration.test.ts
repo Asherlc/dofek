@@ -156,7 +156,7 @@ describe("dbt merged activity field priorities", () => {
     });
     await client.command({
       query: `CREATE TABLE ${database}.deduped_activities (
-      activity_id UUID, provider_id String, user_id UUID, primary_activity_id UUID,
+      activity_id UUID, provider_id String, user_id UUID, primary_activity_id Nullable(UUID),
       canonical_type String, provider_type String, modality Nullable(String),
       started_at DateTime64(6, 'UTC'), ended_at Nullable(DateTime64(6, 'UTC')),
       source_name Nullable(String), name Nullable(String), notes Nullable(String),
@@ -165,6 +165,11 @@ describe("dbt merged activity field priorities", () => {
       raw Nullable(String), source_synced_at DateTime64(9, 'UTC'),
       source_providers Array(String), source_external_ids Array(Map(String, String)),
       absent_source_external_ids Array(Map(String, String)), member_activity_ids Array(UUID),
+  representative_activity_id UUID DEFAULT assumeNotNull(primary_activity_id),
+  primary_provider_id Nullable(String),
+  primary_source_name Nullable(String),
+  origin_candidate_member_ids Array(UUID) DEFAULT member_activity_ids,
+  origin_evidence Array(Map(String, String)),
       refresh_version UInt64, is_deleted UInt8, refreshed_at DateTime64(9, 'UTC'))
       ENGINE = ReplacingMergeTree(refresh_version) ORDER BY (user_id, activity_id)`,
     });

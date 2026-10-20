@@ -14,7 +14,7 @@ const activityIdentityRowSchema = z.object({
   group_id: z.string().uuid(),
   id: z.string().uuid(),
 });
-const primaryMemberRowSchema = z.object({ primary_activity_id: z.string().uuid() });
+const primaryMemberRowSchema = z.object({ representative_activity_id: z.string().uuid() });
 
 describe("StrengthRepository activity scope", () => {
   let testContext: TestContext;
@@ -306,11 +306,11 @@ describe("StrengthRepository activity scope", () => {
     const primaryRows = await executeWithSchema(
       testContext.db,
       primaryMemberRowSchema,
-      sql`SELECT primary_activity_id::text AS primary_activity_id
+      sql`SELECT representative_activity_id::text AS representative_activity_id
           FROM fitness.v_activity
           WHERE id = ${strongMember.group_id}::uuid`,
     );
-    expect(primaryRows[0]?.primary_activity_id).toBe(mirrorMember.id);
+    expect(primaryRows[0]?.representative_activity_id).toBe(mirrorMember.id);
 
     const detailsByLookup = await Promise.all(
       [strongMember.group_id, strongMember.id, mirrorMember.id, historicalAlias].map(

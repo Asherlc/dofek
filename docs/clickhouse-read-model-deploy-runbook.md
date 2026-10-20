@@ -911,3 +911,27 @@ curl -fsS https://dofek.fit/healthz
 
 Record the incident in `docs/production-incident-baseline.md` with symptoms,
 impact, evidence, root cause, fix, remaining risk, and follow-up work.
+
+## Recording-origin rollout
+
+Apply PostgreSQL `0151_activity_origin` and ClickHouse `0103_activity_origin`
+before deploying readers that require the origin columns. The
+[PostgreSQL function](../drizzle/_views/00_activity_origin.sql) resolves current
+group members; the [dbt selector](../analytics/macros/activity_origin.sql) derives
+ClickHouse origin independently from field representatives.
+
+Pause activity analytics refresh using the existing deployment drain procedure before the serving-column migration. Resume it with the matching release so an older writer cannot insert the former column shape.
+
+Run the normal dependency-ordered incremental activity build after migrations.
+For an operator-approved historical repair, use the existing user/activity-scoped
+refresh inputs described in the [scope macro](../analytics/macros/activity_refresh_scope.sql)
+and record the exact user, activity IDs, and resource bounds before executing it.
+Never trigger a full historical refresh from a web request.
+
+Before refresh, existing ClickHouse rows retain their field representative but
+have no proven primary provider, so cards omit the primary logo. Verify the three
+Garmin → Strava → Apple Health availability cases and confirm that provenance-only
+changes leave merged values and group IDs unchanged. Inspect `origin_evidence`
+for supporting fields and `origin_candidate_member_ids` when attribution remains
+unresolved. Preserve Apple Health `sourceBundle` in the existing raw workout payload
+on subsequent native syncs; do not fabricate identifiers for historical rows.

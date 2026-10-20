@@ -10,15 +10,18 @@ import {
   type RecordLocalTimeContext,
 } from "@dofek/format/record-local-time";
 import { formatMeasurementText, type UnitConverter } from "@dofek/format/units";
+import type { ActivityOrigin } from "@dofek/providers/activity-origin";
 import {
   formatProviderAbsentTombstoneSummary,
   formatProviderPartialAbsenceSummary,
   type ProviderAbsentSource,
+  providerLabel,
 } from "@dofek/providers/providers";
 import { isIndoorCyclingModality } from "@dofek/training/endurance-types";
 import { formatActivityTypeLabel } from "@dofek/training/training";
 import { type ActivityMapLocation, ActivityMapTile } from "./ActivityMapTile.tsx";
 import { ActivityTypeIcon } from "./ActivityTypeIcon.tsx";
+import { ProviderLogo } from "./ProviderLogo.tsx";
 
 export interface ActivityCardData {
   id: string;
@@ -29,7 +32,8 @@ export interface ActivityCardData {
   localTimeContext: RecordLocalTimeContext;
   durationMin: number;
   source: {
-    primarySourceLabel: string;
+    origin: ActivityOrigin;
+    primarySourceLabel: string | null;
     sourceCount: number;
     overlapSummary: string | null;
   };
@@ -99,13 +103,22 @@ export function ActivityCardContent({
             />
           ) : null}
           <ActivityTypeIcon activityType={activity.activityType} variant="plain" />
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <h4 className="truncate text-base font-semibold">{activity.name ?? activityLabel}</h4>
             <p className="mt-0.5 text-xs text-muted">
               {localStartTime === "--" ? "Local time unavailable" : localStartTime} ·{" "}
               {formatDurationMinutes(activity.durationMin)}
             </p>
           </div>
+          {activity.source.origin.status === "resolved" ? (
+            <span
+              role="img"
+              aria-label={`Primary recording provider: ${providerLabel(activity.source.origin.providerId)}`}
+              className="shrink-0"
+            >
+              <ProviderLogo provider={activity.source.origin.providerId} size={20} />
+            </span>
+          ) : null}
         </div>
         {isHidden ? (
           <span className="mt-3 w-fit rounded border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-300">

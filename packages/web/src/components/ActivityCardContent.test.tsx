@@ -22,6 +22,7 @@ function activity(overrides: Partial<ActivityCardData> = {}): ActivityCardData {
     },
     durationMin: 30,
     source: {
+      origin: { status: "unresolved", candidateMemberActivityIds: [] },
       primarySourceLabel: "Strong (via Apple Health)",
       sourceCount: 1,
       overlapSummary: null,
@@ -40,6 +41,57 @@ function activity(overrides: Partial<ActivityCardData> = {}): ActivityCardData {
 afterEach(cleanup);
 
 describe("ActivityCardContent", () => {
+  it.each(["garmin", "strava", "apple_health"])(
+    "shows the actual %s primary record provider",
+    (providerId) => {
+      render(
+        <ActivityCardContent
+          activity={activity({
+            source: {
+              origin: {
+                status: "resolved",
+                memberActivityId: "00000000-0000-4000-8000-000000000001",
+                providerId,
+                sourceName: "Garmin Edge 530",
+              },
+              primarySourceLabel: providerId,
+              sourceCount: 2,
+              overlapSummary: "2 matched source records",
+            },
+          })}
+          units={units}
+          selectMode={false}
+          selected={false}
+        />,
+      );
+      expect(screen.getByRole("img", { name: /Primary recording provider:/ })).toBeTruthy();
+      const logo = screen
+        .getByRole("img", { name: /Primary recording provider:/ })
+        .querySelector("img");
+      expect(logo?.getAttribute("src")).toContain(
+        providerId === "apple_health" ? "apple_health" : providerId,
+      );
+    },
+  );
+
+  it("omits the primary logo when provenance is unresolved", () => {
+    render(
+      <ActivityCardContent
+        activity={activity({
+          source: {
+            origin: { status: "unresolved", candidateMemberActivityIds: [] },
+            primarySourceLabel: null,
+            sourceCount: 2,
+            overlapSummary: "2 matched source records",
+          },
+        })}
+        units={units}
+        selectMode={false}
+        selected={false}
+      />,
+    );
+    expect(screen.queryByRole("img", { name: /Primary recording provider:/ })).toBeNull();
+  });
   it.each([
     { modality: "indoor", distanceMeters: 0, elevationGainM: null },
     { modality: "indoor", distanceMeters: 30_000, elevationGainM: 120 },
