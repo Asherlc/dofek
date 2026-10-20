@@ -119,6 +119,34 @@ const gpsPoints = [
 ];
 
 describe("RouteMap", () => {
+  it("lists and selects every named climb sharing an area location", () => {
+    const first = climbMarkers[0];
+    if (!first) throw new Error("Expected a climb marker fixture");
+    const markers = ["Bits and Bits", "Kibbles and Bits", "Blue Arete", "Left Arete"].map(
+      (label, index) => ({
+        ...first,
+        entryId: `area-log-${index}`,
+        label,
+        location: { ...first.location, scope: "area" as const, name: "Johnny Wall" },
+      }),
+    );
+    const onSelectEntry = vi.fn();
+    const { container } = render(
+      <RouteMap points={[]} climbMarkers={markers} onSelectEntry={onSelectEntry} />,
+    );
+    measure(container);
+    const marker = screen.getByTitle(
+      "4 climbs · Bits and Bits · Kibbles and Bits · Blue Arete · Left Arete",
+    );
+    expect(marker.textContent).toBe("Area location: Johnny Wall · Mountain Project4");
+    expect(screen.getAllByTestId("marker")).toHaveLength(1);
+    fireEvent.click(marker);
+    for (const entry of markers) {
+      fireEvent.click(screen.getByRole("button", { name: entry.label }));
+      expect(onSelectEntry).toHaveBeenLastCalledWith(entry.entryId);
+    }
+  });
+
   it("opens a uniquely located entry directly and permits overview pan and zoom", () => {
     const onSelectEntry = vi.fn();
     const { container } = render(
@@ -151,7 +179,7 @@ describe("RouteMap", () => {
     expect(screen.getByTestId("map").getAttribute("data-pointer-events")).toBe("none");
   });
 
-  it("opens every same-name occurrence at a tapped coordinate and selects distinct card identities", () => {
+  it("shows one counted marker and selects every same-name log at its coordinate", () => {
     const first = climbMarkers[0];
     if (!first) throw new Error("Expected a source fixture");
     const onSelectEntry = vi.fn();
@@ -166,19 +194,18 @@ describe("RouteMap", () => {
       />,
     );
     measure(container);
-    const dots = screen.getAllByTestId("marker");
-    expect(dots[0]?.getAttribute("data-coordinate")).toBe(dots[1]?.getAttribute("data-coordinate"));
-    const topDot = dots[1];
-    if (!topDot) throw new Error("Expected the top overlapping dot");
-    fireEvent.click(topDot);
-    fireEvent.click(screen.getByRole("button", { name: "Entry 1 · Swiss Cheese" }));
+    const group = screen.getByTitle("2 climbs · Swiss Cheese · Swiss Cheese");
+    expect(screen.getAllByTestId("marker")).toHaveLength(1);
+    expect(group.textContent).toContain("2");
+    fireEvent.click(group);
+    const [firstChoice, secondChoice] = screen.getAllByRole("button", { name: "Swiss Cheese" });
+    if (!firstChoice || !secondChoice) throw new Error("Expected both climb choices");
+    fireEvent.click(firstChoice);
     expect(onSelectEntry).toHaveBeenLastCalledWith("tick-1");
-    fireEvent.click(screen.getByRole("button", { name: "Entry 3 · Swiss Cheese" }));
+    fireEvent.click(secondChoice);
     expect(onSelectEntry).toHaveBeenLastCalledWith("repeat");
-    expect(
-      screen.getByRole("button", { name: "Entry 3 · Swiss Cheese" }).getAttribute("aria-selected"),
-    ).toBe("true");
-    expect(screen.getAllByTestId("marker")).toHaveLength(2);
+    expect(secondChoice.getAttribute("aria-selected")).toBe("true");
+    expect(screen.getAllByTestId("marker")).toHaveLength(1);
   });
   it("renders the title when given GPS points", () => {
     render(<RouteMap points={gpsPoints} />);
@@ -265,7 +292,7 @@ describe("RouteMap", () => {
     expect(screen.getByText(/Area location.*Goat Rock.*OpenBeta/)).toBeTruthy();
   });
 
-  it("keeps separate repeated ticks alongside the sensor route and hover marker", () => {
+  it("keeps all repeated logs in a counted marker alongside the sensor route and hover marker", () => {
     const first = climbMarkers[0];
     if (!first) throw new Error("Expected a climb marker fixture");
     const { container } = render(
@@ -277,9 +304,10 @@ describe("RouteMap", () => {
     );
     expect(screen.queryByTestId("map")).toBeNull();
     measure(container, 410);
-    expect(screen.getAllByTestId("marker")).toHaveLength(5);
-    expect(screen.getByTitle("Entry 1 · Swiss Cheese")).toBeTruthy();
-    expect(screen.getByTitle("Entry 2 · Swiss Cheese repeat")).toBeTruthy();
+    expect(screen.getAllByTestId("marker")).toHaveLength(4);
+    expect(
+      screen.getByTitle("2 climbs · Swiss Cheese · Swiss Cheese repeat").textContent,
+    ).toContain("2");
     expect(screen.getByTitle("Start")).toBeTruthy();
     expect(screen.getByTitle("Finish")).toBeTruthy();
     expect(screen.getByTestId("polyline").getAttribute("data-coordinates")).toContain(

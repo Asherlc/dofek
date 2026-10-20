@@ -1,6 +1,6 @@
 import { providerSourceLabel } from "@dofek/providers/providers";
 import { statusColors } from "@dofek/scoring/colors";
-import type { ClimbingMapMarker } from "@dofek/training/climbing-map";
+import { type ClimbingMapMarker, groupClimbingMapMarkers } from "@dofek/training/climbing-map";
 import type { GpsCoordinates } from "@dofek/training/gps-coordinates";
 import { useEffect, useRef, useState } from "react";
 import { captureException } from "../lib/telemetry.ts";
@@ -125,53 +125,82 @@ export function ActivityRouteMap({
           }).addTo(map);
         }
 
-        const sourceDots = climbMarkers.map((marker, index) => {
-          const { latitude, longitude } = marker.location.coordinates;
-          const point = L.latLng(latitude, longitude);
-          const owner = marker.location.name ?? marker.location.objectId;
-          const scope = marker.location.scope === "area" ? "Area location" : "Climb location";
-          const label = `Entry ${marker.entryNumber ?? index + 1} · ${marker.label} · ${scope}: ${owner} · ${providerSourceLabel(marker.location.providerId)}`;
-          const tooltip = document.createElement("span");
-          tooltip.textContent = label;
-          Object.assign(tooltip.style, {
-            display: "block",
-            width: "max-content",
-            maxWidth: "240px",
-            whiteSpace: "normal",
-            overflowWrap: "anywhere",
-          });
-          const color = marker.location.scope === "area" ? "#d97706" : "#2563eb";
-          const dot = L.circleMarker(point, { radius: 7, color, fillColor: color, fillOpacity: 1 })
-            .bindTooltip(tooltip)
-            .addTo(map);
-          if (presentation === "detail") {
-            dot.on("click", () => {
-              const overlapping = climbMarkers.some(
-                (other) =>
-                  other.entryId !== marker.entryId &&
-                  other.location.coordinates.latitude === latitude &&
-                  other.location.coordinates.longitude === longitude,
-              );
-              if (overlapping) {
-                setInspectedPoint(marker.location.coordinates);
-              } else {
-                setInspectedPoint(null);
-                setSelectedEntryId(marker.entryId);
-                onSelectEntry?.(marker.entryId);
-              }
+        const sourceDots = groupClimbingMapMarkers(climbMarkers, providerSourceLabel).map(
+          (group) => {
+            const { latitude, longitude } = group.coordinates;
+            const point = L.latLng(latitude, longitude);
+            const label = `${group.title} · ${group.description}`;
+            const tooltip = document.createElement("span");
+            tooltip.textContent = label;
+            Object.assign(tooltip.style, {
+              display: "block",
+              width: "max-content",
+              maxWidth: "240px",
+              whiteSpace: "normal",
+              overflowWrap: "anywhere",
             });
-          }
-          return { point, dot, label, entryId: marker.entryId };
-        });
+            const color = group.markers.every((marker) => marker.location.scope === "area")
+              ? "#d97706"
+              : "#2563eb";
+            const badge = document.createElement("span");
+            badge.textContent = String(group.markers.length);
+            badge.setAttribute("aria-hidden", "true");
+            Object.assign(badge.style, {
+              display: "grid",
+              placeItems: "center",
+              width: "100%",
+              height: "100%",
+              borderRadius: "50%",
+              border: "2px solid white",
+              backgroundColor: color,
+              color: "white",
+              fontSize: "12px",
+              fontWeight: "700",
+              boxShadow: "0 1px 4px #0004",
+            });
+            const dot = (
+              group.markers.length > 1
+                ? L.marker(point, {
+                    keyboard: false,
+                    icon: L.divIcon({
+                      html: badge,
+                      className: "climbing-location-marker",
+                      iconSize: [28, 28],
+                      iconAnchor: [14, 14],
+                    }),
+                  })
+                : L.circleMarker(point, { radius: 7, color, fillColor: color, fillOpacity: 1 })
+            )
+              .bindTooltip(tooltip)
+              .addTo(map);
+            if (presentation === "detail") {
+              dot.on("click", () => {
+                if (group.markers.length > 1) {
+                  setInspectedPoint(group.coordinates);
+                } else {
+                  const marker = group.markers[0];
+                  setInspectedPoint(null);
+                  setSelectedEntryId(marker.entryId);
+                  onSelectEntry?.(marker.entryId);
+                }
+              });
+            }
+            return { point, dot, label, markers: group.markers };
+          },
+        );
         const bounds = L.latLngBounds([...latLngs, ...sourceDots.map(({ point }) => point)]);
         map.fitBounds(bounds, {
           padding: [30, 30],
           ...(points.length === 0 ? { maxZoom: 15 } : {}),
         });
-        for (const { dot, label, entryId } of sourceDots) {
+        for (const { dot, label, markers } of sourceDots) {
           const element = dot.getElement();
           element?.setAttribute("aria-label", label);
-          element?.setAttribute("data-entry-id", entryId);
+          element?.setAttribute(
+            "data-entry-ids",
+            JSON.stringify(markers.map((marker) => marker.entryId)),
+          );
+          if (markers.length === 1) element?.setAttribute("data-entry-id", markers[0].entryId);
           element?.setAttribute("role", presentation === "detail" ? "button" : "img");
           element?.setAttribute("tabindex", "0");
           element?.addEventListener("focus", () => dot.openTooltip());
@@ -248,7 +277,7 @@ export function ActivityRouteMap({
       </div>
       {presentation === "detail" && inspectedPoint && (
         <ul aria-label="Climbing entries at this location" className="mt-2 flex flex-wrap gap-2">
-          {climbMarkers.map((marker, index) => {
+          {climbMarkers.map((marker) => {
             const { latitude, longitude } = marker.location.coordinates;
             if (latitude !== inspectedPoint.latitude || longitude !== inspectedPoint.longitude)
               return null;
@@ -264,7 +293,7 @@ export function ActivityRouteMap({
                     onSelectEntry?.(marker.entryId);
                   }}
                 >
-                  Entry {marker.entryNumber ?? index + 1} · {marker.label}
+                  {marker.label}
                 </button>
               </li>
             );

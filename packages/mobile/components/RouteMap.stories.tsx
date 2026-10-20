@@ -7,6 +7,7 @@ const meta = {
   title: "Activity/RouteMap",
   component: RouteMap,
   parameters: {
+    layout: "fullscreen",
     docs: {
       description: {
         component:
@@ -108,6 +109,26 @@ export const RepeatedPoint: Story = {
       { entryId: "tick-1", label: "Swiss Cheese", location: exactClimbingLocation },
       { entryId: "tick-4", label: "Swiss Cheese", location: exactClimbingLocation },
     ],
+    onSelectEntry: fn(),
+  },
+};
+
+export const SharedAreaClimbs: Story = {
+  args: {
+    points: [],
+    climbMarkers: ["Bits and Bits", "Kibbles and Bits", "Blue Arete", "Left Arete"].map(
+      (label, index) => ({
+        entryId: `johnny-wall-${index}`,
+        label,
+        location: {
+          coordinates: { latitude: 39.323, longitude: -120.599 },
+          scope: "area" as const,
+          objectId: "johnny-wall",
+          providerId: "mountain-project",
+          name: "Johnny Wall",
+        },
+      }),
+    ),
     onSelectEntry: fn(),
   },
 };

@@ -48,7 +48,7 @@ export const PointsOnly: Story = {
   args: { points: [], climbMarkers: markers, onSelectEntry: fn() },
   play: async ({ args, canvasElement }) => {
     const dot = await within(canvasElement).findByRole("button", {
-      name: "Entry 1 · Swiss Cheese · Climb location: Swiss Cheese · Mountain Project",
+      name: "Swiss Cheese · Climb location: Swiss Cheese · Mountain Project",
     });
     const bounds = dot.getBoundingClientRect();
     // Preserve enumerable native coordinates for Leaflet's preclick event copy.
@@ -95,7 +95,7 @@ export const AreaTooltip: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     const dot = await canvas.findByLabelText(
-      "Entry 1 · Bits and Bits · Area location: Johnny Wall · Mountain Project",
+      "Bits and Bits · Area location: Johnny Wall · Mountain Project",
     );
     await userEvent.hover(dot);
     const tooltip = await canvas.findByRole("tooltip");
@@ -116,7 +116,7 @@ export const RepeatedPoint: Story = {
   play: async ({ args, canvasElement }) => {
     const canvas = within(canvasElement);
     const dot = await canvas.findByRole("button", {
-      name: "Entry 2 · Swiss Cheese · Climb location: Swiss Cheese · Mountain Project",
+      name: "2 climbs · Swiss Cheese · Swiss Cheese · Climb location: Swiss Cheese · Mountain Project",
     });
     const bounds = dot.getBoundingClientRect();
     // Preserve enumerable native coordinates for Leaflet's preclick event copy.
@@ -127,8 +127,55 @@ export const RepeatedPoint: Story = {
         clientY: bounds.y + bounds.height / 2,
       }),
     );
-    await userEvent.click(await canvas.findByRole("button", { name: "Entry 2 · Swiss Cheese" }));
+    const choices = await canvas.findAllByRole("button", { name: "Swiss Cheese" });
+    const repeat = choices[1];
+    if (!repeat) throw new Error("Expected the repeated climb choice");
+    await userEvent.click(repeat);
     await expect(args.onSelectEntry).toHaveBeenLastCalledWith("tick-repeat");
+  },
+};
+export const SharedAreaClimbs: Story = {
+  args: {
+    points: [],
+    climbMarkers: ["Bits and Bits", "Kibbles and Bits", "Blue Arete", "Left Arete"].map(
+      (label, index) => ({
+        entryId: `johnny-wall-${index}`,
+        label,
+        location: {
+          coordinates: { latitude: 39.323, longitude: -120.599 },
+          scope: "area" as const,
+          objectId: "johnny-wall",
+          providerId: "mountain-project",
+          name: "Johnny Wall",
+        },
+      }),
+    ),
+    onSelectEntry: fn(),
+  },
+  play: async ({ args, canvasElement }) => {
+    const canvas = within(canvasElement);
+    const marker = await canvas.findByRole("button", { name: /^4 climbs ·/ });
+    await expect(marker).toHaveTextContent("4");
+    await userEvent.hover(marker);
+    await expect(canvas.getByRole("tooltip")).toHaveTextContent(
+      "Bits and Bits · Kibbles and Bits · Blue Arete · Left Arete",
+    );
+    const markerBounds = marker.getBoundingClientRect();
+    // Preserve enumerable native coordinates for Leaflet's preclick event copy.
+    marker.dispatchEvent(
+      new MouseEvent("click", {
+        bubbles: true,
+        clientX: markerBounds.x + markerBounds.width / 2,
+        clientY: markerBounds.y + markerBounds.height / 2,
+      }),
+    );
+    const choices = within(
+      await canvas.findByRole("list", { name: "Climbing entries at this location" }),
+    );
+    for (const entry of args.climbMarkers ?? []) {
+      await userEvent.click(choices.getByRole("button", { name: entry.label }));
+      await expect(args.onSelectEntry).toHaveBeenLastCalledWith(entry.entryId);
+    }
   },
 };
 export const Empty: Story = { args: { points: [] } };

@@ -102,8 +102,12 @@ the owning Climb or Area, and provider attribution.
 [ActivityRouteMap](src/components/ActivityRouteMap.tsx) renders source dots
 independently of recorded GPS tracks and loads compact tick maps as they
 approach the viewport. A unique point opens its climbing log details immediately;
-overlapping points offer an occurrence chooser using Entry numbers from the original
-entry order, preserved across Area grouping. Selection opens the exact log's
+coincident locations show a counted marker. Its tooltip lists every climb name and
+source-location label. Selecting that marker offers each log by climb name, including repeated names,
+without an entry-number heading. The [shared marker grouping](../training/src/climbing-map.ts)
+preserves source coordinates and log identities; the web count uses a
+[Leaflet DivIcon](https://leafletjs.com/reference.html#divicon).
+Selection opens the exact log's
 [record dialog](src/pages/RecordDetailModal.tsx) and highlights its
 [climbing card](src/pages/activity-detail/components/ClimbingLogEntryCard.tsx),
 including repeated names at the same point. Closing the dialog returns keyboard

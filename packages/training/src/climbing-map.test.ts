@@ -3,6 +3,7 @@ import {
   buildClimbingMapLocations,
   buildClimbingMapMarkers,
   type ClimbingMapLocation,
+  groupClimbingMapMarkers,
 } from "./climbing-map.ts";
 
 const climbLocation: ClimbingMapLocation = {
@@ -31,6 +32,47 @@ describe("buildClimbingMapLocations", () => {
     expect(Object.keys(locations)).toEqual(["climb", "area"]);
     expect(locations.climb).toBe(climbLocation);
     expect(locations.area).toBe(areaLocation);
+  });
+});
+
+describe("groupClimbingMapMarkers", () => {
+  const providerLabel = (id: string) =>
+    ({ "mountain-project": "Mountain Project", openbeta: "OpenBeta" })[id] ?? id;
+
+  it("groups identical coordinates, retains every log, and states each source location once", () => {
+    const first = { entryId: "first", label: "Blue Arete", location: areaLocation };
+    const repeat = { ...first, entryId: "repeat" };
+    const last = { ...first, entryId: "last", label: "Kibbles and Bits" };
+    const separate = { entryId: "separate", label: "Other climb", location: climbLocation };
+    const groups = groupClimbingMapMarkers([first, separate, repeat, last], providerLabel);
+
+    expect(groups).toHaveLength(2);
+    expect(groups[0]).toEqual({
+      coordinates: areaLocation.coordinates,
+      markers: [first, repeat, last],
+      title: "3 climbs · Blue Arete · Blue Arete · Kibbles and Bits",
+      description: "Area location: Containing area · OpenBeta",
+    });
+    expect(groups[0]?.markers[0]).toBe(first);
+    expect(groups[1]).toMatchObject({ title: "Other climb", markers: [separate] });
+  });
+
+  it("retains different source owners and scopes at the same coordinate", () => {
+    const groups = groupClimbingMapMarkers(
+      [
+        { entryId: "area", label: "Area climb", location: areaLocation },
+        {
+          entryId: "exact",
+          label: "Exact climb",
+          location: { ...climbLocation, coordinates: areaLocation.coordinates },
+        },
+      ],
+      providerLabel,
+    );
+    expect(groups[0]?.description).toBe(
+      "Area location: Containing area · OpenBeta · Climb location: Source climb · Mountain Project",
+    );
+    expect(groupClimbingMapMarkers([], providerLabel)).toEqual([]);
   });
 });
 
