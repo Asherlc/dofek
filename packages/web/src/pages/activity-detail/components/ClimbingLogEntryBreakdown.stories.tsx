@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { type ComponentProps, useMemo, useState } from "react";
-import { expect, waitFor, within } from "storybook/test";
+import { expect, within } from "storybook/test";
 import "leaflet/dist/leaflet.css";
 import {
   climbingAttemptFixture,
@@ -179,11 +179,9 @@ export const RepeatedPoint: Story = {
   render: (args) => <ActivityArrangement {...args} />,
   play: async ({ canvasElement, userEvent }) => {
     const canvas = within(canvasElement);
-    await waitFor(() =>
-      expect(canvasElement.querySelector('[data-entry-id="tick-4"]')).not.toBeNull(),
-    );
-    const dot = canvasElement.querySelector<SVGElement>('[data-entry-id="tick-4"]');
-    if (!dot) throw new Error("Expected repeated source dot");
+    const dot = await canvas.findByRole("button", {
+      name: /^2 climbs · Swiss Cheese · Swiss Cheese ·/,
+    });
     const bounds = dot.getBoundingClientRect();
     // Preserve enumerable native coordinates for Leaflet's preclick event copy.
     dot.dispatchEvent(
@@ -193,20 +191,26 @@ export const RepeatedPoint: Story = {
         clientY: bounds.y + bounds.height / 2,
       }),
     );
-    await userEvent.click(await canvas.findByRole("button", { name: "Entry 1 · Swiss Cheese" }));
+    const [firstChoice, secondChoice] = await canvas.findAllByRole("button", {
+      name: "Swiss Cheese",
+    });
+    if (!firstChoice || !secondChoice) throw new Error("Expected both climb choices");
+    await userEvent.click(firstChoice);
     await expect(
       canvas
         .getByRole("region", { name: "Attached climbing logs" })
         .querySelector('[aria-current="true"]'),
     ).toBe(canvas.getByRole("list", { name: "Wall climbs" }).children[0]);
-    canvas.getByRole("button", { name: "Entry 3 · Swiss Cheese" }).focus();
+    secondChoice.focus();
     await userEvent.keyboard("[Enter]");
     await expect(
       canvas
         .getByRole("region", { name: "Attached climbing logs" })
         .querySelector('[aria-current="true"]'),
     ).toBe(canvas.getByRole("list", { name: "Wall climbs" }).children[1]);
-    await expect(canvasElement.querySelector('[data-entry-id="tick-4"]')).toBe(dot);
+    await expect(
+      canvas.getByRole("button", { name: /^2 climbs · Swiss Cheese · Swiss Cheese ·/ }),
+    ).toBe(dot);
   },
 };
 export const ActivityDetailClimbs: Story = {

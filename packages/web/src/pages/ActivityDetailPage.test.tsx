@@ -992,7 +992,7 @@ describe("ActivityDetailPage", () => {
     expect(screen.getAllByRole("region", { name: "Climbing locations" })).toHaveLength(3);
     expect(screen.getByText("Climbing refresh failed")).toBeDefined();
     const climbPoint = await screen.findByRole("button", {
-      name: "Entry 2 · Located climb · Climb location: Located climb · Mountain Project",
+      name: "Located climb · Climb location: Located climb · Mountain Project",
     });
     const createdMaps = leafletMocks.map.mock.calls.length;
     act(() => climbPoint.focus());

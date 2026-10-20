@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { ActivityRouteMap } from "./ActivityRouteMap.tsx";
 
@@ -40,6 +40,35 @@ const exact = {
 };
 
 describe("ActivityRouteMap", () => {
+  it("lists and selects every named climb sharing an area location", async () => {
+    const onSelectEntry = vi.fn();
+    const markers = ["Bits and Bits", "Kibbles and Bits", "Blue Arete", "Left Arete"].map(
+      (label, index) => ({
+        ...exact,
+        entryId: `area-log-${index}`,
+        label,
+        location: { ...exact.location, scope: "area" as const, name: "Johnny Wall" },
+      }),
+    );
+    const { container } = render(
+      <ActivityRouteMap points={[]} climbMarkers={markers} onSelectEntry={onSelectEntry} />,
+    );
+    const marker = await screen.findByRole("button", {
+      name: "4 climbs · Bits and Bits · Kibbles and Bits · Blue Arete · Left Arete · Area location: Johnny Wall · Mountain Project",
+    });
+    expect(marker).toHaveTextContent("4");
+    fireEvent.mouseOver(marker);
+    expect(container.querySelector(".leaflet-tooltip")?.textContent).toBe(
+      marker.getAttribute("aria-label"),
+    );
+    fireEvent.click(marker);
+    const choices = within(screen.getByRole("list", { name: "Climbing entries at this location" }));
+    for (const entry of markers) {
+      fireEvent.click(choices.getByRole("button", { name: entry.label }));
+      expect(onSelectEntry).toHaveBeenLastCalledWith(entry.entryId);
+    }
+  });
+
   it("shows processing until the initial map tiles load", async () => {
     const { container } = render(<ActivityRouteMap points={[]} climbMarkers={[exact]} />);
     expect(screen.getByRole("status")).toHaveTextContent("Processing map…");
@@ -72,9 +101,11 @@ describe("ActivityRouteMap", () => {
           onSelectEntry={onSelectEntry}
         />,
       );
-      const dot = await screen.findByRole("button", {
-        name: "Entry 1 · Blue Arete · Climb location: Blue Arete · Mountain Project",
+      const dots = await screen.findAllByRole("button", {
+        name: "Blue Arete · Climb location: Blue Arete · Mountain Project",
       });
+      const dot = dots.find((element) => element.getAttribute("data-entry-id") === "tick-1");
+      if (!dot) throw new Error("Expected the first source marker");
       fireEvent.keyDown(dot, { key: "Escape" });
       expect(onSelectEntry).not.toHaveBeenCalled();
       if (activation === "click") fireEvent.click(dot);
@@ -124,7 +155,7 @@ describe("ActivityRouteMap", () => {
     expect(disconnect).toHaveBeenCalled();
   });
 
-  it("opens all same-name occurrences from the top overlapping dot and selects their card identities", async () => {
+  it("shows a counted marker for shared locations and selects each same-name log", async () => {
     const onSelectEntry = vi.fn();
     const { container } = render(
       <ActivityRouteMap
@@ -136,20 +167,24 @@ describe("ActivityRouteMap", () => {
         onSelectEntry={onSelectEntry}
       />,
     );
-    await waitFor(() => expect(container.querySelectorAll("[data-entry-id]")).toHaveLength(2));
-    const topDot = container.querySelector('[data-entry-id="repeat"]');
-    if (!topDot) throw new Error("Expected the top overlapping dot");
-    fireEvent.click(topDot);
+    const group = await screen.findByRole("button", {
+      name: "2 climbs · Blue Arete · Blue Arete · Climb location: Blue Arete · Mountain Project",
+    });
+    expect(group).toHaveTextContent("2");
+    expect(container.querySelectorAll("[data-entry-ids]")).toHaveLength(1);
+    fireEvent.click(group);
     expect(onSelectEntry).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: "Entry 1 · Blue Arete" }));
+    const chooser = screen.getByRole("list", { name: "Climbing entries at this location" });
+    const [first, second] = within(chooser).getAllByRole("button", { name: "Blue Arete" });
+    if (!first || !second) throw new Error("Expected both climbing logs");
+    fireEvent.click(first);
     expect(onSelectEntry).toHaveBeenLastCalledWith("tick-1");
-    fireEvent.click(screen.getByRole("button", { name: "Entry 3 · Blue Arete" }));
+    fireEvent.click(second);
     expect(onSelectEntry).toHaveBeenLastCalledWith("repeat");
-    expect(screen.getByRole("button", { name: "Entry 3 · Blue Arete" })).toHaveAttribute(
-      "aria-pressed",
-      "true",
+    expect(second).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: group.getAttribute("aria-label") ?? "" })).toBe(
+      group,
     );
-    expect(container.querySelectorAll(".leaflet-overlay-pane path")).toHaveLength(2);
   });
 
   it.each(["Enter", " "])("opens coincident occurrences using the %s key", async (key) => {
@@ -162,20 +197,25 @@ describe("ActivityRouteMap", () => {
       />,
     );
     const dot = await screen.findByRole("button", {
-      name: "Entry 2 · Blue Arete · Climb location: Blue Arete · Mountain Project",
+      name: "2 climbs · Blue Arete · Blue Arete · Climb location: Blue Arete · Mountain Project",
     });
     expect(screen.queryByRole("list", { name: "Climbing entries at this location" })).toBeNull();
     fireEvent.keyDown(dot, { key });
     expect(onSelectEntry).not.toHaveBeenCalled();
-    expect(screen.getByRole("button", { name: "Entry 1 · Blue Arete" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Entry 2 · Blue Arete" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Entry 1 · Blue Arete" }));
+    const choices = within(
+      screen.getByRole("list", { name: "Climbing entries at this location" }),
+    ).getAllByRole("button", { name: "Blue Arete" });
+    expect(choices).toHaveLength(2);
+    const first = choices[0];
+    if (!first) throw new Error("Expected a climb choice");
+    fireEvent.click(first);
     expect(onSelectEntry).toHaveBeenCalledExactlyOnceWith("tick-1");
   });
   it("keeps opaque tick identities separate from readable source-dot labels", async () => {
     const firstId = "f0e5f441-1c6d-4e20-a2a3-41103e7314a0";
     const secondId = "ab648e3e-5ec8-4ac8-817c-47edc84eddb4";
-    const label = "Entry 1 · Blue Arete · Climb location: Blue Arete · Mountain Project";
+    const label =
+      "2 climbs · Blue Arete · Blue Arete · Climb location: Blue Arete · Mountain Project";
     const { container } = render(
       <ActivityRouteMap
         points={[]}
@@ -185,22 +225,16 @@ describe("ActivityRouteMap", () => {
         ]}
       />,
     );
-    await waitFor(() => expect(container.querySelectorAll("[data-entry-id]")).toHaveLength(2));
-    const dots = container.querySelectorAll("[data-entry-id]");
-    expect(dots[0]).toHaveAttribute("data-entry-id", firstId);
-    expect(dots[1]).toHaveAttribute("data-entry-id", secondId);
-    expect(dots[0]).toHaveAttribute("aria-label", label);
-    expect(dots[1]).toHaveAttribute("aria-label", label.replace("Entry 1", "Entry 2"));
-    const firstDot = dots[0];
-    if (!firstDot) throw new Error("Expected a first source dot");
-    fireEvent.mouseOver(firstDot);
+    const group = await screen.findByRole("button", { name: label });
+    expect(group).toHaveAttribute("data-entry-ids", JSON.stringify([firstId, secondId]));
+    fireEvent.mouseOver(group);
     expect(container.querySelector(".leaflet-tooltip")?.textContent).toBe(label);
   });
 
   it("exposes source dots and their labels to keyboard users", async () => {
     const { container } = render(<ActivityRouteMap points={[]} climbMarkers={[exact]} />);
     const dot = await screen.findByRole("button", {
-      name: "Entry 1 · Blue Arete · Climb location: Blue Arete · Mountain Project",
+      name: "Blue Arete · Climb location: Blue Arete · Mountain Project",
     });
     expect(dot).toHaveAttribute("tabindex", "0");
     fireEvent.focus(dot);
@@ -264,7 +298,7 @@ describe("ActivityRouteMap", () => {
     expect(region.querySelectorAll(".leaflet-overlay-pane path")).toHaveLength(4);
     fireEvent.click(
       screen.getByRole("button", {
-        name: "Entry 1 · Blue Arete · Climb location: Blue Arete · Mountain Project",
+        name: "Blue Arete · Climb location: Blue Arete · Mountain Project",
       }),
     );
     expect(onSelectEntry).toHaveBeenCalledExactlyOnceWith("tick-1");
@@ -284,7 +318,7 @@ describe("ActivityRouteMap", () => {
       expect(region.querySelectorAll(".leaflet-overlay-pane path")).toHaveLength(1),
     );
     expect(
-      screen.getByLabelText("Entry 1 · Blue Arete · Climb location: Blue Arete · Mountain Project"),
+      screen.getByLabelText("Blue Arete · Climb location: Blue Arete · Mountain Project"),
     ).toBeInTheDocument();
     expect(container.querySelector(".leaflet-control-attribution")).toHaveTextContent(
       "OpenStreetMap",
@@ -308,11 +342,11 @@ describe("ActivityRouteMap", () => {
       expect(container.querySelectorAll(".leaflet-overlay-pane path")).toHaveLength(4),
     );
     expect(
-      screen.getByLabelText("Entry 1 · Blue Arete · Climb location: Blue Arete · Mountain Project"),
+      screen.getByLabelText("Blue Arete · Climb location: Blue Arete · Mountain Project"),
     ).toBeInTheDocument();
   });
 
-  it("retains repeated occurrences at the same point and safe area tooltip text", async () => {
+  it("lists every climb and source at a shared point with safe tooltip text", async () => {
     const label = '<img src=x onerror="alert(1)"> & ridge';
     const area = {
       ...exact,
@@ -321,17 +355,11 @@ describe("ActivityRouteMap", () => {
       location: { ...exact.location, scope: "area" as const, name: "Goat Rock" },
     };
     const { container } = render(<ActivityRouteMap points={[]} climbMarkers={[exact, area]} />);
-    await waitFor(() =>
-      expect(container.querySelectorAll(".leaflet-overlay-pane path")).toHaveLength(2),
-    );
-    const dot = screen.getByLabelText(
-      `Entry 2 · ${label} · Area location: Goat Rock · Mountain Project`,
-    );
+    const groupLabel = `2 climbs · Blue Arete · ${label} · Climb location: Blue Arete · Mountain Project · Area location: Goat Rock · Mountain Project`;
+    const dot = await screen.findByRole("button", { name: groupLabel });
     fireEvent.mouseOver(dot);
     await waitFor(() =>
-      expect(container.querySelector(".leaflet-tooltip")).toHaveTextContent(
-        `Entry 2 · ${label} · Area location: Goat Rock · Mountain Project`,
-      ),
+      expect(container.querySelector(".leaflet-tooltip")).toHaveTextContent(groupLabel),
     );
     expect(container.querySelector(".leaflet-tooltip img")).toBeNull();
   });

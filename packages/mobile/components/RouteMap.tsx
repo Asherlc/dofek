@@ -1,6 +1,6 @@
 import { providerSourceLabel } from "@dofek/providers/providers";
 import { statusColors } from "@dofek/scoring/colors";
-import type { ClimbingMapMarker } from "@dofek/training/climbing-map";
+import { type ClimbingMapMarker, groupClimbingMapMarkers } from "@dofek/training/climbing-map";
 import type { GpsCoordinates } from "@dofek/training/gps-coordinates";
 import { useCallback, useMemo, useState } from "react";
 import { type LayoutChangeEvent, Pressable, StyleSheet, Text, View } from "react-native";
@@ -22,11 +22,12 @@ interface RouteMapProps {
 }
 
 const MAP_HEIGHT = 280;
+const NO_CLIMB_MARKERS: readonly ClimbingMapMarker[] = [];
 
 export function RouteMap({
   points,
   hoveredPosition,
-  climbMarkers,
+  climbMarkers = NO_CLIMB_MARKERS,
   compact = false,
   onSelectEntry,
 }: RouteMapProps) {
@@ -34,6 +35,10 @@ export function RouteMap({
   const [mapReady, setMapReady] = useState(false);
   const [inspectedPoint, setInspectedPoint] = useState<GpsCoordinates | null>(null);
   const [selectedEntryId, setSelectedEntryId] = useState<string | null>(null);
+  const markerGroups = useMemo(
+    () => groupClimbingMapMarkers(climbMarkers, providerSourceLabel),
+    [climbMarkers],
+  );
 
   const handleLayout = useCallback((event: LayoutChangeEvent) => {
     const width = event.nativeEvent.layout.width;
@@ -129,38 +134,38 @@ export function RouteMap({
             {endCoordinate != null && (
               <Marker coordinate={endCoordinate} pinColor={statusColors.danger} title="Finish" />
             )}
-            {climbMarkers?.map(({ entryId, entryNumber, label, location }, index) => (
+            {markerGroups.map(({ coordinates, markers, title, description }) => (
               <Marker
-                key={entryId}
-                identifier={entryId}
-                coordinate={location.coordinates}
-                title={`Entry ${entryNumber ?? index + 1} · ${label}`}
-                description={`${location.scope === "area" ? "Area location" : "Climb location"}: ${location.name ?? location.objectId} · ${providerSourceLabel(location.providerId)}`}
+                key={`${coordinates.latitude}:${coordinates.longitude}`}
+                identifier={markers[0].entryId}
+                coordinate={coordinates}
+                title={title}
+                description={description}
                 anchor={{ x: 0.5, y: 0.5 }}
                 onPress={
                   compact
                     ? undefined
                     : () => {
-                        const occurrences = climbMarkers.filter(
-                          (marker) =>
-                            marker.location.coordinates.latitude ===
-                              location.coordinates.latitude &&
-                            marker.location.coordinates.longitude ===
-                              location.coordinates.longitude,
-                        );
-                        if (occurrences.length === 1) {
-                          setSelectedEntryId(entryId);
+                        if (markers.length === 1) {
+                          setSelectedEntryId(markers[0].entryId);
                           setInspectedPoint(null);
-                          onSelectEntry?.(entryId);
+                          onSelectEntry?.(markers[0].entryId);
                         } else {
-                          setInspectedPoint(location.coordinates);
+                          setInspectedPoint(coordinates);
                         }
                       }
                 }
               >
                 <View
-                  style={[styles.sourceMarker, location.scope === "area" && styles.areaMarker]}
-                />
+                  style={[
+                    styles.sourceMarker,
+                    markers.every((marker) => marker.location.scope === "area") &&
+                      styles.areaMarker,
+                    markers.length > 1 && styles.groupMarker,
+                  ]}
+                >
+                  {markers.length > 1 && <Text style={styles.markerCount}>{markers.length}</Text>}
+                </View>
               </Marker>
             ))}
             {hoveredPosition != null && (
@@ -184,16 +189,15 @@ export function RouteMap({
       </View>
       {!compact && inspectedPoint && (
         <View accessibilityLabel="Climbing entries at this location" style={styles.occurrences}>
-          {climbMarkers?.map((marker, index) => {
+          {climbMarkers.map((marker) => {
             const { latitude, longitude } = marker.location.coordinates;
             if (latitude !== inspectedPoint.latitude || longitude !== inspectedPoint.longitude)
               return null;
-            const label = `Entry ${marker.entryNumber ?? index + 1} · ${marker.label}`;
             return (
               <Pressable
                 key={marker.entryId}
                 accessibilityRole="button"
-                accessibilityLabel={label}
+                accessibilityLabel={marker.label}
                 accessibilityState={{ selected: selectedEntryId === marker.entryId }}
                 style={styles.occurrence}
                 onPress={() => {
@@ -201,7 +205,7 @@ export function RouteMap({
                   onSelectEntry?.(marker.entryId);
                 }}
               >
-                <Text style={styles.occurrenceLabel}>{label}</Text>
+                <Text style={styles.occurrenceLabel}>{marker.label}</Text>
               </Pressable>
             );
           })}
@@ -247,6 +251,14 @@ const styles = StyleSheet.create({
     borderColor: "#ffffff",
   },
   areaMarker: { backgroundColor: statusColors.warning },
+  groupMarker: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  markerCount: { color: "#ffffff", fontSize: 12, fontWeight: "700" },
   occurrences: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   occurrence: {
     borderWidth: 1,

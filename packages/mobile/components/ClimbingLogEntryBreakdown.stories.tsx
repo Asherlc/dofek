@@ -134,20 +134,19 @@ export const RepeatedPoint: Story = {
   play: async ({ canvasElement, userEvent }) => {
     const canvas = within(canvasElement);
     const overview = within(canvas.getByLabelText("Climbing location overview"));
-    const dot = await overview.findByRole("button", { name: /^Entry 3 · Swiss Cheese, latitude/ });
+    const dot = await overview.findByRole("button", {
+      name: /^2 climbs · Swiss Cheese · Swiss Cheese, latitude/,
+    });
     await userEvent.click(dot);
-    await userEvent.click(canvas.getByRole("button", { name: "Entry 1 · Swiss Cheese" }));
-    await expect(canvas.getAllByLabelText("Climbing entry: Swiss Cheese")[0]).toHaveAttribute(
-      "aria-selected",
-      "true",
-    );
-    const repeat = canvas.getByRole("button", { name: "Entry 3 · Swiss Cheese" });
+    const [firstChoice, repeat] = await canvas.findAllByRole("button", { name: "Swiss Cheese" });
+    if (!firstChoice || !repeat) throw new Error("Expected both climb choices");
+    const [firstCard, repeatedCard] = canvas.getAllByLabelText("Climbing entry: Swiss Cheese");
+    if (!firstCard || !repeatedCard) throw new Error("Expected both climbing cards");
+    await userEvent.click(firstChoice);
+    await expect(firstCard).toHaveStyle({ borderColor: colors.accent, borderWidth: "1px" });
     repeat.focus();
     await userEvent.keyboard("[Enter]");
-    await expect(canvas.getAllByLabelText("Climbing entry: Swiss Cheese")[1]).toHaveAttribute(
-      "aria-selected",
-      "true",
-    );
+    await expect(repeatedCard).toHaveStyle({ borderColor: colors.accent, borderWidth: "1px" });
   },
 };
 function RepeatedPointArrangement(args: ComponentProps<typeof ClimbingLogEntryBreakdown>) {

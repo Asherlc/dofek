@@ -72,9 +72,13 @@ inputs share the web client's [coordinate and provenance types](../training/src/
 [RouteMap](./components/RouteMap.tsx) renders source dots independently of the
 recorded GPS route and supports compact tick maps. The overview supports panning
 and zooming; compact maps do not intercept touches. A unique point opens its log
-details immediately; overlapping points offer an occurrence chooser using Entry
-numbers from the original entry order, preserved across Area grouping. Selection
-opens the exact log's
+details immediately; coincident locations show a counted marker with source-location
+labels. Selecting it lists every log by climb name,
+including repeated names, without an entry-number heading. The
+[shared marker grouping](../training/src/climbing-map.ts) preserves source coordinates
+and log identities; the count renders inside a
+[custom native marker](https://github.com/react-native-maps/react-native-maps/blob/master/docs/marker.md).
+Selection opens the exact log's
 [record modal](./components/providers/provider-record-detail-modal.tsx) and
 highlights its card, including repeated names at the same point. The
 [activity tests](./app-tests/activity/[id].test.tsx) cover closing and reopening
