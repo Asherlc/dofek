@@ -60,7 +60,7 @@ describe("deduped_activities read model", () => {
     }
   });
 
-  it("reattributes origin incrementally without changing merged fields or unchanged rebuild versions", async () => {
+  it("updates origin attribution incrementally without changing merged fields or unchanged rebuild versions", async () => {
     const activeClient = requireClient(client);
     await seedSpecificActivityTypeFixture(activeClient, targetSchema, "cycling", "cycling");
     await activeClient.command({

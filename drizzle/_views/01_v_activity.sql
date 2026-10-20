@@ -328,16 +328,25 @@ tombstoned_groups AS (
 ),
 
 origin_group_members AS (
-  SELECT group_id, user_id, JSONB_AGG(JSONB_BUILD_OBJECT(
-    'id', id, 'providerId', provider_id, 'sourceName', source_name, 'raw', raw
-  ) ORDER BY id) AS members
-  FROM ranked GROUP BY group_id, user_id
+  SELECT
+    group_id,
+    user_id,
+    JSONB_AGG(JSONB_BUILD_OBJECT(
+      'id', id, 'providerId', provider_id, 'sourceName', source_name, 'raw', raw
+    ) ORDER BY id) AS members
+  FROM ranked
+  GROUP BY group_id, user_id
 ),
+
 activity_origins AS (
-  SELECT groups.group_id, groups.user_id, origin.*
+  SELECT
+    groups.group_id,
+    groups.user_id,
+    origin.*
   FROM origin_group_members AS groups
   CROSS JOIN LATERAL fitness.resolve_activity_origin(groups.members) AS origin
 ),
+
 merged AS (
   SELECT
     b.group_id,
@@ -460,5 +469,5 @@ SELECT
   origin.origin_candidate_member_ids,
   origin.origin_evidence
 FROM merged AS m
-INNER JOIN activity_origins AS origin ON origin.group_id = m.group_id AND origin.user_id = m.user_id
+INNER JOIN activity_origins AS origin ON m.group_id = origin.group_id AND m.user_id = origin.user_id
 ORDER BY m.started_at DESC;

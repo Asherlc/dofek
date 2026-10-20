@@ -69,6 +69,7 @@ describe("PostgreSQL provenance-only origin", () => {
               "primary_source_name",
               "origin_candidate_member_ids",
               "origin_evidence",
+              "raw",
             ]).has(key),
         ),
       );
@@ -78,6 +79,8 @@ describe("PostgreSQL provenance-only origin", () => {
     const after = await read();
     expect(after.primary_activity_id).toBe(originalId);
     expect(fields(after)).toEqual(fields(before));
+    expect(before.raw).toMatchObject({ sourceBundle: "com.strava.strava", stable: true });
+    expect(after.raw).toEqual({ stable: true });
     await context.db.execute(sql`INSERT INTO fitness.provider_field_priority(provider_id,field_key,priority) VALUES
       ('apple_health','activity.name',0),('garmin','activity.name',100)
       ON CONFLICT(provider_id,field_key) DO UPDATE SET priority=excluded.priority`);

@@ -88,6 +88,17 @@ describe("clickhouse integration test helpers", () => {
 
     await createClickHouseTestActivityPowerCurveStore(testContext);
 
+    const commands = clickHouseMocks.command.mock.calls.map(([options]) => String(options.query));
+    const activityInsert = commands.find((query) => /INSERT INTO .*\.v_activity\n/.test(query));
+    expect(activityInsert).toContain("origin_labels AS");
+    expect(activityInsert).toContain(
+      "legacy.* REPLACE(origins.primary_activity_id AS primary_activity_id)",
+    );
+    const dedupedInsert = commands.find((query) =>
+      /INSERT INTO .*\.deduped_activities\(/.test(query),
+    );
+    expect(dedupedInsert).toContain("representative_activity_id,primary_provider_id");
+
     expect(analyticsInsertTargets()).toEqual([
       "sensor_scalar_sample",
       "deduped_sensor",

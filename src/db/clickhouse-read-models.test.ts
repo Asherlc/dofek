@@ -12,6 +12,7 @@ describe("buildActivityReadModelRefreshStatements", () => {
     expect(view).toContain("FROM analytics.deduped_activities FINAL");
     expect(view).toContain("primary_provider_id");
     expect(view).toContain("representative_activity_id");
+    expect(view?.match(/CREATE VIEW/g)).toHaveLength(1);
   });
   it("drops and recreates the activity read model views", () => {
     const statements = buildActivityReadModelRefreshStatements();
