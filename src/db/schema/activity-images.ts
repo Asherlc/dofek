@@ -70,6 +70,7 @@ export const activityImage = fitness.table(
     foreignKey({
       columns: [t.userId, t.objectId],
       foreignColumns: [activityImageObject.userId, activityImageObject.id],
+      name: "activity_image_owned_object_fk",
     }),
     check("activity_image_generation", sql`${t.generation} > 0`),
   ],
@@ -94,6 +95,7 @@ export const activityImageDiscovery = fitness.table(
     foreignKey({
       columns: [t.userId, t.activityId],
       foreignColumns: [activity.userId, activity.id],
+      name: "activity_image_discovery_owned_activity_fk",
     }).onDelete("cascade"),
     check(
       "activity_image_discovery_coverage",
@@ -121,6 +123,7 @@ export const activityImageWork = fitness.table(
     foreignKey({
       columns: [t.userId, t.imageId],
       foreignColumns: [activityImage.userId, activityImage.id],
+      name: "activity_image_work_owned_image_fk",
     }).onDelete("cascade"),
     index("activity_image_work_pending_idx").on(t.state, t.availableAt),
     check(

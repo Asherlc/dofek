@@ -1,4 +1,4 @@
-import type { StravaStreamSet } from "./strava-api-types.ts";
+import type { StravaStreamSet } from "./api-types.ts";
 
 const STREAM_KEYS = new Set<string>([
   "time",

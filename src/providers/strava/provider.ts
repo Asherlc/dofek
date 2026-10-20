@@ -3,14 +3,14 @@ import type {
   StravaDetailedActivity,
   StravaStream,
   StravaStreamSet,
-} from "./strava-api-types.ts";
+} from "./api-types.ts";
 
 export type {
   StravaActivity,
   StravaDetailedActivity,
   StravaStream,
   StravaStreamSet,
-} from "./strava-api-types.ts";
+} from "./api-types.ts";
 
 import { ProviderRateLimitError, parseRetryAfterHeader } from "@dofek/provider-http/rate-limit";
 import {
@@ -21,32 +21,31 @@ import { isIndoorCyclingModality } from "@dofek/training/endurance-types";
 import { createActivityTypeMapper, STRAVA_ACTIVITY_TYPE_MAP } from "@dofek/training/training";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { fetchStravaActivityImages } from "../activity-images/providers.ts";
-import type { ImageDiscovery } from "../activity-images/types.ts";
-import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
-import { exchangeCodeForTokens, getOAuthRedirectUri } from "../auth/oauth.ts";
-import { resolveOAuthTokens } from "../auth/resolve-tokens.ts";
-import { recordActivityImageDiscovery } from "../db/activity-images.ts";
-import type { SyncDatabase } from "../db/index.ts";
+import { fetchStravaActivityImages } from "../../activity-images/providers.ts";
+import type { ImageDiscovery } from "../../activity-images/types.ts";
+import type { OAuthConfig, TokenSet } from "../../auth/oauth.ts";
+import { exchangeCodeForTokens, getOAuthRedirectUri } from "../../auth/oauth.ts";
+import { resolveOAuthTokens } from "../../auth/resolve-tokens.ts";
+import { recordActivityImageDiscovery } from "../../db/activity-images.ts";
+import type { SyncDatabase } from "../../db/index.ts";
 import {
   type MetricStreamSourceRow,
   replaceMetricStreamBatch,
   writeMetricStreamBatch,
-} from "../db/metric-stream-writer.ts";
+} from "../../db/metric-stream-writer.ts";
 import {
   finishProviderActivityListSync,
   markProviderActivityAbsent,
   upsertProviderActivity,
-} from "../db/provider-activity-sync.ts";
-import { activity } from "../db/schema/activity.ts";
-import { SOURCE_TYPE_API } from "../db/sensor-channels.ts";
-import { getTokenUserId } from "../db/token-user-context.ts";
-import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
-import { logger } from "../logger.ts";
-import type { SyncDegradation } from "../sync/sync-degradation.ts";
-import { ProviderAuthorizationFailedError } from "./auth-errors.ts";
-import { isStreamKey } from "./strava-streams.ts";
-import type { SyncRun } from "./sync-run.ts";
+} from "../../db/provider-activity-sync.ts";
+import { activity } from "../../db/schema/activity.ts";
+import { SOURCE_TYPE_API } from "../../db/sensor-channels.ts";
+import { getTokenUserId } from "../../db/token-user-context.ts";
+import { createProviderRateLimitFetch } from "../../lib/provider-rate-limit-fetch.ts";
+import { logger } from "../../logger.ts";
+import type { SyncDegradation } from "../../sync/sync-degradation.ts";
+import { ProviderAuthorizationFailedError } from "../auth-errors.ts";
+import type { SyncRun } from "../sync-run.ts";
 import type {
   ProviderAuthSetup,
   ProviderIdentity,
@@ -55,7 +54,8 @@ import type {
   SyncResult,
   WebhookEvent,
   WebhookProvider,
-} from "./types.ts";
+} from "../types.ts";
+import { isStreamKey } from "./streams.ts";
 
 // ============================================================
 // Strava API types

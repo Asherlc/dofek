@@ -4023,8 +4023,8 @@
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
-        "activity_image_user_id_object_id_activity_image_object_user_id_id_fk": {
-          "name": "activity_image_user_id_object_id_activity_image_object_user_id_id_fk",
+        "activity_image_owned_object_fk": {
+          "name": "activity_image_owned_object_fk",
           "tableFrom": "activity_image",
           "tableTo": "activity_image_object",
           "schemaTo": "fitness",
@@ -4272,8 +4272,8 @@
           "onDelete": "no action",
           "onUpdate": "no action"
         },
-        "activity_image_discovery_user_id_activity_id_activity_user_id_id_fk": {
-          "name": "activity_image_discovery_user_id_activity_id_activity_user_id_id_fk",
+        "activity_image_discovery_owned_activity_fk": {
+          "name": "activity_image_discovery_owned_activity_fk",
           "tableFrom": "activity_image_discovery",
           "tableTo": "activity",
           "schemaTo": "fitness",
@@ -4551,8 +4551,8 @@
         }
       },
       "foreignKeys": {
-        "activity_image_work_user_id_image_id_activity_image_user_id_id_fk": {
-          "name": "activity_image_work_user_id_image_id_activity_image_user_id_id_fk",
+        "activity_image_work_owned_image_fk": {
+          "name": "activity_image_work_owned_image_fk",
           "tableFrom": "activity_image_work",
           "tableTo": "activity_image",
           "schemaTo": "fitness",

@@ -21,7 +21,6 @@ const photoSchema = z
   })
   .passthrough();
 export const stravaPhotoListSchema = z.array(photoSchema);
-export type StravaImagePhoto = z.infer<typeof photoSchema>;
 export function stravaImageDiscovery(
   photos: unknown[],
   expectedCount: number | null,

@@ -80,7 +80,7 @@ import {
   StravaUnauthorizedError,
   stravaOAuthConfig,
   stravaStreamsToMetricStream,
-} from "./strava.ts";
+} from "./strava/provider.ts";
 import { SyncRun } from "./sync-run.ts";
 import { SyncWindow } from "./sync-window.ts";
 import { makeTransactionalTestDatabase } from "./test-helpers.ts";
@@ -2724,7 +2724,7 @@ describe("StravaProvider.sync — additional coverage", () => {
       });
 
       vi.resetModules();
-      const { StravaProvider: ReloadedStravaProvider } = await import("./strava.ts");
+      const { StravaProvider: ReloadedStravaProvider } = await import("./strava/provider.ts");
       const provider = new ReloadedStravaProvider(mockFetch);
       const result = await provider.sync(
         new SyncRun({

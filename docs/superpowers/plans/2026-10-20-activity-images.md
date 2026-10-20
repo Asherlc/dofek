@@ -211,3 +211,12 @@ and refresh defects. A provider-media contract checklist with sample payloads,
 URL-expiry behavior, pagination, and retention permissions would make future
 adapters faster to investigate; add it to the provider integration documentation
 and reuse the systematic-debugging and verification skills.
+
+CI follow-up: merged current main and renumbered image migrations after its 0151.
+SQLFluff and Squawk now pass locally: foreign keys are declared while creating
+empty tables in dependency order, constraint names fit PostgreSQL limits, and
+bounded 32-bit image dimensions/retry/per-user counters have documented local
+lint exceptions. Moved Strava modules into one provider directory to satisfy
+import boundaries, removed an unused type export, corrected test wording, and
+promoted Sharp to a production dependency. Import boundaries, Knip, sandbox lint,
+root/server/web typechecks, and 295 affected unit tests pass locally.

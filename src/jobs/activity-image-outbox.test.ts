@@ -57,7 +57,7 @@ describe("activity image durable outbox", () => {
   });
 });
 
-it("does not retain a failed Redis ID that would absorb durable redispatch", async () => {
+it("does not retain a failed Redis ID that would absorb durable dispatch again", async () => {
   mocks.pending.mockResolvedValue([{ id: "work", userId: "owner" }]);
   let launches = 0;
   const failed = new Set<string>();

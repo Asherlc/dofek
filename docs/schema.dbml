@@ -2093,7 +2093,7 @@ ref activity_image_provider_id_provider_id_fk: fitness.activity_image.provider_i
 
 ref activity_image_user_id_activity_id_activity_user_id_id_fk: fitness.activity_image.(user_id, activity_id) > fitness.activity.(user_id, id) [delete: cascade, update: no action]
 
-ref activity_image_user_id_object_id_activity_image_object_user_id_id_fk: fitness.activity_image.(user_id, object_id) > fitness.activity_image_object.(user_id, id) [delete: no action, update: no action]
+ref activity_image_owned_object_fk: fitness.activity_image.(user_id, object_id) > fitness.activity_image_object.(user_id, id) [delete: no action, update: no action]
 
 ref activity_image_backfill_user_id_user_profile_id_fk: fitness.activity_image_backfill.user_id > fitness.user_profile.id [delete: no action, update: no action]
 
@@ -2101,11 +2101,11 @@ ref activity_image_backfill_provider_id_provider_id_fk: fitness.activity_image_b
 
 ref activity_image_discovery_provider_id_provider_id_fk: fitness.activity_image_discovery.provider_id > fitness.provider.id [delete: no action, update: no action]
 
-ref activity_image_discovery_user_id_activity_id_activity_user_id_id_fk: fitness.activity_image_discovery.(user_id, activity_id) > fitness.activity.(user_id, id) [delete: cascade, update: no action]
+ref activity_image_discovery_owned_activity_fk: fitness.activity_image_discovery.(user_id, activity_id) > fitness.activity.(user_id, id) [delete: cascade, update: no action]
 
 ref activity_image_object_user_id_user_profile_id_fk: fitness.activity_image_object.user_id > fitness.user_profile.id [delete: no action, update: no action]
 
-ref activity_image_work_user_id_image_id_activity_image_user_id_id_fk: fitness.activity_image_work.(user_id, image_id) > fitness.activity_image.(user_id, id) [delete: cascade, update: no action]
+ref activity_image_work_owned_image_fk: fitness.activity_image_work.(user_id, image_id) > fitness.activity_image.(user_id, id) [delete: cascade, update: no action]
 
 ref area_user_id_user_profile_id_fk: fitness.area.user_id > fitness.user_profile.id [delete: no action, update: no action]
 

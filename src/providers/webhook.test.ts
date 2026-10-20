@@ -4,14 +4,14 @@ import { isWebhookProvider } from "./types.ts";
 // ── Strava webhook tests ──
 describe("StravaProvider webhook methods", () => {
   it("is detected as a WebhookProvider", async () => {
-    const { StravaProvider } = await import("./strava.ts");
+    const { StravaProvider } = await import("./strava/provider.ts");
     const provider = new StravaProvider(async () => new Response());
     expect(isWebhookProvider(provider)).toBe(true);
     expect(provider.webhookScope).toBe("app");
   });
 
   it("parseWebhookPayload extracts activity create event", async () => {
-    const { StravaProvider } = await import("./strava.ts");
+    const { StravaProvider } = await import("./strava/provider.ts");
     const provider = new StravaProvider(async () => new Response());
 
     const events = provider.parseWebhookPayload({
@@ -33,7 +33,7 @@ describe("StravaProvider webhook methods", () => {
   });
 
   it("parseWebhookPayload handles delete event", async () => {
-    const { StravaProvider } = await import("./strava.ts");
+    const { StravaProvider } = await import("./strava/provider.ts");
     const provider = new StravaProvider(async () => new Response());
 
     const events = provider.parseWebhookPayload({
@@ -48,7 +48,7 @@ describe("StravaProvider webhook methods", () => {
   });
 
   it("parseWebhookPayload returns empty for invalid payload", async () => {
-    const { StravaProvider } = await import("./strava.ts");
+    const { StravaProvider } = await import("./strava/provider.ts");
     const provider = new StravaProvider(async () => new Response());
 
     expect(provider.parseWebhookPayload({})).toHaveLength(0);
@@ -57,7 +57,7 @@ describe("StravaProvider webhook methods", () => {
   });
 
   it("handleValidationChallenge responds to valid challenge", async () => {
-    const { StravaProvider } = await import("./strava.ts");
+    const { StravaProvider } = await import("./strava/provider.ts");
     const provider = new StravaProvider(async () => new Response());
 
     const result = provider.handleValidationChallenge(
@@ -68,7 +68,7 @@ describe("StravaProvider webhook methods", () => {
   });
 
   it("handleValidationChallenge rejects wrong token", async () => {
-    const { StravaProvider } = await import("./strava.ts");
+    const { StravaProvider } = await import("./strava/provider.ts");
     const provider = new StravaProvider(async () => new Response());
 
     const result = provider.handleValidationChallenge(
@@ -79,7 +79,7 @@ describe("StravaProvider webhook methods", () => {
   });
 
   it("verifyWebhookSignature always returns true (Strava trusts registered URLs)", async () => {
-    const { StravaProvider } = await import("./strava.ts");
+    const { StravaProvider } = await import("./strava/provider.ts");
     const provider = new StravaProvider(async () => new Response());
     expect(provider.verifyWebhookSignature(Buffer.from(""), {}, "")).toBe(true);
   });
@@ -524,7 +524,7 @@ describe("StravaProvider register/unregister", () => {
     const mockFetch = vi.fn(
       async () => new Response(JSON.stringify({ id: 12345 }), { status: 200 }),
     );
-    const { StravaProvider } = await import("./strava.ts");
+    const { StravaProvider } = await import("./strava/provider.ts");
     const provider = new StravaProvider(mockFetch);
 
     const original = { ...process.env };
@@ -543,7 +543,7 @@ describe("StravaProvider register/unregister", () => {
   });
 
   it("registerWebhook throws without client credentials", async () => {
-    const { StravaProvider } = await import("./strava.ts");
+    const { StravaProvider } = await import("./strava/provider.ts");
     const provider = new StravaProvider(async () => new Response());
 
     const original = { ...process.env };
@@ -560,7 +560,7 @@ describe("StravaProvider register/unregister", () => {
 
   it("registerWebhook throws on non-ok response", async () => {
     const mockFetch = vi.fn(async () => new Response("error", { status: 403 }));
-    const { StravaProvider } = await import("./strava.ts");
+    const { StravaProvider } = await import("./strava/provider.ts");
     const provider = new StravaProvider(mockFetch);
 
     const original = { ...process.env };
@@ -577,7 +577,7 @@ describe("StravaProvider register/unregister", () => {
 
   it("unregisterWebhook sends DELETE to Strava API", async () => {
     const mockFetch = vi.fn(async () => new Response(null, { status: 200 }));
-    const { StravaProvider } = await import("./strava.ts");
+    const { StravaProvider } = await import("./strava/provider.ts");
     const provider = new StravaProvider(mockFetch);
 
     const original = { ...process.env };
@@ -596,7 +596,7 @@ describe("StravaProvider register/unregister", () => {
 
   it("unregisterWebhook is a no-op without credentials", async () => {
     const mockFetch = vi.fn(async () => new Response());
-    const { StravaProvider } = await import("./strava.ts");
+    const { StravaProvider } = await import("./strava/provider.ts");
     const provider = new StravaProvider(mockFetch);
 
     const original = { ...process.env };
@@ -611,7 +611,7 @@ describe("StravaProvider register/unregister", () => {
   });
 
   it("parseWebhookPayload handles update event", async () => {
-    const { StravaProvider } = await import("./strava.ts");
+    const { StravaProvider } = await import("./strava/provider.ts");
     const provider = new StravaProvider(async () => new Response());
 
     const events = provider.parseWebhookPayload({
@@ -863,7 +863,7 @@ describe("CorosProvider register/unregister", () => {
 
 describe("StravaProvider webhook — precise assertions", () => {
   it("parseWebhookPayload returns exact event structure for create", async () => {
-    const { StravaProvider } = await import("./strava.ts");
+    const { StravaProvider } = await import("./strava/provider.ts");
     const provider = new StravaProvider(async () => new Response());
 
     const events = provider.parseWebhookPayload({
@@ -886,7 +886,7 @@ describe("StravaProvider webhook — precise assertions", () => {
   });
 
   it("parseWebhookPayload defaults to update when aspect_type is unrecognized", async () => {
-    const { StravaProvider } = await import("./strava.ts");
+    const { StravaProvider } = await import("./strava/provider.ts");
     const provider = new StravaProvider(async () => new Response());
 
     const events = provider.parseWebhookPayload({
@@ -900,7 +900,7 @@ describe("StravaProvider webhook — precise assertions", () => {
   });
 
   it("parseWebhookPayload defaults to update when aspect_type is missing", async () => {
-    const { StravaProvider } = await import("./strava.ts");
+    const { StravaProvider } = await import("./strava/provider.ts");
     const provider = new StravaProvider(async () => new Response());
 
     const events = provider.parseWebhookPayload({
@@ -913,7 +913,7 @@ describe("StravaProvider webhook — precise assertions", () => {
   });
 
   it("parseWebhookPayload returns objectId as undefined when object_id is missing", async () => {
-    const { StravaProvider } = await import("./strava.ts");
+    const { StravaProvider } = await import("./strava/provider.ts");
     const provider = new StravaProvider(async () => new Response());
 
     const events = provider.parseWebhookPayload({
@@ -927,7 +927,7 @@ describe("StravaProvider webhook — precise assertions", () => {
   });
 
   it("parseWebhookPayload passes through object_type as-is", async () => {
-    const { StravaProvider } = await import("./strava.ts");
+    const { StravaProvider } = await import("./strava/provider.ts");
     const provider = new StravaProvider(async () => new Response());
 
     const events = provider.parseWebhookPayload({
@@ -941,7 +941,7 @@ describe("StravaProvider webhook — precise assertions", () => {
   });
 
   it("handleValidationChallenge returns null when hub.mode is not subscribe", async () => {
-    const { StravaProvider } = await import("./strava.ts");
+    const { StravaProvider } = await import("./strava/provider.ts");
     const provider = new StravaProvider(async () => new Response());
 
     const result = provider.handleValidationChallenge(
@@ -952,7 +952,7 @@ describe("StravaProvider webhook — precise assertions", () => {
   });
 
   it("handleValidationChallenge returns null when hub.challenge is missing", async () => {
-    const { StravaProvider } = await import("./strava.ts");
+    const { StravaProvider } = await import("./strava/provider.ts");
     const provider = new StravaProvider(async () => new Response());
 
     const result = provider.handleValidationChallenge(
@@ -963,19 +963,19 @@ describe("StravaProvider webhook — precise assertions", () => {
   });
 
   it("id is exactly 'strava'", async () => {
-    const { StravaProvider } = await import("./strava.ts");
+    const { StravaProvider } = await import("./strava/provider.ts");
     const provider = new StravaProvider(async () => new Response());
     expect(provider.id).toBe("strava");
   });
 
   it("name is exactly 'Strava'", async () => {
-    const { StravaProvider } = await import("./strava.ts");
+    const { StravaProvider } = await import("./strava/provider.ts");
     const provider = new StravaProvider(async () => new Response());
     expect(provider.name).toBe("Strava");
   });
 
   it("webhookScope is exactly 'app'", async () => {
-    const { StravaProvider } = await import("./strava.ts");
+    const { StravaProvider } = await import("./strava/provider.ts");
     const provider = new StravaProvider(async () => new Response());
     expect(provider.webhookScope).toBe("app");
   });
