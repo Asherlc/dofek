@@ -275,7 +275,18 @@ merged AS (
         any(best.source_name) AS source_name,
         argMinIf(
             ranked.name,
-            tuple(ranked.name_priority, toString(ranked.activity_id)),
+            tuple(
+                if(
+                    ranked.canonical_type = 'strength'
+                    AND (
+                        ranked.provider_id = 'strong-csv'
+                        OR (ranked.provider_id = 'apple_health' AND trimBoth(ranked.source_name) = 'Strong')
+                    ),
+                    0, 1
+                ),
+                ranked.name_priority,
+                toString(ranked.activity_id)
+            ),
             nullIf(trim(BOTH ' ' FROM ranked.name), '') IS NOT null
         ) AS name,
         argMinIf(
