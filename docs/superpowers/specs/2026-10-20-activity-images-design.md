@@ -1,7 +1,7 @@
 # Preserve provider activity images
 
-Status: proposed written specification; the storage direction was approved in
-conversation. Implementation has not started.
+Status: written specification approved in conversation on 2026-10-20.
+Implementation has not started.
 
 ## Outcome and scope
 
