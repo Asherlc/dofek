@@ -122,6 +122,104 @@ describe("live activity field priorities", () => {
        '${kayaName}', 'Kaya note', 'Kaya', now64(6), 0, 1)`);
   });
 
+  it.each([
+    {
+      providerId: "strong-csv",
+      sourceName: "Strong",
+      canonicalType: "strength",
+      name: "Push day",
+      expected: "Push day",
+    },
+    {
+      providerId: "apple_health",
+      sourceName: "Strong",
+      canonicalType: "strength",
+      name: "Pull day",
+      expected: "Pull day",
+    },
+    {
+      providerId: "apple_health",
+      sourceName: "Strong",
+      canonicalType: "strength",
+      name: null,
+      expected: "Peloton title",
+    },
+    {
+      providerId: "apple_health",
+      sourceName: "Strong",
+      canonicalType: "strength",
+      name: "",
+      expected: "Peloton title",
+    },
+    {
+      providerId: "apple_health",
+      sourceName: "Strong",
+      canonicalType: "strength",
+      name: "   ",
+      expected: "Peloton title",
+    },
+    {
+      providerId: "apple_health",
+      sourceName: "Strong",
+      canonicalType: "cycling",
+      name: "Strong ride",
+      expected: "Peloton title",
+    },
+    {
+      providerId: "apple_health",
+      sourceName: "Other app",
+      canonicalType: "strength",
+      name: "Other title",
+      expected: "Peloton title",
+    },
+  ])(
+    "selects $expected for $providerId / $sourceName / $canonicalType / $name",
+    async ({ providerId, sourceName, canonicalType, name, expected }) => {
+      const id = randomUUID();
+      await insertActivities([
+        {
+          id: randomUUID(),
+          groupId: id,
+          providerId,
+          canonicalType,
+
+          sourceName,
+          name,
+          notes: "Strong note",
+        },
+        {
+          id: randomUUID(),
+          groupId: id,
+          providerId: "peloton",
+          canonicalType,
+
+          name: "Peloton title",
+          notes: "Peloton note",
+        },
+      ]);
+
+      const rows = await mergedFields(id);
+      expect(rows[0]?.name).toBe(expected);
+      expect(rows[0]?.notes).toBe("Peloton note");
+    },
+  );
+
+  it("preserves blank-name priority outside Strong strength workouts", async () => {
+    const id = randomUUID();
+    await insertActivities([
+      {
+        id: randomUUID(),
+        groupId: id,
+        providerId: "apple_health",
+        canonicalType: "cycling",
+        sourceName: "Strong",
+        name: "Strong ride",
+      },
+      { id: randomUUID(), groupId: id, providerId: "peloton", canonicalType: "cycling", name: "" },
+    ]);
+    expect((await mergedFields(id))[0]?.name).toBe("");
+  });
+
   afterAll(async () => {
     await client?.command({ query: `DROP DATABASE IF EXISTS ${database} SYNC` });
     await client?.close();

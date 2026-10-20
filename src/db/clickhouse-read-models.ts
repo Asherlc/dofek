@@ -175,6 +175,10 @@ ranked AS (
     active_activity.ended_at AS ended_at,
     active_activity.source_name AS source_name,
     active_activity.name AS name,
+    if(active_activity.canonical_type = 'strength' AND (
+      active_activity.provider_id = 'strong-csv'
+      OR (active_activity.provider_id = 'apple_health' AND trimBoth(active_activity.source_name) = 'Strong')
+    ), 1, 0) AS is_strong_strength,
     active_activity.notes AS notes,
     active_activity.timezone AS timezone,
     active_activity.start_utc_offset_minutes AS start_utc_offset_minutes,
@@ -316,8 +320,11 @@ merged AS (
       ranked.id IS NOT NULL
     ) AS ended_at,
     any(best.source_name) AS source_name,
-    argMinIf(ranked.name, tuple(ranked.name_priority, toString(ranked.id)),
-      ranked.name IS NOT NULL) AS name,
+    argMinIf(ranked.name,
+      tuple(ranked.is_strong_strength = 0, ranked.name_priority, toString(ranked.id)),
+      ranked.name IS NOT NULL AND (
+        ranked.is_strong_strength = 0 OR nullIf(trimBoth(ranked.name), '') IS NOT NULL
+      )) AS name,
     argMinIf(ranked.notes, tuple(ranked.notes_priority, toString(ranked.id)),
       ranked.notes IS NOT NULL) AS notes,
     tupleElement(
