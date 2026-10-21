@@ -570,6 +570,7 @@ describe("background-whoop-ble-sync", () => {
     vi.mocked(whoopDeps.peekBufferedRealtimeData).mockResolvedValueOnce([
       {
         timestamp: cutoff,
+        heartRateBpm: 67,
         rrIntervalMs: 900,
         quaternionW: 1,
         quaternionX: 0,
@@ -579,6 +580,7 @@ describe("background-whoop-ble-sync", () => {
       },
       {
         timestamp: "2026-03-27T10:00:01.000Z",
+        heartRateBpm: 75,
         rrIntervalMs: 800,
         quaternionW: 1,
         quaternionX: 0,
@@ -1004,11 +1006,11 @@ describe("realtime data (beat interval + quaternion) sync", () => {
     teardownBackgroundWhoopBleSync();
   });
 
-  it("drains realtime data buffer on init", async () => {
+  it("uploads reported heart rate when beat intervals are unavailable", async () => {
     const realtimeSamples = [
       {
         timestamp: "2026-03-30T12:00:00.000Z",
-        heartRate: 72,
+        heartRateBpm: 72,
         quaternionW: 0.02,
         quaternionX: 0.68,
         quaternionY: -0.71,
@@ -1026,6 +1028,7 @@ describe("realtime data (beat interval + quaternion) sync", () => {
       samples: [
         {
           timestamp: "2026-03-30T12:00:00.000Z",
+          heartRateBpm: 72,
           quaternionW: 0.02,
           quaternionX: 0.68,
           quaternionY: -0.71,
@@ -1044,6 +1047,7 @@ describe("realtime data (beat interval + quaternion) sync", () => {
     const strapA1: BufferedRealtimeSample = {
       deviceId: "whoop-a",
       timestamp: "2026-03-30T12:00:00.000Z",
+      heartRateBpm: 72,
       quaternionW: 0.02,
       quaternionX: 0.68,
       quaternionY: -0.71,
@@ -1054,6 +1058,7 @@ describe("realtime data (beat interval + quaternion) sync", () => {
     const strapB: BufferedRealtimeSample = {
       deviceId: "whoop-b",
       timestamp: "2026-03-30T12:00:01.000Z",
+      heartRateBpm: 73,
       quaternionW: 1,
       quaternionX: 0,
       quaternionY: 0,
@@ -1064,6 +1069,7 @@ describe("realtime data (beat interval + quaternion) sync", () => {
     const strapA2: BufferedRealtimeSample = {
       deviceId: "whoop-a",
       timestamp: "2026-03-30T12:00:02.000Z",
+      heartRateBpm: 74,
       quaternionW: 0,
       quaternionX: 1,
       quaternionY: 0,
@@ -1083,6 +1089,7 @@ describe("realtime data (beat interval + quaternion) sync", () => {
       samples: [
         {
           timestamp: strapA1.timestamp,
+          heartRateBpm: strapA1.heartRateBpm,
           quaternionW: strapA1.quaternionW,
           quaternionX: strapA1.quaternionX,
           quaternionY: strapA1.quaternionY,
@@ -1092,6 +1099,7 @@ describe("realtime data (beat interval + quaternion) sync", () => {
         },
         {
           timestamp: strapA2.timestamp,
+          heartRateBpm: strapA2.heartRateBpm,
           quaternionW: strapA2.quaternionW,
           quaternionX: strapA2.quaternionX,
           quaternionY: strapA2.quaternionY,
@@ -1106,6 +1114,7 @@ describe("realtime data (beat interval + quaternion) sync", () => {
       samples: [
         {
           timestamp: strapB.timestamp,
+          heartRateBpm: strapB.heartRateBpm,
           quaternionW: strapB.quaternionW,
           quaternionX: strapB.quaternionX,
           quaternionY: strapB.quaternionY,
@@ -1124,6 +1133,7 @@ describe("realtime data (beat interval + quaternion) sync", () => {
         {
           deviceId: "  ",
           timestamp: "2026-03-30T12:00:00.000Z",
+          heartRateBpm: 72,
           quaternionW: 1,
           quaternionX: 0,
           quaternionY: 0,
@@ -1141,6 +1151,7 @@ describe("realtime data (beat interval + quaternion) sync", () => {
       samples: [
         {
           timestamp: "2026-03-30T12:00:00.000Z",
+          heartRateBpm: 72,
           quaternionW: 1,
           quaternionX: 0,
           quaternionY: 0,
@@ -1158,11 +1169,11 @@ describe("realtime data (beat interval + quaternion) sync", () => {
     expect(whoopDeps.peekBufferedRealtimeData).toHaveBeenCalledWith(500);
   });
 
-  it("uploads only stored realtime fields and omits device heart rate", async () => {
+  it("uploads reported heart rate alongside beat intervals", async () => {
     const realtimeSamples = [
       {
         timestamp: "2026-03-30T12:00:00.000Z",
-        heartRate: 72,
+        heartRateBpm: 72,
         quaternionW: 0,
         quaternionX: 0,
         quaternionY: 0,
@@ -1180,6 +1191,7 @@ describe("realtime data (beat interval + quaternion) sync", () => {
       samples: [
         {
           timestamp: "2026-03-30T12:00:00.000Z",
+          heartRateBpm: 72,
           quaternionW: 0,
           quaternionX: 0,
           quaternionY: 0,
@@ -1195,7 +1207,7 @@ describe("realtime data (beat interval + quaternion) sync", () => {
     const realtimeSamples = [
       {
         timestamp: "2026-03-30T12:00:00.000Z",
-        heartRate: 72,
+        heartRateBpm: 72,
         quaternionW: 0.0,
         quaternionX: 0.0,
         quaternionY: 0.0,
@@ -1228,7 +1240,7 @@ describe("realtime data (beat interval + quaternion) sync", () => {
     const realtimeSamples = [
       {
         timestamp: "2026-03-30T12:00:00.500Z",
-        heartRate: 75,
+        heartRateBpm: 75,
         quaternionW: 0.5,
         quaternionX: 0.5,
         quaternionY: 0.5,
@@ -1250,6 +1262,7 @@ describe("realtime data (beat interval + quaternion) sync", () => {
       samples: [
         {
           timestamp: "2026-03-30T12:00:00.500Z",
+          heartRateBpm: 75,
           quaternionW: 0.5,
           quaternionX: 0.5,
           quaternionY: 0.5,
@@ -1289,7 +1302,7 @@ describe("realtime data (beat interval + quaternion) sync", () => {
     const realtimeSamples = [
       {
         timestamp: "2026-03-30T12:00:00.000Z",
-        heartRate: 80,
+        heartRateBpm: 80,
         quaternionW: 1.0,
         quaternionX: 0.0,
         quaternionY: 0.0,
@@ -1307,6 +1320,7 @@ describe("realtime data (beat interval + quaternion) sync", () => {
       samples: [
         {
           timestamp: "2026-03-30T12:00:00.000Z",
+          heartRateBpm: 80,
           quaternionW: 1.0,
           quaternionX: 0.0,
           quaternionY: 0.0,

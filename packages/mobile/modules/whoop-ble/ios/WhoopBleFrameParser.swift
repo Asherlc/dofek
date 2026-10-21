@@ -319,8 +319,8 @@ final class WhoopBleFrameParser {
     /// - **Full (≥57 bytes)**: HR at offset 22, quaternion at 41-56, optical at 23-40
     /// - **Compact (~24 bytes)**: Minimal format; raw payload preserved for analysis
     ///
-    /// Both formats are captured. For compact packets, HR and quaternion fields
-    /// are zero but the raw payload is preserved in opticalBytes for decoding.
+    /// Compact packets report heart rate independently of their interval count.
+    /// Their quaternion fields are absent; raw bytes remain in opticalBytes.
     static func extractRealtimeData(from frame: WhoopFrame) -> WhoopRealtimeDataSample? {
     // swiftlint:enable function_body_length
         // Handle 0x2F HISTORICAL_DATA record type 18 (116-byte payload)
@@ -330,8 +330,8 @@ final class WhoopBleFrameParser {
             && frame.payload.count >= 50 {
             let payload = frame.payload
             let heartRate = payload[payload.startIndex + 14]
-            let validFlag = payload[payload.startIndex + 15]
-            let rrIntervalMs = validFlag != 0 ? payload.readUInt16LE(at: payload.startIndex + 16) : 0
+            let intervalCount = payload[payload.startIndex + 15]
+            let rrIntervalMs = intervalCount != 0 ? payload.readUInt16LE(at: payload.startIndex + 16) : 0
 
             let quaternionW = payload.readFloat32LE(at: payload.startIndex + 33)
             let quaternionX = payload.readFloat32LE(at: payload.startIndex + 37)
@@ -402,7 +402,7 @@ final class WhoopBleFrameParser {
         //   [2] sequence counter (u8, increments per packet)
         //   [3-7] device/session identifiers (constant per session)
         //   [8] heart rate (bpm) — confirmed from PacketLogger capture (60-62 bpm range)
-        //   [9] flag (0x01 = valid reading, 0x00 = no reading)
+        //   [9] interval count (0 means no R-R intervals, even when HR is present)
         //   [10-11] u16 LE — likely PPG ADC value or R-R interval in ms (~900-1010)
         //   [12-17] zeros (reserved)
         //   [18] constant 0x01
@@ -411,8 +411,8 @@ final class WhoopBleFrameParser {
         guard payload.count >= 12 else { return nil }
 
         let heartRate = payload[payload.startIndex + 8]
-        let validFlag = payload[payload.startIndex + 9]
-        let rrIntervalMs = validFlag != 0 ? payload.readUInt16LE(at: payload.startIndex + 10) : 0
+        let intervalCount = payload[payload.startIndex + 9]
+        let rrIntervalMs = intervalCount != 0 ? payload.readUInt16LE(at: payload.startIndex + 10) : 0
 
         // Preserve the full payload after header for analysis
         var opticalBytes = Data(count: WhoopBleConstants.realtimeDataOpticalByteCount)
