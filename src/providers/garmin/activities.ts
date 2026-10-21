@@ -29,10 +29,18 @@ async function resolveActivityMetadata(
   db: SyncDatabase,
   userId: string,
   externalId: string,
-  record: Record<string, unknown> & { activityName?: string; manual?: boolean },
-): Promise<{ name: string | undefined; raw: Record<string, unknown> }> {
+  record: Record<string, unknown> & {
+    activityName?: string;
+    deviceName?: string;
+    manual?: boolean;
+  },
+): Promise<{
+  name: string | undefined;
+  sourceName: string | undefined;
+  raw: Record<string, unknown>;
+}> {
   const [stored] = await db
-    .select({ name: activity.name, raw: activity.raw })
+    .select({ name: activity.name, sourceName: activity.sourceName, raw: activity.raw })
     .from(activity)
     .where(
       and(
@@ -47,8 +55,12 @@ async function resolveActivityMetadata(
       ? stored.raw.manual
       : undefined;
   const manual = record.manual ?? (typeof storedManual === "boolean" ? storedManual : undefined);
+  // Garmin identifies manually created activities with the placeholder "unknown".
+  const deviceName =
+    record.deviceName === "unknown" || record.deviceName === "" ? undefined : record.deviceName;
   return {
     name: record.activityName ?? stored?.name ?? undefined,
+    sourceName: deviceName ?? stored?.sourceName ?? undefined,
     raw: manual === undefined ? record : { ...record, manual },
   };
 }
@@ -103,7 +115,7 @@ export async function syncGarminActivityRecord(
           originalPath: objectKey,
           userId,
           providerId: "garmin",
-          sourceName: "Garmin",
+          sourceName: metadata.sourceName,
           activitySummary: {
             externalId,
             activityType,

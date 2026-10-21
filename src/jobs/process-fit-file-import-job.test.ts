@@ -431,6 +431,7 @@ describe("processFitFileImportJob", () => {
           originalPath: "DI_CONNECT/activity.fit",
           userId: "user-1",
           providerId: "garmin-dump",
+          sourceName: 123,
         }),
         mockDb,
       ),
@@ -458,6 +459,30 @@ describe("processFitFileImportJob", () => {
         message: expect.stringContaining("Failed to import FIT file activity.fit:"),
       }),
     );
+  });
+
+  it("imports an activity without inventing a source label when device metadata is missing", async () => {
+    const filePath = await writeTempFit(createActivityFit());
+    mockActivityStreamOnce(defaultFitActivity());
+    const job = createFitFileImportJob({
+      filePath,
+      originalPath: "activity.fit",
+      userId: "user-1",
+      providerId: "fit-file",
+      activitySummary: {
+        externalId: "12345",
+        activityType: { canonicalType: "cycling", providerType: "cycling", modality: null },
+        startedAtIso: "2026-07-01T12:00:00.000Z",
+        name: "Morning Ride",
+      },
+    });
+
+    await expect(processFitFileImportJob(job, mockDb)).resolves.toEqual({
+      recordsSynced: 0,
+      errors: [],
+    });
+    expect(mockUpsertProviderActivity.mock.calls[0]?.[1].sourceName).toBeUndefined();
+    expect(mockUpsertProviderActivity.mock.calls[0]?.[2].sourceName).toBeUndefined();
   });
 
   it("imports an activity FIT file with a parent summary and replaces sensor samples", async () => {

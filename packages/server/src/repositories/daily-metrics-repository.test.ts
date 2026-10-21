@@ -8,8 +8,9 @@ import { DailyMetricsRepository } from "./daily-metrics-repository.ts";
 
 function makeRepository(rows: Record<string, unknown>[] = []) {
   const execute = vi.fn().mockResolvedValue(rows);
-  const repo = new DailyMetricsRepository({ execute }, "user-1");
-  return { repo, execute };
+  const sensorQuery = vi.fn().mockResolvedValue([]);
+  const repo = new DailyMetricsRepository({ execute }, "user-1", "UTC", { query: sensorQuery });
+  return { repo, execute, sensorQuery };
 }
 
 function makeDailyMetricsRow(overrides: Record<string, unknown> = {}): Record<string, unknown> {
@@ -170,20 +171,17 @@ describe("DailyMetricsRepository", () => {
 
   describe("listRange", () => {
     it("returns resting heart rate alongside exact-range daily metrics", async () => {
-      const { repo, execute } = makeRepository([makeDailyMetricsRow({ resting_hr: "52" })]);
+      const { repo, sensorQuery } = makeRepository([makeDailyMetricsRow({ resting_hr: "52" })]);
 
       const result = await repo.listRange("2025-03-10", "2025-03-15");
 
       expect(result[0]?.resting_hr).toBe(52);
-      const compiledQuery = new PgDialect().sqlToQuery(execute.mock.calls[0]?.[0]);
-      expect(compiledQuery.sql).toContain("WHERE false");
-      expect(compiledQuery.params).toEqual([
-        "user-1",
-        "user-1",
-        "user-1",
-        "2025-03-10",
-        "2025-03-15",
-      ]);
+      expect(sensorQuery.mock.calls[0]?.[2]).toEqual({
+        userId: "user-1",
+        timezone: "UTC",
+        spo2WindowStart: "2025-03-10",
+        spo2EndDate: "2025-03-15",
+      });
     });
   });
 
@@ -307,20 +305,22 @@ describe("DailyMetricsRepository", () => {
 
     it("uses the intended evidence window for null, short, and long ranges", async () => {
       const cases = [
-        { days: null, evidenceDays: 35, evidenceParameterCount: 1 },
-        { days: 7, evidenceDays: 35, evidenceParameterCount: 1 },
-        { days: 90, evidenceDays: 90, evidenceParameterCount: 3 },
+        { days: null, startDate: undefined },
+        { days: 7, startDate: "2025-02-09" },
+        { days: 90, startDate: "2024-12-16" },
       ] as const;
 
-      for (const { days, evidenceDays, evidenceParameterCount } of cases) {
-        const { repo, execute } = makeRepository([]);
+      for (const { days, startDate } of cases) {
+        const { repo, sensorQuery } = makeRepository([]);
 
         await repo.getTrends(days, "2025-03-15");
 
-        const compiledQuery = new PgDialect().sqlToQuery(execute.mock.calls[0]?.[0]);
-        expect(compiledQuery.params.filter((param) => param === evidenceDays)).toHaveLength(
-          evidenceParameterCount,
-        );
+        expect(sensorQuery.mock.calls[0]?.[2]).toEqual({
+          userId: "user-1",
+          timezone: "UTC",
+          spo2EndDate: "2025-03-15",
+          ...(startDate ? { spo2WindowStart: startDate } : {}),
+        });
       }
     });
 

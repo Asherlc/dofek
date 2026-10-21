@@ -138,10 +138,15 @@ export function registerHealthTrendTools(server: McpServer, context: DofekMcpCon
   ): Promise<HealthTrendRow[]> {
     assertDateRange(input.start_date, input.end_date);
     const requestedTimezone = input.timezone ?? context.timezone;
-    const repository = new DailyMetricsRepository(context.db, context.userId, requestedTimezone);
     if (!context.sensorStore) {
       throw new Error("get_health_trends requires the ClickHouse analytics store");
     }
+    const repository = new DailyMetricsRepository(
+      context.db,
+      context.userId,
+      requestedTimezone,
+      context.sensorStore,
+    );
     const [restingHeartRateCte, baselineRows] = await Promise.all([
       fetchRestingHeartRateValuesCte({
         sensorStore: context.sensorStore,

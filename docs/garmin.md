@@ -57,7 +57,7 @@ when configuring the app; confidential contracts are not reproduced here.
 | `dailies` | Raw daily values and timestamped heart-rate readings. |
 | `sleeps` | Sleep sessions, stage records, and supplied sensor readings. |
 | `hrv` | Provider-supplied nightly HRV. |
-| `pulseox` | Timestamped oxygen-saturation readings. |
+| `pulseox` | Timestamped oxygen-saturation readings; daily averages are calculated when serving health data. |
 | `allDayRespiration` | Timestamped respiration readings. |
 | `activities`, `manuallyUpdatedActivities` | Activity identity and summary revisions, preserving manual/import provenance. |
 | `activityFiles` | Durable FIT download and existing FIT ingestion. |
@@ -69,6 +69,43 @@ Only enabled, granted feeds are ingested. The
 provider-estimated calorie expenditure is not consumed. FIT data uses the
 existing [FIT import routine](../src/jobs/process-fit-file-import-job.ts) and Garmin's
 [FIT format](https://developer.garmin.com/fit/overview/).
+
+Daily SpO₂ displays use a server-side average of retained samples in the selected
+analysis timezone, with source priorities applied against provider-supplied
+daily values. Sample-only dates are included in health lists, trends, and
+coverage. These averages describe the available readings and may differ from
+Garmin's own daily-average statistic. The readings remain in the metric stream;
+calculated averages are not written to PostgreSQL. See the
+[shared daily-health query](../packages/server/src/repositories/daily-metrics-spo2-query.ts)
+and section 6.7 of the
+[Health API reference](https://developerportal.garmin.com/sites/default/files/Health_API_2.0.pdf).
+
+Activity summaries and FIT notifications retain the supplied recording device
+name. A later notification without a device name, or Garmin's `unknown`
+placeholder, preserves the known device label and its priority matching. Raw
+notifications retain the supplied metadata. See the
+[activity mapper](../src/providers/garmin/activities.ts) and sections 6.1–6.4 of
+the [Activity API reference](https://developerportal.garmin.com/sites/default/files/Activity_API%202.0_0.pdf).
+
+## Official API limits
+
+Deleting a workout in Garmin Connect does not currently hide it in Dofek.
+The documented Activity API supplies activity data and revisions, but defines
+neither an activity-deletion notification nor an authoritative current activity
+list. Historical or upload-time responses cannot prove that a missing workout
+was deleted. Dofek therefore retains the workout until the user deletes it in
+Dofek; it does not infer deletion from missing notifications. See Activity API
+2.0, sections 4.1, 6, 7, and 8 in the
+[authorized reference](https://developerportal.garmin.com/sites/default/files/Activity_API%202.0_0.pdf).
+
+Manual API polling and historical API recovery are unavailable with the approved
+Starter entitlement. Enterprise historical backfill is a separate capability,
+and does not establish a current-library reconciliation contract. Existing
+history and account-export ZIP imports remain available. See sections 2.1 and
+2.3 of Garmin's
+[Start Guide](https://developerportal.garmin.com/sites/default/files/Garmin%20Developer%20Program_Start_Guide_2.0.pdf)
+and section 7 of the
+[Activity API reference](https://developerportal.garmin.com/sites/default/files/Activity_API%202.0_0.pdf#page=20).
 
 ## Operator configuration and release checks
 

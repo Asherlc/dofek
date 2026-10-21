@@ -144,14 +144,16 @@ describe("dailyMetrics data correctness", () => {
       );
     }
 
-    // Start server. The trends route reads both ClickHouse datasets on every
+    // Start server. The trends route reads ClickHouse datasets on every
     // request, so select the fixture by query rather than exhausting a
     // one-shot response queue as the test suite makes multiple requests.
     const sensorStore = makeMockSensorStore();
     sensorStore.query.mockImplementation(async (schema, query) => {
       const rows = query.includes("FROM analytics.daily_recovery")
         ? [recoveryBaselineRow(endDate)]
-        : [{ date: endDate, resting_hr: 50 }];
+        : query.includes("FROM analytics.resting_heart_rate_sleep_window")
+          ? [{ date: endDate, resting_hr: 50 }]
+          : [];
       return rows.map((row) => schema.parse(row));
     });
     const app = createApp(testCtx.db, sensorStore);
@@ -304,7 +306,12 @@ describe("dailyMetrics data correctness", () => {
     });
 
     it("uses exactly 35 dates for unbounded metric evidence", async () => {
-      const repo = new DailyMetricsRepository(testCtx.db, dashboardTestUserId, "UTC");
+      const repo = new DailyMetricsRepository(
+        testCtx.db,
+        dashboardTestUserId,
+        "UTC",
+        makeMockSensorStore(),
+      );
       const result = await repo.getTrends(null, endDate);
 
       expect(result?.metric_evidence?.steps?.observedDays).toBe(28);
@@ -323,7 +330,12 @@ describe("dailyMetrics data correctness", () => {
     });
 
     it("uses a representative recent resting heart rate instead of one noisy latest night", async () => {
-      const repo = new DailyMetricsRepository(testCtx.db, dashboardTestUserId, "UTC");
+      const repo = new DailyMetricsRepository(
+        testCtx.db,
+        dashboardTestUserId,
+        "UTC",
+        makeMockSensorStore(),
+      );
       const result = await repo.getTrends(
         30,
         endDate,

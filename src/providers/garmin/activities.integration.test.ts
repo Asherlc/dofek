@@ -128,6 +128,7 @@ describe("official Garmin activity persistence", () => {
       activityId: file.activityId,
       activityType: "CYCLING",
       activityName: "Morning ride",
+      deviceName: "Edge 1050",
       summaryId: "manual-summary-before-file",
       startTimeInSeconds: file.startTimeInSeconds,
       durationInSeconds: 3290,
@@ -160,6 +161,7 @@ describe("official Garmin activity persistence", () => {
       expect(unchanged[0]).toMatchObject({
         id: original?.id,
         name: "Morning ride",
+        sourceName: "Edge 1050",
         raw: knownSummary,
       });
       expect(capture.publishedMetricStreamRows).toHaveLength(0);
@@ -179,6 +181,7 @@ describe("official Garmin activity persistence", () => {
         canonicalType: "cycling",
         providerType: "CYCLING",
         name: "Morning ride",
+        sourceName: "Edge 1050",
         raw: { ...file, manual: true },
         startedAt: new Date("2015-10-12T15:47:45.000Z"),
       });
@@ -232,9 +235,84 @@ describe("official Garmin activity persistence", () => {
       expect(corrected[0]).toMatchObject({
         id: original?.id,
         name: "Morning ride",
+        sourceName: "Edge 1050",
         raw: { ...sparseSummary, manual: true },
         endedAt: new Date((file.startTimeInSeconds + 3400) * 1000),
       });
+
+      const fileFirst = { ...file, activityId: 987654322, deviceName: "fēnix 8 – 47mm" };
+      await syncGarminActivityRecord(
+        context.db,
+        "activityFiles",
+        fileFirst,
+        options,
+        nativeDependencies,
+      );
+      const [fileFirstSaved] = await context.db
+        .select()
+        .from(activity)
+        .where(eq(activity.externalId, "987654322"));
+      expect(fileFirstSaved).toMatchObject({
+        sourceName: "fēnix 8 – 47mm",
+        raw: fileFirst,
+      });
+      await syncGarminActivityRecord(
+        context.db,
+        "activities",
+        { ...sparseSummary, activityId: 987654322 },
+        options,
+        nativeDependencies,
+      );
+      const [sparseCorrected] = await context.db
+        .select()
+        .from(activity)
+        .where(eq(activity.externalId, "987654322"));
+      expect(sparseCorrected).toMatchObject({
+        id: fileFirstSaved?.id,
+        sourceName: "fēnix 8 – 47mm",
+        raw: { ...sparseSummary, activityId: 987654322 },
+      });
+      const manualCorrection = {
+        ...sparseSummary,
+        activityId: 987654322,
+        deviceName: "unknown",
+        manual: true,
+      };
+      await syncGarminActivityRecord(
+        context.db,
+        "manuallyUpdatedActivities",
+        manualCorrection,
+        options,
+        nativeDependencies,
+      );
+      const [manuallyCorrected] = await context.db
+        .select()
+        .from(activity)
+        .where(eq(activity.externalId, "987654322"));
+      expect(manuallyCorrected).toMatchObject({
+        id: fileFirstSaved?.id,
+        sourceName: "fēnix 8 – 47mm",
+        raw: manualCorrection,
+      });
+      const revisedFile = { ...fileFirst, deviceName: "Forerunner 965" };
+      await syncGarminActivityRecord(
+        context.db,
+        "activityFiles",
+        revisedFile,
+        options,
+        nativeDependencies,
+      );
+      const [reprocessed] = await context.db
+        .select()
+        .from(activity)
+        .where(eq(activity.externalId, "987654322"));
+      expect(reprocessed).toMatchObject({
+        id: fileFirstSaved?.id,
+        sourceName: "Forerunner 965",
+        raw: { ...revisedFile, manual: true },
+      });
+      expect(garminDownloads).toBe(1);
+      expect(archiveWrites).toBe(1);
     } finally {
       await context.db.execute(
         `DROP TRIGGER IF EXISTS reject_first_garmin_fit ON fitness.activity`,

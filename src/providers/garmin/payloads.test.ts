@@ -144,6 +144,26 @@ describe("parseGarminWebhookPayload", () => {
     });
   });
 
+  describe.each([
+    ["activities", activity],
+    ["manuallyUpdatedActivities", activity],
+    ["activityFiles", activityFile],
+  ])("%s device metadata", (family, record) => {
+    it.each(["fēnix 8 – 47mm", "unknown"])("retains the exact device name %s", (deviceName) => {
+      const [event] = parseGarminWebhookPayload({ [family]: [{ ...record, deviceName }] });
+      expect(event?.metadata?.payload).toMatchObject({ deviceName });
+    });
+
+    it.each([{ deviceName: null }, { deviceName: 123 }, { deviceName: {} }, { deviceName: [] }])(
+      "rejects a non-string device name $deviceName",
+      ({ deviceName }) => {
+        expect(() => parseGarminWebhookPayload({ [family]: [{ ...record, deviceName }] })).toThrow(
+          ZodError,
+        );
+      },
+    );
+  });
+
   it("retains lifecycle notifications with stable ownership", () => {
     const deregistration = { userId: "stable-owner" };
     const permissions = {

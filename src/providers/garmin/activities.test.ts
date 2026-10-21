@@ -125,6 +125,39 @@ describe("official Garmin activity ingestion", () => {
     });
   });
 
+  describe.each(["activities", "manuallyUpdatedActivities", "activityFiles"] as const)(
+    "%s device identity",
+    (type) => {
+      it.each([
+        { supplied: "fēnix 8 – 47mm", stored: undefined, expected: "fēnix 8 – 47mm" },
+        { supplied: undefined, stored: "Edge 1050", expected: "Edge 1050" },
+        { supplied: "Forerunner 965", stored: "Edge 1050", expected: "Forerunner 965" },
+        { supplied: "unknown", stored: "Edge 1050", expected: "Edge 1050" },
+        { supplied: "unknown", stored: undefined, expected: undefined },
+        { supplied: "", stored: "Edge 1050", expected: "Edge 1050" },
+        { supplied: "", stored: undefined, expected: undefined },
+        { supplied: undefined, stored: undefined, expected: undefined },
+      ])("uses the supplied or known device: %j", async ({ supplied, stored, expected }) => {
+        const { db } = createMockDatabase({
+          tokensResult: stored ? [{ sourceName: stored, raw: { deviceName: stored } }] : [],
+        });
+        const record = {
+          ...(type === "activityFiles" ? file : summary),
+          ...(supplied === undefined ? {} : { deviceName: supplied }),
+        };
+        await syncGarminActivityRecord(db, type, record, { userId }, dependencies());
+        if (type === "activityFiles") {
+          expect(importFitFile.mock.calls[0]?.[1].sourceName).toBe(expected);
+          expect(importFitFile.mock.calls[0]?.[1].activitySummary.raw).toEqual(record);
+        } else {
+          expect(upsertProviderActivity.mock.calls[0]?.[1].sourceName).toBe(expected);
+          expect(upsertProviderActivity.mock.calls[0]?.[2].sourceName).toBe(expected);
+          expect(upsertProviderActivity.mock.calls[0]?.[1].raw).toEqual(record);
+        }
+      });
+    },
+  );
+
   it("persists the streamed FIT artifact before importing and cleans its local materialization", async () => {
     const { db } = createMockDatabase();
     const deps = dependencies();
