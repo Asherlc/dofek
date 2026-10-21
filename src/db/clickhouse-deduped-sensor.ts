@@ -2,6 +2,7 @@ import { METRIC_STREAM_TABLE } from "../metric-stream/clickhouse-table.ts";
 
 const sensorScalarChannels = [
   "heart_rate",
+  "rr_interval_ms",
   "power",
   "speed",
   "cadence",
@@ -35,14 +36,36 @@ function sensorScalarSampleSelectSql(
   recordedAtRange?: RecordedAtRangeSql,
 ): string {
   return `WITH
-metric_stream_rows AS (
+metric_stream_source_rows AS (
   SELECT *
   FROM ${sourceTable}${sourceFinalClause}
-  WHERE scalar IS NOT NULL
+  WHERE (scalar IS NOT NULL OR is_deleted = 1 OR channel = 'rr_interval_ms')
     AND channel IN (
       ${sensorScalarChannelListSql()}
     )
     ${recordedAtRange ? `AND recorded_at >= ${recordedAtRange.lowerBound}\n    AND recorded_at < ${recordedAtRange.upperBound}` : ""}
+),
+metric_stream_rows AS (
+  SELECT
+    source_rows.* EXCEPT (channel, scalar, is_deleted),
+    if(source_rows.channel = 'rr_interval_ms', 'heart_rate', source_rows.channel) AS channel,
+    if(
+      source_rows.channel = 'rr_interval_ms',
+      if(
+        coalesce(source_rows.scalar, 0) > 0 AND isFinite(coalesce(source_rows.scalar, 0)),
+        toFloat32(60000.0 / nullIf(source_rows.scalar, 0)),
+        0
+      ),
+      coalesce(source_rows.scalar, 0)
+    ) AS scalar,
+    toInt8(if(
+      source_rows.channel = 'rr_interval_ms'
+      AND NOT (coalesce(source_rows.scalar, 0) > 0 AND isFinite(coalesce(source_rows.scalar, 0))),
+      1,
+      source_rows.is_deleted
+    )) AS is_deleted,
+    source_rows.channel = 'rr_interval_ms' AS derived_heart_rate
+  FROM metric_stream_source_rows AS source_rows
 ),
 active_sensor_provider_priority AS (
   SELECT provider_id, channel, toNullable(priority) AS priority
@@ -89,6 +112,7 @@ SELECT
   metric_stream_rows.device_id AS device_id,
   metric_stream_rows.source_type AS source_type,
   multiIf(
+    metric_stream_rows.derived_heart_rate, 'estimated',
     JSONExtractString(metric_stream_rows.metadata, 'measurement_kind') = 'direct', 'direct',
     JSONExtractString(metric_stream_rows.metadata, 'measurement_kind') = 'estimated', 'estimated',
     'unknown'
@@ -217,7 +241,12 @@ selected_samples AS (
         samples.id,
         samples.activity_id
       ),
-      (samples.provider_priority, samples.provider_id, samples.id),
+      (
+        samples.provider_priority,
+        samples.provider_id,
+        samples.channel = 'heart_rate' AND samples.measurement_kind = 'estimated',
+        samples.id
+      ),
       samples._peerdb_is_deleted = 0
     ) AS selected_sample,
     coalesce(minIf(samples.provider_priority, samples._peerdb_is_deleted = 0), 65535) AS provider_priority,

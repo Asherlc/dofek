@@ -300,6 +300,20 @@ All commands are sent automatically when the iOS app connects to the strap and a
 | Orientation quaternion | 0x2F R18, bytes 33-48 | During sync | **Stored** in metric stream `orientation` channel when present |
 | Historical R-R | 0x2F R18, bytes 16-17 | During sync | **Stored** in metric stream `rr_interval_ms` channel; historical heart rate is not stored |
 
+Activity charts derive instantaneous heart rate from retained positive, finite
+beat intervals as `60000 / rr_interval_ms`; this is the reciprocal method
+described by [PhysioNet](https://archive.physionet.org/tutorials/hrv/), rather than
+the strap's smoothed BPM field. The [sensor projection](../analytics/models/staging/sensor_scalar_sample.sql)
+emits `heart_rate` samples with `measurement_kind = 'estimated'`, retaining the
+original timestamps, source-record IDs, provider, device, and nullable activity
+links. Raw intervals remain canonical. Web and mobile source controls, charts,
+and zones consume that shared server projection without filling recording gaps.
+Reported BPM wins over an interval-derived reading at the same timestamp when
+their provider and configured priority are equal; see the [deduplication model](../analytics/models/read_models/deduped_sensor.sql).
+Invalid intervals and deletion tombstones retract their derived readings.
+For history outside the normal ingestion-time microbatch lookback, use the
+[bounded sensor replay procedure](../analytics/README.md#microbatch-start-bounds-and-historical-backfills).
+
 ## Next Steps: SpO2 and Skin Temperature
 
 SpO2 and skin temperature are **not available in any packet type we've observed**. They are derived from raw optical sensor data (R22 packets) which the strap only collects during sleep/recovery periods. The firmware logs confirm: "No active optical data collection sources" during daytime.

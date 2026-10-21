@@ -95,6 +95,7 @@ async function seedFixture(client: ClickHouseClient, database: string): Promise<
       member_activity_id Nullable(UUID),
       user_id UUID,
       recorded_at DateTime64(9, 'UTC'),
+      recorded_date Date DEFAULT toDate(recorded_at),
       channel String,
       provider_id String,
       source_external_id Nullable(String),
@@ -104,8 +105,9 @@ async function seedFixture(client: ClickHouseClient, database: string): Promise<
       scalar Float64,
       provider_priority UInt16,
       _peerdb_synced_at DateTime64(9, 'UTC'),
-      _peerdb_is_deleted UInt8
-    ) ENGINE = MergeTree ORDER BY (user_id, channel, recorded_at, id)`,
+      _peerdb_is_deleted UInt8,
+      _peerdb_version Int64 DEFAULT 1
+    ) ENGINE = ReplacingMergeTree(_peerdb_version) ORDER BY (user_id, channel, recorded_at, id)`,
   });
   await client.insert({
     table: `${database}.sensor_scalar_sample`,

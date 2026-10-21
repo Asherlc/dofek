@@ -22,9 +22,10 @@
 WITH metric_stream_versions AS (
     SELECT *
     FROM {{ source('ingest', 'metric_stream_freshness') }}
-    WHERE (scalar IS NOT null OR is_deleted = 1)
+    WHERE (scalar IS NOT null OR is_deleted = 1 OR channel = 'rr_interval_ms')
         AND channel IN (
             'heart_rate',
+            'rr_interval_ms',
             'power',
             'speed',
             'cadence',
@@ -69,7 +70,7 @@ metric_stream_latest AS (
     GROUP BY metric_stream_versions.id
 ),
 
-metric_stream_rows AS (
+metric_stream_source_rows AS (
     SELECT
         metric_stream_latest.id AS id,
         tupleElement(metric_stream_latest.latest, 1) AS activity_id,
@@ -87,6 +88,29 @@ metric_stream_rows AS (
         tupleElement(metric_stream_latest.latest, 12) AS is_deleted,
         tupleElement(metric_stream_latest.latest, 13) AS source_version
     FROM metric_stream_latest
+),
+
+metric_stream_rows AS (
+    SELECT
+        source_rows.* EXCEPT (channel, scalar, is_deleted),
+        if(source_rows.channel = 'rr_interval_ms', 'heart_rate', source_rows.channel) AS channel,
+        if(
+            source_rows.channel = 'rr_interval_ms',
+            if(
+                source_rows.scalar > 0 AND isFinite(source_rows.scalar),
+                toFloat32(60000.0 / nullIf(source_rows.scalar, 0)),
+                0
+            ),
+            source_rows.scalar
+        ) AS scalar,
+        toInt8(if(
+            source_rows.channel = 'rr_interval_ms'
+            AND NOT (source_rows.scalar > 0 AND isFinite(source_rows.scalar)),
+            1,
+            source_rows.is_deleted
+        )) AS is_deleted,
+        source_rows.channel = 'rr_interval_ms' AS derived_heart_rate
+    FROM metric_stream_source_rows AS source_rows
 ),
 
 active_sensor_provider_priority AS (
@@ -147,6 +171,7 @@ SELECT
     metric_stream_rows.device_id AS device_id,
     metric_stream_rows.source_type AS source_type,
     multiIf(
+        metric_stream_rows.derived_heart_rate, 'estimated',
         JSONExtractString(metadata, 'measurement_kind') = 'direct', 'direct',
         JSONExtractString(metadata, 'measurement_kind') = 'estimated', 'estimated',
         'unknown'

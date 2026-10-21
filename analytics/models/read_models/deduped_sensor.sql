@@ -27,7 +27,31 @@
     }
 ) }}
 
-WITH selected_samples AS (
+WITH changed_keys AS (
+    SELECT DISTINCT
+        user_id,
+        channel,
+        recorded_date,
+        recorded_at
+    FROM {{ ref('sensor_scalar_sample') }}
+),
+
+current_samples AS (
+    SELECT *
+    FROM {{ ref('sensor_scalar_sample').render() }}
+    WHERE (user_id, channel, recorded_date, recorded_at) IN (
+        SELECT
+            user_id,
+            channel,
+            recorded_date,
+            recorded_at
+        FROM changed_keys
+    )
+    ORDER BY _peerdb_version DESC
+    LIMIT 1 BY id
+),
+
+selected_samples AS (
     SELECT
         samples.user_id AS user_id,
         samples.recorded_at AS recorded_at,
@@ -44,7 +68,12 @@ WITH selected_samples AS (
                 samples.id,
                 samples.activity_id
             ),
-            (samples.provider_priority, samples.provider_id, samples.id),
+            (
+                samples.provider_priority,
+                samples.provider_id,
+                samples.channel = 'heart_rate' AND samples.measurement_kind = 'estimated',
+                samples.id
+            ),
             samples._peerdb_is_deleted = 0
         ) AS selected_sample,
         coalesce(
@@ -53,7 +82,7 @@ WITH selected_samples AS (
         ) AS provider_priority,
         max(samples._peerdb_synced_at) AS source_refreshed_at,
         countIf(samples._peerdb_is_deleted = 0) AS active_sample_count
-    FROM {{ ref('sensor_scalar_sample') }} AS samples
+    FROM current_samples AS samples
     GROUP BY samples.user_id, samples.channel, samples.recorded_at
 )
 

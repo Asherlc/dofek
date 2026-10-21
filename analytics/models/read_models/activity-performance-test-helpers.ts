@@ -36,12 +36,14 @@ export async function createActivityPerformanceFixture(client: ClickHouseClient,
       ORDER BY (user_id, channel, recorded_date, recorded_at)`,
     `CREATE TABLE ${database}.sensor_scalar_sample (
       id UUID, user_id UUID, recorded_at DateTime64(6, 'UTC'), channel String,
+      recorded_date Date DEFAULT toDate(recorded_at),
       scalar Nullable(Float64), provider_id String, provider_priority Int32,
       member_activity_id Nullable(UUID), activity_id Nullable(UUID),
       device_id Nullable(String), source_external_id Nullable(String), source_type Nullable(String),
       measurement_kind Nullable(String), _peerdb_is_deleted UInt8,
-      _peerdb_synced_at DateTime64(9, 'UTC')
-    ) ENGINE = MergeTree ORDER BY (user_id, channel, recorded_at, id)`,
+      _peerdb_synced_at DateTime64(9, 'UTC'), _peerdb_version Int64 DEFAULT 1
+    ) ENGINE = ReplacingMergeTree(_peerdb_version)
+      ORDER BY (user_id, channel, recorded_date, recorded_at, provider_id, id)`,
     `CREATE TABLE ${database}.probe (
       user_id UUID, activity_id UUID, canonical_type String,
       started_at DateTime64(6, 'UTC'), ended_at DateTime64(6, 'UTC'),
