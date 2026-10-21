@@ -102,7 +102,17 @@ export function ActivityCardContent({
               className="h-4 w-4 cursor-pointer accent-accent"
             />
           ) : null}
-          <ActivityTypeIcon activityType={activity.activityType} variant="plain" />
+          {activity.source.origin.status === "resolved" ? (
+            <span
+              role="img"
+              aria-label={`Primary recording provider: ${providerLabel(activity.source.origin.providerId)}`}
+              className="flex h-12 w-16 shrink-0 items-center justify-center"
+            >
+              <ProviderLogo provider={activity.source.origin.providerId} size={32} />
+            </span>
+          ) : (
+            <ActivityTypeIcon activityType={activity.activityType} variant="plain" />
+          )}
           <div className="min-w-0 flex-1">
             <h4 className="truncate text-base font-semibold">{activity.name ?? activityLabel}</h4>
             <p className="mt-0.5 text-xs text-muted">
@@ -110,15 +120,6 @@ export function ActivityCardContent({
               {formatDurationMinutes(activity.durationMin)}
             </p>
           </div>
-          {activity.source.origin.status === "resolved" ? (
-            <span
-              role="img"
-              aria-label={`Primary recording provider: ${providerLabel(activity.source.origin.providerId)}`}
-              className="shrink-0"
-            >
-              <ProviderLogo provider={activity.source.origin.providerId} size={20} />
-            </span>
-          ) : null}
         </div>
         {isHidden ? (
           <span className="mt-3 w-fit rounded border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-300">

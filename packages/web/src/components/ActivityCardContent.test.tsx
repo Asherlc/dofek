@@ -42,7 +42,7 @@ afterEach(cleanup);
 
 describe("ActivityCardContent", () => {
   it.each(["garmin", "strava", "apple_health"])(
-    "shows the actual %s primary record provider",
+    "uses the actual %s primary provider as the leading card image",
     (providerId) => {
       render(
         <ActivityCardContent
@@ -64,10 +64,10 @@ describe("ActivityCardContent", () => {
           selected={false}
         />,
       );
-      expect(screen.getByRole("img", { name: /Primary recording provider:/ })).toBeTruthy();
-      const logo = screen
-        .getByRole("img", { name: /Primary recording provider:/ })
-        .querySelector("img");
+      const providerImage = screen.getByRole("img", { name: /Primary recording provider:/ });
+      expect(providerImage.parentElement?.firstElementChild).toBe(providerImage);
+      const logo = providerImage.querySelector("img");
+      expect(logo).toHaveAttribute("width", "32");
       expect(logo?.getAttribute("src")).toContain(
         providerId === "apple_health" ? "apple_health" : providerId,
       );
