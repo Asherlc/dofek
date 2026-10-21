@@ -800,7 +800,7 @@ describe("activityRouter", () => {
         id: "00000000-0000-0000-0000-000000000001",
       });
       expect(result).toEqual({ success: true });
-      expect(execute).toHaveBeenCalledTimes(3);
+      expect(execute).toHaveBeenCalledTimes(4);
     });
 
     it("invalidates activity, calendar, and climbing map caches after delete", async () => {
@@ -920,7 +920,7 @@ describe("activityRouter", () => {
       });
 
       expect(result).toEqual({ success: true, deletedCount: 2 });
-      expect(execute).toHaveBeenCalledTimes(3);
+      expect(execute).toHaveBeenCalledTimes(4);
       expect(mockEnqueueActivityDeleteAnalyticsRefresh).toHaveBeenCalledWith("user-1", [
         "00000000-0000-0000-0000-000000000001",
         "00000000-0000-0000-0000-000000000002",
@@ -1799,4 +1799,46 @@ describe("mapHrZones", () => {
       expect(zone.seconds).toBe(0);
     }
   });
+});
+
+vi.mock("dofek/activity-images/storage", () => ({
+  createActivityImageUrl: vi.fn(async () => "https://private.test/signed"),
+}));
+vi.mock("../repositories/activity-images-repository.ts", async (original) => ({
+  ...(await original<typeof import("../repositories/activity-images-repository.ts")>()),
+  listActivityImages: vi.fn(),
+}));
+
+it("serves signed images only for the caller's resolved activity members", async () => {
+  const { listActivityImages } = await import("../repositories/activity-images-repository.ts");
+  const { createActivityImageUrl } = await import("dofek/activity-images/storage");
+  const id = "10000000-0000-4000-8000-000000000001";
+  const members = vi
+    .spyOn(ActivityRepository.prototype, "getActivityMemberIds")
+    .mockResolvedValue([id]);
+  vi.mocked(listActivityImages).mockResolvedValue({
+    images: [
+      {
+        id: "object",
+        objectKey: "images/owner/hash",
+        width: 10,
+        height: 20,
+        mimeType: "image/png",
+        sizeBytes: 50,
+        sources: [],
+      },
+    ],
+    coverage: [],
+    acquisition: [],
+  });
+  const result = await makeCaller().images({ id });
+  expect(members).toHaveBeenCalledWith(id);
+  expect(listActivityImages).toHaveBeenCalledWith(expect.anything(), {
+    userId: "user-1",
+    memberActivityIds: [id],
+  });
+  expect(createActivityImageUrl).toHaveBeenCalledWith("images/owner/hash");
+  expect(result.images[0]?.url).toBe("https://private.test/signed");
+  expect(result.images[0]).not.toHaveProperty("objectKey");
+  members.mockRestore();
 });

@@ -988,6 +988,39 @@ describe("queues", () => {
     });
   });
 
+  describe("activity image queues", () => {
+    it("uses an explicit connection for a standalone queue and the shared connection by default", async () => {
+      const { createActivityImageQueue, getRedisCommandConnection } = await import("./queues.ts");
+      const connection = { host: "image-redis.test", port: 6380 };
+      createActivityImageQueue(connection);
+      expect(MockQueue).toHaveBeenLastCalledWith("activity-images", { connection });
+      createActivityImageQueue();
+      expect(MockQueue).toHaveBeenLastCalledWith("activity-images", {
+        connection: getRedisCommandConnection(),
+      });
+      await closeAllQueueResources();
+    });
+    it("reuses the cached image queue until shutdown, closes it once, and creates it again", async () => {
+      const { getActivityImageQueue } = await import("./queues.ts");
+      await closeAllQueueResources();
+      vi.clearAllMocks();
+      try {
+        const first = getActivityImageQueue();
+        expect(getActivityImageQueue()).toBe(first);
+        expect(MockQueue).toHaveBeenCalledOnce();
+        expect(MockQueue).toHaveBeenCalledWith("activity-images", expect.any(Object));
+        await closeAllQueueResources();
+        expect(mockQueueClose).toHaveBeenCalledOnce();
+        await closeAllQueueResources();
+        expect(mockQueueClose).toHaveBeenCalledOnce();
+        getActivityImageQueue();
+        expect(MockQueue).toHaveBeenCalledTimes(2);
+      } finally {
+        await closeAllQueueResources();
+      }
+    });
+  });
+
   describe("closeAllQueueResources", () => {
     it("closes all cached queues and flow producers", async () => {
       const {

@@ -32377,6 +32377,39 @@ The entries below preserve findings and branch-level validation from the review 
 - **Direct fix / validation:** Move the shared sensor-window and query interfaces into a separate type module. The same dependency-cruiser command then reports no violations, and all 177 relevant repository/router tests pass. CI also exposed missing source-forwarding and activity-ownership assertions in two mutation shards; add focused repository and limited-store tests for selected, empty, and default source paths. Hosted validation of the fixes remains pending.
 - **Retrospective:** The sandbox checks did not include import-boundary validation. Run the existing dependency-cruiser command before future pushes that add repository-to-repository dependencies.
 
+## 2026-10-20 — Activity image CI fixture and queue mutation failures
+
+- **Impact / evidence:** [PR 3016](https://github.com/Asherlc/dofek/pull/3016)
+  was blocked on head `d805f8dd1`. [Integration shard 1/4](https://github.com/Asherlc/dofek/actions/runs/39526011872/job/118981400365)
+  failed while preparing both S3 fixtures with
+  `TypeError: (0, archiver_1.default) is not a function`.
+  [Mutation shard 14](https://github.com/Asherlc/dofek/actions/runs/39526011872/job/118981400770)
+  scored 36.36% against the unchanged 75% threshold. No production deployment
+  or customer data was affected by these CI failures.
+- **Root causes / fixes:** Testcontainers' content-copy helper invokes the
+  archiver 7 default factory, incompatible with the workspace's archiver 8
+  security override. The S3 fixture now supplies a `TarArchive` through the
+  supported [archive-copy input](https://node.testcontainers.org/features/containers/#copying-files-and-directories-to-a-container).
+  The queue shard lacked activity-image queue tests; regression coverage now
+  exercises explicit/default connections, cache reuse, shutdown, and recreation.
+  No dependency downgrade, retry, timeout, or threshold change was introduced.
+- **Validation / limits:** The Docker-free regression extracts the real archive
+  and checks its identity JSON. All 18,550 Docker-free unit tests pass (19 skipped),
+  together with root/server/web typechecks, sandbox lint, Knip, and spelling.
+  Targeted queue mutations score 88.89%. Docker-backed fixture startup and authenticated
+  storage tests require CI services and were not executed locally.
+- **Follow-up:** Include archive serialization in dependency compatibility
+  regressions whenever a shared override crosses a major version; test new queue
+  factories together with their cached shutdown lifecycle.
+- **CI admission:** A subsequent conflict with `main` prevented PR CI from
+  starting ([GitHub pull-request workflow behavior](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#pull_request)).
+  Preserved `main`'s `0152_activity_origin` from
+  [PR 3017](https://github.com/Asherlc/dofek/pull/3017) and renumbered the
+  unapplied image migrations and snapshots to 0153–0155, preserving timestamp
+  order and snapshot lineage. The PR itself remains unmerged.
+  Combined-branch validation passed 18,555 unit tests (19 skipped), all three
+  typechecks, sandbox lint, Knip, spelling, SQLFluff, Squawk, and migration policy.
+
 ## 2026-10-20 — Sparse Watch heart rate invisible on activity charts
 
 - **Symptoms / impact:** Sparse Apple Watch heart-rate readings were invisible in the activity chart for `9fb17d03-f41e-409c-b69c-994895a2cd6f`. The user initially reported this as a source with no data and requested hiding empty sources from the metric dropdowns.
@@ -32464,3 +32497,11 @@ The entries below preserve findings and branch-level validation from the review 
 - **Cause / recovery:** Docker's default pools were exhausted and `hideous-catfish_default` was absent. Following the [existing recovery procedure](testing.md#docker-address-pool-exhaustion), inspected Docker subnets and macOS routes, verified `10.241.29.0/24` was unused, and created only this workspace's default network with its Compose labels. The original startup command then reported healthy ClickHouse. Existing workspace resources were preserved; [Docker documents explicit subnet allocation](https://docs.docker.com/reference/cli/docker/network/create/).
 - **Validation / remaining risk:** Full `pnpm lint` passed using this workspace's ClickHouse port. All 93 focused web/mobile tests and root/server/web/mobile typechecks passed. Shared default-pool exhaustion remains unresolved; future workspaces require their own checked allocation or a separately reviewed capacity change. No retries, timeouts, or daemon settings changed.
 - **Retrospective / follow-up:** The network recovery runbook worked as written. Add a README prerequisite explaining that full lint needs local ClickHouse; use the browser skill for the next visual review when a browser connection is available.
+
+## 2026-10-21 — Activity image PR native archive timeout
+
+- **Impact / evidence:** [PR 3016](https://github.com/Asherlc/dofek/pull/3016) was blocked by the [iOS archive job](https://github.com/Asherlc/dofek/actions/runs/39538186397/job/119019945386). The first fatal line was `The action 'Archive (Release, no signing)' has timed out after 25 minutes.` Mobile Build Gate and CI Gate failed as consequences; the remaining leaf jobs passed. No production deployment occurred.
+- **Investigation / limits:** The archive was actively compiling Expo Updates at cancellation, with no preceding compiler error. CocoaPods, DerivedData, and ccache all missed; ccache recorded 522 misses and zero hits. However, the [previous successful run](https://github.com/Asherlc/dofek/actions/runs/39530594616) also had all three cache misses and completed its archive, so cold caches alone do not establish the root cause. The native build timeout remains unresolved pending further hosted evidence. No timeout, retry, or check exclusion was changed.
+- **Merge conflict / follow-up:** Main advanced with independent incident-history additions. Preserve both histories when resolving this append-only file. Compare successful and failed native build phases before changing build settings; use the repository CI-fix workflow and full workflow-log archive when individual job log downloads fail.
+
+- **Diagnostic follow-up:** With user approval, native CI records Xcode/OS, CPU/memory, and disk state; wraps the archive with macOS resource accounting and Xcode build timing; and retains its log and result bundle on success or failure. Pipeline failure propagation and the 25-minute limit remain intact. These diagnostics establish evidence for further investigation; they do not constitute a timeout fix. Xcode documents timing and result options in `xcodebuild -help`; GitHub documents [artifact retention](https://docs.github.com/en/actions/using-workflows/storing-workflow-data-as-artifacts).

@@ -87,7 +87,7 @@ vi.mock("../providers/garmin-dump.ts", () => ({
 vi.mock("../providers/fit-file.ts", () => ({
   FitFileProvider: mockProviderConstructor(mockProviders["fit-file"]),
 }));
-vi.mock("../providers/strava.ts", () => ({
+vi.mock("../providers/strava/provider.ts", () => ({
   StravaProvider: mockProviderConstructor(mockProviders.strava),
 }));
 vi.mock("../providers/cronometer-csv.ts", () => ({

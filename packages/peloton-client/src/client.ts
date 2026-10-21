@@ -3,9 +3,11 @@ import { z } from "zod";
 import { PelotonAuthenticationError, PelotonResponseError, PelotonServiceError } from "./errors.ts";
 import {
   type PelotonPerformanceGraph,
+  type PelotonWorkout,
   type PelotonWorkoutListResponse,
   pelotonPerformanceGraphSchema,
   pelotonWorkoutListResponseSchema,
+  pelotonWorkoutSchema,
 } from "./types.ts";
 
 export const PELOTON_API_BASE = "https://api.onepeloton.com";
@@ -79,6 +81,13 @@ export class PelotonClient {
     } catch (error: unknown) {
       throw new PelotonResponseError("workouts", error);
     }
+  }
+
+  async getWorkout(workoutId: string): Promise<PelotonWorkout> {
+    const response = await this.#get(`/api/workout/${encodeURIComponent(workoutId)}`, {
+      joins: "ride",
+    });
+    return pelotonWorkoutSchema.parse(await response.json());
   }
 
   async getPerformanceGraph(workoutId: string, everyN = 5): Promise<PelotonPerformanceGraph> {

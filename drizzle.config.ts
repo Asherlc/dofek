@@ -4,6 +4,7 @@ export default defineConfig({
   schema: [
     "./src/db/schema/account.ts",
     "./src/db/schema/activity.ts",
+    "./src/db/schema/activity-images.ts",
     "./src/db/schema/clinical.ts",
     "./src/db/schema/climbing.ts",
     "./src/db/schema/core.ts",
