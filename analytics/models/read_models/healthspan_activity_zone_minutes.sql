@@ -108,7 +108,7 @@ sensor_counts AS (
             AND sensor_samples.scalar >= activity_metadata.ftp * 0.9
         ) AS power_high_intensity_sample_count
     FROM activity_metadata
-    INNER JOIN {{ ref('activity_sensor_sample') }} AS sensor_samples
+    INNER JOIN {{ ref('activity_sensor_sample') }} AS sensor_samples FINAL
         ON sensor_samples.activity_id = activity_metadata.activity_id
         AND sensor_samples.user_id = activity_metadata.user_id
     WHERE sensor_samples.channel IN ('heart_rate', 'power')

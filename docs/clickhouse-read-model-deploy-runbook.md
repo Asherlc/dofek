@@ -580,6 +580,102 @@ turn the daily model into a warning-only step. dbt's incremental model contract
 keeps the serving transformation bounded and stateful:
 [dbt incremental models](https://docs.getdbt.com/docs/build/incremental-models).
 
+## Activity sensor parts blocked by missing projections
+
+For `activity_sensor_sample: PARTIAL SUCCESS`, inspect the batch's first fatal
+ClickHouse message before choosing a repair. The October 21 recurrence of
+[DOFEK-SERVER-6B](https://east-bay-software.sentry.io/issues/7743140686/)
+was `Code: 252 TOO_MANY_PARTS`, rather than the earlier timeout. Lightweight
+replacement deletes left fully masked parts without a projection. ClickHouse's
+[merge predicate](https://github.com/ClickHouse/ClickHouse/blob/v26.6.1.1193-stable/src/Storages/MergeTree/Compaction/MergePredicates/MergeTreeMergePredicate.cpp#L43)
+rejects adjacent parts with different projection sets.
+
+The bounded append model prevents further replacement deletes. It does not
+repair existing parts. Projection rematerialization alone did not repair the
+fully masked part in the isolated reproduction. Do not raise part limits or
+put a cleanup mutation into the recurring worker.
+
+The following is an operator maintenance procedure, requiring separate approval
+and the append release ready for rollout. Coordinate quiescence and restoration
+through the [production release procedure](../deploy/README.md#deployment).
+Keep analytics writers stopped until cutover and the append release are ready;
+resuming the old delete-and-insert model recreates the defect. Use a separate
+operator process, not an extra dbt process inside the analytics worker.
+
+1. Capture the source `SHOW CREATE TABLE`, database engine, pending mutations,
+   dependent views, active part counts, free disk, and current query load. Require
+   `analytics` to use `Atomic`, no remaining writer or pending mutation, and
+   enough disk for a separate copy. Resolve any materialized-view dependency
+   before proceeding. Record the source logical row count and existing tombstone
+   count. ClickHouse documents [Atomic databases](https://clickhouse.com/docs/engines/database-engines/atomic),
+   [parts](https://clickhouse.com/docs/operations/system-tables/parts), and
+   [mutations](https://clickhouse.com/docs/operations/system-tables/mutations).
+2. Create a new candidate with the existing schema and projections. An existing
+   candidate name must fail and be inspected rather than silently reused:
+
+   ```sql
+   CREATE TABLE analytics.activity_sensor_sample_repair
+   AS analytics.activity_sensor_sample;
+
+   INSERT INTO analytics.activity_sensor_sample_repair
+   SELECT * FROM analytics.activity_sensor_sample FINAL
+   SETTINGS max_threads = 1, max_memory_usage = 1073741824;
+   ```
+
+   Preserve every logical row, including `is_deleted = 1`; do not retimestamp
+   rows or copy hidden `_row_exists` masks. This uses
+   [CREATE TABLE AS](https://clickhouse.com/docs/sql-reference/statements/create/table)
+   and [ReplacingMergeTree FINAL](https://clickhouse.com/docs/engines/table-engines/mergetree-family/replacingmergetree).
+   The one-thread/1-GiB bounds apply only to this operator query. Stop on failure
+   with the original table intact.
+3. Require zero row differences in both directions, and require every active
+   candidate part to have `by_activity_source_refresh_version`:
+
+   ```sql
+   SELECT count() AS differences
+   FROM (
+     (SELECT * FROM analytics.activity_sensor_sample FINAL
+      EXCEPT ALL SELECT * FROM analytics.activity_sensor_sample_repair FINAL)
+     UNION ALL
+     (SELECT * FROM analytics.activity_sensor_sample_repair FINAL
+      EXCEPT ALL SELECT * FROM analytics.activity_sensor_sample FINAL)
+   )
+   SETTINGS max_threads = 1, max_memory_usage = 1073741824;
+
+   SELECT count() AS active_parts,
+     countIf(has(projections, 'by_activity_source_refresh_version')) AS projected_parts
+   FROM system.parts
+   WHERE active AND database = 'analytics'
+     AND table = 'activity_sensor_sample_repair';
+   ```
+
+   Also compare the logical row/tombstone counts with preflight. `EXCEPT ALL`
+   retains duplicate-sensitive comparison semantics:
+   [ClickHouse EXCEPT](https://clickhouse.com/docs/sql-reference/statements/select/except).
+4. With writers still stopped, atomically exchange names:
+
+   ```sql
+   EXCHANGE TABLES analytics.activity_sensor_sample
+   AND analytics.activity_sensor_sample_repair;
+   ```
+
+   [EXCHANGE TABLES](https://clickhouse.com/docs/sql-reference/statements/exchange)
+   provides atomic name exchange for Atomic databases. Verify the serving name's
+   schema, logical rows, tombstones, projections, and dependent view reads. Before
+   any new writes, exchanging the names again restores the original table; after
+   writers resume, the retained original is stale and must not be swapped back.
+5. Resume only with the append release. Require a successful normal analytics
+   cycle and cache warm, then a second successful cycle without missing-projection
+   part growth or skipped dependent models. Verify affected activity reads on
+   both clients' shared API. Remove `analytics.activity_sensor_sample_repair`
+   after successful cutover validation so no long-lived duplicate remains, and
+   record release, pre/post counts, checks, and cleanup in the incident baseline.
+
+The copy, duplicate-sensitive parity query, and atomic exchange were validated
+with a tiny isolated ClickHouse fixture containing a masked row, a replacement
+version, and an explicit tombstone. Production capacity, dependency review,
+execution, and end-to-end readback remain gates for the approved maintenance.
+
 ## Activity source-version projection rollout (migration 0073)
 
 Migration `0073_activity_sensor_summary_source_version` registers
