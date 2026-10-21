@@ -37,9 +37,9 @@ const ids = {
   firstStrengthAppleExercise: "85000000-0000-4000-8000-000000000003",
 } as const;
 
-const primaryActivitySchema = z.object({ primary_activity_id: z.string().uuid() });
+const primaryActivitySchema = z.object({ representative_activity_id: z.string().uuid() });
 const clickHousePrimaryActivitySchema = z.array(
-  z.object({ activity_id: z.string().uuid(), primary_activity_id: z.string().uuid() }),
+  z.object({ activity_id: z.string().uuid(), representative_activity_id: z.string().uuid() }),
 );
 
 function populatedPaths(value: unknown, prefix = ""): string[] {
@@ -244,11 +244,11 @@ describe("MCP activity details stable group contract", () => {
   it("keeps structured and sensor payloads visible while representative evidence changes", async () => {
     const beforePrimary = primaryActivitySchema.parse(
       (
-        await context.db.execute(sql`SELECT primary_activity_id::text AS primary_activity_id
+        await context.db.execute(sql`SELECT representative_activity_id::text AS representative_activity_id
           FROM fitness.v_activity WHERE id = ${ids.firstStrengthGroup}::uuid`)
       )[0],
     );
-    expect(beforePrimary.primary_activity_id).toBe(ids.firstStrengthStrong);
+    expect(beforePrimary.representative_activity_id).toBe(ids.firstStrengthStrong);
 
     const before = await getDetails(ids.firstStrengthGroup);
     const firstMovement = before.strength_exercises.find(
@@ -313,7 +313,7 @@ describe("MCP activity details stable group contract", () => {
         await getClickHouseTestClient(context).query({
           query: `SELECT
               toString(activity_id) AS activity_id,
-              toString(primary_activity_id) AS primary_activity_id
+              toString(representative_activity_id) AS representative_activity_id
             FROM analytics.deduped_activities FINAL
             WHERE user_id = {userId:UUID}
               AND is_deleted = 0
@@ -334,15 +334,15 @@ describe("MCP activity details stable group contract", () => {
     expect(assertedRepresentatives).toEqual([
       {
         activity_id: ids.firstStrengthGroup,
-        primary_activity_id: ids.firstStrengthWhoop,
+        representative_activity_id: ids.firstStrengthWhoop,
       },
       {
         activity_id: ids.firstCommuteGroup,
-        primary_activity_id: ids.firstCommuteWhoop,
+        representative_activity_id: ids.firstCommuteWhoop,
       },
       {
         activity_id: ids.secondCommuteGroup,
-        primary_activity_id: ids.secondCommuteWhoop,
+        representative_activity_id: ids.secondCommuteWhoop,
       },
     ]);
     expect(firstCommute.activity).toMatchObject({
@@ -368,11 +368,11 @@ describe("MCP activity details stable group contract", () => {
 
     const afterPrimary = primaryActivitySchema.parse(
       (
-        await context.db.execute(sql`SELECT primary_activity_id::text AS primary_activity_id
+        await context.db.execute(sql`SELECT representative_activity_id::text AS representative_activity_id
           FROM fitness.v_activity WHERE id = ${ids.firstStrengthGroup}::uuid`)
       )[0],
     );
-    expect(afterPrimary.primary_activity_id).toBe(ids.firstStrengthApple);
+    expect(afterPrimary.representative_activity_id).toBe(ids.firstStrengthApple);
 
     const after = await getDetails(ids.firstStrengthGroup);
     expect(after.activity).toMatchObject({ id: ids.firstStrengthGroup, avg_hr: 67 });

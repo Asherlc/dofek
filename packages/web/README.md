@@ -128,6 +128,12 @@ cd packages/web && pnpm storybook # Start Storybook
 pnpm test                        # Run repo-wide Vitest suites from the repo root
 ```
 
+Activity cards show a 20 px logo for the actual provider of the closest available
+recording when provenance resolves a primary. Unresolved origin has no primary
+logo. Field and sensor priorities remain independent. The card reuses
+[ProviderLogo](src/components/ProviderLogo.tsx); see the
+[origin schema](../providers-meta/src/activity-origin.ts).
+
 ## Activity metric sources
 
 Activity views offer independent source controls for heart rate, power, speed,

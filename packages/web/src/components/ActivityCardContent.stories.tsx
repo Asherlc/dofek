@@ -19,6 +19,7 @@ const strengthActivity: ActivityCardData = {
   },
   durationMin: 30,
   source: {
+    origin: { status: "unresolved", candidateMemberActivityIds: [] },
     primarySourceLabel: "Strong (via Apple Health)",
     sourceCount: 1,
     overlapSummary: null,
@@ -69,6 +70,7 @@ const mappedActivity: ActivityCardData = {
   },
   durationMin: 64,
   source: {
+    origin: { status: "unresolved", candidateMemberActivityIds: [] },
     primarySourceLabel: "Garmin Connect",
     sourceCount: 2,
     overlapSummary: "2 matched source records · Garmin Connect selected by source priority",
@@ -182,7 +184,12 @@ export const IndoorCycling: Story = {
       durationMin: 60,
       distanceMeters: 0,
       distanceState: { status: "available" },
-      source: { primarySourceLabel: "Peloton", sourceCount: 1, overlapSummary: null },
+      source: {
+        origin: { status: "unresolved", candidateMemberActivityIds: [] },
+        primarySourceLabel: "Peloton",
+        sourceCount: 1,
+        overlapSummary: null,
+      },
       stats: [{ status: "available", label: "Training Stress Score", value: "65" }],
     },
   },
@@ -202,7 +209,12 @@ export const VirtualCycling: Story = {
       distanceState: { status: "available" },
       elevationGainM: 120,
       elevationState: { status: "available" },
-      source: { primarySourceLabel: "Zwift", sourceCount: 1, overlapSummary: null },
+      source: {
+        origin: { status: "unresolved", candidateMemberActivityIds: [] },
+        primarySourceLabel: "Zwift",
+        sourceCount: 1,
+        overlapSummary: null,
+      },
       stats: [{ status: "available", label: "Training Stress Score", value: "65" }],
     },
   },
@@ -223,7 +235,12 @@ export const ClimbingSourceLocations: Story = {
       name: "Afternoon climbing",
       activityType: "climbing",
       durationMin: 120,
-      source: { primarySourceLabel: "Mountain Project", sourceCount: 1, overlapSummary: null },
+      source: {
+        origin: { status: "unresolved", candidateMemberActivityIds: [] },
+        primarySourceLabel: "Mountain Project",
+        sourceCount: 1,
+        overlapSummary: null,
+      },
       stats: [{ status: "available", label: "Climbs", value: "3" }],
       location: climbingSourceLocation,
     },
@@ -268,4 +285,60 @@ export const ExampleGrid: Story = {
       ))}
     </div>
   ),
+};
+
+export const PrimaryRecordingProvider: Story = {
+  args: {
+    activity: {
+      ...mappedActivity,
+      source: {
+        origin: {
+          status: "resolved",
+          memberActivityId: "00000000-0000-4000-8000-000000000001",
+          providerId: "garmin",
+          sourceName: "Garmin Edge 530",
+        },
+        primarySourceLabel: "Garmin",
+        sourceCount: 3,
+        overlapSummary: "3 matched source records",
+      },
+    },
+  },
+  decorators: MappedActivity.decorators,
+};
+
+export const UnresolvedRecordingOrigin: Story = {
+  args: {
+    activity: {
+      ...mappedActivity,
+      source: {
+        origin: { status: "unresolved", candidateMemberActivityIds: [] },
+        primarySourceLabel: null,
+        sourceCount: 2,
+        overlapSummary: "2 matched source records",
+      },
+    },
+  },
+  decorators: MappedActivity.decorators,
+};
+
+export const PrimaryProviderWithoutLogo: Story = {
+  args: {
+    activity: {
+      ...strengthActivity,
+      name: "A long activity title that should leave space for its provider logo",
+      source: {
+        origin: {
+          status: "resolved",
+          memberActivityId: "00000000-0000-4000-8000-000000000001",
+          providerId: "velohero",
+          sourceName: null,
+        },
+        primarySourceLabel: "VeloHero",
+        sourceCount: 1,
+        overlapSummary: null,
+      },
+    },
+  },
+  decorators: NonMapActivity.decorators,
 };

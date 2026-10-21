@@ -818,3 +818,18 @@ active rows until ClickHouse background merges finish. This follows ClickHouse's
 documented `ReplacingMergeTree` behavior, where replacement occurs during merges
 and `FINAL` forces query-time replacement:
 <https://clickhouse.com/docs/engines/table-engines/mergetree-family/replacingmergetree>.
+
+## Activity recording origin
+
+The [origin selector](macros/activity_origin.sql) resolves the closest available
+record using supported source-app and recording-device evidence within an existing
+activity group. It never consults field priorities or sensor counts. Primary member
+and provider IDs are nullable when origin is unresolved; candidate IDs and evidence
+remain available. A singleton is primary without claiming that it is the original.
+
+The [activity model](models/read_models/deduped_activities.sql) retains the former
+field representative as representative_activity_id. Changing origin does not
+change merged fields, sensor selection, location selection, or stable group IDs.
+The [legacy view projection](../src/db/clickhouse-activity-origin.ts) retains its
+existing field derivation and joins the same materialized origin result. Historical
+migration builders retain their inputs so fresh databases migrate in order.

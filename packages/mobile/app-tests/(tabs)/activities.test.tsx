@@ -153,6 +153,26 @@ import ActivitiesScreen from "../../app/(tabs)/activities";
 afterEach(() => vi.useRealTimers());
 
 describe("ActivitiesScreen", () => {
+  it("identifies the available primary provider without using the activity type or metrics", () => {
+    mockQuery = activityListQuery([
+      activity({
+        source: {
+          origin: {
+            status: "resolved",
+            memberActivityId: "00000000-0000-4000-8000-000000000001",
+            providerId: "strava",
+            sourceName: "Garmin Edge 530",
+          },
+          primarySourceLabel: "Strava",
+          sourceCount: 2,
+          overlapSummary: "2 matched source records",
+        },
+      }),
+    ]);
+    render(<ActivitiesScreen />);
+    expect(screen.getByRole("image", { name: "Primary recording provider: Strava" })).toBeTruthy();
+    expect(screen.queryByRole("image", { name: "Primary recording provider: Garmin" })).toBeNull();
+  });
   beforeEach(() => {
     mockQuery = { data: [], isLoading: false, isError: false, error: null };
     mockCalendarQuery = { data: [], isLoading: false, isError: false, error: null };

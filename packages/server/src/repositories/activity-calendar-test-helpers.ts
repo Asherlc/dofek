@@ -87,6 +87,10 @@ export function makeSensorStore(rowSets: Record<string, unknown>[][]): ActivityS
                   end_utc_offset_minutes: null,
                   local_time_source: "unknown",
                   provider_id: "wahoo",
+                  primary_activity_id: null,
+                  primary_provider_id: null,
+                  primary_source_name: null,
+                  origin_candidate_member_ids: [],
                   member_activity_ids: [],
                   route_activity_id: row.id,
                   modality: null,
@@ -123,6 +127,10 @@ export function makeSensorStore(rowSets: Record<string, unknown>[][]): ActivityS
 
 export function makeActivityRow<T extends Record<string, unknown>>(overrides?: T) {
   return {
+    primary_activity_id: null,
+    primary_provider_id: null,
+    primary_source_name: null,
+    origin_candidate_member_ids: [],
     timezone: null,
     start_utc_offset_minutes: null,
     end_utc_offset_minutes: null,
@@ -196,6 +204,7 @@ export function makeCalendarEntry(
     },
     durationMin: overrides.durationMin ?? 60,
     source: overrides.source ?? {
+      origin: { status: "unresolved", candidateMemberActivityIds: [] },
       primarySourceLabel: "Wahoo",
       sourceCount: 1,
       overlapSummary: null,

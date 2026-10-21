@@ -100,6 +100,7 @@ import { createMigration as createMigration0100 } from "./0100_remove_tracking.t
 import { createMigration as createMigration0101 } from "./0101_activity_end_time_nullability.ts";
 import { createMigration as createMigration0102 } from "./0102_activity_field_source_priorities.ts";
 import { createMigration as createMigration0103 } from "./0103_strong_strength_title_precedence.ts";
+import { createMigration as createMigration0104 } from "./0104_activity_origin.ts";
 import type { ClickHouseMigration, ClickHouseMigrationFactory } from "./types.ts";
 
 const migrationFactories: ClickHouseMigrationFactory[] = [
@@ -205,6 +206,7 @@ const migrationFactories: ClickHouseMigrationFactory[] = [
   createMigration0101,
   createMigration0102,
   createMigration0103,
+  createMigration0104,
 ];
 
 export function clickHouseMigrations(postgresConnectionString: string): ClickHouseMigration[] {

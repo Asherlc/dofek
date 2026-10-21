@@ -331,6 +331,7 @@ describe("runMigrations", () => {
     await client.connect();
     try {
       await resetLegacyClimbingTables(client);
+      await client.query("DROP VIEW fitness.v_activity CASCADE");
       await client.query(
         readFileSync(join(migrationsFolder, "0133_independent_climbing_outcome_count.sql"), "utf8"),
       );
