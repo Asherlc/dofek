@@ -82,7 +82,6 @@ export const PROVIDER_CATALOG: Readonly<Record<string, ProviderCatalogEntry>> = 
   suunto: { label: "Suunto", logo: { type: "png" } },
   trainerroad: { label: "TrainerRoad", logo: { type: "svg" } },
   komoot: { label: "Komoot", logo: { type: "svg" } },
-  alltrails: { label: "AllTrails" },
   concept2: { label: "Concept2", logo: { type: "png" } },
   coros: { label: "COROS", logo: { type: "png" } },
   "cycling-analytics": { label: "Cycling Analytics" },

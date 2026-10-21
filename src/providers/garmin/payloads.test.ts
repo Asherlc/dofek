@@ -1,5 +1,12 @@
-import { describe, expect, it } from "vitest";
-import { parseGarminWebhookPayload } from "./payloads.ts";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { ZodError } from "zod";
+
+let parseGarminWebhookPayload: typeof import("./payloads.ts").parseGarminWebhookPayload;
+
+beforeEach(async () => {
+  vi.resetModules();
+  ({ parseGarminWebhookPayload } = await import("./payloads.ts"));
+});
 
 const summary = {
   userId: "stable-owner",
@@ -217,11 +224,36 @@ describe("parseGarminWebhookPayload", () => {
     ).toThrow();
   });
 
+  it("rejects a zero-length sleep stage with an actionable validation error", () => {
+    expect(() =>
+      parseGarminWebhookPayload({
+        sleeps: [
+          {
+            ...summary,
+            sleepLevelsMap: { light: [{ startTimeInSeconds: 100, endTimeInSeconds: 100 }] },
+          },
+        ],
+      }),
+    ).toThrow("Sleep stage must end after it starts");
+  });
+
+  it.each([
+    { startTimeInSeconds: -1, endTimeInSeconds: 60 },
+    { startTimeInSeconds: "100", endTimeInSeconds: "200" },
+    { startTimeInSeconds: null, endTimeInSeconds: 60 },
+  ])("validates raw sleep-stage timestamps %j", (range) => {
+    expect(() =>
+      parseGarminWebhookPayload({ sleeps: [{ ...summary, sleepLevelsMap: { light: [range] } }] }),
+    ).toThrow(ZodError);
+  });
+
   it.each([
     "http://apis.garmin.com/wellness-api/rest/activityFile?id=1",
     "https://evil.example/wellness-api/rest/activityFile?id=1",
     "https://apis.garmin.com.evil.example/wellness-api/rest/activityFile?id=1",
     "https://apis.garmin.com:444/wellness-api/rest/activityFile?id=1",
+    "https://user@apis.garmin.com/wellness-api/rest/activityFile?id=1",
+    "https://:password@apis.garmin.com/wellness-api/rest/activityFile?id=1",
     "https://user:password@apis.garmin.com/wellness-api/rest/activityFile?id=1",
     "https://apis.garmin.com/wellness-api/rest/activityFile/extra?id=1",
     "https://apis.garmin.com/wellness-api/rest/activityFile?id=1#fragment",
@@ -231,7 +263,7 @@ describe("parseGarminWebhookPayload", () => {
   ])("rejects unsafe callback %s", (callbackURL) => {
     expect(() =>
       parseGarminWebhookPayload({ activityFiles: [{ ...activityFile, callbackURL }] }),
-    ).toThrow();
+    ).toThrow(ZodError);
   });
 
   it("accepts explicit default HTTPS port in a callback", () => {
@@ -250,4 +282,164 @@ describe("parseGarminWebhookPayload", () => {
       ).toThrow();
     },
   );
+
+  it.each(["userId", "summaryId", "activityType"])(
+    "rejects whitespace-only required activity field %s",
+    (field) => {
+      expect(() =>
+        parseGarminWebhookPayload({ activities: [{ ...activity, [field]: " \t\n " }] }),
+      ).toThrow(ZodError);
+    },
+  );
+
+  it.each([1, Number.MAX_SAFE_INTEGER, "1", "99", "5001904988", "9007199254740993"])(
+    "preserves the exact valid activity identity %s",
+    (activityId) => {
+      const record = { ...activity, activityId };
+      expect(parseGarminWebhookPayload({ activities: [record] })).toEqual([
+        {
+          ownerExternalId: summary.userId,
+          eventType: "update",
+          objectType: "activities",
+          objectId: String(activityId),
+          metadata: { payload: record },
+        },
+      ]);
+    },
+  );
+
+  it.each([0, "0", "01", "-1", "+1", "1.5", "1e3", "x12", "12x", " 12", "12 ", null])(
+    "rejects an invalid activity identity %j",
+    (activityId) => {
+      expect(() =>
+        parseGarminWebhookPayload({ activities: [{ ...activity, activityId }] }),
+      ).toThrow(ZodError);
+    },
+  );
+
+  it("preserves integer and fractional second offsets without rounding raw readings", () => {
+    const record = {
+      ...summary,
+      timeOffsetHeartRateSamples: { "0": 0, "9": 60, "12": 61, "12.34": 62.5, "0.5": 59 },
+    };
+    expect(parseGarminWebhookPayload({ dailies: [record] })[0]?.metadata?.payload).toEqual(record);
+  });
+
+  it.each(["x12", "12x", "-1", "+1", ".1", "1.", "1.2.3", "1e3", " 12", "12 ", ""])(
+    "rejects malformed reading offset %j",
+    (offset) => {
+      expect(() =>
+        parseGarminWebhookPayload({
+          dailies: [{ ...summary, timeOffsetHeartRateSamples: { [offset]: 60 } }],
+        }),
+      ).toThrow(ZodError);
+    },
+  );
+
+  it.each(["60", null, false, Number.NaN, Number.POSITIVE_INFINITY])(
+    "rejects nonnumeric or nonfinite sensor reading %j",
+    (reading) => {
+      expect(() =>
+        parseGarminWebhookPayload({
+          hrv: [{ ...summary, hrvValues: { "12.34": reading } }],
+        }),
+      ).toThrow(ZodError);
+    },
+  );
+
+  it.each([
+    ["dailies", { ...summary, steps: "1" }],
+    ["sleeps", { ...summary, awakeDurationInSeconds: "60" }],
+    ["hrv", { ...summary, lastNightAvg: "40" }],
+    ["pulseox", { ...summary, onDemand: "true" }],
+    ["allDayRespiration", { ...summary, timeOffsetEpochToBreaths: { "0": null } }],
+    ["activities", { ...activity, manual: "true" }],
+    ["manuallyUpdatedActivities", { ...activity, activityName: null }],
+    ["activityFiles", { ...activityFile, fileType: "ZIP" }],
+    ["deregistrations", { userId: null }],
+    [
+      "userPermissionsChange",
+      {
+        userId: summary.userId,
+        summaryId: "permissions",
+        permissions: null,
+        changeTimeInSeconds: 0,
+      },
+    ],
+  ])("validates the typed fields of %s records while retaining opaque fields", (family, record) => {
+    expect(() => parseGarminWebhookPayload({ [family]: [record] })).toThrow(ZodError);
+  });
+
+  it.each([
+    ["userId", undefined],
+    ["summaryId", undefined],
+    ["startTimeInSeconds", undefined],
+    ["startTimeInSeconds", -0.1],
+    ["startTimeInSeconds", "0"],
+    ["startTimeOffsetInSeconds", 0.5],
+    ["durationInSeconds", undefined],
+    ["durationInSeconds", 0.5],
+    ["durationInSeconds", null],
+  ])("rejects invalid shared summary field %s=%j", (field, value) => {
+    expect(() => parseGarminWebhookPayload({ dailies: [{ ...summary, [field]: value }] })).toThrow(
+      ZodError,
+    );
+  });
+
+  it.each(["FIT", "TCX", "GPX"])("retains the documented %s file format", (fileType) => {
+    const record = { ...activityFile, fileType, manual: false, futureVendorField: { revision: 2 } };
+    expect(parseGarminWebhookPayload({ activityFiles: [record] })[0]?.metadata?.payload).toEqual(
+      record,
+    );
+  });
+
+  it("preserves zero and null metrics and raw vendor fields on sparse health revisions", () => {
+    const record = {
+      ...summary,
+      startTimeInSeconds: 0,
+      durationInSeconds: 0,
+      steps: 0,
+      distanceInMeters: null,
+      restingHeartRateInBeatsPerMinute: null,
+      futureVendorField: { revision: 2 },
+    };
+    expect(parseGarminWebhookPayload({ dailies: [record] })[0]?.metadata?.payload).toEqual(record);
+  });
+
+  it("keeps lifecycle identity scoped to the owner when opaque summary metadata is not an ID", () => {
+    const record = { userId: summary.userId, summaryId: 123, vendorReason: "user_unlinked" };
+    expect(parseGarminWebhookPayload({ deregistrations: [record] })).toEqual([
+      {
+        ownerExternalId: summary.userId,
+        eventType: "delete",
+        objectType: "deregistrations",
+        objectId: summary.userId,
+        metadata: { payload: record },
+      },
+    ]);
+  });
+
+  it("uses the summary identity when an optional manual activity identity is undefined", () => {
+    const record = { ...summary, activityType: "RUNNING", activityId: undefined };
+    const [event] = parseGarminWebhookPayload({ manuallyUpdatedActivities: [record] });
+    expect(event).toMatchObject({ objectId: summary.summaryId, metadata: { payload: record } });
+  });
+
+  it("treats empty supported feeds as an acknowledged notification with no records", () => {
+    expect(parseGarminWebhookPayload({ dailies: [], hrv: [] })).toEqual([]);
+  });
+
+  it("explains when a notification contains no supported feed", () => {
+    expect(() => parseGarminWebhookPayload({})).toThrow(
+      "Garmin notification must contain a supported feed",
+    );
+  });
+
+  it("explains when a parseable callback points outside the approved file endpoint", () => {
+    expect(() =>
+      parseGarminWebhookPayload({
+        activityFiles: [{ ...activityFile, callbackURL: "https://evil.example/activityFile" }],
+      }),
+    ).toThrow("Garmin activity callback must use the official HTTPS activityFile endpoint");
+  });
 });

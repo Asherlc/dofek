@@ -1,3 +1,4 @@
+import { closeProviderOperationFencePool } from "dofek/db/provider-operation-fence";
 import { queryCache } from "dofek/lib/cache";
 import { savePersonalizedParams } from "dofek/personalization/storage";
 import { sql } from "drizzle-orm";
@@ -25,9 +26,12 @@ describe("Router transformation logic", () => {
   let baseUrl: string;
   let testCtx: TestContext;
   let sessionCookie: string;
+  const originalDatabaseUrl = process.env.DATABASE_URL;
 
   beforeAll(async () => {
+    await closeProviderOperationFencePool();
     testCtx = await setupTestDatabase();
+    process.env.DATABASE_URL = testCtx.connectionString;
 
     const session = await createSession(testCtx.db, TEST_USER_ID);
     sessionCookie = `session=${session.sessionId}`;
@@ -57,13 +61,19 @@ describe("Router transformation logic", () => {
   }, 120_000);
 
   afterAll(async () => {
-    if (server) {
-      server.closeAllConnections();
-      await new Promise<void>((resolve) => {
-        server.close(() => resolve());
-      });
+    try {
+      if (server) {
+        server.closeAllConnections();
+        await new Promise<void>((resolve) => {
+          server.close(() => resolve());
+        });
+      }
+      await closeProviderOperationFencePool();
+      await testCtx?.cleanup();
+    } finally {
+      if (originalDatabaseUrl === undefined) delete process.env.DATABASE_URL;
+      else process.env.DATABASE_URL = originalDatabaseUrl;
     }
-    await testCtx?.cleanup();
   });
 
   /** POST a tRPC query and return parsed response */

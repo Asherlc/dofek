@@ -92,7 +92,6 @@
     "./providers/coros": "./src/providers/coros.ts",
     "./providers/concept2": "./src/providers/concept2.ts",
     "./providers/komoot": "./src/providers/komoot.ts",
-    "./providers/alltrails": "./src/providers/alltrails.ts",
     "./providers/xert": "./src/providers/xert.ts",
     "./providers/cycling-analytics": "./src/providers/cycling-analytics.ts",
     "./providers/wger": "./src/providers/wger.ts",

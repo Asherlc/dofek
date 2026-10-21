@@ -244,11 +244,6 @@ async function loadProviderConnections(
           "Disconnect Ziva in Dofek before deleting your account because Ziva does not advertise remote token revocation.",
         );
       }
-      if (connection.provider_id === "alltrails") {
-        throw new ProviderRevocationPrerequisiteError(
-          "Disconnect AllTrails in Dofek before deleting your account because Dofek cannot revoke AllTrails authorization remotely.",
-        );
-      }
       const provider = providersById.get(connection.provider_id);
       if (!provider) {
         throw new ProviderRevocationPrerequisiteError(

@@ -84,6 +84,43 @@ import {
 
 describe("shared auth helpers", () => {
   describe("persistProviderConnection", () => {
+    it("persists credentials for providers without an auth setup hook", async () => {
+      vi.mocked(ensureProvider).mockClear();
+      vi.mocked(saveTokens).mockClear();
+      vi.mocked(queryCache.invalidateByPrefix).mockClear();
+      const { db } = createMockDatabase();
+      const provider: SyncProvider = {
+        id: "test",
+        name: "Test",
+        validate: () => null,
+        sync: async () => ({ provider: "test", recordsSynced: 0, errors: [], duration: 0 }),
+      };
+      const tokens = {
+        accessToken: "access",
+        refreshToken: null,
+        scopes: null,
+        expiresAt: new Date("2099-01-01"),
+      };
+
+      await persistProviderConnection({
+        db,
+        provider,
+        providerName: "Test",
+        tokens,
+        userId: "owner",
+      });
+
+      expect(ensureProvider).toHaveBeenCalledWith(
+        expect.anything(),
+        "test",
+        "Test",
+        undefined,
+        "owner",
+      );
+      expect(saveTokens).toHaveBeenCalledWith(expect.anything(), "test", tokens, "owner");
+      expect(queryCache.invalidateByPrefix).toHaveBeenCalledWith("owner:sync.providers");
+    });
+
     it("checks provider ownership inside the token transaction before creating a connection", async () => {
       const { db } = createMockDatabase();
       const events: string[] = [];

@@ -1,4 +1,5 @@
 import { once } from "node:events";
+import { gzipSync } from "node:zlib";
 import type { SyncDatabase } from "dofek/db";
 import type { WebhookEvent } from "dofek/providers/types";
 import express from "express";
@@ -11,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   readState: vi.fn(),
   fence: vi.fn(),
   capture: vi.fn(),
+  bodyFault: vi.fn(),
   FencedError: class FencedError extends Error {},
 }));
 
@@ -26,7 +28,26 @@ vi.mock("dofek/providers/garmin/authorization", () => ({
   readGarminDeliveryState: mocks.readState,
 }));
 vi.mock("dofek/lib/error-reporting", () => ({ captureException: mocks.capture }));
+vi.mock("dofek/providers/garmin/payloads", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("dofek/providers/garmin/payloads")>();
+  return { ...actual, parseGarminWebhookPayload: vi.fn(actual.parseGarminWebhookPayload) };
+});
+vi.mock("express", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("express")>();
+  return {
+    ...actual,
+    raw: (options: Parameters<typeof actual.raw>[0]) => {
+      const parse = actual.raw(options);
+      return (req: express.Request, res: express.Response, next: express.NextFunction) => {
+        const failure = mocks.bodyFault();
+        if (failure !== undefined) next(failure);
+        else parse(req, res, next);
+      };
+    },
+  };
+});
 
+import { parseGarminWebhookPayload } from "dofek/providers/garmin/payloads";
 import { createGarminWebhookRouter } from "./garmin-webhooks.ts";
 
 const SECRET = "garmin-receiver-secret-with-at-least-32-characters";
@@ -45,17 +66,27 @@ const payload = {
   ],
 };
 
-function setup(sharedSecret: string | undefined = SECRET) {
+function setup(
+  { sharedSecret }: { sharedSecret: string | undefined } = { sharedSecret: SECRET },
+  beforeRouter?: express.RequestHandler,
+) {
   const { db } = createMockDatabase();
   const enqueueEvent = vi.fn<(userId: string, event: WebhookEvent) => Promise<void>>(
     async () => {},
   );
   const app = express();
+  if (beforeRouter) app.use(beforeRouter);
   app.use("/api/webhooks/garmin", createGarminWebhookRouter({ db, sharedSecret, enqueueEvent }));
   return { app, db, enqueueEvent };
 }
 
-async function post(app: express.Express, path: string, body: unknown = payload, raw = false) {
+async function post(
+  app: express.Express,
+  path: string,
+  body: unknown = payload,
+  raw = false,
+  headers: Record<string, string> = {},
+) {
   const server = app.listen(0);
   await once(server, "listening");
   const address = server.address();
@@ -63,8 +94,12 @@ async function post(app: express.Express, path: string, body: unknown = payload,
   try {
     const response = await fetch(`http://127.0.0.1:${address.port}${path}`, {
       method: "POST",
-      headers: { "content-type": "application/json" },
-      body: raw ? String(body) : JSON.stringify(body),
+      headers: { "content-type": "application/json", ...headers },
+      body: raw
+        ? body instanceof Uint8Array
+          ? new Uint8Array(body)
+          : String(body)
+        : JSON.stringify(body),
     });
     return { status: response.status, body: await response.json() };
   } finally {
@@ -75,8 +110,12 @@ async function post(app: express.Express, path: string, body: unknown = payload,
 }
 
 describe("Garmin portal webhook receiver", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
+  beforeEach(async () => {
+    vi.resetAllMocks();
+    const actual = await vi.importActual<typeof import("dofek/providers/garmin/payloads")>(
+      "dofek/providers/garmin/payloads",
+    );
+    vi.mocked(parseGarminWebhookPayload).mockImplementation(actual.parseGarminWebhookPayload);
     mocks.findOwners.mockResolvedValue([USER_ID]);
     mocks.loadTokens.mockResolvedValue({
       accessToken: "official-token",
@@ -96,30 +135,49 @@ describe("Garmin portal webhook receiver", () => {
     );
   });
 
-  it("fails closed when the configured receiving secret is missing", async () => {
-    const { app, enqueueEvent } = setup("");
-    const response = await post(app, "/api/webhooks/garmin", "malformed-json", true);
-    expect(response.status).toBe(503);
-    expect(response.body).toHaveProperty("error", expect.stringContaining("GARMIN_WEBHOOK_SECRET"));
-    expect(mocks.findOwners).not.toHaveBeenCalled();
-    expect(enqueueEvent).not.toHaveBeenCalled();
-  });
-
-  it.each(["", "?token=wrong", "?client_id=public-client-id", `?token=${SECRET}&token=${SECRET}`])(
-    "rejects unauthenticated delivery before parsing %s",
-    async (query) => {
-      const { app, enqueueEvent } = setup();
-      const response = await post(app, `/api/webhooks/garmin${query}`, "malformed-json", true);
-      expect(response.status).toBe(401);
+  it.each([undefined, "", "x".repeat(31)])(
+    "fails closed for an invalid receiver secret %s",
+    async (sharedSecret) => {
+      const { app, enqueueEvent } = setup({ sharedSecret });
+      const response = await post(app, "/api/webhooks/garmin", "malformed-json", true);
+      expect(response.status).toBe(503);
+      expect(response.body).toEqual({
+        error: "GARMIN_WEBHOOK_SECRET must contain at least 32 characters",
+      });
       expect(mocks.findOwners).not.toHaveBeenCalled();
       expect(enqueueEvent).not.toHaveBeenCalled();
     },
   );
 
+  it("accepts the minimum 32-byte secret", async () => {
+    const sharedSecret = "x".repeat(32);
+    const { app } = setup({ sharedSecret });
+    expect(await post(app, `/api/webhooks/garmin?token=${sharedSecret}`)).toEqual({
+      status: 200,
+      body: { status: "accepted" },
+    });
+  });
+
+  it.each([
+    "",
+    "?token=wrong",
+    `?token=${"x".repeat(SECRET.length)}`,
+    "?client_id=public-client-id",
+    `?token=${SECRET}&token=${SECRET}`,
+  ])("rejects unauthenticated delivery before parsing %s", async (query) => {
+    const { app, enqueueEvent } = setup();
+    const response = await post(app, `/api/webhooks/garmin${query}`, "malformed-json", true);
+    expect(response.status).toBe(401);
+    expect(response.body).toEqual({ error: "Invalid Garmin receiver token" });
+    expect(mocks.findOwners).not.toHaveBeenCalled();
+    expect(enqueueEvent).not.toHaveBeenCalled();
+  });
+
   it("queues the validated original event and grant/deletion generations before acknowledging", async () => {
     const { app, db, enqueueEvent } = setup();
     const response = await post(app, `/api/webhooks/garmin?token=${SECRET}`);
     expect(response.status).toBe(200);
+    expect(response.body).toEqual({ status: "accepted" });
     expect(mocks.findOwners).toHaveBeenCalledWith(db, "garmin", "garmin-owner");
     expect(mocks.fence).toHaveBeenCalledWith(db, USER_ID, expect.any(Function));
     expect(mocks.loadTokens).toHaveBeenCalledWith(db, "garmin", USER_ID);
@@ -177,7 +235,7 @@ describe("Garmin portal webhook receiver", () => {
     expect(enqueueEvent).not.toHaveBeenCalled();
     expect(mocks.capture).toHaveBeenCalledWith(
       expect.objectContaining({ message: expect.stringContaining("multiple Dofek owners") }),
-      expect.any(Object),
+      { tags: { provider: "garmin", operation: "webhook-owner-lookup" } },
     );
   });
 
@@ -227,8 +285,16 @@ describe("Garmin portal webhook receiver", () => {
       if (phase === "tokens") mocks.loadTokens.mockRejectedValue(error);
       if (phase === "state") mocks.readState.mockRejectedValue(error);
       if (phase === "queue") enqueueEvent.mockRejectedValue(error);
-      expect((await post(app, `/api/webhooks/garmin?token=${SECRET}`)).status).toBe(503);
-      expect(mocks.capture).toHaveBeenCalledWith(error, expect.any(Object));
+      expect(await post(app, `/api/webhooks/garmin?token=${SECRET}`)).toEqual({
+        status: 503,
+        body: { error: "Garmin notification could not be queued; retry delivery" },
+      });
+      expect(mocks.capture).toHaveBeenCalledWith(error, {
+        tags: {
+          provider: "garmin",
+          operation: phase === "lookup" ? "webhook-owner-lookup" : "webhook-enqueue",
+        },
+      });
     },
   );
 
@@ -240,6 +306,7 @@ describe("Garmin portal webhook receiver", () => {
   });
 
   it.each([
+    "",
     "not-json",
     "null",
     "[]",
@@ -248,15 +315,103 @@ describe("Garmin portal webhook receiver", () => {
     JSON.stringify({ email: "user@example.com", password: "credentials" }),
   ])("rejects malformed or unsupported JSON before owner lookup %s", async (body) => {
     const { app, enqueueEvent } = setup();
-    expect((await post(app, `/api/webhooks/garmin?token=${SECRET}`, body, true)).status).toBe(400);
+    expect(await post(app, `/api/webhooks/garmin?token=${SECRET}`, body, true)).toEqual({
+      status: 400,
+      body: { error: "Invalid Garmin notification payload" },
+    });
     expect(mocks.findOwners).not.toHaveBeenCalled();
     expect(enqueueEvent).not.toHaveBeenCalled();
   });
 
+  it("rejects requests whose raw body was consumed by earlier middleware", async () => {
+    const { app, enqueueEvent } = setup({ sharedSecret: SECRET }, express.json());
+    expect(await post(app, `/api/webhooks/garmin?token=${SECRET}`)).toEqual({
+      status: 400,
+      body: { error: "Garmin notification must contain a JSON body" },
+    });
+    expect(mocks.findOwners).not.toHaveBeenCalled();
+    expect(enqueueEvent).not.toHaveBeenCalled();
+  });
+
+  it("reports unexpected parser failures as retryable delivery errors", async () => {
+    const failure = new Error("parser unavailable");
+    vi.mocked(parseGarminWebhookPayload).mockImplementationOnce(() => {
+      throw failure;
+    });
+    const { app, enqueueEvent } = setup();
+    expect(await post(app, `/api/webhooks/garmin?token=${SECRET}`)).toEqual({
+      status: 503,
+      body: { error: "Garmin notification parsing failed; retry delivery" },
+    });
+    expect(mocks.capture).toHaveBeenCalledWith(failure, {
+      tags: { provider: "garmin", operation: "webhook-parse" },
+    });
+    expect(mocks.findOwners).not.toHaveBeenCalled();
+    expect(enqueueEvent).not.toHaveBeenCalled();
+  });
+
+  it("rejects a valid compressed body rather than inflating authenticated input", async () => {
+    const { app, enqueueEvent } = setup();
+    expect(
+      await post(
+        app,
+        `/api/webhooks/garmin?token=${SECRET}`,
+        gzipSync(JSON.stringify(payload)),
+        true,
+        { "content-encoding": "gzip" },
+      ),
+    ).toEqual({
+      status: 400,
+      body: { error: "Invalid Garmin notification body" },
+    });
+    expect(mocks.findOwners).not.toHaveBeenCalled();
+    expect(enqueueEvent).not.toHaveBeenCalled();
+    expect(mocks.capture).not.toHaveBeenCalled();
+  });
+
+  it.each(["encoding.unsupported", "request.aborted", "request.size.invalid"])(
+    "rejects malformed request bodies reported by the parser as %s",
+    async (type) => {
+      mocks.bodyFault.mockReturnValueOnce(Object.assign(new Error(type), { type }));
+      const { app, enqueueEvent } = setup();
+      expect(await post(app, `/api/webhooks/garmin?token=${SECRET}`)).toEqual({
+        status: 400,
+        body: { error: "Invalid Garmin notification body" },
+      });
+      expect(mocks.findOwners).not.toHaveBeenCalled();
+      expect(enqueueEvent).not.toHaveBeenCalled();
+      expect(mocks.capture).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    new Error("request stream unavailable"),
+    "unexpected request parser failure",
+    { type: "unknown.body.failure" },
+  ])(
+    "reports unexpected body parser failures without acknowledging delivery %j",
+    async (failure) => {
+      mocks.bodyFault.mockReturnValueOnce(failure);
+      const { app, enqueueEvent } = setup();
+      expect(await post(app, `/api/webhooks/garmin?token=${SECRET}`)).toEqual({
+        status: 503,
+        body: { error: "Garmin notification could not be received; retry delivery" },
+      });
+      expect(mocks.capture).toHaveBeenCalledWith(failure, {
+        tags: { provider: "garmin", operation: "webhook-body" },
+      });
+      expect(mocks.findOwners).not.toHaveBeenCalled();
+      expect(enqueueEvent).not.toHaveBeenCalled();
+    },
+  );
+
   it("bounds the authenticated raw request body", async () => {
     const { app, enqueueEvent } = setup();
     const body = JSON.stringify({ padding: "x".repeat(1024 * 1024) });
-    expect((await post(app, `/api/webhooks/garmin?token=${SECRET}`, body, true)).status).toBe(413);
+    expect(await post(app, `/api/webhooks/garmin?token=${SECRET}`, body, true)).toEqual({
+      status: 413,
+      body: { error: "Garmin notification body exceeds 1 MiB" },
+    });
     expect(enqueueEvent).not.toHaveBeenCalled();
   });
 });

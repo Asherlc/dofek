@@ -234,6 +234,32 @@ describe("initProductionSentry", () => {
     expect(result?.request?.query_string).toEqual({ token: "REDACTED", feed: "dailies" });
   });
 
+  it("keeps request and context metadata intact when an event has no query or trace", async () => {
+    vi.stubEnv("DEPLOY_ENVIRONMENT", "production");
+    (await loadInitProductionSentry())("https://key@sentry.example/456");
+    const beforeSend = mocks.init.mock.calls[0]?.[0].beforeSend;
+    if (!beforeSend) throw new Error("Sentry beforeSend was not configured");
+    const event: ErrorEvent = {
+      type: undefined,
+      request: { method: "POST", url: "https://dofek.example/api/webhooks/garmin" },
+      contexts: { runtime: { name: "node" } },
+    };
+    const expected = structuredClone(event);
+    expect(await beforeSend(event, {})).toStrictEqual(expected);
+  });
+
+  it("redacts a string query without changing its representation or ordinary parameters", async () => {
+    vi.stubEnv("DEPLOY_ENVIRONMENT", "production");
+    (await loadInitProductionSentry())("https://key@sentry.example/456");
+    const beforeSend = mocks.init.mock.calls[0]?.[0].beforeSend;
+    if (!beforeSend) throw new Error("Sentry beforeSend was not configured");
+    const result = await beforeSend(
+      { type: undefined, request: { query_string: "token=synthetic-string-secret&feed=dailies" } },
+      {},
+    );
+    expect(result?.request?.query_string).toBe("token=REDACTED&feed=dailies");
+  });
+
   it("redacts full URLs, legacy attributes and descriptions on Sentry spans", async () => {
     vi.stubEnv("DEPLOY_ENVIRONMENT", "production");
     (await loadInitProductionSentry())("https://key@sentry.example/456");
@@ -291,5 +317,9 @@ describe("initProductionSentry", () => {
     const result = (await beforeSendTransaction?.(event, {})) ?? event;
     expect(JSON.stringify(result)).not.toContain("synthetic-transaction-secret");
     expect(result.contexts?.trace?.data?.["url.query"]).toContain("feed=dailies");
+    expect(result.request?.query_string).toEqual([
+      ["token", "REDACTED"],
+      ["feed", "dailies"],
+    ]);
   });
 });

@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { Provider, ProviderAuthSetup } from "./types.ts";
-import { getProviderAuthTypeFromSetup, isSyncProvider, isWebhookProvider } from "./types.ts";
+import {
+  getProviderAuthTypeFromSetup,
+  isPushProvider,
+  isSyncProvider,
+  isWebhookProvider,
+} from "./types.ts";
 
 function stubProvider(overrides: Partial<Provider> = {}): Provider {
   return {
@@ -20,6 +25,35 @@ const dummyOAuthConfig = {
   redirectUri: "https://example.com/callback",
   scopes: ["read"],
 };
+
+describe("isPushProvider", () => {
+  const handlers = {
+    parseWebhookPayload: () => [],
+    syncWebhookEvent: async () => ({ provider: "test", recordsSynced: 0, errors: [], duration: 0 }),
+  };
+
+  it("recognizes a provider with explicit push delivery and both callable handlers", () => {
+    const provider = { ...stubProvider(), pushOnly: true, ...handlers };
+    expect(isPushProvider(provider)).toBe(true);
+  });
+
+  it.each([false, undefined])("requires explicit push delivery when pushOnly is %s", (pushOnly) => {
+    const provider = { ...stubProvider(), pushOnly, ...handlers };
+    expect(isPushProvider(provider)).toBe(false);
+  });
+
+  it.each([
+    { parseWebhookPayload: handlers.parseWebhookPayload },
+    { ...handlers, syncWebhookEvent: null },
+    { ...handlers, syncWebhookEvent: "not a handler" },
+    { syncWebhookEvent: handlers.syncWebhookEvent },
+    { ...handlers, parseWebhookPayload: null },
+    { ...handlers, parseWebhookPayload: "not a parser" },
+  ])("rejects an incomplete or non-callable push adapter: %j", (candidate) => {
+    const provider: Provider = { ...stubProvider(), pushOnly: true, ...candidate };
+    expect(isPushProvider(provider)).toBe(false);
+  });
+});
 
 describe("getProviderAuthTypeFromSetup", () => {
   it.each(["mountain-project", "openbeta"])(

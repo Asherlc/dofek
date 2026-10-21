@@ -234,35 +234,48 @@ describe("instrumentation", () => {
     );
   });
 
-  it("redacts incoming receiver credentials before HTTP span attributes are created", async () => {
-    const { startInstrumentation } = await import("./instrumentation.ts");
-    startInstrumentation({
-      OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: "https://collector.example/v1/traces",
-    });
-    const config = vi.mocked(getNodeAutoInstrumentations).mock.calls.at(-1)?.[0]?.[
-      "@opentelemetry/instrumentation-http"
-    ];
-    const request = new IncomingMessage(new Socket());
-    request.url = "/api/webhooks/garmin?token=synthetic-receiver-secret&feed=dailies";
-    request.method = "POST";
-    request.headers = { host: "dofek.example" };
-    const attributes = httpUtils.getIncomingRequestAttributes(
-      request,
-      {
-        component: "http",
-        enableSyntheticSourceDetection: false,
-        hookAttributes: config?.startIncomingSpanHook?.(request),
-      },
-      console,
-    );
-    request.destroy();
+  it.each([
+    { connection: "plain HTTP", encrypted: undefined, scheme: "http" },
+    { connection: "explicitly unencrypted HTTP", encrypted: false, scheme: "http" },
+    { connection: "encrypted HTTPS", encrypted: true, scheme: "https" },
+  ])(
+    "redacts incoming receiver credentials and preserves the $connection URL",
+    async ({ encrypted, scheme }) => {
+      const { startInstrumentation } = await import("./instrumentation.ts");
+      startInstrumentation({
+        OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: "https://collector.example/v1/traces",
+      });
+      const config = vi.mocked(getNodeAutoInstrumentations).mock.calls.at(-1)?.[0]?.[
+        "@opentelemetry/instrumentation-http"
+      ];
+      const request = new IncomingMessage(new Socket());
+      if (encrypted !== undefined) Object.assign(request.socket, { encrypted });
+      request.url = "/api/webhooks/garmin?token=synthetic-receiver-secret&feed=dailies";
+      request.method = "POST";
+      request.headers = { host: "dofek.example" };
+      const attributes = httpUtils.getIncomingRequestAttributes(
+        request,
+        {
+          component: scheme,
+          enableSyntheticSourceDetection: false,
+          hookAttributes: config?.startIncomingSpanHook?.(request),
+        },
+        console,
+      );
+      request.destroy();
 
-    expect(attributes["url.query"]).toContain("token=REDACTED");
-    expect(attributes["url.query"]).toContain("feed=dailies");
-    expect(JSON.stringify(attributes)).not.toContain("synthetic-receiver-secret");
-    expect(attributes["http.url"]).toContain("token=REDACTED");
-    expect(attributes["http.target"]).toContain("feed=dailies");
-  });
+      expect(attributes["url.query"]).toContain("token=REDACTED");
+      expect(attributes["url.query"]).toContain("feed=dailies");
+      expect(JSON.stringify(attributes)).not.toContain("synthetic-receiver-secret");
+      expect(attributes["http.url"]).toContain("token=REDACTED");
+      expect(attributes["http.target"]).toContain("feed=dailies");
+      expect(attributes["url.full"]).toBe(
+        `${scheme}://dofek.example/api/webhooks/garmin?token=REDACTED&feed=dailies`,
+      );
+      expect(attributes["http.url"]).toBe(attributes["url.full"]);
+      expect(attributes["http.target"]).toBe("/api/webhooks/garmin?token=REDACTED&feed=dailies");
+    },
+  );
 
   it("redacts outgoing full URLs and legacy HTTP attributes while retaining feed parameters", async () => {
     const { startInstrumentation } = await import("./instrumentation.ts");
@@ -304,7 +317,37 @@ describe("instrumentation", () => {
     expect(attributes["url.full"]).toContain("feed=fit");
     expect(attributes["http.url"]).toContain("token=REDACTED");
     expect(JSON.stringify(attributes)).not.toContain("synthetic-download-secret");
+    expect(attributes["url.full"]).toBe("https://apis.garmin.com/file?token=REDACTED&feed=fit");
+    expect(attributes["http.url"]).toBe(attributes["url.full"]);
+    expect(attributes["http.target"]).toBe("/file?token=REDACTED&feed=fit");
   });
+
+  it.each([
+    {
+      request: {
+        protocol: "https:",
+        host: "apis.garmin.com",
+        port: 8443,
+        path: "/file?token=synthetic-host-secret",
+      },
+      expectedUrl: "https://apis.garmin.com:8443/file?token=REDACTED",
+    },
+    { request: { host: "api.example.test" }, expectedUrl: "http://api.example.test/" },
+  ])(
+    "preserves legacy host and default HTTP request options: $expectedUrl",
+    async ({ request, expectedUrl }) => {
+      const { startInstrumentation } = await import("./instrumentation.ts");
+      startInstrumentation({
+        OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: "https://collector.example/v1/traces",
+      });
+      const config = vi.mocked(getNodeAutoInstrumentations).mock.calls.at(-1)?.[0]?.[
+        "@opentelemetry/instrumentation-http"
+      ];
+      const attributes = config?.startOutgoingSpanHook?.(request);
+      expect(attributes?.["url.full"]).toBe(expectedUrl);
+      expect(attributes?.["http.url"]).toBe(expectedUrl);
+    },
+  );
 
   it("redacts fetch span attributes through the Undici start-span hook", async () => {
     const { startInstrumentation } = await import("./instrumentation.ts");

@@ -22,6 +22,22 @@ describe("ProviderModel", () => {
     expect(model.isConnected).toBe(true);
   });
 
+  it.each([undefined, false])("keeps polling available when pushOnly is %s", (pushOnly) => {
+    const model = new ProviderModel(
+      {
+        id: "strava",
+        name: "Strava",
+        pushOnly,
+        authSetup: () => ({ oauthConfig: {}, exchangeCode: async () => ({}) }),
+      },
+      new Set(["strava"]),
+    );
+
+    expect(model.pushOnly).toBe(false);
+    expect(model.authType).toBe("oauth");
+    expect(model.isConnected).toBe(true);
+  });
+
   it("exposes a public profile connection without classifying it as an access token", () => {
     const model = new ProviderModel(
       {

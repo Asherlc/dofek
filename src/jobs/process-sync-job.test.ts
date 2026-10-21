@@ -473,6 +473,41 @@ describe("process-sync-job", () => {
     expect(provider.sync).not.toHaveBeenCalled();
   });
 
+  it("rejects notification processing when the push provider is misconfigured", async () => {
+    const provider = {
+      ...createMockProvider({ id: "garmin", validate: () => "GARMIN_CLIENT_ID is required" }),
+      pushOnly: true,
+      parseWebhookPayload: vi.fn(),
+      syncWebhookEvent: vi.fn(),
+    };
+    mockGetEnabledSyncProviders.mockReturnValue([]);
+    mockGetProvider.mockReturnValue(provider);
+    const webhookEvent = {
+      ownerExternalId: "owner",
+      eventType: "update" as const,
+      objectType: "dailies",
+    };
+
+    await expect(
+      runSyncJob(createMockJob({ providerId: "garmin", webhookEvent }), mockDb),
+    ).rejects.toThrow("Provider not configured: GARMIN_CLIENT_ID is required");
+    expect(provider.syncWebhookEvent).not.toHaveBeenCalled();
+    expect(provider.sync).not.toHaveBeenCalled();
+  });
+
+  it("rejects a webhook job for an unregistered provider", async () => {
+    mockGetEnabledSyncProviders.mockReturnValue([]);
+    mockGetProvider.mockReturnValue(undefined);
+    const webhookEvent = {
+      ownerExternalId: "owner",
+      eventType: "update" as const,
+      objectType: "dailies",
+    };
+    await expect(
+      runSyncJob(createMockJob({ providerId: "missing", webhookEvent }), mockDb),
+    ).rejects.toThrow("Unknown provider: missing");
+  });
+
   it("enqueues debounced global maintenance and per-user refit after sync", async () => {
     mockGetEnabledSyncProviders.mockReturnValue([createMockProvider()]);
 

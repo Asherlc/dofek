@@ -119,6 +119,35 @@ describe("processProviderDataDeletionJob", () => {
     expect(markCompleted).not.toHaveBeenCalled();
   });
 
+  it("stops artifact cleanup and acknowledgement when account erasure takes ownership", async () => {
+    const command = vi.fn(async () => undefined);
+    const query = vi
+      .fn()
+      .mockResolvedValueOnce({
+        json: async () => [{ active_parts: 1, missing_projection_parts: 0 }],
+      })
+      .mockResolvedValueOnce({ json: async () => [] });
+    const accountErasureAllowsWork = vi.fn(
+      async (phase: string) => phase !== "provider artifact deletion",
+    );
+    const deleteProviderArtifacts = vi.fn(async () => undefined);
+    const markCompleted = vi.fn(async () => undefined);
+
+    await processProviderDataDeletionJob(makeJob(), {
+      accountErasureAllowsWork,
+      clickHouseClient: { command, query },
+      deleteProviderArtifacts,
+      enqueueAnalyticsRefresh: async () => undefined,
+      enqueueContinuation: async () => undefined,
+      markCompleted,
+    });
+
+    expect(accountErasureAllowsWork).toHaveBeenLastCalledWith("provider artifact deletion");
+    expect(deleteProviderArtifacts).not.toHaveBeenCalled();
+    expect(command).toHaveBeenCalledOnce();
+    expect(markCompleted).not.toHaveBeenCalled();
+  });
+
   it("enqueues the next checkpoint as a separate job after one bounded batch", async () => {
     const command = vi.fn(async () => undefined);
     const query = vi

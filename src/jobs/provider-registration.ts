@@ -81,7 +81,6 @@ async function doRegisterProviders() {
       "thecrag",
       () => import("../providers/thecrag/provider.ts").then((m) => new m.TheCragProvider()),
     ],
-    ["alltrails", () => import("../providers/alltrails.ts").then((m) => new m.AllTrailsProvider())],
     [
       "amazfit-zepp",
       () => import("../providers/amazfit-zepp.ts").then((m) => new m.AmazfitZeppProvider()),
