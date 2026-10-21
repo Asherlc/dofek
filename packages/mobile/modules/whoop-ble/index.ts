@@ -30,19 +30,23 @@ export const WhoopDeviceSummarySchema = z.object({
 
 export type WhoopDeviceSummary = z.infer<typeof WhoopDeviceSummarySchema>;
 
-/** A single realtime data sample from a 0x28 REALTIME_DATA packet */
-export interface WhoopRealtimeDataSample {
-  deviceId?: string;
-  timestamp: string; // ISO 8601
+/** A reported heart rate, beat interval, and orientation sample from the native buffer. */
+const WhoopRealtimeDataSampleSchema = z.object({
+  deviceId: z.string().optional(),
+  timestamp: z.string().min(1),
+  /** Heart rate reported by the strap in bpm. 0 when unavailable. */
+  heartRateBpm: z.number().int().min(0).max(255),
   /** R-R interval in milliseconds (beat-to-beat timing). 0 when unavailable. */
-  rrIntervalMs: number;
-  quaternionW: number; // float32
-  quaternionX: number;
-  quaternionY: number;
-  quaternionZ: number;
+  rrIntervalMs: z.number().int().nonnegative(),
+  quaternionW: z.number(),
+  quaternionX: z.number(),
+  quaternionY: z.number(),
+  quaternionZ: z.number(),
   /** Raw optical/PPG bytes (offsets 23-40) as hex string, 36 chars = 18 bytes */
-  opticalRawHex: string;
-}
+  opticalRawHex: z.string().regex(/^[0-9a-f]{36}$/),
+});
+
+export type WhoopRealtimeDataSample = z.infer<typeof WhoopRealtimeDataSampleSchema>;
 
 const NativeWhoopSampleSchema = z.object({
   deviceId: z.string().min(1),
@@ -169,14 +173,16 @@ export function confirmSamplesDrain(count: number): void {
 }
 
 /**
- * Peek at buffered realtime data (beat interval + quaternion) WITHOUT removing.
+ * Peek at buffered realtime data (heart rate + beat interval + quaternion) WITHOUT removing.
  *
  * Call `confirmRealtimeDataDrain(count)` after a successful upload.
  */
 export async function peekBufferedRealtimeData(
   maxCount?: number,
 ): Promise<WhoopRealtimeDataSample[]> {
-  return WhoopBleModule.peekBufferedRealtimeData(maxCount);
+  return WhoopRealtimeDataSampleSchema.array().parse(
+    await WhoopBleModule.peekBufferedRealtimeData(maxCount),
+  );
 }
 
 /**
@@ -192,7 +198,9 @@ export function confirmRealtimeDataDrain(count: number): void {
  * @deprecated Use peekBufferedRealtimeData + confirmRealtimeDataDrain instead.
  */
 export async function getBufferedRealtimeData(): Promise<WhoopRealtimeDataSample[]> {
-  return WhoopBleModule.getBufferedRealtimeData();
+  return WhoopRealtimeDataSampleSchema.array().parse(
+    await WhoopBleModule.getBufferedRealtimeData(),
+  );
 }
 
 /**

@@ -307,6 +307,31 @@ export const PrimaryRecordingProvider: Story = {
   decorators: MappedActivity.decorators,
 };
 
+export const KayaProviderLogo: Story = {
+  args: {
+    activity: {
+      ...strengthActivity,
+      name: "Kaya climbing",
+      activityType: "climbing",
+      durationMin: 48,
+      source: {
+        origin: {
+          status: "resolved",
+          memberActivityId: "00000000-0000-4000-8000-000000000001",
+          providerId: "kaya",
+          sourceName: null,
+        },
+        primarySourceLabel: "Kaya",
+        sourceCount: 1,
+        overlapSummary: null,
+      },
+      location: climbingSourceLocation,
+      stats: [{ status: "available", label: "Training Stress Score", value: "23.4" }],
+    },
+  },
+  decorators: MappedActivity.decorators,
+};
+
 export const UnresolvedRecordingOrigin: Story = {
   args: {
     activity: {
