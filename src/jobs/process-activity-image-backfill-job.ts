@@ -45,8 +45,6 @@ export async function processImageBackfillPage(
   for (const activity of activities) {
     try {
       const result = await discover(activity);
-      discovered += result.images.length;
-      if (result.coverage === "failed" || result.coverage === "partial") failed++;
       if (
         result.retryable === true ||
         (result.coverage === "failed" && result.retryable !== false)
@@ -54,13 +52,15 @@ export async function processImageBackfillPage(
         retryAfterSeconds = result.retryAfterSeconds ?? 300;
         break;
       }
+      discovered += result.images.length;
+      if (result.coverage === "failed" || result.coverage === "partial") failed++;
     } catch (error) {
-      failed++;
       const failure = imageDiscoveryFailure(error);
       if (failure.retryable) {
         retryAfterSeconds = failure.retryAfterSeconds ?? 300;
         break;
       }
+      failed++;
     }
     scanned++;
     cursor = activity;

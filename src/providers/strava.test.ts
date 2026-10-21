@@ -3218,3 +3218,15 @@ describe("mapStravaActivityType — additional types", () => {
     expect(mapStravaActivityType("RockClimbing").canonicalType).toBe("climbing");
   });
 });
+
+it("skips the gallery request for an explicitly empty photo summary", async () => {
+  const fetch = vi.fn();
+  const client = new StravaClient(async () => "token", fetch);
+  expect(await client.getActivityImages(1, 0)).toEqual({
+    coverage: "complete",
+    expectedCount: 0,
+    reason: null,
+    images: [],
+  });
+  expect(fetch).not.toHaveBeenCalled();
+});

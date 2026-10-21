@@ -38,13 +38,13 @@ export function createActivityImageReconciler(
         const key = item.Key;
         // Exclude admitted uploads using the existing bounded session-lock pool,
         // without reserving a main-pool connection or opening a transaction for R2.
-        await pool.runWithExclusiveUserLock(owner.data, async () => {
+        await pool.tryRunWithExclusiveUserLock(owner.data, async () => {
           if (!(await accountErasureAllowsQueuedUserWork(db, owner.data, "activity image cleanup")))
             return;
           const referenced = await executeWithSchema(
             db,
             z.object({ id: z.string() }),
-            sql`SELECT i.id FROM fitness.activity_image i JOIN fitness.activity_image_object o ON o.id=i.object_id WHERE o.object_key=${key} AND i.retired_at IS NULL LIMIT 1`,
+            sql`SELECT i.id FROM fitness.activity_image i JOIN fitness.activity_image_object o ON o.id=i.object_id WHERE i.user_id=${owner.data}::uuid AND o.object_key=${key} AND i.retired_at IS NULL LIMIT 1`,
           );
           if (referenced.length) return;
           // Do not delete a file uploaded by a job whose database acknowledgement failed.
@@ -58,7 +58,7 @@ export function createActivityImageReconciler(
             abortSignal: AbortSignal.timeout(120_000),
           });
           await db.execute(
-            sql`DELETE FROM fitness.activity_image_object WHERE object_key=${key} AND user_id=${owner.data}::uuid AND NOT EXISTS(SELECT 1 FROM fitness.activity_image WHERE object_id=activity_image_object.id)`,
+            sql`DELETE FROM fitness.activity_image_object WHERE object_key=${key} AND user_id=${owner.data}::uuid AND NOT EXISTS(SELECT 1 FROM fitness.activity_image WHERE user_id=${owner.data}::uuid AND object_id=activity_image_object.id)`,
           );
         });
       }

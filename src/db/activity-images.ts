@@ -46,18 +46,19 @@ export async function recordActivityImageDiscovery(
     );
     for (const candidate of discovery.images) {
       if (!candidate.variants.length) continue;
+      // URL rotation refreshes pending work without resetting its generation or retry budget.
       const rows = await executeWithSchema(
         tx,
         idRow,
-        sql`INSERT INTO fitness.activity_image(user_id,activity_id,provider_id,source_id,candidate) VALUES(${userId}::uuid,${activityId}::uuid,${providerId},${candidate.sourceId},${JSON.stringify(candidate)}::jsonb) ON CONFLICT(user_id,activity_id,provider_id,source_id) DO UPDATE SET candidate=excluded.candidate, generation=activity_image.generation+1,updated_at=now() WHERE activity_image.retired_at IS NULL RETURNING id`,
+        sql`INSERT INTO fitness.activity_image(user_id,activity_id,provider_id,source_id,candidate) VALUES(${userId}::uuid,${activityId}::uuid,${providerId},${candidate.sourceId},${JSON.stringify(candidate)}::jsonb) ON CONFLICT(user_id,activity_id,provider_id,source_id) DO UPDATE SET candidate=excluded.candidate, generation=activity_image.generation+CASE WHEN activity_image.candidate->>'revision' IS DISTINCT FROM excluded.candidate->>'revision' THEN 1 ELSE 0 END,updated_at=now() WHERE activity_image.retired_at IS NULL RETURNING id`,
       );
       const row = rows[0];
       if (row) {
         await tx.execute(
-          sql`UPDATE fitness.activity_image_work SET state='terminal_failure',error_code='superseded' WHERE image_id=${row.id}::uuid AND state IN ('pending','retryable_failure')`,
+          sql`UPDATE fitness.activity_image_work SET state='terminal_failure',error_code='superseded' WHERE user_id=${userId}::uuid AND image_id=${row.id}::uuid AND generation<>(SELECT generation FROM fitness.activity_image WHERE id=${row.id}::uuid) AND state IN ('pending','retryable_failure','processing')`,
         );
         await tx.execute(
-          sql`INSERT INTO fitness.activity_image_work(user_id,image_id,generation) SELECT user_id,id,generation FROM fitness.activity_image WHERE id=${row.id}::uuid`,
+          sql`INSERT INTO fitness.activity_image_work(user_id,image_id,generation) SELECT user_id,id,generation FROM fitness.activity_image i WHERE id=${row.id}::uuid AND NOT EXISTS(SELECT 1 FROM fitness.activity_image_work w WHERE w.user_id=i.user_id AND w.image_id=i.id AND w.generation=i.generation)`,
         );
       }
     }

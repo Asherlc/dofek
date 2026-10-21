@@ -20,6 +20,12 @@ class AsyncPermitPool {
     this.#available = size;
   }
 
+  tryAcquire(): (() => void) | undefined {
+    if (this.#available === 0) return undefined;
+    this.#available -= 1;
+    return () => this.#release();
+  }
+
   async acquire(): Promise<() => void> {
     if (this.#available > 0) {
       this.#available -= 1;
@@ -51,8 +57,12 @@ type WorkOutcome<T> =
 
 export interface AccountErasureWorkLockPool {
   close(): Promise<void>;
-  runWithExclusiveUserLock<T>(userId: string, work: () => Promise<T>): Promise<T>;
-  runWithSharedUserLock<T>(userId: string, work: () => Promise<T>, providerId?: string): Promise<T>;
+  tryRunWithExclusiveUserLock<T>(userId: string, work: () => Promise<T>): Promise<T | undefined>;
+  runWithSharedUserLock<T>(
+    userId: string,
+    work: () => Promise<T>,
+    providerId?: string,
+  ): Promise<T | undefined>;
 }
 
 class PostgresAccountErasureWorkLockPool implements AccountErasureWorkLockPool {
@@ -67,7 +77,7 @@ class PostgresAccountErasureWorkLockPool implements AccountErasureWorkLockPool {
     return this.#pool.end();
   }
 
-  runWithExclusiveUserLock<T>(userId: string, work: () => Promise<T>): Promise<T> {
+  tryRunWithExclusiveUserLock<T>(userId: string, work: () => Promise<T>): Promise<T | undefined> {
     return this.#runWithUserLock(userId, work, undefined, true);
   }
 
@@ -75,7 +85,7 @@ class PostgresAccountErasureWorkLockPool implements AccountErasureWorkLockPool {
     userId: string,
     work: () => Promise<T>,
     providerId?: string,
-  ): Promise<T> {
+  ): Promise<T | undefined> {
     return this.#runWithUserLock(userId, work, providerId, false);
   }
 
@@ -84,8 +94,11 @@ class PostgresAccountErasureWorkLockPool implements AccountErasureWorkLockPool {
     work: () => Promise<T>,
     providerId: string | undefined,
     exclusive: boolean,
-  ): Promise<T> {
-    const releaseConnectionPermit = await this.#connectionPermits.acquire();
+  ): Promise<T | undefined> {
+    const releaseConnectionPermit = exclusive
+      ? this.#connectionPermits.tryAcquire()
+      : await this.#connectionPermits.acquire();
+    if (!releaseConnectionPermit) return undefined;
     try {
       const client = await this.#pool.connect();
       const providerLockName =
@@ -128,13 +141,23 @@ class PostgresAccountErasureWorkLockPool implements AccountErasureWorkLockPool {
             sql`SELECT pg_advisory_lock(hashtextextended(${providerLockName}::text, 0))`,
           );
         }
-        await executeWithSchema(
-          database,
-          z.object({}),
-          exclusive
-            ? sql`SELECT pg_advisory_lock(hashtextextended(${accountErasureQueuedUserWorkLockName(userId)}::text, 0))`
-            : sql`SELECT pg_advisory_lock_shared(hashtextextended(${accountErasureQueuedUserWorkLockName(userId)}::text, 0))`,
-        );
+        if (exclusive) {
+          const rows = await executeWithSchema(
+            database,
+            z.object({ acquired: z.boolean() }),
+            sql`SELECT pg_try_advisory_lock(hashtextextended(${accountErasureQueuedUserWorkLockName(userId)}::text, 0)) AS acquired`,
+          );
+          if (!rows[0]?.acquired) {
+            releaseClient();
+            return undefined;
+          }
+        } else {
+          await executeWithSchema(
+            database,
+            z.object({}),
+            sql`SELECT pg_advisory_lock_shared(hashtextextended(${accountErasureQueuedUserWorkLockName(userId)}::text, 0))`,
+          );
+        }
       } catch (error: unknown) {
         releaseClient(true);
         Sentry.captureException(error, {

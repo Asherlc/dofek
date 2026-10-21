@@ -172,9 +172,32 @@ it("reports a polling failure and recovers on the next tick", async () => {
     expect(captureException).toHaveBeenCalledWith(error, {
       tags: { source: "activity-image-outbox" },
     });
-    expect(backfill).not.toHaveBeenCalled();
-    await vi.advanceTimersByTimeAsync(5000);
     expect(backfill).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(backfill).toHaveBeenCalledTimes(2);
+  } finally {
+    await dispatcher.close();
+    vi.useRealTimers();
+  }
+});
+
+it("dispatches acquisitions and backfills during a cleanup outage without polling R2 every tick", async () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date("2026-10-20"));
+  mocks.pending.mockResolvedValue([{ id: "work", userId: "owner" }]);
+  const { startActivityImageOutboxDispatcher } = await import("./activity-image-outbox.ts");
+  const reconcile = vi.fn().mockRejectedValue(Error("R2 unavailable"));
+  const queue = { add: vi.fn(async () => undefined) };
+  const backfill = vi.fn(async () => undefined);
+  const dispatcher = startActivityImageOutboxDispatcher(db, queue, reconcile, backfill);
+  try {
+    await vi.advanceTimersByTimeAsync(0);
+    expect(queue.add).toHaveBeenCalledOnce();
+    expect(backfill).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(reconcile).toHaveBeenCalledOnce();
+    expect(queue.add).toHaveBeenCalledTimes(2);
+    expect(backfill).toHaveBeenCalledTimes(2);
   } finally {
     await dispatcher.close();
     vi.useRealTimers();

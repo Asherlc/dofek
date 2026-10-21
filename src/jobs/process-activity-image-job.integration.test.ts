@@ -1,12 +1,15 @@
 import { randomUUID } from "node:crypto";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { syncBuiltinESMExports } from "node:module";
 import { CreateBucketCommand, GetObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { sql } from "drizzle-orm";
+import { HttpResponse, http } from "msw";
+import { setupServer } from "msw/node";
 import type { StartedTestContainer } from "testcontainers";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createSeaweedFsS3Container } from "../account-erasure/test-helpers.ts";
+import { createActivityImageJobDependencies } from "../activity-images/acquire.ts";
+import { inspectImageBytes } from "../activity-images/download.ts";
+import { activityImageObjectKey, eraseActivityImageObjects } from "../activity-images/storage.ts";
 import { initiateAccountErasure } from "../db/account-erasure.ts";
 import {
   listPendingActivityImageWork,
@@ -22,22 +25,11 @@ import {
   createAccountErasureWorkLockPool,
   runQueuedUserWorkUnlessAccountErasing,
 } from "./account-erasure-work-guard.ts";
-
-const mocks = vi.hoisted(() => ({
-  download: vi.fn<typeof import("../activity-images/download.ts").downloadActivityImage>(),
-}));
-vi.mock("../activity-images/download.ts", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../activity-images/download.ts")>()),
-  downloadActivityImage: mocks.download,
-}));
-
-import { createActivityImageJobDependencies } from "../activity-images/acquire.ts";
-import { inspectImageBytes } from "../activity-images/download.ts";
-import { activityImageObjectKey, eraseActivityImageObjects } from "../activity-images/storage.ts";
 import { processActivityImageJob } from "./process-activity-image-job.ts";
 
 describe("account erasure racing with image acquisition", () => {
-  let ctx: TestContext, container: StartedTestContainer, client: S3Client, directory: string;
+  let ctx: TestContext, container: StartedTestContainer, client: S3Client;
+  const server = setupServer();
   const userId = randomUUID(),
     activityId = randomUUID(),
     bucket = "media-erasure-race";
@@ -59,7 +51,8 @@ describe("account erasure racing with image acquisition", () => {
     vi.stubEnv("R2_ACCESS_KEY_ID", "media");
     vi.stubEnv("R2_SECRET_ACCESS_KEY", "media-secret");
     vi.stubEnv("ACTIVITY_MEDIA_R2_BUCKET", bucket);
-    directory = await mkdtemp(join(tmpdir(), "media-race-"));
+    server.listen({ onUnhandledRequest: "bypass" });
+    syncBuiltinESMExports();
     await ctx.db.execute(
       sql`INSERT INTO fitness.user_profile(id,name) VALUES(${userId},'Media erasure race')`,
     );
@@ -76,7 +69,8 @@ describe("account erasure racing with image acquisition", () => {
   afterAll(async () => {
     vi.unstubAllEnvs();
     client?.destroy();
-    if (directory) await rm(directory, { recursive: true, force: true });
+    server.close();
+    syncBuiltinESMExports();
     await container?.stop();
     await ctx?.cleanup();
   });
@@ -86,15 +80,19 @@ describe("account erasure racing with image acquisition", () => {
       "base64",
     );
     const metadata = await inspectImageBytes(bytes, "image/png");
-    const filePath = join(directory, "original");
-    await writeFile(filePath, bytes);
     const started = createTestBarrier(),
       release = createTestBarrier();
-    mocks.download.mockImplementation(async () => {
-      started.resolve();
-      await release.promise;
-      return { ...metadata, filePath, cleanup: async () => undefined };
-    });
+    const served = vi.fn();
+    server.use(
+      http.get("https://8.8.8.8/photo", async () => {
+        served();
+        started.resolve();
+        await release.promise;
+        return new HttpResponse(new Uint8Array(bytes), {
+          headers: { "content-type": "image/png" },
+        });
+      }),
+    );
     await recordActivityImageDiscovery(ctx.db, {
       userId,
       activityId,
@@ -109,7 +107,7 @@ describe("account erasure racing with image acquisition", () => {
             kind: "photo",
             caption: null,
             position: 0,
-            variants: [{ url: "https://cdn.test/photo", width: 1, height: 1 }],
+            variants: [{ url: "https://8.8.8.8/photo", width: 1, height: 1 }],
             revision: null,
             raw: {},
           },
@@ -151,7 +149,7 @@ describe("account erasure racing with image acquisition", () => {
     await erasure;
     await eraseActivityImageObjects(userId);
     await acquire();
-    expect(mocks.download).toHaveBeenCalledTimes(1);
+    expect(served).toHaveBeenCalledOnce();
     await expect(
       client.send(
         new GetObjectCommand({

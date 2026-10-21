@@ -53,20 +53,23 @@ export function startActivityImageOutboxDispatcher(
   const tick = () => {
     if (closed || active) return;
     active = (async () => {
+      const runStep = async (step: () => Promise<unknown>) => {
+        try {
+          await step();
+        } catch (error) {
+          captureException(error, { tags: { source: "activity-image-outbox" } });
+        }
+      };
       if (Date.now() - lastReconcile >= 300_000) {
-        await reconcileActivityImageWork(db);
-        await reconcile();
         lastReconcile = Date.now();
+        await runStep(() => reconcileActivityImageWork(db));
+        await runStep(reconcile);
       }
-      await dispatchActivityImageOutbox(db, queue);
-      await dispatchBackfills();
-    })()
-      .catch((error: unknown) => {
-        captureException(error, { tags: { source: "activity-image-outbox" } });
-      })
-      .finally(() => {
-        active = null;
-      });
+      await runStep(() => dispatchActivityImageOutbox(db, queue));
+      await runStep(dispatchBackfills);
+    })().finally(() => {
+      active = null;
+    });
   };
   const timer = setInterval(tick, 5000);
   tick();

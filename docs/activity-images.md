@@ -60,24 +60,29 @@ existing provider/user execution locks and account-erasure barriers. Five
 attempts use exponential delays from 30 seconds, respecting image-host
 Retry-After. Expired links are refreshed through the provider once per attempt.
 A stored copy remains available when a refresh fails.
+Rediscovery updates URLs in place; only a changed source revision advances the
+generation. Stored or exhausted acquisition work is not restarted by unchanged
+rediscovery ([persistence implementation](../src/db/activity-images.ts)).
 
 Downloads allow public HTTPS destinations only, pin validated DNS results,
 revalidate redirects, and never send provider credentials to image hosts.
 Limits are 50 MiB, 100 million pixels, three redirects, and two minutes.
+Downloads stream original chunks to a temporary file with incremental hashing;
+metadata inspection reads that file rather than buffering a complete original.
 Rejected images remain visible as failed acquisition records. JPEG, PNG, WebP,
 GIF, AVIF, and supported HEIF images retain their original bytes; no EXIF
 stripping or recompression occurs. Animated files are not flattened.
 
 Reconciliation runs every five minutes, repairs 15-minute stale leases, and
 checks at most 100 stored keys per sweep. Unreferenced files older than one day
-are eligible for cleanup. Cleanup takes an exclusive user-work session advisory
-lock in the existing four-session guard pool; acquisitions retain the shared
-user-work lock through upload and attachment. Cleanup waits for admitted work
-and briefly blocks new work for that user, preserving live associations without
-holding a database transaction during R2 requests. PostgreSQL documents these
+are eligible for cleanup. Cleanup tries an exclusive user-work session advisory
+lock in the existing four-session guard pool, skipping busy locks or a full
+guard pool; acquisitions retain the shared user-work lock through upload and
+attachment. Cleanup skips admitted work and briefly blocks new work for that
+user only after acquiring the lock, preserving live associations without holding
+a database transaction during R2 requests. PostgreSQL documents these
 [session and shared/exclusive advisory locks](https://www.postgresql.org/docs/current/explicit-locking.html#ADVISORY-LOCKS).
-R2 supports the required
-operations through its [S3 API](https://developers.cloudflare.com/r2/api/s3/api/).
+R2 supports the required operations through its [S3 API](https://developers.cloudflare.com/r2/api/s3/api/).
 
 ## Backfill and API
 

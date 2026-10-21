@@ -7,6 +7,7 @@ describe("activity image backfill arguments", () => {
       [],
       ["--user-id", "not-uuid"],
       ["--all", "true"],
+      ["--user-id", "00000000-0000-4000-8000-000000000001", "--status", "not-uuid"],
       [
         "--user-id",
         "00000000-0000-4000-8000-000000000001",
@@ -23,6 +24,12 @@ describe("activity image backfill arguments", () => {
         "00000000-0000-4000-8000-000000000001",
         "--provider-id",
         "peloton",
+        "--status",
+        "00000000-0000-4000-8000-000000000002",
       ]),
-    ).toMatchObject({ providerId: "peloton" }));
+    ).toEqual({
+      userId: "00000000-0000-4000-8000-000000000001",
+      providerId: "peloton",
+      status: "00000000-0000-4000-8000-000000000002",
+    }));
 });

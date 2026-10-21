@@ -104,3 +104,28 @@ it("bounds a provider which always returns full unmatched pages", async () => {
   ).toMatchObject({ coverage: "partial", images: [] });
   expect(mocks.activities).toHaveBeenCalledTimes(100);
 });
+
+it("reuses historical summary pages across one run and continues from the previous offset", async () => {
+  const { db } = createMockDatabase();
+  const run = new SyncRun({
+    db,
+    userId: "owner",
+    window: SyncWindow.fromSince({ since: new Date(0) }),
+  });
+  const provider = new ZwiftProvider();
+  mocks.activities
+    .mockReset()
+    .mockResolvedValueOnce(
+      Array.from({ length: 20 }, (_, id) => ({
+        id,
+        primaryImageUrl: `https://cdn.test/${id}.jpg`,
+      })),
+    )
+    .mockResolvedValueOnce([{ id: 42, primaryImageUrl: "https://cdn.test/42.jpg" }]);
+  await provider.discoverActivityImages(run, "0");
+  expect((await provider.discoverActivityImages(run, "1")).images).toHaveLength(1);
+  expect((await provider.discoverActivityImages(run, "42")).images).toHaveLength(1);
+  await provider.discoverActivityImages(run, "missing");
+  expect(mocks.activities).toHaveBeenCalledTimes(2);
+  expect(mocks.activities).toHaveBeenNthCalledWith(2, 20, 20);
+});

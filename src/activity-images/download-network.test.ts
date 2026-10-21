@@ -1,4 +1,7 @@
+import { createHash } from "node:crypto";
 import { EventEmitter } from "node:events";
+import { readFile } from "node:fs/promises";
+import { Readable } from "node:stream";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({ lookup: vi.fn(), request: vi.fn() }));
@@ -15,26 +18,18 @@ interface FakeImageResponse extends EventEmitter {
   statusCode: number;
   headers: Record<string, string>;
   resume(): void;
-  destroy(): void;
+  destroy(error?: Error): void;
 }
 function respond(status: number, headers: Record<string, string>, bytes = png) {
   mocks.request.mockImplementationOnce(
     (_url: URL, _options: unknown, callback: (response: FakeImageResponse) => void) => {
-      const response = Object.assign(new EventEmitter(), {
-        statusCode: status,
-        headers,
-        resume() {},
-        destroy(error?: Error) {
-          if (error) response.emit("error", error);
-        },
-      });
+      const chunks = Array.from({ length: Math.ceil(bytes.length / 65536) }, (_, i) =>
+        bytes.subarray(i * 65536, (i + 1) * 65536),
+      );
+      const response = Object.assign(Readable.from(chunks), { statusCode: status, headers });
       const req = Object.assign(new EventEmitter(), {
         end() {
           callback(response);
-          queueMicrotask(() => {
-            response.emit("data", bytes);
-            response.emit("end");
-          });
         },
       });
       return req;
@@ -186,6 +181,39 @@ it("includes the caller's abort signal and disables pooled connections", async (
     controller.abort();
     expect(options.signal.aborted).toBe(true);
   } finally {
+    await image.cleanup();
+  }
+});
+
+it.each(["soon", "Infinity", "0"])(
+  "normalizes Retry-After %s to a finite zero delay",
+  async (value) => {
+    respond(429, { "retry-after": value });
+    await expect(
+      downloadActivityImage({ url: "https://cdn.test/a", allowedOrigins: ["https://cdn.test"] }),
+    ).rejects.toMatchObject({ retryAfterSeconds: 0 });
+  },
+);
+
+it("streams chunks to disk without concatenating a complete original in memory", async () => {
+  const original = Buffer.alloc(1024 * 1024);
+  png.copy(original);
+  const concat = vi.spyOn(Buffer, "concat");
+  respond(200, { "content-type": "image/png" }, original);
+  const image = await downloadActivityImage({
+    url: "https://cdn.test/a",
+    allowedOrigins: ["https://cdn.test"],
+  });
+  try {
+    expect(
+      concat.mock.calls.filter(
+        ([chunks]) => chunks.reduce((n, chunk) => n + chunk.length, 0) >= original.length,
+      ),
+    ).toHaveLength(0);
+    expect(await readFile(image.filePath)).toEqual(original);
+    expect(image.sha256).toBe(createHash("sha256").update(original).digest("hex"));
+  } finally {
+    concat.mockRestore();
     await image.cleanup();
   }
 });

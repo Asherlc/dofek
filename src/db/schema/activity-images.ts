@@ -63,6 +63,9 @@ export const activityImage = fitness.table(
   (t) => [
     uniqueIndex("activity_image_source_idx").on(t.userId, t.activityId, t.providerId, t.sourceId),
     uniqueIndex("activity_image_user_id_idx").on(t.userId, t.id),
+    index("activity_image_user_object_idx")
+      .on(t.userId, t.objectId)
+      .where(sql`${t.objectId} IS NOT NULL`),
     foreignKey({
       columns: [t.userId, t.activityId],
       foreignColumns: [activity.userId, activity.id],
@@ -126,6 +129,7 @@ export const activityImageWork = fitness.table(
       name: "activity_image_work_owned_image_fk",
     }).onDelete("cascade"),
     index("activity_image_work_pending_idx").on(t.state, t.availableAt),
+    index("activity_image_work_user_image_idx").on(t.userId, t.imageId),
     check(
       "activity_image_work_state",
       sql`${t.state} IN ('pending','processing','stored','retryable_failure','terminal_failure')`,

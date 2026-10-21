@@ -15,7 +15,7 @@ vi.mock("./account-erasure-work-guard.ts", () => ({
 const pool: AccountErasureWorkLockPool = {
   close: async () => {},
   runWithSharedUserLock: async (_user, work) => work(),
-  runWithExclusiveUserLock: vi.fn(async (_user, work) => work()),
+  tryRunWithExclusiveUserLock: vi.fn(async (_user, work) => work()),
 };
 const owner = "00000000-0000-4000-8000-000000000001";
 const key = `images/${owner}/${"a".repeat(64)}`;
@@ -33,7 +33,7 @@ it("deletes an old unreferenced object under an exclusive user session barrier",
     .mockResolvedValueOnce({});
   await createActivityImageReconciler(db, pool)();
   expect(mocks.guard).toHaveBeenCalledWith(db, owner, "activity image cleanup");
-  expect(pool.runWithExclusiveUserLock).toHaveBeenCalledWith(owner, expect.any(Function));
+  expect(pool.tryRunWithExclusiveUserLock).toHaveBeenCalledWith(owner, expect.any(Function));
   expect(spies.execute).toHaveBeenCalledTimes(3);
   expect(mocks.send).toHaveBeenNthCalledWith(
     2,

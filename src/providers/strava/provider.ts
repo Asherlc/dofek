@@ -276,6 +276,8 @@ export class StravaClient {
     expectedCount: number | null,
     primary: unknown = null,
   ): Promise<ImageDiscovery> {
+    if (expectedCount === 0 && !primary)
+      return { coverage: "complete", expectedCount: 0, reason: null, images: [] };
     return fetchStravaActivityImages(
       (page) =>
         this.#get(`activities/${activityId}/photos`, {

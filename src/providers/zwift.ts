@@ -40,6 +40,15 @@ export class ZwiftProvider implements SyncProvider {
   readonly id = "zwift";
   readonly name = "Zwift";
   #fetchFn: typeof globalThis.fetch;
+  #imageSummaries = new WeakMap<
+    SyncRun,
+    {
+      client: ZwiftClient;
+      nextOffset: number;
+      finished: boolean;
+      byId: Map<string, ZwiftActivitySummary>;
+    }
+  >();
 
   constructor(fetchFn: typeof globalThis.fetch = globalThis.fetch) {
     this.#fetchFn = createProviderRateLimitFetch("zwift", fetchFn);
@@ -222,20 +231,35 @@ export class ZwiftProvider implements SyncProvider {
     );
     const stored = rows[0]?.raw;
     if (!options?.refresh && stored?.primaryImageUrl) return zwiftImageDiscovery(stored);
-    const { accessToken, athleteId } = await this.#resolveTokens(run.db);
-    const client = new ZwiftClient(accessToken, athleteId, this.#fetchFn);
-    for (
-      let offset = 0;
-      offset < ZWIFT_MAX_ACTIVITY_PAGES * ZWIFT_ACTIVITY_PAGE_SIZE;
-      offset += ZWIFT_ACTIVITY_PAGE_SIZE
-    ) {
-      const summaries = await client.getActivities(offset, ZWIFT_ACTIVITY_PAGE_SIZE);
-      const found = summaries.find(
-        (summary) => (summary.id_str || String(summary.id)) === activityExternalId,
-      );
-      if (found) return zwiftImageDiscovery(found);
-      if (summaries.length < ZWIFT_ACTIVITY_PAGE_SIZE) break;
+    if (options?.refresh) this.#imageSummaries.delete(run);
+    let cache = this.#imageSummaries.get(run);
+    if (!cache) {
+      const { accessToken, athleteId } = await this.#resolveTokens(run.db);
+      cache = {
+        client: new ZwiftClient(accessToken, athleteId, this.#fetchFn),
+        nextOffset: 0,
+        finished: false,
+        byId: new Map(),
+      };
+      this.#imageSummaries.set(run, cache);
     }
+    let found = cache.byId.get(activityExternalId);
+    while (
+      !found &&
+      !cache.finished &&
+      cache.nextOffset < ZWIFT_MAX_ACTIVITY_PAGES * ZWIFT_ACTIVITY_PAGE_SIZE
+    ) {
+      const summaries = await cache.client.getActivities(
+        cache.nextOffset,
+        ZWIFT_ACTIVITY_PAGE_SIZE,
+      );
+      cache.nextOffset += ZWIFT_ACTIVITY_PAGE_SIZE;
+      cache.finished = summaries.length < ZWIFT_ACTIVITY_PAGE_SIZE;
+      for (const summary of summaries)
+        cache.byId.set(summary.id_str || String(summary.id), summary);
+      found = cache.byId.get(activityExternalId);
+    }
+    if (found) return zwiftImageDiscovery(found);
     return {
       coverage: "partial",
       expectedCount: null,

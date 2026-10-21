@@ -19,7 +19,7 @@ describe("historical image backfill", () => {
     expect(result).toMatchObject({
       scanned: 1,
       discovered: 2,
-      failed: 1,
+      failed: 0,
       cursor: { id: "a" },
       retryAfterSeconds: 300,
     });
@@ -53,7 +53,7 @@ it("stops before a transient failure and carries its retry deadline", async () =
     scanned: 1,
     cursor: { id: "a" },
     retryAfterSeconds: 900,
-    failed: 1,
+    failed: 0,
   });
 });
 
@@ -234,10 +234,23 @@ it("advances after permanent failures and retries failed discovery without an ex
   ).toMatchObject({ scanned: 1, failed: 1, retryAfterSeconds: 0 });
   expect(
     await processImageBackfillPage(activities, async () => ({ coverage: "failed", images: [] })),
-  ).toMatchObject({ scanned: 0, failed: 1, retryAfterSeconds: 300 });
+  ).toMatchObject({ scanned: 0, failed: 0, retryAfterSeconds: 300 });
   expect(
     await processImageBackfillPage(activities, async () => {
       throw { statusCode: 404 };
     }),
   ).toMatchObject({ scanned: 1, failed: 1, retryAfterSeconds: 0 });
+});
+
+it("counts a partial activity only when its cursor advances", async () => {
+  const activities = [{ id: "a", externalId: "a", startedAt: "2020-01-01" }];
+  const discovery = { coverage: "partial" as const, images: [], retryable: true };
+  expect(await processImageBackfillPage(activities, async () => discovery)).toMatchObject({
+    scanned: 0,
+    discovered: 0,
+    failed: 0,
+  });
+  expect(
+    await processImageBackfillPage(activities, async () => ({ ...discovery, retryable: false })),
+  ).toMatchObject({ scanned: 1, failed: 1 });
 });

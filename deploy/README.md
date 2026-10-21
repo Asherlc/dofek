@@ -740,9 +740,11 @@ one of their historical hostnames does not mean that UI should be running.
 ## Activity image storage
 
 Provider activity image originals use the private `dofek-activity-media` R2
-bucket declared in `storage.tf`, selected by `ACTIVITY_MEDIA_R2_BUCKET` on web
-and worker. Provision the bucket through Terraform and configure the binding
-in Infisical before deploying image acquisition. The media bucket has no
+bucket declared in `storage.tf`, selected by `ACTIVITY_MEDIA_R2_BUCKET`, which
+`stack.yml` sets on web and worker. Provision the bucket through Terraform
+before deploying image acquisition. Reuse the existing Infisical credentials
+`R2_ACCESS_KEY_ID` and `R2_SECRET_ACCESS_KEY` with the configured `R2_ENDPOINT`.
+The media bucket has no
 age-based expiry or public domain. Access uses authenticated, five-minute
 signed GET URLs; treat those URLs as bearer credentials
 ([Cloudflare presigned URLs](https://developers.cloudflare.com/r2/api/s3/presigned-urls/)).

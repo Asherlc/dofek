@@ -92,24 +92,30 @@ describe("account-erasure queued-work barrier (integration)", () => {
       const first =
         firstKind === "upload"
           ? firstPool.runWithSharedUserLock(concurrentWorkUserId, firstWork, "strava")
-          : firstPool.runWithExclusiveUserLock(concurrentWorkUserId, firstWork);
+          : firstPool.tryRunWithExclusiveUserLock(concurrentWorkUserId, firstWork);
       await started.promise;
       const secondWork = vi.fn(async () => {
         events.push("second");
       });
       const second =
         firstKind === "upload"
-          ? secondPool.runWithExclusiveUserLock(concurrentWorkUserId, secondWork)
+          ? secondPool.tryRunWithExclusiveUserLock(concurrentWorkUserId, secondWork)
           : secondPool.runWithSharedUserLock(concurrentWorkUserId, secondWork, "peloton");
       try {
-        await vi.waitFor(async () => expect(await hasDatabaseLockWaiter(context.db)).toBe(true));
+        if (firstKind === "upload") await expect(second).resolves.toBeUndefined();
+        else
+          await vi.waitFor(async () => expect(await hasDatabaseLockWaiter(context.db)).toBe(true));
         expect(secondWork).not.toHaveBeenCalled();
         await secondPool.runWithSharedUserLock(shutdownUserId, async () => "independent user");
       } finally {
         release.resolve();
         await Promise.all([first, second]);
       }
-      expect(events).toEqual(["first start", "first finish", "second"]);
+      expect(events).toEqual(
+        firstKind === "upload"
+          ? ["first start", "first finish"]
+          : ["first start", "first finish", "second"],
+      );
     },
   );
 

@@ -54,7 +54,7 @@ import {
 function createWorkLockPool(): AccountErasureWorkLockPool {
   return {
     close: vi.fn(async () => undefined),
-    runWithExclusiveUserLock: vi.fn(async (_userId, work) => work()),
+    tryRunWithExclusiveUserLock: vi.fn(async (_userId, work) => work()),
     runWithSharedUserLock: vi.fn(async (_userId, work) => work()),
   };
 }
@@ -69,8 +69,9 @@ beforeEach(() => {
 describe("PostgreSQL queued-work lock pool", () => {
   it("holds an exclusive session barrier for cleanup without starting a transaction", async () => {
     const pool = createAccountErasureWorkLockPool("postgres://database.test/dofek");
+    mocks.poolClient.query.mockResolvedValueOnce({ rows: [{ acquired: true }] });
     await expect(
-      pool.runWithExclusiveUserLock("user-1", async () => {
+      pool.tryRunWithExclusiveUserLock("user-1", async () => {
         expect(mocks.poolClient.query).toHaveBeenCalledTimes(1);
         expect(mocks.poolClient.release).not.toHaveBeenCalled();
         return "deleted";
@@ -78,7 +79,7 @@ describe("PostgreSQL queued-work lock pool", () => {
     ).resolves.toBe("deleted");
     expect(
       mocks.poolClient.query.mock.calls.map(([query]) => query.text.trim().split("(")[0]),
-    ).toEqual(["SELECT pg_advisory_lock", "SELECT pg_advisory_unlock"]);
+    ).toEqual(["SELECT pg_try_advisory_lock", "SELECT pg_advisory_unlock"]);
     expect(mocks.poolClient.query.mock.calls.map(([, values]) => values)).toEqual([
       ["account-erasure-queued-user-work:user-1"],
       ["account-erasure-queued-user-work:user-1"],
@@ -606,4 +607,39 @@ describe("runQueuedUserWorkUnlessAccountErasing", () => {
 
     expect(work).not.toHaveBeenCalled();
   });
+});
+
+it("skips cleanup without checking out a fifth session when all permits are occupied", async () => {
+  const pool = createAccountErasureWorkLockPool("postgres://test");
+  let finish = () => {};
+  const pending = new Promise<void>((resolve) => {
+    finish = resolve;
+  });
+  const busy = Array.from({ length: 4 }, (_, i) =>
+    pool.runWithSharedUserLock(String(i), () => pending),
+  );
+  await vi.waitFor(() => expect(mocks.poolClient.query).toHaveBeenCalledTimes(4));
+  const work = vi.fn();
+  try {
+    await expect(pool.tryRunWithExclusiveUserLock("owner", work)).resolves.toBeUndefined();
+    expect(work).not.toHaveBeenCalled();
+    expect(mocks.pool.connect).toHaveBeenCalledTimes(4);
+  } finally {
+    finish();
+    await Promise.all(busy);
+  }
+});
+it("releases the session and permit when a cleanup lock is busy", async () => {
+  const pool = createAccountErasureWorkLockPool("postgres://test");
+  mocks.poolClient.query
+    .mockResolvedValueOnce({ rows: [{ acquired: false }] })
+    .mockResolvedValueOnce({ rows: [{ acquired: true }] })
+    .mockResolvedValueOnce({ rows: [{ unlocked: true }] });
+  const skipped = vi.fn();
+  await expect(pool.tryRunWithExclusiveUserLock("owner", skipped)).resolves.toBeUndefined();
+  expect(skipped).not.toHaveBeenCalled();
+  expect(mocks.poolClient.release).toHaveBeenCalledWith();
+  await expect(pool.tryRunWithExclusiveUserLock("owner", async () => "cleaned")).resolves.toBe(
+    "cleaned",
+  );
 });
