@@ -398,11 +398,21 @@ describe("syncGarminHealthRecord sleep mapping", () => {
 });
 
 describe("syncGarminHealthRecord validation", () => {
-  it("requires an explicit Dofek owner before writing any health record", async () => {
-    const { db, spies } = createMockDatabase();
-    await expect(syncGarminHealthRecord(db, "dailies", {}, {})).rejects.toThrow("userId");
-    expect(spies.insert).not.toHaveBeenCalled();
-  });
+  it.each([undefined, "", "   "])(
+    "requires an explicit Dofek owner before writing a valid health record (%s)",
+    async (ownerId) => {
+      const { db, spies } = createMockDatabase();
+      await expect(
+        syncGarminHealthRecord(
+          db,
+          "dailies",
+          base,
+          ownerId === undefined ? {} : { userId: ownerId },
+        ),
+      ).rejects.toThrow("Garmin health persistence requires userId");
+      expect(spies.insert).not.toHaveBeenCalled();
+    },
+  );
 
   it.each(["dailies", "sleeps", "hrv", "pulseox", "allDayRespiration"] as const)(
     "validates %s payload before writing",
