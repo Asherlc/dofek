@@ -32376,3 +32376,28 @@ The entries below preserve findings and branch-level validation from the review 
 - **Impact / evidence:** [PR #3015's Import Boundaries check](https://github.com/Asherlc/dofek/actions/runs/39506825216/job/118918094344) failed on a type dependency from the source helper back to the activity repository. Production was unaffected.
 - **Direct fix / validation:** Move the shared sensor-window and query interfaces into a separate type module. The same dependency-cruiser command then reports no violations, and all 177 relevant repository/router tests pass. CI also exposed missing source-forwarding and activity-ownership assertions in two mutation shards; add focused repository and limited-store tests for selected, empty, and default source paths. Hosted validation of the fixes remains pending.
 - **Retrospective:** The sandbox checks did not include import-boundary validation. Run the existing dependency-cruiser command before future pushes that add repository-to-repository dependencies.
+
+## 2026-10-20 — Activity image CI fixture and queue mutation failures
+
+- **Impact / evidence:** [PR 3016](https://github.com/Asherlc/dofek/pull/3016)
+  was blocked on head `d805f8dd1`. [Integration shard 1/4](https://github.com/Asherlc/dofek/actions/runs/39526011872/job/118981400365)
+  failed while preparing both S3 fixtures with
+  `TypeError: (0, archiver_1.default) is not a function`.
+  [Mutation shard 14](https://github.com/Asherlc/dofek/actions/runs/39526011872/job/118981400770)
+  scored 36.36% against the unchanged 75% threshold. No production deployment
+  or customer data was affected by these CI failures.
+- **Root causes / fixes:** Testcontainers' content-copy helper invokes the
+  archiver 7 default factory, incompatible with the workspace's archiver 8
+  security override. The S3 fixture now supplies a `TarArchive` through the
+  supported [archive-copy input](https://node.testcontainers.org/features/containers/#copying-files-and-directories-to-a-container).
+  The queue shard lacked activity-image queue tests; regression coverage now
+  exercises explicit/default connections, cache reuse, shutdown, and recreation.
+  No dependency downgrade, retry, timeout, or threshold change was introduced.
+- **Validation / limits:** The Docker-free regression extracts the real archive
+  and checks its identity JSON. All 18,550 Docker-free unit tests pass (19 skipped),
+  together with root/server/web typechecks, sandbox lint, Knip, and spelling.
+  Targeted queue mutations score 88.89%. Docker-backed fixture startup and authenticated
+  storage tests require CI services and were not executed locally.
+- **Follow-up:** Include archive serialization in dependency compatibility
+  regressions whenever a shared override crosses a major version; test new queue
+  factories together with their cached shutdown lifecycle.

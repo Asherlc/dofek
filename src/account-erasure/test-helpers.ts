@@ -1,3 +1,4 @@
+import { TarArchive } from "archiver";
 import { GenericContainer, Wait } from "testcontainers";
 
 /** Digest-pinned SeaweedFS release used as the S3-compatible stand-in for local/CI. */
@@ -29,22 +30,26 @@ export function createSeaweedFsS3Container(credentials?: {
     ])
     .withExposedPorts(9000)
     .withWaitStrategy(Wait.forLogMessage(/Start Seaweed S3 API Server/));
-  if (credentials)
-    container.withCopyContentToContainer([
-      {
-        target: "/tmp/s3-test-identity.json",
-        content: JSON.stringify({
-          identities: [
-            {
-              name: "storage-test",
-              credentials: [
-                { accessKey: credentials.accessKeyId, secretKey: credentials.secretAccessKey },
-              ],
-              actions: ["Admin", "Read", "Write", "List", "Tagging"],
-            },
-          ],
-        }),
-      },
-    ]);
+  if (credentials) {
+    const archive = new TarArchive();
+    archive.append(
+      JSON.stringify({
+        identities: [
+          {
+            name: "storage-test",
+            credentials: [
+              { accessKey: credentials.accessKeyId, secretKey: credentials.secretAccessKey },
+            ],
+            actions: ["Admin", "Read", "Write", "List", "Tagging"],
+          },
+        ],
+      }),
+      { name: "tmp/s3-test-identity.json" },
+    );
+    // Testcontainers' content-copy helper still uses archiver 7's removed factory.
+    // Its public tar input works with the workspace's archiver 8 security override.
+    container.withCopyArchivesToContainer([{ tar: archive, target: "/" }]);
+    void archive.finalize();
+  }
   return container;
 }
