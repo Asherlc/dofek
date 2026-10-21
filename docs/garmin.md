@@ -82,23 +82,29 @@ parsing and durably queues accepted records before acknowledging delivery.
 [Sentry hooks](../src/lib/sentry.ts), and the
 [request logger](../packages/server/src/index.ts) redact credential query values.
 
-Keep portal endpoints disabled or **On Hold** until the production deployment
-and checks below pass. The migration has not yet been deployed as of
-2026-10-21; application approval and configured secrets alone do not establish
-live delivery. Follow [deployment procedures](../deploy/README.md), then:
+Keep portal endpoints **On Hold** until production deployment and OAuth checks
+pass. Garmin queues held notifications without sending them. Removing a hold
+releases queued notifications for the entire application feed, so live delivery
+checks require a controlled release ([Garmin delivery settings](https://developerportal.garmin.com/developer-programs/programs-docs)).
+The migration has not yet been deployed as of 2026-10-21; application approval
+and configured secrets alone do not establish live delivery. Follow
+[deployment procedures](../deploy/README.md), then:
 
-1. Confirm the migration ran and the web server and Garmin queue worker are
-   healthy; queue registration is required even though scheduled polling is
-   excluded. See [worker construction](../src/jobs/worker-queues.ts) and
+1. Confirm the migration ran, the web server and Garmin queue worker are
+   healthy, and the required secrets and R2 bucket are configured. Queue
+   registration is required even though scheduled polling is excluded. See
+   [worker construction](../src/jobs/worker-queues.ts) and
    [queue configuration](../src/jobs/provider-queue-config.ts).
-2. Verify Connect and Reconnect through official OAuth on web and mobile,
-   then sync a Garmin device and verify an authorized Health/Activity delivery.
-3. Verify a FIT delivery reaches durable storage and canonical activity/sensor
+2. Verify Connect and Reconnect through official OAuth on web and mobile.
+3. Remove the hold from the configured feeds for controlled validation and
+   confirm the setting survives a portal reload. Sync a Garmin device and verify
+   an authorized Health/Activity delivery.
+4. Verify a FIT delivery reaches durable storage and canonical activity/sensor
    ingestion, and retry does not require another download once it is retained.
-4. Verify permission changes, disconnect/revocation, and stale-event rejection;
+5. Verify permission changes, disconnect/revocation, and stale-event rejection;
    inspect telemetry using synthetic credentials to confirm redaction.
-5. Release portal delivery from its held/disabled state only after those checks;
-   confirm endpoint state survives a portal reload.
+   Reconnect the test account after revocation checks. Return feeds to **On Hold**
+   if validation fails; leave delivery enabled after all checks pass.
 
 FIT artifacts use the existing `IMPORT_R2_BUCKET` (`dofek-imports` in the
 deployment stack) and shared R2 credentials. Objects belong to the Dofek user
