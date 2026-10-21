@@ -453,6 +453,18 @@ export default function ActivitiesScreen() {
                   <View style={styles.cardContent}>
                     <View style={styles.cardMain}>
                       <View style={styles.titleRow}>
+                        {activity.source.origin.status === "resolved" ? (
+                          <View
+                            accessibilityRole="image"
+                            accessibilityLabel={`Primary recording provider: ${providerLabel(activity.source.origin.providerId)}`}
+                          >
+                            <ProviderLogo
+                              provider={activity.source.origin.providerId}
+                              serverUrl={SERVER_URL}
+                              size={32}
+                            />
+                          </View>
+                        ) : null}
                         <Text style={styles.activityName} numberOfLines={1}>
                           {activity.name ?? formatActivityTypeLabel(activity.activityType)}
                         </Text>
@@ -474,19 +486,6 @@ export default function ActivitiesScreen() {
                             {formatActivityTypeLabel(activity.activityType)}
                           </Text>
                         ) : null}
-                        {activity.source.origin.status === "resolved" ? (
-                          <View
-                            style={{ marginLeft: "auto" }}
-                            accessibilityRole="image"
-                            accessibilityLabel={`Primary recording provider: ${providerLabel(activity.source.origin.providerId)}`}
-                          >
-                            <ProviderLogo
-                              provider={activity.source.origin.providerId}
-                              serverUrl={SERVER_URL}
-                              size={20}
-                            />
-                          </View>
-                        ) : null}
                       </View>
                       <Text style={styles.activityMeta}>
                         {displayRecordLocalTime(activity.startedAt, activity.localTimeContext)} ·{" "}
@@ -494,7 +493,7 @@ export default function ActivitiesScreen() {
                       </Text>
                       <ActivityMetricStrip activity={activity} units={units} />
                     </View>
-                    {!activity.location ? (
+                    {!activity.location && activity.source.origin.status !== "resolved" ? (
                       <ActivityTypeIcon activityType={activity.activityType} />
                     ) : null}
                   </View>
