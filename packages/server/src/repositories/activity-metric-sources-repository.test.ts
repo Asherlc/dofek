@@ -26,10 +26,23 @@ function storeWithRows(rows: unknown[]) {
 }
 
 describe("activity heart-rate sources", () => {
-  it("preselects the highest-priority available provider without adding an automatic choice", async () => {
+  it("labels device sources and preselects the highest-priority available provider", async () => {
+    const whoopBluetoothSourceId = '["whoop_ble","strap-a"]';
+    const garminSourceId = '["garmin","Edge 530"]';
     const store = storeWithRows([
       { channel: "heart_rate", provider_id: "whoop", device_id: null, source_id: "whoop" },
-      { channel: "heart_rate", provider_id: "garmin", device_id: null, source_id: "garmin" },
+      {
+        channel: "heart_rate",
+        provider_id: "whoop_ble",
+        device_id: "strap-a",
+        source_id: whoopBluetoothSourceId,
+      },
+      {
+        channel: "heart_rate",
+        provider_id: "garmin",
+        device_id: "Edge 530",
+        source_id: garminSourceId,
+      },
     ]);
     expect(await getActivityMetricSources(store, window)).toEqual([
       {
@@ -37,7 +50,8 @@ describe("activity heart-rate sources", () => {
         label: "Heart Rate",
         sources: [
           { id: "whoop", label: "WHOOP (Cloud)" },
-          { id: "garmin", label: "Garmin" },
+          { id: whoopBluetoothSourceId, label: "WHOOP (Bluetooth)" },
+          { id: garminSourceId, label: "Garmin · Edge 530" },
         ],
         defaultSourceId: "whoop",
       },

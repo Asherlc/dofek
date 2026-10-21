@@ -256,4 +256,54 @@ describe("activity metric source selection", () => {
     expect(zones.find((zone) => zone.zone === 2)?.seconds).toBe(1);
     expect(zones.find((zone) => zone.zone === 4)?.seconds).toBe(0);
   });
+
+  it("serves reported WHOOP Bluetooth heart rate through a gap in beat intervals", async () => {
+    const heartRateWindow = {
+      ...window,
+      startedAt: "2026-10-20T18:00:00.000Z",
+      endedAt: "2026-10-20T18:00:03.000Z",
+    };
+    await insertClickHouseMetricStreamRows(context, [
+      ...[
+        { recordedAt: "2026-10-20T18:00:00.000Z", scalar: 128 },
+        { recordedAt: "2026-10-20T18:00:01.000Z", scalar: 130 },
+        { recordedAt: "2026-10-20T18:00:02.000Z", scalar: 132 },
+      ].map((sample) => ({
+        ...sample,
+        userId,
+        providerId: "whoop_ble",
+        deviceId: "strap-c",
+        sourceType: "ble",
+        channel: "heart_rate",
+      })),
+      ...[
+        { recordedAt: "2026-10-20T18:00:00.000Z", scalar: 750 },
+        { recordedAt: "2026-10-20T18:00:02.000Z", scalar: 500 },
+      ].map((sample) => ({
+        ...sample,
+        userId,
+        providerId: "whoop_ble",
+        deviceId: "strap-c",
+        sourceType: "ble",
+        channel: "rr_interval_ms",
+      })),
+    ]);
+    await executeClickHouseTestCommand(context, buildSensorScalarSampleBackfillSql());
+
+    const metrics = await getActivityMetricSources(store, heartRateWindow);
+    const heartRate = metrics.find((metric) => metric.key === "heartRate");
+    expect(heartRate?.defaultSourceId).toBe('["whoop_ble","strap-c"]');
+    if (!heartRate) throw new Error("Expected reported WHOOP Bluetooth heart rate");
+
+    const points = await store.getStream(heartRateWindow, 500, {
+      heartRate: heartRate.defaultSourceId,
+    });
+    expect(points.map((point) => [point.recorded_at, point.heart_rate])).toEqual([
+      ["2026-10-20T18:00:00.000Z", 128],
+      ["2026-10-20T18:00:01.000Z", 130],
+      ["2026-10-20T18:00:02.000Z", 132],
+    ]);
+    const zones = await getActivitySourceHrZones(store, heartRateWindow, heartRate.defaultSourceId);
+    expect(zones.reduce((total, zone) => total + zone.seconds, 0)).toBe(3);
+  });
 });

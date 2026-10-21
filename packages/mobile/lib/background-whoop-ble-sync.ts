@@ -1,6 +1,7 @@
 import type { InertialMeasurementUnitSample } from "@dofek/imu";
 import * as Sentry from "@sentry/react-native";
 import { AppState, type AppStateStatus } from "react-native";
+import type { WhoopRealtimeDataSample } from "../modules/whoop-ble";
 import { isAfterDeviceErasureCutoff, loadDeviceErasureCutoff } from "./device-erasure-cutoff";
 import { DeviceSampleGroups, type DeviceScopedSample } from "./device-sample-groups.ts";
 import { captureException, logger } from "./telemetry";
@@ -26,16 +27,7 @@ export interface InertialMeasurementUnitUploadClient {
 
 type BufferedInertialMeasurementUnitSample = InertialMeasurementUnitSample & DeviceScopedSample;
 type ShouldContinueUploading = () => boolean;
-type RealtimeDataSample = {
-  deviceId?: string;
-  timestamp: string;
-  rrIntervalMs: number;
-  quaternionW: number;
-  quaternionX: number;
-  quaternionY: number;
-  quaternionZ: number;
-  opticalRawHex: string;
-};
+type RealtimeDataSample = WhoopRealtimeDataSample;
 
 function toInertialMeasurementUnitUploadSample(
   sample: BufferedInertialMeasurementUnitSample,
@@ -56,6 +48,7 @@ function toRealtimeDataUploadSample(
 ): Omit<RealtimeDataSample, "deviceId"> {
   return {
     timestamp: sample.timestamp,
+    heartRateBpm: sample.heartRateBpm,
     rrIntervalMs: sample.rrIntervalMs,
     quaternionW: sample.quaternionW,
     quaternionX: sample.quaternionX,
@@ -82,21 +75,13 @@ export interface WhoopBleSyncDeps {
   disconnect(): void;
 }
 
-/** tRPC client interface for BLE realtime data upload (beat interval + orientation + optical) */
+/** tRPC client interface for BLE realtime data upload (heart rate + beat interval + orientation + optical) */
 export interface WhoopBleRealtimeUploadClient {
   whoopBleSync: {
     pushRealtimeData: {
       mutate(input: {
         deviceId: string;
-        samples: Array<{
-          timestamp: string;
-          rrIntervalMs: number;
-          quaternionW: number;
-          quaternionX: number;
-          quaternionY: number;
-          quaternionZ: number;
-          opticalRawHex: string;
-        }>;
+        samples: Array<Omit<WhoopRealtimeDataSample, "deviceId">>;
       }): Promise<{ inserted: number }>;
     };
   };

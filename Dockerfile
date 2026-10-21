@@ -8,13 +8,16 @@ COPY package.json ./
 RUN npm install -g npm@12.0.1 corepack@0.35.0 && corepack enable && corepack prepare --activate
 
 FROM python:3.13.16-alpine3.24 AS dbt-tools
+# dbt 1.12.6 requires parser wheels unavailable on Alpine; use the compatible 1.11 line.
+# https://pypi.org/project/dbt-core-experimental-parser/2.0.8/
 RUN apk add --no-cache build-base && \
     pip install --no-cache-dir \
-    certifi==2026.10.19 \
-    dbt-core==1.11.12 \
-    dbt-clickhouse==1.10.1 \
-    sqlfluff==4.2.2 \
-    sqlfluff-templater-dbt==4.2.2
+    dbt-core==1.11.16 \
+    dbt-clickhouse==1.10.3 \
+    sqlfluff==4.4.0 \
+    sqlfluff-templater-dbt==4.4.0 \
+    sqlparse==0.6.0 \
+    certifi==2026.10.19
 
 # ── Native FIT decoder: CMake + vcpkg ────────────────────────────────
 FROM alpine:3.24 AS fit-decoder-build

@@ -91,7 +91,7 @@ try await client.startImuStreaming()
 
 - `WhoopBleClient` — discovery, connection, state, streaming, and disconnection.
 - `WhoopDevice` — a discovered strap's UUID and optional Bluetooth name.
-- `WhoopRealtimeDataSample` — timestamp, R-R interval, orientation quaternion,
+- [`WhoopRealtimeDataSample`](ios/WhoopBleSample.swift) — timestamp, reported heart rate, R-R interval, orientation quaternion,
   and preserved optical bytes.
 - `WhoopImuSample` — normalized accelerometer values in g and gyroscope values
   in radians per second.

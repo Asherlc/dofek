@@ -141,7 +141,7 @@ describe("whoopBleSyncRouter", () => {
       );
     });
 
-    it("stores R-R intervals without requiring or inserting device heart rate", async () => {
+    it("stores intervals when reported heart rate is not supplied", async () => {
       const trpcCaller = caller(ctx);
       await trpcCaller.pushRealtimeData({
         deviceId: "WHOOP Strap",
@@ -174,6 +174,7 @@ describe("whoopBleSyncRouter", () => {
         samples: [
           {
             timestamp: "2026-03-30T12:00:00.000Z",
+            heartRateBpm: 72,
             rrIntervalMs: 812,
             quaternionW: 0,
             quaternionX: 0.5,
@@ -188,6 +189,9 @@ describe("whoopBleSyncRouter", () => {
       expect(publishedRows).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
+            externalId: "whoop_ble:WHOOP Strap:heart_rate:2026-03-30T12:00:00.000Z",
+          }),
+          expect.objectContaining({
             externalId: "whoop_ble:WHOOP Strap:rr_interval_ms:2026-03-30T12:00:00.000Z",
           }),
           expect.objectContaining({
@@ -197,11 +201,11 @@ describe("whoopBleSyncRouter", () => {
       );
     });
 
-    it("ignores legacy heartRate fields instead of storing device-derived HR", async () => {
+    it("retains reported heart rate alongside raw beat intervals", async () => {
       const trpcCaller = caller(ctx);
-      const legacySample = {
+      const sample = {
         timestamp: "2026-03-30T12:00:00.000Z",
-        heartRate: 72,
+        heartRateBpm: 72,
         rrIntervalMs: 812,
         quaternionW: 0,
         quaternionX: 0,
@@ -211,17 +215,82 @@ describe("whoopBleSyncRouter", () => {
 
       await trpcCaller.pushRealtimeData({
         deviceId: "WHOOP Strap",
-        samples: [legacySample],
+        samples: [sample],
       });
 
       const publishedRows = getPublishedRows(metricStreamPublisher);
       expect(publishedRows).toEqual([
         expect.objectContaining({
+          channel: "heart_rate",
+          scalar: 72,
+          sourceType: "ble",
+          deviceId: "WHOOP Strap",
+          providerId: "whoop_ble",
+          externalId: "whoop_ble:WHOOP Strap:heart_rate:2026-03-30T12:00:00.000Z",
+        }),
+        expect.objectContaining({
           channel: "rr_interval_ms",
           scalar: 812,
         }),
       ]);
-      expect(JSON.stringify(publishedRows)).not.toContain("heart_rate");
+    });
+
+    it("retains reported heart rate when the strap has no beat intervals", async () => {
+      const sample = {
+        timestamp: "2026-03-30T12:00:00.000Z",
+        heartRateBpm: 128,
+        rrIntervalMs: 0,
+        quaternionW: 0,
+        quaternionX: 0,
+        quaternionY: 0,
+        quaternionZ: 0,
+      };
+
+      const result = await caller(ctx).pushRealtimeData({
+        deviceId: "WHOOP Strap",
+        samples: [sample],
+      });
+
+      expect(result).toEqual({ inserted: 1 });
+      expect(getPublishedRows(metricStreamPublisher)).toEqual([
+        expect.objectContaining({ channel: "heart_rate", scalar: 128 }),
+      ]);
+    });
+
+    it("retains intervals when the reported heart rate is unavailable", async () => {
+      const sample = {
+        timestamp: "2026-03-30T12:00:00.000Z",
+        heartRateBpm: 0,
+        rrIntervalMs: 812,
+        quaternionW: 0,
+        quaternionX: 0,
+        quaternionY: 0,
+        quaternionZ: 0,
+      };
+
+      await caller(ctx).pushRealtimeData({ deviceId: "WHOOP Strap", samples: [sample] });
+
+      expect(getPublishedRows(metricStreamPublisher)).toEqual([
+        expect.objectContaining({ channel: "rr_interval_ms", scalar: 812 }),
+      ]);
+    });
+
+    it.each([-1, 72.5, 256])("rejects invalid reported heart rate %s", async (heartRateBpm) => {
+      await expect(
+        caller(ctx).pushRealtimeData({
+          deviceId: "WHOOP Strap",
+          samples: [
+            {
+              timestamp: "2026-03-30T12:00:00.000Z",
+              heartRateBpm,
+              quaternionW: 0,
+              quaternionX: 0,
+              quaternionY: 0,
+              quaternionZ: 0,
+            },
+          ],
+        }),
+      ).rejects.toThrow();
     });
 
     it("inserts orientation data into metric stream", async () => {
