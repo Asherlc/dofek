@@ -153,7 +153,7 @@ import ActivitiesScreen from "../../app/(tabs)/activities";
 afterEach(() => vi.useRealTimers());
 
 describe("ActivitiesScreen", () => {
-  it("identifies the available primary provider without using the activity type or metrics", () => {
+  it("uses the primary provider as the leading card image", () => {
     mockQuery = activityListQuery([
       activity({
         source: {
@@ -170,7 +170,8 @@ describe("ActivitiesScreen", () => {
       }),
     ]);
     render(<ActivitiesScreen />);
-    expect(screen.getByRole("image", { name: "Primary recording provider: Strava" })).toBeTruthy();
+    const providerImage = screen.getByRole("image", { name: "Primary recording provider: Strava" });
+    expect(providerImage.parentElement?.firstElementChild).toBe(providerImage);
     expect(screen.queryByRole("image", { name: "Primary recording provider: Garmin" })).toBeNull();
   });
   beforeEach(() => {
