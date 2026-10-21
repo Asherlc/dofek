@@ -140,6 +140,12 @@ pnpm storybook:web
 pnpm storybook:mobile
 ```
 
+Before `pnpm lint`, start the workspace's ClickHouse service with
+`pnpm compose -- up -d --wait clickhouse`. For a new workspace, initialize
+`.env.local` first with `pnpm compose:env --write`. Full lint includes
+[dbt-templated analytics SQL checks](analytics/.sqlfluff); see
+[integration dependencies](docs/testing.md#integration-dependencies).
+
 `pnpm test` and `pnpm test:changed` are Docker-free unit/mobile tiers.
 Database-backed tests run through the integration or `:all` commands, which
 start the workspace's Compose dependencies. See [docs/testing.md](docs/testing.md)
