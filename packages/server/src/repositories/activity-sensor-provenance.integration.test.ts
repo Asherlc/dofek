@@ -58,6 +58,9 @@ describe("activity sensor provenance", () => {
   beforeAll(async () => {
     testContext = await setupTestDatabase();
     await testContext.db.execute(sql`
+      UPDATE fitness.user_profile SET max_hr = 200, resting_hr = 60 WHERE id = ${userId}::uuid
+    `);
+    await testContext.db.execute(sql`
       INSERT INTO fitness.provider (id, name, user_id) VALUES
         ('provenance_wahoo', 'Provenance Wahoo', ${userId}),
         ('provenance_peloton', 'Provenance Peloton', ${userId})
@@ -105,6 +108,17 @@ describe("activity sensor provenance", () => {
         sourceType: "api",
         scalar: 250,
         metadata: JSON.stringify({ measurement_kind: "estimated" }),
+      },
+      {
+        activityId,
+        userId,
+        recordedAt: sampleAt,
+        channel: "rr_interval_ms",
+        providerId: "provenance_wahoo",
+        externalId: "beat-interval-1",
+        deviceId: "Bluetooth strap",
+        sourceType: "ble",
+        scalar: 500,
       },
       ...[1, 2].map((offsetSeconds) => ({
         activityId,
@@ -225,6 +239,34 @@ describe("activity sensor provenance", () => {
         }),
       ]),
     );
+  });
+
+  it("serves interval-derived heart rate through the default activity chart and zone models", async () => {
+    const window = { activityId, userId, startedAt, endedAt, memberActivityIds: [activityId] };
+    const points = await sensorStore.getStream(window, 500);
+    expect(points.map((point) => point.heart_rate)).toEqual([120, null]);
+    const zones = await sensorStore.getHeartRateZoneSeconds(window);
+    expect(zones.reduce((total, zone) => total + zone.seconds, 0)).toBe(1);
+    const rows = await sensorStore.query(
+      scalarProvenanceSchema,
+      `SELECT scalar, provider_id, toString(member_activity_id) AS member_activity_id,
+        device_id, source_external_id, source_type,
+        toString(source_metric_stream_id) AS source_metric_stream_id, measurement_kind
+      FROM analytics.activity_sensor_sample FINAL
+      WHERE activity_id = {activityId:UUID} AND channel = 'heart_rate' AND is_deleted = 0`,
+      { activityId },
+    );
+    expect(rows).toEqual([
+      expect.objectContaining({
+        scalar: 120,
+        provider_id: "provenance_wahoo",
+        member_activity_id: activityId,
+        device_id: "Bluetooth strap",
+        source_external_id: "beat-interval-1",
+        source_type: "ble",
+        measurement_kind: "estimated",
+      }),
+    ]);
   });
 
   it("serves synchronized scalar and GPS rows only from deduped activity models", async () => {

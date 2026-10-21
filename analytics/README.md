@@ -104,6 +104,21 @@ The [staging model](models/staging/sensor_scalar_sample.sql) preserves the lates
 nullable link, and the [deduplication model](models/read_models/deduped_sensor.sql)
 keeps it with the winning sample using tuple-valued
 [argMin](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/argmin).
+The [scalar projection](models/staging/sensor_scalar_sample.sql) also derives
+instantaneous `heart_rate` from valid raw `rr_interval_ms` samples using
+`60000 / interval_ms`, following [PhysioNet's reciprocal method](https://archive.physionet.org/tutorials/hrv/).
+Derived rows are labeled `estimated`, retain source and device provenance, and
+use the configured heart-rate priorities. Raw intervals remain unchanged.
+Reported heart rate wins a same-provider, same-priority timestamp tie over an
+estimate. Invalid or deleted intervals emit tombstones. Sensor deduplication
+uses the ingestion-time microbatch to identify changed timestamp keys, then
+selects the latest version of every candidate at those keys with
+`ORDER BY _peerdb_version DESC LIMIT 1 BY id`. This preserves reported BPM even
+when a matching interval arrives in a later ingestion batch. The model uses
+the referenced [Relation's `render()` method](https://github.com/dbt-labs/dbt-adapters/blob/main/dbt-adapters/src/dbt/adapters/base/relation.py)
+for that bounded current-state read; the normal `ref()` remains filtered for
+changed-key discovery. Replacement follows the source version semantics of
+[ReplacingMergeTree](https://clickhouse.com/docs/engines/table-engines/mergetree-family/replacingmergetree).
 `activity_sensor_sample` is a bounded microbatch intermediary over source
 refresh time. `activity_location_sample` is an append-incremental current-state
 reconciliation: changed activity, membership, and scoped repair keys identify

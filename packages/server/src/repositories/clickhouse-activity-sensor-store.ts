@@ -410,7 +410,8 @@ export class ClickHouseActivitySensorStore implements ActivitySensorStore {
               ? `UNION ALL
           SELECT recorded_at, ${selectedPoints}, NULL AS lat, NULL AS lng
           FROM (
-            SELECT recorded_at, channel, argMin(scalar, (provider_priority, provider_id, id)) AS scalar
+            SELECT recorded_at, channel,
+              argMin(scalar, (provider_priority, provider_id, channel = 'heart_rate' AND measurement_kind = 'estimated', id)) AS scalar
             FROM (${activityMetricSamplesSql})
             WHERE channel IN {selectedChannels:Array(String)}
               AND ${activityMetricSourceIdSql} = arrayElement({selectedSources:Array(String)}, indexOf({selectedChannels:Array(String)}, channel))
