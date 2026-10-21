@@ -65,7 +65,7 @@ export async function getActivityMetricSources(
       .map((row) => ({
         id: row.source_id,
         label:
-          row.provider_id === "apple_health"
+          row.provider_id === "apple_health" || row.provider_id === "whoop_ble"
             ? providerSourceLabel(row.provider_id, row.device_id)
             : providerRecordLabel(row.provider_id, row.device_id),
       }));
