@@ -10,6 +10,7 @@ RUN npm install -g npm@12.0.1 corepack@0.35.0 && corepack enable && corepack pre
 FROM python:3.13.16-alpine3.24 AS dbt-tools
 RUN apk add --no-cache build-base && \
     pip install --no-cache-dir \
+    certifi==2026.10.19 \
     dbt-core==1.11.12 \
     dbt-clickhouse==1.10.1 \
     sqlfluff==4.2.2 \
