@@ -5,6 +5,16 @@ import type { HangTenActivitySegment, HealthWorkout } from "./workouts.ts";
 
 export function hangTenIntervalLabel(segment: HangTenActivitySegment): string {
   if (segment.kind === "rest") return `Step ${segment.stepNumber}: Rest`;
+  if (segment.target?.kind === "resolvedContacts") {
+    const requirement = segment.target.resolution.requirement;
+    const depth = requirement.depth;
+    const range = depth && "range" in depth ? depth.range : undefined;
+    const holdType = requirement.kind ?? "Work";
+    if (range && range.minimum === range.maximum) {
+      return `Step ${segment.stepNumber}: ${range.minimum} mm ${holdType}`;
+    }
+    return `Step ${segment.stepNumber}: ${holdType}`;
+  }
   if (segment.sizeMillimeters !== undefined && segment.holdType) {
     return `Step ${segment.stepNumber}: ${segment.sizeMillimeters} mm ${segment.holdType}`;
   }
