@@ -49,6 +49,7 @@ Every public module is imported as `@dofek/training/<subpath>`.
 | Subpath | Purpose |
 | --- | --- |
 | `activity-icons` | Normalize activity names into framework-neutral icon categories |
+| `activity-chart-series` | [Shared activity-chart timing, gap, marker, and nearest-observation presentation policy](src/activity-chart-series.ts) |
 | `climbing-grades` | Validate recorded grade components; order and convert supported free-rock grades with [Sandbag](https://github.com/OpenBeta/sandbag) |
 | `climbing-context` | Validate the current Climb and Area path with recorded board, wall-angle, and hold-type context |
 | `climbing-sources` | [Select route destinations and match provider attribution to tick links](src/climbing-sources.ts) for web and mobile using a supplied provider-label resolver |
@@ -72,6 +73,20 @@ Every public module is imported as `@dofek/training/<subpath>`.
 | `workout-recommendation` | Workout recommendation types and calculation |
 
 ## Model details
+
+### Activity chart presentation
+
+The [chart-series helper](src/activity-chart-series.ts) positions each metric's
+returned observations on a proportional time axis. Continuity uses that metric's
+lower-median positive sample interval with 50% timing tolerance. At least two
+positive intervals are required to infer cadence; fewer observations remain
+dots. The rule scales with the returned sampling interval so downsampling a long
+recording does not manufacture gaps. These are Dofek display heuristics, following
+[time-based gap handling](https://api.highcharts.com/highstock/plotOptions.series.gapUnit),
+not a classification of sensor failure. Series with at most 20 observations and
+isolated observations retain markers; dense continuous segments show markers
+on hover or touch. Measurements are preserved without filling or smoothing.
+The renderer can show only gaps retained in the API's downsampled observations.
 
 ### Activity icons
 
