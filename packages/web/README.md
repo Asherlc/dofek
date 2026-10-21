@@ -128,9 +128,10 @@ cd packages/web && pnpm storybook # Start Storybook
 pnpm test                        # Run repo-wide Vitest suites from the repo root
 ```
 
-Activity cards show a 20 px logo for the actual provider of the closest available
-recording when provenance resolves a primary. Unresolved origin has no primary
-logo. Field and sensor priorities remain independent. The card reuses
+Activity cards use a 32 px logo for the actual provider of the closest available
+recording as their leading image when provenance resolves a primary. Unresolved
+origin keeps the activity-type icon. Field and sensor priorities remain
+independent. The card reuses
 [ProviderLogo](src/components/ProviderLogo.tsx); see the
 [origin schema](../providers-meta/src/activity-origin.ts).
 
@@ -148,3 +149,8 @@ accepts a `sources` map; zone endpoints accept their metric's source ID.
 The [source repository](../server/src/repositories/activity-metric-sources-repository.ts) retains zero power, speed, and cadence samples
 and negative elevations, excludes invalid heart-rate samples, and preserves
 activity ownership and stream downsampling.
+
+The [metric chart](src/pages/activity-detail/components/ActivityDetailCharts.tsx)
+shows isolated readings as dots and leaves missing samples as gaps, so sparse
+recordings remain visible. Continuous readings retain their line presentation.
+The colocated `SparseReadings` story and SVG-rendering tests cover this behavior.

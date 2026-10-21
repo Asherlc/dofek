@@ -1,6 +1,7 @@
 /** @vitest-environment jsdom */
 import { UnitConverter } from "@dofek/format/units";
 import { fireEvent, render, screen } from "@testing-library/react";
+import { init, setPlatformAPI } from "echarts";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { MetricsChart } from "./ActivityDetailCharts.tsx";
 
@@ -79,6 +80,206 @@ function powerAxis() {
   return axes.find((axis) => axis.name === "Power (W)");
 }
 
+function renderChartSvg(action?: "highlight" | "downplay") {
+  // Text measurement is the only browser canvas dependency of the real SVG renderer.
+  setPlatformAPI({ measureText: (text) => ({ width: text.length * 7 }) });
+  const chart = init(null, null, { renderer: "svg", ssr: true, width: 800, height: 380 });
+  try {
+    chart.setOption({ ...captured.option, animation: false });
+    if (action) {
+      chart.dispatchAction({ type: "highlight", seriesIndex: 0, dataIndex: 1 });
+      chart.getZr().animation.update();
+      if (action === "downplay") {
+        chart.dispatchAction({ type: "downplay", seriesIndex: 0, dataIndex: 1 });
+        chart.getZr().animation.update();
+      }
+    }
+    return new DOMParser().parseFromString(chart.renderToSVGString(), "image/svg+xml");
+  } finally {
+    chart.dispose();
+  }
+}
+
+function visibleChartSymbols(svg: Document) {
+  const clip = svg
+    .querySelector("clipPath path")
+    ?.getAttribute("d")
+    ?.match(/^M([\d.-]+) ([\d.-]+)l([\d.]+) 0l0 ([\d.]+)l-/);
+  expect(clip).toBeTruthy();
+  const left = Number(clip?.[1]);
+  const top = Number(clip?.[2]);
+  const right = left + Number(clip?.[3]);
+  const bottom = top + Number(clip?.[4]);
+  const symbols = Array.from(svg.querySelectorAll('[ecmeta_ssr_type="chart"]')).filter(
+    (symbol) =>
+      !symbol.getAttribute("transform")?.startsWith("matrix(0,0,0,0,") &&
+      !symbol.getAttribute("transform")?.includes("NaN") &&
+      symbol.getAttribute("fill-opacity") !== "0",
+  );
+  for (const symbol of symbols) {
+    expect(symbol.getAttribute("d")).toMatch(/^M1 0A1 1 /);
+    const matrix = symbol.getAttribute("transform")?.match(/^matrix\(([^)]+)\)$/);
+    expect(matrix).toBeTruthy();
+    const [scaleX = NaN, , , scaleY = NaN, centerX = NaN, centerY = NaN] =
+      matrix?.[1]?.split(",").map(Number) ?? [];
+    expect(scaleX).toBeGreaterThan(0);
+    expect(scaleY).toBeGreaterThan(0);
+    expect(centerX).toBeGreaterThanOrEqual(left);
+    expect(centerX).toBeLessThanOrEqual(right);
+    expect(centerY).toBeGreaterThanOrEqual(top);
+    expect(centerY).toBeLessThanOrEqual(bottom);
+  }
+  return symbols;
+}
+
+describe("MetricsChart sparse readings", () => {
+  it("renders every isolated Watch reading among a dense activity timeline", () => {
+    const watchReadings = new Map([
+      [7, 80],
+      [67, 100],
+      [97, 110],
+      [154, 120],
+      [186, 125],
+      [223, 130],
+      [252, 135],
+      [297, 140],
+      [314, 145],
+      [335, 150],
+      [376, 155],
+      [396, 120],
+      [464, 100],
+    ]);
+    render(
+      <MetricsChart
+        {...args}
+        points={Array.from({ length: 490 }, (_, index) => ({
+          ...points[0],
+          recordedAt: new Date(Date.UTC(2026, 9, 20, 16, 3, index)).toISOString(),
+          heartRate: watchReadings.get(index) ?? null,
+          power: 200,
+          speed: 8,
+          cadence: 80,
+          altitude: null,
+          lat: null,
+          lng: null,
+        }))}
+      />,
+    );
+
+    const svg = renderChartSvg();
+    expect(
+      visibleChartSymbols(svg)
+        .filter((symbol) => symbol.getAttribute("ecmeta_series_index") === "0")
+        .map((symbol) => symbol.getAttribute("ecmeta_data_index")),
+    ).toEqual([
+      "7",
+      "67",
+      "97",
+      "154",
+      "186",
+      "223",
+      "252",
+      "297",
+      "314",
+      "335",
+      "376",
+      "396",
+      "464",
+    ]);
+  });
+
+  it.each([
+    { values: [0], symbolIndex: "0" },
+    { values: [null, 0, null], symbolIndex: "1" },
+  ])("renders a single zero reading as a dot: $values", ({ values, symbolIndex }) => {
+    render(
+      <MetricsChart
+        {...args}
+        hasHr={false}
+        hasSpeed={false}
+        hasCadence={false}
+        points={values.map((power, index) => ({
+          ...points[0],
+          recordedAt: new Date(Date.UTC(2026, 9, 20, 16, index)).toISOString(),
+          heartRate: null,
+          power,
+          speed: null,
+          cadence: null,
+          altitude: null,
+          lat: null,
+          lng: null,
+        }))}
+      />,
+    );
+
+    const svg = renderChartSvg();
+    const symbols = visibleChartSymbols(svg);
+    expect(symbols).toHaveLength(1);
+    expect(symbols[0]?.getAttribute("ecmeta_data_index")).toBe(symbolIndex);
+  });
+
+  it("keeps continuous readings as lines and preserves missing-sample gaps", () => {
+    render(
+      <MetricsChart
+        {...args}
+        hasPower={false}
+        hasSpeed={false}
+        hasCadence={false}
+        points={[130, 135, null, 145, 150].map((heartRate, index) => ({
+          ...points[0],
+          recordedAt: new Date(Date.UTC(2026, 9, 20, 16, index)).toISOString(),
+          heartRate,
+          power: null,
+          speed: null,
+          cadence: null,
+          altitude: null,
+          lat: null,
+          lng: null,
+        }))}
+      />,
+    );
+
+    const svg = renderChartSvg();
+    const line = svg.querySelector('path[stroke-width="1.5"]');
+    expect(line?.getAttribute("d")?.match(/[ML]/g)).toEqual(["M", "L", "M", "L"]);
+    expect(visibleChartSymbols(svg)).toHaveLength(0);
+  });
+
+  it("shows a continuous reading on hover and hides its marker afterward", () => {
+    render(
+      <MetricsChart
+        {...args}
+        hasPower={false}
+        hasSpeed={false}
+        hasCadence={false}
+        points={[130, 140, 150].map((heartRate, index) => ({
+          ...points[0],
+          recordedAt: new Date(Date.UTC(2026, 9, 20, 16, index)).toISOString(),
+          heartRate,
+          power: null,
+          speed: null,
+          cadence: null,
+          altitude: null,
+          lat: null,
+          lng: null,
+        }))}
+      />,
+    );
+
+    expect(visibleChartSymbols(renderChartSvg())).toHaveLength(0);
+    const highlighted = renderChartSvg("highlight");
+    expect(highlighted.documentElement.outerHTML).not.toContain("NaN");
+    const marker = visibleChartSymbols(highlighted)[0];
+    const transform = marker?.getAttribute("transform") ?? "";
+    const scale = transform.startsWith("matrix(") ? Number(transform.slice(7).split(",")[0]) : 1;
+    expect(scale).toBeGreaterThanOrEqual(3);
+    expect(
+      visibleChartSymbols(highlighted).map((symbol) => symbol.getAttribute("ecmeta_data_index")),
+    ).toEqual(["1"]);
+    expect(visibleChartSymbols(renderChartSvg("downplay"))).toHaveLength(0);
+  });
+});
+
 describe("MetricsChart custom legend", () => {
   beforeEach(() => {
     captured.option = {};
@@ -123,7 +324,11 @@ describe("MetricsChart custom legend", () => {
     expect(powerAxis()).toMatchObject({ show: false });
     const series = captured.option.series;
     if (!Array.isArray(series)) throw new Error("Expected chart series");
-    expect(series.find((item) => item.name === "Heart Rate")).toMatchObject({ data: [160, 160] });
-    expect(series.find((item) => item.name === "Power")).toMatchObject({ data: [200, 220] });
+    expect(series.find((item) => item.name === "Heart Rate")).toMatchObject({
+      data: [{ value: 160 }, { value: 160 }],
+    });
+    expect(series.find((item) => item.name === "Power")).toMatchObject({
+      data: [{ value: 200 }, { value: 220 }],
+    });
   });
 });

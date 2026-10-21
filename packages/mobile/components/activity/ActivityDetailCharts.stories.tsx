@@ -39,6 +39,14 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 export const Default: Story = {};
 export const Empty: Story = { args: { data: [] } };
+export const SparseReadings: Story = {
+  args: {
+    data: [null, 130, null, 145, null, 155, null].map((value, index) => ({
+      recordedAt: new Date(Date.UTC(2026, 9, 20, 16, index)).toISOString(),
+      value,
+    })),
+  },
+};
 export const MissingSamples: Story = {
   args: {
     data: meta.args.data.map((sample, index) => ({

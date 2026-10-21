@@ -4,7 +4,7 @@ Unofficial Expo iOS client for the reverse-engineered WHOOP strap Bluetooth Low
 Energy protocol.
 
 The package discovers bonded WHOOP straps, parses proprietary framed packets,
-captures real-time R-R intervals and inertial samples, and exposes connection
+captures reported heart rate, real-time R-R intervals and inertial samples, and exposes connection
 and orientation events through Expo Modules.
 
 ## Install
@@ -25,6 +25,14 @@ Protocol details and provenance are documented in
 [`docs/whoop-ble-protocol.md`](../../../../docs/whoop-ble-protocol.md).
 Native Swift applications can use the separately tagged
 [WhoopBLE Swift package](https://github.com/Asherlc/whoop-ble-swift).
+
+Buffered realtime samples expose `heartRateBpm` independently of `rrIntervalMs`.
+WHOOP can report BPM when beat intervals are unavailable during movement; see
+its [research FAQ, page 4](https://sensorlab.arizona.edu/sites/default/files/2023-05/WHOOP%20Unite%20Research%20FAQs_0.pdf#page=4).
+Captured R18/R21 fractional clock words use 1/32768-second ticks, and buffer
+timestamps use that scale; see the [capture-backed protocol reference](../../../../docs/whoop-ble-protocol.md).
+Native changes require a new iOS build, following Expo's
+[native development workflow](https://docs.expo.dev/workflow/customizing/).
 
 This native module requires a development build; it does not run in Expo Go.
 The consuming iOS app must provide `NSBluetoothAlwaysUsageDescription`.

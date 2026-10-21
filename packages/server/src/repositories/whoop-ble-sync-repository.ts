@@ -1,6 +1,6 @@
 import { WHOOP_BLE_PROVIDER_ID } from "@dofek/providers/push-providers";
 import type { Database } from "dofek/db";
-import { RR_INTERVAL_MS } from "../../../../src/db/sensor-channels.ts";
+import { HEART_RATE, RR_INTERVAL_MS } from "../../../../src/db/sensor-channels.ts";
 import type { MetricStreamRowInput } from "../../../../src/metric-stream/events.ts";
 import {
   getDefaultMetricStreamEventPublisher,
@@ -14,6 +14,7 @@ const INSERT_BATCH_SIZE = 2000;
 
 export interface WhoopBleRealtimeDataSample {
   timestamp: string;
+  heartRateBpm: number;
   rrIntervalMs: number;
   quaternionW: number;
   quaternionX: number;
@@ -59,6 +60,21 @@ export class WhoopBleSyncRepository {
     for (let offset = 0; offset < samples.length; offset += INSERT_BATCH_SIZE) {
       const batch = samples.slice(offset, offset + INSERT_BATCH_SIZE);
       const rows: MetricStreamRowInput[] = [];
+
+      for (const sample of batch) {
+        if (sample.heartRateBpm <= 0) continue;
+        const recordedAt = canonicalizeTimestampForExternalId(sample.timestamp);
+        rows.push({
+          recordedAt: sample.timestamp,
+          userId: this.#userId,
+          providerId: WHOOP_BLE_PROVIDER_ID,
+          externalId: `${WHOOP_BLE_PROVIDER_ID}:${deviceId}:${HEART_RATE}:${recordedAt}`,
+          deviceId,
+          sourceType: "ble",
+          channel: HEART_RATE,
+          scalar: sample.heartRateBpm,
+        });
+      }
 
       const beatIntervalSamples = batch.filter((sample) => sample.rrIntervalMs > 0);
       for (const sample of beatIntervalSamples) {

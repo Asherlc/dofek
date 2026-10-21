@@ -6,6 +6,10 @@ The mobile app for Dofek. Built with Expo and React Native, with native Swift mo
 
 - **HealthKit Sync**: Background synchronization of health and fitness metrics from iOS using `BackgroundRefreshModule` which registers `BGAppRefreshTask`.
 - **WHOOP BLE Sync**: High-resolution sensor data capture (IMU - accelerometer + gyroscope) from WHOOP straps via `WhoopBleModule`.
+  Reported heart rate is uploaded independently of beat-interval availability,
+  as supported by WHOOP's [research FAQ, page 4](https://sensorlab.arizona.edu/sites/default/files/2023-05/WHOOP%20Unite%20Research%20FAQs_0.pdf#page=4).
+  The [native module reference](modules/whoop-ble/README.md) describes the buffered
+  fields and fractional clock conversion.
 - **Bluetooth Heart-Rate Monitors**: Pair in Settings and passively upload live
   heart rate + R-R intervals from any standard Bluetooth heart-rate strap via
   `BleHeartRateModule`, using the Bluetooth SIG [Heart Rate Service](https://www.bluetooth.com/specifications/specs/heart-rate-service-1-0/)
@@ -361,7 +365,15 @@ for the approved SDK dependency tree.
 
 ### Native diagnostic runtime
 
-Runtime **1.11** uses the stable [Expo SDK 58](https://expo.dev/changelog/sdk-58)
+Runtime **1.12** adds reported WHOOP BPM to the native buffer payload and fixes
+fractional sensor timestamps; see the [WHOOP module contract](modules/whoop-ble/README.md).
+Build a new native binary containing these changes before publishing updates for
+runtime 1.12. Existing runtime 1.11 and earlier binaries retain their compatible
+updates. Increment the runtime whenever a bridge payload change requires new
+native code, following Expo's
+[runtime compatibility guidance](https://docs.expo.dev/eas-update/runtime-versions/).
+
+Runtime 1.12 retains the stable [Expo SDK 58](https://expo.dev/changelog/sdk-58)
 native dependency set with Expo 58.0.16, Expo Router 58.0.24, Expo Updates
 58.0.17, React Native 0.88.0, and React Native SVG 15.16.0, pinned in
 [package.json](./package.json). The
@@ -375,7 +387,7 @@ Validate SDK-managed versions with
 The native dependency set also includes ExpoNetwork, the pnpm patch to
 `expo-apple-authentication@58.0.2`, and `react-native-maps@1.29.11`.
 
-Runtime 1.11 retains the HealthKit authorization-not-determined classification
+Runtime 1.12 retains the HealthKit authorization-not-determined classification
 introduced in 1.10, with the stable code consumed by anchored sync. A type awaiting authorization leaves
 its anchor unchanged and does not stop other observed types from syncing;
 unexpected query errors still fail. Apple documents this state as
@@ -550,9 +562,10 @@ Source-map and release correlation:
   uploaded from the export that produced the published update, while native
   symbols belong to the archive build.
 
-The activities screen shows a 20 px logo for the actual provider of the closest
-available recording when provenance resolves a primary. Unresolved origin has no
-primary logo. It reuses [ProviderLogo](components/ProviderLogo.tsx), including its
+The activities screen uses a 32 px logo for the actual provider of the closest
+available recording as the leading card image when provenance resolves a primary.
+Unresolved origin keeps the activity-type icon on cards without a map.
+It reuses [ProviderLogo](components/ProviderLogo.tsx), including its
 existing letter fallback for SVG or missing assets. The
 [origin contract](../providers-meta/src/activity-origin.ts) is shared with web;
 field and sensor selection do not determine recording origin.
@@ -571,3 +584,8 @@ accepts a `sources` map; zone endpoints accept their metric's source ID.
 The [source repository](../server/src/repositories/activity-metric-sources-repository.ts) retains zero power, speed, and cadence samples
 and negative elevations, excludes invalid heart-rate samples, and preserves
 activity ownership and stream downsampling.
+
+The [metric line chart](components/activity/ActivityDetailCharts.tsx) shows
+isolated readings as dots, including a source with only one reading. Lines stop
+at missing samples. The colocated `SparseReadings` story and chart tests cover
+the visible readings and gaps.
