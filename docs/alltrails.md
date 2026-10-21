@@ -2,7 +2,7 @@
 
 <!-- cspell:words alltrails apkanalyzer apksigner appsflyer JADX javascripts ndimensional recaptcha -->
 
-Last checked: 2026-10-18 (America/Los_Angeles).
+Last checked: 2026-10-21 (America/Los_Angeles).
 
 ## Finding And Scope
 
@@ -13,9 +13,10 @@ did not account for the native identity-service implementation. The contracts
 below come from deployed first-party [web source maps][web-login] and an
 authentic, historical [Android APK][native-apk].
 
-This investigation used public source downloads and static analysis. No account
-login, authenticated API validation, app execution, or challenge bypass was
-performed. **Current server acceptance remains unverified.** Native findings
+The source investigation used public downloads and static analysis. Production
+account-connect attempts on October 21 were rejected with HTTP `403` and human
+verification; see the [production evidence](#production-verification-block-2026-10-21).
+**Successful account access remains unverified.** Native findings
 are from **19.0.2**, not the latest Android release. A valid app signature and
 available source do not establish present operation.
 
@@ -306,8 +307,9 @@ AllTrails server acceptance. Before claiming current operation, validate:
    decoded raw times match the known recording start/end.
 4. The service's current challenge behavior and actionable reconnect errors.
 
-These live-service checks remain unperformed. No account login is part of the
-local test suite.
+No successful live-service check has been recorded. The October 21 production
+login attempts were blocked before a token response. No account login is part
+of the local test suite.
 
 An AllTrails-issued delegated authorization-code client would be preferable
 to collecting account passwords: OAuth's current security BCP disallows the
@@ -356,6 +358,36 @@ Record the app version, validation date, and exact outcome here. Keep
 configuration values, passwords, tokens, and challenge responses out of
 logs and documentation. The [provider's error handling](../src/providers/alltrails.ts)
 surfaces verification failures without retaining the response body.
+
+### Production Verification Block: 2026-10-21
+
+Two real account-connect attempts at `14:30:24Z` and `14:30:37Z` reached
+`POST https://api-v5.alltrails.com/identity/oauth/token` and received HTTP `403`.
+The [production Sentry event](https://east-bay-software.sentry.io/issues/7804756250/)
+identifies the provider's human-verification branch on release
+`07ee6448aef61e9ecef36737460fbd835fbe8f4b`. Both required application settings
+were present in a names-only Infisical check. Opening the first-party login
+page in Firefox also displayed a DataDome frame with `Access is temporarily
+restricted`, before the credential form. Neither probe obtained account tokens
+or established working refresh/history access.
+
+The [provider](../src/providers/alltrails.ts) now raises a distinct verification
+error. The [shared credential router](../packages/server/src/routers/credential-auth.ts)
+returns `FORBIDDEN` with a safe explanation for both web and mobile, and retains
+Sentry reporting. A verification block does not classify the password as invalid
+or mark stored tokens revoked. Unexpected internal errors retain the existing
+generic client message. This corrects the misleading dialog; production login
+remains blocked until an accepted authentication path is validated.
+
+DataDome's supported [Android](https://docs.datadome.co/docs/sdk-android) and
+[iOS](https://docs.datadome.co/docs/sdk-ios) SDKs present challenges and retry
+requests after resolution. Both use a client key; iOS configures the API origin,
+and Android supports optional API-domain initialization. An interactive
+connection flow therefore needs validation of the
+challenge, token handoff, and subsequent backend refresh/data requests before
+it can be recommended as a working Dofek integration. No such flow or
+AllTrails-issued delegated client has been validated. Re-entering the same
+password in the existing backend form cannot complete the missing challenge.
 
 ## Other Official Surfaces
 

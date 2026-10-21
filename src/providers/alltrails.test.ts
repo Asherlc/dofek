@@ -868,9 +868,11 @@ describe("AllTrails connection", () => {
       );
       await expect(
         provider.authSetup().automatedLogin?.("hiker@example.test", "account-password"),
-      ).rejects.toThrow(
-        "AllTrails requires human verification and blocked this request. Retry later or reconnect if AllTrails permits access.",
-      );
+      ).rejects.toMatchObject({
+        name: "ProviderVerificationRequiredError",
+        message:
+          "AllTrails requires human verification and is blocking this connection. Dofek cannot complete this check automatically. Contact support for help connecting.",
+      });
       expect(deleteTokens).not.toHaveBeenCalled();
     },
   );

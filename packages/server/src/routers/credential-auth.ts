@@ -2,8 +2,12 @@ import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { TRPCError } from "@trpc/server";
 import { runWithTokenUser } from "dofek/db/token-user-context";
 import { saveTokens } from "dofek/db/tokens";
+import { captureException } from "dofek/lib/error-reporting";
 import { reportProviderAuthDiagnostic } from "dofek/lib/provider-diagnostics";
-import { authFailureReasonFromError } from "dofek/providers/auth-errors";
+import {
+  authFailureReasonFromError,
+  ProviderVerificationRequiredError,
+} from "dofek/providers/auth-errors";
 import { getAllProviders } from "dofek/providers/registry";
 import type { TokenSet } from "dofek/providers/types";
 import { z } from "zod";
@@ -49,6 +53,16 @@ export const credentialAuthRouter = router({
         );
       } catch (error) {
         reportProviderAuthDiagnostic(provider.id, "sign_in_failed", ctx.userId);
+        if (error instanceof ProviderVerificationRequiredError) {
+          captureException(error, {
+            tags: { provider: provider.id, trpcPath: "credentialAuth.signIn" },
+          });
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message: error.message,
+            cause: error,
+          });
+        }
         if (error instanceof ProviderRateLimitError) {
           throw new TRPCError({
             code: "TOO_MANY_REQUESTS",

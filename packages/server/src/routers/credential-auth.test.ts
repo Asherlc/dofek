@@ -1,7 +1,8 @@
 import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import type { TRPCError } from "@trpc/server";
+import { AllTrailsProvider } from "dofek/providers/alltrails";
 import { ProviderAuthenticationFailedError } from "dofek/providers/auth-errors";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const {
   mockEnsureProvider,
@@ -23,7 +24,8 @@ const {
   mockReportProviderAuthDiagnostic: vi.fn(),
 }));
 
-vi.mock("dofek/lib/provider-diagnostics", () => ({
+vi.mock("dofek/lib/provider-diagnostics", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("dofek/lib/provider-diagnostics")>()),
   reportProviderAuthDiagnostic: mockReportProviderAuthDiagnostic,
 }));
 
@@ -82,6 +84,10 @@ describe("credentialAuthRouter", () => {
     mockEnqueueSyncJob.mockResolvedValue({ id: "sync-123", alreadyQueued: false });
     mockSaveTokens.mockResolvedValue(undefined);
     mockInvalidateByPrefix.mockResolvedValue(undefined);
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
   });
 
   describe("signIn", () => {
@@ -324,6 +330,42 @@ describe("credentialAuthRouter", () => {
         "user-abc",
       );
       expect(mockEnqueueSyncJob).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      { "x-datadome": "protected", "Content-Type": "application/json" },
+      { "Content-Type": "text/html; charset=utf-8" },
+    ])("explains a blocked AllTrails login without saving credentials", async (headers) => {
+      vi.stubEnv("ALLTRAILS_API_KEY", "test-app-key");
+      vi.stubEnv("ALLTRAILS_CLIENT_ID", "test-client-id");
+      mockGetAllProviders.mockReturnValue([
+        new AllTrailsProvider(
+          async () => new Response("private challenge response", { status: 403, headers }),
+        ),
+      ]);
+      const caller = createCaller({
+        db: { execute: vi.fn() },
+        userId: "user-abc",
+        timezone: "UTC",
+      });
+
+      await expect(
+        caller.signIn({
+          providerId: "alltrails",
+          username: "hiker@example.test",
+          password: "account-password",
+        }),
+      ).rejects.toMatchObject({
+        code: "FORBIDDEN",
+        message:
+          "AllTrails requires human verification and is blocking this connection. Dofek cannot complete this check automatically. Contact support for help connecting.",
+      } satisfies Partial<TRPCError>);
+      expect(mockSaveTokens).not.toHaveBeenCalled();
+      expect(mockEnqueueSyncJob).not.toHaveBeenCalled();
+      expect(mockCaptureException).toHaveBeenCalledWith(
+        expect.objectContaining({ name: "ProviderVerificationRequiredError" }),
+        { tags: { provider: "alltrails", trpcPath: "credentialAuth.signIn" } },
+      );
     });
 
     it("returns too many requests for provider login rate limits", async () => {

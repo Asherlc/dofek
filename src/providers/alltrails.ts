@@ -21,6 +21,7 @@ import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.t
 import {
   AccessTokenExpiredError,
   ProviderInvalidCredentialsError,
+  ProviderVerificationRequiredError,
   RefreshTokenRevokedError,
 } from "./auth-errors.ts";
 import type { SyncRun } from "./sync-run.ts";
@@ -275,9 +276,7 @@ export class AllTrailsProvider implements SyncProvider {
       (response.status === 403 && response.headers.has("x-datadome")) ||
       response.headers.get("content-type")?.includes("text/html")
     ) {
-      throw new Error(
-        "AllTrails requires human verification and blocked this request. Retry later or reconnect if AllTrails permits access.",
-      );
+      throw new ProviderVerificationRequiredError(this.name);
     }
     if (response.status === 401 && kind === "data") throw new AccessTokenExpiredError(this.name);
     let data: unknown;

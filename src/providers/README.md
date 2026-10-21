@@ -90,9 +90,10 @@ The [provider](alltrails.ts) uses the historical native identity contract and
 recording API described in the [source audit](../../docs/alltrails.md).
 
 Sync imports recorded activities and raw timestamped GPS/elevation from the
-native six-axis polyline format. Current account access remains unverified
-against a live AllTrails account. Human-verification responses surface as
-connection/sync errors. See the [API research and validation limits](../../docs/alltrails.md)
+native six-axis polyline format. The October 21 production login attempts were
+blocked by human verification; successful account sync remains unverified.
+Verification blocks return a specific connection error to both clients and
+remain observable in Sentry. See the [production evidence and validation limits](../../docs/alltrails.md#production-verification-block-2026-10-21)
 before treating this source-backed integration as a verified current API.
 Disconnect AllTrails before deleting a Dofek account; the
 [erasure prerequisite](../account-erasure/remote-snapshot.ts) requires this
