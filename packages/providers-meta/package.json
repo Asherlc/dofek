@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./activity-origin": "./src/activity-origin.ts",
     "./providers": "./src/providers.ts",
     "./provider-catalog": "./src/provider-catalog.ts",
     "./provider-connection": "./src/provider-connection.ts",
@@ -22,7 +23,8 @@
     "./hangboarding": "./src/hangboarding.ts"
   },
   "dependencies": {
-    "@dofek/format": "workspace:*"
+    "@dofek/format": "workspace:*",
+    "zod": "4.6.7"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

@@ -107,6 +107,10 @@ describe("ActivityRepository", () => {
                     ? row.canonical_type
                     : row.activity_type,
             timezone: null,
+            primary_activity_id: null,
+            primary_provider_id: null,
+            primary_source_name: null,
+            origin_candidate_member_ids: [],
             start_utc_offset_minutes: null,
             end_utc_offset_minutes: null,
             local_time_source: "unknown",
@@ -1134,6 +1138,10 @@ describe("ActivityRepository", () => {
           .mockResolvedValueOnce([
             {
               id: "tombstoned-id",
+              primary_activity_id: null,
+              primary_provider_id: null,
+              primary_source_name: null,
+              origin_candidate_member_ids: [],
               canonical_type: "running",
               raw_type: "running",
               started_at: "2024-01-15T10:00:00.000Z",

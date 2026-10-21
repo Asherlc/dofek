@@ -32401,3 +32401,11 @@ The entries below preserve findings and branch-level validation from the review 
 - **Follow-up:** Include archive serialization in dependency compatibility
   regressions whenever a shared override crosses a major version; test new queue
   factories together with their cached shutdown lifecycle.
+- **CI admission:** A subsequent conflict with `main` prevented PR CI from
+  starting ([GitHub pull-request workflow behavior](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#pull_request)).
+  Preserved `main`'s `0152_activity_origin` from
+  [PR 3017](https://github.com/Asherlc/dofek/pull/3017) and renumbered the
+  unapplied image migrations and snapshots to 0153–0155, preserving timestamp
+  order and snapshot lineage. The PR itself remains unmerged.
+  Combined-branch validation passed 18,555 unit tests (19 skipped), all three
+  typechecks, sandbox lint, Knip, spelling, SQLFluff, Squawk, and migration policy.

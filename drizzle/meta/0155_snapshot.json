@@ -1,6 +1,6 @@
 {
-  "id": "2ac4567b-147f-4889-9474-2c4903cebcf1",
-  "prevId": "73f02f9c-6a42-4691-a2e4-071bc1dbb965",
+  "id": "9efb1b13-2dd8-40bb-af42-ac5f56b5488b",
+  "prevId": "1c48e92f-e08a-4e34-8431-4fe3002d564f",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -3990,6 +3990,28 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "activity_image_user_object_idx": {
+          "name": "activity_image_user_object_idx",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "object_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"fitness\".\"activity_image\".\"object_id\" IS NOT NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {
@@ -4073,6 +4095,13 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true
+        },
+        "available_at": {
+          "name": "available_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
         },
         "cursor_started_at": {
           "name": "cursor_started_at",
@@ -4532,6 +4561,27 @@
             },
             {
               "expression": "available_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "activity_image_work_user_image_idx": {
+          "name": "activity_image_work_user_image_idx",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "image_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"

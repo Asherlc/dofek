@@ -1,6 +1,6 @@
 {
-  "id": "1c48e92f-e08a-4e34-8431-4fe3002d564f",
-  "prevId": "2ac4567b-147f-4889-9474-2c4903cebcf1",
+  "id": "2ac4567b-147f-4889-9474-2c4903cebcf1",
+  "prevId": "73f02f9c-6a42-4691-a2e4-071bc1dbb965",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -4073,13 +4073,6 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true
-        },
-        "available_at": {
-          "name": "available_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
         },
         "cursor_started_at": {
           "name": "cursor_started_at",

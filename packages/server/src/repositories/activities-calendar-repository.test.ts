@@ -179,9 +179,10 @@ describe("ActivitiesCalendarRepository", () => {
     expect(result[0]?.activities[0]).toEqual(
       expect.objectContaining({
         source: {
-          primarySourceLabel: "Wahoo",
+          origin: { status: "unresolved", candidateMemberActivityIds: [] },
+          primarySourceLabel: null,
           sourceCount: 2,
-          overlapSummary: "2 matched source records · Wahoo selected by source priority",
+          overlapSummary: "2 matched source records",
         },
         lastProcessedAt: "2026-03-18T08:07:00.000Z",
       }),

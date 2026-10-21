@@ -1,93 +1,55 @@
-import { providerSourceLabel } from "@dofek/providers/providers";
+import type { ActivityOrigin } from "@dofek/providers/activity-origin";
+import { providerLabel } from "@dofek/providers/providers";
 import type { ProviderLookup, SourceLink } from "./activity-source-attribution.ts";
 
-/** User-facing explanation of how multi-source activity records were combined. */
 export interface ActivitySourceDecisionDetail {
+  origin: ActivityOrigin;
   sourceCount: number;
-  primarySourceLabel: string;
+  primarySourceLabel: string | null;
   explanation: string;
 }
 
-/** Compact source provenance rendered on activity list cards. */
 export interface ActivityListSourceDetail {
-  primarySourceLabel: string;
+  origin: ActivityOrigin;
+  primarySourceLabel: string | null;
   sourceCount: number;
   overlapSummary: string | null;
 }
 
-/**
- * Derives a concise source-priority explanation for multi-source activities.
- * Single-source activities have no conflict to explain.
- */
+function primaryLabel(origin: ActivityOrigin, lookupProvider?: ProviderLookup): string | null {
+  return origin.status === "resolved"
+    ? (lookupProvider?.(origin.providerId)?.name ?? providerLabel(origin.providerId))
+    : null;
+}
+
 export function buildActivitySourceDecision(
-  providerId: string,
-  subsource: string | null,
+  origin: ActivityOrigin,
   sourceLinks: SourceLink[],
   lookupProvider?: ProviderLookup,
 ): ActivitySourceDecisionDetail | null {
-  if (sourceLinks.length < 2) {
-    return null;
-  }
-
-  const primarySourceLabel = primarySourceLabelFor(
-    providerId,
-    subsource,
-    sourceLinks,
-    lookupProvider,
-  );
-
+  if (sourceLinks.length < 2) return null;
+  const primarySourceLabel = primaryLabel(origin, lookupProvider);
   return {
+    origin,
     sourceCount: sourceLinks.length,
     primarySourceLabel,
-    explanation: `${primarySourceLabel} was selected as the primary record by source priority. Missing details may come from the other matched sources.`,
+    explanation:
+      primarySourceLabel === null
+        ? "The available source information does not establish which record is closest to the original recording."
+        : `${primarySourceLabel} is the closest available record to the original recording. Individual details may come from other matched sources.`,
   };
 }
 
-/** Builds list-card provenance from the same source-priority semantics as activity detail. */
 export function buildActivityListSource(
-  providerId: string,
-  subsource: string | null,
+  origin: ActivityOrigin,
   sourceLinks: SourceLink[] | undefined,
   lookupProvider?: ProviderLookup,
 ): ActivityListSourceDetail {
-  if (sourceLinks === undefined) {
-    return {
-      primarySourceLabel: primarySourceLabelFor(providerId, subsource, sourceLinks, lookupProvider),
-      sourceCount: 1,
-      overlapSummary: null,
-    };
-  }
-
-  const decision = buildActivitySourceDecision(providerId, subsource, sourceLinks, lookupProvider);
-  const primarySourceLabel =
-    decision?.primarySourceLabel ??
-    primarySourceLabelFor(providerId, subsource, sourceLinks, lookupProvider);
-
+  const sourceCount = Math.max(sourceLinks?.length ?? 0, 1);
   return {
-    primarySourceLabel,
-    sourceCount: Math.max(sourceLinks.length, 1),
-    overlapSummary: decision
-      ? `${decision.sourceCount} matched source records · ${decision.primarySourceLabel} selected by source priority`
-      : null,
+    origin,
+    primarySourceLabel: primaryLabel(origin, lookupProvider),
+    sourceCount,
+    overlapSummary: sourceCount > 1 ? `${sourceCount} matched source records` : null,
   };
-}
-
-function primarySourceLabelFor(
-  providerId: string,
-  subsource: string | null,
-  sourceLinks: SourceLink[] | undefined,
-  lookupProvider?: ProviderLookup,
-): string {
-  const matchingLink = sourceLinks?.find(
-    (link) => link.providerId === providerId && (link.subsource ?? null) === subsource,
-  );
-  if (matchingLink) {
-    return matchingLink.label;
-  }
-
-  if (subsource) {
-    return providerSourceLabel(providerId, subsource);
-  }
-
-  return lookupProvider?.(providerId)?.name ?? providerSourceLabel(providerId);
 }

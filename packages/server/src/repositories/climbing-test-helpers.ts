@@ -105,6 +105,10 @@ export function climbingAttemptFixture(
 
 export function climbingActivityFixture(overrides: Partial<ActivityRow> = {}): ActivityRow {
   return {
+    primary_activity_id: null,
+    primary_provider_id: null,
+    primary_source_name: null,
+    origin_candidate_member_ids: [],
     id: "10000000-0000-4000-8000-000000000001",
     canonical_type: "climbing",
     modality: null,

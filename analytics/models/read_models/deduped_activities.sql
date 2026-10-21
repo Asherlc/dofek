@@ -65,6 +65,8 @@ ranked AS (
         {% endif %}
 ),
 
+{{ activity_origin() }},
+
 absent_activity AS (
     SELECT *
     FROM {{ source('postgres_fitness', 'activity') }} FINAL
@@ -347,10 +349,10 @@ merged AS (
 
 current_deduped_activities AS (
     SELECT
-        assumeNotNull(group_id) AS activity_id,
-        id AS primary_activity_id,
+        assumeNotNull(merged.group_id) AS activity_id,
+        activity_origins.primary_activity_id AS primary_activity_id,
         provider_id,
-        user_id,
+        merged.user_id AS user_id,
         canonical_type,
         provider_type,
         modality,
@@ -368,9 +370,15 @@ current_deduped_activities AS (
         source_providers,
         source_external_ids,
         absent_source_external_ids,
-        member_activity_ids
+        member_activity_ids,
+        merged.id AS representative_activity_id,
+        activity_origins.primary_provider_id,
+        activity_origins.primary_source_name,
+        activity_origins.origin_candidate_member_ids,
+        activity_origins.origin_evidence
     FROM merged
-    WHERE group_id NOT IN (SELECT group_id FROM tombstoned_groups)
+    INNER JOIN activity_origins ON activity_origins.group_id = merged.group_id AND activity_origins.user_id = merged.user_id
+    WHERE merged.group_id NOT IN (SELECT group_id FROM tombstoned_groups)
 ),
 
 {% if activity_refresh_scoped %}
@@ -441,6 +449,11 @@ existing_deduped_activities AS (
         deduped.source_external_ids,
         deduped.absent_source_external_ids,
         deduped.member_activity_ids,
+        deduped.representative_activity_id,
+        deduped.primary_provider_id,
+        deduped.primary_source_name,
+        deduped.origin_candidate_member_ids,
+        deduped.origin_evidence,
         deduped.refresh_version,
         deduped.is_deleted,
         deduped.refreshed_at
@@ -506,6 +519,11 @@ current_deduped_activity_state AS (
                 AND current_activities.source_external_ids = existing_activities.source_external_ids
                 AND current_activities.absent_source_external_ids = existing_activities.absent_source_external_ids
                 AND current_activities.member_activity_ids = existing_activities.member_activity_ids
+                AND isNotDistinctFrom(current_activities.representative_activity_id, existing_activities.representative_activity_id)
+                AND isNotDistinctFrom(current_activities.primary_provider_id, existing_activities.primary_provider_id)
+                AND isNotDistinctFrom(current_activities.primary_source_name, existing_activities.primary_source_name)
+                AND isNotDistinctFrom(current_activities.origin_candidate_member_ids, existing_activities.origin_candidate_member_ids)
+                AND isNotDistinctFrom(current_activities.origin_evidence, existing_activities.origin_evidence)
             )
         ) AS has_changed
         {% else %}
@@ -564,6 +582,11 @@ SELECT
     source_external_ids,
     absent_source_external_ids,
     member_activity_ids,
+    representative_activity_id,
+    primary_provider_id,
+    primary_source_name,
+    origin_candidate_member_ids,
+    origin_evidence,
     lifecycle_refresh_version AS refresh_version,
     0 AS is_deleted,
     lifecycle_refreshed_at AS refreshed_at
@@ -598,6 +621,11 @@ SELECT
     source_external_ids,
     absent_source_external_ids,
     member_activity_ids,
+    representative_activity_id,
+    primary_provider_id,
+    primary_source_name,
+    origin_candidate_member_ids,
+    origin_evidence,
     greatest(
         stale_deduped_activities.refresh_version + 1,
         refresh_clock.refresh_version

@@ -4,6 +4,7 @@ import {
 } from "@dofek/format/activity-data-state";
 import { activityOverviewComparisonSchema } from "@dofek/format/activity-overview";
 import { recordLocalTimeContextSchema } from "@dofek/format/record-local-time";
+import { activityOriginSchema } from "@dofek/providers/activity-origin";
 import {
   ACTIVITY_HEATMAP_BAND_IDS,
   type ActivityHeatmapBandId,
@@ -45,7 +46,8 @@ const activityStatSchema = z.discriminatedUnion("status", [
 ]);
 
 const activityListSourceSchema = z.object({
-  primarySourceLabel: z.string(),
+  origin: activityOriginSchema,
+  primarySourceLabel: z.string().nullable(),
   sourceCount: z.number().int().positive(),
   overlapSummary: z.string().nullable(),
 });
@@ -140,7 +142,7 @@ export const calendarRouter = router({
 
   weekList: cachedProtectedQuery({
     maxAge: CacheTTL.MEDIUM,
-    keyVersion: "activity-calendar-modality-v4",
+    keyVersion: "activity-calendar-origin-v5",
   })
     .input(activityListInputSchema)
     .output(z.array(calendarDayActivitiesSchema))

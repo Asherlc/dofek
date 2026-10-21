@@ -19,7 +19,7 @@ import {
 import { formatMeasurementText, type UnitConverter } from "@dofek/format/units";
 import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { processingPollInterval } from "@dofek/providers/processing-status";
-import { providerSourceLabel } from "@dofek/providers/providers";
+import { providerLabel, providerSourceLabel } from "@dofek/providers/providers";
 import type { ClimbingMapLocation } from "@dofek/training/climbing-map";
 import { isIndoorCyclingModality } from "@dofek/training/endurance-types";
 import { formatActivityTypeLabel } from "@dofek/training/training";
@@ -44,7 +44,9 @@ import { ActivityOverview } from "../../components/ActivityOverview";
 import { ActivityTypeIcon } from "../../components/ActivityTypeIcon";
 import { PaginationControls } from "../../components/PaginationControls";
 import { ProcessingStatusWidget } from "../../components/ProcessingStatusWidget";
+import { ProviderLogo } from "../../components/ProviderLogo";
 import { QueryStatePanel } from "../../components/QueryStatePanel";
+import { SERVER_URL } from "../../lib/server";
 import { trpc } from "../../lib/trpc";
 import { useUnitConverter } from "../../lib/units";
 import { useProcessingStatus } from "../../lib/useProcessingStatus";
@@ -471,6 +473,19 @@ export default function ActivitiesScreen() {
                           <Text style={styles.typePill}>
                             {formatActivityTypeLabel(activity.activityType)}
                           </Text>
+                        ) : null}
+                        {activity.source.origin.status === "resolved" ? (
+                          <View
+                            style={{ marginLeft: "auto" }}
+                            accessibilityRole="image"
+                            accessibilityLabel={`Primary recording provider: ${providerLabel(activity.source.origin.providerId)}`}
+                          >
+                            <ProviderLogo
+                              provider={activity.source.origin.providerId}
+                              serverUrl={SERVER_URL}
+                              size={20}
+                            />
+                          </View>
                         ) : null}
                       </View>
                       <Text style={styles.activityMeta}>

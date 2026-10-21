@@ -1,6 +1,7 @@
 import type { ActivityDataState } from "@dofek/format/activity-data-state";
 import type { RecordLocalTimeContext } from "@dofek/format/record-local-time";
 import { activityMeasurementState } from "../services/activity-data-state.ts";
+import { type ActivityOriginColumns, activityOriginFromColumns } from "./activity-origin.ts";
 import type { ActivitySource } from "./activity-source.ts";
 import {
   ActivitySourceAttribution,
@@ -64,7 +65,7 @@ export interface ActivityDetail {
   providerAbsentAt: string | null;
 }
 
-export interface ActivityRow {
+export interface ActivityRow extends ActivityOriginColumns {
   id: string;
   displayed_date: string;
   resolved_from?: string | null;
@@ -256,8 +257,7 @@ export class Activity {
       sourceProviders: this.sourceProviders,
       sourceLinks,
       sourceDecision: buildActivitySourceDecision(
-        this.providerId,
-        this.subsource,
+        activityOriginFromColumns(this.#row),
         sourceLinks,
         this.#lookupProvider,
       ),
