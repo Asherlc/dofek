@@ -270,7 +270,11 @@ const data = await response.json();
 
 ### Pattern 6: Multi-step SSO with OAuth1→OAuth2 exchange (Garmin Connect)
 
-The most complex auth flow we've encountered. Garmin's SSO involves CSRF tokens, session cookies, an OAuth1 ticket exchange, and a final OAuth2 token swap.
+Historical private-API recipe, still reflected in the
+[current unofficial client](../packages/garmin-connect/src/client.ts). Garmin's
+SSO involves CSRF tokens, session cookies, an OAuth1 ticket exchange, and a final
+OAuth2 token swap. Dofek now has Developer Program approval; new integration
+work should follow the [official migration assessment](garmin.md).
 
 ```typescript
 // Step 1: GET /sso/embed — initialize session cookies
@@ -306,7 +310,13 @@ const oauth2Response = await fetch(`${OAUTH_BASE}/exchange/user/2.0`, {
 // Returns JSON: access_token, refresh_token, expires_in
 ```
 
-**Key details:** Cookie jar must persist across all 5 steps. User-Agent must be `com.garmin.android.apps.connectmobile`. MFA is supported (SMS + TOTP).
+**Current client details:** Cookies persist across the SSO steps and the client
+uses `com.garmin.android.apps.connectmobile` as its login user agent.
+Interactive MFA is **not supported**: an MFA response throws
+`GarminMfaRequiredError`. Carrying an existing `mfa_token` in a later exchange
+does not implement SMS or TOTP challenges. See the
+[sign-in flow](../packages/garmin-connect/src/client.ts#L159) and
+[exchange implementation](../packages/garmin-connect/src/client.ts#L284).
 
 ## Common tricks and gotchas
 

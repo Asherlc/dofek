@@ -2,7 +2,8 @@
 
 An assessment of every provider we considered reverse engineering, documenting what the official API provides, what gaps exist, and whether reverse engineering is feasible or worthwhile.
 
-Last updated: 2026-08-14
+Garmin sections updated: 2026-10-21. Other provider assessments retain their
+previous research dates and require current verification before implementation.
 
 ---
 
@@ -26,11 +27,14 @@ no-readable-data state
 ### Gated follow-up: Garmin Women's Health
 
 Garmin's official Women's Health API is the strongest cloud follow-up because it explicitly offers
-menstrual-cycle schedules and phase details with push or ping/pull delivery
+menstrual-cycle schedules and phase details
 ([Women's Health API](https://developer.garmin.com/gc-developer-program/womens-health-api/)).
-Implementation is blocked on Connect Developer Program business approval and the official payload
-contract; Dofek will not guess or scrape women's-health endpoints through its private Garmin
-provider ([program FAQ](https://developer.garmin.com/gc-developer-program/program-faq/)).
+Dofek now has Developer Program approval. Implementation still requires the app entitlement,
+authorized payload contract, consent, and raw-record mapping; Dofek will not guess or scrape
+women's-health endpoints through its private Garmin provider. Starter delivery is push only,
+while Enterprise offers push or Ping/Pull; see the
+[current program overview](https://developer.garmin.com/gc-developer-program/overview/) and
+[Garmin migration assessment](garmin.md).
 
 ### Future Android source: Health Connect
 
@@ -57,12 +61,12 @@ future option when Dofek has an Android client; it is not implemented in the cur
 ## Reverse Engineered (done)
 
 ### Garmin Connect
-- **Package:** `packages/garmin-connect`
-- **Official API:** Garmin Health API (OAuth 2.0, developer program) — limited to activities, sleep, daily summaries, body composition
-- **Internal API:** 105+ endpoints at `connect.garmin.com` via SSO auth (5-step: embed → CSRF → login → OAuth1 ticket → OAuth2)
-- **Gaps filled:** HRV (nightly readings + baseline), body battery (charge/drain time series), stress (per-minute), training readiness, training status/load, race predictions, endurance/hill scores, fitness age, SpO2 time series, FIT/TCX/GPX downloads
-- **Source:** Based on [garth](https://github.com/matin/garth) and [python-garminconnect](https://github.com/cyberjunky/python-garminconnect)
-- **Verdict:** HIGH VALUE — massive data gap between official and internal API
+- **Status:** Dofek has Developer Program approval; the running provider still uses the [unofficial client](../packages/garmin-connect/README.md).
+- **Official scope:** Health, Activity JSON/FIT, Women's Health, Training, and Courses are included in Starter Business. Starter is push only and excludes historical data; Enterprise adds delivery/history/capacity options ([current overview](https://developer.garmin.com/gc-developer-program/overview/)).
+- **Health coverage:** Garmin publicly advertises Body Battery, stress, respiration, Pulse Ox, body composition, and blood pressure in addition to steps, sleep, and heart rate. These are not inherently private-only gaps ([Health API](https://developer.garmin.com/gc-developer-program/health-api/)).
+- **Current implementation:** Private SSO/CSRF/cookies, third-party consumer credentials, mobile user-agent identities, and OAuth1-to-OAuth2 exchange ([client source](../packages/garmin-connect/src/client.ts)).
+- **Live data:** Activities/chart samples, sleep/stages, daily summaries, nightly HRV, and daily HR. The library's additional training/Body Battery methods are not live ingestion ([orchestrator](../src/providers/garmin/sync-orchestrator.ts)).
+- **Verdict:** Replace the private integration after official payload/lifecycle verification. Retain FIT tooling and account-export history; see the [migration assessment](garmin.md) and [authorized catalog](https://developerportal.garmin.com/developer-programs/programs-docs).
 
 ### WHOOP
 - **Package:** `packages/whoop-whoop`
@@ -192,7 +196,7 @@ future option when Dofek has an Android client; it is not implemented in the cur
 
 | Provider | Official API Quality | RE Feasibility | RE Value | Status |
 |----------|---------------------|----------------|----------|--------|
-| Garmin Connect | Limited | Easy (well-documented) | Very high | Done |
+| Garmin Connect | Broad; tier constraints | Existing private client | Reassess after official parity check | Approved; migration pending ([assessment](garmin.md)) |
 | WHOOP | Limited/partner-only | Medium (Cognito) | High | Done |
 | Eight Sleep | None | Easy (hardcoded creds) | Essential | Done |
 | Zwift | None | Easy (Keycloak) | Essential | Done |
