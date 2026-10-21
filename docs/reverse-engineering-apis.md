@@ -270,11 +270,11 @@ const data = await response.json();
 
 ### Pattern 6: Multi-step SSO with OAuth1→OAuth2 exchange (Garmin Connect)
 
-Historical private-API recipe, still reflected in the
-[current unofficial client](../packages/garmin-connect/src/client.ts). Garmin's
-SSO involves CSRF tokens, session cookies, an OAuth1 ticket exchange, and a final
-OAuth2 token swap. Dofek now has Developer Program approval; new integration
-work should follow the [official migration assessment](garmin.md).
+Historical private-API recipe from the
+[retired unofficial client at `585bfa7`](https://github.com/Asherlc/dofek/blob/585bfa7d2e9417bc77e9cef751a2ef5901fdbd7d/packages/garmin-connect/src/client.ts).
+That client used CSRF tokens, session cookies, an OAuth1 ticket exchange, and a
+final OAuth2 token swap. Its source and release wiring have been removed. Dofek
+uses the [official OAuth and push integration](garmin.md).
 
 ```typescript
 // Step 1: GET /sso/embed — initialize session cookies
@@ -310,13 +310,13 @@ const oauth2Response = await fetch(`${OAUTH_BASE}/exchange/user/2.0`, {
 // Returns JSON: access_token, refresh_token, expires_in
 ```
 
-**Current client details:** Cookies persist across the SSO steps and the client
-uses `com.garmin.android.apps.connectmobile` as its login user agent.
-Interactive MFA is **not supported**: an MFA response throws
+**Retired client details:** Cookies persisted across the SSO steps and the client
+used `com.garmin.android.apps.connectmobile` as its login user agent.
+Interactive MFA was **not supported**: an MFA response threw
 `GarminMfaRequiredError`. Carrying an existing `mfa_token` in a later exchange
-does not implement SMS or TOTP challenges. See the
-[sign-in flow](../packages/garmin-connect/src/client.ts#L159) and
-[exchange implementation](../packages/garmin-connect/src/client.ts#L284).
+did not implement SMS or TOTP challenges. See the historical
+[sign-in flow](https://github.com/Asherlc/dofek/blob/585bfa7d2e9417bc77e9cef751a2ef5901fdbd7d/packages/garmin-connect/src/client.ts#L159) and
+[exchange implementation](https://github.com/Asherlc/dofek/blob/585bfa7d2e9417bc77e9cef751a2ef5901fdbd7d/packages/garmin-connect/src/client.ts#L284).
 
 ## Common tricks and gotchas
 

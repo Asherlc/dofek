@@ -72,7 +72,6 @@ COPY packages/zepp-client/package.json ./packages/zepp-client/
 COPY packages/trainerroad-client/package.json ./packages/trainerroad-client/
 COPY packages/velohero-client/package.json ./packages/velohero-client/
 COPY packages/mountain-project-client/package.json ./packages/mountain-project-client/
-COPY packages/garmin-connect/package.json ./packages/garmin-connect/
 COPY packages/trainingpeaks-connect/package.json ./packages/trainingpeaks-connect/
 COPY packages/kaya-client/package.json ./packages/kaya-client/
 COPY packages/provider-http/package.json ./packages/provider-http/

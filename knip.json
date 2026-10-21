@@ -93,12 +93,6 @@
         "entry": ["src/**/*.test.ts"]
       }
     },
-    "packages/garmin-connect": {
-      "vitest": {
-        "config": ["../../vitest.config.ts"],
-        "entry": ["src/**/*.test.ts"]
-      }
-    },
     "packages/trainingpeaks-connect": {
       "vitest": {
         "config": ["../../vitest.config.ts"],

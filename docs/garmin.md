@@ -36,6 +36,14 @@ they are separate from live delivery. See the
 [account-export importer](../src/providers/garmin-dump.ts), and
 [import flow](../src/jobs/garmin-dump-flow.ts).
 
+The private `@dofek/garmin-connect` client is retired. Its source, tests,
+workspace membership, and release configuration have been removed; official
+OAuth and push ingestion are the maintained integration. Historical source remains
+available at the
+[pre-migration revision](https://github.com/Asherlc/dofek/tree/585bfa7d2e9417bc77e9cef751a2ef5901fdbd7d/packages/garmin-connect),
+while the current [workspace](../pnpm-workspace.yaml) and
+[release package list](../lerna.json) define maintained packages.
+
 ## Supported incoming feeds
 
 The [receiver schemas](../src/providers/garmin/payloads.ts) and
@@ -248,10 +256,11 @@ persistence responsibilities still exist. See the
   activity upserts, sensor publishing, and query-time deduplication. Remove
   Garmin-specific policies without dismantling these shared boundaries.
 
-The [unofficial package](https://github.com/Asherlc/dofek/blob/585bfa7d2e9417bc77e9cef751a2ef5901fdbd7d/packages/garmin-connect/package.json) is configured
-for public npm publishing. Removing its Dofek runtime dependency and retiring
-its published API are separate decisions; do not silently repurpose its API as
-an approved-partner client.
+At the time of this assessment, the
+[unofficial package](https://github.com/Asherlc/dofek/blob/585bfa7d2e9417bc77e9cef751a2ef5901fdbd7d/packages/garmin-connect/package.json)
+was configured for public npm publishing. The assessment treated removing its
+Dofek runtime dependency and retiring its package as separate decisions. The
+current retirement status is described above.
 
 ### Remaining migration decisions
 

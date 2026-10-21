@@ -159,7 +159,7 @@
     "schema:diagram": "tsx scripts/generate-schema-diagram.ts",
     "schema:view": "tsx scripts/generate-schema-diagram.ts --open",
     "release:npm:build": "lerna run build --stream",
-    "release:npm:test": "vitest run --project unit packages/provider-http packages/scoring packages/zones packages/training packages/eight-sleep packages/garmin-connect packages/peloton-client packages/trainerroad-client packages/trainingpeaks-connect packages/velohero-client packages/whoop-whoop packages/xert-client packages/zepp-client packages/zwift-client",
+    "release:npm:test": "vitest run --project unit packages/provider-http packages/scoring packages/zones packages/training packages/eight-sleep packages/peloton-client packages/trainerroad-client packages/trainingpeaks-connect packages/velohero-client packages/whoop-whoop packages/xert-client packages/zepp-client packages/zwift-client",
     "release:npm:publish": "pnpm --recursive publish --access public --no-git-checks",
     "typecheck": "tsc --noEmit",
     "check:dependency-security": "tsx scripts/check-node-forge-security.ts && tsx scripts/check-braces-security.ts",

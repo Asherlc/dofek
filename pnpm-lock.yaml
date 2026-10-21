@@ -393,25 +393,6 @@ importers:
         specifier: 4.6.7
         version: 4.6.7
 
-  packages/garmin-connect:
-    dependencies:
-      '@dofek/provider-http':
-        specifier: workspace:*
-        version: link:../provider-http
-      '@dofek/training':
-        specifier: workspace:*
-        version: link:../training
-    devDependencies:
-      '@types/node':
-        specifier: 26.1.2
-        version: 26.1.2
-      typescript:
-        specifier: 6.0.3
-        version: 6.0.3
-      vitest:
-        specifier: 4.1.11
-        version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@26.1.2)(@vitest/coverage-v8@4.1.11)(jsdom@30.1.2)(msw@2.15.0)(vite@8.1.6)
-
   packages/heart-rate-variability: {}
 
   packages/imu: {}
