@@ -128,6 +128,34 @@ meal-aggregate records appear once in editable meal cards; Apple Health daily
 aggregates remain totals-only. The provider-neutral rules are defined in
 [migration 0124](../drizzle/0124_meal_aggregate_nutrition_sources.sql).
 
+## Hang Ten Workouts
+
+Hang Ten writes contact-based intervals under `HangTen.ActivitySegments.v2`.
+The metadata key retains its `.v2` suffix even when the JSON body uses format
+version 3. Version 2 and 3 segments identify work targets as `resolvedContacts`
+or `selfSelected`; rest segments do not require contact identifiers. See the
+[metadata key](https://github.com/Asherlc/hang-ten/blob/c426d7019a65e1bb63c4c9f60ba88b4de65f22cc/HangTen/Models/WorkoutHistory.swift#L4-L8)
+and [recorded segment formats](https://github.com/Asherlc/hang-ten/blob/c426d7019a65e1bb63c4c9f60ba88b4de65f22cc/HangTen/Models/WorkoutActivityRecording.swift#L285-L369).
+
+Both XML imports and native HealthKit sync use the
+[shared workout parser](../src/providers/apple-health/workouts.ts). It also
+reads historical version 1 metadata from `HangTen.ActivitySegments`. When both
+keys are present, the current key takes precedence; invalid current metadata
+produces an import error instead of substituting older intervals. The
+[interval importer](../src/providers/apple-health/hang-ten-intervals.ts) retains
+the recorded target and hand metadata and labels exact contact depths without
+converting a depth range into an exact measurement.
+
+For a session reporting no completed hangs, resolve its displayed group ID to
+the Hang Ten member before comparing `raw.metadata` with
+`fitness.activity_interval`. Check the key and the JSON body's version
+separately. If the raw segments are present but interval rows are missing,
+reprocess the retained metadata with the current parser and interval importer
+in a transaction scoped to that member; preserve its original metadata and
+invalidate the affected user's query cache afterward. The
+[database regression](../packages/server/src/repositories/hang-ten-import.integration.test.ts)
+exercises import, reimport, and the shared detail response.
+
 ## Workout Source Attribution
 
 Apple Health workouts can preserve the upstream app name inside the workout JSON (`raw.sourceName`) even when the canonical `source_name` column is null. In production this is how workouts imported through Apple Health can still identify apps like Strong or WHOOP on the activity detail page.
