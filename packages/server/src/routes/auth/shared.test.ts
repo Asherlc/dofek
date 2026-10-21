@@ -63,6 +63,10 @@ vi.mock("../webhooks.ts", () => ({
 }));
 
 import { createDatabaseFromEnv } from "dofek/db";
+import { ensureProvider, saveTokens } from "dofek/db/tokens";
+import { queryCache } from "dofek/lib/cache";
+import type { SyncProvider } from "dofek/providers/types";
+import { createMockDatabase } from "../../../../../src/providers/test-helpers.ts";
 import {
   InMemoryMobileAuthExchangeStore,
   RedisMobileAuthExchangeStore,
@@ -73,11 +77,89 @@ import {
   getPendingEmailSignupStoreRef,
   initAuthStores,
   isSafeRelativeRedirect,
+  persistProviderConnection,
   sanitizeReturnTo,
   storeIdentityFlow,
 } from "./shared.ts";
 
 describe("shared auth helpers", () => {
+  describe("persistProviderConnection", () => {
+    it("checks provider ownership inside the token transaction before creating a connection", async () => {
+      const { db } = createMockDatabase();
+      const events: string[] = [];
+      const assertCanConnect = vi.fn(async () => {
+        events.push("assert-owner");
+      });
+      vi.mocked(ensureProvider).mockImplementationOnce(async () => {
+        events.push("ensure-provider");
+        return "test";
+      });
+      vi.mocked(saveTokens).mockImplementationOnce(async () => {
+        events.push("save-tokens");
+      });
+      const provider: SyncProvider = {
+        id: "test",
+        name: "Test",
+        validate: () => null,
+        sync: async () => ({ provider: "test", recordsSynced: 0, errors: [], duration: 0 }),
+        authSetup: () => ({ assertCanConnect }),
+      };
+      const tokens = {
+        accessToken: "access",
+        refreshToken: null,
+        scopes: null,
+        expiresAt: new Date("2099-01-01"),
+      };
+      await persistProviderConnection({
+        db,
+        provider,
+        providerName: "Test",
+        tokens,
+        userId: "owner",
+      });
+      expect(events).toEqual(["assert-owner", "ensure-provider", "save-tokens"]);
+      expect(assertCanConnect).toHaveBeenCalledWith(
+        expect.objectContaining({ transaction: expect.any(Function) }),
+        "owner",
+        tokens,
+      );
+    });
+
+    it("does not create a connection or save tokens after the ownership guard rejects", async () => {
+      vi.mocked(ensureProvider).mockClear();
+      vi.mocked(saveTokens).mockClear();
+      vi.mocked(queryCache.invalidateByPrefix).mockClear();
+      const { db } = createMockDatabase();
+      const provider: SyncProvider = {
+        id: "test",
+        name: "Test",
+        validate: () => null,
+        sync: async () => ({ provider: "test", recordsSynced: 0, errors: [], duration: 0 }),
+        authSetup: () => ({
+          assertCanConnect: async () => {
+            throw new Error("Account already owned");
+          },
+        }),
+      };
+      await expect(
+        persistProviderConnection({
+          db,
+          provider,
+          providerName: "Test",
+          userId: "owner",
+          tokens: {
+            accessToken: "access",
+            refreshToken: null,
+            scopes: null,
+            expiresAt: new Date("2099-01-01"),
+          },
+        }),
+      ).rejects.toThrow("Account already owned");
+      expect(ensureProvider).not.toHaveBeenCalled();
+      expect(saveTokens).not.toHaveBeenCalled();
+      expect(queryCache.invalidateByPrefix).not.toHaveBeenCalled();
+    });
+  });
   describe("sanitizeReturnTo", () => {
     it("returns undefined for falsy input", () => {
       expect(sanitizeReturnTo(undefined)).toBeUndefined();

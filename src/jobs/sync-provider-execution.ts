@@ -1,3 +1,4 @@
+import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { withAccountErasureUserWriteFence } from "../db/account-erasure.ts";
 import { loadUserHomeTimezone } from "../db/home-timezone.ts";
 import { runWithProviderUserIngestContext } from "../db/provider-ingest-context.ts";
@@ -7,7 +8,7 @@ import { invalidateAllUserQueries } from "../lib/cache.ts";
 import { providerRequiresStoredTokens } from "../lib/custom-auth-providers.ts";
 import { captureException } from "../lib/error-reporting.ts";
 import { logger } from "../logger.ts";
-import { isWebhookProvider, type SyncProvider } from "../providers/types.ts";
+import { isPushProvider, isWebhookProvider, type SyncProvider } from "../providers/types.ts";
 import {
   syncDuration,
   syncErrorsTotal,
@@ -107,6 +108,13 @@ export async function executeSyncProvider(
       { homeTimezone },
       async () => {
         const event = job.data.webhookEvent;
+        if (event && isPushProvider(provider)) {
+          return provider.syncWebhookEvent(db, event, {
+            userId: job.data.userId,
+            signal,
+            metricStreamPublisher: processingOperation.metricStreamPublisher,
+          });
+        }
         if (event && isWebhookProvider(provider) && provider.syncWebhookEvent) {
           try {
             return await provider.syncWebhookEvent(db, event, {
@@ -148,6 +156,10 @@ export async function executeSyncProvider(
       return true;
     }
     throwRetryableSyncResultError(result.errors);
+    if (isPushProvider(provider) && job.data.webhookEvent && result.errors.length > 0) {
+      const failure = result.errors[0];
+      throw failure?.cause ?? new Error(result.errors.map((error) => error.message).join("; "));
+    }
     const authFailureReason = firstAuthFailureReason(result.errors);
     const failureEvent = providerSyncFailureEvent(provider.name, authFailureReason);
     context.completedCount++;
@@ -206,6 +218,15 @@ export async function executeSyncProvider(
     }
   } catch (err: unknown) {
     await handleSyncProviderFailure(context, provider, processingOperation, syncStart, err);
+    // Push data cannot be recovered through polling; retain its original job for retry.
+    // Rate-limit handling already schedules a durable replacement carrying that event.
+    if (
+      isPushProvider(provider) &&
+      job.data.webhookEvent &&
+      !(err instanceof ProviderRateLimitError)
+    ) {
+      throw err;
+    }
   }
   return true;
 }

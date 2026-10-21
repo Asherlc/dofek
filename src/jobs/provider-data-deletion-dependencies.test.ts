@@ -8,6 +8,12 @@ import {
   getProviderDataDeletionQueue,
 } from "./queues.ts";
 
+const deleteProviderArtifacts = vi.hoisted(() => vi.fn(async () => undefined));
+
+vi.mock("../provider-artifact-storage.ts", () => ({
+  createProviderArtifactStorageFromEnv: () => ({ deleteForProvider: deleteProviderArtifacts }),
+}));
+
 vi.mock("../db/provider-data-deletion.ts", () => ({
   markProviderDataDeletionCompleted: vi.fn(async () => undefined),
 }));
@@ -48,10 +54,15 @@ describe("createProviderDataDeletionDependencies", () => {
     );
     await dependencies.enqueueContinuation(continuation);
     await dependencies.markCompleted(continuation.eventId);
+    await dependencies.deleteProviderArtifacts(continuation.userId, continuation.providerId);
 
     const queue = vi.mocked(getProviderDataDeletionQueue).mock.results[0]?.value;
     expect(enqueueProviderDataDeletionContinuation).toHaveBeenCalledWith(continuation, queue);
     expect(markProviderDataDeletionCompleted).toHaveBeenCalledWith(database, continuation.eventId);
+    expect(deleteProviderArtifacts).toHaveBeenCalledWith(
+      continuation.userId,
+      continuation.providerId,
+    );
     expect(dependencies.clickHouseClient).toBe(clickHouseClient);
     expect(dependencies.accountErasureAllowsWork).toBe(accountErasureAllowsWork);
     expect(dependencies.enqueueAnalyticsRefresh).toBe(enqueueProviderDeleteAnalyticsRefresh);

@@ -30,7 +30,6 @@ vi.mock("../components/ProviderLogo.tsx", () => ({
 
 vi.mock("../components/DataSourcesAuthModals.tsx", () => ({
   CredentialAuthModal: () => <div>Credential reconnect form</div>,
-  GarminAuthModal: () => <div>Garmin reconnect form</div>,
   TokenAuthModal: () => <div>Token reconnect form</div>,
   WhoopAuthModal: ({ onSuccess }: { onSuccess: () => void }) => (
     <div>
@@ -1120,14 +1119,14 @@ describe("ProviderDetailPage import-only providers", () => {
   });
 
   it("shows mobile-only providers without sync controls or history", async () => {
-    mockUseParams.mockReturnValue({ id: "whoop-mobile" });
+    mockUseParams.mockReturnValue({ id: "whoop_ble" });
     mockProviders.data = [
       {
-        id: "whoop-mobile",
-        name: "WHOOP Mobile",
+        id: "whoop_ble",
+        name: "WHOOP (Bluetooth)",
         description: "Streams live sensor data.",
         authorized: true,
-        authType: "none",
+        authType: "push:mobile",
         lastSyncedAt: "2026-06-30T12:00:00Z",
         importOnly: false,
         pushOnly: true,
@@ -1144,14 +1143,14 @@ describe("ProviderDetailPage import-only providers", () => {
     expect(screen.queryByText("Sync History")).toBeNull();
   });
 
-  it("uses the generic mobile sync instructions when a push provider has no description", async () => {
-    mockUseParams.mockReturnValue({ id: "whoop-mobile" });
+  it("uses WHOOP mobile instructions when WHOOP BLE has no description", async () => {
+    mockUseParams.mockReturnValue({ id: "whoop_ble" });
     mockProviders.data = [
       {
-        id: "whoop-mobile",
-        name: "WHOOP Mobile",
+        id: "whoop_ble",
+        name: "WHOOP (Bluetooth)",
         authorized: true,
-        authType: "none",
+        authType: "push:mobile",
         lastSyncedAt: null,
         importOnly: false,
         pushOnly: true,
@@ -1192,26 +1191,35 @@ describe("ProviderDetailPage import-only providers", () => {
     },
   );
 
-  it("opens the Garmin reconnect form for an expired Garmin account", async () => {
-    mockUseParams.mockReturnValue({ id: "garmin" });
-    mockProviders.data = [
-      {
-        id: "garmin",
-        name: "Garmin",
-        authorized: false,
-        authType: "custom:garmin",
-        lastSyncedAt: null,
-        importOnly: false,
-        needsReauth: true,
-      },
-    ];
-
-    const { ProviderDetailPage } = await import("./ProviderDetailPage");
-    render(<ProviderDetailPage />);
-    fireEvent.click(screen.getByRole("button", { name: "Reconnect Garmin" }));
-
-    expect(screen.getByText("Garmin reconnect form")).toBeTruthy();
-  });
+  it.each([false, true])(
+    "opens Garmin OAuth with a push-only connection, needsReauth=%s",
+    async (needsReauth) => {
+      const openWindow = vi.spyOn(window, "open").mockReturnValue(null);
+      mockUseParams.mockReturnValue({ id: "garmin" });
+      mockProviders.data = [
+        {
+          id: "garmin",
+          name: "Garmin",
+          authorized: !needsReauth,
+          authType: "oauth",
+          lastSyncedAt: "2026-10-20T10:00:00Z",
+          importOnly: false,
+          needsReauth,
+          pushOnly: true,
+        },
+      ];
+      const { ProviderDetailPage } = await import("./ProviderDetailPage");
+      render(<ProviderDetailPage />);
+      fireEvent.click(screen.getByRole("button", { name: "Reconnect Garmin" }));
+      expect(openWindow).toHaveBeenCalledWith("/auth/provider/garmin", "_blank");
+      expect(
+        screen.getByText("New data arrives automatically after you sync your Garmin device."),
+      ).toBeTruthy();
+      expect(screen.getByText(/^Last received:/)).toBeTruthy();
+      expect(screen.queryByRole("button", { name: "Sync Last 7 Days" })).toBeNull();
+      openWindow.mockRestore();
+    },
+  );
 
   it("opens the credential and token reconnect forms for expired providers", async () => {
     mockUseParams.mockReturnValue({ id: "fitbit" });

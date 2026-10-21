@@ -198,6 +198,14 @@ advertises the available methods through `/api/auth/providers`; see
 [the app-password guide](docs/app-password-auth.md) and
 [`src/auth/README.md`](src/auth/README.md).
 
+Garmin connects through the approved application's OAuth flow and receives new
+data through official push delivery. Existing history and account-export ZIP
+imports remain available; users with legacy private tokens must reconnect.
+See the [Garmin guide](docs/garmin.md) for Starter limits, required application
+configuration, and the deployment checks before releasing portal delivery
+([provider implementation](src/providers/garmin/provider.ts),
+[authorization migration](drizzle/0153_garmin_official_authorization.sql)).
+
 Committed `.env` files contain non-secret configuration. Infisical contains
 secrets such as client secrets, tokens, private keys, and encryption keys.
 Production CI exports those values to a short-lived runner file; it does not

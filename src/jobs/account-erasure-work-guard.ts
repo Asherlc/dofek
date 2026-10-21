@@ -6,6 +6,7 @@ import { z } from "zod";
 import { accountErasureQueuedUserWorkLockName } from "../db/account-erasure-locks.ts";
 import { isAccountErasureActive } from "../db/account-erasure-processing.ts";
 import type { Database } from "../db/index.ts";
+import { providerExecutionLockName } from "../db/provider-execution-lock.ts";
 import { executeWithSchema } from "../db/typed-sql.ts";
 import { logger } from "../logger.ts";
 
@@ -75,7 +76,7 @@ class PostgresAccountErasureWorkLockPool implements AccountErasureWorkLockPool {
     try {
       const client = await this.#pool.connect();
       const providerLockName =
-        providerId === undefined ? undefined : `provider-sync:${userId}:${providerId}`;
+        providerId === undefined ? undefined : providerExecutionLockName(userId, providerId);
       const onSessionError = (error: Error): never => {
         try {
           Sentry.captureException(error, {

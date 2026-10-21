@@ -78,10 +78,11 @@ function createSeededProviders() {
       {
         id: "garmin",
         name: "Garmin",
-        authType: "custom:garmin",
+        authType: "oauth",
         authorized: false,
         lastSyncedAt: null,
         importOnly: false,
+        pushOnly: true,
         needsReauth: false,
       },
     ],

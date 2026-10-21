@@ -424,6 +424,55 @@ describe("process-sync-job", () => {
     });
   });
 
+  it("processes a notification provider excluded from polling", async () => {
+    const syncWebhookEvent = vi.fn().mockResolvedValue({
+      provider: "garmin",
+      recordsSynced: 1,
+      errors: [],
+      duration: 1,
+    });
+    const provider = {
+      ...createMockProvider({ id: "garmin" }),
+      pushOnly: true,
+      parseWebhookPayload: vi.fn(),
+      syncWebhookEvent,
+    };
+    mockGetEnabledSyncProviders.mockReturnValue([]);
+    mockGetProvider.mockReturnValue(provider);
+    mockIsSyncEligibleProvider.mockReturnValue(false);
+    const webhookEvent = {
+      ownerExternalId: "owner",
+      eventType: "update" as const,
+      objectType: "dailies",
+    };
+    await runSyncJob(createMockJob({ providerId: "garmin", webhookEvent }), mockDb);
+    expect(syncWebhookEvent).toHaveBeenCalledWith(
+      mockDb,
+      webhookEvent,
+      expect.objectContaining({ userId: "user-1" }),
+    );
+  });
+
+  it("skips polling a notification provider when a stale job has no event", async () => {
+    const provider = {
+      ...createMockProvider({ id: "garmin" }),
+      pushOnly: true,
+      parseWebhookPayload: vi.fn(),
+      syncWebhookEvent: vi.fn(),
+    };
+    mockGetProvider.mockReturnValue(provider);
+    mockIsSyncEligibleProvider.mockReturnValue(false);
+    const job = createMockJob({ providerId: "garmin" });
+    await runSyncJob(job, mockDb);
+    expect(job.updateProgress).toHaveBeenCalledWith({
+      providers: {
+        garmin: { status: "done", message: "Data arrives automatically from this provider" },
+      },
+      percentage: 100,
+    });
+    expect(provider.sync).not.toHaveBeenCalled();
+  });
+
   it("enqueues debounced global maintenance and per-user refit after sync", async () => {
     mockGetEnabledSyncProviders.mockReturnValue([createMockProvider()]);
 

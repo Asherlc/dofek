@@ -335,8 +335,10 @@ table fitness.oauth_token {
   user_id uuid [not null]
   provider_id text [not null]
   access_token text [not null]
+  authorization_id uuid
   refresh_token text
   provider_account_id text
+  provider_account_lookup_id text
   expires_at "timestamp with time zone" [not null]
   scopes text
   created_at "timestamp with time zone" [not null, default: `now()`]
@@ -347,6 +349,8 @@ table fitness.oauth_token {
     (user_id, provider_id) [pk]
 
     provider_id [name: 'oauth_token_provider_idx']
+    (provider_id, provider_account_lookup_id) [name: 'oauth_token_provider_account_lookup_idx']
+    provider_account_lookup_id [name: 'oauth_token_garmin_account_owner_idx', unique]
     user_id [name: 'oauth_token_user_idx']
   }
 }

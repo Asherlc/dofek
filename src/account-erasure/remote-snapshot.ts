@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import type { TransactionDatabase } from "../db/index.ts";
+import type { TokenSet } from "../auth/oauth.ts";
+import type { Database, TransactionDatabase } from "../db/index.ts";
 import { loadTokens } from "../db/tokens.ts";
 import { executeWithSchema } from "../db/typed-sql.ts";
 import { listUserExternalEffects } from "../db/user-external-effect.ts";
@@ -129,6 +130,7 @@ export const accountErasureRemoteSnapshotSchema = z.object({
       }),
       z.object({
         accessToken: z.string().min(1),
+        authorizationId: z.uuid().optional(),
         disposition: z.literal("revocation_credentials"),
         expiresAt: z.iso.datetime(),
         providerAccountId: z.string().min(1).optional(),
@@ -160,6 +162,55 @@ function snapshotEncryptionContext(userId: string) {
     columnName: "encrypted_remote_snapshot",
     scopeId: userId,
   };
+}
+
+/** Commit refreshed revocation credentials into the request's canonical encrypted snapshot. */
+export async function updateAccountErasureProviderCredentials(
+  database: Pick<Database, "transaction">,
+  requestId: string,
+  leaseOwner: string,
+  providerId: string,
+  tokens: TokenSet,
+): Promise<string> {
+  return database.transaction(async (transaction) => {
+    const [request] = await executeWithSchema(
+      transaction,
+      z.object({
+        user_id: z.uuid(),
+        encrypted_remote_snapshot: z.string().min(1),
+      }),
+      sql`SELECT user_id, encrypted_remote_snapshot
+      FROM fitness.account_erasure_request
+      WHERE id = ${requestId}::uuid AND lease_owner = ${leaseOwner}
+        AND lease_expires_at > now() AND status <> 'completed'
+        AND user_id IS NOT NULL AND pii_scrubbed_at IS NULL
+      FOR UPDATE`,
+    );
+    if (!request) throw new Error("Account erasure credential update lost its request lease");
+    const snapshot = await decryptAccountErasureSnapshot(
+      request.encrypted_remote_snapshot,
+      request.user_id,
+    );
+    let found = false;
+    snapshot.providerConnections = snapshot.providerConnections.map((connection) => {
+      if (
+        connection.providerId !== providerId ||
+        connection.disposition !== "revocation_credentials"
+      )
+        return connection;
+      found = true;
+      return { ...connection, ...tokens, expiresAt: tokens.expiresAt.toISOString() };
+    });
+    if (!found) throw new Error(`Account erasure has no revocation credentials for ${providerId}`);
+    const encrypted = await encryptCredentialValue(
+      JSON.stringify(accountErasureRemoteSnapshotSchema.parse(snapshot)),
+      snapshotEncryptionContext(request.user_id),
+    );
+    await transaction.execute(sql`UPDATE fitness.account_erasure_request
+      SET encrypted_remote_snapshot = ${encrypted}, updated_at = now()
+      WHERE id = ${requestId}::uuid`);
+    return encrypted;
+  });
 }
 
 async function loadProviderConnections(
@@ -249,6 +300,7 @@ async function loadProviderConnections(
       }
       return {
         accessToken: tokens.accessToken,
+        ...(tokens.authorizationId ? { authorizationId: tokens.authorizationId } : {}),
         disposition: "revocation_credentials" as const,
         expiresAt: tokens.expiresAt.toISOString(),
         ...(tokens.providerAccountId

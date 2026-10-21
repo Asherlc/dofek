@@ -66,9 +66,6 @@ const PROVIDER_QUEUE_CONFIGS: ReadonlyMap<string, ProviderQueueConfig> = new Map
   ["cycling_analytics", realtimeProvider()],
 
   // ── Frequent tier ──
-  // Garmin sync is step-chained: one BullMQ job per sync phase (activities, sleep, etc.).
-  // Job limiter paces phases; adaptive fetch paces individual HTTP calls.
-  ["garmin", frequentProvider(1, { max: 1, duration: 5_000 })],
   // WHOOP sync is step-chained: one BullMQ job ≈ one API step (~3 HTTP calls with auth).
   // Job limiter paces steps; adaptive fetch paces individual HTTP calls.
   ["whoop", frequentProvider(1, { max: 1, duration: 1_000 })],
@@ -92,6 +89,7 @@ const PROVIDER_QUEUE_CONFIGS: ReadonlyMap<string, ProviderQueueConfig> = new Map
   ["thecrag", { concurrency: 1, syncTier: "daily" }],
 
   // ── On-demand tier ──
+  ["garmin", { concurrency: 3, syncTier: "on-demand" }],
   ["bodyspec", { concurrency: 1, syncTier: "on-demand" }],
 ]);
 

@@ -47,6 +47,7 @@ const meta = {
   args: {
     provider: {
       id: "strava",
+      authType: "oauth",
       name: "Strava",
       lastSyncedAt: recentSuccessfulAt,
       lastSuccessfulSyncAt: recentSuccessfulAt,
@@ -94,6 +95,7 @@ export const NoSyncHistory: Story = {
     recentLogs: [],
     provider: {
       id: "strava",
+      authType: "oauth",
       name: "Strava",
       lastSyncedAt: null,
       lastSuccessfulSyncAt: null,
@@ -115,6 +117,7 @@ export const OverdueProvider: Story = {
     recentLogs: [],
     provider: {
       id: "strava",
+      authType: "oauth",
       name: "Strava",
       lastSyncedAt: "2026-08-12T12:00:00.000Z",
       lastSuccessfulSyncAt: "2026-08-11T12:00:00.000Z",
@@ -133,6 +136,7 @@ export const NeedsAuth: Story = {
   args: {
     provider: {
       id: "oura",
+      authType: "oauth",
       name: "Oura",
       lastSyncedAt: null,
       lastSuccessfulSyncAt: null,
@@ -150,6 +154,7 @@ export const NeedsReauth: Story = {
     recentLogs: [],
     provider: {
       id: "whoop",
+      authType: "oauth",
       name: "WHOOP",
       lastSyncedAt: "2026-05-10T10:00:00.000Z",
       lastSuccessfulSyncAt: "2026-05-10T10:00:00.000Z",
@@ -163,4 +168,36 @@ export const NeedsReauth: Story = {
     },
     needsReauth: true,
   },
+};
+
+const garminProvider = {
+  id: "garmin",
+  name: "Garmin",
+  authType: "oauth",
+  authorized: false,
+  description: null,
+  lastSyncedAt: null,
+  lastSuccessfulSyncAt: null,
+  syncFreshness: null,
+};
+
+export const GarminConnect: Story = {
+  args: {
+    provider: garminProvider,
+    pushOnly: true,
+    needsAuth: true,
+    recentLogs: [],
+  },
+};
+
+export const GarminConnected: Story = {
+  args: {
+    ...GarminConnect.args,
+    provider: { ...garminProvider, authorized: true },
+    needsAuth: false,
+  },
+};
+
+export const GarminReconnect: Story = {
+  args: { ...GarminConnected.args, needsReauth: true },
 };

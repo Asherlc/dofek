@@ -354,9 +354,15 @@ describe("createApp", () => {
 
     const res = await request(app, "GET", "/api/nonexistent?session=secret-session&foo=visible");
     const codeRes = await request(app, "GET", "/api/nonexistent?code=secret-code&foo=visible");
+    const tokenRes = await request(
+      app,
+      "POST",
+      "/api/webhooks/garmin?token=private-receiver-token",
+    );
 
     expect(res.status).toBe(404);
     expect(codeRes.status).toBe(404);
+    expect(tokenRes.status).toBe(503);
     expect(mockLoggerInfo).toHaveBeenCalledWith(
       expect.stringMatching(/\/api\/nonexistent\?session=%5B[A-Z]+%5D&foo=visible/),
     );
@@ -367,6 +373,12 @@ describe("createApp", () => {
     expect(mockLoggerInfo.mock.calls[1]?.[0]).not.toContain("session=");
     expect(mockLoggerInfo).not.toHaveBeenCalledWith(expect.stringContaining("secret-session"));
     expect(mockLoggerInfo).not.toHaveBeenCalledWith(expect.stringContaining("secret-code"));
+    expect(mockLoggerInfo).toHaveBeenCalledWith(
+      expect.stringMatching(/garmin\?token=%5B[A-Z]+%5D/),
+    );
+    expect(mockLoggerInfo).not.toHaveBeenCalledWith(
+      expect.stringContaining("private-receiver-token"),
+    );
   });
 
   it("reports malformed request URLs and continues logging", async () => {
@@ -855,6 +867,7 @@ describe("createGracefulShutdownHandler", () => {
     expect(onExit).not.toHaveBeenCalled();
 
     closeCallback?.();
+    await vi.advanceTimersByTimeAsync(0);
     expect(onExit).toHaveBeenCalledWith(0);
 
     onExit.mockClear();
@@ -882,6 +895,7 @@ describe("createGracefulShutdownHandler", () => {
 
       await vi.advanceTimersByTimeAsync(0);
       closeCallback?.();
+      await vi.advanceTimersByTimeAsync(0);
 
       expect(processExit).toHaveBeenCalledWith(0);
     } finally {

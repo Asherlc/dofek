@@ -50,6 +50,7 @@ export interface AccountWorkDependencies {
   abortImportMultipart(objectKey: string, multipartUploadId: string): Promise<void>;
   deleteExportObject(objectKey: string): Promise<void>;
   deleteImportObject(objectKey: string): Promise<void>;
+  deleteProviderArtifactsForUser(userId: string): Promise<void>;
   jobFilesDirectory: string;
   purgeRedis(userId: string, bullmqJobIds: readonly string[]): Promise<void>;
   queues: readonly ErasureQueue[];
@@ -159,6 +160,7 @@ export async function purgeAccountWork(
     }
   }
   await dependencies.purgeRedis(identifiers.userId, [...bullmqJobIds]);
+  await dependencies.deleteProviderArtifactsForUser(identifiers.userId);
 
   for (const upload of identifiers.fileUploads) {
     if (upload.multipartUploadId) {

@@ -1072,6 +1072,13 @@
       "when": 1792533600000,
       "tag": "0152_activity_origin",
       "breakpoints": true
+    },
+    {
+      "idx": 153,
+      "version": "7",
+      "when": 1792605600000,
+      "tag": "0153_garmin_official_authorization",
+      "breakpoints": true
     }
   ]
 }

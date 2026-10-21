@@ -304,7 +304,6 @@ const mockInvalidateActiveImports = vi.fn();
 const mockSyncStatusFetch = vi.fn();
 const mockCredentialSignIn = vi.fn();
 const mockTokenConnect = vi.fn();
-const mockGarminSignIn = vi.fn();
 const mockWhoopSignIn = vi.fn();
 const mockWhoopVerifyCode = vi.fn();
 const mockWhoopSaveTokens = vi.fn();
@@ -349,9 +348,6 @@ vi.mock("../../lib/trpc", () => ({
     },
     tokenAuth: {
       connect: { useMutation: () => ({ mutateAsync: mockTokenConnect }) },
-    },
-    garminAuth: {
-      signIn: { useMutation: () => ({ mutateAsync: mockGarminSignIn }) },
     },
     whoopAuth: {
       signIn: { useMutation: () => ({ mutateAsync: mockWhoopSignIn }) },
@@ -1047,7 +1043,6 @@ describe("ProvidersScreen", () => {
     mockUseRefresh.mockClear();
     mockCredentialSignIn.mockReset();
     mockTokenConnect.mockReset();
-    mockGarminSignIn.mockReset();
     mockWhoopSignIn.mockReset();
     mockWhoopVerifyCode.mockReset();
     mockWhoopSaveTokens.mockReset();
@@ -1137,7 +1132,7 @@ describe("ProvidersScreen", () => {
   it("groups Garmin connection methods and shows the selected method", async () => {
     mockProvidersQuery.mockReturnValue({
       data: [
-        { ...connectedProvider, id: "garmin", name: "Garmin", authType: "custom:garmin" },
+        { ...connectedProvider, id: "garmin", name: "Garmin", authType: "oauth" },
         {
           ...importOnlyProvider,
           id: "garmin-dump",
@@ -1207,7 +1202,7 @@ describe("ProvidersScreen", () => {
           id: "garmin",
           name: "Garmin",
           description: null,
-          authType: "custom:garmin",
+          authType: "oauth",
           tokenAuth: null,
           authorized: true,
           lastSyncedAt: "2026-08-12T12:00:00.000Z",
@@ -2721,66 +2716,34 @@ describe("ProvidersScreen", () => {
     });
   });
 
-  it("opens Garmin auth modal when Connect is clicked on a custom:garmin provider", async () => {
-    const garminProvider = {
-      id: "garmin",
-      name: "Garmin",
-      authType: "custom:garmin",
-      authorized: false,
-      importOnly: false,
-      lastSyncedAt: null,
-    };
-    mockProvidersQuery.mockReturnValue({
-      data: [garminProvider],
-      isLoading: false,
-    });
-
-    await renderProvidersScreen();
-
-    const garminCard = within(screen.getByTestId("provider-card-garmin"));
-    fireEvent.click(garminCard.getByText("Connect"));
-
-    await waitFor(() => {
-      expect(screen.getByText("Connect Garmin")).toBeTruthy();
-    });
-  });
-
-  it("Garmin auth modal calls signIn mutation with correct args", async () => {
-    const garminProvider = {
-      id: "garmin",
-      name: "Garmin",
-      authType: "custom:garmin",
-      authorized: false,
-      importOnly: false,
-      lastSyncedAt: null,
-    };
-    mockProvidersQuery.mockReturnValue({
-      data: [garminProvider],
-      isLoading: false,
-    });
-    mockGarminSignIn.mockResolvedValue({ success: true });
-
-    await renderProvidersScreen();
-
-    const garminCard = within(screen.getByTestId("provider-card-garmin"));
-    fireEvent.click(garminCard.getByText("Connect"));
-    await waitFor(() => {
-      expect(screen.getByText("Connect Garmin")).toBeTruthy();
-    });
-
-    fireEvent.change(screen.getByPlaceholderText("Email"), {
-      target: { value: "user@garmin.com" },
-    });
-    fireEvent.change(screen.getByPlaceholderText("Password"), { target: { value: "garminpass" } });
-    fireEvent.click(screen.getByText("Sign In"));
-
-    await waitFor(() => {
-      expect(mockGarminSignIn).toHaveBeenCalledWith({
-        username: "user@garmin.com",
-        password: "garminpass",
+  it.each([false, true])(
+    "opens Garmin OAuth from its notification source card, authorized=%s",
+    async (authorized) => {
+      const WebBrowser = await import("expo-web-browser");
+      mockProvidersQuery.mockReturnValue({
+        data: [
+          {
+            id: "garmin",
+            name: "Garmin",
+            authType: "oauth",
+            authorized,
+            importOnly: false,
+            pushOnly: true,
+            lastSyncedAt: null,
+          },
+        ],
+        isLoading: false,
       });
-    });
-  });
+      await renderProvidersScreen();
+      const garminCard = within(screen.getByTestId("provider-card-garmin"));
+      fireEvent.click(garminCard.getByText(authorized ? "Reconnect" : "Connect"));
+      await waitFor(() =>
+        expect(WebBrowser.openBrowserAsync).toHaveBeenCalledWith(
+          "https://test.example.com/auth/provider/garmin?code=provider-handoff-code",
+        ),
+      );
+    },
+  );
 
   it("opens WHOOP auth modal when Connect is clicked on a custom:whoop provider", async () => {
     const whoopProvider = {

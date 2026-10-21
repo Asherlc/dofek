@@ -135,6 +135,7 @@ describe("processProviderDataDeletionJob ClickHouse integration", () => {
 
     await runProviderDataDeletionToCompletion(data, {
       accountErasureAllowsWork,
+      deleteProviderArtifacts: async () => undefined,
       clickHouseClient,
       enqueueAnalyticsRefresh,
       markCompleted,
@@ -325,6 +326,7 @@ describe("processProviderDataDeletionJob ClickHouse integration", () => {
     };
     await runProviderDataDeletionToCompletion(data, {
       accountErasureAllowsWork,
+      deleteProviderArtifacts: async () => undefined,
       clickHouseClient: deletionClient,
       enqueueAnalyticsRefresh: vi.fn(async () => undefined),
       markCompleted: vi.fn(async () => undefined),
@@ -361,6 +363,7 @@ describe("processProviderDataDeletionJob ClickHouse integration", () => {
     };
     await runProviderDataDeletionToCompletion(firstDeletionData, {
       accountErasureAllowsWork,
+      deleteProviderArtifacts: async () => undefined,
       clickHouseClient,
       enqueueAnalyticsRefresh: vi.fn(async () => undefined),
       markCompleted: vi.fn(async () => undefined),
@@ -390,6 +393,7 @@ describe("processProviderDataDeletionJob ClickHouse integration", () => {
       },
       {
         accountErasureAllowsWork,
+        deleteProviderArtifacts: async () => undefined,
         clickHouseClient: {
           command: (options) => clickHouseClient.command(options),
           query: async (options) => {
@@ -491,6 +495,7 @@ describe("processProviderDataDeletionJob ClickHouse integration", () => {
         },
         {
           accountErasureAllowsWork,
+          deleteProviderArtifacts: async () => undefined,
           clickHouseClient: deletionClient,
           enqueueAnalyticsRefresh: vi.fn(async () => undefined),
           enqueueContinuation: vi.fn(async () => undefined),

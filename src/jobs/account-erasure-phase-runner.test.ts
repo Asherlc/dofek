@@ -106,6 +106,7 @@ function execution(
     loadCheckpointDetails: vi.fn().mockResolvedValue(null),
     loadProgress: vi.fn().mockResolvedValue(null),
     request,
+    persistProviderCredentials: vi.fn().mockResolvedValue(undefined),
     saveProgress: vi.fn().mockResolvedValue(undefined),
     scrubPii: vi.fn().mockResolvedValue(undefined),
     ...overrides,
@@ -117,6 +118,24 @@ beforeEach(() => {
 });
 
 describe("createAccountErasurePhaseRunner", () => {
+  it("saves refreshed remote credentials before propagating a deletion failure", async () => {
+    const deps = dependencies();
+    const run = execution();
+    const tokens = {
+      accessToken: "rotated",
+      refreshToken: "rotated-refresh",
+      expiresAt: new Date(),
+      scopes: null,
+    };
+    vi.mocked(deps.revokeRemote).mockImplementation(async (_snapshot, persist) => {
+      await persist("garmin", tokens);
+      throw new Error("registration deletion failed");
+    });
+    await expect(
+      createAccountErasurePhaseRunner(deps).runPhase("remote_revocation", run),
+    ).rejects.toThrow("registration deletion failed");
+    expect(run.persistProviderCredentials).toHaveBeenCalledWith("garmin", tokens);
+  });
   it("captures the ingest boundary before draining consumers", async () => {
     const deps = dependencies();
     const runner = createAccountErasurePhaseRunner(deps);

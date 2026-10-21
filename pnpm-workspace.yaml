@@ -208,3 +208,6 @@ minimumReleaseAgeExclude:
   - '@ai-sdk/provider@4.0.28'
   - '@expo/schema-utils@58.0.2'
   - expo-modules-cli@0.3.1
+  - '@aws-sdk/client-s3@3.1154.0'
+  - '@aws-sdk/lib-storage@3.1154.0'
+  - '@aws-sdk/s3-request-presigner@3.1154.0'

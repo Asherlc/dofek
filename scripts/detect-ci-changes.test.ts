@@ -61,7 +61,6 @@ describe("CI change detector", () => {
 
   it.each([
     "eight-sleep",
-    "garmin-connect",
     "trainerroad-client",
     "velohero-client",
     "whoop-whoop",

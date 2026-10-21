@@ -16,6 +16,8 @@ vi.mock("./posthog.ts", () => ({
 
 const originalDeployEnvironment = process.env.DEPLOY_ENVIRONMENT;
 const originalSentryRelease = process.env.SENTRY_RELEASE;
+type SentrySpan = Parameters<NonNullable<NodeOptions["beforeSendSpan"]>>[0];
+type SentryTransaction = Parameters<NonNullable<NodeOptions["beforeSendTransaction"]>>[0];
 
 async function loadInitProductionSentry() {
   return (await import("./sentry.ts")).initProductionSentry;
@@ -83,13 +85,15 @@ describe("initProductionSentry", () => {
       initProductionSentry("https://key@sentry.example/456");
 
       expect(mocks.initProductionPostHog).toHaveBeenCalledWith("dofek-worker");
-      expect(mocks.init).toHaveBeenCalledWith({
-        beforeSend: expect.any(Function),
-        dsn: "https://key@sentry.example/456",
-        environment: "production",
-        release: "0123456789abcdef",
-        skipOpenTelemetrySetup: true,
-      });
+      expect(mocks.init).toHaveBeenCalledWith(
+        expect.objectContaining({
+          beforeSend: expect.any(Function),
+          dsn: "https://key@sentry.example/456",
+          environment: "production",
+          release: "0123456789abcdef",
+          skipOpenTelemetrySetup: true,
+        }),
+      );
     },
   );
 
@@ -200,5 +204,92 @@ describe("initProductionSentry", () => {
 
     expect(mocks.init).toHaveBeenCalledOnce();
     expect(mocks.initProductionPostHog).toHaveBeenCalledOnce();
+  });
+
+  it("redacts receiver credentials from error requests and HTTP breadcrumbs", async () => {
+    vi.stubEnv("DEPLOY_ENVIRONMENT", "production");
+    (await loadInitProductionSentry())("https://key@sentry.example/456");
+    const beforeSend = mocks.init.mock.calls[0]?.[0].beforeSend;
+    if (!beforeSend) throw new Error("Sentry beforeSend was not configured");
+    const event: ErrorEvent = {
+      type: undefined,
+      request: {
+        url: "https://dofek.example/api/webhooks/garmin?token=synthetic-event-secret&feed=dailies",
+        query_string: { token: "synthetic-event-secret", feed: "dailies" },
+      },
+      breadcrumbs: [
+        {
+          category: "http",
+          data: {
+            url: "https://apis.garmin.com/file?token=synthetic-breadcrumb-secret&feed=fit",
+            "http.query": "token=synthetic-breadcrumb-secret&feed=fit",
+          },
+        },
+      ],
+    };
+    const result = await beforeSend(event, {});
+    expect(JSON.stringify(result)).not.toContain("synthetic-event-secret");
+    expect(JSON.stringify(result)).not.toContain("synthetic-breadcrumb-secret");
+    expect(result?.request?.url).toContain("feed=dailies");
+    expect(result?.request?.query_string).toEqual({ token: "REDACTED", feed: "dailies" });
+  });
+
+  it("redacts full URLs, legacy attributes and descriptions on Sentry spans", async () => {
+    vi.stubEnv("DEPLOY_ENVIRONMENT", "production");
+    (await loadInitProductionSentry())("https://key@sentry.example/456");
+    const beforeSendSpan = mocks.init.mock.calls[0]?.[0].beforeSendSpan;
+    const span: SentrySpan = {
+      trace_id: "trace",
+      span_id: "span",
+      start_timestamp: 1,
+      description: "GET https://apis.garmin.com/file?token=synthetic-span-secret&feed=fit",
+      data: {
+        "url.full": "https://apis.garmin.com/file?token=synthetic-span-secret&feed=fit",
+        "http.url": "https://apis.garmin.com/file?token=synthetic-span-secret",
+        "http.target": "/file?token=synthetic-span-secret",
+        "url.query": "token=synthetic-span-secret&feed=fit",
+        "http.query": "?token=synthetic-span-secret&feed=fit",
+      },
+    };
+    const result = beforeSendSpan?.(span) ?? span;
+    expect(JSON.stringify(result)).not.toContain("synthetic-span-secret");
+    expect(result.data["url.full"]).toContain("feed=fit");
+    expect(result.description).toContain("token=REDACTED");
+  });
+
+  it("redacts root transaction data and child spans before sending a transaction", async () => {
+    vi.stubEnv("DEPLOY_ENVIRONMENT", "production");
+    (await loadInitProductionSentry())("https://key@sentry.example/456");
+    const beforeSendTransaction = mocks.init.mock.calls[0]?.[0].beforeSendTransaction;
+    const event: SentryTransaction = {
+      type: "transaction",
+      transaction: "POST /api/webhooks/garmin?token=synthetic-transaction-secret",
+      contexts: {
+        trace: {
+          span_id: "span",
+          trace_id: "trace",
+          data: { "url.query": "token=synthetic-transaction-secret&feed=dailies" },
+        },
+      },
+      request: {
+        query_string: [
+          ["token", "synthetic-transaction-secret"],
+          ["feed", "dailies"],
+        ],
+      },
+      spans: [
+        {
+          trace_id: "trace",
+          span_id: "span",
+          start_timestamp: 1,
+          data: {
+            "http.url": "https://apis.garmin.com/file?token=synthetic-transaction-secret&feed=fit",
+          },
+        },
+      ],
+    };
+    const result = (await beforeSendTransaction?.(event, {})) ?? event;
+    expect(JSON.stringify(result)).not.toContain("synthetic-transaction-secret");
+    expect(result.contexts?.trace?.data?.["url.query"]).toContain("feed=dailies");
   });
 });

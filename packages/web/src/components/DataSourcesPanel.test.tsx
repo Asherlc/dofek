@@ -22,7 +22,7 @@ const mockProvidersQuery = vi.hoisted(() =>
         id: "garmin",
         name: "Garmin",
         authorized: true,
-        authType: "custom:garmin",
+        authType: "oauth",
         importOnly: false,
         pushOnly: false,
         needsReauth: false,
@@ -155,16 +155,6 @@ vi.mock("./DataSourcesAuthModals.tsx", () => ({
       </button>
     </div>
   ),
-  GarminAuthModal: ({ onClose, onSuccess }: { onClose: () => void; onSuccess: () => void }) => (
-    <>
-      <button type="button" onClick={onClose}>
-        Garmin auth
-      </button>
-      <button type="button" onClick={onSuccess}>
-        Save Garmin auth
-      </button>
-    </>
-  ),
   WhoopAuthModal: ({ onClose, onSuccess }: { onClose: () => void; onSuccess: () => void }) => (
     <>
       <button type="button" onClick={onClose}>
@@ -252,7 +242,7 @@ describe("DataSourcesPanel", () => {
           id: "garmin",
           name: "Garmin",
           authorized: true,
-          authType: "custom:garmin",
+          authType: "oauth",
           importOnly: false,
           pushOnly: false,
           needsReauth: false,
@@ -319,7 +309,7 @@ describe("DataSourcesPanel", () => {
           id: "garmin",
           name: "Garmin",
           authorized: true,
-          authType: "custom:garmin",
+          authType: "oauth",
           importOnly: false,
           pushOnly: false,
           needsReauth: false,
@@ -379,7 +369,7 @@ describe("DataSourcesPanel", () => {
           id: "garmin",
           name: "Garmin",
           authorized: true,
-          authType: "custom:garmin",
+          authType: "oauth",
           importOnly: false,
           pushOnly: false,
           needsReauth: false,
@@ -498,7 +488,7 @@ describe("DataSourcesPanel", () => {
           id: "garmin",
           name: "Garmin",
           authorized: true,
-          authType: "custom:garmin",
+          authType: "oauth",
           importOnly: false,
           pushOnly: false,
           needsReauth: false,
@@ -667,7 +657,7 @@ describe("DataSourcesPanel", () => {
           id: "garmin",
           name: "Garmin",
           authorized: true,
-          authType: "custom:garmin",
+          authType: "oauth",
           importOnly: false,
           pushOnly: false,
           needsReauth: false,
@@ -1224,15 +1214,6 @@ describe("DataSourcesPanel", () => {
           pushOnly: false,
           needsReauth: false,
         },
-        {
-          id: "garmin",
-          name: "Garmin",
-          authorized: false,
-          authType: "custom:garmin",
-          importOnly: false,
-          pushOnly: false,
-          needsReauth: false,
-        },
       ],
       isLoading: false,
       error: null,
@@ -1249,11 +1230,7 @@ describe("DataSourcesPanel", () => {
     expect(screen.getByText("WHOOP auth")).toBeTruthy();
     fireEvent.click(screen.getByText("Save WHOOP auth"));
 
-    fireEvent.click(within(screen.getByTestId("provider-card-garmin")).getByText("Sync"));
-    expect(screen.getByText("Garmin auth")).toBeTruthy();
-    fireEvent.click(screen.getByText("Save Garmin auth"));
-
-    expect(mockProvidersInvalidate).toHaveBeenCalledTimes(3);
+    expect(mockProvidersInvalidate).toHaveBeenCalledTimes(2);
   });
 
   it("opens an OAuth connection and leaves push-only providers inactive", () => {
@@ -1398,6 +1375,62 @@ describe("DataSourcesPanel", () => {
         expect.objectContaining({ jobId: "syncable:job-1", providerIds: ["syncable"] }),
       );
     });
+  });
+
+  it("keeps mobile push source authorization in the iOS app", () => {
+    mockProvidersQuery.mockReturnValue({
+      data: [
+        {
+          id: "whoop_ble",
+          name: "WHOOP (Bluetooth)",
+          authType: "push:mobile",
+          authorized: false,
+          importOnly: false,
+          pushOnly: true,
+          needsReauth: false,
+        },
+      ],
+      isLoading: false,
+      error: null,
+    });
+    render(<DataSourcesPanel />);
+    expect(mockSyncProviderCard).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: expect.objectContaining({ id: "whoop_ble" }),
+        needsAuth: false,
+      }),
+    );
+  });
+
+  it("keeps Garmin authorization available and waits for delivered data after OAuth", () => {
+    const open = vi.spyOn(window, "open").mockReturnValue(null);
+    mockProvidersQuery.mockReturnValue({
+      data: [
+        {
+          id: "garmin",
+          name: "Garmin",
+          authorized: false,
+          authType: "oauth",
+          importOnly: false,
+          pushOnly: true,
+          needsReauth: false,
+        },
+      ],
+      isLoading: false,
+      error: null,
+    });
+    render(<DataSourcesPanel />);
+    fireEvent.click(within(screen.getByTestId("provider-card-garmin")).getByText("Sync"));
+    expect(open).toHaveBeenCalledWith("/auth/provider/garmin", "_blank");
+    window.dispatchEvent(
+      new MessageEvent("message", {
+        origin: window.location.origin,
+        data: { type: "oauth-complete", providerId: "garmin" },
+      }),
+    );
+    expect(mockProvidersInvalidate).toHaveBeenCalled();
+    expect(mockSyncMutateAsync).not.toHaveBeenCalled();
+    open.mockRestore();
   });
 
   it("starts a full sync after a valid OAuth completion message", async () => {

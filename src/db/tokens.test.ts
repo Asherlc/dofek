@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { reportProviderAuthDiagnostic } from "../lib/provider-diagnostics.ts";
 import { createMockDatabase } from "../providers/test-helpers.ts";
 import {
+  decryptCredentialValue,
   encryptCredentialValue,
   isEncryptedCredentialValue,
 } from "../security/credential-encryption.ts";
@@ -144,6 +145,7 @@ describe("saveTokens", () => {
       refreshToken: "refresh-plain",
       expiresAt: new Date("2026-04-01T00:00:00Z"),
       providerAccountId: "polar-user-123",
+      authorizationId: "63000000-0000-4000-8000-000000000001",
       scopes: "read write",
     };
 
@@ -161,6 +163,7 @@ describe("saveTokens", () => {
     expect(isEncryptedCredentialValue(firstInsert.accessToken)).toBe(true);
     expect(isEncryptedCredentialValue(firstInsert.refreshToken)).toBe(true);
     expect(isEncryptedCredentialValue(firstInsert.providerAccountId)).toBe(true);
+    expect(firstInsert.authorizationId).toBe("63000000-0000-4000-8000-000000000001");
   });
 
   it("handles null refreshToken and scopes", async () => {
@@ -180,6 +183,35 @@ describe("saveTokens", () => {
         scopes: null,
       }),
     );
+  });
+
+  it("stores a normalized encrypted identity with a stable provider-scoped lookup", async () => {
+    const tokens = {
+      accessToken: "official-access",
+      refreshToken: "official-refresh",
+      expiresAt: new Date("2026-12-01T00:00:00Z"),
+      providerAccountId: "  official-account  ",
+      scopes: "ACTIVITY_EXPORT",
+    };
+    const secondUserId = "11111111-1111-4111-8111-111111111111";
+
+    await saveTokens(mock.db, "garmin", tokens, TEST_USER_ID);
+    await saveTokens(mock.db, "garmin", tokens, secondUserId);
+    await saveTokens(mock.db, "other-provider", tokens, TEST_USER_ID);
+
+    const first = mock.spies.values.mock.calls[0]?.[0];
+    const second = mock.spies.values.mock.calls[1]?.[0];
+    const otherProvider = mock.spies.values.mock.calls[2]?.[0];
+    expect(first?.providerAccountLookupId).toMatch(/^[a-f0-9]{64}$/);
+    expect(second?.providerAccountLookupId).toBe(first?.providerAccountLookupId);
+    expect(otherProvider?.providerAccountLookupId).not.toBe(first?.providerAccountLookupId);
+    await expect(
+      decryptCredentialValue(first?.providerAccountId, {
+        tableName: "fitness.oauth_token",
+        columnName: "provider_account_id",
+        scopeId: `${TEST_USER_ID}:garmin`,
+      }),
+    ).resolves.toBe("official-account");
   });
 });
 
@@ -279,6 +311,7 @@ describe("loadTokens", () => {
     mock.spies.limit.mockResolvedValue([
       {
         accessToken: "access-123",
+        authorizationId: "63000000-0000-4000-8000-000000000001",
         refreshToken: "refresh-456",
         expiresAt: new Date("2026-04-01T00:00:00Z"),
         scopes: "read",
@@ -296,6 +329,7 @@ describe("loadTokens", () => {
 
     expect(result).toEqual({
       accessToken: "access-123",
+      authorizationId: "63000000-0000-4000-8000-000000000001",
       refreshToken: "refresh-456",
       expiresAt: new Date("2026-04-01T00:00:00Z"),
       scopes: "read",

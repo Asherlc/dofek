@@ -1,5 +1,7 @@
 import * as Sentry from "@sentry/node";
 import { z } from "zod";
+import { updateAccountErasureProviderCredentials } from "../account-erasure/remote-snapshot.ts";
+import type { TokenSet } from "../auth/oauth.ts";
 import {
   type ClaimedAccountErasureRequest,
   claimAccountErasureRequest,
@@ -47,6 +49,7 @@ function reportAccountErasureFailure(
 export interface AccountErasurePhaseExecution {
   deleteProfile(): Promise<{ walLsn: string }>;
   request: ClaimedAccountErasureRequest;
+  persistProviderCredentials(providerId: string, tokens: TokenSet): Promise<void>;
   loadCheckpointDetails(phase: AccountErasurePhase): Promise<Record<string, unknown> | null>;
   loadProgress(): Promise<Record<string, unknown> | null>;
   saveProgress(details: Record<string, unknown>): Promise<void>;
@@ -200,6 +203,16 @@ export async function processAccountErasureRequest(
                 );
               },
               request,
+              persistProviderCredentials: async (providerId, tokens) => {
+                heartbeat.assertHealthy();
+                request.encryptedRemoteSnapshot = await updateAccountErasureProviderCredentials(
+                  database,
+                  request.id,
+                  leaseOwner,
+                  providerId,
+                  tokens,
+                );
+              },
               loadCheckpointDetails: (checkpointPhase) =>
                 loadAccountErasureCheckpointDetails(database, request.id, checkpointPhase),
               loadProgress: () => loadAccountErasurePhaseProgress(database, request.id, phase),

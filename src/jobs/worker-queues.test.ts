@@ -452,6 +452,9 @@ describe("worker queues", () => {
   });
 
   it("provider-data-deletion processor delegates to processProviderDataDeletionJob", async () => {
+    const { runQueuedUserWorkUnlessAccountErasing } = await import(
+      "./account-erasure-work-guard.ts"
+    );
     const { markProviderDataDeletionCompleted } = await import("../db/provider-data-deletion.ts");
     const { processProviderDataDeletionJob } = await import(
       "./process-provider-data-deletion-job.ts"
@@ -476,9 +479,17 @@ describe("worker queues", () => {
         markCompleted: expect.any(Function),
       }),
     );
-    const dependencies = vi.mocked(processProviderDataDeletionJob).mock.calls[0]?.[1];
-    if (!dependencies) throw new Error("provider deletion dependencies were not passed");
-    await dependencies.markCompleted("30000000-0000-4000-8000-000000000003");
+    expect(runQueuedUserWorkUnlessAccountErasing).toHaveBeenLastCalledWith(
+      dependencies.accountErasureWorkLockPool,
+      mockDatabase,
+      "00000000-0000-4000-8000-000000000004",
+      "provider data deletion",
+      expect.any(Function),
+      "garmin",
+    );
+    const deletionDependencies = vi.mocked(processProviderDataDeletionJob).mock.calls[0]?.[1];
+    if (!deletionDependencies) throw new Error("provider deletion dependencies were not passed");
+    await deletionDependencies.markCompleted("30000000-0000-4000-8000-000000000003");
     expect(markProviderDataDeletionCompleted).toHaveBeenCalledWith(
       mockDatabase,
       "30000000-0000-4000-8000-000000000003",

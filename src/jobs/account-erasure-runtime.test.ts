@@ -226,6 +226,7 @@ function execution(
     loadCheckpointDetails,
     loadProgress: vi.fn(async () => null),
     request: claimedRequest,
+    persistProviderCredentials: vi.fn(async () => undefined),
     saveProgress: vi.fn(async () => undefined),
     scrubPii: vi.fn(async () => undefined),
   };

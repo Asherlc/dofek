@@ -2,17 +2,15 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { locallyReportedErrorMeta } from "../lib/query-client.ts";
-import { CredentialAuthModal, GarminAuthModal, WhoopAuthModal } from "./DataSourcesAuthModals.tsx";
+import { CredentialAuthModal, WhoopAuthModal } from "./DataSourcesAuthModals.tsx";
 
 const mockCredentialSignIn = vi.hoisted(() => vi.fn());
 const mockTokenConnect = vi.hoisted(() => vi.fn());
-const mockGarminSignIn = vi.hoisted(() => vi.fn());
 const mockWhoopSignIn = vi.hoisted(() => vi.fn());
 const mockWhoopVerifyCode = vi.hoisted(() => vi.fn());
 const mockWhoopSaveTokens = vi.hoisted(() => vi.fn());
 const mockCredentialUseMutation = vi.hoisted(() => vi.fn());
 const mockTokenUseMutation = vi.hoisted(() => vi.fn());
-const mockGarminUseMutation = vi.hoisted(() => vi.fn());
 const mockWhoopSignInUseMutation = vi.hoisted(() => vi.fn());
 const mockWhoopVerifyUseMutation = vi.hoisted(() => vi.fn());
 const mockWhoopSaveUseMutation = vi.hoisted(() => vi.fn());
@@ -22,7 +20,6 @@ vi.mock("../lib/trpc.ts", () => ({
   trpc: {
     credentialAuth: { signIn: { useMutation: mockCredentialUseMutation } },
     tokenAuth: { connect: { useMutation: mockTokenUseMutation } },
-    garminAuth: { signIn: { useMutation: mockGarminUseMutation } },
     whoopAuth: {
       signIn: { useMutation: mockWhoopSignInUseMutation },
       verifyCode: { useMutation: mockWhoopVerifyUseMutation },
@@ -41,7 +38,6 @@ beforeEach(() => {
   vi.clearAllMocks();
   mockCredentialUseMutation.mockReturnValue({ mutateAsync: mockCredentialSignIn });
   mockTokenUseMutation.mockReturnValue({ mutateAsync: mockTokenConnect });
-  mockGarminUseMutation.mockReturnValue({ mutateAsync: mockGarminSignIn });
   mockWhoopSignInUseMutation.mockReturnValue({ mutateAsync: mockWhoopSignIn });
   mockWhoopVerifyUseMutation.mockReturnValue({ mutateAsync: mockWhoopVerifyCode });
   mockWhoopSaveUseMutation.mockReturnValue({ mutateAsync: mockWhoopSaveTokens });
@@ -110,10 +106,6 @@ describe("data source auth dialogs", () => {
       ),
     },
     {
-      name: "Garmin sign-in",
-      renderDialog: () => <GarminAuthModal onClose={vi.fn()} onSuccess={vi.fn()} />,
-    },
-    {
       name: "WHOOP sign-in",
       renderDialog: () => <WhoopAuthModal onClose={vi.fn()} onSuccess={vi.fn()} />,
     },
@@ -148,12 +140,6 @@ describe("data source auth dialogs", () => {
           onClose={onClose}
           onSuccess={() => {}}
         />
-      ),
-    },
-    {
-      name: "Connect Garmin",
-      renderDialog: (onClose: () => void) => (
-        <GarminAuthModal onClose={onClose} onSuccess={() => {}} />
       ),
     },
     {
@@ -353,29 +339,6 @@ describe("Data source authentication telemetry", () => {
     });
     expect(JSON.stringify(mockCaptureException.mock.calls)).not.toContain(password);
     expect(JSON.stringify(mockCaptureException.mock.calls)).not.toContain("private@example.com");
-  });
-
-  it("reports Garmin sign-in failures with only provider context", async () => {
-    const error = new Error("Garmin unavailable");
-    mockGarminSignIn.mockRejectedValue(error);
-
-    render(<GarminAuthModal onClose={vi.fn()} onSuccess={vi.fn()} />);
-    fireEvent.change(screen.getByLabelText("Email"), {
-      target: { value: "private@example.com" },
-    });
-    fireEvent.change(screen.getByLabelText("Password"), {
-      target: { value: "provider-password-must-not-leak" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Sign In" }));
-
-    await waitFor(() => expect(screen.getByText(error.message)).toBeTruthy());
-    expect(mockGarminUseMutation).toHaveBeenCalledWith({
-      meta: locallyReportedErrorMeta,
-    });
-    expect(mockCaptureException).toHaveBeenCalledWith(error, {
-      operation: "garminAuth.signIn",
-      providerId: "garmin",
-    });
   });
 
   it("reports WHOOP verification failures without challenge or code", async () => {

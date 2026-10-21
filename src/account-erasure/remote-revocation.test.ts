@@ -246,7 +246,9 @@ describe("remote account revocation", () => {
       return Response.json({ ok: true, revoked: true });
     };
 
-    await expect(revokeRemoteAccounts(providerSnapshot, providers, fetchFn)).resolves.toEqual([
+    await expect(
+      revokeRemoteAccounts(providerSnapshot, providers, vi.fn(), fetchFn),
+    ).resolves.toEqual([
       { disposition: "no_remote_authorization", providerId: "none" },
       { disposition: "remote_revoked", providerId: "direct-provider" },
       { disposition: "remote_revoked", providerId: "existing-provider" },
@@ -255,6 +257,7 @@ describe("remote account revocation", () => {
     expect(remoteMocks.revokeAppleCredential).toHaveBeenCalledOnce();
     expect(directRevoke).toHaveBeenCalledWith(
       expect.objectContaining({ providerAccountId: "provider-account" }),
+      expect.any(Function),
     );
     expect(existingRevoke).toHaveBeenCalledOnce();
     expect(fallbackRevoke).toHaveBeenCalledOnce();

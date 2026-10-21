@@ -195,6 +195,14 @@ vi.mock("../../db/provider-data-deletion.ts", () => ({
   markProviderDataDeletionCompleted: vi.fn(() => Promise.resolve()),
   markProviderDataDeletionFailed: vi.fn(() => Promise.resolve()),
 }));
+vi.mock("../../provider-artifact-storage.ts", () => ({
+  createProviderArtifactStorageFromEnv: vi.fn(() => ({
+    ensureArtifact: vi.fn(),
+    materializeArtifact: vi.fn(),
+    deleteForUser: vi.fn(async () => undefined),
+    deleteForProvider: vi.fn(async () => undefined),
+  })),
+}));
 
 vi.mock("../../db/refit-sensor-store.ts", () => ({
   createRefitSensorStore: vi.fn(() => ({})),

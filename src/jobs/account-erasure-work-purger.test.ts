@@ -39,6 +39,7 @@ const mocks = vi.hoisted(() => {
     createSyncQueue: vi.fn(() => queue("sync")),
     createZipQueue: vi.fn(() => queue("zip-entry-extract")),
     deleteImportObject: vi.fn(async () => undefined),
+    deleteProviderArtifactsForUser: vi.fn(async () => undefined),
     queuesByName,
     purgeAccountRedisStateForSnapshot: vi.fn(async () => ({
       aofPersisted: true,
@@ -79,6 +80,12 @@ vi.mock("../file-upload-storage.ts", () => ({
   R2ImportUploadStorage: class {
     abortMultipartUpload = mocks.abortImportMultipart;
     deleteObject = mocks.deleteImportObject;
+  },
+}));
+
+vi.mock("../provider-artifact-storage.ts", () => ({
+  R2ProviderArtifactStorage: class {
+    deleteForUser = mocks.deleteProviderArtifactsForUser;
   },
 }));
 
@@ -192,6 +199,7 @@ describe("createAccountErasureWorkPurgerFromEnv", () => {
     await dependencies.purgeRedis(snapshot.localIdentifiers.userId, ["bullmq-job-1994"]);
     await dependencies.abortImportMultipart("imports/user/upload", "multipart-1994");
     await dependencies.deleteImportObject("imports/user/upload");
+    await dependencies.deleteProviderArtifactsForUser(snapshot.localIdentifiers.userId);
     await dependencies.deleteExportObject("exports/user/export/archive.zip");
     await dependencies.removeLocalPath("/tmp/dofek-job-files/work");
 
@@ -202,6 +210,9 @@ describe("createAccountErasureWorkPurgerFromEnv", () => {
       force: true,
       recursive: true,
     });
+    expect(mocks.deleteProviderArtifactsForUser).toHaveBeenCalledWith(
+      snapshot.localIdentifiers.userId,
+    );
     expect(mocks.r2Client.send).toHaveBeenCalledWith(
       expect.objectContaining({
         input: {

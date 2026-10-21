@@ -253,6 +253,7 @@ export function createWorkerQueues({
                 accountErasureAllowsQueuedUserWork(db, job.data.userId, workKind),
               ),
             ),
+          job.data.providerId,
         ),
       );
     },

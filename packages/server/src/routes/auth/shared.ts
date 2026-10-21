@@ -162,14 +162,19 @@ export async function persistProviderConnection(params: {
   userId: string;
 }): Promise<void> {
   const { ensureProvider, saveTokens } = await import("dofek/db/tokens");
-  await ensureProvider(
-    params.db,
-    params.provider.id,
-    params.providerName,
-    params.apiBaseUrl,
-    params.userId,
-  );
-  await saveTokens(params.db, params.provider.id, params.tokens, params.userId);
+  await params.db.transaction(async (transaction) => {
+    await params.provider
+      .authSetup?.()
+      ?.assertCanConnect?.(transaction, params.userId, params.tokens);
+    await ensureProvider(
+      transaction,
+      params.provider.id,
+      params.providerName,
+      params.apiBaseUrl,
+      params.userId,
+    );
+    await saveTokens(transaction, params.provider.id, params.tokens, params.userId);
+  });
   await queryCache.invalidateByPrefix(`${params.userId}:sync.providers`);
 
   logger.info(

@@ -1,3 +1,5 @@
+import type { TokenSet } from "dofek/auth/oauth";
+import type { ProviderRevocationTokenPersistence } from "dofek/providers/types";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { createTestCallerFactory } from "./test-helpers.ts";
@@ -47,6 +49,7 @@ vi.mock("dofek/db/schema/reference", () => ({
 
 const {
   mockLoadTokens,
+  mockSaveTokens,
   mockDeleteProviderAuthorization,
   mockGetAllProviders,
   mockEnsureProvidersRegistered,
@@ -56,8 +59,10 @@ const {
   mockSentryCaptureException,
   mockProviderDataDeletesInc,
   mockGetProviderDataDeletionJob,
+  mockWithProviderOperationFence,
 } = vi.hoisted(() => ({
   mockLoadTokens: vi.fn(),
+  mockSaveTokens: vi.fn(),
   mockDeleteProviderAuthorization: vi.fn(),
   mockGetAllProviders: vi.fn(),
   mockEnsureProvidersRegistered: vi.fn(),
@@ -67,6 +72,11 @@ const {
   mockSentryCaptureException: vi.fn(),
   mockProviderDataDeletesInc: vi.fn(),
   mockGetProviderDataDeletionJob: vi.fn(),
+  mockWithProviderOperationFence: vi.fn(),
+}));
+
+vi.mock("dofek/db/provider-operation-fence", () => ({
+  withProviderOperationFence: mockWithProviderOperationFence,
 }));
 
 vi.mock("dofek/jobs/queues", () => ({
@@ -75,6 +85,7 @@ vi.mock("dofek/jobs/queues", () => ({
 
 vi.mock("dofek/db/tokens", () => ({
   loadTokens: (...args: unknown[]) => mockLoadTokens(...args),
+  saveTokens: (...args: unknown[]) => mockSaveTokens(...args),
   deleteProviderAuthorization: (...args: unknown[]) => mockDeleteProviderAuthorization(...args),
 }));
 vi.mock("dofek/providers/registry", () => ({
@@ -252,6 +263,14 @@ describe("providerDetailRouter", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockWithProviderOperationFence.mockImplementation(
+      async <T>(
+        database: unknown,
+        _userId: string,
+        _providerId: string,
+        operation: (database: unknown) => Promise<T>,
+      ) => operation(database),
+    );
   });
 
   // ── tableInfo ──
@@ -979,6 +998,49 @@ describe("providerDetailRouter", () => {
   // ── disconnect ──
 
   describe("disconnect", () => {
+    it("uses the fenced database for ownership and deletion while saving refreshed credentials independently", async () => {
+      const operationDb = {
+        execute: vi.fn().mockResolvedValue([{ id: "garmin" }]),
+        transaction: vi.fn(),
+      };
+      const db = { execute: vi.fn(), transaction: vi.fn() };
+      const tokens = { accessToken: "expired", refreshToken: "before" };
+      const refreshed = { accessToken: "fresh", refreshToken: "after" };
+      mockWithProviderOperationFence.mockImplementationOnce(
+        async (
+          _database: unknown,
+          _userId: string,
+          _providerId: string,
+          operation: (database: typeof operationDb) => Promise<unknown>,
+        ) => operation(operationDb),
+      );
+      mockLoadTokens.mockResolvedValue(tokens);
+      mockGetAllProviders.mockReturnValue([
+        {
+          id: "garmin",
+          authSetup: () => ({
+            revokeExistingTokens: async (
+              _tokens: TokenSet,
+              persist: ProviderRevocationTokenPersistence,
+            ) => persist(refreshed),
+          }),
+        },
+      ]);
+      const caller = createCaller({ db, userId: "user-1", timezone: "UTC" });
+
+      await expect(caller.disconnect({ providerId: "garmin" })).resolves.toEqual({ success: true });
+
+      expect(mockWithProviderOperationFence).toHaveBeenCalledWith(
+        db,
+        "user-1",
+        "garmin",
+        expect.any(Function),
+      );
+      expect(db.execute).not.toHaveBeenCalled();
+      expect(mockSaveTokens).toHaveBeenCalledWith(db, "garmin", refreshed, "user-1");
+      expect(mockDeleteProviderAuthorization).toHaveBeenCalledWith(operationDb, "garmin", "user-1");
+      expect(operationDb.transaction).not.toHaveBeenCalled();
+    });
     it("removes authorization without deleting imported provider records", async () => {
       const mockExecute = vi.fn().mockResolvedValue([{ id: "strava" }]);
       const mockTransaction = vi.fn();
@@ -1092,7 +1154,7 @@ describe("providerDetailRouter", () => {
       await caller.disconnect({ providerId: "wahoo" });
 
       expect(mockLoadTokens).toHaveBeenCalledWith(expect.anything(), "wahoo", "user-1");
-      expect(mockRevokeExisting).toHaveBeenCalledWith(storedTokens);
+      expect(mockRevokeExisting).toHaveBeenCalledWith(storedTokens, expect.any(Function));
       expect(mockDeleteProviderAuthorization).toHaveBeenCalledWith(
         expect.anything(),
         "wahoo",
@@ -1246,7 +1308,7 @@ describe("providerDetailRouter", () => {
       expect(mockRevokeToken).toHaveBeenCalledWith(expect.anything(), "refresh-only");
     });
 
-    it("falls back to standard OAuth revocation when custom revocation fails", async () => {
+    it("persists rotated credentials and retains authorization when custom revocation fails", async () => {
       mockLoadTokens.mockResolvedValue({
         accessToken: "expired-token",
         refreshToken: null,
@@ -1262,7 +1324,17 @@ describe("providerDetailRouter", () => {
           authSetup: () => ({
             oauthConfig: { revokeUrl: "https://api.wahooligan.com/oauth/revoke" },
             exchangeCode: vi.fn(),
-            revokeExistingTokens: vi.fn().mockRejectedValue(new Error("401 Unauthorized")),
+            revokeExistingTokens: async (
+              tokens: TokenSet,
+              persist: ProviderRevocationTokenPersistence,
+            ) => {
+              await persist({
+                ...tokens,
+                accessToken: "rotated-access",
+                refreshToken: "rotated-refresh",
+              });
+              throw new Error("401 Unauthorized");
+            },
           }),
         },
       ]);
@@ -1276,31 +1348,28 @@ describe("providerDetailRouter", () => {
         });
       const mockExecute = vi.fn().mockResolvedValue([{ id: "wahoo" }]);
 
+      const db = { execute: mockExecute, transaction: mockTransaction };
       const caller = createCaller({
-        db: { execute: mockExecute, transaction: mockTransaction },
+        db,
         userId: "user-1",
         timezone: "UTC",
       });
 
-      const result = await caller.disconnect({ providerId: "wahoo" });
-
-      expect(result).toEqual({ success: true });
-      expect(mockLoggerWarn).toHaveBeenCalledWith(
-        expect.stringContaining("Custom revocation failed for wahoo"),
-      );
-      // Falls back to standard OAuth revocation for the access token
-      expect(mockRevokeToken).toHaveBeenCalledWith(
-        expect.objectContaining({ revokeUrl: "https://api.wahooligan.com/oauth/revoke" }),
-        "expired-token",
-      );
-      expect(mockDeleteProviderAuthorization).toHaveBeenCalledWith(
-        expect.anything(),
+      await expect(caller.disconnect({ providerId: "wahoo" })).rejects.toThrow("401 Unauthorized");
+      expect(mockSaveTokens).toHaveBeenCalledWith(
+        db,
         "wahoo",
+        expect.objectContaining({
+          accessToken: "rotated-access",
+          refreshToken: "rotated-refresh",
+        }),
         "user-1",
       );
+      expect(mockRevokeToken).not.toHaveBeenCalled();
+      expect(mockDeleteProviderAuthorization).not.toHaveBeenCalled();
     });
 
-    it("still removes local authorization when all remote revocation methods fail", async () => {
+    it("retains standard OAuth's best-effort disconnect behavior", async () => {
       mockLoadTokens.mockResolvedValue({
         accessToken: "expired-token",
         refreshToken: "expired-refresh",
@@ -1316,7 +1385,6 @@ describe("providerDetailRouter", () => {
           authSetup: () => ({
             oauthConfig: { revokeUrl: "https://api.wahooligan.com/oauth/revoke" },
             exchangeCode: vi.fn(),
-            revokeExistingTokens: vi.fn().mockRejectedValue(new Error("401 Unauthorized")),
           }),
         },
       ]);
@@ -1346,7 +1414,7 @@ describe("providerDetailRouter", () => {
         expect.stringContaining("Refresh token revocation failed for wahoo"),
       );
       expect(mockSentryCaptureException).toHaveBeenCalledWith(expect.any(Error));
-      expect(mockSentryCaptureException).toHaveBeenCalledTimes(3);
+      expect(mockSentryCaptureException).toHaveBeenCalledTimes(2);
       expect(mockDeleteProviderAuthorization).toHaveBeenCalledWith(
         expect.anything(),
         "wahoo",
@@ -1484,6 +1552,46 @@ describe("providerDetailRouter", () => {
   });
 
   describe("deleteAllData", () => {
+    it("acquires the provider fence before checking ownership or requesting deletion", async () => {
+      const userId = "00000000-0000-4000-8000-000000000001";
+      const eventId = "30000000-0000-4000-8000-000000000001";
+      const txExecute = vi
+        .fn()
+        .mockResolvedValue([
+          { event_id: eventId, generation: "1", provider_id: "garmin", user_id: userId },
+        ]);
+      const operationDb = {
+        execute: vi.fn().mockResolvedValue([{ id: "garmin" }]),
+        transaction: vi.fn(
+          async (operation: (database: { execute: typeof txExecute }) => Promise<unknown>) =>
+            operation({ execute: txExecute }),
+        ),
+      };
+      const db = { execute: vi.fn(), transaction: vi.fn() };
+      mockWithProviderOperationFence.mockImplementationOnce(
+        async (
+          _database: unknown,
+          _userId: string,
+          _providerId: string,
+          operation: (database: typeof operationDb) => Promise<unknown>,
+        ) => operation(operationDb),
+      );
+      const caller = createCaller({ db, userId, timezone: "UTC" });
+
+      await expect(
+        caller.deleteAllData({ providerId: "garmin", confirmation: "DELETE" }),
+      ).resolves.toEqual({ success: true, operationId: eventId });
+
+      expect(mockWithProviderOperationFence).toHaveBeenCalledWith(
+        db,
+        userId,
+        "garmin",
+        expect.any(Function),
+      );
+      expect(db.execute).not.toHaveBeenCalled();
+      expect(db.transaction).not.toHaveBeenCalled();
+      expect(operationDb.transaction).toHaveBeenCalledOnce();
+    });
     it("requires the exact DELETE confirmation", async () => {
       const caller = createCaller({
         db: { execute: vi.fn(), transaction: vi.fn() },

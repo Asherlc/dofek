@@ -25,7 +25,7 @@ export function getAllProviders(): Provider[] {
  * Sync-eligible providers are API sync providers and not CSV import providers.
  */
 export function isSyncEligibleProvider(provider: Provider): provider is SyncProvider {
-  return isSyncProvider(provider);
+  return isSyncProvider(provider) && provider.pushOnly !== true;
 }
 
 /**

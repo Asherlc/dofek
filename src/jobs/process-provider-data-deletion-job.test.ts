@@ -65,6 +65,60 @@ function makeJob(dataOverrides: Partial<ProviderDataDeletionJobData> = {}) {
 }
 
 describe("processProviderDataDeletionJob", () => {
+  it("deletes owned provider artifacts before acknowledging completion", async () => {
+    const command = vi.fn(async () => undefined);
+    const query = vi
+      .fn()
+      .mockResolvedValueOnce({
+        json: async () => [{ active_parts: 1, missing_projection_parts: 0 }],
+      })
+      .mockResolvedValueOnce({ json: async () => [] });
+    const deleteProviderArtifacts = vi.fn(async () => undefined);
+    const markCompleted = vi.fn(async () => undefined);
+    const job = makeJob();
+
+    await processProviderDataDeletionJob(job, {
+      accountErasureAllowsWork: async () => true,
+      clickHouseClient: { command, query },
+      deleteProviderArtifacts,
+      enqueueAnalyticsRefresh: async () => undefined,
+      enqueueContinuation: async () => undefined,
+      markCompleted,
+    });
+
+    expect(deleteProviderArtifacts).toHaveBeenCalledWith(job.data.userId, job.data.providerId);
+    expect(deleteProviderArtifacts.mock.invocationCallOrder[0]).toBeLessThan(
+      command.mock.invocationCallOrder[1] ?? 0,
+    );
+    expect(markCompleted).toHaveBeenCalledWith(job.data.eventId);
+  });
+
+  it("does not acknowledge provider deletion if retained artifact cleanup fails", async () => {
+    const command = vi.fn(async () => undefined);
+    const query = vi
+      .fn()
+      .mockResolvedValueOnce({
+        json: async () => [{ active_parts: 1, missing_projection_parts: 0 }],
+      })
+      .mockResolvedValueOnce({ json: async () => [] });
+    const markCompleted = vi.fn(async () => undefined);
+
+    await expect(
+      processProviderDataDeletionJob(makeJob(), {
+        accountErasureAllowsWork: async () => true,
+        clickHouseClient: { command, query },
+        deleteProviderArtifacts: async () => {
+          throw new Error("Artifact cleanup failed");
+        },
+        enqueueAnalyticsRefresh: async () => undefined,
+        enqueueContinuation: async () => undefined,
+        markCompleted,
+      }),
+    ).rejects.toThrow("Artifact cleanup failed");
+    expect(command).toHaveBeenCalledOnce();
+    expect(markCompleted).not.toHaveBeenCalled();
+  });
+
   it("enqueues the next checkpoint as a separate job after one bounded batch", async () => {
     const command = vi.fn(async () => undefined);
     const query = vi
@@ -81,6 +135,7 @@ describe("processProviderDataDeletionJob", () => {
 
     await processProviderDataDeletionJob(job, {
       accountErasureAllowsWork: vi.fn(async () => true),
+      deleteProviderArtifacts: async () => undefined,
       clickHouseClient: { command, insert: vi.fn(async () => undefined), query },
       enqueueAnalyticsRefresh,
       enqueueContinuation,
@@ -129,6 +184,7 @@ describe("processProviderDataDeletionJob", () => {
 
     await processProviderDataDeletionJob(job, {
       accountErasureAllowsWork: vi.fn(async () => true),
+      deleteProviderArtifacts: async () => undefined,
       clickHouseClient: { command, insert, query },
       enqueueAnalyticsRefresh,
       enqueueContinuation,
@@ -136,6 +192,7 @@ describe("processProviderDataDeletionJob", () => {
     });
     await processProviderDataDeletionJob(job, {
       accountErasureAllowsWork: vi.fn(async () => true),
+      deleteProviderArtifacts: async () => undefined,
       clickHouseClient: { command, insert, query },
       enqueueAnalyticsRefresh,
       enqueueContinuation,
@@ -274,6 +331,7 @@ describe("processProviderDataDeletionJob", () => {
     await expect(
       processProviderDataDeletionJob(makeJob(), {
         accountErasureAllowsWork: vi.fn(async () => true),
+        deleteProviderArtifacts: async () => undefined,
         clickHouseClient: { command, insert, query },
         enqueueAnalyticsRefresh,
         enqueueContinuation: vi.fn(async () => undefined),
@@ -308,6 +366,7 @@ describe("processProviderDataDeletionJob", () => {
 
     await processProviderDataDeletionJob(job, {
       accountErasureAllowsWork,
+      deleteProviderArtifacts: async () => undefined,
       clickHouseClient: {
         command: vi.fn(async () => undefined),
         insert: vi.fn(async () => undefined),
@@ -334,6 +393,7 @@ describe("processProviderDataDeletionJob", () => {
     await expect(
       processProviderDataDeletionJob(makeJob(), {
         accountErasureAllowsWork: vi.fn(async () => true),
+        deleteProviderArtifacts: async () => undefined,
         clickHouseClient: { command, query },
         enqueueAnalyticsRefresh: vi.fn(async () => undefined),
         enqueueContinuation: vi.fn(async () => undefined),
@@ -357,6 +417,7 @@ describe("processProviderDataDeletionJob", () => {
 
     await processProviderDataDeletionJob(makeJob({ checkpoint }), {
       accountErasureAllowsWork: vi.fn(async () => true),
+      deleteProviderArtifacts: async () => undefined,
       clickHouseClient: { command, insert, query },
       enqueueAnalyticsRefresh: vi.fn(async () => undefined),
       enqueueContinuation: vi.fn(async () => undefined),
@@ -387,6 +448,7 @@ describe("processProviderDataDeletionJob", () => {
     await expect(
       processProviderDataDeletionJob(makeJob(), {
         accountErasureAllowsWork: vi.fn(async () => true),
+        deleteProviderArtifacts: async () => undefined,
         clickHouseClient: { command, insert, query },
         enqueueAnalyticsRefresh,
         enqueueContinuation: vi.fn(async () => undefined),
@@ -418,6 +480,7 @@ describe("processProviderDataDeletionJob", () => {
 
     await processProviderDataDeletionJob(job, {
       accountErasureAllowsWork: vi.fn(async () => true),
+      deleteProviderArtifacts: async () => undefined,
       clickHouseClient: { command, query },
       enqueueAnalyticsRefresh,
       enqueueContinuation: vi.fn(async () => undefined),

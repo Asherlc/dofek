@@ -6,6 +6,22 @@ const captureException = vi.hoisted(() => vi.fn());
 vi.mock("../lib/error-reporting.ts", () => ({ captureException }));
 
 describe("ProviderModel", () => {
+  it("keeps OAuth connection state for a push-only source", () => {
+    const model = new ProviderModel(
+      {
+        id: "garmin",
+        name: "Garmin Connect",
+        pushOnly: true,
+        authSetup: () => ({ oauthConfig: {}, exchangeCode: async () => ({}) }),
+      },
+      new Set(["garmin"]),
+    );
+
+    expect(model.pushOnly).toBe(true);
+    expect(model.authType).toBe("oauth");
+    expect(model.isConnected).toBe(true);
+  });
+
   it("exposes a public profile connection without classifying it as an access token", () => {
     const model = new ProviderModel(
       {
@@ -236,12 +252,12 @@ describe("ProviderModel", () => {
 
   it("custom auth override makes provider require auth", () => {
     const model = new ProviderModel(
-      { id: "garmin", name: "Garmin", authSetup: () => undefined },
+      { id: "whoop", name: "WHOOP", authSetup: () => undefined },
       new Set(),
       undefined,
-      { garmin: "custom:garmin" },
+      { whoop: "custom:whoop" },
     );
-    expect(model.authType).toBe("custom:garmin");
+    expect(model.authType).toBe("custom:whoop");
     expect(model.isConnected).toBe(false);
   });
 
