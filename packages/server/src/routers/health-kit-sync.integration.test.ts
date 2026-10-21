@@ -531,6 +531,7 @@ describe("HealthKit sync router", () => {
       );
       expect(rows.length).toBe(1);
       expect(rows[0]?.canonical_type).toBe("running");
+      expect(rows[0]?.raw).toEqual(expect.objectContaining({ sourceBundle: "com.apple.health" }));
     });
 
     it("maps unknown workout types to 'other'", async () => {

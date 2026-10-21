@@ -30,6 +30,10 @@ const mockLookup: ProviderLookup = (id: string) => {
 };
 
 const fullRow: ActivityRow = {
+  primary_activity_id: null,
+  primary_provider_id: null,
+  primary_source_name: null,
+  origin_candidate_member_ids: [],
   id: "abc-123",
   canonical_type: "cycling",
   raw_type: "road_cycling",
@@ -406,10 +410,11 @@ describe("Activity", () => {
         sampleCountState: { status: "available" },
         providerAbsentAt: null,
         sourceDecision: {
+          origin: { status: "unresolved", candidateMemberActivityIds: [] },
           sourceCount: 2,
-          primarySourceLabel: "Wahoo",
+          primarySourceLabel: null,
           explanation:
-            "Wahoo was selected as the primary record by source priority. Missing details may come from the other matched sources.",
+            "The available source information does not establish which record is closest to the original recording.",
         },
       });
     });

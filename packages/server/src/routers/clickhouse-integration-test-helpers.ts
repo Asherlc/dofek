@@ -28,6 +28,7 @@ import {
   buildTestActivityHeartRateZonesSelectSql,
   buildTestActivityLocationSampleSelectSql,
   buildTestActivityLocationSummarySelectSql,
+  buildTestActivityOriginSelectSql,
   buildTestActivitySensorSampleSelectSql,
   buildTestActivitySensorSummarySelectSql,
   buildTestActivityStreamPointsSelectSql,
@@ -382,7 +383,10 @@ function rewriteClickHouseTestCommand(
     if (!selectSql) {
       throw new Error(`Missing ClickHouse test analytics SELECT for ${viewName}`);
     }
-    return [`TRUNCATE TABLE ${viewName}`, `INSERT INTO ${viewName}\n${selectSql}`];
+    const columns = viewName.endsWith(".deduped_activities")
+      ? "(activity_id,provider_id,user_id,primary_activity_id,canonical_type,provider_type,modality,started_at,ended_at,source_name,name,notes,timezone,start_utc_offset_minutes,end_utc_offset_minutes,local_time_source,raw,source_synced_at,source_providers,source_external_ids,absent_source_external_ids,member_activity_ids,representative_activity_id,primary_provider_id,primary_source_name,origin_candidate_member_ids,origin_evidence,refresh_version,is_deleted,refreshed_at)"
+      : "";
+    return [`TRUNCATE TABLE ${viewName}`, `INSERT INTO ${viewName}${columns}\n${selectSql}`];
   }
 
   return [rewrittenQuery];
@@ -398,6 +402,9 @@ function buildTestAnalyticsSelectSql(
     selectSql.includes(".activity_summary_rows FINAL")
   ) {
     return buildTestActivitySummarySelectSql(databases);
+  }
+  if (viewName.endsWith(".v_activity")) {
+    return buildTestActivityOriginSelectSql(selectSql, databases);
   }
   if (viewName.endsWith(".provider_stats")) {
     return buildTestProviderStatsSelectSql(selectSql);
@@ -624,6 +631,7 @@ async function bootstrapClickHouseTestSchema(
   for (const statement of createActivityLocationMemberChangeMigration().statements.slice(0, 2)) {
     await client.command({ query: statement });
   }
+  await client.command({ query: "DROP TABLE IF EXISTS analytics.deduped_activities" });
   await client.command({
     query: `CREATE VIEW IF NOT EXISTS analytics.deduped_activities
 AS

@@ -192,6 +192,10 @@ function makeActivityRow(overrides: Partial<ActivityRow>): ActivityRow {
     name: "Ride",
     notes: null,
     perceived_exertion: null,
+    primary_activity_id: "00000000-0000-4000-8000-000000000001",
+    primary_provider_id: "wahoo",
+    primary_source_name: null,
+    origin_candidate_member_ids: [],
     provider_id: "wahoo",
     source_providers: ["wahoo"],
     source_external_ids: null,
@@ -270,6 +274,10 @@ describe("activityRouter", () => {
           ended_at: "2024-01-01 11:00:00+00",
           canonical_type: "cycling",
           name: "Morning Ride",
+          primary_activity_id: "00000000-0000-4000-8000-000000000001",
+          primary_provider_id: "wahoo",
+          primary_source_name: null,
+          origin_candidate_member_ids: [],
           provider_id: "wahoo",
           source_providers: ["wahoo"],
           member_activity_ids: ["a1"],
@@ -419,6 +427,10 @@ describe("activityRouter", () => {
         ended_at: "2024-01-01T11:00:00Z",
         name: "Morning Ride",
         notes: null,
+        primary_activity_id: "00000000-0000-4000-8000-000000000001",
+        primary_provider_id: "wahoo",
+        primary_source_name: null,
+        origin_candidate_member_ids: [],
         provider_id: "wahoo",
         subsource: null,
         source_providers: ["strava", "wahoo"],
@@ -483,6 +495,10 @@ describe("activityRouter", () => {
         ended_at: null,
         name: null,
         notes: null,
+        primary_activity_id: null,
+        primary_provider_id: null,
+        primary_source_name: null,
+        origin_candidate_member_ids: [],
         provider_id: "manual",
         subsource: null,
         source_providers: null,
@@ -1642,6 +1658,10 @@ describe("Activity model (via router integration)", () => {
     ended_at: "2026-03-01T11:30:00+00:00",
     name: "Morning Ride",
     notes: "Felt good",
+    primary_activity_id: "00000000-0000-4000-8000-000000000001",
+    primary_provider_id: "wahoo",
+    primary_source_name: null,
+    origin_candidate_member_ids: [],
     provider_id: "wahoo",
     source_providers: ["wahoo", "strava"],
     source_external_ids: [
@@ -1675,10 +1695,16 @@ describe("Activity model (via router integration)", () => {
     expect(detail.sourceLinks).toHaveLength(2);
     expect(detail.sourceLinks[0]?.label).toBe("Strava");
     expect(detail.sourceDecision).toEqual({
+      origin: {
+        status: "resolved",
+        memberActivityId: fullRow.primary_activity_id,
+        providerId: "wahoo",
+        sourceName: null,
+      },
       sourceCount: 2,
       primarySourceLabel: "Wahoo",
       explanation:
-        "Wahoo was selected as the primary record by source priority. Missing details may come from the other matched sources.",
+        "Wahoo is the closest available record to the original recording. Individual details may come from other matched sources.",
     });
     expect(detail.avgHr).toBe(145);
     expect(detail.maxHr).toBe(175);

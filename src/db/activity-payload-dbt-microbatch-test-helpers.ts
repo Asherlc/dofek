@@ -448,7 +448,7 @@ export async function getDedupedActivityState(
   database: string,
   activityId: string,
 ): Promise<{
-  primary_activity_id: string;
+  representative_activity_id: string;
   member_activity_ids: string[];
   notes: string | null;
   raw: string | null;
@@ -456,7 +456,7 @@ export async function getDedupedActivityState(
 }> {
   const result = await client.query({
     query: `SELECT
-        toString(primary_activity_id) AS primary_activity_id,
+        toString(representative_activity_id) AS representative_activity_id,
         arrayMap(member_id -> toString(member_id), member_activity_ids) AS member_activity_ids,
         notes,
         raw,
@@ -468,7 +468,7 @@ export async function getDedupedActivityState(
   const [row] = z
     .array(
       z.object({
-        primary_activity_id: z.string(),
+        representative_activity_id: z.string(),
         member_activity_ids: z.array(z.string()),
         notes: z.string().nullable(),
         raw: z.string().nullable(),

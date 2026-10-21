@@ -19,7 +19,7 @@ describe("Persisted PostgreSQL activity representatives", () => {
   const exerciseId = "00000000-0000-4000-8000-000000000304";
   const projectionSchema = z.object({
     id: z.string(),
-    primary_activity_id: z.string(),
+    representative_activity_id: z.string(),
     member_activity_ids: z.array(z.string()),
     source_providers: z.array(z.string()),
     source_external_ids: z.array(z.object({ memberActivityId: z.string() }).passthrough()),
@@ -34,7 +34,7 @@ describe("Persisted PostgreSQL activity representatives", () => {
     executeWithSchema(
       context.db,
       projectionSchema,
-      sql`SELECT id, primary_activity_id, member_activity_ids::text[], source_providers,
+      sql`SELECT id, representative_activity_id, member_activity_ids::text[], source_providers,
         source_external_ids, started_at::text, ended_at::text, raw, timezone,
         local_time_source, perceived_exertion
         FROM fitness.v_activity WHERE ${firstId}::uuid = ANY(member_activity_ids)`,
@@ -72,27 +72,27 @@ describe("Persisted PostgreSQL activity representatives", () => {
   it("keeps persisted identity when provider priority changes the representative", async () => {
     expect((await readProjection())[0]).toMatchObject({
       id: groupId,
-      primary_activity_id: firstId,
+      representative_activity_id: firstId,
     });
     await context.db.execute(
       sql`UPDATE fitness.provider_priority SET priority = 0 WHERE provider_id = 'apple_health'`,
     );
     expect((await readProjection())[0]).toMatchObject({
       id: groupId,
-      primary_activity_id: secondId,
+      representative_activity_id: secondId,
     });
   });
 
   it("prefers strength payload and preserves all member evidence when it arrives", async () => {
     const before = (await readProjection())[0];
-    expect(before?.primary_activity_id).toBe(firstId);
+    expect(before?.representative_activity_id).toBe(firstId);
     await context.db.execute(sql`INSERT INTO fitness.strength_set
       (activity_id, exercise_id, exercise_index, set_index, reps, weight_kg)
       VALUES (${secondId}::uuid, ${exerciseId}::uuid, 0, 0, 5, 0)`);
     const after = (await readProjection())[0];
     expect(after).toMatchObject({
       id: groupId,
-      primary_activity_id: secondId,
+      representative_activity_id: secondId,
       member_activity_ids: [firstId, secondId],
       source_providers: ["apple_health", "wahoo"],
       started_at: "2026-01-01 09:59:00+00",
@@ -118,7 +118,7 @@ describe("Persisted PostgreSQL activity representatives", () => {
       await context.db.execute(
         sql`UPDATE fitness.activity SET canonical_type = ${specificType}::fitness.canonical_activity_type, provider_type = ${specificType} WHERE id = ${secondId}::uuid`,
       );
-      expect((await readProjection())[0]?.primary_activity_id).toBe(secondId);
+      expect((await readProjection())[0]?.representative_activity_id).toBe(secondId);
     },
   );
 
@@ -126,7 +126,7 @@ describe("Persisted PostgreSQL activity representatives", () => {
     await context.db.execute(
       sql`UPDATE fitness.activity SET provider_type = '  Functional_Strength  ' WHERE id = ${secondId}::uuid`,
     );
-    expect((await readProjection())[0]?.primary_activity_id).toBe(secondId);
+    expect((await readProjection())[0]?.representative_activity_id).toBe(secondId);
   });
 
   it.each([
@@ -145,7 +145,7 @@ describe("Persisted PostgreSQL activity representatives", () => {
       (activity_id, exercise_id, exercise_index, set_index, reps, weight_kg, duration_seconds, distance_meters)
       VALUES (${secondId}::uuid, ${exerciseId}::uuid, 0, 0,
         ${values.reps}, ${values.weight}, ${values.duration}, ${values.distance})`);
-      expect((await readProjection())[0]?.primary_activity_id).toBe(secondId);
+      expect((await readProjection())[0]?.representative_activity_id).toBe(secondId);
     },
   );
 
@@ -155,7 +155,7 @@ describe("Persisted PostgreSQL activity representatives", () => {
       VALUES (${firstId}::uuid, ${exerciseId}::uuid, 0, 0),
         (${secondId}::uuid, ${exerciseId}::uuid, 0, 0),
         (${secondId}::uuid, ${exerciseId}::uuid, 0, 1)`);
-    expect((await readProjection())[0]?.primary_activity_id).toBe(secondId);
+    expect((await readProjection())[0]?.representative_activity_id).toBe(secondId);
   });
 
   it("uses distinct exercise count when set counts tie", async () => {
@@ -168,7 +168,7 @@ describe("Persisted PostgreSQL activity representatives", () => {
         (${firstId}::uuid, ${exerciseId}::uuid, 0, 1),
         (${secondId}::uuid, ${exerciseId}::uuid, 0, 0),
         (${secondId}::uuid, ${otherExerciseId}::uuid, 1, 0)`);
-    expect((await readProjection())[0]?.primary_activity_id).toBe(secondId);
+    expect((await readProjection())[0]?.representative_activity_id).toBe(secondId);
   });
 
   it.each(["", "   ", " STRENGTH "])(
@@ -180,7 +180,7 @@ describe("Persisted PostgreSQL activity representatives", () => {
       await context.db.execute(
         sql`UPDATE fitness.activity SET provider_type = ${providerType} WHERE id = ${firstId}::uuid`,
       );
-      expect((await readProjection())[0]?.primary_activity_id).toBe(secondId);
+      expect((await readProjection())[0]?.representative_activity_id).toBe(secondId);
     },
   );
 
@@ -188,7 +188,7 @@ describe("Persisted PostgreSQL activity representatives", () => {
     await context.db.execute(
       sql`UPDATE fitness.provider_priority SET priority = 1 WHERE provider_id = 'apple_health'`,
     );
-    expect((await readProjection())[0]?.primary_activity_id).toBe(firstId);
+    expect((await readProjection())[0]?.representative_activity_id).toBe(firstId);
   });
 });
 

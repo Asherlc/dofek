@@ -20,7 +20,16 @@ export function renderDbtModelSql(
   modelSql: string,
   options: { isIncremental: boolean; activityRefreshScoped?: boolean },
 ): string {
-  const expandedSql = modelSql.replace(
+  const withOrigin = modelSql.replace(/\{\{\s*activity_origin\(\)\s*\}\}/g, () => {
+    const macro = readFileSync(
+      new URL("../../analytics/macros/activity_origin.sql", import.meta.url),
+      "utf8",
+    );
+    const body = macro.match(/\{% macro activity_origin\(\) %\}([\s\S]*?)\{% endmacro %\}/)?.[1];
+    if (!body) throw new Error("Could not find activity origin macro body");
+    return body;
+  });
+  const expandedSql = withOrigin.replace(
     /\{\{\s*apple_health_workout_revisions\(activity_refresh_scoped\)\s*\}\}/g,
     () => {
       const macroSql = readFileSync(
@@ -35,6 +44,7 @@ export function renderDbtModelSql(
     },
   );
   const withoutWrappers = expandedSql
+    .replace(/(\{\{\s*ref\([^)]*\))\.render\(\)(\s*\}\})/g, "$1$2")
     .replace(/\{%\s*set[\s\S]*?%\}\s*/g, "")
     .replace(/\{\{\s*config\([\s\S]*?\)\s*\}\}\s*/g, "")
     .trimStart();

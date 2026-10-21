@@ -1,0 +1,309 @@
+[
+  {
+    "name": "complete transfer chain",
+    "members": [
+      {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "providerId": "garmin",
+        "sourceName": "Garmin Edge 530",
+        "raw": null
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000002",
+        "providerId": "strava",
+        "sourceName": "Garmin Edge 530",
+        "raw": null
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000003",
+        "providerId": "apple_health",
+        "sourceName": "Strava",
+        "raw": {
+          "sourceBundle": "com.strava.strava"
+        }
+      }
+    ],
+    "expectedPrimaryMemberId": "00000000-0000-4000-8000-000000000001",
+    "expectedCandidateMemberIds": ["00000000-0000-4000-8000-000000000001"]
+  },
+  {
+    "name": "only downstream copies available",
+    "members": [
+      {
+        "id": "00000000-0000-4000-8000-000000000002",
+        "providerId": "strava",
+        "sourceName": "Garmin Edge 530",
+        "raw": null
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000003",
+        "providerId": "apple_health",
+        "sourceName": "Strava",
+        "raw": {
+          "sourceBundle": "com.strava.strava"
+        }
+      }
+    ],
+    "expectedPrimaryMemberId": "00000000-0000-4000-8000-000000000002",
+    "expectedCandidateMemberIds": ["00000000-0000-4000-8000-000000000002"]
+  },
+  {
+    "name": "only Apple Health available",
+    "members": [
+      {
+        "id": "00000000-0000-4000-8000-000000000003",
+        "providerId": "apple_health",
+        "sourceName": "Strava",
+        "raw": {
+          "sourceBundle": "com.strava.strava"
+        }
+      }
+    ],
+    "expectedPrimaryMemberId": "00000000-0000-4000-8000-000000000003",
+    "expectedCandidateMemberIds": ["00000000-0000-4000-8000-000000000003"]
+  },
+  {
+    "name": "only Strava available",
+    "members": [
+      {
+        "id": "00000000-0000-4000-8000-000000000002",
+        "providerId": "strava",
+        "sourceName": "Garmin Edge 530",
+        "raw": null
+      }
+    ],
+    "expectedPrimaryMemberId": "00000000-0000-4000-8000-000000000002",
+    "expectedCandidateMemberIds": ["00000000-0000-4000-8000-000000000002"]
+  },
+  {
+    "name": "missing provenance",
+    "members": [
+      {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "providerId": "garmin",
+        "sourceName": "Garmin Edge 530",
+        "raw": null
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000002",
+        "providerId": "strava",
+        "sourceName": null,
+        "raw": null
+      }
+    ],
+    "expectedPrimaryMemberId": null,
+    "expectedCandidateMemberIds": [
+      "00000000-0000-4000-8000-000000000001",
+      "00000000-0000-4000-8000-000000000002"
+    ]
+  },
+  {
+    "name": "unknown Apple Health source",
+    "members": [
+      {
+        "id": "00000000-0000-4000-8000-000000000002",
+        "providerId": "strava",
+        "sourceName": "Garmin Edge 530",
+        "raw": null
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000003",
+        "providerId": "apple_health",
+        "sourceName": "Unknown app",
+        "raw": null
+      }
+    ],
+    "expectedPrimaryMemberId": null,
+    "expectedCandidateMemberIds": [
+      "00000000-0000-4000-8000-000000000002",
+      "00000000-0000-4000-8000-000000000003"
+    ]
+  },
+  {
+    "name": "conflicting Apple Health source bundle",
+    "members": [
+      {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "providerId": "garmin",
+        "sourceName": "Garmin Edge 530",
+        "raw": null
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000002",
+        "providerId": "strava",
+        "sourceName": "Garmin Edge 530",
+        "raw": null
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000003",
+        "providerId": "apple_health",
+        "sourceName": "Garmin",
+        "raw": {
+          "sourceBundle": "com.strava.strava"
+        }
+      }
+    ],
+    "expectedPrimaryMemberId": null,
+    "expectedCandidateMemberIds": [
+      "00000000-0000-4000-8000-000000000001",
+      "00000000-0000-4000-8000-000000000002",
+      "00000000-0000-4000-8000-000000000003"
+    ]
+  },
+  {
+    "name": "ambiguous same-provider records",
+    "members": [
+      {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "providerId": "garmin",
+        "sourceName": "Garmin Edge 530",
+        "raw": null
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000004",
+        "providerId": "garmin",
+        "sourceName": "Garmin Edge 530",
+        "raw": null
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000002",
+        "providerId": "strava",
+        "sourceName": "Garmin Edge 530",
+        "raw": null
+      }
+    ],
+    "expectedPrimaryMemberId": null,
+    "expectedCandidateMemberIds": [
+      "00000000-0000-4000-8000-000000000001",
+      "00000000-0000-4000-8000-000000000002",
+      "00000000-0000-4000-8000-000000000004"
+    ]
+  },
+  {
+    "name": "direct Strava recording is not demoted by Garmin priority",
+    "members": [
+      {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "providerId": "garmin",
+        "sourceName": "Garmin Edge 530",
+        "raw": null
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000002",
+        "providerId": "strava",
+        "sourceName": "iPhone",
+        "raw": null
+      }
+    ],
+    "expectedPrimaryMemberId": null,
+    "expectedCandidateMemberIds": [
+      "00000000-0000-4000-8000-000000000001",
+      "00000000-0000-4000-8000-000000000002"
+    ]
+  },
+  {
+    "name": "case and surrounding whitespace",
+    "members": [
+      {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "providerId": "garmin",
+        "sourceName": "Garmin Edge 530",
+        "raw": null
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000002",
+        "providerId": "strava",
+        "sourceName": "  gArMiN eDgE 530  ",
+        "raw": null
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000003",
+        "providerId": "apple_health",
+        "sourceName": " STRAVA ",
+        "raw": {
+          "sourceBundle": "com.strava.strava"
+        }
+      }
+    ],
+    "expectedPrimaryMemberId": "00000000-0000-4000-8000-000000000001",
+    "expectedCandidateMemberIds": ["00000000-0000-4000-8000-000000000001"]
+  },
+  {
+    "name": "non-ASCII unknown labels",
+    "members": [
+      {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "providerId": "garmin",
+        "sourceName": "Garmin Edge 530",
+        "raw": null
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000002",
+        "providerId": "strava",
+        "sourceName": "時計",
+        "raw": null
+      }
+    ],
+    "expectedPrimaryMemberId": null,
+    "expectedCandidateMemberIds": [
+      "00000000-0000-4000-8000-000000000001",
+      "00000000-0000-4000-8000-000000000002"
+    ]
+  },
+  {
+    "name": "incompatible recording devices",
+    "members": [
+      {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "providerId": "garmin",
+        "sourceName": "Garmin Edge 530",
+        "raw": null
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000002",
+        "providerId": "strava",
+        "sourceName": "Garmin Edge 830",
+        "raw": null
+      }
+    ],
+    "expectedPrimaryMemberId": null,
+    "expectedCandidateMemberIds": [
+      "00000000-0000-4000-8000-000000000001",
+      "00000000-0000-4000-8000-000000000002"
+    ]
+  },
+  {
+    "name": "Wahoo recording copied to Strava",
+    "members": [
+      {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "providerId": "wahoo",
+        "sourceName": "Wahoo ELEMNT",
+        "raw": null
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000002",
+        "providerId": "strava",
+        "sourceName": "Wahoo ELEMNT",
+        "raw": null
+      }
+    ],
+    "expectedPrimaryMemberId": "00000000-0000-4000-8000-000000000001",
+    "expectedCandidateMemberIds": ["00000000-0000-4000-8000-000000000001"]
+  },
+  {
+    "name": "singleton remains the closest held record despite conflicting upstream hints",
+    "members": [
+      {
+        "id": "00000000-0000-4000-8000-000000000003",
+        "providerId": "apple_health",
+        "sourceName": "Garmin",
+        "raw": {
+          "sourceBundle": "com.strava.strava"
+        }
+      }
+    ],
+    "expectedPrimaryMemberId": "00000000-0000-4000-8000-000000000003",
+    "expectedCandidateMemberIds": ["00000000-0000-4000-8000-000000000003"]
+  }
+]

@@ -4,6 +4,10 @@ Metadata and statistics for data providers.
 
 ## Features
 
+- **Activity origin**: The [origin contract](src/activity-origin.ts) identifies
+  the closest available recording or explicitly unresolved attribution. Field
+  priorities never establish recording origin.
+
 - **Provider Identity**: Mapping of provider IDs to human-readable labels and logo types (SVG vs PNG).
 - **WHOOP Wear Locations**: Definitions and parsing for WHOOP-specific sensor placement (wrist, bicep, etc.).
 - **Provider Stats**: Utilities for aggregating and labeling record counts across different data types (activities, sleep, nutrition, etc.).

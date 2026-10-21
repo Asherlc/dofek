@@ -15,6 +15,10 @@ import { z } from "zod";
 import type { ActivityLocation } from "../contracts/activity-location.ts";
 import { osmPointMapPreview, osmTilePreview } from "../lib/osm-tile.ts";
 import { dateStringSchema, timestampStringSchema } from "../lib/typed-sql.ts";
+import {
+  activityOriginColumnsSchema,
+  activityOriginFromColumns,
+} from "../models/activity-origin.ts";
 import { ActivitySourceAttribution } from "../models/activity-source-attribution.ts";
 import {
   type ActivityListSourceDetail,
@@ -64,6 +68,7 @@ export interface CalendarDayActivities {
 }
 
 export const activityRowSchema = z.object({
+  ...activityOriginColumnsSchema.shape,
   id: z.string(),
   name: z.string().nullable(),
   canonical_type: z.string(),
@@ -171,7 +176,7 @@ export function createActiveCalendarEntry(
     ...projectCalendarEntry(
       row,
       context,
-      buildActivityListSource(row.provider_id, row.source_name, sourceLinks, getProvider),
+      buildActivityListSource(activityOriginFromColumns(row), sourceLinks, getProvider),
       sourceLocation ??
         (context.mapReadiness != null && context.mapReadiness !== "unavailable"
           ? { kind: "processing" }
@@ -191,7 +196,7 @@ export function createProviderAbsentCalendarEntry(
     ...projectCalendarEntry(
       row,
       context,
-      buildActivityListSource(row.provider_id, row.source_name, undefined, getProvider),
+      buildActivityListSource(activityOriginFromColumns(row), undefined, getProvider),
       context.mapReadiness === "processing" ? { kind: "processing" } : null,
     ),
     isProviderAbsent: true,

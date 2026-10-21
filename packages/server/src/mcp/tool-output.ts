@@ -10,6 +10,7 @@ import {
 } from "../contracts/activity-location.ts";
 import { baselineRelativeMetricSchema } from "../contracts/baseline-relative-metrics.ts";
 import { climbingLogEntryDetailSchema } from "../contracts/climbing-log-contracts.ts";
+import { activityOriginColumnsSchema } from "../models/activity-origin.ts";
 import {
   fingerLoadingExerciseSchema,
   fingerLoadingGripPositionSchema,
@@ -715,6 +716,7 @@ export const cyclingThresholdEstimateOutputSchema = z
   .strict();
 
 const activityDetailSchema = z.object({
+  ...activityOriginColumnsSchema.shape,
   id: z.string(),
   resolved_from: nullableString.optional(),
   canonical_type: z.string(),

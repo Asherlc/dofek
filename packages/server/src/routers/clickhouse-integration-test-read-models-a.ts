@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import type { IsolatedClickHouseDatabases } from "./clickhouse-integration-test-models.ts";
 
 export function buildTestDedupedActivitiesSelectSql(
@@ -86,7 +87,7 @@ SELECT
   activity.id AS activity_id,
   best.provider_id AS provider_id,
   activity.user_id AS user_id,
-  best.activity_id AS primary_activity_id,
+  activity.primary_activity_id AS primary_activity_id,
   best.canonical_type AS canonical_type,
   activity.provider_type AS provider_type,
   best.modality AS modality,
@@ -105,6 +106,11 @@ SELECT
   activity.source_external_ids AS source_external_ids,
   activity.absent_source_external_ids AS absent_source_external_ids,
   activity.member_activity_ids AS member_activity_ids,
+  best.activity_id AS representative_activity_id,
+  activity.primary_provider_id AS primary_provider_id,
+  activity.primary_source_name AS primary_source_name,
+  activity.origin_candidate_member_ids AS origin_candidate_member_ids,
+  activity.origin_evidence AS origin_evidence,
   toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version,
   toUInt8(0) AS is_deleted,
   now64(9, 'UTC') AS refreshed_at
@@ -1209,4 +1215,28 @@ SELECT
   refresh_clock.refreshed_at AS refreshed_at
 FROM inputs_with_baselines
 CROSS JOIN refresh_clock`;
+}
+
+export function buildTestActivityOriginSelectSql(
+  legacySql: string,
+  databases: IsolatedClickHouseDatabases,
+): string {
+  const macro = readFileSync(
+    new URL("../../../../analytics/macros/activity_origin.sql", import.meta.url),
+    "utf8",
+  );
+  const body = macro.match(/\{% macro activity_origin\(\) %\}([\s\S]*?)\{% endmacro %\}/)?.[1];
+  if (!body) throw new Error("Missing activity origin macro");
+  return `WITH legacy AS (${legacySql}), ranked AS (
+    SELECT a.id AS activity_id, a.user_id, a.group_id, a.provider_id, a.source_name, a.raw
+    FROM ${databases.postgresFitness}.activity AS a FINAL
+    INNER JOIN legacy ON legacy.id = a.group_id AND legacy.user_id = a.user_id
+    WHERE has(legacy.member_activity_ids, a.id) AND a._peerdb_is_deleted = 0
+  ), ${body}
+  SELECT legacy.* REPLACE(origins.primary_activity_id AS primary_activity_id),
+    legacy.primary_activity_id AS representative_activity_id,
+    origins.primary_provider_id, origins.primary_source_name,
+    origins.origin_candidate_member_ids, origins.origin_evidence
+  FROM legacy INNER JOIN activity_origins AS origins
+    ON legacy.id = origins.group_id AND legacy.user_id = origins.user_id`;
 }

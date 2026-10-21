@@ -165,10 +165,12 @@ describe("processWorkouts", () => {
       expect.objectContaining({
         activityType: expect.objectContaining({ canonicalType: "hangboard", providerType: "20" }),
         sourceName: "Hang Ten",
+        raw: expect.objectContaining({ sourceBundle: "com.hangten.app" }),
       }),
       expect.objectContaining({
         activityType: expect.objectContaining({ canonicalType: "hangboard", providerType: "20" }),
         sourceName: "Hang Ten",
+        raw: expect.objectContaining({ sourceBundle: "com.hangten.app" }),
       }),
       expect.anything(),
     );

@@ -59,7 +59,7 @@ describe("calendarRouter", () => {
   it("versions the activity state cache contract", () => {
     expect(cachedQueryOptions).toHaveBeenCalledWith({
       maxAge: 600_000,
-      keyVersion: "activity-calendar-modality-v4",
+      keyVersion: "activity-calendar-origin-v5",
     });
     expect(cachedQueryOptions).toHaveBeenCalledWith({
       maxAge: 600_000,
@@ -118,9 +118,10 @@ describe("calendarRouter", () => {
               },
               durationMin: 60,
               source: {
-                primarySourceLabel: "Wahoo",
+                origin: { status: "unresolved", candidateMemberActivityIds: [] },
+                primarySourceLabel: null,
                 sourceCount: 2,
-                overlapSummary: "2 matched source records · Wahoo selected by source priority",
+                overlapSummary: "2 matched source records",
               },
               lastProcessedAt: "2026-03-18 08:07:00+00",
               distanceMeters: 0,
@@ -158,9 +159,10 @@ describe("calendarRouter", () => {
               startedAt: "2026-03-18T07:00:00.000Z",
               endedAt: "2026-03-18T08:00:00.000Z",
               source: {
-                primarySourceLabel: "Wahoo",
+                origin: { status: "unresolved", candidateMemberActivityIds: [] },
+                primarySourceLabel: null,
                 sourceCount: 2,
-                overlapSummary: "2 matched source records · Wahoo selected by source priority",
+                overlapSummary: "2 matched source records",
               },
               lastProcessedAt: "2026-03-18T08:07:00.000Z",
             }),
@@ -190,7 +192,8 @@ describe("calendarRouter", () => {
             },
             durationMin: 60,
             source: {
-              primarySourceLabel: "Wahoo",
+              origin: { status: "unresolved", candidateMemberActivityIds: [] },
+              primarySourceLabel: null,
               sourceCount: 1,
               overlapSummary: null,
             },
@@ -259,7 +262,8 @@ describe("calendarRouter", () => {
             },
             durationMin: 60,
             source: {
-              primarySourceLabel: "Wahoo",
+              origin: { status: "unresolved", candidateMemberActivityIds: [] },
+              primarySourceLabel: null,
               sourceCount: 1,
               overlapSummary: null,
             },

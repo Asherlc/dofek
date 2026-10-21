@@ -267,6 +267,12 @@ describe("activity visibility consistency", () => {
       MEASURED_ZERO_RUN_ID,
     ]);
     expect(authorizedRun?.source).toEqual({
+      origin: {
+        status: "resolved",
+        memberActivityId: AUTHORIZED_RUN_ID,
+        providerId: "issue_2060",
+        sourceName: null,
+      },
       primarySourceLabel: "issue_2060",
       sourceCount: 1,
       overlapSummary: null,

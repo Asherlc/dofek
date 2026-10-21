@@ -104,6 +104,21 @@ The [staging model](models/staging/sensor_scalar_sample.sql) preserves the lates
 nullable link, and the [deduplication model](models/read_models/deduped_sensor.sql)
 keeps it with the winning sample using tuple-valued
 [argMin](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/argmin).
+The [scalar projection](models/staging/sensor_scalar_sample.sql) also derives
+instantaneous `heart_rate` from valid raw `rr_interval_ms` samples using
+`60000 / interval_ms`, following [PhysioNet's reciprocal method](https://archive.physionet.org/tutorials/hrv/).
+Derived rows are labeled `estimated`, retain source and device provenance, and
+use the configured heart-rate priorities. Raw intervals remain unchanged.
+Reported heart rate wins a same-provider, same-priority timestamp tie over an
+estimate. Invalid or deleted intervals emit tombstones. Sensor deduplication
+uses the ingestion-time microbatch to identify changed timestamp keys, then
+selects the latest version of every candidate at those keys with
+`ORDER BY _peerdb_version DESC LIMIT 1 BY id`. This preserves reported BPM even
+when a matching interval arrives in a later ingestion batch. The model uses
+the referenced [Relation's `render()` method](https://github.com/dbt-labs/dbt-adapters/blob/main/dbt-adapters/src/dbt/adapters/base/relation.py)
+for that bounded current-state read; the normal `ref()` remains filtered for
+changed-key discovery. Replacement follows the source version semantics of
+[ReplacingMergeTree](https://clickhouse.com/docs/engines/table-engines/mergetree-family/replacingmergetree).
 `activity_sensor_sample` is a bounded microbatch intermediary over source
 refresh time. `activity_location_sample` is an append-incremental current-state
 reconciliation: changed activity, membership, and scoped repair keys identify
@@ -818,3 +833,18 @@ active rows until ClickHouse background merges finish. This follows ClickHouse's
 documented `ReplacingMergeTree` behavior, where replacement occurs during merges
 and `FINAL` forces query-time replacement:
 <https://clickhouse.com/docs/engines/table-engines/mergetree-family/replacingmergetree>.
+
+## Activity recording origin
+
+The [origin selector](macros/activity_origin.sql) resolves the closest available
+record using supported source-app and recording-device evidence within an existing
+activity group. It never consults field priorities or sensor counts. Primary member
+and provider IDs are nullable when origin is unresolved; candidate IDs and evidence
+remain available. A singleton is primary without claiming that it is the original.
+
+The [activity model](models/read_models/deduped_activities.sql) retains the former
+field representative as representative_activity_id. Changing origin does not
+change merged fields, sensor selection, location selection, or stable group IDs.
+The [legacy view projection](../src/db/clickhouse-activity-origin.ts) retains its
+existing field derivation and joins the same materialized origin result. Historical
+migration builders retain their inputs so fresh databases migrate in order.

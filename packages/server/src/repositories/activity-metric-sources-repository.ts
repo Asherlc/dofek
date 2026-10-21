@@ -122,7 +122,8 @@ export async function getActivitySourceHrZones(
       FROM postgres_fitness.user_profile_current
       WHERE id = {userId:UUID} AND max_hr > 1
     ), samples AS (
-      SELECT recorded_at, argMin(scalar, (provider_priority, provider_id, id)) AS scalar
+      SELECT recorded_at,
+        argMin(scalar, (provider_priority, provider_id, measurement_kind = 'estimated', id)) AS scalar
       FROM (${activityMetricSamplesSql})
       WHERE channel = 'heart_rate' AND ${activityMetricSourceIdSql} = {heartRateSourceId:String}
       GROUP BY recorded_at

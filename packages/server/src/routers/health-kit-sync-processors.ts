@@ -442,6 +442,7 @@ export async function processWorkouts(
       totalDistance: workout.totalDistance,
       sourceName: workout.sourceName,
       workoutType: workout.workoutType,
+      sourceBundle: workout.sourceBundle,
       metadata: workout.metadata,
       workoutActivities: workout.workoutActivities,
       ...(normalizedWorkout.hangTen ? { hangTen: normalizedWorkout.hangTen } : {}),

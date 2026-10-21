@@ -711,7 +711,7 @@ describe("activity payload dbt batch reconciliation", () => {
       productionProvenanceGroupId,
     );
     expect(initialProvenanceState).toMatchObject({
-      primary_activity_id: productionProvenanceLowerMemberId,
+      representative_activity_id: productionProvenanceLowerMemberId,
       notes: "code-unit-lower notes",
       raw: '{"source":"code-unit-lower"}',
     });
@@ -825,7 +825,7 @@ describe("activity payload dbt batch reconciliation", () => {
       database,
       productionSliceGroupId,
     );
-    expect(priorityActivityState.primary_activity_id).toBe(productionSliceProviderBMemberId);
+    expect(priorityActivityState.representative_activity_id).toBe(productionSliceProviderBMemberId);
     expect(BigInt(priorityActivityState.refresh_version)).toBeGreaterThan(
       BigInt(rebuiltActivityVersion),
     );
@@ -848,7 +848,7 @@ describe("activity payload dbt batch reconciliation", () => {
       database,
       productionSliceGroupId,
     );
-    expect(sensorActivityState.primary_activity_id).toBe(productionSliceMemberId);
+    expect(sensorActivityState.representative_activity_id).toBe(productionSliceMemberId);
     expect(BigInt(sensorActivityState.refresh_version)).toBeGreaterThan(
       BigInt(priorityActivityState.refresh_version),
     );

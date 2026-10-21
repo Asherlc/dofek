@@ -190,6 +190,7 @@ function activity(overrides: Record<string, unknown> = {}) {
     },
     durationMin: 60,
     source: {
+      origin: { status: "unresolved", candidateMemberActivityIds: [] },
       primarySourceLabel: "Wahoo",
       sourceCount: 1,
       overlapSummary: null,

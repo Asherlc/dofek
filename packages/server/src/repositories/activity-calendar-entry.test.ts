@@ -560,7 +560,8 @@ describe("activity calendar entries", () => {
       },
       durationMin: 60,
       source: {
-        primarySourceLabel: "Strava",
+        origin: { status: "unresolved", candidateMemberActivityIds: [] },
+        primarySourceLabel: null,
         sourceCount: 1,
         overlapSummary: null,
       },
