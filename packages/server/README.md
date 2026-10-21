@@ -497,3 +497,12 @@ accepts a `sources` map; zone endpoints accept their metric's source ID.
 The [source repository](src/repositories/activity-metric-sources-repository.ts) retains zero power, speed, and cadence samples
 and negative elevations, excludes invalid heart-rate samples, and preserves
 activity ownership and stream downsampling.
+
+WHOOP Bluetooth uploads retain the strap's reported BPM independently of beat
+intervals through the [upload repository](src/repositories/whoop-ble-sync-repository.ts).
+Reported BPM takes precedence over an interval-derived reading at the same
+timestamp and priority in the shared web/mobile chart and zone path; the
+[ClickHouse regression](src/repositories/activity-metric-sources-repository.integration.test.ts)
+covers a reported-heart-rate stream across a gap in beat intervals. WHOOP
+describes independent heart-rate and interval availability in its
+[research FAQ, page 4](https://sensorlab.arizona.edu/sites/default/files/2023-05/WHOOP%20Unite%20Research%20FAQs_0.pdf#page=4).

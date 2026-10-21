@@ -2,14 +2,14 @@ import Foundation
 
 /// A single realtime data sample from a 0x28 REALTIME_DATA packet.
 /// Contains beat timing, orientation quaternion, and raw optical/PPG bytes
-/// from the strap's sensor fusion. Device-reported heart rate is decoded
-/// internally but not exported to JS or stored.
+/// from the strap's sensor fusion, plus its independently reported heart rate.
 public struct WhoopRealtimeDataSample {
     public let timestampSeconds: UInt32
+    /// Fractional clock ticks, 1/32768 second each.
     public let subSeconds: UInt16
     public let heartRate: UInt8
     /// R-R interval in milliseconds (beat-to-beat timing from PPG).
-    /// 0 when not available (e.g., no valid reading flag in compact packet).
+    /// 0 when no interval is available; reported heart rate may still be present.
     public let rrIntervalMs: UInt16
     public let quaternionW: Float
     public let quaternionX: Float
@@ -47,7 +47,7 @@ public struct WhoopRealtimeDataSample {
 /// Values are normalized from raw int16 sensor readings to standard physical units.
 public struct WhoopImuSample {
     public let timestampSeconds: UInt32    // Unix epoch seconds from frame header
-    public let subSeconds: UInt16          // Millisecond offset within second
+    public let subSeconds: UInt16          // Fractional clock ticks, 1/32768 second each
     public let sampleIndex: Int            // Position within the frame (for per-sample timing)
     public let samplesInFrame: Int         // Total samples in the source frame (for rate derivation)
     public let accelerometerX: Float       // acceleration in g
