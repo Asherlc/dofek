@@ -71,6 +71,20 @@ type Story = StoryObj<typeof meta>;
 export const LocalizedTooltip: Story = {};
 export const Loading: Story = { args: { loading: true } };
 export const Empty: Story = { args: { points: [] } };
+export const SparseReadings: Story = {
+  args: {
+    points: [null, 130, null, 145, null, 155, null].map((heartRate, index) => ({
+      recordedAt: new Date(Date.UTC(2026, 9, 20, 16, index)).toISOString(),
+      heartRate,
+      power: null,
+      speed: null,
+      cadence: null,
+      altitude: null,
+      lat: null,
+      lng: null,
+    })),
+  },
+};
 
 function MetricControl({
   metric,

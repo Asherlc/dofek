@@ -564,3 +564,8 @@ accepts a `sources` map; zone endpoints accept their metric's source ID.
 The [source repository](../server/src/repositories/activity-metric-sources-repository.ts) retains zero power, speed, and cadence samples
 and negative elevations, excludes invalid heart-rate samples, and preserves
 activity ownership and stream downsampling.
+
+The [metric line chart](components/activity/ActivityDetailCharts.tsx) shows
+isolated readings as dots, including a source with only one reading. Lines stop
+at missing samples. The colocated `SparseReadings` story and chart tests cover
+the visible readings and gaps.

@@ -238,8 +238,22 @@ export function MetricsChart({
     name: metric.name,
     type: "line" as const,
     yAxisIndex: index,
-    data: metric.data,
-    showSymbol: false,
+    data: metric.data.map((value, dataIndex) =>
+      value == null
+        ? null
+        : {
+            value,
+            itemStyle: {
+              opacity:
+                metric.data[dataIndex - 1] == null && metric.data[dataIndex + 1] == null ? 1 : 0,
+            },
+          },
+    ),
+    showSymbol: true,
+    showAllSymbol: true,
+    symbol: "circle",
+    symbolSize: 6,
+    emphasis: { itemStyle: { opacity: 1 } },
     lineStyle: { width: 1.5, color: metric.color },
     itemStyle: { color: metric.color },
   }));
