@@ -368,8 +368,14 @@ identifies the provider's human-verification branch on release
 `07ee6448aef61e9ecef36737460fbd835fbe8f4b`. Both required application settings
 were present in a names-only Infisical check. Opening the first-party login
 page in Firefox also displayed a DataDome frame with `Access is temporarily
-restricted`, before the credential form. Neither probe obtained account tokens
-or established working refresh/history access.
+restricted`, before the credential form. During follow-up validation, Chrome
+and a regular Safari window both presented verification sliders. The operator
+reported that neither verification attempt reached the account. Chrome showed
+`Access is temporarily restricted`; Safari still showed `Verification Required`
+at the final inspection. No account tokens were obtained, so token handoff,
+backend refresh, and recording access could not be tested. These results do
+not establish whether a successfully authenticated browser session could be
+used from the backend.
 
 The [provider](../src/providers/alltrails.ts) now raises a distinct verification
 error. The [shared credential router](../packages/server/src/routers/credential-auth.ts)
