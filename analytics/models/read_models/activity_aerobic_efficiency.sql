@@ -91,7 +91,7 @@ z2_heart_rate_samples AS (
         hr.recorded_at AS recorded_at,
         hr.scalar AS heart_rate
     FROM activity_meta AS am
-    INNER JOIN {{ ref('activity_sensor_sample') }} AS hr
+    INNER JOIN {{ ref('activity_sensor_sample') }} AS hr FINAL
         ON hr.activity_id = am.activity_id
         AND hr.user_id = am.user_id
         AND hr.channel = 'heart_rate'
@@ -112,7 +112,7 @@ z2_power_samples AS (
         user_id,
         recorded_at,
         scalar
-    FROM {{ ref('activity_sensor_sample') }}
+    FROM {{ ref('activity_sensor_sample') }} FINAL
     WHERE channel = 'power'
         AND scalar > 0
         AND is_deleted = 0
