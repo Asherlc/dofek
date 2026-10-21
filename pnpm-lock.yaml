@@ -203,8 +203,8 @@ importers:
         specifier: 8.0.0
         version: 8.0.0
       bullmq:
-        specifier: 6.3.4
-        version: 6.3.4(ioredis@6.0.0)(pg@8.23.1)
+        specifier: 6.3.14
+        version: 6.3.14(ioredis@6.0.0)(pg@8.23.1)
       drizzle-orm:
         specifier: 0.45.2
         version: 0.45.2(@opentelemetry/api@1.9.1)(@types/pg@8.23.1)(gel@2.2.0)(pg@8.23.1)(postgres@3.4.8)
@@ -780,10 +780,10 @@ importers:
         version: 3.1.0(encoding@0.1.13)
       '@bull-board/api':
         specifier: 9.10.1
-        version: 9.10.1(@bull-board/ui@9.10.1)(bullmq@6.3.4)(typescript@6.0.3)
+        version: 9.10.1(@bull-board/ui@9.10.1)(bullmq@6.3.14)(typescript@6.0.3)
       '@bull-board/express':
         specifier: 9.10.1
-        version: 9.10.1(bullmq@6.3.4)(supports-color@11.0.0)(typescript@6.0.3)
+        version: 9.10.1(bullmq@6.3.14)(supports-color@11.0.0)(typescript@6.0.3)
       '@dofek/auth':
         specifier: workspace:*
         version: link:../auth
@@ -9713,8 +9713,8 @@ packages:
   builtins@1.0.3:
     resolution: {integrity: sha512-uYBjakWipfaO/bXI7E8rq6kpwHRZK5cNYrUv2OzZSI/FvmdMyXJ2tG9dKcjEC5YHmHpUAwsargWIZNWdxb/bnQ==}
 
-  bullmq@6.3.4:
-    resolution: {integrity: sha512-DpilB5sayCB8huCp4YuzVhJjxB4ieHidzu+GPgbcjPi3kQv0gdLoLnk+I+mMACDQ88rTbSiT+B4crmhWFGL9GA==}
+  bullmq@6.3.14:
+    resolution: {integrity: sha512-iXpDyX45fonQugWAHw+FNPH/YIjqzmzi/xxs31dzWGNP7j6b4jAVN0oNWU5cz0mVi1RofEkrlRwRbLqhqNkjHw==}
     engines: {node: '>=14.17.0'}
     peerDependencies:
       bullmq-otel: '>=2.0.0'
@@ -10266,8 +10266,8 @@ packages:
     resolution: {integrity: sha512-IBWsY8xznyQrcHn8h4bC8/4ErNke5elzgG8GcqF4RFPw6aHkWWRc7Tgw6upjaTX/CT/yQgqYENkxYsTYN+hW2g==}
     engines: {node: '>=18'}
 
-  cron-parser@5.10.0:
-    resolution: {integrity: sha512-izNAxJyRWUP8ljBoDSub5WyrVOUlT4SLGShswE7eoRBpp6QUsSycYxLBMJlbshgPBMcPT/nrfgjNY2918ayv2A==}
+  cron-parser@5.10.2:
+    resolution: {integrity: sha512-JfAYMY0LZaWQTuict8PhtF/ksSnq8xefSDmQUnnoqvkPYkU/y3UP0DTWzJKFBz0P1IXsDG8q0vY3zHkoFZOhvw==}
     engines: {node: '>=18'}
 
   cross-fetch@3.2.0:
@@ -18358,20 +18358,20 @@ snapshots:
     dependencies:
       css-tree: 3.2.1
 
-  '@bull-board/api@9.10.1(@bull-board/ui@9.10.1)(bullmq@6.3.4)(typescript@6.0.3)':
+  '@bull-board/api@9.10.1(@bull-board/ui@9.10.1)(bullmq@6.3.14)(typescript@6.0.3)':
     dependencies:
-      '@bull-board/ui': 9.10.1(bullmq@6.3.4)(typescript@6.0.3)
+      '@bull-board/ui': 9.10.1(bullmq@6.3.14)(typescript@6.0.3)
       redis-info: 3.1.0
       valibot: 1.5.0(typescript@6.0.3)
     optionalDependencies:
-      bullmq: 6.3.4(ioredis@6.0.0)(pg@8.23.1)
+      bullmq: 6.3.14(ioredis@6.0.0)(pg@8.23.1)
     transitivePeerDependencies:
       - typescript
 
-  '@bull-board/express@9.10.1(bullmq@6.3.4)(supports-color@11.0.0)(typescript@6.0.3)':
+  '@bull-board/express@9.10.1(bullmq@6.3.14)(supports-color@11.0.0)(typescript@6.0.3)':
     dependencies:
-      '@bull-board/api': 9.10.1(@bull-board/ui@9.10.1)(bullmq@6.3.4)(typescript@6.0.3)
-      '@bull-board/ui': 9.10.1(bullmq@6.3.4)(typescript@6.0.3)
+      '@bull-board/api': 9.10.1(@bull-board/ui@9.10.1)(bullmq@6.3.14)(typescript@6.0.3)
+      '@bull-board/ui': 9.10.1(bullmq@6.3.14)(typescript@6.0.3)
       ejs: 6.0.1
       express: 5.2.1(supports-color@11.0.0)
     transitivePeerDependencies:
@@ -18380,9 +18380,9 @@ snapshots:
       - supports-color
       - typescript
 
-  '@bull-board/ui@9.10.1(bullmq@6.3.4)(typescript@6.0.3)':
+  '@bull-board/ui@9.10.1(bullmq@6.3.14)(typescript@6.0.3)':
     dependencies:
-      '@bull-board/api': 9.10.1(@bull-board/ui@9.10.1)(bullmq@6.3.4)(typescript@6.0.3)
+      '@bull-board/api': 9.10.1(@bull-board/ui@9.10.1)(bullmq@6.3.14)(typescript@6.0.3)
     transitivePeerDependencies:
       - bull
       - bullmq
@@ -26902,9 +26902,9 @@ snapshots:
 
   builtins@1.0.3: {}
 
-  bullmq@6.3.4(ioredis@6.0.0)(pg@8.23.1):
+  bullmq@6.3.14(ioredis@6.0.0)(pg@8.23.1):
     dependencies:
-      cron-parser: 5.10.0
+      cron-parser: 5.10.2
       msgpackr: 2.1.0
       node-abort-controller: 3.1.1
       semver: 7.8.5
@@ -27469,7 +27469,7 @@ snapshots:
       crc-32: 1.2.2
       readable-stream: 4.7.0
 
-  cron-parser@5.10.0:
+  cron-parser@5.10.2:
     dependencies:
       luxon: 3.7.2
 
