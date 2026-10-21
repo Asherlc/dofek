@@ -66,15 +66,19 @@ beforeEach(() => {
   mocks.store.mockResolvedValue({ objectKey: "images/owner/hash" });
   mocks.complete.mockResolvedValue(true);
 });
-it("persists the largest original under an object lock and always removes the temporary file", async () => {
+it("uploads the largest original before its database transaction and removes the temporary file", async () => {
   const { db, spies } = createMockDatabase();
+  const transaction = vi.spyOn(db, "transaction");
   const dependencies = createActivityImageJobDependencies(db);
   expect(await dependencies.acquire(work)).toEqual({ stored: true });
   expect(mocks.download).toHaveBeenCalledWith({
     url: "https://cdn.test/full",
     allowedOrigins: ["https://cdn.test", "https://other.test"],
   });
-  expect(spies.execute).toHaveBeenCalledOnce();
+  expect(spies.execute).not.toHaveBeenCalled();
+  expect(mocks.store.mock.invocationCallOrder[0]).toBeLessThan(
+    transaction.mock.invocationCallOrder[0] ?? 0,
+  );
   expect(mocks.load).toHaveBeenCalledWith(expect.anything(), "work", "owner");
   expect(mocks.store).toHaveBeenCalledWith({ userId: "owner", image });
   expect(mocks.complete).toHaveBeenCalledWith(expect.anything(), work, {
@@ -84,11 +88,11 @@ it("persists the largest original under an object lock and always removes the te
   expect(mocks.bytes).toHaveBeenCalledWith(20, { provider: "strava" });
   expect(mocks.cleanup).toHaveBeenCalledOnce();
 });
-it("does not upload a work item retired after its download", async () => {
+it("does not attach a work item retired during its upload", async () => {
   const { db } = createMockDatabase();
   mocks.load.mockResolvedValueOnce(null);
   expect(await createActivityImageJobDependencies(db).acquire(work)).toEqual({ stored: false });
-  expect(mocks.store).not.toHaveBeenCalled();
+  expect(mocks.store).toHaveBeenCalledOnce();
   expect(mocks.complete).not.toHaveBeenCalled();
   expect(mocks.cleanup).toHaveBeenCalledOnce();
 });

@@ -70,8 +70,13 @@ stripping or recompression occurs. Animated files are not flattened.
 
 Reconciliation runs every five minutes, repairs 15-minute stale leases, and
 checks at most 100 stored keys per sweep. Unreferenced files older than one day
-are eligible for cleanup. Cleanup and attachment use the same object advisory
-lock so a live association cannot race with deletion. R2 supports the required
+are eligible for cleanup. Cleanup takes an exclusive user-work session advisory
+lock in the existing four-session guard pool; acquisitions retain the shared
+user-work lock through upload and attachment. Cleanup waits for admitted work
+and briefly blocks new work for that user, preserving live associations without
+holding a database transaction during R2 requests. PostgreSQL documents these
+[session and shared/exclusive advisory locks](https://www.postgresql.org/docs/current/explicit-locking.html#ADVISORY-LOCKS).
+R2 supports the required
 operations through its [S3 API](https://developers.cloudflare.com/r2/api/s3/api/).
 
 ## Backfill and API

@@ -1,4 +1,3 @@
-import { sql } from "drizzle-orm";
 import {
   claimActivityImageWork,
   completeActivityImageWork,
@@ -12,8 +11,9 @@ import { SyncWindow } from "../providers/sync-window.ts";
 import { downloadActivityImage } from "./download.ts";
 import { activityImageBytes } from "./metrics.ts";
 import { refreshActivityImage } from "./providers.ts";
-import { activityImageObjectKey, storeActivityImage } from "./storage.ts";
+import { storeActivityImage } from "./storage.ts";
 import { selectImageVariant } from "./types.ts";
+/** Acquisition must run inside the shared account-erasure user-work session barrier. */
 export function createActivityImageJobDependencies(db: SyncDatabase): ActivityImageJobDependencies {
   return {
     load: (id, userId) => loadActivityImageWork(db, id, userId),
@@ -37,16 +37,13 @@ export function createActivityImageJobDependencies(db: SyncDatabase): ActivityIm
         ],
       });
       try {
+        // Cleanup holds the exclusive user-work session barrier; this job holds
+        // its shared counterpart, so upload and attachment cannot race deletion.
+        const stored = await storeActivityImage({ userId: work.userId, image });
+        activityImageBytes.add(image.sizeBytes, { provider: work.providerId });
         return await db.transaction(async (tx) => {
-          const key = activityImageObjectKey(work.userId, image.sha256);
-          // Cleanup uses this same lock: reference creation cannot race object deletion.
-          await tx.execute(
-            sql`SELECT pg_advisory_xact_lock(hashtextextended(${`activity-image-object:${key}`},0))`,
-          );
           const current = await loadActivityImageWork(tx, work.id, work.userId);
           if (!current) return { stored: false };
-          const stored = await storeActivityImage({ userId: work.userId, image });
-          activityImageBytes.add(image.sizeBytes, { provider: work.providerId });
           return { stored: await completeActivityImageWork(tx, work, { ...image, ...stored }) };
         });
       } finally {

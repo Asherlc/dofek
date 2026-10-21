@@ -10,11 +10,12 @@ vi.mock("../r2-storage.ts", () => ({
   requiredR2EnvironmentVariable: () => "private-media",
 }));
 vi.mock("./account-erasure-work-guard.ts", () => ({
-  runQueuedUserWorkUnlessAccountErasing: mocks.guard,
+  accountErasureAllowsQueuedUserWork: mocks.guard,
 }));
 const pool: AccountErasureWorkLockPool = {
   close: async () => {},
   runWithSharedUserLock: async (_user, work) => work(),
+  runWithExclusiveUserLock: vi.fn(async (_user, work) => work()),
 };
 const owner = "00000000-0000-4000-8000-000000000001";
 const key = `images/${owner}/${"a".repeat(64)}`;
@@ -22,42 +23,36 @@ const old = new Date(Date.now() - 2 * 86400000);
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.send.mockReset();
-  mocks.guard.mockImplementation(async (_pool, _db, _owner, _kind, work: () => Promise<unknown>) =>
-    work(),
-  );
+  mocks.guard.mockResolvedValue(true);
 });
-it("deletes an old unreferenced object under the user's erasure guard and object lock", async () => {
+it("deletes an old unreferenced object under an exclusive user session barrier", async () => {
   const { db, spies } = createMockDatabase();
+  const transaction = vi.spyOn(db, "transaction");
   mocks.send
     .mockResolvedValueOnce({ Contents: [{ Key: key, LastModified: old }] })
     .mockResolvedValueOnce({});
   await createActivityImageReconciler(db, pool)();
-  expect(mocks.guard).toHaveBeenCalledWith(
-    pool,
-    db,
-    owner,
-    "activity image cleanup",
-    expect.any(Function),
-  );
-  expect(spies.execute).toHaveBeenCalledTimes(4);
+  expect(mocks.guard).toHaveBeenCalledWith(db, owner, "activity image cleanup");
+  expect(pool.runWithExclusiveUserLock).toHaveBeenCalledWith(owner, expect.any(Function));
+  expect(spies.execute).toHaveBeenCalledTimes(3);
   expect(mocks.send).toHaveBeenNthCalledWith(
     2,
     expect.any(DeleteObjectCommand),
     expect.objectContaining({ abortSignal: expect.any(AbortSignal) }),
   );
   expect(mocks.send.mock.calls[1]?.[0].input).toEqual({ Bucket: "private-media", Key: key });
+  expect(transaction).not.toHaveBeenCalled();
   expect(mocks.destroy).toHaveBeenCalledOnce();
 });
 it.each(["referenced", "acquiring"])("preserves an object while it is %s", async (state) => {
   const { db, spies } = createMockDatabase();
   spies.execute
-    .mockResolvedValueOnce([])
     .mockResolvedValueOnce(state === "referenced" ? [{ id: "reference" }] : [])
     .mockResolvedValueOnce([{ id: "work" }]);
   mocks.send.mockResolvedValue({ Contents: [{ Key: key, LastModified: old }] });
   await createActivityImageReconciler(db, pool)();
   expect(mocks.send).toHaveBeenCalledOnce();
-  expect(spies.execute).toHaveBeenCalledTimes(state === "referenced" ? 2 : 3);
+  expect(spies.execute).toHaveBeenCalledTimes(state === "referenced" ? 1 : 2);
 });
 it("skips recent, malformed and incomplete object metadata without querying ownership", async () => {
   const { db, spies } = createMockDatabase();
@@ -100,5 +95,20 @@ it("rejects incomplete listings and always releases the S3 client", async () => 
   expect(mocks.destroy).toHaveBeenCalledOnce();
   mocks.send.mockRejectedValueOnce(Error("S3 offline"));
   await expect(createActivityImageReconciler(db, pool)()).rejects.toThrow("S3 offline");
+  expect(mocks.destroy).toHaveBeenCalledTimes(2);
+});
+
+it("skips erased accounts and leaves metadata intact when object deletion fails", async () => {
+  const { db, spies } = createMockDatabase();
+  mocks.guard.mockResolvedValueOnce(false);
+  mocks.send.mockResolvedValueOnce({ Contents: [{ Key: key, LastModified: old }] });
+  await createActivityImageReconciler(db, pool)();
+  expect(spies.execute).not.toHaveBeenCalled();
+  expect(mocks.send).toHaveBeenCalledOnce();
+  mocks.send
+    .mockResolvedValueOnce({ Contents: [{ Key: key, LastModified: old }] })
+    .mockRejectedValueOnce(Error("delete failed"));
+  await expect(createActivityImageReconciler(db, pool)()).rejects.toThrow("delete failed");
+  expect(spies.execute).toHaveBeenCalledTimes(2);
   expect(mocks.destroy).toHaveBeenCalledTimes(2);
 });

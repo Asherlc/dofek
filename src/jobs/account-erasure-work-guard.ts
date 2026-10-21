@@ -51,6 +51,7 @@ type WorkOutcome<T> =
 
 export interface AccountErasureWorkLockPool {
   close(): Promise<void>;
+  runWithExclusiveUserLock<T>(userId: string, work: () => Promise<T>): Promise<T>;
   runWithSharedUserLock<T>(userId: string, work: () => Promise<T>, providerId?: string): Promise<T>;
 }
 
@@ -66,10 +67,23 @@ class PostgresAccountErasureWorkLockPool implements AccountErasureWorkLockPool {
     return this.#pool.end();
   }
 
-  async runWithSharedUserLock<T>(
+  runWithExclusiveUserLock<T>(userId: string, work: () => Promise<T>): Promise<T> {
+    return this.#runWithUserLock(userId, work, undefined, true);
+  }
+
+  runWithSharedUserLock<T>(
     userId: string,
     work: () => Promise<T>,
     providerId?: string,
+  ): Promise<T> {
+    return this.#runWithUserLock(userId, work, providerId, false);
+  }
+
+  async #runWithUserLock<T>(
+    userId: string,
+    work: () => Promise<T>,
+    providerId: string | undefined,
+    exclusive: boolean,
   ): Promise<T> {
     const releaseConnectionPermit = await this.#connectionPermits.acquire();
     try {
@@ -117,9 +131,9 @@ class PostgresAccountErasureWorkLockPool implements AccountErasureWorkLockPool {
         await executeWithSchema(
           database,
           z.object({}),
-          sql`SELECT pg_advisory_lock_shared(
-                hashtextextended(${accountErasureQueuedUserWorkLockName(userId)}::text, 0)
-              )`,
+          exclusive
+            ? sql`SELECT pg_advisory_lock(hashtextextended(${accountErasureQueuedUserWorkLockName(userId)}::text, 0))`
+            : sql`SELECT pg_advisory_lock_shared(hashtextextended(${accountErasureQueuedUserWorkLockName(userId)}::text, 0))`,
         );
       } catch (error: unknown) {
         releaseClient(true);
@@ -143,9 +157,9 @@ class PostgresAccountErasureWorkLockPool implements AccountErasureWorkLockPool {
         const unlockRows = await executeWithSchema(
           database,
           advisoryUnlockRowSchema,
-          sql`SELECT pg_advisory_unlock_shared(
-                hashtextextended(${accountErasureQueuedUserWorkLockName(userId)}::text, 0)
-              ) AS unlocked`,
+          exclusive
+            ? sql`SELECT pg_advisory_unlock(hashtextextended(${accountErasureQueuedUserWorkLockName(userId)}::text, 0)) AS unlocked`
+            : sql`SELECT pg_advisory_unlock_shared(hashtextextended(${accountErasureQueuedUserWorkLockName(userId)}::text, 0)) AS unlocked`,
         );
         const unlockRow = unlockRows[0];
         if (!unlockRow?.unlocked) {
