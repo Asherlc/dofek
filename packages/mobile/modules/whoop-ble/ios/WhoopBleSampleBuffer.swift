@@ -34,7 +34,7 @@ private struct DeviceScopedSample<Sample> {
 }
 
 /// Thread-safe buffer for accumulating and draining WHOOP BLE samples.
-/// Handles both IMU (accelerometer + gyroscope) and realtime (beat interval + quaternion) data.
+/// Handles both IMU (accelerometer + gyroscope) and realtime (heart rate + beat interval + quaternion) data.
 /// Serializes samples to bridge-compatible dictionaries for the JS layer.
 final class WhoopBleSampleBuffer {
     private var imuSamples: [DeviceScopedSample<WhoopImuSample>] = []
@@ -230,9 +230,14 @@ final class WhoopBleSampleBuffer {
 
     // MARK: - Serialization
 
+    private func timestampInterval(_ timestampSeconds: UInt32, _ subSeconds: UInt16) -> TimeInterval {
+        // R18/R21 clock fractions use 1/32768-second ticks, not milliseconds.
+        TimeInterval(timestampSeconds) + TimeInterval(subSeconds) / 32_768.0
+    }
+
     /// Clamp a timestamp to a sane range: no earlier than year 2000, no more than 5 min in the future.
     private func clampTimestamp(_ timestampSeconds: UInt32, _ subSeconds: UInt16) -> TimeInterval {
-        let rawInterval = TimeInterval(timestampSeconds) + TimeInterval(subSeconds) / 1000.0
+        let rawInterval = timestampInterval(timestampSeconds, subSeconds)
         let now = Date()
         let maxFuture = now.addingTimeInterval(300).timeIntervalSince1970
         let minPast = Date(timeIntervalSince1970: 946684800).timeIntervalSince1970 // year 2000
@@ -253,17 +258,14 @@ final class WhoopBleSampleBuffer {
             sample.samplesInFrame > 0 ? 1 / Double(sample.samplesInFrame) : 0.01
         return Date(
             timeIntervalSince1970:
-                TimeInterval(sample.timestampSeconds)
-                + TimeInterval(sample.subSeconds) / 1_000
+                timestampInterval(sample.timestampSeconds, sample.subSeconds)
                 + Double(sample.sampleIndex) * samplingInterval
         )
     }
 
     private func realtimeSampleDate(_ sample: WhoopRealtimeDataSample) -> Date {
         Date(
-            timeIntervalSince1970:
-                TimeInterval(sample.timestampSeconds)
-                + TimeInterval(sample.subSeconds) / 1_000
+            timeIntervalSince1970: timestampInterval(sample.timestampSeconds, sample.subSeconds)
         )
     }
 
@@ -310,6 +312,7 @@ final class WhoopBleSampleBuffer {
             return [
                 "deviceId": scopedSample.deviceId,
                 "timestamp": formatter.string(from: date),
+                "heartRateBpm": Int(sample.heartRate),
                 "rrIntervalMs": Int(sample.rrIntervalMs),
                 "quaternionW": Double(sample.quaternionW),
                 "quaternionX": Double(sample.quaternionX),
