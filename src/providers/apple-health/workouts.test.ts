@@ -1,10 +1,18 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { hangTenContactMetadata, hangTenWorkout } from "./test-helpers.ts";
-import { applyWorkoutMetadata } from "./workouts.ts";
+
+let applyWorkoutMetadata: typeof import("./workouts.ts").applyWorkoutMetadata;
+
+beforeEach(async () => {
+  // Exercise schema initialization alongside the payload validation assertions.
+  vi.resetModules();
+  ({ applyWorkoutMetadata } = await import("./workouts.ts"));
+});
 
 describe("Hang Ten contact activity metadata", () => {
   it.each([
     { contactID: "edge-25-left", selection: "single" },
+    { kind: "edge", depth: { range: { minimum: 20, maximum: 25 } }, selection: "bilateralPair" },
     { kind: "jug", depth: { category: "large" }, selection: "single" },
   ])("preserves supported contact requirement variants: %j", (requirement) => {
     const workout = applyWorkoutMetadata(hangTenWorkout(), {
@@ -36,6 +44,65 @@ describe("Hang Ten contact activity metadata", () => {
       resolution: { requirement },
     });
   });
+
+  it.each([
+    {
+      description: "missing contact identifiers",
+      resolution: { boardID: "board", revisionID: "revision", requirement: {} },
+    },
+    {
+      description: "an invalid requirement kind",
+      resolution: {
+        boardID: "board",
+        revisionID: "revision",
+        contactIDs: ["edge-25-left"],
+        requirement: { kind: 25 },
+      },
+    },
+    {
+      description: "an incomplete depth range",
+      resolution: {
+        boardID: "board",
+        revisionID: "revision",
+        contactIDs: ["edge-25-left"],
+        requirement: { depth: { range: { minimum: 25 } } },
+      },
+    },
+  ])("reports contact targets with $description", ({ resolution }) => {
+    const workout = applyWorkoutMetadata(hangTenWorkout(), {
+      "HangTen.PlanName": "Repeaters",
+      "HangTen.ActivitySegments.v2": JSON.stringify({
+        version: 3,
+        segments: [
+          {
+            stepID: "invalid-target",
+            stepNumber: 1,
+            kind: "work",
+            target: { kind: "resolvedContacts", resolution },
+          },
+        ],
+      }),
+    });
+
+    expect(workout.hangTen?.activitySegments).toBeUndefined();
+    expect(workout.hangTen?.activitySegmentsError).toContain("invalid fields");
+  });
+
+  it.each([undefined, 1])(
+    "reports legacy segments without hold identifiers in format version %s",
+    (version) => {
+      const workout = applyWorkoutMetadata(hangTenWorkout(), {
+        "HangTen.PlanName": "Repeaters",
+        "HangTen.ActivitySegments": JSON.stringify({
+          version,
+          segments: [{ stepID: "missing-holds", stepNumber: 1, kind: "work" }],
+        }),
+      });
+
+      expect(workout.hangTen?.activitySegments).toBeUndefined();
+      expect(workout.hangTen?.activitySegmentsError).toContain("invalid fields");
+    },
+  );
 
   it.each([2, 3])("imports all recorded intervals from format version %i", (version) => {
     const metadata = hangTenContactMetadata(version);
