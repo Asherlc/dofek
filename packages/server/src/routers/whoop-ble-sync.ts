@@ -8,6 +8,8 @@ import { filterFutureSamples } from "./sample-validation.ts";
 
 const realtimeDataSampleSchema = z.object({
   timestamp: z.string(), // ISO 8601 with millisecond precision
+  /** Independently reported by the strap; 0 when unavailable. */
+  heartRateBpm: z.number().int().min(0).max(255).default(0),
   /** R-R interval in milliseconds (beat-to-beat timing from PPG). 0 when unavailable. */
   rrIntervalMs: z.number().int().min(0).max(32767).default(0),
   quaternionW: z.number(),
