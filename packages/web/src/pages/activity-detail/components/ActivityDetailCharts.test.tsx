@@ -101,12 +101,35 @@ function renderChartSvg(action?: "highlight" | "downplay") {
 }
 
 function visibleChartSymbols(svg: Document) {
-  return Array.from(svg.querySelectorAll('[ecmeta_ssr_type="chart"]')).filter(
+  const clip = svg
+    .querySelector("clipPath path")
+    ?.getAttribute("d")
+    ?.match(/^M([\d.-]+) ([\d.-]+)l([\d.]+) 0l0 ([\d.]+)l-/);
+  expect(clip).toBeTruthy();
+  const left = Number(clip?.[1]);
+  const top = Number(clip?.[2]);
+  const right = left + Number(clip?.[3]);
+  const bottom = top + Number(clip?.[4]);
+  const symbols = Array.from(svg.querySelectorAll('[ecmeta_ssr_type="chart"]')).filter(
     (symbol) =>
       !symbol.getAttribute("transform")?.startsWith("matrix(0,0,0,0,") &&
       !symbol.getAttribute("transform")?.includes("NaN") &&
       symbol.getAttribute("fill-opacity") !== "0",
   );
+  for (const symbol of symbols) {
+    expect(symbol.getAttribute("d")).toMatch(/^M1 0A1 1 /);
+    const matrix = symbol.getAttribute("transform")?.match(/^matrix\(([^)]+)\)$/);
+    expect(matrix).toBeTruthy();
+    const [scaleX = NaN, , , scaleY = NaN, centerX = NaN, centerY = NaN] =
+      matrix?.[1]?.split(",").map(Number) ?? [];
+    expect(scaleX).toBeGreaterThan(0);
+    expect(scaleY).toBeGreaterThan(0);
+    expect(centerX).toBeGreaterThanOrEqual(left);
+    expect(centerX).toBeLessThanOrEqual(right);
+    expect(centerY).toBeGreaterThanOrEqual(top);
+    expect(centerY).toBeLessThanOrEqual(bottom);
+  }
+  return symbols;
 }
 
 describe("MetricsChart sparse readings", () => {

@@ -10,6 +10,22 @@ vi.mock("./useChartScrub", () => ({
   }),
 }));
 
+function expectVisibleDots(container: HTMLElement, count: number) {
+  const dots = container.querySelectorAll('Circle[fill="#ff0000"]');
+  expect(dots).toHaveLength(count);
+  for (const dot of dots) {
+    const svg = dot.closest("Svg");
+    const radius = Number(dot.getAttribute("r"));
+    const centerX = Number(dot.getAttribute("cx"));
+    const centerY = Number(dot.getAttribute("cy"));
+    expect(radius).toBeGreaterThan(0);
+    expect(centerX - radius).toBeGreaterThanOrEqual(0);
+    expect(centerX + radius).toBeLessThanOrEqual(Number(svg?.getAttribute("width")));
+    expect(centerY - radius).toBeGreaterThanOrEqual(0);
+    expect(centerY + radius).toBeLessThanOrEqual(Number(svg?.getAttribute("height")));
+  }
+}
+
 describe("ActivityDetailCharts", () => {
   const data = [
     { recordedAt: "2026-10-04T16:52:51.440Z", value: 130 },
@@ -59,7 +75,7 @@ describe("ActivityDetailCharts", () => {
       <LineChart data={data} color="#ff0000" label="Heart Rate" unit="beats per minute" />,
     );
 
-    expect(container.querySelectorAll('Circle[fill="#ff0000"]')).toHaveLength(2);
+    expectVisibleDots(container, 2);
     const line = container.querySelector('Path[stroke="#ff0000"]');
     expect(line?.getAttribute("d")?.match(/[ML]/g)).toEqual(["M", "M"]);
   });
@@ -79,7 +95,7 @@ describe("ActivityDetailCharts", () => {
         />,
       );
 
-      expect(container.querySelectorAll('Circle[fill="#ff0000"]')).toHaveLength(1);
+      expectVisibleDots(container, 1);
       fireEvent.click(screen.getByRole("button", { name: "View Power data" }));
       expect(screen.getByText("0 W")).toBeDefined();
     },
@@ -100,7 +116,7 @@ describe("ActivityDetailCharts", () => {
 
     const line = container.querySelector('Path[stroke="#ff0000"]');
     expect(line?.getAttribute("d")?.match(/[ML]/g)).toEqual(["M", "L", "M", "M", "L"]);
-    expect(container.querySelectorAll('Circle[fill="#ff0000"]')).toHaveLength(1);
+    expectVisibleDots(container, 1);
   });
 
   it("scales the elevation profile to the recorded altitude range", () => {
