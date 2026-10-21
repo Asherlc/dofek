@@ -193,12 +193,15 @@ vi.mock("@dofek/format/format", async (importOriginal) => {
   return {
     ...actual,
     formatDateLong: (value: string) => (value.startsWith("2026-03-05") ? "March 5, 2026" : value),
-    formatDateTime: (value: string) =>
-      value.startsWith("2026-03-05") ? "March 5, 2026, 2:30 PM" : value,
+    formatDateTime: (value: string | number | Date) => {
+      const timestamp = typeof value === "string" ? value : new Date(value).toISOString();
+      return timestamp.startsWith("2026-03-05") ? "March 5, 2026, 2:30 PM" : timestamp;
+    },
     formatDurationRange: () => "1:00:00",
     formatDurationSeconds: (value: number) => `${value}s`,
     formatNumber: (value: number) => String(value),
-    formatTimeOnly: (value: string) => value,
+    formatTimeOnly: (value: string | number | Date) =>
+      typeof value === "string" ? value : new Date(value).toISOString(),
   };
 });
 

@@ -694,6 +694,10 @@ export async function enqueueDebouncedUserRefit(
 
 /** Close all cached queues, flow producers, and the shared Redis connection. */
 export async function closeAllQueueResources(): Promise<void> {
+  if (cachedActivityImageQueue) {
+    await cachedActivityImageQueue.close();
+    cachedActivityImageQueue = null;
+  }
   const closePromises: Array<Promise<unknown>> = [];
 
   for (const queue of cachedProviderQueues.values()) {
@@ -728,4 +732,20 @@ export async function closeAllQueueResources(): Promise<void> {
     await sharedRedisConnection.close();
     sharedRedisConnection = null;
   }
+}
+
+export type ActivityImageJobData = { userId: string } & (
+  | { workId: string }
+  | { backfillId: string }
+);
+export const ACTIVITY_IMAGE_QUEUE = "activity-images";
+let cachedActivityImageQueue: Queue<ActivityImageJobData> | null = null;
+export function createActivityImageQueue(
+  connection?: ConnectionOptions,
+): Queue<ActivityImageJobData> {
+  return new Queue(ACTIVITY_IMAGE_QUEUE, { connection: connection ?? getRedisCommandConnection() });
+}
+export function getActivityImageQueue(): Queue<ActivityImageJobData> {
+  cachedActivityImageQueue ??= createActivityImageQueue();
+  return cachedActivityImageQueue;
 }

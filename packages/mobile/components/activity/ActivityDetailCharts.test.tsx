@@ -27,6 +27,82 @@ function expectVisibleDots(container: HTMLElement, count: number) {
 }
 
 describe("ActivityDetailCharts", () => {
+  it("connects regular readings across other metrics' timestamps", () => {
+    const { container } = render(
+      <LineChart
+        data={[130, null, 135, null, 140].map((value, second) => ({
+          recordedAt: new Date(Date.UTC(2026, 9, 20, 16, 0, second)).toISOString(),
+          value,
+        }))}
+        color="#ff0000"
+        label="Heart Rate"
+        unit="bpm"
+      />,
+    );
+
+    const line = container.querySelector('Path[stroke="#ff0000"]');
+    expect(line?.getAttribute("d")?.match(/[ML]/g)).toEqual(["M", "L", "L"]);
+  });
+
+  it.each([
+    ["line", LineChart],
+    ["area", AreaChart],
+  ])("uses proportional time spacing in the %s chart", (_, ChartComponent) => {
+    const { container } = render(
+      <ChartComponent
+        data={[0, 1, 4].map((second) => ({
+          recordedAt: new Date(Date.UTC(2026, 9, 20, 16, 0, second)).toISOString(),
+          value: 140,
+        }))}
+        color="#ff0000"
+        label="Heart Rate"
+        unit="bpm"
+      />,
+    );
+
+    // The plot runs from x=44 to x=324; one second is a quarter of four seconds.
+    const path = container.querySelector('Path[stroke="#ff0000"]')?.getAttribute("d");
+    const coordinates = [...(path?.matchAll(/[ML]([\d.]+),/g) ?? [])].map((match) =>
+      Number(match[1]),
+    );
+    expect(coordinates).toEqual([44, 114, 324]);
+  });
+
+  it("breaks the line at a long recording interruption without null rows", () => {
+    const { container } = render(
+      <LineChart
+        data={[0, 1, 2, 20, 21].map((second) => ({
+          recordedAt: new Date(Date.UTC(2026, 9, 20, 16, 0, second)).toISOString(),
+          value: 140,
+        }))}
+        color="#ff0000"
+        label="Heart Rate"
+        unit="bpm"
+      />,
+    );
+
+    const path = container.querySelector('Path[stroke="#ff0000"]')?.getAttribute("d");
+    expect(path?.match(/[ML]/g)).toEqual(["M", "L", "L", "M", "L"]);
+  });
+
+  it("closes each elevation fill at recording gaps", () => {
+    const { container } = render(
+      <AreaChart
+        data={[0, 1, 2, 20, 21].map((second) => ({
+          recordedAt: new Date(Date.UTC(2026, 9, 20, 16, 0, second)).toISOString(),
+          value: 200 + second,
+        }))}
+        color="#ff0000"
+        label="Elevation"
+        unit="m"
+      />,
+    );
+    const outline = container.querySelector('Path[stroke="#ff0000"]')?.getAttribute("d");
+    const fill = container.querySelector('Path[fill="url(#areaGrad)"]')?.getAttribute("d");
+    expect(outline?.match(/[ML]/g)).toEqual(["M", "L", "L", "M", "L"]);
+    expect(fill?.match(/Z/g)).toHaveLength(2);
+  });
+
   const data = [
     { recordedAt: "2026-10-04T16:52:51.440Z", value: 130 },
     { recordedAt: "2026-10-04T16:53:51.440Z", value: null },
@@ -43,13 +119,12 @@ describe("ActivityDetailCharts", () => {
 
     expect(
       screen.getByRole("image", {
-        name: "Heart Rate. Heart Rate over the activity sample sequence.",
+        name: "Heart Rate. Heart Rate over activity time. Dots mark recorded samples; gaps indicate unobserved time.",
       }),
     ).toBeDefined();
     fireEvent.click(screen.getByRole("button", { name: "View Heart Rate data" }));
     expect(screen.getByText(`Sample 1 · ${formatDateTime(data[0].recordedAt)}`)).toBeDefined();
     expect(screen.getByText("130 beats per minute")).toBeDefined();
-    expect(screen.getByText("No value")).toBeDefined();
     expect(screen.getByText("145 beats per minute")).toBeDefined();
   });
 
@@ -101,7 +176,7 @@ describe("ActivityDetailCharts", () => {
     },
   );
 
-  it("draws each continuous segment and marks only isolated readings", () => {
+  it("draws each continuous segment and marks sparse readings", () => {
     const { container } = render(
       <LineChart
         data={[130, 135, null, 145, null, 150, 155].map((value, index) => ({
@@ -116,7 +191,7 @@ describe("ActivityDetailCharts", () => {
 
     const line = container.querySelector('Path[stroke="#ff0000"]');
     expect(line?.getAttribute("d")?.match(/[ML]/g)).toEqual(["M", "L", "M", "M", "L"]);
-    expectVisibleDots(container, 1);
+    expectVisibleDots(container, 5);
   });
 
   it("scales the elevation profile to the recorded altitude range", () => {

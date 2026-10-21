@@ -80,7 +80,7 @@ import {
   StravaUnauthorizedError,
   stravaOAuthConfig,
   stravaStreamsToMetricStream,
-} from "./strava.ts";
+} from "./strava/provider.ts";
 import { SyncRun } from "./sync-run.ts";
 import { SyncWindow } from "./sync-window.ts";
 import { makeTransactionalTestDatabase } from "./test-helpers.ts";
@@ -2225,6 +2225,35 @@ describe("StravaProvider.sync — additional coverage", () => {
     );
   });
 
+  it("preserves detailed raw photos on conflict updates", async () => {
+    setupEnv();
+    const detail = {
+      ...MOCK_ACTIVITY,
+      device_name: "Wahoo",
+      photos: {
+        count: 1,
+        primary: { unique_id: "photo", urls: { 600: "https://cdn.test/photo" } },
+      },
+    };
+    const mockFetch = vi.fn().mockImplementation((url: string) => {
+      const value = String(url);
+      if (value.includes("/athlete/activities"))
+        return Promise.resolve(Response.json([MOCK_ACTIVITY]));
+      if (value.includes("/streams")) return Promise.resolve(Response.json(MOCK_STREAMS));
+      return Promise.resolve(Response.json(detail));
+    });
+    const provider = new StravaProvider(mockFetch);
+    await provider.sync(
+      new SyncRun({
+        db: createMockDb(),
+        window: SyncWindow.fromSince({ since: new Date("2026-01-01") }),
+      }),
+    );
+    expect(providerActivityAbsenceMocks.upsertProviderActivity.mock.calls[0]?.[2].raw).toEqual(
+      detail,
+    );
+  });
+
   it("writes expected upsert payloads for activity records", async () => {
     setupEnv();
 
@@ -2695,7 +2724,7 @@ describe("StravaProvider.sync — additional coverage", () => {
       });
 
       vi.resetModules();
-      const { StravaProvider: ReloadedStravaProvider } = await import("./strava.ts");
+      const { StravaProvider: ReloadedStravaProvider } = await import("./strava/provider.ts");
       const provider = new ReloadedStravaProvider(mockFetch);
       const result = await provider.sync(
         new SyncRun({
@@ -3188,4 +3217,16 @@ describe("mapStravaActivityType — additional types", () => {
   it("maps RockClimbing to climbing", () => {
     expect(mapStravaActivityType("RockClimbing").canonicalType).toBe("climbing");
   });
+});
+
+it("skips the gallery request for an explicitly empty photo summary", async () => {
+  const fetch = vi.fn();
+  const client = new StravaClient(async () => "token", fetch);
+  expect(await client.getActivityImages(1, 0)).toEqual({
+    coverage: "complete",
+    expectedCount: 0,
+    reason: null,
+    images: [],
+  });
+  expect(fetch).not.toHaveBeenCalled();
 });

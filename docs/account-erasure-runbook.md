@@ -488,3 +488,14 @@ Also validate:
 Do not use a production account as a validation fixture. A production deletion
 request is irreversible even when its coordinator later reports a retryable
 failure.
+
+## Activity image originals
+
+The work-purge phase includes the activity-images queue and deletes the user's
+complete images/<user-id>/ prefix in the private activity media bucket selected
+by ACTIVITY_MEDIA_R2_BUCKET. The sweep paginates and verifies absence before
+acknowledgement; database ownership discovery includes all activity-image tables.
+Existing account-erasure work barriers prevent a late acquisition from recreating
+objects. Restored account rows are subject to the existing restore reconciliation
+before media work resumes. See [activity image operations](activity-images.md)
+and [R2 object operations](https://developers.cloudflare.com/r2/api/s3/api/).

@@ -193,7 +193,7 @@ describe("official Garmin activity ingestion", () => {
   });
 
   it.each(["Corrected run", ""])(
-    "honors the supplied FIT name %j and an explicit nonmanual correction",
+    "honors the supplied FIT name %j and an explicit manual false correction",
     async (activityName) => {
       const { db } = createMockDatabase({
         tokensResult: [{ name: "Known run", raw: { manual: true } }],

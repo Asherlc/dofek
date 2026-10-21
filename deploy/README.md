@@ -736,3 +736,16 @@ PeerDB UI services and routes. Databasus remains active because it owns the
 PostgreSQL backup schedule. `deploy/stack.oracle.yml` sets the other management
 services to zero replicas in production, so a DNS response or Traefik 404 for
 one of their historical hostnames does not mean that UI should be running.
+
+## Activity image storage
+
+Provider activity image originals use the private `dofek-activity-media` R2
+bucket declared in `storage.tf`, selected by `ACTIVITY_MEDIA_R2_BUCKET`, which
+`stack.yml` sets on web and worker. Provision the bucket through Terraform
+before deploying image acquisition. Reuse the existing Infisical credentials
+`R2_ACCESS_KEY_ID` and `R2_SECRET_ACCESS_KEY` with the configured `R2_ENDPOINT`.
+The media bucket has no
+age-based expiry or public domain. Access uses authenticated, five-minute
+signed GET URLs; treat those URLs as bearer credentials
+([Cloudflare presigned URLs](https://developers.cloudflare.com/r2/api/s3/presigned-urls/)).
+Account erasure must remove the user's complete `images/<user-id>/` prefix.

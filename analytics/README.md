@@ -120,7 +120,18 @@ for that bounded current-state read; the normal `ref()` remains filtered for
 changed-key discovery. Replacement follows the source version semantics of
 [ReplacingMergeTree](https://clickhouse.com/docs/engines/table-engines/mergetree-family/replacingmergetree).
 `activity_sensor_sample` is a bounded microbatch intermediary over source
-refresh time. `activity_location_sample` is an append-incremental current-state
+refresh time. It uses the adapter's `inserts_only=true` path so each daily batch
+appends replacements and explicit tombstones to `ReplacingMergeTree(refresh_version)`
+without lightweight deletes. The adapter [documents `inserts_only` as deprecated](https://clickhouse.com/docs/integrations/dbt/materializations#configurations)
+in favor of `incremental_strategy='append'`; this model retains it because dbt-core
+requires `incremental_strategy='microbatch'` for [native daily scheduling](https://docs.getdbt.com/docs/build/incremental-microbatch), bookmarks,
+lookback, and bounded historical replay. The pinned [adapter implementation](https://github.com/ClickHouse/dbt-clickhouse/blob/v1.10.3/dbt/include/clickhouse/macros/materializations/incremental/incremental.sql)
+bypasses delete and schema-change dispatch for insert-only writes; future column
+changes need explicit schema migrations. Aggregating readers resolve current
+versions before filtering tombstones using [FINAL](https://clickhouse.com/docs/engines/table-engines/mergetree-family/replacingmergetree)
+or an explicit latest-version selection. Existing projectionless deleted parts
+need the separately approved [operator repair](../docs/clickhouse-read-model-deploy-runbook.md#activity-sensor-parts-blocked-by-missing-projections).
+`activity_location_sample` is an append-incremental current-state
 reconciliation: changed activity, membership, and scoped repair keys identify
 affected stable groups, then provider selection reads each affected group's
 complete current tracks before replacing or tombstoning route points. `body_measurement` incrementally rebuilds only users whose body samples

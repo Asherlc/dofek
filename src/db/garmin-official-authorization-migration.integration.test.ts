@@ -57,7 +57,7 @@ describe("official Garmin authorization migration", () => {
     );
 
     const migration = readFileSync(
-      new URL("../../drizzle/0153_garmin_official_authorization.sql", import.meta.url),
+      new URL("../../drizzle/0156_garmin_official_authorization.sql", import.meta.url),
       "utf8",
     );
     await context.db.transaction(async (transaction) => {

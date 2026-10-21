@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, expectTypeOf, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => {
   const poolClient = {
@@ -54,6 +54,7 @@ import {
 function createWorkLockPool(): AccountErasureWorkLockPool {
   return {
     close: vi.fn(async () => undefined),
+    tryRunWithExclusiveUserLock: vi.fn(async (_userId, work) => work()),
     runWithSharedUserLock: vi.fn(async (_userId, work) => work()),
   };
 }
@@ -66,6 +67,26 @@ beforeEach(() => {
 });
 
 describe("PostgreSQL queued-work lock pool", () => {
+  it("holds an exclusive session barrier for cleanup without starting a transaction", async () => {
+    const pool = createAccountErasureWorkLockPool("postgres://database.test/dofek");
+    mocks.poolClient.query.mockResolvedValueOnce({ rows: [{ acquired: true }] });
+    const result = pool.tryRunWithExclusiveUserLock("user-1", async () => {
+      expect(mocks.poolClient.query).toHaveBeenCalledTimes(1);
+      expect(mocks.poolClient.release).not.toHaveBeenCalled();
+      return "deleted";
+    });
+    expectTypeOf(result).toEqualTypeOf<Promise<string | undefined>>();
+    await expect(result).resolves.toBe("deleted");
+    expect(
+      mocks.poolClient.query.mock.calls.map(([query]) => query.text.trim().split("(")[0]),
+    ).toEqual(["SELECT pg_try_advisory_lock", "SELECT pg_advisory_unlock"]);
+    expect(mocks.poolClient.query.mock.calls.map(([, values]) => values)).toEqual([
+      ["account-erasure-queued-user-work:user-1"],
+      ["account-erasure-queued-user-work:user-1"],
+    ]);
+    expect(mocks.poolClient.release).toHaveBeenCalledWith();
+  });
+
   it("uses a dedicated bounded pool and closes it on shutdown", async () => {
     const workLockPool = createAccountErasureWorkLockPool("postgres://database.test/dofek");
 
@@ -85,17 +106,17 @@ describe("PostgreSQL queued-work lock pool", () => {
 
   it("holds the provider lock before the erasure barrier and releases both after work", async () => {
     const pool = createAccountErasureWorkLockPool("postgres://database.test/dofek");
-    await expect(
-      pool.runWithSharedUserLock(
-        "user-1",
-        async () => {
-          expect(mocks.poolClient.query).toHaveBeenCalledTimes(2);
-          expect(mocks.poolClient.release).not.toHaveBeenCalled();
-          return "complete";
-        },
-        "mountain-project",
-      ),
-    ).resolves.toBe("complete");
+    const result = pool.runWithSharedUserLock(
+      "user-1",
+      async () => {
+        expect(mocks.poolClient.query).toHaveBeenCalledTimes(2);
+        expect(mocks.poolClient.release).not.toHaveBeenCalled();
+        return "complete";
+      },
+      "mountain-project",
+    );
+    expectTypeOf(result).toEqualTypeOf<Promise<string>>();
+    await expect(result).resolves.toBe("complete");
     expect(
       mocks.poolClient.query.mock.calls.map(([query, values]) => ({
         text: query.text.trim().split("(")[0],
@@ -586,4 +607,39 @@ describe("runQueuedUserWorkUnlessAccountErasing", () => {
 
     expect(work).not.toHaveBeenCalled();
   });
+});
+
+it("skips cleanup without checking out a fifth session when all permits are occupied", async () => {
+  const pool = createAccountErasureWorkLockPool("postgres://test");
+  let finish = () => {};
+  const pending = new Promise<void>((resolve) => {
+    finish = resolve;
+  });
+  const busy = Array.from({ length: 4 }, (_, i) =>
+    pool.runWithSharedUserLock(String(i), () => pending),
+  );
+  await vi.waitFor(() => expect(mocks.poolClient.query).toHaveBeenCalledTimes(4));
+  const work = vi.fn();
+  try {
+    await expect(pool.tryRunWithExclusiveUserLock("owner", work)).resolves.toBeUndefined();
+    expect(work).not.toHaveBeenCalled();
+    expect(mocks.pool.connect).toHaveBeenCalledTimes(4);
+  } finally {
+    finish();
+    await Promise.all(busy);
+  }
+});
+it("releases the session and permit when a cleanup lock is busy", async () => {
+  const pool = createAccountErasureWorkLockPool("postgres://test");
+  mocks.poolClient.query
+    .mockResolvedValueOnce({ rows: [{ acquired: false }] })
+    .mockResolvedValueOnce({ rows: [{ acquired: true }] })
+    .mockResolvedValueOnce({ rows: [{ unlocked: true }] });
+  const skipped = vi.fn();
+  await expect(pool.tryRunWithExclusiveUserLock("owner", skipped)).resolves.toBeUndefined();
+  expect(skipped).not.toHaveBeenCalled();
+  expect(mocks.poolClient.release).toHaveBeenCalledWith();
+  await expect(pool.tryRunWithExclusiveUserLock("owner", async () => "cleaned")).resolves.toBe(
+    "cleaned",
+  );
 });

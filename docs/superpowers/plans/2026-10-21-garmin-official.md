@@ -74,9 +74,9 @@
 - [x] Remove Dofek's private-client runtime dependency. Treat changes to published package distribution separately from runtime replacement.
 - [x] Update active docs, auth metadata, targeted API fixtures and any affected build references.
 - [x] Register/configure the Starter app once required company facts are supplied, store app secrets in Infisical, and configure the verified receiving endpoint only when it is ready.
-- [ ] Run lint, root/server/web typechecks, all affected unit/mobile suites and real database integration tests. Build/runtime checks are required if packaging changes.
-- [ ] Obtain whole-change review, fix findings and rerun covering checks. Commit and push automatically.
-- [ ] Report remaining external authorization/production validation prerequisites accurately; do not call an untested production cutover complete.
+- [x] Run lint, root/server/web typechecks, all affected unit/mobile suites and real database integration tests. Build/runtime checks are required if packaging changes.
+- [x] Obtain whole-change review, fix findings and rerun covering checks. Commit and push automatically.
+- [x] Report remaining external authorization/production validation prerequisites accurately; do not call an untested production cutover complete.
 
 ## Working checkpoints
 
@@ -84,6 +84,7 @@
 - Initial repository: clean branch `explore-garmin-developer-program`, research commit `585bfa7`.
 - Review checkpoints: task 1, task 2, task 3, final whole change.
 - Setup completed: approved Starter app, production secrets, and ten authenticated receiving feeds configured and verified On Hold. See the [release checks](../../garmin.md#operator-configuration-and-release-checks).
-- Final review follow-ups: preserve registration on reconnect; preserve known summary metadata when a sparse FIT notification follows it.
+- Final review follow-ups completed: preserve registration on reconnect and every failed OAuth connection; preserve known summary metadata when a sparse FIT notification follows it.
+- Upstream integration: preserve image migrations 0153–0155 and append Garmin as [0156](../../../drizzle/0156_garmin_official_authorization.sql), with a matching generated schema snapshot. The merged full unit/mobile run passed 20,326 tests (19 existing skips); the final health/activity mapping checks also pass.
 - Local validation gap: the shared provider-deletion ClickHouse fixture exceeds the existing local memory cap before tests execute. Hosted integration validation remains required; see the [incident baseline](../../production-incident-baseline.md).
 - Production deployment, real OAuth consent, and live Health/FIT delivery remain unverified. Do not release held delivery until those checks pass.

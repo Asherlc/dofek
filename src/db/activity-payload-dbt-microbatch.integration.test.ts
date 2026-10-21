@@ -221,7 +221,7 @@ describe("activity payload dbt batch reconciliation", () => {
         FROM system.query_log
         WHERE type = 'QueryFinish'
           AND query_kind = 'Insert'
-          AND query LIKE '%insert into \`${database}\`.\`activity_sensor_sample__dbt_new_data_%'
+          AND query ILIKE '%insert into \`${database}\`.\`activity_sensor_sample\`%'
         ORDER BY event_time_microseconds DESC
         LIMIT 1`,
       format: "JSONEachRow",

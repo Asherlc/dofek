@@ -289,3 +289,9 @@ resource "cloudflare_r2_bucket_lifecycle" "ota_preview_cleanup" {
 # NOTE: S3-compatible API credentials for R2 must be created manually in
 # the Cloudflare dashboard. Store R2_ACCESS_KEY_ID and R2_SECRET_ACCESS_KEY
 # in Infisical.
+
+resource "cloudflare_r2_bucket" "activity_media" {
+  account_id = var.cloudflare_account_id
+  name       = "dofek-activity-media"
+  location   = "WEUR"
+}

@@ -285,3 +285,27 @@ describe("worker startup", () => {
     }
   });
 });
+
+it("wires historical media dispatch into the image outbox startup callback", async () => {
+  hoisted.scheduledSyncState.error = null;
+  mockReconcileGarminProgress.mockResolvedValue(undefined);
+  vi.resetModules();
+  await import("./worker.ts");
+  const { startActivityImageOutboxDispatcher } = await import("./activity-image-outbox.ts");
+  const { dispatchActivityImageBackfills } = await import(
+    "./process-activity-image-backfill-job.ts"
+  );
+  const { getActivityImageQueue } = await import("./queues.ts");
+  vi.mocked(dispatchActivityImageBackfills).mockClear();
+  const call = vi.mocked(startActivityImageOutboxDispatcher).mock.calls.at(-1);
+  if (!call) throw Error("Image outbox was not started");
+  await call[3]();
+  expect(dispatchActivityImageBackfills).toHaveBeenCalledExactlyOnceWith(
+    mockDatabase,
+    vi.mocked(getActivityImageQueue).mock.results.at(-1)?.value,
+  );
+});
+vi.mock("./process-activity-image-backfill-job.ts", async (original) => ({
+  ...(await original<typeof import("./process-activity-image-backfill-job.ts")>()),
+  dispatchActivityImageBackfills: vi.fn(async () => undefined),
+}));

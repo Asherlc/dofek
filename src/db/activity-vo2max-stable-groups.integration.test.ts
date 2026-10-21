@@ -139,8 +139,10 @@ async function seedFixture(client: ClickHouseClient, database: string): Promise<
       ENGINE = ReplacingMergeTree() ORDER BY id`,
     `CREATE TABLE ${database}.activity_sensor_sample (
       activity_id UUID, user_id UUID, recorded_at DateTime64(6, 'UTC'), channel String,
-      scalar Nullable(Float64), is_deleted UInt8, refreshed_at DateTime64(9, 'UTC'))
-      ENGINE = MergeTree ORDER BY (user_id, activity_id, recorded_at, channel)`,
+      scalar Nullable(Float64), is_deleted UInt8, refreshed_at DateTime64(9, 'UTC'),
+      refresh_version UInt64 DEFAULT 1)
+      ENGINE = ReplacingMergeTree(refresh_version)
+      ORDER BY (user_id, activity_id, recorded_at, channel)`,
     `CREATE TABLE ${database}.body_measurement_sample (
       user_id UUID, channel String, _peerdb_synced_at DateTime64(9, 'UTC'))
       ENGINE = ReplacingMergeTree() ORDER BY user_id`,
@@ -167,11 +169,13 @@ async function seedFixture(client: ClickHouseClient, database: string): Promise<
     `INSERT INTO ${database}.body_measurement VALUES
       ('${userId}', toDateTime64('2026-09-01 12:00:00', 6, 'UTC'), 75, 0)`,
     `INSERT INTO ${database}.activity_sensor_sample
+      (activity_id, user_id, recorded_at, channel, scalar, is_deleted, refreshed_at)
       SELECT '${groupId}', '${userId}',
         addSeconds(toDateTime64('2026-09-03 14:00:00', 6, 'UTC'), toInt64(number)),
         'power', 200, 0, toDateTime64('2026-09-03 15:00:00', 9, 'UTC')
       FROM numbers(301)`,
     `INSERT INTO ${database}.activity_sensor_sample
+      (activity_id, user_id, recorded_at, channel, scalar, is_deleted, refreshed_at)
       SELECT '${movedGroupId}', '${userId}',
         addSeconds(toDateTime64('2026-09-03 14:00:00', 6, 'UTC'), toInt64(number)),
         'power', 200, 0, toDateTime64('2026-09-03 15:00:00', 9, 'UTC')

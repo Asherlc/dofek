@@ -534,3 +534,80 @@ describe("worker queues", () => {
     expect(hoisted.mockProcessAccountErasureRequest).not.toHaveBeenCalled();
   });
 });
+
+vi.mock("../db/activity-images.ts", async (original) => ({
+  ...(await original<typeof import("../db/activity-images.ts")>()),
+  loadActivityImageWork: vi.fn(async () => ({ providerId: "strava" })),
+}));
+vi.mock("../activity-images/acquire.ts", () => ({
+  createActivityImageJobDependencies: vi.fn(() => ({ marker: "image dependencies" })),
+}));
+vi.mock("./process-activity-image-job.ts", () => ({
+  processActivityImageJob: vi.fn(async () => undefined),
+}));
+vi.mock("./process-activity-image-backfill-job.ts", () => ({
+  loadActivityImageBackfillProvider: vi.fn(async () => "peloton"),
+  processActivityImageBackfillJob: vi.fn(async () => undefined),
+}));
+
+describe("activity image worker routing", () => {
+  it("guards acquisitions with the source provider and processes their immutable work ID", async () => {
+    const { loadActivityImageWork } = await import("../db/activity-images.ts");
+    const { processActivityImageJob } = await import("./process-activity-image-job.ts");
+    const { runQueuedUserWorkUnlessAccountErasing } = await import(
+      "./account-erasure-work-guard.ts"
+    );
+    const data = { userId: "owner", workId: "work" };
+    await invokeProcessor("activity-images", data);
+    expect(loadActivityImageWork).toHaveBeenCalledWith(mockDatabase, "work", "owner");
+    expect(runQueuedUserWorkUnlessAccountErasing).toHaveBeenLastCalledWith(
+      expect.anything(),
+      mockDatabase,
+      "owner",
+      "activity images",
+      expect.any(Function),
+      "strava",
+    );
+    expect(processActivityImageJob).toHaveBeenCalledWith(data, { marker: "image dependencies" });
+  });
+  it("routes historical discovery through the provider-specific erasure guard", async () => {
+    const { loadActivityImageBackfillProvider, processActivityImageBackfillJob } = await import(
+      "./process-activity-image-backfill-job.ts"
+    );
+    const { runQueuedUserWorkUnlessAccountErasing } = await import(
+      "./account-erasure-work-guard.ts"
+    );
+    const data = { userId: "owner", backfillId: "backfill" };
+    await invokeProcessor("activity-images", data);
+    expect(loadActivityImageBackfillProvider).toHaveBeenCalledWith(
+      mockDatabase,
+      "backfill",
+      "owner",
+    );
+    expect(runQueuedUserWorkUnlessAccountErasing).toHaveBeenLastCalledWith(
+      expect.anything(),
+      mockDatabase,
+      "owner",
+      "activity images",
+      expect.any(Function),
+      "peloton",
+    );
+    expect(processActivityImageBackfillJob).toHaveBeenCalledWith(mockDatabase, data);
+  });
+  it("ignores work which no longer resolves to an owned provider", async () => {
+    const { loadActivityImageWork } = await import("../db/activity-images.ts");
+    const { processActivityImageJob } = await import("./process-activity-image-job.ts");
+    vi.mocked(loadActivityImageWork).mockResolvedValueOnce(null);
+    vi.mocked(processActivityImageJob).mockClear();
+    await invokeProcessor("activity-images", { userId: "owner", workId: "gone" });
+    expect(processActivityImageJob).not.toHaveBeenCalled();
+  });
+  it("requires manual startup and bounds image concurrency", async () => {
+    const { Worker } = await import("bullmq");
+    expect(Worker).toHaveBeenCalledWith(
+      "activity-images",
+      expect.any(Function),
+      expect.objectContaining({ autorun: false, concurrency: 4 }),
+    );
+  });
+});

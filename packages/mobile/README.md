@@ -585,7 +585,12 @@ The [source repository](../server/src/repositories/activity-metric-sources-repos
 and negative elevations, excludes invalid heart-rate samples, and preserves
 activity ownership and stream downsampling.
 
-The [metric line chart](components/activity/ActivityDetailCharts.tsx) shows
-isolated readings as dots, including a source with only one reading. Lines stop
-at missing samples. The colocated `SparseReadings` story and chart tests cover
-the visible readings and gaps.
+The [metric and elevation charts](components/activity/ActivityDetailCharts.tsx)
+position observations by elapsed time and evaluate continuity independently for
+each metric. Sparse observations retain markers; dense recordings show lines
+with markers on touch. Scrubbing selects the nearest measured observation by
+time and retains its original timeline index for the map.
+The [shared presentation policy](../training/src/activity-chart-series.ts) defines
+the cadence-based gap rule used by both clients. This follows the distinction
+between [differing reporting intervals and missing observations](https://www.datawrapper.de/academy/patchy-data).
+The `IndependentMetricTimelines` and `SparseReadings` stories show both cases.

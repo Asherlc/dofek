@@ -32,7 +32,7 @@ Existing `garmin` and `garmin-dump` records remain intact. Legacy private Garmin
 tokens do not authorize the official app: those users must reconnect through
 OAuth. Garmin account-export ZIP imports remain available for historical data;
 they are separate from live delivery. See the
-[authorization migration](../drizzle/0153_garmin_official_authorization.sql),
+[authorization migration](../drizzle/0156_garmin_official_authorization.sql),
 [account-export importer](../src/providers/garmin-dump.ts), and
 [import flow](../src/jobs/garmin-dump-flow.ts).
 

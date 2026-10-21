@@ -80,7 +80,7 @@
     "./providers/garmin/authorization": "./src/providers/garmin/authorization.ts",
     "./providers/garmin-dump": "./src/providers/garmin-dump.ts",
     "./providers/fit-file": "./src/providers/fit-file.ts",
-    "./providers/strava": "./src/providers/strava.ts",
+    "./providers/strava": "./src/providers/strava/provider.ts",
     "./providers/cronometer-csv": "./src/providers/cronometer-csv.ts",
     "./providers/oura": "./src/providers/oura/provider.ts",
     "./providers/eight-sleep": "./src/providers/eight-sleep.ts",
@@ -137,7 +137,9 @@
     "./sync-metrics": "./src/sync-metrics.ts",
     "./exercise-metadata": "./src/exercise-metadata.ts",
     "./lib/cache": "./src/lib/cache.ts",
-    "./admin/provider-rate-limit-status": "./src/admin/provider-rate-limit-status.ts"
+    "./admin/provider-rate-limit-status": "./src/admin/provider-rate-limit-status.ts",
+    "./db/activity-images": "./src/db/activity-images.ts",
+    "./activity-images/storage": "./src/activity-images/storage.ts"
   },
   "scripts": {
     "dev": "tsx scripts/with-env.ts -- tsx src/index.ts",
@@ -289,6 +291,7 @@
     "posthog-node": "5.56.0",
     "prom-client": "15.1.3",
     "sax": "1.6.1",
+    "sharp": "0.35.5",
     "stripe": "22.5.0",
     "tz-lookup": "6.1.25",
     "winston": "3.19.0",
@@ -325,7 +328,6 @@
     "msw": "2.15.0",
     "nyc": "18.0.0",
     "plantuml-encoder": "1.4.0",
-    "sharp": "0.35.5",
     "sherif": "1.13.0",
     "size-limit": "12.0.1",
     "stylelint": "17.14.0",

@@ -7,14 +7,40 @@ import { z } from "zod";
 import { parseHealthDate } from "./dates.ts";
 import type { RouteLocation } from "./records.ts";
 
+const hangTenActivityTargetSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("selfSelected") }),
+  z.object({
+    kind: z.literal("resolvedContacts"),
+    resolution: z
+      .object({
+        boardID: z.string(),
+        revisionID: z.string(),
+        contactIDs: z.array(z.string()),
+        requirement: z
+          .object({
+            kind: z.string().optional(),
+            depth: z
+              .union([
+                z.object({ range: z.object({ minimum: z.number(), maximum: z.number() }) }),
+                z.object({ category: z.string() }),
+              ])
+              .optional(),
+          })
+          .passthrough(),
+      })
+      .passthrough(),
+  }),
+]);
+
 export interface HangTenActivitySegment {
   stepID: string;
   stepNumber: number;
   kind: "work" | "rest";
-  holdIDs: string[];
+  holdIDs?: string[];
   holdType?: string;
   sizeMillimeters?: number;
   durationSeconds?: number;
+  target?: z.infer<typeof hangTenActivityTargetSchema>;
 }
 
 export interface HangTenWorkoutMetadata {
@@ -109,20 +135,33 @@ function trimmedMetadataValue(metadata: WorkoutMetadata, key: string): string | 
   return value ? value : undefined;
 }
 
-const hangTenActivityMetadataSchema = z.object({
-  version: z.number().optional(),
-  segments: z.array(
-    z.object({
-      stepID: z.string(),
-      stepNumber: z.number(),
-      kind: z.enum(["work", "rest"]),
-      holdIDs: z.array(z.string()),
-      holdType: z.string().optional(),
-      sizeMillimeters: z.number().optional(),
-      durationSeconds: z.number().optional(),
-    }),
-  ),
-});
+const hangTenActivitySegmentSchema = z
+  .object({
+    stepID: z.string(),
+    stepNumber: z.number(),
+    kind: z.enum(["work", "rest"]),
+    holdIDs: z.array(z.string()).optional(),
+    holdType: z.string().optional(),
+    sizeMillimeters: z.number().optional(),
+    durationSeconds: z.number().optional(),
+    target: hangTenActivityTargetSchema.optional(),
+  })
+  .passthrough();
+
+const hangTenActivityMetadataSchema = z.union([
+  z.object({
+    version: z.literal(1).optional(),
+    segments: z.array(hangTenActivitySegmentSchema.extend({ holdIDs: z.array(z.string()) })),
+  }),
+  z.object({
+    version: z.union([z.literal(2), z.literal(3)]),
+    segments: z.array(
+      hangTenActivitySegmentSchema.refine(
+        (segment) => segment.kind === "rest" || segment.target !== undefined,
+      ),
+    ),
+  }),
+]);
 
 function parseHangTenActivitySegments(raw: string): {
   segments?: HangTenActivitySegment[];
@@ -161,7 +200,8 @@ function hangTenWorkoutOverrides(
     return { activityType: hangTenActivityType, sourceName: "Hang Ten" };
   }
 
-  const activitySegmentsMetadata = metadata["HangTen.ActivitySegments"];
+  const activitySegmentsMetadata =
+    metadata["HangTen.ActivitySegments.v2"] ?? metadata["HangTen.ActivitySegments"];
   const rawActivitySegments =
     typeof activitySegmentsMetadata === "string" ? activitySegmentsMetadata : undefined;
   const parsedActivitySegments =

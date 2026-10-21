@@ -5,6 +5,7 @@
 {{ config(
     materialized='incremental',
     incremental_strategy='microbatch',
+    inserts_only=true,
     unique_key=['activity_id', 'channel', 'recorded_at'],
     event_time='refreshed_at',
     begin=activity_sensor_sample_begin,
@@ -12,7 +13,6 @@
     lookback=1,
     full_refresh=false,
     concurrent_batches=false,
-    on_schema_change='append_new_columns',
     engine='ReplacingMergeTree(refresh_version)',
     order_by='(user_id, activity_id, recorded_date, channel, recorded_at)',
     settings={

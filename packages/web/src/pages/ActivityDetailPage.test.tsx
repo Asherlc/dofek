@@ -596,7 +596,10 @@ function getPlaceholderData(value: unknown): ((previousData: unknown) => unknown
 function getSeriesData(opt: Record<string, unknown>): Array<unknown> {
   const series = opt.series;
   if (Array.isArray(series) && series[0] && typeof series[0] === "object" && "data" in series[0]) {
-    return series[0].data;
+    return series[0].data.map((datum: unknown) => {
+      if (typeof datum !== "object" || datum === null || !("value" in datum)) return datum;
+      return Array.isArray(datum.value) ? datum.value[1] : datum.value;
+    });
   }
   return [];
 }
@@ -1120,17 +1123,23 @@ describe("ActivityDetailPage", () => {
       throw new Error("Metrics chart pointer events were not registered");
     }
 
-    metricEvents.updateAxisPointer({ axesInfo: [{ value: 0 }] });
+    metricEvents.updateAxisPointer({
+      axesInfo: [{ value: Date.parse(mockStreamPoints[0]?.recordedAt ?? "") }],
+    });
     await waitFor(() => expect(leafletMocks.circleMarker).toHaveBeenCalledTimes(3));
 
     metricEvents.updateAxisPointer({});
     metricEvents.updateAxisPointer({ axesInfo: [] });
     metricEvents.updateAxisPointer({ axesInfo: [{ value: -1 }] });
-    metricEvents.updateAxisPointer({ axesInfo: [{ value: mockStreamPoints.length + 1 }] });
+    metricEvents.updateAxisPointer({
+      axesInfo: [{ value: Date.parse(mockStreamPoints.at(-1)?.recordedAt ?? "") + 1 }],
+    });
 
     expect(leafletMocks.circleMarker).toHaveBeenCalledTimes(3);
 
-    metricEvents.updateAxisPointer({ axesInfo: [{ value: 1 }] });
+    metricEvents.updateAxisPointer({
+      axesInfo: [{ value: Date.parse(mockStreamPoints[1]?.recordedAt ?? "") }],
+    });
     await waitFor(() => expect(leafletMocks.circleMarker).toHaveBeenCalledTimes(4));
     metricEvents.globalout();
   });
@@ -1306,7 +1315,9 @@ describe("ActivityDetailPage", () => {
       throw new Error("Metrics chart pointer events were not registered");
     }
 
-    metricEvents.updateAxisPointer({ axesInfo: [{ value: 1 }] });
+    metricEvents.updateAxisPointer({
+      axesInfo: [{ value: Date.parse(mockStreamPoints[1]?.recordedAt ?? "") }],
+    });
 
     expect(leafletMocks.circleMarker).toHaveBeenCalledTimes(2);
   });
@@ -1758,7 +1769,7 @@ describe("ActivityDetailPage", () => {
       expect(typeof formatter).toBe("function");
       if (typeof formatter !== "function") throw new Error("Expected timestamp formatter");
 
-      expect(formatter({ value: mockStreamPoints[0]?.recordedAt })).toBe(
+      expect(formatter({ value: Date.parse(mockStreamPoints[0]?.recordedAt ?? "") })).toBe(
         formatDateTime("2026-03-18T07:00:00Z"),
       );
     });
@@ -1785,7 +1796,7 @@ describe("ActivityDetailPage", () => {
       const labelFormatter = slider?.labelFormatter;
       expect(typeof labelFormatter).toBe("function");
       if (typeof labelFormatter === "function") {
-        expect(labelFormatter(0, mockStreamPoints[0]?.recordedAt)).toBe(
+        expect(labelFormatter(Date.parse(mockStreamPoints[0]?.recordedAt ?? ""))).toBe(
           formatTimeOnly(mockStreamPoints[0]?.recordedAt ?? ""),
         );
       }
