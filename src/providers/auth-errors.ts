@@ -76,15 +76,6 @@ export class ProviderInvalidCredentialsError extends ProviderAuthError {
   }
 }
 
-export class ProviderVerificationRequiredError extends Error {
-  constructor(providerName: string) {
-    super(
-      `${providerName} requires human verification and is blocking this connection. Dofek cannot complete this check automatically. Contact support for help connecting.`,
-    );
-    this.name = new.target.name;
-  }
-}
-
 export class ProviderStoredIdentityMissingError extends ProviderAuthError {
   constructor(providerName: string, identityName: string, options?: ErrorOptions) {
     super("authentication_failed", `${providerName} ${identityName} not found.`, options);

@@ -1,7 +1,6 @@
 # Providers
 
 <!-- cspell:ignore Ziva -->
-<!-- cspell:words alltrails -->
 
 This directory contains implementations for various data providers (fitness trackers, smart scales, nutrition apps).
 
@@ -48,7 +47,7 @@ upload need not contain the complete remote logbook; see the
 
 ## Supported Providers
 
-- **API/credential/OAuth sync providers**: AllTrails, Amazfit/Zepp, BodySpec, Concept2, Cycling Analytics, Eight Sleep, FatSecret, Garmin, Kaya, Mountain Project, OpenBeta, Oura, Peloton, Polar, Ride with GPS, Strava, theCrag, TrainerRoad, Ultrahuman, VeloHero, Wahoo, Wger, WHOOP, Withings, Xert, Ziva, Zwift. See the [registry](registry.ts).
+- **API/credential/OAuth sync providers**: Amazfit/Zepp, BodySpec, Concept2, Cycling Analytics, Eight Sleep, FatSecret, Garmin, Kaya, Mountain Project, OpenBeta, Oura, Peloton, Polar, Ride with GPS, Strava, theCrag, TrainerRoad, Ultrahuman, VeloHero, Wahoo, Wger, WHOOP, Withings, Xert, Ziva, Zwift. See the [registry](registry.ts).
 - **Import-only providers**: Cronometer CSV, FIT files, Garmin account exports, Kaya CSV (`kaya-export`), Strong CSV, and Zepp OS App exports. FIT imports use Garmin's open FIT protocol and SDK-compatible files ([FIT SDK](https://developer.garmin.com/fit/overview/)).
 - **Upload/native-mobile data sources**: Apple Health import and WHOOP BLE capture live outside this registry path in the web/mobile upload and native module flows.
 
@@ -79,25 +78,6 @@ operator smoke command are documented in the
 [Ziva provider guide](../../docs/ziva.md). See Ziva's
 [official MCP reference](https://ziva.fit/mcp-docs) for the public endpoint and
 tool catalog.
-
-## AllTrails
-
-AllTrails uses per-user email/password connection through the shared web and
-mobile forms, with encrypted identity access/refresh tokens. Configure
-`ALLTRAILS_API_KEY` and `ALLTRAILS_CLIENT_ID` in Infisical for the native
-application identity; neither variable contains an individual user's login.
-The [provider](alltrails.ts) uses the historical native identity contract and
-recording API described in the [source audit](../../docs/alltrails.md).
-
-Sync imports recorded activities and raw timestamped GPS/elevation from the
-native six-axis polyline format. The October 21 production login attempts were
-blocked by human verification; successful account sync remains unverified.
-Verification blocks return a specific connection error to both clients and
-remain observable in Sentry. See the [production evidence and validation limits](../../docs/alltrails.md#production-verification-block-2026-10-21)
-before treating this source-backed integration as a verified current API.
-Disconnect AllTrails before deleting a Dofek account; the
-[erasure prerequisite](../account-erasure/remote-snapshot.ts) requires this
-because Dofek has no verified AllTrails session-revocation operation.
 
 ## Amazfit/Zepp
 
