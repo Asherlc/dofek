@@ -1,4 +1,4 @@
-import { formatDateTime } from "@dofek/format/format";
+import { formatDateTime, formatNumber } from "@dofek/format/format";
 import { activityMetricColors } from "@dofek/scoring/colors";
 import { useState } from "react";
 import { Modal, Pressable, StyleSheet, Text, View } from "react-native";
@@ -57,7 +57,7 @@ interface ChartProps {
 function accessibleRows(data: ChartProps["data"], unit: string) {
   return data.map((datum, index) => ({
     label: `Sample ${index + 1} · ${formatDateTime(datum.recordedAt)}`,
-    value: datum.value === null ? "No value" : `${datum.value} ${unit}`,
+    value: datum.value === null ? "No value" : `${formatNumber(datum.value, 0)} ${unit}`,
   }));
 }
 

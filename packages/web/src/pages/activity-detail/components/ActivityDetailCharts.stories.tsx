@@ -71,6 +71,14 @@ type Story = StoryObj<typeof meta>;
 export const LocalizedTooltip: Story = {};
 export const Loading: Story = { args: { loading: true } };
 export const Empty: Story = { args: { points: [] } };
+export const FractionalReadings: Story = {
+  args: {
+    points: meta.args.points.map((point, index) => ({
+      ...point,
+      heartRate: [43.383949279785156, 76.92308044433594, 69.5][index] ?? null,
+    })),
+  },
+};
 export const SparseReadings: Story = {
   args: {
     points: [null, 130, null, 145, null, 155, null].map((heartRate, index) => ({
