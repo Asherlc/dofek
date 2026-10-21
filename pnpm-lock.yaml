@@ -351,8 +351,8 @@ importers:
         specifier: 12.2.0
         version: 12.2.0(supports-color@11.0.0)
       tsx:
-        specifier: 4.23.1
-        version: 4.23.1
+        specifier: 4.23.15
+        version: 4.23.15
       typescript:
         specifier: 6.0.3
         version: 6.0.3
@@ -457,7 +457,7 @@ importers:
         version: 6.0.3
       vite:
         specifier: 8.1.6
-        version: 8.1.6(@types/node@26.1.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.1)(yaml@2.9.0)
+        version: 8.1.6(@types/node@26.1.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15)(yaml@2.9.0)
 
   packages/mcp-contracts:
     dependencies:
@@ -704,7 +704,7 @@ importers:
         version: 6.0.3
       vite:
         specifier: 8.1.6
-        version: 8.1.6(@types/node@26.1.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.1)(yaml@2.9.0)
+        version: 8.1.6(@types/node@26.1.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15)(yaml@2.9.0)
 
   packages/mobile/modules/whoop-ble:
     devDependencies:
@@ -912,8 +912,8 @@ importers:
         specifier: 1.5.6
         version: 1.5.6
       tsx:
-        specifier: 4.23.1
-        version: 4.23.1
+        specifier: 4.23.15
+        version: 4.23.15
       typescript:
         specifier: 6.0.3
         version: 6.0.3
@@ -1127,7 +1127,7 @@ importers:
         version: 6.0.3
       vite:
         specifier: 8.1.6
-        version: 8.1.6(@types/node@26.1.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.1)(yaml@2.9.0)
+        version: 8.1.6(@types/node@26.1.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15)(yaml@2.9.0)
       vite-plugin-pwa:
         specifier: 2.0.0
         version: 2.0.0(supports-color@11.0.0)(vite@8.1.6)(workbox-build@7.4.1)(workbox-window@7.4.1)
@@ -15970,8 +15970,8 @@ packages:
     resolution: {integrity: sha512-LxhtAkPDTkVCMQjt2h6eBVY28KCjikZqZfMcC15YBeNjkgUpdCfBu5HoiOTDu86v6smE8yOjyEktJ8hlbANHQA==}
     engines: {node: '>=0.6.x'}
 
-  tsx@4.23.1:
-    resolution: {integrity: sha512-GQHnkIfxyx1wYCOS/wonik5MVRZU9hi1TEZmzGZSCJB1y9YgoZ8H6itNE/u4suE+yLmOzuE4E5S4TZ/ZX2wcWQ==}
+  tsx@4.23.15:
+    resolution: {integrity: sha512-Yiex1Ovn8z2xPpOWckIiysV1SSyRMY9BkLF++q0yKiDxCqRhosKfMg3janKkiLBwZ5c/YryloKwGZcrEmtwxKw==}
     engines: {node: '>=18.0.0'}
     hasBin: true
 
@@ -19977,7 +19977,7 @@ snapshots:
     dependencies:
       glob: 13.0.6
       react-docgen-typescript: 2.4.0(typescript@6.0.3)
-      vite: 8.1.6(@types/node@26.1.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.1)(yaml@2.9.0)
+      vite: 8.1.6(@types/node@26.1.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15)(yaml@2.9.0)
     optionalDependencies:
       typescript: 6.0.3
 
@@ -25179,7 +25179,7 @@ snapshots:
     dependencies:
       storybook: 10.6.0(@types/react@19.3.0)(prettier@3.9.5)(react-dom@19.3.0)(react@19.3.0)
       ts-dedent: 2.3.0
-      vite: 8.1.6(@types/node@26.1.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.1)(yaml@2.9.0)
+      vite: 8.1.6(@types/node@26.1.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15)(yaml@2.9.0)
 
   '@storybook/global@5.0.0': {}
 
@@ -25264,7 +25264,7 @@ snapshots:
       react-native: 0.88.0(@babel/core@7.29.7)(@react-native/metro-config@0.88.0)(@types/react@19.3.0)(react@19.3.0)(supports-color@11.0.0)
       react-native-web: 0.21.4(encoding@0.1.13)(react-dom@19.3.0)(react@19.3.0)
       storybook: 10.6.0(@types/react@19.3.0)(prettier@3.9.5)(react-dom@19.3.0)(react@19.3.0)
-      vite: 8.1.6(@types/node@26.1.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.1)(yaml@2.9.0)
+      vite: 8.1.6(@types/node@26.1.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15)(yaml@2.9.0)
       vite-plugin-rnw: 0.0.11(react-native-web@0.21.4)(supports-color@11.0.0)(typescript@6.0.3)(vite@8.1.6)
       vite-tsconfig-paths: 6.1.1(supports-color@11.0.0)(typescript@6.0.3)(vite@8.1.6)
     transitivePeerDependencies:
@@ -25328,7 +25328,7 @@ snapshots:
       resolve: 1.22.12
       storybook: 10.6.0(@types/react@19.3.0)(prettier@3.9.5)(react-dom@19.3.0)(react@19.3.0)
       tsconfig-paths: 4.2.0
-      vite: 8.1.6(@types/node@26.1.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.1)(yaml@2.9.0)
+      vite: 8.1.6(@types/node@26.1.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15)(yaml@2.9.0)
     optionalDependencies:
       typescript: 6.0.3
     transitivePeerDependencies:
@@ -25494,7 +25494,7 @@ snapshots:
       '@tailwindcss/node': 4.3.3
       '@tailwindcss/oxide': 4.3.3
       tailwindcss: 4.3.3
-      vite: 8.1.6(@types/node@26.1.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.1)(yaml@2.9.0)
+      vite: 8.1.6(@types/node@26.1.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15)(yaml@2.9.0)
 
   '@tanstack/history@1.162.0': {}
 
@@ -25618,7 +25618,7 @@ snapshots:
       zod: 4.6.7
     optionalDependencies:
       '@tanstack/react-router': 1.170.17(react-dom@19.3.0)(react@19.3.0)
-      vite: 8.1.6(@types/node@26.1.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.1)(yaml@2.9.0)
+      vite: 8.1.6(@types/node@26.1.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15)(yaml@2.9.0)
     transitivePeerDependencies:
       - '@farmfe/core'
       - '@rspack/core'
@@ -26051,14 +26051,14 @@ snapshots:
       '@rolldown/pluginutils': 1.0.0-rc.3
       '@types/babel__core': 7.20.5
       react-refresh: 0.18.0
-      vite: 8.1.6(@types/node@26.1.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.1)(yaml@2.9.0)
+      vite: 8.1.6(@types/node@26.1.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15)(yaml@2.9.0)
     transitivePeerDependencies:
       - supports-color
 
   '@vitejs/plugin-react@6.1.0(babel-plugin-react-compiler@1.0.0)(vite@8.1.6)':
     dependencies:
       '@rolldown/pluginutils': 1.0.1
-      vite: 8.1.6(@types/node@26.1.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.1)(yaml@2.9.0)
+      vite: 8.1.6(@types/node@26.1.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15)(yaml@2.9.0)
     optionalDependencies:
       babel-plugin-react-compiler: 1.0.0
 
@@ -26100,7 +26100,7 @@ snapshots:
       magic-string: 0.30.21
     optionalDependencies:
       msw: 2.15.0(@types/node@26.1.2)(typescript@6.0.3)
-      vite: 8.1.6(@types/node@26.1.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.1)(yaml@2.9.0)
+      vite: 8.1.6(@types/node@26.1.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15)(yaml@2.9.0)
 
   '@vitest/pretty-format@3.2.4':
     dependencies:
@@ -27922,7 +27922,7 @@ snapshots:
       '@drizzle-team/brocli': 0.10.2
       '@esbuild-kit/esm-loader': 2.6.5
       esbuild: 0.28.1
-      tsx: 4.23.1
+      tsx: 4.23.15
 
   drizzle-orm@0.45.2(@opentelemetry/api@1.9.1)(@types/pg@8.23.1)(gel@2.2.0)(pg@8.23.1)(postgres@3.4.8):
     optionalDependencies:
@@ -34224,7 +34224,7 @@ snapshots:
 
   tsscmp@1.0.6: {}
 
-  tsx@4.23.1:
+  tsx@4.23.15:
     dependencies:
       esbuild: 0.28.1
     optionalDependencies:
@@ -34416,7 +34416,7 @@ snapshots:
       esbuild: 0.28.1
       rolldown: 1.1.5
       rollup: 4.62.2
-      vite: 8.1.6(@types/node@26.1.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.1)(yaml@2.9.0)
+      vite: 8.1.6(@types/node@26.1.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15)(yaml@2.9.0)
 
   until-async@3.0.2: {}
 
@@ -34554,7 +34554,7 @@ snapshots:
       debug: 4.4.3(supports-color@11.0.0)
       pretty-bytes: 6.1.1
       tinyglobby: 0.2.17
-      vite: 8.1.6(@types/node@26.1.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.1)(yaml@2.9.0)
+      vite: 8.1.6(@types/node@26.1.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15)(yaml@2.9.0)
       workbox-build: 7.4.1(@types/babel__core@7.20.5)(supports-color@11.0.0)
       workbox-window: 7.4.1
     transitivePeerDependencies:
@@ -34568,7 +34568,7 @@ snapshots:
       magic-string: 0.30.21
       react-native-web: 0.21.4(encoding@0.1.13)(react-dom@19.3.0)(react@19.3.0)
       typescript: 6.0.3
-      vite: 8.1.6(@types/node@26.1.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.1)(yaml@2.9.0)
+      vite: 8.1.6(@types/node@26.1.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15)(yaml@2.9.0)
       vite-plugin-commonjs: 0.10.4
     transitivePeerDependencies:
       - supports-color
@@ -34578,12 +34578,12 @@ snapshots:
       debug: 4.4.3(supports-color@11.0.0)
       globrex: 0.1.2
       tsconfck: 3.1.6(typescript@6.0.3)
-      vite: 8.1.6(@types/node@26.1.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.1)(yaml@2.9.0)
+      vite: 8.1.6(@types/node@26.1.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15)(yaml@2.9.0)
     transitivePeerDependencies:
       - supports-color
       - typescript
 
-  vite@8.1.6(@types/node@26.1.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.1)(yaml@2.9.0):
+  vite@8.1.6(@types/node@26.1.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15)(yaml@2.9.0):
     dependencies:
       lightningcss: 1.33.0
       picomatch: 4.0.7
@@ -34596,7 +34596,7 @@ snapshots:
       fsevents: 2.3.3
       jiti: 2.7.0
       terser: 5.51.2
-      tsx: 4.23.1
+      tsx: 4.23.15
       yaml: 2.9.0
 
   vitest@4.1.11(@opentelemetry/api@1.9.1)(@types/node@26.1.2)(@vitest/coverage-v8@4.1.11)(jsdom@30.1.2)(msw@2.15.0)(vite@8.1.6):
@@ -34619,7 +34619,7 @@ snapshots:
       tinyexec: 1.3.0
       tinyglobby: 0.2.17
       tinyrainbow: 3.1.1
-      vite: 8.1.6(@types/node@26.1.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.1)(yaml@2.9.0)
+      vite: 8.1.6(@types/node@26.1.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15)(yaml@2.9.0)
       why-is-node-running: 2.3.0
     optionalDependencies:
       '@opentelemetry/api': 1.9.1

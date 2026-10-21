@@ -44,6 +44,7 @@ export function renderDbtModelSql(
     },
   );
   const withoutWrappers = expandedSql
+    .replace(/(\{\{\s*ref\([^)]*\))\.render\(\)(\s*\}\})/g, "$1$2")
     .replace(/\{%\s*set[\s\S]*?%\}\s*/g, "")
     .replace(/\{\{\s*config\([\s\S]*?\)\s*\}\}\s*/g, "")
     .trimStart();

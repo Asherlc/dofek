@@ -1,10 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { buildSensorScalarSampleBackfillSql } from "../../../../src/db/clickhouse-deduped-sensor.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import {
   createClickHouseTestActivitySensorStore,
   executeClickHouseTestCommand,
+  insertClickHouseMetricStreamRows,
 } from "../routers/clickhouse-integration-test-helpers.ts";
 import {
   getActivityMetricSources,
@@ -187,5 +189,71 @@ describe("activity metric source selection", () => {
     expect(points).toHaveLength(10);
     expect(points[0]?.power).toBe(0);
     expect(points.at(-1)?.power).toBe(29);
+  });
+
+  it("offers retained WHOOP Bluetooth intervals as a selectable heart-rate stream with recording gaps", async () => {
+    const intervalWindow = {
+      ...window,
+      startedAt: "2026-10-20T16:00:00.000Z",
+      endedAt: "2026-10-20T16:02:00.000Z",
+    };
+    await insertClickHouseMetricStreamRows(context, [
+      {
+        userId,
+        providerId: "whoop_ble",
+        deviceId: "strap-a",
+        sourceType: "ble",
+        channel: "rr_interval_ms",
+        scalar: 750,
+        recordedAt: "2026-10-20T16:00:00.000Z",
+      },
+      {
+        userId,
+        providerId: "whoop_ble",
+        deviceId: "strap-a",
+        sourceType: "ble",
+        channel: "rr_interval_ms",
+        scalar: 500,
+        recordedAt: "2026-10-20T16:01:00.000Z",
+      },
+    ]);
+    await executeClickHouseTestCommand(context, buildSensorScalarSampleBackfillSql());
+    const metrics = await getActivityMetricSources(store, intervalWindow);
+    const heartRate = metrics.find((metric) => metric.key === "heartRate");
+    expect(heartRate?.sources).toEqual([
+      { id: '["whoop_ble","strap-a"]', label: expect.stringContaining("WHOOP") },
+    ]);
+    if (!heartRate) throw new Error("Expected a derived heart-rate source");
+    const points = await store.getStream(intervalWindow, 500, {
+      heartRate: heartRate.defaultSourceId,
+    });
+    expect(points.map((point) => [point.recorded_at, point.heart_rate])).toEqual([
+      ["2026-10-20T16:00:00.000Z", 80],
+      ["2026-10-20T16:01:00.000Z", 120],
+    ]);
+    const zones = await getActivitySourceHrZones(store, intervalWindow, heartRate.defaultSourceId);
+    expect(zones.find((zone) => zone.zone === 0)?.seconds).toBe(2);
+  });
+
+  it("prefers reported BPM to estimated BPM from the same device in selected charts and zones", async () => {
+    const overlapWindow = {
+      ...window,
+      startedAt: "2026-10-20T17:00:00.000Z",
+      endedAt: "2026-10-20T17:01:00.000Z",
+    };
+    await executeClickHouseTestCommand(
+      context,
+      `INSERT INTO analytics.sensor_scalar_sample
+      (id, user_id, recorded_at, recorded_date, channel, provider_id, device_id, scalar,
+       measurement_kind, provider_priority, _peerdb_is_deleted, _peerdb_version) VALUES
+      ('00000000-0000-0000-0000-000000000001', '${userId}', '2026-10-20 17:00:00', '2026-10-20', 'heart_rate', 'whoop_ble', 'strap-b', 180, 'estimated', 1, 0, 1),
+      ('00000000-0000-0000-0000-000000000099', '${userId}', '2026-10-20 17:00:00', '2026-10-20', 'heart_rate', 'whoop_ble', 'strap-b', 150, 'unknown', 1, 0, 1)`,
+    );
+    const sourceId = '["whoop_ble","strap-b"]';
+    const points = await store.getStream(overlapWindow, 500, { heartRate: sourceId });
+    expect(points.map((point) => point.heart_rate)).toEqual([150]);
+    const zones = await getActivitySourceHrZones(store, overlapWindow, sourceId);
+    expect(zones.find((zone) => zone.zone === 2)?.seconds).toBe(1);
+    expect(zones.find((zone) => zone.zone === 4)?.seconds).toBe(0);
   });
 });
