@@ -8,7 +8,6 @@ import Svg, {
   Line,
   LinearGradient,
   Path,
-  Polyline,
   Stop,
   Text as SvgText,
 } from "react-native-svg";
@@ -84,7 +83,7 @@ export function LineChart({
     .map((d, i) => (d.value != null ? { index: i, value: d.value } : null))
     .filter((d): d is { index: number; value: number } => d !== null);
 
-  if (values.length < 2) return null;
+  if (values.length === 0) return null;
 
   const plotHeight = CHART_HEIGHT - CHART_PADDING.top - CHART_PADDING.bottom;
   const minVal = Math.min(...values.map((v) => v.value));
@@ -97,8 +96,11 @@ export function LineChart({
   const toY = (value: number) =>
     CHART_PADDING.top + plotHeight - ((value - minVal) / range) * plotHeight;
 
-  const chartPoints = values
-    .map((v) => `${toX(v.index).toFixed(1)},${toY(v.value).toFixed(1)}`)
+  const chartPath = values
+    .map(
+      (sample) =>
+        `${data[sample.index - 1]?.value == null ? "M" : "L"}${toX(sample.index).toFixed(1)},${toY(sample.value).toFixed(1)}`,
+    )
     .join(" ");
 
   const yTicks = Array.from({ length: 5 }, (_, i) => {
@@ -150,14 +152,28 @@ export function LineChart({
             >
               {unit}
             </SvgText>
-            <Polyline
-              points={chartPoints}
+            <Path
+              d={chartPath}
               fill="none"
               stroke={color}
               strokeWidth={1.5}
               strokeLinecap="round"
               strokeLinejoin="round"
             />
+            {values
+              .filter(
+                (sample) =>
+                  data[sample.index - 1]?.value == null && data[sample.index + 1]?.value == null,
+              )
+              .map((sample) => (
+                <Circle
+                  key={sample.index}
+                  cx={toX(sample.index)}
+                  cy={toY(sample.value)}
+                  r={3}
+                  fill={color}
+                />
+              ))}
             {touchIndex != null && (
               <Line
                 x1={toX(touchIndex)}
