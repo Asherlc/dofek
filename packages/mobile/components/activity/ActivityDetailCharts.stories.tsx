@@ -1,5 +1,6 @@
 import { UnitConverter } from "@dofek/format/units";
 import { activityMetricColors } from "@dofek/scoring/colors";
+import { activityChartTimingPoints } from "@dofek/training/fixtures/activity-chart-timing";
 import {
   type ActivityPreviewMetric,
   activityMetricSourcePreview,
@@ -54,6 +55,30 @@ export const MissingSamples: Story = {
       value: index === 1 ? null : sample.value,
     })),
   },
+};
+export const IndependentMetricTimelines: Story = {
+  render: () => (
+    <View style={{ gap: 16 }}>
+      <LineChart
+        data={activityChartTimingPoints.map((point) => ({
+          recordedAt: point.recordedAt,
+          value: point.heartRate,
+        }))}
+        color={CHART_COLORS.heartRate}
+        label="Heart Rate"
+        unit="bpm"
+      />
+      <LineChart
+        data={activityChartTimingPoints.map((point) => ({
+          recordedAt: point.recordedAt,
+          value: point.power,
+        }))}
+        color={CHART_COLORS.power}
+        label="Power"
+        unit="W"
+      />
+    </View>
+  ),
 };
 export const Area: Story = { render: (args) => <AreaChart {...args} /> };
 export const HighElevation: Story = {

@@ -1,6 +1,10 @@
-import { formatDateTime } from "@dofek/format/format";
+import { formatDateTime, formatTimeOnly } from "@dofek/format/format";
 import { activityMetricColors } from "@dofek/scoring/colors";
-import { useState } from "react";
+import {
+  type ActivityChartSeries,
+  activityChartSeries,
+} from "@dofek/training/activity-chart-series";
+import { useMemo, useState } from "react";
 import { Modal, Pressable, StyleSheet, Text, View } from "react-native";
 import Svg, {
   Circle,
@@ -54,11 +58,34 @@ interface ChartProps {
   onScrubEnd?: () => void;
 }
 
-function accessibleRows(data: ChartProps["data"], unit: string) {
-  return data.map((datum, index) => ({
-    label: `Sample ${index + 1} · ${formatDateTime(datum.recordedAt)}`,
-    value: datum.value === null ? "No value" : `${datum.value} ${unit}`,
+function accessibleRows(series: ActivityChartSeries, unit: string) {
+  return series.samples.map((sample) => ({
+    label: `Sample ${sample.index + 1} · ${formatDateTime(new Date(sample.timestamp))}`,
+    value: `${sample.value} ${unit}`,
   }));
+}
+
+function TimeAxis({ series }: { series: ActivityChartSeries }) {
+  return (
+    <>
+      {[0, 0.5, 1].map((position) => (
+        <SvgText
+          key={position}
+          x={
+            CHART_PADDING.left + position * (CHART_WIDTH - CHART_PADDING.left - CHART_PADDING.right)
+          }
+          y={CHART_HEIGHT - 6}
+          fill={colors.textTertiary}
+          fontSize={9}
+          textAnchor={position === 0 ? "start" : position === 1 ? "end" : "middle"}
+        >
+          {formatTimeOnly(
+            new Date(series.startedAt + position * (series.endedAt - series.startedAt)),
+          )}
+        </SvgText>
+      ))}
+    </>
+  );
 }
 
 export function LineChart({
@@ -70,18 +97,17 @@ export function LineChart({
   onScrubStart,
   onScrubEnd,
 }: ChartProps) {
+  const series = useMemo(() => activityChartSeries(data), [data]);
   const plotWidth = CHART_WIDTH - CHART_PADDING.left - CHART_PADDING.right;
   const { touchIndex, panResponder } = useChartScrub({
     plotWidth,
-    totalPoints: data.length,
+    series,
     onHoverIndex,
     onScrubStart,
     onScrubEnd,
   });
 
-  const values = data
-    .map((d, i) => (d.value != null ? { index: i, value: d.value } : null))
-    .filter((d): d is { index: number; value: number } => d !== null);
+  const values = series.samples;
 
   if (values.length === 0) return null;
 
@@ -89,17 +115,14 @@ export function LineChart({
   const minVal = Math.min(...values.map((v) => v.value));
   const maxVal = Math.max(...values.map((v) => v.value));
   const range = maxVal - minVal || 1;
-  const totalPoints = data.length;
-
-  const toX = (index: number) =>
-    CHART_PADDING.left + (index / Math.max(totalPoints - 1, 1)) * plotWidth;
+  const toX = (sample: (typeof values)[number]) => CHART_PADDING.left + sample.position * plotWidth;
   const toY = (value: number) =>
     CHART_PADDING.top + plotHeight - ((value - minVal) / range) * plotHeight;
 
   const chartPath = values
     .map(
       (sample) =>
-        `${data[sample.index - 1]?.value == null ? "M" : "L"}${toX(sample.index).toFixed(1)},${toY(sample.value).toFixed(1)}`,
+        `${sample.startsSegment ? "M" : "L"}${toX(sample).toFixed(1)},${toY(sample.value).toFixed(1)}`,
     )
     .join(" ");
 
@@ -113,8 +136,8 @@ export function LineChart({
   return (
     <AccessibleChart
       title={label}
-      summary={`${label} over the activity sample sequence.`}
-      rows={accessibleRows(data, unit)}
+      summary={`${label} over activity time. Dots mark recorded samples; gaps indicate unobserved time.`}
+      rows={accessibleRows(series, unit)}
     >
       <View style={chartStyles.container}>
         <Text style={chartStyles.title}>{label}</Text>
@@ -160,25 +183,23 @@ export function LineChart({
               strokeLinecap="round"
               strokeLinejoin="round"
             />
+            <TimeAxis series={series} />
             {values
-              .filter(
-                (sample) =>
-                  data[sample.index - 1]?.value == null && data[sample.index + 1]?.value == null,
-              )
+              .filter((sample) => sample.showMarker)
               .map((sample) => (
                 <Circle
                   key={sample.index}
-                  cx={toX(sample.index)}
+                  cx={toX(sample)}
                   cy={toY(sample.value)}
                   r={3}
                   fill={color}
                 />
               ))}
-            {touchIndex != null && (
+            {touchedValue != null && (
               <Line
-                x1={toX(touchIndex)}
+                x1={toX(touchedValue)}
                 y1={CHART_PADDING.top}
-                x2={toX(touchIndex)}
+                x2={toX(touchedValue)}
                 y2={CHART_PADDING.top + plotHeight}
                 stroke={colors.textTertiary}
                 strokeWidth={1}
@@ -187,7 +208,7 @@ export function LineChart({
             )}
             {touchedValue != null && (
               <Circle
-                cx={toX(touchedValue.index)}
+                cx={toX(touchedValue)}
                 cy={toY(touchedValue.value)}
                 r={4}
                 fill={color}
@@ -197,6 +218,9 @@ export function LineChart({
             )}
           </Svg>
         </View>
+        <Text style={{ color: colors.textTertiary, fontSize: 11 }}>
+          Dots mark recorded samples; gaps indicate unobserved time.
+        </Text>
       </View>
     </AccessibleChart>
   );
@@ -211,48 +235,47 @@ export function AreaChart({
   onScrubStart,
   onScrubEnd,
 }: ChartProps) {
+  const series = useMemo(() => activityChartSeries(data), [data]);
   const plotWidth = CHART_WIDTH - CHART_PADDING.left - CHART_PADDING.right;
   const { touchIndex, panResponder } = useChartScrub({
     plotWidth,
-    totalPoints: data.length,
+    series,
     onHoverIndex,
     onScrubStart,
     onScrubEnd,
   });
 
-  const values = data
-    .map((d, i) => (d.value != null ? { index: i, value: d.value } : null))
-    .filter((d): d is { index: number; value: number } => d !== null);
+  const values = series.samples;
 
-  if (values.length < 2) return null;
+  if (values.length === 0) return null;
 
   const plotHeight = CHART_HEIGHT - CHART_PADDING.top - CHART_PADDING.bottom;
   const minVal = Math.min(...values.map((v) => v.value));
   const maxVal = Math.max(...values.map((v) => v.value));
   const range = maxVal - minVal || 1;
-  const totalPoints = data.length;
-
-  const toX = (index: number) =>
-    CHART_PADDING.left + (index / Math.max(totalPoints - 1, 1)) * plotWidth;
+  const toX = (sample: (typeof values)[number]) => CHART_PADDING.left + sample.position * plotWidth;
   const toY = (value: number) =>
     CHART_PADDING.top + plotHeight - ((value - minVal) / range) * plotHeight;
 
   const baselineY = CHART_PADDING.top + plotHeight;
 
-  const linePoints = values.map((v) => ({
-    x: toX(v.index),
-    y: toY(v.value),
-  }));
-  const firstPoint = linePoints[0];
-  const lastPoint = linePoints[linePoints.length - 1];
-
-  if (!firstPoint || !lastPoint) return null;
-
-  const linePath = linePoints
-    .map((p, i) => `${i === 0 ? "M" : "L"}${p.x.toFixed(1)},${p.y.toFixed(1)}`)
+  const linePath = values
+    .map(
+      (sample) =>
+        `${sample.startsSegment ? "M" : "L"}${toX(sample).toFixed(1)},${toY(sample.value).toFixed(1)}`,
+    )
     .join(" ");
-
-  const areaPath = `${linePath} L${lastPoint.x.toFixed(1)},${baselineY} L${firstPoint.x.toFixed(1)},${baselineY} Z`;
+  let segmentStartX = 0;
+  const areaPath = values
+    .map((sample, index) => {
+      const sampleX = toX(sample).toFixed(1);
+      if (sample.startsSegment) segmentStartX = toX(sample);
+      const line = `${sample.startsSegment ? "M" : "L"}${sampleX},${toY(sample.value).toFixed(1)}`;
+      return index === values.length - 1 || values[index + 1]?.startsSegment
+        ? `${line} L${sampleX},${baselineY} L${segmentStartX.toFixed(1)},${baselineY} Z`
+        : line;
+    })
+    .join(" ");
 
   const yTicks = Array.from({ length: 5 }, (_, i) => {
     const value = minVal + (range * i) / 4;
@@ -264,8 +287,8 @@ export function AreaChart({
   return (
     <AccessibleChart
       title={label}
-      summary={`${label} over the activity sample sequence.`}
-      rows={accessibleRows(data, unit)}
+      summary={`${label} over activity time. Dots mark recorded samples; gaps indicate unobserved time.`}
+      rows={accessibleRows(series, unit)}
     >
       <View style={chartStyles.container}>
         <Text style={chartStyles.title}>{label}</Text>
@@ -318,11 +341,23 @@ export function AreaChart({
               strokeLinecap="round"
               strokeLinejoin="round"
             />
-            {touchIndex != null && (
+            <TimeAxis series={series} />
+            {values
+              .filter((sample) => sample.showMarker)
+              .map((sample) => (
+                <Circle
+                  key={sample.index}
+                  cx={toX(sample)}
+                  cy={toY(sample.value)}
+                  r={3}
+                  fill={color}
+                />
+              ))}
+            {touchedValue != null && (
               <Line
-                x1={toX(touchIndex)}
+                x1={toX(touchedValue)}
                 y1={CHART_PADDING.top}
-                x2={toX(touchIndex)}
+                x2={toX(touchedValue)}
                 y2={CHART_PADDING.top + plotHeight}
                 stroke={colors.textTertiary}
                 strokeWidth={1}
@@ -331,7 +366,7 @@ export function AreaChart({
             )}
             {touchedValue != null && (
               <Circle
-                cx={toX(touchedValue.index)}
+                cx={toX(touchedValue)}
                 cy={toY(touchedValue.value)}
                 r={4}
                 fill={color}
@@ -341,6 +376,9 @@ export function AreaChart({
             )}
           </Svg>
         </View>
+        <Text style={{ color: colors.textTertiary, fontSize: 11 }}>
+          Dots mark recorded samples; gaps indicate unobserved time.
+        </Text>
       </View>
     </AccessibleChart>
   );
