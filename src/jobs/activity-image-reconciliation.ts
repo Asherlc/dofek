@@ -1,14 +1,14 @@
 import { DeleteObjectCommand, ListObjectsV2Command } from "@aws-sdk/client-s3";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import type { Database } from "../db/index.ts";
+import type { SyncDatabase } from "../db/index.ts";
 import { executeWithSchema } from "../db/typed-sql.ts";
 import { createR2Client, requiredR2EnvironmentVariable } from "../r2-storage.ts";
 import type { AccountErasureWorkLockPool } from "./account-erasure-work-guard.ts";
 import { runQueuedUserWorkUnlessAccountErasing } from "./account-erasure-work-guard.ts";
 /** One bounded bucket page per maintenance pass, including upload-before-ack orphans. */
 export function createActivityImageReconciler(
-  db: Database,
+  db: SyncDatabase,
   pool: AccountErasureWorkLockPool,
 ): () => Promise<void> {
   let cursor: string | undefined;

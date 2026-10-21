@@ -5,7 +5,7 @@ import {
   failActivityImageWork,
   loadActivityImageWork,
 } from "../db/activity-images.ts";
-import type { Database } from "../db/index.ts";
+import type { SyncDatabase } from "../db/index.ts";
 import type { ActivityImageJobDependencies } from "../jobs/process-activity-image-job.ts";
 import { SyncRun } from "../providers/sync-run.ts";
 import { SyncWindow } from "../providers/sync-window.ts";
@@ -14,7 +14,7 @@ import { activityImageBytes } from "./metrics.ts";
 import { refreshActivityImage } from "./providers.ts";
 import { activityImageObjectKey, storeActivityImage } from "./storage.ts";
 import { selectImageVariant } from "./types.ts";
-export function createActivityImageJobDependencies(db: Database): ActivityImageJobDependencies {
+export function createActivityImageJobDependencies(db: SyncDatabase): ActivityImageJobDependencies {
   return {
     load: (id, userId) => loadActivityImageWork(db, id, userId),
     claim: (work) => claimActivityImageWork(db, work),

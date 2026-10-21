@@ -236,3 +236,13 @@ identity 84%, storage 94.87%, outbox 93.94%, backfill 90.32%, image repository
 86.67%, Zwift adapter 88.64%, and client/router/startup callback 100%. Mutation
 runs use CI's configuration with only the local Python virtual environment
 excluded from sandbox copying. No mutation threshold or source exclusion changed.
+
+Patch-coverage follow-up: Codecov's unit report identified acquisition wiring and
+orphan reconciliation as the largest remaining changed-line gaps. Ten added
+behavioral tests cover all 43 executable lines and all 21 branches locally,
+including retired work, failed uploads, owner fencing, active-upload protection,
+object references, listing bounds, and client cleanup. Acquisition mutation score
+is 100%; reconciliation is 84.09%. Narrowed both factories to their actual
+SyncDatabase dependency without changing runtime behavior. Root/server/web
+TypeScript checks, sandbox lint, Knip, and spelling pass. No coverage target or
+exclusion changed.
