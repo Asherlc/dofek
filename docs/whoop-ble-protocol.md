@@ -200,14 +200,20 @@ The strap continuously streams compact 0x28 packets at ~1 Hz, even outside sync 
 | 2-5 | 4 | Timestamp (u32 LE) | Unix epoch seconds. **Different offset from other packet types** (which use offset 7). |
 | 6-7 | 2 | Sub-sequence / flags | Varies per session |
 | **8** | **1** | **Heart Rate (bpm)** | Confirmed 60-62 bpm in resting capture. 0 when strap has no reading. |
-| **9** | **1** | **Valid flag** | `0x01` = valid HR + R-R reading, `0x00` = no valid reading |
-| **10-11** | **2** | **R-R interval (u16 LE, ms)** | Beat-to-beat timing. ~900-1050 ms at resting HR. 0 when flag=0. |
+| **9** | **1** | **R-R interval count** | Zero intervals does not invalidate the independently reported BPM. |
+| **10-11** | **2** | **R-R interval (u16 LE, ms)** | Beat-to-beat timing. ~900-1050 ms at resting HR. 0 when count=0. |
 | 12-17 | 6 | Reserved (zeros) | |
 | 18 | 1 | Constant `0x01` | |
 | 19 | 1 | Constant `0x00` | |
 | 20-23 | 4 | CRC32 / checksum | Changes every packet |
 
-**Key finding**: These packets stream continuously — they are the live HR feed that the WHOOP app displays on its home screen. Our iOS app receives them by piggybacking on the WHOOP app's BLE connection.
+The retained [PacketLogger capture](../packages/mobile/modules/whoop-ble/Tests/fixtures/imu-activation-capture.tsv)
+contains 52 compact packets, including 38 with positive BPM and zero intervals.
+WHOOP's [research FAQ, page 4](https://sensorlab.arizona.edu/sites/default/files/2023-05/WHOOP%20Unite%20Research%20FAQs_0.pdf#page=4)
+explains that its heart-rate estimate can remain available without an R-R
+estimate, particularly during movement. The native buffer therefore exports
+`heartRateBpm` independently of `rrIntervalMs`; see the
+[capture regressions](../packages/mobile/modules/whoop-ble/Tests/WhoopBleSampleBufferTimestampTests.swift).
 
 ## Full REALTIME_DATA (0x28, 116-byte payload)
 
@@ -232,15 +238,14 @@ Historical data replayed during sync. Contains the same sensor data as the compa
 |---|---|---|---|
 | 0 | 1 | Packet type (`0x2F`) | |
 | 1 | 1 | Record type (`0x12` = 18) | |
-| 2-3 | 2 | Sequence (u16 LE) | |
-| 4-5 | 2 | Constant (`0x1850`) | |
-| 6-7 | 2 | Sub-sequence (u16 LE) | |
-| 8-13 | 6 | Session/device ID (constant per session) | |
+| 2 | 1 | Record marker | |
+| 3-6 | 4 | Record index (u32 LE) | |
+| 7-10 | 4 | Unix seconds (u32 LE) | |
+| 11-12 | 2 | Fractional clock ticks (u16 LE) | 1/32768 second per tick in the retained capture. |
+| 13 | 1 | Header padding | |
 | **14** | **1** | **Heart Rate (bpm)** | Confirmed from capture (values 60-73) |
-| **15** | **1** | **Flag** | 1=valid HR+RR, 2=valid HR+RR+extra, 0=no reading |
-| **16-17** | **2** | **R-R interval (u16 LE, ms)** | ~900-1060 ms at resting HR |
-| 18-19 | 2 | Extra data | Non-zero when flag=2 |
-| 20-23 | 4 | Reserved | |
+| **15** | **1** | **R-R interval count** | Zero intervals can accompany positive BPM. |
+| **16-23** | **8** | **Up to four R-R words (u16 LE)** | The current parser retains the first interval. |
 | 24-25 | 2 | Metadata flags | |
 | 26-27 | 2 | Changing data | |
 | 28 | 1 | Session marker | |
@@ -251,6 +256,17 @@ Historical data replayed during sync. Contains the same sensor data as the compa
 | **41-44** | **4** | **Quaternion Y (float32 LE)** | |
 | **45-48** | **4** | **Quaternion Z (float32 LE)** | |
 | 49-115 | 67 | Config/metadata | Partially decoded |
+
+For captured R18 and R21 records, combine the timestamp as
+`unix_seconds + fractional_ticks / 32768`, before adding any IMU sample offset.
+In the [capture](../packages/mobile/modules/whoop-ble/Tests/fixtures/imu-activation-capture.tsv),
+the fractional word `14090` means approximately `0.43` seconds. Treating it as
+milliseconds incorrectly adds `14.09` seconds. The
+[buffer regressions](../packages/mobile/modules/whoop-ble/Tests/WhoopBleSampleBufferTimestampTests.swift)
+verify matching captured live/history readings and use the same conversion for
+serialization and account-erasure cutoffs. The independently maintained
+[R21 protocol reference](https://github.com/ryanbr/noop/blob/main/docs/PROTOCOL_SENSORS.md#inertial-record-timestamps)
+documents the same fractional clock scale.
 
 ## Persistent Config Keys (from firmware console logs)
 
@@ -293,14 +309,20 @@ All commands are sent automatically when the iOS app connects to the strap and a
 
 | Data | Packet | Rate | Status |
 |---|---|---|---|
-| Heart Rate (bpm) | 0x28 compact, byte 8 | 1 Hz | Parsed by native code only; **not uploaded or stored** because it is device-derived |
+| Heart Rate (bpm) | 0x28 compact, byte 8; 0x2F R18, byte 14 | 1 Hz | **Stored** as the strap-reported `heart_rate`, independently of interval availability |
 | R-R Interval (ms) | 0x28 compact, bytes 10-11 | 1 Hz | **Stored** in metric stream `rr_interval_ms` channel |
 | Accelerometer (3-axis) | 0x2B R21 | ~100 Hz | **Stored** in `inertial_measurement_unit_sample` |
 | Gyroscope (3-axis) | 0x2B R21 | ~100 Hz | **Stored** in `inertial_measurement_unit_sample` |
 | Orientation quaternion | 0x2F R18, bytes 33-48 | During sync | **Stored** in metric stream `orientation` channel when present |
-| Historical R-R | 0x2F R18, bytes 16-17 | During sync | **Stored** in metric stream `rr_interval_ms` channel; historical heart rate is not stored |
+| Historical R-R | 0x2F R18, bytes 16-17 | During sync | **Stored** in metric stream `rr_interval_ms` channel alongside reported heart rate |
 
-Activity charts derive instantaneous heart rate from retained positive, finite
+Activity charts prefer reported BPM at the same provider priority and timestamp.
+The [upload repository](../packages/server/src/repositories/whoop-ble-sync-repository.ts)
+retains positive `heartRateBpm` values even when the packet has no beat intervals;
+zero or omitted BPM remains an unavailable measurement. This follows WHOOP's
+[documented distinction between heart-rate estimation and beat-interval availability](https://sensorlab.arizona.edu/sites/default/files/2023-05/WHOOP%20Unite%20Research%20FAQs_0.pdf#page=4).
+
+For interval-only observations, activity charts derive instantaneous heart rate from retained positive, finite
 beat intervals as `60000 / rr_interval_ms`; this is the reciprocal method
 described by [PhysioNet](https://archive.physionet.org/tutorials/hrv/), rather than
 the strap's smoothed BPM field. The [sensor projection](../analytics/models/staging/sensor_scalar_sample.sql)
@@ -313,6 +335,21 @@ their provider and configured priority are equal; see the [deduplication model](
 Invalid intervals and deletion tombstones retract their derived readings.
 For history outside the normal ingestion-time microbatch lookback, use the
 [bounded sensor replay procedure](../analytics/README.md#microbatch-start-bounds-and-historical-backfills).
+
+### Investigating Bluetooth/cloud differences
+
+Compare readings from the same activity window at nearby timestamps before
+comparing whole-window summaries. Missing intervals can concentrate in moving
+or higher-heart-rate periods, so different coverage changes the summary even
+when overlapping readings agree. WHOOP documents that interval estimates can
+be unavailable during sport in its [research FAQ](https://sensorlab.arizona.edu/sites/default/files/2023-05/WHOOP%20Unite%20Research%20FAQs_0.pdf#page=4).
+
+Check the reported-BPM and interval channels independently, retain the provider
+and device identities, and compare live/history copies for timestamp shifts.
+Use captured packets to distinguish an absent interval from an absent BPM;
+the [native capture regressions](../packages/mobile/modules/whoop-ble/Tests/WhoopBleSampleBufferTimestampTests.swift)
+exercise both cases. The [server chart regression](../packages/server/src/repositories/activity-metric-sources-repository.integration.test.ts)
+executes the reported-BPM path through an interval gap against ClickHouse.
 
 ## Next Steps: SpO2 and Skin Temperature
 
