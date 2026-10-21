@@ -258,14 +258,6 @@ describe("dataset contracts", () => {
   });
 
   it("keeps provider processing scopes limited to datasets they can affect", () => {
-    expect(processingDatasetKeysForProvider("alltrails")).toEqual([
-      "activity",
-      "hiking",
-      "cycling",
-      "recovery",
-      "training",
-      "providers",
-    ]);
     expect(processingDatasetKeysForProvider("bodyspec")).toEqual(["body", "providers"]);
     expect(processingDatasetKeysForProvider("eight-sleep")).toEqual([
       "sleep",

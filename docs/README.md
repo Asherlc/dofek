@@ -69,7 +69,6 @@ the exact section.
 | Mountain Project | [mountain-project.md](mountain-project.md) | Observed tick-export fields, standalone tick storage, and exact-day activity matching. |
 | OpenBeta | [openbeta.md](openbeta.md) | Public-profile GraphQL tick sync, shared definitions, GPS and standalone climbing logs. |
 | theCrag | [thecrag.md](thecrag.md) | Supporter personal keys, full logbook reconciliation, climbing logs and live-contract limitations. |
-| AllTrails | [alltrails.md](alltrails.md) | Native identity login/refresh, recording API and raw polyline contracts, and remaining validation. |
 | BodySpec | [bodyspec.md](bodyspec.md) | OAuth setup and DEXA/body-composition sync. |
 | FatSecret | [fatsecret.md](fatsecret.md) | OAuth 1.0 flow and nutrition import details. |
 | Oura | [oura.md](oura.md) | Sleep, readiness, and recovery metrics. |
@@ -130,6 +129,8 @@ Cross-provider reverse-engineering references:
 These files explain why the current system exists but are not current
 instructions:
 
+- [alltrails.md](alltrails.md): investigation of the retired AllTrails provider,
+  including its verification block and former implementation.
 - `superpowers/plans/` and `superpowers/specs/`: dated implementation plans and
   design snapshots. Checklist state records work at the time; verify the code
   before relying on it.

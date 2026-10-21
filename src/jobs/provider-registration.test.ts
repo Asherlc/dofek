@@ -142,8 +142,8 @@ vi.mock("../providers/zos-app/provider.ts", () => ({
   ZosAppProvider: mockProviderConstructor(mockProviders["zos-app"]),
 }));
 
-// Real constructors verify theCrag and AllTrails expose their per-user auth contracts.
-const PROVIDER_COUNT = Object.keys(mockProviders).length + 2;
+// The real constructor verifies theCrag exposes its per-user auth contract.
+const PROVIDER_COUNT = Object.keys(mockProviders).length + 1;
 
 describe("provider-registration", () => {
   beforeEach(() => {
@@ -179,20 +179,6 @@ describe("provider-registration", () => {
       label: "Personal API key (active supporter required)",
       instructionsUrl: "https://www.thecrag.com/en/article/logbookreadapi",
     });
-  });
-
-  it("registers AllTrails with a per-user credential connection", async () => {
-    const { ensureProvidersRegistered } = await import("./provider-registration.ts");
-    await ensureProvidersRegistered();
-
-    const provider = mockRegisterProvider.mock.calls.find(([registered]) => {
-      return registered.id === "alltrails";
-    })?.[0];
-
-    expect(provider).toBeDefined();
-    const setup = provider?.authSetup?.();
-    expect(getProviderAuthTypeFromSetup(setup)).toBe("credential");
-    expect(setup?.automatedLogin).toBeTypeOf("function");
   });
 
   it("only registers once (memoization)", async () => {
