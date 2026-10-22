@@ -47,12 +47,13 @@ export const legacyClimbingRowSchema = z.object({
 });
 export type LegacyClimbingRow = z.infer<typeof legacyClimbingRowSchema>;
 export class LegacyClimbingFactConflict extends Error {
-  constructor(
-    readonly field: string,
-    message: string,
-    readonly externalId: string | null = null,
-  ) {
+  readonly field: string;
+  readonly externalId: string | null;
+
+  constructor(field: string, message: string, externalId: string | null = null) {
     super(message);
+    this.field = field;
+    this.externalId = externalId;
     this.name = "LegacyClimbingFactConflict";
   }
 }

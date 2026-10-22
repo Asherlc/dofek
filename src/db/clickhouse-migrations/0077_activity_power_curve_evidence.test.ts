@@ -7,8 +7,11 @@ type CommandOptions = Parameters<ClickHouseCommandClient["command"]>[0];
 
 class TestClickHouseClient implements ClickHouseCommandClient {
   readonly command = vi.fn(async (_options: CommandOptions) => undefined);
+  readonly tableCount: number | string | undefined;
 
-  constructor(readonly tableCount: number | string | undefined) {}
+  constructor(tableCount: number | string | undefined) {
+    this.tableCount = tableCount;
+  }
 
   async query<TRow extends object>(_options: QueryOptions): Promise<{ json(): Promise<TRow[]> }> {
     const rows = this.tableCount === undefined ? [] : [{ count: this.tableCount }];
