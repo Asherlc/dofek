@@ -345,7 +345,7 @@ export function registerFoodRecordTools(server: McpServer, context: DofekMcpCont
     {
       title: "Create Food Entry",
       description:
-        "Create one itemized Dofek food record and return that day's calorie and macro preview. Before logging, seek calories, protein, carbohydrate, and fat for the consumed portion from a product label, manufacturer, or reliable food database; include other nutrients when available. Ask for the brand, label, or portion when needed. Never invent missing values or substitute zero for unknown nutrients. Use estimates only with the user's approval and identify them as estimates. If the user explicitly wants an incomplete entry saved, save the known facts and explain what nutrition information is missing.",
+        "Create one itemized Dofek food record and return that day's calorie and macro preview. Before logging, seek calories, protein, carbohydrate, fat, and fiber for the consumed portion from a product label, manufacturer, or reliable food database; also seek and include available micronutrients (vitamins and minerals). Ask for the brand, label, or portion when needed. Never invent missing values or substitute zero for unknown nutrients. Use estimates only with the user's approval and identify them as estimates. If the user explicitly wants an incomplete entry saved, save the known facts and explain what nutrition information is missing.",
       annotations: mutationAnnotations,
       inputSchema: z.object({
         request_id: requestIdSchema,
@@ -370,7 +370,7 @@ export function registerFoodRecordTools(server: McpServer, context: DofekMcpCont
         nutrients: z
           .record(nutrientIdSchema, nutrientAmountSchema)
           .describe(
-            "Nutrient totals for the entire consumed portion, scaled from the source serving. Prefer calories (kcal), protein, carbohydrate, and fat (grams), plus other sourced nutrients in their canonical units. Omit unknown values; zero means a known zero. An empty map is for an explicitly requested incomplete entry.",
+            "Nutrient totals for the entire consumed portion, scaled from the source serving. Prefer calories (kcal), protein, carbohydrate, fat, and fiber (grams), plus all available sourced micronutrients (vitamins and minerals) in their canonical units. Omit unknown values; zero means a known zero. An empty map is for an explicitly requested incomplete entry.",
           ),
       }),
       outputSchema: mcpOutputSchemas.foodRecordMutation,
@@ -418,7 +418,7 @@ export function registerFoodRecordTools(server: McpServer, context: DofekMcpCont
     {
       title: "Update Food Entry",
       description:
-        "Append validated scalar and nutrient decisions to a food record and return that day's calorie and macro preview. When filling missing nutrition, seek calories and macros for the consumed portion from a product label, manufacturer, or reliable food database; ask for missing brand, label, or portion details. Include other sourced nutrients when available. Never invent values or substitute zero for unknown nutrients. Use estimates only with the user's approval, identify their basis in food_description, and explain any remaining gaps. Preserve existing nutrients unless the user requests a correction or removal.",
+        "Append validated scalar and nutrient decisions to a food record and return that day's calorie and macro preview. When filling missing nutrition, seek calories, macros, and fiber for the consumed portion from a product label, manufacturer, or reliable food database; ask for missing brand, label, or portion details. Also seek and include available micronutrients (vitamins and minerals). Never invent values or substitute zero for unknown nutrients. Use estimates only with the user's approval, identify their basis in food_description, and explain any remaining gaps. Preserve existing nutrients unless the user requests a correction or removal.",
       annotations: mutationAnnotations,
       inputSchema: z.object({
         ...targetInputSchema,
@@ -436,7 +436,7 @@ export function registerFoodRecordTools(server: McpServer, context: DofekMcpCont
         nutrient_set: z
           .record(nutrientIdSchema, nullableNutrientAmountSchema)
           .describe(
-            "Only nutrient decisions being changed, expressed as totals for the consumed portion in canonical units. Use sourced values or explicitly approved estimates. Zero is a known zero; null explicitly marks a nutrient unknown. Omit unchanged nutrients.",
+            "Only nutrient decisions being changed, expressed as totals for the consumed portion in canonical units. Include fiber and available micronutrients (vitamins and minerals) when filling nutrition gaps. Use sourced values or explicitly approved estimates. Zero is a known zero; null explicitly marks a nutrient unknown. Omit unchanged nutrients.",
           ),
         nutrient_clear: z.array(nutrientIdSchema),
       }),
