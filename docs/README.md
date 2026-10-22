@@ -65,6 +65,7 @@ the exact section.
 | Amazfit/Zepp | [src/providers/README.md](../src/providers/README.md#amazfitzepp) | Current US2 credential flow, API hosts, and account limitations. |
 | WHOOP | [whoop.md](whoop.md) | Internal auth, strength data, and raw IMU capture. |
 | WHOOP BLE | [whoop-ble-protocol.md](whoop-ble-protocol.md) | BLE protocol, frames, CRCs, and packet formats. |
+| Garmin | [garmin.md](garmin.md) | Official OAuth/push setup, Starter limits, delivery checks, durable FIT ownership, preserved history, and dated migration research. |
 | Apple Health | [apple-health.md](apple-health.md) | Quantity/category/workout mappings. |
 | Mountain Project | [mountain-project.md](mountain-project.md) | Observed tick-export fields, standalone tick storage, and exact-day activity matching. |
 | OpenBeta | [openbeta.md](openbeta.md) | Public-profile GraphQL tick sync, shared definitions, GPS and standalone climbing logs. |

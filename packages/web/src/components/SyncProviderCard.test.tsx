@@ -30,6 +30,7 @@ function renderProvider({
   onSync = vi.fn(),
   provider = {
     id: "strava",
+    authType: "oauth",
     name: "Strava",
     lastSyncedAt: "2026-05-12T10:00:00.000Z",
     lastSuccessfulSyncAt: "2026-05-12T10:00:00.000Z",
@@ -44,6 +45,7 @@ function renderProvider({
   needsAuth = false,
   needsReauth = false,
   recentLogs = [],
+  pushOnly = false,
 }: {
   onSync?: () => void;
   provider?: SyncProviderCardProps["provider"];
@@ -51,6 +53,7 @@ function renderProvider({
   needsAuth?: boolean;
   needsReauth?: boolean;
   recentLogs?: SyncProviderCardProps["recentLogs"];
+  pushOnly?: boolean;
 } = {}) {
   render(
     <SyncProviderCard
@@ -58,6 +61,7 @@ function renderProvider({
       state={state}
       needsAuth={needsAuth}
       needsReauth={needsReauth}
+      pushOnly={pushOnly}
       stats={undefined}
       recentLogs={recentLogs}
       onSync={onSync}
@@ -91,6 +95,7 @@ describe("SyncProviderCard", () => {
     renderProvider({
       provider: {
         id: "strava",
+        authType: "oauth",
         name: "Strava",
         lastSyncedAt: "2026-05-13T10:00:00.000Z",
         lastSuccessfulSyncAt: "2026-05-12T10:00:00.000Z",
@@ -128,6 +133,7 @@ describe("SyncProviderCard", () => {
     renderProvider({
       provider: {
         id: "strava",
+        authType: "oauth",
         name: "Strava",
         lastSyncedAt: "2026-05-12T10:00:00.000Z",
         lastSuccessfulSyncAt: "2026-05-12T10:00:00.000Z",
@@ -226,6 +232,7 @@ describe("SyncProviderCard", () => {
     renderProvider({
       provider: {
         id: "strava",
+        authType: "oauth",
         name: "Strava",
         lastSyncedAt: "2026-08-12T12:00:00.000Z",
         lastSuccessfulSyncAt: "2026-08-11T12:00:00.000Z",
@@ -250,6 +257,7 @@ describe("SyncProviderCard", () => {
     renderProvider({
       provider: {
         id: "strava",
+        authType: "oauth",
         name: "Strava",
         lastSyncedAt: null,
         lastSuccessfulSyncAt: null,
@@ -273,6 +281,7 @@ describe("SyncProviderCard", () => {
     renderProvider({
       provider: {
         id: "strava",
+        authType: "oauth",
         name: "Strava",
         lastSyncedAt: "2026-08-12T12:00:00.000Z",
         lastSuccessfulSyncAt: "2026-08-11T12:00:00.000Z",
@@ -301,6 +310,7 @@ describe("SyncProviderCard", () => {
     renderProvider({
       provider: {
         id: "garmin",
+        authType: "oauth",
         name: "Garmin",
         lastSyncedAt: "2026-09-03T04:00:00.000Z",
         lastSuccessfulSyncAt: "2026-09-03T04:00:00.000Z",
@@ -388,6 +398,7 @@ describe("SyncProviderCard", () => {
       <SyncProviderCard
         provider={{
           id: "whoop_ble",
+          authType: "push:mobile",
           name: "WHOOP (Bluetooth)",
           lastSyncedAt: "2026-06-20T12:00:00.000Z",
           lastSuccessfulSyncAt: null,
@@ -411,10 +422,41 @@ describe("SyncProviderCard", () => {
       backgroundColor: operationalStatusColors.success.indicator,
     });
     expect(screen.getByText("Synced via iOS app")).not.toBeNull();
+    expect(screen.queryByRole("button", { name: "Reconnect WHOOP (Bluetooth)" })).toBeNull();
     expect(
       screen.getByText("Synced from the iOS app when your WHOOP strap is nearby."),
     ).not.toBeNull();
     expect(screen.queryByText("Receiving data")).toBeNull();
     expect(screen.queryByText("Live BLE push")).toBeNull();
   });
+});
+
+describe("OAuth notification providers", () => {
+  it.each([false, true])(
+    "keeps Garmin authorization available when authorized=%s",
+    (authorized) => {
+      const onSync = vi.fn();
+      renderProvider({
+        provider: {
+          id: "garmin",
+          authType: "oauth",
+          name: "Garmin",
+          authorized,
+          description: null,
+          lastSyncedAt: null,
+          lastSuccessfulSyncAt: null,
+          syncFreshness: null,
+        },
+        pushOnly: true,
+        needsAuth: !authorized,
+        onSync,
+      });
+      fireEvent.click(
+        screen.getByRole("button", { name: authorized ? "Reconnect Garmin" : "Connect Garmin" }),
+      );
+      expect(onSync).toHaveBeenCalledOnce();
+      expect(screen.getByText("Automatic sync")).toBeTruthy();
+      expect(screen.queryByRole("button", { name: /Sync Garmin/ })).toBeNull();
+    },
+  );
 });

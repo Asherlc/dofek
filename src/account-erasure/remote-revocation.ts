@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { revokeAppleCredential } from "../auth/apple-credential-revocation.ts";
-import { revokeToken } from "../auth/oauth.ts";
+import { revokeToken, type TokenSet } from "../auth/oauth.ts";
 import { createStripeClient } from "../billing/stripe-client.ts";
 import { isWebhookProvider, type Provider } from "../providers/types.ts";
 import type { AccountErasureRemoteSnapshot } from "./remote-snapshot.ts";
@@ -166,9 +166,15 @@ export type ProviderCredentialDisposition =
       providerId: string;
     };
 
+export type AccountErasureProviderTokenPersistence = (
+  providerId: string,
+  tokens: TokenSet,
+) => Promise<void>;
+
 async function revokeProviderConnections(
   snapshot: AccountErasureRemoteSnapshot,
   providers: readonly Provider[],
+  persistProviderCredentials: AccountErasureProviderTokenPersistence,
   fetchFn: typeof globalThis.fetch,
 ): Promise<ProviderCredentialDisposition[]> {
   const dispositions: ProviderCredentialDisposition[] = [];
@@ -192,6 +198,7 @@ async function revokeProviderConnections(
     }
     const tokens = {
       accessToken: storedTokens.accessToken,
+      ...(storedTokens.authorizationId ? { authorizationId: storedTokens.authorizationId } : {}),
       expiresAt: new Date(storedTokens.expiresAt),
       ...(storedTokens.providerAccountId
         ? {
@@ -203,7 +210,9 @@ async function revokeProviderConnections(
     };
 
     if (setup.revokeTokensForAccountErasure) {
-      await setup.revokeTokensForAccountErasure(tokens);
+      await setup.revokeTokensForAccountErasure(tokens, (updatedTokens) =>
+        persistProviderCredentials(storedTokens.providerId, updatedTokens),
+      );
       dispositions.push({
         disposition: "remote_revoked",
         providerId: storedTokens.providerId,
@@ -213,7 +222,9 @@ async function revokeProviderConnections(
 
     if (setup.revokeExistingTokens) {
       try {
-        await setup.revokeExistingTokens(tokens);
+        await setup.revokeExistingTokens(tokens, (updatedTokens) =>
+          persistProviderCredentials(storedTokens.providerId, updatedTokens),
+        );
         dispositions.push({
           disposition: "remote_revoked",
           providerId: storedTokens.providerId,
@@ -257,11 +268,12 @@ async function unregisterUserWebhooks(
 export async function revokeRemoteAccounts(
   snapshot: AccountErasureRemoteSnapshot,
   providers: readonly Provider[],
+  persistProviderCredentials: AccountErasureProviderTokenPersistence,
   fetchFn: typeof globalThis.fetch = globalThis.fetch,
 ): Promise<ProviderCredentialDisposition[]> {
   return withAccountErasureTracingSuppressed(async () => {
     await unregisterUserWebhooks(snapshot, providers);
     await revokeAppleCredentials(snapshot.appleCredentials, fetchFn);
-    return revokeProviderConnections(snapshot, providers, fetchFn);
+    return revokeProviderConnections(snapshot, providers, persistProviderCredentials, fetchFn);
   });
 }

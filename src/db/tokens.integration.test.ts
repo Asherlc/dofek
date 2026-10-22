@@ -14,6 +14,7 @@ import {
   connectProviderWithTokens,
   deleteProviderAuthorization,
   ensureProvider,
+  findTokenUsersByProviderAccountId,
   loadTokens,
   saveTokens,
 } from "./tokens.ts";
@@ -89,6 +90,202 @@ describe("Token storage (integration)", () => {
     const loaded = await loadTokens(ctx.db, "wahoo", TEST_USER_ID);
     expect(loaded?.accessToken).toBe("new-access");
     expect(loaded?.refreshToken).toBe("new-refresh");
+  });
+
+  it("finds every token owner for an encrypted account within its provider", async () => {
+    const firstUserId = "61000000-0000-4000-8000-000000000001";
+    const secondUserId = "61000000-0000-4000-8000-000000000002";
+    const otherUserId = "61000000-0000-4000-8000-000000000003";
+    await ctx.db.execute(
+      sql`INSERT INTO fitness.user_profile (id, name) VALUES
+          (${firstUserId}, 'First Owner'),
+          (${secondUserId}, 'Second Owner'),
+          (${otherUserId}, 'Other Provider Owner')
+          ON CONFLICT DO NOTHING`,
+    );
+    const tokens = {
+      accessToken: "official-access",
+      refreshToken: "official-refresh",
+      providerAccountId: "  shared-official-account  ",
+      expiresAt: new Date("2027-01-01T00:00:00Z"),
+      scopes: "ACTIVITY_EXPORT",
+    };
+    for (const userId of [firstUserId, secondUserId]) {
+      await ensureProvider(ctx.db, "shared-owner-provider", "Garmin", undefined, userId);
+      await saveTokens(ctx.db, "shared-owner-provider", tokens, userId);
+    }
+    await ensureProvider(ctx.db, "different-owner-provider", "Other", undefined, otherUserId);
+    await saveTokens(ctx.db, "different-owner-provider", tokens, otherUserId);
+
+    expect(
+      (
+        await findTokenUsersByProviderAccountId(
+          ctx.db,
+          "shared-owner-provider",
+          "shared-official-account",
+        )
+      ).sort(),
+    ).toEqual([firstUserId, secondUserId]);
+    await expect(
+      findTokenUsersByProviderAccountId(
+        ctx.db,
+        "shared-owner-provider",
+        "  shared-official-account  ",
+      ),
+    ).resolves.toHaveLength(2);
+    await expect(
+      findTokenUsersByProviderAccountId(
+        ctx.db,
+        "different-owner-provider",
+        "shared-official-account",
+      ),
+    ).resolves.toEqual([otherUserId]);
+    await expect(
+      findTokenUsersByProviderAccountId(
+        ctx.db,
+        "shared-owner-provider",
+        "unknown-official-account",
+      ),
+    ).resolves.toEqual([]);
+
+    const stored = await ctx.db
+      .select({
+        providerAccountId: oauthToken.providerAccountId,
+        providerAccountLookupId: oauthToken.providerAccountLookupId,
+      })
+      .from(oauthToken)
+      .where(
+        and(eq(oauthToken.userId, firstUserId), eq(oauthToken.providerId, "shared-owner-provider")),
+      );
+    expect(isEncryptedCredentialValue(stored[0]?.providerAccountId ?? "")).toBe(true);
+    expect(stored[0]?.providerAccountLookupId).toMatch(/^[a-f0-9]{64}$/);
+    await expect(loadTokens(ctx.db, "shared-owner-provider", firstUserId)).resolves.toMatchObject({
+      providerAccountId: "shared-official-account",
+    });
+  });
+
+  it("preserves account ownership when refresh omits identity and replaces it on reauthorization", async () => {
+    const providerId = "account-lookup-refresh";
+    await ensureProvider(ctx.db, providerId, "Account Lookup Refresh", undefined, TEST_USER_ID);
+    const tokens = {
+      accessToken: "first-access",
+      refreshToken: "first-refresh",
+      providerAccountId: "first-account",
+      expiresAt: new Date("2027-01-01T00:00:00Z"),
+      scopes: "read",
+    };
+    await saveTokens(ctx.db, providerId, tokens, TEST_USER_ID);
+    const before = await ctx.db
+      .select({
+        providerAccountId: oauthToken.providerAccountId,
+        providerAccountLookupId: oauthToken.providerAccountLookupId,
+      })
+      .from(oauthToken)
+      .where(and(eq(oauthToken.userId, TEST_USER_ID), eq(oauthToken.providerId, providerId)));
+
+    await saveTokens(
+      ctx.db,
+      providerId,
+      {
+        accessToken: "refreshed-access",
+        refreshToken: "refreshed-refresh",
+        expiresAt: new Date("2027-02-01T00:00:00Z"),
+        scopes: "read",
+      },
+      TEST_USER_ID,
+    );
+
+    await expect(
+      ctx.db
+        .select({
+          providerAccountId: oauthToken.providerAccountId,
+          providerAccountLookupId: oauthToken.providerAccountLookupId,
+        })
+        .from(oauthToken)
+        .where(and(eq(oauthToken.userId, TEST_USER_ID), eq(oauthToken.providerId, providerId))),
+    ).resolves.toEqual(before);
+    await expect(
+      findTokenUsersByProviderAccountId(ctx.db, providerId, "first-account"),
+    ).resolves.toEqual([TEST_USER_ID]);
+
+    await saveTokens(
+      ctx.db,
+      providerId,
+      { ...tokens, providerAccountId: "second-account" },
+      TEST_USER_ID,
+    );
+    await expect(
+      findTokenUsersByProviderAccountId(ctx.db, providerId, "first-account"),
+    ).resolves.toEqual([]);
+    await expect(
+      findTokenUsersByProviderAccountId(ctx.db, providerId, "second-account"),
+    ).resolves.toEqual([TEST_USER_ID]);
+  });
+
+  it("does not route an account to tokens saved without a provider identity", async () => {
+    const providerId = "account-lookup-unidentified";
+    await ensureProvider(ctx.db, providerId, "Unidentified Account", undefined, TEST_USER_ID);
+    await saveTokens(
+      ctx.db,
+      providerId,
+      {
+        accessToken: "unidentified-access",
+        refreshToken: null,
+        expiresAt: new Date("2027-01-01T00:00:00Z"),
+        scopes: null,
+      },
+      TEST_USER_ID,
+    );
+
+    await expect(
+      findTokenUsersByProviderAccountId(ctx.db, providerId, "unknown-account"),
+    ).resolves.toEqual([]);
+    await expect(findTokenUsersByProviderAccountId(ctx.db, providerId, "   ")).rejects.toThrow(
+      "OAuth provider account ID must not be empty",
+    );
+  });
+
+  it("preserves authorization identity on refresh and replaces it for a new grant", async () => {
+    const providerId = "authorization-generation";
+    const firstAuthorizationId = "63000000-0000-4000-8000-000000000001";
+    const nextAuthorizationId = "63000000-0000-4000-8000-000000000002";
+    await ensureProvider(ctx.db, providerId, "Authorization Generation", undefined, TEST_USER_ID);
+    const tokens = {
+      accessToken: "grant-access",
+      refreshToken: "grant-refresh",
+      expiresAt: new Date("2027-01-01T00:00:00Z"),
+      scopes: "read",
+    };
+    await saveTokens(
+      ctx.db,
+      providerId,
+      { ...tokens, authorizationId: firstAuthorizationId },
+      TEST_USER_ID,
+    );
+    await expect(loadTokens(ctx.db, providerId, TEST_USER_ID)).resolves.toMatchObject({
+      authorizationId: firstAuthorizationId,
+    });
+
+    await saveTokens(
+      ctx.db,
+      providerId,
+      { ...tokens, accessToken: "refreshed-access" },
+      TEST_USER_ID,
+    );
+    await expect(loadTokens(ctx.db, providerId, TEST_USER_ID)).resolves.toMatchObject({
+      accessToken: "refreshed-access",
+      authorizationId: firstAuthorizationId,
+    });
+
+    await saveTokens(
+      ctx.db,
+      providerId,
+      { ...tokens, authorizationId: nextAuthorizationId },
+      TEST_USER_ID,
+    );
+    await expect(loadTokens(ctx.db, providerId, TEST_USER_ID)).resolves.toMatchObject({
+      authorizationId: nextAuthorizationId,
+    });
   });
 
   it("isolates provider tokens per user", async () => {

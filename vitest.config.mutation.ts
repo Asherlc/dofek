@@ -73,7 +73,6 @@ const nodeTestIncludes = [
   "packages/mcp-app/src/**/*.test.tsx",
   "packages/mcp-contracts/src/**/*.test.ts",
   "packages/server/src/**/*.test.ts",
-  "packages/garmin-connect/src/**/*.test.ts",
   "packages/eight-sleep/src/**/*.test.ts",
   "packages/kaya-client/src/**/*.test.ts",
   "packages/trainerroad-client/src/**/*.test.ts",

@@ -5,6 +5,7 @@ import type { PeerDbStagingBoundary } from "../account-erasure/peerdb-staging-wr
 import type { AccountErasureProcessorProgress } from "../account-erasure/processor-erasure.ts";
 import type { AccountErasureRouteHighWatermark } from "../account-erasure/redpanda-drain.ts";
 import type {
+  AccountErasureProviderTokenPersistence,
   ProviderCredentialDisposition,
   StripeAccountErasureResult,
 } from "../account-erasure/remote-revocation.ts";
@@ -85,7 +86,10 @@ export interface AccountErasurePhaseRunnerDependencies {
   fenceIngest(snapshot: AccountErasureRemoteSnapshot): Promise<void>;
   now(): Date;
   purgeWork(snapshot: AccountErasureRemoteSnapshot): Promise<void>;
-  revokeRemote(snapshot: AccountErasureRemoteSnapshot): Promise<ProviderCredentialDisposition[]>;
+  revokeRemote(
+    snapshot: AccountErasureRemoteSnapshot,
+    persistProviderCredentials: AccountErasureProviderTokenPersistence,
+  ): Promise<ProviderCredentialDisposition[]>;
   verifyBackupRetention(input: {
     now: Date;
     piiScrubbedAt: Date;
@@ -207,7 +211,10 @@ export function createAccountErasurePhaseRunner(
         case "remote_revocation":
         case "remote_revocation_verification": {
           const snapshot = await loadSnapshot(phase, execution);
-          const dispositions = await dependencies.revokeRemote(snapshot);
+          const dispositions = await dependencies.revokeRemote(
+            snapshot,
+            execution.persistProviderCredentials,
+          );
           return {
             dispositions,
             verified: phase === "remote_revocation_verification",

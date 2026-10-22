@@ -47,6 +47,15 @@ describe("Provider Registry", () => {
     expect(getProvider("nonexistent")).toBeUndefined();
   });
 
+  it("retains push providers in the registry while excluding them from polling", () => {
+    const id = uniqueId();
+    const provider = createMockProvider({ id, pushOnly: true });
+    registerProvider(provider);
+
+    expect(getProvider(id)).toBe(provider);
+    expect(getEnabledSyncProviders().some((candidate) => candidate.id === id)).toBe(false);
+  });
+
   it("returns only enabled sync providers (excludes import-only CSV providers)", () => {
     const syncId = uniqueId();
     const csvId = `${uniqueId()}-csv`;

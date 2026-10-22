@@ -22,11 +22,11 @@ const providers = [
     id: "garmin",
     name: "Garmin",
     description: "Wearable activity, sleep, and body data.",
-    authType: "custom:garmin",
+    authType: "oauth",
     authorized: true,
     lastSyncedAt: "2026-06-30T07:00:00.000Z",
     importOnly: false,
-    pushOnly: false,
+    pushOnly: true,
     needsReauth: false,
   },
   {

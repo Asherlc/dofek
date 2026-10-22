@@ -225,10 +225,14 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
     },
     async ({ date, timezone }) => {
       requireMcpScope(context.scopes, "health:read");
+      if (!context.sensorStore) {
+        throw new Error("get_daily_health_summary requires the ClickHouse analytics store");
+      }
       const repository = new DailyMetricsRepository(
         context.db,
         context.userId,
         timezone ?? context.timezone,
+        context.sensorStore,
       );
       const rows = await repository.list(1, date);
       return jsonToolResult(rows[0] ?? null);
@@ -299,6 +303,9 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
       requireMcpScope(context.scopes, "health:read");
       assertDateRange(start_date, end_date);
       const requestedTimezone = timezone ?? context.timezone;
+      if (!context.sensorStore) {
+        throw new Error("get_sleep_summary requires the ClickHouse analytics store");
+      }
       const repository = new SleepRepository(
         context.db,
         context.userId,
@@ -310,6 +317,7 @@ export function createDofekMcpServer(context: DofekMcpContext): McpServer {
         context.db,
         context.userId,
         requestedTimezone,
+        context.sensorStore,
       );
       const [rows, dailyMetrics] = await Promise.all([
         repository.listRange(start_date, end_date),

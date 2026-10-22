@@ -28,7 +28,6 @@ import {
 describe("defaultThrottleMs", () => {
   it("returns provider-specific defaults", () => {
     expect(defaultThrottleMs("strava")).toBe(10_000);
-    expect(defaultThrottleMs("garmin")).toBe(5_000);
     expect(defaultThrottleMs("whoop")).toBe(1_000);
     expect(defaultThrottleMs("unknown")).toBe(1_000);
   });
@@ -212,7 +211,7 @@ describe("admissionDelayMs", () => {
 
   it("waits for the remaining adaptive window when the inferred budget soft cap is reached", () => {
     const state = {
-      ...createInitialAdaptiveState("garmin", "provider", null, 0),
+      ...createInitialAdaptiveState("example", "provider", null, 0),
       throttleMs: 1000,
       inferredBudget: 10,
       requestCount: 8,
@@ -223,7 +222,7 @@ describe("admissionDelayMs", () => {
 
   it("bounds inferred-budget waits when the clock moves behind the window start", () => {
     const state = {
-      ...createInitialAdaptiveState("garmin", "provider", null, 10_000),
+      ...createInitialAdaptiveState("example", "provider", null, 10_000),
       inferredBudget: 10,
       requestCount: 8,
     };
@@ -245,7 +244,7 @@ describe("admissionDelayMs", () => {
 
   it("derives throttle delay independently from budget pacing", () => {
     const state = {
-      ...createInitialAdaptiveState("garmin", "provider", null, 0),
+      ...createInitialAdaptiveState("example", "provider", null, 0),
       throttleMs: 2_000,
       lastRequestMs: 500,
       inferredBudget: 40,
@@ -257,7 +256,7 @@ describe("admissionDelayMs", () => {
 
   it("returns no throttle delay after the interval has elapsed", () => {
     const state = {
-      ...createInitialAdaptiveState("garmin", "provider", null, 0),
+      ...createInitialAdaptiveState("example", "provider", null, 0),
       throttleMs: 1_000,
       lastRequestMs: 100,
     };
@@ -404,7 +403,7 @@ describe("admissionDelayMs", () => {
 
   it("ignores Strava pacing for non-Strava providers", () => {
     const state = {
-      ...createInitialAdaptiveState("garmin", "provider", null),
+      ...createInitialAdaptiveState("example", "provider", null),
       stravaShortLimit: 100,
       stravaShortUsage: 99,
     };
@@ -458,7 +457,7 @@ describe("applyStravaQuota", () => {
 
 describe("recordAdaptiveRequest", () => {
   it("records requests by incrementing the rolling tally", () => {
-    const state = createInitialAdaptiveState("garmin", "provider", null, 1000);
+    const state = createInitialAdaptiveState("example", "provider", null, 1000);
     const next = recordAdaptiveRequest(state, 1500);
     expect(next.requestCount).toBe(1);
     expect(next.lastRequestMs).toBe(1500);
@@ -468,7 +467,7 @@ describe("recordAdaptiveRequest", () => {
 
 describe("recordAdaptiveThrottleTouch", () => {
   it("updates throttle timing without consuming a sync-step budget slot", () => {
-    const state = createInitialAdaptiveState("garmin", "provider", null, 1000);
+    const state = createInitialAdaptiveState("example", "provider", null, 1000);
     const next = recordAdaptiveThrottleTouch(state, 1500);
     expect(next.requestCount).toBe(0);
     expect(next.lastRequestMs).toBe(1500);
@@ -503,8 +502,8 @@ describe("recordAdaptiveRateLimit", () => {
 
 describe("adaptiveRateLimitStorageKey", () => {
   it("builds provider and user scoped keys", () => {
-    expect(adaptiveRateLimitStorageKey("garmin", "provider", null)).toBe(
-      "provider-adaptive-rate:garmin:provider",
+    expect(adaptiveRateLimitStorageKey("example", "provider", null)).toBe(
+      "provider-adaptive-rate:example:provider",
     );
     expect(adaptiveRateLimitStorageKey("whoop", "user", "user-1")).toBe(
       "provider-adaptive-rate:whoop:user:user-1",
@@ -550,7 +549,7 @@ describe("parseAdaptiveRateState", () => {
     expect(
       parseAdaptiveRateState(
         JSON.stringify({
-          providerId: "garmin",
+          providerId: "example",
           scope: "invalid",
           userId: null,
           windowStartMs: 1,
@@ -576,7 +575,7 @@ describe("parseAdaptiveRateState", () => {
     expect(
       parseAdaptiveRateState(
         JSON.stringify({
-          providerId: "garmin",
+          providerId: "example",
           scope: "provider",
           userId: null,
           windowStartMs: "bad",
@@ -605,7 +604,7 @@ describe("parseAdaptiveRateState", () => {
     expect(
       parseAdaptiveRateState(
         JSON.stringify({
-          providerId: "garmin",
+          providerId: "example",
           scope: "provider",
           userId: null,
           windowStartMs: 1,
@@ -620,7 +619,7 @@ describe("parseAdaptiveRateState", () => {
   it("drops non-finite optional numeric fields", () => {
     const parsed = parseAdaptiveRateState(
       JSON.stringify({
-        providerId: "garmin",
+        providerId: "example",
         scope: "provider",
         userId: null,
         windowStartMs: 1,

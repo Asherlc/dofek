@@ -466,9 +466,9 @@ const importOnlyProvider = {
 };
 
 const pushOnlyProvider = {
-  id: "whoop-ble",
+  id: "whoop_ble",
   name: "WHOOP BLE",
-  authType: "none",
+  authType: "push:mobile",
   authorized: true,
   importOnly: false,
   pushOnly: true,
@@ -762,7 +762,7 @@ describe("ProviderDetailScreen", () => {
     });
 
     it("does not render actions for push-only providers", async () => {
-      mockUseLocalSearchParams.mockReturnValue({ id: "whoop-ble" });
+      mockUseLocalSearchParams.mockReturnValue({ id: "whoop_ble" });
       mockProvidersQuery.mockReturnValue({ data: [pushOnlyProvider], isLoading: false });
 
       const { default: ProviderDetailScreen } = await import("../../app/providers/[id]");
@@ -770,6 +770,7 @@ describe("ProviderDetailScreen", () => {
 
       expect(screen.getByText("WHOOP BLE")).toBeTruthy();
       expect(screen.queryByText("Connect")).toBeNull();
+      expect(screen.queryByText("Reconnect")).toBeNull();
       expect(screen.queryByText("Sync")).toBeNull();
       expect(screen.queryByText("Full sync")).toBeNull();
     });
@@ -1018,6 +1019,40 @@ describe("ProviderDetailScreen", () => {
         );
       });
     });
+
+    it.each([false, true])(
+      "opens Garmin OAuth for a push-only source, authorized=%s",
+      async (authorized) => {
+        mockUseLocalSearchParams.mockReturnValue({ id: "garmin" });
+        mockProvidersQuery.mockReturnValue({
+          data: [
+            {
+              ...unauthorizedProvider,
+              id: "garmin",
+              name: "Garmin",
+              authorized,
+              authType: "oauth",
+              pushOnly: true,
+              lastSyncedAt: "2026-10-20T10:00:00Z",
+            },
+          ],
+          isLoading: false,
+        });
+        const { default: ProviderDetailScreen } = await import("../../app/providers/[id]");
+        render(<ProviderDetailScreen />);
+        fireEvent.click(screen.getByText(authorized ? "Reconnect" : "Connect"));
+        await waitFor(() =>
+          expect(mockOpenBrowserAsync).toHaveBeenCalledWith(
+            "https://test.example.com/auth/provider/garmin?code=provider-handoff-code",
+          ),
+        );
+        expect(
+          screen.getByText("New data arrives automatically after you sync your Garmin device."),
+        ).toBeTruthy();
+        expect(screen.getByText(/^Last received:/)).toBeTruthy();
+        expect(screen.queryByText("Full Sync")).toBeNull();
+      },
+    );
 
     it.each(["token", "public-profile"])(
       "opens and submits the %s connection form",

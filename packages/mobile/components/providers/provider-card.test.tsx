@@ -94,3 +94,36 @@ describe("ProviderCard sync summary", () => {
     expect(onConnect).toHaveBeenCalledOnce();
   });
 });
+
+describe("OAuth notification providers", () => {
+  it.each(["not_connected", "expired", "connected"] as const)(
+    "keeps Garmin authorization available when %s",
+    (authStatus) => {
+      const { onConnect, onSync } = renderProvider({
+        id: "garmin",
+        label: "Garmin",
+        pushOnly: true,
+        authStatus,
+      });
+      fireEvent.click(
+        screen.getByRole("button", {
+          name: authStatus === "not_connected" ? "Connect Garmin" : "Reconnect Garmin",
+        }),
+      );
+      expect(onConnect).toHaveBeenCalledOnce();
+      expect(onSync).not.toHaveBeenCalled();
+      expect(screen.queryByRole("button", { name: "Sync Garmin" })).toBeNull();
+    },
+  );
+});
+
+it("keeps mobile capture actions in source details", () => {
+  renderProvider({
+    id: "whoop_ble",
+    label: "WHOOP (Bluetooth)",
+    authType: "push:mobile",
+    pushOnly: true,
+  });
+  expect(screen.getByRole("button", { name: "Open WHOOP (Bluetooth) details" })).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Reconnect WHOOP (Bluetooth)" })).toBeNull();
+});

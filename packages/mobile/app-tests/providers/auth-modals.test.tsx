@@ -4,7 +4,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const {
   credentialSignIn,
   tokenConnect,
-  garminSignIn,
   mockCaptureException,
   whoopSaveTokens,
   whoopSignIn,
@@ -12,7 +11,6 @@ const {
 } = vi.hoisted(() => ({
   credentialSignIn: vi.fn(),
   tokenConnect: vi.fn(),
-  garminSignIn: vi.fn(),
   mockCaptureException: vi.fn(),
   whoopSaveTokens: vi.fn(),
   whoopSignIn: vi.fn(),
@@ -35,11 +33,6 @@ vi.mock("../../lib/trpc", () => ({
         useMutation: () => ({ mutateAsync: tokenConnect }),
       },
     },
-    garminAuth: {
-      signIn: {
-        useMutation: () => ({ mutateAsync: garminSignIn }),
-      },
-    },
     whoopAuth: {
       signIn: {
         useMutation: () => ({ mutateAsync: whoopSignIn }),
@@ -56,7 +49,6 @@ vi.mock("../../lib/trpc", () => ({
 
 import {
   CredentialAuthModal,
-  GarminAuthModal,
   TokenAuthModal,
   WhoopAuthModal,
 } from "../../components/providers/auth-modals";
@@ -80,7 +72,6 @@ describe("provider auth modals", () => {
   beforeEach(() => {
     credentialSignIn.mockReset();
     tokenConnect.mockReset();
-    garminSignIn.mockReset();
     mockCaptureException.mockReset();
     whoopSaveTokens.mockReset();
     whoopSignIn.mockReset();
@@ -350,29 +341,6 @@ describe("provider auth modals", () => {
 
     await act(async () => resolveConnection?.({ success: true }));
     expect(onSuccess).toHaveBeenCalledOnce();
-  });
-
-  it("reports a Garmin sign-in error while preserving its message", async () => {
-    const signInError = new Error("Garmin rejected these credentials");
-    garminSignIn.mockRejectedValue(signInError);
-
-    render(<GarminAuthModal onClose={vi.fn()} onSuccess={vi.fn()} />);
-
-    fireEvent.change(screen.getByPlaceholderText("Email"), {
-      target: { value: "athlete@example.com" },
-    });
-    fireEvent.change(screen.getByPlaceholderText("Password"), {
-      target: { value: "secret" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Sign in to Garmin" }));
-
-    await waitFor(() => {
-      expect(screen.getByText("Garmin rejected these credentials")).toBeTruthy();
-    });
-    expect(mockCaptureException).toHaveBeenCalledWith(signInError, {
-      source: "provider-garmin-auth-sign-in",
-      providerId: "garmin",
-    });
   });
 
   it("reports a WHOOP sign-in error while preserving its message", async () => {

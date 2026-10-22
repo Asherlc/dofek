@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, expectTypeOf, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => {
   const poolClient = {
@@ -70,13 +70,13 @@ describe("PostgreSQL queued-work lock pool", () => {
   it("holds an exclusive session barrier for cleanup without starting a transaction", async () => {
     const pool = createAccountErasureWorkLockPool("postgres://database.test/dofek");
     mocks.poolClient.query.mockResolvedValueOnce({ rows: [{ acquired: true }] });
-    await expect(
-      pool.tryRunWithExclusiveUserLock("user-1", async () => {
-        expect(mocks.poolClient.query).toHaveBeenCalledTimes(1);
-        expect(mocks.poolClient.release).not.toHaveBeenCalled();
-        return "deleted";
-      }),
-    ).resolves.toBe("deleted");
+    const result = pool.tryRunWithExclusiveUserLock("user-1", async () => {
+      expect(mocks.poolClient.query).toHaveBeenCalledTimes(1);
+      expect(mocks.poolClient.release).not.toHaveBeenCalled();
+      return "deleted";
+    });
+    expectTypeOf(result).toEqualTypeOf<Promise<string | undefined>>();
+    await expect(result).resolves.toBe("deleted");
     expect(
       mocks.poolClient.query.mock.calls.map(([query]) => query.text.trim().split("(")[0]),
     ).toEqual(["SELECT pg_try_advisory_lock", "SELECT pg_advisory_unlock"]);
@@ -106,17 +106,17 @@ describe("PostgreSQL queued-work lock pool", () => {
 
   it("holds the provider lock before the erasure barrier and releases both after work", async () => {
     const pool = createAccountErasureWorkLockPool("postgres://database.test/dofek");
-    await expect(
-      pool.runWithSharedUserLock(
-        "user-1",
-        async () => {
-          expect(mocks.poolClient.query).toHaveBeenCalledTimes(2);
-          expect(mocks.poolClient.release).not.toHaveBeenCalled();
-          return "complete";
-        },
-        "mountain-project",
-      ),
-    ).resolves.toBe("complete");
+    const result = pool.runWithSharedUserLock(
+      "user-1",
+      async () => {
+        expect(mocks.poolClient.query).toHaveBeenCalledTimes(2);
+        expect(mocks.poolClient.release).not.toHaveBeenCalled();
+        return "complete";
+      },
+      "mountain-project",
+    );
+    expectTypeOf(result).toEqualTypeOf<Promise<string>>();
+    await expect(result).resolves.toBe("complete");
     expect(
       mocks.poolClient.query.mock.calls.map(([query, values]) => ({
         text: query.text.trim().split("(")[0],

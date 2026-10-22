@@ -667,7 +667,10 @@ function ProviderDetailContent({
                   </Text>
                 </View>
                 {lastSyncedAt && formatRelativeTime(lastSyncedAt) && (
-                  <Text style={styles.lastSync}>Last sync: {formatRelativeTime(lastSyncedAt)}</Text>
+                  <Text style={styles.lastSync}>
+                    {displayProvider.pushOnly ? "Last received" : "Last sync"}:{" "}
+                    {formatRelativeTime(lastSyncedAt)}
+                  </Text>
                 )}
                 {appleHealthHistoryError ? (
                   <QueryStatePanel

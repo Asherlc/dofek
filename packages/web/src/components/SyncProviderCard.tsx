@@ -24,6 +24,7 @@ export function SyncProviderCard({
     SyncProviderSummary,
     | "id"
     | "name"
+    | "authType"
     | "lastSyncedAt"
     | "lastSuccessfulSyncAt"
     | "syncFreshness"
@@ -48,12 +49,19 @@ export function SyncProviderCard({
   const lastSuccessfulSyncRelative = provider.lastSuccessfulSyncAt
     ? formatRelativeTime(provider.lastSuccessfulSyncAt)
     : null;
-  const primaryActionLabel = needsReauth ? "Reconnect" : needsAuth ? "Connect" : "Sync";
-  const primaryActionTitle = needsReauth
-    ? `Reconnect ${provider.name}`
-    : needsAuth
-      ? `Connect ${provider.name}`
-      : `Sync ${provider.name} from the last 7 days`;
+  const mobileOnly = pushOnly && provider.authType === "push:mobile";
+  const requiresAuthorization =
+    provider.authType !== "none" &&
+    provider.authType !== "file-import" &&
+    provider.authType !== "push:mobile";
+  const primaryActionLabel =
+    needsReauth || (pushOnly && !needsAuth) ? "Reconnect" : needsAuth ? "Connect" : "Sync";
+  const primaryActionTitle =
+    needsReauth || (pushOnly && !needsAuth)
+      ? `Reconnect ${provider.name}`
+      : needsAuth
+        ? `Connect ${provider.name}`
+        : `Sync ${provider.name} from the last 7 days`;
   const latestSync = summary.latestIssue;
   const latestSyncColors =
     latestSync?.status === "error"
@@ -71,7 +79,7 @@ export function SyncProviderCard({
     <div className="flex flex-col rounded-lg border border-border bg-surface px-4 py-3 transition-colors">
       <div className="flex items-center gap-2">
         <ProviderLogo provider={provider.id} size={18} />
-        {pushOnly ? (
+        {mobileOnly ? (
           <span
             className="inline-block h-2 w-2 rounded-full"
             style={{
@@ -94,20 +102,24 @@ export function SyncProviderCard({
           <StatusDot status={state.status} />
         ) : null}
         <span className="text-sm font-medium text-foreground">{provider.name}</span>
-        {pushOnly && <span className="text-xs text-subtle">Mobile sync</span>}
-        {!pushOnly && needsReauth && (
+        {pushOnly && (
+          <span className="text-xs text-subtle">
+            {mobileOnly ? "Mobile sync" : "Automatic sync"}
+          </span>
+        )}
+        {needsReauth && (
           <span className="text-xs" style={{ color: operationalStatusColors.warning.foreground }}>
             Authorization expired
           </span>
         )}
-        {!pushOnly && needsAuth && !needsReauth && (
+        {needsAuth && !needsReauth && (
           <span className="text-xs" style={{ color: operationalStatusColors.info.foreground }}>
             Not connected
           </span>
         )}
       </div>
 
-      {pushOnly && provider.description && (
+      {mobileOnly && provider.description && (
         <span className="text-xs text-subtle mt-1">{provider.description}</span>
       )}
 
@@ -142,7 +154,7 @@ export function SyncProviderCard({
       {/* Latest sync status + action links */}
       <div className="flex flex-wrap items-center justify-between gap-2 mt-2 pt-2 border-t border-border/50">
         <div className="flex items-center gap-1">
-          {pushOnly ? (
+          {mobileOnly ? (
             <span className="text-xs text-dim">
               {provider.authorized ? "Synced via iOS app" : "Waiting for mobile sync"}
             </span>
@@ -163,7 +175,7 @@ export function SyncProviderCard({
               />
               {latestSync.label}
             </output>
-          ) : !summary.hasHistory ? (
+          ) : !pushOnly && !summary.hasHistory ? (
             <span className="text-xs text-dim">No sync history</span>
           ) : null}
         </div>
@@ -184,7 +196,7 @@ export function SyncProviderCard({
               )}
             </div>
           )}
-          {!pushOnly && state.status !== "syncing" && (
+          {(!pushOnly || requiresAuthorization) && state.status !== "syncing" && (
             <button
               type="button"
               onClick={onSync}

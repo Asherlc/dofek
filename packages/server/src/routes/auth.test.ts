@@ -160,9 +160,14 @@ vi.mock("./webhooks.ts", () => ({
 }));
 
 vi.mock("dofek/db", () => ({
-  createDatabaseFromEnv: vi.fn(() => ({
-    execute: vi.fn(() => Promise.resolve([])),
-  })),
+  createDatabaseFromEnv: vi.fn(() => {
+    const database = { execute: vi.fn(() => Promise.resolve([])) };
+    return Object.assign(database, {
+      transaction: vi.fn(async (operation: (transaction: typeof database) => Promise<unknown>) =>
+        operation(database),
+      ),
+    });
+  }),
 }));
 
 import type { AddressInfo } from "node:net";
@@ -4556,12 +4561,15 @@ describe("createAuthRouter", () => {
       const callbackRes = await request(app, "get", `/callback?code=code&state=${state}`);
       expect(callbackRes.status).toBe(200);
 
-      expect(mockRevokeExistingTokens).toHaveBeenCalledWith({
-        accessToken: "old-access",
-        refreshToken: "old-refresh",
-        expiresAt: new Date("2027-01-01"),
-        scopes: "read",
-      });
+      expect(mockRevokeExistingTokens).toHaveBeenCalledWith(
+        {
+          accessToken: "old-access",
+          refreshToken: "old-refresh",
+          expiresAt: new Date("2027-01-01"),
+          scopes: "read",
+        },
+        undefined,
+      );
       expect(revokeToken).not.toHaveBeenCalled();
       expect(mockExchangeCode).toHaveBeenCalledWith("code", undefined, expect.any(Function));
       expect(mockExchangeCode.mock.invocationCallOrder[0]).toBeLessThan(

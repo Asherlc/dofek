@@ -45,13 +45,25 @@ export const dailyMetricsRouter = router({
     "dailyMetrics.list",
     CacheTTL.MEDIUM,
     async ({ ctx, input, range }) => {
-      const repo = new DailyMetricsRepository(ctx.db, ctx.userId, ctx.timezone, ctx.accessWindow);
+      const repo = new DailyMetricsRepository(
+        ctx.db,
+        ctx.userId,
+        ctx.timezone,
+        requireSensorStore(ctx.sensorStore, "dailyMetrics.list"),
+        ctx.accessWindow,
+      );
       return repo.list(range.days, input.endDate);
     },
   ),
 
   latest: cachedProtectedQuery({ maxAge: CacheTTL.SHORT }).query(async ({ ctx }) => {
-    const repo = new DailyMetricsRepository(ctx.db, ctx.userId, ctx.timezone, ctx.accessWindow);
+    const repo = new DailyMetricsRepository(
+      ctx.db,
+      ctx.userId,
+      ctx.timezone,
+      requireSensorStore(ctx.sensorStore, "dailyMetrics.latest"),
+      ctx.accessWindow,
+    );
     return repo.getLatest();
   }),
 
@@ -59,7 +71,13 @@ export const dailyMetricsRouter = router({
     "dailyMetrics.hrvBaseline",
     CacheTTL.MEDIUM,
     async ({ ctx, input, range }) => {
-      const repo = new DailyMetricsRepository(ctx.db, ctx.userId, ctx.timezone, ctx.accessWindow);
+      const repo = new DailyMetricsRepository(
+        ctx.db,
+        ctx.userId,
+        ctx.timezone,
+        requireSensorStore(ctx.sensorStore, "dailyMetrics.hrvBaseline"),
+        ctx.accessWindow,
+      );
       const restingHeartRateCte = await fetchRestingHeartRateValuesCte({
         sensorStore: requireSensorStore(ctx.sensorStore, "dailyMetrics.hrvBaseline"),
         userId: ctx.userId,
@@ -75,7 +93,13 @@ export const dailyMetricsRouter = router({
     "dailyMetrics.trends",
     CacheTTL.MEDIUM,
     async ({ ctx, input, range }) => {
-      const repo = new DailyMetricsRepository(ctx.db, ctx.userId, ctx.timezone, ctx.accessWindow);
+      const repo = new DailyMetricsRepository(
+        ctx.db,
+        ctx.userId,
+        ctx.timezone,
+        requireSensorStore(ctx.sensorStore, "dailyMetrics.trends"),
+        ctx.accessWindow,
+      );
       const sensorStore = requireSensorStore(ctx.sensorStore, "dailyMetrics.trends");
       const baselineRepository = new RecoveryBaselineRepository(
         ctx.userId,

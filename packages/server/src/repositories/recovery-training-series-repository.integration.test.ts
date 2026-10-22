@@ -3,6 +3,7 @@ import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { recoveryTrainingSeriesOutputSchema } from "../mcp/recovery-training-series-output.ts";
+import { makeMockSensorStore } from "../routers/test-helpers.ts";
 import { DailyMetricsRepository } from "./daily-metrics-repository.ts";
 import { FoodRepository } from "./food-repository.ts";
 import { RecoveryTrainingSeriesRepository } from "./recovery-training-series-repository.ts";
@@ -52,7 +53,7 @@ describe("RecoveryTrainingSeriesRepository with canonical Postgres sources", () 
     );
     const repository = new RecoveryTrainingSeriesRepository(
       {
-        dailyMetrics: new DailyMetricsRepository(context.db, userId, "UTC"),
+        dailyMetrics: new DailyMetricsRepository(context.db, userId, "UTC", makeMockSensorStore()),
         nutrition: new FoodRepository(context.db, userId, "UTC"),
       },
       "UTC",
@@ -82,7 +83,12 @@ describe("RecoveryTrainingSeriesRepository with canonical Postgres sources", () 
       sql`INSERT INTO fitness.user_profile (id, name, email)
           VALUES (${userId}::uuid, 'RHR-only fixture', ${`${userId}@example.com`})`,
     );
-    const dailyMetrics = new DailyMetricsRepository(context.db, userId, "UTC");
+    const dailyMetrics = new DailyMetricsRepository(
+      context.db,
+      userId,
+      "UTC",
+      makeMockSensorStore(),
+    );
     const repository = new RecoveryTrainingSeriesRepository(
       {
         dailyMetrics: {

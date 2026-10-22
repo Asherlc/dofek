@@ -325,7 +325,7 @@ const syncRouterProcedures = {
       const cooldowns = new Map(
         await Promise.all(
           registeredProviderModels
-            .filter((model) => model.isConnected && !model.importOnly)
+            .filter((model) => model.isConnected && !model.importOnly && !model.pushOnly)
             .map(
               async (model) =>
                 [
@@ -347,7 +347,7 @@ const syncRouterProcedures = {
           lastSyncedAt: model.lastSyncedAt,
           lastSuccessfulSyncAt,
           syncFreshness:
-            model.isConnected && !model.importOnly
+            model.isConnected && !model.importOnly && !model.pushOnly
               ? evaluateProviderSyncFreshness({
                   now: requestTime,
                   lastSuccessfulSyncAt: lastSuccessfulSyncAt
@@ -358,7 +358,7 @@ const syncRouterProcedures = {
                 })
               : null,
           importOnly: model.importOnly,
-          pushOnly: false,
+          pushOnly: model.pushOnly,
           needsReauth: authErrorProviders.has(model.id),
           recentLogs: recentLogsByProvider.get(model.id) ?? [],
         };
@@ -698,6 +698,12 @@ function createTriggerSyncProcedure() {
           if (!model.isConnected) {
             throw new Error(`Provider not connected: ${provider.id}`);
           }
+          if (model.pushOnly) {
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message: `${model.name} sends new data automatically. Sync your device in ${model.name} Connect.`,
+            });
+          }
           providerIds.push(provider.id);
         } else {
           for (const provider of getAllProviders()) {
@@ -708,7 +714,7 @@ function createTriggerSyncProcedure() {
               undefined,
               CUSTOM_AUTH_PROVIDERS,
             );
-            if (model.importOnly || !model.isConnected) continue;
+            if (model.importOnly || model.pushOnly || !model.isConnected) continue;
             providerIds.push(model.id);
           }
 

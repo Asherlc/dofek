@@ -45,6 +45,7 @@ describe("DataCoverageRepository", () => {
     expect(query.mock.calls[0]?.[1]).toContain("analytics.daily_sleep");
     expect(query.mock.calls[0]?.[1]).toContain("analytics.resting_heart_rate_sleep_window");
     expect(query.mock.calls[0]?.[2]).toEqual({
+      spo2EndDate: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
       timezone: "America/Los_Angeles",
       userId: "00000000-0000-4000-8000-000000000001",
     });

@@ -187,11 +187,11 @@ export const AppleHealthImportOnly: ProviderCardStory = {
 export const PushOnly: ProviderCardStory = {
   args: {
     provider: {
-      id: "whoop-ble",
+      id: "whoop_ble",
       label: "WHOOP BLE",
       enabled: false,
       authStatus: "connected",
-      authType: "none",
+      authType: "push:mobile",
       lastSyncAt: null,
       lastSuccessfulSyncAt: null,
       syncFreshness: null,
@@ -264,4 +264,32 @@ export const StaleProvider: ProviderCardStory = {
       pushOnly: false,
     },
   },
+};
+
+const garminProvider = {
+  id: "garmin",
+  label: "Garmin",
+  authType: "oauth",
+  enabled: false,
+  authStatus: "not_connected" as const,
+  lastSyncAt: null,
+  lastSuccessfulSyncAt: null,
+  syncFreshness: null,
+  recentLogs: [],
+  importOnly: false,
+  pushOnly: true,
+};
+
+export const GarminConnect: ProviderCardStory = {
+  args: {
+    provider: garminProvider,
+  },
+};
+
+export const GarminConnected: ProviderCardStory = {
+  args: { provider: { ...garminProvider, authStatus: "connected" } },
+};
+
+export const GarminReconnect: ProviderCardStory = {
+  args: { provider: { ...garminProvider, authStatus: "expired" } },
 };

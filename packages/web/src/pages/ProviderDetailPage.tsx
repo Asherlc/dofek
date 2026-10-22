@@ -6,7 +6,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { z } from "zod";
 import {
   CredentialAuthModal,
-  GarminAuthModal,
   TokenAuthModal,
   WhoopAuthModal,
 } from "../components/DataSourcesAuthModals.tsx";
@@ -69,6 +68,12 @@ export function ProviderDetailPage() {
     (importJob) => importJob.providerId === providerId,
   );
   const pushOnly = provider?.pushOnly === true;
+  const mobileOnly = provider?.authType === "push:mobile";
+  const canAuthorize =
+    provider?.authType !== "none" &&
+    provider?.authType !== "file-import" &&
+    provider?.authType !== "push:mobile";
+  const needsConnection = canAuthorize && !provider?.authorized;
   const health = provider
     ? providerHealth({
         authorized: provider.authorized,
@@ -218,9 +223,9 @@ export function ProviderDetailPage() {
     }
     await runSyncJob({ sinceDate: rangeStartDate, untilDate: rangeEndDate });
   }, [rangeEndDate, rangeStartDate, runSyncJob]);
-  const [reconnectModal, setReconnectModal] = useState<
-    "credential" | "garmin" | "token" | "whoop" | null
-  >(null);
+  const [reconnectModal, setReconnectModal] = useState<"credential" | "token" | "whoop" | null>(
+    null,
+  );
   const [reconnectError, setReconnectError] = useState<string | null>(null);
 
   const handleReauthorize = useCallback(() => {
@@ -252,9 +257,6 @@ export function ProviderDetailPage() {
         setReconnectError(userFacingErrorMessage(error));
         return;
       }
-      case "custom:garmin":
-        setReconnectModal("garmin");
-        return;
       case "custom:whoop":
         setReconnectModal("whoop");
         return;
@@ -360,7 +362,7 @@ export function ProviderDetailPage() {
             </h1>
             {provider && (
               <div className="flex items-center gap-2 mt-0.5">
-                {provider.pushOnly ? (
+                {mobileOnly ? (
                   <>
                     <span className="text-xs text-subtle">Mobile sync</span>
                     {lastSyncedRelative && (
@@ -399,22 +401,27 @@ export function ProviderDetailPage() {
                     </div>
                   </dl>
                 )}
-                {!provider.pushOnly && !provider.importOnly && lastSyncedRelative && (
-                  <span className="text-xs text-dim">Last sync: {lastSyncedRelative}</span>
+                {!mobileOnly && !provider.importOnly && lastSyncedRelative && (
+                  <span className="text-xs text-dim">
+                    {pushOnly ? "Last received" : "Last sync"}: {lastSyncedRelative}
+                  </span>
                 )}
               </div>
             )}
           </div>
         </div>
-        {provider && health?.requiresReconnect && !provider.importOnly && !provider.pushOnly ? (
+        {provider &&
+        !provider.importOnly &&
+        (health?.requiresReconnect || needsConnection || (pushOnly && canAuthorize)) ? (
           <div className="flex flex-col items-end gap-2">
             <button
               type="button"
               onClick={handleReconnect}
               className="rounded bg-amber-500 px-3 py-2 text-xs font-semibold text-slate-950 transition-colors hover:bg-amber-400"
-              aria-label={`Reconnect ${provider.name}`}
+              aria-label={`${needsConnection && !health?.requiresReconnect ? "Connect" : "Reconnect"} ${provider.name}`}
             >
-              Reconnect {provider.name}
+              {needsConnection && !health?.requiresReconnect ? "Connect" : "Reconnect"}{" "}
+              {provider.name}
             </button>
             {reconnectError ? (
               <p role="alert" className="max-w-sm text-right text-xs text-red-400">
@@ -446,16 +453,24 @@ export function ProviderDetailPage() {
         </section>
       )}
 
-      {pushOnly && (
+      {mobileOnly && (
         <section className="card p-4 space-y-3">
           <div>
             <h2 className="text-sm font-medium text-foreground">Mobile sync</h2>
             <p className="text-xs text-subtle mt-1">
-              {provider.description ? `${provider.description} ` : null}Open the Dofek app on your
-              phone with your WHOOP nearby to stream RR intervals and orientation data.
+              {provider?.description ? `${provider.description} ` : null}
+              {providerId === "whoop_ble"
+                ? "Open the Dofek app on your phone with your WHOOP nearby to stream RR intervals and orientation data."
+                : null}
             </p>
           </div>
         </section>
+      )}
+
+      {providerId === "garmin" && pushOnly && (
+        <p className="text-sm text-subtle">
+          New data arrives automatically after you sync your Garmin device.
+        </p>
       )}
 
       {/* Sync controls */}
@@ -592,12 +607,6 @@ export function ProviderDetailPage() {
           onSuccess={handleReconnectSuccess}
         />
       ) : null}
-      {reconnectModal === "garmin" ? (
-        <GarminAuthModal
-          onClose={() => setReconnectModal(null)}
-          onSuccess={handleReconnectSuccess}
-        />
-      ) : null}
       {provider?.tokenAuth && reconnectModal === "token" ? (
         <TokenAuthModal
           kind={provider.tokenAuth.kind}
@@ -623,7 +632,7 @@ export function ProviderDetailPage() {
       {providerStats && <ProviderStatsBreakdown stats={providerStats} variant="full" />}
 
       {/* Sync history */}
-      {!pushOnly && (
+      {!mobileOnly && (
         <SyncHistory
           key={`sync-history-${providerId}`}
           providerId={providerId}

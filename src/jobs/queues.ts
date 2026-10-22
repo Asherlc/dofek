@@ -83,7 +83,7 @@ export const fitFileImportJobDataSchema = z.object({
   originalPath: z.string(),
   userId: z.string(),
   providerId: z.string(),
-  sourceName: z.string(),
+  sourceName: z.string().optional(),
   activitySummary: fitFileImportActivitySummarySchema.optional(),
   deleteFileAfterImport: z.boolean().optional(),
 });

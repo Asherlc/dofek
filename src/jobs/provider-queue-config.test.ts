@@ -53,13 +53,6 @@ describe("getProviderQueueConfig", () => {
     expect(config.syncTier).toBe("daily");
   });
 
-  it("returns frequent tier for garmin with step-chain job limiter", () => {
-    const config = getProviderQueueConfig("garmin");
-    expect(config.syncTier).toBe("frequent");
-    expect(config.concurrency).toBe(1);
-    expect(config.limiter).toEqual({ max: 1, duration: 5_000 });
-  });
-
   it("returns frequent tier for whoop with step-chain job limiter", () => {
     const config = getProviderQueueConfig("whoop");
     expect(config.syncTier).toBe("frequent");

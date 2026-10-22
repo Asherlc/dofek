@@ -88,6 +88,24 @@ export class ProviderStoredIdentityInvalidError extends ProviderAuthError {
   }
 }
 
+export class ProviderAuthorizationAlreadyOwnedError extends Error {
+  constructor(providerName: string) {
+    super(
+      `${providerName} account is already connected to another Dofek account. Disconnect it from the other Dofek account before connecting here.`,
+    );
+    this.name = "ProviderAuthorizationAlreadyOwnedError";
+  }
+}
+
+export class ProviderAuthorizationAccountMismatchError extends Error {
+  constructor(providerName: string) {
+    super(
+      `Reconnect using the currently connected ${providerName} account. Disconnect ${providerName} first to connect a different account.`,
+    );
+    this.name = "ProviderAuthorizationAccountMismatchError";
+  }
+}
+
 export function authFailureReasonFromError(error: unknown): ProviderAuthFailureReason | undefined {
   const visitedErrors = new Set<unknown>();
   let currentError: unknown = error;

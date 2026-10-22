@@ -293,8 +293,10 @@ export const oauthToken = fitness.table(
       .notNull()
       .references(() => provider.id),
     accessToken: text("access_token").notNull(),
+    authorizationId: uuid("authorization_id"),
     refreshToken: text("refresh_token"),
     providerAccountId: text("provider_account_id"),
+    providerAccountLookupId: text("provider_account_lookup_id"),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
     scopes: text("scopes"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -312,6 +314,13 @@ export const oauthToken = fitness.table(
       name: "oauth_token_provider_connection_fkey",
     }).onDelete("cascade"),
     index("oauth_token_provider_idx").on(table.providerId),
+    index("oauth_token_provider_account_lookup_idx").on(
+      table.providerId,
+      table.providerAccountLookupId,
+    ),
+    uniqueIndex("oauth_token_garmin_account_owner_idx")
+      .on(table.providerAccountLookupId)
+      .where(sql`${table.providerId} = 'garmin' AND ${table.providerAccountLookupId} IS NOT NULL`),
     index("oauth_token_user_idx").on(table.userId),
   ],
 );

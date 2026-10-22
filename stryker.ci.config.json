@@ -26,7 +26,6 @@
     "packages/mcp-contracts/src/**/*.ts",
     "packages/server/src/**/*.ts",
     "packages/web/src/lib/**/*.ts",
-    "packages/garmin-connect/src/**/*.ts",
     "packages/eight-sleep/src/**/*.ts",
     "packages/whoop-whoop/src/**/*.ts",
     "packages/trainerroad-client/src/**/*.ts",

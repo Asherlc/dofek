@@ -226,6 +226,7 @@ function execution(
     loadCheckpointDetails,
     loadProgress: vi.fn(async () => null),
     request: claimedRequest,
+    persistProviderCredentials: vi.fn(async () => undefined),
     saveProgress: vi.fn(async () => undefined),
     scrubPii: vi.fn(async () => undefined),
   };
@@ -262,6 +263,17 @@ describe("createAccountErasureRuntime", () => {
 
     expect(mocks.ensureProvidersRegistered).toHaveBeenCalledOnce();
     expect(mocks.connectRedpanda).toHaveBeenCalledOnce();
+
+    const revocation = execution();
+    await expect(runtime.phaseRunner.runPhase("remote_revocation", revocation)).resolves.toEqual({
+      dispositions: [],
+      verified: false,
+    });
+    expect(mocks.revokeRemote).toHaveBeenCalledWith(
+      snapshot,
+      mocks.getAllProviders(),
+      revocation.persistProviderCredentials,
+    );
 
     await expect(runtime.phaseRunner.runPhase("ingest_fence", execution())).resolves.toEqual({
       highWatermarks,

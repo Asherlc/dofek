@@ -8,7 +8,6 @@
     "packages/zones",
     "packages/training",
     "packages/eight-sleep",
-    "packages/garmin-connect",
     "packages/peloton-client",
     "packages/trainerroad-client",
     "packages/trainingpeaks-connect",

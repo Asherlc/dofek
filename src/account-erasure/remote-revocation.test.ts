@@ -12,7 +12,11 @@ vi.mock("../auth/oauth.ts", () => ({
   revokeToken: remoteMocks.revokeToken,
 }));
 
-import type { Provider, ProviderAuthSetup } from "../providers/types.ts";
+import type {
+  Provider,
+  ProviderAuthSetup,
+  ProviderRevocationTokenPersistence,
+} from "../providers/types.ts";
 import { eraseStripeAccount, revokeRemoteAccounts } from "./remote-revocation.ts";
 import type { AccountErasureRemoteSnapshot } from "./remote-snapshot.ts";
 
@@ -176,6 +180,54 @@ describe("remote account revocation", () => {
     };
   }
 
+  it.each(["revokeTokensForAccountErasure", "revokeExistingTokens"] as const)(
+    "durably persists rotated credentials supplied by %s before completing revocation",
+    async (policy) => {
+      const authorizationId = "10000000-0000-4000-8000-000000000123";
+      const rotatedTokens = {
+        ...tokenSet,
+        authorizationId,
+        accessToken: "rotated-access",
+        refreshToken: "rotated-refresh",
+      };
+      const events: string[] = [];
+      const persist = vi.fn(async () => {
+        events.push("persist");
+      });
+      const revoke = vi.fn(
+        async (tokens: typeof tokenSet, onTokensRefreshed?: ProviderRevocationTokenPersistence) => {
+          expect(tokens).toEqual({ ...tokenSet, authorizationId });
+          expect(onTokensRefreshed).toBeTypeOf("function");
+          await onTokensRefreshed?.(rotatedTokens);
+          events.push("revoke");
+        },
+      );
+      const providerSnapshot: AccountErasureRemoteSnapshot = {
+        ...snapshot,
+        providerConnections: [
+          {
+            ...tokenSet,
+            authorizationId,
+            disposition: "revocation_credentials",
+            providerId: "garmin",
+            expiresAt: tokenSet.expiresAt.toISOString(),
+          },
+        ],
+      };
+
+      await expect(
+        revokeRemoteAccounts(
+          providerSnapshot,
+          [providerWithSetup("garmin", { [policy]: revoke })],
+          persist,
+        ),
+      ).resolves.toEqual([{ disposition: "remote_revoked", providerId: "garmin" }]);
+
+      expect(persist).toHaveBeenCalledExactlyOnceWith("garmin", rotatedTokens);
+      expect(events).toEqual(["persist", "revoke"]);
+    },
+  );
+
   it("revokes Apple, Slack, webhooks, and every provider token policy", async () => {
     remoteMocks.revokeAppleCredential.mockClear();
     remoteMocks.revokeToken.mockClear();
@@ -246,7 +298,9 @@ describe("remote account revocation", () => {
       return Response.json({ ok: true, revoked: true });
     };
 
-    await expect(revokeRemoteAccounts(providerSnapshot, providers, fetchFn)).resolves.toEqual([
+    await expect(
+      revokeRemoteAccounts(providerSnapshot, providers, vi.fn(), fetchFn),
+    ).resolves.toEqual([
       { disposition: "no_remote_authorization", providerId: "none" },
       { disposition: "remote_revoked", providerId: "direct-provider" },
       { disposition: "remote_revoked", providerId: "existing-provider" },
@@ -255,6 +309,7 @@ describe("remote account revocation", () => {
     expect(remoteMocks.revokeAppleCredential).toHaveBeenCalledOnce();
     expect(directRevoke).toHaveBeenCalledWith(
       expect.objectContaining({ providerAccountId: "provider-account" }),
+      expect.any(Function),
     );
     expect(existingRevoke).toHaveBeenCalledOnce();
     expect(fallbackRevoke).toHaveBeenCalledOnce();

@@ -346,7 +346,7 @@ async function requestMany(app: express.Express, count: number): Promise<number[
 }
 
 function createTestApp(
-  sensorStore = undefined,
+  sensorStore: Parameters<typeof createMcpRouter>[0]["sensorStore"] = undefined,
   rateLimit: Partial<RateLimitOptions> | false = false,
 ) {
   const app = express();
@@ -1651,6 +1651,7 @@ describe("createMcpRouter", () => {
 
   it("returns daily health summaries from the metrics repository", async () => {
     authorizeMcpToken();
+    const sensorStore = makeMockSensorStore();
     toolTestMocks.dailyMetricsList.mockResolvedValue([
       {
         date: "2026-05-20",
@@ -1669,7 +1670,7 @@ describe("createMcpRouter", () => {
       },
     ]);
 
-    const response = await request(createTestApp(), {
+    const response = await request(createTestApp(sensorStore), {
       authorization: "Bearer good-token",
       body: createToolCallRequest("get_daily_health_summary", {
         date: "2026-05-20",
@@ -1696,6 +1697,7 @@ describe("createMcpRouter", () => {
       expect.anything(),
       "user-id",
       "America/Los_Angeles",
+      sensorStore,
     );
     expect(toolTestMocks.dailyMetricsList).toHaveBeenCalledWith(1, "2026-05-20");
   });
@@ -3014,7 +3016,7 @@ describe("createMcpRouter", () => {
       },
     ]);
 
-    const response = await request(createTestApp(), {
+    const response = await request(createTestApp(makeMockSensorStore()), {
       authorization: "Bearer good-token",
       body: createToolCallRequest("get_sleep_summary", {
         end_date: "2026-05-18",
@@ -3069,7 +3071,7 @@ describe("createMcpRouter", () => {
       },
     ]);
 
-    const response = await request(createTestApp(), {
+    const response = await request(createTestApp(makeMockSensorStore()), {
       authorization: "Bearer good-token",
       body: createToolCallRequest("get_sleep_summary", {
         end_date: "2026-05-18",

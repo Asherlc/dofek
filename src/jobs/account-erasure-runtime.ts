@@ -188,7 +188,8 @@ export async function createAccountErasureRuntime(
         ),
       now: () => new Date(),
       purgeWork: (snapshot) => workPurger.purge(snapshot),
-      revokeRemote: (snapshot) => revokeRemoteAccounts(snapshot, providers),
+      revokeRemote: (snapshot, persistProviderCredentials) =>
+        revokeRemoteAccounts(snapshot, providers, persistProviderCredentials),
       verifyBackupRetention: (input) =>
         verifyAccountErasureBackupRetention(databaseBackupStorage, {
           maxSweepPasses: MAX_DATABASE_BACKUP_SWEEP_PASSES,

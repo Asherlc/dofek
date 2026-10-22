@@ -52,18 +52,38 @@ function makeCaller() {
   };
 }
 
+function findSensorQuery(sensorStore: ReturnType<typeof makeMockSensorStore>, source: string) {
+  const call = vi.mocked(sensorStore.query).mock.calls.find(([, text]) => text.includes(source));
+  if (!call) throw new Error(`Expected a sensor query for ${source}`);
+  return { text: call[1], params: call[2] };
+}
+
 describe("correlation.computeV2 selected ranges", () => {
   it("uses lower date bounds for finite selected ranges", async () => {
     const { caller, execute, sensorStore } = makeCaller();
 
     await caller.computeV2({ metricX: "protein", metricY: "hrv", days: 365, lag: 0 });
 
-    const restingHeartRateParams = vi.mocked(sensorStore.query).mock.calls[0]?.[2];
-    const sleepQueryText = vi.mocked(sensorStore.query).mock.calls[1]?.[1];
-    const activityQueryText = vi.mocked(sensorStore.query).mock.calls[2]?.[1];
-    const activityQueryParams = vi.mocked(sensorStore.query).mock.calls[2]?.[2];
-    const bodyQueryText = vi.mocked(sensorStore.query).mock.calls[3]?.[1];
+    const { params: restingHeartRateParams } = findSensorQuery(
+      sensorStore,
+      "analytics.resting_heart_rate_sleep_window",
+    );
+    const { text: spo2QueryText, params: spo2QueryParams } = findSensorQuery(
+      sensorStore,
+      "FROM ingest.metric_stream",
+    );
+    const { text: sleepQueryText } = findSensorQuery(sensorStore, "FROM analytics.daily_sleep");
+    const { text: activityQueryText, params: activityQueryParams } = findSensorQuery(
+      sensorStore,
+      "FROM analytics.activity_summary",
+    );
+    const { text: bodyQueryText } = findSensorQuery(
+      sensorStore,
+      "FROM analytics.v_body_measurement",
+    );
     expect(restingHeartRateParams).toHaveProperty("rhrWindowStart");
+    expect(spo2QueryText).toContain("recorded_at >= toDateTime64({spo2WindowStart:String}");
+    expect(spo2QueryParams).toHaveProperty("spo2WindowStart");
     expect(sleepQueryText).toContain("subtractDays(toDate({endDate:String}), {days:UInt32})");
     expect(activityQueryText).toContain("FROM analytics.activity_summary");
     expect(activityQueryText).toContain("subtractDays(toDate({endDate:String}), {days:UInt32})");
@@ -84,16 +104,30 @@ describe("correlation.computeV2 selected ranges", () => {
 
     await caller.computeV2({ metricX: "protein", metricY: "hrv", days: null, lag: 0 });
 
-    const restingHeartRateQueryText = vi.mocked(sensorStore.query).mock.calls[0]?.[1];
-    const restingHeartRateParams = vi.mocked(sensorStore.query).mock.calls[0]?.[2];
-    const sleepQueryText = vi.mocked(sensorStore.query).mock.calls[1]?.[1];
-    const sleepQueryParams = vi.mocked(sensorStore.query).mock.calls[1]?.[2];
-    const activityQueryText = vi.mocked(sensorStore.query).mock.calls[2]?.[1];
-    const activityQueryParams = vi.mocked(sensorStore.query).mock.calls[2]?.[2];
-    const bodyQueryText = vi.mocked(sensorStore.query).mock.calls[3]?.[1];
-    const bodyQueryParams = vi.mocked(sensorStore.query).mock.calls[3]?.[2];
+    const { text: restingHeartRateQueryText, params: restingHeartRateParams } = findSensorQuery(
+      sensorStore,
+      "analytics.resting_heart_rate_sleep_window",
+    );
+    const { text: spo2QueryText, params: spo2QueryParams } = findSensorQuery(
+      sensorStore,
+      "FROM ingest.metric_stream",
+    );
+    const { text: sleepQueryText, params: sleepQueryParams } = findSensorQuery(
+      sensorStore,
+      "FROM analytics.daily_sleep",
+    );
+    const { text: activityQueryText, params: activityQueryParams } = findSensorQuery(
+      sensorStore,
+      "FROM analytics.activity_summary",
+    );
+    const { text: bodyQueryText, params: bodyQueryParams } = findSensorQuery(
+      sensorStore,
+      "FROM analytics.v_body_measurement",
+    );
     expect(restingHeartRateQueryText).not.toContain("rhrWindowStart");
     expect(restingHeartRateParams).not.toHaveProperty("rhrWindowStart");
+    expect(spo2QueryText).not.toContain("spo2WindowStart");
+    expect(spo2QueryParams).not.toHaveProperty("spo2WindowStart");
     expect(sleepQueryText).not.toContain("subtractDays");
     expect(sleepQueryParams).not.toHaveProperty("days");
     expect(activityQueryText).toContain("FROM analytics.activity_summary");

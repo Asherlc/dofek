@@ -7,7 +7,7 @@ This directory contains implementations for various data providers (fitness trac
 ## Core Concepts
 
 - **Provider Interface**: All providers implement the `Provider` interface (defined in `types.ts`).
-- **Sync vs Import**: Providers are either `SyncProvider` (fetches data via API) or `ImportProvider` (processes uploaded files).
+- **Sync, Push, and Import**: The [provider interfaces](types.ts) distinguish `SyncProvider` (fetches API data), `PushProvider` (processes official pushed events), and `ImportProvider` (processes uploaded files).
 - **Connections**: Supports OAuth 2.0 (`oauth`), OAuth 1.0 (`oauth1`), personal token (`token`), credentials (`credential`), and public profile identity (`public-profile`). Each sync provider connects per user through the [provider contract](types.ts) and [auth policy](provider-auth-policy.ts); see [the provider guide](../../docs/adding-a-provider.md).
 - **Manual connections**: `manualToken.kind` distinguishes `public-profile` from `access-token`. Both use the existing connect form and encrypted identity/token repository; [account-erasure snapshotting](../account-erasure/remote-snapshot.ts) marks public-profile connections as `no_remote_authorization`, including identities stored before this classification was added.
 - **Webhooks**: Many providers (Strava, Fitbit, Oura) support real-time updates via webhooks (`WebhookProvider`).
@@ -47,7 +47,8 @@ upload need not contain the complete remote logbook; see the
 
 ## Supported Providers
 
-- **API/credential/OAuth sync providers**: Amazfit/Zepp, BodySpec, Concept2, Cycling Analytics, Eight Sleep, FatSecret, Garmin, Kaya, Mountain Project, OpenBeta, Oura, Peloton, Polar, Ride with GPS, Strava, theCrag, TrainerRoad, Ultrahuman, VeloHero, Wahoo, Wger, WHOOP, Withings, Xert, Ziva, Zwift. See the [registry](registry.ts).
+- **API/credential/OAuth sync providers**: Amazfit/Zepp, BodySpec, Concept2, Cycling Analytics, Eight Sleep, FatSecret, Kaya, Mountain Project, OpenBeta, Oura, Peloton, Polar, Ride with GPS, Strava, theCrag, TrainerRoad, Ultrahuman, VeloHero, Wahoo, Wger, WHOOP, Withings, Xert, Ziva, Zwift. See the [registry](registry.ts).
+- **OAuth push providers**: Garmin uses official Health and Activity notifications through its dedicated queue, with no scheduled/manual polling. Connection controls remain available. See the [provider](garmin/provider.ts) and [Garmin guide](../../docs/garmin.md).
 - **Import-only providers**: Cronometer CSV, FIT files, Garmin account exports, Kaya CSV (`kaya-export`), Strong CSV, and Zepp OS App exports. FIT imports use Garmin's open FIT protocol and SDK-compatible files ([FIT SDK](https://developer.garmin.com/fit/overview/)).
 - **Upload/native-mobile data sources**: Apple Health import and WHOOP BLE capture live outside this registry path in the web/mobile upload and native module flows.
 

@@ -638,7 +638,6 @@ describe("dailyMetricsRouter", () => {
       const result = await caller.trends({ days: 30, endDate: "2024-01-16" });
 
       expect(result?.latest_resting_hr).toBe(53);
-      expect(sensorStore.query).toHaveBeenCalledTimes(2);
       const queryText = vi.mocked(sensorStore.query).mock.calls[0]?.[1];
       const queryParams = vi.mocked(sensorStore.query).mock.calls[0]?.[2];
       expect(queryText).toContain("analytics.resting_heart_rate_sleep_window");
@@ -787,6 +786,7 @@ describe("dailyMetricsRouter", () => {
         db: { execute },
         userId: "user-1",
         timezone: "UTC",
+        sensorStore: makeMockSensorStore(),
         accessWindow: {
           kind: "limited",
           paid: false,

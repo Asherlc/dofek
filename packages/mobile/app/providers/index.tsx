@@ -26,7 +26,6 @@ import { OperationProgressBar } from "../../components/OperationProgressBar";
 import { ProcessingStatusWidget } from "../../components/ProcessingStatusWidget";
 import {
   CredentialAuthModal,
-  GarminAuthModal,
   TokenAuthModal,
   WhoopAuthModal,
 } from "../../components/providers/auth-modals.tsx";
@@ -135,7 +134,6 @@ export default function ProvidersScreen() {
     | null
   >(null);
   const [whoopAuthOpen, setWhoopAuthOpen] = useState(false);
-  const [garminAuthOpen, setGarminAuthOpen] = useState(false);
 
   // Track which providers are currently syncing (from active jobs or user-initiated)
   const [syncingProviders, setSyncingProviders] = useState<Set<string>>(new Set());
@@ -651,9 +649,6 @@ export default function ProvidersScreen() {
         case "custom:whoop":
           setWhoopAuthOpen(true);
           break;
-        case "custom:garmin":
-          setGarminAuthOpen(true);
-          break;
       }
     },
     [serverUrl, sessionToken, trpcUtils],
@@ -1028,16 +1023,6 @@ export default function ProvidersScreen() {
           onClose={() => setWhoopAuthOpen(false)}
           onSuccess={() => {
             setWhoopAuthOpen(false);
-            trpcUtils.sync.providers.invalidate();
-          }}
-        />
-      )}
-      {/* Garmin Auth Modal */}
-      {garminAuthOpen && (
-        <GarminAuthModal
-          onClose={() => setGarminAuthOpen(false)}
-          onSuccess={() => {
-            setGarminAuthOpen(false);
             trpcUtils.sync.providers.invalidate();
           }}
         />

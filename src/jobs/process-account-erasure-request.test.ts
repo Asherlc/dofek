@@ -23,9 +23,13 @@ const accountErasureDatabaseMocks = vi.hoisted(() => ({
 const sentryMocks = vi.hoisted(() => ({
   captureException: vi.fn(),
 }));
+const snapshotMocks = vi.hoisted(() => ({
+  updateAccountErasureProviderCredentials: vi.fn(),
+}));
 
 vi.mock("../db/account-erasure-processing.ts", () => accountErasureDatabaseMocks);
 vi.mock("@sentry/node", () => sentryMocks);
+vi.mock("../account-erasure/remote-snapshot.ts", () => snapshotMocks);
 
 const request: ClaimedAccountErasureRequest = {
   completionDeadline: new Date("2026-08-25T12:00:00.000Z"),
@@ -101,6 +105,40 @@ afterEach(() => {
 });
 
 describe("processAccountErasureRequest", () => {
+  it("commits refreshed credentials and exposes the new encrypted snapshot to verification", async () => {
+    const claimed = { ...request };
+    const tokens = {
+      accessToken: "rotated",
+      refreshToken: "rotated-refresh",
+      expiresAt: new Date(),
+      scopes: null,
+    };
+    accountErasureDatabaseMocks.claimAccountErasureRequest.mockResolvedValue(claimed);
+    snapshotMocks.updateAccountErasureProviderCredentials.mockResolvedValue("rotated-ciphertext");
+    let verificationSnapshot: string | null = null;
+    const runner = phaseRunner(async (phase, execution) => {
+      if (phase === "remote_revocation")
+        await execution.persistProviderCredentials("garmin", tokens);
+      if (phase === "remote_revocation_verification")
+        verificationSnapshot = execution.request.encryptedRemoteSnapshot;
+      return null;
+    });
+    await processAccountErasureRequest(
+      database,
+      request.id,
+      "worker-1",
+      runner,
+      new Date("2026-08-25T12:00:00.001Z"),
+    );
+    expect(snapshotMocks.updateAccountErasureProviderCredentials).toHaveBeenCalledWith(
+      database,
+      request.id,
+      "worker-1",
+      "garmin",
+      tokens,
+    );
+    expect(verificationSnapshot).toBe("rotated-ciphertext");
+  });
   it("does not execute effects when another worker owns the request", async () => {
     accountErasureDatabaseMocks.claimAccountErasureRequest.mockResolvedValue(null);
     const runner = phaseRunner();

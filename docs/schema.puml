@@ -57,8 +57,10 @@ entity "oauth_token" {
   * provider_id : text <<PK>>
   --
   access_token : text
+  authorization_id : uuid
   refresh_token : text
   provider_account_id : text
+  provider_account_lookup_id : text
   expires_at : timestamp
   scopes : text
   created_at : timestamp

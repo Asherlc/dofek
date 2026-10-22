@@ -80,6 +80,7 @@ export interface ProviderDataDeletionJob {
 export interface ProviderDataDeletionDependencies {
   accountErasureAllowsWork(workKind: string): Promise<boolean>;
   clickHouseClient: ProviderDataDeletionClickHouseClient;
+  deleteProviderArtifacts(userId: string, providerId: string): Promise<void>;
   enqueueAnalyticsRefresh: (
     userId: string,
     providerId: string,
@@ -353,6 +354,10 @@ export async function processProviderDataDeletionJob(
     return;
   }
 
+  if (!(await dependencies.accountErasureAllowsWork("provider artifact deletion"))) {
+    return;
+  }
+  await dependencies.deleteProviderArtifacts(job.data.userId, job.data.providerId);
   if (!(await dependencies.accountErasureAllowsWork("provider deletion acknowledgement"))) {
     return;
   }

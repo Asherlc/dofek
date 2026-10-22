@@ -58,6 +58,16 @@ registry, and the tagging step is a no-op for versions already tagged. It does
 not rewrite an existing tag target, so verify release artifacts, npm versions,
 and release-tag targets after publishing.
 
+The private Garmin client, `@dofek/garmin-connect`, is retired from this
+repository and its automated release paths. It is excluded from the current
+[workspace](../pnpm-workspace.yaml), [release package list](../lerna.json), and
+[public-package test command](../package.json). Its
+[historical package manifest](https://github.com/Asherlc/dofek/blob/585bfa7d2e9417bc77e9cef751a2ef5901fdbd7d/packages/garmin-connect/package.json)
+is retained in Git history. Repository retirement does not unpublish existing
+npm versions; registry removal is a separate npm operation
+([npm unpublish](https://docs.npmjs.com/cli/v11/commands/npm-unpublish)). See the
+[Garmin guide](garmin.md) for the official integration.
+
 ### Adding another npm package
 
 A public package must:
