@@ -1,4 +1,4 @@
-import { formatDateTime, formatTimeOnly } from "@dofek/format/format";
+import { formatDateTime, formatNumber, formatTimeOnly } from "@dofek/format/format";
 import { activityMetricColors } from "@dofek/scoring/colors";
 import {
   type ActivityChartSeries,
@@ -61,7 +61,7 @@ interface ChartProps {
 function accessibleRows(series: ActivityChartSeries, unit: string) {
   return series.samples.map((sample) => ({
     label: `Sample ${sample.index + 1} · ${formatDateTime(new Date(sample.timestamp))}`,
-    value: `${sample.value} ${unit}`,
+    value: `${formatNumber(sample.value, 0)} ${unit}`,
   }));
 }
 

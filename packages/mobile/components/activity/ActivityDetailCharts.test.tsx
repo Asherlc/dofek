@@ -145,6 +145,27 @@ describe("ActivityDetailCharts", () => {
     expect(screen.getByLabelText(`Sample 2 · ${timestamp}: 130 beats per minute`)).toBeDefined();
   });
 
+  it.each([
+    ["line", LineChart],
+    ["area", AreaChart],
+  ])("rounds fractional readings to whole numbers for the %s chart", (_, ChartComponent) => {
+    render(
+      <ChartComponent
+        data={data.map((sample, index) => ({
+          ...sample,
+          value: [43.383949279785156, null, 76.92308044433594][index] ?? null,
+        }))}
+        color="#ff0000"
+        label="Heart Rate"
+        unit="beats per minute"
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "View Heart Rate data" }));
+    expect(screen.getByText("43 beats per minute")).toBeDefined();
+    expect(screen.getByText("77 beats per minute")).toBeDefined();
+  });
+
   it("renders isolated readings as dots without drawing across missing samples", () => {
     const { container } = render(
       <LineChart data={data} color="#ff0000" label="Heart Rate" unit="beats per minute" />,

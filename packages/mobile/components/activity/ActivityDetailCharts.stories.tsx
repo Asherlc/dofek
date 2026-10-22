@@ -40,6 +40,14 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 export const Default: Story = {};
 export const Empty: Story = { args: { data: [] } };
+export const FractionalReadings: Story = {
+  args: {
+    data: meta.args.data.map((sample, index) => ({
+      ...sample,
+      value: [43.383949279785156, 76.92308044433594, 69.5, 110.25][index] ?? null,
+    })),
+  },
+};
 export const SparseReadings: Story = {
   args: {
     data: [null, 130, null, 145, null, 155, null].map((value, index) => ({
