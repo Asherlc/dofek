@@ -1,7 +1,9 @@
+import { SQL } from "drizzle-orm";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { reportProviderAuthDiagnostic } from "../lib/provider-diagnostics.ts";
 import { createMockDatabase } from "../providers/test-helpers.ts";
 import {
+  decryptCredentialValue,
   encryptCredentialValue,
   isEncryptedCredentialValue,
 } from "../security/credential-encryption.ts";
@@ -13,6 +15,7 @@ import {
   deleteTokens,
   deriveProviderAccountKey,
   ensureProvider,
+  findTokenUsersByProviderAccountId,
   loadTokens,
   saveTokens,
 } from "./tokens.ts";
@@ -144,6 +147,7 @@ describe("saveTokens", () => {
       refreshToken: "refresh-plain",
       expiresAt: new Date("2026-04-01T00:00:00Z"),
       providerAccountId: "polar-user-123",
+      authorizationId: "63000000-0000-4000-8000-000000000001",
       scopes: "read write",
     };
 
@@ -161,6 +165,39 @@ describe("saveTokens", () => {
     expect(isEncryptedCredentialValue(firstInsert.accessToken)).toBe(true);
     expect(isEncryptedCredentialValue(firstInsert.refreshToken)).toBe(true);
     expect(isEncryptedCredentialValue(firstInsert.providerAccountId)).toBe(true);
+    expect(firstInsert.authorizationId).toBe("63000000-0000-4000-8000-000000000001");
+    expect(mock.spies.onConflictDoUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        set: expect.objectContaining({
+          authorizationId: tokens.authorizationId,
+          providerAccountLookupId: firstInsert.providerAccountLookupId,
+        }),
+      }),
+    );
+  });
+
+  it("keeps grant and account metadata as existing-column expressions during a token-only refresh", async () => {
+    await saveTokens(
+      mock.db,
+      "garmin",
+      {
+        accessToken: "rotated-access",
+        refreshToken: "rotated-refresh",
+        expiresAt: new Date("2026-12-01T00:00:00Z"),
+        scopes: "ACTIVITY_EXPORT",
+      },
+      TEST_USER_ID,
+    );
+
+    expect(mock.spies.onConflictDoUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        set: expect.objectContaining({
+          authorizationId: expect.any(SQL),
+          providerAccountId: expect.any(SQL),
+          providerAccountLookupId: expect.any(SQL),
+        }),
+      }),
+    );
   });
 
   it("handles null refreshToken and scopes", async () => {
@@ -180,6 +217,65 @@ describe("saveTokens", () => {
         scopes: null,
       }),
     );
+  });
+
+  it("stores a normalized encrypted identity with a stable provider-scoped lookup", async () => {
+    const tokens = {
+      accessToken: "official-access",
+      refreshToken: "official-refresh",
+      expiresAt: new Date("2026-12-01T00:00:00Z"),
+      providerAccountId: "  official-account  ",
+      scopes: "ACTIVITY_EXPORT",
+    };
+    const secondUserId = "11111111-1111-4111-8111-111111111111";
+
+    await saveTokens(mock.db, "garmin", tokens, TEST_USER_ID);
+    await saveTokens(mock.db, "garmin", tokens, secondUserId);
+    await saveTokens(mock.db, "other-provider", tokens, TEST_USER_ID);
+
+    const first = mock.spies.values.mock.calls[0]?.[0];
+    const second = mock.spies.values.mock.calls[1]?.[0];
+    const otherProvider = mock.spies.values.mock.calls[2]?.[0];
+    expect(first?.providerAccountLookupId).toMatch(/^[a-f0-9]{64}$/);
+    expect(second?.providerAccountLookupId).toBe(first?.providerAccountLookupId);
+    expect(otherProvider?.providerAccountLookupId).not.toBe(first?.providerAccountLookupId);
+    await expect(
+      decryptCredentialValue(first?.providerAccountId, {
+        tableName: "fitness.oauth_token",
+        columnName: "provider_account_id",
+        scopeId: `${TEST_USER_ID}:garmin`,
+      }),
+    ).resolves.toBe("official-account");
+  });
+});
+
+describe("findTokenUsersByProviderAccountId", () => {
+  it("returns only the selected owner IDs in database order", async () => {
+    const mock = createMockDatabase();
+    const otherUserId = "11111111-1111-4111-8111-111111111111";
+    mock.spies.where.mockResolvedValue([{ userId: TEST_USER_ID }, { userId: otherUserId }]);
+
+    await expect(
+      findTokenUsersByProviderAccountId(mock.db, "shared-provider", "official-account"),
+    ).resolves.toEqual([TEST_USER_ID, otherUserId]);
+    expect(mock.spies.select).toHaveBeenCalledWith({ userId: oauthToken.userId });
+  });
+
+  it("returns an empty owner list when no authorization matches", async () => {
+    const mock = createMockDatabase();
+    mock.spies.where.mockResolvedValue([]);
+
+    await expect(
+      findTokenUsersByProviderAccountId(mock.db, "garmin", "unknown-account"),
+    ).resolves.toEqual([]);
+  });
+
+  it("rejects a blank account before querying authorization owners", async () => {
+    const mock = createMockDatabase();
+    await expect(findTokenUsersByProviderAccountId(mock.db, "garmin", " \t ")).rejects.toThrow(
+      "OAuth provider account ID must not be empty",
+    );
+    expect(mock.spies.select).not.toHaveBeenCalled();
   });
 });
 
@@ -279,6 +375,7 @@ describe("loadTokens", () => {
     mock.spies.limit.mockResolvedValue([
       {
         accessToken: "access-123",
+        authorizationId: "63000000-0000-4000-8000-000000000001",
         refreshToken: "refresh-456",
         expiresAt: new Date("2026-04-01T00:00:00Z"),
         scopes: "read",
@@ -296,6 +393,7 @@ describe("loadTokens", () => {
 
     expect(result).toEqual({
       accessToken: "access-123",
+      authorizationId: "63000000-0000-4000-8000-000000000001",
       refreshToken: "refresh-456",
       expiresAt: new Date("2026-04-01T00:00:00Z"),
       scopes: "read",

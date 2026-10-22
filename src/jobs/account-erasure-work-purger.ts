@@ -7,6 +7,7 @@ import { purgeAccountRedisStateForSnapshot } from "../account-erasure/redis-eras
 import { type ErasureQueue, purgeAccountWork } from "../account-erasure/work-erasure.ts";
 import { eraseActivityImageObjects } from "../activity-images/storage.ts";
 import { R2ImportUploadStorage } from "../file-upload-storage.ts";
+import { R2ProviderArtifactStorage } from "../provider-artifact-storage.ts";
 import { createR2Client, requiredR2EnvironmentVariable } from "../r2-storage.ts";
 import type { AccountErasureWorkPurger } from "./account-erasure-runtime.ts";
 import { getConfiguredProviderIds } from "./provider-queue-config.ts";
@@ -116,6 +117,10 @@ export function createAccountErasureWorkPurgerFromEnv(): AccountErasureWorkPurge
     r2Client,
     requiredR2EnvironmentVariable("IMPORT_R2_BUCKET"),
   );
+  const providerArtifactStorage = new R2ProviderArtifactStorage(
+    r2Client,
+    requiredR2EnvironmentVariable("IMPORT_R2_BUCKET"),
+  );
   const exportBucket = requiredR2EnvironmentVariable("EXPORT_R2_BUCKET");
   const jobFilesDirectory = process.env.JOB_FILES_DIR ?? join(tmpdir(), "dofek-job-files");
 
@@ -146,6 +151,7 @@ export function createAccountErasureWorkPurgerFromEnv(): AccountErasureWorkPurge
             );
           },
           deleteImportObject: (objectKey) => importStorage.deleteObject(objectKey),
+          deleteProviderArtifactsForUser: (userId) => providerArtifactStorage.deleteForUser(userId),
           jobFilesDirectory,
           purgeRedis: async (_userId, bullmqJobIds) => {
             await purgeAccountRedisStateForSnapshot(snapshot, bullmqJobIds);

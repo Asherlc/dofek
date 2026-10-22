@@ -5,6 +5,7 @@ This directory contains background job processing logic using BullMQ and Redis.
 ## Job Types
 
 - **Sync**: Periodic data synchronization with provider APIs (e.g., Strava, Fitbit).
+- **Push delivery**: Official Garmin Health/Activity notifications enter the dedicated provider queue and use the shared worker processing flow; they do not trigger window polling. See the [Garmin provider](../providers/garmin/provider.ts) and [operator guide](../../docs/garmin.md).
 - **Import**: Processing uploaded files (Apple Health XML, Strong CSV, Cronometer CSV).
 - **Export**: Generating user data ZIP exports.
 - **Scheduled Sync**: High-level orchestrator for triggering periodic syncs based on tiers.
@@ -25,7 +26,7 @@ This directory contains background job processing logic using BullMQ and Redis.
 - **Targeted webhooks**: The HTTP receiver queues each actionable targeted event for the provider worker. The worker calls the provider's targeted sync method when available, then records canonical commits and downstream processing through the same operation used by window syncs. Each event has its own queue ID so cooldowns do not merge unrelated events. Strava requires prompt webhook acknowledgement and recommends asynchronous processing ([Strava webhook documentation](https://developers.strava.com/docs/webhooks/)).
 - **Shared sync coordination**: Shared jobs fan out through the existing provider queues with one absolute sync window. BullMQ parent dependencies preserve dispatch through coordinator retries and child pruning; failed provider jobs report independently. The coordinator uses the [waiting-children processing pattern](https://docs.bullmq.io/patterns/process-step-jobs).
 - **Sync processing identity**: Each newly created queue job has its own processing operation, correlated by its queue ID, stored creation timestamp, and provider. Retries and continuations reuse the operation ID persisted in job data. A queue ID alone cannot identify a permanent processing record because BullMQ permits reusing it after job removal; see [BullMQ job IDs](https://docs.bullmq.io/guide/jobs/job-ids).
-- **Credential reconnects**: Generic, Garmin, and WHOOP credential handlers commit renewed tokens inside the account-erasure fence, then reacquire the fence to dispatch a full sync. Each reconnect uses a fresh queue ID so an older active sync or delayed bounded retry cannot absorb the request. Existing provider cooldown delays still apply; see [BullMQ job IDs](https://docs.bullmq.io/guide/jobs/job-ids) and [delayed jobs](https://docs.bullmq.io/guide/jobs/delayed).
+- **Credential reconnects**: Generic and WHOOP credential handlers commit renewed tokens inside the account-erasure fence, then reacquire the fence to dispatch a full sync. Each reconnect uses a fresh queue ID so an older active sync or delayed bounded retry cannot absorb the request. Existing provider cooldown delays still apply; see [BullMQ job IDs](https://docs.bullmq.io/guide/jobs/job-ids) and [delayed jobs](https://docs.bullmq.io/guide/jobs/delayed). Garmin uses [official OAuth](../providers/garmin/oauth.ts); its push-only connection does not dispatch a full poll.
 - **Redis command deadlines**: Shared nonblocking Redis commands and per-provider sync queue commands have a five-second deadline so stalled dispatch releases the account-erasure transaction. Worker and event-listener connections retain their blocking behavior. BullMQ distinguishes request-facing producers from persistent workers in its [connection guidance](https://docs.bullmq.io/guide/connections); ioredis defines [commandTimeout](https://github.com/redis/ioredis/blob/main/lib/redis/RedisOptions.ts) separately from the connection deadline.
 - **Queues**: Defined in `queues.ts` with typed job data interfaces.
 - **Workers**: Implemented in `worker.ts` and kept running while queues are idle. The Swarm service maintains a running replica; an idle process exit ends its task and creates an availability gap before replacement ([Docker Swarm services](https://docs.docker.com/engine/swarm/how-swarm-mode-works/services/)).
@@ -65,13 +66,24 @@ effort at that boundary: immediate exit cannot wait for asynchronous flushing
 [Node.js process.exit](https://nodejs.org/api/process.html#processexitcode)).
 
 Mountain Project fetches and persists its full snapshot in one execution, so the
-guard orders that complete refresh. WHOOP and Garmin carry checkpoints across
+guard orders that complete refresh. WHOOP carries checkpoints across
 separate jobs; execution locking does not order an entire logical refresh across
 those continuations ([BullMQ step jobs](https://docs.bullmq.io/patterns/process-step-jobs)).
+
+Garmin instead validates each delivery's current owner, authorization, permission,
+and provider-data generation before writing. Reconnects and provider-data deletion
+therefore invalidate queued stale deliveries. The
+[receiver](../../packages/server/src/routes/garmin-webhooks.ts),
+[authorization checks](../providers/garmin/authorization.ts), and
+[provider](../providers/garmin/provider.ts) define that lifecycle. Retained FIT
+artifacts belong to the user/provider and are removed by provider-data deletion
+or account erasure; see [artifact storage](../provider-artifact-storage.ts) and
+the [Garmin operator guide](../../docs/garmin.md).
 
 ## Configuration
 
 - **Provider Tiers**: Sync frequency and priority are defined in `provider-queue-config.ts`.
+- **Push-only queues**: Queue registration and scheduled eligibility are distinct. Garmin still needs an on-demand provider queue/worker, while `pushOnly` excludes scheduled and manual polls. See [queue configuration](provider-queue-config.ts), [worker construction](worker-queues.ts), and [sync eligibility](../providers/index.ts).
 - **Concurrency**: Per-queue concurrency limits for rate-limiting API calls.
 - **Retry Logic**: Sync and post-sync jobs use a fixed five-minute backoff;
   provider-deletion and activity-analytics jobs use a fixed 30-second backoff.

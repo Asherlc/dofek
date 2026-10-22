@@ -489,6 +489,17 @@ Do not use a production account as a validation fixture. A production deletion
 request is irreversible even when its coordinator later reports a retryable
 failure.
 
+## Provider download artifacts
+
+The work-purge and verification phases delete the user's complete
+`provider-artifacts/<user-id>/` prefix in `IMPORT_R2_BUCKET`, including Garmin
+FIT files retained for retry. Provider-data deletion removes only that user's
+provider prefix. The shared provider execution fence serializes processing and
+deletion; current authorization and deletion-generation checks reject stale
+work. See [artifact storage](../src/provider-artifact-storage.ts),
+[account work purge](../src/jobs/account-erasure-work-purger.ts), and
+[provider deletion](../src/jobs/process-provider-data-deletion-job.ts).
+
 ## Activity image originals
 
 The work-purge phase includes the activity-images queue and deletes the user's

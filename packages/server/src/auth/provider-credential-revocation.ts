@@ -1,11 +1,13 @@
 import * as Sentry from "@sentry/node";
 import { type OAuthConfig, revokeToken, type TokenSet } from "dofek/auth/oauth";
+import type { ProviderAuthSetup, ProviderRevocationTokenPersistence } from "dofek/providers/types";
 import { logger } from "../logger.ts";
 
 interface RevokeProviderCredentialsInput {
   oauthConfig?: OAuthConfig | undefined;
   providerId: string;
-  revokeExistingTokens?: ((tokens: TokenSet) => Promise<void>) | undefined;
+  revokeExistingTokens?: ProviderAuthSetup["revokeExistingTokens"];
+  onTokensRefreshed?: ProviderRevocationTokenPersistence;
   tokens: TokenSet;
 }
 
@@ -14,7 +16,7 @@ export async function revokeProviderCredentials(
 ): Promise<void> {
   if (input.revokeExistingTokens) {
     try {
-      await input.revokeExistingTokens(input.tokens);
+      await input.revokeExistingTokens(input.tokens, input.onTokensRefreshed);
       return;
     } catch (error: unknown) {
       logger.warn(
@@ -29,7 +31,7 @@ export async function revokeProviderCredentials(
           providerId: input.providerId,
         },
       });
-      if (!input.oauthConfig?.revokeUrl) throw error;
+      throw error;
     }
   }
 

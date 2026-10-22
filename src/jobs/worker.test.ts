@@ -99,6 +99,8 @@ describe("worker startup", () => {
     const { initProductionPostHog } = await import("../lib/posthog.ts");
     expect(Sentry.init).toHaveBeenCalledWith({
       beforeSend: expect.any(Function),
+      beforeSendSpan: expect.any(Function),
+      beforeSendTransaction: expect.any(Function),
       dsn: "https://test@sentry.io/123",
       environment: "production",
       skipOpenTelemetrySetup: true,

@@ -2,7 +2,8 @@
 
 An assessment of every provider we considered reverse engineering, documenting what the official API provides, what gaps exist, and whether reverse engineering is feasible or worthwhile.
 
-Last updated: 2026-08-14
+Garmin sections updated: 2026-10-21. Other provider assessments retain their
+previous research dates and require current verification before implementation.
 
 ---
 
@@ -25,12 +26,15 @@ no-readable-data state
 
 ### Gated follow-up: Garmin Women's Health
 
-Garmin's official Women's Health API is the strongest cloud follow-up because it explicitly offers
-menstrual-cycle schedules and phase details with push or ping/pull delivery
-([Women's Health API](https://developer.garmin.com/gc-developer-program/womens-health-api/)).
-Implementation is blocked on Connect Developer Program business approval and the official payload
-contract; Dofek will not guess or scrape women's-health endpoints through its private Garmin
-provider ([program FAQ](https://developer.garmin.com/gc-developer-program/program-faq/)).
+Garmin's official program includes a Women's Health API as a possible cloud
+follow-up ([program overview](https://developer.garmin.com/gc-developer-program/overview/)).
+Dofek's approved app currently enables Health and Activity. Women's Health still requires
+the app entitlement, authorized payload contract, consent, and raw-record mapping; its
+availability does not add those feeds to the [current provider](../src/providers/garmin/provider.ts).
+Starter delivery is push only,
+while Enterprise offers push or Ping/Pull; see the
+[current program overview](https://developer.garmin.com/gc-developer-program/overview/) and
+[Garmin guide](garmin.md).
 
 ### Future Android source: Health Connect
 
@@ -54,15 +58,15 @@ future option when Dofek has an Android client; it is not implemented in the cur
 
 ---
 
-## Reverse Engineered (done)
+## Garmin: official OAuth and push delivery
 
-### Garmin Connect
-- **Package:** `packages/garmin-connect`
-- **Official API:** Garmin Health API (OAuth 2.0, developer program) — limited to activities, sleep, daily summaries, body composition
-- **Internal API:** 105+ endpoints at `connect.garmin.com` via SSO auth (5-step: embed → CSRF → login → OAuth1 ticket → OAuth2)
-- **Gaps filled:** HRV (nightly readings + baseline), body battery (charge/drain time series), stress (per-minute), training readiness, training status/load, race predictions, endurance/hill scores, fitness age, SpO2 time series, FIT/TCX/GPX downloads
-- **Source:** Based on [garth](https://github.com/matin/garth) and [python-garminconnect](https://github.com/cyberjunky/python-garminconnect)
-- **Verdict:** HIGH VALUE — massive data gap between official and internal API
+- **Status:** The approved Starter app has Health and Activity access. The repository now uses [official OAuth and push processing](../src/providers/garmin/provider.ts); production deployment and live checks are still required before releasing portal delivery. See the [operator guide](garmin.md).
+- **Tier constraints:** Starter is push only with limited capacity and no historical API access. Enterprise offers broader delivery/history/capacity options ([official comparison](https://developer.garmin.com/gc-developer-program/overview/)).
+- **Implemented input:** Daily values/HR samples, sleep/stages, HRV, Pulse Ox, respiration, activity summaries/manual updates/FIT files, and authorization lifecycle notifications. The [schemas](../src/providers/garmin/payloads.ts), [Health mapper](../src/providers/garmin/health.ts), and [activity mapper](../src/providers/garmin/activities.ts) define actual coverage; program availability alone does not establish field parity.
+- **History and reconnect:** Existing source records and [account-export imports](../src/providers/garmin-dump.ts) remain available. Legacy private tokens require new OAuth consent ([migration](../drizzle/0156_garmin_official_authorization.sql)).
+- **Retired implementation:** Private SSO, consumer credentials, mobile identity emulation, private token exchange, polling checkpoints, and Garmin-specific pacing are historical. The private client package and its release wiring are removed. The [Garmin guide](garmin.md) records its retirement, and the [dated assessment](garmin.md#historical-assessment-2026-10-21-before-the-migration) pins old-source references to the pre-migration revision.
+
+## Reverse Engineered (done)
 
 ### WHOOP
 - **Package:** `packages/whoop-whoop`
@@ -192,7 +196,7 @@ future option when Dofek has an Android client; it is not implemented in the cur
 
 | Provider | Official API Quality | RE Feasibility | RE Value | Status |
 |----------|---------------------|----------------|----------|--------|
-| Garmin Connect | Limited | Easy (well-documented) | Very high | Done |
+| Garmin Connect | Starter Health + Activity; push only/no API history | Retired from Dofek runtime | Official OAuth/push implemented | Deploy/live checks before portal release ([guide](garmin.md)) |
 | WHOOP | Limited/partner-only | Medium (Cognito) | High | Done |
 | Eight Sleep | None | Easy (hardcoded creds) | Essential | Done |
 | Zwift | None | Easy (Keycloak) | Essential | Done |

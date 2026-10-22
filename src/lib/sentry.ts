@@ -1,5 +1,10 @@
 import * as Sentry from "@sentry/node";
 import { initProductionPostHog } from "./posthog.ts";
+import {
+  redactTelemetryAttributes,
+  redactTelemetryQuery,
+  redactTelemetryUrl,
+} from "./telemetry-url.ts";
 
 const SENTRY_ENVIRONMENT = "production";
 const ACCOUNT_ERASURE_DATABASE_FENCE_CODE = "55000";
@@ -9,6 +14,7 @@ const ACCOUNT_ERASURE_FENCE_ERROR_NAMES = new Set([
   "AccountErasureUserFencedError",
 ]);
 let initialized = false;
+type SentrySpan = Parameters<NonNullable<Sentry.NodeOptions["beforeSendSpan"]>>[0];
 
 function isProductionDeployment(environment: string | undefined): boolean {
   return environment === "prod" || environment === "production";
@@ -37,6 +43,32 @@ function isExpectedAccountErasureFence(error: unknown): boolean {
   return false;
 }
 
+function redactSentrySpan(span: SentrySpan): SentrySpan {
+  redactTelemetryAttributes(span.data);
+  if (span.description) span.description = redactTelemetryUrl(span.description);
+  return span;
+}
+
+function redactSentryEvent<T extends Sentry.Event>(event: T): T {
+  if (event.request?.url) event.request.url = redactTelemetryUrl(event.request.url);
+  const query = event.request?.query_string;
+  if (event.request && query !== undefined) {
+    if (typeof query === "string") event.request.query_string = redactTelemetryQuery(query);
+    else {
+      const params = new URLSearchParams(query);
+      const redacted = new URLSearchParams(redactTelemetryQuery(params.toString()));
+      event.request.query_string = Array.isArray(query)
+        ? [...redacted.entries()]
+        : Object.fromEntries(redacted);
+    }
+  }
+  if (event.transaction) event.transaction = redactTelemetryUrl(event.transaction);
+  redactTelemetryAttributes(event.contexts?.trace?.data);
+  for (const span of event.spans ?? []) redactSentrySpan(span);
+  for (const breadcrumb of event.breadcrumbs ?? []) redactTelemetryAttributes(breadcrumb.data);
+  return event;
+}
+
 export function initProductionSentry(dsn: string | undefined): void {
   if (initialized || !dsn || !isProductionDeployment(process.env.DEPLOY_ENVIRONMENT)) {
     return;
@@ -46,7 +78,9 @@ export function initProductionSentry(dsn: string | undefined): void {
 
   Sentry.init({
     beforeSend: (event, hint) =>
-      isExpectedAccountErasureFence(hint.originalException) ? null : event,
+      isExpectedAccountErasureFence(hint.originalException) ? null : redactSentryEvent(event),
+    beforeSendSpan: redactSentrySpan,
+    beforeSendTransaction: redactSentryEvent,
     dsn,
     environment: SENTRY_ENVIRONMENT,
     release: process.env.SENTRY_RELEASE,

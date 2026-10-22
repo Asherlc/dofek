@@ -7,6 +7,7 @@ import type { MetricStreamPublishOptions } from "../../metric-stream/redpanda-pr
 import type { ProcessingDatasetKey } from "../../processing/dataset-contracts.ts";
 import { makeTransactionalTestDatabase } from "../../providers/test-helpers.ts";
 import type { SyncProvider, SyncResult } from "../../providers/types.ts";
+import type { WebhookEvent } from "../../webhook-event.ts";
 
 export type MockCooldownRecord = {
   providerId: string;
@@ -337,6 +338,7 @@ export interface MockJob {
     userId: string;
     checkpoint?: unknown;
     processingOperationIds?: Record<string, string>;
+    webhookEvent?: WebhookEvent;
   };
   updateProgress: CallableVitestMock;
   updateData: CallableVitestMock;
@@ -357,6 +359,7 @@ export function createMockJob(
     userId?: string;
     checkpoint?: unknown;
     processingOperationIds?: Record<string, string>;
+    webhookEvent?: WebhookEvent;
   } = {},
 ): MockJob {
   const job: MockJob = {

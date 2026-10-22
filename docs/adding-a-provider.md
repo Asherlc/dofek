@@ -1,6 +1,8 @@
 # Adding a Provider
 
-Providers are plugins that pull data from an external API and upsert it into the database.
+Providers are plugins that ingest external API data or uploaded files through the
+[shared provider interfaces](../src/providers/types.ts). Pull providers fetch a
+window; push-only providers process queued notifications without polling.
 
 ## Per-user authentication (required)
 
@@ -12,11 +14,11 @@ Supported connect flows:
 
 | Pattern | When to use | Example |
 |---------|-------------|---------|
-| OAuth 2.0 | Provider has a standard OAuth app | Strava, Oura, Withings |
+| OAuth 2.0 | Provider has a standard OAuth app | Strava, Oura, Withings, Garmin |
 | OAuth 1.0 | Provider requires 3-legged OAuth 1 | FatSecret |
 | Credential (`automatedLogin`) | Email/password or token exchange without browser | Eight Sleep, Zwift, Amazfit/Zepp |
 | Personal token (`manualToken`) | User mints a personal API or access token | Cycling Analytics, Ultrahuman |
-| Custom auth router | Login flow needs extra UI/steps | Garmin, WHOOP |
+| Custom auth router | Login flow needs extra UI/steps | WHOOP |
 
 App-level OAuth client IDs/secrets in env vars are fine — those identify the Dofek application, not an individual user.
 
@@ -160,6 +162,15 @@ authSetup(): ProviderAuthSetup {
 
 If the provider is file-import-only (like Strong CSV or Cronometer CSV), implement `ImportProvider` instead and add `readonly importOnly = true` rather than a `sync()` method.
 
+For an official push-only integration, implement `PushProvider` with
+`pushOnly = true` and process events through its targeted sync method. Keep
+OAuth Connect/Reconnect/Disconnect available while excluding manual and
+scheduled polling. Authenticate and validate deliveries before durably queuing
+them, and verify current owner/grant/deletion generation before ingestion.
+Garmin's [provider](../src/providers/garmin/provider.ts),
+[receiver](../packages/server/src/routes/garmin-webhooks.ts), and
+[operator guide](garmin.md) show the existing path.
+
 ## 3. Register the provider
 
 Add it to the lazy registration list in **both** `src/jobs/provider-registration.ts` and `packages/server/src/routers/sync-helpers.ts`:
@@ -169,6 +180,13 @@ Add it to the lazy registration list in **both** `src/jobs/provider-registration
 ```
 
 Also add metadata in `packages/providers-meta/src/providers.ts` (label, logo or brand color), queue config in `src/jobs/provider-queue-config.ts`, and optional entries in `packages/onboarding/src/provider-guide.ts`.
+
+Push-only providers still require queue configuration: the
+[worker factory](../src/jobs/worker-queues.ts) creates dedicated workers from
+[configured provider IDs](../src/jobs/provider-queue-config.ts). Excluding a
+provider from [scheduled sync eligibility](../src/providers/index.ts)
+does not replace queue registration. Configure on-demand delivery without a
+polling schedule or unsupported provider-specific limiter.
 
 If other packages need a bare import such as `dofek/providers/my-provider`, add a matching export to the root `package.json`.
 

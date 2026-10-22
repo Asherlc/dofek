@@ -14,7 +14,7 @@ import { type LandingPageProvider, LandingPageView } from "./LandingPage.tsx";
 const configuredProviders: LandingPageProvider[] = [
   { id: "apple_health", name: "Apple Health", authType: "file-import", importOnly: true },
   { id: "strava", name: "Strava", authType: "oauth", importOnly: false },
-  { id: "garmin", name: "Garmin", authType: "custom:garmin", importOnly: false },
+  { id: "garmin", name: "Garmin", authType: "oauth", importOnly: false },
   { id: "whoop", name: "WHOOP", authType: "custom:whoop", importOnly: false },
   { id: "oura", name: "Oura", authType: "oauth", importOnly: false },
   { id: "fitbit", name: "Fitbit", authType: "oauth", importOnly: false },

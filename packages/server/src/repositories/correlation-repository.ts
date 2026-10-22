@@ -30,6 +30,7 @@ import { executeWithSchema } from "../lib/typed-sql.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
 import { bodyCompClickHouseSchema, fetchBodyCompProvenanceRows } from "./body-clickhouse.ts";
 import { fetchSleepNights } from "./clickhouse-sleep-repository.ts";
+import { fetchDailyMetricsWithSpo2Cte } from "./daily-metrics-spo2-query.ts";
 import { fetchRestingHeartRateValuesCte } from "./resting-heart-rate-query.ts";
 
 const correlationDailyRowSchema = dailyRowSchema.extend({
@@ -715,11 +716,18 @@ export class CorrelationRepository {
       endDate: effectiveEndDate,
       days,
     });
+    const dailyMetricsCte = await fetchDailyMetricsWithSpo2Cte({
+      sensorStore,
+      userId: this.#userId,
+      timezone: this.#timezone,
+      endDate: effectiveEndDate,
+      days,
+    });
     const [metrics, sleepResult, activities, nutrition, bodyComp] = await Promise.all([
       executeWithSchema(
         this.#db,
         correlationDailyRowSchema,
-        sql`WITH ${restingHeartRateCte}
+        sql`WITH ${dailyMetricsCte}, ${restingHeartRateCte}
             SELECT
               dm.date,
               drhr.resting_hr,
@@ -728,7 +736,7 @@ export class CorrelationRepository {
               dm.steps,
               dm.skin_temp_c,
               dm.source_providers
-	            FROM fitness.v_daily_metrics dm
+	            FROM daily_metrics dm
 	            LEFT JOIN resting_heart_rate drhr
 	              ON drhr.date = dm.date
             WHERE dm.user_id = ${this.#userId}

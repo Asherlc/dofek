@@ -123,6 +123,12 @@ export function ProviderCard({
   const canRunManualSync = !provider.importOnly && !provider.pushOnly;
   const syncFreshness =
     canRunManualSync && provider.authStatus !== "not_connected" ? provider.syncFreshness : null;
+  const canAuthorize =
+    !provider.importOnly && provider.authType !== "none" && provider.authType !== "push:mobile";
+  const actionLabel =
+    provider.pushOnly && provider.authStatus === "connected"
+      ? "Reconnect"
+      : providerActionLabel(provider.authStatus);
   const canImport = onImport !== undefined;
   const showingProgress = (syncing || importing) && syncProgress !== undefined;
 
@@ -140,24 +146,24 @@ export function ProviderCard({
           <View style={[styles.statusDot, { backgroundColor: dotColor }]} />
           <Text style={styles.cardTitle}>{provider.label}</Text>
         </TouchableOpacity>
-        {(canRunManualSync || canImport) && (
+        {(canRunManualSync || canAuthorize || canImport) && (
           <View style={styles.cardActions}>
-            {canRunManualSync ? (
+            {canRunManualSync || canAuthorize ? (
               <TouchableOpacity
                 style={[styles.syncButton, syncing && styles.syncButtonDisabled]}
-                onPress={provider.authStatus === "connected" ? onSync : onConnect}
+                onPress={
+                  canRunManualSync && provider.authStatus === "connected" ? onSync : onConnect
+                }
                 activeOpacity={0.7}
                 disabled={syncing}
                 accessibilityRole="button"
-                accessibilityLabel={`${providerActionLabel(provider.authStatus)} ${provider.label}`}
+                accessibilityLabel={`${actionLabel} ${provider.label}`}
                 accessibilityState={{ busy: syncing, disabled: syncing }}
               >
                 {syncing ? (
                   <ActivityIndicator color={colors.text} size="small" />
                 ) : (
-                  <Text style={styles.syncButtonText}>
-                    {providerActionLabel(provider.authStatus)}
-                  </Text>
+                  <Text style={styles.syncButtonText}>{actionLabel}</Text>
                 )}
               </TouchableOpacity>
             ) : null}
@@ -200,7 +206,8 @@ export function ProviderCard({
             <Text style={styles.cardMetaText}>
               {provider.importOnly
                 ? "Import only"
-                : provider.pushOnly
+                : provider.pushOnly &&
+                    (provider.authType === "none" || provider.authType === "push:mobile")
                   ? "Push only"
                   : statusLabel(provider.authStatus)}
             </Text>

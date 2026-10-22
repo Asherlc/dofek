@@ -24,6 +24,7 @@ export class ProviderModel {
   readonly id: string;
   readonly name: string;
   readonly importOnly: boolean;
+  readonly pushOnly: boolean;
   readonly authType: string;
   readonly tokenAuth: z.infer<typeof providerTokenAuthSchema> | null;
   readonly isConnected: boolean;
@@ -34,6 +35,7 @@ export class ProviderModel {
       id: string;
       name: string;
       importOnly?: boolean;
+      pushOnly?: boolean;
       authSetup?(options?: { host?: string }): unknown;
     },
     connectionSet: Set<string>,
@@ -43,6 +45,7 @@ export class ProviderModel {
     this.id = provider.id;
     this.name = provider.name;
     this.importOnly = provider.importOnly === true;
+    this.pushOnly = provider.pushOnly === true;
     this.tokenAuth = null;
 
     let authType = "none";

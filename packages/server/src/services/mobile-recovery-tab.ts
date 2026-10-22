@@ -179,6 +179,7 @@ export async function loadMobileRecoveryTab(
     ctx.db,
     ctx.userId,
     ctx.timezone,
+    ctx.sensorStore,
     ctx.accessWindow,
   );
   const bodyRepo = new BodyAnalyticsRepository(

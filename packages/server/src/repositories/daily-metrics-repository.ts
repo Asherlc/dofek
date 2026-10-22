@@ -1,5 +1,7 @@
+import type { Database } from "dofek/db";
 import { type SQL, sql } from "drizzle-orm";
 import { z } from "zod";
+import type { AccessWindow } from "../billing/entitlement.ts";
 import { HEALTH_METRIC_EVIDENCE_WINDOW_DAYS } from "../contracts/mobile-dashboard-contracts.ts";
 import { BaseRepository } from "../lib/base-repository.ts";
 import {
@@ -10,7 +12,9 @@ import {
   rangeDaysOrNullAdd,
 } from "../lib/date-window.ts";
 import { dateStringSchema } from "../lib/typed-sql.ts";
-import { restingHeartRateValuesCte } from "./resting-heart-rate-query.ts";
+import type { ActivitySensorStore } from "./activity-repository.ts";
+import { fetchDailyMetricsWithSpo2Cte } from "./daily-metrics-spo2-query.ts";
+import { localDateString, restingHeartRateValuesCte } from "./resting-heart-rate-query.ts";
 
 export const HRV_BASELINE_WARMUP_DAYS = 60;
 
@@ -105,11 +109,35 @@ export type TrendsRow = z.infer<typeof trendsRowSchema>;
 
 /** Data access for daily health metrics (vitals, activity, body). */
 export class DailyMetricsRepository extends BaseRepository {
+  readonly #sensorStore: Pick<ActivitySensorStore, "query">;
+
+  constructor(
+    db: Pick<Database, "execute">,
+    userId: string,
+    timezone: string,
+    sensorStore: Pick<ActivitySensorStore, "query">,
+    accessWindow?: AccessWindow,
+  ) {
+    super(db, userId, timezone, accessWindow);
+    this.#sensorStore = sensorStore;
+  }
+
+  #source(days: RangeDays, endDate: string): Promise<SQL> {
+    return fetchDailyMetricsWithSpo2Cte({
+      sensorStore: this.#sensorStore,
+      userId: this.userId,
+      timezone: this.timezone,
+      days,
+      endDate,
+    });
+  }
+
   /** Daily metrics within the given date window, ordered by date ascending. */
   async list(days: RangeDays, endDate: string): Promise<DailyMetricsViewRow[]> {
+    const source = await this.#source(days, endDate);
     return this.query(
       dailyMetricsViewRowSchema,
-      sql`SELECT
+      sql`WITH ${source} SELECT
             date,
             user_id,
             hrv,
@@ -123,7 +151,7 @@ export class DailyMetricsRepository extends BaseRepository {
             stand_hours,
             walking_speed,
             source_providers
-          FROM fitness.v_daily_metrics
+          FROM daily_metrics
           WHERE user_id = ${this.userId}
             ${dateWindowStartPredicate(sql`date`, endDate, days)}
             AND date <= ${dateWindowEnd(endDate)}
@@ -138,12 +166,16 @@ export class DailyMetricsRepository extends BaseRepository {
     endDate: string,
     restingHeartRateCte: SQL = restingHeartRateValuesCte([]),
   ): Promise<HealthTrendRow[]> {
+    const source = await this.#source(
+      Math.round((Date.parse(endDate) - Date.parse(startDate)) / 86_400_000) + 1,
+      endDate,
+    );
     return this.query(
       healthTrendRowSchema,
-      sql`WITH ${restingHeartRateCte},
+      sql`WITH ${source}, ${restingHeartRateCte},
           base_dates AS (
             SELECT date
-            FROM fitness.v_daily_metrics
+            FROM daily_metrics
             WHERE user_id = ${this.userId}
             UNION
             SELECT date FROM resting_heart_rate
@@ -164,7 +196,7 @@ export class DailyMetricsRepository extends BaseRepository {
             COALESCE(dm.source_providers, ARRAY[]::text[]) AS source_providers,
             resting.resting_hr
           FROM base_dates
-          LEFT JOIN fitness.v_daily_metrics dm
+          LEFT JOIN daily_metrics dm
             ON dm.user_id = ${this.userId} AND dm.date = base_dates.date
           LEFT JOIN resting_heart_rate resting ON resting.date = base_dates.date
           WHERE base_dates.date >= ${startDate}::date
@@ -176,10 +208,12 @@ export class DailyMetricsRepository extends BaseRepository {
 
   /** Most recent single daily metrics row, or null if none exist. */
   async getLatest(): Promise<DailyMetricsViewRow | null> {
+    const source = await this.#source(null, localDateString(new Date(), this.timezone));
     const rows = await this.query(
       dailyMetricsViewRowSchema,
-      sql`SELECT * FROM fitness.v_daily_metrics
+      sql`WITH ${source} SELECT * FROM daily_metrics
           WHERE user_id = ${this.userId}
+            ${this.dateAccessPredicate(sql`date`)}
           ORDER BY date DESC LIMIT 1`,
     );
     return rows[0] ?? null;
@@ -246,6 +280,10 @@ export class DailyMetricsRepository extends BaseRepository {
     endDate: string,
     restingHeartRateCte: SQL = restingHeartRateValuesCte([]),
   ): Promise<TrendsRow | null> {
+    const source = await this.#source(
+      days === null ? null : Math.max(days, HEALTH_METRIC_EVIDENCE_WINDOW_DAYS),
+      endDate,
+    );
     const evidenceWindowPredicate = dateWindowStartPredicate(
       sql`date`,
       endDate,
@@ -255,10 +293,10 @@ export class DailyMetricsRepository extends BaseRepository {
     );
     const rows = await this.query(
       trendsRowSchema,
-      sql`WITH ${restingHeartRateCte},
+      sql`WITH ${source}, ${restingHeartRateCte},
           base_dates AS (
             SELECT date
-            FROM fitness.v_daily_metrics
+            FROM daily_metrics
             WHERE user_id = ${this.userId}
               ${dateWindowStartPredicate(sql`date`, endDate, days)}
               AND date <= ${dateWindowEnd(endDate)}
@@ -276,7 +314,7 @@ export class DailyMetricsRepository extends BaseRepository {
               dm.skin_temp_c,
               dm.source_providers
             FROM base_dates
-            LEFT JOIN fitness.v_daily_metrics dm
+            LEFT JOIN daily_metrics dm
               ON dm.user_id = ${this.userId}
              AND dm.date = base_dates.date
             LEFT JOIN resting_heart_rate drhr
@@ -294,7 +332,7 @@ export class DailyMetricsRepository extends BaseRepository {
               steps,
               skin_temp_c,
               source_providers
-            FROM fitness.v_daily_metrics
+            FROM daily_metrics
             WHERE user_id = ${this.userId}
               ${evidenceWindowPredicate}
               AND date <= ${dateWindowEnd(endDate)}

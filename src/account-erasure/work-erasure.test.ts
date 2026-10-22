@@ -20,6 +20,7 @@ describe("purgeAccountWork", () => {
     const abortImportMultipart = vi.fn(async () => undefined);
     const deleteImportObject = vi.fn(async () => undefined);
     const deleteExportObject = vi.fn(async () => undefined);
+    const deleteProviderArtifactsForUser = vi.fn(async () => undefined);
     const purgeRedis = vi.fn(async () => undefined);
 
     await purgeAccountWork(
@@ -44,6 +45,7 @@ describe("purgeAccountWork", () => {
         abortImportMultipart,
         deleteExportObject,
         deleteImportObject,
+        deleteProviderArtifactsForUser,
         jobFilesDirectory: "/jobs",
         purgeRedis,
         queues: [{ getJobs: vi.fn(async () => [userJob, otherJob]), name: "import" }],
@@ -56,6 +58,7 @@ describe("purgeAccountWork", () => {
     expect(deleteImportObject).toHaveBeenCalledWith("imports/user/archive.zip");
     expect(abortImportMultipart).toHaveBeenCalledWith("imports/user/archive.zip", "multipart-1994");
     expect(deleteExportObject).toHaveBeenCalledWith("exports/user/export.zip");
+    expect(deleteProviderArtifactsForUser).toHaveBeenCalledWith(userId);
     expect(removeLocalPath).toHaveBeenCalledWith("/jobs/user/source.fit");
     expect(removeLocalPath).toHaveBeenCalledWith(
       "/jobs/file-upload-40000000-0000-4000-8000-000000001994",
@@ -77,6 +80,7 @@ describe("purgeAccountWork", () => {
           abortImportMultipart: vi.fn(async () => undefined),
           deleteExportObject: vi.fn(async () => undefined),
           deleteImportObject: vi.fn(async () => undefined),
+          deleteProviderArtifactsForUser: vi.fn(async () => undefined),
           jobFilesDirectory: "/jobs",
           purgeRedis: vi.fn(async () => undefined),
           queues: [{ getJobs: vi.fn(async () => [activeJob]), name: "sync" }],
@@ -97,6 +101,7 @@ describe("purgeAccountWork", () => {
           abortImportMultipart: vi.fn(async () => undefined),
           deleteExportObject: vi.fn(async () => undefined),
           deleteImportObject: vi.fn(async () => undefined),
+          deleteProviderArtifactsForUser: vi.fn(async () => undefined),
           jobFilesDirectory: "/jobs",
           purgeRedis: vi.fn(async () => undefined),
           queues: [{ getJobs: vi.fn(async () => [job]), name: "fit-file-import" }],
@@ -121,6 +126,7 @@ describe("purgeAccountWork", () => {
         abortImportMultipart: vi.fn(async () => undefined),
         deleteExportObject,
         deleteImportObject: vi.fn(async () => undefined),
+        deleteProviderArtifactsForUser: vi.fn(async () => undefined),
         jobFilesDirectory: "/jobs",
         purgeRedis: vi.fn(async () => undefined),
         queues: [
@@ -172,6 +178,7 @@ describe("purgeAccountWork", () => {
         abortImportMultipart: vi.fn(async () => undefined),
         deleteExportObject: vi.fn(async () => undefined),
         deleteImportObject: vi.fn(async () => undefined),
+        deleteProviderArtifactsForUser: vi.fn(async () => undefined),
         jobFilesDirectory: "/jobs",
         purgeRedis: vi.fn(async () => undefined),
         queues: [{ getJobs, name: "flow" }],
@@ -198,6 +205,7 @@ describe("purgeAccountWork", () => {
         abortImportMultipart: vi.fn(async () => undefined),
         deleteExportObject: vi.fn(async () => undefined),
         deleteImportObject: vi.fn(async () => undefined),
+        deleteProviderArtifactsForUser: vi.fn(async () => undefined),
         jobFilesDirectory: "/jobs",
         purgeRedis: vi.fn(async () => undefined),
         queues: [{ getJobs, name: "sync-provider" }],
@@ -220,6 +228,7 @@ describe("purgeAccountWork", () => {
           abortImportMultipart: vi.fn(async () => undefined),
           deleteExportObject: vi.fn(async () => undefined),
           deleteImportObject: vi.fn(async () => undefined),
+          deleteProviderArtifactsForUser: vi.fn(async () => undefined),
           jobFilesDirectory: "/jobs",
           purgeRedis: vi.fn(async () => undefined),
           queues: [
@@ -235,5 +244,25 @@ describe("purgeAccountWork", () => {
       "Account erasure cannot prove ownership of malformed BullMQ job data in import",
     );
     expect(malformedJob.remove).not.toHaveBeenCalled();
+  });
+
+  it("does not complete account work erasure if retained artifact deletion fails", async () => {
+    await expect(
+      purgeAccountWork(
+        { exportObjects: [], fileUploads: [], userId },
+        {
+          abortImportMultipart: vi.fn(async () => undefined),
+          deleteExportObject: vi.fn(async () => undefined),
+          deleteImportObject: vi.fn(async () => undefined),
+          deleteProviderArtifactsForUser: async () => {
+            throw new Error("Artifact deletion failed");
+          },
+          jobFilesDirectory: "/jobs",
+          purgeRedis: vi.fn(async () => undefined),
+          queues: [],
+          removeLocalPath: vi.fn(async () => undefined),
+        },
+      ),
+    ).rejects.toThrow("Artifact deletion failed");
   });
 });

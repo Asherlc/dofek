@@ -1,7 +1,6 @@
 /** UI auth type overrides for providers with dedicated connect routers. */
 export const CUSTOM_AUTH_PROVIDERS: Record<string, string> = {
   whoop: "custom:whoop",
-  garmin: "custom:garmin",
 };
 
 /**

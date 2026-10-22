@@ -9,8 +9,13 @@ import {
   withAccountErasureUserAndIdentityWriteFence,
   withAccountErasureUserWriteFence,
 } from "dofek/db/account-erasure";
+import { withProviderOperationFence } from "dofek/db/provider-operation-fence";
 import { queryCache } from "dofek/lib/cache";
 import { captureException } from "dofek/lib/error-reporting";
+import {
+  ProviderAuthorizationAccountMismatchError,
+  ProviderAuthorizationAlreadyOwnedError,
+} from "dofek/providers/auth-errors";
 import type { Request, Response } from "express";
 import {
   findExistingUserId,
@@ -257,9 +262,17 @@ export async function handleOAuth2Callback(req: Request, res: Response): Promise
     ): Promise<DeferredOAuthCompletion> => {
       let existingTokens: TokenSet | null = null;
       const isDataReconnect = intent === "data";
-      if (isDataReconnect && (setup.revokeExistingTokens || oauthConfig.revokeUrl)) {
+      if (
+        isDataReconnect &&
+        (setup.reconnectStrategy === "replace" ||
+          setup.revokeExistingTokens ||
+          oauthConfig.revokeUrl)
+      ) {
         const { loadTokens } = await import("dofek/db/tokens");
         existingTokens = await loadTokens(operationDb, providerId, stateUserId);
+      }
+      if (existingTokens && setup.reconnectStrategy === "replace") {
+        reconnectFailure = { kind: "preserved", providerName: provider.name };
       }
 
       const persistConnection = async (userId: string): Promise<void> => {
@@ -273,6 +286,12 @@ export async function handleOAuth2Callback(req: Request, res: Response): Promise
         });
         connectedUserId = userId;
       };
+      const persistRefreshedAuthorization = async (updatedTokens: TokenSet): Promise<void> => {
+        const { saveTokens } = await import("dofek/db/tokens");
+        // A rotating refresh must survive a later remote DELETE failure and
+        // rollback of the connection transaction.
+        await saveTokens(db, providerId, updatedTokens, stateUserId);
+      };
 
       if (existingTokens && setup.reconnectStrategy === "revoke-then-replace") {
         if (!setup.revokeExistingTokens) {
@@ -282,7 +301,7 @@ export async function handleOAuth2Callback(req: Request, res: Response): Promise
         }
         reconnectFailure = { kind: "preserved", providerName: provider.name };
         logger.info(`[auth] Revoking existing ${providerId} authorization before exchange...`);
-        await setup.revokeExistingTokens(existingTokens);
+        await setup.revokeExistingTokens(existingTokens, persistRefreshedAuthorization);
         logger.info(`[auth] Existing ${providerId} authorization revoked`);
 
         reconnectFailure = { kind: "removed", providerName: provider.name };
@@ -311,7 +330,7 @@ export async function handleOAuth2Callback(req: Request, res: Response): Promise
             logger.info(
               `[auth] ${providerId} rejected replacement for too many active tokens; deauthorizing before retry...`,
             );
-            await setup.revokeExistingTokens(existingTokens);
+            await setup.revokeExistingTokens(existingTokens, persistRefreshedAuthorization);
             logger.info(
               `[auth] Existing ${providerId} authorization revoked after token-limit error`,
             );
@@ -328,6 +347,15 @@ export async function handleOAuth2Callback(req: Request, res: Response): Promise
           return { error: exchangeError, kind: "failure" };
         }
         throw exchangeError;
+      }
+
+      if (
+        existingTokens &&
+        setup.reconnectStrategy === "replace" &&
+        (!existingTokens.providerAccountId ||
+          existingTokens.providerAccountId !== tokens.providerAccountId)
+      ) {
+        throw new ProviderAuthorizationAccountMismatchError(provider.name);
       }
 
       // Auto-link identity when connecting data providers (if getUserIdentity is available)
@@ -491,6 +519,7 @@ export async function handleOAuth2Callback(req: Request, res: Response): Promise
 
       if (
         existingTokens &&
+        setup.reconnectStrategy !== "replace" &&
         setup.reconnectStrategy !== "revoke-then-replace" &&
         setup.reconnectStrategy !== "deauthorize-on-token-limit"
       ) {
@@ -532,82 +561,112 @@ export async function handleOAuth2Callback(req: Request, res: Response): Promise
       );
       revokedAuthorizationNeedsDurableRemoval = false;
     };
-    try {
-      const completion = knownUserId
-        ? await withAccountErasureUserWriteFence(db, knownUserId, (transaction) =>
-            completeOAuthConnection(transaction, transaction),
-          )
-        : await completeOAuthConnection(db);
-      if (completion.kind === "failure") {
-        throw completion.error;
-      }
-      await removeRevokedAuthorizationDurably();
-      if (connectedUserId) {
-        const webhookUserId = connectedUserId;
-        try {
-          await registerProviderWebhook({ db, provider, userId: webhookUserId });
-        } catch (webhookError: unknown) {
+    const finalizeConnection = async (
+      operation: () => Promise<DeferredOAuthCompletion>,
+    ): Promise<void> => {
+      try {
+        const completion = await operation();
+        if (completion.kind === "failure") {
+          throw completion.error;
+        }
+        await removeRevokedAuthorizationDurably();
+        if (connectedUserId) {
+          const webhookUserId = connectedUserId;
           try {
-            await withAccountErasureUserWriteFence(db, webhookUserId, (transaction) =>
-              removeRevokedAuthorization(transaction, providerId, webhookUserId),
-            );
-            webhookRegistrationFailure = { kind: "removed", providerName: provider.name };
+            await registerProviderWebhook({ db, provider, userId: webhookUserId });
+          } catch (webhookError: unknown) {
+            try {
+              await withAccountErasureUserWriteFence(db, webhookUserId, (transaction) =>
+                removeRevokedAuthorization(transaction, providerId, webhookUserId),
+              );
+              webhookRegistrationFailure = { kind: "removed", providerName: provider.name };
+            } catch (cleanupError: unknown) {
+              webhookRegistrationFailure = { kind: "preserved", providerName: provider.name };
+              issuedTokens = null;
+              Sentry.captureException(cleanupError, {
+                tags: {
+                  source: "data-provider-oauth",
+                  operation: "remove-webhook-registration-failure",
+                },
+                extra: { providerId, userId: webhookUserId },
+              });
+            }
+            throw webhookError;
+          }
+        }
+        sendDeferredOAuthResponse(res, completion.response);
+      } catch (callbackError: unknown) {
+        if (revokedAuthorizationNeedsDurableRemoval) {
+          try {
+            await removeRevokedAuthorizationDurably();
           } catch (cleanupError: unknown) {
-            webhookRegistrationFailure = { kind: "preserved", providerName: provider.name };
-            issuedTokens = null;
+            if (
+              cleanupError instanceof AccountErasureIdentityFencedError ||
+              cleanupError instanceof AccountErasureUserFencedError
+            ) {
+              throw cleanupError;
+            }
             Sentry.captureException(cleanupError, {
               tags: {
                 source: "data-provider-oauth",
-                operation: "remove-webhook-registration-failure",
+                operation: "remove-revoked-authorization",
               },
-              extra: { providerId, userId: webhookUserId },
             });
-          }
-          throw webhookError;
-        }
-      }
-      sendDeferredOAuthResponse(res, completion.response);
-    } catch (callbackError: unknown) {
-      if (revokedAuthorizationNeedsDurableRemoval) {
-        try {
-          await removeRevokedAuthorizationDurably();
-        } catch (cleanupError: unknown) {
-          if (
-            cleanupError instanceof AccountErasureIdentityFencedError ||
-            cleanupError instanceof AccountErasureUserFencedError
-          ) {
             throw cleanupError;
           }
-          Sentry.captureException(cleanupError, {
-            tags: {
-              source: "data-provider-oauth",
-              operation: "remove-revoked-authorization",
-            },
-          });
-          throw cleanupError;
         }
-      }
-      if (issuedTokens) {
-        try {
-          await revokeSupersededAuthorization({
-            oauthConfig,
-            tokens: issuedTokens,
-            providerId,
-            revokeExistingTokens: setup.revokeExistingTokens,
-          });
-        } catch (cleanupError: unknown) {
-          Sentry.captureException(cleanupError, {
-            tags: {
-              source: "data-provider-oauth",
-              operation: "revoke-orphan-authorization",
-            },
-            extra: { providerId, knownUserId },
-          });
+        // Registration-wide cleanup can revoke another in-flight or existing
+        // connection. Replacement policies reserve it for explicit disconnect.
+        if (
+          issuedTokens &&
+          setup.reconnectStrategy !== "replace" &&
+          !(callbackError instanceof ProviderAuthorizationAlreadyOwnedError)
+        ) {
+          try {
+            await revokeSupersededAuthorization({
+              oauthConfig,
+              tokens: issuedTokens,
+              providerId,
+              revokeExistingTokens: setup.revokeExistingTokens,
+            });
+          } catch (cleanupError: unknown) {
+            Sentry.captureException(cleanupError, {
+              tags: {
+                source: "data-provider-oauth",
+                operation: "revoke-orphan-authorization",
+              },
+              extra: { providerId, knownUserId },
+            });
+          }
         }
+        throw callbackError;
       }
-      throw callbackError;
+    };
+    if (knownUserId && provider.pushOnly) {
+      await withProviderOperationFence(db, knownUserId, providerId, (operationDb) =>
+        finalizeConnection(() =>
+          operationDb.transaction((transaction) =>
+            completeOAuthConnection(transaction, transaction),
+          ),
+        ),
+      );
+    } else {
+      await finalizeConnection(() =>
+        knownUserId
+          ? withAccountErasureUserWriteFence(db, knownUserId, (transaction) =>
+              completeOAuthConnection(transaction, transaction),
+            )
+          : completeOAuthConnection(db),
+      );
     }
   } catch (err: unknown) {
+    if (
+      err instanceof ProviderAuthorizationAlreadyOwnedError ||
+      err instanceof ProviderAuthorizationAccountMismatchError
+    ) {
+      res.status(409).type("text/plain").send(err.message);
+      return;
+    }
     if (
       err instanceof AccountErasureIdentityFencedError ||
       err instanceof AccountErasureUserFencedError
