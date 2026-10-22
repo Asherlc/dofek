@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
 import { inspectImageBytes, isPublicImageAddress, validateImageUrl } from "./download.ts";
 
@@ -6,6 +7,38 @@ const png = Buffer.from(
   "base64",
 );
 describe("private image downloads", () => {
+  it("loads image errors and retry metadata in Node's production TypeScript mode", () => {
+    const moduleUrl = new URL("./download.ts", import.meta.url).href;
+    const result = spawnSync(
+      process.execPath,
+      [
+        "--experimental-strip-types",
+        "--input-type=module",
+        "--eval",
+        `
+          import assert from "node:assert/strict";
+          const { ImageDownloadError, validateImageUrl } = await import(${JSON.stringify(moduleUrl)});
+          const permanent = new ImageDownloadError("image_size_limit");
+          assert.ok(permanent instanceof Error);
+          assert.equal(permanent.message, "image_size_limit");
+          assert.equal(permanent.code, "image_size_limit");
+          assert.equal(permanent.retryable, false);
+          assert.equal(permanent.retryAfterSeconds, 0);
+          const retryable = new ImageDownloadError("image_http_429", true, 60);
+          assert.equal(retryable.code, "image_http_429");
+          assert.equal(retryable.retryable, true);
+          assert.equal(retryable.retryAfterSeconds, 60);
+          assert.throws(
+            () => validateImageUrl("http://cdn.test/image.png", ["https://cdn.test"]),
+            (error) => error instanceof ImageDownloadError && error.code === "image_origin_rejected",
+          );
+        `,
+      ],
+      { encoding: "utf8", env: { ...process.env, NODE_OPTIONS: "" }, timeout: 10_000 },
+    );
+    expect(result.status, result.stderr || result.error?.message).toBe(0);
+  });
+
   it.each([
     "127.0.0.1",
     "10.0.0.1",

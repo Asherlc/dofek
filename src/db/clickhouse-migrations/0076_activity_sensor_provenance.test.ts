@@ -14,8 +14,11 @@ type QueryOptions = Parameters<NonNullable<ClickHouseCommandClient["query"]>>[0]
 class TestClickHouseClient implements ClickHouseCommandClient {
   readonly command = vi.fn(async () => undefined);
   #queryIndex = 0;
+  readonly tableCounts: readonly (number | string | undefined)[];
 
-  constructor(readonly tableCounts: readonly (number | string | undefined)[]) {}
+  constructor(tableCounts: readonly (number | string | undefined)[]) {
+    this.tableCounts = tableCounts;
+  }
 
   async query<TRow extends object>(_options: QueryOptions): Promise<{ json(): Promise<TRow[]> }> {
     const count = this.tableCounts[this.#queryIndex];

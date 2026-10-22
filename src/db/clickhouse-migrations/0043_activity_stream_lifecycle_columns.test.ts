@@ -19,8 +19,11 @@ class TestClickHouseClient implements ClickHouseCommandClient {
   readonly command = vi.fn(async () => undefined);
   readonly queryCalls: QueryOptions[] = [];
   #queryCount = 0;
+  readonly queryResponses: readonly QueryRows[];
 
-  constructor(readonly queryResponses: readonly QueryRows[]) {}
+  constructor(queryResponses: readonly QueryRows[]) {
+    this.queryResponses = queryResponses;
+  }
 
   static withTableCounts(tableCounts: readonly number[]): TestClickHouseClient {
     return new TestClickHouseClient(tableCounts.map((count) => [{ count }]));

@@ -41,12 +41,15 @@ export function isPublicImageAddress(address: string): boolean {
   return false;
 }
 export class ImageDownloadError extends Error {
-  constructor(
-    readonly code: string,
-    readonly retryable = false,
-    readonly retryAfterSeconds = 0,
-  ) {
+  readonly code: string;
+  readonly retryable: boolean;
+  readonly retryAfterSeconds: number;
+
+  constructor(code: string, retryable = false, retryAfterSeconds = 0) {
     super(code);
+    this.code = code;
+    this.retryable = retryable;
+    this.retryAfterSeconds = retryAfterSeconds;
   }
 }
 export function validateImageUrl(value: string, allowedOrigins: string[]): URL {
