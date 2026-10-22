@@ -37,7 +37,7 @@ async function doRegisterProviders() {
       () => import("../providers/garmin-dump.ts").then((m) => new m.GarminDumpProvider()),
     ],
     ["fit-file", () => import("../providers/fit-file.ts").then((m) => new m.FitFileProvider())],
-    ["strava", () => import("../providers/strava.ts").then((m) => new m.StravaProvider())],
+    ["strava", () => import("../providers/strava/provider.ts").then((m) => new m.StravaProvider())],
     [
       "cronometer-csv",
       () => import("../providers/cronometer-csv.ts").then((m) => new m.CronometerCsvProvider()),
@@ -81,7 +81,6 @@ async function doRegisterProviders() {
       "thecrag",
       () => import("../providers/thecrag/provider.ts").then((m) => new m.TheCragProvider()),
     ],
-    ["alltrails", () => import("../providers/alltrails.ts").then((m) => new m.AllTrailsProvider())],
     [
       "amazfit-zepp",
       () => import("../providers/amazfit-zepp.ts").then((m) => new m.AmazfitZeppProvider()),

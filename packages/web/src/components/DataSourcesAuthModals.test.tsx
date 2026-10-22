@@ -65,8 +65,8 @@ describe("data source auth dialogs", () => {
   });
 
   it.each([
-    { id: "polar", name: "Polar" },
-    { id: "alltrails", name: "AllTrails" },
+    { id: "eight-sleep", name: "Eight Sleep" },
+    { id: "zwift", name: "Zwift" },
   ])("submits $name credentials with a trimmed email and protected password", async (provider) => {
     const onSuccess = vi.fn();
     render(

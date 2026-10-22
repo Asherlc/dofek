@@ -1,6 +1,11 @@
 import { formatDateTime, formatNumber, formatTimeOnly } from "@dofek/format/format";
 import type { UnitConverter } from "@dofek/format/units";
 import { activityMetricColors, statusColors } from "@dofek/scoring/colors";
+import {
+  type ActivityChartSeries,
+  activityChartSeries,
+  nearestActivityChartSample,
+} from "@dofek/training/activity-chart-series";
 import { cadenceAxisLabel } from "@dofek/training/training";
 import { type ReactNode, useCallback, useMemo, useState } from "react";
 import type { StreamPoint } from "../../../../../server/src/routers/activity.ts";
@@ -32,13 +37,16 @@ function buildAxisPointerEvents(
   onHoverPosition?: (position: { lat: number; lng: number } | null) => void,
 ) {
   if (!onHoverPosition) return undefined;
+  const samples = dataPoints.map((point) => ({ timestamp: Date.parse(point.recordedAt), point }));
+  const startedAt = Math.min(...samples.map((sample) => sample.timestamp));
+  const endedAt = Math.max(...samples.map((sample) => sample.timestamp));
   return {
     updateAxisPointer: (params: Record<string, unknown>) => {
       const axesInfo = params.axesInfo;
       if (Array.isArray(axesInfo) && axesInfo.length > 0) {
         const rawValue: unknown = axesInfo[0]?.value;
-        if (typeof rawValue === "number" && rawValue >= 0 && rawValue < dataPoints.length) {
-          const point = dataPoints[Math.round(rawValue)];
+        if (typeof rawValue === "number" && rawValue >= startedAt && rawValue <= endedAt) {
+          const point = nearestActivityChartSample(samples, rawValue)?.point;
           if (point?.lat != null && point?.lng != null) {
             onHoverPosition({ lat: point.lat, lng: point.lng });
             return;
@@ -49,6 +57,34 @@ function buildAxisPointerEvents(
     },
     globalout: () => onHoverPosition(null),
   };
+}
+
+function chartSeriesData(series: ActivityChartSeries) {
+  const data: Array<{
+    value: [number, number | null];
+    name: string;
+    displayValue?: string;
+    itemStyle: { opacity: number };
+  }> = [];
+  for (const [index, sample] of series.samples.entries()) {
+    const timestampLabel = formatDateTime(new Date(sample.timestamp));
+    const previous = series.samples[index - 1];
+    if (sample.startsSegment && previous) {
+      data.push({
+        value: [previous.timestamp + (sample.timestamp - previous.timestamp) / 2, null],
+        name: `Gap before ${timestampLabel}`,
+        displayValue: "No recorded samples",
+        itemStyle: { opacity: 0 },
+      });
+    }
+    data.push({
+      value: [sample.timestamp, sample.value],
+      name: `Sample ${sample.index + 1} · ${timestampLabel}`,
+      displayValue: formatNumber(sample.value, 0),
+      itemStyle: { opacity: sample.showMarker ? 1 : 0 },
+    });
+  }
+  return data;
 }
 
 interface MetricDefinition {
@@ -211,7 +247,9 @@ export function MetricsChart({
 
   const isVisible = (name: string) => legendSelected[name] !== false;
 
-  const times = points.map((p) => p.recordedAt);
+  const timeline = activityChartSeries(
+    points.map((point) => ({ recordedAt: point.recordedAt, value: null })),
+  );
   const yAxes = metrics.map((metric, index) => {
     const visible = isVisible(metric.name);
     const isFirst = index === 0;
@@ -238,18 +276,15 @@ export function MetricsChart({
     name: metric.name,
     type: "line" as const,
     yAxisIndex: index,
-    data: metric.data.map((value, dataIndex) =>
-      value == null
-        ? null
-        : {
-            value,
-            displayValue: formatNumber(value, 0),
-            itemStyle: {
-              opacity:
-                metric.data[dataIndex - 1] == null && metric.data[dataIndex + 1] == null ? 1 : 0,
-            },
-          },
+    data: chartSeriesData(
+      activityChartSeries(
+        points.map((point, dataIndex) => ({
+          recordedAt: point.recordedAt,
+          value: metric.data[dataIndex] ?? null,
+        })),
+      ),
     ),
+    connectNulls: false,
     showSymbol: true,
     showAllSymbol: true,
     symbol: "circle",
@@ -262,6 +297,12 @@ export function MetricsChart({
   const visibleRightAxisCount = metrics.slice(1).filter((m) => isVisible(m.name)).length;
 
   const option = {
+    aria: {
+      label: {
+        description:
+          "Activity metrics over time. Dots mark recorded samples; gaps indicate unobserved time.",
+      },
+    },
     grid: {
       top: customLegend ? 24 : 40,
       right: 60 + Math.max(0, visibleRightAxisCount - 1) * 60,
@@ -272,7 +313,7 @@ export function MetricsChart({
       ...dofekTooltip({
         axisPointer: {
           label: {
-            formatter: ({ value }: { value: string }) => formatDateTime(value),
+            formatter: ({ value }: { value: number }) => formatDateTime(new Date(value)),
           },
         },
       }),
@@ -290,7 +331,7 @@ export function MetricsChart({
         bottom: 16,
         showDataShadow: false,
         showDetail: true,
-        labelFormatter: (_value: number, valueText: string) => formatTimeOnly(valueText),
+        labelFormatter: (value: number) => formatTimeOnly(new Date(value)),
         handleSize: "100%",
         moveHandleSize: 8,
         brushSelect: false,
@@ -307,12 +348,18 @@ export function MetricsChart({
         textStyle: { color: chartThemeColors.axisLabel },
       },
     ],
-    xAxis: dofekAxis.category({
-      data: times,
-      axisLabel: {
-        formatter: (v: string) => formatTimeOnly(v),
-      },
-    }),
+    xAxis: {
+      ...dofekAxis.time({
+        axisLabel: {
+          formatter: (value: number) => formatTimeOnly(new Date(value)),
+        },
+      }),
+      min: timeline.startedAt,
+      max: timeline.endedAt,
+      name: "Time",
+      nameLocation: "middle",
+      nameGap: 28,
+    },
     yAxis: yAxes,
     series,
   };
@@ -325,10 +372,11 @@ export function MetricsChart({
       ) : points.length === 0 && error ? null : points.length === 0 ? (
         <p className="py-6 text-sm text-muted">No samples for the selected sources.</p>
       ) : (
-        <DofekChart option={option} height={380} onEvents={chartEvents} />
+        <DofekChart option={option} height={380} onEvents={chartEvents} timeRangeMode="data" />
       )}
       {points.length > 0 && (
         <figcaption className="mt-1 flex flex-wrap items-baseline gap-x-2 px-[60px] text-xs text-dim">
+          <span>Dots mark recorded samples; gaps indicate unobserved time.</span>
           <span className="font-medium text-muted">Zoom timeline</span>
           <span>Drag the handles to focus on part of the activity.</span>
         </figcaption>
@@ -348,38 +396,56 @@ export function ElevationChart({
   units: UnitConverter;
   onHoverPosition?: (position: { lat: number; lng: number } | null) => void;
 }) {
-  const elevPoints = points.filter((p) => p.altitude != null);
+  const elevation = activityChartSeries(
+    points.map((point) => ({
+      recordedAt: point.recordedAt,
+      value: point.altitude != null ? Math.round(units.convertElevation(point.altitude)) : null,
+    })),
+  );
   const chartEvents = useMemo(
-    () => buildAxisPointerEvents(elevPoints, onHoverPosition),
-    [elevPoints, onHoverPosition],
+    () => buildAxisPointerEvents(points, onHoverPosition),
+    [points, onHoverPosition],
   );
 
   if (loading) return <ChartLoadingSkeleton height={200} />;
-  if (elevPoints.length === 0) return null;
+  if (elevation.samples.length === 0) return null;
 
   const option = {
+    aria: {
+      label: {
+        description:
+          "Elevation over activity time. Dots mark recorded samples; gaps indicate unobserved time.",
+      },
+    },
     grid: dofekGrid("single", { top: 10, right: 20, bottom: 30, left: 50 }),
     tooltip: dofekTooltip({
-      formatter: (params: Array<{ value: number; dataIndex: number }>) => {
+      formatter: (params: Array<{ value: [number, number | null]; dataIndex: number }>) => {
         const firstParam = params[0];
-        if (!firstParam) return "";
-        return `Elevation: ${Math.round(units.convertElevation(firstParam.value))} ${escapeTooltipHtml(units.elevationLabel)}`;
+        if (!firstParam || firstParam.value[1] == null) return "";
+        return `${escapeTooltipHtml(formatDateTime(new Date(firstParam.value[0])))}<br/>Elevation: ${firstParam.value[1]} ${escapeTooltipHtml(units.elevationLabel)}`;
       },
     }),
-    xAxis: dofekAxis.category({
-      data: elevPoints.map((p) => p.recordedAt),
-      axisLabel: {
-        formatter: (v: string) => formatTimeOnly(v),
-      },
-    }),
+    xAxis: {
+      ...dofekAxis.time({
+        axisLabel: {
+          formatter: (value: number) => formatTimeOnly(new Date(value)),
+        },
+      }),
+      min: elevation.startedAt,
+      max: elevation.endedAt,
+    },
     yAxis: { ...dofekAxis.value({ name: `Elevation (${units.elevationLabel})` }), scale: true },
     series: [
       {
         type: "line",
-        data: elevPoints.map((p) =>
-          p.altitude != null ? Math.round(units.convertElevation(p.altitude)) : null,
-        ),
-        showSymbol: false,
+        data: chartSeriesData(elevation),
+        connectNulls: false,
+        showSymbol: true,
+        showAllSymbol: true,
+        symbol: "circle",
+        symbolSize: 6,
+        emphasis: { itemStyle: { opacity: 1 } },
+        itemStyle: { color: CHART_COLORS.altitude },
         lineStyle: { width: 1.5, color: CHART_COLORS.altitude },
         areaStyle: {
           color: {
@@ -398,5 +464,12 @@ export function ElevationChart({
     ],
   };
 
-  return <DofekChart option={option} height={200} onEvents={chartEvents} />;
+  return (
+    <figure className="m-0">
+      <DofekChart option={option} height={200} onEvents={chartEvents} timeRangeMode="data" />
+      <figcaption className="mt-1 px-[50px] text-xs text-dim">
+        Dots mark recorded samples; gaps indicate unobserved time.
+      </figcaption>
+    </figure>
+  );
 }

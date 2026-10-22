@@ -64,6 +64,7 @@ services:
       OTEL_TRACES_SAMPLER: parentbased_traceidratio
       OTEL_TRACES_SAMPLER_ARG: "0.1"
       EXPORT_R2_BUCKET: dofek-exports
+      ACTIVITY_MEDIA_R2_BUCKET: dofek-activity-media
       IMPORT_R2_BUCKET: dofek-imports
       ACCOUNT_ERASURE_LEDGER_R2_BUCKET: dofek-account-erasure-ledger
     volumes:
@@ -125,6 +126,7 @@ services:
       OTEL_TRACES_SAMPLER: parentbased_traceidratio
       OTEL_TRACES_SAMPLER_ARG: "0.1"
       EXPORT_R2_BUCKET: dofek-exports
+      ACTIVITY_MEDIA_R2_BUCKET: dofek-activity-media
       IMPORT_R2_BUCKET: dofek-imports
       DB_BACKUPS_R2_BUCKET: dofek-db-backups
       METRIC_STREAM_R2_BUCKET: ${METRIC_STREAM_R2_BUCKET:?METRIC_STREAM_R2_BUCKET is required}

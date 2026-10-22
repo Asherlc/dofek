@@ -423,7 +423,7 @@ const credentialProvider = {
 
 const credentialProviders = [
   credentialProvider,
-  { ...credentialProvider, id: "alltrails", name: "AllTrails" },
+  { ...credentialProvider, id: "zwift", name: "Zwift" },
 ];
 
 const tokenProvider = {

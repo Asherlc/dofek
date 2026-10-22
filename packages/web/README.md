@@ -128,9 +128,10 @@ cd packages/web && pnpm storybook # Start Storybook
 pnpm test                        # Run repo-wide Vitest suites from the repo root
 ```
 
-Activity cards show a 20 px logo for the actual provider of the closest available
-recording when provenance resolves a primary. Unresolved origin has no primary
-logo. Field and sensor priorities remain independent. The card reuses
+Activity cards use a 32 px logo for the actual provider of the closest available
+recording as their leading image when provenance resolves a primary. Unresolved
+origin keeps the activity-type icon. Field and sensor priorities remain
+independent. The card reuses
 [ProviderLogo](src/components/ProviderLogo.tsx); see the
 [origin schema](../providers-meta/src/activity-origin.ts).
 
@@ -149,7 +150,11 @@ The [source repository](../server/src/repositories/activity-metric-sources-repos
 and negative elevations, excludes invalid heart-rate samples, and preserves
 activity ownership and stream downsampling.
 
-The [metric chart](src/pages/activity-detail/components/ActivityDetailCharts.tsx)
-shows isolated readings as dots and leaves missing samples as gaps, so sparse
-recordings remain visible. Continuous readings retain their line presentation.
-The colocated `SparseReadings` story and SVG-rendering tests cover this behavior.
+The [metric and elevation charts](src/pages/activity-detail/components/ActivityDetailCharts.tsx)
+position observations by elapsed time and evaluate continuity independently for
+each metric. Other metrics' timestamps do not interrupt a recording. Sparse
+observations retain markers; dense recordings show lines with markers on hover.
+The [shared presentation policy](../training/src/activity-chart-series.ts) defines
+the cadence-based gap rule used by both clients. This follows the distinction
+between [differing reporting intervals and missing observations](https://www.datawrapper.de/academy/patchy-data).
+The `IndependentMetricTimelines` and `SparseReadings` stories show both cases.

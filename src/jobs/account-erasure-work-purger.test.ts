@@ -27,6 +27,8 @@ const mocks = vi.hoisted(() => {
   return {
     abortImportMultipart: vi.fn(async () => undefined),
     closeByQueue,
+    createImageQueue: vi.fn(() => queue("activity-images")),
+    eraseImageObjects: vi.fn(async () => undefined),
     createActivityQueue: vi.fn(() => queue("activity-delete-analytics")),
     createExportQueue: vi.fn(() => queue("export")),
     createFitBatchQueue: vi.fn(() => queue("fit-file-import-batch")),
@@ -91,7 +93,11 @@ vi.mock("./provider-queue-config.ts", () => ({
   getConfiguredProviderIds: vi.fn(() => ["strava", "garmin"]),
 }));
 
+vi.mock("../activity-images/storage.ts", () => ({
+  eraseActivityImageObjects: mocks.eraseImageObjects,
+}));
 vi.mock("./queues.ts", () => ({
+  createActivityImageQueue: mocks.createImageQueue,
   createActivityDeleteAnalyticsQueue: mocks.createActivityQueue,
   createExportQueue: mocks.createExportQueue,
   createFitFileImportBatchQueue: mocks.createFitBatchQueue,
@@ -145,6 +151,7 @@ describe("createAccountErasureWorkPurgerFromEnv", () => {
     const purger = createAccountErasureWorkPurgerFromEnv();
 
     await purger.purge(snapshot);
+    expect(mocks.eraseImageObjects).toHaveBeenCalledWith(snapshot.localIdentifiers.userId);
 
     expect(mocks.purgeAccountWork).toHaveBeenCalledWith(
       {
@@ -162,6 +169,7 @@ describe("createAccountErasureWorkPurgerFromEnv", () => {
       "sync",
       "sync-strava",
       "sync-garmin",
+      "activity-images",
       "import",
       "fit-file-import",
       "fit-file-import-batch",
@@ -217,7 +225,7 @@ describe("createAccountErasureWorkPurgerFromEnv", () => {
 
     await purger.close();
 
-    expect(mocks.closeByQueue).toHaveLength(12);
+    expect(mocks.closeByQueue).toHaveLength(13);
     for (const close of mocks.closeByQueue.values()) {
       expect(close).toHaveBeenCalledOnce();
     }

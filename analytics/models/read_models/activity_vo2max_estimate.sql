@@ -338,7 +338,7 @@ power_samples AS (
             ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
         ) AS cumulative_sum
     FROM activity_bounds
-    INNER JOIN {{ ref('activity_sensor_sample') }} AS samples
+    INNER JOIN {{ ref('activity_sensor_sample') }} AS samples FINAL
         ON samples.activity_id = activity_bounds.activity_id
         AND samples.user_id = activity_bounds.user_id
     WHERE samples.channel = 'power'
@@ -422,7 +422,7 @@ acsm_segments AS (
             - minIf(samples.scalar, samples.channel = 'altitude')
         ) / nullIf(avgIf(samples.scalar, samples.channel = 'speed') * 300, 0) AS grade_fraction
     FROM activity_bounds
-    INNER JOIN {{ ref('activity_sensor_sample') }} AS samples
+    INNER JOIN {{ ref('activity_sensor_sample') }} AS samples FINAL
         ON samples.activity_id = activity_bounds.activity_id
         AND samples.user_id = activity_bounds.user_id
     WHERE activity_bounds.canonical_type IN ('running', 'walking', 'hiking')

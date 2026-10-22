@@ -13,19 +13,24 @@ import { initProductionSentry } from "../lib/sentry.ts";
 import { logger } from "../logger.ts";
 import { validateMetricStreamTopicConfiguration } from "../metric-stream/routes.ts";
 import { getAllProviders } from "../providers/index.ts";
+import { requiredR2EnvironmentVariable } from "../r2-storage.ts";
 import { startAccountErasureOutboxDispatcher } from "./account-erasure-outbox.ts";
 import { createAccountErasureRuntime } from "./account-erasure-runtime.ts";
 import { runAccountErasureRestoreStartupGate } from "./account-erasure-startup.ts";
 import { createAccountErasureWorkLockPoolFromEnv } from "./account-erasure-work-guard.ts";
 import { createAccountErasureWorkPurgerFromEnv } from "./account-erasure-work-purger.ts";
+import { startActivityImageOutboxDispatcher } from "./activity-image-outbox.ts";
+import { createActivityImageReconciler } from "./activity-image-reconciliation.ts";
 import { startDataExportOutboxDispatcher } from "./data-export-outbox.ts";
 import { startFileUploadOutboxDispatcher } from "./file-upload-outbox.ts";
 import { startFileUploadReconciler } from "./file-upload-reconciliation.ts";
 import { createGarminImportProgressCoordinator } from "./garmin-import-progress.ts";
+import { dispatchActivityImageBackfills } from "./process-activity-image-backfill-job.ts";
 import { startProviderDataDeletionOutboxDispatcher } from "./provider-data-deletion-outbox.ts";
 import { ensureProvidersRegistered } from "./provider-registration.ts";
 import {
   getAccountErasureQueue,
+  getActivityImageQueue,
   getDataExportQueue,
   getImportQueue,
   getProviderDataDeletionQueue,
@@ -138,6 +143,13 @@ const providerDataDeletionOutboxDispatcher = startProviderDataDeletionOutboxDisp
 const dataExportOutboxDispatcher = startDataExportOutboxDispatcher(db, getDataExportQueue());
 const fileUploadOutboxDispatcher = startFileUploadOutboxDispatcher(db, getImportQueue());
 const fileUploadReconciler = startFileUploadReconciler(db, getImportUploadStorage());
+requiredR2EnvironmentVariable("ACTIVITY_MEDIA_R2_BUCKET");
+const activityImageOutboxDispatcher = startActivityImageOutboxDispatcher(
+  db,
+  getActivityImageQueue(),
+  createActivityImageReconciler(db, accountErasureWorkLockPool),
+  () => dispatchActivityImageBackfills(db, getActivityImageQueue()),
+);
 
 const lifecycle = createWorkerLifecycle({
   allWorkers,
@@ -148,6 +160,7 @@ const lifecycle = createWorkerLifecycle({
   dataExportOutboxDispatcher,
   fileUploadOutboxDispatcher,
   fileUploadReconciler,
+  activityImageOutboxDispatcher,
   garminImportProgressCoordinator,
   accountErasureRuntime,
   accountErasureWorkLockPool,

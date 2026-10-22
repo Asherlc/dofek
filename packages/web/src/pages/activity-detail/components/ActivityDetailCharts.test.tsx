@@ -1,18 +1,29 @@
 /** @vitest-environment jsdom */
+import { formatDateTime } from "@dofek/format/format";
 import { UnitConverter } from "@dofek/format/units";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { init, setPlatformAPI } from "echarts";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { MetricsChart } from "./ActivityDetailCharts.tsx";
+import type { StreamPoint } from "../../../../../server/src/routers/activity.ts";
+import { buildChartTable } from "../../../components/chart-accessibility.ts";
+import { ElevationChart, MetricsChart } from "./ActivityDetailCharts.tsx";
 
 const captured = vi.hoisted(() => {
   const option: Record<string, unknown> = {};
-  return { option };
+  const events: Record<string, (params: Record<string, unknown>) => void> = {};
+  return { option, events };
 });
 
 vi.mock("echarts-for-react", () => ({
-  default: ({ option }: { option: Record<string, unknown> }) => {
+  default: ({
+    option,
+    onEvents,
+  }: {
+    option: Record<string, unknown>;
+    onEvents: typeof captured.events;
+  }) => {
     captured.option = option;
+    captured.events = onEvents;
     return null;
   },
 }));
@@ -38,7 +49,7 @@ const points = [
     lat: null,
     lng: null,
   },
-];
+] satisfies [StreamPoint, StreamPoint];
 
 const args = {
   points,
@@ -190,7 +201,143 @@ describe("MetricsChart number formatting", () => {
 });
 
 describe("MetricsChart sparse readings", () => {
-  it("renders every isolated Watch reading among a dense activity timeline", () => {
+  it("retains the tooltip of an elevation observation immediately after a gap", () => {
+    const resumedAt = Date.UTC(2026, 9, 20, 16, 0, 20);
+    render(
+      <ElevationChart
+        loading={false}
+        units={args.units}
+        points={[0, 1, 2, 20, 21].map((second) => ({
+          ...points[0],
+          recordedAt: new Date(Date.UTC(2026, 9, 20, 16, 0, second)).toISOString(),
+          altitude: 200 + second,
+        }))}
+      />,
+    );
+    setPlatformAPI({ measureText: (text) => ({ width: String(text).length * 7 }) });
+    const chart = init(null, null, { renderer: "svg", ssr: true, width: 800, height: 380 });
+    try {
+      chart.setOption({ ...captured.option, animation: false });
+      const selected: { dataIndex: number | null } = { dataIndex: null };
+      chart.on("updateAxisPointer", (event: unknown) => {
+        if (
+          typeof event === "object" &&
+          event !== null &&
+          "dataIndex" in event &&
+          typeof event.dataIndex === "number"
+        ) {
+          selected.dataIndex = event.dataIndex;
+        }
+      });
+      const pixelX = chart.convertToPixel({ xAxisIndex: 0 }, resumedAt);
+      if (typeof pixelX !== "number") throw new Error("Expected time-axis pixel");
+      chart.dispatchAction({ type: "updateAxisPointer", x: pixelX, y: 100 });
+      const series = captured.option.series;
+      if (!Array.isArray(series) || selected.dataIndex === null)
+        throw new Error("Expected selected observation");
+      const observation = series[0].data[selected.dataIndex];
+      expect(observation.value).toEqual([resumedAt, 220]);
+      const tooltip = captured.option.tooltip;
+      if (!tooltip || typeof tooltip !== "object") throw new Error("Expected elevation tooltip");
+      const formatter = Reflect.get(tooltip, "formatter");
+      expect(formatter([observation])).toContain("Elevation: 220 m");
+    } finally {
+      chart.dispose();
+    }
+  });
+
+  it("labels exact observations with readable timestamps in the chart data table", () => {
+    render(<MetricsChart {...args} />);
+    expect(buildChartTable(captured.option).rows).toContainEqual({
+      series: "Heart Rate",
+      category: `Sample 1 · ${formatDateTime(points[0].recordedAt)}`,
+      value: "140",
+    });
+  });
+  it("synchronizes map hover by timestamp rather than row number", () => {
+    const onHoverPosition = vi.fn();
+    render(
+      <MetricsChart
+        {...args}
+        onHoverPosition={onHoverPosition}
+        points={[0, 2, 20].map((second, index) => ({
+          ...points[0],
+          recordedAt: new Date(Date.UTC(2026, 9, 20, 16, 0, second)).toISOString(),
+          lat: 40 + index,
+          lng: -70,
+        }))}
+      />,
+    );
+    captured.events.updateAxisPointer?.({
+      axesInfo: [{ value: Date.UTC(2026, 9, 20, 16, 0, 6) }],
+    });
+    expect(onHoverPosition).toHaveBeenLastCalledWith({ lat: 41, lng: -70 });
+    captured.events.globalout?.({});
+    expect(onHoverPosition).toHaveBeenLastCalledWith(null);
+  });
+
+  it("connects regular HR readings across timestamps belonging to other metrics", () => {
+    render(
+      <MetricsChart
+        {...args}
+        hasPower={false}
+        hasSpeed={false}
+        hasCadence={false}
+        points={[130, null, 135, null, 140].map((heartRate, index) => ({
+          ...points[0],
+          recordedAt: new Date(Date.UTC(2026, 9, 20, 16, 0, index)).toISOString(),
+          heartRate,
+        }))}
+      />,
+    );
+
+    const line = renderChartSvg().querySelector('path[stroke-width="1.5"]');
+    expect(line?.getAttribute("d")?.match(/[ML]/g)).toEqual(["M", "L", "L"]);
+  });
+
+  it("spaces readings proportionally to elapsed time", () => {
+    render(
+      <MetricsChart
+        {...args}
+        hasPower={false}
+        hasSpeed={false}
+        hasCadence={false}
+        points={[0, 1, 4].map((second) => ({
+          ...points[0],
+          recordedAt: new Date(Date.UTC(2026, 9, 20, 16, 0, second)).toISOString(),
+        }))}
+      />,
+    );
+
+    const svg = renderChartSvg("highlight");
+    const marker = visibleChartSymbols(svg).find(
+      (symbol) => symbol.getAttribute("ecmeta_data_index") === "1",
+    );
+    const coordinates = marker?.getAttribute("transform")?.match(/^matrix\(([^)]+)\)$/)?.[1];
+    const centerX = Number(coordinates?.split(",")[4]);
+    // The plot runs from x=60 to x=740; one second is a quarter of four seconds.
+    expect(centerX).toBeCloseTo(230, 0);
+  });
+
+  it("breaks the line at a long HR interruption even without intervening rows", () => {
+    render(
+      <MetricsChart
+        {...args}
+        hasPower={false}
+        hasSpeed={false}
+        hasCadence={false}
+        points={[0, 1, 2, 20, 21].map((second) => ({
+          ...points[0],
+          recordedAt: new Date(Date.UTC(2026, 9, 20, 16, 0, second)).toISOString(),
+        }))}
+      />,
+    );
+
+    const line = renderChartSvg().querySelector('path[stroke-width="1.5"]');
+    expect(line?.getAttribute("d")?.match(/[ML]/g)).toEqual(["M", "L", "L", "M", "L"]);
+  });
+
+  it("renders every sparse Watch reading among a dense activity timeline", () => {
     const watchReadings = new Map([
       [7, 80],
       [67, 100],
@@ -224,31 +371,21 @@ describe("MetricsChart sparse readings", () => {
     );
 
     const svg = renderChartSvg();
+    const series = captured.option.series;
+    if (!Array.isArray(series)) throw new Error("Expected chart series");
     expect(
       visibleChartSymbols(svg)
         .filter((symbol) => symbol.getAttribute("ecmeta_series_index") === "0")
-        .map((symbol) => symbol.getAttribute("ecmeta_data_index")),
-    ).toEqual([
-      "7",
-      "67",
-      "97",
-      "154",
-      "186",
-      "223",
-      "252",
-      "297",
-      "314",
-      "335",
-      "376",
-      "396",
-      "464",
-    ]);
+        .map((symbol) => series[0].data[Number(symbol.getAttribute("ecmeta_data_index"))].value),
+    ).toEqual(
+      [...watchReadings].map(([second, value]) => [Date.UTC(2026, 9, 20, 16, 3, second), value]),
+    );
   });
 
   it.each([
-    { values: [0], symbolIndex: "0" },
-    { values: [null, 0, null], symbolIndex: "1" },
-  ])("renders a single zero reading as a dot: $values", ({ values, symbolIndex }) => {
+    { values: [0], minute: 0 },
+    { values: [null, 0, null], minute: 1 },
+  ])("renders a single zero reading as a dot: $values", ({ values, minute }) => {
     render(
       <MetricsChart
         {...args}
@@ -272,10 +409,12 @@ describe("MetricsChart sparse readings", () => {
     const svg = renderChartSvg();
     const symbols = visibleChartSymbols(svg);
     expect(symbols).toHaveLength(1);
-    expect(symbols[0]?.getAttribute("ecmeta_data_index")).toBe(symbolIndex);
+    const series = captured.option.series;
+    if (!Array.isArray(series)) throw new Error("Expected chart series");
+    expect(series[0].data[0].value).toEqual([Date.UTC(2026, 9, 20, 16, minute), 0]);
   });
 
-  it("keeps continuous readings as lines and preserves missing-sample gaps", () => {
+  it("keeps sparse readings visible and preserves recording gaps", () => {
     render(
       <MetricsChart
         {...args}
@@ -299,7 +438,7 @@ describe("MetricsChart sparse readings", () => {
     const svg = renderChartSvg();
     const line = svg.querySelector('path[stroke-width="1.5"]');
     expect(line?.getAttribute("d")?.match(/[ML]/g)).toEqual(["M", "L", "M", "L"]);
-    expect(visibleChartSymbols(svg)).toHaveLength(0);
+    expect(visibleChartSymbols(svg)).toHaveLength(4);
   });
 
   it("shows a continuous reading on hover and hides its marker afterward", () => {
@@ -309,10 +448,10 @@ describe("MetricsChart sparse readings", () => {
         hasPower={false}
         hasSpeed={false}
         hasCadence={false}
-        points={[130, 140, 150].map((heartRate, index) => ({
+        points={Array.from({ length: 40 }, (_, index) => ({
           ...points[0],
           recordedAt: new Date(Date.UTC(2026, 9, 20, 16, index)).toISOString(),
-          heartRate,
+          heartRate: 130 + index,
           power: null,
           speed: null,
           cadence: null,
@@ -381,11 +520,17 @@ describe("MetricsChart custom legend", () => {
     expect(powerAxis()).toMatchObject({ show: false });
     const series = captured.option.series;
     if (!Array.isArray(series)) throw new Error("Expected chart series");
-    expect(series.find((item) => item.name === "Heart Rate")).toMatchObject({
-      data: [{ value: 160 }, { value: 160 }],
-    });
-    expect(series.find((item) => item.name === "Power")).toMatchObject({
-      data: [{ value: 200 }, { value: 220 }],
-    });
+    expect(series.find((item) => item.name === "Heart Rate")?.data).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ value: [Date.parse(points[0].recordedAt), 160] }),
+        expect.objectContaining({ value: [Date.parse(points[1].recordedAt), 160] }),
+      ]),
+    );
+    expect(series.find((item) => item.name === "Power")?.data).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ value: [Date.parse(points[0].recordedAt), 200] }),
+        expect.objectContaining({ value: [Date.parse(points[1].recordedAt), 220] }),
+      ]),
+    );
   });
 });

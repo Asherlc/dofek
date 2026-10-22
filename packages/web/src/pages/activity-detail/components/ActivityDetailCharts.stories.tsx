@@ -1,5 +1,6 @@
 import { UnitConverter } from "@dofek/format/units";
 import { activityMetricColors } from "@dofek/scoring/colors";
+import { activityChartTimingPoints } from "@dofek/training/fixtures/activity-chart-timing";
 import {
   type ActivityPreviewMetric,
   activityMetricSourcePreview,
@@ -91,6 +92,14 @@ export const SparseReadings: Story = {
       lat: null,
       lng: null,
     })),
+  },
+};
+
+export const IndependentMetricTimelines: Story = {
+  args: {
+    points: activityChartTimingPoints,
+    activityType: "cycling",
+    hasPower: true,
   },
 };
 
