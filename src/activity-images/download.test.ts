@@ -62,7 +62,13 @@ describe("private image downloads", () => {
       "https://cdn.test:444/a",
       "https://other.test/a",
     ])
-      expect(() => validateImageUrl(url, ["https://cdn.test"])).toThrow();
+      expect(() => validateImageUrl(url, ["https://cdn.test"])).toThrow(
+        expect.objectContaining({
+          code: "image_origin_rejected",
+          retryable: false,
+          retryAfterSeconds: 0,
+        }),
+      );
     expect(validateImageUrl("https://cdn.test/a?secret=x", ["https://cdn.test"]).hostname).toBe(
       "cdn.test",
     );
