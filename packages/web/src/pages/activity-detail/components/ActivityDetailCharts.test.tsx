@@ -143,6 +143,63 @@ function visibleChartSymbols(svg: Document) {
   return symbols;
 }
 
+describe("MetricsChart number formatting", () => {
+  const fractionalPoints = points.map((point, index) => ({
+    ...point,
+    heartRate: index === 0 ? 43.383949279785156 : 76.92308044433594,
+  }));
+
+  function renderFractionalChart() {
+    render(
+      <MetricsChart
+        {...args}
+        points={fractionalPoints}
+        hasPower={false}
+        hasSpeed={false}
+        hasCadence={false}
+      />,
+    );
+  }
+
+  it("renders fractional axis endpoints as whole numbers", () => {
+    renderFractionalChart();
+
+    const labels = Array.from(
+      renderChartSvg().querySelectorAll("text"),
+      (node) => node.textContent,
+    );
+    expect(labels).toContain("43");
+    expect(labels).toContain("77");
+  });
+
+  it("rounds tooltip values to whole numbers", () => {
+    renderFractionalChart();
+
+    const tooltip = captured.option.tooltip;
+    if (typeof tooltip !== "object" || tooltip === null || !("valueFormatter" in tooltip)) {
+      throw new Error("Expected tooltip value formatter");
+    }
+    const formatter = tooltip.valueFormatter;
+    if (typeof formatter !== "function") throw new Error("Expected tooltip value formatter");
+    expect(formatter(43.383949279785156)).toBe("43");
+    expect(formatter(76.92308044433594)).toBe("77");
+    expect(formatter(0)).toBe("0");
+  });
+
+  it("rounds the accessible data values", () => {
+    renderFractionalChart();
+
+    const disclosure = screen.getByText("View chart data").closest("details");
+    if (!(disclosure instanceof HTMLDetailsElement))
+      throw new Error("Expected chart data disclosure");
+    disclosure.open = true;
+    fireEvent(disclosure, new Event("toggle"));
+
+    expect(screen.getByRole("cell", { name: "43" })).toBeDefined();
+    expect(screen.getByRole("cell", { name: "77" })).toBeDefined();
+  });
+});
+
 describe("MetricsChart sparse readings", () => {
   it("retains the tooltip of an elevation observation immediately after a gap", () => {
     const resumedAt = Date.UTC(2026, 9, 20, 16, 0, 20);

@@ -80,6 +80,7 @@ function chartSeriesData(series: ActivityChartSeries) {
     data.push({
       value: [sample.timestamp, sample.value],
       name: `Sample ${sample.index + 1} · ${timestampLabel}`,
+      displayValue: formatNumber(sample.value, 0),
       itemStyle: { opacity: sample.showMarker ? 1 : 0 },
     });
   }
@@ -264,7 +265,7 @@ export function MetricsChart({
         max: "dataMax",
         position,
         showSplitLine,
-        axisLabel: { color: metric.color },
+        axisLabel: { color: metric.color, formatter: (value: number) => formatNumber(value, 0) },
       }),
       show: visible,
       offset: !isFirst && visibleRightBefore > 0 ? visibleRightBefore * 60 : 0,
@@ -308,13 +309,16 @@ export function MetricsChart({
       bottom: 86,
       left: 60,
     },
-    tooltip: dofekTooltip({
-      axisPointer: {
-        label: {
-          formatter: ({ value }: { value: number }) => formatDateTime(new Date(value)),
+    tooltip: {
+      ...dofekTooltip({
+        axisPointer: {
+          label: {
+            formatter: ({ value }: { value: number }) => formatDateTime(new Date(value)),
+          },
         },
-      },
-    }),
+      }),
+      valueFormatter: (value: number) => formatNumber(value, 0),
+    },
     legend: { ...dofekLegend(customLegend === undefined), selected: legendSelected },
     dataZoom: [
       { type: "inside", xAxisIndex: 0, start: 0, end: 100 },
