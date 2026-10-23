@@ -30,6 +30,7 @@ final class WhoopBleConnectionManager {
     var pendingPoweredOnCompletion: (([String: Any?]?) -> Void)?
     private var handshakeTimeoutWorkItem: DispatchWorkItem?
     private let connectTimeoutSeconds: TimeInterval
+    private var collectionActivityObserver: NSObjectProtocol?
 
     /// Last write error for diagnostics.
     var lastWriteError: String?
@@ -42,6 +43,25 @@ final class WhoopBleConnectionManager {
         bleQueue.setSpecific(key: Self.bleQueueKey, value: true)
         bleDelegate = WhoopBleDelegate()
         bleDelegate.connectionManager = self
+        collectionActivityObserver = NotificationCenter.default.addObserver(
+            forName: Notification.Name("Dofek.collectionActivityRequested"),
+            object: nil,
+            queue: nil
+        ) { [weak self] notification in
+            guard let self, let collectors = notification.object as? NSMutableSet else { return }
+            let isCollecting = self.syncOnBleQueue {
+                self.state == .ready || self.state == .streaming
+            }
+            if isCollecting {
+                collectors.add("whoop")
+            }
+        }
+    }
+
+    deinit {
+        if let collectionActivityObserver {
+            NotificationCenter.default.removeObserver(collectionActivityObserver)
+        }
     }
 
     func syncOnBleQueue<T>(_ work: () -> T) -> T {
@@ -192,6 +212,7 @@ final class WhoopBleConnectionManager {
             }
             self.cleanup()
             self.finishConnect(.failure(.disconnected(nil)))
+            WhoopBleConnectionEvent.intentionallyDisconnected.post()
             completion?()
         }
     }
@@ -276,6 +297,7 @@ final class WhoopBleConnectionManager {
             setState(.ready)
             let previouslyStreaming = wasStreaming
             wasStreaming = false
+            WhoopBleConnectionEvent.connected.post()
             finishConnect(.success(true))
             return previouslyStreaming
         }

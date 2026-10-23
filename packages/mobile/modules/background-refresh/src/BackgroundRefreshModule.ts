@@ -9,6 +9,8 @@ type BackgroundRefreshEvents = {
 };
 
 declare class BackgroundRefreshNativeModule extends NativeModule<BackgroundRefreshEvents> {
+  enableCollectionNotifications(requestPermission: boolean): Promise<boolean>;
+  disableCollectionNotifications(): void;
   completeRefresh(taskId: string, success: boolean): void;
   isAvailable(): boolean;
   scheduleRefresh(): void;

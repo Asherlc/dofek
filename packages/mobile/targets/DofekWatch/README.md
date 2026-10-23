@@ -23,6 +23,32 @@ transfers between the watch and phone use
 The UI reports unavailable hardware instead of assuming every watch supports
 every sensor.
 
+Authorized accelerometer recording persists its requested deadline, capped at
+the [12-hour Core Motion recording limit](https://developer.apple.com/documentation/coremotion/cmsensorrecorder/recordaccelerometer(forduration:)).
+The native Watch session publishes that recording window through
+[`updateApplicationContext`](https://developer.apple.com/documentation/watchconnectivity/wcsession/updateapplicationcontext(_:))
+after recording starts, account cleanup, and session activation. Gyroscope and
+altimeter capture independently publish their current native start dates in
+the same context when they start, stop, or fail. These dates are each
+recorder's canonical in-memory state, sampled on the main thread by
+[the native publisher](WatchSessionDelegate.swift); they do not require an
+accelerometer recording window. The
+[context builder](WatchAccountStateStore.swift) excludes disabled account sync
+and recording that started at or before the account-erasure cutoff.
+Both foreground collectors use a shared
+[callback fence](WatchRecordingCallbackFence.swift) so callbacks from an older
+recording cannot append after account purge or stop a newer recording. Buffer
+append and purge share the fence lock; native sensor controls run outside it.
+
+The iPhone uses the latest received, unexpired accelerometer window for
+collection-closure warnings even while the Watch is unreachable. Foreground
+gyroscope and altimeter start dates additionally require an activated,
+paired, installed, currently
+[`reachable` Watch session](https://developer.apple.com/documentation/watchconnectivity/wcsession/isreachable).
+An unreachable Watch or missing/delayed application context cannot confirm
+foreground capture. An old recording-start flag or pairing alone is insufficient;
+see the [iPhone activity reporter](../../modules/watch-motion/ios/WatchCollectionActivityReporter.swift).
+
 ## Project integration
 
 `expo-target.config.js` declares the watch target, deployment target, bundle

@@ -17,11 +17,11 @@ final class AccelerometerRecorder: ObservableObject {
     private let sensorRecorder = CMSensorRecorder()
     private let defaults = UserDefaults.standard
     private let transferCursor = AccelerometerTransferCursor()
+    private let accountStateStore = WatchAccountStateStore()
 
-    private let recordingActiveKey = "com.dofek.watch.accelerometer.recordingActive"
     private let lastTransferKey = "com.dofek.watch.accelerometer.lastTransfer"
 
-    static let maxDurationSeconds: TimeInterval = 12 * 3600 // 12 hours
+    static let maxDurationSeconds = WatchAccountStateStore.maximumRecordingDuration
 
     /// Batch size for streaming JSON writes. Keeps peak memory to ~500 KB per flush.
     static let streamingBatchSize = 5000
@@ -34,7 +34,7 @@ final class AccelerometerRecorder: ObservableObject {
     }
 
     init() {
-        isRecording = defaults.bool(forKey: recordingActiveKey)
+        isRecording = accountStateStore.isRecordingActive()
     }
 
     /// Check if accelerometer recording is supported on this Watch.
@@ -47,10 +47,21 @@ final class AccelerometerRecorder: ObservableObject {
     /// Safe to call from any thread — @Published updates are dispatched to main.
     func startRecording() {
         guard Self.isAvailable else { return }
-        guard WatchAccountStateStore().isSyncEnabled else { return }
+        guard accountStateStore.isSyncEnabled else { return }
 
         sensorRecorder.recordAccelerometer(forDuration: Self.maxDurationSeconds)
-        defaults.set(true, forKey: recordingActiveKey)
+        guard CMSensorRecorder.authorizationStatus() == .authorized else {
+            accountStateStore.clearRecording()
+            if Thread.isMainThread {
+                isRecording = false
+            } else {
+                DispatchQueue.main.async { self.isRecording = false }
+            }
+            WatchSessionDelegate.shared.publishRecordingActivity()
+            return
+        }
+        accountStateStore.recordRecording(until: Date().addingTimeInterval(Self.maxDurationSeconds))
+        WatchSessionDelegate.shared.publishRecordingActivity()
 
         if Thread.isMainThread {
             isRecording = true
@@ -170,7 +181,8 @@ final class AccelerometerRecorder: ObservableObject {
     }
 
     func purgeAccountState() {
-        defaults.removeObject(forKey: recordingActiveKey)
+        accountStateStore.clearRecording()
+        WatchSessionDelegate.shared.publishRecordingActivity()
         defaults.removeObject(forKey: lastTransferKey)
         transferCursor.purge()
         DispatchQueue.main.async {

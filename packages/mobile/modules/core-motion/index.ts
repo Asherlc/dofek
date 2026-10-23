@@ -29,7 +29,7 @@ export async function startRecording(durationSeconds: number): Promise<boolean> 
   return CoreMotionModule.startRecording(durationSeconds);
 }
 
-/** Check whether a recording session was previously started. */
+/** Check whether native recording is available, authorized, and its requested session is unexpired. */
 export function isRecordingActive(): boolean {
   return CoreMotionModule.isRecordingActive();
 }
