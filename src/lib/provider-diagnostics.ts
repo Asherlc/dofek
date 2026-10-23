@@ -22,7 +22,7 @@ type ProviderAuthEvent =
   | "refresh_succeeded"
   | "refresh_failed";
 
-const authErrorCodeSchema = z.enum([
+export const authErrorCodeSchema = z.enum([
   "invalid_token",
   "invalid_grant",
   "insufficient_scope",

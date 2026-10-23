@@ -1,6 +1,19 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { buildAuthorizationUrl, refreshAccessToken, type TokenSet } from "../../auth/oauth.ts";
+import { captureException } from "../../lib/error-reporting.ts";
+import { createProviderRateLimitFetch } from "../../lib/provider-rate-limit-fetch.ts";
+import { logger } from "../../logger.ts";
+import { ProviderConnectionError } from "../auth-errors.ts";
 import { createGarminAuthSetup } from "./oauth.ts";
+
+vi.mock("../../lib/error-reporting.ts", () => ({ captureException: vi.fn() }));
+vi.mock("../../lib/provider-adaptive-rate-limit.ts", () => ({
+  providerAdaptiveRateLimitStore: {
+    awaitAdmission: vi.fn(),
+    recordRateLimit: vi.fn(),
+    recordSuccess: vi.fn(),
+  },
+}));
 
 const TOKEN_URL = "https://diauth.garmin.com/di-oauth2-service/oauth/token";
 const API_BASE = "https://apis.garmin.com/partner-gateway/rest";
@@ -26,14 +39,26 @@ function authorization(expiresAt = new Date(Date.now() + 60_000)): TokenSet {
 
 describe("createGarminAuthSetup", () => {
   beforeEach(() => {
+    vi.clearAllMocks();
+    vi.spyOn(logger, "warn").mockReturnValue(logger);
     vi.stubEnv("GARMIN_CLIENT_ID", "client-id");
     vi.stubEnv("GARMIN_CLIENT_SECRET", "client-secret");
   });
 
-  afterEach(() => vi.unstubAllEnvs());
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+  });
 
-  it.each(["GARMIN_CLIENT_ID", "GARMIN_CLIENT_SECRET"])("requires %s", (key) => {
-    vi.stubEnv(key, "");
+  it.each([
+    { key: "GARMIN_CLIENT_ID", value: undefined },
+    { key: "GARMIN_CLIENT_ID", value: "" },
+    { key: "GARMIN_CLIENT_ID", value: " \t " },
+    { key: "GARMIN_CLIENT_SECRET", value: undefined },
+    { key: "GARMIN_CLIENT_SECRET", value: "" },
+    { key: "GARMIN_CLIENT_SECRET", value: " \t " },
+  ])("requires $key when its value is $value", ({ key, value }) => {
+    vi.stubEnv(key, value);
     expect(() => createGarminAuthSetup(vi.fn<typeof fetch>())).toThrow(key);
   });
 
@@ -105,11 +130,16 @@ describe("createGarminAuthSetup", () => {
     );
   });
 
-  it("requires the PKCE verifier before sending the authorization code", async () => {
-    const fetchFn = vi.fn<typeof fetch>();
-    await expect(createGarminAuthSetup(fetchFn).exchangeCode?.("code")).rejects.toThrow("PKCE");
-    expect(fetchFn).not.toHaveBeenCalled();
-  });
+  it.each([undefined, " \t "])(
+    "requires a PKCE verifier before sending the authorization code (%s)",
+    async (verifier) => {
+      const fetchFn = vi.fn<typeof fetch>();
+      await expect(createGarminAuthSetup(fetchFn).exchangeCode?.("code", verifier)).rejects.toThrow(
+        "PKCE",
+      );
+      expect(fetchFn).not.toHaveBeenCalled();
+    },
+  );
 
   it("reports the verified account identity before permissions lookup can fail", async () => {
     const fetchFn = vi
@@ -134,22 +164,116 @@ describe("createGarminAuthSetup", () => {
       const fetchFn = vi
         .fn<typeof fetch>()
         .mockResolvedValueOnce(tokenResponse())
-        .mockResolvedValueOnce(Response.json(identity));
+        .mockResolvedValueOnce(Response.json(identity))
+        .mockResolvedValueOnce(Response.json({ permissions: ["HEALTH_EXPORT"] }));
       await expect(
         createGarminAuthSetup(fetchFn).exchangeCode?.("code", "verifier"),
       ).rejects.toThrow();
     },
   );
 
-  it.each(["identity", "permissions"])("propagates a rejected %s request", async (failure) => {
-    const fetchFn = vi.fn<typeof fetch>().mockResolvedValueOnce(tokenResponse());
-    if (failure === "permissions") {
-      fetchFn.mockResolvedValueOnce(Response.json({ userId: "owner" }));
-    }
-    fetchFn.mockResolvedValueOnce(new Response("Unauthorized", { status: 401 }));
-    await expect(createGarminAuthSetup(fetchFn).exchangeCode?.("code", "verifier")).rejects.toThrow(
-      "401",
-    );
+  it.each(["identity", "permissions"])(
+    "reports a rejected %s request with safe stage diagnostics",
+    async (failure) => {
+      const fetchFn = vi.fn<typeof fetch>().mockResolvedValueOnce(tokenResponse());
+      if (failure === "permissions") {
+        fetchFn.mockResolvedValueOnce(Response.json({ userId: "owner" }));
+      }
+      fetchFn.mockResolvedValueOnce(
+        Response.json(
+          { error: "insufficient_scope", error_description: "private-upstream-detail" },
+          { status: 401 },
+        ),
+      );
+      await expect(
+        createGarminAuthSetup(fetchFn).exchangeCode?.("code", "verifier"),
+      ).rejects.toMatchObject({
+        name: "ProviderConnectionError",
+        stage: failure,
+        statusCode: 401,
+      });
+      expect(captureException).toHaveBeenCalledWith(
+        expect.objectContaining({ name: "ProviderConnectionError" }),
+        expect.objectContaining({
+          extra: expect.objectContaining({
+            stage: failure,
+            statusCode: 401,
+            errorCodes: ["insufficient_scope"],
+          }),
+        }),
+      );
+      expect(JSON.stringify(vi.mocked(captureException).mock.calls)).not.toContain(
+        "private-upstream-detail",
+      );
+      expect(fetchFn).toHaveBeenCalledTimes(failure === "permissions" ? 3 : 2);
+    },
+  );
+
+  it.each(
+    ["identity", "permissions"].flatMap((stage) =>
+      [429, 502, 503, 504].map((statusCode) => ({ stage, statusCode })),
+    ),
+  )(
+    "preserves safe $stage diagnostics for HTTP $statusCode through the production fetch wrapper",
+    async ({ stage, statusCode }) => {
+      const privateDetail = "synthetic-private-upstream-detail";
+      const fetchFn = vi.fn<typeof fetch>().mockResolvedValueOnce(tokenResponse());
+      if (stage === "permissions") {
+        fetchFn.mockResolvedValueOnce(Response.json({ userId: "synthetic-private-owner" }));
+      }
+      fetchFn.mockResolvedValueOnce(
+        Response.json(
+          { error: "forbidden", error_description: privateDetail, access_token: privateDetail },
+          { status: statusCode },
+        ),
+      );
+      const setup = createGarminAuthSetup(createProviderRateLimitFetch("garmin", fetchFn));
+      if (!setup.exchangeCode) throw new Error("Garmin OAuth code exchange is required");
+
+      const error = await setup.exchangeCode("code", "verifier").catch((caught: unknown) => caught);
+
+      expect(error).toBeInstanceOf(ProviderConnectionError);
+      expect(error).toMatchObject({ stage, statusCode });
+      expect(error).not.toHaveProperty("cause");
+      expect(captureException).toHaveBeenCalledWith(
+        expect.objectContaining({ name: "ProviderConnectionError", stage, statusCode }),
+        expect.objectContaining({
+          extra: {
+            event: "connection_http_failed",
+            providerId: "garmin",
+            stage,
+            statusCode,
+          },
+        }),
+      );
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.stringContaining('"event":"connection_http_failed"'),
+      );
+      const output =
+        String(error) +
+        JSON.stringify([
+          error,
+          vi.mocked(logger.warn).mock.calls,
+          vi.mocked(captureException).mock.calls,
+        ]);
+      expect(output).not.toContain(privateDetail);
+      expect(output).not.toContain("synthetic-private-owner");
+    },
+  );
+
+  it("preserves unclassified network failures without inventing HTTP diagnostics", async () => {
+    const networkError = new Error("synthetic-private-network-failure");
+    const fetchFn = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(tokenResponse())
+      .mockRejectedValueOnce(networkError);
+    const setup = createGarminAuthSetup(createProviderRateLimitFetch("garmin", fetchFn));
+    if (!setup.exchangeCode) throw new Error("Garmin OAuth code exchange is required");
+
+    await expect(setup.exchangeCode("code", "verifier")).rejects.toBe(networkError);
+
+    expect(logger.warn).not.toHaveBeenCalled();
+    expect(captureException).not.toHaveBeenCalled();
   });
 
   it("rejects malformed permissions rather than storing default OAuth scopes", async () => {
@@ -219,30 +343,34 @@ describe("createGarminAuthSetup", () => {
     },
   );
 
-  it("refreshes an expired official access token before deregistering", async () => {
-    const fetchFn = vi
-      .fn<typeof fetch>()
-      .mockResolvedValueOnce(
-        Response.json({
-          access_token: "new-access",
-          refresh_token: "new-refresh",
-          expires_in: 86400,
+  it.each([new Date(0), new Date("2026-10-23T00:00:00Z")])(
+    "refreshes an official access token expiring at %s before deregistering",
+    async (expiresAt) => {
+      vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-10-23T00:00:00Z"));
+      const fetchFn = vi
+        .fn<typeof fetch>()
+        .mockResolvedValueOnce(
+          Response.json({
+            access_token: "new-access",
+            refresh_token: "new-refresh",
+            expires_in: 86400,
+          }),
+        )
+        .mockResolvedValueOnce(new Response(null, { status: 204 }));
+      await createGarminAuthSetup(fetchFn).revokeExistingTokens?.(
+        authorization(expiresAt),
+        vi.fn(),
+      );
+      expect(fetchFn.mock.calls[0]?.[0]).toBe(TOKEN_URL);
+      expect(fetchFn).toHaveBeenNthCalledWith(
+        2,
+        `${API_BASE}/user/registration`,
+        expect.objectContaining({
+          headers: expect.objectContaining({ Authorization: "Bearer new-access" }),
         }),
-      )
-      .mockResolvedValueOnce(new Response(null, { status: 204 }));
-    await createGarminAuthSetup(fetchFn).revokeExistingTokens?.(
-      authorization(new Date(0)),
-      vi.fn(),
-    );
-    expect(fetchFn.mock.calls[0]?.[0]).toBe(TOKEN_URL);
-    expect(fetchFn).toHaveBeenNthCalledWith(
-      2,
-      `${API_BASE}/user/registration`,
-      expect.objectContaining({
-        headers: expect.objectContaining({ Authorization: "Bearer new-access" }),
-      }),
-    );
-  });
+      );
+    },
+  );
 
   it.each(["revokeExistingTokens", "revokeTokensForAccountErasure"] as const)(
     "%s durably preserves rotated credentials before a failed registration deletion",
@@ -327,15 +455,17 @@ describe("createGarminAuthSetup", () => {
     },
   );
 
-  it("requires reconnect for legacy private credentials before using official endpoints", async () => {
-    const fetchFn = vi.fn<typeof fetch>();
-    const tokens = authorization();
-    delete tokens.providerAccountId;
-    await expect(
-      createGarminAuthSetup(fetchFn).revokeExistingTokens?.(tokens, vi.fn()),
-    ).rejects.toThrow("reconnect");
-    expect(fetchFn).not.toHaveBeenCalled();
-  });
+  it.each([undefined, " \t "])(
+    "requires reconnect before official revocation when the account ID is %s",
+    async (providerAccountId) => {
+      const fetchFn = vi.fn<typeof fetch>();
+      const tokens = { ...authorization(), providerAccountId };
+      await expect(
+        createGarminAuthSetup(fetchFn).revokeExistingTokens?.(tokens, vi.fn()),
+      ).rejects.toThrow("reconnect");
+      expect(fetchFn).not.toHaveBeenCalled();
+    },
+  );
 
   it("can revoke a newly minted official grant when stable identity setup fails", async () => {
     const fetchFn = vi

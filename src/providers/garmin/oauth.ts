@@ -1,4 +1,8 @@
 import { randomUUID } from "node:crypto";
+import {
+  ProviderRateLimitError,
+  ProviderServiceUnavailableError,
+} from "@dofek/provider-http/rate-limit";
 import { z } from "zod";
 import {
   exchangeCodeForTokens,
@@ -7,8 +11,10 @@ import {
   refreshAccessToken,
   type TokenSet,
 } from "../../auth/oauth.ts";
+import { ProviderConnectionError } from "../auth-errors.ts";
 import type { ProviderAuthSetup, ProviderRevocationTokenPersistence } from "../types.ts";
 import { assertGarminAuthorizationOwner } from "./authorization.ts";
+import { reportGarminConnectionHttpFailure } from "./oauth-diagnostics.ts";
 
 export const GARMIN_API_BASE = "https://apis.garmin.com/partner-gateway/rest";
 
@@ -36,14 +42,34 @@ export function createGarminAuthSetup(
     tokenAuthMethod: "basic",
   };
 
-  async function readUserResource(path: string, accessToken: string): Promise<unknown> {
-    const response = await fetchFn(`${GARMIN_API_BASE}/user/${path}`, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
-    if (!response.ok) {
-      throw new Error(`Garmin user ${path} request failed (${response.status})`);
+  async function readUserResource(
+    path: "id" | "permissions",
+    accessToken: string,
+  ): Promise<unknown> {
+    let response: Response | null = null;
+    let statusCode: number;
+    try {
+      response = await fetchFn(`${GARMIN_API_BASE}/user/${path}`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      statusCode = response.status;
+    } catch (error) {
+      if (
+        !(error instanceof ProviderRateLimitError) &&
+        !(error instanceof ProviderServiceUnavailableError)
+      ) {
+        throw error;
+      }
+      statusCode = error.statusCode;
     }
-    return response.json();
+    if (response?.ok) return response.json();
+    const error = new ProviderConnectionError(
+      "Garmin Connect",
+      path === "id" ? "identity" : "permissions",
+      statusCode,
+    );
+    await reportGarminConnectionHttpFailure(response, error);
+    throw error;
   }
 
   async function revokeAuthorization(
