@@ -281,21 +281,18 @@ export class SyncRepository {
     const rows = await executeWithSchema(
       this.#db,
       recentSyncLogRowSchema,
-      sql`WITH ranked_sync_logs AS (
+      sql`SELECT recent.*
+          FROM fitness.provider provider
+          CROSS JOIN LATERAL (
             SELECT id, provider_id, status, synced_at, duration_ms, record_count,
-                   data_type, error_message, auth_failure_reason,
-                   ROW_NUMBER() OVER (
-                     PARTITION BY provider_id
-                     ORDER BY synced_at DESC, id DESC
-                   ) AS row_number
+                   data_type, error_message, auth_failure_reason
             FROM fitness.sync_log
             WHERE user_id = ${this.#userId}
-          )
-          SELECT id, provider_id, status, synced_at, duration_ms, record_count,
-                 data_type, error_message, auth_failure_reason
-          FROM ranked_sync_logs
-          WHERE row_number <= ${limitPerProvider}
-          ORDER BY provider_id, synced_at DESC, id DESC`,
+              AND provider_id = provider.id
+            ORDER BY synced_at DESC, id DESC
+            LIMIT ${limitPerProvider}
+          ) recent
+          ORDER BY recent.provider_id, recent.synced_at DESC, recent.id DESC`,
     );
 
     const logsByProvider = new Map<string, ProviderRecentSyncLog[]>();
