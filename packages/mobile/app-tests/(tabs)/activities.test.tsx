@@ -140,6 +140,7 @@ vi.mock("../../lib/useRefresh", () => ({
 }));
 
 vi.mock("react-native-svg", () => ({
+  SvgUri: (props: Record<string, unknown>) => createElement("svg", props),
   default: ({ children, ...props }: Record<string, unknown> & { children?: ReactNode }) =>
     createElement("svg", { ...props, "data-testid": props.testID }, children),
   Circle: ({ testID, ...props }: Record<string, unknown>) =>
@@ -153,15 +154,18 @@ import ActivitiesScreen from "../../app/(tabs)/activities";
 afterEach(() => vi.useRealTimers());
 
 describe("ActivitiesScreen", () => {
-  it("uses the primary provider as the leading card image", () => {
+  it.each([
+    ["strava", "Garmin Edge 530", "Strava"],
+    ["apple_health", "Strong", "Strong (via Apple Health)"],
+  ])("uses %s and its source as the leading card image", (providerId, sourceName, label) => {
     mockQuery = activityListQuery([
       activity({
         source: {
           origin: {
             status: "resolved",
             memberActivityId: "00000000-0000-4000-8000-000000000001",
-            providerId: "strava",
-            sourceName: "Garmin Edge 530",
+            providerId,
+            sourceName,
           },
           primarySourceLabel: "Strava",
           sourceCount: 2,
@@ -170,7 +174,9 @@ describe("ActivitiesScreen", () => {
       }),
     ]);
     render(<ActivitiesScreen />);
-    const providerImage = screen.getByRole("image", { name: "Primary recording provider: Strava" });
+    const providerImage = screen.getByRole("image", {
+      name: `Primary recording provider: ${label}`,
+    });
     expect(providerImage.parentElement?.firstElementChild).toBe(providerImage);
     expect(screen.queryByRole("image", { name: "Primary recording provider: Garmin" })).toBeNull();
   });

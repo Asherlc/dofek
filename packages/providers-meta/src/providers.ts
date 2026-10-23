@@ -76,3 +76,20 @@ export function providerLogoType(id: string): "svg" | "png" | null {
 export function providerLogoId(id: string): string {
   return providerCatalogEntry(id)?.logo?.id ?? id;
 }
+
+/** Resolve the recording app separately from its Apple Health transport. */
+export function providerSourceLogo(id: string, sourceName?: string | null) {
+  if (id !== "apple_health" && id !== "apple-health") {
+    return { provider: id, viaAppleHealth: false };
+  }
+  const source = sourceName?.trim();
+  const normalized = source?.toLowerCase();
+  if (!source || normalized === "apple health" || normalized === "healthkit") {
+    return { provider: "apple_health", viaAppleHealth: false };
+  }
+  const match = Object.entries(PROVIDER_CATALOG).find(
+    ([provider, entry]) => provider === normalized || entry.label.toLowerCase() === normalized,
+  );
+  const provider = normalized === "hang ten training" ? "hang-ten" : (match?.[0] ?? source);
+  return { provider, viaAppleHealth: true };
+}

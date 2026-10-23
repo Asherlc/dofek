@@ -98,3 +98,27 @@ describe("ProviderLogo", () => {
     });
   });
 });
+
+describe("Apple Health source icons", () => {
+  it.each([
+    ["Strong", "strong-csv"],
+    ["Hang Ten", "hang-ten"],
+  ])("shows %s with an Apple Health badge", (sourceName, asset) => {
+    const { container } = render(
+      <ProviderLogo provider="apple_health" sourceName={sourceName} size={32} />,
+    );
+    const images = container.querySelectorAll("img");
+    expect(images).toHaveLength(2);
+    expect(images[0]?.getAttribute("src")).toContain(`${asset}.png`);
+    expect(images[1]?.getAttribute("src")).toContain("apple_health.png");
+    expect(images[1]?.getAttribute("style")).toContain("bottom: 0");
+    expect(images[1]?.getAttribute("style")).toContain("right: 0");
+  });
+  it("uses the unknown source initial with the Apple Health badge", () => {
+    const { container, getByText } = render(
+      <ProviderLogo provider="apple_health" sourceName="New App" />,
+    );
+    expect(getByText("N")).toBeTruthy();
+    expect(container.querySelectorAll("img")).toHaveLength(1);
+  });
+});

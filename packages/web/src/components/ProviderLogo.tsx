@@ -10,6 +10,7 @@ import {
   providerLabel,
   providerLogoId,
   providerLogoType,
+  providerSourceLogo,
 } from "@dofek/providers/providers";
 
 export { providerLabel };
@@ -17,6 +18,7 @@ export { providerLabel };
 interface ProviderLogoProps {
   /** Provider ID (e.g. "strava", "ride-with-gps") */
   provider: string;
+  sourceName?: string | null;
   /** Width & height in px (default 20) */
   size?: number;
   className?: string;
@@ -28,7 +30,40 @@ function logoUrl(provider: string): string | null {
   return null;
 }
 
-export function ProviderLogo({ provider, size = 20, className = "" }: ProviderLogoProps) {
+export function ProviderLogo({
+  provider,
+  sourceName,
+  size = 20,
+  className = "",
+}: ProviderLogoProps) {
+  const source = providerSourceLogo(provider, sourceName);
+  if (source.viaAppleHealth) {
+    const badgeSize = Math.round(size * 0.45);
+    return (
+      <span
+        className={`relative inline-flex shrink-0 ${className}`}
+        style={{ width: size, height: size }}
+        aria-hidden="true"
+      >
+        <ProviderLogo provider={source.provider} size={size} />
+        <img
+          src="/logos/apple_health.png"
+          alt=""
+          style={{
+            position: "absolute",
+            bottom: 0,
+            right: 0,
+            width: badgeSize,
+            height: badgeSize,
+            borderRadius: badgeSize * 0.2,
+            backgroundColor: "#fff",
+            boxShadow: "0 0 0 1px #fff",
+          }}
+        />
+      </span>
+    );
+  }
+  provider = source.provider;
   const url = logoUrl(provider);
 
   if (url) {

@@ -292,7 +292,7 @@ function createStoryData(climbingActivity = false, originProvider: string | null
                     status: "resolved",
                     memberActivityId: "00000000-0000-4000-8000-000000000001",
                     providerId: originProvider,
-                    sourceName: "Garmin Edge 530",
+                    sourceName: originProvider === "apple_health" ? "Strong" : "Garmin Edge 530",
                   },
             primarySourceLabel: originProvider === null ? null : providerLabel(originProvider),
             sourceCount: 2,
@@ -595,3 +595,5 @@ export const UnresolvedRecordingOrigin: Story = { parameters: { originProvider: 
 export const OnlyStravaCopyAvailable: Story = { parameters: { originProvider: "strava" } };
 export const KayaProviderLogo: Story = { parameters: { originProvider: "kaya" } };
 export const PrimaryProviderWithoutLogo: Story = { parameters: { originProvider: "velohero" } };
+
+export const AppleHealthSourceApp: Story = { parameters: { originProvider: "apple_health" } };

@@ -52,7 +52,7 @@ describe("ActivityCardContent", () => {
                 status: "resolved",
                 memberActivityId: "00000000-0000-4000-8000-000000000001",
                 providerId,
-                sourceName: "Garmin Edge 530",
+                sourceName: providerId === "apple_health" ? "Strong" : "Garmin Edge 530",
               },
               primarySourceLabel: providerId,
               sourceCount: 2,
@@ -69,7 +69,7 @@ describe("ActivityCardContent", () => {
       const logo = providerImage.querySelector("img");
       expect(logo).toHaveAttribute("width", "32");
       expect(logo?.getAttribute("src")).toContain(
-        providerId === "apple_health" ? "apple_health" : providerId,
+        providerId === "apple_health" ? "strong-csv" : providerId,
       );
     },
   );
