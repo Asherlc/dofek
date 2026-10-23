@@ -22,6 +22,13 @@ into the pending inbox, or copied if the move fails, before an event is sent to
 JavaScript. Files remain pending until the caller uploads them successfully and
 calls `deleteWatchFile()`.
 
+The native activity reporter answers the app's collection-activity query from the
+Watch's latest recording window in
+[`receivedApplicationContext`](https://developer.apple.com/documentation/watchconnectivity/wcsession/receivedapplicationcontext).
+Only an unexpired recording that started after any device-erasure cutoff counts;
+pairing alone does not. A missing or delayed Watch context cannot confirm activity.
+WatchConnectivity controls delivery of [application-context updates](https://developer.apple.com/documentation/watchconnectivity/wcsession/updateapplicationcontext(_:)).
+
 ## TypeScript API
 
 `index.ts` exports:

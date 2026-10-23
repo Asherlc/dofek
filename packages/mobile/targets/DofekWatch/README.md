@@ -23,6 +23,14 @@ transfers between the watch and phone use
 The UI reports unavailable hardware instead of assuming every watch supports
 every sensor.
 
+Authorized accelerometer recording persists its requested deadline, capped at
+the [12-hour Core Motion recording limit](https://developer.apple.com/documentation/coremotion/cmsensorrecorder/recordaccelerometer(forduration:)).
+The native Watch session publishes that recording window through
+[`updateApplicationContext`](https://developer.apple.com/documentation/watchconnectivity/wcsession/updateapplicationcontext(_:))
+after recording starts, account cleanup, and session activation. The iPhone uses
+the latest received, unexpired window for collection-closure warnings; an old
+recording-start flag or Watch pairing alone is insufficient.
+
 ## Project integration
 
 `expo-target.config.js` declares the watch target, deployment target, bundle

@@ -88,8 +88,8 @@ final class CollectionNotificationCoordinator {
         cancel([CollectionNotification.appClosed.identifier])
     }
 
-    func appWillTerminate() {
-        guard enabled else { return }
+    func appWillTerminate(collectionIsActive: Bool) {
+        guard enabled, collectionIsActive else { return }
         schedule(.appClosed)
     }
 }

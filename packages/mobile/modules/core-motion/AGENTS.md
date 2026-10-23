@@ -12,7 +12,11 @@ runtime requirements, and validation commands.
   authorization, query, and persistence behavior belongs in Swift.
 - `ios/CoreMotionModule.swift` owns the `CMSensorRecorder` and
   `CMMotionActivityManager` boundary, background list iteration, ISO timestamp
-  serialization, Expo errors, and the two `UserDefaults` markers.
+  serialization and Expo errors. The
+  [account-state store](ios/CoreMotionAccountStateStore.swift) owns persisted
+  upload, recording-deadline, and erasure state; the
+  [collection reporter](ios/CoreMotionCollectionActivityReporter.swift) answers
+  the native activity snapshot without depending on JavaScript.
 - Recording/upload orchestration does not belong here. Keep batching, retry,
   cursor-advancement policy, tRPC calls, and app lifecycle handling in
   `packages/mobile/lib/inertial-measurement-unit-*.ts` or
@@ -32,9 +36,15 @@ runtime requirements, and validation commands.
   seconds, the 50 Hz source cadence unchanged, and application queries within
   the three-day retention window. These limits come from
   [`recordAccelerometer(forDuration:)`](https://developer.apple.com/documentation/coremotion/cmsensorrecorder/recordaccelerometer%28forduration%3A%29).
-- `isRecordingActive()` is a persisted “session was started” marker. It does
-  not inspect current system recording state; do not use it as proof that
-  samples are still being captured.
+- `isRecordingActive()` requires native availability and authorization plus
+  an unexpired requested recording deadline in the
+  [account-state store](ios/CoreMotionAccountStateStore.swift). Only authorized
+  recording requests retain a deadline; rejected requests and account purge
+  clear it. The native getter and collection reporter share the checks for
+  availability and
+  [`CMSensorRecorder.authorizationStatus()`](https://developer.apple.com/documentation/coremotion/cmsensorrecorder/authorizationstatus%28%29).
+  A requested deadline does not prove hardware sample delivery; keep
+  physical-device validation separate.
 - Query ISO 8601 input at the native boundary and preserve fractional seconds
   in output. Keep large `CMSensorDataList` iteration off the main thread and
   settle the Expo promise on the main thread.
@@ -56,8 +66,10 @@ swift test
 
 `Package.swift` targets macOS and iOS, but the Expo/Core Motion implementation
 is guarded by `#if os(iOS) && canImport(ExpoModulesCore)`. Consequently,
-macOS `swift test` covers only platform-neutral code such as
-`CoreMotionIsoDateParser`; it does not compile the native module definition.
+macOS `swift test` covers platform-neutral code including
+`CoreMotionIsoDateParser`, the recording deadline and purge behavior, and the
+synchronous [collection reporter](ios/CoreMotionCollectionActivityReporter.swift);
+it does not compile the native module definition.
 Keep pure parsing logic outside the platform guard and add focused XCTest cases
 for both accepted ISO forms and rejection behavior.
 

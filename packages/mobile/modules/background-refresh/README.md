@@ -69,6 +69,9 @@ when returning to the foreground. `disableCollectionNotifications(): void`
 disables both alerts and removes their pending and delivered notifications
 when the session ends. Notification permission uses Apple's
 [User Notifications authorization API](https://developer.apple.com/documentation/usernotifications/asking-permission-to-use-notifications).
+Authentication restoration and deferred service startup preserve native alerts;
+only a confirmed session end or account cleanup disables them. A denied foreground
+authorization check explains how to enable notifications in iOS Settings.
 
 The two notifications have separate triggers, identifiers, messages, and
 cancellation rules:
@@ -76,16 +79,31 @@ cancellation rules:
 | Notification | Trigger | Cancellation |
 | --- | --- | --- |
 | WHOOP disconnected | A native unexpected disconnect after a successful WHOOP connection; a five-minute grace period allows automatic reconnection. | Reconnection, intentional disconnect, or session end. |
-| Dofek closed | The native `applicationWillTerminate` callback schedules a general collection warning for delivery one second later, independently of WHOOP. | The next launch/foreground or session end. |
+| Dofek closed | The native `applicationWillTerminate` callback schedules a general collection warning for delivery one second later when a native collector is active, independently of WHOOP. | The next launch/foreground or session end. |
 
-WHOOP's Expo bridge publishes the internal Foundation event
+WHOOP's connection manager publishes the internal Foundation event
 `WhoopBle.connectionStateChanged` with `state` values `connected`,
 `disconnected`, and `intentionallyDisconnected`. The subscriber listens
 natively so alert delivery does not depend on JavaScript receiving an event.
-The [WHOOP bridge](../whoop-ble/ios/WhoopBleModule+ConnectionManagerDelegate.swift)
+The [WHOOP connection manager](../whoop-ble/ios/WhoopBleConnectionManager.swift)
 and [notification service](ios/CollectionNotificationService.swift) define
 this contract; the standalone WHOOP client has no dependency on Dofek's
 notification service.
+
+At termination, `NativeCollectionActivity` synchronously queries native collectors
+through `Dofek.collectionActivityRequested`. WHOOP and other heart-rate monitors
+answer from confirmed subscription readiness. Phone motion answers from its
+authorized, unexpired recording window; Watch motion uses the Watch's latest
+confirmed recording window, delivered through
+[`WCSession.receivedApplicationContext`](https://developer.apple.com/documentation/watchconnectivity/wcsession/receivedapplicationcontext).
+Pairing, authentication, and an old recording-start marker alone do not count.
+Recording windows expire at Apple's maximum
+[`CMSensorRecorder` duration](https://developer.apple.com/documentation/coremotion/cmsensorrecorder/recordaccelerometer(forduration:)).
+
+Each scheduled request has its own identifier under its alert's logical prefix.
+Late save callbacks remove only their own obsolete request, preserving a newer
+disconnect's five-minute grace period. Cancellation also enumerates prior-process
+requests through Apple's [pending-notification API](https://developer.apple.com/documentation/usernotifications/unusernotificationcenter/getpendingnotificationrequests(completionhandler:)).
 
 The closure warning is **best effort**. iOS can terminate a suspended app
 without calling `applicationWillTerminate`, and scheduling a notification is
@@ -96,9 +114,11 @@ are not treated as app closure. See Apple's
 and [local notification delivery guidance](https://developer.apple.com/documentation/usernotifications/scheduling-a-notification-locally-from-your-app).
 Both alerts require notification permission; iOS controls their final delivery.
 
-`CollectionNotificationCoordinatorTests` exercises trigger separation,
+`CollectionNotificationCoordinatorTests` exercises active collection, trigger separation,
 reconnection, deliberate disconnect, independent cancellation, and disabled
-sessions. The delivery adapter and Expo callbacks additionally require an iOS
+sessions. `CollectionNotificationServiceTests` controls settings, authorization,
+notification-save, and persisted-request callbacks to cover sign-out and reconnection
+races. The Apple delivery adapter and Expo callbacks additionally require an iOS
 build. Validate real BLE loss, permission changes, reconnect-before-delivery,
 and app termination on a physical iPhone; the
 [iOS Simulator does not provide Bluetooth hardware](https://docs.expo.dev/workflow/ios-simulator/#limitations).
@@ -128,6 +148,6 @@ pnpm --filter dofek-mobile typecheck
 ```
 
 The TypeScript tests cover promise-to-native completion. `Package.swift`
-excludes the Expo-bound files and tests the background-task and notification
-coordinators. Validate the iOS delivery adapter and full native bridge with an
+excludes the Expo-bound files and tests the background-task coordinator, native
+activity query, and complete notification service. Validate the Apple delivery adapter and full native bridge with an
 iOS app build.

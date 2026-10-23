@@ -1,7 +1,11 @@
-import { fireEvent, render, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { AppState, type AppStateStatus } from "react-native";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  disableCollectionNotifications,
+  enableCollectionNotifications,
+} from "../modules/background-refresh";
 
 const { mockRegisterQueryLifecycle, mockCleanupQueryLifecycle } = vi.hoisted(() => {
   const cleanup = vi.fn();
@@ -393,6 +397,72 @@ describe("RootLayout background cleanup", () => {
     });
   });
 
+  it("preserves pending collection alerts through auth and deferred sync bootstrap", async () => {
+    let finishDeletionRestore: (value: null) => void = () => {};
+    mockLoadStatusCapability.mockReturnValue(
+      new Promise<null>((resolve) => {
+        finishDeletionRestore = resolve;
+      }),
+    );
+    mockAuthState.value = {
+      ...mockAuthState.value,
+      user: null,
+      sessionToken: null,
+      isLoading: true,
+    };
+    const RootLayout = await importRootLayout();
+    const rendered = render(<RootLayout />);
+
+    expect(disableCollectionNotifications).not.toHaveBeenCalled();
+    expect(enableCollectionNotifications).not.toHaveBeenCalled();
+
+    mockAuthState.value = {
+      ...mockAuthState.value,
+      user: { id: "user-1" },
+      sessionToken: "session-token",
+      isLoading: false,
+    };
+    rendered.rerender(<RootLayout />);
+    expect(disableCollectionNotifications).not.toHaveBeenCalled();
+    expect(enableCollectionNotifications).not.toHaveBeenCalled();
+
+    await act(async () => finishDeletionRestore(null));
+    await waitFor(() => expect(enableCollectionNotifications).toHaveBeenCalledWith(true));
+    expect(disableCollectionNotifications).not.toHaveBeenCalled();
+  });
+
+  it("disables collection alerts once auth confirms the saved session has ended", async () => {
+    mockAuthState.value = {
+      ...mockAuthState.value,
+      user: null,
+      sessionToken: null,
+      isLoading: true,
+    };
+    const RootLayout = await importRootLayout();
+    const rendered = render(<RootLayout />);
+    expect(disableCollectionNotifications).not.toHaveBeenCalled();
+
+    mockAuthState.value = { ...mockAuthState.value, isLoading: false };
+    rendered.rerender(<RootLayout />);
+    await waitFor(() => expect(disableCollectionNotifications).toHaveBeenCalledOnce());
+    expect(enableCollectionNotifications).not.toHaveBeenCalled();
+  });
+
+  it("preserves native alerts when session restore fails instead of confirming sign-out", async () => {
+    mockAuthState.value = {
+      ...mockAuthState.value,
+      user: null,
+      sessionToken: null,
+      bootstrapError: "Database unavailable",
+    };
+    const RootLayout = await importRootLayout();
+    const rendered = render(<RootLayout />);
+
+    expect(await rendered.findByText("Database unavailable")).toBeTruthy();
+    expect(disableCollectionNotifications).not.toHaveBeenCalled();
+    expect(enableCollectionNotifications).not.toHaveBeenCalled();
+  });
+
   it("shows bootstrap failure instead of login when auth restore fails", async () => {
     mockAuthState.value = {
       user: null,
@@ -511,6 +581,8 @@ describe("RootLayout background cleanup", () => {
     expect(mockInitBackgroundWatchSync).not.toHaveBeenCalled();
     expect(mockUseWhoopBleSync).not.toHaveBeenCalled();
     expect(mockUseBleHeartRateSync).not.toHaveBeenCalled();
+    expect(disableCollectionNotifications).toHaveBeenCalled();
+    expect(enableCollectionNotifications).not.toHaveBeenCalled();
   });
 
   it("blocks a later authenticated account and all producers while cleanup is pending", async () => {

@@ -93,12 +93,26 @@ extension WhoopBleConnectionManager {
             return
         }
 
+        handleDisconnection(peripheralId: peripheral.identifier.uuidString, error: error) {
+            setConnectedPeripheral(peripheral)
+            peripheral.delegate = bleDelegate
+            centralManager?.connect(peripheral, options: nil)
+            startHandshakeTimeout(for: peripheral)
+        }
+    }
+
+    /// Settle the disconnected session before reconnecting its peripheral.
+    func handleDisconnection(
+        peripheralId: String,
+        error: Error?,
+        reconnectPeripheral: () -> Void
+    ) {
         wasStreaming = state == .streaming
         let shouldReconnect = autoReconnect
-        let peripheralId = peripheral.identifier.uuidString
 
         cleanup()
 
+        WhoopBleConnectionEvent.disconnected.post()
         delegate?.connectionManagerDidDisconnect(self, peripheralId: peripheralId, error: error)
 
         finishConnect(.failure(.disconnected(error?.localizedDescription)))
@@ -106,10 +120,7 @@ extension WhoopBleConnectionManager {
         if shouldReconnect {
             autoReconnect = true
             setState(.connecting)
-            setConnectedPeripheral(peripheral)
-            peripheral.delegate = bleDelegate
-            centralManager?.connect(peripheral, options: nil)
-            startHandshakeTimeout(for: peripheral)
+            reconnectPeripheral()
         }
     }
 

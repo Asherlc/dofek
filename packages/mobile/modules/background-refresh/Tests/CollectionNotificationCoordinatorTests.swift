@@ -32,7 +32,7 @@ final class CollectionNotificationCoordinatorTests: XCTestCase {
         coordinator.setEnabled(true)
         coordinator.whoopConnected()
         coordinator.whoopDisconnected()
-        coordinator.appWillTerminate()
+        coordinator.appWillTerminate(collectionIsActive: true)
         recorder.cancellations.removeAll()
 
         coordinator.whoopConnected()
@@ -60,7 +60,7 @@ final class CollectionNotificationCoordinatorTests: XCTestCase {
         coordinator.setEnabled(true)
         coordinator.whoopConnected()
         coordinator.whoopDisconnected()
-        coordinator.appWillTerminate()
+        coordinator.appWillTerminate(collectionIsActive: true)
         recorder.cancellations.removeAll()
 
         coordinator.whoopIntentionallyDisconnected()
@@ -70,12 +70,22 @@ final class CollectionNotificationCoordinatorTests: XCTestCase {
         XCTAssertEqual(recorder.scheduled, [.whoopDisconnected, .appClosed])
     }
 
-    func testTerminationWarnsWithoutAnyWhoopConnection() {
+    func testTerminationWithoutActiveCollectionDoesNotWarn() {
         let recorder = NotificationRecorder()
         let coordinator = recorder.makeCoordinator()
         coordinator.setEnabled(true)
 
-        coordinator.appWillTerminate()
+        coordinator.appWillTerminate(collectionIsActive: false)
+
+        XCTAssertTrue(recorder.scheduled.isEmpty)
+    }
+
+    func testTerminationWarnsForActiveCollectionWithoutWhoop() {
+        let recorder = NotificationRecorder()
+        let coordinator = recorder.makeCoordinator()
+        coordinator.setEnabled(true)
+
+        coordinator.appWillTerminate(collectionIsActive: true)
 
         XCTAssertEqual(recorder.scheduled, [.appClosed])
         XCTAssertEqual(recorder.scheduled.first?.identifier, "com.dofek.collection.app-closed")
@@ -88,7 +98,7 @@ final class CollectionNotificationCoordinatorTests: XCTestCase {
         coordinator.setEnabled(true)
         coordinator.whoopConnected()
         coordinator.whoopDisconnected()
-        coordinator.appWillTerminate()
+        coordinator.appWillTerminate(collectionIsActive: true)
         recorder.cancellations.removeAll()
 
         coordinator.appBecameActive()
@@ -116,7 +126,7 @@ final class CollectionNotificationCoordinatorTests: XCTestCase {
 
         coordinator.whoopConnected()
         coordinator.whoopDisconnected()
-        coordinator.appWillTerminate()
+        coordinator.appWillTerminate(collectionIsActive: true)
 
         XCTAssertTrue(recorder.scheduled.isEmpty)
     }
@@ -127,11 +137,11 @@ final class CollectionNotificationCoordinatorTests: XCTestCase {
         coordinator.setEnabled(true)
         coordinator.whoopConnected()
         coordinator.whoopDisconnected()
-        coordinator.appWillTerminate()
+        coordinator.appWillTerminate(collectionIsActive: true)
         recorder.cancellations.removeAll()
 
         coordinator.setEnabled(false)
-        coordinator.appWillTerminate()
+        coordinator.appWillTerminate(collectionIsActive: true)
 
         XCTAssertEqual(recorder.cancellations, [[
             "com.dofek.collection.whoop-disconnected",
@@ -149,7 +159,7 @@ final class CollectionNotificationCoordinatorTests: XCTestCase {
 
         coordinator.setEnabled(true)
         coordinator.whoopDisconnected()
-        coordinator.appWillTerminate()
+        coordinator.appWillTerminate(collectionIsActive: true)
 
         XCTAssertEqual(recorder.scheduled, [.appClosed])
     }

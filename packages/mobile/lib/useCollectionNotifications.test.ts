@@ -72,10 +72,27 @@ describe("useCollectionNotifications", () => {
     expect(mocks.remove).toHaveBeenCalledOnce();
   });
 
-  it("removes monitoring and its listener on unmount", () => {
+  it("preserves native alerts while removing its JS listener on unmount", () => {
     const { unmount } = renderHook(() => useCollectionNotifications(true));
     unmount();
-    expect(mocks.disable).toHaveBeenCalledOnce();
+    expect(mocks.disable).not.toHaveBeenCalled();
+    expect(mocks.remove).toHaveBeenCalledOnce();
+  });
+
+  it("preserves pending native alerts while session readiness is unresolved", () => {
+    const { rerender } = renderHook(
+      ({ enabled }: { enabled: boolean | undefined }) => useCollectionNotifications(enabled),
+      {
+        initialProps: { enabled: undefined },
+      },
+    );
+
+    expect(mocks.disable).not.toHaveBeenCalled();
+    expect(mocks.enable).not.toHaveBeenCalled();
+    rerender({ enabled: true });
+    expect(mocks.enable).toHaveBeenCalledWith(true);
+    rerender({ enabled: undefined });
+    expect(mocks.disable).not.toHaveBeenCalled();
     expect(mocks.remove).toHaveBeenCalledOnce();
   });
 
@@ -96,6 +113,91 @@ describe("useCollectionNotifications", () => {
       }),
     );
     expect(mocks.alert).toHaveBeenCalledWith("Notifications unavailable", error.message);
+  });
+
+  it("explains denied collection notifications once while authorization remains denied", async () => {
+    mocks.enable.mockResolvedValue(false);
+    renderHook(() => useCollectionNotifications(true));
+
+    await waitFor(() => expect(mocks.alert).toHaveBeenCalledOnce());
+    expect(mocks.alert).toHaveBeenCalledWith(
+      "Notifications unavailable",
+      expect.stringContaining("iOS Settings"),
+    );
+    expect(mocks.captureException).not.toHaveBeenCalled();
+
+    await act(async () => mocks.onAppState("active"));
+    expect(mocks.alert).toHaveBeenCalledOnce();
+  });
+
+  it("shows denial guidance after a background launch reaches the foreground", async () => {
+    mocks.appState = "background";
+    mocks.enable.mockResolvedValue(false);
+    renderHook(() => useCollectionNotifications(true));
+
+    await act(async () => {});
+    expect(mocks.alert).not.toHaveBeenCalled();
+
+    await act(async () => {
+      mocks.appState = "active";
+      mocks.onAppState("active");
+    });
+    expect(mocks.alert).toHaveBeenCalledOnce();
+  });
+
+  it("does not show a permission denial after the app backgrounds", async () => {
+    let resolvePermission: (granted: boolean) => void = () => {};
+    mocks.enable.mockReturnValue(
+      new Promise<boolean>((resolve) => {
+        resolvePermission = resolve;
+      }),
+    );
+    renderHook(() => useCollectionNotifications(true));
+
+    mocks.appState = "background";
+    await act(async () => resolvePermission(false));
+    expect(mocks.alert).not.toHaveBeenCalled();
+  });
+
+  it("does not show a permission denial after the authenticated session ends", async () => {
+    let resolvePermission: (granted: boolean) => void = () => {};
+    mocks.enable.mockReturnValue(
+      new Promise<boolean>((resolve) => {
+        resolvePermission = resolve;
+      }),
+    );
+    const { rerender } = renderHook(({ enabled }) => useCollectionNotifications(enabled), {
+      initialProps: { enabled: true },
+    });
+
+    rerender({ enabled: false });
+    await act(async () => resolvePermission(false));
+    expect(mocks.alert).not.toHaveBeenCalled();
+  });
+
+  it("ignores stale denial results after a newer foreground check succeeds", async () => {
+    let resolvePermission: (granted: boolean) => void = () => {};
+    mocks.enable.mockReturnValueOnce(
+      new Promise<boolean>((resolve) => {
+        resolvePermission = resolve;
+      }),
+    );
+    renderHook(() => useCollectionNotifications(true));
+
+    await act(async () => mocks.onAppState("active"));
+    await act(async () => resolvePermission(false));
+    expect(mocks.alert).not.toHaveBeenCalled();
+  });
+
+  it("can explain a new denial after notification access was restored", async () => {
+    mocks.enable.mockResolvedValue(false);
+    renderHook(() => useCollectionNotifications(true));
+    await waitFor(() => expect(mocks.alert).toHaveBeenCalledOnce());
+
+    mocks.enable.mockResolvedValueOnce(true);
+    await act(async () => mocks.onAppState("active"));
+    await act(async () => mocks.onAppState("active"));
+    expect(mocks.alert).toHaveBeenCalledTimes(2);
   });
 
   it("ignores a permission failure after the session has ended", async () => {

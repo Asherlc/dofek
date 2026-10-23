@@ -12,7 +12,6 @@ extension WhoopBleModule: WhoopBleConnectionManagerDelegate {
     ) {
         lastKnownDeviceId = peripheral.identifier.uuidString
         lastKnownDeviceName = peripheral.name
-        WhoopBleConnectionEvent.connected.post()
         MainThreadEventEmitter.emit([
             "state": "connected",
             "peripheralId": peripheral.identifier.uuidString,
@@ -50,7 +49,6 @@ extension WhoopBleModule: WhoopBleConnectionManagerDelegate {
         error: Error?
     ) {
         watchdog.stop()
-        WhoopBleConnectionEvent.disconnected.post()
         frameParser.reset()
         cmdFrameParser.reset()
 

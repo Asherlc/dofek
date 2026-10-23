@@ -1,72 +1,97 @@
-#if os(iOS)
-import RNSentry
-import UIKit
+import Foundation
 import UserNotifications
 
-/// App-owned notification delivery, serialized on the main queue.
-final class CollectionNotificationService: NSObject, UNUserNotificationCenterDelegate {
-    static let shared = CollectionNotificationService()
-
-    private let center = UNUserNotificationCenter.current()
+/// App-owned notification lifecycle, serialized on the main queue.
+final class CollectionNotificationService {
+    private let center: CollectionNotificationCenter
+    private let notifications: NotificationCenter
+    private let isAppActive: () -> Bool
+    private let isCollectionActive: () -> Bool
+    private let reportError: (Error, String) -> Void
     private var connectionObserver: NSObjectProtocol?
     private var permissionGeneration: UInt64 = 0
     private var enabled = false
     private var whoopIsConnected = false
-    private var cancelledIdentifiers: Set<String> = []
+    private var requestIdentifiers: [String: String] = [:]
     private lazy var coordinator = CollectionNotificationCoordinator(
         schedule: { [weak self] in self?.schedule($0) },
         cancel: { [weak self] in self?.cancel($0) }
     )
 
+    init(
+        center: CollectionNotificationCenter,
+        notifications: NotificationCenter,
+        isAppActive: @escaping () -> Bool,
+        isCollectionActive: @escaping () -> Bool,
+        reportError: @escaping (Error, String) -> Void
+    ) {
+        self.center = center
+        self.notifications = notifications
+        self.isAppActive = isAppActive
+        self.isCollectionActive = isCollectionActive
+        self.reportError = reportError
+    }
+
+    deinit {
+        if let connectionObserver { notifications.removeObserver(connectionObserver) }
+    }
+
     func start() {
-        center.delegate = self
         coordinator.appBecameActive()
-        connectionObserver = NotificationCenter.default.addObserver(
+        connectionObserver = notifications.addObserver(
             forName: Notification.Name("WhoopBle.connectionStateChanged"),
             object: nil,
-            queue: .main
+            queue: nil
         ) { [weak self] notification in
-            guard let self, let state = notification.userInfo?["state"] as? String else { return }
-            switch state {
-            case "connected":
-                self.whoopIsConnected = true
-                self.coordinator.whoopConnected()
-            case "disconnected":
-                self.whoopIsConnected = false
-                self.coordinator.whoopDisconnected()
-            case "intentionallyDisconnected":
-                self.whoopIsConnected = false
-                self.coordinator.whoopIntentionallyDisconnected()
-            default:
-                break
+            guard let state = notification.userInfo?["state"] as? String else { return }
+            if Thread.isMainThread {
+                self?.handleConnectionState(state)
+            } else {
+                // Main-thread lifecycle snapshots can synchronously query the BLE queue.
+                // Its connection publication must never wait for main-thread delivery.
+                DispatchQueue.main.async { [weak self] in self?.handleConnectionState(state) }
             }
+        }
+    }
+
+    private func handleConnectionState(_ state: String) {
+        switch state {
+        case "connected":
+            whoopIsConnected = true
+            coordinator.whoopConnected()
+        case "disconnected":
+            whoopIsConnected = false
+            coordinator.whoopDisconnected()
+        case "intentionallyDisconnected":
+            whoopIsConnected = false
+            coordinator.whoopIntentionallyDisconnected()
+        default:
+            break
         }
     }
 
     func enable(requestPermission: Bool, completion: @escaping (Result<Bool, Error>) -> Void) {
         permissionGeneration &+= 1
         let generation = permissionGeneration
-        center.getNotificationSettings { [weak self] settings in
+        center.getAuthorizationStatus { [weak self] status in
             guard let self else { return }
             DispatchQueue.main.async {
                 guard generation == self.permissionGeneration else {
                     completion(.success(false))
                     return
                 }
-                if settings.authorizationStatus == .notDetermined {
-                    guard requestPermission, UIApplication.shared.applicationState == .active else {
+                if status == .notDetermined {
+                    guard requestPermission, self.isAppActive() else {
                         completion(.success(false))
                         return
                     }
-                    self.center.requestAuthorization(options: [.alert, .sound]) { granted, error in
+                    self.center.requestAuthorization { granted, error in
                         self.finishAuthorization(
                             granted, error: error, generation: generation, completion: completion
                         )
                     }
                 } else {
-                    let granted = settings.authorizationStatus == .authorized
-                        || settings.authorizationStatus == .provisional
-                        || settings.authorizationStatus == .ephemeral
+                    let granted = status == .authorized
                     self.finishAuthorization(
                         granted, error: nil, generation: generation, completion: completion
                     )
@@ -82,6 +107,7 @@ final class CollectionNotificationService: NSObject, UNUserNotificationCenterDel
         completion: @escaping (Result<Bool, Error>) -> Void
     ) {
         DispatchQueue.main.async {
+            if let error { self.reportError(error, "authorization") }
             guard generation == self.permissionGeneration else {
                 completion(.success(false))
                 return
@@ -111,48 +137,61 @@ final class CollectionNotificationService: NSObject, UNUserNotificationCenterDel
 
     /// iOS may omit this callback for a suspended app; never infer termination from inactivity.
     func appWillTerminate() {
-        coordinator.appWillTerminate()
+        coordinator.appWillTerminate(collectionIsActive: isCollectionActive())
     }
 
     private func schedule(_ notification: CollectionNotification) {
-        cancelledIdentifiers.remove(notification.identifier)
+        // Each save owns its identifier, so a late save cannot overwrite a newer grace period.
+        let identifier = "\(notification.identifier).\(UUID().uuidString)"
+        if let previous = requestIdentifiers.updateValue(identifier, forKey: notification.identifier) {
+            remove([previous])
+        }
         let content = UNMutableNotificationContent()
         content.title = notification.title
         content.body = notification.body
         content.sound = .default
         let request = UNNotificationRequest(
-            identifier: notification.identifier,
+            identifier: identifier,
             content: content,
             trigger: UNTimeIntervalNotificationTrigger(timeInterval: notification.delay, repeats: false)
         )
         center.add(request) { [weak self] error in
-            if let error {
-                SentrySDK.capture(error: error) { scope in
-                    scope.setTag(value: notification.identifier, key: "collection_notification")
-                }
-            }
             DispatchQueue.main.async {
                 guard let self else { return }
-                // A reconnect or sign-out can cancel while the system persists the request.
-                if !self.enabled || self.cancelledIdentifiers.contains(notification.identifier) {
-                    self.cancel([notification.identifier])
+                if let error {
+                    self.reportError(error, notification.identifier)
+                    if self.requestIdentifiers[notification.identifier] == identifier {
+                        self.requestIdentifiers.removeValue(forKey: notification.identifier)
+                    }
+                } else if !self.enabled || self.requestIdentifiers[notification.identifier] != identifier {
+                    self.remove([identifier])
                 }
             }
         }
     }
 
     private func cancel(_ identifiers: [String]) {
-        cancelledIdentifiers.formUnion(identifiers)
+        let current = identifiers.compactMap { requestIdentifiers.removeValue(forKey: $0) }
+        remove(identifiers + current)
+        // Find warnings persisted by previous processes. A delayed lookup must preserve any
+        // new request scheduled since cancellation, while stale add callbacks remove only themselves.
+        let removeCancelled: ([String]) -> Void = { [weak self] savedIdentifiers in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                let active = Set(self.requestIdentifiers.values)
+                self.remove(savedIdentifiers.filter { saved in
+                    !active.contains(saved) && identifiers.contains {
+                        saved == $0 || saved.hasPrefix("\($0).")
+                    }
+                })
+            }
+        }
+        center.getPendingIdentifiers(completion: removeCancelled)
+        center.getDeliveredIdentifiers(completion: removeCancelled)
+    }
+
+    private func remove(_ identifiers: [String]) {
         center.removePendingNotificationRequests(withIdentifiers: identifiers)
         center.removeDeliveredNotifications(withIdentifiers: identifiers)
     }
-
-    func userNotificationCenter(
-        _ center: UNUserNotificationCenter,
-        willPresent notification: UNNotification,
-        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
-    ) {
-        completionHandler([.banner, .sound])
-    }
 }
-#endif

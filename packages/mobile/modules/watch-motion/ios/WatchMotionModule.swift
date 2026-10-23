@@ -294,6 +294,17 @@ public class WatchMotionModule: Module, WatchFileReceiverObserver {
 
 private class WatchSessionDelegateHolder: NSObject, WCSessionDelegate {
     static let shared = WatchSessionDelegateHolder()
+    private let collectionActivity = WatchCollectionActivityReporter(
+        notificationCenter: .default,
+        recordingContext: {
+            let session = WCSession.default
+            guard session.isPaired, session.isWatchAppInstalled else { return [:] }
+            return session.receivedApplicationContext
+        },
+        isSyncEnabled: { WatchMotionAccountStateStore(userDefaults: .standard).isSyncEnabled },
+        deviceErasureCutoff: { WatchMotionAccountStateStore(userDefaults: .standard).deviceErasureCutoff },
+        now: Date.init
+    )
     private let receiver = WatchFileReceiver(
         inbox: .shared,
         shouldAcceptFile: {

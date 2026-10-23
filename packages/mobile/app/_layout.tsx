@@ -202,12 +202,24 @@ function AuthGate() {
   const pathname = usePathname();
   const router = useRouter();
   const [backgroundSyncReady, setBackgroundSyncReady] = useState(false);
-  useCollectionNotifications(backgroundSyncReady);
   const [deletionRecoveryReady, setDeletionRecoveryReady] = useState(false);
   const [hasSavedDeletionRecovery, setHasSavedDeletionRecovery] = useState(false);
   const [localCleanupPending, setLocalCleanupPending] = useState(false);
   const [localCleanupOwnerNonce, setLocalCleanupOwnerNonce] = useState<string | null>(null);
   const startupInteractiveMarkedRef = useRef(false);
+  const localCleanupBlocksSession =
+    localCleanupPending && (!user || localCleanupOwnerNonce === accountSessionOwnerNonce);
+  const collectionSessionEnded =
+    accountErasureCleanupInProgress ||
+    localCleanupBlocksSession ||
+    (!isLoading && !bootstrapError && !user);
+  useCollectionNotifications(
+    collectionSessionEnded
+      ? false
+      : !isLoading && !bootstrapError && deletionRecoveryReady && backgroundSyncReady
+        ? true
+        : undefined,
+  );
 
   const [queryClient] = useState(createAppQueryClient);
 
@@ -334,8 +346,6 @@ function AuthGate() {
   }, [isLoading, user]);
 
   useEffect(() => {
-    const localCleanupBlocksSession =
-      localCleanupPending && (!user || localCleanupOwnerNonce === accountSessionOwnerNonce);
     if (
       !user ||
       !deletionRecoveryReady ||
@@ -355,14 +365,7 @@ function AuthGate() {
       idleHandle.cancel();
       setBackgroundSyncReady(false);
     };
-  }, [
-    accountErasureCleanupInProgress,
-    accountSessionOwnerNonce,
-    deletionRecoveryReady,
-    localCleanupOwnerNonce,
-    localCleanupPending,
-    user,
-  ]);
+  }, [accountErasureCleanupInProgress, deletionRecoveryReady, localCleanupBlocksSession, user]);
 
   // Set up background HealthKit sync when authenticated
   useEffect(() => {
@@ -584,8 +587,6 @@ function AuthGate() {
     );
   }
 
-  const localCleanupBlocksSession =
-    localCleanupPending && (!user || localCleanupOwnerNonce === accountSessionOwnerNonce);
   const showPublicDeletionStatus =
     localCleanupBlocksSession ||
     (!user && (pathname === "/account-deletion" || hasSavedDeletionRecovery));
