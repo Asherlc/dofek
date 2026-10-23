@@ -727,7 +727,7 @@ export async function handleOAuth2Callback(req: Request, res: Response): Promise
     if (reconnectFailure?.kind === "preserved") {
       res
         .status(400)
-        .type("text/plain")
+        .set("Content-Type", "text/plain; charset=utf-8")
         .send(
           err instanceof ProviderConnectionError
             ? `${err.message} Your existing connection is still active.`
@@ -762,11 +762,14 @@ export async function handleOAuth2Callback(req: Request, res: Response): Promise
     }
 
     if (err instanceof ProviderConnectionError) {
-      res.status(500).type("text/plain").send(err.message);
+      res.status(500).set("Content-Type", "text/plain; charset=utf-8").send(err.message);
       return;
     }
 
     const providerLabel = resolvedProviderName ? ` from ${resolvedProviderName}` : "";
-    res.status(500).type("text/plain").send(`Connection failed — please try again${providerLabel}`);
+    res
+      .status(500)
+      .set("Content-Type", "text/plain; charset=utf-8")
+      .send(`Connection failed — please try again${providerLabel}`);
   }
 }

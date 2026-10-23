@@ -1,4 +1,5 @@
 import { getOAuthRedirectUri } from "dofek/auth/oauth";
+import { ProviderConnectionError } from "dofek/providers/auth-errors";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   getMobileAuthExchangeStoreRef,
@@ -3476,8 +3477,15 @@ describe("createAuthRouter", () => {
       expect(callbackRes.body).toContain("does not support OAuth code exchange");
     });
 
-    it("returns 500 when token exchange throws", async () => {
-      const mockExchangeCode = vi.fn(() => Promise.reject(new Error("Token exchange failed")));
+    it.each([
+      ["token exchange", new Error("Token exchange failed"), "Connection failed"],
+      [
+        "permission confirmation",
+        new ProviderConnectionError("Garmin Connect", "permissions", 403),
+        "Garmin Connect connection failed while confirming your permissions (HTTP 403).",
+      ],
+    ])("returns a plain-text 500 when %s fails", async (_stage, error, message) => {
+      const mockExchangeCode = vi.fn(() => Promise.reject(error));
       vi.mocked(getAllProviders).mockReturnValue([
         {
           id: "wahoo",
@@ -3506,7 +3514,8 @@ describe("createAuthRouter", () => {
 
       const callbackRes = await request(app, "get", `/callback?code=test-code&state=${state}`);
       expect(callbackRes.status).toBe(500);
-      expect(callbackRes.body).toContain("Connection failed");
+      expect(callbackRes.headers["content-type"]).toBe("text/plain; charset=utf-8");
+      expect(callbackRes.body).toContain(message);
     });
   });
 

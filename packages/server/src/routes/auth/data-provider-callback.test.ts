@@ -159,6 +159,7 @@ function createMockReqRes(query: Record<string, string> = {}) {
     status: vi.fn().mockReturnThis(),
     send: vi.fn(),
     type: vi.fn().mockReturnThis(),
+    set: vi.fn().mockReturnThis(),
     redirect: vi.fn(),
   });
 
@@ -281,7 +282,7 @@ describe("handleOAuth2Callback — revocation fallback", () => {
       await handleOAuth2Callback(req, res);
 
       expect(res.status).toHaveBeenCalledWith(500);
-      expect(res.type).toHaveBeenCalledWith("text/plain");
+      expect(res.set).toHaveBeenCalledWith("Content-Type", "text/plain; charset=utf-8");
       expect(res.send).toHaveBeenCalledWith(
         "Garmin Connect connection failed while confirming your permissions (HTTP 403). Please contact support if this continues.",
       );
@@ -303,7 +304,7 @@ describe("handleOAuth2Callback — revocation fallback", () => {
     await handleOAuth2Callback(req, res);
 
     expect(res.status).toHaveBeenCalledWith(400);
-    expect(res.type).toHaveBeenCalledWith("text/plain");
+    expect(res.set).toHaveBeenCalledWith("Content-Type", "text/plain; charset=utf-8");
     expect(res.send).toHaveBeenCalledWith(
       "Garmin Connect connection failed while confirming your identity (HTTP 502). Please contact support if this continues. Your existing connection is still active.",
     );
@@ -339,7 +340,7 @@ describe("handleOAuth2Callback — revocation fallback", () => {
       await handleOAuth2Callback(req, res);
 
       expect(res.status).toHaveBeenCalledWith(status);
-      expect(res.type).toHaveBeenCalledWith("text/plain");
+      expect(res.set).toHaveBeenCalledWith("Content-Type", "text/plain; charset=utf-8");
       expect(res.send).toHaveBeenCalledWith(message);
       expect(mockRevokeExistingTokens).not.toHaveBeenCalled();
     },
