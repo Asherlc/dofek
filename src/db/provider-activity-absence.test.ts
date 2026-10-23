@@ -1,3 +1,4 @@
+import { PgDialect } from "drizzle-orm/pg-core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { makeTransactionalTestDatabase } from "../providers/test-helpers.ts";
 
@@ -75,7 +76,7 @@ describe("provider activity absence cache invalidation", () => {
       userId,
     });
 
-    expect(mockExecute).toHaveBeenCalledTimes(2);
+    expect(mockExecute).toHaveBeenCalledTimes(3);
     expect(mockInvalidateByPrefix).toHaveBeenCalledWith(`${userId}:activity.`);
     expect(mockInvalidateByPrefix).toHaveBeenCalledWith(`${userId}:calendar.`);
     expect(mockInvalidateByPrefix).toHaveBeenCalledWith(`${userId}:training.`);
@@ -116,6 +117,10 @@ describe("provider activity absence cache invalidation", () => {
       userId,
     });
 
+    const recordAbsenceQuery = mockExecute.mock.calls[0]?.[0];
+    expect(new PgDialect().sqlToQuery(recordAbsenceQuery).params).toContainEqual([
+      "missing-activity",
+    ]);
     expect(mockInvalidateByPrefix).toHaveBeenCalledWith(`${userId}:activity.`);
     expect(mockInvalidateByPrefix).toHaveBeenCalledWith(`${userId}:calendar.`);
     expect(mockInvalidateByPrefix).toHaveBeenCalledWith(`${userId}:training.`);
@@ -130,7 +135,14 @@ describe("provider activity absence cache invalidation", () => {
       userId,
     });
 
-    expect(mockExecute).toHaveBeenCalledTimes(1);
+    expect(mockExecute).toHaveBeenCalledTimes(2);
+    const recordPresenceQuery = mockExecute.mock.calls[0]?.[0];
+    expect(new PgDialect().sqlToQuery(recordPresenceQuery).params).toContainEqual([
+      "restored-activity",
+    ]);
+    const originPresenceQuery = mockExecute.mock.calls[1]?.[0];
+    const { params } = new PgDialect().sqlToQuery(originPresenceQuery);
+    expect(params).toContainEqual(["restored-activity"]);
     expect(mockInvalidateByPrefix).toHaveBeenCalledWith(`${userId}:activity.`);
     expect(mockInvalidateByPrefix).toHaveBeenCalledWith(`${userId}:calendar.`);
     expect(mockInvalidateByPrefix).toHaveBeenCalledWith(`${userId}:training.`);

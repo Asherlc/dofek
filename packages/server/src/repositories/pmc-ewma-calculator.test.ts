@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { PmcEwmaCalculator } from "./pmc-ewma-calculator.ts";
 
 function dateStringDaysAgo(daysAgo: number): string {
@@ -8,6 +8,11 @@ function dateStringDaysAgo(daysAgo: number): string {
 }
 
 describe("PmcEwmaCalculator", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllEnvs();
+  });
+
   it("applies exact exponential moving average formulas for chronic and acute load", () => {
     const firstDate = dateStringDaysAgo(2);
     const secondDate = dateStringDaysAgo(1);
@@ -88,6 +93,9 @@ describe("PmcEwmaCalculator", () => {
   });
 
   it("returns the full display window when no day reaches the meaningful chronic load threshold", () => {
+    vi.stubEnv("TZ", "America/Los_Angeles");
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-23T09:30:00Z"));
     const calculator = new PmcEwmaCalculator({
       chronicTrainingLoadDays: 42,
       acuteTrainingLoadDays: 7,
@@ -100,6 +108,8 @@ describe("PmcEwmaCalculator", () => {
     });
 
     expect(result).toHaveLength(31);
+    expect(result[0]?.date).toBe("2026-09-23");
+    expect(result.at(-1)?.date).toBe("2026-10-23");
     expect(result.every((point) => point.load === 0)).toBe(true);
     expect(result.every((point) => point.ctl === 0)).toBe(true);
     expect(result.every((point) => point.atl === 0)).toBe(true);

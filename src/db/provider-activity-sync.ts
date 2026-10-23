@@ -46,14 +46,14 @@ export type ProviderActivityInsert = Omit<
 
 type StoredActivityConflictUpdateKey = Exclude<
   keyof StoredActivityInsert,
-  "userId" | "providerId" | "externalId" | "providerAbsentAt"
+  "userId" | "providerId" | "externalId" | "providerAbsentAt" | "absenceProviderId"
 >;
 
 type StoredActivityConflictUpdate = {
   [K in StoredActivityConflictUpdateKey]?: StoredActivityInsert[K] | SQL;
 };
 
-/** Fields allowed in activity upsert conflict updates. Never includes providerAbsentAt. */
+/** Conflict updates cannot clear the provider tombstone or its confirming provider. */
 export type ProviderActivityConflictUpdate = Omit<
   StoredActivityConflictUpdate,
   "canonicalType" | "providerType" | "modality"

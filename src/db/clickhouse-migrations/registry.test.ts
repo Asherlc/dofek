@@ -16,10 +16,10 @@ describe("clickHouseMigrations", () => {
     const migrationIds = migrations.map((migration) => migration.id);
     expect(new Set(migrationIds).size).toBe(migrationIds.length);
     expect(migrationIds.slice(-4)).toEqual([
-      "0101_activity_end_time_nullability",
       "0102_activity_field_source_priorities",
       "0103_strong_strength_title_precedence",
       "0104_activity_origin",
+      "0105_activity_absence_provider",
     ]);
     const migrationNumbers = migrationIds.map((migrationId) => Number(migrationId.slice(0, 4)));
     expect(migrationNumbers).toEqual(

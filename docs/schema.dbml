@@ -509,6 +509,7 @@ table fitness.activity {
   strava_id text
   raw jsonb
   provider_absent_at "timestamp with time zone"
+  absence_provider_id text
   deleted_at "timestamp with time zone"
   created_at "timestamp with time zone" [not null, default: `now()`]
 
@@ -2050,6 +2051,8 @@ ref webhook_subscription_provider_connection_fkey: fitness.webhook_subscription.
 ref activity_provider_id_provider_id_fk: fitness.activity.provider_id > fitness.provider.id [delete: no action, update: no action]
 
 ref activity_user_id_user_profile_id_fk: fitness.activity.user_id > fitness.user_profile.id [delete: no action, update: no action]
+
+ref activity_absence_provider_id_provider_id_fk: fitness.activity.absence_provider_id > fitness.provider.id [delete: no action, update: no action]
 
 ref activity_user_group_fk: fitness.activity.(user_id, group_id) > fitness.activity_group.(user_id, id) [delete: no action, update: no action]
 
