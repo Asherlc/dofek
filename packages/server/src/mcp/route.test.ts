@@ -383,7 +383,13 @@ const toolListResponseSchema = z.object({
   result: z.object({
     tools: z.array(
       z.object({
-        annotations: z.object({ readOnlyHint: z.boolean().optional() }).optional(),
+        annotations: z
+          .object({
+            readOnlyHint: z.boolean().optional(),
+            openWorldHint: z.boolean().optional(),
+            destructiveHint: z.boolean().optional(),
+          })
+          .optional(),
         description: z.string(),
         inputSchema: z.object({}).passthrough(),
         name: z.string(),
@@ -1384,6 +1390,13 @@ describe("createMcpRouter", () => {
       "render_health_explorer",
     ]) {
       expect(findListedTool(tools, name).annotations).toMatchObject({ readOnlyHint: true });
+    }
+    for (const name of ["search_food_entries", "get_food_entry", "get_food_entry_history"]) {
+      expect(findListedTool(tools, name).annotations).toMatchObject({
+        readOnlyHint: true,
+        openWorldHint: false,
+        destructiveHint: false,
+      });
     }
     expect(findListedTool(tools, "start_provider_sync").annotations?.readOnlyHint).not.toBe(true);
   });
