@@ -14,13 +14,15 @@ describe("ProviderLogo", () => {
       expect(img?.getAttribute("source")).toBeTruthy();
     });
 
-    it("renders a letter fallback for providers with SVG logos", () => {
-      const { container, getByText } = render(
+    it("renders the SVG asset for providers with SVG logos", () => {
+      const { container } = render(
         <ProviderLogo provider="strava" serverUrl="https://example.com" />,
       );
       const img = container.querySelector("Image");
       expect(img).toBeNull();
-      expect(getByText("S")).toBeTruthy();
+      expect(container.querySelector("SvgUri")?.getAttribute("uri")).toBe(
+        "https://example.com/logos/strava.svg",
+      );
     });
 
     it("does not render a letter fallback for PNG providers", () => {
@@ -29,15 +31,6 @@ describe("ProviderLogo", () => {
       );
       // "W" would be the fallback letter — should NOT appear since we have a logo
       expect(queryByText("W")).toBeNull();
-    });
-
-    it("uses the default fallback color for SVG provider fallbacks", () => {
-      const { queryByText } = render(
-        <ProviderLogo provider="strava" serverUrl="https://example.com" />,
-      );
-      expect(queryByText("S")?.parentElement?.getAttribute("style")).toContain(
-        "rgb(107, 138, 107)",
-      );
     });
 
     it("respects the size prop", () => {
@@ -96,4 +89,14 @@ describe("Apple Health source icons", () => {
     expect(getByText("N")).toBeTruthy();
     expect(container.querySelectorAll("Image")).toHaveLength(1);
   });
+});
+
+it("renders a known SVG source with an Apple Health badge", () => {
+  const { container } = render(
+    <ProviderLogo provider="apple_health" sourceName="Strava" serverUrl="https://example.com" />,
+  );
+  expect(container.querySelector("SvgUri")?.getAttribute("uri")).toBe(
+    "https://example.com/logos/strava.svg",
+  );
+  expect(container.querySelectorAll("Image")).toHaveLength(1);
 });

@@ -140,6 +140,7 @@ vi.mock("../../lib/useRefresh", () => ({
 }));
 
 vi.mock("react-native-svg", () => ({
+  SvgUri: (props: Record<string, unknown>) => createElement("svg", props),
   default: ({ children, ...props }: Record<string, unknown> & { children?: ReactNode }) =>
     createElement("svg", { ...props, "data-testid": props.testID }, children),
   Circle: ({ testID, ...props }: Record<string, unknown>) =>

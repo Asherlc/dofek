@@ -61,3 +61,7 @@ export const HangTenViaAppleHealth: Story = {
 export const UnknownViaAppleHealth: Story = {
   args: { provider: "apple_health", sourceName: "New App" },
 };
+
+export const StravaViaAppleHealth: Story = {
+  args: { provider: "apple_health", sourceName: "Strava" },
+};
