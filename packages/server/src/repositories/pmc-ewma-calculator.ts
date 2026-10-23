@@ -28,7 +28,7 @@ export class PmcEwmaCalculator {
 
   compute(input: PmcEwmaInput): PmcDataPoint[] {
     const startDate = new Date();
-    startDate.setDate(startDate.getDate() - input.queryDays);
+    startDate.setUTCDate(startDate.getUTCDate() - input.queryDays);
     const endDate = new Date();
 
     const result: PmcDataPoint[] = [];
@@ -60,7 +60,7 @@ export class PmcEwmaCalculator {
       }
 
       dayIndex++;
-      current.setDate(current.getDate() + 1);
+      current.setUTCDate(current.getUTCDate() + 1);
     }
 
     let firstMeaningfulIndex = result.findIndex((dataPoint) => dataPoint.ctl >= 0.1);
