@@ -478,7 +478,7 @@ describe("registerFoodRecordTools", () => {
       request_id: requestId,
       date: "2026-09-07",
       food_name: "Oats",
-      nutrients: { protein: 10 },
+      nutrients: { calories: 300, protein: 10, carbohydrate: 40, fat: 8 },
       client_id: "attacker-supplied",
     });
 
@@ -497,7 +497,7 @@ describe("registerFoodRecordTools", () => {
       numberOfUnits: undefined,
       servingUnit: undefined,
       servingWeightGrams: undefined,
-      nutrients: { protein: 10 },
+      nutrients: { calories: 300, protein: 10, carbohydrate: 40, fat: 8 },
     });
   });
 
@@ -508,7 +508,7 @@ describe("registerFoodRecordTools", () => {
       request_id: requestId,
       date: "2026-09-07",
       food_name: "Oats",
-      nutrients: { protein: 10 },
+      nutrients: { calories: 300, protein: 10, carbohydrate: 40, fat: 8 },
     });
 
     expect(mocks.loggerInfo).toHaveBeenCalledWith("mcp.mutation", {
@@ -623,6 +623,54 @@ describe("registerFoodRecordTools", () => {
     expect(foodName?.safeParse("Oats").success).toBe(true);
   });
 
+  describe("create food nutrition", () => {
+    const requiredNutrients = { calories: 0, protein: 0, carbohydrate: 0, fat: 0 };
+
+    it("advertises all four required nutrients to the AI", () => {
+      const { tool } = setup();
+      const schema = z.object(tool("create_food_entry").inputSchema);
+      const advertised = z.toJSONSchema(schema).properties?.nutrients;
+
+      expect(advertised).toMatchObject({
+        type: "object",
+        required: ["calories", "protein", "carbohydrate", "fat"],
+      });
+    });
+
+    it.each(Object.keys(requiredNutrients))(
+      "rejects missing or invalid %s without filling zero",
+      (id) => {
+        const { tool } = setup();
+        const nutrients = tool("create_food_entry").inputSchema.nutrients;
+        const missing = { ...requiredNutrients };
+        Reflect.deleteProperty(missing, id);
+
+        expect(nutrients?.safeParse(missing).success).toBe(false);
+        for (const value of [undefined, null, "", " ", "0", -1, Number.NaN, Infinity]) {
+          expect(nutrients?.safeParse({ ...requiredNutrients, [id]: value }).success).toBe(false);
+        }
+      },
+    );
+
+    it("preserves explicit zeros and accepts optional sourced nutrients", () => {
+      const { tool } = setup();
+      const nutrients = tool("create_food_entry").inputSchema.nutrients;
+
+      expect(nutrients?.parse(requiredNutrients)).toEqual(requiredNutrients);
+      const complete = {
+        calories: 300,
+        protein: 10,
+        carbohydrate: 40,
+        fat: 8,
+        fiber: 5,
+        sodium: 100,
+      };
+      expect(nutrients?.parse(complete)).toEqual(complete);
+      expect(nutrients?.safeParse({ ...complete, invented: 1 }).success).toBe(false);
+      expect(nutrients?.safeParse({ ...complete, fiber: -1 }).success).toBe(false);
+    });
+  });
+
   describe.each([
     "create_food_entry",
     "update_food_entry",
@@ -701,7 +749,7 @@ describe("registerFoodRecordTools", () => {
       request_id: requestId,
       date: "2026-09-07",
       food_name: "Oats",
-      nutrients: { protein: 10 },
+      nutrients: { calories: 300, protein: 10, carbohydrate: 40, fat: 8 },
     });
 
     expect(parseResult(result)).toMatchObject({ day_summary: null });
