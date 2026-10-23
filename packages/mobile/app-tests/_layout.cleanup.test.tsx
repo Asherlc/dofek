@@ -678,44 +678,28 @@ describe("RootLayout background cleanup", () => {
 
     expect(mockHttpBatchLink).toHaveBeenCalledOnce();
     expect(mockHttpLink).toHaveBeenCalledOnce();
-    expect(mockSplitLink).toHaveBeenCalledTimes(2);
+    expect(mockSplitLink).toHaveBeenCalledOnce();
 
-    const mutationSplitOptions = mockSplitLink.mock.calls[1]?.[0];
-    const querySplitOptions = mockSplitLink.mock.calls[0]?.[0];
-    if (typeof mutationSplitOptions !== "object" || mutationSplitOptions == null) {
-      throw new Error("Expected mutation split link options");
+    const splitOptions = mockSplitLink.mock.calls[0]?.[0];
+    if (typeof splitOptions !== "object" || splitOptions == null) {
+      throw new Error("Expected split link options");
     }
-    if (typeof querySplitOptions !== "object" || querySplitOptions == null) {
-      throw new Error("Expected query split link options");
-    }
-    const mutationCondition = Reflect.get(mutationSplitOptions, "condition");
-    const queryCondition = Reflect.get(querySplitOptions, "condition");
-    if (typeof mutationCondition !== "function" || typeof queryCondition !== "function") {
-      throw new Error("Expected split link conditions");
+    const condition = Reflect.get(splitOptions, "condition");
+    if (typeof condition !== "function") {
+      throw new Error("Expected split link condition");
     }
 
-    expect(mutationCondition({ type: "mutation" })).toBe(true);
-    expect(mutationCondition({ type: "query" })).toBe(false);
-    expect(queryCondition({ type: "query", path: "mobileDashboard.dashboard" })).toBe(true);
-    expect(queryCondition({ type: "query", path: "mobileDashboard.dashboardV2" })).toBe(true);
-    expect(queryCondition({ type: "query", path: "mobileDashboard.recovery" })).toBe(true);
-    expect(queryCondition({ type: "query", path: "mobileDashboard.training" })).toBe(true);
-    expect(queryCondition({ type: "query", path: "processing.status" })).toBe(false);
-    expect(queryCondition({ type: "query", path: "anomalyDetection.check" })).toBe(false);
-    expect(queryCondition({ type: "mutation", path: "mobileDashboard.dashboard" })).toBe(false);
-    const mutationLink = Reflect.get(mutationSplitOptions, "true");
-    const defaultQueryLink = Reflect.get(querySplitOptions, "false");
-    const dashboardQueryLink = Reflect.get(querySplitOptions, "true");
-
-    expect(mutationLink).toEqual({
+    expect(condition({ type: "query", path: "mobileDashboard.dashboard" })).toBe(true);
+    expect(condition({ type: "query", path: "mobileDashboard.dashboardV2" })).toBe(true);
+    expect(condition({ type: "query", path: "mobileDashboard.recovery" })).toBe(true);
+    expect(condition({ type: "query", path: "mobileDashboard.training" })).toBe(true);
+    expect(condition({ type: "query", path: "processing.status" })).toBe(false);
+    expect(condition({ type: "mutation", path: "healthKitSync.recordSync" })).toBe(false);
+    expect(Reflect.get(splitOptions, "false")).toEqual({
       type: "batch",
       options: expect.anything(),
     });
-    expect(defaultQueryLink).toEqual({
-      type: "batch",
-      options: expect.anything(),
-    });
-    expect(dashboardQueryLink).toEqual({
+    expect(Reflect.get(splitOptions, "true")).toEqual({
       type: "single",
       options: expect.anything(),
     });

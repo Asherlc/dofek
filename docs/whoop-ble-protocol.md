@@ -336,6 +336,50 @@ Invalid intervals and deletion tombstones retract their derived readings.
 For history outside the normal ingestion-time microbatch lookback, use the
 [bounded sensor replay procedure](../analytics/README.md#microbatch-start-bounds-and-historical-backfills).
 
+### Independent upload streams and retention
+
+The [mobile uploader](../packages/mobile/lib/background-whoop-ble-sync.ts)
+drains IMU and realtime samples independently, with one active worker per
+stream and sequential batches of at most 500 samples within each worker.
+Foreground, periodic, and native background-refresh callers share existing
+workers. A periodic tick can start a new realtime drain while an earlier IMU
+drain is still catching up. Each worker confirms only its own successfully
+uploaded samples; upload failures leave unconfirmed samples in the native
+buffer. The sync waits for both workers to settle before propagating unexpected
+errors. These scheduling and confirmation boundaries are exercised by the
+[uploader regressions](../packages/mobile/lib/background-whoop-ble-sync.test.ts).
+
+Foreground drains check app state before each upload. A native background
+refresh grants upload permission for its lifetime, including when it joins a
+worker started in the foreground. This preserves the existing distinction
+between foreground work and an explicit native background wake; see the
+[uploader](../packages/mobile/lib/background-whoop-ble-sync.ts) and
+[React Native AppState](https://reactnative.dev/docs/appstate).
+
+In the [mobile transport](../packages/mobile/lib/trpc-links.ts), the two upload
+mutations, `inertialMeasurementUnitSync.pushSamples` and
+`whoopBleSync.pushRealtimeData`, use separate HTTP requests so either response
+can settle independently. Other mobile operations retain their existing
+transport routing.
+tRPC's [`httpLink`](https://trpc.io/docs/client/links/httpLink) sends individual
+operations, whereas
+[`httpBatchLink`](https://trpc.io/docs/client/links/httpBatchLink) combines
+concurrent operations into one HTTP request. Parallel workers therefore also
+need independent transport to avoid coupling their response completion.
+
+The [native sample buffer](../packages/mobile/modules/whoop-ble/ios/WhoopBleSampleBuffer.swift)
+stores samples in memory, with a 500,000-sample IMU limit and an 86,400-sample
+realtime limit. At the observed 100 Hz and 1 Hz rates, those limits correspond
+to approximately 83 minutes and 24 hours respectively. Overflow evicts the
+oldest samples. Creating a new
+[native module instance](../packages/mobile/modules/whoop-ble/ios/WhoopBleModule.swift)
+creates empty buffers; there is no disk-backed sample queue. Connection and
+streaming changes preserve the existing buffer, while account erasure applies
+its recorded cutoff. Consequently, a current connection or nonzero buffer
+count does not establish that samples from an earlier workout were captured
+or remain recoverable. Check the sample timestamps and account-scoped server
+arrival before making that claim.
+
 ### Investigating Bluetooth/cloud differences
 
 Compare readings from the same activity window at nearby timestamps before

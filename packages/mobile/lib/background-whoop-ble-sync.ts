@@ -94,6 +94,9 @@ let syncing = false;
 let connected = false;
 let currentDeps: WhoopBleSyncDeps | null = null;
 let currentRealtimeClient: WhoopBleRealtimeUploadClient | null = null;
+let activeImuDrain: Promise<void> | null = null;
+let activeRealtimeDrain: Promise<void> | null = null;
+let activeBackgroundRefreshes = 0;
 
 /**
  * Initialize always-on WHOOP BLE accelerometer sync.
@@ -158,6 +161,9 @@ export async function initBackgroundWhoopBleSync(
       });
   });
 
+  // Each stream can upload on a timer tick while the other is catching up.
+  startPeriodicDrainTimer(trpcClient, whoopDeps, realtimeClient);
+
   // The AppState listener only fires on state transitions, so sync immediately
   // when init runs in the foreground. Defer a backgrounded initialization until
   // the next active transition so this foreground sync does not try to start a
@@ -182,10 +188,6 @@ export async function initBackgroundWhoopBleSync(
   } else {
     logger.info(LOG_CATEGORY, "initial sync deferred until app foregrounds");
   }
-
-  // Periodically drain the buffer while the app is active so samples
-  // don't pile up waiting for a foreground transition.
-  startPeriodicDrainTimer(trpcClient, whoopDeps, realtimeClient);
 }
 
 function shouldRunForegroundPeriodicDrain(): boolean {
@@ -215,16 +217,13 @@ function startPeriodicDrainTimer(
       stopPeriodicDrainTimer();
       return;
     }
-    if (syncing || !connected) return;
-    syncing = true;
-    drainBuffer(trpcClient, whoopDeps, realtimeClient, shouldRunForegroundPeriodicDrain)
-      .catch((error: unknown) => {
+    if (!connected) return;
+    drainBuffer(trpcClient, whoopDeps, realtimeClient, shouldRunForegroundPeriodicDrain).catch(
+      (error: unknown) => {
         logger.error(LOG_CATEGORY, `periodic drain error: ${error}`);
         captureException(error, { source: "whoop-ble-periodic-drain" });
-      })
-      .finally(() => {
-        syncing = false;
-      });
+      },
+    );
   }, PERIODIC_DRAIN_INTERVAL_MS);
 }
 
@@ -243,6 +242,7 @@ export async function syncWhoopBle(
   whoopDeps: WhoopBleSyncDeps,
   realtimeClient?: WhoopBleRealtimeUploadClient,
 ): Promise<void> {
+  activeBackgroundRefreshes += 1;
   try {
     logger.info(LOG_CATEGORY, "background refresh — starting sync");
     await syncOnForeground(trpcClient, whoopDeps, realtimeClient);
@@ -268,6 +268,8 @@ export async function syncWhoopBle(
     logger.error(LOG_CATEGORY, `background refresh sync error: ${error}`);
     captureException(error, { source: "whoop-ble-background-refresh" });
     throw error;
+  } finally {
+    activeBackgroundRefreshes -= 1;
   }
 }
 
@@ -370,8 +372,8 @@ async function syncOnForeground(
 
 /**
  * Drain the native sample buffers and upload to the server.
- * Pulls samples in small batches (1000) to avoid memory spikes
- * from serializing the entire buffer across the native bridge at once.
+ * Streams upload concurrently, with one 500-sample request per stream at a time.
+ * Overlapping sync callers reuse each stream's in-flight drain.
  */
 async function drainBuffer(
   trpcClient: InertialMeasurementUnitUploadClient,
@@ -396,6 +398,48 @@ async function drainBuffer(
   } catch (error) {
     captureException(error);
   }
+
+  // A native background wake may join a drain that started in the foreground.
+  const canUpload = () => activeBackgroundRefreshes > 0 || shouldContinueUploading();
+  if (!activeImuDrain) {
+    activeImuDrain = drainImuBuffer(trpcClient, whoopDeps, deviceErasureCutoff, canUpload).finally(
+      () => {
+        activeImuDrain = null;
+      },
+    );
+  }
+  const drains = [activeImuDrain];
+  const effectiveRealtimeClient = realtimeClient ?? currentRealtimeClient;
+  if (effectiveRealtimeClient) {
+    if (!activeRealtimeDrain) {
+      activeRealtimeDrain = drainRealtimeBuffer(
+        effectiveRealtimeClient,
+        whoopDeps,
+        deviceErasureCutoff,
+        canUpload,
+      ).finally(() => {
+        activeRealtimeDrain = null;
+      });
+    }
+    drains.push(activeRealtimeDrain);
+  }
+
+  // Do not settle a sync while another stream is still using its native buffer.
+  const results = await Promise.allSettled(drains);
+  const errors = results.flatMap((result) => (result.status === "rejected" ? [result.reason] : []));
+  if (errors.length > 0) {
+    throw errors.length === 1
+      ? errors[0]
+      : new AggregateError(errors, "WHOOP BLE buffer drains failed");
+  }
+}
+
+async function drainImuBuffer(
+  trpcClient: InertialMeasurementUnitUploadClient,
+  whoopDeps: WhoopBleSyncDeps,
+  deviceErasureCutoff: string | null,
+  shouldContinueUploading: ShouldContinueUploading,
+): Promise<void> {
   // Drain IMU buffer using peek-then-confirm: samples stay in the native
   // buffer until the server confirms receipt, preventing data loss on
   // network failures.
@@ -466,59 +510,63 @@ async function drainBuffer(
   if (totalImuUploaded > 0) {
     logger.info(LOG_CATEGORY, `IMU drain complete: ${totalImuUploaded} samples`);
   }
+}
 
+async function drainRealtimeBuffer(
+  realtimeClient: WhoopBleRealtimeUploadClient,
+  whoopDeps: WhoopBleSyncDeps,
+  deviceErasureCutoff: string | null,
+  shouldContinueUploading: ShouldContinueUploading,
+): Promise<void> {
   // Drain realtime data buffer (beat interval + quaternion + optical from 0x28 packets)
-  const effectiveRealtimeClient = realtimeClient ?? currentRealtimeClient;
-  if (effectiveRealtimeClient) {
-    let totalRealtimeUploaded = 0;
-    while (true) {
-      const realtimeSamples = await whoopDeps.peekBufferedRealtimeData(REALTIME_UPLOAD_BATCH_SIZE);
-      logger.info(LOG_CATEGORY, `realtime buffer: ${realtimeSamples.length} samples`);
-      if (realtimeSamples.length === 0) break;
-      const uploadableRealtimeSamples =
-        deviceErasureCutoff === null
-          ? realtimeSamples
-          : realtimeSamples.filter((sample) =>
-              isAfterDeviceErasureCutoff(sample.timestamp, deviceErasureCutoff),
-            );
+  let totalRealtimeUploaded = 0;
+  while (true) {
+    const realtimeSamples = await whoopDeps.peekBufferedRealtimeData(REALTIME_UPLOAD_BATCH_SIZE);
+    logger.info(LOG_CATEGORY, `realtime buffer: ${realtimeSamples.length} samples`);
+    if (realtimeSamples.length === 0) break;
+    const uploadableRealtimeSamples =
+      deviceErasureCutoff === null
+        ? realtimeSamples
+        : realtimeSamples.filter((sample) =>
+            isAfterDeviceErasureCutoff(sample.timestamp, deviceErasureCutoff),
+          );
 
-      try {
-        const groups = new DeviceSampleGroups(DEFAULT_WHOOP_DEVICE_ID, toRealtimeDataUploadSample);
-        for (const sample of uploadableRealtimeSamples) {
-          groups.add(sample);
-        }
-
-        let inserted = 0;
-        for (const [deviceId, uploadSamples] of groups.entries()) {
-          if (!shouldContinueUploading()) {
-            logger.info(LOG_CATEGORY, "realtime upload skipped — app is no longer active");
-            return;
-          }
-          const result = await effectiveRealtimeClient.whoopBleSync.pushRealtimeData.mutate({
-            deviceId,
-            samples: uploadSamples,
-          });
-          inserted += result.inserted;
-        }
-        whoopDeps.confirmRealtimeDataDrain(realtimeSamples.length);
-        totalRealtimeUploaded += realtimeSamples.length;
-        logger.info(
-          LOG_CATEGORY,
-          `uploaded ${realtimeSamples.length} realtime samples (server inserted: ${inserted})`,
-        );
-      } catch (error: unknown) {
-        logger.error(
-          LOG_CATEGORY,
-          `realtime upload failed, ${realtimeSamples.length} samples retained: ${error}`,
-        );
-        captureException(error, { source: "whoop-ble-realtime-upload" });
-        break;
+    try {
+      const groups = new DeviceSampleGroups(DEFAULT_WHOOP_DEVICE_ID, toRealtimeDataUploadSample);
+      for (const sample of uploadableRealtimeSamples) {
+        groups.add(sample);
       }
-    }
 
-    if (totalRealtimeUploaded > 0) {
-      logger.info(LOG_CATEGORY, `realtime drain complete: ${totalRealtimeUploaded} samples`);
+      let inserted = 0;
+      for (const [deviceId, uploadSamples] of groups.entries()) {
+        if (!shouldContinueUploading()) {
+          logger.info(LOG_CATEGORY, "realtime upload skipped — app is no longer active");
+          return;
+        }
+        const result = await realtimeClient.whoopBleSync.pushRealtimeData.mutate({
+          deviceId,
+          samples: uploadSamples,
+        });
+        inserted += result.inserted;
+      }
+      whoopDeps.confirmRealtimeDataDrain(realtimeSamples.length);
+      totalRealtimeUploaded += realtimeSamples.length;
+      logger.info(
+        LOG_CATEGORY,
+        `uploaded ${realtimeSamples.length} realtime samples (server inserted: ${inserted})`,
+      );
+    } catch (error: unknown) {
+      logger.error(
+        LOG_CATEGORY,
+        `realtime upload failed, ${realtimeSamples.length} samples retained: ${error}`,
+      );
+      captureException(error, { source: "whoop-ble-realtime-upload" });
+      break;
     }
+  }
+
+  if (totalRealtimeUploaded > 0) {
+    logger.info(LOG_CATEGORY, `realtime drain complete: ${totalRealtimeUploaded} samples`);
   }
 }
 

@@ -1,6 +1,5 @@
 import * as Sentry from "@sentry/react-native";
 import { QueryClientProvider } from "@tanstack/react-query";
-import { httpBatchLink, httpLink, splitLink } from "@trpc/client";
 import { Stack, usePathname, useRouter } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -49,6 +48,7 @@ import {
 import { captureException, initTelemetry, logger, setTelemetryRoute } from "../lib/telemetry";
 import { trpc } from "../lib/trpc";
 import { createTrpcFetch } from "../lib/trpc-fetch";
+import { createMobileTrpcLinks } from "../lib/trpc-links";
 import { useBleHeartRateSync } from "../lib/useBleHeartRateSync";
 import { useWhoopBleSync } from "../lib/useWhoopBleSync";
 import { getVersionHeaders } from "../lib/version-headers";
@@ -229,26 +229,8 @@ function AuthGate() {
       },
     };
 
-    const batchLink = httpBatchLink(commonOptions);
-    const dashboardQueryLink = httpLink(commonOptions);
-
     return trpc.createClient({
-      links: [
-        splitLink({
-          condition: (operation) => operation.type === "mutation",
-          true: batchLink,
-          false: splitLink({
-            condition: (operation) =>
-              operation.type === "query" &&
-              (operation.path === "mobileDashboard.dashboard" ||
-                operation.path === "mobileDashboard.dashboardV2" ||
-                operation.path === "mobileDashboard.recovery" ||
-                operation.path === "mobileDashboard.training"),
-            true: dashboardQueryLink,
-            false: batchLink,
-          }),
-        }),
-      ],
+      links: createMobileTrpcLinks(commonOptions),
     });
   }, [serverUrl, sessionToken]);
 

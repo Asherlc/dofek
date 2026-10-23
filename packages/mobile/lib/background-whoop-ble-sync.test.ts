@@ -995,6 +995,7 @@ describe("realtime data (beat interval + quaternion) sync", () => {
   let realtimeClient: WhoopBleRealtimeUploadClient;
 
   beforeEach(() => {
+    mockLoadDeviceErasureCutoff.mockResolvedValue(null);
     teardownBackgroundWhoopBleSync();
     AppState.currentState = "active";
     whoopDeps = makeMockDeps();
@@ -1223,6 +1224,340 @@ describe("realtime data (beat interval + quaternion) sync", () => {
 
     // getBufferedRealtimeData should not be called since there's no client to upload to
     expect(whoopDeps.peekBufferedRealtimeData).not.toHaveBeenCalled();
+  });
+
+  it.each(["motion", "realtime"] as const)(
+    "drains %s while the other upload stream is stalled",
+    async (progressingStream) => {
+      type BufferedRealtimeSample = Awaited<
+        ReturnType<WhoopBleSyncDeps["peekBufferedRealtimeData"]>
+      >[number];
+      const imuBuffer = Array.from({ length: 2 }, (_, index) => ({
+        deviceId: "whoop-a",
+        timestamp: new Date(Date.UTC(2026, 2, 30, 12, 0, 0, index)).toISOString(),
+        x: 1,
+        y: 2,
+        z: 3,
+        gyroscopeX: 10,
+        gyroscopeY: -20,
+        gyroscopeZ: 30,
+      }));
+      const realtimeBuffer: BufferedRealtimeSample[] = Array.from({ length: 2 }, (_, index) => ({
+        deviceId: "whoop-a",
+        timestamp: new Date(Date.UTC(2026, 2, 30, 12, 0, 0, index)).toISOString(),
+        heartRateBpm: 75,
+        rrIntervalMs: 800,
+        quaternionW: 1,
+        quaternionX: 0,
+        quaternionY: 0,
+        quaternionZ: 0,
+        opticalRawHex: "000000000000000000000000000000000000",
+      }));
+      let releaseMotion: (() => void) | undefined;
+      let releaseRealtime: (() => void) | undefined;
+      const motionGate = new Promise<void>((resolve) => {
+        releaseMotion = resolve;
+      });
+      const realtimeGate = new Promise<void>((resolve) => {
+        releaseRealtime = resolve;
+      });
+      const acceptedMotion: string[] = [];
+      const acceptedRealtime: string[] = [];
+      mockLoadDeviceErasureCutoff.mockResolvedValue(null);
+      vi.mocked(whoopDeps.peekBufferedSamples).mockImplementation(async (maxCount) =>
+        imuBuffer.slice(0, Math.min(maxCount ?? 1, 1)),
+      );
+      vi.mocked(whoopDeps.confirmSamplesDrain).mockImplementation((count) => {
+        imuBuffer.splice(0, count);
+      });
+      vi.mocked(whoopDeps.peekBufferedRealtimeData).mockImplementation(async (maxCount) =>
+        realtimeBuffer.slice(0, Math.min(maxCount ?? 1, 1)),
+      );
+      vi.mocked(whoopDeps.confirmRealtimeDataDrain).mockImplementation((count) => {
+        realtimeBuffer.splice(0, count);
+      });
+      vi.mocked(trpcClient.inertialMeasurementUnitSync.pushSamples.mutate).mockImplementation(
+        async ({ samples }) => {
+          await motionGate;
+          acceptedMotion.push(...samples.map((sample) => sample.timestamp));
+          return { inserted: samples.length };
+        },
+      );
+      vi.mocked(realtimeClient.whoopBleSync.pushRealtimeData.mutate).mockImplementation(
+        async ({ samples }) => {
+          await realtimeGate;
+          acceptedRealtime.push(...samples.map((sample) => sample.timestamp));
+          return { inserted: samples.length };
+        },
+      );
+
+      const initialization = initBackgroundWhoopBleSync(trpcClient, whoopDeps, realtimeClient);
+      try {
+        await vi.waitFor(() => {
+          expect(trpcClient.inertialMeasurementUnitSync.pushSamples.mutate).toHaveBeenCalledTimes(
+            1,
+          );
+          expect(realtimeClient.whoopBleSync.pushRealtimeData.mutate).toHaveBeenCalledTimes(1);
+        });
+        expect(imuBuffer).toHaveLength(2);
+        expect(realtimeBuffer).toHaveLength(2);
+
+        if (progressingStream === "motion") releaseMotion?.();
+        else releaseRealtime?.();
+        const accepted = progressingStream === "motion" ? acceptedMotion : acceptedRealtime;
+        const stalledBuffer = progressingStream === "motion" ? realtimeBuffer : imuBuffer;
+        const stalledUpload =
+          progressingStream === "motion"
+            ? realtimeClient.whoopBleSync.pushRealtimeData.mutate
+            : trpcClient.inertialMeasurementUnitSync.pushSamples.mutate;
+        await vi.waitFor(() =>
+          expect(accepted).toEqual(["2026-03-30T12:00:00.000Z", "2026-03-30T12:00:00.001Z"]),
+        );
+        expect(stalledBuffer).toHaveLength(2);
+        expect(stalledUpload).toHaveBeenCalledTimes(1);
+      } finally {
+        releaseMotion?.();
+        releaseRealtime?.();
+        await initialization;
+      }
+      expect(imuBuffer).toHaveLength(0);
+      expect(realtimeBuffer).toHaveLength(0);
+      expect(whoopDeps.confirmSamplesDrain).toHaveBeenCalledTimes(2);
+      expect(whoopDeps.confirmRealtimeDataDrain).toHaveBeenCalledTimes(2);
+    },
+  );
+
+  it("uploads new realtime samples on a periodic tick while motion is still draining", async () => {
+    vi.useFakeTimers();
+    let releaseMotion: (() => void) | undefined;
+    const motionGate = new Promise<void>((resolve) => {
+      releaseMotion = resolve;
+    });
+    const realtimeSample = {
+      timestamp: "2026-03-30T12:00:00.000Z",
+      heartRateBpm: 75,
+      rrIntervalMs: 800,
+      quaternionW: 1,
+      quaternionX: 0,
+      quaternionY: 0,
+      quaternionZ: 0,
+      opticalRawHex: "000000000000000000000000000000000000",
+    };
+    const realtimeBuffer: Array<typeof realtimeSample> = [];
+    const uploadedRealtime: number[] = [];
+    vi.mocked(whoopDeps.peekBufferedSamples).mockResolvedValueOnce([
+      {
+        timestamp: "2026-03-30T12:00:00.000Z",
+        x: 1,
+        y: 2,
+        z: 3,
+        gyroscopeX: 0,
+        gyroscopeY: 0,
+        gyroscopeZ: 0,
+      },
+    ]);
+    vi.mocked(trpcClient.inertialMeasurementUnitSync.pushSamples.mutate).mockImplementation(
+      async () => {
+        await motionGate;
+        return { inserted: 1 };
+      },
+    );
+    vi.mocked(whoopDeps.peekBufferedRealtimeData).mockImplementation(async () =>
+      realtimeBuffer.slice(),
+    );
+    vi.mocked(whoopDeps.confirmRealtimeDataDrain).mockImplementation((count) => {
+      realtimeBuffer.splice(0, count);
+    });
+    vi.mocked(realtimeClient.whoopBleSync.pushRealtimeData.mutate).mockImplementation(
+      async ({ samples }) => {
+        uploadedRealtime.push(...samples.map((sample) => sample.heartRateBpm));
+        return { inserted: samples.length };
+      },
+    );
+    const initialization = initBackgroundWhoopBleSync(trpcClient, whoopDeps, realtimeClient);
+    try {
+      await vi.advanceTimersByTimeAsync(0);
+      expect(trpcClient.inertialMeasurementUnitSync.pushSamples.mutate).toHaveBeenCalledTimes(1);
+      expect(whoopDeps.peekBufferedRealtimeData).toHaveBeenCalledTimes(1);
+      realtimeBuffer.push(realtimeSample);
+
+      await vi.advanceTimersByTimeAsync(30_000);
+
+      expect(uploadedRealtime).toEqual([75]);
+      expect(realtimeBuffer).toHaveLength(0);
+      expect(whoopDeps.confirmSamplesDrain).not.toHaveBeenCalled();
+      expect(trpcClient.inertialMeasurementUnitSync.pushSamples.mutate).toHaveBeenCalledTimes(1);
+    } finally {
+      releaseMotion?.();
+      await initialization;
+      vi.useRealTimers();
+    }
+  });
+
+  it("waits for the surviving upload after the other buffer rejects", async () => {
+    const { captureException } = await import("./telemetry");
+    vi.mocked(captureException).mockClear();
+    const realtimeError = new Error("realtime buffer unavailable");
+    let releaseMotion: (() => void) | undefined;
+    const motionGate = new Promise<void>((resolve) => {
+      releaseMotion = resolve;
+    });
+    vi.mocked(whoopDeps.peekBufferedSamples).mockResolvedValueOnce([
+      {
+        timestamp: "2026-03-30T12:00:00.000Z",
+        x: 1,
+        y: 2,
+        z: 3,
+        gyroscopeX: 0,
+        gyroscopeY: 0,
+        gyroscopeZ: 0,
+      },
+    ]);
+    vi.mocked(whoopDeps.peekBufferedRealtimeData).mockRejectedValue(realtimeError);
+    vi.mocked(trpcClient.inertialMeasurementUnitSync.pushSamples.mutate).mockImplementation(
+      async () => {
+        await motionGate;
+        return { inserted: 1 };
+      },
+    );
+    let settled = false;
+    const initialization = initBackgroundWhoopBleSync(trpcClient, whoopDeps, realtimeClient).then(
+      () => {
+        settled = true;
+      },
+    );
+    try {
+      await vi.waitFor(() => expect(whoopDeps.peekBufferedRealtimeData).toHaveBeenCalled());
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(settled).toBe(false);
+      expect(whoopDeps.confirmSamplesDrain).not.toHaveBeenCalled();
+      expect(captureException).not.toHaveBeenCalledWith(realtimeError, expect.anything());
+    } finally {
+      releaseMotion?.();
+      await initialization;
+    }
+    expect(whoopDeps.confirmSamplesDrain).toHaveBeenCalledWith(1);
+    expect(captureException).toHaveBeenCalledWith(realtimeError, { source: "whoop-ble-init-sync" });
+  });
+
+  it("preserves both unexpected buffer errors", async () => {
+    const motionError = new Error("motion buffer unavailable");
+    const realtimeError = new Error("realtime buffer unavailable");
+    vi.mocked(whoopDeps.peekBufferedSamples).mockRejectedValue(motionError);
+    vi.mocked(whoopDeps.peekBufferedRealtimeData).mockRejectedValue(realtimeError);
+
+    await expect(syncWhoopBle(trpcClient, whoopDeps, realtimeClient)).rejects.toMatchObject({
+      name: "AggregateError",
+      errors: [motionError, realtimeError],
+    });
+  });
+
+  it("shares in-flight uploads with an overlapping background refresh", async () => {
+    let releaseUploads: (() => void) | undefined;
+    const uploadGate = new Promise<void>((resolve) => {
+      releaseUploads = resolve;
+    });
+    const motionSample = {
+      timestamp: "2026-03-30T12:00:00.000Z",
+      x: 1,
+      y: 2,
+      z: 3,
+      gyroscopeX: 0,
+      gyroscopeY: 0,
+      gyroscopeZ: 0,
+    };
+    const realtimeSample = {
+      timestamp: "2026-03-30T12:00:00.000Z",
+      heartRateBpm: 75,
+      rrIntervalMs: 800,
+      quaternionW: 1,
+      quaternionX: 0,
+      quaternionY: 0,
+      quaternionZ: 0,
+      opticalRawHex: "000000000000000000000000000000000000",
+    };
+    vi.mocked(whoopDeps.peekBufferedSamples).mockResolvedValue([motionSample]);
+    vi.mocked(whoopDeps.peekBufferedRealtimeData).mockResolvedValue([realtimeSample]);
+    vi.mocked(whoopDeps.confirmSamplesDrain).mockImplementation(() => {
+      vi.mocked(whoopDeps.peekBufferedSamples).mockResolvedValue([]);
+    });
+    vi.mocked(whoopDeps.confirmRealtimeDataDrain).mockImplementation(() => {
+      vi.mocked(whoopDeps.peekBufferedRealtimeData).mockResolvedValue([]);
+    });
+    vi.mocked(trpcClient.inertialMeasurementUnitSync.pushSamples.mutate).mockImplementation(
+      async () => {
+        await uploadGate;
+        return { inserted: 1 };
+      },
+    );
+    vi.mocked(realtimeClient.whoopBleSync.pushRealtimeData.mutate).mockImplementation(async () => {
+      await uploadGate;
+      return { inserted: 1 };
+    });
+
+    const initialization = initBackgroundWhoopBleSync(trpcClient, whoopDeps, realtimeClient);
+    let backgroundRefresh: Promise<void> | undefined;
+    try {
+      await vi.waitFor(() =>
+        expect(trpcClient.inertialMeasurementUnitSync.pushSamples.mutate).toHaveBeenCalledTimes(1),
+      );
+      backgroundRefresh = syncWhoopBle(trpcClient, whoopDeps, realtimeClient);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(trpcClient.inertialMeasurementUnitSync.pushSamples.mutate).toHaveBeenCalledTimes(1);
+      expect(realtimeClient.whoopBleSync.pushRealtimeData.mutate).toHaveBeenCalledTimes(1);
+    } finally {
+      releaseUploads?.();
+      await Promise.all([initialization, backgroundRefresh]);
+    }
+    expect(whoopDeps.confirmSamplesDrain).toHaveBeenCalledTimes(1);
+    expect(whoopDeps.confirmRealtimeDataDrain).toHaveBeenCalledTimes(1);
+  });
+
+  it("continues a shared motion drain during an authorized background refresh", async () => {
+    let releaseMotion: (() => void) | undefined;
+    const motionGate = new Promise<void>((resolve) => {
+      releaseMotion = resolve;
+    });
+    const motionBuffer = Array.from({ length: 2 }, (_, index) => ({
+      timestamp: new Date(Date.UTC(2026, 2, 30, 12, 0, index)).toISOString(),
+      x: 1,
+      y: 2,
+      z: 3,
+      gyroscopeX: 0,
+      gyroscopeY: 0,
+      gyroscopeZ: 0,
+    }));
+    vi.mocked(whoopDeps.peekBufferedSamples).mockImplementation(async () =>
+      motionBuffer.slice(0, 1),
+    );
+    vi.mocked(whoopDeps.confirmSamplesDrain).mockImplementation((count) => {
+      motionBuffer.splice(0, count);
+    });
+    vi.mocked(trpcClient.inertialMeasurementUnitSync.pushSamples.mutate).mockImplementation(
+      async () => {
+        await motionGate;
+        return { inserted: 1 };
+      },
+    );
+    const initialization = initBackgroundWhoopBleSync(trpcClient, whoopDeps, realtimeClient);
+    let backgroundRefresh: Promise<void> | undefined;
+    try {
+      await vi.waitFor(() =>
+        expect(trpcClient.inertialMeasurementUnitSync.pushSamples.mutate).toHaveBeenCalledTimes(1),
+      );
+      AppState.currentState = "background";
+      backgroundRefresh = syncWhoopBle(trpcClient, whoopDeps, realtimeClient);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(trpcClient.inertialMeasurementUnitSync.pushSamples.mutate).toHaveBeenCalledTimes(1);
+      releaseMotion?.();
+      await backgroundRefresh;
+      expect(motionBuffer).toHaveLength(0);
+      expect(trpcClient.inertialMeasurementUnitSync.pushSamples.mutate).toHaveBeenCalledTimes(2);
+      expect(whoopDeps.confirmSamplesDrain).toHaveBeenCalledTimes(2);
+    } finally {
+      releaseMotion?.();
+      await Promise.all([initialization, backgroundRefresh]);
+    }
   });
 
   it("drains both IMU and realtime buffers independently", async () => {
