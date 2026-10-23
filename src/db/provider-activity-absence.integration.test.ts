@@ -74,7 +74,19 @@ describe("reconcileProviderActivityAbsence", () => {
       startedAt: copy.startedAt,
       endedAt: copy.endedAt,
     });
-    // The origin's return does not by itself prove the downstream copy still exists.
+    // A late origin insert is not authoritative confirmation that it returned.
+    await reconcileProviderActivityAbsence(ctx.db, {
+      providerId: "peloton",
+      ...sourceWindow,
+      presentExternalIds: new Set([externalId]),
+    });
+    expect((await readCopy())?.providerAbsentAt).toBeInstanceOf(Date);
+    await reconcileProviderActivityAbsence(ctx.db, {
+      providerId: "whoop",
+      ...sourceWindow,
+      presentExternalIds: new Set([originId]),
+    });
+    // The origin's confirmation does not prove the downstream copy still exists.
     expect((await readCopy())?.providerAbsentAt).toBeInstanceOf(Date);
     await reconcileProviderActivityAbsence(ctx.db, {
       providerId: "peloton",
@@ -142,6 +154,29 @@ describe("reconcileProviderActivityAbsence", () => {
     const [stored] = await ctx.db.select().from(activity).where(eq(activity.id, copy.id));
     expect(stored?.providerAbsentAt).toBeInstanceOf(Date);
     expect(stored?.raw).toEqual({ platform: "whoop", deviceType: "whoop" });
+  });
+
+  it("reconciles copies when multiple source rows normalize to the same upstream UUID", async () => {
+    const { copy, originId, externalId } = await insertWhoopCopy();
+    await ctx.db.insert(activity).values(
+      [originId, externalId].map((id) => ({
+        providerId: "whoop",
+        externalId: id,
+        canonicalType: "climbing" as const,
+        providerType: "rock-climbing",
+        startedAt: copy.startedAt,
+        endedAt: copy.endedAt,
+        providerAbsentAt: new Date("2026-10-22T16:00:00Z"),
+      })),
+    );
+    await reconcileProviderActivityAbsence(ctx.db, {
+      providerId: "peloton",
+      ...sourceWindow,
+      presentExternalIds: new Set([externalId]),
+    });
+    const [stored] = await ctx.db.select().from(activity).where(eq(activity.id, copy.id));
+    expect(stored?.providerAbsentAt).toBeInstanceOf(Date);
+    expect(stored?.absenceProviderId).toBe("whoop");
   });
 
   it("keeps a late copy of a tombstoned origin absent during downstream sync and present events", async () => {

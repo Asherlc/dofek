@@ -108,8 +108,9 @@ start time; a missing local origin row alone is insufficient. Ambiguous empty
 lists do not count. The existing tombstone timestamp preserves raw records;
 `absence_provider_id` records which provider confirmed the absence. A downstream
 list can restore its own absence without an imported origin. An origin-caused
-tombstone requires both an active origin and confirmation that the downstream
-record is present. Upserts cannot clear either tombstone field; see the
+tombstone requires authoritative confirmation that the origin has reappeared,
+followed by confirmation that the downstream record is present. Importing an
+origin row alone does not release that evidence. Upserts cannot clear either tombstone field; see the
 [shared writer](../src/db/provider-activity-sync.ts).
 
 Deploy PostgreSQL migration `0157_activity_copy_identity` and pre-CDC ClickHouse

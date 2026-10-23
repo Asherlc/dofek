@@ -63,15 +63,38 @@ function externalIdListSql(externalIds: string[]) {
 }
 
 /** A stale downstream list cannot override a confirmed origin tombstone. */
-function originAllowsRestoreSql(): SQL {
-  return sql`NOT EXISTS (
+const originAllowsRestoreSql = sql`NOT EXISTS (
     SELECT 1 FROM fitness.activity_copy_identity(candidate.provider_id, candidate.external_id, candidate.raw) AS copy
     LEFT JOIN fitness.activity AS origin ON origin.user_id = candidate.user_id
       AND origin.provider_id = copy.provider_id
       AND LOWER(REPLACE(origin.external_id, '-', '')) = copy.external_id
     WHERE origin.provider_absent_at IS NOT NULL OR origin.deleted_at IS NOT NULL
-      OR (origin.id IS NULL AND COALESCE(candidate.absence_provider_id, candidate.provider_id) <> candidate.provider_id)
+      OR COALESCE(candidate.absence_provider_id, candidate.provider_id) <> candidate.provider_id
   )`;
+
+/** Only authoritative origin presence releases a propagated absence. */
+async function confirmOriginPresence(
+  db: SyncDatabase,
+  userId: string,
+  providerId: string,
+  externalIds: readonly string[],
+): Promise<void> {
+  await db.execute(sql`
+    UPDATE fitness.activity AS candidate
+    SET absence_provider_id = candidate.provider_id
+    WHERE candidate.user_id = ${userId}
+      AND candidate.absence_provider_id = ${providerId}
+      AND candidate.provider_id <> ${providerId}
+      AND candidate.provider_absent_at IS NOT NULL AND candidate.deleted_at IS NULL
+      AND EXISTS (
+        SELECT 1 FROM fitness.activity_copy_identity(candidate.provider_id, candidate.external_id, candidate.raw) AS copy
+        WHERE copy.provider_id = ${providerId}
+          AND EXISTS (
+            SELECT 1 FROM unnest(${sql.param(externalIds)}::text[]) AS present(external_id)
+            WHERE copy.external_id = LOWER(REPLACE(present.external_id, '-', ''))
+          )
+      )
+  `);
 }
 
 /** Skip tombstoning Apple Health rows superseded by another identity in the current push. */
@@ -148,7 +171,7 @@ export async function reconcileProviderActivityAbsence(
       ? appleHealthDuplicateTombstoneGuardSql(reconciliation.presentAppleHealthIdentities ?? [])
       : sql``;
 
-  if (presentExternalIds.length > 0)
+  if (presentExternalIds.length > 0) {
     await db.execute(sql`
     UPDATE fitness.activity AS candidate
     SET provider_absent_at = NULL, absence_provider_id = NULL
@@ -157,12 +180,14 @@ export async function reconcileProviderActivityAbsence(
       AND external_id IN (${externalIdListSql(presentExternalIds)})
       AND provider_absent_at IS NOT NULL
       AND deleted_at IS NULL
-      AND ${originAllowsRestoreSql()}
+      AND ${originAllowsRestoreSql}
   `);
+    await confirmOriginPresence(db, userId, reconciliation.providerId, presentExternalIds);
+  }
 
   await db.execute(sql`
     WITH linked_copies AS (
-      SELECT candidate.id, copy.provider_id AS absence_provider_id
+      SELECT DISTINCT candidate.id, copy.provider_id AS absence_provider_id
       FROM fitness.activity AS candidate
       CROSS JOIN LATERAL fitness.activity_copy_identity(candidate.provider_id, candidate.external_id, candidate.raw) AS copy
       LEFT JOIN fitness.activity AS origin
@@ -177,7 +202,10 @@ export async function reconcileProviderActivityAbsence(
             copy.provider_id = ${reconciliation.providerId}
             AND COALESCE(origin.started_at, candidate.started_at) >= ${reconciliation.windowStart}
             AND COALESCE(origin.started_at, candidate.started_at) < ${reconciliation.windowEnd}
-            ${presentExternalIds.length === 0 ? sql`` : sql`AND copy.external_id NOT IN (${externalIdListSql(presentExternalIds.map((id) => id.toLowerCase().replaceAll("-", "")))})`}
+            AND NOT EXISTS (
+              SELECT 1 FROM unnest(${sql.param(presentExternalIds)}::text[]) AS present(external_id)
+              WHERE copy.external_id = LOWER(REPLACE(present.external_id, '-', ''))
+            )
           )
         )
     )
@@ -221,7 +249,7 @@ export async function markProviderActivityAbsent(
         OR EXISTS (
           SELECT 1 FROM fitness.activity_copy_identity(candidate.provider_id, candidate.external_id, candidate.raw) AS copy
           WHERE copy.provider_id = ${mark.providerId}
-            AND copy.external_id = ${mark.externalId.toLowerCase().replaceAll("-", "")}
+            AND copy.external_id = LOWER(REPLACE(${mark.externalId}, '-', ''))
         )
       )
       AND (provider_absent_at IS NULL OR COALESCE(absence_provider_id, provider_id) <> ${mark.providerId})
@@ -246,8 +274,10 @@ export async function markProviderActivityPresent(
       AND external_id = ${mark.externalId}
       AND provider_absent_at IS NOT NULL
       AND deleted_at IS NULL
-      AND ${originAllowsRestoreSql()}
+      AND ${originAllowsRestoreSql}
   `);
+
+  await confirmOriginPresence(db, userId, mark.providerId, [mark.externalId]);
 
   await invalidateActivityVisibilityCaches(userId);
 }

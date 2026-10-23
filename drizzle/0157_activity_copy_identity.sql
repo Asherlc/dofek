@@ -1,5 +1,9 @@
-ALTER TABLE fitness.activity ADD COLUMN absence_provider_id text;--> statement-breakpoint
-ALTER TABLE fitness.activity ADD CONSTRAINT activity_absence_provider_id_provider_id_fk FOREIGN KEY (absence_provider_id) REFERENCES fitness.provider (id) ON DELETE NO ACTION ON UPDATE NO ACTION;
+-- Approved statement-specific exception: a new nullable column without a default
+-- contains only NULLs, so PostgreSQL skips the FK scan and validates immediately.
+-- https://github.com/postgres/postgres/blob/REL_18_STABLE/src/backend/parser/parse_utilcmd.c#L2797
+ALTER TABLE fitness.activity ADD COLUMN absence_provider_id text
+-- squawk-ignore adding-foreign-key-constraint
+CONSTRAINT activity_absence_provider_id_provider_id_fk REFERENCES fitness.provider (id);
 --> statement-breakpoint
 -- Only explicit source metadata and a valid upstream identifier establish a copy.
 CREATE OR REPLACE FUNCTION fitness.activity_copy_identity(

@@ -75,7 +75,7 @@ describe("provider activity absence cache invalidation", () => {
       userId,
     });
 
-    expect(mockExecute).toHaveBeenCalledTimes(2);
+    expect(mockExecute).toHaveBeenCalledTimes(3);
     expect(mockInvalidateByPrefix).toHaveBeenCalledWith(`${userId}:activity.`);
     expect(mockInvalidateByPrefix).toHaveBeenCalledWith(`${userId}:calendar.`);
     expect(mockInvalidateByPrefix).toHaveBeenCalledWith(`${userId}:training.`);
@@ -130,7 +130,7 @@ describe("provider activity absence cache invalidation", () => {
       userId,
     });
 
-    expect(mockExecute).toHaveBeenCalledTimes(1);
+    expect(mockExecute).toHaveBeenCalledTimes(2);
     expect(mockInvalidateByPrefix).toHaveBeenCalledWith(`${userId}:activity.`);
     expect(mockInvalidateByPrefix).toHaveBeenCalledWith(`${userId}:calendar.`);
     expect(mockInvalidateByPrefix).toHaveBeenCalledWith(`${userId}:training.`);
