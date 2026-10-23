@@ -268,7 +268,11 @@ describe("registerFoodRecordTools", () => {
       "get_food_entry_history",
     ]);
     for (const name of ["search_food_entries", "get_food_entry", "get_food_entry_history"]) {
-      expect(tool(name).annotations).toEqual({ readOnlyHint: true, openWorldHint: false });
+      expect(tool(name).annotations).toEqual({
+        readOnlyHint: true,
+        openWorldHint: false,
+        destructiveHint: false,
+      });
       expect(Object.keys(tool(name).inputSchema).length).toBeGreaterThan(0);
       expect(tool(name).outputSchema).toBeInstanceOf(z.ZodType);
     }
