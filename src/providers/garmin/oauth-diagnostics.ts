@@ -5,6 +5,7 @@ import { logger } from "../../logger.ts";
 import type { ProviderConnectionError } from "../auth-errors.ts";
 
 const MAX_DIAGNOSTIC_BODY_BYTES = 8192;
+const MAX_DIAGNOSTIC_INSPECTION_MS = 1000;
 const diagnosticBodySchema = z.object({
   error: z.unknown().optional(),
   errors: z
@@ -34,16 +35,33 @@ function responseContentType(response: Response): string {
   }
 }
 
+function cancelDiagnosticReader(reader: ReadableStreamDefaultReader<Uint8Array>): void {
+  // Release pending reads without waiting for the upstream cancellation hook.
+  void reader.cancel().catch((_error: unknown) => {
+    captureException(new Error("Unable to cancel Garmin connection diagnostic reader"), {
+      tags: { provider: "garmin", operation: "oauth-connection-diagnostics" },
+    });
+  });
+}
+
 async function inspectBody(response: Response, contentType: string) {
   let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
+  let deadline: ReturnType<typeof setTimeout> | undefined;
+  let timedOut = false;
   let body = "";
   try {
-    reader = response.clone().body?.getReader();
+    reader = response.body?.getReader();
     if (!reader) return { bodyKind: "empty" };
+    const activeReader = reader;
+    deadline = setTimeout(() => {
+      timedOut = true;
+      cancelDiagnosticReader(activeReader);
+    }, MAX_DIAGNOSTIC_INSPECTION_MS);
     const decoder = new TextDecoder();
     let bytes = 0;
     while (true) {
       const chunk = await reader.read();
+      if (timedOut) return { bodyKind: "timed_out" };
       if (chunk.done) break;
       bytes += chunk.value.byteLength;
       if (bytes > MAX_DIAGNOSTIC_BODY_BYTES) return { bodyKind: "too_large" };
@@ -57,13 +75,9 @@ async function inspectBody(response: Response, contentType: string) {
     });
     return { bodyKind: "unreadable" };
   } finally {
+    if (deadline) clearTimeout(deadline);
     if (reader) {
-      // A cloned stream's cancellation can wait for the untouched original branch.
-      void reader.cancel().catch((_error: unknown) => {
-        captureException(new Error("Unable to cancel Garmin connection diagnostic reader"), {
-          tags: { provider: "garmin", operation: "oauth-connection-diagnostics" },
-        });
-      });
+      if (!timedOut) cancelDiagnosticReader(reader);
       reader.releaseLock();
     }
   }

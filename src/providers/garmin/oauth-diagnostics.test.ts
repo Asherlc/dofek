@@ -16,7 +16,10 @@ describe("Garmin OAuth failure diagnostics", () => {
     ({ reportGarminConnectionHttpFailure } = await import("./oauth-diagnostics.ts"));
     vi.clearAllMocks();
   });
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
 
   function diagnostic() {
     const [, context] = vi.mocked(captureException).mock.calls.at(-1) ?? [];
@@ -62,7 +65,6 @@ describe("Garmin OAuth failure diagnostics", () => {
       }),
     );
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('"stage":"permissions"'));
-    expect(await response.json()).toHaveProperty("userId", "synthetic-account-id");
     expect(error).toMatchObject({ stage: "permissions", statusCode: 403 });
   });
 
@@ -153,6 +155,53 @@ describe("Garmin OAuth failure diagnostics", () => {
   it("reports a missing body without attempting to read a stream", async () => {
     await reportGarminConnectionHttpFailure(new Response(null, { status: 403 }), denied());
     expect(diagnostic()).toHaveProperty("bodyKind", "empty");
+  });
+
+  it.each(["text/html", "text/plain", "application/json"])(
+    "bounds stalled %s inspection while retaining the known failure",
+    async (contentType) => {
+      vi.useFakeTimers();
+      const cancel = vi.fn();
+      let controller!: ReadableStreamDefaultController<Uint8Array>;
+      const response = new Response(
+        new ReadableStream<Uint8Array>({
+          start(streamController) {
+            controller = streamController;
+            controller.enqueue(new TextEncoder().encode("synthetic-private-partial-body"));
+          },
+          cancel,
+        }),
+        { status: 403, headers: { "Content-Type": contentType } },
+      );
+      const reporting = reportGarminConnectionHttpFailure(response, denied());
+      try {
+        await vi.advanceTimersByTimeAsync(999);
+        expect(captureException).not.toHaveBeenCalled();
+        await vi.advanceTimersByTimeAsync(1);
+        expect(diagnostic()).toMatchObject({
+          stage: "permissions",
+          statusCode: 403,
+          bodyKind: "timed_out",
+        });
+        await reporting;
+        expect(cancel).toHaveBeenCalledOnce();
+        expect(response.body?.locked).toBe(false);
+        expect(vi.getTimerCount()).toBe(0);
+        expect(JSON.stringify([warn.mock.calls, captureException.mock.calls])).not.toContain(
+          "synthetic-private-partial-body",
+        );
+      } finally {
+        if (!cancel.mock.calls.length) controller.close();
+        await reporting;
+      }
+    },
+  );
+
+  it("clears the inspection deadline after a complete response", async () => {
+    vi.useFakeTimers();
+    await reportGarminConnectionHttpFailure(Response.json({ error: "invalid_token" }), denied());
+    expect(diagnostic()).toMatchObject({ bodyKind: "json_object", errorCodes: ["invalid_token"] });
+    expect(vi.getTimerCount()).toBe(0);
   });
 
   it("recognizes known structured error codes without copying unknown fields", async () => {
@@ -281,14 +330,14 @@ describe("Garmin OAuth failure diagnostics", () => {
       status: 403,
       headers: { "content-type": "application/json" },
     });
-    const clone = response.clone();
-    vi.spyOn(response, "clone").mockReturnValue(clone);
     await reportGarminConnectionHttpFailure(response, denied());
     expect(diagnostic()).toHaveProperty("errorCodes", ["access_denied"]);
-    expect(clone.body?.locked).toBe(false);
+    expect(response.body?.locked).toBe(false);
   });
 
   it("bounds response inspection and reports oversized bodies without waiting for the remainder", async () => {
+    vi.useFakeTimers();
+    const cancel = vi.fn();
     let sent = false;
     const stream = new ReadableStream<Uint8Array>({
       pull(controller) {
@@ -297,9 +346,14 @@ describe("Garmin OAuth failure diagnostics", () => {
           controller.enqueue(new TextEncoder().encode("x".repeat(8193)));
         }
       },
+      cancel,
     });
-    await reportGarminConnectionHttpFailure(new Response(stream, { status: 403 }), denied());
+    const response = new Response(stream, { status: 403 });
+    await reportGarminConnectionHttpFailure(response, denied());
     expect(diagnostic()).toHaveProperty("bodyKind", "too_large");
+    expect(cancel).toHaveBeenCalledOnce();
+    expect(response.body?.locked).toBe(false);
+    expect(vi.getTimerCount()).toBe(0);
   });
 
   it("inspects a body exactly at the byte limit", async () => {
