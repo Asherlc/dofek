@@ -39,3 +39,13 @@ export const Fallback: Story = {
     provider: "unknown",
   },
 };
+
+export const StrongViaAppleHealth: Story = {
+  args: { provider: "apple_health", sourceName: "Strong" },
+};
+export const HangTenViaAppleHealth: Story = {
+  args: { provider: "apple_health", sourceName: "Hang Ten" },
+};
+export const UnknownViaAppleHealth: Story = {
+  args: { provider: "apple_health", sourceName: "New App" },
+};

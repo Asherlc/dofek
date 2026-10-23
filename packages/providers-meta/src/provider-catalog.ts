@@ -103,6 +103,7 @@ export const PROVIDER_CATALOG: Readonly<Record<string, ProviderCatalogEntry>> = 
   "apple-health": { label: "Apple Health" },
   apple_health: { label: "Apple Health", logo: { type: "png" } },
   "strong-csv": { label: "Strong", logo: { type: "png" } },
+  "hang-ten": { label: "Hang Ten", logo: { type: "png" } },
   "cronometer-csv": { label: "Cronometer", logo: { type: "png" } },
   kaya: { label: "Kaya", family: kayaWeb, brandColor: "#1F9D55" },
   "kaya-export": { label: "Kaya", family: kayaExport },

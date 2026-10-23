@@ -71,3 +71,29 @@ describe("ProviderLogo", () => {
     });
   });
 });
+
+describe("Apple Health source icons", () => {
+  it.each(["Strong", "Hang Ten"])("shows %s with an Apple Health badge", (sourceName) => {
+    const { container } = render(
+      <ProviderLogo
+        provider="apple_health"
+        sourceName={sourceName}
+        size={32}
+        serverUrl="https://example.com"
+      />,
+    );
+    const images = container.querySelectorAll("Image");
+    expect(images).toHaveLength(2);
+    expect(images[0]?.getAttribute("style")).toContain("width: 32px");
+    expect(images[1]?.getAttribute("style")).toContain("width: 14px");
+    expect(images[1]?.getAttribute("style")).toContain("bottom: 0");
+    expect(images[1]?.getAttribute("style")).toContain("right: 0");
+  });
+  it("uses the unknown source initial with the Apple Health badge", () => {
+    const { container, getByText } = render(
+      <ProviderLogo provider="apple_health" sourceName="New App" serverUrl="https://example.com" />,
+    );
+    expect(getByText("N")).toBeTruthy();
+    expect(container.querySelectorAll("Image")).toHaveLength(1);
+  });
+});

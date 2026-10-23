@@ -11,6 +11,7 @@ import {
   providerLogoType,
   providerRecordLabel,
   providerSourceLabel,
+  providerSourceLogo,
 } from "./providers.ts";
 
 describe("PROVIDER_LABELS", () => {
@@ -153,5 +154,35 @@ describe("providerLogoId", () => {
   it("resolves WHOOP Bluetooth to the shared WHOOP logo asset stem", () => {
     expect(providerLogoId("whoop_ble")).toBe("whoop");
     expect(providerLogoId("whoop")).toBe("whoop");
+  });
+});
+
+describe("providerSourceLogo", () => {
+  it.each([
+    ["Strong", "strong-csv"],
+    ["Hang Ten", "hang-ten"],
+    ["Hang Ten Training", "hang-ten"],
+    ["  wahoo  ", "wahoo"],
+    ["New App", "New App"],
+  ])("resolves Apple Health source %s", (source, provider) => {
+    expect(providerSourceLogo("apple_health", source)).toEqual({ provider, viaAppleHealth: true });
+  });
+  it.each([null, "", "  ", "Apple Health", "HealthKit"])("keeps Apple Health for %s", (source) => {
+    expect(providerSourceLogo("apple_health", source)).toEqual({
+      provider: "apple_health",
+      viaAppleHealth: false,
+    });
+  });
+  it("supports the Apple Health alias", () => {
+    expect(providerSourceLogo("apple-health", "Strong")).toEqual({
+      provider: "strong-csv",
+      viaAppleHealth: true,
+    });
+  });
+  it("keeps direct provider identity", () => {
+    expect(providerSourceLogo("wahoo", "Strong")).toEqual({
+      provider: "wahoo",
+      viaAppleHealth: false,
+    });
   });
 });

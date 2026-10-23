@@ -15,7 +15,7 @@ import {
   formatProviderAbsentTombstoneSummary,
   formatProviderPartialAbsenceSummary,
   type ProviderAbsentSource,
-  providerLabel,
+  providerSourceLabel,
 } from "@dofek/providers/providers";
 import { isIndoorCyclingModality } from "@dofek/training/endurance-types";
 import { formatActivityTypeLabel } from "@dofek/training/training";
@@ -105,10 +105,14 @@ export function ActivityCardContent({
           {activity.source.origin.status === "resolved" ? (
             <span
               role="img"
-              aria-label={`Primary recording provider: ${providerLabel(activity.source.origin.providerId)}`}
+              aria-label={`Primary recording provider: ${providerSourceLabel(activity.source.origin.providerId, activity.source.origin.sourceName)}`}
               className="flex h-12 w-16 shrink-0 items-center justify-center"
             >
-              <ProviderLogo provider={activity.source.origin.providerId} size={32} />
+              <ProviderLogo
+                provider={activity.source.origin.providerId}
+                sourceName={activity.source.origin.sourceName}
+                size={32}
+              />
             </span>
           ) : (
             <ActivityTypeIcon activityType={activity.activityType} variant="plain" />

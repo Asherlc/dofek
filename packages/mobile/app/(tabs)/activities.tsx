@@ -19,7 +19,7 @@ import {
 import { formatMeasurementText, type UnitConverter } from "@dofek/format/units";
 import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { processingPollInterval } from "@dofek/providers/processing-status";
-import { providerLabel, providerSourceLabel } from "@dofek/providers/providers";
+import { providerSourceLabel } from "@dofek/providers/providers";
 import type { ClimbingMapLocation } from "@dofek/training/climbing-map";
 import { isIndoorCyclingModality } from "@dofek/training/endurance-types";
 import { formatActivityTypeLabel } from "@dofek/training/training";
@@ -456,10 +456,11 @@ export default function ActivitiesScreen() {
                         {activity.source.origin.status === "resolved" ? (
                           <View
                             accessibilityRole="image"
-                            accessibilityLabel={`Primary recording provider: ${providerLabel(activity.source.origin.providerId)}`}
+                            accessibilityLabel={`Primary recording provider: ${providerSourceLabel(activity.source.origin.providerId, activity.source.origin.sourceName)}`}
                           >
                             <ProviderLogo
                               provider={activity.source.origin.providerId}
+                              sourceName={activity.source.origin.sourceName}
                               serverUrl={SERVER_URL}
                               size={32}
                             />

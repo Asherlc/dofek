@@ -3,12 +3,14 @@ import {
   PROVIDER_LABELS,
   providerLogoId,
   providerLogoType,
+  providerSourceLogo,
 } from "@dofek/providers/providers";
 import { Image, StyleSheet, Text, View } from "react-native";
 
 interface ProviderLogoProps {
   /** Provider ID (e.g. "strava", "wahoo") */
   provider: string;
+  sourceName?: string | null;
   /** Server base URL for loading logo assets */
   serverUrl: string;
   /** Width & height in px (default 20) */
@@ -21,7 +23,31 @@ function logoUrl(serverUrl: string, provider: string): string | null {
   return null;
 }
 
-export function ProviderLogo({ provider, serverUrl, size = 20 }: ProviderLogoProps) {
+export function ProviderLogo({ provider, sourceName, serverUrl, size = 20 }: ProviderLogoProps) {
+  const source = providerSourceLogo(provider, sourceName);
+  if (source.viaAppleHealth) {
+    const badgeSize = Math.round(size * 0.45);
+    return (
+      <View style={{ position: "relative", width: size, height: size }} accessibilityElementsHidden>
+        <ProviderLogo provider={source.provider} size={size} serverUrl={serverUrl} />
+        <Image
+          source={{ uri: `${serverUrl}/logos/apple_health.png` }}
+          style={{
+            position: "absolute",
+            bottom: 0,
+            right: 0,
+            width: badgeSize,
+            height: badgeSize,
+            borderRadius: badgeSize * 0.2,
+            backgroundColor: "#fff",
+            borderWidth: 1,
+            borderColor: "#fff",
+          }}
+        />
+      </View>
+    );
+  }
+  provider = source.provider;
   const url = logoUrl(serverUrl, provider);
 
   if (url) {
