@@ -34,13 +34,19 @@ final class WatchSessionDelegate: NSObject, ObservableObject, WCSessionDelegate 
     }
 
     func publishRecordingActivity() {
+        guard Thread.isMainThread else {
+            DispatchQueue.main.async { self.publishRecordingActivity() }
+            return
+        }
         let session = WCSession.default
         guard session.activationState == .activated else { return }
         let store = WatchAccountStateStore()
         let recordingContext = store.recordingContext(
             at: Date(),
             recorderAvailable: CMSensorRecorder.isAccelerometerRecordingAvailable(),
-            authorized: CMSensorRecorder.authorizationStatus() == .authorized
+            authorized: CMSensorRecorder.authorizationStatus() == .authorized,
+            gyroscopeStartedAt: GyroscopeRecorder.shared.recordingStartedAt,
+            altimeterStartedAt: AltimeterRecorder.shared.recordingStartedAt
         )
         var context = session.applicationContext
         for (key, value) in recordingContext { context[key] = value }

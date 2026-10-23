@@ -37,21 +37,39 @@ final class WatchAccountStateStore {
     func recordingContext(
         at now: Date,
         recorderAvailable: Bool,
-        authorized: Bool
+        authorized: Bool,
+        gyroscopeStartedAt: Date?,
+        altimeterStartedAt: Date?
     ) -> [String: TimeInterval] {
-        let inactive: [String: TimeInterval] = ["recordingStartedAt": 0, "recordingUntil": 0]
+        var context: [String: TimeInterval] = [
+            "recordingStartedAt": 0, "recordingUntil": 0,
+            "gyroscopeStartedAt": 0, "altimeterStartedAt": 0,
+        ]
+        guard isSyncEnabled else { return context }
+        context["gyroscopeStartedAt"] = recordingTimestamp(gyroscopeStartedAt, at: now)
+        context["altimeterStartedAt"] = recordingTimestamp(altimeterStartedAt, at: now)
         guard recorderAvailable, authorized else {
             clearRecording()
-            return inactive
+            return context
         }
         guard isRecordingActive(at: now), let deadline = recordingDeadline else {
-            return inactive
+            return context
         }
-        return [
-            "recordingStartedAt": deadline.addingTimeInterval(-Self.maximumRecordingDuration)
-                .timeIntervalSince1970,
-            "recordingUntil": deadline.timeIntervalSince1970,
-        ]
+        let startedAt = recordingTimestamp(
+            deadline.addingTimeInterval(-Self.maximumRecordingDuration), at: now
+        )
+        guard startedAt > 0 else { return context }
+        context["recordingStartedAt"] = startedAt
+        context["recordingUntil"] = deadline.timeIntervalSince1970
+        return context
+    }
+
+    private func recordingTimestamp(_ startedAt: Date?, at now: Date) -> TimeInterval {
+        guard let startedAt else { return 0 }
+        let timestamp = startedAt.timeIntervalSince1970
+        guard timestamp.isFinite, timestamp > 0, startedAt <= now else { return 0 }
+        if let cutoff = deviceErasureCutoff, startedAt <= cutoff { return 0 }
+        return timestamp
     }
 
     func clearRecording() {
