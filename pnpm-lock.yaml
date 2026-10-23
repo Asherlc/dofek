@@ -7,6 +7,7 @@ settings:
 
 overrides:
   '@expo/dom-webview': 58.0.2
+  '@expo/cli>zod': 4.6.7
   '@expo/xcpretty>js-yaml': 4.3.2
   '@grpc/grpc-js': 1.14.5
   '@opentelemetry/core': 2.9.0
@@ -49,7 +50,6 @@ overrides:
   uuid: 11.1.1
   ws: 8.21.0
   yaml: 2.9.0
-  zod: 4.6.7
 
 packageExtensionsChecksum: sha256-fO9HymUlYWgNyVUBC8JSVNfpJ2K38bLEkAHKjI8IzCk=
 
@@ -1243,7 +1243,7 @@ packages:
     resolution: {integrity: sha512-Xn+gDWM4Ti2FzYmxhlZtjEuGBGZlOYaQMpwcVRSN4c9qCMUszD5F5TAbkxgLV/tHKeMfEX+WEuTCl6Kkj2r73A==}
     engines: {node: '>=22'}
     peerDependencies:
-      zod: 4.6.7
+      zod: ^3.25.76 || ^4.1.8
 
   '@ai-sdk/otel@1.0.142':
     resolution: {integrity: sha512-hBxBA0yT4DQhKE6KHbUWyjR9ow5pafP6vovLjt6p+YYnoBQhPY+3ZvYm2citaUv8JE7gnGr/6ssKpCCBljMmQA==}
@@ -1253,7 +1253,7 @@ packages:
     resolution: {integrity: sha512-Y+Z3539UXw0ctFDNepTtG23VqBQHr2A6yI2qUxvQcg75DJYgJoD2F9U2Vp5OgQjX7lxto1BLgFtKuOhzrr52vQ==}
     engines: {node: '>=22'}
     peerDependencies:
-      zod: 4.6.7
+      zod: ^3.25.76 || ^4.1.8
 
   '@ai-sdk/provider@4.0.28':
     resolution: {integrity: sha512-6ThcmkJQXSMlBrf6mirIjUUS04Q5/kApbYTOzd5lZfYXLa1XPpnDLxP/G96/DKc00fDIUOW9S2ls0mSzb0+l9w==}
@@ -3871,7 +3871,7 @@ packages:
       '@modelcontextprotocol/server': ^2.0.0
       react: 19.3.0
       react-dom: 19.3.0
-      zod: 4.6.7
+      zod: ^4.2.0
     peerDependenciesMeta:
       '@modelcontextprotocol/server':
         optional: true
@@ -9177,7 +9177,7 @@ packages:
     resolution: {integrity: sha512-Tifni6/6nNhCu4GnFEeYYR7CGmJ3Yhm44SGxYrOupqP2aaZwmGGiiB5Zx4hiauJR0AWimcXULejDT+Qsj+SHOQ==}
     engines: {node: '>=22'}
     peerDependencies:
-      zod: 4.6.7
+      zod: ^3.25.76 || ^4.1.8
 
   ajv@6.15.0:
     resolution: {integrity: sha512-fgFx7Hfoq60ytK2c7DhnF8jIvzYgOMxfugjLOSMHjLIPgenqa7S7oaagATUq99mV6IYvN2tRmC0wnTYX6iPbMw==}
