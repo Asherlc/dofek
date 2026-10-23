@@ -67,9 +67,14 @@ const runtimeContext = {
 
 const posthogMocks = vi.hoisted(() => {
   const captureException = vi.fn();
-  const register = vi.fn();
+  const registeredProperties: Record<string, unknown> = {};
+  const register = vi.fn((properties: Record<string, unknown>) => {
+    Object.assign(registeredProperties, properties);
+  });
   const identify = vi.fn();
-  const reset = vi.fn();
+  const reset = vi.fn(() => {
+    for (const key of Object.keys(registeredProperties)) delete registeredProperties[key];
+  });
   const mockPosthogConstructor = vi.fn(function posthogConstructor(
     _apiKey: string,
     _options: PostHogClientOptions,
@@ -81,7 +86,14 @@ const posthogMocks = vi.hoisted(() => {
       reset,
     };
   });
-  return { captureException, register, identify, reset, mockPosthogConstructor };
+  return {
+    captureException,
+    register,
+    registeredProperties,
+    identify,
+    reset,
+    mockPosthogConstructor,
+  };
 });
 
 type PostHogClientOptions = {
@@ -127,6 +139,9 @@ describe("ios telemetry", () => {
     vi.clearAllMocks();
     vi.stubGlobal("__DEV__", true);
     constantsMock.platform = { ios: { buildNumber: "123" } };
+    for (const key of Object.keys(posthogMocks.registeredProperties)) {
+      delete posthogMocks.registeredProperties[key];
+    }
 
     originalDsn = process.env.EXPO_PUBLIC_SENTRY_DSN;
     originalRelease = process.env.EXPO_PUBLIC_SENTRY_RELEASE;
@@ -360,6 +375,130 @@ describe("ios telemetry", () => {
     });
     expect(mocks.mockCaptureException.mock.lastCall?.[1].extra.userId).toBeUndefined();
     expect(posthogMocks.captureException.mock.lastCall?.[1].userId).toBeUndefined();
+  });
+
+  it("restores non-user PostHog correlation properties after a user reset", async () => {
+    process.env.EXPO_PUBLIC_SENTRY_DSN = "https://key@sentry.example/789";
+    vi.stubGlobal("__DEV__", false);
+    const mod = await import("./telemetry");
+    mod.initTelemetry();
+    mod.identifyUser({ id: "first-account", email: null, name: "First User" });
+
+    mod.resetUser();
+
+    expect(posthogMocks.reset).toHaveBeenCalledOnce();
+    expect(posthogMocks.registeredProperties).toEqual({
+      service: "dofek-mobile",
+      ...runtimeContext,
+    });
+  });
+
+  it("keeps account attribution on OTel records without retaining it in cross-account breadcrumbs", async () => {
+    process.env.EXPO_PUBLIC_SENTRY_DSN = "https://key@sentry.example/789";
+    process.env.EXPO_PUBLIC_OTEL_ENDPOINT = "https://api.axiom.co/v1/logs";
+    const mod = await import("./telemetry");
+    mod.initTelemetry();
+    mod.identifyUser({ id: "first-account", email: null, name: "First User" });
+    mod.logger.info("whoop-ble", "upload_started", { batchId: "first-batch" });
+    mod.resetUser();
+    mod.identifyUser({ id: "second-account", email: null, name: "Second User" });
+    mod.captureException(new Error("Current request failed"), { source: "whoop-ble" });
+
+    expect(mocks.mockEmit.mock.calls[0]?.[0].attributes.userId).toBe("first-account");
+    expect(mocks.mockEmit.mock.lastCall?.[0].attributes.userId).toBe("second-account");
+    expect(mocks.mockAddBreadcrumb.mock.calls[0]?.[0].data).toEqual({
+      ...runtimeContext,
+      batchId: "first-batch",
+    });
+    expect(mocks.mockAddBreadcrumb.mock.lastCall?.[0].data).toEqual({
+      ...runtimeContext,
+      source: "whoop-ble",
+      errorName: "Error",
+    });
+  });
+
+  it("reports retired lifetime failures anonymously without borrowing the next account's identity or route", async () => {
+    process.env.EXPO_PUBLIC_SENTRY_DSN = "https://key@sentry.example/789";
+    process.env.EXPO_PUBLIC_OTEL_ENDPOINT = "https://api.axiom.co/v1/logs";
+    vi.stubGlobal("__DEV__", false);
+    const mod = await import("./telemetry");
+    mod.initTelemetry();
+    mod.identifyUser({ id: "first-account", email: null, name: "First User" });
+    mod.resetUser();
+    mod.identifyUser({ id: "second-account", email: null, name: "Second User" });
+    mod.setTelemetryRoute("/settings");
+    const retiredError = new Error("Retired WHOOP worker failed");
+
+    mod.captureException(retiredError, {
+      source: "whoop-ble-sync",
+      retiredLifetime: true,
+      userId: "first-account",
+    });
+
+    const retiredCaptureContext = mocks.mockCaptureException.mock.calls[0]?.[1];
+    expect(typeof retiredCaptureContext).toBe("function");
+    if (typeof retiredCaptureContext !== "function") {
+      throw new Error("Expected a local Sentry scope override for a retired failure.");
+    }
+    const scopeState: {
+      user: { id: string } | null;
+      tags: Record<string, string>;
+      extra: Record<string, unknown>;
+    } = { user: { id: "second-account" }, tags: {}, extra: {} };
+    const scope = {
+      setUser(user: { id: string } | null) {
+        scopeState.user = user;
+        return this;
+      },
+      setTag(key: string, value: string) {
+        scopeState.tags[key] = value;
+        return this;
+      },
+      setExtras(extra: Record<string, unknown>) {
+        scopeState.extra = extra;
+        return this;
+      },
+    };
+    expect(retiredCaptureContext(scope)).toBe(scope);
+    expect(scopeState.user).toBeNull();
+    expect(scopeState.tags).toEqual({ source: "whoop-ble-sync" });
+    expect(scopeState.extra).toEqual({
+      ...runtimeContext,
+      source: "whoop-ble-sync",
+      retiredLifetime: true,
+    });
+    expect(mocks.mockEmit.mock.calls[0]?.[0].attributes).toEqual({
+      ...runtimeContext,
+      source: "whoop-ble-sync",
+      retiredLifetime: true,
+      errorName: "Error",
+    });
+    expect(posthogMocks.captureException).not.toHaveBeenCalled();
+    expect(mocks.mockSetUser).toHaveBeenLastCalledWith({ id: "second-account" });
+
+    const currentError = new Error("Current request failed");
+    mod.captureException(currentError, { source: "react-query" });
+
+    expect(mocks.mockCaptureException).toHaveBeenLastCalledWith(currentError, {
+      tags: { source: "react-query" },
+      extra: {
+        ...runtimeContext,
+        source: "react-query",
+        userId: "second-account",
+        route: "/settings",
+      },
+    });
+    expect(posthogMocks.captureException).toHaveBeenCalledOnce();
+    expect(posthogMocks.captureException).toHaveBeenLastCalledWith(currentError, {
+      ...runtimeContext,
+      source: "react-query",
+      userId: "second-account",
+      route: "/settings",
+    });
+    expect(mocks.mockEmit.mock.lastCall?.[0].attributes).toMatchObject({
+      userId: "second-account",
+      route: "/settings",
+    });
   });
 
   it("adds the sanitized current route to error context", async () => {

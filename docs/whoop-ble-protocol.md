@@ -342,7 +342,11 @@ The [mobile uploader](../packages/mobile/lib/background-whoop-ble-sync.ts)
 drains IMU and realtime samples independently, with one active worker per
 stream and sequential batches of at most 500 samples within each worker.
 Foreground, periodic, and native background-refresh callers share existing
-workers. A periodic tick can start a new realtime drain while an earlier IMU
+workers within the current sync lifetime. Teardown retires that lifetime, so a
+new login can upload without waiting for an old HTTP request. Cursor handoff
+waits for any pending native peek and releases it with a zero-count confirmation;
+retired requests cannot remove samples or change replacement-worker state.
+A periodic tick can start a new realtime drain while an earlier IMU
 drain is still catching up. Each worker confirms only its own successfully
 uploaded samples; upload failures leave unconfirmed samples in the native
 buffer. The sync waits for both workers to settle before propagating unexpected
@@ -438,7 +442,8 @@ actual grouped request. A previous checkpoint
 is reported once per observed new buffer instance. The
 [native buffer](../packages/mobile/modules/whoop-ble/ios/WhoopBleSampleBuffer.swift)
 retains one metadata checkpoint, updated during capture at most once per 30
-seconds and at explicit diagnostic/discard boundaries. It does not persist
+seconds and at explicit diagnostic/discard boundaries. Positive confirmations
+that empty a stream also checkpoint the resulting queue state. It does not persist
 sensor samples. A changed buffer ID with an earlier nonempty checkpoint is
 evidence of a reset since that observation, not an exact loss count, prior
 account identity, or termination cause. Apple does not guarantee a final

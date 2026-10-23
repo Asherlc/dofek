@@ -376,10 +376,10 @@ native code, following Expo's
 [runtime compatibility guidance](https://docs.expo.dev/eas-update/runtime-versions/).
 
 Runtime 1.13 retains the stable [Expo SDK 58](https://expo.dev/changelog/sdk-58)
-native dependency set with Expo 58.0.16, Expo Router 58.0.24, Expo Updates
-58.0.17, React Native 0.88.0, and React Native SVG 15.16.0, pinned in
+native dependency set with Expo 58.0.17, Expo Router 58.0.25, Expo Updates
+58.0.18, React Native 0.88.0, and React Native SVG 15.16.0, pinned in
 [package.json](./package.json). The
-[Expo 58.0.16 dependency matrix](https://github.com/expo/expo/blob/expo%4058.0.16/packages/expo/bundledNativeModules.json)
+[Expo 58.0.17 dependency matrix](https://github.com/expo/expo/blob/expo%4058.0.17/packages/expo/bundledNativeModules.json)
 also aligns Crypto and Haptics to 58.0.7, Sharing to 58.0.19, Splash Screen to
 58.0.10, Dev Client to 58.0.14, Build Properties to 58.0.11, and Modules Core to
 58.0.23, with Modules JSI 58.0.16 resolved in the [lockfile](../../pnpm-lock.yaml).
@@ -481,6 +481,14 @@ The [authentication state](./lib/auth-context.tsx) sets or clears it when the
 user changes; Sentry identity and PostHog identity follow the same boundary.
 These identifiers support correlation across logs and requests, following
 [OpenTelemetry's context model](https://opentelemetry.io/docs/concepts/context-propagation/).
+Pending HTTP diagnostics retain a session guard and cannot attach an old request
+to a replacement account. Unexpected failures from retired WHOOP work use
+`retiredLifetime=true` and remain visible without an account or replacement route
+in Sentry and OTLP; they do not create a PostHog exception bound to the new user.
+Sentry breadcrumbs omit account IDs, and PostHog resets restore the shared
+runtime properties. These boundaries are covered by the
+[telemetry regressions](./lib/telemetry.test.ts) and
+[transport regressions](./lib/trpc-fetch.test.ts).
 
 WHOOP diagnostics connect native capture/buffer snapshots, per-stream workers,
 upload batches, HTTP responses, and server broker publication without logging

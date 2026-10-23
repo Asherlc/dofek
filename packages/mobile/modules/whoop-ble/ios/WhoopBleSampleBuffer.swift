@@ -295,6 +295,7 @@ final class WhoopBleSampleBuffer {
         imuDiagnostics.confirmedCount += removeCount
         if removeCount > 0 { imuDiagnostics.lastConfirmedAt = now() }
         let remaining = imuSamples.count
+        if removeCount > 0 && remaining == 0 { _ = checkpointLocked(at: now()) }
         lock.unlock()
 
         NSLog("[WhoopBLE] confirmImuDrain: removed %d samples (%d remaining)", removeCount, remaining)
@@ -313,6 +314,7 @@ final class WhoopBleSampleBuffer {
         realtimeDiagnostics.confirmedCount += removeCount
         if removeCount > 0 { realtimeDiagnostics.lastConfirmedAt = now() }
         let remaining = realtimeDataSamples.count
+        if removeCount > 0 && remaining == 0 { _ = checkpointLocked(at: now()) }
         lock.unlock()
 
         NSLog("[WhoopBLE] confirmRealtimeDataDrain: removed %d samples (%d remaining)",

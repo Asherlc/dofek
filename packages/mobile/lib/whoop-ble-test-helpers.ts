@@ -1,3 +1,9 @@
+import { vi } from "vitest";
+import type {
+  InertialMeasurementUnitUploadClient,
+  WhoopBleRealtimeUploadClient,
+  WhoopBleSyncDeps,
+} from "./background-whoop-ble-sync";
 import type { WhoopCaptureStats } from "./whoop-ble-diagnostics";
 
 export function makeWhoopCaptureStats(): WhoopCaptureStats {
@@ -31,6 +37,43 @@ export function makeWhoopCaptureStats(): WhoopCaptureStats {
       imu: { ...stream },
       realtime: { ...stream },
       previousCheckpoint: null,
+    },
+  };
+}
+
+export function makeMockDeps(): WhoopBleSyncDeps {
+  return {
+    isBluetoothAvailable: vi.fn().mockReturnValue(true),
+    findWhoop: vi.fn().mockResolvedValue({ id: "whoop-123", name: "WHOOP 4.0" }),
+    connect: vi.fn().mockResolvedValue(true),
+    startImuStreaming: vi.fn().mockResolvedValue(true),
+    stopImuStreaming: vi.fn().mockResolvedValue(true),
+    peekBufferedSamples: vi.fn().mockResolvedValue([]),
+    confirmSamplesDrain: vi.fn(),
+    peekBufferedRealtimeData: vi.fn().mockResolvedValue([]),
+    confirmRealtimeDataDrain: vi.fn(),
+    addConnectionStateListener: vi.fn().mockReturnValue({ remove: vi.fn() }),
+    disconnect: vi.fn(),
+    getDataPathStats: vi.fn().mockImplementation(makeWhoopCaptureStats),
+  };
+}
+
+export function makeMockTrpcClient(): InertialMeasurementUnitUploadClient {
+  return {
+    inertialMeasurementUnitSync: {
+      pushSamples: {
+        mutate: vi.fn().mockResolvedValue({ inserted: 0 }),
+      },
+    },
+  };
+}
+
+export function makeMockRealtimeClient(): WhoopBleRealtimeUploadClient {
+  return {
+    whoopBleSync: {
+      pushRealtimeData: {
+        mutate: vi.fn().mockResolvedValue({ inserted: 0 }),
+      },
     },
   };
 }

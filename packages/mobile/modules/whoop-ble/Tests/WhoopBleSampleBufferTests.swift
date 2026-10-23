@@ -92,6 +92,47 @@ final class WhoopBleSampleBufferTests: XCTestCase {
         XCTAssertNil(previous["previousCheckpoint"])
     }
 
+    func testFinalRealtimeConfirmationCheckpointsEmptyQueueBeforeRestart() throws {
+        buffer.appendRealtimeData(makeRealtimeSamples(count: 3))
+        _ = buffer.peekRealtimeData(maxCount: 3)
+        buffer.confirmRealtimeDataDrain(count: 3)
+
+        let recreated = WhoopBleSampleBuffer(diagnosticDefaults: diagnosticDefaults)
+        let previous = try XCTUnwrap(recreated.diagnosticSnapshot()["previousCheckpoint"] as? [String: Any])
+        let realtime = try XCTUnwrap(previous["realtime"] as? [String: Any])
+        XCTAssertEqual(realtime["count"] as? Int, 0)
+        XCTAssertEqual(realtime["confirmedCount"] as? Int, 3)
+        XCTAssertNotNil(realtime["lastConfirmedAt"] as? String)
+    }
+
+    func testFinalImuConfirmationCheckpointsEmptyQueueBeforeRestart() throws {
+        buffer.appendImuSamples(makeImuSamples(count: 3))
+        _ = buffer.peekImuSamples(maxCount: 3)
+        buffer.confirmImuDrain(count: 3)
+
+        let recreated = WhoopBleSampleBuffer(diagnosticDefaults: diagnosticDefaults)
+        let previous = try XCTUnwrap(recreated.diagnosticSnapshot()["previousCheckpoint"] as? [String: Any])
+        let imu = try XCTUnwrap(previous["imu"] as? [String: Any])
+        XCTAssertEqual(imu["count"] as? Int, 0)
+        XCTAssertEqual(imu["confirmedCount"] as? Int, 3)
+        XCTAssertNotNil(imu["lastConfirmedAt"] as? String)
+    }
+
+    func testPartialConfirmationAndEmptyCursorReleaseDoNotForceCheckpoints() throws {
+        var observed = Date(timeIntervalSince1970: 1_800_000_000)
+        let capturing = WhoopBleSampleBuffer(diagnosticDefaults: diagnosticDefaults, now: { observed })
+        let initial = capturing.diagnosticSnapshot()
+        observed = observed.addingTimeInterval(1)
+        _ = capturing.peekRealtimeData()
+        capturing.confirmRealtimeDataDrain(count: 0)
+        capturing.appendImuSamples(makeImuSamples(count: 3))
+        _ = capturing.peekImuSamples(maxCount: 1)
+        capturing.confirmImuDrain(count: 1)
+        let afterPartial = WhoopBleSampleBuffer(diagnosticDefaults: diagnosticDefaults)
+        let partial = try XCTUnwrap(afterPartial.diagnosticSnapshot()["previousCheckpoint"] as? [String: Any])
+        XCTAssertEqual(partial["checkpointAt"] as? String, initial["checkpointAt"] as? String)
+    }
+
     func testCaptureCheckpointsAreBoundedWhileJavaScriptIsSuspended() throws {
         var currentDate = Date(timeIntervalSince1970: 1_800_000_000)
         let capturing = WhoopBleSampleBuffer(

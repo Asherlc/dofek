@@ -25,6 +25,7 @@ let loggerProvider: LoggerProvider | undefined;
 let posthogClient: PostHog | undefined;
 let currentTelemetryRoute: string | undefined;
 let currentTelemetryUserId: string | undefined;
+let telemetrySessionGeneration = 0;
 let runtimeContext: Record<string, string> | undefined;
 
 function getRuntimeContext(): Record<string, string> {
@@ -46,7 +47,7 @@ function getRuntimeContext(): Record<string, string> {
 
 function correlateContext(data: Record<string, unknown> = {}): Record<string, unknown> {
   const context = { ...data, ...getRuntimeContext() };
-  if (currentTelemetryUserId) {
+  if (currentTelemetryUserId && data.retiredLifetime !== true) {
     context.userId = currentTelemetryUserId;
   } else {
     delete context.userId;
@@ -156,6 +157,7 @@ type TelemetryUser = {
 };
 
 export function identifyUser(user: TelemetryUser): void {
+  telemetrySessionGeneration += 1;
   currentTelemetryUserId = user.id;
   Sentry.setUser({ id: user.id });
   posthogClient?.identify(user.id, {
@@ -165,9 +167,17 @@ export function identifyUser(user: TelemetryUser): void {
 }
 
 export function resetUser(): void {
+  telemetrySessionGeneration += 1;
   currentTelemetryUserId = undefined;
   Sentry.setUser(null);
   posthogClient?.reset();
+  posthogClient?.register({ service: "dofek-mobile", ...getRuntimeContext() });
+}
+
+/** Capture a check that retires async telemetry when the authenticated session changes. */
+export function captureTelemetrySessionGuard(): () => boolean {
+  const generation = telemetrySessionGeneration;
+  return () => generation === telemetrySessionGeneration;
 }
 
 export function initTelemetry() {
@@ -247,11 +257,12 @@ export function captureException(
   context: Record<string, unknown> = {},
   options: CaptureExceptionOptions = {},
 ) {
+  const retiredLifetime = context.retiredLifetime === true;
   const hasExplicitRoute = typeof context.route === "string";
   const explicitRoute =
     typeof context.route === "string" ? normalizeTelemetryRoute(context.route) : undefined;
   const telemetryContext = correlateContext(
-    hasExplicitRoute || currentTelemetryRoute
+    hasExplicitRoute || (!retiredLifetime && currentTelemetryRoute)
       ? { ...context, route: hasExplicitRoute ? explicitRoute : currentTelemetryRoute }
       : context,
   );
@@ -266,11 +277,22 @@ export function captureException(
     options.reportToErrorTracking !== false &&
     !shouldSuppressBackgroundTransientNetworkError(error, source);
   if (captureToErrorTracking) {
-    Sentry.captureException(error, {
-      ...(source ? { tags: { source } } : {}),
-      extra: telemetryContext,
-    });
-    posthogClient?.captureException(error, sanitizePostHogProperties(telemetryContext));
+    if (retiredLifetime) {
+      Sentry.captureException(error, (scope) => {
+        scope.setUser(null);
+        if (source) scope.setTag("source", source);
+        scope.setExtras(telemetryContext);
+        return scope;
+      });
+    } else {
+      Sentry.captureException(error, {
+        ...(source ? { tags: { source } } : {}),
+        extra: telemetryContext,
+      });
+      // PostHog's mobile captureException binds to its current distinct ID;
+      // retired failures stay in Sentry and OTel without borrowing that identity.
+      posthogClient?.captureException(error, sanitizePostHogProperties(telemetryContext));
+    }
   }
   const errorMessage =
     error instanceof Error ? error.message : typeof error === "string" ? error : "Unknown error";
@@ -291,15 +313,19 @@ function emitLog(
   const logData =
     typeof data?.route === "string"
       ? { ...data, route: normalizeTelemetryRoute(data.route) }
-      : currentTelemetryRoute && (data === undefined || !("route" in data))
+      : data?.retiredLifetime !== true &&
+          currentTelemetryRoute &&
+          (data === undefined || !("route" in data))
         ? { ...data, route: currentTelemetryRoute }
         : data;
   const sanitizedData = sanitizeLogAttributes(correlateContext(logData));
+  const breadcrumbData = sanitizedData ? { ...sanitizedData } : undefined;
+  if (breadcrumbData) delete breadcrumbData.userId;
   Sentry.addBreadcrumb({
     category,
     message,
     level: sentryBreadcrumbLevel(severityText),
-    ...(sanitizedData ? { data: sanitizedData } : {}),
+    ...(breadcrumbData ? { data: breadcrumbData } : {}),
   });
 
   if (loggerProvider) {

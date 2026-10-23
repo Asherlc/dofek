@@ -1,6 +1,6 @@
 # Parallel WHOOP BLE Uploads Implementation Plan
 
-> **For agentic workers:** Use superpowers:executing-plans for this scoped task. Keep test and final-review checkpoints explicit.
+**Execution:** Reproduce the scheduling failure with tests, implement the independent streams, then complete validation and review before committing.
 
 **Goal:** Let realtime heart-rate uploads progress while motion uploads are in flight.
 
@@ -8,7 +8,7 @@
 
 **Tech Stack:** TypeScript, React Native, Vitest; existing native buffers and tRPC endpoints.
 
-**Spec:** The user explicitly requested parallel WHOOP BLE uploads, with one request per stream and existing foreground/confirmation safeguards. The [incident evidence](../../production-incident-baseline.md#2026-10-22--whoop-bluetooth-uploads-absent-from-a-climbing-activity) records the starvation reproduction. Existing behavior is defined by the [uploader](../../../packages/mobile/lib/background-whoop-ble-sync.ts).
+**Spec:** Run WHOOP BLE uploads in parallel, with one request per stream and existing foreground/confirmation safeguards. The [incident evidence](../../production-incident-baseline.md#2026-10-22--whoop-bluetooth-uploads-absent-from-a-climbing-activity) records the starvation reproduction. Existing behavior is defined by the [uploader](../../../packages/mobile/lib/background-whoop-ble-sync.ts).
 
 ## Global Constraints
 
@@ -25,7 +25,7 @@
 - Periodic ticks must upload new realtime samples while a motion drain is still busy.
 - An unexpected failure must not release the sync guard while the other stream is running.
 - Missing realtime clients must preserve motion-only use.
-- Backgrounding and upload failures must retain unconfirmed samples.
+- Moving the app into the background and upload failures must retain unconfirmed samples.
 
 ## Task 1: Independent bounded upload streams
 
@@ -48,13 +48,13 @@
 - [x] Reproduce HTTP batching coupling with the real client, then route upload mutations independently while preserving other transport behavior.
 - [x] Update the protocol guide and incident record with actual validation and rollout limits.
 - [x] Run unit/mobile tests, relevant TypeScript and lint checks, and independent review; address material findings.
-- Commit and push the complete change on the existing branch after those checks pass.
 
 ## Working Notes
 
-- User approval is for parallel streams; the earlier alternating-batch proposal is superseded by that explicit choice.
+- Parallel streams allow each sample type to progress independently while retaining sequential batches within each stream.
 - Existing source ownership and UI behavior do not require platform-specific web changes.
 - Review checkpoint: red tests before implementation; fresh diff review after validation.
 - Independent review identified HTTP batching as an important remaining coupling; its regression failed with one fetch for two mutations before the transport fix, then passed with realtime settling while motion remained pending.
 - Final validation: 82 focused tests passed; full unit/mobile suite passed 20,309 tests (19 skipped) across 1,316 passing files (2 skipped). Mobile TypeScript, `lint:sandbox`, canonical spellcheck, and `git diff --check` passed. No native or database behavior changed.
 - Physical-device rollout and historical recovery remain unverified. The current scheduling defect is reproduced; the earlier workout's capture/retention gap remains unresolved.
+- PR review extracted [native-cursor and worker ownership](../../../packages/mobile/lib/whoop-ble-upload-workers.ts) and [buffer upload loops](../../../packages/mobile/lib/whoop-ble-buffer-drain.ts) with their colocated tests. Workers now belong to a sync lifetime: replacement sessions wait only for pending native peeks, while retired HTTP requests cannot confirm samples or alter replacement state. Teardown cancels observed connections and pending connection intent. All TypeScript files remain below 1,000 lines; 71 focused lifecycle/upload tests and the final 20,451-test unit/mobile run pass.

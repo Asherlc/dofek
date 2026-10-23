@@ -23,6 +23,8 @@ struct WhoopBleCaptureDiagnostics {
                 timeIntervalSince1970:
                     TimeInterval(sample.timestampSeconds) + TimeInterval(sample.subSeconds) / 32_768.0
             )
+            guard sampleDate.timeIntervalSince1970 >= 946_684_800,
+                  sampleDate <= observedAt.addingTimeInterval(300) else { continue }
             lastValidHeartRateAt = lastValidHeartRateAt.map { max($0, sampleDate) } ?? sampleDate
         }
     }

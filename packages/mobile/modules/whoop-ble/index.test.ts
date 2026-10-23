@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const nativeModule = vi.hoisted(() => ({
   addListener: vi.fn(),
   getBufferedSamples: vi.fn(),
+  getDataPathStats: vi.fn(),
   getDeviceSummary: vi.fn(),
   peekBufferedSamples: vi.fn(),
   peekBufferedRealtimeData: vi.fn(),
@@ -13,17 +14,154 @@ vi.mock("./src/WhoopBleModule", () => ({ default: nativeModule }));
 
 import {
   addDeviceStateListener,
+  getDataPathStats,
   getDeviceSummary,
   peekBufferedRealtimeData,
   peekBufferedSamples,
 } from "./index";
 
+function makeBufferStreamDiagnostics() {
+  return {
+    count: 0,
+    oldestTimestamp: null,
+    newestTimestamp: null,
+    receivedCount: 4,
+    confirmedCount: 3,
+    overflowDiscardedCount: 0,
+    erasureDiscardedCount: 0,
+    clearedCount: 1,
+    legacyDrainedCount: 0,
+    lastConfirmedAt: "2026-10-23T03:00:00.000Z",
+  };
+}
+
+function makeBufferCheckpoint() {
+  return {
+    bufferInstanceId: "9a5b18b9-6037-47b7-ac55-fc2484191178",
+    bufferCreatedAt: "2026-10-23T02:00:00.000Z",
+    checkpointAt: "2026-10-23T03:00:00.000Z",
+    imu: makeBufferStreamDiagnostics(),
+    realtime: {
+      ...makeBufferStreamDiagnostics(),
+      count: 1,
+      oldestTimestamp: "2026-10-23T02:59:00.000Z",
+      newestTimestamp: "2026-10-23T02:59:00.000Z",
+      clearedCount: 0,
+      lastConfirmedAt: null,
+    },
+  };
+}
+
+function makeDataPathStats() {
+  return {
+    dataNotificationCount: 100,
+    cmdNotificationCount: 2,
+    totalFramesParsed: 100,
+    totalSamplesExtracted: 40,
+    emptyExtractions: 0,
+    bufferOverflows: 0,
+    packetTypes: "0x28:100",
+    lastCommandResponse: "",
+    connectionState: "ready",
+    lastKnownDeviceId: "WHOOP Strap",
+    hasDataCharacteristic: true,
+    isNotifying: true,
+    hasCmdCharacteristic: true,
+    hasCmdResponseCharacteristic: true,
+    lastWriteError: "none",
+    watchdogRetryCount: 0,
+    malformedFrames: 0,
+    malformedCmdFrames: 0,
+    coalescedFrames: 0,
+    coalescedCmdFrames: 0,
+    realtimeBufferCount: 1,
+    lastDataNotificationAt: "2026-10-23T03:00:00.000Z",
+    lastParsedImuAt: null,
+    lastParsedRealtimeAt: "2026-10-23T03:00:00.000Z",
+    lastValidHeartRateAt: "2026-10-23T02:59:00.000Z",
+    buffers: {
+      ...makeBufferCheckpoint(),
+      previousCheckpoint: makeBufferCheckpoint(),
+    },
+  };
+}
+
 describe("WhoopBle native bridge", () => {
   beforeEach(() => {
     nativeModule.addListener.mockReset();
+    nativeModule.getDataPathStats.mockReset();
     nativeModule.getDeviceSummary.mockReset();
     nativeModule.peekBufferedSamples.mockReset();
     nativeModule.peekBufferedRealtimeData.mockReset();
+  });
+
+  it("preserves validated capture diagnostics and current and previous buffer checkpoints", () => {
+    const stats = makeDataPathStats();
+    nativeModule.getDataPathStats.mockReturnValue(stats);
+
+    expect(getDataPathStats()).toEqual(stats);
+  });
+
+  it("accepts unavailable device, capture dates and previous checkpoint as null", () => {
+    const stats = {
+      ...makeDataPathStats(),
+      lastKnownDeviceId: null,
+      lastDataNotificationAt: null,
+      lastParsedRealtimeAt: null,
+      lastValidHeartRateAt: null,
+      buffers: { ...makeBufferCheckpoint(), previousCheckpoint: null },
+    };
+    nativeModule.getDataPathStats.mockReturnValue(stats);
+
+    expect(getDataPathStats()).toEqual(stats);
+  });
+
+  it.each([
+    { field: "dataNotificationCount", invalid: { dataNotificationCount: "100" } },
+    { field: "isNotifying", invalid: { isNotifying: "true" } },
+    { field: "lastDataNotificationAt", invalid: { lastDataNotificationAt: "yesterday" } },
+    { field: "totalSamplesExtracted", invalid: { totalSamplesExtracted: -1 } },
+  ])("rejects malformed native capture field $field", ({ field, invalid }) => {
+    nativeModule.getDataPathStats.mockReturnValue({ ...makeDataPathStats(), ...invalid });
+
+    expect(() => getDataPathStats()).toThrow(field);
+  });
+
+  it.each([
+    { field: "bufferInstanceId", invalid: { bufferInstanceId: "not-a-uuid" } },
+    { field: "checkpointAt", invalid: { checkpointAt: "yesterday" } },
+    {
+      field: "count",
+      invalid: { imu: { ...makeBufferStreamDiagnostics(), count: -1 } },
+    },
+    {
+      field: "confirmedCount",
+      invalid: { realtime: { ...makeBufferStreamDiagnostics(), confirmedCount: 0.5 } },
+    },
+  ])("rejects malformed current buffer checkpoint field $field", ({ field, invalid }) => {
+    const stats = makeDataPathStats();
+    nativeModule.getDataPathStats.mockReturnValue({
+      ...stats,
+      buffers: { ...stats.buffers, ...invalid },
+    });
+
+    expect(() => getDataPathStats()).toThrow(field);
+  });
+
+  it("rejects malformed previous buffer checkpoint counters", () => {
+    const stats = makeDataPathStats();
+    nativeModule.getDataPathStats.mockReturnValue({
+      ...stats,
+      buffers: {
+        ...stats.buffers,
+        previousCheckpoint: {
+          ...makeBufferCheckpoint(),
+          imu: { ...makeBufferStreamDiagnostics(), overflowDiscardedCount: "1" },
+        },
+      },
+    });
+
+    expect(() => getDataPathStats()).toThrow(/previousCheckpoint/);
   });
 
   it("rejects malformed native summaries", () => {

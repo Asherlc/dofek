@@ -71,13 +71,16 @@ snapshot: `bufferInstanceId`, `bufferCreatedAt`, `checkpointAt`, `imu`,
 minimum/maximum sample timestamps, received and confirmed counts, discard counts
 for overflow/erasure/clear/legacy drains, and `lastConfirmedAt`. Notification and
 parsed-sample timestamps use phone observation time; `lastValidHeartRateAt` uses
-the device timestamp of the latest positive reported BPM. See the
+the device timestamp of the latest positive reported BPM whose clock is between
+year 2000 and five minutes after phone observation time. See the
 [TypeScript contract](index.ts) and
 [native capture diagnostics](ios/WhoopBleCaptureDiagnostics.swift).
 
 The [buffer](ios/WhoopBleSampleBuffer.swift) checkpoints bounded metadata during
 capture at most once per 30 seconds, and when diagnostics or explicit discard
-boundaries request a snapshot. One previous checkpoint is available after a
+boundaries request a snapshot. A positive confirmation that empties a stream also
+checkpoints the resulting queue state; releasing a peek with count zero retains
+every sample. One previous checkpoint is available after a
 new buffer instance starts. Samples remain in memory and are never restored
 from that checkpoint; prior account ownership is unknown. It is last-observed
 evidence, not an exact loss count or termination reason. Apple does not guarantee

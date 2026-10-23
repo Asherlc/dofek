@@ -232,65 +232,74 @@ export function getDeviceSummary(): WhoopDeviceSummary {
   return WhoopDeviceSummarySchema.parse(WhoopBleModule.getDeviceSummary());
 }
 
-export interface WhoopBufferStreamDiagnostics {
-  count: number;
-  oldestTimestamp: string | null;
-  newestTimestamp: string | null;
-  receivedCount: number;
-  confirmedCount: number;
-  overflowDiscardedCount: number;
-  erasureDiscardedCount: number;
-  clearedCount: number;
-  legacyDrainedCount: number;
-  lastConfirmedAt: string | null;
-}
+const DiagnosticCountSchema = z.number().int().nonnegative();
+const DiagnosticTimestampSchema = z.iso.datetime({ offset: true });
+
+const WhoopBufferStreamDiagnosticsSchema = z.object({
+  count: DiagnosticCountSchema,
+  oldestTimestamp: DiagnosticTimestampSchema.nullable(),
+  newestTimestamp: DiagnosticTimestampSchema.nullable(),
+  receivedCount: DiagnosticCountSchema,
+  confirmedCount: DiagnosticCountSchema,
+  overflowDiscardedCount: DiagnosticCountSchema,
+  erasureDiscardedCount: DiagnosticCountSchema,
+  clearedCount: DiagnosticCountSchema,
+  legacyDrainedCount: DiagnosticCountSchema,
+  lastConfirmedAt: DiagnosticTimestampSchema.nullable(),
+});
+
+export type WhoopBufferStreamDiagnostics = z.infer<typeof WhoopBufferStreamDiagnosticsSchema>;
+
+const WhoopBufferCheckpointSchema = z.object({
+  bufferInstanceId: z.uuid(),
+  bufferCreatedAt: DiagnosticTimestampSchema,
+  checkpointAt: DiagnosticTimestampSchema,
+  imu: WhoopBufferStreamDiagnosticsSchema,
+  realtime: WhoopBufferStreamDiagnosticsSchema,
+});
 
 /** Metadata observed before a buffer was recreated; samples are never persisted. */
-export interface WhoopBufferCheckpoint {
-  bufferInstanceId: string;
-  bufferCreatedAt: string;
-  checkpointAt: string;
-  imu: WhoopBufferStreamDiagnostics;
-  realtime: WhoopBufferStreamDiagnostics;
-}
+export type WhoopBufferCheckpoint = z.infer<typeof WhoopBufferCheckpointSchema>;
 
-export interface WhoopDataPathStats {
-  dataNotificationCount: number;
-  cmdNotificationCount: number;
-  totalFramesParsed: number;
-  totalSamplesExtracted: number;
+const WhoopDataPathStatsSchema = z.object({
+  dataNotificationCount: DiagnosticCountSchema,
+  cmdNotificationCount: DiagnosticCountSchema,
+  totalFramesParsed: DiagnosticCountSchema,
+  totalSamplesExtracted: DiagnosticCountSchema,
 
-  emptyExtractions: number;
-  bufferOverflows: number;
-  packetTypes: string;
-  lastCommandResponse: string;
-  connectionState: string;
-  lastKnownDeviceId: string | null;
-  hasDataCharacteristic: boolean;
-  isNotifying: boolean;
-  hasCmdCharacteristic: boolean;
-  hasCmdResponseCharacteristic: boolean;
-  lastWriteError: string;
-  watchdogRetryCount: number;
-  malformedFrames: number;
-  malformedCmdFrames: number;
-  coalescedFrames: number;
-  coalescedCmdFrames: number;
-  realtimeBufferCount: number;
-  lastDataNotificationAt: string | null;
-  lastParsedImuAt: string | null;
-  lastParsedRealtimeAt: string | null;
+  emptyExtractions: DiagnosticCountSchema,
+  bufferOverflows: DiagnosticCountSchema,
+  packetTypes: z.string(),
+  lastCommandResponse: z.string(),
+  connectionState: z.string().min(1),
+  lastKnownDeviceId: z.string().nullable(),
+  hasDataCharacteristic: z.boolean(),
+  isNotifying: z.boolean(),
+  hasCmdCharacteristic: z.boolean(),
+  hasCmdResponseCharacteristic: z.boolean(),
+  lastWriteError: z.string(),
+  watchdogRetryCount: DiagnosticCountSchema,
+  malformedFrames: DiagnosticCountSchema,
+  malformedCmdFrames: DiagnosticCountSchema,
+  coalescedFrames: DiagnosticCountSchema,
+  coalescedCmdFrames: DiagnosticCountSchema,
+  realtimeBufferCount: DiagnosticCountSchema,
+  lastDataNotificationAt: DiagnosticTimestampSchema.nullable(),
+  lastParsedImuAt: DiagnosticTimestampSchema.nullable(),
+  lastParsedRealtimeAt: DiagnosticTimestampSchema.nullable(),
   /** Latest device timestamp with a positive reported heart rate, not receipt time. */
-  lastValidHeartRateAt: string | null;
-  buffers: WhoopBufferCheckpoint & {
+  lastValidHeartRateAt: DiagnosticTimestampSchema.nullable(),
+  buffers: WhoopBufferCheckpointSchema.extend({
     /** Prior buffer identity has no account attribution; this is last-observed metadata. */
-    previousCheckpoint: WhoopBufferCheckpoint | null;
-  };
-}
+    previousCheckpoint: WhoopBufferCheckpointSchema.nullable(),
+  }),
+});
+
+export type WhoopDataPathStats = z.infer<typeof WhoopDataPathStatsSchema>;
 
 /** Get BLE capture, queue, discard, and prior-checkpoint metadata. */
 export function getDataPathStats(): WhoopDataPathStats {
-  return WhoopBleModule.getDataPathStats();
+  return WhoopDataPathStatsSchema.parse(WhoopBleModule.getDataPathStats());
 }
 
 /**
