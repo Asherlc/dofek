@@ -2,14 +2,17 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createTrpcFetch } from "./trpc-fetch";
 
 const mockCaptureException = vi.hoisted(() => vi.fn());
+const mockLogInfo = vi.hoisted(() => vi.fn());
 
 vi.mock("./telemetry", () => ({
   captureException: mockCaptureException,
+  logger: { info: mockLogInfo },
 }));
 
 describe("createTrpcFetch", () => {
   beforeEach(() => {
     mockCaptureException.mockClear();
+    mockLogInfo.mockClear();
   });
 
   it("throws an actionable error when tRPC receives a non-JSON response", async () => {
@@ -153,5 +156,32 @@ describe("createTrpcFetch", () => {
     await expect(
       trpcFetch("https://dofek.test/api/trpc/whoopBleSync.pushRealtimeData"),
     ).resolves.toBe(response);
+  });
+
+  it("records actual HTTP status with upload correlation before response diagnostics", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response("payload too large", {
+        status: 413,
+        headers: { "content-type": "text/plain" },
+      }),
+    );
+    const trpcFetch = createTrpcFetch(fetchImpl);
+
+    await expect(
+      trpcFetch("https://dofek.test/api/trpc/whoopBleSync.pushRealtimeData", {
+        headers: { "x-dofek-upload-id": "11111111-1111-4111-8111-111111111111" },
+      }),
+    ).rejects.toThrow("413");
+
+    expect(mockLogInfo).toHaveBeenCalledWith(
+      "whoop-ble",
+      "upload_http_response",
+      expect.objectContaining({
+        event: "upload_http_response",
+        batchId: "11111111-1111-4111-8111-111111111111",
+        httpStatus: 413,
+        elapsedMs: expect.any(Number),
+      }),
+    );
   });
 });

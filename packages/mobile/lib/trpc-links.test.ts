@@ -28,10 +28,12 @@ describe("createMobileTrpcLinks", () => {
       deviceId: "whoop-123",
       deviceType: "whoop",
       samples: [],
+      telemetry: { batchId: "11111111-1111-4111-8111-111111111111" },
     });
     const realtime = client.whoopBleSync.pushRealtimeData.mutate({
       deviceId: "whoop-123",
       samples: [],
+      telemetry: { batchId: "22222222-2222-4222-8222-222222222222" },
     });
     const motionFinished = vi.fn();
     void motion.then(motionFinished);
@@ -46,6 +48,11 @@ describe("createMobileTrpcLinks", () => {
         expect(new URL(String(input)).searchParams.has("batch")).toBe(false);
         expect(init?.method).toBe("POST");
         expect(new Headers(init?.headers).get("Authorization")).toBe("Bearer session-token");
+        expect(new Headers(init?.headers).get("x-dofek-upload-id")).toBe(
+          String(input).includes("inertialMeasurementUnitSync")
+            ? "11111111-1111-4111-8111-111111111111"
+            : "22222222-2222-4222-8222-222222222222",
+        );
       }
       realtimeResponse.resolve();
       await expect(realtime).resolves.toEqual({ inserted: 1 });

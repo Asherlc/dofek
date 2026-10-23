@@ -69,6 +69,7 @@ extension WhoopBleModule: WhoopBleConnectionManagerDelegate {
         guard let deviceId = manager.connectedPeripheral?.identifier.uuidString else { return }
 
         dataNotificationCount += 1
+        captureDiagnostics.recordNotification()
         watchdog.recordDataReceived()
 
         let frames = frameParser.feed(data)
@@ -98,6 +99,10 @@ extension WhoopBleModule: WhoopBleConnectionManagerDelegate {
             }
         }
 
+        captureDiagnostics.recordParsed(
+            imuCount: newImuSamples.count,
+            realtimeSamples: newRealtimeData
+        )
         sampleBuffer.appendRealtimeData(newRealtimeData, deviceId: deviceId)
 
         if newImuSamples.isEmpty && newRealtimeData.isEmpty {

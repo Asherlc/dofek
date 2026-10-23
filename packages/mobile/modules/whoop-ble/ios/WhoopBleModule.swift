@@ -31,6 +31,7 @@ public class WhoopBleModule: Module {
     internal var emptyExtractions: UInt64 = 0
     internal var packetTypeCounts: [UInt8: UInt64] = [:]
     internal var lastCommandResponse: String = "none"
+    internal var captureDiagnostics = WhoopBleCaptureDiagnostics()
 
     // swiftlint:disable:next function_body_length
     public func definition() -> ModuleDefinition {
@@ -164,7 +165,7 @@ public class WhoopBleModule: Module {
                     .map { String(format: "0x%02X:%llu", $0.key, $0.value) }
                     .joined(separator: ", ")
 
-                return [
+                var stats: [String: Any] = [
                     "dataNotificationCount": Int(self.dataNotificationCount),
                     "cmdNotificationCount": Int(self.cmdNotificationCount),
                     "totalFramesParsed": Int(self.totalFramesParsed),
@@ -174,6 +175,7 @@ public class WhoopBleModule: Module {
                     "packetTypes": packetTypeSummary,
                     "lastCommandResponse": self.lastCommandResponse,
                     "connectionState": self.connectionManager.state.rawValue,
+                    "lastKnownDeviceId": self.lastKnownDeviceId ?? NSNull(),
                     "hasDataCharacteristic": self.connectionManager.hasDataCharacteristic,
                     "isNotifying": self.connectionManager.isNotifying,
                     "hasCmdCharacteristic": self.connectionManager.hasCmdCharacteristic,
@@ -185,7 +187,10 @@ public class WhoopBleModule: Module {
                     "malformedCmdFrames": Int(self.cmdFrameParser.malformedFrameCount),
                     "coalescedFrames": Int(self.frameParser.coalescedFrameCount),
                     "coalescedCmdFrames": Int(self.cmdFrameParser.coalescedFrameCount),
+                    "buffers": self.sampleBuffer.diagnosticSnapshot(),
                 ]
+                stats.merge(self.captureDiagnostics.payload) { _, captured in captured }
+                return stats
             }
         }
 
@@ -291,6 +296,7 @@ public class WhoopBleModule: Module {
             self.connectionManager.bleQueue.async {
                 self.watchdog.stop()
                 self.sampleBuffer.advanceErasureCutoff(to: retainedCutoff)
+                self.sampleBuffer.resetDiagnosticHistory()
                 self.frameParser.reset()
                 self.cmdFrameParser.reset()
                 self.orientationProcessor.reset()
@@ -301,6 +307,7 @@ public class WhoopBleModule: Module {
                 self.emptyExtractions = 0
                 self.packetTypeCounts.removeAll()
                 self.lastCommandResponse = "none"
+                self.captureDiagnostics = WhoopBleCaptureDiagnostics()
                 self.lastKnownDeviceId = nil
                 self.lastKnownDeviceName = nil
                 self.connectionManager.disconnect { [weak self] in

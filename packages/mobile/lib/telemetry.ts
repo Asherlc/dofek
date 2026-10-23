@@ -4,8 +4,12 @@ import { resourceFromAttributes } from "@opentelemetry/resources";
 import { BatchLogRecordProcessor, LoggerProvider } from "@opentelemetry/sdk-logs";
 import { ATTR_SERVICE_NAME } from "@opentelemetry/semantic-conventions";
 import * as Sentry from "@sentry/react-native";
+import Constants from "expo-constants";
+import { randomUUID } from "expo-crypto";
+import * as Updates from "expo-updates";
 import PostHog from "posthog-react-native";
 import { shouldSuppressBackgroundTransientNetworkError } from "./health-kit-errors";
+import { getVersionHeaders } from "./version-headers";
 
 const SENTRY_DSN: string | undefined = process.env.EXPO_PUBLIC_SENTRY_DSN;
 const SENTRY_RELEASE: string | undefined = process.env.EXPO_PUBLIC_SENTRY_RELEASE;
@@ -20,6 +24,35 @@ let initialized = false;
 let loggerProvider: LoggerProvider | undefined;
 let posthogClient: PostHog | undefined;
 let currentTelemetryRoute: string | undefined;
+let currentTelemetryUserId: string | undefined;
+let runtimeContext: Record<string, string> | undefined;
+
+function getRuntimeContext(): Record<string, string> {
+  if (!runtimeContext) {
+    const versionHeaders = getVersionHeaders();
+    runtimeContext = {
+      appVersion: versionHeaders["x-app-version"],
+      appBuild:
+        Constants.platform?.ios?.buildNumber ??
+        Constants.platform?.android?.versionCode?.toString() ??
+        "unknown",
+      assetsVersion: versionHeaders["x-assets-version"],
+      runtimeVersion: Updates.runtimeVersion ?? "unknown",
+      runtimeId: randomUUID(),
+    };
+  }
+  return runtimeContext;
+}
+
+function correlateContext(data: Record<string, unknown> = {}): Record<string, unknown> {
+  const context = { ...data, ...getRuntimeContext() };
+  if (currentTelemetryUserId) {
+    context.userId = currentTelemetryUserId;
+  } else {
+    delete context.userId;
+  }
+  return context;
+}
 
 const uuidRouteSegment =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -123,6 +156,8 @@ type TelemetryUser = {
 };
 
 export function identifyUser(user: TelemetryUser): void {
+  currentTelemetryUserId = user.id;
+  Sentry.setUser({ id: user.id });
   posthogClient?.identify(user.id, {
     email: user.email,
     name: user.name,
@@ -130,6 +165,8 @@ export function identifyUser(user: TelemetryUser): void {
 }
 
 export function resetUser(): void {
+  currentTelemetryUserId = undefined;
+  Sentry.setUser(null);
   posthogClient?.reset();
 }
 
@@ -168,7 +205,7 @@ export function initTelemetry() {
         },
       },
     });
-    posthogClient.register({ service: "dofek-mobile" });
+    posthogClient.register({ service: "dofek-mobile", ...getRuntimeContext() });
   }
 
   const logProcessors = createLogProcessors();
@@ -213,10 +250,11 @@ export function captureException(
   const hasExplicitRoute = typeof context.route === "string";
   const explicitRoute =
     typeof context.route === "string" ? normalizeTelemetryRoute(context.route) : undefined;
-  const telemetryContext =
+  const telemetryContext = correlateContext(
     hasExplicitRoute || currentTelemetryRoute
       ? { ...context, route: hasExplicitRoute ? explicitRoute : currentTelemetryRoute }
-      : context;
+      : context,
+  );
   const source = typeof context.source === "string" ? context.source : undefined;
   // Suppress non-actionable transient network failures from declared background
   // sync sources at every error-tracking destination. Applying the check here
@@ -256,7 +294,7 @@ function emitLog(
       : currentTelemetryRoute && (data === undefined || !("route" in data))
         ? { ...data, route: currentTelemetryRoute }
         : data;
-  const sanitizedData = sanitizeLogAttributes(logData);
+  const sanitizedData = sanitizeLogAttributes(correlateContext(logData));
   Sentry.addBreadcrumb({
     category,
     message,

@@ -380,6 +380,110 @@ count does not establish that samples from an earlier workout were captured
 or remain recoverable. Check the sample timestamps and account-scoped server
 arrival before making that claim.
 
+### Diagnosing capture, upload, and visibility
+
+Use a bounded UTC incident window and the authenticated account ID. The
+[mobile telemetry boundary](../packages/mobile/lib/telemetry.ts) adds canonical
+`userId`, `appVersion`, native `appBuild`, `assetsVersion`, `runtimeVersion`,
+and JavaScript-lifetime `runtimeId` to logs/errors. Authentication changes clear
+or replace that identity immediately through the
+[auth context](../packages/mobile/lib/auth-context.tsx); caller attributes cannot
+override it. Buffer and batch IDs connect the stages below. This is operational
+correlation metadata, following
+[OpenTelemetry's context model](https://opentelemetry.io/docs/concepts/context-propagation/),
+without logging sensor values.
+
+| Evidence | Fields and events | Interpretation |
+| --- | --- | --- |
+| Capture | `capture_snapshot`: `lastKnownDeviceId`, `connectionState`, `isNotifying`, `dataNotificationCount`, `totalFramesParsed`, `malformedFrames`, `lastDataNotificationAt`, `lastParsedImuAt`, `lastParsedRealtimeAt`, `lastValidHeartRateAt` | Compare successive observations within one buffer/runtime. Notification and parsed timestamps are phone observation times; `lastValidHeartRateAt` is a device sample timestamp. A connected state alone does not prove usable capture; last-known identity does not prove a current connection. |
+| Retained queue | `bufferInstanceId`, `bufferCreatedAt`, `checkpointAt`; stream-prefixed `imuCount`/`realtimeCount`, `OldestTimestamp`, `NewestTimestamp`, `ReceivedCount`, `ConfirmedCount`, `OverflowDiscardedCount`, `ErasureDiscardedCount`, `ClearedCount`, `LegacyDrainedCount`, `LastConfirmedAt` | Counts and true minimum/maximum sample times distinguish retained backlog from explicit removals, including out-of-order samples. Native confirmation counters describe actual removals. |
+| Scheduling | `worker_started`, `worker_joined`, `worker_finished`, `upload_skipped`; snapshot fields such as `realtimeWorkerActive`, `realtimeWorkerAgeMs`, `realtimeRequestPending`, `realtimePendingRequestAgeMs`, `realtimePendingBatchId` | Growing queue with no upload attempt points to scheduling/permission decisions; an aging pending request points farther along the upload path. Inspect `trigger`, `appState`, and skipped `reason`. |
+| Request and confirmation | `upload_started`, `upload_http_response`, `upload_acknowledged`, `upload_failed`, `buffer_confirmed`; `stream`, `deviceId`, `batchId`, `sampleCount`, `firstTimestamp`, `lastTimestamp`, `elapsedMs` | Follow the same batch from attempt through acknowledgment and native confirmation. HTTP diagnostics report actual `httpStatus`; a response alone is not successful tRPC completion. |
+| Server receipt/publication | `upload_received`, `upload_published`, `upload_failed`; `inputSampleCount`, `acceptedSampleCount`, `filteredSampleCount`, `publishedRowCount`, timestamp bounds, `boundary` | `boundary=redpanda` means the awaited broker publication completed. `boundary=no_metric_rows` means no metric rows were published, even if the request succeeded. Neither proves ClickHouse or chart visibility. |
+
+`buffer_confirmed.requestedConfirmationCount` and
+`requestedErasureDiscardCount` describe what JavaScript requested, not the
+number actually removed. Concurrent overflow can reduce a subsequent native
+confirmation; use snapshot `imuConfirmedCount`/`realtimeConfirmedCount` and
+discard-counter deltas for actual removals.
+
+The [diagnostics model](../packages/mobile/lib/whoop-ble-diagnostics.ts),
+[native contract](../packages/mobile/modules/whoop-ble/index.ts),
+[HTTP boundary](../packages/mobile/lib/trpc-fetch.ts), and
+[server helper](../packages/server/src/lib/sensor-upload-telemetry.ts) define the
+exact fields. Each grouped request carries `telemetry.batchId` and optional
+`telemetry.bufferInstanceId`; the
+[transport](../packages/mobile/lib/trpc-links.ts) copies the same batch UUID to
+`x-dofek-upload-id`. Server receipt/publication uses the authenticated account,
+device and request metadata, with true accepted-sample timestamp bounds.
+Published row counts can differ from sample counts because one realtime sample
+can produce multiple channels, as defined by the
+[upload repository](../packages/server/src/repositories/whoop-ble-sync-repository.ts).
+Broker acknowledgment follows the producer's configured KafkaJS
+[`send` acknowledgment boundary](https://kafka.js.org/docs/producing#producing-messages),
+not downstream consumer completion.
+
+In the log explorer, discover the live service/attribute names first, then use
+these exact attribute filters with the incident's UTC start/end:
+
+| Search | Filters |
+| --- | --- |
+| Capture and queue progression | Service `dofek-mobile`, `userId=<account>`, `event=capture_snapshot`; group observations by `runtimeId` and `bufferInstanceId`. |
+| One upload's mobile lifecycle | Service `dofek-mobile`, `userId=<account>`, `batchId=<UUID>`; inspect `upload_started`, `upload_http_response`, `upload_acknowledged`, and `upload_failed`. `buffer_confirmed` carries the correlated UUIDs in `batchIds`. |
+| Server receipt and publication | Service `dofek-web`, `userId=<account>`, `deviceId=<device>`, `batchId=<UUID>`; inspect `upload_received`, `upload_published`, and `upload_failed`. |
+| Restart evidence | Service `dofek-mobile`, `event=previous_buffer_checkpoint`; compare current/previous buffer IDs and checkpoint time. `checkpointAccountProvenance=unknown` prohibits treating previous data as proven history of the currently logged-in account. |
+
+Capture snapshots use `lastKnownDeviceId`; upload events use `deviceId` for the
+actual grouped request. A previous checkpoint
+is reported once per observed new buffer instance. The
+[native buffer](../packages/mobile/modules/whoop-ble/ios/WhoopBleSampleBuffer.swift)
+retains one metadata checkpoint, updated during capture at most once per 30
+seconds and at explicit diagnostic/discard boundaries. It does not persist
+sensor samples. A changed buffer ID with an earlier nonempty checkpoint is
+evidence of a reset since that observation, not an exact loss count, prior
+account identity, or termination cause. Apple does not guarantee a final
+[`applicationWillTerminate` callback](https://developer.apple.com/documentation/uikit/uiapplicationdelegate/applicationwillterminate(_:)).
+Missing logs therefore do not prove capture stopped.
+
+After `upload_published` with `boundary=redpanda`, follow the existing
+[consumer-lag and freshness checks](metric-stream-redpanda-r2-runbook.md#freshness-checks).
+Then compare account/device/time coverage in raw and serving storage. Replace
+the example account, device, and UTC bounds below with the incident scope:
+
+```sql
+SELECT
+    channel,
+    count() AS row_count,
+    min(recorded_at) AS first_sample_at,
+    max(recorded_at) AS last_sample_at
+FROM ingest.metric_stream FINAL
+WHERE user_id = toUUID('00000000-0000-0000-0000-000000000000')
+    AND provider_id = 'whoop_ble'
+    AND device_id = 'REPLACE_WITH_DEVICE_ID'
+    AND recorded_at >= toDateTime64('2026-10-22 14:53:00', 6, 'UTC')
+    AND recorded_at < toDateTime64('2026-10-22 15:51:00', 6, 'UTC')
+    AND channel IN ('heart_rate', 'rr_interval_ms')
+    AND is_deleted = 0
+GROUP BY channel;
+```
+
+Repeat the same bounded query against `analytics.sensor_scalar_sample FINAL`,
+using `_peerdb_is_deleted = 0` in place of `is_deleted = 0`. The
+[scalar projection](../analytics/models/staging/sensor_scalar_sample.sql)
+derives heart rate from intervals, so compare timestamp coverage and source
+identity rather than expecting identical channel counts. Published data missing
+from raw storage requires sink/consumer investigation; raw data present but
+absent from the scalar projection requires analytics freshness investigation.
+If both contain the samples, inspect the activity source selection and response.
+These checks do not provide an exact batch receipt in the sink: the upload UUID
+is log correlation metadata, not a stored sensor-row key.
+
+The expanded native bridge requires a new runtime 1.13 binary, as declared in
+[app.json](../packages/mobile/app.json); an OTA update cannot add native code.
+Follow Expo's [runtime compatibility guidance](https://docs.expo.dev/eas-update/runtime-versions/)
+and verify a real device's version/build before interpreting absent new fields.
+The telemetry does not establish what happened before that build was installed.
+
 ### Investigating Bluetooth/cloud differences
 
 Compare readings from the same activity window at nearby timestamps before

@@ -232,8 +232,29 @@ export function getDeviceSummary(): WhoopDeviceSummary {
   return WhoopDeviceSummarySchema.parse(WhoopBleModule.getDeviceSummary());
 }
 
-/** Get BLE data path statistics for debugging. */
-export function getDataPathStats(): {
+export interface WhoopBufferStreamDiagnostics {
+  count: number;
+  oldestTimestamp: string | null;
+  newestTimestamp: string | null;
+  receivedCount: number;
+  confirmedCount: number;
+  overflowDiscardedCount: number;
+  erasureDiscardedCount: number;
+  clearedCount: number;
+  legacyDrainedCount: number;
+  lastConfirmedAt: string | null;
+}
+
+/** Metadata observed before a buffer was recreated; samples are never persisted. */
+export interface WhoopBufferCheckpoint {
+  bufferInstanceId: string;
+  bufferCreatedAt: string;
+  checkpointAt: string;
+  imu: WhoopBufferStreamDiagnostics;
+  realtime: WhoopBufferStreamDiagnostics;
+}
+
+export interface WhoopDataPathStats {
   dataNotificationCount: number;
   cmdNotificationCount: number;
   totalFramesParsed: number;
@@ -244,6 +265,7 @@ export function getDataPathStats(): {
   packetTypes: string;
   lastCommandResponse: string;
   connectionState: string;
+  lastKnownDeviceId: string | null;
   hasDataCharacteristic: boolean;
   isNotifying: boolean;
   hasCmdCharacteristic: boolean;
@@ -254,7 +276,20 @@ export function getDataPathStats(): {
   malformedCmdFrames: number;
   coalescedFrames: number;
   coalescedCmdFrames: number;
-} {
+  realtimeBufferCount: number;
+  lastDataNotificationAt: string | null;
+  lastParsedImuAt: string | null;
+  lastParsedRealtimeAt: string | null;
+  /** Latest device timestamp with a positive reported heart rate, not receipt time. */
+  lastValidHeartRateAt: string | null;
+  buffers: WhoopBufferCheckpoint & {
+    /** Prior buffer identity has no account attribution; this is last-observed metadata. */
+    previousCheckpoint: WhoopBufferCheckpoint | null;
+  };
+}
+
+/** Get BLE capture, queue, discard, and prior-checkpoint metadata. */
+export function getDataPathStats(): WhoopDataPathStats {
   return WhoopBleModule.getDataPathStats();
 }
 

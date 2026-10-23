@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => {
   const mockCaptureException = vi.fn();
   const mockCaptureMessage = vi.fn();
   const mockAddBreadcrumb = vi.fn();
+  const mockSetUser = vi.fn();
   const mockEmit = vi.fn();
   const mockGetLogger = vi.fn().mockReturnValue({ emit: mockEmit });
   const mockResourceFromAttributes = vi.fn().mockReturnValue({ resource: "mock" });
@@ -22,6 +23,7 @@ const mocks = vi.hoisted(() => {
     mockCaptureException,
     mockCaptureMessage,
     mockAddBreadcrumb,
+    mockSetUser,
     mockEmit,
     mockGetLogger,
     mockResourceFromAttributes,
@@ -35,11 +37,39 @@ vi.mock("@sentry/react-native", () => ({
   captureException: mocks.mockCaptureException,
   captureMessage: mocks.mockCaptureMessage,
   addBreadcrumb: mocks.mockAddBreadcrumb,
+  setUser: mocks.mockSetUser,
 }));
+
+const versionMocks = vi.hoisted(() => ({
+  manifest: { version: "1.2.3" },
+  runtimeVersion: "1.12",
+  updateId: "ota-update-id",
+}));
+const constantsMock = vi.hoisted(
+  (): {
+    platform?: { ios?: { buildNumber: string | null }; android?: { versionCode: number } };
+  } => ({ platform: { ios: { buildNumber: "123" } } }),
+);
+
+vi.mock("expo-updates", () => versionMocks);
+vi.mock("expo-constants", () => ({
+  default: constantsMock,
+}));
+vi.mock("expo-crypto", () => ({ randomUUID: () => "runtime-instance-id" }));
+
+const runtimeContext = {
+  appVersion: "1.2.3",
+  appBuild: "123",
+  assetsVersion: "ota-update-id",
+  runtimeVersion: "1.12",
+  runtimeId: "runtime-instance-id",
+};
 
 const posthogMocks = vi.hoisted(() => {
   const captureException = vi.fn();
   const register = vi.fn();
+  const identify = vi.fn();
+  const reset = vi.fn();
   const mockPosthogConstructor = vi.fn(function posthogConstructor(
     _apiKey: string,
     _options: PostHogClientOptions,
@@ -47,9 +77,11 @@ const posthogMocks = vi.hoisted(() => {
     return {
       captureException,
       register,
+      identify,
+      reset,
     };
   });
-  return { captureException, register, mockPosthogConstructor };
+  return { captureException, register, identify, reset, mockPosthogConstructor };
 });
 
 type PostHogClientOptions = {
@@ -94,6 +126,7 @@ describe("ios telemetry", () => {
     vi.resetModules();
     vi.clearAllMocks();
     vi.stubGlobal("__DEV__", true);
+    constantsMock.platform = { ios: { buildNumber: "123" } };
 
     originalDsn = process.env.EXPO_PUBLIC_SENTRY_DSN;
     originalRelease = process.env.EXPO_PUBLIC_SENTRY_RELEASE;
@@ -201,6 +234,7 @@ describe("ios telemetry", () => {
     });
     expect(posthogMocks.register).toHaveBeenCalledWith({
       service: "dofek-mobile",
+      ...runtimeContext,
     });
   });
 
@@ -219,10 +253,113 @@ describe("ios telemetry", () => {
     expect(mocks.mockCaptureException).toHaveBeenCalledWith(error, {
       tags: { source: "react-native-global" },
       extra: {
+        ...runtimeContext,
         source: "react-native-global",
         operation: "global-handler",
       },
     });
+  });
+
+  it("correlates logs and errors with the native build, OTA and JavaScript runtime", async () => {
+    process.env.EXPO_PUBLIC_SENTRY_DSN = "https://key@sentry.example/789";
+    process.env.EXPO_PUBLIC_OTEL_ENDPOINT = "https://api.axiom.co/v1/logs";
+    vi.stubGlobal("__DEV__", false);
+    const mod = await import("./telemetry");
+    mod.initTelemetry();
+
+    mod.logger.info("whoop-ble", "Buffer snapshot", { sampleCount: 12, appBuild: "spoofed" });
+    const error = new Error("Upload failed");
+    mod.captureException(error, { source: "whoop-ble-sync", runtimeId: "spoofed" });
+
+    expect(mocks.mockEmit.mock.calls[0]?.[0].attributes).toEqual({
+      ...runtimeContext,
+      sampleCount: 12,
+    });
+    expect(mocks.mockCaptureException).toHaveBeenCalledWith(error, {
+      tags: { source: "whoop-ble-sync" },
+      extra: { ...runtimeContext, source: "whoop-ble-sync" },
+    });
+    expect(posthogMocks.captureException).toHaveBeenCalledWith(error, {
+      ...runtimeContext,
+      source: "whoop-ble-sync",
+    });
+    expect(posthogMocks.register).toHaveBeenCalledWith({
+      ...runtimeContext,
+      service: "dofek-mobile",
+    });
+  });
+
+  it("uses the authenticated account ID on each record and Sentry without copying contact details", async () => {
+    process.env.EXPO_PUBLIC_SENTRY_DSN = "https://key@sentry.example/789";
+    process.env.EXPO_PUBLIC_OTEL_ENDPOINT = "https://api.axiom.co/v1/logs";
+    vi.stubGlobal("__DEV__", false);
+    const mod = await import("./telemetry");
+    mod.initTelemetry();
+    mod.identifyUser({ id: "first-account", email: "private@example.com", name: "Private Name" });
+    mod.logger.info("whoop-ble", "Connected", { userId: "spoofed-account" });
+    mod.identifyUser({ id: "second-account", email: null, name: "Second Private Name" });
+    const error = new Error("Upload failed");
+    mod.captureException(error, { source: "whoop-ble-sync", userId: "first-account" });
+
+    expect(mocks.mockSetUser.mock.calls).toEqual([
+      [{ id: "first-account" }],
+      [{ id: "second-account" }],
+    ]);
+    expect(mocks.mockEmit.mock.calls[0]?.[0].attributes.userId).toBe("first-account");
+    expect(mocks.mockEmit.mock.lastCall?.[0].attributes.userId).toBe("second-account");
+    expect(mocks.mockCaptureException.mock.lastCall?.[1].extra.userId).toBe("second-account");
+    expect(posthogMocks.captureException.mock.lastCall?.[1].userId).toBe("second-account");
+    expect(posthogMocks.identify).toHaveBeenLastCalledWith("second-account", {
+      email: null,
+      name: "Second Private Name",
+    });
+    expect(
+      JSON.stringify([mocks.mockEmit.mock.calls, mocks.mockCaptureException.mock.calls]),
+    ).not.toContain("Private Name");
+    expect(
+      JSON.stringify([mocks.mockEmit.mock.calls, mocks.mockCaptureException.mock.calls]),
+    ).not.toContain("private@example.com");
+  });
+
+  it.each([
+    { platform: { android: { versionCode: 42 } }, expectedBuild: "42" },
+    { platform: { ios: { buildNumber: null } }, expectedBuild: "unknown" },
+    { platform: undefined, expectedBuild: "unknown" },
+  ])(
+    "records the available native build or an explicit unknown ($expectedBuild)",
+    async ({ platform, expectedBuild }) => {
+      process.env.EXPO_PUBLIC_SENTRY_DSN = "https://key@sentry.example/789";
+      process.env.EXPO_PUBLIC_OTEL_ENDPOINT = "https://api.axiom.co/v1/logs";
+      constantsMock.platform = platform;
+      const mod = await import("./telemetry");
+      mod.initTelemetry();
+
+      mod.logger.info("whoop-ble", "Connected");
+
+      expect(mocks.mockEmit.mock.lastCall?.[0].attributes.appBuild).toBe(expectedBuild);
+    },
+  );
+
+  it("clears account attribution on logout even if a caller passes a stale account ID", async () => {
+    process.env.EXPO_PUBLIC_SENTRY_DSN = "https://key@sentry.example/789";
+    process.env.EXPO_PUBLIC_OTEL_ENDPOINT = "https://api.axiom.co/v1/logs";
+    vi.stubGlobal("__DEV__", false);
+    const mod = await import("./telemetry");
+    mod.initTelemetry();
+    mod.identifyUser({ id: "first-account", email: null, name: "Private Name" });
+    mod.resetUser();
+    mod.logger.info("whoop-ble", "Disconnected", { userId: "first-account" });
+    mod.captureException(new Error("Logged-out failure"), { userId: "first-account" });
+
+    expect(mocks.mockSetUser).toHaveBeenLastCalledWith(null);
+    expect(posthogMocks.reset).toHaveBeenCalledOnce();
+    expect(mocks.mockEmit.mock.calls[0]?.[0].attributes).toEqual(runtimeContext);
+    expect(mocks.mockEmit.mock.lastCall?.[0].attributes).toEqual({
+      ...runtimeContext,
+      errorName: "Error",
+    });
+    expect(mocks.mockCaptureException.mock.lastCall?.[1].extra.userId).toBeUndefined();
+    expect(posthogMocks.captureException.mock.lastCall?.[1].userId).toBeUndefined();
   });
 
   it("adds the sanitized current route to error context", async () => {
@@ -238,6 +375,7 @@ describe("ios telemetry", () => {
       expect.any(Error),
       expect.objectContaining({
         extra: {
+          ...runtimeContext,
           source: "react-query",
           route: "/activity/:id",
         },
@@ -262,6 +400,7 @@ describe("ios telemetry", () => {
       expect.any(Error),
       expect.objectContaining({
         extra: {
+          ...runtimeContext,
           source: "react-query",
           route: "/activity/:id",
         },
@@ -285,6 +424,7 @@ describe("ios telemetry", () => {
       expect.any(Error),
       expect.objectContaining({
         extra: {
+          ...runtimeContext,
           source: "react-query",
           route: "/providers",
         },
@@ -310,6 +450,7 @@ describe("ios telemetry", () => {
       expect.any(Error),
       expect.objectContaining({
         extra: {
+          ...runtimeContext,
           source: "react-query",
           route: undefined,
         },
@@ -319,11 +460,12 @@ describe("ios telemetry", () => {
       category: "invalid-route",
       message: "request failed",
       level: "error",
+      data: runtimeContext,
     });
     expect(mocks.mockEmit).toHaveBeenLastCalledWith(
       expect.objectContaining({
         body: "[invalid-route] request failed",
-        attributes: undefined,
+        attributes: runtimeContext,
       }),
     );
     expect(
@@ -403,7 +545,7 @@ describe("ios telemetry", () => {
 
     expect(mocks.mockCaptureException).toHaveBeenCalledWith(connectionLostError, {
       tags: { source: "react-query" },
-      extra: { source: "react-query" },
+      extra: { ...runtimeContext, source: "react-query" },
     });
   });
 
@@ -423,6 +565,7 @@ describe("ios telemetry", () => {
         severityText: "ERROR",
         body: "[exception] native apple failed",
         attributes: {
+          ...runtimeContext,
           source: "login-screen-handle-login",
           errorName: "Error",
         },
@@ -464,7 +607,7 @@ describe("ios telemetry", () => {
       expect.objectContaining({
         body: "[test-category] hello world",
         severityText: "INFO",
-        attributes: { key: "value" },
+        attributes: { ...runtimeContext, key: "value" },
       }),
     );
   });
@@ -484,6 +627,7 @@ describe("ios telemetry", () => {
       message: "Activity opened",
       level: "info",
       data: {
+        ...runtimeContext,
         selected: true,
         route: "/activity/:id",
       },
@@ -491,6 +635,7 @@ describe("ios telemetry", () => {
     expect(mocks.mockEmit).toHaveBeenCalledWith(
       expect.objectContaining({
         attributes: {
+          ...runtimeContext,
           selected: true,
           route: "/activity/:id",
         },
@@ -516,6 +661,7 @@ describe("ios telemetry", () => {
       message: "Nutrition tab selected",
       level: "info",
       data: {
+        ...runtimeContext,
         route: "/food",
         selected: true,
         count: 1,

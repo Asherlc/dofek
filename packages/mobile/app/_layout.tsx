@@ -63,6 +63,7 @@ import {
   confirmRealtimeDataDrain as confirmWhoopRealtimeDataDrain,
   confirmSamplesDrain as confirmWhoopSamplesDrain,
   findWhoop,
+  getDataPathStats as getWhoopDataPathStats,
   isBluetoothAvailable,
   peekBufferedRealtimeData as peekWhoopRealtimeData,
   peekBufferedSamples as peekWhoopSamples,
@@ -122,6 +123,7 @@ function WhoopBleSyncManager({ trpcClient }: { trpcClient: ReturnType<typeof trp
 
   const whoopDeps = useMemo(
     () => ({
+      getDataPathStats: getWhoopDataPathStats,
       isBluetoothAvailable,
       findWhoop,
       connect: whoopConnect,
@@ -463,6 +465,7 @@ function AuthGate() {
             syncWhoopBle(
               imuSyncClient,
               {
+                getDataPathStats: getWhoopDataPathStats,
                 isBluetoothAvailable,
                 findWhoop,
                 connect: whoopConnect,

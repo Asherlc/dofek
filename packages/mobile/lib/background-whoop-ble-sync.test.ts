@@ -8,6 +8,7 @@ import {
   type WhoopBleRealtimeUploadClient,
   type WhoopBleSyncDeps,
 } from "./background-whoop-ble-sync.ts";
+import { makeWhoopCaptureStats } from "./whoop-ble-test-helpers";
 
 const { mockLoadDeviceErasureCutoff } = vi.hoisted(() => ({
   mockLoadDeviceErasureCutoff: vi.fn<() => Promise<string | null>>(),
@@ -34,6 +35,7 @@ function makeMockDeps(): WhoopBleSyncDeps {
     confirmRealtimeDataDrain: vi.fn(),
     addConnectionStateListener: vi.fn().mockReturnValue({ remove: vi.fn() }),
     disconnect: vi.fn(),
+    getDataPathStats: vi.fn().mockImplementation(makeWhoopCaptureStats),
   };
 }
 
@@ -214,6 +216,7 @@ describe("background-whoop-ble-sync", () => {
     await initBackgroundWhoopBleSync(trpcClient, whoopDeps);
 
     expect(trpcClient.inertialMeasurementUnitSync.pushSamples.mutate).toHaveBeenCalledWith({
+      telemetry: expect.objectContaining({ batchId: expect.any(String) }),
       deviceId: "WHOOP Strap",
       deviceType: "whoop",
       samples: [
@@ -266,6 +269,7 @@ describe("background-whoop-ble-sync", () => {
 
     await vi.waitFor(() => {
       expect(trpcClient.inertialMeasurementUnitSync.pushSamples.mutate).toHaveBeenCalledWith({
+        telemetry: expect.objectContaining({ batchId: expect.any(String) }),
         deviceId: "WHOOP Strap",
         deviceType: "whoop",
         samples: expect.arrayContaining([
@@ -405,6 +409,7 @@ describe("background-whoop-ble-sync", () => {
 
     expect(whoopDeps.peekBufferedSamples).toHaveBeenCalled();
     expect(trpcClient.inertialMeasurementUnitSync.pushSamples.mutate).toHaveBeenCalledWith({
+      telemetry: expect.objectContaining({ batchId: expect.any(String) }),
       deviceId: "WHOOP Strap",
       deviceType: "whoop",
       samples: expect.arrayContaining([
@@ -644,6 +649,7 @@ describe("background-whoop-ble-sync", () => {
 
     expect(trpcClient.inertialMeasurementUnitSync.pushSamples.mutate).toHaveBeenCalledTimes(2);
     expect(trpcClient.inertialMeasurementUnitSync.pushSamples.mutate).toHaveBeenNthCalledWith(1, {
+      telemetry: expect.objectContaining({ batchId: expect.any(String) }),
       deviceId: "whoop-a",
       deviceType: "whoop",
       samples: [
@@ -668,6 +674,7 @@ describe("background-whoop-ble-sync", () => {
       ],
     });
     expect(trpcClient.inertialMeasurementUnitSync.pushSamples.mutate).toHaveBeenNthCalledWith(2, {
+      telemetry: expect.objectContaining({ batchId: expect.any(String) }),
       deviceId: "whoop-b",
       deviceType: "whoop",
       samples: [
@@ -739,6 +746,8 @@ describe("background-whoop-ble-sync", () => {
     expect(whoopDeps.confirmSamplesDrain).not.toHaveBeenCalled();
     expect(captureException).toHaveBeenCalledWith(expect.any(Error), {
       source: "whoop-ble-imu-upload",
+      batchId: expect.any(String),
+      bufferInstanceId: "11111111-1111-4111-8111-111111111111",
       bufferedSampleCount: 1,
       deviceCount: 1,
       deviceIds: ["WHOOP Strap"],
@@ -877,6 +886,7 @@ describe("syncWhoopBle", () => {
     expect(whoopDeps.findWhoop).toHaveBeenCalled();
     expect(whoopDeps.connect).toHaveBeenCalledWith("whoop-123");
     expect(trpcClient.inertialMeasurementUnitSync.pushSamples.mutate).toHaveBeenCalledWith({
+      telemetry: expect.objectContaining({ batchId: expect.any(String) }),
       deviceId: "WHOOP Strap",
       deviceType: "whoop",
       samples: expect.arrayContaining([
@@ -903,6 +913,7 @@ describe("syncWhoopBle", () => {
     await syncWhoopBle(trpcClient, whoopDeps);
 
     expect(trpcClient.inertialMeasurementUnitSync.pushSamples.mutate).toHaveBeenCalledWith({
+      telemetry: expect.objectContaining({ batchId: expect.any(String) }),
       deviceId: "WHOOP Strap",
       deviceType: "whoop",
       samples: expect.arrayContaining([
@@ -953,6 +964,7 @@ describe("syncWhoopBle", () => {
     await expect(syncWhoopBle(trpcClient, whoopDeps)).resolves.toBeUndefined();
 
     expect(trpcClient.inertialMeasurementUnitSync.pushSamples.mutate).toHaveBeenCalledWith({
+      telemetry: expect.objectContaining({ batchId: expect.any(String) }),
       deviceId: "WHOOP Strap",
       deviceType: "whoop",
       samples: expect.arrayContaining([
@@ -1025,6 +1037,7 @@ describe("realtime data (beat interval + quaternion) sync", () => {
     await initBackgroundWhoopBleSync(trpcClient, whoopDeps, realtimeClient);
 
     expect(realtimeClient.whoopBleSync.pushRealtimeData.mutate).toHaveBeenCalledWith({
+      telemetry: expect.objectContaining({ batchId: expect.any(String) }),
       deviceId: "WHOOP Strap",
       samples: [
         {
@@ -1086,6 +1099,7 @@ describe("realtime data (beat interval + quaternion) sync", () => {
 
     expect(realtimeClient.whoopBleSync.pushRealtimeData.mutate).toHaveBeenCalledTimes(2);
     expect(realtimeClient.whoopBleSync.pushRealtimeData.mutate).toHaveBeenNthCalledWith(1, {
+      telemetry: expect.objectContaining({ batchId: expect.any(String) }),
       deviceId: "whoop-a",
       samples: [
         {
@@ -1111,6 +1125,7 @@ describe("realtime data (beat interval + quaternion) sync", () => {
       ],
     });
     expect(realtimeClient.whoopBleSync.pushRealtimeData.mutate).toHaveBeenNthCalledWith(2, {
+      telemetry: expect.objectContaining({ batchId: expect.any(String) }),
       deviceId: "whoop-b",
       samples: [
         {
@@ -1148,6 +1163,7 @@ describe("realtime data (beat interval + quaternion) sync", () => {
     await initBackgroundWhoopBleSync(trpcClient, whoopDeps, realtimeClient);
 
     expect(realtimeClient.whoopBleSync.pushRealtimeData.mutate).toHaveBeenCalledWith({
+      telemetry: expect.objectContaining({ batchId: expect.any(String) }),
       deviceId: "WHOOP Strap",
       samples: [
         {
@@ -1188,6 +1204,7 @@ describe("realtime data (beat interval + quaternion) sync", () => {
     await initBackgroundWhoopBleSync(trpcClient, whoopDeps, realtimeClient);
 
     expect(realtimeClient.whoopBleSync.pushRealtimeData.mutate).toHaveBeenCalledWith({
+      telemetry: expect.objectContaining({ batchId: expect.any(String) }),
       deviceId: "WHOOP Strap",
       samples: [
         {
@@ -1324,10 +1341,12 @@ describe("realtime data (beat interval + quaternion) sync", () => {
       expect(realtimeBuffer).toHaveLength(0);
       expect(whoopDeps.confirmSamplesDrain).toHaveBeenCalledTimes(2);
       expect(whoopDeps.confirmRealtimeDataDrain).toHaveBeenCalledTimes(2);
+      expect(whoopDeps.getDataPathStats).toHaveBeenCalledTimes(1);
     },
   );
 
   it("uploads new realtime samples on a periodic tick while motion is still draining", async () => {
+    const { logger } = await import("./telemetry");
     vi.useFakeTimers();
     let releaseMotion: (() => void) | undefined;
     const motionGate = new Promise<void>((resolve) => {
@@ -1383,6 +1402,16 @@ describe("realtime data (beat interval + quaternion) sync", () => {
 
       await vi.advanceTimersByTimeAsync(30_000);
 
+      expect(logger.info).toHaveBeenCalledWith(
+        "whoop-ble",
+        "capture_snapshot",
+        expect.objectContaining({
+          trigger: "periodic",
+          imuRequestPending: true,
+          imuPendingRequestAgeMs: 30_000,
+          imuPendingBatchId: expect.any(String),
+        }),
+      );
       expect(uploadedRealtime).toEqual([75]);
       expect(realtimeBuffer).toHaveLength(0);
       expect(whoopDeps.confirmSamplesDrain).not.toHaveBeenCalled();
@@ -1560,6 +1589,62 @@ describe("realtime data (beat interval + quaternion) sync", () => {
     }
   });
 
+  it("correlates upload acknowledgment and native confirmation without logging sensor values", async () => {
+    const { logger } = await import("./telemetry");
+    vi.mocked(logger.info).mockClear();
+    vi.mocked(whoopDeps.peekBufferedRealtimeData).mockResolvedValueOnce([
+      {
+        deviceId: "whoop-a",
+        timestamp: "2026-10-23T00:00:00.000Z",
+        heartRateBpm: 75,
+        rrIntervalMs: 800,
+        quaternionW: 1,
+        quaternionX: 0,
+        quaternionY: 0,
+        quaternionZ: 0,
+        opticalRawHex: "private-optical-payload",
+      },
+    ]);
+    vi.mocked(whoopDeps.confirmRealtimeDataDrain).mockImplementation(() => {
+      expect(logger.info).toHaveBeenCalledWith(
+        "whoop-ble",
+        "upload_acknowledged",
+        expect.objectContaining({ stream: "realtime", publishedRowCount: 3 }),
+      );
+      expect(
+        vi.mocked(logger.info).mock.calls.some(([, message]) => message === "buffer_confirmed"),
+      ).toBe(false);
+    });
+    vi.mocked(realtimeClient.whoopBleSync.pushRealtimeData.mutate).mockResolvedValue({
+      inserted: 3,
+    });
+
+    await initBackgroundWhoopBleSync(trpcClient, whoopDeps, realtimeClient);
+
+    const upload = vi.mocked(realtimeClient.whoopBleSync.pushRealtimeData.mutate).mock
+      .calls[0]?.[0];
+    expect(upload).toMatchObject({
+      telemetry: {
+        batchId: expect.any(String),
+        bufferInstanceId: "11111111-1111-4111-8111-111111111111",
+      },
+    });
+    expect(logger.info).toHaveBeenCalledWith(
+      "whoop-ble",
+      "buffer_confirmed",
+      expect.objectContaining({
+        stream: "realtime",
+        batchIds: upload?.telemetry?.batchId,
+        requestedConfirmationCount: 1,
+      }),
+    );
+    const structured = JSON.stringify(
+      vi.mocked(logger.info).mock.calls.filter(([, , attributes]) => attributes),
+    );
+    expect(structured).not.toContain("private-optical-payload");
+    expect(structured).not.toContain("heartRateBpm");
+  });
+
   it("drains both IMU and realtime buffers independently", async () => {
     const imuSamples = [
       {
@@ -1593,6 +1678,7 @@ describe("realtime data (beat interval + quaternion) sync", () => {
     // Both should be uploaded
     expect(trpcClient.inertialMeasurementUnitSync.pushSamples.mutate).toHaveBeenCalled();
     expect(realtimeClient.whoopBleSync.pushRealtimeData.mutate).toHaveBeenCalledWith({
+      telemetry: expect.objectContaining({ batchId: expect.any(String) }),
       deviceId: "WHOOP Strap",
       samples: [
         {
@@ -1651,6 +1737,7 @@ describe("realtime data (beat interval + quaternion) sync", () => {
     await syncWhoopBle(trpcClient, whoopDeps, realtimeClient);
 
     expect(realtimeClient.whoopBleSync.pushRealtimeData.mutate).toHaveBeenCalledWith({
+      telemetry: expect.objectContaining({ batchId: expect.any(String) }),
       deviceId: "WHOOP Strap",
       samples: [
         {

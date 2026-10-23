@@ -1,4 +1,4 @@
-import { captureException } from "./telemetry";
+import { captureException, logger } from "./telemetry";
 
 const BODY_PREVIEW_LIMIT = 240;
 
@@ -78,7 +78,17 @@ function withJsonBodyDiagnostics(response: Response, input: Parameters<typeof fe
 
 export function createTrpcFetch(fetchImpl: typeof fetch = fetch): typeof fetch {
   return async (input, init) => {
+    const batchId = new Headers(init?.headers).get("x-dofek-upload-id");
+    const startedAt = Date.now();
     const response = await fetchImpl(input, init);
+    if (batchId) {
+      logger.info("whoop-ble", "upload_http_response", {
+        event: "upload_http_response",
+        batchId,
+        httpStatus: response.status,
+        elapsedMs: Date.now() - startedAt,
+      });
+    }
     if (isJsonResponse(response)) {
       return withJsonBodyDiagnostics(response, input);
     }

@@ -3,10 +3,20 @@ import XCTest
 
 final class WhoopBleSampleBufferTimestampTests: XCTestCase {
     private var buffer: WhoopBleSampleBuffer!
+    private var diagnosticDefaults: UserDefaults!
+    private var diagnosticSuite: String!
 
     override func setUp() {
         super.setUp()
-        buffer = WhoopBleSampleBuffer()
+        diagnosticSuite = "WhoopBleSampleBufferTimestampTests.\(UUID().uuidString)"
+        diagnosticDefaults = UserDefaults(suiteName: diagnosticSuite)!
+        buffer = WhoopBleSampleBuffer(diagnosticDefaults: diagnosticDefaults)
+    }
+
+    override func tearDown() {
+        diagnosticDefaults.removePersistentDomain(forName: diagnosticSuite)
+        buffer = nil
+        super.tearDown()
     }
 
     private func capturedFrames() throws -> [WhoopFrame] {

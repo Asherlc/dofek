@@ -214,6 +214,7 @@ vi.mock("../modules/background-refresh", () => ({
 }));
 
 vi.mock("../modules/whoop-ble", () => ({
+  getDataPathStats: vi.fn(),
   addConnectionStateListener: vi.fn(),
   confirmRealtimeDataDrain: vi.fn(),
   confirmSamplesDrain: vi.fn(),

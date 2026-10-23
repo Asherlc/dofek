@@ -39,7 +39,7 @@ vi.mock("@opentelemetry/api", () => ({
 }));
 
 vi.mock("../logger.ts", () => ({
-  logger: { info: vi.fn(), warn: vi.fn() },
+  logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
 
 vi.mock("../trpc.ts", async () => {
@@ -109,6 +109,84 @@ describe("inertialMeasurementUnitSyncRouter", () => {
   });
 
   describe("pushSamples", () => {
+    it("records receipt before publication and retains correlation until the broker acknowledges", async () => {
+      let acknowledge!: () => void;
+      const acknowledgment = new Promise<void>((resolve) => {
+        acknowledge = resolve;
+      });
+      const metricStreamPublisher = makeMetricStreamPublisher();
+      metricStreamPublisher.publishRows.mockImplementation(async (rows) => {
+        await acknowledgment;
+        return rows.map((_, index) => ({ id: `event-${index}` }));
+      });
+      const caller = createCaller({
+        db: makeDatabase(),
+        metricStreamPublisher,
+        userId: "user-1",
+        appVersion: "1.12.0",
+        assetsVersion: "ota-1",
+      });
+      const telemetry = {
+        batchId: "73eb7c21-e54e-4542-be72-69562de3f61d",
+        bufferInstanceId: "9a5b18b9-6037-47b7-ac55-fc2484191178",
+      };
+      const upload = caller.pushSamples({
+        deviceId: "WHOOP Strap",
+        deviceType: "whoop",
+        samples: [makeSample()],
+        telemetry,
+      });
+      await vi.waitFor(() => expect(metricStreamPublisher.publishRows).toHaveBeenCalledOnce());
+      const attributes = {
+        ...telemetry,
+        stream: "imu",
+        userId: "user-1",
+        appVersion: "1.12.0",
+        assetsVersion: "ota-1",
+        inputSampleCount: 1,
+        acceptedSampleCount: 1,
+        filteredSampleCount: 0,
+      };
+      expect(logger.info).toHaveBeenCalledWith(
+        "[sensor-upload] upload_received",
+        expect.objectContaining(attributes),
+      );
+      expect(logger.info).not.toHaveBeenCalledWith(
+        "[sensor-upload] upload_published",
+        expect.objectContaining(telemetry),
+      );
+      acknowledge();
+      await expect(upload).resolves.toEqual({ inserted: 1 });
+      expect(logger.info).toHaveBeenCalledWith(
+        "[sensor-upload] upload_published",
+        expect.objectContaining({ ...attributes, publishedRowCount: 1, boundary: "redpanda" }),
+      );
+    });
+
+    it("correlates failed IMU publication without replacing its exception", async () => {
+      const publishError = new Error("broker unavailable");
+      const metricStreamPublisher = makeMetricStreamPublisher();
+      metricStreamPublisher.publishRows.mockRejectedValueOnce(publishError);
+      const caller = createCaller({ db: makeDatabase(), metricStreamPublisher, userId: "user-1" });
+      const telemetry = { batchId: "a8568e69-646f-4699-93a9-325b059b5f19" };
+      await expect(
+        caller.pushSamples({
+          deviceId: "WHOOP Strap",
+          deviceType: "whoop",
+          samples: [makeSample()],
+          telemetry,
+        }),
+      ).rejects.toMatchObject({ cause: publishError });
+      expect(logger.error).toHaveBeenCalledWith(
+        "[sensor-upload] upload_failed",
+        expect.objectContaining(telemetry),
+      );
+      expect(captureException).toHaveBeenCalledWith(
+        publishError,
+        expect.objectContaining({ extra: expect.objectContaining(telemetry) }),
+      );
+    });
+
     it("publishes accel samples", async () => {
       const execute = makeExecute();
       const metricStreamPublisher = makeMetricStreamPublisher();
@@ -238,11 +316,13 @@ describe("inertialMeasurementUnitSyncRouter", () => {
     it("handles empty samples array by returning zero inserted", async () => {
       const execute = makeExecute();
       const caller = createCaller({ db: makeDatabase(execute), userId: "user-1" });
+      const telemetry = { batchId: "d9c5772c-e502-4828-93d6-b2966f8c1c6f" };
 
       const result = await caller.pushSamples({
         deviceId: "iPhone 15 Pro",
         deviceType: "iphone",
         samples: [],
+        telemetry,
       });
 
       expect(result.inserted).toBe(0);
@@ -254,6 +334,17 @@ describe("inertialMeasurementUnitSyncRouter", () => {
         deviceType: "iphone",
       });
       expect(mockStartActiveSpan).not.toHaveBeenCalled();
+      expect(logger.info).toHaveBeenCalledWith(
+        "[sensor-upload] upload_published",
+        expect.objectContaining({
+          ...telemetry,
+          boundary: "no_metric_rows",
+          inputSampleCount: 0,
+          acceptedSampleCount: 0,
+          filteredSampleCount: 0,
+          publishedRowCount: 0,
+        }),
+      );
     });
 
     it("returns zero inserted when duplicate IMU rows no-op", async () => {
@@ -309,11 +400,13 @@ describe("inertialMeasurementUnitSyncRouter", () => {
 
       const execute = makeExecute();
       const caller = createCaller({ db: makeDatabase(execute), userId: "user-1" });
+      const telemetry = { batchId: "1fef5b35-f09a-4412-94b5-0679dfdc663f" };
 
       try {
         const result = await caller.pushSamples({
           deviceId: "WHOOP Strap",
           deviceType: "whoop",
+          telemetry,
           samples: [makeSample({ timestamp: "2026-03-25T10:06:00.001Z" })],
         });
 
@@ -325,6 +418,17 @@ describe("inertialMeasurementUnitSyncRouter", () => {
         expect(logger.info).toHaveBeenCalledWith(
           "IMU samples pushed",
           expect.objectContaining({ filteredCount: 1 }),
+        );
+        expect(logger.info).toHaveBeenCalledWith(
+          "[sensor-upload] upload_published",
+          expect.objectContaining({
+            ...telemetry,
+            boundary: "no_metric_rows",
+            inputSampleCount: 1,
+            acceptedSampleCount: 0,
+            filteredSampleCount: 1,
+            publishedRowCount: 0,
+          }),
         );
       } finally {
         vi.useRealTimers();
@@ -485,7 +589,7 @@ describe("inertialMeasurementUnitSyncRouter", () => {
       },
     );
 
-    it("logs the full timestamp range for successful pushes", async () => {
+    it("logs chronological timestamp bounds for an unordered successful push", async () => {
       const execute = makeExecute();
       const metricStreamPublisher = makeMetricStreamPublisher();
       const caller = createCaller({
@@ -504,9 +608,9 @@ describe("inertialMeasurementUnitSyncRouter", () => {
           deviceId: "Apple Watch",
           deviceType: "apple_watch",
           samples: [
+            makeSample({ timestamp: "2026-03-25T10:00:00.140Z" }),
             makeSample({ timestamp: "2026-03-25T10:00:00.020Z" }),
             makeSample({ timestamp: "2026-03-25T10:00:00.080Z" }),
-            makeSample({ timestamp: "2026-03-25T10:00:00.140Z" }),
           ],
         });
 
@@ -548,9 +652,10 @@ describe("inertialMeasurementUnitSyncRouter", () => {
         message: expect.stringContaining("ensureProvider(apple_motion) failed"),
         cause: dbError,
       });
-      expect(captureException).toHaveBeenCalledWith(ensureError, {
-        tags: { source: "imu-push-samples" },
-      });
+      expect(captureException).toHaveBeenCalledWith(
+        ensureError,
+        expect.objectContaining({ tags: { source: "imu-push-samples" } }),
+      );
       expect(mockSpan.recordException).toHaveBeenCalledWith(ensureError);
       expect(mockSpan.setStatus).toHaveBeenCalledWith({
         code: 2,
@@ -578,9 +683,10 @@ describe("inertialMeasurementUnitSyncRouter", () => {
         }),
       ).rejects.toThrow("redpanda offline");
 
-      expect(captureException).toHaveBeenCalledWith(publishError, {
-        tags: { source: "imu-push-samples" },
-      });
+      expect(captureException).toHaveBeenCalledWith(
+        publishError,
+        expect.objectContaining({ tags: { source: "imu-push-samples" } }),
+      );
       expect(mockSpan.setStatus).toHaveBeenCalledWith({
         code: 2,
         message: "redpanda offline",
@@ -607,9 +713,10 @@ describe("inertialMeasurementUnitSyncRouter", () => {
         }),
       ).rejects.toThrow("string error");
 
-      expect(captureException).toHaveBeenCalledWith("string error", {
-        tags: { source: "imu-push-samples" },
-      });
+      expect(captureException).toHaveBeenCalledWith(
+        "string error",
+        expect.objectContaining({ tags: { source: "imu-push-samples" } }),
+      );
       expect(mockSpan.recordException).not.toHaveBeenCalled();
     });
 
@@ -635,9 +742,10 @@ describe("inertialMeasurementUnitSyncRouter", () => {
         message: expect.stringContaining("ensureProvider(apple_motion) failed"),
         cause: stringError,
       });
-      expect(captureException).toHaveBeenCalledWith(ensureError, {
-        tags: { source: "imu-push-samples" },
-      });
+      expect(captureException).toHaveBeenCalledWith(
+        ensureError,
+        expect.objectContaining({ tags: { source: "imu-push-samples" } }),
+      );
       expect(mockSpan.recordException).toHaveBeenCalledWith(ensureError);
     });
   });

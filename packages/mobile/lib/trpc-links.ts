@@ -6,7 +6,32 @@ export function createMobileTrpcLinks(
     Parameters<typeof httpBatchLink<AppRouter>>[0],
 ): TRPCLink<AppRouter>[] {
   const batchLink = httpBatchLink<AppRouter>(options);
-  const individualLink = httpLink<AppRouter>(options);
+  const individualLink = httpLink<AppRouter>({
+    ...options,
+    headers: async (operationOptions) => {
+      const headers =
+        typeof options.headers === "function"
+          ? await options.headers({ ...operationOptions, opList: [operationOptions.op] })
+          : options.headers;
+      const { op } = operationOptions;
+      if (
+        op.type === "mutation" &&
+        (op.path === "inertialMeasurementUnitSync.pushSamples" ||
+          op.path === "whoopBleSync.pushRealtimeData") &&
+        typeof op.input === "object" &&
+        op.input !== null
+      ) {
+        const telemetry = Reflect.get(op.input, "telemetry");
+        if (typeof telemetry === "object" && telemetry !== null) {
+          const batchId = Reflect.get(telemetry, "batchId");
+          if (typeof batchId === "string") {
+            return { ...headers, "x-dofek-upload-id": batchId };
+          }
+        }
+      }
+      return headers ?? {};
+    },
+  });
 
   return [
     splitLink({
