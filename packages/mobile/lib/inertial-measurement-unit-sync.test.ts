@@ -65,6 +65,52 @@ describe("syncInertialMeasurementUnitToServer", () => {
     expect(result.recording).toBe(false);
   });
 
+  it.each([
+    { path: "already up to date", lastSync: "2026-05-20T19:00:00.000Z", samples: [], inserted: 0 },
+    { path: "no retained samples", lastSync: "2026-05-20T18:59:00.000Z", samples: [], inserted: 0 },
+    {
+      path: "successful retained-sample upload",
+      lastSync: "2026-05-20T18:59:00.000Z",
+      samples: [{ timestamp: "2026-05-20T18:59:30.000Z", x: 1, y: 2, z: 3 }],
+      inserted: 1,
+    },
+  ])("reports a rejected recording start after $path", async ({ lastSync, samples, inserted }) => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-05-20T19:00:00.000Z"));
+    const setLastSyncTimestamp = vi.fn();
+    const onProgress = vi.fn();
+    const coreMotion = makeAdapter({
+      getLastSyncTimestamp: () => lastSync,
+      queryRecordedData: vi.fn().mockResolvedValue(samples),
+      setLastSyncTimestamp,
+      startRecording: vi.fn().mockResolvedValue(false),
+    });
+    const trpcClient = makeTrpcClient({ pushResult: { inserted } });
+
+    const result = await syncInertialMeasurementUnitToServer({
+      trpcClient,
+      coreMotion,
+      deviceId: "iPhone 15 Pro",
+      deviceType: "iphone",
+      onProgress,
+    });
+
+    expect(result).toEqual({ inserted, recording: false });
+    expect(onProgress).toHaveBeenLastCalledWith(expect.stringContaining("iOS Settings"));
+    if (lastSync === "2026-05-20T19:00:00.000Z") {
+      expect(setLastSyncTimestamp).not.toHaveBeenCalled();
+    } else {
+      expect(setLastSyncTimestamp).toHaveBeenCalledWith("2026-05-20T19:00:00.000Z");
+    }
+    if (samples.length > 0) {
+      expect(trpcClient.inertialMeasurementUnitSync.pushSamples.mutate).toHaveBeenCalledWith({
+        deviceId: "iPhone 15 Pro",
+        deviceType: "iphone",
+        samples,
+      });
+    }
+  });
+
   it("queries from lastSyncTimestamp when available", async () => {
     const queryRecordedData = vi.fn().mockResolvedValue([]);
     const lastSync = new Date(Date.now() - 60_000).toISOString();
@@ -251,7 +297,7 @@ describe("syncInertialMeasurementUnitToServer", () => {
     const coreMotion = makeAdapter({ startRecording });
     const trpcClient = makeTrpcClient();
 
-    await syncInertialMeasurementUnitToServer({
+    const result = await syncInertialMeasurementUnitToServer({
       trpcClient,
       coreMotion,
       deviceId: "iPhone 15 Pro",
@@ -259,6 +305,7 @@ describe("syncInertialMeasurementUnitToServer", () => {
     });
 
     expect(startRecording).toHaveBeenCalledWith(43200); // 12 hours
+    expect(result.recording).toBe(true);
   });
 
   it("handles empty data gracefully", async () => {

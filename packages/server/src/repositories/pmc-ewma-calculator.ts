@@ -27,9 +27,9 @@ export class PmcEwmaCalculator {
   }
 
   compute(input: PmcEwmaInput): PmcDataPoint[] {
-    const startDate = new Date();
-    startDate.setUTCDate(startDate.getUTCDate() - input.queryDays);
     const endDate = new Date();
+    const startDate = new Date(endDate);
+    startDate.setUTCDate(startDate.getUTCDate() - input.queryDays);
 
     const result: PmcDataPoint[] = [];
     let chronicTrainingLoad = 0;

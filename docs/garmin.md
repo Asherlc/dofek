@@ -131,8 +131,11 @@ Keep portal endpoints **On Hold** until production deployment and OAuth checks
 pass. Garmin queues held notifications without sending them. Removing a hold
 releases queued notifications for the entire application feed, so live delivery
 checks require a controlled release ([Garmin delivery settings](https://developerportal.garmin.com/developer-programs/programs-docs)).
-The migration has not yet been deployed as of 2026-10-21; application approval
-and configured secrets alone do not establish live delivery. Follow
+The [production deployment](https://github.com/Asherlc/dofek/actions/runs/39796505289)
+succeeded on 2026-10-22, including worker recovery. A subsequent live OAuth
+attempt failed at permission confirmation with HTTP 403; live activation remains
+blocked, as recorded in the [incident baseline](production-incident-baseline.md#2026-10-22--live-garmin-oauth-blocked-at-permission-confirmation-unresolved).
+Application approval and configured secrets alone do not establish live delivery. Follow
 [deployment procedures](../deploy/README.md), then:
 
 1. Confirm the migration ran, the web server and Garmin queue worker are
@@ -150,6 +153,35 @@ and configured secrets alone do not establish live delivery. Follow
    inspect telemetry using synthetic credentials to confirm redaction.
    Reconnect the test account after revocation checks. Return feeds to **On Hold**
    if validation fails; leave delivery enabled after all checks pass.
+
+If OAuth fails while confirming the Garmin account identity or permissions,
+the [callback](../packages/server/src/routes/auth/data-provider-callback.ts)
+reports that stage and the upstream HTTP status. It preserves the existing
+connection on a failed reconnect. Find the corresponding `[garmin-oauth]`
+`connection_http_failed` event in application logs or Sentry. The
+[diagnostic reader](../src/providers/garmin/oauth-diagnostics.ts) inspects at most
+8 KiB for at most one second and retains only normalized content type, body shape, known error-field
+names, allowlisted error codes, and UUID/W3C request references from selected
+headers. It excludes raw bodies, descriptions, credential headers, account
+identifiers, and callback URLs, following the data-minimization guidance in
+the [OWASP logging guide](https://cheatsheetseries.owasp.org/cheatsheets/Logging_Cheat_Sheet.html#data-to-exclude).
+Use the event's UTC timestamp, failed stage, status, and any validated request
+reference when investigating a denial with Garmin; never share callback query
+values or credentials. These diagnostics do not resolve an upstream denial.
+The [production HTTP wrapper](../src/lib/provider-rate-limit-fetch.ts) can throw
+a typed rate-limit or service-unavailable error before returning a response.
+For those failures, the event retains the failed stage and HTTP status but
+omits unavailable body, content-type, and request-reference metadata. The
+[OAuth reader](../src/providers/garmin/oauth.ts) does not report the original
+error message, body, or cause.
+Once a response reaches the diagnostic reader, a stalled body produces
+`bodyKind: timed_out` while retaining the known stage and status. The reader
+consumes and cancels the failed response directly, then releases its lock;
+it does not leave an unused cloned branch open. This inspection budget does
+not change request deadlines or body reads inside the shared HTTP wrapper.
+See the [stream regressions](../src/providers/garmin/oauth-diagnostics.test.ts)
+and the Streams standard's [cancellation](https://streams.spec.whatwg.org/#readable-stream-cancel)
+and [tee cancellation](https://streams.spec.whatwg.org/#readable-stream-default-tee) algorithms.
 
 FIT artifacts use the existing `IMPORT_R2_BUCKET` (`dofek-imports` in the
 deployment stack) and shared R2 credentials. Objects belong to the Dofek user

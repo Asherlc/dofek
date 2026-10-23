@@ -106,6 +106,21 @@ export class ProviderAuthorizationAccountMismatchError extends Error {
   }
 }
 
+/** A connection-stage failure whose message contains only trusted labels and an HTTP status. */
+export class ProviderConnectionError extends Error {
+  readonly stage: "identity" | "permissions";
+  readonly statusCode: number;
+
+  constructor(providerName: string, stage: "identity" | "permissions", statusCode: number) {
+    super(
+      `${providerName} connection failed while confirming your ${stage} (HTTP ${statusCode}). Please contact support if this continues.`,
+    );
+    this.name = "ProviderConnectionError";
+    this.stage = stage;
+    this.statusCode = statusCode;
+  }
+}
+
 export function authFailureReasonFromError(error: unknown): ProviderAuthFailureReason | undefined {
   const visitedErrors = new Set<unknown>();
   let currentError: unknown = error;

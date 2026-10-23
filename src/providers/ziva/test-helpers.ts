@@ -152,6 +152,7 @@ export function createFakeZivaMcpHarness(options: FakeZivaMcpOptions = {}): Fake
   let cancellationNotifications = 0;
   let transportClosed = false;
   const observedSignals = new WeakSet<AbortSignal>();
+  const pendingRequestSignals = new Set<AbortSignal>();
 
   const fakeFetch: typeof globalThis.fetch = async (input, init) => {
     const request = new Request(input, init);
@@ -183,11 +184,15 @@ export function createFakeZivaMcpHarness(options: FakeZivaMcpOptions = {}): Fake
 
     const configuredDelay = options.delayedMethods?.[message.method];
     if (configuredDelay !== undefined) {
+      // Keep pending mock requests observable across garbage collection, as native fetch does.
+      pendingRequestSignals.add(request.signal);
       try {
         await waitForConfiguredDelay(configuredDelay, request.signal);
       } catch (error: unknown) {
         transportClosed = true;
         throw error;
+      } finally {
+        pendingRequestSignals.delete(request.signal);
       }
     }
 

@@ -13,5 +13,6 @@ Pod::Spec.new do |s|
   s.source_files   = '**/*.swift'
 
   s.dependency 'ExpoModulesCore'
-  s.frameworks     = 'BackgroundTasks'
+  s.dependency 'RNSentry'
+  s.frameworks     = 'BackgroundTasks', 'UserNotifications'
 end

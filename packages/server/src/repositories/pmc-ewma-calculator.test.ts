@@ -116,6 +116,39 @@ describe("PmcEwmaCalculator", () => {
     expect(result.every((point) => point.tsb === 0)).toBe(true);
   });
 
+  it.each(["2026-10-23T08:30:00.000Z", "2026-10-23T09:30:00.000Z", "2026-10-23T10:30:00.000Z"])(
+    "preserves UTC display dates and endpoint loads across DST at %s",
+    (fixedNow) => {
+      vi.stubEnv("TZ", "America/Los_Angeles");
+      vi.useFakeTimers({ toFake: ["Date"] });
+      try {
+        vi.setSystemTime(new Date(fixedNow));
+        const calculator = new PmcEwmaCalculator({
+          chronicTrainingLoadDays: 42,
+          acuteTrainingLoadDays: 7,
+        });
+        const result = calculator.compute({
+          dailyLoad: new Map([
+            ["2026-09-23", 84],
+            ["2026-10-23", 42],
+          ]),
+          queryDays: 407,
+          displayDays: 30,
+        });
+        const expectedDates = Array.from({ length: 31 }, (_, day) =>
+          new Date(Date.UTC(2026, 8, 23 + day)).toISOString().slice(0, 10),
+        );
+
+        expect(result.map((point) => point.date)).toEqual(expectedDates);
+        expect(result[0]?.load).toBe(84);
+        expect(result.at(-1)).toMatchObject({ date: "2026-10-23", load: 42 });
+      } finally {
+        vi.useRealTimers();
+        vi.unstubAllEnvs();
+      }
+    },
+  );
+
   it("produces consecutive dates and decays chronic load on rest days", () => {
     const activityDate = dateStringDaysAgo(5);
     const calculator = new PmcEwmaCalculator({

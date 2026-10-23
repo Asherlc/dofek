@@ -257,4 +257,142 @@ final class WhoopBleConnectionManagerTests: XCTestCase {
             return XCTFail("Expected explicit cancellation to settle as disconnected")
         }
     }
+
+    func testConfirmedSubscriptionsPublishConnectedWithoutAnExpoDelegate() {
+        let manager = WhoopBleConnectionManager()
+        manager.setState(.subscribing)
+        let delivery = connectionEventExpectation(state: "connected")
+
+        _ = manager.settleNotificationSubscriptionUpdate(
+            .ready,
+            failureDetail: "unused",
+            cancelPeripheral: { XCTFail("Successful subscriptions must not cancel the peripheral") }
+        )
+
+        wait(for: [delivery], timeout: 1)
+        XCTAssertEqual(manager.state, .ready)
+    }
+
+    func testRestoredSubscriptionsPublishConnectedBeforeStreamingResumes() {
+        let manager = WhoopBleConnectionManager()
+        manager.setState(.subscribing)
+        manager.wasStreaming = true
+        let delivery = connectionEventExpectation(state: "connected")
+
+        let previouslyStreaming = manager.settleNotificationSubscriptionUpdate(
+            .ready,
+            failureDetail: "unused",
+            cancelPeripheral: { XCTFail("Restored subscriptions must not cancel the peripheral") }
+        )
+
+        wait(for: [delivery], timeout: 1)
+        XCTAssertEqual(previouslyStreaming, true)
+        XCTAssertEqual(manager.state, .ready)
+    }
+
+    func testIntentionalDisconnectPublishesAfterNativeCleanup() {
+        let manager = WhoopBleConnectionManager()
+        manager.setState(.streaming)
+        manager.autoReconnect = true
+        let delivery = connectionEventExpectation(state: "intentionallyDisconnected") { [weak manager] in
+            XCTAssertEqual(manager?.state, .idle)
+            XCTAssertEqual(manager?.autoReconnect, false)
+        }
+
+        manager.disconnect()
+
+        wait(for: [delivery], timeout: 1)
+    }
+
+    func testUnexpectedDisconnectPublishesBeforeAutomaticReconnect() {
+        let manager = WhoopBleConnectionManager()
+        manager.setState(.streaming)
+        manager.autoReconnect = true
+        var didReconnect = false
+        let delivery = connectionEventExpectation(state: "disconnected") { [weak manager] in
+            XCTAssertEqual(manager?.state, .idle)
+            XCTAssertFalse(didReconnect)
+        }
+
+        manager.handleDisconnection(peripheralId: "strap-id", error: nil) {
+            didReconnect = true
+        }
+
+        wait(for: [delivery], timeout: 1)
+        XCTAssertTrue(didReconnect)
+        XCTAssertEqual(manager.state, .connecting)
+        XCTAssertTrue(manager.wasStreaming)
+    }
+
+    func testActivitySnapshotIncludesOnlyNativeConnectionsThatAreCollecting() {
+        let manager = WhoopBleConnectionManager()
+        let cases: [(ConnectionState, [String])] = [
+            (.idle, []),
+            (.scanning, []),
+            (.connecting, []),
+            (.discoveringServices, []),
+            (.subscribing, []),
+            (.ready, ["whoop"]),
+            (.streaming, ["whoop"]),
+        ]
+
+        for (state, expectedCollectors) in cases {
+            manager.setState(state)
+            let collectors = NSMutableSet()
+
+            manager.syncOnBleQueue {
+                NotificationCenter.default.post(
+                    name: Notification.Name("Dofek.collectionActivityRequested"),
+                    object: collectors
+                )
+            }
+
+            XCTAssertEqual(collectors, NSSet(array: expectedCollectors), "state: \(state)")
+        }
+    }
+
+    func testActivitySnapshotReflectsNativeDisconnect() {
+        let manager = WhoopBleConnectionManager()
+        manager.setState(.ready)
+        let disconnected = expectation(description: "native disconnect completed")
+
+        manager.disconnect {
+            disconnected.fulfill()
+        }
+        wait(for: [disconnected], timeout: 1)
+
+        let collectors = NSMutableSet()
+        NotificationCenter.default.post(
+            name: Notification.Name("Dofek.collectionActivityRequested"),
+            object: collectors
+        )
+
+        XCTAssertFalse(collectors.contains("whoop"))
+    }
+
+    func testCollectionActivityObserverDoesNotRetainTheManager() {
+        weak var retainedManager: WhoopBleConnectionManager?
+
+        do {
+            let manager = WhoopBleConnectionManager()
+            manager.setState(.ready)
+            retainedManager = manager
+        }
+
+        XCTAssertNil(retainedManager)
+    }
+
+    private func connectionEventExpectation(
+        state: String,
+        onDelivery: @escaping () -> Void = {}
+    ) -> XCTestExpectation {
+        expectation(
+            forNotification: Notification.Name("WhoopBle.connectionStateChanged"),
+            object: nil
+        ) { notification in
+            guard notification.userInfo?["state"] as? String == state else { return false }
+            onDelivery()
+            return true
+        }
+    }
 }

@@ -14,6 +14,7 @@ public class BackgroundRefreshAppDelegateSubscriber: ExpoAppDelegateSubscriber {
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
+        CollectionNotificationService.shared.start()
         BackgroundRefreshModule.registerBackgroundTask { refreshTask in
             // Schedule the next refresh before doing work
             Self.scheduleRefresh()
@@ -42,6 +43,14 @@ public class BackgroundRefreshAppDelegateSubscriber: ExpoAppDelegateSubscriber {
 
         Self.scheduleRefresh()
         return true
+    }
+
+    public func applicationDidBecomeActive(_ application: UIApplication) {
+        CollectionNotificationService.shared.appBecameActive()
+    }
+
+    public func applicationWillTerminate(_ application: UIApplication) {
+        CollectionNotificationService.shared.appWillTerminate()
     }
 
     private static func scheduleRefresh() {
