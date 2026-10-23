@@ -68,9 +68,9 @@ final class CollectionNotificationCoordinator {
     }
 
     func whoopConnected() {
+        cancel([CollectionNotification.whoopDisconnected.identifier])
         guard enabled else { return }
         whoopIsConnected = true
-        cancel([CollectionNotification.whoopDisconnected.identifier])
     }
 
     func whoopDisconnected() {

@@ -175,6 +175,18 @@ final class CollectionNotificationCoordinatorTests: XCTestCase {
         XCTAssertTrue(recorder.scheduled.isEmpty)
     }
 
+    func testDisabledReconnectCancelsWarningsWithoutArmingDisconnect() {
+        let recorder = NotificationRecorder()
+        let coordinator = recorder.makeCoordinator()
+
+        coordinator.whoopConnected()
+
+        XCTAssertEqual(recorder.cancellations, [[CollectionNotification.whoopDisconnected.identifier]])
+        coordinator.setEnabled(true)
+        coordinator.whoopDisconnected()
+        XCTAssertTrue(recorder.scheduled.isEmpty)
+    }
+
     func testRepeatedEnablePreservesKnownWhoopConnection() {
         let recorder = NotificationRecorder()
         let coordinator = recorder.makeCoordinator()

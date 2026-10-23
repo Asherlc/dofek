@@ -211,6 +211,24 @@ final class CollectionNotificationServiceTests: XCTestCase {
         XCTAssertFalse(harness.center.delivered.contains(oldIdentifier))
     }
 
+    func testReconnectBeforeAuthorizationRemovesPriorProcessWhoopWarnings() {
+        let center = ControlledCollectionNotificationCenter()
+        let oldIdentifier = "\(CollectionNotification.whoopDisconnected.identifier).\(UUID().uuidString)"
+        center.seed(oldIdentifier)
+        center.seed("unrelated")
+        center.delivered = [oldIdentifier, "unrelated"]
+        let harness = CollectionNotificationServiceHarness(center: center)
+
+        harness.connection("connected")
+        center.completeLookups()
+        drainCallbacks()
+
+        XCTAssertEqual(Set(center.pending.keys), ["unrelated"])
+        XCTAssertEqual(center.delivered, ["unrelated"])
+        XCTAssertTrue(center.settingsCallbacks.isEmpty)
+        XCTAssertTrue(center.adds.isEmpty)
+    }
+
     func testDisableRemovesPersistedWarningsForBothKinds() {
         let harness = CollectionNotificationServiceHarness()
         let oldWhoop = "\(CollectionNotification.whoopDisconnected.identifier).previous-process"
