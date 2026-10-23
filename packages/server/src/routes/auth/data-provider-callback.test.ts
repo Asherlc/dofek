@@ -312,20 +312,38 @@ describe("handleOAuth2Callback — revocation fallback", () => {
     expect(mockDeleteProviderAuthorization).not.toHaveBeenCalled();
   });
 
-  it("keeps arbitrary upstream error details out of the connection failure response", async () => {
-    useRegistrationReplacement();
-    mockLoadTokens.mockResolvedValue(null);
-    mockExchangeCode.mockRejectedValue(
-      new Error("Upstream failure: access_token=secret-token <script>private</script>"),
-    );
+  it.each([
+    {
+      kind: "first connection",
+      existing: null,
+      status: 500,
+      message: "Connection failed — please try again from Garmin",
+    },
+    {
+      kind: "reconnect",
+      existing: { accessToken: "old-access", providerAccountId: "account-1" },
+      status: 400,
+      message:
+        "Garmin reconnect failed. Your existing connection is still active. Please try again later.",
+    },
+  ])(
+    "keeps arbitrary upstream error details out of a failed $kind response",
+    async ({ existing, status, message }) => {
+      useRegistrationReplacement();
+      mockLoadTokens.mockResolvedValue(existing);
+      mockExchangeCode.mockRejectedValue(
+        new Error("Upstream failure: access_token=secret-token <script>private</script>"),
+      );
 
-    const { req, res } = createMockReqRes({ code: "code", state: "state" });
-    await handleOAuth2Callback(req, res);
+      const { req, res } = createMockReqRes({ code: "code", state: "state" });
+      await handleOAuth2Callback(req, res);
 
-    expect(res.status).toHaveBeenCalledWith(500);
-    expect(res.type).toHaveBeenCalledWith("text/plain");
-    expect(res.send).toHaveBeenCalledWith("Connection failed — please try again from Garmin");
-  });
+      expect(res.status).toHaveBeenCalledWith(status);
+      expect(res.type).toHaveBeenCalledWith("text/plain");
+      expect(res.send).toHaveBeenCalledWith(message);
+      expect(mockRevokeExistingTokens).not.toHaveBeenCalled();
+    },
+  );
 
   it("replaces credentials for the same registration without revoking either grant", async () => {
     useRegistrationReplacement();
