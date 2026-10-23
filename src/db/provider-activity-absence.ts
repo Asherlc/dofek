@@ -62,6 +62,18 @@ function externalIdListSql(externalIds: string[]) {
   );
 }
 
+/** A stale downstream list cannot override a confirmed origin tombstone. */
+function originAllowsRestoreSql(): SQL {
+  return sql`NOT EXISTS (
+    SELECT 1 FROM fitness.activity_copy_identity(candidate.provider_id, candidate.external_id, candidate.raw) AS copy
+    LEFT JOIN fitness.activity AS origin ON origin.user_id = candidate.user_id
+      AND origin.provider_id = copy.provider_id
+      AND LOWER(REPLACE(origin.external_id, '-', '')) = copy.external_id
+    WHERE origin.provider_absent_at IS NOT NULL OR origin.deleted_at IS NOT NULL
+      OR (origin.id IS NULL AND COALESCE(candidate.absence_provider_id, candidate.provider_id) <> candidate.provider_id)
+  )`;
+}
+
 /** Skip tombstoning Apple Health rows superseded by another identity in the current push. */
 export function appleHealthDuplicateTombstoneGuardSql(
   identities: readonly AppleHealthWorkoutIdentity[],
@@ -138,28 +150,58 @@ export async function reconcileProviderActivityAbsence(
 
   if (presentExternalIds.length > 0)
     await db.execute(sql`
-    UPDATE fitness.activity
-    SET provider_absent_at = NULL
+    UPDATE fitness.activity AS candidate
+    SET provider_absent_at = NULL, absence_provider_id = NULL
     WHERE user_id = ${userId}
       AND provider_id = ${reconciliation.providerId}
       AND external_id IN (${externalIdListSql(presentExternalIds)})
       AND provider_absent_at IS NOT NULL
       AND deleted_at IS NULL
+      AND ${originAllowsRestoreSql()}
   `);
 
   await db.execute(sql`
-    UPDATE fitness.activity
-    SET provider_absent_at = NOW()
+    WITH linked_copies AS (
+      SELECT candidate.id, copy.provider_id AS absence_provider_id
+      FROM fitness.activity AS candidate
+      CROSS JOIN LATERAL fitness.activity_copy_identity(candidate.provider_id, candidate.external_id, candidate.raw) AS copy
+      LEFT JOIN fitness.activity AS origin
+        ON origin.user_id = candidate.user_id AND origin.provider_id = copy.provider_id
+        AND LOWER(REPLACE(origin.external_id, '-', '')) = copy.external_id
+      WHERE candidate.user_id = ${userId}
+        AND candidate.deleted_at IS NULL
+        AND (candidate.provider_absent_at IS NULL OR candidate.absence_provider_id IS DISTINCT FROM copy.provider_id)
+        AND (
+          origin.provider_absent_at IS NOT NULL OR origin.deleted_at IS NOT NULL
+          OR (
+            copy.provider_id = ${reconciliation.providerId}
+            AND COALESCE(origin.started_at, candidate.started_at) >= ${reconciliation.windowStart}
+            AND COALESCE(origin.started_at, candidate.started_at) < ${reconciliation.windowEnd}
+            ${presentExternalIds.length === 0 ? sql`` : sql`AND copy.external_id NOT IN (${externalIdListSql(presentExternalIds.map((id) => id.toLowerCase().replaceAll("-", "")))})`}
+          )
+        )
+    )
+    UPDATE fitness.activity AS candidate
+    SET provider_absent_at = COALESCE(candidate.provider_absent_at, NOW()),
+      absence_provider_id = COALESCE(
+        (SELECT absence_provider_id FROM linked_copies WHERE id = candidate.id),
+        ${reconciliation.providerId}
+      )
     WHERE user_id = ${userId}
-      AND provider_id = ${reconciliation.providerId}
-      AND provider_absent_at IS NULL
       AND deleted_at IS NULL
-      AND external_id IS NOT NULL
-      AND external_id <> ''
-      AND started_at >= ${reconciliation.windowStart}
-      AND started_at < ${reconciliation.windowEnd}
-      ${presentExternalIds.length === 0 ? sql`` : sql`AND external_id NOT IN (${externalIdListSql(presentExternalIds)})`}
-    ${appleHealthDuplicateGuard}
+      AND (
+        (
+          provider_id = ${reconciliation.providerId}
+          AND provider_absent_at IS NULL
+          AND external_id IS NOT NULL
+          AND external_id <> ''
+          AND started_at >= ${reconciliation.windowStart}
+          AND started_at < ${reconciliation.windowEnd}
+          ${presentExternalIds.length === 0 ? sql`` : sql`AND external_id NOT IN (${externalIdListSql(presentExternalIds)})`}
+          ${appleHealthDuplicateGuard}
+        )
+        OR id IN (SELECT id FROM linked_copies)
+      )
   `);
 
   await invalidateActivityVisibilityCaches(userId);
@@ -171,12 +213,18 @@ export async function markProviderActivityAbsent(
 ): Promise<number> {
   const userId = resolveUserId(mark.userId);
   const markedRows = await db.execute<{ id: string }>(sql`
-    UPDATE fitness.activity
-    SET provider_absent_at = NOW()
+    UPDATE fitness.activity AS candidate
+    SET provider_absent_at = COALESCE(provider_absent_at, NOW()), absence_provider_id = ${mark.providerId}
     WHERE user_id = ${userId}
-      AND provider_id = ${mark.providerId}
-      AND external_id = ${mark.externalId}
-      AND provider_absent_at IS NULL
+      AND (
+        (provider_id = ${mark.providerId} AND external_id = ${mark.externalId} AND provider_absent_at IS NULL)
+        OR EXISTS (
+          SELECT 1 FROM fitness.activity_copy_identity(candidate.provider_id, candidate.external_id, candidate.raw) AS copy
+          WHERE copy.provider_id = ${mark.providerId}
+            AND copy.external_id = ${mark.externalId.toLowerCase().replaceAll("-", "")}
+        )
+      )
+      AND (provider_absent_at IS NULL OR COALESCE(absence_provider_id, provider_id) <> ${mark.providerId})
       AND deleted_at IS NULL
     RETURNING id
   `);
@@ -191,13 +239,14 @@ export async function markProviderActivityPresent(
 ): Promise<void> {
   const userId = resolveUserId(mark.userId);
   await db.execute(sql`
-    UPDATE fitness.activity
-    SET provider_absent_at = NULL
+    UPDATE fitness.activity AS candidate
+    SET provider_absent_at = NULL, absence_provider_id = NULL
     WHERE user_id = ${userId}
       AND provider_id = ${mark.providerId}
       AND external_id = ${mark.externalId}
       AND provider_absent_at IS NOT NULL
       AND deleted_at IS NULL
+      AND ${originAllowsRestoreSql()}
   `);
 
   await invalidateActivityVisibilityCaches(userId);

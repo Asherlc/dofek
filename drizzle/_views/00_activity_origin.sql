@@ -12,11 +12,17 @@ WITH RECURSIVE labels AS (
   SELECT
     (member ->> 'id')::uuid AS member_id,
     member ->> 'providerId' AS provider_id,
+    member ->> 'externalId' AS external_id,
+    copy.provider_id AS copy_provider,
+    copy.external_id AS copy_external_id,
     member ->> 'sourceName' AS source_name,
     LOWER(TRIM(COALESCE(member ->> 'sourceName', ''))) AS source_label,
     LOWER(TRIM(COALESCE(member -> 'raw' ->> 'sourceBundle', ''))) AS source_bundle,
     LOWER(TRIM(COALESCE(member -> 'raw' ->> 'device_name', ''))) AS raw_device_label
   FROM JSONB_ARRAY_ELEMENTS(input_members) AS member
+  LEFT JOIN LATERAL fitness.activity_copy_identity(
+    member ->> 'providerId', member ->> 'externalId', member -> 'raw'
+  ) AS copy ON true
 ), hints AS (
   SELECT *,
     CASE
@@ -45,12 +51,14 @@ WITH RECURSIVE labels AS (
   FROM labels
 ), members AS (
   SELECT *,
-    COALESCE(bundle_provider, label_provider, device_provider) AS upstream_provider,
-    (SELECT COUNT(DISTINCT hint) > 1 FROM UNNEST(ARRAY[label_provider, bundle_provider, device_provider]) AS hint)
+    COALESCE(copy_provider, bundle_provider, label_provider, device_provider) AS upstream_provider,
+    (SELECT COUNT(DISTINCT hint) > 1 FROM UNNEST(ARRAY[copy_provider, label_provider, bundle_provider, device_provider]) AS hint)
       OR (provider_id = 'strava' AND source_label <> '' AND raw_device_label <> '' AND source_label <> raw_device_label) AS conflicting,
-    CASE WHEN bundle_provider IS NOT NULL THEN 'raw.sourceBundle'
+    CASE WHEN copy_provider IS NOT NULL THEN 'external_id'
+      WHEN bundle_provider IS NOT NULL THEN 'raw.sourceBundle'
       WHEN label_provider IS NOT NULL THEN 'source_name' ELSE 'raw.device_name' END AS evidence_field,
-    CASE WHEN bundle_provider IS NOT NULL THEN source_bundle
+    CASE WHEN copy_provider IS NOT NULL THEN copy_external_id
+      WHEN bundle_provider IS NOT NULL THEN source_bundle
       WHEN label_provider IS NOT NULL THEN source_label ELSE raw_device_label END AS evidence_value
   FROM hints
 ), matches AS (
@@ -61,6 +69,8 @@ WITH RECURSIVE labels AS (
   INNER JOIN members AS upstream
     ON upstream.provider_id = downstream.upstream_provider AND upstream.member_id <> downstream.member_id
   WHERE NOT downstream.conflicting
+    AND (downstream.copy_provider IS NULL
+      OR LOWER(REPLACE(upstream.external_id, '-', '')) = downstream.copy_external_id)
     AND (downstream.provider_id <> 'strava' OR upstream.source_label = ''
       OR upstream.source_label = COALESCE(NULLIF(downstream.source_label, ''), downstream.raw_device_label))
 ), edges AS (

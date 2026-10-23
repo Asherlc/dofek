@@ -332,7 +332,7 @@ origin_group_members AS (
     group_id,
     user_id,
     JSONB_AGG(JSONB_BUILD_OBJECT(
-      'id', id, 'providerId', provider_id, 'sourceName', source_name, 'raw', raw
+      'id', id, 'providerId', provider_id, 'externalId', external_id, 'sourceName', source_name, 'raw', raw
     ) ORDER BY id) AS members
   FROM ranked
   GROUP BY group_id, user_id

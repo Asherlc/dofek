@@ -1,5 +1,50 @@
 [
   {
+    "name": "WHOOP workout propagated to Peloton",
+    "members": [
+      {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "providerId": "whoop",
+        "externalId": "c4e019f3-3874-47ad-8a24-20e7c7918cf5",
+        "sourceName": null,
+        "raw": null
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000002",
+        "providerId": "peloton",
+        "externalId": "c4e019f3387447ad8a2420e7c7918cf5",
+        "sourceName": null,
+        "raw": { "platform": "whoop", "deviceType": "whoop" }
+      }
+    ],
+    "expectedPrimaryMemberId": "00000000-0000-4000-8000-000000000001",
+    "expectedCandidateMemberIds": ["00000000-0000-4000-8000-000000000001"]
+  },
+  {
+    "name": "WHOOP metadata with a different workout identity is unresolved",
+    "members": [
+      {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "providerId": "whoop",
+        "externalId": "c4e019f3-3874-47ad-8a24-20e7c7918cf5",
+        "sourceName": null,
+        "raw": null
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000002",
+        "providerId": "peloton",
+        "externalId": "24cbaba10c204a52a38b9fd1191a705d",
+        "sourceName": null,
+        "raw": { "platform": "whoop", "deviceType": "whoop" }
+      }
+    ],
+    "expectedPrimaryMemberId": null,
+    "expectedCandidateMemberIds": [
+      "00000000-0000-4000-8000-000000000001",
+      "00000000-0000-4000-8000-000000000002"
+    ]
+  },
+  {
     "name": "complete transfer chain",
     "members": [
       {
