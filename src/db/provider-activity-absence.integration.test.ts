@@ -48,6 +48,20 @@ describe("reconcileProviderActivityAbsence", () => {
     windowEnd: new Date("2026-10-23T00:00:00Z"),
   };
 
+  it("rejects absence attribution to a provider that does not exist", async () => {
+    const { copy } = await insertWhoopCopy();
+    await expect(
+      ctx.db
+        .update(activity)
+        .set({ absenceProviderId: randomUUID() })
+        .where(eq(activity.id, copy.id)),
+    ).rejects.toMatchObject({
+      cause: { code: "23503", constraint: "activity_absence_provider_id_provider_id_fk" },
+    });
+    const [stored] = await ctx.db.select().from(activity).where(eq(activity.id, copy.id));
+    expect(stored?.absenceProviderId).toBeNull();
+  });
+
   it("retires an absent origin's copy and restores it only after both providers return it", async () => {
     const { copy, originId, externalId } = await insertWhoopCopy();
     const readCopy = async () =>
