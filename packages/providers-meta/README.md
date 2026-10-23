@@ -18,7 +18,7 @@ Metadata and statistics for data providers.
 
 - `PROVIDER_LABELS` provides the canonical display name for each provider.
 - [`providerLogoType` and `providerLogoId`](src/providers.ts) resolve provider icons from the [provider catalog](src/provider-catalog.ts).
-- `BRAND_COLORS` provides fallback colors for providers without dedicated logos (e.g., `bodyspec` uses `#00B4D8`).
+- [`BRAND_COLORS`](src/provider-catalog.ts) provides fallback colors for providers without dedicated logos (e.g., `dofek` uses `#4A9D8E`).
 
 ### WHOOP Wear Locations
 
