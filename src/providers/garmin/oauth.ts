@@ -1,4 +1,8 @@
 import { randomUUID } from "node:crypto";
+import {
+  ProviderRateLimitError,
+  ProviderServiceUnavailableError,
+} from "@dofek/provider-http/rate-limit";
 import { z } from "zod";
 import {
   exchangeCodeForTokens,
@@ -42,19 +46,30 @@ export function createGarminAuthSetup(
     path: "id" | "permissions",
     accessToken: string,
   ): Promise<unknown> {
-    const response = await fetchFn(`${GARMIN_API_BASE}/user/${path}`, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
-    if (!response.ok) {
-      const error = new ProviderConnectionError(
-        "Garmin Connect",
-        path === "id" ? "identity" : "permissions",
-        response.status,
-      );
-      await reportGarminConnectionHttpFailure(response, error);
-      throw error;
+    let response: Response | null = null;
+    let statusCode: number;
+    try {
+      response = await fetchFn(`${GARMIN_API_BASE}/user/${path}`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      statusCode = response.status;
+    } catch (error) {
+      if (
+        !(error instanceof ProviderRateLimitError) &&
+        !(error instanceof ProviderServiceUnavailableError)
+      ) {
+        throw error;
+      }
+      statusCode = error.statusCode;
     }
-    return response.json();
+    if (response?.ok) return response.json();
+    const error = new ProviderConnectionError(
+      "Garmin Connect",
+      path === "id" ? "identity" : "permissions",
+      statusCode,
+    );
+    await reportGarminConnectionHttpFailure(response, error);
+    throw error;
   }
 
   async function revokeAuthorization(

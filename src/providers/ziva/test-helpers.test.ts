@@ -25,7 +25,13 @@ describe("createFakeZivaMcpHarness", () => {
             signal: AbortSignal.any([controller.signal]),
           }).then(() => { outcome = "resolved"; }, () => { outcome = "aborted"; });
 
-          await setImmediate();
+          const initializationDeadline = Date.now() + 1_000;
+          while (!harness.jsonRpcMethods.includes("notifications/initialized")) {
+            if (Date.now() >= initializationDeadline) {
+              throw new Error("Initialization notification did not reach the fake transport");
+            }
+            await setImmediate();
+          }
           for (let turn = 0; turn < 5; turn += 1) {
             globalThis.gc();
             await setImmediate();

@@ -168,6 +168,12 @@ the [OWASP logging guide](https://cheatsheetseries.owasp.org/cheatsheets/Logging
 Use the event's UTC timestamp, failed stage, status, and any validated request
 reference when investigating a denial with Garmin; never share callback query
 values or credentials. These diagnostics do not resolve an upstream denial.
+The [production HTTP wrapper](../src/lib/provider-rate-limit-fetch.ts) can throw
+a typed rate-limit or service-unavailable error before returning a response.
+For those failures, the event retains the failed stage and HTTP status but
+omits unavailable body, content-type, and request-reference metadata. The
+[OAuth reader](../src/providers/garmin/oauth.ts) does not report the original
+error message, body, or cause.
 
 FIT artifacts use the existing `IMPORT_R2_BUCKET` (`dofek-imports` in the
 deployment stack) and shared R2 credentials. Objects belong to the Dofek user

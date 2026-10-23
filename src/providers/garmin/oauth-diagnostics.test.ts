@@ -177,6 +177,53 @@ describe("Garmin OAuth failure diagnostics", () => {
     });
   });
 
+  it("retains known field names for heterogeneous JSON error values", async () => {
+    const privateDetail = "synthetic-private-detail";
+    await reportGarminConnectionHttpFailure(
+      Response.json(
+        {
+          error: "invalid_token",
+          errors: { code: "forbidden", message: privateDetail },
+          code: null,
+          errorCode: 403,
+          error_description: [privateDetail],
+          errorMessage: { detail: privateDetail },
+          message: false,
+          unknownField: privateDetail,
+        },
+        { status: 403 },
+      ),
+      denied(),
+    );
+
+    expect(diagnostic()).toMatchObject({
+      bodyKind: "json_object",
+      bodyFields: [
+        "error",
+        "errors",
+        "code",
+        "errorCode",
+        "error_description",
+        "errorMessage",
+        "message",
+      ],
+      errorCodes: ["invalid_token"],
+    });
+    expect(JSON.stringify([warn.mock.calls, captureException.mock.calls])).not.toContain(
+      privateDetail,
+    );
+  });
+
+  it("accepts JSON objects with every diagnostic field absent", async () => {
+    await reportGarminConnectionHttpFailure(Response.json({}, { status: 403 }), denied());
+
+    expect(diagnostic()).toMatchObject({
+      bodyKind: "json_object",
+      bodyFields: [],
+      errorCodes: [],
+    });
+  });
+
   it.each([
     "00000000-0000-0000-0000-000000000000",
     "token-shaped-opaque-id",
