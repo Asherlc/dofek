@@ -367,3 +367,34 @@ export const PrimaryProviderWithoutLogo: Story = {
   },
   decorators: NonMapActivity.decorators,
 };
+
+export const AppleHealthSourceApps: Story = {
+  render: () => (
+    <div className="grid gap-4 lg:grid-cols-2">
+      {["Strong", "Hang Ten"].map((sourceName) => (
+        <article key={sourceName} className="card overflow-hidden">
+          <ActivityCardContent
+            activity={{
+              ...strengthActivity,
+              name: sourceName === "Strong" ? "Morning strength" : "Hangboard session",
+              source: {
+                origin: {
+                  status: "resolved",
+                  memberActivityId: "00000000-0000-4000-8000-000000000001",
+                  providerId: "apple_health",
+                  sourceName,
+                },
+                primarySourceLabel: `${sourceName} (via Apple Health)`,
+                sourceCount: 1,
+                overlapSummary: null,
+              },
+            }}
+            units={units}
+            selectMode={false}
+            selected={false}
+          />
+        </article>
+      ))}
+    </div>
+  ),
+};
