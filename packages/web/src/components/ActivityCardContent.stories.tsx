@@ -356,10 +356,10 @@ export const PrimaryProviderWithoutLogo: Story = {
         origin: {
           status: "resolved",
           memberActivityId: "00000000-0000-4000-8000-000000000001",
-          providerId: "bodyspec",
+          providerId: "mountain-project",
           sourceName: null,
         },
-        primarySourceLabel: "BodySpec",
+        primarySourceLabel: "Mountain Project",
         sourceCount: 1,
         overlapSummary: null,
       },

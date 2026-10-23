@@ -68,15 +68,15 @@ describe("ProviderLogo", () => {
 
   describe("letter fallback", () => {
     it("renders a styled letter for providers without a logo", () => {
-      const { container } = render(<ProviderLogo provider="bodyspec" />);
+      const { container } = render(<ProviderLogo provider="mountain-project" />);
       const span = querySpan(container);
-      expect(span.textContent).toBe("B");
+      expect(span.textContent).toBe("M");
     });
 
     it("uses the brand color when available", () => {
-      const { container } = render(<ProviderLogo provider="bodyspec" />);
+      const { container } = render(<ProviderLogo provider="mountain-project" />);
       const span = querySpan(container);
-      expect(span.style.backgroundColor).toBe("rgb(0, 180, 216)");
+      expect(span.style.backgroundColor).toBe("rgb(31, 90, 136)");
     });
 
     it("uses the default gray for unknown providers", () => {
@@ -92,7 +92,7 @@ describe("ProviderLogo", () => {
     });
 
     it("scales font size to 55% of size", () => {
-      const { container } = render(<ProviderLogo provider="bodyspec" size={40} />);
+      const { container } = render(<ProviderLogo provider="mountain-project" size={40} />);
       const span = querySpan(container);
       expect(span.style.fontSize).toBe("22px");
     });

@@ -117,7 +117,7 @@ describe("providerAbsentExplanation", () => {
 
 describe("BRAND_COLORS", () => {
   it("maps providers to hex color strings", () => {
-    expect(BRAND_COLORS.bodyspec).toBe("#00B4D8");
+    expect(BRAND_COLORS.dofek).toBe("#4A9D8E");
     expect(BRAND_COLORS.ble_heart_rate).toBe("#E0245E");
   });
 });
