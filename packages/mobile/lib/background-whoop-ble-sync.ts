@@ -1,67 +1,16 @@
-import type { InertialMeasurementUnitSample } from "@dofek/imu";
 import * as Sentry from "@sentry/react-native";
 import { AppState, type AppStateStatus } from "react-native";
-import type { WhoopRealtimeDataSample } from "../modules/whoop-ble";
-import type { DeviceScopedSample } from "./device-sample-groups";
 import { captureException, logger } from "./telemetry";
-import {
-  WhoopBleDiagnostics,
-  type WhoopCaptureStats,
-  type WhoopSyncTrigger,
-  type WhoopUploadBatch,
-} from "./whoop-ble-diagnostics";
+import { WhoopBleDiagnostics, type WhoopSyncTrigger } from "./whoop-ble-diagnostics";
+import type {
+  InertialMeasurementUnitUploadClient,
+  WhoopBleRealtimeUploadClient,
+  WhoopBleSyncDeps,
+} from "./whoop-ble-sync-types";
 import { WhoopBleUploadWorkers } from "./whoop-ble-upload-workers";
 
 const PERIODIC_DRAIN_INTERVAL_MS = 30_000;
 const LOG_CATEGORY = "whoop-ble";
-
-/** tRPC client interface for passive WHOOP IMU sample upload. */
-export interface InertialMeasurementUnitUploadClient {
-  inertialMeasurementUnitSync: {
-    pushSamples: {
-      mutate(input: {
-        deviceId: string;
-        deviceType: string;
-        samples: InertialMeasurementUnitSample[];
-        telemetry?: WhoopUploadBatch["telemetry"];
-      }): Promise<{ inserted: number }>;
-    };
-  };
-}
-
-type BufferedInertialMeasurementUnitSample = InertialMeasurementUnitSample & DeviceScopedSample;
-type RealtimeDataSample = WhoopRealtimeDataSample;
-
-/** Dependencies injected for testability (wraps the whoop-ble native module) */
-export interface WhoopBleSyncDeps {
-  getDataPathStats(): WhoopCaptureStats;
-  isBluetoothAvailable(): boolean;
-  findWhoop(): Promise<{ id: string; name: string | null } | null>;
-  connect(peripheralId: string): Promise<boolean>;
-  startImuStreaming(): Promise<boolean>;
-  stopImuStreaming(): Promise<boolean>;
-  peekBufferedSamples(maxCount?: number): Promise<BufferedInertialMeasurementUnitSample[]>;
-  confirmSamplesDrain(count: number): void;
-  peekBufferedRealtimeData(maxCount?: number): Promise<RealtimeDataSample[]>;
-  confirmRealtimeDataDrain(count: number): void;
-  addConnectionStateListener(
-    callback: (event: { state: string; peripheralId?: string; error?: string }) => void,
-  ): { remove(): void };
-  disconnect(): void;
-}
-
-/** tRPC client interface for BLE realtime data upload (heart rate + beat interval + orientation + optical) */
-export interface WhoopBleRealtimeUploadClient {
-  whoopBleSync: {
-    pushRealtimeData: {
-      mutate(input: {
-        deviceId: string;
-        samples: Array<Omit<WhoopRealtimeDataSample, "deviceId">>;
-        telemetry?: WhoopUploadBatch["telemetry"];
-      }): Promise<{ inserted: number }>;
-    };
-  };
-}
 
 interface WhoopBleSyncSession {
   deps: WhoopBleSyncDeps;

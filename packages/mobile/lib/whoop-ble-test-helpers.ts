@@ -1,10 +1,10 @@
 import { vi } from "vitest";
+import type { WhoopCaptureStats } from "./whoop-ble-diagnostics";
 import type {
   InertialMeasurementUnitUploadClient,
   WhoopBleRealtimeUploadClient,
   WhoopBleSyncDeps,
-} from "./background-whoop-ble-sync";
-import type { WhoopCaptureStats } from "./whoop-ble-diagnostics";
+} from "./whoop-ble-sync-types";
 
 export function makeWhoopCaptureStats(): WhoopCaptureStats {
   const stream = {

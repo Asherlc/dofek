@@ -1,13 +1,15 @@
 import { AppState } from "react-native";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  type InertialMeasurementUnitUploadClient,
   initBackgroundWhoopBleSync,
   syncWhoopBle,
   teardownBackgroundWhoopBleSync,
-  type WhoopBleRealtimeUploadClient,
-  type WhoopBleSyncDeps,
-} from "./background-whoop-ble-sync.ts";
+} from "./background-whoop-ble-sync";
+import type {
+  InertialMeasurementUnitUploadClient,
+  WhoopBleRealtimeUploadClient,
+  WhoopBleSyncDeps,
+} from "./whoop-ble-sync-types";
 import { makeMockDeps, makeMockRealtimeClient, makeMockTrpcClient } from "./whoop-ble-test-helpers";
 
 const { mockLoadDeviceErasureCutoff } = vi.hoisted(() => ({

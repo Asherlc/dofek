@@ -1,10 +1,5 @@
 import type { InertialMeasurementUnitSample } from "@dofek/imu";
 import type { WhoopRealtimeDataSample } from "../modules/whoop-ble";
-import type {
-  InertialMeasurementUnitUploadClient,
-  WhoopBleRealtimeUploadClient,
-  WhoopBleSyncDeps,
-} from "./background-whoop-ble-sync";
 import { isAfterDeviceErasureCutoff } from "./device-erasure-cutoff";
 import { DeviceSampleGroups, type DeviceScopedSample } from "./device-sample-groups";
 import { captureException, logger } from "./telemetry";
@@ -13,6 +8,11 @@ import type {
   WhoopSyncTrigger,
   WhoopUploadBatch,
 } from "./whoop-ble-diagnostics";
+import type {
+  InertialMeasurementUnitUploadClient,
+  WhoopBleRealtimeUploadClient,
+  WhoopBleSyncDeps,
+} from "./whoop-ble-sync-types";
 
 const LOG_CATEGORY = "whoop-ble";
 const IMU_UPLOAD_BATCH_SIZE = 500;

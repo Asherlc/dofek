@@ -1,11 +1,11 @@
 import { AppState } from "react-native";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { WhoopBleDiagnostics } from "./whoop-ble-diagnostics";
 import type {
   InertialMeasurementUnitUploadClient,
   WhoopBleRealtimeUploadClient,
   WhoopBleSyncDeps,
-} from "./background-whoop-ble-sync";
-import { WhoopBleDiagnostics } from "./whoop-ble-diagnostics";
+} from "./whoop-ble-sync-types";
 import {
   makeMockDeps,
   makeMockRealtimeClient,

@@ -1,12 +1,12 @@
-import type {
-  InertialMeasurementUnitUploadClient,
-  WhoopBleRealtimeUploadClient,
-  WhoopBleSyncDeps,
-} from "./background-whoop-ble-sync";
 import { loadDeviceErasureCutoff } from "./device-erasure-cutoff";
 import { captureException } from "./telemetry";
 import { drainWhoopImuBuffer, drainWhoopRealtimeBuffer } from "./whoop-ble-buffer-drain";
 import type { WhoopBleDiagnostics, WhoopSyncTrigger } from "./whoop-ble-diagnostics";
+import type {
+  InertialMeasurementUnitUploadClient,
+  WhoopBleRealtimeUploadClient,
+  WhoopBleSyncDeps,
+} from "./whoop-ble-sync-types";
 
 type Stream = "imu" | "realtime";
 interface NativePeekOwnership {

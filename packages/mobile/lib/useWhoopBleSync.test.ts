@@ -2,10 +2,7 @@
 
 import { renderHook } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type {
-  InertialMeasurementUnitUploadClient,
-  WhoopBleSyncDeps,
-} from "./background-whoop-ble-sync";
+import type { InertialMeasurementUnitUploadClient, WhoopBleSyncDeps } from "./whoop-ble-sync-types";
 import { makeWhoopCaptureStats } from "./whoop-ble-test-helpers";
 
 const { mockInit, mockTeardown } = vi.hoisted(() => ({
