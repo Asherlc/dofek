@@ -337,6 +337,16 @@ Search, get, and history advertise `readOnlyHint: true` and
 `openWorldHint: false`. These hints follow the official [MCP tool annotation
 contract](https://modelcontextprotocol.io/specification/2025-11-25/server/tools#toolannotations).
 
+## Widget appearance
+
+The Day Nutrition and Analytics Explorer widgets follow the MCP host's light
+or dark theme, including changes while a widget is open. They apply host color
+variables through the SDK's
+[`useHostStyleVariables`](https://apps.extensions.modelcontextprotocol.io/api/functions/_modelcontextprotocol_ext-apps_react.useHostStyleVariables.html)
+hook, with light/dark defaults when host colors are absent. Analytics charts
+use [ECharts' dark theme](https://echarts.apache.org/handbook/en/concepts/style/)
+and a transparent background to match the widget.
+
 ## Output contract
 
 Every Dofek MCP tool advertises an `outputSchema` and, on success, returns
