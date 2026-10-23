@@ -6,7 +6,6 @@ settings:
   excludeLinksFromLockfile: false
 
 overrides:
-  '@expo/cli>zod': 4.6.7
   '@expo/dom-webview': 58.0.2
   '@expo/cli>zod': 4.6.7
   '@expo/xcpretty>js-yaml': 4.3.2
