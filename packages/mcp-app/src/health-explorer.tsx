@@ -4,6 +4,7 @@ import {
   healthMetricPresentation,
   healthMetricSchema,
 } from "@dofek/mcp-contracts/health-explorer";
+import { useDocumentTheme } from "@modelcontextprotocol/ext-apps/react";
 import { LineChart } from "echarts/charts";
 import { GridComponent, TooltipComponent } from "echarts/components";
 import * as echarts from "echarts/core";
@@ -18,6 +19,7 @@ export interface HealthExplorerProps {
 }
 
 export function HealthExplorer({ snapshot, onMetricChange }: HealthExplorerProps) {
+  const theme = useDocumentTheme();
   const chartRef = useRef<HTMLDivElement>(null);
   const primarySeries = snapshot.series[0];
   const displayedMetric = primarySeries?.metric ?? snapshot.summary[0]?.metric;
@@ -27,8 +29,9 @@ export function HealthExplorer({ snapshot, onMetricChange }: HealthExplorerProps
 
   useEffect(() => {
     if (!chartRef.current || !primarySeries) return;
-    const chart = echarts.init(chartRef.current);
+    const chart = echarts.init(chartRef.current, theme === "dark" ? "dark" : undefined);
     chart.setOption({
+      backgroundColor: "transparent",
       grid: { left: 44, right: 20, top: 24, bottom: 34 },
       tooltip: { trigger: "axis" },
       xAxis: { type: "category", data: primarySeries.points.map((point) => point.key) },
@@ -42,7 +45,7 @@ export function HealthExplorer({ snapshot, onMetricChange }: HealthExplorerProps
       ],
     });
     return () => chart.dispose();
-  }, [primarySeries]);
+  }, [primarySeries, theme]);
 
   return (
     <main>
