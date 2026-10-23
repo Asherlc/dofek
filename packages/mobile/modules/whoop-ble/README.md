@@ -65,6 +65,31 @@ stream controls, orientation events, reconnect support, and peek-then-confirm
 buffer drains. Use the peek/confirm pair when uploading samples so data is only
 removed after the upload succeeds.
 
+`getDataPathStats()` also exposes `lastKnownDeviceId`, capture timestamps, and a typed `buffers`
+snapshot: `bufferInstanceId`, `bufferCreatedAt`, `checkpointAt`, `imu`,
+`realtime`, and `previousCheckpoint`. Each stream reports its count, true
+minimum/maximum sample timestamps, received and confirmed counts, discard counts
+for overflow/erasure/clear/legacy drains, and `lastConfirmedAt`. Notification and
+parsed-sample timestamps use phone observation time; `lastValidHeartRateAt` uses
+the device timestamp of the latest positive reported BPM whose clock is between
+year 2000 and five minutes after phone observation time. See the
+[TypeScript contract](index.ts) and
+[native capture diagnostics](ios/WhoopBleCaptureDiagnostics.swift).
+
+The [buffer](ios/WhoopBleSampleBuffer.swift) checkpoints bounded metadata during
+capture at most once per 30 seconds, and when diagnostics or explicit discard
+boundaries request a snapshot. A positive confirmation that empties a stream also
+checkpoints the resulting queue state; releasing a peek with count zero retains
+every sample. One previous checkpoint is available after a
+new buffer instance starts. Samples remain in memory and are never restored
+from that checkpoint; prior account ownership is unknown. It is last-observed
+evidence, not an exact loss count or termination reason. Apple does not guarantee
+a final [termination callback](https://developer.apple.com/documentation/uikit/uiapplicationdelegate/applicationwillterminate(_:)).
+The expanded bridge requires a new native build; the Dofek app declares runtime
+1.13 in [app.json](../../app.json). The
+[diagnostic procedure](../../../../docs/whoop-ble-protocol.md#diagnosing-capture-upload-and-visibility)
+describes correlation with upload and server events.
+
 ## Runtime, Stability, and Errors
 
 - Node.js 22.14 or later is required by the package tooling.

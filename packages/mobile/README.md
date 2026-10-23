@@ -365,19 +365,21 @@ for the approved SDK dependency tree.
 
 ### Native diagnostic runtime
 
-Runtime **1.12** adds reported WHOOP BPM to the native buffer payload and fixes
-fractional sensor timestamps; see the [WHOOP module contract](modules/whoop-ble/README.md).
+Runtime **1.13** adds WHOOP capture timestamps, buffer counters and retained
+diagnostic checkpoints to the native bridge. It includes runtime 1.12's reported
+WHOOP BPM and fractional timestamp fixes; see the
+[WHOOP module contract](modules/whoop-ble/README.md).
 Build a new native binary containing these changes before publishing updates for
-runtime 1.12. Existing runtime 1.11 and earlier binaries retain their compatible
+runtime 1.13. Existing runtime 1.12 and earlier binaries retain their compatible
 updates. Increment the runtime whenever a bridge payload change requires new
 native code, following Expo's
 [runtime compatibility guidance](https://docs.expo.dev/eas-update/runtime-versions/).
 
-Runtime 1.12 retains the stable [Expo SDK 58](https://expo.dev/changelog/sdk-58)
-native dependency set with Expo 58.0.16, Expo Router 58.0.24, Expo Updates
-58.0.17, React Native 0.88.0, and React Native SVG 15.16.0, pinned in
+Runtime 1.13 retains the stable [Expo SDK 58](https://expo.dev/changelog/sdk-58)
+native dependency set with Expo 58.0.17, Expo Router 58.0.25, Expo Updates
+58.0.18, React Native 0.88.0, and React Native SVG 15.16.0, pinned in
 [package.json](./package.json). The
-[Expo 58.0.16 dependency matrix](https://github.com/expo/expo/blob/expo%4058.0.16/packages/expo/bundledNativeModules.json)
+[Expo 58.0.17 dependency matrix](https://github.com/expo/expo/blob/expo%4058.0.17/packages/expo/bundledNativeModules.json)
 also aligns Crypto and Haptics to 58.0.7, Sharing to 58.0.19, Splash Screen to
 58.0.10, Dev Client to 58.0.14, Build Properties to 58.0.11, and Modules Core to
 58.0.23, with Modules JSI 58.0.16 resolved in the [lockfile](../../pnpm-lock.yaml).
@@ -451,8 +453,10 @@ device sign-in validation remains separate from helper tests and archive validat
 
 Query persistence records allowlisted failure categories/codes and aggregate
 attempted-write counts and UTF-8 byte measurements per persister lifetime.
-Diagnostics contain no cache keys, user IDs, health values, tokens, or original
-native messages. The pinned AsyncStorage conversion drops NSError codes, so
+Persistence-specific attributes contain no cache keys, user IDs, health values,
+tokens, or original native messages. The shared telemetry context separately
+adds authenticated identity and runtime versions as described below. The pinned
+AsyncStorage conversion drops NSError codes, so
 known fixed storage messages also map to safe categories; other failures stay
 `unknown`. Read/remove and deserialization rejections retain their original
 identity, and write failures are captured through TanStack's retry callback
@@ -468,6 +472,30 @@ The 5 MiB cap measures `TextEncoder` UTF-8 output, matching the
 [Encoding Standard](https://encoding.spec.whatwg.org/#interface-textencoder).
 
 ## Mobile Telemetry
+
+The [shared telemetry boundary](./lib/telemetry.ts) adds canonical `userId` while
+authenticated, plus `appVersion`, native `appBuild`, `assetsVersion`,
+`runtimeVersion`, and a JavaScript-lifetime `runtimeId` to emitted logs and
+errors. Caller attributes cannot replace that identity or version context.
+The [authentication state](./lib/auth-context.tsx) sets or clears it when the
+user changes; Sentry identity and PostHog identity follow the same boundary.
+These identifiers support correlation across logs and requests, following
+[OpenTelemetry's context model](https://opentelemetry.io/docs/concepts/context-propagation/).
+Pending HTTP diagnostics retain a session guard and cannot attach an old request
+to a replacement account. Unexpected failures from retired WHOOP work use
+`retiredLifetime=true` and remain visible without an account or replacement route
+in Sentry and OTLP; they do not create a PostHog exception bound to the new user.
+Sentry breadcrumbs omit account IDs, and PostHog resets restore the shared
+runtime properties. These boundaries are covered by the
+[telemetry regressions](./lib/telemetry.test.ts) and
+[transport regressions](./lib/trpc-fetch.test.ts).
+
+WHOOP diagnostics connect native capture/buffer snapshots, per-stream workers,
+upload batches, HTTP responses, and server broker publication without logging
+sensor values. A retained native checkpoint contains metadata only, has unknown
+prior-account provenance, and cannot restore samples. See the
+[WHOOP diagnostic procedure](../../docs/whoop-ble-protocol.md#diagnosing-capture-upload-and-visibility)
+for fields, filters, raw/serving checks, and interpretation limits.
 
 `lib/telemetry.ts` always reports exceptions to Sentry via `EXPO_PUBLIC_SENTRY_DSN`.
 Exceptions also include the current Expo Router pathname in Sentry, PostHog, and

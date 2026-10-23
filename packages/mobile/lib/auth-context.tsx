@@ -91,6 +91,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const updateUser = useCallback((nextUser: AuthUser | null) => {
     userRef.current = nextUser;
     setUser(nextUser);
+    if (nextUser) {
+      identifyUser(nextUser);
+    } else {
+      resetUser();
+    }
   }, []);
 
   const updateSessionOwnerNonce = useCallback((nonce: string | null) => {
@@ -155,7 +160,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         updateUser(currentUser);
         setBootstrapError(null);
         startupOutcome = "authenticated";
-        identifyUser(currentUser);
       } else {
         await clearSessionToken();
         updateUser(null);
@@ -240,9 +244,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       updateSessionOwnerNonce(sessionOwnerNonce);
       updateUser(currentUser);
       setBootstrapError(null);
-      if (currentUser) {
-        identifyUser(currentUser);
-      }
     },
     [updateSessionOwnerNonce, updateSessionToken, updateUser],
   );
@@ -345,7 +346,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     try {
       await logoutOperation;
-      resetUser();
     } catch (error: unknown) {
       captureException(error, { source: "logout" });
     }

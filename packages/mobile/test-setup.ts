@@ -1,5 +1,6 @@
 import { createElement, type ReactNode, useEffect, useRef } from "react";
 import { beforeEach, vi } from "vitest";
+import { makeWhoopCaptureStats } from "./lib/whoop-ble-test-helpers";
 
 const asyncStorageValues = vi.hoisted(() => new Map<string, string>());
 const secureStoreValues = vi.hoisted(() => new Map<string, string>());
@@ -37,6 +38,11 @@ vi.mock("@sentry/react-native", () => ({
   withScope: vi.fn(),
   setTag: vi.fn(),
   setExtra: vi.fn(),
+  setUser: vi.fn(),
+}));
+
+vi.mock("expo-constants", () => ({
+  default: { platform: { ios: { buildNumber: "test-build" } } },
 }));
 
 vi.mock("expo-crypto", () => ({
@@ -633,6 +639,7 @@ vi.mock("./modules/app-store-billing", () => ({
 
 // ── expo-updates mock ─────────────────────────────────────────────
 vi.mock("expo-updates", () => ({
+  manifest: null,
   updateId: null,
   channel: null,
   runtimeVersion: null,
@@ -642,6 +649,7 @@ vi.mock("expo-updates", () => ({
 
 // ── WHOOP BLE native module mock ───────────────────────────────────
 vi.mock("./modules/whoop-ble", () => ({
+  getDataPathStats: vi.fn(() => makeWhoopCaptureStats()),
   isBluetoothAvailable: vi.fn(() => false),
   findWhoop: vi.fn(() => Promise.resolve(null)),
   connect: vi.fn(() => Promise.resolve(false)),

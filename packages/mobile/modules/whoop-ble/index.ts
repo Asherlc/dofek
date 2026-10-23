@@ -232,30 +232,74 @@ export function getDeviceSummary(): WhoopDeviceSummary {
   return WhoopDeviceSummarySchema.parse(WhoopBleModule.getDeviceSummary());
 }
 
-/** Get BLE data path statistics for debugging. */
-export function getDataPathStats(): {
-  dataNotificationCount: number;
-  cmdNotificationCount: number;
-  totalFramesParsed: number;
-  totalSamplesExtracted: number;
+const DiagnosticCountSchema = z.number().int().nonnegative();
+const DiagnosticTimestampSchema = z.iso.datetime({ offset: true });
 
-  emptyExtractions: number;
-  bufferOverflows: number;
-  packetTypes: string;
-  lastCommandResponse: string;
-  connectionState: string;
-  hasDataCharacteristic: boolean;
-  isNotifying: boolean;
-  hasCmdCharacteristic: boolean;
-  hasCmdResponseCharacteristic: boolean;
-  lastWriteError: string;
-  watchdogRetryCount: number;
-  malformedFrames: number;
-  malformedCmdFrames: number;
-  coalescedFrames: number;
-  coalescedCmdFrames: number;
-} {
-  return WhoopBleModule.getDataPathStats();
+const WhoopBufferStreamDiagnosticsSchema = z.object({
+  count: DiagnosticCountSchema,
+  oldestTimestamp: DiagnosticTimestampSchema.nullable(),
+  newestTimestamp: DiagnosticTimestampSchema.nullable(),
+  receivedCount: DiagnosticCountSchema,
+  confirmedCount: DiagnosticCountSchema,
+  overflowDiscardedCount: DiagnosticCountSchema,
+  erasureDiscardedCount: DiagnosticCountSchema,
+  clearedCount: DiagnosticCountSchema,
+  legacyDrainedCount: DiagnosticCountSchema,
+  lastConfirmedAt: DiagnosticTimestampSchema.nullable(),
+});
+
+export type WhoopBufferStreamDiagnostics = z.infer<typeof WhoopBufferStreamDiagnosticsSchema>;
+
+const WhoopBufferCheckpointSchema = z.object({
+  bufferInstanceId: z.uuid(),
+  bufferCreatedAt: DiagnosticTimestampSchema,
+  checkpointAt: DiagnosticTimestampSchema,
+  imu: WhoopBufferStreamDiagnosticsSchema,
+  realtime: WhoopBufferStreamDiagnosticsSchema,
+});
+
+/** Metadata observed before a buffer was recreated; samples are never persisted. */
+export type WhoopBufferCheckpoint = z.infer<typeof WhoopBufferCheckpointSchema>;
+
+const WhoopDataPathStatsSchema = z.object({
+  dataNotificationCount: DiagnosticCountSchema,
+  cmdNotificationCount: DiagnosticCountSchema,
+  totalFramesParsed: DiagnosticCountSchema,
+  totalSamplesExtracted: DiagnosticCountSchema,
+
+  emptyExtractions: DiagnosticCountSchema,
+  bufferOverflows: DiagnosticCountSchema,
+  packetTypes: z.string(),
+  lastCommandResponse: z.string(),
+  connectionState: z.string().min(1),
+  lastKnownDeviceId: z.string().nullable(),
+  hasDataCharacteristic: z.boolean(),
+  isNotifying: z.boolean(),
+  hasCmdCharacteristic: z.boolean(),
+  hasCmdResponseCharacteristic: z.boolean(),
+  lastWriteError: z.string(),
+  watchdogRetryCount: DiagnosticCountSchema,
+  malformedFrames: DiagnosticCountSchema,
+  malformedCmdFrames: DiagnosticCountSchema,
+  coalescedFrames: DiagnosticCountSchema,
+  coalescedCmdFrames: DiagnosticCountSchema,
+  realtimeBufferCount: DiagnosticCountSchema,
+  lastDataNotificationAt: DiagnosticTimestampSchema.nullable(),
+  lastParsedImuAt: DiagnosticTimestampSchema.nullable(),
+  lastParsedRealtimeAt: DiagnosticTimestampSchema.nullable(),
+  /** Latest device timestamp with a positive reported heart rate, not receipt time. */
+  lastValidHeartRateAt: DiagnosticTimestampSchema.nullable(),
+  buffers: WhoopBufferCheckpointSchema.extend({
+    /** Prior buffer identity has no account attribution; this is last-observed metadata. */
+    previousCheckpoint: WhoopBufferCheckpointSchema.nullable(),
+  }),
+});
+
+export type WhoopDataPathStats = z.infer<typeof WhoopDataPathStatsSchema>;
+
+/** Get BLE capture, queue, discard, and prior-checkpoint metadata. */
+export function getDataPathStats(): WhoopDataPathStats {
+  return WhoopDataPathStatsSchema.parse(WhoopBleModule.getDataPathStats());
 }
 
 /**

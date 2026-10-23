@@ -20,6 +20,8 @@ vi.mock("./account-erasure-storage", () => ({
 }));
 
 const mockCaptureException = vi.hoisted(() => vi.fn());
+const mockIdentifyUser = vi.hoisted(() => vi.fn());
+const mockResetUser = vi.hoisted(() => vi.fn());
 const { mockStartStartupPhase, mockFinishStartupPhase } = vi.hoisted(() => ({
   mockStartStartupPhase: vi.fn(),
   mockFinishStartupPhase: vi.fn(),
@@ -27,8 +29,8 @@ const { mockStartStartupPhase, mockFinishStartupPhase } = vi.hoisted(() => ({
 
 vi.mock("./telemetry", () => ({
   captureException: mockCaptureException,
-  identifyUser: vi.fn(),
-  resetUser: vi.fn(),
+  identifyUser: mockIdentifyUser,
+  resetUser: mockResetUser,
 }));
 
 vi.mock("./startup-telemetry", () => ({
@@ -104,6 +106,7 @@ describe("auth-context", () => {
 
       expect(saveSessionToken).not.toHaveBeenCalled();
       expect(mockFinishStartupPhase).toHaveBeenCalledWith("authentication", "unauthenticated");
+      expect(mockResetUser).toHaveBeenCalledOnce();
     });
 
     it("finishes bootstrap on a fresh inactive launch with no token", async () => {
@@ -304,6 +307,7 @@ describe("auth-context", () => {
       // User should be null immediately, even though authLogout hasn't resolved
       expect(result.current.user).toBeNull();
       expect(result.current.sessionToken).toBeNull();
+      expect(mockResetUser).toHaveBeenCalledOnce();
 
       // Clean up: resolve the pending logout
       if (resolveLogout) resolveLogout();
@@ -337,6 +341,7 @@ describe("auth-context", () => {
 
       expect(result.current.user).toBeNull();
       expect(result.current.sessionToken).toBeNull();
+      expect(mockResetUser).toHaveBeenCalledOnce();
     });
 
     it("clears persisted query cache for the active user", async () => {
@@ -361,6 +366,54 @@ describe("auth-context", () => {
       });
 
       expect(mockRemoveMobileQueryCache).toHaveBeenCalledWith("user-1");
+    });
+
+    it("keeps the new account's telemetry identity when an older logout finishes", async () => {
+      const { getSessionToken, fetchCurrentUser, logout: authLogout } = await import("./auth");
+      vi.mocked(getSessionToken).mockResolvedValue("first-token");
+      vi.mocked(fetchCurrentUser).mockResolvedValueOnce({
+        id: "first-account",
+        name: "First User",
+        email: null,
+      });
+      let resolveLogout: (() => void) | undefined;
+      vi.mocked(authLogout).mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve) => {
+            resolveLogout = resolve;
+          }),
+      );
+      const { result } = renderHook(() => useAuth(), { wrapper });
+      await waitFor(() => expect(result.current.user?.id).toBe("first-account"));
+
+      let logout: Promise<void> | undefined;
+      act(() => {
+        logout = result.current.logout();
+      });
+      vi.mocked(fetchCurrentUser).mockResolvedValueOnce({
+        id: "second-account",
+        name: "Second User",
+        email: null,
+      });
+      await act(async () => result.current.onLoginSuccess("second-token"));
+      expect(result.current.user?.id).toBe("second-account");
+      expect(mockIdentifyUser).toHaveBeenLastCalledWith({
+        id: "second-account",
+        name: "Second User",
+        email: null,
+      });
+      mockResetUser.mockClear();
+      mockIdentifyUser.mockClear();
+
+      await act(async () => {
+        if (!resolveLogout || !logout) throw new Error("Logout did not start.");
+        resolveLogout();
+        await logout;
+      });
+
+      expect(result.current.user?.id).toBe("second-account");
+      expect(mockResetUser).not.toHaveBeenCalled();
+      expect(mockIdentifyUser).not.toHaveBeenCalled();
     });
 
     it("clears an unused deletion preparation during normal logout", async () => {
@@ -408,6 +461,7 @@ describe("auth-context", () => {
       expect(result.current.sessionToken).toBeNull();
       expect(result.current.accountErasureCleanupInProgress).toBe(true);
       expect(authLogout).not.toHaveBeenCalled();
+      expect(mockResetUser).toHaveBeenCalledOnce();
 
       await expect(result.current.onLoginSuccess("user-2-token")).rejects.toThrow(
         /account deletion cleanup is still in progress/i,

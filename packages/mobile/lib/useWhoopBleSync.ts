@@ -1,12 +1,14 @@
 import { useEffect } from "react";
 import {
-  type InertialMeasurementUnitUploadClient,
   initBackgroundWhoopBleSync,
   teardownBackgroundWhoopBleSync,
-  type WhoopBleRealtimeUploadClient,
-  type WhoopBleSyncDeps,
 } from "./background-whoop-ble-sync";
 import { captureException } from "./telemetry";
+import type {
+  InertialMeasurementUnitUploadClient,
+  WhoopBleRealtimeUploadClient,
+  WhoopBleSyncDeps,
+} from "./whoop-ble-sync-types";
 
 /**
  * Hook that starts WHOOP BLE sync for all available data streams:

@@ -226,7 +226,7 @@ describe("bluetooth-device-catalog", () => {
     );
     expect(Sentry.captureException).toHaveBeenCalledWith(error, {
       tags: { source: "bluetooth-device-catalog-subscription" },
-      extra: { source: "bluetooth-device-catalog-subscription" },
+      extra: expect.objectContaining({ source: "bluetooth-device-catalog-subscription" }),
     });
   });
 
