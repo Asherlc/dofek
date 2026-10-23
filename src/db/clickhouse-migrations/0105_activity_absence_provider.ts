@@ -5,7 +5,7 @@ export function createMigration(): ClickHouseMigration {
     id: "0105_activity_absence_provider",
     phase: "pre-cdc",
     statements: [
-      "ALTER TABLE postgres_fitness.activity ADD COLUMN IF NOT EXISTS absence_provider_id Nullable(String)",
+      "ALTER TABLE postgres_fitness.activity ADD COLUMN IF NOT EXISTS absence_provider_id Nullable(String) AFTER provider_absent_at",
     ],
   };
 }

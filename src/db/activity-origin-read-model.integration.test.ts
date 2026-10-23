@@ -1,7 +1,10 @@
+import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { createClient } from "@clickhouse/client";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
+import { createMigration } from "./clickhouse-migrations/0105_activity_absence_provider.ts";
+import { buildPostgresFitnessActivityRawTableStatement } from "./clickhouse-raw-tables.ts";
 
 const fixtureSchema = z.object({
   name: z.string(),
@@ -56,6 +59,58 @@ describe("ClickHouse provenance-only origin", () => {
   });
   afterAll(async () => {
     await client.close();
+  });
+
+  it("preserves absence and deletion fields when a migrated table is copied to a fresh table", async () => {
+    const suffix = randomUUID().replaceAll("-", "");
+    const migrated = `activity_migrated_${suffix}`;
+    const fresh = `activity_fresh_${suffix}`;
+    try {
+      await client.command({
+        query: buildPostgresFitnessActivityRawTableStatement({ tableName: migrated }).replace(
+          "  absence_provider_id Nullable(String),\n",
+          "",
+        ),
+      });
+      for (const statement of createMigration().statements) {
+        await client.command({ query: statement.replace("postgres_fitness.activity", migrated) });
+      }
+      await client.command({
+        query: buildPostgresFitnessActivityRawTableStatement({ tableName: fresh }),
+      });
+      await client.insert({
+        table: migrated,
+        format: "JSONEachRow",
+        values: [
+          {
+            id: randomUUID(),
+            user_id: userId,
+            provider_id: "peloton",
+            absence_provider_id: "whoop",
+            provider_absent_at: "2026-10-22 01:00:00",
+            deleted_at: "2026-10-22 02:00:00",
+            group_id: groupId,
+          },
+        ],
+      });
+      await client.command({ query: `INSERT INTO ${fresh} SELECT * FROM ${migrated}` });
+      const result = await client.query({
+        query: `SELECT absence_provider_id, toString(provider_absent_at) AS absent_at,
+          toString(deleted_at) AS deleted_at, toString(group_id) AS group_id FROM ${fresh}`,
+        format: "JSONEachRow",
+      });
+      expect(await result.json()).toEqual([
+        {
+          absence_provider_id: "whoop",
+          absent_at: "2026-10-22 01:00:00.000000",
+          deleted_at: "2026-10-22 02:00:00.000000",
+          group_id: groupId,
+        },
+      ]);
+    } finally {
+      await client.command({ query: `DROP TABLE IF EXISTS ${fresh}` });
+      await client.command({ query: `DROP TABLE IF EXISTS ${migrated}` });
+    }
   });
 
   it.each(fixtures)("$name", async (fixture) => {
