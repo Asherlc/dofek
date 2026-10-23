@@ -134,6 +134,37 @@ response and retries failed deliveries. Use that contract when interpreting
 IAP-05 through IAP-07; never mark a row passed from a client-only state change:
 [App Store Server Notifications V2](https://developer.apple.com/documentation/appstoreservernotifications/app-store-server-notifications-v2).
 
+### App Review submission gate
+
+Before submitting the first auto-renewable subscription, confirm that the same
+App Review draft contains the iOS app version, `com.dofek.premium.monthly`, and
+its unapproved `Dofek Premium` subscription group. Apple requires the first
+subscription of each type with a new app version, and a new subscription with
+its group. Add every required item before choosing Submit for Review:
+[Submit an In-App Purchase](https://developer.apple.com/help/app-store-connect/manage-submissions-to-app-review/submit-an-in-app-purchase/).
+
+Record the submission ID, selected app version/build, subscription-version ID,
+and group-version ID. Inspect their direct relationships before submission and
+read them back afterward; the API exposes each item through `appStoreVersion`,
+`subscriptionVersion`, or `subscriptionGroupVersion`:
+[List the Items in a Review Submission](https://developer.apple.com/documentation/appstoreconnectapi/get-v1-reviewsubmissions-_id_-items).
+
+```bash
+asc review submissions-get --id "SUBMISSION_ID" --output json --pretty
+asc review items list \
+  --submission "SUBMISSION_ID" \
+  --fields state,appStoreVersion,subscriptionVersion,subscriptionGroupVersion \
+  --include appStoreVersion,subscriptionVersion,subscriptionGroupVersion \
+  --paginate --output json --pretty
+```
+
+Match the returned relationship IDs to the intended app and product versions;
+an app-only item list leaves the subscription and group outside that submission.
+Record submission state and each required item's state separately. A
+`WAITING_FOR_REVIEW` submission is queued for review, not approved for
+distribution; track Apple's approval separately:
+[App and submission statuses](https://developer.apple.com/help/app-store-connect/reference/app-information/app-and-submission-statuses/).
+
 ## Physical-device matrix
 
 Run every `Every RC` row for every candidate. Run conditional compatibility

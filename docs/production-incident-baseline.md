@@ -1,5 +1,50 @@
 # Production Incident Baseline
 
+## 2026-10-22 — iOS App Review submission repaired with subscription items
+
+- **Status / impact:** The submission repair is complete; Apple approval remains
+  pending. Dofek app `6760842046`, iOS version `1.01`
+  (`d345ccaf-7a94-4085-8bc4-394a63fe1361`), was resubmitted on October 22 at
+  17:50 PDT in [submission `9dc7b245-9392-4605-9270-7f961d02c61c`](https://appstoreconnect.apple.com/apps/6760842046/distribution/reviewsubmissions/details/9dc7b245-9392-4605-9270-7f961d02c61c).
+- **Evidence / cause:** The prior submission
+  `5108e39b-3c8e-4e4e-be05-b5c03d6ac369`, submitted at
+  `2026-10-20T19:54:06.37Z`, was `WAITING_FOR_REVIEW` with only the app version
+  in its direct item relationships. Subscription `6808690818`
+  (`com.dofek.premium.monthly`) was `READY_TO_SUBMIT`; its version
+  `1b9b59bd-36cc-4f01-8dd1-0a5786813267` and group version
+  `027c3922-c82a-4b31-91b3-f76160666cb8` were `DEVELOPER_REJECTED`. Apple's
+  [first-submission instructions](https://developer.apple.com/help/app-store-connect/manage-submissions-to-app-review/submit-an-in-app-purchase/)
+  require the app version, first subscription, and its unapproved group in the
+  same submission. The omission is confirmed; it does not establish why
+  Apple's earlier review queue had not advanced.
+- **Direct repair:** With operator approval, used the actual Firefox session to
+  add the existing subscription and `Dofek Premium` group `22359256` to one
+  draft, cancel the previous app-only submission, and add the same app version
+  with its original build `1.0.0 (1792449826)`
+  (`6627fd30-cc1a-4e57-95de-c4958cab8298`). App Privacy was verified `Published`.
+  The draft showed three ready items and no errors before submission.
+- **Validation / remaining risk:** App Store Connect confirmed `3 Items
+  Submitted`. The new submission's detail page lists the Dofek Premium Monthly
+  subscription, Dofek Premium subscription group, and iOS App `1.01`, each
+  `Waiting for Review`, with zero draft submissions remaining. Review and
+  distribution approval remain outstanding; submission success is not approval.
+  No new binary, product, retry, timeout, or runtime setting was introduced.
+- **Authentication side issue:** A Homebrew upgrade from `asc` 3.4.1 to
+  [5.16.0](https://github.com/rorkai/App-Store-Connect-CLI/releases/tag/5.16.0)
+  resolved the [upstream bootstrap 404](https://github.com/rorkai/App-Store-Connect-CLI/pull/2483).
+  Local login then failed with `srp login failed: signin init failed with status
+  503 at signin_init`, including after clearing the cached session. Service
+  unavailability versus sign-in throttling remains unknown; a cooldown is a
+  client safeguard, not proof of recovery or an incorrect password:
+  [upstream guidance](https://github.com/rorkai/App-Store-Connect-CLI/blob/5.16.0/commands/web.mdx#L188-L210).
+  Further CLI login attempts stopped; the approved browser route completed the
+  repair.
+- **Retrospective / follow-up:** Direct item relationships exposed the omission;
+  the [release audit](ios-physical-device-release-audit.md#app-review-submission-gate)
+  now requires membership evidence alongside queue and approval states. For
+  future reviews, preserve exact resource IDs, check CLI currency, and verify
+  browser automation controls the operator's actual signed-in profile.
+
 ## 2026-10-21 — Activity sensor replacement deletes blocked ClickHouse merges
 
 - **Status / impact:** [DOFEK-SERVER-6B](https://east-bay-software.sentry.io/issues/7743140686/) regressed on release `07ee6448aef61e9ecef36737460fbd835fbe8f4b`. The 14:27 UTC analytics build skipped 19 dependent models after `activity_sensor_sample` partially failed; the previous cycle passed all 45 models. Production repair and deployment remain outstanding.
