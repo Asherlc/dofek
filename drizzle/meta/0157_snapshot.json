@@ -1,5 +1,5 @@
 {
-  "id": "4eb64c73-3350-40e7-8a6b-ab8f13273358",
+  "id": "06b72272-f35a-4907-bd79-1a38f298ccff",
   "prevId": "8f3e4a30-b0eb-4efa-935d-b850ae423eba",
   "version": "7",
   "dialect": "postgresql",
@@ -1882,12 +1882,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "absence_provider_id": {
-          "name": "absence_provider_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
         "deleted_at": {
           "name": "deleted_at",
           "type": "timestamp with time zone",
@@ -2016,20 +2010,6 @@
           "schemaTo": "fitness",
           "columnsFrom": [
             "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "activity_absence_provider_id_provider_id_fk": {
-          "name": "activity_absence_provider_id_provider_id_fk",
-          "tableFrom": "activity",
-          "tableTo": "provider",
-          "schemaTo": "fitness",
-          "columnsFrom": [
-            "absence_provider_id"
           ],
           "columnsTo": [
             "id"
@@ -8028,7 +8008,13 @@
               "expression": "synced_at",
               "isExpression": false,
               "asc": false,
-              "nulls": "last"
+              "nulls": "first"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "first"
             }
           ],
           "isUnique": false,

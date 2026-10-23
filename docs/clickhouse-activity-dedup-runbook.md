@@ -119,7 +119,7 @@ for the same user and provider. Restoration and absence use that same predicate,
 so an authoritative return cannot immediately be undone by a stale alias.
 Raw IDs and unrelated opaque provider IDs retain exact matching semantics.
 
-Deploy PostgreSQL migration `0157_activity_copy_identity` and pre-CDC ClickHouse
+Deploy PostgreSQL migration `0158_activity_copy_identity` and pre-CDC ClickHouse
 migration `0105_activity_absence_provider` through the normal
 [deployment procedure](../deploy/README.md#deployment). Subsequent completed
 provider syncs reconcile existing records and persist group changes. Verify the
