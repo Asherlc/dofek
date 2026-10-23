@@ -34,7 +34,6 @@ const mockProviders = {
   xert: { id: "xert" },
   "cycling-analytics": { id: "cycling-analytics" },
   wger: { id: "wger" },
-  velohero: { id: "velohero" },
   "mountain-project": { id: "mountain-project" },
   openbeta: { id: "openbeta" },
   "amazfit-zepp": { id: "amazfit-zepp" },
@@ -122,9 +121,6 @@ vi.mock("../providers/cycling-analytics.ts", () => ({
 }));
 vi.mock("../providers/wger.ts", () => ({
   WgerProvider: mockProviderConstructor(mockProviders.wger),
-}));
-vi.mock("../providers/velohero.ts", () => ({
-  VeloHeroProvider: mockProviderConstructor(mockProviders.velohero),
 }));
 vi.mock("../providers/mountain-project.ts", () => ({
   MountainProjectProvider: mockProviderConstructor(mockProviders["mountain-project"]),

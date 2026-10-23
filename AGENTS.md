@@ -220,7 +220,6 @@ packages/
   eight-sleep/               — RE'd Eight Sleep internal API client
   zwift-client/              — RE'd Zwift internal API client
   trainerroad-client/        — RE'd TrainerRoad internal API client
-  velohero-client/           — RE'd VeloHero API client
   trainingpeaks-connect/     — RE'd TrainingPeaks internal API client
   zepp/                      — @dofek/zepp: Zepp OS companion app (API_LEVEL 3.0+ devices)
     page/                    — Watch UI (sensor recording, status display)

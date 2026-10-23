@@ -594,6 +594,6 @@ export const ClimbingActivity: Story = {
 export const UnresolvedRecordingOrigin: Story = { parameters: { originProvider: null } };
 export const OnlyStravaCopyAvailable: Story = { parameters: { originProvider: "strava" } };
 export const KayaProviderLogo: Story = { parameters: { originProvider: "kaya" } };
-export const PrimaryProviderWithoutLogo: Story = { parameters: { originProvider: "velohero" } };
+export const PrimaryProviderWithoutLogo: Story = { parameters: { originProvider: "bodyspec" } };
 
 export const AppleHealthSourceApp: Story = { parameters: { originProvider: "apple_health" } };

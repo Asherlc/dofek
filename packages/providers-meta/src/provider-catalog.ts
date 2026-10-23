@@ -94,7 +94,6 @@ export const PROVIDER_CATALOG: Readonly<Record<string, ProviderCatalogEntry>> = 
   ultrahuman: { label: "Ultrahuman", logo: { type: "png" } },
   "amazfit-zepp": { label: "Amazfit/Zepp", family: zeppCloud, brandColor: "#00B588" },
   "zos-app": { label: "Zepp OS App", family: zeppApp },
-  velohero: { label: "VeloHero", brandColor: "#FF6600" },
   "mountain-project": { label: "Mountain Project", brandColor: "#1F5A88" },
   openbeta: { label: "OpenBeta" },
   thecrag: { label: "theCrag" },

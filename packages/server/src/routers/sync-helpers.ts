@@ -101,7 +101,6 @@ async function doRegisterProviders() {
         import("dofek/providers/cycling-analytics").then((m) => new m.CyclingAnalyticsProvider()),
     ],
     ["wger", () => import("dofek/providers/wger").then((m) => new m.WgerProvider())],
-    ["velohero", () => import("dofek/providers/velohero").then((m) => new m.VeloHeroProvider())],
     [
       "mountain-project",
       () => import("dofek/providers/mountain-project").then((m) => new m.MountainProjectProvider()),

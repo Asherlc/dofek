@@ -61,7 +61,6 @@ const PROVIDER_QUEUE_CONFIGS: ReadonlyMap<string, ProviderQueueConfig> = new Map
   ["wahoo", realtimeProvider()],
   ["polar", realtimeProvider()],
   ["ride-with-gps", realtimeProvider()],
-  ["velohero", realtimeProvider()],
   ["xert", realtimeProvider()],
   ["cycling_analytics", realtimeProvider()],
 
