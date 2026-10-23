@@ -57,7 +57,7 @@ describe("createGarminAuthSetup", () => {
     { key: "GARMIN_CLIENT_SECRET", value: undefined },
     { key: "GARMIN_CLIENT_SECRET", value: "" },
     { key: "GARMIN_CLIENT_SECRET", value: " \t " },
-  ])("requires nonblank $key when its value is $value", ({ key, value }) => {
+  ])("requires $key when its value is $value", ({ key, value }) => {
     vi.stubEnv(key, value);
     expect(() => createGarminAuthSetup(vi.fn<typeof fetch>())).toThrow(key);
   });
@@ -131,7 +131,7 @@ describe("createGarminAuthSetup", () => {
   });
 
   it.each([undefined, " \t "])(
-    "requires a nonblank PKCE verifier before sending the authorization code (%s)",
+    "requires a PKCE verifier before sending the authorization code (%s)",
     async (verifier) => {
       const fetchFn = vi.fn<typeof fetch>();
       await expect(createGarminAuthSetup(fetchFn).exchangeCode?.("code", verifier)).rejects.toThrow(
