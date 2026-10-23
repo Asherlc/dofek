@@ -50,6 +50,7 @@ import { trpc } from "../lib/trpc";
 import { createTrpcFetch } from "../lib/trpc-fetch";
 import { createMobileTrpcLinks } from "../lib/trpc-links";
 import { useBleHeartRateSync } from "../lib/useBleHeartRateSync";
+import { useCollectionNotifications } from "../lib/useCollectionNotifications";
 import { useWhoopBleSync } from "../lib/useWhoopBleSync";
 import { getVersionHeaders } from "../lib/version-headers";
 import { addBackgroundRefreshListener } from "../modules/background-refresh";
@@ -208,6 +209,19 @@ function AuthGate() {
   const [localCleanupPending, setLocalCleanupPending] = useState(false);
   const [localCleanupOwnerNonce, setLocalCleanupOwnerNonce] = useState<string | null>(null);
   const startupInteractiveMarkedRef = useRef(false);
+  const localCleanupBlocksSession =
+    localCleanupPending && (!user || localCleanupOwnerNonce === accountSessionOwnerNonce);
+  const collectionSessionEnded =
+    accountErasureCleanupInProgress ||
+    localCleanupBlocksSession ||
+    (!isLoading && !bootstrapError && !user);
+  useCollectionNotifications(
+    collectionSessionEnded
+      ? false
+      : !isLoading && !bootstrapError && deletionRecoveryReady && backgroundSyncReady
+        ? true
+        : undefined,
+  );
 
   const [queryClient] = useState(createAppQueryClient);
 
@@ -316,8 +330,6 @@ function AuthGate() {
   }, [isLoading, user]);
 
   useEffect(() => {
-    const localCleanupBlocksSession =
-      localCleanupPending && (!user || localCleanupOwnerNonce === accountSessionOwnerNonce);
     if (
       !user ||
       !deletionRecoveryReady ||
@@ -337,14 +349,7 @@ function AuthGate() {
       idleHandle.cancel();
       setBackgroundSyncReady(false);
     };
-  }, [
-    accountErasureCleanupInProgress,
-    accountSessionOwnerNonce,
-    deletionRecoveryReady,
-    localCleanupOwnerNonce,
-    localCleanupPending,
-    user,
-  ]);
+  }, [accountErasureCleanupInProgress, deletionRecoveryReady, localCleanupBlocksSession, user]);
 
   // Set up background HealthKit sync when authenticated
   useEffect(() => {
@@ -567,8 +572,6 @@ function AuthGate() {
     );
   }
 
-  const localCleanupBlocksSession =
-    localCleanupPending && (!user || localCleanupOwnerNonce === accountSessionOwnerNonce);
   const showPublicDeletionStatus =
     localCleanupBlocksSession ||
     (!user && (pathname === "/account-deletion" || hasSavedDeletionRecovery));

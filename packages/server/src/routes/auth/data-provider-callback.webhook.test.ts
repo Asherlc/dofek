@@ -83,6 +83,7 @@ function createMockReqRes(query: Record<string, string> = {}) {
     status: vi.fn().mockReturnThis(),
     send: vi.fn(),
     type: vi.fn().mockReturnThis(),
+    set: vi.fn().mockReturnThis(),
     redirect: vi.fn(),
   });
   return { req, res };

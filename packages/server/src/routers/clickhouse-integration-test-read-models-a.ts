@@ -1228,7 +1228,7 @@ export function buildTestActivityOriginSelectSql(
   const body = macro.match(/\{% macro activity_origin\(\) %\}([\s\S]*?)\{% endmacro %\}/)?.[1];
   if (!body) throw new Error("Missing activity origin macro");
   return `WITH legacy AS (${legacySql}), ranked AS (
-    SELECT a.id AS activity_id, a.user_id, a.group_id, a.provider_id, a.source_name, a.raw
+    SELECT a.id AS activity_id, a.user_id, a.group_id, a.provider_id, a.external_id, a.source_name, a.raw
     FROM ${databases.postgresFitness}.activity AS a FINAL
     INNER JOIN legacy ON legacy.id = a.group_id AND legacy.user_id = a.user_id
     WHERE has(legacy.member_activity_ids, a.id) AND a._peerdb_is_deleted = 0

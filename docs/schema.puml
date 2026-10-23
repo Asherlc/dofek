@@ -194,6 +194,7 @@ entity "activity" {
   strava_id : text
   raw : jsonb
   provider_absent_at : timestamp
+  absence_provider_id : text <<FK>>
   deleted_at : timestamp
   created_at : timestamp
 }
@@ -1290,6 +1291,7 @@ provider ||--o{ webhook_subscription
 provider_connection ||--o{ webhook_subscription
 provider ||--o{ activity
 user_profile ||--o{ activity
+provider ||--o{ activity
 activity_group ||--o{ activity
 user_profile ||--o{ activity_group
 user_profile ||--o{ activity_group_alias

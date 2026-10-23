@@ -13,6 +13,7 @@ const cases = z
         z.object({
           id: z.string(),
           providerId: z.string(),
+          externalId: z.string().optional(),
           sourceName: z.string().nullable(),
           raw: z.record(z.string(), z.unknown()).nullable(),
         }),

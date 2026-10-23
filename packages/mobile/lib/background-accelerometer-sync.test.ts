@@ -55,9 +55,11 @@ vi.mock("./inertial-measurement-unit-sync", () => ({
 }));
 
 const mockCaptureException = vi.fn();
+const mockLoggerInfo = vi.fn();
 
 vi.mock("./telemetry", () => ({
   captureException: (...args: unknown[]) => mockCaptureException(...args),
+  logger: { info: (...args: unknown[]) => mockLoggerInfo(...args) },
 }));
 
 const { initBackgroundAccelerometerSync, teardownBackgroundAccelerometerSync } = await import(
@@ -82,6 +84,7 @@ describe("background-accelerometer-sync", () => {
     appStateCallback = null;
     mockRemove.mockClear();
     mockCaptureException.mockClear();
+    mockLoggerInfo.mockClear();
     mockSyncInertialMeasurementUnitToServer.mockReset();
     mockSyncInertialMeasurementUnitToServer.mockResolvedValue({ inserted: 0, recording: true });
     mockIsAccelerometerRecordingAvailable.mockReturnValue(true);
@@ -99,7 +102,34 @@ describe("background-accelerometer-sync", () => {
   it("registers an AppState listener on init", async () => {
     await initBackgroundAccelerometerSync(trpcClient);
 
+    expect(mockLoggerInfo).not.toHaveBeenCalled();
     expect(AppState.addEventListener).toHaveBeenCalledWith("change", expect.any(Function));
+  });
+
+  it("reports rejected recording while preserving foreground uploads", async () => {
+    mockStartRecording.mockResolvedValueOnce(false);
+
+    await initBackgroundAccelerometerSync(trpcClient);
+
+    expect(mockLoggerInfo).toHaveBeenCalledWith(
+      "bg-accel-sync",
+      expect.stringContaining("iOS Settings"),
+    );
+    expect(AppState.addEventListener).toHaveBeenCalledWith("change", expect.any(Function));
+    appStateCallback?.("active");
+    await vi.waitFor(() => expect(mockSyncInertialMeasurementUnitToServer).toHaveBeenCalledOnce());
+    expect(mockCaptureException).not.toHaveBeenCalled();
+  });
+
+  it("replaces the foreground listener even when a new recording request is rejected", async () => {
+    await initBackgroundAccelerometerSync(trpcClient);
+    mockStartRecording.mockResolvedValueOnce(false);
+
+    await initBackgroundAccelerometerSync(trpcClient);
+
+    expect(mockLoggerInfo).toHaveBeenCalledOnce();
+    expect(mockRemove).toHaveBeenCalledOnce();
+    expect(AppState.addEventListener).toHaveBeenCalledTimes(2);
   });
 
   it("skips init when accelerometer recording is not available", async () => {
@@ -131,6 +161,24 @@ describe("background-accelerometer-sync", () => {
         source: "bg-accel-sync",
       });
     });
+  });
+
+  it("reports a resolved inactive foreground recording state without losing uploaded samples", async () => {
+    await initBackgroundAccelerometerSync(trpcClient);
+    mockSyncInertialMeasurementUnitToServer.mockResolvedValueOnce({
+      inserted: 5,
+      recording: false,
+    });
+
+    appStateCallback?.("active");
+
+    await vi.waitFor(() => {
+      expect(mockLoggerInfo).toHaveBeenCalledWith(
+        "bg-accel-sync",
+        expect.stringContaining("iOS Settings"),
+      );
+    });
+    expect(mockCaptureException).not.toHaveBeenCalled();
   });
 
   it("passes the retained device cutoff to every foreground sync", async () => {

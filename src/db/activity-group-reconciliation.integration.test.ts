@@ -12,7 +12,7 @@ describe("transactional activity group reconciliation", () => {
     context = await setupTestDatabase();
     await context.db.execute(sql`INSERT INTO fitness.provider (id, name)
       VALUES ('group-test-a', 'Group A'), ('group-test-b', 'Group B'),
-        ('whoop', 'WHOOP'), ('strava', 'Strava')
+        ('whoop', 'WHOOP'), ('strava', 'Strava'), ('peloton', 'Peloton')
       ON CONFLICT (id) DO NOTHING`);
   }, 120_000);
   afterAll(async () => {
@@ -46,6 +46,47 @@ describe("transactional activity group reconciliation", () => {
     context.db.execute(
       sql`SELECT alias_id, group_id, reason FROM fitness.activity_group_alias WHERE user_id = ${userId} ORDER BY alias_id`,
     );
+
+  it("matches a propagated WHOOP identity despite changed timing and activity type", async () => {
+    const original = await activity("whoop", undefined, undefined, undefined, "climbing");
+    const copy = await activity(
+      "peloton",
+      "2026-09-01T12:00:00Z",
+      "2026-09-01T12:25:00Z",
+      "2026-09-02T10:00:00Z",
+      "cardio",
+    );
+    await context.db.execute(sql`UPDATE fitness.activity SET external_id = ${original.id.replaceAll("-", "")},
+      raw = '{"platform":"whoop","deviceType":"whoop"}' WHERE id = ${copy.id}`);
+
+    await reconcile();
+
+    expect(await membership(copy.id)).toEqual([{ group_id: original.groupId }]);
+    const [resolved] = await context.db.execute(sql`SELECT primary_activity_id, primary_provider_id
+      FROM fitness.v_activity WHERE id = ${original.groupId}`);
+    expect(resolved).toEqual({ primary_activity_id: original.id, primary_provider_id: "whoop" });
+  });
+
+  it.each([
+    { platform: "home_bike", deviceType: "bike" },
+    { platform: "whoop", deviceType: "bike" },
+  ])(
+    "keeps an unrelated Peloton ID separate when provenance is $platform / $deviceType",
+    async (raw) => {
+      const original = await activity("whoop", undefined, undefined, undefined, "climbing");
+      const copy = await activity(
+        "peloton",
+        "2026-09-01T08:00:00Z",
+        "2026-09-01T08:25:00Z",
+        "2026-09-02T10:00:00Z",
+        "cardio",
+      );
+      await context.db.execute(sql`UPDATE fitness.activity SET external_id = ${original.id.replaceAll("-", "")},
+      raw = ${JSON.stringify(raw)}::jsonb WHERE id = ${copy.id}`);
+      await reconcile();
+      expect(await membership(copy.id)).toEqual([{ group_id: copy.groupId }]);
+    },
+  );
 
   it("keeps disjoint manually merged members together after reconciliation", async () => {
     const first = await activity("group-test-a", "2026-09-01T08:00:00Z", "2026-09-01T09:00:00Z");

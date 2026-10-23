@@ -139,6 +139,7 @@ vi.mock("./shared.ts", () => ({
 }));
 
 import { captureException } from "dofek/lib/error-reporting";
+import { ProviderConnectionError } from "dofek/providers/auth-errors";
 import { MissingEmailForSignupError } from "../../auth/account-linking.ts";
 import { handleOAuth2Callback } from "./data-provider-callback.ts";
 
@@ -158,6 +159,7 @@ function createMockReqRes(query: Record<string, string> = {}) {
     status: vi.fn().mockReturnThis(),
     send: vi.fn(),
     type: vi.fn().mockReturnThis(),
+    set: vi.fn().mockReturnThis(),
     redirect: vi.fn(),
   });
 
@@ -262,6 +264,87 @@ describe("handleOAuth2Callback — revocation fallback", () => {
       },
     ]);
   }
+
+  it.each(["data", "login"])(
+    "reports permission confirmation failures safely for %s callbacks",
+    async (intent) => {
+      useRegistrationReplacement();
+      mockOauthStateStore.get.mockResolvedValue({
+        providerId: "wahoo",
+        intent,
+        userId: "user-1",
+      });
+      mockLoadTokens.mockResolvedValue(null);
+      const error = new ProviderConnectionError("Garmin Connect", "permissions", 403);
+      mockExchangeCode.mockRejectedValue(error);
+
+      const { req, res } = createMockReqRes({ code: "private-code", state: "private-state" });
+      await handleOAuth2Callback(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(500);
+      expect(res.set).toHaveBeenCalledWith("Content-Type", "text/plain; charset=utf-8");
+      expect(res.send).toHaveBeenCalledWith(
+        "Garmin Connect connection failed while confirming your permissions (HTTP 403). Please contact support if this continues.",
+      );
+      expect(captureException).toHaveBeenCalledWith(error);
+      expect(mockPersistProviderConnection).not.toHaveBeenCalled();
+      expect(mockRevokeExistingTokens).not.toHaveBeenCalled();
+      expect(res.redirect).not.toHaveBeenCalled();
+    },
+  );
+
+  it("reports identity confirmation failures and preserves an existing registration", async () => {
+    useRegistrationReplacement();
+    mockLoadTokens.mockResolvedValue({ accessToken: "old-access", providerAccountId: "account-1" });
+    mockExchangeCode.mockRejectedValue(
+      new ProviderConnectionError("Garmin Connect", "identity", 502),
+    );
+
+    const { req, res } = createMockReqRes({ code: "code", state: "state" });
+    await handleOAuth2Callback(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.set).toHaveBeenCalledWith("Content-Type", "text/plain; charset=utf-8");
+    expect(res.send).toHaveBeenCalledWith(
+      "Garmin Connect connection failed while confirming your identity (HTTP 502). Please contact support if this continues. Your existing connection is still active.",
+    );
+    expect(mockPersistProviderConnection).not.toHaveBeenCalled();
+    expect(mockRevokeExistingTokens).not.toHaveBeenCalled();
+    expect(mockDeleteProviderAuthorization).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    {
+      kind: "first connection",
+      existing: null,
+      status: 500,
+      message: "Connection failed — please try again from Garmin",
+    },
+    {
+      kind: "reconnect",
+      existing: { accessToken: "old-access", providerAccountId: "account-1" },
+      status: 400,
+      message:
+        "Garmin reconnect failed. Your existing connection is still active. Please try again later.",
+    },
+  ])(
+    "keeps arbitrary upstream error details out of a failed $kind response",
+    async ({ existing, status, message }) => {
+      useRegistrationReplacement();
+      mockLoadTokens.mockResolvedValue(existing);
+      mockExchangeCode.mockRejectedValue(
+        new Error("Upstream failure: access_token=secret-token <script>private</script>"),
+      );
+
+      const { req, res } = createMockReqRes({ code: "code", state: "state" });
+      await handleOAuth2Callback(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(status);
+      expect(res.set).toHaveBeenCalledWith("Content-Type", "text/plain; charset=utf-8");
+      expect(res.send).toHaveBeenCalledWith(message);
+      expect(mockRevokeExistingTokens).not.toHaveBeenCalled();
+    },
+  );
 
   it("replaces credentials for the same registration without revoking either grant", async () => {
     useRegistrationReplacement();

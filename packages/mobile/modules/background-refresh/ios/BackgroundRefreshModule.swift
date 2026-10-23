@@ -24,6 +24,23 @@ public class BackgroundRefreshModule: Module {
 
         Events("onBackgroundRefresh")
 
+        AsyncFunction("enableCollectionNotifications") { (requestPermission: Bool, promise: Promise) in
+            DispatchQueue.main.async {
+                CollectionNotificationService.shared.enable(requestPermission: requestPermission) { result in
+                    switch result {
+                    case .success(let granted):
+                        promise.resolve(granted)
+                    case .failure(let error):
+                        promise.reject("COLLECTION_NOTIFICATIONS_UNAVAILABLE", error.localizedDescription)
+                    }
+                }
+            }
+        }
+
+        Function("disableCollectionNotifications") {
+            DispatchQueue.main.async { CollectionNotificationService.shared.disable() }
+        }
+
         OnStartObserving("onBackgroundRefresh") {
             self.notificationObserver = NotificationCenter.default.addObserver(
                 forName: Self.backgroundRefreshNotification,

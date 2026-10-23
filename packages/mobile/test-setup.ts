@@ -611,6 +611,8 @@ vi.mock("./modules/core-motion", () => ({
 
 // ── Background Refresh native module mock ──────────────────────────
 vi.mock("./modules/background-refresh", () => ({
+  enableCollectionNotifications: vi.fn(() => Promise.resolve(true)),
+  disableCollectionNotifications: vi.fn(),
   scheduleRefresh: vi.fn(),
   isBackgroundRefreshAvailable: vi.fn(() => false),
   addBackgroundRefreshListener: vi.fn(() => ({ remove: vi.fn() })),

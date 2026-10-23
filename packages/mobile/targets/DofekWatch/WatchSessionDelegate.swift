@@ -1,6 +1,7 @@
 #if canImport(Sentry)
 import Sentry
 #endif
+import CoreMotion
 import Foundation
 import WatchConnectivity
 
@@ -32,6 +33,33 @@ final class WatchSessionDelegate: NSObject, ObservableObject, WCSessionDelegate 
         WCSession.default.activate()
     }
 
+    func publishRecordingActivity() {
+        guard Thread.isMainThread else {
+            DispatchQueue.main.async { self.publishRecordingActivity() }
+            return
+        }
+        let session = WCSession.default
+        guard session.activationState == .activated else { return }
+        let store = WatchAccountStateStore()
+        let recordingContext = store.recordingContext(
+            at: Date(),
+            recorderAvailable: CMSensorRecorder.isAccelerometerRecordingAvailable(),
+            authorized: CMSensorRecorder.authorizationStatus() == .authorized,
+            gyroscopeStartedAt: GyroscopeRecorder.shared.recordingStartedAt,
+            altimeterStartedAt: AltimeterRecorder.shared.recordingStartedAt
+        )
+        var context = session.applicationContext
+        for (key, value) in recordingContext { context[key] = value }
+        do {
+            try session.updateApplicationContext(context)
+        } catch {
+            NSLog("[DofekWatch] Failed to publish recording activity: %@", error.localizedDescription)
+            #if canImport(Sentry)
+            SentrySDK.capture(error: error)
+            #endif
+        }
+    }
+
     // MARK: - WCSessionDelegate
 
     func session(
@@ -39,6 +67,7 @@ final class WatchSessionDelegate: NSObject, ObservableObject, WCSessionDelegate 
         activationDidCompleteWith activationState: WCSessionActivationState,
         error: Error?
     ) {
+        if activationState == .activated { publishRecordingActivity() }
         DispatchQueue.main.async {
             self.isActivated = activationState == .activated
             self.isIPhoneReachable = session.isReachable

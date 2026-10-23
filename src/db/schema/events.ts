@@ -186,7 +186,8 @@ export const syncLog = fitness.table(
     index("sync_log_user_provider_synced_at_idx").on(
       table.userId,
       table.providerId,
-      table.syncedAt.desc(),
+      table.syncedAt.desc().nullsFirst(),
+      table.id.desc().nullsFirst(),
     ),
     index("sync_log_user_origin_status_provider_synced_at_idx").on(
       table.userId,

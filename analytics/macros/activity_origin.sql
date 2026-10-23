@@ -5,10 +5,16 @@ origin_labels AS (
         group_id,
         activity_id,
         provider_id,
+        external_id,
         source_name,
         lowerUTF8(trim(BOTH ' ' FROM coalesce(source_name, ''))) AS source_label,
         lowerUTF8(trim(BOTH ' ' FROM JSONExtractString(coalesce(raw, '{}'), 'sourceBundle'))) AS source_bundle,
-        lowerUTF8(trim(BOTH ' ' FROM JSONExtractString(coalesce(raw, '{}'), 'device_name'))) AS raw_device_label
+        lowerUTF8(trim(BOTH ' ' FROM JSONExtractString(coalesce(raw, '{}'), 'device_name'))) AS raw_device_label,
+        if(provider_id = 'peloton'
+            AND lowerUTF8(trim(BOTH ' ' FROM JSONExtractString(coalesce(raw, '{}'), 'platform'))) = 'whoop'
+            AND lowerUTF8(trim(BOTH ' ' FROM JSONExtractString(coalesce(raw, '{}'), 'deviceType'))) = 'whoop'
+            AND match(lowerUTF8(coalesce(external_id, '')), '^([0-9a-f]{32}|[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12})$'),
+            'whoop', NULL) AS copy_provider
     FROM ranked
 ),
 origin_hints AS (
@@ -34,12 +40,12 @@ origin_hints AS (
 origin_members AS (
     SELECT
         *,
-        coalesce(nullIf(bundle_provider, ''), nullIf(label_provider, ''), nullIf(device_provider, '')) AS upstream_provider,
-        length(arrayDistinct(arrayFilter(hint -> hint != '', [label_provider, bundle_provider, device_provider]))) > 1
+        coalesce(copy_provider, nullIf(bundle_provider, ''), nullIf(label_provider, ''), nullIf(device_provider, '')) AS upstream_provider,
+        length(arrayDistinct(arrayFilter(hint -> isNotNull(hint) AND hint != '', [copy_provider, label_provider, bundle_provider, device_provider]))) > 1
         OR (provider_id = 'strava' AND source_label != '' AND raw_device_label != '' AND source_label != raw_device_label)
             AS conflicting,
-        multiIf(bundle_provider != '', 'raw.sourceBundle', label_provider != '', 'source_name', 'raw.device_name') AS evidence_field,
-        multiIf(bundle_provider != '', source_bundle, label_provider != '', source_label, raw_device_label) AS evidence_value
+        multiIf(copy_provider IS NOT NULL, 'external_id', bundle_provider != '', 'raw.sourceBundle', label_provider != '', 'source_name', 'raw.device_name') AS evidence_field,
+        multiIf(copy_provider IS NOT NULL, lowerUTF8(replaceAll(external_id, '-', '')), bundle_provider != '', source_bundle, label_provider != '', source_label, raw_device_label) AS evidence_value
     FROM origin_hints
 ),
 origin_matches AS (
@@ -57,6 +63,8 @@ origin_matches AS (
         AND upstream.provider_id = downstream.upstream_provider
         AND upstream.activity_id != downstream.activity_id
     WHERE NOT downstream.conflicting
+        AND (downstream.copy_provider IS NULL
+            OR lowerUTF8(replaceAll(upstream.external_id, '-', '')) = lowerUTF8(replaceAll(downstream.external_id, '-', '')))
         AND (downstream.provider_id != 'strava'
             OR upstream.source_label = ''
             OR upstream.source_label = coalesce(nullIf(downstream.source_label, ''), downstream.raw_device_label))
