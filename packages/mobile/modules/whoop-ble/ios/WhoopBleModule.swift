@@ -268,6 +268,7 @@ public class WhoopBleModule: Module {
 
         Function("disconnect") {
             self.connectionManager.disconnect { [weak self] in
+                WhoopBleConnectionEvent.intentionallyDisconnected.post()
                 self?.emitDeviceState()
             }
         }
@@ -304,6 +305,7 @@ public class WhoopBleModule: Module {
                 self.lastKnownDeviceId = nil
                 self.lastKnownDeviceName = nil
                 self.connectionManager.disconnect { [weak self] in
+                    WhoopBleConnectionEvent.intentionallyDisconnected.post()
                     self?.emitDeviceState()
                     promise.resolve(true)
                 }

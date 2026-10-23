@@ -16,6 +16,16 @@ export function isBackgroundRefreshAvailable(): boolean {
   return BackgroundRefreshModule.isAvailable();
 }
 
+/** Enable native alerts using existing authorization; request permission only in the foreground. */
+export function enableCollectionNotifications(requestPermission: boolean): Promise<boolean> {
+  return BackgroundRefreshModule.enableCollectionNotifications(requestPermission);
+}
+
+/** Cancel both alerts when the authenticated session or background collection ends. */
+export function disableCollectionNotifications(): void {
+  BackgroundRefreshModule.disableCollectionNotifications();
+}
+
 /** Listen for background refresh wakeups and bridge the settled handler result
  * back to the matching native BGAppRefreshTask. */
 export function addBackgroundRefreshListener(callback: () => Promise<void>): EventSubscription {

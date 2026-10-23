@@ -50,6 +50,7 @@ import { captureException, initTelemetry, logger, setTelemetryRoute } from "../l
 import { trpc } from "../lib/trpc";
 import { createTrpcFetch } from "../lib/trpc-fetch";
 import { useBleHeartRateSync } from "../lib/useBleHeartRateSync";
+import { useCollectionNotifications } from "../lib/useCollectionNotifications";
 import { useWhoopBleSync } from "../lib/useWhoopBleSync";
 import { getVersionHeaders } from "../lib/version-headers";
 import { addBackgroundRefreshListener } from "../modules/background-refresh";
@@ -201,6 +202,7 @@ function AuthGate() {
   const pathname = usePathname();
   const router = useRouter();
   const [backgroundSyncReady, setBackgroundSyncReady] = useState(false);
+  useCollectionNotifications(backgroundSyncReady);
   const [deletionRecoveryReady, setDeletionRecoveryReady] = useState(false);
   const [hasSavedDeletionRecovery, setHasSavedDeletionRecovery] = useState(false);
   const [localCleanupPending, setLocalCleanupPending] = useState(false);

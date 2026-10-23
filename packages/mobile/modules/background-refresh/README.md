@@ -2,7 +2,8 @@
 
 An iOS-only local Expo module that bridges `BGAppRefreshTask` wake-up events
 to an asynchronous JavaScript handler. Dofek uses it to restart background
-device work and flush buffered data.
+device work and flush buffered data. The app-delegate subscriber also owns
+the app's native data-collection notifications.
 
 The CocoaPods target supports iOS 16.4 and later. It exposes the native module
 as `BackgroundRefresh`; `index.ts` is the public TypeScript entry point.
@@ -57,6 +58,51 @@ subscription.remove();
   completes it unsuccessfully. Remove the returned subscription during
   teardown.
 
+## Data-collection notifications
+
+`enableCollectionNotifications(requestPermission: boolean): Promise<boolean>`
+enables native alerts using existing authorization, including after an
+authenticated background launch. Passing `true` allows requesting alert and
+sound permission while the app is active. It returns `false` when permission
+is denied or a background launch still needs authorization. The app checks permission again
+when returning to the foreground. `disableCollectionNotifications(): void`
+disables both alerts and removes their pending and delivered notifications
+when the session ends. Notification permission uses Apple's
+[User Notifications authorization API](https://developer.apple.com/documentation/usernotifications/asking-permission-to-use-notifications).
+
+The two notifications have separate triggers, identifiers, messages, and
+cancellation rules:
+
+| Notification | Trigger | Cancellation |
+| --- | --- | --- |
+| WHOOP disconnected | A native unexpected disconnect after a successful WHOOP connection; a five-minute grace period allows automatic reconnection. | Reconnection, intentional disconnect, or session end. |
+| Dofek closed | The native `applicationWillTerminate` callback schedules a general collection warning for delivery one second later, independently of WHOOP. | The next launch/foreground or session end. |
+
+WHOOP's Expo bridge publishes the internal Foundation event
+`WhoopBle.connectionStateChanged` with `state` values `connected`,
+`disconnected`, and `intentionallyDisconnected`. The subscriber listens
+natively so alert delivery does not depend on JavaScript receiving an event.
+The [WHOOP bridge](../whoop-ble/ios/WhoopBleModule+ConnectionManagerDelegate.swift)
+and [notification service](ios/CollectionNotificationService.swift) define
+this contract; the standalone WHOOP client has no dependency on Dofek's
+notification service.
+
+The closure warning is **best effort**. iOS can terminate a suspended app
+without calling `applicationWillTerminate`, and scheduling a notification is
+asynchronous. It therefore cannot warn about every force-quit, crash, or system
+termination. Moving to the background, suspension, and missing sensor samples
+are not treated as app closure. See Apple's
+[termination callback documentation](https://developer.apple.com/documentation/uikit/uiapplicationdelegate/applicationwillterminate(_:))
+and [local notification delivery guidance](https://developer.apple.com/documentation/usernotifications/scheduling-a-notification-locally-from-your-app).
+Both alerts require notification permission; iOS controls their final delivery.
+
+`CollectionNotificationCoordinatorTests` exercises trigger separation,
+reconnection, deliberate disconnect, independent cancellation, and disabled
+sessions. The delivery adapter and Expo callbacks additionally require an iOS
+build. Validate real BLE loss, permission changes, reconnect-before-delivery,
+and app termination on a physical iPhone; the
+[iOS Simulator does not provide Bluetooth hardware](https://docs.expo.dev/workflow/ios-simulator/#limitations).
+
 ## Native configuration
 
 The task identifier must remain listed in
@@ -82,6 +128,6 @@ pnpm --filter dofek-mobile typecheck
 ```
 
 The TypeScript tests cover promise-to-native completion. `Package.swift`
-excludes the Expo-bound files and tests only
-`BackgroundRefreshTaskCoordinator`; validate changes to the full native bridge
-with an iOS app build.
+excludes the Expo-bound files and tests the background-task and notification
+coordinators. Validate the iOS delivery adapter and full native bridge with an
+iOS app build.

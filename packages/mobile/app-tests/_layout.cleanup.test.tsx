@@ -209,6 +209,8 @@ vi.mock("../lib/version-headers", () => ({
 }));
 
 vi.mock("../modules/background-refresh", () => ({
+  enableCollectionNotifications: vi.fn(() => Promise.resolve(true)),
+  disableCollectionNotifications: vi.fn(),
   addBackgroundRefreshListener: () => ({ remove: mockRefreshRemove }),
   scheduleRefresh: vi.fn(),
 }));
