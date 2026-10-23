@@ -15,6 +15,7 @@ import { captureException } from "dofek/lib/error-reporting";
 import {
   ProviderAuthorizationAccountMismatchError,
   ProviderAuthorizationAlreadyOwnedError,
+  ProviderConnectionError,
 } from "dofek/providers/auth-errors";
 import type { Request, Response } from "express";
 import {
@@ -726,8 +727,11 @@ export async function handleOAuth2Callback(req: Request, res: Response): Promise
     if (reconnectFailure?.kind === "preserved") {
       res
         .status(400)
+        .type("text/plain")
         .send(
-          `${reconnectFailure.providerName} reconnect failed. Your existing connection is still active. Please try again later.`,
+          err instanceof ProviderConnectionError
+            ? `${err.message} Your existing connection is still active.`
+            : `${reconnectFailure.providerName} reconnect failed. Your existing connection is still active. Please try again later.`,
         );
       return;
     }
@@ -757,7 +761,12 @@ export async function handleOAuth2Callback(req: Request, res: Response): Promise
       return;
     }
 
+    if (err instanceof ProviderConnectionError) {
+      res.status(500).type("text/plain").send(err.message);
+      return;
+    }
+
     const providerLabel = resolvedProviderName ? ` from ${resolvedProviderName}` : "";
-    res.status(500).send(`Token exchange failed — please try again${providerLabel}`);
+    res.status(500).type("text/plain").send(`Connection failed — please try again${providerLabel}`);
   }
 }

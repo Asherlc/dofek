@@ -1,6 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { buildAuthorizationUrl, refreshAccessToken, type TokenSet } from "../../auth/oauth.ts";
+import { captureException } from "../../lib/error-reporting.ts";
+import { logger } from "../../logger.ts";
 import { createGarminAuthSetup } from "./oauth.ts";
+
+vi.mock("../../lib/error-reporting.ts", () => ({ captureException: vi.fn() }));
 
 const TOKEN_URL = "https://diauth.garmin.com/di-oauth2-service/oauth/token";
 const API_BASE = "https://apis.garmin.com/partner-gateway/rest";
@@ -26,11 +30,16 @@ function authorization(expiresAt = new Date(Date.now() + 60_000)): TokenSet {
 
 describe("createGarminAuthSetup", () => {
   beforeEach(() => {
+    vi.clearAllMocks();
+    vi.spyOn(logger, "warn").mockReturnValue(logger);
     vi.stubEnv("GARMIN_CLIENT_ID", "client-id");
     vi.stubEnv("GARMIN_CLIENT_SECRET", "client-secret");
   });
 
-  afterEach(() => vi.unstubAllEnvs());
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+  });
 
   it.each(["GARMIN_CLIENT_ID", "GARMIN_CLIENT_SECRET"])("requires %s", (key) => {
     vi.stubEnv(key, "");
@@ -141,16 +150,42 @@ describe("createGarminAuthSetup", () => {
     },
   );
 
-  it.each(["identity", "permissions"])("propagates a rejected %s request", async (failure) => {
-    const fetchFn = vi.fn<typeof fetch>().mockResolvedValueOnce(tokenResponse());
-    if (failure === "permissions") {
-      fetchFn.mockResolvedValueOnce(Response.json({ userId: "owner" }));
-    }
-    fetchFn.mockResolvedValueOnce(new Response("Unauthorized", { status: 401 }));
-    await expect(createGarminAuthSetup(fetchFn).exchangeCode?.("code", "verifier")).rejects.toThrow(
-      "401",
-    );
-  });
+  it.each(["identity", "permissions"])(
+    "reports a rejected %s request with safe stage diagnostics",
+    async (failure) => {
+      const fetchFn = vi.fn<typeof fetch>().mockResolvedValueOnce(tokenResponse());
+      if (failure === "permissions") {
+        fetchFn.mockResolvedValueOnce(Response.json({ userId: "owner" }));
+      }
+      fetchFn.mockResolvedValueOnce(
+        Response.json(
+          { error: "insufficient_scope", error_description: "private-upstream-detail" },
+          { status: 401 },
+        ),
+      );
+      await expect(
+        createGarminAuthSetup(fetchFn).exchangeCode?.("code", "verifier"),
+      ).rejects.toMatchObject({
+        name: "ProviderConnectionError",
+        stage: failure,
+        statusCode: 401,
+      });
+      expect(captureException).toHaveBeenCalledWith(
+        expect.objectContaining({ name: "ProviderConnectionError" }),
+        expect.objectContaining({
+          extra: expect.objectContaining({
+            stage: failure,
+            statusCode: 401,
+            errorCodes: ["insufficient_scope"],
+          }),
+        }),
+      );
+      expect(JSON.stringify(vi.mocked(captureException).mock.calls)).not.toContain(
+        "private-upstream-detail",
+      );
+      expect(fetchFn).toHaveBeenCalledTimes(failure === "permissions" ? 3 : 2);
+    },
+  );
 
   it("rejects malformed permissions rather than storing default OAuth scopes", async () => {
     const fetchFn = vi

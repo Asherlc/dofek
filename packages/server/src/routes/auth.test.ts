@@ -2776,7 +2776,7 @@ describe("createAuthRouter", () => {
       );
 
       expect(callbackRes.status).toBe(500);
-      expect(callbackRes.body).toContain("Token exchange failed");
+      expect(callbackRes.body).toContain("Connection failed");
       expect(createSession).not.toHaveBeenCalled();
       expect(setSessionCookie).not.toHaveBeenCalled();
     });
@@ -3506,7 +3506,7 @@ describe("createAuthRouter", () => {
 
       const callbackRes = await request(app, "get", `/callback?code=test-code&state=${state}`);
       expect(callbackRes.status).toBe(500);
-      expect(callbackRes.body).toContain("Token exchange failed");
+      expect(callbackRes.body).toContain("Connection failed");
     });
   });
 

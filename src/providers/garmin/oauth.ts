@@ -7,8 +7,10 @@ import {
   refreshAccessToken,
   type TokenSet,
 } from "../../auth/oauth.ts";
+import { ProviderConnectionError } from "../auth-errors.ts";
 import type { ProviderAuthSetup, ProviderRevocationTokenPersistence } from "../types.ts";
 import { assertGarminAuthorizationOwner } from "./authorization.ts";
+import { reportGarminConnectionHttpFailure } from "./oauth-diagnostics.ts";
 
 export const GARMIN_API_BASE = "https://apis.garmin.com/partner-gateway/rest";
 
@@ -36,12 +38,21 @@ export function createGarminAuthSetup(
     tokenAuthMethod: "basic",
   };
 
-  async function readUserResource(path: string, accessToken: string): Promise<unknown> {
+  async function readUserResource(
+    path: "id" | "permissions",
+    accessToken: string,
+  ): Promise<unknown> {
     const response = await fetchFn(`${GARMIN_API_BASE}/user/${path}`, {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
     if (!response.ok) {
-      throw new Error(`Garmin user ${path} request failed (${response.status})`);
+      const error = new ProviderConnectionError(
+        "Garmin Connect",
+        path === "id" ? "identity" : "permissions",
+        response.status,
+      );
+      await reportGarminConnectionHttpFailure(response, error);
+      throw error;
     }
     return response.json();
   }
