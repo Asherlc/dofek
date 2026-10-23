@@ -602,46 +602,169 @@ Keep analytics writers stopped until cutover and the append release are ready;
 resuming the old delete-and-insert model recreates the defect. Use a separate
 operator process, not an extra dbt process inside the analytics worker.
 
-1. Capture the source `SHOW CREATE TABLE`, database engine, pending mutations,
-   dependent views, active part counts, free disk, and current query load. Require
-   `analytics` to use `Atomic`, no remaining writer or pending mutation, and
+Before stopping writers, discover tentative scopes and test every proposed scope
+with a full-row read under the approved operator bounds. Then follow the
+maintenance steps below: stop writers, freeze the inventories, and test any newly
+discovered scope before copying it. Live probes establish feasibility, not frozen
+row counts.
+
+1. Capture the source `SHOW CREATE TABLE`, table UUID, database engine, pending
+   mutations, dependent views, active part counts, available memory, free disk,
+   and current query load. Require `analytics` to use `Atomic`, no remaining
+   writer or pending mutation, and
    enough disk for a separate copy. Resolve any materialized-view dependency
-   before proceeding. Record the source logical row count and existing tombstone
-   count. ClickHouse documents [Atomic databases](https://clickhouse.com/docs/engines/database-engines/atomic),
+   before proceeding. Record original replica counts for `analytics-worker`,
+   `processing-reconciliation`, and the job `worker` before stopping them, and
+   confirm the stopped tasks have exited. The job worker also runs
+   [deletion-triggered dbt builds](../src/jobs/process-activity-delete-analytics-job.ts)
+   and [account erasure](account-erasure-runbook.md#triage-by-phase), whose
+   [table discovery](../src/account-erasure/clickhouse-erasure.ts) includes repair
+   candidates in `analytics`. Source logical row and tombstone totals may be
+   accumulated from the bounded batches below: the October 22 whole-table
+   `FINAL` preflight exceeded the operator's 1-GiB bound; see the
+   [incident evidence](production-incident-baseline.md#2026-10-22--vo2-estimate-timeout-exposed-the-outstanding-sensor-parts-backlog).
+   ClickHouse documents [Atomic databases](https://clickhouse.com/docs/engines/database-engines/atomic),
    [parts](https://clickhouse.com/docs/operations/system-tables/parts), and
    [mutations](https://clickhouse.com/docs/operations/system-tables/mutations).
+   Compare qualified native UUIDs such as `tables.uuid` in identity guards, and
+   use a distinct output alias such as `observed_uuid` for their string form.
+   ClickHouse [expression aliases](https://clickhouse.com/docs/reference/syntax#expression-aliases)
+   are global within a query or subquery and can substitute same-name column
+   references. If verification fails after a destructive statement succeeds,
+   inspect state with read-only queries before choosing recovery; do not replay
+   the successful statement.
 2. Create a new candidate with the existing schema and projections. An existing
    candidate name must fail and be inspected rather than silently reused:
 
    ```sql
+   SET max_threads = 1, max_final_threads = 1,
+     max_memory_usage = 4294967296, max_execution_time = 240;
+
    CREATE TABLE analytics.activity_sensor_sample_repair
    AS analytics.activity_sensor_sample;
 
-   INSERT INTO analytics.activity_sensor_sample_repair
-   SELECT * FROM analytics.activity_sensor_sample FINAL
-   SETTINGS max_threads = 1, max_memory_usage = 1073741824;
+   SELECT DISTINCT samples.user_id, samples.activity_id
+   FROM analytics.activity_sensor_sample AS samples
+   ORDER BY samples.user_id, samples.activity_id
+   SETTINGS max_threads = 1, max_final_threads = 1,
+     max_memory_usage = 4294967296, max_execution_time = 240
+   FORMAT JSONEachRow;
    ```
 
-   Preserve every logical row, including `is_deleted = 1`; do not retimestamp
-   rows or copy hidden `_row_exists` masks. This uses
+   Compare the candidate schema, settings, and projection definitions with the
+   source. Freeze the distinct key inventory while writers and mutations remain
+   absent. Batch complete `(user_id, activity_id)` pairs, the leading prefix of
+   this table's sorting key, using native UUID tuple `IN` predicates. If a whole
+   activity does not fit, separately approved and tested scopes may use the
+   complete `(user_id, activity_id, recorded_date, channel)` prefix instead.
+   Exclude that activity entirely from whole-activity batches, and freeze all
+   its distinct stored date/channel prefixes. Use typed `Date` and `String`
+   values, not dates recomputed from timestamps or channel dictionary IDs.
+   Require disjoint scopes covering every inventoried key. Both grains keep
+   every replacement identity together under
+   [ReplacingMergeTree `FINAL`](https://clickhouse.com/docs/engines/table-engines/mergetree-family/replacingmergetree).
+   Keep the qualified native UUID ordering above; sorting `toString` aliases
+   changes the key order. Use explicit `PREWHERE` only for this sorting-key
+   predicate, so rows outside selected keys are filtered before reading the
+   remaining columns without splitting replacement versions. Filtering columns
+   outside `ORDER BY` before `FINAL` can change results; see
+   [ClickHouse `PREWHERE`](https://clickhouse.com/docs/sql-reference/statements/select/prewhere).
+   Test any newly discovered frozen scope with a full-row read before copying
+   it. Start a fresh ledger for each new candidate and track each ordinary
+   activity key or frozen fine prefix exactly once.
+   If batches are reordered, exclude completed keys by identity, not position.
    [CREATE TABLE AS](https://clickhouse.com/docs/sql-reference/statements/create/table)
-   and [ReplacingMergeTree FINAL](https://clickhouse.com/docs/engines/table-engines/mergetree-family/replacingmergetree).
-   The one-thread/1-GiB bounds apply only to this operator query. Stop on failure
-   with the original table intact.
-3. Require zero row differences in both directions, and require every active
-   candidate part to have `by_activity_source_refresh_version`:
+   copies the existing structure; it does not repair data until rows are copied.
+3. For each batch, record source counts, copy unfiltered `FINAL` rows, require
+   exact bidirectional parity against the raw candidate, and record candidate
+   counts before marking the batch complete. Run the two parity directions as
+   separate sequential queries so their read/compare pipelines do not share one
+   query's memory budget. The example uses one typed pair; extend the tuple list
+   identically in every statement for a larger batch. For approved date/channel
+   scopes, use the same complete four-column predicate in every statement:
 
    ```sql
-   SELECT count() AS differences
-   FROM (
-     (SELECT * FROM analytics.activity_sensor_sample FINAL
-      EXCEPT ALL SELECT * FROM analytics.activity_sensor_sample_repair FINAL)
-     UNION ALL
-     (SELECT * FROM analytics.activity_sensor_sample_repair FINAL
-      EXCEPT ALL SELECT * FROM analytics.activity_sensor_sample FINAL)
-   )
-   SETTINGS max_threads = 1, max_memory_usage = 1073741824;
+   SELECT count() AS rows, countIf(is_deleted = 1) AS tombstones
+   FROM analytics.activity_sensor_sample FINAL
+   PREWHERE (user_id, activity_id) IN (({userId:UUID}, {activityId:UUID}))
+   SETTINGS max_threads = 1, max_final_threads = 1,
+     max_memory_usage = 4294967296, max_execution_time = 240;
 
+   INSERT INTO analytics.activity_sensor_sample_repair
+   SELECT * FROM analytics.activity_sensor_sample FINAL
+   PREWHERE (user_id, activity_id) IN (({userId:UUID}, {activityId:UUID}))
+   SETTINGS max_threads = 1, max_final_threads = 1,
+     max_memory_usage = 4294967296, max_execution_time = 240;
+
+   SELECT count() AS differences,
+     throwIf(count() != 0, 'Missing copied rows') AS parity_gate
+   FROM (
+     SELECT * FROM analytics.activity_sensor_sample FINAL
+     PREWHERE (user_id, activity_id) IN (({userId:UUID}, {activityId:UUID}))
+     EXCEPT ALL SELECT * FROM analytics.activity_sensor_sample_repair
+     PREWHERE (user_id, activity_id) IN (({userId:UUID}, {activityId:UUID}))
+   )
+   SETTINGS max_threads = 1, max_final_threads = 1,
+     max_memory_usage = 4294967296, max_execution_time = 240;
+
+   SELECT count() AS differences,
+     throwIf(count() != 0, 'Unexpected copied rows') AS parity_gate
+   FROM (
+     SELECT * FROM analytics.activity_sensor_sample_repair
+     PREWHERE (user_id, activity_id) IN (({userId:UUID}, {activityId:UUID}))
+     EXCEPT ALL SELECT * FROM analytics.activity_sensor_sample FINAL
+     PREWHERE (user_id, activity_id) IN (({userId:UUID}, {activityId:UUID}))
+   )
+   SETTINGS max_threads = 1, max_final_threads = 1,
+     max_memory_usage = 4294967296, max_execution_time = 240;
+
+   SELECT count() AS rows, countIf(is_deleted = 1) AS tombstones
+   FROM analytics.activity_sensor_sample_repair
+   WHERE (user_id, activity_id) IN (({userId:UUID}, {activityId:UUID}))
+   SETTINGS max_threads = 1, max_final_threads = 1,
+     max_memory_usage = 4294967296, max_execution_time = 240;
+   ```
+
+   Preserve `is_deleted = 1`; do not change timestamps or copy hidden
+   `_row_exists` masks. Zero-row batches still require zero candidate rows and a
+   completed ledger entry. `EXCEPT ALL` preserves duplicate-sensitive comparison:
+   [ClickHouse EXCEPT](https://clickhouse.com/docs/sql-reference/statements/select/except).
+   These one-thread/4-GiB/240-second bounds require explicit approval and current
+   memory/disk headroom; they apply only to operator queries. The production
+   13-GiB service cap in the [deployment contract](../deploy/README.md) stays
+   unchanged. ClickHouse documents the per-query
+   [memory limit](https://clickhouse.com/docs/operations/settings/settings#max_memory_usage).
+   Stop on any error with the original table intact. An
+   insert exception or disconnect may leave committed blocks: do not blindly
+   retry the batch or delete candidate rows to clean it up. Inspect query and
+   candidate state before choosing recovery; ClickHouse's
+   [insert transaction guarantees](https://clickhouse.com/docs/concepts/features/operations/insert/transactions)
+   require a single block for whole-insert atomicity.
+
+   Even a complete single-activity key or an approved date/channel prefix can
+   exceed the memory bound. Test read-only feasibility before stopping writers;
+   freeze the repair inventory only after writers and mutations are absent.
+   Any resource-bound change requires specific approval, headroom, and validation;
+   do not increase it as an automatic response to a failed probe. If the
+   approved bound is exceeded, stop and inspect partial candidate/query state.
+   Before ending maintenance, verify that no exchange occurred and the serving UUID
+   still matches the captured source, verify the candidate's UUID, remove only
+   that aborted candidate, and restore the original writer replicas. Obtain
+   approval before changing the approved batch grain. Completion records from
+   a removed candidate must not be reused for a new candidate.
+
+   Before exchange, require each ordinary activity key and each frozen fine
+   prefix to have exactly one completed scope. Activities covered by fine
+   prefixes must be excluded from whole-activity scopes. Require zero differences
+   for every scope, equal accumulated source/candidate row and tombstone totals,
+   and no candidate keys outside the frozen inventory.
+   A source key with no logical rows need not appear in the candidate's key set.
+   Recheck that current activity and fine-prefix inventories match the frozen
+   lists, writers remain stopped, and no pending mutations or active source/
+   candidate queries remain. Require every active candidate part to have
+   `by_activity_source_refresh_version`:
+
+   ```sql
    SELECT count() AS active_parts,
      countIf(has(projections, 'by_activity_source_refresh_version')) AS projected_parts
    FROM system.parts
@@ -649,9 +772,6 @@ operator process, not an extra dbt process inside the analytics worker.
      AND table = 'activity_sensor_sample_repair';
    ```
 
-   Also compare the logical row/tombstone counts with preflight. `EXCEPT ALL`
-   retains duplicate-sensitive comparison semantics:
-   [ClickHouse EXCEPT](https://clickhouse.com/docs/sql-reference/statements/select/except).
 4. With writers still stopped, atomically exchange names:
 
    ```sql
@@ -671,10 +791,31 @@ operator process, not an extra dbt process inside the analytics worker.
    after successful cutover validation so no long-lived duplicate remains, and
    record release, pre/post counts, checks, and cleanup in the incident baseline.
 
-The copy, duplicate-sensitive parity query, and atomic exchange were validated
-with a tiny isolated ClickHouse fixture containing a masked row, a replacement
-version, and an explicit tombstone. Production capacity, dependency review,
-execution, and end-to-end readback remain gates for the approved maintenance.
+The original whole-table procedure was validated with a tiny isolated fixture;
+that did not establish production memory feasibility. The bounded copy and
+duplicate-sensitive batch parity were exercised in the
+[October 22 maintenance](production-incident-baseline.md#2026-10-22--vo2-estimate-timeout-exposed-the-outstanding-sensor-parts-backlog).
+Its 16-key read probe confirmed that explicit sorting-key `PREWHERE` reduced
+memory while selecting the same parts; reducing block sizes alone had failed.
+Later whole-activity batches, a single-activity probe, and an approved
+date/channel prefix probe still exceeded the initial 1-GiB bound. Those attempts
+left the original serving table intact. After separate approval, the 4-GiB
+bound passed 133 live mixed-scope full-row probes and one newly frozen activity
+probe; a whole-table probe still failed. All 134 copy scopes and 268 exact
+comparisons then succeeded. The atomic exchange passed identity, count, and
+projection checks, preserving 16,684,741 rows, including 1,563,690 tombstones,
+in nine parts with every freshness projection present. Two normal 45-model
+cycles then completed with zero errors or skipped models, and cache warming
+reported zero registered keys and zero skipped keys. VO2 inserts completed in
+7.158 and 6.972 seconds, with no missing projections or serving merge-mismatch
+messages. Direct serving-repository checks returned 50 cycling power points,
+50 ACSM speed/heart-rate/altitude points, and one matching finite VO2 estimate
+per activity; these checks did not exercise HTTP authentication or client UI.
+After guarded cleanup, read-only checks confirmed the retained table was absent,
+the serving UUID was unchanged, all eight active parts had the projection, and
+42,715,566,080 bytes were free. See the
+[incident record](production-incident-baseline.md#2026-10-22--vo2-estimate-timeout-exposed-the-outstanding-sensor-parts-backlog)
+for the full evidence.
 
 ## Activity source-version projection rollout (migration 0073)
 
