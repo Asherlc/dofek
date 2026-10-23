@@ -62,7 +62,11 @@ const targetInputSchema = {
   request_id: requestIdSchema,
 };
 
-const readAnnotations = { readOnlyHint: true, openWorldHint: false } as const;
+const readAnnotations = {
+  readOnlyHint: true,
+  openWorldHint: false,
+  destructiveHint: false,
+} as const;
 const mutationAnnotations = {
   readOnlyHint: false,
   openWorldHint: false,

@@ -333,9 +333,25 @@ tool-level `insufficient_scope` authorization failures.
 All food mutations advertise `idempotentHint: true`, `readOnlyHint: false`, and
 `openWorldHint: false`. Create, update, and restore advertise
 `destructiveHint: false`; delete alone advertises `destructiveHint: true`.
-Search, get, and history advertise `readOnlyHint: true` and
-`openWorldHint: false`. These hints follow the official [MCP tool annotation
+Search, get, and history advertise `readOnlyHint: true`,
+`openWorldHint: false`, and `destructiveHint: false`. OpenAI requires these
+three annotations to be explicit booleans and specifies `destructiveHint: false`
+for read-only tools ([OpenAI plugin guidelines](https://developers.openai.com/plugins/plugin-guidelines#correct-annotation)).
+These hints follow the official [MCP tool annotation
 contract](https://modelcontextprotocol.io/specification/2025-11-25/server/tools#toolannotations).
+
+### ChatGPT permission prompts
+
+Capture the exact prompt and inspect the saved Dofek-specific permission before
+diagnosing repeated approvals. ChatGPT's tool-approval policy and Dofek's OAuth
+account authorization are separate controls; a saved tool permission does not
+grant additional OAuth scopes ([OpenAI plugin permissions](https://learn.chatgpt.com/docs/plugins#how-permissions-and-data-sharing-work)).
+After deploying annotation changes, refresh the app's discovered tools in
+ChatGPT's app settings before retesting ([OpenAI custom MCP setup](https://developers.openai.com/api/docs/guides/custom-mcp-server)).
+Explicit annotations establish the tool metadata contract; they do not prove
+that a client is applying its saved approval policy correctly. See the
+[2026-10-22 investigation](production-incident-baseline.md#2026-10-22--chatgpt-repeated-dofek-tool-approvals-despite-allow-all-actions)
+for the unresolved client behavior and the food-read annotation correction.
 
 ## Widget appearance
 
