@@ -1,17 +1,17 @@
 import type { DayNutritionPreview } from "@dofek/mcp-contracts/day-nutrition";
 
 const mealStyles = {
-  breakfast: { label: "Breakfast", color: "#2563eb" },
-  lunch: { label: "Lunch", color: "#7c3aed" },
-  dinner: { label: "Dinner", color: "#0e7490" },
-  snack: { label: "Snacks", color: "#c026d3" },
-  other: { label: "Other / unspecified", color: "#64748b" },
+  breakfast: { label: "Breakfast", color: "light-dark(#2563eb, #60a5fa)" },
+  lunch: { label: "Lunch", color: "light-dark(#7c3aed, #a78bfa)" },
+  dinner: { label: "Dinner", color: "light-dark(#0e7490, #22d3ee)" },
+  snack: { label: "Snacks", color: "light-dark(#c026d3, #e879f9)" },
+  other: { label: "Other / unspecified", color: "light-dark(#64748b, #94a3b8)" },
 } as const;
 
 const macroColors = {
-  protein: "#2563eb",
-  carbs: "#5E35B1",
-  fat: "#0ea5e9",
+  protein: "light-dark(#2563eb, #60a5fa)",
+  carbs: "light-dark(#5e35b1, #a78bfa)",
+  fat: "light-dark(#0ea5e9, #38bdf8)",
 } as const;
 
 function formatNumber(value: number): string {
@@ -41,14 +41,16 @@ function ProgressBar({
         }}
       >
         <span style={{ fontWeight: 600 }}>{label}</span>
-        <span style={{ fontVariantNumeric: "tabular-nums", color: "#475569" }}>{valueLabel}</span>
+        <span style={{ fontVariantNumeric: "tabular-nums", color: "var(--color-text-secondary)" }}>
+          {valueLabel}
+        </span>
       </div>
       <div
         aria-hidden="true"
         style={{
           height: 8,
           borderRadius: 999,
-          background: "#e2e8f0",
+          background: "var(--color-background-secondary)",
           overflow: "hidden",
         }}
       >
@@ -76,8 +78,8 @@ export function DayNutritionPreviewPanel({ preview }: DayNutritionPreviewPanelPr
   return (
     <main
       style={{
-        fontFamily: "ui-sans-serif, system-ui, sans-serif",
-        color: "#0f172a",
+        fontFamily: "var(--font-sans, ui-sans-serif, system-ui, sans-serif)",
+        color: "var(--color-text-primary)",
         padding: 16,
         display: "grid",
         gap: 20,
@@ -85,7 +87,9 @@ export function DayNutritionPreviewPanel({ preview }: DayNutritionPreviewPanelPr
     >
       <header style={{ display: "grid", gap: 4 }}>
         <h1 style={{ margin: 0, fontSize: 18 }}>Today's nutrition</h1>
-        <p style={{ margin: 0, color: "#64748b", fontSize: 14 }}>{preview.date}</p>
+        <p style={{ margin: 0, color: "var(--color-text-secondary)", fontSize: 14 }}>
+          {preview.date}
+        </p>
       </header>
 
       <section aria-label="Calories" style={{ display: "grid", gap: 12 }}>
@@ -133,14 +137,16 @@ export function DayNutritionPreviewPanel({ preview }: DayNutritionPreviewPanelPr
             </ul>
           </>
         ) : (
-          <p style={{ margin: 0, fontSize: 14, color: "#64748b" }}>
+          <p style={{ margin: 0, fontSize: 14, color: "var(--color-text-secondary)" }}>
             No calories logged for this date.
           </p>
         )}
       </section>
 
       <section aria-label="Macros" style={{ display: "grid", gap: 14 }}>
-        <p style={{ margin: 0, fontSize: 12, fontWeight: 600, color: "#64748b" }}>
+        <p
+          style={{ margin: 0, fontSize: 12, fontWeight: 600, color: "var(--color-text-secondary)" }}
+        >
           SHARE OF ENERGY
         </p>
         <ProgressBar

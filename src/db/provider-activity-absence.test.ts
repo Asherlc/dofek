@@ -117,6 +117,10 @@ describe("provider activity absence cache invalidation", () => {
       userId,
     });
 
+    const recordAbsenceQuery = mockExecute.mock.calls[0]?.[0];
+    expect(new PgDialect().sqlToQuery(recordAbsenceQuery).params).toContainEqual([
+      "missing-activity",
+    ]);
     expect(mockInvalidateByPrefix).toHaveBeenCalledWith(`${userId}:activity.`);
     expect(mockInvalidateByPrefix).toHaveBeenCalledWith(`${userId}:calendar.`);
     expect(mockInvalidateByPrefix).toHaveBeenCalledWith(`${userId}:training.`);
