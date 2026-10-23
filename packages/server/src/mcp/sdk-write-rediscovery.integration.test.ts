@@ -91,7 +91,7 @@ describe("MCP SDK write and fresh discovery", () => {
           request_id: "22222222-2222-4222-8222-222222222222",
           date: "2026-09-15",
           food_name: "Unauthorized isolated oats",
-          nutrients: { protein: 12.5 },
+          nutrients: { calories: 300, protein: 12.5, carbohydrate: 40, fat: 0 },
         },
       });
       expect(rejected.isError).toBe(true);
@@ -108,6 +108,54 @@ describe("MCP SDK write and fresh discovery", () => {
               start_date: "2026-09-15",
               end_date: "2026-09-15",
               query: "Unauthorized isolated oats",
+            },
+          })
+        ).structuredContent,
+      );
+      expect(searched.result.items).toEqual([]);
+    } finally {
+      await client.close();
+    }
+  });
+
+  it("rejects missing and invalid required nutrients through SDK HTTP without writing", async () => {
+    const client = new Client({ name: "dofek-sdk-nutrition-test", version: "1.0.0" });
+    const nutrients = { calories: 300, protein: 12.5, carbohydrate: 40, fat: 0 };
+    try {
+      await client.connect(
+        new StreamableHTTPClientTransport(endpoint, {
+          requestInit: { headers: { Authorization: `Bearer ${token}` } },
+        }),
+      );
+      for (const id of Object.keys(nutrients)) {
+        const missing = Object.fromEntries(Object.entries(nutrients).filter(([key]) => key !== id));
+        for (const invalid of [
+          missing,
+          { ...nutrients, [id]: "" },
+          { ...nutrients, [id]: null },
+          { ...nutrients, [id]: -1 },
+          { ...nutrients, [id]: "0" },
+        ]) {
+          const rejected = await client.callTool({
+            name: "create_food_entry",
+            arguments: {
+              request_id: crypto.randomUUID(),
+              date: "2026-09-15",
+              food_name: "Incomplete isolated oats",
+              nutrients: invalid,
+            },
+          });
+          expect(rejected.isError).toBe(true);
+        }
+      }
+      const searched = foodRecordSearchOutputSchema.parse(
+        (
+          await client.callTool({
+            name: "search_food_entries",
+            arguments: {
+              start_date: "2026-09-15",
+              end_date: "2026-09-15",
+              query: "Incomplete isolated oats",
             },
           })
         ).structuredContent,
@@ -142,6 +190,12 @@ describe("MCP SDK write and fresh discovery", () => {
       expect(createTool?.inputSchema).toMatchObject({
         type: "object",
         required: expect.arrayContaining(["request_id", "date", "food_name", "nutrients"]),
+        properties: {
+          nutrients: {
+            type: "object",
+            required: expect.arrayContaining(["calories", "protein", "carbohydrate", "fat"]),
+          },
+        },
       });
       expect(createTool?.outputSchema).toMatchObject({
         type: "object",
@@ -156,7 +210,7 @@ describe("MCP SDK write and fresh discovery", () => {
           date: "2026-09-15",
           meal: "breakfast",
           food_name: "SDK isolated oats",
-          nutrients: { protein: 12.5 },
+          nutrients: { calories: 300, protein: 12.5, carbohydrate: 40, fat: 0 },
         },
       });
       expect(created.isError).not.toBe(true);
@@ -170,7 +224,12 @@ describe("MCP SDK write and fresh discovery", () => {
       expect(createdJson).toEqual(createdStructured);
       const mutation = foodRecordMutationOutputSchema.parse(created.structuredContent);
       expect(mutation.result.record.food_name).toBe("SDK isolated oats");
-      expect(mutation.result.record.nutrients).toMatchObject({ protein: 12.5 });
+      expect(mutation.result.record.nutrients).toMatchObject({
+        calories: 300,
+        protein: 12.5,
+        carbohydrate: 40,
+        fat: 0,
+      });
       expect(mutation.result.operation.replayed).toBe(false);
 
       await firstClient.close();
