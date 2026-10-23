@@ -62,6 +62,25 @@ function externalIdListSql(externalIds: string[]) {
   );
 }
 
+/** Only an explicit copy identity establishes equivalent upstream ID spellings. */
+function sourceIdentityMatchesSql(userId: string, externalIds: readonly string[]): SQL {
+  return sql`(
+    candidate.external_id = ANY(${sql.param(externalIds)}::text[])
+    OR EXISTS (
+      SELECT 1 FROM fitness.activity AS propagated
+      CROSS JOIN LATERAL fitness.activity_copy_identity(propagated.provider_id, propagated.external_id, propagated.raw) AS copy
+      WHERE propagated.user_id = candidate.user_id
+        AND propagated.user_id = ${userId}
+        AND copy.provider_id = candidate.provider_id
+        AND copy.external_id = LOWER(REPLACE(candidate.external_id, '-', ''))
+        AND EXISTS (
+          SELECT 1 FROM unnest(${sql.param(externalIds)}::text[]) AS present(external_id)
+          WHERE copy.external_id = LOWER(REPLACE(present.external_id, '-', ''))
+        )
+    )
+  )`;
+}
+
 /** A stale downstream list cannot override a confirmed origin tombstone. */
 const originAllowsRestoreSql = sql`NOT EXISTS (
     SELECT 1 FROM fitness.activity_copy_identity(candidate.provider_id, candidate.external_id, candidate.raw) AS copy
@@ -177,7 +196,7 @@ export async function reconcileProviderActivityAbsence(
     SET provider_absent_at = NULL, absence_provider_id = NULL
     WHERE user_id = ${userId}
       AND provider_id = ${reconciliation.providerId}
-      AND external_id IN (${externalIdListSql(presentExternalIds)})
+      AND ${sourceIdentityMatchesSql(userId, presentExternalIds)}
       AND provider_absent_at IS NOT NULL
       AND deleted_at IS NULL
       AND ${originAllowsRestoreSql}
@@ -225,7 +244,7 @@ export async function reconcileProviderActivityAbsence(
           AND external_id <> ''
           AND started_at >= ${reconciliation.windowStart}
           AND started_at < ${reconciliation.windowEnd}
-          ${presentExternalIds.length === 0 ? sql`` : sql`AND external_id NOT IN (${externalIdListSql(presentExternalIds)})`}
+          AND NOT ${sourceIdentityMatchesSql(userId, presentExternalIds)}
           ${appleHealthDuplicateGuard}
         )
         OR id IN (SELECT id FROM linked_copies)
@@ -245,7 +264,7 @@ export async function markProviderActivityAbsent(
     SET provider_absent_at = COALESCE(provider_absent_at, NOW()), absence_provider_id = ${mark.providerId}
     WHERE user_id = ${userId}
       AND (
-        (provider_id = ${mark.providerId} AND external_id = ${mark.externalId} AND provider_absent_at IS NULL)
+        (provider_id = ${mark.providerId} AND ${sourceIdentityMatchesSql(userId, [mark.externalId])} AND provider_absent_at IS NULL)
         OR EXISTS (
           SELECT 1 FROM fitness.activity_copy_identity(candidate.provider_id, candidate.external_id, candidate.raw) AS copy
           WHERE copy.provider_id = ${mark.providerId}
@@ -271,7 +290,7 @@ export async function markProviderActivityPresent(
     SET provider_absent_at = NULL, absence_provider_id = NULL
     WHERE user_id = ${userId}
       AND provider_id = ${mark.providerId}
-      AND external_id = ${mark.externalId}
+      AND ${sourceIdentityMatchesSql(userId, [mark.externalId])}
       AND provider_absent_at IS NOT NULL
       AND deleted_at IS NULL
       AND ${originAllowsRestoreSql}

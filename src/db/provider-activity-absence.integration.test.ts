@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   markProviderActivityAbsent,
@@ -178,28 +178,101 @@ describe("reconcileProviderActivityAbsence", () => {
     expect(stored?.raw).toEqual({ platform: "whoop", deviceType: "whoop" });
   });
 
-  it("reconciles copies when multiple source rows normalize to the same upstream UUID", async () => {
-    const { copy, originId, externalId } = await insertWhoopCopy();
-    await ctx.db.insert(activity).values(
-      [originId, externalId].map((id) => ({
-        providerId: "whoop",
-        externalId: id,
-        canonicalType: "climbing" as const,
-        providerType: "rock-climbing",
-        startedAt: copy.startedAt,
-        endedAt: copy.endedAt,
-        providerAbsentAt: new Date("2026-10-22T16:00:00Z"),
-      })),
-    );
-    await reconcileProviderActivityAbsence(ctx.db, {
-      providerId: "peloton",
-      ...sourceWindow,
-      presentExternalIds: new Set([externalId]),
-    });
-    const [stored] = await ctx.db.select().from(activity).where(eq(activity.id, copy.id));
-    expect(stored?.providerAbsentAt).toBeInstanceOf(Date);
-    expect(stored?.absenceProviderId).toBe("whoop");
-  });
+  it.each(["list", "event"])(
+    "reconciles normalized upstream UUID aliases through a %s",
+    async (confirmation) => {
+      const { copy, originId, externalId } = await insertWhoopCopy();
+      await ctx.db.insert(activity).values(
+        [originId, externalId].map((id) => ({
+          providerId: "whoop",
+          externalId: id,
+          canonicalType: "climbing" as const,
+          providerType: "rock-climbing",
+          startedAt: copy.startedAt,
+          endedAt: copy.endedAt,
+          providerAbsentAt: new Date("2026-10-22T16:00:00Z"),
+        })),
+      );
+      await reconcileProviderActivityAbsence(ctx.db, {
+        providerId: "peloton",
+        ...sourceWindow,
+        presentExternalIds: new Set([externalId]),
+      });
+      const [stored] = await ctx.db.select().from(activity).where(eq(activity.id, copy.id));
+      expect(stored?.providerAbsentAt).toBeInstanceOf(Date);
+      expect(stored?.absenceProviderId).toBe("whoop");
+
+      if (confirmation === "list") {
+        await reconcileProviderActivityAbsence(ctx.db, {
+          providerId: "whoop",
+          ...sourceWindow,
+          presentExternalIds: new Set([originId]),
+        });
+      } else {
+        await markProviderActivityPresent(ctx.db, { providerId: "whoop", externalId: originId });
+      }
+      const [originReturned] = await ctx.db.select().from(activity).where(eq(activity.id, copy.id));
+      expect(originReturned?.providerAbsentAt).toBeInstanceOf(Date);
+      expect(originReturned?.absenceProviderId).toBe("peloton");
+      await reconcileProviderActivityAbsence(ctx.db, {
+        providerId: "peloton",
+        ...sourceWindow,
+        presentExternalIds: new Set([externalId]),
+      });
+      const [copyReturned] = await ctx.db.select().from(activity).where(eq(activity.id, copy.id));
+      expect(copyReturned?.providerAbsentAt).toBeNull();
+
+      await markProviderActivityAbsent(ctx.db, { providerId: "whoop", externalId: originId });
+      const originAliases = await ctx.db
+        .select()
+        .from(activity)
+        .where(
+          and(
+            eq(activity.providerId, "whoop"),
+            inArray(activity.externalId, [originId, externalId]),
+          ),
+        );
+      expect(originAliases).toHaveLength(2);
+      for (const alias of originAliases) expect(alias.providerAbsentAt).toBeInstanceOf(Date);
+    },
+  );
+
+  it.each(["provider-absence-test", "whoop"])(
+    "preserves distinct IDs without copy identity evidence for %s",
+    async (providerId) => {
+      const { originId: copiedOriginId } = await insertWhoopCopy();
+      const originId = providerId === "whoop" ? randomUUID() : copiedOriginId;
+      const compactId = originId.replaceAll("-", "");
+      await ctx.db.insert(activity).values(
+        [originId, compactId].map((externalId) => ({
+          providerId,
+          externalId,
+          canonicalType: "running" as const,
+          providerType: "run",
+          startedAt: new Date("2026-10-22T15:34:00Z"),
+          providerAbsentAt: new Date("2026-10-22T16:00:00Z"),
+        })),
+      );
+      await reconcileProviderActivityAbsence(ctx.db, {
+        providerId,
+        ...sourceWindow,
+        presentExternalIds: new Set([originId]),
+      });
+      const rows = await ctx.db
+        .select()
+        .from(activity)
+        .where(
+          and(
+            eq(activity.providerId, providerId),
+            inArray(activity.externalId, [originId, compactId]),
+          ),
+        );
+      expect(rows.find((row) => row.externalId === originId)?.providerAbsentAt).toBeNull();
+      expect(rows.find((row) => row.externalId === compactId)?.providerAbsentAt).toBeInstanceOf(
+        Date,
+      );
+    },
+  );
 
   it("keeps a late copy of a tombstoned origin absent during downstream sync and present events", async () => {
     const { copy, originId, externalId } = await insertWhoopCopy();

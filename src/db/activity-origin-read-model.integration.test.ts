@@ -27,6 +27,25 @@ const fixtures = z
 const groupId = "00000000-0000-4000-8000-000000000100";
 const userId = "00000000-0000-4000-8000-000000000200";
 
+function originQuery(selectSql: string): string {
+  const macro = readFileSync(
+    new URL("../../analytics/macros/activity_origin.sql", import.meta.url),
+    "utf8",
+  );
+  const body = macro.match(/\{% macro activity_origin\(\) %\}([\s\S]*?)\{% endmacro %\}/)?.[1];
+  if (!body) throw new Error("Missing activity origin macro");
+  return `WITH ranked AS (
+    SELECT toUUID(JSONExtractString(member, 'activity_id')) AS activity_id,
+      toUUID(JSONExtractString(member, 'user_id')) AS user_id,
+      toUUID(JSONExtractString(member, 'group_id')) AS group_id,
+      JSONExtractString(member, 'provider_id') AS provider_id,
+      JSONExtract(member, 'external_id', 'Nullable(String)') AS external_id,
+      JSONExtract(member, 'source_name', 'Nullable(String)') AS source_name,
+      JSONExtract(member, 'raw', 'Nullable(String)') AS raw
+    FROM (SELECT arrayJoin(JSONExtractArrayRaw({members:String})) AS member)
+  ), ${body} SELECT ${selectSql}`;
+}
+
 describe("ClickHouse provenance-only origin", () => {
   const client = createClient({
     url: process.env.CLICKHOUSE_URL ?? "http://localhost:8123",
@@ -40,12 +59,6 @@ describe("ClickHouse provenance-only origin", () => {
   });
 
   it.each(fixtures)("$name", async (fixture) => {
-    const macro = readFileSync(
-      new URL("../../analytics/macros/activity_origin.sql", import.meta.url),
-      "utf8",
-    );
-    const body = macro.match(/\{% macro activity_origin\(\) %\}([\s\S]*?)\{% endmacro %\}/)?.[1];
-    if (!body) throw new Error("Missing activity origin macro");
     const rows = fixture.members.map((member) => ({
       activity_id: member.id,
       user_id: userId,
@@ -56,17 +69,9 @@ describe("ClickHouse provenance-only origin", () => {
       raw: member.raw === null ? null : JSON.stringify(member.raw),
     }));
     const data = JSON.stringify(rows);
-    const query = `WITH ranked AS (
-      SELECT toUUID(JSONExtractString(member, 'activity_id')) AS activity_id,
-        toUUID(JSONExtractString(member, 'user_id')) AS user_id,
-        toUUID(JSONExtractString(member, 'group_id')) AS group_id,
-        JSONExtractString(member, 'provider_id') AS provider_id,
-        JSONExtract(member, 'external_id', 'Nullable(String)') AS external_id,
-        JSONExtract(member, 'source_name', 'Nullable(String)') AS source_name,
-        JSONExtract(member, 'raw', 'Nullable(String)') AS raw
-      FROM (SELECT arrayJoin(JSONExtractArrayRaw({members:String})) AS member)
-    ), ${body}
-    SELECT toString(primary_activity_id) AS primary, arrayMap(member -> toString(member), origin_candidate_member_ids) AS candidates FROM activity_origins`;
+    const query = originQuery(
+      "toString(primary_activity_id) AS primary, arrayMap(member -> toString(member), origin_candidate_member_ids) AS candidates FROM activity_origins",
+    );
     const result = await client.query({
       query,
       query_params: { members: data },
@@ -79,5 +84,32 @@ describe("ClickHouse provenance-only origin", () => {
     ).toEqual([
       { primary: fixture.expectedPrimaryMemberId, candidates: fixture.expectedCandidateMemberIds },
     ]);
+  });
+
+  it("returns a nullable copy provider only when explicit upstream identity exists", async () => {
+    const rows = [
+      {
+        activity_id: "00000000-0000-4000-8000-000000000001",
+        provider_id: "peloton",
+        raw: JSON.stringify({ platform: "home_bike", deviceType: "bike" }),
+      },
+      {
+        activity_id: "00000000-0000-4000-8000-000000000002",
+        provider_id: "peloton",
+        raw: JSON.stringify({ platform: "whoop", deviceType: "whoop" }),
+      },
+    ].map((row) => ({
+      ...row,
+      user_id: userId,
+      group_id: groupId,
+      external_id: "c4e019f3387447ad8a2420e7c7918cf5",
+      source_name: null,
+    }));
+    const result = await client.query({
+      query: originQuery("copy_provider FROM origin_labels ORDER BY activity_id"),
+      query_params: { members: JSON.stringify(rows) },
+      format: "JSONEachRow",
+    });
+    expect(await result.json()).toEqual([{ copy_provider: null }, { copy_provider: "whoop" }]);
   });
 });

@@ -113,6 +113,12 @@ followed by confirmation that the downstream record is present. Importing an
 origin row alone does not release that evidence. Upserts cannot clear either tombstone field; see the
 [shared writer](../src/db/provider-activity-sync.ts).
 
+The [presence predicate](../src/db/provider-activity-absence.ts) recognizes upstream
+ID spelling aliases only when an explicit copy identity proves the relationship
+for the same user and provider. Restoration and absence use that same predicate,
+so an authoritative return cannot immediately be undone by a stale alias.
+Raw IDs and unrelated opaque provider IDs retain exact matching semantics.
+
 Deploy PostgreSQL migration `0157_activity_copy_identity` and pre-CDC ClickHouse
 migration `0105_activity_absence_provider` through the normal
 [deployment procedure](../deploy/README.md#deployment). Subsequent completed

@@ -132,6 +132,10 @@ describe("provider activity absence cache invalidation", () => {
     });
 
     expect(mockExecute).toHaveBeenCalledTimes(2);
+    const recordPresenceQuery = mockExecute.mock.calls[0]?.[0];
+    expect(new PgDialect().sqlToQuery(recordPresenceQuery).params).toContainEqual([
+      "restored-activity",
+    ]);
     const originPresenceQuery = mockExecute.mock.calls[1]?.[0];
     const { params } = new PgDialect().sqlToQuery(originPresenceQuery);
     expect(params).toContainEqual(["restored-activity"]);
