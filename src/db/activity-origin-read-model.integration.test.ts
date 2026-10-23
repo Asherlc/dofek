@@ -51,7 +51,7 @@ describe("ClickHouse provenance-only origin", () => {
       user_id: userId,
       group_id: groupId,
       provider_id: member.providerId,
-      external_id: member.externalId ?? "",
+      external_id: member.externalId ?? null,
       source_name: member.sourceName,
       raw: member.raw === null ? null : JSON.stringify(member.raw),
     }));
@@ -61,7 +61,7 @@ describe("ClickHouse provenance-only origin", () => {
         toUUID(JSONExtractString(member, 'user_id')) AS user_id,
         toUUID(JSONExtractString(member, 'group_id')) AS group_id,
         JSONExtractString(member, 'provider_id') AS provider_id,
-        JSONExtractString(member, 'external_id') AS external_id,
+        JSONExtract(member, 'external_id', 'Nullable(String)') AS external_id,
         JSONExtract(member, 'source_name', 'Nullable(String)') AS source_name,
         JSONExtract(member, 'raw', 'Nullable(String)') AS raw
       FROM (SELECT arrayJoin(JSONExtractArrayRaw({members:String})) AS member)

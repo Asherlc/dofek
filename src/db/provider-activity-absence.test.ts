@@ -1,3 +1,4 @@
+import { PgDialect } from "drizzle-orm/pg-core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { makeTransactionalTestDatabase } from "../providers/test-helpers.ts";
 
@@ -131,6 +132,9 @@ describe("provider activity absence cache invalidation", () => {
     });
 
     expect(mockExecute).toHaveBeenCalledTimes(2);
+    const originPresenceQuery = mockExecute.mock.calls[1]?.[0];
+    const { params } = new PgDialect().sqlToQuery(originPresenceQuery);
+    expect(params).toContainEqual(["restored-activity"]);
     expect(mockInvalidateByPrefix).toHaveBeenCalledWith(`${userId}:activity.`);
     expect(mockInvalidateByPrefix).toHaveBeenCalledWith(`${userId}:calendar.`);
     expect(mockInvalidateByPrefix).toHaveBeenCalledWith(`${userId}:training.`);

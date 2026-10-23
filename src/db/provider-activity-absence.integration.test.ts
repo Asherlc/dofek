@@ -146,6 +146,14 @@ describe("reconcileProviderActivityAbsence", () => {
     const [stored] = await ctx.db.select().from(activity).where(eq(activity.id, copy.id));
     expect(stored?.providerAbsentAt).toBeInstanceOf(Date);
     expect(stored?.absenceProviderId).toBe("whoop");
+
+    await markProviderActivityPresent(ctx.db, { providerId: "whoop", externalId: originId });
+    const [originPresent] = await ctx.db.select().from(activity).where(eq(activity.id, copy.id));
+    expect(originPresent?.providerAbsentAt).toBeInstanceOf(Date);
+    expect(originPresent?.absenceProviderId).toBe("peloton");
+    await markProviderActivityPresent(ctx.db, { providerId: "peloton", externalId });
+    const [copyPresent] = await ctx.db.select().from(activity).where(eq(activity.id, copy.id));
+    expect(copyPresent?.providerAbsentAt).toBeNull();
   });
 
   it("propagates an explicit deletion even before the origin row was imported", async () => {
