@@ -118,7 +118,7 @@ describe("MCP SDK write and fresh discovery", () => {
     }
   });
 
-  it("rejects missing and blank required nutrients through SDK HTTP without writing", async () => {
+  it("rejects missing and invalid required nutrients through SDK HTTP without writing", async () => {
     const client = new Client({ name: "dofek-sdk-nutrition-test", version: "1.0.0" });
     const nutrients = { calories: 300, protein: 12.5, carbohydrate: 40, fat: 0 };
     try {
@@ -129,7 +129,13 @@ describe("MCP SDK write and fresh discovery", () => {
       );
       for (const id of Object.keys(nutrients)) {
         const missing = Object.fromEntries(Object.entries(nutrients).filter(([key]) => key !== id));
-        for (const invalid of [missing, { ...nutrients, [id]: "" }, { ...nutrients, [id]: null }]) {
+        for (const invalid of [
+          missing,
+          { ...nutrients, [id]: "" },
+          { ...nutrients, [id]: null },
+          { ...nutrients, [id]: -1 },
+          { ...nutrients, [id]: "0" },
+        ]) {
           const rejected = await client.callTool({
             name: "create_food_entry",
             arguments: {
