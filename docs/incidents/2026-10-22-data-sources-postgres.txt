@@ -1,0 +1,86 @@
+Redacted primary evidence: Data Sources, 2026-10-22
+
+Sources: production PostgreSQL slow-statement logs and read-only
+EXPLAIN (ANALYZE, BUFFERS) diagnostic output. Capture timestamps are UTC.
+User UUIDs and SQL string literals are redacted; measurement values are unchanged.
+The warm-cache comparisons preceded migration 0157 and do not establish
+end-to-end production recovery.
+
+PostgreSQL slow-statement excerpt
+Captured: 2026-10-22T16:02:09.140Z
+
+2026-10-22 16:00:45.361 UTC [3599536] LOG:  duration: 40320.195 ms  execute <unnamed>: WITH ranked_sync_logs AS (
+2026-10-22 16:00:45.362 UTC [3599534] LOG:  duration: 15471.230 ms  execute <unnamed>: WITH ranked_sync_logs AS (
+
+Original full-history query plan
+Captured: 2026-10-22T16:02:34.157Z
+
+Subquery Scan on ranked_sync_logs  (cost=0.59..75670.09 rows=628603 width=154) (actual time=0.115..490.973 rows=53.00 loops=1)
+   Buffers: shared hit=100896
+   ->  WindowAgg  (cost=0.59..69384.06 rows=628603 width=162) (actual time=0.114..490.955 rows=53.00 loops=1)
+         Window: w1 AS (PARTITION BY sync_log.provider_id ORDER BY sync_log.synced_at, sync_log.id ROWS UNBOUNDED PRECEDING)
+         Run Condition: (row_number() OVER w1 <= 3)
+         Storage: Memory  Maximum Storage: 19kB
+         Buffers: shared hit=100896
+         ->  Incremental Sort  (cost=0.48..56812.00 rows=628603 width=154) (actual time=0.109..436.246 rows=630923.00 loops=1)
+               Sort Key: sync_log.provider_id, sync_log.synced_at DESC, sync_log.id DESC
+               Presorted Key: sync_log.provider_id, sync_log.synced_at
+               Full-sort Groups: 19717  Sort Method: quicksort  Average Memory: 31kB  Peak Memory: 31kB
+               Buffers: shared hit=100896
+               ->  Index Scan using sync_log_user_provider_synced_at_idx on sync_log  (cost=0.42..28524.87 rows=628603 width=154) (actual time=0.034..239.588 rows=630923.00 loops=1)
+                     Index Cond: (user_id = '[redacted]'::uuid)
+                     Index Searches: 1
+                     Buffers: shared hit=100890
+ Planning:
+   Buffers: shared hit=134
+ Planning Time: 0.513 ms
+ Execution Time: 491.026 ms
+(20 rows)
+
+Candidate catalog count, query plan, and result comparison
+Captured: 2026-10-22T16:03:37.245Z
+
+BEGIN
+SET
+ provider_catalog_rows
+-----------------------
+                    23
+(1 row)
+
+                                                                                     QUERY PLAN
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Sort  (cost=34.67..34.85 rows=69 width=154) (actual time=0.824..0.827 rows=53.00 loops=1)
+   Sort Key: sync_log.provider_id, sync_log.synced_at DESC, sync_log.id DESC
+   Sort Method: quicksort  Memory: 34kB
+   Buffers: shared hit=141
+   ->  Nested Loop  (cost=0.63..32.57 rows=69 width=154) (actual time=0.132..0.751 rows=53.00 loops=1)
+         Buffers: shared hit=132
+         ->  Seq Scan on provider  (cost=0.00..1.23 rows=23 width=10) (actual time=0.015..0.018 rows=23.00 loops=1)
+               Buffers: shared hit=1
+         ->  Limit  (cost=0.63..1.33 rows=3 width=154) (actual time=0.031..0.031 rows=2.30 loops=23)
+               Buffers: shared hit=131
+               ->  Incremental Sort  (cost=0.63..8712.81 rows=36977 width=154) (actual time=0.030..0.031 rows=2.30 loops=23)
+                     Sort Key: sync_log.synced_at DESC, sync_log.id DESC
+                     Presorted Key: sync_log.synced_at
+                     Full-sort Groups: 23  Sort Method: quicksort  Average Memory: 25kB  Peak Memory: 25kB
+                     Buffers: shared hit=131
+                     ->  Index Scan using sync_log_user_provider_synced_at_idx on sync_log  (cost=0.42..7048.85 rows=36977 width=154) (actual time=0.021..0.027 rows=3.04 loops=23)
+                           Index Cond: ((user_id = '[redacted]'::uuid) AND (provider_id = provider.id))
+                           Index Searches: 23
+                           Buffers: shared hit=128
+ Planning:
+   Buffers: shared hit=238
+ Planning Time: 0.869 ms
+ Execution Time: 0.864 ms
+(23 rows)
+
+ old_count | candidate_count | different_ids
+-----------+-----------------+---------------
+        53 |              53 |             0
+(1 row)
+
+ROLLBACK
+
+Comparison expression used for the result check
+
+SELECT (SELECT COUNT(*) FROM old_result) AS old_count, (SELECT COUNT(*) FROM candidate) AS candidate_count,(SELECT COUNT(*) FROM ((SELECT * FROM old_result EXCEPT SELECT * FROM candidate) UNION ALL (SELECT * FROM candidate EXCEPT SELECT * FROM old_result)) difference) AS different_ids;

@@ -1100,6 +1100,13 @@
       "when": 1792605600000,
       "tag": "0156_garmin_official_authorization",
       "breakpoints": true
+    },
+    {
+      "idx": 157,
+      "version": "7",
+      "when": 1792686183056,
+      "tag": "0157_sync_log_recent_history_index",
+      "breakpoints": true
     }
   ]
 }
