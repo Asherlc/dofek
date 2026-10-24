@@ -85,8 +85,25 @@ new buffer instance starts. Samples remain in memory and are never restored
 from that checkpoint; prior account ownership is unknown. It is last-observed
 evidence, not an exact loss count or termination reason. Apple does not guarantee
 a final [termination callback](https://developer.apple.com/documentation/uikit/uiapplicationdelegate/applicationwillterminate(_:)).
-The expanded bridge requires a new native build; the Dofek app declares runtime
-1.13 in [app.json](../../app.json). The
+`getDataPathStats().connectionDiagnostics` exposes the latest 64 native
+connection events and a cumulative `overflowCount` for older events removed
+from that bounded history. The [native connection journal](ios/WhoopBleConnectionDiagnostics.swift)
+retains metadata in UserDefaults before JavaScript reporting: stable event IDs,
+native occurrence times, native session and process identity, connection and
+central-manager states, reconnect intent, and Bluetooth error domain/code/description.
+It also records restoration and application handshake failures, distinguishing
+those failures from an upstream Bluetooth disconnect. The history contains no
+sensor samples, reads do not consume events, and account erasure clears it.
+The [app diagnostics reporter](../../lib/whoop-ble-diagnostics.ts) sends each
+unseen event through the existing logger when JavaScript takes a snapshot;
+replays after restart retain the same event IDs and mark account provenance
+unknown. This is diagnostic evidence, not proof of uninterrupted capture.
+
+Changes to the native bridge require a new native build, as described in
+[Expo's native development workflow](https://docs.expo.dev/workflow/customizing/).
+The app uses the fingerprint runtime policy in [app.json](../../app.json),
+following [Expo runtime compatibility guidance](https://docs.expo.dev/eas-update/runtime-versions/).
+The
 [diagnostic procedure](../../../../docs/whoop-ble-protocol.md#diagnosing-capture-upload-and-visibility)
 describes correlation with upload and server events.
 

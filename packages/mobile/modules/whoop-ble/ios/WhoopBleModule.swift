@@ -188,6 +188,7 @@ public class WhoopBleModule: Module {
                     "coalescedFrames": Int(self.frameParser.coalescedFrameCount),
                     "coalescedCmdFrames": Int(self.cmdFrameParser.coalescedFrameCount),
                     "buffers": self.sampleBuffer.diagnosticSnapshot(),
+                    "connectionDiagnostics": self.connectionManager.connectionDiagnostics.payload,
                 ]
                 stats.merge(self.captureDiagnostics.payload) { _, captured in captured }
                 return stats
@@ -311,6 +312,7 @@ public class WhoopBleModule: Module {
                 self.lastKnownDeviceId = nil
                 self.lastKnownDeviceName = nil
                 self.connectionManager.disconnect { [weak self] in
+                    self?.connectionManager.connectionDiagnostics.clear()
                     self?.emitDeviceState()
                     promise.resolve(true)
                 }

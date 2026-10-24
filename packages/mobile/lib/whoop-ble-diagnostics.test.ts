@@ -14,6 +14,66 @@ afterEach(() => {
 });
 
 describe("WhoopBleDiagnostics", () => {
+  it("replays unseen native events once with native time, flat metadata and unknown account provenance", () => {
+    const diagnostics = new WhoopBleDiagnostics();
+    const stats = makeWhoopCaptureStats();
+    const event = {
+      eventId: "11111111-1111-4111-8111-111111111111",
+      occurredAt: "2026-10-23T01:00:00.000Z",
+      nativeSessionId: "22222222-2222-4222-8222-222222222222",
+      processId: 4321,
+      event: "disconnected",
+      connectionState: "streaming",
+      centralState: "poweredOn",
+      reconnectIntent: true,
+      errorDomain: "CBErrorDomain",
+      errorCode: 6,
+      errorDescription: "Connection lost",
+    };
+    Object.assign(stats, { connectionDiagnostics: { events: [event], overflowCount: 3 } });
+    Object.assign(event, { sensorValue: "private-sample", credentials: "private-credential" });
+    diagnostics.snapshot(stats, "initial", "background");
+    diagnostics.snapshot(stats, "periodic", "active");
+    Object.assign(stats, {
+      connectionDiagnostics: {
+        events: [
+          event,
+          { ...event, eventId: "33333333-3333-4333-8333-333333333333", event: "central_state" },
+        ],
+        overflowCount: 3,
+      },
+    });
+    diagnostics.snapshot(stats, "periodic", "active");
+    const logs = vi
+      .mocked(logger.info)
+      .mock.calls.filter(([, message]) => message === "native_connection_event");
+    expect(logs).toHaveLength(2);
+    expect(logs[0]?.[2]).toMatchObject({
+      event: "native_connection_event",
+      nativeEvent: "disconnected",
+      nativeOccurredAt: event.occurredAt,
+      nativeSessionId: event.nativeSessionId,
+      processId: 4321,
+      eventId: event.eventId,
+      connectionAccountProvenance: "unknown",
+      connectionHistoryOverflowCount: 3,
+      errorDomain: "CBErrorDomain",
+      errorCode: 6,
+    });
+    expect(JSON.stringify(logs)).not.toContain("private-");
+    expect(
+      Object.values(logs[0]?.[2] ?? {}).every(
+        (value) => value == null || ["string", "number", "boolean"].includes(typeof value),
+      ),
+    ).toBe(true);
+    new WhoopBleDiagnostics().snapshot(stats, "initial", "active");
+    expect(
+      vi
+        .mocked(logger.info)
+        .mock.calls.filter(([, message]) => message === "native_connection_event"),
+    ).toHaveLength(4);
+  });
+
   it("reports capture, queue ranges, counters and prior checkpoint once per buffer instance", () => {
     const stats = makeWhoopCaptureStats();
     Object.assign(stats, { lastCommandResponse: "private-native-response" });

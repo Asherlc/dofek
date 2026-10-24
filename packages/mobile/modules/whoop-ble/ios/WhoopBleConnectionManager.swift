@@ -9,12 +9,20 @@ import Foundation
 final class WhoopBleConnectionManager {
     weak var delegate: WhoopBleConnectionManagerDelegate?
 
-    private(set) var state: ConnectionState = .idle
+    private(set) var state: ConnectionState = .idle {
+        didSet {
+            if state != oldValue {
+                recordConnectionEvent("state_transition", previousConnectionState: oldValue.rawValue)
+            }
+        }
+    }
     private(set) var connectedPeripheral: CBPeripheral?
     private(set) var cmdCharacteristic: CBCharacteristic?
 
     let bleQueue: DispatchQueue
     let bleDelegate: WhoopBleDelegate
+    let connectionDiagnostics: WhoopBleConnectionDiagnostics
+    private(set) var centralState = "uninitialized"
 
     static let bleQueueKey = DispatchSpecificKey<Bool>()
 
@@ -37,12 +45,17 @@ final class WhoopBleConnectionManager {
 
     static let restoreIdentifier = "com.dofek.whoop-ble-central"
 
-    init(connectTimeoutSeconds: TimeInterval = 10) {
+    init(
+        connectTimeoutSeconds: TimeInterval = 10,
+        connectionDiagnostics: WhoopBleConnectionDiagnostics = WhoopBleConnectionDiagnostics()
+    ) {
+        self.connectionDiagnostics = connectionDiagnostics
         self.connectTimeoutSeconds = connectTimeoutSeconds
         bleQueue = DispatchQueue(label: "com.dofek.whoop-ble", qos: .userInitiated)
         bleQueue.setSpecific(key: Self.bleQueueKey, value: true)
         bleDelegate = WhoopBleDelegate()
         bleDelegate.connectionManager = self
+        recordConnectionEvent("native_session_start")
         collectionActivityObserver = NotificationCenter.default.addObserver(
             forName: Notification.Name("Dofek.collectionActivityRequested"),
             object: nil,
@@ -129,6 +142,7 @@ final class WhoopBleConnectionManager {
         let centralManager = ensureCentralManager()
 
         bleQueue.async {
+            self.recordConnectionEvent("connect_requested", peripheralId: peripheralId, reason: "explicit_connect")
             guard let uuid = UUID(uuidString: peripheralId) else {
                 completion(.failure(.invalidPeripheralId(peripheralId)))
                 return
@@ -156,6 +170,7 @@ final class WhoopBleConnectionManager {
         let manager = ensureCentralManager()
 
         bleQueue.async {
+            self.recordConnectionEvent("retry_requested", reason: "explicit_retry")
             if self.connectedPeripheral?.state == .connected {
                 NSLog("[WhoopBLE] retryConnection: already connected")
                 completion(true)
@@ -177,6 +192,7 @@ final class WhoopBleConnectionManager {
                     peripheral.delegate = self.bleDelegate
                     self.state = .connecting
                     self.autoReconnect = true
+                    self.recordConnectionEvent("connect_requested", reason: "retry_connected_peripheral")
                     manager.connect(peripheral, options: nil)
                     self.startHandshakeTimeout(for: peripheral)
                     completion(true)
@@ -206,6 +222,7 @@ final class WhoopBleConnectionManager {
 
     func disconnect(completion: (() -> Void)? = nil) {
         bleQueue.async {
+            self.recordConnectionEvent("disconnect_requested", reason: "intentional_disconnect")
             self.autoReconnect = false
             if let peripheral = self.connectedPeripheral {
                 self.centralManager?.cancelPeripheralConnection(peripheral)
@@ -246,6 +263,47 @@ final class WhoopBleConnectionManager {
 
     // MARK: - Internal state mutation
 
+    func recordConnectionEvent(
+        _ event: String,
+        peripheralId: String? = nil,
+        error: Error? = nil,
+        reason: String? = nil,
+        previousConnectionState: String? = nil,
+        restoredPeripheralCount: Int? = nil
+    ) {
+        connectionDiagnostics.record(
+            event: event, connectionState: state.rawValue, centralState: centralState,
+            reconnectIntent: autoReconnect,
+            peripheralId: peripheralId ?? connectedPeripheral?.identifier.uuidString,
+            error: error, reason: reason, previousConnectionState: previousConnectionState,
+            restoredPeripheralCount: restoredPeripheralCount
+        )
+    }
+
+    func handleCentralManagerStateUpdated(_ updatedState: CBManagerState) {
+        switch updatedState {
+        case .unknown: centralState = "unknown"
+        case .resetting: centralState = "resetting"
+        case .unsupported: centralState = "unsupported"
+        case .unauthorized: centralState = "unauthorized"
+        case .poweredOff: centralState = "poweredOff"
+        case .poweredOn: centralState = "poweredOn"
+        @unknown default: centralState = "unknown"
+        }
+        recordConnectionEvent("central_state")
+        if updatedState == .poweredOn {
+            handleCentralManagerPoweredOn()
+        }
+    }
+
+    func handleRestoration(_ peripherals: [CBPeripheral]) {
+        recordConnectionEvent("restoration", peripheralId: peripherals.first?.identifier.uuidString,
+                              restoredPeripheralCount: peripherals.count)
+        guard let peripheral = peripherals.first else { return }
+        peripheral.delegate = bleDelegate
+        handleRestoredPeripheral(peripheral)
+    }
+
     func setState(_ newState: ConnectionState) {
         state = newState
     }
@@ -279,6 +337,7 @@ final class WhoopBleConnectionManager {
     func settleNotificationSubscriptionUpdate(
         _ update: WhoopBleNotificationSubscriptionTracker.UpdateResult,
         failureDetail: String,
+        underlyingError: Error? = nil,
         cancelPeripheral: () -> Void
     ) -> Bool? {
         guard state == .subscribing else { return nil }
@@ -289,6 +348,7 @@ final class WhoopBleConnectionManager {
         case .failed:
             abortHandshake(
                 with: .notificationSubscriptionFailed(failureDetail),
+                underlyingError: underlyingError,
                 cancelPeripheral: cancelPeripheral
             )
             return nil
@@ -341,6 +401,7 @@ final class WhoopBleConnectionManager {
     /// Cancel and clean up a connection that failed before becoming ready.
     func abortHandshake(
         with error: WhoopBleConnectionError,
+        underlyingError: Error? = nil,
         cancelPeripheral: () -> Void
     ) {
         guard
@@ -348,6 +409,7 @@ final class WhoopBleConnectionManager {
                 || state == .discoveringServices
                 || state == .subscribing
         else { return }
+        recordConnectionEvent("handshake_aborted", error: underlyingError, reason: error.rejection.code)
         autoReconnect = false
         cancelPeripheral()
         cleanup()
@@ -357,10 +419,11 @@ final class WhoopBleConnectionManager {
     /// Ignore a late callback from a peripheral that no longer owns the attempt.
     func abortHandshake(
         for peripheral: CBPeripheral,
-        with error: WhoopBleConnectionError
+        with error: WhoopBleConnectionError,
+        underlyingError: Error? = nil
     ) {
         guard connectedPeripheral?.identifier == peripheral.identifier else { return }
-        abortHandshake(with: error) { [weak self, weak peripheral] in
+        abortHandshake(with: error, underlyingError: underlyingError) { [weak self, weak peripheral] in
             guard let peripheral else { return }
             self?.centralManager?.cancelPeripheralConnection(peripheral)
         }

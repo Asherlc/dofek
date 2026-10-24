@@ -261,7 +261,29 @@ const WhoopBufferCheckpointSchema = z.object({
 /** Metadata observed before a buffer was recreated; samples are never persisted. */
 export type WhoopBufferCheckpoint = z.infer<typeof WhoopBufferCheckpointSchema>;
 
+const WhoopConnectionEventSchema = z.object({
+  eventId: z.uuid(),
+  occurredAt: DiagnosticTimestampSchema,
+  nativeSessionId: z.uuid(),
+  processId: z.number().int().positive(),
+  event: z.string().min(1),
+  connectionState: z.string().min(1),
+  centralState: z.string().min(1),
+  reconnectIntent: z.boolean(),
+  peripheralId: z.string().optional(),
+  errorDomain: z.string().optional(),
+  errorCode: z.number().int().optional(),
+  errorDescription: z.string().optional(),
+  reason: z.string().optional(),
+  previousConnectionState: z.string().optional(),
+  restoredPeripheralCount: DiagnosticCountSchema.optional(),
+});
+
 const WhoopDataPathStatsSchema = z.object({
+  connectionDiagnostics: z.object({
+    events: z.array(WhoopConnectionEventSchema).max(64),
+    overflowCount: DiagnosticCountSchema,
+  }),
   dataNotificationCount: DiagnosticCountSchema,
   cmdNotificationCount: DiagnosticCountSchema,
   totalFramesParsed: DiagnosticCountSchema,

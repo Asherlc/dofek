@@ -20,6 +20,7 @@ export function makeWhoopCaptureStats(): WhoopCaptureStats {
     lastConfirmedAt: null,
   };
   return {
+    connectionDiagnostics: { events: [], overflowCount: 0 },
     dataNotificationCount: 0,
     totalFramesParsed: 0,
     malformedFrames: 0,

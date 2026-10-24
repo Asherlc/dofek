@@ -11,18 +11,12 @@ final class WhoopBleDelegate: NSObject, CBCentralManagerDelegate, CBPeripheralDe
     // MARK: - CBCentralManagerDelegate
 
     func centralManagerDidUpdateState(_ central: CBCentralManager) {
-        if central.state == .poweredOn {
-            connectionManager?.handleCentralManagerPoweredOn()
-        }
+        connectionManager?.handleCentralManagerStateUpdated(central.state)
     }
 
     func centralManager(_ central: CBCentralManager, willRestoreState dict: [String: Any]) {
-        guard let peripherals = dict[CBCentralManagerRestoredStatePeripheralsKey] as? [CBPeripheral],
-              let peripheral = peripherals.first else {
-            return
-        }
-        peripheral.delegate = self
-        connectionManager?.handleRestoredPeripheral(peripheral)
+        let peripherals = dict[CBCentralManagerRestoredStatePeripheralsKey] as? [CBPeripheral] ?? []
+        connectionManager?.handleRestoration(peripherals)
     }
 
     func centralManager(
@@ -61,7 +55,8 @@ final class WhoopBleDelegate: NSObject, CBCentralManagerDelegate, CBPeripheralDe
             NSLog("[WhoopBLE] service discovery error: %@", error.localizedDescription)
             connectionManager?.abortHandshake(
                 for: peripheral,
-                with: .serviceDiscoveryFailed(error.localizedDescription)
+                with: .serviceDiscoveryFailed(error.localizedDescription),
+                underlyingError: error
             )
             return
         }
@@ -77,7 +72,8 @@ final class WhoopBleDelegate: NSObject, CBCentralManagerDelegate, CBPeripheralDe
             NSLog("[WhoopBLE] characteristic discovery error: %@", error.localizedDescription)
             connectionManager?.abortHandshake(
                 for: peripheral,
-                with: .characteristicDiscoveryFailed(error.localizedDescription)
+                with: .characteristicDiscoveryFailed(error.localizedDescription),
+                underlyingError: error
             )
             return
         }
