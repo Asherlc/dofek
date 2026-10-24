@@ -569,6 +569,8 @@ Workflow-only secrets loaded by iOS and OTA workflows ([iOS](../../.github/workf
 
 - `SENTRY_AUTH_TOKEN` (iOS and OTA sourcemap uploads)
 - `EXPO_TOKEN` (OTA workflows)
+- `EXPO_APP_ID` (PR channel setup links previews to the existing Expo project;
+  [preview workflow](../../.github/workflows/mobile-preview-ota.yml))
 
 The shared Infisical action fails when a requested secret is missing, so keep this list aligned with each workflow's `keys` block ([source](../../.github/actions/load-infisical-secrets/action.yml)).
 
@@ -579,7 +581,7 @@ Workflow key requirements:
 - `.github/workflows/build-mobile.yml`: `EXPO_PUBLIC_SENTRY_DSN`, `EXPO_PUBLIC_OTEL_ENDPOINT`, `EXPO_PUBLIC_OTEL_HEADERS`
 - `.github/workflows/deploy-ios.yml`: `SENTRY_AUTH_TOKEN`, `EXPO_PUBLIC_SENTRY_DSN`, `EXPO_PUBLIC_OTEL_ENDPOINT`, `EXPO_PUBLIC_OTEL_HEADERS`
 - `.github/workflows/deploy-ota.yml`: `EXPO_TOKEN`, `SENTRY_AUTH_TOKEN`, `EXPO_PUBLIC_SENTRY_DSN`, `EXPO_PUBLIC_OTEL_ENDPOINT`, `EXPO_PUBLIC_OTEL_HEADERS`
-- `.github/workflows/mobile-preview-ota.yml`: `EXPO_TOKEN`, `EXPO_PUBLIC_SENTRY_DSN`, `EXPO_PUBLIC_OTEL_ENDPOINT`, `EXPO_PUBLIC_OTEL_HEADERS`
+- `.github/workflows/mobile-preview-ota.yml`: `EXPO_APP_ID`, `EXPO_TOKEN`, `EXPO_PUBLIC_SENTRY_DSN`, `EXPO_PUBLIC_OTEL_ENDPOINT`, `EXPO_PUBLIC_OTEL_HEADERS`
 
 Source-map and release correlation:
 

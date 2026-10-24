@@ -53,6 +53,12 @@ bundle with an old runtime to force delivery. Expo explains the separation of
    the app's managed native configuration. The [preview publisher](../.github/workflows/mobile-preview-ota.yml)
    and [app configuration](../packages/mobile/app.config.js) implement that
    convention; Expo fingerprints the resolved [app configuration](https://docs.expo.dev/versions/latest/sdk/fingerprint/).
+   Before publishing, the workflow uses the official EAS CLI to ensure the PR
+   channel links to the same-named branch. Uploading a branch alone does not
+   create that channel; the pinned server resolves incoming channel names
+   through [Expo's channel mapping](https://github.com/mercuretechnologies/xprem/blob/v2.3.16/internal/services/expo.go).
+   Channel setup reads EAS directly because the server's management list has a
+   [ten-second cache](https://github.com/mercuretechnologies/xprem/blob/v2.3.16/internal/handlers/dashboard_handler.go).
 3. When the runtime changes, deliver the new native build through TestFlight
    before testing its OTA. Older runtimes continue with their compatible
    updates. Preserve normal launch behavior: this app starts from cached code

@@ -242,6 +242,13 @@ for the upstream fixes, regression coverage, and scoped advisory exceptions.
   - Usage: `pnpm tsx scripts/with-env.ts -- pnpm check:database-backup-freshness`
 - `cdc-health-state.ts`: Atomically records CDC monitor outcomes and implements
   the bounded-age/failure probe used by the production `cdc-health` service.
+- `ensure-mobile-preview-channel.ts`: Uses the pinned official EAS CLI to
+  create a missing PR channel and verify that it maps only to its same-named
+  branch. It refuses production channel names and conflicting mappings. The
+  temporary EAS project configuration keeps channel management separate from
+  native app configuration. Requires existing Infisical keys `EXPO_APP_ID`
+  and `EXPO_TOKEN`; see [EAS channel commands](https://docs.expo.dev/eas/cli/#channelcreate).
+  - Usage: `pnpm tsx scripts/with-env.ts -- pnpm tsx scripts/ensure-mobile-preview-channel.ts pr-3060`
 - `check-ota-manifest.ts`: Sends the production iOS [Expo Updates protocol
   request](https://docs.expo.dev/technical-specs/expo-updates-1/) and prints
   the deployed update metadata, or reports that no update is available.

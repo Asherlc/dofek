@@ -41,3 +41,10 @@
 - [x] Review the complete diff and documentation citations. Independent review found four native-input/preview gaps; all were addressed and verified with executable Expo probes.
 - [x] Run appropriate configuration/build validation, lint, typechecks, and unit/mobile tests; report exact blockers. All passed after initializing the required local ClickHouse environment.
 - [ ] Update incident evidence, commit, push, open a PR, and monitor required checks.
+
+### Task 4: Close the preview delivery gap found by live validation
+
+- [x] Reproduce successful upload with failed manifest delivery; confirm the PR branch lacks a channel mapping.
+- [x] Add a test-first TypeScript operator command using the pinned official EAS CLI to list, create when absent, and verify the PR channel's exclusive mapping. Keep the management project temporary so native fingerprints remain unchanged.
+- [x] Load the already-existing `EXPO_APP_ID` key in preview CI and run channel setup before publishing. Refuse production channel names and conflicting mappings.
+- [x] Verify with 11 focused tests, live idempotency, the actual preview manifest, independent component review, full lint, root typecheck, Knip, and all 20,487 unit/mobile tests.
