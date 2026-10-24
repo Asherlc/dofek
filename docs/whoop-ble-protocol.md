@@ -399,6 +399,7 @@ without logging sensor values.
 
 | Evidence | Fields and events | Interpretation |
 | --- | --- | --- |
+| Native connection history | `native_connection_event`: `eventId`, `nativeEvent`, `nativeOccurredAt`, `nativeSessionId`, `processId`, `connectionState`, `centralState`, `reconnectIntent`, `errorDomain`, `errorCode`, `errorDescription`, `connectionHistoryOverflowCount` | Native occurrence time can precede log emission when JavaScript was unavailable. Stable event IDs identify replay after a restart; unknown account provenance must not be treated as proven ownership. An application handshake failure is separate from a CoreBluetooth disconnect error. |
 | Capture | `capture_snapshot`: `lastKnownDeviceId`, `connectionState`, `isNotifying`, `dataNotificationCount`, `totalFramesParsed`, `malformedFrames`, `lastDataNotificationAt`, `lastParsedImuAt`, `lastParsedRealtimeAt`, `lastValidHeartRateAt` | Compare successive observations within one buffer/runtime. Notification and parsed timestamps are phone observation times; `lastValidHeartRateAt` is a device sample timestamp. A connected state alone does not prove usable capture; last-known identity does not prove a current connection. |
 | Retained queue | `bufferInstanceId`, `bufferCreatedAt`, `checkpointAt`; stream-prefixed `imuCount`/`realtimeCount`, `OldestTimestamp`, `NewestTimestamp`, `ReceivedCount`, `ConfirmedCount`, `OverflowDiscardedCount`, `ErasureDiscardedCount`, `ClearedCount`, `LegacyDrainedCount`, `LastConfirmedAt` | Counts and true minimum/maximum sample times distinguish retained backlog from explicit removals, including out-of-order samples. Native confirmation counters describe actual removals. |
 | Scheduling | `worker_started`, `worker_joined`, `worker_finished`, `upload_skipped`; snapshot fields such as `realtimeWorkerActive`, `realtimeWorkerAgeMs`, `realtimeRequestPending`, `realtimePendingRequestAgeMs`, `realtimePendingBatchId` | Growing queue with no upload attempt points to scheduling/permission decisions; an aging pending request points farther along the upload path. Inspect `trigger`, `appState`, and skipped `reason`. |
@@ -432,6 +433,7 @@ these exact attribute filters with the incident's UTC start/end:
 
 | Search | Filters |
 | --- | --- |
+| Disconnect and recovery | Service `dofek-mobile`, `event=native_connection_event`; correlate `nativeSessionId`, sort by `nativeOccurredAt`, and deduplicate by `eventId`. Inspect disconnect error metadata, reconnect intent and subsequent handshake/restoration events. `connectionAccountProvenance=unknown` marks retained native history without account attribution. |
 | Capture and queue progression | Service `dofek-mobile`, `userId=<account>`, `event=capture_snapshot`; group observations by `runtimeId` and `bufferInstanceId`. |
 | One upload's mobile lifecycle | Service `dofek-mobile`, `userId=<account>`, `batchId=<UUID>`; inspect `upload_started`, `upload_http_response`, `upload_acknowledged`, and `upload_failed`. `buffer_confirmed` carries the correlated UUIDs in `batchIds`. |
 | Server receipt and publication | Service `dofek-web`, `userId=<account>`, `deviceId=<device>`, `batchId=<UUID>`; inspect `upload_received`, `upload_published`, and `upload_failed`. |
@@ -449,6 +451,30 @@ evidence of a reset since that observation, not an exact loss count, prior
 account identity, or termination cause. Apple does not guarantee a final
 [`applicationWillTerminate` callback](https://developer.apple.com/documentation/uikit/uiapplicationdelegate/applicationwillterminate(_:)).
 Missing logs therefore do not prove capture stopped.
+
+For a disconnection alert, first correlate the native disconnect with the
+[notification coordinator's](../packages/mobile/modules/background-refresh/ios/CollectionNotificationCoordinator.swift)
+five-minute grace period, then check for a native reconnect or handshake failure.
+The [connection journal](../packages/mobile/modules/whoop-ble/ios/WhoopBleConnectionDiagnostics.swift)
+persists the latest 64 metadata events at native lifecycle boundaries, including
+while JavaScript is suspended. UserDefaults writes update memory immediately and
+persist asynchronously, so the final write is not guaranteed after abrupt
+termination: [Apple UserDefaults](https://developer.apple.com/documentation/foundation/userdefaults).
+Its reads are nondestructive. The [reporter](../packages/mobile/lib/whoop-ble-diagnostics.ts)
+logs each retained event once per JavaScript diagnostics lifetime, retaining
+stable IDs across later replays. `connectionHistoryOverflowCount` identifies
+history truncation; a gap does not establish why the app stopped or prove a
+successful reconnection. Account erasure clears this history through the
+[native bridge](../packages/mobile/modules/whoop-ble/ios/WhoopBleModule.swift).
+
+Use the [Axiom map-field paths](axiom-observability-runbook.md) for updated mobile
+logs. Bound the query by ingestion time wide enough to include the next app
+startup, then filter `nativeOccurredAt` to the actual incident window; native
+background events may be reported later. A Bluetooth disconnect alone is not a
+cloud authorization failure. The [CoreBluetooth delegate callback](https://developer.apple.com/documentation/corebluetooth/cbcentralmanagerdelegate/centralmanager(_:diddisconnectperipheral:error:))
+and the journal's application handshake events describe different boundaries.
+These native diagnostics require a [new native build](https://docs.expo.dev/workflow/customizing/);
+an existing installation cannot gain them from a JavaScript-only update.
 
 After `upload_published` with `boundary=redpanda`, follow the existing
 [consumer-lag and freshness checks](metric-stream-redpanda-r2-runbook.md#freshness-checks).
@@ -483,8 +509,9 @@ If both contain the samples, inspect the activity source selection and response.
 These checks do not provide an exact batch receipt in the sink: the upload UUID
 is log correlation metadata, not a stored sensor-row key.
 
-The expanded native bridge requires a new runtime 1.13 binary, as declared in
-[app.json](../packages/mobile/app.json); an OTA update cannot add native code.
+The expanded native bridge requires a new native build; an OTA update cannot add
+native code. The app uses the fingerprint runtime policy in
+[app.json](../packages/mobile/app.json).
 Follow Expo's [runtime compatibility guidance](https://docs.expo.dev/eas-update/runtime-versions/)
 and verify a real device's version/build before interpreting absent new fields.
 The telemetry does not establish what happened before that build was installed.

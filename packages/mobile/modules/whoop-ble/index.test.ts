@@ -79,6 +79,25 @@ function makeDataPathStats() {
     lastParsedImuAt: null,
     lastParsedRealtimeAt: "2026-10-23T03:00:00.000Z",
     lastValidHeartRateAt: "2026-10-23T02:59:00.000Z",
+    connectionDiagnostics: {
+      overflowCount: 2,
+      events: [
+        {
+          eventId: "11111111-1111-4111-8111-111111111111",
+          occurredAt: "2026-10-23T02:59:00.000Z",
+          nativeSessionId: "22222222-2222-4222-8222-222222222222",
+          processId: 123,
+          event: "disconnected",
+          connectionState: "streaming",
+          centralState: "poweredOn",
+          reconnectIntent: true,
+          peripheralId: "strap",
+          errorDomain: "CBErrorDomain",
+          errorCode: -7,
+          errorDescription: "Connection lost",
+        },
+      ],
+    },
     buffers: {
       ...makeBufferCheckpoint(),
       previousCheckpoint: makeBufferCheckpoint(),
@@ -114,6 +133,43 @@ describe("WhoopBle native bridge", () => {
     nativeModule.getDataPathStats.mockReturnValue(stats);
 
     expect(getDataPathStats()).toEqual(stats);
+  });
+
+  it.each([
+    { field: "connectionDiagnostics", value: undefined },
+    { field: "overflowCount", value: { events: [], overflowCount: -1 } },
+    {
+      field: "events",
+      value: {
+        events: Array(65).fill(makeDataPathStats().connectionDiagnostics.events[0]),
+        overflowCount: 0,
+      },
+    },
+    ...[
+      ["eventId", "bad-id"],
+      ["occurredAt", "yesterday"],
+      ["nativeSessionId", "bad-id"],
+      ["processId", 0.5],
+      ["reconnectIntent", "true"],
+      ["errorCode", "7"],
+    ].map(([field, invalid]) => ({
+      field,
+      value: {
+        overflowCount: 0,
+        events: [
+          {
+            ...makeDataPathStats().connectionDiagnostics.events[0],
+            [field]: invalid,
+          },
+        ],
+      },
+    })),
+  ])("rejects malformed native connection journal $field", ({ field, value }) => {
+    nativeModule.getDataPathStats.mockReturnValue({
+      ...makeDataPathStats(),
+      connectionDiagnostics: value,
+    });
+    expect(() => getDataPathStats()).toThrow(String(field));
   });
 
   it.each([

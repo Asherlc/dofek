@@ -1,5 +1,99 @@
 import XCTest
+import CoreBluetooth
 @testable import WhoopBLE
+
+final class WhoopBleConnectionManagerDiagnosticsTests: XCTestCase {
+    func testNativeSessionCentralStatesAndEmptyRestorationAreRecorded() {
+        let journal = WhoopBleConnectionDiagnostics(diagnosticDefaults: UserDefaults(suiteName: UUID().uuidString)!)
+        let manager = WhoopBleConnectionManager(connectionDiagnostics: journal)
+        for state in [CBManagerState.unknown, .resetting, .unsupported, .unauthorized, .poweredOff, .poweredOn] {
+            manager.handleCentralManagerStateUpdated(state)
+        }
+        manager.handleRestoration([])
+        let events = journal.payload["events"] as? [[String: Any]] ?? []
+        XCTAssertEqual(events.first?["event"] as? String, "native_session_start")
+        XCTAssertEqual(events.filter { $0["event"] as? String == "central_state" }
+            .compactMap { $0["centralState"] as? String },
+            ["unknown", "resetting", "unsupported", "unauthorized", "poweredOff", "poweredOn"])
+        XCTAssertEqual(events.last?["event"] as? String, "restoration")
+        XCTAssertEqual(events.last?["restoredPeripheralCount"] as? Int, 0)
+    }
+
+    func testTimeoutRecordsStageAndReconnectIntentBeforeCleanup() throws {
+        let journal = WhoopBleConnectionDiagnostics(diagnosticDefaults: UserDefaults(suiteName: UUID().uuidString)!)
+        let manager = WhoopBleConnectionManager(connectTimeoutSeconds: 0.01, connectionDiagnostics: journal)
+        let settled = expectation(description: "timeout settled")
+        manager.autoReconnect = true
+        manager.setState(.subscribing)
+        manager.connectCompletion = { _ in settled.fulfill() }
+        manager.startHandshakeTimeout(cancelPeripheral: {})
+        wait(for: [settled], timeout: 1)
+        let event = try XCTUnwrap((journal.payload["events"] as? [[String: Any]])?
+            .first { $0["event"] as? String == "handshake_aborted" })
+        XCTAssertEqual(event["connectionState"] as? String, "subscribing")
+        XCTAssertEqual(event["reason"] as? String, "TIMEOUT")
+        XCTAssertEqual(event["reconnectIntent"] as? Bool, true)
+        XCTAssertNil(event["errorDomain"])
+        XCTAssertFalse(manager.autoReconnect)
+    }
+
+    func testDisconnectRecordsOperatingSystemErrorAndAutomaticReconnect() throws {
+        let journal = WhoopBleConnectionDiagnostics(diagnosticDefaults: UserDefaults(suiteName: UUID().uuidString)!)
+        let manager = WhoopBleConnectionManager(connectionDiagnostics: journal)
+        manager.setState(.streaming)
+        manager.autoReconnect = true
+        var reconnects = 0
+        let peripheralId = "11111111-1111-4111-8111-111111111111"
+        manager.handleDisconnection(peripheralId: peripheralId, error: NSError(domain: "CBErrorDomain", code: 7,
+            userInfo: [NSLocalizedDescriptionKey: "Disconnected"])) { reconnects += 1 }
+        let events = journal.payload["events"] as? [[String: Any]] ?? []
+        let event = try XCTUnwrap(events.first { $0["event"] as? String == "disconnected" })
+        XCTAssertEqual(event["connectionState"] as? String, "streaming")
+        XCTAssertEqual(event["errorCode"] as? Int, 7)
+        XCTAssertEqual(event["peripheralId"] as? String, peripheralId)
+        XCTAssertEqual(events.last?["event"] as? String, "connect_requested")
+        XCTAssertEqual(events.last?["reason"] as? String, "automatic_reconnect")
+        XCTAssertEqual(reconnects, 1)
+    }
+
+    func testHandshakeFailureRetainsBluetoothErrorMetadataBeforeCancellation() throws {
+        let journal = WhoopBleConnectionDiagnostics(diagnosticDefaults: UserDefaults(suiteName: UUID().uuidString)!)
+        let manager = WhoopBleConnectionManager(connectionDiagnostics: journal)
+        manager.setState(.discoveringServices)
+        manager.autoReconnect = true
+        let error = NSError(domain: "CBATTErrorDomain", code: 10,
+                            userInfo: [NSLocalizedDescriptionKey: "Attribute not found"])
+        manager.abortHandshake(with: .serviceDiscoveryFailed(error.localizedDescription), underlyingError: error) {
+            let event = (journal.payload["events"] as? [[String: Any]])?.last
+            XCTAssertEqual(event?["event"] as? String, "handshake_aborted")
+            XCTAssertEqual(event?["reconnectIntent"] as? Bool, true)
+        }
+        let event = try XCTUnwrap((journal.payload["events"] as? [[String: Any]])?
+            .first { $0["event"] as? String == "handshake_aborted" })
+        XCTAssertEqual(event["errorDomain"] as? String, "CBATTErrorDomain")
+        XCTAssertEqual(event["errorCode"] as? Int, 10)
+        XCTAssertEqual(event["errorDescription"] as? String, "Attribute not found")
+        XCTAssertEqual(event["reason"] as? String, "SERVICE_DISCOVERY_FAILED")
+    }
+
+    func testIntentionalDisconnectCanClearJournalAfterCleanupAndCompletion() {
+        let defaults = UserDefaults(suiteName: UUID().uuidString)!
+        let journal = WhoopBleConnectionDiagnostics(diagnosticDefaults: defaults)
+        let manager = WhoopBleConnectionManager(connectionDiagnostics: journal)
+        manager.setState(.streaming)
+        let settled = expectation(description: "disconnect settled")
+        manager.disconnect {
+            XCTAssertTrue((journal.payload["events"] as? [[String: Any]] ?? [])
+                .contains { $0["event"] as? String == "disconnect_requested" })
+            XCTAssertEqual(manager.state, .idle)
+            journal.clear()
+            settled.fulfill()
+        }
+        wait(for: [settled], timeout: 1)
+        let recreated = WhoopBleConnectionDiagnostics(diagnosticDefaults: defaults)
+        XCTAssertEqual((recreated.payload["events"] as? [[String: Any]])?.count, 0)
+    }
+}
 
 final class WhoopBleConnectionManagerTests: XCTestCase {
     func testRestoredStreamingEmitsFinalStreamingSnapshotAfterReconnect() {

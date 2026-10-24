@@ -5,6 +5,7 @@ import { logger } from "./telemetry";
 export type WhoopCaptureStats = Pick<
   WhoopDataPathStats,
   | "buffers"
+  | "connectionDiagnostics"
   | "dataNotificationCount"
   | "totalFramesParsed"
   | "malformedFrames"
@@ -59,11 +60,40 @@ function bufferAttributes(prefix: string, buffer: WhoopBufferStreamDiagnostics) 
 export class WhoopBleDiagnostics {
   #bufferInstanceId: string | undefined;
   #reportedCheckpointFor: string | undefined;
+  #reportedConnectionEvents = new Set<string>();
   readonly #workers = new Map<Stream, { startedAt: number; trigger: WhoopSyncTrigger }>();
   readonly #requests = new Map<Stream, WhoopUploadBatch>();
 
   snapshot(stats: WhoopCaptureStats, trigger: WhoopSyncTrigger, appState: string): void {
     const { buffers } = stats;
+    const retainedEventIds = new Set<string>();
+    for (const nativeEvent of stats.connectionDiagnostics.events) {
+      retainedEventIds.add(nativeEvent.eventId);
+      if (this.#reportedConnectionEvents.has(nativeEvent.eventId)) continue;
+      logger.info("whoop-ble", "native_connection_event", {
+        event: "native_connection_event",
+        eventId: nativeEvent.eventId,
+        nativeEvent: nativeEvent.event,
+        nativeOccurredAt: nativeEvent.occurredAt,
+        nativeSessionId: nativeEvent.nativeSessionId,
+        processId: nativeEvent.processId,
+        connectionState: nativeEvent.connectionState,
+        centralState: nativeEvent.centralState,
+        reconnectIntent: nativeEvent.reconnectIntent,
+        peripheralId: nativeEvent.peripheralId,
+        errorDomain: nativeEvent.errorDomain,
+        errorCode: nativeEvent.errorCode,
+        errorDescription: nativeEvent.errorDescription,
+        reason: nativeEvent.reason,
+        previousConnectionState: nativeEvent.previousConnectionState,
+        restoredPeripheralCount: nativeEvent.restoredPeripheralCount,
+        connectionAccountProvenance: "unknown",
+        connectionHistoryOverflowCount: stats.connectionDiagnostics.overflowCount,
+        trigger,
+        appState,
+      });
+    }
+    this.#reportedConnectionEvents = retainedEventIds;
     const capture = {
       dataNotificationCount: stats.dataNotificationCount,
       totalFramesParsed: stats.totalFramesParsed,

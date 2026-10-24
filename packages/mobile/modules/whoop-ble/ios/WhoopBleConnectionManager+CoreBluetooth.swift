@@ -27,6 +27,7 @@ extension WhoopBleConnectionManager {
                 startHandshakeTimeout(for: peripheral)
             } else {
                 setState(.connecting)
+                recordConnectionEvent("connect_requested", reason: "powered_on_reconnect")
                 centralManager?.connect(peripheral, options: nil)
                 startHandshakeTimeout(for: peripheral)
             }
@@ -67,6 +68,7 @@ extension WhoopBleConnectionManager {
             setConnectedPeripheral(peripheral)
             peripheral.delegate = bleDelegate
             setState(.connecting)
+            recordConnectionEvent("connect_requested", reason: "scan_reconnect")
             centralManager?.connect(peripheral, options: nil)
             startHandshakeTimeout(for: peripheral)
         }
@@ -107,6 +109,7 @@ extension WhoopBleConnectionManager {
         error: Error?,
         reconnectPeripheral: () -> Void
     ) {
+        recordConnectionEvent("disconnected", peripheralId: peripheralId, error: error)
         wasStreaming = state == .streaming
         let shouldReconnect = autoReconnect
 
@@ -120,6 +123,7 @@ extension WhoopBleConnectionManager {
         if shouldReconnect {
             autoReconnect = true
             setState(.connecting)
+            recordConnectionEvent("connect_requested", peripheralId: peripheralId, reason: "automatic_reconnect")
             reconnectPeripheral()
         }
     }
@@ -208,6 +212,7 @@ extension WhoopBleConnectionManager {
         let previouslyStreaming = settleNotificationSubscriptionUpdate(
             update,
             failureDetail: detail,
+            underlyingError: error,
             cancelPeripheral: { [weak self, weak peripheral] in
                 guard let peripheral else { return }
                 self?.centralManager?.cancelPeripheralConnection(peripheral)
