@@ -349,7 +349,7 @@ export function registerFoodRecordTools(server: McpServer, context: DofekMcpCont
     {
       title: "Create Food Entry",
       description:
-        "Create one itemized Dofek food record and return that day's calorie and macro preview. Before logging, seek calories, protein, carbohydrate, fat, and fiber for the consumed portion from a product label, manufacturer, or reliable food database; also seek and include available micronutrients (vitamins and minerals). Ask for the brand, label, or portion when needed. Never invent missing values or substitute zero for unknown nutrients. Use estimates only with the user's approval and identify them as estimates. If the user explicitly wants an incomplete entry saved, save the known facts and explain what nutrition information is missing.",
+        "Create one itemized Dofek food record and return that day's calorie and macro preview. Calories, protein, carbohydrate, and fat are required for the consumed portion. Obtain them from a product label, manufacturer, or reliable food database before calling this tool. Also seek and include available fiber and micronutrients (vitamins and minerals). Ask for the brand, label, portion, or missing required nutrition when needed. Never invent missing values, fill blanks with zero, or substitute zero for unknown nutrients. Zero is valid only when explicitly known. Use estimates only with the user's approval and identify them as estimates. Do not call this tool until all four required values are available.",
       annotations: mutationAnnotations,
       inputSchema: z.object({
         request_id: requestIdSchema,
@@ -372,9 +372,26 @@ export function registerFoodRecordTools(server: McpServer, context: DofekMcpCont
           .optional()
           .describe("Weight actually consumed in grams, not the label's reference serving weight."),
         nutrients: z
-          .record(nutrientIdSchema, nutrientAmountSchema)
+          .object({
+            calories: nutrientAmountSchema,
+            protein: nutrientAmountSchema,
+            carbohydrate: nutrientAmountSchema,
+            fat: nutrientAmountSchema,
+          })
+          .catchall(nutrientAmountSchema)
+          .superRefine((nutrients, context) => {
+            for (const id of Object.keys(nutrients)) {
+              if (!nutrientIds.has(id)) {
+                context.addIssue({
+                  code: "custom",
+                  path: [id],
+                  message: "Unknown canonical nutrient ID",
+                });
+              }
+            }
+          })
           .describe(
-            "Nutrient totals for the entire consumed portion, scaled from the source serving. Prefer calories (kcal), protein, carbohydrate, fat, and fiber (grams), plus all available sourced micronutrients (vitamins and minerals) in their canonical units. Omit unknown values; zero means a known zero. An empty map is for an explicitly requested incomplete entry.",
+            "Nutrient totals for the entire consumed portion, scaled from the source serving. Required: calories (kcal), protein, carbohydrate, and fat (grams), each supplied as a nonnegative number, including explicit known zeros. Missing, blank, or unknown required values are not allowed; never fill them with zero. Include available sourced fiber (grams) and micronutrients (vitamins and minerals) in canonical units; omit unknown optional nutrients.",
           ),
       }),
       outputSchema: mcpOutputSchemas.foodRecordMutation,
