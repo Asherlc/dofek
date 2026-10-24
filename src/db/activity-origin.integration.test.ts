@@ -7,6 +7,26 @@ import { executeWithSchema } from "./execute-with-schema.ts";
 import { TEST_USER_ID } from "./schema/core.ts";
 import { setupTestDatabase } from "./test-helpers.ts";
 
+interface ExplainNode {
+  "Node Type": string;
+  "Actual Rows": number;
+  "Actual Loops": number;
+  "Parent Relationship"?: string;
+  Output?: string[];
+  Plans?: ExplainNode[];
+}
+
+const explainNodeSchema: z.ZodType<ExplainNode> = z.lazy(() =>
+  z.object({
+    "Node Type": z.string(),
+    "Actual Rows": z.number(),
+    "Actual Loops": z.number(),
+    "Parent Relationship": z.string().optional(),
+    Output: z.array(z.string()).optional(),
+    Plans: z.array(explainNodeSchema).optional(),
+  }),
+);
+
 const cases = z
   .array(
     z.object({
@@ -384,6 +404,87 @@ describe("PostgreSQL provenance-only origin", () => {
       member_activity_ids: [newCopyId],
     });
   });
+
+  it.each([
+    {
+      filter: "id",
+      groupId: "00000000-0000-4000-8000-000000000500",
+      originalId: "00000000-0000-4000-8000-000000000501",
+      copyId: "00000000-0000-4000-8000-000000000502",
+      date: "2026-10-03",
+    },
+    {
+      filter: "date",
+      groupId: "00000000-0000-4000-8000-000000000600",
+      originalId: "00000000-0000-4000-8000-000000000601",
+      copyId: "00000000-0000-4000-8000-000000000602",
+      date: "2026-10-04",
+    },
+  ])("aggregates origin payloads only for requested groups using $filter", async (fixture) => {
+    const { filter, groupId, originalId, copyId, date } = fixture;
+    const scopedContext = await setupTestDatabase();
+    try {
+      const db = scopedContext.db;
+      await db.execute(
+        sql`INSERT INTO fitness.provider(id,name) VALUES ('garmin','Garmin'),('apple_health','Apple Health') ON CONFLICT(id) DO NOTHING`,
+      );
+      await db.execute(sql`INSERT INTO fitness.activity_group(id,user_id)
+      SELECT md5('unrelated-origin-group-' || ${filter} || fixture)::uuid, ${TEST_USER_ID}::uuid
+      FROM generate_series(1,24) AS fixture`);
+      await db.execute(sql`INSERT INTO fitness.activity(
+      id,group_id,user_id,provider_id,external_id,canonical_type,provider_type,started_at,ended_at,raw
+    ) SELECT
+      md5('unrelated-origin-member-' || ${filter} || fixture)::uuid,
+      md5('unrelated-origin-group-' || ${filter} || fixture)::uuid,
+      ${TEST_USER_ID}::uuid,'garmin','unrelated-origin-' || ${filter} || fixture,'cycling','cycling',
+      '2026-09-01T10:00:00Z'::timestamptz,'2026-09-01T11:00:00Z'::timestamptz,
+      jsonb_build_object('fixture',fixture)
+      FROM generate_series(1,24) AS fixture`);
+      await db.execute(
+        sql`INSERT INTO fitness.activity_group(id,user_id) VALUES (${groupId},${TEST_USER_ID})`,
+      );
+      await db.execute(sql`INSERT INTO fitness.activity(
+      id,group_id,user_id,provider_id,external_id,canonical_type,provider_type,started_at,ended_at,source_name,raw
+    ) VALUES
+      (${originalId},${groupId},${TEST_USER_ID},'garmin',${`selected-origin-${filter}`},'cycling','cycling',
+       ${`${date}T10:00:00Z`},${`${date}T11:00:00Z`},'Garmin Edge 530','{}'),
+      (${copyId},${groupId},${TEST_USER_ID},'apple_health',${`selected-origin-copy-${filter}`},'cycling','cycling',
+       ${`${date}T10:00:00Z`},${`${date}T11:00:00Z`},'Garmin','{}')`);
+      const selection =
+        filter === "id"
+          ? sql`AND id=${groupId}::uuid`
+          : sql`AND started_at >= ${date}::date AND started_at < ${date}::date + INTERVAL '1 day'`;
+      const query = sql`SELECT id,primary_activity_id FROM fitness.v_activity
+      WHERE user_id=${TEST_USER_ID}::uuid ${selection}`;
+      const rows = z
+        .array(z.object({ id: z.string(), primary_activity_id: z.string().nullable() }))
+        .parse(await db.execute(query));
+      expect(rows).toEqual([{ id: groupId, primary_activity_id: originalId }]);
+
+      const [result] = z
+        .array(z.object({ "QUERY PLAN": z.array(z.object({ Plan: explainNodeSchema })) }))
+        .parse(await db.execute(sql`EXPLAIN (ANALYZE, VERBOSE, FORMAT JSON) ${query}`));
+      const plan = result?.["QUERY PLAN"][0]?.Plan;
+      if (!plan) throw new Error("PostgreSQL did not return an execution plan");
+      const originAggregateInputs: number[] = [];
+      const visit = (node: ExplainNode): void => {
+        if (
+          node["Node Type"] === "Aggregate" &&
+          node.Output?.some((expression) => /jsonb_agg\(.*\braw\b/.test(expression))
+        ) {
+          const input = node.Plans?.find((child) => child["Parent Relationship"] === "Outer");
+          if (!input) throw new Error("Origin aggregation has no input plan");
+          originAggregateInputs.push(input["Actual Rows"] * input["Actual Loops"]);
+        }
+        for (const child of node.Plans ?? []) visit(child);
+      };
+      visit(plan);
+      expect(originAggregateInputs).toEqual([2]);
+    } finally {
+      await scopedContext.cleanup();
+    }
+  });
+
   it.each(cases)("$name", async (fixture) => {
     const rows = await context.db.execute(sql`SELECT primary_activity_id::text AS primary,
       origin_candidate_member_ids::text[] AS candidates

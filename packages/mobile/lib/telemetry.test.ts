@@ -1,4 +1,6 @@
 import { OTLPLogExporter } from "@opentelemetry/exporter-logs-otlp-http";
+import { resourceFromAttributes } from "@opentelemetry/resources";
+import type { LogRecordExporter, ReadableLogRecord } from "@opentelemetry/sdk-logs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => {
@@ -10,7 +12,9 @@ const mocks = vi.hoisted(() => {
   const mockEmit = vi.fn();
   const mockGetLogger = vi.fn().mockReturnValue({ emit: mockEmit });
   const mockResourceFromAttributes = vi.fn().mockReturnValue({ resource: "mock" });
-  const mockBatchLogRecordProcessor = vi.fn(function batchLogRecordProcessorConstructor() {
+  const mockBatchLogRecordProcessor = vi.fn(function batchLogRecordProcessorConstructor(_options: {
+    exporter: LogRecordExporter;
+  }) {
     return { processor: "mock" };
   });
   const mockLoggerProvider = vi.fn(function loggerProviderConstructor() {
@@ -116,7 +120,11 @@ vi.mock("@opentelemetry/sdk-logs", () => ({
 }));
 
 vi.mock("@opentelemetry/exporter-logs-otlp-http", () => ({
-  OTLPLogExporter: vi.fn(),
+  OTLPLogExporter: vi.fn(function otlpLogExporterConstructor(this: LogRecordExporter) {
+    this.export = vi.fn<LogRecordExporter["export"]>();
+    this.forceFlush = vi.fn<LogRecordExporter["forceFlush"]>().mockResolvedValue(undefined);
+    this.shutdown = vi.fn<LogRecordExporter["shutdown"]>().mockResolvedValue(undefined);
+  }),
 }));
 
 vi.mock("@opentelemetry/resources", () => ({
@@ -724,7 +732,11 @@ describe("ios telemetry", () => {
       "service.name": "dofek-mobile",
     });
     expect(mocks.mockBatchLogRecordProcessor).toHaveBeenCalledWith({
-      exporter: expect.any(OTLPLogExporter),
+      exporter: expect.objectContaining({
+        export: expect.any(Function),
+        forceFlush: expect.any(Function),
+        shutdown: expect.any(Function),
+      }),
     });
     expect(mocks.mockLoggerProvider).toHaveBeenCalledWith({
       resource: { resource: "mock" },
@@ -749,6 +761,114 @@ describe("ios telemetry", () => {
         attributes: { ...runtimeContext, key: "value" },
       }),
     );
+  });
+
+  it("exports mobile metadata as an Axiom map while preserving PostHog records", async () => {
+    vi.stubGlobal("__DEV__", false);
+    process.env.EXPO_PUBLIC_SENTRY_DSN = "https://key@sentry.example/789";
+    process.env.EXPO_PUBLIC_OTEL_ENDPOINT = "https://api.axiom.co/v1/logs";
+
+    const mod = await import("./telemetry");
+    mod.initTelemetry();
+    mod.identifyUser({ id: "mobile-user", email: null, name: "Mobile User" });
+    mod.setTelemetryRoute("/activity/550e8400-e29b-41d4-a716-446655440000");
+    mod.logger.warn("sensor-sync", "Upload delayed", { pending: 2, connected: false });
+
+    const emitted = mocks.mockEmit.mock.lastCall?.[0];
+    const axiomProcessorExporter = mocks.mockBatchLogRecordProcessor.mock.calls[0]?.[0].exporter;
+    const posthogProcessorExporter = mocks.mockBatchLogRecordProcessor.mock.calls[1]?.[0].exporter;
+    const axiomOtlpExporter = vi.mocked(OTLPLogExporter).mock.instances[0];
+    const posthogOtlpExporter = vi.mocked(OTLPLogExporter).mock.instances[1];
+    if (
+      !emitted ||
+      !axiomProcessorExporter ||
+      !posthogProcessorExporter ||
+      !axiomOtlpExporter ||
+      !posthogOtlpExporter
+    ) {
+      throw new Error("Both telemetry export destinations must initialize");
+    }
+    const resource = resourceFromAttributes({ "service.name": "dofek-mobile" });
+    const instrumentationScope = { name: "sensor-sync", version: "1.0.0" };
+    const spanContext = {
+      traceId: "11111111111111111111111111111111",
+      spanId: "2222222222222222",
+      traceFlags: 1,
+    };
+    const record: ReadableLogRecord = {
+      get hrTime() {
+        return [1, 2];
+      },
+      get hrTimeObserved() {
+        return [3, 4];
+      },
+      get body() {
+        return emitted.body;
+      },
+      get severityNumber() {
+        return emitted.severityNumber;
+      },
+      get severityText() {
+        return emitted.severityText;
+      },
+      get spanContext() {
+        return spanContext;
+      },
+      get eventName() {
+        return "sensor_upload";
+      },
+      resource,
+      instrumentationScope,
+      droppedAttributesCount: 0,
+      attributes: emitted.attributes,
+    };
+    const callback = vi.fn();
+
+    axiomProcessorExporter.export([record], callback);
+    posthogProcessorExporter.export([record], callback);
+
+    const exported = vi.mocked(axiomOtlpExporter.export).mock.lastCall?.[0][0];
+    expect(exported).toEqual({
+      hrTime: [1, 2],
+      hrTimeObserved: [3, 4],
+      body: "[sensor-sync] Upload delayed",
+      severityNumber: 13,
+      severityText: "WARN",
+      spanContext,
+      eventName: "sensor_upload",
+      resource,
+      instrumentationScope,
+      droppedAttributesCount: 0,
+      attributes: {
+        custom: {
+          ...runtimeContext,
+          userId: "mobile-user",
+          route: "/activity/:id",
+          pending: 2,
+          connected: false,
+        },
+      },
+    });
+    expect(axiomOtlpExporter.export).toHaveBeenCalledWith([exported], callback);
+    expect(posthogOtlpExporter.export).toHaveBeenCalledWith([record], callback);
+    expect(record.attributes).toEqual({
+      ...runtimeContext,
+      userId: "mobile-user",
+      route: "/activity/:id",
+      pending: 2,
+      connected: false,
+    });
+    expect(mocks.mockAddBreadcrumb).toHaveBeenLastCalledWith({
+      category: "sensor-sync",
+      message: "Upload delayed",
+      level: "warning",
+      data: {
+        ...runtimeContext,
+        route: "/activity/:id",
+        pending: 2,
+        connected: false,
+      },
+    });
   });
 
   it("adds the current route to structured log breadcrumbs and OTel records", async () => {

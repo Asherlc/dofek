@@ -116,6 +116,9 @@ importers:
       '@dofek/stats':
         specifier: workspace:*
         version: link:packages/stats
+      '@dofek/telemetry':
+        specifier: workspace:*
+        version: link:packages/telemetry
       '@dofek/trainerroad':
         specifier: workspace:*
         version: link:packages/trainerroad-client
@@ -482,6 +485,9 @@ importers:
       '@dofek/stats':
         specifier: workspace:*
         version: link:../stats
+      '@dofek/telemetry':
+        specifier: workspace:*
+        version: link:../telemetry
       '@dofek/training':
         specifier: workspace:*
         version: link:../training
@@ -905,6 +911,12 @@ importers:
       zod:
         specifier: 4.6.7
         version: 4.6.7
+
+  packages/telemetry:
+    dependencies:
+      '@opentelemetry/sdk-logs':
+        specifier: 0.221.0
+        version: 0.221.0(@opentelemetry/api@1.9.1)
 
   packages/trainerroad-client:
     dependencies:

@@ -61,7 +61,7 @@ as reporting a value's storage size, including compression where applicable.
 - [`ClimbingRepository`](../../packages/server/src/repositories/climbing-repository.ts)
   joins activity-bound logs through that same view. The mobile training
   service separately requests progression, volume, and session summaries.
-- [`origin_group_members`](../../drizzle/_views/01_v_activity.sql)
+- [`origin_group_members` in the investigated view](../../drizzle/0158_activity_copy_identity.sql)
   groups complete raw member payloads before the view joins origins and
   callers apply local-date filters. The live plan confirms this work survives
   ID-only selection.
@@ -110,7 +110,7 @@ additional contention that stretched incident queries to 81–95 seconds.
 
 The approved correction narrows only the nested origin input in the
 [canonical view](../../drizzle/_views/01_v_activity.sql).
-[Migration 0160](../../drizzle/0160_bound_activity_origin_input.sql) installs
+[Migration 0161](../../drizzle/0161_bound_activity_origin_input.sql) installs
 the identical view through the normal forward migration path. Stored payloads,
 public raw data, the resolver algorithm, and activity visibility remain intact.
 
@@ -149,3 +149,19 @@ For future investigations, reuse bounded execution plans and the real-function
 input regression pattern; add migration-only verification and changed-file
 policy coverage to the testing guide, since canonical replay and HEAD-based
 diffs can otherwise conceal an omitted migration.
+
+## Composition with the scoped-origin fix
+
+Before merge, main gained the complementary [scoped-origin correction](https://github.com/Asherlc/dofek/pull/3061),
+installed by migration 0160. The final canonical view preserves its correlated
+`LATERAL` lookup of only each selected group's member IDs and narrows the JSON
+input at that lookup. This branch's migration was renumbered to 0161 and
+regenerated from that combined canonical definition. Both scoping regressions
+and the payload-size regression pass in the combined 109-test integration run.
+
+The timing tables above record the earlier isolated metadata comparison on
+release `4179f298`; they do not measure the final combination. Its production
+rollout and post-deploy timing remain to be verified. The initial PR's hosted
+[CI run](https://github.com/Asherlc/dofek/actions/runs/40061580537) passed all
+four integration shards, including the cross-store tier that local fixture
+memory pressure had prevented from running to completion.

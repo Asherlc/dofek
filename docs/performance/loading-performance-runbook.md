@@ -34,11 +34,12 @@ Use Axiom before backend optimization. Axiom's query language is APL, and the CL
 1. Discover the production dataset and schema before filtering on fields:
 
    ```bash
-   rtk "$HOME/.agents/skills/axiom-sre/scripts/discover-axiom" prod
-   rtk sh -c "printf %s \"['dofek-logs'] | getschema\" | \"$HOME/.agents/skills/axiom-sre/scripts/axiom-query\" prod --since 15m"
+   axiom dataset list
+   axiom query "['dofek-logs'] | getschema" --format json
+   axiom query "['dofek-traces'] | getschema" --format json
    ```
 
-2. Query the page or procedure family that matches the symptom. Start with the names visible in the UI or issue, then include known loading suspects such as `mobileDashboard.dashboard`, `activity.stream`, `recovery.readinessScore`, `recovery.workloadRatio`, `sync.dataHealth`, `sleep.latestStages`, and `healthspan.score`.
+2. Query the page or procedure family that matches the symptom. Logs are in `dofek-logs` and spans are in `dofek-traces`; custom metadata uses the `attributes.custom` map. See the [Axiom runbook](../axiom-observability-runbook.md) and [map-field syntax](https://axiom.co/docs/apl/data-types/map-fields). Start with the names visible in the UI or issue, then include known loading suspects such as `mobileDashboard.dashboard`, `activity.stream`, `recovery.readinessScore`, `recovery.workloadRatio`, `sync.dataHealth`, `sleep.latestStages`, and `healthspan.score`.
 
 3. Separate total request time from child database time. A slow parent with short ClickHouse spans points to batching, queueing, or app-layer work; a slow ClickHouse span points to query shape or ClickHouse resource pressure.
 
