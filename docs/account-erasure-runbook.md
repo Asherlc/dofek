@@ -147,11 +147,13 @@ Credential requirements:
   [same set of scopes](https://www.zoho.com/accounts/protocol/oauth/devices/refresh-access-token.html),
   regenerate `ZOHO_DESK_REFRESH_TOKEN` with the full set and update Infisical
   before rollout.
-- The Axiom dataset and Sentry organization must retain events for at most 29
-  days. A 30-day setting fails closed because it leaves no time to verify and
-  retry before the public deadline.
-- The Axiom token must read dataset retention configuration:
-  <https://axiom.co/docs/restapi/endpoints/updateDataset>.
+- Both Axiom datasets, `dofek-logs` (or the `AXIOM_LOG_DATASET` override) and
+  `dofek-traces`, and the Sentry organization must retain events for at most 29
+  days. The [processor verifier](../src/account-erasure/processor-retention.ts)
+  checks each dataset; a 30-day setting fails closed because it leaves no time
+  to verify and retry before the public deadline.
+- The Axiom token must read retention configuration for both datasets:
+  <https://axiom.co/docs/restapi/endpoints/getDataset>.
 - The Sentry token must have `org:read` so the coordinator can read the
   organization's `dataRetention` value:
   <https://docs.sentry.io/api/organizations/retrieve-an-organization/>.

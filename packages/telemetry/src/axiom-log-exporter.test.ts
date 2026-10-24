@@ -23,6 +23,7 @@ describe("AxiomLogExporter", () => {
       expected: { provider: "garmin" },
     },
     { attributes: { custom: "recorded-value" }, expected: { custom: "recorded-value" } },
+    { attributes: { custom: null }, expected: { custom: null } },
     {
       attributes: { custom: new Uint8Array([1, 2]) },
       expected: { custom: new Uint8Array([1, 2]) },
