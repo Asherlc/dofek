@@ -40,6 +40,7 @@
     "packages/mobile": {
       "entry": [
         "app/**/*.{ts,tsx}",
+        "fingerprint.config.js",
         "modules/*/index.ts",
         "plugins/*.js",
         "scripts/capture-app-store-screenshots.ts",
