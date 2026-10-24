@@ -31,3 +31,19 @@ failures also fail installation under [pnpm v11](https://pnpm.io/cli/patch#allow
 
 When adopting published upstream fixes, verify the regressions against those
 releases and remove the corresponding patch and advisory exception together.
+
+## Expo CLI Zod override
+
+The workspace pins Expo CLI's Zod dependency to 4.6.7, the same release used by
+the application. Expo CLI 58.1.14 still declares Zod 3
+([upstream manifest](https://github.com/expo/expo/blob/main/packages/%40expo/cli/package.json)),
+which is covered by the [collection validation advisory](https://github.com/advisories/GHSA-mrhx-c7xc-m3w5).
+The [upstream fix](https://github.com/colinhacks/zod/commit/a0ebf97)
+rejects oversized constrained collections before parsing their elements.
+
+`pnpm check:dependency-security` exercises that behavior through Expo CLI's
+installed dependency and checks its plugin descriptor, command-input, and
+command-output schemas with valid and invalid inputs. The security assertion
+failed with Expo's original Zod 3 dependency and passes with the scoped override.
+This correction adds no audit exception. Review the override and these checks
+together when updating Expo CLI's schema consumers.

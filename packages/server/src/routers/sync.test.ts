@@ -14,7 +14,6 @@ const {
   mockLoggerWarn,
   mockCaptureException,
   mockInvalidateByPrefix,
-  mockVeloHeroProvider,
   mockCachedProtectedQuery,
   mockProtectedQueryCache,
   mockWithUserWriteFence,
@@ -37,9 +36,6 @@ const {
   mockLoggerWarn: vi.fn(),
   mockCaptureException: vi.fn(),
   mockInvalidateByPrefix: vi.fn().mockResolvedValue(undefined),
-  mockVeloHeroProvider: vi.fn(function vitestConstructor() {
-    return { id: "velohero" };
-  }),
   mockCachedProtectedQuery: vi.fn(),
   mockProtectedQueryCache: new Map<string, { data: unknown; expiresAt: number }>(),
   mockWithUserWriteFence: vi.fn(),
@@ -217,9 +213,6 @@ vi.mock("dofek/providers/xert", () => ({ XertProvider: vi.fn() }));
 vi.mock("dofek/providers/cycling-analytics", () => ({ CyclingAnalyticsProvider: vi.fn() }));
 vi.mock("dofek/providers/wger", () => ({ WgerProvider: vi.fn() }));
 vi.mock("dofek/providers/decathlon", () => ({ DecathlonProvider: vi.fn() }));
-vi.mock("dofek/providers/velohero", () => ({
-  VeloHeroProvider: mockVeloHeroProvider,
-}));
 
 // Mock schema and drizzle-orm for logs query
 vi.mock("dofek/db/schema/events", () => ({
@@ -271,9 +264,6 @@ describe("syncRouter", () => {
     mockProtectedQueryCache.clear();
     mockGetAllProviders.mockReturnValue([]);
     mockRegisterProvider.mockImplementation(() => undefined);
-    mockVeloHeroProvider.mockImplementation(function vitestConstructor() {
-      return { id: "velohero" };
-    });
     mockGetProviderSyncQueue.mockImplementation((id: string) => ({
       add: mockAdd,
       getJob: mockGetJob,
