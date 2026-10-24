@@ -123,6 +123,7 @@ Cross-provider reverse-engineering references:
 | [oracle-cutover.md](oracle-cutover.md) | Current Oracle production cutover status and deploy targeting notes. |
 | [sync-checkpoint-retries.md](sync-checkpoint-retries.md) | Durable provider sync retry checkpoints and retryable infrastructure failure scope. |
 | [sentry.md](sentry.md) | Investigating Sentry issues and stack traces from terminal. |
+| [mobile-ota-recovery.md](mobile-ota-recovery.md) | Runtime compatibility, staging on shipped binaries, and recovery of incompatible OTA updates. |
 | [traefik-subdomain-404-runbook.md](traefik-subdomain-404-runbook.md) | Diagnosing active Traefik routes, including the Databasus backup service. |
 
 ## Historical Records

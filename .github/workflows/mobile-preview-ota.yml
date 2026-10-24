@@ -41,10 +41,17 @@ jobs:
         uses: ./.github/actions/load-infisical-secrets
         with:
           keys: |
+            EXPO_APP_ID
             EXPO_TOKEN
             EXPO_PUBLIC_SENTRY_DSN
             EXPO_PUBLIC_OTEL_ENDPOINT
             EXPO_PUBLIC_OTEL_HEADERS
+
+      - name: Ensure preview channel maps to PR branch
+        if: steps.mobile-changes.outputs.changed == 'true'
+        env:
+          PR_NUMBER: ${{ github.event.number }}
+        run: pnpm tsx scripts/ensure-mobile-preview-channel.ts "pr-$PR_NUMBER"
 
       - name: Publish OTA to PR branch
         if: steps.mobile-changes.outputs.changed == 'true'
@@ -53,6 +60,7 @@ jobs:
           PR_NUMBER: ${{ github.event.number }}
           DEBUG: true
           RELEASE_CHANNEL: staging
+          PREVIEW_CHANNEL: pr-${{ github.event.number }}
         run: |
           for attempt in 1 2 3 4 5; do
             status_code=$(/usr/bin/curl -s -o /dev/null -w "%{http_code}" "https://ota.dofek.asherlc.com/hc" || true)

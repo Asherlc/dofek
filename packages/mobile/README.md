@@ -137,6 +137,13 @@ enforces the same-day rule for both clients.
 
 ## Development
 
+Native builds and OTA updates use Expo's automatic `fingerprint` runtime
+policy, including the Watch sources configured in `fingerprint.config.js`.
+New native interfaces receive a different runtime so older installations keep
+their compatible JavaScript; see [Expo runtime compatibility](https://docs.expo.dev/eas-update/runtime-versions/).
+Follow the [OTA release and recovery runbook](../../docs/mobile-ota-recovery.md)
+to stage updates on already-built binaries and recover an affected runtime.
+
 ```bash
 cd packages/mobile
 pnpm start
@@ -347,8 +354,8 @@ for the approved SDK dependency tree.
   The tested native pin remains listed in Expo's documented
   [`expo.install.exclude`](https://docs.expo.dev/more/expo-cli/#configuring-dependency-validation)
   setting. The existing Expo check validates the remaining SDK-managed
-  packages. Maps upgrades require a fresh native binary, a matching runtime
-  increment, and the signed simulator audit: route, Start/Finish pins, elevation
+  packages. Maps upgrades require a fresh native binary, its fingerprint-derived
+  runtime, and the signed simulator audit: route, Start/Finish pins, elevation
   hover/release, navigation/remount, and session restoration after restart
   ([native runtime compatibility](https://docs.expo.dev/eas-update/runtime-versions/)).
 
@@ -363,26 +370,24 @@ for the approved SDK dependency tree.
   prebuild and the Release archive; see the [runner](../../scripts/test-apple-auth-diagnostics.ts)
   and [workflow](../../.github/workflows/build-mobile.yml).
 
-### Native diagnostic runtime
+### Native runtime compatibility
 
 Runtime **1.13** adds WHOOP capture timestamps, buffer counters and retained
 diagnostic checkpoints to the native bridge. It includes runtime 1.12's reported
 WHOOP BPM and fractional timestamp fixes; see the
 [WHOOP module contract](modules/whoop-ble/README.md).
-Build a new native binary containing these changes before publishing updates for
-runtime 1.13. Existing runtime 1.12 and earlier binaries retain their compatible
-updates. Increment the runtime whenever a bridge payload change requires new
-native code, following Expo's
+Existing runtime 1.13 and earlier binaries retain their compatible updates.
+Current releases use Expo's automatic fingerprint policy; native changes
+require a new binary with the resulting runtime, following Expo's
 [runtime compatibility guidance](https://docs.expo.dev/eas-update/runtime-versions/).
 
-Runtime 1.13 retains the stable [Expo SDK 58](https://expo.dev/changelog/sdk-58)
-native dependency set with Expo 58.0.17, Expo Router 58.0.25, Expo Updates
+The current stable [Expo SDK 58](https://expo.dev/changelog/sdk-58)
+native dependency set uses Expo 58.0.19, Expo Router 58.0.26, Expo Updates
 58.0.18, React Native 0.88.0, and React Native SVG 15.16.0, pinned in
 [package.json](./package.json). The
-[Expo 58.0.17 dependency matrix](https://github.com/expo/expo/blob/expo%4058.0.17/packages/expo/bundledNativeModules.json)
-also aligns Crypto and Haptics to 58.0.7, Sharing to 58.0.19, Splash Screen to
-58.0.10, Dev Client to 58.0.14, Build Properties to 58.0.11, and Modules Core to
-58.0.23, with Modules JSI 58.0.16 resolved in the [lockfile](../../pnpm-lock.yaml).
+[Expo dependency matrix](https://github.com/expo/expo/blob/expo%4058.0.19/packages/expo/bundledNativeModules.json)
+and the [lockfile](../../pnpm-lock.yaml) define the corresponding SDK-managed
+versions, including the updated native Modules Core and JSI packages.
 Validate SDK-managed versions with
 `pnpm tsx ../../scripts/with-env.ts -- pnpm expo install --check` from this package, following Expo's
 [dependency validation guidance](https://docs.expo.dev/more/expo-cli/#configuring-dependency-validation).
@@ -394,21 +399,11 @@ introduced in 1.10, with the stable code consumed by anchored sync. A type await
 its anchor unchanged and does not stop other observed types from syncing;
 unexpected query errors still fail. Apple documents this state as
 [`errorAuthorizationNotDetermined`](https://developer.apple.com/documentation/healthkit/hkerror/code/errorauthorizationnotdetermined).
-This patch alignment changes native executable code: Router fixes the iOS
-[`Link.AppleZoom` dismissal transition](https://github.com/expo/expo/pull/51676),
-and Modules Core changes [synchronous worklet result handling](https://github.com/expo/expo/pull/51656)
-and the [native JavaScript class factory](https://github.com/expo/expo/pull/51582).
-File System 58.0.10 and Font 58.0.9 include rebuilt native artifacts for the
-[Modules Core 58.0.23 ABI change](https://github.com/expo/expo/pull/51823),
-which requires the new runtime boundary even though these are patch releases.
-Build a new native binary containing these dependencies and HealthKit changes
-before publishing updates for runtime 1.11. Existing runtime 1.10 and earlier
-binaries must keep their compatible updates rather than receiving this dependency set.
-Expo requires a runtime increment when native code is updated; see
-[manual runtime version increments](https://docs.expo.dev/eas-update/runtime-versions/#manually-increment-the-runtime-version).
-Expo uses
-runtime versions to match updates to compatible native code
-([runtime versions](https://docs.expo.dev/eas-update/runtime-versions/)).
+Native patch releases can change executable code and ABI contracts; the
+[Modules Core ABI change](https://github.com/expo/expo/pull/51823) is one
+example. Fingerprinting derives a new runtime for the changed native inputs;
+build and release that binary before testing updates against its interface.
+Follow the [release and recovery runbook](../../docs/mobile-ota-recovery.md).
 Use [pnpm patch/patch-commit](https://pnpm.io/cli/patch-commit) when updating the
 patch, then rerun the native regression and existing Release archive job.
 
@@ -562,6 +557,8 @@ Workflow-only secrets loaded by iOS and OTA workflows ([iOS](../../.github/workf
 
 - `SENTRY_AUTH_TOKEN` (iOS and OTA sourcemap uploads)
 - `EXPO_TOKEN` (OTA workflows)
+- `EXPO_APP_ID` (PR channel setup links previews to the existing Expo project;
+  [preview workflow](../../.github/workflows/mobile-preview-ota.yml))
 
 The shared Infisical action fails when a requested secret is missing, so keep this list aligned with each workflow's `keys` block ([source](../../.github/actions/load-infisical-secrets/action.yml)).
 
@@ -572,7 +569,7 @@ Workflow key requirements:
 - `.github/workflows/build-mobile.yml`: `EXPO_PUBLIC_SENTRY_DSN`, `EXPO_PUBLIC_OTEL_ENDPOINT`, `EXPO_PUBLIC_OTEL_HEADERS`
 - `.github/workflows/deploy-ios.yml`: `SENTRY_AUTH_TOKEN`, `EXPO_PUBLIC_SENTRY_DSN`, `EXPO_PUBLIC_OTEL_ENDPOINT`, `EXPO_PUBLIC_OTEL_HEADERS`
 - `.github/workflows/deploy-ota.yml`: `EXPO_TOKEN`, `SENTRY_AUTH_TOKEN`, `EXPO_PUBLIC_SENTRY_DSN`, `EXPO_PUBLIC_OTEL_ENDPOINT`, `EXPO_PUBLIC_OTEL_HEADERS`
-- `.github/workflows/mobile-preview-ota.yml`: `EXPO_TOKEN`, `EXPO_PUBLIC_SENTRY_DSN`, `EXPO_PUBLIC_OTEL_ENDPOINT`, `EXPO_PUBLIC_OTEL_HEADERS`
+- `.github/workflows/mobile-preview-ota.yml`: `EXPO_APP_ID`, `EXPO_TOKEN`, `EXPO_PUBLIC_SENTRY_DSN`, `EXPO_PUBLIC_OTEL_ENDPOINT`, `EXPO_PUBLIC_OTEL_HEADERS`
 
 Source-map and release correlation:
 
