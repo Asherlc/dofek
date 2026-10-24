@@ -170,6 +170,11 @@ The WHOOP app performs this sequence on connection:
 9. App sends `HISTORICAL_DATA_RESULT (0x17)` ACKs for each chunk
 10. Concurrent: strap streams `REALTIME_DATA (0x28)` with HR + orientation quaternion at ~1 Hz
 
+Dofek receives supported historical records but does not initiate this replay.
+The [historical replay investigation](whoop-ble-replay.md) traces a complete
+exchange in the retained capture, distinguishes chunk metadata from command
+responses, and records durability and official-app coexistence limits.
+
 ## Authentication / Bonding
 
 The strap requires BLE bonding before accepting any commands:
