@@ -13,7 +13,18 @@ const config = {
   sentryOrg: "east-bay-software",
 };
 
-const server = setupServer();
+const server = setupServer(
+  http.get("https://api.axiom.co/v2/datasets/dofek-traces", ({ request }) => {
+    expect(request.headers.get("authorization")).toBe("Bearer axiom-token");
+    expect(request.headers.get("x-axiom-org-id")).toBe("axiom-org");
+    return HttpResponse.json({
+      id: "dofek-traces",
+      name: "dofek-traces",
+      retentionDays: 29,
+      useRetentionPeriod: true,
+    });
+  }),
+);
 
 describe("account-erasure processor retention (integration)", () => {
   beforeAll(() => {
@@ -70,6 +81,21 @@ describe("account-erasure processor retention (integration)", () => {
 
     await expect(verifyProcessorRetentionPolicies(config)).rejects.toThrow(
       "Axiom dataset retention is not enabled",
+    );
+  });
+
+  it("fails closed when the trace dataset cannot be verified", async () => {
+    server.use(
+      http.get("https://api.axiom.co/v2/datasets/dofek-logs", () =>
+        HttpResponse.json({ retentionDays: 29, useRetentionPeriod: true }),
+      ),
+      http.get("https://api.axiom.co/v2/datasets/dofek-traces", () =>
+        HttpResponse.json({ message: "Dataset not found" }, { status: 404 }),
+      ),
+    );
+
+    await expect(verifyProcessorRetentionPolicies(config)).rejects.toThrow(
+      "Axiom dataset retention verification failed with status 404 for dofek-traces",
     );
   });
 

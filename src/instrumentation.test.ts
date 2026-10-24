@@ -2,11 +2,17 @@ import { IncomingMessage } from "node:http";
 import { createRequire } from "node:module";
 import { Socket } from "node:net";
 import { dirname, join } from "node:path";
+import { AxiomLogExporter } from "@dofek/telemetry";
+import { ROOT_CONTEXT, TraceFlags, trace } from "@opentelemetry/api";
 import { getNodeAutoInstrumentations } from "@opentelemetry/auto-instrumentations-node";
 import { OTLPLogExporter } from "@opentelemetry/exporter-logs-otlp-http";
 import { OTLPMetricExporter } from "@opentelemetry/exporter-metrics-otlp-proto";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-proto";
-import { BatchLogRecordProcessor } from "@opentelemetry/sdk-logs";
+import {
+  BatchLogRecordProcessor,
+  type LogRecordExporter,
+  type ReadableLogRecord,
+} from "@opentelemetry/sdk-logs";
 import { PeriodicExportingMetricReader } from "@opentelemetry/sdk-metrics";
 import { NodeSDK } from "@opentelemetry/sdk-node";
 import { BatchSpanProcessor } from "@opentelemetry/sdk-trace-node";
@@ -18,6 +24,7 @@ import { POSTHOG_API_KEY, POSTHOG_HOST, POSTHOG_TRACES_URL } from "./lib/posthog
 const mockStart = vi.fn();
 const mockShutdown = vi.fn().mockResolvedValue(undefined);
 const mockAutoInstrumentations = { bundle: "auto" };
+const exportedLogRecords: ReadableLogRecord[][] = [];
 const require = createRequire(import.meta.url);
 const instrumentationRequire = createRequire(
   require.resolve("@opentelemetry/auto-instrumentations-node"),
@@ -51,7 +58,19 @@ vi.mock("@opentelemetry/exporter-trace-otlp-proto", () => ({
 }));
 
 vi.mock("@opentelemetry/exporter-logs-otlp-http", () => ({
-  OTLPLogExporter: vi.fn(),
+  OTLPLogExporter: vi.fn(function vitestConstructor() {
+    return {
+      export: (
+        records: ReadableLogRecord[],
+        callback: Parameters<LogRecordExporter["export"]>[1],
+      ) => {
+        exportedLogRecords.push(records);
+        callback({ code: 0 });
+      },
+      forceFlush: vi.fn().mockResolvedValue(undefined),
+      shutdown: vi.fn().mockResolvedValue(undefined),
+    };
+  }),
 }));
 
 vi.mock("@opentelemetry/resources", () => ({
@@ -135,6 +154,7 @@ describe("instrumentation", () => {
     aiTelemetryMocks.OpenTelemetry.mockClear();
     mockStart.mockClear();
     mockShutdown.mockClear();
+    exportedLogRecords.length = 0;
   });
 
   afterEach(() => {
@@ -222,7 +242,7 @@ describe("instrumentation", () => {
     expect(BatchSpanProcessor).toHaveBeenCalledWith(expect.any(OTLPTraceExporter));
     expect(PostHogSpanProcessor).not.toHaveBeenCalled();
     expect(BatchLogRecordProcessor).toHaveBeenCalledWith({
-      exporter: expect.any(OTLPLogExporter),
+      exporter: expect.any(AxiomLogExporter),
     });
     expect(PeriodicExportingMetricReader).toHaveBeenCalledWith(
       expect.objectContaining({ exporter: expect.any(OTLPMetricExporter) }),
@@ -418,7 +438,7 @@ describe("instrumentation", () => {
     const config = vi.mocked(NodeSDK).mock.calls.at(-1)?.[0];
     expect(config?.logRecordProcessors).toHaveLength(1);
     expect(BatchLogRecordProcessor).toHaveBeenCalledWith({
-      exporter: expect.any(OTLPLogExporter),
+      exporter: vi.mocked(OTLPLogExporter).mock.results.at(-1)?.value,
     });
     expect(OTLPLogExporter).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -428,6 +448,55 @@ describe("instrumentation", () => {
         }),
       }),
     );
+  });
+
+  it("exports Axiom metadata in one map while preserving the emitted record and PostHog attributes", async () => {
+    const { startInstrumentation } = await import("./instrumentation.ts");
+    const { LoggerProvider, SimpleLogRecordProcessor } =
+      await vi.importActual<typeof import("@opentelemetry/sdk-logs")>("@opentelemetry/sdk-logs");
+    startInstrumentation({
+      DEPLOY_ENVIRONMENT: "production",
+      OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: "https://api.axiom.co/v1/logs",
+    });
+    const exporters = vi
+      .mocked(BatchLogRecordProcessor)
+      .mock.calls.map(([options]) => options.exporter);
+    const provider = new LoggerProvider({
+      processors: exporters.map((exporter) => new SimpleLogRecordProcessor({ exporter })),
+    });
+    const attributes = { category: "sync", provider: "garmin", count: 4 };
+    const spanContext = {
+      traceId: "12345678901234567890123456789012",
+      spanId: "1234567890123456",
+      traceFlags: TraceFlags.SAMPLED,
+    };
+    provider.getLogger("instrumentation-test").emit({
+      body: "Sync complete",
+      severityNumber: 9,
+      severityText: "INFO",
+      eventName: "sync.completed",
+      attributes,
+      timestamp: new Date("2026-10-23T00:00:00Z"),
+      observedTimestamp: new Date("2026-10-23T00:00:01Z"),
+      context: trace.setSpanContext(ROOT_CONTEXT, spanContext),
+    });
+    await provider.forceFlush();
+
+    expect(exportedLogRecords[0]?.[0]).toMatchObject({
+      body: "Sync complete",
+      severityNumber: 9,
+      severityText: "INFO",
+      eventName: "sync.completed",
+      attributes: { custom: attributes },
+      spanContext,
+      hrTime: [1792713600, 0],
+      hrTimeObserved: [1792713601, 0],
+      instrumentationScope: { name: "instrumentation-test" },
+      droppedAttributesCount: 0,
+    });
+    expect(exportedLogRecords[1]?.[0]?.attributes).toEqual(attributes);
+    expect(exportedLogRecords[0]?.[0]?.resource).toBe(exportedLogRecords[1]?.[0]?.resource);
+    await provider.shutdown();
   });
 
   it.each(["prod", "production"])(

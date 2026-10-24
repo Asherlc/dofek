@@ -1,3 +1,4 @@
+import { AxiomLogExporter } from "@dofek/telemetry";
 import { SeverityNumber } from "@opentelemetry/api-logs";
 import { OTLPLogExporter } from "@opentelemetry/exporter-logs-otlp-http";
 import { resourceFromAttributes } from "@opentelemetry/resources";
@@ -126,10 +127,12 @@ function createLogProcessors(): BatchLogRecordProcessor[] {
   if (OTEL_ENDPOINT) {
     processors.push(
       new BatchLogRecordProcessor({
-        exporter: new OTLPLogExporter({
-          url: OTEL_ENDPOINT,
-          headers: OTEL_HEADERS ? parseHeaders(OTEL_HEADERS) : undefined,
-        }),
+        exporter: new AxiomLogExporter(
+          new OTLPLogExporter({
+            url: OTEL_ENDPOINT,
+            headers: OTEL_HEADERS ? parseHeaders(OTEL_HEADERS) : undefined,
+          }),
+        ),
       }),
     );
   }

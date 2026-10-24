@@ -89,7 +89,9 @@ for the upstream fixes, regression coverage, and scoped advisory exceptions.
   secrets as JSON, and then applies `.env.local` as the highest-precedence local
   override. Infisical documents JSON as a supported export format in the
   [CLI export command](https://github.com/Infisical/cli/blob/main/packages/cmd/export.go).
-  - Automatically constructs OpenTelemetry auth headers from `AXIOM_API_TOKEN`.
+  - Constructs OpenTelemetry auth headers from `AXIOM_API_TOKEN`, routing logs to
+    `dofek-logs` and traces to `dofek-traces` through signal-specific headers.
+    OpenTelemetry documents [signal-specific exporter configuration](https://opentelemetry.io/docs/languages/sdk-configuration/otlp-exporter/).
   - Tags locally wrapped Sentry events with the `development` environment unless
     `.env.local` explicitly selects another environment.
   - Exits before running the command when Infisical export fails or no command is provided.

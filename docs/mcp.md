@@ -687,7 +687,7 @@ For other clients, use the OAuth setup above when the client supports remote MCP
 
 ## Local Axiom MCP
 
-The repo `.mcp.json` also exposes an `axiom` MCP server for production log queries. It starts `mcp-server-axiom` through `npx` and derives `AXIOM_TOKEN`, `AXIOM_URL`, and `AXIOM_ORG_ID` from the authenticated local Axiom CLI config. The deployed collector routes application and infrastructure logs to `dofek-logs` ([source](../deploy/otel-collector-config.yaml)).
+The repo `.mcp.json` also exposes an `axiom` MCP server for production log queries. It starts `mcp-server-axiom` through `npx` and derives `AXIOM_TOKEN`, `AXIOM_URL`, and `AXIOM_ORG_ID` from the authenticated local Axiom CLI config. The collector routes logs to `dofek-logs` and traces to `dofek-traces` ([source](../deploy/otel-collector-config.yaml)). Log metadata uses `['attributes.custom']['key']`; see the [Axiom runbook](axiom-observability-runbook.md) for current and historical query paths and [Axiom's map syntax](https://axiom.co/docs/apl/data-types/map-fields).
 
 ```bash
 axiom auth status --no-spinner

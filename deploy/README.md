@@ -126,6 +126,11 @@ infrastructure has been retired.
 - Parsed with `json_parser` and `regex_parser` (to extract container IDs).
 - Filters out noisy Postgres `NOTICE` lines to reduce volume.
 - Exports to Axiom via `otlphttp`.
+- Logs use `dofek-logs`, with metadata grouped into the `attributes.custom` map;
+  traces use `dofek-traces`. Axiom requires a dedicated dataset per OTel signal:
+  [OTel ingestion](https://axiom.co/docs/send-data/opentelemetry). Both retain
+  data for 29 days; see the [Axiom runbook](../docs/axiom-observability-runbook.md)
+  for map configuration, query paths, and field-limit diagnosis.
 
 ## Deployment
 
