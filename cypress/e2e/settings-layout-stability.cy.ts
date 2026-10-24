@@ -214,11 +214,13 @@ describe("Settings layout stability", () => {
   });
 
   for (const path of ["/settings?tab=data-sources", "/providers"]) {
-    it(`keeps connection settings stable on a direct ${path} load`, () => {
+    it(`expands provider settings in page flow on a direct ${path} load`, () => {
+      let releaseProviderInventory: (() => void) | undefined;
+      const providerInventoryResponse = new Promise<void>((resolve) => {
+        releaseProviderInventory = resolve;
+      });
       cy.intercept("POST", /\/api\/trpc\/.*sync\.providers/, (request) => {
-        request.on("response", (response) => {
-          response.setDelay(TARGET_RESPONSE_DELAY_MS);
-        });
+        request.continue(() => providerInventoryResponse);
       }).as("providerInventory");
 
       let initialZeppPairingTop = 0;
@@ -251,6 +253,10 @@ describe("Settings layout stability", () => {
         initialDataSourcesHeight = sectionHeight(heading);
       });
 
+      cy.then(() => {
+        if (!releaseProviderInventory) throw new Error("Provider inventory response was not held");
+        releaseProviderInventory();
+      });
       cy.wait("@providerInventory");
       cy.contains("main", "Apple Health").should("exist");
       cy.window().then((win) => waitForStableLayout(win, true));
@@ -287,10 +293,11 @@ describe("Settings layout stability", () => {
           `CLS ${cls.toFixed(4)}; sources: ${sources.join(", ") || "none"}; ` +
           `Data Sources height delta ${dataSourcesHeightDelta}px; ` +
           `normalized Zepp pairing delta ${downstreamDelta}px`;
-        expect(Math.abs(dataSourcesHeightDelta), evidence).to.be.lessThan(1);
-        expect(downstreamDelta, evidence).to.be.lessThan(1);
+        expect(dataSourcesHeightDelta, evidence).to.be.greaterThan(0);
+        expect(Math.abs(downstreamDelta - dataSourcesHeightDelta), evidence).to.be.lessThan(1);
         expect(cls, evidence).to.be.at.most(0.001);
       });
+      cy.contains("main section h3", "Pair your Zepp app").scrollIntoView().should("be.visible");
     });
   }
 
