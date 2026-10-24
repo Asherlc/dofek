@@ -1,7 +1,9 @@
+import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
+import { executeWithSchema } from "./execute-with-schema.ts";
 import { TEST_USER_ID } from "./schema/core.ts";
 import { setupTestDatabase } from "./test-helpers.ts";
 
@@ -48,6 +50,156 @@ const cases = z
     ),
   );
 
+const originSchema = z.object({
+  primary_activity_id: z.string().nullable(),
+  primary_provider_id: z.string().nullable(),
+  primary_source_name: z.string().nullable(),
+  origin_candidate_member_ids: z.array(z.string()),
+  origin_evidence: z.array(z.record(z.string(), z.unknown())),
+});
+const firstMemberId = "00000000-0000-4000-8000-000000000001";
+const secondMemberId = "00000000-0000-4000-8000-000000000002";
+const thirdMemberId = "00000000-0000-4000-8000-000000000003";
+const unresolvedOrigin = {
+  primary_activity_id: null,
+  primary_provider_id: null,
+  primary_source_name: null,
+  origin_candidate_member_ids: [firstMemberId, secondMemberId],
+  origin_evidence: [],
+};
+const fixtureMembers = (name: string) => {
+  const fixture = cases.find((candidate) => candidate.name === name);
+  if (!fixture) throw new Error(`Missing origin fixture: ${name}`);
+  return fixture.members;
+};
+const whoopMembers = fixtureMembers("WHOOP workout propagated to Peloton");
+const missingMembers = fixtureMembers("missing provenance");
+const viewCases = [
+  {
+    name: "source bundle and source name transfer chain",
+    members: fixtureMembers("complete transfer chain"),
+    expected: {
+      primary_activity_id: firstMemberId,
+      primary_provider_id: "garmin",
+      primary_source_name: "Garmin Edge 530",
+      origin_candidate_member_ids: [firstMemberId],
+      origin_evidence: [
+        {
+          upstreamMemberActivityId: firstMemberId,
+          downstreamMemberActivityId: secondMemberId,
+          field: "source_name",
+          value: "garmin edge 530",
+        },
+        {
+          upstreamMemberActivityId: secondMemberId,
+          downstreamMemberActivityId: thirdMemberId,
+          field: "raw.sourceBundle",
+          value: "com.strava.strava",
+        },
+      ],
+    },
+  },
+  {
+    name: "device name transfer",
+    members: [
+      { id: firstMemberId, providerId: "garmin", sourceName: null, raw: null },
+      {
+        id: secondMemberId,
+        providerId: "strava",
+        sourceName: null,
+        raw: { device_name: "  Garmin Edge 530  " },
+      },
+    ],
+    expected: {
+      primary_activity_id: firstMemberId,
+      primary_provider_id: "garmin",
+      primary_source_name: null,
+      origin_candidate_member_ids: [firstMemberId],
+      origin_evidence: [
+        {
+          upstreamMemberActivityId: firstMemberId,
+          downstreamMemberActivityId: secondMemberId,
+          field: "raw.device_name",
+          value: "garmin edge 530",
+        },
+      ],
+    },
+  },
+  {
+    name: "platform and device type transfer",
+    members: whoopMembers,
+    expected: {
+      primary_activity_id: firstMemberId,
+      primary_provider_id: "whoop",
+      primary_source_name: null,
+      origin_candidate_member_ids: [firstMemberId],
+      origin_evidence: [
+        {
+          upstreamMemberActivityId: firstMemberId,
+          downstreamMemberActivityId: secondMemberId,
+          field: "external_id",
+          value: "c4e019f3387447ad8a2420e7c7918cf5",
+        },
+      ],
+    },
+  },
+  ...["platform", "deviceType"].map((field) => ({
+    name: `JSON-null ${field} cannot establish a transfer`,
+    members: whoopMembers.map((member) => ({
+      ...member,
+      raw: member.providerId === "peloton" ? { ...member.raw, [field]: null } : member.raw,
+    })),
+    expected: unresolvedOrigin,
+  })),
+  {
+    name: "JSON-null source bundle cannot establish a transfer",
+    members: [
+      { id: firstMemberId, providerId: "strava", sourceName: null, raw: null },
+      {
+        id: secondMemberId,
+        providerId: "apple_health",
+        sourceName: null,
+        raw: { sourceBundle: null },
+      },
+    ],
+    expected: unresolvedOrigin,
+  },
+  {
+    name: "conflicting source bundle",
+    members: fixtureMembers("conflicting Apple Health source bundle"),
+    expected: {
+      ...unresolvedOrigin,
+      origin_candidate_member_ids: [firstMemberId, secondMemberId, thirdMemberId],
+      origin_evidence: [
+        {
+          upstreamMemberActivityId: firstMemberId,
+          downstreamMemberActivityId: secondMemberId,
+          field: "source_name",
+          value: "garmin edge 530",
+        },
+      ],
+    },
+  },
+  {
+    name: "SQL-null raw metadata",
+    members: missingMembers,
+    expected: unresolvedOrigin,
+  },
+  {
+    name: "missing metadata keys",
+    members: missingMembers.map((member) => ({ ...member, raw: {} })),
+    expected: unresolvedOrigin,
+  },
+  {
+    name: "JSON-null metadata keys",
+    members: missingMembers.map((member) => ({
+      ...member,
+      raw: { sourceBundle: null, device_name: null, platform: null, deviceType: null },
+    })),
+    expected: unresolvedOrigin,
+  },
+];
+
 describe("PostgreSQL provenance-only origin", () => {
   let context: Awaited<ReturnType<typeof setupTestDatabase>>;
   beforeAll(async () => {
@@ -55,6 +207,100 @@ describe("PostgreSQL provenance-only origin", () => {
   });
   afterAll(async () => {
     if (context) await context.cleanup();
+  });
+
+  it("bounds resolver input independently of the full public vendor payload", async () => {
+    const groupId = randomUUID();
+    const memberId = randomUUID();
+    const raw = { sourceBundle: "com.strava.strava", vendorBody: "x".repeat(64 * 1024) };
+    await context.db.execute(
+      sql`INSERT INTO fitness.provider(id,name) VALUES ('apple_health','Apple Health') ON CONFLICT(id) DO NOTHING`,
+    );
+    await context.db.execute(sql`INSERT INTO fitness.activity(id,group_id,user_id,provider_id,external_id,canonical_type,provider_type,started_at,raw) VALUES
+      (${memberId},${groupId},${TEST_USER_ID},'apple_health',${memberId},'cycling','cycling','2026-10-03T10:00:00Z',${JSON.stringify(raw)}::jsonb)`);
+    const [original] = await executeWithSchema(
+      context.db,
+      z.object({ definition: z.string() }),
+      sql`SELECT pg_get_functiondef('fitness.resolve_activity_origin(jsonb)'::regprocedure) AS definition`,
+    );
+    if (!original) throw new Error("Missing origin resolver definition");
+    try {
+      await context.db.execute(
+        sql.raw(
+          original.definition.replace(
+            "fitness.resolve_activity_origin(",
+            "fitness.test_resolve_activity_origin(",
+          ),
+        ),
+      );
+      await context.db.execute(
+        sql`CREATE TABLE fitness.test_origin_input (members jsonb NOT NULL)`,
+      );
+      // Preserve the function identity referenced by v_activity and delegate to its real body.
+      await context.db.execute(sql`CREATE OR REPLACE FUNCTION fitness.resolve_activity_origin(input_members jsonb)
+        RETURNS TABLE (primary_activity_id uuid, primary_provider_id text, primary_source_name text,
+          origin_candidate_member_ids uuid[], origin_evidence jsonb)
+        LANGUAGE plpgsql VOLATILE PARALLEL UNSAFE AS $$
+        BEGIN
+          INSERT INTO fitness.test_origin_input(members) VALUES (input_members);
+          RETURN QUERY SELECT * FROM fitness.test_resolve_activity_origin(input_members);
+        END;
+        $$`);
+      const rows = await executeWithSchema(
+        context.db,
+        originSchema.extend({ raw: z.record(z.string(), z.unknown()) }),
+        sql`SELECT primary_activity_id,primary_provider_id,primary_source_name,
+          origin_candidate_member_ids,origin_evidence,raw FROM fitness.v_activity WHERE id=${groupId}`,
+      );
+      expect(rows).toEqual([
+        {
+          primary_activity_id: memberId,
+          primary_provider_id: "apple_health",
+          primary_source_name: null,
+          origin_candidate_member_ids: [memberId],
+          origin_evidence: [],
+          raw,
+        },
+      ]);
+      const observed = await executeWithSchema(
+        context.db,
+        z.object({ input_bytes: z.number() }),
+        sql`SELECT octet_length(members::text) AS input_bytes FROM fitness.test_origin_input
+          WHERE members @> ${JSON.stringify([{ id: memberId }])}::jsonb`,
+      );
+      expect(observed.length).toBeGreaterThan(0);
+      for (const input of observed) expect(input.input_bytes).toBeLessThan(1024);
+    } finally {
+      await context.db.execute(sql.raw(original.definition));
+      await context.db.execute(
+        sql`DROP FUNCTION IF EXISTS fitness.test_resolve_activity_origin(jsonb)`,
+      );
+      await context.db.execute(sql`DROP TABLE IF EXISTS fitness.test_origin_input`);
+      await context.db.execute(sql`DELETE FROM fitness.activity WHERE group_id=${groupId}`);
+      await context.db.execute(sql`DELETE FROM fitness.activity_group WHERE id=${groupId}`);
+    }
+  });
+
+  it.each(viewCases)("preserves every origin column through v_activity: $name", async (fixture) => {
+    const groupId = randomUUID();
+    try {
+      for (const member of fixture.members) {
+        await context.db.execute(sql`INSERT INTO fitness.provider(id,name) VALUES
+          (${member.providerId},${member.providerId}) ON CONFLICT(id) DO NOTHING`);
+        await context.db.execute(sql`INSERT INTO fitness.activity(id,group_id,user_id,provider_id,external_id,canonical_type,provider_type,started_at,source_name,raw) VALUES
+          (${member.id},${groupId},${TEST_USER_ID},${member.providerId},${"externalId" in member ? member.externalId : member.id},'cycling','cycling','2026-10-04T10:00:00Z',${member.sourceName},${member.raw === null ? null : JSON.stringify(member.raw)}::jsonb)`);
+      }
+      const rows = await executeWithSchema(
+        context.db,
+        originSchema,
+        sql`SELECT primary_activity_id,primary_provider_id,primary_source_name,
+          origin_candidate_member_ids,origin_evidence FROM fitness.v_activity WHERE id=${groupId}`,
+      );
+      expect(rows).toEqual([fixture.expected]);
+    } finally {
+      await context.db.execute(sql`DELETE FROM fitness.activity WHERE group_id=${groupId}`);
+      await context.db.execute(sql`DELETE FROM fitness.activity_group WHERE id=${groupId}`);
+    }
   });
 
   it("changes provenance without changing selected fields, and changes field preference without changing origin", async () => {

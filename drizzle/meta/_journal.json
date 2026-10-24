@@ -1128,6 +1128,13 @@
       "when": 1792812600000,
       "tag": "0160_scoped_activity_origin",
       "breakpoints": true
+    },
+    {
+      "idx": 161,
+      "version": "7",
+      "when": 1792819617330,
+      "tag": "0161_bound_activity_origin_input",
+      "breakpoints": true
     }
   ]
 }

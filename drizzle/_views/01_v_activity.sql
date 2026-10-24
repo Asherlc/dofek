@@ -455,7 +455,13 @@ CROSS JOIN
     SELECT
       JSONB_AGG(JSONB_BUILD_OBJECT(
         'id', r.id, 'providerId', r.provider_id, 'externalId', r.external_id,
-        'sourceName', r.source_name, 'raw', r.raw
+        'sourceName', r.source_name,
+        'raw', JSONB_BUILD_OBJECT(
+          'sourceBundle', r.raw -> 'sourceBundle',
+          'device_name', r.raw -> 'device_name',
+          'platform', r.raw -> 'platform',
+          'deviceType', r.raw -> 'deviceType'
+        )
       ) ORDER BY r.id) AS members
     FROM fitness.activity AS r
     WHERE r.id = ANY(m.member_activity_ids) AND r.user_id = m.user_id
