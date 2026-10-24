@@ -760,7 +760,7 @@ services:
     volumes:
       - /var/lib/docker/containers:/var/lib/docker/containers:ro
     configs:
-      - source: otel_collector_config_v2
+      - source: otel_collector_config_v3
         target: /etc/otelcol-contrib/config.yaml
 
   ota:
@@ -866,7 +866,7 @@ configs:
   # Swarm config objects are immutable: when otel-collector-config.yaml changes,
   # bump this key's version suffix (e.g. _v2) so a new config object is created
   # and the collector rolls onto it — same convention as netdata_db_limits_v2.
-  otel_collector_config_v2:
+  otel_collector_config_v3:
     file: ./otel-collector-config.yaml
   # Swarm config objects are immutable: when metric-stream-r2-archive.connect.yml
   # changes, bump this key's version suffix so a new config object is created and

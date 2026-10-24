@@ -66,6 +66,7 @@ const nodeTestIncludes = [
   "packages/recovery/src/**/*.test.ts",
   "packages/zones/src/**/*.test.ts",
   "packages/stats/src/**/*.test.ts",
+  "packages/telemetry/src/**/*.test.ts",
   "packages/onboarding/src/**/*.test.ts",
   "packages/providers-meta/src/**/*.test.ts",
   "packages/auth/src/**/*.test.ts",

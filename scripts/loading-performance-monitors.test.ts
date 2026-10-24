@@ -31,7 +31,7 @@ describe("loadingPerformanceMonitors", () => {
     expect(monitor?.notifyByGroup).toBe(true);
     expect(monitor?.aplQuery).toContain("clickhouse.queue_wait");
     expect(monitor?.aplQuery).toContain("clickhouse.queue.name");
-    expect(monitor?.aplQuery).toContain("percentile(['clickhouse.queue.wait_ms'], 95)");
+    expect(monitor?.aplQuery).toContain("percentile(wait_ms, 95)");
   });
 
   it("defines the ClickHouse infrastructure error monitor for connection failures", () => {

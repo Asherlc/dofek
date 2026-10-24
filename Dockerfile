@@ -77,6 +77,7 @@ COPY packages/provider-http/package.json ./packages/provider-http/
 COPY packages/peloton-client/package.json ./packages/peloton-client/
 COPY packages/xert-client/package.json ./packages/xert-client/
 COPY packages/format/package.json ./packages/format/
+COPY packages/telemetry/package.json ./packages/telemetry/
 COPY packages/filter-columns/package.json ./packages/filter-columns/
 COPY packages/scoring/package.json ./packages/scoring/
 COPY packages/nutrition/package.json ./packages/nutrition/
@@ -168,6 +169,8 @@ COPY --from=source --chown=node:node /app/packages/xert-client/src ./packages/xe
 COPY --from=source --chown=node:node /app/packages/xert-client/package.json ./packages/xert-client/
 COPY --from=source --chown=node:node /app/packages/format/src ./packages/format/src
 COPY --from=source --chown=node:node /app/packages/format/package.json ./packages/format/
+COPY --from=source --chown=node:node /app/packages/telemetry/src ./packages/telemetry/src
+COPY --from=source --chown=node:node /app/packages/telemetry/package.json ./packages/telemetry/
 COPY --from=source --chown=node:node /app/packages/filter-columns/src ./packages/filter-columns/src
 COPY --from=source --chown=node:node /app/packages/filter-columns/package.json ./packages/filter-columns/
 COPY --from=source --chown=node:node /app/packages/stats/src ./packages/stats/src
@@ -205,6 +208,7 @@ RUN ln -sfn /app node_modules/dofek && \
     mkdir -p node_modules/@dofek && \
     ln -sfn /app/packages/kaya-client node_modules/@dofek/kaya-client && \
     ln -sfn /app/packages/format node_modules/@dofek/format && \
+    ln -sfn /app/packages/telemetry node_modules/@dofek/telemetry && \
     ln -sfn /app/packages/filter-columns node_modules/@dofek/filter-columns && \
     ln -sfn /app/packages/stats node_modules/@dofek/stats && \
     ln -sfn /app/packages/scoring node_modules/@dofek/scoring && \

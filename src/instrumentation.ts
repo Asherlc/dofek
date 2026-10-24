@@ -1,3 +1,4 @@
+import { AxiomLogExporter } from "@dofek/telemetry";
 import { getNodeAutoInstrumentations } from "@opentelemetry/auto-instrumentations-node";
 import { OTLPLogExporter } from "@opentelemetry/exporter-logs-otlp-http";
 import { OTLPMetricExporter } from "@opentelemetry/exporter-metrics-otlp-proto";
@@ -73,7 +74,7 @@ function createLogRecordProcessors(env: Record<string, string | undefined>): Log
   if (hasAxiomLogExport) {
     processors.push(
       new BatchLogRecordProcessor({
-        exporter: new OTLPLogExporter(),
+        exporter: new AxiomLogExporter(new OTLPLogExporter()),
       }),
     );
   }

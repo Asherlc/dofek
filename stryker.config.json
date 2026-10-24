@@ -17,6 +17,7 @@
     "packages/recovery/src/**/*.ts",
     "packages/zones/src/**/*.ts",
     "packages/stats/src/**/*.ts",
+    "packages/telemetry/src/**/*.ts",
     "packages/onboarding/src/**/*.ts",
     "packages/providers-meta/src/**/*.ts",
     "packages/auth/src/**/*.ts",

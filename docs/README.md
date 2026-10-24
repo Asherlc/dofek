@@ -112,6 +112,7 @@ Cross-provider reverse-engineering references:
 | [provider-data-deletion-runbook.md](provider-data-deletion-runbook.md) | Generation-fenced provider deletion, transactional outbox delivery, BullMQ checkpoints, and ClickHouse tombstone verification. |
 | [clickhouse-activity-dedup-runbook.md](clickhouse-activity-dedup-runbook.md) | Keeping ClickHouse activity read models on canonical deduped activity IDs. |
 | [production-incident-baseline.md](production-incident-baseline.md) | Baseline knowledge from production incidents and recurring failure patterns. |
+| [axiom-observability-runbook.md](axiom-observability-runbook.md) | Log/trace routing, map queries, retention checks, and field-limit diagnosis. |
 | [provider-sync-degradation-runbook.md](provider-sync-degradation-runbook.md) | Querying degraded provider sync rows and correlating pagination fingerprints with metrics and structured logs. |
 | [staging.md](staging.md) | Disabled staging environment notes and re-enable requirements. |
 | [xcode-cloud.md](xcode-cloud.md) | Xcode Cloud setup and troubleshooting. |
