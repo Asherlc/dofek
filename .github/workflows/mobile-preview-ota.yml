@@ -53,6 +53,7 @@ jobs:
           PR_NUMBER: ${{ github.event.number }}
           DEBUG: true
           RELEASE_CHANNEL: staging
+          PREVIEW_CHANNEL: pr-${{ github.event.number }}
         run: |
           for attempt in 1 2 3 4 5; do
             status_code=$(/usr/bin/curl -s -o /dev/null -w "%{http_code}" "https://ota.dofek.asherlc.com/hc" || true)

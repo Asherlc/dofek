@@ -4,7 +4,9 @@
     "slug": "dofek",
     "scheme": "dofek",
     "version": "1.0.0",
-    "runtimeVersion": "1.13",
+    "runtimeVersion": {
+      "policy": "fingerprint"
+    },
     "updates": {
       "url": "https://ota.dofek.asherlc.com/manifest",
       "enabled": true,

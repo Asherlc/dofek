@@ -45,7 +45,7 @@ jobs:
     if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     env:
-      IOS_NATIVE_INPUT_PATTERN: '^(pnpm-lock\.yaml$|packages/mobile/(package\.json$|app\.json$|app\.config\.(js|ts|mjs|cjs)$|build/|plugins/|targets/|native/|modules/[^/]+/(expo-module\.config\.json$|ios/)))'
+      IOS_NATIVE_INPUT_PATTERN: '^(pnpm-lock\.yaml$|patches/|packages/mobile/(package\.json$|app\.json$|app\.config\.(js|ts|mjs|cjs)$|fingerprint\.config\.js$|\.fingerprintignore$|\.gitignore$|assets/|certs/certificate\.pem$|build/|plugins/|targets/|native/|modules/[^/]+/(expo-module\.config\.json$|ios/)))'
     outputs:
       commit_sha: ${{ steps.resolve.outputs.sha }}
       should_deploy: ${{ steps.detect.outputs.should_deploy }}

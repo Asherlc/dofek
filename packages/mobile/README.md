@@ -137,6 +137,13 @@ enforces the same-day rule for both clients.
 
 ## Development
 
+Native builds and OTA updates use Expo's automatic `fingerprint` runtime
+policy, including the Watch sources configured in `fingerprint.config.js`.
+New native interfaces receive a different runtime so older installations keep
+their compatible JavaScript; see [Expo runtime compatibility](https://docs.expo.dev/eas-update/runtime-versions/).
+Follow the [OTA release and recovery runbook](../../docs/mobile-ota-recovery.md)
+to stage updates on already-built binaries and recover an affected runtime.
+
 ```bash
 cd packages/mobile
 pnpm start
