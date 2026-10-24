@@ -30,6 +30,24 @@ const mockTeardownBackgroundWhoopBleSync = vi.fn();
 const mockUseWhoopBleSync = vi.fn();
 const mockUseBleHeartRateSync = vi.fn();
 const mockRefreshRemove = vi.fn();
+const {
+  mockCreateRefreshDiagnostics,
+  mockReportRefreshDiagnostics,
+  mockRemoveRefreshDiagnostics,
+  mockAddRefreshListener,
+} = vi.hoisted(() => {
+  const report = vi.fn();
+  const remove = vi.fn();
+  return {
+    mockCreateRefreshDiagnostics: vi.fn(() => ({ report, remove })),
+    mockReportRefreshDiagnostics: report,
+    mockRemoveRefreshDiagnostics: remove,
+    mockAddRefreshListener: vi.fn(),
+  };
+});
+vi.mock("../lib/background-refresh-diagnostics", () => ({
+  createBackgroundRefreshDiagnostics: mockCreateRefreshDiagnostics,
+}));
 const mockLoadStatusCapability = vi.fn();
 const mockLoadPreparation = vi.fn();
 let rootAppStateCallback: ((state: AppStateStatus) => void) | null = null;
@@ -215,7 +233,10 @@ vi.mock("../lib/version-headers", () => ({
 vi.mock("../modules/background-refresh", () => ({
   enableCollectionNotifications: vi.fn(() => Promise.resolve(true)),
   disableCollectionNotifications: vi.fn(),
-  addBackgroundRefreshListener: () => ({ remove: mockRefreshRemove }),
+  addBackgroundRefreshListener: (...args: unknown[]) => {
+    mockAddRefreshListener(...args);
+    return { remove: mockRefreshRemove };
+  },
   scheduleRefresh: vi.fn(),
 }));
 
@@ -325,6 +346,29 @@ describe("RootLayout background cleanup", () => {
       rootAppStateCallback = callback;
       return { remove: vi.fn() };
     });
+  });
+
+  it("owns diagnostics alongside the authenticated refresh listener and retires them on cleanup", async () => {
+    const RootLayout = await importRootLayout();
+    const rendered = render(<RootLayout />);
+    await waitFor(() => expect(mockInitBackgroundAccelerometerSync).toHaveBeenCalled());
+    expect(mockCreateRefreshDiagnostics).toHaveBeenCalledOnce();
+    expect(mockAddRefreshListener).toHaveBeenCalledWith(
+      expect.any(Function),
+      mockReportRefreshDiagnostics,
+    );
+    rendered.unmount();
+    expect(mockRefreshRemove).toHaveBeenCalledOnce();
+    expect(mockRemoveRefreshDiagnostics).toHaveBeenCalledOnce();
+  });
+
+  it("does not start diagnostic replay for an unauthenticated session", async () => {
+    mockAuthState.value = { ...mockAuthState.value, user: null, sessionToken: null };
+    const RootLayout = await importRootLayout();
+    const rendered = render(<RootLayout />);
+    await waitFor(() => expect(mockMarkAppInteractive).toHaveBeenCalled());
+    expect(mockCreateRefreshDiagnostics).not.toHaveBeenCalled();
+    rendered.unmount();
   });
 
   it("registers query lifecycle once and removes it on root unmount", async () => {
@@ -582,6 +626,7 @@ describe("RootLayout background cleanup", () => {
     expect(mockInitBackgroundWatchSync).not.toHaveBeenCalled();
     expect(mockUseWhoopBleSync).not.toHaveBeenCalled();
     expect(mockUseBleHeartRateSync).not.toHaveBeenCalled();
+    expect(mockCreateRefreshDiagnostics).not.toHaveBeenCalled();
     expect(disableCollectionNotifications).toHaveBeenCalled();
     expect(enableCollectionNotifications).not.toHaveBeenCalled();
   });
@@ -603,6 +648,7 @@ describe("RootLayout background cleanup", () => {
     expect(mockInitBackgroundWatchSync).not.toHaveBeenCalled();
     expect(mockUseWhoopBleSync).not.toHaveBeenCalled();
     expect(mockUseBleHeartRateSync).not.toHaveBeenCalled();
+    expect(mockCreateRefreshDiagnostics).not.toHaveBeenCalled();
   });
 
   it("keeps producers gated after a locked restore and retries cleanup state on foreground", async () => {
@@ -628,6 +674,7 @@ describe("RootLayout background cleanup", () => {
     expect(mockInitBackgroundWatchSync).not.toHaveBeenCalled();
     expect(mockUseWhoopBleSync).not.toHaveBeenCalled();
     expect(mockUseBleHeartRateSync).not.toHaveBeenCalled();
+    expect(mockCreateRefreshDiagnostics).not.toHaveBeenCalled();
   });
 
   it("does not let an old account cleanup gate or purge a later session generation", async () => {
