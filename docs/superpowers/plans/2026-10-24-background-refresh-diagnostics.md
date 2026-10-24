@@ -50,14 +50,14 @@ existing logger/Sentry, XCTest and Vitest.
 - JS reporter: a focused factory owns replay IDs, validates native payloads, and reports on initial setup/foreground/handler receipt and settlement. Logs use category `background-refresh`, `event=native_background_refresh_event`, `nativeEvent`, `nativeOccurredAt`, `diagnosticAccountProvenance=unknown`, and `historyOverflowCount`; copy only known fields.
 - Existing coordinator methods remain production entry points; add diagnostic injection without making required production dependencies optional or changing task outcomes. Report unexpected scheduling/bridge failures to Sentry.
 
-- [ ] Write failing native tests for retained history across recreation, nondestructive reads, overflow and clearing, actual completion reasons including missing listener/expiration/late completion.
-- [ ] Write failing mobile tests for received/settled handler instrumentation, replay deduplication, exact safe telemetry fields, malformed input error reporting, foreground subscription teardown, and account-purge clearing.
-- [ ] Run the tests and record the expected missing-behavior failures before implementation.
-- [ ] Implement the native journal and boundary recording using the existing pattern; avoid external callbacks while native state locks are held.
-- [ ] Expose the typed bridge and wire the focused reporter to the authenticated app lifecycle and refresh callback; clear native history through existing cleanup ownership gates.
-- [ ] Run focused Swift/mobile tests, mobile typecheck and strict SwiftLint on changed native files; document public contract, queries and native-build boundary.
-- [ ] Self-review, commit, push, and write the report with exact commands/results and remaining validation limits.
-- [ ] Independent task review: spec compliance and code quality; resolve material findings before completion.
+- [x] Write failing native tests for retained history across recreation, nondestructive reads, overflow and clearing, actual completion reasons including missing listener/expiration/late completion.
+- [x] Write failing mobile tests for received/settled handler instrumentation, replay deduplication, exact safe telemetry fields, malformed input error reporting, foreground subscription teardown, and account-purge clearing.
+- [x] Run the tests and record the expected missing-behavior failures before implementation.
+- [x] Implement the native journal and boundary recording using the existing pattern; avoid external callbacks while native state locks are held.
+- [x] Expose the typed bridge and wire the focused reporter to the authenticated app lifecycle and refresh callback; clear native history through existing cleanup ownership gates.
+- [x] Run focused Swift/mobile tests, mobile typecheck and strict SwiftLint on changed native files; document public contract, queries and native-build boundary.
+- [x] Self-review, commit, push, and write the report with exact commands/results and remaining validation limits.
+- [x] Independent task review: spec compliance and code quality; resolve material findings before completion.
 
 ### Task 2: Validate and record the complete change
 
@@ -65,8 +65,8 @@ existing logger/Sentry, XCTest and Vitest.
 
 **Interfaces:** Consumes Task 1's report and committed implementation. Produces verified branch, native build evidence and incident follow-up.
 
-- [ ] Run the repository's Docker-free unit/mobile tier once and appropriate typechecks/lint; reuse focused check evidence unless code changes invalidate it.
+- [x] Run the repository's Docker-free unit/mobile tier once and appropriate typechecks/lint; reuse focused check evidence unless code changes invalidate it.
 - [ ] Build the iOS app to compile the Expo bridge using existing signed simulator procedures; distinguish compile/runtime evidence from physical-device scheduling.
-- [ ] Perform a whole-branch independent review after task review and verification.
+- [x] Perform a whole-branch independent review after task review and verification.
 - [ ] Append the incident baseline with direct observability fix, validation results, physical rollout boundary, and short retrospective; keep this plan's review checkpoints current.
 - [ ] Commit/push remaining documentation and fixes; report the diagnostics added, checks, and new-native-build requirement.

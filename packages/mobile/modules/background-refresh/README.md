@@ -95,6 +95,11 @@ boundaries capture UIKit availability and Low Power Mode. The emitted names are:
 | `task_completed` | The coordinator consumed its one native completion, with `javascript_success`, `javascript_failure`, `missing_listener`, `listener_removed`, or `expired`. |
 | `task_expired` | iOS expiration callback, including an ignored callback after completion (`no_pending_task`). |
 
+`nativeOccurredAt` is the diagnostic call's time. The
+[coordinator](ios/BackgroundRefreshTaskCoordinator.swift) records outside its state
+lock, so concurrent transitions can appear out of decision order. Correlate task
+IDs and completion reasons rather than treating timestamp order as strict causality.
+
 The app's authenticated service lifetime owns
 [`createBackgroundRefreshDiagnostics`](../../lib/background-refresh-diagnostics.ts).
 It validates the snapshot, strips unknown fields, and replays events at initial

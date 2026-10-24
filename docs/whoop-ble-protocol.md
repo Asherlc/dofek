@@ -1,5 +1,7 @@
 # WHOOP BLE Protocol
 
+<!-- cspell:words todatetime -->
+
 Reverse-engineered BLE protocol for WHOOP fitness straps (Gen 4 Harvard, Maverick/Goose, Puffin generations). Findings from APK decompilation (v5.439.0), PacketLogger captures, and live device probing (March 2026).
 
 ## GATT Services
@@ -488,9 +490,10 @@ independent of replay time:
 | extend d = ['attributes.custom']
 | where tostring(d['event']) == 'native_background_refresh_event'
 | where tostring(d['userId']) == 'ACCOUNT_ID'
+| extend eventId = tostring(d['eventId'])
+| summarize arg_max(_time, d) by eventId
 | extend nativeAt = todatetime(d['nativeOccurredAt'])
 | where nativeAt >= datetime(2026-10-24T08:00:00Z) and nativeAt < datetime(2026-10-25T08:00:00Z)
-| summarize arg_max(_time, *) by eventId=tostring(d['eventId'])
 | project nativeAt, emittedAt=_time, nativeEvent=d['nativeEvent'], taskId=d['taskId'],
     nativeSessionId=d['nativeSessionId'], processId=d['processId'], success=d['success'],
     reason=d['reason'], backgroundRefreshStatus=d['backgroundRefreshStatus'],
@@ -500,8 +503,8 @@ independent of replay time:
 | sort by nativeAt asc
 ```
 
-To count boundaries or isolate scheduler failures, use the same filters through
-the deduplication line, then replace the final `project`/`sort` with:
+To count boundaries or isolate scheduler failures, keep the query through the
+native-time filter, then replace the final `project`/`sort` with:
 
 ```apl
 | summarize events=count() by nativeEvent=tostring(d['nativeEvent']), reason=tostring(d['reason'])
@@ -509,7 +512,8 @@ the deduplication line, then replace the final `project`/`sort` with:
 
 Or use `| where tostring(d['nativeEvent']) == 'schedule_failed'` before the original
 projection. Axiom documents [extend](https://axiom.co/docs/apl/tabular-operators/extend-operator)
-and [summarize](https://axiom.co/docs/apl/tabular-operators/summarize-operator)
+and [summarize](https://axiom.co/docs/apl/tabular-operators/summarize-operator),
+including [explicit arg_max fields](https://axiom.co/docs/apl/aggregation-function/arg-max),
 for these projections and grouped event counts.
 
 Interpret the last observed boundary conservatively:
@@ -525,6 +529,11 @@ Interpret the last observed boundary conservatively:
   the coordinator's winning completion decision. `task_expired` and
   `no_pending_task` distinguish expiry from a later ignored completion;
   expiration does not cancel existing JavaScript work.
+- `nativeOccurredAt` timestamps the diagnostic call. The
+  [coordinator](../packages/mobile/modules/background-refresh/ios/BackgroundRefreshTaskCoordinator.swift)
+  records after releasing its state lock, so simultaneous transitions can appear
+  out of decision order. Use task IDs and completion reasons together; timestamp
+  order alone does not establish causality between concurrent records.
 - A complete refresh followed by no `upload_started` requires looking at the
   existing WHOOP connection, worker, and queue events; refresh completion alone
   does not establish sample publication or chart visibility.
