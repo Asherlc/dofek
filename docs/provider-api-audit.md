@@ -101,14 +101,6 @@ future option when Dofek has an Android client; it is not implemented in the cur
 - **Data:** Activities with power data, career stats, workout history
 - **Verdict:** ONLY OPTION — no public API exists
 
-### VeloHero
-- **Package:** `packages/velohero-client`
-- **Official API:** None (has a simple SSO-based web API)
-- **Internal API:** Session token via SSO POST, REST at `app.velohero.com`
-- **Data:** Workouts with HR/power/cadence, sport type mapping
-- **Source:** Based on [tapiriik](https://github.com/cpfair/tapiriik)
-- **Verdict:** ONLY OPTION — SSO API is the only programmatic access
-
 ### TrainingPeaks
 - **Package:** `packages/trainingpeaks-connect`
 - **Official API:** Partner-only (requires approval, personal use blocked). Metrics are write-only. No CTL/ATL/TSB.
@@ -201,7 +193,6 @@ future option when Dofek has an Android client; it is not implemented in the cur
 | Eight Sleep | None | Easy (hardcoded creds) | Essential | Done |
 | Zwift | None | Easy (Keycloak) | Essential | Done |
 | TrainerRoad | None | Medium (CSRF cookies) | Essential | Done |
-| VeloHero | None | Easy (SSO) | Essential | Done |
 | TrainingPeaks | Partner-only | Easy (cookie → Bearer) | High | Done |
 | Peloton | Private member API | Medium (Auth0 + PKCE) | High | Done |
 | Xert | Limited | Easy (password grant) | High | Done |

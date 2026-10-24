@@ -59,25 +59,21 @@ describe("CI change detector", () => {
     );
   });
 
-  it.each([
-    "eight-sleep",
-    "trainerroad-client",
-    "velohero-client",
-    "whoop-whoop",
-    "zepp-client",
-    "zwift-client",
-  ])("runs server image and E2E surfaces for %s", (packageDirectory) => {
-    expect(detectChangedAreas(`packages/${packageDirectory}/src/client.ts`)).toEqual(
-      expect.objectContaining({
-        docker_server: true,
-        e2e_web: true,
-        ml: false,
-        mobile: true,
-        web: true,
-        zepp: packageDirectory === "zepp-client",
-      }),
-    );
-  });
+  it.each(["eight-sleep", "trainerroad-client", "whoop-whoop", "zepp-client", "zwift-client"])(
+    "runs server image and E2E surfaces for %s",
+    (packageDirectory) => {
+      expect(detectChangedAreas(`packages/${packageDirectory}/src/client.ts`)).toEqual(
+        expect.objectContaining({
+          docker_server: true,
+          e2e_web: true,
+          ml: false,
+          mobile: true,
+          web: true,
+          zepp: packageDirectory === "zepp-client",
+        }),
+      );
+    },
+  );
 
   it("does not run application builds for an unrelated package change", () => {
     expect(detectChangedAreas("packages/trainingpeaks-connect/src/client.ts")).toEqual(

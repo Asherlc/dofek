@@ -117,7 +117,6 @@ describe("providerAbsentExplanation", () => {
 
 describe("BRAND_COLORS", () => {
   it("maps providers to hex color strings", () => {
-    expect(BRAND_COLORS.velohero).toBe("#FF6600");
     expect(BRAND_COLORS.dofek).toBe("#4A9D8E");
     expect(BRAND_COLORS.ble_heart_rate).toBe("#E0245E");
   });
@@ -136,7 +135,6 @@ describe("providerLogoType", () => {
   });
 
   it("returns null for providers without logos", () => {
-    expect(providerLogoType("velohero")).toBeNull();
     expect(providerLogoType("ble_heart_rate")).toBeNull();
     expect(providerLogoType("unknown")).toBeNull();
     expect(providerLogoType("ziva")).toBeNull();

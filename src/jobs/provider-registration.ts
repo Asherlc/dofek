@@ -65,7 +65,6 @@ async function doRegisterProviders() {
         import("../providers/cycling-analytics.ts").then((m) => new m.CyclingAnalyticsProvider()),
     ],
     ["wger", () => import("../providers/wger.ts").then((m) => new m.WgerProvider())],
-    ["velohero", () => import("../providers/velohero.ts").then((m) => new m.VeloHeroProvider())],
     [
       "mountain-project",
       () => import("../providers/mountain-project.ts").then((m) => new m.MountainProjectProvider()),

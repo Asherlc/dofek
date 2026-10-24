@@ -31,7 +31,6 @@ are not authenticated live-account validation. A missing adapter means
 | TrainerRoad | Retrieval unverified | [Current client/writer](../src/providers/trainerroad.ts), [API audit](trainerroad.md); generated chart screenshots are not automatically presumed available through its API. |
 | Concept2 | Retrieval unverified | [Current client/writer](../src/providers/concept2.ts); no verified image adapter. |
 | Xert | Retrieval unverified | [Current client/writer](../src/providers/xert.ts); no verified image adapter. |
-| VeloHero | Retrieval unverified | [Current client/writer](../src/providers/velohero.ts); no verified image adapter. |
 | Cycling Analytics | Retrieval unverified | [Current client/writer](../src/providers/cycling-analytics.ts); no verified image adapter. |
 | Wger | Retrieval unverified | [Current client/writer](../src/providers/wger.ts); exercise catalog pictures are not individual workout photos. |
 | Kaya | Retrieval unverified | [Current sync writer](../src/providers/kaya-sync.ts); no verified per-activity media contract. |
