@@ -1,7 +1,5 @@
 # Mobile OTA compatibility implementation plan
 
-> **For agentic workers:** Use superpowers:executing-plans for this approved implementation.
-
 **Goal:** Restore compatible OTA delivery to runtime 1.12 and automatically separate future native interfaces.
 
 **Architecture / approved design:** Republish the stored pre-notification iOS bundle for runtime 1.12 as an operator action. Keep runtime 1.13 deliveries intact. Adopt Expo's fingerprint runtime policy for subsequent native builds and OTA publications, with explicit Watch-source coverage. The existing publisher resolves fingerprint policies through expo-updates; no server replacement or application fallback is needed.
@@ -9,6 +7,8 @@
 **Tech stack:** Expo Updates, Expo Fingerprint, pinned EOAS publisher, existing self-hosted OTA server.
 
 **Sources:** [Expo runtime policies](https://docs.expo.dev/eas-update/runtime-versions/), [fingerprint configuration](https://docs.expo.dev/versions/latest/sdk/fingerprint/), [pinned publisher runtime resolution](https://github.com/mercuretechnologies/xprem/blob/v2.3.22/apps/eoas/src/lib/runtimeVersion.ts), [server republish handler](https://github.com/mercuretechnologies/xprem/blob/v2.3.16/internal/handlers/republish_handler.go).
+
+**Execution evidence:** [Recorded command output, runtime probes, recovery, and review notes](../../mobile-ota-validation-2026-10-23.md), [incident record](../../production-incident-baseline.md#2026-10-23--recover-runtime-112-and-automate-ota-compatibility), and [hosted checks and review](https://github.com/Asherlc/dofek/pull/3060).
 
 ## Constraints and review focus
 
