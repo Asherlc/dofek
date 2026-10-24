@@ -1121,6 +1121,13 @@
       "when": 1792792800000,
       "tag": "0159_recording_app_origin",
       "breakpoints": true
+    },
+    {
+      "idx": 160,
+      "version": "7",
+      "when": 1792812600000,
+      "tag": "0160_scoped_activity_origin",
+      "breakpoints": true
     }
   ]
 }
