@@ -83,6 +83,7 @@
     "confrelid",
     "constraintdef",
     "deptype",
+    "functiondef",
     "indrelid",
     "indexdef",
     "indexrelid",
