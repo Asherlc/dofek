@@ -2,12 +2,31 @@ import XCTest
 @testable import WhoopBLE
 
 final class WhoopBleConnectionDiagnosticsTests: XCTestCase {
+    func testPeripheralIdentifiersAreCanonicalUUIDsAndInvalidTextIsNeverPersisted() throws {
+        let defaults = UserDefaults(suiteName: UUID().uuidString)!
+        let journal = WhoopBleConnectionDiagnostics(diagnosticDefaults: defaults)
+        let identifier = "aBcDeF01-2345-4678-9aBc-dEf012345678"
+        journal.record(event: "connect_requested", connectionState: "idle", centralState: "unknown",
+                       reconnectIntent: false, peripheralId: "private-credential")
+        journal.record(event: "connect_requested", connectionState: "idle", centralState: "unknown",
+                       reconnectIntent: false, peripheralId: identifier)
+
+        let events = try XCTUnwrap(journal.payload["events"] as? [[String: Any]])
+        XCTAssertNil(events.first?["peripheralId"])
+        XCTAssertEqual(events.last?["peripheralId"] as? String, "ABCDEF01-2345-4678-9ABC-DEF012345678")
+        XCTAssertFalse(String(describing: defaults.dictionaryRepresentation()).contains("private-credential"))
+        let recreated = WhoopBleConnectionDiagnostics(diagnosticDefaults: defaults)
+        let retained = try XCTUnwrap(recreated.payload["events"] as? [[String: Any]])
+        XCTAssertNil(retained.first?["peripheralId"])
+        XCTAssertEqual(retained.last?["peripheralId"] as? String, "ABCDEF01-2345-4678-9ABC-DEF012345678")
+    }
+
     func testEventsSurviveRecreationWithStableIdentityAndNativeOccurrenceTime() throws {
         let defaults = UserDefaults(suiteName: UUID().uuidString)!
         let date = Date(timeIntervalSince1970: 1_792_800_000)
         let journal = WhoopBleConnectionDiagnostics(diagnosticDefaults: defaults, now: { date })
         journal.record(event: "disconnected", connectionState: "streaming", centralState: "poweredOn",
-                       reconnectIntent: true, peripheralId: "strap", error: NSError(
+                       reconnectIntent: true, peripheralId: "11111111-1111-4111-8111-111111111111", error: NSError(
                         domain: "CBErrorDomain", code: 6,
                         userInfo: [NSLocalizedDescriptionKey: "Connection timed out", "payload": "private"]
                        ))

@@ -47,7 +47,7 @@ final class WhoopBleConnectionDiagnostics {
             "centralState": centralState,
             "reconnectIntent": reconnectIntent,
         ]
-        entry["peripheralId"] = peripheralId
+        entry["peripheralId"] = peripheralId.flatMap { UUID(uuidString: $0)?.uuidString }
         entry["reason"] = reason
         entry["previousConnectionState"] = previousConnectionState
         entry["restoredPeripheralCount"] = restoredPeripheralCount

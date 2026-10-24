@@ -509,8 +509,9 @@ If both contain the samples, inspect the activity source selection and response.
 These checks do not provide an exact batch receipt in the sink: the upload UUID
 is log correlation metadata, not a stored sensor-row key.
 
-The expanded native bridge requires a new runtime 1.13 binary, as declared in
-[app.json](../packages/mobile/app.json); an OTA update cannot add native code.
+The expanded native bridge requires a new native build; an OTA update cannot add
+native code. The app uses the fingerprint runtime policy in
+[app.json](../packages/mobile/app.json).
 Follow Expo's [runtime compatibility guidance](https://docs.expo.dev/eas-update/runtime-versions/)
 and verify a real device's version/build before interpreting absent new fields.
 The telemetry does not establish what happened before that build was installed.

@@ -43,13 +43,14 @@ final class WhoopBleConnectionManagerDiagnosticsTests: XCTestCase {
         manager.setState(.streaming)
         manager.autoReconnect = true
         var reconnects = 0
-        manager.handleDisconnection(peripheralId: "strap", error: NSError(domain: "CBErrorDomain", code: 7,
+        let peripheralId = "11111111-1111-4111-8111-111111111111"
+        manager.handleDisconnection(peripheralId: peripheralId, error: NSError(domain: "CBErrorDomain", code: 7,
             userInfo: [NSLocalizedDescriptionKey: "Disconnected"])) { reconnects += 1 }
         let events = journal.payload["events"] as? [[String: Any]] ?? []
         let event = try XCTUnwrap(events.first { $0["event"] as? String == "disconnected" })
         XCTAssertEqual(event["connectionState"] as? String, "streaming")
         XCTAssertEqual(event["errorCode"] as? Int, 7)
-        XCTAssertEqual(event["peripheralId"] as? String, "strap")
+        XCTAssertEqual(event["peripheralId"] as? String, peripheralId)
         XCTAssertEqual(events.last?["event"] as? String, "connect_requested")
         XCTAssertEqual(events.last?["reason"] as? String, "automatic_reconnect")
         XCTAssertEqual(reconnects, 1)

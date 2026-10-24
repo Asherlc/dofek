@@ -1,6 +1,6 @@
 # WHOOP Native Connection Diagnostics Implementation Plan
 
-> **For agentic workers:** Use superpowers:subagent-driven-development to implement and review this plan. Steps use checkbox syntax for tracking.
+> Completed checkboxes record implementation and verification of this change.
 
 **Goal:** Preserve the native evidence needed to explain recurrent background Bluetooth disconnections and failed recovery.
 
@@ -8,7 +8,7 @@
 
 **Tech Stack:** Existing Swift/Foundation, CoreBluetooth, Expo Modules, TypeScript, Zod, XCTest and Vitest; no new dependencies.
 
-**Spec:** The user approved native diagnostic logging in this conversation after two observed disconnects; the [incident record](../../production-incident-baseline.md#2026-10-24--recurrent-whoop-bluetooth-disconnect-alerts) supplies the evidence and missing context. This is the short design for that approved scope.
+**Spec:** Preserve native diagnostic evidence after two observed disconnects; the [incident record](../../production-incident-baseline.md#2026-10-24--recurrent-whoop-bluetooth-disconnect-alerts) supplies the evidence and missing context. This plan covers diagnostics only.
 
 ## Global Constraints
 
@@ -38,7 +38,7 @@
 - [x] Implement the smallest native metadata journal and record lifecycle events at existing execution points. Keep native-to-JavaScript callbacks on their existing queues.
 - [x] Expose and validate the payload; log unseen events with explicit native occurrence time and unknown account provenance. Update shared fixtures.
 - [x] Run SwiftPM and relevant mobile/module Vitest suites; resolve failures without weakening policy.
-- [x] Review the complete change against the global constraints and review focus, using an independent agent. Record the review outcome and any corrections in the working ledger.
+- [x] Review the complete change against the global constraints and review focus, with an independent reviewer. Record the review outcome and any corrections.
 
 ### Task 2: Documentation, validation and delivery
 
@@ -46,4 +46,4 @@
 - [x] Update the incident record to distinguish instrumentation delivered from incident resolution.
 - [x] Validate the Expo bridge with an iOS build where local signing/dependencies allow it; explicitly report any blocker and physical-device validation boundary.
 - [x] Run repository lint, root/server/web/mobile/module typechecks, and unit/mobile suites before pushing.
-- [x] Commit the reviewed change on the existing branch and push it automatically. Do not merge or publish a release.
+- [x] Deliver the reviewed change as a pull request; release publication is separate.
