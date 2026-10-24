@@ -65,6 +65,14 @@ describe("ActivityCardContent", () => {
         />,
       );
       const providerImage = screen.getByRole("img", { name: /Primary recording provider:/ });
+      expect(providerImage).toHaveAttribute(
+        "aria-label",
+        providerId === "apple_health"
+          ? "Primary recording provider: Strong (via Apple Health)"
+          : providerId === "garmin"
+            ? "Primary recording provider: Garmin · Garmin Edge 530"
+            : "Primary recording provider: Strava",
+      );
       expect(providerImage.parentElement?.firstElementChild).toBe(providerImage);
       const logo = providerImage.querySelector("img");
       expect(logo).toHaveAttribute("width", "32");

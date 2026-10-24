@@ -4,6 +4,7 @@
  * Files live in public/logos/ and are served by Vite as static assets.
  */
 
+import { garminDeviceThumbnail } from "@dofek/providers/garmin-devices";
 import {
   BRAND_COLORS,
   PROVIDER_LABELS,
@@ -12,6 +13,8 @@ import {
   providerLogoType,
   providerSourceLogo,
 } from "@dofek/providers/providers";
+import { useState } from "react";
+import { captureException } from "../lib/telemetry";
 
 export { providerLabel };
 
@@ -28,6 +31,40 @@ function logoUrl(provider: string): string | null {
   const type = providerLogoType(provider);
   if (type) return `/logos/${providerLogoId(provider)}.${type}`;
   return null;
+}
+
+function GarminThumbnail({
+  imageUrl,
+  sourceName,
+  size,
+  className,
+}: {
+  imageUrl: string;
+  sourceName?: string | null;
+  size: number;
+  className: string;
+}) {
+  const [failed, setFailed] = useState(false);
+  if (failed) return <ProviderLogo provider="garmin" size={size} className={className} />;
+  return (
+    <img
+      src={imageUrl}
+      alt=""
+      width={size}
+      height={size}
+      style={{ objectFit: "contain" }}
+      className={`shrink-0 ${className}`}
+      aria-hidden="true"
+      onError={() => {
+        setFailed(true);
+        captureException(new Error("Unable to load Garmin device thumbnail"), {
+          provider: "garmin",
+          sourceName,
+          imageUrl,
+        });
+      }}
+    />
+  );
 }
 
 export function ProviderLogo({
@@ -64,6 +101,18 @@ export function ProviderLogo({
     );
   }
   provider = source.provider;
+  const thumbnail = provider === "garmin" ? garminDeviceThumbnail(sourceName) : null;
+  if (thumbnail) {
+    return (
+      <GarminThumbnail
+        key={thumbnail}
+        imageUrl={thumbnail}
+        sourceName={sourceName}
+        size={size}
+        className={className}
+      />
+    );
+  }
   const url = logoUrl(provider);
 
   if (url) {

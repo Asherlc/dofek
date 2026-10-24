@@ -20,7 +20,8 @@
     "./processing-status": "./src/processing-status.ts",
     "./sync-actions": "./src/sync-actions.ts",
     "./auth-provider-grouping": "./src/auth-provider-grouping.ts",
-    "./hangboarding": "./src/hangboarding.ts"
+    "./hangboarding": "./src/hangboarding.ts",
+    "./garmin-devices": "./src/garmin-devices.ts"
   },
   "dependencies": {
     "@dofek/format": "workspace:*",

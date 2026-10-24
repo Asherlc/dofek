@@ -20,6 +20,24 @@ Metadata and statistics for data providers.
 - [`providerLogoType` and `providerLogoId`](src/providers.ts) resolve provider icons from the [provider catalog](src/provider-catalog.ts).
 - [`BRAND_COLORS`](src/provider-catalog.ts) provides fallback colors for providers without dedicated logos (e.g., `dofek` uses `#4A9D8E`).
 
+### Garmin recording-device thumbnails
+
+The [Garmin model lookup](src/garmin-devices.ts) supplies product thumbnails for
+recognized recording-device names to the web and iOS provider-icon components.
+Its checked-in snapshot comes from Garmin's [Connect IQ device
+catalog](https://apps.garmin.com/api/appsLibraryExternalServices/api/asw/deviceTypes),
+including the catalog's alternate model names. Matching normalizes accents,
+trademarks, punctuation, and an optional Garmin prefix. Unknown or ambiguous
+models retain the Garmin logo; failed image loads also return to that logo.
+
+The snapshot prefers verified transparent Garmin product images when available,
+otherwise retaining the catalog's thumbnail URL. Images load on demand; there
+is no runtime catalog fetch. Product images represent a model and may group
+sizes; they do not establish the recording device's color or SKU. Refresh the
+snapshot from the linked catalog when adding a newly supported device, preserve
+complete alternate model names, omit standalone edition/display qualifiers,
+and verify the resulting image before changing its URL.
+
 ### WHOOP Wear Locations
 
 Supported locations are defined in `WHOOP_WEAR_LOCATIONS`. The `parseWhoopWearLocation` function ensures any input defaults to `wrist` if invalid.

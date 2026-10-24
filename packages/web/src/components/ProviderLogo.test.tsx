@@ -1,7 +1,10 @@
 // @vitest-environment jsdom
-import { cleanup, render } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { cleanup, fireEvent, render } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { captureException } from "../lib/telemetry";
 import { ProviderLogo, providerLabel } from "./ProviderLogo";
+
+vi.mock("../lib/telemetry", () => ({ captureException: vi.fn() }));
 
 afterEach(cleanup);
 
@@ -31,6 +34,48 @@ describe("providerLabel", () => {
 });
 
 describe("ProviderLogo", () => {
+  describe("Garmin recording devices", () => {
+    it("shows a contained model thumbnail at the requested size", () => {
+      const { container } = render(
+        <ProviderLogo provider="garmin" sourceName="Forerunner 965" size={32} />,
+      );
+      const img = queryImg(container);
+      expect(img.src).toContain("010-02809-00");
+      expect(img.width).toBe(32);
+      expect(img.height).toBe(32);
+      expect(img.style.objectFit).toBe("contain");
+    });
+
+    it.each([undefined, "Unrecognized watch", "Forerunner 965 Ultra"])(
+      "keeps the provider logo for %s",
+      (sourceName) => {
+        const { container } = render(<ProviderLogo provider="garmin" sourceName={sourceName} />);
+        expect(queryImg(container).getAttribute("src")).toBe("/logos/garmin.svg");
+      },
+    );
+
+    it("keeps another provider's logo when its source names a Garmin model", () => {
+      const { container } = render(<ProviderLogo provider="strava" sourceName="Edge 1050" />);
+      expect(queryImg(container).getAttribute("src")).toBe("/logos/strava.svg");
+    });
+
+    it("reports a failed thumbnail and falls back to Garmin until the image URL changes", () => {
+      const { container, rerender } = render(
+        <ProviderLogo provider="garmin" sourceName="Forerunner 965" />,
+      );
+      fireEvent.error(queryImg(container));
+      expect(queryImg(container).getAttribute("src")).toBe("/logos/garmin.svg");
+      expect(captureException).toHaveBeenCalledWith(
+        expect.any(Error),
+        expect.objectContaining({ provider: "garmin", sourceName: "Forerunner 965" }),
+      );
+      rerender(<ProviderLogo provider="garmin" sourceName="Garmin Forerunner® 965" />);
+      expect(queryImg(container).getAttribute("src")).toBe("/logos/garmin.svg");
+      rerender(<ProviderLogo provider="garmin" sourceName="Edge 1050" />);
+      expect(queryImg(container).src).toContain("010-02890-00");
+    });
+  });
+
   describe("image logos", () => {
     it("renders an SVG img for providers with SVG logos", () => {
       const { container } = render(<ProviderLogo provider="strava" />);

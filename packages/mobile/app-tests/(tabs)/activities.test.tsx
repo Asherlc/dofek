@@ -155,6 +155,7 @@ afterEach(() => vi.useRealTimers());
 
 describe("ActivitiesScreen", () => {
   it.each([
+    ["garmin", "Forerunner 965", "Garmin · Forerunner 965"],
     ["strava", "Garmin Edge 530", "Strava"],
     ["apple_health", "Strong", "Strong (via Apple Health)"],
   ])("uses %s and its source as the leading card image", (providerId, sourceName, label) => {
