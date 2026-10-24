@@ -76,6 +76,30 @@ const whoopMembers = fixtureMembers("WHOOP workout propagated to Peloton");
 const missingMembers = fixtureMembers("missing provenance");
 const viewCases = [
   {
+    name: "personalized Apple Watch alongside WHOOP copies",
+    members: fixtureMembers("Personalized Apple Watch initiates alongside WHOOP and its copies"),
+    expected: {
+      primary_activity_id: firstMemberId,
+      primary_provider_id: "apple_health",
+      primary_source_name: "Asher’s Apple\u00a0Watch",
+      origin_candidate_member_ids: [firstMemberId],
+      origin_evidence: [
+        {
+          upstreamMemberActivityId: secondMemberId,
+          downstreamMemberActivityId: thirdMemberId,
+          field: "source_name",
+          value: "whoop",
+        },
+        {
+          upstreamMemberActivityId: secondMemberId,
+          downstreamMemberActivityId: "00000000-0000-4000-8000-000000000004",
+          field: "external_id",
+          value: "c4e019f3387447ad8a2420e7c7918cf5",
+        },
+      ],
+    },
+  },
+  {
     name: "source bundle and source name transfer chain",
     members: fixtureMembers("complete transfer chain"),
     expected: {

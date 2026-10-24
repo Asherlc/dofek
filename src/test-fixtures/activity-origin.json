@@ -1,5 +1,189 @@
 [
   {
+    "name": "Personalized Apple Watch initiates alongside WHOOP and its copies",
+    "members": [
+      {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "providerId": "apple_health",
+        "sourceName": "Asher’s Apple\u00a0Watch",
+        "raw": null
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000002",
+        "providerId": "whoop",
+        "externalId": "c4e019f3-3874-47ad-8a24-20e7c7918cf5",
+        "sourceName": null,
+        "raw": null
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000003",
+        "providerId": "apple_health",
+        "sourceName": "WHOOP",
+        "raw": null
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000004",
+        "providerId": "peloton",
+        "externalId": "c4e019f3387447ad8a2420e7c7918cf5",
+        "sourceName": null,
+        "raw": { "platform": "whoop", "deviceType": "whoop" }
+      }
+    ],
+    "expectedPrimaryMemberId": "00000000-0000-4000-8000-000000000001",
+    "expectedCandidateMemberIds": ["00000000-0000-4000-8000-000000000001"]
+  },
+  {
+    "name": "Apple Watch source recognition ignores case and whitespace",
+    "members": [
+      {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "providerId": "apple_health",
+        "sourceName": "  aPpLe   wAtCh  ",
+        "raw": null
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000002",
+        "providerId": "whoop",
+        "sourceName": null,
+        "raw": null
+      }
+    ],
+    "expectedPrimaryMemberId": "00000000-0000-4000-8000-000000000001",
+    "expectedCandidateMemberIds": ["00000000-0000-4000-8000-000000000001"]
+  },
+  {
+    "name": "Apple Watch and Strong together remain unresolved",
+    "members": [
+      {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "providerId": "apple_health",
+        "sourceName": "Apple Watch",
+        "raw": null
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000002",
+        "providerId": "strong-csv",
+        "sourceName": null,
+        "raw": null
+      }
+    ],
+    "expectedPrimaryMemberId": null,
+    "expectedCandidateMemberIds": [
+      "00000000-0000-4000-8000-000000000001",
+      "00000000-0000-4000-8000-000000000002"
+    ]
+  },
+  {
+    "name": "Apple Watch and Hang Ten together remain unresolved",
+    "members": [
+      {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "providerId": "apple_health",
+        "sourceName": "Apple Watch",
+        "raw": null
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000002",
+        "providerId": "apple_health",
+        "sourceName": "Hang Ten",
+        "raw": null
+      }
+    ],
+    "expectedPrimaryMemberId": null,
+    "expectedCandidateMemberIds": [
+      "00000000-0000-4000-8000-000000000001",
+      "00000000-0000-4000-8000-000000000002"
+    ]
+  },
+  {
+    "name": "Multiple Apple Watch recordings remain unresolved",
+    "members": [
+      {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "providerId": "apple_health",
+        "sourceName": "Alice’s Apple Watch",
+        "raw": null
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000002",
+        "providerId": "apple_health",
+        "sourceName": "Bob’s Apple Watch",
+        "raw": null
+      }
+    ],
+    "expectedPrimaryMemberId": null,
+    "expectedCandidateMemberIds": [
+      "00000000-0000-4000-8000-000000000001",
+      "00000000-0000-4000-8000-000000000002"
+    ]
+  },
+  {
+    "name": "Apple Watch with contradictory source bundle stays unresolved",
+    "members": [
+      {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "providerId": "apple_health",
+        "sourceName": "Apple Watch",
+        "raw": { "sourceBundle": "com.strava.strava" }
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000002",
+        "providerId": "whoop",
+        "sourceName": null,
+        "raw": null
+      }
+    ],
+    "expectedPrimaryMemberId": null,
+    "expectedCandidateMemberIds": [
+      "00000000-0000-4000-8000-000000000001",
+      "00000000-0000-4000-8000-000000000002"
+    ]
+  },
+  {
+    "name": "Apple Watch device label on another provider is not an initiating source",
+    "members": [
+      {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "providerId": "strava",
+        "sourceName": "Apple Watch",
+        "raw": null
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000002",
+        "providerId": "whoop",
+        "sourceName": null,
+        "raw": null
+      }
+    ],
+    "expectedPrimaryMemberId": null,
+    "expectedCandidateMemberIds": [
+      "00000000-0000-4000-8000-000000000001",
+      "00000000-0000-4000-8000-000000000002"
+    ]
+  },
+  {
+    "name": "Apple Watch text inside an app name is not an initiating source",
+    "members": [
+      {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "providerId": "apple_health",
+        "sourceName": "Apple Watch Companion",
+        "raw": null
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000002",
+        "providerId": "whoop",
+        "sourceName": null,
+        "raw": null
+      }
+    ],
+    "expectedPrimaryMemberId": null,
+    "expectedCandidateMemberIds": [
+      "00000000-0000-4000-8000-000000000001",
+      "00000000-0000-4000-8000-000000000002"
+    ]
+  },
+  {
     "name": "WHOOP workout propagated to Peloton",
     "members": [
       {
