@@ -2,7 +2,7 @@ import XCTest
 import CoreBluetooth
 @testable import WhoopBLE
 
-final class WhoopBleConnectionManagerTests: XCTestCase {
+final class WhoopBleConnectionManagerDiagnosticsTests: XCTestCase {
     func testNativeSessionCentralStatesAndEmptyRestorationAreRecorded() {
         let journal = WhoopBleConnectionDiagnostics(diagnosticDefaults: UserDefaults(suiteName: UUID().uuidString)!)
         let manager = WhoopBleConnectionManager(connectionDiagnostics: journal)
@@ -92,7 +92,9 @@ final class WhoopBleConnectionManagerTests: XCTestCase {
         let recreated = WhoopBleConnectionDiagnostics(diagnosticDefaults: defaults)
         XCTAssertEqual((recreated.payload["events"] as? [[String: Any]])?.count, 0)
     }
+}
 
+final class WhoopBleConnectionManagerTests: XCTestCase {
     func testRestoredStreamingEmitsFinalStreamingSnapshotAfterReconnect() {
         let manager = WhoopBleConnectionManager()
         manager.setState(.ready)
