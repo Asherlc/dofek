@@ -87,6 +87,9 @@ export function providerSourceLogo(id: string, sourceName?: string | null) {
   if (!source || normalized === "apple health" || normalized === "healthkit") {
     return { provider: "apple_health", viaAppleHealth: false };
   }
+  if (/(?:^|\s)apple\s+watch$/i.test(source)) {
+    return { provider: "apple-watch", viaAppleHealth: true };
+  }
   const match = Object.entries(PROVIDER_CATALOG).find(
     ([provider, entry]) => provider === normalized || entry.label.toLowerCase() === normalized,
   );

@@ -25,6 +25,9 @@ WITH RECURSIVE labels AS (
   ) AS copy ON true
 ), hints AS (
   SELECT *,
+    provider_id = 'apple_health'
+      AND REPLACE(source_label, CHR(160), ' ') ~ '(^|[[:space:]])apple[[:space:]]+watch[[:space:]]*$'
+      AS is_watch_recording,
     CASE
       WHEN provider_id = 'apple_health' THEN
         CASE source_label
@@ -55,6 +58,7 @@ WITH RECURSIVE labels AS (
   SELECT *,
     COALESCE(copy_provider, bundle_provider, label_provider, device_provider) AS upstream_provider,
     (SELECT COUNT(DISTINCT hint) > 1 FROM UNNEST(ARRAY[copy_provider, label_provider, bundle_provider, device_provider]) AS hint)
+      OR (is_watch_recording AND bundle_provider IS NOT NULL)
       OR (provider_id = 'strava' AND source_label <> '' AND raw_device_label <> '' AND source_label <> raw_device_label) AS conflicting,
     CASE WHEN copy_provider IS NOT NULL THEN 'external_id'
       WHEN bundle_provider IS NOT NULL THEN 'raw.sourceBundle'
@@ -92,10 +96,11 @@ WITH RECURSIVE labels AS (
         WHERE reached.upstream_id = member.member_id AND reached.downstream_id = other.member_id)
   )
 ), initiating_origins AS (
-  -- Strong and Hang Ten are assumed to initiate the workout. Prefer a direct export over
+  -- Strong, Hang Ten, and Apple Watch initiate the workout by policy. Prefer a direct export over
   -- its Apple Health copy, without inventing transfer edges to other providers.
   SELECT member_id FROM members
   WHERE provider_id = 'strong-csv'
+    OR is_watch_recording
     OR (provider_id = 'apple_health' AND source_label IN ('hang ten', 'hang ten training'))
     OR (provider_id = 'apple_health' AND source_label = 'strong'
       AND NOT EXISTS (SELECT 1 FROM members WHERE provider_id = 'strong-csv'))

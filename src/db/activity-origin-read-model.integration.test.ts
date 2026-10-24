@@ -125,7 +125,7 @@ describe("ClickHouse provenance-only origin", () => {
     }));
     const data = JSON.stringify(rows);
     const query = originQuery(
-      "toString(primary_activity_id) AS primary, arrayMap(member -> toString(member), origin_candidate_member_ids) AS candidates FROM activity_origins",
+      "toString(primary_activity_id) AS primary, primary_provider_id, primary_source_name, arrayMap(member -> toString(member), origin_candidate_member_ids) AS candidates FROM activity_origins",
     );
     const result = await client.query({
       query,
@@ -134,10 +134,26 @@ describe("ClickHouse provenance-only origin", () => {
     });
     expect(
       z
-        .array(z.object({ primary: z.string().nullable(), candidates: z.array(z.string()) }))
+        .array(
+          z.object({
+            primary: z.string().nullable(),
+            primary_provider_id: z.string().nullable(),
+            primary_source_name: z.string().nullable(),
+            candidates: z.array(z.string()),
+          }),
+        )
         .parse(await result.json()),
     ).toEqual([
-      { primary: fixture.expectedPrimaryMemberId, candidates: fixture.expectedCandidateMemberIds },
+      {
+        primary: fixture.expectedPrimaryMemberId,
+        primary_provider_id:
+          fixture.members.find((member) => member.id === fixture.expectedPrimaryMemberId)
+            ?.providerId ?? null,
+        primary_source_name:
+          fixture.members.find((member) => member.id === fixture.expectedPrimaryMemberId)
+            ?.sourceName ?? null,
+        candidates: fixture.expectedCandidateMemberIds,
+      },
     ]);
   });
 
