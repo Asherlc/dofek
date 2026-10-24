@@ -1031,3 +1031,25 @@ changes leave merged values and group IDs unchanged. Inspect `origin_evidence`
 for supporting fields and `origin_candidate_member_ids` when attribution remains
 unresolved. Preserve Apple Health `sourceBundle` in the existing raw workout payload
 on subsequent native syncs; do not fabricate identifiers for historical rows.
+
+### Strong and Hang Ten attribution
+
+The [PostgreSQL resolver](../drizzle/_views/00_activity_origin.sql) and
+[ClickHouse selector](../analytics/macros/activity_origin.sql) treat Strong and
+Hang Ten as initiating apps within an existing matched activity group. This is
+an explicit product assumption, not evidence that WHOOP imported their records.
+Strong documents [sharing workouts through Apple Health](https://help.strongapp.io/article/147-sync-with-apple-health),
+and Hang Ten documents [saving completed sessions to Apple Health](https://apps.apple.com/us/app/hang-ten-training/id6797141761).
+Neither source establishes a transfer chain for a particular WHOOP workout.
+
+Prefer a Strong CSV member over its Apple Health copies. Otherwise, select the
+single Apple Health member labeled Strong, Hang Ten, or Hang Ten Training.
+Multiple initiating candidates, conflicting provenance, and cycles remain
+unresolved. The rule changes recording attribution only; field selection,
+sensor priorities, grouping, and evidenced copy edges retain their existing behavior.
+
+Apply `0159_recording_app_origin` and build the incremental activity models with
+the matching release. Existing ClickHouse rows require recomputation before
+clients receive the updated origin; use the established scoped refresh procedure
+above when validating a specific activity. Both clients consume the shared origin
+contract, including Apple Health source-app logos.

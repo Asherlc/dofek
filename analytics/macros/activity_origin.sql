@@ -23,8 +23,8 @@ origin_hints AS (
         multiIf(
             provider_id = 'apple_health',
             transform(source_label,
-                ['strava', 'garmin', 'garmin connect', 'wahoo', 'zwift', 'peloton', 'trainerroad', 'whoop', 'strong'],
-                ['strava', 'garmin', 'garmin', 'wahoo', 'zwift', 'peloton', 'trainerroad', 'whoop', 'strong-csv'], ''),
+                ['strava', 'garmin', 'garmin connect', 'wahoo', 'zwift', 'peloton', 'trainerroad', 'whoop', 'strong', 'hang ten', 'hang ten training'],
+                ['strava', 'garmin', 'garmin', 'wahoo', 'zwift', 'peloton', 'trainerroad', 'whoop', 'strong-csv', 'hang-ten', 'hang-ten'], ''),
             provider_id = 'strava' AND match(source_label, '^garmin edge( |$)'), 'garmin',
             provider_id = 'strava' AND match(source_label, '^wahoo elemnt( |$)'), 'wahoo',
             ''
@@ -84,6 +84,9 @@ origin_graphs AS (
         members.user_id AS user_id,
         members.group_id AS group_id,
         arraySort(groupArray(members.activity_id)) AS member_ids,
+        arraySort(groupArrayIf(members.activity_id, members.provider_id = 'strong-csv')) AS strong_export_ids,
+        arraySort(groupArrayIf(members.activity_id, members.provider_id = 'apple_health' AND members.source_label = 'strong')) AS strong_health_ids,
+        arraySort(groupArrayIf(members.activity_id, members.provider_id = 'apple_health' AND members.source_label IN ('hang ten', 'hang ten training'))) AS hang_ten_ids,
         max(members.conflicting) AS conflicting,
         coalesce(any(origin_group_edges.edges), CAST([], 'Array(Tuple(UUID, UUID, String, String))')) AS edges
     FROM origin_members AS members
@@ -115,26 +118,37 @@ origin_decisions AS (
         group_id,
         any(member_ids) AS group_member_ids,
         any(edges) AS group_edges,
+        any(arrayConcat(if(length(strong_export_ids) > 0, strong_export_ids, strong_health_ids), hang_ten_ids)) AS initiating_origins,
         max(conflicting) OR max(has(reached, member_id)) AS invalid,
         arraySort(groupArrayIf(member_id, length(arrayDistinct(arrayConcat([member_id], reached))) = length(member_ids))) AS roots
     FROM origin_reachability
     GROUP BY user_id, group_id
 ),
+origin_selections AS (
+    -- Strong and Hang Ten initiate the workout by policy; copy edges remain evidence-only.
+    SELECT
+        *,
+        multiIf(
+            NOT invalid AND length(initiating_origins) = 1, toNullable(initiating_origins[1]),
+            length(initiating_origins) > 1, NULL,
+            length(group_member_ids) = 1 OR (NOT invalid AND length(roots) = 1), toNullable(roots[1]),
+            NULL
+        ) AS primary_activity_id
+    FROM origin_decisions
+),
 activity_origins AS (
     SELECT
         decisions.user_id AS user_id,
         decisions.group_id AS group_id,
-        if(length(decisions.group_member_ids) = 1 OR (NOT decisions.invalid AND length(decisions.roots) = 1),
-            toNullable(decisions.roots[1]), NULL) AS primary_activity_id,
+        decisions.primary_activity_id AS primary_activity_id,
         if(primary_activity_id IS NOT NULL, [assumeNotNull(primary_activity_id)], decisions.group_member_ids) AS origin_candidate_member_ids,
         arrayMap(edge -> map('upstreamMemberActivityId', toString(edge.1), 'downstreamMemberActivityId', toString(edge.2),
             'field', edge.3, 'value', edge.4), decisions.group_edges) AS origin_evidence,
         if(primary_activity_id IS NOT NULL, members.provider_id, NULL) AS primary_provider_id,
         if(primary_activity_id IS NOT NULL, members.source_name, NULL) AS primary_source_name
-    FROM origin_decisions AS decisions
+    FROM origin_selections AS decisions
     LEFT JOIN origin_members AS members
         ON members.user_id = decisions.user_id AND members.group_id = decisions.group_id
-        AND members.activity_id = if(length(decisions.group_member_ids) = 1 OR (NOT decisions.invalid AND length(decisions.roots) = 1),
-            toNullable(decisions.roots[1]), NULL)
+        AND members.activity_id = decisions.primary_activity_id
 )
 {% endmacro %}
