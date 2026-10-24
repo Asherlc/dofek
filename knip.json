@@ -82,12 +82,6 @@
       }
     },
     "packages/trainerroad-client": {},
-    "packages/velohero-client": {
-      "vitest": {
-        "config": ["../../vitest.config.ts"],
-        "entry": ["src/**/*.test.ts"]
-      }
-    },
     "packages/mountain-project-client": {
       "vitest": {
         "config": ["../../vitest.config.ts"],

@@ -1,4 +1,4 @@
--- Provenance only: no field priorities, sample counts, or ingestion timestamps.
+-- Recording provenance and initiating-app assumptions; no metric priorities.
 CREATE OR REPLACE FUNCTION fitness.resolve_activity_origin(input_members jsonb)
 RETURNS TABLE (
   primary_activity_id uuid,
@@ -37,6 +37,8 @@ WITH RECURSIVE labels AS (
           WHEN 'trainerroad' THEN 'trainerroad'
           WHEN 'whoop' THEN 'whoop'
           WHEN 'strong' THEN 'strong-csv'
+          WHEN 'hang ten' THEN 'hang-ten'
+          WHEN 'hang ten training' THEN 'hang-ten'
           ELSE NULL
         END
       WHEN provider_id = 'strava' AND source_label ~ '^garmin edge( |$)' THEN 'garmin'
@@ -89,8 +91,22 @@ WITH RECURSIVE labels AS (
       AND NOT EXISTS (SELECT 1 FROM reachability AS reached
         WHERE reached.upstream_id = member.member_id AND reached.downstream_id = other.member_id)
   )
+), initiating_origins AS (
+  -- Strong and Hang Ten are assumed to initiate the workout. Prefer a direct export over
+  -- its Apple Health copy, without inventing transfer edges to other providers.
+  SELECT member_id FROM members
+  WHERE provider_id = 'strong-csv'
+    OR (provider_id = 'apple_health' AND source_label IN ('hang ten', 'hang ten training'))
+    OR (provider_id = 'apple_health' AND source_label = 'strong'
+      AND NOT EXISTS (SELECT 1 FROM members WHERE provider_id = 'strong-csv'))
 ), decision AS (
-  SELECT CASE WHEN (SELECT COUNT(*) FROM members) = 1 OR (COUNT(*) = 1
+  SELECT CASE
+    WHEN (SELECT COUNT(*) FROM initiating_origins) = 1
+      AND NOT EXISTS (SELECT 1 FROM members WHERE conflicting)
+      AND NOT EXISTS (SELECT 1 FROM reachability WHERE upstream_id = downstream_id)
+      THEN (SELECT member_id FROM initiating_origins)
+    WHEN (SELECT COUNT(*) FROM initiating_origins) > 1 THEN NULL
+    WHEN (SELECT COUNT(*) FROM members) = 1 OR (COUNT(*) = 1
     AND NOT EXISTS (SELECT 1 FROM members WHERE conflicting)
     AND NOT EXISTS (SELECT 1 FROM reachability WHERE upstream_id = downstream_id))
     THEN (ARRAY_AGG(member_id))[1] ELSE NULL END AS selected_id

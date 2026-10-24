@@ -439,7 +439,6 @@ const PROVIDER_DATASET_CAPABILITIES: Readonly<Record<string, readonly Processing
   suunto: ["activity", "hiking", "cycling", "sleep", "recovery", "training", "providers"],
   trainerroad: ["activity", "cycling", "recovery", "training", "providers"],
   ultrahuman: ["activity", "sleep", "recovery", "training", "providers"],
-  velohero: ["activity", "cycling", "recovery", "training", "providers"],
   wahoo: ["activity", "hiking", "cycling", "recovery", "training", "providers"],
   wger: ["activity", "training", "providers"],
   whoop: ["activity", "sleep", "recovery", "training", "providers"],

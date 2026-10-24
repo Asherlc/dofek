@@ -29,7 +29,6 @@
     "packages/eight-sleep/src/**/*.ts",
     "packages/whoop-whoop/src/**/*.ts",
     "packages/trainerroad-client/src/**/*.ts",
-    "packages/velohero-client/src/**/*.ts",
     "packages/zwift-client/src/**/*.ts",
     "packages/zepp-client/src/**/*.ts",
     "packages/zepp/src/**/*.ts",

@@ -27,7 +27,6 @@ packages:
   - packages/zepp-client
   - packages/kaya-client
   - packages/trainerroad-client
-  - packages/velohero-client
   - packages/mountain-project-client
   - packages/trainingpeaks-connect
   - packages/peloton-client
@@ -45,8 +44,8 @@ audit:
     - GHSA-vfj7-8cjw-p6xm
 
 overrides:
-  "@expo/dom-webview": 58.0.2
   "@expo/cli>zod": 4.6.7
+  "@expo/dom-webview": 58.0.2
   "@expo/xcpretty>js-yaml": 4.3.2
   "@grpc/grpc-js": 1.14.5
   "@opentelemetry/core": 2.9.0

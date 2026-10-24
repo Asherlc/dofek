@@ -6,8 +6,8 @@ settings:
   excludeLinksFromLockfile: false
 
 overrides:
-  '@expo/dom-webview': 58.0.2
   '@expo/cli>zod': 4.6.7
+  '@expo/dom-webview': 58.0.2
   '@expo/xcpretty>js-yaml': 4.3.2
   '@grpc/grpc-js': 1.14.5
   '@opentelemetry/core': 2.9.0
@@ -122,9 +122,6 @@ importers:
       '@dofek/training':
         specifier: workspace:*
         version: link:packages/training
-      '@dofek/velohero':
-        specifier: workspace:*
-        version: link:packages/velohero-client
       '@dofek/whoop':
         specifier: workspace:*
         version: link:packages/whoop-whoop
@@ -941,22 +938,6 @@ importers:
         version: 4.6.7
 
   packages/trainingpeaks-connect:
-    dependencies:
-      '@dofek/provider-http':
-        specifier: workspace:*
-        version: link:../provider-http
-      '@dofek/training':
-        specifier: workspace:*
-        version: link:../training
-    devDependencies:
-      typescript:
-        specifier: 6.0.3
-        version: 6.0.3
-      vitest:
-        specifier: 4.1.11
-        version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@26.1.2)(@vitest/coverage-v8@4.1.11)(jsdom@30.1.2)(msw@2.15.0)(vite@8.1.6)
-
-  packages/velohero-client:
     dependencies:
       '@dofek/provider-http':
         specifier: workspace:*
@@ -26542,7 +26523,7 @@ snapshots:
   babel-dead-code-elimination@1.0.12(supports-color@11.0.0):
     dependencies:
       '@babel/core': 7.29.7(supports-color@11.0.0)
-      '@babel/parser': 7.29.8
+      '@babel/parser': 7.29.9
       '@babel/traverse': 7.29.8(supports-color@11.0.0)
       '@babel/types': 7.29.8
     transitivePeerDependencies:

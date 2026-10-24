@@ -70,7 +70,6 @@ COPY packages/eight-sleep/package.json ./packages/eight-sleep/
 COPY packages/zwift-client/package.json ./packages/zwift-client/
 COPY packages/zepp-client/package.json ./packages/zepp-client/
 COPY packages/trainerroad-client/package.json ./packages/trainerroad-client/
-COPY packages/velohero-client/package.json ./packages/velohero-client/
 COPY packages/mountain-project-client/package.json ./packages/mountain-project-client/
 COPY packages/trainingpeaks-connect/package.json ./packages/trainingpeaks-connect/
 COPY packages/kaya-client/package.json ./packages/kaya-client/
@@ -155,8 +154,6 @@ COPY --from=source --chown=node:node /app/packages/zepp-client/src ./packages/ze
 COPY --from=source --chown=node:node /app/packages/zepp-client/package.json ./packages/zepp-client/
 COPY --from=source --chown=node:node /app/packages/trainerroad-client/src ./packages/trainerroad-client/src
 COPY --from=source --chown=node:node /app/packages/trainerroad-client/package.json ./packages/trainerroad-client/
-COPY --from=source --chown=node:node /app/packages/velohero-client/src ./packages/velohero-client/src
-COPY --from=source --chown=node:node /app/packages/velohero-client/package.json ./packages/velohero-client/
 COPY --from=source --chown=node:node /app/packages/mountain-project-client/src ./packages/mountain-project-client/src
 COPY --from=source --chown=node:node /app/packages/mountain-project-client/package.json ./packages/mountain-project-client/
 COPY --from=source --chown=node:node /app/packages/trainingpeaks-connect/src ./packages/trainingpeaks-connect/src
@@ -203,7 +200,6 @@ RUN ln -sfn /app node_modules/dofek && \
     ln -sfn /app/packages/zwift-client node_modules/zwift-client && \
     ln -sfn /app/packages/zepp-client node_modules/zepp-client && \
     ln -sfn /app/packages/trainerroad-client node_modules/trainerroad-client && \
-    ln -sfn /app/packages/velohero-client node_modules/velohero-client && \
     ln -sfn /app/packages/trainingpeaks-connect node_modules/trainingpeaks-connect && \
     ln -sfn /app/packages/whoop-whoop node_modules/whoop-whoop && \
     mkdir -p node_modules/@dofek && \
