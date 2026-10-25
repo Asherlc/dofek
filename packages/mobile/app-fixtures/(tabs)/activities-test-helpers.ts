@@ -60,6 +60,7 @@ export function activity(overrides: Record<string, unknown> = {}) {
     },
     durationMin: 60,
     source: {
+      tree: { primary: null, otherSources: [] },
       origin: { status: "unresolved", candidateMemberActivityIds: [] },
       primarySourceLabel: "Wahoo",
       sourceCount: 1,

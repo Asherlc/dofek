@@ -564,6 +564,19 @@ describe("activity calendar entries", () => {
         primarySourceLabel: null,
         sourceCount: 1,
         overlapSummary: null,
+        tree: {
+          primary: null,
+          otherSources: [
+            {
+              id: "wahoo:wahoo-activity-1:",
+              providerId: "wahoo",
+              label: "Wahoo",
+              description: "Other matching source",
+              url: null,
+              children: [],
+            },
+          ],
+        },
       },
       lastProcessedAt: null,
       distanceMeters: null,

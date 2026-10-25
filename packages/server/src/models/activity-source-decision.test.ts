@@ -35,11 +35,12 @@ describe("provenance-based source attribution", () => {
       status: "unresolved",
       candidateMemberActivityIds: [origin.memberActivityId],
     };
-    expect(buildActivityListSource(unresolved, links)).toEqual({
+    expect(buildActivityListSource(unresolved, links)).toMatchObject({
       origin: unresolved,
       sourceCount: 2,
       primarySourceLabel: null,
       overlapSummary: "2 matched source records",
+      tree: { primary: null, otherSources: [{ providerId: "garmin" }, { providerId: "strava" }] },
     });
     expect(buildActivitySourceDecision(unresolved, links)?.explanation).toBe(
       "The available source information does not establish which record is closest to the original recording.",
@@ -51,11 +52,12 @@ describe("provenance-based source attribution", () => {
         { ...origin, providerId: "apple_health", sourceName: "Garmin" },
         undefined,
       ),
-    ).toEqual({
+    ).toMatchObject({
       origin: { ...origin, providerId: "apple_health", sourceName: "Garmin" },
       sourceCount: 1,
       primarySourceLabel: "Apple Health",
       overlapSummary: null,
+      tree: { primary: null, otherSources: [] },
     });
   });
   it("has no multi-source explanation for one source", () => {

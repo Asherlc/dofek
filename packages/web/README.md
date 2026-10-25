@@ -128,18 +128,21 @@ cd packages/web && pnpm storybook # Start Storybook
 pnpm test                        # Run repo-wide Vitest suites from the repo root
 ```
 
-Activity cards lead with the shared rounded-outline activity icon, including
-cards with a map or a resolved recording origin. Beside time and duration, a
-recording-app logo and chevron open source details: **Recorded in** identifies
-the recording app, and **Imported via** identifies Apple Health when it carried
-another app's recording. Direct sources have one row; unresolved origins omit
-the source control. The [shared source-role helper](../providers-meta/src/activity-source-details.ts)
-derives those roles from the [origin contract](../providers-meta/src/activity-origin.ts),
-independently of field and sensor priorities.
-[ActivitySourceDisclosure](src/components/ActivitySourceDisclosure.tsx) uses
-[Radix Popover](https://www.radix-ui.com/primitives/docs/components/popover)
-for anchored placement, dismissal, and focus restoration. Its trigger is a
-separate control beside the card's navigation or selection action.
+Activity cards lead with the shared rounded-outline activity icon. A source row
+below the content and map expands inside the same card to show propagation
+branches. The row shows the recording source once and serves as the root when
+expanded. Separate copies from the same provider remain distinct, while
+unconnected records appear as other matching sources. Dofek remains implicit.
+See [ActivityCardContent](src/components/ActivityCardContent.tsx) and
+[ActivitySourceDisclosure](src/components/ActivitySourceDisclosure.tsx).
+
+Both clients render the [shared source-tree contract](../providers-meta/src/activity-source-tree.ts)
+from the [server projection](../server/src/models/activity-source-tree.ts).
+Retained origin evidence establishes links between source records; membership
+and metric priorities do not. Recording-app/device metadata can identify an
+earlier source without claiming its record is available. The inline button
+follows the [WAI disclosure pattern](https://www.w3.org/WAI/ARIA/apg/patterns/disclosure/)
+and stays independent of activity navigation and selection.
 
 ## Activity metric sources
 

@@ -1,8 +1,10 @@
 import { UnitConverter } from "@dofek/format/units";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useState } from "react";
+import { expect, within } from "storybook/test";
 import { ActivityCardContent, type ActivityCardData } from "./ActivityCardContent.tsx";
 import { climbingSourceLocation } from "./ActivityMapTile.fixtures.ts";
+import { branchingSourceTree, strongSourceTree } from "./ActivitySourceDisclosure.fixtures.ts";
 
 const units = new UnitConverter("metric");
 
@@ -26,6 +28,7 @@ const strengthActivity: ActivityCardData = {
       providerId: "apple_health",
       sourceName: "Strong",
     },
+    tree: strongSourceTree,
     primarySourceLabel: "Strong (via Apple Health)",
     sourceCount: 1,
     overlapSummary: null,
@@ -82,9 +85,10 @@ const mappedActivity: ActivityCardData = {
       providerId: "garmin",
       sourceName: "Garmin Edge 530",
     },
+    tree: branchingSourceTree,
     primarySourceLabel: "Garmin Connect",
-    sourceCount: 2,
-    overlapSummary: "2 matched source records · Garmin Connect selected by source priority",
+    sourceCount: 5,
+    overlapSummary: "5 matched source records",
   },
   lastProcessedAt: "2026-07-14T08:45:00-07:00",
   distanceMeters: 8530,
@@ -198,6 +202,17 @@ export const IndoorCycling: Story = {
       distanceState: { status: "available" },
       source: {
         origin: { status: "unresolved", candidateMemberActivityIds: [] },
+        tree: {
+          primary: {
+            id: "peloton-record",
+            providerId: "peloton",
+            label: "Peloton",
+            description: "Closest available recording",
+            url: null,
+            children: [],
+          },
+          otherSources: [],
+        },
         primarySourceLabel: "Peloton",
         sourceCount: 1,
         overlapSummary: null,
@@ -223,6 +238,17 @@ export const VirtualCycling: Story = {
       elevationState: { status: "available" },
       source: {
         origin: { status: "unresolved", candidateMemberActivityIds: [] },
+        tree: {
+          primary: {
+            id: "zwift-record",
+            providerId: "zwift",
+            label: "Zwift",
+            description: "Closest available recording",
+            url: null,
+            children: [],
+          },
+          otherSources: [],
+        },
         primarySourceLabel: "Zwift",
         sourceCount: 1,
         overlapSummary: null,
@@ -249,6 +275,17 @@ export const ClimbingSourceLocations: Story = {
       durationMin: 120,
       source: {
         origin: { status: "unresolved", candidateMemberActivityIds: [] },
+        tree: {
+          primary: {
+            id: "mountain-project-record",
+            providerId: "mountain-project",
+            label: "Mountain Project",
+            description: "Closest available recording",
+            url: null,
+            children: [],
+          },
+          otherSources: [],
+        },
         primarySourceLabel: "Mountain Project",
         sourceCount: 1,
         overlapSummary: null,
@@ -310,6 +347,17 @@ export const PrimaryRecordingProvider: Story = {
           providerId: "garmin",
           sourceName: "Garmin Edge 530",
         },
+        tree: {
+          primary: {
+            id: "garmin-record",
+            providerId: "garmin",
+            label: "Garmin",
+            description: "Closest available recording",
+            url: null,
+            children: [],
+          },
+          otherSources: [],
+        },
         primarySourceLabel: "Garmin",
         sourceCount: 3,
         overlapSummary: "3 matched source records",
@@ -333,6 +381,17 @@ export const KayaProviderLogo: Story = {
           providerId: "kaya",
           sourceName: null,
         },
+        tree: {
+          primary: {
+            id: "kaya-record",
+            providerId: "kaya",
+            label: "Kaya",
+            description: "Closest available recording",
+            url: null,
+            children: [],
+          },
+          otherSources: [],
+        },
         primarySourceLabel: "Kaya",
         sourceCount: 1,
         overlapSummary: null,
@@ -350,6 +409,7 @@ export const UnresolvedRecordingOrigin: Story = {
       ...mappedActivity,
       source: {
         origin: { status: "unresolved", candidateMemberActivityIds: [] },
+        tree: { primary: null, otherSources: branchingSourceTree.otherSources },
         primarySourceLabel: null,
         sourceCount: 2,
         overlapSummary: "2 matched source records",
@@ -370,6 +430,17 @@ export const PrimaryProviderWithoutLogo: Story = {
           memberActivityId: "00000000-0000-4000-8000-000000000001",
           providerId: "mountain-project",
           sourceName: null,
+        },
+        tree: {
+          primary: {
+            id: "mountain-project-record",
+            providerId: "mountain-project",
+            label: "Mountain Project",
+            description: "Closest available recording",
+            url: null,
+            children: [],
+          },
+          otherSources: [],
         },
         primarySourceLabel: "Mountain Project",
         sourceCount: 1,
@@ -397,6 +468,29 @@ export const AppleHealthSourceApps: Story = {
                   providerId: "apple_health",
                   sourceName,
                 },
+                tree:
+                  sourceName === "Strong"
+                    ? strongSourceTree
+                    : {
+                        primary: {
+                          id: "hang-ten-record",
+                          providerId: "hang-ten",
+                          label: "Hang Ten",
+                          description: "Recording app reported by Apple Health",
+                          url: null,
+                          children: [
+                            {
+                              id: "apple-hang-ten-record",
+                              providerId: "apple_health",
+                              label: "Apple Health",
+                              description: "Recorded by Hang Ten",
+                              url: null,
+                              children: [],
+                            },
+                          ],
+                        },
+                        otherSources: [],
+                      },
                 primarySourceLabel: `${sourceName} (via Apple Health)`,
                 sourceCount: 1,
                 overlapSummary: null,
@@ -456,8 +550,43 @@ function InteractiveCard({ selectMode }: { selectMode: boolean }) {
 
 export const NavigableCard: Story = {
   render: () => <InteractiveCard selectMode={false} />,
+  play: async ({ canvasElement, userEvent }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(canvas.getByRole("button", { name: "Garmin Connect Sources" }));
+    await expect(canvas.getByRole("link", { name: "Morning Run" })).toBeVisible();
+    await expect(canvas.getByText("Imported from Strava")).toBeVisible();
+  },
 };
 
 export const SelectableCard: Story = {
   render: () => <InteractiveCard selectMode={true} />,
+  play: async ({ canvasElement, userEvent }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(canvas.getByRole("button", { name: "Garmin Connect Sources" }));
+    await expect(canvas.getByRole("checkbox", { name: "Select Morning Run" })).not.toBeChecked();
+    await expect(canvas.getByRole("button", { name: "Morning Run" })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+  },
+};
+
+export const SourceTreeExpanded: Story = {
+  args: {
+    activity: {
+      ...mappedActivity,
+      location: null,
+    },
+  },
+  decorators: NonMapActivity.decorators,
+  play: async ({ canvasElement, userEvent }) => {
+    await userEvent.click(
+      within(canvasElement).getByRole("button", { name: "Garmin Connect Sources" }),
+    );
+  },
+};
+
+export const MappedSourceTreeExpanded: Story = {
+  ...MappedActivity,
+  play: SourceTreeExpanded.play,
 };

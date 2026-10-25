@@ -1,6 +1,8 @@
-import type { ActivityOrigin } from "@dofek/providers/activity-origin";
+import type { ActivityOrigin, ActivityOriginEvidence } from "@dofek/providers/activity-origin";
+import type { ActivitySourceTree } from "@dofek/providers/activity-source-tree";
 import { providerLabel } from "@dofek/providers/providers";
 import type { ProviderLookup, SourceLink } from "./activity-source-attribution.ts";
+import { buildActivitySourceTree } from "./activity-source-tree.ts";
 
 export interface ActivitySourceDecisionDetail {
   origin: ActivityOrigin;
@@ -14,6 +16,7 @@ export interface ActivityListSourceDetail {
   primarySourceLabel: string | null;
   sourceCount: number;
   overlapSummary: string | null;
+  tree: ActivitySourceTree;
 }
 
 function primaryLabel(origin: ActivityOrigin, lookupProvider?: ProviderLookup): string | null {
@@ -44,6 +47,7 @@ export function buildActivityListSource(
   origin: ActivityOrigin,
   sourceLinks: SourceLink[] | undefined,
   lookupProvider?: ProviderLookup,
+  evidence: ActivityOriginEvidence[] = [],
 ): ActivityListSourceDetail {
   const sourceCount = Math.max(sourceLinks?.length ?? 0, 1);
   return {
@@ -51,5 +55,6 @@ export function buildActivityListSource(
     primarySourceLabel: primaryLabel(origin, lookupProvider),
     sourceCount,
     overlapSummary: sourceCount > 1 ? `${sourceCount} matched source records` : null,
+    tree: buildActivitySourceTree(origin, sourceLinks ?? [], evidence),
   };
 }

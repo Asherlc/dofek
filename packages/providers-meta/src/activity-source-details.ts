@@ -14,11 +14,21 @@ export interface ActivitySourceDetails {
 /** Presentation roles from resolved origin, independent of field priorities. */
 export function activitySourceDetails(origin: ActivityOrigin): ActivitySourceDetails | null {
   if (origin.status === "unresolved") return null;
-  const source = providerSourceLogo(origin.providerId, origin.sourceName);
+  const provider = origin.providerId === "apple-health" ? "apple_health" : origin.providerId;
+  const name = origin.sourceName?.trim();
+  const distinctSource =
+    name &&
+    ![
+      provider,
+      providerLabel(provider),
+      ...(provider === "apple_health" ? ["HealthKit"] : []),
+    ].some((label) => label.toLowerCase() === name.toLowerCase());
+  const source = distinctSource ? providerSourceLogo("apple_health", name).provider : provider;
   return {
-    recordingApp: { provider: source.provider, label: providerLabel(source.provider) },
-    importedVia: source.viaAppleHealth
-      ? { provider: "apple_health", label: providerLabel("apple_health") }
-      : null,
+    recordingApp: {
+      provider: source,
+      label: source === "apple-watch" && distinctSource ? name : providerLabel(source),
+    },
+    importedVia: source !== provider ? { provider, label: providerLabel(provider) } : null,
   };
 }

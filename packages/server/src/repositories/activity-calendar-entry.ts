@@ -69,6 +69,14 @@ export interface CalendarDayActivities {
 
 export const activityRowSchema = z.object({
   ...activityOriginColumnsSchema.shape,
+  origin_evidence: z.array(
+    z.object({
+      upstreamMemberActivityId: z.string(),
+      downstreamMemberActivityId: z.string(),
+      field: z.string(),
+      value: z.string(),
+    }),
+  ),
   id: z.string(),
   name: z.string().nullable(),
   canonical_type: z.string(),
@@ -176,7 +184,12 @@ export function createActiveCalendarEntry(
     ...projectCalendarEntry(
       row,
       context,
-      buildActivityListSource(activityOriginFromColumns(row), sourceLinks, getProvider),
+      buildActivityListSource(
+        activityOriginFromColumns(row),
+        sourceLinks,
+        getProvider,
+        row.origin_evidence,
+      ),
       sourceLocation ??
         (context.mapReadiness != null && context.mapReadiness !== "unavailable"
           ? { kind: "processing" }
@@ -196,7 +209,15 @@ export function createProviderAbsentCalendarEntry(
     ...projectCalendarEntry(
       row,
       context,
-      buildActivityListSource(activityOriginFromColumns(row), undefined, getProvider),
+      buildActivityListSource(
+        activityOriginFromColumns(row),
+        ActivitySourceAttribution.fromClickHouseRow(
+          row.source_external_ids,
+          row.absent_source_external_ids,
+        ).toSourceLinks(getProvider),
+        getProvider,
+        row.origin_evidence,
+      ),
       context.mapReadiness === "processing" ? { kind: "processing" } : null,
     ),
     isProviderAbsent: true,

@@ -183,6 +183,27 @@ describe("ActivitiesCalendarRepository", () => {
           primarySourceLabel: null,
           sourceCount: 2,
           overlapSummary: "2 matched source records",
+          tree: {
+            primary: null,
+            otherSources: [
+              {
+                id: "strava:strava-activity-1:",
+                providerId: "strava",
+                label: "Strava",
+                description: "Other matching source",
+                url: null,
+                children: [],
+              },
+              {
+                id: "wahoo:wahoo-activity-1:",
+                providerId: "wahoo",
+                label: "Wahoo",
+                description: "Other matching source",
+                url: null,
+                children: [],
+              },
+            ],
+          },
         },
         lastProcessedAt: "2026-03-18T08:07:00.000Z",
       }),

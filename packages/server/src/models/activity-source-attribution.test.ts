@@ -52,7 +52,7 @@ describe("ActivitySourceAttribution", () => {
     ]);
   });
 
-  it("keeps an active source link when the same provider also has an absent entry", () => {
+  it("retains distinct active and absent records from the same provider", () => {
     const attribution = ActivitySourceAttribution.fromEntries(
       [{ providerId: "strava", externalId: "active-123" }],
       [
@@ -73,6 +73,15 @@ describe("ActivitySourceAttribution", () => {
         label: "Strava",
         url: "https://www.strava.com/activities/active-123",
         providerAbsentAt: null,
+      },
+      {
+        providerId: "strava",
+        externalId: "removed-999",
+        subsource: null,
+        label: "Strava",
+        url: "https://www.strava.com/activities/removed-999",
+        providerAbsentAt: "2026-03-05T14:30:00.000Z",
+        memberActivityId: "member-strava",
       },
     ]);
   });

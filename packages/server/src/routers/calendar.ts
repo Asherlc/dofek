@@ -5,6 +5,7 @@ import {
 import { activityOverviewComparisonSchema } from "@dofek/format/activity-overview";
 import { recordLocalTimeContextSchema } from "@dofek/format/record-local-time";
 import { activityOriginSchema } from "@dofek/providers/activity-origin";
+import { activitySourceTreeSchema } from "@dofek/providers/activity-source-tree";
 import {
   ACTIVITY_HEATMAP_BAND_IDS,
   type ActivityHeatmapBandId,
@@ -50,6 +51,7 @@ const activityListSourceSchema = z.object({
   primarySourceLabel: z.string().nullable(),
   sourceCount: z.number().int().positive(),
   overlapSummary: z.string().nullable(),
+  tree: activitySourceTreeSchema,
 });
 
 const calendarActivityEntrySchema = z.object({
@@ -142,7 +144,7 @@ export const calendarRouter = router({
 
   weekList: cachedProtectedQuery({
     maxAge: CacheTTL.MEDIUM,
-    keyVersion: "activity-calendar-origin-v5",
+    keyVersion: "activity-calendar-source-tree-v6",
   })
     .input(activityListInputSchema)
     .output(z.array(calendarDayActivitiesSchema))

@@ -12,6 +12,24 @@ function origin(providerId: string, sourceName: string | null = null): ActivityO
 }
 
 describe("activitySourceDetails", () => {
+  it.each(["strava", "garmin", "suunto"])(
+    "preserves exact device metadata reported by %s",
+    (provider) => {
+      expect(activitySourceDetails(origin(provider, "Garmin Edge 530"))).toEqual({
+        recordingApp: { provider: "Garmin Edge 530", label: "Garmin Edge 530" },
+        importedVia: {
+          provider,
+          label: provider === "strava" ? "Strava" : provider === "garmin" ? "Garmin" : "Suunto",
+        },
+      });
+    },
+  );
+
+  it("preserves the exact Apple Watch name", () => {
+    expect(
+      activitySourceDetails(origin("apple_health", "Asher’s Apple Watch"))?.recordingApp,
+    ).toEqual({ provider: "apple-watch", label: "Asher’s Apple Watch" });
+  });
   it("keeps a direct WHOOP recording in one role", () => {
     expect(activitySourceDetails(origin("whoop"))).toEqual({
       recordingApp: { provider: "whoop", label: "WHOOP (Cloud)" },

@@ -1,23 +1,23 @@
-import type { ActivityOrigin } from "@dofek/providers/activity-origin";
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { expect, within } from "storybook/test";
+import {
+  branchingSourceTree,
+  longSourceTree,
+  strongSourceTree,
+} from "./ActivitySourceDisclosure.fixtures.ts";
 import { ActivitySourceDisclosure } from "./ActivitySourceDisclosure.tsx";
-
-const origin: ActivityOrigin = {
-  status: "resolved",
-  memberActivityId: "00000000-0000-4000-8000-000000000001",
-  providerId: "apple_health",
-  sourceName: "Hang Ten",
-};
 
 const meta = {
   title: "Activities/ActivitySourceDisclosure",
   component: ActivitySourceDisclosure,
-  args: { origin },
+  args: { tree: branchingSourceTree },
   tags: ["autodocs"],
   decorators: [
     (Story) => (
-      <div className="min-h-64 bg-page p-8 text-foreground">
-        <Story />
+      <div className="bg-page p-4 text-foreground">
+        <div className="card mx-auto max-w-xl overflow-hidden">
+          <Story />
+        </div>
       </div>
     ),
   ],
@@ -26,17 +26,48 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-export const HangTenViaAppleHealth: Story = {};
-export const StrongViaAppleHealth: Story = {
-  args: { origin: { ...origin, sourceName: "Strong" } },
+export const Collapsed: Story = {};
+export const Expanded: Story = {
+  play: async ({ canvasElement, userEvent }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(canvas.getByRole("button", { name: "Garmin Connect Sources" }));
+    await expect(canvas.getAllByText("Apple Health")).toHaveLength(2);
+  },
 };
-export const DirectWhoop: Story = {
-  args: { origin: { ...origin, providerId: "whoop", sourceName: null } },
+export const StrongViaAppleHealth: Story = { args: { tree: strongSourceTree } };
+export const UnresolvedSources: Story = {
+  args: { tree: { primary: null, otherSources: branchingSourceTree.otherSources } },
+  play: async ({ canvasElement, userEvent }) => {
+    await userEvent.click(within(canvasElement).getByRole("button", { name: "Sources" }));
+  },
 };
-export const AppleHealthOnly: Story = { args: { origin: { ...origin, sourceName: null } } };
-export const UnknownRecordingApp: Story = {
-  args: { origin: { ...origin, sourceName: "My Workout App" } },
+export const KeyboardDisclosure: Story = {
+  play: async ({ canvasElement, userEvent }) => {
+    const trigger = within(canvasElement).getByRole("button", { name: "Garmin Connect Sources" });
+    trigger.focus();
+    await userEvent.keyboard("{Enter}");
+    await expect(trigger).toHaveAttribute("aria-expanded", "true");
+    await expect(trigger).toHaveFocus();
+    await userEvent.keyboard(" ");
+    await expect(trigger).toHaveAttribute("aria-expanded", "false");
+  },
 };
-export const UnresolvedOrigin: Story = {
-  args: { origin: { status: "unresolved", candidateMemberActivityIds: [] } },
+
+export const LongSourceLabels: Story = {
+  args: { tree: longSourceTree },
+  play: async ({ canvasElement, userEvent }) => {
+    const canvas = within(canvasElement);
+    const trigger = canvas.getByRole("button", { name: /RecordingDeviceWithAnUnbrokenLongName/ });
+    await userEvent.click(trigger);
+    const disclosure = trigger.parentElement;
+    if (!disclosure) throw new Error("Missing source disclosure");
+    const bounds = disclosure.getBoundingClientRect();
+    const textElements = canvas.getAllByText(/WithAnUnbrokenLong|WithoutWordBreaks/);
+    await expect(textElements).toHaveLength(6);
+    for (const element of textElements) {
+      const textBounds = element.getBoundingClientRect();
+      await expect(textBounds.right).toBeLessThanOrEqual(bounds.right);
+      await expect(element.scrollWidth).toBeLessThanOrEqual(element.clientWidth + 1);
+    }
+  },
 };

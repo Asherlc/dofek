@@ -587,27 +587,29 @@ Source-map and release correlation:
   uploaded from the export that produced the published update, while native
   symbols belong to the archive build.
 
-The activities screen always leads with the shared rounded-outline activity
-icon, including cards with maps and resolved recording origins. Beside time
-and duration, a small recording-app logo and chevron open source details.
-The [source disclosure](components/ActivitySourceDisclosure.tsx) shows
-“Recorded in” and, when applicable, “Imported via” as separate roles:
-[Hang Ten](https://apps.apple.com/us/app/hang-ten-training/id6797141761)
-can save completed sessions to Apple Health. Its trigger uses the
-recording app's clean [ProviderLogo](components/ProviderLogo.tsx), including the
-existing letter fallback for missing assets. Unresolved origins show no source
-control. The [shared origin contract](../providers-meta/src/activity-origin.ts)
-and [source presentation helper](../providers-meta/src/activity-source-details.ts)
-keep origin independent of field and sensor selection.
+The activities screen leads with the shared rounded-outline activity icon.
+The [source disclosure](components/ActivitySourceDisclosure.tsx) sits after the
+activity content and map, inside the same card. Its source row expands into
+propagation branches and doubles as the primary root, avoiding a repeated source
+name. Separate copies from the same provider retain their own branches;
+unconnected records appear as other matching sources. Dofek remains implicit.
+See the [Activities screen](<app/(tabs)/activities.tsx>).
 
-Source details use a native [React Native Modal](https://reactnative.dev/docs/modal)
-with close and backdrop controls, system-back dismissal, and accessibility escape.
-The source trigger has its own 44-point touch target beside a separate full-card
-navigation or selection target, following React Native's
-[Pressable](https://reactnative.dev/docs/pressable) and
-[accessibility guidance](https://reactnative.dev/docs/accessibility).
-After iOS dismisses the modal, the trigger regains screen-reader focus through
-[`AccessibilityInfo.sendAccessibilityEvent`](https://reactnative.dev/docs/accessibilityinfo#sendaccessibilityevent).
+Both clients render the [shared source-tree contract](../providers-meta/src/activity-source-tree.ts)
+from the [server projection](../server/src/models/activity-source-tree.ts).
+Only retained origin evidence connects source records; metric priorities do not
+establish ancestry. Recording-app/device metadata can identify an earlier source
+without claiming its record is available.
+
+The [persisted query contract](lib/mobile-query-persistence.ts) invalidates older
+calendar responses without source trees before restoring activity data, covered
+by the [upgrade regression](lib/mobile-query-persistence.test.tsx).
+
+The inline source button has its own 44-point touch target, independent of the
+card's navigation or selection action. Its expanded accessibility state follows
+the [WAI disclosure pattern](https://www.w3.org/WAI/ARIA/apg/patterns/disclosure/),
+using React Native's [Pressable](https://reactnative.dev/docs/pressable) and
+[accessibility state](https://reactnative.dev/docs/accessibility#accessibilitystate).
 
 ## Activity metric sources
 

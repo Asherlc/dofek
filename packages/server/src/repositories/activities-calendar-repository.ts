@@ -80,6 +80,7 @@ export class ActivitiesCalendarRepository extends BaseRepository {
             activity.primary_provider_id AS primary_provider_id,
             activity.primary_source_name AS primary_source_name,
             arrayMap(member -> toString(member), activity.origin_candidate_member_ids) AS origin_candidate_member_ids,
+            activity.origin_evidence AS origin_evidence,
             activity.source_name AS source_name,
             activity.member_activity_ids AS member_activity_ids,
             activity.timezone AS timezone,

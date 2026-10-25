@@ -1,23 +1,16 @@
 import type { Meta, StoryObj } from "@storybook/react-native";
-import { Text, View } from "react-native";
+import { View } from "react-native";
 import { expect, within } from "storybook/test";
+import { branchingActivitySourceTree } from "../app-fixtures/activity-source-tree";
 import { ActivitySourceDisclosure } from "./ActivitySourceDisclosure";
 
 const meta = {
   title: "Activities/ActivitySourceDisclosure",
   component: ActivitySourceDisclosure,
-  args: {
-    origin: {
-      status: "resolved",
-      memberActivityId: "00000000-0000-4000-8000-000000000001",
-      providerId: "whoop",
-      sourceName: null,
-    },
-  },
+  args: { tree: branchingActivitySourceTree },
   decorators: [
     (Story) => (
-      <View style={{ flexDirection: "row", alignItems: "center", padding: 16, gap: 4 }}>
-        <Text>8:15 AM · 45m</Text>
+      <View style={{ padding: 16, width: "100%", maxWidth: 560 }}>
         <Story />
       </View>
     ),
@@ -27,28 +20,43 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-export const DirectWhoop: Story = {};
-export const HangTenViaAppleHealth: Story = {
-  args: {
-    origin: { ...meta.args.origin, providerId: "apple_health", sourceName: "Hang Ten Training" },
+export const BranchingCollapsed: Story = {};
+export const BranchingExpanded: Story = {
+  play: async ({ canvasElement, userEvent }) => {
+    const canvas = within(canvasElement);
+    const trigger = await canvas.findByRole("button", { name: "Sources: Hang Ten" });
+    trigger.focus();
+    await userEvent.keyboard("{Enter}");
+    await expect(trigger).toHaveAttribute("aria-expanded", "true");
+    await expect(await canvas.findByText("Apple Health")).toBeVisible();
+    await expect(canvas.getAllByText("Strava")).toHaveLength(2);
+    await expect(canvas.getByText("Other matching sources")).toBeVisible();
   },
+};
+export const DirectWhoop: Story = {
+  args: { tree: { primary: branchingActivitySourceTree.otherSources[0], otherSources: [] } },
 };
 export const UnknownRecordingApp: Story = {
   args: {
-    origin: { ...meta.args.origin, providerId: "apple_health", sourceName: "My Workout App" },
+    tree: {
+      ...branchingActivitySourceTree,
+      primary: branchingActivitySourceTree.primary
+        ? {
+            ...branchingActivitySourceTree.primary,
+            providerId: "my-training-app",
+            label: "My Training App",
+          }
+        : null,
+    },
   },
 };
 export const UnresolvedOrigin: Story = {
-  args: { origin: { status: "unresolved", candidateMemberActivityIds: [] } },
-};
-export const SourceDetailsOpen: Story = {
-  ...HangTenViaAppleHealth,
+  args: {
+    tree: { primary: null, otherSources: branchingActivitySourceTree.primary?.children ?? [] },
+  },
   play: async ({ canvasElement, userEvent }) => {
-    await userEvent.click(
-      await within(canvasElement).findByRole("button", { name: "Activity source: Hang Ten" }),
-    );
-    const page = within(canvasElement.ownerDocument.body);
-    await expect(await page.findByText("Recorded in")).toBeVisible();
-    await expect(await page.findByText("Imported via")).toBeVisible();
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByRole("button", { name: "Sources" }));
+    await expect(await canvas.findByText("Other matching sources")).toBeVisible();
   },
 };

@@ -16,6 +16,8 @@ import {
   type WeekListQueryOptions,
 } from "../../app-fixtures/(tabs)/activities-test-helpers";
 
+import { branchingActivitySourceTree } from "../../app-fixtures/activity-source-tree";
+
 let mockQuery: MockQuery;
 let mockCalendarQuery: MockQuery;
 let mockOverviewQuery: MockOverviewQuery;
@@ -162,6 +164,7 @@ describe("ActivitiesScreen", () => {
         activity({
           location,
           source: {
+            tree: branchingActivitySourceTree,
             origin: {
               status: "resolved",
               memberActivityId: "00000000-0000-4000-8000-000000000001",
@@ -178,7 +181,16 @@ describe("ActivitiesScreen", () => {
       const icon = screen.getByTestId("activity-type-icon");
       const title = screen.getByText("Trainer Ride");
       expect(icon.compareDocumentPosition(title) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-      expect(screen.getByRole("button", { name: "Activity source: Hang Ten" })).toBeDefined();
+      const sources = screen.getByRole("button", { name: "Sources: Hang Ten" });
+      expect(
+        title.compareDocumentPosition(sources) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+      if (location) {
+        const map = screen.getByTestId("activity-route-viewport");
+        expect(
+          map.compareDocumentPosition(sources) & Node.DOCUMENT_POSITION_FOLLOWING,
+        ).toBeTruthy();
+      }
     },
   );
 
@@ -188,6 +200,7 @@ describe("ActivitiesScreen", () => {
       mockQuery = activityListQuery([
         activity({
           source: {
+            tree: branchingActivitySourceTree,
             origin: {
               status: "resolved",
               memberActivityId: "00000000-0000-4000-8000-000000000001",
@@ -202,7 +215,7 @@ describe("ActivitiesScreen", () => {
       ]);
       render(<ActivitiesScreen />);
       if (selectMode) fireEvent.click(screen.getByRole("button", { name: "Select activities" }));
-      const sourceButton = screen.getByRole("button", { name: "Activity source: WHOOP (Cloud)" });
+      const sourceButton = screen.getByRole("button", { name: "Sources: Hang Ten" });
       const cardAction = screen.getByRole("button", {
         name: selectMode ? /^Select Trainer Ride/ : /^Open Trainer Ride/,
       });
@@ -210,10 +223,10 @@ describe("ActivitiesScreen", () => {
       expect(sourceButton.parentElement?.closest("button")).toBeNull();
 
       fireEvent.click(sourceButton);
-      expect(screen.getByText("Recorded in")).toBeDefined();
+      expect(screen.getByText("Recording app reported by Apple Health")).toBeDefined();
       expect(routerPush).not.toHaveBeenCalled();
       if (selectMode) expect(screen.getByText("0 activities selected")).toBeDefined();
-      fireEvent.click(screen.getByRole("button", { name: "Close activity source details" }));
+      fireEvent.click(sourceButton);
       fireEvent.click(cardAction);
       if (selectMode) {
         expect(screen.getByText("1 activity selected")).toBeDefined();

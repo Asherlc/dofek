@@ -59,7 +59,7 @@ describe("calendarRouter", () => {
   it("versions the activity state cache contract", () => {
     expect(cachedQueryOptions).toHaveBeenCalledWith({
       maxAge: 600_000,
-      keyVersion: "activity-calendar-origin-v5",
+      keyVersion: "activity-calendar-source-tree-v6",
     });
     expect(cachedQueryOptions).toHaveBeenCalledWith({
       maxAge: 600_000,
@@ -122,6 +122,7 @@ describe("calendarRouter", () => {
                 primarySourceLabel: null,
                 sourceCount: 2,
                 overlapSummary: "2 matched source records",
+                tree: { primary: null, otherSources: [] },
               },
               lastProcessedAt: "2026-03-18 08:07:00+00",
               distanceMeters: 0,
@@ -163,6 +164,7 @@ describe("calendarRouter", () => {
                 primarySourceLabel: null,
                 sourceCount: 2,
                 overlapSummary: "2 matched source records",
+                tree: { primary: null, otherSources: [] },
               },
               lastProcessedAt: "2026-03-18T08:07:00.000Z",
             }),
@@ -196,6 +198,7 @@ describe("calendarRouter", () => {
               primarySourceLabel: null,
               sourceCount: 1,
               overlapSummary: null,
+              tree: { primary: null, otherSources: [] },
             },
             lastProcessedAt: "2026-03-18T08:07:00.000Z",
             distanceMeters: null,
@@ -266,6 +269,7 @@ describe("calendarRouter", () => {
               primarySourceLabel: null,
               sourceCount: 1,
               overlapSummary: null,
+              tree: { primary: null, otherSources: [] },
             },
             lastProcessedAt: "2026-03-18T08:07:00.000Z",
             distanceMeters: 5000,
