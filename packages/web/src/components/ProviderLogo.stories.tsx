@@ -85,3 +85,27 @@ export const GarminFenix8: Story = {
 export const GarminUnknownModel: Story = {
   args: { provider: "garmin", sourceName: "Unrecognized watch" },
 };
+
+export const RoundedCorners: Story = {
+  render: () => (
+    <div className="flex flex-col gap-4">
+      {["#16251b", "#e2e8f0"].map((backgroundColor) => (
+        <div
+          key={backgroundColor}
+          className="flex items-center gap-6 p-6"
+          style={{ backgroundColor }}
+        >
+          {[20, 32, 64].map((size) => (
+            <div key={size} className="flex items-center gap-4">
+              <ProviderLogo provider="hang-ten" size={size} />
+              <ProviderLogo provider="apple_health" sourceName="Hang Ten" size={size} />
+              <ProviderLogo provider="apple_health" size={size} />
+              <ProviderLogo provider="strava" size={size} />
+              <ProviderLogo provider="unknown-provider" size={size} />
+            </div>
+          ))}
+        </div>
+      ))}
+    </div>
+  ),
+};
