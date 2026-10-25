@@ -46,8 +46,8 @@ export function buildActivitySourceDecision(
 export function buildActivityListSource(
   origin: ActivityOrigin,
   sourceLinks: SourceLink[] | undefined,
-  lookupProvider?: ProviderLookup,
-  evidence: ActivityOriginEvidence[] = [],
+  lookupProvider: ProviderLookup | undefined,
+  evidence: ActivityOriginEvidence[],
 ): ActivityListSourceDetail {
   const sourceCount = Math.max(sourceLinks?.length ?? 0, 1);
   return {

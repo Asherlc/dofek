@@ -35,7 +35,7 @@ describe("provenance-based source attribution", () => {
       status: "unresolved",
       candidateMemberActivityIds: [origin.memberActivityId],
     };
-    expect(buildActivityListSource(unresolved, links)).toMatchObject({
+    expect(buildActivityListSource(unresolved, links, undefined, [])).toMatchObject({
       origin: unresolved,
       sourceCount: 2,
       primarySourceLabel: null,
@@ -51,6 +51,8 @@ describe("provenance-based source attribution", () => {
       buildActivityListSource(
         { ...origin, providerId: "apple_health", sourceName: "Garmin" },
         undefined,
+        undefined,
+        [],
       ),
     ).toMatchObject({
       origin: { ...origin, providerId: "apple_health", sourceName: "Garmin" },
@@ -65,7 +67,60 @@ describe("provenance-based source attribution", () => {
   });
   it("uses the actual provider display name supplied by the provider registry", () => {
     expect(
-      buildActivityListSource(origin, links, () => ({ name: "Garmin Connect" })).primarySourceLabel,
+      buildActivityListSource(origin, links, () => ({ name: "Garmin Connect" }), [])
+        .primarySourceLabel,
     ).toBe("Garmin Connect");
+  });
+  it("uses supplied origin evidence to nest matched copies beneath their recording source", () => {
+    const sourceLinks: SourceLink[] = [
+      {
+        providerId: "garmin",
+        externalId: "original",
+        memberActivityId: origin.memberActivityId,
+        subsource: null,
+        label: "Garmin",
+        url: "https://connect.garmin.com/modern/activity/original",
+      },
+      {
+        providerId: "strava",
+        externalId: "copy",
+        memberActivityId: "00000000-0000-4000-8000-000000000002",
+        subsource: null,
+        label: "Strava",
+        url: "https://www.strava.com/activities/copy",
+      },
+    ];
+
+    expect(
+      buildActivityListSource(origin, sourceLinks, undefined, [
+        {
+          upstreamMemberActivityId: origin.memberActivityId,
+          downstreamMemberActivityId: "00000000-0000-4000-8000-000000000002",
+          field: "garminActivityId",
+          value: "original",
+        },
+      ]).tree,
+    ).toEqual({
+      primary: {
+        id: "00000000-0000-4000-8000-000000000001",
+        providerId: "garmin",
+        sourceName: "Garmin Edge 530",
+        label: "Garmin Edge 530",
+        description: "Closest available recording",
+        url: "https://connect.garmin.com/modern/activity/original",
+        children: [
+          {
+            id: "00000000-0000-4000-8000-000000000002",
+            providerId: "strava",
+            sourceName: null,
+            label: "Strava",
+            description: "Imported from Garmin",
+            url: "https://www.strava.com/activities/copy",
+            children: [],
+          },
+        ],
+      },
+      otherSources: [],
+    });
   });
 });

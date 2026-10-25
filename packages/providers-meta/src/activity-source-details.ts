@@ -19,11 +19,9 @@ export function activitySourceDetails(origin: ActivityOrigin): ActivitySourceDet
   const name = origin.sourceName?.trim();
   const distinctSource =
     name &&
-    ![
-      provider,
-      providerLabel(provider),
-      ...(provider === "apple_health" ? ["HealthKit"] : []),
-    ].some((label) => label.toLowerCase() === name.toLowerCase());
+    ![provider, providerLabel(provider)].some(
+      (label) => label.toLowerCase() === name.toLowerCase(),
+    );
   const source = distinctSource
     ? provider === "garmin" || garminDeviceThumbnail(name) !== null
       ? "garmin"
