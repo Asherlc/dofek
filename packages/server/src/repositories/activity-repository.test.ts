@@ -1589,7 +1589,18 @@ describe("ActivityRepository", () => {
         {
           key: "heartRate",
           label: "Heart Rate",
-          sources: [{ id: "garmin", label: "Garmin" }],
+          sources: [
+            {
+              id: "garmin",
+              label: "Garmin",
+              presentation: {
+                displayName: "Garmin",
+                providerId: "garmin",
+                sourceName: null,
+                attribution: null,
+              },
+            },
+          ],
           defaultSourceId: "garmin",
         },
       ]);
