@@ -49,6 +49,26 @@ The backend API and background job processor for Dofek. Built with Node.js, Expr
 
 ## Key Implementation Details
 
+- **Activity hardware**: `activity.hardware` resolves owned, visible activity
+  members through the [activity repository](src/repositories/activity-repository.ts)
+  and reads raw provider payloads and FIT observations from Postgres through the
+  [hardware repository](src/repositories/activity-hardware-repository.ts).
+  [Normalization](src/models/activity-hardware.ts) consolidates repeated FIT
+  observations only at read time, preserving partial identity and latest reported
+  battery facts. Explicit device indices remain distinct despite serial-number
+  collisions; unindexed serial evidence merges only with a unique compatible
+  manufacturer/identity. FIT file creators are qualified separately from
+  provider-reported recording devices, since a creator may be an export platform
+  ([Garmin activity files](https://developer.garmin.com/fit/articles/file-types/activity.html)).
+  Source apps and equipment categories do not establish an original recorder.
+  Metric-source enrichment changes labels only; source IDs,
+  ordering, defaults, priorities, and measurement classification remain unchanged.
+  Existing retained API metadata is immediately available; newly retained FIT,
+  Polar, HealthKit, and BLE metadata requires reimport, resync, or new capture.
+  Both clients render the [shared contract](../providers-meta/src/activity-hardware.ts)
+  with identifiers and firmware behind device disclosure controls, following the
+  [WAI disclosure pattern](https://www.w3.org/WAI/ARIA/apg/patterns/disclosure/).
+
 - **Hangboarding details**: The [repository](src/repositories/hangboarding-repository.ts)
   accepts the displayed activity group ID and provider member IDs. Both lookups
   retain user ownership, canonical hangboard type, and access-window restrictions;

@@ -73,6 +73,7 @@ describe("syncHealthKitToServer", () => {
           endDate: "2026-03-21T08:00:00Z",
           duration: 3600,
           totalDistance: 10000,
+          device: { name: "My Watch", model: "Watch7,12" },
           sourceName: "Apple Watch",
           sourceBundle: "com.apple.health",
         },
@@ -512,7 +513,12 @@ describe("syncHealthKitToServer", () => {
     expect(healthKit.queryWorkouts).toHaveBeenCalledTimes(1);
     expect(client.healthKitSync.pushWorkouts.mutate).toHaveBeenCalledWith(
       expect.objectContaining({
-        workouts: expect.arrayContaining([expect.objectContaining({ uuid: "workout-1" })]),
+        workouts: expect.arrayContaining([
+          expect.objectContaining({
+            uuid: "workout-1",
+            device: { name: "My Watch", model: "Watch7,12" },
+          }),
+        ]),
       }),
     );
   });
@@ -1205,6 +1211,7 @@ describe("syncHealthKitObserverChanges", () => {
         endDate: "2026-07-27T11:00:00Z",
         duration: 3600,
         totalDistance: 10000,
+        device: { name: "My Watch", model: "Watch7,12" },
         sourceName: "Apple Watch",
         sourceBundle: "com.apple.health",
       },
@@ -1235,6 +1242,16 @@ describe("syncHealthKitObserverChanges", () => {
     });
 
     expect(client.healthKitSync.pushWorkoutRoutes.mutate).toHaveBeenCalledTimes(1);
+    expect(client.healthKitSync.pushWorkouts.mutate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workouts: expect.arrayContaining([
+          expect.objectContaining({
+            uuid: "workout-1",
+            device: { name: "My Watch", model: "Watch7,12" },
+          }),
+        ]),
+      }),
+    );
     expect(client.healthKitSync.pushWorkoutRoutes.mutate).toHaveBeenCalledWith({
       routes: [
         expect.objectContaining({ workoutUuid: "workout-1" }),

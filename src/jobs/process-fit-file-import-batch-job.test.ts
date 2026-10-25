@@ -1,7 +1,90 @@
-import { describe, expect, it } from "vitest";
-import { processFitFileImportBatchJob } from "./process-fit-file-import-batch-job.ts";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { OriginalFitRetentionError } from "./original-fit-retention-error.ts";
+import { processFitFileImportBatchJob as processBatch } from "./process-fit-file-import-batch-job.ts";
+
+const { getJob } = vi.hoisted(() => ({ getJob: vi.fn() }));
+vi.mock("./queues.ts", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./queues.ts")>()),
+  getFitFileImportQueue: () => ({ getJob }),
+}));
+
+beforeEach(() => {
+  getJob.mockReset();
+});
+
+const archivedData = {
+  originalPath: "activity.fit",
+  userId: "user-1",
+  providerId: "garmin-dump",
+  retainedArtifactKey: `provider-artifacts/user-1/garmin-dump/${"a".repeat(64)}.fit`,
+};
+const processFitFileImportBatchJob = (job: Parameters<typeof processBatch>[0]) =>
+  processBatch(job, async () => archivedData);
 
 describe("processFitFileImportBatchJob", () => {
+  it("loads the stored failed child's ownership using its queue job identifier", async () => {
+    getJob.mockImplementation(async (id) =>
+      id === "owned-fit-42" ? { data: archivedData } : undefined,
+    );
+
+    await expect(
+      processBatch({
+        getChildrenValues: async () => ({
+          "bull:fit-file-import:success": { recordsSynced: 2, errors: [] },
+        }),
+        getIgnoredChildrenFailures: async () => ({
+          "bull:fit-file-import:owned-fit-42": "Invalid FIT checksum",
+        }),
+      }),
+    ).resolves.toEqual({
+      recordsSynced: 2,
+      errors: [{ message: "1 FIT file failed: Invalid FIT checksum" }],
+    });
+  });
+
+  it("keeps a missing failed child retryable when loading ownership from the queue", async () => {
+    getJob.mockResolvedValue(undefined);
+    await expect(
+      processBatch({
+        getChildrenValues: async () => ({}),
+        getIgnoredChildrenFailures: async () => ({
+          "bull:fit-file-import:missing-fit-42": "Storage unavailable",
+        }),
+      }),
+    ).rejects.toBeInstanceOf(OriginalFitRetentionError);
+  });
+  it("keeps a failed FIT child without an archive retryable instead of completing its batch", async () => {
+    await expect(
+      processBatch(
+        {
+          getChildrenValues: async () => ({}),
+          getIgnoredChildrenFailures: async () => ({
+            "bull:fit-file-import:pending": "R2 unavailable",
+          }),
+        },
+        async () => ({
+          originalPath: "activity.fit",
+          userId: "user-1",
+          providerId: "garmin-dump",
+          filePath: "/job-files/owned/activity.fit",
+        }),
+      ),
+    ).rejects.toBeInstanceOf(OriginalFitRetentionError);
+  });
+
+  it("fails when an ignored child has no remaining ownership record", async () => {
+    await expect(
+      processBatch(
+        {
+          getChildrenValues: async () => ({}),
+          getIgnoredChildrenFailures: async () => ({
+            "bull:fit-file-import:missing": "R2 unavailable",
+          }),
+        },
+        async () => undefined,
+      ),
+    ).rejects.toBeInstanceOf(OriginalFitRetentionError);
+  });
   it("preserves successful records and groups completed and ignored child failures", async () => {
     const result = await processFitFileImportBatchJob({
       getChildrenValues: async () => ({

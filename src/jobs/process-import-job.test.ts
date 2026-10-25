@@ -11,6 +11,7 @@ import {
   STRONG_CSV_IMPORT_VALIDATION_ERROR_NAME,
 } from "./import-validation-error.ts";
 import type { LocalImportJobData as ImportJobData } from "./local-import-job-data.ts";
+import { OriginalFitRetentionError } from "./original-fit-retention-error.ts";
 
 const mockCaptureException = vi.fn();
 vi.mock("@sentry/node", () => ({
@@ -41,7 +42,7 @@ vi.mock("node:fs/promises", async (importOriginal) => {
   realUnlink = actual.unlink;
   return { ...actual, unlink: (...args: [string]) => mockUnlink(...args) };
 });
-const { writeFile, access } = await import("node:fs/promises");
+const { writeFile, readFile, access } = await import("node:fs/promises");
 
 const mockLoggerInfo = vi.fn();
 const mockLoggerError = vi.fn();
@@ -1127,6 +1128,35 @@ describe("processImportJob", () => {
   });
 
   describe("fit-file import", () => {
+    it("preserves original manual FIT bytes after retention fails and cleans them after retry succeeds", async () => {
+      const error = new OriginalFitRetentionError("Original FIT retention failed", {
+        cause: new Error("R2 unavailable"),
+      });
+      mockImportFitFile.mockRejectedValueOnce(error);
+      const job = createMockJob({ filePath: tempFilePath, importType: "fit-file" });
+
+      await expect(runImportJob(job, mockDb)).rejects.toBe(error);
+
+      await expect(readFile(tempFilePath)).resolves.toEqual(Buffer.from("test data"));
+      expect(mockAppendProcessingStageEvent).toHaveBeenCalledWith(
+        mockDb,
+        expect.objectContaining({
+          stage: "ingest",
+          status: "failed",
+          errorCode: "file_import_failed",
+        }),
+      );
+      expect(mockAppendProcessingStageEvent).not.toHaveBeenCalledWith(
+        mockDb,
+        expect.objectContaining({ stage: "ingest", status: "succeeded" }),
+      );
+      expect(mockCaptureException).toHaveBeenCalledWith(error, { tags: { phase: "file-import" } });
+
+      await runImportJob(job, mockDb);
+
+      await expect(access(tempFilePath)).rejects.toMatchObject({ code: "ENOENT" });
+    });
+
     it("delegates FIT decoding and records the import lifecycle", async () => {
       const job = createMockJob({ filePath: tempFilePath, importType: "fit-file" });
       await runImportJob(job, mockDb);

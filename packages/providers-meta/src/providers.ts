@@ -13,6 +13,7 @@ export function providerLabel(id: string): string {
 
 export function providerSourceLabel(id: string, subsource?: string | null): string {
   if (id === "apple_health" && subsource) return `${subsource} (via Apple Health)`;
+  if (id === "garmin") return providerRecordLabel(id, subsource);
   return providerLabel(id);
 }
 

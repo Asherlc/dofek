@@ -11,6 +11,7 @@ import {
 import type { SyncResult } from "../providers/types.ts";
 import { attachGarminFitImportFlow, createBatchId, FLOW_BATCH_SIZE } from "./garmin-dump-flow.ts";
 import type { LocalImportJobData } from "./local-import-job-data.ts";
+import { OriginalFitRetentionError } from "./original-fit-retention-error.ts";
 import { fitFileImportJobResultSchema } from "./queues.ts";
 
 const MAX_GARMIN_IMPORT_ERRORS = 10;
@@ -185,14 +186,17 @@ export async function processGarminDumpImportJob(
   ]);
   const batchResult = batchResultFromChildren(checkpoint, childValues);
   const batchFailures = batchFailureFromChildren(checkpoint, ignoredFailures);
+  if (batchFailures.length > 0) {
+    throw new OriginalFitRetentionError(
+      "Some original FIT files could not be saved. Try the import again.",
+      { cause: new AggregateError(batchFailures) },
+    );
+  }
   if (!batchResult && batchFailures.length === 0 && checkpoint.totalFitFiles > 0) {
     throw new Error(`Garmin FIT batch result is missing: ${checkpoint.batchId}`);
   }
 
   const fitResult = batchResult ?? { recordsSynced: 0, errors: [] };
-  for (const message of batchFailures) {
-    fitResult.errors.push({ message: `Garmin FIT batch failed: ${message}` });
-  }
   await cleanupPreparedGarminDumpImport(checkpoint.tempDirectories);
   const result: GarminDumpImportResult = {
     provider: "garmin-dump",

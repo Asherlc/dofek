@@ -322,6 +322,7 @@ public class BleHeartRateModule: Module {
     private func emitHeartRateMeasurement(_ sample: BleHeartRateSample) {
         emitOnMainThread("onHeartRateMeasurement", [
             "deviceId": sample.deviceId,
+            "deviceName": sample.deviceName,
             "timestamp": isoFormatter.string(from: sample.timestamp),
             "heartRateBpm": sample.heartRateBpm,
             "rrIntervalsMs": sample.rrIntervalsMs,

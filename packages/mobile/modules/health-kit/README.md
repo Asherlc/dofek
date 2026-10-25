@@ -9,6 +9,13 @@ This module provides the iOS-native HealthKit bridge used by the mobile app to:
 - incrementally query samples and deletions with a native-persisted opaque anchor
 - enable background delivery + observer events
 
+Workout queries retain the optional recording hardware supplied by
+[`HKDevice`](https://developer.apple.com/documentation/healthkit/hkdevice)
+as `device`, separately from `sourceName` and `sourceBundle`. Available name,
+model, manufacturer, version and identifier fields pass through normal and
+observer-triggered workout uploads into the activity's raw payload. Unknown
+fields remain absent; existing activities gain newly retained facts after sync.
+
 ## Structure
 
 - `index.ts`: TypeScript API exported to React Native code.

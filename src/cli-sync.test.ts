@@ -196,6 +196,22 @@ describe("handleSyncCommand", () => {
     expect(mockProcessFitFileImportJob).toHaveBeenCalledWith(fakeJob, expect.any(Object));
   });
 
+  it("fences CLI child FIT archival with its provider before processing", async () => {
+    mockGetEnabledSyncProviders.mockReturnValue([{ id: "wahoo" }]);
+    await handleSyncCommand(["node", "index.ts", "sync"]);
+    await capturedWorkerCallbacks.get("fit-file-import")?.({
+      data: { userId: "test-user", providerId: "wahoo" },
+    });
+    expect(mockRunQueuedUserWorkUnlessAccountErasing).toHaveBeenLastCalledWith(
+      expect.anything(),
+      expect.anything(),
+      "test-user",
+      "CLI FIT file import",
+      expect.any(Function),
+      "wahoo",
+    );
+  });
+
   it("closes the queued-work lock pool after temporary workers stop", async () => {
     mockGetEnabledSyncProviders.mockReturnValue([{ id: "strava" }]);
 

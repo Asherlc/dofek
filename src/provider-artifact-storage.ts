@@ -1,4 +1,5 @@
-import { createWriteStream } from "node:fs";
+import { createHash } from "node:crypto";
+import { createReadStream, createWriteStream } from "node:fs";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import {
@@ -30,6 +31,12 @@ const objectKeySchema = z
   );
 
 export interface ProviderArtifactStorage {
+  retainFile(input: {
+    userId: string;
+    providerId: string;
+    filePath: string;
+    retainedObjectKey?: string;
+  }): Promise<string>;
   ensureArtifact(input: {
     userId: string;
     providerId: string;
@@ -39,6 +46,7 @@ export interface ProviderArtifactStorage {
   materializeArtifact(objectKey: string, filePath: string): Promise<void>;
   deleteForUser(userId: string): Promise<void>;
   deleteForProvider(userId: string, providerId: string): Promise<void>;
+  hasForProvider(userId: string, providerId: string): Promise<boolean>;
 }
 
 export class R2ProviderArtifactStorage implements ProviderArtifactStorage {
@@ -48,6 +56,30 @@ export class R2ProviderArtifactStorage implements ProviderArtifactStorage {
   constructor(client: S3Client, bucket: string) {
     this.#client = client;
     this.#bucket = bucket;
+  }
+
+  async retainFile(input: Parameters<ProviderArtifactStorage["retainFile"]>[0]): Promise<string> {
+    const userId = segmentSchema.parse(input.userId);
+    const providerId = segmentSchema.parse(input.providerId);
+    let artifactId: string;
+    if (input.retainedObjectKey !== undefined) {
+      const objectKey = objectKeySchema.parse(input.retainedObjectKey);
+      const prefix = `provider-artifacts/${userId}/${providerId}/`;
+      if (!objectKey.startsWith(prefix)) {
+        throw new Error("Retained provider artifact is outside its ownership prefix");
+      }
+      artifactId = objectKey.slice(prefix.length, -".fit".length);
+    } else {
+      const hash = createHash("sha256");
+      await pipeline(createReadStream(input.filePath), hash);
+      artifactId = hash.digest("hex");
+    }
+    return this.ensureArtifact({
+      userId,
+      providerId,
+      artifactId,
+      download: async () => createReadStream(input.filePath),
+    });
   }
 
   async ensureArtifact(
@@ -106,6 +138,21 @@ export class R2ProviderArtifactStorage implements ProviderArtifactStorage {
     await this.#deletePrefix(
       `provider-artifacts/${segmentSchema.parse(userId)}/${segmentSchema.parse(providerId)}/`,
     );
+  }
+
+  async hasForProvider(userId: string, providerId: string): Promise<boolean> {
+    const prefix = `provider-artifacts/${segmentSchema.parse(userId)}/${segmentSchema.parse(providerId)}/`;
+    const response = await this.#client.send(
+      new ListObjectsV2Command({ Bucket: this.#bucket, Prefix: prefix, MaxKeys: 1 }),
+    );
+    const objects = response.Contents ?? [];
+    for (const object of objects) {
+      if (!object.Key?.startsWith(prefix)) {
+        throw new Error("R2 returned a provider artifact outside its ownership prefix");
+      }
+      objectKeySchema.parse(object.Key);
+    }
+    return objects.length > 0;
   }
 
   async #deletePrefix(prefix: string): Promise<void> {

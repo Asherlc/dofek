@@ -24,7 +24,19 @@ export interface WorkoutActivity {
   metadata?: Record<string, string | number>;
 }
 
+export interface HealthKitDevice {
+  name?: string;
+  model?: string;
+  manufacturer?: string;
+  hardwareVersion?: string;
+  firmwareVersion?: string;
+  softwareVersion?: string;
+  localIdentifier?: string;
+  udiDeviceIdentifier?: string;
+}
+
 export interface WorkoutSample {
+  device?: HealthKitDevice;
   uuid: string;
   workoutType: string;
   startDate: string;

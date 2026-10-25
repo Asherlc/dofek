@@ -133,7 +133,11 @@ describe("ActivityCardContent", () => {
       const logo = source.querySelector("img");
       expect(logo).toHaveAttribute("width", "18");
       expect(logo?.getAttribute("src")).toContain(
-        providerId === "apple_health" ? "strong-csv" : providerId,
+        providerId === "garmin"
+          ? "010-02060-00"
+          : providerId === "apple_health"
+            ? "strong-csv"
+            : providerId,
       );
     },
   );

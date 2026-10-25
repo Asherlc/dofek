@@ -59,6 +59,22 @@ export const StravaViaAppleHealth: Story = {
   args: { provider: "apple_health", sourceName: "Strava" },
 };
 
+export const GarminWatch: Story = {
+  args: { provider: "garmin", sourceName: "Forerunner 965" },
+};
+
+export const GarminBikeComputer: Story = {
+  args: { provider: "garmin", sourceName: "Edge 1050" },
+};
+
+export const GarminFenix8: Story = {
+  args: { provider: "garmin", sourceName: "fēnix 8 – 47mm" },
+};
+
+export const GarminUnknownModel: Story = {
+  args: { provider: "garmin", sourceName: "Unrecognized watch" },
+};
+
 export const RoundedCornersOnBackgrounds: Story = {
   args: { size: 64 },
   render: (args) => (
