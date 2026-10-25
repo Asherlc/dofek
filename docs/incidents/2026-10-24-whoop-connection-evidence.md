@@ -110,3 +110,71 @@ Test Suite 'All tests' passed at 2026-10-24 08:07:43.052.
 ```
 
 Strict SwiftLint passed over all 139 tracked Swift files, and the signed Debug iOS Simulator rebuild returned exit code 0 after this correction. No TypeScript implementation changed.
+
+## Evening recurrence with native diagnostics
+
+The user reported another “WHOOP disconnected” alert on October 24 Pacific.
+The updated native journal was present in the installed app. The following
+read-only [Axiom query](../axiom-observability-runbook.md#queries) retains only
+connection metadata, omitting account, device, process and event identifiers:
+
+```apl
+['dofek-logs']
+| where _time >= datetime(2026-10-25T01:31:35Z) and _time < datetime(2026-10-25T01:40:00Z)
+| where ['service.name'] == 'dofek-mobile'
+| where body == '[whoop-ble] native_connection_event' or body contains 'BLE disconnected'
+| project _time, body,
+    nativeEvent=['attributes.custom']['nativeEvent'],
+    nativeOccurredAt=['attributes.custom']['nativeOccurredAt'],
+    connectionState=['attributes.custom']['connectionState'],
+    previousConnectionState=['attributes.custom']['previousConnectionState'],
+    centralState=['attributes.custom']['centralState'],
+    reconnectIntent=['attributes.custom']['reconnectIntent'],
+    reason=['attributes.custom']['reason'],
+    errorDomain=['attributes.custom']['errorDomain'],
+    errorCode=['attributes.custom']['errorCode'],
+    errorDescription=['attributes.custom']['errorDescription'],
+    appState=['attributes.custom']['appState']
+| sort by _time asc
+```
+
+```jsonl
+{"_time":"2026-10-25T01:31:46.76Z","appState":"background","body":"[whoop-ble] native_connection_event","centralState":"poweredOn","connectionState":"streaming","errorCode":6,"errorDescription":"The connection has timed out unexpectedly.","errorDomain":"CBErrorDomain","nativeEvent":"disconnected","nativeOccurredAt":"2026-10-25T01:31:46.590Z","previousConnectionState":null,"reason":null,"reconnectIntent":true}
+{"_time":"2026-10-25T01:31:46.766Z","appState":"background","body":"[whoop-ble] native_connection_event","centralState":"poweredOn","connectionState":"idle","errorCode":null,"errorDescription":null,"errorDomain":null,"nativeEvent":"state_transition","nativeOccurredAt":"2026-10-25T01:31:46.598Z","previousConnectionState":"streaming","reason":null,"reconnectIntent":true}
+{"_time":"2026-10-25T01:31:46.767Z","appState":"background","body":"[whoop-ble] native_connection_event","centralState":"poweredOn","connectionState":"connecting","errorCode":null,"errorDescription":null,"errorDomain":null,"nativeEvent":"state_transition","nativeOccurredAt":"2026-10-25T01:31:46.602Z","previousConnectionState":"idle","reason":null,"reconnectIntent":true}
+{"_time":"2026-10-25T01:31:46.768Z","appState":"background","body":"[whoop-ble] native_connection_event","centralState":"poweredOn","connectionState":"connecting","errorCode":null,"errorDescription":null,"errorDomain":null,"nativeEvent":"connect_requested","nativeOccurredAt":"2026-10-25T01:31:46.604Z","previousConnectionState":null,"reason":"automatic_reconnect","reconnectIntent":true}
+{"_time":"2026-10-25T01:31:46.774Z","appState":null,"body":"[whoop-ble] BLE disconnected (The connection has timed out unexpectedly.), will reconnect","centralState":null,"connectionState":null,"errorCode":null,"errorDescription":null,"errorDomain":null,"nativeEvent":null,"nativeOccurredAt":null,"previousConnectionState":null,"reason":null,"reconnectIntent":null}
+```
+
+The native event records an OS-reported timeout at 18:31:46 Pacific, followed
+14 ms later by an automatic reconnect request. The capture snapshot exported
+at `01:31:46.771Z` recorded its last data notification at `01:31:40.439Z`.
+These observations identify the failure and attempted recovery; they do not
+establish what caused the link timeout or whether recovery later succeeded.
+The five-minute delay in the [notification coordinator](../../packages/mobile/modules/background-refresh/ios/CollectionNotificationCoordinator.swift)
+predicts an alert around 18:36:46 Pacific; actual delivery was not logged.
+
+A complete mobile-service query returned no events after the disconnect export
+through `01:40:00Z`:
+
+```apl
+['dofek-logs']
+| where _time > datetime(2026-10-25T01:31:46.774Z) and _time < datetime(2026-10-25T01:40:00Z)
+| where ['service.name'] == 'dofek-mobile'
+| summarize events=count()
+```
+
+```jsonl
+[]
+```
+
+Separately, the last-hour cloud-request aggregate returned 18 requests with
+status `200`. This is evidence of successful logged cloud requests, not
+Bluetooth recovery or complete capture. The user was asked to open Dofek to
+allow retained native history to upload. Inspect `nativeOccurredAt` and the
+native session when correlating replayed events: the [diagnostics reporter](../../packages/mobile/lib/whoop-ble-diagnostics.ts)
+exports persisted history with the current snapshot context. In particular,
+look for a later `handshake_aborted` event before attributing recovery failure
+to the [application handshake timeout](../../packages/mobile/modules/whoop-ble/ios/WhoopBleConnectionManager.swift).
+Cause and recovery remain unresolved; no behavioral change or production
+mutation was performed.
