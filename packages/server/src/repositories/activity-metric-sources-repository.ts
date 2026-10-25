@@ -119,15 +119,17 @@ export async function getActivityMetricSources(
             ? labels[0]
             : undefined;
         if (!name) return { id: row.source_id, label: originalLabel };
+        const includesHardwareName = originalLabel
+          .replace(/\s+/g, " ")
+          .toLowerCase()
+          .includes(name.replace(/\s+/g, " ").toLowerCase());
         if (role === "recorder") {
           return {
             id: row.source_id,
-            label: originalLabel.includes(name)
-              ? originalLabel
-              : `${originalLabel} · recorded by ${name}`,
+            label: includesHardwareName ? originalLabel : `${originalLabel} · recorded by ${name}`,
           };
         }
-        const baseLabel = originalLabel.includes(name)
+        const baseLabel = includesHardwareName
           ? providerRecordLabel(row.provider_id, null)
           : originalLabel;
         return {

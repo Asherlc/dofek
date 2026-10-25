@@ -348,3 +348,21 @@ export const HeartRateSources = {
     );
   },
 };
+
+export const ElevationSources = {
+  render: function ElevationSourcesStory() {
+    const [selectedId, setSelectedId] = useState("watch");
+    return (
+      <MetricSourcePicker
+        label="Elevation"
+        showLabel={false}
+        sources={[
+          { id: "watch", label: "Asher’s Apple\u00a0Watch (via Apple Health)" },
+          { id: "garmin", label: "Garmin" },
+        ]}
+        selectedId={selectedId}
+        onChange={setSelectedId}
+      />
+    );
+  },
+};

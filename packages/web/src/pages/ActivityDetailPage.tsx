@@ -430,21 +430,19 @@ export function ActivityDetailPage() {
             {sourceControls
               .filter((metric) => metric.key === "altitude")
               .map((metric) => (
-                <label key={metric.key} className="mb-2 block text-xs text-muted">
-                  Elevation source
-                  <select
-                    aria-label="Elevation source"
-                    className="ml-2 min-h-9 min-w-0 max-w-44 rounded-md border border-border bg-transparent py-1 pl-2 pr-1 text-xs text-muted focus-visible:outline-2 focus-visible:outline-offset-2"
-                    value={metric.selectedId}
-                    onChange={(event) => metric.onChange(event.target.value)}
-                  >
-                    {metric.sources.map((source) => (
-                      <option key={source.id} value={source.id}>
-                        {source.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                <select
+                  key={metric.key}
+                  aria-label="Elevation source"
+                  className="mb-2 block min-h-9 min-w-0 max-w-44 rounded-md border border-border bg-transparent py-1 pl-2 pr-1 text-xs text-muted focus-visible:outline-2 focus-visible:outline-offset-2"
+                  value={metric.selectedId}
+                  onChange={(event) => metric.onChange(event.target.value)}
+                >
+                  {metric.sources.map((source) => (
+                    <option key={source.id} value={source.id}>
+                      {source.label}
+                    </option>
+                  ))}
+                </select>
               ))}
             <ElevationChart
               points={points}

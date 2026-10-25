@@ -380,11 +380,13 @@ export function AreaChart({
 
 export function MetricSourcePicker({
   label,
+  showLabel = true,
   sources,
   selectedId,
   onChange,
 }: {
   label: string;
+  showLabel?: boolean;
   sources: Array<{ id: string; label: string }>;
   selectedId: string;
   onChange: (sourceId: string) => void;
@@ -400,7 +402,8 @@ export function MetricSourcePicker({
         style={{ padding: 12, backgroundColor: colors.surface, borderRadius: 8 }}
       >
         <Text style={{ color: colors.text }}>
-          {label} · {selected?.label} ▾
+          {showLabel ? `${label} · ` : ""}
+          {selected?.label} ▾
         </Text>
       </Pressable>
       <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>

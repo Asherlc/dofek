@@ -2265,7 +2265,9 @@ it("keeps mobile metric choices independent and propagates power and elevation",
   render(<ActivityDetailScreen />);
   fireEvent.click(screen.getByRole("button", { name: "Power source: Wahoo" }));
   fireEvent.click(screen.getByRole("radio", { name: "Garmin" }));
-  fireEvent.click(screen.getByRole("button", { name: "Elevation source: Wahoo" }));
+  const elevationSource = screen.getByRole("button", { name: "Elevation source: Wahoo" });
+  expect(elevationSource.textContent).toBe("Wahoo ▾");
+  fireEvent.click(elevationSource);
   fireEvent.click(screen.getByRole("radio", { name: "Garmin" }));
   expect(screen.getByRole("button", { name: "Heart Rate source: WHOOP" })).toBeTruthy();
   expect(mockStreamQuery).toHaveBeenLastCalledWith(

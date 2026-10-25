@@ -873,6 +873,7 @@ export default function ActivityDetailScreen() {
           <MetricSourcePicker
             key={metric.key}
             label={metric.label}
+            showLabel={false}
             sources={metric.sources}
             selectedId={metric.selectedId}
             onChange={metric.onChange}

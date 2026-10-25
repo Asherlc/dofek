@@ -385,6 +385,17 @@ describe("hardware label evidence boundaries", () => {
   it("retains an already descriptive recorder label without duplicating it", async () => {
     expect(await source([item()], { device_id: "Edge 530" })).toBe("Garmin · Edge 530");
   });
+  it.each(["Asher’s Apple\u00a0Watch", "Asher’s Apple\u202fWatch", "Asher’s APPLE WATCH"])(
+    "recognizes the recorder already named in %s",
+    async (deviceName) => {
+      expect(
+        await source(
+          [item({ providerId: "apple_health", sourceName: deviceName, label: "Apple Watch" })],
+          { provider_id: "apple_health", device_id: deviceName },
+        ),
+      ).toBe(`${deviceName} (via Apple Health)`);
+    },
+  );
   it("retains the stream's distinct app label when qualifying its file creator", async () => {
     expect(await source([item({ role: "creator" })], { device_id: "Recording app" })).toBe(
       "Garmin · Recording app · file created by Edge 530",
