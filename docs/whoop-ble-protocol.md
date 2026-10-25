@@ -549,6 +549,28 @@ physical iPhone; simulator evidence does not establish those hardware paths
 For a disconnection alert, first correlate the native disconnect with the
 [notification coordinator's](../packages/mobile/modules/background-refresh/ios/CollectionNotificationCoordinator.swift)
 five-minute grace period, then check for a native reconnect or handshake failure.
+If the background outcome has not reached the log service, open Dofek briefly
+to allow the [reporter](../packages/mobile/lib/whoop-ble-diagnostics.ts) to export
+retained native history. Correlate `nativeSessionId`, sort by `nativeOccurredAt`,
+and deduplicate by `eventId`; ingestion time describes the later export.
+Then verify a newer `lastDataNotificationAt`, `lastParsedRealtimeAt`, and
+`lastValidHeartRateAt` to establish resumed heart-rate capture. A foreground
+recovery does not establish sustained background recovery or historical
+completeness, as illustrated by the
+[October 24 evidence](incidents/2026-10-24-whoop-connection-evidence.md#foreground-replay-confirms-the-recovery-failure).
+
+Automatic recovery leaves a pending Bluetooth connection intact instead of
+expiring it after ten seconds. The
+[handshake lifecycle](../packages/mobile/modules/whoop-ble/ios/WhoopBleConnectionManager+Handshake.swift)
+keeps explicit connection requests bounded and times out service discovery and
+notification subscription after a passive connection succeeds. Discovery/retry
+preserves pending peripheral ownership. Apple documents that
+[connection requests do not time out](https://developer.apple.com/documentation/corebluetooth/cbcentralmanager/connect(_:options:))
+and that [restored peripherals can be connected or pending](https://developer.apple.com/documentation/corebluetooth/cbcentralmanagerrestoredstateperipheralskey).
+The existing delayed alert still reports loss of collection while a reconnect
+remains pending; a native rebuild and physical background test are required to
+validate this behavior on a strap.
+
 The [connection journal](../packages/mobile/modules/whoop-ble/ios/WhoopBleConnectionDiagnostics.swift)
 persists the latest 64 metadata events at native lifecycle boundaries, including
 while JavaScript is suspended. UserDefaults writes update memory immediately and

@@ -1334,11 +1334,16 @@ jobs:
           ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || '' }}
           persist-credentials: false
           fetch-depth: 0
+      - uses: ./.github/actions/setup-node-pnpm
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: packages/mobile/modules/health-kit/.build
-          key: swift-build-v2-${{ hashFiles('packages/mobile/modules/health-kit/Package.swift') }}
-          restore-keys: swift-build-v2-
+          path: |
+            packages/mobile/modules/*/.build
+            packages/mobile/targets/*/.build
+            !packages/mobile/modules/*_mutated/.build
+            !packages/mobile/targets/*_mutated/.build
+          key: swift-mutation-build-v3-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('packages/mobile/modules/*/Package.swift', 'packages/mobile/targets/*/Package.swift') }}
+          restore-keys: swift-mutation-build-v3-${{ runner.os }}-${{ runner.arch }}-
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         id: muter-cache
         with:
@@ -1350,37 +1355,14 @@ jobs:
       - name: Link Muter from cache
         if: steps.muter-cache.outputs.cache-hit == 'true'
         run: brew link --overwrite muter 2>/dev/null || ln -sf /opt/homebrew/Cellar/muter/*/bin/muter /opt/homebrew/bin/muter
-      - name: Get changed Swift files
-        id: changed
-        run: |
-          CHANGED=$(git diff --name-only origin/main...HEAD \
-            | { grep '\.swift$' || true; } \
-            | { grep -v 'Tests/' || true; } \
-            | { grep -v 'HealthKitModule.swift' || true; } \
-            | { grep -v 'Package.swift' || true; } \
-            | sed 's|^packages/mobile/modules/health-kit/||' \
-            | tr '\n' ',' \
-            | sed 's/,$//')
-          echo "files=$CHANGED" >> "$GITHUB_OUTPUT"
-          echo "Mutating changed Swift files: $CHANGED"
-      - name: Run Muter
-        if: steps.changed.outputs.files != ''
-        working-directory: packages/mobile/modules/health-kit
+      - name: Run native mutation tests
         timeout-minutes: 30
-        run: |
-          muter --files-to-mutate "${{ steps.changed.outputs.files }}" || {
-            EXIT_CODE=$?
-            if [ $EXIT_CODE -eq 255 ]; then
-              echo "Muter found no mutatable code in changed files — skipping."
-              exit 0
-            fi
-            exit $EXIT_CODE
-          }
+        run: pnpm tsx scripts/run-swift-mutation.ts --base origin/main
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: failure()
+        if: always() && hashFiles('reports/swift-mutation/*.json') != ''
         with:
           name: muter-report
-          path: packages/mobile/modules/health-kit/muter_logs/
+          path: reports/swift-mutation/
           retention-days: 7
 
   mutation-gate:
