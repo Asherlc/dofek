@@ -7,6 +7,7 @@ const currentDir = dirname(fileURLToPath(import.meta.url));
 const config: StorybookConfig = {
   core: { allowedHosts: [".trycloudflare.com"] },
   stories: ["../components/**/*.stories.@(ts|tsx)", "../app-stories/**/*.stories.@(ts|tsx)"],
+  staticDirs: ["../../web/src/public"],
   framework: "@storybook/react-native-web-vite",
   docs: {
     autodocs: "tag",
