@@ -102,6 +102,16 @@ for the upstream fixes, regression coverage, and scoped advisory exceptions.
 
 ## Verification & Tooling
 
+- `detect-ci-changes.ts`: Classifies changed paths and affected workspace
+  packages for the existing CI jobs. Native files under `packages/mobile/`
+  enable mobile checks even when the longest matching workspace is a local
+  module with no manifest dependency edge to the app. The new path check
+  excludes Markdown; existing workspace impact rules remain in effect.
+  Expo discovers [local native modules](https://docs.expo.dev/modules/autolinking/#nativemodulesdir)
+  separately from dependency traversal. See the
+  [detector implementation](./detect-ci-changes.ts) and
+  [CI workflow](../.github/workflows/ci.yml).
+  - Usage: `pnpm tsx scripts/detect-ci-changes.ts --changed-file packages/mobile/modules/whoop-ble/ios/WhoopBleConnectionManager.swift --json`
 - `resolve-deploy-image.ts`: Resolves a requested registry image once, pulls the
   immutable manifest reference through the configured Docker daemon, verifies
   its full source release, and retains the existing web service's desired digest

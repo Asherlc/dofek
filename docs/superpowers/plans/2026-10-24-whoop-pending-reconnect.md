@@ -25,6 +25,9 @@
 - Restored pending connections must accept a later callback; restored connected peripherals must retain bounded discovery.
 - Stale callbacks, intentional cancellation and successful subscription must settle or cancel only the owning attempt.
 
+Checkboxes record progress at the commit that contains them. Subsequent build
+and hosted validation results are tracked in [PR 3072](https://github.com/Asherlc/dofek/pull/3072).
+
 ### Task 1: Native reconnect lifecycle and regressions
 
 **Files:**
@@ -55,5 +58,21 @@
 - [x] Document pending automatic connections, bounded setup, diagnostic replay and native release verification with primary-source citations.
 - [x] Run focused mobile sync/diagnostic tests, including the existing explicit-connection timeout upload fallback; expect all tests to pass.
 - [ ] Run full repository lint, root/server/web/mobile/module TypeScript checks, and a signed iOS Simulator compile when available; report the physical-device validation boundary accurately.
-- [ ] Final review checkpoint: independent whole-change review, address material findings with regression coverage.
-- [ ] Commit and push the completed change on `strong-eagle`; report root cause, fix, validation and native build requirement.
+- [x] Final review checkpoint: independent whole-change review, address material findings with regression coverage.
+- [x] Commit and push the completed change on `strong-eagle`; report root cause, fix, validation and native build requirement.
+
+### Task 3: Restore mobile CI coverage for nested native modules
+
+**Files:**
+- Modify: `scripts/detect-ci-changes.ts`
+- Test: `scripts/detect-ci-changes.test.ts`
+- Document: `scripts/README.md`, `docs/production-incident-baseline.md`
+
+**Interfaces:** Preserve the detector's public CLI/output contract and existing shared-workspace propagation. Consume the current `packages/mobile/` ownership boundary, including Expo local modules.
+
+- [x] Add a failing public detector regression using a nested WHOOP native Swift path; cover another local module or bridge/test path without adding redundant cases.
+- [x] Run the focused detector test before implementation; expect `mobile=false` to contradict the required `true`.
+- [x] Include non-documentation `packages/mobile/` paths in mobile scope while preserving documentation-only and transitive workspace behavior.
+- [x] Run the complete detector suite and invoke the public CLI with the exact failing native path; expect mobile checks enabled.
+- [x] Independent scoped review checkpoint: inspect the small CI diff and regression coverage, then run lint/typechecks/relevant tests, commit and push.
+- [ ] Observe the fresh hosted detector output and existing native jobs; do not treat skipped mobile checks as native validation.

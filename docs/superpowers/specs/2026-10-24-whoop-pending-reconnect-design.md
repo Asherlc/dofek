@@ -42,3 +42,16 @@ lint and required TypeScript checks, then obtain independent code review.
 Native changes need a [new iOS build](https://docs.expo.dev/workflow/customizing/).
 Unit tests and Simulator compilation do not establish sustained collection on
 physical hardware; verify reconnect and fresh capture there after release.
+
+## Required CI scope correction
+
+Validation of the native fix exposed a reproducible CI detector gap: the
+workspace graph assigns changed WHOOP files to the nested module package, but
+does not propagate that package to the parent mobile app. Expo also discovers
+[local native modules](https://docs.expo.dev/modules/autolinking/#nativemodulesdir)
+outside manifest dependency traversal. Treat non-documentation paths under
+`packages/mobile/` as mobile changes while retaining shared-workspace impact
+detection and the existing documentation-only behavior. Add a failing public
+detector regression before the smallest classification fix. This correction
+is needed to run the existing native CI checks for this change; it does not
+alter the approved Bluetooth implementation or add package dependencies.
