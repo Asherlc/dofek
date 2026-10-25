@@ -34,6 +34,7 @@ import type { ActivityDetail } from "../../../server/src/models/activity.ts";
 import type { StrengthExerciseDetail } from "../../../server/src/routers/activity.ts";
 import { ActivityExportDropdown } from "../components/ActivityExportDropdown.tsx";
 import { ActivityHardwarePanel } from "../components/ActivityHardwarePanel.tsx";
+import { ActivityMetricSourcePicker } from "../components/ActivityMetricSourcePicker.tsx";
 import { ActivityPerceivedExertion } from "../components/ActivityPerceivedExertion.tsx";
 import { ActivityPhotos } from "../components/ActivityPhotos.tsx";
 import { ActivityRouteMap } from "../components/ActivityRouteMap.tsx";
@@ -430,21 +431,14 @@ export function ActivityDetailPage() {
             {sourceControls
               .filter((metric) => metric.key === "altitude")
               .map((metric) => (
-                <label key={metric.key} className="mb-2 block text-xs text-muted">
-                  Elevation source
-                  <select
-                    aria-label="Elevation source"
-                    className="ml-2 min-h-9 min-w-0 max-w-44 rounded-md border border-border bg-transparent py-1 pl-2 pr-1 text-xs text-muted focus-visible:outline-2 focus-visible:outline-offset-2"
-                    value={metric.selectedId}
-                    onChange={(event) => metric.onChange(event.target.value)}
-                  >
-                    {metric.sources.map((source) => (
-                      <option key={source.id} value={source.id}>
-                        {source.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                <ActivityMetricSourcePicker
+                  key={metric.key}
+                  label="Elevation"
+                  className="mb-2 rounded-lg border border-border px-3"
+                  sources={metric.sources}
+                  selectedId={metric.selectedId}
+                  onChange={metric.onChange}
+                />
               ))}
             <ElevationChart
               points={points}

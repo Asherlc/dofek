@@ -4,10 +4,11 @@
   "private": true,
   "type": "module",
   "exports": {
-    "./device-names": "./src/device-names.ts",
+    "./activity-metric-source": "./src/activity-metric-source.ts",
     "./activity-origin": "./src/activity-origin.ts",
     "./activity-source-details": "./src/activity-source-details.ts",
     "./activity-source-tree": "./src/activity-source-tree.ts",
+    "./device-names": "./src/device-names.ts",
     "./providers": "./src/providers.ts",
     "./provider-catalog": "./src/provider-catalog.ts",
     "./provider-connection": "./src/provider-connection.ts",

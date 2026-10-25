@@ -218,7 +218,8 @@ vi.mock("@dofek/format/format", async (importOriginal) => {
 
 vi.mock("@dofek/format/units", () => ({}));
 
-vi.mock("@dofek/providers/providers", () => ({
+vi.mock("@dofek/providers/providers", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@dofek/providers/providers")>()),
   providerLabel: (id: string) => (id === "strava" ? "Strava" : id),
   providerSourceLabel: (id: string, subsource?: string | null) =>
     id === "apple_health" && subsource
@@ -2205,8 +2206,26 @@ it("preselects the default HR source and switches mobile streams and zones", asy
         key: "heartRate",
         label: "Heart Rate",
         sources: [
-          { id: "whoop", label: "WHOOP" },
-          { id: "garmin", label: "Garmin" },
+          {
+            id: "whoop",
+            label: "WHOOP",
+            presentation: {
+              displayName: "WHOOP",
+              providerId: "whoop",
+              sourceName: null,
+              attribution: null,
+            },
+          },
+          {
+            id: "garmin",
+            label: "Garmin",
+            presentation: {
+              displayName: "Garmin",
+              providerId: "garmin",
+              sourceName: null,
+              attribution: null,
+            },
+          },
         ],
         defaultSourceId: "whoop",
       },
@@ -2236,15 +2255,44 @@ it("keeps mobile metric choices independent and propagates power and elevation",
       {
         key: "heartRate",
         label: "Heart Rate",
-        sources: [{ id: "whoop", label: "WHOOP" }],
+        sources: [
+          {
+            id: "whoop",
+            label: "WHOOP",
+            presentation: {
+              displayName: "WHOOP",
+              providerId: "whoop",
+              sourceName: null,
+              attribution: null,
+            },
+          },
+        ],
         defaultSourceId: "whoop",
       },
       {
         key: "power",
         label: "Power",
         sources: [
-          { id: "wahoo", label: "Wahoo" },
-          { id: "garmin", label: "Garmin" },
+          {
+            id: "wahoo",
+            label: "Wahoo",
+            presentation: {
+              displayName: "Wahoo",
+              providerId: "wahoo",
+              sourceName: null,
+              attribution: null,
+            },
+          },
+          {
+            id: "garmin",
+            label: "Garmin",
+            presentation: {
+              displayName: "Garmin",
+              providerId: "garmin",
+              sourceName: null,
+              attribution: null,
+            },
+          },
         ],
         defaultSourceId: "wahoo",
       },
@@ -2252,8 +2300,26 @@ it("keeps mobile metric choices independent and propagates power and elevation",
         key: "altitude",
         label: "Elevation",
         sources: [
-          { id: "wahoo", label: "Wahoo" },
-          { id: "garmin", label: "Garmin" },
+          {
+            id: "wahoo",
+            label: "Wahoo",
+            presentation: {
+              displayName: "Wahoo",
+              providerId: "wahoo",
+              sourceName: null,
+              attribution: null,
+            },
+          },
+          {
+            id: "garmin",
+            label: "Garmin",
+            presentation: {
+              displayName: "Garmin",
+              providerId: "garmin",
+              sourceName: null,
+              attribution: null,
+            },
+          },
         ],
         defaultSourceId: "wahoo",
       },
@@ -2265,7 +2331,9 @@ it("keeps mobile metric choices independent and propagates power and elevation",
   render(<ActivityDetailScreen />);
   fireEvent.click(screen.getByRole("button", { name: "Power source: Wahoo" }));
   fireEvent.click(screen.getByRole("radio", { name: "Garmin" }));
-  fireEvent.click(screen.getByRole("button", { name: "Elevation source: Wahoo" }));
+  const elevationSource = screen.getByRole("button", { name: "Elevation source: Wahoo" });
+  expect(elevationSource.textContent).toBe("Wahoo");
+  fireEvent.click(elevationSource);
   fireEvent.click(screen.getByRole("radio", { name: "Garmin" }));
   expect(screen.getByRole("button", { name: "Heart Rate source: WHOOP" })).toBeTruthy();
   expect(mockStreamQuery).toHaveBeenLastCalledWith(
@@ -2287,8 +2355,26 @@ it("keeps mobile pickers available after a source read fails", async () => {
         key: "heartRate",
         label: "Heart Rate",
         sources: [
-          { id: "whoop", label: "WHOOP" },
-          { id: "garmin", label: "Garmin" },
+          {
+            id: "whoop",
+            label: "WHOOP",
+            presentation: {
+              displayName: "WHOOP",
+              providerId: "whoop",
+              sourceName: null,
+              attribution: null,
+            },
+          },
+          {
+            id: "garmin",
+            label: "Garmin",
+            presentation: {
+              displayName: "Garmin",
+              providerId: "garmin",
+              sourceName: null,
+              attribution: null,
+            },
+          },
         ],
         defaultSourceId: "whoop",
       },
@@ -2335,8 +2421,26 @@ it.each([false, true])(
           key: "power",
           label: "Power",
           sources: [
-            { id: "wahoo", label: "Wahoo" },
-            { id: "garmin", label: "Garmin" },
+            {
+              id: "wahoo",
+              label: "Wahoo",
+              presentation: {
+                displayName: "Wahoo",
+                providerId: "wahoo",
+                sourceName: null,
+                attribution: null,
+              },
+            },
+            {
+              id: "garmin",
+              label: "Garmin",
+              presentation: {
+                displayName: "Garmin",
+                providerId: "garmin",
+                sourceName: null,
+                attribution: null,
+              },
+            },
           ],
           defaultSourceId: "wahoo",
         },

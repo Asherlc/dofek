@@ -60,6 +60,12 @@ describe("activity heart-rate sources", () => {
       {
         id: "distinct-watch",
         label: "Garmin · Forerunner 955",
+        presentation: {
+          displayName: "Garmin · Forerunner 955",
+          providerId: "garmin",
+          sourceName: "forerunner955",
+          attribution: null,
+        },
       },
     ]);
     expect(result[0]?.defaultSourceId).toBe("distinct-watch");
@@ -105,8 +111,90 @@ describe("activity heart-rate sources", () => {
       hardware,
     );
     expect(result[0]?.sources).toEqual([
-      { id: "raw-id", label: "Garmin · Forerunner 955 · recorded by My custom watch" },
+      {
+        id: "raw-id",
+        label: "Garmin · Forerunner 955 · recorded by My custom watch",
+        presentation: {
+          displayName: "Garmin · Forerunner 955 · recorded by My custom watch",
+          providerId: "garmin",
+          sourceName: "fr955",
+          attribution: null,
+        },
+      },
     ]);
+  });
+  it("adds structured presentation from raw source metadata without changing source labels", async () => {
+    const result = await getActivityMetricSources(
+      storeWithRows([
+        {
+          channel: "heart_rate",
+          provider_id: "apple_health",
+          device_id: "Zepp",
+          source_id: "opaque-zepp",
+        },
+        { channel: "heart_rate", provider_id: "whoop", device_id: null, source_id: "opaque-cloud" },
+        {
+          channel: "heart_rate",
+          provider_id: "whoop_ble",
+          device_id: "strap-a",
+          source_id: "opaque-ble",
+        },
+        {
+          channel: "heart_rate",
+          provider_id: "unknown",
+          device_id: "Watch",
+          source_id: "opaque-other",
+        },
+      ]),
+      window,
+    );
+    expect(result[0]).toEqual({
+      key: "heartRate",
+      label: "Heart Rate",
+      defaultSourceId: "opaque-zepp",
+      sources: [
+        {
+          id: "opaque-zepp",
+          label: "Zepp (via Apple Health)",
+          presentation: {
+            displayName: "Zepp",
+            providerId: "apple_health",
+            sourceName: "Zepp",
+            attribution: { kind: "apple_health", label: "Apple Health" },
+          },
+        },
+        {
+          id: "opaque-cloud",
+          label: "WHOOP (Cloud)",
+          presentation: {
+            displayName: "WHOOP",
+            providerId: "whoop",
+            sourceName: null,
+            attribution: { kind: "cloud", label: "Cloud" },
+          },
+        },
+        {
+          id: "opaque-ble",
+          label: "WHOOP (Bluetooth)",
+          presentation: {
+            displayName: "WHOOP",
+            providerId: "whoop_ble",
+            sourceName: "strap-a",
+            attribution: { kind: "bluetooth", label: "Bluetooth" },
+          },
+        },
+        {
+          id: "opaque-other",
+          label: "unknown · Watch",
+          presentation: {
+            displayName: "unknown · Watch",
+            providerId: "unknown",
+            sourceName: "Watch",
+            attribution: null,
+          },
+        },
+      ],
+    });
   });
   it("labels device sources and preselects the highest-priority available provider", async () => {
     const whoopBluetoothSourceId = '["whoop_ble","strap-a"]';
@@ -131,9 +219,9 @@ describe("activity heart-rate sources", () => {
         key: "heartRate",
         label: "Heart Rate",
         sources: [
-          { id: "whoop", label: "WHOOP (Cloud)" },
-          { id: whoopBluetoothSourceId, label: "WHOOP (Bluetooth)" },
-          { id: garminSourceId, label: "Garmin · Edge 530" },
+          expect.objectContaining({ id: "whoop", label: "WHOOP (Cloud)" }),
+          expect.objectContaining({ id: whoopBluetoothSourceId, label: "WHOOP (Bluetooth)" }),
+          expect.objectContaining({ id: garminSourceId, label: "Garmin · Edge 530" }),
         ],
         defaultSourceId: "whoop",
       },
@@ -198,7 +286,16 @@ it("enriches recorder labels without changing identities, order, defaults, or at
   ];
   const before = await getActivityMetricSources(storeWithRows(rows), window);
   const after = await getActivityMetricSources(storeWithRows(rows), window, hardware);
-  expect(after[0]?.sources[0]).toEqual({ id: "strava", label: "Strava · recorded by Edge 530" });
+  expect(after[0]?.sources[0]).toEqual({
+    id: "strava",
+    label: "Strava · recorded by Edge 530",
+    presentation: {
+      displayName: "Strava · recorded by Edge 530",
+      providerId: "strava",
+      sourceName: null,
+      attribution: null,
+    },
+  });
   expect(
     after.map((metric) => ({ ...metric, sources: metric.sources.map(({ id }) => id) })),
   ).toEqual(before.map((metric) => ({ ...metric, sources: metric.sources.map(({ id }) => id) })));
@@ -286,6 +383,12 @@ it("qualifies a creator name even when it already appears in the original source
   expect(result[0]?.sources[0]).toEqual({
     id: sourceId,
     label: "FIT File · file created by Export platform",
+    presentation: {
+      displayName: "FIT File · file created by Export platform",
+      providerId: "fit-file",
+      sourceName: "Export platform",
+      attribution: null,
+    },
   });
   expect(result[0]?.defaultSourceId).toBe(sourceId);
 });
@@ -353,6 +456,12 @@ it("uses the reported BLE name while keeping the peripheral UUID source identity
   expect(result[0]?.sources[0]).toEqual({
     id: '["ble_heart_rate","uuid"]',
     label: "Heart Rate Monitor (Bluetooth) · Polar H10",
+    presentation: {
+      displayName: "Polar H10",
+      providerId: "ble_heart_rate",
+      sourceName: "Polar H10",
+      attribution: { kind: "bluetooth", label: "Bluetooth" },
+    },
   });
 });
 
@@ -393,8 +502,8 @@ it("keeps different devices imported through the same provider as separate sourc
   );
   expect(metrics[0]?.defaultSourceId).toBe(zeppId);
   expect(metrics[0]?.sources).toEqual([
-    { id: zeppId, label: "Zepp (via Apple Health)" },
-    { id: watchId, label: "Apple Watch (via Apple Health)" },
+    expect.objectContaining({ id: zeppId, label: "Zepp (via Apple Health)" }),
+    expect.objectContaining({ id: watchId, label: "Apple Watch (via Apple Health)" }),
   ]);
 });
 
@@ -459,6 +568,17 @@ describe("hardware label evidence boundaries", () => {
   it("retains an already descriptive recorder label without duplicating it", async () => {
     expect(await source([item()], { device_id: "Edge 530" })).toBe("Garmin · Edge 530");
   });
+  it.each(["Asher’s Apple\u00a0Watch", "Asher’s Apple\u202fWatch", "Asher’s APPLE WATCH"])(
+    "recognizes the recorder already named in %s",
+    async (deviceName) => {
+      expect(
+        await source(
+          [item({ providerId: "apple_health", sourceName: deviceName, label: "Apple Watch" })],
+          { provider_id: "apple_health", device_id: deviceName },
+        ),
+      ).toBe(`${deviceName} (via Apple Health)`);
+    },
+  );
   it("retains the stream's distinct app label when qualifying its file creator", async () => {
     expect(await source([item({ role: "creator" })], { device_id: "Recording app" })).toBe(
       "Garmin · Recording app · file created by Edge 530",
@@ -542,13 +662,16 @@ describe("BLE peripheral label lookup", () => {
       label: "Heart Rate",
       defaultSourceId: "ble_heart_rate",
       sources: [
-        { id: "ble_heart_rate", label: "Heart Rate Monitor (Bluetooth)" },
-        {
+        expect.objectContaining({ id: "ble_heart_rate", label: "Heart Rate Monitor (Bluetooth)" }),
+        expect.objectContaining({
           id: '["ble_heart_rate","strap-a"]',
           label: "Heart Rate Monitor (Bluetooth) · Wahoo TICKR",
-        },
-        { id: '["ble_heart_rate","strap-b"]', label: "Heart Rate Monitor (Bluetooth) · Polar H10" },
-        { id: '["garmin","strap-a"]', label: "Garmin · strap-a" },
+        }),
+        expect.objectContaining({
+          id: '["ble_heart_rate","strap-b"]',
+          label: "Heart Rate Monitor (Bluetooth) · Polar H10",
+        }),
+        expect.objectContaining({ id: '["garmin","strap-a"]', label: "Garmin · strap-a" }),
       ],
     });
   });
@@ -568,7 +691,16 @@ describe("BLE peripheral label lookup", () => {
     store.query.mockResolvedValueOnce([]);
     const result = await getActivityMetricSources(store, window);
     expect(result[0]?.sources).toEqual([
-      { id: "source", label: "Heart Rate Monitor (Bluetooth) · strap-a" },
+      {
+        id: "source",
+        label: "Heart Rate Monitor (Bluetooth) · strap-a",
+        presentation: {
+          displayName: "strap-a",
+          providerId: "ble_heart_rate",
+          sourceName: "strap-a",
+          attribution: { kind: "bluetooth", label: "Bluetooth" },
+        },
+      },
     ]);
   });
   it("does not perform a raw lookup when BLE rows have no device identity", async () => {
@@ -581,7 +713,16 @@ describe("BLE peripheral label lookup", () => {
       },
     ]);
     expect((await getActivityMetricSources(store, window))[0]?.sources).toEqual([
-      { id: "ble_heart_rate", label: "Heart Rate Monitor (Bluetooth)" },
+      {
+        id: "ble_heart_rate",
+        label: "Heart Rate Monitor (Bluetooth)",
+        presentation: {
+          displayName: "Heart Rate Monitor",
+          providerId: "ble_heart_rate",
+          sourceName: null,
+          attribution: { kind: "bluetooth", label: "Bluetooth" },
+        },
+      },
     ]);
     expect(store.query).toHaveBeenCalledTimes(1);
   });
