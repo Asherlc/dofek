@@ -1,6 +1,7 @@
 import { formatDateYmd } from "@dofek/format/format";
 import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import type { ProviderManualConnectionMetadata } from "@dofek/providers/provider-connection";
+import type { ProviderSyncHistory } from "@dofek/providers/sync-card-summary";
 import * as WebBrowser from "expo-web-browser";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAppleHealthProviderModel } from "../../lib/apple-health-provider";
@@ -13,7 +14,7 @@ import {
 import { captureException } from "../../lib/telemetry";
 import { trpc } from "../../lib/trpc";
 
-interface ProviderRecord {
+interface ProviderRecord extends ProviderSyncHistory {
   id: string;
   name: string;
   authType: string;

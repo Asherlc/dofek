@@ -101,6 +101,7 @@ export const PROVIDER_CATALOG: Readonly<Record<string, ProviderCatalogEntry>> = 
   xert: { label: "Xert", logo: { type: "png" } },
   "apple-health": { label: "Apple Health" },
   apple_health: { label: "Apple Health", logo: { type: "png" } },
+  "apple-watch": { label: "Apple Watch", logo: { type: "svg" } },
   "strong-csv": { label: "Strong", logo: { type: "png" } },
   "hang-ten": { label: "Hang Ten", logo: { type: "png" } },
   "cronometer-csv": { label: "Cronometer", logo: { type: "png" } },

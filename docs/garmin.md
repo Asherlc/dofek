@@ -133,8 +133,10 @@ releases queued notifications for the entire application feed, so live delivery
 checks require a controlled release ([Garmin delivery settings](https://developerportal.garmin.com/developer-programs/programs-docs)).
 The [production deployment](https://github.com/Asherlc/dofek/actions/runs/39796505289)
 succeeded on 2026-10-22, including worker recovery. A subsequent live OAuth
-attempt failed at permission confirmation with HTTP 403; live activation remains
-blocked, as recorded in the [incident baseline](production-incident-baseline.md#2026-10-22--live-garmin-oauth-blocked-at-permission-confirmation-unresolved).
+attempt failed at permission confirmation with HTTP 403. A reconnect on
+2026-10-24 successfully saved official Health and Activity authorization;
+the first authorized push delivery remains unverified, as recorded in the
+[follow-up incident baseline](production-incident-baseline.md#2026-10-24--garmin-reconnect-succeeds-while-the-provider-summary-contradicts-sync-history).
 Application approval and configured secrets alone do not establish live delivery. Follow
 [deployment procedures](../deploy/README.md), then:
 

@@ -1135,6 +1135,13 @@
       "when": 1792819617330,
       "tag": "0161_bound_activity_origin_input",
       "breakpoints": true
+    },
+    {
+      "idx": 162,
+      "version": "7",
+      "when": 1792884000000,
+      "tag": "0162_apple_watch_activity_origin",
+      "breakpoints": true
     }
   ]
 }

@@ -20,6 +20,9 @@ origin_labels AS (
 origin_hints AS (
     SELECT
         *,
+        provider_id = 'apple_health'
+        AND match(replaceAll(source_label, unhex('C2A0'), ' '), '(^|[[:space:]])apple[[:space:]]+watch[[:space:]]*$')
+            AS is_watch_recording,
         multiIf(
             provider_id = 'apple_health',
             transform(source_label,
@@ -42,6 +45,7 @@ origin_members AS (
         *,
         coalesce(copy_provider, nullIf(bundle_provider, ''), nullIf(label_provider, ''), nullIf(device_provider, '')) AS upstream_provider,
         length(arrayDistinct(arrayFilter(hint -> isNotNull(hint) AND hint != '', [copy_provider, label_provider, bundle_provider, device_provider]))) > 1
+        OR (is_watch_recording AND bundle_provider != '')
         OR (provider_id = 'strava' AND source_label != '' AND raw_device_label != '' AND source_label != raw_device_label)
             AS conflicting,
         multiIf(copy_provider IS NOT NULL, 'external_id', bundle_provider != '', 'raw.sourceBundle', label_provider != '', 'source_name', 'raw.device_name') AS evidence_field,
@@ -87,6 +91,7 @@ origin_graphs AS (
         arraySort(groupArrayIf(members.activity_id, members.provider_id = 'strong-csv')) AS strong_export_ids,
         arraySort(groupArrayIf(members.activity_id, members.provider_id = 'apple_health' AND members.source_label = 'strong')) AS strong_health_ids,
         arraySort(groupArrayIf(members.activity_id, members.provider_id = 'apple_health' AND members.source_label IN ('hang ten', 'hang ten training'))) AS hang_ten_ids,
+        arraySort(groupArrayIf(members.activity_id, members.is_watch_recording)) AS apple_watch_ids,
         max(members.conflicting) AS conflicting,
         coalesce(any(origin_group_edges.edges), CAST([], 'Array(Tuple(UUID, UUID, String, String))')) AS edges
     FROM origin_members AS members
@@ -118,14 +123,14 @@ origin_decisions AS (
         group_id,
         any(member_ids) AS group_member_ids,
         any(edges) AS group_edges,
-        any(arrayConcat(if(length(strong_export_ids) > 0, strong_export_ids, strong_health_ids), hang_ten_ids)) AS initiating_origins,
+        any(arrayConcat(if(length(strong_export_ids) > 0, strong_export_ids, strong_health_ids), hang_ten_ids, apple_watch_ids)) AS initiating_origins,
         max(conflicting) OR max(has(reached, member_id)) AS invalid,
         arraySort(groupArrayIf(member_id, length(arrayDistinct(arrayConcat([member_id], reached))) = length(member_ids))) AS roots
     FROM origin_reachability
     GROUP BY user_id, group_id
 ),
 origin_selections AS (
-    -- Strong and Hang Ten initiate the workout by policy; copy edges remain evidence-only.
+    -- Strong, Hang Ten, and Apple Watch initiate by policy; copy edges remain evidence-only.
     SELECT
         *,
         multiIf(

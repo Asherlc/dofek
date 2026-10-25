@@ -11,6 +11,11 @@ import {
   processingTarget,
   resolveProcessingTargetScope,
 } from "@dofek/providers/processing-status";
+import { providerLabel } from "@dofek/providers/providers";
+import {
+  type ProviderSyncHistory,
+  providerSyncStatusPresentation,
+} from "@dofek/providers/sync-card-summary";
 import { useRouter } from "expo-router";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { trpc } from "../lib/trpc";
@@ -63,6 +68,7 @@ interface ProcessingStatusWidgetProps {
   loading?: boolean;
   contextLabel?: string;
   alwaysVisible?: boolean;
+  providerHistory?: ProviderSyncHistory;
 }
 
 export function ProcessingStatusWidget({
@@ -71,6 +77,7 @@ export function ProcessingStatusWidget({
   loading = false,
   contextLabel,
   alwaysVisible = false,
+  providerHistory = { lastSuccessfulSyncAt: null, recentLogs: [] },
 }: ProcessingStatusWidgetProps) {
   const router = useRouter();
   const trpcUtils = trpc.useUtils();
@@ -95,10 +102,15 @@ export function ProcessingStatusWidget({
       />
     );
   }
-  if (!data || (data.overallStatus === "ready" && !alwaysVisible)) {
+  if (!data || (data.overallStatus === "ready" && !alwaysVisible && !error)) {
     return null;
   }
 
+  const refreshError = error ? (
+    <Text style={styles.datasetError} accessibilityRole="alert">
+      {userFacingErrorMessage(error, "Processing status could not be refreshed. Please try again.")}
+    </Text>
+  ) : null;
   const progress = processingAggregateProgress(data.datasets);
   const targetScope = resolveProcessingTargetScope({
     scopeProviderId: data.scope.providerId,
@@ -118,13 +130,42 @@ export function ProcessingStatusWidget({
   const inProgressDatasets = data.datasets.filter((dataset) =>
     ["active", "partial", "waiting", "delayed", "blocked"].includes(dataset.status),
   );
-  if (hasFailureStatus && failureGroups.length === 0 && inProgressDatasets.length === 0) {
-    return null;
-  }
   const displayStatus =
     hasFailureStatus && failureGroups.length === 0
       ? (inProgressDatasets[0]?.status ?? data.overallStatus)
       : data.overallStatus;
+  const providerPresentation =
+    alwaysVisible && data.scope.providerId
+      ? providerSyncStatusPresentation(providerLabel(data.scope.providerId), providerHistory, {
+          status: displayStatus,
+          datasets: data.datasets,
+          operations: data.operations,
+        })
+      : null;
+  if (
+    hasFailureStatus &&
+    failureGroups.length === 0 &&
+    inProgressDatasets.length === 0 &&
+    !providerPresentation?.occurredAt
+  ) {
+    return refreshError;
+  }
+  if (providerPresentation) {
+    return (
+      <SourceProcessingStatusCard
+        contextLabel={contextLabel}
+        {...providerPresentation}
+        progress={null}
+      >
+        {providerPresentation.occurredAt ? (
+          <Text style={styles.datasetFreshness}>
+            Latest attempt: {formatRelativeTime(providerPresentation.occurredAt)}
+          </Text>
+        ) : null}
+        {refreshError}
+      </SourceProcessingStatusCard>
+    );
+  }
   const statusMessage =
     failureGroups.length > 0
       ? null
@@ -137,11 +178,14 @@ export function ProcessingStatusWidget({
     (dataset) =>
       dataset.status !== "ready" || dataset.lastAdvancedAt !== null || dataset.lastReadyAt !== null,
   );
-  const visibleDatasets = alwaysVisible
-    ? datasetsWithHistory
-    : failureGroups.length > 0
-      ? problemDatasets
-      : inProgressDatasets;
+  const visibleDatasets =
+    failureGroups.length > 0
+      ? alwaysVisible
+        ? inProgressDatasets
+        : problemDatasets
+      : alwaysVisible
+        ? datasetsWithHistory
+        : inProgressDatasets;
   const historicalDatasetDetails =
     visibleDatasets.length > 0 ? (
       <View style={styles.datasetList}>
@@ -194,7 +238,10 @@ export function ProcessingStatusWidget({
                   ) : null}
                 </View>
                 <View style={styles.failureActions}>
-                  {group.requiresReconnect && group.providerId && group.providerLabel ? (
+                  {group.requiresReconnect &&
+                  providerHistory.needsReauth !== false &&
+                  group.providerId &&
+                  group.providerLabel ? (
                     <Pressable
                       accessibilityRole="button"
                       accessibilityLabel={`Reconnect ${group.providerLabel}`}
@@ -226,11 +273,23 @@ export function ProcessingStatusWidget({
         })}
       </View>
     ) : null;
-  const datasetDetails = failureGroupDetails ?? historicalDatasetDetails;
+  const datasetDetails = failureGroupDetails ? (
+    <>
+      {failureGroupDetails}
+      {alwaysVisible ? historicalDatasetDetails : null}
+    </>
+  ) : (
+    historicalDatasetDetails
+  );
   const collapseDatasetDetails = !alwaysVisible && failureGroups.length === 0;
 
   if (target.action === "recompute" && failureGroups.length === 0) {
-    return <RecomputeStatusIndicator label={heading} progress={progress} status={displayStatus} />;
+    return (
+      <>
+        <RecomputeStatusIndicator label={heading} progress={progress} status={displayStatus} />
+        {refreshError}
+      </>
+    );
   }
 
   return (
@@ -243,6 +302,7 @@ export function ProcessingStatusWidget({
       details={collapseDatasetDetails ? historicalDatasetDetails : null}
     >
       {collapseDatasetDetails ? null : datasetDetails}
+      {refreshError}
       {dismissMutation.error ? (
         <Text style={styles.datasetError} accessibilityRole="alert">
           {userFacingErrorMessage(
