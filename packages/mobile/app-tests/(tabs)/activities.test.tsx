@@ -15,6 +15,7 @@ import {
   routeMapTiles,
   type WeekListQueryOptions,
 } from "../../app-fixtures/(tabs)/activities-test-helpers";
+import { activityImageFixture } from "../../components/activity-images-test-helpers";
 
 let mockQuery: MockQuery;
 let mockCalendarQuery: MockQuery;
@@ -40,6 +41,7 @@ let mockDataHealthQuery: {
 };
 let processingStatusInput: unknown;
 const routerPush = vi.fn();
+const mockImagesQuery = vi.hoisted(() => vi.fn());
 
 vi.mock("expo-router", () => ({
   useRouter: () => ({ push: routerPush }),
@@ -77,6 +79,7 @@ vi.mock("../../lib/trpc", () => ({
       },
     },
     activity: {
+      images: { useQuery: mockImagesQuery },
       merge: {
         useMutation: (options?: {
           onSuccess?: () => Promise<void> | void;
@@ -155,6 +158,43 @@ import ActivitiesScreen from "../../app/(tabs)/activities";
 afterEach(() => vi.useRealTimers());
 
 describe("ActivitiesScreen", () => {
+  it("shows one downloaded photo for activities without a map", () => {
+    mockQuery = activityListQuery([activity({ location: null })]);
+    mockImagesQuery.mockReturnValue({
+      data: {
+        images: [activityImageFixture, { ...activityImageFixture, id: "photo-2" }],
+        coverage: [],
+        acquisition: [],
+      },
+      error: null,
+      isLoading: false,
+      isFetching: false,
+      refetch: vi.fn(),
+    });
+    render(<ActivitiesScreen />);
+    expect(screen.getAllByLabelText("View from the summit")).toHaveLength(1);
+    expect(mockImagesQuery).toHaveBeenCalledWith(
+      { id: "activity-1" },
+      expect.objectContaining({ meta: { persist: false } }),
+    );
+  });
+
+  it("keeps provider-removed activities visible without requesting their retired photos", () => {
+    mockQuery = activityListQuery([activity({ location: null, isProviderAbsent: true })]);
+    render(<ActivitiesScreen />);
+    expect(screen.getByText("Trainer Ride")).toBeTruthy();
+    expect(mockImagesQuery).not.toHaveBeenCalled();
+  });
+
+  it.each([recordedGpsLocation(), climbingSourceLocation(), { kind: "processing" }])(
+    "keeps map cards focused on their map rather than fetching a photo",
+    (location) => {
+      mockQuery = activityListQuery([activity({ location })]);
+      render(<ActivitiesScreen />);
+      expect(mockImagesQuery).not.toHaveBeenCalled();
+      expect(screen.queryByLabelText("View from the summit")).toBeNull();
+    },
+  );
   it.each([null, recordedGpsLocation()])(
     "keeps activity identity leading with a resolved source and location %j",
     (location) => {
@@ -183,7 +223,7 @@ describe("ActivitiesScreen", () => {
   );
 
   it.each([false, true])(
-    "keeps source details independent of card action in selection mode %s",
+    "keeps photos and source details independent of card action in selection mode %s",
     (selectMode) => {
       mockQuery = activityListQuery([
         activity({
@@ -200,6 +240,13 @@ describe("ActivitiesScreen", () => {
           },
         }),
       ]);
+      mockImagesQuery.mockReturnValue({
+        data: { images: [activityImageFixture], coverage: [], acquisition: [] },
+        error: null,
+        isLoading: false,
+        isFetching: false,
+        refetch: vi.fn(),
+      });
       render(<ActivitiesScreen />);
       if (selectMode) fireEvent.click(screen.getByRole("button", { name: "Select activities" }));
       const sourceButton = screen.getByRole("button", { name: "Activity source: WHOOP (Cloud)" });
@@ -208,6 +255,8 @@ describe("ActivitiesScreen", () => {
       });
       expect(cardAction.contains(sourceButton)).toBe(false);
       expect(sourceButton.parentElement?.closest("button")).toBeNull();
+      const photo = screen.getByLabelText("View from the summit");
+      expect(photo.closest('[pointer-events="none"]')).not.toBeNull();
 
       fireEvent.click(sourceButton);
       expect(screen.getByText("Recorded in")).toBeDefined();
@@ -224,6 +273,14 @@ describe("ActivitiesScreen", () => {
     },
   );
   beforeEach(() => {
+    mockImagesQuery.mockReset();
+    mockImagesQuery.mockReturnValue({
+      data: { images: [], coverage: [], acquisition: [] },
+      error: null,
+      isLoading: false,
+      isFetching: false,
+      refetch: vi.fn(),
+    });
     mockQuery = { data: [], isLoading: false, isError: false, error: null };
     mockCalendarQuery = { data: [], isLoading: false, isError: false, error: null };
     mockOverviewQuery = emptyActivityOverviewQuery();
