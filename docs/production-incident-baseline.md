@@ -33011,6 +33011,13 @@ The incident date uses America/Los_Angeles: the October 23 UTC sync timestamps b
 
 - **Review corrections:** The [native identifier regression](incidents/2026-10-24-whoop-connection-evidence.md#identifier-privacy-regression-validation) demonstrated that an invalid explicit-connect argument could be retained in diagnostics before connection validation. The journal now retains canonical UUIDs only and omits invalid text at the persistence boundary. The native suite passes 153 tests; strict SwiftLint over 139 owned files and the signed Debug Simulator rebuild pass. The dated plan is tool-independent, and the protocol guide matches the current fingerprint runtime policy.
 
+## 2026-10-24 — Local Docker subnet exhaustion blocked UI lint prerequisites
+
+- **Symptoms / impact:** During activity-icon/source-disclosure verification, local ClickHouse could not start, blocking full lint. Production was unaffected.
+- **Evidence / root cause:** `pnpm compose -- up -d --wait clickhouse` failed creating `clean-dolphin_default` with the first fatal daemon error `all predefined address pools have been fully subnetted`. Network inspection found 56 bridge networks, including 53 empty Compose bridges; retained workspace networks consumed the available address pools.
+- **Direct fix:** Immediately re-inspected `charming-leopard_default` (`a1b06d6545d9`) and confirmed zero attached containers, then removed only that unused bridge. No containers or named volumes were removed. Docker documents [network removal](https://docs.docker.com/reference/cli/docker/network/rm/).
+- **Validation:** The original Compose command then created this workspace's network and ClickHouse container and reached Healthy without ad-hoc sleeps or retry configuration. No resilience knob was added.
+- **Remaining risk / follow-up:** Other unused workspace networks remain; review archive cleanup to prevent repeated subnet pressure. Keep one-time workstation cleanup outside production runtime/deploy configuration.
 ## 2026-10-24 — Garmin reconnect succeeds while the provider summary contradicts sync history
 
 - **Symptoms / impact:** The provider page showed Connected, Authorization Active, “Garmin sync complete,” “Last received: 3d ago,” zero records, and failed October 21 sync history. The user reconnected and had not yet confirmed a subsequent device sync in Garmin Connect. Live data delivery remains unverified.

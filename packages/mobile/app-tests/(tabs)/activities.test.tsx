@@ -140,6 +140,7 @@ vi.mock("../../lib/useRefresh", () => ({
 }));
 
 vi.mock("react-native-svg", () => ({
+  SvgXml: (props: Record<string, unknown>) => createElement("svg", props),
   SvgUri: (props: Record<string, unknown>) => createElement("svg", props),
   default: ({ children, ...props }: Record<string, unknown> & { children?: ReactNode }) =>
     createElement("svg", { ...props, "data-testid": props.testID }, children),
@@ -154,32 +155,74 @@ import ActivitiesScreen from "../../app/(tabs)/activities";
 afterEach(() => vi.useRealTimers());
 
 describe("ActivitiesScreen", () => {
-  it.each([
-    ["strava", "Garmin Edge 530", "Strava"],
-    ["apple_health", "Strong", "Strong (via Apple Health)"],
-  ])("uses %s and its source as the leading card image", (providerId, sourceName, label) => {
-    mockQuery = activityListQuery([
-      activity({
-        source: {
-          origin: {
-            status: "resolved",
-            memberActivityId: "00000000-0000-4000-8000-000000000001",
-            providerId,
-            sourceName,
+  it.each([null, recordedGpsLocation()])(
+    "keeps activity identity leading with a resolved source and location %j",
+    (location) => {
+      mockQuery = activityListQuery([
+        activity({
+          location,
+          source: {
+            origin: {
+              status: "resolved",
+              memberActivityId: "00000000-0000-4000-8000-000000000001",
+              providerId: "apple_health",
+              sourceName: "Hang Ten Training",
+            },
+            primarySourceLabel: "Hang Ten (via Apple Health)",
+            sourceCount: 2,
+            overlapSummary: "2 matched source records",
           },
-          primarySourceLabel: "Strava",
-          sourceCount: 2,
-          overlapSummary: "2 matched source records",
-        },
-      }),
-    ]);
-    render(<ActivitiesScreen />);
-    const providerImage = screen.getByRole("image", {
-      name: `Primary recording provider: ${label}`,
-    });
-    expect(providerImage.parentElement?.firstElementChild).toBe(providerImage);
-    expect(screen.queryByRole("image", { name: "Primary recording provider: Garmin" })).toBeNull();
-  });
+        }),
+      ]);
+      render(<ActivitiesScreen />);
+      const icon = screen.getByTestId("activity-type-icon");
+      const title = screen.getByText("Trainer Ride");
+      expect(icon.compareDocumentPosition(title) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Activity source: Hang Ten" })).toBeDefined();
+    },
+  );
+
+  it.each([false, true])(
+    "keeps source details independent of card action in selection mode %s",
+    (selectMode) => {
+      mockQuery = activityListQuery([
+        activity({
+          source: {
+            origin: {
+              status: "resolved",
+              memberActivityId: "00000000-0000-4000-8000-000000000001",
+              providerId: "whoop",
+              sourceName: null,
+            },
+            primarySourceLabel: "WHOOP",
+            sourceCount: 1,
+            overlapSummary: null,
+          },
+        }),
+      ]);
+      render(<ActivitiesScreen />);
+      if (selectMode) fireEvent.click(screen.getByRole("button", { name: "Select activities" }));
+      const sourceButton = screen.getByRole("button", { name: "Activity source: WHOOP (Cloud)" });
+      const cardAction = screen.getByRole("button", {
+        name: selectMode ? /^Select Trainer Ride/ : /^Open Trainer Ride/,
+      });
+      expect(cardAction.contains(sourceButton)).toBe(false);
+      expect(sourceButton.parentElement?.closest("button")).toBeNull();
+
+      fireEvent.click(sourceButton);
+      expect(screen.getByText("Recorded in")).toBeDefined();
+      expect(routerPush).not.toHaveBeenCalled();
+      if (selectMode) expect(screen.getByText("0 activities selected")).toBeDefined();
+      fireEvent.click(screen.getByRole("button", { name: "Close activity source details" }));
+      fireEvent.click(cardAction);
+      if (selectMode) {
+        expect(screen.getByText("1 activity selected")).toBeDefined();
+        expect(routerPush).not.toHaveBeenCalled();
+      } else {
+        expect(routerPush).toHaveBeenCalledWith("/activity/activity-1");
+      }
+    },
+  );
   beforeEach(() => {
     mockQuery = { data: [], isLoading: false, isError: false, error: null };
     mockCalendarQuery = { data: [], isLoading: false, isError: false, error: null };
@@ -481,7 +524,7 @@ describe("ActivitiesScreen", () => {
     mockQuery = activityListQuery([activity()]);
 
     render(<ActivitiesScreen />);
-    fireEvent.click(screen.getByText("Trainer Ride"));
+    fireEvent.click(screen.getByRole("button", { name: /^(Open|Select|Deselect) Trainer Ride,/ }));
 
     expect(routerPush).toHaveBeenCalledWith("/activity/activity-1");
   });
@@ -491,7 +534,7 @@ describe("ActivitiesScreen", () => {
 
     render(<ActivitiesScreen />);
 
-    const activityButton = screen.getByText("Trainer Ride").closest("button");
+    const activityButton = screen.getByRole("button", { name: /^Open Trainer Ride/ });
     expect(activityButton?.getAttribute("aria-label")).toContain("Open Trainer Ride");
     expect(activityButton?.getAttribute("aria-label")).toContain("1h");
     expect(activityButton?.getAttribute("aria-label")).toContain("Indoor Cycling");
@@ -512,7 +555,7 @@ describe("ActivitiesScreen", () => {
 
     render(<ActivitiesScreen />);
 
-    const activityButton = screen.getByText("Trainer Ride").closest("button");
+    const activityButton = screen.getByRole("button", { name: /^Open Trainer Ride/ });
     expect(activityButton?.getAttribute("aria-label")).toContain("Distance 5.0 km");
     expect(activityButton?.getAttribute("aria-label")).toContain("Elevation 120 m");
   });
@@ -546,10 +589,16 @@ describe("ActivitiesScreen", () => {
       render(<ActivitiesScreen />);
 
       const activityButton = screen.getByRole("button", { name: /^Open Trainer Ride/ });
-      expect(within(activityButton).getByText("Training Stress Score")).toBeDefined();
-      expect(within(activityButton).getByText("100")).toBeDefined();
-      expect(within(activityButton).queryByText("Distance")).toBeNull();
-      expect(within(activityButton).queryByText(/Elevation/)).toBeNull();
+      expect(
+        within(activityButton.parentElement ?? activityButton).getByText("Training Stress Score"),
+      ).toBeDefined();
+      expect(within(activityButton.parentElement ?? activityButton).getByText("100")).toBeDefined();
+      expect(
+        within(activityButton.parentElement ?? activityButton).queryByText("Distance"),
+      ).toBeNull();
+      expect(
+        within(activityButton.parentElement ?? activityButton).queryByText(/Elevation/),
+      ).toBeNull();
       expect(activityButton.getAttribute("aria-label")).toContain("Training Stress Score 100");
       expect(activityButton.getAttribute("aria-label")).toContain(
         "Average Power unavailable: Power not recorded",
@@ -577,8 +626,12 @@ describe("ActivitiesScreen", () => {
     const activityButton = screen.getByRole("button", { name: /^Open Trainer Ride/ });
     expect(activityButton.getAttribute("aria-label")).toContain("Distance 0.0 km");
     expect(activityButton.getAttribute("aria-label")).toContain("Elevation 0 m");
-    expect(within(activityButton).getByText("Distance")).toBeDefined();
-    expect(within(activityButton).getByText("Elevation")).toBeDefined();
+    expect(
+      within(activityButton.parentElement ?? activityButton).getByText("Distance"),
+    ).toBeDefined();
+    expect(
+      within(activityButton.parentElement ?? activityButton).getByText("Elevation"),
+    ).toBeDefined();
   });
 
   it.each([null, "Indoor Cycling"])(
@@ -590,7 +643,9 @@ describe("ActivitiesScreen", () => {
 
       const openButton = screen.getByRole("button", { name: /^Open Indoor Cycling/ });
       expect(openButton.getAttribute("aria-label")?.match(/Indoor Cycling/g)).toHaveLength(1);
-      expect(within(openButton).getAllByText("Indoor Cycling")).toHaveLength(1);
+      expect(
+        within(openButton.parentElement ?? openButton).getAllByText("Indoor Cycling"),
+      ).toHaveLength(1);
 
       fireEvent.click(screen.getByRole("button", { name: "Select activities" }));
       const selectButton = screen.getByRole("button", { name: /^Select Indoor Cycling/ });
@@ -608,7 +663,7 @@ describe("ActivitiesScreen", () => {
     expect(screen.getByText("0 activities selected").getAttribute("accessibilityliveregion")).toBe(
       "polite",
     );
-    fireEvent.click(screen.getByText("Trainer Ride"));
+    fireEvent.click(screen.getByRole("button", { name: /^(Open|Select|Deselect) Trainer Ride,/ }));
 
     expect(routerPush).not.toHaveBeenCalled();
     expect(screen.getByText("1 activity selected").getAttribute("accessibilityliveregion")).toBe(
@@ -628,7 +683,7 @@ describe("ActivitiesScreen", () => {
     await waitFor(() =>
       expect(announceForAccessibility).toHaveBeenLastCalledWith("0 activities selected"),
     );
-    fireEvent.click(screen.getByText("Trainer Ride"));
+    fireEvent.click(screen.getByRole("button", { name: /^(Open|Select|Deselect) Trainer Ride,/ }));
 
     await waitFor(() =>
       expect(announceForAccessibility).toHaveBeenLastCalledWith("1 activity selected"),
@@ -643,7 +698,7 @@ describe("ActivitiesScreen", () => {
 
     render(<ActivitiesScreen />);
     fireEvent.click(screen.getByRole("button", { name: "Select activities" }));
-    fireEvent.click(screen.getByText("Trainer Ride"));
+    fireEvent.click(screen.getByRole("button", { name: /^(Open|Select|Deselect) Trainer Ride,/ }));
     fireEvent.click(screen.getByText("Delete"));
 
     await waitFor(() => {
@@ -666,8 +721,8 @@ describe("ActivitiesScreen", () => {
     });
     render(<ActivitiesScreen />);
     fireEvent.click(screen.getByRole("button", { name: "Select activities" }));
-    fireEvent.click(screen.getByText("Trainer Ride"));
-    fireEvent.click(screen.getByText("Second Ride"));
+    fireEvent.click(screen.getByRole("button", { name: /^(Open|Select|Deselect) Trainer Ride,/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^(Open|Select|Deselect) Second Ride,/ }));
     fireEvent.click(screen.getByText("Merge"));
     await waitFor(() => {
       expect(mergeMutateAsync).toHaveBeenCalledWith({ ids: ["activity-1", "activity-2"] });
@@ -687,9 +742,9 @@ describe("ActivitiesScreen", () => {
     fireEvent.click(screen.getByRole("button", { name: "Select activities" }));
     const merge = screen.getByRole("button", { name: "Merge selected activities" });
     expect(merge.hasAttribute("disabled")).toBe(true);
-    fireEvent.click(screen.getByText("Trainer Ride"));
+    fireEvent.click(screen.getByRole("button", { name: /^(Open|Select|Deselect) Trainer Ride,/ }));
     expect(merge.hasAttribute("disabled")).toBe(true);
-    fireEvent.click(screen.getByText("Run"));
+    fireEvent.click(screen.getByRole("button", { name: /^(Open|Select|Deselect) Run,/ }));
     expect(merge.hasAttribute("disabled")).toBe(true);
     expect(screen.getByText("Select activities of one type to merge.")).toBeDefined();
   });
@@ -705,8 +760,8 @@ describe("ActivitiesScreen", () => {
     });
     render(<ActivitiesScreen />);
     fireEvent.click(screen.getByRole("button", { name: "Select activities" }));
-    fireEvent.click(screen.getByText("Trainer Ride"));
-    fireEvent.click(screen.getByText("Second Ride"));
+    fireEvent.click(screen.getByRole("button", { name: /^(Open|Select|Deselect) Trainer Ride,/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^(Open|Select|Deselect) Second Ride,/ }));
     fireEvent.click(screen.getByText("Merge"));
     await waitFor(() => {
       expect(mergeMutateAsync).toHaveBeenCalledWith({ ids: ["activity-1", "activity-2"] });
@@ -734,7 +789,7 @@ describe("ActivitiesScreen", () => {
 
     render(<ActivitiesScreen />);
     fireEvent.click(screen.getByRole("button", { name: "Select activities" }));
-    fireEvent.click(screen.getByText("Trainer Ride"));
+    fireEvent.click(screen.getByRole("button", { name: /^(Open|Select|Deselect) Trainer Ride,/ }));
     fireEvent.click(screen.getByText("Running"));
 
     expect(screen.queryByText("1 activity selected")).toBeNull();
@@ -746,7 +801,7 @@ describe("ActivitiesScreen", () => {
 
     render(<ActivitiesScreen />);
     fireEvent.click(screen.getByRole("button", { name: "Select activities" }));
-    fireEvent.click(screen.getByText("Trainer Ride"));
+    fireEvent.click(screen.getByRole("button", { name: /^(Open|Select|Deselect) Trainer Ride,/ }));
     fireEvent.click(screen.getByText("8 weeks"));
 
     expect(screen.queryByText("1 activity selected")).toBeNull();

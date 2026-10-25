@@ -587,13 +587,27 @@ Source-map and release correlation:
   uploaded from the export that produced the published update, while native
   symbols belong to the archive build.
 
-The activities screen uses a 32 px logo for the actual provider of the closest
-available recording as the leading card image when provenance resolves a primary.
-Unresolved origin keeps the activity-type icon on cards without a map.
-It reuses [ProviderLogo](components/ProviderLogo.tsx), including its
-existing letter fallback for missing assets. The
-[origin contract](../providers-meta/src/activity-origin.ts) is shared with web;
-field and sensor selection do not determine recording origin.
+The activities screen always leads with the shared rounded-outline activity
+icon, including cards with maps and resolved recording origins. Beside time
+and duration, a small recording-app logo and chevron open source details.
+The [source disclosure](components/ActivitySourceDisclosure.tsx) shows
+“Recorded in” and, when applicable, “Imported via” as separate roles:
+[Hang Ten](https://apps.apple.com/us/app/hang-ten-training/id6797141761)
+can save completed sessions to Apple Health. Its trigger uses the
+recording app's clean [ProviderLogo](components/ProviderLogo.tsx), including the
+existing letter fallback for missing assets. Unresolved origins show no source
+control. The [shared origin contract](../providers-meta/src/activity-origin.ts)
+and [source presentation helper](../providers-meta/src/activity-source-details.ts)
+keep origin independent of field and sensor selection.
+
+Source details use a native [React Native Modal](https://reactnative.dev/docs/modal)
+with close and backdrop controls, system-back dismissal, and accessibility escape.
+The source trigger has its own 44-point touch target beside a separate full-card
+navigation or selection target, following React Native's
+[Pressable](https://reactnative.dev/docs/pressable) and
+[accessibility guidance](https://reactnative.dev/docs/accessibility).
+After iOS dismisses the modal, the trigger regains screen-reader focus through
+[`AccessibilityInfo.sendAccessibilityEvent`](https://reactnative.dev/docs/accessibilityinfo#sendaccessibilityevent).
 
 ## Activity metric sources
 

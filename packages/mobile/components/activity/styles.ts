@@ -57,9 +57,6 @@ export const styles = StyleSheet.create({
     alignItems: "center",
     gap: 12,
   },
-  icon: {
-    fontSize: 32,
-  },
   headerText: {
     flex: 1,
     gap: 6,

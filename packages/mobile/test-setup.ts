@@ -273,7 +273,26 @@ vi.mock("react-native", () => {
     );
   Image.displayName = "Image";
   const FlatList = createMockComponent("FlatList");
-  const Modal = createMockComponent("Modal");
+  const ModalContent = createMockComponent("Modal");
+  const Modal = ({
+    visible,
+    onDismiss,
+    onRequestClose,
+    transparent: _transparent,
+    ...props
+  }: Record<string, unknown>) => {
+    const previouslyVisible = React.useRef(visible);
+    React.useEffect(() => {
+      if (previouslyVisible.current && !visible && typeof onDismiss === "function") onDismiss();
+      previouslyVisible.current = visible;
+    }, [visible, onDismiss]);
+    return React.createElement(ModalContent, {
+      ...props,
+      onKeyDown: (event: { key: string }) => {
+        if (event.key === "Escape" && typeof onRequestClose === "function") onRequestClose();
+      },
+    });
+  };
   const ActivityIndicator = ({ color, style, ...props }: Record<string, unknown>) =>
     React.createElement("activityindicator", {
       ...props,
@@ -344,7 +363,10 @@ vi.mock("react-native", () => {
   };
 
   const Alert = { alert: vi.fn() };
-  const AccessibilityInfo = { announceForAccessibility: vi.fn() };
+  const AccessibilityInfo = {
+    announceForAccessibility: vi.fn(),
+    sendAccessibilityEvent: vi.fn(),
+  };
   const Linking = { openURL: vi.fn(() => Promise.resolve()) };
   const Share = { share: vi.fn(() => Promise.resolve({ action: "sharedAction" })) };
 
