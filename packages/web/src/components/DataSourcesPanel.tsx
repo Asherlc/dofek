@@ -33,8 +33,7 @@ const oauthPostMessage = z.object({
   providerId: z.string().optional(),
 });
 
-const providerRegionClassName =
-  "h-80 space-y-3 overflow-y-auto overscroll-contain rounded-lg pr-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent sm:h-96 lg:h-[28rem]";
+const providerRegionClassName = "min-h-80 space-y-3 rounded-lg sm:min-h-96 lg:min-h-[28rem]";
 const providerGridClassName = "grid gap-3 sm:grid-cols-2 lg:grid-cols-3";
 
 export function DataSourcesPanel() {
