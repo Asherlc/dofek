@@ -1,5 +1,44 @@
 # Testing Notes
 
+## Native Swift mutation testing
+
+Run the [native mutation runner](../scripts/run-swift-mutation.ts) from the
+repository root on macOS with Swift and Muter installed:
+
+```bash
+pnpm tsx scripts/run-swift-mutation.ts --base origin/main
+```
+
+The base comparison uses Git's merge base with `HEAD`, so unrelated commits on
+main and uncommitted-only paths are not selected. Muter tests the working
+copy of each selected package. For each changed Swift file, the
+runner finds the owning `Package.swift`, reads SwiftPM's compiled source
+inventory, and keeps non-test Swift targets. Test files, manifests and excluded
+Expo bridge files do not become mutation inputs. See the
+[Git comparison contract](https://git-scm.com/docs/git-diff) and
+[SwiftPM describe command](https://github.com/swiftlang/swift-package-manager/blob/main/Sources/Commands/PackageCommands/Describe.swift).
+
+Muter runs inside each affected package, with package-relative source paths.
+The [canonical configuration](../packages/mobile/muter.conf.yml) is shared by
+package-local symlinks; Muter loads it from its current working directory and
+copies that project to a sibling mutation directory:
+[configuration loading](https://github.com/muter-mutation-testing/muter/blob/16/Sources/muterCore/MuterRunSteps/LoadConfiguration.swift),
+[mutation project location](https://github.com/muter-mutation-testing/muter/blob/16/Sources/muterCore/MuterRunSteps/CreateTempDirectoryURL.swift).
+Only an empty compiled-source intersection skips mutation testing. A selected
+run must exit successfully and produce a valid positive-work JSON report under
+`reports/swift-mutation/`; missing configuration, invalid reports, and all
+nonzero statuses fail. Exit 255 does not identify benign empty work:
+[Muter error handling](https://github.com/muter-mutation-testing/muter/blob/16/Sources/muterCore/CLICommands/RunCommand/Run.swift).
+
+Inspect the actual JSON mutation results for surviving mutants and build
+errors. A successful Muter process means the run completed; it does not imply
+every mutation was killed. The runner preserves this tool contract rather
+than introducing a new score threshold:
+[Muter report schema](https://github.com/muter-mutation-testing/muter/blob/16/Sources/muterCore/TestReporting/MuterTestReport.swift),
+[mutation scoring](https://github.com/muter-mutation-testing/muter/blob/16/Sources/muterCore/TestReporting/mutationScoring.swift).
+Native unit tests and a signed Simulator build remain separate checks;
+physical background reconnection and capture still require a device.
+
 ## Integration Dependencies
 
 The default and changed-test commands are intentionally Docker-free:

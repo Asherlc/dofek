@@ -29,6 +29,7 @@ let package = Package(
                 "TransferManager.swift",
                 "WatchSessionDelegate.swift",
                 "expo-target.config.js",
+                "muter.conf.yml",
                 "pods.rb",
             ],
             sources: [

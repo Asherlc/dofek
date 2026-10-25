@@ -102,6 +102,24 @@ for the upstream fixes, regression coverage, and scoped advisory exceptions.
 
 ## Verification & Tooling
 
+- `run-swift-mutation.ts`: Runs the existing Muter tool for changed compiled
+  Swift sources in their owning Swift packages. Git's merge-base comparison
+  limits selection to the PR delta, and SwiftPM's source inventory respects
+  each manifest's test and Expo bridge exclusions. Each selected package runs
+  from its own directory with package-relative source paths and writes an
+  absolute JSON report under `reports/swift-mutation/`.
+  - Usage: `pnpm tsx scripts/run-swift-mutation.ts --base origin/main`
+  - The shared [Muter configuration](../packages/mobile/muter.conf.yml) is
+    linked into each package. The runner skips only an empty compiled-source
+    intersection, propagates every nonzero tool exit, and requires a valid
+    positive-work report after a selected run. Muter 16 uses its working
+    directory's configuration and filenames:
+    [configuration loading](https://github.com/muter-mutation-testing/muter/blob/16/Sources/muterCore/MuterRunSteps/LoadConfiguration.swift),
+    [file selection](https://github.com/muter-mutation-testing/muter/blob/16/Sources/muterCore/MuterRunSteps/DiscoverSourceFiles.swift).
+- Native mutation selection uses the [SwiftPM describe command](https://github.com/swiftlang/swift-package-manager/blob/main/Sources/Commands/PackageCommands/Describe.swift)
+  and Git's [three-dot comparison](https://git-scm.com/docs/git-diff),
+  rather than duplicating Swift manifest exclusions or comparing unrelated
+  changes on the current base-branch tip.
 - `detect-ci-changes.ts`: Classifies changed paths and affected workspace
   packages for the existing CI jobs. Native files under `packages/mobile/`
   enable mobile checks even when the longest matching workspace is a local

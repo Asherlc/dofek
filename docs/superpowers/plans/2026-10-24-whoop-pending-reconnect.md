@@ -57,7 +57,7 @@ and hosted validation results are tracked in [PR 3072](https://github.com/Asherl
 
 - [x] Document pending automatic connections, bounded setup, diagnostic replay and native release verification with primary-source citations.
 - [x] Run focused mobile sync/diagnostic tests, including the existing explicit-connection timeout upload fallback; expect all tests to pass.
-- [ ] Run full repository lint, root/server/web/mobile/module TypeScript checks, and a signed iOS Simulator compile when available; report the physical-device validation boundary accurately.
+- [x] Run full repository lint, root/server/web/mobile/module TypeScript checks, and a signed iOS Simulator compile when available; report the physical-device validation boundary accurately.
 - [x] Final review checkpoint: independent whole-change review, address material findings with regression coverage.
 - [x] Commit and push the completed change on `strong-eagle`; report root cause, fix, validation and native build requirement.
 
@@ -76,3 +76,23 @@ and hosted validation results are tracked in [PR 3072](https://github.com/Asherl
 - [x] Run the complete detector suite and invoke the public CLI with the exact failing native path; expect mobile checks enabled.
 - [x] Independent scoped review checkpoint: inspect the small CI diff and regression coverage, then run lint/typechecks/relevant tests, commit and push.
 - [ ] Observe the fresh hosted detector output and existing native jobs; do not treat skipped mobile checks as native validation.
+
+### Task 4: Route native mutation testing to the owning Swift package
+
+**Files:**
+- Create: `scripts/run-swift-mutation.ts`, `scripts/run-swift-mutation.test.ts`
+- Modify: `.github/workflows/test.yml`
+- Create: `packages/mobile/muter.conf.yml` and package-local configuration symlinks for all eight native Swift packages.
+- Replace: `packages/mobile/modules/health-kit/muter.conf.yml` with the canonical configuration symlink.
+- Modify: `packages/mobile/targets/DofekWatch/Package.swift` to exclude the added tool configuration from its root source target; ignore generated sibling mutation clones in `.gitignore`.
+- Document: `scripts/README.md`, `docs/testing.md`, `docs/production-incident-baseline.md`
+
+**Interfaces:** Public CLI `pnpm tsx scripts/run-swift-mutation.ts --base origin/main`. Consume Git changed paths, owning `Package.swift`, SwiftPM description JSON and Muter 16. Preserve Muter exit semantics; no new score threshold or framework.
+
+- [x] Add public CLI fixture tests for affected WHOOP and HealthKit packages, a real divergent Git history proving merge-base selection, package-relative files, excluded test/Expo bridge files, empty selection, tool failures including 255, missing configuration and invalid/missing reports.
+- [x] Run the focused runner suite with `--retry=0` before implementation; observe RED.
+- [x] Implement the smallest runner using SwiftPM source inventory, per-package working directories, a shared configuration and absolute JSON reports; propagate all nonzero exits.
+- [x] Replace the hardcoded HealthKit workflow commands and exit-255 success branch with the runner; upload all package reports. Validate YAML using the existing schema/lint tooling rather than static configuration tests.
+- [ ] Run the runner suite and a real WHOOP mutation run; inspect actual discovery and report results.
+- [x] Independent scoped review checkpoint: review runner, workflow, configuration and tests; run required pre-push checks, commit and push.
+- [ ] Observe real hosted native mutation execution and completion; distinguish its report from ordinary unit and build results.

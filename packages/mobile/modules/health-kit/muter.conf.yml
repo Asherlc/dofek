@@ -1,17 +1,1 @@
-executable: /usr/bin/swift
-arguments:
-  - test
-  - --package-path
-  - .
-
-excludeFiles:
-  - Tests/**
-  - Package.swift
-  - ios/HealthKitModule.swift
-  - ios/ExpoHealthKit.podspec
-
-mutationOperators:
-  - NegateConditionals
-  - ChangeLogicalConnector
-  - RemoveSideEffects
-  - SwapTernary
+../../muter.conf.yml

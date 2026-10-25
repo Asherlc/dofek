@@ -55,3 +55,40 @@ detection and the existing documentation-only behavior. Add a failing public
 detector regression before the smallest classification fix. This correction
 is needed to run the existing native CI checks for this change; it does not
 alter the approved Bluetooth implementation or add package dependencies.
+
+## Approved native mutation repair
+
+The user explicitly approved repairing the mutation workflow in this PR after
+the hosted job sent WHOOP paths to HealthKit, discovered zero files, and
+converted exit 255 into success. Use the existing Muter tool and SwiftPM;
+introduce no replacement mutation framework or score threshold.
+
+A TypeScript CLI receives the comparison base, reads the committed PR delta
+using Git's `base...HEAD` merge-base comparison, selects changed Swift files,
+finds each owning `Package.swift`, and uses
+[`swift package describe --type json`](https://github.com/swiftlang/swift-package-manager/blob/main/Sources/Commands/PackageCommands/Describe.swift)
+to intersect changes with compiled non-test Swift targets. This respects Expo
+bridge exclusions already declared by each package. Skip only an empty
+compiled-source intersection. Run Muter from each affected package with
+package-relative source paths and absolute JSON report paths. Propagate every
+nonzero tool exit, including 255; require a valid positive-work report after a
+successful selected-source run. Do not infer benign zero work from a generic
+error status: [Muter run command](https://github.com/muter-mutation-testing/muter/blob/16/Sources/muterCore/CLICommands/RunCommand/Run.swift).
+
+Use one canonical `packages/mobile/muter.conf.yml` with package-local relative
+symlinks for the seven native modules and watch transfer package. Muter loads
+configuration from its working directory and clones that directory to a
+sibling with the same depth, preserving these relative links:
+[configuration loader](https://github.com/muter-mutation-testing/muter/blob/16/Sources/muterCore/MuterRunSteps/LoadConfiguration.swift),
+[clone location](https://github.com/muter-mutation-testing/muter/blob/16/Sources/muterCore/MuterRunSteps/CreateTempDirectoryURL.swift).
+Retain `swift test --package-path .` as the package test command and remove
+obsolete ignored configuration keys. Muter 16 is the installed and
+[latest stable release](https://github.com/muter-mutation-testing/muter/releases/tag/16)
+verified for this repair.
+
+Public CLI fixture tests must reproduce multi-package routing, relative paths,
+manifest-based test/bridge exclusion, missing prerequisites, and nonzero
+Muter/SwiftPM/report failures. Verify the actual runner against real SwiftPM
+and Muter on the changed WHOOP source, inspect the resulting report, and retain
+its precise mutation results. The workflow must use this runner and upload
+all affected-package reports; it must not catch discovery failures as success.
