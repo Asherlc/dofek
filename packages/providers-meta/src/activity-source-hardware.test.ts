@@ -36,6 +36,124 @@ function item(overrides: Partial<ActivityHardwareItem> = {}): ActivityHardwareIt
 }
 
 describe("activitySourceTreeWithHardware", () => {
+  it.each(["Asher’s Apple Watch", "  ASHER’S APPLE WATCH  "])(
+    "omits a device name fact that repeats the recording header: %s",
+    (deviceName) => {
+      const watch = {
+        ...node("activity-1:recording-attribution", "apple-watch"),
+        label: "Asher’s Apple Watch",
+      };
+      const result = activitySourceTreeWithHardware(
+        { primary: node("activity-1", "apple_health", [watch]), otherSources: [] },
+        {
+          items: [
+            item({
+              model: "Apple Watch Ultra 3",
+              details: [
+                { label: "Device name", value: deviceName },
+                { label: "Software", value: "26.6" },
+              ],
+            }),
+          ],
+          power: [],
+        },
+      );
+      expect(result.primary?.children[0]?.details).toEqual([
+        { label: "Model", value: "Apple Watch Ultra 3" },
+        { label: "Software", value: "26.6" },
+      ]);
+    },
+  );
+
+  it("retains a personal device name beneath a model header", () => {
+    const watch = {
+      ...node("activity-1:recording-attribution", "apple-watch"),
+      label: "Apple Watch Ultra 3",
+    };
+    const result = activitySourceTreeWithHardware(
+      { primary: node("activity-1", "apple_health", [watch]), otherSources: [] },
+      {
+        items: [
+          item({
+            model: "Apple Watch Ultra 3",
+            details: [
+              { label: "Device name", value: "Asher’s Apple Watch" },
+              { label: "Software", value: "26.6" },
+            ],
+          }),
+        ],
+        power: [],
+      },
+    );
+    expect(result.primary?.children[0]?.details).toEqual([
+      { label: "Device name", value: "Asher’s Apple Watch" },
+      { label: "Software", value: "26.6" },
+    ]);
+  });
+
+  it("resolves raw Apple model facts beneath a named watch without changing its source identity", () => {
+    const watch = {
+      ...node("activity-1:recording-attribution", "apple-watch"),
+      label: "Asher’s Apple Watch",
+      sourceName: "Watch6,9",
+    };
+    const result = activitySourceTreeWithHardware(
+      { primary: node("activity-1", "apple_health", [watch]), otherSources: [] },
+      { items: [item({ model: "Watch6,9", sourceName: "Watch6,9" })], power: [] },
+    );
+    expect(result.primary?.children[0]).toEqual({
+      ...watch,
+      details: [
+        { label: "Model", value: "Apple Watch Series 7 (GPS + Cellular, 45mm)" },
+        { label: "Software", value: "26.1" },
+      ],
+    });
+  });
+
+  it.each([
+    ["Watch6,9", "Apple Watch Series 7 (GPS + Cellular, 45mm)"],
+    ["fr955", "Forerunner 955"],
+  ])(
+    "resolves standalone hardware label %s while preserving its raw source name",
+    (rawName, label) => {
+      const result = activitySourceTreeWithHardware(
+        { primary: node("activity-1", "wahoo"), otherSources: [] },
+        {
+          items: [
+            item({
+              providerId: "wahoo",
+              role: "sensor",
+              label: rawName,
+              model: rawName,
+              sourceName: "original-source-id",
+              details: [],
+            }),
+          ],
+          power: [],
+        },
+      );
+      expect(result.primary?.children[0]).toMatchObject({
+        sourceName: "original-source-id",
+        label,
+      });
+      expect(result.primary?.children[0]?.details).toBeUndefined();
+    },
+  );
+
+  it("resolves an existing Garmin source label and avoids repeating its model", () => {
+    const garmin = { ...node("activity-1", "garmin"), sourceName: "fr955", label: "fr955" };
+    const result = activitySourceTreeWithHardware(
+      { primary: garmin, otherSources: [] },
+      { items: [item({ providerId: "garmin", model: "fr955" })], power: [] },
+    );
+    expect(result.primary).toEqual({
+      ...garmin,
+      label: "Forerunner 955",
+      details: [{ label: "Software", value: "26.1" }],
+    });
+    expect(garmin.label).toBe("fr955");
+  });
+
   it("places recording facts on the existing Apple Watch attribution", () => {
     const watch = node("activity-1:recording-attribution", "apple-watch");
     const tree = { primary: node("activity-1", "apple_health", [watch]), otherSources: [] };

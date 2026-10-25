@@ -3,6 +3,8 @@ import { expect, within } from "storybook/test";
 import {
   branchingSourceTree,
   longSourceTree,
+  recognizedWatchHardware,
+  recognizedWatchSourceTree,
   sourceHardware,
   strongSourceTree,
 } from "./ActivitySourceDisclosure.fixtures.ts";
@@ -28,6 +30,17 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const Collapsed: Story = {};
+export const RecognizedWatchModels: Story = {
+  args: { tree: recognizedWatchSourceTree, hardware: recognizedWatchHardware },
+  play: async ({ canvasElement, userEvent }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(
+      canvas.getByRole("button", { name: "Apple Watch Series 7 (GPS + Cellular, 45mm) Sources" }),
+    );
+    await expect(canvas.getByText("Garmin Forerunner 955")).toBeVisible();
+    await expect(canvas.getByText("Asher’s Apple Watch")).toBeVisible();
+  },
+};
 export const WithDeviceFacts: Story = {
   args: { hardware: sourceHardware },
   play: async ({ canvasElement, userEvent }) => {

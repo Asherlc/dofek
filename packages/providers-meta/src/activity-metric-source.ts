@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { deviceDisplayName } from "./device-names.ts";
 import { providerFamily } from "./provider-catalog.ts";
 import { providerSourceLogo } from "./providers.ts";
 
@@ -32,7 +33,9 @@ export function activityMetricSourcePresentation(
   if (providerId === "apple_health" || providerId === "apple-health") {
     const { viaAppleHealth } = providerSourceLogo(providerId, sourceName);
     return {
-      displayName: viaAppleHealth ? (sourceName?.trim() ?? "Apple Health") : "Apple Health",
+      displayName: viaAppleHealth
+        ? deviceDisplayName(sourceName ?? "Apple Health")
+        : "Apple Health",
       providerId,
       sourceName,
       attribution: viaAppleHealth ? { kind: "apple_health", label: "Apple Health" } : null,
@@ -52,7 +55,7 @@ export function activityMetricSourcePresentation(
   }
   if (providerId === "ble_heart_rate") {
     return {
-      displayName: sourceName || "Heart Rate Monitor",
+      displayName: sourceName ? deviceDisplayName(sourceName) : "Heart Rate Monitor",
       providerId,
       sourceName,
       attribution: { kind: "bluetooth", label: "Bluetooth" },

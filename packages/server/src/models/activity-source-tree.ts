@@ -5,6 +5,7 @@ import type {
   ActivitySourceTree,
   ActivitySourceTreeNode,
 } from "@dofek/providers/activity-source-tree";
+import { deviceDisplayName } from "@dofek/providers/device-names";
 import { providerLabel } from "@dofek/providers/providers";
 import type { SourceLink } from "./activity-source-attribution.ts";
 
@@ -88,7 +89,7 @@ export function buildActivitySourceTree(
       sourceName: source.providerId === "garmin" ? sourceName : null,
       label:
         source.providerId === "garmin" && sourceName?.trim()
-          ? sourceName.trim()
+          ? deviceDisplayName(sourceName)
           : providerLabel(source.providerId),
       description:
         [relationship, removal].filter((description) => description !== null).join(" · ") || null,

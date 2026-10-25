@@ -5,6 +5,8 @@ import { userEvent } from "storybook/test";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   branchingActivitySourceTree,
+  recognizedWatchHardware,
+  recognizedWatchSourceTree,
   walkingActivitySourceHardware,
   walkingActivitySourceTree,
 } from "../app-fixtures/activity-source-tree";
@@ -80,6 +82,35 @@ vi.mock("./ProviderLogo", () => ({
 
 describe("ActivitySourceDisclosure", () => {
   beforeEach(() => vi.clearAllMocks());
+  it("discloses recognized watch models once in their provenance branches", () => {
+    render(
+      <ActivitySourceDisclosure
+        tree={recognizedWatchSourceTree}
+        hardware={recognizedWatchHardware}
+      />,
+    );
+    const trigger = screen.getByRole("button", {
+      name: "Sources: Apple Watch Series 7 (GPS + Cellular, 45mm)",
+    });
+    expect(screen.queryByText("Device name: Asher’s Apple Watch")).toBeNull();
+    fireEvent.click(trigger);
+    expect(trigger.getAttribute("aria-expanded")).toBe("true");
+    expect(screen.getAllByText("Apple Watch Series 7 (GPS + Cellular, 45mm)")).toHaveLength(1);
+    expect(screen.getAllByText("Garmin Forerunner 955")).toHaveLength(1);
+    expect(screen.getByText("Device name: Asher’s Apple Watch")).toBeDefined();
+    expect(screen.getByText("Apple Health")).toBeDefined();
+    const garminLink = screen.getByRole("button", {
+      name: "View source for Garmin Forerunner 955",
+    });
+    const garmin = garminLink.parentElement?.parentElement?.parentElement?.parentElement;
+    if (!garmin) throw new Error("Missing Garmin source branch");
+    expect(within(garmin).getByText("Firmware: 19.18")).toBeDefined();
+    expect(within(garmin).queryByText("Device name: Asher’s Apple Watch")).toBeNull();
+    fireEvent.click(trigger);
+    expect(trigger.getAttribute("aria-expanded")).toBe("false");
+    expect(screen.queryByText("Device name: Asher’s Apple Watch")).toBeNull();
+    expect(screen.getByText("Apple Watch Series 7 (GPS + Cellular, 45mm)")).toBeDefined();
+  });
 
   it("only offers source details when the tree contains source records", () => {
     const { container, rerender } = render(

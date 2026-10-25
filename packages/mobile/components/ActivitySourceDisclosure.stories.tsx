@@ -5,6 +5,8 @@ import {
   branchingActivitySourceTree,
   garminActivitySourceHardware,
   garminActivitySourceTree,
+  recognizedWatchHardware,
+  recognizedWatchSourceTree,
   walkingActivitySourceHardware,
   walkingActivitySourceTree,
 } from "../app-fixtures/activity-source-tree";
@@ -27,6 +29,19 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const BranchingCollapsed: Story = {};
+export const RecognizedWatchModels: Story = {
+  args: { tree: recognizedWatchSourceTree, hardware: recognizedWatchHardware },
+  play: async ({ canvasElement, userEvent }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(
+      await canvas.findByRole("button", {
+        name: "Sources: Apple Watch Series 7 (GPS + Cellular, 45mm)",
+      }),
+    );
+    await expect(canvas.getByText("Garmin Forerunner 955")).toBeVisible();
+    await expect(canvas.getByText("Device name: Asher’s Apple Watch")).toBeVisible();
+  },
+};
 export const EmptyTree: Story = {
   args: { tree: { primary: null, otherSources: [] } },
   play: async ({ canvasElement }) => {

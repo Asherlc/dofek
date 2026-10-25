@@ -67,8 +67,11 @@ The backend API and background job processor for Dofek. Built with Node.js, Expr
   Polar, HealthKit, and BLE metadata requires reimport, resync, or new capture.
   Both clients render the [shared contract](../providers-meta/src/activity-hardware.ts)
   through the [shared source-tree presentation](../providers-meta/src/activity-source-hardware.ts).
-  One Sources control reveals identifiers, firmware, and specific models beneath
-  device nodes; reported hardware nests under its reporting provider, following the
+  Equipment names use the [shared device resolver](../providers-meta/src/device-names.ts).
+  One Sources control reveals firmware, personal device names, and specific models
+  beneath device nodes; reported hardware nests under its reporting provider.
+  Product codes and raw Apple model identifiers stay in retained source data.
+  The disclosure follows the
   [WAI disclosure pattern](https://www.w3.org/WAI/ARIA/apg/patterns/disclosure/).
 
 - **Hangboarding details**: The [repository](src/repositories/hangboarding-repository.ts)

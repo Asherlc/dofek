@@ -3,6 +3,8 @@ import { cleanup, fireEvent, render, screen, within } from "@testing-library/rea
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   branchingSourceTree,
+  recognizedWatchHardware,
+  recognizedWatchSourceTree,
   sourceHardware,
   walkingSourceTree,
 } from "./ActivitySourceDisclosure.fixtures.ts";
@@ -11,6 +13,32 @@ import { ActivitySourceDisclosure } from "./ActivitySourceDisclosure.tsx";
 afterEach(cleanup);
 
 describe("ActivitySourceDisclosure", () => {
+  it("discloses recognized watch models once in their provenance branches", () => {
+    render(
+      <ActivitySourceDisclosure
+        tree={recognizedWatchSourceTree}
+        hardware={recognizedWatchHardware}
+      />,
+    );
+    const trigger = screen.getByRole("button", {
+      name: "Apple Watch Series 7 (GPS + Cellular, 45mm) Sources",
+    });
+    expect(screen.queryByText("Asher’s Apple Watch")).toBeNull();
+    fireEvent.click(trigger);
+    expect(trigger).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getAllByText("Apple Watch Series 7 (GPS + Cellular, 45mm)")).toHaveLength(1);
+    expect(screen.getAllByText("Garmin Forerunner 955")).toHaveLength(1);
+    expect(screen.getByText("Asher’s Apple Watch")).toBeVisible();
+    expect(screen.getByText("Apple Health")).toBeVisible();
+    const garmin = screen.getByRole("link", { name: "Garmin Forerunner 955" }).closest("li");
+    if (!garmin) throw new Error("Missing Garmin source branch");
+    expect(within(garmin).getByText("19.18")).toBeVisible();
+    expect(within(garmin).queryByText("Asher’s Apple Watch")).toBeNull();
+    fireEvent.click(trigger);
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByText("Asher’s Apple Watch")).toBeNull();
+    expect(screen.getByText("Apple Watch Series 7 (GPS + Cellular, 45mm)")).toBeVisible();
+  });
   it("reveals device facts with their source branch through the Sources control", () => {
     render(<ActivitySourceDisclosure tree={branchingSourceTree} hardware={sourceHardware} />);
     const trigger = screen.getByRole("button", { name: "Garmin Connect Sources" });

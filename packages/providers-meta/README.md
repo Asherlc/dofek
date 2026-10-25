@@ -53,6 +53,45 @@ snapshot from the linked catalog when adding a newly supported device, preserve
 complete alternate model names, omit standalone edition/display qualifiers,
 and verify the resulting image before changing its URL.
 
+### Device display names
+
+[`deviceDisplayName` and `appleDeviceModel`](src/device-names.ts), exported from
+`@dofek/providers/device-names`, resolve device labels for both clients and server
+presentation. Source records retain their original identifiers and provider
+provenance. Recognized Garmin model symbols such as `fr955`, `edge530`, and
+`fenix8` become readable names without adding an edition or size; supplied
+camel-case or underscore qualifiers remain part of the name. Readable branding,
+custom names, and unrecognized identifiers remain intact. The existing
+[Garmin catalog](https://apps.garmin.com/api/appsLibraryExternalServices/api/asw/deviceTypes)
+provides the model-family spelling; no FIT SDK is imported into this package.
+
+The checked-in [Apple device catalog](src/apple-device-catalog.ts) projects
+identifier/name pairs from [AppleDB's public device API](https://api.appledb.dev/device/main.json),
+using upstream revision
+[`90134cb81b2dc60306b1bb694081e8e5692398f6`](https://github.com/littlebyteorg/appledb/tree/90134cb81b2dc60306b1bb694081e8e5692398f6)
+(2026-10-25). It includes public Apple Watch, iPhone, all iPad families, and iPod
+touch records, excluding `internal: true` entries. For example, `Watch6,9` resolves
+to **Apple Watch Series 7 (GPS + Cellular, 45mm)**. The snapshot retains AppleDB's
+[MIT license and copyright notice](https://github.com/littlebyteorg/appledb/blob/90134cb81b2dc60306b1bb694081e8e5692398f6/LICENSE).
+Resolution uses this bundled snapshot without fetching a catalog at runtime.
+The snapshot corrects the upstream `Watch5,11` size to 40mm, matching Apple's
+[A2353/A2355 identification](https://support.apple.com/en-us/108056). Preserve
+this correction when refreshing until the upstream record is corrected.
+
+The [hardware projection](../server/src/models/activity-hardware.ts) uses the
+resolved model in device headings and omits product codes and raw Apple model
+identifiers from displayed details. Original provider payloads retain those facts.
+
+To refresh, download the linked device API and record the corresponding
+[upstream revision](https://api.github.com/repos/littlebyteorg/appledb/commits/main).
+Select records whose `internal` field is not `true` and whose `type` is
+`Apple Watch`, `iPhone`, `iPod touch`, or starts with `iPad`; expand each record's
+`identifier` array into identifier/name pairs and sort identifiers. Reject
+conflicting names for an identifier instead of silently choosing one. Replace
+the snapshot, preserve the upstream license notice, update its revision/date
+and this reference, then run the package tests and typecheck. Unknown identifiers
+remain unchanged until a refreshed snapshot recognizes them.
+
 ### WHOOP Wear Locations
 
 Supported locations are defined in `WHOOP_WEAR_LOCATIONS`. The `parseWhoopWearLocation` function ensures any input defaults to `wrist` if invalid.

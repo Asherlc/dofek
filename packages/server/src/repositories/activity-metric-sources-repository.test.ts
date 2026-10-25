@@ -34,6 +34,95 @@ function storeWithRows(rows: unknown[]) {
 }
 
 describe("activity heart-rate sources", () => {
+  it("keeps distinct source identifiers separate when their display names are identical", async () => {
+    const hardware = normalizeActivityHardware([
+      {
+        activityId: window.activityId,
+        providerId: "garmin",
+        sourceName: "fr955",
+        raw: { deviceName: "Other watch" },
+        observations: [],
+      },
+    ]);
+    const result = await getActivityMetricSources(
+      storeWithRows([
+        {
+          channel: "heart_rate",
+          provider_id: "garmin",
+          device_id: "forerunner955",
+          source_id: "distinct-watch",
+        },
+      ]),
+      window,
+      hardware,
+    );
+    expect(result[0]?.sources).toEqual([
+      {
+        id: "distinct-watch",
+        label: "Garmin · Forerunner 955",
+        presentation: {
+          displayName: "Garmin · Forerunner 955",
+          providerId: "garmin",
+          sourceName: "forerunner955",
+          attribution: null,
+        },
+      },
+    ]);
+    expect(result[0]?.defaultSourceId).toBe("distinct-watch");
+  });
+  it("keeps a raw Garmin source ID matched to its readable hardware label", async () => {
+    const sourceId = '["garmin","fr955"]';
+    const hardware = normalizeActivityHardware([
+      {
+        activityId: window.activityId,
+        providerId: "garmin",
+        sourceName: "fr955",
+        raw: { deviceName: "fr955" },
+        observations: [],
+      },
+    ]);
+    const result = await getActivityMetricSources(
+      storeWithRows([
+        { channel: "heart_rate", provider_id: "garmin", device_id: "fr955", source_id: sourceId },
+      ]),
+      window,
+      hardware,
+    );
+    expect(result[0]).toMatchObject({
+      defaultSourceId: sourceId,
+      sources: [{ id: sourceId, label: "Garmin · Forerunner 955" }],
+    });
+  });
+  it("matches normalized source names when the reported recorder has a distinct name", async () => {
+    const hardware = normalizeActivityHardware([
+      {
+        activityId: window.activityId,
+        providerId: "garmin",
+        sourceName: "fr955",
+        raw: { deviceName: "My custom watch" },
+        observations: [],
+      },
+    ]);
+    const result = await getActivityMetricSources(
+      storeWithRows([
+        { channel: "heart_rate", provider_id: "garmin", device_id: "fr955", source_id: "raw-id" },
+      ]),
+      window,
+      hardware,
+    );
+    expect(result[0]?.sources).toEqual([
+      {
+        id: "raw-id",
+        label: "Garmin · Forerunner 955 · recorded by My custom watch",
+        presentation: {
+          displayName: "Garmin · Forerunner 955 · recorded by My custom watch",
+          providerId: "garmin",
+          sourceName: "fr955",
+          attribution: null,
+        },
+      },
+    ]);
+  });
   it("adds structured presentation from raw source metadata without changing source labels", async () => {
     const result = await getActivityMetricSources(
       storeWithRows([

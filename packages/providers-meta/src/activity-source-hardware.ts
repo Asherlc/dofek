@@ -4,6 +4,7 @@ import {
   activityHardwareRoleLabels,
 } from "./activity-hardware.ts";
 import type { ActivitySourceTree, ActivitySourceTreeNode } from "./activity-source-tree.ts";
+import { deviceDisplayName } from "./device-names.ts";
 import { providerLabel, providerLogoType, providerSourceLogo } from "./providers.ts";
 
 function appendDetails(node: ActivitySourceTreeNode, details: { label: string; value: string }[]) {
@@ -20,7 +21,7 @@ function appendDetails(node: ActivitySourceTreeNode, details: { label: string; v
 }
 
 function hardwareDetails(item: ActivityHardwareItem, destinationLabel: string) {
-  const model = item.model?.trim();
+  const model = item.model ? deviceDisplayName(item.model) : null;
   const manufacturer = item.manufacturer?.trim();
   const label = destinationLabel.trim().toLowerCase();
   const details =
@@ -30,7 +31,12 @@ function hardwareDetails(item: ActivityHardwareItem, destinationLabel: string) {
   if (manufacturer && !label.includes(manufacturer.toLowerCase())) {
     details.push({ label: "Manufacturer", value: manufacturer });
   }
-  return [...details, ...item.details];
+  return [
+    ...details,
+    ...item.details.filter(
+      (detail) => detail.label !== "Device name" || detail.value.trim().toLowerCase() !== label,
+    ),
+  ];
 }
 
 export function activitySourceTreeWithHardware(
@@ -40,6 +46,7 @@ export function activitySourceTreeWithHardware(
   function cloneNode(node: ActivitySourceTreeNode): ActivitySourceTreeNode {
     return {
       ...node,
+      label: deviceDisplayName(node.label),
       ...(node.details ? { details: node.details.map((detail) => ({ ...detail })) } : {}),
       children: node.children.map(cloneNode),
     };
@@ -95,8 +102,8 @@ export function activitySourceTreeWithHardware(
     const node: ActivitySourceTreeNode = {
       id: item.id,
       providerId: providerLogoType(logoCandidate) ? logoCandidate : item.providerId,
-      sourceName: item.label,
-      label: item.label,
+      sourceName: item.sourceName ?? item.label,
+      label: deviceDisplayName(item.label),
       description: ["category", "recorder", "source"].includes(item.role)
         ? null
         : activityHardwareRoleLabels[item.role],

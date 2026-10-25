@@ -1,4 +1,5 @@
 import { formatDateTime } from "@dofek/format/format";
+import { deviceDisplayName } from "./device-names.ts";
 import { PROVIDER_CATALOG, providerCatalogEntry } from "./provider-catalog.ts";
 
 /** Display labels for provider IDs, shared across web and iOS. */
@@ -12,7 +13,9 @@ export function providerLabel(id: string): string {
 }
 
 export function providerSourceLabel(id: string, subsource?: string | null): string {
-  if (id === "apple_health" && subsource) return `${subsource} (via Apple Health)`;
+  if ((id === "apple_health" || id === "apple-health") && subsource) {
+    return `${deviceDisplayName(subsource)} (via Apple Health)`;
+  }
   if (id === "garmin") return providerRecordLabel(id, subsource);
   return providerLabel(id);
 }
@@ -25,7 +28,7 @@ export function providerRecordLabel(id: string, sourceName?: string | null): str
   if (normalizedSource === id.toLowerCase() || normalizedSource === label.toLowerCase()) {
     return label;
   }
-  return `${label} · ${source}`;
+  return `${label} · ${deviceDisplayName(source)}`;
 }
 
 export interface ProviderAbsentSource {
@@ -58,7 +61,8 @@ export function formatProviderPartialAbsenceSummary(
 
 export function providerAbsentExplanation(id: string, subsource?: string | null): string {
   if (id === "apple_health" && subsource) {
-    return `The Apple Health copy of this workout (originally from ${subsource}) was removed from sync. This does not mean ${subsource} deleted the activity.`;
+    const source = deviceDisplayName(subsource);
+    return `The Apple Health copy of this workout (originally from ${source}) was removed from sync. This does not mean ${source} deleted the activity.`;
   }
   return `This activity was hidden because ${providerSourceLabel(id, subsource)} reported it as deleted or missing.`;
 }

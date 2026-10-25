@@ -12,6 +12,45 @@ function origin(providerId: string, sourceName: string | null = null): ActivityO
 }
 
 describe("activitySourceDetails", () => {
+  it.each(["Watch6,9", "watch6,9", "wAtch6,9"])(
+    "renders Apple model %s while retaining the Apple Health transport",
+    (sourceName) => {
+      const reportedOrigin = origin("apple_health", sourceName);
+      expect(activitySourceDetails(reportedOrigin)).toEqual({
+        recordingApp: {
+          provider: "apple-watch",
+          label: "Apple Watch Series 7 (GPS + Cellular, 45mm)",
+        },
+        importedVia: { provider: "apple_health", label: "Apple Health" },
+      });
+      expect(reportedOrigin).toMatchObject({ sourceName });
+    },
+  );
+
+  it.each(["watch99,99", "wAtch2,1"])(
+    "preserves an unknown or internal Watch source %s",
+    (sourceName) => {
+      expect(activitySourceDetails(origin("apple_health", sourceName))).toEqual({
+        recordingApp: { provider: sourceName, label: sourceName },
+        importedVia: { provider: "apple_health", label: "Apple Health" },
+      });
+    },
+  );
+
+  it("renders Garmin enum names through another provider", () => {
+    expect(activitySourceDetails(origin("strava", "edge530"))).toEqual({
+      recordingApp: { provider: "garmin", label: "Edge 530" },
+      importedVia: { provider: "strava", label: "Strava" },
+    });
+  });
+
+  it("renders an Apple phone identifier while retaining the reported source identity", () => {
+    expect(activitySourceDetails(origin("apple_health", "iPhone16,1"))).toEqual({
+      recordingApp: { provider: "iPhone16,1", label: "iPhone 15 Pro" },
+      importedVia: { provider: "apple_health", label: "Apple Health" },
+    });
+  });
+
   it.each(["strava", "suunto"])("preserves exact device metadata reported by %s", (provider) => {
     expect(activitySourceDetails(origin(provider, "Garmin Edge 530"))).toEqual({
       recordingApp: { provider: "garmin", label: "Garmin Edge 530" },

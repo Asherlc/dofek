@@ -216,3 +216,66 @@ export const walkingActivitySourceHardware: ActivityHardware = {
   ],
   power: [],
 };
+
+export const recognizedWatchSourceTree: ActivitySourceTree = {
+  primary: {
+    id: "apple-run:recording-attribution",
+    providerId: "apple-watch",
+    sourceName: "Watch6,9",
+    label: "Apple Watch Series 7 (GPS + Cellular, 45mm)",
+    description: null,
+    url: null,
+    children: [
+      {
+        id: "apple-run",
+        providerId: "apple_health",
+        sourceName: "Workout",
+        label: "Apple Health",
+        description: null,
+        url: null,
+        children: [],
+      },
+    ],
+  },
+  otherSources: [
+    {
+      id: "garmin-run",
+      providerId: "garmin",
+      sourceName: "fr955",
+      label: "Garmin Forerunner 955",
+      description: null,
+      url: "https://connect.garmin.com/modern/activity/955",
+      children: [],
+    },
+  ],
+};
+
+export const recognizedWatchHardware: ActivityHardware = {
+  items: [
+    {
+      id: "apple-watch-series-7",
+      activityId: "apple-run",
+      providerId: "apple_health",
+      sourceName: "Workout",
+      role: "recorder",
+      label: "Apple Watch Series 7 (GPS + Cellular, 45mm)",
+      model: "Apple Watch Series 7 (GPS + Cellular, 45mm)",
+      manufacturer: "Apple",
+      evidence: "Hardware reported by HealthKit.",
+      details: [{ label: "Device name", value: "Asher’s Apple Watch" }],
+    },
+    {
+      id: "garmin-forerunner-955",
+      activityId: "garmin-run",
+      providerId: "garmin",
+      sourceName: "fr955",
+      role: "recorder",
+      label: "Garmin Forerunner 955",
+      model: "Garmin Forerunner 955",
+      manufacturer: "Garmin",
+      evidence: "Recording device reported by Garmin.",
+      details: [{ label: "Firmware", value: "19.18" }],
+    },
+  ],
+  power: [],
+};

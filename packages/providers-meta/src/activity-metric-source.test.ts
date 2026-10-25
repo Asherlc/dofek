@@ -5,6 +5,58 @@ import {
 } from "./activity-metric-source.ts";
 
 describe("activityMetricSourcePresentation", () => {
+  it.each(["apple_health", "apple-health"])(
+    "resolves Apple model names through %s without changing source identity",
+    (providerId) => {
+      const sourceName = "  Watch6,9  ";
+      expect(
+        activityMetricSourcePresentation(
+          providerId,
+          sourceName,
+          "Apple Watch Series 7 (GPS + Cellular, 45mm) (via Apple Health)",
+        ),
+      ).toEqual({
+        displayName: "Apple Watch Series 7 (GPS + Cellular, 45mm)",
+        providerId,
+        sourceName,
+        attribution: { kind: "apple_health", label: "Apple Health" },
+      });
+    },
+  );
+
+  it("resolves a reported Bluetooth device model without changing its identity or attribution", () => {
+    expect(
+      activityMetricSourcePresentation(
+        "ble_heart_rate",
+        "fr955",
+        "Heart Rate Monitor · Forerunner 955",
+      ),
+    ).toEqual({
+      displayName: "Forerunner 955",
+      providerId: "ble_heart_rate",
+      sourceName: "fr955",
+      attribution: { kind: "bluetooth", label: "Bluetooth" },
+    });
+  });
+
+  it.each(["  Asher’s Apple Watch  ", "Watch99,99", "COROS PACE 3"])(
+    "preserves custom and unknown Apple Health sources: %s",
+    (sourceName) => {
+      expect(
+        activityMetricSourcePresentation(
+          "apple_health",
+          sourceName,
+          `${sourceName} (via Apple Health)`,
+        ),
+      ).toEqual({
+        displayName: sourceName.trim(),
+        providerId: "apple_health",
+        sourceName,
+        attribution: { kind: "apple_health", label: "Apple Health" },
+      });
+    },
+  );
+
   it.each([
     ["apple_health", "Zepp", "Zepp (via Apple Health)", "Zepp", "apple_health", "Apple Health"],
     [
