@@ -28,6 +28,7 @@ vi.mock("react-native", () => ({
     children,
     accessibilityLabel,
     accessibilityRole,
+    accessible,
     style,
     ...props
   }: Record<string, unknown>) =>
@@ -37,6 +38,7 @@ vi.mock("react-native", () => ({
         ...props,
         "aria-label": accessibilityLabel,
         role: accessibilityRole,
+        "data-accessible": accessible,
         "data-style": JSON.stringify(style),
       }),
       ...(children != null ? [children] : []),
@@ -101,6 +103,8 @@ vi.mock("react-native", () => ({
 
 vi.mock("react-native-svg", () => ({
   __esModule: true,
+  SvgXml: ({ xml, color, width, height }: Record<string, unknown>) =>
+    React.createElement("SvgXml", { xml, color, width, height }),
   default: ({ children, ...props }: Record<string, unknown>) =>
     React.createElement("svg", props, ...(children != null ? [children] : [])),
   Circle: (props: Record<string, unknown>) => React.createElement("circle", props),
@@ -665,6 +669,22 @@ describe("ActivityDetailScreen", () => {
     view.rerender(React.createElement(ActivityDetailScreen));
     expect(screen.queryByRole("button", { name: "Close photo" })).toBeNull();
   });
+  it.each(["running", "hangboard", "archery"])(
+    "renders the shared %s activity icon in the header",
+    async (activityType) => {
+      mockByIdQuery.mockReturnValue({
+        data: { ...baseCyclingActivity, activityType },
+        isLoading: false,
+        error: null,
+      });
+      const { default: ActivityDetailScreen } = await import("../../app/activity/[id]");
+      render(React.createElement(ActivityDetailScreen));
+      expect(
+        screen.getByLabelText(`${activityType} activity`).querySelector("SvgXml"),
+      ).toBeTruthy();
+    },
+  );
+
   it.each(["hiking", "running", "cycling", "strength", "hangboard"])(
     "hides climbs for %s activities even when climbing queries have cached data",
     async (activityType) => {

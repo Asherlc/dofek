@@ -1,5 +1,6 @@
 import { ACCOUNT_ERASURE_CLEANUP_OWNERSHIP_ERROR_MESSAGE } from "@dofek/auth/account-erasure";
 import type { QueryClient } from "@tanstack/react-query";
+import { clearDiagnostics } from "../modules/background-refresh";
 import { purgeAccountState as purgeHeartRateAccountState } from "../modules/ble-heart-rate";
 import { purgeAccountState as purgeCoreMotionAccountState } from "../modules/core-motion";
 import {
@@ -24,6 +25,7 @@ import { captureException } from "./telemetry";
 
 interface MobileAccountPurgeDependencies {
   advanceErasureCutoff(candidate: string): Promise<string>;
+  clearBackgroundRefreshDiagnostics(): void;
   clearPreparation(): Promise<unknown>;
   clearSession(): Promise<unknown>;
   purgeCoreMotion(cutoff: string): Promise<unknown>;
@@ -43,6 +45,7 @@ interface MobileAccountPurgeDependencies {
 
 const defaultDependencies: MobileAccountPurgeDependencies = {
   advanceErasureCutoff: advanceDeviceErasureCutoff,
+  clearBackgroundRefreshDiagnostics: clearDiagnostics,
   clearPreparation: clearMobileAccountErasurePreparation,
   clearSession: clearSessionToken,
   purgeCoreMotion: purgeCoreMotionAccountState,
@@ -139,6 +142,10 @@ export async function purgeMobileAccountState({
   );
   await attempt("account-erasure-heart-rate-purge", () =>
     dependencies.purgeHeartRate(effectiveCutoff),
+  );
+  await attempt(
+    "account-erasure-background-refresh-diagnostics-purge",
+    dependencies.clearBackgroundRefreshDiagnostics,
   );
   await attempt("account-erasure-export-cache-purge", dependencies.purgeExportCache);
   await attempt("account-erasure-query-persistence-purge", dependencies.purgeQueryCaches);

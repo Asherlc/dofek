@@ -590,7 +590,7 @@ function ActivityCard({
   onToggleSelected,
 }: ActivityCardProps) {
   const isHidden = activity.isProviderAbsent === true;
-  const cardRef = useRef<HTMLDivElement>(null);
+  const cardRef = useRef<HTMLElement>(null);
   const [visible, setVisible] = useState(false);
   const photoEnabled = !activity.location && !isHidden && visible;
   const photos = trpc.activity.images.useQuery(
@@ -607,7 +607,7 @@ function ActivityCard({
     return () => observer.disconnect();
   }, [activity.location, isHidden]);
   const cardClassName = [
-    "card block h-full overflow-hidden transition-colors",
+    "card relative block h-full overflow-hidden transition-colors",
     selectMode ? "cursor-pointer hover:bg-surface-elevated" : "hover:bg-surface-elevated",
     selected ? "ring-2 ring-accent bg-surface-hover" : "",
     isHidden ? "border-l-4 border-l-amber-500/80 bg-amber-500/5" : "",
@@ -615,13 +615,33 @@ function ActivityCard({
     .filter(Boolean)
     .join(" ");
 
-  const content = (
-    <div ref={cardRef} className="h-full">
+  const activityLabel = activity.name ?? formatActivityTypeLabel(activity.activityType);
+  const actionClassName =
+    "text-left after:absolute after:inset-0 after:z-10 focus-visible:outline-none focus-visible:after:rounded-lg focus-visible:after:outline-2 focus-visible:after:outline-accent";
+  const headingAction = selectMode ? (
+    <button
+      type="button"
+      onClick={onToggleSelected}
+      aria-pressed={selected}
+      className={actionClassName}
+    >
+      {activityLabel}
+    </button>
+  ) : (
+    <Link to="/activity/$id" params={{ id: activity.id }} className={actionClassName}>
+      {activityLabel}
+    </Link>
+  );
+
+  return (
+    <article ref={cardRef} className={cardClassName}>
       <ActivityCardContent
         activity={activity}
         units={units}
         selectMode={selectMode}
         selected={selected}
+        headingAction={headingAction}
+        onToggleSelected={onToggleSelected}
         photo={photos.data?.images[0]}
       />
       {!activity.location && !isHidden && photos.error ? (
@@ -629,25 +649,7 @@ function ActivityCard({
           {userFacingErrorMessage(photos.error)}
         </p>
       ) : null}
-    </div>
-  );
-
-  if (selectMode) {
-    return (
-      <button
-        type="button"
-        onClick={onToggleSelected}
-        className={`${cardClassName} w-full text-left`}
-      >
-        {content}
-      </button>
-    );
-  }
-
-  return (
-    <Link to="/activity/$id" params={{ id: activity.id }} className={cardClassName}>
-      {content}
-    </Link>
+    </article>
   );
 }
 

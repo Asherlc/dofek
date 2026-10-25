@@ -136,12 +136,18 @@ cd packages/web && pnpm storybook # Start Storybook
 pnpm test                        # Run repo-wide Vitest suites from the repo root
 ```
 
-Activity cards use a 32 px logo for the actual provider of the closest available
-recording as their leading image when provenance resolves a primary. Unresolved
-origin keeps the activity-type icon. Field and sensor priorities remain
-independent. The card reuses
-[ProviderLogo](src/components/ProviderLogo.tsx); see the
-[origin schema](../providers-meta/src/activity-origin.ts).
+Activity cards lead with the shared rounded-outline activity icon, including
+cards with a map or a resolved recording origin. Beside time and duration, a
+recording-app logo and chevron open source details: **Recorded in** identifies
+the recording app, and **Imported via** identifies Apple Health when it carried
+another app's recording. Direct sources have one row; unresolved origins omit
+the source control. The [shared source-role helper](../providers-meta/src/activity-source-details.ts)
+derives those roles from the [origin contract](../providers-meta/src/activity-origin.ts),
+independently of field and sensor priorities.
+[ActivitySourceDisclosure](src/components/ActivitySourceDisclosure.tsx) uses
+[Radix Popover](https://www.radix-ui.com/primitives/docs/components/popover)
+for anchored placement, dismissal, and focus restoration. Its trigger is a
+separate control beside the card's navigation or selection action.
 
 ## Activity metric sources
 

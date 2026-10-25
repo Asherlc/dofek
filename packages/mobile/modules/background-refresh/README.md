@@ -30,20 +30,23 @@ as `BackgroundRefresh`; `index.ts` is the public TypeScript entry point.
 ## Public API
 
 ```ts
+import { createBackgroundRefreshDiagnostics } from "../../lib/background-refresh-diagnostics";
 import {
   addBackgroundRefreshListener,
   isBackgroundRefreshAvailable,
   scheduleRefresh,
 } from "./modules/background-refresh";
 
+const diagnostics = createBackgroundRefreshDiagnostics();
 const subscription = addBackgroundRefreshListener(async () => {
   await performRequiredBackgroundWork();
-});
+}, diagnostics.report);
 
 if (isBackgroundRefreshAvailable()) {
   scheduleRefresh();
 }
 
+diagnostics.remove();
 subscription.remove();
 ```
 
@@ -53,10 +56,76 @@ subscription.remove();
   considers Background App Refresh available. Apple documents the possible
   user, device-management, and power-state restrictions in
   [`backgroundRefreshStatus`](https://developer.apple.com/documentation/uikit/uiapplication/backgroundrefreshstatus).
-- `addBackgroundRefreshListener(callback): EventSubscription` registers one
+- `addBackgroundRefreshListener(callback, reportDiagnostics): EventSubscription` registers one
   asynchronous handler. Resolution completes the task successfully; rejection
   completes it unsuccessfully. Remove the returned subscription during
   teardown.
+
+## Native refresh diagnostics
+
+[`BackgroundRefreshDiagnostics`](ios/BackgroundRefreshDiagnostics.swift) retains
+64 lifecycle events plus `overflowCount` in UserDefaults. Reads do not consume
+history; events keep the same IDs and occurrence times across journal recreation.
+Persistence is metadata only: no samples, account identifiers, tokens, or credentials.
+UserDefaults writes to disk asynchronously, so the final event is not guaranteed
+to survive abrupt process termination ([Apple UserDefaults](https://developer.apple.com/documentation/foundation/userdefaults)).
+
+Public bridge functions, exported through `index.ts`:
+
+- `getDiagnostics(): { events, overflowCount }` returns a snapshot.
+- `recordRefreshReceived(taskId): void` records JavaScript receipt; the listener
+  invokes this before starting its handler.
+- `clearDiagnostics(): void` erases retained events and resets overflow; account
+  erasure invokes it under the existing cleanup-ownership lease.
+
+Every event has `eventId`, ISO UTC `occurredAt`, `nativeSessionId`, `processId`,
+and `event`. Optional fields are `taskId`, `taskIdentifier`, `earliestBeginAt`,
+`success`, `reason`, `backgroundRefreshStatus`, `lowPowerModeEnabled`,
+`errorDomain`, `errorCode`, and `errorDescription`. Task IDs are canonicalized as UUIDs before storage; the reporter validates UUIDs and timestamps before logging. Registration and schedule
+boundaries capture UIKit availability and Low Power Mode. The emitted names are:
+
+| Event | Meaning |
+| --- | --- |
+| `registration_result` | Native scheduler registration result. |
+| `schedule_requested`, `schedule_succeeded`, `schedule_failed` | Submission attempt and result, with the requested earliest date and structured OS error on failure. |
+| `task_launched` | A native refresh reached the task coordinator, including when no JavaScript listener exists. |
+| `listener_changed` | Listener became `available` or `unavailable` in `reason`. |
+| `bridge_dispatched`, `js_received` | Native event dispatch and confirmed JavaScript receipt. |
+| `completion_requested` | JavaScript requested success/failure; `no_pending_task` identifies an ignored late/duplicate completion. |
+| `task_completed` | The coordinator consumed its one native completion, with `javascript_success`, `javascript_failure`, `missing_listener`, `listener_removed`, or `expired`. |
+| `task_expired` | iOS expiration callback, including an ignored callback after completion (`no_pending_task`). |
+
+`nativeOccurredAt` is the diagnostic call's time. The
+[coordinator](ios/BackgroundRefreshTaskCoordinator.swift) records outside its state
+lock, so concurrent transitions can appear out of decision order. Correlate task
+IDs and completion reasons rather than treating timestamp order as strict causality.
+
+The app's authenticated service lifetime owns
+[`createBackgroundRefreshDiagnostics`](../../lib/background-refresh-diagnostics.ts).
+It validates the snapshot, strips unknown fields, and replays events at initial
+setup, foreground activation, handler receipt, and handler settlement. Its
+retained-ID set is bounded by the journal's 64-event window. Removing the reporter
+removes its [AppState subscription](https://reactnative.dev/docs/appstate) and
+retires late reporting. The listener preserves handler success/failure even when
+diagnostic reporting fails; unexpected bridge errors go to the existing mobile
+Sentry path, while scheduler failures use the native RNSentry SDK.
+
+Logs use category `background-refresh`, `event=native_background_refresh_event`,
+`nativeEvent`, `nativeOccurredAt`, `diagnosticAccountProvenance=unknown`, and
+`historyOverflowCount`. Existing telemetry supplies authenticated and build/runtime
+context. A logged-in user at replay time does not establish ownership of retained
+native events. See the [WHOOP diagnostic runbook](../../../../docs/whoop-ble-protocol.md#native-background-refresh-evidence)
+for Axiom queries and interpretation.
+
+These native APIs require a new app binary. The existing fingerprint runtime
+policy derives compatibility from native changes; do not publish this JavaScript
+to an older native runtime or replace the policy with a manual runtime version
+([Expo runtime compatibility](https://docs.expo.dev/eas-update/runtime-versions/)).
+The diagnostic path preserves the existing earliest date, upload triggers,
+completion and expiration policy, retries, and timeouts. In particular, a
+cold-start task with no listener still fails immediately, and expiration still
+completes native work without cancelling JavaScript work. These events expose
+those existing boundaries for investigation.
 
 ## Data-collection notifications
 
@@ -147,7 +216,7 @@ swift test --package-path packages/mobile/modules/background-refresh
 pnpm --filter dofek-mobile typecheck
 ```
 
-The TypeScript tests cover promise-to-native completion. `Package.swift`
-excludes the Expo-bound files and tests the background-task coordinator, native
+The TypeScript tests cover promise-to-native completion, receipt/settlement diagnostics, replay validation/deduplication, and cleanup ownership. `Package.swift`
+excludes the Expo-bound files and scheduler adapter and tests the background-task coordinator, native
 activity query, and complete notification service. Validate the Apple delivery adapter and full native bridge with an
 iOS app build.

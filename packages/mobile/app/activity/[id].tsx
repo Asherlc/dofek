@@ -14,7 +14,6 @@ import type { UnitConverter } from "@dofek/format/units";
 import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { processingPollInterval } from "@dofek/providers/processing-status";
 import { providerSourceLabel } from "@dofek/providers/providers";
-import { getActivityIconInfo } from "@dofek/training/activity-icons";
 import { ACTIVITY_IMAGES_QUERY_OPTIONS } from "@dofek/training/activity-images";
 import { buildClimbingMapLocations, buildClimbingMapMarkers } from "@dofek/training/climbing-map";
 import type { MuscleGroupInput } from "@dofek/training/muscle-groups";
@@ -43,6 +42,7 @@ import type {
 } from "../../../server/src/contracts/activity-metric-sources.ts";
 import { ActivityImages } from "../../components/ActivityImages";
 import { ActivityPerceivedExertion } from "../../components/ActivityPerceivedExertion";
+import { ActivityTypeIcon } from "../../components/ActivityTypeIcon";
 import {
   AreaChart,
   CHART_COLORS,
@@ -69,10 +69,6 @@ import { useUnitConverter } from "../../lib/units";
 import { colors } from "../../theme";
 
 const EMPTY_ROUTE_POINTS: ComponentProps<typeof RouteMap>["points"] = [];
-
-function activityIcon(type: string): string {
-  return getActivityIconInfo(type).emoji;
-}
 
 interface ActivitySourceLink {
   providerId: string;
@@ -766,7 +762,7 @@ export default function ActivityDetailScreen() {
       {/* Activity Header */}
       <View style={styles.header}>
         <View style={styles.headerRow}>
-          <Text style={styles.icon}>{activityIcon(activity.activityType)}</Text>
+          <ActivityTypeIcon activityType={activity.activityType} size={48} />
           <View style={styles.headerText}>
             <Text style={styles.name}>
               {activity.name ?? formatActivityTypeLabel(activity.activityType)}

@@ -24,6 +24,7 @@ import {
   initBackgroundHealthKitSync,
   teardownBackgroundHealthKitSync,
 } from "../lib/background-health-kit-sync";
+import { createBackgroundRefreshDiagnostics } from "../lib/background-refresh-diagnostics";
 import { runRequiredBackgroundRefreshWork } from "../lib/background-refresh-work";
 import {
   createWatchSyncClient,
@@ -437,6 +438,7 @@ function AuthGate() {
     // On each wake, restart Watch recording, sync IMU data, and
     // retry WHOOP BLE connection so coverage continues even if the user
     // never opens the app.
+    const refreshDiagnostics = createBackgroundRefreshDiagnostics();
     const refreshSubscription = addBackgroundRefreshListener(() => {
       // Upload any WHOOP BLE samples buffered since last sync
       const whoopRealtimeSyncClient = {
@@ -491,9 +493,10 @@ function AuthGate() {
           run: () => syncBleHeartRate(),
         },
       ]);
-    });
+    }, refreshDiagnostics.report);
 
     return () => {
+      refreshDiagnostics.remove();
       teardownBackgroundHealthKitSync();
       teardownBackgroundAccelerometerSync();
       teardownBackgroundWatchInertialMeasurementUnitSync();

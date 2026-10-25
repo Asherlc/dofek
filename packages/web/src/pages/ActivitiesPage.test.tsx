@@ -90,11 +90,17 @@ vi.mock("@tanstack/react-router", () => ({
     children,
     to,
     params,
+    className,
   }: {
     children: ReactNode;
     to: string;
     params?: { id: string };
-  }) => <a href={params?.id ? to.replace("$id", params.id) : to}>{children}</a>,
+    className?: string;
+  }) => (
+    <a className={className} href={params?.id ? to.replace("$id", params.id) : to}>
+      {children}
+    </a>
+  ),
 }));
 
 vi.mock("../lib/trpc.ts", () => ({
@@ -751,11 +757,65 @@ describe("ActivitiesPage", () => {
     const map = screen.getByRole("img", {
       name: /Climbing source locations.*North Wall.*Mountain Project/,
     });
-    expect(map.closest("a")).toHaveAttribute("href", "/activity/climbing-1");
+    expect(screen.getByRole("link", { name: "Afternoon climbing" })).toHaveAttribute(
+      "href",
+      "/activity/climbing-1",
+    );
     expect(screen.getByText("Climbs")).toBeDefined();
     expect(map.querySelectorAll("circle")).toHaveLength(1);
     expect(map.querySelector("path")).toBeNull();
   });
+
+  it.each([false, true])(
+    "keeps source details separate from the card action in selection mode %s",
+    (selectMode) => {
+      mockQuery = {
+        data: [
+          {
+            date: "2026-03-18",
+            activities: [
+              activity({
+                source: {
+                  origin: {
+                    status: "resolved",
+                    memberActivityId: "00000000-0000-4000-8000-000000000001",
+                    providerId: "apple_health",
+                    sourceName: "Hang Ten",
+                  },
+                  primarySourceLabel: "Hang Ten (via Apple Health)",
+                  sourceCount: 1,
+                  overlapSummary: null,
+                },
+              }),
+            ],
+          },
+        ],
+        isLoading: false,
+        isError: false,
+        error: null,
+      };
+      render(<ActivitiesPage />);
+      if (selectMode) fireEvent.click(screen.getByRole("button", { name: "Select activities" }));
+      const trigger = screen.getByRole("button", { name: "Activity source: Hang Ten" });
+      expect(trigger.closest("a")).toBeNull();
+      expect(trigger.parentElement?.closest("button")).toBeNull();
+      fireEvent.click(trigger);
+      expect(screen.getByRole("dialog", { name: "Activity source" })).toBeVisible();
+      if (selectMode) {
+        expect(screen.getByRole("checkbox", { name: "Select Trainer Ride" })).not.toBeChecked();
+      } else {
+        expect(screen.getByRole("link", { name: "Trainer Ride" })).toHaveAttribute(
+          "href",
+          "/activity/activity-1",
+        );
+      }
+      fireEvent.click(screen.getByRole("button", { name: "Close activity source" }));
+      if (selectMode) {
+        fireEvent.click(screen.getByRole("checkbox", { name: "Select Trainer Ride" }));
+        expect(screen.getByRole("checkbox", { name: "Select Trainer Ride" })).toBeChecked();
+      }
+    },
+  );
 
   it("shows selection guidance while choosing activities", () => {
     mockQuery = {
