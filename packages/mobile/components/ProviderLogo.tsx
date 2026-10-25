@@ -41,9 +41,6 @@ export function ProviderLogo({ provider, sourceName, serverUrl, size = 20 }: Pro
             width: badgeSize,
             height: badgeSize,
             borderRadius: badgeSize * 0.2,
-            backgroundColor: "#fff",
-            borderWidth: 1,
-            borderColor: "#fff",
           }}
         />
       </View>
@@ -52,25 +49,28 @@ export function ProviderLogo({ provider, sourceName, serverUrl, size = 20 }: Pro
   provider = source.provider;
   const url = logoUrl(serverUrl, provider);
 
-  if (url && providerLogoType(provider) === "svg") {
-    return (
-      <SvgUri
-        uri={url}
-        width={size}
-        height={size}
-        accessibilityElementsHidden
-        onError={captureException}
-      />
-    );
-  }
-
   if (url) {
     return (
-      <Image
-        source={{ uri: url }}
-        style={{ width: size, height: size }}
+      <View
+        style={[styles.logoContainer, { width: size, height: size, borderRadius: size * 0.2 }]}
         accessibilityElementsHidden
-      />
+      >
+        {providerLogoType(provider) === "svg" ? (
+          <SvgUri
+            uri={url}
+            width={size}
+            height={size}
+            accessibilityElementsHidden
+            onError={captureException}
+          />
+        ) : (
+          <Image
+            source={{ uri: url }}
+            style={{ width: size, height: size }}
+            accessibilityElementsHidden
+          />
+        )}
+      </View>
     );
   }
 
@@ -94,6 +94,10 @@ export function ProviderLogo({ provider, sourceName, serverUrl, size = 20 }: Pro
 }
 
 const styles = StyleSheet.create({
+  logoContainer: {
+    backgroundColor: "transparent",
+    overflow: "hidden",
+  },
   letterContainer: {
     alignItems: "center",
     justifyContent: "center",
