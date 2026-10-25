@@ -73,6 +73,7 @@ function metadataMessage(overrides: Record<string, unknown> = {}): Record<string
     type: "metadata",
     fileType: 4,
     fileTypeName: "activity",
+    fileId: null,
     hasWeightMessages: false,
     session: null,
     sportName: null,
@@ -87,6 +88,7 @@ function noopConsumer(overrides: Partial<FitStreamConsumer> = {}): FitStreamCons
     onMetadata: async () => undefined,
     onRecordBatch: async () => undefined,
     onWeightBatch: async () => undefined,
+    onDeviceInfoBatch: async () => undefined,
     ...overrides,
   };
 }
@@ -97,6 +99,111 @@ describe("streamFitFile", () => {
     mockSpawn.mockReset();
     mockExistsSync.mockReset();
     mockExistsSync.mockReturnValue(false);
+  });
+
+  it("retains raw file identity including absent and incomplete identity", async () => {
+    for (const fileId of [null, {}, { manufacturer: 1, product: 3121, serial_number: "123456" }]) {
+      const decoder = simulatedDecoder();
+      mockSpawn.mockReturnValue(decoder.child);
+      const onMetadata = vi.fn(async () => undefined);
+      queueMicrotask(async () => {
+        decoder.send(metadataMessage({ fileId }));
+        await decoder.waitForAcknowledgement(1);
+        decoder.send({ type: "end", messageCount: 0 });
+        decoder.finish();
+      });
+
+      await streamFitFile("activity.fit", noopConsumer({ onMetadata }));
+
+      expect(onMetadata).toHaveBeenCalledWith(expect.objectContaining({ fileId }));
+    }
+  });
+
+  it("retains repeated raw device observations and waits for their persistence", async () => {
+    const decoder = simulatedDecoder();
+    mockSpawn.mockReturnValue(decoder.child);
+    const messages = [
+      { device_index: 1, manufacturer: 1, serial_number: 123, product_name: "Sensor" },
+      { device_index: 1, battery_voltage: 2.75 },
+      {},
+    ];
+    let started: (() => void) | undefined;
+    const deviceBatchStarted = new Promise<void>((resolvePromise) => {
+      started = resolvePromise;
+    });
+    let release: (() => void) | undefined;
+    const deviceBatchHeld = new Promise<void>((resolvePromise) => {
+      release = resolvePromise;
+    });
+    const onDeviceInfoBatch = vi.fn(async () => {
+      started?.();
+      await deviceBatchHeld;
+    });
+    queueMicrotask(async () => {
+      decoder.send(metadataMessage());
+      await decoder.waitForAcknowledgement(1);
+      decoder.send({ type: "devices", messages });
+      await decoder.waitForAcknowledgement(2);
+      decoder.send({ type: "records", messages: [{ timestamp: "2026-07-01T12:00:01Z" }] });
+      await decoder.waitForAcknowledgement(3);
+      decoder.send({ type: "end", messageCount: 4 });
+      decoder.finish();
+    });
+
+    const result = streamFitFile("activity.fit", noopConsumer({ onDeviceInfoBatch }));
+    const failure = result.catch((error: unknown) => {
+      release?.();
+      started?.();
+      throw error;
+    });
+    await deviceBatchStarted;
+    expect(decoder.acknowledgements).toEqual(["continue\n"]);
+    release?.();
+    await expect(failure).resolves.toEqual({ messageCount: 4 });
+    expect(onDeviceInfoBatch).toHaveBeenCalledWith(messages);
+    expect(decoder.acknowledgements).toHaveLength(3);
+  });
+
+  it("accepts device observations for weight files", async () => {
+    const decoder = simulatedDecoder();
+    mockSpawn.mockReturnValue(decoder.child);
+    const onDeviceInfoBatch = vi.fn(async () => undefined);
+    queueMicrotask(async () => {
+      decoder.send(metadataMessage({ fileType: 9, hasWeightMessages: true }));
+      await decoder.waitForAcknowledgement(1);
+      decoder.send({ type: "devices", messages: [{ device_index: 0 }] });
+      await decoder.waitForAcknowledgement(2);
+      decoder.send({ type: "end", messageCount: 1 });
+      decoder.finish();
+    });
+    await expect(streamFitFile("weight.fit", noopConsumer({ onDeviceInfoBatch }))).resolves.toEqual(
+      { messageCount: 1 },
+    );
+    expect(onDeviceInfoBatch).toHaveBeenCalledWith([{ device_index: 0 }]);
+  });
+
+  it("rejects device batches before metadata", async () => {
+    const decoder = simulatedDecoder();
+    mockSpawn.mockReturnValue(decoder.child);
+    const onDeviceInfoBatch = vi.fn(async () => undefined);
+    queueMicrotask(() => decoder.send({ type: "devices", messages: [{}] }));
+    await expect(
+      streamFitFile("activity.fit", noopConsumer({ onDeviceInfoBatch })),
+    ).rejects.toThrow("Native FIT decoder returned devices before file metadata");
+    expect(onDeviceInfoBatch).not.toHaveBeenCalled();
+  });
+
+  it("rejects device batches over the message bound", async () => {
+    const decoder = simulatedDecoder();
+    mockSpawn.mockReturnValue(decoder.child);
+    queueMicrotask(async () => {
+      decoder.send(metadataMessage());
+      await decoder.waitForAcknowledgement(1);
+      decoder.send({ type: "devices", messages: Array.from({ length: 251 }, () => ({})) });
+    });
+    await expect(streamFitFile("activity.fit", noopConsumer())).rejects.toThrow(
+      "Native FIT decoder returned an invalid protocol message",
+    );
   });
 
   it("uses Garmin profile names and acknowledges a batch only after it is consumed", async () => {
@@ -112,6 +219,7 @@ describe("streamFitFile", () => {
           type: "metadata",
           fileType: 4,
           fileTypeName: "activity",
+          fileId: null,
           hasWeightMessages: false,
           session: {
             sport: 2,
@@ -159,6 +267,7 @@ describe("streamFitFile", () => {
         await holdRecordBatch;
       },
       onWeightBatch: async () => undefined,
+      onDeviceInfoBatch: async () => undefined,
     });
 
     await recordBatchStarted;
@@ -304,6 +413,7 @@ describe("streamFitFile", () => {
         type: "metadata",
         fileType: null,
         fileTypeName: null,
+        fileId: null,
         hasWeightMessages: false,
         session: null,
         sportName: null,
@@ -319,6 +429,7 @@ describe("streamFitFile", () => {
       onMetadata: async () => undefined,
       onRecordBatch: async () => undefined,
       onWeightBatch: async () => undefined,
+      onDeviceInfoBatch: async () => undefined,
     });
 
     const caughtError: unknown = await streamPromise.catch((error: unknown) => error);
@@ -471,6 +582,7 @@ describe("streamFitFile", () => {
       onMetadata: async () => undefined,
       onRecordBatch,
       onWeightBatch: async () => undefined,
+      onDeviceInfoBatch: async () => undefined,
     });
 
     await expect(streamPromise).rejects.toThrow(
@@ -504,6 +616,7 @@ describe("streamFitFile", () => {
         type: "metadata",
         fileType: 9,
         fileTypeName: "weight",
+        fileId: null,
         hasWeightMessages: true,
         session: null,
         sportName: null,
@@ -522,6 +635,7 @@ describe("streamFitFile", () => {
       onMetadata: async () => undefined,
       onRecordBatch,
       onWeightBatch: async () => undefined,
+      onDeviceInfoBatch: async () => undefined,
     });
 
     await expect(streamPromise).rejects.toThrow(
@@ -630,6 +744,7 @@ describe("streamFitFile", () => {
         type: "metadata",
         fileType: 4,
         fileTypeName: "activity",
+        fileId: null,
         hasWeightMessages: false,
         session: null,
         sportName: null,
@@ -649,6 +764,7 @@ describe("streamFitFile", () => {
       onMetadata: async () => undefined,
       onRecordBatch,
       onWeightBatch: async () => undefined,
+      onDeviceInfoBatch: async () => undefined,
     });
 
     await expect(streamPromise).rejects.toThrow(
@@ -700,11 +816,13 @@ describe("streamFitFile", () => {
       onMetadata: async () => undefined,
       onRecordBatch: async () => undefined,
       onWeightBatch: async () => undefined,
+      onDeviceInfoBatch: async () => undefined,
     });
     decoder.send({
       type: "metadata",
       fileType: 4,
       fileTypeName: "activity",
+      fileId: null,
       hasWeightMessages: false,
       session: null,
       sportName: null,

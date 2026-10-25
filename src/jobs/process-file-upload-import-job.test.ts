@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Readable } from "node:stream";
@@ -11,6 +11,7 @@ import type { SyncDatabase } from "../db/index.ts";
 import type { ImportUploadStorage } from "../file-upload-storage.ts";
 import { makeTransactionalTestDatabase } from "../providers/test-helpers.ts";
 import { createAppleHealthImportValidationError } from "./import-validation-error.ts";
+import { OriginalFitRetentionError } from "./original-fit-retention-error.ts";
 import type { ImportJobData } from "./queues.ts";
 
 const mocks = vi.hoisted(() => ({
@@ -86,8 +87,8 @@ function upload(overrides: Partial<FileUpload> = {}): FileUpload {
   };
 }
 
-function job() {
-  const data: ImportJobData = { uploadId, userId: upload().userId, importType: "strong-csv" };
+function job(importType: ImportJobData["importType"] = "strong-csv") {
+  const data: ImportJobData = { uploadId, userId: upload().userId, importType };
   return {
     id: `file-import-${uploadId}`,
     queueQualifiedName: "bull:import",
@@ -143,6 +144,20 @@ describe("processFileUploadImportJob", () => {
     expect(storage.deleteObject).toHaveBeenCalledWith(upload().objectKey);
     expect(existsSync(join(jobFilesDirectory, `file-upload-${uploadId}`))).toBe(false);
   });
+
+  it.each([{ userId: "another-user" }, { importType: "fit-file" as const }])(
+    "rejects a claimed upload outside the queued fence scope: %j",
+    async (override) => {
+      mocks.claim.mockResolvedValue(upload(override));
+      const storage = storageWithBody();
+
+      await expect(processFileUploadImportJob(job(), database, storage)).rejects.toThrow(
+        "Upload owner or import type does not match its queued job",
+      );
+      expect(mocks.processImport).not.toHaveBeenCalled();
+      expect(storage.getObjectStream).not.toHaveBeenCalled();
+    },
+  );
 
   it("does not download when erasure activates after the upload is claimed", async () => {
     mocks.accountErasureAllowsQueuedUserWork.mockResolvedValueOnce(false);
@@ -288,7 +303,7 @@ describe("processFileUploadImportJob", () => {
       upload({ originalFilename: "GARMIN.ZIP", importType: "garmin-dump" }),
     );
 
-    await processFileUploadImportJob(job(), database, storageWithBody());
+    await processFileUploadImportJob(job("garmin-dump"), database, storageWithBody());
 
     expect(mocks.validateArchive).toHaveBeenCalledWith(
       join(jobFilesDirectory, `file-upload-${uploadId}`, "source.zip"),
@@ -309,7 +324,7 @@ describe("processFileUploadImportJob", () => {
   });
 
   it("preserves and verifies the local file while a Garmin flow waits for children", async () => {
-    const durableJob = job();
+    const durableJob = job("garmin-dump");
     durableJob.data = {
       ...durableJob.data,
       checkpoint: { phase: "ready" },
@@ -343,6 +358,36 @@ describe("processFileUploadImportJob", () => {
     await expect(processFileUploadImportJob(job(), database, objectStorage)).rejects.toThrow(
       "Retained upload work file failed integrity verification",
     );
+  });
+
+  it("preserves a Garmin upload source after original retention fails and reuses it on retry", async () => {
+    const durableJob = job("garmin-dump");
+    mocks.claim.mockResolvedValue(
+      upload({ importType: "garmin-dump", originalFilename: "garmin.zip" }),
+    );
+    const error = new OriginalFitRetentionError(
+      "Some original FIT files could not be saved. Try the import again.",
+      { cause: new Error("R2 unavailable") },
+    );
+    mocks.processImport.mockRejectedValueOnce(error);
+    const objectStorage = storageWithBody();
+    const filePath = join(jobFilesDirectory, `file-upload-${uploadId}`, "source.zip");
+
+    await expect(processFileUploadImportJob(durableJob, database, objectStorage)).rejects.toBe(
+      error,
+    );
+
+    expect(existsSync(filePath)).toBe(true);
+    expect(await readFile(filePath)).toEqual(body);
+    expect(mocks.complete).not.toHaveBeenCalled();
+    expect(objectStorage.deleteObject).not.toHaveBeenCalled();
+
+    await processFileUploadImportJob(durableJob, database, objectStorage);
+
+    expect(objectStorage.getObjectStream).toHaveBeenCalledOnce();
+    expect(mocks.complete).toHaveBeenCalledOnce();
+    expect(objectStorage.deleteObject).toHaveBeenCalledWith(upload().objectKey);
+    expect(existsSync(filePath)).toBe(false);
   });
 
   it("records unrecoverable importer failures and cleans the work directory", async () => {

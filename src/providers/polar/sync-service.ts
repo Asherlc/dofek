@@ -172,6 +172,8 @@ export class PolarSyncService {
                   startedAt: parsedExercise.startedAt,
                   endedAt: parsedExercise.endedAt,
                   raw: {
+                    device: parsedExercise.device,
+                    device_id: parsedExercise.deviceId,
                     durationSeconds: parsedExercise.durationSeconds,
                     distanceMeters: parsedExercise.distanceMeters,
                     avgHeartRate: parsedExercise.avgHeartRate,
@@ -184,6 +186,8 @@ export class PolarSyncService {
                   startedAt: parsedExercise.startedAt,
                   endedAt: parsedExercise.endedAt,
                   raw: {
+                    device: parsedExercise.device,
+                    device_id: parsedExercise.deviceId,
                     durationSeconds: parsedExercise.durationSeconds,
                     distanceMeters: parsedExercise.distanceMeters,
                     avgHeartRate: parsedExercise.avgHeartRate,

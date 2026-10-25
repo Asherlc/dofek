@@ -1,3 +1,4 @@
+import { activityHardwareSchema } from "@dofek/providers/activity-hardware";
 import { isCyclingActivity } from "@dofek/training/training";
 import { TRPCError } from "@trpc/server";
 import { createActivityImageUrl } from "dofek/activity-images/storage";
@@ -251,6 +252,19 @@ export const activityRouter = router({
       }
       return getActivityRoute(ctx.sensorStore, window, input.maxPoints);
     }),
+
+  hardware: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })
+    .input(z.object({ id: z.guid() }))
+    .output(activityHardwareSchema)
+    .query(({ ctx, input }) =>
+      new ActivityRepository(
+        ctx.db,
+        ctx.userId,
+        ctx.timezone,
+        ctx.accessWindow,
+        ctx.sensorStore,
+      ).getHardware(input.id),
+    ),
 
   metricSources: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })
     .input(z.object({ id: z.guid() }))

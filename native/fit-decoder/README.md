@@ -4,10 +4,11 @@ This directory is a self-contained C++ project that streams Garmin FIT messages 
 application over newline-delimited JSON. Its
 [decoder implementation](src/fit-decoder.cpp) performs two constant-memory passes: the first emits
 file metadata and a field-occurrence table capped at 4,096 unique message/field pairs, and the
-second emits record or weight messages in batches of at most 250 messages and 512 KiB. Every
+second emits record or weight messages and raw `device_info` observations in batches of at most
+250 messages and 512 KiB. Every
 protocol message is capped at 512 KiB, as enforced by the
 [native protocol test](tests/VerifyProtocol.cmake). The decoder waits for a `continue`
-acknowledgement after metadata and each record or weight batch, so persistence can apply
+acknowledgement after metadata and each record, weight, or device batch, so persistence can apply
 backpressure without waiting after the final `end` message.
 
 The project builds against Garmin's official
@@ -36,10 +37,20 @@ baseline.
 
 ## Protocol
 
-The executable accepts one FIT file path. It emits a `metadata` message, zero or more `records` or
-`weights` batches, and one `end` message. The caller must write `continue` followed by a newline to
+The executable accepts one FIT file path. It emits a `metadata` message, zero or more `records`,
+`weights`, or `devices` batches, and one `end` message. Metadata includes `fileId`, the first raw
+`file_id` message or `null` when absent. `devices` batches contain unmodified decoded
+`device_info` fields, including repeated and partial observations. Fields retain SDK names such
+as `device_index` and `serial_number` and numeric enum values. FIT describes file creation and
+device observations separately; see Garmin's [activity file documentation](https://developer.garmin.com/fit/articles/file-types/activity.html).
+
+The second pass preserves the relative order of device and record/weight messages, flushing the
+current batch when its message type changes. `end.messageCount` includes every streamed device
+and record/weight message; it excludes metadata's file ID. The caller must write `continue`
+followed by a newline to
 standard input after metadata and each batch. Any malformed file, oversized individual message,
 missing acknowledgement, or write failure terminates the process with a nonzero exit status. The
 [decoder source](src/fit-decoder.cpp), [protocol test](tests/VerifyProtocol.cmake), and
+[hardware protocol test](tests/VerifyHardware.cmake), and
 [integer-fidelity test](tests/FieldJsonTest.cpp) are the authoritative contract and validation
 sources.

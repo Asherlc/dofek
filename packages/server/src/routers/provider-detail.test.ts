@@ -60,6 +60,7 @@ const {
   mockProviderDataDeletesInc,
   mockGetProviderDataDeletionJob,
   mockWithProviderOperationFence,
+  mockHasProviderArtifacts,
 } = vi.hoisted(() => ({
   mockLoadTokens: vi.fn(),
   mockSaveTokens: vi.fn(),
@@ -73,6 +74,11 @@ const {
   mockProviderDataDeletesInc: vi.fn(),
   mockGetProviderDataDeletionJob: vi.fn(),
   mockWithProviderOperationFence: vi.fn(),
+  mockHasProviderArtifacts: vi.fn(),
+}));
+
+vi.mock("dofek/provider-artifact-storage", () => ({
+  createProviderArtifactStorageFromEnv: () => ({ hasForProvider: mockHasProviderArtifacts }),
 }));
 
 vi.mock("dofek/db/provider-operation-fence", () => ({
@@ -263,6 +269,7 @@ describe("providerDetailRouter", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockHasProviderArtifacts.mockReset().mockResolvedValue(false);
     mockWithProviderOperationFence.mockImplementation(
       async <T>(
         database: unknown,

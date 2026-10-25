@@ -222,6 +222,32 @@ describe("ActivitiesScreen", () => {
     },
   );
 
+  it("keeps a Garmin model thumbnail in its compact source disclosure", () => {
+    mockQuery = activityListQuery([
+      activity({
+        source: {
+          origin: {
+            status: "resolved",
+            memberActivityId: "00000000-0000-4000-8000-000000000001",
+            providerId: "garmin",
+            sourceName: "Forerunner 965",
+          },
+          primarySourceLabel: "Garmin · Forerunner 965",
+          sourceCount: 1,
+          overlapSummary: null,
+        },
+      }),
+    ]);
+    render(<ActivitiesScreen />);
+    const source = screen.getByRole("button", { name: "Activity source: Garmin" });
+    const thumbnail = source.querySelector("Image");
+    expect(thumbnail).toBeTruthy();
+    expect(thumbnail?.getAttribute("resizeMode")).toBe("contain");
+    expect(thumbnail?.getAttribute("style")).toContain("width: 18px");
+    expect(thumbnail?.getAttribute("style")).toContain("height: 18px");
+    expect(screen.getByTestId("activity-type-icon")).toBeDefined();
+  });
+
   it.each([false, true])(
     "keeps photos and source details independent of card action in selection mode %s",
     (selectMode) => {

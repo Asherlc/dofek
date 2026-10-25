@@ -43,7 +43,16 @@ export function ActivitySourceDisclosure({ origin }: { origin: ActivityOrigin })
         accessibilityState={{ expanded: open }}
         onPress={() => setOpen(true)}
       >
-        <ProviderLogo provider={details.recordingApp.provider} serverUrl={SERVER_URL} size={18} />
+        <ProviderLogo
+          provider={details.recordingApp.provider}
+          sourceName={
+            origin.status === "resolved" && origin.providerId === "garmin"
+              ? origin.sourceName
+              : undefined
+          }
+          serverUrl={SERVER_URL}
+          size={18}
+        />
         <Text style={styles.chevron} accessibilityElementsHidden importantForAccessibility="no">
           ⌄
         </Text>

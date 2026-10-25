@@ -13,6 +13,29 @@ function makeJob(data: unknown, state: string, id?: string) {
 }
 
 describe("purgeAccountWork", () => {
+  it("erases owned FIT files when their original path is a logical archive member name", async () => {
+    const job = makeJob(
+      { userId, filePath: "/jobs/owned/source.fit", originalPath: "nested/activity.fit" },
+      "failed",
+    );
+    const removeLocalPath = vi.fn(async () => undefined);
+    await expect(
+      purgeAccountWork(
+        { exportObjects: [], fileUploads: [], userId },
+        {
+          abortImportMultipart: vi.fn(async () => undefined),
+          deleteExportObject: vi.fn(async () => undefined),
+          deleteImportObject: vi.fn(async () => undefined),
+          deleteProviderArtifactsForUser: vi.fn(async () => undefined),
+          jobFilesDirectory: "/jobs",
+          purgeRedis: vi.fn(async () => undefined),
+          queues: [{ getJobs: vi.fn(async () => [job]), name: "fit-file-import" }],
+          removeLocalPath,
+        },
+      ),
+    ).resolves.toBeUndefined();
+    expect(removeLocalPath).toHaveBeenCalledWith("/jobs/owned/source.fit");
+  });
   it("removes attributable jobs, cache state, objects, and exact local paths", async () => {
     const userJob = makeJob({ userId, filePath: "/jobs/user/source.fit" }, "waiting", "job-erased");
     const otherJob = makeJob({ userId: "20000000-0000-4000-8000-000000001994" }, "waiting");

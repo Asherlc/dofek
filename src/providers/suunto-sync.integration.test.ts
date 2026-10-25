@@ -2,14 +2,14 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
-import { setupServer } from "msw/node";
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { activity } from "../db/schema/activity.ts";
 import { TEST_USER_ID } from "../db/schema/core.ts";
 import { oauthToken } from "../db/schema/reference.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
+import { createProviderArtifactStorageTestContext } from "../test-helpers.ts";
 import { SuuntoProvider } from "./suunto.ts";
 import { SyncRun } from "./sync-run.ts";
 import { SyncWindow } from "./sync-window.ts";
@@ -88,13 +88,15 @@ function suuntoHandlers(
   ];
 }
 
-const server = setupServer();
+const archive = createProviderArtifactStorageTestContext("http://r2.suunto-fit.test");
+const server = archive.server;
 const metricStreamCapture = createCapturingMetricStreamPublisher();
 
 describe("SuuntoProvider.sync() (integration)", () => {
   let ctx: TestContext;
 
   beforeAll(async () => {
+    archive.stubEnvironment();
     process.env.SUUNTO_CLIENT_ID = "test-client-id";
     process.env.SUUNTO_CLIENT_SECRET = "test-client-secret";
     process.env.SUUNTO_SUBSCRIPTION_KEY = "test-subscription-key";
@@ -104,6 +106,8 @@ describe("SuuntoProvider.sync() (integration)", () => {
   }, 60_000);
 
   beforeEach(() => {
+    archive.originals.clear();
+    archive.writes.length = 0;
     metricStreamCapture.publishedMetricStreamRows.length = 0;
     metricStreamCapture.deletedMetricStreamScopes.length = 0;
   });
@@ -114,6 +118,8 @@ describe("SuuntoProvider.sync() (integration)", () => {
 
   afterAll(async () => {
     server.close();
+    archive.client.destroy();
+    vi.unstubAllEnvs();
     if (ctx) await ctx.cleanup();
   });
 
@@ -192,7 +198,8 @@ describe("SuuntoProvider.sync() (integration)", () => {
       }),
     );
 
-    expect(result.errors).toHaveLength(0);
+    expect(result.errors).toEqual([]);
+    expect([...archive.originals.values()]).toEqual([fitFileBuffer]);
     const rows = await ctx.db
       .select()
       .from(activity)

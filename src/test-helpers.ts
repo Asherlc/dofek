@@ -6,10 +6,63 @@
  * - `createTypedMockFetch()` — builds a `typeof fetch` mock with accessible `.mock` property
  * - `mockCallArg()` — extracts a typed argument from `vi.fn().mock.calls`
  */
+import { S3Client } from "@aws-sdk/client-s3";
+import { HttpResponse, http } from "msw";
+import { setupServer } from "msw/node";
 import { vi } from "vitest";
 import * as winston from "winston";
 import Transport from "winston-transport";
 import { logger } from "./logger.ts";
+import { R2ProviderArtifactStorage } from "./provider-artifact-storage.ts";
+
+export function createProviderArtifactStorageTestContext(endpoint: string, bucket = "imports") {
+  const originals = new Map<string, Buffer>();
+  const writes: string[] = [];
+  const client = new S3Client({
+    endpoint,
+    region: "auto",
+    forcePathStyle: true,
+    maxAttempts: 1,
+    requestChecksumCalculation: "WHEN_REQUIRED",
+    credentials: { accessKeyId: "test-key", secretAccessKey: "test-secret" },
+  });
+  const server = setupServer(
+    http.head(`${endpoint}/${bucket}/*`, ({ request }) => {
+      const bytes = originals.get(new URL(request.url).pathname.slice(bucket.length + 2));
+      return new HttpResponse(null, {
+        status: bytes ? 200 : 404,
+        headers: bytes ? { "Content-Length": String(bytes.byteLength) } : {},
+      });
+    }),
+    http.put(`${endpoint}/${bucket}/*`, async ({ request }) => {
+      const key = new URL(request.url).pathname.slice(bucket.length + 2);
+      writes.push(key);
+      originals.set(key, Buffer.from(await request.arrayBuffer()));
+      return new HttpResponse(null, { headers: { ETag: '"retained"' } });
+    }),
+    http.get(`${endpoint}/${bucket}/*`, ({ request }) => {
+      const bytes = originals.get(new URL(request.url).pathname.slice(bucket.length + 2));
+      return bytes
+        ? new HttpResponse(new Uint8Array(bytes).buffer, {
+            headers: { "Content-Length": String(bytes.byteLength) },
+          })
+        : new HttpResponse(null, { status: 404 });
+    }),
+  );
+  return {
+    client,
+    storage: new R2ProviderArtifactStorage(client, bucket),
+    stubEnvironment() {
+      vi.stubEnv("R2_ACCESS_KEY_ID", "test-key");
+      vi.stubEnv("R2_SECRET_ACCESS_KEY", "test-secret");
+      vi.stubEnv("R2_ENDPOINT", endpoint);
+      vi.stubEnv("IMPORT_R2_BUCKET", bucket);
+    },
+    server,
+    originals,
+    writes,
+  };
+}
 
 // cspell:ignore Logform
 export class CaptureInfoTransport extends Transport {
