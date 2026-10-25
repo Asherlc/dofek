@@ -1,6 +1,24 @@
 # Background Refresh Diagnostics Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development or superpowers:executing-plans. Steps use checkbox syntax for tracking.
+Execute Task 1 before Task 2 on the existing branch. Use the checkboxes below
+as the implementation and verification record, following these checkpoints:
+
+1. Write focused failing tests and capture the failure before implementing each
+   behavior. Keep scheduling and task outcomes unchanged.
+2. Review Task 1 for specification compliance, privacy, concurrency, and cleanup
+   ownership; have a second reviewer check the completed implementation and
+   resolve material findings before whole-branch verification.
+3. Run the complete verification in Task 2, compile the Expo bridge in a signed
+   iOS build, and have a second reviewer assess the whole branch. Preserve exact
+   command results and distinguish simulator compilation from physical-device
+   behavior.
+4. Record remaining limits in the incident baseline, complete the repository's
+   pre-push checks, then commit and push. Recheck affected behavior after any
+   review-directed change.
+
+See [the testing guide](../../testing.md) for test tiers and dependency setup,
+and [the signed iOS audit procedure](../../ios-physical-device-release-audit.md)
+for the physical-device validation boundary.
 
 **Goal:** Establish where native background refresh stops before WHOOP uploads.
 

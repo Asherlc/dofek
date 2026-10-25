@@ -4,9 +4,16 @@ import UIKit
 
 /// The single scheduler boundary used by launch-time registration and JavaScript rescheduling.
 enum BackgroundRefreshScheduler {
+    static func refreshStatus() -> UIBackgroundRefreshStatus {
+        if Thread.isMainThread {
+            return UIApplication.shared.backgroundRefreshStatus
+        }
+        return DispatchQueue.main.sync { UIApplication.shared.backgroundRefreshStatus }
+    }
+
     static func fields() -> BackgroundRefreshDiagnosticFields {
         let status: String
-        switch UIApplication.shared.backgroundRefreshStatus {
+        switch refreshStatus() {
         case .available: status = "available"
         case .denied: status = "denied"
         case .restricted: status = "restricted"

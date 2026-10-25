@@ -59,7 +59,7 @@ public class BackgroundRefreshModule: Module {
 
         Function("scheduleRefresh") { BackgroundRefreshScheduler.schedule() }
         Function("isAvailable") { () -> Bool in
-            UIApplication.shared.backgroundRefreshStatus == .available
+            BackgroundRefreshScheduler.refreshStatus() == .available
         }
         Function("completeRefresh") { (taskId: String, success: Bool) in
             Self.taskCoordinator.completeTask(id: taskId, success: success)
