@@ -1,5 +1,7 @@
+import type { ActivityHardware } from "@dofek/providers/activity-hardware";
 import { describe, expect, it, vi } from "vitest";
-import type { z } from "zod";
+import { z } from "zod";
+import { normalizeActivityHardware } from "../models/activity-hardware.ts";
 import {
   activityMetricParams,
   getActivityMetricSources,
@@ -20,7 +22,13 @@ function storeWithRows(rows: unknown[]) {
         schema: T,
         _sql: string,
         _params?: Record<string, unknown>,
-      ): Promise<z.infer<T>[]> => rows.map((row) => schema.parse(row)),
+      ): Promise<z.infer<T>[]> =>
+        rows.map((row) =>
+          schema.parse({
+            activity_ids: window.memberActivityIds,
+            ...z.record(z.string(), z.unknown()).parse(row),
+          }),
+        ),
     ),
   };
 }
@@ -77,6 +85,200 @@ describe("activity heart-rate sources", () => {
     const store = storeWithRows([]);
     await getActivitySourceHrZones(store, window, "garmin");
     expect(store.query.mock.calls[0]?.[1]).toContain("quantileExactInclusive(0.5)");
+  });
+});
+
+it("enriches recorder labels without changing identities, order, defaults, or attributing sensors", async () => {
+  const hardware: ActivityHardware = {
+    items: [
+      {
+        id: "recorder",
+        activityId: window.activityId,
+        providerId: "strava",
+        sourceName: null,
+        role: "recorder",
+        label: "Edge 530",
+        model: null,
+        manufacturer: null,
+        evidence: "Reported",
+        details: [],
+      },
+      {
+        id: "sensor",
+        activityId: window.activityId,
+        providerId: "strava",
+        sourceName: null,
+        role: "sensor",
+        label: "HRM-Pro",
+        model: null,
+        manufacturer: null,
+        evidence: "Observed",
+        details: [],
+      },
+    ],
+    power: [],
+  };
+  const rows = [
+    { channel: "heart_rate", provider_id: "strava", device_id: null, source_id: "strava" },
+    { channel: "heart_rate", provider_id: "garmin", device_id: null, source_id: "garmin" },
+  ];
+  const before = await getActivityMetricSources(storeWithRows(rows), window);
+  const after = await getActivityMetricSources(storeWithRows(rows), window, hardware);
+  expect(after[0]?.sources[0]).toEqual({ id: "strava", label: "Strava · recorded by Edge 530" });
+  expect(
+    after.map((metric) => ({ ...metric, sources: metric.sources.map(({ id }) => id) })),
+  ).toEqual(before.map((metric) => ({ ...metric, sources: metric.sources.map(({ id }) => id) })));
+});
+it("qualifies creator-only FIT provenance and prefers separately reported recorder evidence without selection changes", async () => {
+  for (const providerId of ["fit-file", "garmin"]) {
+    const hardware = normalizeActivityHardware([
+      {
+        activityId: window.activityId,
+        providerId,
+        sourceName: null,
+        raw: providerId === "garmin" ? { deviceName: "Edge 530" } : null,
+        observations: [
+          { sequence: 0, messageType: "file_id", raw: { product_name: "Export platform" } },
+        ],
+      },
+    ]);
+    const rows = [
+      { channel: "power", provider_id: providerId, device_id: null, source_id: providerId },
+    ];
+    const before = await getActivityMetricSources(storeWithRows(rows), window);
+    const after = await getActivityMetricSources(storeWithRows(rows), window, hardware);
+    expect(after[0]?.sources[0]?.label).toBe(
+      providerId === "garmin"
+        ? "Garmin · recorded by Edge 530"
+        : "FIT File · file created by Export platform",
+    );
+    expect(
+      after.map((metric) => [
+        metric.key,
+        metric.defaultSourceId,
+        metric.sources.map((source) => source.id),
+      ]),
+    ).toEqual(
+      before.map((metric) => [
+        metric.key,
+        metric.defaultSourceId,
+        metric.sources.map((source) => source.id),
+      ]),
+    );
+  }
+});
+it("keeps coarse equipment, app, and import provenance out of recorder labels", async () => {
+  for (const [providerId, raw] of [
+    ["ride-with-gps", { source: "garmin_connect" }],
+    ["amazfit-zepp", { source: "watch", app_name: "Zepp" }],
+    ["peloton", { deviceType: "bike", platform: "home_bike" }],
+  ] as const) {
+    const hardware = normalizeActivityHardware([
+      { activityId: window.activityId, providerId, sourceName: null, raw, observations: [] },
+    ]);
+    const rows = [
+      { channel: "heart_rate", provider_id: providerId, device_id: null, source_id: providerId },
+    ];
+    const original = await getActivityMetricSources(storeWithRows(rows), window);
+    expect(await getActivityMetricSources(storeWithRows(rows), window, hardware)).toEqual(original);
+    expect(hardware.items).toHaveLength(1);
+  }
+});
+it("qualifies a creator name even when it already appears in the original source label", async () => {
+  const sourceId = '["fit-file","Export platform"]';
+  const hardware = normalizeActivityHardware([
+    {
+      activityId: window.activityId,
+      providerId: "fit-file",
+      sourceName: "Export platform",
+      raw: null,
+      observations: [
+        { sequence: 0, messageType: "file_id", raw: { product_name: "Export platform" } },
+      ],
+    },
+  ]);
+  const result = await getActivityMetricSources(
+    storeWithRows([
+      {
+        channel: "power",
+        provider_id: "fit-file",
+        device_id: "Export platform",
+        source_id: sourceId,
+      },
+    ]),
+    window,
+    hardware,
+  );
+  expect(result[0]?.sources[0]).toEqual({
+    id: sourceId,
+    label: "FIT File · file created by Export platform",
+  });
+  expect(result[0]?.defaultSourceId).toBe(sourceId);
+});
+
+it("does not apply an activity recorder to standalone recordings or ambiguous recorders", async () => {
+  const hardware: ActivityHardware = {
+    items: [
+      {
+        id: "recorder",
+        activityId: window.activityId,
+        providerId: "strava",
+        sourceName: null,
+        role: "recorder",
+        label: "Edge",
+        model: null,
+        manufacturer: null,
+        evidence: "Reported",
+        details: [],
+      },
+    ],
+    power: [],
+  };
+  const result = await getActivityMetricSources(
+    storeWithRows([
+      {
+        activity_ids: [],
+        channel: "power",
+        provider_id: "strava",
+        device_id: null,
+        source_id: "strava",
+      },
+    ]),
+    window,
+    hardware,
+  );
+  expect(result[0]?.sources[0]?.label).toBe("Strava");
+});
+
+it("uses the reported BLE name while keeping the peripheral UUID source identity", async () => {
+  const store = storeWithRows([
+    {
+      channel: "heart_rate",
+      provider_id: "ble_heart_rate",
+      device_id: "uuid",
+      source_id: '["ble_heart_rate","uuid"]',
+    },
+  ]);
+  store.query.mockImplementationOnce(async (schema) =>
+    [
+      {
+        channel: "heart_rate",
+        provider_id: "ble_heart_rate",
+        device_id: "uuid",
+        source_id: '["ble_heart_rate","uuid"]',
+        activity_ids: [],
+      },
+    ].map((row) => schema.parse(row)),
+  );
+  store.query.mockImplementationOnce(async (schema) =>
+    [{ provider_id: "ble_heart_rate", device_id: "uuid", device_name: "Polar H10" }].map((row) =>
+      schema.parse(row),
+    ),
+  );
+  const result = await getActivityMetricSources(store, window);
+  expect(result[0]?.sources[0]).toEqual({
+    id: '["ble_heart_rate","uuid"]',
+    label: "Heart Rate Monitor (Bluetooth) · Polar H10",
   });
 });
 

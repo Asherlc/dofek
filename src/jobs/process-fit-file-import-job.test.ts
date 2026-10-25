@@ -44,6 +44,11 @@ vi.mock("../db/provider-activity-sync.ts", () => ({
 }));
 
 const mockStreamFitFile = vi.fn();
+const mockReplaceActivityDeviceObservations = vi.fn();
+vi.mock("../db/activity-device-observations.ts", () => ({
+  replaceActivityDeviceObservations: (...args: unknown[]) =>
+    mockReplaceActivityDeviceObservations(...args),
+}));
 vi.mock("../fit/stream-decoder.ts", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../fit/stream-decoder.ts")>();
   return {
@@ -238,6 +243,7 @@ async function streamActivity(
   consumer: FitStreamConsumer,
 ): Promise<FitStreamResult> {
   await consumer.onMetadata({
+    fileId: null,
     fileType: 4,
     fileTypeName: "activity",
     fieldOccurrences: [],
@@ -278,6 +284,7 @@ async function streamGeneratedTestFit(
   const isWeightFile = fileType === "weight" || fileType === 9 || weightRows.length > 0;
   if (fileType === "monitoringB") {
     await consumer.onMetadata({
+      fileId: null,
       fileType: 32,
       fileTypeName: "monitoring_b",
       fieldOccurrences: [
@@ -296,6 +303,7 @@ async function streamGeneratedTestFit(
   }
 
   await consumer.onMetadata({
+    fileId: null,
     fileType: typeof fileType === "number" ? fileType : 9,
     fileTypeName: "weight",
     fieldOccurrences: [
@@ -349,6 +357,11 @@ describe("processFitFileImportJob", () => {
     mockWriteMetricStreamBatchForScope.mockResolvedValue(undefined);
     mockStreamFitFile.mockImplementation(streamGeneratedTestFit);
     mockAccountErasureAllowsQueuedUserWork.mockResolvedValue(true);
+    mockReplaceActivityDeviceObservations.mockImplementation(async (_db, _scope, batches) => {
+      for await (const _batch of batches) {
+        /* consume the staged batches */
+      }
+    });
   });
 
   afterEach(async () => {
@@ -357,6 +370,82 @@ describe("processFitFileImportJob", () => {
         .splice(0)
         .map((directory) => rm(directory, { recursive: true, force: true })),
     );
+  });
+
+  it("replays bounded raw hardware batches only after the complete FIT stream succeeds", async () => {
+    const filePath = await writeTempFit(createActivityFit());
+    const fileId = { type: 4, manufacturer: 1, serial_number: 123 };
+    const messages = Array.from({ length: 501 }, (_, index) => ({
+      device_index: index,
+      battery_voltage: 2.8,
+    }));
+    mockStreamFitFile.mockImplementationOnce(async (_path: string, consumer: FitStreamConsumer) => {
+      await consumer.onMetadata({
+        fileId,
+        fileType: 4,
+        fileTypeName: "activity",
+        fieldOccurrences: [],
+        isWeightFile: false,
+        session: defaultFitActivity().session,
+      });
+      for (let offset = 0; offset < messages.length; offset += 250) {
+        await consumer.onDeviceInfoBatch(messages.slice(offset, offset + 250));
+        expect(mockReplaceActivityDeviceObservations).not.toHaveBeenCalled();
+      }
+      return { messageCount: messages.length };
+    });
+    const retained: unknown[] = [];
+    mockReplaceActivityDeviceObservations.mockImplementationOnce(async (_db, scope, batches) => {
+      expect(scope).toEqual({ activityId: "activity-row-1", userId: "user-1" });
+      for await (const batch of batches) {
+        expect(batch.length).toBeLessThanOrEqual(250);
+        retained.push(...batch);
+      }
+    });
+    await processFitFileImportJob(
+      createFitFileImportJob({
+        filePath,
+        originalPath: "activity.fit",
+        userId: "user-1",
+        providerId: "fit-file",
+        sourceName: "FIT File",
+      }),
+      mockDb,
+    );
+    expect(retained).toEqual([
+      { messageType: "file_id", raw: fileId },
+      ...messages.map((raw) => ({ messageType: "device_info", raw })),
+    ]);
+  });
+
+  it("leaves device observations intact when decoding fails after hardware batches", async () => {
+    const filePath = await writeTempFit(createActivityFit());
+    mockStreamFitFile.mockImplementationOnce(async (_path: string, consumer: FitStreamConsumer) => {
+      await consumer.onMetadata({
+        fileId: null,
+        fileType: 4,
+        fileTypeName: "activity",
+        fieldOccurrences: [],
+        isWeightFile: false,
+        session: defaultFitActivity().session,
+      });
+      await consumer.onDeviceInfoBatch([{ product_name: "Recorder" }]);
+      throw new FitDecoderError("invalid FIT checksum");
+    });
+    await expect(
+      processFitFileImportJob(
+        createFitFileImportJob({
+          filePath,
+          originalPath: "activity.fit",
+          userId: "user-1",
+          providerId: "fit-file",
+          sourceName: "FIT File",
+        }),
+        mockDb,
+      ),
+    ).rejects.toThrow("invalid FIT checksum");
+    expect(mockReplaceActivityDeviceObservations).not.toHaveBeenCalled();
+    expect(mockUpsertProviderActivity).not.toHaveBeenCalled();
   });
 
   it("fails jobs without a file path or extraction child without retrying", async () => {
@@ -723,6 +812,7 @@ describe("processFitFileImportJob", () => {
     mockStreamFitFile.mockImplementationOnce(
       async (_filePath: string, consumer: FitStreamConsumer) => {
         await consumer.onMetadata({
+          fileId: null,
           fileType: 4,
           fileTypeName: "activity",
           fieldOccurrences: [],

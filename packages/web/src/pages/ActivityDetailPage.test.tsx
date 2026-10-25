@@ -344,6 +344,14 @@ vi.mock("../lib/trpc.ts", () => ({
       byId: { useQuery: mockActivityByIdUseQuery },
       stream: { useQuery: mockStreamUseQuery },
       metricSources: { useQuery: mockMetricSourcesUseQuery },
+      hardware: {
+        useQuery: () => ({
+          data: { items: [], power: [] },
+          isLoading: false,
+          error: null,
+          refetch: vi.fn(),
+        }),
+      },
       route: { useQuery: mockRouteUseQuery },
       hrZones: { useQuery: mockHrZonesUseQuery },
       powerZones: { useQuery: mockPowerZonesUseQuery },

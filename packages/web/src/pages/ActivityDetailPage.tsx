@@ -38,6 +38,7 @@ import type {
 import type { ActivityDetail } from "../../../server/src/models/activity.ts";
 import type { StrengthExerciseDetail } from "../../../server/src/routers/activity.ts";
 import { ActivityExportDropdown } from "../components/ActivityExportDropdown.tsx";
+import { ActivityHardwarePanel } from "../components/ActivityHardwarePanel.tsx";
 import { ActivityPerceivedExertion } from "../components/ActivityPerceivedExertion.tsx";
 import { ActivityRouteMap } from "../components/ActivityRouteMap.tsx";
 import { HangboardingDetail } from "../components/HangboardingDetail.tsx";
@@ -66,6 +67,7 @@ export function ActivityDetailPage() {
 
   const units = useUnitConverter();
   const detail = trpc.activity.byId.useQuery({ id });
+  const hardware = trpc.activity.hardware.useQuery({ id });
   const metricSources = trpc.activity.metricSources.useQuery({ id: id ?? "" });
   const [sourceSelection, setSourceSelection] = useState<{
     activityId: string;
@@ -268,6 +270,12 @@ export function ActivityDetailPage() {
       {detail.error ? <QueryStatePanel error={detail.error} height={72} /> : null}
 
       {metricSources.error && <QueryStatePanel error={metricSources.error} height={72} />}
+      <ActivityHardwarePanel
+        data={hardware.data}
+        loading={hardware.isLoading}
+        error={hardware.error}
+        onRetry={() => void hardware.refetch()}
+      />
       {stream.error ? (
         <Section title="Sensor Data">
           <QueryStatePanel error={stream.error} height={72} />

@@ -4,6 +4,14 @@ Metadata and statistics for data providers.
 
 ## Features
 
+- **Activity hardware**: The [hardware contract](src/activity-hardware.ts) carries
+  server-normalized FIT file creators, provider-reported recording devices,
+  observed sensors, source apps, coarse equipment categories, provider provenance,
+  optional device details, and reported power-meter/estimated-power evidence.
+  FIT creators may be export platforms; observed FIT devices are inventory
+  evidence, not per-sample attribution; see
+  [Garmin's activity-file description](https://developer.garmin.com/fit/articles/file-types/activity.html).
+
 - **Activity origin**: The [origin contract](src/activity-origin.ts) identifies
   the closest available recording or explicitly unresolved attribution. Field
   priorities never establish recording origin.

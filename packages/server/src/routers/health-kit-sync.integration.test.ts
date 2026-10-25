@@ -430,6 +430,7 @@ describe("HealthKit sync router", () => {
             totalDistance: null,
             sourceName: "Hang Ten",
             sourceBundle: "com.asherlc.hangten",
+            device: { name: "My Watch", model: "Watch7,12", manufacturer: "Apple" },
             metadata: {
               HKMetadataKeyWorkoutBrandName: "Hang Ten",
               "HangTen.PlanName": "7/3 Repeaters",
@@ -475,6 +476,7 @@ describe("HealthKit sync router", () => {
         canonical_type: "hangboard",
         source_name: "Hang Ten",
         raw: {
+          device: { name: "My Watch", model: "Watch7,12", manufacturer: "Apple" },
           hangTen: {
             sessionId: "hang-ten-session-1",
             planName: "7/3 Repeaters",

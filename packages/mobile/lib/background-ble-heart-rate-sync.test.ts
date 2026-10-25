@@ -87,6 +87,7 @@ describe("background BLE heart-rate sync", () => {
       .mockResolvedValueOnce([
         {
           deviceId: "polar-123",
+          deviceName: "Polar H10",
           timestamp: "2026-08-13T12:00:00.000Z",
           heartRateBpm: 142,
           rrIntervalsMs: [811, 820],
@@ -100,6 +101,7 @@ describe("background BLE heart-rate sync", () => {
       deviceId: "polar-123",
       samples: [
         {
+          deviceName: "Polar H10",
           timestamp: "2026-08-13T12:00:00.000Z",
           heartRateBpm: 142,
           rrIntervalsMs: [811, 820],

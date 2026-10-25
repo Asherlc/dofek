@@ -40,6 +40,7 @@ import type {
   ActivityMetricSourceSelection,
   ActivityMetric as SourceMetric,
 } from "../../../server/src/contracts/activity-metric-sources.ts";
+import { ActivityHardwareSection } from "../../components/ActivityHardwarePanel";
 import { ActivityPerceivedExertion } from "../../components/ActivityPerceivedExertion";
 import {
   AreaChart,
@@ -902,6 +903,7 @@ export default function ActivityDetailScreen() {
         />
       )}
 
+      <ActivityHardwareSection activityId={id ?? ""} />
       {metricSources.error && (
         <QueryStatePanel variant="error" message={metricSources.error.message} />
       )}

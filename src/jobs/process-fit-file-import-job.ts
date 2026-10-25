@@ -9,6 +9,7 @@ import {
 } from "@dofek/training/activity-types";
 import { UnrecoverableError } from "bullmq";
 import { z } from "zod";
+import { replaceActivityDeviceObservations } from "../db/activity-device-observations.ts";
 import type { SyncDatabase } from "../db/index.ts";
 import {
   replaceMetricStreamBatch,
@@ -185,6 +186,7 @@ function activityTypeFromFitSession(session: ParsedFitSession): ProviderActivity
 }
 
 const FIT_FILE_TYPE_ACTIVITY = 4;
+const stagedDeviceBatchSchema = z.array(z.record(z.string(), z.unknown())).max(250);
 const stagedRecordBatchSchema = z
   .array(
     z.object({
@@ -213,6 +215,7 @@ interface FitImportSpool {
   recordBatchCount: number;
   weightBatchCount: number;
   weightMessageCount: number;
+  deviceBatchCount: number;
 }
 
 async function createFitImportSpool(): Promise<FitImportSpool> {
@@ -221,12 +224,13 @@ async function createFitImportSpool(): Promise<FitImportSpool> {
     recordBatchCount: 0,
     weightBatchCount: 0,
     weightMessageCount: 0,
+    deviceBatchCount: 0,
   };
 }
 
 function spoolBatchPath(
   spool: FitImportSpool,
-  batchType: "records" | "weights",
+  batchType: "records" | "weights" | "devices",
   batchIndex: number,
 ): string {
   return join(spool.directory, `${batchType}-${batchIndex}.json`);
@@ -247,6 +251,29 @@ async function stageWeightBatch(spool: FitImportSpool, weights: ParsedFitWeight[
   );
   spool.weightBatchCount++;
   spool.weightMessageCount += weights.length;
+}
+
+async function stageDeviceBatch(
+  spool: FitImportSpool,
+  messages: Record<string, unknown>[],
+): Promise<void> {
+  await writeFile(
+    spoolBatchPath(spool, "devices", spool.deviceBatchCount),
+    JSON.stringify(messages),
+  );
+  spool.deviceBatchCount++;
+}
+
+async function* replayDeviceBatches(spool: FitImportSpool, fileId: Record<string, unknown> | null) {
+  if (fileId !== null) yield [{ messageType: "file_id" as const, raw: fileId }];
+  for (let batchIndex = 0; batchIndex < spool.deviceBatchCount; batchIndex++) {
+    const decoded: unknown = JSON.parse(
+      await readFile(spoolBatchPath(spool, "devices", batchIndex), "utf8"),
+    );
+    yield stagedDeviceBatchSchema
+      .parse(decoded)
+      .map((raw) => ({ messageType: "device_info" as const, raw }));
+  }
 }
 
 async function replayRecordBatches(
@@ -515,6 +542,9 @@ export async function importFitFile(
             await stageWeightBatch(spool, weights);
           }
         },
+        onDeviceInfoBatch: async (messages) => {
+          if (importType === "activity") await stageDeviceBatch(spool, messages);
+        },
       });
     } catch (error) {
       if (error instanceof FitDecoderError || error instanceof FitFileImportValidationError) {
@@ -576,6 +606,11 @@ export async function importFitFile(
             await writeMetricStreamBatchForScope(db, scope, rows, SOURCE_TYPE_FILE);
           }
         });
+        await replaceActivityDeviceObservations(
+          db,
+          { activityId, userId: data.userId },
+          replayDeviceBatches(spool, streamMetadata.fileId),
+        );
       }
     } else {
       recordDroppedFitFields(data.providerId, streamMetadata, routingConsumedFields);

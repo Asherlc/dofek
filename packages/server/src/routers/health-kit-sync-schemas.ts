@@ -61,6 +61,18 @@ export const workoutSampleSchema = z.object({
   sourceBundle: z.string(),
   metadata: z.record(z.string(), z.union([z.string(), z.number()])).optional(),
   workoutActivities: z.array(workoutActivitySchema).optional(),
+  device: z
+    .object({
+      name: z.string().optional(),
+      model: z.string().optional(),
+      manufacturer: z.string().optional(),
+      hardwareVersion: z.string().optional(),
+      firmwareVersion: z.string().optional(),
+      softwareVersion: z.string().optional(),
+      localIdentifier: z.string().optional(),
+      udiDeviceIdentifier: z.string().optional(),
+    })
+    .optional(),
 });
 
 export const routeLocationSchema = z.object({

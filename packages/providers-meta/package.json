@@ -21,7 +21,8 @@
     "./sync-actions": "./src/sync-actions.ts",
     "./auth-provider-grouping": "./src/auth-provider-grouping.ts",
     "./hangboarding": "./src/hangboarding.ts",
-    "./garmin-devices": "./src/garmin-devices.ts"
+    "./garmin-devices": "./src/garmin-devices.ts",
+    "./activity-hardware": "./src/activity-hardware.ts"
   },
   "dependencies": {
     "@dofek/format": "workspace:*",

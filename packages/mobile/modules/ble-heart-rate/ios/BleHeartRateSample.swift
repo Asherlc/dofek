@@ -9,4 +9,5 @@ struct BleHeartRateSample {
     let timestamp: Date
     let heartRateBpm: Int
     let rrIntervalsMs: [Int]
+    var deviceName: String? = nil
 }
