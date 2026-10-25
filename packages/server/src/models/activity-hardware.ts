@@ -220,14 +220,18 @@ function apiItem(member: ActivityHardwareMember): ActivityHardwareItem | null {
   }
   if (member.providerId === "apple_health" || member.providerId === "apple-health") {
     const device = object(raw.device);
-    const reportedModel = text(device.model);
-    const hardware = text(device.hardwareVersion);
+    const productType = text(raw.sourceProductType);
+    const watchProductType = productType?.match(/^watch\d+,\d+$/i)?.[0] ?? null;
+    const reportedModel = watchProductType ?? text(device.model);
+    const specificModel =
+      reportedModel !== null && !/^(apple )?watch$/i.test(readableName(reportedModel))
+        ? reportedModel
+        : null;
+    const identifier = specificModel ?? text(device.hardwareVersion);
+    const resolvedModel = identifier === null ? null : appleDeviceModel(identifier);
+    const isModelIdentifier = /^(?:Watch|iPhone|iPad|iPod)\d+,\d+$/i.test(specificModel ?? "");
     const deviceName = text(device.name);
-    const isModelIdentifier = /^(?:Watch|iPhone|iPad|iPod)\d+,\d+$/.test(reportedModel ?? "");
-    const resolvedModel =
-      (hardware ? appleDeviceModel(hardware) : null) ??
-      (reportedModel ? appleDeviceModel(reportedModel) : null);
-    model = resolvedModel ?? (isModelIdentifier ? null : reportedModel);
+    model = resolvedModel ?? (isModelIdentifier ? null : specificModel);
     manufacturer = text(device.manufacturer);
     label =
       resolvedModel ??

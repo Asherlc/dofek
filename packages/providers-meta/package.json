@@ -9,6 +9,7 @@
     "./activity-source-details": "./src/activity-source-details.ts",
     "./activity-source-tree": "./src/activity-source-tree.ts",
     "./device-names": "./src/device-names.ts",
+    "./activity-source-hardware": "./src/activity-source-hardware.ts",
     "./providers": "./src/providers.ts",
     "./provider-catalog": "./src/provider-catalog.ts",
     "./provider-connection": "./src/provider-connection.ts",

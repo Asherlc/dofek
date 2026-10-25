@@ -572,7 +572,7 @@ describe("activity calendar entries", () => {
               providerId: "wahoo",
               sourceName: null,
               label: "Wahoo",
-              description: "Other matching source",
+              description: null,
               url: null,
               children: [],
             },

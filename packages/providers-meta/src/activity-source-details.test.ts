@@ -12,15 +12,30 @@ function origin(providerId: string, sourceName: string | null = null): ActivityO
 }
 
 describe("activitySourceDetails", () => {
-  it("renders an Apple model identifier while retaining the Apple Health transport", () => {
-    expect(activitySourceDetails(origin("apple_health", "Watch6,9"))).toEqual({
-      recordingApp: {
-        provider: "apple-watch",
-        label: "Apple Watch Series 7 (GPS + Cellular, 45mm)",
-      },
-      importedVia: { provider: "apple_health", label: "Apple Health" },
-    });
-  });
+  it.each(["Watch6,9", "watch6,9", "wAtch6,9"])(
+    "renders Apple model %s while retaining the Apple Health transport",
+    (sourceName) => {
+      const reportedOrigin = origin("apple_health", sourceName);
+      expect(activitySourceDetails(reportedOrigin)).toEqual({
+        recordingApp: {
+          provider: "apple-watch",
+          label: "Apple Watch Series 7 (GPS + Cellular, 45mm)",
+        },
+        importedVia: { provider: "apple_health", label: "Apple Health" },
+      });
+      expect(reportedOrigin).toMatchObject({ sourceName });
+    },
+  );
+
+  it.each(["watch99,99", "wAtch2,1"])(
+    "preserves an unknown or internal Watch source %s",
+    (sourceName) => {
+      expect(activitySourceDetails(origin("apple_health", sourceName))).toEqual({
+        recordingApp: { provider: sourceName, label: sourceName },
+        importedVia: { provider: "apple_health", label: "Apple Health" },
+      });
+    },
+  );
 
   it("renders Garmin enum names through another provider", () => {
     expect(activitySourceDetails(origin("strava", "edge530"))).toEqual({

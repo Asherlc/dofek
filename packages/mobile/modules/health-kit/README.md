@@ -15,6 +15,18 @@ as `device`, separately from `sourceName` and `sourceBundle`. Available name,
 model, manufacturer, version and identifier fields pass through normal and
 observer-triggered workout uploads into the activity's raw payload. Unknown
 fields remain absent; existing activities gain newly retained facts after sync.
+The workout's [`HKSourceRevision.productType`](https://developer.apple.com/documentation/healthkit/hksourcerevision/producttype)
+is retained separately as `sourceProductType`, since `HKDevice.model` can identify
+only a device family. The server resolves known Apple Watch identifiers to
+specific generation/size names using the watch-only mapping from
+[DeviceKit 5.9.0](https://github.com/devicekit/DeviceKit/blob/5.9.0/Source/Device.generated.swift),
+with its MIT notice retained in the lookup file. Unknown identifiers remain
+verbatim; generic Watch/Apple Watch values do not establish a specific model.
+Source product identifiers take precedence over a specific device model; when
+both are unavailable, a known watch identifier in `device.hardwareVersion`
+can resolve the model from previously retained [HKDevice facts](https://developer.apple.com/documentation/healthkit/hkdevice).
+Existing uploads need a workout resync from an updated native build to acquire
+the newly retained identifier.
 
 ## Structure
 
@@ -23,8 +35,11 @@ fields remain absent; existing activities gain newly retained facts after sync.
 - `ios/HealthKitModule.swift`: Main Swift module implementation.
 - `ios/HealthKitTypes.swift`: Canonical HealthKit read/write type sets used for
   authorization and legacy-sample cleanup.
-- `ios/HealthKitQueries.swift`: Shared date/unit/query helpers.
-- `Tests/`: Swift unit tests for query/type helpers.
+- [`ios/HealthKitQueries.swift`](ios/HealthKitQueries.swift): Shared date/unit/query helpers.
+- [`ios/HealthKitWorkoutTransport.swift`](ios/HealthKitWorkoutTransport.swift):
+  Workout bridge encoding, including source, recording device and JSON-safe metadata.
+- [`Tests/`](Tests/): Swift unit tests, with workout transport coverage in
+  [`HealthKitWorkoutTransportTests.swift`](Tests/HealthKitWorkoutTransportTests.swift).
 
 ## App Integration
 
@@ -93,8 +108,10 @@ From repo root:
 - `pnpm test:mobile -- packages/mobile/lib/health-kit-sync.test.ts`
 - `pnpm test:mobile -- packages/mobile/lib/background-health-kit-sync.test.ts`
 - `pnpm tsx scripts/check-health-kit-coverage.ts`: runs native Swift tests and
-  enforces 90% line and function coverage for `HealthKitQueries.swift` and
-  `HealthKitTypes.swift`. The runner discovers the exported coverage report with
+  enforces 90% line and function coverage for `HealthKitQueries.swift`,
+  `HealthKitTypes.swift` and `HealthKitWorkoutTransport.swift`
+  ([coverage runner](../../../../scripts/check-health-kit-coverage.ts)).
+  The runner discovers the exported coverage report with
   SwiftPM's [`swift test --show-codecov-path`](https://github.com/swiftlang/swift-package-manager/blob/main/Sources/PackageManagerDocs/Documentation.docc/SwiftTest.md),
   so validation and CI artifacts follow the active toolchain's build layout.
 

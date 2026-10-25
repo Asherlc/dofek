@@ -1,7 +1,12 @@
 import type { Meta, StoryObj } from "@storybook/react-native";
 import { View } from "react-native";
 import { expect, within } from "storybook/test";
-import { garminActivitySourceTree } from "../../app-fixtures/activity-source-tree";
+import {
+  garminActivitySourceHardware,
+  garminActivitySourceTree,
+  walkingActivitySourceHardware,
+  walkingActivitySourceTree,
+} from "../../app-fixtures/activity-source-tree";
 import { ActivityDetailHeader } from "./ActivityDetailHeader";
 import { detailHeaderActivity, removedDetailHeaderActivity } from "./ActivityDetailHeader.fixtures";
 
@@ -30,7 +35,7 @@ export const BranchingSourcesExpanded: Story = {
     await expect(trigger).toHaveAttribute("aria-expanded", "true");
     await expect(canvas.getAllByText("Garmin Edge 530")).toHaveLength(1);
     await expect(canvas.getAllByText("Apple Health")).toHaveLength(2);
-    await expect(canvas.getByText("Other matching sources")).toBeVisible();
+    await expect(canvas.getByText("WHOOP")).toBeVisible();
   },
 };
 export const UnresolvedSources: Story = {
@@ -65,5 +70,52 @@ export const RemovedSource: Story = {
     await expect(
       canvas.queryByRole("button", { name: "View source for Garmin Edge 530" }),
     ).toBeNull();
+  },
+};
+
+export const DeviceMetadataCollapsed: Story = {
+  args: { hardware: garminActivitySourceHardware },
+};
+export const DeviceMetadataExpanded: Story = {
+  args: { hardware: garminActivitySourceHardware },
+  play: async ({ canvasElement, userEvent }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByRole("button", { name: "Sources: Garmin Edge 530" }));
+    await expect(canvas.getByText("Firmware: 9.75")).toBeVisible();
+    await expect(canvas.getByText("Peloton")).toBeVisible();
+    await expect(canvas.getByText("Peloton Bike+")).toBeVisible();
+    await expect(canvas.getByText("Morning Ride")).toBeVisible();
+  },
+};
+
+export const WalkingCollapsed: Story = {
+  args: {
+    activity: {
+      ...detailHeaderActivity,
+      name: "Walking",
+      activityType: "walking",
+      sourceTree: walkingActivitySourceTree,
+    },
+    hardware: walkingActivitySourceHardware,
+  },
+};
+export const WalkingExpanded: Story = {
+  args: {
+    activity: {
+      ...detailHeaderActivity,
+      name: "Walking",
+      activityType: "walking",
+      sourceTree: walkingActivitySourceTree,
+    },
+    hardware: walkingActivitySourceHardware,
+  },
+  play: async ({ canvasElement, userEvent }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(
+      await canvas.findByRole("button", { name: "Sources: Asher’s Apple Watch" }),
+    );
+    await expect(canvas.getByText("Serial number: WATCH-123")).toBeVisible();
+    await expect(canvas.getByText("Peloton")).toBeVisible();
+    await expect(canvas.getByText("Whoop")).toBeVisible();
   },
 };

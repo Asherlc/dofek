@@ -36,6 +36,7 @@ export interface HealthKitDevice {
 }
 
 export interface WorkoutSample {
+  sourceProductType?: string;
   device?: HealthKitDevice;
   uuid: string;
   workoutType: string;

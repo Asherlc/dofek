@@ -2,6 +2,7 @@ import { formatDateLong } from "@dofek/format/format";
 import { formatRecordLocalTime } from "@dofek/format/record-local-time";
 import { formatActivityTypeLabel } from "@dofek/training/training";
 import type { ActivityDetail } from "dofek-server/types";
+import type { ComponentProps } from "react";
 import { Text, View } from "react-native";
 import { ActivitySourceDisclosure } from "../ActivitySourceDisclosure";
 import { ActivityTypeIcon } from "../ActivityTypeIcon";
@@ -10,6 +11,7 @@ import { styles } from "./styles";
 
 export function ActivityDetailHeader({
   activity,
+  ...hardwareProps
 }: {
   activity: Pick<
     ActivityDetail,
@@ -23,7 +25,7 @@ export function ActivityDetailHeader({
     | "subsource"
     | "providerAbsentAt"
   >;
-}) {
+} & Omit<ComponentProps<typeof ActivitySourceDisclosure>, "tree">) {
   const localStartTime = formatRecordLocalTime(
     activity.startedAt,
     activity.localTimeContext,
@@ -52,7 +54,7 @@ export function ActivityDetailHeader({
         {" at "}
         {localStartTime === "--" ? "Local time unavailable" : localStartTime}
       </Text>
-      <ActivitySourceDisclosure tree={activity.sourceTree} />
+      <ActivitySourceDisclosure tree={activity.sourceTree} {...hardwareProps} />
       {activity.providerAbsentAt && <ProviderAbsentBanner activity={activity} />}
     </View>
   );

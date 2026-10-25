@@ -4,6 +4,9 @@ import { appleDeviceModel, deviceDisplayName } from "./device-names.ts";
 describe("appleDeviceModel", () => {
   it.each([
     ["Watch6,9", "Apple Watch Series 7 (GPS + Cellular, 45mm)"],
+    ["watch6,9", "Apple Watch Series 7 (GPS + Cellular, 45mm)"],
+    ["wAtch6,9", "Apple Watch Series 7 (GPS + Cellular, 45mm)"],
+    ["watch7,12", "Apple Watch Ultra 3"],
     ["Watch7,5", "Apple Watch Ultra 2"],
     ["Watch5,11", "Apple Watch SE (1st generation, GPS + Cellular, 40mm)"],
     ["Watch5,12", "Apple Watch SE (1st generation, GPS + Cellular, 44mm)"],
@@ -18,7 +21,7 @@ describe("appleDeviceModel", () => {
     expect(deviceDisplayName(identifier)).toBe(expected);
   });
 
-  it.each(["Watch2,1", "Watch99,99", "iPhone99,1", "Mac14,2", "toString", "", "watch6,9"])(
+  it.each(["Watch2,1", "Watch99,99", "iPhone99,1", "Mac14,2", "toString", "", "iphone16,1"])(
     "does not claim a public Apple model for %s",
     (identifier) => {
       expect(appleDeviceModel(identifier)).toBeNull();

@@ -3,6 +3,9 @@ import { expect, within } from "storybook/test";
 import {
   branchingSourceTree,
   longSourceTree,
+  recognizedWatchHardware,
+  recognizedWatchSourceTree,
+  sourceHardware,
   strongSourceTree,
 } from "./ActivitySourceDisclosure.fixtures.ts";
 import { ActivitySourceDisclosure } from "./ActivitySourceDisclosure.tsx";
@@ -27,6 +30,40 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const Collapsed: Story = {};
+export const RecognizedWatchModels: Story = {
+  args: { tree: recognizedWatchSourceTree, hardware: recognizedWatchHardware },
+  play: async ({ canvasElement, userEvent }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(
+      canvas.getByRole("button", { name: "Apple Watch Series 7 (GPS + Cellular, 45mm) Sources" }),
+    );
+    await expect(canvas.getByText("Garmin Forerunner 955")).toBeVisible();
+    await expect(canvas.getByText("Asher’s Apple Watch")).toBeVisible();
+  },
+};
+export const WithDeviceFacts: Story = {
+  args: { hardware: sourceHardware },
+  play: async ({ canvasElement, userEvent }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(canvas.getByRole("button", { name: "Garmin Connect Sources" }));
+    await expect(canvas.getByText("12345678")).toBeVisible();
+    await expect(canvas.getByText("Whoop")).toBeVisible();
+  },
+};
+export const LoadingDevices: Story = { args: { hardwareLoading: true } };
+export const DeviceError: Story = {
+  args: {
+    hardwareError: new Error("Reconnect Garmin to load device details."),
+    onRetryHardware: () => undefined,
+  },
+};
+export const CachedDeviceError: Story = {
+  args: {
+    hardware: sourceHardware,
+    hardwareError: new Error("Refresh failed. Retry this activity."),
+    onRetryHardware: () => undefined,
+  },
+};
 export const EmptyTree: Story = {
   args: { tree: { primary: null, otherSources: [] } },
   play: async ({ canvasElement }) => {

@@ -78,7 +78,7 @@ describe("buildActivitySourceTree", () => {
           providerId: "wahoo",
           sourceName: null,
           label: "Wahoo",
-          description: "Other matching source",
+          description: null,
           url: null,
           children: [],
         },
@@ -87,7 +87,7 @@ describe("buildActivitySourceTree", () => {
           providerId: "wahoo",
           sourceName: null,
           label: "Wahoo",
-          description: "Other matching source",
+          description: null,
           url: null,
           children: [],
         },
@@ -193,7 +193,7 @@ describe("buildActivitySourceTree", () => {
     );
     expect(tree.primary?.children).toEqual([]);
     expect(tree.otherSources).toMatchObject([
-      { id: "d", description: "Other matching source" },
+      { id: "d", description: null },
       { id: "b", children: [{ id: "c" }] },
     ]);
   });
@@ -239,7 +239,7 @@ describe("buildActivitySourceTree", () => {
           providerId: "garmin",
           sourceName: null,
           label: "Garmin",
-          description: "Other matching source",
+          description: null,
           url: "https://example.com/d",
           children: [],
         },
@@ -335,10 +335,8 @@ describe("buildActivitySourceTree", () => {
       sourceName: "Garmin Edge 530",
       label: "Garmin Edge 530",
       url: null,
-      description: "Recording app or device attribution",
-      children: [
-        { id: "a", label: "Strava", description: "Recording attribution reported by Strava" },
-      ],
+      description: null,
+      children: [{ id: "a", label: "Strava", description: null }],
     });
     expect(tree.otherSources).toMatchObject([{ id: "b", providerId: "garmin" }]);
   });
@@ -369,7 +367,7 @@ describe("buildActivitySourceTree", () => {
           providerId: "strava",
           label: "Strava",
           url: null,
-          description: `Recording attribution reported by Strava · Removed from provider ${formatDateTime("2026-10-02T00:00:00Z")}`,
+          description: `Removed from provider ${formatDateTime("2026-10-02T00:00:00Z")}`,
         },
       ],
     });

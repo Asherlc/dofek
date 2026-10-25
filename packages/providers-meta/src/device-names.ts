@@ -2,8 +2,9 @@ import APPLE_DEVICE_CATALOG from "./apple-device-catalog.ts";
 
 /** Public Apple hardware identifiers only; unknown/internal identifiers remain unresolved. */
 export function appleDeviceModel(identifier: string): string | null {
-  return Object.hasOwn(APPLE_DEVICE_CATALOG, identifier)
-    ? (APPLE_DEVICE_CATALOG[identifier] ?? null)
+  const canonicalIdentifier = identifier.replace(/^watch(?=\d)/i, "Watch");
+  return Object.hasOwn(APPLE_DEVICE_CATALOG, canonicalIdentifier)
+    ? (APPLE_DEVICE_CATALOG[canonicalIdentifier] ?? null)
     : null;
 }
 

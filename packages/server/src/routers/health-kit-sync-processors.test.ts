@@ -153,6 +153,7 @@ describe("processWorkouts", () => {
           totalDistance: null,
           sourceName: "Hang Ten",
           sourceBundle: "com.hangten.app",
+          sourceProductType: "Watch7,12",
           device: { name: "My Watch", model: "Watch7,12" },
         },
       ],
@@ -168,6 +169,7 @@ describe("processWorkouts", () => {
         sourceName: "Hang Ten",
         raw: expect.objectContaining({
           sourceBundle: "com.hangten.app",
+          sourceProductType: "Watch7,12",
           device: { name: "My Watch", model: "Watch7,12" },
         }),
       }),
@@ -176,6 +178,7 @@ describe("processWorkouts", () => {
         sourceName: "Hang Ten",
         raw: expect.objectContaining({
           sourceBundle: "com.hangten.app",
+          sourceProductType: "Watch7,12",
           device: { name: "My Watch", model: "Watch7,12" },
         }),
       }),

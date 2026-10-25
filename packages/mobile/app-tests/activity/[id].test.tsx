@@ -1,3 +1,4 @@
+import type { ActivityHardware } from "@dofek/providers/activity-hardware";
 import type { ActivityMetricSources } from "../../../server/src/contracts/activity-metric-sources.ts";
 import {
   climbingAttemptFixture,
@@ -316,6 +317,23 @@ const mockMetricSourcesQuery = vi.fn(
     isLoading: boolean;
   } => ({ data: [], error: null, isLoading: false }),
 );
+const mockHardwareRefetch = vi.fn();
+const mockHardwareQuery = vi.fn(
+  (
+    _input?: unknown,
+    _options?: unknown,
+  ): {
+    data: ActivityHardware | undefined;
+    isLoading: boolean;
+    error: Error | null;
+    refetch: typeof mockHardwareRefetch;
+  } => ({
+    data: { items: [], power: [] },
+    isLoading: false,
+    error: null,
+    refetch: mockHardwareRefetch,
+  }),
+);
 const mockAttachEntryMutate = vi.fn();
 const mockClimbingEntriesInvalidate = vi.fn().mockResolvedValue(undefined);
 const mockEntrySuggestionsInvalidate = vi.fn().mockResolvedValue(undefined);
@@ -329,14 +347,7 @@ vi.mock("../../lib/trpc", () => ({
       images: { useQuery: (...args: unknown[]) => mockImagesQuery(...args) },
       byId: { useQuery: (...args: unknown[]) => mockByIdQuery(...args) },
       metricSources: { useQuery: (...args: unknown[]) => mockMetricSourcesQuery(...args) },
-      hardware: {
-        useQuery: () => ({
-          data: { items: [], power: [] },
-          isLoading: false,
-          error: null,
-          refetch: vi.fn(),
-        }),
-      },
+      hardware: { useQuery: (...args: unknown[]) => mockHardwareQuery(...args) },
       stream: { useQuery: (...args: unknown[]) => mockStreamQuery(...args) },
       route: { useQuery: (...args: unknown[]) => mockRouteQuery(...args) },
       hrZones: { useQuery: (...args: unknown[]) => mockHrZonesQuery(...args) },
@@ -548,6 +559,13 @@ function getPlaceholderData(value: unknown): ((previousData: unknown) => unknown
 }
 
 beforeEach(() => {
+  mockHardwareRefetch.mockClear();
+  mockHardwareQuery.mockReturnValue({
+    data: { items: [], power: [] },
+    isLoading: false,
+    error: null,
+    refetch: mockHardwareRefetch,
+  });
   mockMetricSourcesQuery.mockReturnValue({
     data: [],
     error: null,
@@ -611,6 +629,45 @@ beforeEach(() => {
 });
 
 describe("ActivityDetailScreen", () => {
+  it("opens device facts with Sources in the real activity header", async () => {
+    mockByIdQuery.mockReturnValue({
+      data: { ...baseCyclingActivity, sourceTree: garminActivitySourceTree },
+      isLoading: false,
+      error: null,
+    });
+    mockHardwareQuery.mockReturnValue({
+      data: {
+        items: [
+          {
+            id: "watch",
+            activityId: "garmin-record",
+            providerId: "garmin",
+            sourceName: null,
+            role: "recorder",
+            label: "Edge 530",
+            model: "Edge 530",
+            manufacturer: "Garmin",
+            evidence: "Reported recording device.",
+            details: [{ label: "Serial number", value: "EDGE-123" }],
+          },
+        ],
+        power: [],
+      },
+      isLoading: false,
+      error: new Error("Reconnect Garmin and retry device metadata."),
+      refetch: mockHardwareRefetch,
+    });
+    const { default: ActivityDetailScreen } = await import("../../app/activity/[id]");
+    render(<ActivityDetailScreen />);
+    expect(screen.queryByText("Serial number: EDGE-123")).toBeNull();
+    expect(screen.getByText("Reconnect Garmin and retry device metadata.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(mockHardwareRefetch).toHaveBeenCalledOnce();
+    fireEvent.click(screen.getByRole("button", { name: "Sources: Garmin Edge 530" }));
+    expect(screen.getByText("Serial number: EDGE-123")).toBeTruthy();
+    expect(screen.getByText("220 W")).toBeTruthy();
+  });
+
   it("renders and expands the server-authored source tree in the real detail header", async () => {
     mockByIdQuery.mockReturnValue({
       data: { ...baseCyclingActivity, sourceTree: garminActivitySourceTree },
@@ -626,7 +683,6 @@ describe("ActivityDetailScreen", () => {
     fireEvent.click(trigger);
     expect(trigger.getAttribute("aria-expanded")).toBe("true");
     expect(screen.getAllByText("Apple Health")).toHaveLength(2);
-    expect(screen.getByText("Other matching sources")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "View source for Strava" }));
     expect(Linking.openURL).toHaveBeenCalledWith("https://www.strava.com/activities/123");
     expect(screen.getByText("Morning Ride")).toBeTruthy();
@@ -2148,7 +2204,7 @@ describe("ActivityDetailScreen", () => {
             providerId: "strong-csv",
             sourceName: null,
             label: "Strong",
-            description: "Recording app reported by Apple Health",
+            description: null,
             url: null,
             children: [
               {
@@ -2173,7 +2229,6 @@ describe("ActivityDetailScreen", () => {
     render(React.createElement(ActivityDetailScreen));
 
     fireEvent.click(screen.getByRole("button", { name: "Sources: Strong" }));
-    expect(screen.getByText("Recording app reported by Apple Health")).toBeTruthy();
     expect(screen.getByText("Apple Health")).toBeTruthy();
     expect(screen.getByText("Recorded by Strong")).toBeTruthy();
   });

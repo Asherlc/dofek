@@ -27,7 +27,7 @@ export function activitySourceDetails(origin: ActivityOrigin): ActivitySourceDet
   const source = distinctSource
     ? provider === "garmin" || garminDeviceThumbnail(displayName) !== null
       ? "garmin"
-      : name.startsWith("Watch") && appleDeviceModel(name)
+      : /^watch/i.test(name) && appleDeviceModel(name)
         ? "apple-watch"
         : providerSourceLogo("apple_health", name).provider
     : provider;
