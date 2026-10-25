@@ -3,77 +3,7 @@ import XCTest
 
 @testable import HealthKitLib
 
-private final class WorkoutSource: HKSource, @unchecked Sendable {
-    override var name: String { "Fitness" }
-    override var bundleIdentifier: String { "com.apple.fitness" }
-}
-
-private final class WatchWorkout: HKWorkout, @unchecked Sendable {
-    override var sourceRevision: HKSourceRevision {
-        // SwiftPM has no app bundle, so HKSource.default() cannot supply a test source.
-        // Decode an HKSource test double and override its public identity properties.
-        let archiver = NSKeyedArchiver(requiringSecureCoding: true)
-        archiver.finishEncoding()
-        let decoder = try! NSKeyedUnarchiver(forReadingFrom: archiver.encodedData)
-        let source = WorkoutSource(coder: decoder)!
-        return HKSourceRevision(source: source, version: "1.0", productType: "Watch7,12",
-                         operatingSystemVersion: OperatingSystemVersion(majorVersion: 26, minorVersion: 0, patchVersion: 0))
-    }
-}
-
 final class HealthKitQueriesTests: XCTestCase {
-
-    func testWorkoutTransportRetainsSourceProductTypeSeparatelyFromGenericDeviceModel() {
-        let workout = WatchWorkout(activityType: .running, start: Date(), end: Date(), duration: 0,
-                                   totalEnergyBurned: nil, totalDistance: nil,
-                                   device: HKDevice(name: "My Watch", manufacturer: "Apple", model: "Watch",
-                                                    hardwareVersion: nil, firmwareVersion: nil, softwareVersion: nil,
-                                                    localIdentifier: nil, udiDeviceIdentifier: nil), metadata: nil)
-        let result = HealthKitQueries.transportWorkout(workout)
-        XCTAssertEqual(result["sourceProductType"] as? String, "Watch7,12")
-        XCTAssertEqual((result["device"] as? [String: String])?["model"], "Watch")
-    }
-
-    func testWorkoutTransportPreservesReportedDeviceAndSource() throws {
-        let device = HKDevice(
-            name: "My Watch", manufacturer: "Apple", model: "Watch7,12",
-            hardwareVersion: "2", firmwareVersion: "3", softwareVersion: "11.0",
-            localIdentifier: "local-device", udiDeviceIdentifier: "udi-device"
-        )
-        let workout = HKWorkout(
-            activityType: .running,
-            start: Date(timeIntervalSince1970: 1_700_000_000),
-            end: Date(timeIntervalSince1970: 1_700_000_060),
-            duration: 60, totalEnergyBurned: nil, totalDistance: HKQuantity(unit: .meter(), doubleValue: 200),
-            device: device, metadata: [
-                "recordedBy": "runner", "recordingVersion": 3,
-                "recordingDate": Date(timeIntervalSince1970: 1_700_000_000),
-            ]
-        )
-        let result = HealthKitQueries.transportWorkout(workout)
-        let hardware = try XCTUnwrap(result["device"] as? [String: String])
-        XCTAssertEqual(hardware, [
-            "name": "My Watch", "manufacturer": "Apple", "model": "Watch7,12",
-            "hardwareVersion": "2", "firmwareVersion": "3", "softwareVersion": "11.0",
-            "localIdentifier": "local-device", "udiDeviceIdentifier": "udi-device",
-        ])
-        XCTAssertEqual(result["sourceName"] as? String, workout.sourceRevision.source.name)
-        XCTAssertEqual(result["sourceBundle"] as? String, workout.sourceRevision.source.bundleIdentifier)
-        XCTAssertEqual(result["totalDistance"] as? Double, 200)
-        let metadata = try XCTUnwrap(result["metadata"] as? [String: Any])
-        XCTAssertEqual(metadata["recordedBy"] as? String, "runner")
-        XCTAssertEqual(metadata["recordingVersion"] as? Double, 3)
-        XCTAssertEqual(metadata["recordingDate"] as? String, HealthKitQueries.formatDate(workout.startDate))
-    }
-
-    func testWorkoutWithPartialDeviceKeepsUnknownFieldsAbsent() throws {
-        let device = HKDevice(name: nil, manufacturer: nil, model: "Watch", hardwareVersion: nil,
-                              firmwareVersion: nil, softwareVersion: nil, localIdentifier: nil,
-                              udiDeviceIdentifier: nil)
-        let workout = HKWorkout(activityType: .walking, start: Date(), end: Date(), duration: 0,
-                                totalEnergyBurned: nil, totalDistance: nil, device: device, metadata: nil)
-        XCTAssertEqual(HealthKitQueries.transportWorkout(workout)["device"] as? [String: String], ["model": "Watch"])
-    }
 
     func testClinicalRecordMapsFHIRPayloadAndDownloadDate() throws {
         let fixture = ClinicalRecordMappingInput(

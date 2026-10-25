@@ -35,8 +35,11 @@ the newly retained identifier.
 - `ios/HealthKitModule.swift`: Main Swift module implementation.
 - `ios/HealthKitTypes.swift`: Canonical HealthKit read/write type sets used for
   authorization and legacy-sample cleanup.
-- `ios/HealthKitQueries.swift`: Shared date/unit/query helpers.
-- `Tests/`: Swift unit tests for query/type helpers.
+- [`ios/HealthKitQueries.swift`](ios/HealthKitQueries.swift): Shared date/unit/query helpers.
+- [`ios/HealthKitWorkoutTransport.swift`](ios/HealthKitWorkoutTransport.swift):
+  Workout bridge encoding, including source, recording device and JSON-safe metadata.
+- [`Tests/`](Tests/): Swift unit tests, with workout transport coverage in
+  [`HealthKitWorkoutTransportTests.swift`](Tests/HealthKitWorkoutTransportTests.swift).
 
 ## App Integration
 
@@ -105,8 +108,10 @@ From repo root:
 - `pnpm test:mobile -- packages/mobile/lib/health-kit-sync.test.ts`
 - `pnpm test:mobile -- packages/mobile/lib/background-health-kit-sync.test.ts`
 - `pnpm tsx scripts/check-health-kit-coverage.ts`: runs native Swift tests and
-  enforces 90% line and function coverage for `HealthKitQueries.swift` and
-  `HealthKitTypes.swift`. The runner discovers the exported coverage report with
+  enforces 90% line and function coverage for `HealthKitQueries.swift`,
+  `HealthKitTypes.swift` and `HealthKitWorkoutTransport.swift`
+  ([coverage runner](../../../../scripts/check-health-kit-coverage.ts)).
+  The runner discovers the exported coverage report with
   SwiftPM's [`swift test --show-codecov-path`](https://github.com/swiftlang/swift-package-manager/blob/main/Sources/PackageManagerDocs/Documentation.docc/SwiftTest.md),
   so validation and CI artifacts follow the active toolchain's build layout.
 

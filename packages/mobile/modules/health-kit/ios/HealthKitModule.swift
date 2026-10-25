@@ -378,7 +378,7 @@ public class HealthKitModule: Module {
                     .filter {
                         self.accountStateStore.shouldInclude(sampleDate: $0.startDate)
                     }
-                    .map(HealthKitQueries.transportWorkout) ?? []
+                    .map(HealthKitWorkoutTransport.encode) ?? []
                 promise.resolve(workouts)
             }
             self.healthStore.execute(query)
