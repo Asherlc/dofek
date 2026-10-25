@@ -351,6 +351,21 @@ describe("activity hardware", () => {
     expect(result.items[0]?.details).toEqual([{ label: "App", value: "Fitness app" }]);
     expect(result.items.map((item) => item.providerId)).toEqual(["amazfit-zepp", "ride-with-gps"]);
   });
+  it("uses the same readable name for matching source metadata", () => {
+    const result = normalizeActivityHardware([
+      {
+        ...member,
+        providerId: "ride-with-gps",
+        sourceName: "ridewithgps_iphone",
+        raw: { source: "ridewithgps_iphone" },
+        observations: [],
+      },
+    ]);
+    expect(result.items[0]).toMatchObject({
+      label: "Ride with GPS for iPhone",
+      sourceName: "Ride with GPS for iPhone",
+    });
+  });
   it.each([
     ["strava", { device_name: "Garmin_Edge_530" }, "Garmin Edge 530"],
     ["garmin", { deviceName: "Garmin_Edge_530" }, "Garmin Edge 530"],

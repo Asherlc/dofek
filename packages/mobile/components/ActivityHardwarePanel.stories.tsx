@@ -155,6 +155,28 @@ export const PelotonAndStrava: Story = {
     },
   },
 };
+export const LongDeviceFacts: Story = {
+  parameters: { layout: "padded" },
+  args: {
+    data: {
+      items: [
+        {
+          id: "long-device-facts",
+          activityId: "ride",
+          providerId: "apple_health",
+          sourceName: "com.example.workout".repeat(6),
+          role: "recorder",
+          label: "Workout recorder",
+          model: "DeviceModel".repeat(10),
+          manufacturer: "ManufacturerName".repeat(8),
+          evidence: "Hardware reported by HealthKit.",
+          details: [{ label: "Local identifier", value: "0123456789abcdef".repeat(8) }],
+        },
+      ],
+      power: [],
+    },
+  },
+};
 export const Empty: Story = { args: { data: { items: [], power: [] } } };
 export const Loading: Story = { args: { loading: true } };
 export const LoadError: Story = {

@@ -2,6 +2,17 @@ import sharp from "sharp";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import { consolidateActivityImageCopies } from "./gallery.ts";
 
+const comparisonObserver = vi.hoisted(() => vi.fn<() => void>());
+vi.mock("pixelmatch", async (importOriginal) => {
+  const original = await importOriginal<typeof import("pixelmatch")>();
+  return {
+    default(...args: Parameters<typeof original.default>) {
+      comparisonObserver();
+      return original.default(...args);
+    },
+  };
+});
+
 const scene = Buffer.from(`<svg width="1024" height="768" xmlns="http://www.w3.org/2000/svg">
   <defs>
     <linearGradient id="sky"><stop stop-color="#123754"/><stop offset="1" stop-color="#bdac79"/></linearGradient>
@@ -60,6 +71,19 @@ describe("activity gallery image copies", () => {
     expect(result[0]?.id).toBe("original.png");
     expect(result[0]?.sources).toEqual([copy.sources[0], original.sources[0]]);
     expect(copy.sources).toHaveLength(1);
+  });
+
+  it("recognizes a JPEG export with ordinary compression and chroma subsampling", async () => {
+    const exportBytes = await sharp(png)
+      .jpeg({ quality: 85, chromaSubsampling: "4:2:0" })
+      .toBuffer();
+    const original = image("original.png", "peloton");
+    const copy = image("export.jpg", "strava");
+    const result = await consolidateActivityImageCopies([original, copy], async (key) =>
+      key === "original.png" ? png : exportBytes,
+    );
+    expect(result.map((entry) => entry.id)).toEqual(["original.png"]);
+    expect(result[0]?.sources).toEqual([...original.sources, ...copy.sources]);
   });
 
   it.each([
@@ -153,6 +177,38 @@ describe("activity gallery image copies", () => {
       key === "first.png" ? png : key === "second.png" ? changed : third,
     );
     expect(result.map((entry) => entry.id)).toEqual(["first.png", "second.png", "third.png"]);
+  });
+
+  it("lets other requests run between comparisons of cached image pixels", async () => {
+    const third = await sharp(png).negate().png().toBuffer();
+    const images = [
+      image("first.png", "peloton"),
+      image("second.png", "strava"),
+      image("third.png", "garmin"),
+    ];
+    let comparisons = 0;
+    let probeRan = false;
+    let probeBeforeThird: boolean | undefined;
+    let probe: NodeJS.Immediate | undefined;
+    comparisonObserver.mockImplementation(() => {
+      comparisons++;
+      if (comparisons === 2)
+        probe = setImmediate(() => {
+          probeRan = true;
+        });
+      if (comparisons === 3) probeBeforeThird = probeRan;
+    });
+    try {
+      const result = await consolidateActivityImageCopies(images, async (key) =>
+        key === "first.png" ? png : key === "second.png" ? changed : third,
+      );
+      expect(result).toHaveLength(3);
+      expect(comparisons).toBe(3);
+      expect(probeBeforeThird).toBe(true);
+    } finally {
+      comparisonObserver.mockReset();
+      if (probe) clearImmediate(probe);
+    }
   });
 
   it("does not read originals when there is no comparable cross-provider pair", async () => {

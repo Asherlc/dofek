@@ -85,7 +85,7 @@ function base(member: ActivityHardwareMember, suffix: string) {
     id: `${member.activityId}:${suffix}`,
     activityId: member.activityId,
     providerId: member.providerId,
-    sourceName: member.sourceName === null ? null : readableName(member.sourceName),
+    sourceName: reportedSourceLabel(member.sourceName),
   };
 }
 function compatibleIdentity(left: Raw, right: Raw): boolean {

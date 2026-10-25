@@ -49,31 +49,31 @@ export function ActivityHardwarePanel({ data, loading = false, error, onRetry }:
             {activityHardwareRoleLabels[item.role]} · {providerLabel(item.providerId)}
           </p>
           {expanded ? (
-            <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 pt-2 text-xs text-muted">
+            <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1 pt-2 text-xs text-muted">
               {item.sourceName &&
               item.sourceName !== item.label &&
               item.sourceName !== providerLabel(item.providerId) ? (
                 <>
                   <dt>Source</dt>
-                  <dd className="break-words">{item.sourceName}</dd>
+                  <dd className="wrap-anywhere">{item.sourceName}</dd>
                 </>
               ) : null}
               {item.manufacturer ? (
                 <>
                   <dt>Manufacturer</dt>
-                  <dd>{item.manufacturer}</dd>
+                  <dd className="wrap-anywhere">{item.manufacturer}</dd>
                 </>
               ) : null}
               {item.model && item.model !== item.label ? (
                 <>
                   <dt>Model</dt>
-                  <dd>{item.model}</dd>
+                  <dd className="wrap-anywhere">{item.model}</dd>
                 </>
               ) : null}
               {item.details.map((detail) => (
                 <div className="contents" key={detail.label}>
                   <dt>{detail.label}</dt>
-                  <dd className="break-words">{detail.value}</dd>
+                  <dd className="wrap-anywhere">{detail.value}</dd>
                 </div>
               ))}
             </dl>

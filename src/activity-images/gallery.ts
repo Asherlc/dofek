@@ -1,3 +1,4 @@
+import { setImmediate } from "node:timers/promises";
 import pixelmatch from "pixelmatch";
 import sharp from "sharp";
 
@@ -74,6 +75,8 @@ export async function consolidateActivityImageCopies<T extends GalleryImage>(
         threshold: 0.05,
         includeAA: true,
       });
+      // Cached comparisons still need to let other requests use the event loop.
+      await setImmediate();
       if (differences / (first.width * first.height) <= 0.0001) {
         match = index;
         break;
