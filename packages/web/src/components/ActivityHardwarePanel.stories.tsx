@@ -115,6 +115,68 @@ export const PartialMetadata: Story = {
     },
   },
 };
+export const PelotonAndStrava: Story = {
+  args: {
+    data: {
+      items: [
+        {
+          id: "peloton-bike-plus",
+          activityId: "peloton-ride",
+          providerId: "peloton",
+          sourceName: null,
+          role: "category",
+          label: "Peloton Bike+",
+          model: null,
+          manufacturer: null,
+          evidence: "Reported equipment category or platform; exact model unavailable.",
+          details: [{ label: "Platform", value: "Peloton Bike" }],
+        },
+        {
+          id: "strava-bike",
+          activityId: "strava-ride",
+          providerId: "strava",
+          sourceName: "Peloton Bike",
+          role: "recorder",
+          label: "Peloton Bike",
+          model: null,
+          manufacturer: null,
+          evidence: "Recording device reported by the provider.",
+          details: [],
+        },
+      ],
+      power: [
+        {
+          activityId: "strava-ride",
+          providerId: "strava",
+          kind: "measured",
+          label: "Power · Measured · Strava",
+        },
+      ],
+    },
+  },
+};
+export const LongDeviceFacts: Story = {
+  parameters: { layout: "padded" },
+  args: {
+    data: {
+      items: [
+        {
+          id: "long-device-facts",
+          activityId: "ride",
+          providerId: "apple_health",
+          sourceName: "com.example.workout".repeat(6),
+          role: "recorder",
+          label: "Workout recorder",
+          model: "DeviceModel".repeat(10),
+          manufacturer: "ManufacturerName".repeat(8),
+          evidence: "Hardware reported by HealthKit.",
+          details: [{ label: "Local identifier", value: "0123456789abcdef".repeat(8) }],
+        },
+      ],
+      power: [],
+    },
+  },
+};
 export const Empty: Story = { args: { data: { items: [], power: [] } } };
 export const Loading: Story = { args: { loading: true } };
 export const LoadError: Story = {

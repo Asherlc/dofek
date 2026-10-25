@@ -109,7 +109,16 @@ removed so the durable dispatcher can recreate them.
 `activity.images({id})` uses the existing activity visibility and entitlement
 resolution, then reads images from every contributing source activity. The
 response includes image metadata, all source associations, discovery coverage,
-and current acquisition states. Identical stored objects appear once. Signed
+and current acquisition states. Identical stored objects appear once. The
+[gallery projection](../src/activity-images/gallery.ts) also combines static
+copies from different providers when their aspect ratios match and their
+normalized pixels differ only within a narrow compression tolerance. It uses
+[Sharp](https://sharp.pixelplumbing.com/api-resize/) and
+[Pixelmatch](https://github.com/mapbox/pixelmatch), retains every source
+association, and selects the larger representation, preferring PNG at equal
+resolution. Separate photos from the same provider and animated images remain
+separate. Original files are retained; comparison reads private originals only
+when a cross-provider pair has compatible dimensions. Signed
 URLs expire after five minutes and are bearer credentials
 ([Cloudflare signed URL guidance](https://developers.cloudflare.com/r2/api/s3/presigned-urls/)).
 

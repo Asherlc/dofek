@@ -3,21 +3,20 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { ActivityHardwarePanel } from "./ActivityHardwarePanel.tsx";
 
+const watch = {
+  id: "watch",
+  activityId: "activity",
+  providerId: "apple_health",
+  sourceName: "Workout app",
+  role: "recorder" as const,
+  label: "My Watch",
+  model: "Watch",
+  manufacturer: "Apple",
+  evidence: "Reported hardware",
+  details: [{ label: "Serial number", value: "ABC" }],
+};
 const data = {
-  items: [
-    {
-      id: "watch",
-      activityId: "activity",
-      providerId: "apple_health",
-      sourceName: "Workout app",
-      role: "recorder" as const,
-      label: "My Watch",
-      model: "Watch",
-      manufacturer: "Apple",
-      evidence: "Reported hardware",
-      details: [{ label: "Serial number", value: "ABC" }],
-    },
-  ],
+  items: [watch],
   power: [],
 };
 describe("ActivityHardwarePanel", () => {
@@ -31,7 +30,7 @@ describe("ActivityHardwarePanel", () => {
       />,
     );
     expect(screen.getByText(/Reported source/)).toBeTruthy();
-    expect(screen.getByText("Source details")).toBeTruthy();
+    expect(screen.getByText("Details")).toBeTruthy();
     view.rerender(
       <ActivityHardwarePanel
         data={{
@@ -61,12 +60,41 @@ describe("ActivityHardwarePanel", () => {
   it("shows concise hardware and discloses identifiers accessibly", () => {
     render(<ActivityHardwarePanel data={data} />);
     expect(screen.getByText("My Watch")).toBeTruthy();
-    expect(screen.getByText(/Workout app/)).toBeTruthy();
-    const disclosure = screen.getByText("Device details");
-    expect(disclosure.closest("details")?.open).toBe(false);
+    const disclosure = screen.getByRole("button", { name: "Device and sensor details" });
+    expect(disclosure.getAttribute("aria-expanded")).toBe("false");
+    expect(screen.queryByText("ABC")).toBeNull();
     fireEvent.click(disclosure);
-    expect(disclosure.closest("details")?.open).toBe(true);
+    expect(disclosure.getAttribute("aria-expanded")).toBe("true");
     expect(screen.getByText("ABC")).toBeTruthy();
+    expect(screen.getByText("Workout app")).toBeTruthy();
+    fireEvent.click(disclosure);
+    expect(disclosure.getAttribute("aria-expanded")).toBe("false");
+    expect(screen.queryByText("ABC")).toBeNull();
+  });
+  it("uses one disclosure for every device and keeps matching source names concise", () => {
+    render(
+      <ActivityHardwarePanel
+        data={{
+          items: [
+            { ...watch, sourceName: "My Watch" },
+            {
+              ...watch,
+              id: "strap",
+              label: "Heart rate strap",
+              sourceName: "Apple Health",
+              details: [{ label: "Firmware", value: "2.0" }],
+            },
+          ],
+          power: [],
+        }}
+      />,
+    );
+    expect(screen.getAllByRole("button")).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: "Device and sensor details" }));
+    expect(screen.getAllByText("My Watch")).toHaveLength(1);
+    expect(screen.getByText("ABC")).toBeTruthy();
+    expect(screen.getByText("2.0")).toBeTruthy();
+    expect(screen.getAllByText("Recording source · Apple Health")).toHaveLength(2);
   });
   it("retains cached hardware while displaying a refetch error", () => {
     render(

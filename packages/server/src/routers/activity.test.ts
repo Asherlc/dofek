@@ -1850,6 +1850,7 @@ describe("mapHrZones", () => {
 
 vi.mock("dofek/activity-images/storage", () => ({
   createActivityImageUrl: vi.fn(async () => "https://private.test/signed"),
+  readActivityImageObject: vi.fn(async () => new Uint8Array()),
 }));
 vi.mock("../repositories/activity-images-repository.ts", async (original) => ({
   ...(await original<typeof import("../repositories/activity-images-repository.ts")>()),

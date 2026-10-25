@@ -54,6 +54,21 @@ export async function createActivityImageUrl(objectKey: string): Promise<string>
     client.destroy();
   }
 }
+export async function readActivityImageObject(objectKey: string): Promise<Uint8Array> {
+  const client = createR2Client();
+  try {
+    const result = await client.send(
+      new GetObjectCommand({
+        Bucket: requiredR2EnvironmentVariable("ACTIVITY_MEDIA_R2_BUCKET"),
+        Key: objectKey,
+      }),
+    );
+    if (!result.Body) throw new Error("Activity image object has no body");
+    return await result.Body.transformToByteArray();
+  } finally {
+    client.destroy();
+  }
+}
 export async function deleteActivityImageObject(objectKey: string): Promise<void> {
   const client = createR2Client();
   try {

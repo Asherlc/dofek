@@ -7,7 +7,11 @@ import type { StartedTestContainer } from "testcontainers";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createSeaweedFsS3Container } from "../account-erasure/test-helpers.ts";
 import { inspectImageBytes } from "./download.ts";
-import { eraseActivityImageObjects, storeActivityImage } from "./storage.ts";
+import {
+  eraseActivityImageObjects,
+  readActivityImageObject,
+  storeActivityImage,
+} from "./storage.ts";
 
 describe("private activity originals against S3 storage", () => {
   let container: StartedTestContainer;
@@ -60,6 +64,7 @@ describe("private activity originals against S3 storage", () => {
       new GetObjectCommand({ Bucket: bucket, Key: first.objectKey }),
     );
     expect(Buffer.from((await stored.Body?.transformToByteArray()) ?? [])).toEqual(bytes);
+    expect(Buffer.from(await readActivityImageObject(first.objectKey))).toEqual(bytes);
     await eraseActivityImageObjects(a);
     await expect(
       client.send(new GetObjectCommand({ Bucket: bucket, Key: first.objectKey })),

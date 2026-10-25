@@ -7,7 +7,11 @@ vi.mock("../r2-storage.ts", () => ({
   requiredR2EnvironmentVariable: () => "private-media",
 }));
 
-import { activityImageObjectKey, eraseActivityImageObjects } from "./storage.ts";
+import {
+  activityImageObjectKey,
+  eraseActivityImageObjects,
+  readActivityImageObject,
+} from "./storage.ts";
 
 describe("activity image storage", () => {
   const a = "00000000-0000-4000-8000-000000000001",
@@ -17,6 +21,37 @@ describe("activity image storage", () => {
     expect(activityImageObjectKey(a, hash)).toBe(activityImageObjectKey(a, hash));
     expect(activityImageObjectKey(a, hash)).not.toBe(activityImageObjectKey(b, hash));
     expect(() => activityImageObjectKey("../escape", hash)).toThrow();
+  });
+  it("reads the selected original bytes and releases the storage client", async () => {
+    const bytes = new Uint8Array([10, 20, 30]);
+    send.mockReset().mockResolvedValue({ Body: { transformToByteArray: async () => bytes } });
+    destroy.mockClear();
+    expect(await readActivityImageObject("images/owner/original")).toEqual(bytes);
+    expect(send).toHaveBeenCalledWith(
+      expect.objectContaining({
+        input: {
+          Bucket: "private-media",
+          Key: "images/owner/original",
+        },
+      }),
+    );
+    expect(destroy).toHaveBeenCalledOnce();
+  });
+  it("fails explicitly when an original has no body", async () => {
+    send.mockReset().mockResolvedValue({});
+    destroy.mockClear();
+    await expect(readActivityImageObject("images/owner/original")).rejects.toThrow(
+      "Activity image object has no body",
+    );
+    expect(destroy).toHaveBeenCalledOnce();
+  });
+  it("propagates original read failures and releases the storage client", async () => {
+    send.mockReset().mockRejectedValue(new Error("R2 unavailable"));
+    destroy.mockClear();
+    await expect(readActivityImageObject("images/owner/original")).rejects.toThrow(
+      "R2 unavailable",
+    );
+    expect(destroy).toHaveBeenCalledOnce();
   });
   it("paginates erasure and verifies the prefix is empty", async () => {
     send.mockReset();

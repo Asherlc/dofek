@@ -1,6 +1,8 @@
 import { TRPCError } from "@trpc/server";
+import { consolidateActivityImageCopies } from "dofek/activity-images/gallery";
 import type { Database } from "dofek/db";
 import { executeWithSchema } from "dofek/db/execute-with-schema";
+import { captureException } from "dofek/lib/error-reporting";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 
@@ -77,18 +79,29 @@ export async function getOwnedActivityImages(
     members(id: string): Promise<string[] | null>;
     read(ids: string[]): Promise<ImageReadResult>;
     sign(key: string): Promise<string>;
+    readImage(key: string): Promise<Uint8Array>;
   },
 ) {
   const members = await deps.members(id);
   if (!members?.length) throw new TRPCError({ code: "NOT_FOUND", message: "Activity not found" });
   const result = await deps.read(members);
-  return {
-    ...result,
-    images: await Promise.all(
-      result.images.map(async ({ objectKey, ...image }) => ({
-        ...image,
-        url: await deps.sign(objectKey),
-      })),
-    ),
-  };
+  try {
+    const images = await consolidateActivityImageCopies(result.images, deps.readImage);
+    return {
+      ...result,
+      images: await Promise.all(
+        images.map(async ({ objectKey, ...image }) => ({
+          ...image,
+          url: await deps.sign(objectKey),
+        })),
+      ),
+    };
+  } catch (error) {
+    captureException(error, { tags: { context: "activity-photos" } });
+    throw new TRPCError({
+      code: "INTERNAL_SERVER_ERROR",
+      message: "Stored activity photos could not be loaded. Refresh photos to retry.",
+      cause: error,
+    });
+  }
 }
