@@ -88,28 +88,15 @@ describe("ActivityCard", () => {
     expect(screen.getByLabelText("Distance processing: Distance is still processing")).toBeTruthy();
   });
 
-  it("shows specific icons for common activity types", () => {
-    const { rerender } = render(<ActivityCard {...baseProps} activityType="running" />);
-    expect(screen.getByText("\u{1F3C3}")).toBeTruthy();
-
-    rerender(<ActivityCard {...baseProps} activityType="cycling" />);
-    expect(screen.getByText("\u{1F6B4}")).toBeTruthy();
-
-    rerender(<ActivityCard {...baseProps} activityType="hiit" />);
-    expect(screen.getByText("\u{1F4A5}")).toBeTruthy();
-
-    rerender(<ActivityCard {...baseProps} activityType="rowing" />);
-    expect(screen.getByText("\u{1F6A3}")).toBeTruthy();
-  });
-
-  it("shows default icon for unknown activity types", () => {
-    render(<ActivityCard {...baseProps} activityType="archery" />);
-    expect(screen.getByText("\u{26A1}")).toBeTruthy();
-  });
-
-  it("shows water icon for paddle sports", () => {
-    render(<ActivityCard {...baseProps} activityType="paddleboarding" />);
-    expect(screen.getByText("\u{1F3C4}")).toBeTruthy();
+  it.each([
+    ["running", "Running"],
+    ["cycling", "Cycling"],
+    ["hangboard", "Hangboarding"],
+    ["archery", "Archery"],
+    ["paddleboarding", "Paddleboarding"],
+  ])("renders the shared activity icon for %s", (activityType, label) => {
+    render(<ActivityCard {...baseProps} activityType={activityType} />);
+    expect(screen.getByLabelText(`${label} activity`).querySelector("SvgXml")).toBeTruthy();
   });
 
   it("parses postgres-style space-separated timestamps", () => {

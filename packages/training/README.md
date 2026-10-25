@@ -90,9 +90,15 @@ The renderer can show only gaps retained in the API's downsampled observations.
 
 ### Activity icons
 
-The [activity icon metadata](src/activity-icons.ts) includes a shared SVG for
-hangboarding, rendered by web and mobile ActivityTypeIcon components. Inline
-emoji consumers use a hand fallback rather than the generic activity symbol.
+The [activity icon metadata](src/activity-icons.ts) owns Dofek's original rounded
+outline SVG family for all 16 existing categories, including a neutral activity
+glyph for unknown types. Category resolution remains shared across web and
+mobile. Each glyph uses a 32-unit view box, rounded strokes, and `currentColor`
+so renderers can supply a theme-appropriate foreground; see the
+[SVG painting specification](https://www.w3.org/TR/SVG2/painting.html).
+Web uses the shared SVG as a [CSS mask](https://www.w3.org/TR/css-masking-1/),
+and mobile renders the same source through
+[react-native-svg's SvgXml](https://github.com/software-mansion/react-native-svg/blob/main/USAGE.md#use-with-xml-strings).
 
 ### Climbing grades and attempts
 

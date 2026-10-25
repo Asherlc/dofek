@@ -15,13 +15,13 @@ import {
   formatProviderAbsentTombstoneSummary,
   formatProviderPartialAbsenceSummary,
   type ProviderAbsentSource,
-  providerSourceLabel,
 } from "@dofek/providers/providers";
 import { isIndoorCyclingModality } from "@dofek/training/endurance-types";
 import { formatActivityTypeLabel } from "@dofek/training/training";
+import type { ReactNode } from "react";
 import { type ActivityMapLocation, ActivityMapTile } from "./ActivityMapTile.tsx";
+import { ActivitySourceDisclosure } from "./ActivitySourceDisclosure.tsx";
 import { ActivityTypeIcon } from "./ActivityTypeIcon.tsx";
-import { ProviderLogo } from "./ProviderLogo.tsx";
 
 export interface ActivityCardData {
   id: string;
@@ -59,6 +59,8 @@ interface ActivityCardContentProps {
   units: UnitConverter;
   selectMode: boolean;
   selected: boolean;
+  headingAction?: ReactNode;
+  onToggleSelected?: () => void;
 }
 
 export function ActivityCardContent({
@@ -66,6 +68,8 @@ export function ActivityCardContent({
   units,
   selectMode,
   selected,
+  headingAction,
+  onToggleSelected,
 }: ActivityCardContentProps) {
   const isHidden = activity.isProviderAbsent === true;
   const tombstoneSummary =
@@ -98,31 +102,23 @@ export function ActivityCardContent({
               type="checkbox"
               aria-label={`Select ${activity.name ?? activityLabel}`}
               checked={selected}
-              readOnly
-              className="h-4 w-4 cursor-pointer accent-accent"
+              readOnly={!onToggleSelected}
+              onChange={onToggleSelected}
+              className="relative z-20 h-4 w-4 cursor-pointer accent-accent"
             />
           ) : null}
-          {activity.source.origin.status === "resolved" ? (
-            <span
-              role="img"
-              aria-label={`Primary recording provider: ${providerSourceLabel(activity.source.origin.providerId, activity.source.origin.sourceName)}`}
-              className="flex h-12 w-16 shrink-0 items-center justify-center"
-            >
-              <ProviderLogo
-                provider={activity.source.origin.providerId}
-                sourceName={activity.source.origin.sourceName}
-                size={32}
-              />
-            </span>
-          ) : (
-            <ActivityTypeIcon activityType={activity.activityType} variant="plain" />
-          )}
+          <ActivityTypeIcon activityType={activity.activityType} variant="plain" />
           <div className="min-w-0 flex-1">
-            <h4 className="truncate text-base font-semibold">{activity.name ?? activityLabel}</h4>
-            <p className="mt-0.5 text-xs text-muted">
-              {localStartTime === "--" ? "Local time unavailable" : localStartTime} ·{" "}
-              {formatDurationMinutes(activity.durationMin)}
-            </p>
+            <h4 className="truncate text-base font-semibold">
+              {headingAction ?? activity.name ?? activityLabel}
+            </h4>
+            <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-muted">
+              <span>
+                {localStartTime === "--" ? "Local time unavailable" : localStartTime} ·{" "}
+                {formatDurationMinutes(activity.durationMin)}
+              </span>
+              <ActivitySourceDisclosure origin={activity.source.origin} />
+            </div>
           </div>
         </div>
         {isHidden ? (

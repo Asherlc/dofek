@@ -1,34 +1,31 @@
 import { getActivityIconInfo } from "@dofek/training/activity-icons";
 import { formatActivityTypeLabel } from "@dofek/training/training";
-import { StyleSheet, Text, View } from "react-native";
+import { type ColorValue, StyleSheet, View } from "react-native";
 import { SvgXml } from "react-native-svg";
-import { radius } from "../theme";
+import { colors, radius } from "../theme";
 
 interface ActivityTypeIconProps {
   activityType: string;
   size?: number;
+  color?: ColorValue;
 }
 
-export function ActivityTypeIcon({ activityType, size = 96 }: ActivityTypeIconProps) {
-  const { emoji, svg, gradientFrom } = getActivityIconInfo(activityType);
+export function ActivityTypeIcon({
+  activityType,
+  size = 96,
+  color = colors.text,
+}: ActivityTypeIconProps) {
+  const { svg } = getActivityIconInfo(activityType);
   const label = formatActivityTypeLabel(activityType);
-  const fontSize = Math.round(size * 0.42);
 
   return (
     <View
       testID="activity-type-icon"
       accessibilityLabel={`${label} activity`}
       accessible={true}
-      style={[
-        styles.container,
-        { width: size, height: size, borderRadius: radius.md, backgroundColor: gradientFrom },
-      ]}
+      style={[styles.container, { width: size, height: size, borderRadius: radius.md }]}
     >
-      {svg ? (
-        <SvgXml xml={svg} width={size * 0.75} height={size * 0.75} />
-      ) : (
-        <Text style={[styles.emoji, { fontSize }]}>{emoji}</Text>
-      )}
+      <SvgXml xml={svg} width={size * 0.75} height={size * 0.75} color={color} accessible={false} />
     </View>
   );
 }
@@ -38,8 +35,5 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     overflow: "hidden",
-  },
-  emoji: {
-    lineHeight: undefined,
   },
 });
