@@ -427,6 +427,8 @@ const authorizedProvider = {
   authorized: true,
   importOnly: false,
   lastSyncedAt: "2026-03-19T12:00:00Z",
+  recentLogs: [],
+  lastSuccessfulSyncAt: null,
   needsReauth: false,
 };
 
@@ -437,6 +439,8 @@ const unauthorizedProvider = {
   authorized: false,
   importOnly: false,
   lastSyncedAt: null,
+  recentLogs: [],
+  lastSuccessfulSyncAt: null,
   needsReauth: false,
 };
 
@@ -452,6 +456,8 @@ const tokenProvider = {
   authorized: false,
   importOnly: false,
   lastSyncedAt: null,
+  recentLogs: [],
+  lastSuccessfulSyncAt: null,
   needsReauth: false,
 };
 
@@ -462,6 +468,8 @@ const importOnlyProvider = {
   authorized: true,
   importOnly: true,
   lastSyncedAt: null,
+  recentLogs: [],
+  lastSuccessfulSyncAt: null,
   needsReauth: false,
 };
 
@@ -473,6 +481,8 @@ const pushOnlyProvider = {
   importOnly: false,
   pushOnly: true,
   lastSyncedAt: null,
+  recentLogs: [],
+  lastSuccessfulSyncAt: null,
   needsReauth: false,
 };
 
@@ -821,13 +831,12 @@ describe("ProviderDetailScreen", () => {
             {
               key: "activity",
               label: "Activities",
-              rawRows: 12,
-              latestRawAt: "2026-06-29T12:00:00Z",
-              latestReadModelAt: null,
-              cdcLagSeconds: 90000,
-              readModelLagSeconds: null,
+              currentStage: "cdc",
+              progressPercentage: null,
+              lastAdvancedAt: "2026-06-29T12:00:00Z",
+              lastReadyAt: null,
+              lastFailedAt: null,
               status: "active",
-              message: "Activity data is available, but ClickHouse mirrors are not current.",
             },
           ],
         },
@@ -1020,6 +1029,34 @@ describe("ProviderDetailScreen", () => {
       });
     });
 
+    it.each([null, "2026-10-20T10:00:00Z"])(
+      "uses successful receipt evidence for push providers: %s",
+      async (lastSuccessfulSyncAt) => {
+        vi.setSystemTime(new Date("2026-10-24T10:00:00Z"));
+        mockUseLocalSearchParams.mockReturnValue({ id: "garmin" });
+        mockProvidersQuery.mockReturnValue({
+          data: [
+            {
+              ...unauthorizedProvider,
+              id: "garmin",
+              name: "Garmin",
+              authorized: true,
+              authType: "oauth",
+              pushOnly: true,
+              lastSyncedAt: "2026-10-24T09:00:00Z",
+              lastSuccessfulSyncAt,
+            },
+          ],
+          isLoading: false,
+        });
+        const { default: ProviderDetailScreen } = await import("../../app/providers/[id]");
+        render(<ProviderDetailScreen />);
+        if (lastSuccessfulSyncAt)
+          expect(screen.getByText("Last received: 2026-10-20T10:00:00Z ago")).toBeTruthy();
+        else expect(screen.queryByText(/^Last received:/)).toBeNull();
+      },
+    );
+
     it.each([false, true])(
       "opens Garmin OAuth for a push-only source, authorized=%s",
       async (authorized) => {
@@ -1034,6 +1071,8 @@ describe("ProviderDetailScreen", () => {
               authType: "oauth",
               pushOnly: true,
               lastSyncedAt: "2026-10-20T10:00:00Z",
+              recentLogs: [],
+              lastSuccessfulSyncAt: "2026-10-20T10:00:00Z",
             },
           ],
           isLoading: false,
@@ -1596,6 +1635,8 @@ describe("ProviderDetailScreen", () => {
       authorized: true,
       importOnly: false,
       lastSyncedAt: "2026-03-19T12:00:00Z",
+      recentLogs: [],
+      lastSuccessfulSyncAt: null,
       needsReauth: false,
     };
 

@@ -1,5 +1,175 @@
 import { describe, expect, it } from "vitest";
-import { syncCardSummary } from "./sync-card-summary.ts";
+import { providerSyncStatusPresentation, syncCardSummary } from "./sync-card-summary.ts";
+
+describe("providerSyncStatusPresentation", () => {
+  const old = "2026-10-23T10:00:00.000Z";
+  const recent = "2026-10-24T10:00:00.000Z";
+  const history = { lastSuccessfulSyncAt: null, recentLogs: [] };
+  const processing = { status: "ready" as const, datasets: [], operations: [] };
+
+  it("keeps missing recorded outcomes neutral", () => {
+    expect(providerSyncStatusPresentation("Garmin", history, processing)).toMatchObject({
+      heading: "No sync outcome recorded",
+      tone: "neutral",
+    });
+  });
+
+  it.each([
+    ["error", "danger", "Latest Garmin sync failed"],
+    ["degraded", "warning", "Garmin sync completed with issues"],
+    ["success", "success", "Garmin sync complete"],
+    ["unknown", "neutral", "Sync outcome unavailable"],
+  ])(
+    "presents the latest %s log without inferring success from record counts",
+    (status, tone, heading) => {
+      expect(
+        providerSyncStatusPresentation(
+          "Garmin",
+          {
+            lastSuccessfulSyncAt: old,
+            recentLogs: [
+              { status: "success", syncedAt: old },
+              { status, syncedAt: recent },
+            ],
+          },
+          processing,
+        ),
+      ).toMatchObject({ tone, heading, occurredAt: recent });
+    },
+  );
+
+  it("recognizes recorded success outside the recent log window", () => {
+    expect(
+      providerSyncStatusPresentation(
+        "Garmin",
+        { ...history, lastSuccessfulSyncAt: recent },
+        processing,
+      ),
+    ).toMatchObject({ tone: "success" });
+  });
+
+  it.each(["active", "failed", "ready"] as const)("preserves newer %s processing", (status) => {
+    expect(
+      providerSyncStatusPresentation(
+        "Garmin",
+        {
+          ...history,
+          recentLogs: [{ status: "error", syncedAt: old }],
+        },
+        {
+          status,
+          datasets: [],
+          operations: [{ status, dismissed: false, createdAt: recent, timeline: [] }],
+        },
+      ),
+    ).toBeNull();
+  });
+
+  it("keeps unfinished processing after ingestion records a successful sync", () => {
+    expect(
+      providerSyncStatusPresentation(
+        "Garmin",
+        { ...history, recentLogs: [{ status: "success", syncedAt: recent }] },
+        {
+          status: "active",
+          datasets: [
+            { status: "active", lastReadyAt: null, lastAdvancedAt: old, lastFailedAt: null },
+          ],
+          operations: [],
+        },
+      ),
+    ).toBeNull();
+  });
+
+  it.each(["success", "error"])(
+    "preserves a newer active dataset beside a failed dataset, latest sync=%s",
+    (status) => {
+      expect(
+        providerSyncStatusPresentation(
+          "Garmin",
+          { ...history, recentLogs: [{ status, syncedAt: recent }] },
+          {
+            status: "failed",
+            datasets: [
+              { status: "failed", lastReadyAt: null, lastAdvancedAt: old, lastFailedAt: old },
+              {
+                status: "active",
+                lastReadyAt: null,
+                lastAdvancedAt: "2026-10-24T11:00:00.000Z",
+                lastFailedAt: null,
+              },
+            ],
+            operations: [],
+          },
+        ),
+      ).toBeNull();
+    },
+  );
+
+  it.each(["failed", "ready"] as const)(
+    "ignores an old active operation superseded by the current %s dataset",
+    (status) => {
+      expect(
+        providerSyncStatusPresentation(
+          "Garmin",
+          { ...history, recentLogs: [{ status: "success", syncedAt: recent }] },
+          {
+            status,
+            datasets: [
+              {
+                status,
+                lastAdvancedAt: "2026-10-24T09:00:00.000Z",
+                lastReadyAt: status === "ready" ? "2026-10-24T09:00:00.000Z" : null,
+                lastFailedAt: status === "failed" ? "2026-10-24T09:00:00.000Z" : null,
+              },
+            ],
+            operations: [{ status: "active", dismissed: false, createdAt: old, timeline: [] }],
+          },
+        ),
+      ).toMatchObject({ tone: "success", heading: "Garmin sync complete" });
+    },
+  );
+
+  it("prefers failure at the same time as ready processing", () => {
+    expect(
+      providerSyncStatusPresentation(
+        "Garmin",
+        {
+          ...history,
+          recentLogs: [
+            { status: "success", syncedAt: recent },
+            { status: "error", syncedAt: recent },
+          ],
+        },
+        {
+          ...processing,
+          datasets: [
+            { status: "ready", lastReadyAt: recent, lastAdvancedAt: recent, lastFailedAt: null },
+          ],
+        },
+      ),
+    ).toMatchObject({ tone: "danger" });
+  });
+
+  it("replaces stale failed processing with a newer successful sync", () => {
+    expect(
+      providerSyncStatusPresentation(
+        "Garmin",
+        {
+          ...history,
+          recentLogs: [{ status: "success", syncedAt: recent }],
+        },
+        {
+          status: "failed",
+          datasets: [
+            { status: "failed", lastReadyAt: null, lastAdvancedAt: old, lastFailedAt: old },
+          ],
+          operations: [],
+        },
+      ),
+    ).toMatchObject({ tone: "success" });
+  });
+});
 
 describe("syncCardSummary", () => {
   const successfulAt = "2026-05-12T10:00:00.000Z";

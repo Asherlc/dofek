@@ -50,6 +50,13 @@ authorization as not required.
 Processing-status presentation helpers, including dataset-scoped failure messages, live in
 [`processing-status.ts`](src/processing-status.ts).
 
+Provider detail summaries use
+[`providerSyncStatusPresentation`](src/sync-card-summary.ts) to compare recorded
+sync outcomes with processing evidence. Missing outcome history receives a
+neutral presentation; newer processing retains its progress and details.
+The [provider API](../server/src/routers/sync.ts) supplies recent outcomes and
+successful-sync timestamps separately from connection and authorization state.
+
 ### Disconnect and Data Deletion
 
 Use [`providerDangerZoneCopy`](src/provider-disconnect.ts) for the shared web/mobile impact
