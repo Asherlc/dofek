@@ -147,6 +147,52 @@ describe("mobile query persistence", () => {
     await refetch;
   });
 
+  it("discards v10 activity details without source trees before provider restoration completes", async () => {
+    const AsyncStorage = (await import("@react-native-async-storage/async-storage")).default;
+    const userId = "detail-owner";
+    const queryKey = [["activity", "byId"], { input: { id: "activity-1" }, type: "query" }];
+    const seedClient = createQueryClient();
+    seedClient.setQueryData(queryKey, {
+      id: "activity-1",
+      name: "Morning Ride",
+      providerId: "strava",
+      sourceProviders: ["strava"],
+      sourceLinks: [
+        {
+          providerId: "strava",
+          externalId: "123",
+          subsource: null,
+          label: "Strava",
+          url: "https://www.strava.com/activities/123",
+          providerAbsentAt: null,
+        },
+      ],
+      sourceDecision: null,
+    });
+    await AsyncStorage.setItem(
+      `dofek-query-cache:${userId}`,
+      JSON.stringify({
+        timestamp: Date.now(),
+        buster: `${userId}:v10`,
+        clientState: dehydrate(seedClient),
+      }),
+    );
+
+    function RestorationStatus() {
+      return <span>{useIsRestoring() ? "restoring" : "restored"}</span>;
+    }
+    const restoredClient = createQueryClient();
+    render(
+      <MobileQueryPersistenceProvider queryClient={restoredClient} userId={userId}>
+        <RestorationStatus />
+      </MobileQueryPersistenceProvider>,
+    );
+
+    expect(await screen.findByText("restored")).toBeTruthy();
+    expect(restoredClient.getQueryData(queryKey)).toBeUndefined();
+    await expect(AsyncStorage.getItem(`dofek-query-cache:${userId}`)).resolves.toBeNull();
+  });
+
   it("discards v9 calendar activities without source trees before provider restoration completes", async () => {
     const AsyncStorage = (await import("@react-native-async-storage/async-storage")).default;
     const queryKey = [["calendar", "weekList"], { input: { weeks: 4 }, type: "query" }];

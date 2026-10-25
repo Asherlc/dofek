@@ -59,7 +59,7 @@ describe("calendarRouter", () => {
   it("versions the activity state cache contract", () => {
     expect(cachedQueryOptions).toHaveBeenCalledWith({
       maxAge: 600_000,
-      keyVersion: "activity-calendar-source-tree-v6",
+      keyVersion: "activity-calendar-source-tree-v7",
     });
     expect(cachedQueryOptions).toHaveBeenCalledWith({
       maxAge: 600_000,

@@ -1,3 +1,4 @@
+import { formatDateTime } from "@dofek/format/format";
 import type { ActivityOrigin, ActivityOriginEvidence } from "@dofek/providers/activity-origin";
 import { activitySourceDetails } from "@dofek/providers/activity-source-details";
 import type {
@@ -66,6 +67,9 @@ export function buildActivitySourceTree(
       ? origin.memberActivityId
       : null;
   function project(id: string, source: SourceLink): ActivitySourceTreeNode {
+    const removal = source.providerAbsentAt
+      ? ` · Removed from provider ${formatDateTime(source.providerAbsentAt)}`
+      : "";
     const sourceName =
       source.subsource ??
       (origin.status === "resolved" && id === primaryId ? origin.sourceName : null);
@@ -86,8 +90,8 @@ export function buildActivitySourceTree(
         source.providerId === "garmin" && sourceName?.trim()
           ? sourceName.trim()
           : providerLabel(source.providerId),
-      description: `${relationship}${source.providerAbsentAt ? " · Removed from provider" : ""}`,
-      url: source.url,
+      description: `${relationship}${removal}`,
+      url: source.providerAbsentAt ? null : source.url,
       children: [...sources]
         .filter(([child]) => parentById.get(child) === id)
         .map(([child, link]) => project(child, link)),
@@ -100,7 +104,7 @@ export function buildActivitySourceTree(
       sourceName,
     });
     if (!attribution?.importedVia) return node;
-    node.description = `Recording attribution reported by ${providerLabel(source.providerId)}${source.providerAbsentAt ? " · Removed from provider" : ""}`;
+    node.description = `Recording attribution reported by ${providerLabel(source.providerId)}${removal}`;
     return {
       id: `${id}:recording-attribution`,
       providerId: attribution.recordingApp.provider,

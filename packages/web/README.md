@@ -144,6 +144,12 @@ unconnected records appear as other matching sources. Dofek remains implicit.
 See [ActivityCardContent](src/components/ActivityCardContent.tsx) and
 [ActivitySourceDisclosure](src/components/ActivitySourceDisclosure.tsx).
 
+The [activity detail header](src/pages/ActivityDetailPage.tsx) uses the same
+disclosure in place of flat source links. Its required `sourceTree` comes from
+the [detail model](../server/src/models/activity.ts); removed records retain
+their removal information without an actionable source URL. Empty trees omit
+the source row, while unresolved trees with matching records remain expandable.
+
 Both clients render the [shared source-tree contract](../providers-meta/src/activity-source-tree.ts)
 from the [server projection](../server/src/models/activity-source-tree.ts).
 Retained origin evidence establishes links between source records; membership

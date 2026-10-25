@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { formatDateTime } from "@dofek/format/format";
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createClickHouseClientFromEnv } from "../../../../src/db/clickhouse.ts";
@@ -149,7 +150,8 @@ describe("Activities list source tree hydration", () => {
             id: absentId,
             providerId: "strava",
             label: "Strava",
-            description: "Recording attribution reported by Strava · Removed from provider",
+            description: `Recording attribution reported by Strava · Removed from provider ${formatDateTime("2026-10-03 12:00:00")}`,
+            url: null,
           },
         ],
       },

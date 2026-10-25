@@ -47,3 +47,9 @@ Test source projection and actual expansion behavior before implementation.
 Cover branching, repeated provider copies, incomplete history, source names from
 Strava and Apple Health, and independent activity navigation/selection. Verify
 the web and mobile stories at phone and desktop widths.
+
+## Activity detail pages
+
+The same visualization also belongs in each activity detail header on web and mobile. Replace the flat source-link row with the existing inline disclosure, retaining the surrounding activity identity, metrics, removal notices, photos, and hardware. The header shows one collapsed source root; expansion shows its branches and other matching sources without a second activity container.
+
+The [detail model](../../../packages/server/src/models/activity.ts) must return the same server-authored tree as the list, including single-source activities. Use retained origin evidence, preserve separate records, and keep empty trees hidden. Removed records remain visible with their removal information, but their unavailable source links are not actionable. Invalidate older detail responses in server and device caches before clients require the new tree. Capture collapsed and expanded production header stories on both platforms with branching sample data.

@@ -198,6 +198,7 @@ function makeActivityRow(overrides: Partial<ActivityRow>): ActivityRow {
     origin_candidate_member_ids: [],
     provider_id: "wahoo",
     source_providers: ["wahoo"],
+    origin_evidence: [],
     source_external_ids: null,
     avg_hr: null,
     max_hr: null,
@@ -478,6 +479,7 @@ describe("activityRouter", () => {
         subsource: null,
         source_providers: ["strava", "wahoo"],
         member_activity_ids: ["abc-123"],
+        origin_evidence: [],
         source_external_ids: [
           { providerId: "strava", externalId: "99999" },
           { providerId: "wahoo", externalId: "42" },
@@ -546,6 +548,7 @@ describe("activityRouter", () => {
         subsource: null,
         source_providers: null,
         member_activity_ids: ["abc-123"],
+        origin_evidence: [],
         source_external_ids: null,
         avg_hr: null,
         max_hr: null,
@@ -1707,6 +1710,7 @@ describe("Activity model (via router integration)", () => {
     origin_candidate_member_ids: [],
     provider_id: "wahoo",
     source_providers: ["wahoo", "strava"],
+    origin_evidence: [],
     source_external_ids: [
       { providerId: "strava", externalId: "99999" },
       { providerId: "wahoo", externalId: "42" },

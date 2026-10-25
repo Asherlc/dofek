@@ -125,6 +125,7 @@ export function climbingActivityFixture(overrides: Partial<ActivityRow> = {}): A
     local_time_source: "unknown",
     subsource: null,
     source_providers: ["strava"],
+    origin_evidence: [],
     source_external_ids: null,
     avg_hr: null,
     max_hr: null,

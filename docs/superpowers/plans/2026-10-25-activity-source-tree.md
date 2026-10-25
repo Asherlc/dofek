@@ -2,7 +2,7 @@
 
 This dated plan records the implementation steps, review checkpoints, and verification history. Checked steps describe completed work.
 
-**Goal:** Show truthful propagation trees inside a single expandable activity card on web and mobile.
+**Goal:** Show truthful propagation trees inside activity cards and activity detail headers on web and mobile.
 
 **Architecture:** Project existing source members and evidence edges into a server-authored source forest. Both clients render the same contract with the primary root in an inline disclosure row and remaining nodes inside the existing card.
 
@@ -83,3 +83,41 @@ This dated plan records the implementation steps, review checkpoints, and verifi
 - Future checklist improvement proposed: required API response changes should review both server and device-local cache contracts. Use minimal final-schema fixtures for database hydration and real RN-web for keyboard regressions.
 - PR integration retained newer activity photos, hardware, rounded logos, and the mobile query persistence opt-out. A failing regression exposed lost Garmin device thumbnails; the [tree contract](../../../packages/providers-meta/src/activity-source-tree.ts) now carries nullable logo source metadata, and both disclosures preserve exact model labels. The original four regression suites passed 83 tests after the fix; expanded integration verification passed 263 tests. An independent integration review found no further issues.
 - The final merged unit/mobile run passed 20,862 tests across 1,339 files, with 19 tests skipped. Both database hydration cases, full lint, all five typechecks, spelling, configured Knip, production web build, and bundle limits passed. Narrow browser checks preserved expanded Sources below activity photos on both platforms without horizontal overflow.
+
+## Detail-page extension
+
+### Task 5: Detail response and cache contract
+
+**Files:** Modify server `models/activity.ts`, `repositories/activity-repository.ts`, `repositories/activity-repository-schemas.ts`, `routers/activity.ts`, the source-tree model, calendar cache version, and their colocated tests. Extend `repositories/activity-repository.integration.test.ts` with a minimal PostgreSQL fixture. Modify mobile `lib/mobile-query-persistence.ts` and its test.
+
+**Interfaces:** Required `ActivityDetail.sourceTree: ActivitySourceTree`; required `ActivityRow.origin_evidence: ActivityOriginEvidence[]`. Active detail SQL selects `a.origin_evidence`; fully absent detail rows explicitly return an empty evidence array. Compute the tree with `buildActivitySourceTree(activityOriginFromColumns(row), sourceLinks, row.origin_evidence)`; do not depend on nullable `sourceDecision`. Set removed source-node URLs to null and retain removal information in the description. Detail cache suffix becomes `activity-origin-source-tree-v3`; calendar source-tree cache advances to v7. Mobile persistence advances from v10 to v11.
+
+- [x] Write failing model and real PostgreSQL tests for explicit branching evidence, single-source attribution, disconnected copies, and removed-source link suppression.
+- [x] Write a failing restoration regression with a persisted v10 `activity.byId` response missing `sourceTree`; verify it is discarded before rendering.
+- [x] Implement the required response, evidence selection/validation, canonical removal behavior, and cache invalidation without migrations or client-side inference.
+- [x] Run affected server/cache tests and real PostgreSQL cases; review the API and upgrade behavior before delivery.
+
+### Task 6: Web activity detail visualization
+
+**Files:** Modify `packages/web/src/pages/ActivityDetailPage.tsx`, its unit test, and its stories.
+
+**Interfaces:** Production `ActivityHeader` consumes required `activity.sourceTree` and renders the existing `ActivitySourceDisclosure` in place of its flat source helpers. Existing activity metrics and other detail content retain their current responsibilities.
+
+- [x] Write failing tests for collapsed/expanded branches in the real header, duplicate provider copies, empty/unresolved trees, and removed sources without links.
+- [x] Replace the flat source row with the shared disclosure; delete its unused local helpers and update required response fixtures.
+- [x] Add branching collapsed/expanded detail-header stories; run affected tests/types and review the production wiring.
+
+### Task 7: Mobile activity detail visualization and screenshots
+
+**Files:** Create production `packages/mobile/components/activity/ActivityDetailHeader.tsx` with colocated tests and stories. Modify `app/activity/[id].tsx`, its tests under `app-tests/`, and obsolete header styles in `components/activity/styles.ts`.
+
+**Interfaces:** `ActivityDetailHeader` accepts the existing activity identity/date/local-time/removal fields and required `sourceTree` as a typed subset of `ActivityDetail`. It renders the existing native disclosure. The route retains metrics, queries, photos, hardware, exports, and other detail logic.
+
+- [x] Write failing component and route-wiring tests for inline expansion, distinct branches, empty/unresolved trees, source actions, and retained activity-removal notices.
+- [x] Extract the existing production header and replace its flat source helpers; keep all helpers, fixtures, tests, and stories outside Expo Router's `app/` directory.
+- [x] Add collapsed/expanded production header stories with the same branching sample data as web; run affected tests/types and review parity.
+- [x] Capture actual web and mobile header stories in both states, verifying narrow layout and accessible actions.
+- [x] Run required local checks and review the connected change.
+- [ ] Publish the connected change and update the PR.
+
+Detail-page verification passed 21,015 unit/mobile tests, 347 focused server tests, 19 real PostgreSQL cases, two calendar hydration cases, 101 web detail tests, 82 mobile header/route/disclosure tests, and 27 persistence tests. Normal package/root typechecks, lint, spelling, web build/size limits, and the mobile Storybook build passed. A fresh parity review cleared the implementation after aligning the paired story captions with the server projection. New header screenshots show both disclosure states with the same source branches.

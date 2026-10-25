@@ -608,6 +608,12 @@ name. Separate copies from the same provider retain their own branches;
 unconnected records appear as other matching sources. Dofek remains implicit.
 See the [Activities screen](<app/(tabs)/activities.tsx>).
 
+The [activity detail header](components/activity/ActivityDetailHeader.tsx) uses
+the same disclosure inside the existing header, retaining its activity identity
+and removal notice. The [detail route](<app/activity/[id].tsx>) keeps the other
+detail content. Removed source records remain visible without actionable URLs;
+empty trees omit the source row and unresolved trees with records remain expandable.
+
 Both clients render the [shared source-tree contract](../providers-meta/src/activity-source-tree.ts)
 from the [server projection](../server/src/models/activity-source-tree.ts).
 Only retained origin evidence connects source records; metric priorities do not
@@ -615,7 +621,7 @@ establish ancestry. Recording-app/device metadata can identify an earlier source
 without claiming its record is available.
 
 The [persisted query contract](lib/mobile-query-persistence.ts) invalidates older
-calendar responses without source trees before restoring activity data, covered
+calendar and detail responses without source trees before restoring activity data, covered
 by the [upgrade regression](lib/mobile-query-persistence.test.tsx).
 
 The inline source button has its own 44-point touch target, independent of the

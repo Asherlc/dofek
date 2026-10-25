@@ -53,6 +53,14 @@ export const activityListColumns = sql`
 
 export const activityDetailRowSchema = z.object({
   ...activityOriginColumnsSchema.shape,
+  origin_evidence: z.array(
+    z.object({
+      upstreamMemberActivityId: z.string(),
+      downstreamMemberActivityId: z.string(),
+      field: z.string(),
+      value: z.string(),
+    }),
+  ),
   id: z.string(),
   displayed_date: dateStringSchema,
   canonical_type: z.string(),

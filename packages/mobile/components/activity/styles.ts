@@ -112,35 +112,6 @@ export const styles = StyleSheet.create({
     color: colors.textSecondary,
     marginTop: 4,
   },
-  sourceRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    alignItems: "center",
-    marginTop: 2,
-  },
-  source: {
-    fontSize: 12,
-    color: colors.textTertiary,
-  },
-  sourceLinkRow: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  sourceLinkPressable: {
-    paddingVertical: 2,
-    paddingHorizontal: 4,
-    borderRadius: 4,
-  },
-  sourceLink: {
-    fontSize: 12,
-    color: colors.accent,
-    textDecorationLine: "underline",
-  },
-  sourceRemoved: {
-    fontSize: 12,
-    color: colors.textTertiary,
-    textDecorationLine: "line-through",
-  },
   providerAbsentBanner: {
     marginTop: 8,
     borderRadius: 8,

@@ -6,8 +6,114 @@ import { climb, climbingAttempt, climbingLogEntry } from "../../../../src/db/sch
 import { TEST_USER_ID } from "../../../../src/db/schema/core.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { ensureProvider } from "../../../../src/db/tokens.ts";
+import { Activity } from "../models/activity.ts";
 import { makeMockSensorStore } from "../routers/test-helpers.ts";
 import { ActivityRepository } from "./activity-repository.ts";
+
+describe("ActivityRepository detail source-tree evidence", () => {
+  let context: TestContext;
+  const groupId = "91000000-0000-4000-8000-000000000001";
+  const recordingId = "91000000-0000-4000-8000-000000000002";
+  const stravaId = "91000000-0000-4000-8000-000000000003";
+  const stravaHealthId = "91000000-0000-4000-8000-000000000004";
+  const garminHealthId = "91000000-0000-4000-8000-000000000005";
+  const removedGroupId = "91000000-0000-4000-8000-000000000006";
+  const removedId = "91000000-0000-4000-8000-000000000007";
+
+  beforeAll(async () => {
+    context = await setupTestDatabase();
+    await context.db.execute(sql`INSERT INTO fitness.provider (id, name)
+      VALUES ('garmin', 'Garmin'), ('strava', 'Strava'), ('apple_health', 'Apple Health')
+      ON CONFLICT (id) DO NOTHING`);
+    await context.db.execute(sql`INSERT INTO fitness.activity
+      (id, group_id, user_id, provider_id, external_id, canonical_type, provider_type,
+        started_at, ended_at, source_name, raw, provider_absent_at)
+      VALUES
+      (${recordingId}, ${groupId}, ${TEST_USER_ID}, 'garmin', 'source-tree-recording', 'cycling', 'cycling',
+        '2026-10-01T10:00:00Z', '2026-10-01T11:00:00Z', 'Garmin Edge 530', '{}', NULL),
+      (${stravaId}, ${groupId}, ${TEST_USER_ID}, 'strava', 'source-tree-strava', 'cycling', 'cycling',
+        '2026-10-01T10:00:00Z', '2026-10-01T11:00:00Z', 'Garmin Edge 530', '{}', NULL),
+      (${stravaHealthId}, ${groupId}, ${TEST_USER_ID}, 'apple_health', 'source-tree-strava-health', 'cycling', 'cycling',
+        '2026-10-01T10:00:00Z', '2026-10-01T11:00:00Z', 'Strava', '{"sourceBundle":"com.strava.strava"}', NULL),
+      (${garminHealthId}, ${groupId}, ${TEST_USER_ID}, 'apple_health', 'source-tree-garmin-health', 'cycling', 'cycling',
+        '2026-10-01T10:00:00Z', '2026-10-01T11:00:00Z', 'Garmin Connect', '{"sourceBundle":"com.garmin.connect.mobile"}', NULL),
+      (${removedId}, ${removedGroupId}, ${TEST_USER_ID}, 'strava', 'source-tree-removed', 'cycling', 'cycling',
+        '2026-10-02T10:00:00Z', '2026-10-02T11:00:00Z', NULL, '{}', '2026-10-03T10:00:00Z')`);
+  });
+  afterAll(async () => {
+    await context?.cleanup();
+  });
+
+  it("hydrates explicit branching ancestry and exact member source metadata from PostgreSQL", async () => {
+    const row = await new ActivityRepository(context.db, TEST_USER_ID, "UTC").findById(groupId);
+    expect(row?.origin_evidence).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          upstreamMemberActivityId: recordingId,
+          downstreamMemberActivityId: stravaId,
+        }),
+        expect.objectContaining({
+          upstreamMemberActivityId: stravaId,
+          downstreamMemberActivityId: stravaHealthId,
+        }),
+        expect.objectContaining({
+          upstreamMemberActivityId: recordingId,
+          downstreamMemberActivityId: garminHealthId,
+        }),
+      ]),
+    );
+    if (!row) throw new Error("Expected source-tree detail row");
+    const detail = new Activity(row, (provider) => ({
+      name: provider,
+      activityUrl: (externalId) => `https://${provider}.example.test/activities/${externalId}`,
+    })).toDetail();
+    expect(detail.sourceTree).toMatchObject({
+      primary: {
+        id: recordingId,
+        providerId: "garmin",
+        sourceName: "Garmin Edge 530",
+        label: "Garmin Edge 530",
+        url: "https://garmin.example.test/activities/source-tree-recording",
+        children: [
+          { id: garminHealthId, providerId: "apple_health", sourceName: null, children: [] },
+          {
+            id: stravaId,
+            providerId: "strava",
+            url: "https://strava.example.test/activities/source-tree-strava",
+            children: [
+              { id: stravaHealthId, providerId: "apple_health", sourceName: null, children: [] },
+            ],
+          },
+        ],
+      },
+      otherSources: [],
+    });
+  });
+
+  it("returns explicit empty evidence for a fully removed source and suppresses its detail link", async () => {
+    const row = await new ActivityRepository(context.db, TEST_USER_ID, "UTC").findById(
+      removedGroupId,
+    );
+    expect(row?.origin_evidence).toEqual([]);
+    if (!row) throw new Error("Expected removed detail row");
+    const detail = new Activity(row, () => ({
+      name: "Strava",
+      activityUrl: () => "https://strava.example.test/removed",
+    })).toDetail();
+    expect(detail.sourceTree).toMatchObject({
+      primary: null,
+      otherSources: [
+        {
+          id: removedId,
+          providerId: "strava",
+          url: null,
+          description: expect.stringContaining("Removed from provider"),
+          children: [],
+        },
+      ],
+    });
+  });
+});
 
 describe("ActivityRepository climbing log unlinking", () => {
   let context: TestContext;

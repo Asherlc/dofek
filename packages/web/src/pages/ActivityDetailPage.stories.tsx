@@ -1,6 +1,8 @@
 import { UnitConverter } from "@dofek/format/units";
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { expect, within } from "storybook/test";
 import type { ActivityDetail } from "../../../server/src/models/activity.ts";
+import { detailSourceTree, removedDetailSourceTree } from "./ActivityDetailPage.fixtures.ts";
 import { ActivityHeader } from "./ActivityDetailPage.tsx";
 
 // ── ActivityHeader ──────────────────────────────────────────
@@ -22,19 +24,20 @@ const baseActivity: ActivityDetail = {
   name: "Morning Ride",
   notes: null,
   perceivedExertion: null,
-  providerId: "wahoo",
+  providerId: "garmin",
   subsource: null,
-  sourceProviders: ["wahoo", "apple_health"],
+  sourceProviders: ["garmin", "strava", "apple_health", "whoop"],
   sourceLinks: [
     {
-      providerId: "wahoo",
-      externalId: "42",
+      providerId: "garmin",
+      externalId: "123",
       subsource: null,
-      label: "Wahoo",
-      url: "https://systm.wahoofitness.com/history/activity-details/42",
+      label: "Garmin Connect",
+      url: "https://connect.garmin.com/modern/activity/123",
       providerAbsentAt: null,
     },
   ],
+  sourceTree: detailSourceTree,
   avgHr: 145,
   avgHrState: { status: "available" },
   maxHr: 175,
@@ -82,6 +85,62 @@ type HeaderStory = StoryObj<typeof headerMeta>;
 
 export const CyclingMetric: HeaderStory = {
   args: {},
+};
+
+export const BranchingCollapsed: HeaderStory = {
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(canvas.getByRole("button", { name: "Garmin Edge 530 Sources" })).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
+    await expect(canvas.queryByText("Strava")).toBeNull();
+  },
+};
+
+export const BranchingExpanded: HeaderStory = {
+  play: async ({ canvasElement, userEvent }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(canvas.getByRole("button", { name: "Garmin Edge 530 Sources" }));
+    await expect(canvas.getAllByText("Garmin Edge 530")).toHaveLength(1);
+    await expect(canvas.getAllByText("Apple Health")).toHaveLength(2);
+    await expect(canvas.getByText("Imported from Strava")).toBeVisible();
+    await expect(canvas.getByText("WHOOP")).toBeVisible();
+  },
+};
+
+export const EmptySources: HeaderStory = {
+  args: { activity: { ...baseActivity, sourceTree: { primary: null, otherSources: [] } } },
+  play: async ({ canvasElement }) => {
+    await expect(within(canvasElement).queryByRole("button", { name: /Sources/ })).toBeNull();
+  },
+};
+
+export const UnresolvedSources: HeaderStory = {
+  args: {
+    activity: {
+      ...baseActivity,
+      sourceTree: { primary: null, otherSources: detailSourceTree.otherSources },
+    },
+  },
+  play: async ({ canvasElement, userEvent }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(canvas.getByRole("button", { name: "Sources" }));
+    await expect(canvas.getByText("WHOOP")).toBeVisible();
+  },
+};
+
+export const RemovedSources: HeaderStory = {
+  args: { activity: { ...baseActivity, sourceTree: removedDetailSourceTree } },
+  play: async ({ canvasElement, userEvent }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(canvas.getByRole("button", { name: "Garmin Edge 530 Sources" }));
+    await expect(
+      canvas.getByText("Closest available recording · Removed from provider"),
+    ).toBeVisible();
+    await expect(canvas.queryByRole("link", { name: "Strava" })).toBeNull();
+    await expect(canvas.getByRole("link", { name: "WHOOP" })).toBeVisible();
+  },
 };
 
 export const CyclingImperial: HeaderStory = {
@@ -146,6 +205,7 @@ export const Minimal: HeaderStory = {
       elevationLossState: missingMetricState("Elevation loss"),
       sourceProviders: [],
       sourceLinks: [],
+      sourceTree: { primary: null, otherSources: [] },
     },
   },
 };

@@ -3891,6 +3891,7 @@ describe("createMcpRouter", () => {
         provider_id: "apple_health",
         raw_type: "strength",
         sample_count: 10,
+        origin_evidence: [],
         source_external_ids: [],
         source_providers: ["apple_health"],
         start_utc_offset_minutes: 0,
@@ -4003,6 +4004,7 @@ describe("createMcpRouter", () => {
       raw_type: "strength",
       resolved_from: requestedMemberId,
       sample_count: null,
+      origin_evidence: [],
       source_external_ids: [
         {
           providerId: "apple_health",

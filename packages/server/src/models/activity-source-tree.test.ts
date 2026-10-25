@@ -1,3 +1,4 @@
+import { formatDateTime } from "@dofek/format/format";
 import type { ActivityOrigin, ActivityOriginEvidence } from "@dofek/providers/activity-origin";
 import { activitySourceTreeSchema } from "@dofek/providers/activity-source-tree";
 import { describe, expect, it } from "vitest";
@@ -336,8 +337,28 @@ describe("buildActivitySourceTree", () => {
     );
     expect(tree.primary?.children[0]).toMatchObject({
       id: "b",
-      description: "Imported from Wahoo · Removed from provider",
-      url: "https://example.com/b",
+      description: `Imported from Wahoo · Removed from provider ${formatDateTime("2026-10-02T00:00:00Z")}`,
+      url: null,
+    });
+  });
+  it("suppresses links on removed recording-attribution copies while retaining their identity", () => {
+    const tree = buildActivitySourceTree(
+      { ...origin, providerId: "strava", sourceName: "Garmin Edge 530" },
+      [{ ...link("a", "strava", "Garmin Edge 530"), providerAbsentAt: "2026-10-02T00:00:00Z" }],
+      [],
+    );
+    expect(tree.primary).toMatchObject({
+      label: "Garmin Edge 530",
+      url: null,
+      children: [
+        {
+          id: "a",
+          providerId: "strava",
+          label: "Strava",
+          url: null,
+          description: `Recording attribution reported by Strava · Removed from provider ${formatDateTime("2026-10-02T00:00:00Z")}`,
+        },
+      ],
     });
   });
 });
