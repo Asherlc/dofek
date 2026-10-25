@@ -10,9 +10,10 @@ import {
 } from "@dofek/training/fixtures/activity-metric-sources";
 import type { Meta, StoryObj } from "@storybook/react-native";
 import { useState } from "react";
-import { Modal, Pressable, Text, View } from "react-native";
+import { Modal, Platform, Pressable, Text, View } from "react-native";
 import { colors } from "../../theme";
-import { AreaChart, CHART_COLORS, LineChart, MetricSourcePicker } from "./ActivityDetailCharts";
+import { AreaChart, CHART_COLORS, LineChart } from "./ActivityDetailCharts";
+import { ActivityMetricSourcePicker } from "./ActivityMetricSourcePicker";
 
 const meta = {
   title: "Activity/ActivityDetailCharts",
@@ -336,11 +337,67 @@ export const HeartRateSources = {
   render: function HeartRateSourcesStory() {
     const [selectedId, setSelectedId] = useState("whoop");
     return (
-      <MetricSourcePicker
+      <ActivityMetricSourcePicker
         label="Heart Rate"
+        serverUrl={Platform.OS === "web" ? "" : "https://dofek.fit"}
         sources={[
-          { id: "whoop", label: "WHOOP" },
-          { id: "garmin", label: "Garmin" },
+          {
+            id: "whoop",
+            label: "WHOOP",
+            presentation: {
+              displayName: "WHOOP",
+              providerId: "whoop",
+              sourceName: null,
+              attribution: null,
+            },
+          },
+          {
+            id: "garmin",
+            label: "Garmin",
+            presentation: {
+              displayName: "Garmin",
+              providerId: "garmin",
+              sourceName: null,
+              attribution: null,
+            },
+          },
+        ]}
+        selectedId={selectedId}
+        onChange={setSelectedId}
+      />
+    );
+  },
+};
+
+export const ElevationSources = {
+  render: function ElevationSourcesStory() {
+    const [selectedId, setSelectedId] = useState("watch");
+    return (
+      <ActivityMetricSourcePicker
+        label="Elevation"
+        serverUrl={Platform.OS === "web" ? "" : "https://dofek.fit"}
+        showLabel={false}
+        sources={[
+          {
+            id: "watch",
+            label: "Asher’s Apple Watch (via Apple Health)",
+            presentation: {
+              displayName: "Asher’s Apple Watch",
+              providerId: "apple_health",
+              sourceName: "Asher’s Apple Watch",
+              attribution: { kind: "apple_health", label: "via Apple Health" },
+            },
+          },
+          {
+            id: "garmin",
+            label: "Garmin",
+            presentation: {
+              displayName: "Garmin",
+              providerId: "garmin",
+              sourceName: null,
+              attribution: null,
+            },
+          },
         ]}
         selectedId={selectedId}
         onChange={setSelectedId}

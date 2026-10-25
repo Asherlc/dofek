@@ -642,11 +642,18 @@ using React Native's [Pressable](https://reactnative.dev/docs/pressable) and
 
 ## Activity metric sources
 
-Activity views offer independent source controls for heart rate, power, speed,
-cadence, and elevation. Each control preselects its existing priority winner
+Activity views offer independent [source controls](components/activity/ActivityMetricSourcePicker.tsx)
+for heart rate, power, speed, cadence, and elevation. Compact source names and
+attribution icons keep the controls concise; the chooser and accessible names
+retain the complete source wording. Each control preselects its existing priority winner
 without an Auto option. Choices distinguish providers and devices and apply
 only to the current view; saved priorities are unchanged. Heart-rate and power
 zones follow their respective selected sources.
+
+The [shared source presentation](../providers-meta/src/activity-metric-source.ts)
+supplies the compact name and attribution without client-side label parsing.
+The [cache hydration regression](lib/mobile-query-persistence.test.tsx) covers
+discarding persisted source lists from the preceding response contract.
 
 `activity.metricSources` lists available sources in the owned activity window,
 including standalone recordings and canonical member activities. `activity.stream`

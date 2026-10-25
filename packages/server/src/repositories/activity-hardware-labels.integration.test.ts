@@ -157,7 +157,16 @@ describe("activity hardware source labels in ClickHouse", () => {
     expect(result[0]).toMatchObject({
       defaultSourceId: sourceId,
       sources: [
-        { id: sourceId, label: "Heart Rate Monitor (Bluetooth) · Polar H10 updated" },
+        {
+          id: sourceId,
+          label: "Heart Rate Monitor (Bluetooth) · Polar H10 updated",
+          presentation: {
+            displayName: "Polar H10 updated",
+            providerId: "ble_heart_rate",
+            sourceName: "Polar H10 updated",
+            attribution: { kind: "bluetooth", label: "Bluetooth" },
+          },
+        },
         { id: "strava", label: "Strava" },
       ],
     });
@@ -242,8 +251,26 @@ describe("activity hardware source labels in ClickHouse", () => {
     const before = await getActivityMetricSources(store, scopedWindow);
     const after = await getActivityMetricSources(store, scopedWindow, hardware);
     expect(after[0]?.sources).toEqual([
-      { id: "fit-file", label: "FIT File · file created by Export platform" },
-      { id: "garmin", label: "Garmin · recorded by Edge 530" },
+      {
+        id: "fit-file",
+        label: "FIT File · file created by Export platform",
+        presentation: {
+          displayName: "FIT File · file created by Export platform",
+          providerId: "fit-file",
+          sourceName: null,
+          attribution: null,
+        },
+      },
+      {
+        id: "garmin",
+        label: "Garmin · recorded by Edge 530",
+        presentation: {
+          displayName: "Garmin · recorded by Edge 530",
+          providerId: "garmin",
+          sourceName: null,
+          attribution: null,
+        },
+      },
     ]);
     expect(
       after.map((metric) => [

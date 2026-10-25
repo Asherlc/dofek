@@ -147,6 +147,44 @@ describe("mobile query persistence", () => {
     await refetch;
   });
 
+  it("discards v11 metric sources without structured presentation before restoration completes", async () => {
+    const AsyncStorage = (await import("@react-native-async-storage/async-storage")).default;
+    const userId = "metric-source-owner";
+    const queryKey = [
+      ["activity", "metricSources"],
+      { input: { id: "activity-1" }, type: "query" },
+    ];
+    const seedClient = createQueryClient();
+    seedClient.setQueryData(queryKey, [
+      {
+        key: "heartRate",
+        label: "Heart Rate",
+        defaultSourceId: "whoop",
+        sources: [{ id: "whoop", label: "WHOOP" }],
+      },
+    ]);
+    await AsyncStorage.setItem(
+      `dofek-query-cache:${userId}`,
+      JSON.stringify({
+        timestamp: Date.now(),
+        buster: `${userId}:v11`,
+        clientState: dehydrate(seedClient),
+      }),
+    );
+    function RestorationStatus() {
+      return <span>{useIsRestoring() ? "restoring" : "restored"}</span>;
+    }
+    const restoredClient = createQueryClient();
+    render(
+      <MobileQueryPersistenceProvider queryClient={restoredClient} userId={userId}>
+        <RestorationStatus />
+      </MobileQueryPersistenceProvider>,
+    );
+    expect(await screen.findByText("restored")).toBeTruthy();
+    expect(restoredClient.getQueryData(queryKey)).toBeUndefined();
+    await expect(AsyncStorage.getItem(`dofek-query-cache:${userId}`)).resolves.toBeNull();
+  });
+
   it("discards v10 activity details without source trees before provider restoration completes", async () => {
     const AsyncStorage = (await import("@react-native-async-storage/async-storage")).default;
     const userId = "detail-owner";

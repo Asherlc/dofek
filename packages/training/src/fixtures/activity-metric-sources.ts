@@ -9,6 +9,12 @@ export type ActivityPreviewMetric = "heartRate" | "power" | "speed" | "cadence" 
 interface PreviewSource {
   id: string;
   label: string;
+  presentation: {
+    displayName: string;
+    providerId: string;
+    sourceName: string | null;
+    attribution: { kind: "apple_health" | "cloud" | "bluetooth"; label: string } | null;
+  };
   sourceLabel: string;
   attribution: string;
   values: Array<number | null>;
@@ -48,6 +54,12 @@ export const activityMetricSourcePreview: PreviewMetric[] = [
       {
         id: "zepp",
         label: "Zepp via Apple Health",
+        presentation: {
+          displayName: "Zepp",
+          providerId: "apple_health",
+          sourceName: "Zepp",
+          attribution: { kind: "apple_health", label: "Apple Health" },
+        },
         sourceLabel: "Zepp via Apple Health",
         attribution: "Matched by recording time",
         values: zepp,
@@ -55,6 +67,12 @@ export const activityMetricSourcePreview: PreviewMetric[] = [
       {
         id: "whoop",
         label: "WHOOP",
+        presentation: {
+          displayName: "WHOOP",
+          providerId: "whoop",
+          sourceName: null,
+          attribution: { kind: "cloud", label: "Cloud" },
+        },
         sourceLabel: "WHOOP",
         attribution: "Recorded with this activity",
         values: whoop,
@@ -62,6 +80,12 @@ export const activityMetricSourcePreview: PreviewMetric[] = [
       {
         id: "apple-watch",
         label: "Apple Watch via Apple Health",
+        presentation: {
+          displayName: "Apple Watch",
+          providerId: "apple_health",
+          sourceName: "Apple Watch",
+          attribution: { kind: "apple_health", label: "Apple Health" },
+        },
         sourceLabel: "Apple Watch via Apple Health",
         attribution: "Matched by recording time",
         values: appleWatch,
@@ -72,9 +96,18 @@ export const activityMetricSourcePreview: PreviewMetric[] = [
     key: "power",
     label: "Power",
     unit: "W",
-    sources: ["Wahoo", "Garmin"].map((provider, index) => ({
-      id: provider.toLowerCase(),
+    sources: [
+      { id: "wahoo", label: "Wahoo" },
+      { id: "garmin", label: "Garmin" },
+    ].map(({ id: providerId, label: provider }, index) => ({
+      id: providerId,
       label: provider,
+      presentation: {
+        displayName: provider,
+        providerId,
+        sourceName: null,
+        attribution: null,
+      },
       sourceLabel: provider,
       attribution: "Recorded with this activity",
       values: recording((minute) =>
@@ -88,9 +121,19 @@ export const activityMetricSourcePreview: PreviewMetric[] = [
     key: "speed",
     label: "Speed",
     unit: "km/h",
-    sources: ["Wahoo", "Garmin", "Strava"].map((provider, index) => ({
-      id: provider.toLowerCase(),
+    sources: [
+      { id: "wahoo", label: "Wahoo" },
+      { id: "garmin", label: "Garmin" },
+      { id: "strava", label: "Strava" },
+    ].map(({ id: providerId, label: provider }, index) => ({
+      id: providerId,
       label: provider,
+      presentation: {
+        displayName: provider,
+        providerId,
+        sourceName: null,
+        attribution: null,
+      },
       sourceLabel: provider,
       attribution: "Recorded with this activity",
       values: recording((minute) =>
@@ -104,9 +147,18 @@ export const activityMetricSourcePreview: PreviewMetric[] = [
     key: "cadence",
     label: "Cadence",
     unit: "rpm",
-    sources: ["Wahoo", "Garmin"].map((provider, index) => ({
-      id: provider.toLowerCase(),
+    sources: [
+      { id: "wahoo", label: "Wahoo" },
+      { id: "garmin", label: "Garmin" },
+    ].map(({ id: providerId, label: provider }, index) => ({
+      id: providerId,
       label: provider,
+      presentation: {
+        displayName: provider,
+        providerId,
+        sourceName: null,
+        attribution: null,
+      },
       sourceLabel: provider,
       attribution: "Recorded with this activity",
       values: recording((minute) =>
@@ -118,9 +170,18 @@ export const activityMetricSourcePreview: PreviewMetric[] = [
     key: "altitude",
     label: "Elevation",
     unit: "m",
-    sources: ["Garmin", "Wahoo"].map((provider, index) => ({
-      id: provider.toLowerCase(),
+    sources: [
+      { id: "garmin", label: "Garmin" },
+      { id: "wahoo", label: "Wahoo" },
+    ].map(({ id: providerId, label: provider }, index) => ({
+      id: providerId,
       label: provider,
+      presentation: {
+        displayName: provider,
+        providerId,
+        sourceName: null,
+        attribution: null,
+      },
       sourceLabel: provider,
       attribution: "Recorded with this activity",
       values: recording((minute) =>

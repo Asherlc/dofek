@@ -507,6 +507,14 @@ also removes that table's indexes and constraints.
 
 ## Activity metric sources
 
+The [source contract](../providers-meta/src/activity-metric-source.ts) separates
+the complete source label from its compact display name, provider identity, and
+known Apple Health, cloud, or Bluetooth attribution. Clients render these fields
+without parsing labels or source IDs. The [metric-source route](src/routers/activity.ts)
+versions its response cache when this contract changes; the
+[mobile persistence boundary](../mobile/lib/mobile-query-persistence.ts) also
+invalidates cached responses from the older contract.
+
 Activity views offer independent source controls for heart rate, power, speed,
 cadence, and elevation. Each control preselects its existing priority winner
 without an Auto option. Choices distinguish providers and devices and apply

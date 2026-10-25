@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./activity-metric-source": "./src/activity-metric-source.ts",
     "./activity-origin": "./src/activity-origin.ts",
     "./activity-source-details": "./src/activity-source-details.ts",
     "./activity-source-tree": "./src/activity-source-tree.ts",
