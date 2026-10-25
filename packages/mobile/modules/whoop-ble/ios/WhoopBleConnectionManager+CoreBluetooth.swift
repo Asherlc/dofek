@@ -44,6 +44,9 @@ extension WhoopBleConnectionManager {
             setState(.discoveringServices)
             peripheral.discoverServices(WhoopBleConstants.allServiceUUIDs)
             startHandshakeTimeout(for: peripheral)
+        } else if peripheral.state == .connecting {
+            setState(.connecting)
+            startHandshakeTimeout(for: peripheral)
         }
     }
 
@@ -84,6 +87,9 @@ extension WhoopBleConnectionManager {
 
         setState(.discoveringServices)
         peripheral.discoverServices(WhoopBleConstants.allServiceUUIDs)
+        if connectCompletion == nil {
+            startHandshakeTimeout(for: peripheral)
+        }
     }
 
     func handlePeripheralDisconnected(_ peripheral: CBPeripheral, error: Error?) {

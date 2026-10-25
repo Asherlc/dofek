@@ -258,6 +258,9 @@ function classifyChanges(
     );
   const mobileChange =
     affectedPackages.has("dofek-mobile") ||
+    changedFiles.some(
+      (changedFile) => changedFile.startsWith("packages/mobile/") && !changedFile.endsWith(".md"),
+    ) ||
     globalPackageChange ||
     hasMatchingFile(changedFiles, /^\.github\/workflows\/build-mobile\.yml$/);
   const zeppChange =

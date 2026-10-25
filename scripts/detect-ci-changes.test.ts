@@ -33,6 +33,41 @@ function detectChangedAreas(changedFile: string) {
 }
 
 describe("CI change detector", () => {
+  it.each([
+    "packages/mobile/modules/whoop-ble/ios/WhoopBleConnectionManager.swift",
+    "packages/mobile/modules/whoop-ble/index.ts",
+  ])("runs mobile surfaces for the local native module path %s", (changedFile) => {
+    expect(detectChangedAreas(changedFile)).toEqual({
+      analytics: false,
+      docker_ml: false,
+      docker_server: false,
+      e2e_web: false,
+      ml: false,
+      mobile: true,
+      storybook_mobile: true,
+      storybook_web: false,
+      terraform: false,
+      web: false,
+      zepp: false,
+    });
+  });
+
+  it("keeps local native module documentation changes outside mobile scope", () => {
+    expect(detectChangedAreas("packages/mobile/modules/whoop-ble/README.md")).toEqual({
+      analytics: false,
+      docker_ml: false,
+      docker_server: false,
+      e2e_web: false,
+      ml: false,
+      mobile: false,
+      storybook_mobile: false,
+      storybook_web: false,
+      terraform: false,
+      web: false,
+      zepp: false,
+    });
+  });
+
   it("runs mobile and server surfaces for an IMU package change", () => {
     expect(detectChangedAreas("packages/imu/src/sample.ts")).toEqual(
       expect.objectContaining({

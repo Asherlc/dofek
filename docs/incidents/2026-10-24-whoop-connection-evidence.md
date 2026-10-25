@@ -110,3 +110,131 @@ Test Suite 'All tests' passed at 2026-10-24 08:07:43.052.
 ```
 
 Strict SwiftLint passed over all 139 tracked Swift files, and the signed Debug iOS Simulator rebuild returned exit code 0 after this correction. No TypeScript implementation changed.
+
+## Evening recurrence with native diagnostics
+
+The user reported another “WHOOP disconnected” alert on October 24 Pacific.
+The updated native journal was present in the installed app. The following
+read-only [Axiom query](../axiom-observability-runbook.md#queries) retains only
+connection metadata, omitting account, device, process and event identifiers:
+
+```apl
+['dofek-logs']
+| where _time >= datetime(2026-10-25T01:31:35Z) and _time < datetime(2026-10-25T01:40:00Z)
+| where ['service.name'] == 'dofek-mobile'
+| where body == '[whoop-ble] native_connection_event' or body contains 'BLE disconnected'
+| project _time, body,
+    nativeEvent=['attributes.custom']['nativeEvent'],
+    nativeOccurredAt=['attributes.custom']['nativeOccurredAt'],
+    connectionState=['attributes.custom']['connectionState'],
+    previousConnectionState=['attributes.custom']['previousConnectionState'],
+    centralState=['attributes.custom']['centralState'],
+    reconnectIntent=['attributes.custom']['reconnectIntent'],
+    reason=['attributes.custom']['reason'],
+    errorDomain=['attributes.custom']['errorDomain'],
+    errorCode=['attributes.custom']['errorCode'],
+    errorDescription=['attributes.custom']['errorDescription'],
+    appState=['attributes.custom']['appState']
+| sort by _time asc
+```
+
+```jsonl
+{"_time":"2026-10-25T01:31:46.76Z","appState":"background","body":"[whoop-ble] native_connection_event","centralState":"poweredOn","connectionState":"streaming","errorCode":6,"errorDescription":"The connection has timed out unexpectedly.","errorDomain":"CBErrorDomain","nativeEvent":"disconnected","nativeOccurredAt":"2026-10-25T01:31:46.590Z","previousConnectionState":null,"reason":null,"reconnectIntent":true}
+{"_time":"2026-10-25T01:31:46.766Z","appState":"background","body":"[whoop-ble] native_connection_event","centralState":"poweredOn","connectionState":"idle","errorCode":null,"errorDescription":null,"errorDomain":null,"nativeEvent":"state_transition","nativeOccurredAt":"2026-10-25T01:31:46.598Z","previousConnectionState":"streaming","reason":null,"reconnectIntent":true}
+{"_time":"2026-10-25T01:31:46.767Z","appState":"background","body":"[whoop-ble] native_connection_event","centralState":"poweredOn","connectionState":"connecting","errorCode":null,"errorDescription":null,"errorDomain":null,"nativeEvent":"state_transition","nativeOccurredAt":"2026-10-25T01:31:46.602Z","previousConnectionState":"idle","reason":null,"reconnectIntent":true}
+{"_time":"2026-10-25T01:31:46.768Z","appState":"background","body":"[whoop-ble] native_connection_event","centralState":"poweredOn","connectionState":"connecting","errorCode":null,"errorDescription":null,"errorDomain":null,"nativeEvent":"connect_requested","nativeOccurredAt":"2026-10-25T01:31:46.604Z","previousConnectionState":null,"reason":"automatic_reconnect","reconnectIntent":true}
+{"_time":"2026-10-25T01:31:46.774Z","appState":null,"body":"[whoop-ble] BLE disconnected (The connection has timed out unexpectedly.), will reconnect","centralState":null,"connectionState":null,"errorCode":null,"errorDescription":null,"errorDomain":null,"nativeEvent":null,"nativeOccurredAt":null,"previousConnectionState":null,"reason":null,"reconnectIntent":null}
+```
+
+The native event records an OS-reported timeout at 18:31:46 Pacific, followed
+14 ms later by an automatic reconnect request. The capture snapshot exported
+at `01:31:46.771Z` recorded its last data notification at `01:31:40.439Z`.
+These observations identify the failure and attempted recovery; they do not
+establish what caused the link timeout or whether recovery later succeeded.
+The five-minute delay in the [notification coordinator](../../packages/mobile/modules/background-refresh/ios/CollectionNotificationCoordinator.swift)
+predicts an alert around 18:36:46 Pacific; actual delivery was not logged.
+
+A complete mobile-service query returned no events after the disconnect export
+through `01:40:00Z`:
+
+```apl
+['dofek-logs']
+| where _time > datetime(2026-10-25T01:31:46.774Z) and _time < datetime(2026-10-25T01:40:00Z)
+| where ['service.name'] == 'dofek-mobile'
+| summarize events=count()
+```
+
+```jsonl
+[]
+```
+
+Separately, the last-hour cloud-request aggregate returned 18 requests with
+status `200`. This is evidence of successful logged cloud requests, not
+Bluetooth recovery or complete capture. The user was asked to open Dofek to
+allow retained native history to upload. Inspect `nativeOccurredAt` and the
+native session when correlating replayed events: the [diagnostics reporter](../../packages/mobile/lib/whoop-ble-diagnostics.ts)
+exports persisted history with the current snapshot context. In particular,
+look for a later `handshake_aborted` event before attributing recovery failure
+to the [application handshake timeout](../../packages/mobile/modules/whoop-ble/ios/WhoopBleConnectionManager.swift).
+Cause and recovery remain unresolved; no behavioral change or production
+mutation was performed.
+
+## Foreground replay confirms the recovery failure
+
+After the user opened Dofek, the existing app process exported retained native
+events at `01:44:49.872Z`. Their native session matched the earlier disconnect;
+there was no new native session or JavaScript runtime in this sequence.
+The [same Axiom projection](../axiom-observability-runbook.md#queries), restricted
+to native connection events exported from `01:44:49Z` through `01:45:21Z`, returned:
+
+```jsonl
+{"_time":"2026-10-25T01:44:49.872Z","centralState":"poweredOn","connectionState":"connecting","nativeEvent":"handshake_aborted","nativeOccurredAt":"2026-10-25T01:31:57.084Z","previousConnectionState":"","reason":"TIMEOUT","reconnectIntent":true}
+{"_time":"2026-10-25T01:44:49.872Z","centralState":"poweredOn","connectionState":"idle","nativeEvent":"state_transition","nativeOccurredAt":"2026-10-25T01:31:57.092Z","previousConnectionState":"connecting","reason":"","reconnectIntent":false}
+{"_time":"2026-10-25T01:44:50.341Z","centralState":"poweredOn","connectionState":"idle","nativeEvent":"connect_requested","nativeOccurredAt":"2026-10-25T01:44:50.018Z","previousConnectionState":"","reason":"explicit_connect","reconnectIntent":false}
+{"_time":"2026-10-25T01:44:50.341Z","centralState":"poweredOn","connectionState":"connecting","nativeEvent":"state_transition","nativeOccurredAt":"2026-10-25T01:44:50.019Z","previousConnectionState":"idle","reason":"","reconnectIntent":false}
+{"_time":"2026-10-25T01:44:50.341Z","centralState":"poweredOn","connectionState":"discoveringServices","nativeEvent":"state_transition","nativeOccurredAt":"2026-10-25T01:44:50.022Z","previousConnectionState":"connecting","reason":"","reconnectIntent":true}
+{"_time":"2026-10-25T01:44:50.341Z","centralState":"poweredOn","connectionState":"subscribing","nativeEvent":"state_transition","nativeOccurredAt":"2026-10-25T01:44:50.120Z","previousConnectionState":"discoveringServices","reason":"","reconnectIntent":true}
+{"_time":"2026-10-25T01:44:50.341Z","centralState":"poweredOn","connectionState":"ready","nativeEvent":"state_transition","nativeOccurredAt":"2026-10-25T01:44:50.329Z","previousConnectionState":"subscribing","reason":"","reconnectIntent":true}
+{"_time":"2026-10-25T01:44:50.341Z","centralState":"poweredOn","connectionState":"streaming","nativeEvent":"state_transition","nativeOccurredAt":"2026-10-25T01:44:50.331Z","previousConnectionState":"ready","reason":"","reconnectIntent":true}
+```
+
+This confirms that the [application handshake timer](../../packages/mobile/modules/whoop-ble/ios/WhoopBleConnectionManager.swift)
+aborted the automatic attempt while Bluetooth was still connecting, about
+10.48 seconds after the reconnect request. The abort handler cancels the
+peripheral connection and disables automatic reconnection, matching the
+recorded transition to `idle` with `reconnectIntent=false`. This establishes
+the application's recovery failure; it does not establish the initiating
+cause of the earlier OS-reported Bluetooth link timeout. Apple documents that
+[Core Bluetooth connection attempts do not time out](https://developer.apple.com/documentation/corebluetooth/cbcentralmanager/connect(_:options:));
+explicit cancellation or peripheral deallocation ends a pending attempt.
+
+Foregrounding initiated a new connection to the same strap and reached
+`streaming` at 18:44:50 Pacific. A subsequent capture projection verified new
+notifications, parsed realtime samples and a fresh valid heart-rate timestamp:
+
+```apl
+['dofek-logs']
+| where _time > datetime(2026-10-25T01:44:49Z)
+| where ['service.name'] == 'dofek-mobile'
+| where body == '[whoop-ble] capture_snapshot'
+| project _time,
+    connectionState=['attributes.custom']['connectionState'],
+    lastDataNotificationAt=['attributes.custom']['lastDataNotificationAt'],
+    lastValidHeartRateAt=['attributes.custom']['lastValidHeartRateAt'],
+    lastParsedRealtimeAt=['attributes.custom']['lastParsedRealtimeAt'],
+    realtimeReceivedCount=['attributes.custom']['realtimeReceivedCount'],
+    realtimeConfirmedCount=['attributes.custom']['realtimeConfirmedCount'],
+    realtimeCount=['attributes.custom']['realtimeCount']
+| sort by _time desc
+| limit 5
+```
+
+```jsonl
+{"_time":"2026-10-25T01:45:19.895Z","connectionState":"streaming","lastDataNotificationAt":"2026-10-25T01:45:19.310Z","lastParsedRealtimeAt":"2026-10-25T01:45:19.310Z","lastValidHeartRateAt":"2026-10-25T01:45:18.000Z","realtimeConfirmedCount":53456,"realtimeCount":18,"realtimeReceivedCount":53474}
+{"_time":"2026-10-25T01:44:50.341Z","connectionState":"streaming","lastDataNotificationAt":"2026-10-25T01:44:50.299Z","lastParsedRealtimeAt":"2026-10-25T01:31:38.711Z","lastValidHeartRateAt":"2026-10-25T01:31:36.000Z","realtimeConfirmedCount":37383,"realtimeCount":16062,"realtimeReceivedCount":53445}
+{"_time":"2026-10-25T01:44:49.872Z","connectionState":"idle","lastDataNotificationAt":"2026-10-25T01:31:40.439Z","lastParsedRealtimeAt":"2026-10-25T01:31:38.711Z","lastValidHeartRateAt":"2026-10-25T01:31:36.000Z","realtimeConfirmedCount":37383,"realtimeCount":16062,"realtimeReceivedCount":53445}
+```
+
+New capture and foreground recovery are verified. Historical capture
+completeness and durable background recovery remain unverified. No behavioral
+fix or production mutation was performed during this observation.

@@ -36,8 +36,8 @@ final class WhoopBleConnectionManager {
     var findCompletion: (([String: Any?]?) -> Void)?
     var connectCompletion: ((Result<Bool, WhoopBleConnectionError>) -> Void)?
     var pendingPoweredOnCompletion: (([String: Any?]?) -> Void)?
-    private var handshakeTimeoutWorkItem: DispatchWorkItem?
-    private let connectTimeoutSeconds: TimeInterval
+    var handshakeTimeoutWorkItem: DispatchWorkItem?
+    let connectTimeoutSeconds: TimeInterval
     private var collectionActivityObserver: NSObjectProtocol?
 
     /// Last write error for diagnostics.
@@ -171,8 +171,9 @@ final class WhoopBleConnectionManager {
 
         bleQueue.async {
             self.recordConnectionEvent("retry_requested", reason: "explicit_retry")
-            if self.connectedPeripheral?.state == .connected {
-                NSLog("[WhoopBLE] retryConnection: already connected")
+            if let peripheral = self.connectedPeripheral,
+               peripheral.state == .connected || self.state == .connecting {
+                NSLog("[WhoopBLE] retryConnection: existing connection owns recovery")
                 completion(true)
                 return
             }
@@ -360,72 +361,6 @@ final class WhoopBleConnectionManager {
             WhoopBleConnectionEvent.connected.post()
             finishConnect(.success(true))
             return previouslyStreaming
-        }
-    }
-
-    /// Keep one timeout active for the complete connect/discovery handshake.
-    func startHandshakeTimeout(cancelPeripheral: @escaping () -> Void) {
-        handshakeTimeoutWorkItem?.cancel()
-        let timeoutWorkItem = DispatchWorkItem { [weak self] in
-            guard
-                let self,
-                self.state == .connecting
-                    || self.state == .discoveringServices
-                    || self.state == .subscribing
-            else { return }
-            self.abortHandshake(with: .timeout, cancelPeripheral: cancelPeripheral)
-        }
-        handshakeTimeoutWorkItem = timeoutWorkItem
-        bleQueue.asyncAfter(
-            deadline: .now() + connectTimeoutSeconds,
-            execute: timeoutWorkItem
-        )
-    }
-
-    func startHandshakeTimeout(for peripheral: CBPeripheral) {
-        startHandshakeTimeout { [weak self, weak peripheral] in
-            guard let peripheral else { return }
-            self?.centralManager?.cancelPeripheralConnection(peripheral)
-        }
-    }
-
-    /// Settle the JavaScript connect completion at most once.
-    func finishConnect(_ result: Result<Bool, WhoopBleConnectionError>) {
-        handshakeTimeoutWorkItem?.cancel()
-        handshakeTimeoutWorkItem = nil
-        let completion = connectCompletion
-        connectCompletion = nil
-        completion?(result)
-    }
-
-    /// Cancel and clean up a connection that failed before becoming ready.
-    func abortHandshake(
-        with error: WhoopBleConnectionError,
-        underlyingError: Error? = nil,
-        cancelPeripheral: () -> Void
-    ) {
-        guard
-            state == .connecting
-                || state == .discoveringServices
-                || state == .subscribing
-        else { return }
-        recordConnectionEvent("handshake_aborted", error: underlyingError, reason: error.rejection.code)
-        autoReconnect = false
-        cancelPeripheral()
-        cleanup()
-        finishConnect(.failure(error))
-    }
-
-    /// Ignore a late callback from a peripheral that no longer owns the attempt.
-    func abortHandshake(
-        for peripheral: CBPeripheral,
-        with error: WhoopBleConnectionError,
-        underlyingError: Error? = nil
-    ) {
-        guard connectedPeripheral?.identifier == peripheral.identifier else { return }
-        abortHandshake(with: error, underlyingError: underlyingError) { [weak self, weak peripheral] in
-            guard let peripheral else { return }
-            self?.centralManager?.cancelPeripheralConnection(peripheral)
         }
     }
 }

@@ -118,6 +118,6 @@ This dated plan records the implementation steps, review checkpoints, and verifi
 - [x] Add collapsed/expanded production header stories with the same branching sample data as web; run affected tests/types and review parity.
 - [x] Capture actual web and mobile header stories in both states, verifying narrow layout and accessible actions.
 - [x] Run required local checks and review the connected change.
-- [ ] Publish the connected change and update the PR.
+- [x] Publish the connected change and update the PR.
 
 Detail-page verification passed 21,015 unit/mobile tests, 347 focused server tests, 19 real PostgreSQL cases, two calendar hydration cases, 101 web detail tests, 82 mobile header/route/disclosure tests, and 27 persistence tests. Normal package/root typechecks, lint, spelling, web build/size limits, and the mobile Storybook build passed. A fresh parity review cleared the implementation after aligning the paired story captions with the server projection. New header screenshots show both disclosure states with the same source branches.

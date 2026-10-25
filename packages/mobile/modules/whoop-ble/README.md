@@ -65,6 +65,16 @@ stream controls, orientation events, reconnect support, and peek-then-confirm
 buffer drains. Use the peek/confirm pair when uploading samples so data is only
 removed after the upload succeeds.
 
+Automatic reconnection keeps the Core Bluetooth connection request pending
+while the strap is unavailable. Service discovery and notification subscription
+have a ten-second deadline after Bluetooth connects; explicit `connect()` calls
+retain a bounded wait. Foreground discovery and retry preserve an existing
+pending connection. This follows Apple's
+[pending connection behavior](https://developer.apple.com/documentation/corebluetooth/cbcentralmanager/connect(_:options:));
+the [native handshake lifecycle](ios/WhoopBleConnectionManager+Handshake.swift) owns the
+application deadlines and cancellation. A pending request alone does not prove
+capture has resumed: check new data notifications and parsed sample timestamps.
+
 `getDataPathStats()` also exposes `lastKnownDeviceId`, capture timestamps, and a typed `buffers`
 snapshot: `bufferInstanceId`, `bufferCreatedAt`, `checkpointAt`, `imu`,
 `realtime`, and `previousCheckpoint`. Each stream reports its count, true
