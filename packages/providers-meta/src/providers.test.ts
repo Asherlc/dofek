@@ -163,6 +163,28 @@ describe("providerLogoId", () => {
 });
 
 describe("providerSourceLogo", () => {
+  it.each(["apple_health", "apple-health"])(
+    "recognizes Apple Watch recordings through %s",
+    (id) => {
+      for (const source of ["Apple Watch", "Asher’s Apple\u00a0Watch", "  ASHER'S APPLE WATCH  "]) {
+        expect(providerSourceLogo(id, source)).toEqual({
+          provider: "apple-watch",
+          viaAppleHealth: true,
+        });
+      }
+    },
+  );
+
+  it.each(["Pineapple Watch", "Apple Watch Companion", "Watch", "Apple Watch Ultra"])(
+    "retains the unknown source fallback for %s",
+    (source) => {
+      expect(providerSourceLogo("apple_health", source)).toEqual({
+        provider: source,
+        viaAppleHealth: true,
+      });
+    },
+  );
+
   it.each([
     ["Strong", "strong-csv"],
     ["Hang Ten", "hang-ten"],

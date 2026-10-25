@@ -81,8 +81,10 @@ export function ProviderDetailPage() {
         requiresAuthorization: provider.authType !== "none",
       })
     : null;
-  const lastSyncedRelative = hasValidDateInput(provider?.lastSyncedAt)
-    ? formatRelativeTime(provider.lastSyncedAt)
+  const lastSyncedAt =
+    pushOnly || mobileOnly ? provider?.lastSuccessfulSyncAt : provider?.lastSyncedAt;
+  const lastSyncedRelative = hasValidDateInput(lastSyncedAt)
+    ? formatRelativeTime(lastSyncedAt)
     : null;
 
   // Sync state
@@ -437,6 +439,7 @@ export function ProviderDetailPage() {
         error={processingStatus.error}
         loading={processingStatus.isLoading}
         contextLabel={`${formatProviderName(providerId)} data status`}
+        providerHistory={provider}
         alwaysVisible
       />
 

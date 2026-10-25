@@ -42,7 +42,7 @@ afterEach(cleanup);
 
 describe("ActivityCardContent", () => {
   it.each(["garmin", "strava", "apple_health"])(
-    "uses the actual %s primary provider as the leading card image",
+    "keeps the activity icon ahead of the resolved %s source control",
     (providerId) => {
       render(
         <ActivityCardContent
@@ -64,20 +64,17 @@ describe("ActivityCardContent", () => {
           selected={false}
         />,
       );
-      const providerImage = screen.getByRole("img", { name: /Primary recording provider:/ });
-      expect(providerImage).toHaveAttribute(
-        "aria-label",
-        providerId === "apple_health"
-          ? "Primary recording provider: Strong (via Apple Health)"
-          : providerId === "garmin"
-            ? "Primary recording provider: Garmin · Garmin Edge 530"
-            : "Primary recording provider: Strava",
-      );
-      expect(providerImage.parentElement?.firstElementChild).toBe(providerImage);
-      const logo = providerImage.querySelector("img");
-      expect(logo).toHaveAttribute("width", "32");
+      const activityIcon = screen.getByTestId("activity-type-icon");
+      expect(activityIcon.parentElement?.firstElementChild).toBe(activityIcon);
+      const source = screen.getByRole("button", { name: /Activity source:/ });
+      const logo = source.querySelector("img");
+      expect(logo).toHaveAttribute("width", "18");
       expect(logo?.getAttribute("src")).toContain(
-        providerId === "apple_health" ? "strong-csv" : providerId,
+        providerId === "garmin"
+          ? "010-02060-00"
+          : providerId === "apple_health"
+            ? "strong-csv"
+            : providerId,
       );
     },
   );
@@ -98,7 +95,8 @@ describe("ActivityCardContent", () => {
         selected={false}
       />,
     );
-    expect(screen.queryByRole("img", { name: /Primary recording provider:/ })).toBeNull();
+    expect(screen.getByTestId("activity-type-icon")).toBeVisible();
+    expect(screen.queryByRole("button", { name: /Activity source:/ })).toBeNull();
   });
   it.each([
     { modality: "indoor", distanceMeters: 0, elevationGainM: null },
@@ -276,6 +274,17 @@ describe("ActivityCardContent", () => {
       <ActivityCardContent
         activity={activity({
           activityType: "running",
+          source: {
+            origin: {
+              status: "resolved",
+              memberActivityId: "00000000-0000-4000-8000-000000000001",
+              providerId: "whoop",
+              sourceName: null,
+            },
+            primarySourceLabel: "WHOOP",
+            sourceCount: 1,
+            overlapSummary: null,
+          },
           distanceMeters: 5000,
           distanceState: { status: "available" },
           elevationGainM: 120,
@@ -302,6 +311,8 @@ describe("ActivityCardContent", () => {
       "sm:grid-cols-[minmax(0,2fr)_minmax(18rem,3fr)]",
     );
     expect(screen.getByLabelText("Activity location map")).toBeDefined();
+    expect(screen.getByTestId("activity-type-icon")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Activity source: WHOOP (Cloud)" })).toBeVisible();
     expect(screen.getByTestId("activity-detail-metrics")).toBeDefined();
     expect(screen.queryByText("No route recorded")).toBeNull();
     expect(screen.getByTestId("activity-secondary-panel")).toBeDefined();

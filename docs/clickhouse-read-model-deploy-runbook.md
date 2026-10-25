@@ -1032,23 +1032,31 @@ for supporting fields and `origin_candidate_member_ids` when attribution remains
 unresolved. Preserve Apple Health `sourceBundle` in the existing raw workout payload
 on subsequent native syncs; do not fabricate identifiers for historical rows.
 
-### Strong and Hang Ten attribution
+### Strong, Hang Ten, and Apple Watch attribution
 
 The [PostgreSQL resolver](../drizzle/_views/00_activity_origin.sql) and
-[ClickHouse selector](../analytics/macros/activity_origin.sql) treat Strong and
-Hang Ten as initiating apps within an existing matched activity group. This is
+[ClickHouse selector](../analytics/macros/activity_origin.sql) treat Strong,
+Hang Ten, and Apple Watch as initiating sources within an existing matched activity group. This is
 an explicit product assumption, not evidence that WHOOP imported their records.
 Strong documents [sharing workouts through Apple Health](https://help.strongapp.io/article/147-sync-with-apple-health),
 and Hang Ten documents [saving completed sessions to Apple Health](https://apps.apple.com/us/app/hang-ten-training/id6797141761).
 Neither source establishes a transfer chain for a particular WHOOP workout.
 
 Prefer a Strong CSV member over its Apple Health copies. Otherwise, select the
-single Apple Health member labeled Strong, Hang Ten, or Hang Ten Training.
+single Apple Health member labeled Strong, Hang Ten, Hang Ten Training, or Apple Watch.
+Watch recognition accepts personalized source names such as `Asher’s Apple Watch`,
+case differences, and nonbreaking spaces between words. This rule interprets the
+retained [HealthKit source name](https://developer.apple.com/documentation/healthkit/hksource/name)
+as an initiating-source product policy; it does not establish a transfer edge to
+WHOOP or Peloton. Both clients use the shared
+[source-logo mapping](../packages/providers-meta/src/providers.ts) to show a watch
+icon with the Apple Health badge.
 Multiple initiating candidates, conflicting provenance, and cycles remain
 unresolved. The rule changes recording attribution only; field selection,
 sensor priorities, grouping, and evidenced copy edges retain their existing behavior.
 
-Apply `0159_recording_app_origin` and build the incremental activity models with
+Apply `0162_apple_watch_activity_origin` (which extends `0159_recording_app_origin`)
+and build the incremental activity models with
 the matching release. Existing ClickHouse rows require recomputation before
 clients receive the updated origin; use the established scoped refresh procedure
 above when validating a specific activity. Both clients consume the shared origin

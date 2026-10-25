@@ -261,10 +261,22 @@ const climbingSourceLocation = {
   ],
 } satisfies ActivityLocation;
 
-function createStoryData(climbingActivity = false, originProvider: string | null = "garmin") {
+function createStoryData(
+  climbingActivity = false,
+  originProvider: string | null = "garmin",
+  originSourceName: string | null = null,
+) {
   const today = formatDateYmd();
   const yesterday = formatDateYmd(new Date(Date.now() - 86_400_000));
   const queryInput = { weeks: 4, endDate: today };
+  const hangboarding =
+    originProvider === "apple_health" && originSourceName === "Hang Ten Training";
+  const primaryActivityType = climbingActivity
+    ? "climbing"
+    : hangboarding
+      ? "hangboard"
+      : "road_cycling";
+  const hasRoute = !climbingActivity && !hangboarding;
 
   const weekList: AppRouterOutputs["calendar"]["weekList"] = [
     {
@@ -272,9 +284,9 @@ function createStoryData(climbingActivity = false, originProvider: string | null
       activities: [
         {
           id: "story-outdoor",
-          name: "Morning Ride",
-          activityType: "road_cycling",
-          modality: "road",
+          name: hangboarding ? "Hangboard repeats" : "Morning Ride",
+          activityType: hangboarding ? "hangboard" : "road_cycling",
+          modality: hangboarding ? null : "road",
           startedAt: `${today}T07:30:00Z`,
           endedAt: `${today}T09:00:00Z`,
           localTimeContext: {
@@ -292,23 +304,30 @@ function createStoryData(climbingActivity = false, originProvider: string | null
                     status: "resolved",
                     memberActivityId: "00000000-0000-4000-8000-000000000001",
                     providerId: originProvider,
-                    sourceName: originProvider === "apple_health" ? "Strong" : "Garmin Edge 530",
+                    sourceName:
+                      originSourceName ?? (originProvider === "apple_health" ? "Strong" : null),
                   },
             primarySourceLabel: originProvider === null ? null : providerLabel(originProvider),
             sourceCount: 2,
             overlapSummary: "2 matched source records",
           },
           lastProcessedAt: `${today}T09:05:00Z`,
-          distanceMeters: 32400,
-          distanceState: { status: "available" },
-          elevationGainM: 412,
-          elevationState: { status: "available" },
-          location: {
-            kind: "recorded_gps",
-            centroidLat: 37.7749,
-            centroidLng: -122.4194,
-            mapPreview,
-          },
+          distanceMeters: hangboarding ? null : 32400,
+          distanceState: hangboarding
+            ? { status: "missing", reason: "Distance not recorded" }
+            : { status: "available" },
+          elevationGainM: hangboarding ? null : 412,
+          elevationState: hangboarding
+            ? { status: "missing", reason: "Elevation not recorded" }
+            : { status: "available" },
+          location: hangboarding
+            ? null
+            : {
+                kind: "recorded_gps",
+                centroidLat: 37.7749,
+                centroidLng: -122.4194,
+                mapPreview,
+              },
           tss: 78.4,
           stats: [{ status: "available", label: "Training Stress Score", value: "78.4" }],
         },
@@ -394,15 +413,15 @@ function createStoryData(climbingActivity = false, originProvider: string | null
   const activityOverview = {
     activityCount: 2,
     totalMinutes: climbingActivity ? 165 : 135,
-    totalDistanceMeters: climbingActivity ? null : 32400,
-    totalDistanceState: climbingActivity
-      ? { status: "missing", reason: "Distance not recorded" }
-      : { status: "available" },
-    totalElevationGainM: climbingActivity ? null : 412,
-    totalElevationState: climbingActivity
-      ? { status: "missing", reason: "Elevation not recorded" }
-      : { status: "available" },
-    activityTypes: [climbingActivity ? "climbing" : "road_cycling", "strength"],
+    totalDistanceMeters: hasRoute ? 32400 : null,
+    totalDistanceState: hasRoute
+      ? { status: "available" }
+      : { status: "missing", reason: "Distance not recorded" },
+    totalElevationGainM: hasRoute ? 412 : null,
+    totalElevationState: hasRoute
+      ? { status: "available" }
+      : { status: "missing", reason: "Elevation not recorded" },
+    activityTypes: [primaryActivityType, "strength"],
   };
 
   const calendarData = [
@@ -418,7 +437,7 @@ function createStoryData(climbingActivity = false, originProvider: string | null
       date: today,
       activityCount: 1,
       totalMinutes: climbingActivity ? 120 : 90,
-      activityTypes: [climbingActivity ? "climbing" : "road_cycling"],
+      activityTypes: [primaryActivityType],
       trainingTimeBand: "high" as const,
       trainingTimeMeaning: "High recorded training volume",
     },
@@ -483,14 +502,16 @@ function MockProviders({
   children,
   climbingActivity,
   originProvider,
+  originSourceName,
 }: {
   children: React.ReactNode;
   climbingActivity: boolean;
   originProvider: string | null;
+  originSourceName: string | null;
 }) {
   const storyData = useMemo(
-    () => createStoryData(climbingActivity, originProvider),
-    [climbingActivity, originProvider],
+    () => createStoryData(climbingActivity, originProvider, originSourceName),
+    [climbingActivity, originProvider, originSourceName],
   );
   const queryClient = useMemo(() => {
     const client = new QueryClient({
@@ -541,6 +562,7 @@ const meta = {
             ? null
             : (context.parameters.originProvider ?? "garmin")
         }
+        originSourceName={context.parameters.originSourceName ?? null}
       >
         <View style={{ flex: 1, backgroundColor: "#000" }}>
           <Story />
@@ -574,10 +596,19 @@ export const Default: Story = {
 };
 
 export const SelectionMode: Story = {
+  parameters: { originProvider: "whoop" },
   play: async ({ canvasElement, userEvent }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByRole("button", { name: "Select activities" }));
     await userEvent.click(
-      await within(canvasElement).findByRole("button", { name: "Select activities" }),
+      await canvas.findByRole("button", { name: "Activity source: WHOOP (Cloud)" }),
     );
+    const page = within(canvasElement.ownerDocument.body);
+    await page.findByText("Recorded in");
+    await userEvent.click(
+      await page.findByRole("button", { name: "Close activity source details" }),
+    );
+    await expect(canvas.getByText("0 activities selected")).toBeVisible();
   },
 };
 
@@ -599,3 +630,15 @@ export const PrimaryProviderWithoutLogo: Story = {
 };
 
 export const AppleHealthSourceApp: Story = { parameters: { originProvider: "apple_health" } };
+export const DirectWhoop: Story = { parameters: { originProvider: "whoop" } };
+export const HangTenViaAppleHealth: Story = {
+  parameters: { originProvider: "apple_health", originSourceName: "Hang Ten Training" },
+  play: async ({ canvasElement, userEvent }) => {
+    await userEvent.click(
+      await within(canvasElement).findByRole("button", { name: "Activity source: Hang Ten" }),
+    );
+    const page = within(canvasElement.ownerDocument.body);
+    await expect(await page.findByText("Recorded in")).toBeVisible();
+    await expect(await page.findByText("Imported via")).toBeVisible();
+  },
+};

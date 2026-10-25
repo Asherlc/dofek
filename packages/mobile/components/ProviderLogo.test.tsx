@@ -146,6 +146,23 @@ describe("ProviderLogo", () => {
 });
 
 describe("Apple Health source icons", () => {
+  it("renders the personalized Apple Watch source with its Apple Health badge", () => {
+    const { container } = render(
+      <ProviderLogo
+        provider="apple_health"
+        sourceName={"Asher’s Apple\u00a0Watch"}
+        size={32}
+        serverUrl="https://example.com"
+      />,
+    );
+    const watch = container.querySelector("SvgUri");
+    expect(watch?.getAttribute("uri")).toBe("https://example.com/logos/apple-watch.svg");
+    expect(watch?.getAttribute("width")).toBe("32");
+    const images = container.querySelectorAll("Image");
+    expect(images).toHaveLength(1);
+    expect(images[0]?.getAttribute("style")).toContain("width: 14px");
+  });
+
   it.each(["Strong", "Hang Ten"])("shows %s with an Apple Health badge", (sourceName) => {
     const { container } = render(
       <ProviderLogo
