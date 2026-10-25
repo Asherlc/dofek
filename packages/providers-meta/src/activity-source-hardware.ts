@@ -31,7 +31,12 @@ function hardwareDetails(item: ActivityHardwareItem, destinationLabel: string) {
   if (manufacturer && !label.includes(manufacturer.toLowerCase())) {
     details.push({ label: "Manufacturer", value: manufacturer });
   }
-  return [...details, ...item.details];
+  return [
+    ...details,
+    ...item.details.filter(
+      (detail) => detail.label !== "Device name" || detail.value.trim().toLowerCase() !== label,
+    ),
+  ];
 }
 
 export function activitySourceTreeWithHardware(

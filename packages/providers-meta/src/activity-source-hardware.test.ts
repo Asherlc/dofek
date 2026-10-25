@@ -36,6 +36,61 @@ function item(overrides: Partial<ActivityHardwareItem> = {}): ActivityHardwareIt
 }
 
 describe("activitySourceTreeWithHardware", () => {
+  it.each(["Asher’s Apple Watch", "  ASHER’S APPLE WATCH  "])(
+    "omits a device name fact that repeats the recording header: %s",
+    (deviceName) => {
+      const watch = {
+        ...node("activity-1:recording-attribution", "apple-watch"),
+        label: "Asher’s Apple Watch",
+      };
+      const result = activitySourceTreeWithHardware(
+        { primary: node("activity-1", "apple_health", [watch]), otherSources: [] },
+        {
+          items: [
+            item({
+              model: "Apple Watch Ultra 3",
+              details: [
+                { label: "Device name", value: deviceName },
+                { label: "Software", value: "26.6" },
+              ],
+            }),
+          ],
+          power: [],
+        },
+      );
+      expect(result.primary?.children[0]?.details).toEqual([
+        { label: "Model", value: "Apple Watch Ultra 3" },
+        { label: "Software", value: "26.6" },
+      ]);
+    },
+  );
+
+  it("retains a personal device name beneath a model header", () => {
+    const watch = {
+      ...node("activity-1:recording-attribution", "apple-watch"),
+      label: "Apple Watch Ultra 3",
+    };
+    const result = activitySourceTreeWithHardware(
+      { primary: node("activity-1", "apple_health", [watch]), otherSources: [] },
+      {
+        items: [
+          item({
+            model: "Apple Watch Ultra 3",
+            details: [
+              { label: "Device name", value: "Asher’s Apple Watch" },
+              { label: "Software", value: "26.6" },
+            ],
+          }),
+        ],
+        power: [],
+      },
+    );
+    expect(result.primary?.children[0]?.details).toEqual([
+      { label: "Device name", value: "Asher’s Apple Watch" },
+      { label: "Software", value: "26.6" },
+    ]);
+  });
+
   it("resolves raw Apple model facts beneath a named watch without changing its source identity", () => {
     const watch = {
       ...node("activity-1:recording-attribution", "apple-watch"),
