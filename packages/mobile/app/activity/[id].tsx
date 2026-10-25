@@ -3,32 +3,19 @@ import {
   activityDataStateLabel,
   formatActivityMetric,
 } from "@dofek/format/activity-data-state";
-import {
-  formatDateLong,
-  formatDurationRange,
-  formatDurationSeconds,
-  formatNumber,
-} from "@dofek/format/format";
-import { formatRecordLocalTime } from "@dofek/format/record-local-time";
+import { formatDurationRange, formatDurationSeconds, formatNumber } from "@dofek/format/format";
 import type { UnitConverter } from "@dofek/format/units";
 import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { processingPollInterval } from "@dofek/providers/processing-status";
-import { providerSourceLabel } from "@dofek/providers/providers";
 import { ACTIVITY_IMAGES_QUERY_OPTIONS } from "@dofek/training/activity-images";
 import { buildClimbingMapLocations, buildClimbingMapMarkers } from "@dofek/training/climbing-map";
 import type { MuscleGroupInput } from "@dofek/training/muscle-groups";
-import {
-  cadenceUnit,
-  formatActivityTypeLabel,
-  isActivityDetailType,
-  isCyclingActivity,
-} from "@dofek/training/training";
+import { cadenceUnit, isActivityDetailType, isCyclingActivity } from "@dofek/training/training";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { type ComponentProps, useCallback, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
-  Linking,
   Modal,
   Pressable,
   ScrollView,
@@ -43,7 +30,6 @@ import type {
 import { ActivityHardwareSection } from "../../components/ActivityHardwarePanel";
 import { ActivityImages } from "../../components/ActivityImages";
 import { ActivityPerceivedExertion } from "../../components/ActivityPerceivedExertion";
-import { ActivityTypeIcon } from "../../components/ActivityTypeIcon";
 import {
   AreaChart,
   CHART_COLORS,
@@ -51,7 +37,7 @@ import {
   LineChart,
   MetricSourcePicker,
 } from "../../components/activity/ActivityDetailCharts";
-import { ProviderAbsentBanner } from "../../components/activity/ProviderAbsentBanner";
+import { ActivityDetailHeader } from "../../components/activity/ActivityDetailHeader";
 import { statsStyles, styles } from "../../components/activity/styles";
 import { HrZonesChart, PowerZonesChart } from "../../components/activity/ZoneDistributionCharts";
 import { ClimbingLogEntryBreakdown } from "../../components/ClimbingLogEntryBreakdown";
@@ -70,87 +56,6 @@ import { useUnitConverter } from "../../lib/units";
 import { colors } from "../../theme";
 
 const EMPTY_ROUTE_POINTS: ComponentProps<typeof RouteMap>["points"] = [];
-
-interface ActivitySourceLink {
-  providerId: string;
-  externalId: string;
-  subsource: string | null;
-  label: string;
-  url: string | null;
-  providerAbsentAt?: string | null;
-  memberActivityId?: string | null;
-}
-
-interface ActivitySourceSummary {
-  sourceProviders: string[];
-  sourceLinks: ActivitySourceLink[];
-  subsource?: string | null;
-}
-
-function ActivitySourceLinks({ activity }: { activity: ActivitySourceSummary }) {
-  if (activity.sourceLinks.length > 0) {
-    return (
-      <>
-        {activity.sourceLinks.map((link, index) => (
-          <ActivitySourceLinkLabel
-            key={`${link.providerId}:${link.externalId}:${link.memberActivityId ?? ""}`}
-            link={link}
-            prefix={index > 0 ? ", " : ""}
-          />
-        ))}
-      </>
-    );
-  }
-
-  return (
-    <>
-      {activity.sourceProviders.map((providerId, index) => (
-        <Text key={providerId} style={styles.source}>
-          {index > 0 && ", "}
-          {providerSourceLabel(providerId, activity.subsource)}
-        </Text>
-      ))}
-    </>
-  );
-}
-
-function ActivitySourceLinkLabel({ link, prefix }: { link: ActivitySourceLink; prefix: string }) {
-  if (link.providerAbsentAt) {
-    return (
-      <Text style={styles.sourceRemoved}>
-        {prefix}
-        {link.label} (removed)
-      </Text>
-    );
-  }
-
-  if (link.url) {
-    const sourceUrl = link.url;
-    return (
-      <View style={styles.sourceLinkRow}>
-        {prefix && <Text style={styles.source}>{prefix}</Text>}
-        <Pressable
-          onPress={() => {
-            void Linking.openURL(sourceUrl);
-          }}
-          hitSlop={4}
-          style={styles.sourceLinkPressable}
-          accessibilityRole="link"
-          accessibilityLabel={`Open ${link.label}`}
-        >
-          <Text style={styles.sourceLink}>{link.label} ↗</Text>
-        </Pressable>
-      </View>
-    );
-  }
-
-  return (
-    <Text style={styles.source}>
-      {prefix}
-      {link.label}
-    </Text>
-  );
-}
 
 // ── Stats Grid ──
 
@@ -614,13 +519,6 @@ export default function ActivityDetailScreen() {
   }
 
   const activity = detail.data;
-  const localStartTime = formatRecordLocalTime(
-    activity.startedAt,
-    activity.localTimeContext,
-    "start",
-    undefined,
-    Intl.DateTimeFormat().resolvedOptions().timeZone,
-  );
   const zones = hrZones.data ?? [];
 
   const routePoints = route.data?.status === "ready" ? route.data.points : EMPTY_ROUTE_POINTS;
@@ -761,33 +659,7 @@ export default function ActivityDetailScreen() {
       scrollEnabled={scrollEnabled}
     >
       {/* Activity Header */}
-      <View style={styles.header}>
-        <View style={styles.headerRow}>
-          <ActivityTypeIcon activityType={activity.activityType} size={48} />
-          <View style={styles.headerText}>
-            <Text style={styles.name}>
-              {activity.name ?? formatActivityTypeLabel(activity.activityType)}
-            </Text>
-            <View style={styles.typeBadge}>
-              <Text style={styles.typeBadgeText}>
-                {formatActivityTypeLabel(activity.activityType)}
-              </Text>
-            </View>
-          </View>
-        </View>
-        <Text style={styles.dateTime}>
-          {formatDateLong(activity.displayedDate, { timeZone: "UTC" })}
-          {" at "}
-          {localStartTime === "--" ? "Local time unavailable" : localStartTime}
-        </Text>
-        {(activity.sourceLinks.length > 0 || activity.sourceProviders.length > 0) && (
-          <View style={styles.sourceRow}>
-            <Text style={styles.source}>Source: </Text>
-            <ActivitySourceLinks activity={activity} />
-          </View>
-        )}
-        {activity.providerAbsentAt && <ProviderAbsentBanner activity={activity} />}
-      </View>
+      <ActivityDetailHeader activity={activity} />
 
       {/* Stats Grid */}
       {stats.length > 0 && <StatsGrid stats={stats} />}

@@ -29,6 +29,7 @@ const activity: ActivityRow = {
   local_time_source: "provider_timezone",
   subsource: "Wahoo trainer",
   source_providers: ["wahoo", "strava"],
+  origin_evidence: [],
   source_external_ids: null,
   avg_hr: null,
   max_hr: null,

@@ -501,7 +501,6 @@ export default function ActivitiesScreen() {
                             · {formatDurationMinutes(activity.durationMin)}
                           </Text>
                         </View>
-                        <ActivitySourceDisclosure origin={activity.source.origin} />
                       </View>
                       <View
                         pointerEvents="none"
@@ -526,6 +525,7 @@ export default function ActivitiesScreen() {
                       <ActivityPhotoPreview activityId={activity.id} />
                     </View>
                   ) : null}
+                  <ActivitySourceDisclosure tree={activity.source.tree} />
                 </View>
               ))}
             </View>

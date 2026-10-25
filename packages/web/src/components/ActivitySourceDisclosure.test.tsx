@@ -1,97 +1,126 @@
 /** @vitest-environment jsdom */
-import type { ActivityOrigin } from "@dofek/providers/activity-origin";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
+import { branchingSourceTree } from "./ActivitySourceDisclosure.fixtures.ts";
 import { ActivitySourceDisclosure } from "./ActivitySourceDisclosure.tsx";
 
-const origin: ActivityOrigin = {
-  status: "resolved",
-  memberActivityId: "00000000-0000-4000-8000-000000000001",
-  providerId: "apple_health",
-  sourceName: "Hang Ten",
-};
 afterEach(cleanup);
 
 describe("ActivitySourceDisclosure", () => {
-  it("shows the Garmin recording model in its compact control and details", () => {
+  it("only offers source details when the tree contains source records", () => {
+    const { container, rerender } = render(
+      <ActivitySourceDisclosure tree={{ primary: null, otherSources: [] }} />,
+    );
+    expect(container).toBeEmptyDOMElement();
+
+    rerender(<ActivitySourceDisclosure tree={branchingSourceTree} />);
+    expect(screen.getByRole("button", { name: "Garmin Connect Sources" })).toBeVisible();
+
+    rerender(<ActivitySourceDisclosure tree={{ primary: null, otherSources: [] }} />);
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  it("shows the Garmin model thumbnail in the inline control", () => {
     render(
       <ActivitySourceDisclosure
-        origin={{ ...origin, providerId: "garmin", sourceName: "Forerunner 965" }}
+        tree={{
+          primary: {
+            id: "garmin-record",
+            providerId: "garmin",
+            sourceName: "Forerunner 965",
+            label: "Forerunner 965",
+            description: "Closest available recording",
+            url: null,
+            children: [],
+          },
+          otherSources: [],
+        }}
       />,
     );
-    const trigger = screen.getByRole("button", { name: "Activity source: Garmin" });
+    const trigger = screen.getByRole("button", { name: "Forerunner 965 Sources" });
     expect(trigger.querySelector("img")).toHaveAttribute(
       "src",
       expect.stringContaining("010-02809-00"),
     );
     expect(trigger.querySelector("img")).toHaveAttribute("width", "18");
     fireEvent.click(trigger);
-    const details = screen.getByRole("dialog", { name: "Activity source" });
-    expect(details.querySelector("img")).toHaveAttribute(
-      "src",
-      expect.stringContaining("010-02809-00"),
-    );
-    expect(within(details).getByText("Garmin")).toBeVisible();
-    expect(within(details).queryByText("Imported via")).toBeNull();
+    expect(screen.getAllByText("Forerunner 965")).toHaveLength(1);
+    expect(screen.getByText("Closest available recording")).toBeVisible();
   });
 
-  it("opens recording and import roles from a clean recording-only logo", () => {
-    render(<ActivitySourceDisclosure origin={origin} />);
-    const trigger = screen.getByRole("button", { name: "Activity source: Hang Ten" });
+  it("expands inline with one primary root and distinct transfer branches", () => {
+    render(<ActivitySourceDisclosure tree={branchingSourceTree} />);
+    const trigger = screen.getByRole("button", { name: "Garmin Connect Sources" });
     expect(trigger).toHaveAttribute("aria-expanded", "false");
     expect(trigger.querySelectorAll("img")).toHaveLength(1);
-    expect(trigger.querySelector("img")).toHaveAttribute("src", "/logos/hang-ten.png");
-    expect(trigger).toHaveTextContent("");
+    expect(screen.queryByText("Strava")).toBeNull();
     fireEvent.click(trigger);
-    const details = screen.getByRole("dialog", { name: "Activity source" });
-    expect(within(details).getByText("Recorded in")).toBeVisible();
-    expect(within(details).getByText("Hang Ten")).toBeVisible();
-    expect(within(details).getByText("Imported via")).toBeVisible();
-    expect(within(details).getByText("Apple Health")).toBeVisible();
-    fireEvent.click(within(details).getByRole("button", { name: "Close activity source" }));
-    expect(screen.queryByRole("dialog")).toBeNull();
-  });
-
-  it("dismisses with Escape and returns focus to its trigger", async () => {
-    render(<ActivitySourceDisclosure origin={origin} />);
-    const trigger = screen.getByRole("button", { name: "Activity source: Hang Ten" });
-    trigger.focus();
+    expect(trigger).toHaveAttribute("aria-expanded", "true");
+    const content = document.getElementById(trigger.getAttribute("aria-controls") ?? "");
+    expect(content).toBeVisible();
+    expect(screen.getAllByText("Garmin Connect")).toHaveLength(1);
+    expect(screen.getByText("Closest available recording")).toBeVisible();
+    const strava = screen.getByRole("link", { name: "Strava" }).closest("li");
+    expect(strava).not.toBeNull();
+    if (!strava) throw new Error("Missing Strava tree node");
+    expect(within(strava).getByText("Imported from Strava")).toBeVisible();
+    expect(screen.getAllByText("Apple Health")).toHaveLength(2);
+    expect(screen.getAllByText("Imported from Garmin Connect")).toHaveLength(2);
     fireEvent.click(trigger);
-    await waitFor(() =>
-      expect(screen.getByRole("button", { name: "Close activity source" })).toHaveFocus(),
-    );
-    fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
-    await waitFor(() => expect(trigger).toHaveFocus());
-    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByText("Strava")).toBeNull();
   });
 
-  it("dismisses when focus moves outside", async () => {
-    render(
-      <>
-        <ActivitySourceDisclosure origin={origin} />
-        <button type="button">Outside</button>
-      </>,
-    );
-    fireEvent.click(screen.getByRole("button", { name: "Activity source: Hang Ten" }));
-    screen.getByRole("button", { name: "Outside" }).focus();
-    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  it("retains disconnected components outside the primary tree", () => {
+    render(<ActivitySourceDisclosure tree={branchingSourceTree} />);
+    fireEvent.click(screen.getByRole("button", { name: "Garmin Connect Sources" }));
+    const others = screen.getByRole("region", { name: "Other matching sources" });
+    expect(within(others).getByText("WHOOP")).toBeVisible();
+    expect(within(others).getByText("Transfer history unavailable")).toBeVisible();
+    expect(within(others).queryByText("Strava")).toBeNull();
   });
 
-  it("shows one row for direct WHOOP", () => {
-    render(
-      <ActivitySourceDisclosure origin={{ ...origin, providerId: "whoop", sourceName: null }} />,
-    );
-    fireEvent.click(screen.getByRole("button", { name: "Activity source: WHOOP (Cloud)" }));
-    expect(screen.getByText("WHOOP (Cloud)")).toBeVisible();
-    expect(screen.queryByText("Imported via")).toBeNull();
-  });
-
-  it("omits an unresolved source control", () => {
+  it("shows a generic disclosure for unresolved sources", () => {
     render(
       <ActivitySourceDisclosure
-        origin={{ status: "unresolved", candidateMemberActivityIds: [] }}
+        tree={{ primary: null, otherSources: branchingSourceTree.otherSources }}
       />,
     );
-    expect(screen.queryByRole("button")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Sources" }));
+    expect(screen.getByText("WHOOP")).toBeVisible();
+  });
+
+  it("keeps focus on the native disclosure button and gives each region a unique id", () => {
+    render(
+      <>
+        <ActivitySourceDisclosure tree={branchingSourceTree} />
+        <ActivitySourceDisclosure tree={branchingSourceTree} />
+      </>,
+    );
+    const triggers = screen.getAllByRole("button", { name: "Garmin Connect Sources" });
+    expect(triggers[0]?.tagName).toBe("BUTTON");
+    expect(triggers[0]?.getAttribute("aria-controls")).not.toBe(
+      triggers[1]?.getAttribute("aria-controls"),
+    );
+    const trigger = triggers[0];
+    if (!trigger) throw new Error("Missing disclosure");
+    trigger.focus();
+    fireEvent.click(trigger);
+    expect(trigger).toHaveFocus();
+  });
+
+  it("renders server labels and URLs without adding Apple Health logo badges", () => {
+    render(<ActivitySourceDisclosure tree={branchingSourceTree} />);
+    fireEvent.click(screen.getByRole("button", { name: "Garmin Connect Sources" }));
+    expect(screen.getByRole("link", { name: "Strava" })).toHaveAttribute(
+      "href",
+      "https://www.strava.com/activities/123",
+    );
+    for (const label of screen.getAllByText("Apple Health")) {
+      expect(label.parentElement?.querySelectorAll("img")).toHaveLength(1);
+    }
+    const primaryLink = screen.getByRole("link", { name: "View activity for Garmin Connect" });
+    expect(primaryLink).toHaveTextContent("View activity");
+    expect(primaryLink).toHaveAttribute("href", "https://connect.garmin.com/modern/activity/123");
   });
 });

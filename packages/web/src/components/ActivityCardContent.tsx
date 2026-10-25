@@ -11,6 +11,7 @@ import {
 } from "@dofek/format/record-local-time";
 import { formatMeasurementText, type UnitConverter } from "@dofek/format/units";
 import type { ActivityOrigin } from "@dofek/providers/activity-origin";
+import type { ActivitySourceTree } from "@dofek/providers/activity-source-tree";
 import {
   formatProviderAbsentTombstoneSummary,
   formatProviderPartialAbsenceSummary,
@@ -35,6 +36,7 @@ export interface ActivityCardData {
   durationMin: number;
   source: {
     origin: ActivityOrigin;
+    tree: ActivitySourceTree;
     primarySourceLabel: string | null;
     sourceCount: number;
     overlapSummary: string | null;
@@ -94,76 +96,80 @@ export function ActivityCardContent({
   );
 
   return (
-    <div
-      data-testid="activity-card-layout"
-      className={
-        activity.location || previewPhoto
-          ? "grid min-h-60 sm:grid-cols-[minmax(0,2fr)_minmax(18rem,3fr)]"
-          : "grid"
-      }
-    >
-      <div className="flex min-w-0 flex-col p-4 sm:p-5">
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-          {selectMode ? (
-            <input
-              type="checkbox"
-              aria-label={`Select ${activity.name ?? activityLabel}`}
-              checked={selected}
-              readOnly={!onToggleSelected}
-              onChange={onToggleSelected}
-              className="relative z-20 h-4 w-4 cursor-pointer accent-accent"
-            />
-          ) : null}
-          <ActivityTypeIcon activityType={activity.activityType} variant="plain" />
-          <div className="min-w-0 flex-1">
-            <h4 className="truncate text-base font-semibold">
-              {headingAction ?? activity.name ?? activityLabel}
-            </h4>
-            <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-muted">
-              <span>
-                {localStartTime === "--" ? "Local time unavailable" : localStartTime} ·{" "}
-                {formatDurationMinutes(activity.durationMin)}
-              </span>
-              <ActivitySourceDisclosure origin={activity.source.origin} />
-            </div>
-          </div>
-        </div>
-        {isHidden ? (
-          <span className="mt-3 w-fit rounded border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-300">
-            Removed
-          </span>
-        ) : null}
-        {tombstoneSummary ? (
-          <p className="mt-2 text-xs text-amber-700 dark:text-amber-300">{tombstoneSummary}</p>
-        ) : null}
-        {partialAbsenceSummary ? (
-          <p className="mt-2 text-xs text-amber-700 dark:text-amber-300">{partialAbsenceSummary}</p>
-        ) : null}
-        <div data-testid="activity-detail-metrics" className="mt-auto pt-6">
-          <ActivityMetricGrid activity={activity} units={units} />
-        </div>
-      </div>
-      {activity.location || previewPhoto ? (
-        <div
-          data-testid="activity-secondary-panel"
-          className="flex min-h-64 flex-col border-t border-border/60 bg-surface-secondary/45 p-4 sm:border-l sm:border-t-0"
-        >
-          <div
-            data-testid="activity-secondary-inset"
-            className="min-h-48 flex-1 overflow-hidden rounded-lg border border-border bg-surface-solid"
-          >
-            {activity.location ? (
-              <ActivityMapTile location={activity.location} variant="panel" />
-            ) : previewPhoto ? (
-              <ActivityPhoto
-                image={previewPhoto}
-                className="h-full min-h-48"
-                recoveryMessage="Open the activity to refresh photos and try again."
+    <div className="flex h-full flex-col">
+      <div
+        data-testid="activity-card-layout"
+        className={
+          activity.location || previewPhoto
+            ? "grid min-h-60 flex-1 sm:grid-cols-[minmax(0,2fr)_minmax(18rem,3fr)]"
+            : "grid flex-1"
+        }
+      >
+        <div className="flex min-w-0 flex-col p-4 sm:p-5">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            {selectMode ? (
+              <input
+                type="checkbox"
+                aria-label={`Select ${activity.name ?? activityLabel}`}
+                checked={selected}
+                readOnly={!onToggleSelected}
+                onChange={onToggleSelected}
+                className="relative z-20 h-4 w-4 cursor-pointer accent-accent"
               />
             ) : null}
+            <ActivityTypeIcon activityType={activity.activityType} variant="plain" />
+            <div className="min-w-0 flex-1">
+              <h4 className="truncate text-base font-semibold">
+                {headingAction ?? activity.name ?? activityLabel}
+              </h4>
+              <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-muted">
+                <span>
+                  {localStartTime === "--" ? "Local time unavailable" : localStartTime} ·{" "}
+                  {formatDurationMinutes(activity.durationMin)}
+                </span>
+              </div>
+            </div>
+          </div>
+          {isHidden ? (
+            <span className="mt-3 w-fit rounded border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-300">
+              Removed
+            </span>
+          ) : null}
+          {tombstoneSummary ? (
+            <p className="mt-2 text-xs text-amber-700 dark:text-amber-300">{tombstoneSummary}</p>
+          ) : null}
+          {partialAbsenceSummary ? (
+            <p className="mt-2 text-xs text-amber-700 dark:text-amber-300">
+              {partialAbsenceSummary}
+            </p>
+          ) : null}
+          <div data-testid="activity-detail-metrics" className="mt-auto pt-6">
+            <ActivityMetricGrid activity={activity} units={units} />
           </div>
         </div>
-      ) : null}
+        {activity.location || previewPhoto ? (
+          <div
+            data-testid="activity-secondary-panel"
+            className="flex min-h-64 flex-col border-t border-border/60 bg-surface-secondary/45 p-4 sm:border-l sm:border-t-0"
+          >
+            <div
+              data-testid="activity-secondary-inset"
+              className="min-h-48 flex-1 overflow-hidden rounded-lg border border-border bg-surface-solid"
+            >
+              {activity.location ? (
+                <ActivityMapTile location={activity.location} variant="panel" />
+              ) : previewPhoto ? (
+                <ActivityPhoto
+                  image={previewPhoto}
+                  className="h-full min-h-48"
+                  recoveryMessage="Open the activity to refresh photos and try again."
+                />
+              ) : null}
+            </div>
+          </div>
+        ) : null}
+      </div>
+      <ActivitySourceDisclosure tree={activity.source.tree} />
     </div>
   );
 }

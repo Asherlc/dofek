@@ -23,6 +23,7 @@ function activity(overrides: Partial<ActivityCardData> = {}): ActivityCardData {
     durationMin: 30,
     source: {
       origin: { status: "unresolved", candidateMemberActivityIds: [] },
+      tree: { primary: null, otherSources: [] },
       primarySourceLabel: "Strong (via Apple Health)",
       sourceCount: 1,
       overlapSummary: null,
@@ -117,6 +118,18 @@ describe("ActivityCardContent", () => {
                 providerId,
                 sourceName: providerId === "apple_health" ? "Strong" : "Garmin Edge 530",
               },
+              tree: {
+                primary: {
+                  id: "source-1",
+                  providerId: providerId === "apple_health" ? "strong-csv" : providerId,
+                  sourceName: providerId === "garmin" ? "Garmin Edge 530" : null,
+                  label: providerId,
+                  description: null,
+                  url: null,
+                  children: [],
+                },
+                otherSources: [],
+              },
               primarySourceLabel: providerId,
               sourceCount: 2,
               overlapSummary: "2 matched source records",
@@ -129,7 +142,7 @@ describe("ActivityCardContent", () => {
       );
       const activityIcon = screen.getByTestId("activity-type-icon");
       expect(activityIcon.parentElement?.firstElementChild).toBe(activityIcon);
-      const source = screen.getByRole("button", { name: /Activity source:/ });
+      const source = screen.getByRole("button", { name: /Sources/ });
       const logo = source.querySelector("img");
       expect(logo).toHaveAttribute("width", "18");
       expect(logo?.getAttribute("src")).toContain(
@@ -142,15 +155,16 @@ describe("ActivityCardContent", () => {
     },
   );
 
-  it("omits the primary logo when provenance is unresolved", () => {
+  it("keeps activity content when no external source records are available", () => {
     render(
       <ActivityCardContent
         activity={activity({
           source: {
             origin: { status: "unresolved", candidateMemberActivityIds: [] },
+            tree: { primary: null, otherSources: [] },
             primarySourceLabel: null,
-            sourceCount: 2,
-            overlapSummary: "2 matched source records",
+            sourceCount: 1,
+            overlapSummary: null,
           },
         })}
         units={units}
@@ -159,7 +173,8 @@ describe("ActivityCardContent", () => {
       />,
     );
     expect(screen.getByTestId("activity-type-icon")).toBeVisible();
-    expect(screen.queryByRole("button", { name: /Activity source:/ })).toBeNull();
+    expect(screen.getByText("Training Stress Score")).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Sources" })).toBeNull();
   });
   it.each([
     { modality: "indoor", distanceMeters: 0, elevationGainM: null },
@@ -344,6 +359,18 @@ describe("ActivityCardContent", () => {
               providerId: "whoop",
               sourceName: null,
             },
+            tree: {
+              primary: {
+                id: "source-whoop",
+                providerId: "whoop",
+                sourceName: null,
+                label: "WHOOP (Cloud)",
+                description: null,
+                url: null,
+                children: [],
+              },
+              otherSources: [],
+            },
             primarySourceLabel: "WHOOP",
             sourceCount: 1,
             overlapSummary: null,
@@ -375,7 +402,7 @@ describe("ActivityCardContent", () => {
     );
     expect(screen.getByLabelText("Activity location map")).toBeDefined();
     expect(screen.getByTestId("activity-type-icon")).toBeVisible();
-    expect(screen.getByRole("button", { name: "Activity source: WHOOP (Cloud)" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "WHOOP (Cloud) Sources" })).toBeVisible();
     expect(screen.getByTestId("activity-detail-metrics")).toBeDefined();
     expect(screen.queryByText("No route recorded")).toBeNull();
     expect(screen.getByTestId("activity-secondary-panel")).toBeDefined();

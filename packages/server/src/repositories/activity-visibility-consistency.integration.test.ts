@@ -276,6 +276,20 @@ describe("activity visibility consistency", () => {
       primarySourceLabel: "issue_2060",
       sourceCount: 1,
       overlapSummary: null,
+      tree: {
+        primary: null,
+        otherSources: [
+          {
+            id: "issue_2060:authorized-run:",
+            providerId: "issue_2060",
+            sourceName: null,
+            label: "issue_2060",
+            description: "Other matching source",
+            url: null,
+            children: [],
+          },
+        ],
+      },
     });
     expect(new Date(authorizedRun?.lastProcessedAt ?? "").getTime()).toBe(
       new Date(processingFreshness[0]?.last_processed_at ?? "").getTime(),

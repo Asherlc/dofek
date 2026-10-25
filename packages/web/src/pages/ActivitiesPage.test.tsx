@@ -195,6 +195,8 @@ vi.mock("../lib/unitContext.ts", () => ({
   }),
 }));
 
+import { branchingSourceTree } from "../components/ActivitySourceDisclosure.fixtures.ts";
+
 import { ActivitiesPage } from "./ActivitiesPage.tsx";
 
 function activity(overrides: Record<string, unknown> = {}) {
@@ -212,6 +214,7 @@ function activity(overrides: Record<string, unknown> = {}) {
     },
     durationMin: 60,
     source: {
+      tree: { primary: null, otherSources: [] },
       origin: { status: "unresolved", candidateMemberActivityIds: [] },
       primarySourceLabel: "Wahoo",
       sourceCount: 1,
@@ -779,11 +782,12 @@ describe("ActivitiesPage", () => {
                   origin: {
                     status: "resolved",
                     memberActivityId: "00000000-0000-4000-8000-000000000001",
-                    providerId: "apple_health",
-                    sourceName: "Hang Ten",
+                    providerId: "garmin",
+                    sourceName: "Garmin Edge 530",
                   },
-                  primarySourceLabel: "Hang Ten (via Apple Health)",
-                  sourceCount: 1,
+                  primarySourceLabel: "Garmin Connect",
+                  tree: branchingSourceTree,
+                  sourceCount: 5,
                   overlapSummary: null,
                 },
               }),
@@ -796,11 +800,11 @@ describe("ActivitiesPage", () => {
       };
       render(<ActivitiesPage />);
       if (selectMode) fireEvent.click(screen.getByRole("button", { name: "Select activities" }));
-      const trigger = screen.getByRole("button", { name: "Activity source: Hang Ten" });
+      const trigger = screen.getByRole("button", { name: "Garmin Connect Sources" });
       expect(trigger.closest("a")).toBeNull();
       expect(trigger.parentElement?.closest("button")).toBeNull();
       fireEvent.click(trigger);
-      expect(screen.getByRole("dialog", { name: "Activity source" })).toBeVisible();
+      expect(screen.getByText("Imported from Strava")).toBeVisible();
       if (selectMode) {
         expect(screen.getByRole("checkbox", { name: "Select Trainer Ride" })).not.toBeChecked();
       } else {
@@ -809,7 +813,8 @@ describe("ActivitiesPage", () => {
           "/activity/activity-1",
         );
       }
-      fireEvent.click(screen.getByRole("button", { name: "Close activity source" }));
+      fireEvent.click(trigger);
+      expect(trigger).toHaveAttribute("aria-expanded", "false");
       if (selectMode) {
         fireEvent.click(screen.getByRole("checkbox", { name: "Select Trainer Ride" }));
         expect(screen.getByRole("checkbox", { name: "Select Trainer Ride" })).toBeChecked();

@@ -1,5 +1,7 @@
 import type { ActivityDataState } from "@dofek/format/activity-data-state";
 import type { RecordLocalTimeContext } from "@dofek/format/record-local-time";
+import type { ActivityOriginEvidence } from "@dofek/providers/activity-origin";
+import type { ActivitySourceTree } from "@dofek/providers/activity-source-tree";
 import { activityMeasurementState } from "../services/activity-data-state.ts";
 import { type ActivityOriginColumns, activityOriginFromColumns } from "./activity-origin.ts";
 import type { ActivitySource } from "./activity-source.ts";
@@ -13,6 +15,7 @@ import {
   type ActivitySourceDecisionDetail,
   buildActivitySourceDecision,
 } from "./activity-source-decision.ts";
+import { buildActivitySourceTree } from "./activity-source-tree.ts";
 
 export type {
   ActivitySource,
@@ -39,6 +42,7 @@ export interface ActivityDetail {
   subsource: string | null;
   sourceProviders: string[];
   sourceLinks: SourceLink[];
+  sourceTree: ActivitySourceTree;
   sourceDecision: ActivitySourceDecisionDetail | null;
   avgHr: number | null;
   avgHrState: ActivityDataState;
@@ -66,6 +70,7 @@ export interface ActivityDetail {
 }
 
 export interface ActivityRow extends ActivityOriginColumns {
+  origin_evidence: ActivityOriginEvidence[];
   id: string;
   displayed_date: string;
   resolved_from?: string | null;
@@ -239,6 +244,7 @@ export class Activity {
   /** Serialize to the ActivityDetail shape consumed by API clients. */
   toDetail(): ActivityDetail {
     const sourceLinks = this.sourceLinks;
+    const origin = activityOriginFromColumns(this.#row);
     return {
       id: this.id,
       displayedDate: this.displayedDate,
@@ -256,11 +262,8 @@ export class Activity {
       subsource: this.subsource,
       sourceProviders: this.sourceProviders,
       sourceLinks,
-      sourceDecision: buildActivitySourceDecision(
-        activityOriginFromColumns(this.#row),
-        sourceLinks,
-        this.#lookupProvider,
-      ),
+      sourceTree: buildActivitySourceTree(origin, sourceLinks, this.#row.origin_evidence),
+      sourceDecision: buildActivitySourceDecision(origin, sourceLinks, this.#lookupProvider),
       avgHr: this.avgHr,
       avgHrState: activityMeasurementState("Average heart rate", this.avgHr),
       maxHr: this.maxHr,

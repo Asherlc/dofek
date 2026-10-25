@@ -10,6 +10,7 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import React from "react";
 import { Alert, Linking } from "react-native";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { garminActivitySourceTree } from "../../app-fixtures/activity-source-tree";
 import { activityImageFixture } from "../../components/activity-images-test-helpers";
 import { RouteMap } from "../../components/RouteMap";
 import { captureException } from "../../lib/telemetry";
@@ -136,6 +137,8 @@ vi.mock("../../components/ChartTitleWithTooltip", () => ({
 vi.mock("../../components/MuscleGroupBodyDiagram", () => ({
   MuscleGroupBodyDiagram: () => null,
 }));
+
+vi.mock("../../components/ProviderLogo", () => ({ ProviderLogo: () => null }));
 
 vi.mock("../../components/RouteMap", () => ({
   RouteMap: vi.fn(({ points }: { points: Array<{ lat: number | null; lng: number | null }> }) =>
@@ -439,6 +442,7 @@ const baseCyclingActivity = {
   sourceProviders: ["wahoo"],
   sourceLinks: [],
   sourceDecision: null,
+  sourceTree: { primary: null, otherSources: [] },
   avgHr: 145,
   avgHrState: { status: "available" },
   maxHr: 172,
@@ -606,6 +610,28 @@ beforeEach(() => {
 });
 
 describe("ActivityDetailScreen", () => {
+  it("renders and expands the server-authored source tree in the real detail header", async () => {
+    mockByIdQuery.mockReturnValue({
+      data: { ...baseCyclingActivity, sourceTree: garminActivitySourceTree },
+      isLoading: false,
+      error: null,
+    });
+    const { default: ActivityDetailScreen } = await import("../../app/activity/[id]");
+    render(<ActivityDetailScreen />);
+
+    expect(screen.getByText("Morning Ride")).toBeTruthy();
+    const trigger = screen.getByRole("button", { name: "Sources: Garmin Edge 530" });
+    expect(trigger.getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(trigger);
+    expect(trigger.getAttribute("aria-expanded")).toBe("true");
+    expect(screen.getAllByText("Apple Health")).toHaveLength(2);
+    expect(screen.getByText("Other matching sources")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "View source for Strava" }));
+    expect(Linking.openURL).toHaveBeenCalledWith("https://www.strava.com/activities/123");
+    expect(screen.getByText("Morning Ride")).toBeTruthy();
+    expect(screen.getByText("220 W")).toBeTruthy();
+  });
+
   it("shows downloaded activity images with the activity detail and opens them", async () => {
     mockImagesQuery.mockReturnValue({
       data: {
@@ -2108,13 +2134,35 @@ describe("ActivityDetailScreen", () => {
     expect(getQueryEnabledFlag(mockClimbingEntriesQuery.mock.calls[0]?.[1])).toBe(false);
   });
 
-  it("shows Apple Health upstream app names when subsource is present", async () => {
+  it("shows the server-authored upstream app and its Apple Health record", async () => {
     mockByIdQuery.mockReturnValue({
       data: {
         ...baseCyclingActivity,
         providerId: "apple_health",
         subsource: "Strong",
         sourceProviders: ["apple_health"],
+        sourceTree: {
+          primary: {
+            id: "strong-recording",
+            providerId: "strong-csv",
+            sourceName: null,
+            label: "Strong",
+            description: "Recording app reported by Apple Health",
+            url: null,
+            children: [
+              {
+                id: "strong-apple-health",
+                providerId: "apple_health",
+                sourceName: null,
+                label: "Apple Health",
+                description: "Recorded by Strong",
+                url: null,
+                children: [],
+              },
+            ],
+          },
+          otherSources: [],
+        },
       },
       isLoading: false,
       error: null,
@@ -2123,50 +2171,10 @@ describe("ActivityDetailScreen", () => {
     const { default: ActivityDetailScreen } = await import("../../app/activity/[id]");
     render(React.createElement(ActivityDetailScreen));
 
-    expect(screen.getByText(/Strong \(via Apple Health\)/)).toBeTruthy();
-  });
-
-  it("renders multiple source links for grouped Apple Health activities", async () => {
-    mockByIdQuery.mockReturnValue({
-      data: {
-        ...baseCyclingActivity,
-        providerId: "whoop",
-        subsource: "WHOOP",
-        sourceProviders: ["apple_health", "whoop"],
-        sourceLinks: [
-          {
-            providerId: "apple_health",
-            label: "Strong (via Apple Health)",
-            url: null,
-            providerAbsentAt: null,
-            memberActivityId: "strong-member",
-          },
-          {
-            providerId: "apple_health",
-            label: "WHOOP (via Apple Health)",
-            url: null,
-            providerAbsentAt: null,
-            memberActivityId: "whoop-apple-member",
-          },
-          {
-            providerId: "whoop",
-            label: "WHOOP (Cloud)",
-            url: "https://app.whoop.com/activities/whoop-cloud",
-            providerAbsentAt: null,
-            memberActivityId: "whoop-cloud-member",
-          },
-        ],
-      },
-      isLoading: false,
-      error: null,
-    });
-
-    const { default: ActivityDetailScreen } = await import("../../app/activity/[id]");
-    render(React.createElement(ActivityDetailScreen));
-
-    expect(screen.getByText(/Strong \(via Apple Health\)/)).toBeTruthy();
-    expect(screen.getByText(/WHOOP \(via Apple Health\)/)).toBeTruthy();
-    expect(screen.getByText(/WHOOP \(Cloud\)/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Sources: Strong" }));
+    expect(screen.getByText("Recording app reported by Apple Health")).toBeTruthy();
+    expect(screen.getByText("Apple Health")).toBeTruthy();
+    expect(screen.getByText("Recorded by Strong")).toBeTruthy();
   });
 
   it("shows removed provider status for provider-absent activities", async () => {

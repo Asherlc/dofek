@@ -51,6 +51,7 @@ const fullRow: ActivityRow = {
   provider_id: "wahoo",
   subsource: null,
   source_providers: ["wahoo", "strava"],
+  origin_evidence: [],
   source_external_ids: [
     { providerId: "strava", externalId: "99999" },
     { providerId: "wahoo", externalId: "42" },
@@ -344,6 +345,84 @@ describe("Activity", () => {
   });
 
   describe("toDetail", () => {
+    it("projects explicit branches and keeps disconnected records in the required source tree", () => {
+      const recording = "00000000-0000-4000-8000-000000000001";
+      const stravaCopy = "00000000-0000-4000-8000-000000000002";
+      const healthCopy = "00000000-0000-4000-8000-000000000003";
+      const other = "00000000-0000-4000-8000-000000000004";
+      const detail = new Activity(
+        {
+          ...fullRow,
+          primary_activity_id: recording,
+          primary_provider_id: "wahoo",
+          source_external_ids: [
+            { memberActivityId: recording, providerId: "wahoo", externalId: "42" },
+            { memberActivityId: stravaCopy, providerId: "strava", externalId: "123" },
+            { memberActivityId: healthCopy, providerId: "apple_health", externalId: "health" },
+            { memberActivityId: other, providerId: "strava", externalId: "456" },
+          ],
+          origin_evidence: [stravaCopy, healthCopy].map((downstreamMemberActivityId) => ({
+            upstreamMemberActivityId: recording,
+            downstreamMemberActivityId,
+            field: "external_id",
+            value: "42",
+          })),
+        },
+        mockLookup,
+      ).toDetail();
+      expect(detail.sourceTree).toMatchObject({
+        primary: {
+          id: recording,
+          label: "Wahoo",
+          url: "https://systm.wahoofitness.com/history/activity-details/42",
+          children: [
+            { id: healthCopy, providerId: "apple_health", children: [] },
+            { id: stravaCopy, url: "https://www.strava.com/activities/123", children: [] },
+          ],
+        },
+        otherSources: [{ id: other, description: "Other matching source", children: [] }],
+      });
+    });
+
+    it("includes a single-source tree independently of its absent source decision", () => {
+      const memberId = "00000000-0000-4000-8000-000000000001";
+      const detail = new Activity(
+        {
+          ...fullRow,
+          primary_activity_id: memberId,
+          primary_provider_id: "garmin",
+          primary_source_name: "Forerunner 965",
+          source_external_ids: [
+            { memberActivityId: memberId, providerId: "garmin", externalId: "123" },
+          ],
+          origin_evidence: [],
+        },
+        mockLookup,
+      ).toDetail();
+      expect(detail.sourceDecision).toBeNull();
+      expect(detail.sourceTree).toMatchObject({
+        primary: {
+          id: memberId,
+          providerId: "garmin",
+          sourceName: "Forerunner 965",
+          label: "Forerunner 965",
+          children: [],
+        },
+        otherSources: [],
+      });
+    });
+
+    it("keeps unresolved detail records disconnected without inventing a primary", () => {
+      const detail = new Activity({ ...fullRow, origin_evidence: [] }, mockLookup).toDetail();
+      expect(detail.sourceTree).toMatchObject({
+        primary: null,
+        otherSources: [
+          { id: "strava:99999:", providerId: "strava", children: [] },
+          { id: "wahoo:42:", providerId: "wahoo", children: [] },
+        ],
+      });
+    });
+
     it("serializes to ActivityDetail shape", () => {
       const activity = new Activity(fullRow, mockLookup);
       const detail = activity.toDetail();
@@ -386,6 +465,29 @@ describe("Activity", () => {
             providerAbsentAt: null,
           },
         ],
+        sourceTree: {
+          primary: null,
+          otherSources: [
+            {
+              id: "strava:99999:",
+              providerId: "strava",
+              sourceName: null,
+              label: "Strava",
+              description: "Other matching source",
+              url: "https://www.strava.com/activities/99999",
+              children: [],
+            },
+            {
+              id: "wahoo:42:",
+              providerId: "wahoo",
+              sourceName: null,
+              label: "Wahoo",
+              description: "Other matching source",
+              url: "https://systm.wahoofitness.com/history/activity-details/42",
+              children: [],
+            },
+          ],
+        },
         avgHr: 145,
         avgHrState: { status: "available" },
         maxHr: 175,

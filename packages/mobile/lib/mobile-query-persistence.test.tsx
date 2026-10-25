@@ -8,7 +8,6 @@ import { act, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createMobileQueryPersister,
-  MOBILE_QUERY_CACHE_CONTRACT_VERSION,
   MOBILE_QUERY_CACHE_MAX_PERSISTED_BYTES,
   MobileQueryPersistenceProvider,
   mobileQueryCacheBuster,
@@ -39,11 +38,6 @@ describe("mobile query persistence", () => {
     vi.clearAllMocks();
     const AsyncStorage = (await import("@react-native-async-storage/async-storage")).default;
     await AsyncStorage.clear();
-  });
-
-  it("uses the current cache contract buster", () => {
-    expect(MOBILE_QUERY_CACHE_CONTRACT_VERSION).toBe(9);
-    expect(mobileQueryCacheBuster("user-1")).toBe("user-1:v9");
   });
 
   it("persists normal query data while leaving short-lived signed image URLs in memory", async () => {
@@ -153,31 +147,114 @@ describe("mobile query persistence", () => {
     await refetch;
   });
 
-  it("discards persisted data from the previous cache contract", async () => {
+  it("discards v10 activity details without source trees before provider restoration completes", async () => {
     const AsyncStorage = (await import("@react-native-async-storage/async-storage")).default;
+    const userId = "detail-owner";
+    const queryKey = [["activity", "byId"], { input: { id: "activity-1" }, type: "query" }];
     const seedClient = createQueryClient();
-    seedClient.setQueryData(["food", "byDate"], {
-      entries: [],
-      summary: { calories: 1000 },
+    seedClient.setQueryData(queryKey, {
+      id: "activity-1",
+      name: "Morning Ride",
+      providerId: "strava",
+      sourceProviders: ["strava"],
+      sourceLinks: [
+        {
+          providerId: "strava",
+          externalId: "123",
+          subsource: null,
+          label: "Strava",
+          url: "https://www.strava.com/activities/123",
+          providerAbsentAt: null,
+        },
+      ],
+      sourceDecision: null,
     });
     await AsyncStorage.setItem(
-      "dofek-query-cache:user-1",
+      `dofek-query-cache:${userId}`,
       JSON.stringify({
         timestamp: Date.now(),
-        buster: "user-1:v7",
+        buster: `${userId}:v10`,
         clientState: dehydrate(seedClient),
       }),
     );
 
+    function RestorationStatus() {
+      return <span>{useIsRestoring() ? "restoring" : "restored"}</span>;
+    }
     const restoredClient = createQueryClient();
-    await persistQueryClientRestore({
-      queryClient: restoredClient,
-      persister: createMobileQueryPersister("user-1"),
-      maxAge: QUERY_CACHE_MAX_AGE_MS,
-      buster: mobileQueryCacheBuster("user-1"),
-    });
+    render(
+      <MobileQueryPersistenceProvider queryClient={restoredClient} userId={userId}>
+        <RestorationStatus />
+      </MobileQueryPersistenceProvider>,
+    );
 
-    expect(restoredClient.getQueryData(["food", "byDate"])).toBeUndefined();
+    expect(await screen.findByText("restored")).toBeTruthy();
+    expect(restoredClient.getQueryData(queryKey)).toBeUndefined();
+    await expect(AsyncStorage.getItem(`dofek-query-cache:${userId}`)).resolves.toBeNull();
+  });
+
+  it("discards v9 calendar activities without source trees before provider restoration completes", async () => {
+    const AsyncStorage = (await import("@react-native-async-storage/async-storage")).default;
+    const queryKey = [["calendar", "weekList"], { input: { weeks: 4 }, type: "query" }];
+    const seedClient = createQueryClient();
+    seedClient.setQueryData(queryKey, [
+      {
+        date: "2026-03-18",
+        activities: [
+          {
+            id: "activity-1",
+            name: "Trainer Ride",
+            activityType: "indoor_cycling",
+            modality: null,
+            startedAt: "2026-03-18T07:00:00.000Z",
+            endedAt: "2026-03-18T08:00:00.000Z",
+            localTimeContext: {
+              timezone: null,
+              startUtcOffsetMinutes: 60,
+              endUtcOffsetMinutes: 60,
+              source: "provider_offset",
+            },
+            durationMin: 60,
+            source: {
+              origin: { status: "unresolved", candidateMemberActivityIds: [] },
+              primarySourceLabel: "Wahoo",
+              sourceCount: 1,
+              overlapSummary: null,
+            },
+            lastProcessedAt: "2026-03-18T08:05:00.000Z",
+            distanceMeters: null,
+            distanceState: { status: "missing", reason: "Distance not recorded" },
+            elevationGainM: null,
+            elevationState: { status: "missing", reason: "Elevation not recorded" },
+            location: null,
+            tss: 100,
+            stats: [{ status: "available", label: "Training Stress Score", value: "100" }],
+          },
+        ],
+      },
+    ]);
+    await AsyncStorage.setItem(
+      "dofek-query-cache:user-1",
+      JSON.stringify({
+        timestamp: Date.now(),
+        buster: "user-1:v9",
+        clientState: dehydrate(seedClient),
+      }),
+    );
+
+    function RestorationStatus() {
+      return <span>{useIsRestoring() ? "restoring" : "restored"}</span>;
+    }
+    const restoredClient = createQueryClient();
+    render(
+      <MobileQueryPersistenceProvider queryClient={restoredClient} userId="user-1">
+        <RestorationStatus />
+      </MobileQueryPersistenceProvider>,
+    );
+
+    expect(await screen.findByText("restored")).toBeTruthy();
+    expect(restoredClient.getQueryData(queryKey)).toBeUndefined();
+    await expect(AsyncStorage.getItem("dofek-query-cache:user-1")).resolves.toBeNull();
   });
 
   it("scopes persisted data by authenticated user", async () => {

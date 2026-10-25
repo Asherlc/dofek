@@ -1,4 +1,5 @@
 import { formatDateYmd } from "@dofek/format/format";
+import type { ActivitySourceTree } from "@dofek/providers/activity-source-tree";
 import { providerLabel } from "@dofek/providers/providers";
 import type { Meta, StoryObj } from "@storybook/react-native";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -9,6 +10,7 @@ import { useMemo } from "react";
 import { View } from "react-native";
 import { expect, within } from "storybook/test";
 import ActivitiesScreen from "../../app/(tabs)/activities";
+import { branchingActivitySourceTree } from "../../app-fixtures/activity-source-tree";
 import { activityImageFixture } from "../../components/activity-images-test-helpers";
 import { trpc } from "../../lib/trpc";
 
@@ -267,6 +269,7 @@ function createStoryData(
   originProvider: string | null = "garmin",
   photoActivity = false,
   originSourceName: string | null = null,
+  branchingSources = false,
 ) {
   const today = formatDateYmd();
   const yesterday = formatDateYmd(new Date(Date.now() - 86_400_000));
@@ -279,6 +282,49 @@ function createStoryData(
       ? "hangboard"
       : "road_cycling";
   const hasRoute = !climbingActivity && !hangboarding;
+
+  const sourceTree: ActivitySourceTree = branchingSources
+    ? branchingActivitySourceTree
+    : originProvider === null
+      ? { primary: null, otherSources: branchingActivitySourceTree.otherSources }
+      : originProvider === "apple_health"
+        ? {
+            primary: {
+              id: "recording-app",
+              providerId: hangboarding ? "hang-ten" : "strong",
+              sourceName: null,
+              label: hangboarding ? "Hang Ten" : "Strong",
+              description: "Recording app reported by Apple Health",
+              url: null,
+              children: [
+                {
+                  id: "apple-health",
+                  providerId: "apple_health",
+                  sourceName: null,
+                  label: "Apple Health",
+                  description: "Imported from recording app",
+                  url: null,
+                  children: [],
+                },
+              ],
+            },
+            otherSources: [],
+          }
+        : {
+            primary: {
+              id: "recording-app",
+              providerId: originProvider,
+              sourceName: originProvider === "garmin" ? originSourceName : null,
+              label:
+                originProvider === "garmin" && originSourceName
+                  ? originSourceName
+                  : providerLabel(originProvider),
+              description: "Closest available source record",
+              url: null,
+              children: [],
+            },
+            otherSources: [],
+          };
 
   const weekList: AppRouterOutputs["calendar"]["weekList"] = [
     {
@@ -299,6 +345,7 @@ function createStoryData(
           },
           durationMin: 90,
           source: {
+            tree: sourceTree,
             origin:
               originProvider === null
                 ? { status: "unresolved", candidateMemberActivityIds: [] }
@@ -353,6 +400,18 @@ function createStoryData(
           },
           durationMin: 45,
           source: {
+            tree: {
+              primary: {
+                id: "strong",
+                providerId: "strong",
+                sourceName: null,
+                label: "Strong",
+                description: null,
+                url: null,
+                children: [],
+              },
+              otherSources: [],
+            },
             origin: { status: "unresolved", candidateMemberActivityIds: [] },
             primarySourceLabel: "Strong (via Apple Health)",
             sourceCount: 1,
@@ -395,6 +454,18 @@ function createStoryData(
         },
         durationMin: 120,
         source: {
+          tree: {
+            primary: {
+              id: "mountain-project",
+              providerId: "mountain-project",
+              sourceName: null,
+              label: "Mountain Project",
+              description: null,
+              url: null,
+              children: [],
+            },
+            otherSources: [],
+          },
           origin: { status: "unresolved", candidateMemberActivityIds: [] },
           primarySourceLabel: "Mountain Project",
           sourceCount: 1,
@@ -528,16 +599,25 @@ function MockProviders({
   originProvider,
   photoActivity,
   originSourceName,
+  branchingSources,
 }: {
   children: React.ReactNode;
   climbingActivity: boolean;
   originProvider: string | null;
   photoActivity: boolean;
   originSourceName: string | null;
+  branchingSources: boolean;
 }) {
   const storyData = useMemo(
-    () => createStoryData(climbingActivity, originProvider, photoActivity, originSourceName),
-    [climbingActivity, originProvider, photoActivity, originSourceName],
+    () =>
+      createStoryData(
+        climbingActivity,
+        originProvider,
+        photoActivity,
+        originSourceName,
+        branchingSources,
+      ),
+    [climbingActivity, originProvider, photoActivity, originSourceName, branchingSources],
   );
   const queryClient = useMemo(() => {
     const client = new QueryClient({
@@ -583,6 +663,7 @@ const meta = {
     (Story, context) => (
       <MockProviders
         climbingActivity={context.parameters.climbingActivity === true}
+        branchingSources={context.parameters.branchingSources === true}
         photoActivity={context.parameters.photoActivity === true}
         originProvider={
           context.parameters.originProvider === null
@@ -627,14 +708,12 @@ export const SelectionMode: Story = {
   play: async ({ canvasElement, userEvent }) => {
     const canvas = within(canvasElement);
     await userEvent.click(await canvas.findByRole("button", { name: "Select activities" }));
-    await userEvent.click(
-      await canvas.findByRole("button", { name: "Activity source: WHOOP (Cloud)" }),
+    await userEvent.click(await canvas.findByRole("button", { name: "Sources: WHOOP (Cloud)" }));
+    await expect(canvas.getByRole("button", { name: "Sources: WHOOP (Cloud)" })).toHaveAttribute(
+      "aria-expanded",
+      "true",
     );
-    const page = within(canvasElement.ownerDocument.body);
-    await page.findByText("Recorded in");
-    await userEvent.click(
-      await page.findByRole("button", { name: "Close activity source details" }),
-    );
+    await userEvent.click(canvas.getByRole("button", { name: "Sources: WHOOP (Cloud)" }));
     await expect(canvas.getByText("0 activities selected")).toBeVisible();
   },
 };
@@ -663,10 +742,26 @@ export const HangTenViaAppleHealth: Story = {
   parameters: { originProvider: "apple_health", originSourceName: "Hang Ten Training" },
   play: async ({ canvasElement, userEvent }) => {
     await userEvent.click(
-      await within(canvasElement).findByRole("button", { name: "Activity source: Hang Ten" }),
+      await within(canvasElement).findByRole("button", { name: "Sources: Hang Ten" }),
     );
-    const page = within(canvasElement.ownerDocument.body);
-    await expect(await page.findByText("Recorded in")).toBeVisible();
-    await expect(await page.findByText("Imported via")).toBeVisible();
+    const canvas = within(canvasElement);
+    await expect(await canvas.findByText("Recording app reported by Apple Health")).toBeVisible();
+    await expect(await canvas.findByText("Apple Health")).toBeVisible();
+  },
+};
+
+export const BranchingSourcesCollapsed: Story = {
+  parameters: { branchingSources: true },
+};
+export const BranchingSourcesExpanded: Story = {
+  parameters: { branchingSources: true },
+  play: async ({ canvasElement, userEvent }) => {
+    const canvas = within(canvasElement);
+    const trigger = await canvas.findByRole("button", { name: "Sources: Hang Ten" });
+    await userEvent.click(trigger);
+    await expect(trigger).toHaveAttribute("aria-expanded", "true");
+    await expect(canvas.getAllByText("Hang Ten")).toHaveLength(1);
+    await expect(canvas.getAllByText("Strava")).toHaveLength(2);
+    await expect(canvas.getByText("Other matching sources")).toBeVisible();
   },
 };

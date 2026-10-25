@@ -3,17 +3,11 @@ import {
   activityDataStateLabel,
   formatActivityMetric,
 } from "@dofek/format/activity-data-state";
-import {
-  formatDateLong,
-  formatDateTime,
-  formatDurationSeconds,
-  formatNumber,
-} from "@dofek/format/format";
+import { formatDateLong, formatDurationSeconds, formatNumber } from "@dofek/format/format";
 import { formatRecordLocalTime } from "@dofek/format/record-local-time";
 import type { UnitConverter } from "@dofek/format/units";
 import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { processingPollInterval } from "@dofek/providers/processing-status";
-import { providerSourceLabel } from "@dofek/providers/providers";
 import { ACTIVITY_IMAGES_QUERY_OPTIONS } from "@dofek/training/activity-images";
 import { buildClimbingMapLocations, buildClimbingMapMarkers } from "@dofek/training/climbing-map";
 import {
@@ -43,6 +37,7 @@ import { ActivityHardwarePanel } from "../components/ActivityHardwarePanel.tsx";
 import { ActivityPerceivedExertion } from "../components/ActivityPerceivedExertion.tsx";
 import { ActivityPhotos } from "../components/ActivityPhotos.tsx";
 import { ActivityRouteMap } from "../components/ActivityRouteMap.tsx";
+import { ActivitySourceDisclosure } from "../components/ActivitySourceDisclosure.tsx";
 import { HangboardingDetail } from "../components/HangboardingDetail.tsx";
 import { HrZonesChart, PowerZonesChart } from "../components/HeartRateZonesChart.tsx";
 import { ChartLoadingSkeleton } from "../components/LoadingSkeleton.tsx";
@@ -591,13 +586,7 @@ export function ActivityHeader({
         {formatDateLong(activity.displayedDate, { timeZone: "UTC" })} at{" "}
         {localStartTime === "--" ? "Local time unavailable" : localStartTime}
       </p>
-      {(activity.sourceLinks.length > 0 || activity.sourceProviders.length > 0) && (
-        <div className="mb-4">
-          <p className="text-xs text-subtle">
-            Source: <SourceLinks activity={activity} />
-          </p>
-        </div>
-      )}
+      <ActivitySourceDisclosure tree={activity.sourceTree} />
 
       {stats.length > 0 && (
         <div className="flex flex-wrap gap-4">
@@ -632,66 +621,6 @@ export function ActivityHeader({
       )}
     </div>
   );
-}
-
-function SourceLinks({ activity }: { activity: ActivityDetail }) {
-  if (activity.sourceLinks.length > 0) {
-    return (
-      <>
-        {activity.sourceLinks.map((link, index) => (
-          <span key={`${link.providerId}:${link.externalId}:${link.memberActivityId ?? ""}`}>
-            {index > 0 && ", "}
-            <SourceLinkLabel link={link} />
-          </span>
-        ))}
-      </>
-    );
-  }
-
-  return (
-    <>
-      {activity.sourceProviders.map((providerId, index) => {
-        return (
-          <span key={providerId}>
-            {index > 0 && ", "}
-            {providerSourceLabel(providerId, activity.subsource)}
-          </span>
-        );
-      })}
-    </>
-  );
-}
-
-function SourceLinkLabel({ link }: { link: ActivityDetail["sourceLinks"][number] }) {
-  if (link.providerAbsentAt) {
-    return (
-      <span
-        className="text-amber-700 dark:text-amber-300 line-through decoration-amber-500/60"
-        title={
-          link.providerAbsentAt
-            ? `Removed ${formatDateTime(link.providerAbsentAt)}`
-            : "Removed from provider sync"
-        }
-      >
-        {link.label} (removed)
-      </span>
-    );
-  }
-
-  if (link.url) {
-    return (
-      <a
-        href={link.url}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="text-accent hover:text-accent-secondary underline"
-      >
-        {link.label}
-      </a>
-    );
-  }
-
-  return <>{link.label}</>;
 }
 
 function WorkoutMuscleMap({ exercises }: { exercises: StrengthExerciseDetail[] }) {

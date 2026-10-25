@@ -15,6 +15,7 @@ import {
   routeMapTiles,
   type WeekListQueryOptions,
 } from "../../app-fixtures/(tabs)/activities-test-helpers";
+import { branchingActivitySourceTree } from "../../app-fixtures/activity-source-tree";
 import { activityImageFixture } from "../../components/activity-images-test-helpers";
 
 let mockQuery: MockQuery;
@@ -202,6 +203,7 @@ describe("ActivitiesScreen", () => {
         activity({
           location,
           source: {
+            tree: branchingActivitySourceTree,
             origin: {
               status: "resolved",
               memberActivityId: "00000000-0000-4000-8000-000000000001",
@@ -218,11 +220,20 @@ describe("ActivitiesScreen", () => {
       const icon = screen.getByTestId("activity-type-icon");
       const title = screen.getByText("Trainer Ride");
       expect(icon.compareDocumentPosition(title) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-      expect(screen.getByRole("button", { name: "Activity source: Hang Ten" })).toBeDefined();
+      const sources = screen.getByRole("button", { name: "Sources: Hang Ten" });
+      expect(
+        title.compareDocumentPosition(sources) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+      if (location) {
+        const map = screen.getByTestId("activity-route-viewport");
+        expect(
+          map.compareDocumentPosition(sources) & Node.DOCUMENT_POSITION_FOLLOWING,
+        ).toBeTruthy();
+      }
     },
   );
 
-  it("keeps a Garmin model thumbnail in its compact source disclosure", () => {
+  it("keeps a Garmin model thumbnail in its inline source disclosure", () => {
     mockQuery = activityListQuery([
       activity({
         source: {
@@ -233,18 +244,30 @@ describe("ActivitiesScreen", () => {
             sourceName: "Forerunner 965",
           },
           primarySourceLabel: "Garmin · Forerunner 965",
+          tree: {
+            primary: {
+              id: "garmin-record",
+              providerId: "garmin",
+              sourceName: "Forerunner 965",
+              label: "Forerunner 965",
+              description: "Closest available recording",
+              url: null,
+              children: [],
+            },
+            otherSources: [],
+          },
           sourceCount: 1,
           overlapSummary: null,
         },
       }),
     ]);
     render(<ActivitiesScreen />);
-    const source = screen.getByRole("button", { name: "Activity source: Garmin" });
+    const source = screen.getByRole("button", { name: "Sources: Forerunner 965" });
     const thumbnail = source.querySelector("Image");
     expect(thumbnail).toBeTruthy();
     expect(thumbnail?.getAttribute("resizeMode")).toBe("contain");
-    expect(thumbnail?.getAttribute("style")).toContain("width: 18px");
-    expect(thumbnail?.getAttribute("style")).toContain("height: 18px");
+    expect(thumbnail?.getAttribute("style")).toContain("width: 20px");
+    expect(thumbnail?.getAttribute("style")).toContain("height: 20px");
     expect(screen.getByTestId("activity-type-icon")).toBeDefined();
   });
 
@@ -254,6 +277,7 @@ describe("ActivitiesScreen", () => {
       mockQuery = activityListQuery([
         activity({
           source: {
+            tree: branchingActivitySourceTree,
             origin: {
               status: "resolved",
               memberActivityId: "00000000-0000-4000-8000-000000000001",
@@ -275,7 +299,7 @@ describe("ActivitiesScreen", () => {
       });
       render(<ActivitiesScreen />);
       if (selectMode) fireEvent.click(screen.getByRole("button", { name: "Select activities" }));
-      const sourceButton = screen.getByRole("button", { name: "Activity source: WHOOP (Cloud)" });
+      const sourceButton = screen.getByRole("button", { name: "Sources: Hang Ten" });
       const cardAction = screen.getByRole("button", {
         name: selectMode ? /^Select Trainer Ride/ : /^Open Trainer Ride/,
       });
@@ -285,10 +309,10 @@ describe("ActivitiesScreen", () => {
       expect(photo.closest('[pointer-events="none"]')).not.toBeNull();
 
       fireEvent.click(sourceButton);
-      expect(screen.getByText("Recorded in")).toBeDefined();
+      expect(screen.getByText("Recording app reported by Apple Health")).toBeDefined();
       expect(routerPush).not.toHaveBeenCalled();
       if (selectMode) expect(screen.getByText("0 activities selected")).toBeDefined();
-      fireEvent.click(screen.getByRole("button", { name: "Close activity source details" }));
+      fireEvent.click(sourceButton);
       fireEvent.click(cardAction);
       if (selectMode) {
         expect(screen.getByText("1 activity selected")).toBeDefined();

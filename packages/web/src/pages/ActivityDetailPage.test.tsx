@@ -15,7 +15,9 @@ import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ActivityDetail } from "../../../server/src/models/activity.ts";
 import type { StrengthExerciseDetail } from "../../../server/src/routers/activity.ts";
+import { strongSourceTree } from "../components/ActivitySourceDisclosure.fixtures.ts";
 import { UnitContext } from "../lib/unitContext.ts";
+import { detailSourceTree, removedDetailSourceTree } from "./ActivityDetailPage.fixtures.ts";
 
 const capturedOptions: Array<Record<string, unknown>> = [];
 const capturedEvents: Array<Record<string, (...params: Array<Record<string, unknown>>) => void>> =
@@ -126,6 +128,7 @@ const mockActivity: ActivityDetail & { displayedDate?: string } = {
   avgCadenceState: { status: "missing", reason: "Avg Cadence not recorded" },
   sourceProviders: ["whoop", "apple_health"],
   sourceLinks: [],
+  sourceTree: { primary: null, otherSources: [] },
   sourceDecision: null,
 };
 
@@ -710,27 +713,11 @@ describe("ActivityDetailPage", () => {
     expect(screen.queryByText("Activity not found")).toBeNull();
   });
 
-  it("renders active and removed source links with their distinct displays", async () => {
+  it("keeps removed source records visible without links while retaining active sources", async () => {
     mockActivityByIdUseQuery.mockReturnValue({
       data: {
         ...mockActivity,
-        sourceLinks: [
-          {
-            providerId: "strava",
-            externalId: "strava-activity",
-            subsource: null,
-            label: "Strava",
-            url: "https://strava.example.test/activities/1",
-          },
-          {
-            providerId: "garmin",
-            externalId: "garmin-activity",
-            subsource: null,
-            label: "Garmin",
-            url: null,
-            providerAbsentAt: "2026-06-20T10:00:00.000Z",
-          },
-        ],
+        sourceTree: removedDetailSourceTree,
       },
       error: null,
       isError: false,
@@ -740,14 +727,15 @@ describe("ActivityDetailPage", () => {
 
     renderWithUnits(<ActivityDetailPage />);
 
-    expect(screen.getByRole("link", { name: "Strava" }).getAttribute("href")).toBe(
-      "https://strava.example.test/activities/1",
+    fireEvent.click(screen.getByRole("button", { name: "Garmin Edge 530 Sources" }));
+    expect(screen.getByText("Closest available recording · Removed from provider")).toBeVisible();
+    expect(screen.getByText("Imported from Garmin Connect · Removed from provider")).toBeVisible();
+    expect(screen.getByText("Strava").closest("a")).toBeNull();
+    expect(screen.queryByRole("link", { name: "View activity for Garmin Edge 530" })).toBeNull();
+    expect(screen.getByRole("link", { name: "WHOOP" })).toHaveAttribute(
+      "href",
+      "https://app.whoop.com/activities/123",
     );
-    const removed = screen.getByText("Garmin (removed)");
-    expect(removed.getAttribute("title")).toBe(
-      `Removed ${formatDateTime("2026-06-20T10:00:00.000Z")}`,
-    );
-    expect(removed.className).toContain("line-through");
   });
 
   it("shows the primary server error instead of reporting a missing activity", async () => {
@@ -837,13 +825,15 @@ describe("ActivityDetailPage", () => {
           name: null,
           sourceLinks: [],
           sourceProviders: [],
+          sourceTree: { primary: null, otherSources: [] },
         }}
         units={new UnitConverter("metric")}
       />,
     );
 
     expect(screen.getByRole("heading", { name: "running" })).toBeDefined();
-    expect(screen.queryByText(/^Source:/)).toBeNull();
+    expect(screen.queryByRole("button", { name: /Sources/ })).toBeNull();
+    expect(screen.getByText("10.0 km")).toBeVisible();
   });
 
   it("renders the server-provided calendar date at a UTC boundary", async () => {
@@ -1566,136 +1556,88 @@ describe("ActivityDetailPage", () => {
     });
   });
 
-  describe("source providers", () => {
-    it("shows source providers with human-readable labels", async () => {
+  describe("source tree", () => {
+    it("expands the server source tree inside the real detail header with distinct transfer branches", async () => {
+      mockActivityByIdUseQuery.mockReturnValue({
+        data: { ...mockActivity, sourceTree: detailSourceTree },
+        error: null,
+        isError: false,
+        isLoading: false,
+      });
       const ActivityDetailPage = await importPage();
       renderWithUnits(<ActivityDetailPage />);
-      expect(screen.getByText(/WHOOP/)).toBeDefined();
-      expect(screen.getByText(/Apple Health/)).toBeDefined();
+
+      const trigger = screen.getByRole("button", { name: "Garmin Edge 530 Sources" });
+      expect(trigger).toHaveAttribute("aria-expanded", "false");
+      expect(screen.queryByText("Strava")).toBeNull();
+      expect(screen.getByRole("heading", { name: "Morning Run" })).toBeVisible();
+      expect(screen.getByText(/Wed, Mar 18, 2026 at/)).toBeVisible();
+      expect(screen.getByText("45m")).toBeVisible();
+      expect(screen.getByText("10.0 km")).toBeVisible();
+
+      trigger.focus();
+      fireEvent.click(trigger);
+
+      expect(trigger).toHaveAttribute("aria-expanded", "true");
+      const details = document.getElementById(trigger.getAttribute("aria-controls") ?? "");
+      expect(details).toBeVisible();
+      expect(screen.getAllByText("Garmin Edge 530")).toHaveLength(1);
+      expect(
+        screen.getByRole("link", { name: "View activity for Garmin Edge 530" }),
+      ).toHaveAttribute("href", "https://connect.garmin.com/modern/activity/123");
+      const strava = screen.getByRole("link", { name: "Strava" }).closest("li");
+      if (!strava) throw new Error("Missing Strava branch");
+      expect(within(strava).getByText("Apple Health")).toBeVisible();
+      expect(within(strava).getByText("Imported from Strava")).toBeVisible();
+      expect(screen.getAllByText("Apple Health")).toHaveLength(2);
+      expect(screen.getAllByText("Imported from Garmin Connect")).toHaveLength(2);
+      expect(
+        within(screen.getByRole("region", { name: "Other matching sources" })).getByText("WHOOP"),
+      ).toBeVisible();
+      expect(screen.getByRole("heading", { name: "Morning Run" })).toBeVisible();
+      expect(screen.getByText("10.0 km")).toBeVisible();
+
+      fireEvent.click(trigger);
+      expect(trigger).toHaveAttribute("aria-expanded", "false");
+      expect(trigger).toHaveFocus();
+      expect(screen.queryByText("Strava")).toBeNull();
     });
 
-    it("shows Apple Health upstream app names when subsource is present", async () => {
-      const originalData = { ...mockActivity };
-      Object.assign(mockActivity, {
-        providerId: "apple_health",
-        subsource: "Strong",
-        sourceProviders: ["apple_health"],
-        sourceLinks: [],
-      });
-
-      const ActivityDetailPage = await importPage();
-      renderWithUnits(<ActivityDetailPage />);
-
-      expect(screen.getByText(/Strong \(via Apple Health\)/)).toBeDefined();
-
-      Object.assign(mockActivity, originalData);
-    });
-
-    it("renders multiple Apple Health upstream app source links", async () => {
-      const originalData = { ...mockActivity };
-      Object.assign(mockActivity, {
-        providerId: "whoop",
-        subsource: "WHOOP",
-        sourceProviders: ["apple_health", "whoop"],
-        sourceLinks: [
-          {
-            providerId: "apple_health",
-            label: "Strong (via Apple Health)",
-            url: null,
-            providerAbsentAt: null,
-            memberActivityId: "strong-member",
-          },
-          {
-            providerId: "apple_health",
-            label: "WHOOP (via Apple Health)",
-            url: null,
-            providerAbsentAt: null,
-            memberActivityId: "whoop-apple-member",
-          },
-          {
-            providerId: "whoop",
-            label: "WHOOP (Cloud)",
-            url: "https://app.whoop.com/activities/whoop-cloud",
-            providerAbsentAt: null,
-            memberActivityId: "whoop-cloud-member",
-          },
-        ],
-      });
-
-      const ActivityDetailPage = await importPage();
-      renderWithUnits(<ActivityDetailPage />);
-
-      expect(screen.getByText(/Strong \(via Apple Health\)/)).toBeDefined();
-      expect(screen.getByText(/WHOOP \(via Apple Health\)/)).toBeDefined();
-      expect(screen.getByRole("link", { name: "WHOOP (Cloud)" })).toBeDefined();
-
-      Object.assign(mockActivity, originalData);
-    });
-
-    it("renders removed source links without anchors", async () => {
-      const originalData = { ...mockActivity };
-      Object.assign(mockActivity, {
-        providerId: "garmin",
-        subsource: null,
-        sourceProviders: ["garmin", "strava"],
-        sourceLinks: [
-          {
-            providerId: "garmin",
-            label: "Garmin",
-            url: "https://connect.garmin.com/modern/activity/456",
-            providerAbsentAt: null,
-          },
-          {
-            providerId: "strava",
-            label: "Strava",
-            url: "https://www.strava.com/activities/123",
-            providerAbsentAt: "2026-03-05T14:30:00.000Z",
-          },
-        ],
-      });
-
-      const ActivityDetailPage = await importPage();
-      renderWithUnits(<ActivityDetailPage />);
-
-      expect(screen.getByText("Strava (removed)")).toBeTruthy();
-      expect(screen.queryByRole("link", { name: "Strava" })).toBeNull();
-      expect(screen.getByRole("link", { name: "Garmin" })).toBeTruthy();
-
-      Object.assign(mockActivity, originalData);
-    });
-
-    it("renders source links as clickable anchors", async () => {
-      const originalData = { ...mockActivity };
-      Object.assign(mockActivity, {
-        providerId: "wahoo",
-        subsource: null,
-        sourceProviders: ["strava", "garmin"],
-        sourceLinks: [
-          { providerId: "strava", label: "Strava", url: "https://www.strava.com/activities/123" },
-          {
-            providerId: "garmin",
-            label: "Garmin",
-            url: "https://connect.garmin.com/modern/activity/456",
-          },
-        ],
-      });
-
-      const ActivityDetailPage = await importPage();
-      renderWithUnits(<ActivityDetailPage />);
-
-      const stravaLink = screen.getByText("Strava");
-      expect(stravaLink.tagName).toBe("A");
-      expect(stravaLink.getAttribute("href")).toBe("https://www.strava.com/activities/123");
-      expect(stravaLink.getAttribute("target")).toBe("_blank");
-
-      const garminLink = screen.getByText("Garmin");
-      expect(garminLink.tagName).toBe("A");
-      expect(garminLink.getAttribute("href")).toBe(
-        "https://connect.garmin.com/modern/activity/456",
+    it("renders recording attribution from the server even without flat source links", async () => {
+      const ActivityHeader = await importActivityHeader();
+      renderWithUnits(
+        <ActivityHeader
+          activity={{ ...mockActivity, sourceTree: strongSourceTree }}
+          units={new UnitConverter("metric")}
+        />,
       );
 
-      // Restore
-      Object.assign(mockActivity, originalData);
+      fireEvent.click(screen.getByRole("button", { name: "Strong Sources" }));
+      expect(screen.getAllByText("Strong")).toHaveLength(1);
+      expect(screen.getByText("Recording app reported by Apple Health")).toBeVisible();
+      expect(screen.getByText("Apple Health")).toBeVisible();
+      expect(screen.getByText("Recorded by Strong")).toBeVisible();
+    });
+
+    it("keeps unresolved source records expandable without inventing a primary root", async () => {
+      const ActivityHeader = await importActivityHeader();
+      renderWithUnits(
+        <ActivityHeader
+          activity={{
+            ...mockActivity,
+            sourceTree: { primary: null, otherSources: detailSourceTree.otherSources },
+          }}
+          units={new UnitConverter("metric")}
+        />,
+      );
+
+      const trigger = screen.getByRole("button", { name: "Sources" });
+      expect(trigger).toHaveAttribute("aria-expanded", "false");
+      fireEvent.click(trigger);
+      expect(
+        within(screen.getByRole("region", { name: "Other matching sources" })).getByText("WHOOP"),
+      ).toBeVisible();
+      expect(screen.getByRole("heading", { name: "Morning Run" })).toBeVisible();
     });
   });
 

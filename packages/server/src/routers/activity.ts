@@ -158,7 +158,10 @@ export const activityRouter = router({
     { keyVersion: "activity-list-locations-v1" },
   ),
 
-  byId: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM, keyVersion: "activity-origin-v2" })
+  byId: cachedProtectedQuery({
+    maxAge: CacheTTL.MEDIUM,
+    keyVersion: "activity-origin-source-tree-v3",
+  })
     .input(z.object({ id: z.guid() }))
     .query(async ({ ctx, input }): Promise<ActivityDetail> => {
       const repo = new ActivityRepository(

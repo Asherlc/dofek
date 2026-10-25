@@ -517,6 +517,7 @@ export class ActivityRepository extends BaseRepository {
             a.primary_provider_id,
             a.primary_source_name,
             a.origin_candidate_member_ids::text[] AS origin_candidate_member_ids,
+            a.origin_evidence,
             a.timezone,
             a.start_utc_offset_minutes,
             a.end_utc_offset_minutes,
@@ -571,6 +572,7 @@ export class ActivityRepository extends BaseRepository {
             ARRAY(SELECT member.id::text FROM fitness.activity AS member
               WHERE member.user_id = a.user_id AND member.group_id = a.group_id
                 AND member.deleted_at IS NULL ORDER BY member.id) AS origin_candidate_member_ids,
+            '[]'::jsonb AS origin_evidence,
             CASE
               WHEN a.local_time_source IN ('provider_timezone', 'device_timezone', 'user_home_timezone')
               THEN a.timezone

@@ -1,4 +1,5 @@
 import type { ActivityOrigin } from "./activity-origin.ts";
+import { garminDeviceThumbnail } from "./garmin-devices.ts";
 import { providerLabel, providerSourceLogo } from "./providers.ts";
 
 export interface ActivitySourceApp {
@@ -14,11 +15,26 @@ export interface ActivitySourceDetails {
 /** Presentation roles from resolved origin, independent of field priorities. */
 export function activitySourceDetails(origin: ActivityOrigin): ActivitySourceDetails | null {
   if (origin.status === "unresolved") return null;
-  const source = providerSourceLogo(origin.providerId, origin.sourceName);
+  const provider = origin.providerId === "apple-health" ? "apple_health" : origin.providerId;
+  const name = origin.sourceName?.trim();
+  const distinctSource =
+    name &&
+    ![provider, providerLabel(provider)].some(
+      (label) => label.toLowerCase() === name.toLowerCase(),
+    );
+  const source = distinctSource
+    ? provider === "garmin" || garminDeviceThumbnail(name) !== null
+      ? "garmin"
+      : providerSourceLogo("apple_health", name).provider
+    : provider;
   return {
-    recordingApp: { provider: source.provider, label: providerLabel(source.provider) },
-    importedVia: source.viaAppleHealth
-      ? { provider: "apple_health", label: providerLabel("apple_health") }
-      : null,
+    recordingApp: {
+      provider: source,
+      label:
+        (source === "apple-watch" || source === "garmin") && distinctSource
+          ? name
+          : providerLabel(source),
+    },
+    importedVia: source !== provider ? { provider, label: providerLabel(provider) } : null,
   };
 }

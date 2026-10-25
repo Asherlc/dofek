@@ -52,7 +52,7 @@ describe("ActivitySourceAttribution", () => {
     ]);
   });
 
-  it("keeps an active source link when the same provider also has an absent entry", () => {
+  it("retains distinct active and absent records from the same provider", () => {
     const attribution = ActivitySourceAttribution.fromEntries(
       [{ providerId: "strava", externalId: "active-123" }],
       [
@@ -73,6 +73,15 @@ describe("ActivitySourceAttribution", () => {
         label: "Strava",
         url: "https://www.strava.com/activities/active-123",
         providerAbsentAt: null,
+      },
+      {
+        providerId: "strava",
+        externalId: "removed-999",
+        subsource: null,
+        label: "Strava",
+        url: "https://www.strava.com/activities/removed-999",
+        providerAbsentAt: "2026-03-05T14:30:00.000Z",
+        memberActivityId: "member-strava",
       },
     ]);
   });
@@ -104,6 +113,39 @@ describe("ActivitySourceAttribution", () => {
       {
         providerId: "apple_health",
         externalId: "active-whoop",
+        subsource: "WHOOP",
+        label: "WHOOP (via Apple Health)",
+        url: null,
+        providerAbsentAt: null,
+      },
+    ]);
+  });
+
+  it("distinguishes source apps sharing a provider external id without member ids", () => {
+    const attribution = ActivitySourceAttribution.fromEntries(
+      [{ providerId: "apple_health", externalId: "shared-record", subsource: "WHOOP" }],
+      [
+        {
+          providerId: "apple_health",
+          externalId: "shared-record",
+          subsource: "Strong",
+          providerAbsentAt: "2026-03-05T14:30:00.000Z",
+        },
+      ],
+    );
+
+    expect(attribution.toSourceLinks(mockLookup)).toEqual([
+      {
+        providerId: "apple_health",
+        externalId: "shared-record",
+        subsource: "Strong",
+        label: "Strong (via Apple Health)",
+        url: null,
+        providerAbsentAt: "2026-03-05T14:30:00.000Z",
+      },
+      {
+        providerId: "apple_health",
+        externalId: "shared-record",
         subsource: "WHOOP",
         label: "WHOOP (via Apple Health)",
         url: null,

@@ -1,144 +1,183 @@
-import type { ActivityOrigin } from "@dofek/providers/activity-origin";
-import { activitySourceDetails } from "@dofek/providers/activity-source-details";
-import { type ComponentRef, useRef, useState } from "react";
-import {
-  AccessibilityInfo,
-  Modal,
-  Platform,
-  Pressable,
-  StyleSheet,
-  Text,
-  View,
-} from "react-native";
+import type {
+  ActivitySourceTree,
+  ActivitySourceTreeNode,
+} from "@dofek/providers/activity-source-tree";
+import { useId, useState } from "react";
+import { Linking, Pressable, StyleSheet, Text, View } from "react-native";
 import { SERVER_URL } from "../lib/server";
-import { colors, radius, spacing } from "../theme";
+import { captureException } from "../lib/telemetry";
+import { colors, spacing } from "../theme";
 import { ProviderLogo } from "./ProviderLogo";
 
-export function ActivitySourceDisclosure({ origin }: { origin: ActivityOrigin }) {
-  const [open, setOpen] = useState(false);
-  const triggerRef = useRef<ComponentRef<typeof View>>(null);
-  const details = activitySourceDetails(origin);
-  if (!details) return null;
+function SourceLink({ node }: { node: ActivitySourceTreeNode }) {
+  const [error, setError] = useState<string | null>(null);
+  const url = node.url;
+  if (!url) return null;
+  return (
+    <View>
+      <Pressable
+        style={styles.link}
+        accessibilityRole="button"
+        accessibilityLabel={`View source for ${node.label}`}
+        onPress={async () => {
+          setError(null);
+          try {
+            await Linking.openURL(url);
+          } catch (error) {
+            captureException(error);
+            setError(error instanceof Error ? error.message : "Unable to open source link.");
+          }
+        }}
+      >
+        <Text style={styles.linkLabel}>View source ↗</Text>
+      </Pressable>
+      {error ? (
+        <Text style={styles.error} accessibilityRole="alert">
+          {error}
+        </Text>
+      ) : null}
+    </View>
+  );
+}
 
-  const close = () => {
-    setOpen(false);
-    triggerRef.current?.focus();
-  };
-  const restoreFocus = () => {
-    const trigger = triggerRef.current;
-    if (!trigger) return;
-    trigger.focus();
-    if (Platform.OS !== "web") AccessibilityInfo.sendAccessibilityEvent(trigger, "focus");
-  };
+function SourceNode({ node }: { node: ActivitySourceTreeNode }) {
+  return (
+    <View>
+      <View style={styles.nodeRow}>
+        <ProviderLogo
+          provider={node.providerId}
+          sourceName={node.sourceName}
+          serverUrl={SERVER_URL}
+          size={20}
+        />
+        <View style={styles.nodeContent}>
+          <Text style={styles.label}>{node.label}</Text>
+          {node.description ? <Text style={styles.description}>{node.description}</Text> : null}
+          <SourceLink node={node} />
+        </View>
+      </View>
+      <SourceBranches nodes={node.children} />
+    </View>
+  );
+}
+
+function SourceBranches({ nodes }: { nodes: ActivitySourceTreeNode[] }) {
+  return nodes.map((node) => (
+    <View key={node.id} style={styles.branch}>
+      <View style={styles.connector} accessibilityElementsHidden importantForAccessibility="no" />
+      <SourceNode node={node} />
+    </View>
+  ));
+}
+
+export function ActivitySourceDisclosure({ tree }: { tree: ActivitySourceTree }) {
+  const [open, setOpen] = useState(false);
+  const contentId = useId();
+  const primary = tree.primary;
+  if (!primary && tree.otherSources.length === 0) return null;
 
   return (
-    <>
+    <View style={styles.container}>
       <Pressable
-        ref={triggerRef}
         style={styles.trigger}
         accessibilityRole="button"
-        accessible
-        accessibilityLabel={`Activity source: ${details.recordingApp.label}`}
-        accessibilityHint="Show recording and import details"
+        accessibilityLabel={primary ? `Sources: ${primary.label}` : "Sources"}
+        accessibilityHint={open ? "Hide activity sources" : "Show activity sources"}
         accessibilityState={{ expanded: open }}
-        onPress={() => setOpen(true)}
+        aria-expanded={open}
+        aria-controls={contentId}
+        onPress={() => setOpen((expanded) => !expanded)}
       >
-        <ProviderLogo
-          provider={details.recordingApp.provider}
-          sourceName={
-            origin.status === "resolved" && origin.providerId === "garmin"
-              ? origin.sourceName
-              : undefined
-          }
-          serverUrl={SERVER_URL}
-          size={18}
-        />
-        <Text style={styles.chevron} accessibilityElementsHidden importantForAccessibility="no">
-          ⌄
-        </Text>
-      </Pressable>
-      <Modal
-        visible={open}
-        transparent
-        animationType="fade"
-        onRequestClose={close}
-        onDismiss={restoreFocus}
-      >
-        {open ? (
-          <View style={styles.backdrop}>
-            <Pressable
-              style={styles.dismissArea}
-              accessibilityRole="button"
-              accessibilityLabel="Dismiss activity source details"
-              onPress={close}
+        {primary ? (
+          <View style={styles.primary}>
+            <ProviderLogo
+              provider={primary.providerId}
+              sourceName={primary.sourceName}
+              serverUrl={SERVER_URL}
+              size={20}
             />
-            <View
-              style={styles.dialog}
-              accessibilityViewIsModal
-              role="dialog"
-              accessibilityLabel="Activity source details"
-              onAccessibilityEscape={close}
-            >
-              <Text style={styles.title} accessibilityRole="header">
-                Activity source
-              </Text>
-              <View style={styles.sourceRow}>
-                <Text style={styles.role}>Recorded in</Text>
-                <Text style={styles.app}>{details.recordingApp.label}</Text>
-              </View>
-              {details.importedVia ? (
-                <View style={styles.sourceRow}>
-                  <Text style={styles.role}>Imported via</Text>
-                  <Text style={styles.app}>{details.importedVia.label}</Text>
-                </View>
-              ) : null}
-              <Pressable
-                style={styles.closeButton}
-                accessibilityRole="button"
-                accessibilityLabel="Close activity source details"
-                onPress={close}
-              >
-                <Text style={styles.closeLabel}>Close</Text>
-              </Pressable>
-            </View>
+            <Text style={styles.label}>{primary.label}</Text>
           </View>
         ) : null}
-      </Modal>
-    </>
+        <View style={styles.sourceControl}>
+          <Text style={styles.controlLabel}>Sources</Text>
+          <Text style={styles.chevron} accessibilityElementsHidden importantForAccessibility="no">
+            {open ? "⌃" : "⌄"}
+          </Text>
+        </View>
+      </Pressable>
+      {open ? (
+        <View id={contentId} style={styles.details}>
+          {primary ? (
+            <View>
+              {primary.description ? (
+                <Text style={styles.description}>{primary.description}</Text>
+              ) : null}
+              <SourceLink node={primary} />
+              <SourceBranches nodes={primary.children} />
+            </View>
+          ) : null}
+          {tree.otherSources.length > 0 ? (
+            <View style={styles.otherSources}>
+              <Text style={styles.otherHeading}>Other matching sources</Text>
+              {tree.otherSources.map((node) => (
+                <SourceNode key={node.id} node={node} />
+              ))}
+            </View>
+          ) : null}
+        </View>
+      ) : null}
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  container: {
+    borderTopWidth: 1,
+    borderTopColor: colors.surfaceSecondary,
+    backgroundColor: colors.surface,
+  },
   trigger: {
-    minWidth: 44,
     minHeight: 44,
+    minWidth: 44,
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
-    gap: 4,
-    borderRadius: radius.sm,
+    justifyContent: "space-between",
+    paddingHorizontal: spacing.md,
+    gap: spacing.sm,
   },
+  primary: { flexDirection: "row", alignItems: "center", gap: spacing.sm, flexShrink: 1 },
+  sourceControl: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    marginLeft: "auto",
+  },
+  controlLabel: { color: colors.textSecondary, fontSize: 12 },
   chevron: { color: colors.textSecondary, fontSize: 16 },
-  backdrop: {
-    flex: 1,
-    justifyContent: "center",
-    padding: spacing.lg,
-    backgroundColor: "rgba(0,0,0,0.5)",
+  label: { color: colors.text, fontSize: 13, fontWeight: "600", flexShrink: 1 },
+  details: { paddingHorizontal: spacing.md, paddingBottom: spacing.md },
+  description: { color: colors.textSecondary, fontSize: 12, lineHeight: 18 },
+  nodeRow: { flexDirection: "row", alignItems: "flex-start", gap: spacing.sm },
+  nodeContent: { flex: 1, minWidth: 0, gap: 2 },
+  branch: {
+    marginLeft: 9,
+    borderLeftWidth: 1,
+    borderLeftColor: colors.textTertiary,
+    paddingLeft: 18,
+    paddingTop: spacing.sm,
   },
-  dismissArea: { position: "absolute", top: 0, right: 0, bottom: 0, left: 0 },
-  dialog: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.lg,
-    padding: spacing.lg,
-    gap: spacing.md,
-    width: "100%",
-    maxWidth: 400,
-    alignSelf: "center",
+  connector: {
+    position: "absolute",
+    left: 0,
+    top: 18,
+    width: 14,
+    borderTopWidth: 1,
+    borderTopColor: colors.textTertiary,
   },
-  title: { color: colors.text, fontSize: 18, fontWeight: "600" },
-  sourceRow: { gap: spacing.xs },
-  role: { color: colors.textSecondary, fontSize: 12 },
-  app: { color: colors.text, fontSize: 15, fontWeight: "600" },
-  closeButton: { minHeight: 44, alignItems: "center", justifyContent: "center" },
-  closeLabel: { color: colors.accent, fontSize: 15, fontWeight: "600" },
+  otherSources: { gap: spacing.sm, marginTop: spacing.md },
+  otherHeading: { color: colors.textSecondary, fontSize: 12, fontWeight: "600" },
+  link: { minHeight: 44, minWidth: 44, justifyContent: "center", alignSelf: "flex-start" },
+  linkLabel: { color: colors.accent, fontSize: 12 },
+  error: { color: colors.danger, fontSize: 12 },
 });
