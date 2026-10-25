@@ -41,6 +41,55 @@ function activity(overrides: Partial<ActivityCardData> = {}): ActivityCardData {
 afterEach(cleanup);
 
 describe("ActivityCardContent", () => {
+  const photo = {
+    id: "photo-1",
+    url: "https://private.test/photo",
+    width: 1200,
+    height: 800,
+    mimeType: "image/jpeg",
+    sizeBytes: 12000,
+    sources: [],
+  };
+
+  it("shows one photo in the secondary panel when the activity has no map", () => {
+    render(
+      <ActivityCardContent
+        activity={activity()}
+        units={units}
+        selectMode={false}
+        selected={false}
+        photo={photo}
+      />,
+    );
+    expect(screen.getByRole("img", { name: "Activity photo" })).toHaveAttribute("src", photo.url);
+    expect(screen.getByTestId("activity-card-layout")).toHaveClass(
+      "sm:grid-cols-[minmax(0,2fr)_minmax(18rem,3fr)]",
+    );
+    expect(screen.getByTestId("activity-secondary-panel")).toBeInTheDocument();
+  });
+
+  it.each([
+    { kind: "processing" as const },
+    {
+      kind: "recorded_gps" as const,
+      centroidLat: 37,
+      centroidLng: -122,
+      mapPreview: { width: 512, height: 288, tiles: [], routePath: null },
+    },
+  ])("keeps the $kind map instead of a photo", (location) => {
+    render(
+      <ActivityCardContent
+        activity={activity({ location })}
+        units={units}
+        selectMode={false}
+        selected={false}
+        photo={photo}
+      />,
+    );
+    expect(screen.queryByRole("img", { name: "Activity photo" })).toBeNull();
+    expect(screen.getByTestId("activity-secondary-panel")).toBeInTheDocument();
+  });
+
   it.each(["garmin", "strava", "apple_health"])(
     "uses the actual %s primary provider as the leading card image",
     (providerId) => {

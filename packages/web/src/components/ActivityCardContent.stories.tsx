@@ -2,6 +2,7 @@ import { UnitConverter } from "@dofek/format/units";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { ActivityCardContent, type ActivityCardData } from "./ActivityCardContent.tsx";
 import { climbingSourceLocation } from "./ActivityMapTile.fixtures.ts";
+import { activityPhotoFixture } from "./ActivityPhoto.fixtures.ts";
 
 const units = new UnitConverter("metric");
 
@@ -397,4 +398,12 @@ export const AppleHealthSourceApps: Story = {
       ))}
     </div>
   ),
+};
+
+export const PhotoWithoutMap: Story = {
+  args: { activity: strengthActivity, photo: activityPhotoFixture },
+};
+
+export const MapBeforePhoto: Story = {
+  args: { activity: mappedActivity, photo: activityPhotoFixture },
 };

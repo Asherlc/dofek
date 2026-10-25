@@ -43,6 +43,19 @@ The [GPS-route preview](../../docs/screenshots/mobile-activity-route.png) and
 show the [Activities stories](<app-stories/(tabs)/activities.stories.tsx>) at a
 390-pixel browser viewport.
 
+Activity details show downloaded photos in [ActivityImages](components/ActivityImages.tsx),
+with tappable thumbnails, captions, source labels, and a full-screen
+[native Modal](https://reactnative.dev/docs/modal). Cards without a map show the
+first downloaded photo through [ActivityPhotoPreview](components/ActivityPhotoPreview.tsx);
+recorded routes, climbing locations, and processing maps retain precedence.
+The [shared query policy](../training/src/activity-images.ts) refreshes signed
+image URLs while visible and discards inactive image queries. The
+[mobile persistence boundary](lib/mobile-query-persistence.ts) excludes queries
+marked `persist: false`, following TanStack's
+[query dehydration filter](https://tanstack.com/query/latest/docs/framework/react/reference/hydration#dehydrate).
+Cached photos remain visible during refresh errors, and photo load failures
+offer a refresh action in the activity detail.
+
 Activity and training maps reserve space and show “Processing map…” while server geometry,
 preview images, or native map rendering are pending. Lists poll while any map's
 geometry is processing. Preview images become ready only after every tile

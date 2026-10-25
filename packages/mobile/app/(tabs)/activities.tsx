@@ -41,6 +41,7 @@ import { ActivityHeatmap } from "../../components/ActivityHeatmap";
 import { ActivityMapTile } from "../../components/ActivityMapTile";
 import { ActivityMetricStrip } from "../../components/ActivityMetricStrip";
 import { ActivityOverview } from "../../components/ActivityOverview";
+import { ActivityPhotoPreview } from "../../components/ActivityPhotoPreview";
 import { ActivityTypeIcon } from "../../components/ActivityTypeIcon";
 import { PaginationControls } from "../../components/PaginationControls";
 import { ProcessingStatusWidget } from "../../components/ProcessingStatusWidget";
@@ -502,6 +503,8 @@ export default function ActivitiesScreen() {
                     <View style={styles.mapPanel}>
                       <ActivityMapTile location={activity.location} />
                     </View>
+                  ) : !activity.isProviderAbsent ? (
+                    <ActivityPhotoPreview activityId={activity.id} />
                   ) : null}
                 </TouchableOpacity>
               ))}

@@ -9,6 +9,7 @@ import { useMemo } from "react";
 import { View } from "react-native";
 import { expect, within } from "storybook/test";
 import ActivitiesScreen from "../../app/(tabs)/activities";
+import { activityImageFixture } from "../../components/activity-images-test-helpers";
 import { trpc } from "../../lib/trpc";
 
 const mapPreview = {
@@ -261,7 +262,11 @@ const climbingSourceLocation = {
   ],
 } satisfies ActivityLocation;
 
-function createStoryData(climbingActivity = false, originProvider: string | null = "garmin") {
+function createStoryData(
+  climbingActivity = false,
+  originProvider: string | null = "garmin",
+  photoActivity = false,
+) {
   const today = formatDateYmd();
   const yesterday = formatDateYmd(new Date(Date.now() - 86_400_000));
   const queryInput = { weeks: 4, endDate: today };
@@ -443,7 +448,27 @@ function createStoryData(climbingActivity = false, originProvider: string | null
     operations: [],
   };
 
-  return { today, queryInput, weekList, activityOverview, calendarData, processingStatus };
+  const activityImages = {
+    images: photoActivity
+      ? [
+          {
+            ...activityImageFixture,
+            url: "https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?w=1200&q=80",
+          },
+        ]
+      : [],
+    coverage: [],
+    acquisition: [],
+  };
+  return {
+    today,
+    queryInput,
+    weekList,
+    activityOverview,
+    calendarData,
+    processingStatus,
+    activityImages,
+  };
 }
 
 function createMockLink(storyData: ReturnType<typeof createStoryData>): TRPCLink<AppRouter> {
@@ -466,6 +491,8 @@ function createMockObservable(
         observer.next?.({ result: { data: storyData.calendarData } });
       } else if (path === "processing.status") {
         observer.next?.({ result: { data: storyData.processingStatus } });
+      } else if (path === "activity.images") {
+        observer.next?.({ result: { data: storyData.activityImages } });
       } else {
         throw new Error(`Unhandled activities story tRPC operation: ${path}`);
       }
@@ -483,14 +510,16 @@ function MockProviders({
   children,
   climbingActivity,
   originProvider,
+  photoActivity,
 }: {
   children: React.ReactNode;
   climbingActivity: boolean;
   originProvider: string | null;
+  photoActivity: boolean;
 }) {
   const storyData = useMemo(
-    () => createStoryData(climbingActivity, originProvider),
-    [climbingActivity, originProvider],
+    () => createStoryData(climbingActivity, originProvider, photoActivity),
+    [climbingActivity, originProvider, photoActivity],
   );
   const queryClient = useMemo(() => {
     const client = new QueryClient({
@@ -536,6 +565,7 @@ const meta = {
     (Story, context) => (
       <MockProviders
         climbingActivity={context.parameters.climbingActivity === true}
+        photoActivity={context.parameters.photoActivity === true}
         originProvider={
           context.parameters.originProvider === null
             ? null
@@ -599,3 +629,4 @@ export const PrimaryProviderWithoutLogo: Story = {
 };
 
 export const AppleHealthSourceApp: Story = { parameters: { originProvider: "apple_health" } };
+export const PhotoWithoutMap: Story = { parameters: { photoActivity: true } };

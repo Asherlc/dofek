@@ -2,6 +2,34 @@ import { statusColors } from "@dofek/scoring/colors";
 import { StyleSheet } from "react-native";
 import { colors } from "../../theme";
 
+export const statsStyles = StyleSheet.create({
+  grid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  card: {
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+    padding: 14,
+    width: "48%",
+    flexGrow: 1,
+  },
+  label: {
+    fontSize: 11,
+    color: colors.textTertiary,
+    marginBottom: 4,
+    textTransform: "uppercase",
+    letterSpacing: 0.3,
+  },
+  value: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: colors.text,
+    fontVariant: ["tabular-nums"],
+  },
+});
+
 export const styles = StyleSheet.create({
   container: {
     flex: 1,

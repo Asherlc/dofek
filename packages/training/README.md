@@ -50,6 +50,7 @@ Every public module is imported as `@dofek/training/<subpath>`.
 | --- | --- |
 | `activity-icons` | Normalize activity names into framework-neutral icon categories |
 | `activity-chart-series` | [Shared activity-chart timing, gap, marker, and nearest-observation presentation policy](src/activity-chart-series.ts) |
+| `activity-images` | [Activity-image metadata, captions, and shared web/mobile query refresh policy](src/activity-images.ts) |
 | `climbing-grades` | Validate recorded grade components; order and convert supported free-rock grades with [Sandbag](https://github.com/OpenBeta/sandbag) |
 | `climbing-context` | Validate the current Climb and Area path with recorded board, wall-angle, and hold-type context |
 | `climbing-sources` | [Select route destinations and match provider attribution to tick links](src/climbing-sources.ts) for web and mobile using a supplied provider-label resolver |
@@ -73,6 +74,17 @@ Every public module is imported as `@dofek/training/<subpath>`.
 | `workout-recommendation` | Workout recommendation types and calculation |
 
 ## Model details
+
+### Activity images
+
+The [image presentation contract](src/activity-images.ts) retains stored-image
+dimensions, source associations, and captions. Its query options refresh active
+acquisition every three seconds and renew visible stored-image links every four
+minutes, before the [server's five-minute signed URL lifetime](../../src/activity-images/storage.ts).
+Empty completed results stop polling. Inactive queries discard their temporary
+links; remounting or focusing the client refreshes the query. Persistence metadata excludes them from the
+mobile disk cache. TanStack documents the [query refresh options](https://tanstack.com/query/latest/docs/framework/react/reference/useQuery),
+and Cloudflare describes [signed URLs as temporary bearer access](https://developers.cloudflare.com/r2/api/s3/presigned-urls/).
 
 ### Activity chart presentation
 

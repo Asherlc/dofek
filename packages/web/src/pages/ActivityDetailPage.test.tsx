@@ -328,6 +328,13 @@ const mockMetricSourcesUseQuery = vi.fn(
   }),
 );
 const mockRecomputeMutate = vi.fn();
+const mockImagesUseQuery = vi.fn(() => ({
+  data: { images: [], coverage: [], acquisition: [] },
+  error: null,
+  isLoading: false,
+  isFetching: false,
+  refetch: vi.fn(),
+}));
 const mockRecomputeShouldFail = vi.fn(() => false);
 const mockActivityByIdInvalidate = vi.fn().mockResolvedValue(undefined);
 const mockActivityStreamInvalidate = vi.fn().mockResolvedValue(undefined);
@@ -341,6 +348,7 @@ const mockCalendarActivityOverviewInvalidate = vi.fn().mockResolvedValue(undefin
 vi.mock("../lib/trpc.ts", () => ({
   trpc: {
     activity: {
+      images: { useQuery: mockImagesUseQuery },
       byId: { useQuery: mockActivityByIdUseQuery },
       stream: { useQuery: mockStreamUseQuery },
       metricSources: { useQuery: mockMetricSourcesUseQuery },
@@ -671,6 +679,14 @@ async function importActivityHeader() {
 }
 
 describe("ActivityDetailPage", () => {
+  it("requests downloaded photos for the current activity with signed-link renewal", async () => {
+    const { ActivityDetailPage } = await import("./ActivityDetailPage.tsx");
+    renderWithUnits(<ActivityDetailPage />);
+    expect(mockImagesUseQuery).toHaveBeenCalledWith(
+      { id: "test-123" },
+      expect.objectContaining({ refetchOnMount: "always", refetchOnWindowFocus: true }),
+    );
+  });
   it("shows a loading skeleton before activity details resolve", async () => {
     mockActivityByIdUseQuery.mockReturnValue({
       data: undefined,

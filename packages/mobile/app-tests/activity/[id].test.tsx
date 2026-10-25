@@ -10,6 +10,7 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import React from "react";
 import { Alert, Linking } from "react-native";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { activityImageFixture } from "../../components/activity-images-test-helpers";
 import { RouteMap } from "../../components/RouteMap";
 import { captureException } from "../../lib/telemetry";
 
@@ -80,6 +81,8 @@ vi.mock("react-native", () => ({
       ...(children != null ? [children] : []),
     ),
   ActivityIndicator: () => React.createElement("div", { "data-testid": "loading" }),
+  Image: ({ accessibilityLabel, ...props }: Record<string, unknown>) =>
+    React.createElement("img", { ...stripStyle(props), "aria-label": accessibilityLabel }),
   Alert: { alert: vi.fn() },
   Modal: ({ children, visible }: Record<string, unknown>) =>
     visible ? React.createElement("div", { "data-testid": "modal" }, children) : null,
@@ -116,8 +119,9 @@ vi.mock("react-native-svg", () => ({
     React.createElement("text", props, ...(children != null ? [children] : [])),
 }));
 
+const activityRouteParams = vi.hoisted(() => ({ id: "00000000-0000-0000-0000-000000000001" }));
 vi.mock("expo-router", () => ({
-  useLocalSearchParams: () => ({ id: "00000000-0000-0000-0000-000000000001" }),
+  useLocalSearchParams: () => activityRouteParams,
   useRouter: () => ({ back: mockRouterBack }),
 }));
 
@@ -267,6 +271,7 @@ vi.mock("@dofek/zones/zones", async () => {
 });
 
 const mockByIdQuery = vi.fn();
+const mockImagesQuery = vi.fn();
 const mockStreamQuery = vi.fn();
 const mockRouteQuery = vi.fn();
 const mockHrZonesQuery = vi.fn();
@@ -313,6 +318,7 @@ const mockClimbingVolumeByGradeInvalidate = vi.fn().mockResolvedValue(undefined)
 vi.mock("../../lib/trpc", () => ({
   trpc: {
     activity: {
+      images: { useQuery: (...args: unknown[]) => mockImagesQuery(...args) },
       byId: { useQuery: (...args: unknown[]) => mockByIdQuery(...args) },
       metricSources: { useQuery: (...args: unknown[]) => mockMetricSourcesQuery(...args) },
       stream: { useQuery: (...args: unknown[]) => mockStreamQuery(...args) },
@@ -532,6 +538,15 @@ beforeEach(() => {
   });
   vi.mocked(RouteMap).mockClear();
   mockByIdQuery.mockClear();
+  activityRouteParams.id = "00000000-0000-0000-0000-000000000001";
+  mockImagesQuery.mockReset();
+  mockImagesQuery.mockReturnValue({
+    data: { images: [], coverage: [], acquisition: [] },
+    isLoading: false,
+    isFetching: false,
+    error: null,
+    refetch: vi.fn(),
+  });
   mockStreamQuery.mockClear();
   mockRouteQuery.mockClear();
   mockHrZonesQuery.mockClear();
@@ -579,6 +594,77 @@ beforeEach(() => {
 });
 
 describe("ActivityDetailScreen", () => {
+  it("shows downloaded activity images with the activity detail and opens them", async () => {
+    mockImagesQuery.mockReturnValue({
+      data: {
+        images: [
+          {
+            ...activityImageFixture,
+            id: "photo-1",
+            url: "https://images.example.test/photo.jpg",
+            width: 1200,
+            height: 800,
+            sources: activityImageFixture.sources.map((source) => ({
+              ...source,
+              caption: "At the summit",
+            })),
+          },
+        ],
+        coverage: [],
+        acquisition: [],
+      },
+      isLoading: false,
+      isFetching: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+    const { default: ActivityDetailScreen } = await import("../../app/activity/[id]");
+    render(React.createElement(ActivityDetailScreen));
+    expect(mockImagesQuery).toHaveBeenCalledWith(
+      { id: baseCyclingActivity.id },
+      expect.objectContaining({
+        enabled: true,
+        staleTime: 0,
+        refetchOnMount: "always",
+        meta: { persist: false },
+      }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Open photo 1: At the summit" }));
+    expect(screen.getByRole("button", { name: "Close photo" })).toBeTruthy();
+  });
+
+  it("closes the photo viewer when navigating to another activity with the same image", async () => {
+    mockImagesQuery.mockReturnValue({
+      data: {
+        images: [
+          {
+            ...activityImageFixture,
+            id: "shared-photo",
+            url: "https://images.example.test/photo.jpg",
+            width: 1200,
+            height: 800,
+            sources: activityImageFixture.sources.map((source) => ({
+              ...source,
+              caption: "At the summit",
+            })),
+          },
+        ],
+        coverage: [],
+        acquisition: [],
+      },
+      isLoading: false,
+      isFetching: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+    const { default: ActivityDetailScreen } = await import("../../app/activity/[id]");
+    const view = render(React.createElement(ActivityDetailScreen));
+    fireEvent.click(screen.getByRole("button", { name: "Open photo 1: At the summit" }));
+    expect(screen.getByRole("button", { name: "Close photo" })).toBeTruthy();
+    activityRouteParams.id = "00000000-0000-0000-0000-000000000002";
+    view.rerender(React.createElement(ActivityDetailScreen));
+    expect(screen.queryByRole("button", { name: "Close photo" })).toBeNull();
+  });
   it.each(["hiking", "running", "cycling", "strength", "hangboard"])(
     "hides climbs for %s activities even when climbing queries have cached data",
     async (activityType) => {

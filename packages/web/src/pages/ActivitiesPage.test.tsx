@@ -1,6 +1,7 @@
 /** @vitest-environment jsdom */
 
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import type { ActivityImage } from "@dofek/training/activity-images";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -67,6 +68,18 @@ let mockDataHealthQuery: {
   error: Error | null;
 };
 let processingStatusInput: unknown;
+const mockImagesUseQuery = vi.fn(
+  (
+    _input?: unknown,
+    _options?: unknown,
+  ): {
+    data: { images: ActivityImage[]; coverage: unknown[]; acquisition: unknown[] };
+    error: Error | null;
+  } => ({
+    data: { images: [], coverage: [], acquisition: [] },
+    error: null,
+  }),
+);
 
 interface BulkDeleteVariables {
   ids: string[];
@@ -106,6 +119,9 @@ vi.mock("../lib/trpc.ts", () => ({
       },
     },
     activity: {
+      images: {
+        useQuery: (input: unknown, options: unknown) => mockImagesUseQuery(input, options),
+      },
       merge: {
         useMutation: (options?: { onSuccess?: () => Promise<void> | void }) => ({
           mutate: mergeMutate.mockImplementation(async () => options?.onSuccess?.()),
@@ -227,6 +243,11 @@ const mapPreview = {
 
 describe("ActivitiesPage", () => {
   beforeEach(() => {
+    mockImagesUseQuery.mockReset();
+    mockImagesUseQuery.mockReturnValue({
+      data: { images: [], coverage: [], acquisition: [] },
+      error: null,
+    });
     mockQuery = { data: [], isLoading: false, isError: false, error: null };
     mockOverviewQuery = {
       data: {
@@ -255,6 +276,89 @@ describe("ActivitiesPage", () => {
     mockBulkDeleteShouldFail = false;
     mockDataHealthQuery = { data: undefined, isLoading: false, error: null };
     processingStatusInput = undefined;
+  });
+
+  it("loads one photo only for visible cards without a map", () => {
+    const photo = {
+      id: "photo-1",
+      url: "https://private.test/photo",
+      width: 1200,
+      height: 800,
+      mimeType: "image/jpeg",
+      sizeBytes: 1000,
+      sources: [],
+    };
+    mockImagesUseQuery.mockReturnValue({
+      data: { images: [photo, { ...photo, id: "photo-2" }], coverage: [], acquisition: [] },
+      error: null,
+    });
+    mockQuery = {
+      data: [
+        {
+          date: "2026-03-18",
+          totalTss: 100,
+          totalDurationMin: 120,
+          activities: [activity(), activity({ id: "mapped-2", location: { kind: "processing" } })],
+        },
+      ],
+      isLoading: false,
+      isError: false,
+      error: null,
+    };
+    render(<ActivitiesPage />);
+    expect(screen.getAllByRole("img", { name: "Activity photo" })).toHaveLength(1);
+    expect(mockImagesUseQuery).toHaveBeenCalledWith(
+      { id: "activity-1" },
+      expect.objectContaining({ enabled: true }),
+    );
+    expect(mockImagesUseQuery).toHaveBeenCalledWith(
+      { id: "mapped-2" },
+      expect.objectContaining({ enabled: false }),
+    );
+  });
+
+  it("keeps a loaded photo and its card height when the card leaves the viewport", () => {
+    let visibilityChanged: ((entries: { isIntersecting: boolean }[]) => void) | undefined;
+    vi.stubGlobal(
+      "IntersectionObserver",
+      class {
+        constructor(callback: (entries: { isIntersecting: boolean }[]) => void) {
+          visibilityChanged = callback;
+        }
+        observe() {
+          visibilityChanged?.([{ isIntersecting: true }]);
+        }
+        disconnect() {}
+      },
+    );
+    const photo = {
+      id: "photo-1",
+      url: "https://private.test/photo",
+      width: 1200,
+      height: 800,
+      mimeType: "image/jpeg",
+      sizeBytes: 1000,
+      sources: [],
+    };
+    mockImagesUseQuery.mockReturnValue({
+      data: { images: [photo], coverage: [], acquisition: [] },
+      error: null,
+    });
+    mockQuery = {
+      data: [{ date: "2026-03-18", totalTss: 100, totalDurationMin: 60, activities: [activity()] }],
+      isLoading: false,
+      isError: false,
+      error: null,
+    };
+    render(<ActivitiesPage />);
+    expect(screen.getByRole("img", { name: "Activity photo" })).toBeInTheDocument();
+    act(() => visibilityChanged?.([{ isIntersecting: false }]));
+    expect(screen.getByRole("img", { name: "Activity photo" })).toBeInTheDocument();
+    expect(screen.getByTestId("activity-secondary-panel")).toBeInTheDocument();
+    expect(mockImagesUseQuery).toHaveBeenLastCalledWith(
+      { id: "activity-1" },
+      expect.objectContaining({ enabled: false }),
+    );
   });
 
   it("shows activity progress while summaries are updating", () => {

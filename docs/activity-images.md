@@ -112,7 +112,26 @@ response includes image metadata, all source associations, discovery coverage,
 and current acquisition states. Identical stored objects appear once. Signed
 URLs expire after five minutes and are bearer credentials
 ([Cloudflare signed URL guidance](https://developers.cloudflare.com/r2/api/s3/presigned-urls/)).
-No gallery UI is added by this storage change.
+
+Web and mobile activity details display downloaded images in a Photos gallery.
+Selecting a thumbnail opens the full image with its caption and source provider.
+Activity cards show the first downloaded image only when they have no map;
+recorded routes, climbing-source maps, and processing maps take precedence.
+Activities without a downloaded image keep their existing details-only card.
+The clients reuse `activity.images`, including its ownership and canonical-group
+resolution, rather than fetching provider URLs directly.
+
+The [shared image query policy](../packages/training/src/activity-images.ts)
+refreshes signed links on mount/focus and every four minutes while observed.
+It polls pending acquisitions every three seconds and stops polling completed
+empty results. Web card queries run only near the viewport and retain loaded
+photos when scrolled away. Mobile excludes these bearer URLs from its persisted
+query cache. These settings use TanStack Query's
+[query lifecycle options](https://tanstack.com/query/latest/docs/framework/react/reference/useQuery)
+and [dehydration filtering](https://tanstack.com/query/latest/docs/framework/react/reference/hydration).
+The web image viewer reuses the existing modal with keyboard containment,
+Escape dismissal, and focus restoration, following the
+[WAI modal-dialog pattern](https://www.w3.org/WAI/ARIA/apg/patterns/dialog-modal/).
 
 ## Deployment and deletion
 
