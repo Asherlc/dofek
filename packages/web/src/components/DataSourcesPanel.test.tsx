@@ -357,10 +357,9 @@ describe("DataSourcesPanel", () => {
 
     expect(screen.queryByRole("region", { name: "Sync all providers" })).toBeNull();
     expect(loadingRegion.getAttribute("aria-busy")).toBe("true");
-    expect(loadingRegion.className).toContain("h-80");
-    expect(loadingRegion.className).toContain("sm:h-96");
-    expect(loadingRegion.className).toContain("lg:h-[28rem]");
-    expect(loadingRegion.className).toContain("overflow-y-auto");
+    expect(loadingRegion.className).toContain("min-h-80");
+    expect(loadingRegion.className).toContain("sm:min-h-96");
+    expect(loadingRegion.className).toContain("lg:min-h-[28rem]");
     expect(within(loadingRegion).getByText("Loading processing status…")).toBeTruthy();
 
     mockProvidersQuery.mockReturnValue({
