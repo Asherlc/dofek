@@ -93,6 +93,6 @@ and hosted validation results are tracked in [PR 3072](https://github.com/Asherl
 - [x] Run the focused runner suite with `--retry=0` before implementation; observe RED.
 - [x] Implement the smallest runner using SwiftPM source inventory, per-package working directories, a shared configuration and absolute JSON reports; propagate all nonzero exits.
 - [x] Replace the hardcoded HealthKit workflow commands and exit-255 success branch with the runner; upload all package reports. Validate YAML using the existing schema/lint tooling rather than static configuration tests.
-- [ ] Run the runner suite and a real WHOOP mutation run; inspect actual discovery and report results.
+- [x] Run the runner suite and a real WHOOP mutation run; inspect actual discovery and report results.
 - [x] Independent scoped review checkpoint: review runner, workflow, configuration and tests; run required pre-push checks, commit and push.
 - [ ] Observe real hosted native mutation execution and completion; distinguish its report from ordinary unit and build results.
