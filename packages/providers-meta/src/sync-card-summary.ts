@@ -70,7 +70,7 @@ export function providerSyncStatusPresentation(
   processing: ProviderProcessingEvidence,
 ): ProviderSyncStatusPresentation | null {
   const latestLog = latestSyncLog(history);
-  const outcome =
+  const outcome: ProviderSyncHistory["recentLogs"][number] | null =
     history.lastSuccessfulSyncAt &&
     (!latestLog || history.lastSuccessfulSyncAt > latestLog.syncedAt)
       ? { status: "success", syncedAt: history.lastSuccessfulSyncAt }
@@ -78,12 +78,7 @@ export function providerSyncStatusPresentation(
   const processingEvidence = [
     ...processing.datasets.map((dataset) => ({
       status: dataset.status,
-      occurredAt:
-        dataset.status === "ready"
-          ? dataset.lastReadyAt
-          : dataset.status === "failed"
-            ? dataset.lastFailedAt
-            : dataset.lastAdvancedAt,
+      occurredAt: dataset.status === "failed" ? dataset.lastFailedAt : dataset.lastAdvancedAt,
     })),
     ...processing.operations
       .filter((operation) => !operation.dismissed)
@@ -153,9 +148,9 @@ export function providerSyncStatusPresentation(
   }
   const logPresentation = providerSyncLogPresentation({
     providerName,
-    dataType: latestLog?.dataType ?? "data",
+    dataType: outcome.dataType ?? "data",
     status: outcome.status,
-    authFailureReason: history.needsReauth ? (latestLog?.authFailureReason ?? null) : null,
+    authFailureReason: history.needsReauth ? (outcome.authFailureReason ?? null) : null,
   });
   return {
     occurredAt: outcome.syncedAt,
