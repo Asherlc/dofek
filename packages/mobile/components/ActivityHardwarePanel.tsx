@@ -2,6 +2,7 @@ import {
   type ActivityHardware,
   activityHardwareRoleLabels,
 } from "@dofek/providers/activity-hardware";
+import { deviceDisplayName } from "@dofek/providers/device-names";
 import { providerLabel } from "@dofek/providers/providers";
 import { useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
@@ -63,15 +64,17 @@ export function ActivityHardwarePanel({ data, loading = false, error, onRetry }:
       {data?.items.map((item, index) => (
         <View key={item.id} style={[styles.item, index > 0 && styles.separator]}>
           <Text style={styles.name}>{item.label}</Text>
-          <Text style={styles.secondary}>
-            {activityHardwareRoleLabels[item.role]} · {providerLabel(item.providerId)}
-          </Text>
+          {item.role !== "recorder" ? (
+            <Text style={styles.secondary}>
+              {activityHardwareRoleLabels[item.role]} · {providerLabel(item.providerId)}
+            </Text>
+          ) : null}
           {expanded ? (
             <View style={styles.facts}>
               {item.sourceName &&
-              item.sourceName !== item.label &&
+              deviceDisplayName(item.sourceName) !== item.label &&
               item.sourceName !== providerLabel(item.providerId) ? (
-                <Text style={styles.secondary}>Source: {item.sourceName}</Text>
+                <Text style={styles.secondary}>Source: {deviceDisplayName(item.sourceName)}</Text>
               ) : null}
               {item.manufacturer ? (
                 <Text style={styles.secondary}>Manufacturer: {item.manufacturer}</Text>

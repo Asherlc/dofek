@@ -2,6 +2,7 @@ import {
   type ActivityHardware,
   activityHardwareRoleLabels,
 } from "@dofek/providers/activity-hardware";
+import { deviceDisplayName } from "@dofek/providers/device-names";
 import { providerLabel } from "@dofek/providers/providers";
 import { useState } from "react";
 import { QueryStatePanel } from "./QueryStatePanel.tsx";
@@ -45,17 +46,19 @@ export function ActivityHardwarePanel({ data, loading = false, error, onRetry }:
           className={index > 0 ? "space-y-1 border-t border-border pt-3" : "space-y-1"}
         >
           <p className="text-sm font-medium text-foreground">{item.label}</p>
-          <p className="text-xs text-muted">
-            {activityHardwareRoleLabels[item.role]} · {providerLabel(item.providerId)}
-          </p>
+          {item.role !== "recorder" ? (
+            <p className="text-xs text-muted">
+              {activityHardwareRoleLabels[item.role]} · {providerLabel(item.providerId)}
+            </p>
+          ) : null}
           {expanded ? (
             <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1 pt-2 text-xs text-muted">
               {item.sourceName &&
-              item.sourceName !== item.label &&
+              deviceDisplayName(item.sourceName) !== item.label &&
               item.sourceName !== providerLabel(item.providerId) ? (
                 <>
                   <dt>Source</dt>
-                  <dd className="wrap-anywhere">{item.sourceName}</dd>
+                  <dd className="wrap-anywhere">{deviceDisplayName(item.sourceName)}</dd>
                 </>
               ) : null}
               {item.manufacturer ? (

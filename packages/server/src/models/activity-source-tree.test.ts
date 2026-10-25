@@ -33,6 +33,19 @@ function edge(
   };
 }
 describe("buildActivitySourceTree", () => {
+  it("uses a readable Garmin model label while preserving source identity", () => {
+    const tree = buildActivitySourceTree(
+      { ...origin, providerId: "garmin", sourceName: "fr955" },
+      [link("a", "garmin", "fr955")],
+      [],
+    );
+    expect(tree.primary).toMatchObject({
+      id: "a",
+      providerId: "garmin",
+      sourceName: "fr955",
+      label: "Forerunner 955",
+    });
+  });
   it("orders same-provider held copies by member identity independently of external IDs", () => {
     const tree = buildActivitySourceTree(
       { status: "unresolved", candidateMemberActivityIds: ["a", "b"] },

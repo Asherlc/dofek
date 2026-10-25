@@ -1,4 +1,5 @@
 import type { ActivityHardware, ActivityHardwareItem } from "@dofek/providers/activity-hardware";
+import { appleDeviceModel, deviceDisplayName } from "@dofek/providers/device-names";
 import { Profile } from "@garmin/fitsdk";
 import { z } from "zod";
 
@@ -27,7 +28,8 @@ function readable(value: string): string {
   return words.charAt(0).toUpperCase() + words.slice(1);
 }
 function readableName(value: string): string {
-  return value.includes("_") ? readable(value) : value;
+  const name = deviceDisplayName(value);
+  return name === value && value.includes("_") ? readable(value) : name;
 }
 function pelotonEquipmentLabel(value: unknown): string | null {
   const code = text(value);
@@ -40,11 +42,27 @@ function reportedSourceLabel(value: unknown): string | null {
   const source = text(value);
   if (source === null) return null;
   if (source === "ridewithgps_iphone") return "Ride with GPS for iPhone";
-  return source === "watch" ? "Watch" : readableName(source);
+  // Preserve model tokens for source matching; clients resolve their display names.
+  return source === "watch" ? "Watch" : source.includes("_") ? readable(source) : source;
 }
 function enumName(type: string, value: unknown): string | null {
-  const name = typeof value === "number" ? Profile.types[type]?.[value] : text(value);
-  return name ? readable(name) : null;
+  const numeric = valueText(value);
+  const name =
+    numeric !== null && /^\d+$/.test(numeric)
+      ? Profile.types[type]?.[Number(numeric)]
+      : text(value);
+  if (!name) return null;
+  const resolved = type === "garminProduct" ? deviceDisplayName(name) : name;
+  return resolved === name ? readable(name) : resolved;
+}
+function enumCode(type: string, value: unknown): number | null {
+  const code = valueText(value);
+  if (code === null) return null;
+  if (/^\d+$/.test(code)) return Number(code);
+  const entry = Object.entries(Profile.types[type] ?? {}).find(
+    ([, name]) => text(name)?.toLowerCase() === code.toLowerCase(),
+  );
+  return entry ? Number(entry[0]) : null;
 }
 const fitDeviceFields = z
   .array(
@@ -53,6 +71,7 @@ const fitDeviceFields = z
       type: z.string(),
       subFields: z.array(
         z.object({
+          name: z.string(),
           type: z.string(),
           map: z.array(z.object({ name: z.string(), value: z.number() })),
         }),
@@ -70,9 +89,18 @@ function fitFieldLabel(name: string, raw: Raw): string | null {
   const field = fitDeviceFields.find((field) => field.name === name);
   if (!field) return null;
   const subfield = field.subFields.find((subfield) =>
-    subfield.map.some((reference) => raw[reference.name] === reference.value),
+    subfield.map.some((reference) => {
+      const referenceType = fitDeviceFields.find((field) => field.name === reference.name)?.type;
+      return (
+        referenceType !== undefined &&
+        enumCode(referenceType, raw[reference.name]) === reference.value
+      );
+    }),
   );
-  return enumName(subfield?.type ?? field.type, raw[name]);
+  return enumName(
+    subfield?.type ?? field.type,
+    (subfield ? raw[subfield.name] : undefined) ?? raw[name],
+  );
 }
 function details(fields: [string, unknown][]): ActivityHardwareItem["details"] {
   return fields.flatMap(([label, value]) => {
@@ -138,7 +166,6 @@ function fitItems(member: ActivityHardwareMember): ActivityHardwareItem[] {
   }
   return [...groups].map(([key, raw]) => {
     const manufacturer = enumName("manufacturer", raw.manufacturer);
-    const product = raw.garminProduct ?? raw.product;
     const model = text(raw.productName) ?? fitFieldLabel("product", raw);
     const role =
       key === "creator" || valueText(raw.deviceIndex) === "0"
@@ -160,8 +187,6 @@ function fitItems(member: ActivityHardwareMember): ActivityHardwareItem[] {
       details: details([
         ["Serial number", raw.serialNumber],
         ["Device index", raw.deviceIndex],
-        ["Manufacturer code", manufacturer === null ? raw.manufacturer : null],
-        ["Product code", model === null ? product : null],
         ["Connection", enumName("sourceType", raw.sourceType)],
         ["Device type", deviceType],
         ["Firmware", raw.softwareVersion],
@@ -195,11 +220,21 @@ function apiItem(member: ActivityHardwareMember): ActivityHardwareItem | null {
   }
   if (member.providerId === "apple_health" || member.providerId === "apple-health") {
     const device = object(raw.device);
-    model = text(device.model);
+    const reportedModel = text(device.model);
+    const hardware = text(device.hardwareVersion);
+    const deviceName = text(device.name);
+    const resolvedModel =
+      (hardware ? appleDeviceModel(hardware) : null) ??
+      (reportedModel ? appleDeviceModel(reportedModel) : null);
+    model = resolvedModel ?? reportedModel;
     manufacturer = text(device.manufacturer);
-    label = text(device.name) ?? model ?? manufacturer;
+    label = resolvedModel ?? deviceName ?? model ?? manufacturer;
     itemDetails = details([
-      ["Hardware", device.hardwareVersion],
+      ["Device name", resolvedModel && deviceName !== resolvedModel ? deviceName : null],
+      [
+        "Hardware",
+        hardware && /^(?:Watch|iPhone|iPad|iPod)\d+,\d+$/.test(hardware) ? null : hardware,
+      ],
       ["Firmware", device.firmwareVersion],
       ["Software", device.softwareVersion],
       ["Local identifier", device.localIdentifier],
@@ -226,10 +261,11 @@ function apiItem(member: ActivityHardwareMember): ActivityHardwareItem | null {
   }
   if (!label && itemDetails.length) label = "Unidentified device";
   if (!label) return null;
+  const displayLabel = readableName(label);
   return {
     ...base(member, "api"),
     role,
-    label: readableName(label),
+    label: displayLabel,
     model: model === null ? null : readableName(model),
     manufacturer: manufacturer === null ? null : readableName(manufacturer),
     evidence,

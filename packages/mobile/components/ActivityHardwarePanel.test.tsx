@@ -2,6 +2,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { ActivityHardwarePanel } from "./ActivityHardwarePanel";
+import { recognizedWatches } from "./ActivityHardwarePanel.fixtures";
 
 const watch = {
   id: "watch",
@@ -20,6 +21,34 @@ const data = {
   power: [],
 };
 describe("ActivityHardwarePanel", () => {
+  it("renders a source model token readably without using the token as its display label", () => {
+    render(
+      <ActivityHardwarePanel data={{ ...data, items: [{ ...watch, sourceName: "fr955" }] }} />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Device and sensor details" }));
+    expect(screen.getByText("Source: Forerunner 955")).toBeTruthy();
+  });
+  it("shows recognized watch models and discloses personal names and software versions", () => {
+    render(<ActivityHardwarePanel data={recognizedWatches} />);
+    expect(screen.getByText("Apple Watch Series 7 (GPS + Cellular, 45mm)")).toBeTruthy();
+    expect(screen.getByText("Garmin Forerunner 955")).toBeTruthy();
+    expect(screen.queryByText("Device name: Asher’s Apple Watch")).toBeNull();
+
+    const disclosure = screen.getByRole("button", { name: "Device and sensor details" });
+    fireEvent.click(disclosure);
+    expect(disclosure.getAttribute("aria-expanded")).toBe("true");
+    expect(screen.getByText("Software: 26.6")).toBeTruthy();
+    expect(screen.getByText("Firmware: 21.19")).toBeTruthy();
+    expect(screen.getByText("Device name: Asher’s Apple Watch")).toBeTruthy();
+    expect(screen.getByText("Source: Workout")).toBeTruthy();
+    expect(screen.getAllByText("Apple Watch Series 7 (GPS + Cellular, 45mm)")).toHaveLength(1);
+    expect(screen.getAllByText("Garmin Forerunner 955")).toHaveLength(1);
+
+    fireEvent.click(disclosure);
+    expect(disclosure.getAttribute("aria-expanded")).toBe("false");
+    expect(screen.getByText("Apple Watch Series 7 (GPS + Cellular, 45mm)")).toBeTruthy();
+    expect(screen.getByText("Garmin Forerunner 955")).toBeTruthy();
+  });
   it("distinguishes source apps and coarse equipment categories", () => {
     const view = render(
       <ActivityHardwarePanel
@@ -94,7 +123,6 @@ describe("ActivityHardwarePanel", () => {
     expect(screen.getAllByText("My Watch")).toHaveLength(1);
     expect(screen.getByText("Serial number: ABC")).toBeTruthy();
     expect(screen.getByText("Firmware: 2.0")).toBeTruthy();
-    expect(screen.getAllByText("Recording source · Apple Health")).toHaveLength(2);
   });
   it("retains cached hardware and the server error during refetch", () => {
     render(

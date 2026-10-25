@@ -1,5 +1,6 @@
 import type { ActivityHardware } from "@dofek/providers/activity-hardware";
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { recognizedWatches } from "./ActivityHardwarePanel.fixtures.ts";
 import { ActivityHardwarePanel } from "./ActivityHardwarePanel.tsx";
 
 const data: ActivityHardware = {
@@ -50,6 +51,7 @@ const meta = {
 } satisfies Meta<typeof ActivityHardwarePanel>;
 export default meta;
 type Story = StoryObj<typeof meta>;
+export const RecognizedWatchModels: Story = { args: { data: recognizedWatches } };
 export const RecorderAndSensors: Story = { args: { data } };
 export const FitFileCreator: Story = {
   args: {

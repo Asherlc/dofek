@@ -1,6 +1,7 @@
 /** @vitest-environment jsdom */
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
+import { recognizedWatches } from "./ActivityHardwarePanel.fixtures.ts";
 import { ActivityHardwarePanel } from "./ActivityHardwarePanel.tsx";
 
 const watch = {
@@ -20,6 +21,36 @@ const data = {
   power: [],
 };
 describe("ActivityHardwarePanel", () => {
+  it("renders a source model token readably without using the token as its display label", () => {
+    render(
+      <ActivityHardwarePanel data={{ ...data, items: [{ ...watch, sourceName: "fr955" }] }} />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Device and sensor details" }));
+    expect(screen.getByText("Source").nextElementSibling?.textContent).toBe("Forerunner 955");
+  });
+  it("shows recognized watch models and discloses personal names and software versions", () => {
+    render(<ActivityHardwarePanel data={recognizedWatches} />);
+    expect(screen.getByText("Apple Watch Series 7 (GPS + Cellular, 45mm)")).toBeTruthy();
+    expect(screen.getByText("Garmin Forerunner 955")).toBeTruthy();
+    expect(screen.queryByText("Asher’s Apple Watch")).toBeNull();
+
+    const disclosure = screen.getByRole("button", { name: "Device and sensor details" });
+    fireEvent.click(disclosure);
+    expect(disclosure.getAttribute("aria-expanded")).toBe("true");
+    expect(screen.getByText("Software").nextElementSibling?.textContent).toBe("26.6");
+    expect(screen.getByText("Firmware").nextElementSibling?.textContent).toBe("21.19");
+    expect(screen.getByText("Device name").nextElementSibling?.textContent).toBe(
+      "Asher’s Apple Watch",
+    );
+    expect(screen.getByText("Source").nextElementSibling?.textContent).toBe("Workout");
+    expect(screen.getAllByText("Apple Watch Series 7 (GPS + Cellular, 45mm)")).toHaveLength(1);
+    expect(screen.getAllByText("Garmin Forerunner 955")).toHaveLength(1);
+
+    fireEvent.click(disclosure);
+    expect(disclosure.getAttribute("aria-expanded")).toBe("false");
+    expect(screen.getByText("Apple Watch Series 7 (GPS + Cellular, 45mm)")).toBeTruthy();
+    expect(screen.getByText("Garmin Forerunner 955")).toBeTruthy();
+  });
   it("distinguishes source apps and coarse equipment categories", () => {
     const view = render(
       <ActivityHardwarePanel
@@ -94,7 +125,6 @@ describe("ActivityHardwarePanel", () => {
     expect(screen.getAllByText("My Watch")).toHaveLength(1);
     expect(screen.getByText("ABC")).toBeTruthy();
     expect(screen.getByText("2.0")).toBeTruthy();
-    expect(screen.getAllByText("Recording source · Apple Health")).toHaveLength(2);
   });
   it("retains cached hardware while displaying a refetch error", () => {
     render(

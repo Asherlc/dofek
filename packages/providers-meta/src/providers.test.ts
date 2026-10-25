@@ -52,6 +52,19 @@ describe("providerLabel", () => {
 });
 
 describe("providerSourceLabel", () => {
+  it("renders Apple model identifiers through both Apple Health provider aliases", () => {
+    for (const provider of ["apple_health", "apple-health"]) {
+      expect(providerSourceLabel(provider, "Watch6,9")).toBe(
+        "Apple Watch Series 7 (GPS + Cellular, 45mm) (via Apple Health)",
+      );
+    }
+  });
+
+  it("renders Garmin enum names without guessing an edition", () => {
+    expect(providerSourceLabel("garmin", "fr955")).toBe("Garmin · Forerunner 955");
+    expect(providerRecordLabel("fit-file", "edge530")).toBe("FIT File · Edge 530");
+  });
+
   it("includes the Garmin recording model without repeating a provider-only name", () => {
     expect(providerSourceLabel("garmin", "Forerunner 965")).toBe("Garmin · Forerunner 965");
     expect(providerSourceLabel("garmin", "  fēnix 8 – 47mm  ")).toBe("Garmin · fēnix 8 – 47mm");
@@ -101,6 +114,12 @@ describe("providerAbsent summaries", () => {
 });
 
 describe("providerAbsentExplanation", () => {
+  it("uses a readable device name in Apple Health removal explanations", () => {
+    expect(providerAbsentExplanation("apple_health", "Watch6,9")).toContain(
+      "originally from Apple Watch Series 7 (GPS + Cellular, 45mm)",
+    );
+  });
+
   it("clarifies Apple Health subsource tombstones do not delete the upstream app activity", () => {
     expect(providerAbsentExplanation("apple_health", "Strava")).toContain("Apple Health copy");
     expect(providerAbsentExplanation("apple_health", "Strava")).toContain(

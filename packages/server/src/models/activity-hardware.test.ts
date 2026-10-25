@@ -3,6 +3,123 @@ import { normalizeActivityHardware } from "./activity-hardware.ts";
 
 const member = { activityId: "member", providerId: "garmin", sourceName: null, raw: null };
 describe("activity hardware", () => {
+  it.each([
+    [3299, "Hrm Dual"],
+    [3300, "Hrm Pro"],
+    [3258, "Descent Mk2"],
+  ])("formats known Garmin product %s outside the watch families", (product, label) => {
+    const result = normalizeActivityHardware([
+      {
+        ...member,
+        observations: [
+          { sequence: 0, messageType: "device_info", raw: { manufacturer: 1, product } },
+        ],
+      },
+    ]);
+    expect(result.items[0]).toMatchObject({ label, model: label });
+  });
+  it.each([
+    ["garmin", { deviceName: "fr955" }],
+    ["strava", { device_name: "fr955" }],
+  ])("resolves API device names from %s while preserving source identity", (providerId, raw) => {
+    const result = normalizeActivityHardware([
+      { ...member, providerId, sourceName: "fr955", raw, observations: [] },
+    ]);
+    expect(result.items[0]).toMatchObject({ label: "Forerunner 955", sourceName: "fr955" });
+  });
+  it.each(["apple_health", "apple-health"])(
+    "resolves HealthKit hardware identifiers from %s and retains the reported name",
+    (providerId) => {
+      const result = normalizeActivityHardware([
+        {
+          ...member,
+          providerId,
+          sourceName: "Workout app",
+          raw: {
+            device: {
+              name: "Asher’s Apple Watch",
+              model: "Watch",
+              manufacturer: "Apple Inc.",
+              hardwareVersion: "Watch6,9",
+              softwareVersion: "26.6",
+            },
+          },
+          observations: [],
+        },
+      ]);
+      expect(result.items[0]).toMatchObject({
+        label: "Apple Watch Series 7 (GPS + Cellular, 45mm)",
+        model: "Apple Watch Series 7 (GPS + Cellular, 45mm)",
+        sourceName: "Workout app",
+        details: expect.arrayContaining([
+          { label: "Device name", value: "Asher’s Apple Watch" },
+          { label: "Software", value: "26.6" },
+        ]),
+      });
+    },
+  );
+  it("resolves a HealthKit model identifier while retaining an unrelated hardware revision", () => {
+    const result = normalizeActivityHardware([
+      {
+        ...member,
+        providerId: "apple_health",
+        raw: { device: { model: "Watch6,9", hardwareVersion: "2" } },
+        observations: [],
+      },
+    ]);
+    expect(result.items[0]).toMatchObject({
+      label: "Apple Watch Series 7 (GPS + Cellular, 45mm)",
+      details: expect.arrayContaining([{ label: "Hardware", value: "2" }]),
+    });
+  });
+  it("keeps the reported name when an Apple model cannot be identified", () => {
+    const result = normalizeActivityHardware([
+      {
+        ...member,
+        providerId: "apple_health",
+        raw: { device: { name: "My Watch", model: "Watch", hardwareVersion: "Watch99,99" } },
+        observations: [],
+      },
+    ]);
+    expect(result.items[0]).toMatchObject({ label: "My Watch", model: "Watch" });
+  });
+  it.each([
+    [{ manufacturer: 1, product: 4024 }, "Forerunner 955", "Garmin"],
+    [{ manufacturer: "1", product: "4024" }, "Forerunner 955", "Garmin"],
+    [{ manufacturer: "garmin", product: 4024 }, "Forerunner 955", "Garmin"],
+    [{ manufacturer: 1, garminProduct: 4315 }, "Forerunner 965", "Garmin"],
+    [{ manufacturer: "garmin", garminProduct: "fr955" }, "Forerunner 955", "Garmin"],
+    [{ manufacturer: 263, faveroProduct: 12 }, "Assioma Duo", "Favero Electronics"],
+    [
+      { manufacturer: "faveroElectronics", product: "assiomaUno" },
+      "Assioma Uno",
+      "Favero Electronics",
+    ],
+  ])("resolves manufacturer-scoped FIT products %j", (raw, label, manufacturer) => {
+    const result = normalizeActivityHardware([
+      { ...member, observations: [{ sequence: 0, messageType: "device_info", raw }] },
+    ]);
+    expect(result.items[0]).toMatchObject({ label, model: label, manufacturer });
+  });
+  it("does not resolve another manufacturer's product number as Garmin hardware", () => {
+    const result = normalizeActivityHardware([
+      {
+        ...member,
+        observations: [
+          {
+            sequence: 0,
+            messageType: "device_info",
+            raw: { manufacturer: 32, product: 4024, sourceType: 1, deviceType: 120 },
+          },
+        ],
+      },
+    ]);
+    expect(result.items[0]).toMatchObject({
+      label: "Heart Rate",
+      model: null,
+      manufacturer: "Wahoo Fitness",
+    });
+  });
   it("consolidates partial FIT updates without losing identity or inventing sensor attribution", () => {
     const result = normalizeActivityHardware([
       {
@@ -48,7 +165,7 @@ describe("activity hardware", () => {
     expect(result.items[1]?.details).toContainEqual({ label: "Battery voltage", value: "2.8 V" });
     expect(result.items[1]?.evidence).toContain("does not identify");
   });
-  it("retains unknown FIT codes as qualified details", () => {
+  it("qualifies unidentified FIT hardware without guessing a manufacturer or model", () => {
     const result = normalizeActivityHardware([
       {
         ...member,
@@ -63,7 +180,6 @@ describe("activity hardware", () => {
       manufacturer: null,
       model: null,
     });
-    expect(result.items[0]?.details).toContainEqual({ label: "Manufacturer code", value: "65000" });
   });
   it("keeps explicit FIT indices distinct despite serial collisions and attaches later partial updates to their index", () => {
     const result = normalizeActivityHardware([
