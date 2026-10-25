@@ -5,6 +5,7 @@ import { Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "
 import { colors } from "../../theme";
 import { ProviderLogo } from "../ProviderLogo";
 import { AreaChart, CHART_COLORS } from "./ActivityDetailCharts";
+import { ActivityMetricSourcePicker } from "./ActivityMetricSourcePicker";
 
 type Treatment = "icons" | "pills";
 type Source = {
@@ -87,6 +88,33 @@ function SourcePicker({
 }) {
   const [selected, setSelected] = useState(initialSource);
   const [open, setOpen] = useState(false);
+  if (treatment === "icons") {
+    return (
+      <ActivityMetricSourcePicker
+        label={metric}
+        showLabel={false}
+        serverUrl={logoServer}
+        selectedId={selected.id}
+        sources={choices.map((source) => ({
+          id: source.id,
+          label: `${source.name} (${source.attribution})`,
+          presentation: {
+            displayName: source.name,
+            providerId: source.provider,
+            sourceName: source.name,
+            attribution: {
+              kind: source.route === "health" ? "apple_health" : source.route,
+              label: source.attribution,
+            },
+          },
+        }))}
+        onChange={(id) => {
+          const source = choices.find((choice) => choice.id === id);
+          if (source) setSelected(source);
+        }}
+      />
+    );
+  }
   return (
     <View>
       <Pressable

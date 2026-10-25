@@ -270,7 +270,10 @@ export const activityRouter = router({
       ).getHardware(input.id),
     ),
 
-  metricSources: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })
+  metricSources: cachedProtectedQuery({
+    maxAge: CacheTTL.MEDIUM,
+    keyVersion: "source-presentation-v1",
+  })
     .input(z.object({ id: z.guid() }))
     .output(activityMetricSourcesSchema)
     .query(({ ctx, input }) =>

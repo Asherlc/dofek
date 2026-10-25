@@ -160,6 +160,12 @@ and stays independent of activity navigation and selection.
 
 ## Activity metric sources
 
+The [source picker](src/components/ActivityMetricSourcePicker.tsx) displays a
+provider icon, compact source name, and small attribution badge. Its chooser
+retains the complete source label, including any recording-device or file-creator
+qualification. Both clients consume the same
+[structured presentation](../providers-meta/src/activity-metric-source.ts).
+
 Activity views offer independent source controls for heart rate, power, speed,
 cadence, and elevation. Each control preselects its existing priority winner
 without an Auto option. Choices distinguish providers and devices and apply

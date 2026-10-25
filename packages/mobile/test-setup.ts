@@ -49,6 +49,10 @@ vi.mock("expo-crypto", () => ({
   randomUUID: vi.fn(() => crypto.randomUUID()),
 }));
 
+vi.mock("@expo/vector-icons", () => ({
+  Ionicons: ({ name }: { name: string }) => createElement("span", { "data-icon": name }),
+}));
+
 vi.mock("posthog-react-native", () => ({
   __esModule: true,
   default: vi.fn().mockImplementation(() => ({

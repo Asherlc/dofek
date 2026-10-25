@@ -1,7 +1,7 @@
 import { formatDateTime } from "@dofek/format/format";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { AreaChart, LineChart, MetricSourcePicker } from "./ActivityDetailCharts";
+import { AreaChart, LineChart } from "./ActivityDetailCharts";
 
 vi.mock("./useChartScrub", () => ({
   useChartScrub: () => ({
@@ -25,38 +25,6 @@ function expectVisibleDots(container: HTMLElement, count: number) {
     expect(centerY + radius).toBeLessThanOrEqual(Number(svg?.getAttribute("height")));
   }
 }
-
-describe("MetricSourcePicker", () => {
-  it.each([
-    [true, "Elevation · Apple Watch (via Apple Health) ▾"],
-    [false, "Apple Watch (via Apple Health) ▾"],
-  ])(
-    "shows the selected source with showLabel=%s and keeps source switching accessible",
-    (showLabel, text) => {
-      const onChange = vi.fn();
-      render(
-        <MetricSourcePicker
-          label="Elevation"
-          showLabel={showLabel}
-          sources={[
-            { id: "watch", label: "Apple Watch (via Apple Health)" },
-            { id: "garmin", label: "Garmin" },
-          ]}
-          selectedId="watch"
-          onChange={onChange}
-        />,
-      );
-
-      const trigger = screen.getByRole("button", {
-        name: "Elevation source: Apple Watch (via Apple Health)",
-      });
-      expect(trigger.textContent).toBe(text);
-      fireEvent.click(trigger);
-      fireEvent.click(screen.getByRole("radio", { name: "Garmin" }));
-      expect(onChange).toHaveBeenCalledWith("garmin");
-    },
-  );
-});
 
 describe("ActivityDetailCharts", () => {
   it("connects regular readings across other metrics' timestamps", () => {

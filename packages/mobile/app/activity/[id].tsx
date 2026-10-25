@@ -35,9 +35,9 @@ import {
   CHART_COLORS,
   chartStyles,
   LineChart,
-  MetricSourcePicker,
 } from "../../components/activity/ActivityDetailCharts";
 import { ActivityDetailHeader } from "../../components/activity/ActivityDetailHeader";
+import { ActivityMetricSourcePicker } from "../../components/activity/ActivityMetricSourcePicker";
 import { statsStyles, styles } from "../../components/activity/styles";
 import { HrZonesChart, PowerZonesChart } from "../../components/activity/ZoneDistributionCharts";
 import { ClimbingLogEntryBreakdown } from "../../components/ClimbingLogEntryBreakdown";
@@ -777,9 +777,10 @@ export default function ActivityDetailScreen() {
       {sourceControls
         .filter((metric) => metric.key === "heartRate")
         .map((metric) => (
-          <MetricSourcePicker
+          <ActivityMetricSourcePicker
             key={metric.key}
             label={metric.label}
+            serverUrl={serverUrl}
             sources={metric.sources}
             selectedId={metric.selectedId}
             onChange={metric.onChange}
@@ -800,9 +801,10 @@ export default function ActivityDetailScreen() {
       {sourceControls
         .filter((metric) => metric.key === "power")
         .map((metric) => (
-          <MetricSourcePicker
+          <ActivityMetricSourcePicker
             key={metric.key}
             label={metric.label}
+            serverUrl={serverUrl}
             sources={metric.sources}
             selectedId={metric.selectedId}
             onChange={metric.onChange}
@@ -823,9 +825,10 @@ export default function ActivityDetailScreen() {
       {sourceControls
         .filter((metric) => metric.key === "speed")
         .map((metric) => (
-          <MetricSourcePicker
+          <ActivityMetricSourcePicker
             key={metric.key}
             label={metric.label}
+            serverUrl={serverUrl}
             sources={metric.sources}
             selectedId={metric.selectedId}
             onChange={metric.onChange}
@@ -848,9 +851,10 @@ export default function ActivityDetailScreen() {
       {sourceControls
         .filter((metric) => metric.key === "cadence")
         .map((metric) => (
-          <MetricSourcePicker
+          <ActivityMetricSourcePicker
             key={metric.key}
             label={metric.label}
+            serverUrl={serverUrl}
             sources={metric.sources}
             selectedId={metric.selectedId}
             onChange={metric.onChange}
@@ -870,10 +874,11 @@ export default function ActivityDetailScreen() {
       {sourceControls
         .filter((metric) => metric.key === "altitude")
         .map((metric) => (
-          <MetricSourcePicker
+          <ActivityMetricSourcePicker
             key={metric.key}
             label={metric.label}
             showLabel={false}
+            serverUrl={serverUrl}
             sources={metric.sources}
             selectedId={metric.selectedId}
             onChange={metric.onChange}

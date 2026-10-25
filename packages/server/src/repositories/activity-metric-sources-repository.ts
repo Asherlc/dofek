@@ -1,4 +1,5 @@
 import type { ActivityHardware } from "@dofek/providers/activity-hardware";
+import { activityMetricSourcePresentation } from "@dofek/providers/activity-metric-source";
 import { providerRecordLabel, providerSourceLabel } from "@dofek/providers/providers";
 import { mapHrZones } from "@dofek/zones/zones";
 import { z } from "zod";
@@ -118,23 +119,29 @@ export async function getActivityMetricSources(
           row.activity_ids.every((id) => matching.some((item) => item.activityId === id))
             ? labels[0]
             : undefined;
-        if (!name) return { id: row.source_id, label: originalLabel };
-        const includesHardwareName = originalLabel
-          .replace(/\s+/g, " ")
-          .toLowerCase()
-          .includes(name.replace(/\s+/g, " ").toLowerCase());
-        if (role === "recorder") {
-          return {
-            id: row.source_id,
-            label: includesHardwareName ? originalLabel : `${originalLabel} · recorded by ${name}`,
-          };
+        let label = originalLabel;
+        if (name) {
+          const includesHardwareName = originalLabel
+            .replace(/\s+/g, " ")
+            .toLowerCase()
+            .includes(name.replace(/\s+/g, " ").toLowerCase());
+          if (role === "recorder") {
+            label = includesHardwareName ? originalLabel : `${originalLabel} · recorded by ${name}`;
+          } else {
+            const baseLabel = includesHardwareName
+              ? providerRecordLabel(row.provider_id, null)
+              : originalLabel;
+            label = `${baseLabel} · file created by ${name}`;
+          }
         }
-        const baseLabel = includesHardwareName
-          ? providerRecordLabel(row.provider_id, null)
-          : originalLabel;
         return {
           id: row.source_id,
-          label: `${baseLabel} · file created by ${name}`,
+          label,
+          presentation: activityMetricSourcePresentation(
+            row.provider_id,
+            peripheralName ?? row.device_id,
+            label,
+          ),
         };
       });
     const first = sources[0];

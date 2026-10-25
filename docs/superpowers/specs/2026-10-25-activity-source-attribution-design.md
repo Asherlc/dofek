@@ -1,7 +1,7 @@
 # Compact activity source attribution
 
 Date: 2026-10-25. Visual direction selected: A, icon badges.
-Implementation scope proposed for approval.
+Implementation scope approved by the user.
 
 ## Intent
 
@@ -22,11 +22,11 @@ leads; a small Apple Health, cloud, or Bluetooth icon supplies attribution.
 
 - Apply A to the activity metric source controls on web and mobile, including
   elevation and heart rate. Reuse the existing provider logos and visual palette
-  ([web logos](../../../../packages/web/src/components/ProviderLogo.tsx),
-  [mobile logos](../../../../packages/mobile/components/ProviderLogo.tsx)).
+  ([web logos](../../../packages/web/src/components/ProviderLogo.tsx),
+  [mobile logos](../../../packages/mobile/components/ProviderLogo.tsx)).
 - Supply structured names and attribution in the metric-source response rather
   than extracting them from display strings or opaque source IDs
-  ([current contract](../../../../packages/server/src/contracts/activity-metric-sources.ts)).
+  ([current contract](../../../packages/server/src/contracts/activity-metric-sources.ts)).
 - Keep full textual attribution in the opened chooser and accessible control
   names. Icons complement text alternatives, following
   [WAI non-text content guidance](https://www.w3.org/WAI/WCAG22/Understanding/non-text-content.html).
@@ -43,5 +43,5 @@ will choose the smallest accessible picker using existing repository primitives.
 Web interaction must retain keyboard selection and focus behavior, following the
 [WAI listbox guidance](https://www.w3.org/WAI/ARIA/apg/patterns/listbox/).
 
-The comparison stories are design previews. The selected treatment has not yet
-been applied to production controls.
+The comparison stories retain both visual alternatives. The selected icon-badge
+treatment is implemented by the production source controls on both platforms.

@@ -5,6 +5,7 @@ import {
 } from "@dofek/training/fixtures/activity-metric-sources";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useState } from "react";
+import { ActivityMetricSourcePicker } from "../../../components/ActivityMetricSourcePicker.tsx";
 import {
   ModalDialog,
   ModalDialogDescription,
@@ -112,6 +113,29 @@ function SourcePickerPreview({
   const [open, setOpen] = useState(false);
   const selected = sources.find((source) => source.id === selectedId) ?? sources[0];
   if (!selected) return null;
+
+  if (treatment === "icons") {
+    return (
+      <ActivityMetricSourcePicker
+        label={metric}
+        sources={sources.map((source) => ({
+          id: source.id,
+          label: `${source.name} (${source.attribution})`,
+          presentation: {
+            displayName: source.name,
+            providerId: source.provider,
+            sourceName: source.name,
+            attribution: {
+              kind: source.route === "health" ? "apple_health" : source.route,
+              label: source.attribution,
+            },
+          },
+        }))}
+        selectedId={selectedId}
+        onChange={setSelectedId}
+      />
+    );
+  }
 
   return (
     <>

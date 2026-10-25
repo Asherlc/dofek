@@ -4,8 +4,8 @@ import {
   type ActivityChartSeries,
   activityChartSeries,
 } from "@dofek/training/activity-chart-series";
-import { useMemo, useState } from "react";
-import { Modal, Pressable, StyleSheet, Text, View } from "react-native";
+import { useMemo } from "react";
+import { StyleSheet, Text, View } from "react-native";
 import Svg, {
   Circle,
   Defs,
@@ -375,77 +375,5 @@ export function AreaChart({
         </View>
       </View>
     </AccessibleChart>
-  );
-}
-
-export function MetricSourcePicker({
-  label,
-  showLabel = true,
-  sources,
-  selectedId,
-  onChange,
-}: {
-  label: string;
-  showLabel?: boolean;
-  sources: Array<{ id: string; label: string }>;
-  selectedId: string;
-  onChange: (sourceId: string) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const selected = sources.find((source) => source.id === selectedId);
-  return (
-    <View>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={`${label} source: ${selected?.label ?? ""}`}
-        onPress={() => setOpen(true)}
-        style={{ padding: 12, backgroundColor: colors.surface, borderRadius: 8 }}
-      >
-        <Text style={{ color: colors.text }}>
-          {showLabel ? `${label} · ` : ""}
-          {selected?.label} ▾
-        </Text>
-      </Pressable>
-      <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
-        <View
-          style={{
-            flex: 1,
-            justifyContent: "center",
-            padding: 24,
-            backgroundColor: "rgba(0,0,0,0.5)",
-          }}
-        >
-          <View style={{ backgroundColor: colors.surface, borderRadius: 16, padding: 16, gap: 8 }}>
-            <Text accessibilityRole="header" style={{ color: colors.text, fontWeight: "600" }}>
-              {label} source
-            </Text>
-            {sources.map((source) => (
-              <Pressable
-                key={source.id}
-                accessibilityRole="radio"
-                accessibilityLabel={source.label}
-                accessibilityState={{ checked: source.id === selectedId }}
-                onPress={() => {
-                  onChange(source.id);
-                  setOpen(false);
-                }}
-                style={{ padding: 12 }}
-              >
-                <Text style={{ color: source.id === selectedId ? colors.accent : colors.text }}>
-                  {source.label}
-                </Text>
-              </Pressable>
-            ))}
-            <Pressable
-              accessibilityRole="button"
-              onPress={() => setOpen(false)}
-              style={{ padding: 12 }}
-            >
-              <Text style={{ color: colors.textSecondary }}>Cancel</Text>
-            </Pressable>
-          </View>
-        </View>
-      </Modal>
-    </View>
   );
 }
