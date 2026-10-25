@@ -1,3 +1,4 @@
+import { captureException } from "dofek/lib/error-reporting";
 import sharp from "sharp";
 import { describe, expect, it, vi } from "vitest";
 
@@ -114,6 +115,7 @@ describe("owned activity image access", () => {
     expect(result.images[0]).not.toHaveProperty("objectKey");
   });
   it("returns an actionable error when stored photos cannot be signed", async () => {
+    const failure = new Error("R2 unavailable");
     await expect(
       getOwnedActivityImages("group", {
         members: async () => ["member"],
@@ -134,13 +136,16 @@ describe("owned activity image access", () => {
         }),
         readImage: vi.fn(),
         sign: async () => {
-          throw new Error("R2 unavailable");
+          throw failure;
         },
       }),
     ).rejects.toMatchObject({
       code: "INTERNAL_SERVER_ERROR",
       message: "Stored activity photos could not be loaded. Refresh photos to retry.",
       cause: expect.objectContaining({ message: "R2 unavailable" }),
+    });
+    expect(captureException).toHaveBeenCalledWith(failure, {
+      tags: { context: "activity-photos" },
     });
   });
 });

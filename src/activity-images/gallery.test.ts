@@ -28,11 +28,13 @@ function image(objectKey: string, providerId: string, width = 1024, height = 768
 describe("activity gallery image copies", () => {
   let png: Buffer;
   let jpeg: Buffer;
+  let webp: Buffer;
   let resized: Buffer;
   let changed: Buffer;
   beforeAll(async () => {
     png = await sharp(scene).png().toBuffer();
     jpeg = await sharp(png).jpeg({ quality: 100, chromaSubsampling: "4:4:4" }).toBuffer();
+    webp = await sharp(png).webp({ lossless: true }).toBuffer();
     resized = await sharp(png).resize(512, 384).png().toBuffer();
     changed = await sharp(png)
       .composite([
@@ -59,6 +61,38 @@ describe("activity gallery image copies", () => {
     expect(result[0]?.sources).toEqual([copy.sources[0], original.sources[0]]);
     expect(copy.sources).toHaveLength(1);
   });
+
+  it.each([
+    ["original.png", "copy.jpg", "image/png", "image/jpeg"],
+    ["first.png", "second.png", "image/png", "image/png"],
+    ["first.jpg", "second.webp", "image/jpeg", "image/webp"],
+  ])(
+    "retains the first equally sharp %s over %s",
+    async (firstKey, secondKey, firstMime, secondMime) => {
+      const first = { ...image(firstKey, "peloton"), mimeType: firstMime };
+      const second = { ...image(secondKey, "strava"), mimeType: secondMime };
+      const firstBytes = firstMime === "image/jpeg" ? jpeg : png;
+      const secondBytes =
+        secondMime === "image/jpeg" ? jpeg : secondMime === "image/webp" ? webp : png;
+      const result = await consolidateActivityImageCopies([first, second], async (key) =>
+        key === firstKey ? firstBytes : secondBytes,
+      );
+      expect(result.map((entry) => entry.id)).toEqual([firstKey]);
+      expect(result[0]?.sources).toEqual([...first.sources, ...second.sources]);
+    },
+  );
+
+  it.each(["image/jpeg", "image/png"])(
+    "keeps the larger %s over a smaller PNG",
+    async (mimeType) => {
+      const large = { ...image("large", "peloton"), mimeType };
+      const small = image("small.png", "strava", 512, 384);
+      const result = await consolidateActivityImageCopies([large, small], async (key) =>
+        key === "large" ? png : resized,
+      );
+      expect(result.map((entry) => entry.id)).toEqual(["large"]);
+    },
+  );
 
   it("keeps the larger copy in the original gallery position", async () => {
     const small = image("small.png", "strava", 512, 384);
@@ -99,6 +133,28 @@ describe("activity gallery image copies", () => {
     expect(result[1]?.id).toBe("second.png");
   });
 
+  it("keeps an incoming photo separate when only one of its providers overlaps", async () => {
+    const first = image("first.png", "strava");
+    const second = image("second.png", "peloton");
+    second.sources.push({ providerId: "strava", sourceId: "shared-copy" });
+    const read = vi.fn(async () => png);
+    expect(await consolidateActivityImageCopies([first, second], read)).toEqual([first, second]);
+    expect(read).not.toHaveBeenCalled();
+  });
+
+  it("preserves three distinct scenes in gallery order", async () => {
+    const third = await sharp(png).negate().png().toBuffer();
+    const images = [
+      image("first.png", "peloton"),
+      image("second.png", "strava"),
+      image("third.png", "garmin"),
+    ];
+    const result = await consolidateActivityImageCopies(images, async (key) =>
+      key === "first.png" ? png : key === "second.png" ? changed : third,
+    );
+    expect(result.map((entry) => entry.id)).toEqual(["first.png", "second.png", "third.png"]);
+  });
+
   it("does not read originals when there is no comparable cross-provider pair", async () => {
     const read = vi.fn(async () => png);
     const lone = image("one.png", "peloton");
@@ -126,6 +182,132 @@ describe("activity gallery image copies", () => {
         key === "animation.gif" ? animated : still,
       ),
     ).toEqual(images);
+  });
+
+  it("preserves separate animations with identical frames and different timing", async () => {
+    const frames = Buffer.from([255, 0, 0, 0, 0, 255]);
+    const firstBytes = await sharp(frames, {
+      raw: { width: 1, height: 2, channels: 3, pageHeight: 1 },
+    })
+      .gif({ delay: [100, 100] })
+      .toBuffer();
+    const secondBytes = await sharp(frames, {
+      raw: { width: 1, height: 2, channels: 3, pageHeight: 1 },
+    })
+      .gif({ delay: [200, 200] })
+      .toBuffer();
+    const images = [
+      image("first.gif", "peloton", 1, 1),
+      image("second.gif", "strava", 1, 1),
+      image("third.gif", "garmin", 1, 1),
+    ];
+    const read = vi.fn(async (key: string) => (key === "first.gif" ? firstBytes : secondBytes));
+    expect(await consolidateActivityImageCopies(images, read)).toEqual(images);
+    expect(read.mock.calls.filter(([key]) => key === "first.gif")).toHaveLength(1);
+  });
+
+  it("preserves an animation supplied after a static photo", async () => {
+    const still = await sharp({ create: { width: 1, height: 1, channels: 3, background: "red" } })
+      .png()
+      .toBuffer();
+    const animated = await sharp(Buffer.from([255, 0, 0, 0, 0, 255]), {
+      raw: { width: 1, height: 2, channels: 3, pageHeight: 1 },
+    })
+      .gif({ delay: [100, 100] })
+      .toBuffer();
+    const images = [image("still.png", "peloton", 1, 1), image("animation.gif", "strava", 1, 1)];
+    expect(
+      await consolidateActivityImageCopies(images, async (key) =>
+        key === "still.png" ? still : animated,
+      ),
+    ).toEqual(images);
+  });
+
+  it("preserves photos whose stored dimensions agree but displayed orientations differ", async () => {
+    const bytes = await sharp({
+      create: { width: 1024, height: 768, channels: 3, background: "white" },
+    })
+      .jpeg()
+      .toBuffer();
+    const rotated = await sharp(bytes).withMetadata({ orientation: 6 }).jpeg().toBuffer();
+    const images = [image("landscape.jpg", "peloton"), image("portrait.jpg", "strava")];
+    expect(
+      await consolidateActivityImageCopies(images, async (key) =>
+        key === "landscape.jpg" ? bytes : rotated,
+      ),
+    ).toEqual(images);
+  });
+
+  it.each([
+    [26, 1],
+    [27, 2],
+  ])(
+    "allows %i isolated changed pixels only within the compression tolerance",
+    async (count, expectedImages) => {
+      const pixels = Buffer.alloc(512 * 512 * 3, 255);
+      const original = await sharp(pixels, { raw: { width: 512, height: 512, channels: 3 } })
+        .png()
+        .toBuffer();
+      for (let index = 0; index < count; index++) {
+        const offset = ((10 + index * 16) * 512 + 100) * 3;
+        pixels.fill(0, offset, offset + 3);
+      }
+      const copy = await sharp(pixels, { raw: { width: 512, height: 512, channels: 3 } })
+        .png()
+        .toBuffer();
+      const images = [
+        image("original.png", "peloton", 512, 512),
+        image("copy.png", "strava", 512, 512),
+      ];
+      expect(
+        await consolidateActivityImageCopies(images, async (key) =>
+          key === "original.png" ? original : copy,
+        ),
+      ).toHaveLength(expectedImages);
+    },
+  );
+
+  it("preserves a small change along an anti-aliased contour", async () => {
+    const pixels = Buffer.alloc(512 * 512 * 3, 255);
+    for (let y = 0; y < 512; y++) pixels.fill(0, (y * 512 + 150) * 3, (y * 512 + 350) * 3);
+    const original = await sharp(pixels, { raw: { width: 512, height: 512, channels: 3 } })
+      .png()
+      .toBuffer();
+    for (let y = 200; y < 300; y++) pixels.fill(128, (y * 512 + 149) * 3, (y * 512 + 150) * 3);
+    const changed = await sharp(pixels, { raw: { width: 512, height: 512, channels: 3 } })
+      .png()
+      .toBuffer();
+    const images = [
+      image("original.png", "peloton", 512, 512),
+      image("changed.png", "strava", 512, 512),
+    ];
+    expect(
+      await consolidateActivityImageCopies(images, async (key) =>
+        key === "original.png" ? original : changed,
+      ),
+    ).toHaveLength(2);
+  });
+
+  it("preserves a low-contrast change across the scene", async () => {
+    const original = await sharp({
+      create: { width: 512, height: 512, channels: 3, background: { r: 100, g: 100, b: 100 } },
+    })
+      .png()
+      .toBuffer();
+    const changed = await sharp({
+      create: { width: 512, height: 512, channels: 3, background: { r: 120, g: 120, b: 120 } },
+    })
+      .png()
+      .toBuffer();
+    const images = [
+      image("original.png", "peloton", 512, 512),
+      image("changed.png", "strava", 512, 512),
+    ];
+    expect(
+      await consolidateActivityImageCopies(images, async (key) =>
+        key === "original.png" ? original : changed,
+      ),
+    ).toHaveLength(2);
   });
 
   it("reuses prepared originals within one gallery read", async () => {

@@ -18,8 +18,6 @@ interface PreparedImage {
 
 function canCompare(first: GalleryImage, second: GalleryImage): boolean {
   return (
-    first.sources.length > 0 &&
-    second.sources.length > 0 &&
     first.width * second.height === second.width * first.height &&
     !first.sources.some((source) =>
       second.sources.some((other) => source.providerId === other.providerId),
@@ -41,9 +39,10 @@ export async function consolidateActivityImageCopies<T extends GalleryImage>(
 ): Promise<T[]> {
   const prepared = new Map<string, PreparedImage | null>();
   async function prepare(image: T): Promise<PreparedImage | null> {
-    if (prepared.has(image.objectKey)) return prepared.get(image.objectKey) ?? null;
+    const cached = prepared.get(image.objectKey);
+    if (cached !== undefined) return cached;
     const bytes = await readImage(image.objectKey);
-    const decoder = sharp(bytes, { limitInputPixels: 100_000_000, animated: true });
+    const decoder = sharp(bytes, { limitInputPixels: 100_000_000 });
     const metadata = await decoder.metadata();
     if ((metadata.pages ?? 1) > 1) {
       prepared.set(image.objectKey, null);
@@ -64,9 +63,8 @@ export async function consolidateActivityImageCopies<T extends GalleryImage>(
   const gallery: T[] = [];
   for (const image of images) {
     let match = -1;
-    for (let index = 0; index < gallery.length; index++) {
-      const existing = gallery[index];
-      if (!existing || !canCompare(existing, image)) continue;
+    for (const [index, existing] of gallery.entries()) {
+      if (!canCompare(existing, image)) continue;
       const first = await prepare(existing);
       if (!first) continue;
       const second = await prepare(image);
