@@ -1,5 +1,6 @@
 import { formatDateTime, formatNumber, formatTimeOnly } from "@dofek/format/format";
 import type { UnitConverter } from "@dofek/format/units";
+import type { ActivityMetricSource } from "@dofek/providers/activity-metric-source";
 import { activityMetricColors, statusColors } from "@dofek/scoring/colors";
 import {
   type ActivityChartSeries,
@@ -9,6 +10,7 @@ import {
 import { cadenceAxisLabel } from "@dofek/training/training";
 import { type ReactNode, useCallback, useMemo, useState } from "react";
 import type { StreamPoint } from "../../../../../server/src/routers/activity.ts";
+import { ActivityMetricSourcePicker } from "../../../components/ActivityMetricSourcePicker.tsx";
 import { DofekChart } from "../../../components/DofekChart.tsx";
 import { ChartLoadingSkeleton } from "../../../components/LoadingSkeleton.tsx";
 import {
@@ -121,7 +123,7 @@ export function MetricsChart({
   metricSources?: Array<{
     key: string;
     label: string;
-    sources: Array<{ id: string; label: string }>;
+    sources: ActivityMetricSource[];
     selectedId: string;
     onChange: (sourceId: string) => void;
   }>;
@@ -213,7 +215,7 @@ export function MetricsChart({
                   aria-label={`Toggle ${metric.name}`}
                   aria-pressed={isVisible(metric.name)}
                   onClick={() => toggle(metric.name)}
-                  className={`flex min-h-9 items-center gap-1.5 px-2 text-xs font-medium ${isVisible(metric.name) ? "text-foreground" : "text-dim line-through"}`}
+                  className={`flex min-h-11 shrink-0 items-center gap-1.5 px-2 text-xs font-medium ${isVisible(metric.name) ? "text-foreground" : "text-dim line-through"}`}
                 >
                   <span
                     className="h-2 w-2 rounded-full"
@@ -225,19 +227,14 @@ export function MetricsChart({
                 {metricSources
                   .filter((source) => source.label === metric.name)
                   .map((metricSource) => (
-                    <select
+                    <ActivityMetricSourcePicker
                       key={metricSource.key}
-                      aria-label={`${metric.name} source`}
-                      value={metricSource.selectedId}
-                      onChange={(event) => metricSource.onChange(event.target.value)}
-                      className="min-h-9 min-w-0 max-w-44 rounded-r-md border-l border-border bg-transparent py-1 pl-2 pr-1 text-xs text-muted"
-                    >
-                      {metricSource.sources.map((source) => (
-                        <option key={source.id} value={source.id}>
-                          {source.label}
-                        </option>
-                      ))}
-                    </select>
+                      label={metric.name}
+                      sources={metricSource.sources}
+                      selectedId={metricSource.selectedId}
+                      onChange={metricSource.onChange}
+                      className="max-w-60 rounded-r-md border-l border-border px-2"
+                    />
                   ))}
               </div>
             ))}

@@ -1,3 +1,4 @@
+import { activityMetricSourceSchema } from "@dofek/providers/activity-metric-source";
 import { z } from "zod";
 
 export const activityMetricSchema = z.enum(["heartRate", "power", "speed", "cadence", "altitude"]);
@@ -11,7 +12,7 @@ export const activityMetricSourcesSchema = z.array(
   z.object({
     key: activityMetricSchema,
     label: z.string(),
-    sources: z.array(z.object({ id: z.string(), label: z.string() })).nonempty(),
+    sources: z.array(activityMetricSourceSchema).nonempty(),
     defaultSourceId: z.string(),
   }),
 );

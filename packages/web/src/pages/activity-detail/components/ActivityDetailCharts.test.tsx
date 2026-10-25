@@ -481,6 +481,53 @@ describe("MetricsChart custom legend", () => {
     captured.option = {};
   });
 
+  it("keeps the visibility toggle independent from the source chooser", () => {
+    const onChange = vi.fn();
+    render(
+      <MetricsChart
+        {...args}
+        metricSources={[
+          {
+            key: "power",
+            label: "Power",
+            sources: [
+              {
+                id: "wahoo",
+                label: "Wahoo",
+                presentation: {
+                  displayName: "Wahoo",
+                  providerId: "wahoo",
+                  sourceName: null,
+                  attribution: { kind: "cloud", label: "via Wahoo" },
+                },
+              },
+              {
+                id: "garmin",
+                label: "Garmin",
+                presentation: {
+                  displayName: "Garmin",
+                  providerId: "garmin",
+                  sourceName: null,
+                  attribution: { kind: "cloud", label: "via Garmin" },
+                },
+              },
+            ],
+            selectedId: "wahoo",
+            onChange,
+          },
+        ]}
+      />,
+    );
+    const toggle = screen.getByRole("button", { name: "Toggle Power" });
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute("aria-pressed", "false");
+    fireEvent.click(screen.getByRole("button", { name: "Power source: Wahoo" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Garmin" }));
+    expect(onChange).toHaveBeenCalledWith("garmin");
+    expect(toggle).toHaveAttribute("aria-pressed", "false");
+    expect(powerAxis()).toMatchObject({ show: false });
+  });
+
   it("toggles one metric and its axis through the custom legend", () => {
     render(<MetricsChart {...args} renderLegend={customLegend} />);
     const power = screen.getByRole("button", { name: "Power" });

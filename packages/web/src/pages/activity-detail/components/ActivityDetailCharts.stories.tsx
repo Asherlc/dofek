@@ -5,11 +5,11 @@ import {
   type ActivityPreviewMetric,
   activityMetricSourcePreview,
   activityPreviewPoints,
-  activityPreviewSource,
   defaultActivityMetricSources,
 } from "@dofek/training/fixtures/activity-metric-sources";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useState } from "react";
+import { ActivityMetricSourcePicker } from "../../../components/ActivityMetricSourcePicker.tsx";
 import { ElevationChart, MetricsChart } from "./ActivityDetailCharts.tsx";
 
 const meta = {
@@ -116,7 +116,6 @@ function MetricControl({
   onToggle: () => void;
   onChange: (sourceId: string) => void;
 }) {
-  const source = activityPreviewSource(metric, sourceId);
   const color = metric.key === "altitude" ? "#6b7280" : activityMetricColors[metric.key];
 
   return (
@@ -126,7 +125,7 @@ function MetricControl({
         aria-label={`Toggle ${metric.label}`}
         aria-pressed={visible}
         onClick={onToggle}
-        className={`flex min-h-9 shrink-0 items-center gap-1.5 rounded-l-md px-2 text-xs font-medium focus-visible:outline-2 focus-visible:outline-offset-2 ${visible ? "text-foreground" : "text-dim line-through"}`}
+        className={`flex min-h-11 shrink-0 items-center gap-1.5 rounded-l-md px-2 text-xs font-medium focus-visible:outline-2 focus-visible:outline-offset-2 ${visible ? "text-foreground" : "text-dim line-through"}`}
       >
         <span
           className="h-2 w-2 rounded-full"
@@ -135,19 +134,13 @@ function MetricControl({
         />
         {metric.key === "heartRate" ? "HR" : metric.label}
       </button>
-      <select
-        aria-label={`${metric.label} source`}
-        title={`${source.sourceLabel} · ${source.attribution}`}
-        value={sourceId}
-        onChange={(event) => onChange(event.target.value)}
-        className="min-h-9 min-w-0 max-w-44 rounded-r-md border-l border-border bg-transparent py-1 pl-2 pr-1 text-xs text-muted focus-visible:outline-2 focus-visible:outline-offset-2"
-      >
-        {metric.sources.map((item) => (
-          <option key={item.id} value={item.id}>
-            {item.label}
-          </option>
-        ))}
-      </select>
+      <ActivityMetricSourcePicker
+        label={metric.label}
+        sources={metric.sources}
+        selectedId={sourceId}
+        onChange={onChange}
+        className="max-w-60 rounded-r-md border-l border-border px-2"
+      />
     </div>
   );
 }
@@ -234,8 +227,26 @@ export const HeartRateSources: Story = {
             key: "heartRate",
             label: "Heart Rate",
             sources: [
-              { id: "whoop", label: "WHOOP (Cloud)" },
-              { id: "garmin", label: "Garmin" },
+              {
+                id: "whoop",
+                label: "WHOOP (Cloud)",
+                presentation: {
+                  displayName: "WHOOP",
+                  providerId: "whoop",
+                  sourceName: null,
+                  attribution: { kind: "cloud", label: "Cloud" },
+                },
+              },
+              {
+                id: "garmin",
+                label: "Garmin",
+                presentation: {
+                  displayName: "Garmin",
+                  providerId: "garmin",
+                  sourceName: null,
+                  attribution: null,
+                },
+              },
             ],
             selectedId,
             onChange: setSelectedId,

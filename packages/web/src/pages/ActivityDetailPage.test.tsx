@@ -2971,8 +2971,26 @@ describe("activity heart-rate sources", () => {
           key: "heartRate",
           label: "Heart Rate",
           sources: [
-            { id: "whoop", label: "WHOOP" },
-            { id: "garmin", label: "Garmin" },
+            {
+              id: "whoop",
+              label: "WHOOP",
+              presentation: {
+                displayName: "WHOOP",
+                providerId: "whoop",
+                sourceName: null,
+                attribution: { kind: "cloud", label: "via WHOOP" },
+              },
+            },
+            {
+              id: "garmin",
+              label: "Garmin",
+              presentation: {
+                displayName: "Garmin",
+                providerId: "garmin",
+                sourceName: null,
+                attribution: { kind: "cloud", label: "via Garmin" },
+              },
+            },
           ],
           defaultSourceId: "whoop",
         },
@@ -2983,11 +3001,11 @@ describe("activity heart-rate sources", () => {
     });
     const { ActivityDetailPage } = await import("./ActivityDetailPage.tsx");
     renderWithUnits(<ActivityDetailPage />);
-    const select = screen.getByRole("combobox", { name: "Heart Rate source" });
-    expect(select).toHaveValue("whoop");
-    expect(within(select).queryByRole("option", { name: /auto/i })).not.toBeInTheDocument();
-    fireEvent.change(select, { target: { value: "garmin" } });
-    expect(select).toHaveValue("garmin");
+    const trigger = screen.getByRole("button", { name: "Heart Rate source: WHOOP" });
+    fireEvent.click(trigger);
+    expect(screen.getByRole("radio", { name: "WHOOP" })).toBeChecked();
+    fireEvent.click(screen.getByRole("radio", { name: "Garmin" }));
+    expect(screen.getByRole("button", { name: "Heart Rate source: Garmin" })).toBeVisible();
     expect(mockStreamUseQuery).toHaveBeenLastCalledWith(
       { id: "test-123", maxPoints: 500, sources: { heartRate: "garmin" } },
       expect.anything(),
@@ -3006,8 +3024,26 @@ it("keeps the HR source picker available to recover from a failed source switch"
         key: "heartRate",
         label: "Heart Rate",
         sources: [
-          { id: "whoop", label: "WHOOP" },
-          { id: "garmin", label: "Garmin" },
+          {
+            id: "whoop",
+            label: "WHOOP",
+            presentation: {
+              displayName: "WHOOP",
+              providerId: "whoop",
+              sourceName: null,
+              attribution: { kind: "cloud", label: "via WHOOP" },
+            },
+          },
+          {
+            id: "garmin",
+            label: "Garmin",
+            presentation: {
+              displayName: "Garmin",
+              providerId: "garmin",
+              sourceName: null,
+              attribution: { kind: "cloud", label: "via Garmin" },
+            },
+          },
         ],
         defaultSourceId: "whoop",
       },
@@ -3037,15 +3073,13 @@ it("keeps the HR source picker available to recover from a failed source switch"
   });
   const { ActivityDetailPage } = await import("./ActivityDetailPage.tsx");
   renderWithUnits(<ActivityDetailPage />);
-  fireEvent.change(screen.getByRole("combobox", { name: "Heart Rate source" }), {
-    target: { value: "garmin" },
-  });
+  fireEvent.click(screen.getByRole("button", { name: /Heart Rate source:/ }));
+  fireEvent.click(screen.getByRole("radio", { name: "Garmin" }));
   expect(screen.getByText("Garmin samples could not be read")).toBeInTheDocument();
   expect(screen.queryByText("No samples for the selected sources.")).not.toBeInTheDocument();
-  fireEvent.change(screen.getByRole("combobox", { name: "Heart Rate source" }), {
-    target: { value: "whoop" },
-  });
-  expect(screen.getByRole("combobox", { name: "Heart Rate source" })).toHaveValue("whoop");
+  fireEvent.click(screen.getByRole("button", { name: /Heart Rate source:/ }));
+  fireEvent.click(screen.getByRole("radio", { name: "WHOOP" }));
+  expect(screen.getByRole("button", { name: "Heart Rate source: WHOOP" })).toBeVisible();
 });
 
 it("selects independent metric sources and sends elevation and zone choices", async () => {
@@ -3055,8 +3089,26 @@ it("selects independent metric sources and sends elevation and zone choices", as
         key: "heartRate",
         label: "Heart Rate",
         sources: [
-          { id: "whoop", label: "WHOOP" },
-          { id: "garmin", label: "Garmin" },
+          {
+            id: "whoop",
+            label: "WHOOP",
+            presentation: {
+              displayName: "WHOOP",
+              providerId: "whoop",
+              sourceName: null,
+              attribution: { kind: "cloud", label: "via WHOOP" },
+            },
+          },
+          {
+            id: "garmin",
+            label: "Garmin",
+            presentation: {
+              displayName: "Garmin",
+              providerId: "garmin",
+              sourceName: null,
+              attribution: { kind: "cloud", label: "via Garmin" },
+            },
+          },
         ],
         defaultSourceId: "whoop",
       },
@@ -3064,8 +3116,26 @@ it("selects independent metric sources and sends elevation and zone choices", as
         key: "power",
         label: "Power",
         sources: [
-          { id: "wahoo", label: "Wahoo" },
-          { id: "garmin", label: "Garmin" },
+          {
+            id: "wahoo",
+            label: "Wahoo",
+            presentation: {
+              displayName: "Wahoo",
+              providerId: "wahoo",
+              sourceName: null,
+              attribution: { kind: "cloud", label: "via Wahoo" },
+            },
+          },
+          {
+            id: "garmin",
+            label: "Garmin",
+            presentation: {
+              displayName: "Garmin",
+              providerId: "garmin",
+              sourceName: null,
+              attribution: { kind: "cloud", label: "via Garmin" },
+            },
+          },
         ],
         defaultSourceId: "wahoo",
       },
@@ -3073,8 +3143,26 @@ it("selects independent metric sources and sends elevation and zone choices", as
         key: "altitude",
         label: "Elevation",
         sources: [
-          { id: "wahoo", label: "Wahoo" },
-          { id: "garmin", label: "Garmin" },
+          {
+            id: "wahoo",
+            label: "Wahoo",
+            presentation: {
+              displayName: "Wahoo",
+              providerId: "wahoo",
+              sourceName: null,
+              attribution: { kind: "cloud", label: "via Wahoo" },
+            },
+          },
+          {
+            id: "garmin",
+            label: "Garmin",
+            presentation: {
+              displayName: "Garmin",
+              providerId: "garmin",
+              sourceName: null,
+              attribution: { kind: "cloud", label: "via Garmin" },
+            },
+          },
         ],
         defaultSourceId: "wahoo",
       },
@@ -3085,13 +3173,11 @@ it("selects independent metric sources and sends elevation and zone choices", as
   });
   const { ActivityDetailPage } = await import("./ActivityDetailPage.tsx");
   renderWithUnits(<ActivityDetailPage />);
-  fireEvent.change(screen.getByRole("combobox", { name: "Power source" }), {
-    target: { value: "garmin" },
-  });
-  fireEvent.change(screen.getByRole("combobox", { name: "Elevation source" }), {
-    target: { value: "garmin" },
-  });
-  expect(screen.getByRole("combobox", { name: "Heart Rate source" })).toHaveValue("whoop");
+  fireEvent.click(screen.getByRole("button", { name: /Power source:/ }));
+  fireEvent.click(screen.getByRole("radio", { name: "Garmin" }));
+  fireEvent.click(screen.getByRole("button", { name: /Elevation source:/ }));
+  fireEvent.click(screen.getByRole("radio", { name: "Garmin" }));
+  expect(screen.getByRole("button", { name: "Heart Rate source: WHOOP" })).toBeVisible();
   expect(mockStreamUseQuery).toHaveBeenLastCalledWith(
     {
       id: "test-123",
