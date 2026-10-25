@@ -104,6 +104,9 @@ class MetadataListener final : public fit::MesgListener {
     RecordFieldOccurrences(message);
     switch (message.GetNum()) {
       case FIT_MESG_NUM_FILE_ID: {
+        if (!file_id_json_.has_value()) {
+          file_id_json_ = JsonMessage(message);
+        }
         const fit::FileIdMesg file_id(message);
         if (!file_type_.has_value() && file_id.IsTypeValid()) {
           file_type_ = file_id.GetType();
@@ -146,6 +149,7 @@ class MetadataListener final : public fit::MesgListener {
 
   std::optional<unsigned int> FileType() const { return file_type_; }
   const std::optional<std::string>& FileTypeName() const { return file_type_name_; }
+  const std::optional<std::string>& FileIdJson() const { return file_id_json_; }
   bool HasWeightMessages() const { return has_weight_messages_; }
   const std::optional<std::string>& SessionJson() const { return session_json_; }
   const std::optional<std::string>& SportName() const { return sport_name_; }
@@ -192,6 +196,7 @@ class MetadataListener final : public fit::MesgListener {
 
   std::optional<unsigned int> file_type_;
   std::optional<std::string> file_type_name_;
+  std::optional<std::string> file_id_json_;
   bool has_weight_messages_ = false;
   std::optional<std::string> session_json_;
   std::optional<std::string> sport_name_;
@@ -212,11 +217,20 @@ std::size_t BatchEnvelopeBytes(const std::string& type) {
 class BatchListener final : public fit::MesgListener {
  public:
   BatchListener(FIT_UINT16 target_message_number, std::string batch_type)
-      : target_message_number_(target_message_number), batch_type_(std::move(batch_type)) {}
+      : target_message_number_(target_message_number),
+        target_batch_type_(std::move(batch_type)),
+        batch_type_(target_batch_type_) {}
 
   void OnMesg(fit::Mesg& message) override {
-    if (message.GetNum() != target_message_number_) {
+    if (message.GetNum() != target_message_number_ &&
+        message.GetNum() != FIT_MESG_NUM_DEVICE_INFO) {
       return;
+    }
+    const std::string& message_type =
+        message.GetNum() == FIT_MESG_NUM_DEVICE_INFO ? device_batch_type_ : target_batch_type_;
+    if (message_type != batch_type_) {
+      FlushBatch();
+      batch_type_ = message_type;
     }
     std::string json = JsonMessage(message);
     if (BatchEnvelopeBytes(batch_type_) + json.size() > kMaximumBatchBytes) {
@@ -250,6 +264,8 @@ class BatchListener final : public fit::MesgListener {
 
  private:
   FIT_UINT16 target_message_number_;
+  const std::string target_batch_type_;
+  const std::string device_batch_type_ = "devices";
   std::string batch_type_;
   std::vector<std::string> messages_;
   std::size_t batch_bytes_ = 0;
@@ -274,6 +290,12 @@ void WriteMetadata(const MetadataListener& metadata) {
   output << ",\"fileTypeName\":";
   if (metadata.FileTypeName().has_value()) {
     output << JsonString(*metadata.FileTypeName());
+  } else {
+    output << "null";
+  }
+  output << ",\"fileId\":";
+  if (metadata.FileIdJson().has_value()) {
+    output << *metadata.FileIdJson();
   } else {
     output << "null";
   }

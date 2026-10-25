@@ -1,3 +1,4 @@
+import type { ActivityHardware } from "@dofek/providers/activity-hardware";
 import { providerRecordLabel, providerSourceLabel } from "@dofek/providers/providers";
 import { mapHrZones } from "@dofek/zones/zones";
 import { z } from "zod";
@@ -41,11 +42,18 @@ const sourceRowSchema = z.object({
   provider_id: z.string(),
   device_id: z.string().nullable(),
   source_id: z.string(),
+  activity_ids: z.array(z.string()),
+});
+const deviceNameSchema = z.object({
+  provider_id: z.string(),
+  device_id: z.string(),
+  device_name: z.string(),
 });
 
 export async function getActivityMetricSources(
   store: ActivitySensorQueryStore,
   window: ActivitySensorWindow,
+  hardware: ActivityHardware = { items: [], power: [] },
 ): Promise<ActivityMetricSources> {
   const rows = await store.query(
     sourceRowSchema,
@@ -53,22 +61,80 @@ export async function getActivityMetricSources(
     WITH source_samples AS (
       SELECT *, ${activityMetricSourceIdSql} AS source_id FROM (${activityMetricSamplesSql})
     )
-    SELECT channel, provider_id, source_id, any(nullIf(device_id, '')) AS device_id
+    SELECT channel, provider_id, source_id, any(nullIf(device_id, '')) AS device_id,
+      groupUniqArray(ifNull(toString(activity_id), '')) AS activity_ids
     FROM source_samples
     GROUP BY channel, provider_id, source_id
     ORDER BY channel, min(provider_priority), provider_id, min(id), source_id`,
     activityMetricParams(window),
   );
+  const peripheralIds = rows
+    .filter((row) => row.provider_id === "ble_heart_rate" && row.device_id !== null)
+    .map((row) => row.device_id);
+  // Raw storage is ordered by user/activity/channel/time; keep this lookup within
+  // the same eligible activity window and only request the selected peripherals.
+  const peripheralNames = peripheralIds.length
+    ? await store.query(
+        deviceNameSchema,
+        `
+    SELECT provider_id, assumeNotNull(device_id) AS device_id,
+      argMax(JSONExtractString(metadata, 'device_name'), tuple(recorded_at, version, id)) AS device_name
+    FROM ingest.metric_stream FINAL
+    WHERE user_id = {userId:UUID} AND provider_id = 'ble_heart_rate'
+      AND device_id IN {peripheralIds:Array(String)}
+      AND channel IN ('heart_rate', 'rr_interval_ms')
+      AND recorded_at >= parseDateTime64BestEffort({windowStartedAt:String}, 6, 'UTC')
+      AND recorded_at <= parseDateTime64BestEffort({windowEndedAt:String}, 6, 'UTC')
+      AND (activity_id IS NULL OR activity_id IN (SELECT arrayJoin(CAST({memberActivityIds:Array(String)}, 'Array(UUID)'))))
+      AND is_deleted = 0 AND scalar > 0 AND JSONExtractString(metadata, 'device_name') != ''
+    GROUP BY provider_id, device_id`,
+        { ...activityMetricParams(window), peripheralIds },
+      )
+    : [];
   return ACTIVITY_CHART_METRICS.flatMap((metric) => {
     const sources = rows
       .filter((row) => row.channel === metric.channel)
-      .map((row) => ({
-        id: row.source_id,
-        label:
+      .map((row) => {
+        const peripheralName = peripheralNames.find(
+          (device) => device.provider_id === row.provider_id && device.device_id === row.device_id,
+        )?.device_name;
+        const originalLabel =
           row.provider_id === "apple_health" || row.provider_id === "whoop_ble"
             ? providerSourceLabel(row.provider_id, row.device_id)
-            : providerRecordLabel(row.provider_id, row.device_id),
-      }));
+            : providerRecordLabel(row.provider_id, peripheralName ?? row.device_id);
+        const provenance = hardware.items.filter(
+          (item) =>
+            item.providerId === row.provider_id &&
+            row.activity_ids.includes(item.activityId) &&
+            (row.device_id === null ||
+              row.device_id === item.sourceName ||
+              row.device_id === item.label),
+        );
+        const role = provenance.some((item) => item.role === "recorder") ? "recorder" : "creator";
+        const matching = provenance.filter((item) => item.role === role);
+        const labels = [...new Set(matching.map((item) => item.label))];
+        const name =
+          labels.length === 1 &&
+          row.activity_ids.every((id) => matching.some((item) => item.activityId === id))
+            ? labels[0]
+            : undefined;
+        if (!name) return { id: row.source_id, label: originalLabel };
+        if (role === "recorder") {
+          return {
+            id: row.source_id,
+            label: originalLabel.includes(name)
+              ? originalLabel
+              : `${originalLabel} · recorded by ${name}`,
+          };
+        }
+        const baseLabel = originalLabel.includes(name)
+          ? providerRecordLabel(row.provider_id, null)
+          : originalLabel;
+        return {
+          id: row.source_id,
+          label: `${baseLabel} · file created by ${name}`,
+        };
+      });
     const first = sources[0];
     return first
       ? [

@@ -92,6 +92,25 @@ describe("BleHeartRate native bridge", () => {
     await expect(peekBufferedSamples()).rejects.toThrow(/deviceId/);
   });
 
+  it("preserves capture-time names through buffered and live measurement bridges", async () => {
+    const sample = {
+      deviceId: "polar",
+      deviceName: "Polar H10",
+      timestamp: "2026-08-24T19:00:00.000Z",
+      heartRateBpm: 61,
+      rrIntervalsMs: [980],
+    };
+    nativeModule.peekBufferedSamples.mockResolvedValue([sample]);
+    expect(await peekBufferedSamples()).toEqual([sample]);
+    const listener = vi.fn();
+    addHeartRateListener(listener);
+    const onMeasurement = nativeModule.addListener.mock.calls[0][1];
+    if (typeof onMeasurement !== "function")
+      throw new Error("Expected native measurement listener");
+    onMeasurement(sample);
+    expect(listener).toHaveBeenCalledWith(sample);
+  });
+
   it("rejects malformed native device-state and measurement events", () => {
     const subscription = { remove: vi.fn() };
     const deviceStateListener = vi.fn();

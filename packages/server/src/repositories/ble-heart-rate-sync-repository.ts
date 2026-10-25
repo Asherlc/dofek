@@ -21,6 +21,7 @@ const INSERT_BATCH_SIZE = 2000;
  * heart-rate variability. A single notification may include several.
  */
 export interface BleHeartRateSample {
+  deviceName?: string;
   timestamp: string;
   heartRateBpm: number;
   rrIntervalsMs: number[];
@@ -77,6 +78,9 @@ export class BleHeartRateSyncRepository {
             externalId: `${BLE_HEART_RATE_PROVIDER_ID}:${deviceId}:${HEART_RATE}:${canonicalRecordedAt}`,
             deviceId,
             sourceType: "ble",
+            ...(sample.deviceName !== undefined
+              ? { metadata: { device_name: sample.deviceName } }
+              : {}),
             channel: HEART_RATE,
             scalar: sample.heartRateBpm,
           });
@@ -93,6 +97,9 @@ export class BleHeartRateSyncRepository {
             externalId: `${BLE_HEART_RATE_PROVIDER_ID}:${deviceId}:${RR_INTERVAL_MS}:${canonicalRecordedAt}:${index}`,
             deviceId,
             sourceType: "ble",
+            ...(sample.deviceName !== undefined
+              ? { metadata: { device_name: sample.deviceName } }
+              : {}),
             channel: RR_INTERVAL_MS,
             scalar: rrIntervalMs,
           });

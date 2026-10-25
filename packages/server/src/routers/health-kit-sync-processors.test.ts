@@ -153,6 +153,7 @@ describe("processWorkouts", () => {
           totalDistance: null,
           sourceName: "Hang Ten",
           sourceBundle: "com.hangten.app",
+          device: { name: "My Watch", model: "Watch7,12" },
         },
       ],
       {
@@ -165,12 +166,18 @@ describe("processWorkouts", () => {
       expect.objectContaining({
         activityType: expect.objectContaining({ canonicalType: "hangboard", providerType: "20" }),
         sourceName: "Hang Ten",
-        raw: expect.objectContaining({ sourceBundle: "com.hangten.app" }),
+        raw: expect.objectContaining({
+          sourceBundle: "com.hangten.app",
+          device: { name: "My Watch", model: "Watch7,12" },
+        }),
       }),
       expect.objectContaining({
         activityType: expect.objectContaining({ canonicalType: "hangboard", providerType: "20" }),
         sourceName: "Hang Ten",
-        raw: expect.objectContaining({ sourceBundle: "com.hangten.app" }),
+        raw: expect.objectContaining({
+          sourceBundle: "com.hangten.app",
+          device: { name: "My Watch", model: "Watch7,12" },
+        }),
       }),
       expect.anything(),
     );

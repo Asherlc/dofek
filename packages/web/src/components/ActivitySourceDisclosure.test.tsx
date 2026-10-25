@@ -13,6 +13,28 @@ const origin: ActivityOrigin = {
 afterEach(cleanup);
 
 describe("ActivitySourceDisclosure", () => {
+  it("shows the Garmin recording model in its compact control and details", () => {
+    render(
+      <ActivitySourceDisclosure
+        origin={{ ...origin, providerId: "garmin", sourceName: "Forerunner 965" }}
+      />,
+    );
+    const trigger = screen.getByRole("button", { name: "Activity source: Garmin" });
+    expect(trigger.querySelector("img")).toHaveAttribute(
+      "src",
+      expect.stringContaining("010-02809-00"),
+    );
+    expect(trigger.querySelector("img")).toHaveAttribute("width", "18");
+    fireEvent.click(trigger);
+    const details = screen.getByRole("dialog", { name: "Activity source" });
+    expect(details.querySelector("img")).toHaveAttribute(
+      "src",
+      expect.stringContaining("010-02809-00"),
+    );
+    expect(within(details).getByText("Garmin")).toBeVisible();
+    expect(within(details).queryByText("Imported via")).toBeNull();
+  });
+
   it("opens recording and import roles from a clean recording-only logo", () => {
     render(<ActivitySourceDisclosure origin={origin} />);
     const trigger = screen.getByRole("button", { name: "Activity source: Hang Ten" });

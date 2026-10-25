@@ -30,6 +30,7 @@ const metadataMessageSchema = z.object({
   type: z.literal("metadata"),
   fileType: z.number().int().nonnegative().nullable(),
   fileTypeName: z.string().nullable(),
+  fileId: rawMessageSchema.nullable(),
   hasWeightMessages: z.boolean(),
   session: rawMessageSchema.nullable(),
   sportName: z.string().nullable(),
@@ -47,6 +48,11 @@ const weightBatchMessageSchema = z.object({
   messages: z.array(rawMessageSchema).max(250),
 });
 
+const deviceBatchMessageSchema = z.object({
+  type: z.literal("devices"),
+  messages: z.array(rawMessageSchema).max(250),
+});
+
 const endMessageSchema = z.object({
   type: z.literal("end"),
   messageCount: z.number().int().nonnegative(),
@@ -56,6 +62,7 @@ const decoderMessageSchema = z.discriminatedUnion("type", [
   metadataMessageSchema,
   recordBatchMessageSchema,
   weightBatchMessageSchema,
+  deviceBatchMessageSchema,
   endMessageSchema,
 ]);
 
@@ -71,6 +78,7 @@ export interface ParsedFitWeight {
 }
 
 export interface FitStreamMetadata {
+  fileId: Record<string, unknown> | null;
   fileType: number | null;
   fileTypeName: string | null;
   fieldOccurrences: Array<z.infer<typeof fieldOccurrenceSchema>>;
@@ -82,6 +90,7 @@ export interface FitStreamConsumer {
   onMetadata: (metadata: FitStreamMetadata) => Promise<void>;
   onRecordBatch: (records: ParsedFitRecord[]) => Promise<void>;
   onWeightBatch: (weights: ParsedFitWeight[]) => Promise<void>;
+  onDeviceInfoBatch: (messages: Record<string, unknown>[]) => Promise<void>;
 }
 
 export interface FitStreamResult {
@@ -247,6 +256,7 @@ export async function streamFitFile(
           metadataIsWeightFile =
             message.fileType === FIT_FILE_TYPE_WEIGHT || message.hasWeightMessages;
           await consumer.onMetadata({
+            fileId: message.fileId,
             fileType: message.fileType,
             fileTypeName: message.fileTypeName,
             fieldOccurrences: message.fieldOccurrences,
@@ -255,6 +265,15 @@ export async function streamFitFile(
               ? parsedSession(message.session, message.sportName, message.subSportName)
               : null,
           });
+          await writeContinue(child.stdin);
+          armIdleTimeout();
+          break;
+        case "devices":
+          if (!metadataReceived) {
+            throw new FitDecoderError("Native FIT decoder returned devices before file metadata");
+          }
+          consumedMessageCount += message.messages.length;
+          await consumer.onDeviceInfoBatch(message.messages);
           await writeContinue(child.stdin);
           armIdleTimeout();
           break;

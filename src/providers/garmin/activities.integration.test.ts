@@ -29,6 +29,12 @@ const summary = {
   manual: true,
 };
 const artifacts: ProviderArtifactStorage = {
+  async retainFile() {
+    throw new Error("Summary must not retain an artifact");
+  },
+  async hasForProvider() {
+    throw new Error("Summary must not inspect artifacts");
+  },
   async ensureArtifact() {
     throw new Error("Summary must not download an artifact");
   },
@@ -211,7 +217,7 @@ describe("official Garmin activity persistence", () => {
         ),
       ).toBe(true);
       expect(garminDownloads).toBe(1);
-      expect(archiveHeads).toBe(2);
+      expect(archiveHeads).toBe(4);
       expect(archiveWrites).toBe(1);
       expect(archiveReads).toBe(2);
 

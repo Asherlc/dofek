@@ -87,10 +87,7 @@ function collectJobPaths(value: JsonValue, paths: Set<string>): void {
   if (value === null || typeof value !== "object") return;
   for (const [key, nestedValue] of Object.entries(value)) {
     if (
-      (key === "archivePath" ||
-        key === "filePath" ||
-        key === "originalPath" ||
-        key === "outputDirectory") &&
+      (key === "archivePath" || key === "filePath" || key === "outputDirectory") &&
       typeof nestedValue === "string"
     ) {
       paths.add(nestedValue);

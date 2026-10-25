@@ -24,6 +24,17 @@ install(TARGETS dofek-fit-decoder RUNTIME DESTINATION bin)
 
 include(CTest)
 if(BUILD_TESTING)
+  add_executable(fit-decoder-hardware-fixture tests/HardwareFixture.cpp)
+  target_compile_features(fit-decoder-hardware-fixture PRIVATE cxx_std_17)
+  target_link_libraries(fit-decoder-hardware-fixture PRIVATE garmin-fit-sdk::garmin-fit-sdk)
+  add_test(
+    NAME fit-decoder-hardware
+    COMMAND
+      ${CMAKE_COMMAND}
+      -DDECODER=$<TARGET_FILE:dofek-fit-decoder>
+      -DFIXTURE_WRITER=$<TARGET_FILE:fit-decoder-hardware-fixture>
+      -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/VerifyHardware.cmake
+  )
   add_executable(fit-decoder-field-json-test tests/FieldJsonTest.cpp)
   target_compile_features(fit-decoder-field-json-test PRIVATE cxx_std_17)
   target_link_libraries(fit-decoder-field-json-test PRIVATE fit-decoder-field-json)

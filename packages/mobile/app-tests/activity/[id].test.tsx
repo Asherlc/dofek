@@ -325,6 +325,14 @@ vi.mock("../../lib/trpc", () => ({
       images: { useQuery: (...args: unknown[]) => mockImagesQuery(...args) },
       byId: { useQuery: (...args: unknown[]) => mockByIdQuery(...args) },
       metricSources: { useQuery: (...args: unknown[]) => mockMetricSourcesQuery(...args) },
+      hardware: {
+        useQuery: () => ({
+          data: { items: [], power: [] },
+          isLoading: false,
+          error: null,
+          refetch: vi.fn(),
+        }),
+      },
       stream: { useQuery: (...args: unknown[]) => mockStreamQuery(...args) },
       route: { useQuery: (...args: unknown[]) => mockRouteQuery(...args) },
       hrZones: { useQuery: (...args: unknown[]) => mockHrZonesQuery(...args) },

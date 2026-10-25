@@ -6,6 +6,8 @@ import { ProviderLogo } from "./ProviderLogo.tsx";
 export function ActivitySourceDisclosure({ origin }: { origin: ActivityOrigin }) {
   const details = activitySourceDetails(origin);
   if (!details) return null;
+  const sourceName =
+    origin.status === "resolved" && origin.providerId === "garmin" ? origin.sourceName : undefined;
 
   return (
     <Popover.Root>
@@ -14,7 +16,7 @@ export function ActivitySourceDisclosure({ origin }: { origin: ActivityOrigin })
         aria-label={`Activity source: ${details.recordingApp.label}`}
         className="relative z-20 inline-flex min-h-8 items-center gap-1 rounded border border-border px-1.5 hover:bg-surface-hover focus-visible:outline-2 focus-visible:outline-accent"
       >
-        <ProviderLogo provider={details.recordingApp.provider} size={18} />
+        <ProviderLogo provider={details.recordingApp.provider} sourceName={sourceName} size={18} />
         <svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true">
           <path
             d="m2 3.5 3 3 3-3"
@@ -36,7 +38,7 @@ export function ActivitySourceDisclosure({ origin }: { origin: ActivityOrigin })
             <div>
               <dt className="text-xs text-muted">Recorded in</dt>
               <dd className="mt-1 flex items-center gap-2 text-sm font-medium">
-                <ProviderLogo provider={details.recordingApp.provider} />
+                <ProviderLogo provider={details.recordingApp.provider} sourceName={sourceName} />
                 {details.recordingApp.label}
               </dd>
             </div>
