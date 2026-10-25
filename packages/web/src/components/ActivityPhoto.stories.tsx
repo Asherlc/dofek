@@ -15,3 +15,10 @@ export const Uncropped: Story = { args: { fit: "contain" } };
 export const LoadError: Story = {
   args: { image: { ...activityPhotoFixture, url: "data:image/png;base64,invalid" } },
 };
+
+export const CardLoadError: Story = {
+  args: {
+    image: { ...activityPhotoFixture, url: "data:image/png;base64,invalid" },
+    recoveryMessage: "Open the activity to refresh photos and try again.",
+  },
+};

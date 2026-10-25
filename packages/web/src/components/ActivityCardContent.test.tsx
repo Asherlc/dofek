@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 
 import { UnitConverter } from "@dofek/format/units";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { ActivityCardContent, type ActivityCardData } from "./ActivityCardContent.tsx";
 
@@ -66,6 +66,20 @@ describe("ActivityCardContent", () => {
       "sm:grid-cols-[minmax(0,2fr)_minmax(18rem,3fr)]",
     );
     expect(screen.getByTestId("activity-secondary-panel")).toBeInTheDocument();
+  });
+
+  it("directs users to activity details when a card photo fails", () => {
+    render(
+      <ActivityCardContent
+        activity={activity()}
+        units={units}
+        selectMode={false}
+        selected={false}
+        photo={photo}
+      />,
+    );
+    fireEvent.error(screen.getByRole("img", { name: "Activity photo" }));
+    expect(screen.getByRole("alert")).toHaveTextContent("Open the activity to refresh photos");
   });
 
   it.each([

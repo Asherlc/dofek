@@ -23,6 +23,7 @@ export function activityImageCaption(image: Pick<ActivityImage, "sources">): str
 
 interface ActivityImagesQueryState {
   state: {
+    error: unknown | null;
     data?: {
       images: ReadonlyArray<Pick<ActivityImage, "id">>;
       acquisition: ReadonlyArray<{ state: string }>;
@@ -45,6 +46,7 @@ export const ACTIVITY_IMAGES_QUERY_OPTIONS = {
     ) {
       return 3_000;
     }
-    return data?.images.length ? 240_000 : false;
+    if (!data?.images.length) return false;
+    return query.state.error !== null ? 30_000 : 240_000;
   },
 };

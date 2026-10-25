@@ -155,7 +155,11 @@ export function ActivityCardContent({
             {activity.location ? (
               <ActivityMapTile location={activity.location} variant="panel" />
             ) : previewPhoto ? (
-              <ActivityPhoto image={previewPhoto} className="h-full min-h-48" />
+              <ActivityPhoto
+                image={previewPhoto}
+                className="h-full min-h-48"
+                recoveryMessage="Open the activity to refresh photos and try again."
+              />
             ) : null}
           </div>
         </div>

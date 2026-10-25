@@ -74,6 +74,17 @@ describe("ActivityPhotos", () => {
     expect(screen.getByRole("img", { name: "Summit" })).toHaveAttribute("src", image.url);
   });
 
+  it("keeps a loaded photo visible and mounted when refreshing its links", () => {
+    const retry = vi.fn();
+    render(<ActivityPhotos images={[image]} loading={false} error={null} onRetry={retry} />);
+    const photo = screen.getByRole("img", { name: "Summit" });
+    fireEvent.load(photo);
+    fireEvent.click(screen.getByRole("button", { name: "Refresh photos" }));
+    expect(screen.getByRole("img", { name: "Summit" })).toBe(photo);
+    expect(screen.queryByRole("status")).toBeNull();
+    expect(retry).toHaveBeenCalledTimes(1);
+  });
+
   it("closes a selected photo when the image is no longer in the activity", () => {
     const { rerender } = render(
       <ActivityPhotos images={[image]} loading={false} error={null} onRetry={vi.fn()} />,

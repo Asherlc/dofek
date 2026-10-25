@@ -81,6 +81,7 @@ The [image presentation contract](src/activity-images.ts) retains stored-image
 dimensions, source associations, and captions. Its query options refresh active
 acquisition every three seconds and renew visible stored-image links every four
 minutes, before the [server's five-minute signed URL lifetime](../../src/activity-images/storage.ts).
+Failed link renewal retries after thirty seconds while stored images remain visible.
 Empty completed results stop polling. Inactive queries discard their temporary
 links; remounting or focusing the client refreshes the query. Persistence metadata excludes them from the
 mobile disk cache. TanStack documents the [query refresh options](https://tanstack.com/query/latest/docs/framework/react/reference/useQuery),

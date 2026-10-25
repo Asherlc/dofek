@@ -56,7 +56,7 @@ export function ActivityPhotos({
               onClick={() => setSelectedId(image.id)}
               className="min-w-0 rounded-lg text-left focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-accent"
             >
-              <ActivityPhoto key={`${image.id}:${refreshVersion}`} image={image} />
+              <ActivityPhoto image={image} retryVersion={refreshVersion} />
             </button>
           ))}
         </div>
@@ -90,8 +90,9 @@ export function ActivityPhotos({
             </button>
           </div>
           <ActivityPhoto
-            key={`${selected.id}:${refreshVersion}`}
+            key={selected.id}
             image={selected}
+            retryVersion={refreshVersion}
             fit="contain"
             className="h-[70dvh] w-full"
           />

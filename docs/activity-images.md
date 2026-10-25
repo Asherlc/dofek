@@ -123,6 +123,7 @@ resolution, rather than fetching provider URLs directly.
 
 The [shared image query policy](../packages/training/src/activity-images.ts)
 refreshes signed links on mount/focus and every four minutes while observed.
+If renewal fails while stored photos remain, it retries after thirty seconds.
 It polls pending acquisitions every three seconds and stops polling completed
 empty results. Web card queries run only near the viewport and retain loaded
 photos when scrolled away. Mobile excludes these bearer URLs from its persisted
