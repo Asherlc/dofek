@@ -10,6 +10,7 @@ interface SourceProcessingStatusCardProps {
   message: string | null;
   progress: number | null;
   status: ProcessingDisplayStatus;
+  tone?: "success" | "warning" | "danger" | "neutral";
   children?: ReactNode;
   details?: ReactNode;
 }
@@ -20,6 +21,7 @@ export function SourceProcessingStatusCard({
   message,
   progress,
   status,
+  tone,
   children,
   details,
 }: SourceProcessingStatusCardProps) {
@@ -27,7 +29,12 @@ export function SourceProcessingStatusCard({
 
   return (
     <View
-      style={[styles.container, borderStyleByStatus[status]]}
+      style={[
+        styles.container,
+        tone
+          ? { borderLeftColor: operationalStatusColors[tone].indicator }
+          : borderStyleByStatus[status],
+      ]}
       accessibilityRole="summary"
       accessibilityLiveRegion={status === "active" || status === "partial" ? "polite" : "none"}
     >
