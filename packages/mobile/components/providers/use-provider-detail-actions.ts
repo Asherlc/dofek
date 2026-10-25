@@ -446,7 +446,9 @@ export function useProviderDetailActions(
       displayProvider &&
         !displayProvider.importOnly &&
         (!displayProvider.pushOnly ||
-          (displayProvider.authType !== "none" && displayProvider.authType !== "push:mobile")),
+          (displayProvider.authType !== "none" &&
+            displayProvider.authType !== "push:mobile" &&
+            (!isConnected || needsReauth))),
     ),
     shouldShowFullSync:
       isConnected &&

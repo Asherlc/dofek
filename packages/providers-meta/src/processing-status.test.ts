@@ -10,6 +10,86 @@ import {
   resolveProcessingTargetScope,
 } from "./processing-status.ts";
 
+describe("push ingestion processing", () => {
+  it("keeps recovered push authorization errors historical without current reconnect guidance", () => {
+    const groups = processingFailureGroups({
+      needsReauth: false,
+      datasets: [
+        {
+          key: "activity",
+          label: "Activities",
+          status: "failed",
+          lastFailedAt: "2026-10-24T10:00:00Z",
+          lastReadyAt: null,
+        },
+      ],
+      operations: [
+        {
+          id: "failed-push",
+          providerId: "garmin",
+          kind: "push_ingest",
+          status: "failed",
+          datasets: ["activity"],
+          dismissed: false,
+          errorCode: "provider_auth_failed",
+          errorMessage: "Reconnect Garmin to resume incoming updates.",
+        },
+      ],
+    });
+    expect(groups[0]).toMatchObject({
+      requiresReconnect: false,
+      errorMessage: "Earlier updates remain available. Open Diagnostics for details.",
+    });
+  });
+
+  it.each([
+    ["active", "Processing Garmin data"],
+    ["failed", "Couldn't process the latest Garmin update"],
+    ["ready", "Garmin update processed"],
+  ] as const)("names push %s work by its processing stage", (status, heading) => {
+    const target = processingTarget({
+      providerId: "garmin",
+      operationKind: "push_ingest",
+      datasets: [],
+    });
+    expect(processingHeading(status, target)).toBe(heading);
+  });
+
+  it("keeps mixed incoming and polling work as a data update", () => {
+    const scope = resolveProcessingTargetScope({
+      scopeProviderId: null,
+      operations: [
+        { providerId: "garmin", kind: "push_ingest", status: "active" },
+        { providerId: "wahoo", kind: "provider_sync", status: "active" },
+      ],
+    });
+    expect(processingTarget({ ...scope, datasets: [] })).toEqual({
+      action: "update",
+      label: "your data",
+    });
+  });
+
+  it("provides processing guidance for a push failure without a safe error message", () => {
+    expect(
+      processingStatusMessage({
+        status: "failed",
+        errorMessage: null,
+        operationKind: "push_ingest",
+      }),
+    ).toBe("Earlier updates remain available. Open Diagnostics for details.");
+  });
+
+  it("keeps a push failure's actionable server message", () => {
+    expect(
+      processingStatusMessage({
+        status: "failed",
+        errorMessage: "An activity file could not be read.",
+        operationKind: "push_ingest",
+      }),
+    ).toBe("An activity file could not be read.");
+  });
+});
+
 describe("processing status presentation", () => {
   const firstOperationId = "10000000-0000-4000-8000-000000000001";
   const secondOperationId = "10000000-0000-4000-8000-000000000002";
@@ -248,6 +328,7 @@ describe("processing status presentation", () => {
     expect(groups).toEqual([
       {
         operationId: firstOperationId,
+        operationKind: null,
         providerId: "whoop",
         providerLabel: "WHOOP (Cloud)",
         datasetLabels: ["Activities", "Sleep"],

@@ -263,6 +263,7 @@ describe("providerDetailRouter", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockGetAllProviders.mockReturnValue([]);
     mockWithProviderOperationFence.mockImplementation(
       async <T>(
         database: unknown,
@@ -364,6 +365,37 @@ describe("providerDetailRouter", () => {
   // ── logs ──
 
   describe("logs", () => {
+    it("serves push update history from the processing ledger", async () => {
+      mockGetAllProviders.mockReturnValue([{ id: "garmin", pushOnly: true }]);
+      const caller = createCaller({
+        db: {
+          execute: vi.fn().mockResolvedValue([
+            {
+              id: "push-update",
+              provider_id: "garmin",
+              status: "success",
+              synced_at: new Date("2026-10-24T10:00:00Z"),
+              duration_ms: null,
+              record_count: null,
+              data_type: "update",
+              error_message: null,
+              auth_failure_reason: null,
+            },
+          ]),
+        },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      await expect(caller.logs({ providerId: "garmin", limit: 20, offset: 0 })).resolves.toEqual([
+        expect.objectContaining({
+          id: "push-update",
+          dataType: "update",
+          syncedAt: "2026-10-24T10:00:00.000Z",
+        }),
+      ]);
+    });
+
     it("returns paginated sync logs for a specific provider", async () => {
       const mockSelect = vi.fn().mockReturnValue({
         from: vi.fn().mockReturnValue({

@@ -2,6 +2,53 @@ import { describe, expect, it } from "vitest";
 import { providerSyncLogPresentation } from "./sync-log-presentation.ts";
 
 describe("providerSyncLogPresentation", () => {
+  it.each([
+    ["error", "Activities update not processed", "danger"],
+    ["success", "Activities update processed", "success"],
+    ["degraded", "Activities update processed with issues", "warning"],
+  ])("describes a push %s outcome as an update", (status, heading, tone) => {
+    expect(
+      providerSyncLogPresentation({
+        providerName: "Garmin",
+        dataType: "activities",
+        status,
+        authFailureReason: null,
+        pushOnly: true,
+      }),
+    ).toMatchObject({ heading, tone });
+  });
+
+  it("gives diagnostics guidance for failed incoming data", () => {
+    expect(
+      providerSyncLogPresentation({
+        providerName: "Garmin",
+        dataType: "update",
+        status: "error",
+        authFailureReason: null,
+        pushOnly: true,
+      }),
+    ).toMatchObject({
+      dataTypeLabel: "Update",
+      heading: "Update not processed",
+      message: "Earlier updates remain available. Open Diagnostics for details.",
+    });
+  });
+
+  it("keeps authorization recovery specific to push authorization errors", () => {
+    expect(
+      providerSyncLogPresentation({
+        providerName: "Garmin",
+        dataType: "update",
+        status: "error",
+        authFailureReason: "authorization_failed",
+        pushOnly: true,
+      }),
+    ).toMatchObject({
+      heading: "Authorization failed",
+      message: "Reconnect Garmin to resume incoming updates.",
+    });
+  });
+
   it.each(["access_token_expired", "refresh_token_revoked", "session_expired"])(
     "explains that %s requires reconnecting before data can resume",
     (authFailureReason) => {

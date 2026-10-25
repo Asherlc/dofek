@@ -15,6 +15,24 @@ const expiredAuthorizationEntry = {
 };
 
 describe("ProviderSyncHistoryEntry", () => {
+  it("shows a push processing failure and its actionable cause before diagnostics", () => {
+    render(
+      <ProviderSyncHistoryEntry
+        providerName="Garmin"
+        pushOnly
+        entry={{
+          ...expiredAuthorizationEntry,
+          dataType: "activities",
+          authFailureReason: null,
+          errorMessage: "An activity file could not be read.",
+        }}
+      />,
+    );
+    expect(screen.getByRole("heading", { name: "Activities update not processed" })).toBeVisible();
+    expect(screen.getAllByText("An activity file could not be read.")[0]).toBeVisible();
+    expect(screen.getByText("Diagnostics").closest("details")).not.toHaveAttribute("open");
+  });
+
   it("leads with the reconnect action and keeps raw failure details closed", () => {
     render(<ProviderSyncHistoryEntry providerName="WHOOP" entry={expiredAuthorizationEntry} />);
 

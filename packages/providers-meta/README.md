@@ -57,6 +57,21 @@ neutral presentation; newer processing retains its progress and details.
 The [provider API](../server/src/routers/sync.ts) supplies recent outcomes and
 successful-sync timestamps separately from connection and authorization state.
 
+Cloud push providers use **Updates automatically** and **Update history**.
+Their **Last update processed** timestamp comes from `lastProcessedUpdateAt`:
+the [provider API](../server/src/routers/sync.ts) queries successful ingestion
+events on `push_ingest` operations with recorded output, through the
+[sync repository](../server/src/repositories/sync-repository.ts). It does not
+represent receipt time, a failed attempt, a permission-only notification, or
+dashboard readiness. Historical polling logs are retained but are not
+reclassified as incoming updates. No update history is a neutral first-update
+state; missing authorization instead requests connection or reconnection.
+The [shared presentation](src/sync-card-summary.ts) preserves newer downstream
+processing and real error details, while [history labels](src/sync-log-presentation.ts)
+give reconnect guidance only for authorization failures. Mobile-origin BLE
+sources retain their mobile-specific synchronization flow. This distinction
+matches [Garmin Starter's push-only delivery](https://developer.garmin.com/gc-developer-program/overview/).
+
 ### Disconnect and Data Deletion
 
 Use [`providerDangerZoneCopy`](src/provider-disconnect.ts) for the shared web/mobile impact

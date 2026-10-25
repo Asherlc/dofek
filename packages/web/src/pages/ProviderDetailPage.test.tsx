@@ -81,6 +81,7 @@ interface MockProvider {
   authType: string;
   lastSyncedAt: string | null;
   lastSuccessfulSyncAt?: string | null;
+  lastProcessedUpdateAt?: string | null;
   recentLogs?: Array<{ status: string; syncedAt: string }>;
   importOnly: boolean;
   description?: string;
@@ -289,6 +290,7 @@ describe("ProviderDetailPage import-only providers", () => {
         lastSyncedAt: null,
         recentLogs: [],
         lastSuccessfulSyncAt: null,
+        lastProcessedUpdateAt: null,
         importOnly: true,
       },
     ];
@@ -331,6 +333,7 @@ describe("ProviderDetailPage import-only providers", () => {
         lastSyncedAt: null,
         recentLogs: [],
         lastSuccessfulSyncAt: null,
+        lastProcessedUpdateAt: null,
         importOnly: false,
       },
     ];
@@ -375,6 +378,7 @@ describe("ProviderDetailPage import-only providers", () => {
         lastSyncedAt: null,
         recentLogs: [],
         lastSuccessfulSyncAt: null,
+        lastProcessedUpdateAt: null,
         importOnly: false,
       },
     ];
@@ -400,6 +404,7 @@ describe("ProviderDetailPage import-only providers", () => {
         lastSyncedAt: null,
         recentLogs: [],
         lastSuccessfulSyncAt: null,
+        lastProcessedUpdateAt: null,
         importOnly: false,
       },
     ];
@@ -437,6 +442,7 @@ describe("ProviderDetailPage import-only providers", () => {
         lastSyncedAt: null,
         recentLogs: [],
         lastSuccessfulSyncAt: null,
+        lastProcessedUpdateAt: null,
         importOnly: false,
         needsReauth: true,
       },
@@ -472,6 +478,7 @@ describe("ProviderDetailPage import-only providers", () => {
         lastSyncedAt: null,
         recentLogs: [],
         lastSuccessfulSyncAt: null,
+        lastProcessedUpdateAt: null,
         importOnly: true,
       },
     ];
@@ -494,6 +501,7 @@ describe("ProviderDetailPage import-only providers", () => {
         lastSyncedAt: null,
         recentLogs: [],
         lastSuccessfulSyncAt: null,
+        lastProcessedUpdateAt: null,
         importOnly: true,
       },
     ];
@@ -562,6 +570,7 @@ describe("ProviderDetailPage import-only providers", () => {
         lastSyncedAt: null,
         recentLogs: [],
         lastSuccessfulSyncAt: null,
+        lastProcessedUpdateAt: null,
         importOnly: false,
       },
     ];
@@ -585,6 +594,7 @@ describe("ProviderDetailPage import-only providers", () => {
         lastSyncedAt: null,
         recentLogs: [],
         lastSuccessfulSyncAt: null,
+        lastProcessedUpdateAt: null,
         importOnly: false,
       },
     ];
@@ -633,6 +643,7 @@ describe("ProviderDetailPage import-only providers", () => {
         lastSyncedAt: null,
         recentLogs: [],
         lastSuccessfulSyncAt: null,
+        lastProcessedUpdateAt: null,
         importOnly: false,
       },
     ];
@@ -659,6 +670,7 @@ describe("ProviderDetailPage import-only providers", () => {
         lastSyncedAt: null,
         recentLogs: [],
         lastSuccessfulSyncAt: null,
+        lastProcessedUpdateAt: null,
         importOnly: false,
       },
     ];
@@ -699,6 +711,7 @@ describe("ProviderDetailPage import-only providers", () => {
         lastSyncedAt: "2026-06-29T12:00:00Z",
         recentLogs: [],
         lastSuccessfulSyncAt: null,
+        lastProcessedUpdateAt: null,
         importOnly: false,
         needsReauth: true,
       },
@@ -731,6 +744,7 @@ describe("ProviderDetailPage import-only providers", () => {
         lastSyncedAt: null,
         recentLogs: [],
         lastSuccessfulSyncAt: null,
+        lastProcessedUpdateAt: null,
         importOnly: false,
         needsReauth: true,
         tokenAuth: null,
@@ -762,6 +776,7 @@ describe("ProviderDetailPage import-only providers", () => {
         lastSyncedAt: "2026-06-30T12:00:00Z",
         recentLogs: [],
         lastSuccessfulSyncAt: null,
+        lastProcessedUpdateAt: null,
         importOnly: false,
       },
     ];
@@ -801,6 +816,7 @@ describe("ProviderDetailPage import-only providers", () => {
         lastSyncedAt: null,
         recentLogs: [],
         lastSuccessfulSyncAt: null,
+        lastProcessedUpdateAt: null,
         importOnly: false,
       },
     ];
@@ -840,6 +856,7 @@ describe("ProviderDetailPage import-only providers", () => {
         lastSyncedAt: null,
         recentLogs: [],
         lastSuccessfulSyncAt: null,
+        lastProcessedUpdateAt: null,
         importOnly: false,
       },
     ];
@@ -876,6 +893,7 @@ describe("ProviderDetailPage import-only providers", () => {
         lastSyncedAt: null,
         recentLogs: [],
         lastSuccessfulSyncAt: null,
+        lastProcessedUpdateAt: null,
         importOnly: false,
       },
     ];
@@ -920,6 +938,7 @@ describe("ProviderDetailPage import-only providers", () => {
         lastSyncedAt: null,
         recentLogs: [],
         lastSuccessfulSyncAt: null,
+        lastProcessedUpdateAt: null,
         importOnly: false,
       },
     ];
@@ -955,6 +974,7 @@ describe("ProviderDetailPage import-only providers", () => {
         lastSyncedAt: null,
         recentLogs: [],
         lastSuccessfulSyncAt: null,
+        lastProcessedUpdateAt: null,
         importOnly: false,
       },
     ];
@@ -989,6 +1009,7 @@ describe("ProviderDetailPage import-only providers", () => {
         lastSyncedAt: null,
         recentLogs: [],
         lastSuccessfulSyncAt: null,
+        lastProcessedUpdateAt: null,
         importOnly: false,
       },
     ];
@@ -1030,6 +1051,7 @@ describe("ProviderDetailPage import-only providers", () => {
         lastSyncedAt: null,
         recentLogs: [],
         lastSuccessfulSyncAt: null,
+        lastProcessedUpdateAt: null,
         importOnly: false,
       },
     ];
@@ -1063,6 +1085,7 @@ describe("ProviderDetailPage import-only providers", () => {
         lastSyncedAt: null,
         recentLogs: [],
         lastSuccessfulSyncAt: null,
+        lastProcessedUpdateAt: null,
         importOnly: false,
       },
     ];
@@ -1114,6 +1137,7 @@ describe("ProviderDetailPage import-only providers", () => {
         lastSyncedAt: null,
         recentLogs: [],
         lastSuccessfulSyncAt: null,
+        lastProcessedUpdateAt: null,
         importOnly: false,
       },
     ];
@@ -1141,6 +1165,7 @@ describe("ProviderDetailPage import-only providers", () => {
         lastSyncedAt: null,
         recentLogs: [],
         lastSuccessfulSyncAt: null,
+        lastProcessedUpdateAt: null,
         importOnly: false,
       },
     ];
@@ -1180,6 +1205,7 @@ describe("ProviderDetailPage import-only providers", () => {
         lastSyncedAt: "2026-06-30T12:00:00Z",
         recentLogs: [],
         lastSuccessfulSyncAt: "2026-06-30T12:00:00Z",
+        lastProcessedUpdateAt: null,
         importOnly: false,
         pushOnly: true,
       },
@@ -1206,6 +1232,7 @@ describe("ProviderDetailPage import-only providers", () => {
         lastSyncedAt: null,
         recentLogs: [],
         lastSuccessfulSyncAt: null,
+        lastProcessedUpdateAt: null,
         importOnly: false,
         pushOnly: true,
       },
@@ -1233,6 +1260,7 @@ describe("ProviderDetailPage import-only providers", () => {
           lastSyncedAt: null,
           recentLogs: [],
           lastSuccessfulSyncAt: null,
+          lastProcessedUpdateAt: null,
           importOnly: false,
           needsReauth: true,
         },
@@ -1248,8 +1276,8 @@ describe("ProviderDetailPage import-only providers", () => {
   );
 
   it.each([null, "2026-10-20T10:00:00Z"])(
-    "uses successful receipt evidence for push providers: %s",
-    async (lastSuccessfulSyncAt) => {
+    "uses successful processing evidence for push providers: %s",
+    async (lastProcessedUpdateAt) => {
       vi.setSystemTime(new Date("2026-10-24T10:00:00Z"));
       mockUseParams.mockReturnValue({ id: "garmin" });
       mockProviders.data = [
@@ -1261,18 +1289,20 @@ describe("ProviderDetailPage import-only providers", () => {
           importOnly: false,
           pushOnly: true,
           lastSyncedAt: "2026-10-24T09:00:00Z",
-          lastSuccessfulSyncAt,
+          lastSuccessfulSyncAt: "2026-10-24T09:00:00Z",
+          lastProcessedUpdateAt,
         },
       ];
       const { ProviderDetailPage } = await import("./ProviderDetailPage");
       render(<ProviderDetailPage />);
-      if (lastSuccessfulSyncAt) expect(screen.getByText("Last received: 4d ago")).toBeTruthy();
-      else expect(screen.queryByText(/^Last received:/)).toBeNull();
+      if (lastProcessedUpdateAt)
+        expect(screen.getByText("Last update processed: 4d ago")).toBeTruthy();
+      else expect(screen.queryByText(/^Last update processed:/)).toBeNull();
     },
   );
 
   it.each([false, true])(
-    "opens Garmin OAuth with a push-only connection, needsReauth=%s",
+    "offers Garmin OAuth recovery only when needed, needsReauth=%s",
     async (needsReauth) => {
       const openWindow = vi.spyOn(window, "open").mockReturnValue(null);
       mockUseParams.mockReturnValue({ id: "garmin" });
@@ -1285,6 +1315,7 @@ describe("ProviderDetailPage import-only providers", () => {
           lastSyncedAt: "2026-10-20T10:00:00Z",
           recentLogs: [],
           lastSuccessfulSyncAt: "2026-10-20T10:00:00Z",
+          lastProcessedUpdateAt: "2026-10-20T10:00:00Z",
           importOnly: false,
           needsReauth,
           pushOnly: true,
@@ -1292,12 +1323,17 @@ describe("ProviderDetailPage import-only providers", () => {
       ];
       const { ProviderDetailPage } = await import("./ProviderDetailPage");
       render(<ProviderDetailPage />);
-      fireEvent.click(screen.getByRole("button", { name: "Reconnect Garmin" }));
-      expect(openWindow).toHaveBeenCalledWith("/auth/provider/garmin", "_blank");
+      if (needsReauth) {
+        fireEvent.click(screen.getByRole("button", { name: "Reconnect Garmin" }));
+        expect(openWindow).toHaveBeenCalledWith("/auth/provider/garmin", "_blank");
+      } else {
+        expect(screen.queryByRole("button", { name: "Reconnect Garmin" })).toBeNull();
+      }
       expect(
         screen.getByText("New data arrives automatically after you sync your Garmin device."),
       ).toBeTruthy();
-      expect(screen.getByText(/^Last received:/)).toBeTruthy();
+      expect(screen.getByText("Updates automatically")).toBeVisible();
+      expect(screen.getByText(/^Last update processed:/)).toBeTruthy();
       expect(screen.queryByRole("button", { name: "Sync Last 7 Days" })).toBeNull();
       openWindow.mockRestore();
     },
@@ -1314,6 +1350,7 @@ describe("ProviderDetailPage import-only providers", () => {
         lastSyncedAt: null,
         recentLogs: [],
         lastSuccessfulSyncAt: null,
+        lastProcessedUpdateAt: null,
         importOnly: false,
         needsReauth: true,
       },
@@ -1334,6 +1371,7 @@ describe("ProviderDetailPage import-only providers", () => {
         lastSyncedAt: null,
         recentLogs: [],
         lastSuccessfulSyncAt: null,
+        lastProcessedUpdateAt: null,
         importOnly: false,
         needsReauth: true,
         tokenAuth: {
@@ -1359,6 +1397,7 @@ describe("ProviderDetailPage import-only providers", () => {
         lastSyncedAt: null,
         recentLogs: [],
         lastSuccessfulSyncAt: null,
+        lastProcessedUpdateAt: null,
         importOnly: false,
         needsReauth: true,
         tokenAuth: {
@@ -1385,6 +1424,7 @@ describe("ProviderDetailPage import-only providers", () => {
         lastSyncedAt: null,
         recentLogs: [],
         lastSuccessfulSyncAt: null,
+        lastProcessedUpdateAt: null,
         importOnly: false,
       },
     ];
@@ -1432,6 +1472,7 @@ describe("ProviderDetailPage delete all data", () => {
         lastSyncedAt: null,
         recentLogs: [],
         lastSuccessfulSyncAt: null,
+        lastProcessedUpdateAt: null,
         importOnly: false,
       },
     ];
@@ -1474,6 +1515,7 @@ describe("ProviderDetailPage activity records", () => {
         lastSyncedAt: null,
         recentLogs: [],
         lastSuccessfulSyncAt: null,
+        lastProcessedUpdateAt: null,
         importOnly: true,
       },
     ];
@@ -1506,6 +1548,7 @@ describe("ProviderDetailPage activity records", () => {
         lastSyncedAt: null,
         recentLogs: [],
         lastSuccessfulSyncAt: null,
+        lastProcessedUpdateAt: null,
         importOnly: false,
       },
     ];
@@ -1558,6 +1601,7 @@ describe("WhoopWearLocationPicker", () => {
         lastSyncedAt: "2026-03-19T12:00:00Z",
         recentLogs: [],
         lastSuccessfulSyncAt: null,
+        lastProcessedUpdateAt: null,
         importOnly: false,
       },
     ];
@@ -1605,6 +1649,7 @@ describe("WhoopWearLocationPicker", () => {
         lastSyncedAt: null,
         recentLogs: [],
         lastSuccessfulSyncAt: null,
+        lastProcessedUpdateAt: null,
         importOnly: false,
       },
     ];

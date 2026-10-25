@@ -1,7 +1,11 @@
+import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import type { ProcessingDisplayStatus } from "./processing-status.ts";
 import { providerSyncLogPresentation } from "./sync-log-presentation.ts";
 
 export interface ProviderSyncHistory {
+  authorized?: boolean;
+  pushOnly?: boolean;
+  lastProcessedUpdateAt?: string | null;
   needsReauth?: boolean;
   lastSuccessfulSyncAt: string | null;
   recentLogs: ReadonlyArray<{
@@ -11,6 +15,10 @@ export interface ProviderSyncHistory {
     authFailureReason?: string | null;
     errorMessage?: string | null;
   }>;
+}
+
+function lastSuccessfulOutcomeAt(history: ProviderSyncHistory): string | null {
+  return history.pushOnly ? (history.lastProcessedUpdateAt ?? null) : history.lastSuccessfulSyncAt;
 }
 
 interface SyncCardHistory extends ProviderSyncHistory {
@@ -70,10 +78,10 @@ export function providerSyncStatusPresentation(
   processing: ProviderProcessingEvidence,
 ): ProviderSyncStatusPresentation | null {
   const latestLog = latestSyncLog(history);
+  const lastSuccessfulAt = lastSuccessfulOutcomeAt(history);
   const outcome: ProviderSyncHistory["recentLogs"][number] | null =
-    history.lastSuccessfulSyncAt &&
-    (!latestLog || history.lastSuccessfulSyncAt > latestLog.syncedAt)
-      ? { status: "success", syncedAt: history.lastSuccessfulSyncAt }
+    lastSuccessfulAt && (!latestLog || lastSuccessfulAt > latestLog.syncedAt)
+      ? { status: "success", syncedAt: lastSuccessfulAt }
       : latestLog;
   const processingEvidence = [
     ...processing.datasets.map((dataset) => ({
@@ -91,7 +99,7 @@ export function providerSyncStatusPresentation(
       ]),
   ].filter(
     (evidence): evidence is { status: ProcessingDisplayStatus; occurredAt: string } =>
-      evidence.occurredAt !== null,
+      evidence.occurredAt !== null && (!history.pushOnly || evidence.status !== "ready"),
   );
   const latestProcessing = processingEvidence.reduce<(typeof processingEvidence)[number] | null>(
     (latest, evidence) =>
@@ -106,8 +114,15 @@ export function providerSyncStatusPresentation(
   const unfinished = processing.datasets.some(
     (dataset) => !["ready", "failed", "cancelled"].includes(dataset.status),
   );
+  const currentPushProcessing =
+    processing.datasets.length > 0
+      ? processing.datasets.some((dataset) => !["ready", "cancelled"].includes(dataset.status))
+      : processing.operations.some(
+          (operation) => !operation.dismissed && !["ready", "cancelled"].includes(operation.status),
+        );
   if (
     latestProcessing &&
+    (!history.pushOnly || currentPushProcessing) &&
     (!outcome ||
       (unfinished && outcome.status === "success") ||
       latestProcessing.occurredAt > outcome.syncedAt ||
@@ -120,9 +135,14 @@ export function providerSyncStatusPresentation(
     return null;
   }
   if (!outcome) {
+    const missingPushOutcomeHeading = history.needsReauth
+      ? `Reconnect ${providerName} to resume incoming updates`
+      : history.authorized === false
+        ? `Connect ${providerName} to receive updates`
+        : "Waiting for first update";
     return {
       occurredAt: null,
-      heading: "No sync outcome recorded",
+      heading: history.pushOnly ? missingPushOutcomeHeading : "No sync outcome recorded",
       message: null,
       status: "cancelled",
       tone: "neutral",
@@ -131,7 +151,9 @@ export function providerSyncStatusPresentation(
   if (outcome.status === "success") {
     return {
       occurredAt: outcome.syncedAt,
-      heading: `${providerName} sync complete`,
+      heading: history.pushOnly
+        ? `${providerName} update processed`
+        : `${providerName} sync complete`,
       message: null,
       status: "ready",
       tone: "success",
@@ -140,8 +162,10 @@ export function providerSyncStatusPresentation(
   if (outcome.status !== "error" && outcome.status !== "degraded") {
     return {
       occurredAt: outcome.syncedAt,
-      heading: "Sync outcome unavailable",
-      message: "Open Diagnostics for the raw sync status.",
+      heading: history.pushOnly ? "Update outcome unavailable" : "Sync outcome unavailable",
+      message: history.pushOnly
+        ? "Open Diagnostics for the processing status."
+        : "Open Diagnostics for the raw sync status.",
       status: "cancelled",
       tone: "neutral",
     };
@@ -151,14 +175,24 @@ export function providerSyncStatusPresentation(
     dataType: outcome.dataType ?? "data",
     status: outcome.status,
     authFailureReason: history.needsReauth ? (outcome.authFailureReason ?? null) : null,
+    pushOnly: history.pushOnly,
   });
   return {
     occurredAt: outcome.syncedAt,
-    heading:
-      outcome.status === "error"
+    heading: history.pushOnly
+      ? outcome.status === "error"
+        ? `Couldn't process the latest ${providerName} update`
+        : `${providerName} update processed with issues`
+      : outcome.status === "error"
         ? `Latest ${providerName} sync failed`
         : `${providerName} sync completed with issues`,
-    message: logPresentation.message,
+    message:
+      history.pushOnly && !history.needsReauth && !outcome.authFailureReason && outcome.errorMessage
+        ? userFacingErrorMessage(
+            outcome.errorMessage,
+            logPresentation.message ?? "The update could not be processed.",
+          )
+        : logPresentation.message,
     status: outcome.status === "error" ? "failed" : "blocked",
     tone: logPresentation.tone,
   };
@@ -166,24 +200,37 @@ export function providerSyncStatusPresentation(
 
 export function syncCardSummary(history: SyncCardHistory) {
   const latestLog = latestSyncLog(history);
+  const lastSuccessfulAt = lastSuccessfulOutcomeAt(history);
   const latestIssue: SyncCardIssue | null =
     latestLog?.status === "error"
-      ? { status: "error", label: "Latest sync failed", accessibilityLabel: "Sync needs attention" }
+      ? {
+          status: "error",
+          label: history.pushOnly ? "Couldn't process the latest update" : "Latest sync failed",
+          accessibilityLabel: history.pushOnly
+            ? "Update processing needs attention"
+            : "Sync needs attention",
+        }
       : latestLog?.status === "degraded"
         ? {
             status: "degraded",
-            label: "Latest sync completed with issues",
-            accessibilityLabel: "Sync completed with issues",
+            label: history.pushOnly
+              ? "Update processed with issues"
+              : "Latest sync completed with issues",
+            accessibilityLabel: history.pushOnly
+              ? "Update processed with issues"
+              : "Sync completed with issues",
           }
         : null;
   const attemptedAt = latestIssue ? (latestLog?.syncedAt ?? null) : history.lastSyncAt;
 
   return {
     lastAttemptAt:
-      attemptedAt === history.lastSuccessfulSyncAt && !latestIssue ? null : attemptedAt,
-    lastSuccessfulSyncAt: history.lastSuccessfulSyncAt,
+      history.pushOnly || (attemptedAt === lastSuccessfulAt && !latestIssue) ? null : attemptedAt,
+    lastSuccessfulSyncAt: lastSuccessfulAt,
     latestIssue,
     hasHistory:
-      history.lastSyncAt !== null || history.lastSuccessfulSyncAt !== null || latestLog !== null,
+      (!history.pushOnly && history.lastSyncAt !== null) ||
+      lastSuccessfulAt !== null ||
+      latestLog !== null,
   };
 }

@@ -19,7 +19,7 @@ export type ProcessingDisplayStage =
   | "cache_refresh";
 
 export interface ProcessingTarget {
-  action: "import" | "recompute" | "sync" | "update";
+  action: "import" | "recompute" | "sync" | "update" | "process";
   label: string;
 }
 
@@ -33,6 +33,8 @@ function activeHeading(target: ProcessingTarget): string {
       return `Syncing ${target.label}`;
     case "update":
       return `Updating ${target.label}`;
+    case "process":
+      return `Processing ${target.label} data`;
   }
 }
 
@@ -47,7 +49,9 @@ export function processingHeading(
   if (target) {
     switch (status) {
       case "failed":
-        return `${capitalize(target.label)} ${target.action} didn’t finish`;
+        return target.action === "process"
+          ? `Couldn't process the latest ${target.label} update`
+          : `${capitalize(target.label)} ${target.action} didn’t finish`;
       case "blocked":
         return `${activeHeading(target)} is waiting to continue`;
       case "delayed":
@@ -56,11 +60,17 @@ export function processingHeading(
       case "partial":
         return activeHeading(target);
       case "waiting":
-        return `Preparing to ${target.action} ${target.label}`;
+        return target.action === "process"
+          ? `Preparing to process ${target.label} data`
+          : `Preparing to ${target.action} ${target.label}`;
       case "cancelled":
-        return `${capitalize(target.label)} ${target.action} was cancelled`;
+        return target.action === "process"
+          ? `Processing ${target.label} data was cancelled`
+          : `${capitalize(target.label)} ${target.action} was cancelled`;
       case "ready":
-        return `${capitalize(target.label)} ${target.action} complete`;
+        return target.action === "process"
+          ? `${capitalize(target.label)} update processed`
+          : `${capitalize(target.label)} ${target.action} complete`;
     }
   }
   switch (status) {
@@ -110,7 +120,12 @@ export function processingTarget(input: {
 }): ProcessingTarget {
   if (input.providerId) {
     return {
-      action: input.operationKind === "file_import" ? "import" : "sync",
+      action:
+        input.operationKind === "file_import"
+          ? "import"
+          : input.operationKind === "push_ingest"
+            ? "process"
+            : "sync",
       label: providerLabel(input.providerId),
     };
   }
@@ -120,7 +135,10 @@ export function processingTarget(input: {
   const targets = [...new Set(relevantDatasets.map(datasetTarget))];
 
   return {
-    action: input.operationKind === "provider_sync" ? "update" : "recompute",
+    action:
+      input.operationKind === "provider_sync" || input.operationKind === "push_ingest"
+        ? "update"
+        : "recompute",
     label: formatList(targets),
   };
 }
@@ -175,7 +193,9 @@ export function resolveProcessingTargetScope(input: {
     nonReadyOperations.every(
       (operation) =>
         operation.providerId !== null &&
-        (operation.kind === "provider_sync" || operation.kind === "file_import"),
+        (operation.kind === "provider_sync" ||
+          operation.kind === "file_import" ||
+          operation.kind === "push_ingest"),
     );
   return {
     providerId: null,
@@ -188,8 +208,12 @@ export function resolveProcessingTargetScope(input: {
 export function processingStatusMessage(input: {
   status: ProcessingDisplayStatus;
   errorMessage: string | null;
+  operationKind?: string | null;
 }): string | null {
-  const failureGuidance = "Try the update again. If it still fails, reconnect the data source.";
+  const failureGuidance =
+    input.operationKind === "push_ingest"
+      ? "Earlier updates remain available. Open Diagnostics for details."
+      : "Try the update again. If it still fails, reconnect the data source.";
   if (input.status === "failed" && input.errorMessage) {
     return userFacingErrorMessage(input.errorMessage, failureGuidance);
   }
@@ -204,7 +228,9 @@ export function processingStatusMessage(input: {
     case "waiting":
       return null;
     case "cancelled":
-      return "Start the update again when you are ready.";
+      return input.operationKind === "push_ingest"
+        ? "Earlier updates remain available."
+        : "Start the update again when you are ready.";
     case "ready":
       return null;
   }
@@ -240,6 +266,7 @@ interface ProcessingFailureDataset {
 interface ProcessingFailureOperation {
   id: string;
   providerId: string | null;
+  kind?: string;
   status: ProcessingDisplayStatus;
   datasets: readonly string[];
   dismissed: boolean;
@@ -250,6 +277,7 @@ interface ProcessingFailureOperation {
 export interface ProcessingFailureGroup {
   operationId: string;
   providerId: string | null;
+  operationKind: string | null;
   providerLabel: string | null;
   datasetLabels: string[];
   status: "failed";
@@ -269,6 +297,7 @@ function latestTimestamp(values: readonly (string | null)[]): string | null {
 }
 
 export function processingFailureGroups(input: {
+  needsReauth?: boolean;
   datasets: readonly ProcessingFailureDataset[];
   operations: readonly ProcessingFailureOperation[];
 }): ProcessingFailureGroup[] {
@@ -291,20 +320,33 @@ export function processingFailureGroups(input: {
         currentOperationIdsByDataset.get(dataset.key) === operation.id,
     );
     if (groupedDatasets.length === 0) return [];
+    const resolvedPushAuthorization =
+      operation.kind === "push_ingest" &&
+      operation.errorCode === "provider_auth_failed" &&
+      input.needsReauth === false;
 
     return [
       {
         operationId: operation.id,
         providerId: operation.providerId,
+        operationKind: operation.kind ?? null,
         providerLabel: operation.providerId ? providerLabel(operation.providerId) : null,
         datasetLabels: groupedDatasets.map((dataset) => dataset.label),
         status: operation.status,
         failedAt: latestTimestamp(groupedDatasets.map((dataset) => dataset.lastFailedAt)),
         lastReadyAt: latestTimestamp(groupedDatasets.map((dataset) => dataset.lastReadyAt)),
-        errorMessage: operation.errorMessage
-          ? userFacingErrorMessage(operation.errorMessage, "The update failed. Please try again.")
-          : null,
-        requiresReconnect: operation.errorCode === "provider_auth_failed",
+        errorMessage: resolvedPushAuthorization
+          ? "Earlier updates remain available. Open Diagnostics for details."
+          : operation.errorMessage
+            ? userFacingErrorMessage(
+                operation.errorMessage,
+                operation.kind === "push_ingest"
+                  ? "Incoming data could not be processed. Open Diagnostics for details."
+                  : "The update failed. Please try again.",
+              )
+            : null,
+        requiresReconnect:
+          operation.errorCode === "provider_auth_failed" && !resolvedPushAuthorization,
         dismissed: operation.dismissed,
       },
     ];

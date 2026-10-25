@@ -196,6 +196,26 @@ function buildProcessingAlert(
     };
   }
 
+  if (operation.kind === "push_ingest" && sourceLabel) {
+    const needsReauth = failedEvent?.errorCode === "provider_auth_failed";
+    return {
+      id: alertId,
+      providerId: operation.providerId,
+      providerLabel: sourceLabel,
+      datasetKeys,
+      datasetLabels,
+      occurredAt,
+      title: needsReauth
+        ? `${sourceLabel} needs to reconnect`
+        : `Couldn’t process the latest ${sourceLabel} update`,
+      message: needsReauth
+        ? `Dofek couldn’t authenticate with ${sourceLabel}. Reconnect ${sourceLabel} to receive future updates.`
+        : `${failedEvent?.errorMessage ?? `Dofek couldn’t finish processing the ${sourceLabel} update.`} Contact support for help.`,
+      action: needsReauth ? "reconnect" : "contact_support",
+      actionLabel: needsReauth ? `Reconnect ${sourceLabel}` : "Contact support",
+    };
+  }
+
   if (operation.kind === "provider_sync" && sourceLabel) {
     if (failedEvent?.errorCode === "provider_auth_failed") {
       return {
@@ -333,6 +353,7 @@ export class ProcessingRepository {
   async status(input: {
     providerId?: string;
     datasets?: readonly ProcessingDatasetKey[];
+    kind?: ProcessingOperationWithEvents["kind"];
   }): Promise<ProcessingStatusSnapshot> {
     const now = new Date();
     const requestedDatasets = [...(input.datasets ?? PROCESSING_DATASET_KEYS)];
@@ -341,6 +362,7 @@ export class ProcessingRepository {
       userId: this.#userId,
       providerId: input.providerId,
       datasetKeys: requestedDatasets,
+      ...(input.kind ? { kind: input.kind } : {}),
     });
     const dismissedOperationIds = await this.#loadDismissedOperationIds(
       operations.map((operation) => operation.id),

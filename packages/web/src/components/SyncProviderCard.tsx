@@ -27,6 +27,7 @@ export function SyncProviderCard({
     | "authType"
     | "lastSyncedAt"
     | "lastSuccessfulSyncAt"
+    | "lastProcessedUpdateAt"
     | "syncFreshness"
     | "authorized"
     | "description"
@@ -39,29 +40,34 @@ export function SyncProviderCard({
   recentLogs: SyncLogEntry[];
   onSync: () => void;
 }) {
+  const mobileOnly = pushOnly && provider.authType === "push:mobile";
+  const automaticUpdates = pushOnly && !mobileOnly && provider.authType !== "none";
   const summary = syncCardSummary({
     lastSyncAt: provider.lastSyncedAt,
     lastSuccessfulSyncAt: provider.lastSuccessfulSyncAt,
     recentLogs,
+    pushOnly: automaticUpdates,
+    lastProcessedUpdateAt: provider.lastProcessedUpdateAt,
   });
-  const lastAttemptAt = pushOnly ? provider.lastSyncedAt : summary.lastAttemptAt;
+  const lastAttemptAt = automaticUpdates
+    ? provider.lastProcessedUpdateAt
+    : pushOnly
+      ? provider.lastSyncedAt
+      : summary.lastAttemptAt;
   const lastSyncedRelative = lastAttemptAt ? formatRelativeTime(lastAttemptAt) : null;
   const lastSuccessfulSyncRelative = provider.lastSuccessfulSyncAt
     ? formatRelativeTime(provider.lastSuccessfulSyncAt)
     : null;
-  const mobileOnly = pushOnly && provider.authType === "push:mobile";
   const requiresAuthorization =
     provider.authType !== "none" &&
     provider.authType !== "file-import" &&
     provider.authType !== "push:mobile";
-  const primaryActionLabel =
-    needsReauth || (pushOnly && !needsAuth) ? "Reconnect" : needsAuth ? "Connect" : "Sync";
-  const primaryActionTitle =
-    needsReauth || (pushOnly && !needsAuth)
-      ? `Reconnect ${provider.name}`
-      : needsAuth
-        ? `Connect ${provider.name}`
-        : `Sync ${provider.name} from the last 7 days`;
+  const primaryActionLabel = needsReauth ? "Reconnect" : needsAuth ? "Connect" : "Sync";
+  const primaryActionTitle = needsReauth
+    ? `Reconnect ${provider.name}`
+    : needsAuth
+      ? `Connect ${provider.name}`
+      : `Sync ${provider.name} from the last 7 days`;
   const latestSync = summary.latestIssue;
   const latestSyncColors =
     latestSync?.status === "error"
@@ -98,13 +104,13 @@ export function SyncProviderCard({
             className="inline-block h-2 w-2 rounded-full"
             style={{ backgroundColor: operationalStatusColors.info.indicator }}
           />
-        ) : state.status !== "idle" ? (
+        ) : !automaticUpdates && state.status !== "idle" ? (
           <StatusDot status={state.status} />
         ) : null}
         <span className="text-sm font-medium text-foreground">{provider.name}</span>
         {pushOnly && (
           <span className="text-xs text-subtle">
-            {mobileOnly ? "Mobile sync" : "Automatic sync"}
+            {mobileOnly ? "Mobile sync" : "Updates automatically"}
           </span>
         )}
         {needsReauth && (
@@ -137,11 +143,17 @@ export function SyncProviderCard({
             : state.message}
         </span>
       )}
-      {state.status !== "syncing" && !state.message && lastSyncedRelative && (
-        <span className="text-xs text-dim mt-1">
-          {pushOnly ? "Last received" : "Last attempt"}: {lastSyncedRelative}
-        </span>
-      )}
+      {(automaticUpdates || (state.status !== "syncing" && !state.message)) &&
+        lastSyncedRelative && (
+          <span className="text-xs text-dim mt-1">
+            {automaticUpdates
+              ? "Last update processed"
+              : pushOnly
+                ? "Last received"
+                : "Last attempt"}
+            : {lastSyncedRelative}
+          </span>
+        )}
       {!pushOnly && state.status !== "syncing" && lastSuccessfulSyncRelative && (
         <span className="text-xs text-dim mt-1">
           Last successful sync: {lastSuccessfulSyncRelative}
@@ -153,7 +165,10 @@ export function SyncProviderCard({
 
       {/* Latest sync status + action links */}
       <div className="flex flex-wrap items-center justify-between gap-2 mt-2 pt-2 border-t border-border/50">
-        <div className="flex items-center gap-1">
+        <div className="flex flex-wrap items-center gap-2">
+          {automaticUpdates && !needsAuth && !needsReauth && (
+            <span className="text-xs text-dim">Connected</span>
+          )}
           {mobileOnly ? (
             <span className="text-xs text-dim">
               {provider.authorized ? "Synced via iOS app" : "Waiting for mobile sync"}
@@ -163,7 +178,10 @@ export function SyncProviderCard({
               aria-label={latestSync.accessibilityLabel}
               className="inline-flex items-center gap-1.5 text-xs"
               style={{
-                color: latestSyncColors.foreground,
+                color:
+                  latestSync.status === "error"
+                    ? "var(--color-danger)"
+                    : latestSyncColors.foreground,
               }}
             >
               <span
@@ -175,6 +193,8 @@ export function SyncProviderCard({
               />
               {latestSync.label}
             </output>
+          ) : automaticUpdates && !needsAuth && !needsReauth && !summary.hasHistory ? (
+            <span className="text-xs text-dim">Waiting for first update</span>
           ) : !pushOnly && !summary.hasHistory ? (
             <span className="text-xs text-dim">No sync history</span>
           ) : null}
@@ -196,17 +216,18 @@ export function SyncProviderCard({
               )}
             </div>
           )}
-          {(!pushOnly || requiresAuthorization) && state.status !== "syncing" && (
-            <button
-              type="button"
-              onClick={onSync}
-              title={primaryActionTitle}
-              aria-label={primaryActionTitle}
-              className="text-xs text-muted hover:text-foreground transition-colors"
-            >
-              {primaryActionLabel}
-            </button>
-          )}
+          {(!pushOnly || (requiresAuthorization && (needsAuth || needsReauth))) &&
+            state.status !== "syncing" && (
+              <button
+                type="button"
+                onClick={onSync}
+                title={primaryActionTitle}
+                aria-label={primaryActionTitle}
+                className="text-xs text-muted hover:text-foreground transition-colors"
+              >
+                {primaryActionLabel}
+              </button>
+            )}
           <Link
             to="/providers/$id"
             params={{ id: provider.id }}

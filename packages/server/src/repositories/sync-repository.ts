@@ -4,8 +4,9 @@ import {
   type ProviderAuthFailureReason,
   providerAuthFailureReasonSchema,
 } from "dofek/providers/auth-errors";
-import { desc, eq, sql } from "drizzle-orm";
+import { desc, eq, type SQL, sql } from "drizzle-orm";
 import { z } from "zod";
+import { buildPostgresFilterConditionsMapped } from "../lib/field-filters.ts";
 import { executeWithSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 
 // ---------------------------------------------------------------------------
@@ -49,6 +50,35 @@ const scheduledSyncHealthRowSchema = z.object({
   last_error: z.string().nullable(),
   consecutive_failures: z.coerce.number().int().nonnegative(),
 });
+
+const pushUpdateFilterOptionRowSchema = z.object({
+  field: z.string(),
+  values: z.array(z.string()),
+});
+const PUSH_UPDATE_FILTER_FIELDS = {
+  id: "id",
+  syncedAt: "synced_at",
+  dataType: "data_type",
+  status: "status",
+  recordCount: "record_count",
+  errorMessage: "error_message",
+  authFailureReason: "auth_failure_reason",
+  durationMs: "duration_ms",
+} as const;
+
+function recentLog(row: z.infer<typeof recentSyncLogRowSchema>): ProviderRecentSyncLog {
+  return {
+    id: row.id,
+    providerId: row.provider_id,
+    status: row.status,
+    syncedAt: row.synced_at.toISOString(),
+    durationMs: row.duration_ms,
+    recordCount: row.record_count,
+    dataType: row.data_type,
+    errorMessage: row.error_message,
+    authFailureReason: row.auth_failure_reason,
+  };
+}
 
 const clickHouseProviderStatsRowSchema = z.object({
   provider_id: z.string(),
@@ -219,6 +249,123 @@ export class SyncRepository {
       providerId: row.provider_id,
       lastSynced: row.last_synced,
     }));
+  }
+
+  /** Current terminal ingest outcomes; lifecycle/no-output successes are not data updates. */
+  #pushUpdatesQuery(providerId?: string | SQL): SQL {
+    return sql`
+      SELECT operation.id, operation.provider_id,
+             CASE ingest.status WHEN 'succeeded' THEN 'success' ELSE 'error' END AS status,
+             ingest.occurred_at AS synced_at,
+             NULL::integer AS duration_ms, NULL::integer AS record_count,
+             'update'::text AS data_type, ingest.error_message,
+             CASE WHEN ingest.error_code = 'provider_auth_failed'
+                  THEN 'authorization_failed'::text ELSE NULL::text END AS auth_failure_reason
+      FROM fitness.processing_operation operation
+      CROSS JOIN LATERAL (
+        SELECT status, occurred_at, error_message, error_code
+        FROM fitness.processing_stage_event
+        WHERE operation_id = operation.id AND stage = 'ingest'
+        ORDER BY sequence DESC
+        LIMIT 1
+      ) ingest
+      WHERE operation.user_id = ${this.#userId}::uuid
+        AND operation.kind = 'push_ingest'
+        ${providerId === undefined ? sql`` : sql`AND operation.provider_id = ${providerId}`}
+        AND (ingest.status = 'failed' OR (
+          ingest.status = 'succeeded' AND EXISTS (
+            SELECT 1 FROM fitness.processing_operation_output output
+            WHERE output.operation_id = operation.id
+          )
+        ))
+    `;
+  }
+
+  /** Successful push ingestion with emitted data, independent of dashboard readiness. */
+  async getLastProcessedUpdateTimes(): Promise<LastSync[]> {
+    const rows = await executeWithSchema(
+      this.#db,
+      lastSyncRowSchema,
+      sql`
+      SELECT provider_id, MAX(synced_at) AS last_synced
+      FROM (${this.#pushUpdatesQuery()}) updates
+      WHERE status = 'success'
+      GROUP BY provider_id
+      ORDER BY provider_id
+    `,
+    );
+    return rows.map((row) => ({ providerId: row.provider_id, lastSynced: row.last_synced }));
+  }
+
+  async getRecentPushUpdatesByProvider(
+    limitPerProvider: number,
+  ): Promise<Map<string, ProviderRecentSyncLog[]>> {
+    const rows = await executeWithSchema(
+      this.#db,
+      recentSyncLogRowSchema,
+      sql`
+      SELECT recent.* FROM fitness.provider provider
+      CROSS JOIN LATERAL (
+        SELECT * FROM (${this.#pushUpdatesQuery(sql`provider.id`)}) updates
+        ORDER BY synced_at DESC, id DESC
+        LIMIT ${limitPerProvider}
+      ) recent
+      ORDER BY provider_id, synced_at DESC, id DESC
+    `,
+    );
+    const histories = new Map<string, ProviderRecentSyncLog[]>();
+    for (const row of rows) {
+      const logs = histories.get(row.provider_id) ?? [];
+      logs.push(recentLog(row));
+      histories.set(row.provider_id, logs);
+    }
+    return histories;
+  }
+
+  async getPushUpdateHistory(
+    providerId: string,
+    limit: number,
+    offset = 0,
+    filters: Record<string, string> = {},
+  ): Promise<ProviderRecentSyncLog[]> {
+    const conditions = buildPostgresFilterConditionsMapped(filters, PUSH_UPDATE_FILTER_FIELDS);
+    const rows = await executeWithSchema(
+      this.#db,
+      recentSyncLogRowSchema,
+      sql`
+      SELECT * FROM (${this.#pushUpdatesQuery(providerId)}) updates
+      ${conditions.length === 0 ? sql`` : sql`WHERE ${sql.join(conditions, sql` AND `)}`}
+      ORDER BY synced_at DESC, id DESC
+      LIMIT ${limit} OFFSET ${offset}
+    `,
+    );
+    return rows.map(recentLog);
+  }
+
+  async getPushUpdateFilterOptions(
+    providerId: string,
+  ): Promise<Record<string, Array<{ value: string }>>> {
+    const rows = await executeWithSchema(
+      this.#db,
+      pushUpdateFilterOptionRowSchema,
+      sql`
+      SELECT options.field, array_agg(DISTINCT options.value ORDER BY options.value) AS values
+      FROM (${this.#pushUpdatesQuery(providerId)}) updates
+      CROSS JOIN LATERAL (VALUES
+        ('status', updates.status), ('dataType', updates.data_type),
+        ('authFailureReason', updates.auth_failure_reason)
+      ) options(field, value)
+      WHERE options.value IS NOT NULL
+      GROUP BY options.field
+    `,
+    );
+    const options: Record<string, Array<{ value: string }>> = {
+      status: [],
+      dataType: [],
+      authFailureReason: [],
+    };
+    for (const row of rows) options[row.field] = row.values.map((value) => ({ value }));
+    return options;
   }
 
   /**

@@ -52,6 +52,28 @@ describe("sync-processing-operation", () => {
     expect(() => stripTypeScriptTypes(source, { mode: "strip" })).not.toThrow();
   });
 
+  it("records actual push deliveries as push ingestion while preserving retry identity", async () => {
+    const provider = createMockProvider({ id: "garmin", pushOnly: true });
+    const job = createMockJob({
+      providerId: "garmin",
+      webhookEvent: {
+        ownerExternalId: "garmin-user",
+        eventType: "update",
+        objectType: "activities",
+        objectId: "123",
+      },
+    });
+
+    await SyncProcessingOperation.start(job, mockDb, provider);
+    await SyncProcessingOperation.start(job, mockDb, provider);
+
+    expect(mockCreateProcessingOperation).toHaveBeenCalledExactlyOnceWith(
+      mockDb,
+      expect.objectContaining({ kind: "push_ingest", providerId: "garmin" }),
+    );
+    expect(job.data.processingOperationIds).toEqual({ garmin: processingOperationId });
+  });
+
   it("records a retry-stable processing lifecycle and correlates metric batches", async () => {
     const provider = createMockProvider({
       id: "garmin",

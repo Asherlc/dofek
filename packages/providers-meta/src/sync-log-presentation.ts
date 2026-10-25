@@ -5,6 +5,7 @@ export interface ProviderSyncLogPresentationInput {
   dataType: string;
   status: string;
   authFailureReason: string | null;
+  pushOnly?: boolean;
 }
 
 export interface ProviderSyncLogPresentation {
@@ -29,6 +30,7 @@ export function providerSyncLogPresentation(
   input: ProviderSyncLogPresentationInput,
 ): ProviderSyncLogPresentation {
   const dataTypeLabel = humanizeIdentifier(input.dataType);
+  const updateLabel = input.dataType === "update" ? "Update" : `${dataTypeLabel} update`;
 
   if (input.authFailureReason !== null) {
     let heading = "Sign-in failed";
@@ -42,7 +44,9 @@ export function providerSyncLogPresentation(
     return {
       dataTypeLabel,
       heading,
-      message: `Reconnect ${input.providerName} to resume ${dataTypeLabel} data.`,
+      message: input.pushOnly
+        ? `Reconnect ${input.providerName} to resume incoming updates.`
+        : `Reconnect ${input.providerName} to resume ${dataTypeLabel} data.`,
       tone: "danger",
     };
   }
@@ -50,8 +54,12 @@ export function providerSyncLogPresentation(
   if (input.status === "error") {
     return {
       dataTypeLabel,
-      heading: `${dataTypeLabel} data sync failed`,
-      message: `Try syncing ${input.providerName} again. Open Diagnostics if the problem continues.`,
+      heading: input.pushOnly
+        ? `${updateLabel} not processed`
+        : `${dataTypeLabel} data sync failed`,
+      message: input.pushOnly
+        ? "Earlier updates remain available. Open Diagnostics for details."
+        : `Try syncing ${input.providerName} again. Open Diagnostics if the problem continues.`,
       tone: "danger",
     };
   }
@@ -59,7 +67,9 @@ export function providerSyncLogPresentation(
   if (input.status === "degraded") {
     return {
       dataTypeLabel,
-      heading: `${dataTypeLabel} data synced with issues`,
+      heading: input.pushOnly
+        ? `${updateLabel} processed with issues`
+        : `${dataTypeLabel} data synced with issues`,
       message: `Some ${dataTypeLabel.toLowerCase()} data may be missing. Open Diagnostics for details.`,
       tone: "warning",
     };
@@ -68,7 +78,7 @@ export function providerSyncLogPresentation(
   if (input.status === "success") {
     return {
       dataTypeLabel,
-      heading: `${dataTypeLabel} data synced`,
+      heading: input.pushOnly ? `${updateLabel} processed` : `${dataTypeLabel} data synced`,
       message: null,
       tone: "success",
     };
@@ -77,7 +87,9 @@ export function providerSyncLogPresentation(
   return {
     dataTypeLabel,
     heading: `${dataTypeLabel} data status unavailable`,
-    message: "Open Diagnostics for the raw sync status.",
+    message: input.pushOnly
+      ? "Open Diagnostics for the processing status."
+      : "Open Diagnostics for the raw sync status.",
     tone: "warning",
   };
 }

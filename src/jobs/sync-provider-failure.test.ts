@@ -59,6 +59,60 @@ describe("sync-provider-failure", () => {
     vi.restoreAllMocks();
   });
 
+  it("records push processing failures without prescribing a manual sync", async () => {
+    const provider = createMockProvider({
+      id: "garmin",
+      name: "Garmin",
+      pushOnly: true,
+      sync: vi.fn().mockRejectedValue(new Error("Activity file could not be decoded")),
+    });
+    mockGetEnabledSyncProviders.mockReturnValue([provider]);
+
+    await runSyncJob(createMockJob({ providerId: "garmin" }), mockDb);
+
+    expect(mockAppendProcessingStageEvent.mock.calls.at(-1)?.[1]).toMatchObject({
+      stage: "ingest",
+      status: "failed",
+      errorMessage: "Activity file could not be decoded",
+    });
+  });
+
+  it.each([
+    {
+      message: "Garmin provider data deletion must complete before this notification can run",
+      expected: "Garmin provider data deletion must complete before this notification can run",
+    },
+    {
+      message: "Garmin download rejected: Authorization: Bearer private-value",
+      expected: "Garmin download rejected: Authorization: Bearer [REDACTED]",
+    },
+    {
+      message: "Garmin download rejected: https://apis.garmin.com/file?access_token=private-value",
+      expected: "Garmin download rejected: https://apis.garmin.com/file?[REDACTED]",
+    },
+    {
+      message:
+        "Failed query: SELECT secret FROM fitness.oauth_token\n    at query (/app/worker.ts:1)",
+      expected: "Garmin data could not be processed. Your existing data is still available.",
+    },
+  ])("retains a safe push failure cause for $message", async ({ message, expected }) => {
+    const provider = createMockProvider({
+      id: "garmin",
+      name: "Garmin",
+      pushOnly: true,
+      sync: vi.fn().mockRejectedValue(new Error(message)),
+    });
+    mockGetEnabledSyncProviders.mockReturnValue([provider]);
+
+    await runSyncJob(createMockJob({ providerId: "garmin" }), mockDb);
+
+    expect(mockAppendProcessingStageEvent.mock.calls.at(-1)?.[1]).toMatchObject({
+      stage: "ingest",
+      status: "failed",
+      errorMessage: expected,
+    });
+  });
+
   it("records provider rate-limit cooldown records and schedules a deterministic delayed retry", async () => {
     vi.setSystemTime(new Date("2026-06-02T12:00:00Z"));
     const provider = createMockProvider({

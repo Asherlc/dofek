@@ -45,4 +45,28 @@ describe("ProviderSyncHistoryEntry", () => {
     expect(screen.getByText("The sync failed. Please try again.")).toBeTruthy();
     expect(screen.queryByText(/Cannot read properties/)).toBeNull();
   });
+
+  it("shows an automatic update failure with its actionable error before opening diagnostics", () => {
+    render(
+      <ProviderSyncHistoryEntry
+        providerName="Garmin"
+        pushOnly
+        entry={{
+          ...expiredAuthorizationEntry,
+          dataType: "activities",
+          authFailureReason: null,
+          errorMessage: "An activity file could not be read.",
+        }}
+      />,
+    );
+
+    expect(screen.getByText("Activities update not processed")).toBeTruthy();
+    expect(screen.getByText("An activity file could not be read.")).toBeTruthy();
+    expect(screen.queryByText(/Try syncing/)).toBeNull();
+    expect(screen.queryByText("raw-log-123")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Show diagnostics" }));
+    expect(screen.getByText("raw-log-123")).toBeTruthy();
+    expect(screen.getByText("error")).toBeTruthy();
+  });
 });

@@ -74,6 +74,7 @@ export function ProviderDetailPage() {
     provider?.authType !== "file-import" &&
     provider?.authType !== "push:mobile";
   const needsConnection = canAuthorize && !provider?.authorized;
+  const automaticUpdates = pushOnly && !mobileOnly && canAuthorize;
   const health = provider
     ? providerHealth({
         authorized: provider.authorized,
@@ -81,8 +82,11 @@ export function ProviderDetailPage() {
         requiresAuthorization: provider.authType !== "none",
       })
     : null;
-  const lastSyncedAt =
-    pushOnly || mobileOnly ? provider?.lastSuccessfulSyncAt : provider?.lastSyncedAt;
+  const lastSyncedAt = automaticUpdates
+    ? provider?.lastProcessedUpdateAt
+    : mobileOnly
+      ? provider?.lastSuccessfulSyncAt
+      : provider?.lastSyncedAt;
   const lastSyncedRelative = hasValidDateInput(lastSyncedAt)
     ? formatRelativeTime(lastSyncedAt)
     : null;
@@ -403,18 +407,19 @@ export function ProviderDetailPage() {
                     </div>
                   </dl>
                 )}
+                {automaticUpdates && (
+                  <span className="text-xs text-dim">Updates automatically</span>
+                )}
                 {!mobileOnly && !provider.importOnly && lastSyncedRelative && (
                   <span className="text-xs text-dim">
-                    {pushOnly ? "Last received" : "Last sync"}: {lastSyncedRelative}
+                    {automaticUpdates ? "Last update processed" : "Last sync"}: {lastSyncedRelative}
                   </span>
                 )}
               </div>
             )}
           </div>
         </div>
-        {provider &&
-        !provider.importOnly &&
-        (health?.requiresReconnect || needsConnection || (pushOnly && canAuthorize)) ? (
+        {provider && !provider.importOnly && (health?.requiresReconnect || needsConnection) ? (
           <div className="flex flex-col items-end gap-2">
             <button
               type="button"
@@ -439,7 +444,7 @@ export function ProviderDetailPage() {
         error={processingStatus.error}
         loading={processingStatus.isLoading}
         contextLabel={`${formatProviderName(providerId)} data status`}
-        providerHistory={provider}
+        providerHistory={provider ? { ...provider, pushOnly: automaticUpdates } : undefined}
         alwaysVisible
       />
 
@@ -640,6 +645,7 @@ export function ProviderDetailPage() {
           key={`sync-history-${providerId}`}
           providerId={providerId}
           providerName={provider?.name ?? formatProviderName(providerId)}
+          pushOnly={automaticUpdates}
         />
       )}
 

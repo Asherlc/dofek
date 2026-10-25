@@ -21,13 +21,19 @@ export interface ProviderSyncHistoryEntryData {
 
 interface ProviderSyncHistoryEntryProps {
   providerName: string;
+  pushOnly?: boolean;
   entry: ProviderSyncHistoryEntryData;
 }
 
-export function ProviderSyncHistoryEntry({ providerName, entry }: ProviderSyncHistoryEntryProps) {
+export function ProviderSyncHistoryEntry({
+  providerName,
+  pushOnly,
+  entry,
+}: ProviderSyncHistoryEntryProps) {
   const [showDiagnostics, setShowDiagnostics] = useState(false);
   const presentation = providerSyncLogPresentation({
     providerName,
+    pushOnly,
     dataType: entry.dataType,
     status: entry.status,
     authFailureReason: entry.authFailureReason,
@@ -40,6 +46,13 @@ export function ProviderSyncHistoryEntry({ providerName, entry }: ProviderSyncHi
           <Text style={styles.dataType}>{presentation.dataTypeLabel}</Text>
           <Text style={styles.heading}>{presentation.heading}</Text>
           {presentation.message ? <Text style={styles.message}>{presentation.message}</Text> : null}
+          {pushOnly &&
+          entry.errorMessage &&
+          (entry.status === "error" || entry.status === "degraded") ? (
+            <Text style={styles.message}>
+              {userFacingErrorMessage(entry.errorMessage, "The update could not be processed.")}
+            </Text>
+          ) : null}
         </View>
         <Text style={styles.time}>{formatTime(entry.syncedAt)}</Text>
       </View>
@@ -75,7 +88,9 @@ export function ProviderSyncHistoryEntry({ providerName, entry }: ProviderSyncHi
               label="Error"
               value={userFacingErrorMessage(
                 entry.errorMessage,
-                "The sync failed. Please try again.",
+                pushOnly
+                  ? "The update could not be processed."
+                  : "The sync failed. Please try again.",
               )}
             />
           ) : null}

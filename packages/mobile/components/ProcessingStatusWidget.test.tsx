@@ -731,6 +731,103 @@ describe("ProcessingStatusWidget", () => {
     expect(screen.queryByText("Reconnect Garmin to resume Activities data.")).toBeNull();
     expect(screen.queryByText("Garmin sync complete")).toBeNull();
   });
+
+  it("shows a push processing error with a processing timestamp and its actual cause", () => {
+    vi.setSystemTime(new Date("2026-07-24T12:00:00.000Z"));
+    render(
+      <ProcessingStatusWidget
+        alwaysVisible
+        providerHistory={{
+          pushOnly: true,
+          needsReauth: false,
+          lastProcessedUpdateAt: "2026-07-22T12:00:00.000Z",
+          lastSuccessfulSyncAt: "2026-07-24T12:00:00.000Z",
+          recentLogs: [
+            {
+              status: "error",
+              syncedAt: "2026-07-23T12:00:00.000Z",
+              dataType: "activities",
+              errorMessage: "An activity file could not be read.",
+            },
+          ],
+        }}
+        data={{ ...snapshot, overallStatus: "ready", datasets: [], operations: [] }}
+      />,
+    );
+
+    expect(screen.getByText("Couldn't process the latest Garmin update")).toBeTruthy();
+    expect(screen.getByText("An activity file could not be read.")).toBeTruthy();
+    expect(screen.getByText("Processing failed: 1d ago")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Reconnect Garmin" })).toBeNull();
+  });
+
+  it("dismisses a failed push ingestion with an update processing accessibility label", () => {
+    render(
+      <ProcessingStatusWidget
+        data={{
+          ...snapshot,
+          overallStatus: "failed",
+          datasets: [{ ...activityDataset, status: "failed", lastFailedAt: snapshot.generatedAt }],
+          operations: [
+            {
+              ...operation,
+              kind: "push_ingest",
+              status: "failed",
+              errorCode: "push_ingest_failed",
+              errorMessage: "An activity file could not be read.",
+              timeline: [],
+            },
+          ],
+        }}
+      />,
+    );
+
+    expect(screen.getByText("An activity file could not be read.")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Reconnect Garmin" })).toBeNull();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Dismiss Garmin update processing failure" }),
+    );
+    expect(mockDismissOperation).toHaveBeenCalledWith({ operationId: operation.id });
+  });
+
+  it("replaces a resolved push authorization failure's stale reconnect instructions", () => {
+    render(
+      <ProcessingStatusWidget
+        alwaysVisible
+        providerHistory={{
+          pushOnly: true,
+          needsReauth: false,
+          lastSuccessfulSyncAt: null,
+          lastProcessedUpdateAt: null,
+          recentLogs: [],
+        }}
+        data={{
+          ...snapshot,
+          overallStatus: "failed",
+          datasets: [{ ...activityDataset, status: "failed", lastFailedAt: snapshot.generatedAt }],
+          operations: [
+            {
+              ...operation,
+              kind: "push_ingest",
+              status: "failed",
+              errorCode: "provider_auth_failed",
+              errorMessage: "Reconnect Garmin to resume incoming updates.",
+              timeline: [],
+            },
+          ],
+        }}
+      />,
+    );
+
+    expect(screen.queryByText("Reconnect Garmin to resume incoming updates.")).toBeNull();
+    expect(
+      screen.getByText("Earlier updates remain available. Open Diagnostics for details."),
+    ).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Reconnect Garmin" })).toBeNull();
+    expect(
+      screen.getByRole("button", { name: "Dismiss Garmin update processing failure" }),
+    ).toBeTruthy();
+  });
   it("keeps analytics progress visible when ingestion finishes successfully", () => {
     render(
       <ProcessingStatusWidget

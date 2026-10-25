@@ -123,6 +123,23 @@ describe("ProcessingRepository", () => {
     expect(result.generatedAt).toBe("2026-07-22T18:00:00.000Z");
   });
 
+  it("scopes push status before selecting the latest operations for each dataset", async () => {
+    mockListScopedProcessingOperations.mockResolvedValue([]);
+
+    await new ProcessingRepository(database, userId).status({
+      providerId: "garmin",
+      datasets: ["activity"],
+      kind: "push_ingest",
+    });
+
+    expect(mockListScopedProcessingOperations).toHaveBeenCalledWith(database, {
+      userId,
+      providerId: "garmin",
+      datasetKeys: ["activity"],
+      kind: "push_ingest",
+    });
+  });
+
   it("selects the matching dataset contract for labels", async () => {
     mockListScopedProcessingOperations.mockResolvedValue([]);
     const repository = new ProcessingRepository(database, userId);
@@ -888,6 +905,53 @@ describe("ProcessingRepository", () => {
       ],
     });
   });
+
+  it.each([
+    {
+      errorCode: "provider_sync_failed",
+      action: "contact_support",
+      actionLabel: "Contact support",
+    },
+    { errorCode: "provider_auth_failed", action: "reconnect", actionLabel: "Reconnect Garmin" },
+  ])(
+    "offers $action for a push ingestion $errorCode",
+    async ({ errorCode, action, actionLabel }) => {
+      mockListScopedProcessingOperations.mockResolvedValue([
+        operation({
+          providerId: "garmin",
+          kind: "push_ingest",
+          events: [
+            event(1, {
+              stage: "ingest",
+              status: "failed",
+              errorCode,
+              errorMessage: "Garmin data could not be processed.",
+            }),
+          ],
+        }),
+      ]);
+      mockDeriveProcessingState.mockReturnValue({
+        overallStatus: "failed",
+        datasets: [
+          {
+            datasetKey: "activity",
+            currentStage: "ingest",
+            status: "failed",
+            progressPercentage: null,
+            lastAdvancedAt: now,
+          },
+        ],
+      });
+
+      const result = await new ProcessingRepository(database, userId).alerts();
+
+      expect(result.alerts[0]).toMatchObject({ providerId: "garmin", action, actionLabel });
+      expect(result.alerts[0]?.message).not.toMatch(/try.*sync|start.*sync/i);
+      if (action === "contact_support") {
+        expect(result.alerts[0]?.message).toContain("Garmin data could not be processed.");
+      }
+    },
+  );
 
   it("offers a retry for a provider-level sync failure after ingestion", async () => {
     mockListScopedProcessingOperations.mockResolvedValue([

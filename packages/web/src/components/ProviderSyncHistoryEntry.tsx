@@ -19,6 +19,7 @@ export interface ProviderSyncHistoryEntryData {
 interface ProviderSyncHistoryEntryProps {
   providerName: string;
   entry: ProviderSyncHistoryEntryData;
+  pushOnly?: boolean;
 }
 
 const toneClasses: Record<ProviderSyncLogTone, string> = {
@@ -27,13 +28,25 @@ const toneClasses: Record<ProviderSyncLogTone, string> = {
   danger: "border-l-red-400",
 };
 
-export function ProviderSyncHistoryEntry({ providerName, entry }: ProviderSyncHistoryEntryProps) {
+export function ProviderSyncHistoryEntry({
+  providerName,
+  entry,
+  pushOnly = false,
+}: ProviderSyncHistoryEntryProps) {
   const presentation = providerSyncLogPresentation({
     providerName,
     dataType: entry.dataType,
     status: entry.status,
     authFailureReason: entry.authFailureReason,
+    pushOnly,
   });
+  const visibleMessage =
+    pushOnly && entry.errorMessage && !entry.authFailureReason
+      ? userFacingErrorMessage(
+          entry.errorMessage,
+          presentation.message ?? "The update could not be processed.",
+        )
+      : presentation.message;
 
   return (
     <article
@@ -45,9 +58,7 @@ export function ProviderSyncHistoryEntry({ providerName, entry }: ProviderSyncHi
             {presentation.dataTypeLabel}
           </p>
           <h3 className="text-sm font-semibold text-foreground">{presentation.heading}</h3>
-          {presentation.message ? (
-            <p className="mt-0.5 text-xs text-muted">{presentation.message}</p>
-          ) : null}
+          {visibleMessage ? <p className="mt-0.5 text-xs text-muted">{visibleMessage}</p> : null}
         </div>
         <time className="text-xs text-subtle" dateTime={entry.syncedAt}>
           {formatTime(entry.syncedAt)}
@@ -78,7 +89,12 @@ export function ProviderSyncHistoryEntry({ providerName, entry }: ProviderSyncHi
             <>
               <dt className="text-subtle">Error</dt>
               <dd className="break-words">
-                {userFacingErrorMessage(entry.errorMessage, "The sync failed. Please try again.")}
+                {userFacingErrorMessage(
+                  entry.errorMessage,
+                  pushOnly
+                    ? "The update could not be processed. Open Diagnostics for details."
+                    : "The sync failed. Please try again.",
+                )}
               </dd>
             </>
           ) : null}

@@ -2729,6 +2729,7 @@ describe("ProvidersScreen", () => {
             authorized,
             importOnly: false,
             pushOnly: true,
+            needsReauth: authorized,
             lastSyncedAt: null,
           },
         ],
