@@ -8,6 +8,7 @@ interface SourceProcessingStatusCardProps {
   message: string | null;
   progress: number | null;
   status: ProcessingDisplayStatus;
+  tone?: "success" | "warning" | "danger" | "neutral";
   children?: ReactNode;
   details?: ReactNode;
 }
@@ -29,6 +30,7 @@ export function SourceProcessingStatusCard({
   message,
   progress,
   status,
+  tone,
   children,
   details,
 }: SourceProcessingStatusCardProps) {
@@ -38,7 +40,11 @@ export function SourceProcessingStatusCard({
   return (
     <section
       className="w-full rounded-lg border border-l-4 bg-surface-solid px-3 py-2.5 text-foreground shadow-sm"
-      style={{ borderLeftColor: indicatorColorByStatus[status] }}
+      style={{
+        borderLeftColor: tone
+          ? operationalStatusColors[tone].indicator
+          : indicatorColorByStatus[status],
+      }}
       aria-live="polite"
     >
       {contextLabel ? (

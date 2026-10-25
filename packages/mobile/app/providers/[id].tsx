@@ -600,7 +600,9 @@ function ProviderDetailContent({
   const lastSyncedAt =
     providerId === "apple_health"
       ? (appleHealthLogs.data?.[0]?.syncedAt ?? null)
-      : displayProvider.lastSyncedAt;
+      : displayProvider.pushOnly
+        ? provider?.lastSuccessfulSyncAt
+        : displayProvider.lastSyncedAt;
   const appleHealthHistoryError =
     providerId === "apple_health" && appleHealthLogs.error && appleHealthLogs.data === undefined;
 
@@ -705,6 +707,7 @@ function ProviderDetailContent({
         error={processingStatus.error}
         loading={processingStatus.isLoading}
         contextLabel={`${formatProviderName(providerId)} data status`}
+        providerHistory={provider}
         alwaysVisible
       />
 

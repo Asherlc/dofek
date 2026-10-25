@@ -80,6 +80,8 @@ interface MockProvider {
   authorized: boolean;
   authType: string;
   lastSyncedAt: string | null;
+  lastSuccessfulSyncAt?: string | null;
+  recentLogs?: Array<{ status: string; syncedAt: string }>;
   importOnly: boolean;
   description?: string;
   needsReauth?: boolean;
@@ -285,6 +287,8 @@ describe("ProviderDetailPage import-only providers", () => {
         authorized: true,
         authType: "none",
         lastSyncedAt: null,
+        recentLogs: [],
+        lastSuccessfulSyncAt: null,
         importOnly: true,
       },
     ];
@@ -325,6 +329,8 @@ describe("ProviderDetailPage import-only providers", () => {
         authorized: true,
         authType: "oauth",
         lastSyncedAt: null,
+        recentLogs: [],
+        lastSuccessfulSyncAt: null,
         importOnly: false,
       },
     ];
@@ -367,6 +373,8 @@ describe("ProviderDetailPage import-only providers", () => {
         authorized: true,
         authType: "oauth",
         lastSyncedAt: null,
+        recentLogs: [],
+        lastSuccessfulSyncAt: null,
         importOnly: false,
       },
     ];
@@ -390,6 +398,8 @@ describe("ProviderDetailPage import-only providers", () => {
         authorized: true,
         authType: "oauth",
         lastSyncedAt: null,
+        recentLogs: [],
+        lastSuccessfulSyncAt: null,
         importOnly: false,
       },
     ];
@@ -425,6 +435,8 @@ describe("ProviderDetailPage import-only providers", () => {
         authorized: false,
         authType: "oauth",
         lastSyncedAt: null,
+        recentLogs: [],
+        lastSuccessfulSyncAt: null,
         importOnly: false,
         needsReauth: true,
       },
@@ -458,6 +470,8 @@ describe("ProviderDetailPage import-only providers", () => {
         authorized: true,
         authType: "none",
         lastSyncedAt: null,
+        recentLogs: [],
+        lastSuccessfulSyncAt: null,
         importOnly: true,
       },
     ];
@@ -478,6 +492,8 @@ describe("ProviderDetailPage import-only providers", () => {
         authorized: true,
         authType: "file-import",
         lastSyncedAt: null,
+        recentLogs: [],
+        lastSuccessfulSyncAt: null,
         importOnly: true,
       },
     ];
@@ -544,6 +560,8 @@ describe("ProviderDetailPage import-only providers", () => {
         authorized: true,
         authType: "oauth",
         lastSyncedAt: null,
+        recentLogs: [],
+        lastSuccessfulSyncAt: null,
         importOnly: false,
       },
     ];
@@ -565,6 +583,8 @@ describe("ProviderDetailPage import-only providers", () => {
         authorized: true,
         authType: "custom:whoop",
         lastSyncedAt: null,
+        recentLogs: [],
+        lastSuccessfulSyncAt: null,
         importOnly: false,
       },
     ];
@@ -611,6 +631,8 @@ describe("ProviderDetailPage import-only providers", () => {
         authorized: true,
         authType: "custom:whoop",
         lastSyncedAt: null,
+        recentLogs: [],
+        lastSuccessfulSyncAt: null,
         importOnly: false,
       },
     ];
@@ -635,6 +657,8 @@ describe("ProviderDetailPage import-only providers", () => {
         authorized: true,
         authType: "oauth",
         lastSyncedAt: null,
+        recentLogs: [],
+        lastSuccessfulSyncAt: null,
         importOnly: false,
       },
     ];
@@ -673,6 +697,8 @@ describe("ProviderDetailPage import-only providers", () => {
         authorized: true,
         authType: "custom:whoop",
         lastSyncedAt: "2026-06-29T12:00:00Z",
+        recentLogs: [],
+        lastSuccessfulSyncAt: null,
         importOnly: false,
         needsReauth: true,
       },
@@ -703,6 +729,8 @@ describe("ProviderDetailPage import-only providers", () => {
         authorized: false,
         authType: "token",
         lastSyncedAt: null,
+        recentLogs: [],
+        lastSuccessfulSyncAt: null,
         importOnly: false,
         needsReauth: true,
         tokenAuth: null,
@@ -732,6 +760,8 @@ describe("ProviderDetailPage import-only providers", () => {
         authorized: true,
         authType: "oauth",
         lastSyncedAt: "2026-06-30T12:00:00Z",
+        recentLogs: [],
+        lastSuccessfulSyncAt: null,
         importOnly: false,
       },
     ];
@@ -769,6 +799,8 @@ describe("ProviderDetailPage import-only providers", () => {
         authorized: true,
         authType: "oauth",
         lastSyncedAt: null,
+        recentLogs: [],
+        lastSuccessfulSyncAt: null,
         importOnly: false,
       },
     ];
@@ -806,6 +838,8 @@ describe("ProviderDetailPage import-only providers", () => {
         authorized: true,
         authType: "oauth",
         lastSyncedAt: null,
+        recentLogs: [],
+        lastSuccessfulSyncAt: null,
         importOnly: false,
       },
     ];
@@ -840,6 +874,8 @@ describe("ProviderDetailPage import-only providers", () => {
         authorized: true,
         authType: "oauth",
         lastSyncedAt: null,
+        recentLogs: [],
+        lastSuccessfulSyncAt: null,
         importOnly: false,
       },
     ];
@@ -882,6 +918,8 @@ describe("ProviderDetailPage import-only providers", () => {
         authorized: true,
         authType: "oauth",
         lastSyncedAt: null,
+        recentLogs: [],
+        lastSuccessfulSyncAt: null,
         importOnly: false,
       },
     ];
@@ -915,6 +953,8 @@ describe("ProviderDetailPage import-only providers", () => {
         authorized: true,
         authType: "oauth",
         lastSyncedAt: null,
+        recentLogs: [],
+        lastSuccessfulSyncAt: null,
         importOnly: false,
       },
     ];
@@ -947,6 +987,8 @@ describe("ProviderDetailPage import-only providers", () => {
         authorized: true,
         authType: "oauth",
         lastSyncedAt: null,
+        recentLogs: [],
+        lastSuccessfulSyncAt: null,
         importOnly: false,
       },
     ];
@@ -986,6 +1028,8 @@ describe("ProviderDetailPage import-only providers", () => {
         authorized: true,
         authType: "oauth",
         lastSyncedAt: null,
+        recentLogs: [],
+        lastSuccessfulSyncAt: null,
         importOnly: false,
       },
     ];
@@ -1017,6 +1061,8 @@ describe("ProviderDetailPage import-only providers", () => {
         authorized: true,
         authType: "oauth",
         lastSyncedAt: null,
+        recentLogs: [],
+        lastSuccessfulSyncAt: null,
         importOnly: false,
       },
     ];
@@ -1066,6 +1112,8 @@ describe("ProviderDetailPage import-only providers", () => {
         authorized: true,
         authType: "oauth",
         lastSyncedAt: null,
+        recentLogs: [],
+        lastSuccessfulSyncAt: null,
         importOnly: false,
       },
     ];
@@ -1091,6 +1139,8 @@ describe("ProviderDetailPage import-only providers", () => {
         authorized: false,
         authType: "oauth",
         lastSyncedAt: null,
+        recentLogs: [],
+        lastSuccessfulSyncAt: null,
         importOnly: false,
       },
     ];
@@ -1128,6 +1178,8 @@ describe("ProviderDetailPage import-only providers", () => {
         authorized: true,
         authType: "push:mobile",
         lastSyncedAt: "2026-06-30T12:00:00Z",
+        recentLogs: [],
+        lastSuccessfulSyncAt: "2026-06-30T12:00:00Z",
         importOnly: false,
         pushOnly: true,
       },
@@ -1152,6 +1204,8 @@ describe("ProviderDetailPage import-only providers", () => {
         authorized: true,
         authType: "push:mobile",
         lastSyncedAt: null,
+        recentLogs: [],
+        lastSuccessfulSyncAt: null,
         importOnly: false,
         pushOnly: true,
       },
@@ -1177,6 +1231,8 @@ describe("ProviderDetailPage import-only providers", () => {
           authorized: false,
           authType,
           lastSyncedAt: null,
+          recentLogs: [],
+          lastSuccessfulSyncAt: null,
           importOnly: false,
           needsReauth: true,
         },
@@ -1188,6 +1244,30 @@ describe("ProviderDetailPage import-only providers", () => {
 
       expect(openWindow).toHaveBeenCalledWith("/auth/provider/wahoo", "_blank");
       openWindow.mockRestore();
+    },
+  );
+
+  it.each([null, "2026-10-20T10:00:00Z"])(
+    "uses successful receipt evidence for push providers: %s",
+    async (lastSuccessfulSyncAt) => {
+      vi.setSystemTime(new Date("2026-10-24T10:00:00Z"));
+      mockUseParams.mockReturnValue({ id: "garmin" });
+      mockProviders.data = [
+        {
+          id: "garmin",
+          name: "Garmin",
+          authorized: true,
+          authType: "oauth",
+          importOnly: false,
+          pushOnly: true,
+          lastSyncedAt: "2026-10-24T09:00:00Z",
+          lastSuccessfulSyncAt,
+        },
+      ];
+      const { ProviderDetailPage } = await import("./ProviderDetailPage");
+      render(<ProviderDetailPage />);
+      if (lastSuccessfulSyncAt) expect(screen.getByText("Last received: 4d ago")).toBeTruthy();
+      else expect(screen.queryByText(/^Last received:/)).toBeNull();
     },
   );
 
@@ -1203,6 +1283,8 @@ describe("ProviderDetailPage import-only providers", () => {
           authorized: !needsReauth,
           authType: "oauth",
           lastSyncedAt: "2026-10-20T10:00:00Z",
+          recentLogs: [],
+          lastSuccessfulSyncAt: "2026-10-20T10:00:00Z",
           importOnly: false,
           needsReauth,
           pushOnly: true,
@@ -1230,6 +1312,8 @@ describe("ProviderDetailPage import-only providers", () => {
         authorized: false,
         authType: "credential",
         lastSyncedAt: null,
+        recentLogs: [],
+        lastSuccessfulSyncAt: null,
         importOnly: false,
         needsReauth: true,
       },
@@ -1248,6 +1332,8 @@ describe("ProviderDetailPage import-only providers", () => {
         authorized: false,
         authType: "token",
         lastSyncedAt: null,
+        recentLogs: [],
+        lastSuccessfulSyncAt: null,
         importOnly: false,
         needsReauth: true,
         tokenAuth: {
@@ -1271,6 +1357,8 @@ describe("ProviderDetailPage import-only providers", () => {
         authorized: false,
         authType: "public-profile",
         lastSyncedAt: null,
+        recentLogs: [],
+        lastSuccessfulSyncAt: null,
         importOnly: false,
         needsReauth: true,
         tokenAuth: {
@@ -1295,6 +1383,8 @@ describe("ProviderDetailPage import-only providers", () => {
         authorized: true,
         authType: "oauth",
         lastSyncedAt: null,
+        recentLogs: [],
+        lastSuccessfulSyncAt: null,
         importOnly: false,
       },
     ];
@@ -1340,6 +1430,8 @@ describe("ProviderDetailPage delete all data", () => {
         authorized: true,
         authType: "oauth",
         lastSyncedAt: null,
+        recentLogs: [],
+        lastSuccessfulSyncAt: null,
         importOnly: false,
       },
     ];
@@ -1380,6 +1472,8 @@ describe("ProviderDetailPage activity records", () => {
         authorized: true,
         authType: "file-import",
         lastSyncedAt: null,
+        recentLogs: [],
+        lastSuccessfulSyncAt: null,
         importOnly: true,
       },
     ];
@@ -1410,6 +1504,8 @@ describe("ProviderDetailPage activity records", () => {
         authorized: true,
         authType: "oauth",
         lastSyncedAt: null,
+        recentLogs: [],
+        lastSuccessfulSyncAt: null,
         importOnly: false,
       },
     ];
@@ -1460,6 +1556,8 @@ describe("WhoopWearLocationPicker", () => {
         authorized: true,
         authType: "oauth",
         lastSyncedAt: "2026-03-19T12:00:00Z",
+        recentLogs: [],
+        lastSuccessfulSyncAt: null,
         importOnly: false,
       },
     ];
@@ -1505,6 +1603,8 @@ describe("WhoopWearLocationPicker", () => {
         authorized: true,
         authType: "oauth",
         lastSyncedAt: null,
+        recentLogs: [],
+        lastSuccessfulSyncAt: null,
         importOnly: false,
       },
     ];
