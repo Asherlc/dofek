@@ -28,6 +28,13 @@ describe("appleDeviceModel", () => {
 });
 
 describe("deviceDisplayName", () => {
+  it.each(["constructor123", "Constructor123", "constructor_123"])(
+    "preserves unknown model families that match inherited properties: %s",
+    (name) => {
+      expect(deviceDisplayName(name)).toBe(name);
+    },
+  );
+
   it.each([
     ["fr955", "Forerunner 955"],
     ["Fr955", "Forerunner 955"],

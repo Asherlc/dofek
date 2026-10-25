@@ -43,6 +43,7 @@ function reportedSourceLabel(value: unknown): string | null {
   if (source === null) return null;
   if (source === "ridewithgps_iphone") return "Ride with GPS for iPhone";
   // Preserve model tokens for source matching; clients resolve their display names.
+  if (deviceDisplayName(source) !== source) return source;
   return source === "watch" ? "Watch" : source.includes("_") ? readable(source) : source;
 }
 function enumName(type: string, value: unknown): string | null {
@@ -256,9 +257,10 @@ function apiItem(member: ActivityHardwareMember): ActivityHardwareItem | null {
   }
   if (member.providerId === "amazfit-zepp") {
     role = "source";
-    label = reportedSourceLabel(raw.source) ?? reportedSourceLabel(raw.app_name);
+    const appName = reportedSourceLabel(raw.app_name);
+    label = reportedSourceLabel(raw.source) ?? appName;
     evidence = "Reported source or app; original recording hardware is not established.";
-    itemDetails = details([["App", reportedSourceLabel(raw.app_name)]]);
+    itemDetails = details([["App", appName === null ? null : readableName(appName)]]);
   }
   if (!label && itemDetails.length) label = "Unidentified device";
   if (!label) return null;

@@ -32,7 +32,10 @@ function garminSymbolName(name: string): string | null {
   const match = name.match(/^([A-Za-z]+)_?(\d+(?:[sSxX](?=$|_|[A-Z]))?)(.*)$/);
   if (!match) return null;
   const [, family, model, suffix] = match;
-  const label = family ? GARMIN_FAMILIES[family.toLowerCase()] : undefined;
+  const label =
+    family && Object.hasOwn(GARMIN_FAMILIES, family.toLowerCase())
+      ? GARMIN_FAMILIES[family.toLowerCase()]
+      : undefined;
   if (!label || !model) return null;
   const words = (suffix ?? "")
     .replace(/([a-z])([A-Z])/g, "$1 $2")

@@ -33,6 +33,31 @@ describe("activity hardware", () => {
     ]);
     expect(result.items[0]).toMatchObject({ label: "Forerunner 955" });
   });
+  it.each([
+    { providerId: "ride-with-gps", raw: { source: "fr_955" }, details: [] },
+    {
+      providerId: "amazfit-zepp",
+      raw: { source: "fr_955", app_name: "fr_955" },
+      details: [{ label: "App", value: "Forerunner 955" }],
+    },
+    {
+      providerId: "amazfit-zepp",
+      raw: { app_name: "fr_955" },
+      details: [{ label: "App", value: "Forerunner 955" }],
+    },
+  ])(
+    "resolves model tokens in $providerId source fields without changing identity",
+    ({ providerId, raw, details }) => {
+      const result = normalizeActivityHardware([
+        { ...member, providerId, raw, sourceName: "fr_955", observations: [] },
+      ]);
+      expect(result.items[0]).toMatchObject({
+        label: "Forerunner 955",
+        sourceName: "fr_955",
+        details,
+      });
+    },
+  );
   it.each(["apple_health", "apple-health"])(
     "resolves HealthKit hardware identifiers from %s and retains the reported name",
     (providerId) => {
