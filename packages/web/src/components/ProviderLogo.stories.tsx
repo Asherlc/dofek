@@ -27,6 +27,10 @@ export const AppleHealth: Story = {
   },
 };
 
+export const AppleWatchViaAppleHealth: Story = {
+  args: { provider: "apple_health", sourceName: "Asher’s Apple\u00a0Watch" },
+};
+
 export const RideWithGPS: Story = {
   args: {
     provider: "ride-with-gps",
