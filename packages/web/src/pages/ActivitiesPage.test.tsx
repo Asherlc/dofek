@@ -1,6 +1,7 @@
 /** @vitest-environment jsdom */
 
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import type { ActivityImage } from "@dofek/training/activity-images";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -67,6 +68,18 @@ let mockDataHealthQuery: {
   error: Error | null;
 };
 let processingStatusInput: unknown;
+const mockImagesUseQuery = vi.fn(
+  (
+    _input?: unknown,
+    _options?: unknown,
+  ): {
+    data: { images: ActivityImage[]; coverage: unknown[]; acquisition: unknown[] };
+    error: Error | null;
+  } => ({
+    data: { images: [], coverage: [], acquisition: [] },
+    error: null,
+  }),
+);
 
 interface BulkDeleteVariables {
   ids: string[];
@@ -77,11 +90,17 @@ vi.mock("@tanstack/react-router", () => ({
     children,
     to,
     params,
+    className,
   }: {
     children: ReactNode;
     to: string;
     params?: { id: string };
-  }) => <a href={params?.id ? to.replace("$id", params.id) : to}>{children}</a>,
+    className?: string;
+  }) => (
+    <a className={className} href={params?.id ? to.replace("$id", params.id) : to}>
+      {children}
+    </a>
+  ),
 }));
 
 vi.mock("../lib/trpc.ts", () => ({
@@ -106,6 +125,9 @@ vi.mock("../lib/trpc.ts", () => ({
       },
     },
     activity: {
+      images: {
+        useQuery: (input: unknown, options: unknown) => mockImagesUseQuery(input, options),
+      },
       merge: {
         useMutation: (options?: { onSuccess?: () => Promise<void> | void }) => ({
           mutate: mergeMutate.mockImplementation(async () => options?.onSuccess?.()),
@@ -227,6 +249,11 @@ const mapPreview = {
 
 describe("ActivitiesPage", () => {
   beforeEach(() => {
+    mockImagesUseQuery.mockReset();
+    mockImagesUseQuery.mockReturnValue({
+      data: { images: [], coverage: [], acquisition: [] },
+      error: null,
+    });
     mockQuery = { data: [], isLoading: false, isError: false, error: null };
     mockOverviewQuery = {
       data: {
@@ -255,6 +282,89 @@ describe("ActivitiesPage", () => {
     mockBulkDeleteShouldFail = false;
     mockDataHealthQuery = { data: undefined, isLoading: false, error: null };
     processingStatusInput = undefined;
+  });
+
+  it("loads one photo only for visible cards without a map", () => {
+    const photo = {
+      id: "photo-1",
+      url: "https://private.test/photo",
+      width: 1200,
+      height: 800,
+      mimeType: "image/jpeg",
+      sizeBytes: 1000,
+      sources: [],
+    };
+    mockImagesUseQuery.mockReturnValue({
+      data: { images: [photo, { ...photo, id: "photo-2" }], coverage: [], acquisition: [] },
+      error: null,
+    });
+    mockQuery = {
+      data: [
+        {
+          date: "2026-03-18",
+          totalTss: 100,
+          totalDurationMin: 120,
+          activities: [activity(), activity({ id: "mapped-2", location: { kind: "processing" } })],
+        },
+      ],
+      isLoading: false,
+      isError: false,
+      error: null,
+    };
+    render(<ActivitiesPage />);
+    expect(screen.getAllByRole("img", { name: "Activity photo" })).toHaveLength(1);
+    expect(mockImagesUseQuery).toHaveBeenCalledWith(
+      { id: "activity-1" },
+      expect.objectContaining({ enabled: true }),
+    );
+    expect(mockImagesUseQuery).toHaveBeenCalledWith(
+      { id: "mapped-2" },
+      expect.objectContaining({ enabled: false }),
+    );
+  });
+
+  it("keeps a loaded photo and its card height when the card leaves the viewport", () => {
+    let visibilityChanged: ((entries: { isIntersecting: boolean }[]) => void) | undefined;
+    vi.stubGlobal(
+      "IntersectionObserver",
+      class {
+        constructor(callback: (entries: { isIntersecting: boolean }[]) => void) {
+          visibilityChanged = callback;
+        }
+        observe() {
+          visibilityChanged?.([{ isIntersecting: true }]);
+        }
+        disconnect() {}
+      },
+    );
+    const photo = {
+      id: "photo-1",
+      url: "https://private.test/photo",
+      width: 1200,
+      height: 800,
+      mimeType: "image/jpeg",
+      sizeBytes: 1000,
+      sources: [],
+    };
+    mockImagesUseQuery.mockReturnValue({
+      data: { images: [photo], coverage: [], acquisition: [] },
+      error: null,
+    });
+    mockQuery = {
+      data: [{ date: "2026-03-18", totalTss: 100, totalDurationMin: 60, activities: [activity()] }],
+      isLoading: false,
+      isError: false,
+      error: null,
+    };
+    render(<ActivitiesPage />);
+    expect(screen.getByRole("img", { name: "Activity photo" })).toBeInTheDocument();
+    act(() => visibilityChanged?.([{ isIntersecting: false }]));
+    expect(screen.getByRole("img", { name: "Activity photo" })).toBeInTheDocument();
+    expect(screen.getByTestId("activity-secondary-panel")).toBeInTheDocument();
+    expect(mockImagesUseQuery).toHaveBeenLastCalledWith(
+      { id: "activity-1" },
+      expect.objectContaining({ enabled: false }),
+    );
   });
 
   it("shows activity progress while summaries are updating", () => {
@@ -647,11 +757,65 @@ describe("ActivitiesPage", () => {
     const map = screen.getByRole("img", {
       name: /Climbing source locations.*North Wall.*Mountain Project/,
     });
-    expect(map.closest("a")).toHaveAttribute("href", "/activity/climbing-1");
+    expect(screen.getByRole("link", { name: "Afternoon climbing" })).toHaveAttribute(
+      "href",
+      "/activity/climbing-1",
+    );
     expect(screen.getByText("Climbs")).toBeDefined();
     expect(map.querySelectorAll("circle")).toHaveLength(1);
     expect(map.querySelector("path")).toBeNull();
   });
+
+  it.each([false, true])(
+    "keeps source details separate from the card action in selection mode %s",
+    (selectMode) => {
+      mockQuery = {
+        data: [
+          {
+            date: "2026-03-18",
+            activities: [
+              activity({
+                source: {
+                  origin: {
+                    status: "resolved",
+                    memberActivityId: "00000000-0000-4000-8000-000000000001",
+                    providerId: "apple_health",
+                    sourceName: "Hang Ten",
+                  },
+                  primarySourceLabel: "Hang Ten (via Apple Health)",
+                  sourceCount: 1,
+                  overlapSummary: null,
+                },
+              }),
+            ],
+          },
+        ],
+        isLoading: false,
+        isError: false,
+        error: null,
+      };
+      render(<ActivitiesPage />);
+      if (selectMode) fireEvent.click(screen.getByRole("button", { name: "Select activities" }));
+      const trigger = screen.getByRole("button", { name: "Activity source: Hang Ten" });
+      expect(trigger.closest("a")).toBeNull();
+      expect(trigger.parentElement?.closest("button")).toBeNull();
+      fireEvent.click(trigger);
+      expect(screen.getByRole("dialog", { name: "Activity source" })).toBeVisible();
+      if (selectMode) {
+        expect(screen.getByRole("checkbox", { name: "Select Trainer Ride" })).not.toBeChecked();
+      } else {
+        expect(screen.getByRole("link", { name: "Trainer Ride" })).toHaveAttribute(
+          "href",
+          "/activity/activity-1",
+        );
+      }
+      fireEvent.click(screen.getByRole("button", { name: "Close activity source" }));
+      if (selectMode) {
+        fireEvent.click(screen.getByRole("checkbox", { name: "Select Trainer Ride" }));
+        expect(screen.getByRole("checkbox", { name: "Select Trainer Ride" })).toBeChecked();
+      }
+    },
+  );
 
   it("shows selection guidance while choosing activities", () => {
     mockQuery = {

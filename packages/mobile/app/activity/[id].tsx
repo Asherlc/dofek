@@ -14,7 +14,7 @@ import type { UnitConverter } from "@dofek/format/units";
 import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { processingPollInterval } from "@dofek/providers/processing-status";
 import { providerSourceLabel } from "@dofek/providers/providers";
-import { getActivityIconInfo } from "@dofek/training/activity-icons";
+import { ACTIVITY_IMAGES_QUERY_OPTIONS } from "@dofek/training/activity-images";
 import { buildClimbingMapLocations, buildClimbingMapMarkers } from "@dofek/training/climbing-map";
 import type { MuscleGroupInput } from "@dofek/training/muscle-groups";
 import {
@@ -40,7 +40,9 @@ import type {
   ActivityMetricSourceSelection,
   ActivityMetric as SourceMetric,
 } from "../../../server/src/contracts/activity-metric-sources.ts";
+import { ActivityImages } from "../../components/ActivityImages";
 import { ActivityPerceivedExertion } from "../../components/ActivityPerceivedExertion";
+import { ActivityTypeIcon } from "../../components/ActivityTypeIcon";
 import {
   AreaChart,
   CHART_COLORS,
@@ -49,7 +51,7 @@ import {
   MetricSourcePicker,
 } from "../../components/activity/ActivityDetailCharts";
 import { ProviderAbsentBanner } from "../../components/activity/ProviderAbsentBanner";
-import { styles } from "../../components/activity/styles";
+import { statsStyles, styles } from "../../components/activity/styles";
 import { HrZonesChart, PowerZonesChart } from "../../components/activity/ZoneDistributionCharts";
 import { ClimbingLogEntryBreakdown } from "../../components/ClimbingLogEntryBreakdown";
 import { HangboardingDetail } from "../../components/HangboardingDetail";
@@ -67,10 +69,6 @@ import { useUnitConverter } from "../../lib/units";
 import { colors } from "../../theme";
 
 const EMPTY_ROUTE_POINTS: ComponentProps<typeof RouteMap>["points"] = [];
-
-function activityIcon(type: string): string {
-  return getActivityIconInfo(type).emoji;
-}
 
 interface ActivitySourceLink {
   providerId: string;
@@ -189,34 +187,6 @@ function StatsGrid({ stats }: { stats: StatItem[] }) {
     </View>
   );
 }
-
-const statsStyles = StyleSheet.create({
-  grid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-  },
-  card: {
-    backgroundColor: colors.surface,
-    borderRadius: 12,
-    padding: 14,
-    width: "48%",
-    flexGrow: 1,
-  },
-  label: {
-    fontSize: 11,
-    color: colors.textTertiary,
-    marginBottom: 4,
-    textTransform: "uppercase",
-    letterSpacing: 0.3,
-  },
-  value: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: colors.text,
-    fontVariant: ["tabular-nums"],
-  },
-});
 
 // ── Strength Exercise Breakdown ──
 
@@ -471,6 +441,10 @@ export default function ActivityDetailScreen() {
   };
 
   const detail = trpc.activity.byId.useQuery({ id: id ?? "" }, { enabled: !!id });
+  const images = trpc.activity.images.useQuery(
+    { id: id ?? "" },
+    { ...ACTIVITY_IMAGES_QUERY_OPTIONS, enabled: !!id },
+  );
   const metricSources = trpc.activity.metricSources.useQuery({ id: id ?? "" }, { enabled: !!id });
   const [sourceSelection, setSourceSelection] = useState<{
     activityId: string;
@@ -788,7 +762,7 @@ export default function ActivityDetailScreen() {
       {/* Activity Header */}
       <View style={styles.header}>
         <View style={styles.headerRow}>
-          <Text style={styles.icon}>{activityIcon(activity.activityType)}</Text>
+          <ActivityTypeIcon activityType={activity.activityType} size={48} />
           <View style={styles.headerText}>
             <Text style={styles.name}>
               {activity.name ?? formatActivityTypeLabel(activity.activityType)}
@@ -817,6 +791,14 @@ export default function ActivityDetailScreen() {
       {/* Stats Grid */}
       {stats.length > 0 && <StatsGrid stats={stats} />}
       <ActivityPerceivedExertion value={activity.perceivedExertion} />
+      <ActivityImages
+        key={id}
+        images={images.data?.images ?? []}
+        loading={images.isLoading}
+        error={images.error}
+        retrying={images.isFetching}
+        onRetry={() => void images.refetch()}
+      />
 
       {isHangboardingActivity && (
         <View style={hangboardingStyles.container}>

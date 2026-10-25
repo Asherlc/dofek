@@ -43,6 +43,19 @@ The [GPS-route preview](../../docs/screenshots/mobile-activity-route.png) and
 show the [Activities stories](<app-stories/(tabs)/activities.stories.tsx>) at a
 390-pixel browser viewport.
 
+Activity details show downloaded photos in [ActivityImages](components/ActivityImages.tsx),
+with tappable thumbnails, captions, source labels, and a full-screen
+[native Modal](https://reactnative.dev/docs/modal). Cards without a map show the
+first downloaded photo through [ActivityPhotoPreview](components/ActivityPhotoPreview.tsx);
+recorded routes, climbing locations, and processing maps retain precedence.
+The [shared query policy](../training/src/activity-images.ts) refreshes signed
+image URLs while visible and discards inactive image queries. The
+[mobile persistence boundary](lib/mobile-query-persistence.ts) excludes queries
+marked `persist: false`, following TanStack's
+[query dehydration filter](https://tanstack.com/query/latest/docs/framework/react/reference/hydration#dehydrate).
+Cached photos remain visible during refresh errors, and photo load failures
+offer a refresh action in the activity detail.
+
 Activity and training maps reserve space and show “Processing map…” while server geometry,
 preview images, or native map rendering are pending. Lists poll while any map's
 geometry is processing. Preview images become ready only after every tile
@@ -587,13 +600,27 @@ Source-map and release correlation:
   uploaded from the export that produced the published update, while native
   symbols belong to the archive build.
 
-The activities screen uses a 32 px logo for the actual provider of the closest
-available recording as the leading card image when provenance resolves a primary.
-Unresolved origin keeps the activity-type icon on cards without a map.
-It reuses [ProviderLogo](components/ProviderLogo.tsx), including its
-existing letter fallback for missing assets. The
-[origin contract](../providers-meta/src/activity-origin.ts) is shared with web;
-field and sensor selection do not determine recording origin.
+The activities screen always leads with the shared rounded-outline activity
+icon, including cards with maps and resolved recording origins. Beside time
+and duration, a small recording-app logo and chevron open source details.
+The [source disclosure](components/ActivitySourceDisclosure.tsx) shows
+“Recorded in” and, when applicable, “Imported via” as separate roles:
+[Hang Ten](https://apps.apple.com/us/app/hang-ten-training/id6797141761)
+can save completed sessions to Apple Health. Its trigger uses the
+recording app's clean [ProviderLogo](components/ProviderLogo.tsx), including the
+existing letter fallback for missing assets. Unresolved origins show no source
+control. The [shared origin contract](../providers-meta/src/activity-origin.ts)
+and [source presentation helper](../providers-meta/src/activity-source-details.ts)
+keep origin independent of field and sensor selection.
+
+Source details use a native [React Native Modal](https://reactnative.dev/docs/modal)
+with close and backdrop controls, system-back dismissal, and accessibility escape.
+The source trigger has its own 44-point touch target beside a separate full-card
+navigation or selection target, following React Native's
+[Pressable](https://reactnative.dev/docs/pressable) and
+[accessibility guidance](https://reactnative.dev/docs/accessibility).
+After iOS dismisses the modal, the trigger regains screen-reader focus through
+[`AccessibilityInfo.sendAccessibilityEvent`](https://reactnative.dev/docs/accessibilityinfo#sendaccessibilityevent).
 
 ## Activity metric sources
 

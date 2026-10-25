@@ -56,8 +56,6 @@ export function ProviderLogo({
             width: badgeSize,
             height: badgeSize,
             borderRadius: badgeSize * 0.2,
-            backgroundColor: "#fff",
-            boxShadow: "0 0 0 1px #fff",
           }}
         />
       </span>
@@ -73,6 +71,7 @@ export function ProviderLogo({
         alt=""
         width={size}
         height={size}
+        style={{ borderRadius: size * 0.2 }}
         className={`shrink-0 ${className}`}
         aria-hidden="true"
       />
@@ -87,10 +86,11 @@ export function ProviderLogo({
 
   return (
     <span
-      className={`inline-flex items-center justify-center rounded shrink-0 ${className}`}
+      className={`inline-flex items-center justify-center shrink-0 ${className}`}
       style={{
         width: size,
         height: size,
+        borderRadius: size * 0.2,
         backgroundColor: color,
         color: "#fff",
         fontSize,

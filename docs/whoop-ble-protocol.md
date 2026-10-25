@@ -1,5 +1,7 @@
 # WHOOP BLE Protocol
 
+<!-- cspell:words todatetime -->
+
 Reverse-engineered BLE protocol for WHOOP fitness straps (Gen 4 Harvard, Maverick/Goose, Puffin generations). Findings from APK decompilation (v5.439.0), PacketLogger captures, and live device probing (March 2026).
 
 ## GATT Services
@@ -451,6 +453,98 @@ evidence of a reset since that observation, not an exact loss count, prior
 account identity, or termination cause. Apple does not guarantee a final
 [`applicationWillTerminate` callback](https://developer.apple.com/documentation/uikit/uiapplicationdelegate/applicationwillterminate(_:)).
 Missing logs therefore do not prove capture stopped.
+
+### Native background refresh evidence
+
+When the retained queue grows without an upload attempt, inspect the separate
+`background-refresh` log category before changing uploader behavior. The
+[native journal](../packages/mobile/modules/background-refresh/README.md#native-refresh-diagnostics)
+retains 64 metadata events plus overflow, replayed through authenticated mobile
+telemetry on setup, foreground, and handler receipt/settlement. It records
+registration, schedule submission, launch, listener changes, bridge dispatch,
+JavaScript receipt, completion, and expiration. Scheduling failures include
+`errorDomain`, `errorCode`, and `errorDescription`; schedule events include
+`backgroundRefreshStatus`, `lowPowerModeEnabled`, and `earliestBeginAt`.
+
+Use native `eventId` to deduplicate replay across JavaScript lifetimes, and
+`nativeSessionId`, `processId`, and `taskId` to follow a launch. Sort by
+`nativeOccurredAt`, because `_time` is telemetry emission time after replay.
+`diagnosticAccountProvenance=unknown` means `userId` identifies the authenticated
+replaying session, not proven ownership when a native event occurred. Account
+erasure clears the native history through the existing cleanup lease. These
+metadata writes use asynchronous [UserDefaults persistence](https://developer.apple.com/documentation/foundation/userdefaults);
+missing events and overflow cannot establish that iOS never ran a task.
+
+In Axiom, first confirm the live dataset and service fields using the
+[observability runbook](axiom-observability-runbook.md). The examples below use
+`dofek-logs`, `service.name`, and the current `attributes.custom` object emitted
+by the [Axiom exporter](../packages/telemetry/src/axiom-log-exporter.ts).
+Set a bounded UTC incident window in the explorer; widen the emission window
+if native history was replayed after the incident. Replace `ACCOUNT_ID` with the
+account whose app is replaying the journal. Native occurrence filtering remains
+independent of replay time:
+
+```apl
+['dofek-logs']
+| where ['service.name'] == 'dofek-mobile'
+| extend d = ['attributes.custom']
+| where tostring(d['event']) == 'native_background_refresh_event'
+| where tostring(d['userId']) == 'ACCOUNT_ID'
+| extend eventId = tostring(d['eventId'])
+| summarize arg_max(_time, d) by eventId
+| extend nativeAt = todatetime(d['nativeOccurredAt'])
+| where nativeAt >= datetime(2026-10-24T08:00:00Z) and nativeAt < datetime(2026-10-25T08:00:00Z)
+| project nativeAt, emittedAt=_time, nativeEvent=d['nativeEvent'], taskId=d['taskId'],
+    nativeSessionId=d['nativeSessionId'], processId=d['processId'], success=d['success'],
+    reason=d['reason'], backgroundRefreshStatus=d['backgroundRefreshStatus'],
+    lowPowerModeEnabled=d['lowPowerModeEnabled'], earliestBeginAt=d['earliestBeginAt'],
+    errorDomain=d['errorDomain'], errorCode=d['errorCode'], errorDescription=d['errorDescription'],
+    historyOverflowCount=d['historyOverflowCount'], diagnosticAccountProvenance=d['diagnosticAccountProvenance']
+| sort by nativeAt asc
+```
+
+To count boundaries or isolate scheduler failures, keep the query through the
+native-time filter, then replace the final `project`/`sort` with:
+
+```apl
+| summarize events=count() by nativeEvent=tostring(d['nativeEvent']), reason=tostring(d['reason'])
+```
+
+Or use `| where tostring(d['nativeEvent']) == 'schedule_failed'` before the original
+projection. Axiom documents [extend](https://axiom.co/docs/apl/tabular-operators/extend-operator)
+and [summarize](https://axiom.co/docs/apl/tabular-operators/summarize-operator),
+including [explicit arg_max fields](https://axiom.co/docs/apl/aggregation-function/arg-max),
+for these projections and grouped event counts.
+
+Interpret the last observed boundary conservatively:
+
+- `schedule_succeeded` confirms submission; it does not guarantee execution.
+  Apple's [`earliestBeginDate`](https://developer.apple.com/documentation/backgroundtasks/bgtaskrequest/earliestbegindate)
+  is a lower bound, and Dofek keeps its existing 15-minute request.
+- `task_launched` followed by `task_completed` with `reason=missing_listener`
+  exposes the existing cold-start listener policy. A native launch with
+  `bridge_dispatched` but no `js_received` narrows the missing boundary to the
+  event bridge/JavaScript lifetime, subject to retained-history gaps.
+- `completion_requested` records the JavaScript result. `task_completed` records
+  the coordinator's winning completion decision. `task_expired` and
+  `no_pending_task` distinguish expiry from a later ignored completion;
+  expiration does not cancel existing JavaScript work.
+- `nativeOccurredAt` timestamps the diagnostic call. The
+  [coordinator](../packages/mobile/modules/background-refresh/ios/BackgroundRefreshTaskCoordinator.swift)
+  records after releasing its state lock, so simultaneous transitions can appear
+  out of decision order. Use task IDs and completion reasons together; timestamp
+  order alone does not establish causality between concurrent records.
+- A complete refresh followed by no `upload_started` requires looking at the
+  existing WHOOP connection, worker, and queue events; refresh completion alone
+  does not establish sample publication or chart visibility.
+
+The additive bridge requires a new native build. Keep the existing Expo
+fingerprint runtime policy so updates target compatible binaries
+([Expo runtime versions](https://docs.expo.dev/eas-update/runtime-versions/)).
+SwiftPM validates the journal/coordinator; an iOS build validates the Expo-bound
+scheduler/bridge. Verify real OS scheduling, expiration, and BLE recovery on a
+physical iPhone; simulator evidence does not establish those hardware paths
+([Expo simulator limitations](https://docs.expo.dev/workflow/ios-simulator/#limitations)).
 
 For a disconnection alert, first correlate the native disconnect with the
 [notification coordinator's](../packages/mobile/modules/background-refresh/ios/CollectionNotificationCoordinator.swift)
