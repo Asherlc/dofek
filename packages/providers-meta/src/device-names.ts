@@ -28,7 +28,7 @@ const GARMIN_FAMILIES: Readonly<Record<string, string>> = {
 /** Render supplied model tokens without inferring a size, edition, or capability. */
 function garminSymbolName(name: string): string | null {
   // Already-readable names and custom device names retain their spelling and casing.
-  if (!/^[A-Za-z][A-Za-z0-9_]*\d[A-Za-z0-9_]*$/.test(name)) return null;
+  if (/[^A-Za-z0-9_]/.test(name)) return null;
   const match = name.match(/^([A-Za-z]+)_?(\d+(?:[sSxX](?=$|_|[A-Z]))?)(.*)$/);
   if (!match) return null;
   const [, family, model, suffix] = match;

@@ -27,6 +27,12 @@ describe("activity hardware", () => {
     ]);
     expect(result.items[0]).toMatchObject({ label: "Forerunner 955", sourceName: "fr955" });
   });
+  it("resolves known underscore-delimited device names before generic formatting", () => {
+    const result = normalizeActivityHardware([
+      { ...member, raw: { deviceName: "fr_955" }, observations: [] },
+    ]);
+    expect(result.items[0]).toMatchObject({ label: "Forerunner 955" });
+  });
   it.each(["apple_health", "apple-health"])(
     "resolves HealthKit hardware identifiers from %s and retains the reported name",
     (providerId) => {
@@ -58,7 +64,7 @@ describe("activity hardware", () => {
       });
     },
   );
-  it("resolves a HealthKit model identifier while retaining an unrelated hardware revision", () => {
+  it("resolves a HealthKit model identifier alongside an unrelated hardware revision", () => {
     const result = normalizeActivityHardware([
       {
         ...member,
@@ -69,8 +75,21 @@ describe("activity hardware", () => {
     ]);
     expect(result.items[0]).toMatchObject({
       label: "Apple Watch Series 7 (GPS + Cellular, 45mm)",
-      details: expect.arrayContaining([{ label: "Hardware", value: "2" }]),
+      model: "Apple Watch Series 7 (GPS + Cellular, 45mm)",
     });
+  });
+  it.each([
+    { name: "My Watch", softwareVersion: "26.6" },
+    {
+      name: "Apple Watch Series 7 (GPS + Cellular, 45mm)",
+      hardwareVersion: "Watch6,9",
+      softwareVersion: "26.6",
+    },
+  ])("keeps HealthKit device details concise for %j", (device) => {
+    const result = normalizeActivityHardware([
+      { ...member, providerId: "apple_health", raw: { device }, observations: [] },
+    ]);
+    expect(result.items[0]?.details).toEqual([{ label: "Software", value: "26.6" }]);
   });
   it("keeps the reported name when an Apple model cannot be identified", () => {
     const result = normalizeActivityHardware([
@@ -87,9 +106,13 @@ describe("activity hardware", () => {
     [{ manufacturer: 1, product: 4024 }, "Forerunner 955", "Garmin"],
     [{ manufacturer: "1", product: "4024" }, "Forerunner 955", "Garmin"],
     [{ manufacturer: "garmin", product: 4024 }, "Forerunner 955", "Garmin"],
+    [{ manufacturer: 1, product: 4375 }, "fēnix 7 Pro Solar", "Garmin"],
+    [{ manufacturer: 1, product: 2271 }, "vívosmart 2", "Garmin"],
+    [{ manufacturer: 1, product: 3991 }, "Forerunner 255 Small Music", "Garmin"],
     [{ manufacturer: 1, garminProduct: 4315 }, "Forerunner 965", "Garmin"],
     [{ manufacturer: "garmin", garminProduct: "fr955" }, "Forerunner 955", "Garmin"],
     [{ manufacturer: 263, faveroProduct: 12 }, "Assioma Duo", "Favero Electronics"],
+    [{ manufacturer: "faveroElectronics", product: 12 }, "Assioma Duo", "Favero Electronics"],
     [
       { manufacturer: "faveroElectronics", product: "assiomaUno" },
       "Assioma Uno",
@@ -101,7 +124,29 @@ describe("activity hardware", () => {
     ]);
     expect(result.items[0]).toMatchObject({ label, model: label, manufacturer });
   });
-  it("does not resolve another manufacturer's product number as Garmin hardware", () => {
+  it.each([32, "wahooFitness"])(
+    "does not resolve manufacturer %s's product number as Garmin hardware",
+    (manufacturer) => {
+      const result = normalizeActivityHardware([
+        {
+          ...member,
+          observations: [
+            {
+              sequence: 0,
+              messageType: "device_info",
+              raw: { manufacturer, product: 4024, sourceType: 1, deviceType: 120 },
+            },
+          ],
+        },
+      ]);
+      expect(result.items[0]).toMatchObject({
+        label: "Heart Rate",
+        model: null,
+        manufacturer: "Wahoo Fitness",
+      });
+    },
+  );
+  it("preserves a reported manufacturer name beginning with a digit", () => {
     const result = normalizeActivityHardware([
       {
         ...member,
@@ -109,15 +154,15 @@ describe("activity hardware", () => {
           {
             sequence: 0,
             messageType: "device_info",
-            raw: { manufacturer: 32, product: 4024, sourceType: 1, deviceType: 120 },
+            raw: { manufacturer: "3T", productName: "Power meter" },
           },
         ],
       },
     ]);
     expect(result.items[0]).toMatchObject({
-      label: "Heart Rate",
-      model: null,
-      manufacturer: "Wahoo Fitness",
+      label: "Power meter",
+      model: "Power meter",
+      manufacturer: "3T",
     });
   });
   it("consolidates partial FIT updates without losing identity or inventing sensor attribution", () => {

@@ -62,4 +62,9 @@ describe("deviceDisplayName", () => {
   it("trims presentation whitespace", () => {
     expect(deviceDisplayName("  My Watch\t")).toBe("My Watch");
   });
+
+  it("preserves long malformed model tokens", () => {
+    const name = `fenix${"0".repeat(20_000)}!`;
+    expect(deviceDisplayName(name)).toBe(name);
+  });
 });

@@ -190,7 +190,6 @@ function fitItems(member: ActivityHardwareMember): ActivityHardwareItem[] {
         ["Connection", enumName("sourceType", raw.sourceType)],
         ["Device type", deviceType],
         ["Firmware", raw.softwareVersion],
-        ["Hardware", raw.hardwareVersion],
         ["Battery", enumName("batteryStatus", raw.batteryStatus)],
         [
           "Battery voltage",
@@ -231,10 +230,6 @@ function apiItem(member: ActivityHardwareMember): ActivityHardwareItem | null {
     label = resolvedModel ?? deviceName ?? model ?? manufacturer;
     itemDetails = details([
       ["Device name", resolvedModel && deviceName !== resolvedModel ? deviceName : null],
-      [
-        "Hardware",
-        hardware && /^(?:Watch|iPhone|iPad|iPod)\d+,\d+$/.test(hardware) ? null : hardware,
-      ],
       ["Firmware", device.firmwareVersion],
       ["Software", device.softwareVersion],
       ["Local identifier", device.localIdentifier],
