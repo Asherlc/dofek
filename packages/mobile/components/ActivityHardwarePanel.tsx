@@ -1,7 +1,5 @@
 import {
   type ActivityHardware,
-  type ActivityHardwareItem,
-  activityHardwareDetailsLabel,
   activityHardwareRoleLabels,
 } from "@dofek/providers/activity-hardware";
 import { providerLabel } from "@dofek/providers/providers";
@@ -28,52 +26,31 @@ export function ActivityHardwareSection({ activityId }: { activityId: string }) 
     />
   );
 }
-function HardwareItem({ item }: { item: ActivityHardwareItem }) {
-  const [expanded, setExpanded] = useState(false);
-  const detailsLabel = activityHardwareDetailsLabel(item.role);
-  return (
-    <View style={styles.item}>
-      <Text style={styles.name}>{item.label}</Text>
-      <Text style={styles.secondary}>
-        {activityHardwareRoleLabels[item.role]} · {providerLabel(item.providerId)}
-        {item.sourceName ? ` · ${item.sourceName}` : ""}
-      </Text>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={`${detailsLabel} for ${item.label}`}
-        accessibilityState={{ expanded }}
-        onPress={() => setExpanded((value) => !value)}
-        style={styles.disclosure}
-      >
-        <Text style={styles.secondary}>
-          {expanded ? `Hide ${detailsLabel.toLowerCase()}` : detailsLabel}
-        </Text>
-      </Pressable>
-      {expanded ? (
-        <View style={styles.item}>
-          <Text style={styles.secondary}>{item.evidence}</Text>
-          {item.manufacturer ? (
-            <Text style={styles.secondary}>Manufacturer: {item.manufacturer}</Text>
-          ) : null}
-          {item.model && item.model !== item.label ? (
-            <Text style={styles.secondary}>Model: {item.model}</Text>
-          ) : null}
-          {item.details.map((detail) => (
-            <Text key={detail.label} style={styles.secondary}>
-              {detail.label}: {detail.value}
-            </Text>
-          ))}
-        </View>
-      ) : null}
-    </View>
-  );
-}
 export function ActivityHardwarePanel({ data, loading = false, error, onRetry }: Props) {
+  const [expanded, setExpanded] = useState(false);
+  const hasHardware = data && (data.items.length > 0 || data.power.length > 0);
   return (
     <View style={styles.panel}>
-      <Text accessibilityRole="header" style={styles.title}>
-        Devices and sensors
-      </Text>
+      <View style={styles.header}>
+        <Text accessibilityRole="header" style={styles.title}>
+          Devices and sensors
+        </Text>
+        {hasHardware ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Device and sensor details"
+            accessibilityState={{ expanded }}
+            aria-expanded={expanded}
+            onPress={() => setExpanded((value) => !value)}
+            style={styles.disclosure}
+          >
+            <Text style={styles.secondary}>Details</Text>
+            <Text style={styles.chevron} accessibilityElementsHidden importantForAccessibility="no">
+              {expanded ? "⌃" : "⌄"}
+            </Text>
+          </Pressable>
+        ) : null}
+      </View>
       {error ? (
         <QueryStatePanel
           variant="error"
@@ -83,14 +60,41 @@ export function ActivityHardwarePanel({ data, loading = false, error, onRetry }:
         />
       ) : null}
       {!data && loading && !error ? <QueryStatePanel variant="loading" minHeight={72} /> : null}
-      {data?.items.map((item) => (
-        <HardwareItem key={item.id} item={item} />
+      {data?.items.map((item, index) => (
+        <View key={item.id} style={[styles.item, index > 0 && styles.separator]}>
+          <Text style={styles.name}>{item.label}</Text>
+          <Text style={styles.secondary}>
+            {activityHardwareRoleLabels[item.role]} · {providerLabel(item.providerId)}
+          </Text>
+          {expanded ? (
+            <View style={styles.facts}>
+              {item.sourceName &&
+              item.sourceName !== item.label &&
+              item.sourceName !== providerLabel(item.providerId) ? (
+                <Text style={styles.secondary}>Source: {item.sourceName}</Text>
+              ) : null}
+              {item.manufacturer ? (
+                <Text style={styles.secondary}>Manufacturer: {item.manufacturer}</Text>
+              ) : null}
+              {item.model && item.model !== item.label ? (
+                <Text style={styles.secondary}>Model: {item.model}</Text>
+              ) : null}
+              {item.details.map((detail) => (
+                <Text key={detail.label} style={styles.secondary}>
+                  {detail.label}: {detail.value}
+                </Text>
+              ))}
+            </View>
+          ) : null}
+        </View>
       ))}
-      {data?.power.map((power) => (
-        <Text key={power.activityId} style={styles.secondary}>
-          {power.label}
-        </Text>
-      ))}
+      {expanded
+        ? data?.power.map((power) => (
+            <Text key={power.activityId} style={styles.secondary}>
+              {power.label}
+            </Text>
+          ))
+        : null}
       {data && data.items.length === 0 && data.power.length === 0 && !error ? (
         <QueryStatePanel variant="empty" message="No device metadata reported." minHeight={64} />
       ) : null}
@@ -104,9 +108,20 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     gap: spacing.md,
   },
+  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   item: { gap: spacing.xs },
-  title: { color: colors.text, fontSize: 16, fontWeight: "600" },
+  facts: { gap: spacing.xs, marginTop: spacing.xs },
+  separator: { borderTopWidth: 1, borderTopColor: colors.border, paddingTop: spacing.sm },
+  title: { color: colors.text, fontSize: 16, fontWeight: "600", flexShrink: 1 },
   name: { color: colors.text, fontSize: 14, fontWeight: "500" },
   secondary: { color: colors.textSecondary, fontSize: 12 },
-  disclosure: { minHeight: 44, justifyContent: "center" },
+  disclosure: {
+    minHeight: 44,
+    minWidth: 44,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xs,
+    paddingLeft: spacing.sm,
+  },
+  chevron: { color: colors.textSecondary, fontSize: 16 },
 });

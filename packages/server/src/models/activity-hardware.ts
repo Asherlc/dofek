@@ -26,6 +26,22 @@ function readable(value: string): string {
   const words = value.replace(/([a-z])([A-Z])/g, "$1 $2").replaceAll("_", " ");
   return words.charAt(0).toUpperCase() + words.slice(1);
 }
+function readableName(value: string): string {
+  return value.includes("_") ? readable(value) : value;
+}
+function pelotonEquipmentLabel(value: unknown): string | null {
+  const code = text(value);
+  if (code === null) return null;
+  if (code === "home_bike_plus") return "Peloton Bike+";
+  if (code === "home_bike_v1" || code === "home_bike") return "Peloton Bike";
+  return readable(code);
+}
+function reportedSourceLabel(value: unknown): string | null {
+  const source = text(value);
+  if (source === null) return null;
+  if (source === "ridewithgps_iphone") return "Ride with GPS for iPhone";
+  return source === "watch" ? "Watch" : readableName(source);
+}
 function enumName(type: string, value: unknown): string | null {
   const name = typeof value === "number" ? Profile.types[type]?.[value] : text(value);
   return name ? readable(name) : null;
@@ -69,7 +85,7 @@ function base(member: ActivityHardwareMember, suffix: string) {
     id: `${member.activityId}:${suffix}`,
     activityId: member.activityId,
     providerId: member.providerId,
-    sourceName: member.sourceName,
+    sourceName: member.sourceName === null ? null : readableName(member.sourceName),
   };
 }
 function compatibleIdentity(left: Raw, right: Raw): boolean {
@@ -134,9 +150,9 @@ function fitItems(member: ActivityHardwareMember): ActivityHardwareItem[] {
     return {
       ...base(member, key),
       role,
-      label: model ?? deviceType ?? manufacturer ?? "Unidentified device",
-      model,
-      manufacturer,
+      label: readableName(model ?? deviceType ?? manufacturer ?? "Unidentified device"),
+      model: model === null ? null : readableName(model),
+      manufacturer: manufacturer === null ? null : readableName(manufacturer),
       evidence:
         role === "creator"
           ? "FIT file creator; may be an export platform rather than the original recording device."
@@ -193,29 +209,29 @@ function apiItem(member: ActivityHardwareMember): ActivityHardwareItem | null {
   }
   if (member.providerId === "peloton") {
     role = "category";
-    label = text(raw.deviceType) ?? text(raw.platform);
+    label = pelotonEquipmentLabel(raw.deviceType) ?? pelotonEquipmentLabel(raw.platform);
     evidence = "Reported equipment category or platform; exact model unavailable.";
-    itemDetails = details([["Platform", raw.platform]]);
+    itemDetails = details([["Platform", pelotonEquipmentLabel(raw.platform)]]);
   }
   if (member.providerId === "ride-with-gps") {
     role = "source";
-    label = text(raw.source);
+    label = reportedSourceLabel(raw.source);
     evidence = "Reported source or import app; original recording hardware is not established.";
   }
   if (member.providerId === "amazfit-zepp") {
     role = "source";
-    label = text(raw.source) ?? text(raw.app_name);
+    label = reportedSourceLabel(raw.source) ?? reportedSourceLabel(raw.app_name);
     evidence = "Reported source or app; original recording hardware is not established.";
-    itemDetails = details([["App", raw.app_name]]);
+    itemDetails = details([["App", reportedSourceLabel(raw.app_name)]]);
   }
   if (!label && itemDetails.length) label = "Unidentified device";
   if (!label) return null;
   return {
     ...base(member, "api"),
     role,
-    label,
-    model,
-    manufacturer,
+    label: readableName(label),
+    model: model === null ? null : readableName(model),
+    manufacturer: manufacturer === null ? null : readableName(manufacturer),
     evidence,
     details: itemDetails,
   };
@@ -235,7 +251,7 @@ export function normalizeActivityHardware(members: ActivityHardwareMember[]): Ac
               activityId: member.activityId,
               providerId: member.providerId,
               kind: watts ? ("measured" as const) : ("estimated" as const),
-              label: watts ? "Strava reports power-meter data." : "Strava reports estimated power.",
+              label: watts ? "Power · Measured · Strava" : "Power · Estimated · Strava",
             },
           ]
         : [];

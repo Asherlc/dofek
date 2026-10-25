@@ -1,7 +1,7 @@
 import { activityHardwareSchema } from "@dofek/providers/activity-hardware";
 import { isCyclingActivity } from "@dofek/training/training";
 import { TRPCError } from "@trpc/server";
-import { createActivityImageUrl } from "dofek/activity-images/storage";
+import { createActivityImageUrl, readActivityImageObject } from "dofek/activity-images/storage";
 import { withAccountErasureUserWriteFence } from "dofek/db/account-erasure";
 import { isRelationMissingError } from "dofek/db/dedup";
 import {
@@ -121,6 +121,7 @@ export const activityRouter = router({
         members: (id) => repository.getActivityMemberIds(id),
         read: (ids) => listActivityImages(ctx.db, { userId: ctx.userId, memberActivityIds: ids }),
         sign: createActivityImageUrl,
+        readImage: readActivityImageObject,
       });
     }),
   list: selectedChartCustomRangeQuery(

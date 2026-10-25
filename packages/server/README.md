@@ -66,7 +66,8 @@ The backend API and background job processor for Dofek. Built with Node.js, Expr
   Existing retained API metadata is immediately available; newly retained FIT,
   Polar, HealthKit, and BLE metadata requires reimport, resync, or new capture.
   Both clients render the [shared contract](../providers-meta/src/activity-hardware.ts)
-  with identifiers and firmware behind device disclosure controls, following the
+  with readable equipment names and one Details control for identifiers,
+  firmware, and source facts, following the
   [WAI disclosure pattern](https://www.w3.org/WAI/ARIA/apg/patterns/disclosure/).
 
 - **Hangboarding details**: The [repository](src/repositories/hangboarding-repository.ts)

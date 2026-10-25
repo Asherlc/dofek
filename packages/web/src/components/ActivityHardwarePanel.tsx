@@ -1,9 +1,9 @@
 import {
   type ActivityHardware,
-  activityHardwareDetailsLabel,
   activityHardwareRoleLabels,
 } from "@dofek/providers/activity-hardware";
 import { providerLabel } from "@dofek/providers/providers";
+import { useState } from "react";
 import { QueryStatePanel } from "./QueryStatePanel.tsx";
 
 interface Props {
@@ -13,29 +13,51 @@ interface Props {
   onRetry?: () => void;
 }
 export function ActivityHardwarePanel({ data, loading = false, error, onRetry }: Props) {
+  const [expanded, setExpanded] = useState(false);
+  const hasHardware = data && (data.items.length > 0 || data.power.length > 0);
   return (
     <section
       className="rounded-xl border border-border bg-surface p-4 space-y-3"
       aria-label="Devices and sensors"
     >
-      <h2 className="text-sm font-semibold text-foreground">Devices and sensors</h2>
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="text-sm font-semibold text-foreground">Devices and sensors</h2>
+        {hasHardware ? (
+          <button
+            type="button"
+            aria-label="Device and sensor details"
+            aria-expanded={expanded}
+            onClick={() => setExpanded((value) => !value)}
+            className="flex min-h-11 items-center gap-1 rounded px-2 text-xs text-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-accent"
+          >
+            Details
+            <span aria-hidden="true">{expanded ? "⌃" : "⌄"}</span>
+          </button>
+        ) : null}
+      </div>
       {error ? <QueryStatePanel error={error} onRetry={onRetry} height={72} /> : null}
       {!data && loading && !error ? (
         <QueryStatePanel variant="loading" contextLabel="Devices and sensors" height={72} />
       ) : null}
-      {data?.items.map((item) => (
-        <div key={item.id} className="space-y-1">
+      {data?.items.map((item, index) => (
+        <div
+          key={item.id}
+          className={index > 0 ? "space-y-1 border-t border-border pt-3" : "space-y-1"}
+        >
           <p className="text-sm font-medium text-foreground">{item.label}</p>
           <p className="text-xs text-muted">
             {activityHardwareRoleLabels[item.role]} · {providerLabel(item.providerId)}
-            {item.sourceName ? ` · ${item.sourceName}` : ""}
           </p>
-          <details className="text-xs text-muted">
-            <summary className="cursor-pointer py-1">
-              {activityHardwareDetailsLabel(item.role)}
-            </summary>
-            <p className="py-1">{item.evidence}</p>
-            <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 py-1">
+          {expanded ? (
+            <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 pt-2 text-xs text-muted">
+              {item.sourceName &&
+              item.sourceName !== item.label &&
+              item.sourceName !== providerLabel(item.providerId) ? (
+                <>
+                  <dt>Source</dt>
+                  <dd className="break-words">{item.sourceName}</dd>
+                </>
+              ) : null}
               {item.manufacturer ? (
                 <>
                   <dt>Manufacturer</dt>
@@ -51,18 +73,20 @@ export function ActivityHardwarePanel({ data, loading = false, error, onRetry }:
               {item.details.map((detail) => (
                 <div className="contents" key={detail.label}>
                   <dt>{detail.label}</dt>
-                  <dd className="break-all">{detail.value}</dd>
+                  <dd className="break-words">{detail.value}</dd>
                 </div>
               ))}
             </dl>
-          </details>
+          ) : null}
         </div>
       ))}
-      {data?.power.map((power) => (
-        <p key={power.activityId} className="text-xs text-muted">
-          {power.label}
-        </p>
-      ))}
+      {expanded
+        ? data?.power.map((power) => (
+            <p key={power.activityId} className="text-xs text-muted">
+              {power.label}
+            </p>
+          ))
+        : null}
       {data && data.items.length === 0 && data.power.length === 0 && !error ? (
         <QueryStatePanel variant="empty" message="No device metadata reported." height={64} />
       ) : null}

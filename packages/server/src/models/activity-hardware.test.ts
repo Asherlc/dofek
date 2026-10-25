@@ -221,9 +221,9 @@ describe("activity hardware", () => {
     }
   });
   it("uses Strava recording names and explicit power evidence", () => {
-    for (const [device_watts, kind] of [
-      [true, "measured"],
-      [false, "estimated"],
+    for (const [device_watts, kind, label] of [
+      [true, "measured", "Power · Measured · Strava"],
+      [false, "estimated", "Power · Estimated · Strava"],
     ] as const) {
       const result = normalizeActivityHardware([
         {
@@ -235,6 +235,7 @@ describe("activity hardware", () => {
       ]);
       expect(result.items[0]?.label).toBe("Garmin Edge 530");
       expect(result.power[0]?.kind).toBe(kind);
+      expect(result.power[0]?.label).toBe(label);
     }
   });
   it("keeps HealthKit device and importing app separate", () => {
@@ -288,10 +289,10 @@ describe("activity hardware", () => {
       },
     ]);
     expect(result.items.map((item) => item.label)).toEqual([
-      "bike",
+      "Bike",
       "Polar Vantage V3",
-      "ridewithgps_iphone",
-      "watch",
+      "Ride with GPS for iPhone",
+      "Watch",
     ]);
     expect(result.items[0]?.model).toBeNull();
     expect(result.items.map((item) => item.role)).toEqual([
@@ -301,6 +302,143 @@ describe("activity hardware", () => {
       "source",
     ]);
     expect(result.items[0]?.evidence).toContain("category");
+  });
+  it.each([
+    ["home_bike_plus", "Peloton Bike+"],
+    ["home_bike_v1", "Peloton Bike"],
+    ["home_bike", "Peloton Bike"],
+    ["bike", "Bike"],
+    ["future_equipment", "Future equipment"],
+  ])("names Peloton equipment %s readably", (deviceType, label) => {
+    const result = normalizeActivityHardware([
+      {
+        ...member,
+        providerId: "peloton",
+        raw: { deviceType, platform: "home_bike" },
+        observations: [],
+      },
+    ]);
+    expect(result.items[0]).toMatchObject({ label, role: "category", model: null });
+    expect(result.items[0]?.details).toEqual([{ label: "Platform", value: "Peloton Bike" }]);
+  });
+  it("uses a readable Peloton platform when the equipment type is missing", () => {
+    const result = normalizeActivityHardware([
+      {
+        ...member,
+        providerId: "peloton",
+        raw: { platform: "home_bike" },
+        observations: [],
+      },
+    ]);
+    expect(result.items[0]).toMatchObject({ label: "Peloton Bike", model: null });
+  });
+  it("formats source codes while preserving their provider provenance", () => {
+    const result = normalizeActivityHardware([
+      {
+        ...member,
+        providerId: "amazfit-zepp",
+        raw: { source: "fitness_watch", app_name: "fitness_app" },
+        observations: [],
+      },
+      {
+        ...member,
+        providerId: "ride-with-gps",
+        raw: { source: "fitness_app" },
+        observations: [],
+      },
+    ]);
+    expect(result.items.map((item) => item.label)).toEqual(["Fitness watch", "Fitness app"]);
+    expect(result.items[0]?.details).toEqual([{ label: "App", value: "Fitness app" }]);
+    expect(result.items.map((item) => item.providerId)).toEqual(["amazfit-zepp", "ride-with-gps"]);
+  });
+  it.each([
+    ["strava", { device_name: "Garmin_Edge_530" }, "Garmin Edge 530"],
+    ["garmin", { deviceName: "Garmin_Edge_530" }, "Garmin Edge 530"],
+    ["apple_health", { device: { name: "Apple_Watch" } }, "Apple Watch"],
+  ])("formats reported device and source names from %s", (providerId, raw, label) => {
+    const result = normalizeActivityHardware([
+      {
+        ...member,
+        providerId,
+        sourceName: "Workout_app",
+        raw,
+        observations: [],
+      },
+    ]);
+    expect(result.items[0]).toMatchObject({ label, sourceName: "Workout app" });
+  });
+  it("preserves brand casing in reported device and source names", () => {
+    const result = normalizeActivityHardware([
+      {
+        ...member,
+        providerId: "strava",
+        sourceName: "WHOOP",
+        raw: { device_name: "Edge 530" },
+        observations: [],
+      },
+      {
+        ...member,
+        providerId: "amazfit-zepp",
+        sourceName: "iPhone",
+        raw: { source: "iPhone" },
+        observations: [],
+      },
+    ]);
+    expect(result.items.map((item) => [item.label, item.sourceName])).toEqual([
+      ["Edge 530", "WHOOP"],
+      ["iPhone", "iPhone"],
+    ]);
+  });
+  it("formats FIT product names while preserving device identifiers", () => {
+    const result = normalizeActivityHardware([
+      {
+        ...member,
+        observations: [
+          {
+            sequence: 0,
+            messageType: "device_info",
+            raw: {
+              deviceIndex: 0,
+              productName: "Garmin_Edge_530",
+              manufacturer: 1,
+              serialNumber: "ABC_123",
+            },
+          },
+        ],
+      },
+    ]);
+    expect(result.items[0]).toMatchObject({
+      label: "Garmin Edge 530",
+      model: "Garmin Edge 530",
+      manufacturer: "Garmin",
+    });
+    expect(result.items[0]?.details).toContainEqual({ label: "Serial number", value: "ABC_123" });
+  });
+  it("formats HealthKit model and manufacturer names while preserving local identifiers", () => {
+    const result = normalizeActivityHardware([
+      {
+        ...member,
+        providerId: "apple_health",
+        raw: {
+          device: {
+            name: "My_Watch",
+            model: "Watch_Ultra",
+            manufacturer: "Apple_Inc",
+            localIdentifier: "local_identifier",
+          },
+        },
+        observations: [],
+      },
+    ]);
+    expect(result.items[0]).toMatchObject({
+      label: "My Watch",
+      model: "Watch Ultra",
+      manufacturer: "Apple Inc",
+    });
+    expect(result.items[0]?.details).toContainEqual({
+      label: "Local identifier",
+      value: "local_identifier",
+    });
   });
   it("leaves unsupported and absent metadata empty", () => {
     expect(normalizeActivityHardware([{ ...member, observations: [] }])).toEqual({

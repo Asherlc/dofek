@@ -115,6 +115,46 @@ export const PartialMetadata: Story = {
     },
   },
 };
+export const PelotonAndStrava: Story = {
+  args: {
+    data: {
+      items: [
+        {
+          id: "peloton-bike-plus",
+          activityId: "peloton-ride",
+          providerId: "peloton",
+          sourceName: null,
+          role: "category",
+          label: "Peloton Bike+",
+          model: null,
+          manufacturer: null,
+          evidence: "Reported equipment category or platform; exact model unavailable.",
+          details: [{ label: "Platform", value: "Peloton Bike" }],
+        },
+        {
+          id: "strava-bike",
+          activityId: "strava-ride",
+          providerId: "strava",
+          sourceName: "Peloton Bike",
+          role: "recorder",
+          label: "Peloton Bike",
+          model: null,
+          manufacturer: null,
+          evidence: "Recording device reported by the provider.",
+          details: [],
+        },
+      ],
+      power: [
+        {
+          activityId: "strava-ride",
+          providerId: "strava",
+          kind: "measured",
+          label: "Power · Measured · Strava",
+        },
+      ],
+    },
+  },
+};
 export const Empty: Story = { args: { data: { items: [], power: [] } } };
 export const Loading: Story = { args: { loading: true } };
 export const LoadError: Story = {

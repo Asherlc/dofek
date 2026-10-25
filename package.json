@@ -139,7 +139,8 @@
     "./lib/cache": "./src/lib/cache.ts",
     "./admin/provider-rate-limit-status": "./src/admin/provider-rate-limit-status.ts",
     "./db/activity-images": "./src/db/activity-images.ts",
-    "./activity-images/storage": "./src/activity-images/storage.ts"
+    "./activity-images/storage": "./src/activity-images/storage.ts",
+    "./activity-images/gallery": "./src/activity-images/gallery.ts"
   },
   "scripts": {
     "dev": "tsx scripts/with-env.ts -- tsx src/index.ts",
@@ -287,6 +288,7 @@
     "ioredis": "6.0.0",
     "kafkajs": "2.2.4",
     "pg": "8.23.1",
+    "pixelmatch": "8.0.0",
     "postgres": "3.4.8",
     "posthog-node": "5.56.0",
     "prom-client": "15.1.3",

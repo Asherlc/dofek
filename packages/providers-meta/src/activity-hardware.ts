@@ -33,8 +33,3 @@ export const activityHardwareRoleLabels: Record<ActivityHardwareItem["role"], st
   category: "Equipment category",
   unknown: "Reported device",
 };
-export function activityHardwareDetailsLabel(role: ActivityHardwareItem["role"]): string {
-  return role === "creator" || role === "source" || role === "category"
-    ? "Source details"
-    : "Device details";
-}
