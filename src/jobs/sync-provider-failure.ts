@@ -1,3 +1,4 @@
+import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { withAccountErasureUserWriteFence } from "../db/account-erasure.ts";
 import type { SyncDatabase } from "../db/index.ts";
@@ -10,6 +11,7 @@ import {
   isZeppHttp500ServiceUnavailableError,
 } from "../lib/provider-transport-error.ts";
 import { isRetryableInfraError } from "../lib/retryable-infra-error.ts";
+import { sanitizeErrorMessage } from "../lib/sanitize-error.ts";
 import { logger } from "../logger.ts";
 import { appendProcessingStageEvent } from "../processing/processing-event-store.ts";
 import {
@@ -54,16 +56,31 @@ export function firstAuthFailureReason(errors: SyncError[]): ProviderAuthFailure
 export function providerSyncFailureEvent(
   providerName: string,
   authFailureReason: ProviderAuthFailureReason | undefined,
+  pushOnly = false,
+  failure?: unknown,
 ): { errorCode: "provider_auth_failed" | "provider_sync_failed"; errorMessage: string } {
   if (authFailureReason) {
     return {
       errorCode: "provider_auth_failed",
-      errorMessage: `${providerName} authorization needs attention. Reconnect ${providerName}, then try again.`,
+      errorMessage: pushOnly
+        ? `${providerName} authorization needs attention. Reconnect ${providerName} to receive future updates.`
+        : `${providerName} authorization needs attention. Reconnect ${providerName}, then try again.`,
     };
   }
   return {
     errorCode: "provider_sync_failed",
-    errorMessage: `${providerName} could not be synced. Try the sync again later.`,
+    errorMessage: pushOnly
+      ? userFacingErrorMessage(
+          sanitizeErrorMessage(
+            failure instanceof Error
+              ? failure.message
+              : typeof failure === "string"
+                ? failure
+                : null,
+          ),
+          `${providerName} data could not be processed. Your existing data is still available.`,
+        ).slice(0, 500)
+      : `${providerName} could not be synced. Try the sync again later.`,
   };
 }
 
@@ -211,7 +228,12 @@ export async function handleSyncProviderFailure(
       ? err.message
       : String(err);
   const authFailureReason = authFailureReasonFromError(err);
-  const failureEvent = providerSyncFailureEvent(provider.name, authFailureReason);
+  const failureEvent = providerSyncFailureEvent(
+    provider.name,
+    authFailureReason,
+    provider.pushOnly,
+    err,
+  );
   if (shouldReportProviderError(err)) {
     captureException(err, { tags: { provider: provider.id } });
   }

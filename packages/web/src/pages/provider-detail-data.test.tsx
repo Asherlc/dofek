@@ -330,6 +330,37 @@ describe("RecordsBrowser", () => {
 });
 
 describe("SyncHistory", () => {
+  it("shows a neutral update-history empty state for push sources", () => {
+    render(<SyncHistory providerId="garmin" providerName="Garmin" pushOnly />);
+    expect(screen.getByRole("heading", { name: "Update history" })).toBeVisible();
+    expect(screen.getByText("No updates processed yet.")).toBeVisible();
+  });
+
+  it("exposes push update history navigation and diagnostics", () => {
+    mocks.logsUseQuery.mockReturnValue({
+      data: [
+        {
+          id: "push-outcome",
+          syncedAt: "2026-10-24T10:00:00Z",
+          dataType: "update",
+          status: "error",
+          recordCount: null,
+          durationMs: null,
+          authFailureReason: null,
+          errorMessage: "An activity file could not be read.",
+        },
+      ],
+      isLoading: false,
+      isError: false,
+      error: null,
+    });
+    render(<SyncHistory providerId="garmin" providerName="Garmin" pushOnly />);
+    expect(screen.getByRole("button", { name: "Next update history page" })).toBeDisabled();
+    expect(screen.getByRole("heading", { name: "Update not processed" })).toBeVisible();
+    fireEvent.click(screen.getByText("Diagnostics"));
+    expect(screen.getByText("push-outcome")).toBeVisible();
+  });
+
   beforeEach(() => {
     mocks.logFilterOptionsUseQuery.mockReset();
     mocks.logFilterOptionsUseQuery.mockReturnValue({ data: {} });

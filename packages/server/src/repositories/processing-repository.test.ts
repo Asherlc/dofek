@@ -123,6 +123,23 @@ describe("ProcessingRepository", () => {
     expect(result.generatedAt).toBe("2026-07-22T18:00:00.000Z");
   });
 
+  it("scopes push status before selecting the latest operations for each dataset", async () => {
+    mockListScopedProcessingOperations.mockResolvedValue([]);
+
+    await new ProcessingRepository(database, userId).status({
+      providerId: "garmin",
+      datasets: ["activity"],
+      kind: "push_ingest",
+    });
+
+    expect(mockListScopedProcessingOperations).toHaveBeenCalledWith(database, {
+      userId,
+      providerId: "garmin",
+      datasetKeys: ["activity"],
+      kind: "push_ingest",
+    });
+  });
+
   it("selects the matching dataset contract for labels", async () => {
     mockListScopedProcessingOperations.mockResolvedValue([]);
     const repository = new ProcessingRepository(database, userId);
@@ -888,6 +905,94 @@ describe("ProcessingRepository", () => {
       ],
     });
   });
+
+  it.each([
+    ["Activity file could not be decoded", "Activity file could not be decoded."],
+    ["The file is missing. Check the attachment", "The file is missing. Check the attachment."],
+    ["Activity file could not be decoded.", "Activity file could not be decoded."],
+    ["Check the activity file!", "Check the activity file!"],
+    ["Is the activity file available?", "Is the activity file available?"],
+    ["Activity file could not be decoded.  ", "Activity file could not be decoded."],
+    [null, "Dofek couldn’t finish processing the Garmin update."],
+    [undefined, "Dofek couldn’t finish processing the Garmin update."],
+  ])("separates push failure %j from support guidance", async (errorMessage, sentence) => {
+    mockListScopedProcessingOperations.mockResolvedValue([
+      operation({
+        providerId: "garmin",
+        kind: "push_ingest",
+        events:
+          errorMessage === undefined
+            ? [event(1, { stage: "analytics", status: "failed", modelName: "activity" })]
+            : [event(1, { stage: "ingest", status: "failed", errorMessage })],
+      }),
+    ]);
+    mockDeriveProcessingState.mockReturnValue({
+      overallStatus: "failed",
+      datasets: [
+        {
+          datasetKey: "activity",
+          currentStage: "ingest",
+          status: "failed",
+          progressPercentage: null,
+          lastAdvancedAt: now,
+        },
+      ],
+    });
+
+    const result = await new ProcessingRepository(database, userId).alerts();
+
+    expect(result.alerts[0]).toMatchObject({
+      action: "contact_support",
+      message: `${sentence} Contact support for help.`,
+    });
+  });
+
+  it.each([
+    {
+      errorCode: "provider_sync_failed",
+      action: "contact_support",
+      actionLabel: "Contact support",
+    },
+    { errorCode: "provider_auth_failed", action: "reconnect", actionLabel: "Reconnect Garmin" },
+  ])(
+    "offers $action for a push ingestion $errorCode",
+    async ({ errorCode, action, actionLabel }) => {
+      mockListScopedProcessingOperations.mockResolvedValue([
+        operation({
+          providerId: "garmin",
+          kind: "push_ingest",
+          events: [
+            event(1, {
+              stage: "ingest",
+              status: "failed",
+              errorCode,
+              errorMessage: "Garmin data could not be processed.",
+            }),
+          ],
+        }),
+      ]);
+      mockDeriveProcessingState.mockReturnValue({
+        overallStatus: "failed",
+        datasets: [
+          {
+            datasetKey: "activity",
+            currentStage: "ingest",
+            status: "failed",
+            progressPercentage: null,
+            lastAdvancedAt: now,
+          },
+        ],
+      });
+
+      const result = await new ProcessingRepository(database, userId).alerts();
+
+      expect(result.alerts[0]).toMatchObject({ providerId: "garmin", action, actionLabel });
+      expect(result.alerts[0]?.message).not.toMatch(/try.*sync|start.*sync/i);
+      if (action === "contact_support") {
+        expect(result.alerts[0]?.message).toContain("Garmin data could not be processed.");
+      }
+    },
+  );
 
   it("offers a retry for a provider-level sync failure after ingestion", async () => {
     mockListScopedProcessingOperations.mockResolvedValue([

@@ -595,6 +595,76 @@ describe("syncRouter", () => {
       expect(cronometerCsv?.importOnly).toBe(true);
     });
 
+    it("reports push processing evidence independently of historical polling attempts", async () => {
+      mockGetAllProviders.mockReturnValue([
+        {
+          id: "garmin",
+          name: "Garmin",
+          pushOnly: true,
+          validate: () => null,
+          authSetup: () => oauthAuthSetup("https://connect.garmin.com"),
+        },
+      ]);
+      const caller = createCaller({
+        db: {
+          execute: vi
+            .fn()
+            .mockResolvedValueOnce([
+              {
+                provider_id: "garmin",
+                has_tokens: true,
+                updated_at: new Date("2026-10-24T09:00:00Z"),
+              },
+            ])
+            .mockResolvedValueOnce([{ provider_id: "garmin", last_synced: "2026-10-24T12:00:00Z" }])
+            .mockResolvedValueOnce([])
+            .mockResolvedValueOnce([{ provider_id: "garmin", last_synced: "2026-10-24T08:00:00Z" }])
+            .mockResolvedValueOnce([
+              {
+                id: "legacy-poll",
+                provider_id: "garmin",
+                status: "error",
+                synced_at: new Date("2026-10-24T12:00:00Z"),
+                duration_ms: 10,
+                record_count: 0,
+                data_type: "sync",
+                error_message: "Old polling failed",
+                auth_failure_reason: null,
+              },
+            ])
+            .mockResolvedValueOnce([
+              { provider_id: "garmin", last_synced: "2026-10-24T10:00:00.000Z" },
+            ])
+            .mockResolvedValueOnce([
+              {
+                id: "push-update",
+                provider_id: "garmin",
+                status: "success",
+                synced_at: new Date("2026-10-24T10:00:00Z"),
+                duration_ms: null,
+                record_count: null,
+                data_type: "update",
+                error_message: null,
+                auth_failure_reason: null,
+              },
+            ]),
+        },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      const result = await caller.providers();
+
+      expect(result.find((provider) => provider.id === "garmin")).toMatchObject({
+        lastProcessedUpdateAt: "2026-10-24T10:00:00.000Z",
+        syncFreshness: null,
+        recentLogs: [expect.objectContaining({ id: "push-update", status: "success" })],
+      });
+      expect(
+        result.find((provider) => provider.id === "whoop_ble")?.lastProcessedUpdateAt,
+      ).toBeNull();
+    });
+
     it("returns current freshness from the latest successful pull-provider sync", async () => {
       vi.useFakeTimers();
       vi.setSystemTime(new Date("2026-08-12T12:00:00.000Z"));

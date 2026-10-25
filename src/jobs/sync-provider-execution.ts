@@ -161,7 +161,12 @@ export async function executeSyncProvider(
       throw failure?.cause ?? new Error(result.errors.map((error) => error.message).join("; "));
     }
     const authFailureReason = firstAuthFailureReason(result.errors);
-    const failureEvent = providerSyncFailureEvent(provider.name, authFailureReason);
+    const failureEvent = providerSyncFailureEvent(
+      provider.name,
+      authFailureReason,
+      provider.pushOnly,
+      result.errors[0]?.message,
+    );
     context.completedCount++;
     const hasErrors = result.errors.length > 0;
     await processingOperation.recordOutputs(result.recordsSynced);

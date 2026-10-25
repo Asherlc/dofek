@@ -529,10 +529,9 @@ export async function importFitFile(
     });
   } catch (error) {
     captureException(error, { tags: { fitImportStep: "original-retention" } });
-    throw new OriginalFitRetentionError(
-      "The original FIT file could not be saved. Try the import again.",
-      { cause: error },
-    );
+    throw new OriginalFitRetentionError("The original FIT file could not be saved.", {
+      cause: error,
+    });
   }
   await onRetained?.(retainedArtifactKey);
   await onProgress({ percentage: 25, message: "Decoding FIT file..." });

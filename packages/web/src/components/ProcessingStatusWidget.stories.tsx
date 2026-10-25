@@ -298,6 +298,7 @@ export const LatestSyncFailed: Story = {
     providerHistory: {
       needsReauth: false,
       lastSuccessfulSyncAt: "2026-07-22T12:00:00.000Z",
+      lastProcessedUpdateAt: null,
       recentLogs: [
         {
           status: "error",
@@ -315,6 +316,7 @@ export const LatestSyncDegraded: Story = {
     alwaysVisible: true,
     providerHistory: {
       lastSuccessfulSyncAt: null,
+      lastProcessedUpdateAt: null,
       recentLogs: [
         { status: "degraded", syncedAt: "2026-10-21T12:00:00.000Z", dataType: "activities" },
       ],
@@ -327,6 +329,7 @@ export const UnknownSyncOutcome: Story = {
     alwaysVisible: true,
     providerHistory: {
       lastSuccessfulSyncAt: null,
+      lastProcessedUpdateAt: null,
       recentLogs: [{ status: "unknown", syncedAt: "2026-10-21T12:00:00.000Z" }],
     },
   },
@@ -338,6 +341,7 @@ export const FailureWithNewerProgress: Story = {
     providerHistory: {
       needsReauth: false,
       lastSuccessfulSyncAt: null,
+      lastProcessedUpdateAt: null,
       recentLogs: [
         { status: "error", syncedAt: "2026-07-22T16:06:00.000Z", dataType: "activities" },
       ],
@@ -377,6 +381,79 @@ export const FailureWithNewerProgress: Story = {
           timeline: [],
         },
       ],
+    },
+  },
+};
+
+export const AutomaticUpdateWaiting: Story = {
+  args: {
+    data: emptyProviderSnapshot,
+    alwaysVisible: true,
+    providerHistory: {
+      authorized: true,
+      pushOnly: true,
+      lastProcessedUpdateAt: null,
+      lastSuccessfulSyncAt: null,
+      recentLogs: [],
+    },
+  },
+};
+
+export const AutomaticUpdateProcessing: Story = {
+  args: {
+    data: { ...activeSnapshot, operations: [{ ...activeOperation, kind: "push_ingest" }] },
+    alwaysVisible: true,
+    providerHistory: {
+      authorized: true,
+      pushOnly: true,
+      lastProcessedUpdateAt: null,
+      lastSuccessfulSyncAt: null,
+      recentLogs: [],
+    },
+  },
+};
+
+export const AutomaticUpdateFailed: Story = {
+  args: {
+    data: emptyProviderSnapshot,
+    alwaysVisible: true,
+    providerHistory: {
+      authorized: true,
+      pushOnly: true,
+      lastProcessedUpdateAt: "2026-10-24T10:00:00Z",
+      lastSuccessfulSyncAt: null,
+      recentLogs: [
+        {
+          status: "error",
+          syncedAt: "2026-10-24T11:00:00Z",
+          dataType: "update",
+          errorMessage: "An activity file could not be read.",
+        },
+      ],
+    },
+  },
+};
+
+export const AutomaticUpdateDegraded: Story = {
+  args: {
+    data: emptyProviderSnapshot,
+    alwaysVisible: true,
+    providerHistory: {
+      pushOnly: true,
+      lastSuccessfulSyncAt: null,
+      recentLogs: [{ status: "degraded", syncedAt: "2026-10-24T11:00:00Z" }],
+    },
+  },
+};
+
+export const AutomaticUpdateOutcomeUnavailable: Story = {
+  args: {
+    data: emptyProviderSnapshot,
+    alwaysVisible: true,
+    providerHistory: {
+      pushOnly: true,
+      lastSuccessfulSyncAt: null,
+      recentLogs: [{ status: "unknown", syncedAt: "2026-10-24T11:00:00Z" }],
     },
   },
 };

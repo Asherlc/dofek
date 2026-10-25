@@ -140,6 +140,87 @@ function failedWahooSnapshot(overrides: Partial<ProcessingStatusSnapshot> = {}) 
 }
 
 describe("ProcessingStatusWidget", () => {
+  it.each([
+    ["success", "Last update processed"],
+    ["error", "Processing failed"],
+    ["degraded", "Update processed with issues"],
+    ["unknown", "Update outcome unavailable"],
+  ])("labels the recorded push %s timestamp", (status, label) => {
+    vi.setSystemTime(new Date("2026-07-24T12:00:00.000Z"));
+    render(
+      <ProcessingStatusWidget
+        alwaysVisible
+        providerHistory={{
+          pushOnly: true,
+          lastSuccessfulSyncAt: null,
+          recentLogs: [{ status, syncedAt: "2026-07-23T12:00:00.000Z" }],
+        }}
+        data={{ ...snapshot, overallStatus: "ready", datasets: [], operations: [] }}
+      />,
+    );
+    expect(screen.getByText(`${label}: 1d ago`)).toBeTruthy();
+  });
+
+  it("keeps a resolved push auth failure visible without asking for another reconnect", () => {
+    render(
+      <ProcessingStatusWidget
+        providerHistory={{
+          pushOnly: true,
+          needsReauth: false,
+          lastSuccessfulSyncAt: null,
+          recentLogs: [],
+        }}
+        data={{
+          ...snapshot,
+          overallStatus: "failed",
+          datasets: [
+            { ...activityDataset, status: "failed", lastFailedAt: "2026-07-22T11:59:00.000Z" },
+          ],
+          operations: [
+            {
+              ...operation,
+              kind: "push_ingest",
+              status: "failed",
+              errorCode: "provider_auth_failed",
+              errorMessage: "Reconnect Garmin to resume incoming updates.",
+            },
+          ],
+        }}
+      />,
+    );
+    expect(
+      screen.getByText("Earlier updates remain available. Open Diagnostics for details."),
+    ).toBeVisible();
+    expect(screen.queryByRole("link", { name: "Reconnect Garmin" })).toBeNull();
+  });
+
+  it("describes failed push ingestion with processing-oriented accessible dismissal", () => {
+    render(
+      <ProcessingStatusWidget
+        data={{
+          ...snapshot,
+          overallStatus: "failed",
+          datasets: [
+            { ...activityDataset, status: "failed", lastFailedAt: "2026-07-22T11:59:00.000Z" },
+          ],
+          operations: [
+            {
+              ...operation,
+              kind: "push_ingest",
+              status: "failed",
+              errorMessage: "An activity file could not be read.",
+            },
+          ],
+        }}
+      />,
+    );
+    expect(screen.getByText("Couldn't process the latest Garmin update")).toBeVisible();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Dismiss Garmin update processing failure" }),
+    );
+    expect(mockDismissOperation).toHaveBeenCalledWith({ operationId });
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
     mockDismissState.error = null;
@@ -669,6 +750,7 @@ describe("ProcessingStatusWidget", () => {
         providerHistory={{
           needsReauth: true,
           lastSuccessfulSyncAt: null,
+          lastProcessedUpdateAt: null,
           recentLogs: [
             {
               status: "error",
@@ -695,6 +777,7 @@ describe("ProcessingStatusWidget", () => {
         providerHistory={{
           needsReauth: false,
           lastSuccessfulSyncAt: "2026-07-22T12:00:00.000Z",
+          lastProcessedUpdateAt: null,
           recentLogs: [
             {
               status: "error",
@@ -727,6 +810,7 @@ describe("ProcessingStatusWidget", () => {
         data={snapshot}
         providerHistory={{
           lastSuccessfulSyncAt: "2026-07-22T12:00:00.000Z",
+          lastProcessedUpdateAt: null,
           recentLogs: [{ status: "success", syncedAt: "2026-07-22T12:00:00.000Z" }],
         }}
       />,
@@ -747,6 +831,7 @@ describe("ProcessingStatusWidget", () => {
           }}
           providerHistory={{
             lastSuccessfulSyncAt: null,
+            lastProcessedUpdateAt: null,
             recentLogs: [{ status, syncedAt: "2026-07-23T12:00:00.000Z" }],
           }}
         />,
@@ -769,6 +854,7 @@ describe("ProcessingStatusWidget", () => {
           }}
           providerHistory={{
             lastSuccessfulSyncAt: null,
+            lastProcessedUpdateAt: null,
             recentLogs: [{ status: "error", syncedAt: "2026-07-22T16:05:00.000Z" }],
           }}
         />,
@@ -810,6 +896,7 @@ describe("ProcessingStatusWidget", () => {
           providerHistory={{
             needsReauth: false,
             lastSuccessfulSyncAt: null,
+            lastProcessedUpdateAt: null,
             recentLogs: withLog
               ? [
                   {
@@ -866,6 +953,7 @@ describe("ProcessingStatusWidget", () => {
           }}
           providerHistory={{
             lastSuccessfulSyncAt: null,
+            lastProcessedUpdateAt: null,
             recentLogs: [{ status, syncedAt: "2026-07-22T16:06:00.000Z" }],
           }}
         />,

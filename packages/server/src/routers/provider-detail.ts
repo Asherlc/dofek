@@ -5,6 +5,7 @@ import { deleteProviderAuthorization } from "dofek/db/tokens";
 import { getProviderDataDeletionQueue } from "dofek/jobs/queues";
 import { invalidateAllUserQueries } from "dofek/lib/cache";
 import { captureException } from "dofek/lib/error-reporting";
+import { getAllProviders } from "dofek/providers/registry";
 import { z } from "zod";
 import { providerDataDeletesTotal } from "../lib/metrics.ts";
 import { operationStatusOutputSchema } from "../lib/operation-progress.ts";
@@ -19,8 +20,10 @@ import {
   SYNC_LOG_FILTER_OPTION_FIELDS,
   tableInfo,
 } from "../repositories/provider-detail-repository.ts";
+import { SyncRepository } from "../repositories/sync-repository.ts";
 import { readProviderDataDeletionStatus } from "../services/provider-data-deletion-status.ts";
 import { CacheTTL, cachedProtectedQuery, protectedProcedure, router } from "../trpc.ts";
+import { ensureProvidersRegistered } from "./sync-helpers.ts";
 
 // Re-export for backward compatibility (used by settings router and tests)
 export {
@@ -33,8 +36,8 @@ export {
   tableInfo,
 };
 
+import { sanitizeErrorMessage } from "dofek/lib/sanitize-error";
 import { fieldFiltersSchema } from "../lib/field-filters.ts";
-import { sanitizeErrorMessage } from "../lib/sanitize-error.ts";
 
 const SYNC_LOG_FILTER_FIELDS = {
   id: "id",
@@ -108,6 +111,20 @@ export const providerDetailRouter = router({
       }),
     )
     .query(async ({ ctx, input }) => {
+      await ensureProvidersRegistered();
+      if (getAllProviders().find((provider) => provider.id === input.providerId)?.pushOnly) {
+        const repository = new SyncRepository(ctx.db, ctx.userId);
+        const rows = await repository.getPushUpdateHistory(
+          input.providerId,
+          input.limit,
+          input.offset,
+          input.filters,
+        );
+        return rows.map((row) => ({
+          ...row,
+          errorMessage: sanitizeErrorMessage(row.errorMessage),
+        }));
+      }
       const { syncLog } = await import("dofek/db/schema/events");
       const { and, desc, eq } = await import("drizzle-orm");
       const { buildPostgresFilterConditionsMapped } = await import("../lib/field-filters.ts");
@@ -141,6 +158,10 @@ export const providerDetailRouter = router({
   logFilterOptions: cachedProtectedQuery({ maxAge: CacheTTL.SHORT })
     .input(z.object({ providerId: z.string() }))
     .query(async ({ ctx, input }) => {
+      await ensureProvidersRegistered();
+      if (getAllProviders().find((provider) => provider.id === input.providerId)?.pushOnly) {
+        return new SyncRepository(ctx.db, ctx.userId).getPushUpdateFilterOptions(input.providerId);
+      }
       const repo = new ProviderDetailRepository(ctx.db, ctx.userId);
       return repo.getSyncLogFilterOptions(input.providerId);
     }),

@@ -4,10 +4,14 @@ import { z } from "zod";
 import { executeWithSchema } from "../../../../src/db/execute-with-schema.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../../../../src/db/tokens.ts";
+import {
+  appendProcessingStageEvent,
+  createProcessingOperation,
+} from "../../../../src/processing/processing-event-store.ts";
 import { SyncRepository } from "./sync-repository.ts";
 
-const SYNC_REPOSITORY_TEST_USER_ID = "00000000-0000-0000-0000-0000000000f2";
-const SECOND_SYNC_REPOSITORY_TEST_USER_ID = "00000000-0000-0000-0000-0000000000f3";
+const SYNC_REPOSITORY_TEST_USER_ID = "00000000-0000-4000-8000-0000000000f2";
+const SECOND_SYNC_REPOSITORY_TEST_USER_ID = "00000000-0000-4000-8000-0000000000f3";
 const SYNC_REPOSITORY_PROVIDER_IDS = [
   "sync-repository-provider",
   "sync-repository-historical-provider",
@@ -69,6 +73,10 @@ describe("SyncRepository integration", () => {
 
   afterEach(async () => {
     await testContext.db.execute(
+      sql`DELETE FROM fitness.processing_operation
+          WHERE provider_id = ANY(${sql.param(SYNC_REPOSITORY_PROVIDER_IDS)}::text[])`,
+    );
+    await testContext.db.execute(
       sql`DELETE FROM fitness.sync_log
           WHERE provider_id = ANY(${sql.param(SYNC_REPOSITORY_PROVIDER_IDS)}::text[])`,
     );
@@ -84,6 +92,133 @@ describe("SyncRepository integration", () => {
       sql`DELETE FROM fitness.provider
           WHERE id = ANY(${sql.param(SYNC_REPOSITORY_PROVIDER_IDS)}::text[])`,
     );
+  });
+
+  describe("push update evidence", () => {
+    async function seedOperation(input: {
+      at: string;
+      output?: boolean;
+      userId?: string;
+      kind?: "push_ingest" | "provider_sync";
+      status?: "succeeded" | "failed" | "running";
+      errorCode?: string;
+    }) {
+      const ownerId = input.userId ?? SYNC_REPOSITORY_TEST_USER_ID;
+      const operation = await createProcessingOperation(testContext.db, {
+        userId: ownerId,
+        providerId: "sync-repository-provider",
+        kind: input.kind ?? "push_ingest",
+        datasetKeys: ["activity"],
+      });
+      await appendProcessingStageEvent(testContext.db, {
+        operationId: operation.id,
+        stage: "ingest",
+        status: input.status ?? "succeeded",
+        occurredAt: new Date(input.at),
+        errorCode: input.errorCode,
+        errorMessage:
+          input.status === "failed" ? "The received activity could not be processed." : undefined,
+        idempotencyKey: "first-ingest-outcome",
+      });
+      if (input.output) {
+        await testContext.db.execute(sql`
+          INSERT INTO fitness.processing_operation_output (operation_id, dataset_key, output_path)
+          VALUES (${operation.id}::uuid, 'activity', 'relational')
+        `);
+      }
+      return operation.id;
+    }
+
+    it("advances the last processed update only for successful output-bearing push ingestion", async () => {
+      await seedOperation({ at: "2026-10-24T10:00:00Z", output: true });
+      await seedOperation({ at: "2026-10-24T11:00:00Z" });
+      await seedOperation({ at: "2026-10-24T12:00:00Z", status: "failed", output: true });
+      await seedOperation({ at: "2026-10-24T13:00:00Z", kind: "provider_sync", output: true });
+      await seedOperation({
+        at: "2026-10-24T14:00:00Z",
+        userId: SECOND_SYNC_REPOSITORY_TEST_USER_ID,
+        output: true,
+      });
+      const retryId = await seedOperation({ at: "2026-10-24T15:00:00Z", output: true });
+      await appendProcessingStageEvent(testContext.db, {
+        operationId: retryId,
+        stage: "ingest",
+        status: "running",
+        occurredAt: new Date("2026-10-24T15:01:00Z"),
+        idempotencyKey: "retry-running",
+      });
+      const repository = new SyncRepository(testContext.db, SYNC_REPOSITORY_TEST_USER_ID);
+
+      await expect(repository.getLastProcessedUpdateTimes()).resolves.toEqual([
+        { providerId: "sync-repository-provider", lastSynced: "2026-10-24T10:00:00.000Z" },
+      ]);
+    });
+
+    it("pages current push outcomes with user isolation, recovery, and history filters", async () => {
+      await testContext.db.execute(sql`INSERT INTO fitness.provider (id, name)
+        VALUES ('sync-repository-provider', 'Push Provider')`);
+      const successId = await seedOperation({ at: "2026-10-24T09:00:00Z", output: true });
+      const failedId = await seedOperation({
+        at: "2026-10-24T10:00:00Z",
+        status: "failed",
+        errorCode: "provider_auth_failed",
+      });
+      await seedOperation({ at: "2026-10-24T11:00:00Z" });
+      await seedOperation({ at: "2026-10-24T12:00:00Z", kind: "provider_sync", output: true });
+      await seedOperation({
+        at: "2026-10-24T13:00:00Z",
+        userId: SECOND_SYNC_REPOSITORY_TEST_USER_ID,
+        output: true,
+      });
+      const recoveredId = await seedOperation({
+        at: "2026-10-24T14:00:00Z",
+        status: "failed",
+        output: true,
+      });
+      await appendProcessingStageEvent(testContext.db, {
+        operationId: recoveredId,
+        stage: "ingest",
+        status: "succeeded",
+        occurredAt: new Date("2026-10-24T14:01:00Z"),
+        idempotencyKey: "retry-succeeded",
+      });
+      const repository = new SyncRepository(testContext.db, SYNC_REPOSITORY_TEST_USER_ID);
+
+      const recent = await repository.getRecentPushUpdatesByProvider(2);
+      expect(recent.get("sync-repository-provider")).toEqual([
+        expect.objectContaining({
+          id: recoveredId,
+          status: "success",
+          recordCount: null,
+          durationMs: null,
+        }),
+        expect.objectContaining({
+          id: failedId,
+          status: "error",
+          authFailureReason: "authorization_failed",
+        }),
+      ]);
+      const page = await repository.getPushUpdateHistory("sync-repository-provider", 1, 2);
+      expect(page.map((row) => row.id)).toEqual([successId]);
+      const failures = await repository.getPushUpdateHistory("sync-repository-provider", 20, 0, {
+        status: "error",
+      });
+      expect(failures.map((row) => row.id)).toEqual([failedId]);
+      expect(failures[0]?.errorMessage).toBe("The received activity could not be processed.");
+      await expect(
+        repository.getPushUpdateHistory("sync-repository-other-provider", 20),
+      ).resolves.toEqual([]);
+      await expect(
+        repository.getPushUpdateFilterOptions("sync-repository-provider"),
+      ).resolves.toEqual({
+        status: [{ value: "error" }, { value: "success" }],
+        dataType: [{ value: "update" }],
+        authFailureReason: [{ value: "authorization_failed" }],
+      });
+      await expect(repository.getLastProcessedUpdateTimes()).resolves.toEqual([
+        { providerId: "sync-repository-provider", lastSynced: "2026-10-24T14:01:00.000Z" },
+      ]);
+    });
   });
 
   describe("getRecentLogsByProvider", () => {

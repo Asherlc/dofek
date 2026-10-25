@@ -21,16 +21,23 @@ export interface ProviderSyncHistoryEntryData {
 
 interface ProviderSyncHistoryEntryProps {
   providerName: string;
+  pushOnly?: boolean;
   entry: ProviderSyncHistoryEntryData;
 }
 
-export function ProviderSyncHistoryEntry({ providerName, entry }: ProviderSyncHistoryEntryProps) {
+export function ProviderSyncHistoryEntry({
+  providerName,
+  pushOnly,
+  entry,
+}: ProviderSyncHistoryEntryProps) {
   const [showDiagnostics, setShowDiagnostics] = useState(false);
   const presentation = providerSyncLogPresentation({
     providerName,
+    pushOnly,
     dataType: entry.dataType,
     status: entry.status,
     authFailureReason: entry.authFailureReason,
+    errorMessage: entry.errorMessage,
   });
 
   return (
@@ -75,7 +82,9 @@ export function ProviderSyncHistoryEntry({ providerName, entry }: ProviderSyncHi
               label="Error"
               value={userFacingErrorMessage(
                 entry.errorMessage,
-                "The sync failed. Please try again.",
+                pushOnly
+                  ? "The update could not be processed."
+                  : "The sync failed. Please try again.",
               )}
             />
           ) : null}

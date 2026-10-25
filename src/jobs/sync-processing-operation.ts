@@ -24,7 +24,11 @@ import type { SyncJob } from "./queues.ts";
 async function ensureProcessingOperation(
   job: SyncJob,
   db: SyncDatabase,
-  provider: { id: string; processingDatasetKeys?: readonly ProcessingDatasetKey[] },
+  provider: {
+    id: string;
+    pushOnly?: boolean;
+    processingDatasetKeys?: readonly ProcessingDatasetKey[];
+  },
 ) {
   const datasetKeys = processingDatasetKeysForProvider(provider.id, provider.processingDatasetKeys);
   const existingOperationId = job.data.processingOperationIds?.[provider.id];
@@ -41,7 +45,7 @@ async function ensureProcessingOperation(
   const operation = await createProcessingOperation(db, {
     userId: job.data.userId,
     providerId: provider.id,
-    kind: "provider_sync",
+    kind: provider.pushOnly && job.data.webhookEvent ? "push_ingest" : "provider_sync",
     // Queue IDs are reusable after removal; the creation timestamp identifies this job instance.
     externalCorrelationKey: `${job.id ?? fallbackCorrelationKey}:${job.timestamp}:${provider.id}`,
     datasetKeys: [...datasetKeys],
@@ -102,7 +106,11 @@ export class SyncProcessingOperation {
   static async start(
     job: SyncJob,
     db: SyncDatabase,
-    provider: { id: string; processingDatasetKeys?: readonly ProcessingDatasetKey[] },
+    provider: {
+      id: string;
+      pushOnly?: boolean;
+      processingDatasetKeys?: readonly ProcessingDatasetKey[];
+    },
   ): Promise<SyncProcessingOperation> {
     const processingOperation = await ensureProcessingOperation(job, db, provider);
     await appendProcessingStageEvent(db, {

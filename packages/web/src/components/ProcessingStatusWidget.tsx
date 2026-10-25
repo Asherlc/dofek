@@ -129,6 +129,7 @@ export function ProcessingStatusWidget({
   });
   const problemDatasets = data.datasets.filter((dataset) => dataset.status === "failed");
   const failureGroups = processingFailureGroups({
+    needsReauth: providerHistory.needsReauth,
     datasets: data.datasets,
     operations: data.operations,
   });
@@ -165,7 +166,8 @@ export function ProcessingStatusWidget({
       >
         {providerPresentation.occurredAt ? (
           <p className="mt-0.5 text-xs text-subtle">
-            Latest attempt: {formatRelativeTime(providerPresentation.occurredAt)}
+            {providerPresentation.timestampLabel}:{" "}
+            {formatRelativeTime(providerPresentation.occurredAt)}
           </p>
         ) : null}
         {refreshError}
@@ -178,6 +180,7 @@ export function ProcessingStatusWidget({
       : processingStatusMessage({
           status: displayStatus,
           errorMessage: null,
+          operationKind: targetScope.operationKind,
         });
   const heading = processingHeading(displayStatus, target);
   const datasetsWithHistory = data.datasets.filter(
@@ -217,7 +220,9 @@ export function ProcessingStatusWidget({
         {failureGroups.map((group) => {
           const failedAt = group.failedAt ? formatRelativeTime(group.failedAt) : null;
           const lastReadyAt = group.lastReadyAt ? formatRelativeTime(group.lastReadyAt) : null;
-          const labelPrefix = group.providerLabel ? `${group.providerLabel} sync` : "data update";
+          const labelPrefix = group.providerLabel
+            ? `${group.providerLabel} ${group.operationKind === "push_ingest" ? "update processing" : "sync"}`
+            : "data update";
           return (
             <li key={group.operationId} className="py-2 text-xs">
               <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">

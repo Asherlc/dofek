@@ -29,9 +29,11 @@ const SYNC_HISTORY_FILTER_COLUMNS = [
 export function SyncHistory({
   providerId,
   providerName,
+  pushOnly = false,
 }: {
   providerId: string;
   providerName: string;
+  pushOnly?: boolean;
 }) {
   const [page, setPage] = useState(0);
   const [filters, setFilters] = useState<Record<string, string>>({});
@@ -61,7 +63,9 @@ export function SyncHistory({
 
   return (
     <section>
-      <h2 className="text-sm font-medium text-muted uppercase tracking-wider mb-2">Sync History</h2>
+      <h2 className="text-sm font-medium text-muted uppercase tracking-wider mb-2">
+        {pushOnly ? "Update history" : "Sync History"}
+      </h2>
 
       {logs.isError ? <QueryStatePanel error={logs.error} height={80} /> : null}
 
@@ -69,7 +73,9 @@ export function SyncHistory({
         <QueryStatePanel variant="loading" height={80} />
       ) : logs.isError && logs.data === undefined ? null : rows.length === 0 &&
         Object.keys(activeFilters).length === 0 ? (
-        <div className="text-xs text-subtle">No sync history yet.</div>
+        <div className="text-xs text-subtle">
+          {pushOnly ? "No updates processed yet." : "No sync history yet."}
+        </div>
       ) : (
         <>
           <details className="mb-3 rounded border border-border bg-surface px-3 py-2 text-xs">
@@ -87,11 +93,18 @@ export function SyncHistory({
           <div className="space-y-2">
             {rows.length === 0 ? (
               <div className="rounded border border-border bg-surface px-4 py-6 text-xs text-subtle">
-                No sync history matches the current filters.
+                {pushOnly
+                  ? "No updates match the current filters."
+                  : "No sync history matches the current filters."}
               </div>
             ) : (
               rows.map((row) => (
-                <ProviderSyncHistoryEntry key={row.id} providerName={providerName} entry={row} />
+                <ProviderSyncHistoryEntry
+                  key={row.id}
+                  providerName={providerName}
+                  entry={row}
+                  pushOnly={pushOnly}
+                />
               ))
             )}
           </div>
@@ -101,6 +114,7 @@ export function SyncHistory({
               type="button"
               onClick={() => setPage((p) => Math.max(0, p - 1))}
               disabled={page === 0}
+              aria-label={pushOnly ? "Previous update history page" : "Previous sync history page"}
               className="text-xs px-3 py-1 rounded bg-accent/10 text-foreground hover:bg-surface-hover disabled:opacity-50 transition-colors"
             >
               Previous
@@ -110,6 +124,7 @@ export function SyncHistory({
               type="button"
               onClick={() => setPage((p) => p + 1)}
               disabled={rows.length < pageSize}
+              aria-label={pushOnly ? "Next update history page" : "Next sync history page"}
               className="text-xs px-3 py-1 rounded bg-accent/10 text-foreground hover:bg-surface-hover disabled:opacity-50 transition-colors"
             >
               Next
