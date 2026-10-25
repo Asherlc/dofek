@@ -39,6 +39,7 @@ describe("purgeMobileAccountState", () => {
       cutoff: "2026-07-26T12:00:00.000Z",
       dependencies: {
         advanceErasureCutoff: vi.fn(async (cutoff) => cutoff),
+        clearBackgroundRefreshDiagnostics: operation("background-refresh-diagnostics"),
         clearPreparation: operation("preparation"),
         clearSession: operation("session"),
         purgeCoreMotion: vi.fn(async (cutoff) => calls.push(`core-motion:${cutoff}`)),
@@ -70,6 +71,7 @@ describe("purgeMobileAccountState", () => {
     expect(calls).toEqual(
       expect.arrayContaining([
         "food-writeback",
+        "background-refresh-diagnostics",
         "health-kit-state:2026-07-26T12:00:00.000Z",
         "core-motion:2026-07-26T12:00:00.000Z",
         "watch-motion:2026-07-26T12:00:00.000Z",
@@ -99,6 +101,7 @@ describe("purgeMobileAccountState", () => {
       cleanupLease,
       dependencies: {
         advanceErasureCutoff: vi.fn(async (cutoff) => cutoff),
+        clearBackgroundRefreshDiagnostics: vi.fn(),
         clearPreparation: later,
         clearSession,
         purgeCoreMotion: later,
@@ -133,6 +136,7 @@ describe("purgeMobileAccountState", () => {
       cleanupLease,
       dependencies: {
         advanceErasureCutoff: vi.fn(async (cutoff) => cutoff),
+        clearBackgroundRefreshDiagnostics: vi.fn(),
         clearPreparation: laterCleanup,
         clearSession: laterCleanup,
         purgeCoreMotion: vi.fn().mockRejectedValue(new Error("motion failed")),
@@ -171,6 +175,7 @@ describe("purgeMobileAccountState", () => {
       cleanupLease,
       dependencies: {
         advanceErasureCutoff: vi.fn(async (cutoff) => cutoff),
+        clearBackgroundRefreshDiagnostics: vi.fn(),
         clearPreparation: vi.fn(),
         clearSession: vi.fn(),
         purgeCoreMotion: vi.fn(),
@@ -209,6 +214,7 @@ describe("purgeMobileAccountState", () => {
       cutoff: "2026-07-25T12:00:00.000Z",
       dependencies: {
         advanceErasureCutoff: vi.fn().mockResolvedValue("2026-07-26T12:00:00.000Z"),
+        clearBackgroundRefreshDiagnostics: vi.fn(),
         clearPreparation: vi.fn(),
         clearSession: vi.fn(),
         purgeCoreMotion: nativePurge,
@@ -240,6 +246,7 @@ describe("purgeMobileAccountState", () => {
       cutoff: "2026-07-26T12:00:00.000Z",
       dependencies: {
         advanceErasureCutoff: vi.fn().mockRejectedValue(new Error("SecureStore unavailable")),
+        clearBackgroundRefreshDiagnostics: vi.fn(),
         clearPreparation: vi.fn(),
         clearSession: vi.fn(),
         purgeCoreMotion: nativePurge,
@@ -272,6 +279,7 @@ describe("purgeMobileAccountState", () => {
       cleanupLease,
       dependencies: {
         advanceErasureCutoff: operation,
+        clearBackgroundRefreshDiagnostics: operation,
         clearPreparation: operation,
         clearSession: operation,
         purgeCoreMotion: operation,
@@ -306,12 +314,14 @@ describe("purgeMobileAccountState", () => {
       leaseCurrent = false;
     });
     const purgeQueryCaches = vi.fn();
+    const clearBackgroundRefreshDiagnostics = vi.fn();
     const queryClient = { clear: vi.fn() };
 
     const result = await purgeMobileAccountState({
       cleanupLease,
       dependencies: {
         advanceErasureCutoff: vi.fn(async (cutoff) => cutoff),
+        clearBackgroundRefreshDiagnostics,
         clearPreparation: vi.fn(),
         clearSession,
         purgeCoreMotion,
@@ -336,6 +346,7 @@ describe("purgeMobileAccountState", () => {
     expect(result.errors.map((error) => error.message)).toEqual([
       expect.stringMatching(/another account became active/i),
     ]);
+    expect(clearBackgroundRefreshDiagnostics).not.toHaveBeenCalled();
     expect(purgeQueryCaches).not.toHaveBeenCalled();
     expect(clearSession).not.toHaveBeenCalled();
     expect(queryClient.clear).not.toHaveBeenCalled();
