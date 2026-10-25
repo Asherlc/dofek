@@ -50,6 +50,7 @@ Every public module is imported as `@dofek/training/<subpath>`.
 | --- | --- |
 | `activity-icons` | Normalize activity names into framework-neutral icon categories |
 | `activity-chart-series` | [Shared activity-chart timing, gap, marker, and nearest-observation presentation policy](src/activity-chart-series.ts) |
+| `activity-images` | [Activity-image metadata, captions, and shared web/mobile query refresh policy](src/activity-images.ts) |
 | `climbing-grades` | Validate recorded grade components; order and convert supported free-rock grades with [Sandbag](https://github.com/OpenBeta/sandbag) |
 | `climbing-context` | Validate the current Climb and Area path with recorded board, wall-angle, and hold-type context |
 | `climbing-sources` | [Select route destinations and match provider attribution to tick links](src/climbing-sources.ts) for web and mobile using a supplied provider-label resolver |
@@ -74,6 +75,18 @@ Every public module is imported as `@dofek/training/<subpath>`.
 
 ## Model details
 
+### Activity images
+
+The [image presentation contract](src/activity-images.ts) retains stored-image
+dimensions, source associations, and captions. Its query options refresh active
+acquisition every three seconds and renew visible stored-image links every four
+minutes, before the [server's five-minute signed URL lifetime](../../src/activity-images/storage.ts).
+Failed link renewal retries after thirty seconds while stored images remain visible.
+Empty completed results stop polling. Inactive queries discard their temporary
+links; remounting or focusing the client refreshes the query. Persistence metadata excludes them from the
+mobile disk cache. TanStack documents the [query refresh options](https://tanstack.com/query/latest/docs/framework/react/reference/useQuery),
+and Cloudflare describes [signed URLs as temporary bearer access](https://developers.cloudflare.com/r2/api/s3/presigned-urls/).
+
 ### Activity chart presentation
 
 The [chart-series helper](src/activity-chart-series.ts) positions each metric's
@@ -90,9 +103,15 @@ The renderer can show only gaps retained in the API's downsampled observations.
 
 ### Activity icons
 
-The [activity icon metadata](src/activity-icons.ts) includes a shared SVG for
-hangboarding, rendered by web and mobile ActivityTypeIcon components. Inline
-emoji consumers use a hand fallback rather than the generic activity symbol.
+The [activity icon metadata](src/activity-icons.ts) owns Dofek's original rounded
+outline SVG family for all 16 existing categories, including a neutral activity
+glyph for unknown types. Category resolution remains shared across web and
+mobile. Each glyph uses a 32-unit view box, rounded strokes, and `currentColor`
+so renderers can supply a theme-appropriate foreground; see the
+[SVG painting specification](https://www.w3.org/TR/SVG2/painting.html).
+Web uses the shared SVG as a [CSS mask](https://www.w3.org/TR/css-masking-1/),
+and mobile renders the same source through
+[react-native-svg's SvgXml](https://github.com/software-mansion/react-native-svg/blob/main/USAGE.md#use-with-xml-strings).
 
 ### Climbing grades and attempts
 

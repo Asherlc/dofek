@@ -41,12 +41,12 @@ import { ActivityHeatmap } from "../../components/ActivityHeatmap";
 import { ActivityMapTile } from "../../components/ActivityMapTile";
 import { ActivityMetricStrip } from "../../components/ActivityMetricStrip";
 import { ActivityOverview } from "../../components/ActivityOverview";
+import { ActivityPhotoPreview } from "../../components/ActivityPhotoPreview";
+import { ActivitySourceDisclosure } from "../../components/ActivitySourceDisclosure";
 import { ActivityTypeIcon } from "../../components/ActivityTypeIcon";
 import { PaginationControls } from "../../components/PaginationControls";
 import { ProcessingStatusWidget } from "../../components/ProcessingStatusWidget";
-import { ProviderLogo } from "../../components/ProviderLogo";
 import { QueryStatePanel } from "../../components/QueryStatePanel";
-import { SERVER_URL } from "../../lib/server";
 import { trpc } from "../../lib/trpc";
 import { useUnitConverter } from "../../lib/units";
 import { useProcessingStatus } from "../../lib/useProcessingStatus";
@@ -422,50 +422,52 @@ export default function ActivitiesScreen() {
                 <View style={styles.dayHeaderRule} />
               </View>
               {day.activities.map((activity) => (
-                <TouchableOpacity
+                <View
                   key={activity.id}
-                  activeOpacity={0.7}
-                  onPress={() => {
-                    if (selectMode) {
-                      toggleSelectedActivity(activity.id);
-                      return;
-                    }
-                    router.push(`/activity/${activity.id}`);
-                  }}
                   style={[
                     styles.card,
                     selectedActivityIds.has(activity.id) ? styles.cardSelected : null,
                   ]}
-                  accessibilityRole="button"
-                  accessibilityLabel={formatActivityAccessibilityLabel(
-                    selectMode
-                      ? selectedActivityIds.has(activity.id)
-                        ? "Deselect"
-                        : "Select"
-                      : "Open",
-                    activity,
-                    units,
-                  )}
-                  accessibilityState={{
-                    selected: selectMode ? selectedActivityIds.has(activity.id) : undefined,
-                  }}
                 >
-                  <View style={styles.cardContent}>
-                    <View style={styles.cardMain}>
-                      <View style={styles.titleRow}>
-                        {activity.source.origin.status === "resolved" ? (
-                          <View
-                            accessibilityRole="image"
-                            accessibilityLabel={`Primary recording provider: ${providerSourceLabel(activity.source.origin.providerId, activity.source.origin.sourceName)}`}
-                          >
-                            <ProviderLogo
-                              provider={activity.source.origin.providerId}
-                              sourceName={activity.source.origin.sourceName}
-                              serverUrl={SERVER_URL}
-                              size={32}
-                            />
-                          </View>
-                        ) : null}
+                  <TouchableOpacity
+                    activeOpacity={0.7}
+                    onPress={() => {
+                      if (selectMode) {
+                        toggleSelectedActivity(activity.id);
+                        return;
+                      }
+                      router.push(`/activity/${activity.id}`);
+                    }}
+                    style={styles.cardAction}
+                    accessibilityRole="button"
+                    accessibilityLabel={formatActivityAccessibilityLabel(
+                      selectMode
+                        ? selectedActivityIds.has(activity.id)
+                          ? "Deselect"
+                          : "Select"
+                        : "Open",
+                      activity,
+                      units,
+                    )}
+                    accessibilityState={{
+                      selected: selectMode ? selectedActivityIds.has(activity.id) : undefined,
+                    }}
+                  />
+                  <View style={styles.cardContent} pointerEvents="box-none">
+                    <View
+                      pointerEvents="none"
+                      accessibilityElementsHidden
+                      importantForAccessibility="no-hide-descendants"
+                    >
+                      <ActivityTypeIcon activityType={activity.activityType} size={40} />
+                    </View>
+                    <View style={styles.cardMain} pointerEvents="box-none">
+                      <View
+                        style={styles.titleRow}
+                        pointerEvents="none"
+                        accessibilityElementsHidden
+                        importantForAccessibility="no-hide-descendants"
+                      >
                         <Text style={styles.activityName} numberOfLines={1}>
                           {activity.name ?? formatActivityTypeLabel(activity.activityType)}
                         </Text>
@@ -488,22 +490,43 @@ export default function ActivitiesScreen() {
                           </Text>
                         ) : null}
                       </View>
-                      <Text style={styles.activityMeta}>
-                        {displayRecordLocalTime(activity.startedAt, activity.localTimeContext)} ·{" "}
-                        {formatDurationMinutes(activity.durationMin)}
-                      </Text>
-                      <ActivityMetricStrip activity={activity} units={units} />
+                      <View style={styles.metaRow} pointerEvents="box-none">
+                        <View
+                          pointerEvents="none"
+                          accessibilityElementsHidden
+                          importantForAccessibility="no-hide-descendants"
+                        >
+                          <Text style={styles.activityMeta}>
+                            {displayRecordLocalTime(activity.startedAt, activity.localTimeContext)}{" "}
+                            · {formatDurationMinutes(activity.durationMin)}
+                          </Text>
+                        </View>
+                        <ActivitySourceDisclosure origin={activity.source.origin} />
+                      </View>
+                      <View
+                        pointerEvents="none"
+                        accessibilityElementsHidden
+                        importantForAccessibility="no-hide-descendants"
+                      >
+                        <ActivityMetricStrip activity={activity} units={units} />
+                      </View>
                     </View>
-                    {!activity.location && activity.source.origin.status !== "resolved" ? (
-                      <ActivityTypeIcon activityType={activity.activityType} />
-                    ) : null}
                   </View>
                   {activity.location ? (
-                    <View style={styles.mapPanel}>
+                    <View
+                      style={styles.mapPanel}
+                      pointerEvents="none"
+                      accessibilityElementsHidden
+                      importantForAccessibility="no-hide-descendants"
+                    >
                       <ActivityMapTile location={activity.location} />
                     </View>
+                  ) : !activity.isProviderAbsent ? (
+                    <View pointerEvents="none">
+                      <ActivityPhotoPreview activityId={activity.id} />
+                    </View>
                   ) : null}
-                </TouchableOpacity>
+                </View>
               ))}
             </View>
           ))}
@@ -850,6 +873,13 @@ const styles = StyleSheet.create({
     borderColor: colors.accent,
     borderWidth: 1,
   },
+  cardAction: {
+    position: "absolute",
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+  },
   cardContent: {
     flexDirection: "row",
     gap: spacing.sm,
@@ -901,6 +931,12 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     fontSize: 12,
     marginTop: 2,
+  },
+  metaRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xs,
+    flexWrap: "wrap",
   },
   mapPanel: {
     paddingHorizontal: spacing.sm,

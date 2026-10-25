@@ -374,13 +374,6 @@ export function MetricsChart({
       ) : (
         <DofekChart option={option} height={380} onEvents={chartEvents} timeRangeMode="data" />
       )}
-      {points.length > 0 && (
-        <figcaption className="mt-1 flex flex-wrap items-baseline gap-x-2 px-[60px] text-xs text-dim">
-          <span>Dots mark recorded samples; gaps indicate unobserved time.</span>
-          <span className="font-medium text-muted">Zoom timeline</span>
-          <span>Drag the handles to focus on part of the activity.</span>
-        </figcaption>
-      )}
     </figure>
   );
 }
@@ -467,9 +460,6 @@ export function ElevationChart({
   return (
     <figure className="m-0">
       <DofekChart option={option} height={200} onEvents={chartEvents} timeRangeMode="data" />
-      <figcaption className="mt-1 px-[50px] text-xs text-dim">
-        Dots mark recorded samples; gaps indicate unobserved time.
-      </figcaption>
     </figure>
   );
 }

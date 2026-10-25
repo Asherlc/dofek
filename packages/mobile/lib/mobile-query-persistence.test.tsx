@@ -4,7 +4,7 @@ import {
   persistQueryClient,
   persistQueryClientRestore,
 } from "@tanstack/react-query-persist-client";
-import { render, screen } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createMobileQueryPersister,
@@ -44,6 +44,40 @@ describe("mobile query persistence", () => {
   it("uses the current cache contract buster", () => {
     expect(MOBILE_QUERY_CACHE_CONTRACT_VERSION).toBe(9);
     expect(mobileQueryCacheBuster("user-1")).toBe("user-1:v9");
+  });
+
+  it("persists normal query data while leaving short-lived signed image URLs in memory", async () => {
+    const AsyncStorage = (await import("@react-native-async-storage/async-storage")).default;
+    const client = createQueryClient();
+    function RestorationStatus() {
+      return <span>{useIsRestoring() ? "restoring" : "restored"}</span>;
+    }
+    render(
+      <MobileQueryPersistenceProvider queryClient={client} userId="image-owner">
+        <RestorationStatus />
+      </MobileQueryPersistenceProvider>,
+    );
+    await screen.findByText("restored");
+    await act(async () => {
+      await client.fetchQuery({
+        queryKey: [["activity", "images"], { id: "activity-1" }],
+        meta: { persist: false },
+        queryFn: () => ({ images: [{ url: "https://private.test/image?signature=secret" }] }),
+      });
+      client.setQueryData(["dashboard"], { readiness: "cached" });
+    });
+
+    await waitFor(
+      async () => {
+        const stored = await AsyncStorage.getItem("dofek-query-cache:image-owner");
+        expect(stored).toBeTruthy();
+        expect(JSON.parse(stored ?? "null").clientState.queries).toEqual([
+          expect.objectContaining({ queryKey: ["dashboard"] }),
+        ]);
+        expect(stored).not.toContain("signature");
+      },
+      { timeout: 3000 },
+    );
   });
 
   it("reports downstream hydration failures safely and completes provider restoration", async () => {

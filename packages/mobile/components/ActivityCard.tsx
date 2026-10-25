@@ -6,10 +6,10 @@ import {
 } from "@dofek/format/activity-data-state";
 import { formatDurationRange, formatNumber, formatTimeOnly } from "@dofek/format/format";
 import type { UnitConverter } from "@dofek/format/units";
-import { getActivityIconInfo } from "@dofek/training/activity-icons";
 import { formatActivityTypeLabel } from "@dofek/training/training";
 import { StyleSheet, Text, View } from "react-native";
 import { colors } from "../theme";
+import { ActivityTypeIcon } from "./ActivityTypeIcon";
 
 interface ActivityCardProps {
   name: string;
@@ -22,10 +22,6 @@ interface ActivityCardProps {
   distanceKm: number | null;
   distanceState: ActivityDataState;
   units: UnitConverter;
-}
-
-function activityIcon(type: string): string {
-  return getActivityIconInfo(type).emoji;
 }
 
 function Stat({ value, label, unit }: { value: string | number; label: string; unit?: string }) {
@@ -75,7 +71,7 @@ export function ActivityCard({
   return (
     <View style={styles.card}>
       <View style={styles.header}>
-        <Text style={styles.icon}>{activityIcon(activityType)}</Text>
+        <ActivityTypeIcon activityType={activityType} size={40} />
         <View style={styles.headerText}>
           <Text style={styles.name} numberOfLines={2}>
             {name || formatActivityTypeLabel(activityType)}
@@ -113,9 +109,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
-  },
-  icon: {
-    fontSize: 28,
   },
   headerText: {
     flex: 1,

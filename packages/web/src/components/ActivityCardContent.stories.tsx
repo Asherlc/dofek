@@ -1,7 +1,9 @@
 import { UnitConverter } from "@dofek/format/units";
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { useState } from "react";
 import { ActivityCardContent, type ActivityCardData } from "./ActivityCardContent.tsx";
 import { climbingSourceLocation } from "./ActivityMapTile.fixtures.ts";
+import { activityPhotoFixture } from "./ActivityPhoto.fixtures.ts";
 
 const units = new UnitConverter("metric");
 
@@ -19,7 +21,12 @@ const strengthActivity: ActivityCardData = {
   },
   durationMin: 30,
   source: {
-    origin: { status: "unresolved", candidateMemberActivityIds: [] },
+    origin: {
+      status: "resolved",
+      memberActivityId: "00000000-0000-4000-8000-000000000001",
+      providerId: "apple_health",
+      sourceName: "Strong",
+    },
     primarySourceLabel: "Strong (via Apple Health)",
     sourceCount: 1,
     overlapSummary: null,
@@ -70,7 +77,12 @@ const mappedActivity: ActivityCardData = {
   },
   durationMin: 64,
   source: {
-    origin: { status: "unresolved", candidateMemberActivityIds: [] },
+    origin: {
+      status: "resolved",
+      memberActivityId: "00000000-0000-4000-8000-000000000001",
+      providerId: "garmin",
+      sourceName: "Garmin Edge 530",
+    },
     primarySourceLabel: "Garmin Connect",
     sourceCount: 2,
     overlapSummary: "2 matched source records · Garmin Connect selected by source priority",
@@ -133,6 +145,7 @@ const meta = {
   title: "Activities/ActivityCardContent",
   component: ActivityCardContent,
   tags: ["autodocs"],
+  parameters: { layout: "fullscreen" },
   args: {
     activity: strengthActivity,
     units,
@@ -141,7 +154,7 @@ const meta = {
   },
   decorators: [
     (Story) => (
-      <div className="w-[1400px] max-w-full bg-background p-8">
+      <div className="w-full max-w-[1400px] bg-background p-4 sm:p-8">
         <Story />
       </div>
     ),
@@ -377,6 +390,7 @@ export const AppleHealthSourceApps: Story = {
             activity={{
               ...strengthActivity,
               name: sourceName === "Strong" ? "Morning strength" : "Hangboard session",
+              activityType: sourceName === "Strong" ? "strength" : "hangboarding",
               source: {
                 origin: {
                   status: "resolved",
@@ -397,4 +411,62 @@ export const AppleHealthSourceApps: Story = {
       ))}
     </div>
   ),
+};
+
+export const PhotoWithoutMap: Story = {
+  args: { activity: strengthActivity, photo: activityPhotoFixture },
+};
+
+export const MapBeforePhoto: Story = {
+  args: { activity: mappedActivity, photo: activityPhotoFixture },
+};
+
+function InteractiveCard({ selectMode }: { selectMode: boolean }) {
+  const [selected, setSelected] = useState(false);
+  const actionClassName =
+    "text-left after:absolute after:inset-0 after:z-10 focus-visible:outline-none focus-visible:after:rounded-lg focus-visible:after:outline-2 focus-visible:after:outline-accent";
+  const toggleSelected = () => setSelected((current) => !current);
+  const headingAction = selectMode ? (
+    <button
+      type="button"
+      onClick={toggleSelected}
+      aria-pressed={selected}
+      className={actionClassName}
+    >
+      {mappedActivity.name}
+    </button>
+  ) : (
+    <a href="#activity-navigation" className={actionClassName}>
+      {mappedActivity.name}
+    </a>
+  );
+  return (
+    <div>
+      <p id="activity-navigation" role="status" className="mb-4 text-sm text-foreground">
+        {selectMode
+          ? `Selected: ${selected ? "yes" : "no"}`
+          : "Navigation target: #activity-navigation"}
+      </p>
+      <article
+        className={`card relative block h-full overflow-hidden transition-colors ${selected ? "ring-2 ring-accent bg-surface-hover" : ""}`}
+      >
+        <ActivityCardContent
+          activity={mappedActivity}
+          units={units}
+          selectMode={selectMode}
+          selected={selected}
+          headingAction={headingAction}
+          onToggleSelected={toggleSelected}
+        />
+      </article>
+    </div>
+  );
+}
+
+export const NavigableCard: Story = {
+  render: () => <InteractiveCard selectMode={false} />,
+};
+
+export const SelectableCard: Story = {
+  render: () => <InteractiveCard selectMode={true} />,
 };
