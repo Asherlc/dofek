@@ -102,6 +102,31 @@ describe("activity hardware", () => {
     ]);
     expect(result.items[0]).toMatchObject({ label: "My Watch", model: "Watch" });
   });
+  it.each(["Watch99,99", "iPhone99,99", "iPad99,99", "iPod99,99"])(
+    "keeps a personal name when Apple model %s is unresolved",
+    (model) => {
+      const result = normalizeActivityHardware([
+        {
+          ...member,
+          providerId: "apple_health",
+          raw: { device: { name: "My device", model } },
+          observations: [],
+        },
+      ]);
+      expect(result.items[0]).toMatchObject({ label: "My device", model: null });
+    },
+  );
+  it("qualifies an unresolved Apple device that has no reported name", () => {
+    const result = normalizeActivityHardware([
+      {
+        ...member,
+        providerId: "apple_health",
+        raw: { device: { model: "Watch99,99" } },
+        observations: [],
+      },
+    ]);
+    expect(result.items[0]).toMatchObject({ label: "Unidentified device", model: null });
+  });
   it.each([
     [{ manufacturer: 1, product: 4024 }, "Forerunner 955", "Garmin"],
     [{ manufacturer: "1", product: "4024" }, "Forerunner 955", "Garmin"],
@@ -616,12 +641,15 @@ describe("activity hardware", () => {
       value: "local_identifier",
     });
   });
-  it("leaves unsupported and absent metadata empty", () => {
-    expect(normalizeActivityHardware([{ ...member, observations: [] }])).toEqual({
-      items: [],
-      power: [],
-    });
-  });
+  it.each(["garmin", "apple_health", "apple-health"])(
+    "leaves absent metadata from %s empty",
+    (providerId) => {
+      expect(normalizeActivityHardware([{ ...member, providerId, observations: [] }])).toEqual({
+        items: [],
+        power: [],
+      });
+    },
+  );
   it("resolves numeric FIT device types from the official profile and keeps unknown identity facts", () => {
     const result = normalizeActivityHardware([
       {

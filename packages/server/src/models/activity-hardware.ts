@@ -222,12 +222,18 @@ function apiItem(member: ActivityHardwareMember): ActivityHardwareItem | null {
     const reportedModel = text(device.model);
     const hardware = text(device.hardwareVersion);
     const deviceName = text(device.name);
+    const isModelIdentifier = /^(?:Watch|iPhone|iPad|iPod)\d+,\d+$/.test(reportedModel ?? "");
     const resolvedModel =
       (hardware ? appleDeviceModel(hardware) : null) ??
       (reportedModel ? appleDeviceModel(reportedModel) : null);
-    model = resolvedModel ?? reportedModel;
+    model = resolvedModel ?? (isModelIdentifier ? null : reportedModel);
     manufacturer = text(device.manufacturer);
-    label = resolvedModel ?? deviceName ?? model ?? manufacturer;
+    label =
+      resolvedModel ??
+      deviceName ??
+      model ??
+      manufacturer ??
+      (isModelIdentifier ? "Unidentified device" : null);
     itemDetails = details([
       ["Device name", resolvedModel && deviceName !== resolvedModel ? deviceName : null],
       ["Firmware", device.firmwareVersion],
