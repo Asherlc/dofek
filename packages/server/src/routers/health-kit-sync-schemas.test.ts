@@ -26,9 +26,10 @@ it("retains optional reported workout hardware through validation", () => {
       duration: 3600,
       sourceName: "Fitness",
       sourceBundle: "com.apple.fitness",
+      sourceProductType: "Watch7,12",
       device,
     }),
-  ).toMatchObject({ device });
+  ).toMatchObject({ device, sourceProductType: "Watch7,12" });
 });
 
 describe("healthKitSampleSchema", () => {

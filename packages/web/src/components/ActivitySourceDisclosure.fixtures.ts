@@ -1,4 +1,105 @@
+import type { ActivityHardware } from "@dofek/providers/activity-hardware";
 import type { ActivitySourceTree } from "@dofek/providers/activity-source-tree";
+
+export const walkingSourceTree: ActivitySourceTree = {
+  primary: {
+    id: "apple-record:recording-attribution",
+    providerId: "apple-watch",
+    sourceName: null,
+    label: "Asher’s Apple Watch",
+    description: null,
+    url: null,
+    children: [
+      {
+        id: "apple-record",
+        providerId: "apple_health",
+        sourceName: null,
+        label: "Apple Health",
+        description: null,
+        url: null,
+        children: [],
+      },
+    ],
+  },
+  otherSources: [
+    {
+      id: "peloton-record",
+      providerId: "peloton",
+      sourceName: null,
+      label: "Peloton",
+      description: null,
+      url: null,
+      children: [],
+    },
+  ],
+};
+
+export const walkingHardware: ActivityHardware = {
+  items: [
+    {
+      id: "apple-watch",
+      activityId: "apple-record",
+      providerId: "apple_health",
+      sourceName: "Asher’s Apple Watch",
+      role: "recorder",
+      label: "Apple Watch",
+      model: null,
+      manufacturer: "Apple",
+      evidence: "Hardware reported by HealthKit.",
+      details: [],
+    },
+    {
+      id: "peloton-device",
+      activityId: "peloton-record",
+      providerId: "peloton",
+      sourceName: null,
+      role: "category",
+      label: "Whoop",
+      model: null,
+      manufacturer: null,
+      evidence: "Device or platform metadata reported by Peloton.",
+      details: [],
+    },
+  ],
+  power: [],
+};
+
+export const sourceHardware: ActivityHardware = {
+  items: [
+    {
+      id: "garmin-device",
+      activityId: "garmin-record",
+      providerId: "garmin",
+      sourceName: null,
+      role: "recorder",
+      label: "Edge 530",
+      model: "Edge 530",
+      manufacturer: "Garmin",
+      evidence: "Recording device reported by Garmin.",
+      details: [{ label: "Serial number", value: "12345678" }],
+    },
+    {
+      id: "peloton-metadata",
+      activityId: "peloton-record",
+      providerId: "peloton",
+      sourceName: null,
+      role: "category",
+      label: "Whoop",
+      model: null,
+      manufacturer: null,
+      evidence: "Device or platform metadata reported by Peloton.",
+      details: [],
+    },
+  ],
+  power: [
+    {
+      activityId: "strava-record",
+      providerId: "strava",
+      kind: "measured",
+      label: "Power · Measured · Strava",
+    },
+  ],
+};
 
 export const branchingSourceTree: ActivitySourceTree = {
   primary: {

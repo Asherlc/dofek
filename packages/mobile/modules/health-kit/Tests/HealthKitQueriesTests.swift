@@ -3,7 +3,36 @@ import XCTest
 
 @testable import HealthKitLib
 
+private final class WorkoutSource: HKSource, @unchecked Sendable {
+    override var name: String { "Fitness" }
+    override var bundleIdentifier: String { "com.apple.fitness" }
+}
+
+private final class WatchWorkout: HKWorkout, @unchecked Sendable {
+    override var sourceRevision: HKSourceRevision {
+        // SwiftPM has no app bundle, so HKSource.default() cannot supply a test source.
+        // Decode an HKSource test double and override its public identity properties.
+        let archiver = NSKeyedArchiver(requiringSecureCoding: true)
+        archiver.finishEncoding()
+        let decoder = try! NSKeyedUnarchiver(forReadingFrom: archiver.encodedData)
+        let source = WorkoutSource(coder: decoder)!
+        return HKSourceRevision(source: source, version: "1.0", productType: "Watch7,12",
+                         operatingSystemVersion: OperatingSystemVersion(majorVersion: 26, minorVersion: 0, patchVersion: 0))
+    }
+}
+
 final class HealthKitQueriesTests: XCTestCase {
+
+    func testWorkoutTransportRetainsSourceProductTypeSeparatelyFromGenericDeviceModel() {
+        let workout = WatchWorkout(activityType: .running, start: Date(), end: Date(), duration: 0,
+                                   totalEnergyBurned: nil, totalDistance: nil,
+                                   device: HKDevice(name: "My Watch", manufacturer: "Apple", model: "Watch",
+                                                    hardwareVersion: nil, firmwareVersion: nil, softwareVersion: nil,
+                                                    localIdentifier: nil, udiDeviceIdentifier: nil), metadata: nil)
+        let result = HealthKitQueries.transportWorkout(workout)
+        XCTAssertEqual(result["sourceProductType"] as? String, "Watch7,12")
+        XCTAssertEqual((result["device"] as? [String: String])?["model"], "Watch")
+    }
 
     func testWorkoutTransportPreservesReportedDeviceAndSource() throws {
         let device = HKDevice(

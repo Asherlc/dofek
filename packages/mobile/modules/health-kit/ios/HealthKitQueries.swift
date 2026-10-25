@@ -66,6 +66,9 @@ enum HealthKitQueries {
             "sourceName": workout.sourceRevision.source.name,
             "sourceBundle": workout.sourceRevision.source.bundleIdentifier,
         ]
+        if let productType = workout.sourceRevision.productType {
+            dict["sourceProductType"] = productType
+        }
         if let distance = workout.totalDistance {
             dict["totalDistance"] = distance.doubleValue(for: .meter())
         }

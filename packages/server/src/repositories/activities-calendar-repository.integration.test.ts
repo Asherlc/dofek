@@ -134,7 +134,7 @@ describe("Activities list source tree hydration", () => {
           { id: ids[1], providerId: "strava", children: [{ id: ids[2], providerId: "strava" }] },
         ],
       },
-      otherSources: [{ id: ids[4], providerId: "garmin", description: "Other matching source" }],
+      otherSources: [{ id: ids[4], providerId: "garmin", description: null }],
     });
   });
   it("hydrates removed-record identity and recording-device attribution", async () => {
@@ -144,13 +144,13 @@ describe("Activities list source tree hydration", () => {
     expect(entries.find((entry) => entry.id === absentId)?.source.tree).toMatchObject({
       primary: {
         label: "Garmin Edge 530",
-        description: "Recording app or device attribution",
+        description: null,
         children: [
           {
             id: absentId,
             providerId: "strava",
             label: "Strava",
-            description: `Recording attribution reported by Strava · Removed from provider ${formatDateTime("2026-10-03 12:00:00")}`,
+            description: `Removed from provider ${formatDateTime("2026-10-03 12:00:00")}`,
             url: null,
           },
         ],

@@ -1,16 +1,37 @@
+import type { ActivityHardware } from "@dofek/providers/activity-hardware";
+import { activitySourceTreeWithHardware } from "@dofek/providers/activity-source-hardware";
 import type {
   ActivitySourceTree,
   ActivitySourceTreeNode,
 } from "@dofek/providers/activity-source-tree";
 import { useId, useState } from "react";
 import { ProviderLogo } from "./ProviderLogo.tsx";
+import { QueryStatePanel } from "./QueryStatePanel.tsx";
 
-export function ActivitySourceDisclosure({ tree }: { tree: ActivitySourceTree }) {
+const EMPTY_HARDWARE: ActivityHardware = { items: [], power: [] };
+
+interface Props {
+  tree: ActivitySourceTree;
+  hardware?: ActivityHardware;
+  hardwareLoading?: boolean;
+  hardwareError?: unknown;
+  onRetryHardware?: () => void;
+}
+
+export function ActivitySourceDisclosure({
+  tree,
+  hardware,
+  hardwareLoading = false,
+  hardwareError,
+  onRetryHardware,
+}: Props) {
   const [expanded, setExpanded] = useState(false);
   const contentId = useId();
-  const othersId = useId();
-  const { primary, otherSources } = tree;
-  if (!primary && otherSources.length === 0) return null;
+  const { primary, otherSources } = activitySourceTreeWithHardware(
+    tree,
+    hardware ?? EMPTY_HARDWARE,
+  );
+  if (!primary && otherSources.length === 0 && !hardwareLoading && !hardwareError) return null;
 
   return (
     <div className="relative z-20 min-w-0 border-t border-border/60 text-sm">
@@ -49,9 +70,20 @@ export function ActivitySourceDisclosure({ tree }: { tree: ActivitySourceTree })
           />
         </svg>
       </button>
+      {hardwareError ? (
+        <QueryStatePanel
+          contextLabel="Device details"
+          error={hardwareError}
+          onRetry={onRetryHardware}
+          height={72}
+        />
+      ) : null}
       <div id={contentId} hidden={!expanded}>
         {expanded ? (
           <div className="px-4 pb-4 sm:px-5">
+            {!hardware && hardwareLoading && !hardwareError ? (
+              <QueryStatePanel variant="loading" contextLabel="Device details" height={72} />
+            ) : null}
             {primary ? (
               <>
                 {primary.description ? (
@@ -70,17 +102,15 @@ export function ActivitySourceDisclosure({ tree }: { tree: ActivitySourceTree })
                     View activity ↗
                   </a>
                 ) : null}
+                <SourceNodeDetails node={primary} />
                 <SourceTreeNodes nodes={primary.children} connected />
               </>
             ) : null}
             {otherSources.length > 0 ? (
               <section
-                aria-labelledby={othersId}
+                aria-label="Additional sources"
                 className={primary ? "mt-4 border-t border-border/60 pt-3" : ""}
               >
-                <p id={othersId} className="mb-2 text-xs font-medium text-muted">
-                  Other matching sources
-                </p>
                 <SourceTreeNodes nodes={otherSources} />
               </section>
             ) : null}
@@ -88,6 +118,20 @@ export function ActivitySourceDisclosure({ tree }: { tree: ActivitySourceTree })
         ) : null}
       </div>
     </div>
+  );
+}
+
+function SourceNodeDetails({ node }: { node: ActivitySourceTreeNode }) {
+  if (!node.details?.length) return null;
+  return (
+    <dl className="ml-[26px] mt-1 grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1 text-xs text-muted [overflow-wrap:anywhere]">
+      {node.details.map((detail) => (
+        <div className="contents" key={detail.label}>
+          <dt>{detail.label}</dt>
+          <dd>{detail.value}</dd>
+        </div>
+      ))}
+    </dl>
   );
 }
 
@@ -130,6 +174,7 @@ function SourceTreeNodes({
               {node.description}
             </p>
           ) : null}
+          <SourceNodeDetails node={node} />
           <SourceTreeNodes nodes={node.children} connected />
         </li>
       ))}

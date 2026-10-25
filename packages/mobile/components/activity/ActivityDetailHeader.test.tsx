@@ -31,7 +31,6 @@ describe("ActivityDetailHeader", () => {
     expect(screen.getAllByText("Garmin Edge 530")).toHaveLength(1);
     expect(screen.getAllByText("Apple Health")).toHaveLength(2);
     expect(screen.getByText("Imported from Strava")).toBeDefined();
-    expect(screen.getByText("Other matching sources")).toBeDefined();
     expect(screen.getByText("WHOOP")).toBeDefined();
     fireEvent.click(screen.getByRole("button", { name: "View source for Strava" }));
     expect(Linking.openURL).toHaveBeenCalledWith("https://www.strava.com/activities/123");
@@ -71,7 +70,6 @@ describe("ActivityDetailHeader", () => {
       />,
     );
     fireEvent.click(screen.getByRole("button", { name: "Sources" }));
-    expect(screen.getByText("Other matching sources")).toBeDefined();
     expect(screen.getByText("WHOOP")).toBeDefined();
   });
 

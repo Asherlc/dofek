@@ -15,6 +15,18 @@ as `device`, separately from `sourceName` and `sourceBundle`. Available name,
 model, manufacturer, version and identifier fields pass through normal and
 observer-triggered workout uploads into the activity's raw payload. Unknown
 fields remain absent; existing activities gain newly retained facts after sync.
+The workout's [`HKSourceRevision.productType`](https://developer.apple.com/documentation/healthkit/hksourcerevision/producttype)
+is retained separately as `sourceProductType`, since `HKDevice.model` can identify
+only a device family. The server resolves known Apple Watch identifiers to
+specific generation/size names using the watch-only mapping from
+[DeviceKit 5.9.0](https://github.com/devicekit/DeviceKit/blob/5.9.0/Source/Device.generated.swift),
+with its MIT notice retained in the lookup file. Unknown identifiers remain
+verbatim; generic Watch/Apple Watch values do not establish a specific model.
+Source product identifiers take precedence over a specific device model; when
+both are unavailable, a known watch identifier in `device.hardwareVersion`
+can resolve the model from previously retained [HKDevice facts](https://developer.apple.com/documentation/healthkit/hkdevice).
+Existing uploads need a workout resync from an updated native build to acquire
+the newly retained identifier.
 
 ## Structure
 

@@ -11,6 +11,13 @@ Metadata and statistics for data providers.
   FIT creators may be export platforms; observed FIT devices are inventory
   evidence, not per-sample attribution; see
   [Garmin's activity-file description](https://developer.garmin.com/fit/articles/file-types/activity.html).
+  [`activitySourceTreeWithHardware(tree, hardware)`](src/activity-source-hardware.ts)
+  clones the source tree and nests hardware beneath its reporting record. Recording
+  device facts enrich existing Apple Watch or Garmin device nodes; specific models,
+  reported details, and power evidence use optional node `details`. Unmatched
+  records remain separate reporting-source roots rather than implying import
+  ancestry. This projection preserves the distinction between FIT creators and
+  device inventory described in the linked Garmin activity-file specification.
 
 - **Activity origin**: The [origin contract](src/activity-origin.ts) identifies
   the closest available recording or explicitly unresolved attribution. Field

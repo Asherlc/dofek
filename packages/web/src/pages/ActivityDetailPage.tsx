@@ -33,7 +33,6 @@ import type {
 import type { ActivityDetail } from "../../../server/src/models/activity.ts";
 import type { StrengthExerciseDetail } from "../../../server/src/routers/activity.ts";
 import { ActivityExportDropdown } from "../components/ActivityExportDropdown.tsx";
-import { ActivityHardwarePanel } from "../components/ActivityHardwarePanel.tsx";
 import { ActivityPerceivedExertion } from "../components/ActivityPerceivedExertion.tsx";
 import { ActivityPhotos } from "../components/ActivityPhotos.tsx";
 import { ActivityRouteMap } from "../components/ActivityRouteMap.tsx";
@@ -262,7 +261,14 @@ export function ActivityDetailPage() {
 
       {activity.providerAbsentAt ? <ProviderAbsentBanner activity={activity} /> : null}
 
-      <ActivityHeader activity={activity} units={units} />
+      <ActivityHeader
+        activity={activity}
+        units={units}
+        hardware={hardware.data}
+        hardwareLoading={hardware.isLoading}
+        hardwareError={hardware.error}
+        onRetryHardware={() => void hardware.refetch()}
+      />
       <ActivityPerceivedExertion value={activity.perceivedExertion} />
 
       <ActivityPhotos
@@ -279,12 +285,6 @@ export function ActivityDetailPage() {
       {detail.error ? <QueryStatePanel error={detail.error} height={72} /> : null}
 
       {metricSources.error && <QueryStatePanel error={metricSources.error} height={72} />}
-      <ActivityHardwarePanel
-        data={hardware.data}
-        loading={hardware.isLoading}
-        error={hardware.error}
-        onRetry={() => void hardware.refetch()}
-      />
       {stream.error ? (
         <Section title="Sensor Data">
           <QueryStatePanel error={stream.error} height={72} />
@@ -492,10 +492,11 @@ export function ActivityDetailPage() {
 export function ActivityHeader({
   activity,
   units,
+  ...sourceDetails
 }: {
   activity: ActivityDetail;
   units: UnitConverter;
-}) {
+} & Omit<ComponentProps<typeof ActivitySourceDisclosure>, "tree">) {
   const durationMin =
     activity.startedAt && activity.endedAt
       ? Math.round(
@@ -586,7 +587,7 @@ export function ActivityHeader({
         {formatDateLong(activity.displayedDate, { timeZone: "UTC" })} at{" "}
         {localStartTime === "--" ? "Local time unavailable" : localStartTime}
       </p>
-      <ActivitySourceDisclosure tree={activity.sourceTree} />
+      <ActivitySourceDisclosure tree={activity.sourceTree} {...sourceDetails} />
 
       {stats.length > 0 && (
         <div className="flex flex-wrap gap-4">

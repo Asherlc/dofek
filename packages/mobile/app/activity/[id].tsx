@@ -27,7 +27,6 @@ import type {
   ActivityMetricSourceSelection,
   ActivityMetric as SourceMetric,
 } from "../../../server/src/contracts/activity-metric-sources.ts";
-import { ActivityHardwareSection } from "../../components/ActivityHardwarePanel";
 import { ActivityImages } from "../../components/ActivityImages";
 import { ActivityPerceivedExertion } from "../../components/ActivityPerceivedExertion";
 import {
@@ -352,6 +351,7 @@ export default function ActivityDetailScreen() {
     { ...ACTIVITY_IMAGES_QUERY_OPTIONS, enabled: !!id },
   );
   const metricSources = trpc.activity.metricSources.useQuery({ id: id ?? "" }, { enabled: !!id });
+  const hardware = trpc.activity.hardware.useQuery({ id: id ?? "" }, { enabled: !!id });
   const [sourceSelection, setSourceSelection] = useState<{
     activityId: string;
     sources: ActivityMetricSourceSelection;
@@ -659,7 +659,13 @@ export default function ActivityDetailScreen() {
       scrollEnabled={scrollEnabled}
     >
       {/* Activity Header */}
-      <ActivityDetailHeader activity={activity} />
+      <ActivityDetailHeader
+        activity={activity}
+        hardware={hardware.data}
+        hardwareLoading={hardware.isLoading}
+        hardwareError={hardware.error}
+        onRetryHardware={() => void hardware.refetch()}
+      />
 
       {/* Stats Grid */}
       {stats.length > 0 && <StatsGrid stats={stats} />}
@@ -757,7 +763,6 @@ export default function ActivityDetailScreen() {
         />
       )}
 
-      <ActivityHardwareSection activityId={id ?? ""} />
       {metricSources.error && (
         <QueryStatePanel variant="error" message={metricSources.error.message} />
       )}
