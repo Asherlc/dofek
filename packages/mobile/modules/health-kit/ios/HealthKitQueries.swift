@@ -60,8 +60,8 @@ enum HealthKitQueries {
         var dict: [String: Any] = [
             "uuid": workout.uuid.uuidString,
             "workoutType": String(describing: workout.workoutActivityType.rawValue),
-            "startDate": HealthKitQueries.formatDate(workout.startDate),
-            "endDate": HealthKitQueries.formatDate(workout.endDate),
+            "startDate": Self.formatDate(workout.startDate),
+            "endDate": Self.formatDate(workout.endDate),
             "duration": workout.duration,
             "sourceName": workout.sourceRevision.source.name,
             "sourceBundle": workout.sourceRevision.source.bundleIdentifier,
@@ -80,7 +80,7 @@ enum HealthKitQueries {
                 } else if let numberValue = value as? NSNumber {
                     metadataDict[key] = numberValue.doubleValue
                 } else if let dateValue = value as? Date {
-                    metadataDict[key] = HealthKitQueries.formatDate(dateValue)
+                    metadataDict[key] = Self.formatDate(dateValue)
                 }
             }
             if !metadataDict.isEmpty {
@@ -95,10 +95,10 @@ enum HealthKitQueries {
                 var activityDict: [String: Any] = [
                     "uuid": activity.uuid.uuidString,
                     "activityType": activity.workoutConfiguration.activityType.rawValue,
-                    "startDate": HealthKitQueries.formatDate(activity.startDate),
+                    "startDate": Self.formatDate(activity.startDate),
                 ]
                 if let endDate = activity.endDate {
-                    activityDict["endDate"] = HealthKitQueries.formatDate(endDate)
+                    activityDict["endDate"] = Self.formatDate(endDate)
                 }
                 if let activityMetadata = activity.metadata, !activityMetadata.isEmpty {
                     var activityMetaDict: [String: Any] = [:]
@@ -108,7 +108,7 @@ enum HealthKitQueries {
                         } else if let numberValue = value as? NSNumber {
                             activityMetaDict[key] = numberValue.doubleValue
                         } else if let dateValue = value as? Date {
-                            activityMetaDict[key] = HealthKitQueries.formatDate(dateValue)
+                            activityMetaDict[key] = Self.formatDate(dateValue)
                         }
                     }
                     if !activityMetaDict.isEmpty {
@@ -118,16 +118,18 @@ enum HealthKitQueries {
                 return activityDict
             }
         }
-        if let device = workout.device {
-            let fields: [String: String?] = [
-                "name": device.name, "model": device.model, "manufacturer": device.manufacturer,
-                "hardwareVersion": device.hardwareVersion, "firmwareVersion": device.firmwareVersion,
-                "softwareVersion": device.softwareVersion, "localIdentifier": device.localIdentifier,
-                "udiDeviceIdentifier": device.udiDeviceIdentifier,
-            ]
-            dict["device"] = fields.compactMapValues { $0 }
-        }
+        dict["device"] = workout.device.map(Self.transportDevice)
         return dict
+    }
+
+    private static func transportDevice(_ device: HKDevice) -> [String: String] {
+        let fields: [String: String?] = [
+            "name": device.name, "model": device.model, "manufacturer": device.manufacturer,
+            "hardwareVersion": device.hardwareVersion, "firmwareVersion": device.firmwareVersion,
+            "softwareVersion": device.softwareVersion, "localIdentifier": device.localIdentifier,
+            "udiDeviceIdentifier": device.udiDeviceIdentifier,
+        ]
+        return fields.compactMapValues { $0 }
     }
 
     /// Resolve raw HealthKit identifiers used by generic sample queries.
