@@ -1774,12 +1774,9 @@ describe("ActivityDetailPage", () => {
       );
     });
 
-    it("presents the navigator as a labeled control instead of a miniature chart", async () => {
+    it("shows a draggable navigator with formatted time labels", async () => {
       const ActivityDetailPage = await importPage();
       renderWithUnits(<ActivityDetailPage />);
-
-      expect(screen.getByText("Zoom timeline")).toBeDefined();
-      expect(screen.getByText("Drag the handles to focus on part of the activity.")).toBeDefined();
 
       const metricsOption = findOptionByYAxisArrayName("Heart Rate");
       expect(metricsOption).toBeDefined();
