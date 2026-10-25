@@ -44,6 +44,21 @@ describe("sanitizeErrorMessage", () => {
     expect(sanitizeErrorMessage(message)).toBe("authorization: basic [REDACTED] in request");
   });
 
+  it.each([
+    ["Bearer   private-value", "Bearer [REDACTED]"],
+    [
+      "Activity download rejected: Bearer private-value",
+      "Activity download rejected: Bearer [REDACTED]",
+    ],
+    [
+      "Activity download rejected: Basic dXNlcjpwYXNz",
+      "Activity download rejected: Basic [REDACTED]",
+    ],
+    ["bearer private-value, basic dXNlcjpwYXNz", "bearer [REDACTED], basic [REDACTED]"],
+  ])("redacts credentials without an Authorization header in %s", (message, expected) => {
+    expect(sanitizeErrorMessage(message)).toBe(expected);
+  });
+
   it("strips query strings from URLs", () => {
     const message = "API error (401): https://connectapi.garmin.com/oauth?code=abc123&state=xyz";
     expect(sanitizeErrorMessage(message)).toBe(

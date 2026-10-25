@@ -1,6 +1,268 @@
 import { describe, expect, it } from "vitest";
 import { providerSyncStatusPresentation, syncCardSummary } from "./sync-card-summary.ts";
 
+describe("push update presentation", () => {
+  const processedAt = "2026-10-24T10:00:00.000Z";
+  const failedAt = "2026-10-24T11:00:00.000Z";
+  const history = {
+    pushOnly: true,
+    lastSuccessfulSyncAt: failedAt,
+    lastProcessedUpdateAt: null,
+    recentLogs: [],
+  };
+  const processing = { status: "ready" as const, datasets: [], operations: [] };
+
+  it.each([
+    ["success", "Last update processed", "Garmin update processed"],
+    ["error", "Processing failed", "Couldn't process the latest Garmin update"],
+    ["degraded", "Update processed with issues", "Garmin update processed with issues"],
+    ["unknown", "Update outcome unavailable", "Update outcome unavailable"],
+  ])(
+    "labels the recorded %s timestamp consistently across source types",
+    (status, label, heading) => {
+      for (const pushOnly of [true, false]) {
+        expect(
+          providerSyncStatusPresentation(
+            "Garmin",
+            {
+              ...history,
+              pushOnly,
+              lastSuccessfulSyncAt: null,
+              recentLogs: [{ status, syncedAt: processedAt }],
+            },
+            processing,
+          ),
+        ).toMatchObject({
+          timestampLabel: pushOnly ? label : "Latest attempt",
+          ...(pushOnly ? { heading } : {}),
+        });
+      }
+    },
+  );
+
+  it.each([
+    [
+      false,
+      false,
+      "The activity file could not be read.",
+      "Try syncing Garmin again. Open Diagnostics if the problem continues.",
+    ],
+    [
+      true,
+      true,
+      "The activity file could not be read.",
+      "Earlier updates remain available. Open Diagnostics for details.",
+    ],
+    [
+      true,
+      false,
+      "TypeError: Cannot read properties of undefined",
+      "Earlier updates remain available. Open Diagnostics for details.",
+    ],
+  ] as const)(
+    "keeps safe failure guidance for pushOnly=%s, needsReauth=%s",
+    (pushOnly, needsReauth, errorMessage, message) => {
+      expect(
+        providerSyncStatusPresentation(
+          "Garmin",
+          {
+            ...history,
+            pushOnly,
+            needsReauth,
+            lastSuccessfulSyncAt: null,
+            recentLogs: [{ status: "error", syncedAt: processedAt, errorMessage }],
+          },
+          processing,
+        ),
+      ).toMatchObject({ message });
+    },
+  );
+
+  it("keeps a source with only legacy sync evidence waiting for its first update", () => {
+    expect(providerSyncStatusPresentation("Garmin", history, processing)).toMatchObject({
+      heading: "Waiting for first update",
+      occurredAt: null,
+      timestampLabel: null,
+      tone: "neutral",
+    });
+    expect(syncCardSummary({ ...history, lastSyncAt: failedAt }).hasHistory).toBe(false);
+  });
+
+  it("uses successful push processing instead of the scheduled success timestamp", () => {
+    expect(
+      providerSyncStatusPresentation(
+        "Garmin",
+        {
+          ...history,
+          lastProcessedUpdateAt: processedAt,
+        },
+        processing,
+      ),
+    ).toMatchObject({
+      heading: "Garmin update processed",
+      occurredAt: processedAt,
+      status: "ready",
+    });
+  });
+
+  it.each([
+    [false, "Connect Garmin to receive updates"],
+    [true, "Reconnect Garmin to resume incoming updates"],
+  ])(
+    "describes the missing connection before waiting for data, needsReauth=%s",
+    (needsReauth, heading) => {
+      expect(
+        providerSyncStatusPresentation(
+          "Garmin",
+          { ...history, authorized: false, needsReauth },
+          processing,
+        ),
+      ).toMatchObject({
+        heading,
+        occurredAt: null,
+        tone: "neutral",
+      });
+    },
+  );
+
+  it("shows a later processing error and preserves its actionable cause", () => {
+    const pushHistory = {
+      ...history,
+      lastProcessedUpdateAt: processedAt,
+      recentLogs: [
+        {
+          status: "error",
+          syncedAt: failedAt,
+          errorMessage: "The activity file could not be read.",
+        },
+      ],
+    };
+    expect(providerSyncStatusPresentation("Garmin", pushHistory, processing)).toMatchObject({
+      heading: "Couldn't process the latest Garmin update",
+      occurredAt: failedAt,
+      message: "The activity file could not be read.",
+      tone: "danger",
+    });
+    expect(syncCardSummary({ ...pushHistory, lastSyncAt: null }).latestIssue).toEqual({
+      status: "error",
+      label: "Couldn't process the latest update",
+      accessibilityLabel: "Update processing needs attention",
+    });
+  });
+
+  it("preserves unfinished dashboard processing after successful push ingestion", () => {
+    expect(
+      providerSyncStatusPresentation(
+        "Garmin",
+        {
+          ...history,
+          lastProcessedUpdateAt: processedAt,
+        },
+        {
+          status: "active",
+          operations: [],
+          datasets: [
+            {
+              status: "active",
+              lastAdvancedAt: processedAt,
+              lastReadyAt: null,
+              lastFailedAt: null,
+            },
+          ],
+        },
+      ),
+    ).toBeNull();
+  });
+
+  it.each(["push_ingest", "provider_sync"])(
+    "keeps completed %s processing from inventing an update outcome",
+    (kind) => {
+      const operation = {
+        kind,
+        status: "ready" as const,
+        dismissed: false,
+        createdAt: failedAt,
+        timeline: [{ occurredAt: failedAt }],
+      };
+      expect(
+        providerSyncStatusPresentation("Garmin", history, {
+          status: "ready",
+          datasets: [
+            {
+              status: "ready",
+              lastAdvancedAt: failedAt,
+              lastReadyAt: failedAt,
+              lastFailedAt: null,
+            },
+          ],
+          operations: [operation],
+        }),
+      ).toMatchObject({ heading: "Waiting for first update", occurredAt: null, tone: "neutral" });
+    },
+  );
+
+  it("keeps an ingestion failure visible after a newer no-output job completes", () => {
+    expect(
+      providerSyncStatusPresentation(
+        "Garmin",
+        { ...history, recentLogs: [{ status: "error", syncedAt: processedAt }] },
+        {
+          status: "ready",
+          datasets: [
+            {
+              status: "ready",
+              lastAdvancedAt: failedAt,
+              lastReadyAt: failedAt,
+              lastFailedAt: processedAt,
+            },
+          ],
+          operations: [
+            { status: "ready", dismissed: false, createdAt: failedAt, timeline: [] },
+            {
+              status: "failed",
+              dismissed: false,
+              createdAt: processedAt,
+              timeline: [{ occurredAt: processedAt }],
+            },
+          ],
+        },
+      ),
+    ).toMatchObject({
+      heading: "Couldn't process the latest Garmin update",
+      occurredAt: processedAt,
+    });
+  });
+});
+
+describe("recovered push authorization", () => {
+  it("keeps a resolved authorization failure historical without prescribing reconnect again", () => {
+    expect(
+      providerSyncStatusPresentation(
+        "Garmin",
+        {
+          pushOnly: true,
+          authorized: true,
+          needsReauth: false,
+          lastSuccessfulSyncAt: null,
+          lastProcessedUpdateAt: null,
+          recentLogs: [
+            {
+              status: "error",
+              syncedAt: "2026-10-24T10:00:00Z",
+              authFailureReason: "authorization_failed",
+              errorMessage:
+                "Garmin authorization failed. Reconnect Garmin to resume incoming updates.",
+            },
+          ],
+        },
+        { status: "ready", datasets: [], operations: [] },
+      ),
+    ).toMatchObject({
+      message: "Earlier updates remain available. Open Diagnostics for details.",
+    });
+  });
+});
+
 describe("providerSyncStatusPresentation", () => {
   const old = "2026-10-23T10:00:00.000Z";
   const recent = "2026-10-24T10:00:00.000Z";

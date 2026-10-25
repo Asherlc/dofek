@@ -1,6 +1,9 @@
 import { formatDateYmd } from "@dofek/format/format";
 import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
-import type { ProviderManualConnectionMetadata } from "@dofek/providers/provider-connection";
+import {
+  isCloudPushProvider,
+  type ProviderManualConnectionMetadata,
+} from "@dofek/providers/provider-connection";
 import type { ProviderSyncHistory } from "@dofek/providers/sync-card-summary";
 import * as WebBrowser from "expo-web-browser";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -446,7 +449,7 @@ export function useProviderDetailActions(
       displayProvider &&
         !displayProvider.importOnly &&
         (!displayProvider.pushOnly ||
-          (displayProvider.authType !== "none" && displayProvider.authType !== "push:mobile")),
+          (isCloudPushProvider(displayProvider) && (!isConnected || needsReauth))),
     ),
     shouldShowFullSync:
       isConnected &&

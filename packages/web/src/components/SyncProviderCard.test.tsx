@@ -34,6 +34,7 @@ function renderProvider({
     name: "Strava",
     lastSyncedAt: "2026-05-12T10:00:00.000Z",
     lastSuccessfulSyncAt: "2026-05-12T10:00:00.000Z",
+    lastProcessedUpdateAt: null,
     syncFreshness: {
       status: "current",
       label: "Sync current",
@@ -99,6 +100,7 @@ describe("SyncProviderCard", () => {
         name: "Strava",
         lastSyncedAt: "2026-05-13T10:00:00.000Z",
         lastSuccessfulSyncAt: "2026-05-12T10:00:00.000Z",
+        lastProcessedUpdateAt: null,
         syncFreshness: {
           status: "overdue",
           label: "Sync overdue",
@@ -137,6 +139,7 @@ describe("SyncProviderCard", () => {
         name: "Strava",
         lastSyncedAt: "2026-05-12T10:00:00.000Z",
         lastSuccessfulSyncAt: "2026-05-12T10:00:00.000Z",
+        lastProcessedUpdateAt: null,
         syncFreshness: {
           status: "overdue",
           label: "Sync overdue",
@@ -236,6 +239,7 @@ describe("SyncProviderCard", () => {
         name: "Strava",
         lastSyncedAt: "2026-08-12T12:00:00.000Z",
         lastSuccessfulSyncAt: "2026-08-11T12:00:00.000Z",
+        lastProcessedUpdateAt: null,
         syncFreshness: {
           status: "overdue",
           label: "Sync overdue",
@@ -261,6 +265,7 @@ describe("SyncProviderCard", () => {
         name: "Strava",
         lastSyncedAt: null,
         lastSuccessfulSyncAt: null,
+        lastProcessedUpdateAt: null,
         syncFreshness: {
           status: "unknown",
           label: "Sync status unknown",
@@ -285,6 +290,7 @@ describe("SyncProviderCard", () => {
         name: "Strava",
         lastSyncedAt: "2026-08-12T12:00:00.000Z",
         lastSuccessfulSyncAt: "2026-08-11T12:00:00.000Z",
+        lastProcessedUpdateAt: null,
         syncFreshness: {
           status: "overdue",
           label: "Sync overdue",
@@ -314,6 +320,7 @@ describe("SyncProviderCard", () => {
         name: "Garmin",
         lastSyncedAt: "2026-09-03T04:00:00.000Z",
         lastSuccessfulSyncAt: "2026-09-03T04:00:00.000Z",
+        lastProcessedUpdateAt: null,
         syncFreshness: {
           status: "deferred",
           label: "Sync deferred",
@@ -402,6 +409,7 @@ describe("SyncProviderCard", () => {
           name: "WHOOP (Bluetooth)",
           lastSyncedAt: "2026-06-20T12:00:00.000Z",
           lastSuccessfulSyncAt: null,
+          lastProcessedUpdateAt: null,
           syncFreshness: null,
           authorized: true,
           description: "Synced from the iOS app when your WHOOP strap is nearby.",
@@ -432,30 +440,75 @@ describe("SyncProviderCard", () => {
 });
 
 describe("OAuth notification providers", () => {
+  const garmin = {
+    id: "garmin",
+    authType: "oauth",
+    name: "Garmin",
+    authorized: true,
+    description: null,
+    lastSyncedAt: "2026-10-24T12:00:00Z",
+    lastSuccessfulSyncAt: null,
+    syncFreshness: null,
+    lastProcessedUpdateAt: null,
+  };
+
+  it("keeps a connected cloud source waiting for its first actual update", () => {
+    renderProvider({ provider: garmin, pushOnly: true });
+    expect(screen.getByText("Waiting for first update")).toBeVisible();
+    expect(screen.getByText("Connected")).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Reconnect Garmin" })).toBeNull();
+  });
+
+  it("retains the successful update timestamp while a later update needs attention", () => {
+    renderProvider({
+      provider: { ...garmin, lastProcessedUpdateAt: "2026-10-24T11:00:00Z" },
+      pushOnly: true,
+      recentLogs: [
+        {
+          id: "failed-update",
+          status: "error",
+          syncedAt: "2026-10-24T12:00:00Z",
+          dataType: "update",
+          recordCount: null,
+          durationMs: null,
+          errorMessage: "The activity file could not be read.",
+          authFailureReason: null,
+        },
+      ],
+    });
+    expect(screen.getByText(/^Last update processed:/)).toBeVisible();
+    expect(
+      screen.getByRole("status", { name: "Update processing needs attention" }),
+    ).toHaveTextContent("Couldn't process the latest update");
+    expect(screen.getByText("Connected")).toBeVisible();
+  });
+
   it.each([false, true])(
-    "keeps Garmin authorization available when authorized=%s",
-    (authorized) => {
+    "offers Garmin authorization recovery when needsReauth=%s",
+    (needsReauth) => {
       const onSync = vi.fn();
       renderProvider({
         provider: {
           id: "garmin",
           authType: "oauth",
           name: "Garmin",
-          authorized,
+          authorized: needsReauth,
           description: null,
           lastSyncedAt: null,
           lastSuccessfulSyncAt: null,
+          lastProcessedUpdateAt: null,
           syncFreshness: null,
         },
         pushOnly: true,
-        needsAuth: !authorized,
+        needsAuth: !needsReauth,
+        needsReauth,
         onSync,
       });
       fireEvent.click(
-        screen.getByRole("button", { name: authorized ? "Reconnect Garmin" : "Connect Garmin" }),
+        screen.getByRole("button", { name: needsReauth ? "Reconnect Garmin" : "Connect Garmin" }),
       );
       expect(onSync).toHaveBeenCalledOnce();
-      expect(screen.getByText("Automatic sync")).toBeTruthy();
+      expect(screen.getByText("Updates automatically")).toBeTruthy();
       expect(screen.queryByRole("button", { name: /Sync Garmin/ })).toBeNull();
     },
   );

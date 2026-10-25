@@ -484,7 +484,14 @@ describe("processFitFileImportJob", () => {
         }),
         mockDb,
       ),
-    ).rejects.toMatchObject({ name: "OriginalFitRetentionError", cause: archiveError });
+    ).rejects.toMatchObject({
+      name: "OriginalFitRetentionError",
+      message: "The original FIT file could not be saved.",
+      cause: archiveError,
+    });
+    expect(mockCaptureException).toHaveBeenCalledWith(archiveError, {
+      tags: { fitImportStep: "original-retention" },
+    });
     expect(mockStreamFitFile).not.toHaveBeenCalled();
     expect(await readFile(filePath)).toEqual(bytes);
   });

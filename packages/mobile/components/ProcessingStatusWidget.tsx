@@ -125,6 +125,7 @@ export function ProcessingStatusWidget({
   const failureGroups = processingFailureGroups({
     datasets: data.datasets,
     operations: data.operations,
+    needsReauth: providerHistory.needsReauth,
   });
   const hasFailureStatus = data.overallStatus === "failed";
   const inProgressDatasets = data.datasets.filter((dataset) =>
@@ -159,7 +160,8 @@ export function ProcessingStatusWidget({
       >
         {providerPresentation.occurredAt ? (
           <Text style={styles.datasetFreshness}>
-            Latest attempt: {formatRelativeTime(providerPresentation.occurredAt)}
+            {providerPresentation.timestampLabel}:{" "}
+            {formatRelativeTime(providerPresentation.occurredAt)}
           </Text>
         ) : null}
         {refreshError}
@@ -172,6 +174,7 @@ export function ProcessingStatusWidget({
       : processingStatusMessage({
           status: displayStatus,
           errorMessage: null,
+          operationKind: targetScope.operationKind,
         });
   const heading = processingHeading(displayStatus, target);
   const datasetsWithHistory = data.datasets.filter(
@@ -213,7 +216,9 @@ export function ProcessingStatusWidget({
         {failureGroups.map((group) => {
           const failedAt = group.failedAt ? formatRelativeTime(group.failedAt) : null;
           const lastReadyAt = group.lastReadyAt ? formatRelativeTime(group.lastReadyAt) : null;
-          const labelPrefix = group.providerLabel ? `${group.providerLabel} sync` : "data update";
+          const labelPrefix = group.providerLabel
+            ? `${group.providerLabel} ${group.operationKind === "push_ingest" ? "update processing" : "sync"}`
+            : "data update";
           return (
             <View key={group.operationId} style={styles.datasetRow}>
               <View style={styles.failureGroupHeader}>

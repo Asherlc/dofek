@@ -1030,8 +1030,8 @@ describe("ProviderDetailScreen", () => {
     });
 
     it.each([null, "2026-10-20T10:00:00Z"])(
-      "uses successful receipt evidence for push providers: %s",
-      async (lastSuccessfulSyncAt) => {
+      "uses processed update evidence for push providers: %s",
+      async (lastProcessedUpdateAt) => {
         vi.setSystemTime(new Date("2026-10-24T10:00:00Z"));
         mockUseLocalSearchParams.mockReturnValue({ id: "garmin" });
         mockProvidersQuery.mockReturnValue({
@@ -1044,16 +1044,19 @@ describe("ProviderDetailScreen", () => {
               authType: "oauth",
               pushOnly: true,
               lastSyncedAt: "2026-10-24T09:00:00Z",
-              lastSuccessfulSyncAt,
+              lastSuccessfulSyncAt: "2026-10-24T09:00:00Z",
+              lastProcessedUpdateAt,
             },
           ],
           isLoading: false,
         });
         const { default: ProviderDetailScreen } = await import("../../app/providers/[id]");
         render(<ProviderDetailScreen />);
-        if (lastSuccessfulSyncAt)
-          expect(screen.getByText("Last received: 2026-10-20T10:00:00Z ago")).toBeTruthy();
-        else expect(screen.queryByText(/^Last received:/)).toBeNull();
+        expect(screen.getByText("Updates automatically")).toBeTruthy();
+        if (lastProcessedUpdateAt)
+          expect(screen.getByText("Last update processed: 2026-10-20T10:00:00Z ago")).toBeTruthy();
+        else expect(screen.queryByText(/^Last update processed:/)).toBeNull();
+        expect(screen.queryByRole("button", { name: "Reconnect Garmin" })).toBeNull();
       },
     );
 
@@ -1068,18 +1071,20 @@ describe("ProviderDetailScreen", () => {
               id: "garmin",
               name: "Garmin",
               authorized,
+              needsReauth: authorized,
               authType: "oauth",
               pushOnly: true,
               lastSyncedAt: "2026-10-20T10:00:00Z",
               recentLogs: [],
               lastSuccessfulSyncAt: "2026-10-20T10:00:00Z",
+              lastProcessedUpdateAt: "2026-10-20T10:00:00Z",
             },
           ],
           isLoading: false,
         });
         const { default: ProviderDetailScreen } = await import("../../app/providers/[id]");
         render(<ProviderDetailScreen />);
-        fireEvent.click(screen.getByText(authorized ? "Reconnect" : "Connect"));
+        fireEvent.click(screen.getByRole("button", { name: authorized ? "Reconnect" : "Connect" }));
         await waitFor(() =>
           expect(mockOpenBrowserAsync).toHaveBeenCalledWith(
             "https://test.example.com/auth/provider/garmin?code=provider-handoff-code",
@@ -1088,10 +1093,48 @@ describe("ProviderDetailScreen", () => {
         expect(
           screen.getByText("New data arrives automatically after you sync your Garmin device."),
         ).toBeTruthy();
-        expect(screen.getByText(/^Last received:/)).toBeTruthy();
+        expect(screen.getByText(/^Last update processed:/)).toBeTruthy();
         expect(screen.queryByText("Full Sync")).toBeNull();
       },
     );
+
+    it("presents and paginates automatic update history with accessible update labels", async () => {
+      mockUseLocalSearchParams.mockReturnValue({ id: "garmin" });
+      mockProvidersQuery.mockReturnValue({
+        data: [{ ...authorizedProvider, id: "garmin", name: "Garmin", pushOnly: true }],
+        isLoading: false,
+      });
+      const { default: ProviderDetailScreen } = await import("../../app/providers/[id]");
+      const { rerender } = render(<ProviderDetailScreen />);
+      expect(screen.getByText("Update history")).toBeTruthy();
+      expect(screen.getByText("No updates processed yet.")).toBeTruthy();
+
+      mockLogsQuery.mockReturnValue({
+        data: Array.from({ length: 20 }, (_, index) => ({
+          id: `update-${index}`,
+          syncedAt: "2026-10-20T10:00:00Z",
+          dataType: "activities",
+          status: "success",
+          recordCount: 1,
+          durationMs: 100,
+          errorMessage: null,
+          authFailureReason: null,
+        })),
+        isLoading: false,
+      });
+      rerender(<ProviderDetailScreen />);
+      expect(screen.getAllByText("Activities update processed")).toHaveLength(20);
+      expect(screen.getByRole("button", { name: "Previous update history page" })).toHaveProperty(
+        "disabled",
+        true,
+      );
+      fireEvent.click(screen.getByRole("button", { name: "Next update history page" }));
+      expect(mockLogsQuery).toHaveBeenLastCalledWith({
+        providerId: "garmin",
+        limit: 20,
+        offset: 20,
+      });
+    });
 
     it.each(["token", "public-profile"])(
       "opens and submits the %s connection form",

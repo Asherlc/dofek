@@ -10,6 +10,7 @@ const {
   mockEnsureProvidersRegistered,
   mockHistory,
   mockStatus,
+  mockGetAllProviders,
 } = vi.hoisted(() => ({
   mockAlerts: vi.fn(),
   mockDataQuality: vi.fn(),
@@ -17,7 +18,10 @@ const {
   mockEnsureProvidersRegistered: vi.fn(),
   mockHistory: vi.fn(),
   mockStatus: vi.fn(),
+  mockGetAllProviders: vi.fn(),
 }));
+
+vi.mock("dofek/providers/registry", () => ({ getAllProviders: mockGetAllProviders }));
 
 vi.mock("dofek/lib/cache", () => ({
   queryCache: {
@@ -52,11 +56,41 @@ const userId = "10000000-0000-4000-8000-000000000001";
 describe("processingRouter", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockGetAllProviders.mockReturnValue([]);
     mockEnsureProvidersRegistered.mockResolvedValue(undefined);
     vi.mocked(queryCache.get).mockResolvedValue(undefined);
     vi.mocked(queryCache.set).mockResolvedValue(undefined);
     vi.mocked(queryCache.invalidateByPrefix).mockResolvedValue(undefined);
   });
+
+  it.each([
+    { providerId: "garmin", pushOnly: true, kind: "push_ingest" },
+    { providerId: "wahoo", pushOnly: false, kind: undefined },
+    { providerId: "whoop_ble", pushOnly: undefined, kind: undefined },
+  ])(
+    "scopes $providerId status using its registered delivery capability",
+    async ({ providerId, pushOnly, kind }) => {
+      mockGetAllProviders.mockReturnValue(
+        pushOnly === undefined ? [] : [{ id: providerId, pushOnly }],
+      );
+      mockStatus.mockResolvedValue({
+        generatedAt: "2026-10-24T12:00:00.000Z",
+        scope: { providerId, datasets: ["activity"] },
+        overallStatus: "ready",
+        datasets: [],
+        operations: [],
+      });
+      const caller = createCaller({ db: {}, userId, timezone: "UTC" });
+
+      await caller.status({ providerId, datasets: ["activity"] });
+
+      expect(mockStatus).toHaveBeenCalledWith({
+        providerId,
+        datasets: ["activity"],
+        ...(kind ? { kind } : {}),
+      });
+    },
+  );
 
   it("validates the processing history response at runtime", async () => {
     mockHistory.mockResolvedValue({

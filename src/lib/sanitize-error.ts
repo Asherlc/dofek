@@ -9,10 +9,10 @@ export function sanitizeErrorMessage(errorMessage: string | null): string | null
 
   let sanitized = errorMessage;
 
-  // Redact Authorization header values (must run before generic key/value redaction)
+  // Redact authentication values with or without an Authorization header prefix.
   sanitized = sanitized.replace(
-    /\b(authorization\s*:\s*)(bearer|basic)\s+[^\s,]+/gi,
-    (_match, prefix: string, scheme: string) => `${prefix}${scheme} [REDACTED]`,
+    /\b(bearer|basic)\s+[^\s,]+/gi,
+    (_match, scheme: string) => `${scheme} [REDACTED]`,
   );
 
   // Redact common credential key/value pairs in free-form error messages.

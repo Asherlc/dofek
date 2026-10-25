@@ -667,6 +667,7 @@ export default function ProvidersScreen() {
     tokenAuth: provider.tokenAuth,
     lastSyncAt: provider.lastSyncedAt,
     lastSuccessfulSyncAt: provider.lastSuccessfulSyncAt,
+    lastProcessedUpdateAt: provider.lastProcessedUpdateAt,
     syncFreshness: provider.syncFreshness,
     importOnly: provider.importOnly,
     pushOnly: provider.pushOnly,

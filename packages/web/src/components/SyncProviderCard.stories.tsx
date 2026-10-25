@@ -51,6 +51,7 @@ const meta = {
       name: "Strava",
       lastSyncedAt: recentSuccessfulAt,
       lastSuccessfulSyncAt: recentSuccessfulAt,
+      lastProcessedUpdateAt: null,
       syncFreshness: {
         status: "current",
         label: "Sync current",
@@ -99,6 +100,7 @@ export const NoSyncHistory: Story = {
       name: "Strava",
       lastSyncedAt: null,
       lastSuccessfulSyncAt: null,
+      lastProcessedUpdateAt: null,
       syncFreshness: {
         status: "unknown",
         label: "Sync status unknown",
@@ -121,6 +123,7 @@ export const OverdueProvider: Story = {
       name: "Strava",
       lastSyncedAt: "2026-08-12T12:00:00.000Z",
       lastSuccessfulSyncAt: "2026-08-11T12:00:00.000Z",
+      lastProcessedUpdateAt: null,
       syncFreshness: {
         status: "overdue",
         label: "Sync overdue",
@@ -140,6 +143,7 @@ export const NeedsAuth: Story = {
       name: "Oura",
       lastSyncedAt: null,
       lastSuccessfulSyncAt: null,
+      lastProcessedUpdateAt: null,
       syncFreshness: null,
       authorized: false,
       description: null,
@@ -158,6 +162,7 @@ export const NeedsReauth: Story = {
       name: "WHOOP",
       lastSyncedAt: "2026-05-10T10:00:00.000Z",
       lastSuccessfulSyncAt: "2026-05-10T10:00:00.000Z",
+      lastProcessedUpdateAt: null,
       syncFreshness: {
         status: "overdue",
         label: "Sync overdue",
@@ -178,6 +183,7 @@ const garminProvider = {
   description: null,
   lastSyncedAt: null,
   lastSuccessfulSyncAt: null,
+  lastProcessedUpdateAt: null,
   syncFreshness: null,
 };
 
@@ -200,4 +206,29 @@ export const GarminConnected: Story = {
 
 export const GarminReconnect: Story = {
   args: { ...GarminConnected.args, needsReauth: true },
+};
+
+export const GarminUpdateProcessed: Story = {
+  args: {
+    ...GarminConnected.args,
+    provider: { ...garminProvider, authorized: true, lastProcessedUpdateAt: recentSuccessfulAt },
+  },
+};
+
+export const GarminUpdateFailed: Story = {
+  args: {
+    ...GarminUpdateProcessed.args,
+    recentLogs: [
+      {
+        id: "garmin-update-1",
+        syncedAt: new Date().toISOString(),
+        dataType: "update",
+        status: "error",
+        recordCount: null,
+        durationMs: null,
+        errorMessage: "An activity file could not be read.",
+        authFailureReason: null,
+      },
+    ],
+  },
 };

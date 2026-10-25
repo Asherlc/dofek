@@ -287,7 +287,54 @@ export const GarminConnect: ProviderCardStory = {
 };
 
 export const GarminConnected: ProviderCardStory = {
+  name: "Garmin · Waiting for first update",
   args: { provider: { ...garminProvider, authStatus: "connected" } },
+};
+
+export const GarminUpdateProcessed: ProviderCardStory = {
+  args: {
+    provider: {
+      ...garminProvider,
+      authStatus: "connected",
+      lastProcessedUpdateAt: oneHourAgo,
+      recentLogs: [
+        {
+          id: "garmin-update-success",
+          providerId: "garmin",
+          dataType: "activities",
+          status: "success",
+          recordCount: 1,
+          durationMs: 1250,
+          errorMessage: null,
+          authFailureReason: null,
+          syncedAt: oneHourAgo,
+        },
+      ],
+    },
+  },
+};
+
+export const GarminUpdateFailed: ProviderCardStory = {
+  args: {
+    provider: {
+      ...garminProvider,
+      authStatus: "connected",
+      lastProcessedUpdateAt: oneHourAgo,
+      recentLogs: [
+        {
+          id: "garmin-update-failed",
+          providerId: "garmin",
+          dataType: "activities",
+          status: "error",
+          recordCount: null,
+          durationMs: 1250,
+          errorMessage: "An activity file could not be read.",
+          authFailureReason: null,
+          syncedAt: new Date().toISOString(),
+        },
+      ],
+    },
+  },
 };
 
 export const GarminReconnect: ProviderCardStory = {
