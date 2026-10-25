@@ -445,6 +445,9 @@ export async function processWorkouts(
       sourceBundle: workout.sourceBundle,
       metadata: workout.metadata,
       workoutActivities: workout.workoutActivities,
+      ...(workout.sourceProductType !== undefined
+        ? { sourceProductType: workout.sourceProductType }
+        : {}),
       ...(workout.device !== undefined ? { device: workout.device } : {}),
       ...(normalizedWorkout.hangTen ? { hangTen: normalizedWorkout.hangTen } : {}),
     };

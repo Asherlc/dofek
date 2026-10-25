@@ -10,12 +10,16 @@ import {
 import { formatDateTime, formatTimeOnly } from "@dofek/format/format";
 import type { UnitSystem } from "@dofek/format/units";
 import { UnitConverter } from "@dofek/format/units";
+import type { ActivityHardware } from "@dofek/providers/activity-hardware";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ActivityDetail } from "../../../server/src/models/activity.ts";
 import type { StrengthExerciseDetail } from "../../../server/src/routers/activity.ts";
-import { strongSourceTree } from "../components/ActivitySourceDisclosure.fixtures.ts";
+import {
+  sourceHardware,
+  strongSourceTree,
+} from "../components/ActivitySourceDisclosure.fixtures.ts";
 import { UnitContext } from "../lib/unitContext.ts";
 import { detailSourceTree, removedDetailSourceTree } from "./ActivityDetailPage.fixtures.ts";
 
@@ -331,6 +335,14 @@ const mockMetricSourcesUseQuery = vi.fn(
   }),
 );
 const mockRecomputeMutate = vi.fn();
+const mockHardwareUseQuery = vi.fn(
+  (): {
+    data: ActivityHardware;
+    isLoading: boolean;
+    error: Error | null;
+    refetch: () => void;
+  } => ({ data: { items: [], power: [] }, isLoading: false, error: null, refetch: vi.fn() }),
+);
 const mockImagesUseQuery = vi.fn(() => ({
   data: { images: [], coverage: [], acquisition: [] },
   error: null,
@@ -355,14 +367,7 @@ vi.mock("../lib/trpc.ts", () => ({
       byId: { useQuery: mockActivityByIdUseQuery },
       stream: { useQuery: mockStreamUseQuery },
       metricSources: { useQuery: mockMetricSourcesUseQuery },
-      hardware: {
-        useQuery: () => ({
-          data: { items: [], power: [] },
-          isLoading: false,
-          error: null,
-          refetch: vi.fn(),
-        }),
-      },
+      hardware: { useQuery: mockHardwareUseQuery },
       route: { useQuery: mockRouteUseQuery },
       hrZones: { useQuery: mockHrZonesUseQuery },
       powerZones: { useQuery: mockPowerZonesUseQuery },
@@ -454,6 +459,13 @@ vi.mock("react-body-highlighter", () => ({
 }));
 
 afterEach(() => {
+  mockHardwareUseQuery.mockReset();
+  mockHardwareUseQuery.mockReturnValue({
+    data: { items: [], power: [] },
+    isLoading: false,
+    error: null,
+    refetch: vi.fn(),
+  });
   mockMetricSourcesUseQuery.mockReset();
   mockMetricSourcesUseQuery.mockReturnValue({
     data: [],
@@ -1557,6 +1569,27 @@ describe("ActivityDetailPage", () => {
   });
 
   describe("source tree", () => {
+    it("opens the queried device facts from the activity's Sources control", async () => {
+      mockActivityByIdUseQuery.mockReturnValue({
+        data: { ...mockActivity, sourceTree: detailSourceTree },
+        error: null,
+        isError: false,
+        isLoading: false,
+      });
+      mockHardwareUseQuery.mockReturnValue({
+        data: sourceHardware,
+        isLoading: false,
+        error: null,
+        refetch: vi.fn(),
+      });
+      const ActivityDetailPage = await importPage();
+      renderWithUnits(<ActivityDetailPage />);
+      expect(screen.queryByText("12345678")).toBeNull();
+      fireEvent.click(screen.getByRole("button", { name: "Garmin Edge 530 Sources" }));
+      expect(screen.getByText("12345678")).toBeVisible();
+      expect(screen.getByText("Whoop")).toBeVisible();
+    });
+
     it("expands the server source tree inside the real detail header with distinct transfer branches", async () => {
       mockActivityByIdUseQuery.mockReturnValue({
         data: { ...mockActivity, sourceTree: detailSourceTree },
@@ -1592,7 +1625,7 @@ describe("ActivityDetailPage", () => {
       expect(screen.getAllByText("Apple Health")).toHaveLength(2);
       expect(screen.getAllByText("Imported from Garmin Connect")).toHaveLength(2);
       expect(
-        within(screen.getByRole("region", { name: "Other matching sources" })).getByText("WHOOP"),
+        within(screen.getByRole("region", { name: "Additional sources" })).getByText("WHOOP"),
       ).toBeVisible();
       expect(screen.getByRole("heading", { name: "Morning Run" })).toBeVisible();
       expect(screen.getByText("10.0 km")).toBeVisible();
@@ -1635,7 +1668,7 @@ describe("ActivityDetailPage", () => {
       expect(trigger).toHaveAttribute("aria-expanded", "false");
       fireEvent.click(trigger);
       expect(
-        within(screen.getByRole("region", { name: "Other matching sources" })).getByText("WHOOP"),
+        within(screen.getByRole("region", { name: "Additional sources" })).getByText("WHOOP"),
       ).toBeVisible();
       expect(screen.getByRole("heading", { name: "Morning Run" })).toBeVisible();
     });

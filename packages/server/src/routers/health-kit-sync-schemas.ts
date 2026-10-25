@@ -51,6 +51,7 @@ export const workoutActivitySchema = z.object({
 });
 
 export const workoutSampleSchema = z.object({
+  sourceProductType: z.string().optional(),
   uuid: z.string(),
   workoutType: z.string(),
   startDate: z.string(),

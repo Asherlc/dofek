@@ -1,6 +1,7 @@
 import type { ActivityHardware, ActivityHardwareItem } from "@dofek/providers/activity-hardware";
 import { Profile } from "@garmin/fitsdk";
 import { z } from "zod";
+import { appleWatchModels } from "./apple-watch-models.ts";
 
 type Raw = Record<string, unknown>;
 export interface ActivityHardwareMember {
@@ -28,6 +29,10 @@ function readable(value: string): string {
 }
 function readableName(value: string): string {
   return value.includes("_") ? readable(value) : value;
+}
+function appleWatchModel(identifier: string | null): string | null {
+  if (identifier === null || !/^watch\d+,\d+$/i.test(identifier)) return null;
+  return appleWatchModels[identifier.replace(/^watch/i, "Watch")] ?? null;
 }
 function pelotonEquipmentLabel(value: unknown): string | null {
   const code = text(value);
@@ -195,10 +200,21 @@ function apiItem(member: ActivityHardwareMember): ActivityHardwareItem | null {
   }
   if (member.providerId === "apple_health" || member.providerId === "apple-health") {
     const device = object(raw.device);
-    model = text(device.model);
+    const productType = text(raw.sourceProductType);
+    const watchProductType = productType?.match(/^watch\d+,\d+$/i)?.[0] ?? null;
+    const reportedModel = watchProductType ?? text(device.model);
+    const specificModel =
+      reportedModel !== null && !/^(apple )?watch$/i.test(readableName(reportedModel))
+        ? reportedModel
+        : null;
+    model =
+      specificModel === null
+        ? appleWatchModel(text(device.hardwareVersion))
+        : (appleWatchModel(specificModel) ?? specificModel);
     manufacturer = text(device.manufacturer);
     label = text(device.name) ?? model ?? manufacturer;
     itemDetails = details([
+      ["Product type", productType],
       ["Hardware", device.hardwareVersion],
       ["Firmware", device.firmwareVersion],
       ["Software", device.softwareVersion],

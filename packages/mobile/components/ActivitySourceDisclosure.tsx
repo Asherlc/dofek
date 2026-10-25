@@ -1,3 +1,5 @@
+import type { ActivityHardware } from "@dofek/providers/activity-hardware";
+import { activitySourceTreeWithHardware } from "@dofek/providers/activity-source-hardware";
 import type {
   ActivitySourceTree,
   ActivitySourceTreeNode,
@@ -8,6 +10,28 @@ import { SERVER_URL } from "../lib/server";
 import { captureException } from "../lib/telemetry";
 import { colors, spacing } from "../theme";
 import { ProviderLogo } from "./ProviderLogo";
+import { getQueryErrorMessage, QueryStatePanel } from "./QueryStatePanel";
+
+interface Props {
+  tree: ActivitySourceTree;
+  hardware?: ActivityHardware;
+  hardwareLoading?: boolean;
+  hardwareError?: unknown;
+  onRetryHardware?: () => void;
+}
+
+function SourceDetails({ node }: { node: ActivitySourceTreeNode }) {
+  if (!node.details?.length) return null;
+  return (
+    <View style={styles.nodeDetails}>
+      {node.details.map((detail) => (
+        <Text key={`${detail.label}:${detail.value}`} style={styles.description}>
+          {detail.label}: {detail.value}
+        </Text>
+      ))}
+    </View>
+  );
+}
 
 function SourceLink({ node }: { node: ActivitySourceTreeNode }) {
   const [error, setError] = useState<string | null>(null);
@@ -54,6 +78,7 @@ function SourceNode({ node }: { node: ActivitySourceTreeNode }) {
           <Text style={styles.label}>{node.label}</Text>
           {node.description ? <Text style={styles.description}>{node.description}</Text> : null}
           <SourceLink node={node} />
+          <SourceDetails node={node} />
         </View>
       </View>
       <SourceBranches nodes={node.children} />
@@ -70,11 +95,18 @@ function SourceBranches({ nodes }: { nodes: ActivitySourceTreeNode[] }) {
   ));
 }
 
-export function ActivitySourceDisclosure({ tree }: { tree: ActivitySourceTree }) {
+export function ActivitySourceDisclosure({
+  tree,
+  hardware,
+  hardwareLoading = false,
+  hardwareError,
+  onRetryHardware,
+}: Props) {
   const [open, setOpen] = useState(false);
   const contentId = useId();
-  const primary = tree.primary;
-  if (!primary && tree.otherSources.length === 0) return null;
+  const sourceTree = hardware ? activitySourceTreeWithHardware(tree, hardware) : tree;
+  const { primary, otherSources } = sourceTree;
+  if (!primary && otherSources.length === 0 && !hardwareLoading && !hardwareError) return null;
 
   return (
     <View style={styles.container}>
@@ -106,21 +138,33 @@ export function ActivitySourceDisclosure({ tree }: { tree: ActivitySourceTree })
           </Text>
         </View>
       </Pressable>
+      {hardwareError ? (
+        <QueryStatePanel
+          variant="error"
+          title="Could not load device metadata"
+          message={getQueryErrorMessage(hardwareError)}
+          onRetry={onRetryHardware}
+          minHeight={72}
+        />
+      ) : null}
       {open ? (
         <View id={contentId} style={styles.details}>
+          {!hardware && hardwareLoading && !hardwareError ? (
+            <QueryStatePanel variant="loading" minHeight={72} />
+          ) : null}
           {primary ? (
             <View>
               {primary.description ? (
                 <Text style={styles.description}>{primary.description}</Text>
               ) : null}
               <SourceLink node={primary} />
+              <SourceDetails node={primary} />
               <SourceBranches nodes={primary.children} />
             </View>
           ) : null}
-          {tree.otherSources.length > 0 ? (
+          {otherSources.length > 0 ? (
             <View style={styles.otherSources}>
-              <Text style={styles.otherHeading}>Other matching sources</Text>
-              {tree.otherSources.map((node) => (
+              {otherSources.map((node) => (
                 <SourceNode key={node.id} node={node} />
               ))}
             </View>
@@ -160,6 +204,7 @@ const styles = StyleSheet.create({
   description: { color: colors.textSecondary, fontSize: 12, lineHeight: 18 },
   nodeRow: { flexDirection: "row", alignItems: "flex-start", gap: spacing.sm },
   nodeContent: { flex: 1, minWidth: 0, gap: 2 },
+  nodeDetails: { gap: 2, marginTop: spacing.xs },
   branch: {
     marginLeft: 9,
     borderLeftWidth: 1,
@@ -176,7 +221,6 @@ const styles = StyleSheet.create({
     borderTopColor: colors.textTertiary,
   },
   otherSources: { gap: spacing.sm, marginTop: spacing.md },
-  otherHeading: { color: colors.textSecondary, fontSize: 12, fontWeight: "600" },
   link: { minHeight: 44, minWidth: 44, justifyContent: "center", alignSelf: "flex-start" },
   linkLabel: { color: colors.accent, fontSize: 12 },
   error: { color: colors.danger, fontSize: 12 },

@@ -284,7 +284,7 @@ describe("activity visibility consistency", () => {
             providerId: "issue_2060",
             sourceName: null,
             label: "issue_2060",
-            description: "Other matching source",
+            description: null,
             url: null,
             children: [],
           },

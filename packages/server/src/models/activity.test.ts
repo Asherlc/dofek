@@ -380,7 +380,7 @@ describe("Activity", () => {
             { id: stravaCopy, url: "https://www.strava.com/activities/123", children: [] },
           ],
         },
-        otherSources: [{ id: other, description: "Other matching source", children: [] }],
+        otherSources: [{ id: other, description: null, children: [] }],
       });
     });
 
@@ -473,7 +473,7 @@ describe("Activity", () => {
               providerId: "strava",
               sourceName: null,
               label: "Strava",
-              description: "Other matching source",
+              description: null,
               url: "https://www.strava.com/activities/99999",
               children: [],
             },
@@ -482,7 +482,7 @@ describe("Activity", () => {
               providerId: "wahoo",
               sourceName: null,
               label: "Wahoo",
-              description: "Other matching source",
+              description: null,
               url: "https://systm.wahoofitness.com/history/activity-details/42",
               children: [],
             },

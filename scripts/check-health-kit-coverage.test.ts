@@ -33,14 +33,18 @@ function runCoverage(
   for (const directory of [sourceDirectory, reportDirectory, binDirectory]) {
     mkdirSync(directory, { recursive: true });
   }
-  const files = ["HealthKitQueries.swift", "HealthKitTypes.swift"].map((name, index) => {
+  const files = [
+    "HealthKitQueries.swift",
+    "HealthKitTypes.swift",
+    "HealthKitWorkoutTransport.swift",
+  ].map((name, index) => {
     const filename = join(sourceDirectory, name);
     writeFileSync(filename, "// fixture\n");
     return {
       filename,
       summary: {
         lines: options.lines?.[index] ?? {
-          count: index === 0 ? 1 : 9,
+          count: index === 0 ? 1 : index === 1 ? 9 : 10,
           covered: index === 0 ? 0 : 9,
         },
         functions: options.functions?.[index] ?? { count: 10, covered: 9 },
@@ -91,6 +95,19 @@ afterEach(() => {
 });
 
 describe("HealthKit coverage runner", () => {
+  it("includes workout transport when enforcing production coverage", () => {
+    const result = runCoverage({
+      lines: [
+        { count: 10, covered: 10 },
+        { count: 10, covered: 10 },
+        { count: 100, covered: 0 },
+      ],
+    });
+    expect(result.status).not.toBe(0);
+    expect(result.stdout).toContain("Line coverage: 16.67%");
+    expect(result.stderr).toContain("Line coverage is below 90%");
+  });
+
   it("uses Swift's exported report path and accepts weighted coverage exactly at 90 percent", () => {
     const result = runCoverage();
     expect(result.status, result.stderr).toBe(0);

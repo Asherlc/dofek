@@ -309,7 +309,7 @@ describe("ActivitiesScreen", () => {
       expect(photo.closest('[pointer-events="none"]')).not.toBeNull();
 
       fireEvent.click(sourceButton);
-      expect(screen.getByText("Recording app reported by Apple Health")).toBeDefined();
+      expect(screen.getByText("Apple Health")).toBeDefined();
       expect(routerPush).not.toHaveBeenCalled();
       if (selectMode) expect(screen.getByText("0 activities selected")).toBeDefined();
       fireEvent.click(sourceButton);

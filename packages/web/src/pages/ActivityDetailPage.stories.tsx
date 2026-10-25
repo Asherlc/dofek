@@ -2,6 +2,10 @@ import { UnitConverter } from "@dofek/format/units";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, within } from "storybook/test";
 import type { ActivityDetail } from "../../../server/src/models/activity.ts";
+import {
+  walkingHardware,
+  walkingSourceTree,
+} from "../components/ActivitySourceDisclosure.fixtures.ts";
 import { detailSourceTree, removedDetailSourceTree } from "./ActivityDetailPage.fixtures.ts";
 import { ActivityHeader } from "./ActivityDetailPage.tsx";
 
@@ -85,6 +89,45 @@ type HeaderStory = StoryObj<typeof headerMeta>;
 
 export const CyclingMetric: HeaderStory = {
   args: {},
+};
+
+export const WalkingSourcesCollapsed: HeaderStory = {
+  parameters: { layout: "padded" },
+  args: {
+    activity: {
+      ...baseActivity,
+      name: "67 min 59 sec Walking",
+      activityType: "hiking",
+      startedAt: "2026-10-24T18:52:00Z",
+      endedAt: "2026-10-24T20:45:00Z",
+      displayedDate: "2026-10-24",
+      sourceTree: walkingSourceTree,
+      totalDistance: 6598,
+      elevationGain: 303.6,
+      avgHr: 108,
+      maxHr: 141,
+      avgSpeed: 0.9835,
+      avgPower: null,
+      avgPowerState: missingMetricState("Average power"),
+      maxPower: null,
+      maxPowerState: missingMetricState("Maximum power"),
+      avgCadence: null,
+      avgCadenceState: missingMetricState("Cadence"),
+    },
+    units: new UnitConverter("imperial"),
+    hardware: walkingHardware,
+  },
+};
+
+export const WalkingSourcesExpanded: HeaderStory = {
+  parameters: { layout: "padded" },
+  args: WalkingSourcesCollapsed.args,
+  play: async ({ canvasElement, userEvent }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(canvas.getByRole("button", { name: "Asher’s Apple Watch Sources" }));
+    await expect(canvas.getByText("Whoop")).toBeVisible();
+    await expect(canvas.getByText("Apple Health")).toBeVisible();
+  },
 };
 
 export const BranchingCollapsed: HeaderStory = {

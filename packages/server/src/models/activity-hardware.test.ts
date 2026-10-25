@@ -3,6 +3,134 @@ import { normalizeActivityHardware } from "./activity-hardware.ts";
 
 const member = { activityId: "member", providerId: "garmin", sourceName: null, raw: null };
 describe("activity hardware", () => {
+  it.each([
+    ["Watch7,12", "Apple Watch Ultra 3"],
+    ["watch7,12", "Apple Watch Ultra 3"],
+    ["Watch7,10", "Apple Watch Series 10 (42mm)"],
+    ["Watch6,13", "Apple Watch SE (2nd generation, 44mm)"],
+    ["Watch8,4", "Apple Watch Series 12 (42mm)"],
+    ["Watch99,1", "Watch99,1"],
+    ["watch99,1", "watch99,1"],
+  ])(
+    "resolves specific HealthKit source product %s without guessing",
+    (sourceProductType, model) => {
+      const result = normalizeActivityHardware([
+        {
+          ...member,
+          providerId: "apple_health",
+          observations: [],
+          raw: {
+            sourceProductType,
+            device: { name: "My Watch", model: "Watch", manufacturer: "Apple" },
+          },
+        },
+      ]);
+      expect(result.items[0]).toMatchObject({ model });
+      expect(result.items[0]?.details).toContainEqual({
+        label: "Product type",
+        value: sourceProductType,
+      });
+    },
+  );
+  it.each(["Watch7,12", "watch7,12"])(
+    "resolves retained HealthKit device model %s when the source product is unavailable",
+    (model) => {
+      const result = normalizeActivityHardware([
+        {
+          ...member,
+          providerId: "apple_health",
+          observations: [],
+          raw: { device: { model } },
+        },
+      ]);
+      expect(result.items[0]).toMatchObject({
+        label: "Apple Watch Ultra 3",
+        model: "Apple Watch Ultra 3",
+      });
+    },
+  );
+  it("retains an unrecognized model name without resolving inherited lookup properties", () => {
+    const result = normalizeActivityHardware([
+      {
+        ...member,
+        providerId: "apple_health",
+        observations: [],
+        raw: { device: { model: "constructor" } },
+      },
+    ]);
+    expect(result.items[0]).toMatchObject({ label: "constructor", model: "constructor" });
+  });
+  it.each(["Watch7,12", "watch7,12"])(
+    "resolves retained hardware-version identifier %s when HealthKit reports a generic model",
+    (hardwareVersion) => {
+      const result = normalizeActivityHardware([
+        {
+          ...member,
+          providerId: "apple_health",
+          observations: [],
+          raw: { device: { model: "Watch", hardwareVersion } },
+        },
+      ]);
+      expect(result.items[0]).toMatchObject({
+        label: "Apple Watch Ultra 3",
+        model: "Apple Watch Ultra 3",
+      });
+      expect(result.items[0]?.details).toContainEqual({
+        label: "Hardware",
+        value: hardwareVersion,
+      });
+    },
+  );
+  it("keeps source-product evidence ahead of reported model and hardware-version identifiers", () => {
+    const result = normalizeActivityHardware([
+      {
+        ...member,
+        providerId: "apple_health",
+        observations: [],
+        raw: {
+          sourceProductType: "Watch7,12",
+          device: { model: "Watch6,18", hardwareVersion: "Watch7,5" },
+        },
+      },
+    ]);
+    expect(result.items[0]?.model).toBe("Apple Watch Ultra 3");
+  });
+  it("keeps a specific reported model ahead of hardware-version identifiers", () => {
+    const result = normalizeActivityHardware([
+      {
+        ...member,
+        providerId: "apple_health",
+        observations: [],
+        raw: { device: { model: "Watch6,18", hardwareVersion: "Watch7,5" } },
+      },
+    ]);
+    expect(result.items[0]?.model).toBe("Apple Watch Ultra");
+  });
+  it("does not infer a model from a generic numeric hardware version", () => {
+    const result = normalizeActivityHardware([
+      {
+        ...member,
+        providerId: "apple_health",
+        observations: [],
+        raw: { device: { name: "My Watch", model: "Watch", hardwareVersion: "2" } },
+      },
+    ]);
+    expect(result.items[0]).toMatchObject({ label: "My Watch", model: null });
+  });
+  it.each(["Watch", "Apple Watch", "Apple_Watch"])(
+    "does not claim generic %s is a specific model",
+    (model) => {
+      const result = normalizeActivityHardware([
+        {
+          ...member,
+          providerId: "apple_health",
+          observations: [],
+          raw: { device: { name: "My Watch", model } },
+        },
+      ]);
+      expect(result.items[0]).toMatchObject({ label: "My Watch", model: null });
+    },
+  );
   it("consolidates partial FIT updates without losing identity or inventing sensor attribution", () => {
     const result = normalizeActivityHardware([
       {
@@ -258,7 +386,7 @@ describe("activity hardware", () => {
     expect(result.items[0]).toMatchObject({
       label: "My Watch",
       sourceName: "Workout app",
-      model: "Watch",
+      model: null,
     });
   });
   it("preserves coarse equipment and source provenance without guessing models", () => {

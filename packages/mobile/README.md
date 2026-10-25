@@ -605,14 +605,24 @@ The [source disclosure](components/ActivitySourceDisclosure.tsx) sits after the
 activity content and map, inside the same card. Its source row expands into
 propagation branches and doubles as the primary root, avoiding a repeated source
 name. Separate copies from the same provider retain their own branches;
-unconnected records appear as other matching sources. Dofek remains implicit.
+unconnected records retain separate roots. Dofek remains implicit.
 See the [Activities screen](<app/(tabs)/activities.tsx>).
 
 The [activity detail header](components/activity/ActivityDetailHeader.tsx) uses
 the same disclosure inside the existing header, retaining its activity identity
-and removal notice. The [detail route](<app/activity/[id].tsx>) keeps the other
-detail content. Removed source records remain visible without actionable URLs;
-empty trees omit the source row and unresolved trees with records remain expandable.
+and removal notice. Its single [Sources disclosure](components/ActivitySourceDisclosure.tsx)
+groups provider ancestry and reported device/sensor facts, following the
+[WAI disclosure pattern](https://www.w3.org/WAI/ARIA/apg/patterns/disclosure/).
+Expanding Sources reveals recording-device facts at the device root and reported
+equipment as children of the reporting provider. Unmatched records retain their
+own provider branch through the [shared projection](../providers-meta/src/activity-source-hardware.ts).
+Hardware refresh
+errors keep their retry action visible while collapsed, and cached facts remain
+available. Sources remains reachable for hardware, loading, and error states
+even without source-tree records; an empty tree with no metadata or query state
+omits the source row. The [detail route](<app/activity/[id].tsx>) keeps the other
+detail content. Removed source records remain visible without actionable URLs,
+and unresolved trees with records remain expandable.
 
 Both clients render the [shared source-tree contract](../providers-meta/src/activity-source-tree.ts)
 from the [server projection](../server/src/models/activity-source-tree.ts).

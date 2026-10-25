@@ -7,6 +7,7 @@ export interface ActivitySourceTreeNode {
   label: string;
   description: string | null;
   url: string | null;
+  details?: { label: string; value: string }[];
   children: ActivitySourceTreeNode[];
 }
 
@@ -17,6 +18,7 @@ export const activitySourceTreeNodeSchema: z.ZodType<ActivitySourceTreeNode> = z
   label: z.string(),
   description: z.string().nullable(),
   url: z.string().nullable(),
+  details: z.array(z.object({ label: z.string(), value: z.string() })).optional(),
   children: z.lazy(() => z.array(activitySourceTreeNodeSchema)),
 });
 

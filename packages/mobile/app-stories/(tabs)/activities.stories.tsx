@@ -294,7 +294,7 @@ function createStoryData(
               providerId: hangboarding ? "hang-ten" : "strong",
               sourceName: null,
               label: hangboarding ? "Hang Ten" : "Strong",
-              description: "Recording app reported by Apple Health",
+              description: null,
               url: null,
               children: [
                 {
@@ -319,7 +319,7 @@ function createStoryData(
                 originProvider === "garmin" && originSourceName
                   ? originSourceName
                   : providerLabel(originProvider),
-              description: "Closest available source record",
+              description: null,
               url: null,
               children: [],
             },
@@ -745,7 +745,6 @@ export const HangTenViaAppleHealth: Story = {
       await within(canvasElement).findByRole("button", { name: "Sources: Hang Ten" }),
     );
     const canvas = within(canvasElement);
-    await expect(await canvas.findByText("Recording app reported by Apple Health")).toBeVisible();
     await expect(await canvas.findByText("Apple Health")).toBeVisible();
   },
 };
@@ -762,6 +761,6 @@ export const BranchingSourcesExpanded: Story = {
     await expect(trigger).toHaveAttribute("aria-expanded", "true");
     await expect(canvas.getAllByText("Hang Ten")).toHaveLength(1);
     await expect(canvas.getAllByText("Strava")).toHaveLength(2);
-    await expect(canvas.getByText("Other matching sources")).toBeVisible();
+    await expect(canvas.getByText("WHOOP")).toBeVisible();
   },
 };
