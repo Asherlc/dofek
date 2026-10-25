@@ -66,7 +66,7 @@ existing logger/Sentry, XCTest and Vitest.
 **Interfaces:** Consumes Task 1's report and committed implementation. Produces verified branch, native build evidence and incident follow-up.
 
 - [x] Run the repository's Docker-free unit/mobile tier once and appropriate typechecks/lint; reuse focused check evidence unless code changes invalidate it.
-- [ ] Build the iOS app to compile the Expo bridge using existing signed simulator procedures; distinguish compile/runtime evidence from physical-device scheduling.
+- [x] Build the iOS app to compile the Expo bridge using existing signed simulator procedures; distinguish compile/runtime evidence from physical-device scheduling.
 - [x] Perform a whole-branch independent review after task review and verification.
-- [ ] Append the incident baseline with direct observability fix, validation results, physical rollout boundary, and short retrospective; keep this plan's review checkpoints current.
-- [ ] Commit/push remaining documentation and fixes; report the diagnostics added, checks, and new-native-build requirement.
+- [x] Append the incident baseline with direct observability fix, validation results, physical rollout boundary, and short retrospective; keep this plan's review checkpoints current.
+- [x] Commit/push remaining documentation and fixes; report the diagnostics added, checks, and new-native-build requirement.
