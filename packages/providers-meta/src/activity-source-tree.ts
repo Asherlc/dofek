@@ -3,6 +3,7 @@ import { z } from "zod";
 export interface ActivitySourceTreeNode {
   id: string;
   providerId: string;
+  sourceName: string | null;
   label: string;
   description: string | null;
   url: string | null;
@@ -12,6 +13,7 @@ export interface ActivitySourceTreeNode {
 export const activitySourceTreeNodeSchema: z.ZodType<ActivitySourceTreeNode> = z.object({
   id: z.string(),
   providerId: z.string(),
+  sourceName: z.string().nullable(),
   label: z.string(),
   description: z.string().nullable(),
   url: z.string().nullable(),

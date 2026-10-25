@@ -189,6 +189,7 @@ describe("ActivitiesCalendarRepository", () => {
               {
                 id: "strava:strava-activity-1:",
                 providerId: "strava",
+                sourceName: null,
                 label: "Strava",
                 description: "Other matching source",
                 url: null,
@@ -197,6 +198,7 @@ describe("ActivitiesCalendarRepository", () => {
               {
                 id: "wahoo:wahoo-activity-1:",
                 providerId: "wahoo",
+                sourceName: null,
                 label: "Wahoo",
                 description: "Other matching source",
                 url: null,

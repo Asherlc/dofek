@@ -55,6 +55,7 @@ export type BleHeartRateDeviceSnapshot = z.infer<typeof BleHeartRateDeviceSnapsh
  */
 export const BleHeartRateSampleSchema = z.object({
   deviceId: z.string().min(1),
+  deviceName: z.string().optional(),
   timestamp: z.string().min(1),
   heartRateBpm: z.number(),
   rrIntervalsMs: z.array(z.number()),

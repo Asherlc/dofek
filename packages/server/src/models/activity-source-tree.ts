@@ -66,6 +66,9 @@ export function buildActivitySourceTree(
       ? origin.memberActivityId
       : null;
   function project(id: string, source: SourceLink): ActivitySourceTreeNode {
+    const sourceName =
+      source.subsource ??
+      (origin.status === "resolved" && id === primaryId ? origin.sourceName : null);
     const parentId = parentById.get(id);
     const parent = parentId ? sources.get(parentId) : undefined;
     const relationship = parent
@@ -76,7 +79,11 @@ export function buildActivitySourceTree(
     const node: ActivitySourceTreeNode = {
       id,
       providerId: source.providerId,
-      label: providerLabel(source.providerId),
+      sourceName: source.providerId === "garmin" ? sourceName : null,
+      label:
+        source.providerId === "garmin" && sourceName?.trim()
+          ? sourceName.trim()
+          : providerLabel(source.providerId),
       description: `${relationship}${source.providerAbsentAt ? " · Removed from provider" : ""}`,
       url: source.url,
       children: [...sources]
@@ -88,15 +95,14 @@ export function buildActivitySourceTree(
       status: "resolved",
       memberActivityId: id,
       providerId: source.providerId,
-      sourceName:
-        source.subsource ??
-        (origin.status === "resolved" && id === primaryId ? origin.sourceName : null),
+      sourceName,
     });
     if (!attribution?.importedVia) return node;
     node.description = `Recording attribution reported by ${providerLabel(source.providerId)}${source.providerAbsentAt ? " · Removed from provider" : ""}`;
     return {
       id: `${id}:recording-attribution`,
       providerId: attribution.recordingApp.provider,
+      sourceName: attribution.recordingApp.provider === "garmin" ? sourceName : null,
       label: attribution.recordingApp.label,
       description: "Recording app or device attribution",
       url: null,

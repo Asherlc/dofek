@@ -44,7 +44,12 @@ function SourceNode({ node }: { node: ActivitySourceTreeNode }) {
   return (
     <View>
       <View style={styles.nodeRow}>
-        <ProviderLogo provider={node.providerId} serverUrl={SERVER_URL} size={20} />
+        <ProviderLogo
+          provider={node.providerId}
+          sourceName={node.sourceName}
+          serverUrl={SERVER_URL}
+          size={20}
+        />
         <View style={styles.nodeContent}>
           <Text style={styles.label}>{node.label}</Text>
           {node.description ? <Text style={styles.description}>{node.description}</Text> : null}
@@ -83,7 +88,12 @@ export function ActivitySourceDisclosure({ tree }: { tree: ActivitySourceTree })
       >
         {primary ? (
           <View style={styles.primary}>
-            <ProviderLogo provider={primary.providerId} serverUrl={SERVER_URL} size={20} />
+            <ProviderLogo
+              provider={primary.providerId}
+              sourceName={primary.sourceName}
+              serverUrl={SERVER_URL}
+              size={20}
+            />
             <Text style={styles.label}>{primary.label}</Text>
           </View>
         ) : null}

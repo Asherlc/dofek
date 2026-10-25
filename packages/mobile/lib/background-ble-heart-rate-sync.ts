@@ -41,6 +41,7 @@ let pendingNativeTeardown: Promise<void> = Promise.resolve();
 
 function toUploadSample(sample: BleHeartRateSample): BleHeartRateUploadSample {
   return {
+    ...(sample.deviceName !== undefined ? { deviceName: sample.deviceName } : {}),
     timestamp: sample.timestamp,
     heartRateBpm: sample.heartRateBpm,
     rrIntervalsMs: sample.rrIntervalsMs,

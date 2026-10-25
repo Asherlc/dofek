@@ -3,6 +3,22 @@ import XCTest
 @testable import BleHeartRateLib
 
 final class BleHeartRateDeviceCoordinatorTests: XCTestCase {
+    func testMeasurementCapturesRegisteredNameBeforeLaterRegistryChange() throws {
+        let registry = try BleHeartRateDeviceRegistry(defaults: makeDefaults())
+        let deviceId = "00000000-0000-0000-0000-000000000010"
+        try registry.register(BleHeartRateDevice(id: deviceId, name: "Polar H10"))
+        let buffer = BleHeartRateSampleBuffer()
+        let events = EventRecorder()
+        let coordinator = makeCoordinator(manager: FakeConnectionManager(), registry: registry,
+                                          sampleBuffer: buffer, events: events)
+        coordinator.connectionManager(BleHeartRateConnectionManager(),
+            didReceiveMeasurement: BleHeartRateMeasurement(heartRateBpm: 142, rrIntervalsMs: [800]),
+            from: deviceId, at: Date())
+        try registry.register(BleHeartRateDevice(id: deviceId, name: "Renamed later"))
+        XCTAssertEqual(events.measurements.first?.deviceName, "Polar H10")
+        XCTAssertEqual(buffer.peekSamples().first?["deviceName"] as? String, "Polar H10")
+        XCTAssertEqual(buffer.peekSamples().first?["deviceId"] as? String, deviceId)
+    }
     func testDisconnectLifecycleForOneDeviceKeepsAnotherDeviceReady() throws {
         let registry = try BleHeartRateDeviceRegistry(defaults: makeDefaults())
         let readyId = "00000000-0000-0000-0000-000000000010"

@@ -71,6 +71,47 @@ describe("bleHeartRateSyncRouter", () => {
   describe("pushSamples", () => {
     const caller = bleHeartRateSyncRouter.createCaller;
 
+    it("retains capture-time device names on HR and RR rows without changing UUID identity", async () => {
+      await caller(ctx).pushSamples({
+        deviceId: "peripheral-uuid",
+        samples: [
+          {
+            timestamp: "2026-03-30T12:00:00.000Z",
+            heartRateBpm: 142,
+            rrIntervalsMs: [800],
+            deviceName: "Polar H10",
+          },
+          {
+            timestamp: "2026-03-30T12:00:01.000Z",
+            heartRateBpm: 143,
+            rrIntervalsMs: [],
+            deviceName: "Renamed strap",
+          },
+        ],
+      });
+      expect(getPublishedRows(metricStreamPublisher)).toEqual([
+        expect.objectContaining({
+          deviceId: "peripheral-uuid",
+          channel: "heart_rate",
+          metadata: { device_name: "Polar H10" },
+          externalId: "ble_heart_rate:peripheral-uuid:heart_rate:2026-03-30T12:00:00.000Z",
+          scalar: 142,
+        }),
+        expect.objectContaining({
+          deviceId: "peripheral-uuid",
+          channel: "rr_interval_ms",
+          metadata: { device_name: "Polar H10" },
+          scalar: 800,
+        }),
+        expect.objectContaining({
+          deviceId: "peripheral-uuid",
+          channel: "heart_rate",
+          metadata: { device_name: "Renamed strap" },
+          scalar: 143,
+        }),
+      ]);
+    });
+
     it("returns zero inserted for empty samples array", async () => {
       const result = await caller(ctx).pushSamples({
         deviceId: "Polar H10",

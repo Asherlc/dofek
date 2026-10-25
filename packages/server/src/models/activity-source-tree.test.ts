@@ -32,6 +32,39 @@ function edge(
   };
 }
 describe("buildActivitySourceTree", () => {
+  it("retains exact Garmin model metadata and canonical logo identity on a direct record", () => {
+    const tree = buildActivitySourceTree(
+      { ...origin, providerId: "garmin", sourceName: "Forerunner 965" },
+      [link("a", "garmin", "Forerunner 965")],
+      [],
+    );
+    expect(tree.primary).toMatchObject({
+      id: "a",
+      providerId: "garmin",
+      sourceName: "Forerunner 965",
+      label: "Forerunner 965",
+      children: [],
+    });
+    expect(activitySourceTreeSchema.parse(tree)).toEqual(tree);
+  });
+
+  it("retains Garmin model thumbnails on held descendants without decorating Apple Health copies", () => {
+    const tree = buildActivitySourceTree(
+      origin,
+      [
+        link("a", "wahoo"),
+        link("b", "garmin", "Forerunner 965"),
+        link("c", "apple_health", "Garmin"),
+      ],
+      [edge("a", "b"), edge("b", "c")],
+    );
+    expect(tree.primary?.children[0]).toMatchObject({
+      providerId: "garmin",
+      sourceName: "Forerunner 965",
+      children: [{ providerId: "apple_health", sourceName: null }],
+    });
+  });
+
   it("projects branches and retains separate same-provider copies with stable identities", () => {
     const links = [link("d"), link("c", "apple_health"), link("b"), link("a", "wahoo")];
     const tree = buildActivitySourceTree(origin, links, [
@@ -155,6 +188,8 @@ describe("buildActivitySourceTree", () => {
       [],
     );
     expect(tree.primary).toMatchObject({
+      providerId: "garmin",
+      sourceName: "Garmin Edge 530",
       label: "Garmin Edge 530",
       url: null,
       description: "Recording app or device attribution",

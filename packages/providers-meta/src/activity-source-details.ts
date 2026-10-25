@@ -1,4 +1,5 @@
 import type { ActivityOrigin } from "./activity-origin.ts";
+import { garminDeviceThumbnail } from "./garmin-devices.ts";
 import { providerLabel, providerSourceLogo } from "./providers.ts";
 
 export interface ActivitySourceApp {
@@ -23,11 +24,18 @@ export function activitySourceDetails(origin: ActivityOrigin): ActivitySourceDet
       providerLabel(provider),
       ...(provider === "apple_health" ? ["HealthKit"] : []),
     ].some((label) => label.toLowerCase() === name.toLowerCase());
-  const source = distinctSource ? providerSourceLogo("apple_health", name).provider : provider;
+  const source = distinctSource
+    ? provider === "garmin" || garminDeviceThumbnail(name) !== null
+      ? "garmin"
+      : providerSourceLogo("apple_health", name).provider
+    : provider;
   return {
     recordingApp: {
       provider: source,
-      label: source === "apple-watch" && distinctSource ? name : providerLabel(source),
+      label:
+        (source === "apple-watch" || source === "garmin") && distinctSource
+          ? name
+          : providerLabel(source),
     },
     importedVia: source !== provider ? { provider, label: providerLabel(provider) } : null,
   };

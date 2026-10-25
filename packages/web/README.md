@@ -83,6 +83,14 @@ not imply recorded distance or elevation. The
 [calendar repository](../server/src/repositories/activities-calendar-repository.ts)
 projects map geometry on the server, and recorded GPS takes precedence.
 
+Cards without a map show one downloaded activity image when available; processing
+maps keep their panel. The activity detail's
+[Photos gallery](src/components/ActivityPhotos.tsx) opens images with captions and
+source attribution in the existing accessible modal, following the
+[WAI dialog pattern](https://www.w3.org/WAI/ARIA/apg/patterns/dialog-modal/).
+The [shared query policy](../training/src/activity-images.ts) renews private signed
+links; see [activity image storage and display](../../docs/activity-images.md).
+
 Expected maps retain their space and show a processing status while location data
 or initial map tiles are pending. List queries refresh while the server reports a
 pending map, and ready maps remain visible during background refreshes. The shared

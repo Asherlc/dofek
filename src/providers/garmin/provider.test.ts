@@ -24,6 +24,8 @@ vi.mock("./health.ts", () => ({ syncGarminHealthRecord: mocks.health }));
 vi.mock("./activities.ts", () => ({ syncGarminActivityRecord: mocks.activity }));
 vi.mock("../../provider-artifact-storage.ts", () => ({
   createProviderArtifactStorageFromEnv: () => ({
+    retainFile: vi.fn().mockResolvedValue("retained.fit"),
+    hasForProvider: vi.fn().mockResolvedValue(false),
     ensureArtifact: vi.fn(),
     materializeArtifact: vi.fn(),
     deleteForUser: vi.fn(),
@@ -301,6 +303,8 @@ describe("official Garmin provider", () => {
     async (type) => {
       const { db } = createMockDatabase();
       const artifacts = {
+        retainFile: vi.fn().mockResolvedValue("retained.fit"),
+        hasForProvider: vi.fn().mockResolvedValue(false),
         ensureArtifact: vi.fn(),
         materializeArtifact: vi.fn(),
         deleteForUser: vi.fn(),

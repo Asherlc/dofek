@@ -25,6 +25,7 @@ function fakePolarExercise(overrides: Partial<PolarExercise> = {}): PolarExercis
     upload_time: "2026-03-01T11:30:00Z",
     polar_user: "https://www.polaraccesslink.com/v3/users/12345",
     device: "Polar Vantage V3",
+    device_id: "ABC12345",
     start_time: "2026-03-01T10:00:00Z",
     duration: "PT1H15M30S",
     calories: 780,
@@ -236,6 +237,8 @@ describe("PolarProvider.sync() (integration)", () => {
     if (!run) throw new Error("expected exercise ex-1001");
     expect(run.canonicalType).toBe("running");
     expect(run.name).toBe("Running");
+    expect(run.raw).toMatchObject({ device: "Polar Vantage V3", device_id: "ABC12345" });
+    expect(run.sourceName).toBeNull();
 
     const ride = activityRows.find((r) => r.externalId === "ex-1002");
     if (!ride) throw new Error("expected exercise ex-1002");

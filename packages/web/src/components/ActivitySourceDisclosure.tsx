@@ -23,7 +23,7 @@ export function ActivitySourceDisclosure({ tree }: { tree: ActivitySourceTree })
       >
         {primary ? (
           <>
-            <ProviderLogo provider={primary.providerId} size={18} />
+            <ProviderLogo provider={primary.providerId} sourceName={primary.sourceName} size={18} />
             <span className="min-w-0 flex-1 font-medium [overflow-wrap:anywhere]">
               {primary.label}
             </span>
@@ -110,7 +110,7 @@ function SourceTreeNodes({
           }
         >
           <div className="flex min-w-0 items-center gap-2">
-            <ProviderLogo provider={node.providerId} size={18} />
+            <ProviderLogo provider={node.providerId} sourceName={node.sourceName} size={18} />
             {node.url ? (
               <a
                 href={node.url}

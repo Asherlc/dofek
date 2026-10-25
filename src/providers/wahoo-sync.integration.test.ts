@@ -2,12 +2,12 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
-import { setupServer } from "msw/node";
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { activity } from "../db/schema/activity.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
+import { createProviderArtifactStorageTestContext } from "../test-helpers.ts";
 import { SyncRun } from "./sync-run.ts";
 import { SyncWindow } from "./sync-window.ts";
 import { createCapturingMetricStreamPublisher } from "./test-helpers.ts";
@@ -103,13 +103,15 @@ function wahooHandlers(
   ];
 }
 
-const server = setupServer();
+const archive = createProviderArtifactStorageTestContext("http://r2.wahoo-fit.test");
+const server = archive.server;
 const metricStreamCapture = createCapturingMetricStreamPublisher();
 
 describe("WahooProvider.sync() (integration)", () => {
   let ctx: TestContext;
 
   beforeAll(async () => {
+    archive.stubEnvironment();
     process.env.WAHOO_CLIENT_ID = "test-client-id";
     process.env.WAHOO_CLIENT_SECRET = "test-client-secret";
     ctx = await setupTestDatabase();
@@ -118,6 +120,8 @@ describe("WahooProvider.sync() (integration)", () => {
   }, 60_000);
 
   beforeEach(() => {
+    archive.originals.clear();
+    archive.writes.length = 0;
     metricStreamCapture.publishedMetricStreamRows.length = 0;
     metricStreamCapture.deletedMetricStreamScopes.length = 0;
   });
@@ -128,6 +132,8 @@ describe("WahooProvider.sync() (integration)", () => {
 
   afterAll(async () => {
     server.close();
+    archive.client.destroy();
+    vi.unstubAllEnvs();
     if (ctx) await ctx.cleanup();
   });
 
@@ -160,7 +166,8 @@ describe("WahooProvider.sync() (integration)", () => {
 
     expect(result.provider).toBe("wahoo");
     expect(result.recordsSynced).toBe(2);
-    expect(result.errors).toHaveLength(0);
+    expect(result.errors).toEqual([]);
+    expect([...archive.originals.values()]).toEqual([fitFileBuffer]);
 
     // Verify rows in DB
     const rows = await ctx.db.select().from(activity).where(eq(activity.providerId, "wahoo"));

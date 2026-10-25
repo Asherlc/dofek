@@ -21,6 +21,7 @@ set(
   src/fit_buffered_record_mesg_broadcaster.cpp
   src/fit_crc.cpp
   src/fit_decode.cpp
+  src/fit_encode.cpp
   src/fit_field.cpp
   src/fit_field_definition.cpp
   src/fit_mesg.cpp
@@ -28,6 +29,7 @@ set(
   src/fit_mesg_definition.cpp
   src/fit_mesg_with_event_broadcaster.cpp
   src/fit_profile.cpp
+  src/fit_protocol_validator.cpp
   src/fit_unicode.cpp
 )
 

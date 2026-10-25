@@ -11,6 +11,7 @@ import { View } from "react-native";
 import { expect, within } from "storybook/test";
 import ActivitiesScreen from "../../app/(tabs)/activities";
 import { branchingActivitySourceTree } from "../../app-fixtures/activity-source-tree";
+import { activityImageFixture } from "../../components/activity-images-test-helpers";
 import { trpc } from "../../lib/trpc";
 
 const mapPreview = {
@@ -266,6 +267,7 @@ const climbingSourceLocation = {
 function createStoryData(
   climbingActivity = false,
   originProvider: string | null = "garmin",
+  photoActivity = false,
   originSourceName: string | null = null,
   branchingSources = false,
 ) {
@@ -290,6 +292,7 @@ function createStoryData(
             primary: {
               id: "recording-app",
               providerId: hangboarding ? "hang-ten" : "strong",
+              sourceName: null,
               label: hangboarding ? "Hang Ten" : "Strong",
               description: "Recording app reported by Apple Health",
               url: null,
@@ -297,6 +300,7 @@ function createStoryData(
                 {
                   id: "apple-health",
                   providerId: "apple_health",
+                  sourceName: null,
                   label: "Apple Health",
                   description: "Imported from recording app",
                   url: null,
@@ -310,7 +314,11 @@ function createStoryData(
             primary: {
               id: "recording-app",
               providerId: originProvider,
-              label: providerLabel(originProvider),
+              sourceName: originProvider === "garmin" ? originSourceName : null,
+              label:
+                originProvider === "garmin" && originSourceName
+                  ? originSourceName
+                  : providerLabel(originProvider),
               description: "Closest available source record",
               url: null,
               children: [],
@@ -396,6 +404,7 @@ function createStoryData(
               primary: {
                 id: "strong",
                 providerId: "strong",
+                sourceName: null,
                 label: "Strong",
                 description: null,
                 url: null,
@@ -449,6 +458,7 @@ function createStoryData(
             primary: {
               id: "mountain-project",
               providerId: "mountain-project",
+              sourceName: null,
               label: "Mountain Project",
               description: null,
               url: null,
@@ -525,7 +535,27 @@ function createStoryData(
     operations: [],
   };
 
-  return { today, queryInput, weekList, activityOverview, calendarData, processingStatus };
+  const activityImages = {
+    images: photoActivity
+      ? [
+          {
+            ...activityImageFixture,
+            url: "https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?w=1200&q=80",
+          },
+        ]
+      : [],
+    coverage: [],
+    acquisition: [],
+  };
+  return {
+    today,
+    queryInput,
+    weekList,
+    activityOverview,
+    calendarData,
+    processingStatus,
+    activityImages,
+  };
 }
 
 function createMockLink(storyData: ReturnType<typeof createStoryData>): TRPCLink<AppRouter> {
@@ -548,6 +578,8 @@ function createMockObservable(
         observer.next?.({ result: { data: storyData.calendarData } });
       } else if (path === "processing.status") {
         observer.next?.({ result: { data: storyData.processingStatus } });
+      } else if (path === "activity.images") {
+        observer.next?.({ result: { data: storyData.activityImages } });
       } else {
         throw new Error(`Unhandled activities story tRPC operation: ${path}`);
       }
@@ -565,18 +597,27 @@ function MockProviders({
   children,
   climbingActivity,
   originProvider,
+  photoActivity,
   originSourceName,
   branchingSources,
 }: {
   children: React.ReactNode;
   climbingActivity: boolean;
   originProvider: string | null;
+  photoActivity: boolean;
   originSourceName: string | null;
   branchingSources: boolean;
 }) {
   const storyData = useMemo(
-    () => createStoryData(climbingActivity, originProvider, originSourceName, branchingSources),
-    [climbingActivity, originProvider, originSourceName, branchingSources],
+    () =>
+      createStoryData(
+        climbingActivity,
+        originProvider,
+        photoActivity,
+        originSourceName,
+        branchingSources,
+      ),
+    [climbingActivity, originProvider, photoActivity, originSourceName, branchingSources],
   );
   const queryClient = useMemo(() => {
     const client = new QueryClient({
@@ -623,6 +664,7 @@ const meta = {
       <MockProviders
         climbingActivity={context.parameters.climbingActivity === true}
         branchingSources={context.parameters.branchingSources === true}
+        photoActivity={context.parameters.photoActivity === true}
         originProvider={
           context.parameters.originProvider === null
             ? null
@@ -694,6 +736,7 @@ export const PrimaryProviderWithoutLogo: Story = {
 };
 
 export const AppleHealthSourceApp: Story = { parameters: { originProvider: "apple_health" } };
+export const PhotoWithoutMap: Story = { parameters: { photoActivity: true } };
 export const DirectWhoop: Story = { parameters: { originProvider: "whoop" } };
 export const HangTenViaAppleHealth: Story = {
   parameters: { originProvider: "apple_health", originSourceName: "Hang Ten Training" },

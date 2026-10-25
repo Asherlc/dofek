@@ -4,6 +4,7 @@ import { useState } from "react";
 import { expect, within } from "storybook/test";
 import { ActivityCardContent, type ActivityCardData } from "./ActivityCardContent.tsx";
 import { climbingSourceLocation } from "./ActivityMapTile.fixtures.ts";
+import { activityPhotoFixture } from "./ActivityPhoto.fixtures.ts";
 import { branchingSourceTree, strongSourceTree } from "./ActivitySourceDisclosure.fixtures.ts";
 
 const units = new UnitConverter("metric");
@@ -206,6 +207,7 @@ export const IndoorCycling: Story = {
           primary: {
             id: "peloton-record",
             providerId: "peloton",
+            sourceName: null,
             label: "Peloton",
             description: "Closest available recording",
             url: null,
@@ -242,6 +244,7 @@ export const VirtualCycling: Story = {
           primary: {
             id: "zwift-record",
             providerId: "zwift",
+            sourceName: null,
             label: "Zwift",
             description: "Closest available recording",
             url: null,
@@ -279,6 +282,7 @@ export const ClimbingSourceLocations: Story = {
           primary: {
             id: "mountain-project-record",
             providerId: "mountain-project",
+            sourceName: null,
             label: "Mountain Project",
             description: "Closest available recording",
             url: null,
@@ -351,7 +355,8 @@ export const PrimaryRecordingProvider: Story = {
           primary: {
             id: "garmin-record",
             providerId: "garmin",
-            label: "Garmin",
+            sourceName: "Garmin Edge 530",
+            label: "Garmin Edge 530",
             description: "Closest available recording",
             url: null,
             children: [],
@@ -385,6 +390,7 @@ export const KayaProviderLogo: Story = {
           primary: {
             id: "kaya-record",
             providerId: "kaya",
+            sourceName: null,
             label: "Kaya",
             description: "Closest available recording",
             url: null,
@@ -435,6 +441,7 @@ export const PrimaryProviderWithoutLogo: Story = {
           primary: {
             id: "mountain-project-record",
             providerId: "mountain-project",
+            sourceName: null,
             label: "Mountain Project",
             description: "Closest available recording",
             url: null,
@@ -475,6 +482,7 @@ export const AppleHealthSourceApps: Story = {
                         primary: {
                           id: "hang-ten-record",
                           providerId: "hang-ten",
+                          sourceName: null,
                           label: "Hang Ten",
                           description: "Recording app reported by Apple Health",
                           url: null,
@@ -482,6 +490,7 @@ export const AppleHealthSourceApps: Story = {
                             {
                               id: "apple-hang-ten-record",
                               providerId: "apple_health",
+                              sourceName: null,
                               label: "Apple Health",
                               description: "Recorded by Hang Ten",
                               url: null,
@@ -504,6 +513,14 @@ export const AppleHealthSourceApps: Story = {
       ))}
     </div>
   ),
+};
+
+export const PhotoWithoutMap: Story = {
+  args: { activity: strengthActivity, photo: activityPhotoFixture },
+};
+
+export const MapBeforePhoto: Story = {
+  args: { activity: mappedActivity, photo: activityPhotoFixture },
 };
 
 function InteractiveCard({ selectMode }: { selectMode: boolean }) {

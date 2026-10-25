@@ -151,6 +151,7 @@ describe("ActivityRepository", () => {
   function makeRepositoryWithSensorStore(postgresRows: Record<string, unknown>[] = []) {
     const execute = vi.fn().mockImplementation((query) => {
       const compiledQuery = dialect.sqlToQuery(query);
+      if (compiledQuery.sql.includes("activity_device_observation")) return Promise.resolve([]);
       if (compiledQuery.sql.includes("identity_candidates")) {
         const requestedId = compiledQuery.params.find(
           (parameter) => typeof parameter === "string" && parameter !== "user-1",
@@ -1569,7 +1570,13 @@ describe("ActivityRepository", () => {
     it("lists sources within the owned canonical activity window", async () => {
       const { repo, sensorStore, execute } = makeRepositoryWithSensorStore([row]);
       sensorStore.query.mockResolvedValueOnce([
-        { channel: "heart_rate", provider_id: "garmin", device_id: null, source_id: "garmin" },
+        {
+          channel: "heart_rate",
+          provider_id: "garmin",
+          device_id: null,
+          source_id: "garmin",
+          activity_ids: window.memberActivityIds,
+        },
       ]);
       await expect(repo.getMetricSources("member-id")).resolves.toEqual([
         {

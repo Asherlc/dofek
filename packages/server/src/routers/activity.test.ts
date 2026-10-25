@@ -215,6 +215,49 @@ function makeActivityRow(overrides: Partial<ActivityRow>): ActivityRow {
 }
 
 describe("activityRouter", () => {
+  describe("hardware", () => {
+    it("returns the normalized hardware contract through owned activity resolution", async () => {
+      const id = "734b5d3e-df2b-4ee0-888e-55ea539d913a";
+      const { caller } = makeTestCaller(
+        createCaller,
+        [
+          [{ requested_id: id, resolved_group_id: id, resolution_kind: "member" }],
+          [
+            {
+              id,
+              user_id: "user-1",
+              started_at: "2026-10-20T12:00:00.000Z",
+              ended_at: "2026-10-20T13:00:00.000Z",
+              member_activity_ids: [id],
+            },
+          ],
+          [
+            {
+              activityId: id,
+              providerId: "strava",
+              sourceName: null,
+              raw: { device_name: "Edge 530", device_watts: false },
+              observations: [],
+            },
+          ],
+        ],
+        (db) => ({ db, sensorStore: makeSensorStoreStub(), userId: "user-1", timezone: "UTC" }),
+      );
+      const result = await caller.hardware({ id });
+      expect(result.items[0]).toMatchObject({
+        activityId: id,
+        providerId: "strava",
+        role: "recorder",
+        label: "Edge 530",
+      });
+      expect(result.power[0]).toMatchObject({ kind: "estimated" });
+    });
+    it("rejects unresolved activity IDs with the existing actionable error", async () => {
+      await expect(
+        makeCaller([]).hardware({ id: "734b5d3e-df2b-4ee0-888e-55ea539d913a" }),
+      ).rejects.toMatchObject({ code: "NOT_FOUND", message: "Activity not found" });
+    });
+  });
   describe("hangboardDetails", () => {
     it("returns the Hangboarding detail contract", async () => {
       const caller = makeCaller([

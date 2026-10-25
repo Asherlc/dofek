@@ -12,18 +12,22 @@ function origin(providerId: string, sourceName: string | null = null): ActivityO
 }
 
 describe("activitySourceDetails", () => {
-  it.each(["strava", "garmin", "suunto"])(
-    "preserves exact device metadata reported by %s",
-    (provider) => {
-      expect(activitySourceDetails(origin(provider, "Garmin Edge 530"))).toEqual({
-        recordingApp: { provider: "Garmin Edge 530", label: "Garmin Edge 530" },
-        importedVia: {
-          provider,
-          label: provider === "strava" ? "Strava" : provider === "garmin" ? "Garmin" : "Suunto",
-        },
-      });
-    },
-  );
+  it.each(["strava", "suunto"])("preserves exact device metadata reported by %s", (provider) => {
+    expect(activitySourceDetails(origin(provider, "Garmin Edge 530"))).toEqual({
+      recordingApp: { provider: "garmin", label: "Garmin Edge 530" },
+      importedVia: {
+        provider,
+        label: provider === "strava" ? "Strava" : provider === "garmin" ? "Garmin" : "Suunto",
+      },
+    });
+  });
+
+  it("retains Garmin model labels without inventing an imported copy", () => {
+    expect(activitySourceDetails(origin("garmin", "Forerunner 965"))).toEqual({
+      recordingApp: { provider: "garmin", label: "Forerunner 965" },
+      importedVia: null,
+    });
+  });
 
   it("preserves the exact Apple Watch name", () => {
     expect(

@@ -52,6 +52,13 @@ describe("providerLabel", () => {
 });
 
 describe("providerSourceLabel", () => {
+  it("includes the Garmin recording model without repeating a provider-only name", () => {
+    expect(providerSourceLabel("garmin", "Forerunner 965")).toBe("Garmin · Forerunner 965");
+    expect(providerSourceLabel("garmin", "  fēnix 8 – 47mm  ")).toBe("Garmin · fēnix 8 – 47mm");
+    expect(providerSourceLabel("garmin", "Garmin")).toBe("Garmin");
+    expect(providerSourceLabel("garmin", null)).toBe("Garmin");
+  });
+
   it("shows Apple Health upstream app names when present", () => {
     expect(providerSourceLabel("apple_health", "Strong")).toBe("Strong (via Apple Health)");
   });

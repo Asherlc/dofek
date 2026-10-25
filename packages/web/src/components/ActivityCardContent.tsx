@@ -17,10 +17,12 @@ import {
   formatProviderPartialAbsenceSummary,
   type ProviderAbsentSource,
 } from "@dofek/providers/providers";
+import type { ActivityImage } from "@dofek/training/activity-images";
 import { isIndoorCyclingModality } from "@dofek/training/endurance-types";
 import { formatActivityTypeLabel } from "@dofek/training/training";
 import type { ReactNode } from "react";
 import { type ActivityMapLocation, ActivityMapTile } from "./ActivityMapTile.tsx";
+import { ActivityPhoto } from "./ActivityPhoto.tsx";
 import { ActivitySourceDisclosure } from "./ActivitySourceDisclosure.tsx";
 import { ActivityTypeIcon } from "./ActivityTypeIcon.tsx";
 
@@ -61,6 +63,7 @@ interface ActivityCardContentProps {
   units: UnitConverter;
   selectMode: boolean;
   selected: boolean;
+  photo?: ActivityImage;
   headingAction?: ReactNode;
   onToggleSelected?: () => void;
 }
@@ -70,10 +73,12 @@ export function ActivityCardContent({
   units,
   selectMode,
   selected,
+  photo,
   headingAction,
   onToggleSelected,
 }: ActivityCardContentProps) {
   const isHidden = activity.isProviderAbsent === true;
+  const previewPhoto = !activity.location && !isHidden ? photo : undefined;
   const tombstoneSummary =
     isHidden && activity.providerId && activity.providerAbsentAt
       ? formatProviderAbsentTombstoneSummary(activity.providerId, activity.providerAbsentAt)
@@ -95,7 +100,7 @@ export function ActivityCardContent({
       <div
         data-testid="activity-card-layout"
         className={
-          activity.location
+          activity.location || previewPhoto
             ? "grid min-h-60 flex-1 sm:grid-cols-[minmax(0,2fr)_minmax(18rem,3fr)]"
             : "grid flex-1"
         }
@@ -142,7 +147,7 @@ export function ActivityCardContent({
             <ActivityMetricGrid activity={activity} units={units} />
           </div>
         </div>
-        {activity.location ? (
+        {activity.location || previewPhoto ? (
           <div
             data-testid="activity-secondary-panel"
             className="flex min-h-64 flex-col border-t border-border/60 bg-surface-secondary/45 p-4 sm:border-l sm:border-t-0"
@@ -151,7 +156,15 @@ export function ActivityCardContent({
               data-testid="activity-secondary-inset"
               className="min-h-48 flex-1 overflow-hidden rounded-lg border border-border bg-surface-solid"
             >
-              <ActivityMapTile location={activity.location} variant="panel" />
+              {activity.location ? (
+                <ActivityMapTile location={activity.location} variant="panel" />
+              ) : previewPhoto ? (
+                <ActivityPhoto
+                  image={previewPhoto}
+                  className="h-full min-h-48"
+                  recoveryMessage="Open the activity to refresh photos and try again."
+                />
+              ) : null}
             </div>
           </div>
         ) : null}

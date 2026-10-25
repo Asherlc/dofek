@@ -166,6 +166,21 @@
     "codecov",
     "wahoo",
     "fēnix",
+    "vívoactive",
+    "vívolife",
+    "Camo",
+    "dēzl",
+    "LUFFY",
+    "AMOLED",
+    "quatix",
+    "tactix",
+    "Bontrager",
+    "epix",
+    "Chronos",
+    "Rino",
+    "GPSMAP",
+    "MARQ",
+    "antplus",
     "wahooligan",
     "metolius",
     "Metolius",
@@ -733,6 +748,12 @@
     "uiaa",
     "ewbank",
     "vscale"
+  ],
+  "overrides": [
+    {
+      "filename": "packages/providers-meta/src/garmin-device-catalog.ts",
+      "words": ["Ballisitcs"]
+    }
   ],
   "flagWords": [],
   "useGitignore": false,

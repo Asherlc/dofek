@@ -10,6 +10,7 @@ import { R2ImportUploadStorage } from "../file-upload-storage.ts";
 import { R2ProviderArtifactStorage } from "../provider-artifact-storage.ts";
 import { createR2Client, requiredR2EnvironmentVariable } from "../r2-storage.ts";
 import type { AccountErasureWorkPurger } from "./account-erasure-runtime.ts";
+import { deleteStagedProviderFitFiles } from "./provider-fit-staging.ts";
 import { getConfiguredProviderIds } from "./provider-queue-config.ts";
 import {
   createActivityDeleteAnalyticsQueue,
@@ -133,6 +134,7 @@ export function createAccountErasureWorkPurgerFromEnv(): AccountErasureWorkPurge
       }
     },
     purge: async (snapshot) => {
+      await deleteStagedProviderFitFiles(snapshot.localIdentifiers.userId);
       await purgeAccountWork(
         {
           exportObjects: snapshot.localIdentifiers.exportObjects,

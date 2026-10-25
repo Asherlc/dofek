@@ -80,6 +80,16 @@ artifacts belong to the user/provider and are removed by provider-data deletion
 or account erasure; see [artifact storage](../provider-artifact-storage.ts) and
 the [Garmin operator guide](../../docs/garmin.md).
 
+All FIT sources now share the same durable-original requirement: the
+[FIT importer](process-fit-file-import-job.ts) archives the complete file before
+native decoding. Provider downloads, manual FIT uploads and extractable Garmin
+ZIP members use the existing owner/provider artifact prefix; official Garmin
+delivery reuses its already-retained object. Malformed/unsupported FITs remain
+retained, and archive failures prevent decoding. Temporary staging/upload cleanup
+is separate from durable artifact deletion. See the
+[FIT retention policy](../fit/README.md#original-file-retention) for identity,
+reprocessing and historical-data limits.
+
 ## Configuration
 
 - **Provider Tiers**: Sync frequency and priority are defined in `provider-queue-config.ts`.

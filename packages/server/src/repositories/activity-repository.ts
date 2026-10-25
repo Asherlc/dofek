@@ -17,6 +17,7 @@ import { dateStringSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 import { logger } from "../logger.ts";
 import type { ActivityRow } from "../models/activity.ts";
 import { activityMeasurementState } from "../services/activity-data-state.ts";
+import { listActivityHardware } from "./activity-hardware-repository.ts";
 import { postgresActivityCalendarDate } from "./activity-local-date.ts";
 import {
   getActivityMetricSources,
@@ -767,7 +768,14 @@ export class ActivityRepository extends BaseRepository {
   async getMetricSources(activityId: string) {
     const window = await this.findSensorWindow(activityId);
     if (!window) throw activityNotFoundError();
-    return getActivityMetricSources(this.#requireSensorStore("metric sources"), window);
+    const hardware = await listActivityHardware(this.db, window);
+    return getActivityMetricSources(this.#requireSensorStore("metric sources"), window, hardware);
+  }
+
+  async getHardware(activityId: string) {
+    const window = await this.findSensorWindow(activityId);
+    if (!window) throw activityNotFoundError();
+    return listActivityHardware(this.db, window);
   }
 
   /** HR zone distribution for a single activity using the canonical Karvonen model. */

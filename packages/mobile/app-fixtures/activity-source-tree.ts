@@ -4,6 +4,7 @@ export const branchingActivitySourceTree: ActivitySourceTree = {
   primary: {
     id: "hang-ten",
     providerId: "hang-ten",
+    sourceName: null,
     label: "Hang Ten",
     description: "Recording app reported by Apple Health",
     url: null,
@@ -11,6 +12,7 @@ export const branchingActivitySourceTree: ActivitySourceTree = {
       {
         id: "apple-health",
         providerId: "apple_health",
+        sourceName: null,
         label: "Apple Health",
         description: "Imported from Hang Ten",
         url: null,
@@ -18,6 +20,7 @@ export const branchingActivitySourceTree: ActivitySourceTree = {
           {
             id: "strava-health",
             providerId: "strava",
+            sourceName: null,
             label: "Strava",
             description: "Imported from Apple Health",
             url: "https://www.strava.com/activities/123",
@@ -28,6 +31,7 @@ export const branchingActivitySourceTree: ActivitySourceTree = {
       {
         id: "strava-direct",
         providerId: "strava",
+        sourceName: null,
         label: "Strava",
         description: "Imported from Hang Ten",
         url: "https://www.strava.com/activities/456",
@@ -39,6 +43,7 @@ export const branchingActivitySourceTree: ActivitySourceTree = {
     {
       id: "whoop",
       providerId: "whoop",
+      sourceName: null,
       label: "WHOOP",
       description: "No confirmed transfer path",
       url: null,

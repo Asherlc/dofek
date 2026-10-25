@@ -41,6 +41,17 @@ function dependencies() {
   const materializedPaths: string[] = [];
   const downloadedOwners: Array<{ userId: string; providerId: string; artifactId: string }> = [];
   const artifacts: ProviderArtifactStorage = {
+    async retainFile({ retainedObjectKey }) {
+      if (!retainedObjectKey || !retained.has(retainedObjectKey)) {
+        throw new Error("Expected the already retained Garmin artifact");
+      }
+      return retainedObjectKey;
+    },
+    async hasForProvider(owner, provider) {
+      return [...retained.keys()].some((key) =>
+        key.startsWith(`provider-artifacts/${owner}/${provider}/`),
+      );
+    },
     async ensureArtifact({ download, ...owner }) {
       downloadedOwners.push(owner);
       const key = `provider-artifacts/${owner.userId}/${owner.providerId}/${owner.artifactId}.fit`;
@@ -161,7 +172,7 @@ describe("official Garmin activity ingestion", () => {
   it("persists the streamed FIT artifact before importing and cleans its local materialization", async () => {
     const { db } = createMockDatabase();
     const deps = dependencies();
-    importFitFile.mockImplementation(async (_db, data) => {
+    importFitFile.mockImplementation(async (_db, data, _progress, _publisher, artifacts) => {
       expect(await readFile(data.filePath, "utf8")).toBe("fit-data");
       expect(deps.retained.size).toBe(1);
       expect(data).toMatchObject({
@@ -170,6 +181,8 @@ describe("official Garmin activity ingestion", () => {
         activitySummary: { externalId: "123", raw: file },
       });
       expect(data.originalPath).not.toContain("signed-token");
+      expect(data.retainedArtifactKey).toBe(data.originalPath);
+      expect(artifacts).toBe(deps.artifacts);
       return { recordsSynced: 0, errors: [] };
     });
     const abortController = new AbortController();

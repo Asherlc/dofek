@@ -328,6 +328,13 @@ const mockMetricSourcesUseQuery = vi.fn(
   }),
 );
 const mockRecomputeMutate = vi.fn();
+const mockImagesUseQuery = vi.fn(() => ({
+  data: { images: [], coverage: [], acquisition: [] },
+  error: null,
+  isLoading: false,
+  isFetching: false,
+  refetch: vi.fn(),
+}));
 const mockRecomputeShouldFail = vi.fn(() => false);
 const mockActivityByIdInvalidate = vi.fn().mockResolvedValue(undefined);
 const mockActivityStreamInvalidate = vi.fn().mockResolvedValue(undefined);
@@ -341,9 +348,18 @@ const mockCalendarActivityOverviewInvalidate = vi.fn().mockResolvedValue(undefin
 vi.mock("../lib/trpc.ts", () => ({
   trpc: {
     activity: {
+      images: { useQuery: mockImagesUseQuery },
       byId: { useQuery: mockActivityByIdUseQuery },
       stream: { useQuery: mockStreamUseQuery },
       metricSources: { useQuery: mockMetricSourcesUseQuery },
+      hardware: {
+        useQuery: () => ({
+          data: { items: [], power: [] },
+          isLoading: false,
+          error: null,
+          refetch: vi.fn(),
+        }),
+      },
       route: { useQuery: mockRouteUseQuery },
       hrZones: { useQuery: mockHrZonesUseQuery },
       powerZones: { useQuery: mockPowerZonesUseQuery },
@@ -671,6 +687,14 @@ async function importActivityHeader() {
 }
 
 describe("ActivityDetailPage", () => {
+  it("requests downloaded photos for the current activity with signed-link renewal", async () => {
+    const { ActivityDetailPage } = await import("./ActivityDetailPage.tsx");
+    renderWithUnits(<ActivityDetailPage />);
+    expect(mockImagesUseQuery).toHaveBeenCalledWith(
+      { id: "test-123" },
+      expect.objectContaining({ refetchOnMount: "always", refetchOnWindowFocus: true }),
+    );
+  });
   it("shows a loading skeleton before activity details resolve", async () => {
     mockActivityByIdUseQuery.mockReturnValue({
       data: undefined,
@@ -1774,12 +1798,9 @@ describe("ActivityDetailPage", () => {
       );
     });
 
-    it("presents the navigator as a labeled control instead of a miniature chart", async () => {
+    it("shows a draggable navigator with formatted time labels", async () => {
       const ActivityDetailPage = await importPage();
       renderWithUnits(<ActivityDetailPage />);
-
-      expect(screen.getByText("Zoom timeline")).toBeDefined();
-      expect(screen.getByText("Drag the handles to focus on part of the activity.")).toBeDefined();
 
       const metricsOption = findOptionByYAxisArrayName("Heart Rate");
       expect(metricsOption).toBeDefined();

@@ -218,9 +218,6 @@ export function LineChart({
             )}
           </Svg>
         </View>
-        <Text style={{ color: colors.textTertiary, fontSize: 11 }}>
-          Dots mark recorded samples; gaps indicate unobserved time.
-        </Text>
       </View>
     </AccessibleChart>
   );
@@ -376,9 +373,6 @@ export function AreaChart({
             )}
           </Svg>
         </View>
-        <Text style={{ color: colors.textTertiary, fontSize: 11 }}>
-          Dots mark recorded samples; gaps indicate unobserved time.
-        </Text>
       </View>
     </AccessibleChart>
   );

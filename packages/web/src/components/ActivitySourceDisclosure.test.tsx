@@ -7,6 +7,34 @@ import { ActivitySourceDisclosure } from "./ActivitySourceDisclosure.tsx";
 afterEach(cleanup);
 
 describe("ActivitySourceDisclosure", () => {
+  it("shows the Garmin model thumbnail in the inline control", () => {
+    render(
+      <ActivitySourceDisclosure
+        tree={{
+          primary: {
+            id: "garmin-record",
+            providerId: "garmin",
+            sourceName: "Forerunner 965",
+            label: "Forerunner 965",
+            description: "Closest available recording",
+            url: null,
+            children: [],
+          },
+          otherSources: [],
+        }}
+      />,
+    );
+    const trigger = screen.getByRole("button", { name: "Forerunner 965 Sources" });
+    expect(trigger.querySelector("img")).toHaveAttribute(
+      "src",
+      expect.stringContaining("010-02809-00"),
+    );
+    expect(trigger.querySelector("img")).toHaveAttribute("width", "18");
+    fireEvent.click(trigger);
+    expect(screen.getAllByText("Forerunner 965")).toHaveLength(1);
+    expect(screen.getByText("Closest available recording")).toBeVisible();
+  });
+
   it("expands inline with one primary root and distinct transfer branches", () => {
     render(<ActivitySourceDisclosure tree={branchingSourceTree} />);
     const trigger = screen.getByRole("button", { name: "Garmin Connect Sources" });

@@ -1,7 +1,7 @@
 import { QUERY_CACHE_MAX_AGE_MS } from "@dofek/scoring/query-cache";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { createAsyncStoragePersister } from "@tanstack/query-async-storage-persister";
-import type { QueryClient } from "@tanstack/react-query";
+import { defaultShouldDehydrateQuery, type QueryClient } from "@tanstack/react-query";
 import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
 import { createElement, type ReactNode, useMemo } from "react";
 import { captureException, logger } from "./telemetry";
@@ -166,6 +166,10 @@ export function MobileQueryPersistenceProvider({
         persister,
         maxAge: QUERY_CACHE_MAX_AGE_MS,
         buster: mobileQueryCacheBuster(userId),
+        dehydrateOptions: {
+          shouldDehydrateQuery: (query) =>
+            defaultShouldDehydrateQuery(query) && query.meta?.persist !== false,
+        },
       },
       onError: () => {
         // This callback has no error argument and also covers failures during hydration.

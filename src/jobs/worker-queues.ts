@@ -146,6 +146,9 @@ export function createWorkerQueues({
               db,
               getImportUploadStorage(),
             ),
+          job.data.importType === "fit-file" || job.data.importType === "garmin-dump"
+            ? job.data.importType
+            : undefined,
         ),
       ),
     { autorun: false, connection },
@@ -174,6 +177,7 @@ export function createWorkerQueues({
           job.data.userId,
           "FIT file import",
           () => processFitFileImportJob(job, db),
+          job.data.providerId,
         ),
       ),
     { autorun: false, connection, concurrency: 2 },

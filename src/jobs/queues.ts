@@ -81,6 +81,7 @@ export const fitFileImportActivitySummarySchema = z.object({
 export const fitFileImportJobDataSchema = z.object({
   filePath: z.string().optional(),
   originalPath: z.string(),
+  retainedArtifactKey: z.string().optional(),
   userId: z.string(),
   providerId: z.string(),
   sourceName: z.string().optional(),
