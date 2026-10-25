@@ -166,12 +166,8 @@ export function ProcessingStatusWidget({
       >
         {providerPresentation.occurredAt ? (
           <p className="mt-0.5 text-xs text-subtle">
-            {providerHistory.pushOnly
-              ? providerPresentation.status === "failed"
-                ? "Processing failed"
-                : "Last update processed"
-              : "Latest attempt"}
-            : {formatRelativeTime(providerPresentation.occurredAt)}
+            {providerPresentation.timestampLabel}:{" "}
+            {formatRelativeTime(providerPresentation.occurredAt)}
           </p>
         ) : null}
         {refreshError}

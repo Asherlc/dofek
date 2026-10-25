@@ -140,6 +140,27 @@ function failedWahooSnapshot(overrides: Partial<ProcessingStatusSnapshot> = {}) 
 }
 
 describe("ProcessingStatusWidget", () => {
+  it.each([
+    ["success", "Last update processed"],
+    ["error", "Processing failed"],
+    ["degraded", "Update processed with issues"],
+    ["unknown", "Update outcome unavailable"],
+  ])("labels the recorded push %s timestamp", (status, label) => {
+    vi.setSystemTime(new Date("2026-07-24T12:00:00.000Z"));
+    render(
+      <ProcessingStatusWidget
+        alwaysVisible
+        providerHistory={{
+          pushOnly: true,
+          lastSuccessfulSyncAt: null,
+          recentLogs: [{ status, syncedAt: "2026-07-23T12:00:00.000Z" }],
+        }}
+        data={{ ...snapshot, overallStatus: "ready", datasets: [], operations: [] }}
+      />,
+    );
+    expect(screen.getByText(`${label}: 1d ago`)).toBeTruthy();
+  });
+
   it("keeps a resolved push auth failure visible without asking for another reconnect", () => {
     render(
       <ProcessingStatusWidget

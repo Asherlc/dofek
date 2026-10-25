@@ -198,6 +198,10 @@ function buildProcessingAlert(
 
   if (operation.kind === "push_ingest" && sourceLabel) {
     const needsReauth = failedEvent?.errorCode === "provider_auth_failed";
+    const cause = (
+      failedEvent?.errorMessage ?? `Dofek couldn’t finish processing the ${sourceLabel} update.`
+    ).trimEnd();
+    const causeSentence = /[.!?]$/.test(cause) ? cause : `${cause}.`;
     return {
       id: alertId,
       providerId: operation.providerId,
@@ -210,7 +214,7 @@ function buildProcessingAlert(
         : `Couldn’t process the latest ${sourceLabel} update`,
       message: needsReauth
         ? `Dofek couldn’t authenticate with ${sourceLabel}. Reconnect ${sourceLabel} to receive future updates.`
-        : `${failedEvent?.errorMessage ?? `Dofek couldn’t finish processing the ${sourceLabel} update.`} Contact support for help.`,
+        : `${causeSentence} Contact support for help.`,
       action: needsReauth ? "reconnect" : "contact_support",
       actionLabel: needsReauth ? `Reconnect ${sourceLabel}` : "Contact support",
     };

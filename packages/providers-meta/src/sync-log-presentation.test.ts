@@ -2,6 +2,120 @@ import { describe, expect, it } from "vitest";
 import { providerSyncLogPresentation } from "./sync-log-presentation.ts";
 
 describe("providerSyncLogPresentation", () => {
+  it("collapses repeated separators in a recorded data type", () => {
+    expect(
+      providerSyncLogPresentation({
+        providerName: "Oura",
+        dataType: "daily__metrics--summary",
+        status: "success",
+        authFailureReason: null,
+      }).dataTypeLabel,
+    ).toBe("Daily metrics summary");
+  });
+
+  it("distinguishes a failed sign-in from a failed authorization", () => {
+    expect(
+      providerSyncLogPresentation({
+        providerName: "Garmin",
+        dataType: "update",
+        status: "error",
+        pushOnly: true,
+        authFailureReason: "authentication_failed",
+        errorMessage: "Try syncing Garmin again.",
+      }),
+    ).toMatchObject({
+      heading: "Sign-in failed",
+      message: "Reconnect Garmin to resume incoming updates.",
+      tone: "danger",
+    });
+  });
+
+  it.each(["error", "degraded"])("selects the actionable cause for a push %s", (status) => {
+    expect(
+      providerSyncLogPresentation({
+        providerName: "Garmin",
+        dataType: "update",
+        status,
+        pushOnly: true,
+        authFailureReason: null,
+        errorMessage: "An activity file could not be read.",
+      }).message,
+    ).toBe("An activity file could not be read.");
+  });
+
+  it("keeps reconnect guidance ahead of a stored authorization error", () => {
+    expect(
+      providerSyncLogPresentation({
+        providerName: "Garmin",
+        dataType: "update",
+        status: "error",
+        pushOnly: true,
+        authFailureReason: "authorization_failed",
+        errorMessage: "Try syncing Garmin again.",
+      }).message,
+    ).toBe("Reconnect Garmin to resume incoming updates.");
+  });
+
+  it.each([
+    ["error", "Earlier updates remain available. Open Diagnostics for details."],
+    ["degraded", "Some update data may be missing. Open Diagnostics for details."],
+  ])(
+    "uses %s outcome guidance when its stored cause contains runtime details",
+    (status, message) => {
+      expect(
+        providerSyncLogPresentation({
+          providerName: "Garmin",
+          dataType: "update",
+          status,
+          pushOnly: true,
+          authFailureReason: null,
+          errorMessage: "TypeError: Cannot read properties of undefined",
+        }).message,
+      ).toBe(message);
+    },
+  );
+
+  it.each([
+    ["error", "Try syncing Oura again. Open Diagnostics if the problem continues."],
+    ["degraded", "Some sleep data may be missing. Open Diagnostics for details."],
+  ])("retains polling %s guidance when a stored cause is available", (status, message) => {
+    expect(
+      providerSyncLogPresentation({
+        providerName: "Oura",
+        dataType: "sleep",
+        status,
+        pushOnly: false,
+        authFailureReason: null,
+        errorMessage: "The provider is unavailable.",
+      }).message,
+    ).toBe(message);
+  });
+
+  it("describes missing generic data once for a degraded outcome", () => {
+    expect(
+      providerSyncLogPresentation({
+        providerName: "Garmin",
+        dataType: "data",
+        status: "degraded",
+        pushOnly: true,
+        authFailureReason: null,
+      }).message,
+    ).toBe("Some data may be missing. Open Diagnostics for details.");
+  });
+
+  it("keeps successful push outcomes free of stale error guidance", () => {
+    expect(
+      providerSyncLogPresentation({
+        providerName: "Garmin",
+        dataType: "update",
+        status: "success",
+        pushOnly: true,
+        authFailureReason: null,
+        errorMessage: "An earlier update could not be read.",
+      }).message,
+    ).toBeNull();
+  });
+
   it.each([
     ["error", "Activities update not processed", "danger"],
     ["success", "Activities update processed", "success"],

@@ -1,4 +1,3 @@
-import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import type { ProcessingDisplayStatus } from "./processing-status.ts";
 import { providerSyncLogPresentation } from "./sync-log-presentation.ts";
 
@@ -65,6 +64,7 @@ interface ProviderProcessingEvidence {
 
 interface ProviderSyncStatusPresentation {
   occurredAt: string | null;
+  timestampLabel: string | null;
   heading: string;
   message: string | null;
   status: ProcessingDisplayStatus;
@@ -142,6 +142,7 @@ export function providerSyncStatusPresentation(
         : "Waiting for first update";
     return {
       occurredAt: null,
+      timestampLabel: null,
       heading: history.pushOnly ? missingPushOutcomeHeading : "No sync outcome recorded",
       message: null,
       status: "cancelled",
@@ -151,6 +152,7 @@ export function providerSyncStatusPresentation(
   if (outcome.status === "success") {
     return {
       occurredAt: outcome.syncedAt,
+      timestampLabel: history.pushOnly ? "Last update processed" : "Latest attempt",
       heading: history.pushOnly
         ? `${providerName} update processed`
         : `${providerName} sync complete`,
@@ -162,6 +164,7 @@ export function providerSyncStatusPresentation(
   if (outcome.status !== "error" && outcome.status !== "degraded") {
     return {
       occurredAt: outcome.syncedAt,
+      timestampLabel: history.pushOnly ? "Update outcome unavailable" : "Latest attempt",
       heading: history.pushOnly ? "Update outcome unavailable" : "Sync outcome unavailable",
       message: history.pushOnly
         ? "Open Diagnostics for the processing status."
@@ -175,10 +178,16 @@ export function providerSyncStatusPresentation(
     dataType: outcome.dataType ?? "data",
     status: outcome.status,
     authFailureReason: history.needsReauth ? (outcome.authFailureReason ?? null) : null,
+    errorMessage: !history.needsReauth && !outcome.authFailureReason ? outcome.errorMessage : null,
     pushOnly: history.pushOnly,
   });
   return {
     occurredAt: outcome.syncedAt,
+    timestampLabel: history.pushOnly
+      ? outcome.status === "error"
+        ? "Processing failed"
+        : "Update processed with issues"
+      : "Latest attempt",
     heading: history.pushOnly
       ? outcome.status === "error"
         ? `Couldn't process the latest ${providerName} update`
@@ -186,13 +195,7 @@ export function providerSyncStatusPresentation(
       : outcome.status === "error"
         ? `Latest ${providerName} sync failed`
         : `${providerName} sync completed with issues`,
-    message:
-      history.pushOnly && !history.needsReauth && !outcome.authFailureReason && outcome.errorMessage
-        ? userFacingErrorMessage(
-            outcome.errorMessage,
-            logPresentation.message ?? "The update could not be processed.",
-          )
-        : logPresentation.message,
+    message: logPresentation.message,
     status: outcome.status === "error" ? "failed" : "blocked",
     tone: logPresentation.tone,
   };

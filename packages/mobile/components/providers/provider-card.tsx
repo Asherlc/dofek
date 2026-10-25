@@ -1,5 +1,9 @@
 import { formatDurationSeconds, formatRelativeTime } from "@dofek/format/format";
 import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
+import {
+  isCloudPushProvider,
+  type ProviderManualConnectionMetadata,
+} from "@dofek/providers/provider-connection";
 import type { ProviderStats } from "@dofek/providers/provider-stats";
 import { syncCardSummary } from "@dofek/providers/sync-card-summary";
 import { ActivityIndicator, Text, TouchableOpacity, View } from "react-native";
@@ -116,8 +120,7 @@ export function ProviderCard({
 }) {
   const { serverUrl } = useAuth();
   const dotColor = statusDotColor(provider.authStatus);
-  const isAutomaticSource =
-    provider.pushOnly && provider.authType !== "none" && provider.authType !== "push:mobile";
+  const isAutomaticSource = isCloudPushProvider(provider);
   const summary = syncCardSummary({ ...provider, pushOnly: isAutomaticSource });
   const lastSyncRelative = summary.lastAttemptAt ? formatRelativeTime(summary.lastAttemptAt) : null;
   const lastSuccessfulSyncRelative = provider.lastSuccessfulSyncAt
@@ -212,8 +215,7 @@ export function ProviderCard({
             <Text style={styles.cardMetaText}>
               {provider.importOnly
                 ? "Import only"
-                : provider.pushOnly &&
-                    (provider.authType === "none" || provider.authType === "push:mobile")
+                : provider.pushOnly && !isAutomaticSource
                   ? "Push only"
                   : statusLabel(provider.authStatus)}
             </Text>
@@ -307,5 +309,3 @@ export function SyncLogRow({ log }: { log: SyncLog }) {
     </View>
   );
 }
-
-import type { ProviderManualConnectionMetadata } from "@dofek/providers/provider-connection";

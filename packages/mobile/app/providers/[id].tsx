@@ -1,5 +1,6 @@
 import { formatRelativeTime } from "@dofek/format/format";
 import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
+import { isCloudPushProvider } from "@dofek/providers/provider-connection";
 import { providerHealth } from "@dofek/providers/provider-health";
 import type { ProviderStats } from "@dofek/providers/provider-stats";
 import { DATA_TYPE_LABELS } from "@dofek/providers/provider-stats";
@@ -612,10 +613,7 @@ function ProviderDetailContent({
     needsReauth: Boolean(provider?.needsReauth),
     requiresAuthorization: displayProvider.authType !== "none",
   });
-  const isAutomaticSource =
-    displayProvider.pushOnly &&
-    displayProvider.authType !== "none" &&
-    displayProvider.authType !== "push:mobile";
+  const isAutomaticSource = isCloudPushProvider(displayProvider);
   const lastSyncedAt =
     providerId === "apple_health"
       ? (appleHealthLogs.data?.[0]?.syncedAt ?? null)

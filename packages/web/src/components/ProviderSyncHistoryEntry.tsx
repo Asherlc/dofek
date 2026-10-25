@@ -38,15 +38,9 @@ export function ProviderSyncHistoryEntry({
     dataType: entry.dataType,
     status: entry.status,
     authFailureReason: entry.authFailureReason,
+    errorMessage: entry.errorMessage,
     pushOnly,
   });
-  const visibleMessage =
-    pushOnly && entry.errorMessage && !entry.authFailureReason
-      ? userFacingErrorMessage(
-          entry.errorMessage,
-          presentation.message ?? "The update could not be processed.",
-        )
-      : presentation.message;
 
   return (
     <article
@@ -58,7 +52,9 @@ export function ProviderSyncHistoryEntry({
             {presentation.dataTypeLabel}
           </p>
           <h3 className="text-sm font-semibold text-foreground">{presentation.heading}</h3>
-          {visibleMessage ? <p className="mt-0.5 text-xs text-muted">{visibleMessage}</p> : null}
+          {presentation.message ? (
+            <p className="mt-0.5 text-xs text-muted">{presentation.message}</p>
+          ) : null}
         </div>
         <time className="text-xs text-subtle" dateTime={entry.syncedAt}>
           {formatTime(entry.syncedAt)}

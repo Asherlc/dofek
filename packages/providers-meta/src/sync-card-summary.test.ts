@@ -12,10 +12,77 @@ describe("push update presentation", () => {
   };
   const processing = { status: "ready" as const, datasets: [], operations: [] };
 
+  it.each([
+    ["success", "Last update processed", "Garmin update processed"],
+    ["error", "Processing failed", "Couldn't process the latest Garmin update"],
+    ["degraded", "Update processed with issues", "Garmin update processed with issues"],
+    ["unknown", "Update outcome unavailable", "Update outcome unavailable"],
+  ])(
+    "labels the recorded %s timestamp consistently across source types",
+    (status, label, heading) => {
+      for (const pushOnly of [true, false]) {
+        expect(
+          providerSyncStatusPresentation(
+            "Garmin",
+            {
+              ...history,
+              pushOnly,
+              lastSuccessfulSyncAt: null,
+              recentLogs: [{ status, syncedAt: processedAt }],
+            },
+            processing,
+          ),
+        ).toMatchObject({
+          timestampLabel: pushOnly ? label : "Latest attempt",
+          ...(pushOnly ? { heading } : {}),
+        });
+      }
+    },
+  );
+
+  it.each([
+    [
+      false,
+      false,
+      "The activity file could not be read.",
+      "Try syncing Garmin again. Open Diagnostics if the problem continues.",
+    ],
+    [
+      true,
+      true,
+      "The activity file could not be read.",
+      "Earlier updates remain available. Open Diagnostics for details.",
+    ],
+    [
+      true,
+      false,
+      "TypeError: Cannot read properties of undefined",
+      "Earlier updates remain available. Open Diagnostics for details.",
+    ],
+  ] as const)(
+    "keeps safe failure guidance for pushOnly=%s, needsReauth=%s",
+    (pushOnly, needsReauth, errorMessage, message) => {
+      expect(
+        providerSyncStatusPresentation(
+          "Garmin",
+          {
+            ...history,
+            pushOnly,
+            needsReauth,
+            lastSuccessfulSyncAt: null,
+            recentLogs: [{ status: "error", syncedAt: processedAt, errorMessage }],
+          },
+          processing,
+        ),
+      ).toMatchObject({ message });
+    },
+  );
+
   it("keeps a source with only legacy sync evidence waiting for its first update", () => {
     expect(providerSyncStatusPresentation("Garmin", history, processing)).toMatchObject({
       heading: "Waiting for first update",
       occurredAt: null,
+      timestampLabel: null,
       tone: "neutral",
     });
     expect(syncCardSummary({ ...history, lastSyncAt: failedAt }).hasHistory).toBe(false);

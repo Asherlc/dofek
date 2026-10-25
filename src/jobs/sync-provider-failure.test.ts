@@ -126,6 +126,14 @@ describe("sync-provider-failure", () => {
       expected: "Garmin download rejected: Authorization: Bearer [REDACTED]",
     },
     {
+      message: "Activity download rejected: Bearer private-value",
+      expected: "Activity download rejected: Bearer [REDACTED]",
+    },
+    {
+      message: "Activity download rejected: Basic dXNlcjpwYXNz",
+      expected: "Activity download rejected: Basic [REDACTED]",
+    },
+    {
       message: "Garmin download rejected: https://apis.garmin.com/file?access_token=private-value",
       expected: "Garmin download rejected: https://apis.garmin.com/file?[REDACTED]",
     },

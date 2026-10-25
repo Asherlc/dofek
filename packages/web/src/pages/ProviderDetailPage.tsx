@@ -1,5 +1,6 @@
 import { formatDateYmd, formatRelativeTime } from "@dofek/format/format";
 import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
+import { isCloudPushProvider } from "@dofek/providers/provider-connection";
 import { providerHealth } from "@dofek/providers/provider-health";
 import { Link, useParams } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -74,7 +75,7 @@ export function ProviderDetailPage() {
     provider?.authType !== "file-import" &&
     provider?.authType !== "push:mobile";
   const needsConnection = canAuthorize && !provider?.authorized;
-  const automaticUpdates = pushOnly && !mobileOnly && canAuthorize;
+  const automaticUpdates = provider ? isCloudPushProvider(provider) : false;
   const health = provider
     ? providerHealth({
         authorized: provider.authorized,

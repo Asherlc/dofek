@@ -907,6 +907,47 @@ describe("ProcessingRepository", () => {
   });
 
   it.each([
+    ["Activity file could not be decoded", "Activity file could not be decoded."],
+    ["The file is missing. Check the attachment", "The file is missing. Check the attachment."],
+    ["Activity file could not be decoded.", "Activity file could not be decoded."],
+    ["Check the activity file!", "Check the activity file!"],
+    ["Is the activity file available?", "Is the activity file available?"],
+    ["Activity file could not be decoded.  ", "Activity file could not be decoded."],
+    [null, "Dofek couldn’t finish processing the Garmin update."],
+    [undefined, "Dofek couldn’t finish processing the Garmin update."],
+  ])("separates push failure %j from support guidance", async (errorMessage, sentence) => {
+    mockListScopedProcessingOperations.mockResolvedValue([
+      operation({
+        providerId: "garmin",
+        kind: "push_ingest",
+        events:
+          errorMessage === undefined
+            ? [event(1, { stage: "analytics", status: "failed", modelName: "activity" })]
+            : [event(1, { stage: "ingest", status: "failed", errorMessage })],
+      }),
+    ]);
+    mockDeriveProcessingState.mockReturnValue({
+      overallStatus: "failed",
+      datasets: [
+        {
+          datasetKey: "activity",
+          currentStage: "ingest",
+          status: "failed",
+          progressPercentage: null,
+          lastAdvancedAt: now,
+        },
+      ],
+    });
+
+    const result = await new ProcessingRepository(database, userId).alerts();
+
+    expect(result.alerts[0]).toMatchObject({
+      action: "contact_support",
+      message: `${sentence} Contact support for help.`,
+    });
+  });
+
+  it.each([
     {
       errorCode: "provider_sync_failed",
       action: "contact_support",

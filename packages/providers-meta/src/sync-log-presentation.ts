@@ -1,3 +1,5 @@
+import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
+
 export type ProviderSyncLogTone = "success" | "warning" | "danger";
 
 export interface ProviderSyncLogPresentationInput {
@@ -5,6 +7,7 @@ export interface ProviderSyncLogPresentationInput {
   dataType: string;
   status: string;
   authFailureReason: string | null;
+  errorMessage?: string | null;
   pushOnly?: boolean;
 }
 
@@ -58,19 +61,24 @@ export function providerSyncLogPresentation(
         ? `${updateLabel} not processed`
         : `${dataTypeLabel} data sync failed`,
       message: input.pushOnly
-        ? "Earlier updates remain available. Open Diagnostics for details."
+        ? userFacingErrorMessage(
+            input.errorMessage,
+            "Earlier updates remain available. Open Diagnostics for details.",
+          )
         : `Try syncing ${input.providerName} again. Open Diagnostics if the problem continues.`,
       tone: "danger",
     };
   }
 
   if (input.status === "degraded") {
+    const subject = dataTypeLabel === "Data" ? "data" : `${dataTypeLabel.toLowerCase()} data`;
+    const message = `Some ${subject} may be missing. Open Diagnostics for details.`;
     return {
       dataTypeLabel,
       heading: input.pushOnly
         ? `${updateLabel} processed with issues`
         : `${dataTypeLabel} data synced with issues`,
-      message: `Some ${dataTypeLabel.toLowerCase()} data may be missing. Open Diagnostics for details.`,
+      message: input.pushOnly ? userFacingErrorMessage(input.errorMessage, message) : message,
       tone: "warning",
     };
   }

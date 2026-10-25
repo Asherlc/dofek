@@ -7,3 +7,12 @@ export interface ProviderManualConnectionMetadata {
   label: string;
   instructionsUrl: string;
 }
+
+export function isCloudPushProvider(provider: { pushOnly: boolean; authType: string }): boolean {
+  return (
+    provider.pushOnly &&
+    provider.authType !== "none" &&
+    provider.authType !== "push:mobile" &&
+    provider.authType !== "file-import"
+  );
+}

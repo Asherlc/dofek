@@ -160,14 +160,8 @@ export function ProcessingStatusWidget({
       >
         {providerPresentation.occurredAt ? (
           <Text style={styles.datasetFreshness}>
-            {providerHistory.pushOnly
-              ? providerPresentation.status === "ready"
-                ? "Last update processed"
-                : providerPresentation.status === "failed"
-                  ? "Processing failed"
-                  : "Update processing"
-              : "Latest attempt"}
-            : {formatRelativeTime(providerPresentation.occurredAt)}
+            {providerPresentation.timestampLabel}:{" "}
+            {formatRelativeTime(providerPresentation.occurredAt)}
           </Text>
         ) : null}
         {refreshError}

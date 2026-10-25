@@ -1,5 +1,6 @@
 import { formatRelativeTime } from "@dofek/format/format";
 import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
+import { isCloudPushProvider } from "@dofek/providers/provider-connection";
 import type { ProviderStats } from "@dofek/providers/provider-stats";
 import { syncCardSummary } from "@dofek/providers/sync-card-summary";
 import { operationalStatusColors } from "@dofek/scoring/colors";
@@ -41,7 +42,7 @@ export function SyncProviderCard({
   onSync: () => void;
 }) {
   const mobileOnly = pushOnly && provider.authType === "push:mobile";
-  const automaticUpdates = pushOnly && !mobileOnly && provider.authType !== "none";
+  const automaticUpdates = isCloudPushProvider({ pushOnly, authType: provider.authType });
   const summary = syncCardSummary({
     lastSyncAt: provider.lastSyncedAt,
     lastSuccessfulSyncAt: provider.lastSuccessfulSyncAt,

@@ -433,3 +433,27 @@ export const AutomaticUpdateFailed: Story = {
     },
   },
 };
+
+export const AutomaticUpdateDegraded: Story = {
+  args: {
+    data: emptyProviderSnapshot,
+    alwaysVisible: true,
+    providerHistory: {
+      pushOnly: true,
+      lastSuccessfulSyncAt: null,
+      recentLogs: [{ status: "degraded", syncedAt: "2026-10-24T11:00:00Z" }],
+    },
+  },
+};
+
+export const AutomaticUpdateOutcomeUnavailable: Story = {
+  args: {
+    data: emptyProviderSnapshot,
+    alwaysVisible: true,
+    providerHistory: {
+      pushOnly: true,
+      lastSuccessfulSyncAt: null,
+      recentLogs: [{ status: "unknown", syncedAt: "2026-10-24T11:00:00Z" }],
+    },
+  },
+};
