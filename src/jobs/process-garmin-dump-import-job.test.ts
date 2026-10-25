@@ -7,6 +7,7 @@ import {
 } from "../providers/garmin-dump.ts";
 import { attachGarminFitImportFlow } from "./garmin-dump-flow.ts";
 import type { LocalImportJobData as ImportJobData } from "./local-import-job-data.ts";
+import { OriginalFitRetentionError } from "./original-fit-retention-error.ts";
 import { processGarminDumpImportJob } from "./process-garmin-dump-import-job.ts";
 
 const { mockCaptureException, mockLoggerWarn } = vi.hoisted(() => ({
@@ -351,20 +352,17 @@ describe("processGarminDumpImportJob", () => {
     expect(cleanupPreparedGarminDumpImport).toHaveBeenCalledWith(preparedImport.tempDirectories);
   });
 
-  it("turns an ignored batch failure into a bounded terminal result", async () => {
+  it("preserves extracted sources when a FIT batch fails before confirming retention", async () => {
     const job = createJob(waitingCheckpoint());
     job.moveToWaitingChildren.mockResolvedValue(false);
     job.getIgnoredChildrenFailures.mockResolvedValue({
       "bull:fit-file-import-batch:garmin-fit-batch-1": "batch Redis connection failed",
     });
 
-    const result = await processGarminDumpImportJob(job, mockDb);
-
-    expect(result.recordsSynced).toBe(2);
-    expect(result.errors).toEqual([
-      { message: "one summary was invalid" },
-      { message: "Garmin FIT batch failed: batch Redis connection failed" },
-    ]);
+    await expect(processGarminDumpImportJob(job, mockDb)).rejects.toBeInstanceOf(
+      OriginalFitRetentionError,
+    );
+    expect(cleanupPreparedGarminDumpImport).not.toHaveBeenCalled();
   });
 
   it("finalizes zero FIT files without throwing", async () => {
@@ -382,7 +380,7 @@ describe("processGarminDumpImportJob", () => {
     expect(result.totalFitFiles).toBe(0);
   });
 
-  it("merges partial batch failures into successful batch results", async () => {
+  it("preserves all sources when another batch succeeds alongside an unretained batch", async () => {
     const job = createJob({
       ...waitingCheckpoint(),
       batchIds: ["garmin-fit-batch-1", "garmin-fit-batch-1-batch-1"],
@@ -398,13 +396,10 @@ describe("processGarminDumpImportJob", () => {
       "bull:fit-file-import-batch:garmin-fit-batch-1-batch-1": "batch Redis connection failed",
     });
 
-    const result = await processGarminDumpImportJob(job, mockDb);
-
-    expect(result.recordsSynced).toBe(5);
-    expect(result.errors).toEqual([
-      { message: "one summary was invalid" },
-      { message: "Garmin FIT batch failed: batch Redis connection failed" },
-    ]);
+    await expect(processGarminDumpImportJob(job, mockDb)).rejects.toBeInstanceOf(
+      OriginalFitRetentionError,
+    );
+    expect(cleanupPreparedGarminDumpImport).not.toHaveBeenCalled();
   });
 
   it("bounds combined preparation and FIT error groups", async () => {

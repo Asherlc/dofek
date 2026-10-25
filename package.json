@@ -127,6 +127,7 @@
     "./file-upload-storage": "./src/file-upload-storage.ts",
     "./file-upload-metrics": "./src/file-upload-metrics.ts",
     "./r2-storage": "./src/r2-storage.ts",
+    "./provider-artifact-storage": "./src/provider-artifact-storage.ts",
     "./zoho-desk": "./src/zoho-desk.ts",
     "./personalization/params": "./src/personalization/params.ts",
     "./personalization/model-card": "./src/personalization/model-card.ts",

@@ -1,4 +1,10 @@
-import { type FitFileImportJobResult, fitFileImportJobResultSchema } from "./queues.ts";
+import { OriginalFitRetentionError } from "./original-fit-retention-error.ts";
+import {
+  type FitFileImportJobResult,
+  fitFileImportJobDataSchema,
+  fitFileImportJobResultSchema,
+  getFitFileImportQueue,
+} from "./queues.ts";
 
 interface FitFileImportBatchJob {
   getChildrenValues: () => Promise<Record<string, unknown>>;
@@ -43,6 +49,8 @@ function groupedFitFailureErrors(messages: string[]): FitFileImportJobResult["er
 
 export async function processFitFileImportBatchJob(
   job: FitFileImportBatchJob,
+  loadFailedChildData: (jobKey: string) => Promise<unknown> = async (jobKey) =>
+    (await getFitFileImportQueue().getJob(jobKey.slice(jobKey.lastIndexOf(":") + 1)))?.data,
 ): Promise<FitFileImportJobResult> {
   const [childValues, ignoredChildFailures] = await Promise.all([
     job.getChildrenValues(),
@@ -51,6 +59,14 @@ export async function processFitFileImportBatchJob(
   const results = Object.values(childValues).map((value) =>
     fitFileImportJobResultSchema.parse(value),
   );
+  for (const childKey of Object.keys(ignoredChildFailures)) {
+    const childData = fitFileImportJobDataSchema.safeParse(await loadFailedChildData(childKey));
+    if (!childData.success || !childData.data.retainedArtifactKey) {
+      throw new OriginalFitRetentionError(
+        "Some original FIT files could not be saved. Try the import again.",
+      );
+    }
+  }
   const failureMessages = [
     ...results.flatMap((result) => result.errors.map((error) => error.message)),
     ...Object.values(ignoredChildFailures),

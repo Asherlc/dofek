@@ -198,6 +198,47 @@ describe("worker queues", () => {
     expect(hoisted.mockCreateImportUploadStorage).not.toHaveBeenCalled();
   });
 
+  it.each(["fit-file", "garmin-dump"])(
+    "fences %s uploads with their archive provider before processing",
+    async (importType) => {
+      const { runQueuedUserWorkUnlessAccountErasing } = await import(
+        "./account-erasure-work-guard.ts"
+      );
+      await invokeProcessor("import-queue", { uploadId: "upload-1", userId: "user-1", importType });
+      expect(runQueuedUserWorkUnlessAccountErasing).toHaveBeenLastCalledWith(
+        dependencies.accountErasureWorkLockPool,
+        mockDatabase,
+        "user-1",
+        "file import",
+        expect.any(Function),
+        importType,
+      );
+    },
+  );
+
+  it.each(["wahoo", "garmin-dump"])(
+    "fences %s child FIT imports with the archive provider",
+    async (providerId) => {
+      const { runQueuedUserWorkUnlessAccountErasing } = await import(
+        "./account-erasure-work-guard.ts"
+      );
+      await invokeProcessor("fit-file-import-queue", {
+        userId: "user-1",
+        providerId,
+        filePath: "/tmp/activity.fit",
+        originalPath: "activity.fit",
+      });
+      expect(runQueuedUserWorkUnlessAccountErasing).toHaveBeenLastCalledWith(
+        dependencies.accountErasureWorkLockPool,
+        mockDatabase,
+        "user-1",
+        "FIT file import",
+        expect.any(Function),
+        providerId,
+      );
+    },
+  );
+
   it("import processor fails loudly when BullMQ omits the job ID", async () => {
     const { processFileUploadImportJob } = await import("./process-file-upload-import-job.ts");
     vi.mocked(processFileUploadImportJob).mockClear();

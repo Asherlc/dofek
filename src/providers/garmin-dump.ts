@@ -652,7 +652,6 @@ export async function prepareGarminDumpImport(
       const activitySummary = summary ? garminSummaryToFitJobSummary(summary) : undefined;
       if (summary && !activitySummary) {
         errors.push({ message: `Garmin activity ${externalId} is missing a valid start time` });
-        continue;
       }
       const jobData: Omit<FitFileImportJobData, "filePath"> = {
         originalPath: fitFile.path,

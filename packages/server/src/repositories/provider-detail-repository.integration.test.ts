@@ -1,7 +1,9 @@
 import { randomUUID } from "node:crypto";
 import type { Database } from "dofek/db";
 import { sql } from "drizzle-orm";
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { HttpResponse, http } from "msw";
+import { setupServer } from "msw/node";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { createClickHouseClientFromEnv } from "../../../../src/db/clickhouse.ts";
 import { buildClickHouseBootstrapStatementsForNativeMetricStream } from "../../../../src/db/clickhouse-metric-stream-bootstrap.ts";
@@ -14,6 +16,33 @@ import {
   seedMetricStreamRows,
 } from "./metric-stream-integration-test-helpers.ts";
 import { ProviderDetailRepository } from "./provider-detail-repository.ts";
+
+const archiveKeys = new Set<string>();
+const archiveNetwork = setupServer(
+  http.get("http://provider-archives.test/original-fits", ({ request }) => {
+    const prefix = new URL(request.url).searchParams.get("prefix") ?? "";
+    const key = [...archiveKeys].find((candidate) => candidate.startsWith(prefix));
+    return HttpResponse.xml(
+      `<ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">${key ? `<Contents><Key>${key}</Key></Contents>` : ""}<IsTruncated>false</IsTruncated></ListBucketResult>`,
+    );
+  }),
+);
+
+beforeAll(() => {
+  vi.stubEnv("R2_ACCESS_KEY_ID", "integration-key");
+  vi.stubEnv("R2_SECRET_ACCESS_KEY", "integration-secret");
+  vi.stubEnv("R2_ENDPOINT", "http://provider-archives.test");
+  vi.stubEnv("IMPORT_R2_BUCKET", "original-fits");
+  archiveNetwork.listen({ onUnhandledRequest: "bypass" });
+});
+afterEach(() => {
+  archiveKeys.clear();
+  archiveNetwork.resetHandlers();
+});
+afterAll(() => {
+  archiveNetwork.close();
+  vi.unstubAllEnvs();
+});
 
 // metricStream reads only touch ClickHouse; the repository still requires a
 // Postgres Database to construct, but it is never queried by these tests.
@@ -430,6 +459,52 @@ describe("ProviderDetailRepository provider data deletion (integration)", () => 
     );
 
     await expect(repository.canDeleteProviderData(retainedProviderId)).resolves.toBe(false);
+  });
+
+  it("authorizes an owned FIT archive without a connection or canonical records and emits its outbox event", async () => {
+    const archiveProviderId = "wahoo";
+    archiveKeys.add(`provider-artifacts/${userId}/${archiveProviderId}/${"a".repeat(64)}.fit`);
+    const repository = new ProviderDetailRepository(testContext.db, userId, noRetainedMetricStream);
+
+    await expect(repository.canDeleteProviderData(archiveProviderId)).resolves.toBe(true);
+    const request = await repository.requestProviderDataDeletion(archiveProviderId);
+    const [outbox] = await executeWithSchema(
+      testContext.db,
+      z.object({ user_id: z.string(), provider_id: z.string(), generation: z.coerce.number() }),
+      sql`SELECT user_id, provider_id, generation FROM fitness.provider_data_deletion_outbox
+          WHERE event_id = ${request.eventId}::uuid`,
+    );
+    expect(outbox).toEqual({ user_id: userId, provider_id: archiveProviderId, generation: 1 });
+  });
+
+  it.each([
+    [secondUserId, "wahoo"],
+    [userId, "garmin"],
+  ])("does not authorize %s/%s from a foreign FIT archive", async (ownerId, sourceId) => {
+    archiveKeys.add(`provider-artifacts/${userId}/wahoo/${"a".repeat(64)}.fit`);
+    const repository = new ProviderDetailRepository(
+      testContext.db,
+      ownerId,
+      noRetainedMetricStream,
+    );
+
+    await expect(repository.canDeleteProviderData(sourceId)).resolves.toBe(false);
+  });
+
+  it("propagates archive access failures after canonical ownership checks find no records", async () => {
+    archiveNetwork.use(
+      http.get("http://provider-archives.test/original-fits", () =>
+        HttpResponse.xml(
+          "<Error><Code>AccessDenied</Code><Message>Archive access denied</Message></Error>",
+          { status: 403 },
+        ),
+      ),
+    );
+    const repository = new ProviderDetailRepository(testContext.db, userId, noRetainedMetricStream);
+
+    await expect(repository.canDeleteProviderData("wahoo")).rejects.toThrow(
+      "Archive access denied",
+    );
   });
 
   it("fails with the missing-table error before writing another outbox event", async () => {

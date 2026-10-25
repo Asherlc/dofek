@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { BodyClickHouseStore } from "./body-clickhouse.ts";
 import {
   climbingAttemptFixture,
@@ -17,6 +17,17 @@ import {
   SYNC_LOG_FILTER_OPTION_FIELDS,
   tableInfo,
 } from "./provider-detail-repository.ts";
+
+const artifactStorage = vi.hoisted(() => ({ hasForProvider: vi.fn() }));
+
+vi.mock("dofek/provider-artifact-storage", () => ({
+  createProviderArtifactStorageFromEnv: () => artifactStorage,
+}));
+
+beforeEach(() => {
+  artifactStorage.hasForProvider.mockReset();
+  artifactStorage.hasForProvider.mockResolvedValue(false);
+});
 
 // ---------------------------------------------------------------------------
 // tableInfo
@@ -465,6 +476,63 @@ describe("ProviderDetailRepository", () => {
   });
 
   describe("canDeleteProviderData", () => {
+    it("allows a disconnected user whose only retained data is an owned original FIT", async () => {
+      const { bodyStore } = makeBodyStore([{ has_data: 0 }]);
+      const execute = vi
+        .fn()
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([{ has_data: false }]);
+      artifactStorage.hasForProvider.mockImplementation(
+        async (userId: string, providerId: string) => userId === "user-1" && providerId === "wahoo",
+      );
+      const repository = new ProviderDetailRepository(
+        { execute, transaction: vi.fn() },
+        "user-1",
+        bodyStore,
+      );
+
+      await expect(repository.canDeleteProviderData("wahoo")).resolves.toBe(true);
+    });
+
+    it.each([
+      ["user-2", "wahoo"],
+      ["user-1", "garmin"],
+    ])("does not authorize %s/%s from another archive scope", async (userId, providerId) => {
+      const { bodyStore } = makeBodyStore([{ has_data: 0 }]);
+      const execute = vi
+        .fn()
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([{ has_data: false }]);
+      artifactStorage.hasForProvider.mockImplementation(
+        async (ownerId: string, sourceId: string) => ownerId === "user-1" && sourceId === "wahoo",
+      );
+      const repository = new ProviderDetailRepository(
+        { execute, transaction: vi.fn() },
+        userId,
+        bodyStore,
+      );
+
+      await expect(repository.canDeleteProviderData(providerId)).resolves.toBe(false);
+    });
+
+    it("propagates archive lookup failures instead of denying retained data exists", async () => {
+      const { bodyStore } = makeBodyStore([{ has_data: 0 }]);
+      const execute = vi
+        .fn()
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([{ has_data: false }]);
+      artifactStorage.hasForProvider.mockRejectedValue(new Error("Archive access denied"));
+      const repository = new ProviderDetailRepository(
+        { execute, transaction: vi.fn() },
+        "user-1",
+        bodyStore,
+      );
+
+      await expect(repository.canDeleteProviderData("wahoo")).rejects.toThrow(
+        "Archive access denied",
+      );
+    });
+
     it("allows a disconnected user with retained PostgreSQL records", async () => {
       const { bodyStore, query } = makeBodyStore([{ has_data: 0 }]);
       const execute = vi

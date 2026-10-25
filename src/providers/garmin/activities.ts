@@ -113,6 +113,7 @@ export async function syncGarminActivityRecord(
         {
           filePath,
           originalPath: objectKey,
+          retainedArtifactKey: objectKey,
           userId,
           providerId: "garmin",
           sourceName: metadata.sourceName,
@@ -126,6 +127,7 @@ export async function syncGarminActivityRecord(
         },
         async (progress) => options.onProgress?.(progress.percentage, progress.message),
         options.metricStreamPublisher,
+        dependencies.artifacts,
       );
       if (result.errors.length > 0) {
         throw new Error(

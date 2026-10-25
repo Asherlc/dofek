@@ -34,10 +34,16 @@ import { captureException } from "../lib/error-reporting.ts";
 import { logger } from "../logger.ts";
 import type { MetricStreamEventPublisher } from "../metric-stream/redpanda-producer.ts";
 import {
+  createProviderArtifactStorageFromEnv,
+  type ProviderArtifactStorage,
+} from "../provider-artifact-storage.ts";
+import {
   fitImportDroppedFieldOccurrencesTotal,
   fitImportFilesWithDroppedFieldTotal,
 } from "../sync-metrics.ts";
 import { accountErasureAllowsQueuedUserWork } from "./account-erasure-work-guard.ts";
+import { OriginalFitRetentionError } from "./original-fit-retention-error.ts";
+import { deleteRetainedProviderFitSource } from "./provider-fit-staging.ts";
 import {
   type FitFileImportJobData,
   type FitFileImportJobResult,
@@ -46,6 +52,7 @@ import {
 
 interface FitFileImportJob {
   data: unknown;
+  updateData: (data: FitFileImportJobData) => Promise<void>;
   getChildrenValues?: () => Promise<Record<string, unknown>>;
   getIgnoredChildrenFailures?: () => Promise<Record<string, string>>;
   updateProgress: (data: FitFileImportProgressInfo) => Promise<void>;
@@ -503,11 +510,31 @@ async function resolveFitFileImportJobData(
 
 export async function importFitFile(
   db: SyncDatabase,
-  data: FitFileImportJobData & { filePath: string },
+  data: FitFileImportJobData & { filePath: string; retainedArtifactKey?: string },
   onProgress: (info: FitFileImportProgressInfo) => Promise<void>,
   metricStreamPublisher?: MetricStreamEventPublisher,
+  artifacts: ProviderArtifactStorage = createProviderArtifactStorageFromEnv(),
+  onRetained?: (objectKey: string) => Promise<void>,
 ): Promise<FitFileImportJobResult> {
   await onProgress({ percentage: 10, message: "Reading FIT file..." });
+  let retainedArtifactKey: string;
+  try {
+    retainedArtifactKey = await artifacts.retainFile({
+      userId: data.userId,
+      providerId: data.providerId,
+      filePath: data.filePath,
+      ...(data.retainedArtifactKey === undefined
+        ? {}
+        : { retainedObjectKey: data.retainedArtifactKey }),
+    });
+  } catch (error) {
+    captureException(error, { tags: { fitImportStep: "original-retention" } });
+    throw new OriginalFitRetentionError(
+      "The original FIT file could not be saved. Try the import again.",
+      { cause: error },
+    );
+  }
+  await onRetained?.(retainedArtifactKey);
   await onProgress({ percentage: 25, message: "Decoding FIT file..." });
   const spool = await createFitImportSpool();
   try {
@@ -639,6 +666,7 @@ export async function processFitFileImportJob(
   job: FitFileImportJob,
   db: SyncDatabase,
   metricStreamPublisher?: MetricStreamEventPublisher,
+  artifacts: ProviderArtifactStorage = createProviderArtifactStorageFromEnv(),
 ): Promise<FitFileImportJobResult> {
   await updateFitFileImportProgress(job, {
     percentage: 0,
@@ -661,15 +689,16 @@ export async function processFitFileImportJob(
     data,
     (info) => updateFitFileImportProgress(job, info),
     metricStreamPublisher,
+    artifacts,
+    (retainedArtifactKey) => job.updateData({ ...data, retainedArtifactKey }),
   );
-  if (result.errors.length > 0) {
-    if (data.deleteFileAfterImport) {
+  if (data.deleteFileAfterImport) {
+    if (!(await deleteRetainedProviderFitSource(data))) {
       await rm(data.filePath, { force: true });
     }
-    throw unrecoverableErrorFromResult(result);
   }
-  if (data.deleteFileAfterImport) {
-    await rm(data.filePath, { force: true });
+  if (result.errors.length > 0) {
+    throw unrecoverableErrorFromResult(result);
   }
   return result;
 }

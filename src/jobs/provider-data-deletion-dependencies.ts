@@ -5,6 +5,7 @@ import type {
   ProviderDataDeletionClickHouseClient,
   ProviderDataDeletionDependencies,
 } from "./process-provider-data-deletion-job.ts";
+import { deleteStagedProviderFitFiles } from "./provider-fit-staging.ts";
 import {
   enqueueProviderDataDeletionContinuation,
   enqueueProviderDeleteAnalyticsRefresh,
@@ -20,8 +21,10 @@ export function createProviderDataDeletionDependencies(
   return {
     accountErasureAllowsWork,
     clickHouseClient,
-    deleteProviderArtifacts: (userId, providerId) =>
-      artifacts.deleteForProvider(userId, providerId),
+    deleteProviderArtifacts: async (userId, providerId) => {
+      await deleteStagedProviderFitFiles(userId, providerId);
+      await artifacts.deleteForProvider(userId, providerId);
+    },
     enqueueAnalyticsRefresh: enqueueProviderDeleteAnalyticsRefresh,
     enqueueContinuation(data) {
       return enqueueProviderDataDeletionContinuation(data, getProviderDataDeletionQueue());

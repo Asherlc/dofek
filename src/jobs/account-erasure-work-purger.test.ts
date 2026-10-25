@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { S3ServiceException } from "@aws-sdk/client-s3";
 import { describe, expect, it, vi } from "vitest";
 import type { AccountErasureRemoteSnapshot } from "../account-erasure/remote-snapshot.ts";
@@ -54,7 +55,7 @@ const mocks = vi.hoisted(() => {
     purgeAccountWork: vi.fn<typeof import("../account-erasure/work-erasure.ts").purgeAccountWork>(
       async () => undefined,
     ),
-    removeLocalPath: vi.fn(async () => undefined),
+    removeLocalPath: vi.fn<typeof import("node:fs/promises").rm>(async () => undefined),
     r2Client: {
       destroy: vi.fn(),
       send: vi.fn(async () => ({})),
@@ -62,7 +63,8 @@ const mocks = vi.hoisted(() => {
   };
 });
 
-vi.mock("node:fs/promises", () => ({
+vi.mock("node:fs/promises", async (original) => ({
+  ...(await original<typeof import("node:fs/promises")>()),
   rm: mocks.removeLocalPath,
 }));
 
@@ -154,6 +156,44 @@ const snapshot: AccountErasureRemoteSnapshot = {
 };
 
 describe("createAccountErasureWorkPurgerFromEnv", () => {
+  it("erases pending originals for every owned provider even when queue discovery fails", async () => {
+    const fs = await vi.importActual<typeof import("node:fs/promises")>("node:fs/promises");
+    const { join, dirname } = await import("node:path");
+    const directory = await fs.mkdtemp("/tmp/account-staging-deletion-");
+    vi.stubEnv("JOB_FILES_DIR", directory);
+    const userId = snapshot.localIdentifiers.userId;
+    const owned = ["wahoo", "garmin"].map((providerId) =>
+      join(directory, "provider-fit", userId, providerId, "a".repeat(64), "activity.fit"),
+    );
+    const otherUser = join(
+      directory,
+      "provider-fit",
+      "other-user",
+      "wahoo",
+      "a".repeat(64),
+      "activity.fit",
+    );
+    try {
+      for (const filePath of [...owned, otherUser]) {
+        await fs.mkdir(dirname(filePath), { recursive: true });
+        await fs.writeFile(filePath, "unarchived FIT original");
+      }
+      mocks.removeLocalPath.mockImplementation(fs.rm);
+      mocks.purgeAccountWork.mockRejectedValueOnce(new Error("Redis queue discovery unavailable"));
+      const purger = createAccountErasureWorkPurgerFromEnv();
+
+      await expect(purger.purge(snapshot)).rejects.toThrow("Redis queue discovery unavailable");
+
+      expect(owned.map(existsSync)).toEqual([false, false]);
+      expect(existsSync(otherUser)).toBe(true);
+    } finally {
+      mocks.removeLocalPath.mockImplementation(async () => undefined);
+      mocks.purgeAccountWork.mockClear();
+      vi.unstubAllEnvs();
+      await fs.rm(directory, { force: true, recursive: true });
+    }
+  });
+
   it("purges every non-coordinator queue plus attributable objects and files", async () => {
     const purger = createAccountErasureWorkPurgerFromEnv();
 

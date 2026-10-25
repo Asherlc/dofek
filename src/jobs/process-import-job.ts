@@ -31,6 +31,7 @@ import {
   isImportValidationError,
 } from "./import-validation-error.ts";
 import type { LocalImportJobData } from "./local-import-job-data.ts";
+import { OriginalFitRetentionError } from "./original-fit-retention-error.ts";
 import type { GarminDumpImportJob } from "./process-garmin-dump-import-job.ts";
 
 type ImportJob = Omit<GarminDumpImportJob, "data" | "updateData"> & {
@@ -381,6 +382,7 @@ export async function processImportJob(job: ImportJob, db: SyncDatabase): Promis
       });
     }
   } catch (error) {
+    if (error instanceof OriginalFitRetentionError) shouldCleanUpUploadedFile = false;
     importFailed = true;
     importError = error;
   }

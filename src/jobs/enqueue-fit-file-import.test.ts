@@ -1,217 +1,213 @@
+import { createHash } from "node:crypto";
+import { access, mkdtemp, readFile, realpath, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { resolveProviderActivityType } from "@dofek/training/activity-types";
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { SyncDatabase } from "../db/index.ts";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { makeTransactionalTestDatabase } from "../providers/test-helpers.ts";
 
 const mocks = vi.hoisted(() => ({
   add: vi.fn(),
-  mkdir: vi.fn(),
-  mkdtemp: vi.fn(),
-  rm: vi.fn(),
   processFitFileImportJob: vi.fn(),
+  retainFile: vi.fn(),
   waitUntilFinished: vi.fn(),
-  writeFile: vi.fn(),
-}));
-
-vi.mock("node:fs/promises", () => ({
-  mkdir: mocks.mkdir,
-  mkdtemp: mocks.mkdtemp,
-  rm: mocks.rm,
-  writeFile: mocks.writeFile,
 }));
 
 const queueEvents = { kind: "fit-file-import-events" };
-
-vi.mock("./queues.ts", async (importOriginal) => {
-  const original = await importOriginal<typeof import("./queues.ts")>();
-  return {
-    ...original,
-    getFitFileImportQueue: () => ({ add: mocks.add }),
-    getFitFileImportQueueEvents: () => queueEvents,
-  };
-});
-
+vi.mock("./queues.ts", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./queues.ts")>()),
+  getFitFileImportQueue: () => ({ add: mocks.add }),
+  getFitFileImportQueueEvents: () => queueEvents,
+}));
 vi.mock("./process-fit-file-import-job.ts", () => ({
   processFitFileImportJob: mocks.processFitFileImportJob,
+}));
+vi.mock("../provider-artifact-storage.ts", () => ({
+  createProviderArtifactStorageFromEnv: () => ({ retainFile: mocks.retainFile }),
 }));
 
 import { enqueueFitFileImportAndWait } from "./enqueue-fit-file-import.ts";
 
-describe("enqueueFitFileImportAndWait", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    vi.stubEnv("JOB_FILES_DIR", "/app/job-files");
-    mocks.mkdtemp.mockResolvedValue("/app/job-files/provider-fit-random");
-    mocks.writeFile.mockResolvedValue(undefined);
-    mocks.rm.mockResolvedValue(undefined);
-    mocks.processFitFileImportJob.mockResolvedValue({ recordsSynced: 3, errors: [] });
-    mocks.waitUntilFinished.mockResolvedValue({ recordsSynced: 0, errors: [] });
-    mocks.add.mockResolvedValue({ waitUntilFinished: mocks.waitUntilFinished });
-  });
+const bytes = Buffer.from("received FIT bytes");
+const digest = createHash("sha256").update(bytes).digest("hex");
+const retainedArtifactKey = `provider-artifacts/user-1/wahoo/${digest}.fit`;
+const activitySummary = {
+  externalId: "workout-42",
+  activityType: resolveProviderActivityType("cycling", "cycling"),
+  startedAtIso: "2026-07-01T12:00:00.000Z",
+  name: "Morning ride",
+};
+const options = {
+  fitBuffer: bytes,
+  providerId: "wahoo",
+  sourceName: "Wahoo",
+  userId: "user-1",
+  activitySummary,
+};
+const db = makeTransactionalTestDatabase({
+  select: vi.fn(),
+  insert: vi.fn(),
+  delete: vi.fn(),
+  execute: vi.fn(),
+});
+const publisher = { publishRows: vi.fn(async () => []) };
+let directory: string;
 
-  it("runs the import in-process when a metric stream publisher is supplied", async () => {
-    const db: SyncDatabase = makeTransactionalTestDatabase({
-      select: vi.fn(),
-      insert: vi.fn(),
-      delete: vi.fn(),
-      execute: vi.fn(),
+beforeEach(async () => {
+  vi.clearAllMocks();
+  directory = await realpath(await mkdtemp(join(tmpdir(), "fit-staging-test-")));
+  vi.stubEnv("JOB_FILES_DIR", directory);
+  mocks.retainFile.mockResolvedValue(retainedArtifactKey);
+  mocks.processFitFileImportJob.mockResolvedValue({ recordsSynced: 3, errors: [] });
+  mocks.waitUntilFinished.mockResolvedValue({ recordsSynced: 0, errors: [] });
+  mocks.add.mockResolvedValue({ waitUntilFinished: mocks.waitUntilFinished });
+});
+
+afterEach(async () => {
+  await rm(directory, { recursive: true, force: true });
+  vi.unstubAllEnvs();
+});
+
+function sourceDirectory(filename = "wahoo_workout-42.fit"): string {
+  return join(directory, "provider-fit", "user-1", "wahoo", digest, filename);
+}
+
+describe("enqueueFitFileImportAndWait", () => {
+  it("retains the original before importing inline with the same processing publisher", async () => {
+    const order: string[] = [];
+    mocks.retainFile.mockImplementation(async ({ filePath }) => {
+      expect(await readFile(filePath)).toEqual(bytes);
+      order.push("archive");
+      return retainedArtifactKey;
     });
-    const metricStreamPublisher = {
-      publishRows: vi.fn(async () => []),
-    };
-    const activitySummary = {
-      externalId: "workout-42",
-      activityType: resolveProviderActivityType("cycling", "cycling"),
-      startedAtIso: "2026-07-01T12:00:00.000Z",
-      endedAtIso: "2026-07-01T13:00:00.000Z",
-      name: "Morning ride",
-    };
+    mocks.processFitFileImportJob.mockImplementation(async (job, database, metricPublisher) => {
+      order.push("import");
+      expect(job.data).toMatchObject({
+        originalPath: "wahoo_workout-42.fit",
+        retainedArtifactKey,
+        userId: "user-1",
+        providerId: "wahoo",
+        activitySummary,
+      });
+      expect(database).toBe(db);
+      expect(metricPublisher).toBe(publisher);
+      expect(await readFile(job.data.filePath)).toEqual(bytes);
+      return { recordsSynced: 3, errors: [] };
+    });
 
     await expect(
-      enqueueFitFileImportAndWait({
-        fitBuffer: Buffer.from([1, 2, 3]),
-        providerId: "wahoo",
-        sourceName: "Wahoo",
-        userId: "user-1",
-        activitySummary,
-        db,
-        metricStreamPublisher,
-      }),
+      enqueueFitFileImportAndWait({ ...options, db, metricStreamPublisher: publisher }),
     ).resolves.toEqual({ recordsSynced: 3, errors: [] });
 
+    expect(order).toEqual(["archive", "import"]);
     expect(mocks.add).not.toHaveBeenCalled();
-    expect(mocks.processFitFileImportJob).toHaveBeenCalledWith(
-      {
-        data: {
-          filePath: "/app/job-files/provider-fit-random/input.fit",
-          originalPath: "wahoo_workout-42.fit",
-          userId: "user-1",
-          providerId: "wahoo",
-          sourceName: "Wahoo",
-          activitySummary,
-        },
-        updateProgress: expect.any(Function),
-      },
-      db,
-      metricStreamPublisher,
-    );
+    await expect(access(sourceDirectory())).rejects.toMatchObject({ code: "ENOENT" });
   });
 
-  it("keeps the staged file until an in-process import finishes", async () => {
-    let resolveImport: ((result: { recordsSynced: number; errors: never[] }) => void) | undefined;
-    const importPromise = new Promise<{ recordsSynced: number; errors: never[] }>((resolve) => {
-      resolveImport = resolve;
-    });
-    mocks.processFitFileImportJob.mockReturnValue(importPromise);
+  it("preserves exact owned bytes and recovery data when storage fails before queueing", async () => {
+    const failure = new Error("Original FIT storage is unavailable");
+    mocks.retainFile.mockRejectedValue(failure);
 
-    const enqueuePromise = enqueueFitFileImportAndWait({
-      fitBuffer: Buffer.from([1, 2, 3]),
+    await expect(enqueueFitFileImportAndWait(options)).rejects.toBe(failure);
+
+    const filePath = join(sourceDirectory(), "input.fit");
+    expect(await readFile(filePath)).toEqual(bytes);
+    expect(JSON.parse(await readFile(join(sourceDirectory(), "import.json"), "utf8"))).toEqual({
+      filePath,
+      originalPath: "wahoo_workout-42.fit",
+      userId: "user-1",
       providerId: "wahoo",
       sourceName: "Wahoo",
-      userId: "user-1",
-      activitySummary: {
-        externalId: "workout-42",
-        activityType: resolveProviderActivityType("cycling", "cycling"),
-        startedAtIso: "2026-07-01T12:00:00.000Z",
-        endedAtIso: "2026-07-01T13:00:00.000Z",
-        name: "Morning ride",
-      },
-      db: makeTransactionalTestDatabase({
-        select: vi.fn(),
-        insert: vi.fn(),
-        delete: vi.fn(),
-        execute: vi.fn(),
-      }),
-      metricStreamPublisher: {
-        publishRows: vi.fn(async () => []),
-      },
+      activitySummary,
+      deleteFileAfterImport: true,
     });
-
-    await vi.waitFor(() => expect(mocks.processFitFileImportJob).toHaveBeenCalledOnce());
-    expect(mocks.rm).not.toHaveBeenCalled();
-
-    if (!resolveImport) {
-      throw new Error("expected in-process import to start");
-    }
-    resolveImport({ recordsSynced: 3, errors: [] });
-
-    await expect(enqueuePromise).resolves.toEqual({ recordsSynced: 3, errors: [] });
-    expect(mocks.rm).toHaveBeenCalledWith("/app/job-files/provider-fit-random", {
-      recursive: true,
-      force: true,
-    });
+    expect(mocks.add).not.toHaveBeenCalled();
+    expect(mocks.processFitFileImportJob).not.toHaveBeenCalled();
   });
 
-  it("stages a downloaded FIT file and waits for the canonical import job", async () => {
-    const activitySummary = {
-      externalId: "workout-42",
-      activityType: resolveProviderActivityType("cycling", "cycling"),
-      startedAtIso: "2026-07-01T12:00:00.000Z",
-      endedAtIso: "2026-07-01T13:00:00.000Z",
-      name: "Morning ride",
-    };
+  it("reuses pending bytes on resync and cleans them after successful retention", async () => {
+    mocks.retainFile.mockRejectedValueOnce(new Error("Storage unavailable"));
+    await expect(enqueueFitFileImportAndWait(options)).rejects.toThrow("Storage unavailable");
+    const filePath = join(sourceDirectory(), "input.fit");
+    expect(await readFile(filePath)).toEqual(bytes);
 
-    await expect(
-      enqueueFitFileImportAndWait({
-        fitBuffer: Buffer.from([1, 2, 3]),
-        providerId: "wahoo",
-        sourceName: "Wahoo",
-        userId: "user-1",
-        activitySummary,
-      }),
-    ).resolves.toEqual({ recordsSynced: 0, errors: [] });
+    await expect(enqueueFitFileImportAndWait(options)).resolves.toEqual({
+      recordsSynced: 0,
+      errors: [],
+    });
 
-    expect(mocks.mkdir).toHaveBeenCalledWith("/app/job-files", { recursive: true });
-    expect(mocks.mkdtemp).toHaveBeenCalledWith("/app/job-files/provider-fit-");
-    expect(mocks.writeFile).toHaveBeenCalledWith(
-      "/app/job-files/provider-fit-random/input.fit",
-      Buffer.from([1, 2, 3]),
-    );
+    expect(mocks.retainFile.mock.calls.map(([input]) => input.filePath)).toEqual([
+      filePath,
+      filePath,
+    ]);
+    await expect(access(sourceDirectory())).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("queues only after retaining the original and carries the retained key", async () => {
+    await enqueueFitFileImportAndWait(options);
+
     expect(mocks.add).toHaveBeenCalledWith(
       "fit-file-import",
-      {
-        filePath: "/app/job-files/provider-fit-random/input.fit",
+      expect.objectContaining({
+        filePath: join(sourceDirectory(), "input.fit"),
+        retainedArtifactKey,
         originalPath: "wahoo_workout-42.fit",
         userId: "user-1",
         providerId: "wahoo",
-        sourceName: "Wahoo",
-        activitySummary,
         deleteFileAfterImport: true,
-      },
-      {
-        removeOnComplete: { age: 86_400 },
-        removeOnFail: { age: 604_800 },
-      },
+      }),
+      expect.any(Object),
     );
     expect(mocks.waitUntilFinished).toHaveBeenCalledWith(queueEvents);
-    expect(mocks.rm).toHaveBeenCalledWith("/app/job-files/provider-fit-random", {
-      recursive: true,
-      force: true,
-    });
+    await expect(access(sourceDirectory())).rejects.toMatchObject({ code: "ENOENT" });
   });
 
-  it("removes the staging directory when the import job fails", async () => {
-    mocks.waitUntilFinished.mockRejectedValue(new Error("decode failed"));
+  it("cleans retained local bytes when inline parsing fails", async () => {
+    const failure = new Error("Decode failed");
+    mocks.processFitFileImportJob.mockRejectedValue(failure);
 
     await expect(
-      enqueueFitFileImportAndWait({
-        fitBuffer: Buffer.from([1, 2, 3]),
-        providerId: "coros",
-        sourceName: "COROS",
-        userId: "user-1",
-        activitySummary: {
-          externalId: "workout-7",
-          activityType: resolveProviderActivityType("running", "running"),
-          startedAtIso: "2026-07-01T12:00:00.000Z",
-          endedAtIso: "2026-07-01T13:00:00.000Z",
-          name: "Run",
-        },
-      }),
-    ).rejects.toThrow("decode failed");
+      enqueueFitFileImportAndWait({ ...options, db, metricStreamPublisher: publisher }),
+    ).rejects.toBe(failure);
 
-    expect(mocks.rm).toHaveBeenCalledWith("/app/job-files/provider-fit-random", {
-      recursive: true,
-      force: true,
-    });
+    await expect(access(sourceDirectory())).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("cleans retained local bytes when queued parsing fails", async () => {
+    const failure = new Error("Decode failed");
+    mocks.waitUntilFinished.mockRejectedValue(failure);
+
+    await expect(enqueueFitFileImportAndWait(options)).rejects.toBe(failure);
+
+    await expect(access(sourceDirectory())).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("keeps equal bytes for different activity identities independently recoverable", async () => {
+    mocks.retainFile.mockRejectedValue(new Error("Storage unavailable"));
+    const otherOptions = {
+      ...options,
+      activitySummary: { ...activitySummary, externalId: "workout-43" },
+    };
+    await expect(enqueueFitFileImportAndWait(options)).rejects.toThrow("Storage unavailable");
+    await expect(enqueueFitFileImportAndWait(otherOptions)).rejects.toThrow("Storage unavailable");
+
+    const firstManifest = join(sourceDirectory(), "import.json");
+    const otherDirectory = sourceDirectory("wahoo_workout-43.fit");
+    const otherManifest = join(otherDirectory, "import.json");
+    expect(JSON.parse(await readFile(firstManifest, "utf8")).activitySummary.externalId).toBe(
+      "workout-42",
+    );
+    expect(JSON.parse(await readFile(otherManifest, "utf8")).activitySummary.externalId).toBe(
+      "workout-43",
+    );
+
+    mocks.retainFile.mockResolvedValue(retainedArtifactKey);
+    await enqueueFitFileImportAndWait(options);
+
+    await expect(access(sourceDirectory())).rejects.toMatchObject({ code: "ENOENT" });
+    expect(await readFile(join(otherDirectory, "input.fit"))).toEqual(bytes);
+    expect(JSON.parse(await readFile(otherManifest, "utf8")).activitySummary.externalId).toBe(
+      "workout-43",
+    );
   });
 });

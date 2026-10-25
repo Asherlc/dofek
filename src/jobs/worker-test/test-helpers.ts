@@ -198,6 +198,8 @@ vi.mock("../../db/provider-data-deletion.ts", () => ({
 }));
 vi.mock("../../provider-artifact-storage.ts", () => ({
   createProviderArtifactStorageFromEnv: vi.fn(() => ({
+    retainFile: vi.fn().mockResolvedValue("retained.fit"),
+    hasForProvider: vi.fn().mockResolvedValue(false),
     ensureArtifact: vi.fn(),
     materializeArtifact: vi.fn(),
     deleteForUser: vi.fn(async () => undefined),
