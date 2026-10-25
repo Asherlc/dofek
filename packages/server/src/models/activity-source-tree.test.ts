@@ -32,6 +32,82 @@ function edge(
   };
 }
 describe("buildActivitySourceTree", () => {
+  it("orders same-provider held copies by member identity independently of external IDs", () => {
+    const tree = buildActivitySourceTree(
+      { status: "unresolved", candidateMemberActivityIds: ["a", "b"] },
+      [
+        { ...link("0"), memberActivityId: "b" },
+        { ...link("z"), memberActivityId: "a" },
+      ],
+      [],
+    );
+    expect(tree.otherSources.map((node) => ({ id: node.id, url: node.url }))).toEqual([
+      { id: "a", url: "https://example.com/z" },
+      { id: "b", url: "https://example.com/0" },
+    ]);
+  });
+
+  it("orders legacy sources by external ID and retains their complete fallback identity", () => {
+    const tree = buildActivitySourceTree(
+      { status: "unresolved", candidateMemberActivityIds: [] },
+      [
+        { providerId: "wahoo", externalId: "z", subsource: null, label: "Wahoo", url: null },
+        { providerId: "wahoo", externalId: "a", subsource: null, label: "Wahoo", url: null },
+      ],
+      [],
+    );
+    expect(tree).toEqual({
+      primary: null,
+      otherSources: [
+        {
+          id: "wahoo:a:",
+          providerId: "wahoo",
+          sourceName: null,
+          label: "Wahoo",
+          description: "Other matching source",
+          url: null,
+          children: [],
+        },
+        {
+          id: "wahoo:z:",
+          providerId: "wahoo",
+          sourceName: null,
+          label: "Wahoo",
+          description: "Other matching source",
+          url: null,
+          children: [],
+        },
+      ],
+    });
+  });
+
+  it("uses origin model metadata only for its own held record when copy metadata is absent", () => {
+    const tree = buildActivitySourceTree(
+      { ...origin, providerId: "garmin", sourceName: "  Forerunner 965  " },
+      [link("a", "garmin"), link("b", "garmin")],
+      [],
+    );
+    expect(tree.primary).toMatchObject({
+      id: "a",
+      sourceName: "  Forerunner 965  ",
+      label: "Forerunner 965",
+    });
+    expect(tree.otherSources).toMatchObject([{ id: "b", sourceName: null, label: "Garmin" }]);
+  });
+
+  it("retains the provider label when Garmin model metadata contains only whitespace", () => {
+    const tree = buildActivitySourceTree(
+      { ...origin, providerId: "garmin" },
+      [link("a", "garmin", "   ")],
+      [],
+    );
+    expect(tree.primary).toMatchObject({
+      providerId: "garmin",
+      sourceName: "   ",
+      label: "Garmin",
+    });
+  });
+
   it("retains exact Garmin model metadata and canonical logo identity on a direct record", () => {
     const tree = buildActivitySourceTree(
       { ...origin, providerId: "garmin", sourceName: "Forerunner 965" },
@@ -107,6 +183,55 @@ describe("buildActivitySourceTree", () => {
       { id: "b", children: [{ id: "c" }] },
     ]);
   });
+  it("labels the promoted ancestor as primary when the resolved origin is downstream", () => {
+    const tree = buildActivitySourceTree(
+      { ...origin, memberActivityId: "c", providerId: "apple_health" },
+      [link("a", "wahoo"), link("b"), link("c", "apple_health"), link("d", "garmin")],
+      [edge("a", "b"), edge("b", "c")],
+    );
+    expect(tree).toEqual({
+      primary: {
+        id: "a",
+        providerId: "wahoo",
+        sourceName: null,
+        label: "Wahoo",
+        description: "Primary source",
+        url: "https://example.com/a",
+        children: [
+          {
+            id: "b",
+            providerId: "strava",
+            sourceName: null,
+            label: "Strava",
+            description: "Imported from Wahoo",
+            url: "https://example.com/b",
+            children: [
+              {
+                id: "c",
+                providerId: "apple_health",
+                sourceName: null,
+                label: "Apple Health",
+                description: "Imported from Strava",
+                url: "https://example.com/c",
+                children: [],
+              },
+            ],
+          },
+        ],
+      },
+      otherSources: [
+        {
+          id: "d",
+          providerId: "garmin",
+          sourceName: null,
+          label: "Garmin",
+          description: "Other matching source",
+          url: "https://example.com/d",
+          children: [],
+        },
+      ],
+    });
+  });
   it("retains cyclic records without fabricating ancestry or a recording root", () => {
     const tree = buildActivitySourceTree(
       { status: "unresolved", candidateMemberActivityIds: ["a", "b"] },
@@ -119,12 +244,15 @@ describe("buildActivitySourceTree", () => {
   });
   it("does not present a cyclic resolved member as the recording root", () => {
     const tree = buildActivitySourceTree(
-      origin,
-      [link("a", "wahoo"), link("b")],
+      { ...origin, providerId: "garmin", sourceName: "Forerunner 965" },
+      [link("a", "garmin"), link("b")],
       [edge("a", "b"), edge("b", "a")],
     );
     expect(tree.primary).toBeNull();
-    expect(tree.otherSources.map((node) => node.id)).toEqual(["b", "a"]);
+    expect(tree.otherSources).toMatchObject([
+      { id: "a", label: "Garmin", sourceName: null, children: [] },
+      { id: "b", label: "Strava", sourceName: null, children: [] },
+    ]);
   });
 
   it("uses Apple Health app metadata as attribution without joining another held copy", () => {
@@ -135,8 +263,9 @@ describe("buildActivitySourceTree", () => {
     );
     expect(tree.primary).toMatchObject({
       providerId: "hang-ten",
+      sourceName: null,
       label: "Hang Ten",
-      children: [{ id: "a", providerId: "apple_health", label: "Apple Health" }],
+      children: [{ id: "a", providerId: "apple_health", sourceName: null, label: "Apple Health" }],
     });
     expect(tree.otherSources).toMatchObject([{ id: "b", providerId: "hang-ten", children: [] }]);
   });

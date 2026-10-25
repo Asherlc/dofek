@@ -21,6 +21,12 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const BranchingCollapsed: Story = {};
+export const EmptyTree: Story = {
+  args: { tree: { primary: null, otherSources: [] } },
+  play: async ({ canvasElement }) => {
+    await expect(within(canvasElement).queryByRole("button", { name: "Sources" })).toBeNull();
+  },
+};
 export const BranchingExpanded: Story = {
   play: async ({ canvasElement, userEvent }) => {
     const canvas = within(canvasElement);
@@ -34,7 +40,9 @@ export const BranchingExpanded: Story = {
   },
 };
 export const DirectWhoop: Story = {
-  args: { tree: { primary: branchingActivitySourceTree.otherSources[0], otherSources: [] } },
+  args: {
+    tree: { primary: branchingActivitySourceTree.otherSources[0] ?? null, otherSources: [] },
+  },
 };
 export const UnknownRecordingApp: Story = {
   args: {

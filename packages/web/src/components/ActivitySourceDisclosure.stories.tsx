@@ -27,6 +27,12 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const Collapsed: Story = {};
+export const EmptyTree: Story = {
+  args: { tree: { primary: null, otherSources: [] } },
+  play: async ({ canvasElement }) => {
+    await expect(within(canvasElement).queryByRole("button", { name: "Sources" })).toBeNull();
+  },
+};
 export const Expanded: Story = {
   play: async ({ canvasElement, userEvent }) => {
     const canvas = within(canvasElement);

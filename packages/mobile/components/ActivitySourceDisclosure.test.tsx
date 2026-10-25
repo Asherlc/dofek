@@ -20,6 +20,20 @@ vi.mock("./ProviderLogo", () => ({
 
 describe("ActivitySourceDisclosure", () => {
   beforeEach(() => vi.clearAllMocks());
+
+  it("only offers source details when the tree contains source records", () => {
+    const { container, rerender } = render(
+      <ActivitySourceDisclosure tree={{ primary: null, otherSources: [] }} />,
+    );
+    expect(container.innerHTML).toBe("");
+
+    rerender(<ActivitySourceDisclosure tree={branchingActivitySourceTree} />);
+    expect(screen.getByRole("button", { name: "Sources: Hang Ten" })).toBeDefined();
+
+    rerender(<ActivitySourceDisclosure tree={{ primary: null, otherSources: [] }} />);
+    expect(container.innerHTML).toBe("");
+  });
+
   it("toggles an inline tree with a single primary root and accessible controls", () => {
     render(<ActivitySourceDisclosure tree={branchingActivitySourceTree} />);
     const trigger = screen.getByRole("button", { name: "Sources: Hang Ten" });
@@ -68,16 +82,26 @@ describe("ActivitySourceDisclosure", () => {
     render(<ActivitySourceDisclosure tree={branchingActivitySourceTree} />);
     const trigger = screen.getByRole("button", { name: "Sources: Hang Ten" });
     fireEvent.click(trigger);
-    fireEvent.click(screen.getAllByLabelText("Open Strava source")[0]);
+    fireEvent.click(screen.getAllByRole("button", { name: "View source for Strava" })[0]);
     expect(Linking.openURL).toHaveBeenCalledWith("https://www.strava.com/activities/123");
     expect(trigger.getAttribute("aria-expanded")).toBe("true");
+  });
+
+  it("names source controls with their visible action and provider", () => {
+    render(<ActivitySourceDisclosure tree={branchingActivitySourceTree} />);
+    fireEvent.click(screen.getByRole("button", { name: "Sources: Hang Ten" }));
+    const controls = screen.getAllByRole("button", { name: "View source for Strava" });
+    expect(controls).toHaveLength(2);
+    for (const control of controls) {
+      expect(control.textContent).toContain("View source");
+    }
   });
 
   it.each(["Enter", " "])("opens a source with the real RN-web %j key", async (key) => {
     render(<ActivitySourceDisclosure tree={branchingActivitySourceTree} />);
     const trigger = screen.getByRole("button", { name: "Sources: Hang Ten" });
     fireEvent.click(trigger);
-    const source = screen.getAllByLabelText("Open Strava source")[0];
+    const source = screen.getAllByRole("button", { name: "View source for Strava" })[0];
     expect(source).toBeDefined();
     if (!source) throw new Error("Missing Strava source control");
     act(() => source.focus());
@@ -91,7 +115,7 @@ describe("ActivitySourceDisclosure", () => {
     vi.mocked(Linking.openURL).mockRejectedValueOnce(error);
     render(<ActivitySourceDisclosure tree={branchingActivitySourceTree} />);
     fireEvent.click(screen.getByRole("button", { name: "Sources: Hang Ten" }));
-    fireEvent.click(screen.getAllByLabelText("Open Strava source")[0]);
+    fireEvent.click(screen.getAllByRole("button", { name: "View source for Strava" })[0]);
     await waitFor(() => expect(captureException).toHaveBeenCalledWith(error));
     expect(screen.getByText("Cannot open source")).toBeDefined();
   });

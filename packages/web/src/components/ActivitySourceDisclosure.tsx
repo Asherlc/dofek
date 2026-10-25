@@ -10,6 +10,7 @@ export function ActivitySourceDisclosure({ tree }: { tree: ActivitySourceTree })
   const contentId = useId();
   const othersId = useId();
   const { primary, otherSources } = tree;
+  if (!primary && otherSources.length === 0) return null;
 
   return (
     <div className="relative z-20 min-w-0 border-t border-border/60 text-sm">
@@ -63,7 +64,7 @@ export function ActivitySourceDisclosure({ tree }: { tree: ActivitySourceTree })
                     href={primary.url}
                     target="_blank"
                     rel="noreferrer"
-                    aria-label={`View ${primary.label} activity`}
+                    aria-label={`View activity for ${primary.label}`}
                     className="ml-[26px] mt-1 inline-block text-xs text-accent hover:underline focus-visible:outline-2 focus-visible:outline-accent"
                   >
                     View activity ↗

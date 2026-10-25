@@ -155,7 +155,7 @@ describe("ActivityCardContent", () => {
     },
   );
 
-  it("omits the primary logo when provenance is unresolved", () => {
+  it("keeps activity content when no external source records are available", () => {
     render(
       <ActivityCardContent
         activity={activity({
@@ -163,8 +163,8 @@ describe("ActivityCardContent", () => {
             origin: { status: "unresolved", candidateMemberActivityIds: [] },
             tree: { primary: null, otherSources: [] },
             primarySourceLabel: null,
-            sourceCount: 2,
-            overlapSummary: "2 matched source records",
+            sourceCount: 1,
+            overlapSummary: null,
           },
         })}
         units={units}
@@ -173,9 +173,8 @@ describe("ActivityCardContent", () => {
       />,
     );
     expect(screen.getByTestId("activity-type-icon")).toBeVisible();
-    const disclosure = screen.getByRole("button", { name: "Sources" });
-    expect(disclosure).toBeVisible();
-    expect(disclosure.querySelector("img")).toBeNull();
+    expect(screen.getByText("Training Stress Score")).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Sources" })).toBeNull();
   });
   it.each([
     { modality: "indoor", distanceMeters: 0, elevationGainM: null },

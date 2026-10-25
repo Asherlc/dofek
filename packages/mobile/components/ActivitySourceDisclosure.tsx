@@ -18,7 +18,7 @@ function SourceLink({ node }: { node: ActivitySourceTreeNode }) {
       <Pressable
         style={styles.link}
         accessibilityRole="button"
-        accessibilityLabel={`Open ${node.label} source`}
+        accessibilityLabel={`View source for ${node.label}`}
         onPress={async () => {
           setError(null);
           try {
@@ -74,6 +74,8 @@ export function ActivitySourceDisclosure({ tree }: { tree: ActivitySourceTree })
   const [open, setOpen] = useState(false);
   const contentId = useId();
   const primary = tree.primary;
+  if (!primary && tree.otherSources.length === 0) return null;
+
   return (
     <View style={styles.container}>
       <Pressable

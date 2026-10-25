@@ -1,6 +1,6 @@
 # Activity Source Tree Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox syntax for tracking.
+This dated plan records the implementation steps, review checkpoints, and verification history. Checked steps describe completed work.
 
 **Goal:** Show truthful propagation trees inside a single expandable activity card on web and mobile.
 
@@ -8,7 +8,7 @@
 
 **Tech Stack:** TypeScript, Zod, React, React Native, Vitest, existing Storybook.
 
-**Spec:** `docs/superpowers/specs/2026-10-25-activity-source-tree-design.md`
+**Spec:** [Activity source tree design](../specs/2026-10-25-activity-source-tree-design.md).
 
 ## Global Constraints
 
@@ -17,7 +17,7 @@
 - Connect held records only through existing evidence; do not infer edges from matched membership or source priority.
 - Both platforms use one server-authored source forest. No new dependencies, tables, read models, or environment variables.
 - Keep unknown relationships visible; do not call the closest available record an established original.
-- Follow TDD. Do not switch branches. Commit and push after required checks pass.
+- Write failing behavior tests before implementation. Work on the current branch; commit and push after required checks pass.
 
 ## Review Focus
 
@@ -66,17 +66,17 @@
 
 **Files:** Update web/mobile README source-card guidance with citations to the implementation and WAI disclosure pattern.
 
-- [x] Visually verify real web and mobile stories at narrow and wide widths, including both collapsed and expanded states. Keep a quick tunnel running for each HTTP development server.
+- [x] Visually verify real web and mobile stories at narrow and wide widths, including both collapsed and expanded states.
 - [x] Run required lint, root/server/web/mobile/shared typechecks, relevant unit suites, and required integration coverage.
 - [x] Request a whole-change review and address concrete findings with regression tests.
-- [x] Commit the connected feature once its interdependent contracts and checks pass, then push the current branch automatically.
+- [x] Commit the connected feature once its interdependent contracts and checks pass, then push the current branch.
 - [x] Report the user-visible outcome, checks, limitations, and a concise retrospective.
 
 ## Verification record
 
 - Independent task reviews and the final cross-platform review cleared the graph, interaction, layout, and upgrade regressions.
 - Current affected unit suites: 416 tests passed; final full mobile suite: 1,729 tests passed. The broader unit run passed 18,894 tests before the final scoped graph correction, which was rechecked in the affected suites.
-- Both real Postgres/ClickHouse hydration cases passed again after the graph correction. The unchanged broad fixture setup remains limited by local ClickHouse memory, as recorded in the incident baseline.
+- Both real Postgres/ClickHouse hydration cases passed again after the graph correction; the [retained focused run](../../incidents/2026-10-24-activity-source-validation.md#focused-calendar-hydration-passed) records both passing cases. The unchanged broad fixture setup remains limited by local ClickHouse memory, as recorded in the [incident baseline](../../production-incident-baseline.md#2026-10-24--local-activity-source-validation-exceeded-clickhouse-fixture-memory).
 - Root/server/web/mobile/shared typechecks, full lint, configured Knip, production web build, and size limits passed. Browser stories verified inline expansion and keyboard behavior at phone/desktop widths.
 - Review found the device-local cache contract also needed invalidation; the existing mobile cache version now discards old responses before hydration.
 - Extremely deep artificial source chains remain limited by existing recursive rendering/validation; no speculative depth cap was added.

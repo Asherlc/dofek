@@ -75,7 +75,9 @@ export function buildActivitySourceTree(
       ? `Imported from ${providerLabel(parent.providerId)}`
       : id === primaryId
         ? "Closest available recording"
-        : "Other matching source";
+        : id === primaryRoot
+          ? "Primary source"
+          : "Other matching source";
     const node: ActivitySourceTreeNode = {
       id,
       providerId: source.providerId,

@@ -7,6 +7,19 @@ import { ActivitySourceDisclosure } from "./ActivitySourceDisclosure.tsx";
 afterEach(cleanup);
 
 describe("ActivitySourceDisclosure", () => {
+  it("only offers source details when the tree contains source records", () => {
+    const { container, rerender } = render(
+      <ActivitySourceDisclosure tree={{ primary: null, otherSources: [] }} />,
+    );
+    expect(container).toBeEmptyDOMElement();
+
+    rerender(<ActivitySourceDisclosure tree={branchingSourceTree} />);
+    expect(screen.getByRole("button", { name: "Garmin Connect Sources" })).toBeVisible();
+
+    rerender(<ActivitySourceDisclosure tree={{ primary: null, otherSources: [] }} />);
+    expect(container).toBeEmptyDOMElement();
+  });
+
   it("shows the Garmin model thumbnail in the inline control", () => {
     render(
       <ActivitySourceDisclosure
@@ -106,9 +119,8 @@ describe("ActivitySourceDisclosure", () => {
     for (const label of screen.getAllByText("Apple Health")) {
       expect(label.parentElement?.querySelectorAll("img")).toHaveLength(1);
     }
-    expect(screen.getByRole("link", { name: "View Garmin Connect activity" })).toHaveAttribute(
-      "href",
-      "https://connect.garmin.com/modern/activity/123",
-    );
+    const primaryLink = screen.getByRole("link", { name: "View activity for Garmin Connect" });
+    expect(primaryLink).toHaveTextContent("View activity");
+    expect(primaryLink).toHaveAttribute("href", "https://connect.garmin.com/modern/activity/123");
   });
 });
