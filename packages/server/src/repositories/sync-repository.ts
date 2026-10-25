@@ -252,7 +252,7 @@ export class SyncRepository {
   }
 
   /** Current terminal ingest outcomes; lifecycle/no-output successes are not data updates. */
-  #pushUpdatesQuery(providerId?: string | SQL): SQL {
+  #pushUpdatesQuery(): SQL {
     return sql`
       SELECT operation.id, operation.provider_id,
              CASE ingest.status WHEN 'succeeded' THEN 'success' ELSE 'error' END AS status,
@@ -271,7 +271,6 @@ export class SyncRepository {
       ) ingest
       WHERE operation.user_id = ${this.#userId}::uuid
         AND operation.kind = 'push_ingest'
-        ${providerId === undefined ? sql`` : sql`AND operation.provider_id = ${providerId}`}
         AND (ingest.status = 'failed' OR (
           ingest.status = 'succeeded' AND EXISTS (
             SELECT 1 FROM fitness.processing_operation_output output
@@ -306,7 +305,8 @@ export class SyncRepository {
       sql`
       SELECT recent.* FROM fitness.provider provider
       CROSS JOIN LATERAL (
-        SELECT * FROM (${this.#pushUpdatesQuery(sql`provider.id`)}) updates
+        SELECT * FROM (${this.#pushUpdatesQuery()}) updates
+        WHERE updates.provider_id = provider.id
         ORDER BY synced_at DESC, id DESC
         LIMIT ${limitPerProvider}
       ) recent
@@ -328,13 +328,16 @@ export class SyncRepository {
     offset = 0,
     filters: Record<string, string> = {},
   ): Promise<ProviderRecentSyncLog[]> {
-    const conditions = buildPostgresFilterConditionsMapped(filters, PUSH_UPDATE_FILTER_FIELDS);
+    const conditions = [
+      sql`provider_id = ${providerId}`,
+      ...buildPostgresFilterConditionsMapped(filters, PUSH_UPDATE_FILTER_FIELDS),
+    ];
     const rows = await executeWithSchema(
       this.#db,
       recentSyncLogRowSchema,
       sql`
-      SELECT * FROM (${this.#pushUpdatesQuery(providerId)}) updates
-      ${conditions.length === 0 ? sql`` : sql`WHERE ${sql.join(conditions, sql` AND `)}`}
+      SELECT * FROM (${this.#pushUpdatesQuery()}) updates
+      WHERE ${sql.join(conditions, sql` AND `)}
       ORDER BY synced_at DESC, id DESC
       LIMIT ${limit} OFFSET ${offset}
     `,
@@ -350,12 +353,13 @@ export class SyncRepository {
       pushUpdateFilterOptionRowSchema,
       sql`
       SELECT options.field, array_agg(DISTINCT options.value ORDER BY options.value) AS values
-      FROM (${this.#pushUpdatesQuery(providerId)}) updates
+      FROM (${this.#pushUpdatesQuery()}) updates
       CROSS JOIN LATERAL (VALUES
         ('status', updates.status), ('dataType', updates.data_type),
         ('authFailureReason', updates.auth_failure_reason)
       ) options(field, value)
-      WHERE options.value IS NOT NULL
+      WHERE updates.provider_id = ${providerId}
+        AND options.value IS NOT NULL
       GROUP BY options.field
     `,
     );

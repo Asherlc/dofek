@@ -1,3 +1,5 @@
+import { SQL } from "drizzle-orm";
+import { PgDialect } from "drizzle-orm/pg-core";
 import { describe, expect, it, vi } from "vitest";
 import type { z } from "zod";
 import { SyncRepository } from "./sync-repository.ts";
@@ -30,11 +32,171 @@ function makeRepository(
   return { repo, execute, query, select };
 }
 
+function queryBindings(execute: ReturnType<typeof makeRepository>["execute"]): unknown[] {
+  const statement = execute.mock.calls[0]?.[0];
+  if (!(statement instanceof SQL)) throw new Error("Expected a parameterized Drizzle statement");
+  return new PgDialect().sqlToQuery(statement).params;
+}
+
 // ---------------------------------------------------------------------------
 // Repository tests
 // ---------------------------------------------------------------------------
 
 describe("SyncRepository", () => {
+  describe("push update projection", () => {
+    const processedAt = new Date("2026-10-24T10:00:00Z");
+    const failedAt = new Date("2026-10-24T11:00:00Z");
+    const processedRow = {
+      id: "processed-update",
+      provider_id: "garmin",
+      status: "success",
+      synced_at: processedAt,
+      duration_ms: null,
+      record_count: null,
+      data_type: "update",
+      error_message: null,
+      auth_failure_reason: null,
+    };
+    const failureRow = {
+      ...processedRow,
+      id: "failed-update",
+      status: "error",
+      synced_at: failedAt,
+      error_message: "Reconnect Garmin to receive future updates.",
+      auth_failure_reason: "authorization_failed",
+    };
+
+    it("normalizes processed timestamps and binds the authenticated owner", async () => {
+      const { repo, execute } = makeRepository([
+        { provider_id: "garmin", last_synced: processedAt },
+      ]);
+
+      await expect(repo.getLastProcessedUpdateTimes()).resolves.toEqual([
+        { providerId: "garmin", lastSynced: "2026-10-24T10:00:00.000Z" },
+      ]);
+      expect(queryBindings(execute)).toEqual(["user-1"]);
+    });
+
+    it("retains multiple outcomes per provider and keeps other providers separate", async () => {
+      const { repo, execute } = makeRepository([
+        failureRow,
+        processedRow,
+        { ...processedRow, id: "other-update", provider_id: "other" },
+      ]);
+
+      const result = await repo.getRecentPushUpdatesByProvider(2);
+
+      expect(result).toEqual(
+        new Map([
+          [
+            "garmin",
+            [
+              {
+                id: "failed-update",
+                providerId: "garmin",
+                status: "error",
+                syncedAt: "2026-10-24T11:00:00.000Z",
+                durationMs: null,
+                recordCount: null,
+                dataType: "update",
+                errorMessage: "Reconnect Garmin to receive future updates.",
+                authFailureReason: "authorization_failed",
+              },
+              {
+                id: "processed-update",
+                providerId: "garmin",
+                status: "success",
+                syncedAt: "2026-10-24T10:00:00.000Z",
+                durationMs: null,
+                recordCount: null,
+                dataType: "update",
+                errorMessage: null,
+                authFailureReason: null,
+              },
+            ],
+          ],
+          [
+            "other",
+            [
+              {
+                id: "other-update",
+                providerId: "other",
+                status: "success",
+                syncedAt: "2026-10-24T10:00:00.000Z",
+                durationMs: null,
+                recordCount: null,
+                dataType: "update",
+                errorMessage: null,
+                authFailureReason: null,
+              },
+            ],
+          ],
+        ]),
+      );
+      expect(queryBindings(execute)).toEqual(["user-1", 2]);
+    });
+
+    it("binds provider identity, allowlisted filters, and pagination independently", async () => {
+      const providerId = "garmin'); DELETE FROM fitness.user_profile; --";
+      const { repo, execute } = makeRepository([failureRow]);
+
+      const result = await repo.getPushUpdateHistory(providerId, 20, 40, {
+        status: "error",
+        dataType: "update",
+        userId: "different-owner",
+      });
+
+      expect(result).toEqual([
+        {
+          id: "failed-update",
+          providerId: "garmin",
+          status: "error",
+          syncedAt: "2026-10-24T11:00:00.000Z",
+          durationMs: null,
+          recordCount: null,
+          dataType: "update",
+          errorMessage: "Reconnect Garmin to receive future updates.",
+          authFailureReason: "authorization_failed",
+        },
+      ]);
+      expect(queryBindings(execute)).toEqual(["user-1", providerId, "%error%", "%update%", 20, 40]);
+    });
+
+    it("binds a first history page without optional filter values", async () => {
+      const { repo, execute } = makeRepository([]);
+
+      await expect(repo.getPushUpdateHistory("garmin", 5)).resolves.toEqual([]);
+
+      expect(queryBindings(execute)).toEqual(["user-1", "garmin", 5, 0]);
+    });
+
+    it("maps filter choices from the ledger while preserving empty categories", async () => {
+      const { repo, execute } = makeRepository([
+        { field: "status", values: ["error", "success"] },
+        { field: "dataType", values: ["update"] },
+      ]);
+
+      await expect(repo.getPushUpdateFilterOptions("garmin")).resolves.toEqual({
+        status: [{ value: "error" }, { value: "success" }],
+        dataType: [{ value: "update" }],
+        authFailureReason: [],
+      });
+      expect(queryBindings(execute)).toEqual(["user-1", "garmin"]);
+    });
+
+    it("returns neutral collections when no push evidence exists", async () => {
+      const { repo } = makeRepository([]);
+
+      await expect(repo.getLastProcessedUpdateTimes()).resolves.toEqual([]);
+      await expect(repo.getRecentPushUpdatesByProvider(3)).resolves.toEqual(new Map());
+      await expect(repo.getPushUpdateFilterOptions("garmin")).resolves.toEqual({
+        status: [],
+        dataType: [],
+        authFailureReason: [],
+      });
+    });
+  });
+
   describe("getConnectedProviderIds", () => {
     it("returns empty array when no tokens", async () => {
       const { repo } = makeRepository([]);

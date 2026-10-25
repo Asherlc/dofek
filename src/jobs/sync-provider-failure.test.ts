@@ -78,6 +78,45 @@ describe("sync-provider-failure", () => {
   });
 
   it.each([
+    ["The activity attachment is missing.", "The activity attachment is missing."],
+    [
+      { unexpected: "provider response" },
+      "Garmin data could not be processed. Your existing data is still available.",
+    ],
+  ])("records a safe push outcome when rejection is %j", async (failure, expected) => {
+    const provider = createMockProvider({
+      id: "garmin",
+      name: "Garmin",
+      pushOnly: true,
+      sync: vi.fn().mockRejectedValue(failure),
+    });
+    mockGetEnabledSyncProviders.mockReturnValue([provider]);
+    await runSyncJob(createMockJob({ providerId: "garmin" }), mockDb);
+    expect(mockAppendProcessingStageEvent.mock.calls.at(-1)?.[1]).toMatchObject({
+      stage: "ingest",
+      status: "failed",
+      errorMessage: expected,
+    });
+  });
+
+  it("bounds a retained push cause to the processing ledger's 500-character message limit", async () => {
+    const prefix = "The activity export could not be read. ";
+    const provider = createMockProvider({
+      id: "garmin",
+      name: "Garmin",
+      pushOnly: true,
+      sync: vi.fn().mockRejectedValue(new Error(prefix + "x".repeat(600))),
+    });
+    mockGetEnabledSyncProviders.mockReturnValue([provider]);
+    await runSyncJob(createMockJob({ providerId: "garmin" }), mockDb);
+    const event = mockAppendProcessingStageEvent.mock.calls.at(-1)?.[1];
+    expect(event).toMatchObject({ errorMessage: expect.stringMatching(/^.{500}$/s) });
+    expect(event).toMatchObject({
+      errorMessage: expect.stringMatching(/^The activity export could not be read\. /),
+    });
+  });
+
+  it.each([
     {
       message: "Garmin provider data deletion must complete before this notification can run",
       expected: "Garmin provider data deletion must complete before this notification can run",

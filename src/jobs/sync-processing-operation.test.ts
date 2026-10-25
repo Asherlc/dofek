@@ -74,6 +74,34 @@ describe("sync-processing-operation", () => {
     expect(job.data.processingOperationIds).toEqual({ garmin: processingOperationId });
   });
 
+  it.each([
+    [false, true],
+    [true, false],
+  ])(
+    "keeps a non-push job as provider sync: pushOnly=%s, webhook=%s",
+    async (pushOnly, withWebhook) => {
+      const provider = createMockProvider({ id: "example", pushOnly });
+      const job = createMockJob({
+        providerId: "example",
+        ...(withWebhook
+          ? {
+              webhookEvent: {
+                ownerExternalId: "account-1",
+                eventType: "update",
+                objectType: "activities",
+                objectId: "123",
+              },
+            }
+          : {}),
+      });
+      await SyncProcessingOperation.start(job, mockDb, provider);
+      expect(mockCreateProcessingOperation).toHaveBeenCalledExactlyOnceWith(
+        mockDb,
+        expect.objectContaining({ kind: "provider_sync", providerId: "example" }),
+      );
+    },
+  );
+
   it("records a retry-stable processing lifecycle and correlates metric batches", async () => {
     const provider = createMockProvider({
       id: "garmin",
