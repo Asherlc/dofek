@@ -59,7 +59,7 @@ describe("createProviderDataDeletionDependencies", () => {
     try {
       for (const filePath of [owned, otherProvider, otherUser]) {
         await mkdir(join(filePath, ".."), { recursive: true });
-        await writeFile(filePath, "unarchived FIT original");
+        await writeFile(filePath, "pending FIT original");
       }
       const dependencies = createProviderDataDeletionDependencies(
         { execute: vi.fn(async () => []) },

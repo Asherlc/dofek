@@ -52,6 +52,12 @@ export function createProviderArtifactStorageTestContext(endpoint: string, bucke
   return {
     client,
     storage: new R2ProviderArtifactStorage(client, bucket),
+    stubEnvironment() {
+      vi.stubEnv("R2_ACCESS_KEY_ID", "test-key");
+      vi.stubEnv("R2_SECRET_ACCESS_KEY", "test-secret");
+      vi.stubEnv("R2_ENDPOINT", endpoint);
+      vi.stubEnv("IMPORT_R2_BUCKET", bucket);
+    },
     server,
     originals,
     writes,

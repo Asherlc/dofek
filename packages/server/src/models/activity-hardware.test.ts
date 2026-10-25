@@ -98,7 +98,7 @@ describe("activity hardware", () => {
     expect(result.items[1]?.details).toContainEqual({ label: "Device index", value: "2" });
     expect(result.items[1]?.details).toContainEqual({ label: "Battery voltage", value: "2.7 V" });
   });
-  it("does not reconcile ambiguous or incompatible unindexed serial evidence", () => {
+  it("does not reconcile ambiguous or incompatible serial evidence without a device index", () => {
     const result = normalizeActivityHardware([
       {
         ...member,
@@ -129,7 +129,7 @@ describe("activity hardware", () => {
     expect(result.items).toHaveLength(4);
     expect(result.items.map((item) => item.label)).toEqual(["A", "B", "Garmin", "C"]);
   });
-  it("reconciles unindexed updates only to a unique compatible manufacturer and serial", () => {
+  it("reconciles updates without a device index only to a unique compatible manufacturer and serial", () => {
     const result = normalizeActivityHardware([
       {
         ...member,

@@ -29,7 +29,7 @@ afterEach(async () => {
 });
 
 describe("original FIT retention over S3", () => {
-  it("retains byte-exact multichunk originals after source cleanup and reuses retry content", async () => {
+  it("retains byte-exact originals across multiple chunks after source cleanup and reuses retry content", async () => {
     const bytes = Buffer.alloc(256 * 1024);
     for (let index = 0; index < bytes.length; index += 1) bytes[index] = index % 251;
     const filePath = join(directory, "original.fit");

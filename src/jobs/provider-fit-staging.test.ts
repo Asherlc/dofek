@@ -2,6 +2,7 @@ import {
   access,
   mkdir,
   mkdtemp,
+  readdir,
   readFile,
   realpath,
   rm,
@@ -11,11 +12,22 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  deleteRetainedProviderFitSource,
-  deleteStagedProviderFitFiles,
-  stageProviderFitFile,
-} from "./provider-fit-staging.ts";
+
+const filesystemBoundary = vi.hoisted(() => ({
+  mkdir: vi.fn<typeof import("node:fs/promises").mkdir>(),
+  rm: vi.fn<typeof import("node:fs/promises").rm>(),
+}));
+vi.mock("node:fs/promises", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("node:fs/promises")>()),
+  mkdir: filesystemBoundary.mkdir,
+  rm: filesystemBoundary.rm,
+}));
+let actualFilesystem: typeof import("node:fs/promises");
+
+type StagingModule = typeof import("./provider-fit-staging.ts");
+let deleteRetainedProviderFitSource: StagingModule["deleteRetainedProviderFitSource"];
+let deleteStagedProviderFitFiles: StagingModule["deleteStagedProviderFitFiles"];
+let stageProviderFitFile: StagingModule["stageProviderFitFile"];
 
 let directory: string;
 const digest = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
@@ -27,11 +39,19 @@ const input = {
 };
 
 beforeEach(async () => {
+  actualFilesystem = await vi.importActual<typeof import("node:fs/promises")>("node:fs/promises");
+  filesystemBoundary.mkdir.mockImplementation(actualFilesystem.mkdir);
+  filesystemBoundary.rm.mockImplementation(actualFilesystem.rm);
+  vi.resetModules();
+  ({ deleteRetainedProviderFitSource, deleteStagedProviderFitFiles, stageProviderFitFile } =
+    await import("./provider-fit-staging.ts"));
   directory = await realpath(await mkdtemp(join(tmpdir(), "owned-fit-staging-")));
   vi.stubEnv("JOB_FILES_DIR", directory);
 });
 
 afterEach(async () => {
+  filesystemBoundary.mkdir.mockImplementation(actualFilesystem.mkdir);
+  filesystemBoundary.rm.mockImplementation(actualFilesystem.rm);
   await rm(directory, { recursive: true, force: true });
   vi.unstubAllEnvs();
 });
@@ -70,7 +90,9 @@ describe("provider FIT staging", () => {
   it.each([{ userId: "../user-2" }, { providerId: "../coros" }, { filename: "../outside.fit" }])(
     "rejects traversing staging identity %j",
     async (invalid) => {
-      await expect(stageProviderFitFile({ ...input, ...invalid })).rejects.toThrow();
+      await expect(stageProviderFitFile({ ...input, ...invalid })).rejects.toMatchObject({
+        name: "ZodError",
+      });
     },
   );
 
@@ -145,4 +167,161 @@ describe("provider FIT staging", () => {
     ).resolves.toBe(false);
     expect(await readFile(source, "utf8")).toBe("ZIP original");
   });
+
+  it("creates a missing job-files root when staging received bytes", async () => {
+    const missingRoot = join(directory, "new-job-files");
+    vi.stubEnv("JOB_FILES_DIR", missingRoot);
+    const staged = await stageProviderFitFile(input);
+    expect(await readFile(staged.filePath)).toEqual(Buffer.from("abc"));
+  });
+
+  it.each([
+    { userId: "a", providerId: "b", filename: "c.fit" },
+    { userId: "A0_-", providerId: "B9_-", filename: "activity.42_-FIT.fit" },
+  ])("stages valid ownership and filenames %j", async (identity) => {
+    const staged = await stageProviderFitFile({ ...input, ...identity });
+    expect(await readFile(staged.filePath)).toEqual(Buffer.from("abc"));
+    expect(staged.filePath).toBe(
+      join(
+        directory,
+        "provider-fit",
+        identity.userId,
+        identity.providerId,
+        digest,
+        identity.filename,
+        "input.fit",
+      ),
+    );
+  });
+
+  it.each([
+    { userId: "!user-1" },
+    { userId: "user-1!" },
+    { userId: "_user-1" },
+    { providerId: "!wahoo" },
+    { providerId: "wahoo!" },
+    { filename: "!activity.fit" },
+    { filename: "activity.fit!" },
+  ])("rejects invalid identity before creating source files %j", async (invalid) => {
+    await expect(stageProviderFitFile({ ...input, ...invalid })).rejects.toMatchObject({
+      name: "ZodError",
+    });
+    expect(await readdir(directory)).toEqual([]);
+  });
+
+  it("treats an absent configured root as no retained staging source", async () => {
+    const missingRoot = join(directory, "missing-job-files");
+    vi.stubEnv("JOB_FILES_DIR", missingRoot);
+    await expect(
+      deleteRetainedProviderFitSource({
+        filePath: join(
+          missingRoot,
+          "provider-fit",
+          "user-1",
+          "wahoo",
+          digest,
+          input.filename,
+          "input.fit",
+        ),
+        originalPath: input.filename,
+        userId: input.userId,
+        providerId: input.providerId,
+      }),
+    ).resolves.toBe(false);
+    await expect(
+      deleteStagedProviderFitFiles(input.userId, input.providerId),
+    ).resolves.toBeUndefined();
+    await expect(access(missingRoot)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it.each([
+    { existingSegments: [] },
+    { existingSegments: ["provider-fit"] },
+    { existingSegments: ["provider-fit", "user-1"] },
+  ])(
+    "does not create missing ownership directories during deletion %j",
+    async ({ existingSegments }) => {
+      await mkdir(join(directory, ...existingSegments), { recursive: true });
+      await expect(
+        deleteStagedProviderFitFiles(input.userId, input.providerId),
+      ).resolves.toBeUndefined();
+      expect(await readdir(join(directory, ...existingSegments))).toEqual([]);
+    },
+  );
+
+  it.each(["short", `x${digest}`, `${digest}x`])(
+    "rejects cleanup of a source with an invalid content identifier %s",
+    async (invalidDigest) => {
+      const sourceDirectory = join(
+        directory,
+        "provider-fit",
+        input.userId,
+        input.providerId,
+        invalidDigest,
+        input.filename,
+      );
+      await mkdir(sourceDirectory, { recursive: true });
+      const filePath = join(sourceDirectory, "input.fit");
+      await writeFile(filePath, "original bytes");
+      await expect(
+        deleteRetainedProviderFitSource({ ...input, filePath, originalPath: input.filename }),
+      ).rejects.toThrow("outside its ownership directory");
+      expect(await readFile(filePath, "utf8")).toBe("original bytes");
+    },
+  );
+
+  it("rejects cleanup of a different file inside a valid logical source directory", async () => {
+    const staged = await stageProviderFitFile(input);
+    const otherFile = join(staged.directory, "another.fit");
+    await writeFile(otherFile, "another original");
+    await expect(
+      deleteRetainedProviderFitSource({
+        ...input,
+        filePath: otherFile,
+        originalPath: input.filename,
+      }),
+    ).rejects.toThrow("outside its ownership directory");
+    expect(await readFile(staged.filePath)).toEqual(Buffer.from("abc"));
+    expect(await readFile(otherFile, "utf8")).toBe("another original");
+  });
+
+  it("repeated source cleanup succeeds without recreating the logical source", async () => {
+    const staged = await stageProviderFitFile(input);
+    await deleteRetainedProviderFitSource({
+      ...input,
+      filePath: staged.filePath,
+      originalPath: input.filename,
+    });
+    filesystemBoundary.mkdir.mockRejectedValue(new Error("Filesystem is not writable"));
+    await expect(
+      deleteRetainedProviderFitSource({
+        ...input,
+        filePath: staged.filePath,
+        originalPath: input.filename,
+      }),
+    ).resolves.toBe(true);
+    await expect(access(staged.directory)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it.each(["source", "provider"])(
+    "finishes %s cleanup if the path disappears immediately before removal",
+    async (scope) => {
+      const staged = await stageProviderFitFile(input);
+      const actualRemove = actualFilesystem.rm;
+      filesystemBoundary.rm.mockImplementation(async (path, options) => {
+        await actualRemove(path, { recursive: true, force: true });
+        await actualRemove(path, options);
+      });
+      const deletion =
+        scope === "source"
+          ? deleteRetainedProviderFitSource({
+              ...input,
+              filePath: staged.filePath,
+              originalPath: input.filename,
+            })
+          : deleteStagedProviderFitFiles(input.userId, input.providerId);
+      await expect(deletion).resolves.toBe(scope === "source" ? true : undefined);
+      await expect(access(staged.filePath)).rejects.toMatchObject({ code: "ENOENT" });
+    },
+  );
 });

@@ -1,5 +1,6 @@
 // Garmin Connect IQ device catalog snapshot, 2026-10-24.
 // https://apps.garmin.com/api/appsLibraryExternalServices/api/asw/deviceTypes
+// Names preserve Garmin's published identifiers, including its "Ballisitcs" spelling.
 // Verified Garmin Connect transparent product assets are preferred where available.
 const GARMIN_DEVICE_CATALOG: ReadonlyArray<readonly [names: readonly string[], imageUrl: string]> =
   [

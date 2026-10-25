@@ -1,5 +1,14 @@
 import { createHash } from "node:crypto";
-import { access, mkdtemp, readFile, realpath, rm } from "node:fs/promises";
+import {
+  access,
+  mkdir,
+  mkdtemp,
+  readFile,
+  realpath,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { resolveProviderActivityType } from "@dofek/training/activity-types";
@@ -209,5 +218,53 @@ describe("enqueueFitFileImportAndWait", () => {
     expect(JSON.parse(await readFile(otherManifest, "utf8")).activitySummary.externalId).toBe(
       "workout-43",
     );
+  });
+
+  it("does not overwrite a symbolic link when creating pending recovery metadata", async () => {
+    await mkdir(sourceDirectory(), { recursive: true });
+    const target = join(directory, "another-owner.json");
+    await writeFile(target, "another owner's metadata");
+    await symlink(target, join(sourceDirectory(), "import.json"));
+
+    await expect(enqueueFitFileImportAndWait(options)).rejects.toMatchObject({ code: "ELOOP" });
+
+    expect(await readFile(target, "utf8")).toBe("another owner's metadata");
+    expect(await readFile(join(sourceDirectory(), "input.fit"))).toEqual(bytes);
+    expect(mocks.retainFile).not.toHaveBeenCalled();
+  });
+
+  it("persists the retained ownership supplied by the inline processor", async () => {
+    mocks.processFitFileImportJob.mockImplementation(async (job) => {
+      await job.updateData(job.data);
+      const metadata = JSON.parse(await readFile(join(sourceDirectory(), "import.json"), "utf8"));
+      expect(metadata).toMatchObject({
+        userId: "user-1",
+        providerId: "wahoo",
+        retainedArtifactKey,
+        filePath: join(sourceDirectory(), "input.fit"),
+      });
+      return { recordsSynced: 3, errors: [] };
+    });
+
+    await expect(
+      enqueueFitFileImportAndWait({ ...options, db, metricStreamPublisher: publisher }),
+    ).resolves.toEqual({ recordsSynced: 3, errors: [] });
+  });
+
+  it("does not overwrite a symbolic link while persisting retained ownership", async () => {
+    const target = join(directory, "another-owner.json");
+    await writeFile(target, "another owner's metadata");
+    mocks.processFitFileImportJob.mockImplementation(async (job) => {
+      const metadataPath = join(sourceDirectory(), "import.json");
+      await rm(metadataPath);
+      await symlink(target, metadataPath);
+      await job.updateData(job.data);
+      return { recordsSynced: 3, errors: [] };
+    });
+
+    await expect(
+      enqueueFitFileImportAndWait({ ...options, db, metricStreamPublisher: publisher }),
+    ).rejects.toMatchObject({ code: "ELOOP" });
+    expect(await readFile(target, "utf8")).toBe("another owner's metadata");
   });
 });

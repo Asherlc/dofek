@@ -380,7 +380,7 @@ describe("processGarminDumpImportJob", () => {
     expect(result.totalFitFiles).toBe(0);
   });
 
-  it("preserves all sources when another batch succeeds alongside an unretained batch", async () => {
+  it("preserves all sources when another batch succeeds alongside a batch without retained originals", async () => {
     const job = createJob({
       ...waitingCheckpoint(),
       batchIds: ["garmin-fit-batch-1", "garmin-fit-batch-1-batch-1"],

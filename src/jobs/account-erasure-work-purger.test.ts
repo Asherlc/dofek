@@ -176,7 +176,7 @@ describe("createAccountErasureWorkPurgerFromEnv", () => {
     try {
       for (const filePath of [...owned, otherUser]) {
         await fs.mkdir(dirname(filePath), { recursive: true });
-        await fs.writeFile(filePath, "unarchived FIT original");
+        await fs.writeFile(filePath, "pending FIT original");
       }
       mocks.removeLocalPath.mockImplementation(fs.rm);
       mocks.purgeAccountWork.mockRejectedValueOnce(new Error("Redis queue discovery unavailable"));

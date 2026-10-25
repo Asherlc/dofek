@@ -211,7 +211,7 @@ export const activityDeviceObservation = fitness.table(
     activityId: uuid("activity_id")
       .notNull()
       .references(() => activity.id, { onDelete: "cascade" }),
-    sequence: integer("sequence").notNull(),
+    sequence: bigint("sequence", { mode: "number" }).notNull(),
     messageType: text("message_type", { enum: ["file_id", "device_info"] }).notNull(),
     raw: jsonb("raw").$type<Record<string, unknown>>().notNull(),
   },

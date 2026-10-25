@@ -104,7 +104,6 @@ export async function getActivityMetricSources(
             : providerRecordLabel(row.provider_id, peripheralName ?? row.device_id);
         const provenance = hardware.items.filter(
           (item) =>
-            (item.role === "recorder" || item.role === "creator") &&
             item.providerId === row.provider_id &&
             row.activity_ids.includes(item.activityId) &&
             (row.device_id === null ||
@@ -119,16 +118,21 @@ export async function getActivityMetricSources(
           row.activity_ids.every((id) => matching.some((item) => item.activityId === id))
             ? labels[0]
             : undefined;
-        const baseLabel =
-          name && role === "creator" && originalLabel.includes(name)
-            ? providerRecordLabel(row.provider_id, null)
-            : originalLabel;
+        if (!name) return { id: row.source_id, label: originalLabel };
+        if (role === "recorder") {
+          return {
+            id: row.source_id,
+            label: originalLabel.includes(name)
+              ? originalLabel
+              : `${originalLabel} · recorded by ${name}`,
+          };
+        }
+        const baseLabel = originalLabel.includes(name)
+          ? providerRecordLabel(row.provider_id, null)
+          : originalLabel;
         return {
           id: row.source_id,
-          label:
-            name && (role === "creator" || !originalLabel.includes(name))
-              ? `${baseLabel} · ${role === "creator" ? "file created by" : "recorded by"} ${name}`
-              : originalLabel,
+          label: `${baseLabel} · file created by ${name}`,
         };
       });
     const first = sources[0];
