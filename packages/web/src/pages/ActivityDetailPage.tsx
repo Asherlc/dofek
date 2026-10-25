@@ -14,6 +14,7 @@ import type { UnitConverter } from "@dofek/format/units";
 import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { processingPollInterval } from "@dofek/providers/processing-status";
 import { providerSourceLabel } from "@dofek/providers/providers";
+import { ACTIVITY_IMAGES_QUERY_OPTIONS } from "@dofek/training/activity-images";
 import { buildClimbingMapLocations, buildClimbingMapMarkers } from "@dofek/training/climbing-map";
 import {
   computeIntensities,
@@ -40,6 +41,7 @@ import type { StrengthExerciseDetail } from "../../../server/src/routers/activit
 import { ActivityExportDropdown } from "../components/ActivityExportDropdown.tsx";
 import { ActivityHardwarePanel } from "../components/ActivityHardwarePanel.tsx";
 import { ActivityPerceivedExertion } from "../components/ActivityPerceivedExertion.tsx";
+import { ActivityPhotos } from "../components/ActivityPhotos.tsx";
 import { ActivityRouteMap } from "../components/ActivityRouteMap.tsx";
 import { HangboardingDetail } from "../components/HangboardingDetail.tsx";
 import { HrZonesChart, PowerZonesChart } from "../components/HeartRateZonesChart.tsx";
@@ -68,6 +70,7 @@ export function ActivityDetailPage() {
   const units = useUnitConverter();
   const detail = trpc.activity.byId.useQuery({ id });
   const hardware = trpc.activity.hardware.useQuery({ id });
+  const images = trpc.activity.images.useQuery({ id }, ACTIVITY_IMAGES_QUERY_OPTIONS);
   const metricSources = trpc.activity.metricSources.useQuery({ id: id ?? "" });
   const [sourceSelection, setSourceSelection] = useState<{
     activityId: string;
@@ -266,6 +269,17 @@ export function ActivityDetailPage() {
 
       <ActivityHeader activity={activity} units={units} />
       <ActivityPerceivedExertion value={activity.perceivedExertion} />
+
+      <ActivityPhotos
+        key={id}
+        images={images.data?.images ?? []}
+        loading={images.isLoading}
+        error={images.error}
+        retrying={images.isFetching}
+        onRetry={() => {
+          void images.refetch();
+        }}
+      />
 
       {detail.error ? <QueryStatePanel error={detail.error} height={72} /> : null}
 

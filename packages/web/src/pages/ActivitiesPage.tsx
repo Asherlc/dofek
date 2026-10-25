@@ -19,10 +19,12 @@ import {
   parseValidDate,
 } from "@dofek/format/format";
 import { formatMeasurementText } from "@dofek/format/units";
+import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { processingPollInterval } from "@dofek/providers/processing-status";
+import { ACTIVITY_IMAGES_QUERY_OPTIONS } from "@dofek/training/activity-images";
 import { formatActivityTypeLabel } from "@dofek/training/training";
 import { Link } from "@tanstack/react-router";
-import { useId, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { ActivityCardContent, type ActivityCardData } from "../components/ActivityCardContent.tsx";
 import { PageLayout } from "../components/PageLayout.tsx";
 import { PaginationControls } from "../components/PaginationControls.tsx";
@@ -588,6 +590,22 @@ function ActivityCard({
   onToggleSelected,
 }: ActivityCardProps) {
   const isHidden = activity.isProviderAbsent === true;
+  const cardRef = useRef<HTMLElement>(null);
+  const [visible, setVisible] = useState(false);
+  const photoEnabled = !activity.location && !isHidden && visible;
+  const photos = trpc.activity.images.useQuery(
+    { id: activity.id },
+    { ...ACTIVITY_IMAGES_QUERY_OPTIONS, enabled: photoEnabled },
+  );
+  useEffect(() => {
+    if (activity.location || isHidden || !cardRef.current) return;
+    const observer = new IntersectionObserver(
+      (entries) => setVisible(entries.some((entry) => entry.isIntersecting)),
+      { rootMargin: "200px" },
+    );
+    observer.observe(cardRef.current);
+    return () => observer.disconnect();
+  }, [activity.location, isHidden]);
   const cardClassName = [
     "card relative block h-full overflow-hidden transition-colors",
     selectMode ? "cursor-pointer hover:bg-surface-elevated" : "hover:bg-surface-elevated",
@@ -616,7 +634,7 @@ function ActivityCard({
   );
 
   return (
-    <article className={cardClassName}>
+    <article ref={cardRef} className={cardClassName}>
       <ActivityCardContent
         activity={activity}
         units={units}
@@ -624,7 +642,13 @@ function ActivityCard({
         selected={selected}
         headingAction={headingAction}
         onToggleSelected={onToggleSelected}
+        photo={photos.data?.images[0]}
       />
+      {!activity.location && !isHidden && photos.error ? (
+        <p role="alert" className="px-4 pb-3 text-xs text-red-400">
+          {userFacingErrorMessage(photos.error)}
+        </p>
+      ) : null}
     </article>
   );
 }
