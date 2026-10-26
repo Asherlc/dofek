@@ -262,7 +262,6 @@ it("escapes source labels in tooltip HTML while retaining exact values and limit
   expect(html).toContain("&lt;img");
   expect(html).not.toContain("<img");
   expect(html).toContain("0 sends / 2 climbs");
-  expect(html).toContain("Limited data");
 });
 
 const outcomePoint = z.object({
@@ -299,7 +298,7 @@ it("highlights only the selected style and visually distinguishes limited sample
   expect(limited.itemStyle.opacity).toBeLessThan(available.itemStyle.opacity);
   expect(selected.symbol).toBe("circle");
   expect(limited.symbol).toBe("emptyCircle");
-  expect(limited.displayValue).toBe("0% · 0 sends / 2 climbs · Limited data");
+  expect(limited.displayValue).toBe("0% · 0 sends / 2 climbs");
   expect(selected.tooltipText).toBe(
     "Vertical · V4\n50% · 3 sends / 6 climbs\n12.5 percentage points vs same-grade baseline",
   );
@@ -313,7 +312,7 @@ it("keeps missing comparisons out of tooltip text and includes full monthly scop
   expect(missing).toBe("Slab · V4<br/>No data · 0 sends / 0 climbs");
   const progress = climbingStrengthsChartOption(panel, "progress", "V4", null);
   expect(formatter({ data: progress.series[0]?.data[0] })).toBe(
-    "Vertical · V4 · 2026-08-15 – 2026-08-31<br/>0% · 0 sends / 1 climbs · Limited data",
+    "Vertical · V4 · 2026-08-15 – 2026-08-31<br/>0% · 0 sends / 1 climbs",
   );
 });
 
@@ -400,7 +399,7 @@ it("filters missing radar axes while retaining zero outcomes and the server's ba
       name: "Observed success",
       value: [50, 0],
       tooltipText:
-        "Vertical · V4\n50% · 3 sends / 6 climbs\nOverhang · V4\n0% · 0 sends / 2 climbs · Limited data",
+        "Vertical · V4\n50% · 3 sends / 6 climbs\nOverhang · V4\n0% · 0 sends / 2 climbs",
       areaStyle: { opacity: expect.any(Number) },
     }),
     expect.objectContaining({

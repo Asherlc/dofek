@@ -119,9 +119,7 @@ it("explains sparse radar without hiding exact values or selection", () => {
   expect(screen.getByText(/Radar needs at least three style groups/)).toBeVisible();
   expect(screen.queryByText("Chart canvas")).toBeNull();
   fireEvent.click(screen.getByText("Exact values"));
-  fireEvent.click(
-    screen.getByRole("button", { name: /Overhang · V4 · 0% · 0 sends \/ 2 climbs · Limited data/ }),
-  );
+  fireEvent.click(screen.getByRole("button", { name: /Overhang · V4 · 0% · 0 sends \/ 2 climbs/ }));
   expect(onSelectCell).toHaveBeenCalledWith("overhang", "V4");
 });
 it("uses data-scoped monthly dates and resolves chart clicks to whole-period detail keys", () => {

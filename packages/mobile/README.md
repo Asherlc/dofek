@@ -141,7 +141,11 @@ The compact View chooser keeps Grade profile as its default and offers Style
 gaps, Success curves, Exposure map, Grade pyramids, Progress, and Radar profile
 from the [shared view definitions](../training/src/climbing-strengths-views.ts).
 The [native modal](https://reactnative.dev/docs/modal) uses radio choices and
-retains the selected context, setting, grade, and style when changing views.
+retains the selected grade and style when changing views. The page-wide climbing
+filters select context and setting; strengths uses one grouping control and View
+picker, with separate labeled sections for multiple returned contexts and
+settings. Every grouping stays clickable and shows an empty state when its
+observations are absent.
 Selecting a grade and style reveals recorded success counts and source climbs;
 wall-angle, hold-type, and indoor/outdoor groups share the web client's
 [server-computed contract](../training/src/climbing-strengths.ts).

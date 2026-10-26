@@ -1,5 +1,5 @@
 import { formatDateYmdInTimeZone } from "@dofek/format/format";
-import type { FreeRockGradeSystem } from "@dofek/training/climbing-grades";
+import { type FreeRockGradeSystem, gradeSystemLabel } from "@dofek/training/climbing-grades";
 import type {
   ClimbingStrengths,
   ClimbingStrengthsExample,
@@ -148,6 +148,20 @@ export function buildClimbingStrengths(
   const contexts = [...new Set(entries.map((e) => e.contextKey))].sort();
   for (const contextKey of contexts) {
     const context = entries.filter((e) => e.contextKey === contextKey);
+    const representative = context[0];
+    const systems = new Set(
+      entries
+        .filter((entry) => entry.laneKey === representative?.laneKey)
+        .map((entry) => entry.gradeSystem),
+    );
+    const label = representative?.contextLabel ?? contextKey;
+    const suffix = representative?.gradeSystem
+      ? ` · ${gradeSystemLabel(representative.gradeSystem)}`
+      : null;
+    const contextLabel =
+      systems.size === 1 && suffix && label.toLowerCase().endsWith(suffix.toLowerCase())
+        ? label.slice(0, -suffix.length)
+        : label;
     for (const dimension of ["wall_angle", "hold_type", "setting"] as const) {
       const settings =
         dimension === "setting"
@@ -252,7 +266,7 @@ export function buildClimbingStrengths(
         panels.push({
           key: JSON.stringify([contextKey, dimension, setting]),
           contextKey,
-          contextLabel: context[0]?.contextLabel ?? contextKey,
+          contextLabel,
           dimension,
           setting,
           ...buildProfile(false),

@@ -39,9 +39,7 @@ describe("ClimbingStrengthsChart", () => {
     (view) => {
       render(<ClimbingStrengthsChart panel={panel} view={view} grade="V4" onSelect={() => {}} />);
       fireEvent.click(screen.getByRole("button", { name: /^View .* data$/ }));
-      expect(
-        screen.getByLabelText(/Slab · V4.*0%.*0 sends \/ 2 climbs.*Limited data/),
-      ).toBeTruthy();
+      expect(screen.getByLabelText(/Slab · V4.*0%.*0 sends \/ 2 climbs/)).toBeTruthy();
       if (view !== "progress") {
         expect(screen.getByLabelText(/Vertical · V3.*No data.*0 sends \/ 0 climbs/)).toBeTruthy();
       }

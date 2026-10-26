@@ -65,6 +65,9 @@ The backend API and background job processor for Dofek. Built with Node.js, Expr
   unknown-only months retain null rates and zero sample counts. All view metrics
   are supplied by this server response, as defined in the
   [shared strengths contract](../training/src/climbing-strengths.ts).
+  Context labels omit the grading-system suffix when that semantic lane uses
+  one system; distinct systems retain their labels in the
+  [aggregation](src/services/climbing-strengths.ts).
   The same contract supplies a separate `allGrades` profile with pooled counts,
   rates, comparisons and monthly outcomes from the consolidated climbs. Missing
   aid use joins free climbing; explicit aid stays separate. `days: null` queries

@@ -36,6 +36,40 @@ const dated = (date: string, patch: Partial<ClimbingStrengthsObservation> = {}) 
   return { ...entry, example: { ...entry.example, date } };
 };
 describe("climbing strengths", () => {
+  it("labels a single grading system by climbing context without redundant system text", () => {
+    const result = analyze([
+      observation({ contextLabel: "Bouldering · V Scale" }),
+      observation({
+        contextKey: "lead",
+        laneKey: "lead",
+        contextLabel: "Lead · Yosemite Decimal System",
+        gradeSystem: "yds",
+        grade: "5.8",
+      }),
+    ]);
+    expect(result.panels.find((panel) => panel.contextKey === "boulder")?.contextLabel).toBe(
+      "Bouldering",
+    );
+    expect(result.panels.find((panel) => panel.contextKey === "lead")?.contextLabel).toBe("Lead");
+  });
+
+  it("retains grading system labels when the same climbing lane has different systems", () => {
+    const result = analyze([
+      observation({ contextKey: "v", contextLabel: "Bouldering · V Scale" }),
+      observation({
+        contextKey: "font",
+        gradeSystem: "font",
+        grade: "6b",
+        contextLabel: "Bouldering · Fontainebleau",
+      }),
+    ]);
+    expect(result.panels.find((panel) => panel.contextKey === "v")?.contextLabel).toBe(
+      "Bouldering · V Scale",
+    );
+    expect(result.panels.find((panel) => panel.contextKey === "font")?.contextLabel).toBe(
+      "Bouldering · Fontainebleau",
+    );
+  });
   it("pools distinct climbs across grades using counts and independent monthly outcomes", () => {
     const entries = [
       ...Array.from({ length: 5 }, (_, index) =>
@@ -555,7 +589,7 @@ describe("climbing strengths", () => {
     ]);
     expect(result.coverage.missingGrades).toBe(0);
     const panel = result.panels.find((panel) => panel.dimension === "setting");
-    expect(panel).toMatchObject({ contextKey: "boulder", contextLabel: "Bouldering · V scale" });
+    expect(panel).toMatchObject({ contextKey: "boulder", contextLabel: "Bouldering" });
     expect(panel?.grades[0]).toMatchObject({ grade: "V4", sends: 1, climbs: 1 });
     expect(panel?.rows[0]?.cells[0]?.examples[0]).toMatchObject({ grade: "V4", outcome: "sent" });
   });

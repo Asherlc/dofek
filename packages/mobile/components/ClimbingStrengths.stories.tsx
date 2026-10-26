@@ -57,3 +57,12 @@ export const MixedUnknownOnlyContext: Story = {
 };
 
 export const VisualizationChoices: Story = { args: { data: climbingStrengthsComparisonFixture } };
+
+export const MissingDimensions: Story = {
+  args: {
+    data: {
+      ...climbingStrengthsFixture,
+      panels: climbingStrengthsFixture.panels.filter((panel) => panel.dimension === "setting"),
+    },
+  },
+};

@@ -214,3 +214,15 @@ export const SettingsAndContexts: Story = {
     },
   },
 };
+
+export const MissingDimension: Story = {
+  args: {
+    data: {
+      ...fixture,
+      panels: fixture.panels.filter((panel) => panel.dimension === "wall_angle"),
+    },
+  },
+  play: async ({ canvasElement, userEvent }) => {
+    await userEvent.click(within(canvasElement).getByRole("button", { name: "Hold type" }));
+  },
+};

@@ -20,7 +20,7 @@ function rate(value: number | null | undefined) {
   return value == null ? "No data" : `${value}%`;
 }
 function facts(cell: Pick<Cell, "sends" | "climbs" | "successRate" | "sampleStatus">) {
-  return `${rate(cell.successRate)} · ${cell.sends} sends / ${cell.climbs} climbs${cell.sampleStatus === "limited" ? " · Limited data" : ""}`;
+  return `${rate(cell.successRate)} · ${cell.sends} sends / ${cell.climbs} climbs`;
 }
 const explanations: Record<ViewKind, string> = {
   gaps: "Success gap in percentage points from the same-grade baseline. Zero is the baseline.",

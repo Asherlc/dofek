@@ -22,7 +22,7 @@ type Outcome = Pick<
 >;
 type OutcomeValues = Omit<Outcome, "sampleStatus"> & { sampleStatus?: Outcome["sampleStatus"] };
 export function climbingStrengthsValueLabel(cell: OutcomeValues) {
-  return `${cell.successRate === null ? "No data" : `${cell.successRate}%`} · ${cell.sends} sends / ${cell.climbs} climbs${cell.sampleStatus === "limited" ? " · Limited data" : ""}`;
+  return `${cell.successRate === null ? "No data" : `${cell.successRate}%`} · ${cell.sends} sends / ${cell.climbs} climbs`;
 }
 
 function tooltipText(label: string, cell: OutcomeValues, period?: string) {

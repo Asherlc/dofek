@@ -38,7 +38,7 @@ function defaultPanel(panels: ClimbingStrengthsPanel[]) {
 function cellLabel(label: string, cell: ClimbingStrengthsCell) {
   return cell.sampleStatus === "no_data"
     ? `${label} · No data`
-    : `${label} · ${cell.successRate}% · ${cell.sends}/${cell.climbs} climbs sent${cell.sampleStatus === "limited" ? " · Limited data" : ""}${cell.differencePercentagePoints === null ? "" : ` · ${cell.differencePercentagePoints > 0 ? "+" : ""}${cell.differencePercentagePoints} percentage points vs ${climbingStrengthsBaselineLabel(cell.grade).toLowerCase()}`}`;
+    : `${label} · ${cell.successRate}% · ${cell.sends}/${cell.climbs} climbs sent${cell.differencePercentagePoints === null ? "" : ` · ${cell.differencePercentagePoints > 0 ? "+" : ""}${cell.differencePercentagePoints} percentage points vs ${climbingStrengthsBaselineLabel(cell.grade).toLowerCase()}`}`;
 }
 export function ClimbingStrengths({
   data,
@@ -51,286 +51,291 @@ export function ClimbingStrengths({
   error?: { message: string } | null;
   rangeControl?: ReactNode;
 }) {
-  const router = useRouter();
   const [view, setView] = useState<ClimbingStrengthsView>("profile");
-  const [panelKey, setPanelKey] = useState<string | null>(null);
-  const [preferredSetting, setPreferredSetting] = useState<"indoor" | "outdoor" | null>(null);
-  const [grade, setGrade] = useState<string | null>(null);
-  const [selectedDetail, setSelectedDetail] = useState<{
-    panelKey: string;
-    rowKey: string;
-    grade: string;
-  } | null>(null);
-  const panels = data?.panels ?? [];
-  const panel = panels.find((item) => item.key === panelKey) ?? defaultPanel(panels);
-  const selectedGradeKey =
-    panel?.grades.find((item) => item.grade === grade)?.grade ?? ALL_CLIMBING_GRADES;
-  const gradePanel = panel ? climbingStrengthsGradePanel(panel, selectedGradeKey) : undefined;
-  const selectedGrade = panel?.grades.length
-    ? gradePanel?.grades.find((item) => item.grade === selectedGradeKey)
-    : undefined;
-  const contextPanels = panels.filter((item) => item.contextKey === panel?.contextKey);
-  const contexts = panels.filter(
-    (item, index) => panels.findIndex((other) => other.contextKey === item.contextKey) === index,
+  const [selectedDimension, setDimension] = useState<ClimbingStrengthsPanel["dimension"] | null>(
+    null,
   );
-  const selectedCell =
-    selectedDetail &&
-    selectedDetail.panelKey === panel?.key &&
-    selectedDetail.grade === selectedGrade?.grade
-      ? gradePanel?.rows
-          .find((row) => row.key === selectedDetail.rowKey)
-          ?.cells.find((cell) => cell.grade === selectedDetail.grade)
-      : undefined;
-  const selectedRowKey = selectedCell ? selectedDetail?.rowKey : null;
-  function selectPanel(next: ClimbingStrengthsPanel | undefined) {
-    if (next) {
-      if (next.dimension === "setting" && panel?.setting) setPreferredSetting(panel.setting);
-      setPanelKey(next.key);
-      if (next.setting !== null) setPreferredSetting(next.setting);
-      setSelectedDetail(null);
-    }
-  }
+  const panels = data?.panels ?? [];
+  const dimension = selectedDimension ?? defaultPanel(panels)?.dimension ?? "wall_angle";
+  const contexts = [
+    ...new Map(panels.map((panel) => [panel.contextKey, panel.contextLabel])).entries(),
+  ];
   return (
     <View style={styles.card}>
       <Text style={styles.title}>Climbing strengths</Text>
       {rangeControl}
       {error && <QueryStatePanel variant="error" message={error.message} minHeight={80} />}
-      {panel ? (
+      {panels.length ? (
         <>
           <ClimbingStrengthsViewPicker value={view} onChange={setView} />
           <View style={styles.controls}>
-            {contexts.map((context) => (
+            {Object.entries(dimensions).map(([item, label]) => (
               <Pressable
-                key={context.contextKey}
+                key={item}
                 accessibilityRole="button"
-                accessibilityState={{ selected: context.contextKey === panel.contextKey }}
-                style={[styles.chip, context.contextKey === panel.contextKey && styles.selected]}
-                onPress={() =>
-                  selectPanel(
-                    contextPanels[0]?.contextKey === context.contextKey
-                      ? panel
-                      : defaultPanel(
-                          panels.filter((item) => item.contextKey === context.contextKey),
-                        ),
-                  )
-                }
-              >
-                <Text style={styles.text}>{context.contextLabel}</Text>
-              </Pressable>
-            ))}
-          </View>
-          <View style={styles.controls}>
-            {Object.entries(dimensions).map(([dimension, label]) => (
-              <Pressable
-                key={dimension}
-                accessibilityRole="button"
-                accessibilityState={{ selected: panel.dimension === dimension }}
-                disabled={!contextPanels.some((item) => item.dimension === dimension)}
-                style={[styles.chip, panel.dimension === dimension && styles.selected]}
-                onPress={() =>
-                  selectPanel(
-                    contextPanels.find(
-                      (item) =>
-                        item.dimension === dimension &&
-                        item.setting === (panel.setting ?? preferredSetting),
-                    ) ?? contextPanels.find((item) => item.dimension === dimension),
-                  )
-                }
+                accessibilityState={{ selected: dimension === item }}
+                style={[styles.chip, dimension === item && styles.selected]}
+                onPress={() => {
+                  if (item === "wall_angle" || item === "hold_type" || item === "setting")
+                    setDimension(item);
+                }}
               >
                 <Text style={styles.text}>{label}</Text>
               </Pressable>
             ))}
           </View>
-          {panel.dimension !== "setting" && (
-            <View style={styles.controls}>
-              {contextPanels
-                .filter((item) => item.dimension === panel.dimension)
-                .map((item) => (
-                  <Pressable
-                    key={item.key}
-                    accessibilityRole="button"
-                    accessibilityState={{ selected: item.key === panel.key }}
-                    style={[styles.chip, item.key === panel.key && styles.selected]}
-                    onPress={() => selectPanel(item)}
-                  >
-                    <Text style={styles.text}>
-                      {item.setting === "indoor" ? "Indoor" : "Outdoor"}
-                    </Text>
-                  </Pressable>
-                ))}
-            </View>
-          )}
-          {selectedGrade ? (
-            <>
-              <View style={styles.controls}>
-                {[...panel.allGrades.grades, ...panel.grades].map((item) => (
-                  <Pressable
-                    key={item.grade}
-                    accessibilityRole="button"
-                    accessibilityState={{ selected: selectedGrade.grade === item.grade }}
-                    style={[styles.chip, selectedGrade.grade === item.grade && styles.selected]}
-                    onPress={() => {
-                      setGrade(item.grade);
-                      setSelectedDetail(null);
-                    }}
-                  >
-                    <Text style={styles.text}>{item.grade}</Text>
-                  </Pressable>
-                ))}
-              </View>
-              <Text style={styles.meta}>
-                {selectedGradeKey === ALL_CLIMBING_GRADES ? "Overall" : "Same-grade"} baseline ·{" "}
-                {selectedGrade.successRate === null ? "No data" : `${selectedGrade.successRate}%`} ·{" "}
-                {selectedGrade.sends}/{selectedGrade.climbs} climbs sent
-              </Text>
-              {view !== "profile" && (
-                <ClimbingStrengthsChart
-                  panel={view === "curves" || view === "pyramids" ? panel : (gradePanel ?? panel)}
-                  view={view}
-                  grade={selectedGrade.grade}
-                  onSelect={(row, selected) => {
-                    setSelectedDetail({ panelKey: panel.key, rowKey: row, grade: selected });
-                    setGrade(selected);
-                  }}
-                />
-              )}
-              {(gradePanel?.rows ?? []).map((row) => {
-                const cell = row.cells.find((item) => item.grade === selectedGrade.grade);
-                return cell ? (
-                  <Pressable
-                    key={row.key}
-                    accessibilityRole="button"
-                    accessibilityLabel={cellLabel(row.label, cell)}
-                    accessibilityState={{ selected: selectedRowKey === row.key }}
-                    style={[styles.row, selectedRowKey === row.key && styles.selected]}
-                    onPress={() =>
-                      setSelectedDetail({
-                        panelKey: panel.key,
-                        rowKey: row.key,
-                        grade: selectedGrade.grade,
-                      })
-                    }
-                  >
-                    <View style={styles.rowHeading}>
-                      <Text style={styles.text}>{row.label}</Text>
-                      <Text style={styles.text}>
-                        {cell.successRate === null ? "—" : `${cell.successRate}%`}
-                      </Text>
-                    </View>
-                    {view === "profile" && (
-                      <Svg height={8} width="100%" accessibilityElementsHidden>
-                        <Rect width="100%" height={8} rx={4} fill={colors.surfaceSecondary} />
-                        {cell.successRate !== null && (
-                          <Rect
-                            testID={`strength-bar-${row.key}`}
-                            width={`${cell.successRate}%`}
-                            height={8}
-                            rx={4}
-                            fill={colors.accent}
-                          />
-                        )}
-                        {selectedGrade.successRate !== null && (
-                          <Rect
-                            testID={`strength-baseline-${row.key}`}
-                            x={`${selectedGrade.successRate}%`}
-                            width={2}
-                            height={8}
-                            fill={colors.text}
-                          />
-                        )}
-                      </Svg>
-                    )}
-                    <Text style={styles.meta}>
-                      {cell.sampleStatus === "no_data"
-                        ? "No data"
-                        : `${cell.sends}/${cell.climbs} climbs sent${cell.sampleStatus === "limited" ? " · Limited data" : ""}`}
-                    </Text>
-                    {cell.differencePercentagePoints !== null && (
-                      <Text style={styles.meta}>
-                        {cell.differencePercentagePoints > 0 ? "+" : ""}
-                        {cell.differencePercentagePoints} percentage points vs{" "}
-                        {selectedGradeKey === ALL_CLIMBING_GRADES ? "overall" : "same-grade"}{" "}
-                        baseline
-                      </Text>
-                    )}
-                  </Pressable>
-                ) : null;
-              })}
-              {!observed(panel) && (
-                <Text style={styles.meta}>
-                  No recorded {dimensions[panel.dimension].toLowerCase()} observations in this
-                  context.
-                </Text>
-              )}
-              {selectedCell && (
-                <View style={styles.examples}>
-                  <Text style={styles.text}>
-                    {view === "progress"
-                      ? "Recorded climbs · Across the selected period"
-                      : "Recorded climbs"}
-                  </Text>
-                  {selectedCell.examples.length === 0 ? (
-                    <Text style={styles.meta}>No examples available for this selection.</Text>
-                  ) : (
-                    selectedCell.examples.map((example) => (
-                      <View key={example.logEntryId} style={styles.row}>
-                        <Text style={styles.text}>{example.name}</Text>
-                        <Text style={styles.meta}>
-                          {example.grade} · {example.date} ·{" "}
-                          {example.outcome === "sent" ? "Sent" : "Not sent"}
-                        </Text>
-                        {example.sourceUrl ? (
-                          <Pressable
-                            accessibilityRole="link"
-                            accessibilityLabel={`${example.sourceName} source for ${example.name}`}
-                            style={styles.chip}
-                            onPress={async () => {
-                              if (
-                                example.sourceUrl &&
-                                !(await openExternalUrl(
-                                  example.sourceUrl,
-                                  "climbing-strengths-source",
-                                ))
-                              )
-                                Alert.alert(
-                                  "Unable to open source",
-                                  `Open this source in your browser: ${example.sourceUrl}`,
-                                );
-                            }}
-                          >
-                            <Text style={styles.link}>{example.sourceName}</Text>
-                          </Pressable>
-                        ) : (
-                          <Text style={styles.meta}>{example.sourceName}</Text>
-                        )}
-                        {example.activityId && (
-                          <Pressable
-                            accessibilityRole="button"
-                            accessibilityLabel={`View activity for ${example.name}`}
-                            onPress={() => router.push(`/activity/${example.activityId}`)}
-                            style={styles.chip}
-                          >
-                            <Text style={styles.link}>View activity</Text>
-                          </Pressable>
-                        )}
-                      </View>
-                    ))
-                  )}
-                </View>
-              )}
-            </>
-          ) : (
-            <QueryStatePanel
-              variant="empty"
-              message="No recorded climbing outcomes in this context"
+          {contexts.map(([key, label]) => (
+            <ClimbingStrengthsContext
+              key={key}
+              panels={panels.filter((panel) => panel.contextKey === key)}
+              dimension={dimension}
+              view={view}
+              label={contexts.length > 1 ? label : undefined}
             />
-          )}
+          ))}
         </>
       ) : loading && data == null ? (
         <QueryStatePanel variant="loading" />
       ) : !error ? (
         <QueryStatePanel variant="empty" message="No recorded climbing outcomes in this period" />
       ) : null}
+    </View>
+  );
+}
+
+function ClimbingStrengthsContext({
+  panels,
+  dimension,
+  view,
+  label,
+}: {
+  panels: ClimbingStrengthsPanel[];
+  dimension: ClimbingStrengthsPanel["dimension"];
+  view: ClimbingStrengthsView;
+  label: string | undefined;
+}) {
+  const [gradeKey, setGradeKey] = useState<string | null>(null);
+  const selectedPanels = panels.filter((panel) => panel.dimension === dimension);
+  const grades = [
+    ...new Map(
+      selectedPanels.flatMap((panel) => panel.grades.map((grade) => [grade.grade, grade] as const)),
+    ).values(),
+  ].sort((first, second) => first.gradeSortValue - second.gradeSortValue);
+  const grade = grades.find((item) => item.grade === gradeKey)?.grade ?? ALL_CLIMBING_GRADES;
+  return (
+    <View style={{ gap: spacing.md }}>
+      {label ? (
+        <Text accessibilityRole="header" style={styles.text}>
+          {label}
+        </Text>
+      ) : null}
+      {grades.length > 0 ? (
+        <View style={styles.controls}>
+          {[ALL_CLIMBING_GRADES, ...grades.map((item) => item.grade)].map((item) => (
+            <Pressable
+              key={item}
+              accessibilityRole="button"
+              accessibilityState={{ selected: grade === item }}
+              style={[styles.chip, grade === item && styles.selected]}
+              onPress={() => setGradeKey(item)}
+            >
+              <Text style={styles.text}>{item}</Text>
+            </Pressable>
+          ))}
+        </View>
+      ) : null}
+      {selectedPanels.length ? (
+        selectedPanels.map((panel) => (
+          <View key={panel.key} style={{ gap: spacing.md }}>
+            {dimension !== "setting" && selectedPanels.length > 1 && panel.setting ? (
+              <Text accessibilityRole="header" style={styles.text}>
+                {panel.setting === "indoor" ? "Indoor" : "Outdoor"}
+              </Text>
+            ) : null}
+            <ClimbingStrengthsPanelContent
+              panel={panel}
+              view={view}
+              selectedGradeKey={grade}
+              onGradeChange={setGradeKey}
+            />
+          </View>
+        ))
+      ) : (
+        <Text style={styles.meta}>
+          {`No recorded ${dimensions[dimension].toLowerCase()} observations in this context.`}
+        </Text>
+      )}
+    </View>
+  );
+}
+
+function ClimbingStrengthsPanelContent({
+  panel,
+  view,
+  selectedGradeKey,
+  onGradeChange,
+}: {
+  panel: ClimbingStrengthsPanel;
+  view: ClimbingStrengthsView;
+  selectedGradeKey: string;
+  onGradeChange: (grade: string) => void;
+}) {
+  const router = useRouter();
+  const [selectedDetail, setSelectedDetail] = useState<{ rowKey: string; grade: string } | null>(
+    null,
+  );
+  const gradePanel = climbingStrengthsGradePanel(panel, selectedGradeKey);
+  const selectedGrade = gradePanel.grades.find((item) => item.grade === selectedGradeKey);
+  const selectedCell =
+    selectedDetail?.grade === selectedGrade?.grade
+      ? gradePanel.rows
+          .find((row) => row.key === selectedDetail?.rowKey)
+          ?.cells.find((cell) => cell.grade === selectedDetail?.grade)
+      : undefined;
+  const selectedRowKey = selectedCell ? selectedDetail?.rowKey : null;
+  if (!observed(panel))
+    return (
+      <Text
+        style={styles.meta}
+      >{`No recorded ${dimensions[panel.dimension].toLowerCase()} observations in this context.`}</Text>
+    );
+  return (
+    <View style={{ gap: spacing.md }}>
+      {view !== "profile" && (selectedGrade || view === "curves" || view === "pyramids") && (
+        <ClimbingStrengthsChart
+          panel={view === "curves" || view === "pyramids" ? panel : (gradePanel ?? panel)}
+          view={view}
+          grade={selectedGradeKey}
+          onSelect={(row, selected) => {
+            setSelectedDetail({ rowKey: row, grade: selected });
+            onGradeChange(selected);
+          }}
+        />
+      )}
+      {selectedGrade ? (
+        <>
+          <Text style={styles.meta}>
+            {selectedGradeKey === ALL_CLIMBING_GRADES ? "Overall" : "Same-grade"} baseline ·{" "}
+            {selectedGrade.successRate === null ? "No data" : `${selectedGrade.successRate}%`} ·{" "}
+            {selectedGrade.sends}/{selectedGrade.climbs} climbs sent
+          </Text>
+          {(gradePanel?.rows ?? []).map((row) => {
+            const cell = row.cells.find((item) => item.grade === selectedGrade.grade);
+            return cell ? (
+              <Pressable
+                key={row.key}
+                accessibilityRole="button"
+                accessibilityLabel={cellLabel(row.label, cell)}
+                accessibilityState={{ selected: selectedRowKey === row.key }}
+                style={[styles.row, selectedRowKey === row.key && styles.selected]}
+                onPress={() =>
+                  setSelectedDetail({
+                    rowKey: row.key,
+                    grade: selectedGrade.grade,
+                  })
+                }
+              >
+                <View style={styles.rowHeading}>
+                  <Text style={styles.text}>{row.label}</Text>
+                  <Text style={styles.text}>
+                    {cell.successRate === null ? "—" : `${cell.successRate}%`}
+                  </Text>
+                </View>
+                {view === "profile" && (
+                  <Svg height={8} width="100%" accessibilityElementsHidden>
+                    <Rect width="100%" height={8} rx={4} fill={colors.surfaceSecondary} />
+                    {cell.successRate !== null && (
+                      <Rect
+                        testID={`strength-bar-${row.key}`}
+                        width={`${cell.successRate}%`}
+                        height={8}
+                        rx={4}
+                        fill={colors.accent}
+                      />
+                    )}
+                    {selectedGrade.successRate !== null && (
+                      <Rect
+                        testID={`strength-baseline-${row.key}`}
+                        x={`${selectedGrade.successRate}%`}
+                        width={2}
+                        height={8}
+                        fill={colors.text}
+                      />
+                    )}
+                  </Svg>
+                )}
+                <Text style={styles.meta}>
+                  {cell.sampleStatus === "no_data"
+                    ? "No data"
+                    : `${cell.sends}/${cell.climbs} climbs sent`}
+                </Text>
+                {cell.differencePercentagePoints !== null && (
+                  <Text style={styles.meta}>
+                    {cell.differencePercentagePoints > 0 ? "+" : ""}
+                    {cell.differencePercentagePoints} percentage points vs{" "}
+                    {selectedGradeKey === ALL_CLIMBING_GRADES ? "overall" : "same-grade"} baseline
+                  </Text>
+                )}
+              </Pressable>
+            ) : null;
+          })}
+          {selectedCell && (
+            <View style={styles.examples}>
+              <Text style={styles.text}>
+                {view === "progress"
+                  ? "Recorded climbs · Across the selected period"
+                  : "Recorded climbs"}
+              </Text>
+              {selectedCell.examples.length === 0 ? (
+                <Text style={styles.meta}>No examples available for this selection.</Text>
+              ) : (
+                selectedCell.examples.map((example) => (
+                  <View key={example.logEntryId} style={styles.row}>
+                    <Text style={styles.text}>{example.name}</Text>
+                    <Text style={styles.meta}>
+                      {example.grade} · {example.date} ·{" "}
+                      {example.outcome === "sent" ? "Sent" : "Not sent"}
+                    </Text>
+                    {example.sourceUrl ? (
+                      <Pressable
+                        accessibilityRole="link"
+                        accessibilityLabel={`${example.sourceName} source for ${example.name}`}
+                        style={styles.chip}
+                        onPress={async () => {
+                          if (
+                            example.sourceUrl &&
+                            !(await openExternalUrl(example.sourceUrl, "climbing-strengths-source"))
+                          )
+                            Alert.alert(
+                              "Unable to open source",
+                              `Open this source in your browser: ${example.sourceUrl}`,
+                            );
+                        }}
+                      >
+                        <Text style={styles.link}>{example.sourceName}</Text>
+                      </Pressable>
+                    ) : (
+                      <Text style={styles.meta}>{example.sourceName}</Text>
+                    )}
+                    {example.activityId && (
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel={`View activity for ${example.name}`}
+                        onPress={() => router.push(`/activity/${example.activityId}`)}
+                        style={styles.chip}
+                      >
+                        <Text style={styles.link}>View activity</Text>
+                      </Pressable>
+                    )}
+                  </View>
+                ))
+              )}
+            </View>
+          )}
+        </>
+      ) : view === "curves" || view === "pyramids" ? null : (
+        <QueryStatePanel variant="empty" message="No recorded climbing outcomes in this context" />
+      )}
     </View>
   );
 }
