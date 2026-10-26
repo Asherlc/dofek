@@ -1,3 +1,4 @@
+import { formatDateYmdInTimeZone } from "@dofek/format/format";
 import { climbingFiltersSchema } from "@dofek/training/climbing-filters";
 import { climbingLocationMapSchema } from "@dofek/training/climbing-location-map";
 import { climbingStrengthsSchema } from "@dofek/training/climbing-strengths";
@@ -10,6 +11,7 @@ import {
   climbingAttachmentActivitySchema,
   climbingLogEntryDetailSchema,
 } from "../contracts/climbing-log-contracts.ts";
+import { dateWindowStartString } from "../lib/date-window.ts";
 import { ActivityRepository } from "../repositories/activity-repository.ts";
 import { ClimbingLogEntryAssociator } from "../repositories/climbing-log-entry-associator.ts";
 import {
@@ -94,7 +96,7 @@ export const climbingRouter = router({
   strengths: cachedProtectedQuery({
     maxAge: CacheTTL.LONG,
     outputSchema: climbingStrengthsSchema,
-    keyVersion: "climbing-strengths-v1",
+    keyVersion: "climbing-strengths-v2",
   })
     .input(climbingInputSchema.extend({ endDate: z.iso.date().optional() }))
     .output(climbingStrengthsSchema)
@@ -108,8 +110,10 @@ export const climbingRouter = router({
           ctx.accessWindow,
           preference,
         );
+        const endDate = input.endDate ?? formatDateYmdInTimeZone(new Date(), ctx.timezone);
         return buildClimbingStrengths(
-          await repository.getObservations(input.days, input, input.endDate),
+          await repository.getObservations(input.days, input, endDate),
+          { startDate: dateWindowStartString(endDate, input.days - 1), endDate },
         );
       }),
     ),

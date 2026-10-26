@@ -86,7 +86,10 @@ describe("climbingRouter", () => {
     captureException.mockClear();
     invalidateByPrefix.mockClear();
   });
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.useRealTimers();
+  });
   it.each([
     groupId,
     "00000000-0000-4000-8000-000000000702",
@@ -204,7 +207,7 @@ describe("climbingRouter", () => {
       activityId: groupId,
       name: "Corner",
       grade: "V4",
-      date: "2026-10-25",
+      date: "2025-02-05",
       providerId: "kaya",
       sourceName: "KAYA",
       sourceUrl: null,
@@ -258,6 +261,16 @@ describe("climbingRouter", () => {
     expect(execute).toHaveBeenCalledOnce();
     expect(result.coverage).toEqual({ unknownOutcomes: 1, missingGrades: 0, missingIdentity: 0 });
     const panel = result.panels.find((panel) => panel.dimension === "hold_type");
+    expect(panel?.progress.map(({ startDate, endDate }) => ({ startDate, endDate }))).toEqual([
+      { startDate: "2025-01-07", endDate: "2025-01-31" },
+      { startDate: "2025-02-01", endDate: "2025-02-05" },
+    ]);
+    expect(panel?.progress[0]?.rows[0]?.cells[0]).toMatchObject({ climbs: 0, successRate: null });
+    expect(panel?.progress[1]?.rows[0]?.cells[0]).toMatchObject({
+      climbs: 2,
+      sends: 1,
+      successRate: 50,
+    });
     expect(panel).toMatchObject({
       contextKey: "boulder-free-v",
       setting: "indoor",
@@ -282,6 +295,65 @@ describe("climbingRouter", () => {
       ],
     });
   });
+  it.each([
+    ["America/Los_Angeles", "2026-09-30"],
+    ["Asia/Tokyo", "2026-10-01"],
+  ])(
+    "resolves the omitted strengths anchor in %s and forwards the same one-day window",
+    async (timezone, endDate) => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-10-01T02:00:00Z"));
+      const lookup = vi
+        .spyOn(ClimbingStrengthsRepository.prototype, "getObservations")
+        .mockResolvedValue([
+          {
+            identity: "climb",
+            contextKey: "boulder",
+            laneKey: "boulder",
+            gradeSystem: "v_scale",
+            contextLabel: "Bouldering",
+            setting: "indoor",
+            grade: "V4",
+            gradeSortValue: 4,
+            wallAngle: null,
+            holdType: "crimp",
+            outcome: "not_sent",
+            example: {
+              logEntryId: "log",
+              activityId: null,
+              name: "Problem",
+              grade: "V4",
+              date: endDate,
+              providerId: "kaya",
+              sourceName: "KAYA",
+              sourceUrl: null,
+              outcome: "not_sent",
+            },
+          },
+        ]);
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        userId: "user-1",
+        timezone,
+      });
+      const result = await caller.strengths({ days: 1 });
+      expect(lookup).toHaveBeenCalledExactlyOnceWith(1, { days: 1 }, endDate);
+      expect(result.panels.find((panel) => panel.dimension === "hold_type")?.progress).toEqual([
+        {
+          startDate: endDate,
+          endDate,
+          rows: [
+            {
+              key: "crimp",
+              cells: [
+                { grade: "V4", sends: 0, climbs: 1, successRate: 0, sampleStatus: "limited" },
+              ],
+            },
+          ],
+        },
+      ]);
+    },
+  );
   it("returns server-built map circles with canonical climb details", async () => {
     const { caller } = makeCallerWithResponses([
       [],

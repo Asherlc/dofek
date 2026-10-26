@@ -1,6 +1,9 @@
 import type { Meta, StoryObj } from "@storybook/react-native";
 import { ClimbingStrengths } from "./ClimbingStrengths";
-import { climbingStrengthsFixture } from "./climbing-strengths-fixtures";
+import {
+  climbingStrengthsComparisonFixture,
+  climbingStrengthsFixture,
+} from "./climbing-strengths-fixtures";
 
 const meta = {
   title: "Components/ClimbingStrengths",
@@ -52,3 +55,5 @@ export const MixedUnknownOnlyContext: Story = {
     },
   },
 };
+
+export const VisualizationChoices: Story = { args: { data: climbingStrengthsComparisonFixture } };

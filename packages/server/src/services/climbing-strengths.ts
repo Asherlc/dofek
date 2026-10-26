@@ -1,3 +1,4 @@
+import { formatDateYmdInTimeZone } from "@dofek/format/format";
 import type { FreeRockGradeSystem } from "@dofek/training/climbing-grades";
 import type {
   ClimbingStrengths,
@@ -29,8 +30,26 @@ function trait(
   const angle = entry.wallAngle;
   return angle?.unit === "degrees" ? `${angle.value}°` : null;
 }
+const sampleStatus = (climbs: number): "no_data" | "limited" | "available" =>
+  climbs === 0 ? "no_data" : climbs < 5 ? "limited" : "available";
+function monthlyWindows(window: { startDate: string; endDate: string }) {
+  const months: Array<{ startDate: string; endDate: string }> = [];
+  let startDate = window.startDate;
+  while (startDate <= window.endDate) {
+    const next = new Date(`${startDate}T00:00:00Z`);
+    next.setUTCDate(1);
+    next.setUTCMonth(next.getUTCMonth() + 1);
+    const nextStart = formatDateYmdInTimeZone(next, "UTC");
+    next.setUTCDate(0);
+    const monthEnd = formatDateYmdInTimeZone(next, "UTC");
+    months.push({ startDate, endDate: monthEnd < window.endDate ? monthEnd : window.endDate });
+    startDate = nextStart;
+  }
+  return months;
+}
 export function buildClimbingStrengths(
   observations: ClimbingStrengthsObservation[],
+  window: { startDate: string; endDate: string },
 ): ClimbingStrengths {
   const coverage = { unknownOutcomes: 0, missingGrades: 0, missingIdentity: 0 };
   const groups = new Map<string, ClimbingStrengthsObservation[]>();
@@ -65,7 +84,11 @@ export function buildClimbingStrengths(
     group.push(entry);
     groups.set(key, group);
   }
-  const entries: ClimbingStrengthsObservation[] = [];
+  const entries: Array<
+    ClimbingStrengthsObservation & {
+      observations: ClimbingStrengthsObservation[];
+    }
+  > = [];
   for (const group of groups.values()) {
     const grades = [
       ...new Map(
@@ -97,6 +120,7 @@ export function buildClimbingStrengths(
     ];
     entries.push({
       ...preferred,
+      observations: group,
       grade: grade.grade,
       gradeSortValue: grade.gradeSortValue,
       setting: settings.length === 1 ? (settings[0] ?? null) : null,
@@ -112,6 +136,7 @@ export function buildClimbingStrengths(
       },
     });
   }
+  const months = monthlyWindows(window);
   const panels: ClimbingStrengthsPanel[] = [];
   const contexts = [...new Set(entries.map((e) => e.contextKey))].sort();
   for (const contextKey of contexts) {
@@ -169,12 +194,49 @@ export function buildClimbingStrengths(
                   successRate === null || g.successRate === null
                     ? null
                     : successRate - g.successRate,
-                sampleStatus:
-                  matching.length === 0 ? "no_data" : matching.length < 5 ? "limited" : "available",
+                sampleStatus: sampleStatus(matching.length),
                 examples: matching.slice(0, 3).map((e) => e.example),
               };
             }),
           })),
+          progress: months.map(({ startDate, endDate }) => {
+            // Resolve identity, grade and traits across the complete window;
+            // only outcomes are re-evaluated from this month's original logs.
+            const monthly = selected.flatMap((entry) => {
+              const attempts = entry.observations.filter(
+                (observation) =>
+                  observation.example.date >= startDate && observation.example.date <= endDate,
+              );
+              const outcome: ClimbingStrengthsObservation["outcome"] = attempts.some(
+                (attempt) => attempt.outcome === "sent",
+              )
+                ? "sent"
+                : attempts.some((attempt) => attempt.outcome === "not_sent")
+                  ? "not_sent"
+                  : null;
+              return outcome === null ? [] : [{ ...entry, outcome }];
+            });
+            return {
+              startDate,
+              endDate,
+              rows: keys.map((key) => ({
+                key,
+                cells: grades.map(({ grade }) => {
+                  const matching = monthly.filter(
+                    (entry) => entry.grade === grade && trait(entry, dimension) === key,
+                  );
+                  const sends = matching.filter((entry) => entry.outcome === "sent").length;
+                  return {
+                    grade,
+                    sends,
+                    climbs: matching.length,
+                    successRate: percent(sends, matching.length),
+                    sampleStatus: sampleStatus(matching.length),
+                  };
+                }),
+              })),
+            };
+          }),
           coverage: {
             missingTraits: known.filter((e) => trait(e, dimension) === null).length,
             unknownOutcomes: selected.filter((e) => e.outcome === null).length,

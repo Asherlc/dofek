@@ -3,7 +3,12 @@ import type {
   ClimbingStrengthsPanel,
   ClimbingStrengths as Strengths,
 } from "@dofek/training/climbing-strengths";
+import {
+  CLIMBING_STRENGTHS_VIEWS,
+  type ClimbingStrengthsView,
+} from "@dofek/training/climbing-strengths-views";
 import { useState } from "react";
+import { ClimbingStrengthsChart } from "./ClimbingStrengthsChart.tsx";
 import { QueryStatePanel } from "./QueryStatePanel.tsx";
 
 const dimensions = {
@@ -35,6 +40,8 @@ export function ClimbingStrengths({
   loading?: boolean;
 }) {
   const [panelKey, setPanelKey] = useState<string | null>(null);
+  const [view, setView] = useState<ClimbingStrengthsView>("profile");
+  const [gradeKey, setGradeKey] = useState<string | null>(null);
   const [lastSetting, setLastSetting] = useState<{
     contextKey: string;
     setting: "indoor" | "outdoor";
@@ -54,6 +61,13 @@ export function ClimbingStrengths({
       ? panel.rows.find((item) => item.key === selected.row)
       : undefined;
   const cell = row?.cells.find((item) => item.grade === selected?.grade);
+  const grade =
+    panel?.grades.find((item) => item.grade === gradeKey)?.grade ?? panel?.grades[0]?.grade ?? "";
+  const selectCell = (rowKey: string, grade: string) => {
+    if (!panel) return;
+    setGradeKey(grade);
+    setSelected({ panel: panel.key, row: rowKey, grade });
+  };
 
   if (!data && loading)
     return <QueryStatePanel variant="loading" contextLabel="Climbing strengths" />;
@@ -93,6 +107,42 @@ export function ClimbingStrengths({
           ))}
         </div>
         <div className="flex flex-wrap gap-3">
+          <label className="text-xs text-muted">
+            View
+            <select
+              className="ml-2 min-h-10 rounded border border-border bg-surface p-2"
+              value={view}
+              onChange={(event) => {
+                const next = CLIMBING_STRENGTHS_VIEWS.find(
+                  (item) => item.value === event.target.value,
+                );
+                if (next) setView(next.value);
+              }}
+            >
+              {CLIMBING_STRENGTHS_VIEWS.map((item) => (
+                <option key={item.value} value={item.value}>
+                  {item.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="text-xs text-muted">
+            Grade
+            <select
+              className="ml-2 min-h-10 rounded border border-border bg-surface p-2"
+              value={grade}
+              onChange={(event) => {
+                setGradeKey(event.target.value);
+                if (row) selectCell(row.key, event.target.value);
+              }}
+            >
+              {panel.grades.map((item) => (
+                <option key={item.grade} value={item.grade}>
+                  {item.grade}
+                </option>
+              ))}
+            </select>
+          </label>
           {contexts.length > 1 ? (
             <label className="text-xs text-muted">
               Climbing context
@@ -137,7 +187,15 @@ export function ClimbingStrengths({
         {panel.setting ? `${settings[panel.setting]} · ` : "Indoor & outdoor · "}Sends per distinct
         climb. Select a cell to see its climbs.
       </p>
-      {observed(panel) ? (
+      {view !== "profile" ? (
+        <ClimbingStrengthsChart
+          panel={panel}
+          view={view}
+          grade={grade}
+          selectedRow={row?.key ?? null}
+          onSelectCell={selectCell}
+        />
+      ) : observed(panel) ? (
         <div className="overflow-x-auto">
           <table className="w-full border-separate border-spacing-1 text-sm">
             <caption className="sr-only">
@@ -167,9 +225,7 @@ export function ClimbingStrengths({
                         type="button"
                         aria-label={`${item.label} · ${value.grade} · ${rateLabel(value)} · ${value.sends} sends / ${value.climbs} climbs${value.sampleStatus === "limited" ? " · Limited data" : ""}`}
                         aria-pressed={row?.key === item.key && cell?.grade === value.grade}
-                        onClick={() =>
-                          setSelected({ panel: panel.key, row: item.key, grade: value.grade })
-                        }
+                        onClick={() => selectCell(item.key, value.grade)}
                         className={`min-h-20 w-full min-w-24 rounded-lg border p-2 text-center focus-visible:outline-2 focus-visible:outline-accent ${row?.key === item.key && cell?.grade === value.grade ? "ring-2 ring-accent ring-offset-2 ring-offset-surface-solid" : ""} ${value.sampleStatus === "no_data" ? "border-dashed border-border text-dim" : "border-accent/20 text-foreground"}`}
                         style={
                           value.successRate === null
@@ -214,6 +270,11 @@ export function ClimbingStrengths({
           <h3 className="font-semibold">
             {row.label} · {cell.grade}
           </h3>
+          {view === "progress" ? (
+            <p className="text-xs text-muted">
+              Across the selected period · counts and source climbs below apply to the whole period.
+            </p>
+          ) : null}
           <p>
             {rateLabel(cell)} · {cell.sends} sends / {cell.climbs} climbs
           </p>

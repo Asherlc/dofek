@@ -3,12 +3,15 @@ import type {
   ClimbingStrengthsPanel,
   ClimbingStrengths as Strengths,
 } from "@dofek/training/climbing-strengths";
+import type { ClimbingStrengthsView } from "@dofek/training/climbing-strengths-views";
 import { useRouter } from "expo-router";
 import { useState } from "react";
 import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
 import Svg, { Rect } from "react-native-svg";
 import { openExternalUrl } from "../lib/open-external-url";
 import { colors, radius, spacing } from "../theme";
+import { ClimbingStrengthsChart } from "./ClimbingStrengthsChart";
+import { ClimbingStrengthsViewPicker } from "./ClimbingStrengthsViewPicker";
 import { QueryStatePanel } from "./QueryStatePanel";
 
 const dimensions = {
@@ -42,10 +45,15 @@ export function ClimbingStrengths({
   error?: { message: string } | null;
 }) {
   const router = useRouter();
+  const [view, setView] = useState<ClimbingStrengthsView>("profile");
   const [panelKey, setPanelKey] = useState<string | null>(null);
   const [preferredSetting, setPreferredSetting] = useState<"indoor" | "outdoor" | null>(null);
   const [grade, setGrade] = useState<string | null>(null);
-  const [rowKey, setRowKey] = useState<string | null>(null);
+  const [selectedDetail, setSelectedDetail] = useState<{
+    panelKey: string;
+    rowKey: string;
+    grade: string;
+  } | null>(null);
   const [coverageOpen, setCoverageOpen] = useState(false);
   const panels = data?.panels ?? [];
   const panel = panels.find((item) => item.key === panelKey) ?? defaultPanel(panels);
@@ -54,15 +62,21 @@ export function ClimbingStrengths({
   const contexts = panels.filter(
     (item, index) => panels.findIndex((other) => other.contextKey === item.contextKey) === index,
   );
-  const selectedCell = panel?.rows
-    .find((row) => row.key === rowKey)
-    ?.cells.find((cell) => cell.grade === selectedGrade?.grade);
+  const selectedCell =
+    selectedDetail &&
+    selectedDetail.panelKey === panel?.key &&
+    selectedDetail.grade === selectedGrade?.grade
+      ? panel.rows
+          .find((row) => row.key === selectedDetail.rowKey)
+          ?.cells.find((cell) => cell.grade === selectedDetail.grade)
+      : undefined;
+  const selectedRowKey = selectedCell ? selectedDetail?.rowKey : null;
   function selectPanel(next: ClimbingStrengthsPanel | undefined) {
     if (next) {
       if (next.dimension === "setting" && panel?.setting) setPreferredSetting(panel.setting);
       setPanelKey(next.key);
       if (next.setting !== null) setPreferredSetting(next.setting);
-      setRowKey(null);
+      setSelectedDetail(null);
     }
   }
   return (
@@ -71,6 +85,7 @@ export function ClimbingStrengths({
       {error && <QueryStatePanel variant="error" message={error.message} minHeight={80} />}
       {panel ? (
         <>
+          <ClimbingStrengthsViewPicker value={view} onChange={setView} />
           <View style={styles.controls}>
             {contexts.map((context) => (
               <Pressable
@@ -144,7 +159,7 @@ export function ClimbingStrengths({
                     style={[styles.chip, selectedGrade.grade === item.grade && styles.selected]}
                     onPress={() => {
                       setGrade(item.grade);
-                      setRowKey(null);
+                      setSelectedDetail(null);
                     }}
                   >
                     <Text style={styles.text}>{item.grade}</Text>
@@ -156,6 +171,22 @@ export function ClimbingStrengths({
                 {selectedGrade.successRate === null ? "No data" : `${selectedGrade.successRate}%`} ·{" "}
                 {selectedGrade.sends}/{selectedGrade.climbs} climbs sent
               </Text>
+              {view !== "profile" && (
+                <ClimbingStrengthsChart
+                  panel={panel}
+                  view={view}
+                  grade={selectedGrade.grade}
+                  onSelect={(row, selected) => {
+                    setSelectedDetail({ panelKey: panel.key, rowKey: row, grade: selected });
+                    setGrade(selected);
+                  }}
+                />
+              )}
+              {view !== "profile" && (
+                <Text style={styles.meta}>
+                  Select a grade and style to see its recorded climbs.
+                </Text>
+              )}
               {panel.rows.map((row) => {
                 const cell = row.cells.find((item) => item.grade === selectedGrade.grade);
                 return cell ? (
@@ -163,9 +194,15 @@ export function ClimbingStrengths({
                     key={row.key}
                     accessibilityRole="button"
                     accessibilityLabel={cellLabel(row.label, cell)}
-                    accessibilityState={{ selected: rowKey === row.key }}
-                    style={[styles.row, rowKey === row.key && styles.selected]}
-                    onPress={() => setRowKey(row.key)}
+                    accessibilityState={{ selected: selectedRowKey === row.key }}
+                    style={[styles.row, selectedRowKey === row.key && styles.selected]}
+                    onPress={() =>
+                      setSelectedDetail({
+                        panelKey: panel.key,
+                        rowKey: row.key,
+                        grade: selectedGrade.grade,
+                      })
+                    }
                   >
                     <View style={styles.rowHeading}>
                       <Text style={styles.text}>{row.label}</Text>
@@ -173,27 +210,29 @@ export function ClimbingStrengths({
                         {cell.successRate === null ? "—" : `${cell.successRate}%`}
                       </Text>
                     </View>
-                    <Svg height={8} width="100%" accessibilityElementsHidden>
-                      <Rect width="100%" height={8} rx={4} fill={colors.surfaceSecondary} />
-                      {cell.successRate !== null && (
-                        <Rect
-                          testID={`strength-bar-${row.key}`}
-                          width={`${cell.successRate}%`}
-                          height={8}
-                          rx={4}
-                          fill={colors.accent}
-                        />
-                      )}
-                      {selectedGrade.successRate !== null && (
-                        <Rect
-                          testID={`strength-baseline-${row.key}`}
-                          x={`${selectedGrade.successRate}%`}
-                          width={2}
-                          height={8}
-                          fill={colors.text}
-                        />
-                      )}
-                    </Svg>
+                    {view === "profile" && (
+                      <Svg height={8} width="100%" accessibilityElementsHidden>
+                        <Rect width="100%" height={8} rx={4} fill={colors.surfaceSecondary} />
+                        {cell.successRate !== null && (
+                          <Rect
+                            testID={`strength-bar-${row.key}`}
+                            width={`${cell.successRate}%`}
+                            height={8}
+                            rx={4}
+                            fill={colors.accent}
+                          />
+                        )}
+                        {selectedGrade.successRate !== null && (
+                          <Rect
+                            testID={`strength-baseline-${row.key}`}
+                            x={`${selectedGrade.successRate}%`}
+                            width={2}
+                            height={8}
+                            fill={colors.text}
+                          />
+                        )}
+                      </Svg>
+                    )}
                     <Text style={styles.meta}>
                       {cell.sampleStatus === "no_data"
                         ? "No data"
@@ -216,7 +255,11 @@ export function ClimbingStrengths({
               )}
               {selectedCell && (
                 <View style={styles.examples}>
-                  <Text style={styles.text}>Recorded climbs</Text>
+                  <Text style={styles.text}>
+                    {view === "progress"
+                      ? "Recorded climbs · Across the selected period"
+                      : "Recorded climbs"}
+                  </Text>
                   {selectedCell.examples.length === 0 ? (
                     <Text style={styles.meta}>No examples available for this selection.</Text>
                   ) : (

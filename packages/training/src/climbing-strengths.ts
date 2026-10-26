@@ -38,6 +38,26 @@ const panel = z.object({
     }),
   ),
   rows: z.array(z.object({ key: z.string(), label: z.string(), cells: z.array(cell) })),
+  progress: z.array(
+    z.object({
+      startDate: z.iso.date(),
+      endDate: z.iso.date(),
+      rows: z.array(
+        z.object({
+          key: z.string(),
+          cells: z.array(
+            cell.pick({
+              grade: true,
+              sends: true,
+              climbs: true,
+              successRate: true,
+              sampleStatus: true,
+            }),
+          ),
+        }),
+      ),
+    }),
+  ),
   coverage: z.object({ missingTraits: count, unknownOutcomes: count }),
 });
 export const climbingStrengthsSchema = z.object({

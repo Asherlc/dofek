@@ -54,9 +54,17 @@ The backend API and background job processor for Dofek. Built with Node.js, Expr
   Gradeless source observations contribute only when the same identified climb and
   semantic lane have one recognized grade-system context; ambiguous contexts stay
   excluded. The optional `endDate` input anchors an inclusive calendar-day window,
-  while omitted dates retain the server-local current-day behavior; see the
+  resolving omitted dates in the caller's timezone through the
+  [router](src/routers/climbing.ts). The same explicit window reaches the
   [repository](src/repositories/climbing-strengths-repository.ts) and
-  [aggregation](src/services/climbing-strengths.ts).
+  [aggregation](src/services/climbing-strengths.ts). Each panel supplies clipped
+  calendar-month progress using whole-window identity, grade, context and trait
+  resolution. Outcomes resolve from each month's original observations: a later
+  send does not erase an earlier month's failure, and globally conflicting grades
+  remain excluded. Each climb counts once overall and once per observed month;
+  unknown-only months retain null rates and zero sample counts. All view metrics
+  are supplied by this server response, as defined in the
+  [shared strengths contract](../training/src/climbing-strengths.ts).
 - **Provider climbing records**: The [provider detail repository](src/repositories/provider-detail-repository.ts)
   lists retained logs, including undated records and provider-absence tombstones,
   and loads the full owned graph for a selected record. The [sync repository](src/repositories/sync-repository.ts)

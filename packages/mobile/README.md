@@ -113,9 +113,21 @@ The Training route coordinates query states and delegates climbing payload valid
 
 The [climbing strengths profile](components/ClimbingStrengths.tsx) has its own
 `climbing.strengths` query using the current training dates and climbing filters.
+The compact View chooser keeps Grade profile as its default and offers Style
+gaps, Success curves, Exposure map, Grade pyramids, Progress, and Radar profile
+from the [shared view definitions](../training/src/climbing-strengths-views.ts).
+The [native modal](https://reactnative.dev/docs/modal) uses radio choices and
+retains the selected context, setting, grade, and style when changing views.
 Selecting a grade and style reveals recorded success counts and source climbs;
 wall-angle, hold-type, and indoor/outdoor groups share the web client's
-[server-computed contract](../training/src/climbing-strengths.ts). Coverage
+[server-computed contract](../training/src/climbing-strengths.ts).
+[SVG alternatives](components/ClimbingStrengthsChart.tsx) measure their container,
+retain missing observations as gaps, and expose supplied exact values through
+[AccessibleChart](components/AccessibleChart.tsx). Radar needs three styles with
+recorded rates; progress uses the supplied clipped calendar months and labels
+source-climb details as applying across the selected period. Native grade/style
+buttons provide selection independently of the SVG marks, using React Native's
+[accessibility roles and state](https://reactnative.dev/docs/accessibility). Coverage
 distinguishes missing traits and unknown outcomes. Unknown angle units remain
 unclassified, while known degrees retain their recorded numeric labels.
 The [Training route](<app/(tabs)/strain.tsx>) includes its existing local date

@@ -82,6 +82,107 @@ export const climbingStrengthsFixture: ClimbingStrengths = {
         },
       ],
       coverage: { missingTraits: 4, unknownOutcomes: 2 },
+      progress: [
+        {
+          startDate: "2026-08-15",
+          endDate: "2026-08-31",
+          rows: [
+            {
+              key: "vertical",
+              cells: [
+                cell("V3", 2, 3, 66.7, null, "limited"),
+                cell("V4", 0, 1, 0, null, "limited"),
+                cell("V5", 0, 0, null, null, "no_data"),
+                cell("V6", 0, 0, null, null, "no_data"),
+              ],
+            },
+            {
+              key: "overhang",
+              cells: [
+                cell("V3", 1, 2, 50, null, "limited"),
+                cell("V4", 0, 1, 0, null, "limited"),
+                cell("V5", 0, 0, null, null, "no_data"),
+                cell("V6", 0, 0, null, null, "no_data"),
+              ],
+            },
+            {
+              key: "slab",
+              cells: [
+                cell("V3", 1, 1, 100, null, "limited"),
+                cell("V4", 0, 0, null, null, "no_data"),
+                cell("V5", 0, 0, null, null, "no_data"),
+                cell("V6", 0, 0, null, null, "no_data"),
+              ],
+            },
+          ],
+        },
+        {
+          startDate: "2026-09-01",
+          endDate: "2026-09-30",
+          rows: [
+            {
+              key: "vertical",
+              cells: [
+                cell("V3", 0, 0, null, null, "no_data"),
+                cell("V4", 0, 0, null, null, "no_data"),
+                cell("V5", 0, 0, null, null, "no_data"),
+                cell("V6", 0, 0, null, null, "no_data"),
+              ],
+            },
+            {
+              key: "overhang",
+              cells: [
+                cell("V3", 0, 0, null, null, "no_data"),
+                cell("V4", 0, 0, null, null, "no_data"),
+                cell("V5", 0, 0, null, null, "no_data"),
+                cell("V6", 0, 0, null, null, "no_data"),
+              ],
+            },
+            {
+              key: "slab",
+              cells: [
+                cell("V3", 0, 0, null, null, "no_data"),
+                cell("V4", 0, 0, null, null, "no_data"),
+                cell("V5", 0, 0, null, null, "no_data"),
+                cell("V6", 0, 0, null, null, "no_data"),
+              ],
+            },
+          ],
+        },
+        {
+          startDate: "2026-10-01",
+          endDate: "2026-10-26",
+          rows: [
+            {
+              key: "vertical",
+              cells: [
+                cell("V3", 8, 10, 80, null, "available"),
+                cell("V4", 3, 6, 50, null, "available"),
+                cell("V5", 2, 5, 40, null, "available"),
+                cell("V6", 0, 0, null, null, "no_data"),
+              ],
+            },
+            {
+              key: "overhang",
+              cells: [
+                cell("V3", 6, 10, 60, null, "available"),
+                cell("V4", 0, 2, 0, null, "limited"),
+                cell("V5", 4, 5, 80, null, "available"),
+                cell("V6", 1, 2, 50, null, "limited"),
+              ],
+            },
+            {
+              key: "slab",
+              cells: [
+                cell("V3", 10, 10, 100, null, "available"),
+                cell("V4", 0, 0, null, null, "no_data"),
+                cell("V5", 0, 10, 0, null, "available"),
+                cell("V6", 0, 3, 0, null, "limited"),
+              ],
+            },
+          ],
+        },
+      ],
     },
   ],
 };

@@ -63,6 +63,8 @@ interface DofekChartProps {
   onEvents?: Record<string, (...params: Array<Record<string, unknown>>) => void>;
   /** Use "data" for charts whose time axis must stay data-driven. */
   timeRangeMode?: "context" | "data";
+  /** Replace the generated data disclosure with a chart-specific accessible exact-values control. */
+  dataDisclosure?: ReactNode;
 }
 
 export function DofekChart({
@@ -74,6 +76,7 @@ export function DofekChart({
   opts,
   onEvents,
   timeRangeMode = "context",
+  dataDisclosure,
 }: DofekChartProps) {
   const fetchingCount = useFetchingCount();
   const range = useContext(ChartRangeContext);
@@ -110,7 +113,7 @@ export function DofekChart({
           onEvents={onEvents}
         />
       </div>
-      <ChartDataDisclosure option={chartOption} summary={chartSummary} />
+      {dataDisclosure ?? <ChartDataDisclosure option={chartOption} summary={chartSummary} />}
     </QueryErrorBoundary>
   );
 }

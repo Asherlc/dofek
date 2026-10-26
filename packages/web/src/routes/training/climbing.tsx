@@ -18,6 +18,7 @@ import { ClimbingVolumeByGradeChart } from "../../components/ClimbingVolumeByGra
 import { HangboardingSummary } from "../../components/HangboardingSummary.tsx";
 import { QueryStatePanel } from "../../components/QueryStatePanel.tsx";
 import { RecentActivitiesSection } from "../../components/RecentActivitiesSection.tsx";
+import { useTodayQueryDate } from "../../hooks/useTodayQueryDate.ts";
 import { useTrainingDays } from "../../lib/trainingDaysContext.ts";
 import { TRAINING_SLOW_QUERY_OPTIONS } from "../../lib/trainingQueryOptions.ts";
 import { trpc } from "../../lib/trpc.ts";
@@ -80,6 +81,7 @@ function climbingSessionColumns(
 
 export function ClimbingTab() {
   const { days } = useTrainingDays();
+  const endDate = useTodayQueryDate();
   const [filters, setFilters] = useState<ClimbingFilters>({});
   const [filtersOpen, setFiltersOpen] = useState(false);
   const filtersId = useId();
@@ -94,7 +96,10 @@ export function ClimbingTab() {
   );
   const volumeByGrade = trpc.climbing.volumeByGrade.useQuery(rangeInput, climbingQueryOptions);
   const locationMap = trpc.climbing.locationMap.useQuery(rangeInput, climbingQueryOptions);
-  const strengths = trpc.climbing.strengths.useQuery(rangeInput, climbingQueryOptions);
+  const strengths = trpc.climbing.strengths.useQuery(
+    { ...rangeInput, endDate },
+    climbingQueryOptions,
+  );
   const sessionSummary = trpc.climbing.sessionSummary.useQuery(rangeInput, climbingQueryOptions);
   const hangboardingSummary = trpc.climbing.hangboardingSummary.useQuery(
     climbingRangeInput(days),

@@ -1,8 +1,69 @@
 /** @vitest-environment jsdom */
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { ClimbingStrengths } from "./ClimbingStrengths.tsx";
 import { climbingStrengthsFixture as fixture } from "./climbing-strengths-fixtures.ts";
+
+vi.mock("./DofekChart.tsx", () => ({ DofekChart: () => <div>Chart</div> }));
+
+it("offers seven views and retains context, setting, grade and source details through refreshes", () => {
+  const angle = fixture.panels[0];
+  if (!angle) throw new Error("Missing fixture");
+  const data = {
+    ...fixture,
+    panels: [
+      angle,
+      { ...angle, key: "outdoor", setting: "outdoor" as const },
+      { ...angle, key: "route", contextKey: "route", contextLabel: "Routes" },
+      {
+        ...angle,
+        key: "route-outdoor",
+        contextKey: "route",
+        contextLabel: "Routes",
+        setting: "outdoor" as const,
+      },
+    ],
+  };
+  const { rerender } = render(<ClimbingStrengths data={data} />);
+  expect(screen.getByLabelText("View")).toHaveValue("profile");
+  for (const label of [
+    "Grade profile",
+    "Style gaps",
+    "Success curves",
+    "Exposure map",
+    "Grade pyramids",
+    "Progress",
+    "Radar profile",
+  ])
+    expect(screen.getByRole("option", { name: label })).toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText("Climbing context"), { target: { value: "route" } });
+  fireEvent.change(screen.getByLabelText("Strength setting"), {
+    target: { value: "route-outdoor" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: /Vertical · V4/ }));
+  for (const view of ["gaps", "curves", "exposure", "pyramids", "progress", "radar", "profile"]) {
+    fireEvent.change(screen.getByLabelText("View"), { target: { value: view } });
+    expect(screen.getByLabelText("Grade")).toHaveValue("V4");
+    expect(screen.getByLabelText("Climbing context")).toHaveValue("route");
+    expect(screen.getByLabelText("Strength setting")).toHaveValue("route-outdoor");
+    expect(screen.getByRole("region", { name: "Selected climbs" })).toHaveTextContent(
+      "Evening Arete",
+    );
+  }
+  fireEvent.change(screen.getByLabelText("View"), { target: { value: "progress" } });
+  rerender(<ClimbingStrengths data={structuredClone(data)} />);
+  expect(screen.getByLabelText("View")).toHaveValue("progress");
+  expect(screen.getByLabelText("Grade")).toHaveValue("V4");
+  expect(screen.getByLabelText("Climbing context")).toHaveValue("route");
+  expect(screen.getByLabelText("Strength setting")).toHaveValue("route-outdoor");
+  expect(screen.getByRole("region", { name: "Selected climbs" })).toHaveTextContent(
+    "Across the selected period",
+  );
+  expect(screen.getByRole("link", { name: "KAYA" })).toHaveAttribute(
+    "href",
+    "https://kayaclimb.com/climb/example",
+  );
+});
 
 afterEach(cleanup);
 it("preserves the actual setting between dimensions and through the setting comparison", () => {

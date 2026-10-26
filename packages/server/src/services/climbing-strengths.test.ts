@@ -28,9 +28,341 @@ const observation = (
   },
   ...patch,
 });
+const window = { startDate: "2026-08-15", endDate: "2026-10-20" };
+const analyze = (observations: ClimbingStrengthsObservation[]) =>
+  buildClimbingStrengths(observations, window);
+const dated = (date: string, patch: Partial<ClimbingStrengthsObservation> = {}) => {
+  const entry = observation(patch);
+  return { ...entry, example: { ...entry.example, date } };
+};
 describe("climbing strengths", () => {
+  it("projects independent monthly outcomes after whole-window context and trait resolution", () => {
+    const result = analyze([
+      dated("2026-08-15", { holdType: "crimp", wallAngle: { value: 0, unit: "degrees" } }),
+      dated("2026-08-31", { outcome: null }),
+      dated("2026-09-01", {
+        grade: null,
+        gradeSystem: null,
+        contextKey: "missing",
+        outcome: "sent",
+        setting: null,
+      }),
+      dated("2026-10-20", { outcome: null }),
+    ]);
+    const panel = result.panels.find((p) => p.dimension === "hold_type");
+    expect(panel?.rows[0]?.cells[0]).toMatchObject({ sends: 1, climbs: 1, successRate: 100 });
+    expect(panel?.progress).toEqual([
+      {
+        startDate: "2026-08-15",
+        endDate: "2026-08-31",
+        rows: [
+          {
+            key: "crimp",
+            cells: [{ grade: "V4", sends: 0, climbs: 1, successRate: 0, sampleStatus: "limited" }],
+          },
+        ],
+      },
+      {
+        startDate: "2026-09-01",
+        endDate: "2026-09-30",
+        rows: [
+          {
+            key: "crimp",
+            cells: [
+              { grade: "V4", sends: 1, climbs: 1, successRate: 100, sampleStatus: "limited" },
+            ],
+          },
+        ],
+      },
+      {
+        startDate: "2026-10-01",
+        endDate: "2026-10-20",
+        rows: [
+          {
+            key: "crimp",
+            cells: [
+              { grade: "V4", sends: 0, climbs: 0, successRate: null, sampleStatus: "no_data" },
+            ],
+          },
+        ],
+      },
+    ]);
+    expect(result.panels.find((p) => p.dimension === "wall_angle")?.progress[1]?.rows[0]?.key).toBe(
+      "0°",
+    );
+  });
+  it("retains empty clipped months, grade order and row keys while excluding global grade conflicts", () => {
+    const result = analyze([
+      dated("2026-08-16", { identity: "conflict" }),
+      dated("2026-09-02", { identity: "conflict", grade: "V5", outcome: "sent" }),
+      dated("2026-10-20", { identity: "kept", outcome: "sent", grade: "V3", gradeSortValue: 3 }),
+      dated("2026-10-20", { identity: "failed", grade: "V4", gradeSortValue: 4 }),
+    ]);
+    const panel = result.panels.find((p) => p.dimension === "setting");
+    expect(result.coverage.missingGrades).toBe(2);
+    expect(panel?.progress[0]).toEqual({
+      startDate: "2026-08-15",
+      endDate: "2026-08-31",
+      rows: [
+        {
+          key: "indoor",
+          cells: [
+            { grade: "V3", sends: 0, climbs: 0, successRate: null, sampleStatus: "no_data" },
+            { grade: "V4", sends: 0, climbs: 0, successRate: null, sampleStatus: "no_data" },
+          ],
+        },
+        {
+          key: "outdoor",
+          cells: [
+            { grade: "V3", sends: 0, climbs: 0, successRate: null, sampleStatus: "no_data" },
+            { grade: "V4", sends: 0, climbs: 0, successRate: null, sampleStatus: "no_data" },
+          ],
+        },
+      ],
+    });
+    expect(panel?.progress[1]?.rows[0]?.cells[1]).toMatchObject({ climbs: 0, successRate: null });
+    expect(panel?.progress[2]?.rows[0]?.cells[1]).toMatchObject({
+      climbs: 1,
+      sends: 0,
+      successRate: 0,
+    });
+  });
+  it("keeps monthly styles, grades and settings independent while deduplicating known outcomes", () => {
+    const result = analyze([
+      dated("2026-08-16", {
+        identity: "sloper-high",
+        holdType: "sloper",
+        grade: "V10",
+        gradeSortValue: 10,
+        outcome: null,
+      }),
+      dated("2026-08-17", {
+        identity: "crimp-high",
+        holdType: "crimp",
+        grade: "V10",
+        gradeSortValue: 10,
+        outcome: "sent",
+      }),
+      dated("2026-08-18", { identity: "sloper-low", holdType: "sloper" }),
+      dated("2026-09-01", { identity: "sloper-low", holdType: "sloper", outcome: "sent" }),
+      dated("2026-09-30", {
+        identity: "sloper-high",
+        holdType: "sloper",
+        grade: "V10",
+        gradeSortValue: 10,
+        outcome: "sent",
+      }),
+      ...Array.from({ length: 5 }, (_, index) =>
+        dated("2026-08-19", {
+          identity: `crimp-low-${index}`,
+          holdType: "crimp",
+          outcome: index < 2 ? "sent" : "not_sent",
+        }),
+      ),
+      dated("2026-08-20", { identity: "crimp-low-0", holdType: "crimp", outcome: null }),
+      dated("2026-08-21", { identity: "crimp-low-0", holdType: "crimp" }),
+      dated("2026-10-20", { identity: "crimp-low-0", holdType: "crimp", outcome: null }),
+      dated("2026-08-20", {
+        identity: "outdoor",
+        holdType: "crimp",
+        setting: "outdoor",
+        outcome: "sent",
+      }),
+      dated("2026-08-20", {
+        identity: "missing-trait",
+        grade: "V8",
+        gradeSortValue: 8,
+        outcome: "sent",
+      }),
+    ]);
+    const panel = result.panels.find(
+      (panel) => panel.dimension === "hold_type" && panel.setting === "indoor",
+    );
+    expect(panel?.rows).toEqual([
+      {
+        key: "crimp",
+        label: "Crimp",
+        cells: [
+          expect.objectContaining({
+            grade: "V4",
+            sends: 2,
+            climbs: 5,
+            successRate: 40,
+            sampleStatus: "available",
+          }),
+          expect.objectContaining({
+            grade: "V8",
+            sends: 0,
+            climbs: 0,
+            successRate: null,
+            differencePercentagePoints: null,
+            sampleStatus: "no_data",
+          }),
+          expect.objectContaining({
+            grade: "V10",
+            sends: 1,
+            climbs: 1,
+            successRate: 100,
+            sampleStatus: "limited",
+          }),
+        ],
+      },
+      {
+        key: "sloper",
+        label: "Sloper",
+        cells: [
+          expect.objectContaining({
+            grade: "V4",
+            sends: 1,
+            climbs: 1,
+            successRate: 100,
+            sampleStatus: "limited",
+          }),
+          expect.objectContaining({
+            grade: "V8",
+            sends: 0,
+            climbs: 0,
+            successRate: null,
+            differencePercentagePoints: null,
+            sampleStatus: "no_data",
+          }),
+          expect.objectContaining({
+            grade: "V10",
+            sends: 1,
+            climbs: 1,
+            successRate: 100,
+            sampleStatus: "limited",
+          }),
+        ],
+      },
+    ]);
+    expect(panel?.progress).toEqual([
+      {
+        startDate: "2026-08-15",
+        endDate: "2026-08-31",
+        rows: [
+          {
+            key: "crimp",
+            cells: [
+              { grade: "V4", sends: 2, climbs: 5, successRate: 40, sampleStatus: "available" },
+              { grade: "V8", sends: 0, climbs: 0, successRate: null, sampleStatus: "no_data" },
+              { grade: "V10", sends: 1, climbs: 1, successRate: 100, sampleStatus: "limited" },
+            ],
+          },
+          {
+            key: "sloper",
+            cells: [
+              { grade: "V4", sends: 0, climbs: 1, successRate: 0, sampleStatus: "limited" },
+              { grade: "V8", sends: 0, climbs: 0, successRate: null, sampleStatus: "no_data" },
+              { grade: "V10", sends: 0, climbs: 0, successRate: null, sampleStatus: "no_data" },
+            ],
+          },
+        ],
+      },
+      {
+        startDate: "2026-09-01",
+        endDate: "2026-09-30",
+        rows: [
+          {
+            key: "crimp",
+            cells: [
+              { grade: "V4", sends: 0, climbs: 0, successRate: null, sampleStatus: "no_data" },
+              { grade: "V8", sends: 0, climbs: 0, successRate: null, sampleStatus: "no_data" },
+              { grade: "V10", sends: 0, climbs: 0, successRate: null, sampleStatus: "no_data" },
+            ],
+          },
+          {
+            key: "sloper",
+            cells: [
+              { grade: "V4", sends: 1, climbs: 1, successRate: 100, sampleStatus: "limited" },
+              { grade: "V8", sends: 0, climbs: 0, successRate: null, sampleStatus: "no_data" },
+              { grade: "V10", sends: 1, climbs: 1, successRate: 100, sampleStatus: "limited" },
+            ],
+          },
+        ],
+      },
+      {
+        startDate: "2026-10-01",
+        endDate: "2026-10-20",
+        rows: [
+          {
+            key: "crimp",
+            cells: [
+              { grade: "V4", sends: 0, climbs: 0, successRate: null, sampleStatus: "no_data" },
+              { grade: "V8", sends: 0, climbs: 0, successRate: null, sampleStatus: "no_data" },
+              { grade: "V10", sends: 0, climbs: 0, successRate: null, sampleStatus: "no_data" },
+            ],
+          },
+          {
+            key: "sloper",
+            cells: [
+              { grade: "V4", sends: 0, climbs: 0, successRate: null, sampleStatus: "no_data" },
+              { grade: "V8", sends: 0, climbs: 0, successRate: null, sampleStatus: "no_data" },
+              { grade: "V10", sends: 0, climbs: 0, successRate: null, sampleStatus: "no_data" },
+            ],
+          },
+        ],
+      },
+    ]);
+  });
+  it("keeps globally conflicting settings outside setting-specific monthly samples", () => {
+    const result = analyze([
+      dated("2026-08-16", {
+        identity: "conflict",
+        setting: "indoor",
+        holdType: "crimp",
+        outcome: "sent",
+      }),
+      dated("2026-09-16", { identity: "conflict", setting: "outdoor", holdType: "crimp" }),
+      dated("2026-08-20", { identity: "kept", holdType: "crimp" }),
+    ]);
+    const panel = result.panels.find(
+      (panel) => panel.dimension === "hold_type" && panel.setting === "indoor",
+    );
+    expect(panel?.rows[0]?.cells[0]).toMatchObject({ sends: 0, climbs: 1, successRate: 0 });
+    expect(panel?.progress[0]?.rows[0]?.cells[0]).toEqual({
+      grade: "V4",
+      sends: 0,
+      climbs: 1,
+      successRate: 0,
+      sampleStatus: "limited",
+    });
+    expect(panel?.progress[1]?.rows[0]?.cells[0]).toEqual({
+      grade: "V4",
+      sends: 0,
+      climbs: 0,
+      successRate: null,
+      sampleStatus: "no_data",
+    });
+    expect(result.panels.find((panel) => panel.dimension === "setting")?.grades[0]).toMatchObject({
+      sends: 1,
+      climbs: 2,
+    });
+  });
+  it("returns empty coverage without inventing panels for an empty response", () => {
+    expect(analyze([])).toEqual({
+      panels: [],
+      coverage: { unknownOutcomes: 0, missingGrades: 0, missingIdentity: 0 },
+    });
+  });
+  it("clips a leap-year month and keeps a single-day window", () => {
+    const entries = [dated("2024-02-29")];
+    expect(
+      buildClimbingStrengths(entries, {
+        startDate: "2024-02-29",
+        endDate: "2024-03-01",
+      }).panels[0]?.progress.map(({ startDate, endDate }) => ({ startDate, endDate })),
+    ).toEqual([
+      { startDate: "2024-02-29", endDate: "2024-02-29" },
+      { startDate: "2024-03-01", endDate: "2024-03-01" },
+    ]);
+    expect(
+      buildClimbingStrengths(entries, { startDate: "2024-02-29", endDate: "2024-02-29" }).panels[0]
+        ?.progress,
+    ).toHaveLength(1);
+  });
   it("counts each identified climb once and a send overrides repeated failures", () => {
-    const result = buildClimbingStrengths([
+    const result = analyze([
       observation(),
       observation(),
       observation({ outcome: "sent" }),
@@ -43,7 +375,7 @@ describe("climbing strengths", () => {
     });
   });
   it("excludes unknown-only outcomes and missing identity or grade visibly", () => {
-    const result = buildClimbingStrengths([
+    const result = analyze([
       observation({ outcome: null }),
       observation({ identity: null }),
       observation({ identity: "ungraded", grade: null }),
@@ -51,7 +383,7 @@ describe("climbing strengths", () => {
     expect(result.coverage).toEqual({ unknownOutcomes: 1, missingIdentity: 1, missingGrades: 1 });
   });
   it("keeps settings separate, unknown units missing, and zero/no-data/limited distinct", () => {
-    const result = buildClimbingStrengths([
+    const result = analyze([
       observation({ wallAngle: { value: 20, unit: null } }),
       observation({
         identity: "out",
@@ -85,7 +417,7 @@ describe("climbing strengths", () => {
         wallAngle: { value: 0, unit: "degrees" },
       }),
     );
-    const result = buildClimbingStrengths([
+    const result = analyze([
       ...entries,
       observation({ identity: "sloper", holdType: "sloper", outcome: "sent" }),
     ]);
@@ -99,9 +431,9 @@ describe("climbing strengths", () => {
     expect(panel?.rows.find((row) => row.key === "crimp")?.cells[0]?.examples).toHaveLength(3);
   });
   it("keeps distinct climbs and semantic contexts independent and unknown does not erase known failure", () => {
-    const result = buildClimbingStrengths([
-      observation(),
+    const result = analyze([
       observation({ outcome: null }),
+      observation(),
       observation({ contextKey: "pitch", contextLabel: "Pitch", outcome: "sent" }),
       observation({ identity: "other", grade: "V5", gradeSortValue: 5, outcome: "sent" }),
     ]);
@@ -116,7 +448,7 @@ describe("climbing strengths", () => {
     expect(result.panels.some((panel) => panel.contextKey === "pitch")).toBe(true);
   });
   it("merges known setting and traits across observations without duplicating the climb", () => {
-    const result = buildClimbingStrengths([
+    const result = analyze([
       observation({ setting: null, outcome: "sent" }),
       observation({ holdType: "crimp", wallAngle: { value: 20, unit: "degrees" } }),
     ]);
@@ -129,7 +461,7 @@ describe("climbing strengths", () => {
     );
   });
   it("leaves conflicting recorded traits unknown", () => {
-    const result = buildClimbingStrengths([
+    const result = analyze([
       observation({
         outcome: "sent",
         holdType: "crimp",
@@ -145,7 +477,7 @@ describe("climbing strengths", () => {
     ).toBe(1);
   });
   it("excludes conflicting recognized grades for one identity with visible record coverage", () => {
-    const result = buildClimbingStrengths([
+    const result = analyze([
       observation(),
       observation({ grade: "V5", gradeSortValue: 5, outcome: "sent" }),
     ]);
@@ -153,7 +485,7 @@ describe("climbing strengths", () => {
     expect(result.panels).toEqual([]);
   });
   it("uses a unique recognized grade from another observation without losing a send", () => {
-    const result = buildClimbingStrengths([
+    const result = analyze([
       observation({
         grade: null,
         gradeSystem: null,
@@ -170,7 +502,7 @@ describe("climbing strengths", () => {
     expect(panel?.rows[0]?.cells[0]?.examples[0]).toMatchObject({ grade: "V4", outcome: "sent" });
   });
   it("does not assign a send with a missing grade when two recognized grade systems remain possible", () => {
-    const result = buildClimbingStrengths([
+    const result = analyze([
       observation({ contextKey: "v", laneKey: "lane", gradeSystem: "v_scale" }),
       observation({ contextKey: "font", laneKey: "lane", gradeSystem: "font", grade: "6b" }),
       observation({
@@ -189,7 +521,7 @@ describe("climbing strengths", () => {
     ).toEqual([0, 0]);
   });
   it("keeps a missing-system send isolated from another semantic lane for the same climb", () => {
-    const result = buildClimbingStrengths([
+    const result = analyze([
       observation(),
       observation({
         laneKey: "pitch",
@@ -206,7 +538,7 @@ describe("climbing strengths", () => {
     expect(panels[0]).toMatchObject({ contextKey: "boulder", grades: [{ climbs: 1, sends: 0 }] });
   });
   it("excludes unidentified and missing-system observations without recognized grade evidence", () => {
-    const result = buildClimbingStrengths([
+    const result = analyze([
       observation({ identity: null }),
       observation({
         grade: null,
@@ -219,7 +551,7 @@ describe("climbing strengths", () => {
     expect(result.panels).toEqual([]);
   });
   it("requires an actual recognized grade before a declared system can establish ambiguity", () => {
-    const result = buildClimbingStrengths([
+    const result = analyze([
       observation(),
       observation({ contextKey: "font", gradeSystem: "font", grade: null }),
       observation({

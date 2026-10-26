@@ -6,7 +6,10 @@ import { area, climb, climbingLogEntry } from "../../../../src/db/schema/climbin
 import { TEST_USER_ID } from "../../../../src/db/schema/core.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { ensureProvider } from "../../../../src/db/tokens.ts";
-import { buildClimbingStrengths } from "../services/climbing-strengths.ts";
+import {
+  buildClimbingStrengths,
+  type ClimbingStrengthsObservation,
+} from "../services/climbing-strengths.ts";
 import {
   climbingTestDate,
   seedClimbingActivity,
@@ -16,8 +19,15 @@ import { ClimbingStrengthsRepository } from "./climbing-strengths-repository.ts"
 
 describe("climbing strengths PostgreSQL", () => {
   let context: TestContext;
+  let window: { startDate: string; endDate: string };
+  const analyze = (observations: ClimbingStrengthsObservation[]) =>
+    buildClimbingStrengths(observations, window);
   beforeAll(async () => {
     context = await setupTestDatabase();
+    window = {
+      startDate: await climbingTestDate(context.db, 29),
+      endDate: await climbingTestDate(context.db, 0),
+    };
     for (const id of ["mountain-project", "openbeta"])
       await ensureProvider(context.db, id, id, undefined, TEST_USER_ID);
   });
@@ -71,7 +81,7 @@ describe("climbing strengths PostgreSQL", () => {
     expect(observations.find((entry) => entry.example.logEntryId === failureId)?.outcome).toBe(
       "not_sent",
     );
-    const result = buildClimbingStrengths(observations);
+    const result = analyze(observations);
     expect(
       result.panels.find((p) => p.dimension === "setting" && p.grades.some((g) => g.sends > 0))
         ?.grades[0],
@@ -82,7 +92,7 @@ describe("climbing strengths PostgreSQL", () => {
       wallAngle: { value: 30, unit: null },
       attempts: [{ scope: "climb", ropeMethod: "lead" }],
     });
-    const result = buildClimbingStrengths(await repo().getObservations(30));
+    const result = analyze(await repo().getObservations(30));
     expect(result.coverage.unknownOutcomes).toBe(1);
     expect(result.panels.every((p) => p.grades.length === 0)).toBe(true);
   });
@@ -124,7 +134,7 @@ describe("climbing strengths PostgreSQL", () => {
     const outing = await seedClimbingActivity(context.db, "mountain-project", "trait-outing");
     await write("first", { activityId: outing.id });
     await write("second", { activityId: outing.id, holdType: "crimp" }, "openbeta");
-    const result = buildClimbingStrengths(await repo().getObservations(30));
+    const result = analyze(await repo().getObservations(30));
     expect(
       result.panels.find((panel) => panel.dimension === "hold_type")?.rows[0]?.cells[0],
     ).toMatchObject({ climbs: 1, sends: 1 });
@@ -153,7 +163,7 @@ describe("climbing strengths PostgreSQL", () => {
     expect(observations.find((entry) => entry.example.logEntryId === failureId)?.outcome).toBe(
       "not_sent",
     );
-    const result = buildClimbingStrengths(observations);
+    const result = analyze(observations);
     expect(result.coverage.missingGrades).toBe(2);
     expect(result.panels).toEqual([]);
   });
@@ -182,10 +192,123 @@ describe("climbing strengths PostgreSQL", () => {
     expect(observations.some((entry) => entry.grade === null && entry.outcome === "sent")).toBe(
       true,
     );
-    const result = buildClimbingStrengths(observations);
+    const result = analyze(observations);
     expect(result.coverage.missingGrades).toBe(0);
     expect(result.panels.find((panel) => panel.dimension === "setting")?.grades).toMatchObject([
       { climbs: 1, sends: 1, successRate: 100 },
+    ]);
+  });
+  it("projects cross-month original outcomes after resolving missing source grades and zero-angle traits", async () => {
+    await write("august-failure", {
+      climbedOn: "2026-08-15",
+      holdType: "crimp",
+      wallAngle: { value: 0, unit: "degrees" },
+      attempts: [{ scope: "climb", ropeMethod: "lead", usedAid: false, sourceResult: "Failed" }],
+    });
+    await write(
+      "september-send",
+      {
+        climbedOn: "2026-09-01",
+        climb: {
+          externalId: "climb",
+          name: "Corner",
+          kind: "route",
+          setting: "outdoor",
+          publishedGrades: [],
+          areas: [{ externalId: "wall", name: "Wall" }],
+        },
+      },
+      "openbeta",
+    );
+    await write("october-unknown", {
+      climbedOn: "2026-10-20",
+      attempts: [{ scope: "climb", ropeMethod: "lead" }],
+    });
+    const observations = await repo().getObservations(67, {}, "2026-10-20");
+    expect(observations).toHaveLength(3);
+    const result = buildClimbingStrengths(observations, {
+      startDate: "2026-08-15",
+      endDate: "2026-10-20",
+    });
+    const panel = result.panels.find((panel) => panel.dimension === "hold_type");
+    expect(panel?.rows[0]?.cells[0]).toMatchObject({ sends: 1, climbs: 1, successRate: 100 });
+    expect(panel?.progress).toEqual([
+      {
+        startDate: "2026-08-15",
+        endDate: "2026-08-31",
+        rows: [
+          {
+            key: "crimp",
+            cells: [
+              { grade: "5.10a", sends: 0, climbs: 1, successRate: 0, sampleStatus: "limited" },
+            ],
+          },
+        ],
+      },
+      {
+        startDate: "2026-09-01",
+        endDate: "2026-09-30",
+        rows: [
+          {
+            key: "crimp",
+            cells: [
+              { grade: "5.10a", sends: 1, climbs: 1, successRate: 100, sampleStatus: "limited" },
+            ],
+          },
+        ],
+      },
+      {
+        startDate: "2026-10-01",
+        endDate: "2026-10-20",
+        rows: [
+          {
+            key: "crimp",
+            cells: [
+              { grade: "5.10a", sends: 0, climbs: 0, successRate: null, sampleStatus: "no_data" },
+            ],
+          },
+        ],
+      },
+    ]);
+    expect(
+      result.panels.find((panel) => panel.dimension === "wall_angle")?.progress[1]?.rows[0],
+    ).toMatchObject({ key: "0°", cells: [{ sends: 1, climbs: 1 }] });
+  });
+  it("does not resurrect cross-month conflicting grades in otherwise valid monthly panels", async () => {
+    const catalogue = {
+      externalId: "conflict",
+      name: "Conflict",
+      kind: "route",
+      setting: "outdoor",
+      areas: [{ externalId: "wall", name: "Wall" }],
+    } as const;
+    await write("conflict-august", {
+      climbedOn: "2026-08-20",
+      climb: { ...catalogue, publishedGrades: [{ value: "5.10a", system: "yds" }] },
+    });
+    await write(
+      "conflict-september",
+      {
+        climbedOn: "2026-09-20",
+        climb: { ...catalogue, publishedGrades: [{ value: "5.11a", system: "yds" }] },
+      },
+      "openbeta",
+    );
+    await write("retained", { climbedOn: "2026-10-20" });
+    const result = buildClimbingStrengths(await repo().getObservations(67, {}, "2026-10-20"), {
+      startDate: "2026-08-15",
+      endDate: "2026-10-20",
+    });
+    expect(result.coverage.missingGrades).toBe(2);
+    const panel = result.panels.find((panel) => panel.dimension === "setting");
+    expect(panel?.progress[0]?.rows[1]?.cells).toEqual([
+      { grade: "5.10a", sends: 0, climbs: 0, successRate: null, sampleStatus: "no_data" },
+    ]);
+    expect(panel?.progress[1]?.rows[1]?.cells).toEqual([
+      { grade: "5.10a", sends: 0, climbs: 0, successRate: null, sampleStatus: "no_data" },
+    ]);
+    expect(panel?.progress[2]?.rows[1]?.cells).toEqual([
+      { grade: "5.10a", sends: 1, climbs: 1, successRate: 100, sampleStatus: "limited" },
     ]);
   });
   it("anchors a one-day historic window with exclusive lower and inclusive end dates", async () => {

@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { within } from "storybook/test";
 import { ClimbingStrengths } from "./ClimbingStrengths.tsx";
 import { climbingStrengthsFixture as fixture } from "./climbing-strengths-fixtures.ts";
 
@@ -10,6 +11,80 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 export const Default: Story = {};
+export const StyleGaps: Story = {
+  play: async ({ canvasElement, userEvent }) => {
+    await userEvent.selectOptions(within(canvasElement).getByLabelText("View"), "gaps");
+  },
+};
+export const SuccessCurves: Story = {
+  play: async ({ canvasElement, userEvent }) => {
+    await userEvent.selectOptions(within(canvasElement).getByLabelText("View"), "curves");
+  },
+};
+export const ExposureMap: Story = {
+  play: async ({ canvasElement, userEvent }) => {
+    await userEvent.selectOptions(within(canvasElement).getByLabelText("View"), "exposure");
+  },
+};
+export const GradePyramids: Story = {
+  play: async ({ canvasElement, userEvent }) => {
+    await userEvent.selectOptions(within(canvasElement).getByLabelText("View"), "pyramids");
+  },
+};
+export const Progress: Story = {
+  play: async ({ canvasElement, userEvent }) => {
+    await userEvent.selectOptions(within(canvasElement).getByLabelText("View"), "progress");
+  },
+};
+export const RadarProfile: Story = {
+  play: async ({ canvasElement, userEvent }) => {
+    await userEvent.selectOptions(within(canvasElement).getByLabelText("View"), "radar");
+  },
+};
+export const SparseRadar: Story = {
+  play: async ({ canvasElement, userEvent }) => {
+    const canvas = within(canvasElement);
+    await userEvent.selectOptions(canvas.getByLabelText("Grade"), "V4");
+    await userEvent.selectOptions(canvas.getByLabelText("View"), "radar");
+  },
+};
+export const UnknownOnly: Story = {
+  args: {
+    data: {
+      ...fixture,
+      panels: fixture.panels.map((panel) => ({
+        ...panel,
+        coverage: { ...panel.coverage, unknownOutcomes: 9 },
+        grades: panel.grades.map((grade) => ({ ...grade, sends: 0, climbs: 0, successRate: null })),
+        rows: panel.rows.map((row) => ({
+          ...row,
+          cells: row.cells.map((cell) => ({
+            ...cell,
+            sends: 0,
+            climbs: 0,
+            successRate: null,
+            differencePercentagePoints: null,
+            sampleStatus: "no_data" as const,
+            examples: [],
+          })),
+        })),
+        progress: panel.progress.map((period) => ({
+          ...period,
+          rows: period.rows.map((row) => ({
+            ...row,
+            cells: row.cells.map((cell) => ({
+              ...cell,
+              sends: 0,
+              climbs: 0,
+              successRate: null,
+              sampleStatus: "no_data" as const,
+            })),
+          })),
+        })),
+      })),
+    },
+  },
+};
 export const Loading: Story = { args: { data: undefined, loading: true } };
 export const Empty: Story = { args: { data: { ...fixture, panels: [] } } };
 export const Sparse: Story = {
@@ -22,6 +97,13 @@ export const Sparse: Story = {
         rows: panel.rows.map((row) => ({
           ...row,
           cells: row.cells.filter((cell) => cell.grade === "V6"),
+        })),
+        progress: panel.progress.map((period) => ({
+          ...period,
+          rows: period.rows.map((row) => ({
+            ...row,
+            cells: row.cells.filter((cell) => cell.grade === "V6"),
+          })),
         })),
       })),
     },
@@ -48,6 +130,12 @@ export const SettingsAndContexts: Story = {
           key: "setting",
           dimension: "setting" as const,
           setting: null,
+          progress: panel.progress.map((period) => ({
+            ...period,
+            rows: period.rows
+              .map((row) => (row.key === "overhang" ? { ...row, key: "outdoor" } : row))
+              .filter((row) => row.key !== "slab"),
+          })),
           rows: [
             ...panel.rows.slice(0, 1).map((row) => ({ ...row, label: "Indoor" })),
             {
@@ -99,6 +187,16 @@ export const SettingsAndContexts: Story = {
           key: "routes",
           contextKey: "routes",
           contextLabel: "Routes · Lead · French",
+          progress: panel.progress.map((period) => ({
+            ...period,
+            rows: period.rows.map((row) => ({
+              ...row,
+              cells: row.cells.map((cell, index) => ({
+                ...cell,
+                grade: ["6a", "6b", "6c", "7a"][index] ?? cell.grade,
+              })),
+            })),
+          })),
           grades: panel.grades.map((grade, index) => ({
             ...grade,
             grade: ["6a", "6b", "6c", "7a"][index] ?? grade.grade,

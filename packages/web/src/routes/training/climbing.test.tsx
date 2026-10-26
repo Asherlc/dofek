@@ -13,6 +13,9 @@ const locationMapQuery = vi.hoisted(() => vi.fn());
 const strengthsQuery = vi.hoisted(() => vi.fn());
 const recentActivitiesSection = vi.hoisted(() => vi.fn());
 const trainingDaysState = vi.hoisted<{ days: number | null }>(() => ({ days: 90 }));
+const queryDate = vi.hoisted(() => ({ value: "2026-10-26" }));
+
+vi.mock("../../hooks/useTodayQueryDate.ts", () => ({ useTodayQueryDate: () => queryDate.value }));
 
 vi.mock("@tanstack/react-router", () => ({
   createFileRoute: () => () => null,
@@ -91,6 +94,21 @@ async function importClimbingTab() {
 }
 
 describe("ClimbingTab", () => {
+  it("anchors the strengths query to today's date and renews its input when the date changes", async () => {
+    const ClimbingTab = await importClimbingTab();
+    const { rerender } = render(<ClimbingTab />);
+    expect(strengthsQuery).toHaveBeenLastCalledWith(
+      { days: 90, endDate: "2026-10-26" },
+      expect.any(Object),
+    );
+    queryDate.value = "2026-10-27";
+    rerender(<ClimbingTab />);
+    expect(strengthsQuery).toHaveBeenLastCalledWith(
+      { days: 90, endDate: "2026-10-27" },
+      expect.any(Object),
+    );
+    expect(gradeProgressionQuery).toHaveBeenLastCalledWith({ days: 90 }, expect.any(Object));
+  });
   it("retains strengths and shows their refresh error while forwarding filters", async () => {
     strengthsQuery.mockReturnValue({
       data: climbingStrengthsFixture,
@@ -105,7 +123,7 @@ describe("ClimbingTab", () => {
     fireEvent.click(screen.getByRole("button", { name: "All climbing" }));
     fireEvent.change(screen.getByLabelText("Rope method"), { target: { value: "lead" } });
     expect(strengthsQuery).toHaveBeenLastCalledWith(
-      { days: 90, ropeMethod: "lead" },
+      { days: 90, endDate: "2026-10-26", ropeMethod: "lead" },
       expect.any(Object),
     );
   });
@@ -288,6 +306,7 @@ describe("ClimbingTab", () => {
     locationMapQuery.mockReset();
     recentActivitiesSection.mockReset();
     trainingDaysState.days = 90;
+    queryDate.value = "2026-10-26";
     gradeProgressionQuery.mockReturnValue({ data: [], isLoading: false, error: null });
     volumeByGradeQuery.mockReturnValue({ data: [], isLoading: false, error: null });
     sessionSummaryQuery.mockReturnValue({ data: [], isLoading: false, error: null });
@@ -322,7 +341,7 @@ describe("ClimbingTab", () => {
 
     expect(gradeProgressionQuery).toHaveBeenCalledWith({ days: 90 }, expect.any(Object));
     expect(strengthsQuery).toHaveBeenCalledWith(
-      { days: 90 },
+      { days: 90, endDate: "2026-10-26" },
       expect.objectContaining({ placeholderData: expect.any(Function) }),
     );
     expect(volumeByGradeQuery).toHaveBeenCalledWith({ days: 90 }, expect.any(Object));
@@ -352,6 +371,7 @@ describe("ClimbingTab", () => {
     expect(sessionSummaryQuery).toHaveBeenCalledWith({}, expect.any(Object));
     expect(hangboardingSummaryQuery).toHaveBeenCalledWith({}, expect.any(Object));
     expect(locationMapQuery).toHaveBeenCalledWith({}, expect.any(Object));
+    expect(strengthsQuery).toHaveBeenCalledWith({ endDate: "2026-10-26" }, expect.any(Object));
   });
 
   it("renders one recent climbing table", async () => {
