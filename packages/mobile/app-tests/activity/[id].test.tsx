@@ -182,7 +182,8 @@ vi.mock("../../lib/telemetry", () => ({
   captureException: vi.fn(),
 }));
 
-vi.mock("../../theme", () => ({
+vi.mock("../../theme", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../theme")>()),
   colors: {
     background: "#000",
     surface: "#111",
@@ -237,7 +238,8 @@ vi.mock("@dofek/providers/providers", async (importOriginal) => ({
   },
 }));
 
-vi.mock("@dofek/scoring/colors", () => ({
+vi.mock("@dofek/scoring/colors", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@dofek/scoring/colors")>()),
   activityMetricColors: { heartRate: "red", power: "orange" },
   chartColors: { teal: "#0ea5e9", purple: "#5E35B1" },
   statusColors: {
@@ -246,9 +248,6 @@ vi.mock("@dofek/scoring/colors", () => ({
     danger: "#dc2626",
     info: "#2563eb",
     elevated: "#ea580c",
-  },
-  operationalStatusColors: {
-    danger: { surface: "#fee2e2", border: "#dc2626", foreground: "#991b1b" },
   },
   textColors: { neutral: "#8aaa8a" },
 }));
@@ -2168,9 +2167,11 @@ describe("ActivityDetailScreen", () => {
     expect(screen.getByText("Wall angle: −20 (units unknown)")).toBeTruthy();
     expect(screen.getByText("Attempts: 7")).toBeTruthy();
     expect(screen.getByText("Project")).toBeTruthy();
-    expect(screen.getByText("Failed · Attempts: 1")).toBeTruthy();
+    const project = within(screen.getByLabelText("Climbing entry: Project"));
+    expect(project.getByText("Attempted")).toBeTruthy();
+    expect(project.getByText("Attempts: 1")).toBeTruthy();
     expect(screen.getByText("Wall angle: 35°")).toBeTruthy();
-    expect(screen.getByText("Attempts: 1")).toBeTruthy();
+    expect(screen.getAllByText("Attempts: 1")).toHaveLength(2);
     expect(screen.getAllByText("Touchstone Pacific Pipe")).toHaveLength(3);
   });
 

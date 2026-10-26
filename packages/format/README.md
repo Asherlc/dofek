@@ -70,3 +70,9 @@ known not to be a clean send; falling or hanging alone does not establish whethe
 the climber reached the top. See the
 [server contract](../server/src/contracts/climbing-log-contracts.ts) and
 [canonical send projection](../../drizzle/0148_compute_climbing_attempt_outcome.sql).
+
+The [web card](../web/src/pages/activity-detail/components/ClimbingLogEntryCard.tsx)
+and [mobile card](../mobile/components/ClimbingLogEntryCard.tsx) render outcome
+labels as text badges, separately from attempt counts and pitch context. Both
+use the [shared outcome formatter](src/climbing-log.ts) and
+[semantic color palette](../scoring/src/colors.ts).

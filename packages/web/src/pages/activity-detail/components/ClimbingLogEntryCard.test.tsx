@@ -31,7 +31,7 @@ it("shows Mountain Project's recorded top-rope method with an unknown attempt co
 
 it.each([
   { count: null, summary: "Completed" },
-  { count: 2, summary: "Completed · Attempts: 2" },
+  { count: 2, summary: "Attempts: 2" },
 ])("shows the recorded result with attempt count $count", ({ count, summary }) => {
   const entry = climbingLogEntryFixture({
     recordedClimbAttemptCount: count,
@@ -43,6 +43,7 @@ it.each([
     </ul>,
   );
   expect(screen.getByText(summary)).toBeInTheDocument();
+  expect(screen.getByText("Completed")).toBeInTheDocument();
 });
 
 it.each([undefined, 3])(
@@ -85,15 +86,15 @@ it.each([undefined, 3])(
 );
 
 it.each([
-  { freeSend: false, outcome: "completed", summary: "Completed · Attempts: 2" },
-  { freeSend: false, outcome: "failed", summary: "Attempted · Attempts: 2" },
-  { freeSend: null, outcome: "completed", summary: "Completed · Attempts: 2" },
-  { freeSend: true, outcome: "completed", summary: "Attempts: 2" },
-  { freeSend: false, outcome: null, summary: "Attempts: 2" },
-  { freeSend: null, outcome: null, summary: "Attempts: 2" },
+  { freeSend: false, outcome: "completed", label: "Completed" },
+  { freeSend: false, outcome: "failed", label: "Attempted" },
+  { freeSend: null, outcome: "completed", label: "Completed" },
+  { freeSend: true, outcome: "completed", label: null },
+  { freeSend: false, outcome: null, label: null },
+  { freeSend: null, outcome: null, label: null },
 ] as const)(
   "renders the server's send status ($freeSend, $outcome)",
-  ({ freeSend, outcome, summary }) => {
+  ({ freeSend, outcome, label }) => {
     const entry = climbingLogEntryFixture({
       freeSend,
       recordedClimbOutcome: outcome,
@@ -104,7 +105,8 @@ it.each([
         <ClimbingLogEntryCard entry={entry} />
       </ul>,
     );
-    expect(screen.getByText(summary)).toBeInTheDocument();
+    expect(screen.getByText("Attempts: 2")).toBeInTheDocument();
+    if (label !== null) expect(screen.getByText(label)).toBeInTheDocument();
     expect(screen.queryAllByText(/Attempted/)).toHaveLength(outcome === "failed" ? 1 : 0);
   },
 );

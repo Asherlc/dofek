@@ -101,7 +101,7 @@ describe("ClimbingLogEntryCard", () => {
     expect(screen.getByRole("link", { name: "Swiss Cheese on Mountain Project" })).toBeTruthy();
     expect(screen.getByRole("link", { name: "Mountain Project" })).toBeTruthy();
     expect(screen.getByText("5.4")).toBeTruthy();
-    expect(screen.getByText("Completed")).toBeTruthy();
+    expect(screen.getByText("Sent")).toBeTruthy();
   });
 
   it("shows a known recorded attempt count alongside its outcome", () => {
@@ -110,19 +110,20 @@ describe("ClimbingLogEntryCard", () => {
         entry={{ ...climbingLogFixture, providerId: "kaya", recordedClimbAttemptCount: 2 }}
       />,
     );
-    expect(screen.getByText("Completed · Attempts: 2")).toBeTruthy();
+    expect(screen.getByText("Sent")).toBeTruthy();
+    expect(screen.getByText("Attempts: 2")).toBeTruthy();
   });
 
   it.each([
-    { freeSend: false, outcome: "completed", summary: "Completed · Attempts: 2" },
-    { freeSend: false, outcome: "failed", summary: "Attempted · Attempts: 2" },
-    { freeSend: null, outcome: "completed", summary: "Completed · Attempts: 2" },
-    { freeSend: true, outcome: "completed", summary: "Attempts: 2" },
-    { freeSend: false, outcome: null, summary: "Attempts: 2" },
-    { freeSend: null, outcome: null, summary: "Attempts: 2" },
+    { freeSend: false, outcome: "completed", badge: "Completed" },
+    { freeSend: false, outcome: "failed", badge: "Attempted" },
+    { freeSend: null, outcome: "completed", badge: "Completed" },
+    { freeSend: true, outcome: "completed", badge: null },
+    { freeSend: false, outcome: null, badge: null },
+    { freeSend: null, outcome: null, badge: null },
   ] as const)(
     "renders the server's send status ($freeSend, $outcome)",
-    ({ freeSend, outcome, summary }) => {
+    ({ freeSend, outcome, badge }) => {
       render(
         <ClimbingLogEntryCard
           entry={{
@@ -134,8 +135,10 @@ describe("ClimbingLogEntryCard", () => {
           }}
         />,
       );
-      expect(screen.getByText(summary)).toBeTruthy();
-      expect(screen.queryAllByText(/Attempted/)).toHaveLength(outcome === "failed" ? 1 : 0);
+      expect(screen.getByText("Attempts: 2")).toBeTruthy();
+      if (badge !== null) expect(screen.getByText(badge)).toBeTruthy();
+      expect(screen.queryAllByText("Attempted")).toHaveLength(badge === "Attempted" ? 1 : 0);
+      expect(screen.queryAllByText("Completed")).toHaveLength(badge === "Completed" ? 1 : 0);
     },
   );
 

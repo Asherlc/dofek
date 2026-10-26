@@ -1,15 +1,35 @@
 import {
   formatClimbingRecordedResult,
+  formatClimbingResultOutcome,
   formatClimbingRopeMethods,
 } from "@dofek/format/climbing-log";
 import { climbingLogEntryName } from "@dofek/training/climbing-log";
 import type { ClimbingMapLocation } from "@dofek/training/climbing-map";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import type { ClimbingLogEntryDetail } from "../../server/src/contracts/climbing-log-contracts.ts";
-import { colors } from "../theme";
+import { colors, operationalStatusColors } from "../theme";
 import { ClimbingLogEntryContext } from "./ClimbingLogEntryContext";
 import { ClimbingLogEntrySources } from "./ClimbingLogEntrySources";
 import { RouteMap } from "./RouteMap";
+
+function ResultBadge({ label }: { label: string }) {
+  const palette =
+    label === "Attempted"
+      ? operationalStatusColors.warning
+      : label === "Completed"
+        ? operationalStatusColors.info
+        : operationalStatusColors.success;
+  return (
+    <View
+      style={[
+        styles.resultBadge,
+        { backgroundColor: palette.surface, borderColor: palette.border },
+      ]}
+    >
+      <Text style={[styles.resultBadgeText, { color: palette.foreground }]}>{label}</Text>
+    </View>
+  );
+}
 
 export interface ClimbingLogAttachmentState {
   pending: boolean;
@@ -34,17 +54,21 @@ export function ClimbingLogEntryCard({
   const name = climbingLogEntryName(entry);
   const attachmentPending = attachmentState?.pending ?? false;
   const ropeMethods = formatClimbingRopeMethods(entry.attempts);
+  const climbResultLabels = entry.attempts
+    .filter((attempt) => attempt.scope === "climb")
+    .flatMap((attempt) => attempt.rockResultLabels);
+  const recordedOutcome =
+    entry.recordedClimbAttemptCount === 0
+      ? null
+      : formatClimbingResultOutcome(entry.recordedClimbOutcome, climbResultLabels, entry.freeSend);
   const recordedResult =
     entry.recordedClimbAttemptCount === 0
       ? null
       : formatClimbingRecordedResult(
           null,
-          entry.recordedClimbOutcome,
+          null,
           entry.recordedClimbAttemptCount,
-          entry.attempts
-            .filter((attempt) => attempt.scope === "climb")
-            .flatMap((attempt) => attempt.rockResultLabels),
-          entry.freeSend,
+          climbResultLabels,
         );
   return (
     <View
@@ -73,32 +97,45 @@ export function ClimbingLogEntryCard({
         </View>
       )}
       {ropeMethods && <Text style={styles.summary}>{ropeMethods}</Text>}
-      {recordedResult && <Text style={styles.summary}>{recordedResult}</Text>}
-      {entry.pitchResults.map((result) => (
-        <Text key={result.attemptIds.join(":")} style={styles.summary}>
-          {formatClimbingRecordedResult(
-            result.pitch === null
-              ? "Unidentified pitch"
-              : result.pitch.number === null
-                ? (result.pitch.name ?? "Pitch")
-                : `Pitch ${result.pitch.number}`,
-            result.recordedOutcome,
-            result.recordedAttemptCount,
-            entry.attempts
-              .filter((attempt) => result.attemptIds.includes(attempt.id))
-              .flatMap((attempt) => attempt.rockResultLabels),
-          )}
-        </Text>
-      ))}
+      {(recordedOutcome || recordedResult) && (
+        <View style={styles.resultRow}>
+          {recordedOutcome && <ResultBadge label={recordedOutcome} />}
+          {recordedResult && <Text style={styles.summary}>{recordedResult}</Text>}
+        </View>
+      )}
+      {entry.pitchResults.map((result) => {
+        const resultLabels = entry.attempts
+          .filter((attempt) => result.attemptIds.includes(attempt.id))
+          .flatMap((attempt) => attempt.rockResultLabels);
+        const outcome = formatClimbingResultOutcome(result.recordedOutcome, resultLabels);
+        return (
+          <View key={result.attemptIds.join(":")} style={styles.resultRow}>
+            <Text style={styles.summary}>
+              {formatClimbingRecordedResult(
+                result.pitch === null
+                  ? "Unidentified pitch"
+                  : result.pitch.number === null
+                    ? (result.pitch.name ?? "Pitch")
+                    : `Pitch ${result.pitch.number}`,
+                null,
+                result.recordedAttemptCount,
+                resultLabels,
+              )}
+            </Text>
+            {outcome && <ResultBadge label={outcome} />}
+          </View>
+        );
+      })}
       {entry.attempts.map(
         (attempt) =>
           attempt.rockResultLabels.length > 0 && (
-            <Text key={attempt.id} style={styles.result}>
+            <View key={attempt.id} style={styles.resultRow}>
               {attempt.rockResultLabels
                 .filter((label) => label !== "sent" || attempt.rockResultLabels.length === 1)
-                .map((label) => (label === "sent" ? "Sent" : label))
-                .join(" · ")}
-            </Text>
+                .map((label) => (
+                  <ResultBadge key={label} label={label === "sent" ? "Sent" : label} />
+                ))}
+            </View>
           ),
       )}
       {onAttach && (
@@ -146,5 +183,13 @@ const styles = StyleSheet.create({
   identity: { flex: 1, gap: 4, minWidth: 0 },
   grade: { fontSize: 14, fontWeight: "600", color: colors.accent },
   summary: { fontSize: 12, color: colors.textSecondary },
-  result: { fontSize: 12, color: colors.positive },
+  resultRow: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 6 },
+  resultBadge: {
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    alignSelf: "flex-start",
+  },
+  resultBadgeText: { fontSize: 12, fontWeight: "600" },
 });

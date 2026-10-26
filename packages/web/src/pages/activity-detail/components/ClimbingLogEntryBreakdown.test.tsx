@@ -146,7 +146,8 @@ it("keeps a completed pitch scoped to its recorded result", () => {
   ];
   render(<ClimbingLogEntryBreakdown entries={[entry]} />);
   expect(screen.getByText("A recorded outing")).toBeTruthy();
-  expect(screen.getByText("Unidentified pitch · Completed · Attempts: 1")).toBeTruthy();
+  expect(screen.getByText("Unidentified pitch · Attempts: 1")).toBeTruthy();
+  expect(screen.getByText("Completed")).toBeTruthy();
 });
 it("renders the server's unknown occurrence count with its current published display grade", () => {
   const entry = climbingLogEntryFixture({
@@ -184,7 +185,8 @@ it("shows pitch completion with unknown whole-climb outcome", () => {
     },
   ];
   render(<ClimbingLogEntryBreakdown entries={[entry]} />);
-  expect(screen.getByText("Unidentified pitch · Completed · Attempts: 1")).toBeTruthy();
+  expect(screen.getByText("Unidentified pitch · Attempts: 1")).toBeTruthy();
+  expect(screen.getByText("Completed")).toBeTruthy();
   expect(screen.getByText("Attempts: 1")).toBeTruthy();
 });
 it("shows a completed dab without a send label", () => {
@@ -201,6 +203,7 @@ it("shows a completed dab without a send label", () => {
     }),
   ];
   render(<ClimbingLogEntryBreakdown entries={[entry]} />);
-  expect(screen.getByText("Completed · Attempts: 1")).toBeTruthy();
+  expect(screen.getByText("Completed")).toBeTruthy();
+  expect(screen.getByText("Attempts: 1")).toBeTruthy();
   expect(screen.queryByText("Sent")).toBeNull();
 });

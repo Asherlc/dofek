@@ -54,6 +54,22 @@ export const Attempted: Story = {
     },
   },
 };
+export const Onsight: Story = {
+  args: {
+    entry: {
+      ...climbingLogFixture,
+      freeSend: true,
+      recordedClimbAttemptCount: 1,
+      attempts: [
+        climbingAttemptFixture(climbingLogFixture.id, {
+          outcome: "completed",
+          ropeMethod: "lead",
+          rockResultLabels: ["sent", "Onsight"],
+        }),
+      ],
+    },
+  },
+};
 export const MinimalEntry: Story = { args: { entry: climbingLogEntryFixture() } };
 export const ExactClimb: Story = { args: { location: exactClimbingLocation } };
 export const AreaLocation: Story = { args: { location: areaClimbingLocation } };
