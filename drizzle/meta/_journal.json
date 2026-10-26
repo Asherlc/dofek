@@ -1156,6 +1156,13 @@
       "when": 1793053745114,
       "tag": "0164_climbing_catalogue_setting",
       "breakpoints": true
+    },
+    {
+      "idx": 165,
+      "version": "7",
+      "when": 1793054593792,
+      "tag": "0165_mountain_project_top_rope_completion",
+      "breakpoints": true
     }
   ]
 }

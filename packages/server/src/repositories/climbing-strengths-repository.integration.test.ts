@@ -104,35 +104,55 @@ describe("climbing strengths PostgreSQL", () => {
     });
     expect(setting?.rows[1]?.cells[0]?.examples[0]?.outcome).toBeNull();
   });
-  it("retains imported top-rope grades without converting missing results into failures", async () => {
-    for (const grade of ["5.2", "5.9", "5.10b"]) {
-      await write(`top-rope-${grade}`, {
-        climb: {
-          externalId: `route-${grade}`,
-          name: `Route ${grade}`,
-          kind: "route",
-          publishedGrades: [{ value: grade, system: "yds" }],
-        },
-        attempts: [{ scope: "climb", ropeMethod: "top_rope" }],
-      });
-    }
-    const observations = await repo().getObservations(30);
-    expect(observations).toHaveLength(3);
-    expect(observations.every((entry) => entry.setting === "outdoor")).toBe(true);
-    const result = analyze(observations);
-    const setting = result.panels.find((panel) => panel.dimension === "setting");
-    expect(setting?.contextLabel).toBe("Top rope");
-    expect(setting?.grades).toMatchObject([
-      { grade: "5.2", climbs: 1, sends: 0, unknownOutcomes: 1, successRate: null },
-      { grade: "5.9", climbs: 1, sends: 0, unknownOutcomes: 1, successRate: null },
-      { grade: "5.10b", climbs: 1, sends: 0, unknownOutcomes: 1, successRate: null },
-    ]);
-    expect(setting?.rows.find((row) => row.key === "outdoor")?.cells).toMatchObject([
-      { climbs: 1, unknownOutcomes: 1, successRate: null, examples: [{ outcome: null }] },
-      { climbs: 1, unknownOutcomes: 1, successRate: null, examples: [{ outcome: null }] },
-      { climbs: 1, unknownOutcomes: 1, successRate: null, examples: [{ outcome: null }] },
-    ]);
-  });
+  it.each([
+    {
+      provider: "mountain-project",
+      sends: 1,
+      unknownOutcomes: 0,
+      successRate: 100,
+      outcome: "sent",
+    },
+    { provider: "openbeta", sends: 0, unknownOutcomes: 1, successRate: null, outcome: null },
+  ])(
+    "retains top-rope grades with the recorded $provider result semantics",
+    async ({ provider, sends, unknownOutcomes, successRate, outcome }) => {
+      for (const grade of ["5.2", "5.9", "5.10b"]) {
+        await write(
+          `top-rope-${grade}`,
+          {
+            climb: {
+              externalId: `route-${grade}`,
+              name: `Route ${grade}`,
+              kind: "route",
+              publishedGrades: [{ value: grade, system: "yds" }],
+            },
+            attempts: [{ scope: "climb", ropeMethod: "top_rope" }],
+          },
+          provider,
+        );
+      }
+      const observations = await repo().getObservations(30);
+      expect(observations).toHaveLength(3);
+      expect(observations.every((entry) => entry.setting === "outdoor")).toBe(true);
+      const result = analyze(observations);
+      const setting = result.panels.find((panel) => panel.dimension === "setting");
+      expect(setting?.contextLabel).toBe("Top rope");
+      expect(setting?.grades).toMatchObject(
+        ["5.2", "5.9", "5.10b"].map((grade) => ({
+          grade,
+          climbs: 1,
+          sends,
+          unknownOutcomes,
+          successRate,
+        })),
+      );
+      expect(setting?.rows.find((row) => row.key === "outdoor")?.cells).toMatchObject([
+        { climbs: 1, unknownOutcomes, successRate, examples: [{ outcome }] },
+        { climbs: 1, unknownOutcomes, successRate, examples: [{ outcome }] },
+        { climbs: 1, unknownOutcomes, successRate, examples: [{ outcome }] },
+      ]);
+    },
+  );
   it("queries all accessible history through the selected end date", async () => {
     const old = await write("historical", { climbedOn: await climbingTestDate(context.db, 800) });
     const recent = await write("recent");

@@ -85,7 +85,13 @@ original labels and normalizes their independently supported facts through the
 | Onsight / Flash | First attempt index; supported completion and execution facts; beta follows the shared history rule |
 | Boulder Attempt | Failed attempt |
 | Fell/Hung | `fellOrHung = true`; completion remains unknown |
-| Blank qualifier | Outcome and execution facts remain unknown |
+| Blank qualifier with TR | Successful completion on reads; explicit aid/fall facts still take precedence |
+| Other blank qualifier | Outcome and execution facts remain unknown |
+
+The [attempt read view](../drizzle/0165_mountain_project_top_rope_completion.sql)
+applies the top-rope rule to existing Mountain Project whole-route ticks as well
+as future imports. It defaults missing aid/fall flags to false for that case,
+while retaining explicit result labels and raw stored fields unchanged.
 
 The export supplies no attempt total, so each tick records one whole-Climb
 occurrence. `Pitches` describes the tick's pitch extent and creates neither

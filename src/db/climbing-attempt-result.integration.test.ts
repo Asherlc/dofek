@@ -300,4 +300,139 @@ describe("computed climbing attempt results (integration)", () => {
       expect(retained.rows).toEqual([{ outcome: "completed" }]);
     },
   );
+  describe("Mountain Project top-rope completion projection", () => {
+    beforeEach(async () => {
+      await migrate();
+    });
+
+    async function applyTopRopeProjection() {
+      await client.query(
+        readFileSync(
+          resolve(migrationDirectory, "0165_mountain_project_top_rope_completion.sql"),
+          "utf8",
+        ),
+      );
+    }
+
+    async function insertRecordedAttempt(
+      provider: string,
+      options: {
+        ropeMethod?: string;
+        sourceResult?: string;
+        fellOrHung?: boolean;
+        usedAid?: boolean;
+        kind?: string;
+        scope?: string;
+      } = {},
+    ) {
+      const logId = await seedLog(
+        provider,
+        { Style: options.ropeMethod === "lead" ? "Lead" : "TR" },
+        options.kind ?? "route",
+      );
+      const id = randomUUID();
+      await client.query(
+        `INSERT INTO fitness.climbing_attempt (id, climbing_log_entry_id, scope, rope_method, source_result, fell_or_hung, used_aid)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [
+          id,
+          logId,
+          options.scope ?? "climb",
+          options.ropeMethod ?? "top_rope",
+          options.sourceResult,
+          options.fellOrHung,
+          options.usedAid,
+        ],
+      );
+      return { id, logId };
+    }
+
+    it("projects a clean completed top-rope climb without changing retained raw facts", async () => {
+      const { id, logId } = await insertRecordedAttempt("mountain-project");
+      await applyTopRopeProjection();
+      const projected = await client.query(
+        "SELECT outcome, used_aid, fell_or_hung, source_result FROM fitness.v_climbing_attempt WHERE id = $1",
+        [id],
+      );
+      expect(projected.rows).toEqual([
+        { outcome: "completed", used_aid: false, fell_or_hung: false, source_result: null },
+      ]);
+      const log = await client.query(
+        "SELECT recorded_climb_outcome, free_send FROM fitness.v_climbing_log_entry WHERE id = $1",
+        [logId],
+      );
+      expect(log.rows).toEqual([{ recorded_climb_outcome: "completed", free_send: true }]);
+      const retained = await client.query(
+        "SELECT source_result, used_aid, fell_or_hung FROM fitness.climbing_attempt WHERE id = $1",
+        [id],
+      );
+      expect(retained.rows).toEqual([{ source_result: null, used_aid: null, fell_or_hung: null }]);
+    });
+
+    it.each([
+      {
+        sourceResult: "Fell/Hung",
+        fellOrHung: true,
+        expectedOutcome: null,
+        expectedFreeSend: false,
+        expectedAid: null,
+      },
+      {
+        sourceResult: "Failed",
+        expectedOutcome: "failed",
+        expectedFreeSend: false,
+        expectedAid: null,
+      },
+      {
+        sourceResult: "Flash",
+        expectedOutcome: "completed",
+        expectedFreeSend: null,
+        expectedAid: null,
+      },
+      {
+        fellOrHung: true,
+        expectedOutcome: "completed",
+        expectedFreeSend: false,
+        expectedAid: false,
+      },
+      { usedAid: true, expectedOutcome: "completed", expectedFreeSend: false, expectedAid: true },
+    ])("preserves explicit result and execution facts: %j", async (scenario) => {
+      const { id, logId } = await insertRecordedAttempt("mountain-project", scenario);
+      await applyTopRopeProjection();
+      const projected = await client.query(
+        "SELECT outcome, used_aid, fell_or_hung FROM fitness.v_climbing_attempt WHERE id = $1",
+        [id],
+      );
+      expect(projected.rows).toEqual([
+        {
+          outcome: scenario.expectedOutcome,
+          used_aid: scenario.expectedAid,
+          fell_or_hung: scenario.fellOrHung ?? (scenario.sourceResult ? null : false),
+        },
+      ]);
+      const log = await client.query(
+        "SELECT free_send FROM fitness.v_climbing_log_entry WHERE id = $1",
+        [logId],
+      );
+      expect(log.rows).toEqual([{ free_send: scenario.expectedFreeSend }]);
+    });
+
+    it.each([
+      { provider: "mountain-project", ropeMethod: "lead" },
+      { provider: "openbeta", ropeMethod: "top_rope" },
+      { provider: "mountain-project", ropeMethod: "top_rope", scope: "pitch" },
+      { provider: "mountain-project", ropeMethod: "top_rope", kind: "boulder" },
+    ])(
+      "keeps unsupported provider/kind/scope/method unknown: %j",
+      async ({ provider, ...options }) => {
+        const { id } = await insertRecordedAttempt(provider, options);
+        await applyTopRopeProjection();
+        const projected = await client.query(
+          "SELECT outcome, used_aid, fell_or_hung FROM fitness.v_climbing_attempt WHERE id = $1",
+          [id],
+        );
+        expect(projected.rows).toEqual([{ outcome: null, used_aid: null, fell_or_hung: null }]);
+      },
+    );
+  });
 });
