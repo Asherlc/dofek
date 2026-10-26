@@ -28,6 +28,53 @@ export const climbingStrengthsFixture: ClimbingStrengths = {
       contextLabel: "Bouldering · V scale",
       dimension: "wall_angle",
       setting: "indoor",
+      allGrades: {
+        grades: [
+          { grade: "All grades", gradeSortValue: 0, sends: 34, climbs: 63, successRate: 54 },
+        ],
+        rows: [
+          {
+            key: "vertical",
+            label: "Vertical",
+            cells: [cell("All grades", 13, 21, 62, 8, "available")],
+          },
+          {
+            key: "overhang",
+            label: "Overhang",
+            cells: [cell("All grades", 11, 19, 58, 4, "available")],
+          },
+          { key: "slab", label: "Slab", cells: [cell("All grades", 10, 23, 43, -11, "available")] },
+        ],
+        progress: [
+          {
+            startDate: "2026-08-15",
+            endDate: "2026-08-31",
+            rows: [
+              { key: "vertical", cells: [cell("All grades", 2, 4, 50, null, "limited")] },
+              { key: "overhang", cells: [cell("All grades", 1, 3, 33, null, "limited")] },
+              { key: "slab", cells: [cell("All grades", 1, 1, 100, null, "limited")] },
+            ],
+          },
+          {
+            startDate: "2026-09-01",
+            endDate: "2026-09-30",
+            rows: [
+              { key: "vertical", cells: [cell("All grades", 0, 0, null, null, "no_data")] },
+              { key: "overhang", cells: [cell("All grades", 0, 0, null, null, "no_data")] },
+              { key: "slab", cells: [cell("All grades", 0, 0, null, null, "no_data")] },
+            ],
+          },
+          {
+            startDate: "2026-10-01",
+            endDate: "2026-10-26",
+            rows: [
+              { key: "vertical", cells: [cell("All grades", 13, 21, 62, null, "available")] },
+              { key: "overhang", cells: [cell("All grades", 11, 19, 58, null, "available")] },
+              { key: "slab", cells: [cell("All grades", 10, 23, 43, null, "available")] },
+            ],
+          },
+        ],
+      },
       grades: [
         { grade: "V3", gradeSortValue: 3, sends: 24, climbs: 30, successRate: 80 },
         { grade: "V4", gradeSortValue: 4, sends: 3, climbs: 8, successRate: 37.5 },

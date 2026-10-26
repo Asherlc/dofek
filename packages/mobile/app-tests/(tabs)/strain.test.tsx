@@ -34,7 +34,7 @@ type MockRangeQueryOptions = {
 };
 let mockRangeQueryCalls: Record<
   "training" | "hrZones" | "polarization" | "monotony" | "locationMap" | "strengths",
-  Array<{ input: { days: number; endDate?: string }; options: MockRangeQueryOptions }>
+  Array<{ input: { days: number | null; endDate?: string }; options: MockRangeQueryOptions }>
 >;
 let mockTimeRangePreference = {
   days: 90,
@@ -130,7 +130,7 @@ vi.mock("../../lib/trpc", () => ({
   trpc: {
     climbing: {
       strengths: {
-        useQuery: (input: { days: number }, options: MockRangeQueryOptions) => {
+        useQuery: (input: { days: number | null }, options: MockRangeQueryOptions) => {
           mockRangeQueryCalls.strengths.push({ input, options });
           return { ...mockStrengthsState };
         },
@@ -317,6 +317,18 @@ describe("StrainScreen recent activity navigation", () => {
     }
   });
 
+  it("offers all time for strengths without changing the other training ranges", async () => {
+    const { default: StrainScreen } = await import("../../app/(tabs)/strain");
+    render(<StrainScreen />);
+    fireEvent.click(screen.getByRole("radio", { name: "All time" }));
+    expect(mockRangeQueryCalls.strengths.at(-1)?.input).toEqual({
+      days: null,
+      endDate: "2026-03-28",
+    });
+    expect(mockRangeQueryCalls.training.at(-1)?.input.days).toBe(90);
+    fireEvent.click(screen.getByRole("radio", { name: "90 days" }));
+    expect(mockRangeQueryCalls.strengths.at(-1)?.input.days).toBe(90);
+  });
   it("updates the strengths query anchor at local midnight and retains explicit date anchors", async () => {
     const { default: StrainScreen } = await import("../../app/(tabs)/strain");
     const { rerender } = render(<StrainScreen />);
@@ -345,7 +357,7 @@ describe("StrainScreen recent activity navigation", () => {
     fireEvent.click(screen.getByRole("button", { name: "All climbing" }));
     fireEvent.click(screen.getByRole("button", { name: "Rope method: Lead" }));
     expect(screen.getByText("Updating climbing strengths…")).toBeTruthy();
-    expect(screen.getByRole("button", { name: /Slab · 40% · 2\/5 climbs sent/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Slab · 29% · 2\/7 climbs sent/ })).toBeTruthy();
     expect(mockRangeQueryCalls.strengths.at(-1)?.input).toEqual({
       days: 90,
       endDate: "2026-03-28",
@@ -387,7 +399,7 @@ describe("StrainScreen recent activity navigation", () => {
       endDate: "2026-03-28",
       ropeMethod: "lead",
     });
-    expect(screen.getByRole("button", { name: /Slab · 40% · 2\/5 climbs sent/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Slab · 29% · 2\/7 climbs sent/ })).toBeTruthy();
     expect(screen.getByText("Climbing strengths")).toBeTruthy();
     expect(screen.getByText("Climbing locations")).toBeTruthy();
   });

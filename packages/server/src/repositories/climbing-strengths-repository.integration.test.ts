@@ -96,6 +96,59 @@ describe("climbing strengths PostgreSQL", () => {
     expect(result.coverage.unknownOutcomes).toBe(1);
     expect(result.panels.every((p) => p.grades.length === 0)).toBe(true);
   });
+  it("queries all accessible history through the selected end date", async () => {
+    const old = await write("historical", { climbedOn: await climbingTestDate(context.db, 800) });
+    const recent = await write("recent");
+    const future = await write("future", { climbedOn: await climbingTestDate(context.db, -1) });
+    const historical = await repo().getObservations(null, {}, window.endDate);
+    expect(historical.map((entry) => entry.example.logEntryId)).toEqual(
+      expect.arrayContaining([old, recent]),
+    );
+    expect(historical.some((entry) => entry.example.logEntryId === future)).toBe(false);
+    expect(
+      (await repo().getObservations(365, {}, window.endDate)).some(
+        (entry) => entry.example.logEntryId === old,
+      ),
+    ).toBe(false);
+    const restricted = new ClimbingStrengthsRepository(context.db, TEST_USER_ID, "UTC", {
+      kind: "limited",
+      startDate: window.startDate,
+      endDateExclusive: await climbingTestDate(context.db, -1),
+      paid: false,
+      reason: "free_recent_week",
+    });
+    expect(
+      (await restricted.getObservations(null, {}, window.endDate)).map(
+        (entry) => entry.example.logEntryId,
+      ),
+    ).toEqual([recent]);
+    expect(
+      await new ClimbingStrengthsRepository(
+        context.db,
+        "00000000-0000-0000-0000-000000000099",
+        "UTC",
+      ).getObservations(null, {}, window.endDate),
+    ).toEqual([]);
+  });
+  it("treats omitted aid use as free and keeps explicit aid separate", async () => {
+    const unspecified = await write("unspecified", {
+      attempts: [{ scope: "climb", ropeMethod: "lead", sourceResult: "Failed" }],
+    });
+    const free = await write("free", {
+      attempts: [{ scope: "climb", ropeMethod: "lead", sourceResult: "Failed", usedAid: false }],
+    });
+    const aid = await write("aid", {
+      attempts: [{ scope: "climb", ropeMethod: "lead", sourceResult: "Failed", usedAid: true }],
+    });
+    const rows = await repo().getObservations(30);
+    const contextFor = (id: string) =>
+      rows.find((entry) => entry.example.logEntryId === id)?.contextKey;
+    expect(contextFor(unspecified)).toBe(contextFor(free));
+    expect(contextFor(aid)).not.toBe(contextFor(free));
+    expect(rows.find((entry) => entry.example.logEntryId === free)?.contextLabel).toBe(
+      "Lead · Yosemite Decimal System",
+    );
+  });
   it("filters dates, settings, access windows and deleted attached activity", async () => {
     const old = await write("old", { climbedOn: await climbingTestDate(context.db, 40) });
     const visible = await write("visible");

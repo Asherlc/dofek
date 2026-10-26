@@ -36,6 +36,58 @@ const dated = (date: string, patch: Partial<ClimbingStrengthsObservation> = {}) 
   return { ...entry, example: { ...entry.example, date } };
 };
 describe("climbing strengths", () => {
+  it("pools distinct climbs across grades using counts and independent monthly outcomes", () => {
+    const entries = [
+      ...Array.from({ length: 5 }, (_, index) =>
+        dated("2026-08-16", {
+          identity: `easy-${index}`,
+          grade: "V3",
+          gradeSortValue: 3,
+          holdType: index === 4 ? null : "crimp",
+        }),
+      ),
+      dated("2026-08-16", { identity: "hard", grade: "V5", gradeSortValue: 5, holdType: "crimp" }),
+      dated("2026-10-20", {
+        identity: "hard",
+        grade: "V5",
+        gradeSortValue: 5,
+        holdType: "crimp",
+        outcome: "sent",
+      }),
+      dated("2026-10-20", { identity: "unknown", outcome: null, holdType: "crimp" }),
+    ];
+    const result = analyze(entries);
+    const panel = result.panels.find((item) => item.dimension === "hold_type");
+    expect(panel?.allGrades.grades).toEqual([
+      { grade: "All grades", gradeSortValue: 0, sends: 1, climbs: 6, successRate: 17 },
+    ]);
+    expect(panel?.allGrades.rows[0]?.cells[0]).toMatchObject({
+      grade: "All grades",
+      sends: 1,
+      climbs: 5,
+      successRate: 20,
+      differencePercentagePoints: 3,
+      sampleStatus: "available",
+    });
+    expect(panel?.allGrades.rows[0]?.cells[0]?.examples).toHaveLength(3);
+    expect(panel?.allGrades.progress[0]?.rows[0]?.cells[0]).toMatchObject({
+      sends: 0,
+      climbs: 5,
+      successRate: 0,
+    });
+    expect(panel?.allGrades.progress[1]?.rows[0]?.cells[0]).toMatchObject({
+      sends: 0,
+      climbs: 0,
+      successRate: null,
+      sampleStatus: "no_data",
+    });
+    expect(panel?.allGrades.progress[2]?.rows[0]?.cells[0]).toMatchObject({
+      sends: 1,
+      climbs: 1,
+      successRate: 100,
+    });
+    expect(panel?.grades.map((item) => item.grade)).toEqual(["V3", "V5"]);
+  });
   it("projects independent monthly outcomes after whole-window context and trait resolution", () => {
     const result = analyze([
       dated("2026-08-15", { holdType: "crimp", wallAngle: { value: 0, unit: "degrees" } }),

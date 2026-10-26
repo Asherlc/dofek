@@ -1,4 +1,5 @@
 import type { ClimbingStrengthsPanel } from "@dofek/training/climbing-strengths";
+import { climbingStrengthsGradePanel } from "@dofek/training/climbing-strengths";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { ClimbingStrengthsChart } from "./ClimbingStrengthsChart";
@@ -15,6 +16,24 @@ const firstCell = firstRow?.cells[0];
 if (!firstRow || !secondRow || !firstCell) throw new Error("Missing row fixture");
 
 describe("ClimbingStrengthsChart", () => {
+  it("labels every style curve when All grades remains selected", () => {
+    render(
+      <ClimbingStrengthsChart panel={panel} view="curves" grade="All grades" onSelect={() => {}} />,
+    );
+    for (const row of panel.rows) expect(screen.getByText(row.label)).toBeTruthy();
+  });
+  it("identifies the overall baseline in pooled exact values", () => {
+    render(
+      <ClimbingStrengthsChart
+        panel={climbingStrengthsGradePanel(panel, "All grades")}
+        view="gaps"
+        grade="All grades"
+        onSelect={() => {}}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /^View .* data$/ }));
+    expect(screen.getByLabelText(/Slab · All grades.*Overall baseline 36%/)).toBeTruthy();
+  });
   it.each(["gaps", "curves", "exposure", "pyramids", "progress", "radar"] as const)(
     "%s retains exact supplied rates and counts, missing values and limited qualifiers",
     (view) => {

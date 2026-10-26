@@ -3,9 +3,14 @@ import type {
   ClimbingStrengthsPanel,
   ClimbingStrengths as Strengths,
 } from "@dofek/training/climbing-strengths";
+import {
+  ALL_CLIMBING_GRADES,
+  climbingStrengthsBaselineLabel,
+  climbingStrengthsGradePanel,
+} from "@dofek/training/climbing-strengths";
 import type { ClimbingStrengthsView } from "@dofek/training/climbing-strengths-views";
 import { useRouter } from "expo-router";
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
 import Svg, { Rect } from "react-native-svg";
 import { openExternalUrl } from "../lib/open-external-url";
@@ -33,16 +38,18 @@ function defaultPanel(panels: ClimbingStrengthsPanel[]) {
 function cellLabel(label: string, cell: ClimbingStrengthsCell) {
   return cell.sampleStatus === "no_data"
     ? `${label} · No data`
-    : `${label} · ${cell.successRate}% · ${cell.sends}/${cell.climbs} climbs sent${cell.sampleStatus === "limited" ? " · Limited data" : ""}${cell.differencePercentagePoints === null ? "" : ` · ${cell.differencePercentagePoints > 0 ? "+" : ""}${cell.differencePercentagePoints} percentage points vs same-grade baseline`}`;
+    : `${label} · ${cell.successRate}% · ${cell.sends}/${cell.climbs} climbs sent${cell.sampleStatus === "limited" ? " · Limited data" : ""}${cell.differencePercentagePoints === null ? "" : ` · ${cell.differencePercentagePoints > 0 ? "+" : ""}${cell.differencePercentagePoints} percentage points vs ${climbingStrengthsBaselineLabel(cell.grade).toLowerCase()}`}`;
 }
 export function ClimbingStrengths({
   data,
   loading = false,
   error,
+  rangeControl,
 }: {
   data: Strengths | undefined;
   loading?: boolean;
   error?: { message: string } | null;
+  rangeControl?: ReactNode;
 }) {
   const router = useRouter();
   const [view, setView] = useState<ClimbingStrengthsView>("profile");
@@ -54,10 +61,14 @@ export function ClimbingStrengths({
     rowKey: string;
     grade: string;
   } | null>(null);
-  const [coverageOpen, setCoverageOpen] = useState(false);
   const panels = data?.panels ?? [];
   const panel = panels.find((item) => item.key === panelKey) ?? defaultPanel(panels);
-  const selectedGrade = panel?.grades.find((item) => item.grade === grade) ?? panel?.grades[0];
+  const selectedGradeKey =
+    panel?.grades.find((item) => item.grade === grade)?.grade ?? ALL_CLIMBING_GRADES;
+  const gradePanel = panel ? climbingStrengthsGradePanel(panel, selectedGradeKey) : undefined;
+  const selectedGrade = panel?.grades.length
+    ? gradePanel?.grades.find((item) => item.grade === selectedGradeKey)
+    : undefined;
   const contextPanels = panels.filter((item) => item.contextKey === panel?.contextKey);
   const contexts = panels.filter(
     (item, index) => panels.findIndex((other) => other.contextKey === item.contextKey) === index,
@@ -66,7 +77,7 @@ export function ClimbingStrengths({
     selectedDetail &&
     selectedDetail.panelKey === panel?.key &&
     selectedDetail.grade === selectedGrade?.grade
-      ? panel.rows
+      ? gradePanel?.rows
           .find((row) => row.key === selectedDetail.rowKey)
           ?.cells.find((cell) => cell.grade === selectedDetail.grade)
       : undefined;
@@ -82,6 +93,7 @@ export function ClimbingStrengths({
   return (
     <View style={styles.card}>
       <Text style={styles.title}>Climbing strengths</Text>
+      {rangeControl}
       {error && <QueryStatePanel variant="error" message={error.message} minHeight={80} />}
       {panel ? (
         <>
@@ -151,7 +163,7 @@ export function ClimbingStrengths({
           {selectedGrade ? (
             <>
               <View style={styles.controls}>
-                {panel.grades.map((item) => (
+                {[...panel.allGrades.grades, ...panel.grades].map((item) => (
                   <Pressable
                     key={item.grade}
                     accessibilityRole="button"
@@ -167,13 +179,13 @@ export function ClimbingStrengths({
                 ))}
               </View>
               <Text style={styles.meta}>
-                Same-grade baseline ·{" "}
+                {selectedGradeKey === ALL_CLIMBING_GRADES ? "Overall" : "Same-grade"} baseline ·{" "}
                 {selectedGrade.successRate === null ? "No data" : `${selectedGrade.successRate}%`} ·{" "}
                 {selectedGrade.sends}/{selectedGrade.climbs} climbs sent
               </Text>
               {view !== "profile" && (
                 <ClimbingStrengthsChart
-                  panel={panel}
+                  panel={view === "curves" || view === "pyramids" ? panel : (gradePanel ?? panel)}
                   view={view}
                   grade={selectedGrade.grade}
                   onSelect={(row, selected) => {
@@ -182,12 +194,7 @@ export function ClimbingStrengths({
                   }}
                 />
               )}
-              {view !== "profile" && (
-                <Text style={styles.meta}>
-                  Select a grade and style to see its recorded climbs.
-                </Text>
-              )}
-              {panel.rows.map((row) => {
+              {(gradePanel?.rows ?? []).map((row) => {
                 const cell = row.cells.find((item) => item.grade === selectedGrade.grade);
                 return cell ? (
                   <Pressable
@@ -241,7 +248,9 @@ export function ClimbingStrengths({
                     {cell.differencePercentagePoints !== null && (
                       <Text style={styles.meta}>
                         {cell.differencePercentagePoints > 0 ? "+" : ""}
-                        {cell.differencePercentagePoints} percentage points vs same-grade baseline
+                        {cell.differencePercentagePoints} percentage points vs{" "}
+                        {selectedGradeKey === ALL_CLIMBING_GRADES ? "overall" : "same-grade"}{" "}
+                        baseline
                       </Text>
                     )}
                   </Pressable>
@@ -322,36 +331,6 @@ export function ClimbingStrengths({
       ) : !error ? (
         <QueryStatePanel variant="empty" message="No recorded climbing outcomes in this period" />
       ) : null}
-      {data && (
-        <>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Coverage details"
-            accessibilityState={{ expanded: coverageOpen }}
-            onPress={() => setCoverageOpen(!coverageOpen)}
-            style={styles.chip}
-          >
-            <Text style={styles.link}>Coverage details {coverageOpen ? "−" : "+"}</Text>
-          </Pressable>
-          {coverageOpen && (
-            <View style={styles.examples}>
-              {panel && (
-                <>
-                  <Text style={styles.meta}>Missing traits: {panel.coverage.missingTraits}</Text>
-                  <Text style={styles.meta}>
-                    Unknown outcomes in this context: {panel.coverage.unknownOutcomes}
-                  </Text>
-                </>
-              )}
-              <Text style={styles.meta}>Unknown outcomes: {data.coverage.unknownOutcomes}</Text>
-              <Text style={styles.meta}>
-                Records with missing or conflicting grades: {data.coverage.missingGrades}
-              </Text>
-              <Text style={styles.meta}>Unidentified records: {data.coverage.missingIdentity}</Text>
-            </View>
-          )}
-        </>
-      )}
     </View>
   );
 }

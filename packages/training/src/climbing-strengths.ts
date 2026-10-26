@@ -22,12 +22,7 @@ const cell = z.object({
   sampleStatus: z.enum(["no_data", "limited", "available"]),
   examples: z.array(example),
 });
-const panel = z.object({
-  key: z.string(),
-  contextKey: z.string(),
-  contextLabel: z.string(),
-  dimension: z.enum(["wall_angle", "hold_type", "setting"]),
-  setting: z.enum(["indoor", "outdoor"]).nullable(),
+const profile = z.object({
   grades: z.array(
     z.object({
       grade: z.string(),
@@ -58,6 +53,14 @@ const panel = z.object({
       ),
     }),
   ),
+});
+const panel = profile.extend({
+  key: z.string(),
+  contextKey: z.string(),
+  contextLabel: z.string(),
+  dimension: z.enum(["wall_angle", "hold_type", "setting"]),
+  setting: z.enum(["indoor", "outdoor"]).nullable(),
+  allGrades: profile,
   coverage: z.object({ missingTraits: count, unknownOutcomes: count }),
 });
 export const climbingStrengthsSchema = z.object({
@@ -68,3 +71,16 @@ export type ClimbingStrengths = z.infer<typeof climbingStrengthsSchema>;
 export type ClimbingStrengthsPanel = ClimbingStrengths["panels"][number];
 export type ClimbingStrengthsCell = ClimbingStrengthsPanel["rows"][number]["cells"][number];
 export type ClimbingStrengthsExample = ClimbingStrengthsCell["examples"][number];
+
+export const ALL_CLIMBING_GRADES = "All grades";
+export function climbingStrengthsBaselineLabel(grade: string): string {
+  return grade === ALL_CLIMBING_GRADES ? "Overall baseline" : "Same-grade baseline";
+}
+
+/** Select server-computed values for rendering, without aggregating client-side. */
+export function climbingStrengthsGradePanel(
+  panel: ClimbingStrengthsPanel,
+  grade: string,
+): ClimbingStrengthsPanel {
+  return grade === ALL_CLIMBING_GRADES ? { ...panel, ...panel.allGrades } : panel;
+}

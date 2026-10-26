@@ -4,6 +4,10 @@ import type {
   ClimbingStrengths as Strengths,
 } from "@dofek/training/climbing-strengths";
 import {
+  ALL_CLIMBING_GRADES,
+  climbingStrengthsGradePanel,
+} from "@dofek/training/climbing-strengths";
+import {
   CLIMBING_STRENGTHS_VIEWS,
   type ClimbingStrengthsView,
 } from "@dofek/training/climbing-strengths-views";
@@ -58,11 +62,13 @@ export function ClimbingStrengths({
   const settingPanels = contextPanels.filter((item) => item.dimension === panel?.dimension);
   const row =
     panel && selected && panel.key === selected.panel
-      ? panel.rows.find((item) => item.key === selected.row)
+      ? (selected.grade === ALL_CLIMBING_GRADES ? panel.allGrades.rows : panel.rows).find(
+          (item) => item.key === selected.row,
+        )
       : undefined;
   const cell = row?.cells.find((item) => item.grade === selected?.grade);
-  const grade =
-    panel?.grades.find((item) => item.grade === gradeKey)?.grade ?? panel?.grades[0]?.grade ?? "";
+  const grade = panel?.grades.find((item) => item.grade === gradeKey)?.grade ?? ALL_CLIMBING_GRADES;
+  const gradePanel = panel ? climbingStrengthsGradePanel(panel, grade) : undefined;
   const selectCell = (rowKey: string, grade: string) => {
     if (!panel) return;
     setGradeKey(grade);
@@ -73,14 +79,29 @@ export function ClimbingStrengths({
     return <QueryStatePanel variant="loading" contextLabel="Climbing strengths" />;
   if (!panel)
     return (
-      <div className="space-y-3">
-        <QueryStatePanel variant="empty" message="No recorded climbing strengths in this period." />
-        {data ? <Coverage data={data} /> : null}
-      </div>
+      <QueryStatePanel variant="empty" message="No recorded climbing strengths in this period." />
     );
 
   return (
     <div className="space-y-4">
+      {contexts.length > 1 ? (
+        <fieldset aria-label="Climbing context" className="flex flex-wrap gap-2">
+          {contexts.map(([key, label]) => (
+            <button
+              type="button"
+              key={key}
+              aria-pressed={key === panel.contextKey}
+              className={`min-h-11 rounded-lg border px-3 py-2 text-sm ${key === panel.contextKey ? "border-accent bg-accent/10 text-accent" : "border-border text-muted"}`}
+              onClick={() => {
+                const next = preferred(panels.filter((item) => item.contextKey === key));
+                if (next) setPanelKey(next.key);
+              }}
+            >
+              {label}
+            </button>
+          ))}
+        </fieldset>
+      ) : null}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap gap-2">
           {Object.entries(dimensions).map(([dimension, label]) => (
@@ -126,39 +147,21 @@ export function ClimbingStrengths({
               ))}
             </select>
           </label>
-          <label className="text-xs text-muted">
-            Grade
-            <select
-              className="ml-2 min-h-10 rounded border border-border bg-surface p-2"
-              value={grade}
-              onChange={(event) => {
-                setGradeKey(event.target.value);
-                if (row) selectCell(row.key, event.target.value);
-              }}
-            >
-              {panel.grades.map((item) => (
-                <option key={item.grade} value={item.grade}>
-                  {item.grade}
-                </option>
-              ))}
-            </select>
-          </label>
-          {contexts.length > 1 ? (
+          {view !== "profile" && view !== "curves" && view !== "pyramids" ? (
             <label className="text-xs text-muted">
-              Climbing context
+              Grade
               <select
-                className="ml-2 rounded border border-border bg-surface p-2"
-                value={panel.contextKey}
+                className="ml-2 min-h-10 rounded border border-border bg-surface p-2"
+                value={grade}
                 onChange={(event) => {
-                  const next = preferred(
-                    panels.filter((item) => item.contextKey === event.target.value),
-                  );
-                  if (next) setPanelKey(next.key);
+                  setGradeKey(event.target.value);
+                  if (row) selectCell(row.key, event.target.value);
                 }}
               >
-                {contexts.map(([key, label]) => (
-                  <option key={key} value={key}>
-                    {label}
+                <option value={ALL_CLIMBING_GRADES}>{ALL_CLIMBING_GRADES}</option>
+                {panel.grades.map((item) => (
+                  <option key={item.grade} value={item.grade}>
+                    {item.grade}
                   </option>
                 ))}
               </select>
@@ -182,14 +185,9 @@ export function ClimbingStrengths({
           ) : null}
         </div>
       </div>
-      <p className="text-sm text-muted">{panel.contextLabel}</p>
-      <p className="text-xs text-muted">
-        {panel.setting ? `${settings[panel.setting]} · ` : "Indoor & outdoor · "}Sends per distinct
-        climb. Select a cell to see its climbs.
-      </p>
       {view !== "profile" ? (
         <ClimbingStrengthsChart
-          panel={panel}
+          panel={view === "curves" || view === "pyramids" ? panel : (gradePanel ?? panel)}
           view={view}
           grade={grade}
           selectedRow={row?.key ?? null}
@@ -284,7 +282,8 @@ export function ClimbingStrengths({
           {cell.differencePercentagePoints !== null ? (
             <p className="text-xs text-muted">
               {cell.differencePercentagePoints > 0 ? "+" : ""}
-              {cell.differencePercentagePoints} percentage points vs same-grade baseline
+              {cell.differencePercentagePoints} percentage points vs{" "}
+              {cell.grade === ALL_CLIMBING_GRADES ? "overall" : "same-grade"} baseline
             </p>
           ) : null}
           {cell.examples.map((example) => (
@@ -310,33 +309,6 @@ export function ClimbingStrengths({
           ))}
         </section>
       ) : null}
-      <Coverage data={data} panel={panel} />
     </div>
-  );
-}
-
-function Coverage({
-  data,
-  panel,
-}: {
-  data: Strengths | undefined;
-  panel?: ClimbingStrengthsPanel;
-}) {
-  if (!data) return null;
-  return (
-    <details className="text-xs text-muted">
-      <summary className="cursor-pointer py-2">Coverage</summary>
-      <p>
-        {data.coverage.unknownOutcomes} unknown outcomes · {data.coverage.missingGrades} records
-        excluded for missing or conflicting grades · {data.coverage.missingIdentity} unidentified
-        records excluded
-      </p>
-      {panel ? (
-        <p>
-          {panel.coverage.missingTraits} climbs missing {dimensions[panel.dimension].toLowerCase()}{" "}
-          · {panel.coverage.unknownOutcomes} unknown outcomes in this context
-        </p>
-      ) : null}
-    </details>
   );
 }

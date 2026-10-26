@@ -7,6 +7,12 @@ import { climbingStrengthsFixture as fixture } from "./climbing-strengths-fixtur
 
 const panel = fixture.panels[0];
 if (!panel) throw new Error("Missing fixture");
+it("labels per-grade curve differences against their grade baseline after selecting All grades", () => {
+  const option = climbingStrengthsChartOption(panel, "curves", "All grades", null);
+  expect(option.series[0]?.data[1]).toMatchObject({
+    tooltipText: expect.stringContaining("vs same-grade baseline"),
+  });
+});
 it("renders supplied same-grade gaps, including zero and missing observations", () => {
   const option = climbingStrengthsChartOption(panel, "gaps", "V4", "vertical");
   expect(option.series).toEqual([
@@ -151,6 +157,29 @@ it("preserves calendar bucket dates and missing-month gaps without smoothing", (
       }),
     ]),
   );
+});
+it.each([320, 900])("keeps progress headings clear of axis labels at %ipx", (width) => {
+  const chart = init(null, undefined, { renderer: "svg", ssr: true, width, height: 610 });
+  try {
+    chart.setOption({
+      ...climbingStrengthsChartOption(panel, "progress", "V4", null),
+      animation: false,
+    });
+    const labels = renderedText(chart);
+    for (const row of panel.rows) {
+      const heading = labels.find((label) => label.text === row.label);
+      expect(heading).toBeDefined();
+      if (!heading) throw new Error(`Missing heading: ${row.label}`);
+      for (const label of labels.filter((label) => label !== heading)) {
+        expect(heading.bounds.intersect(label.bounds), `${row.label} overlaps ${label.text}`).toBe(
+          false,
+        );
+      }
+    }
+    expect(labels.filter((label) => label.text === "100%")).toHaveLength(panel.rows.length);
+  } finally {
+    chart.dispose();
+  }
 });
 it("centers unequal pyramid tracks and sends on the same rendered midpoint", () => {
   const chart = init(null, undefined, { renderer: "svg", ssr: true, width: 900, height: 700 });
@@ -561,9 +590,9 @@ it("renders monthly facets with independent style headings and visible shared su
           .map((item) => item.text);
         expect(labels).toEqual(
           expect.arrayContaining([
-            "0",
-            "50",
-            "100",
+            "0%",
+            "50%",
+            "100%",
             "2026-08-15 – 2026-08-31",
             "2026-09-01 – 2026-09-30",
             "2026-10-01 – 2026-10-26",

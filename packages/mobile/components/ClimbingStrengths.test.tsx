@@ -7,9 +7,27 @@ const openExternalUrl = vi.hoisted(() => vi.fn().mockResolvedValue(true));
 vi.mock("../lib/open-external-url", () => ({ openExternalUrl }));
 const push = vi.hoisted(() => vi.fn());
 vi.mock("expo-router", () => ({ useRouter: () => ({ push }) }));
+function renderAtV3(element: Parameters<typeof render>[0]) {
+  const result = render(element);
+  const grade = screen.queryByRole("button", { name: "V3" });
+  if (grade) fireEvent.click(grade);
+  return result;
+}
 describe("ClimbingStrengths", () => {
+  it("shows pooled All grades by default and switches to individual grade results", () => {
+    render(<ClimbingStrengths data={data} />);
+    expect(screen.getByRole("button", { name: "All grades" }).getAttribute("aria-selected")).toBe(
+      "true",
+    );
+    expect(screen.getByText("Overall baseline · 36% · 5/14 climbs sent")).toBeTruthy();
+    expect(screen.getByRole("button", { name: /^Slab · 29%/ })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "V3" }));
+    expect(screen.getByRole("button", { name: /^Slab · 40%/ })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "All grades" }));
+    expect(screen.getByRole("button", { name: /^Slab · 29%/ })).toBeTruthy();
+  });
   it("changes visualization with a compact native radio picker and retains selected climbs on refresh", () => {
-    const rendered = render(<ClimbingStrengths data={data} />);
+    const rendered = renderAtV3(<ClimbingStrengths data={data} />);
     fireEvent.click(screen.getByRole("button", { name: /^Slab · 40%/ }));
     for (const label of [
       "Style gaps",
@@ -31,14 +49,14 @@ describe("ClimbingStrengths", () => {
     expect(screen.getByText("Quiet Feet")).toBeTruthy();
   });
   it("labels progress examples as applying to the selected period", () => {
-    render(<ClimbingStrengths data={data} />);
+    renderAtV3(<ClimbingStrengths data={data} />);
     fireEvent.click(screen.getByRole("button", { name: /^Slab · 40%/ }));
     fireEvent.click(screen.getByRole("button", { name: /^View:/ }));
     fireEvent.click(screen.getByRole("radio", { name: "Progress" }));
     expect(screen.getByText("Recorded climbs · Across the selected period")).toBeTruthy();
   });
   it("hides chart-selected detail when its grade disappears during refresh", () => {
-    const rendered = render(<ClimbingStrengths data={data} />);
+    const rendered = renderAtV3(<ClimbingStrengths data={data} />);
     fireEvent.click(screen.getByRole("button", { name: /^View:/ }));
     fireEvent.click(screen.getByRole("radio", { name: "Success curves" }));
     const point = rendered.container.querySelector('Circle[accessibilityLabel^="Slab · V4"]');
@@ -69,10 +87,12 @@ describe("ClimbingStrengths", () => {
       />,
     );
     expect(screen.getByRole("button", { name: "View: Success curves" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "V3" }).getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByRole("button", { name: "All grades" }).getAttribute("aria-selected")).toBe(
+      "true",
+    );
     expect(screen.queryByText("Quiet Feet")).toBeNull();
     expect(screen.queryByText("Recorded climbs")).toBeNull();
-    expect(screen.getByRole("button", { name: /^Slab · 40%/ }).getAttribute("aria-selected")).toBe(
+    expect(screen.getByRole("button", { name: /^Slab · 29%/ }).getAttribute("aria-selected")).toBe(
       "false",
     );
   });
@@ -91,7 +111,7 @@ describe("ClimbingStrengths", () => {
         })),
       })),
     };
-    const rendered = render(<ClimbingStrengths data={{ ...data, panels: [panel, outdoor] }} />);
+    const rendered = renderAtV3(<ClimbingStrengths data={{ ...data, panels: [panel, outdoor] }} />);
     fireEvent.click(screen.getByRole("button", { name: /^Slab · 40%/ }));
     expect(screen.getByText("Quiet Feet")).toBeTruthy();
     rendered.rerender(<ClimbingStrengths data={{ ...data, panels: [outdoor] }} />);
@@ -106,7 +126,7 @@ describe("ClimbingStrengths", () => {
     );
   });
   it("renders server values and selects grade, dimension and context", () => {
-    render(<ClimbingStrengths data={data} />);
+    renderAtV3(<ClimbingStrengths data={data} />);
     expect(screen.getByText("Same-grade baseline · 44% · 4/9 climbs sent")).toBeTruthy();
     expect(document.querySelector('[testID="strength-bar-slab"]')?.getAttribute("width")).toBe(
       "40%",
@@ -152,7 +172,7 @@ describe("ClimbingStrengths", () => {
     const panels = data.panels.map((panel) =>
       panel.dimension === "setting" ? panel : { ...panel, rows: [] },
     );
-    render(<ClimbingStrengths data={{ ...data, panels }} />);
+    renderAtV3(<ClimbingStrengths data={{ ...data, panels }} />);
     expect(
       screen.getByRole("button", { name: "Indoor / outdoor" }).getAttribute("aria-selected"),
     ).toBe("true");
@@ -172,7 +192,7 @@ describe("ClimbingStrengths", () => {
     if (!angle) throw new Error("Missing fixture angle panel");
     const setting = data.panels.find((panel) => panel.dimension === "setting");
     if (!setting) throw new Error("Missing fixture setting panel");
-    render(
+    renderAtV3(
       <ClimbingStrengths
         data={{
           ...data,
@@ -199,28 +219,20 @@ describe("ClimbingStrengths", () => {
         ? { ...panel, grades: [], rows: [], coverage: { missingTraits: 0, unknownOutcomes: 3 } }
         : panel,
     );
-    render(<ClimbingStrengths data={{ ...data, panels }} />);
+    renderAtV3(<ClimbingStrengths data={{ ...data, panels }} />);
     expect(screen.getByText("Same-grade baseline · 44% · 4/9 climbs sent")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Routes · YDS · Lead · Free" }));
     expect(screen.getByRole("button", { name: "Bouldering · V scale · Free" })).toBeTruthy();
     expect(screen.getByText("No recorded climbing outcomes in this context")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Coverage details" }));
-    expect(screen.getByText("Unknown outcomes in this context: 3")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Bouldering · V scale · Free" }));
     expect(screen.getByText("Same-grade baseline · 44% · 4/9 climbs sent")).toBeTruthy();
-    expect(screen.getByText("Unknown outcomes in this context: 2")).toBeTruthy();
   });
-  it("discloses coverage and distinguishes no data", () => {
-    render(<ClimbingStrengths data={data} />);
+  it("distinguishes no data", () => {
+    renderAtV3(<ClimbingStrengths data={data} />);
     expect(screen.getByRole("button", { name: "Vertical · No data" })).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Coverage details" }));
-    expect(screen.getByText("Missing traits: 7")).toBeTruthy();
-    expect(screen.getByText("Unknown outcomes: 3")).toBeTruthy();
-    expect(screen.getByText("Records with missing or conflicting grades: 2")).toBeTruthy();
-    expect(screen.getByText("Unidentified records: 1")).toBeTruthy();
   });
   it("separates loading, errors, empty and cached refresh", () => {
-    const view = render(<ClimbingStrengths data={undefined} loading />);
+    const view = renderAtV3(<ClimbingStrengths data={undefined} loading />);
     expect(screen.getByTestId("query-state-loading")).toBeTruthy();
     view.rerender(
       <ClimbingStrengths data={undefined} error={{ message: "Reconnect your account." }} />,
@@ -232,7 +244,7 @@ describe("ClimbingStrengths", () => {
     view.rerender(
       <ClimbingStrengths data={data} loading error={{ message: "Reconnect your account." }} />,
     );
-    expect(screen.getByText("Same-grade baseline · 44% · 4/9 climbs sent")).toBeTruthy();
+    expect(screen.getByText("Overall baseline · 36% · 5/14 climbs sent")).toBeTruthy();
     expect(screen.queryByTestId("query-state-loading")).toBeNull();
   });
 });

@@ -2,6 +2,7 @@ import type {
   ClimbingStrengthsCell,
   ClimbingStrengthsPanel,
 } from "@dofek/training/climbing-strengths";
+import { climbingStrengthsBaselineLabel } from "@dofek/training/climbing-strengths";
 import type { ClimbingStrengthsView } from "@dofek/training/climbing-strengths-views";
 import type { CustomSeriesRenderItem } from "echarts";
 import {
@@ -35,6 +36,7 @@ export function climbingStrengthsChartOption(
   selectedRow: string | null,
 ) {
   const baseline = panel.grades.find((item) => item.grade === grade);
+  const baselineLabel = climbingStrengthsBaselineLabel(grade);
   const selected = panel.rows.flatMap((row, index) => {
     const cell = row.cells.find((item) => item.grade === grade);
     return cell ? [{ row, cell, color: seriesColor(index) }] : [];
@@ -54,7 +56,7 @@ export function climbingStrengthsChartOption(
     tooltipText:
       tooltipText(row.label, cell, period) +
       ("differencePercentagePoints" in cell && cell.differencePercentagePoints !== null
-        ? `\n${cell.differencePercentagePoints} percentage points vs same-grade baseline`
+        ? `\n${cell.differencePercentagePoints} percentage points vs ${climbingStrengthsBaselineLabel(cell.grade).toLowerCase()}`
         : ""),
     itemStyle: {
       color,
@@ -92,7 +94,7 @@ export function climbingStrengthsChartOption(
       ...base,
       xAxis: {
         ...dofekAxis.value({
-          name: "Percentage points vs same-grade baseline",
+          name: `Percentage points vs ${baselineLabel.toLowerCase()}`,
           min: -100,
           max: 100,
         }),
@@ -298,7 +300,7 @@ export function climbingStrengthsChartOption(
         gridIndex: index,
       })),
       yAxis: panel.rows.map((_, index) => ({
-        ...dofekAxis.value({ name: "Success (%)", min: 0, max: 100 }),
+        ...dofekAxis.value({ min: 0, max: 100, axisLabel: { formatter: "{value}%" } }),
         gridIndex: index,
         interval: 50,
       })),
@@ -347,11 +349,11 @@ export function climbingStrengthsChartOption(
             areaStyle: { opacity: 0.12 },
           },
           {
-            name: "Same-grade baseline",
+            name: baselineLabel,
             value: axes.map(() => baseline?.successRate ?? null),
             tooltipText: baseline
-              ? tooltipText("Same-grade baseline", baseline)
-              : `Same-grade baseline · ${grade}\nNo data`,
+              ? tooltipText(baselineLabel, baseline)
+              : `${baselineLabel} · ${grade}\nNo data`,
             lineStyle: { type: "dashed", color: chartThemeColors.axisLabel },
             itemStyle: { color: chartThemeColors.axisLabel },
           },

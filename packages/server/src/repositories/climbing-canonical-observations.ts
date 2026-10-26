@@ -4,7 +4,7 @@ import { type SQL, sql } from "drizzle-orm";
 import { postgresActivityCalendarDate } from "./activity-local-date.ts";
 import { rockClimbingLogProjection } from "./climbing-rock-observations.ts";
 export function canonicalClimbingLogCtes(
-  range: number | { startDate: string; endDate: string },
+  range: number | { startDate?: string; endDate: string },
   filters: ClimbingFilters,
   preference: ClimbingGradePreference,
   userId: string,
@@ -15,7 +15,7 @@ export function canonicalClimbingLogCtes(
   const datePredicate = (date: SQL) =>
     typeof range === "number"
       ? sql`(${date}) > (NOW() AT TIME ZONE ${timezone})::date - ${range}::int AND (${date}) <= (NOW() AT TIME ZONE ${timezone})::date`
-      : sql`(${date}) BETWEEN ${range.startDate}::date AND ${range.endDate}::date`;
+      : sql`(${date}) <= ${range.endDate}::date ${range.startDate === undefined ? sql`` : sql`AND (${date}) >= ${range.startDate}::date`}`;
   return sql`rock_logs AS (${rockClimbingLogProjection(preference, filters)}),
       dated_logs AS (
         SELECT (${activityDate})::text AS session_date, a.id AS canonical_activity_id,

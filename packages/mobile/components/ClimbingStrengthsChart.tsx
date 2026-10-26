@@ -1,4 +1,5 @@
 import type { ClimbingStrengthsPanel } from "@dofek/training/climbing-strengths";
+import { climbingStrengthsBaselineLabel } from "@dofek/training/climbing-strengths";
 import {
   CLIMBING_STRENGTHS_VIEWS,
   type ClimbingStrengthsView,
@@ -46,6 +47,11 @@ export function ClimbingStrengthsChart({
   onSelect: (rowKey: string, grade: string) => void;
 }) {
   const [width, setWidth] = useState(300);
+  const baselineLabel = climbingStrengthsBaselineLabel(grade);
+  const explanation = explanations[view].replaceAll(
+    "same-grade baseline",
+    baselineLabel.toLowerCase(),
+  );
   const title =
     CLIMBING_STRENGTHS_VIEWS.find((entry) => entry.value === view)?.label ?? "Climbing strengths";
   const baseline = panel.grades.find((entry) => entry.grade === grade);
@@ -66,10 +72,16 @@ export function ClimbingStrengthsChart({
       : panel.rows.flatMap((row) =>
           row.cells.map((cell) => ({
             label: `${row.label} · ${cell.grade}`,
-            value: `${facts(cell)} · Same-grade baseline ${rate(panel.grades.find((entry) => entry.grade === cell.grade)?.successRate)}${cell.differencePercentagePoints === null ? "" : ` · ${cell.differencePercentagePoints > 0 ? "+" : ""}${cell.differencePercentagePoints} percentage points`}`,
+            value: `${facts(cell)} · ${climbingStrengthsBaselineLabel(cell.grade)} ${rate(panel.grades.find((entry) => entry.grade === cell.grade)?.successRate)}${cell.differencePercentagePoints === null ? "" : ` · ${cell.differencePercentagePoints > 0 ? "+" : ""}${cell.differencePercentagePoints} percentage points`}`,
           })),
         );
   const usable = selected.filter(({ cell }) => cell.successRate !== null);
+  const legendRows =
+    view === "curves"
+      ? panel.rows.map((row, index) => ({ row, index }))
+      : view === "radar"
+        ? usable
+        : selected;
   const insufficientRadar = view === "radar" && usable.length < 3;
   const chartWidth = Math.max(
     width,
@@ -109,7 +121,7 @@ export function ClimbingStrengthsChart({
       style={styles.container}
     >
       <Text style={styles.title}>{title}</Text>
-      <Text style={styles.meta}>{explanations[view]}</Text>
+      <Text style={styles.meta}>{explanation}</Text>
       {insufficientRadar && (
         <Text style={styles.meta}>
           Radar needs at least three styles with recorded success rates for this grade.
@@ -118,7 +130,7 @@ export function ClimbingStrengthsChart({
       {(view === "gaps" || view === "exposure") && (
         <Text style={styles.meta}>Gap (percentage points)</Text>
       )}
-      <AccessibleChart title={title} summary={`${grade}. ${explanations[view]}`} rows={exactRows}>
+      <AccessibleChart title={title} summary={`${grade}. ${explanation}`} rows={exactRows}>
         {!insufficientRadar && (
           <ScrollView horizontal contentContainerStyle={{ minWidth: width }}>
             <Svg width={chartWidth} height={height} viewBox={`0 0 ${chartWidth} ${height}`}>
@@ -521,7 +533,7 @@ export function ClimbingStrengthsChart({
       </AccessibleChart>
       {(view === "curves" || view === "exposure" || view === "radar") && (
         <View style={styles.legend}>
-          {(view === "radar" ? usable : selected).map(({ row, index }, axis) => (
+          {legendRows.map(({ row, index }, axis) => (
             <Text key={row.key} style={[styles.meta, { color: color(index) }]}>
               {view === "exposure" || view === "radar" ? `${axis + 1}. ` : ""}
               {row.label}

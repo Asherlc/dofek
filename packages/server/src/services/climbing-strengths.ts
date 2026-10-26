@@ -5,6 +5,7 @@ import type {
   ClimbingStrengthsExample,
   ClimbingStrengthsPanel,
 } from "@dofek/training/climbing-strengths";
+import { ALL_CLIMBING_GRADES } from "@dofek/training/climbing-strengths";
 export interface ClimbingStrengthsObservation {
   identity: string | null;
   contextKey: string;
@@ -49,7 +50,7 @@ function monthlyWindows(window: { startDate: string; endDate: string }) {
 }
 export function buildClimbingStrengths(
   observations: ClimbingStrengthsObservation[],
-  window: { startDate: string; endDate: string },
+  window: { startDate?: string; endDate: string },
 ): ClimbingStrengths {
   const coverage = { unknownOutcomes: 0, missingGrades: 0, missingIdentity: 0 };
   const groups = new Map<string, ClimbingStrengthsObservation[]>();
@@ -136,7 +137,13 @@ export function buildClimbingStrengths(
       },
     });
   }
-  const months = monthlyWindows(window);
+  const startDate =
+    window.startDate ??
+    observations.reduce(
+      (earliest, entry) => (entry.example.date < earliest ? entry.example.date : earliest),
+      window.endDate,
+    );
+  const months = monthlyWindows({ startDate, endDate: window.endDate });
   const panels: ClimbingStrengthsPanel[] = [];
   const contexts = [...new Set(entries.map((e) => e.contextKey))].sort();
   for (const contextKey of contexts) {
@@ -149,14 +156,21 @@ export function buildClimbingStrengths(
       for (const setting of settings) {
         const selected = context.filter((e) => setting === null || e.setting === setting);
         const known = selected.filter((e) => e.outcome !== null);
-        const grades = [
-          ...new Map(
-            known.map((e) => [e.grade, { grade: e.grade ?? "", gradeSortValue: e.gradeSortValue }]),
-          ).values(),
-        ]
-          .sort((a, b) => a.gradeSortValue - b.gradeSortValue || a.grade.localeCompare(b.grade))
-          .map((g) => {
-            const matching = known.filter((e) => e.grade === g.grade);
+        const buildProfile = (allGrades: boolean) => {
+          const gradeGroups = allGrades
+            ? [{ grade: ALL_CLIMBING_GRADES, gradeSortValue: 0 }]
+            : [
+                ...new Map(
+                  known.map((e) => [
+                    e.grade,
+                    { grade: e.grade ?? "", gradeSortValue: e.gradeSortValue },
+                  ]),
+                ).values(),
+              ].sort(
+                (a, b) => a.gradeSortValue - b.gradeSortValue || a.grade.localeCompare(b.grade),
+              );
+          const grades = gradeGroups.map((g) => {
+            const matching = known.filter((e) => allGrades || e.grade === g.grade);
             const sends = matching.filter((e) => e.outcome === "sent").length;
             return {
               ...g,
@@ -165,78 +179,84 @@ export function buildClimbingStrengths(
               successRate: percent(sends, matching.length),
             };
           });
-        const keys =
-          dimension === "setting"
-            ? ["indoor", "outdoor"]
-            : [...new Set(known.flatMap((e) => trait(e, dimension) ?? []))].sort();
+          const keys =
+            dimension === "setting"
+              ? ["indoor", "outdoor"]
+              : [...new Set(known.flatMap((e) => trait(e, dimension) ?? []))].sort();
+          return {
+            grades,
+            rows: keys.map((key) => ({
+              key,
+              label: key.charAt(0).toUpperCase() + key.slice(1),
+              cells: grades.map((g) => {
+                const matching = known.filter(
+                  (e) => (allGrades || e.grade === g.grade) && trait(e, dimension) === key,
+                );
+                const sends = matching.filter((e) => e.outcome === "sent").length;
+                const successRate = percent(sends, matching.length);
+                return {
+                  grade: g.grade,
+                  sends,
+                  climbs: matching.length,
+                  successRate,
+                  differencePercentagePoints:
+                    successRate === null || g.successRate === null
+                      ? null
+                      : successRate - g.successRate,
+                  sampleStatus: sampleStatus(matching.length),
+                  examples: matching.slice(0, 3).map((e) => e.example),
+                };
+              }),
+            })),
+            progress: months.map(({ startDate, endDate }) => {
+              // Resolve identity, grade and traits across the complete window;
+              // only outcomes are re-evaluated from this month's original logs.
+              const monthly = selected.flatMap((entry) => {
+                const attempts = entry.observations.filter(
+                  (observation) =>
+                    observation.example.date >= startDate && observation.example.date <= endDate,
+                );
+                const outcome: ClimbingStrengthsObservation["outcome"] = attempts.some(
+                  (attempt) => attempt.outcome === "sent",
+                )
+                  ? "sent"
+                  : attempts.some((attempt) => attempt.outcome === "not_sent")
+                    ? "not_sent"
+                    : null;
+                return outcome === null ? [] : [{ ...entry, outcome }];
+              });
+              return {
+                startDate,
+                endDate,
+                rows: keys.map((key) => ({
+                  key,
+                  cells: grades.map(({ grade }) => {
+                    const matching = monthly.filter(
+                      (entry) =>
+                        (allGrades || entry.grade === grade) && trait(entry, dimension) === key,
+                    );
+                    const sends = matching.filter((entry) => entry.outcome === "sent").length;
+                    return {
+                      grade,
+                      sends,
+                      climbs: matching.length,
+                      successRate: percent(sends, matching.length),
+                      sampleStatus: sampleStatus(matching.length),
+                    };
+                  }),
+                })),
+              };
+            }),
+          };
+        };
         panels.push({
           key: JSON.stringify([contextKey, dimension, setting]),
           contextKey,
           contextLabel: context[0]?.contextLabel ?? contextKey,
           dimension,
           setting,
-          grades,
-          rows: keys.map((key) => ({
-            key,
-            label: key.charAt(0).toUpperCase() + key.slice(1),
-            cells: grades.map((g) => {
-              const matching = known.filter(
-                (e) => e.grade === g.grade && trait(e, dimension) === key,
-              );
-              const sends = matching.filter((e) => e.outcome === "sent").length;
-              const successRate = percent(sends, matching.length);
-              return {
-                grade: g.grade,
-                sends,
-                climbs: matching.length,
-                successRate,
-                differencePercentagePoints:
-                  successRate === null || g.successRate === null
-                    ? null
-                    : successRate - g.successRate,
-                sampleStatus: sampleStatus(matching.length),
-                examples: matching.slice(0, 3).map((e) => e.example),
-              };
-            }),
-          })),
-          progress: months.map(({ startDate, endDate }) => {
-            // Resolve identity, grade and traits across the complete window;
-            // only outcomes are re-evaluated from this month's original logs.
-            const monthly = selected.flatMap((entry) => {
-              const attempts = entry.observations.filter(
-                (observation) =>
-                  observation.example.date >= startDate && observation.example.date <= endDate,
-              );
-              const outcome: ClimbingStrengthsObservation["outcome"] = attempts.some(
-                (attempt) => attempt.outcome === "sent",
-              )
-                ? "sent"
-                : attempts.some((attempt) => attempt.outcome === "not_sent")
-                  ? "not_sent"
-                  : null;
-              return outcome === null ? [] : [{ ...entry, outcome }];
-            });
-            return {
-              startDate,
-              endDate,
-              rows: keys.map((key) => ({
-                key,
-                cells: grades.map(({ grade }) => {
-                  const matching = monthly.filter(
-                    (entry) => entry.grade === grade && trait(entry, dimension) === key,
-                  );
-                  const sends = matching.filter((entry) => entry.outcome === "sent").length;
-                  return {
-                    grade,
-                    sends,
-                    climbs: matching.length,
-                    successRate: percent(sends, matching.length),
-                    sampleStatus: sampleStatus(matching.length),
-                  };
-                }),
-              })),
-            };
-          }),
+          ...buildProfile(false),
+          allGrades: buildProfile(true),
           coverage: {
             missingTraits: known.filter((e) => trait(e, dimension) === null).length,
             unknownOutcomes: selected.filter((e) => e.outcome === null).length,

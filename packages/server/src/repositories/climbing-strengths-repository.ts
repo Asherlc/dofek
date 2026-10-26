@@ -1,3 +1,4 @@
+import { formatDateYmdInTimeZone } from "@dofek/format/format";
 import { climbingWallAngleSchema } from "@dofek/training/climbing-experience";
 import type { ClimbingFilters } from "@dofek/training/climbing-filters";
 import {
@@ -61,13 +62,13 @@ export class ClimbingStrengthsRepository extends BaseRepository {
     this.#preference = preference;
   }
   async getObservations(
-    days: number,
+    days: number | null,
     filters: ClimbingFilters = {},
     endDate?: string,
   ): Promise<ClimbingStrengthsObservation[]> {
     const rows = await this.query(
       rowSchema,
-      sql`WITH ${canonicalClimbingLogCtes(endDate === undefined ? days : { startDate: dateWindowStartString(endDate, days - 1), endDate }, filters, this.#preference, this.userId, this.timezone, (date) => this.dateAccessPredicate(date))} SELECT * FROM dated_logs ORDER BY session_date DESC,id`,
+      sql`WITH ${canonicalClimbingLogCtes(days === null ? { endDate: endDate ?? formatDateYmdInTimeZone(new Date(), this.timezone) } : endDate === undefined ? days : { startDate: dateWindowStartString(endDate, days - 1), endDate }, filters, this.#preference, this.userId, this.timezone, (date) => this.dateAccessPredicate(date))} SELECT * FROM dated_logs ORDER BY session_date DESC,id`,
     );
     // A full recorded location/name match is the existing cross-source identity rule.
     // Ambiguous names within one provider retain their native catalogue identities.
@@ -116,17 +117,22 @@ export class ClimbingStrengthsRepository extends BaseRepository {
           climbKind: row.climb_kind,
           attemptScope: row.attempt_scope,
           ...attempt,
+          usedAid: attempt.usedAid === true,
         });
         const gradeSystem = grade?.gradeSystem ?? row.grade_system;
         const contextKey = JSON.stringify([laneKey, gradeSystem]);
+        const method = attempt.ropeMethod?.replaceAll("_", " ");
         const labels = [
-          row.climb_kind === "boulder" ? "Bouldering" : "Routes",
-          row.attempt_scope === "pitch" ? "Pitch" : "Whole climb",
-          attempt.ropeMethod?.replace(/_/g, " ") ?? "Rope method unknown",
-          attempt.solo === null ? "Solo unknown" : attempt.solo ? "Solo" : "Not solo",
-          attempt.usedAid === null ? "Aid unknown" : attempt.usedAid ? "Aid" : "Free",
-          grade ? gradeSystemLabel(grade.gradeSystem) : "Grade unknown",
-        ];
+          row.climb_kind === "boulder"
+            ? "Bouldering"
+            : method
+              ? method.charAt(0).toUpperCase() + method.slice(1)
+              : "Routes",
+          row.attempt_scope === "pitch" ? "Pitch" : null,
+          attempt.solo === true ? "Solo" : attempt.solo === false ? "With belayer" : null,
+          attempt.usedAid === true ? "Aid" : null,
+          grade ? gradeSystemLabel(grade.gradeSystem) : null,
+        ].filter((label) => label !== null);
         return {
           identity,
           contextKey,

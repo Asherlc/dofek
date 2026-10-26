@@ -151,8 +151,12 @@ retain missing observations as gaps, and expose supplied exact values through
 recorded rates; progress uses the supplied clipped calendar months and labels
 source-climb details as applying across the selected period. Native grade/style
 buttons provide selection independently of the SVG marks, using React Native's
-[accessibility roles and state](https://reactnative.dev/docs/accessibility). Coverage
-distinguishes missing traits and unknown outcomes. Unknown angle units remain
+[accessibility roles and state](https://reactnative.dev/docs/accessibility).
+All grades displays the server's pooled result per style; individual grades
+filter those results. The card offers the current training period or All time
+through the [Training route](<app/(tabs)/strain.tsx>), preserving its explicit
+end date and access restrictions in the [server query](../server/src/routers/climbing.ts).
+Unknown angle units remain
 unclassified, while known degrees retain their recorded numeric labels.
 The [Training route](<app/(tabs)/strain.tsx>) includes its existing local date
 anchor in the query key, validates restored responses with the shared schema,
