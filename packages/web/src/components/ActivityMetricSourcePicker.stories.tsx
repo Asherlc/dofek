@@ -1,6 +1,7 @@
 import type { ActivityMetricSource } from "@dofek/providers/activity-metric-source";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useState } from "react";
+import { expect, within } from "storybook/test";
 import { ActivityMetricSourcePicker } from "./ActivityMetricSourcePicker.tsx";
 
 const sources: ActivityMetricSource[] = [
@@ -77,3 +78,15 @@ export const Cloud: Story = { args: { selectedId: "whoop-cloud" } };
 export const Bluetooth: Story = { args: { selectedId: "whoop-bluetooth" } };
 export const RecorderDetails: Story = { args: { selectedId: "fit-file" } };
 export const UnknownAttribution: Story = { args: { selectedId: "unknown" } };
+
+export const OpenDropdown: Story = {
+  args: { selectedId: "whoop-cloud" },
+  play: async ({ canvasElement, userEvent }) => {
+    await userEvent.click(within(canvasElement).getByRole("button", { name: /Heart Rate source/ }));
+    const dropdown = within(canvasElement.ownerDocument.body).getByRole("dialog", {
+      name: "Heart Rate source",
+    });
+    await expect(dropdown).toBeVisible();
+    await expect(within(dropdown).getByRole("radio", { name: "WHOOP (Cloud)" })).toBeChecked();
+  },
+};

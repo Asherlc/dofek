@@ -6,6 +6,33 @@ import { Modal, Pressable, StyleSheet, Text, View } from "react-native";
 import { colors } from "../../theme";
 import { ProviderLogo } from "../ProviderLogo";
 
+function AttributionIcon({
+  attribution,
+  serverUrl,
+}: {
+  attribution: ActivityMetricSource["presentation"]["attribution"] | undefined;
+  serverUrl: string;
+}) {
+  if (!attribution) return null;
+  return (
+    <View
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
+      style={styles.badge}
+    >
+      {attribution.kind === "apple_health" ? (
+        <ProviderLogo provider="apple_health" serverUrl={serverUrl} size={14} />
+      ) : (
+        <Ionicons
+          name={attribution.kind === "cloud" ? "cloud-outline" : "bluetooth-outline"}
+          size={14}
+          color={colors.textSecondary}
+        />
+      )}
+    </View>
+  );
+}
+
 export function ActivityMetricSourcePicker({
   label,
   showLabel = true,
@@ -50,25 +77,7 @@ export function ActivityMetricSourcePicker({
         <Text numberOfLines={1} style={styles.sourceName}>
           {presentation?.displayName}
         </Text>
-        {presentation?.attribution && (
-          <View
-            accessibilityElementsHidden
-            importantForAccessibility="no-hide-descendants"
-            style={styles.badge}
-          >
-            {presentation.attribution.kind === "apple_health" ? (
-              <ProviderLogo provider="apple_health" serverUrl={serverUrl} size={14} />
-            ) : (
-              <Ionicons
-                name={
-                  presentation.attribution.kind === "cloud" ? "cloud-outline" : "bluetooth-outline"
-                }
-                size={14}
-                color={colors.textSecondary}
-              />
-            )}
-          </View>
-        )}
+        <AttributionIcon attribution={presentation?.attribution} serverUrl={serverUrl} />
         <Ionicons name="chevron-down" size={14} color={colors.textTertiary} accessible={false} />
       </Pressable>
       {open && (
@@ -88,11 +97,33 @@ export function ActivityMetricSourcePicker({
                     onChange(source.id);
                     setOpen(false);
                   }}
-                  style={styles.choice}
+                  style={[styles.choice, styles.sourceChoice]}
                 >
-                  <Text style={{ color: source.id === selectedId ? colors.accent : colors.text }}>
-                    {source.label}
+                  <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+                    <ProviderLogo
+                      provider={
+                        providerSourceLogo(
+                          source.presentation.providerId,
+                          source.presentation.sourceName,
+                        ).provider
+                      }
+                      sourceName={source.presentation.sourceName}
+                      serverUrl={serverUrl}
+                      size={22}
+                    />
+                  </View>
+                  <Text
+                    style={{
+                      flex: 1,
+                      color: source.id === selectedId ? colors.accent : colors.text,
+                    }}
+                  >
+                    {source.presentation.displayName}
                   </Text>
+                  <AttributionIcon
+                    attribution={source.presentation.attribution}
+                    serverUrl={serverUrl}
+                  />
                 </Pressable>
               ))}
               <Pressable
@@ -136,5 +167,6 @@ const styles = StyleSheet.create({
   overlay: { flex: 1, justifyContent: "center", padding: 24, backgroundColor: "rgba(0,0,0,0.5)" },
   dialog: { backgroundColor: colors.surface, borderRadius: 16, padding: 16, gap: 8 },
   dialogTitle: { color: colors.text, fontWeight: "600" },
+  sourceChoice: { flexDirection: "row", alignItems: "center", gap: 8 },
   choice: { minHeight: 44, padding: 12, justifyContent: "center" },
 });
