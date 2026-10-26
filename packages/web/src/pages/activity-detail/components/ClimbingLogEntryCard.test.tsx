@@ -85,6 +85,29 @@ it.each([undefined, 3])(
   },
 );
 
+it.each([
+  { freeSend: false, outcome: "completed", summary: "Attempted · Attempts: 2" },
+  { freeSend: false, outcome: "failed", summary: "Attempted · Attempts: 2" },
+  { freeSend: true, outcome: "completed", summary: "Attempts: 2" },
+  { freeSend: null, outcome: null, summary: "Attempts: 2" },
+] as const)(
+  "renders the server's send status ($freeSend, $outcome)",
+  ({ freeSend, outcome, summary }) => {
+    const entry = climbingLogEntryFixture({
+      freeSend,
+      recordedClimbOutcome: outcome,
+      recordedClimbAttemptCount: 2,
+    });
+    render(
+      <ul>
+        <ClimbingLogEntryCard entry={entry} />
+      </ul>,
+    );
+    expect(screen.getByText(summary)).toBeInTheDocument();
+    expect(screen.queryAllByText(/Attempted/)).toHaveLength(freeSend === false ? 1 : 0);
+  },
+);
+
 it("keeps canonical source links and attachment actions accessible without GPS", () => {
   const entry = climbingLogEntryFixture({
     climb: climbingClimbFixture(),

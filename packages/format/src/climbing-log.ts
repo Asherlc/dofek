@@ -7,12 +7,15 @@ export function formatClimbingRecordedResult(
   outcome: AttemptOutcome | null,
   recordedCount: number | null,
   resultLabels: readonly string[] = [],
+  freeSend: boolean | null = null,
 ): string | null {
   const result =
     target === null
-      ? outcome === "failed"
-        ? "Failed"
-        : null
+      ? freeSend === false
+        ? "Attempted"
+        : outcome === "failed"
+          ? "Failed"
+          : null
       : `${target}${outcome === "failed" ? " failed" : ""}`;
   return (
     [

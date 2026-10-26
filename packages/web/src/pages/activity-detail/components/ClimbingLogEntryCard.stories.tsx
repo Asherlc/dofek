@@ -1,6 +1,9 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import "leaflet/dist/leaflet.css";
-import { climbingLogEntryFixture } from "../../../../../server/src/repositories/climbing-test-helpers.ts";
+import {
+  climbingAttemptFixture,
+  climbingLogEntryFixture,
+} from "../../../../../server/src/repositories/climbing-test-helpers.ts";
 import { ClimbingLogEntryCard } from "./ClimbingLogEntryCard.tsx";
 import {
   areaClimbingLocation,
@@ -27,6 +30,21 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 export const Default: Story = {};
+export const Attempted: Story = {
+  args: {
+    location: undefined,
+    entry: {
+      ...meta.args.entry,
+      freeSend: false,
+      recordedClimbOutcome: "completed",
+      recordedClimbAttemptCount: 2,
+      attempts: [
+        climbingAttemptFixture(meta.args.entry.id, { outcome: "failed" }),
+        climbingAttemptFixture(meta.args.entry.id, { outcome: "completed", fellOrHung: true }),
+      ],
+    },
+  },
+};
 export const RouteWithTicks: Story = {
   args: {
     entry: {

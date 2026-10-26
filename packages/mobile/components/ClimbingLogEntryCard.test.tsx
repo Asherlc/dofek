@@ -113,6 +113,30 @@ describe("ClimbingLogEntryCard", () => {
     expect(screen.getByText("Attempts: 2")).toBeTruthy();
   });
 
+  it.each([
+    { freeSend: false, outcome: "completed", summary: "Attempted · Attempts: 2" },
+    { freeSend: false, outcome: "failed", summary: "Attempted · Attempts: 2" },
+    { freeSend: true, outcome: "completed", summary: "Attempts: 2" },
+    { freeSend: null, outcome: null, summary: "Attempts: 2" },
+  ] as const)(
+    "renders the server's send status ($freeSend, $outcome)",
+    ({ freeSend, outcome, summary }) => {
+      render(
+        <ClimbingLogEntryCard
+          entry={{
+            ...climbingLogFixture,
+            freeSend,
+            recordedClimbOutcome: outcome,
+            recordedClimbAttemptCount: 2,
+            attempts: [climbingAttemptFixture(climbingLogFixture.id, { outcome })],
+          }}
+        />,
+      );
+      expect(screen.getByText(summary)).toBeTruthy();
+      expect(screen.queryAllByText(/Attempted/)).toHaveLength(freeSend === false ? 1 : 0);
+    },
+  );
+
   it("shows a compact single-point map", () => {
     const { container } = render(
       <ClimbingLogEntryCard entry={climbingLogFixture} location={exactClimbingLocation} />,

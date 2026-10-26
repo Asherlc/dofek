@@ -63,3 +63,8 @@ and internal references.
 [Climbing summaries](src/climbing-log.ts) omit generic “Completed” wording and
 suppress redundant attempt counts for the server's Onsight and Flash labels.
 Other recorded attempt counts and explicit failure results stay visible.
+Confirmed non-sends from the server's nullable `freeSend` field display as
+“Attempted” alongside known attempt counts. Unknown send status stays unlabeled;
+completion alone does not establish a send. See the
+[server contract](../server/src/contracts/climbing-log-contracts.ts) and
+[canonical send projection](../../drizzle/0148_compute_climbing_attempt_outcome.sql).

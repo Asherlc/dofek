@@ -29,6 +29,20 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const Default: Story = {};
+export const Attempted: Story = {
+  args: {
+    entry: {
+      ...climbingLogFixture,
+      freeSend: false,
+      recordedClimbOutcome: "completed",
+      recordedClimbAttemptCount: 2,
+      attempts: [
+        climbingAttemptFixture(climbingLogFixture.id, { outcome: "failed" }),
+        climbingAttemptFixture(climbingLogFixture.id, { outcome: "completed", fellOrHung: true }),
+      ],
+    },
+  },
+};
 export const MinimalEntry: Story = { args: { entry: climbingLogEntryFixture() } };
 export const ExactClimb: Story = { args: { location: exactClimbingLocation } };
 export const AreaLocation: Story = { args: { location: areaClimbingLocation } };
