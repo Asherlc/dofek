@@ -206,7 +206,7 @@ describe("ClimbingLogEntryBreakdown", () => {
     expect(cards[1]?.getAttribute("aria-label")).toBe("Climbing entry: Swiss Cheese");
   });
 
-  it("keeps each climb in one cell for walls with one or multiple climbs", () => {
+  it("flows climbs across wall boundaries while retaining each wall heading", () => {
     const climb = climbingLogFixture.climb;
     const area = climb?.areaPath.at(-1);
     if (!climb || !area) throw new Error("Expected an area fixture");
@@ -227,16 +227,34 @@ describe("ClimbingLogEntryBreakdown", () => {
         ]}
       />,
     );
-    const groupedCards = within(screen.getByLabelText("Goat Rock")).getAllByLabelText(
-      "Climbing entry: Swiss Cheese",
-    );
-    const singletonCard = within(screen.getByLabelText("North Wall")).getByLabelText(
-      "Climbing entry: Other climb",
-    );
+    const goatRock = screen.getByLabelText("Goat Rock");
+    const northWall = screen.getByLabelText("North Wall");
+    const groupedCards = within(goatRock).getAllByLabelText("Climbing entry: Swiss Cheese");
+    const singletonCard = within(northWall).getByLabelText("Climbing entry: Other climb");
     expect(groupedCards).toHaveLength(2);
+    expect(goatRock.parentElement?.style.flexDirection).toBe("row");
+    expect(goatRock.parentElement?.style.flexWrap).toBe("wrap");
+    for (const area of [goatRock, northWall]) {
+      expect(area.style.display).toBe("contents");
+      expect(area.firstElementChild?.getAttribute("style")).toContain("display: contents");
+    }
     for (const card of [...groupedCards, singletonCard]) {
       expect(card.parentElement?.style.flexGrow).toBe("0");
+      expect(card.parentElement?.firstElementChild?.getAttribute("style")).toContain(
+        "min-height: 20px",
+      );
     }
+    const [firstCard, repeatedCard] = groupedCards;
+    if (!firstCard?.parentElement || !repeatedCard?.parentElement || !singletonCard.parentElement) {
+      throw new Error("Expected each climb to have a cell");
+    }
+    expect(within(firstCard.parentElement).getByText("Goat Rock").getAttribute("role")).toBe(
+      "header",
+    );
+    expect(within(repeatedCard.parentElement).queryByText("Goat Rock")).toBeNull();
+    expect(within(singletonCard.parentElement).getByText("North Wall").getAttribute("role")).toBe(
+      "header",
+    );
   });
 
   it("allows a 280px cell basis to shrink inside the 256px padded screen content", () => {

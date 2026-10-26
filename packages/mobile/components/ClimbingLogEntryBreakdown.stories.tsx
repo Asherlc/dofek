@@ -227,6 +227,49 @@ export const SingleClimbWall: Story = {
       </View>
     ),
   ],
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const firstCard = canvas.getByLabelText("Climbing entry: Hunger Pains");
+    const secondCard = canvas.getByLabelText("Climbing entry: Short Term Memory");
+    const firstBounds = firstCard.getBoundingClientRect();
+    const secondBounds = secondCard.getBoundingClientRect();
+    const availableWidth = canvas.getByLabelText("Wreckage Wall").parentElement?.clientWidth ?? 0;
+    if (availableWidth >= 572) {
+      await expect(firstBounds.top).toBe(secondBounds.top);
+      await expect(secondBounds.left).toBeGreaterThanOrEqual(firstBounds.right);
+    } else {
+      await expect(secondBounds.top).toBeGreaterThan(firstBounds.bottom);
+      await expect(secondBounds.left).toBe(firstBounds.left);
+    }
+    await expect(canvas.getByRole("heading", { name: "Wreckage Wall" })).toBeVisible();
+    await expect(canvas.getByRole("heading", { name: "Memorial Wall" })).toBeVisible();
+  },
+};
+const longAreaName = "Wreckage Wall above the California coastal climbing area and upper canyon";
+export const LongAreaName: Story = {
+  args: {
+    ...SingleClimbWall.args,
+    entries: SingleClimbWall.args?.entries?.map((entry, index) =>
+      index === 0 && entry.climb
+        ? {
+            ...entry,
+            climb: {
+              ...entry.climb,
+              areaPath: entry.climb.areaPath.map((area) => ({ ...area, name: longAreaName })),
+            },
+          }
+        : entry,
+    ),
+  },
+  decorators: SingleClimbWall.decorators,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const heading = canvas.getByRole("heading", { name: longAreaName });
+    const card = canvas.getByLabelText("Climbing entry: Hunger Pains");
+    await expect(card.getBoundingClientRect().top).toBeGreaterThan(
+      heading.getBoundingClientRect().bottom,
+    );
+  },
 };
 export const AttachStates: Story = {
   args: {

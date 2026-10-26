@@ -19,15 +19,14 @@ export function ClimbingLogEntryBreakdown({
   label?: string;
 }) {
   return (
-    <section aria-label={label} className="space-y-4">
+    <section
+      aria-label={label}
+      className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,260px),1fr))] items-start gap-3"
+    >
       {groupClimbingLogEntriesByArea(entries).map(({ area, entries: groupEntries }) => (
-        <div key={area?.id ?? "unlocated"} className="space-y-2">
-          {area && <h3 className="text-sm font-medium text-foreground">{area.name}</h3>}
-          <ul
-            aria-label={area ? `${area.name} climbs` : "Climbing logs"}
-            className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,260px),1fr))] gap-3"
-          >
-            {groupEntries.map(({ entry, entryNumber }) => (
+        <div key={area?.id ?? "unlocated"} className="contents">
+          <ul aria-label={area ? `${area.name} climbs` : "Climbing logs"} className="contents">
+            {groupEntries.map(({ entry, entryNumber }, index) => (
               <ClimbingLogEntryCard
                 key={entry.id}
                 entry={entry}
@@ -36,6 +35,11 @@ export function ClimbingLogEntryBreakdown({
                 selected={entry.id === selectedEntryId}
                 attachmentState={attachmentStates?.[entry.id]}
                 onAttach={onAttach}
+                heading={
+                  index === 0 && area ? (
+                    <h3 className="text-sm font-medium text-foreground">{area.name}</h3>
+                  ) : null
+                }
               />
             ))}
           </ul>

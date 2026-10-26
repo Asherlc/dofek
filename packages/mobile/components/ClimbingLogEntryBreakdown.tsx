@@ -24,14 +24,16 @@ export function ClimbingLogEntryBreakdown({
     <View style={styles.groups}>
       {groupClimbingLogEntriesByArea(entries).map(({ area, entries: groupEntries }) => (
         <View key={area?.id ?? "unlocated"} accessibilityLabel={area?.name} style={styles.group}>
-          {area && (
-            <Text accessibilityRole="header" style={styles.heading}>
-              {area.name}
-            </Text>
-          )}
           <View style={styles.grid}>
-            {groupEntries.map(({ entry, entryNumber }) => (
+            {groupEntries.map(({ entry, entryNumber }, index) => (
               <View key={entry.id} style={styles.cell}>
+                <View style={styles.headingSlot}>
+                  {area && index === 0 && (
+                    <Text accessibilityRole="header" style={styles.heading}>
+                      {area.name}
+                    </Text>
+                  )}
+                </View>
                 <ClimbingLogEntryCard
                   entry={entry}
                   location={locations?.[entry.id]}
@@ -50,9 +52,10 @@ export function ClimbingLogEntryBreakdown({
 }
 
 const styles = StyleSheet.create({
-  groups: { gap: 16 },
-  group: { gap: 8 },
-  heading: { color: colors.text, fontSize: 14, fontWeight: "600" },
-  grid: { flexDirection: "row", flexWrap: "wrap", gap: 12 },
-  cell: { flexGrow: 0, flexShrink: 1, flexBasis: 280, minWidth: 0 },
+  groups: { flexDirection: "row", flexWrap: "wrap", alignItems: "flex-start", gap: 12 },
+  group: { display: "contents" },
+  headingSlot: { minHeight: 20 },
+  heading: { color: colors.text, fontSize: 14, fontWeight: "600", lineHeight: 20 },
+  grid: { display: "contents" },
+  cell: { flexGrow: 0, flexShrink: 1, flexBasis: 280, minWidth: 0, gap: 8 },
 });

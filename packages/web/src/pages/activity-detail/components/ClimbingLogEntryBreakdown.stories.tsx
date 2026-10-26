@@ -119,6 +119,24 @@ export const Wide: Story = {
       </div>
     ),
   ],
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const grid = canvas.getByRole("region", { name: "Attached climbing logs" });
+    const [first, second, third, fourth] = within(grid).getAllByRole("listitem");
+    if (!first || !second || !third || !fourth) throw new Error("Expected four climbing logs");
+    if (grid.getBoundingClientRect().width >= 900) {
+      await expect(third.getBoundingClientRect().top).toBeCloseTo(
+        first.getBoundingClientRect().top,
+        0,
+      );
+      await expect(third.getBoundingClientRect().left).toBeGreaterThan(
+        second.getBoundingClientRect().right,
+      );
+      await expect(fourth.getBoundingClientRect().top).toBeGreaterThan(
+        first.getBoundingClientRect().bottom,
+      );
+    }
+  },
 };
 export const SingleClimbWall: Story = {
   decorators: Wide.decorators,
@@ -142,6 +160,7 @@ export const SingleClimbWall: Story = {
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
+    const grid = canvas.getByRole("region", { name: "Attached climbing logs" });
     const singleWall = canvas.getByRole("list", { name: "Wreckage Wall climbs" });
     const secondWall = canvas.getByRole("list", { name: "Memorial Wall climbs" });
     const singleClimb = within(singleWall).getByRole("listitem");
@@ -150,14 +169,26 @@ export const SingleClimbWall: Story = {
       singleClimb.getBoundingClientRect().width,
       0,
     );
-    if (singleWall.getBoundingClientRect().width >= 600) {
+    if (grid.getBoundingClientRect().width >= 600) {
       await expect(singleClimb.getBoundingClientRect().width).toBeLessThan(
-        singleWall.getBoundingClientRect().width / 2,
+        grid.getBoundingClientRect().width / 2,
       );
-    } else if (singleWall.getBoundingClientRect().width <= 320) {
+    } else if (grid.getBoundingClientRect().width <= 320) {
       await expect(singleClimb.getBoundingClientRect().width).toBeCloseTo(
-        singleWall.getBoundingClientRect().width,
+        grid.getBoundingClientRect().width,
         0,
+      );
+      await expect(secondClimb.getBoundingClientRect().top).toBeGreaterThan(
+        singleClimb.getBoundingClientRect().bottom,
+      );
+    }
+    if (canvasElement.getBoundingClientRect().width >= 600) {
+      await expect(secondClimb.getBoundingClientRect().top).toBeCloseTo(
+        singleClimb.getBoundingClientRect().top,
+        0,
+      );
+      await expect(secondClimb.getBoundingClientRect().left).toBeGreaterThan(
+        singleClimb.getBoundingClientRect().right,
       );
     }
   },
