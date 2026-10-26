@@ -112,7 +112,7 @@ describe("climbing strengths PostgreSQL", () => {
       successRate: 100,
       outcome: "sent",
     },
-    { provider: "openbeta", sends: 0, unknownOutcomes: 1, successRate: null, outcome: null },
+    { provider: "openbeta", sends: 1, unknownOutcomes: 0, successRate: 100, outcome: "sent" },
   ])(
     "retains top-rope grades with the recorded $provider result semantics",
     async ({ provider, sends, unknownOutcomes, successRate, outcome }) => {

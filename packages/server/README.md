@@ -40,11 +40,14 @@ The backend API and background job processor for Dofek. Built with Node.js, Expr
   from retained source labels through the [canonical SQL function](../../drizzle/0148_compute_climbing_attempt_outcome.sql).
   The [API contract](src/contracts/climbing-log-contracts.ts) continues returning
   `completed`, `failed`, or null to web, mobile, and MCP clients.
-  The [attempt view](../../drizzle/0165_mountain_project_top_rope_completion.sql)
+  The [attempt view](../../drizzle/0166_openbeta_tick_completion.sql)
   treats Mountain Project whole-route top-rope ticks with no separate result
   label as successful completions. It defaults only missing aid/fall flags;
   explicit labels and execution facts remain authoritative, and raw storage
-  is unchanged.
+  is unchanged. Unlabeled OpenBeta ticks also count as completed; explicit
+  failures retained only in raw JSON by older adapters remain unsuccessful.
+  Explicit aid/fall/dab facts still prevent a clean free send. See the
+  [OpenBeta interpretation](../../docs/openbeta.md#stored-records).
 - **Climbing strengths**: The protected cached `climbing.strengths` query serves
   [display-ready panels](../training/src/climbing-strengths.ts) for both clients.
   Its [repository](src/repositories/climbing-strengths-repository.ts) reuses the

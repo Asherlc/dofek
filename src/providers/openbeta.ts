@@ -451,7 +451,10 @@ function parseOpenBetaTicks(ticks: OpenBetaTick[]): OpenBetaTickParseResult {
           ...(tick.style === "Solo" ? { solo: true } : {}),
           ...(tick.style === "Aid" || resultLabel === "frenchfree" ? { usedAid: true } : {}),
           ...(resultLabel === "pinkpoint" ? { usedPreplacedProtection: true } : {}),
-          ...(qualifier === undefined ? {} : { qualifier, sourceResult: tick.attemptType }),
+          ...(qualifier === undefined ? {} : { qualifier }),
+          ...(qualifier !== undefined || resultLabel === "attempt"
+            ? { sourceResult: tick.attemptType }
+            : {}),
         },
       ],
       climb: {

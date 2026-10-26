@@ -1,5 +1,13 @@
 # Production Incident Baseline
 
+## 2026-10-26 — Unlabeled OpenBeta ticks had unknown outcomes
+
+- **Symptoms / impact:** The requested OpenBeta interpretation was missing: unlabeled ticks did not count as successful sends in shared climbing results. Deployment remains pending; no production records were changed during this follow-up.
+- **Evidence / root cause:** The [PostgreSQL regression](../src/db/climbing-attempt-result.integration.test.ts) initially failed six cases: unlabeled completion and legacy explicit failures both returned `outcome: null`. The [adapter](../src/providers/openbeta.ts) previously retained result labels only for recognized qualifiers, discarding explicit `Attempt` from `source_result` while preserving it in raw JSON. A boulder regression additionally exposed the missing dab default required by the canonical free-send projection.
+- **Direct fix:** [Migration 0166](../drizzle/0166_openbeta_tick_completion.sql) interprets unlabeled whole-climb OpenBeta ticks as completed, recovers legacy explicit failure evidence from raw JSON, and defaults missing aid/fall facts plus boulder dab facts. Explicit labels and execution facts retain precedence. The adapter preserves new explicit `Attempt` labels. Shared server semantics cover web and mobile, with bumped response-cache versions and unchanged raw storage; see the [provider contract](openbeta.md#stored-records).
+- **Validation / remaining risk:** All 56 focused real-PostgreSQL result, OpenBeta sync, and strengths repository cases passed with retries disabled. These cover prior Mountain Project semantics, other-provider behavior, raw-only failures, missing/null labels, routes, boulders, explicit aid/fall/dab facts, and raw-fact preservation. Production rollout is still required. No resilience tuning was added.
+- **Retrospective / proposed improvement:** Retained raw JSON made historical repair possible without resync. Keep raw-label versus canonical-label comparisons in future provider-result investigations; use the integration-tests-ready skill with the repository Compose wrapper and explicit `TEST_DATABASE_URL`. Proposed runbook wording: “Before interpreting a missing canonical result, inspect the retained source label; an older adapter may have discarded it.”
+
 ## 2026-10-26 — Climbing strengths hid imported grades and settings
 
 - **Symptoms / impact:** Top-rope strengths showed only 5.6, 5.7 and 5.8; lead indoor/outdoor showed no observations despite retained lead logs. Dimension controls could be disabled when no corresponding panel existed, and local context/setting selectors duplicated global filters.

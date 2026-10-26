@@ -47,8 +47,17 @@ Each supported tick becomes one standalone `fitness.climbing_log_entry` row:
   Supported selections include V-scale, Font, YDS, French, UIAA, Ewbank,
   Brazilian Crux and water ice. Uncertain syntax retains a null system.
 - Method, solo, aid and supplied attempt qualifiers become independent
-  nullable Attempt facts. Fell/Hung records a fall-or-hang fact without
-  inferring completion; unfamiliar labels remain in raw provenance.
+  nullable Attempt facts. Explicit `Attempt` labels are retained as unsuccessful
+  results. Fell/Hung records a fall-or-hang fact without inferring completion;
+  unfamiliar labels remain in raw provenance. See the [adapter](../src/providers/openbeta.ts).
+- Dofek interprets a tick with no attempt label as successful completion,
+  defaulting missing aid/fall facts and boulder dab facts to false. Explicit
+  aid/fall/dab facts still prevent a clean free send; no Onsight or Flash is inferred. The
+  [read-view migration](../drizzle/0166_openbeta_tick_completion.sql) also covers
+  existing records and recovers explicit failures from retained `raw.attemptType`
+  when older adapters discarded their canonical source label. Raw storage stays
+  unchanged; [PostgreSQL views](https://www.postgresql.org/docs/current/sql-createview.html)
+  evaluate the interpretation when queried.
 - A missing total produces one whole-Climb occurrence. Catalogue Pitch
   definitions establish targets, not attempted pitches or additional tries.
 - Names and verified identities belong to shared Climb/Pitch/Area objects;

@@ -96,7 +96,7 @@ export const climbingRouter = router({
   strengths: cachedProtectedQuery({
     maxAge: CacheTTL.LONG,
     outputSchema: climbingStrengthsSchema,
-    keyVersion: "climbing-strengths-v6",
+    keyVersion: "climbing-strengths-v7",
   })
     .input(
       climbingInputSchema.extend({
@@ -142,7 +142,7 @@ export const climbingRouter = router({
   activityLogEntries: cachedProtectedQuery({
     maxAge: CacheTTL.LONG,
     outputSchema: climbingLogEntriesSchema,
-    keyVersion: "climbing-activity-log-model-v4",
+    keyVersion: "climbing-activity-log-model-v5",
   })
     .input(z.object({ activityId: z.guid() }))
     .output(climbingLogEntriesSchema)
@@ -166,7 +166,7 @@ export const climbingRouter = router({
   unattachedClimbingLogEntries: cachedProtectedQuery({
     maxAge: CacheTTL.SHORT,
     outputSchema: climbingLogEntriesSchema,
-    keyVersion: "climbing-log-suggestions-v4",
+    keyVersion: "climbing-log-suggestions-v5",
   })
     .input(z.object({ activityId: z.guid() }))
     .output(climbingLogEntriesSchema)
@@ -223,7 +223,7 @@ export const climbingRouter = router({
   gradeProgression: cachedProtectedQuery({
     maxAge: CacheTTL.LONG,
     outputSchema: climbingGradeProgressionsSchema,
-    keyVersion: "climbing-scoped-grade-lanes-v3",
+    keyVersion: "climbing-scoped-grade-lanes-v4",
   })
     .input(climbingInputSchema)
     .output(climbingGradeProgressionsSchema)
@@ -239,7 +239,7 @@ export const climbingRouter = router({
   volumeByGrade: cachedProtectedQuery({
     maxAge: CacheTTL.LONG,
     outputSchema: climbingVolumesSchema,
-    keyVersion: "climbing-canonical-log-observations-v3",
+    keyVersion: "climbing-canonical-log-observations-v4",
   })
     .input(climbingInputSchema)
     .output(climbingVolumesSchema)
@@ -253,7 +253,7 @@ export const climbingRouter = router({
   sessionSummary: cachedProtectedQuery({
     maxAge: CacheTTL.LONG,
     outputSchema: climbingSessionSummariesSchema,
-    keyVersion: "climbing-canonical-log-sessions-v3",
+    keyVersion: "climbing-canonical-log-sessions-v4",
   })
     .input(climbingInputSchema)
     .output(climbingSessionSummariesSchema)
@@ -269,7 +269,7 @@ export const climbingRouter = router({
   locationMap: cachedProtectedQuery({
     maxAge: CacheTTL.LONG,
     outputSchema: climbingLocationMapSchema,
-    keyVersion: "climbing-location-map-v3",
+    keyVersion: "climbing-location-map-v4",
   })
     .input(climbingInputSchema)
     .output(climbingLocationMapSchema)

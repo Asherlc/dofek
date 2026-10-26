@@ -180,7 +180,16 @@ describe("OpenBetaProvider", () => {
       },
     },
     { style: null, label: "Unknown", expected: { scope: "climb", ropeMethod: null } },
-    { style: "Lead", label: "Attempt", expected: { scope: "climb", ropeMethod: "lead" } },
+    {
+      style: "Lead",
+      label: "Attempt",
+      expected: { scope: "climb", ropeMethod: "lead", sourceResult: "Attempt" },
+    },
+    {
+      style: "TR",
+      label: " aTtEmPt ",
+      expected: { scope: "climb", ropeMethod: "top_rope", sourceResult: " aTtEmPt " },
+    },
     {
       style: "Lead",
       label: " oNsIgHt ",
