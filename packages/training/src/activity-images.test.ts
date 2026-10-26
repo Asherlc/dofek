@@ -137,7 +137,7 @@ describe("activity image refresh policy", () => {
   });
 });
 
-it("labels an uncaptioned log-owned image as an ascent photo", () => {
+it("labels a log-owned image without a caption as an ascent photo", () => {
   const image = imageWithCaptions([null]);
   image.sources = [
     {

@@ -168,7 +168,7 @@ The next normal sync discovers photographs on historical ascents using its
 already complete feed; no separate historical scan or per-ascent sync request
 is needed. The [adapter](../src/providers/kaya-sync.ts) keeps one stable photo
 slot per ascent, prefers `photo_url`, and offers `thumb_url` as an alternative.
-The [media mapper](../src/providers/kaya-images.ts) identifies revisions from
+The [media mapper](../src/providers/kaya-sync.ts) identifies revisions from
 the underlying URL after removing signing parameters, so rotating signatures
 do not replace an image while a changed source photograph does. Explicit
 `photo: null` establishes no photograph; omitted, malformed, or empty photo
