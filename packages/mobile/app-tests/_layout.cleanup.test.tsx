@@ -71,7 +71,7 @@ const {
 interface MockAuthStateValue {
   accountErasureCleanupInProgress?: boolean;
   accountSessionOwnerNonce?: string | null;
-  user: { id: string } | null;
+  user: { id: string; name?: string } | null;
   serverUrl: string;
   isLoading: boolean;
   sessionToken: string | null;
@@ -122,7 +122,7 @@ vi.mock("expo-router", async () => {
   const React = await import("react");
 
   const Stack = ({ children }: { children: ReactNode }) =>
-    React.createElement("Stack", null, children);
+    React.createElement("Stack", { "data-testid": "app-navigation" }, children);
   Stack.Screen = () => null;
 
   return {
@@ -737,6 +737,41 @@ describe("RootLayout background cleanup", () => {
       expect(mockStartStartupPhase).toHaveBeenCalledWith("service-bootstrap");
       expect(mockFinishStartupPhase).toHaveBeenCalledWith("service-bootstrap", "ready");
     });
+  });
+
+  it("opens navigation and starts Bluetooth collection while server queries are offline", async () => {
+    const RootLayout = await importRootLayout();
+    const { onlineManager } = await import("@tanstack/react-query");
+    const wasOnline = onlineManager.isOnline();
+    onlineManager.setOnline(false);
+
+    try {
+      const rendered = render(<RootLayout />);
+
+      await waitFor(() => {
+        expect(rendered.getByTestId("app-navigation")).toBeTruthy();
+        expect(mockUseWhoopBleSync).toHaveBeenCalledOnce();
+        expect(mockUseBleHeartRateSync).toHaveBeenCalledOnce();
+      });
+      expect(onlineManager.isOnline()).toBe(false);
+      expect(disableCollectionNotifications).not.toHaveBeenCalled();
+      rendered.unmount();
+    } finally {
+      onlineManager.setOnline(wasOnline);
+    }
+  });
+
+  it("keeps collection running when background verification updates the same account's name", async () => {
+    const RootLayout = await importRootLayout();
+    const rendered = render(<RootLayout />);
+    await waitFor(() => expect(mockInitBackgroundHealthKitSync).toHaveBeenCalledOnce());
+
+    mockAuthState.value.user = { id: "user-1", name: "Updated User" };
+    await act(async () => rendered.rerender(<RootLayout />));
+
+    expect(mockTeardownBackgroundHealthKitSync).not.toHaveBeenCalled();
+    expect(mockTeardownBackgroundWhoopBleSync).not.toHaveBeenCalled();
+    expect(mockInitBackgroundHealthKitSync).toHaveBeenCalledOnce();
   });
 
   it("uses targeted invalidation after the canonical HealthKit sync completes", async () => {

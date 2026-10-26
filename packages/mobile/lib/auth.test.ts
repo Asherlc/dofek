@@ -14,7 +14,9 @@ import {
   fetchConfiguredProviders,
   fetchCurrentUser,
   getOrCreateSessionOwnerNonce,
+  getSavedSessionUser,
   getSessionToken,
+  invalidateSessionPersistence,
   isNativeAppleSignInAvailable,
   loginWithPassword,
   logout,
@@ -23,6 +25,7 @@ import {
   resetSessionTokenCacheForTests,
   rotateSessionOwnerNonce,
   saveSessionToken,
+  saveSessionUser,
   startNativeAppleSignIn,
   startOAuthLogin,
 } from "./auth";
@@ -646,14 +649,23 @@ describe("requestPasswordReset", () => {
 
 describe("session token storage", () => {
   let SecureStore: typeof import("expo-secure-store");
+  let storage: Map<string, string>;
+  const savedUser = { id: "u1", name: "Alice", email: "alice@example.com" };
 
   beforeEach(async () => {
     SecureStore = await import("expo-secure-store");
-    await clearSessionToken();
     vi.clearAllMocks();
     vi.mocked(SecureStore.getItemAsync).mockReset();
     vi.mocked(SecureStore.setItemAsync).mockReset();
     vi.mocked(SecureStore.deleteItemAsync).mockReset();
+    storage = new Map();
+    vi.mocked(SecureStore.getItemAsync).mockImplementation(async (key) => storage.get(key) ?? null);
+    vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
+      storage.set(key, value);
+    });
+    vi.mocked(SecureStore.deleteItemAsync).mockImplementation(async (key) => {
+      storage.delete(key);
+    });
     resetSessionTokenCacheForTests();
   });
 
@@ -667,6 +679,7 @@ describe("session token storage", () => {
   it.each(["stale-restored-token", "new-login-token"])(
     "deletes a deferred %s write after cleanup starts",
     async (token) => {
+      storage.set("dofek_session_token", token);
       let resolveWrite: (() => void) | undefined;
       vi.mocked(SecureStore.setItemAsync).mockImplementationOnce(
         () =>
@@ -757,6 +770,253 @@ describe("session token storage", () => {
     await clearSessionToken();
     expect(SecureStore.deleteItemAsync).toHaveBeenCalledWith("dofek_session_token");
     expect(SecureStore.deleteItemAsync).toHaveBeenCalledWith("dofek_session_owner_nonce_v1");
+  });
+
+  it("saves and restores only the user for the persisted session token", async () => {
+    await saveSessionToken("saved-token");
+    await saveSessionUser("saved-token", savedUser);
+    resetSessionTokenCacheForTests();
+
+    await expect(getSavedSessionUser("saved-token")).resolves.toEqual(savedUser);
+    expect(storage.get("dofek_session_user_v1")).toBe(
+      '{"id":"u1","name":"Alice","email":"alice@example.com"}',
+    );
+    expect(SecureStore.setItemAsync).toHaveBeenCalledWith(
+      "dofek_session_user_v1",
+      expect.any(String),
+      { keychainAccessible: SecureStore.AFTER_FIRST_UNLOCK },
+    );
+  });
+
+  it("preserves the user while re-saving the same token for accessibility migration", async () => {
+    storage.set("dofek_session_token", "saved-token");
+    storage.set("dofek_session_user_v1", JSON.stringify(savedUser));
+
+    await saveSessionToken("saved-token");
+
+    expect(storage.get("dofek_session_user_v1")).toBe(JSON.stringify(savedUser));
+  });
+
+  it("deletes the previous user before replacing the token", async () => {
+    storage.set("dofek_session_token", "old-token");
+    storage.set("dofek_session_user_v1", JSON.stringify(savedUser));
+    vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
+      if (key === "dofek_session_token") {
+        expect(storage.has("dofek_session_user_v1")).toBe(false);
+      }
+      storage.set(key, value);
+    });
+
+    await saveSessionToken("new-token");
+
+    expect(storage.get("dofek_session_token")).toBe("new-token");
+    expect(storage.has("dofek_session_user_v1")).toBe(false);
+  });
+
+  it("keeps the previous token when deleting its user fails", async () => {
+    storage.set("dofek_session_token", "old-token");
+    storage.set("dofek_session_user_v1", JSON.stringify(savedUser));
+    vi.mocked(SecureStore.deleteItemAsync).mockRejectedValueOnce(new Error("keychain failure"));
+
+    await expect(saveSessionToken("new-token")).rejects.toThrow("keychain failure");
+
+    expect(storage.get("dofek_session_token")).toBe("old-token");
+  });
+
+  it("keeps the previous token when its saved user cannot be deleted while locked", async () => {
+    storage.set("dofek_session_token", "old-token");
+    storage.set("dofek_session_user_v1", JSON.stringify(savedUser));
+    vi.mocked(SecureStore.deleteItemAsync).mockRejectedValueOnce(
+      new Error("User interaction is not allowed"),
+    );
+
+    await expect(saveSessionToken("new-token")).rejects.toThrow();
+
+    expect(storage.get("dofek_session_token")).toBe("old-token");
+  });
+
+  it("leaves no saved identity when replacement stops after deleting the previous user", async () => {
+    storage.set("dofek_session_token", "old-token");
+    storage.set("dofek_session_user_v1", JSON.stringify(savedUser));
+    vi.mocked(SecureStore.setItemAsync).mockRejectedValueOnce(new Error("token write failed"));
+
+    await expect(saveSessionToken("new-token")).rejects.toThrow("token write failed");
+    resetSessionTokenCacheForTests();
+
+    expect(storage.get("dofek_session_token")).toBe("old-token");
+    await expect(getSavedSessionUser("old-token")).resolves.toBeNull();
+  });
+
+  it("does not restore another token's saved user", async () => {
+    storage.set("dofek_session_token", "current-token");
+    storage.set("dofek_session_user_v1", JSON.stringify(savedUser));
+
+    await expect(getSavedSessionUser("previous-token")).resolves.toBeNull();
+  });
+
+  it("does not overwrite another token's saved user", async () => {
+    storage.set("dofek_session_token", "current-token");
+    storage.set("dofek_session_user_v1", JSON.stringify(savedUser));
+
+    await saveSessionUser("previous-token", { id: "u2", name: "Bob", email: null });
+
+    expect(storage.get("dofek_session_user_v1")).toBe(JSON.stringify(savedUser));
+  });
+
+  it("requires a persisted token before storing or restoring a user", async () => {
+    await saveSessionUser("missing-token", savedUser);
+
+    expect(storage.has("dofek_session_user_v1")).toBe(false);
+    await expect(getSavedSessionUser("missing-token")).resolves.toBeNull();
+  });
+
+  it("requires online identity verification when only a token was saved before a restart", async () => {
+    await saveSessionToken("saved-token");
+    resetSessionTokenCacheForTests();
+
+    await expect(getSavedSessionUser("saved-token")).resolves.toBeNull();
+  });
+
+  it.each(["not-json", '{"id":"u1"}', "null"])(
+    "reports corrupted saved-user data and allows online recovery: %s",
+    async (rawUser) => {
+      storage.set("dofek_session_token", "saved-token");
+      storage.set("dofek_session_user_v1", rawUser);
+
+      await expect(getSavedSessionUser("saved-token")).resolves.toBeNull();
+      expect(mockCaptureException).toHaveBeenCalledWith(expect.any(Error), {
+        source: "auth-saved-user-restore",
+      });
+    },
+  );
+
+  it.each(["dofek_session_token", "dofek_session_user_v1"])(
+    "propagates saved-user restore storage errors reading %s",
+    async (unavailableKey) => {
+      storage.set("dofek_session_token", "saved-token");
+      storage.set("dofek_session_user_v1", JSON.stringify(savedUser));
+      const storageError = new Error("User interaction is not allowed");
+      vi.mocked(SecureStore.getItemAsync).mockImplementation(async (key) => {
+        if (key === unavailableKey) throw storageError;
+        return storage.get(key) ?? null;
+      });
+
+      await expect(getSavedSessionUser("saved-token")).rejects.toBe(storageError);
+      expect(mockCaptureException).not.toHaveBeenCalled();
+    },
+  );
+
+  it("clears the saved user with the token during logout", async () => {
+    storage.set("dofek_session_token", "saved-token");
+    storage.set("dofek_session_user_v1", JSON.stringify(savedUser));
+
+    await clearSessionToken();
+
+    expect(storage.has("dofek_session_token")).toBe(false);
+    expect(storage.has("dofek_session_user_v1")).toBe(false);
+    await expect(getSavedSessionUser("saved-token")).resolves.toBeNull();
+  });
+
+  it("surfaces a saved-user deletion failure during logout", async () => {
+    storage.set("dofek_session_token", "saved-token");
+    storage.set("dofek_session_user_v1", JSON.stringify(savedUser));
+    vi.mocked(SecureStore.deleteItemAsync).mockImplementation(async (key) => {
+      if (key === "dofek_session_user_v1") {
+        throw new Error("User interaction is not allowed");
+      }
+      storage.delete(key);
+    });
+
+    await expect(clearSessionToken()).rejects.toThrow("User interaction is not allowed");
+  });
+
+  it.each(["dofek_session_token", "dofek_session_user_v1"])(
+    "does not restore a user when cleanup invalidates its %s read",
+    async (deferredKey) => {
+      storage.set("dofek_session_token", "saved-token");
+      storage.set("dofek_session_user_v1", JSON.stringify(savedUser));
+      let resolveRead: ((value: string | null) => void) | undefined;
+      vi.mocked(SecureStore.getItemAsync).mockImplementation(async (key) => {
+        if (key === deferredKey) {
+          return new Promise<string | null>((resolve) => {
+            resolveRead = resolve;
+          });
+        }
+        return storage.get(key) ?? null;
+      });
+
+      const read = getSavedSessionUser("saved-token");
+      await vi.waitFor(() => expect(resolveRead).toBeTypeOf("function"));
+      invalidateSessionPersistence();
+      resolveRead?.(storage.get(deferredKey) ?? null);
+
+      await expect(read).resolves.toBeNull();
+    },
+  );
+
+  it("does not save a user when cleanup invalidates its token read", async () => {
+    storage.set("dofek_session_token", "saved-token");
+    let resolveRead: ((value: string | null) => void) | undefined;
+    vi.mocked(SecureStore.getItemAsync).mockImplementationOnce(
+      () =>
+        new Promise<string | null>((resolve) => {
+          resolveRead = resolve;
+        }),
+    );
+
+    const write = saveSessionUser("saved-token", savedUser);
+    await vi.waitFor(() => expect(resolveRead).toBeTypeOf("function"));
+    invalidateSessionPersistence();
+    resolveRead?.("saved-token");
+    await write;
+
+    expect(storage.has("dofek_session_user_v1")).toBe(false);
+  });
+
+  it("does not run queued saved-user operations after cleanup invalidates them", async () => {
+    storage.set("dofek_session_token", "saved-token");
+    storage.set("dofek_session_user_v1", JSON.stringify(savedUser));
+    let resolveRead: ((value: string | null) => void) | undefined;
+    vi.mocked(SecureStore.getItemAsync).mockImplementationOnce(
+      () =>
+        new Promise<string | null>((resolve) => {
+          resolveRead = resolve;
+        }),
+    );
+    const blockingRead = getSessionToken();
+    await vi.waitFor(() => expect(resolveRead).toBeTypeOf("function"));
+    const queuedRead = getSavedSessionUser("saved-token");
+    const queuedWrite = saveSessionUser("saved-token", { id: "u2", name: "Bob", email: null });
+
+    const clear = clearSessionToken();
+    resolveRead?.("saved-token");
+    await Promise.all([blockingRead, queuedWrite, clear]);
+
+    await expect(queuedRead).resolves.toBeNull();
+    expect(storage.has("dofek_session_user_v1")).toBe(false);
+    expect(SecureStore.setItemAsync).not.toHaveBeenCalled();
+  });
+
+  it("deletes an in-flight saved-user write after cleanup starts", async () => {
+    storage.set("dofek_session_token", "saved-token");
+    let resolveWrite: (() => void) | undefined;
+    vi.mocked(SecureStore.setItemAsync).mockImplementationOnce(
+      (key, value) =>
+        new Promise<void>((resolve) => {
+          resolveWrite = () => {
+            storage.set(key, value);
+            resolve();
+          };
+        }),
+    );
+    const write = saveSessionUser("saved-token", savedUser);
+    await vi.waitFor(() => expect(resolveWrite).toBeTypeOf("function"));
+
+    const clear = clearSessionToken();
+    resolveWrite?.();
+    await Promise.all([write, clear]);
+
+    expect(storage.has("dofek_session_user_v1")).toBe(false);
   });
 
   it("rotates an opaque owner nonce for each adopted session", async () => {

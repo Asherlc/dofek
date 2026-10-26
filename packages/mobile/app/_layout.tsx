@@ -202,6 +202,7 @@ function AuthGate() {
     logout,
     retryBootstrap,
   } = useAuth();
+  const userId = user?.id;
   const pathname = usePathname();
   const router = useRouter();
   const [backgroundSyncReady, setBackgroundSyncReady] = useState(false);
@@ -332,7 +333,7 @@ function AuthGate() {
 
   useEffect(() => {
     if (
-      !user ||
+      !userId ||
       !deletionRecoveryReady ||
       accountErasureCleanupInProgress ||
       localCleanupBlocksSession
@@ -350,12 +351,12 @@ function AuthGate() {
       idleHandle.cancel();
       setBackgroundSyncReady(false);
     };
-  }, [accountErasureCleanupInProgress, deletionRecoveryReady, localCleanupBlocksSession, user]);
+  }, [accountErasureCleanupInProgress, deletionRecoveryReady, localCleanupBlocksSession, userId]);
 
   // Set up background HealthKit sync when authenticated
   useEffect(() => {
     if (
-      !user ||
+      !userId ||
       !trpcClient ||
       !backgroundSyncReady ||
       !deletionRecoveryReady ||
@@ -504,7 +505,7 @@ function AuthGate() {
       refreshSubscription.remove();
     };
   }, [
-    user,
+    userId,
     trpcClient,
     queryClient,
     backgroundSyncReady,
