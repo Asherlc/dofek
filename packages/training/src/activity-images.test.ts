@@ -136,3 +136,19 @@ describe("activity image refresh policy", () => {
     ).toBe(3000);
   });
 });
+
+it("labels an uncaptioned log-owned image as an ascent photo", () => {
+  const image = imageWithCaptions([null]);
+  image.sources = [
+    {
+      activityId: null,
+      climbingLogEntryId: "ascent",
+      providerId: "kaya",
+      sourceId: "photo",
+      kind: "photo",
+      caption: null,
+      position: 0,
+    },
+  ];
+  expect(activityImageCaption(image)).toBe("Ascent photo");
+});

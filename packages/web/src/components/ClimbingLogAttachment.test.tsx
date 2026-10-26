@@ -69,6 +69,7 @@ describe("ClimbingLogAttachment", () => {
   it("attaches exactly the chosen log and activity and refreshes their affected cached views", async () => {
     const { fixture } = renderAttachment();
     const keys = [
+      getQueryKey(trpc.activity.images, { id: "22222222-2222-4222-8222-222222222222" }, "query"),
       getQueryKey(trpc.climbing.locationMap, { days: 90 }, "query"),
       getQueryKey(trpc.climbing.activityLogEntries, { activityId: "activity-1" }, "query"),
       getQueryKey(

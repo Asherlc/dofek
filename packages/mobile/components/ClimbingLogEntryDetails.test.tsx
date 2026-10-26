@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { render, screen } from "@testing-library/react";
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 import {
   climbingAttemptFixture,
   climbingClimbFixture,
@@ -75,4 +75,34 @@ it("renders the climb, grades, known attempt facts and notes", () => {
   expect(screen.getByText("Used aid")).toBeTruthy();
   expect(screen.getByText("Lead")).toBeTruthy();
   expect(screen.getByText("Source note")).toBeTruthy();
+});
+
+vi.mock("./ClimbingPhotos", () => ({
+  ClimbingPhotos: ({ id }: { id: string }) => <div data-testid="ascent-photos">{id}</div>,
+}));
+
+it.each(["kaya", "openbeta"])(
+  "uses the server-selected KAYA photo source with preferred provider %s",
+  (providerId) => {
+    const sourceId = "20000000-0000-4000-8000-000000000099";
+    const entry = climbingLogEntryFixture({
+      providerId,
+      externalId: "source-record",
+      photoLogEntryId: sourceId,
+    });
+    render(<ClimbingLogEntryDetails entry={entry} />);
+    expect(screen.getByTestId("ascent-photos").textContent).toBe(sourceId);
+  },
+);
+it.each([
+  { providerId: "kaya", externalId: "kaya:session:123:attempted:456" },
+  { providerId: "openbeta", externalId: "source-record" },
+  { providerId: "kaya", externalId: null },
+])("omits the gallery when the server reports no eligible photo source: %o", (source) => {
+  render(
+    <ClimbingLogEntryDetails
+      entry={climbingLogEntryFixture({ ...source, photoLogEntryId: null })}
+    />,
+  );
+  expect(screen.queryByTestId("ascent-photos")).toBeNull();
 });

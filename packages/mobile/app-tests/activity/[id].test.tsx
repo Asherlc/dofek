@@ -334,6 +334,7 @@ const mockHardwareQuery = vi.fn(
   }),
 );
 const mockAttachEntryMutate = vi.fn();
+const mockActivityImagesInvalidate = vi.fn().mockResolvedValue(undefined);
 const mockClimbingEntriesInvalidate = vi.fn().mockResolvedValue(undefined);
 const mockEntrySuggestionsInvalidate = vi.fn().mockResolvedValue(undefined);
 const mockClimbingSessionSummaryInvalidate = vi.fn().mockResolvedValue(undefined);
@@ -410,6 +411,7 @@ vi.mock("../../lib/trpc", () => ({
     },
     useUtils: () => ({
       activity: {
+        images: { invalidate: mockActivityImagesInvalidate },
         byId: { invalidate: mockActivityByIdInvalidate },
         stream: { invalidate: mockActivityStreamInvalidate },
         hrZones: { invalidate: mockActivityHrZonesInvalidate },
@@ -592,6 +594,7 @@ beforeEach(() => {
   mockEntrySuggestionsQuery.mockReset();
   mockEntrySuggestionsQuery.mockReturnValue({ data: [], error: null, isLoading: false });
   mockAttachEntryMutate.mockClear();
+  mockActivityImagesInvalidate.mockClear();
   mockClimbingEntriesInvalidate.mockClear();
   mockEntrySuggestionsInvalidate.mockClear();
   mockClimbingSessionSummaryInvalidate.mockClear();
@@ -1290,6 +1293,7 @@ describe("ActivityDetailScreen", () => {
       expect(mockEntrySuggestionsInvalidate).toHaveBeenCalledWith({
         activityId: baseCyclingActivity.id,
       });
+      expect(mockActivityImagesInvalidate).toHaveBeenCalledWith({ id: baseCyclingActivity.id });
       expect(mockClimbingSessionSummaryInvalidate).toHaveBeenCalledWith();
       expect(mockClimbingGradeProgressionInvalidate).toHaveBeenCalledWith();
       expect(mockClimbingStrengthsInvalidate).toHaveBeenCalledWith();

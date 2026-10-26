@@ -134,6 +134,7 @@ describe("ClimbingLogAttachment", () => {
   it("attaches only the selected log and refreshes its map and activity views before closing", async () => {
     const fixture = renderPicker();
     const affectedKeys = [
+      getQueryKey(trpc.activity.images, { id: "00000000-0000-4000-8000-000000000001" }, "query"),
       getQueryKey(trpc.climbing.locationMap),
       getQueryKey(
         trpc.climbing.activityLogEntries,

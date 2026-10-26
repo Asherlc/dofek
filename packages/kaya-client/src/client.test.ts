@@ -24,6 +24,21 @@ const emptyClimbContext = {
 };
 
 describe("KayaClient", () => {
+  it.each([
+    null,
+    { photo_url: "https://cdn.test/original", thumb_url: "https://cdn.test/thumb" },
+    { photo_url: 42 },
+    undefined,
+  ])("requests photos and preserves their raw presence: %j", async (photo) => {
+    const body = await ascentResponse({}).json();
+    if (photo !== undefined) body.data.ascentsForUser[0].photo = photo;
+    const fetchFn = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse(body));
+    const result = await new KayaClient("token", fetchFn).listAscents("42");
+    expect(result[0]).toEqual(expect.objectContaining(photo === undefined ? {} : { photo }));
+    expect(Object.hasOwn(result[0] ?? {}, "photo")).toBe(photo !== undefined);
+    const request = JSON.parse(String(fetchFn.mock.calls[0]?.[1]?.body));
+    expect(request.query).toMatch(/photo\s*\{\s*photo_url\s+thumb_url\s*\}/);
+  });
   it("retains hold colors on unnamed attempted climbs", async () => {
     const fetchFn = vi.fn<typeof fetch>().mockResolvedValue(
       jsonResponse({

@@ -18,6 +18,8 @@ import { gpsCoordinatesSchema } from "@dofek/training/gps-coordinates";
 import { sql } from "drizzle-orm";
 import timezoneAt from "tz-lookup";
 import { z } from "zod";
+import type { ImageDiscovery } from "../activity-images/types.ts";
+import { recordClimbingImageDiscovery } from "../db/activity-images.ts";
 import { persistClimbingLogSnapshot } from "../db/climbing-log-snapshot.ts";
 import type {
   SourceAreaDefinition,
@@ -37,6 +39,7 @@ import {
   ProviderStoredIdentityMissingError,
   RefreshTokenRevokedError,
 } from "./auth-errors.ts";
+import { kayaImageDiscovery } from "./kaya-images.ts";
 import type { SyncRun } from "./sync-run.ts";
 import type { ProviderAuthSetup, SyncError, SyncProvider, SyncResult, TokenSet } from "./types.ts";
 
@@ -99,6 +102,52 @@ export class KayaSyncProvider implements SyncProvider {
 
   #isAccessTokenRejected(error: unknown): error is KayaApiError {
     return error instanceof KayaApiError && error.status === 401;
+  }
+
+  async discoverClimbingImages(
+    run: SyncRun,
+    externalId: string,
+    _options?: { refresh?: boolean },
+  ): Promise<ImageDiscovery> {
+    const ascentId = /^kaya:ascent:([1-9]\d*)$/.exec(externalId)?.[1];
+    if (!ascentId) throw new Error("Kaya photo refresh requires a valid ascent identity.");
+    const userId = run.options.userId;
+    if (!userId) throw new Error("Kaya photo refresh requires a userId.");
+    try {
+      let tokens = await loadTokens(run.db, this.id, userId);
+      if (!tokens)
+        throw new ProviderStoredIdentityMissingError(
+          this.name,
+          "credentials — reconnect via the app",
+        );
+      const identity = scopesSchema.parse(tokens.scopes ? JSON.parse(tokens.scopes) : null);
+      if (tokens.expiresAt <= new Date())
+        tokens = await this.#refreshTokens(run.db, userId, tokens);
+      let ascents: KayaAscent[];
+      try {
+        ascents = await new KayaClient(tokens.accessToken, this.fetchFn).listAscents(
+          identity.kayaUserId,
+        );
+      } catch (error) {
+        if (!this.#isAccessTokenRejected(error)) throw error;
+        tokens = await this.#refreshTokens(run.db, userId, tokens);
+        ascents = await new KayaClient(tokens.accessToken, this.fetchFn).listAscents(
+          identity.kayaUserId,
+        );
+      }
+      const ascent = ascents.find((entry) => entry.id === ascentId);
+      return ascent
+        ? kayaImageDiscovery(ascent)
+        : {
+            coverage: "unavailable",
+            expectedCount: null,
+            reason: "kaya_ascent_not_found",
+            images: [],
+          };
+    } catch (error) {
+      if (!(error instanceof RefreshTokenRevokedError)) captureException(error);
+      throw error;
+    }
   }
 
   async sync(run: SyncRun): Promise<SyncResult> {
@@ -271,16 +320,31 @@ export class KayaSyncProvider implements SyncProvider {
           `,
               );
         const sourceAttachedIds = new Set(sourceAttachedEntries.map((entry) => entry.externalId));
+        const snapshotEntries = [
+          ...entries,
+          ...standaloneEntries.map((entry) =>
+            sourceAttachedIds.has(entry.externalId) ? { ...entry, activityId: null } : entry,
+          ),
+        ];
         const result = await persistClimbingLogSnapshot(transaction, {
           userId,
           providerId: this.id,
-          entries: [
-            ...entries,
-            ...standaloneEntries.map((entry) =>
-              sourceAttachedIds.has(entry.externalId) ? { ...entry, activityId: null } : entry,
-            ),
-          ],
+          entries: snapshotEntries,
         });
+        const ascentByExternalId = new Map(
+          ascents.map((ascent) => [`kaya:ascent:${ascent.id}`, ascent]),
+        );
+        for (const [index, climbingLogEntryId] of result.logEntryIds.entries()) {
+          const externalId = snapshotEntries[index]?.externalId;
+          const ascent = externalId ? ascentByExternalId.get(externalId) : undefined;
+          if (ascent)
+            await recordClimbingImageDiscovery(transaction, {
+              userId,
+              climbingLogEntryId,
+              providerId: this.id,
+              discovery: kayaImageDiscovery(ascent),
+            });
+        }
         await finishProviderActivityListSync(transaction, {
           userId,
           providerId: this.id,

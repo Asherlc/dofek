@@ -62,3 +62,65 @@ describe("activity image source visibility", () => {
     expect(objects).toHaveLength(1);
   });
 });
+
+describe("climbing-owned image attachment", () => {
+  let ctx: TestContext;
+  const userId = randomUUID(),
+    other = randomUUID(),
+    first = randomUUID(),
+    second = randomUUID(),
+    log = randomUUID(),
+    object = randomUUID();
+  beforeAll(async () => {
+    ctx = await setupTestDatabase();
+    await ctx.db.execute(
+      sql`INSERT INTO fitness.user_profile(id,name) VALUES(${userId},'Climbing photos'),(${other},'Other')`,
+    );
+    await ctx.db.execute(
+      sql`INSERT INTO fitness.provider(id,name) VALUES('climb-media','Climbing media')`,
+    );
+    await ctx.db.execute(
+      sql`INSERT INTO fitness.activity(id,user_id,provider_id,external_id,canonical_type,provider_type,started_at) VALUES(${first},${userId},'climb-media','one','climbing','climbing',now()),(${second},${userId},'climb-media','two','climbing','climbing',now())`,
+    );
+    await ctx.db.execute(
+      sql`INSERT INTO fitness.climbing_log_entry(id,user_id,provider_id,external_id,activity_id,climbed_on) VALUES(${log},${userId},'climb-media','ascent',${first},CURRENT_DATE)`,
+    );
+    await ctx.db.execute(
+      sql`INSERT INTO fitness.activity_image_object(id,user_id,sha256,object_key,mime_type,size_bytes,width,height) VALUES(${object},${userId},${"b".repeat(64)},${`images/${userId}/climb`},'image/png',40,1,1)`,
+    );
+    await ctx.db.execute(
+      sql`INSERT INTO fitness.activity_image(user_id,climbing_log_entry_id,provider_id,source_id,candidate,object_id) VALUES(${userId},${log},'climb-media','ascent-photo','{"kind":"photo","caption":"Ascent","position":0}'::jsonb,${object})`,
+    );
+  });
+  afterAll(async () => {
+    await ctx?.cleanup();
+  });
+  it("follows current attachments and absence without moving the source association", async () => {
+    const read = (ids: string[], owner = userId) =>
+      listActivityImages(ctx.db, { userId: owner, memberActivityIds: ids });
+    expect((await read([first], other)).images).toEqual([]);
+    expect((await read([first])).images[0]?.sources).toEqual([
+      expect.objectContaining({ activityId: null, climbingLogEntryId: log, caption: "Ascent" }),
+    ]);
+    await ctx.db.execute(
+      sql`INSERT INTO fitness.activity_image(user_id,activity_id,provider_id,source_id,candidate,object_id) VALUES(${userId},${first},'climb-media','workout-photo','{"kind":"photo","caption":null,"position":0}'::jsonb,${object})`,
+    );
+    const combined = await read([first, second]);
+    expect(combined.images).toHaveLength(1);
+    expect(combined.images[0]?.sources).toHaveLength(2);
+    await ctx.db.execute(sql`DELETE FROM fitness.activity_image WHERE activity_id=${first}`);
+    await ctx.db.execute(
+      sql`UPDATE fitness.climbing_log_entry SET activity_id=${second} WHERE id=${log}`,
+    );
+    expect((await read([first])).images).toEqual([]);
+    expect((await read([first, second])).images).toHaveLength(1);
+    await ctx.db.execute(
+      sql`UPDATE fitness.climbing_log_entry SET provider_absent_at=now() WHERE id=${log}`,
+    );
+    expect((await read([second])).images).toEqual([]);
+    await ctx.db.execute(
+      sql`UPDATE fitness.climbing_log_entry SET provider_absent_at=NULL, activity_id=NULL WHERE id=${log}`,
+    );
+    expect((await read([second])).images).toEqual([]);
+  });
+});

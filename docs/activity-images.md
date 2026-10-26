@@ -33,7 +33,7 @@ are not authenticated live-account validation. A missing adapter means
 | Xert | Retrieval unverified | [Current client/writer](../src/providers/xert.ts); no verified image adapter. |
 | Cycling Analytics | Retrieval unverified | [Current client/writer](../src/providers/cycling-analytics.ts); no verified image adapter. |
 | Wger | Retrieval unverified | [Current client/writer](../src/providers/wger.ts); exercise catalog pictures are not individual workout photos. |
-| Kaya | Retrieval unverified | [Current sync writer](../src/providers/kaya-sync.ts); no verified per-activity media contract. |
+| KAYA | Ascent photographs through climbing-log associations | The [current app fragment](https://kaya-app.kayaclimb.com/static/js/main.9113009d.chunk.js) exposes `photo { photo_url thumb_url }` on ascents. The [sync writer](../src/providers/kaya-sync.ts) imports this field; see [KAYA photo coverage](kaya.md#ascent-photographs). |
 | Amazfit/Zepp | Retrieval unverified | [Current client/writer](../src/providers/amazfit-zepp.ts); no verified activity-media contract. |
 | FIT, Garmin dump, Apple Health, Strong CSV, Kaya CSV, Zepp OS imports | No verified embedded image extraction | [FIT import](../src/providers/fit-file.ts), [Garmin export importer](../src/providers/garmin-dump.ts), [Apple Health importer](../src/providers/apple-health/import.ts), [Strong importer](../src/providers/strong-csv.ts), [Kaya importer](../src/providers/kaya/import.ts), [Zepp OS importer](../src/providers/zos-app/provider.ts). Unsupported media is reported rather than inferred from sensor records. |
 
@@ -43,6 +43,16 @@ Decathlon) retain unavailable coverage. See the
 [production provider scope](../src/providers/README.md#supported-providers).
 
 ## Storage and background work
+
+KAYA ascent photos use this same pipeline. Image and discovery associations
+have exactly one owner: an Activity or a ClimbingLogEntry. Owner-scoped foreign
+keys preserve account/provider identity and cascade associations on hard log
+deletion; PostgreSQL documents [composite foreign keys and checks](https://www.postgresql.org/docs/current/ddl-constraints.html).
+Objects, acquisition work, cleanup, and account-erasure barriers remain shared.
+An activity attachment does not own the ascent's photos: deleting or changing
+the attachment leaves retained log-owned copies intact. Provider absence hides
+and pauses the source; disconnect stops acquisition while retaining copies.
+See the [persistence implementation](../src/db/activity-images.ts).
 
 - `fitness.activity_image` owns provider identity, caption/order, source payload,
   resolution alternatives, generation, and the current stored-object reference.
@@ -84,6 +94,32 @@ a database transaction during R2 requests. PostgreSQL documents these
 R2 supports the required operations through its [S3 API](https://developers.cloudflare.com/r2/api/s3/api/).
 
 ## Backfill and API
+
+The next normal KAYA sync discovers photographs across its complete paginated
+logbook, including historical and standalone ascents. It reuses the existing
+ascent feed instead of fetching a gallery per ascent. The activity-only backfill
+command below is not needed for KAYA ascent discovery. Download work remains
+bounded by the shared outbox; see the [KAYA sync contract](kaya.md#ascent-photographs).
+
+`climbing.images({id})` serves stored photographs for an owned, visible climbing
+log with the same gallery shape and signed-link renewal as `activity.images`.
+Standalone log access uses its climb date; attached logs use the activity
+group's displayed date and visibility, matching the existing climbing detail
+policy. Undated standalone logs require unrestricted history access. Activity
+galleries also include photos through current visible log attachments, without
+copying associations. See the [authorization repository](../packages/server/src/repositories/climbing-images-repository.ts)
+and [shared gallery repository](../packages/server/src/repositories/activity-images-repository.ts).
+
+Both clients show the gallery within KAYA ascent details, with download progress,
+actionable errors, retained photos during failed refetches, and a full image
+viewer. Attempted-climb summaries do not inherit an ascent's photographs.
+The server's `photoLogEntryId` retains the KAYA source owner when another
+provider supplies a consolidated climb's displayed facts. Ordinary climbing
+detail responses omit KAYA's upstream `raw.photo`; its original payload remains
+in Postgres. Only the nonpersistent photo query returns image URLs, signed for
+the private stored copy. See the [climbing serializer](../packages/server/src/repositories/climbing-activity-log-entry-repository.ts).
+The [shared query policy](../packages/training/src/activity-images.ts) refreshes
+signed links and excludes them from persisted mobile query caches.
 
 After configuration and migration, run from the repository root:
 

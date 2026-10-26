@@ -33352,3 +33352,11 @@ The incident date uses America/Los_Angeles: the October 23 UTC sync timestamps b
 - **Retrospective / proposed improvement:** Downloading the individual job log exposed the first failure while the overall workflow was still running. Add that log-retrieval procedure and a distinction between token issuance and Infisical login to the CI debugging guide; reuse the CI diagnosis workflow for similar failures.
 
 - **2026-10-26 follow-up:** The [mobile preview job](https://github.com/Asherlc/dofek/actions/runs/40392107736/job/121815472813) subsequently failed at the same GitHub token request with HTTP 504. An operator rerun of the failed job [passed secret loading](https://github.com/Asherlc/dofek/actions/runs/40392107736/job/121819479417), confirming token issuance recovered for that attempt. This is service recovery evidence, not a repository fix or proof of the upstream cause. Native and remaining CI jobs were still running at this checkpoint. Review also exposed missing accessible Cloud/Bluetooth qualifiers in nested and additional source rows; focused failing web/mobile tests reproduced that separate regression. Both clients now retain the complete source label for assistive technology while displaying the compact name and icon; all 35 disclosure tests pass.
+
+
+## 2026-10-26 — Fresh workspace analytics verification required schema initialization
+
+- **Impact:** Local KAYA photo verification only; no production deployment or production data changes.
+- **Evidence / cause:** The required `pnpm analytics:build` failed first with `ClickHouseError: Database ingest does not exist`. Compose services were healthy, but this new workspace had not run the [canonical schema bootstrap](../README.md#schema-and-migrations).
+- **Direct fix / validation:** Ran `pnpm setup-db` against the workspace-local databases through the existing environment wrapper, then reran the unchanged `pnpm analytics:build`: 45 models passed, zero errors. No retries, sleeps, timeout changes, or runtime workarounds were added.
+- **Remaining risk / follow-up:** This validates an empty local analytics schema, not production CDC freshness. For future new-workspace validation, run the documented bootstrap before analytics builds; reuse the integration-readiness workflow.

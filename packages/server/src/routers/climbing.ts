@@ -3,6 +3,7 @@ import { climbingFiltersSchema } from "@dofek/training/climbing-filters";
 import { climbingLocationMapSchema } from "@dofek/training/climbing-location-map";
 import { climbingStrengthsSchema } from "@dofek/training/climbing-strengths";
 import { TRPCError } from "@trpc/server";
+import { createActivityImageUrl, readActivityImageObject } from "dofek/activity-images/storage";
 import { queryCache } from "dofek/lib/cache";
 import { captureException } from "dofek/lib/error-reporting";
 import { z } from "zod";
@@ -12,7 +13,9 @@ import {
   climbingLogEntryDetailSchema,
 } from "../contracts/climbing-log-contracts.ts";
 import { dateWindowStartString } from "../lib/date-window.ts";
+import { activityImagesOutputSchema } from "../repositories/activity-images-repository.ts";
 import { ActivityRepository } from "../repositories/activity-repository.ts";
+import { ClimbingImagesRepository } from "../repositories/climbing-images-repository.ts";
 import { ClimbingLogEntryAssociator } from "../repositories/climbing-log-entry-associator.ts";
 import {
   type ClimbingGradeProgressionRow,
@@ -93,6 +96,17 @@ async function runClimbingQuery<T>(query: () => Promise<T>): Promise<T> {
 }
 
 export const climbingRouter = router({
+  images: protectedProcedure
+    .input(z.object({ id: z.guid() }))
+    .output(activityImagesOutputSchema)
+    .query(async ({ ctx, input }) =>
+      runClimbingQuery(() =>
+        new ClimbingImagesRepository(ctx.db, ctx.userId, ctx.timezone, ctx.accessWindow).getImages(
+          input.id,
+          { sign: createActivityImageUrl, readImage: readActivityImageObject },
+        ),
+      ),
+    ),
   strengths: cachedProtectedQuery({
     maxAge: CacheTTL.LONG,
     outputSchema: climbingStrengthsSchema,

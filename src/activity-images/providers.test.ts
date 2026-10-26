@@ -259,6 +259,7 @@ it("rejects malformed provider metadata without retrying and clamps retry deadli
 vi.mock("../providers/index.ts", () => ({ getProvider: vi.fn() }));
 vi.mock("../db/activity-images.ts", () => ({
   recordActivityImageDiscovery: vi.fn(async () => undefined),
+  recordClimbingImageDiscovery: vi.fn(async () => undefined),
 }));
 
 it("records supported, unsupported, and failed discoveries with their owner", async () => {
@@ -310,60 +311,82 @@ it("records supported, unsupported, and failed discoveries with their owner", as
     discoverAndRecordActivityImages(new SyncRun({ db, window: run.window }), "a", "e", "provider"),
   ).rejects.toThrow("explicit owner");
 });
-it("refreshes only the matching stable image and requests a fresh provider lookup", async () => {
-  const { getProvider } = await import("../providers/index.ts");
-  const { refreshActivityImage } = await import("./providers.ts");
-  const { SyncRun } = await import("../providers/sync-run.ts");
-  const { SyncWindow } = await import("../providers/sync-window.ts");
-  const { createMockDatabase } = await import("../providers/test-helpers.ts");
-  const { db } = createMockDatabase();
-  const run = new SyncRun({
-    db,
-    userId: "owner",
-    window: SyncWindow.fromSince({ since: new Date(0) }),
-  });
-  const image = {
-    sourceId: "same",
-    kind: "photo" as const,
-    caption: null,
-    position: 0,
-    variants: [{ url: "https://cdn.test/fresh", width: 1, height: 1 }],
-    revision: null,
-    raw: {},
-  };
-  const work = {
-    id: "work",
-    userId: "owner",
-    providerId: "provider",
-    activityId: "activity",
-    activityExternalId: "external",
-    imageId: "image",
-    generation: 1,
-    candidate: image,
-    attempts: 1,
-  };
-  const discover = vi.fn(async () => ({
-    coverage: "complete" as const,
-    expectedCount: 1,
-    reason: null,
-    images: [image],
-  }));
-  vi.mocked(getProvider).mockReturnValue({
-    id: "provider",
-    name: "Provider",
-    validate: () => null,
-    sync: vi.fn(),
-    discoverActivityImages: discover,
-  });
-  expect(await refreshActivityImage(run, work)).toEqual(image);
-  expect(discover).toHaveBeenCalledWith(run, "external", { refresh: true });
-  discover.mockResolvedValueOnce({
-    coverage: "complete",
-    expectedCount: 0,
-    reason: null,
-    images: [],
-  });
-  await expect(refreshActivityImage(run, work)).rejects.toThrow("no longer exposed");
-  vi.mocked(getProvider).mockReturnValue(undefined);
-  await expect(refreshActivityImage(run, work)).rejects.toThrow("refresh unavailable");
-});
+it.each(["activity", null])(
+  "refreshes the matching image for owner %s through the corresponding provider lookup",
+  async (activityId) => {
+    const { getProvider } = await import("../providers/index.ts");
+    const { refreshActivityImage } = await import("./providers.ts");
+    const { recordClimbingImageDiscovery } = await import("../db/activity-images.ts");
+    vi.mocked(recordClimbingImageDiscovery).mockClear();
+    const { SyncRun } = await import("../providers/sync-run.ts");
+    const { SyncWindow } = await import("../providers/sync-window.ts");
+    const { createMockDatabase } = await import("../providers/test-helpers.ts");
+    const { db } = createMockDatabase();
+    const run = new SyncRun({
+      db,
+      userId: "owner",
+      window: SyncWindow.fromSince({ since: new Date(0) }),
+    });
+    const image = {
+      sourceId: "same",
+      kind: "photo" as const,
+      caption: null,
+      position: 0,
+      variants: [{ url: "https://cdn.test/fresh", width: 1, height: 1 }],
+      revision: null,
+      raw: {},
+    };
+    const work = {
+      id: "work",
+      userId: "owner",
+      providerId: "provider",
+      ...(activityId === null ? { activityId: null, climbingLogEntryId: "log" } : { activityId }),
+      activityExternalId: "external",
+      imageId: "image",
+      generation: 1,
+      candidate: { ...image, revision: "previous-photo" },
+      attempts: 1,
+    };
+    const discover = vi.fn(async () => ({
+      coverage: "complete" as const,
+      expectedCount: 1,
+      reason: null,
+      images: [image],
+    }));
+    vi.mocked(getProvider).mockReturnValue({
+      id: "provider",
+      name: "Provider",
+      validate: () => null,
+      sync: vi.fn(),
+      ...(activityId === null
+        ? { discoverClimbingImages: discover }
+        : { discoverActivityImages: discover }),
+    });
+    expect(await refreshActivityImage(run, work)).toEqual(image);
+    expect(discover).toHaveBeenCalledWith(run, "external", { refresh: true });
+    if (activityId === null)
+      expect(recordClimbingImageDiscovery).toHaveBeenCalledWith(db, {
+        userId: work.userId,
+        climbingLogEntryId: "log",
+        providerId: work.providerId,
+        discovery: { coverage: "complete", expectedCount: 1, reason: null, images: [image] },
+      });
+    else expect(recordClimbingImageDiscovery).not.toHaveBeenCalled();
+    discover.mockResolvedValueOnce({
+      coverage: "complete",
+      expectedCount: 0,
+      reason: null,
+      images: [],
+    });
+    await expect(refreshActivityImage(run, work)).rejects.toThrow("no longer exposed");
+    if (activityId === null)
+      expect(recordClimbingImageDiscovery).toHaveBeenLastCalledWith(db, {
+        userId: work.userId,
+        climbingLogEntryId: "log",
+        providerId: work.providerId,
+        discovery: { coverage: "complete", expectedCount: 0, reason: null, images: [] },
+      });
+    vi.mocked(getProvider).mockReturnValue(undefined);
+    await expect(refreshActivityImage(run, work)).rejects.toThrow("refresh unavailable");
+  },
+);

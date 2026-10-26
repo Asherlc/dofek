@@ -1,6 +1,6 @@
 # Ascent photo imports
 
-Status: proposed; approach approved, design awaiting approval.
+Status: approved for KAYA only on 2026-10-26. Other provider retrieval remains research.
 
 ## Intent and scope
 
@@ -8,6 +8,14 @@ Import photographs explicitly attached to the connected user's logged ascents.
 Preserve the source association and original bytes, support standalone climbing
 logs, collect new photos during sync, and provide a bounded historical import.
 Expose the same photos and acquisition state on web and mobile.
+
+The user subsequently narrowed implementation to KAYA. Do not add discovery
+adapters or unavailable-coverage rows for other climbing providers. KAYA already
+fetches and persists its complete paginated logbook on each sync; collect photos
+from that same feed, including historical ascents. A normal KAYA sync is the
+historical discovery pass, so no separate scan or backfill service is needed.
+Acquisition remains bounded by the existing durable outbox. These scope decisions
+supersede the multi-provider and separate historical-scan requirements below.
 
 The user selected ascent photos and approved extending the existing private
 photo pipeline. Route catalogue galleries, other users' photos, video downloads,

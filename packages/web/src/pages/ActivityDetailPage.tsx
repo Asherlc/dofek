@@ -152,6 +152,7 @@ export function ActivityDetailPage() {
   const attachEntry = trpc.climbing.attachClimbingLogEntry.useMutation({
     onSuccess: async (_result, input) => {
       await Promise.all([
+        trpcUtils.activity.images.invalidate({ id: input.activityId }),
         trpcUtils.climbing.activityLogEntries.invalidate({ activityId: input.activityId }),
         trpcUtils.climbing.sessionSummary.invalidate(),
         trpcUtils.climbing.gradeProgression.invalidate(),

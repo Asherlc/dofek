@@ -53,6 +53,8 @@ const sessionSchema = z.object({
   attempted_climbs: z.array(climbSchema.extend({ attempts: attemptCountSchema })),
 });
 const ascentSchema = z.object({
+  // Validate media independently so an unknown photo cannot invalidate the logbook.
+  photo: z.json().optional(),
   id: idSchema,
   session_id: idSchema.nullable(),
   date: z.string(),
@@ -187,4 +189,4 @@ function browserHeaders(): Record<string, string> {
 
 const CLIMB_FIELDS = `id name color { name } slug lead climb_type { id name } grade { id name climb_type_group } gym { id name address city region country latitude longitude } destination { id name latitude longitude } area { id name latitude longitude } subarea { id name latitude longitude } board { id name } angle`;
 const SESSION_QUERY = `query sessionsForUser($user_id: ID!, $offset: Int!, $count: Int!) { sessionsForUser(user_id: $user_id, offset: $offset, count: $count) { id start_time end_time notes gym { id name address city region country latitude longitude } board { id name latitude longitude } destination { id name latitude longitude } attempted_climbs { attempts: session_attempts ${CLIMB_FIELDS} } } }`;
-const ASCENT_QUERY = `query ascentsForUser($user_id: ID!, $offset: Int!, $count: Int!) { ascentsForUser(user_id: $user_id, offset: $offset, count: $count) { id session_id date comment rating stiffness attempts ascent_type { id name } gym { id name address city region country latitude longitude } climb { ${CLIMB_FIELDS} } } }`;
+const ASCENT_QUERY = `query ascentsForUser($user_id: ID!, $offset: Int!, $count: Int!) { ascentsForUser(user_id: $user_id, offset: $offset, count: $count) { id session_id date comment rating stiffness attempts photo { photo_url thumb_url } ascent_type { id name } gym { id name address city region country latitude longitude } climb { ${CLIMB_FIELDS} } } }`;

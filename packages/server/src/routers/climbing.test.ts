@@ -90,6 +90,19 @@ describe("climbingRouter", () => {
     vi.restoreAllMocks();
     vi.useRealTimers();
   });
+  it("rejects an inaccessible climbing photo owner before reading or signing media", async () => {
+    const { caller, execute } = makeCaller();
+    await expect(caller.images({ id: groupId })).rejects.toMatchObject({
+      code: "NOT_FOUND",
+      message: "Climbing log entry not found",
+    });
+    expect(execute).toHaveBeenCalledOnce();
+  });
+  it("validates climbing photo IDs before querying", async () => {
+    const { caller, execute } = makeCaller();
+    await expect(caller.images({ id: "invalid" })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    expect(execute).not.toHaveBeenCalled();
+  });
   it.each([
     groupId,
     "00000000-0000-4000-8000-000000000702",
