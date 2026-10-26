@@ -3,7 +3,7 @@ import type { ClimbingMapLocation, ClimbingMapMarker } from "@dofek/training/cli
 import type { Meta, StoryObj } from "@storybook/react-native";
 import { type ComponentProps, useMemo, useState } from "react";
 import { Text, View } from "react-native";
-import { expect, fn, within } from "storybook/test";
+import { expect, fn, waitFor, within } from "storybook/test";
 import type { ClimbingLogEntryDetail } from "../../server/src/contracts/climbing-log-contracts.ts";
 import {
   climbingAttemptFixture,
@@ -229,22 +229,136 @@ export const SingleClimbWall: Story = {
   ],
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    const firstCard = canvas.getByLabelText("Climbing entry: Hunger Pains");
-    const secondCard = canvas.getByLabelText("Climbing entry: Short Term Memory");
-    const firstBounds = firstCard.getBoundingClientRect();
-    const secondBounds = secondCard.getBoundingClientRect();
-    const availableWidth = canvas.getByLabelText("Wreckage Wall").parentElement?.clientWidth ?? 0;
-    if (availableWidth >= 572) {
-      await expect(firstBounds.top).toBe(secondBounds.top);
-      await expect(secondBounds.left).toBeGreaterThanOrEqual(firstBounds.right);
-    } else {
-      await expect(secondBounds.top).toBeGreaterThan(firstBounds.bottom);
-      await expect(secondBounds.left).toBe(firstBounds.left);
-    }
+    await waitFor(async () => {
+      const firstCard = canvas.getByLabelText("Climbing entry: Hunger Pains");
+      const secondCard = canvas.getByLabelText("Climbing entry: Short Term Memory");
+      const firstBounds = firstCard.getBoundingClientRect();
+      const secondBounds = secondCard.getBoundingClientRect();
+      const availableWidth = canvas.getByLabelText("Wreckage Wall").parentElement?.clientWidth ?? 0;
+      if (availableWidth >= 572) {
+        await expect(firstBounds.top).toBe(secondBounds.top);
+        await expect(secondBounds.left).toBeGreaterThanOrEqual(firstBounds.right);
+      } else {
+        await expect(secondBounds.top).toBeGreaterThan(firstBounds.bottom);
+        await expect(secondBounds.left).toBe(firstBounds.left);
+      }
+    });
     await expect(canvas.getByRole("heading", { name: "Wreckage Wall" })).toBeVisible();
     await expect(canvas.getByRole("heading", { name: "Memorial Wall" })).toBeVisible();
   },
 };
+const areaBlockEntries = [
+  { wall: "Wreckage Wall", climbs: ["Hunger Pains"] },
+  { wall: "Scale Wall", climbs: ["Swiss Cheese", "Road Kill", "Left Arete"] },
+  { wall: "Memorial Wall", climbs: ["Short Term Memory"] },
+  { wall: "Cave Wall", climbs: ["Cave Crack"] },
+].flatMap(({ wall, climbs }) =>
+  climbs.map((name) => {
+    const climb = climbingClimbFixture("mountain-project");
+    const id = name.toLowerCase().replaceAll(" ", "-");
+    const areaId = wall.toLowerCase().replaceAll(" ", "-");
+    return {
+      ...climbingLogFixture,
+      id,
+      climbId: id,
+      climb: {
+        ...climb,
+        id,
+        name,
+        areaId,
+        areaPath: climb.areaPath.map((area) => ({ ...area, id: areaId, name: wall })),
+      },
+    };
+  }),
+);
+export const AreaBlocks: Story = {
+  args: {
+    entries: areaBlockEntries,
+    locations: Object.fromEntries(
+      areaBlockEntries.map((entry) => [
+        entry.id,
+        { ...exactClimbingLocation, name: entry.climb.name },
+      ]),
+    ),
+  },
+  decorators: SingleClimbWall.decorators,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(canvas.getAllByLabelText(/^Climbing entry:/)).toHaveLength(6);
+    await waitFor(async () => {
+      const wreckage = canvas.getByLabelText("Wreckage Wall");
+      const scale = canvas.getByLabelText("Scale Wall");
+      const memorial = canvas.getByLabelText("Memorial Wall");
+      const cave = canvas.getByLabelText("Cave Wall");
+      const cards = canvas.getAllByLabelText(/^Climbing entry:/);
+      const wreckageBounds = wreckage.getBoundingClientRect();
+      const scaleBounds = scale.getBoundingClientRect();
+      const memorialBounds = memorial.getBoundingClientRect();
+      const caveBounds = cave.getBoundingClientRect();
+      await expect(wreckageBounds.width).toBeGreaterThan(0);
+      await expect(scaleBounds.top).toBeGreaterThan(wreckageBounds.bottom);
+      await expect(memorialBounds.top).toBeGreaterThan(scaleBounds.bottom);
+      const availableWidth = wreckage.parentElement?.clientWidth ?? 0;
+      if (availableWidth >= 572) {
+        await expect(caveBounds.top).toBe(memorialBounds.top);
+        await expect(caveBounds.left).toBeGreaterThan(memorialBounds.right);
+      } else {
+        await expect(caveBounds.top).toBeGreaterThan(memorialBounds.bottom);
+      }
+      const firstCardWidth = cards[0]?.getBoundingClientRect().width ?? 0;
+      for (const card of cards) {
+        await expect(Math.abs(card.getBoundingClientRect().width - firstCardWidth)).toBeLessThan(
+          0.1,
+        );
+        await expect(card.getBoundingClientRect().right).toBeLessThanOrEqual(availableWidth);
+      }
+    });
+  },
+};
+
+export const FractionalAreaBlocks: Story = {
+  ...AreaBlocks,
+  decorators: [
+    (Story) => (
+      <View style={{ width: 900.5, maxWidth: "100%" }}>
+        <Story />
+      </View>
+    ),
+  ],
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await waitFor(async () => {
+      const scale = canvas.getByLabelText("Scale Wall");
+      const cards = within(scale).getAllByLabelText(/^Climbing entry:/);
+      await expect(cards).toHaveLength(3);
+      const [first, second, third] = cards.map((card) => card.getBoundingClientRect());
+      if (!first || !second || !third) throw new Error("Expected three Scale Wall cards");
+      const availableWidth = scale.parentElement?.getBoundingClientRect().width ?? 0;
+      if (availableWidth < 864) {
+        await expect(third.top).toBeGreaterThan(first.top);
+        await expect(third.right).toBeLessThanOrEqual(scale.getBoundingClientRect().right);
+        return;
+      }
+      await expect(second.top).toBe(first.top);
+      await expect(third.top).toBe(first.top);
+      await expect(second.left).toBeGreaterThan(first.right);
+      await expect(third.left).toBeGreaterThan(second.right);
+      await expect(third.right).toBeLessThanOrEqual(scale.getBoundingClientRect().right);
+    });
+  },
+};
+
+export const FractionalSingletonAreaBlocks: Story = {
+  ...AreaBlocks,
+  decorators: [
+    (Story) => (
+      <View style={{ width: 600.5, maxWidth: "100%" }}>
+        <Story />
+      </View>
+    ),
+  ],
+};
+
 const longAreaName = "Wreckage Wall above the California coastal climbing area and upper canyon";
 export const LongAreaName: Story = {
   args: {

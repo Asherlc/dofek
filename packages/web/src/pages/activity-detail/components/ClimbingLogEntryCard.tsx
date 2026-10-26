@@ -4,7 +4,7 @@ import {
 } from "@dofek/format/climbing-log";
 import { climbingLogEntryName } from "@dofek/training/climbing-log";
 import type { ClimbingMapLocation, ClimbingMapMarker } from "@dofek/training/climbing-map";
-import { type ReactNode, useMemo } from "react";
+import { useMemo } from "react";
 import type { ClimbingLogEntryDetail } from "../../../../../server/src/contracts/climbing-log-contracts.ts";
 import { ActivityRouteMap } from "../../../components/ActivityRouteMap.tsx";
 import { ClimbingLogEntryContext } from "./ClimbingLogEntryContext.tsx";
@@ -24,7 +24,6 @@ export function ClimbingLogEntryCard({
   selected = false,
   attachmentState,
   onAttach,
-  heading,
 }: {
   entry: ClimbingLogEntryDetail;
   location?: ClimbingMapLocation;
@@ -32,7 +31,6 @@ export function ClimbingLogEntryCard({
   selected?: boolean;
   attachmentState?: ClimbingLogAttachmentState;
   onAttach?: (entryId: string) => void;
-  heading?: ReactNode;
 }) {
   const name = climbingLogEntryName(entry);
   const methods = formatClimbingRopeMethods(entry.attempts);
@@ -53,84 +51,78 @@ export function ClimbingLogEntryCard({
     [entry.id, entryNumber, name, location],
   );
   return (
-    <li aria-current={selected ? "true" : undefined} className="flex min-w-0 flex-col gap-2">
-      {heading !== undefined && <div className="min-h-5">{heading}</div>}
-      <div
-        className={`flex min-w-0 flex-1 flex-col gap-3 rounded-lg border p-3 ${selected ? "border-accent" : "border-border"}`}
-      >
-        {location && (
-          <ActivityRouteMap
-            points={NO_SENSOR_POINTS}
-            climbMarkers={markers}
-            presentation="compact"
+    <li
+      aria-current={selected ? "true" : undefined}
+      className={`flex min-w-0 flex-col gap-3 rounded-lg border p-3 ${selected ? "border-accent" : "border-border"}`}
+    >
+      {location && (
+        <ActivityRouteMap points={NO_SENSOR_POINTS} climbMarkers={markers} presentation="compact" />
+      )}
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 space-y-1">
+          <ClimbingLogEntrySources
+            name={name}
+            sourceName={entry.sourceName}
+            links={entry.sourceLinks}
           />
-        )}
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0 space-y-1">
-            <ClimbingLogEntrySources
-              name={name}
-              sourceName={entry.sourceName}
-              links={entry.sourceLinks}
-            />
-            <ClimbingLogEntryContext entry={entry} />
-          </div>
-          {entry.displayGrade && (
-            <span className="rounded bg-accent/10 px-2 py-1 text-sm font-semibold text-accent">
-              {entry.displayGrade}
-            </span>
-          )}
+          <ClimbingLogEntryContext entry={entry} />
         </div>
-        <div className="space-y-1 text-xs text-subtle">
-          {methods && <p>{methods}</p>}
-          {recordedResult && <p>{recordedResult}</p>}
-          {entry.pitchResults.map((result) => (
-            <p key={result.attemptIds.join(":")}>
-              {formatClimbingRecordedResult(
-                result.pitch === null
-                  ? "Unidentified pitch"
-                  : result.pitch.number === null
-                    ? (result.pitch.name ?? "Pitch")
-                    : `Pitch ${result.pitch.number}`,
-                result.recordedOutcome,
-                result.recordedAttemptCount,
-                entry.attempts
-                  .filter((attempt) => result.attemptIds.includes(attempt.id))
-                  .flatMap((attempt) => attempt.rockResultLabels),
-              )}
-            </p>
-          ))}
-          {entry.attempts.map(
-            (attempt) =>
-              attempt.rockResultLabels.length > 0 && (
-                <p key={attempt.id} className="text-green-500">
-                  {attempt.rockResultLabels
-                    .filter((label) => label !== "sent" || attempt.rockResultLabels.length === 1)
-                    .map((label) => (label === "sent" ? "Sent" : label))
-                    .join(" · ")}
-                </p>
-              ),
-          )}
-        </div>
-        {onAttach && (
-          <div className="mt-auto space-y-2">
-            {attachmentState?.error && (
-              <p role="alert" className="text-sm text-red-400">
-                {attachmentState.error}
-              </p>
-            )}
-            <button
-              type="button"
-              className="self-start rounded bg-accent px-3 py-2 text-sm font-semibold text-white disabled:opacity-60"
-              aria-label={`Attach ${entryNumber == null ? name : `entry ${entryNumber}, ${name}`} to this activity`}
-              aria-busy={attachmentState?.pending ?? false}
-              disabled={attachmentState?.pending}
-              onClick={() => onAttach(entry.id)}
-            >
-              {attachmentState?.pending ? "Attaching..." : "Attach"}
-            </button>
-          </div>
+        {entry.displayGrade && (
+          <span className="rounded bg-accent/10 px-2 py-1 text-sm font-semibold text-accent">
+            {entry.displayGrade}
+          </span>
         )}
       </div>
+      <div className="space-y-1 text-xs text-subtle">
+        {methods && <p>{methods}</p>}
+        {recordedResult && <p>{recordedResult}</p>}
+        {entry.pitchResults.map((result) => (
+          <p key={result.attemptIds.join(":")}>
+            {formatClimbingRecordedResult(
+              result.pitch === null
+                ? "Unidentified pitch"
+                : result.pitch.number === null
+                  ? (result.pitch.name ?? "Pitch")
+                  : `Pitch ${result.pitch.number}`,
+              result.recordedOutcome,
+              result.recordedAttemptCount,
+              entry.attempts
+                .filter((attempt) => result.attemptIds.includes(attempt.id))
+                .flatMap((attempt) => attempt.rockResultLabels),
+            )}
+          </p>
+        ))}
+        {entry.attempts.map(
+          (attempt) =>
+            attempt.rockResultLabels.length > 0 && (
+              <p key={attempt.id} className="text-green-500">
+                {attempt.rockResultLabels
+                  .filter((label) => label !== "sent" || attempt.rockResultLabels.length === 1)
+                  .map((label) => (label === "sent" ? "Sent" : label))
+                  .join(" · ")}
+              </p>
+            ),
+        )}
+      </div>
+      {onAttach && (
+        <div className="mt-auto space-y-2">
+          {attachmentState?.error && (
+            <p role="alert" className="text-sm text-red-400">
+              {attachmentState.error}
+            </p>
+          )}
+          <button
+            type="button"
+            className="self-start rounded bg-accent px-3 py-2 text-sm font-semibold text-white disabled:opacity-60"
+            aria-label={`Attach ${entryNumber == null ? name : `entry ${entryNumber}, ${name}`} to this activity`}
+            aria-busy={attachmentState?.pending ?? false}
+            disabled={attachmentState?.pending}
+            onClick={() => onAttach(entry.id)}
+          >
+            {attachmentState?.pending ? "Attaching..." : "Attach"}
+          </button>
+        </div>
+      )}
     </li>
   );
 }

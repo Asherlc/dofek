@@ -119,23 +119,73 @@ export const Wide: Story = {
       </div>
     ),
   ],
+};
+export const AreaBlocks: Story = {
+  decorators: Wide.decorators,
+  parameters: { layout: "padded" },
+  args: {
+    entries: [
+      { wall: "Wreckage Wall", name: "Hunger Pains" },
+      { wall: "Scale Wall", name: "Thin Fingers" },
+      { wall: "Scale Wall", name: "The Corner" },
+      { wall: "Scale Wall", name: "Long Reach" },
+      { wall: "Memorial Wall", name: "Short Term Memory" },
+      { wall: "Cave Wall", name: "Cave Route" },
+    ].map(({ wall, name }, index) => {
+      const climb = climbingClimbFixture();
+      return climbingLogEntryFixture({
+        id: `block-${index}`,
+        displayGrade: "5.10a",
+        climb: {
+          ...climb,
+          name,
+          areaPath: climb.areaPath.map((area) => ({ ...area, id: wall, name: wall })),
+        },
+      });
+    }),
+    locations: {},
+  },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     const grid = canvas.getByRole("region", { name: "Attached climbing logs" });
-    const [first, second, third, fourth] = within(grid).getAllByRole("listitem");
-    if (!first || !second || !third || !fourth) throw new Error("Expected four climbing logs");
-    if (grid.getBoundingClientRect().width >= 900) {
-      await expect(third.getBoundingClientRect().top).toBeCloseTo(
-        first.getBoundingClientRect().top,
+    const wreckage = within(canvas.getByRole("list", { name: "Wreckage Wall climbs" })).getByRole(
+      "listitem",
+    );
+    const scale = within(canvas.getByRole("list", { name: "Scale Wall climbs" })).getAllByRole(
+      "listitem",
+    );
+    const memorial = within(canvas.getByRole("list", { name: "Memorial Wall climbs" })).getByRole(
+      "listitem",
+    );
+    const cave = within(canvas.getByRole("list", { name: "Cave Wall climbs" })).getByRole(
+      "listitem",
+    );
+    for (const climb of scale) {
+      await expect(climb.getBoundingClientRect().top).toBeGreaterThan(
+        wreckage.getBoundingClientRect().bottom,
+      );
+      await expect(climb.getBoundingClientRect().width).toBeCloseTo(
+        wreckage.getBoundingClientRect().width,
         0,
       );
-      await expect(third.getBoundingClientRect().left).toBeGreaterThan(
-        second.getBoundingClientRect().right,
-      );
-      await expect(fourth.getBoundingClientRect().top).toBeGreaterThan(
-        first.getBoundingClientRect().bottom,
+      await expect(memorial.getBoundingClientRect().top).toBeGreaterThan(
+        climb.getBoundingClientRect().bottom,
       );
     }
+    if (grid.getBoundingClientRect().width >= 532) {
+      await expect(memorial.getBoundingClientRect().top).toBeCloseTo(
+        cave.getBoundingClientRect().top,
+        0,
+      );
+      await expect(cave.getBoundingClientRect().left).toBeGreaterThan(
+        memorial.getBoundingClientRect().right,
+      );
+    } else {
+      await expect(cave.getBoundingClientRect().top).toBeGreaterThan(
+        memorial.getBoundingClientRect().bottom,
+      );
+    }
+    await expect(grid.scrollWidth).toBeLessThanOrEqual(grid.clientWidth);
   },
 };
 export const SingleClimbWall: Story = {

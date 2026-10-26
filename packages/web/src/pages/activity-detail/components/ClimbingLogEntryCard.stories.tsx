@@ -30,11 +30,6 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 export const Default: Story = {};
-export const WithAreaHeading: Story = {
-  args: {
-    heading: <h3 className="text-sm font-medium text-foreground">Wreckage Wall</h3>,
-  },
-};
 export const Attempted: Story = {
   args: {
     location: undefined,
