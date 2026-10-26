@@ -40,6 +40,17 @@ The backend API and background job processor for Dofek. Built with Node.js, Expr
   from retained source labels through the [canonical SQL function](../../drizzle/0148_compute_climbing_attempt_outcome.sql).
   The [API contract](src/contracts/climbing-log-contracts.ts) continues returning
   `completed`, `failed`, or null to web, mobile, and MCP clients.
+- **Climbing strengths**: The protected cached `climbing.strengths` query serves
+  [display-ready panels](../training/src/climbing-strengths.ts) for both clients.
+  Its [repository](src/repositories/climbing-strengths-repository.ts) reuses the
+  owned, dated canonical climbing projection while retaining all source trait
+  evidence before [distinct-climb consolidation](src/services/climbing-strengths.ts).
+  Repeated attempts count once per identified climb and semantic context;
+  known sends take precedence over failures, while unknown-only outcomes and
+  conflicting grades are excluded.
+  Coverage reports unidentified/missing-grade observation records separately from
+  distinct-climb trait and outcome coverage. Known degree values are shown literally;
+  missing units and contradictory traits remain unknown.
 - **Provider climbing records**: The [provider detail repository](src/repositories/provider-detail-repository.ts)
   lists retained logs, including undated records and provider-absence tombstones,
   and loads the full owned graph for a selected record. The [sync repository](src/repositories/sync-repository.ts)

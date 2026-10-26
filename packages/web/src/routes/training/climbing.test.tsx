@@ -3,12 +3,14 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { climbingProgressionFixture } from "../../components/climbing-progression-test-helpers.ts";
+import { climbingStrengthsFixture } from "../../components/climbing-strengths-fixtures.ts";
 
 const gradeProgressionQuery = vi.hoisted(() => vi.fn());
 const volumeByGradeQuery = vi.hoisted(() => vi.fn());
 const sessionSummaryQuery = vi.hoisted(() => vi.fn());
 const hangboardingSummaryQuery = vi.hoisted(() => vi.fn());
 const locationMapQuery = vi.hoisted(() => vi.fn());
+const strengthsQuery = vi.hoisted(() => vi.fn());
 const recentActivitiesSection = vi.hoisted(() => vi.fn());
 const trainingDaysState = vi.hoisted<{ days: number | null }>(() => ({ days: 90 }));
 
@@ -78,6 +80,7 @@ vi.mock("../../lib/trpc.ts", () => ({
       sessionSummary: { useQuery: sessionSummaryQuery },
       hangboardingSummary: { useQuery: hangboardingSummaryQuery },
       locationMap: { useQuery: locationMapQuery },
+      strengths: { useQuery: strengthsQuery },
     },
   },
 }));
@@ -88,6 +91,35 @@ async function importClimbingTab() {
 }
 
 describe("ClimbingTab", () => {
+  it("retains strengths and shows their refresh error while forwarding filters", async () => {
+    strengthsQuery.mockReturnValue({
+      data: climbingStrengthsFixture,
+      isLoading: false,
+      isFetching: true,
+      error: new Error("Reconnect strengths provider"),
+    });
+    const ClimbingTab = await importClimbingTab();
+    render(<ClimbingTab />);
+    expect(screen.getByText("Error: Reconnect strengths provider")).toBeVisible();
+    expect(screen.getByRole("button", { name: /Vertical · V4/ })).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "All climbing" }));
+    fireEvent.change(screen.getByLabelText("Rope method"), { target: { value: "lead" } });
+    expect(strengthsQuery).toHaveBeenLastCalledWith(
+      { days: 90, ropeMethod: "lead" },
+      expect.any(Object),
+    );
+  });
+  it("shows initial strengths errors without an empty substitute", async () => {
+    strengthsQuery.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      error: new Error("Strengths unavailable"),
+    });
+    const ClimbingTab = await importClimbingTab();
+    render(<ClimbingTab />);
+    expect(screen.getByText("Error: Strengths unavailable")).toBeVisible();
+    expect(screen.queryByText("No recorded climbing strengths in this period.")).toBeNull();
+  });
   it("keeps a cached location map above the grade chart while refresh errors remain visible", async () => {
     locationMapQuery.mockReturnValue({
       data: { bounds: null, nodes: [] },
@@ -247,6 +279,8 @@ describe("ClimbingTab", () => {
       expect(screen.getByLabelText(name)).toBeTruthy();
   });
   beforeEach(() => {
+    strengthsQuery.mockReset();
+    strengthsQuery.mockReturnValue({ data: undefined, isLoading: false, error: null });
     gradeProgressionQuery.mockReset();
     volumeByGradeQuery.mockReset();
     sessionSummaryQuery.mockReset();
@@ -287,6 +321,10 @@ describe("ClimbingTab", () => {
     render(<ClimbingTab />);
 
     expect(gradeProgressionQuery).toHaveBeenCalledWith({ days: 90 }, expect.any(Object));
+    expect(strengthsQuery).toHaveBeenCalledWith(
+      { days: 90 },
+      expect.objectContaining({ placeholderData: expect.any(Function) }),
+    );
     expect(volumeByGradeQuery).toHaveBeenCalledWith({ days: 90 }, expect.any(Object));
     expect(sessionSummaryQuery).toHaveBeenCalledWith({ days: 90 }, expect.any(Object));
     expect(hangboardingSummaryQuery).toHaveBeenCalledWith({ days: 90 }, expect.any(Object));

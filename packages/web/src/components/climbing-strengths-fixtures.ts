@@ -1,0 +1,87 @@
+import type { ClimbingStrengths, ClimbingStrengthsCell } from "@dofek/training/climbing-strengths";
+
+function cell(
+  grade: string,
+  sends: number,
+  climbs: number,
+  successRate: number | null,
+  differencePercentagePoints: number | null,
+  sampleStatus: ClimbingStrengthsCell["sampleStatus"],
+): ClimbingStrengthsCell {
+  return {
+    grade,
+    sends,
+    climbs,
+    successRate,
+    differencePercentagePoints,
+    sampleStatus,
+    examples: [],
+  };
+}
+
+export const climbingStrengthsFixture: ClimbingStrengths = {
+  coverage: { unknownOutcomes: 2, missingGrades: 1, missingIdentity: 3 },
+  panels: [
+    {
+      key: "boulder-angle-indoor",
+      contextKey: "boulder",
+      contextLabel: "Bouldering · V scale",
+      dimension: "wall_angle",
+      setting: "indoor",
+      grades: [
+        { grade: "V3", gradeSortValue: 3, sends: 24, climbs: 30, successRate: 80 },
+        { grade: "V4", gradeSortValue: 4, sends: 3, climbs: 8, successRate: 37.5 },
+        { grade: "V5", gradeSortValue: 5, sends: 6, climbs: 20, successRate: 30 },
+        { grade: "V6", gradeSortValue: 6, sends: 1, climbs: 5, successRate: 20 },
+      ],
+      rows: [
+        {
+          key: "vertical",
+          label: "Vertical",
+          cells: [
+            cell("V3", 8, 10, 80, 0, "available"),
+            {
+              ...cell("V4", 3, 6, 50, 12.5, "available"),
+              examples: [
+                {
+                  logEntryId: "log-1",
+                  activityId: "activity-1",
+                  name: "Evening Arete",
+                  grade: "V4",
+                  date: "2026-10-20",
+                  providerId: "kaya",
+                  sourceName: "KAYA",
+                  sourceUrl: "https://kayaclimb.com/climb/example",
+                  outcome: "sent",
+                },
+              ],
+            },
+            cell("V5", 2, 5, 40, 10, "available"),
+            cell("V6", 0, 0, null, null, "no_data"),
+          ],
+        },
+        {
+          key: "overhang",
+          label: "Overhang",
+          cells: [
+            cell("V3", 6, 10, 60, -20, "available"),
+            cell("V4", 0, 2, 0, -37.5, "limited"),
+            cell("V5", 4, 5, 80, 50, "available"),
+            cell("V6", 1, 2, 50, 30, "limited"),
+          ],
+        },
+        {
+          key: "slab",
+          label: "Slab",
+          cells: [
+            cell("V3", 10, 10, 100, 20, "available"),
+            cell("V4", 0, 0, null, null, "no_data"),
+            cell("V5", 0, 10, 0, -30, "available"),
+            cell("V6", 0, 3, 0, -20, "limited"),
+          ],
+        },
+      ],
+      coverage: { missingTraits: 4, unknownOutcomes: 2 },
+    },
+  ],
+};

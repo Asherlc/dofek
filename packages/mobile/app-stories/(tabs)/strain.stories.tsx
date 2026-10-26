@@ -17,12 +17,14 @@ import {
   climbingAttachmentActivities,
   climbingAttachmentSafeAreaMetrics,
 } from "../../components/climbing-log-attachment-test-helpers";
+import { climbingStrengthsFixture } from "../../components/climbing-strengths-fixtures";
 import { trpc } from "../../lib/trpc";
 
 const STRAIN_COMPANION_RESPONSES = {
   "climbing.attachmentActivities": climbingAttachmentActivities,
   "climbing.attachClimbingLogEntry": { attached: true },
   "climbing.locationMap": climbingLocationMapFixture,
+  "climbing.strengths": climbingStrengthsFixture,
   "training.hrZones": {
     maxHr: 190,
     weeks: [],
@@ -255,6 +257,11 @@ function createSeededProviders(
   queryClient.setQueryData(
     [["climbing", "locationMap"], { input: { days: 90 }, type: "query" }],
     climbingLocationMapFixture,
+  );
+
+  queryClient.setQueryData(
+    [["climbing", "strengths"], { input: { days: 90 }, type: "query" }],
+    climbingStrengthsFixture,
   );
 
   const processingStatus = seedReadyProcessingStatus(queryClient, [

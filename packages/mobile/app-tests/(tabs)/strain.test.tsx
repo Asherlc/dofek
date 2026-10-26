@@ -19,7 +19,7 @@ type MockRangeQueryOptions = {
   placeholderData?: (previousData: unknown) => unknown;
 };
 let mockRangeQueryCalls: Record<
-  "training" | "hrZones" | "polarization" | "monotony" | "locationMap",
+  "training" | "hrZones" | "polarization" | "monotony" | "locationMap" | "strengths",
   Array<{ input: { days: number; endDate?: string }; options: MockRangeQueryOptions }>
 >;
 let mockTimeRangePreference = {
@@ -153,6 +153,12 @@ vi.mock("expo-router", () => ({
 vi.mock("../../lib/trpc", () => ({
   trpc: {
     climbing: {
+      strengths: {
+        useQuery: (input: { days: number }, options: MockRangeQueryOptions) => {
+          mockRangeQueryCalls.strengths.push({ input, options });
+          return { data: undefined, isLoading: false, error: null };
+        },
+      },
       locationMap: {
         useQuery: (input: { days: number }, options: MockRangeQueryOptions) => {
           mockRangeQueryCalls.locationMap.push({ input, options });
@@ -210,7 +216,10 @@ vi.mock("../../lib/trpc", () => ({
       },
     },
     useUtils: () => ({
-      climbing: { locationMap: { invalidate: mockLocationMapInvalidate } },
+      climbing: {
+        locationMap: { invalidate: mockLocationMapInvalidate },
+        strengths: { invalidate: vi.fn().mockResolvedValue(undefined) },
+      },
       mobileDashboard: {
         training: { invalidate: mockTrainingInvalidate },
       },
@@ -287,6 +296,7 @@ describe("StrainScreen recent activity navigation", () => {
     mockRangeQueryCalls = {
       training: [],
       locationMap: [],
+      strengths: [],
       hrZones: [],
       polarization: [],
       monotony: [],
@@ -341,6 +351,8 @@ describe("StrainScreen recent activity navigation", () => {
     });
     expect(mockRangeQueryCalls.locationMap.at(-1)?.input).toEqual({ days: 90, ropeMethod: "lead" });
     expect(mockRangeQueryCalls.locationMap.at(-1)?.options.placeholderData).toBeTypeOf("function");
+    expect(mockRangeQueryCalls.strengths.at(-1)?.input).toEqual({ days: 90, ropeMethod: "lead" });
+    expect(screen.getByText("Climbing strengths")).toBeTruthy();
     expect(screen.getByText("Climbing locations")).toBeTruthy();
   });
 

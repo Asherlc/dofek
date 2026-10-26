@@ -1,5 +1,6 @@
 import { climbingFiltersSchema } from "@dofek/training/climbing-filters";
 import { climbingLocationMapSchema } from "@dofek/training/climbing-location-map";
+import { climbingStrengthsSchema } from "@dofek/training/climbing-strengths";
 import { TRPCError } from "@trpc/server";
 import { queryCache } from "dofek/lib/cache";
 import { captureException } from "dofek/lib/error-reporting";
@@ -21,9 +22,11 @@ import {
   climbingSessionSummarySchema,
   climbingVolumeByGradeSchema,
 } from "../repositories/climbing-repository.ts";
+import { ClimbingStrengthsRepository } from "../repositories/climbing-strengths-repository.ts";
 import { ClimbingTrainingLogRepository } from "../repositories/climbing-training-log-repository.ts";
 import { HangboardingRepository } from "../repositories/hangboarding-repository.ts";
 import { buildClimbingLocationMap } from "../services/climbing-location-map.ts";
+import { buildClimbingStrengths } from "../services/climbing-strengths.ts";
 import {
   type AuthenticatedContext,
   CacheTTL,
@@ -83,6 +86,22 @@ async function runClimbingQuery<T>(query: () => Promise<T>): Promise<T> {
 }
 
 export const climbingRouter = router({
+  strengths: cachedProtectedQuery({ maxAge: CacheTTL.LONG, keyVersion: "climbing-strengths-v1" })
+    .input(climbingInputSchema)
+    .output(climbingStrengthsSchema)
+    .query(async ({ ctx, input }) =>
+      runClimbingQuery(async () => {
+        const preference = await loadClimbingGradePreference(ctx.db, ctx.userId);
+        const repository = new ClimbingStrengthsRepository(
+          ctx.db,
+          ctx.userId,
+          ctx.timezone,
+          ctx.accessWindow,
+          preference,
+        );
+        return buildClimbingStrengths(await repository.getObservations(input.days, input));
+      }),
+    ),
   fingerLoadingHistory: cachedProtectedQuery({ maxAge: CacheTTL.SHORT })
     .input(daysInputSchema)
     .query(async ({ ctx, input }) => {
@@ -165,6 +184,7 @@ export const climbingRouter = router({
           queryCache.invalidateByPrefix(`${ctx.userId}:climbing.gradeProgression:`),
           queryCache.invalidateByPrefix(`${ctx.userId}:climbing.volumeByGrade:`),
           queryCache.invalidateByPrefix(`${ctx.userId}:climbing.locationMap:`),
+          queryCache.invalidateByPrefix(`${ctx.userId}:climbing.strengths:`),
           queryCache.invalidateByPrefix(`${ctx.userId}:climbing.unattachedClimbingLogEntries:`),
           queryCache.invalidateByPrefix(`${ctx.userId}:activity.list:`),
           queryCache.invalidateByPrefix(`${ctx.userId}:calendar.weekList:`),

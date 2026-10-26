@@ -13,6 +13,7 @@ import type { Activity } from "../../components/ActivityList.tsx";
 import type { ActivityTableColumn } from "../../components/ActivityTable.tsx";
 import { ClimbingGradeProgressionChart } from "../../components/ClimbingGradeProgressionChart.tsx";
 import { ClimbingLocationMap } from "../../components/ClimbingLocationMap.tsx";
+import { ClimbingStrengths } from "../../components/ClimbingStrengths.tsx";
 import { ClimbingVolumeByGradeChart } from "../../components/ClimbingVolumeByGradeChart.tsx";
 import { HangboardingSummary } from "../../components/HangboardingSummary.tsx";
 import { QueryStatePanel } from "../../components/QueryStatePanel.tsx";
@@ -93,6 +94,7 @@ export function ClimbingTab() {
   );
   const volumeByGrade = trpc.climbing.volumeByGrade.useQuery(rangeInput, climbingQueryOptions);
   const locationMap = trpc.climbing.locationMap.useQuery(rangeInput, climbingQueryOptions);
+  const strengths = trpc.climbing.strengths.useQuery(rangeInput, climbingQueryOptions);
   const sessionSummary = trpc.climbing.sessionSummary.useQuery(rangeInput, climbingQueryOptions);
   const hangboardingSummary = trpc.climbing.hangboardingSummary.useQuery(
     climbingRangeInput(days),
@@ -170,12 +172,19 @@ export function ClimbingTab() {
       {gradeProgression.isFetching ||
       volumeByGrade.isFetching ||
       sessionSummary.isFetching ||
+      strengths.isFetching ||
       locationMap.isFetching ? (
         <p role="status" className="mb-3 text-xs text-muted">
           Updating climbing…
         </p>
       ) : null}
       <div className="grid grid-cols-1 gap-6">
+        <Section title="Climbing Strengths">
+          {strengths.error ? <QueryStatePanel error={strengths.error} height={0} /> : null}
+          {strengths.error && !strengths.data ? null : (
+            <ClimbingStrengths data={strengths.data} loading={strengths.isLoading} />
+          )}
+        </Section>
         <Section title="Climbing Locations">
           {locationMap.error ? <QueryStatePanel error={locationMap.error} height={0} /> : null}
           {locationMap.error && !locationMap.data ? null : (
