@@ -36,3 +36,15 @@ export const Loading: Story = { args: { data: undefined, loading: true, error: n
 export const ErrorState: Story = {
   args: { data: undefined, loading: false, error: new Error("Hangboarding details unavailable") },
 };
+
+export const GenericWork: Story = {
+  args: {
+    data: {
+      ...data,
+      summary: {
+        ...data.summary,
+        exercises: [{ label: "Work", workIntervalCount: 3, workDurationSeconds: 21 }],
+      },
+    },
+  },
+};

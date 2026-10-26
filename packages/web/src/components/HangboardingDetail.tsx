@@ -30,6 +30,10 @@ export function HangboardingDetail({ data, loading, error }: HangboardingDetailP
       />
     );
 
+  const showExerciseBreakdown =
+    data.summary.exercises.length > 1 ||
+    data.summary.exercises.some((exercise) => exercise.label !== "Work");
+
   return (
     <div className="space-y-4">
       {error ? <QueryStatePanel error={error} height={72} /> : null}
@@ -48,7 +52,7 @@ export function HangboardingDetail({ data, loading, error }: HangboardingDetailP
         <Metadata label="Board" value={nullableValue(data.boardName)} />
       </dl>
 
-      {data.summary.exercises.length > 0 ? (
+      {showExerciseBreakdown ? (
         <div className="divide-y divide-border rounded border border-border">
           {data.summary.exercises.map((exercise) => (
             <div key={exercise.label} className="flex items-center justify-between gap-3 px-3 py-2">
@@ -60,9 +64,9 @@ export function HangboardingDetail({ data, loading, error }: HangboardingDetailP
             </div>
           ))}
         </div>
-      ) : (
+      ) : data.summary.exercises.length === 0 ? (
         <QueryStatePanel variant="empty" message="No completed hangs recorded." height={96} />
-      )}
+      ) : null}
 
       <dl className="grid gap-3 sm:grid-cols-4">
         <Metadata label="Hangs" value={String(data.summary.workIntervalCount)} />
