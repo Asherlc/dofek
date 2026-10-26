@@ -81,6 +81,39 @@ vi.mock("./ProviderLogo", () => ({
 }));
 
 describe("ActivitySourceDisclosure", () => {
+  it.each([
+    ["whoop", "WHOOP (Cloud)"],
+    ["whoop_ble", "WHOOP (Bluetooth)"],
+  ])("retains accessible names for nested and additional %s sources", (providerId, label) => {
+    const source = {
+      id: "child",
+      providerId,
+      label,
+      sourceName: null,
+      description: null,
+      url: "https://example.com/source",
+      children: [],
+    };
+    render(
+      <ActivitySourceDisclosure
+        tree={{
+          primary: {
+            id: "root",
+            providerId: "strava",
+            label: "Strava",
+            sourceName: null,
+            description: null,
+            url: null,
+            children: [source],
+          },
+          otherSources: [{ ...source, id: "additional" }],
+        }}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Sources: Strava" }));
+    expect(screen.getAllByLabelText(label)).toHaveLength(2);
+  });
+
   it("shows cloud attribution as an icon while keeping the full accessible source name", () => {
     render(
       <ActivitySourceDisclosure

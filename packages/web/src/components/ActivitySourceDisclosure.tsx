@@ -191,7 +191,8 @@ function SourceLabel({ node }: { node: ActivitySourceTreeNode }) {
   if (!attribution) return <>{displayName}</>;
   return (
     <span className="inline-flex min-w-0 items-center gap-2">
-      <span>{displayName}</span>
+      <span aria-hidden="true">{displayName}</span>
+      <span className="sr-only">{node.label}</span>
       <AttributionIcon attribution={attribution} />
     </span>
   );

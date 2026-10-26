@@ -233,7 +233,9 @@ function SourceLabel({ node }: { node: ActivitySourceTreeNode }) {
   if (!attribution) return <Text style={styles.label}>{displayName}</Text>;
   return (
     <View style={styles.primary}>
-      <Text style={styles.label}>{displayName}</Text>
+      <Text style={styles.label} accessibilityLabel={node.label}>
+        {displayName}
+      </Text>
       <AttributionIcon attribution={attribution} serverUrl={SERVER_URL} />
     </View>
   );
