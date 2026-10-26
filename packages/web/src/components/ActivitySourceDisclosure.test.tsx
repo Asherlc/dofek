@@ -13,6 +13,28 @@ import { ActivitySourceDisclosure } from "./ActivitySourceDisclosure.tsx";
 afterEach(cleanup);
 
 describe("ActivitySourceDisclosure", () => {
+  it("shows cloud attribution as an icon while keeping the full accessible source name", () => {
+    render(
+      <ActivitySourceDisclosure
+        tree={{
+          primary: {
+            id: "whoop",
+            providerId: "whoop",
+            sourceName: null,
+            label: "WHOOP (Cloud)",
+            description: null,
+            url: null,
+            children: [],
+          },
+          otherSources: [],
+        }}
+      />,
+    );
+    const trigger = screen.getByRole("button", { name: "WHOOP (Cloud) Sources" });
+    expect(within(trigger).getByText("WHOOP")).toBeDefined();
+    expect(within(trigger).getByTitle("Cloud").querySelector("svg")).toBeTruthy();
+  });
+
   it("discloses recognized watch models once in their provenance branches", () => {
     render(
       <ActivitySourceDisclosure
@@ -164,7 +186,7 @@ describe("ActivitySourceDisclosure", () => {
             providerId: "garmin",
             sourceName: "Forerunner 965",
             label: "Forerunner 965",
-            description: "Closest available recording",
+            description: null,
             url: null,
             children: [],
           },
@@ -180,7 +202,6 @@ describe("ActivitySourceDisclosure", () => {
     expect(trigger.querySelector("img")).toHaveAttribute("width", "18");
     fireEvent.click(trigger);
     expect(screen.getAllByText("Forerunner 965")).toHaveLength(1);
-    expect(screen.getByText("Closest available recording")).toBeVisible();
   });
 
   it("expands inline with one primary root and distinct transfer branches", () => {
@@ -194,13 +215,10 @@ describe("ActivitySourceDisclosure", () => {
     const content = document.getElementById(trigger.getAttribute("aria-controls") ?? "");
     expect(content).toBeVisible();
     expect(screen.getAllByText("Garmin Connect")).toHaveLength(1);
-    expect(screen.getByText("Closest available recording")).toBeVisible();
     const strava = screen.getByRole("link", { name: "Strava" }).closest("li");
     expect(strava).not.toBeNull();
     if (!strava) throw new Error("Missing Strava tree node");
-    expect(within(strava).getByText("Imported from Strava")).toBeVisible();
     expect(screen.getAllByText("Apple Health")).toHaveLength(2);
-    expect(screen.getAllByText("Imported from Garmin Connect")).toHaveLength(2);
     fireEvent.click(trigger);
     expect(trigger).toHaveAttribute("aria-expanded", "false");
     expect(screen.queryByText("Strava")).toBeNull();

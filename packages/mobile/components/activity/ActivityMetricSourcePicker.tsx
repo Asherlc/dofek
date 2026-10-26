@@ -6,7 +6,7 @@ import { Modal, Pressable, StyleSheet, Text, View } from "react-native";
 import { colors } from "../../theme";
 import { ProviderLogo } from "../ProviderLogo";
 
-function AttributionIcon({
+export function AttributionIcon({
   attribution,
   serverUrl,
 }: {

@@ -1,4 +1,16 @@
 import { z } from "zod";
+import { activityMetricSourcePresentation } from "./activity-metric-source.ts";
+import { providerFamily } from "./provider-catalog.ts";
+import { providerLabel } from "./providers.ts";
+
+export function activitySourceNodePresentation(node: ActivitySourceTreeNode) {
+  const family = providerFamily(node.providerId);
+  return family &&
+    ["Cloud", "Bluetooth"].includes(family.methodLabel) &&
+    node.label === providerLabel(node.providerId)
+    ? activityMetricSourcePresentation(node.providerId, node.sourceName, node.label)
+    : { displayName: node.label, attribution: null };
+}
 
 export interface ActivitySourceTreeNode {
   id: string;

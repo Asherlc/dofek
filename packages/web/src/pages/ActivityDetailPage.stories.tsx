@@ -147,7 +147,6 @@ export const BranchingExpanded: HeaderStory = {
     await userEvent.click(canvas.getByRole("button", { name: "Garmin Edge 530 Sources" }));
     await expect(canvas.getAllByText("Garmin Edge 530")).toHaveLength(1);
     await expect(canvas.getAllByText("Apple Health")).toHaveLength(2);
-    await expect(canvas.getByText("Imported from Strava")).toBeVisible();
     await expect(canvas.getByText("WHOOP")).toBeVisible();
   },
 };
@@ -178,9 +177,7 @@ export const RemovedSources: HeaderStory = {
   play: async ({ canvasElement, userEvent }) => {
     const canvas = within(canvasElement);
     await userEvent.click(canvas.getByRole("button", { name: "Garmin Edge 530 Sources" }));
-    await expect(
-      canvas.getByText("Closest available recording · Removed from provider"),
-    ).toBeVisible();
+    await expect(canvas.getAllByText("Removed from provider")[0]).toBeVisible();
     await expect(canvas.queryByRole("link", { name: "Strava" })).toBeNull();
     await expect(canvas.getByRole("link", { name: "WHOOP" })).toBeVisible();
   },

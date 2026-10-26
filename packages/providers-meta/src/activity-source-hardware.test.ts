@@ -36,6 +36,25 @@ function item(overrides: Partial<ActivityHardwareItem> = {}): ActivityHardwareIt
 }
 
 describe("activitySourceTreeWithHardware", () => {
+  it("keeps distinct hardware facts beneath a source heading", () => {
+    const result = activitySourceTreeWithHardware(
+      { primary: node("activity-1", "peloton"), otherSources: [] },
+      {
+        items: [
+          item({
+            label: "Whoop",
+            role: "source",
+            details: [
+              { label: "Platform", value: "Whoop" },
+              { label: "Software", value: "26.6" },
+            ],
+          }),
+        ],
+        power: [],
+      },
+    );
+    expect(result.primary?.children[0]?.details).toEqual([{ label: "Software", value: "26.6" }]);
+  });
   it.each(["Asher’s Apple Watch", "  ASHER’S APPLE WATCH  "])(
     "omits a device name fact that repeats the recording header: %s",
     (deviceName) => {

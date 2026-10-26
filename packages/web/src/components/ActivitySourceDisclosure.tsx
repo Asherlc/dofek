@@ -1,10 +1,12 @@
 import type { ActivityHardware } from "@dofek/providers/activity-hardware";
 import { activitySourceTreeWithHardware } from "@dofek/providers/activity-source-hardware";
-import type {
-  ActivitySourceTree,
-  ActivitySourceTreeNode,
+import {
+  type ActivitySourceTree,
+  type ActivitySourceTreeNode,
+  activitySourceNodePresentation,
 } from "@dofek/providers/activity-source-tree";
 import { useId, useState } from "react";
+import { AttributionIcon } from "./ActivityMetricSourcePicker.tsx";
 import { ProviderLogo } from "./ProviderLogo.tsx";
 import { QueryStatePanel } from "./QueryStatePanel.tsx";
 
@@ -47,7 +49,7 @@ export function ActivitySourceDisclosure({
           <>
             <ProviderLogo provider={primary.providerId} sourceName={primary.sourceName} size={18} />
             <span className="min-w-0 flex-1 font-medium [overflow-wrap:anywhere]">
-              {primary.label}
+              <SourceLabel node={primary} />
             </span>
           </>
         ) : null}
@@ -163,10 +165,12 @@ function SourceTreeNodes({
                 rel="noreferrer"
                 className="min-w-0 font-medium text-accent [overflow-wrap:anywhere] hover:underline focus-visible:outline-2 focus-visible:outline-accent"
               >
-                {node.label}
+                <SourceLabel node={node} />
               </a>
             ) : (
-              <span className="min-w-0 font-medium [overflow-wrap:anywhere]">{node.label}</span>
+              <span className="min-w-0 font-medium [overflow-wrap:anywhere]">
+                <SourceLabel node={node} />
+              </span>
             )}
           </div>
           {node.description ? (
@@ -179,5 +183,16 @@ function SourceTreeNodes({
         </li>
       ))}
     </ul>
+  );
+}
+
+function SourceLabel({ node }: { node: ActivitySourceTreeNode }) {
+  const { displayName, attribution } = activitySourceNodePresentation(node);
+  if (!attribution) return <>{displayName}</>;
+  return (
+    <span className="inline-flex min-w-0 items-center gap-2">
+      <span>{displayName}</span>
+      <AttributionIcon attribution={attribution} />
+    </span>
   );
 }

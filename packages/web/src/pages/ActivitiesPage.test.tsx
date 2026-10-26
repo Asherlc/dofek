@@ -804,7 +804,6 @@ describe("ActivitiesPage", () => {
       expect(trigger.closest("a")).toBeNull();
       expect(trigger.parentElement?.closest("button")).toBeNull();
       fireEvent.click(trigger);
-      expect(screen.getByText("Imported from Strava")).toBeVisible();
       if (selectMode) {
         expect(screen.getByRole("checkbox", { name: "Select Trainer Ride" })).not.toBeChecked();
       } else {

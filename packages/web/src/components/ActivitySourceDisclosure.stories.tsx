@@ -114,3 +114,45 @@ export const LongSourceLabels: Story = {
     }
   },
 };
+
+export const CloudRecording: Story = {
+  args: {
+    tree: {
+      primary: {
+        id: "whoop",
+        providerId: "whoop",
+        sourceName: null,
+        label: "WHOOP (Cloud)",
+        description: null,
+        url: null,
+        children: [
+          {
+            id: "health",
+            providerId: "apple_health",
+            sourceName: null,
+            label: "Apple Health",
+            description: null,
+            url: null,
+            children: [],
+          },
+          {
+            id: "peloton",
+            providerId: "peloton",
+            sourceName: null,
+            label: "Peloton",
+            description: null,
+            url: null,
+            children: [],
+          },
+        ],
+      },
+      otherSources: [],
+    },
+  },
+  play: async ({ canvasElement, userEvent }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(canvas.getByRole("button", { name: "WHOOP (Cloud) Sources" }));
+    await expect(canvas.getByText("WHOOP")).toBeVisible();
+    await expect(canvas.getByTitle("Cloud")).toBeVisible();
+  },
+};

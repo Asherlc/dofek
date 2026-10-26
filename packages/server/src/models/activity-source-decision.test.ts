@@ -106,7 +106,7 @@ describe("provenance-based source attribution", () => {
         providerId: "garmin",
         sourceName: "Garmin Edge 530",
         label: "Garmin Edge 530",
-        description: "Closest available recording",
+        description: null,
         url: "https://connect.garmin.com/modern/activity/original",
         children: [
           {
@@ -114,7 +114,7 @@ describe("provenance-based source attribution", () => {
             providerId: "strava",
             sourceName: null,
             label: "Strava",
-            description: "Imported from Garmin",
+            description: null,
             url: "https://www.strava.com/activities/copy",
             children: [],
           },

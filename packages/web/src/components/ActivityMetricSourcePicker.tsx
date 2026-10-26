@@ -12,7 +12,7 @@ interface ActivityMetricSourcePickerProps {
   className?: string;
 }
 
-function AttributionIcon({
+export function AttributionIcon({
   attribution,
 }: {
   attribution: ActivityMetricSource["presentation"]["attribution"];
