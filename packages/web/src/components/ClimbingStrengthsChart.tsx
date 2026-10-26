@@ -20,7 +20,10 @@ export function ClimbingStrengthsChart({
   selectedRow: string | null;
   onSelectCell: (rowKey: string, grade: string) => void;
 }) {
-  const baselineLabel = climbingStrengthsBaselineLabel(grade);
+  const baselineLabel =
+    view === "curves" || view === "pyramids"
+      ? "Same-grade baseline"
+      : climbingStrengthsBaselineLabel(grade);
   const sparseRadar =
     view === "radar" &&
     panel.rows.filter((row) =>

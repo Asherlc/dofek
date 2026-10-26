@@ -56,7 +56,7 @@ export function climbingStrengthsChartOption(
     tooltipText:
       tooltipText(row.label, cell, period) +
       ("differencePercentagePoints" in cell && cell.differencePercentagePoints !== null
-        ? `\n${cell.differencePercentagePoints} percentage points vs ${baselineLabel.toLowerCase()}`
+        ? `\n${cell.differencePercentagePoints} percentage points vs ${climbingStrengthsBaselineLabel(cell.grade).toLowerCase()}`
         : ""),
     itemStyle: {
       color,

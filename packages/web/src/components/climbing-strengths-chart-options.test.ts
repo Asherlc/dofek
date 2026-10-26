@@ -7,6 +7,12 @@ import { climbingStrengthsFixture as fixture } from "./climbing-strengths-fixtur
 
 const panel = fixture.panels[0];
 if (!panel) throw new Error("Missing fixture");
+it("labels per-grade curve differences against their grade baseline after selecting All grades", () => {
+  const option = climbingStrengthsChartOption(panel, "curves", "All grades", null);
+  expect(option.series[0]?.data[1]).toMatchObject({
+    tooltipText: expect.stringContaining("vs same-grade baseline"),
+  });
+});
 it("renders supplied same-grade gaps, including zero and missing observations", () => {
   const option = climbingStrengthsChartOption(panel, "gaps", "V4", "vertical");
   expect(option.series).toEqual([

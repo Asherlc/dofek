@@ -72,10 +72,16 @@ export function ClimbingStrengthsChart({
       : panel.rows.flatMap((row) =>
           row.cells.map((cell) => ({
             label: `${row.label} · ${cell.grade}`,
-            value: `${facts(cell)} · Same-grade baseline ${rate(panel.grades.find((entry) => entry.grade === cell.grade)?.successRate)}${cell.differencePercentagePoints === null ? "" : ` · ${cell.differencePercentagePoints > 0 ? "+" : ""}${cell.differencePercentagePoints} percentage points`}`,
+            value: `${facts(cell)} · ${climbingStrengthsBaselineLabel(cell.grade)} ${rate(panel.grades.find((entry) => entry.grade === cell.grade)?.successRate)}${cell.differencePercentagePoints === null ? "" : ` · ${cell.differencePercentagePoints > 0 ? "+" : ""}${cell.differencePercentagePoints} percentage points`}`,
           })),
         );
   const usable = selected.filter(({ cell }) => cell.successRate !== null);
+  const legendRows =
+    view === "curves"
+      ? panel.rows.map((row, index) => ({ row, index }))
+      : view === "radar"
+        ? usable
+        : selected;
   const insufficientRadar = view === "radar" && usable.length < 3;
   const chartWidth = Math.max(
     width,
@@ -527,7 +533,7 @@ export function ClimbingStrengthsChart({
       </AccessibleChart>
       {(view === "curves" || view === "exposure" || view === "radar") && (
         <View style={styles.legend}>
-          {(view === "radar" ? usable : selected).map(({ row, index }, axis) => (
+          {legendRows.map(({ row, index }, axis) => (
             <Text key={row.key} style={[styles.meta, { color: color(index) }]}>
               {view === "exposure" || view === "radar" ? `${axis + 1}. ` : ""}
               {row.label}

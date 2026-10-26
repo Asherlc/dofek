@@ -24,6 +24,22 @@ vi.mock("./DofekChart.tsx", () => ({
 afterEach(cleanup);
 const panel = fixture.panels[0];
 if (!panel) throw new Error("Missing fixture");
+it.each(["curves", "pyramids"] as const)(
+  "keeps the per-grade baseline heading for %s when All grades was selected",
+  (view) => {
+    render(
+      <ClimbingStrengthsChart
+        panel={panel}
+        view={view}
+        grade="All grades"
+        selectedRow={null}
+        onSelectCell={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByText("Exact values"));
+    expect(screen.getByRole("columnheader", { name: "Gap vs same-grade baseline" })).toBeVisible();
+  },
+);
 it("spells out percentage-point units for positive, negative and recorded zero gaps", () => {
   const { rerender } = render(
     <ClimbingStrengthsChart
