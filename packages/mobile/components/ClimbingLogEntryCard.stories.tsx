@@ -29,7 +29,7 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const Default: Story = {};
-export const Attempted: Story = {
+export const Completed: Story = {
   args: {
     entry: {
       ...climbingLogFixture,
@@ -39,6 +39,33 @@ export const Attempted: Story = {
       attempts: [
         climbingAttemptFixture(climbingLogFixture.id, { outcome: "failed" }),
         climbingAttemptFixture(climbingLogFixture.id, { outcome: "completed", fellOrHung: true }),
+      ],
+    },
+  },
+};
+export const Attempted: Story = {
+  args: {
+    entry: {
+      ...climbingLogFixture,
+      freeSend: false,
+      recordedClimbOutcome: "failed",
+      recordedClimbAttemptCount: 1,
+      attempts: [climbingAttemptFixture(climbingLogFixture.id, { outcome: "failed" })],
+    },
+  },
+};
+export const Onsight: Story = {
+  args: {
+    entry: {
+      ...climbingLogFixture,
+      freeSend: true,
+      recordedClimbAttemptCount: 1,
+      attempts: [
+        climbingAttemptFixture(climbingLogFixture.id, {
+          outcome: "completed",
+          ropeMethod: "lead",
+          rockResultLabels: ["sent", "Onsight"],
+        }),
       ],
     },
   },
