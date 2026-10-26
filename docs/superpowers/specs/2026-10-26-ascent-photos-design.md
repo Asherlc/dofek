@@ -31,6 +31,12 @@ alternatives do not fit the approved requirements.
 Investigated on 2026-10-26 using repository adapters, upstream source, and the
 current public application bundle. No authenticated account response was tested.
 
+The subsequent [retrieval audit](../../climbing-ascent-photo-retrieval.md)
+verified photo byte retrieval for OpenBeta and Mountain Project, but established
+no per-ascent association for either. It also identified theCrag note embeds
+as a candidate whose oEmbed request currently returns HTTP 403. The provider
+rows below describe ascent-photo support, not general photo availability.
+
 | Source | Evidence | Proposed behavior |
 | --- | --- | --- |
 | KAYA | The current [web application bundle](https://kaya-app.kayaclimb.com/static/js/main.9113009d.chunk.js) contains `WebAscentFields` with `photo { photo_url thumb_url }` and a distinct video object. The earlier authenticated field audit in [kaya.md](../../kaya.md#confirmed-request-coverage) established the same fields. | Request the ascent's photo object, preserve it in raw, and acquire `photo_url`. `thumb_url` is a lower resolution alternative, not a second photograph. Validate the selection against the authenticated logbook query before claiming live coverage. |
