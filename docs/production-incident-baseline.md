@@ -1,5 +1,12 @@
 # Production Incident Baseline
 
+## 2026-10-26 — Climbing integration shard retained old OpenBeta expectations
+
+- **Symptoms / impact:** [PR #3096](https://github.com/Asherlc/dofek/pull/3096) failed integration shard 4 and its dependent gates; production was unaffected. Other integration shards and mutation jobs passed.
+- **Evidence / root cause:** The [failed shard](https://github.com/Asherlc/dofek/actions/runs/40417556408/job/121904852921) ran `pnpm exec vitest run --project integration --coverage --shard=4/4`. Its first failing assertion in [the activity-log projection suite](../packages/server/src/repositories/climbing-activity-log-entry-repository.integration.test.ts) expected an unlabeled OpenBeta attempt's outcome to be null but received `completed`; a second case expected null free-send status but received true. Both expectations predated the [unlabeled-tick rule](openbeta.md#stored-records). An isolated local run with retries disabled reproduced both and additionally exposed a preferred-source fixture tie: the previously unknown OpenBeta record now had the same completion evidence as the Mountain Project record.
+- **Direct fix / validation:** Updated the unlabeled-tick expectations and retained unknown-result coverage with an explicit unrecognized label. The preferred-source fixture now explicitly records an unrecognized label, restoring its unknown-versus-known evidence comparison. All 23 affected PostgreSQL integration cases pass without retries. Broader local and hosted validation remain pending at this checkpoint. No production code, timeout, retry, or resilience setting changed.
+- **Retrospective / proposed improvement:** Running the actual consumer repository suite caught stale expectations beyond the focused migration tests. Use gh-fix-ci for the first fatal assertion and integration-tests-ready for isolated real-database reproduction. Proposed testing-guide note: “Provider outcome changes require the activity-log projection suite; fixtures that depend on unknown evidence must express that evidence explicitly when unlabeled records have provider-specific meaning.”
+
 ## 2026-10-26 — Climbing PR validation found stale route assertions and SQL formatting
 
 - **Symptoms / impact:** [PR #3096](https://github.com/Asherlc/dofek/pull/3096) validation was blocked; production was unaffected.

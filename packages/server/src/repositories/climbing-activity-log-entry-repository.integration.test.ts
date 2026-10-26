@@ -85,7 +85,7 @@ describe("ClimbingActivityLogEntryRepository PostgreSQL projection", () => {
         coordinates: { latitude: 10, longitude: 10 },
         areas: [{ externalId: "crag", name: "Crag" }],
       },
-      attempts: [{ scope: "climb", ropeMethod: "lead" }],
+      attempts: [{ scope: "climb", ropeMethod: "lead", sourceResult: "Unrecognized result" }],
     });
     await persistClimbingLogEntries(context.db, {
       userId,
@@ -264,7 +264,8 @@ describe("ClimbingActivityLogEntryRepository PostgreSQL projection", () => {
   it.each([
     { sourceResult: "Redpoint", outcome: "completed", labels: ["sent"] },
     { sourceResult: "failed", outcome: "failed", labels: [] },
-    { sourceResult: null, outcome: null, labels: [] },
+    { sourceResult: null, outcome: "completed", labels: ["sent"] },
+    { sourceResult: "Unrecognized result", outcome: null, labels: [] },
   ])("computes $outcome from stored source evidence", async ({ sourceResult, outcome, labels }) => {
     const before = await write({
       externalId: "source-result",
@@ -322,10 +323,17 @@ describe("ClimbingActivityLogEntryRepository PostgreSQL projection", () => {
     },
     {
       name: "unknown outcome",
-      sourceResult: null,
+      sourceResult: "Unrecognized result",
       fellOrHung: false,
       usedAid: false,
       freeSend: null,
+    },
+    {
+      name: "unlabeled OpenBeta completion",
+      sourceResult: null,
+      fellOrHung: null,
+      usedAid: null,
+      freeSend: true,
     },
   ])(
     "projects free-send evidence for $name",
