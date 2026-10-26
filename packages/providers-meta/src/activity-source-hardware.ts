@@ -34,7 +34,9 @@ function hardwareDetails(item: ActivityHardwareItem, destinationLabel: string) {
   return [
     ...details,
     ...item.details.filter(
-      (detail) => detail.label !== "Device name" || detail.value.trim().toLowerCase() !== label,
+      (detail) =>
+        !["Device name", "Platform"].includes(detail.label) ||
+        detail.value.trim().toLowerCase() !== label,
     ),
   ];
 }

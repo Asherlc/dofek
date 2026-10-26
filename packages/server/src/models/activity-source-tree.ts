@@ -76,13 +76,6 @@ export function buildActivitySourceTree(
       (origin.status === "resolved" && id === primaryId ? origin.sourceName : null);
     const parentId = parentById.get(id);
     const parent = parentId ? sources.get(parentId) : undefined;
-    const relationship = parent
-      ? `Imported from ${providerLabel(parent.providerId)}`
-      : id === primaryId
-        ? "Closest available recording"
-        : id === primaryRoot
-          ? "Primary source"
-          : null;
     const node: ActivitySourceTreeNode = {
       id,
       providerId: source.providerId,
@@ -91,8 +84,7 @@ export function buildActivitySourceTree(
         source.providerId === "garmin" && sourceName?.trim()
           ? deviceDisplayName(sourceName)
           : providerLabel(source.providerId),
-      description:
-        [relationship, removal].filter((description) => description !== null).join(" · ") || null,
+      description: removal,
       url: source.providerAbsentAt ? null : source.url,
       children: [...sources]
         .filter(([child]) => parentById.get(child) === id)

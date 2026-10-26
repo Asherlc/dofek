@@ -81,6 +81,61 @@ vi.mock("./ProviderLogo", () => ({
 }));
 
 describe("ActivitySourceDisclosure", () => {
+  it.each([
+    ["whoop", "WHOOP (Cloud)"],
+    ["whoop_ble", "WHOOP (Bluetooth)"],
+  ])("retains accessible names for nested and additional %s sources", (providerId, label) => {
+    const source = {
+      id: "child",
+      providerId,
+      label,
+      sourceName: null,
+      description: null,
+      url: "https://example.com/source",
+      children: [],
+    };
+    render(
+      <ActivitySourceDisclosure
+        tree={{
+          primary: {
+            id: "root",
+            providerId: "strava",
+            label: "Strava",
+            sourceName: null,
+            description: null,
+            url: null,
+            children: [source],
+          },
+          otherSources: [{ ...source, id: "additional" }],
+        }}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Sources: Strava" }));
+    expect(screen.getAllByLabelText(label)).toHaveLength(2);
+  });
+
+  it("shows cloud attribution as an icon while keeping the full accessible source name", () => {
+    render(
+      <ActivitySourceDisclosure
+        tree={{
+          primary: {
+            id: "whoop",
+            providerId: "whoop",
+            sourceName: null,
+            label: "WHOOP (Cloud)",
+            description: null,
+            url: null,
+            children: [],
+          },
+          otherSources: [],
+        }}
+      />,
+    );
+    const trigger = screen.getByRole("button", { name: "Sources: WHOOP (Cloud)" });
+    expect(within(trigger).getByText("WHOOP")).toBeDefined();
+    expect(trigger.querySelector('[data-icon="cloud-outline"]')).toBeTruthy();
+  });
+
   beforeEach(() => vi.clearAllMocks());
   it("discloses recognized watch models once in their provenance branches", () => {
     render(
@@ -138,7 +193,6 @@ describe("ActivitySourceDisclosure", () => {
     expect(
       within(trigger).getByTestId("provider-logo").getAttribute("data-source-name"),
     ).toBeNull();
-    expect(screen.queryByText("Imported from Hang Ten")).toBeNull();
     fireEvent.click(trigger);
     expect(trigger.getAttribute("aria-expanded")).toBe("true");
     const controlledId = trigger.getAttribute("aria-controls");
@@ -147,12 +201,9 @@ describe("ActivitySourceDisclosure", () => {
     expect(screen.getAllByText("Hang Ten")).toHaveLength(1);
     expect(screen.getByText("Apple Health")).toBeDefined();
     expect(screen.getAllByText("Strava")).toHaveLength(2);
-    expect(screen.getByText("Imported from Apple Health")).toBeDefined();
-    expect(screen.getAllByText("Imported from Hang Ten")).toHaveLength(2);
     expect(screen.getByText("WHOOP")).toBeDefined();
     fireEvent.click(trigger);
     expect(trigger.getAttribute("aria-expanded")).toBe("false");
-    expect(screen.queryByText("Imported from Hang Ten")).toBeNull();
   });
 
   it("shows disconnected source components when the primary is unresolved", () => {

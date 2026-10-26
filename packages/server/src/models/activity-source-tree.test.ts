@@ -165,13 +165,13 @@ describe("buildActivitySourceTree", () => {
     expect(tree.primary).toMatchObject({
       id: "a",
       providerId: "wahoo",
-      description: "Closest available recording",
+      description: null,
       children: [
-        { id: "c", description: "Imported from Wahoo", children: [] },
+        { id: "c", description: null, children: [] },
         {
           id: "b",
-          description: "Imported from Wahoo",
-          children: [{ id: "d", description: "Imported from Strava" }],
+          description: null,
+          children: [{ id: "d", description: null }],
         },
       ],
     });
@@ -209,7 +209,7 @@ describe("buildActivitySourceTree", () => {
         providerId: "wahoo",
         sourceName: null,
         label: "Wahoo",
-        description: "Primary source",
+        description: null,
         url: "https://example.com/a",
         children: [
           {
@@ -217,7 +217,7 @@ describe("buildActivitySourceTree", () => {
             providerId: "strava",
             sourceName: null,
             label: "Strava",
-            description: "Imported from Wahoo",
+            description: null,
             url: "https://example.com/b",
             children: [
               {
@@ -225,7 +225,7 @@ describe("buildActivitySourceTree", () => {
                 providerId: "apple_health",
                 sourceName: null,
                 label: "Apple Health",
-                description: "Imported from Strava",
+                description: null,
                 url: "https://example.com/c",
                 children: [],
               },
@@ -348,7 +348,7 @@ describe("buildActivitySourceTree", () => {
     );
     expect(tree.primary?.children[0]).toMatchObject({
       id: "b",
-      description: `Imported from Wahoo · Removed from provider ${formatDateTime("2026-10-02T00:00:00Z")}`,
+      description: `Removed from provider ${formatDateTime("2026-10-02T00:00:00Z")}`,
       url: null,
     });
   });

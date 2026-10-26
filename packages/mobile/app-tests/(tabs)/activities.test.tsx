@@ -250,7 +250,7 @@ describe("ActivitiesScreen", () => {
               providerId: "garmin",
               sourceName: "Forerunner 965",
               label: "Forerunner 965",
-              description: "Closest available recording",
+              description: null,
               url: null,
               children: [],
             },

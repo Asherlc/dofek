@@ -6,7 +6,7 @@ export const detailSourceTree: ActivitySourceTree = {
     providerId: "garmin",
     sourceName: "Garmin Edge 530",
     label: "Garmin Edge 530",
-    description: "Closest available recording",
+    description: null,
     url: "https://connect.garmin.com/modern/activity/123",
     children: [
       {
@@ -14,7 +14,7 @@ export const detailSourceTree: ActivitySourceTree = {
         providerId: "strava",
         sourceName: null,
         label: "Strava",
-        description: "Imported from Garmin Connect",
+        description: null,
         url: "https://www.strava.com/activities/123",
         children: [
           {
@@ -22,7 +22,7 @@ export const detailSourceTree: ActivitySourceTree = {
             providerId: "apple_health",
             sourceName: null,
             label: "Apple Health",
-            description: "Imported from Strava",
+            description: null,
             url: null,
             children: [],
           },
@@ -33,7 +33,7 @@ export const detailSourceTree: ActivitySourceTree = {
         providerId: "apple_health",
         sourceName: null,
         label: "Apple Health",
-        description: "Imported from Garmin Connect",
+        description: null,
         url: null,
         children: [],
       },
@@ -58,7 +58,7 @@ export const removedDetailSourceTree: ActivitySourceTree = {
     providerId: "garmin",
     sourceName: "Garmin Edge 530",
     label: "Garmin Edge 530",
-    description: "Closest available recording · Removed from provider",
+    description: "Removed from provider",
     url: null,
     children: [
       {
@@ -66,7 +66,7 @@ export const removedDetailSourceTree: ActivitySourceTree = {
         providerId: "strava",
         sourceName: null,
         label: "Strava",
-        description: "Imported from Garmin Connect · Removed from provider",
+        description: "Removed from provider",
         url: null,
         children: [],
       },

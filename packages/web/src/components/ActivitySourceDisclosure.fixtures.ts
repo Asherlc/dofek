@@ -107,7 +107,7 @@ export const branchingSourceTree: ActivitySourceTree = {
     providerId: "garmin",
     sourceName: null,
     label: "Garmin Connect",
-    description: "Closest available recording",
+    description: null,
     url: "https://connect.garmin.com/modern/activity/123",
     children: [
       {
@@ -115,7 +115,7 @@ export const branchingSourceTree: ActivitySourceTree = {
         providerId: "strava",
         sourceName: null,
         label: "Strava",
-        description: "Imported from Garmin Connect",
+        description: null,
         url: "https://www.strava.com/activities/123",
         children: [
           {
@@ -123,7 +123,7 @@ export const branchingSourceTree: ActivitySourceTree = {
             providerId: "apple_health",
             sourceName: null,
             label: "Apple Health",
-            description: "Imported from Strava",
+            description: null,
             url: null,
             children: [],
           },
@@ -134,7 +134,7 @@ export const branchingSourceTree: ActivitySourceTree = {
         providerId: "apple_health",
         sourceName: null,
         label: "Apple Health",
-        description: "Imported from Garmin Connect",
+        description: null,
         url: null,
         children: [],
       },

@@ -128,7 +128,7 @@ describe("Activities list source tree hydration", () => {
           {
             id: ids[3],
             providerId: "apple_health",
-            description: "Imported from Wahoo",
+            description: null,
             children: [],
           },
           { id: ids[1], providerId: "strava", children: [{ id: ids[2], providerId: "strava" }] },

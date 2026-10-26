@@ -15,7 +15,7 @@ export const branchingActivitySourceTree: ActivitySourceTree = {
         providerId: "apple_health",
         sourceName: null,
         label: "Apple Health",
-        description: "Imported from Hang Ten",
+        description: null,
         url: null,
         children: [
           {
@@ -23,7 +23,7 @@ export const branchingActivitySourceTree: ActivitySourceTree = {
             providerId: "strava",
             sourceName: null,
             label: "Strava",
-            description: "Imported from Apple Health",
+            description: null,
             url: "https://www.strava.com/activities/123",
             children: [],
           },
@@ -34,7 +34,7 @@ export const branchingActivitySourceTree: ActivitySourceTree = {
         providerId: "strava",
         sourceName: null,
         label: "Strava",
-        description: "Imported from Hang Ten",
+        description: null,
         url: "https://www.strava.com/activities/456",
         children: [],
       },
@@ -67,7 +67,7 @@ export const garminActivitySourceTree: ActivitySourceTree = {
         providerId: "strava",
         sourceName: null,
         label: "Strava",
-        description: "Imported from Garmin Connect",
+        description: null,
         url: "https://www.strava.com/activities/123",
         children: [
           {
@@ -75,7 +75,7 @@ export const garminActivitySourceTree: ActivitySourceTree = {
             providerId: "apple_health",
             sourceName: null,
             label: "Apple Health",
-            description: "Imported from Strava",
+            description: null,
             url: null,
             children: [],
           },
@@ -86,7 +86,7 @@ export const garminActivitySourceTree: ActivitySourceTree = {
         providerId: "apple_health",
         sourceName: null,
         label: "Apple Health",
-        description: "Imported from Garmin Connect",
+        description: null,
         url: null,
         children: [],
       },

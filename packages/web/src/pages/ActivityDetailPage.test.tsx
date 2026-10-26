@@ -743,8 +743,7 @@ describe("ActivityDetailPage", () => {
     renderWithUnits(<ActivityDetailPage />);
 
     fireEvent.click(screen.getByRole("button", { name: "Garmin Edge 530 Sources" }));
-    expect(screen.getByText("Closest available recording · Removed from provider")).toBeVisible();
-    expect(screen.getByText("Imported from Garmin Connect · Removed from provider")).toBeVisible();
+    expect(screen.getAllByText("Removed from provider")).toHaveLength(2);
     expect(screen.getByText("Strava").closest("a")).toBeNull();
     expect(screen.queryByRole("link", { name: "View activity for Garmin Edge 530" })).toBeNull();
     expect(screen.getByRole("link", { name: "WHOOP" })).toHaveAttribute(
@@ -1624,9 +1623,7 @@ describe("ActivityDetailPage", () => {
       const strava = screen.getByRole("link", { name: "Strava" }).closest("li");
       if (!strava) throw new Error("Missing Strava branch");
       expect(within(strava).getByText("Apple Health")).toBeVisible();
-      expect(within(strava).getByText("Imported from Strava")).toBeVisible();
       expect(screen.getAllByText("Apple Health")).toHaveLength(2);
-      expect(screen.getAllByText("Imported from Garmin Connect")).toHaveLength(2);
       expect(
         within(screen.getByRole("region", { name: "Additional sources" })).getByText("WHOOP"),
       ).toBeVisible();

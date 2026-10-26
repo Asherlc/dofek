@@ -1,14 +1,16 @@
 import type { ActivityHardware } from "@dofek/providers/activity-hardware";
 import { activitySourceTreeWithHardware } from "@dofek/providers/activity-source-hardware";
-import type {
-  ActivitySourceTree,
-  ActivitySourceTreeNode,
+import {
+  type ActivitySourceTree,
+  type ActivitySourceTreeNode,
+  activitySourceNodePresentation,
 } from "@dofek/providers/activity-source-tree";
 import { useId, useState } from "react";
 import { Linking, Pressable, StyleSheet, Text, View } from "react-native";
 import { SERVER_URL } from "../lib/server";
 import { captureException } from "../lib/telemetry";
 import { colors, spacing } from "../theme";
+import { AttributionIcon } from "./activity/ActivityMetricSourcePicker";
 import { ProviderLogo } from "./ProviderLogo";
 import { getQueryErrorMessage, QueryStatePanel } from "./QueryStatePanel";
 
@@ -75,7 +77,7 @@ function SourceNode({ node }: { node: ActivitySourceTreeNode }) {
           size={20}
         />
         <View style={styles.nodeContent}>
-          <Text style={styles.label}>{node.label}</Text>
+          <SourceLabel node={node} />
           {node.description ? <Text style={styles.description}>{node.description}</Text> : null}
           <SourceLink node={node} />
           <SourceDetails node={node} />
@@ -128,7 +130,7 @@ export function ActivitySourceDisclosure({
               serverUrl={SERVER_URL}
               size={20}
             />
-            <Text style={styles.label}>{primary.label}</Text>
+            <SourceLabel node={primary} />
           </View>
         ) : null}
         <View style={styles.sourceControl}>
@@ -225,3 +227,16 @@ const styles = StyleSheet.create({
   linkLabel: { color: colors.accent, fontSize: 12 },
   error: { color: colors.danger, fontSize: 12 },
 });
+
+function SourceLabel({ node }: { node: ActivitySourceTreeNode }) {
+  const { displayName, attribution } = activitySourceNodePresentation(node);
+  if (!attribution) return <Text style={styles.label}>{displayName}</Text>;
+  return (
+    <View style={styles.primary}>
+      <Text style={styles.label} accessibilityLabel={node.label}>
+        {displayName}
+      </Text>
+      <AttributionIcon attribution={attribution} serverUrl={SERVER_URL} />
+    </View>
+  );
+}

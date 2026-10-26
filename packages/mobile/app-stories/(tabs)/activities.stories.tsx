@@ -302,7 +302,7 @@ function createStoryData(
                   providerId: "apple_health",
                   sourceName: null,
                   label: "Apple Health",
-                  description: "Imported from recording app",
+                  description: null,
                   url: null,
                   children: [],
                 },

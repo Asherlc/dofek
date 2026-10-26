@@ -209,7 +209,7 @@ export const IndoorCycling: Story = {
             providerId: "peloton",
             sourceName: null,
             label: "Peloton",
-            description: "Closest available recording",
+            description: null,
             url: null,
             children: [],
           },
@@ -246,7 +246,7 @@ export const VirtualCycling: Story = {
             providerId: "zwift",
             sourceName: null,
             label: "Zwift",
-            description: "Closest available recording",
+            description: null,
             url: null,
             children: [],
           },
@@ -284,7 +284,7 @@ export const ClimbingSourceLocations: Story = {
             providerId: "mountain-project",
             sourceName: null,
             label: "Mountain Project",
-            description: "Closest available recording",
+            description: null,
             url: null,
             children: [],
           },
@@ -357,7 +357,7 @@ export const PrimaryRecordingProvider: Story = {
             providerId: "garmin",
             sourceName: "Garmin Edge 530",
             label: "Garmin Edge 530",
-            description: "Closest available recording",
+            description: null,
             url: null,
             children: [],
           },
@@ -392,7 +392,7 @@ export const KayaProviderLogo: Story = {
             providerId: "kaya",
             sourceName: null,
             label: "Kaya",
-            description: "Closest available recording",
+            description: null,
             url: null,
             children: [],
           },
@@ -443,7 +443,7 @@ export const PrimaryProviderWithoutLogo: Story = {
             providerId: "mountain-project",
             sourceName: null,
             label: "Mountain Project",
-            description: "Closest available recording",
+            description: null,
             url: null,
             children: [],
           },
@@ -571,7 +571,6 @@ export const NavigableCard: Story = {
     const canvas = within(canvasElement);
     await userEvent.click(canvas.getByRole("button", { name: "Garmin Connect Sources" }));
     await expect(canvas.getByRole("link", { name: "Morning Run" })).toBeVisible();
-    await expect(canvas.getByText("Imported from Strava")).toBeVisible();
   },
 };
 
