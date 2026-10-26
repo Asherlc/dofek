@@ -1,7 +1,7 @@
 import {
+  formatClimbingAttemptStyles,
   formatClimbingRecordedResult,
   formatClimbingResultOutcome,
-  formatClimbingRopeMethods,
 } from "@dofek/format/climbing-log";
 import { climbingLogEntryName } from "@dofek/training/climbing-log";
 import type { ClimbingMapLocation } from "@dofek/training/climbing-map";
@@ -53,7 +53,7 @@ export function ClimbingLogEntryCard({
 }) {
   const name = climbingLogEntryName(entry);
   const attachmentPending = attachmentState?.pending ?? false;
-  const ropeMethods = formatClimbingRopeMethods(entry.attempts);
+  const ropeMethods = formatClimbingAttemptStyles(entry.attempts);
   const climbResultLabels = entry.attempts
     .filter((attempt) => attempt.scope === "climb")
     .flatMap((attempt) => attempt.rockResultLabels);

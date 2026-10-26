@@ -49,7 +49,7 @@ count; the server derives free-rock result labels from the recorded attempt
 facts. See the [shared model](../training/src/climbing-log.ts) and
 [formatters](src/climbing-context.ts).
 
-The [log formatter](src/climbing-log.ts) labels recorded rope methods once per
+The [log formatter](src/climbing-log.ts) labels distinct recorded attempt styles once per
 card and formats known counts as `Attempts: N`, omitting unknown counts supplied
 as null by the [server contract](../server/src/contracts/climbing-log-contracts.ts).
 Whole-climb summaries show the outcome
@@ -65,7 +65,11 @@ and internal references.
 [Garmin's completion labels and separate fall count](https://www8.garmin.com/manuals/webhelp/GUID-BD965919-30AA-4EB5-95D7-A899658C50EB/EN-US/GUID-D67857E8-04FB-44CA-9D58-B77AB8D50F83.html).
 Confirmed sends retain their result labels instead of a redundant “Completed”
 label. Onsight and Flash also suppress redundant attempt counts. Pitch results
-retain their scope. Unknown completion stays unlabeled even when the attempt is
+retain their scope. Recorded falls or hangs appear alongside their rope method as `Lead · Fell/Hung`,
+`Top rope · Fell/Hung`, or `Follow · Fell/Hung`. The
+[Mountain Project forum discussion](https://www.mountainproject.com/forum/topic/124980013/onsight-vs-flash-vs-redpoint)
+distinguishes Fell/Hung from a clean send without guaranteeing arrival at the top.
+Unknown completion stays unlabeled even when the attempt is
 known not to be a clean send; falling or hanging alone does not establish whether
 the climber reached the top. See the
 [server contract](../server/src/contracts/climbing-log-contracts.ts) and

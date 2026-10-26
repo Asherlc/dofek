@@ -1,7 +1,7 @@
 import {
+  formatClimbingAttemptStyles,
   formatClimbingRecordedResult,
   formatClimbingResultOutcome,
-  formatClimbingRopeMethods,
 } from "@dofek/format/climbing-log";
 import { operationalStatusColors } from "@dofek/scoring/colors";
 import { climbingLogEntryName } from "@dofek/training/climbing-log";
@@ -40,7 +40,7 @@ export function ClimbingLogEntryCard({
   onAttach?: (entryId: string) => void;
 }) {
   const name = climbingLogEntryName(entry);
-  const methods = formatClimbingRopeMethods(entry.attempts);
+  const methods = formatClimbingAttemptStyles(entry.attempts);
   const climbResultLabels = entry.attempts
     .filter((attempt) => attempt.scope === "climb")
     .flatMap((attempt) => attempt.rockResultLabels);

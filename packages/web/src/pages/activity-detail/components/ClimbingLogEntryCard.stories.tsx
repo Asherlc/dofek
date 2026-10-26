@@ -62,6 +62,23 @@ export const Attempted: Story = {
     },
   },
 };
+export const FellHung: Story = {
+  args: {
+    entry: {
+      ...meta.args.entry,
+      freeSend: false,
+      recordedClimbOutcome: null,
+      recordedClimbAttemptCount: null,
+      attempts: [
+        climbingAttemptFixture(meta.args.entry.id, {
+          ropeMethod: "lead",
+          fellOrHung: true,
+          outcome: null,
+        }),
+      ],
+    },
+  },
+};
 export const Onsight: Story = {
   args: {
     location: undefined,
