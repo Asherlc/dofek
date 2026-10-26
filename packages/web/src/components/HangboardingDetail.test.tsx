@@ -20,6 +20,54 @@ const detail = {
 afterEach(cleanup);
 
 describe("HangboardingDetail", () => {
+  it("shows only session metrics when the sole exercise is generic Work", () => {
+    render(
+      <HangboardingDetail
+        data={{
+          ...detail,
+          summary: {
+            ...detail.summary,
+            exercises: [{ label: "Work", workIntervalCount: 3, workDurationSeconds: 21 }],
+          },
+        }}
+        loading={false}
+        error={null}
+      />,
+    );
+
+    expect(screen.getByText("Hangs")).toBeTruthy();
+    expect(screen.getByText("3")).toBeTruthy();
+    expect(screen.getByText("21s")).toBeTruthy();
+    expect(screen.getByText("Session time")).toBeTruthy();
+    expect(screen.queryByText("Work")).toBeNull();
+    expect(screen.queryByText("3 hangs · 21s")).toBeNull();
+    expect(screen.queryByText("No completed hangs recorded.")).toBeNull();
+  });
+
+  it("keeps generic work in a breakdown alongside named exercises", () => {
+    render(
+      <HangboardingDetail
+        data={{
+          ...detail,
+          summary: {
+            ...detail.summary,
+            exercises: [
+              { label: "Work", workIntervalCount: 1, workDurationSeconds: 7 },
+              { label: "19 mm edge", workIntervalCount: 2, workDurationSeconds: 14 },
+            ],
+          },
+        }}
+        loading={false}
+        error={null}
+      />,
+    );
+
+    expect(screen.getByText("Work")).toBeTruthy();
+    expect(screen.getByText("1 hang · 7s")).toBeTruthy();
+    expect(screen.getByText("19 mm edge")).toBeTruthy();
+    expect(screen.getByText("2 hangs · 14s")).toBeTruthy();
+  });
+
   it("renders a concise finger-loading summary", () => {
     render(<HangboardingDetail data={detail} loading={false} error={null} />);
 
@@ -33,6 +81,21 @@ describe("HangboardingDetail", () => {
     expect(screen.getByText("Hang time")).toBeTruthy();
     expect(screen.getByText("Rest time")).toBeTruthy();
     expect(screen.getByText("Session time")).toBeTruthy();
+  });
+
+  it("renders an empty state when there are no completed hangs", () => {
+    render(
+      <HangboardingDetail
+        data={{
+          ...detail,
+          summary: { ...detail.summary, exercises: [] },
+        }}
+        loading={false}
+        error={null}
+      />,
+    );
+
+    expect(screen.getByText("No completed hangs recorded.")).toBeTruthy();
   });
 
   it("renders an actionable segments note without hiding valid data", () => {
