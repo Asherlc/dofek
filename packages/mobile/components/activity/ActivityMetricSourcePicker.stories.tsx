@@ -85,3 +85,19 @@ export const NoAttribution: Story = {
   },
 };
 export const Empty: Story = { args: { sources: [], selectedId: "" } };
+export const LongSourceName: Story = {
+  args: {
+    sources: [
+      cloud,
+      bluetooth,
+      {
+        ...watch,
+        presentation: {
+          ...watch.presentation,
+          displayName: "Asher’s Apple Watch Ultra recording",
+        },
+      },
+    ],
+    selectedId: watch.id,
+  },
+};

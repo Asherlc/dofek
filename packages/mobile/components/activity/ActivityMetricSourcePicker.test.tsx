@@ -60,7 +60,7 @@ describe("ActivityMetricSourcePicker", () => {
     fireEvent.click(trigger);
     expect(trigger.getAttribute("aria-expanded")).toBe("true");
     expect(screen.getByRole("radio", { name: sources[0]?.label, checked: true }).textContent).toBe(
-      sources[0]?.label,
+      sources[0]?.presentation.displayName,
     );
   });
 
@@ -81,6 +81,10 @@ describe("ActivityMetricSourcePicker", () => {
     expect(trigger.querySelector(`[data-icon="${icon}"]`)).toBeTruthy();
     expect(trigger.querySelector('[data-icon="chevron-down"]')).toBeTruthy();
     expect(trigger.textContent).toBe("Heart Rate · WHOOP");
+    fireEvent.click(trigger);
+    const option = screen.getByRole("radio", { name: fullLabel });
+    expect(option.querySelector(`[data-icon="${icon}"]`)).toBeTruthy();
+    expect(option.textContent).toBe("WHOOP");
   });
 
   it("distinguishes duplicate names and switches by source ID", () => {
