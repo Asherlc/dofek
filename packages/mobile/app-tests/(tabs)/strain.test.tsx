@@ -5,6 +5,16 @@ import { Alert } from "react-native";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { climbingProgressionFixture } from "../../components/climbing-progression-test-helpers";
 
+import { climbingStrengthsFixture } from "../../components/climbing-strengths-fixtures";
+
+let mockTodayQueryDate = "2026-03-28";
+const mockStrengthsState: {
+  data: unknown;
+  isLoading: boolean;
+  isFetching: boolean;
+  isError: boolean;
+  error: Error | null;
+} = { data: undefined, isLoading: false, isFetching: false, isError: false, error: null };
 const mockRouterPush = vi.fn();
 const mockTrainingInvalidate = vi.fn();
 const mockLocationMapInvalidate = vi.fn();
@@ -125,6 +135,15 @@ function defaultMockTrainingData(): MockTrainingData {
 }
 
 function resetMockTrainingState() {
+  mockTodayQueryDate = "2026-03-28";
+  Object.assign(mockStrengthsState, {
+    data: structuredClone(climbingStrengthsFixture),
+    isLoading: false,
+    isFetching: false,
+    isError: false,
+    error: null,
+  });
+  vi.mocked(captureException).mockClear();
   mockTrainingState.data = structuredClone(defaultMockTrainingData());
   mockTrainingState.isLoading = false;
   mockTrainingState.isFetching = false;
@@ -156,7 +175,7 @@ vi.mock("../../lib/trpc", () => ({
       strengths: {
         useQuery: (input: { days: number }, options: MockRangeQueryOptions) => {
           mockRangeQueryCalls.strengths.push({ input, options });
-          return { data: undefined, isLoading: false, error: null };
+          return { ...mockStrengthsState };
         },
       },
       locationMap: {
@@ -251,7 +270,7 @@ vi.mock("../../lib/useRefresh", () => ({
 }));
 
 vi.mock("../../lib/useTodayQueryDate", () => ({
-  useTodayQueryDate: () => "2026-03-28",
+  useTodayQueryDate: () => mockTodayQueryDate,
 }));
 
 vi.mock("../../lib/telemetry", () => ({
@@ -341,6 +360,61 @@ describe("StrainScreen recent activity navigation", () => {
     }
   });
 
+  it("updates the strengths query anchor at local midnight and retains explicit date anchors", async () => {
+    const { default: StrainScreen } = await import("../../app/(tabs)/strain");
+    const { rerender } = render(<StrainScreen />);
+    expect(mockRangeQueryCalls.strengths.at(-1)?.input).toEqual({
+      days: 90,
+      endDate: "2026-03-28",
+    });
+    mockTodayQueryDate = "2026-03-29";
+    rerender(<StrainScreen />);
+    expect(mockRangeQueryCalls.strengths.at(-1)?.input).toEqual({
+      days: 90,
+      endDate: "2026-03-29",
+    });
+    mockTodayQueryDate = "2025-12-31";
+    rerender(<StrainScreen />);
+    expect(mockRangeQueryCalls.strengths.at(-1)?.input).toEqual({
+      days: 90,
+      endDate: "2025-12-31",
+    });
+  });
+
+  it("keeps cached strengths visible with an updating indicator while a new population loads", async () => {
+    mockStrengthsState.isFetching = true;
+    const { default: StrainScreen } = await import("../../app/(tabs)/strain");
+    render(<StrainScreen />);
+    fireEvent.click(screen.getByRole("button", { name: "All climbing" }));
+    fireEvent.click(screen.getByRole("button", { name: "Rope method: Lead" }));
+    expect(screen.getByText("Updating climbing strengths…")).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Slab · 40% · 2\/5 climbs sent/ })).toBeTruthy();
+    expect(mockRangeQueryCalls.strengths.at(-1)?.input).toEqual({
+      days: 90,
+      endDate: "2026-03-28",
+      ropeMethod: "lead",
+    });
+  });
+
+  it("rejects malformed restored strengths with a visible error and reports it once per payload", async () => {
+    mockStrengthsState.data = { panels: [{}] };
+    const { default: StrainScreen } = await import("../../app/(tabs)/strain");
+    const { rerender } = render(<StrainScreen />);
+    expect(
+      screen.getByText("Climbing strengths data could not be read. Pull to refresh to reload it."),
+    ).toBeTruthy();
+    expect(captureException).toHaveBeenCalledOnce();
+    expect(captureException).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: expect.stringContaining("Climbing strengths: Zod parse failed"),
+      }),
+      expect.objectContaining({ context: "Climbing strengths" }),
+    );
+    rerender(<StrainScreen />);
+    expect(captureException).toHaveBeenCalledOnce();
+    expect(screen.queryByRole("button", { name: /Slab · 40%/ })).toBeNull();
+  });
+
   it("sends climbing selections to the server while keeping other training queries unchanged", async () => {
     const { default: StrainScreen } = await import("../../app/(tabs)/strain");
     render(<StrainScreen />);
@@ -351,7 +425,12 @@ describe("StrainScreen recent activity navigation", () => {
     });
     expect(mockRangeQueryCalls.locationMap.at(-1)?.input).toEqual({ days: 90, ropeMethod: "lead" });
     expect(mockRangeQueryCalls.locationMap.at(-1)?.options.placeholderData).toBeTypeOf("function");
-    expect(mockRangeQueryCalls.strengths.at(-1)?.input).toEqual({ days: 90, ropeMethod: "lead" });
+    expect(mockRangeQueryCalls.strengths.at(-1)?.input).toEqual({
+      days: 90,
+      endDate: "2026-03-28",
+      ropeMethod: "lead",
+    });
+    expect(screen.getByRole("button", { name: /Slab · 40% · 2\/5 climbs sent/ })).toBeTruthy();
     expect(screen.getByText("Climbing strengths")).toBeTruthy();
     expect(screen.getByText("Climbing locations")).toBeTruthy();
   });
@@ -944,7 +1023,7 @@ describe("StrainScreen recent activity navigation", () => {
 
     expect(screen.queryByText("Climbing refresh failed")).toBeNull();
     expect(screen.getByText("Bouldering")).toBeTruthy();
-    expect(screen.getByText("V4")).toBeTruthy();
+    expect(screen.getAllByText("V4").length).toBeGreaterThan(0);
   });
 
   it("reports the same cached training query error only once across remounts", async () => {

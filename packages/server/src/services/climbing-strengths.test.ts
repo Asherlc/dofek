@@ -6,6 +6,8 @@ const observation = (
 ): ClimbingStrengthsObservation => ({
   identity: "climb",
   contextKey: "boulder",
+  laneKey: "boulder",
+  gradeSystem: "v_scale",
   contextLabel: "Bouldering · V scale",
   setting: "indoor",
   grade: "V4",
@@ -152,14 +154,87 @@ describe("climbing strengths", () => {
   });
   it("uses a unique recognized grade from another observation without losing a send", () => {
     const result = buildClimbingStrengths([
-      observation({ grade: null, outcome: "sent" }),
+      observation({
+        grade: null,
+        gradeSystem: null,
+        contextKey: "missing-system",
+        contextLabel: "Grade missing",
+        outcome: "sent",
+      }),
       observation(),
     ]);
     expect(result.coverage.missingGrades).toBe(0);
-    expect(result.panels.find((panel) => panel.dimension === "setting")?.grades[0]).toMatchObject({
-      grade: "V4",
-      sends: 1,
-      climbs: 1,
+    const panel = result.panels.find((panel) => panel.dimension === "setting");
+    expect(panel).toMatchObject({ contextKey: "boulder", contextLabel: "Bouldering · V scale" });
+    expect(panel?.grades[0]).toMatchObject({ grade: "V4", sends: 1, climbs: 1 });
+    expect(panel?.rows[0]?.cells[0]?.examples[0]).toMatchObject({ grade: "V4", outcome: "sent" });
+  });
+  it("does not assign a send with a missing grade when two recognized grade systems remain possible", () => {
+    const result = buildClimbingStrengths([
+      observation({ contextKey: "v", laneKey: "lane", gradeSystem: "v_scale" }),
+      observation({ contextKey: "font", laneKey: "lane", gradeSystem: "font", grade: "6b" }),
+      observation({
+        contextKey: "unknown",
+        laneKey: "lane",
+        gradeSystem: null,
+        grade: null,
+        outcome: "sent",
+      }),
+    ]);
+    expect(result.coverage.missingGrades).toBe(1);
+    expect(
+      result.panels
+        .filter((panel) => panel.dimension === "setting")
+        .map((panel) => panel.grades[0]?.sends),
+    ).toEqual([0, 0]);
+  });
+  it("keeps a missing-system send isolated from another semantic lane for the same climb", () => {
+    const result = buildClimbingStrengths([
+      observation(),
+      observation({
+        laneKey: "pitch",
+        contextKey: "pitch-missing-system",
+        contextLabel: "Pitch · Grade missing",
+        gradeSystem: null,
+        grade: null,
+        outcome: "sent",
+      }),
+    ]);
+    expect(result.coverage.missingGrades).toBe(1);
+    const panels = result.panels.filter((panel) => panel.dimension === "setting");
+    expect(panels).toHaveLength(1);
+    expect(panels[0]).toMatchObject({ contextKey: "boulder", grades: [{ climbs: 1, sends: 0 }] });
+  });
+  it("excludes unidentified and missing-system observations without recognized grade evidence", () => {
+    const result = buildClimbingStrengths([
+      observation({ identity: null }),
+      observation({
+        grade: null,
+        gradeSystem: null,
+        contextKey: "missing-system",
+        outcome: "sent",
+      }),
+    ]);
+    expect(result.coverage).toEqual({ missingIdentity: 1, missingGrades: 1, unknownOutcomes: 0 });
+    expect(result.panels).toEqual([]);
+  });
+  it("requires an actual recognized grade before a declared system can establish ambiguity", () => {
+    const result = buildClimbingStrengths([
+      observation(),
+      observation({ contextKey: "font", gradeSystem: "font", grade: null }),
+      observation({
+        contextKey: "missing-system",
+        gradeSystem: null,
+        grade: null,
+        outcome: "sent",
+      }),
+    ]);
+    expect(result.coverage.missingGrades).toBe(1);
+    const panels = result.panels.filter((panel) => panel.dimension === "setting");
+    expect(panels).toHaveLength(1);
+    expect(panels[0]).toMatchObject({
+      contextKey: "boulder",
+      grades: [{ climbs: 1, sends: 1, successRate: 100 }],
     });
   });
 });

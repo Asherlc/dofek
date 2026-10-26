@@ -118,6 +118,11 @@ wall-angle, hold-type, and indoor/outdoor groups share the web client's
 [server-computed contract](../training/src/climbing-strengths.ts). Coverage
 distinguishes missing traits and unknown outcomes. Unknown angle units remain
 unclassified, while known degrees retain their recorded numeric labels.
+The [Training route](<app/(tabs)/strain.tsx>) includes its existing local date
+anchor in the query key, validates restored responses with the shared schema,
+and labels retained data while it refreshes. Successful attachment actions
+invalidate strengths alongside the affected climbing detail queries; see the
+[attachment picker](components/ClimbingLogAttachment.tsx).
 
 Climbing grade charts use the [shared chart selection and labels](../training/src/climbing-progression.ts)
 to display bouldering and routes with recorded rope methods, each with recorded

@@ -11,6 +11,7 @@ import { climbingProgressionLaneKey } from "@dofek/training/climbing-progression
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { BaseRepository } from "../lib/base-repository.ts";
+import { dateWindowStartString } from "../lib/date-window.ts";
 import type { ClimbingStrengthsObservation } from "../services/climbing-strengths.ts";
 import { canonicalClimbingLogCtes } from "./climbing-canonical-observations.ts";
 import { displayClimbingGrade } from "./climbing-grade-display.ts";
@@ -62,10 +63,11 @@ export class ClimbingStrengthsRepository extends BaseRepository {
   async getObservations(
     days: number,
     filters: ClimbingFilters = {},
+    endDate?: string,
   ): Promise<ClimbingStrengthsObservation[]> {
     const rows = await this.query(
       rowSchema,
-      sql`WITH ${canonicalClimbingLogCtes(days, filters, this.#preference, this.userId, this.timezone, (date) => this.dateAccessPredicate(date))} SELECT * FROM dated_logs ORDER BY session_date DESC,id`,
+      sql`WITH ${canonicalClimbingLogCtes(endDate === undefined ? days : { startDate: dateWindowStartString(endDate, days - 1), endDate }, filters, this.#preference, this.userId, this.timezone, (date) => this.dateAccessPredicate(date))} SELECT * FROM dated_logs ORDER BY session_date DESC,id`,
     );
     // A full recorded location/name match is the existing cross-source identity rule.
     // Ambiguous names within one provider retain their native catalogue identities.
@@ -110,14 +112,13 @@ export class ClimbingStrengthsRepository extends BaseRepository {
             : attempt.unknownOutcomes > 0
               ? null
               : ("not_sent" as const);
-        const contextKey = JSON.stringify([
-          climbingProgressionLaneKey({
-            climbKind: row.climb_kind,
-            attemptScope: row.attempt_scope,
-            ...attempt,
-          }),
-          grade?.gradeSystem ?? row.grade_system,
-        ]);
+        const laneKey = climbingProgressionLaneKey({
+          climbKind: row.climb_kind,
+          attemptScope: row.attempt_scope,
+          ...attempt,
+        });
+        const gradeSystem = grade?.gradeSystem ?? row.grade_system;
+        const contextKey = JSON.stringify([laneKey, gradeSystem]);
         const labels = [
           row.climb_kind === "boulder" ? "Bouldering" : "Routes",
           row.attempt_scope === "pitch" ? "Pitch" : "Whole climb",
@@ -129,6 +130,8 @@ export class ClimbingStrengthsRepository extends BaseRepository {
         return {
           identity,
           contextKey,
+          laneKey,
+          gradeSystem,
           contextLabel: labels.join(" · "),
           setting: row.setting,
           grade: grade?.grade ?? null,

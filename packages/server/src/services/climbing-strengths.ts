@@ -1,3 +1,4 @@
+import type { FreeRockGradeSystem } from "@dofek/training/climbing-grades";
 import type {
   ClimbingStrengths,
   ClimbingStrengthsExample,
@@ -6,6 +7,8 @@ import type {
 export interface ClimbingStrengthsObservation {
   identity: string | null;
   contextKey: string;
+  laneKey: string;
+  gradeSystem: FreeRockGradeSystem | null;
   contextLabel: string;
   setting: "indoor" | "outdoor" | null;
   grade: string | null;
@@ -31,7 +34,28 @@ export function buildClimbingStrengths(
 ): ClimbingStrengths {
   const coverage = { unknownOutcomes: 0, missingGrades: 0, missingIdentity: 0 };
   const groups = new Map<string, ClimbingStrengthsObservation[]>();
+  // A missing system can inherit context only from one evidenced system for
+  // this identified climb and semantic lane; ambiguous systems stay separate.
+  const recognizedContexts = new Map<string, Map<string, ClimbingStrengthsObservation>>();
   for (const entry of observations) {
+    if (entry.identity === null || entry.grade === null || entry.gradeSystem === null) continue;
+    const key = JSON.stringify([entry.identity, entry.laneKey]);
+    const systems = recognizedContexts.get(key) ?? new Map<string, ClimbingStrengthsObservation>();
+    systems.set(entry.gradeSystem, entry);
+    recognizedContexts.set(key, systems);
+  }
+  for (const original of observations) {
+    const systems = recognizedContexts.get(JSON.stringify([original.identity, original.laneKey]));
+    const context =
+      original.gradeSystem === null && systems?.size === 1 ? [...systems.values()][0] : undefined;
+    const entry = context
+      ? {
+          ...original,
+          contextKey: context.contextKey,
+          contextLabel: context.contextLabel,
+          gradeSystem: context.gradeSystem,
+        }
+      : original;
     if (entry.identity === null) {
       coverage.missingIdentity++;
       continue;

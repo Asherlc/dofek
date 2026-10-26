@@ -51,6 +51,12 @@ The backend API and background job processor for Dofek. Built with Node.js, Expr
   Coverage reports unidentified/missing-grade observation records separately from
   distinct-climb trait and outcome coverage. Known degree values are shown literally;
   missing units and contradictory traits remain unknown.
+  Gradeless source observations contribute only when the same identified climb and
+  semantic lane have one recognized grade-system context; ambiguous contexts stay
+  excluded. The optional `endDate` input anchors an inclusive calendar-day window,
+  while omitted dates retain the server-local current-day behavior; see the
+  [repository](src/repositories/climbing-strengths-repository.ts) and
+  [aggregation](src/services/climbing-strengths.ts).
 - **Provider climbing records**: The [provider detail repository](src/repositories/provider-detail-repository.ts)
   lists retained logs, including undated records and provider-absence tombstones,
   and loads the full owned graph for a selected record. The [sync repository](src/repositories/sync-repository.ts)
@@ -91,7 +97,7 @@ The backend API and background job processor for Dofek. Built with Node.js, Expr
   interval data comes from the group's Hang Ten member.
 
 - **Safe SQL**: Uses `executeWithSchema` (in `src/lib/typed-sql.ts`) which combines Drizzle's `sql` template literal with Zod schema validation to ensure runtime type safety and catch schema drift.
-- **Caching**: Implements a `queryCache` middleware for tRPC procedures (`src/trpc.ts`), with per-user isolation and configurable TTLs.
+- **Caching**: Implements a [query-cache middleware](src/trpc.ts) for tRPC procedures, with per-user isolation and configurable TTLs. Typed cached climbing queries supply their existing output schema for cache-hit validation. Invalid derived cache entries are reported, evicted, and rebuilt through the normal source-query path, matching the [cache's malformed-JSON policy](../../src/lib/cache.ts).
 - **Nutrition AI Parsing**: `food.analyzeWithAi` estimates one entry, while `food.analyzeItemsWithAi` parses a natural-language meal into multiple itemized entries for client-side logging flows.
 - **Food Record Mutations**: [`FoodRecordService`](./src/services/food-record-service.ts) is the single mutation boundary for MCP and future food-record clients. It validates commands, applies account-erasure fencing and optimistic versions, writes the append-only record ledger through [`FoodRecordRepository`](./src/repositories/food-record-repository.ts), and invalidates nutrition caches only after a new committed operation. New creates require known calories, protein, carbohydrate, and fat; new create/update results receive transactional nutrition validation, including unchanged nutrients and source-clears. Zero-calorie outcomes require explicit source evidence retained in the description. A conservative protein/fat lower bound preserves label calories and allows rounding, based on [USDA Handbook 74](https://www.ars.usda.gov/ARSUserFiles/80400525/Data/Classics/ah74.pdf) and [21 CFR 101.9(c)](https://www.ecfr.gov/current/title-21/section-101.9#p-101.9(c)); the full policy is in the [MCP contract](../../docs/mcp.md). Callers must not update or delete provider rows directly.
 - **Authentication**: Supports session-based auth with cookie-based persistence for web and Bearer tokens for mobile. See `src/auth/` and `src/routes/auth/`.

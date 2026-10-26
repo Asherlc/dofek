@@ -5,7 +5,7 @@ import { middlewareMarker } from "@trpc/server/unstable-core-do-not-import";
 import type { Database } from "dofek/db";
 import { queryCache } from "dofek/lib/cache";
 import { captureException } from "dofek/lib/error-reporting";
-import { ZodError } from "zod";
+import { ZodError, type ZodType } from "zod";
 import type { AccountErasureRestoreLedger } from "../../../src/account-erasure/restore-ledger.ts";
 import type { MetricStreamEventPublisher } from "../../../src/metric-stream/redpanda-producer.ts";
 import type { AccessWindow } from "./billing/entitlement.ts";
@@ -266,6 +266,7 @@ interface CachePolicy {
   maxAge: number;
   expiresAt?: CacheExpiry;
   keyVersion?: string;
+  outputSchema?: ZodType;
 }
 
 function localDateString(date: Date, timezone: string): string {
@@ -331,7 +332,17 @@ function cached(policy: CachePolicy) {
 
     // Cache lookup
     const cacheLookupStart = performance.now();
-    const hit = ctx.cacheMode === "refresh" ? undefined : await queryCache.get(key);
+    let hit = ctx.cacheMode === "refresh" ? undefined : await queryCache.get(key);
+    if (hit !== undefined && policy.outputSchema !== undefined) {
+      const parsed = await policy.outputSchema.safeParseAsync(hit);
+      if (parsed.success) {
+        hit = parsed.data;
+      } else {
+        captureException(parsed.error);
+        await queryCache.invalidate(key);
+        hit = undefined;
+      }
+    }
     trpcCacheLookupDuration.observe(
       { procedure: path, hit: hit !== undefined ? "true" : "false" },
       (performance.now() - cacheLookupStart) / 1000,

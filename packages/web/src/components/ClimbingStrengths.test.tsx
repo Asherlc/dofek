@@ -85,8 +85,19 @@ it("defaults to observations and preserves selection across refreshes and contex
   );
   fireEvent.change(screen.getByLabelText("Climbing context"), { target: { value: "route" } });
   expect(screen.getByText("Routes · Lead · YDS", { selector: "p" })).toBeVisible();
+  fireEvent.click(screen.getByRole("button", { name: /Vertical · V4/ }));
+  expect(screen.getByRole("region", { name: "Selected climbs" })).toHaveTextContent(
+    "Evening Arete",
+  );
   rerender(<ClimbingStrengths data={structuredClone(data)} />);
   expect(screen.getByLabelText("Climbing context")).toHaveValue("route");
+  expect(screen.getByRole("button", { name: /Vertical · V4/ })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  expect(screen.getByRole("region", { name: "Selected climbs" })).toHaveTextContent(
+    "Evening Arete",
+  );
 });
 it("selects hold types and recorded settings without mixing their observations", () => {
   const angle = fixture.panels[0];

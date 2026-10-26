@@ -246,6 +246,7 @@ const mockClimbingEntriesInvalidate = vi.fn().mockResolvedValue(undefined);
 const mockEntrySuggestionsInvalidate = vi.fn().mockResolvedValue(undefined);
 const mockClimbingSessionSummaryInvalidate = vi.fn().mockResolvedValue(undefined);
 const mockClimbingGradeProgressionInvalidate = vi.fn().mockResolvedValue(undefined);
+const mockClimbingStrengthsInvalidate = vi.fn().mockResolvedValue(undefined);
 const mockClimbingVolumeByGradeInvalidate = vi.fn().mockResolvedValue(undefined);
 
 interface MockHrZone {
@@ -441,6 +442,7 @@ vi.mock("../lib/trpc.ts", () => ({
         unattachedClimbingLogEntries: { invalidate: mockEntrySuggestionsInvalidate },
         sessionSummary: { invalidate: mockClimbingSessionSummaryInvalidate },
         gradeProgression: { invalidate: mockClimbingGradeProgressionInvalidate },
+        strengths: { invalidate: mockClimbingStrengthsInvalidate },
         volumeByGrade: { invalidate: mockClimbingVolumeByGradeInvalidate },
       },
     }),
@@ -516,6 +518,7 @@ afterEach(() => {
   mockEntrySuggestionsInvalidate.mockClear();
   mockClimbingSessionSummaryInvalidate.mockClear();
   mockClimbingGradeProgressionInvalidate.mockClear();
+  mockClimbingStrengthsInvalidate.mockClear();
   mockClimbingVolumeByGradeInvalidate.mockClear();
   mockStrengthExercisesUseQuery.mockReset();
   mockStrengthExercisesUseQuery.mockReturnValue({
@@ -2323,6 +2326,7 @@ describe("ActivityDetailPage", () => {
         expect(mockEntrySuggestionsInvalidate).toHaveBeenCalledWith({ activityId: "test-123" });
         expect(mockClimbingSessionSummaryInvalidate).toHaveBeenCalledWith();
         expect(mockClimbingGradeProgressionInvalidate).toHaveBeenCalledWith();
+        expect(mockClimbingStrengthsInvalidate).toHaveBeenCalledWith();
         expect(mockClimbingVolumeByGradeInvalidate).toHaveBeenCalledWith();
       });
       expect(mockActivityByIdInvalidate).not.toHaveBeenCalled();

@@ -213,6 +213,8 @@ describe("climbingRouter", () => {
     const sent: ClimbingStrengthsObservation = {
       identity: "corner",
       contextKey: "boulder-free-v",
+      laneKey: "boulder-free",
+      gradeSystem: "v_scale",
       contextLabel: "Bouldering · V scale",
       setting: "indoor",
       grade: "V4",
@@ -245,9 +247,14 @@ describe("climbingRouter", () => {
         },
       ]);
     const { caller, execute } = makeCaller();
-    const input = { days: 30, climbKind: "boulder" as const, setting: "indoor" as const };
+    const input = {
+      days: 30,
+      endDate: "2025-02-05",
+      climbKind: "boulder" as const,
+      setting: "indoor" as const,
+    };
     const result = await caller.strengths(input);
-    expect(lookup).toHaveBeenCalledExactlyOnceWith(30, input);
+    expect(lookup).toHaveBeenCalledExactlyOnceWith(30, input, input.endDate);
     expect(execute).toHaveBeenCalledOnce();
     expect(result.coverage).toEqual({ unknownOutcomes: 1, missingGrades: 0, missingIdentity: 0 });
     const panel = result.panels.find((panel) => panel.dimension === "hold_type");

@@ -260,7 +260,7 @@ function createSeededProviders(
   );
 
   queryClient.setQueryData(
-    [["climbing", "strengths"], { input: { days: 90 }, type: "query" }],
+    [["climbing", "strengths"], { input: { days: 90, endDate }, type: "query" }],
     climbingStrengthsFixture,
   );
 

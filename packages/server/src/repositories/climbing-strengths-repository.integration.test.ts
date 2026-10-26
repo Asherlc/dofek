@@ -56,14 +56,26 @@ describe("climbing strengths PostgreSQL", () => {
     await write("send");
     await write("repeat");
     await write("duplicate", {}, "openbeta");
-    await write("failure", {
-      attempts: [{ scope: "climb", ropeMethod: "lead", sourceResult: "Fall", usedAid: false }],
+    const failureId = await write("failure", {
+      climb: {
+        externalId: "project",
+        name: "Project",
+        kind: "route",
+        setting: "outdoor",
+        publishedGrades: [{ value: "5.10a", system: "yds" }],
+        areas: [{ externalId: "wall", name: "Wall" }],
+      },
+      attempts: [{ scope: "climb", ropeMethod: "lead", sourceResult: "Failed", usedAid: false }],
     });
-    const result = buildClimbingStrengths(await repo().getObservations(30));
+    const observations = await repo().getObservations(30);
+    expect(observations.find((entry) => entry.example.logEntryId === failureId)?.outcome).toBe(
+      "not_sent",
+    );
+    const result = buildClimbingStrengths(observations);
     expect(
       result.panels.find((p) => p.dimension === "setting" && p.grades.some((g) => g.sends > 0))
         ?.grades[0],
-    ).toMatchObject({ climbs: 1, sends: 1, successRate: 100 });
+    ).toMatchObject({ climbs: 2, sends: 1, successRate: 50 });
   });
   it("preserves unknown outcomes and unknown angle units", async () => {
     await write("unknown", {
@@ -125,9 +137,9 @@ describe("climbing strengths PostgreSQL", () => {
       setting: "outdoor",
       areas: [{ externalId: "wall", name: "Wall" }],
     } as const;
-    await write("v4-failure", {
+    const failureId = await write("v4-failure", {
       climb: { ...catalogue, publishedGrades: [{ value: "V4", system: "v_scale" }] },
-      attempts: [{ scope: "climb", usedAid: false, sourceResult: "Fall" }],
+      attempts: [{ scope: "climb", usedAid: false, sourceResult: "Failed" }],
     });
     await write(
       "v5-send",
@@ -137,8 +149,51 @@ describe("climbing strengths PostgreSQL", () => {
       },
       "openbeta",
     );
-    const result = buildClimbingStrengths(await repo().getObservations(30));
+    const observations = await repo().getObservations(30);
+    expect(observations.find((entry) => entry.example.logEntryId === failureId)?.outcome).toBe(
+      "not_sent",
+    );
+    const result = buildClimbingStrengths(observations);
     expect(result.coverage.missingGrades).toBe(2);
     expect(result.panels).toEqual([]);
+  });
+  it("merges a send with a missing grade into the unique known grade-system lane", async () => {
+    const failureId = await write("graded", {
+      attempts: [{ scope: "climb", ropeMethod: "lead", usedAid: false, sourceResult: "Failed" }],
+    });
+    await write(
+      "missingGrade",
+      {
+        climb: {
+          externalId: "climb",
+          name: "Corner",
+          kind: "route",
+          setting: "outdoor",
+          publishedGrades: [],
+          areas: [{ externalId: "wall", name: "Wall" }],
+        },
+      },
+      "openbeta",
+    );
+    const observations = await repo().getObservations(30);
+    expect(observations.find((entry) => entry.example.logEntryId === failureId)?.outcome).toBe(
+      "not_sent",
+    );
+    expect(observations.some((entry) => entry.grade === null && entry.outcome === "sent")).toBe(
+      true,
+    );
+    const result = buildClimbingStrengths(observations);
+    expect(result.coverage.missingGrades).toBe(0);
+    expect(result.panels.find((panel) => panel.dimension === "setting")?.grades).toMatchObject([
+      { climbs: 1, sends: 1, successRate: 100 },
+    ]);
+  });
+  it("anchors a one-day historic window with exclusive lower and inclusive end dates", async () => {
+    await write("before", { climbedOn: "2025-02-04" });
+    const included = await write("included", { climbedOn: "2025-02-05" });
+    await write("after", { climbedOn: "2025-02-06" });
+    expect(
+      (await repo().getObservations(1, {}, "2025-02-05")).map((entry) => entry.example.logEntryId),
+    ).toEqual([included]);
   });
 });
