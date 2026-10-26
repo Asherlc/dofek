@@ -1,6 +1,6 @@
 # WHOOP streaming intent implementation plan
 
-> **For agentic workers:** Use superpowers:subagent-driven-development or superpowers:executing-plans. Keep the test, review, and build checkpoints below explicit.
+> This plan is self-contained. Follow the test, review, and build checkpoints below.
 
 **Goal:** Preserve requested motion capture across automatic reconnect failures and honor explicit cancellation during recovery.
 
@@ -38,7 +38,7 @@
 - [x] Write regressions proving the review-focus cases through actual state transitions and readiness restoration. A failed automatic reconnect must still yield `streaming`; explicit Stop or Disconnect during recovery must yield `ready` after a later successful connection. Assert restored IMU activation where the existing test seam permits it.
 - [x] Run the focused XCTest cases against unchanged production source and retain the expected failures.
 - [x] Preserve pending `wasStreaming` on unexpected failures; clear it unconditionally on explicit Stop and Disconnect. Let the Expo stop handler always cancel intent while issuing the stop command only when the existing characteristic permits it.
-- [x] Run the full WHOOP Swift suite and strict native lint, then obtain independent task review for specification and code quality. Root validates a signed iOS Simulator build to compile the Expo bridge; physical Bluetooth behavior remains a separate check. SwiftPM's exclusion of the Expo bridge is documented in the [module guide](../../../packages/mobile/modules/whoop-ble/AGENTS.md).
+- [x] Run the full WHOOP Swift suite and strict native lint, then obtain independent task review for specification and code quality. Validate a signed iOS Simulator build to compile the Expo bridge; physical Bluetooth behavior remains a separate check. The [Swift package manifest](../../../packages/mobile/modules/whoop-ble/Package.swift) excludes the Expo bridge from SwiftPM.
 - [x] Update the incident record with exact validation, obtain final review, commit, and push the correction.
 
 ## Review checkpoints
