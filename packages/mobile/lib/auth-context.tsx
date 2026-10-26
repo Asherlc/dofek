@@ -1,4 +1,5 @@
 import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
+import { onlineManager } from "@tanstack/react-query";
 import {
   createContext,
   type ReactNode,
@@ -18,10 +19,12 @@ import {
   createAccountErasureCleanupNonce,
   fetchCurrentUser,
   getOrCreateSessionOwnerNonce,
+  getSavedSessionUser,
   getSessionToken,
   invalidateSessionPersistence,
   rotateSessionOwnerNonce,
   saveSessionToken,
+  saveSessionUser,
 } from "./auth";
 import { removeMobileQueryCache } from "./mobile-query-persistence";
 import { isSecureStoreAccessibilityError } from "./secure-store-access";
@@ -106,16 +109,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const retryBootstrap = useCallback(async () => {
     if (activeCleanupLeaseRef.current) return;
     startStartupPhase("authentication");
-    setIsLoading(true);
+    setIsLoading(userRef.current === null);
     bootstrapDeferredRef.current = false;
     let deferBootstrap = false;
-    const bootstrapGeneration = sessionGenerationRef.current;
+    const restoreGeneration = sessionGenerationRef.current + 1;
+    sessionGenerationRef.current = restoreGeneration;
+    const isCurrentRestore = () =>
+      !activeCleanupLeaseRef.current && sessionGenerationRef.current === restoreGeneration;
+    let localSessionRestored = false;
     let startupOutcome: "authenticated" | "deferred" | "error" | "unauthenticated" = "error";
     try {
       const token = await getSessionToken();
-      if (activeCleanupLeaseRef.current || sessionGenerationRef.current !== bootstrapGeneration) {
-        return;
-      }
+      if (!isCurrentRestore()) return;
       if (!token) {
         if (AppState.currentState === "background") {
           // iOS can relaunch the app in the background while the device is locked.
@@ -141,35 +146,54 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       // Re-save to migrate existing tokens to AFTER_FIRST_UNLOCK accessibility
       // so they remain readable when the app runs in the background while locked.
-      const restoreGeneration = bootstrapGeneration + 1;
-      sessionGenerationRef.current = restoreGeneration;
       await saveSessionToken(token);
-      if (activeCleanupLeaseRef.current || sessionGenerationRef.current !== restoreGeneration)
-        return;
+      if (!isCurrentRestore()) return;
       updateSessionToken(token);
 
-      const currentUser = await fetchCurrentUser(SERVER_URL, token);
-      if (activeCleanupLeaseRef.current || sessionGenerationRef.current !== restoreGeneration)
-        return;
-      if (currentUser) {
+      const savedUser = await getSavedSessionUser(token);
+      if (!isCurrentRestore()) return;
+      if (savedUser) {
         const sessionOwnerNonce = await getOrCreateSessionOwnerNonce();
-        if (activeCleanupLeaseRef.current || sessionGenerationRef.current !== restoreGeneration) {
-          return;
-        }
+        if (!isCurrentRestore()) return;
+        updateSessionOwnerNonce(sessionOwnerNonce);
+        updateUser(savedUser);
+        setBootstrapError(null);
+        setIsLoading(false);
+        // Local collection and navigation must not wait for the network request below.
+        finishStartupPhase("authentication", "authenticated");
+        localSessionRestored = true;
+      }
+
+      const currentUser = await fetchCurrentUser(SERVER_URL, token);
+      if (!isCurrentRestore()) return;
+      if (currentUser) {
+        await saveSessionUser(token, currentUser);
+        if (!isCurrentRestore()) return;
+        const sessionOwnerNonce = await getOrCreateSessionOwnerNonce();
+        if (!isCurrentRestore()) return;
         updateSessionOwnerNonce(sessionOwnerNonce);
         updateUser(currentUser);
         setBootstrapError(null);
         startupOutcome = "authenticated";
       } else {
-        await clearSessionToken();
         updateUser(null);
         updateSessionToken(null);
         updateSessionOwnerNonce(null);
         setBootstrapError(null);
+        await clearSessionToken();
+        if (!isCurrentRestore()) return;
         startupOutcome = "unauthenticated";
       }
     } catch (error: unknown) {
-      if (isSecureStoreAccessibilityError(error) && AppState.currentState === "background") {
+      if (!isCurrentRestore()) {
+        captureException(error, { source: "auth-state-restore" });
+        return;
+      }
+      if (
+        !userRef.current &&
+        isSecureStoreAccessibilityError(error) &&
+        AppState.currentState === "background"
+      ) {
         // iOS can relaunch the app in the background while the device is locked.
         // SecureStore reads fail with errSecInteractionNotAllowed in that state,
         // so defer auth restore until the user brings the app to the foreground.
@@ -184,14 +208,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       captureException(error, { source: "auth-state-restore" });
-      updateUser(null);
-      setBootstrapError(
-        userFacingErrorMessage(error, "Your session could not be restored. Please sign in again."),
-      );
+      if (!userRef.current) {
+        updateUser(null);
+        setBootstrapError(
+          userFacingErrorMessage(
+            error,
+            "Your session could not be restored. Please sign in again.",
+          ),
+        );
+      }
       startupOutcome = "error";
     } finally {
-      finishStartupPhase("authentication", startupOutcome);
-      if (!deferBootstrap) {
+      if (!localSessionRestored) finishStartupPhase("authentication", startupOutcome);
+      if (isCurrentRestore() && !deferBootstrap) {
         setIsLoading(false);
       }
     }
@@ -200,16 +229,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // On mount, restore auth state from secure storage.
   useEffect(() => {
     void retryBootstrap();
+    return () => {
+      sessionGenerationRef.current += 1;
+    };
   }, [retryBootstrap]);
 
   useEffect(() => {
     const subscription = AppState.addEventListener("change", (nextState) => {
-      if (nextState === "active" && bootstrapDeferredRef.current) {
+      if (
+        nextState === "active" &&
+        (bootstrapDeferredRef.current || (userRef.current && sessionTokenRef.current))
+      ) {
+        void retryBootstrap();
+      }
+    });
+    const unsubscribeOnline = onlineManager.subscribe((online) => {
+      if (online && userRef.current && sessionTokenRef.current) {
         void retryBootstrap();
       }
     });
 
-    return () => subscription.remove();
+    return () => {
+      subscription.remove();
+      unsubscribeOnline();
+    };
   }, [retryBootstrap]);
 
   const onLoginSuccess = useCallback(
@@ -234,6 +277,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         throw new Error(
           "Account deletion cleanup is still in progress. Try signing in again after cleanup finishes.",
         );
+      }
+      if (currentUser) {
+        await saveSessionUser(token, currentUser);
+        if (activeCleanupLeaseRef.current || sessionGenerationRef.current !== loginGeneration) {
+          throw new Error(
+            "Account deletion cleanup is still in progress. Try signing in again after cleanup finishes.",
+          );
+        }
       }
       const sessionOwnerNonce = await rotateSessionOwnerNonce();
       if (activeCleanupLeaseRef.current || sessionGenerationRef.current !== loginGeneration) {

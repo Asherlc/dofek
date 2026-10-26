@@ -6,6 +6,7 @@ import {
 } from "@dofek/auth/auth";
 import * as AppleAuthentication from "expo-apple-authentication";
 import * as Crypto from "expo-crypto";
+import * as SecureStore from "expo-secure-store";
 import * as WebBrowser from "expo-web-browser";
 import { Platform } from "react-native";
 import { z } from "zod";
@@ -20,6 +21,7 @@ export type { AuthUser, ConfiguredProviders };
 export { AuthUserSchema, ConfiguredProvidersSchema };
 
 const SESSION_TOKEN_KEY = "dofek_session_token";
+const SESSION_USER_KEY = "dofek_session_user_v1";
 const SESSION_OWNER_NONCE_KEY = "dofek_session_owner_nonce_v1";
 const APP_SCHEME = "dofek";
 const ErrorResponseSchema = z.object({ error: z.string().min(1) });
@@ -84,6 +86,12 @@ export async function saveSessionToken(token: string): Promise<void> {
   const writeGeneration = sessionPersistenceGeneration;
   await serializeSessionPersistence(async () => {
     if (writeGeneration !== sessionPersistenceGeneration) return;
+    const storedToken = await readSecureStoreItem(SESSION_TOKEN_KEY);
+    if (writeGeneration !== sessionPersistenceGeneration) return;
+    if (storedToken !== token) {
+      await SecureStore.deleteItemAsync(SESSION_USER_KEY);
+      if (writeGeneration !== sessionPersistenceGeneration) return;
+    }
     await writeSecureStoreItem(SESSION_TOKEN_KEY, token);
     if (writeGeneration === sessionPersistenceGeneration) {
       cachedSessionToken = token;
@@ -109,6 +117,34 @@ export async function getSessionToken(): Promise<string | null> {
   });
 }
 
+/** Save a verified user only while their session token remains persisted. */
+export async function saveSessionUser(token: string, user: AuthUser): Promise<void> {
+  const writeGeneration = sessionPersistenceGeneration;
+  await serializeSessionPersistence(async () => {
+    if (writeGeneration !== sessionPersistenceGeneration) return;
+    const storedToken = await readSecureStoreItem(SESSION_TOKEN_KEY);
+    if (writeGeneration !== sessionPersistenceGeneration || storedToken !== token) return;
+    await writeSecureStoreItem(SESSION_USER_KEY, JSON.stringify(AuthUserSchema.parse(user)));
+    if (writeGeneration !== sessionPersistenceGeneration) {
+      await SecureStore.deleteItemAsync(SESSION_USER_KEY);
+    }
+  });
+}
+
+/** Restore the saved user belonging to the persisted token without a network request. */
+export async function getSavedSessionUser(token: string): Promise<AuthUser | null> {
+  const readGeneration = sessionPersistenceGeneration;
+  return serializeSessionPersistence(async () => {
+    if (readGeneration !== sessionPersistenceGeneration) return null;
+    const storedToken = await readSecureStoreItem(SESSION_TOKEN_KEY);
+    if (readGeneration !== sessionPersistenceGeneration || storedToken !== token) return null;
+    const storedUser = await readSecureStoreItem(SESSION_USER_KEY);
+    if (readGeneration !== sessionPersistenceGeneration || storedUser === null) return null;
+    const data: unknown = JSON.parse(storedUser);
+    return AuthUserSchema.parse(data);
+  });
+}
+
 /** Clear the session token (logout). */
 export async function clearSessionToken(): Promise<void> {
   invalidateSessionPersistence();
@@ -116,6 +152,7 @@ export async function clearSessionToken(): Promise<void> {
     cachedSessionToken = null;
     await Promise.all([
       deleteSecureStoreItem(SESSION_TOKEN_KEY),
+      SecureStore.deleteItemAsync(SESSION_USER_KEY),
       deleteSecureStoreItem(SESSION_OWNER_NONCE_KEY),
     ]);
     cachedSessionToken = null;

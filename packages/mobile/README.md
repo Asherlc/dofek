@@ -22,6 +22,24 @@ The mobile app for Dofek. Built with Expo and React Native, with native Swift mo
 - **Mobile Dashboard**: Simplified mobile-first health and recovery tracking with SVG-based charts (`react-native-svg`).
 - **Nutrition history**: Read-only nutrition history, totals, source resolution, and analytics.
 
+## Offline startup
+
+After a successful sign-in or online session restore, the app saves the verified
+user alongside the session in [SecureStore](https://docs.expo.dev/versions/latest/sdk/securestore/).
+Subsequent launches restore that local session before contacting the server, so
+navigation and Bluetooth sample collection can start without internet access.
+Session verification runs in the background and repeats on foregrounding or
+reconnection through the existing [network lifecycle](lib/mobile-query-lifecycle.ts).
+A rejected session clears local authentication; connection failures preserve it.
+Sign-out and account deletion remove the saved identity.
+
+First-time sign-in, and the first online restore after upgrading from a version
+that saved only the token, need internet to establish the saved identity.
+Bluetooth uploads retain unconfirmed samples during connection failures; see the
+[WHOOP buffer contract](modules/whoop-ble/README.md) and
+[heart-rate buffer implementation](modules/ble-heart-rate/ios/BleHeartRateSampleBuffer.swift).
+These sample buffers remain in memory and do not survive process termination.
+
 ## Project Structure
 
 Activity-list cards use the stored cycling modality to show training stats instead
@@ -301,8 +319,11 @@ Then:
    error.
 
 The post-termination authenticated screen is the required read proof:
-`AuthProvider` can render it only after the new process restores the session
-token through SecureStore and verifies it with the server. Static signature
+`AuthProvider` restores the session token and saved user through SecureStore,
+then verifies the session with the server in the background. Repeat the
+hard-stop and relaunch with internet unavailable to verify that local session
+restoration still reaches the app. Check the server logs separately for the
+online verification request. Static signature
 inspection can support the evidence:
 
 ```bash

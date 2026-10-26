@@ -1,3 +1,4 @@
+import { onlineManager } from "@tanstack/react-query";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { createElement } from "react";
@@ -7,6 +8,8 @@ import { AuthProvider, useAuth } from "./auth-context";
 
 const mockRemoveMobileQueryCache = vi.hoisted(() => vi.fn(() => Promise.resolve()));
 const mockClearAccountErasurePreparation = vi.hoisted(() => vi.fn(() => Promise.resolve()));
+const mockGetSavedSessionUser = vi.hoisted(() => vi.fn());
+const mockSaveSessionUser = vi.hoisted(() => vi.fn(() => Promise.resolve()));
 
 // expo-secure-store, expo-web-browser, expo-apple-authentication, and react-native
 // are mocked globally in test-setup.ts
@@ -49,6 +52,8 @@ vi.mock("./auth", async (importOriginal) => {
     invalidateSessionPersistence: vi.fn(),
     rotateSessionOwnerNonce: vi.fn(() => Promise.resolve("11111111-1111-4111-8111-111111111111")),
     saveSessionToken: vi.fn(() => Promise.resolve()),
+    getSavedSessionUser: mockGetSavedSessionUser,
+    saveSessionUser: mockSaveSessionUser,
     fetchCurrentUser: vi.fn(() => Promise.resolve(null)),
   };
 });
@@ -58,6 +63,10 @@ function wrapper({ children }: { children: ReactNode }) {
 }
 
 describe("auth-context", () => {
+  beforeEach(() => {
+    mockGetSavedSessionUser.mockResolvedValue(null);
+  });
+
   it("exports AuthProvider and useAuth", async () => {
     const mod = await import("./auth-context");
     expect(mod.AuthProvider).toBeDefined();
@@ -259,6 +268,143 @@ describe("auth-context", () => {
       });
 
       expect(authLogout).toHaveBeenCalledWith(expect.any(String), "existing-token");
+    });
+  });
+
+  describe("offline session restoration", () => {
+    const savedUser = { id: "user-1", name: "Test User", email: "test@example.com" };
+
+    beforeEach(async () => {
+      vi.clearAllMocks();
+      AppState.currentState = "active";
+      const { getSessionToken } = await import("./auth");
+      vi.mocked(getSessionToken).mockResolvedValue("existing-token");
+      mockGetSavedSessionUser.mockResolvedValue(savedUser);
+    });
+
+    it("opens the saved session before server verification completes", async () => {
+      const { fetchCurrentUser } = await import("./auth");
+      let finishVerification: ((user: typeof savedUser) => void) | undefined;
+      vi.mocked(fetchCurrentUser).mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finishVerification = resolve;
+          }),
+      );
+      const { result } = renderHook(() => useAuth(), { wrapper });
+
+      try {
+        await waitFor(() => expect(result.current.isLoading).toBe(false));
+        expect(result.current.user).toEqual(savedUser);
+        expect(result.current.sessionToken).toBe("existing-token");
+        expect(result.current.accountSessionOwnerNonce).not.toBeNull();
+        expect(result.current.bootstrapError).toBeNull();
+      } finally {
+        await act(async () => finishVerification?.(savedUser));
+      }
+    });
+
+    it("keeps the saved session usable when verification fails offline", async () => {
+      const { fetchCurrentUser, clearSessionToken } = await import("./auth");
+      const error = new TypeError("Network request failed");
+      vi.mocked(fetchCurrentUser).mockRejectedValueOnce(error);
+      const { result } = renderHook(() => useAuth(), { wrapper });
+
+      await waitFor(() => expect(result.current.isLoading).toBe(false));
+      expect(result.current.user).toEqual(savedUser);
+      expect(result.current.bootstrapError).toBeNull();
+      expect(clearSessionToken).not.toHaveBeenCalled();
+      expect(mockCaptureException).toHaveBeenCalledWith(error, { source: "auth-state-restore" });
+    });
+
+    it("clears the saved session when the server rejects the token", async () => {
+      const { fetchCurrentUser, clearSessionToken } = await import("./auth");
+      vi.mocked(fetchCurrentUser).mockResolvedValueOnce(null);
+      const { result } = renderHook(() => useAuth(), { wrapper });
+
+      await waitFor(() => expect(clearSessionToken).toHaveBeenCalledOnce());
+      expect(result.current.user).toBeNull();
+      expect(result.current.sessionToken).toBeNull();
+      expect(result.current.bootstrapError).toBeNull();
+    });
+
+    it("ends a rejected session even when persisted identity cleanup fails", async () => {
+      const { fetchCurrentUser, clearSessionToken } = await import("./auth");
+      vi.mocked(fetchCurrentUser).mockResolvedValueOnce(null);
+      vi.mocked(clearSessionToken).mockRejectedValueOnce(new Error("Keychain unavailable"));
+      const { result } = renderHook(() => useAuth(), { wrapper });
+
+      await waitFor(() => expect(mockCaptureException).toHaveBeenCalled());
+      expect(result.current.user).toBeNull();
+      expect(result.current.sessionToken).toBeNull();
+      expect(result.current.accountSessionOwnerNonce).toBeNull();
+      expect(result.current.bootstrapError).toBe("Keychain unavailable");
+    });
+
+    it("persists the verified user for the next offline launch", async () => {
+      const { fetchCurrentUser } = await import("./auth");
+      mockGetSavedSessionUser.mockResolvedValue(null);
+      vi.mocked(fetchCurrentUser).mockResolvedValueOnce(savedUser);
+      renderHook(() => useAuth(), { wrapper });
+
+      await waitFor(() =>
+        expect(mockSaveSessionUser).toHaveBeenCalledWith("existing-token", savedUser),
+      );
+    });
+
+    it("rechecks the saved session when connectivity returns", async () => {
+      const { fetchCurrentUser } = await import("./auth");
+      onlineManager.setOnline(false);
+      vi.mocked(fetchCurrentUser)
+        .mockRejectedValueOnce(new TypeError("Network request failed"))
+        .mockResolvedValueOnce({ ...savedUser, name: "Updated User" });
+      const { result } = renderHook(() => useAuth(), { wrapper });
+
+      try {
+        await waitFor(() => expect(mockCaptureException).toHaveBeenCalled());
+        await act(async () => onlineManager.setOnline(true));
+        await waitFor(() => expect(result.current.user?.name).toBe("Updated User"));
+        expect(result.current.isLoading).toBe(false);
+        expect(result.current.bootstrapError).toBeNull();
+      } finally {
+        onlineManager.setOnline(true);
+      }
+    });
+
+    it("does not replace a newer login when old verification fails", async () => {
+      const { fetchCurrentUser, logout: authLogout } = await import("./auth");
+      vi.mocked(authLogout).mockResolvedValue();
+      let failVerification: ((error: Error) => void) | undefined;
+      vi.mocked(fetchCurrentUser).mockImplementationOnce(
+        () =>
+          new Promise((_resolve, reject) => {
+            failVerification = reject;
+          }),
+      );
+      const { result } = renderHook(() => useAuth(), { wrapper });
+
+      try {
+        await waitFor(() => expect(result.current.isLoading).toBe(false));
+        await act(async () => result.current.logout());
+        vi.mocked(fetchCurrentUser).mockResolvedValueOnce({
+          id: "second-account",
+          name: "Second User",
+          email: null,
+        });
+        await act(async () => result.current.onLoginSuccess("second-token"));
+        await act(async () => failVerification?.(new TypeError("Network request failed")));
+
+        expect(result.current.user?.id).toBe("second-account");
+        expect(result.current.sessionToken).toBe("second-token");
+        expect(result.current.bootstrapError).toBeNull();
+        expect(mockSaveSessionUser).toHaveBeenCalledWith("second-token", {
+          id: "second-account",
+          name: "Second User",
+          email: null,
+        });
+      } finally {
+        await act(async () => failVerification?.(new TypeError("Network request failed")));
+      }
     });
   });
 
@@ -615,5 +761,51 @@ describe("auth-context", () => {
       expect(result.current.user?.id).toBe("user-2");
       expect(result.current.isAccountErasureCleanupLeaseCurrent(cleanupLease)).toBe(false);
     });
+  });
+
+  it("restores a signed-in user after a cold offline launch using persisted keychain state", async () => {
+    const original = await vi.importActual<typeof import("./auth")>("./auth");
+    const auth = await import("./auth");
+    original.resetSessionTokenCacheForTests();
+    vi.mocked(auth.getSessionToken).mockImplementation(original.getSessionToken);
+    vi.mocked(auth.saveSessionToken).mockImplementation(original.saveSessionToken);
+    vi.mocked(auth.rotateSessionOwnerNonce).mockImplementation(original.rotateSessionOwnerNonce);
+    mockGetSavedSessionUser.mockImplementation(original.getSavedSessionUser);
+    mockSaveSessionUser.mockImplementation(original.saveSessionUser);
+    const user = { id: "cold-launch-user", name: "Saved User", email: null };
+    vi.mocked(auth.fetchCurrentUser).mockResolvedValueOnce(user);
+    const initialLaunch = renderHook(() => useAuth(), { wrapper });
+
+    try {
+      await waitFor(() => expect(initialLaunch.result.current.isLoading).toBe(false));
+      await act(async () => initialLaunch.result.current.onLoginSuccess("persisted-token"));
+      const savedOwner = initialLaunch.result.current.accountSessionOwnerNonce;
+      initialLaunch.unmount();
+      // A new process has no token or React state in memory; only keychain survives.
+      original.resetSessionTokenCacheForTests();
+      const offlineError = new TypeError("Network request failed");
+      vi.mocked(auth.fetchCurrentUser).mockRejectedValueOnce(offlineError);
+      const offlineLaunch = renderHook(() => useAuth(), { wrapper });
+
+      try {
+        await waitFor(() => expect(offlineLaunch.result.current.isLoading).toBe(false));
+        expect(offlineLaunch.result.current.user).toEqual(user);
+        expect(offlineLaunch.result.current.sessionToken).toBe("persisted-token");
+        expect(offlineLaunch.result.current.accountSessionOwnerNonce).toBe(savedOwner);
+        expect(offlineLaunch.result.current.bootstrapError).toBeNull();
+      } finally {
+        offlineLaunch.unmount();
+      }
+    } finally {
+      initialLaunch.unmount();
+      original.resetSessionTokenCacheForTests();
+      vi.mocked(auth.getSessionToken).mockReset().mockResolvedValue(null);
+      vi.mocked(auth.saveSessionToken).mockReset().mockResolvedValue();
+      vi.mocked(auth.rotateSessionOwnerNonce)
+        .mockReset()
+        .mockResolvedValue("11111111-1111-4111-8111-111111111111");
+      mockGetSavedSessionUser.mockReset().mockResolvedValue(null);
+      mockSaveSessionUser.mockReset().mockResolvedValue();
+    }
   });
 });
