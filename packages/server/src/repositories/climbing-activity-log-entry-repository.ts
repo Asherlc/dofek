@@ -28,6 +28,7 @@ const databaseRowSchema = z.object({
     providerAbsentAt: timestampStringSchema.nullable(),
   }),
   climb: climbingLogClimbDetailSchema.nullable(),
+  freeSend: z.boolean().nullable(),
   attempts: z.array(
     z
       .object({ ...climbingAttemptSchema.shape, createdAt: timestampStringSchema })
@@ -304,6 +305,7 @@ export class ClimbingActivityLogEntryRepository extends BaseRepository {
           'publishedGrades',COALESCE((SELECT jsonb_agg(jsonb_build_object('value',component.value,'system',component.system) ORDER BY component.position) FROM fitness.pitch_grade AS component WHERE component.pitch_id=pitch.id),'[]'::jsonb)
         ) ORDER BY pitch.number NULLS LAST,pitch.id) FROM fitness.pitch AS pitch WHERE pitch.climb_id=catalogue.id),'[]'::jsonb)
       ) END AS climb,
+      entry.free_send AS "freeSend",
       COALESCE((SELECT jsonb_agg(jsonb_build_object(
         'id',attempt.id,'climbingLogEntryId',attempt.climbing_log_entry_id,'scope',attempt.scope,'pitchId',attempt.pitch_id,
         'parentAttemptId',attempt.parent_attempt_id,'attemptIndex',attempt.attempt_index,'outcome',attempt.outcome,
@@ -357,6 +359,7 @@ export class ClimbingActivityLogEntryRepository extends BaseRepository {
         recordedClimbAttemptCount: row.log.providerId === "mountain-project" ? null : whole.length,
         recordedPitchAttemptCount: row.attempts.length - whole.length,
         recordedClimbOutcome: recordedOutcome(whole),
+        freeSend: row.freeSend,
         pitchResults,
         displayGrade: displayGradeComponents(
           this.#gradePreference,

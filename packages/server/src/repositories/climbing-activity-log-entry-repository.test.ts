@@ -38,6 +38,17 @@ function repository(logs: ClimbingLogEntryDetail[]) {
   );
 }
 describe("ClimbingActivityLogEntryRepository", () => {
+  it.each([true, false, null])("retains the database free-send state %s", async (freeSend) => {
+    const log = named("openbeta");
+    const execute = vi.fn().mockResolvedValue([{ ...climbingLogDatabaseFixture(log), freeSend }]);
+    const repo = new ClimbingActivityLogEntryRepository(
+      { execute },
+      "20000000-0000-4000-8000-000000000002",
+      "UTC",
+    );
+    const [result] = await repo.getLogEntries([log.id]);
+    expect(result?.toDetail()).toMatchObject({ freeSend });
+  });
   it("returns unique native map owners for each requested canonical activity", async () => {
     const climb = climbingClimbFixture("openbeta");
     const source = {

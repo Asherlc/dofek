@@ -39,7 +39,7 @@ function record(overrides: Partial<EffectiveFoodRecord> = {}): EffectiveFoodReco
     numberOfUnits: 1,
     servingUnit: "bowl",
     servingWeightGrams: 80,
-    nutrients: { calories: 300, protein: 10 },
+    nutrients: { calories: 300, protein: 10, carbohydrate: 40, fat: 8 },
     sourceProvider: "dofek",
     provenance: {},
     ...overrides,
@@ -100,6 +100,289 @@ function setup(overrides: Partial<FoodRecordRepositoryCommands> = {}) {
 }
 
 describe("FoodRecordService", () => {
+  const completeNutrition = { calories: 300, protein: 10, carbohydrate: 40, fat: 8 };
+
+  it.each(["calories", "protein", "carbohydrate", "fat"])(
+    "requires known %s when creating food",
+    async (missing) => {
+      const nutrients = Object.fromEntries(
+        Object.entries(completeNutrition).filter(([id]) => id !== missing),
+      );
+      const { service } = setup({ get: vi.fn(async () => record({ nutrients })) });
+      await expect(
+        service.create({ requestId, date: "2026-09-07", foodName: "Cookies", nutrients }),
+      ).rejects.toMatchObject({
+        code: "INVALID_ARGUMENT",
+        details: { reason: "MISSING_REQUIRED_NUTRITION" },
+      });
+    },
+  );
+
+  it.each([
+    ["protein shake", { calories: 0, protein: 40, carbohydrate: 0, fat: 0 }],
+    ["oil", { calories: 20, protein: 0, carbohydrate: 0, fat: 10 }],
+  ])("rejects impossible calories for %s even with evidence", async (foodName, nutrients) => {
+    const { service, invalidateNutritionCaches } = setup({
+      get: vi.fn(async () => record({ nutrients })),
+    });
+    await expect(
+      service.create({
+        requestId,
+        date: "2026-09-07",
+        foodName,
+        nutrients,
+        zeroCalorieEvidence: "Manufacturer label",
+      }),
+    ).rejects.toMatchObject({
+      code: "INVALID_ARGUMENT",
+      details: { reason: "CALORIES_BELOW_MACRO_MINIMUM" },
+    });
+    expect(invalidateNutritionCaches).not.toHaveBeenCalled();
+  });
+
+  it("rejects all-zero cookies without explicit source evidence", async () => {
+    const nutrients = { calories: 0, protein: 0, carbohydrate: 0, fat: 0 };
+    const { service } = setup({ get: vi.fn(async () => record({ nutrients })) });
+    await expect(
+      service.create({ requestId, date: "2026-09-07", foodName: "Two cookies", nutrients }),
+    ).rejects.toMatchObject({
+      code: "INVALID_ARGUMENT",
+      details: { reason: "ZERO_CALORIE_EVIDENCE_REQUIRED" },
+    });
+  });
+
+  it.each([
+    { calories: 144, protein: 36, carbohydrate: 0, fat: 0 },
+    { calories: 100, protein: 4, carbohydrate: 23, fat: 3 },
+    { calories: 0, protein: 0, carbohydrate: 8, fat: 0 },
+    { calories: 10, protein: 0, carbohydrate: 0, fat: 2 },
+    { calories: 20, protein: 7, carbohydrate: 0, fat: 2 },
+  ])("preserves legitimate label nutrition %j", async (nutrients) => {
+    const { service } = setup({ get: vi.fn(async () => record({ nutrients })) });
+    const result = await service.create({
+      requestId,
+      date: "2026-09-07",
+      foodName: "Sourced food",
+      nutrients,
+      zeroCalorieEvidence: "Manufacturer label",
+    });
+    expect(result.record.nutrients).toEqual(nutrients);
+  });
+
+  it("retains source evidence alongside existing description for zero-calorie water", async () => {
+    const nutrients = { calories: 0, protein: 0, carbohydrate: 0, fat: 0 };
+    const { service, repository } = setup({ get: vi.fn(async () => record({ nutrients })) });
+    await service.create({
+      requestId,
+      date: "2026-09-07",
+      foodName: "Water",
+      foodDescription: "500 mL",
+      nutrients,
+      zeroCalorieEvidence: "User confirmed plain water",
+    });
+    expect(repository.createSourceAndIdentity).toHaveBeenCalledWith(
+      expect.objectContaining({
+        foodDescription: "500 mL\nZero-calorie evidence: User confirmed plain water",
+      }),
+    );
+  });
+
+  it.each([
+    { calories: 0, protein: 40 },
+    { calories: 30, protein: 10, fat: 10 },
+  ])("validates the merged update result %j", async (nutrients) => {
+    const { service, invalidateNutritionCaches } = setup({
+      get: vi.fn(async () => record({ nutrients })),
+    });
+    await expect(
+      service.update({
+        recordId,
+        expectedVersion: firstVersion,
+        requestId,
+        set: { foodName: "Correction" },
+        clear: [],
+        nutrientSet: {},
+        nutrientClear: [],
+      }),
+    ).rejects.toMatchObject({
+      code: "INVALID_ARGUMENT",
+      details: { reason: "CALORIES_BELOW_MACRO_MINIMUM" },
+    });
+    expect(invalidateNutritionCaches).not.toHaveBeenCalled();
+  });
+
+  it("requires evidence when a scalar-only update leaves zero calories", async () => {
+    const { service } = setup({ get: vi.fn(async () => record({ nutrients: { calories: 0 } })) });
+    await expect(
+      service.update({
+        recordId,
+        expectedVersion: firstVersion,
+        requestId,
+        set: { foodName: "Cookies" },
+        clear: [],
+        nutrientSet: {},
+        nutrientClear: [],
+      }),
+    ).rejects.toMatchObject({
+      code: "INVALID_ARGUMENT",
+      details: { reason: "ZERO_CALORIE_EVIDENCE_REQUIRED" },
+    });
+  });
+
+  it("appends evidence to the effective description on update", async () => {
+    const { service, repository } = setup({
+      get: vi.fn(async () => record({ foodDescription: "500 mL", nutrients: { calories: 0 } })),
+    });
+    await service.update({
+      recordId,
+      expectedVersion: firstVersion,
+      requestId,
+      set: { foodName: "Water" },
+      clear: [],
+      nutrientSet: {},
+      nutrientClear: [],
+      zeroCalorieEvidence: "User confirmed plain water",
+    });
+    expect(repository.appendChange).toHaveBeenCalledWith(
+      expect.objectContaining({
+        fields: {
+          food_name: { operation: "set", value: "Water" },
+          food_description: {
+            operation: "set",
+            value: "500 mL\nZero-calorie evidence: User confirmed plain water",
+          },
+        },
+      }),
+    );
+  });
+
+  it("accepts evidence as the only update decision", async () => {
+    const { service, repository } = setup({
+      get: vi.fn(async () => record({ foodDescription: "500 mL", nutrients: { calories: 0 } })),
+    });
+    await expect(
+      service.update({
+        recordId,
+        expectedVersion: firstVersion,
+        requestId,
+        set: {},
+        clear: [],
+        nutrientSet: {},
+        nutrientClear: [],
+        zeroCalorieEvidence: "User confirmed plain water",
+      }),
+    ).resolves.toMatchObject({ operation: { replayed: false } });
+    expect(repository.appendChange).toHaveBeenCalledWith(
+      expect.objectContaining({
+        fields: {
+          food_description: {
+            operation: "set",
+            value: "500 mL\nZero-calorie evidence: User confirmed plain water",
+          },
+        },
+      }),
+    );
+  });
+
+  it("replays previously accepted impossible nutrition without revalidating", async () => {
+    const { service } = setup({
+      appendChange: vi.fn(async () => head({ replayed: true })),
+      get: vi.fn(async () => record({ nutrients: { calories: 0, protein: 40 } })),
+    });
+    await expect(
+      service.update({
+        recordId,
+        expectedVersion: firstVersion,
+        requestId,
+        set: { foodName: "Old shake" },
+        clear: [],
+        nutrientSet: {},
+        nutrientClear: [],
+      }),
+    ).resolves.toMatchObject({ operation: { replayed: true }, affectedDates: [] });
+  });
+
+  it("replays a historical partial create receipt without requiring new nutrition", async () => {
+    const { service, invalidateNutritionCaches } = setup({
+      createSourceAndIdentity: vi.fn(async () => head({ kind: "create", replayed: true })),
+      get: vi.fn(async () => record({ nutrients: { protein: 40 } })),
+    });
+    await expect(
+      service.create({
+        requestId,
+        date: "2026-09-07",
+        foodName: "Historical shake",
+        nutrients: { protein: 40 },
+      }),
+    ).resolves.toMatchObject({
+      operation: { replayed: true },
+      affectedDates: [],
+      record: { nutrients: { protein: 40 } },
+    });
+    expect(invalidateNutritionCaches).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { calories: null, protein: 40, fat: 10 },
+    { calories: 300, protein: null, fat: null },
+  ])("preserves unknown nutrients in effective updates %j", async (nutrients) => {
+    const { service } = setup({ get: vi.fn(async () => record({ nutrients })) });
+    await expect(
+      service.update({
+        recordId,
+        expectedVersion: firstVersion,
+        requestId,
+        set: {},
+        clear: [],
+        nutrientSet: { calories: null },
+        nutrientClear: [],
+      }),
+    ).resolves.toMatchObject({ record: { nutrients } });
+  });
+
+  it.each([Number.NaN, Number.POSITIVE_INFINITY, -1])(
+    "rejects invalid source nutrient amounts %s on updates",
+    async (protein) => {
+      const { service } = setup({
+        get: vi.fn(async () => record({ nutrients: { calories: 300, protein } })),
+      });
+      await expect(
+        service.update({
+          recordId,
+          expectedVersion: firstVersion,
+          requestId,
+          set: { foodName: "Correction" },
+          clear: [],
+          nutrientSet: {},
+          nutrientClear: [],
+        }),
+      ).rejects.toMatchObject({
+        code: "INVALID_ARGUMENT",
+        details: { reason: "INVALID_NUTRIENT_AMOUNT" },
+      });
+    },
+  );
+
+  it.each([
+    [48, true],
+    [47.9, false],
+  ] as const)("applies conservative rounding allowance at %s kcal", async (calories, accepted) => {
+    const nutrients = { calories, protein: 11, carbohydrate: 0, fat: 6 };
+    const { service } = setup({ get: vi.fn(async () => record({ nutrients })) });
+    const operation = service.create({
+      requestId,
+      date: "2026-09-07",
+      foodName: "Rounded label",
+      nutrients,
+    });
+    if (accepted) await expect(operation).resolves.toMatchObject({ record: { nutrients } });
+    else
+      await expect(operation).rejects.toMatchObject({
+        code: "INVALID_ARGUMENT",
+        details: { reason: "CALORIES_BELOW_MACRO_MINIMUM", minimumCalories: 48 },
+      });
+  });
+
   it.each(["create", "delete"] as const)("sanitizes unexpected %s telemetry", async (operation) => {
     vi.mocked(captureException).mockClear();
     const secret = "private-food-value-8321";
@@ -147,7 +430,7 @@ describe("FoodRecordService", () => {
     const created = record({
       version: secondVersion,
       foodName: "Rice",
-      nutrients: { calories: 220 },
+      nutrients: { calories: 220, protein: 4, carbohydrate: 46, fat: 2 },
     });
     const { invalidateNutritionCaches, repository, service, withUserWriteFence } = setup({
       get: vi.fn(async () => created),
@@ -164,7 +447,7 @@ describe("FoodRecordService", () => {
         numberOfUnits: 1,
         servingUnit: "plate",
         servingWeightGrams: 180,
-        nutrients: { calories: 220 },
+        nutrients: { calories: 220, protein: 4, carbohydrate: 46, fat: 2 },
       }),
     ).resolves.toEqual({
       operation: { changeId, resultingVersion: secondVersion, replayed: false },
@@ -226,7 +509,7 @@ describe("FoodRecordService", () => {
     const facts = {
       date: "2026-09-07",
       foodName: "Oats",
-      nutrients: { protein: 10 },
+      nutrients: completeNutrition,
     };
 
     await service.create({ requestId, ...facts });

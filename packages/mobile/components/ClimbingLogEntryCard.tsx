@@ -44,6 +44,7 @@ export function ClimbingLogEntryCard({
           entry.attempts
             .filter((attempt) => attempt.scope === "climb")
             .flatMap((attempt) => attempt.rockResultLabels),
+          entry.freeSend,
         );
   return (
     <View

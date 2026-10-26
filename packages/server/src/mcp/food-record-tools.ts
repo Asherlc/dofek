@@ -35,6 +35,14 @@ const nutrientIdSchema = z.string().refine((value) => nutrientIds.has(value), {
 const nutrientAmountSchema = z.number().finite().nonnegative();
 const nullableNutrientAmountSchema = nutrientAmountSchema.nullable();
 const nullableNonemptyTextSchema = z.string().trim().min(1).nullable();
+const zeroCalorieEvidenceSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .optional()
+  .describe(
+    "Required whenever the resulting calories are zero. Identify the product label, manufacturer, reliable food database (include a URL when available), or user confirmation of a genuinely zero-calorie item. This evidence is retained in food_description and cannot override contradictory protein/fat values. Never use zero for unknown nutrition.",
+  );
 const editableFieldSchema = z.enum([
   "date",
   "meal",
@@ -349,13 +357,14 @@ export function registerFoodRecordTools(server: McpServer, context: DofekMcpCont
     {
       title: "Create Food Entry",
       description:
-        "Create one itemized Dofek food record and return that day's calorie and macro preview. Calories, protein, carbohydrate, and fat are required for the consumed portion. Obtain them from a product label, manufacturer, or reliable food database before calling this tool. Also seek and include available fiber and micronutrients (vitamins and minerals). Ask for the brand, label, portion, or missing required nutrition when needed. Never invent missing values, fill blanks with zero, or substitute zero for unknown nutrients. Zero is valid only when explicitly known. Use estimates only with the user's approval and identify them as estimates. Do not call this tool until all four required values are available.",
+        "Create one itemized Dofek food record and return that day's calorie and macro preview. Calories, protein, carbohydrate, and fat are required for the consumed portion. Obtain them from a product label, manufacturer, or reliable food database before calling this tool. Also seek and include available fiber and micronutrients (vitamins and minerals). Ask for the brand, label, portion, or missing required nutrition when needed. Never invent missing values, fill blanks with zero, or substitute zero for unknown nutrients. Zero is valid only when explicitly known; zero calories require zero_calorie_evidence. Contradictory calories and protein/fat are rejected; recheck the source and consumed portion, preserving label calories rather than forcing 4/4/9 equality. Use estimates only with the user's approval and identify them as estimates. Do not call this tool until all four required values are available.",
       annotations: mutationAnnotations,
       inputSchema: z.object({
         request_id: requestIdSchema,
         date: dateSchema,
         meal: z.enum(mealEnum.enumValues).nullable().optional(),
         food_name: z.string().trim().min(1),
+        zero_calorie_evidence: zeroCalorieEvidenceSchema,
         food_description: nullableNonemptyTextSchema
           .optional()
           .describe(
@@ -402,6 +411,7 @@ export function registerFoodRecordTools(server: McpServer, context: DofekMcpCont
       date,
       meal,
       food_name,
+      zero_calorie_evidence,
       food_description,
       category,
       number_of_units,
@@ -418,6 +428,7 @@ export function registerFoodRecordTools(server: McpServer, context: DofekMcpCont
               date,
               meal,
               foodName: food_name,
+              zeroCalorieEvidence: zero_calorie_evidence,
               foodDescription: food_description,
               category,
               numberOfUnits: number_of_units,
@@ -439,10 +450,11 @@ export function registerFoodRecordTools(server: McpServer, context: DofekMcpCont
     {
       title: "Update Food Entry",
       description:
-        "Append validated scalar and nutrient decisions to a food record and return that day's calorie and macro preview. When filling missing nutrition, seek calories, macros, and fiber for the consumed portion from a product label, manufacturer, or reliable food database; ask for missing brand, label, or portion details. Also seek and include available micronutrients (vitamins and minerals). Never invent values or substitute zero for unknown nutrients. Use estimates only with the user's approval, identify their basis in food_description, and explain any remaining gaps. Preserve existing nutrients unless the user requests a correction or removal.",
+        "Append validated scalar and nutrient decisions to a food record and return that day's calorie and macro preview. The complete effective result, including unchanged and source-cleared nutrients, must have consistent calories and protein/fat. If resulting calories are zero, supply zero_calorie_evidence even for a scalar-only edit. When filling missing nutrition, seek calories, macros, and fiber for the consumed portion from a product label, manufacturer, or reliable food database; ask for missing brand, label, or portion details. Also seek and include available micronutrients (vitamins and minerals). Never invent values or substitute zero for unknown nutrients. Use estimates only with the user's approval, identify their basis in food_description, and explain any remaining gaps. Preserve existing nutrients unless the user requests a correction or removal.",
       annotations: mutationAnnotations,
       inputSchema: z.object({
         ...targetInputSchema,
+        zero_calorie_evidence: zeroCalorieEvidenceSchema,
         set: z.object({
           date: dateSchema.optional(),
           meal: z.enum(mealEnum.enumValues).nullable().optional(),
@@ -468,6 +480,7 @@ export function registerFoodRecordTools(server: McpServer, context: DofekMcpCont
       record_id,
       expected_version,
       request_id,
+      zero_calorie_evidence,
       set,
       clear,
       nutrient_set,
@@ -481,6 +494,7 @@ export function registerFoodRecordTools(server: McpServer, context: DofekMcpCont
               recordId: record_id,
               expectedVersion: expected_version,
               requestId: request_id,
+              zeroCalorieEvidence: zero_calorie_evidence,
               set: scalarSetToDomain(set),
               clear: clear.map(editableFieldToDomain),
               nutrientSet: nutrient_set,
