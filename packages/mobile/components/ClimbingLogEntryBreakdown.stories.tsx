@@ -192,18 +192,32 @@ export const Wide: Story = {
 export const SingleClimbWall: Story = {
   args: {
     entries: [
-      climbingLogFixture,
-      { ...climbingLogFixture, id: "repeat" },
-      climbingLogEntryFixture({
-        id: "singleton",
-        climb: climbingClimbFixture(),
-        displayGrade: "5.10a",
-      }),
-    ],
+      { id: "hunger-pains", name: "Hunger Pains", wall: "Wreckage Wall", grade: "5.10b" },
+      {
+        id: "short-term-memory",
+        name: "Short Term Memory",
+        wall: "Memorial Wall",
+        grade: "5.10a",
+      },
+    ].map(({ id, name, wall, grade }) => {
+      const climb = climbingClimbFixture("mountain-project");
+      return {
+        ...climbingLogFixture,
+        id,
+        climbId: id,
+        climb: {
+          ...climb,
+          id,
+          name,
+          areaId: `${id}-wall`,
+          areaPath: climb.areaPath.map((area) => ({ ...area, id: `${id}-wall`, name: wall })),
+        },
+        displayGrade: grade,
+      };
+    }),
     locations: {
-      "tick-1": exactClimbingLocation,
-      repeat: exactClimbingLocation,
-      singleton: exactClimbingLocation,
+      "hunger-pains": { ...exactClimbingLocation, name: "Hunger Pains" },
+      "short-term-memory": { ...exactClimbingLocation, name: "Short Term Memory" },
     },
   },
   decorators: [

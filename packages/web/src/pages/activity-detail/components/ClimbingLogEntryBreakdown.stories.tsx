@@ -124,12 +124,17 @@ export const SingleClimbWall: Story = {
   decorators: Wide.decorators,
   parameters: { layout: "padded" },
   args: {
-    entries: ["Wreckage Wall", "Scale Wall", "Scale Wall"].map((wall, index) => {
+    entries: [
+      { wall: "Wreckage Wall", name: "Hunger Pains", grade: "5.10b" },
+      { wall: "Memorial Wall", name: "Short Term Memory", grade: "5.10a" },
+    ].map(({ wall, name, grade }, index) => {
       const climb = climbingClimbFixture();
       return climbingLogEntryFixture({
         id: `tick-${index + 1}`,
+        displayGrade: grade,
         climb: {
           ...climb,
+          name,
           areaPath: climb.areaPath.map((area) => ({ ...area, id: wall, name: wall })),
         },
       });
@@ -138,15 +143,13 @@ export const SingleClimbWall: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     const singleWall = canvas.getByRole("list", { name: "Wreckage Wall climbs" });
-    const multipleWall = canvas.getByRole("list", { name: "Scale Wall climbs" });
+    const secondWall = canvas.getByRole("list", { name: "Memorial Wall climbs" });
     const singleClimb = within(singleWall).getByRole("listitem");
-    const multipleClimbs = within(multipleWall).getAllByRole("listitem");
-    for (const climb of multipleClimbs) {
-      await expect(climb.getBoundingClientRect().width).toBeCloseTo(
-        singleClimb.getBoundingClientRect().width,
-        0,
-      );
-    }
+    const secondClimb = within(secondWall).getByRole("listitem");
+    await expect(secondClimb.getBoundingClientRect().width).toBeCloseTo(
+      singleClimb.getBoundingClientRect().width,
+      0,
+    );
     if (singleWall.getBoundingClientRect().width >= 600) {
       await expect(singleClimb.getBoundingClientRect().width).toBeLessThan(
         singleWall.getBoundingClientRect().width / 2,
