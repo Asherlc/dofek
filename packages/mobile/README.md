@@ -104,6 +104,12 @@ Activity-detail climbing entries and suggestions use
 [ClimbingLogEntryBreakdown](./components/ClimbingLogEntryBreakdown.tsx) and
 [ClimbingLogEntryCard](./components/ClimbingLogEntryCard.tsx). Their source-location
 inputs share the web client's [coordinate and provenance types](../training/src/climbing-map.ts).
+Each Area occupies a block with one heading above its cards. Small blocks share
+rows, while larger blocks wrap their cards internally. The breakdown uses
+[`onLayout`](https://reactnative.dev/docs/view#onlayout) to keep card widths
+consistent across blocks as the container resizes.
+Area rows and card rows use flexible cells to preserve their columns at fractional
+widths, covered by the [fractional-width regression stories](./components/ClimbingLogEntryBreakdown.stories.tsx).
 [RouteMap](./components/RouteMap.tsx) renders source dots independently of the
 recorded GPS route and supports compact tick maps. The overview supports panning
 and zooming; compact maps do not intercept touches. A unique point opens its log

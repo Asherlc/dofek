@@ -209,7 +209,84 @@ describe("ClimbingLogEntryBreakdown", () => {
     expect(cards[1]?.getAttribute("aria-label")).toBe("Climbing entry: Swiss Cheese");
   });
 
-  it("allows a 280px cell basis to shrink inside the 256px padded screen content", () => {
+  it("packs area blocks into rows and keeps their cards beneath one heading on resize", () => {
+    const climb = climbingLogFixture.climb;
+    const area = climb?.areaPath.at(-1);
+    if (!climb || !area) throw new Error("Expected an area fixture");
+    const { container } = render(
+      <ClimbingLogEntryBreakdown
+        entries={[
+          climbingLogFixture,
+          { ...climbingLogFixture, id: "repeat" },
+          { ...climbingLogFixture, id: "third" },
+          {
+            ...climbingLogFixture,
+            id: "singleton",
+            climb: {
+              ...climb,
+              name: "Other climb",
+              areaPath: [{ ...area, id: "other-area", name: "North Wall" }],
+            },
+          },
+          {
+            ...climbingLogFixture,
+            id: "cave-singleton",
+            climb: {
+              ...climb,
+              name: "Cave climb",
+              areaPath: [{ ...area, id: "cave-area", name: "Cave Wall" }],
+            },
+          },
+        ]}
+      />,
+    );
+    let goatRock = screen.getByLabelText("Goat Rock");
+    let northWall = screen.getByLabelText("North Wall");
+    let caveWall = screen.getByLabelText("Cave Wall");
+    expect(within(goatRock).getAllByLabelText("Climbing entry: Swiss Cheese")).toHaveLength(3);
+    const groups = container.firstElementChild;
+    if (!groups) throw new Error("Expected a measured area-block container");
+    for (const area of [goatRock, northWall, caveWall]) {
+      expect(area.firstElementChild?.getAttribute("role")).toBe("header");
+    }
+
+    fireEvent(groups, new CustomEvent("layout", { detail: { width: 900, height: 600 } }));
+    goatRock = screen.getByLabelText("Goat Rock");
+    northWall = screen.getByLabelText("North Wall");
+    caveWall = screen.getByLabelText("Cave Wall");
+    expect(goatRock.parentElement).not.toBe(northWall.parentElement);
+    expect(northWall.parentElement).toBe(caveWall.parentElement);
+    const wideCards = within(goatRock).getAllByLabelText("Climbing entry: Swiss Cheese");
+    const wideRows = wideCards.map((card) => card.parentElement?.parentElement);
+    expect(new Set(wideRows).size).toBe(1);
+
+    fireEvent(groups, new CustomEvent("layout", { detail: { width: 600, height: 600 } }));
+    goatRock = screen.getByLabelText("Goat Rock");
+    northWall = screen.getByLabelText("North Wall");
+    caveWall = screen.getByLabelText("Cave Wall");
+    expect(goatRock.parentElement).not.toBe(northWall.parentElement);
+    expect(northWall.parentElement).toBe(caveWall.parentElement);
+    const mediumCards = within(goatRock).getAllByLabelText("Climbing entry: Swiss Cheese");
+    const mediumRows = mediumCards.map((card) => card.parentElement?.parentElement);
+    expect(mediumRows[0]).toBe(mediumRows[1]);
+    expect(mediumRows[2]).not.toBe(mediumRows[0]);
+    expect(mediumRows[2]?.children).toHaveLength(2);
+    expect(within(goatRock).getAllByLabelText("Climbing entry: Swiss Cheese")).toHaveLength(3);
+    expect(within(northWall).getByText("Other climb")).toBeTruthy();
+
+    fireEvent(groups, new CustomEvent("layout", { detail: { width: 256, height: 600 } }));
+    goatRock = screen.getByLabelText("Goat Rock");
+    northWall = screen.getByLabelText("North Wall");
+    caveWall = screen.getByLabelText("Cave Wall");
+    expect(northWall.parentElement).not.toBe(caveWall.parentElement);
+    const narrowCards = within(goatRock).getAllByLabelText("Climbing entry: Swiss Cheese");
+    const narrowRows = narrowCards.map((card) => card.parentElement?.parentElement);
+    expect(new Set(narrowRows).size).toBe(3);
+    expect(within(goatRock).getByText("Goat Rock")).toBeTruthy();
+    expect(within(northWall).getByText("North Wall")).toBeTruthy();
+  });
+
+  it("allows cells to shrink inside the 256px padded screen content", () => {
     render(
       <View style={{ width: 320, padding: 16 }}>
         <View style={{ padding: 16 }}>
