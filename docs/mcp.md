@@ -214,12 +214,45 @@ and the `nutrition:write` scope approved by the user.
 Create and update descriptions encourage sourced nutrition for the consumed
 portion, clarification when brand/label/portion information is missing, and
 explicit approval for estimates. Unknown nutrients must not be filled with
-zero. Incomplete entries remain supported when explicitly requested; these
-descriptions guide the model rather than enforce completeness. See the
+zero. Create requires known calories, protein, carbohydrate, and fat for the
+entire consumed portion; the service rejects incomplete new entries. Updates
+preserve explicit-null unknown nutrient decisions, but validate the resulting
+effective nutrition, including unchanged values and source-clears. See the
 [tool descriptors](../packages/server/src/mcp/food-record-tools.ts) and
+[service validation](../packages/server/src/services/food-record-service.ts), plus
 [OpenAI's tool metadata guidance](https://developers.openai.com/plugins/guides/optimize-metadata).
 The [manual nutrition eval](mcp-nutrition-manual-eval.md) measures conversational
 behavior separately from schema and mutation tests.
+
+New create/update operations with zero effective calories require nonempty
+`zero_calorie_evidence`: identify the label, manufacturer, reliable database
+(with a URL when available), or user confirmation of a genuinely zero-calorie
+item. The service appends this evidence to `food_description`, retaining existing
+text unless the caller replaces or clears it. A description clear uses the
+source description before appending the evidence. Supply evidence on every new
+zero-calorie operation; an older description is not an implicit attestation.
+Evidence cannot override contradictory macros
+([mutation boundary](../packages/server/src/services/food-record-service.ts)).
+
+Validation preserves source calories instead of requiring 4/4/9 equality. It
+rejects calories below a deliberately conservative protein/fat floor:
+`max(0, 1.8 × max(0, protein − 1) + 8 × max(0, fat − 1) − 10)` kcal, using
+known gram amounts only. The chosen factors sit below the lowest protein/fat
+factors in [USDA Handbook 74, table 13](https://www.ars.usda.gov/ARSUserFiles/80400525/Data/Classics/ah74.pdf).
+The 1 g macro allowances and 10 kcal slack are an intentionally generous
+application policy accommodating [nutrition-label rounding and specific energy factors](https://www.ecfr.gov/current/title-21/section-101.9#p-101.9(c)).
+Carbohydrate is excluded because fiber and sugar alcohols have varying energy
+factors under that regulation. This check detects clear contradictions; it does
+not verify that the supplied nutrition or evidence is true.
+
+Validation failures return `INVALID_ARGUMENT` with an actionable message and a
+stable `details.reason`: `MISSING_REQUIRED_NUTRITION`,
+`CALORIES_BELOW_MACRO_MINIMUM`, `ZERO_CALORIE_EVIDENCE_REQUIRED`, or
+`INVALID_NUTRIENT_AMOUNT`. Rejected writes roll back the source/ledger operation
+and do not invalidate nutrition caches. Historical raw facts, delete/restore,
+and identical request replays retain their existing behavior
+([service](../packages/server/src/services/food-record-service.ts),
+[Postgres regressions](../packages/server/src/services/food-record-service.integration.test.ts)).
 
 `search_food_entries` requires `start_date` and `end_date`. Its optional
 case-insensitive text query matches the effective food name, description,
@@ -259,7 +292,9 @@ decisions that resume following it. Values in `set` override scalar fields;
 fields in `clear` follow the source value again. `nutrient_set` accepts a
 non-negative amount or explicit `null`; `nutrient_clear` resumes following the
 raw nutrient. A field or nutrient cannot appear in both forms, and an update
-must contain at least one decision. `delete_food_entry` hides the effective
+must contain at least one decision; supplied zero-calorie evidence counts as a
+description decision ([service schema](../packages/server/src/services/food-record-service.ts)).
+`delete_food_entry` hides the effective
 record and removes its contribution from canonical nutrition without deleting
 the raw provider row. `restore_food_entry` makes the same effective record
 visible again. `get_food_entry_history` returns ledger operations and recorded
