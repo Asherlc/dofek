@@ -339,6 +339,26 @@ describe("ClimbingActivityLogEntryRepository PostgreSQL projection", () => {
       expect(log).toMatchObject({ freeSend });
     },
   );
+  it.each([{ outcomes: ["failed", "completed"] }, { outcomes: ["completed", "failed"] }] as const)(
+    "retains a free send across mixed attempts $outcomes",
+    async ({ outcomes }) => {
+      const log = await write({
+        externalId: "mixed-free-send-evidence",
+        discipline: "rock_climbing",
+        climb: route,
+        attempts: outcomes.map((sourceResult, index) => ({
+          scope: "climb",
+          attemptIndex: index + 1,
+          ropeMethod: "lead",
+          sourceResult,
+          fellOrHung: sourceResult === "failed",
+          usedAid: false,
+        })),
+      });
+      expect(log).toMatchObject({ freeSend: true, recordedClimbAttemptCount: 2 });
+      expect(log.attempts.map((attempt) => attempt.outcome)).toEqual(outcomes);
+    },
+  );
   it("projects a completed pitch without claiming route completion", async () => {
     const log = await write({
       externalId: "pitch-only",
