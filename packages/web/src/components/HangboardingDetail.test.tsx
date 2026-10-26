@@ -83,6 +83,21 @@ describe("HangboardingDetail", () => {
     expect(screen.getByText("Session time")).toBeTruthy();
   });
 
+  it("renders an empty state when there are no completed hangs", () => {
+    render(
+      <HangboardingDetail
+        data={{
+          ...detail,
+          summary: { ...detail.summary, exercises: [] },
+        }}
+        loading={false}
+        error={null}
+      />,
+    );
+
+    expect(screen.getByText("No completed hangs recorded.")).toBeTruthy();
+  });
+
   it("renders an actionable segments note without hiding valid data", () => {
     render(
       <HangboardingDetail
