@@ -37,6 +37,29 @@ const sources: ActivityMetricSource[] = [
 ];
 
 describe("ActivityMetricSourcePicker", () => {
+  it("shows a compact device name while keeping full provenance accessible", () => {
+    const source: ActivityMetricSource = {
+      id: "edge",
+      label: "Garmin Edge 1050 · Recorded by Garmin Edge 1050 · FIT file creator Garmin",
+      presentation: {
+        displayName: "Garmin Edge 1050",
+        providerId: "garmin",
+        sourceName: "Edge 1050",
+        attribution: null,
+      },
+    };
+    render(
+      <ActivityMetricSourcePicker
+        label="Power"
+        sources={[source]}
+        selectedId={source.id}
+        onChange={vi.fn()}
+        serverUrl=""
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: `Power source: ${source.label}` }));
+    expect(screen.getByRole("radio", { name: source.label }).textContent).toBe("Garmin Edge 1050");
+  });
   it.each([true, false])("keeps full attribution accessible with showLabel=%s", (showLabel) => {
     render(
       <ActivityMetricSourcePicker

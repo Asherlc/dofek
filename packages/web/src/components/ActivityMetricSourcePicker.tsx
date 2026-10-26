@@ -125,7 +125,7 @@ export function ActivityMetricSourcePicker({
                   size={22}
                 />
                 <span className="min-w-0 flex-1 break-words text-sm font-medium">
-                  {source.presentation.attribution ? source.presentation.displayName : source.label}
+                  {source.presentation.displayName}
                 </span>
                 <AttributionIcon attribution={source.presentation.attribution} />
                 <input

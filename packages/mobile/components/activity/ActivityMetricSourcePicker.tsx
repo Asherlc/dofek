@@ -118,9 +118,7 @@ export function ActivityMetricSourcePicker({
                       color: source.id === selectedId ? colors.accent : colors.text,
                     }}
                   >
-                    {source.presentation.attribution
-                      ? source.presentation.displayName
-                      : source.label}
+                    {source.presentation.displayName}
                   </Text>
                   <AttributionIcon
                     attribution={source.presentation.attribution}

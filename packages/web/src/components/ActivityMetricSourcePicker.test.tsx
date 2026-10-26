@@ -153,7 +153,7 @@ describe("ActivityMetricSourcePicker", () => {
     },
   );
 
-  it("keeps recorder and file-creator wording visible without repeating device names", () => {
+  it("shows the compact device name and retains full provenance in the tooltip", () => {
     render(
       <ActivityMetricSourcePicker
         label="Power"
@@ -177,11 +177,10 @@ describe("ActivityMetricSourcePicker", () => {
     const option = screen.getByRole("radio", {
       name: "Garmin Edge 1050 · Recorded by Garmin Edge 1050 · FIT file creator Garmin",
     });
-    expect(option.closest("label")).toHaveTextContent(
+    expect(option.closest("label")).toHaveAttribute(
+      "title",
       "Garmin Edge 1050 · Recorded by Garmin Edge 1050 · FIT file creator Garmin",
     );
-    expect(
-      within(screen.getByRole("dialog")).queryByText("Garmin Edge 1050", { exact: true }),
-    ).toBeNull();
+    expect(option.closest("label")?.textContent).toBe("Garmin Edge 1050");
   });
 });
