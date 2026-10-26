@@ -174,3 +174,50 @@ it.each(["Onsight", "Flash"] as const)(
     expect(screen.queryByText(/Attempts:|completed/i)).not.toBeInTheDocument();
   },
 );
+
+it.each([
+  { number: 2, name: "Crux", context: "Pitch 2 · Attempts: 1" },
+  { number: null, name: "Crux", context: "Crux · Attempts: 1" },
+  { number: null, name: null, context: "Pitch · Attempts: 1" },
+])(
+  "keeps a recorded pitch's context beside its outcome badge ($context)",
+  ({ number, name, context }) => {
+    const climb = climbingClimbFixture();
+    const pitch = {
+      id: "20000000-0000-4000-8000-000000000006",
+      climbId: climb.id,
+      externalId: null,
+      number,
+      name,
+      publishedGrades: [],
+    };
+    const entry = climbingLogEntryFixture({
+      climbId: climb.id,
+      climb: { ...climb, pitches: [pitch] },
+      recordedPitchAttemptCount: 1,
+    });
+    const attempt = climbingAttemptFixture(entry.id, {
+      scope: "pitch",
+      pitchId: pitch.id,
+      outcome: "failed",
+      ropeMethod: "lead",
+    });
+    entry.attempts = [attempt];
+    entry.pitchResults = [
+      {
+        pitch,
+        attemptIds: [attempt.id],
+        recordedOutcome: "failed",
+        recordedAttemptCount: 1,
+        displayGrade: null,
+      },
+    ];
+    render(
+      <ul>
+        <ClimbingLogEntryCard entry={entry} />
+      </ul>,
+    );
+    expect(screen.getByText(context)).toBeInTheDocument();
+    expect(screen.getByText("Attempted")).toBeInTheDocument();
+  },
+);

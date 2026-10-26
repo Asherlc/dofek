@@ -142,6 +142,52 @@ describe("ClimbingLogEntryCard", () => {
     },
   );
 
+  it.each([
+    { number: 2, name: "Crux", expected: "Pitch 2" },
+    { number: null, name: "Crux", expected: "Crux" },
+    { number: null, name: null, expected: "Pitch" },
+  ])("keeps $expected context separate from its attempted badge", ({ number, name, expected }) => {
+    const climb = climbingClimbFixture();
+    const pitch = {
+      id: "20000000-0000-4000-8000-000000000020",
+      climbId: climb.id,
+      externalId: null,
+      number,
+      name,
+      publishedGrades: [],
+    };
+    const attempt = climbingAttemptFixture(climbingLogFixture.id, {
+      scope: "pitch",
+      pitchId: pitch.id,
+      outcome: "failed",
+      ropeMethod: "lead",
+    });
+    render(
+      <ClimbingLogEntryCard
+        entry={{
+          ...climbingLogFixture,
+          climbId: climb.id,
+          climb: { ...climb, pitches: [pitch] },
+          recordedClimbAttemptCount: 0,
+          recordedClimbOutcome: null,
+          recordedPitchAttemptCount: 1,
+          attempts: [attempt],
+          pitchResults: [
+            {
+              pitch,
+              attemptIds: [attempt.id],
+              recordedOutcome: "failed",
+              recordedAttemptCount: 1,
+              displayGrade: null,
+            },
+          ],
+        }}
+      />,
+    );
+    expect(screen.getByText(`${expected} · Attempts: 1`)).toBeTruthy();
+    expect(screen.getByText("Attempted")).toBeTruthy();
+  });
+
   it("shows a compact single-point map", () => {
     const { container } = render(
       <ClimbingLogEntryCard entry={climbingLogFixture} location={exactClimbingLocation} />,
