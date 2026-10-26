@@ -33185,3 +33185,57 @@ The incident date uses America/Los_Angeles: the October 23 UTC sync timestamps b
 - **Evidence / root cause:** `pnpm test:integration -- packages/server/src/repositories/activity-metric-sources-repository.integration.test.ts` reproduced `ClickHouseError: (total) memory limit exceeded`, with current RSS 1.09 GiB and maximum 1.08 GiB. The [generic fixture](../packages/server/src/routers/clickhouse-integration-test-helpers.ts) rebuilt the unrelated `v_activity` origin graph while initializing a sensor-only suite.
 - **Direct fix / validation:** The [metric-source integration fixture](../packages/server/src/repositories/activity-metric-sources-repository.integration.test.ts) now creates only its required current sensor, profile, and priority schemas using the real sensor store and existing schema builders. The same command passed all eleven tests without waits, retries, memory-limit changes, or production query changes.
 - **Remaining risk / follow-up:** Other suites using the full analytics fixture can still encounter its memory cost. Prefer the existing minimal-schema patterns for sensor-only tests; use the [integration dependency guide](testing.md#integration-dependencies) when diagnosing local service prerequisites.
+
+## 2026-10-25 — WHOOP Bluetooth reconnection failed while the strap was nearby
+
+- **Symptoms / impact:** The user received “WHOOP disconnected” and confirmed
+  the phone and strap were together. Native capture last parsed realtime and
+  IMU samples at approximately 02:20:07 UTC on October 26 (19:20 Pacific on
+  October 25). The alert's five-minute delay matches the observed timeline;
+  its [policy](../packages/mobile/modules/background-refresh/ios/CollectionNotificationCoordinator.swift)
+  requires an unexpected disconnect after a ready connection and cancels on
+  successful reconnection, rather than treating app foregrounding as recovery.
+- **Evidence / confirmed failure boundary:** Axiom's `dofek-logs` recorded
+  `native_connection_event` at 02:20:16.300 UTC, with native occurrence
+  02:20:16.216 UTC, state `streaming`, `CBErrorDomain` code 6, and the first
+  error “The connection has timed out unexpectedly.” Subsequent attempts
+  failed with connection and encryption timeouts in `connecting`,
+  `discoveringServices`, or `subscribing` through 02:25:17 UTC. Bluetooth was
+  `poweredOn`, reconnect intent remained true, and no ready transition was
+  observed in that interval. Query: `axiom query "['dofek-logs'] | where _time
+  between (datetime(2026-10-26T02:19:00Z) .. datetime(2026-10-26T02:26:00Z)) |
+  where body contains 'native_connection_event' or body contains
+  'capture_snapshot' | project _time, body, c=['attributes.custom'] | sort by
+  _time asc" --format json`. The [disconnect handler](../packages/mobile/modules/whoop-ble/ios/WhoopBleConnectionManager+CoreBluetooth.swift)
+  and [delegate](../packages/mobile/modules/whoop-ble/ios/WhoopBleDelegate.swift)
+  distinguish the initially lost stream from later failed connection attempts.
+  Apple's [error reference](https://developer.apple.com/documentation/corebluetooth/cberror-swift.struct)
+  describes these transport errors; their presence does not establish why
+  the radio or encryption exchange failed. The underlying cause remains
+  **unresolved**. WHOOP cloud sync separately succeeded at 02:00 UTC with
+  unexpired credentials; web and worker Swarm replicas were healthy.
+- **Additional observed impact:** At 02:25:17 UTC, the capture snapshot held
+  7,357 realtime and 500,000 IMU samples, with 229,499 IMU overflow discards.
+  Last upload confirmations were 01:16:52 and 01:17:05 UTC respectively;
+  two uploads reported `fetch failed: cancelled` at 02:20:30 UTC after
+  approximately 1,723 seconds. This establishes a separate upload backlog,
+  not its cause or a causal link to the Bluetooth failure. The
+  [sample buffer](../packages/mobile/modules/whoop-ble/ios/WhoopBleSampleBuffer.swift)
+  retains samples only in memory; checkpoint metadata cannot restore them.
+- **Mitigation / validation boundary:** Requested that the user foreground
+  Dofek with the strap nearby, preserving the running process. Recovery must
+  show subscribed readiness, new parsed sample timestamps, and advancing
+  upload confirmations in Axiom. The user subsequently confirmed “Connected
+  with a live heart rate” after foregrounding. At 02:29 UTC the latest phone
+  telemetry still ended at 02:25:17 UTC, so recovery is confirmed on screen
+  only; backlog delivery and sustained background recovery remain unverified.
+  No runtime code, timeout, retry, pairing state, or production configuration
+  was changed. There is no new resilience setting to justify.
+- **Retrospective / follow-up:** Native timestamps, typed errors, and buffer
+  counters made the failure boundary visible without another cloud reconnect.
+  Physical-device evidence is still needed for the Bluetooth root cause.
+  Proposed runbook addition: preserve pending memory buffers before suggesting
+  force quit, and verify capture and uploads separately after foregrounding.
+  Reuse the [Axiom query procedure](axiom-observability-runbook.md) and
+  [physical-device audit](ios-physical-device-release-audit.md) for the next
+  investigation.
