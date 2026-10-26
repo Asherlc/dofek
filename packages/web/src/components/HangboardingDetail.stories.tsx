@@ -54,3 +54,18 @@ export const GenericWork: Story = {
     },
   },
 };
+
+export const MixedWorkAndNamed: Story = {
+  args: {
+    data: {
+      ...data,
+      summary: {
+        ...data.summary,
+        exercises: [
+          { label: "Work", workIntervalCount: 1, workDurationSeconds: 7 },
+          { label: "19 mm edge", workIntervalCount: 2, workDurationSeconds: 14 },
+        ],
+      },
+    },
+  },
+};
