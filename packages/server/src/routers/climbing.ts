@@ -96,7 +96,7 @@ export const climbingRouter = router({
   strengths: cachedProtectedQuery({
     maxAge: CacheTTL.LONG,
     outputSchema: climbingStrengthsSchema,
-    keyVersion: "climbing-strengths-v4",
+    keyVersion: "climbing-strengths-v5",
   })
     .input(
       climbingInputSchema.extend({
@@ -223,7 +223,7 @@ export const climbingRouter = router({
   gradeProgression: cachedProtectedQuery({
     maxAge: CacheTTL.LONG,
     outputSchema: climbingGradeProgressionsSchema,
-    keyVersion: "climbing-scoped-grade-lanes-v1",
+    keyVersion: "climbing-scoped-grade-lanes-v2",
   })
     .input(climbingInputSchema)
     .output(climbingGradeProgressionsSchema)
@@ -239,7 +239,7 @@ export const climbingRouter = router({
   volumeByGrade: cachedProtectedQuery({
     maxAge: CacheTTL.LONG,
     outputSchema: climbingVolumesSchema,
-    keyVersion: "climbing-canonical-log-observations-v1",
+    keyVersion: "climbing-canonical-log-observations-v2",
   })
     .input(climbingInputSchema)
     .output(climbingVolumesSchema)
@@ -253,7 +253,7 @@ export const climbingRouter = router({
   sessionSummary: cachedProtectedQuery({
     maxAge: CacheTTL.LONG,
     outputSchema: climbingSessionSummariesSchema,
-    keyVersion: "climbing-canonical-log-sessions-v1",
+    keyVersion: "climbing-canonical-log-sessions-v2",
   })
     .input(climbingInputSchema)
     .output(climbingSessionSummariesSchema)
@@ -269,7 +269,7 @@ export const climbingRouter = router({
   locationMap: cachedProtectedQuery({
     maxAge: CacheTTL.LONG,
     outputSchema: climbingLocationMapSchema,
-    keyVersion: "climbing-location-map-v1",
+    keyVersion: "climbing-location-map-v2",
   })
     .input(climbingInputSchema)
     .output(climbingLocationMapSchema)

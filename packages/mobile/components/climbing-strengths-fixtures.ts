@@ -8,7 +8,16 @@ const angle: ClimbingStrengthsPanel = {
   dimension: "wall_angle",
   setting: "indoor",
   allGrades: {
-    grades: [{ grade: "All grades", gradeSortValue: 0, sends: 5, climbs: 14, successRate: 36 }],
+    grades: [
+      {
+        grade: "All grades",
+        gradeSortValue: 0,
+        unknownOutcomes: 0,
+        sends: 5,
+        climbs: 14,
+        successRate: 36,
+      },
+    ],
     rows: [
       {
         key: "slab",
@@ -16,6 +25,7 @@ const angle: ClimbingStrengthsPanel = {
         cells: [
           {
             grade: "All grades",
+            unknownOutcomes: 0,
             sends: 2,
             climbs: 7,
             successRate: 29,
@@ -31,6 +41,7 @@ const angle: ClimbingStrengthsPanel = {
         cells: [
           {
             grade: "All grades",
+            unknownOutcomes: 0,
             sends: 1,
             climbs: 3,
             successRate: 33,
@@ -44,8 +55,8 @@ const angle: ClimbingStrengthsPanel = {
     progress: [],
   },
   grades: [
-    { grade: "V3", gradeSortValue: 3, sends: 4, climbs: 9, successRate: 44 },
-    { grade: "V4", gradeSortValue: 4, sends: 1, climbs: 5, successRate: 20 },
+    { grade: "V3", gradeSortValue: 3, unknownOutcomes: 0, sends: 4, climbs: 9, successRate: 44 },
+    { grade: "V4", gradeSortValue: 4, unknownOutcomes: 0, sends: 1, climbs: 5, successRate: 20 },
   ],
   rows: [
     {
@@ -54,6 +65,7 @@ const angle: ClimbingStrengthsPanel = {
       cells: [
         {
           grade: "V3",
+          unknownOutcomes: 0,
           sends: 2,
           climbs: 5,
           successRate: 40,
@@ -75,6 +87,7 @@ const angle: ClimbingStrengthsPanel = {
         },
         {
           grade: "V4",
+          unknownOutcomes: 0,
           sends: 0,
           climbs: 2,
           successRate: 0,
@@ -90,6 +103,7 @@ const angle: ClimbingStrengthsPanel = {
       cells: [
         {
           grade: "V3",
+          unknownOutcomes: 0,
           sends: 0,
           climbs: 0,
           successRate: null,
@@ -99,6 +113,7 @@ const angle: ClimbingStrengthsPanel = {
         },
         {
           grade: "V4",
+          unknownOutcomes: 0,
           sends: 1,
           climbs: 3,
           successRate: 33,
@@ -133,7 +148,14 @@ export const climbingStrengthsFixture: ClimbingStrengths = {
         setting: null,
         allGrades: {
           grades: [
-            { grade: "All grades", gradeSortValue: 0, sends: 7, climbs: 18, successRate: 39 },
+            {
+              grade: "All grades",
+              gradeSortValue: 0,
+              unknownOutcomes: 0,
+              sends: 7,
+              climbs: 18,
+              successRate: 39,
+            },
           ],
           rows: [
             {
@@ -142,6 +164,7 @@ export const climbingStrengthsFixture: ClimbingStrengths = {
               cells: [
                 {
                   grade: "All grades",
+                  unknownOutcomes: 0,
                   sends: 5,
                   climbs: 14,
                   successRate: 36,
@@ -157,6 +180,7 @@ export const climbingStrengthsFixture: ClimbingStrengths = {
               cells: [
                 {
                   grade: "All grades",
+                  unknownOutcomes: 0,
                   sends: 2,
                   climbs: 4,
                   successRate: 50,
@@ -170,8 +194,22 @@ export const climbingStrengthsFixture: ClimbingStrengths = {
           progress: [],
         },
         grades: [
-          { grade: "V3", gradeSortValue: 3, sends: 6, climbs: 13, successRate: 46 },
-          { grade: "V4", gradeSortValue: 4, sends: 1, climbs: 5, successRate: 20 },
+          {
+            grade: "V3",
+            gradeSortValue: 3,
+            unknownOutcomes: 0,
+            sends: 6,
+            climbs: 13,
+            successRate: 46,
+          },
+          {
+            grade: "V4",
+            gradeSortValue: 4,
+            unknownOutcomes: 0,
+            sends: 1,
+            climbs: 5,
+            successRate: 20,
+          },
         ],
         rows: [
           {
@@ -180,6 +218,7 @@ export const climbingStrengthsFixture: ClimbingStrengths = {
             cells: [
               {
                 grade: "V3",
+                unknownOutcomes: 0,
                 sends: 4,
                 climbs: 9,
                 successRate: 44,
@@ -189,6 +228,7 @@ export const climbingStrengthsFixture: ClimbingStrengths = {
               },
               {
                 grade: "V4",
+                unknownOutcomes: 0,
                 sends: 1,
                 climbs: 5,
                 successRate: 20,
@@ -204,6 +244,7 @@ export const climbingStrengthsFixture: ClimbingStrengths = {
             cells: [
               {
                 grade: "V3",
+                unknownOutcomes: 0,
                 sends: 2,
                 climbs: 4,
                 successRate: 50,
@@ -213,6 +254,7 @@ export const climbingStrengthsFixture: ClimbingStrengths = {
               },
               {
                 grade: "V4",
+                unknownOutcomes: 0,
                 sends: 0,
                 climbs: 0,
                 successRate: null,
@@ -266,6 +308,7 @@ export const climbingStrengthsFixture: ClimbingStrengths = {
               ? cell
               : {
                   ...cell,
+                  unknownOutcomes: 0,
                   sends: 0,
                   climbs: 0,
                   successRate: null,
@@ -283,6 +326,7 @@ export const climbingStrengthsFixture: ClimbingStrengths = {
           key: row.key,
           cells: row.cells.map((cell) => ({
             grade: cell.grade,
+            unknownOutcomes: 0,
             sends: 0,
             climbs: 0,
             successRate: null,
@@ -297,6 +341,7 @@ export const climbingStrengthsFixture: ClimbingStrengths = {
           key: row.key,
           cells: row.cells.map((cell) => ({
             grade: cell.grade,
+            unknownOutcomes: 0,
             sends: 0,
             climbs: 0,
             successRate: null,
@@ -311,6 +356,7 @@ export const climbingStrengthsFixture: ClimbingStrengths = {
           key: row.key,
           cells: row.cells.map(({ grade, sends, climbs, successRate, sampleStatus }) => ({
             grade,
+            unknownOutcomes: 0,
             sends,
             climbs,
             successRate,
@@ -343,6 +389,7 @@ const comparisonRows: ClimbingStrengthsPanel["rows"] = [
     cells: [
       {
         grade: "V3",
+        unknownOutcomes: 0,
         sends: 3,
         climbs: 5,
         successRate: 60,
@@ -352,6 +399,7 @@ const comparisonRows: ClimbingStrengthsPanel["rows"] = [
       },
       {
         grade: "V4",
+        unknownOutcomes: 0,
         sends: 1,
         climbs: 3,
         successRate: 33,
@@ -367,6 +415,7 @@ const comparisonRows: ClimbingStrengthsPanel["rows"] = [
     cells: [
       {
         grade: "V3",
+        unknownOutcomes: 0,
         sends: 1,
         climbs: 5,
         successRate: 20,
@@ -376,6 +425,7 @@ const comparisonRows: ClimbingStrengthsPanel["rows"] = [
       },
       {
         grade: "V4",
+        unknownOutcomes: 0,
         sends: 0,
         climbs: 0,
         successRate: null,
@@ -392,7 +442,9 @@ export const climbingStrengthsComparisonFixture: ClimbingStrengths = {
     {
       ...comparisonPanel,
       grades: comparisonPanel.grades.map((grade) =>
-        grade.grade === "V3" ? { ...grade, sends: 6, climbs: 15, successRate: 40 } : grade,
+        grade.grade === "V3"
+          ? { ...grade, unknownOutcomes: 0, sends: 6, climbs: 15, successRate: 40 }
+          : grade,
       ),
       coverage: { ...comparisonPanel.coverage, missingTraits: 0 },
       rows: comparisonRows,
@@ -404,6 +456,7 @@ export const climbingStrengthsComparisonFixture: ClimbingStrengths = {
             key: row.key,
             cells: row.cells.map((cell) => ({
               grade: cell.grade,
+              unknownOutcomes: 0,
               sends: 0,
               climbs: 0,
               successRate: null,
@@ -418,22 +471,64 @@ export const climbingStrengthsComparisonFixture: ClimbingStrengths = {
             {
               key: "angle-0",
               cells: [
-                { grade: "V3", sends: 0, climbs: 2, successRate: 0, sampleStatus: "limited" },
-                { grade: "V4", sends: 0, climbs: 1, successRate: 0, sampleStatus: "limited" },
+                {
+                  grade: "V3",
+                  unknownOutcomes: 0,
+                  sends: 0,
+                  climbs: 2,
+                  successRate: 0,
+                  sampleStatus: "limited",
+                },
+                {
+                  grade: "V4",
+                  unknownOutcomes: 0,
+                  sends: 0,
+                  climbs: 1,
+                  successRate: 0,
+                  sampleStatus: "limited",
+                },
               ],
             },
             {
               key: "angle-20",
               cells: [
-                { grade: "V3", sends: 1, climbs: 3, successRate: 33, sampleStatus: "limited" },
-                { grade: "V4", sends: 0, climbs: 0, successRate: null, sampleStatus: "no_data" },
+                {
+                  grade: "V3",
+                  unknownOutcomes: 0,
+                  sends: 1,
+                  climbs: 3,
+                  successRate: 33,
+                  sampleStatus: "limited",
+                },
+                {
+                  grade: "V4",
+                  unknownOutcomes: 0,
+                  sends: 0,
+                  climbs: 0,
+                  successRate: null,
+                  sampleStatus: "no_data",
+                },
               ],
             },
             {
               key: "angle-40",
               cells: [
-                { grade: "V3", sends: 1, climbs: 5, successRate: 20, sampleStatus: "available" },
-                { grade: "V4", sends: 0, climbs: 0, successRate: null, sampleStatus: "no_data" },
+                {
+                  grade: "V3",
+                  unknownOutcomes: 0,
+                  sends: 1,
+                  climbs: 5,
+                  successRate: 20,
+                  sampleStatus: "available",
+                },
+                {
+                  grade: "V4",
+                  unknownOutcomes: 0,
+                  sends: 0,
+                  climbs: 0,
+                  successRate: null,
+                  sampleStatus: "no_data",
+                },
               ],
             },
           ],
@@ -445,6 +540,7 @@ export const climbingStrengthsComparisonFixture: ClimbingStrengths = {
             key: row.key,
             cells: row.cells.map(({ grade, sends, climbs, successRate, sampleStatus }) => ({
               grade,
+              unknownOutcomes: 0,
               sends,
               climbs,
               successRate,
@@ -453,6 +549,72 @@ export const climbingStrengthsComparisonFixture: ClimbingStrengths = {
           })),
         },
       ],
+    },
+  ],
+};
+
+const unknownBase = climbingStrengthsFixture.panels[0];
+if (!unknownBase) throw new Error("Missing climbing strengths panel");
+const unknownRow = unknownBase.rows[0];
+const unknownExample = unknownRow?.cells.flatMap((cell) => cell.examples)[0];
+if (!unknownRow || !unknownExample) throw new Error("Missing climbing strengths examples");
+const unknownCells: ClimbingStrengthsPanel["rows"][number]["cells"] = [
+  {
+    grade: "V3",
+    sends: 0,
+    climbs: 4,
+    unknownOutcomes: 4,
+    successRate: null,
+    differencePercentagePoints: null,
+    sampleStatus: "limited",
+    examples: [{ ...unknownExample, name: "Unknown ascent", grade: "V3", outcome: null }],
+  },
+  {
+    grade: "V4",
+    sends: 2,
+    climbs: 5,
+    unknownOutcomes: 2,
+    successRate: 67,
+    differencePercentagePoints: 0,
+    sampleStatus: "available",
+    examples: [{ ...unknownExample, name: "Known ascent", grade: "V4", outcome: "sent" }],
+  },
+];
+const unknownPooled = {
+  grade: "All grades",
+  sends: 2,
+  climbs: 9,
+  unknownOutcomes: 6,
+  successRate: 67,
+  differencePercentagePoints: 0,
+  sampleStatus: "available" as const,
+  examples: unknownCells.flatMap((cell) => cell.examples),
+};
+export const climbingStrengthsUnknownResultsFixture: ClimbingStrengths = {
+  coverage: { unknownOutcomes: 6, missingGrades: 0, missingIdentity: 0 },
+  panels: [
+    {
+      ...unknownBase,
+      grades: unknownCells.map((cell, index) => ({ ...cell, gradeSortValue: index })),
+      rows: [{ key: "vertical", label: "Vertical", cells: unknownCells }],
+      progress: [
+        {
+          startDate: "2026-10-01",
+          endDate: "2026-10-26",
+          rows: [{ key: "vertical", cells: unknownCells }],
+        },
+      ],
+      allGrades: {
+        grades: [{ ...unknownPooled, gradeSortValue: 0 }],
+        rows: [{ key: "vertical", label: "Vertical", cells: [unknownPooled] }],
+        progress: [
+          {
+            startDate: "2026-10-01",
+            endDate: "2026-10-26",
+            rows: [{ key: "vertical", cells: [unknownPooled] }],
+          },
+        ],
+      },
     },
   ],
 };

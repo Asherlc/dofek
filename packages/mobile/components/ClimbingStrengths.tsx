@@ -6,7 +6,10 @@ import type {
 import {
   ALL_CLIMBING_GRADES,
   climbingStrengthsBaselineLabel,
+  climbingStrengthsCountLabel,
   climbingStrengthsGradePanel,
+  climbingStrengthsRateLabel,
+  climbingStrengthsResultLabel,
 } from "@dofek/training/climbing-strengths";
 import type { ClimbingStrengthsView } from "@dofek/training/climbing-strengths-views";
 import { useRouter } from "expo-router";
@@ -38,7 +41,7 @@ function defaultPanel(panels: ClimbingStrengthsPanel[]) {
 function cellLabel(label: string, cell: ClimbingStrengthsCell) {
   return cell.sampleStatus === "no_data"
     ? `${label} · No data`
-    : `${label} · ${cell.successRate}% · ${cell.sends}/${cell.climbs} climbs sent${cell.differencePercentagePoints === null ? "" : ` · ${cell.differencePercentagePoints > 0 ? "+" : ""}${cell.differencePercentagePoints} percentage points vs ${climbingStrengthsBaselineLabel(cell.grade).toLowerCase()}`}`;
+    : `${label} · ${climbingStrengthsRateLabel(cell)} · ${climbingStrengthsCountLabel(cell)}${cell.differencePercentagePoints === null ? "" : ` · ${cell.differencePercentagePoints > 0 ? "+" : ""}${cell.differencePercentagePoints} percentage points vs ${climbingStrengthsBaselineLabel(cell.grade).toLowerCase()}`}`;
 }
 export function ClimbingStrengths({
   data,
@@ -84,6 +87,9 @@ export function ClimbingStrengths({
               </Pressable>
             ))}
           </View>
+          {panels.some((panel) => panel.grades.some((grade) => grade.unknownOutcomes > 0)) ? (
+            <Text style={styles.meta}>Success rates use climbs with known results.</Text>
+          ) : null}
           {contexts.map(([key, label]) => (
             <ClimbingStrengthsContext
               key={key}
@@ -149,7 +155,11 @@ function ClimbingStrengthsContext({
           <View key={panel.key} style={{ gap: spacing.md }}>
             {dimension !== "setting" && selectedPanels.length > 1 && panel.setting ? (
               <Text accessibilityRole="header" style={styles.text}>
-                {panel.setting === "indoor" ? "Indoor" : "Outdoor"}
+                {panel.setting === "indoor"
+                  ? "Indoor"
+                  : panel.setting === "outdoor"
+                    ? "Outdoor"
+                    : "Setting unknown"}
               </Text>
             ) : null}
             <ClimbingStrengthsPanelContent
@@ -216,8 +226,8 @@ function ClimbingStrengthsPanelContent({
         <>
           <Text style={styles.meta}>
             {selectedGradeKey === ALL_CLIMBING_GRADES ? "Overall" : "Same-grade"} baseline ·{" "}
-            {selectedGrade.successRate === null ? "No data" : `${selectedGrade.successRate}%`} ·{" "}
-            {selectedGrade.sends}/{selectedGrade.climbs} climbs sent
+            {climbingStrengthsRateLabel(selectedGrade)} ·{" "}
+            {climbingStrengthsCountLabel(selectedGrade)}
           </Text>
           {(gradePanel?.rows ?? []).map((row) => {
             const cell = row.cells.find((item) => item.grade === selectedGrade.grade);
@@ -237,9 +247,7 @@ function ClimbingStrengthsPanelContent({
               >
                 <View style={styles.rowHeading}>
                   <Text style={styles.text}>{row.label}</Text>
-                  <Text style={styles.text}>
-                    {cell.successRate === null ? "—" : `${cell.successRate}%`}
-                  </Text>
+                  <Text style={styles.text}>{climbingStrengthsRateLabel(cell)}</Text>
                 </View>
                 {view === "profile" && (
                   <Svg height={8} width="100%" accessibilityElementsHidden>
@@ -265,9 +273,7 @@ function ClimbingStrengthsPanelContent({
                   </Svg>
                 )}
                 <Text style={styles.meta}>
-                  {cell.sampleStatus === "no_data"
-                    ? "No data"
-                    : `${cell.sends}/${cell.climbs} climbs sent`}
+                  {cell.sampleStatus === "no_data" ? "No data" : climbingStrengthsCountLabel(cell)}
                 </Text>
                 {cell.differencePercentagePoints !== null && (
                   <Text style={styles.meta}>
@@ -294,7 +300,7 @@ function ClimbingStrengthsPanelContent({
                     <Text style={styles.text}>{example.name}</Text>
                     <Text style={styles.meta}>
                       {example.grade} · {example.date} ·{" "}
-                      {example.outcome === "sent" ? "Sent" : "Not sent"}
+                      {climbingStrengthsResultLabel(example.outcome)}
                     </Text>
                     {example.sourceUrl ? (
                       <Pressable

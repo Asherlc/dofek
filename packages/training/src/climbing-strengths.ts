@@ -11,12 +11,13 @@ const example = z.object({
   providerId: z.string(),
   sourceName: z.string(),
   sourceUrl: z.string().nullable(),
-  outcome: z.enum(["sent", "not_sent"]),
+  outcome: z.enum(["sent", "not_sent"]).nullable(),
 });
 const cell = z.object({
   grade: z.string(),
   sends: count,
   climbs: count,
+  unknownOutcomes: count,
   successRate: rate,
   differencePercentagePoints: z.number().min(-100).max(100).nullable(),
   sampleStatus: z.enum(["no_data", "limited", "available"]),
@@ -29,6 +30,7 @@ const profile = z.object({
       gradeSortValue: z.number(),
       sends: count,
       climbs: count,
+      unknownOutcomes: count,
       successRate: rate,
     }),
   ),
@@ -45,6 +47,7 @@ const profile = z.object({
               grade: true,
               sends: true,
               climbs: true,
+              unknownOutcomes: true,
               successRate: true,
               sampleStatus: true,
             }),
@@ -59,7 +62,7 @@ const panel = profile.extend({
   contextKey: z.string(),
   contextLabel: z.string(),
   dimension: z.enum(["wall_angle", "hold_type", "setting"]),
-  setting: z.enum(["indoor", "outdoor"]).nullable(),
+  setting: z.enum(["indoor", "outdoor", "unknown"]).nullable(),
   allGrades: profile,
   coverage: z.object({ missingTraits: count, unknownOutcomes: count }),
 });
@@ -83,4 +86,26 @@ export function climbingStrengthsGradePanel(
   grade: string,
 ): ClimbingStrengthsPanel {
   return grade === ALL_CLIMBING_GRADES ? { ...panel, ...panel.allGrades } : panel;
+}
+
+/** Format the supplied rate without interpreting an unknown result as missing climbs. */
+export function climbingStrengthsRateLabel(
+  value: Pick<ClimbingStrengthsCell, "climbs" | "successRate">,
+): string {
+  return value.successRate === null
+    ? value.climbs > 0
+      ? "Result unknown"
+      : "No data"
+    : `${value.successRate}%`;
+}
+
+/** Counts include every logged climb; the server computes rates from known results only. */
+export function climbingStrengthsCountLabel(
+  value: Pick<ClimbingStrengthsCell, "sends" | "climbs" | "unknownOutcomes">,
+): string {
+  return `${value.sends} sends / ${value.climbs} climbs${value.unknownOutcomes > 0 ? ` · ${value.unknownOutcomes} ${value.unknownOutcomes === 1 ? "result" : "results"} unknown` : ""}`;
+}
+
+export function climbingStrengthsResultLabel(outcome: ClimbingStrengthsExample["outcome"]): string {
+  return outcome === null ? "Result unknown" : outcome === "sent" ? "Sent" : "Not sent";
 }

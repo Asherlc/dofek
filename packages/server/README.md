@@ -46,8 +46,9 @@ The backend API and background job processor for Dofek. Built with Node.js, Expr
   owned, dated canonical climbing projection while retaining all source trait
   evidence before [distinct-climb consolidation](src/services/climbing-strengths.ts).
   Repeated attempts count once per identified climb and semantic context;
-  known sends take precedence over failures, while unknown-only outcomes and
-  conflicting grades are excluded.
+  known sends take precedence over failures. Unknown-only outcomes remain in
+  total climb counts and grade lists; success rates use known outcomes only.
+  Conflicting grades remain excluded.
   Coverage reports unidentified/missing-grade observation records separately from
   distinct-climb trait and outcome coverage. Known degree values are shown literally;
   missing units and contradictory traits remain unknown.
@@ -62,7 +63,8 @@ The backend API and background job processor for Dofek. Built with Node.js, Expr
   resolution. Outcomes resolve from each month's original observations: a later
   send does not erase an earlier month's failure, and globally conflicting grades
   remain excluded. Each climb counts once overall and once per observed month;
-  unknown-only months retain null rates and zero sample counts. All view metrics
+  unknown-only months retain their recorded counts and null rates; months with
+  no recorded attempts retain zero counts. All view metrics
   are supplied by this server response, as defined in the
   [shared strengths contract](../training/src/climbing-strengths.ts).
   Context labels omit the grading-system suffix when that semantic lane uses
@@ -74,6 +76,10 @@ The backend API and background job processor for Dofek. Built with Node.js, Expr
   accessible history through `endDate`, and progress starts at its earliest
   observation. See the [repository](src/repositories/climbing-strengths-repository.ts)
   and [aggregation](src/services/climbing-strengths.ts).
+  The [catalogue-setting view](../../drizzle/0164_climbing_catalogue_setting.sql)
+  assumes missing Mountain Project/OpenBeta rock settings are outdoor for reads
+  and global filters. Explicit settings take precedence; imported raw catalogue
+  rows are unchanged. Other missing settings appear as Unknown setting.
 - **Provider climbing records**: The [provider detail repository](src/repositories/provider-detail-repository.ts)
   lists retained logs, including undated records and provider-absence tombstones,
   and loads the full owned graph for a selected record. The [sync repository](src/repositories/sync-repository.ts)

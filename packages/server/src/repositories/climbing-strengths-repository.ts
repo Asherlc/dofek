@@ -154,7 +154,7 @@ export class ClimbingStrengthsRepository extends BaseRepository {
             providerId: row.provider_id,
             sourceName: row.source_name ?? row.provider_id,
             sourceUrl: climbingSourceLinks(row.provider_id, row.raw)[0]?.url ?? null,
-            outcome: outcome ?? "not_sent",
+            outcome,
           },
         };
       });

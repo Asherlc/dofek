@@ -1,5 +1,10 @@
 # Mountain Project provider
 
+Missing rock catalogue settings are assumed outdoor by the
+[canonical read view](../drizzle/0164_climbing_catalogue_setting.sql) for analytics
+and filters. Explicit settings take precedence, and imported source records
+retain null rather than storing this assumption as a raw fact.
+
 The Mountain Project integration syncs a connected user's route and boulder
 ticks as standalone climbing log entries. It is an unofficial integration and
 fetches a public export endpoint observed on

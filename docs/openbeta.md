@@ -53,7 +53,11 @@ Each supported tick becomes one standalone `fitness.climbing_log_entry` row:
   definitions establish targets, not attempted pitches or additional tries.
 - Names and verified identities belong to shared Climb/Pitch/Area objects;
   current Area ancestry supplies the displayed path. Source name stays on
-  the log. Neither this provider nor Mountain Project implies outdoor setting.
+  the log. The importer retains a missing setting as null. The
+  [canonical read view](../drizzle/0164_climbing_catalogue_setting.sql) assumes
+  missing OpenBeta/Mountain Project rock catalogue settings are outdoor; an
+  explicit source setting takes precedence. This is a display/filter assumption,
+  not a claim that the source supplied the fact.
 - `raw` retains the selected OpenBeta GraphQL response object for provenance.
 
 The upstream [tick schema](https://github.com/OpenBeta/openbeta-graphql/blob/f1508b2479cc7658ac4341d59ec817836190d6d8/src/graphql/schema/Tick.gql)

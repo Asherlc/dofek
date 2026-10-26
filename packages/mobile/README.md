@@ -145,7 +145,10 @@ retains the selected grade and style when changing views. The page-wide climbing
 filters select context and setting; strengths uses one grouping control and View
 picker, with separate labeled sections for multiple returned contexts and
 settings. Every grouping stays clickable and shows an empty state when its
-observations are absent.
+observations are absent. Logged climbs with unrecorded results remain in total
+counts and appear as "Result unknown". Success rates use only known results;
+unknown-result counts and source examples remain visible. Unknown settings
+have a separate group.
 Selecting a grade and style reveals recorded success counts and source climbs;
 wall-angle, hold-type, and indoor/outdoor groups share the web client's
 [server-computed contract](../training/src/climbing-strengths.ts).

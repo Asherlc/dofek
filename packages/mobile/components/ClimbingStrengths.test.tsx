@@ -1,7 +1,10 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { ClimbingStrengths } from "./ClimbingStrengths";
-import { climbingStrengthsFixture as fixture } from "./climbing-strengths-fixtures";
+import {
+  climbingStrengthsUnknownResultsFixture,
+  climbingStrengthsFixture as fixture,
+} from "./climbing-strengths-fixtures";
 
 const data = {
   ...fixture,
@@ -23,7 +26,7 @@ describe("ClimbingStrengths", () => {
     expect(screen.getByRole("button", { name: "All grades" }).getAttribute("aria-selected")).toBe(
       "true",
     );
-    expect(screen.getByText("Overall baseline · 36% · 5/14 climbs sent")).toBeTruthy();
+    expect(screen.getByText("Overall baseline · 36% · 5 sends / 14 climbs")).toBeTruthy();
     expect(screen.getByRole("button", { name: /^Slab · 29%/ })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "V3" }));
     expect(screen.getByRole("button", { name: /^Slab · 40%/ })).toBeTruthy();
@@ -126,7 +129,7 @@ describe("ClimbingStrengths", () => {
   });
   it("renders server values and selects grade, dimension and context", () => {
     renderAtV3(<ClimbingStrengths data={data} />);
-    expect(screen.getByText("Same-grade baseline · 44% · 4/9 climbs sent")).toBeTruthy();
+    expect(screen.getByText("Same-grade baseline · 44% · 4 sends / 9 climbs")).toBeTruthy();
     expect(document.querySelector('[testID="strength-bar-slab"]')?.getAttribute("width")).toBe(
       "40%",
     );
@@ -135,7 +138,7 @@ describe("ClimbingStrengths", () => {
     );
     fireEvent.click(
       screen.getByRole("button", {
-        name: "Slab · 40% · 2/5 climbs sent · -4 percentage points vs same-grade baseline",
+        name: "Slab · 40% · 2 sends / 5 climbs · -4 percentage points vs same-grade baseline",
       }),
     );
     expect(screen.getByText("Quiet Feet")).toBeTruthy();
@@ -147,21 +150,21 @@ describe("ClimbingStrengths", () => {
       "climbing-strengths-source",
     );
     fireEvent.click(screen.getByRole("button", { name: "V4" }));
-    expect(screen.getByText("Same-grade baseline · 20% · 1/5 climbs sent")).toBeTruthy();
+    expect(screen.getByText("Same-grade baseline · 20% · 1 sends / 5 climbs")).toBeTruthy();
     expect(
       screen.getByRole("button", {
-        name: "Slab · 0% · 0/2 climbs sent · -20 percentage points vs same-grade baseline",
+        name: "Slab · 0% · 0 sends / 2 climbs · -20 percentage points vs same-grade baseline",
       }),
     ).toBeTruthy();
     expect(
       screen.getByRole("button", {
-        name: "Vertical · 33% · 1/3 climbs sent · +13 percentage points vs same-grade baseline",
+        name: "Vertical · 33% · 1 sends / 3 climbs · +13 percentage points vs same-grade baseline",
       }),
     ).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Hold type" }));
     expect(
       screen.getByRole("button", {
-        name: "Crimps · 0% · 0/2 climbs sent · -20 percentage points vs same-grade baseline",
+        name: "Crimps · 0% · 0 sends / 2 climbs · -20 percentage points vs same-grade baseline",
       }),
     ).toBeTruthy();
   });
@@ -180,7 +183,7 @@ describe("ClimbingStrengths", () => {
     fireEvent.click(screen.getByRole("button", { name: "Indoor / outdoor" }));
     expect(
       screen.getByRole("button", {
-        name: "Indoor · 20% · 1/5 climbs sent · 0 percentage points vs same-grade baseline",
+        name: "Indoor · 20% · 1 sends / 5 climbs · 0 percentage points vs same-grade baseline",
       }),
     ).toBeTruthy();
   });
@@ -218,7 +221,7 @@ describe("ClimbingStrengths", () => {
     renderAtV3(<ClimbingStrengths data={{ ...fixture, panels }} />);
     expect(screen.getByText("Bouldering · V scale · Free")).toBeTruthy();
     expect(screen.getByText("Routes · YDS · Lead · Free")).toBeTruthy();
-    expect(screen.getByText("Same-grade baseline · 44% · 4/9 climbs sent")).toBeTruthy();
+    expect(screen.getByText("Same-grade baseline · 44% · 4 sends / 9 climbs")).toBeTruthy();
     expect(screen.getByText("No recorded wall angle observations in this context.")).toBeTruthy();
   });
   it("distinguishes no data", () => {
@@ -238,7 +241,7 @@ describe("ClimbingStrengths", () => {
     view.rerender(
       <ClimbingStrengths data={data} loading error={{ message: "Reconnect your account." }} />,
     );
-    expect(screen.getByText("Overall baseline · 36% · 5/14 climbs sent")).toBeTruthy();
+    expect(screen.getByText("Overall baseline · 36% · 5 sends / 14 climbs")).toBeTruthy();
     expect(screen.queryByTestId("query-state-loading")).toBeNull();
   });
 });
@@ -297,4 +300,22 @@ it("uses an empty state for missing traits even when the panel has graded climbs
   fireEvent.click(screen.getByRole("radio", { name: "Success curves" }));
   expect(screen.getByText("No recorded wall angle observations in this context.")).toBeTruthy();
   expect(screen.queryByRole("button", { name: "View Success curves data" })).toBeNull();
+});
+
+it("shows unknown results and explains known-only rates for mixed climbs", () => {
+  render(<ClimbingStrengths data={climbingStrengthsUnknownResultsFixture} />);
+  fireEvent.click(screen.getByRole("button", { name: "V3" }));
+  fireEvent.click(
+    screen.getByRole("button", {
+      name: /Vertical · Result unknown · 0 sends \/ 4 climbs · 4 results unknown/,
+    }),
+  );
+  expect(screen.getByText(/V3 · .* · Result unknown/)).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "V4" }));
+  expect(
+    screen.getByRole("button", {
+      name: /Vertical · 67% · 2 sends \/ 5 climbs · 2 results unknown/,
+    }),
+  ).toBeTruthy();
+  expect(screen.getByText("Success rates use climbs with known results.")).toBeTruthy();
 });

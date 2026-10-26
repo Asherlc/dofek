@@ -147,17 +147,26 @@ describe("mobile query persistence", () => {
     await refetch;
   });
 
-  it("discards strengths from v12 without pooled grade results", async () => {
+  it("discards strengths from v13 without unknown result counts", async () => {
     const AsyncStorage = (await import("@react-native-async-storage/async-storage")).default;
     const userId = "strengths-owner";
     const queryKey = [["climbing", "strengths"], { input: { days: 90 }, type: "query" }];
     const seedClient = createQueryClient();
-    seedClient.setQueryData(queryKey, { panels: [{ grades: [], rows: [], progress: [] }] });
+    seedClient.setQueryData(queryKey, {
+      panels: [
+        {
+          grades: [{ grade: "5.9", climbs: 1, sends: 1, successRate: 100 }],
+          rows: [],
+          progress: [],
+          allGrades: { grades: [], rows: [], progress: [] },
+        },
+      ],
+    });
     await AsyncStorage.setItem(
       `dofek-query-cache:${userId}`,
       JSON.stringify({
         timestamp: Date.now(),
-        buster: `${userId}:v12`,
+        buster: `${userId}:v13`,
         clientState: dehydrate(seedClient),
       }),
     );

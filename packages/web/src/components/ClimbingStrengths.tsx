@@ -5,7 +5,10 @@ import type {
 } from "@dofek/training/climbing-strengths";
 import {
   ALL_CLIMBING_GRADES,
+  climbingStrengthsCountLabel,
   climbingStrengthsGradePanel,
+  climbingStrengthsRateLabel,
+  climbingStrengthsResultLabel,
 } from "@dofek/training/climbing-strengths";
 import {
   CLIMBING_STRENGTHS_VIEWS,
@@ -20,7 +23,7 @@ const dimensions = {
   hold_type: "Hold type",
   setting: "Indoor & outdoor",
 };
-const settings = { indoor: "Indoor", outdoor: "Outdoor" };
+const settings = { indoor: "Indoor", outdoor: "Outdoor", unknown: "Setting unknown" };
 function observed(panel: ClimbingStrengthsPanel) {
   return panel.rows.some((row) => row.cells.some((cell) => cell.sampleStatus !== "no_data"));
 }
@@ -33,7 +36,7 @@ function preferred(panels: ClimbingStrengthsPanel[]) {
   );
 }
 function rateLabel(cell: ClimbingStrengthsCell) {
-  return cell.successRate === null ? "No data" : `${cell.successRate}%`;
+  return climbingStrengthsRateLabel(cell);
 }
 
 export function ClimbingStrengths({
@@ -104,6 +107,9 @@ export function ClimbingStrengths({
           </select>
         </label>
       </div>
+      {panels.some((panel) => panel.grades.some((grade) => grade.unknownOutcomes > 0)) ? (
+        <p className="text-xs text-muted">Success rates use climbs with known results.</p>
+      ) : null}
       {contexts.map(([key, label]) => (
         <ClimbingStrengthsContext
           key={key}
@@ -253,7 +259,7 @@ function ClimbingStrengthsPanelContent({
                     <td key={value.grade}>
                       <button
                         type="button"
-                        aria-label={`${item.label} · ${value.grade} · ${rateLabel(value)} · ${value.sends} sends / ${value.climbs} climbs`}
+                        aria-label={`${item.label} · ${value.grade} · ${rateLabel(value)} · ${climbingStrengthsCountLabel(value)}`}
                         aria-pressed={row?.key === item.key && cell?.grade === value.grade}
                         onClick={() => selectCell(item.key, value.grade)}
                         className={`min-h-20 w-full min-w-24 rounded-lg border p-2 text-center focus-visible:outline-2 focus-visible:outline-accent ${row?.key === item.key && cell?.grade === value.grade ? "ring-2 ring-accent ring-offset-2 ring-offset-surface-solid" : ""} ${value.sampleStatus === "no_data" ? "border-dashed border-border text-dim" : "border-accent/20 text-foreground"}`}
@@ -273,7 +279,7 @@ function ClimbingStrengthsPanelContent({
                         <span className="block text-xs">
                           {value.sampleStatus === "no_data"
                             ? "No recorded climbs"
-                            : `${value.sends} / ${value.climbs} climbs`}
+                            : climbingStrengthsCountLabel(value)}
                         </span>
                       </button>
                     </td>
@@ -298,7 +304,7 @@ function ClimbingStrengthsPanelContent({
             </p>
           ) : null}
           <p>
-            {rateLabel(cell)} · {cell.sends} sends / {cell.climbs} climbs
+            {rateLabel(cell)} · {climbingStrengthsCountLabel(cell)}
           </p>
           {cell.differencePercentagePoints !== null ? (
             <p className="text-xs text-muted">
@@ -311,8 +317,7 @@ function ClimbingStrengthsPanelContent({
             <div key={example.logEntryId} className="border-t border-border pt-3 text-sm">
               <p className="font-medium">{example.name}</p>
               <p className="text-xs text-muted">
-                {example.grade} · {example.date} ·{" "}
-                {example.outcome === "sent" ? "Sent" : "Not sent"}
+                {example.grade} · {example.date} · {climbingStrengthsResultLabel(example.outcome)}
               </p>
               <div className="mt-1 flex gap-3 text-xs text-accent">
                 {example.sourceUrl ? (

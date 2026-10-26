@@ -3,7 +3,10 @@ import { expect, it } from "vitest";
 import { z } from "zod";
 import { chartThemeColors } from "../lib/chartTheme.ts";
 import { climbingStrengthsChartOption } from "./climbing-strengths-chart-options.ts";
-import { climbingStrengthsFixture as fixture } from "./climbing-strengths-fixtures.ts";
+import {
+  climbingStrengthsUnknownResultsFixture,
+  climbingStrengthsFixture as fixture,
+} from "./climbing-strengths-fixtures.ts";
 
 const panel = fixture.panels[0];
 if (!panel) throw new Error("Missing fixture");
@@ -650,4 +653,31 @@ it("renders an isolated observation with a marker and retains every dense style"
     },
     350,
   );
+});
+
+it("retains unknown-result logged climbs in pyramids and total mixed exposure counts", () => {
+  const unknownPanel = climbingStrengthsUnknownResultsFixture.panels[0];
+  if (!unknownPanel) throw new Error("Missing unknown results fixture");
+  const pyramid = climbingStrengthsChartOption(unknownPanel, "pyramids", "V3", null);
+  expect(pyramid.series[0]?.data).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        grade: "V3",
+        value: 4,
+        displayValue: "Result unknown · 0 sends / 4 climbs · 4 results unknown",
+      }),
+    ]),
+  );
+  const exposure = climbingStrengthsChartOption(unknownPanel, "exposure", "V4", null);
+  expect(exposure.series[0]?.data).toEqual([
+    expect.objectContaining({
+      value: [5, 0],
+      displayValue: "67% · 2 sends / 5 climbs · 2 results unknown",
+    }),
+  ]);
+  const curve = climbingStrengthsChartOption(unknownPanel, "curves", "V3", null);
+  expect(curve.series[0]?.data[0]).toMatchObject({
+    value: null,
+    displayValue: "Result unknown · 0 sends / 4 climbs · 4 results unknown",
+  });
 });

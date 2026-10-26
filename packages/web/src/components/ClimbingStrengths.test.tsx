@@ -3,7 +3,10 @@ import { cleanup, fireEvent, render, screen, within } from "@testing-library/rea
 import type { ReactNode } from "react";
 import { afterEach, expect, it, vi } from "vitest";
 import { ClimbingStrengths } from "./ClimbingStrengths.tsx";
-import { climbingStrengthsFixture as fixture } from "./climbing-strengths-fixtures.ts";
+import {
+  climbingStrengthsUnknownResultsFixture,
+  climbingStrengthsFixture as fixture,
+} from "./climbing-strengths-fixtures.ts";
 
 vi.mock("./DofekChart.tsx", () => ({
   DofekChart: ({ dataDisclosure }: { dataDisclosure: ReactNode }) => (
@@ -100,7 +103,9 @@ it("distinguishes zero and missing data and exposes actual examples", () => {
   );
   expect(screen.getByText("Evening Arete")).toBeVisible();
   fireEvent.click(screen.getByRole("button", { name: /Overhang · V4/ }));
-  expect(screen.getByText(/0 sends \/ 2 climbs/)).toBeVisible();
+  expect(screen.getByRole("region", { name: "Selected climbs" })).toHaveTextContent(
+    "0 sends / 2 climbs",
+  );
   expect(screen.getByRole("button", { name: /Slab · V4 · No data/ })).toBeVisible();
 });
 it("keeps cached content during loading and distinguishes initial loading from empty", () => {
@@ -174,4 +179,23 @@ it("selects missing dimensions and shows their empty state while preserving navi
   }
   fireEvent.click(screen.getByRole("button", { name: "Wall angle" }));
   expect(screen.getByRole("button", { name: /Vertical · V4/ })).toBeVisible();
+});
+
+it("shows unknown results and mixed counts without treating logged climbs as missing", () => {
+  render(<ClimbingStrengths data={climbingStrengthsUnknownResultsFixture} />);
+  fireEvent.click(
+    screen.getByRole("button", {
+      name: /Vertical · V3 · Result unknown · 0 sends \/ 4 climbs · 4 results unknown/,
+    }),
+  );
+  expect(screen.getByRole("region", { name: "Selected climbs" })).toHaveTextContent(
+    "Result unknown",
+  );
+  expect(screen.getByText(/V3 · .* · Result unknown/)).toBeVisible();
+  fireEvent.click(
+    screen.getByRole("button", {
+      name: /Vertical · V4 · 67% · 2 sends \/ 5 climbs · 2 results unknown/,
+    }),
+  );
+  expect(screen.getByText("Success rates use climbs with known results.")).toBeVisible();
 });

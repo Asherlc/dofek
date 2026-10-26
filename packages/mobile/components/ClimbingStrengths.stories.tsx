@@ -3,6 +3,7 @@ import { ClimbingStrengths } from "./ClimbingStrengths";
 import {
   climbingStrengthsComparisonFixture,
   climbingStrengthsFixture,
+  climbingStrengthsUnknownResultsFixture,
 } from "./climbing-strengths-fixtures";
 
 const meta = {
@@ -66,3 +67,5 @@ export const MissingDimensions: Story = {
     },
   },
 };
+
+export const UnknownResults: Story = { args: { data: climbingStrengthsUnknownResultsFixture } };

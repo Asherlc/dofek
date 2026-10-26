@@ -4,7 +4,10 @@ import { cleanup, fireEvent, render, screen, within } from "@testing-library/rea
 import type { ComponentProps } from "react";
 import { afterEach, expect, it, vi } from "vitest";
 import { ClimbingStrengthsChart } from "./ClimbingStrengthsChart.tsx";
-import { climbingStrengthsFixture as fixture } from "./climbing-strengths-fixtures.ts";
+import {
+  climbingStrengthsUnknownResultsFixture,
+  climbingStrengthsFixture as fixture,
+} from "./climbing-strengths-fixtures.ts";
 import type { DofekChart } from "./DofekChart.tsx";
 
 const captured = vi.hoisted<{ props: ComponentProps<typeof DofekChart> | null }>(() => ({
@@ -174,3 +177,26 @@ it("retains dense styles and complete long labels in keyboard-selectable exact v
     screen.getByRole("button", { name: /Long source wall-angle description 23 · V3 · 80%/ }),
   ).toBeVisible();
 });
+
+it.each(["gaps", "curves", "exposure", "pyramids", "progress", "radar"] as const)(
+  "%s exposes unknown-result counts in exact values",
+  (view) => {
+    const unknownPanel = climbingStrengthsUnknownResultsFixture.panels[0];
+    if (!unknownPanel) throw new Error("Missing unknown results fixture");
+    render(
+      <ClimbingStrengthsChart
+        panel={unknownPanel}
+        view={view}
+        grade="V3"
+        selectedRow={null}
+        onSelectCell={() => {}}
+      />,
+    );
+    fireEvent.click(screen.getByText("Exact values"));
+    expect(
+      screen.getByRole("button", {
+        name: /Vertical · V3.*Result unknown · 0 sends \/ 4 climbs · 4 results unknown/,
+      }),
+    ).toBeVisible();
+  },
+);
