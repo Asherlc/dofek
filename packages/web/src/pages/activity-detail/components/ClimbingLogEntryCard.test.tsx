@@ -30,8 +30,8 @@ it("shows Mountain Project's recorded top-rope method with an unknown attempt co
 });
 
 it.each([
-  { count: null, summary: null },
-  { count: 2, summary: "Attempts: 2" },
+  { count: null, summary: "Completed" },
+  { count: 2, summary: "Completed · Attempts: 2" },
 ])("shows the recorded result with attempt count $count", ({ count, summary }) => {
   const entry = climbingLogEntryFixture({
     recordedClimbAttemptCount: count,
@@ -42,8 +42,7 @@ it.each([
       <ClimbingLogEntryCard entry={entry} />
     </ul>,
   );
-  if (summary === null) expect(screen.queryByText("Completed")).not.toBeInTheDocument();
-  else expect(screen.getByText(summary)).toBeInTheDocument();
+  expect(screen.getByText(summary)).toBeInTheDocument();
 });
 
 it.each([undefined, 3])(
@@ -86,9 +85,11 @@ it.each([undefined, 3])(
 );
 
 it.each([
-  { freeSend: false, outcome: "completed", summary: "Attempted · Attempts: 2" },
+  { freeSend: false, outcome: "completed", summary: "Completed · Attempts: 2" },
   { freeSend: false, outcome: "failed", summary: "Attempted · Attempts: 2" },
+  { freeSend: null, outcome: "completed", summary: "Completed · Attempts: 2" },
   { freeSend: true, outcome: "completed", summary: "Attempts: 2" },
+  { freeSend: false, outcome: null, summary: "Attempts: 2" },
   { freeSend: null, outcome: null, summary: "Attempts: 2" },
 ] as const)(
   "renders the server's send status ($freeSend, $outcome)",
@@ -104,7 +105,7 @@ it.each([
       </ul>,
     );
     expect(screen.getByText(summary)).toBeInTheDocument();
-    expect(screen.queryAllByText(/Attempted/)).toHaveLength(freeSend === false ? 1 : 0);
+    expect(screen.queryAllByText(/Attempted/)).toHaveLength(outcome === "failed" ? 1 : 0);
   },
 );
 

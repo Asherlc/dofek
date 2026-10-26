@@ -101,7 +101,7 @@ describe("ClimbingLogEntryCard", () => {
     expect(screen.getByRole("link", { name: "Swiss Cheese on Mountain Project" })).toBeTruthy();
     expect(screen.getByRole("link", { name: "Mountain Project" })).toBeTruthy();
     expect(screen.getByText("5.4")).toBeTruthy();
-    expect(screen.queryByText("Completed")).toBeNull();
+    expect(screen.getByText("Completed")).toBeTruthy();
   });
 
   it("shows a known recorded attempt count alongside its outcome", () => {
@@ -110,13 +110,15 @@ describe("ClimbingLogEntryCard", () => {
         entry={{ ...climbingLogFixture, providerId: "kaya", recordedClimbAttemptCount: 2 }}
       />,
     );
-    expect(screen.getByText("Attempts: 2")).toBeTruthy();
+    expect(screen.getByText("Completed · Attempts: 2")).toBeTruthy();
   });
 
   it.each([
-    { freeSend: false, outcome: "completed", summary: "Attempted · Attempts: 2" },
+    { freeSend: false, outcome: "completed", summary: "Completed · Attempts: 2" },
     { freeSend: false, outcome: "failed", summary: "Attempted · Attempts: 2" },
+    { freeSend: null, outcome: "completed", summary: "Completed · Attempts: 2" },
     { freeSend: true, outcome: "completed", summary: "Attempts: 2" },
+    { freeSend: false, outcome: null, summary: "Attempts: 2" },
     { freeSend: null, outcome: null, summary: "Attempts: 2" },
   ] as const)(
     "renders the server's send status ($freeSend, $outcome)",
@@ -133,7 +135,7 @@ describe("ClimbingLogEntryCard", () => {
         />,
       );
       expect(screen.getByText(summary)).toBeTruthy();
-      expect(screen.queryAllByText(/Attempted/)).toHaveLength(freeSend === false ? 1 : 0);
+      expect(screen.queryAllByText(/Attempted/)).toHaveLength(outcome === "failed" ? 1 : 0);
     },
   );
 
@@ -179,6 +181,7 @@ it.each(["Onsight", "Flash"] as const)(
       climb: { ...climbingClimbFixture("kaya"), name: null, kind: "boulder" as const },
       raw: { color: { name: "Blue" } },
       displayGrade: "V5",
+      freeSend: true,
       recordedClimbAttemptCount: 1,
       attempts: [
         climbingAttemptFixture(climbingLogFixture.id, { rockResultLabels: ["sent", label] }),

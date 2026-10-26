@@ -9,16 +9,13 @@ export function formatClimbingRecordedResult(
   resultLabels: readonly string[] = [],
   freeSend: boolean | null = null,
 ): string | null {
-  const result =
-    target === null
-      ? freeSend === false
-        ? "Attempted"
-        : outcome === "failed"
-          ? "Failed"
-          : null
-      : `${target}${outcome === "failed" ? " failed" : ""}`;
+  let result: string | null = null;
+  if (outcome === "failed") result = "Attempted";
+  else if (outcome === "completed" && freeSend !== true && resultLabels.length === 0)
+    result = "Completed";
   return (
     [
+      target,
       result,
       recordedCount === null || isFirstTryClimbingResult(resultLabels)
         ? null
