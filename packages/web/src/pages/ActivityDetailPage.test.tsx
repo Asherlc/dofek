@@ -2717,9 +2717,9 @@ describe("ActivityDetailPage", () => {
       expect(screen.getByText("Sent")).toBeDefined();
       expect(screen.getByText("Attempts: 7")).toBeDefined();
       expect(screen.getByText("Project")).toBeDefined();
-      expect(screen.getByText("Failed · Attempts: 1")).toBeDefined();
+      expect(screen.getByText("Attempted")).toBeDefined();
       expect(screen.getByText("Wall angle: 35°")).toBeDefined();
-      expect(screen.getByText("Attempts: 1")).toBeDefined();
+      expect(screen.getAllByText("Attempts: 1")).toHaveLength(2);
       expect(screen.getAllByText("Touchstone Pacific Pipe")).toHaveLength(3);
       expect(
         screen.queryByText("No unattached climbing logs for this day."),

@@ -56,6 +56,11 @@ for climbing activities. Cards group under Area headings and show the
 published display grade, concise attempt counts, pitch labels, and server-derived
 rock labels through the [shared grouping helper](../training/src/climbing-log-groups.ts)
 and [card](src/pages/activity-detail/components/ClimbingLogEntryCard.tsx).
+Areas flow as blocks, with singleton areas sharing a row and larger areas
+wrapping their cards internally. The
+[breakdown](src/pages/activity-detail/components/ClimbingLogEntryBreakdown.tsx)
+uses [ResizeObserver](https://www.w3.org/TR/resize-observer/) to keep each block's
+column span within the available grid and preserve consistent card widths.
 The provider data viewer's
 [record details](src/components/ClimbingLogEntryDetails.tsx) show source links,
 published and reported grade collections, known attempt facts, and notes.

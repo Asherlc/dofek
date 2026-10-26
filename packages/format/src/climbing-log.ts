@@ -2,6 +2,16 @@ import { gradeSystemLabel } from "@dofek/training/climbing-grades";
 import type { AttemptOutcome, ClimbingAttempt, GradeComponent } from "@dofek/training/climbing-log";
 import { formatClimbingRopeMethod } from "./climbing-context.ts";
 
+export function formatClimbingResultOutcome(
+  outcome: AttemptOutcome | null,
+  resultLabels: readonly string[] = [],
+  freeSend: boolean | null = null,
+): "Attempted" | "Completed" | null {
+  if (outcome === "failed") return "Attempted";
+  if (outcome === "completed" && freeSend !== true && resultLabels.length === 0) return "Completed";
+  return null;
+}
+
 export function formatClimbingRecordedResult(
   target: string | null,
   outcome: AttemptOutcome | null,
@@ -9,16 +19,10 @@ export function formatClimbingRecordedResult(
   resultLabels: readonly string[] = [],
   freeSend: boolean | null = null,
 ): string | null {
-  const result =
-    target === null
-      ? freeSend === false
-        ? "Attempted"
-        : outcome === "failed"
-          ? "Failed"
-          : null
-      : `${target}${outcome === "failed" ? " failed" : ""}`;
+  const result = formatClimbingResultOutcome(outcome, resultLabels, freeSend);
   return (
     [
+      target,
       result,
       recordedCount === null || isFirstTryClimbingResult(resultLabels)
         ? null

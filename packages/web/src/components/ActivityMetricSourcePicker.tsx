@@ -1,7 +1,7 @@
 import type { ActivityMetricSource } from "@dofek/providers/activity-metric-source";
 import { providerSourceLogo } from "@dofek/providers/providers";
+import * as Popover from "@radix-ui/react-popover";
 import { useId, useRef, useState } from "react";
-import { ModalDialog, ModalDialogDescription, ModalDialogTitle } from "./ModalDialog.tsx";
 import { ProviderLogo } from "./ProviderLogo.tsx";
 
 interface ActivityMetricSourcePickerProps {
@@ -65,106 +65,109 @@ export function ActivityMetricSourcePicker({
   const { presentation } = selected;
 
   return (
-    <>
-      <button
-        type="button"
-        aria-label={`${label} source: ${selected.label}`}
-        aria-haspopup="dialog"
-        aria-expanded={open}
-        onClick={() => setOpen(true)}
-        className={`inline-flex min-h-11 min-w-0 max-w-full items-center gap-2 bg-transparent py-2 text-xs text-foreground transition-colors hover:bg-surface-hover focus-visible:outline-2 focus-visible:outline-offset-2 ${className}`}
-      >
-        <ProviderLogo
-          provider={providerSourceLogo(presentation.providerId, presentation.sourceName).provider}
-          sourceName={presentation.sourceName}
-          size={19}
-        />
-        <span className="min-w-0 truncate font-medium">{presentation.displayName}</span>
-        <AttributionIcon attribution={presentation.attribution} />
-        <svg
-          className="ml-1 shrink-0 text-muted"
-          width="10"
-          height="10"
-          viewBox="0 0 12 12"
-          fill="none"
-          stroke="currentColor"
-          aria-hidden="true"
-        >
-          <path d="m3 4.5 3 3 3-3" />
-        </svg>
-      </button>
-      <ModalDialog
-        open={open}
-        onClose={() => setOpen(false)}
-        closeOnInteractOutside
-        initialFocusRef={selectedRef}
-        contentClassName="w-[calc(100%-2rem)] max-w-sm max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-2xl border border-border bg-surface p-5 text-foreground shadow-2xl"
-      >
-        <ModalDialogTitle className="text-base font-semibold">{label} source</ModalDialogTitle>
-        <ModalDialogDescription className="mt-1 text-xs text-muted">
-          Choose a recording for this chart.
-        </ModalDialogDescription>
-        <fieldset className="mt-4 space-y-1">
-          <legend className="sr-only">Available recordings</legend>
-          {sources.map((source, index) => (
-            <label
-              key={source.id}
-              className="flex min-h-14 cursor-pointer items-center gap-3 rounded-lg px-2 py-3 hover:bg-surface-hover focus-within:outline-2 focus-within:outline-offset-2"
-            >
-              <ProviderLogo
-                provider={
-                  providerSourceLogo(source.presentation.providerId, source.presentation.sourceName)
-                    .provider
-                }
-                sourceName={source.presentation.sourceName}
-                size={28}
-              />
-              <span className="min-w-0 flex-1 break-words text-sm font-medium">{source.label}</span>
-              <input
-                ref={(element) => {
-                  optionRefs.current[index] = element;
-                  if (source.id === selectedId) selectedRef.current = element;
-                }}
-                type="radio"
-                name={groupId}
-                value={source.id}
-                checked={source.id === selectedId}
-                onChange={() => {
-                  onChange(source.id);
-                  setOpen(false);
-                }}
-                onKeyDown={(event) => {
-                  const direction = ["ArrowDown", "ArrowRight"].includes(event.key)
-                    ? 1
-                    : ["ArrowUp", "ArrowLeft"].includes(event.key)
-                      ? -1
-                      : 0;
-                  if (direction) {
-                    event.preventDefault();
-                    const nextIndex = (index + direction + sources.length) % sources.length;
-                    const nextSource = sources[nextIndex];
-                    if (nextSource) {
-                      onChange(nextSource.id);
-                      optionRefs.current[nextIndex]?.focus();
-                    }
-                  } else if (event.key === "Enter") {
-                    event.preventDefault();
-                    setOpen(false);
-                  }
-                }}
-                className="shrink-0 accent-accent"
-              />
-            </label>
-          ))}
-        </fieldset>
+    <Popover.Root open={open} onOpenChange={setOpen}>
+      <Popover.Trigger asChild>
         <button
           type="button"
-          onClick={() => setOpen(false)}
-          className="mt-3 min-h-11 w-full rounded-lg border border-border text-sm text-muted hover:bg-surface-hover"
+          aria-label={`${label} source: ${selected.label}`}
+          aria-haspopup="dialog"
+          aria-expanded={open}
+          className={`inline-flex min-h-11 min-w-0 max-w-full items-center gap-2 bg-transparent py-2 text-xs text-foreground transition-colors hover:bg-surface-hover focus-visible:outline-2 focus-visible:outline-offset-2 ${className}`}
         >
-          Done
+          <ProviderLogo
+            provider={providerSourceLogo(presentation.providerId, presentation.sourceName).provider}
+            sourceName={presentation.sourceName}
+            size={19}
+          />
+          <span className="min-w-0 truncate font-medium">{presentation.displayName}</span>
+          <AttributionIcon attribution={presentation.attribution} />
+          <svg
+            className="ml-1 shrink-0 text-muted"
+            width="10"
+            height="10"
+            viewBox="0 0 12 12"
+            fill="none"
+            stroke="currentColor"
+            aria-hidden="true"
+          >
+            <path d="m3 4.5 3 3 3-3" />
+          </svg>
         </button>
-      </ModalDialog>
-    </>
+      </Popover.Trigger>
+      <Popover.Portal>
+        <Popover.Content
+          aria-label={`${label} source`}
+          align="start"
+          sideOffset={6}
+          collisionPadding={16}
+          onOpenAutoFocus={(event) => {
+            event.preventDefault();
+            selectedRef.current?.focus();
+          }}
+          className="z-50 w-80 max-w-[calc(100vw-2rem)] max-h-[var(--radix-popover-content-available-height)] overflow-y-auto rounded-xl border border-border bg-surface p-2 text-foreground shadow-xl"
+        >
+          <fieldset className="space-y-1">
+            <legend className="sr-only">Available recordings</legend>
+            {sources.map((source, index) => (
+              <label
+                key={source.id}
+                title={source.label}
+                className="flex min-h-11 cursor-pointer items-center gap-3 rounded-lg px-2 py-2 hover:bg-surface-hover focus-within:outline-2 focus-within:outline-offset-2"
+              >
+                <ProviderLogo
+                  provider={
+                    providerSourceLogo(
+                      source.presentation.providerId,
+                      source.presentation.sourceName,
+                    ).provider
+                  }
+                  sourceName={source.presentation.sourceName}
+                  size={22}
+                />
+                <span className="min-w-0 flex-1 break-words text-sm font-medium">
+                  {source.presentation.displayName}
+                </span>
+                <AttributionIcon attribution={source.presentation.attribution} />
+                <input
+                  aria-label={source.label}
+                  ref={(element) => {
+                    optionRefs.current[index] = element;
+                    if (source.id === selectedId) selectedRef.current = element;
+                  }}
+                  type="radio"
+                  name={groupId}
+                  value={source.id}
+                  checked={source.id === selectedId}
+                  onChange={() => {
+                    onChange(source.id);
+                    setOpen(false);
+                  }}
+                  onKeyDown={(event) => {
+                    const direction = ["ArrowDown", "ArrowRight"].includes(event.key)
+                      ? 1
+                      : ["ArrowUp", "ArrowLeft"].includes(event.key)
+                        ? -1
+                        : 0;
+                    if (direction) {
+                      event.preventDefault();
+                      const nextIndex = (index + direction + sources.length) % sources.length;
+                      const nextSource = sources[nextIndex];
+                      if (nextSource) {
+                        onChange(nextSource.id);
+                        optionRefs.current[nextIndex]?.focus();
+                      }
+                    } else if (event.key === "Enter") {
+                      event.preventDefault();
+                      setOpen(false);
+                    }
+                  }}
+                  className="shrink-0 accent-accent"
+                />
+              </label>
+            ))}
+          </fieldset>
+        </Popover.Content>
+      </Popover.Portal>
+    </Popover.Root>
   );
 }

@@ -42,3 +42,30 @@ export const SegmentWarning: Story = {
 };
 
 export const Loading: Story = { args: { data: undefined, loading: true, error: null } };
+
+export const GenericWork: Story = {
+  args: {
+    data: {
+      ...data,
+      summary: {
+        ...data.summary,
+        exercises: [{ label: "Work", workIntervalCount: 3, workDurationSeconds: 21 }],
+      },
+    },
+  },
+};
+
+export const MixedWorkAndNamed: Story = {
+  args: {
+    data: {
+      ...data,
+      summary: {
+        ...data.summary,
+        exercises: [
+          { label: "Work", workIntervalCount: 1, workDurationSeconds: 7 },
+          { label: "19 mm edge", workIntervalCount: 2, workDurationSeconds: 14 },
+        ],
+      },
+    },
+  },
+};

@@ -30,7 +30,7 @@ it("shows Mountain Project's recorded top-rope method with an unknown attempt co
 });
 
 it.each([
-  { count: null, summary: null },
+  { count: null, summary: "Completed" },
   { count: 2, summary: "Attempts: 2" },
 ])("shows the recorded result with attempt count $count", ({ count, summary }) => {
   const entry = climbingLogEntryFixture({
@@ -42,8 +42,8 @@ it.each([
       <ClimbingLogEntryCard entry={entry} />
     </ul>,
   );
-  if (summary === null) expect(screen.queryByText("Completed")).not.toBeInTheDocument();
-  else expect(screen.getByText(summary)).toBeInTheDocument();
+  expect(screen.getByText(summary)).toBeInTheDocument();
+  expect(screen.getByText("Completed")).toBeInTheDocument();
 });
 
 it.each([undefined, 3])(
@@ -86,13 +86,15 @@ it.each([undefined, 3])(
 );
 
 it.each([
-  { freeSend: false, outcome: "completed", summary: "Attempted · Attempts: 2" },
-  { freeSend: false, outcome: "failed", summary: "Attempted · Attempts: 2" },
-  { freeSend: true, outcome: "completed", summary: "Attempts: 2" },
-  { freeSend: null, outcome: null, summary: "Attempts: 2" },
+  { freeSend: false, outcome: "completed", label: "Completed" },
+  { freeSend: false, outcome: "failed", label: "Attempted" },
+  { freeSend: null, outcome: "completed", label: "Completed" },
+  { freeSend: true, outcome: "completed", label: null },
+  { freeSend: false, outcome: null, label: null },
+  { freeSend: null, outcome: null, label: null },
 ] as const)(
   "renders the server's send status ($freeSend, $outcome)",
-  ({ freeSend, outcome, summary }) => {
+  ({ freeSend, outcome, label }) => {
     const entry = climbingLogEntryFixture({
       freeSend,
       recordedClimbOutcome: outcome,
@@ -103,8 +105,9 @@ it.each([
         <ClimbingLogEntryCard entry={entry} />
       </ul>,
     );
-    expect(screen.getByText(summary)).toBeInTheDocument();
-    expect(screen.queryAllByText(/Attempted/)).toHaveLength(freeSend === false ? 1 : 0);
+    expect(screen.getByText("Attempts: 2")).toBeInTheDocument();
+    if (label !== null) expect(screen.getByText(label)).toBeInTheDocument();
+    expect(screen.queryAllByText(/Attempted/)).toHaveLength(outcome === "failed" ? 1 : 0);
   },
 );
 
@@ -169,5 +172,52 @@ it.each(["Onsight", "Flash"] as const)(
     expect(screen.getByText("V5")).toBeInTheDocument();
     expect(screen.getByText(label)).toBeInTheDocument();
     expect(screen.queryByText(/Attempts:|completed/i)).not.toBeInTheDocument();
+  },
+);
+
+it.each([
+  { number: 2, name: "Crux", context: "Pitch 2 · Attempts: 1" },
+  { number: null, name: "Crux", context: "Crux · Attempts: 1" },
+  { number: null, name: null, context: "Pitch · Attempts: 1" },
+])(
+  "keeps a recorded pitch's context beside its outcome badge ($context)",
+  ({ number, name, context }) => {
+    const climb = climbingClimbFixture();
+    const pitch = {
+      id: "20000000-0000-4000-8000-000000000006",
+      climbId: climb.id,
+      externalId: null,
+      number,
+      name,
+      publishedGrades: [],
+    };
+    const entry = climbingLogEntryFixture({
+      climbId: climb.id,
+      climb: { ...climb, pitches: [pitch] },
+      recordedPitchAttemptCount: 1,
+    });
+    const attempt = climbingAttemptFixture(entry.id, {
+      scope: "pitch",
+      pitchId: pitch.id,
+      outcome: "failed",
+      ropeMethod: "lead",
+    });
+    entry.attempts = [attempt];
+    entry.pitchResults = [
+      {
+        pitch,
+        attemptIds: [attempt.id],
+        recordedOutcome: "failed",
+        recordedAttemptCount: 1,
+        displayGrade: null,
+      },
+    ];
+    render(
+      <ul>
+        <ClimbingLogEntryCard entry={entry} />
+      </ul>,
+    );
+    expect(screen.getByText(context)).toBeInTheDocument();
+    expect(screen.getByText("Attempted")).toBeInTheDocument();
   },
 );
