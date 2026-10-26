@@ -201,6 +201,16 @@ describe("climbingRouter", () => {
       },
     ]);
   });
+  it("accepts an all-time strengths range with an explicit end date", async () => {
+    const lookup = vi
+      .spyOn(ClimbingStrengthsRepository.prototype, "getObservations")
+      .mockResolvedValue([]);
+    const { caller } = makeCaller();
+    await expect(caller.strengths({ days: null, endDate: "2025-02-05" })).resolves.toMatchObject({
+      panels: [],
+    });
+    expect(lookup).toHaveBeenCalledWith(null, { days: null, endDate: "2025-02-05" }, "2025-02-05");
+  });
   it("builds strengths panels from owned repository observations with the selected period and filters", async () => {
     const example = {
       logEntryId: "send-log",

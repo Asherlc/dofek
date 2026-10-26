@@ -96,9 +96,14 @@ export const climbingRouter = router({
   strengths: cachedProtectedQuery({
     maxAge: CacheTTL.LONG,
     outputSchema: climbingStrengthsSchema,
-    keyVersion: "climbing-strengths-v2",
+    keyVersion: "climbing-strengths-v3",
   })
-    .input(climbingInputSchema.extend({ endDate: z.iso.date().optional() }))
+    .input(
+      climbingInputSchema.extend({
+        days: z.number().int().min(1).max(365).nullable().default(90),
+        endDate: z.iso.date().optional(),
+      }),
+    )
     .output(climbingStrengthsSchema)
     .query(async ({ ctx, input }) =>
       runClimbingQuery(async () => {
@@ -113,7 +118,12 @@ export const climbingRouter = router({
         const endDate = input.endDate ?? formatDateYmdInTimeZone(new Date(), ctx.timezone);
         return buildClimbingStrengths(
           await repository.getObservations(input.days, input, endDate),
-          { startDate: dateWindowStartString(endDate, input.days - 1), endDate },
+          {
+            ...(input.days === null
+              ? {}
+              : { startDate: dateWindowStartString(endDate, input.days - 1) }),
+            endDate,
+          },
         );
       }),
     ),
