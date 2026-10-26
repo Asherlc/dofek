@@ -4,11 +4,13 @@ import { ActivityRepository } from "../repositories/activity-repository.ts";
 import { ClimbingActivityLogEntry } from "../repositories/climbing-activity-log-entry-repository.ts";
 import { ClimbingLogEntryAssociator } from "../repositories/climbing-log-entry-associator.ts";
 import { ClimbingRepository } from "../repositories/climbing-repository.ts";
+import { ClimbingStrengthsRepository } from "../repositories/climbing-strengths-repository.ts";
 import {
   climbingActivityFixture,
   climbingLogEntryFixture,
 } from "../repositories/climbing-test-helpers.ts";
 import { HangboardingRepository } from "../repositories/hangboarding-repository.ts";
+import type { ClimbingStrengthsObservation } from "../services/climbing-strengths.ts";
 import { createTestCallerFactory } from "./test-helpers.ts";
 
 const { captureException } = vi.hoisted(() => ({ captureException: vi.fn() }));
@@ -195,6 +197,83 @@ describe("climbingRouter", () => {
         sends: 2,
       },
     ]);
+  });
+  it("builds strengths panels from owned repository observations with the selected period and filters", async () => {
+    const example = {
+      logEntryId: "send-log",
+      activityId: groupId,
+      name: "Corner",
+      grade: "V4",
+      date: "2026-10-25",
+      providerId: "kaya",
+      sourceName: "KAYA",
+      sourceUrl: null,
+      outcome: "sent" as const,
+    };
+    const sent: ClimbingStrengthsObservation = {
+      identity: "corner",
+      contextKey: "boulder-free-v",
+      contextLabel: "Bouldering · V scale",
+      setting: "indoor",
+      grade: "V4",
+      gradeSortValue: 4,
+      wallAngle: null,
+      holdType: "crimp",
+      outcome: "sent",
+      example,
+    };
+    const lookup = vi
+      .spyOn(ClimbingStrengthsRepository.prototype, "getObservations")
+      .mockResolvedValue([
+        sent,
+        {
+          ...sent,
+          outcome: "not_sent",
+          example: { ...example, logEntryId: "earlier-failure", outcome: "not_sent" },
+        },
+        {
+          ...sent,
+          identity: "project",
+          outcome: "not_sent",
+          example: { ...example, logEntryId: "project-log", name: "Project", outcome: "not_sent" },
+        },
+        {
+          ...sent,
+          identity: "unknown",
+          outcome: null,
+          example: { ...example, logEntryId: "unknown-log" },
+        },
+      ]);
+    const { caller, execute } = makeCaller();
+    const input = { days: 30, climbKind: "boulder" as const, setting: "indoor" as const };
+    const result = await caller.strengths(input);
+    expect(lookup).toHaveBeenCalledExactlyOnceWith(30, input);
+    expect(execute).toHaveBeenCalledOnce();
+    expect(result.coverage).toEqual({ unknownOutcomes: 1, missingGrades: 0, missingIdentity: 0 });
+    const panel = result.panels.find((panel) => panel.dimension === "hold_type");
+    expect(panel).toMatchObject({
+      contextKey: "boulder-free-v",
+      setting: "indoor",
+      grades: [{ grade: "V4", sends: 1, climbs: 2, successRate: 50 }],
+      rows: [
+        {
+          key: "crimp",
+          cells: [
+            {
+              grade: "V4",
+              sends: 1,
+              climbs: 2,
+              successRate: 50,
+              sampleStatus: "limited",
+              examples: [
+                example,
+                expect.objectContaining({ logEntryId: "project-log", outcome: "not_sent" }),
+              ],
+            },
+          ],
+        },
+      ],
+    });
   });
   it("returns server-built map circles with canonical climb details", async () => {
     const { caller } = makeCallerWithResponses([

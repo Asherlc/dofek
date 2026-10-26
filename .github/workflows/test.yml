@@ -764,7 +764,7 @@ jobs:
         shard: [1, 2, 3, 4]
     services:
       postgres:
-        image: mirror.gcr.io/timescale/timescaledb-ha:pg18.3-ts2.26.4-all
+        image: timescale/timescaledb-ha:pg18.3-ts2.26.4-all
         env:
           POSTGRES_DB: test
           POSTGRES_USER: test
@@ -1254,7 +1254,7 @@ jobs:
       contents: read
     services:
       postgres:
-        image: mirror.gcr.io/timescale/timescaledb-ha:pg18.3-ts2.26.4-all
+        image: timescale/timescaledb-ha:pg18.3-ts2.26.4-all
         env:
           POSTGRES_DB: test
           POSTGRES_USER: test

@@ -1,4 +1,5 @@
 import type { ClimbingGradePreference } from "@dofek/training/climbing-grades";
+import { PgDialect } from "drizzle-orm/pg-core";
 import { describe, expect, it, vi } from "vitest";
 import { ClimbingRepository } from "./climbing-repository.ts";
 
@@ -341,4 +342,33 @@ describe("ClimbingRepository attached rock observations", () => {
       [],
     );
   });
+});
+
+// Query wiring coverage complements the executable PostgreSQL access-window tests.
+describe("ClimbingRepository access-policy wiring", () => {
+  it.each([
+    "getGradeProgression",
+    "getVolumeByGrade",
+    "getSessionSummaries",
+    "getMapEntries",
+  ] as const)(
+    "forwards restricted access dates to both canonical branches for %s",
+    async (method) => {
+      const execute = vi.fn().mockResolvedValue([]);
+      const startDate = "2026-10-19";
+      const endDateExclusive = "2026-10-26";
+      const repo = new ClimbingRepository({ execute }, "user", "America/Los_Angeles", {
+        kind: "limited",
+        paid: false,
+        reason: "free_recent_week",
+        startDate,
+        endDateExclusive,
+      });
+      await repo[method](90);
+      expect(execute).toHaveBeenCalledOnce();
+      const query = new PgDialect().sqlToQuery(execute.mock.calls[0]?.[0]);
+      expect(query.params.filter((value) => value === startDate)).toHaveLength(2);
+      expect(query.params.filter((value) => value === endDateExclusive)).toHaveLength(2);
+    },
+  );
 });
