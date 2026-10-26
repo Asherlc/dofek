@@ -8,6 +8,26 @@ import {
 } from "../../../../../server/src/repositories/climbing-test-helpers.ts";
 import { ClimbingLogEntryCard } from "./ClimbingLogEntryCard.tsx";
 
+it.each(["lead", "top_rope", "follow"] as const)(
+  "shows recorded falls or hangs on %s without inventing completion",
+  (ropeMethod) => {
+    const entry = climbingLogEntryFixture({
+      freeSend: false,
+      recordedClimbOutcome: null,
+      recordedClimbAttemptCount: null,
+    });
+    entry.attempts = [climbingAttemptFixture(entry.id, { ropeMethod, fellOrHung: true })];
+    render(
+      <ul>
+        <ClimbingLogEntryCard entry={entry} />
+      </ul>,
+    );
+    const method = { lead: "Lead", top_rope: "Top rope", follow: "Follow" }[ropeMethod];
+    expect(screen.getByText(`${method} · Fell/Hung`)).toBeInTheDocument();
+    expect(screen.queryByText(/Attempted|Completed|Sent/)).not.toBeInTheDocument();
+  },
+);
+
 it("shows Mountain Project's recorded top-rope method with an unknown attempt count", () => {
   const climb = { ...climbingClimbFixture("mountain-project"), name: "Havarti Cheese" };
   const entry = climbingLogEntryFixture({

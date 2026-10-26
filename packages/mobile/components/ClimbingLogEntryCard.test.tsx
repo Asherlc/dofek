@@ -8,6 +8,28 @@ import { ClimbingLogEntryCard } from "./ClimbingLogEntryCard";
 import { climbingLogFixture, exactClimbingLocation } from "./climbing-log-entry-fixtures";
 
 describe("ClimbingLogEntryCard", () => {
+  it.each(["lead", "top_rope", "follow"] as const)(
+    "shows recorded falls or hangs on %s without inventing completion",
+    (ropeMethod) => {
+      render(
+        <ClimbingLogEntryCard
+          entry={{
+            ...climbingLogFixture,
+            freeSend: false,
+            recordedClimbOutcome: null,
+            recordedClimbAttemptCount: null,
+            attempts: [
+              climbingAttemptFixture(climbingLogFixture.id, { ropeMethod, fellOrHung: true }),
+            ],
+          }}
+        />,
+      );
+      const method = { lead: "Lead", top_rope: "Top rope", follow: "Follow" }[ropeMethod];
+      expect(screen.getByText(`${method} · Fell/Hung`)).toBeTruthy();
+      expect(screen.queryByText(/Attempted|Completed|Sent/)).toBeNull();
+    },
+  );
+
   it("announces selection on the climb link while retaining the source and Attach actions", () => {
     const onAttach = vi.fn();
     const { rerender } = render(
