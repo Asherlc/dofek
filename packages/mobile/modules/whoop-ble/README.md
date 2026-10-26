@@ -75,6 +75,15 @@ the [native handshake lifecycle](ios/WhoopBleConnectionManager+Handshake.swift) 
 application deadlines and cancellation. A pending request alone does not prove
 capture has resumed: check new data notifications and parsed sample timestamps.
 
+Requested IMU capture survives unsuccessful automatic reconnect attempts and
+resumes after notification readiness. Explicit Stop and Disconnect cancel
+pending capture restoration, including when the strap is disconnected. The
+[connection manager](ios/WhoopBleConnectionManager.swift) owns that intent;
+the [disconnect transition](ios/WhoopBleConnectionManager+CoreBluetooth.swift)
+preserves it only for automatic recovery, and the
+[Expo stop handler](ios/WhoopBleModule.swift) applies cancellation even without
+a command characteristic.
+
 `getDataPathStats()` also exposes `lastKnownDeviceId`, capture timestamps, and a typed `buffers`
 snapshot: `bufferInstanceId`, `bufferCreatedAt`, `checkpointAt`, `imu`,
 `realtime`, and `previousCheckpoint`. Each stream reports its count, true

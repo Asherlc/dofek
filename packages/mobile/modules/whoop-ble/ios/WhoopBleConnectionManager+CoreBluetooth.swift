@@ -116,7 +116,7 @@ extension WhoopBleConnectionManager {
         reconnectPeripheral: () -> Void
     ) {
         recordConnectionEvent("disconnected", peripheralId: peripheralId, error: error)
-        wasStreaming = state == .streaming
+        wasStreaming = wasStreaming || state == .streaming
         let shouldReconnect = autoReconnect
 
         cleanup()

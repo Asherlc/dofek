@@ -119,17 +119,13 @@ public class WhoopBleModule: Module {
 
         AsyncFunction("stopImuStreaming") { (promise: Promise) in
             self.connectionManager.bleQueue.async {
-                guard self.connectionManager.cmdCharacteristic != nil else {
-                    self.emitDeviceState()
-                    promise.resolve(true)
-                    return
-                }
-
-                let commandData = WhoopBleFrameParser.buildCommandData(
-                    command: WhoopBleConstants.commandStopRawData
-                )
-                self.connectionManager.writeToStrap(commandData)
                 self.connectionManager.stopStreaming()
+                if self.connectionManager.cmdCharacteristic != nil {
+                    let commandData = WhoopBleFrameParser.buildCommandData(
+                        command: WhoopBleConstants.commandStopRawData
+                    )
+                    self.connectionManager.writeToStrap(commandData)
+                }
 
                 self.emitDeviceState()
                 promise.resolve(true)

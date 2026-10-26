@@ -33186,6 +33186,129 @@ The incident date uses America/Los_Angeles: the October 23 UTC sync timestamps b
 - **Direct fix / validation:** The [metric-source integration fixture](../packages/server/src/repositories/activity-metric-sources-repository.integration.test.ts) now creates only its required current sensor, profile, and priority schemas using the real sensor store and existing schema builders. The same command passed all eleven tests without waits, retries, memory-limit changes, or production query changes.
 - **Remaining risk / follow-up:** Other suites using the full analytics fixture can still encounter its memory cost. Prefer the existing minimal-schema patterns for sensor-only tests; use the [integration dependency guide](testing.md#integration-dependencies) when diagnosing local service prerequisites.
 
+## 2026-10-25 — WHOOP Bluetooth reconnection failed while the strap was nearby
+
+- **Symptoms / impact:** The user received “WHOOP disconnected” and confirmed
+  the phone and strap were together. Native capture last parsed realtime and
+  IMU samples at approximately 02:20:07 UTC on October 26 (19:20 Pacific on
+  October 25). The alert's five-minute delay matches the observed timeline;
+  its [policy](../packages/mobile/modules/background-refresh/ios/CollectionNotificationCoordinator.swift)
+  requires an unexpected disconnect after a ready connection and cancels on
+  successful reconnection, rather than treating app foregrounding as recovery.
+- **Evidence / confirmed failure boundary:** Axiom's `dofek-logs` recorded
+  `native_connection_event` at 02:20:16.300 UTC, with native occurrence
+  02:20:16.216 UTC, state `streaming`, `CBErrorDomain` code 6, and the first
+  error “The connection has timed out unexpectedly.” Subsequent attempts
+  failed with connection and encryption timeouts in `connecting`,
+  `discoveringServices`, or `subscribing` through 02:25:17 UTC. Bluetooth was
+  `poweredOn`, reconnect intent remained true, and no ready transition was
+  observed in that interval. Query: `axiom query "['dofek-logs'] | where _time
+  between (datetime(2026-10-26T02:19:00Z) .. datetime(2026-10-26T02:26:00Z)) |
+  where body contains 'native_connection_event' or body contains
+  'capture_snapshot' | project _time, body, c=['attributes.custom'] | sort by
+  _time asc" --format json`. The [disconnect handler](../packages/mobile/modules/whoop-ble/ios/WhoopBleConnectionManager+CoreBluetooth.swift)
+  and [delegate](../packages/mobile/modules/whoop-ble/ios/WhoopBleDelegate.swift)
+  distinguish the initially lost stream from later failed connection attempts.
+  Apple's [error reference](https://developer.apple.com/documentation/corebluetooth/cberror-swift.struct)
+  describes these transport errors; their presence does not establish why
+  the radio or encryption exchange failed. The underlying cause remains
+  **unresolved**. WHOOP cloud sync separately succeeded at 02:00 UTC with
+  unexpired credentials; web and worker Swarm replicas were healthy.
+- **Additional observed impact:** At 02:25:17 UTC, the capture snapshot held
+  7,357 realtime and 500,000 IMU samples, with 229,499 IMU overflow discards.
+  Last upload confirmations were 01:16:52 and 01:17:05 UTC respectively;
+  two uploads reported `fetch failed: cancelled` at 02:20:30 UTC after
+  approximately 1,723 seconds. This establishes a separate upload backlog,
+  not its cause or a causal link to the Bluetooth failure. The
+  [sample buffer](../packages/mobile/modules/whoop-ble/ios/WhoopBleSampleBuffer.swift)
+  retains samples only in memory; checkpoint metadata cannot restore them.
+- **Mitigation / validation boundary:** Requested that the user foreground
+  Dofek with the strap nearby, preserving the running process. Recovery must
+  show subscribed readiness, new parsed sample timestamps, and advancing
+  upload confirmations in Axiom. The user subsequently confirmed “Connected
+  with a live heart rate” after foregrounding. At 02:29 UTC the latest phone
+  telemetry still ended at 02:25:17 UTC, so recovery is confirmed on screen
+  only; backlog delivery and sustained background recovery remain unverified.
+  No runtime code, timeout, retry, pairing state, or production configuration
+  was changed. There is no new resilience setting to justify.
+- **Retrospective / follow-up:** Native timestamps, typed errors, and buffer
+  counters made the failure boundary visible without another cloud reconnect.
+  Physical-device evidence is still needed for the Bluetooth root cause.
+  Proposed runbook addition: preserve pending memory buffers before suggesting
+  force quit, and verify capture and uploads separately after foregrounding.
+  Reuse the [Axiom query procedure](axiom-observability-runbook.md) and
+  [physical-device audit](ios-physical-device-release-audit.md) for the next
+  investigation.
+- **Continued diagnosis:** Server `[sensor-upload] upload_received` and
+  `upload_published` events confirmed the last IMU publication at 01:17:05 UTC.
+  Phone snapshots place both later pending requests at approximately
+  01:51:47 UTC; their request ages continued to advance through foreground
+  visits at 01:52, 01:57, and 01:58 UTC before cancellation at 02:20:30 UTC.
+  Neither pending batch has matching server receipt evidence. The
+  [upload workers](../packages/mobile/lib/whoop-ble-upload-workers.ts) join
+  existing pending requests, explaining why another trigger alone did not
+  clear those requests. The [HTTP wrapper](../packages/mobile/lib/trpc-fetch.ts)
+  records responses but has no native task-start or transport-metrics evidence,
+  so the original request stall is still unclassified. No delivered background
+  refresh was observed in the retained journal for this interval.
+- **Reproduced recovery defects, separate from encryption:** A temporary copy
+  of the unchanged Swift package reproduced three failing native assertions:
+  repeated unexpected disconnects followed by subscribed readiness left the
+  manager `ready` instead of `streaming`, and intentional disconnect during
+  recovery retained the old streaming intent. Explicit Stop during recovery
+  also allowed later readiness to restart streaming. The
+  [disconnect state transition](../packages/mobile/modules/whoop-ble/ios/WhoopBleConnectionManager+CoreBluetooth.swift)
+  overwrites `wasStreaming` on every failure; intentional
+  [disconnect/stop operations](../packages/mobile/modules/whoop-ble/ios/WhoopBleConnectionManager.swift)
+  do not clear that pending intent; the
+  [Expo stop handler](../packages/mobile/modules/whoop-ble/ios/WhoopBleModule.swift)
+  additionally returns before stopping when no command characteristic exists.
+  These establish application recovery bugs,
+  not the cause of the earlier native link-encryption timeouts. Production
+  changes remain pending implementation alignment.
+- **Physical evidence boundary:** Read-only `xcrun devicectl device info
+  processes` failed with CoreDevice error 10003, “The device is currently
+  locked,” while trying to mount the developer disk image. The user could not
+  unlock the phone at this time. No process was restarted and no pairing was
+  changed. The next discriminating evidence is a native Bluetooth trace
+  spanning failed encryption and successful reconnection; Apple provides the
+  [Bluetooth logging profiles and capture instructions](https://developer.apple.com/feedback-assistant/profiles-and-logs/).
+- **Approved correction / validation:** The user approved the narrow recovery
+  state fix. The [disconnect transition](../packages/mobile/modules/whoop-ble/ios/WhoopBleConnectionManager+CoreBluetooth.swift)
+  now preserves pending streaming intent through repeated automatic failures;
+  explicit [Stop and Disconnect](../packages/mobile/modules/whoop-ble/ios/WhoopBleConnectionManager.swift)
+  clear it. The [Expo stop handler](../packages/mobile/modules/whoop-ble/ios/WhoopBleModule.swift)
+  applies cancellation even without an active command characteristic. The
+  [three repository regressions](../packages/mobile/modules/whoop-ble/Tests/WhoopBleConnectionManagerTests.swift)
+  first failed against unchanged source with six assertion failures, then
+  passed after the correction. The full WHOOP Swift suite passed 161 tests,
+  and the mobile tier passed 1,795 tests with retries disabled. Full repository
+  lint, root/server/web/mobile/module typechecks, spelling, and strict lint
+  across 146 tracked native Swift files passed. Independent task and final
+  reviews found no issues. The canonical signed Release Simulator build exited
+  zero; both simulator architectures contain the changed native objects, and
+  `codesign --verify --deep --strict` passed. The
+  [implementation plan](superpowers/plans/2026-10-25-whoop-stream-intent.md)
+  records the scope and review checkpoints.
+- **Validation context / remaining boundary:** A fresh workspace needed
+  `pnpm compose:env --write` before full lint could use its actual ClickHouse
+  port instead of default port 8123; the same `pnpm lint` then passed. Local
+  recursive SwiftLint also traversed installed third-party Expo sources;
+  strict checks of all tracked native files passed without changing rules or
+  dependencies. Xcode emitted generic successful-command diagnostics for
+  unrelated native targets but completed the signed build successfully; their
+  cause remains unverified. No retry, timeout, pairing, or upload setting
+  changed. A new native iOS build is required to deliver the correction,
+  following the [module build boundary](../packages/mobile/modules/whoop-ble/README.md).
+  Physical WHOOP recovery, the original encryption failure, and the separate
+  upload stall remain unverified; no release or phone installation was performed.
+- **Retrospective / proposed improvement:** Regression-first tests exposed
+  both lost intent and stale cancellation intent; tracing both native clients
+  caught the Expo early-return path. Add repeated failures followed by Stop or
+  Disconnect to the physical recovery checklist, and reuse native TDD plus the
+  signed build audit. Keep the distinction between a state fix, a successful
+  native build, and physical Bluetooth recovery explicit in future reports.
+
 ## 2026-10-25 — MCP food writes accepted missing or contradictory nutrition
 
 - **Symptoms / impact:** [Issue #3082](https://github.com/Asherlc/dofek/issues/3082) records two Lenny & Larry's protein cookies saved with all-zero nutrition and a Fairlife shake saved with 40 g protein but zero calories, alongside 144 kcal collagen. Accepted placeholders understated the day's calorie totals. The reported incident records were already manually corrected; this PR performs no historical repairs.

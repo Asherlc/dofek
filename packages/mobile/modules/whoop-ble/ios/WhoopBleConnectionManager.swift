@@ -225,6 +225,7 @@ final class WhoopBleConnectionManager {
         bleQueue.async {
             self.recordConnectionEvent("disconnect_requested", reason: "intentional_disconnect")
             self.autoReconnect = false
+            self.wasStreaming = false
             if let peripheral = self.connectedPeripheral {
                 self.centralManager?.cancelPeripheralConnection(peripheral)
             }
@@ -255,8 +256,9 @@ final class WhoopBleConnectionManager {
         return true
     }
 
-    /// Transition from `.streaming` to `.ready`.
+    /// Cancel pending streaming restoration and transition from `.streaming` to `.ready`.
     func stopStreaming() {
+        wasStreaming = false
         if state == .streaming {
             state = .ready
         }
