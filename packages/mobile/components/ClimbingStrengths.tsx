@@ -54,7 +54,6 @@ export function ClimbingStrengths({
     rowKey: string;
     grade: string;
   } | null>(null);
-  const [coverageOpen, setCoverageOpen] = useState(false);
   const panels = data?.panels ?? [];
   const panel = panels.find((item) => item.key === panelKey) ?? defaultPanel(panels);
   const selectedGrade = panel?.grades.find((item) => item.grade === grade) ?? panel?.grades[0];
@@ -181,11 +180,6 @@ export function ClimbingStrengths({
                     setGrade(selected);
                   }}
                 />
-              )}
-              {view !== "profile" && (
-                <Text style={styles.meta}>
-                  Select a grade and style to see its recorded climbs.
-                </Text>
               )}
               {panel.rows.map((row) => {
                 const cell = row.cells.find((item) => item.grade === selectedGrade.grade);
@@ -322,36 +316,6 @@ export function ClimbingStrengths({
       ) : !error ? (
         <QueryStatePanel variant="empty" message="No recorded climbing outcomes in this period" />
       ) : null}
-      {data && (
-        <>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Coverage details"
-            accessibilityState={{ expanded: coverageOpen }}
-            onPress={() => setCoverageOpen(!coverageOpen)}
-            style={styles.chip}
-          >
-            <Text style={styles.link}>Coverage details {coverageOpen ? "−" : "+"}</Text>
-          </Pressable>
-          {coverageOpen && (
-            <View style={styles.examples}>
-              {panel && (
-                <>
-                  <Text style={styles.meta}>Missing traits: {panel.coverage.missingTraits}</Text>
-                  <Text style={styles.meta}>
-                    Unknown outcomes in this context: {panel.coverage.unknownOutcomes}
-                  </Text>
-                </>
-              )}
-              <Text style={styles.meta}>Unknown outcomes: {data.coverage.unknownOutcomes}</Text>
-              <Text style={styles.meta}>
-                Records with missing or conflicting grades: {data.coverage.missingGrades}
-              </Text>
-              <Text style={styles.meta}>Unidentified records: {data.coverage.missingIdentity}</Text>
-            </View>
-          )}
-        </>
-      )}
     </View>
   );
 }

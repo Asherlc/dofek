@@ -44,8 +44,8 @@ export const RadarProfile: Story = {
 export const SparseRadar: Story = {
   play: async ({ canvasElement, userEvent }) => {
     const canvas = within(canvasElement);
-    await userEvent.selectOptions(canvas.getByLabelText("Grade"), "V4");
     await userEvent.selectOptions(canvas.getByLabelText("View"), "radar");
+    await userEvent.selectOptions(canvas.getByLabelText("Grade"), "V4");
   },
 };
 export const UnknownOnly: Story = {

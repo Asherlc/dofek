@@ -10,49 +10,22 @@ const contexts = [
     id: "boulder-free",
     kind: "Bouldering",
     method: null,
-    aid: "Free",
     label: "Bouldering",
     detail: "V scale · Free climbing",
-  },
-  {
-    id: "boulder-unknown",
-    kind: "Bouldering",
-    method: null,
-    aid: "Not recorded",
-    label: "Bouldering",
-    detail: "V scale · Aid use not recorded",
   },
   {
     id: "lead-free",
     kind: "Routes",
     method: "Lead",
-    aid: "Free",
     label: "Lead",
     detail: "YDS · Free climbing",
-  },
-  {
-    id: "lead-unknown",
-    kind: "Routes",
-    method: "Lead",
-    aid: "Not recorded",
-    label: "Lead",
-    detail: "YDS · Aid use not recorded",
   },
   {
     id: "top-rope-free",
     kind: "Routes",
     method: "Top rope",
-    aid: "Free",
     label: "Top rope",
     detail: "YDS · Free climbing",
-  },
-  {
-    id: "top-rope-unknown",
-    kind: "Routes",
-    method: "Top rope",
-    aid: "Not recorded",
-    label: "Top rope",
-    detail: "YDS · Aid use not recorded",
   },
 ] as const;
 type Context = (typeof contexts)[number];
@@ -162,6 +135,7 @@ function ClimbingContextMockup({ variant }: { variant: "filters" | "picker" }) {
             <option>30 days</option>
             <option>90 days</option>
             <option>1 year</option>
+            <option>All time</option>
           </select>
         </label>
       </div>
@@ -176,9 +150,7 @@ function ClimbingContextMockup({ variant }: { variant: "filters" | "picker" }) {
               options={["Bouldering", "Routes"]}
               value={context.kind}
               onChange={(kind) => {
-                const next = contexts.find(
-                  (item) => item.kind === kind && item.aid === context.aid,
-                );
+                const next = contexts.find((item) => item.kind === kind);
                 if (next) select(next);
               }}
             />
@@ -189,27 +161,11 @@ function ClimbingContextMockup({ variant }: { variant: "filters" | "picker" }) {
                   options={["Lead", "Top rope"]}
                   value={context.method ?? ""}
                   onChange={(method) => {
-                    const next = contexts.find(
-                      (item) => item.method === method && item.aid === context.aid,
-                    );
+                    const next = contexts.find((item) => item.method === method);
                     if (next) select(next);
                   }}
                 />
               )}
-              <Choices
-                label="Aid use"
-                options={["Free", "Not recorded"]}
-                value={context.aid}
-                onChange={(aid) => {
-                  const next = contexts.find(
-                    (item) =>
-                      item.kind === context.kind &&
-                      item.method === context.method &&
-                      item.aid === aid,
-                  );
-                  if (next) select(next);
-                }}
-              />
             </div>
           </>
         ) : (
@@ -263,23 +219,6 @@ function ClimbingContextMockup({ variant }: { variant: "filters" | "picker" }) {
             )}
           </div>
         )}
-        <details className="border-t border-border pt-3 text-xs text-muted">
-          <summary className="min-h-8 cursor-pointer">Recorded context details</summary>
-          <dl className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
-            <div>
-              <dt>Scope</dt>
-              <dd className="mt-1 text-foreground">Whole climb</dd>
-            </div>
-            <div>
-              <dt>Solo status</dt>
-              <dd className="mt-1 text-foreground">Not recorded</dd>
-            </div>
-            <div>
-              <dt>Rope method</dt>
-              <dd className="mt-1 text-foreground">{context.method ?? "Not recorded"}</dd>
-            </div>
-          </dl>
-        </details>
       </section>
       <section
         aria-label="Strengths preview"
@@ -289,8 +228,7 @@ function ClimbingContextMockup({ variant }: { variant: "filters" | "picker" }) {
       </section>
       <p className="text-xs text-muted">
         Design prototype · Illustrative data reused across contexts and periods. Try changing
-        context, view, or grade, then select a cell to inspect climbs. Unknown aid use remains a
-        separate group.
+        context, view, or grade, then select a cell to inspect climbs.
       </p>
     </main>
   );
@@ -326,9 +264,9 @@ export const FiltersInteraction: Story = {
       "aria-pressed",
       "true",
     );
-    await expect(canvas.getByText("Top rope · YDS · Free climbing")).toBeVisible();
-    await userEvent.click(canvas.getByRole("button", { name: "Not recorded" }));
-    await expect(canvas.getByText("Top rope · YDS · Aid use not recorded")).toBeVisible();
+    await expect(canvas.getByRole("columnheader", { name: "5.10a" })).toBeVisible();
+    await userEvent.selectOptions(canvas.getByLabelText("Period"), "All time");
+    await expect(canvas.getByLabelText("Period")).toHaveValue("All time");
   },
 };
 export const PickerInteraction: Story = {
@@ -341,6 +279,6 @@ export const PickerInteraction: Story = {
       "aria-expanded",
       "false",
     );
-    await expect(canvas.getByText("Lead · YDS · Free climbing")).toBeVisible();
+    await expect(canvas.getByRole("columnheader", { name: "5.10a" })).toBeVisible();
   },
 };

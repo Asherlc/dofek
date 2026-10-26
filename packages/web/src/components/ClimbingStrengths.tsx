@@ -73,10 +73,7 @@ export function ClimbingStrengths({
     return <QueryStatePanel variant="loading" contextLabel="Climbing strengths" />;
   if (!panel)
     return (
-      <div className="space-y-3">
-        <QueryStatePanel variant="empty" message="No recorded climbing strengths in this period." />
-        {data ? <Coverage data={data} /> : null}
-      </div>
+      <QueryStatePanel variant="empty" message="No recorded climbing strengths in this period." />
     );
 
   return (
@@ -126,23 +123,25 @@ export function ClimbingStrengths({
               ))}
             </select>
           </label>
-          <label className="text-xs text-muted">
-            Grade
-            <select
-              className="ml-2 min-h-10 rounded border border-border bg-surface p-2"
-              value={grade}
-              onChange={(event) => {
-                setGradeKey(event.target.value);
-                if (row) selectCell(row.key, event.target.value);
-              }}
-            >
-              {panel.grades.map((item) => (
-                <option key={item.grade} value={item.grade}>
-                  {item.grade}
-                </option>
-              ))}
-            </select>
-          </label>
+          {view !== "profile" && view !== "curves" && view !== "pyramids" ? (
+            <label className="text-xs text-muted">
+              Grade
+              <select
+                className="ml-2 min-h-10 rounded border border-border bg-surface p-2"
+                value={grade}
+                onChange={(event) => {
+                  setGradeKey(event.target.value);
+                  if (row) selectCell(row.key, event.target.value);
+                }}
+              >
+                {panel.grades.map((item) => (
+                  <option key={item.grade} value={item.grade}>
+                    {item.grade}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
           {contexts.length > 1 ? (
             <label className="text-xs text-muted">
               Climbing context
@@ -182,11 +181,6 @@ export function ClimbingStrengths({
           ) : null}
         </div>
       </div>
-      <p className="text-sm text-muted">{panel.contextLabel}</p>
-      <p className="text-xs text-muted">
-        {panel.setting ? `${settings[panel.setting]} · ` : "Indoor & outdoor · "}Sends per distinct
-        climb. Select a cell to see its climbs.
-      </p>
       {view !== "profile" ? (
         <ClimbingStrengthsChart
           panel={panel}
@@ -310,33 +304,6 @@ export function ClimbingStrengths({
           ))}
         </section>
       ) : null}
-      <Coverage data={data} panel={panel} />
     </div>
-  );
-}
-
-function Coverage({
-  data,
-  panel,
-}: {
-  data: Strengths | undefined;
-  panel?: ClimbingStrengthsPanel;
-}) {
-  if (!data) return null;
-  return (
-    <details className="text-xs text-muted">
-      <summary className="cursor-pointer py-2">Coverage</summary>
-      <p>
-        {data.coverage.unknownOutcomes} unknown outcomes · {data.coverage.missingGrades} records
-        excluded for missing or conflicting grades · {data.coverage.missingIdentity} unidentified
-        records excluded
-      </p>
-      {panel ? (
-        <p>
-          {panel.coverage.missingTraits} climbs missing {dimensions[panel.dimension].toLowerCase()}{" "}
-          · {panel.coverage.unknownOutcomes} unknown outcomes in this context
-        </p>
-      ) : null}
-    </details>
   );
 }

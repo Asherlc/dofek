@@ -204,20 +204,12 @@ describe("ClimbingStrengths", () => {
     fireEvent.click(screen.getByRole("button", { name: "Routes · YDS · Lead · Free" }));
     expect(screen.getByRole("button", { name: "Bouldering · V scale · Free" })).toBeTruthy();
     expect(screen.getByText("No recorded climbing outcomes in this context")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Coverage details" }));
-    expect(screen.getByText("Unknown outcomes in this context: 3")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Bouldering · V scale · Free" }));
     expect(screen.getByText("Same-grade baseline · 44% · 4/9 climbs sent")).toBeTruthy();
-    expect(screen.getByText("Unknown outcomes in this context: 2")).toBeTruthy();
   });
-  it("discloses coverage and distinguishes no data", () => {
+  it("distinguishes no data", () => {
     render(<ClimbingStrengths data={data} />);
     expect(screen.getByRole("button", { name: "Vertical · No data" })).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Coverage details" }));
-    expect(screen.getByText("Missing traits: 7")).toBeTruthy();
-    expect(screen.getByText("Unknown outcomes: 3")).toBeTruthy();
-    expect(screen.getByText("Records with missing or conflicting grades: 2")).toBeTruthy();
-    expect(screen.getByText("Unidentified records: 1")).toBeTruthy();
   });
   it("separates loading, errors, empty and cached refresh", () => {
     const view = render(<ClimbingStrengths data={undefined} loading />);
