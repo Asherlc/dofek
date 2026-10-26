@@ -298,7 +298,7 @@ export function climbingStrengthsChartOption(
         gridIndex: index,
       })),
       yAxis: panel.rows.map((_, index) => ({
-        ...dofekAxis.value({ name: "Success (%)", min: 0, max: 100 }),
+        ...dofekAxis.value({ min: 0, max: 100, axisLabel: { formatter: "{value}%" } }),
         gridIndex: index,
         interval: 50,
       })),
