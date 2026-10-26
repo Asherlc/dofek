@@ -255,6 +255,74 @@ beforeEach(() => {
 });
 
 describe("registerFoodRecordTools", () => {
+  it.each(["create_food_entry", "update_food_entry"])(
+    "transports explicit zero-calorie evidence through %s",
+    async (name) => {
+      const { tool } = setup();
+      const input =
+        name === "create_food_entry"
+          ? {
+              request_id: requestId,
+              date: "2026-09-07",
+              food_name: "Water",
+              nutrients: { calories: 0, protein: 0, carbohydrate: 0, fat: 0 },
+              zero_calorie_evidence: "User confirmed plain water",
+            }
+          : {
+              record_id: recordId,
+              expected_version: version,
+              request_id: requestId,
+              set: { food_name: "Water" },
+              clear: [],
+              nutrient_set: { calories: 0 },
+              nutrient_clear: [],
+              zero_calorie_evidence: "User confirmed plain water",
+            };
+      const registered = tool(name);
+      expect(z.object(registered.inputSchema).parse(input)).toMatchObject({
+        zero_calorie_evidence: "User confirmed plain water",
+      });
+      const result = await registered.handler(input);
+      const mutation = name === "create_food_entry" ? mocks.create : mocks.update;
+      expect(mutation).toHaveBeenCalledWith(
+        expect.objectContaining({ zeroCalorieEvidence: "User confirmed plain water" }),
+      );
+      expect(parseResult(result)).toMatchObject({ day_summary: daySummary });
+    },
+  );
+
+  it("transports actionable nutrition validation reasons without loading a success summary", async () => {
+    const { tool } = setup();
+    mocks.create.mockRejectedValue(
+      new FoodRecordError(
+        "INVALID_ARGUMENT",
+        "Calories contradict the known protein/fat. Check the consumed portion against the label.",
+        {
+          reason: "CALORIES_BELOW_MACRO_MINIMUM",
+          minimumCalories: 60.2,
+          action: "Provide sourced calories and macros for the same consumed portion.",
+        },
+      ),
+    );
+    const result = await tool("create_food_entry").handler({
+      request_id: requestId,
+      date: "2026-09-07",
+      food_name: "Shake",
+      nutrients: { calories: 0, protein: 40, carbohydrate: 0, fat: 0 },
+    });
+    expect(parseResult(result)).toMatchObject({
+      error: {
+        code: "INVALID_ARGUMENT",
+        details: {
+          reason: "CALORIES_BELOW_MACRO_MINIMUM",
+          minimum_calories: 60.2,
+          action: expect.stringContaining("sourced"),
+        },
+      },
+    });
+    expect(mocks.nutritionTotalsByDate).not.toHaveBeenCalled();
+  });
+
   it("registers the exact seven tools with concrete schemas and annotations", () => {
     const { tool, tools } = setup();
 
@@ -294,6 +362,7 @@ describe("registerFoodRecordTools", () => {
       "record_id",
       "expected_version",
       "request_id",
+      "zero_calorie_evidence",
       "set",
       "clear",
       "nutrient_set",

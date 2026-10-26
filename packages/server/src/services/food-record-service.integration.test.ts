@@ -120,6 +120,215 @@ describe.sequential("FoodRecordService with Postgres", () => {
     expect(planText).toContain("food_entry_pkey");
   }
 
+  it("rejects the cookies/shake incident atomically and totals sourced replacements", async () => {
+    const date = "2026-10-20";
+    const commands = service();
+    const nutrition = new FoodRepository(context.db, userId, "UTC");
+    await commands.create({
+      requestId: randomUUID(),
+      date,
+      foodName: "Collagen",
+      foodDescription: "Manufacturer label",
+      nutrients: { calories: 144, protein: 36, carbohydrate: 0, fat: 0 },
+    });
+    const counts = () =>
+      context.db.execute(sql`
+      SELECT (SELECT COUNT(*)::int FROM fitness.food_entry WHERE user_id = ${userId}) AS entries,
+             (SELECT COUNT(*)::int FROM fitness.human_record_identity WHERE user_id = ${userId}) AS identities,
+             (SELECT COUNT(*)::int FROM fitness.human_record_change WHERE user_id = ${userId}) AS changes,
+             (SELECT COUNT(*)::int FROM fitness.human_record_target WHERE user_id = ${userId}) AS targets
+    `);
+    const beforeCounts = await counts();
+    const beforeTotals = await nutrition.nutritionTotalsByDate(date);
+    for (const [foodName, nutrients] of [
+      ["Two Lenny & Larry's protein cookies", { calories: 0, protein: 0, carbohydrate: 0, fat: 0 }],
+      ["Fairlife 40 g protein shake", { calories: 0, protein: 40, carbohydrate: 0, fat: 0 }],
+    ] as const) {
+      await expect(
+        commands.create({ requestId: randomUUID(), date, foodName, nutrients }),
+      ).rejects.toMatchObject({ code: "INVALID_ARGUMENT" });
+      expect(await counts()).toEqual(beforeCounts);
+      expect(await nutrition.nutritionTotalsByDate(date)).toEqual(beforeTotals);
+    }
+    await commands.create({
+      requestId: randomUUID(),
+      date,
+      foodName: "Two cookies",
+      foodDescription: "Package label for consumed portion",
+      nutrients: { calories: 280, protein: 4, carbohydrate: 38, fat: 12 },
+    });
+    const shakeCommand = {
+      requestId: randomUUID(),
+      date,
+      foodName: "Protein shake",
+      foodDescription: "Manufacturer label",
+      nutrients: { calories: 200, protein: 40, carbohydrate: 6, fat: 2 },
+    };
+    const shake = await commands.create(shakeCommand);
+    expect((await nutrition.nutritionTotalsByDate(date)).summary).toMatchObject({
+      calories: 624,
+      macros: { protein: { grams: 80 }, carbs: { grams: 44 }, fat: { grams: 14 } },
+    });
+    const acceptedCounts = await counts();
+    await expect(
+      commands.update({
+        recordId: shake.record.recordId,
+        expectedVersion: shake.record.version,
+        requestId: randomUUID(),
+        set: {},
+        clear: [],
+        nutrientSet: { calories: 0 },
+        nutrientClear: [],
+      }),
+    ).rejects.toMatchObject({
+      code: "INVALID_ARGUMENT",
+      details: { reason: "CALORIES_BELOW_MACRO_MINIMUM" },
+    });
+    expect(await counts()).toEqual(acceptedCounts);
+    expect((await nutrition.nutritionTotalsByDate(date)).summary?.calories).toBe(624);
+    await expect(commands.create(shakeCommand)).resolves.toMatchObject({
+      operation: { replayed: true },
+    });
+    expect(await counts()).toEqual(acceptedCounts);
+  });
+
+  it("validates edits and source-clears without repairing historical raw nutrition", async () => {
+    const sourceEntryId = await addProviderFood({
+      date: "2026-10-21",
+      name: "Historical shake",
+      nutrients: { calories: 0, protein: 40 },
+    });
+    const repository = new FoodRecordRepository(context.db, userId);
+    const { identityId } = await repository.resolveStableIdentity(sourceEntryId);
+    const commands = service();
+    const command = {
+      recordId: identityId,
+      expectedVersion: null,
+      requestId: randomUUID(),
+      set: { foodName: "Renamed shake" },
+      clear: [],
+      nutrientSet: {},
+      nutrientClear: [],
+    };
+    const beforeHistory = await repository.history(identityId, null, 20);
+    await expect(commands.update(command)).rejects.toMatchObject({
+      code: "INVALID_ARGUMENT",
+      details: { reason: "CALORIES_BELOW_MACRO_MINIMUM" },
+    });
+    expect(await repository.history(identityId, null, 20)).toEqual(beforeHistory);
+    const corrected = await commands.update({
+      ...command,
+      requestId: randomUUID(),
+      nutrientSet: { calories: 200 },
+    });
+    const correctedHistory = await repository.history(identityId, null, 20);
+    await expect(
+      commands.update({
+        ...command,
+        requestId: randomUUID(),
+        expectedVersion: corrected.record.version,
+        nutrientClear: ["calories"],
+      }),
+    ).rejects.toMatchObject({
+      code: "INVALID_ARGUMENT",
+      details: { reason: "CALORIES_BELOW_MACRO_MINIMUM" },
+    });
+    expect(await repository.history(identityId, null, 20)).toEqual(correctedHistory);
+    expect(await repository.get(identityId)).toMatchObject({
+      version: corrected.record.version,
+      nutrients: { calories: 200, protein: 40 },
+    });
+    expect(
+      await context.db.execute(
+        sql`SELECT nutrient_id, amount::real AS amount FROM fitness.food_entry_nutrient WHERE food_entry_id = ${sourceEntryId} ORDER BY nutrient_id`,
+      ),
+    ).toEqual([
+      { nutrient_id: "calories", amount: 0 },
+      { nutrient_id: "protein", amount: 40 },
+    ]);
+    const unknown = await commands.update({
+      ...command,
+      requestId: randomUUID(),
+      expectedVersion: corrected.record.version,
+      nutrientSet: { protein: null },
+    });
+    expect(unknown.record.nutrients).toMatchObject({ calories: 200, protein: null });
+  });
+
+  it("retains zero-calorie evidence through description edits and source-clears", async () => {
+    const commands = service();
+    const created = await commands.create({
+      requestId: randomUUID(),
+      date: "2026-10-22",
+      foodName: "Water",
+      foodDescription: "500 mL",
+      nutrients: { calories: 0, protein: 0, carbohydrate: 0, fat: 0 },
+      zeroCalorieEvidence: "User confirmed plain water",
+    });
+    expect(created.record.foodDescription).toBe(
+      "500 mL\nZero-calorie evidence: User confirmed plain water",
+    );
+    const updated = await commands.update({
+      recordId: created.record.recordId,
+      expectedVersion: created.record.version,
+      requestId: randomUUID(),
+      set: { foodDescription: "Fresh glass" },
+      clear: [],
+      nutrientSet: {},
+      nutrientClear: [],
+      zeroCalorieEvidence: "Manufacturer label: zero kcal",
+    });
+    expect(updated.record.foodDescription).toBe(
+      "Fresh glass\nZero-calorie evidence: Manufacturer label: zero kcal",
+    );
+    const cleared = await commands.update({
+      recordId: created.record.recordId,
+      expectedVersion: updated.record.version,
+      requestId: randomUUID(),
+      set: {},
+      clear: ["foodDescription"],
+      nutrientSet: {},
+      nutrientClear: [],
+      zeroCalorieEvidence: "User confirmed tap water",
+    });
+    expect(cleared.record.foodDescription).toBe(
+      "500 mL\nZero-calorie evidence: User confirmed plain water\nZero-calorie evidence: User confirmed tap water",
+    );
+  });
+
+  it.each([
+    ["missing", false],
+    ["missing", true],
+    ["another user's", false],
+    ["another user's", true],
+  ] as const)(
+    "returns NOT_FOUND for %s records during evidence update (clear=%s)",
+    async (ownership, clearDescription) => {
+      const sourceEntryId = await addProviderFood();
+      const repository = new FoodRecordRepository(context.db, userId);
+      const { identityId } = await repository.resolveStableIdentity(sourceEntryId);
+      const recordId = ownership === "missing" ? randomUUID() : identityId;
+      const commands = service(ownership === "missing" ? userId : otherUserId);
+      await expect(
+        commands.update({
+          recordId,
+          expectedVersion: null,
+          requestId: randomUUID(),
+          set: {},
+          clear: clearDescription ? ["foodDescription"] : [],
+          nutrientSet: {},
+          nutrientClear: [],
+          zeroCalorieEvidence: "User confirmed plain water",
+        }),
+      ).rejects.toMatchObject({
+        code: "NOT_FOUND",
+        message: "The food record was not found.",
+        details: { recordId },
+      });
+      expect((await repository.history(identityId, null, 20)).items).toEqual([]);
+    },
+  );
+
   it("creates, updates, clears, deletes, restores, replays, and preserves raw rows", async () => {
     const commands = service();
     const createRequest = randomUUID();
@@ -133,7 +342,7 @@ describe.sequential("FoodRecordService with Postgres", () => {
       numberOfUnits: 1,
       servingUnit: "bowl",
       servingWeightGrams: 80,
-      nutrients: { calories: 300, protein: 10, sodium: 100 },
+      nutrients: { calories: 300, protein: 10, carbohydrate: 40, fat: 8, sodium: 100 },
     });
     expect(created).toMatchObject({
       affectedDates: ["2026-09-07"],
@@ -432,7 +641,7 @@ describe.sequential("FoodRecordService with Postgres", () => {
       requestId: randomUUID(),
       date: "2026-07-04",
       foodName: "Replay food",
-      nutrients: { calories: 200 },
+      nutrients: { calories: 200, protein: 4, carbohydrate: 40, fat: 2 },
     };
     const created = await service().create(command);
     const replay = await context.db.transaction(async (transaction) => {
@@ -636,7 +845,7 @@ describe.sequential("FoodRecordService with Postgres", () => {
       requestId: createRequest,
       date: "2026-09-05",
       foodName: "Create conflict source",
-      nutrients: {},
+      nutrients: { calories: 200, protein: 4, carbohydrate: 40, fat: 2 },
     });
     const deleted = await commands.delete({
       recordId: created.record.recordId,
