@@ -54,5 +54,5 @@ const styles = StyleSheet.create({
   group: { gap: 8 },
   heading: { color: colors.text, fontSize: 14, fontWeight: "600" },
   grid: { flexDirection: "row", flexWrap: "wrap", gap: 12 },
-  cell: { flexGrow: 1, flexShrink: 1, flexBasis: 280, minWidth: 0 },
+  cell: { flexGrow: 0, flexShrink: 1, flexBasis: 280, minWidth: 0 },
 });

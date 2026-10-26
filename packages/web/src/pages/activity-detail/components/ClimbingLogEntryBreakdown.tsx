@@ -25,7 +25,7 @@ export function ClimbingLogEntryBreakdown({
           {area && <h3 className="text-sm font-medium text-foreground">{area.name}</h3>}
           <ul
             aria-label={area ? `${area.name} climbs` : "Climbing logs"}
-            className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,260px),1fr))] gap-3"
+            className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,260px),1fr))] gap-3"
           >
             {groupEntries.map(({ entry, entryNumber }) => (
               <ClimbingLogEntryCard

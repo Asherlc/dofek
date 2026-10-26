@@ -189,6 +189,31 @@ export const Wide: Story = {
     ),
   ],
 };
+export const SingleClimbWall: Story = {
+  args: {
+    entries: [
+      climbingLogFixture,
+      { ...climbingLogFixture, id: "repeat" },
+      climbingLogEntryFixture({
+        id: "singleton",
+        climb: climbingClimbFixture(),
+        displayGrade: "5.10a",
+      }),
+    ],
+    locations: {
+      "tick-1": exactClimbingLocation,
+      repeat: exactClimbingLocation,
+      singleton: exactClimbingLocation,
+    },
+  },
+  decorators: [
+    (Story) => (
+      <View style={{ width: 900, maxWidth: "100%" }}>
+        <Story />
+      </View>
+    ),
+  ],
+};
 export const AttachStates: Story = {
   args: {
     onAttach: fn(),

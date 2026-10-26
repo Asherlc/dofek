@@ -206,6 +206,39 @@ describe("ClimbingLogEntryBreakdown", () => {
     expect(cards[1]?.getAttribute("aria-label")).toBe("Climbing entry: Swiss Cheese");
   });
 
+  it("keeps each climb in one cell for walls with one or multiple climbs", () => {
+    const climb = climbingLogFixture.climb;
+    const area = climb?.areaPath.at(-1);
+    if (!climb || !area) throw new Error("Expected an area fixture");
+    render(
+      <ClimbingLogEntryBreakdown
+        entries={[
+          climbingLogFixture,
+          { ...climbingLogFixture, id: "repeat" },
+          {
+            ...climbingLogFixture,
+            id: "singleton",
+            climb: {
+              ...climb,
+              name: "Other climb",
+              areaPath: [{ ...area, id: "other-area", name: "North Wall" }],
+            },
+          },
+        ]}
+      />,
+    );
+    const groupedCards = within(screen.getByLabelText("Goat Rock")).getAllByLabelText(
+      "Climbing entry: Swiss Cheese",
+    );
+    const singletonCard = within(screen.getByLabelText("North Wall")).getByLabelText(
+      "Climbing entry: Other climb",
+    );
+    expect(groupedCards).toHaveLength(2);
+    for (const card of [...groupedCards, singletonCard]) {
+      expect(card.parentElement?.style.flexGrow).toBe("0");
+    }
+  });
+
   it("allows a 280px cell basis to shrink inside the 256px padded screen content", () => {
     render(
       <View style={{ width: 320, padding: 16 }}>
