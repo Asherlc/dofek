@@ -38,12 +38,12 @@ repository, canonical CTE and router; their colocated tests.
 `ALL_CLIMBING_GRADES` and `climbingStrengthsGradePanel(panel, grade)` as shared
 presentation helpers. Accept `days: null` on the strengths endpoint.
 
-- [ ] Add failing service tests for pooled counts, deduplication, monthly outcomes and empty data.
-- [ ] Add failing router and executable repository tests for null days, end dates, aid normalization and access restrictions.
-- [ ] Run the tests and confirm the intended failures.
-- [ ] Implement projections, concise context labels and bounded historical queries; update the output cache version.
-- [ ] Run service/router unit tests and the strengths repository integration suite. Expected: all pass.
-- [ ] Commit and push.
+- [x] Add failing service tests for pooled counts, deduplication, monthly outcomes and empty data.
+- [x] Add failing router and executable repository tests for null days, end dates, aid normalization and access restrictions.
+- [x] Run the tests and confirm the intended failures.
+- [x] Implement projections, concise context labels and bounded historical queries; update the output cache version.
+- [x] Run service/router unit tests and the strengths repository integration suite. Expected: all pass.
+- [x] Commit and push.
 
 ### Task 2: Clients and Storybook
 
@@ -53,9 +53,35 @@ web climbing route and chart options; strengths stories.
 **Interfaces:** Consume Task 1's computed profile. All grades is the default
 for views with a grade selector; the grade profile table remains per-grade.
 
-- [ ] Add failing web/mobile interaction tests for All grades, specific grades, view switching and concise context choices.
-- [ ] Update the real clients, historical request input and baseline wording.
-- [ ] Replace illustrative-only aggregate stories with stories using the production component and server-shaped fixtures.
-- [ ] Run affected tests, both client typechecks, server typecheck, changed-file lint and Storybook interaction/visual checks. Expected: all pass.
-- [ ] Commit and push.
-- [ ] Run a fresh final review of the complete implementation and address material findings.
+- [x] Add failing web/mobile interaction tests for All grades, specific grades, view switching and concise context choices.
+- [x] Update the real clients, historical request input and baseline wording.
+- [x] Replace illustrative-only aggregate stories with stories using the production component and server-shaped fixtures.
+- [x] Run affected tests, both client typechecks, server typecheck, changed-file lint and Storybook interaction/visual checks. Expected: all pass.
+- [x] Commit and push.
+- [x] Run a fresh final review of the complete implementation and address material findings.
+
+## Completion
+
+- Final full unit/mobile run: 21,487 passed, 19 skipped; 1,352 test files passed.
+- Strengths PostgreSQL integration suite: 11 passed.
+- Server, web and mobile typechecks passed; changed-file Biome checks passed.
+- Production Storybook All grades selection and desktop/narrow layouts verified.
+- Fresh review found a missing native Success curves legend and incorrect
+  baseline labels. Five new regression cases failed first and passed after
+  the fixes; the final full suite includes those cases.
+
+### Implementation decisions
+
+- Only missing aid use inherits free climbing. Known solo and scope groups
+  remain distinct; merging those would change unrelated climbing semantics.
+- Mobile All time applies to strengths, since the other training endpoints
+  accept finite ranges. Extending it to the entire Training screen needs
+  separate API work.
+- Baseline-label findings were treated as material because they identify the
+  comparison population, even though the numerical values were correct.
+- Native-device rendering and production-scale historical performance were
+  not audited. Executable component tests and web visual checks do not
+  establish either property.
+
+No deferred review findings. Suggested next review checklist addition:
+exercise the default All grades selection through every visualization.
