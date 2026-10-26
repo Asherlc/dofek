@@ -9,13 +9,14 @@ import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { shouldShowBlockingLoading } from "@dofek/scoring/loading-policy";
 import { aggregateWeeklyVolume, StrainScore } from "@dofek/scoring/scoring";
 import type { ClimbingFilters as ClimbingFilterValues } from "@dofek/training/climbing-filters";
+import { climbingStrengthsSchema } from "@dofek/training/climbing-strengths";
 import { TRAINING_TERMINOLOGY } from "@dofek/training/terminology";
 import {
   collapseWeeklyVolumeActivityTypes,
   formatActivityTypeLabel,
 } from "@dofek/training/training";
 import { useRouter } from "expo-router";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   RefreshControl,
@@ -29,6 +30,7 @@ import { ActivityCard } from "../../components/ActivityCard";
 import { ChartTitleWithTooltip } from "../../components/ChartTitleWithTooltip";
 import { ClimbingFilters } from "../../components/ClimbingFilters";
 import { ClimbingLocationMapCard } from "../../components/ClimbingLocationMapCard";
+import { ClimbingStrengths } from "../../components/ClimbingStrengths";
 import { ClimbingTrainingCard } from "../../components/ClimbingTrainingCard";
 import { SparkLine } from "../../components/charts/SparkLine";
 import { StrainGauge } from "../../components/charts/StrainGauge";
@@ -40,7 +42,7 @@ import { QueryStatePanel } from "../../components/QueryStatePanel";
 import { TrainingChartEmptyState } from "../../components/TrainingChartEmptyState";
 import { TrainingDistributionCards } from "../../components/TrainingDistributionCards";
 import { isTransientNetworkError } from "../../lib/query-client";
-import { safeParseRows } from "../../lib/safe-parse";
+import { safeParseData, safeParseRows } from "../../lib/safe-parse";
 import { captureException } from "../../lib/telemetry";
 import { trpc } from "../../lib/trpc";
 import { useUnitConverter } from "../../lib/units";
@@ -87,6 +89,20 @@ export default function StrainScreen() {
       placeholderData: preservePreviousRangeData ? (previousData) => previousData : undefined,
     },
   );
+  const climbingStrengthsQuery = trpc.climbing.strengths.useQuery(
+    { days, endDate, ...climbingFilters },
+    {
+      enabled: isHydrated,
+      placeholderData: preservePreviousRangeData ? (previousData) => previousData : undefined,
+    },
+  );
+  const climbingStrengths = useMemo(
+    () =>
+      climbingStrengthsQuery.data === undefined
+        ? { data: undefined, error: null }
+        : safeParseData(climbingStrengthsSchema, climbingStrengthsQuery.data, "Climbing strengths"),
+    [climbingStrengthsQuery.data],
+  );
   const climbingLocationMapQuery = trpc.climbing.locationMap.useQuery(
     { days, ...climbingFilters },
     {
@@ -119,6 +135,7 @@ export default function StrainScreen() {
 
   useReportQueryError(trainingQuery);
   useReportQueryError(climbingLocationMapQuery);
+  useReportQueryError(climbingStrengthsQuery);
   useReportQueryError(hrZonesQuery);
   useReportQueryError(polarizationQuery);
   useReportQueryError(monotonyQuery);
@@ -196,6 +213,7 @@ export default function StrainScreen() {
       Promise.all([
         utils.mobileDashboard.training.invalidate(),
         utils.climbing.locationMap.invalidate(),
+        utils.climbing.strengths.invalidate(),
         utils.training.hrZones.invalidate(),
         utils.efficiency.polarizationTrend.invalidate(),
         utils.cyclingAdvanced.trainingMonotony.invalidate(),
@@ -371,6 +389,23 @@ export default function StrainScreen() {
       )}
 
       <ClimbingFilters value={climbingFilters} onChange={setClimbingFilters} />
+      {climbingStrengths.data && climbingStrengthsQuery.isFetching ? (
+        <Text accessibilityLiveRegion="polite" style={styles.emptyChartText}>
+          Updating climbing strengths…
+        </Text>
+      ) : null}
+      <ClimbingStrengths
+        data={climbingStrengths.data}
+        loading={climbingStrengthsQuery.isLoading}
+        error={
+          climbingStrengthsQuery.error ??
+          (climbingStrengths.error
+            ? {
+                message: "Climbing strengths data could not be read. Pull to refresh to reload it.",
+              }
+            : null)
+        }
+      />
       <ClimbingLocationMapCard
         data={climbingLocationMapQuery.data}
         loading={climbingLocationMapQuery.isLoading}

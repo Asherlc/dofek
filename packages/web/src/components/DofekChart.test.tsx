@@ -166,6 +166,32 @@ describe("DofekChart", () => {
     expect(screen.getByRole("cell", { name: "6100" })).toBeDefined();
   });
 
+  it("uses a supplied selectable exact-data disclosure while retaining the chart description", () => {
+    const onSelect = vi.fn();
+    const { container } = render(
+      <DofekChart
+        option={{ series: [{ type: "bar", name: "Climbing success", data: [50] }] }}
+        dataDisclosure={
+          <details>
+            <summary>Exact values</summary>
+            <button type="button" onClick={onSelect}>
+              Vertical · V4 · 50% · 3 sends / 6 climbs
+            </button>
+          </details>
+        }
+      />,
+    );
+    fireEvent.click(screen.getByText("Exact values"));
+    fireEvent.click(screen.getByRole("button", { name: /Vertical · V4/ }));
+    expect(onSelect).toHaveBeenCalledOnce();
+    expect(container.querySelectorAll("details")).toHaveLength(1);
+    const option = JSON.parse(
+      screen.getByTestId("echarts-mock").getAttribute("data-option") ?? "{}",
+    );
+    expect(option.aria.enabled).toBe(true);
+    expect(option.aria.label.description).toBe("Climbing success chart.");
+  });
+
   it("forces transparent background on chart option", () => {
     render(<DofekChart option={{ series: [] }} />);
     const chart = screen.getByTestId("echarts-mock");

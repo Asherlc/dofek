@@ -4,11 +4,13 @@ import { ActivityRepository } from "../repositories/activity-repository.ts";
 import { ClimbingActivityLogEntry } from "../repositories/climbing-activity-log-entry-repository.ts";
 import { ClimbingLogEntryAssociator } from "../repositories/climbing-log-entry-associator.ts";
 import { ClimbingRepository } from "../repositories/climbing-repository.ts";
+import { ClimbingStrengthsRepository } from "../repositories/climbing-strengths-repository.ts";
 import {
   climbingActivityFixture,
   climbingLogEntryFixture,
 } from "../repositories/climbing-test-helpers.ts";
 import { HangboardingRepository } from "../repositories/hangboarding-repository.ts";
+import type { ClimbingStrengthsObservation } from "../services/climbing-strengths.ts";
 import { createTestCallerFactory } from "./test-helpers.ts";
 
 const { captureException } = vi.hoisted(() => ({ captureException: vi.fn() }));
@@ -84,7 +86,10 @@ describe("climbingRouter", () => {
     captureException.mockClear();
     invalidateByPrefix.mockClear();
   });
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.useRealTimers();
+  });
   it.each([
     groupId,
     "00000000-0000-4000-8000-000000000702",
@@ -196,6 +201,159 @@ describe("climbingRouter", () => {
       },
     ]);
   });
+  it("builds strengths panels from owned repository observations with the selected period and filters", async () => {
+    const example = {
+      logEntryId: "send-log",
+      activityId: groupId,
+      name: "Corner",
+      grade: "V4",
+      date: "2025-02-05",
+      providerId: "kaya",
+      sourceName: "KAYA",
+      sourceUrl: null,
+      outcome: "sent" as const,
+    };
+    const sent: ClimbingStrengthsObservation = {
+      identity: "corner",
+      contextKey: "boulder-free-v",
+      laneKey: "boulder-free",
+      gradeSystem: "v_scale",
+      contextLabel: "Bouldering · V scale",
+      setting: "indoor",
+      grade: "V4",
+      gradeSortValue: 4,
+      wallAngle: null,
+      holdType: "crimp",
+      outcome: "sent",
+      example,
+    };
+    const lookup = vi
+      .spyOn(ClimbingStrengthsRepository.prototype, "getObservations")
+      .mockResolvedValue([
+        sent,
+        {
+          ...sent,
+          outcome: "not_sent",
+          example: { ...example, logEntryId: "earlier-failure", outcome: "not_sent" },
+        },
+        {
+          ...sent,
+          identity: "project",
+          outcome: "not_sent",
+          example: { ...example, logEntryId: "project-log", name: "Project", outcome: "not_sent" },
+        },
+        {
+          ...sent,
+          identity: "unknown",
+          outcome: null,
+          example: { ...example, logEntryId: "unknown-log" },
+        },
+      ]);
+    const { caller, execute } = makeCaller();
+    const input = {
+      days: 30,
+      endDate: "2025-02-05",
+      climbKind: "boulder" as const,
+      setting: "indoor" as const,
+    };
+    const result = await caller.strengths(input);
+    expect(lookup).toHaveBeenCalledExactlyOnceWith(30, input, input.endDate);
+    expect(execute).toHaveBeenCalledOnce();
+    expect(result.coverage).toEqual({ unknownOutcomes: 1, missingGrades: 0, missingIdentity: 0 });
+    const panel = result.panels.find((panel) => panel.dimension === "hold_type");
+    expect(panel?.progress.map(({ startDate, endDate }) => ({ startDate, endDate }))).toEqual([
+      { startDate: "2025-01-07", endDate: "2025-01-31" },
+      { startDate: "2025-02-01", endDate: "2025-02-05" },
+    ]);
+    expect(panel?.progress[0]?.rows[0]?.cells[0]).toMatchObject({ climbs: 0, successRate: null });
+    expect(panel?.progress[1]?.rows[0]?.cells[0]).toMatchObject({
+      climbs: 2,
+      sends: 1,
+      successRate: 50,
+    });
+    expect(panel).toMatchObject({
+      contextKey: "boulder-free-v",
+      setting: "indoor",
+      grades: [{ grade: "V4", sends: 1, climbs: 2, successRate: 50 }],
+      rows: [
+        {
+          key: "crimp",
+          cells: [
+            {
+              grade: "V4",
+              sends: 1,
+              climbs: 2,
+              successRate: 50,
+              sampleStatus: "limited",
+              examples: [
+                example,
+                expect.objectContaining({ logEntryId: "project-log", outcome: "not_sent" }),
+              ],
+            },
+          ],
+        },
+      ],
+    });
+  });
+  it.each([
+    ["America/Los_Angeles", "2026-09-30"],
+    ["Asia/Tokyo", "2026-10-01"],
+  ])(
+    "resolves the omitted strengths anchor in %s and forwards the same one-day window",
+    async (timezone, endDate) => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-10-01T02:00:00Z"));
+      const lookup = vi
+        .spyOn(ClimbingStrengthsRepository.prototype, "getObservations")
+        .mockResolvedValue([
+          {
+            identity: "climb",
+            contextKey: "boulder",
+            laneKey: "boulder",
+            gradeSystem: "v_scale",
+            contextLabel: "Bouldering",
+            setting: "indoor",
+            grade: "V4",
+            gradeSortValue: 4,
+            wallAngle: null,
+            holdType: "crimp",
+            outcome: "not_sent",
+            example: {
+              logEntryId: "log",
+              activityId: null,
+              name: "Problem",
+              grade: "V4",
+              date: endDate,
+              providerId: "kaya",
+              sourceName: "KAYA",
+              sourceUrl: null,
+              outcome: "not_sent",
+            },
+          },
+        ]);
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        userId: "user-1",
+        timezone,
+      });
+      const result = await caller.strengths({ days: 1 });
+      expect(lookup).toHaveBeenCalledExactlyOnceWith(1, { days: 1 }, endDate);
+      expect(result.panels.find((panel) => panel.dimension === "hold_type")?.progress).toEqual([
+        {
+          startDate: endDate,
+          endDate,
+          rows: [
+            {
+              key: "crimp",
+              cells: [
+                { grade: "V4", sends: 0, climbs: 1, successRate: 0, sampleStatus: "limited" },
+              ],
+            },
+          ],
+        },
+      ]);
+    },
+  );
   it("returns server-built map circles with canonical climb details", async () => {
     const { caller } = makeCallerWithResponses([
       [],

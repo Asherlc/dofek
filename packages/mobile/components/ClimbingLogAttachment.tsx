@@ -32,6 +32,7 @@ export function ClimbingLogAttachment({
         utils.climbing.sessionSummary.invalidate(),
         utils.climbing.gradeProgression.invalidate(),
         utils.climbing.volumeByGrade.invalidate(),
+        utils.climbing.strengths.invalidate(),
         utils.activity.list.invalidate(),
         utils.calendar.weekList.invalidate(),
       ]);

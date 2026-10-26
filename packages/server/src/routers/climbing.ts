@@ -1,5 +1,7 @@
+import { formatDateYmdInTimeZone } from "@dofek/format/format";
 import { climbingFiltersSchema } from "@dofek/training/climbing-filters";
 import { climbingLocationMapSchema } from "@dofek/training/climbing-location-map";
+import { climbingStrengthsSchema } from "@dofek/training/climbing-strengths";
 import { TRPCError } from "@trpc/server";
 import { queryCache } from "dofek/lib/cache";
 import { captureException } from "dofek/lib/error-reporting";
@@ -9,6 +11,7 @@ import {
   climbingAttachmentActivitySchema,
   climbingLogEntryDetailSchema,
 } from "../contracts/climbing-log-contracts.ts";
+import { dateWindowStartString } from "../lib/date-window.ts";
 import { ActivityRepository } from "../repositories/activity-repository.ts";
 import { ClimbingLogEntryAssociator } from "../repositories/climbing-log-entry-associator.ts";
 import {
@@ -21,9 +24,11 @@ import {
   climbingSessionSummarySchema,
   climbingVolumeByGradeSchema,
 } from "../repositories/climbing-repository.ts";
+import { ClimbingStrengthsRepository } from "../repositories/climbing-strengths-repository.ts";
 import { ClimbingTrainingLogRepository } from "../repositories/climbing-training-log-repository.ts";
 import { HangboardingRepository } from "../repositories/hangboarding-repository.ts";
 import { buildClimbingLocationMap } from "../services/climbing-location-map.ts";
+import { buildClimbingStrengths } from "../services/climbing-strengths.ts";
 import {
   type AuthenticatedContext,
   CacheTTL,
@@ -34,6 +39,11 @@ import {
 
 const daysInputSchema = z.object({ days: z.number().int().min(1).max(365).default(90) });
 const climbingInputSchema = daysInputSchema.extend(climbingFiltersSchema.shape);
+const climbingLogEntriesSchema = z.array(climbingLogEntryDetailSchema);
+const climbingGradeProgressionsSchema = z.array(climbingGradeProgressionSchema);
+const climbingVolumesSchema = z.array(climbingVolumeByGradeSchema);
+const climbingSessionSummariesSchema = z.array(climbingSessionSummarySchema);
+
 const hangboardingSummarySchema = z.object({
   sessionCount: z.number().int().nonnegative(),
   totalDurationSeconds: z.number().nonnegative(),
@@ -83,6 +93,30 @@ async function runClimbingQuery<T>(query: () => Promise<T>): Promise<T> {
 }
 
 export const climbingRouter = router({
+  strengths: cachedProtectedQuery({
+    maxAge: CacheTTL.LONG,
+    outputSchema: climbingStrengthsSchema,
+    keyVersion: "climbing-strengths-v2",
+  })
+    .input(climbingInputSchema.extend({ endDate: z.iso.date().optional() }))
+    .output(climbingStrengthsSchema)
+    .query(async ({ ctx, input }) =>
+      runClimbingQuery(async () => {
+        const preference = await loadClimbingGradePreference(ctx.db, ctx.userId);
+        const repository = new ClimbingStrengthsRepository(
+          ctx.db,
+          ctx.userId,
+          ctx.timezone,
+          ctx.accessWindow,
+          preference,
+        );
+        const endDate = input.endDate ?? formatDateYmdInTimeZone(new Date(), ctx.timezone);
+        return buildClimbingStrengths(
+          await repository.getObservations(input.days, input, endDate),
+          { startDate: dateWindowStartString(endDate, input.days - 1), endDate },
+        );
+      }),
+    ),
   fingerLoadingHistory: cachedProtectedQuery({ maxAge: CacheTTL.SHORT })
     .input(daysInputSchema)
     .query(async ({ ctx, input }) => {
@@ -97,10 +131,11 @@ export const climbingRouter = router({
 
   activityLogEntries: cachedProtectedQuery({
     maxAge: CacheTTL.LONG,
+    outputSchema: climbingLogEntriesSchema,
     keyVersion: "climbing-activity-log-model-v3",
   })
     .input(z.object({ activityId: z.guid() }))
-    .output(z.array(climbingLogEntryDetailSchema))
+    .output(climbingLogEntriesSchema)
     .query(async ({ ctx, input }): Promise<ClimbingLogEntryDetail[]> => {
       return runClimbingQuery(async () => {
         const activity = await new ActivityRepository(
@@ -120,10 +155,11 @@ export const climbingRouter = router({
 
   unattachedClimbingLogEntries: cachedProtectedQuery({
     maxAge: CacheTTL.SHORT,
+    outputSchema: climbingLogEntriesSchema,
     keyVersion: "climbing-log-suggestions-v3",
   })
     .input(z.object({ activityId: z.guid() }))
-    .output(z.array(climbingLogEntryDetailSchema))
+    .output(climbingLogEntriesSchema)
     .query(async ({ ctx, input }) =>
       runClimbingQuery(() =>
         new ClimbingLogEntryAssociator(
@@ -165,6 +201,7 @@ export const climbingRouter = router({
           queryCache.invalidateByPrefix(`${ctx.userId}:climbing.gradeProgression:`),
           queryCache.invalidateByPrefix(`${ctx.userId}:climbing.volumeByGrade:`),
           queryCache.invalidateByPrefix(`${ctx.userId}:climbing.locationMap:`),
+          queryCache.invalidateByPrefix(`${ctx.userId}:climbing.strengths:`),
           queryCache.invalidateByPrefix(`${ctx.userId}:climbing.unattachedClimbingLogEntries:`),
           queryCache.invalidateByPrefix(`${ctx.userId}:activity.list:`),
           queryCache.invalidateByPrefix(`${ctx.userId}:calendar.weekList:`),
@@ -175,10 +212,11 @@ export const climbingRouter = router({
 
   gradeProgression: cachedProtectedQuery({
     maxAge: CacheTTL.LONG,
+    outputSchema: climbingGradeProgressionsSchema,
     keyVersion: "climbing-scoped-grade-lanes-v1",
   })
     .input(climbingInputSchema)
-    .output(z.array(climbingGradeProgressionSchema))
+    .output(climbingGradeProgressionsSchema)
     .query(async ({ ctx, input }): Promise<ClimbingGradeProgressionRow[]> => {
       return runClimbingQuery(async () => {
         const repository = await createClimbingRepository(ctx);
@@ -190,10 +228,11 @@ export const climbingRouter = router({
 
   volumeByGrade: cachedProtectedQuery({
     maxAge: CacheTTL.LONG,
+    outputSchema: climbingVolumesSchema,
     keyVersion: "climbing-canonical-log-observations-v1",
   })
     .input(climbingInputSchema)
-    .output(z.array(climbingVolumeByGradeSchema))
+    .output(climbingVolumesSchema)
     .query(async ({ ctx, input }): Promise<ClimbingVolumeByGradeRow[]> => {
       return runClimbingQuery(async () => {
         const repository = await createClimbingRepository(ctx);
@@ -203,10 +242,11 @@ export const climbingRouter = router({
 
   sessionSummary: cachedProtectedQuery({
     maxAge: CacheTTL.LONG,
+    outputSchema: climbingSessionSummariesSchema,
     keyVersion: "climbing-canonical-log-sessions-v1",
   })
     .input(climbingInputSchema)
-    .output(z.array(climbingSessionSummarySchema))
+    .output(climbingSessionSummariesSchema)
     .query(async ({ ctx, input }): Promise<ClimbingSessionSummaryRow[]> => {
       return runClimbingQuery(async () => {
         const repository = await createClimbingRepository(ctx);
@@ -218,6 +258,7 @@ export const climbingRouter = router({
 
   locationMap: cachedProtectedQuery({
     maxAge: CacheTTL.LONG,
+    outputSchema: climbingLocationMapSchema,
     keyVersion: "climbing-location-map-v1",
   })
     .input(climbingInputSchema)
@@ -229,7 +270,10 @@ export const climbingRouter = router({
       }),
     ),
 
-  hangboardingSummary: cachedProtectedQuery({ maxAge: CacheTTL.LONG })
+  hangboardingSummary: cachedProtectedQuery({
+    maxAge: CacheTTL.LONG,
+    outputSchema: hangboardingSummarySchema,
+  })
     .input(daysInputSchema)
     .output(hangboardingSummarySchema)
     .query(async ({ ctx, input }) => {

@@ -338,6 +338,7 @@ const mockClimbingEntriesInvalidate = vi.fn().mockResolvedValue(undefined);
 const mockEntrySuggestionsInvalidate = vi.fn().mockResolvedValue(undefined);
 const mockClimbingSessionSummaryInvalidate = vi.fn().mockResolvedValue(undefined);
 const mockClimbingGradeProgressionInvalidate = vi.fn().mockResolvedValue(undefined);
+const mockClimbingStrengthsInvalidate = vi.fn().mockResolvedValue(undefined);
 const mockClimbingVolumeByGradeInvalidate = vi.fn().mockResolvedValue(undefined);
 
 vi.mock("../../lib/trpc", () => ({
@@ -427,6 +428,7 @@ vi.mock("../../lib/trpc", () => ({
         unattachedClimbingLogEntries: { invalidate: mockEntrySuggestionsInvalidate },
         sessionSummary: { invalidate: mockClimbingSessionSummaryInvalidate },
         gradeProgression: { invalidate: mockClimbingGradeProgressionInvalidate },
+        strengths: { invalidate: mockClimbingStrengthsInvalidate },
         volumeByGrade: { invalidate: mockClimbingVolumeByGradeInvalidate },
       },
     }),
@@ -594,6 +596,7 @@ beforeEach(() => {
   mockEntrySuggestionsInvalidate.mockClear();
   mockClimbingSessionSummaryInvalidate.mockClear();
   mockClimbingGradeProgressionInvalidate.mockClear();
+  mockClimbingStrengthsInvalidate.mockClear();
   mockClimbingVolumeByGradeInvalidate.mockClear();
   mockHangboardDetailsQuery.mockClear();
   mockDeleteMutate.mockClear();
@@ -1289,6 +1292,7 @@ describe("ActivityDetailScreen", () => {
       });
       expect(mockClimbingSessionSummaryInvalidate).toHaveBeenCalledWith();
       expect(mockClimbingGradeProgressionInvalidate).toHaveBeenCalledWith();
+      expect(mockClimbingStrengthsInvalidate).toHaveBeenCalledWith();
       expect(mockClimbingVolumeByGradeInvalidate).toHaveBeenCalledWith();
     });
     expect(mockActivityByIdInvalidate).not.toHaveBeenCalled();

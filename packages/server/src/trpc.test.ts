@@ -1,6 +1,7 @@
 import { TRPCError } from "@trpc/server";
 import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
 import { queryCache } from "dofek/lib/cache";
+import { captureException } from "dofek/lib/error-reporting";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import {
@@ -12,6 +13,8 @@ import {
   requestCacheTtl,
   router,
 } from "./trpc.ts";
+
+vi.mock("dofek/lib/error-reporting", () => ({ captureException: vi.fn() }));
 
 const safeInternalErrorMessage =
   "We couldn't complete this request. Please try again. If the problem continues, contact support.";
@@ -328,5 +331,69 @@ describe("requestCacheTtl", () => {
         new Date("2026-07-08T23:45:00.000Z"),
       ),
     ).toThrow("calendar service unavailable");
+  });
+});
+
+describe("schema-aware cached queries", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.clearAllMocks();
+  });
+  const outputSchema = z.object({ count: z.number() });
+  function typedCaller(resolver: () => unknown) {
+    return router({
+      typed: cachedProtectedQuery({ maxAge: CacheTTL.SHORT, outputSchema })
+        .output(outputSchema)
+        .query(resolver),
+    }).createCaller(testContext({ userId: "user-1", timezone: "UTC", db: {}, sensorStore: {} }));
+  }
+  it("parses a valid cached hit without invoking the resolver", async () => {
+    const get = vi.spyOn(queryCache, "get").mockResolvedValue({ count: 3, extra: "discarded" });
+    const set = vi.spyOn(queryCache, "set").mockResolvedValue(undefined);
+    const resolver = vi.fn(() => ({ count: 9 }));
+    expect(await typedCaller(resolver).typed()).toEqual({ count: 3 });
+    expect(get).toHaveBeenCalledOnce();
+    expect(resolver).not.toHaveBeenCalled();
+    expect(set).not.toHaveBeenCalled();
+  });
+  it("reports and evicts malformed cached data then rebuilds through the resolver", async () => {
+    vi.spyOn(queryCache, "get").mockResolvedValue({ count: "invalid" });
+    const invalidate = vi.spyOn(queryCache, "invalidate").mockResolvedValue(undefined);
+    const set = vi.spyOn(queryCache, "set").mockResolvedValue(undefined);
+    const resolver = vi.fn(() => ({ count: 7 }));
+    expect(await typedCaller(resolver).typed()).toEqual({ count: 7 });
+    expect(captureException).toHaveBeenCalledWith(expect.any(z.ZodError));
+    expect(invalidate).toHaveBeenCalledWith(requestCacheKey("user-1", "typed", undefined, "UTC"));
+    expect(resolver).toHaveBeenCalledOnce();
+    expect(set).toHaveBeenCalledWith(
+      requestCacheKey("user-1", "typed", undefined, "UTC"),
+      { count: 7 },
+      CacheTTL.SHORT,
+    );
+  });
+  it("validates cache misses before writing data", async () => {
+    vi.spyOn(queryCache, "get").mockResolvedValue(undefined);
+    const set = vi.spyOn(queryCache, "set").mockResolvedValue(undefined);
+    const caller = typedCaller(() => ({ count: "invalid" }));
+    await expect(caller.typed()).rejects.toMatchObject({
+      code: "INTERNAL_SERVER_ERROR",
+      message: "Output validation failed",
+    });
+    expect(set).not.toHaveBeenCalled();
+  });
+  it("caches a valid miss without reporting or evicting it as malformed", async () => {
+    vi.spyOn(queryCache, "get").mockResolvedValue(undefined);
+    const invalidate = vi.spyOn(queryCache, "invalidate").mockResolvedValue(undefined);
+    const set = vi.spyOn(queryCache, "set").mockResolvedValue(undefined);
+    const resolver = vi.fn(() => ({ count: 5 }));
+    expect(await typedCaller(resolver).typed()).toEqual({ count: 5 });
+    expect(resolver).toHaveBeenCalledOnce();
+    expect(captureException).not.toHaveBeenCalled();
+    expect(invalidate).not.toHaveBeenCalled();
+    expect(set).toHaveBeenCalledWith(
+      requestCacheKey("user-1", "typed", undefined, "UTC"),
+      { count: 5 },
+      CacheTTL.SHORT,
+    );
   });
 });
