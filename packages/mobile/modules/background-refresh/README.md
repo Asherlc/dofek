@@ -150,6 +150,13 @@ cancellation rules:
 | WHOOP disconnected | A native unexpected disconnect after a successful WHOOP connection; a five-minute grace period allows automatic reconnection. | Reconnection, intentional disconnect, or session end. |
 | Dofek closed | The native `applicationWillTerminate` callback schedules a general collection warning for delivery one second later when a native collector is active, independently of WHOOP. | The next launch/foreground or session end. |
 
+The disconnect alert asks users to check device proximity and Bluetooth. It does
+not infer that foregrounding the app will restore a lost connection; Core
+Bluetooth supports connecting to peripherals in the background ([Apple's
+background-processing guide](https://developer.apple.com/library/archive/documentation/NetworkingInternetWeb/Conceptual/CoreBluetooth_concepts/CoreBluetoothBackgroundProcessingForIOSApps/PerformingTasksWhileYourAppIsInTheBackground.html)).
+The instruction to reopen Dofek belongs to the separate app-closed warning,
+triggered by the [termination callback](https://developer.apple.com/documentation/uikit/uiapplicationdelegate/applicationwillterminate(_:)).
+
 WHOOP's connection manager publishes the internal Foundation event
 `WhoopBle.connectionStateChanged` with `state` values `connected`,
 `disconnected`, and `intentionallyDisconnected`. The subscriber listens

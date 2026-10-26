@@ -25,7 +25,7 @@ enum CollectionNotification: Equatable {
     var body: String {
         switch self {
         case .whoopDisconnected:
-            return "Dofek lost its connection to your WHOOP. Open Dofek and keep your WHOOP nearby to resume collecting data."
+            return "Dofek lost its connection to your WHOOP. Check that your WHOOP is near your phone and Bluetooth is on."
         case .appClosed:
             return "Background data collection may stop while Dofek is closed. Open Dofek to keep collecting data."
         }
