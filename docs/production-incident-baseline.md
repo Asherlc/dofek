@@ -33273,3 +33273,38 @@ The incident date uses America/Los_Angeles: the October 23 UTC sync timestamps b
   changed. The next discriminating evidence is a native Bluetooth trace
   spanning failed encryption and successful reconnection; Apple provides the
   [Bluetooth logging profiles and capture instructions](https://developer.apple.com/feedback-assistant/profiles-and-logs/).
+- **Approved correction / validation:** The user approved the narrow recovery
+  state fix. The [disconnect transition](../packages/mobile/modules/whoop-ble/ios/WhoopBleConnectionManager+CoreBluetooth.swift)
+  now preserves pending streaming intent through repeated automatic failures;
+  explicit [Stop and Disconnect](../packages/mobile/modules/whoop-ble/ios/WhoopBleConnectionManager.swift)
+  clear it. The [Expo stop handler](../packages/mobile/modules/whoop-ble/ios/WhoopBleModule.swift)
+  applies cancellation even without an active command characteristic. The
+  [three repository regressions](../packages/mobile/modules/whoop-ble/Tests/WhoopBleConnectionManagerTests.swift)
+  first failed against unchanged source with six assertion failures, then
+  passed after the correction. The full WHOOP Swift suite passed 161 tests,
+  and the mobile tier passed 1,795 tests with retries disabled. Full repository
+  lint, root/server/web/mobile/module typechecks, spelling, and strict lint
+  across 146 tracked native Swift files passed. Independent task and final
+  reviews found no issues. The canonical signed Release Simulator build exited
+  zero; both simulator architectures contain the changed native objects, and
+  `codesign --verify --deep --strict` passed. The
+  [implementation plan](superpowers/plans/2026-10-25-whoop-stream-intent.md)
+  records the scope and review checkpoints.
+- **Validation context / remaining boundary:** A fresh workspace needed
+  `pnpm compose:env --write` before full lint could use its actual ClickHouse
+  port instead of default port 8123; the same `pnpm lint` then passed. Local
+  recursive SwiftLint also traversed installed third-party Expo sources;
+  strict checks of all tracked native files passed without changing rules or
+  dependencies. Xcode emitted generic successful-command diagnostics for
+  unrelated native targets but completed the signed build successfully; their
+  cause remains unverified. No retry, timeout, pairing, or upload setting
+  changed. A new native iOS build is required to deliver the correction,
+  following the [module build boundary](../packages/mobile/modules/whoop-ble/README.md).
+  Physical WHOOP recovery, the original encryption failure, and the separate
+  upload stall remain unverified; no release or phone installation was performed.
+- **Retrospective / proposed improvement:** Regression-first tests exposed
+  both lost intent and stale cancellation intent; tracing both native clients
+  caught the Expo early-return path. Add repeated failures followed by Stop or
+  Disconnect to the physical recovery checklist, and reuse native TDD plus the
+  signed build audit. Keep the distinction between a state fix, a successful
+  native build, and physical Bluetooth recovery explicit in future reports.

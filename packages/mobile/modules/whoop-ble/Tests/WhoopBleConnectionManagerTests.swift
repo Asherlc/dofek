@@ -112,6 +112,71 @@ final class WhoopBleConnectionManagerTests: XCTestCase {
         XCTAssertEqual(snapshots, [.ready, .streaming])
     }
 
+    func testRepeatedReconnectFailuresRestoreStreamingAfterReadiness() {
+        let manager = WhoopBleConnectionManager()
+        manager.syncOnBleQueue {
+            manager.setState(.ready)
+            XCTAssertTrue(manager.startStreaming())
+            manager.autoReconnect = true
+            var reconnectCount = 0
+
+            for _ in 0..<3 {
+                manager.handleDisconnection(
+                    peripheralId: "strap-id",
+                    error: NSError(domain: "CBErrorDomain", code: 6)
+                ) {
+                    reconnectCount += 1
+                }
+                XCTAssertEqual(manager.state, .connecting)
+            }
+
+            XCTAssertEqual(reconnectCount, 3)
+            XCTAssertEqual(completeNotificationReadiness(for: manager), 1)
+            XCTAssertEqual(manager.state, .streaming)
+        }
+    }
+
+    func testStopDuringReconnectPreventsStreamingAfterReadiness() {
+        let manager = WhoopBleConnectionManager()
+        manager.syncOnBleQueue {
+            manager.setState(.ready)
+            XCTAssertTrue(manager.startStreaming())
+            manager.autoReconnect = true
+            manager.handleDisconnection(peripheralId: "strap-id", error: nil) {}
+            XCTAssertEqual(manager.state, .connecting)
+            XCTAssertNil(manager.cmdCharacteristic)
+
+            manager.stopStreaming()
+
+            XCTAssertEqual(manager.state, .connecting)
+            XCTAssertEqual(completeNotificationReadiness(for: manager), 0)
+            XCTAssertEqual(manager.state, .ready)
+        }
+    }
+
+    func testDisconnectDuringReconnectPreventsStreamingAfterLaterReadiness() {
+        let manager = WhoopBleConnectionManager()
+        manager.syncOnBleQueue {
+            manager.setState(.ready)
+            XCTAssertTrue(manager.startStreaming())
+            manager.autoReconnect = true
+            manager.handleDisconnection(peripheralId: "strap-id", error: nil) {}
+            XCTAssertEqual(manager.state, .connecting)
+        }
+        let disconnected = expectation(description: "intentional disconnect completed")
+
+        manager.disconnect {
+            XCTAssertEqual(manager.state, .idle)
+            XCTAssertFalse(manager.autoReconnect)
+            manager.setState(.connecting)
+            XCTAssertEqual(self.completeNotificationReadiness(for: manager), 0)
+            XCTAssertEqual(manager.state, .ready)
+            disconnected.fulfill()
+        }
+
+        wait(for: [disconnected], timeout: 1)
+    }
+
     func testSyncOnBleQueueRunsInlineWhenAlreadyOnBleQueue() {
         let manager = WhoopBleConnectionManager()
         let expectation = expectation(description: "ble queue work finished")
@@ -335,6 +400,25 @@ final class WhoopBleConnectionManagerTests: XCTestCase {
         }
 
         XCTAssertNil(retainedManager)
+    }
+
+    private func completeNotificationReadiness(for manager: WhoopBleConnectionManager) -> Int {
+        manager.setState(.discoveringServices)
+        manager.setState(.subscribing)
+        let previouslyStreaming = manager.settleNotificationSubscriptionUpdate(
+            .ready,
+            failureDetail: "unused",
+            cancelPeripheral: { XCTFail("Successful subscriptions must not cancel the peripheral") }
+        )
+        XCTAssertNotNil(previouslyStreaming)
+        var imuActivationCount = 0
+        WhoopBleStreamRestorer.restoreIfNeeded(
+            wasStreaming: previouslyStreaming ?? false,
+            startStreaming: manager.startStreaming,
+            activateImu: { imuActivationCount += 1 },
+            emitDeviceState: {}
+        )
+        return imuActivationCount
     }
 
     private func connectionEventExpectation(

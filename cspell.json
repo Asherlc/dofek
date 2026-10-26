@@ -339,6 +339,7 @@
     "podspec",
     "xcworkspace",
     "xcodebuild",
+    "codesign",
     "xcodebuildmcp",
     "xcodeproj",
     "xcscheme",
