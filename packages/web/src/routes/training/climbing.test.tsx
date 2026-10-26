@@ -371,7 +371,10 @@ describe("ClimbingTab", () => {
     expect(sessionSummaryQuery).toHaveBeenCalledWith({}, expect.any(Object));
     expect(hangboardingSummaryQuery).toHaveBeenCalledWith({}, expect.any(Object));
     expect(locationMapQuery).toHaveBeenCalledWith({}, expect.any(Object));
-    expect(strengthsQuery).toHaveBeenCalledWith({ endDate: "2026-10-26" }, expect.any(Object));
+    expect(strengthsQuery).toHaveBeenCalledWith(
+      { days: null, endDate: "2026-10-26" },
+      expect.any(Object),
+    );
   });
 
   it("renders one recent climbing table", async () => {

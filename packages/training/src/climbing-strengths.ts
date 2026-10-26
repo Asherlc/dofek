@@ -73,6 +73,9 @@ export type ClimbingStrengthsCell = ClimbingStrengthsPanel["rows"][number]["cell
 export type ClimbingStrengthsExample = ClimbingStrengthsCell["examples"][number];
 
 export const ALL_CLIMBING_GRADES = "All grades";
+export function climbingStrengthsBaselineLabel(grade: string): string {
+  return grade === ALL_CLIMBING_GRADES ? "Overall baseline" : "Same-grade baseline";
+}
 
 /** Select server-computed values for rendering, without aggregating client-side. */
 export function climbingStrengthsGradePanel(

@@ -1,4 +1,5 @@
 import type { ClimbingStrengthsPanel } from "@dofek/training/climbing-strengths";
+import { climbingStrengthsBaselineLabel } from "@dofek/training/climbing-strengths";
 import {
   CLIMBING_STRENGTHS_VIEWS,
   type ClimbingStrengthsView,
@@ -46,6 +47,11 @@ export function ClimbingStrengthsChart({
   onSelect: (rowKey: string, grade: string) => void;
 }) {
   const [width, setWidth] = useState(300);
+  const baselineLabel = climbingStrengthsBaselineLabel(grade);
+  const explanation = explanations[view].replaceAll(
+    "same-grade baseline",
+    baselineLabel.toLowerCase(),
+  );
   const title =
     CLIMBING_STRENGTHS_VIEWS.find((entry) => entry.value === view)?.label ?? "Climbing strengths";
   const baseline = panel.grades.find((entry) => entry.grade === grade);
@@ -109,7 +115,7 @@ export function ClimbingStrengthsChart({
       style={styles.container}
     >
       <Text style={styles.title}>{title}</Text>
-      <Text style={styles.meta}>{explanations[view]}</Text>
+      <Text style={styles.meta}>{explanation}</Text>
       {insufficientRadar && (
         <Text style={styles.meta}>
           Radar needs at least three styles with recorded success rates for this grade.
@@ -118,7 +124,7 @@ export function ClimbingStrengthsChart({
       {(view === "gaps" || view === "exposure") && (
         <Text style={styles.meta}>Gap (percentage points)</Text>
       )}
-      <AccessibleChart title={title} summary={`${grade}. ${explanations[view]}`} rows={exactRows}>
+      <AccessibleChart title={title} summary={`${grade}. ${explanation}`} rows={exactRows}>
         {!insufficientRadar && (
           <ScrollView horizontal contentContainerStyle={{ minWidth: width }}>
             <Svg width={chartWidth} height={height} viewBox={`0 0 ${chartWidth} ${height}`}>

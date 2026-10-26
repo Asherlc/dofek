@@ -7,6 +7,42 @@ const angle: ClimbingStrengthsPanel = {
   contextLabel: "Bouldering · V scale · Free",
   dimension: "wall_angle",
   setting: "indoor",
+  allGrades: {
+    grades: [{ grade: "All grades", gradeSortValue: 0, sends: 5, climbs: 14, successRate: 36 }],
+    rows: [
+      {
+        key: "slab",
+        label: "Slab",
+        cells: [
+          {
+            grade: "All grades",
+            sends: 2,
+            climbs: 7,
+            successRate: 29,
+            differencePercentagePoints: -7,
+            sampleStatus: "available",
+            examples: [],
+          },
+        ],
+      },
+      {
+        key: "vertical",
+        label: "Vertical",
+        cells: [
+          {
+            grade: "All grades",
+            sends: 1,
+            climbs: 3,
+            successRate: 33,
+            differencePercentagePoints: -3,
+            sampleStatus: "limited",
+            examples: [],
+          },
+        ],
+      },
+    ],
+    progress: [],
+  },
   grades: [
     { grade: "V3", gradeSortValue: 3, sends: 4, climbs: 9, successRate: 44 },
     { grade: "V4", gradeSortValue: 4, sends: 1, climbs: 5, successRate: 20 },
@@ -95,6 +131,44 @@ export const climbingStrengthsFixture: ClimbingStrengths = {
         key: "boulder-setting",
         dimension: "setting",
         setting: null,
+        allGrades: {
+          grades: [
+            { grade: "All grades", gradeSortValue: 0, sends: 7, climbs: 18, successRate: 39 },
+          ],
+          rows: [
+            {
+              key: "indoor",
+              label: "Indoor",
+              cells: [
+                {
+                  grade: "All grades",
+                  sends: 5,
+                  climbs: 14,
+                  successRate: 36,
+                  differencePercentagePoints: -3,
+                  sampleStatus: "available",
+                  examples: [],
+                },
+              ],
+            },
+            {
+              key: "outdoor",
+              label: "Outdoor",
+              cells: [
+                {
+                  grade: "All grades",
+                  sends: 2,
+                  climbs: 4,
+                  successRate: 50,
+                  differencePercentagePoints: 11,
+                  sampleStatus: "limited",
+                  examples: [],
+                },
+              ],
+            },
+          ],
+          progress: [],
+        },
         grades: [
           { grade: "V3", gradeSortValue: 3, sends: 6, climbs: 13, successRate: 46 },
           { grade: "V4", gradeSortValue: 4, sends: 1, climbs: 5, successRate: 20 },
@@ -172,6 +246,35 @@ export const climbingStrengthsFixture: ClimbingStrengths = {
     ] satisfies ClimbingStrengthsPanel[]
   ).map((panel) => ({
     ...panel,
+    allGrades: {
+      ...panel.allGrades,
+      rows: panel.allGrades.rows.map((row, index) => ({
+        ...row,
+        key: panel.rows[index]?.key ?? row.key,
+        label: panel.rows[index]?.label ?? row.label,
+      })),
+      progress: [
+        { startDate: "2026-08-15", endDate: "2026-08-31" },
+        { startDate: "2026-09-01", endDate: "2026-09-30" },
+        { startDate: "2026-10-01", endDate: "2026-10-26" },
+      ].map((period, index) => ({
+        ...period,
+        rows: panel.allGrades.rows.map((row, rowIndex) => ({
+          key: panel.rows[rowIndex]?.key ?? row.key,
+          cells: row.cells.map((cell) =>
+            index === 2
+              ? cell
+              : {
+                  ...cell,
+                  sends: 0,
+                  climbs: 0,
+                  successRate: null,
+                  sampleStatus: "no_data" as const,
+                },
+          ),
+        })),
+      })),
+    },
     progress: [
       {
         startDate: "2026-08-15",

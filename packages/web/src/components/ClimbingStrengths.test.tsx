@@ -1,10 +1,35 @@
 /** @vitest-environment jsdom */
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import type { ReactNode } from "react";
 import { afterEach, expect, it, vi } from "vitest";
 import { ClimbingStrengths } from "./ClimbingStrengths.tsx";
 import { climbingStrengthsFixture as fixture } from "./climbing-strengths-fixtures.ts";
 
-vi.mock("./DofekChart.tsx", () => ({ DofekChart: () => <div>Chart</div> }));
+vi.mock("./DofekChart.tsx", () => ({
+  DofekChart: ({ dataDisclosure }: { dataDisclosure: ReactNode }) => (
+    <div>Chart{dataDisclosure}</div>
+  ),
+}));
+
+it("defaults single-grade views to pooled All grades and filters supplied results on selection", () => {
+  render(<ClimbingStrengths data={fixture} />);
+  fireEvent.change(screen.getByLabelText("View"), { target: { value: "gaps" } });
+  expect(screen.getByLabelText("Grade")).toHaveValue("All grades");
+  fireEvent.click(screen.getByText("Exact values"));
+  fireEvent.click(screen.getByRole("button", { name: /Vertical · All grades · 62%/ }));
+  expect(screen.getByRole("region", { name: "Selected climbs" })).toHaveTextContent(
+    "13 sends / 21 climbs",
+  );
+  fireEvent.change(screen.getByLabelText("Grade"), { target: { value: "V4" } });
+  expect(screen.getByRole("region", { name: "Selected climbs" })).toHaveTextContent(
+    "3 sends / 6 climbs",
+  );
+  fireEvent.change(screen.getByLabelText("Grade"), { target: { value: "All grades" } });
+  fireEvent.change(screen.getByLabelText("View"), { target: { value: "profile" } });
+  expect(screen.getByRole("columnheader", { name: "V4" })).toBeVisible();
+  fireEvent.change(screen.getByLabelText("View"), { target: { value: "radar" } });
+  expect(screen.getByLabelText("Grade")).toHaveValue("All grades");
+});
 
 it("offers seven views and retains context, setting, grade and source details through refreshes", () => {
   const angle = fixture.panels[0];
@@ -37,7 +62,7 @@ it("offers seven views and retains context, setting, grade and source details th
     "Radar profile",
   ])
     expect(screen.getByRole("option", { name: label })).toBeInTheDocument();
-  fireEvent.change(screen.getByLabelText("Climbing context"), { target: { value: "route" } });
+  fireEvent.click(screen.getByRole("button", { name: /^Routes/ }));
   fireEvent.change(screen.getByLabelText("Strength setting"), {
     target: { value: "route-outdoor" },
   });
@@ -49,7 +74,7 @@ it("offers seven views and retains context, setting, grade and source details th
     } else {
       expect(screen.getByLabelText("Grade")).toHaveValue("V4");
     }
-    expect(screen.getByLabelText("Climbing context")).toHaveValue("route");
+    expect(screen.getByRole("button", { name: /^Routes/ })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByLabelText("Strength setting")).toHaveValue("route-outdoor");
     expect(screen.getByRole("region", { name: "Selected climbs" })).toHaveTextContent(
       "Evening Arete",
@@ -59,7 +84,7 @@ it("offers seven views and retains context, setting, grade and source details th
   rerender(<ClimbingStrengths data={structuredClone(data)} />);
   expect(screen.getByLabelText("View")).toHaveValue("progress");
   expect(screen.getByLabelText("Grade")).toHaveValue("V4");
-  expect(screen.getByLabelText("Climbing context")).toHaveValue("route");
+  expect(screen.getByRole("button", { name: /^Routes/ })).toHaveAttribute("aria-pressed", "true");
   expect(screen.getByLabelText("Strength setting")).toHaveValue("route-outdoor");
   expect(screen.getByRole("region", { name: "Selected climbs" })).toHaveTextContent(
     "Across the selected period",
@@ -145,14 +170,14 @@ it("defaults to observations and preserves selection across refreshes and contex
     "aria-pressed",
     "true",
   );
-  fireEvent.change(screen.getByLabelText("Climbing context"), { target: { value: "route" } });
-  expect(screen.getByLabelText("Climbing context")).toHaveValue("route");
+  fireEvent.click(screen.getByRole("button", { name: /^Routes/ }));
+  expect(screen.getByRole("button", { name: /^Routes/ })).toHaveAttribute("aria-pressed", "true");
   fireEvent.click(screen.getByRole("button", { name: /Vertical · V4/ }));
   expect(screen.getByRole("region", { name: "Selected climbs" })).toHaveTextContent(
     "Evening Arete",
   );
   rerender(<ClimbingStrengths data={structuredClone(data)} />);
-  expect(screen.getByLabelText("Climbing context")).toHaveValue("route");
+  expect(screen.getByRole("button", { name: /^Routes/ })).toHaveAttribute("aria-pressed", "true");
   expect(screen.getByRole("button", { name: /Vertical · V4/ })).toHaveAttribute(
     "aria-pressed",
     "true",

@@ -1,4 +1,5 @@
 import type { ClimbingStrengthsPanel } from "@dofek/training/climbing-strengths";
+import { climbingStrengthsBaselineLabel } from "@dofek/training/climbing-strengths";
 import type { ClimbingStrengthsView } from "@dofek/training/climbing-strengths-views";
 import {
   climbingStrengthsChartOption,
@@ -19,6 +20,7 @@ export function ClimbingStrengthsChart({
   selectedRow: string | null;
   onSelectCell: (rowKey: string, grade: string) => void;
 }) {
+  const baselineLabel = climbingStrengthsBaselineLabel(grade);
   const sparseRadar =
     view === "radar" &&
     panel.rows.filter((row) =>
@@ -69,14 +71,16 @@ export function ClimbingStrengthsChart({
             <tr>
               <th scope="col">Style / grade{view === "progress" ? " / month" : ""}</th>
               <th scope="col">Success and sample</th>
-              {view !== "progress" ? <th scope="col">Gap vs same-grade baseline</th> : null}
+              {view !== "progress" ? (
+                <th scope="col">Gap vs {baselineLabel.toLowerCase()}</th>
+              ) : null}
             </tr>
           </thead>
           <tbody>
             {baselines.map((baseline) => (
               <tr key={`baseline-${baseline.grade}`} className="border-t border-border">
                 <th scope="row" className="py-2 pr-3 font-normal">
-                  Same-grade baseline · {baseline.grade}
+                  {climbingStrengthsBaselineLabel(baseline.grade)} · {baseline.grade}
                 </th>
                 <td className="py-2 pr-3">{climbingStrengthsValueLabel(baseline)}</td>
                 <td>Baseline</td>
@@ -125,8 +129,8 @@ export function ClimbingStrengthsChart({
       ) : null}
       {view === "radar" ? (
         <p className="text-xs text-muted">
-          Success on a shared 0–100% scale. Dashed line: same-grade baseline. Groups without a
-          success rate are omitted from the polygon.
+          Success on a shared 0–100% scale. Dashed line: {baselineLabel.toLowerCase()}. Groups
+          without a success rate are omitted from the polygon.
         </p>
       ) : null}
       {sparseRadar ? (

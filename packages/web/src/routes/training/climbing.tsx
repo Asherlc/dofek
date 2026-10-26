@@ -97,7 +97,7 @@ export function ClimbingTab() {
   const volumeByGrade = trpc.climbing.volumeByGrade.useQuery(rangeInput, climbingQueryOptions);
   const locationMap = trpc.climbing.locationMap.useQuery(rangeInput, climbingQueryOptions);
   const strengths = trpc.climbing.strengths.useQuery(
-    { ...rangeInput, endDate },
+    { ...rangeInput, days, endDate },
     climbingQueryOptions,
   );
   const sessionSummary = trpc.climbing.sessionSummary.useQuery(rangeInput, climbingQueryOptions);

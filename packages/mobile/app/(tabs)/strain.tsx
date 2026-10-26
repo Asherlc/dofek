@@ -71,6 +71,7 @@ function useReportQueryError(query: { isError: boolean; error: object | null }) 
 
 export default function StrainScreen() {
   const [climbingFilters, setClimbingFilters] = useState<ClimbingFilterValues>({});
+  const [strengthsAllTime, setStrengthsAllTime] = useState(false);
   const router = useRouter();
   const utils = trpc.useUtils();
   const { days, isHydrated, setDays } = useTimeRangePreference("training");
@@ -90,7 +91,7 @@ export default function StrainScreen() {
     },
   );
   const climbingStrengthsQuery = trpc.climbing.strengths.useQuery(
-    { days, endDate, ...climbingFilters },
+    { days: strengthsAllTime ? null : days, endDate, ...climbingFilters },
     {
       enabled: isHydrated,
       placeholderData: preservePreviousRangeData ? (previousData) => previousData : undefined,
@@ -396,6 +397,44 @@ export default function StrainScreen() {
       ) : null}
       <ClimbingStrengths
         data={climbingStrengths.data}
+        rangeControl={
+          <View
+            accessibilityRole="radiogroup"
+            accessibilityLabel="Climbing strengths period"
+            style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}
+          >
+            {[
+              { label: `${days} days`, allTime: false },
+              { label: "All time", allTime: true },
+            ].map((option) => (
+              <TouchableOpacity
+                key={option.label}
+                accessibilityRole="radio"
+                accessibilityLabel={option.label}
+                accessibilityState={{ checked: strengthsAllTime === option.allTime }}
+                onPress={() => setStrengthsAllTime(option.allTime)}
+                style={{
+                  minHeight: 44,
+                  justifyContent: "center",
+                  paddingHorizontal: 12,
+                  borderRadius: 8,
+                  borderWidth: 1,
+                  borderColor:
+                    strengthsAllTime === option.allTime ? colors.accent : colors.surfaceSecondary,
+                }}
+              >
+                <Text
+                  style={{
+                    color:
+                      strengthsAllTime === option.allTime ? colors.accent : colors.textSecondary,
+                  }}
+                >
+                  {option.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        }
         loading={climbingStrengthsQuery.isLoading}
         error={
           climbingStrengthsQuery.error ??

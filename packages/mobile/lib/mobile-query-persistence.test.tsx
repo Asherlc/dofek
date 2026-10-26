@@ -147,6 +147,29 @@ describe("mobile query persistence", () => {
     await refetch;
   });
 
+  it("discards strengths from v12 without pooled grade results", async () => {
+    const AsyncStorage = (await import("@react-native-async-storage/async-storage")).default;
+    const userId = "strengths-owner";
+    const queryKey = [["climbing", "strengths"], { input: { days: 90 }, type: "query" }];
+    const seedClient = createQueryClient();
+    seedClient.setQueryData(queryKey, { panels: [{ grades: [], rows: [], progress: [] }] });
+    await AsyncStorage.setItem(
+      `dofek-query-cache:${userId}`,
+      JSON.stringify({
+        timestamp: Date.now(),
+        buster: `${userId}:v12`,
+        clientState: dehydrate(seedClient),
+      }),
+    );
+    const restoredClient = createQueryClient();
+    await persistQueryClientRestore({
+      queryClient: restoredClient,
+      persister: createMobileQueryPersister(userId),
+      maxAge: QUERY_CACHE_MAX_AGE_MS,
+      buster: mobileQueryCacheBuster(userId),
+    });
+    expect(restoredClient.getQueryData(queryKey)).toBeUndefined();
+  });
   it("discards v11 metric sources without structured presentation before restoration completes", async () => {
     const AsyncStorage = (await import("@react-native-async-storage/async-storage")).default;
     const userId = "metric-source-owner";

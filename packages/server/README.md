@@ -65,6 +65,12 @@ The backend API and background job processor for Dofek. Built with Node.js, Expr
   unknown-only months retain null rates and zero sample counts. All view metrics
   are supplied by this server response, as defined in the
   [shared strengths contract](../training/src/climbing-strengths.ts).
+  The same contract supplies a separate `allGrades` profile with pooled counts,
+  rates, comparisons and monthly outcomes from the consolidated climbs. Missing
+  aid use joins free climbing; explicit aid stays separate. `days: null` queries
+  accessible history through `endDate`, and progress starts at its earliest
+  observation. See the [repository](src/repositories/climbing-strengths-repository.ts)
+  and [aggregation](src/services/climbing-strengths.ts).
 - **Provider climbing records**: The [provider detail repository](src/repositories/provider-detail-repository.ts)
   lists retained logs, including undated records and provider-absence tombstones,
   and loads the full owned graph for a selected record. The [sync repository](src/repositories/sync-repository.ts)
