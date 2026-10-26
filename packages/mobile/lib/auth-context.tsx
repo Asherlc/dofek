@@ -79,7 +79,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [accountErasureCleanupInProgress, setAccountErasureCleanupInProgress] = useState(false);
   const [accountSessionOwnerNonce, setAccountSessionOwnerNonce] = useState<string | null>(null);
   const activeCleanupLeaseRef = useRef<AccountErasureCleanupLease | null>(null);
-  const bootstrapDeferredRef = useRef(false);
+  const bootstrapRetryPendingRef = useRef(false);
   const nextCleanupIdRef = useRef(0);
   const sessionGenerationRef = useRef(0);
   const sessionOwnerNonceRef = useRef<string | null>(null);
@@ -110,7 +110,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (activeCleanupLeaseRef.current) return;
     startStartupPhase("authentication");
     setIsLoading(userRef.current === null);
-    bootstrapDeferredRef.current = false;
+    bootstrapRetryPendingRef.current = false;
     let deferBootstrap = false;
     const restoreGeneration = sessionGenerationRef.current + 1;
     sessionGenerationRef.current = restoreGeneration;
@@ -127,7 +127,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           // SecureStore reads fail with errSecInteractionNotAllowed in that state,
           // so defer auth restore until the user brings the app to the foreground.
           deferBootstrap = true;
-          bootstrapDeferredRef.current = true;
+          bootstrapRetryPendingRef.current = true;
           updateUser(null);
           updateSessionToken(null);
           updateSessionOwnerNonce(null);
@@ -198,7 +198,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // SecureStore reads fail with errSecInteractionNotAllowed in that state,
         // so defer auth restore until the user brings the app to the foreground.
         deferBootstrap = true;
-        bootstrapDeferredRef.current = true;
+        bootstrapRetryPendingRef.current = true;
         updateUser(null);
         updateSessionToken(null);
         updateSessionOwnerNonce(null);
@@ -209,6 +209,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       captureException(error, { source: "auth-state-restore" });
       if (!userRef.current) {
+        bootstrapRetryPendingRef.current = true;
         updateUser(null);
         setBootstrapError(
           userFacingErrorMessage(
@@ -219,7 +220,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
       startupOutcome = "error";
     } finally {
-      if (!localSessionRestored) finishStartupPhase("authentication", startupOutcome);
+      if (!localSessionRestored && isCurrentRestore()) {
+        finishStartupPhase("authentication", startupOutcome);
+      }
       if (isCurrentRestore() && !deferBootstrap) {
         setIsLoading(false);
       }
@@ -231,6 +234,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     void retryBootstrap();
     return () => {
       sessionGenerationRef.current += 1;
+      finishStartupPhase("authentication", "skipped");
     };
   }, [retryBootstrap]);
 
@@ -238,13 +242,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const subscription = AppState.addEventListener("change", (nextState) => {
       if (
         nextState === "active" &&
-        (bootstrapDeferredRef.current || (userRef.current && sessionTokenRef.current))
+        (bootstrapRetryPendingRef.current || (sessionTokenRef.current && userRef.current))
       ) {
         void retryBootstrap();
       }
     });
     const unsubscribeOnline = onlineManager.subscribe((online) => {
-      if (online && userRef.current && sessionTokenRef.current) {
+      if (
+        online &&
+        sessionTokenRef.current &&
+        (userRef.current || bootstrapRetryPendingRef.current)
+      ) {
         void retryBootstrap();
       }
     });
@@ -264,6 +272,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
       const loginGeneration = sessionGenerationRef.current + 1;
       sessionGenerationRef.current = loginGeneration;
+      bootstrapRetryPendingRef.current = false;
+      finishStartupPhase("authentication", "skipped");
+      setBootstrapError(null);
       await saveSessionToken(token);
       if (activeCleanupLeaseRef.current || sessionGenerationRef.current !== loginGeneration) {
         throw new Error(
@@ -306,6 +317,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
       const sessionGeneration = sessionGenerationRef.current + 1;
       sessionGenerationRef.current = sessionGeneration;
+      bootstrapRetryPendingRef.current = false;
+      finishStartupPhase("authentication", "skipped");
       const cleanupLease = {
         cleanupId: nextCleanupIdRef.current + 1,
         cleanupOwnerNonce,
@@ -377,6 +390,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const clearLocalAuthState = useCallback(() => {
     sessionGenerationRef.current += 1;
+    bootstrapRetryPendingRef.current = false;
+    finishStartupPhase("authentication", "skipped");
     updateSessionToken(null);
     updateSessionOwnerNonce(null);
     updateUser(null);

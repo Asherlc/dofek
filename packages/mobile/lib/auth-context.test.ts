@@ -63,8 +63,10 @@ function wrapper({ children }: { children: ReactNode }) {
 }
 
 describe("auth-context", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     mockGetSavedSessionUser.mockResolvedValue(null);
+    const { fetchCurrentUser } = await import("./auth");
+    vi.mocked(fetchCurrentUser).mockReset().mockResolvedValue(null);
   });
 
   it("exports AuthProvider and useAuth", async () => {
@@ -368,6 +370,140 @@ describe("auth-context", () => {
         expect(result.current.bootstrapError).toBeNull();
       } finally {
         onlineManager.setOnline(true);
+      }
+    });
+
+    it.each(["reconnection", "foreground"])(
+      "retries a token-only bootstrap failure on %s",
+      async (event) => {
+        const { fetchCurrentUser } = await import("./auth");
+        const appStateListeners: Array<(state: string) => void> = [];
+        vi.mocked(AppState.addEventListener).mockImplementation((_event, listener) => {
+          appStateListeners.push(listener);
+          return { remove: vi.fn() };
+        });
+        mockGetSavedSessionUser.mockResolvedValue(null);
+        onlineManager.setOnline(false);
+        vi.mocked(fetchCurrentUser)
+          .mockRejectedValueOnce(new TypeError("Network request failed"))
+          .mockResolvedValueOnce(savedUser);
+        const { result } = renderHook(() => useAuth(), { wrapper });
+
+        try {
+          await waitFor(() => expect(result.current.bootstrapError).not.toBeNull());
+          await act(async () => {
+            if (event === "reconnection") onlineManager.setOnline(true);
+            else appStateListeners.at(-1)?.("active");
+          });
+          await waitFor(() => expect(result.current.user).toEqual(savedUser));
+          expect(result.current.bootstrapError).toBeNull();
+        } finally {
+          onlineManager.setOnline(true);
+        }
+      },
+    );
+
+    it("does not restart a failed bootstrap when a new login is being verified", async () => {
+      const { fetchCurrentUser } = await import("./auth");
+      mockGetSavedSessionUser.mockResolvedValue(null);
+      onlineManager.setOnline(false);
+      let finishLogin: ((user: typeof savedUser) => void) | undefined;
+      vi.mocked(fetchCurrentUser)
+        .mockRejectedValueOnce(new TypeError("Network request failed"))
+        .mockImplementationOnce(
+          () =>
+            new Promise((resolve) => {
+              finishLogin = resolve;
+            }),
+        );
+      const { result } = renderHook(() => useAuth(), { wrapper });
+      await waitFor(() => expect(result.current.bootstrapError).not.toBeNull());
+      let login: Promise<unknown> | undefined;
+      act(() => {
+        login = result.current.onLoginSuccess("new-token").then(
+          () => null,
+          (error: unknown) => error,
+        );
+        onlineManager.setOnline(true);
+      });
+      await waitFor(() => expect(fetchCurrentUser).toHaveBeenCalledTimes(2));
+
+      try {
+        expect(fetchCurrentUser).toHaveBeenCalledTimes(2);
+        expect(result.current.bootstrapError).toBeNull();
+      } finally {
+        await act(async () => {
+          finishLogin?.(savedUser);
+          await login;
+        });
+        onlineManager.setOnline(true);
+      }
+      await expect(login).resolves.toBeNull();
+      expect(result.current.user).toEqual(savedUser);
+      expect(result.current.sessionToken).toBe("new-token");
+    });
+
+    it("lets the current restore finish authentication telemetry after an older restore settles", async () => {
+      const { fetchCurrentUser } = await import("./auth");
+      mockGetSavedSessionUser.mockResolvedValue(null);
+      let finishOlder: ((user: typeof savedUser) => void) | undefined;
+      let finishCurrent: ((user: typeof savedUser) => void) | undefined;
+      vi.mocked(fetchCurrentUser)
+        .mockImplementationOnce(
+          () =>
+            new Promise((resolve) => {
+              finishOlder = resolve;
+            }),
+        )
+        .mockImplementationOnce(
+          () =>
+            new Promise((resolve) => {
+              finishCurrent = resolve;
+            }),
+        );
+      const { result } = renderHook(() => useAuth(), { wrapper });
+      await waitFor(() => expect(fetchCurrentUser).toHaveBeenCalledOnce());
+      let retry: Promise<void> | undefined;
+      act(() => {
+        retry = result.current.retryBootstrap();
+      });
+      await waitFor(() => expect(fetchCurrentUser).toHaveBeenCalledTimes(2));
+
+      try {
+        await act(async () => finishOlder?.(savedUser));
+        expect(mockFinishStartupPhase).not.toHaveBeenCalled();
+      } finally {
+        await act(async () => {
+          finishCurrent?.(savedUser);
+          await retry;
+        });
+      }
+      expect(mockFinishStartupPhase).toHaveBeenCalledExactlyOnceWith(
+        "authentication",
+        "authenticated",
+      );
+    });
+
+    it("finishes authentication telemetry when account cleanup supersedes a pending restore", async () => {
+      const { fetchCurrentUser } = await import("./auth");
+      mockGetSavedSessionUser.mockResolvedValue(null);
+      let finishVerification: ((user: typeof savedUser) => void) | undefined;
+      vi.mocked(fetchCurrentUser).mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finishVerification = resolve;
+          }),
+      );
+      const { result } = renderHook(() => useAuth(), { wrapper });
+      await waitFor(() => expect(fetchCurrentUser).toHaveBeenCalledOnce());
+
+      try {
+        act(() => {
+          result.current.beginAccountErasureCleanup("user-1");
+        });
+        expect(mockFinishStartupPhase).toHaveBeenCalledExactlyOnceWith("authentication", "skipped");
+      } finally {
+        await act(async () => finishVerification?.(savedUser));
       }
     });
 

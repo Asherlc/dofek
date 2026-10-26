@@ -140,8 +140,13 @@ export async function getSavedSessionUser(token: string): Promise<AuthUser | nul
     if (readGeneration !== sessionPersistenceGeneration || storedToken !== token) return null;
     const storedUser = await readSecureStoreItem(SESSION_USER_KEY);
     if (readGeneration !== sessionPersistenceGeneration || storedUser === null) return null;
-    const data: unknown = JSON.parse(storedUser);
-    return AuthUserSchema.parse(data);
+    try {
+      const data: unknown = JSON.parse(storedUser);
+      return AuthUserSchema.parse(data);
+    } catch (error: unknown) {
+      captureException(error, { source: "auth-saved-user-restore" });
+      return null;
+    }
   });
 }
 

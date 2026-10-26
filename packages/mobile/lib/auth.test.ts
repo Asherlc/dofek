@@ -878,12 +878,31 @@ describe("session token storage", () => {
   });
 
   it.each(["not-json", '{"id":"u1"}', "null"])(
-    "throws for corrupted saved-user data: %s",
+    "reports corrupted saved-user data and allows online recovery: %s",
     async (rawUser) => {
       storage.set("dofek_session_token", "saved-token");
       storage.set("dofek_session_user_v1", rawUser);
 
-      await expect(getSavedSessionUser("saved-token")).rejects.toThrow();
+      await expect(getSavedSessionUser("saved-token")).resolves.toBeNull();
+      expect(mockCaptureException).toHaveBeenCalledWith(expect.any(Error), {
+        source: "auth-saved-user-restore",
+      });
+    },
+  );
+
+  it.each(["dofek_session_token", "dofek_session_user_v1"])(
+    "propagates saved-user restore storage errors reading %s",
+    async (unavailableKey) => {
+      storage.set("dofek_session_token", "saved-token");
+      storage.set("dofek_session_user_v1", JSON.stringify(savedUser));
+      const storageError = new Error("User interaction is not allowed");
+      vi.mocked(SecureStore.getItemAsync).mockImplementation(async (key) => {
+        if (key === unavailableKey) throw storageError;
+        return storage.get(key) ?? null;
+      });
+
+      await expect(getSavedSessionUser("saved-token")).rejects.toBe(storageError);
+      expect(mockCaptureException).not.toHaveBeenCalled();
     },
   );
 
