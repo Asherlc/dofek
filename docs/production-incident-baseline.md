@@ -33239,3 +33239,37 @@ The incident date uses America/Los_Angeles: the October 23 UTC sync timestamps b
   Reuse the [Axiom query procedure](axiom-observability-runbook.md) and
   [physical-device audit](ios-physical-device-release-audit.md) for the next
   investigation.
+- **Continued diagnosis:** Server `[sensor-upload] upload_received` and
+  `upload_published` events confirmed the last IMU publication at 01:17:05 UTC.
+  Phone snapshots place both later pending requests at approximately
+  01:51:47 UTC; their request ages continued to advance through foreground
+  visits at 01:52, 01:57, and 01:58 UTC before cancellation at 02:20:30 UTC.
+  Neither pending batch has matching server receipt evidence. The
+  [upload workers](../packages/mobile/lib/whoop-ble-upload-workers.ts) join
+  existing pending requests, explaining why another trigger alone did not
+  clear those requests. The [HTTP wrapper](../packages/mobile/lib/trpc-fetch.ts)
+  records responses but has no native task-start or transport-metrics evidence,
+  so the original request stall is still unclassified. No delivered background
+  refresh was observed in the retained journal for this interval.
+- **Reproduced recovery defects, separate from encryption:** A temporary copy
+  of the unchanged Swift package reproduced three failing native assertions:
+  repeated unexpected disconnects followed by subscribed readiness left the
+  manager `ready` instead of `streaming`, and intentional disconnect during
+  recovery retained the old streaming intent. Explicit Stop during recovery
+  also allowed later readiness to restart streaming. The
+  [disconnect state transition](../packages/mobile/modules/whoop-ble/ios/WhoopBleConnectionManager+CoreBluetooth.swift)
+  overwrites `wasStreaming` on every failure; intentional
+  [disconnect/stop operations](../packages/mobile/modules/whoop-ble/ios/WhoopBleConnectionManager.swift)
+  do not clear that pending intent; the
+  [Expo stop handler](../packages/mobile/modules/whoop-ble/ios/WhoopBleModule.swift)
+  additionally returns before stopping when no command characteristic exists.
+  These establish application recovery bugs,
+  not the cause of the earlier native link-encryption timeouts. Production
+  changes remain pending implementation alignment.
+- **Physical evidence boundary:** Read-only `xcrun devicectl device info
+  processes` failed with CoreDevice error 10003, “The device is currently
+  locked,” while trying to mount the developer disk image. The user could not
+  unlock the phone at this time. No process was restarted and no pairing was
+  changed. The next discriminating evidence is a native Bluetooth trace
+  spanning failed encryption and successful reconnection; Apple provides the
+  [Bluetooth logging profiles and capture instructions](https://developer.apple.com/feedback-assistant/profiles-and-logs/).

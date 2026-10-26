@@ -344,6 +344,7 @@
     "xcscheme",
     "xcarchive",
     "xcrun",
+    "devicectl",
     "simctl",
     "openurl",
     "iphonesimulator",
