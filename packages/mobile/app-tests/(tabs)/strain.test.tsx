@@ -357,7 +357,9 @@ describe("StrainScreen recent activity navigation", () => {
     fireEvent.click(screen.getByRole("button", { name: "All climbing" }));
     fireEvent.click(screen.getByRole("button", { name: "Rope method: Lead" }));
     expect(screen.getByText("Updating climbing strengths…")).toBeTruthy();
-    expect(screen.getByRole("button", { name: /Slab · 29% · 2\/7 climbs sent/ })).toBeTruthy();
+    expect(
+      screen.getAllByRole("button", { name: /Slab · 29% · 2 sends \/ 7 climbs/ }),
+    ).toHaveLength(2);
     expect(mockRangeQueryCalls.strengths.at(-1)?.input).toEqual({
       days: 90,
       endDate: "2026-03-28",
@@ -399,7 +401,9 @@ describe("StrainScreen recent activity navigation", () => {
       endDate: "2026-03-28",
       ropeMethod: "lead",
     });
-    expect(screen.getByRole("button", { name: /Slab · 29% · 2\/7 climbs sent/ })).toBeTruthy();
+    expect(
+      screen.getAllByRole("button", { name: /Slab · 29% · 2 sends \/ 7 climbs/ }),
+    ).toHaveLength(2);
     expect(screen.getByText("Climbing strengths")).toBeTruthy();
     expect(screen.getByText("Climbing locations")).toBeTruthy();
   });

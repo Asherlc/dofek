@@ -1,5 +1,12 @@
 # Production Incident Baseline
 
+## 2026-10-26 — Climbing PR validation found stale route assertions and SQL formatting
+
+- **Symptoms / impact:** [PR #3096](https://github.com/Asherlc/dofek/pull/3096) validation was blocked; production was unaffected.
+- **Evidence / root cause:** `pnpm test` passed 21,532 tests but failed two [mobile Strain route assertions](<../packages/mobile/app-tests/(tabs)/strain.test.tsx>) that still requested the old `2/7 climbs sent` accessibility text and assumed a single strengths section. The new formatter uses `2 sends / 7 climbs`, with separate semantic sections. The [SQLFluff job](https://github.com/Asherlc/dofek/actions/runs/40417032273/job/121902210521) ran `uv tool run sqlfluff lint` on migrations 0164–0166 and first reported `drizzle/0164_climbing_catalogue_setting.sql` line 25, `LT02`, followed by mixed function/type capitalization and a trailing-newline violation. The identical local command reproduced those failures.
+- **Direct fix / validation:** Updated the two route assertions to verify both retained sections with the current accessible text; all 30 route tests passed with retries disabled. Formatted migration 0164 without changing its query semantics; SQLFluff passes for all three new migrations. Full-suite and hosted reruns remain pending at this checkpoint. No retries, timeouts, skipped checks, or runtime changes were added.
+- **Retrospective / proposed improvement:** The full route suite exposed coverage missing from the earlier component-only validation. Run the ship-pr and gh-fix-ci skills for this workflow. Proposed testing-guide note: “When changing shared strengths labels or section structure, run the mobile Strain route suite as well as component tests; lint every migration added by the complete branch.”
+
 ## 2026-10-26 — Unlabeled OpenBeta ticks had unknown outcomes
 
 - **Symptoms / impact:** The requested OpenBeta interpretation was missing: unlabeled ticks did not count as successful sends in shared climbing results. Deployment remains pending; no production records were changed during this follow-up.
