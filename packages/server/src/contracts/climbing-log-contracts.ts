@@ -39,6 +39,7 @@ export const climbingLogEntryDetailSchema = climbingLogEntrySchema.extend({
   recordedClimbAttemptCount: z.number().int().nonnegative().nullable(),
   recordedPitchAttemptCount: z.number().int().nonnegative(),
   recordedClimbOutcome: attemptOutcomeSchema.nullable(),
+  freeSend: z.boolean().nullable(),
   pitchResults: z.array(climbingPitchResultSchema),
   displayGrade: z.string().nullable(),
   sourceLinks: z.array(climbingSourceLinkSchema),

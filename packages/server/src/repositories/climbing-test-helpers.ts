@@ -30,6 +30,7 @@ export function climbingLogEntryFixture(
     recordedClimbAttemptCount: 0,
     recordedPitchAttemptCount: 0,
     recordedClimbOutcome: null,
+    freeSend: null,
     pitchResults: [],
     displayGrade: null,
     sourceLinks: [],
@@ -40,6 +41,7 @@ export function climbingLogDatabaseFixture(detail: ClimbingLogEntryDetail) {
   return {
     log: climbingLogEntrySchema.strip().parse(detail),
     climb: detail.climb,
+    freeSend: detail.freeSend,
     attempts: detail.attempts.map((attempt) => climbingAttemptSchema.strip().parse(attempt)),
   };
 }

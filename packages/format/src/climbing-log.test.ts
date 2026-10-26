@@ -62,6 +62,19 @@ describe("climbing log formatting", () => {
     expect(formatClimbingRecordedResult("Pitch 1", null, null)).toBe("Pitch 1");
     expect(formatClimbingRecordedResult(null, null, null)).toBeNull();
   });
+  it.each(["completed", "failed"] as const)(
+    "labels a confirmed non-send as Attempted for a %s outcome",
+    (outcome) => {
+      expect(formatClimbingRecordedResult(null, outcome, 2, [], false)).toBe(
+        "Attempted · Attempts: 2",
+      );
+      expect(formatClimbingRecordedResult(null, outcome, null, [], false)).toBe("Attempted");
+    },
+  );
+  it.each([true, null])("preserves send or unknown summaries (%s)", (freeSend) => {
+    expect(formatClimbingRecordedResult(null, "completed", 2, [], freeSend)).toBe("Attempts: 2");
+    expect(formatClimbingRecordedResult(null, "completed", null, [], freeSend)).toBeNull();
+  });
   it("labels each recorded rope method once without exposing unreported methods", () => {
     expect(formatClimbingRopeMethods([{ ropeMethod: "top_rope" }])).toBe("Top rope");
     expect(

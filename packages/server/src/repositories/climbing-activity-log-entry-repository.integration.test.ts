@@ -284,6 +284,61 @@ describe("ClimbingActivityLogEntryRepository PostgreSQL projection", () => {
       attempts: [{ outcome, rockResultLabels: labels }],
     });
   });
+  it.each([
+    {
+      name: "clean completion",
+      sourceResult: "completed",
+      fellOrHung: false,
+      usedAid: false,
+      freeSend: true,
+    },
+    {
+      name: "failed attempt",
+      sourceResult: "failed",
+      fellOrHung: null,
+      usedAid: null,
+      freeSend: false,
+    },
+    {
+      name: "completion with a fall or hang",
+      sourceResult: "completed",
+      fellOrHung: true,
+      usedAid: false,
+      freeSend: false,
+    },
+    {
+      name: "completion using aid",
+      sourceResult: "completed",
+      fellOrHung: false,
+      usedAid: true,
+      freeSend: false,
+    },
+    {
+      name: "completion with unknown fall or hang",
+      sourceResult: "completed",
+      fellOrHung: null,
+      usedAid: false,
+      freeSend: null,
+    },
+    {
+      name: "unknown outcome",
+      sourceResult: null,
+      fellOrHung: false,
+      usedAid: false,
+      freeSend: null,
+    },
+  ])(
+    "projects free-send evidence for $name",
+    async ({ sourceResult, fellOrHung, usedAid, freeSend }) => {
+      const log = await write({
+        externalId: "free-send-evidence",
+        discipline: "rock_climbing",
+        climb: route,
+        attempts: [{ scope: "climb", ropeMethod: "lead", sourceResult, fellOrHung, usedAid }],
+      });
+      expect(log).toMatchObject({ freeSend });
+    },
+  );
   it("projects a completed pitch without claiming route completion", async () => {
     const log = await write({
       externalId: "pitch-only",
@@ -439,6 +494,7 @@ describe("ClimbingActivityLogEntryRepository PostgreSQL projection", () => {
       displayGrade: null,
       recordedClimbAttemptCount: 1,
       recordedClimbOutcome: "completed",
+      freeSend: null,
       climb: { publishedGrades: [] },
     });
     expect(summit.attempts[0]?.rockResultLabels).toEqual([]);
@@ -460,7 +516,7 @@ describe("ClimbingActivityLogEntryRepository PostgreSQL projection", () => {
         },
       ],
     });
-    expect(dab).toMatchObject({ recordedClimbOutcome: "completed" });
+    expect(dab).toMatchObject({ recordedClimbOutcome: "completed", freeSend: false });
     expect(dab.attempts[0]?.rockResultLabels).toEqual([]);
   });
   it("loads attached logs for a hiking activity without changing source dates", async () => {
